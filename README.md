@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <p align="center">
   <img src="docs/images/openrs-banner.svg" width="600" alt="openRS">
 </p>
@@ -313,3 +314,7 @@ This project is licensed under the MIT License — see [LICENSE](LICENSE) for de
 <p align="center">
   <sub>Built for the car Ford should have given us an app for.</sub>
 </p>
+=======
+# openRS
+A custom-built telemetry app that reads real-time CAN bus data from your Focus RS via MeatPi WiCAN (ESP32-C3) and displays it on Android Auto and/or Sync 3.
+>>>>>>> 78f5a4f3e43bb4e8051f75ae3a80baff6cbb6e73
