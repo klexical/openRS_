@@ -1,0 +1,47 @@
+# ═══ Build outputs ═══════════════════════════════════
+*.apk
+*.aar
+*.ap_
+*.aab
+*.dex
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# ═══ Gradle ═════════════════════════════════════════
+.gradle/
+build/
+**/build/
+local.properties
+gradle-app.setting
+!gradle-wrapper.jar
+
+# ═══ Android Studio / IntelliJ ═══════════════════════
+.idea/
+*.iml
+*.iws
+*.ipr
+.navigation/
+captures/
+.externalNativeBuild/
+.cxx/
+output.json
+
+# ═══ Kotlin ═════════════════════════════════════════
+*.kotlin_metadata
+
+# ═══ OS files ═══════════════════════════════════════
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# ═══ Signing ════════════════════════════════════════
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+
+# ═══ Logs ═══════════════════════════════════════════
+*.log
