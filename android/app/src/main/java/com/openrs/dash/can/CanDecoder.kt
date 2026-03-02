@@ -17,9 +17,11 @@ object CanDecoder {
     const val ID_DYNAMICS       = 0x0B0
     const val ID_GAUGE_ILLUM    = 0x0C8
     const val ID_ENGINE_TEMPS   = 0x0F8
-    const val ID_DRIVE_MODE     = 0x1E3
+    // 0x1B0 (AWDmsg01): DriveMode in bits 55|4 — confirmed RS_HS.dbc (values: 0=Normal,1=Sport,2=Drift)
+    const val ID_AWD_MSG        = 0x1B0
+    // 0x1C0 (ABSmsg04): ESCMode in bits 13|2 — confirmed RS_HS.dbc (0=Normal,1=Off,2=Sport,3=Launch)
+    const val ID_ESC_ABS        = 0x1C0
     const val ID_WHEEL_SPEEDS   = 0x215
-    const val ID_ESC_STATUS     = 0x217
     const val ID_GEAR           = 0x230
     const val ID_AWD_TORQUE     = 0x2C0
     const val ID_PTU_TEMP       = 0x2C2
@@ -29,8 +31,9 @@ object CanDecoder {
 
     private val KNOWN_IDS = setOf(
         ID_TORQUE, ID_THROTTLE_SPEED, ID_PEDALS_STEER, ID_ENGINE_RPM,
-        ID_DYNAMICS, ID_GAUGE_ILLUM, ID_ENGINE_TEMPS, ID_DRIVE_MODE,
-        ID_WHEEL_SPEEDS, ID_ESC_STATUS, ID_GEAR, ID_AWD_TORQUE,
+        ID_DYNAMICS, ID_GAUGE_ILLUM, ID_ENGINE_TEMPS,
+        ID_AWD_MSG, ID_ESC_ABS,
+        ID_WHEEL_SPEEDS, ID_GEAR, ID_AWD_TORQUE,
         ID_PTU_TEMP, ID_FUEL_LEVEL, ID_AMBIENT_TEMP, ID_BATTERY
     )
 
@@ -103,12 +106,17 @@ object CanDecoder {
                 ptuTempC = (ubyte(data, 0) - 40).toDouble(), lastUpdate = now
             ) else null
 
-            ID_DRIVE_MODE -> if (n >= 1) state.copy(
-                driveMode = DriveMode.fromInt(bits(data, 0, 4)), lastUpdate = now
+            // AWDmsg01 (0x1B0): DriveMode at Motorola bit 55, 4-bit — RS_HS.dbc confirmed
+            // Also carries torque vectoring totals (requested/actual)
+            ID_AWD_MSG -> if (n >= 7) state.copy(
+                driveMode = DriveMode.fromInt(bits(data, 55, 4)),
+                lastUpdate = now
             ) else null
 
-            ID_ESC_STATUS -> if (n >= 1) state.copy(
-                escStatus = EscStatus.fromInt(bits(data, 0, 2)), lastUpdate = now
+            // ABSmsg04 (0x1C0): ESCMode at Motorola bit 13, 2-bit — RS_HS.dbc confirmed
+            ID_ESC_ABS -> if (n >= 2) state.copy(
+                escStatus = EscStatus.fromInt(bits(data, 13, 2)),
+                lastUpdate = now
             ) else null
 
             ID_GEAR -> if (n >= 1) state.copy(

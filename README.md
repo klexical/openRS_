@@ -129,7 +129,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 ### Browser Emulator (no hardware required)
 
-Open `Android App/browser-emulator/index.html` in any browser, or visit the live version:
+Open `android/browser-emulator/index.html` in any browser, or visit the live version:
 
 **[klexical.github.io/openRS_](https://klexical.github.io/openRS_)**
 
@@ -146,7 +146,7 @@ Open `Android App/browser-emulator/index.html` in any browser, or visit the live
 
 openRS_ targets a **custom Activity-based Android Auto UI** that renders the exact same gauge components as the phone app — full Nitrous Blue / Frost White theme, gauge boxes, torque bars, and tile grids — identical to what you see in the browser emulator.
 
-> See [`Android App/docs/android-auto-custom-ui-research.md`](Android%20App/docs/android-auto-custom-ui-research.md) for a detailed comparison of the official Car App Library vs the custom Activity approach used by projects like [aa-torque](https://github.com/agronick/aa-torque).
+> See [`android/docs/android-auto-custom-ui-research.md`](android/docs/android-auto-custom-ui-research.md) for a detailed comparison of the official Car App Library vs the custom Activity approach used by projects like [aa-torque](https://github.com/agronick/aa-torque).
 
 ### AA Navigation
 
@@ -163,7 +163,7 @@ openRS_ targets a **custom Activity-based Android Auto UI** that renders the exa
 └─────────────────────────────────────────────────────┘
 ```
 
-See [`Android App/docs/android-auto-setup.md`](Android%20App/docs/android-auto-setup.md) for full setup instructions.
+See [`android/docs/android-auto-setup.md`](android/docs/android-auto-setup.md) for full setup instructions.
 
 ---
 
@@ -217,7 +217,7 @@ See [`Android App/docs/android-auto-setup.md`](Android%20App/docs/android-auto-s
 
 ```
 openRS/
-├── Android App/
+├── android/
 │   ├── app/src/main/java/com/openrs/dash/
 │   │   ├── OpenRSDashApp.kt              # Application singleton + VehicleState
 │   │   ├── auto/screens/                 # 6 AA screens (Dash, AWD, Perf, Temps, Tune, TPMS)
@@ -240,7 +240,7 @@ openRS/
 
 ## OBD PID Reference
 
-Full PID documentation: [`Android App/docs/pid-reference.md`](Android%20App/docs/pid-reference.md)
+Full PID documentation: [`android/docs/pid-reference.md`](android/docs/pid-reference.md)
 
 ### ECU Addresses
 
@@ -284,7 +284,7 @@ Full PID documentation: [`Android App/docs/pid-reference.md`](Android%20App/docs
 
 ## Contributing
 
-Pull requests welcome. See [Android App/CONTRIBUTING.md](Android%20App/CONTRIBUTING.md) for guidelines.
+Pull requests welcome. See [android/CONTRIBUTING.md](android/CONTRIBUTING.md) for guidelines.
 
 If you have a Focus RS and FORScan/OBDLink, we'd love help verifying:
 - Tire temperature PIDs (0x2823–0x2826) — currently experimental
@@ -295,7 +295,7 @@ If you have a Focus RS and FORScan/OBDLink, we'd love help verifying:
 
 ## License
 
-MIT — see [Android App/LICENSE](Android%20App/LICENSE) for details.
+MIT — see [android/LICENSE](android/LICENSE) for details.
 
 ---
 
