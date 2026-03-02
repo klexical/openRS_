@@ -54,11 +54,10 @@ android {
 }
 
 dependencies {
-    // ── aauto-sdk (unofficial) — place aauto.aar in app/libs/ to enable custom AA UI
-    // See app/libs/AAUTO_SDK.md for instructions on obtaining the AAR file.
-    // implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
+    // ── aauto-sdk (unofficial) — custom full-screen AA UI identical to phone app
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
 
-    // ── Android Auto (Car App Library — official, used until aauto.aar available) ─
+    // ── Android Auto (Car App Library — kept for RSDashCarAppService fallback) ────
     implementation("androidx.car.app:app:1.4.0")
 
     // ── Jetpack Compose (Phone UI) ──────────────────────────
