@@ -110,8 +110,14 @@ class MainActivity : ComponentActivity() {
     Row(Modifier.fillMaxWidth().background(Surf).padding(horizontal = 12.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically) {
-        Text("RS DASH", fontSize = 14.sp, fontWeight = FontWeight.Bold,
-            fontFamily = Mono, color = Accent, letterSpacing = 2.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("open", fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                fontFamily = Mono, color = Color(0xFFF5F6F4), letterSpacing = 1.sp)
+            Text("RS", fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                fontFamily = Mono, color = Accent, letterSpacing = 1.sp)
+            Text("_", fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                fontFamily = Mono, color = Color(0xFFF5F6F4))
+        }
         // Mode badge
         val (modeColor, modeText) = when (vs.driveMode.label) {
             "Sport" -> Grn to "SPORT"; "Track" -> Org to "TRACK"
