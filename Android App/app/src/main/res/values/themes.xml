@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.OpenRS" parent="android:Theme.DeviceDefault.NoActionBar">
+        <!-- Ford Nitrous Blue / Frost White brand theme -->
+        <item name="android:colorPrimary">@color/nitrous_blue</item>
+        <item name="android:colorPrimaryDark">@color/bg_deep</item>
+        <item name="android:colorAccent">@color/nitrous_blue</item>
+        <item name="android:textColorPrimary">@color/frost_white</item>
+        <item name="android:textColorSecondary">@color/text_dim</item>
+        <item name="android:statusBarColor">@color/bg_deep</item>
+        <item name="android:navigationBarColor">@color/bg_deep</item>
+        <item name="android:windowBackground">@color/bg_deep</item>
+    </style>
+</resources>

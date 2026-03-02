@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>openRS_ — Phone &amp; Android Auto Emulator</title>
+  <style>
+    /* ── Reset & base ─────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      /* Ford theme colors */
+      --nitrous-blue: #00AEEF;   /* Ford Nitrous Blue  */
+      --frost-white:  #F5F6F4;   /* Ford Frost White   */
+
+      --bg:     #0a0a0a;
+      --surf:   #1a1a1a;
+      --brd:    #2a2a2a;
+      --txt:    #F5F6F4;         /* Frost White for all primary text */
+      --dim:    #6a6e72;
+      --accent: #00AEEF;         /* Nitrous Blue for all accents     */
+      --grn:    #00e676;
+      --red:    #ff5252;
+      --org:    #ff9800;
+      --gold:   #f8e63c;
+      --mono:   'SF Mono','Consolas','Courier New',monospace;
+    }
+    html, body { height: 100%; }
+    body {
+      background: var(--bg);
+      color: var(--txt);
+      font-family: var(--mono);
+      font-size: 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* ── Switcher ─────────────────────────────────────── */
+    #switcher {
+      width: 100%;
+      max-width: 500px;
+      display: flex;
+      gap: 8px;
+      padding: 8px;
+      background: var(--surf);
+      border-bottom: 1px solid var(--brd);
+    }
+    #switcher button {
+      flex: 1;
+      padding: 9px;
+      background: var(--brd);
+      border: 1px solid var(--brd);
+      color: var(--txt);
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      letter-spacing: 1px;
+    }
+    #switcher button.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #000;
+    }
+
+    /* ── Phone frame ──────────────────────────────────── */
+    #phone {
+      width: 100%;
+      max-width: 420px;
+      min-height: 0;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    #phone.hidden, #aa.hidden { display: none; }
+
+    /* Header */
+    .ph-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 12px;
+      background: var(--surf);
+      border-bottom: 1px solid var(--brd);
+      gap: 6px;
+    }
+    .ph-brand { font-weight: 700; letter-spacing: 2px; font-size: 14px; }
+    .brand-open { color: #F5F6F4; }
+    .brand-rs   { color: #00AEEF; }
+    .brand-tail { color: #F5F6F4; }
+    .ph-badge {
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #000;
+    }
+    .ph-badge.sport  { background: var(--grn); }
+    .ph-badge.track  { background: var(--org); }
+    .ph-badge.drift  { background: var(--red); }
+    .ph-badge.normal { background: var(--accent); }
+    .ph-gear { font-size: 20px; font-weight: 700; color: var(--accent); }
+    .ph-esc  { font-size: 10px; color: var(--dim); }
+    .ph-conn { font-size: 10px; font-weight: 700; cursor: pointer; }
+    .ph-conn.on  { color: var(--grn); }
+    .ph-conn.off { color: var(--red); }
+
+    /* Tabs */
+    .ph-tabs {
+      display: flex;
+      background: var(--surf);
+      border-bottom: 1px solid var(--brd);
+      height: 36px;
+    }
+    .ph-tab {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--dim);
+      cursor: pointer;
+      position: relative;
+      gap: 2px;
+    }
+    .ph-tab.active { color: var(--accent); background: rgba(0,168,232,0.08); }
+    .ph-tab.active::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 28px;
+      height: 2px;
+      background: var(--accent);
+      border-radius: 2px;
+    }
+
+    /* Pages */
+    .ph-content { flex: 1; overflow-y: auto; padding: 8px; background: var(--bg); }
+    .ph-page { display: none; }
+    .ph-page.active { display: block; }
+
+    /* ── Shared phone components ──────────────────────── */
+    .gauge-row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .gauge-box {
+      flex: 1;
+      background: var(--surf);
+      border: 1px solid var(--brd);
+      border-radius: 8px;
+      padding: 8px;
+      text-align: center;
+    }
+    .gauge-box.lg { flex: 1.5; }
+    .g-lbl { font-size: 10px; color: var(--dim); letter-spacing: 1px; margin-bottom: 2px; }
+    .g-val { font-size: 32px; font-weight: 700; line-height: 1.05; color: var(--txt); }
+    .gauge-box.lg .g-val { font-size: 42px; }
+    .g-unit { font-size: 10px; color: var(--dim); }
+
+    .info-row { display: flex; gap: 6px; margin: 3px 0; }
+    .cell {
+      flex: 1;
+      background: var(--surf);
+      border: 1px solid var(--brd);
+      border-radius: 6px;
+      padding: 5px 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      min-width: 0;
+    }
+    .c-lbl { font-size: 9px; color: var(--dim); white-space: nowrap; }
+    .c-val { font-size: 12px; font-weight: 600; color: var(--txt); white-space: nowrap; }
+    .c-val.gold { color: var(--gold); }
+    .c-val.warm { color: var(--org); }
+    .c-val.hot  { color: var(--red); }
+
+    /* AWD */
+    .sec-lbl { font-size: 11px; color: var(--dim); text-align: center; margin: 4px 0; }
+    .axle-row { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 6px 0; }
+    .wheel-box {
+      width: 88px;
+      background: var(--surf);
+      border: 1px solid var(--brd);
+      border-radius: 6px;
+      padding: 6px;
+      text-align: center;
+    }
+    .wb-lbl { font-size: 9px; color: var(--dim); }
+    .wb-val { font-size: 16px; font-weight: 700; color: var(--txt); }
+    .split-mid { text-align: center; }
+    .split-val { font-size: 32px; font-weight: 700; color: var(--accent); }
+    .split-sub { font-size: 9px; color: var(--dim); }
+    .torque-bar {
+      width: 100%; max-width: 300px; height: 18px;
+      background: var(--brd); border-radius: 9px;
+      display: flex; margin: 4px auto; overflow: hidden;
+    }
+    .tb-l { height: 100%; background: var(--accent); border-radius: 9px 0 0 9px; }
+    .tb-r { height: 100%; background: var(--grn);    border-radius: 0 9px 9px 0; }
+
+    /* Temps */
+    .temp-gauge {
+      flex: 1;
+      background: var(--surf);
+      border: 1px solid var(--brd);
+      border-radius: 8px;
+      padding: 12px;
+      text-align: center;
+    }
+    .tg-lbl  { font-size: 10px; color: var(--dim); letter-spacing: 1px; margin-bottom: 4px; }
+    .tg-val  { font-size: 36px; font-weight: 700; color: var(--txt); line-height: 1; }
+    .tg-unit { font-size: 10px; color: var(--dim); margin-top: 2px; }
+
+    /* RTR */
+    .rtr {
+      margin-top: 8px;
+      padding: 12px;
+      background: rgba(0,230,118,0.12);
+      border: 1px solid var(--grn);
+      border-radius: 8px;
+      text-align: center;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--grn);
+      letter-spacing: 2px;
+    }
+
+    /* PERF */
+    .reset-btn {
+      display: block;
+      width: 100%;
+      margin-top: 8px;
+      padding: 8px;
+      background: var(--surf);
+      border: 1px solid rgba(255,82,82,0.5);
+      border-radius: 6px;
+      color: var(--red);
+      font-family: var(--mono);
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    /* TPMS */
+    .tpms-hd  { font-size: 20px; font-weight: 700; color: var(--accent); text-align: center; margin-bottom: 4px; }
+    .tpms-sub { font-size: 11px; color: var(--dim); text-align: center; margin-bottom: 12px; }
+    .tire-row { display: flex; gap: 10px; justify-content: space-evenly; margin: 8px 0; }
+    .tire-box {
+      flex: 1;
+      max-width: 180px;
+      background: var(--surf);
+      border: 2px solid var(--brd);
+      border-radius: 8px;
+      padding: 12px;
+      text-align: center;
+    }
+    .tire-box.low { border-color: var(--red); }
+    .tire-lbl  { font-size: 10px; color: var(--dim); letter-spacing: 1px; margin-bottom: 4px; }
+    .tire-psi  { font-size: 38px; font-weight: 700; color: var(--txt); line-height: 1; }
+    .tire-box.low .tire-psi { color: var(--red); }
+    .tire-unit { font-size: 12px; color: var(--dim); }
+    .tire-temp { font-size: 14px; color: var(--dim); margin-top: 4px; }
+
+    /* ── Android Auto frame ───────────────────────────── */
+    #aa {
+      width: 100%;
+      max-width: 820px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #111;
+    }
+
+    /* AA header bar — 3-col grid: brand | mode·gear·esc | conn */
+    .aa-header {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      padding: 10px 18px;
+      background: var(--surf);
+      border-bottom: 2px solid var(--brd);
+    }
+    .aa-header-left  { display: flex; align-items: center; gap: 10px; justify-content: flex-start; }
+    .aa-header-center{ display: flex; align-items: center; gap: 10px; justify-content: center; }
+    .aa-header-right { display: flex; align-items: center; gap: 10px; justify-content: flex-end; }
+    .aa-title-txt { font-size: 18px; font-weight: 700; color: var(--txt); letter-spacing: 1px; }
+    .aa-badge {
+      padding: 3px 10px; border-radius: 4px;
+      font-size: 12px; font-weight: 700; color: #000; letter-spacing: 1px;
+    }
+    .aa-badge.sport  { background: var(--grn); }
+    .aa-badge.track  { background: var(--org); }
+    .aa-badge.drift  { background: var(--red); }
+    .aa-badge.normal { background: var(--accent); }
+    .aa-gear { font-size: 22px; font-weight: 700; color: var(--accent); }
+    .aa-esc  { font-size: 11px; color: var(--dim); }
+    .aa-conn { font-size: 12px; font-weight: 700; }
+    .aa-conn.on  { color: var(--grn); }
+    .aa-conn.off { color: var(--red); }
+    .aa-fps-note { font-size: 10px; color: var(--dim); }
+
+    /* AA content */
+    .aa-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* AA strip */
+    .aa-strip {
+      display: flex;
+      gap: 10px;
+      padding: 12px 18px;
+      background: var(--surf);
+      border-top: 2px solid var(--brd);
+    }
+    .aa-strip button {
+      flex: 1;
+      padding: 12px;
+      background: var(--brd);
+      border: none;
+      color: var(--txt);
+      font-family: var(--mono);
+      font-size: 14px;
+      font-weight: 700;
+      border-radius: 8px;
+      cursor: pointer;
+      letter-spacing: 1px;
+      transition: background 0.15s;
+    }
+    .aa-strip button:hover, .aa-strip button.active-nav { background: var(--accent); color: #000; }
+    .aa-back-bar {
+      padding: 8px 18px;
+      background: var(--surf);
+      border-bottom: 1px solid var(--brd);
+    }
+    .aa-back-bar button {
+      padding: 7px 14px;
+      background: transparent;
+      border: 1px solid var(--dim);
+      color: var(--txt);
+      font-family: var(--mono);
+      font-size: 13px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    /* AA menu list */
+    .aa-menu-list { list-style: none; }
+    .aa-menu-list li {
+      padding: 16px;
+      border-bottom: 1px solid var(--brd);
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .aa-menu-list li:hover { background: var(--surf); }
+    .aa-menu-tit  { font-size: 16px; font-weight: 700; color: var(--accent); letter-spacing: 1px; }
+    .aa-menu-desc { font-size: 12px; color: var(--dim); }
+
+    /* AA gauge grid (landscape 3-col) */
+    .aa-gauge-row { display: flex; gap: 12px; }
+    .aa-gauge-row .gauge-box .g-val { font-size: 38px; }
+    .aa-gauge-row .gauge-box.lg .g-val { font-size: 52px; }
+
+    /* AA info rows */
+    .aa-info-row { display: flex; gap: 10px; }
+    .aa-info-row .cell .c-lbl { font-size: 10px; }
+    .aa-info-row .cell .c-val { font-size: 14px; }
+
+    /* AA axle layout */
+    .aa-axle { display: flex; align-items: center; gap: 20px; justify-content: center; margin: 6px 0; }
+    .aa-axle .wheel-box { width: 110px; }
+    .aa-axle .wb-val { font-size: 20px; }
+    .aa-axle .split-val { font-size: 40px; }
+
+    /* AA temp row */
+    .aa-temp-row { display: flex; gap: 12px; }
+    .aa-temp-row .temp-gauge .tg-val { font-size: 42px; }
+
+    /* AA tire row */
+    .aa-tire-row { display: flex; gap: 14px; justify-content: space-evenly; }
+    .aa-tire-row .tire-box { max-width: none; flex: 1; }
+    .aa-tire-row .tire-psi { font-size: 44px; }
+  </style>
+</head>
+<body>
+
+  <!-- Switcher -->
+  <div id="switcher">
+    <button id="btn-phone" class="active">📱 PHONE</button>
+    <button id="btn-aa">🚗 ANDROID AUTO</button>
+  </div>
+
+  <!-- ════════ PHONE UI ════════ -->
+  <div id="phone">
+    <div class="ph-header">
+      <span class="ph-brand"><span class="brand-open">open</span><span class="brand-rs">RS</span><span class="brand-tail">_</span></span>
+      <span class="ph-badge sport" id="h-mode">SPORT</span>
+      <span class="ph-gear" id="h-gear">3</span>
+      <span class="ph-esc"  id="h-esc">ESC On</span>
+      <span class="ph-conn on" id="h-conn">● CONNECTED</span>
+    </div>
+    <div class="ph-tabs" id="ph-tabs">
+      <div class="ph-tab active" data-tab="0">DASH</div>
+      <div class="ph-tab" data-tab="1">AWD</div>
+      <div class="ph-tab" data-tab="2">PERF</div>
+      <div class="ph-tab" data-tab="3">TEMPS</div>
+      <div class="ph-tab" data-tab="4">TUNE</div>
+      <div class="ph-tab" data-tab="5">TPMS</div>
+    </div>
+    <div class="ph-content">
+      <div id="ph-dash"  class="ph-page active"></div>
+      <div id="ph-awd"   class="ph-page"></div>
+      <div id="ph-perf"  class="ph-page"></div>
+      <div id="ph-temps" class="ph-page"></div>
+      <div id="ph-tune"  class="ph-page"></div>
+      <div id="ph-tpms"  class="ph-page"></div>
+    </div>
+  </div>
+
+  <!-- ════════ ANDROID AUTO UI ════════ -->
+  <div id="aa" class="hidden">
+    <div class="aa-header">
+      <div class="aa-header-left">
+        <span class="aa-title-txt" id="aa-title">RS DASH</span>
+      </div>
+      <div class="aa-header-center">
+        <span class="aa-badge sport" id="aa-mode-badge">SPORT</span>
+        <span class="aa-gear" id="aa-gear">3</span>
+        <span class="aa-esc"  id="aa-esc">ESC On</span>
+      </div>
+      <div class="aa-header-right">
+        <span class="aa-conn on" id="aa-conn-badge">● CONNECTED</span>
+        <span class="aa-fps-note" id="aa-fps">12 fps — CAN frames/s</span>
+      </div>
+    </div>
+    <div class="aa-back-bar" id="aa-back-bar" style="display:none">
+      <button id="aa-back-btn">← Back</button>
+    </div>
+    <div class="aa-body" id="aa-body"></div>
+    <div class="aa-strip" id="aa-strip">
+      <button data-screen="awd">AWD</button>
+      <button data-screen="perf">PERF</button>
+      <button data-screen="temps">TEMPS</button>
+      <button data-screen="menu">MENU ☰</button>
+    </div>
+  </div>
+
+<script>
+/* ── Helpers ─────────────────────────────── */
+const toF  = c => Math.round(c * 9 / 5 + 32);
+const f1   = n => n.toFixed(1);
+const f2   = n => n.toFixed(2);
+const f3   = n => n.toFixed(3);
+const ri   = n => Math.round(n);
+const pct  = n => ri(n) + '%';
+
+/* ── Demo state ───────────────────────────── */
+function demo(t) {
+  const rpm       = 2800 + Math.sin(t * 0.5) * 800;
+  const boostPsi  = (Math.sin(t * 0.3) + 1) * 11.6;
+  const speedKph  = 72 + Math.sin(t * 0.2) * 20;
+  const speedMph  = speedKph * 0.621371;
+  const thr       = 35 + Math.sin(t * 0.4) * 15;
+  const brk       = 2 + Math.sin(t) * 0.5;
+  const gear      = 3;
+  const rearL     = 40 + Math.sin(t * 0.35) * 25;
+  const rearR     = 35 + Math.sin(t * 0.4)  * 20;
+  const total     = rearL + rearR;
+  const rearPct   = total > 0 ? Math.min(100, total / 200 * 100) : 0;
+  const oil       = 82 + Math.sin(t * 0.1)  * 3;
+  const clnt      = 88 + Math.sin(t * 0.12) * 2;
+  const rdu       = 45 + Math.sin(t * 0.15) * 5;
+  const ptu       = 55 + Math.sin(t * 0.13) * 4;
+  const latG      = Math.sin(t * 0.6) * 0.4;
+  const lonG      = Math.cos(t * 0.5) * 0.3;
+  const wFL = speedKph * 0.98 + Math.sin(t) * 1;
+  const wFR = speedKph * 1.02 + Math.cos(t * 1.1) * 1;
+  const wRL = speedKph * 0.97 + Math.sin(t * 0.9) * 1;
+  const wRR = speedKph * 1.01 + Math.cos(t * 0.95) * 1;
+  return {
+    rpm, boostPsi, speedKph, speedMph,
+    gear, gearDisplay: String(gear),
+    throttlePct: thr, brakePressure: brk,
+    frontRearSplit: (100 - ri(rearPct)) + '/' + ri(rearPct),
+    torqueAtTrans: 220,
+    oilTempC: oil, coolantTempC: clnt,
+    intakeTempC: 32 + Math.sin(t * 0.2) * 5,
+    ambientTempC: 22,
+    batteryVoltage: 13.2 + Math.sin(t * 0.1) * 0.3,
+    lateralG: latG, longitudinalG: lonG,
+    combinedG: Math.sqrt(latG*latG + lonG*lonG),
+    steeringAngle: Math.sin(t * 0.4) * 15,
+    yawRate: Math.sin(t * 0.5) * 5,
+    fuelLevelPct: 72,
+    calcLoad: 45 + Math.sin(t) * 10,
+    commandedAfr: 14.5 + Math.sin(t * 0.2) * 0.3,
+    framesPerSecond: 12,
+    wheelSpeedFL: wFL, wheelSpeedFR: wFR,
+    wheelSpeedRL: wRL, wheelSpeedRR: wRR,
+    awdLeftTorque: ri(rearL), awdRightTorque: ri(rearR),
+    totalRearTorque: total, awdMaxTorque: 350,
+    rduTempC: rdu, ptuTempC: ptu,
+    rearLeftRightBias: total > 0
+      ? ri(rearL/total*100)+'/'+ri(rearR/total*100) : '50/50',
+    peakLateralG: 0.72, peakLongitudinalG: 0.55,
+    peakBoostPsi: 18.2, peakRpm: 6200,
+    chargeAirTempC: 38, catalyticTempC: 420,
+    afrActual: 14.4 + Math.sin(t*0.2)*0.2, afrDesired: 14.7,
+    lambdaActual: 0.98 + Math.sin(t*0.1)*0.02,
+    etcAngleActual: 45 + Math.sin(t)*5, etcAngleDesired: 48,
+    tipActualPsi: 12 + Math.sin(t*0.3)*2, tipDesiredPsi: 13.5,
+    wgdcDesired: 55 + Math.sin(t*0.4)*15,
+    timingAdvance: 18 + Math.sin(t*0.2)*2,
+    shortFuelTrim: 2.1 + Math.sin(t)*0.5,
+    longFuelTrim: -0.8 + Math.cos(t*0.7)*0.3,
+    fuelRailPsi: 42 + Math.sin(t*0.5)*3,
+    vctIntakeAngle: 25 + Math.sin(t*0.2)*5,
+    vctExhaustAngle: 20 + Math.cos(t*0.2)*3,
+    octaneAdjustRatio: 0.98, barometricPressure: 101,
+    oilLifePct: 67, ignCorrCyl1: 0.00,
+    tirePressLF: 35, tirePressRF: 34,
+    tirePressLR: 36, tirePressRR: 35,
+    tireTempLF: 28, tireTempRF: 27,
+    tireTempLR: 29, tireTempRR: 28,
+    maxTirePressSpread: 2,
+    hasTpmsData: true, anyTireLow: false,
+    isReadyToRace: oil >= 65 && rdu >= 20 && ptu >= 50,
+    isConnected: true, driveMode: 'Sport', escStatus: 'ESC On'
+  };
+}
+
+/* ── HTML builders ────────────────────────── */
+function gaugeBox(lbl, val, unit, large = false) {
+  return `<div class="gauge-box${large?' lg':''}">
+    <div class="g-lbl">${lbl}</div>
+    <div class="g-val">${val}</div>
+    ${unit ? `<div class="g-unit">${unit}</div>` : ''}
+  </div>`;
+}
+function cell(lbl, val, cls = '') {
+  return `<div class="cell"><span class="c-lbl">${lbl}</span><span class="c-val${cls?' '+cls:''}">${val}</span></div>`;
+}
+function infoRow(pairs) {
+  return `<div class="info-row">${pairs.map(([l,v,c])=>cell(l,v,c)).join('')}</div>`;
+}
+function tempGauge(lbl, val, unit, cls = '') {
+  return `<div class="temp-gauge">
+    <div class="tg-lbl">${lbl}</div>
+    <div class="tg-val${cls?' '+cls:''}">${val}</div>
+    <div class="tg-unit">${unit}</div>
+  </div>`;
+}
+function wheelBox(lbl, val) {
+  return `<div class="wheel-box"><div class="wb-lbl">${lbl}</div><div class="wb-val">${val}</div></div>`;
+}
+
+/* ── Phone pages ──────────────────────────── */
+function dashHtml(v) {
+  return `
+    <div class="gauge-row">
+      ${gaugeBox('BOOST', f1(v.boostPsi), 'PSI')}
+      ${gaugeBox('RPM',   ri(v.rpm),      '',    true)}
+      ${gaugeBox('SPEED', ri(v.speedMph), 'MPH')}
+    </div>
+    ${infoRow([['THROTTLE', pct(v.throttlePct)],['BRAKE', f1(v.brakePressure)],['AWD', v.frontRearSplit],['TORQUE', ri(v.torqueAtTrans)+' Nm']])}
+    ${infoRow([['OIL', toF(v.oilTempC)+'°F'],['COOLANT', toF(v.coolantTempC)+'°F'],['INTAKE', toF(v.intakeTempC)+'°F'],['BATT', f1(v.batteryVoltage)+'V']])}
+    ${infoRow([['LAT G', f2(v.lateralG)],['LON G', f2(v.longitudinalG)],['STEER', f1(v.steeringAngle)+'°'],['YAW', f1(v.yawRate)]])}
+    ${infoRow([['FUEL', pct(v.fuelLevelPct)],['LOAD', pct(v.calcLoad)],['AFR', f2(v.commandedAfr)],['FPS', ri(v.framesPerSecond)]])}`;
+}
+
+function awdHtml(v) {
+  const avgF = (v.wheelSpeedFL + v.wheelSpeedFR) / 2;
+  const avgR = (v.wheelSpeedRL + v.wheelSpeedRR) / 2;
+  const lp   = v.totalRearTorque > 0 ? v.awdLeftTorque / v.totalRearTorque : 0.5;
+  return `
+    <div class="sec-lbl">FRONT AXLE</div>
+    <div class="axle-row">
+      ${wheelBox('FL', f1(v.wheelSpeedFL))}
+      <div class="split-mid"><div class="split-val">${v.frontRearSplit}</div><div class="split-sub">FRONT / REAR</div></div>
+      ${wheelBox('FR', f1(v.wheelSpeedFR))}
+    </div>
+    <div class="sec-lbl">▼ PTU: ${toF(v.ptuTempC)}°F ▼</div>
+    <div style="display:flex;justify-content:space-between;max-width:300px;margin:0 auto;font-size:10px;color:var(--dim)">
+      <span>L ${v.awdLeftTorque} Nm</span><span>${v.awdRightTorque} Nm R</span>
+    </div>
+    <div class="torque-bar">
+      <div class="tb-l" style="flex:${lp}"></div>
+      <div class="tb-r" style="flex:${1-lp}"></div>
+    </div>
+    <div class="axle-row">
+      ${wheelBox('RL', f1(v.wheelSpeedRL))}
+      <div class="split-mid">
+        <div style="font-size:11px;color:var(--dim)">RDU: ${toF(v.rduTempC)}°F</div>
+        <div class="split-sub">Max: ${v.awdMaxTorque} Nm</div>
+      </div>
+      ${wheelBox('RR', f1(v.wheelSpeedRR))}
+    </div>
+    <div class="sec-lbl">REAR AXLE</div>
+    ${infoRow([['F/R DELTA', f1(avgR-avgF)],['L/R DELTA', f1(v.wheelSpeedRR-v.wheelSpeedRL)],['REAR BIAS', v.rearLeftRightBias]])}`;
+}
+
+function perfHtml(v) {
+  return `
+    <div class="info-row">
+      ${cell('LAT G',    f2(v.lateralG)+' g')}
+      ${cell('LON G',    f2(v.longitudinalG)+' g')}
+      ${cell('COMBINED', f2(v.combinedG)+' g')}
+    </div>
+    <div class="info-row">
+      ${cell('STEER', f1(v.steeringAngle)+'°')}
+      ${cell('YAW',   f1(v.yawRate)+'°/s')}
+      ${cell('SPEED', ri(v.speedMph)+' MPH')}
+    </div>
+    <div class="info-row">
+      ${cell('PEAK LAT',   f2(v.peakLateralG)+' g',  'gold')}
+      ${cell('PEAK LON',   f2(v.peakLongitudinalG)+' g','gold')}
+      ${cell('PEAK BOOST', f1(v.peakBoostPsi)+' PSI','gold')}
+      ${cell('PEAK RPM',   ri(v.peakRpm),             'gold')}
+    </div>
+    <div class="info-row">
+      ${cell('THROTTLE', pct(v.throttlePct))}
+      ${cell('BRAKE',    f1(v.brakePressure)+' bar')}
+    </div>
+    <button class="reset-btn" id="reset-peaks-btn">RESET PEAKS ↺</button>`;
+}
+
+function tempsHtml(v) {
+  const oilCls  = v.oilTempC  > 110 ? 'hot' : v.oilTempC  > 100 ? 'warm' : '';
+  const clntCls = v.coolantTempC > 110 ? 'hot' : v.coolantTempC > 100 ? 'warm' : '';
+  const rduCls  = v.rduTempC  > 110 ? 'hot' : v.rduTempC  > 100 ? 'warm' : '';
+  const ptuCls  = v.ptuTempC  > 110 ? 'hot' : v.ptuTempC  > 100 ? 'warm' : '';
+  const catCls  = v.catalyticTempC > 700 ? 'hot' : v.catalyticTempC > 500 ? 'warm' : '';
+  return `
+    <div class="gauge-row">
+      ${tempGauge('ENGINE OIL',   toF(v.oilTempC),         '°F (INFERRED)', oilCls)}
+      ${tempGauge('COOLANT',      toF(v.coolantTempC),     '°F',            clntCls)}
+    </div>
+    <div style="height:8px"></div>
+    <div class="gauge-row">
+      ${tempGauge('INTAKE AIR',   toF(v.intakeTempC),      '°F')}
+      ${tempGauge('AMBIENT',      toF(v.ambientTempC),     '°F')}
+    </div>
+    <div style="height:8px"></div>
+    <div class="gauge-row">
+      ${tempGauge('RDU (REAR DIFF)',  toF(v.rduTempC),     '°F', rduCls)}
+      ${tempGauge('PTU (TRANSFER)',   toF(v.ptuTempC),     '°F', ptuCls)}
+    </div>
+    <div style="height:8px"></div>
+    <div class="gauge-row">
+      ${tempGauge('CHARGE AIR',   toF(v.chargeAirTempC),  '°F')}
+      ${tempGauge('CATALYTIC',    toF(v.catalyticTempC),  '°F', catCls)}
+    </div>
+    ${v.isReadyToRace ? '<div class="rtr">READY TO RACE</div>' : ''}`;
+}
+
+function tuneHtml(v) {
+  return `
+    <div class="gauge-row">
+      ${gaugeBox('AFR ACT', f2(v.afrActual),      ':1')}
+      ${gaugeBox('AFR DES', f1(v.afrDesired),      ':1')}
+      ${gaugeBox('LAMBDA',  f3(v.lambdaActual),    'λ')}
+    </div>
+    ${infoRow([['ETC ACT', f1(v.etcAngleActual)+'°'],['ETC DES', v.etcAngleDesired+'°'],['WGDC', ri(v.wgdcDesired)+'%']])}
+    ${infoRow([['TIP ACT', f1(v.tipActualPsi)+' PSI'],['TIP DES', v.tipDesiredPsi+' PSI'],['KR CYL1', f2(v.ignCorrCyl1)+'°']])}
+    ${infoRow([['LOAD', pct(v.calcLoad)],['TIMING', f1(v.timingAdvance)+'°'],['OAR', ri(v.octaneAdjustRatio*100)+'%']])}
+    ${infoRow([['SHORT FT', f1(v.shortFuelTrim)+'%'],['LONG FT', f1(v.longFuelTrim)+'%'],['FUEL RAIL', ri(v.fuelRailPsi)+' PSI']])}
+    ${infoRow([['VCT-I', f1(v.vctIntakeAngle)+'°'],['VCT-E', f1(v.vctExhaustAngle)+'°'],['CHG AIR', toF(v.chargeAirTempC)+'°F']])}
+    ${infoRow([['CAT TEMP', toF(v.catalyticTempC)+'°F'],['OIL LIFE', v.oilLifePct>=0?pct(v.oilLifePct):'--'],['BARO', ri(v.barometricPressure)+' kPa']])}`;
+}
+
+function tpmsHtml(v) {
+  if (!v.hasTpmsData) return `
+    <div style="text-align:center;padding:32px;color:var(--dim)">Waiting for TPMS data...</div>
+    <div style="text-align:center;font-size:12px;color:var(--dim)">BCM 0x726 • PIDs 0x2813–0x2816</div>`;
+  const tireBox = (lbl, p, tc) => `
+    <div class="tire-box${p<30?' low':''}">
+      <div class="tire-lbl">${lbl}</div>
+      <div class="tire-psi">${ri(p)}</div>
+      <div class="tire-unit">PSI</div>
+      ${tc > -90 ? `<div class="tire-temp">${toF(tc)}°</div>` : ''}
+    </div>`;
+  return `
+    <div class="tpms-hd">TPMS+</div>
+    <div class="tpms-sub">Real numbers, not just low tire pressure warnings.</div>
+    <div class="tire-row">
+      ${tireBox('LF', v.tirePressLF, v.tireTempLF)}
+      ${tireBox('RF', v.tirePressRF, v.tireTempRF)}
+    </div>
+    <div class="sec-lbl">FRONT</div>
+    <div style="height:8px"></div>
+    <div class="tire-row">
+      ${tireBox('LR', v.tirePressLR, v.tireTempLR)}
+      ${tireBox('RR', v.tirePressRR, v.tireTempRR)}
+    </div>
+    <div class="sec-lbl">REAR</div>
+    <div style="height:8px"></div>
+    ${infoRow([['SPREAD', f1(v.maxTirePressSpread)+' PSI'], ...( v.oilLifePct>=0 ? [['OIL LIFE', pct(v.oilLifePct)]] : [] )])}`;
+}
+
+/* ── AA pages (same components, landscape layout) ── */
+function aaDash(v) {
+  return `
+    <div class="aa-gauge-row">
+      ${gaugeBox('BOOST', f1(v.boostPsi), 'PSI')}
+      ${gaugeBox('RPM',   ri(v.rpm),      '',   true)}
+      ${gaugeBox('SPEED', ri(v.speedMph), 'MPH')}
+    </div>
+    <div class="aa-info-row">
+      ${cell('THROTTLE', pct(v.throttlePct))}
+      ${cell('BRAKE',    f1(v.brakePressure))}
+      ${cell('AWD',      v.frontRearSplit)}
+      ${cell('TORQUE',   ri(v.torqueAtTrans)+' Nm')}
+    </div>
+    <div class="aa-info-row">
+      ${cell('OIL',     toF(v.oilTempC)+'°F')}
+      ${cell('COOLANT', toF(v.coolantTempC)+'°F')}
+      ${cell('INTAKE',  toF(v.intakeTempC)+'°F')}
+      ${cell('BATT',    f1(v.batteryVoltage)+'V')}
+    </div>
+    <div class="aa-info-row">
+      ${cell('LAT G', f2(v.lateralG))}
+      ${cell('LON G', f2(v.longitudinalG))}
+      ${cell('STEER', f1(v.steeringAngle)+'°')}
+      ${cell('YAW',   f1(v.yawRate))}
+      ${cell('FUEL',  pct(v.fuelLevelPct))}
+      ${cell('LOAD',  pct(v.calcLoad))}
+      ${cell('AFR',   f2(v.commandedAfr))}
+      ${cell('FPS',   ri(v.framesPerSecond))}
+    </div>`;
+}
+
+function aaAwd(v) {
+  const avgF = (v.wheelSpeedFL + v.wheelSpeedFR) / 2;
+  const avgR = (v.wheelSpeedRL + v.wheelSpeedRR) / 2;
+  const lp   = v.totalRearTorque > 0 ? v.awdLeftTorque / v.totalRearTorque : 0.5;
+  return `
+    <div class="sec-lbl">FRONT AXLE</div>
+    <div class="aa-axle">
+      ${wheelBox('FL', f1(v.wheelSpeedFL))}
+      <div class="split-mid"><div class="split-val">${v.frontRearSplit}</div><div class="split-sub">FRONT / REAR</div></div>
+      ${wheelBox('FR', f1(v.wheelSpeedFR))}
+    </div>
+    <div class="sec-lbl">▼ PTU: ${toF(v.ptuTempC)}°F ▼</div>
+    <div style="display:flex;justify-content:space-between;max-width:400px;margin:0 auto;font-size:11px;color:var(--dim)">
+      <span>L ${v.awdLeftTorque} Nm</span><span>${v.awdRightTorque} Nm R</span>
+    </div>
+    <div class="torque-bar" style="max-width:400px">
+      <div class="tb-l" style="flex:${lp}"></div>
+      <div class="tb-r" style="flex:${1-lp}"></div>
+    </div>
+    <div class="aa-axle">
+      ${wheelBox('RL', f1(v.wheelSpeedRL))}
+      <div class="split-mid">
+        <div style="font-size:13px;color:var(--dim)">RDU: ${toF(v.rduTempC)}°F</div>
+        <div class="split-sub">Max: ${v.awdMaxTorque} Nm</div>
+      </div>
+      ${wheelBox('RR', f1(v.wheelSpeedRR))}
+    </div>
+    <div class="sec-lbl">REAR AXLE</div>
+    <div class="aa-info-row">
+      ${cell('F/R DELTA', f1(avgR-avgF))}
+      ${cell('L/R DELTA', f1(v.wheelSpeedRR-v.wheelSpeedRL))}
+      ${cell('REAR BIAS', v.rearLeftRightBias)}
+    </div>`;
+}
+
+function aaPerf(v) {
+  return `
+    <div class="aa-info-row">
+      ${cell('LAT G',    f2(v.lateralG)+' g')}
+      ${cell('LON G',    f2(v.longitudinalG)+' g')}
+      ${cell('COMBINED', f2(v.combinedG)+' g')}
+      ${cell('STEER',    f1(v.steeringAngle)+'°')}
+      ${cell('YAW',      f1(v.yawRate)+'°/s')}
+      ${cell('SPEED',    ri(v.speedMph)+' MPH')}
+    </div>
+    <div class="aa-info-row">
+      ${cell('PEAK LAT',   f2(v.peakLateralG)+' g',   'gold')}
+      ${cell('PEAK LON',   f2(v.peakLongitudinalG)+' g','gold')}
+      ${cell('PEAK BOOST', f1(v.peakBoostPsi)+' PSI', 'gold')}
+      ${cell('PEAK RPM',   ri(v.peakRpm),              'gold')}
+      ${cell('THROTTLE',   pct(v.throttlePct))}
+      ${cell('BRAKE',      f1(v.brakePressure)+' bar')}
+    </div>
+    <button class="reset-btn" id="aa-reset-btn">RESET PEAKS ↺</button>`;
+}
+
+function aaTemps(v) {
+  const oilCls  = v.oilTempC  > 110 ? 'hot' : v.oilTempC  > 100 ? 'warm' : '';
+  const clntCls = v.coolantTempC > 110 ? 'hot' : v.coolantTempC > 100 ? 'warm' : '';
+  const rduCls  = v.rduTempC  > 110 ? 'hot' : v.rduTempC  > 100 ? 'warm' : '';
+  const ptuCls  = v.ptuTempC  > 110 ? 'hot' : v.ptuTempC  > 100 ? 'warm' : '';
+  const catCls  = v.catalyticTempC > 700 ? 'hot' : v.catalyticTempC > 500 ? 'warm' : '';
+  return `
+    <div class="aa-temp-row">
+      ${tempGauge('ENGINE OIL',  toF(v.oilTempC),     '°F', oilCls)}
+      ${tempGauge('COOLANT',     toF(v.coolantTempC), '°F', clntCls)}
+      ${tempGauge('INTAKE AIR',  toF(v.intakeTempC),  '°F')}
+      ${tempGauge('AMBIENT',     toF(v.ambientTempC), '°F')}
+    </div>
+    <div style="height:10px"></div>
+    <div class="aa-temp-row">
+      ${tempGauge('RDU (REAR DIFF)', toF(v.rduTempC),         '°F', rduCls)}
+      ${tempGauge('PTU (TRANSFER)',  toF(v.ptuTempC),         '°F', ptuCls)}
+      ${tempGauge('CHARGE AIR',     toF(v.chargeAirTempC),   '°F')}
+      ${tempGauge('CATALYTIC',      toF(v.catalyticTempC),   '°F', catCls)}
+    </div>
+    ${v.isReadyToRace ? '<div class="rtr">READY TO RACE</div>' : ''}`;
+}
+
+function aaTune(v) {
+  return `
+    <div class="aa-gauge-row">
+      ${gaugeBox('AFR ACT', f2(v.afrActual),   ':1')}
+      ${gaugeBox('AFR DES', f1(v.afrDesired),  ':1')}
+      ${gaugeBox('LAMBDA',  f3(v.lambdaActual),'λ')}
+    </div>
+    <div class="aa-info-row">
+      ${cell('ETC ACT',  f1(v.etcAngleActual)+'°')}
+      ${cell('ETC DES',  v.etcAngleDesired+'°')}
+      ${cell('WGDC',     ri(v.wgdcDesired)+'%')}
+      ${cell('TIP ACT',  f1(v.tipActualPsi)+' PSI')}
+      ${cell('TIP DES',  v.tipDesiredPsi+' PSI')}
+      ${cell('KR CYL1',  f2(v.ignCorrCyl1)+'°')}
+    </div>
+    <div class="aa-info-row">
+      ${cell('LOAD',      pct(v.calcLoad))}
+      ${cell('TIMING',    f1(v.timingAdvance)+'°')}
+      ${cell('OAR',       ri(v.octaneAdjustRatio*100)+'%')}
+      ${cell('SHORT FT',  f1(v.shortFuelTrim)+'%')}
+      ${cell('LONG FT',   f1(v.longFuelTrim)+'%')}
+      ${cell('FUEL RAIL', ri(v.fuelRailPsi)+' PSI')}
+    </div>
+    <div class="aa-info-row">
+      ${cell('VCT-I',    f1(v.vctIntakeAngle)+'°')}
+      ${cell('VCT-E',    f1(v.vctExhaustAngle)+'°')}
+      ${cell('CHG AIR',  toF(v.chargeAirTempC)+'°F')}
+      ${cell('CAT TEMP', toF(v.catalyticTempC)+'°F')}
+      ${cell('OIL LIFE', v.oilLifePct>=0?pct(v.oilLifePct):'--')}
+      ${cell('BARO',     ri(v.barometricPressure)+' kPa')}
+    </div>`;
+}
+
+function aaTpms(v) {
+  if (!v.hasTpmsData) return `
+    <div style="text-align:center;padding:32px;color:var(--dim)">Waiting for TPMS data…</div>
+    <div style="text-align:center;font-size:12px;color:var(--dim)">BCM 0x726 • PIDs 0x2813–0x2816</div>`;
+  const tireBox = (lbl, p, tc) => `
+    <div class="tire-box${p<30?' low':''}">
+      <div class="tire-lbl">${lbl}</div>
+      <div class="tire-psi">${ri(p)}</div>
+      <div class="tire-unit">PSI</div>
+      ${tc > -90 ? `<div class="tire-temp">${toF(tc)}°</div>` : ''}
+    </div>`;
+  return `
+    <div class="tpms-hd">TPMS+</div>
+    <div class="tpms-sub">Real numbers, not just low tire pressure warnings.</div>
+    <div class="aa-tire-row">
+      ${tireBox('LF', v.tirePressLF, v.tireTempLF)}
+      ${tireBox('RF', v.tirePressRF, v.tireTempRF)}
+      ${tireBox('LR', v.tirePressLR, v.tireTempLR)}
+      ${tireBox('RR', v.tirePressRR, v.tireTempRR)}
+    </div>
+    <div style="display:flex;gap:6px;margin-top:4px">
+      <div style="flex:1;text-align:center;font-size:11px;color:var(--dim)">FRONT ←→</div>
+      <div style="flex:1;text-align:center;font-size:11px;color:var(--dim)">→ REAR</div>
+    </div>
+    <div style="height:8px"></div>
+    <div class="aa-info-row">
+      ${cell('SPREAD', f1(v.maxTirePressSpread)+' PSI')}
+      ${v.oilLifePct>=0 ? cell('OIL LIFE', pct(v.oilLifePct)) : ''}
+    </div>`;
+}
+
+function aaMenu() {
+  const items = [
+    ['dash',  'DASH',  'Boost, RPM, speed, temps, AWD, tune data'],
+    ['awd',   'AWD',   'Front/rear split, wheel speeds, RDU/PTU temps'],
+    ['perf',  'PERF',  'G-forces, peaks, reset'],
+    ['temps', 'TEMPS', 'Oil, coolant, RDU, PTU, charge, catalytic'],
+    ['tune',  'TUNE',  'AFR, timing, fuel trims, VCT, OBD'],
+    ['tpms',  'TPMS',  'Tire pressure & temperature, 4 corners'],
+  ];
+  return `<ul class="aa-menu-list">${items.map(([k,t,d])=>
+    `<li data-screen="${k}"><span class="aa-menu-tit">${t}</span><span class="aa-menu-desc">${d}</span></li>`
+  ).join('')}</ul>`;
+}
+
+/* ── State & render loop ──────────────────── */
+let vs = demo(0);
+let activePhoneTab = 0;
+let aaScreen = 'dash';
+
+function renderPhone() {
+  const v = vs;
+  // header
+  const modeLabel = {Sport:'SPORT', Track:'TRACK', Drift:'DRIFT'}[v.driveMode] || 'NORMAL';
+  const modeCls   = {Sport:'sport', Track:'track',  Drift:'drift'}[v.driveMode] || 'normal';
+  document.getElementById('h-mode').textContent = modeLabel;
+  document.getElementById('h-mode').className   = 'ph-badge ' + modeCls;
+  document.getElementById('h-gear').textContent = v.gearDisplay;
+  document.getElementById('h-esc' ).textContent = v.escStatus;
+  document.getElementById('h-conn').textContent = v.isConnected ? '● CONNECTED' : '● OFFLINE';
+  document.getElementById('h-conn').className   = 'ph-conn ' + (v.isConnected ? 'on' : 'off');
+  // pages
+  document.getElementById('ph-dash' ).innerHTML = dashHtml(v);
+  document.getElementById('ph-awd'  ).innerHTML = awdHtml(v);
+  document.getElementById('ph-perf' ).innerHTML = perfHtml(v);
+  document.getElementById('ph-temps').innerHTML = tempsHtml(v);
+  document.getElementById('ph-tune' ).innerHTML = tuneHtml(v);
+  document.getElementById('ph-tpms' ).innerHTML = tpmsHtml(v);
+}
+
+function renderAA() {
+  const v = vs;
+  const titleEl   = document.getElementById('aa-title');
+  const backBar   = document.getElementById('aa-back-bar');
+  const bodyEl    = document.getElementById('aa-body');
+  const stripEl   = document.getElementById('aa-strip');
+
+  // header
+  const modeLabel = {Sport:'SPORT', Track:'TRACK', Drift:'DRIFT'}[v.driveMode] || 'NORMAL';
+  const modeCls   = {Sport:'sport', Track:'track',  Drift:'drift'}[v.driveMode] || 'normal';
+  document.getElementById('aa-mode-badge').textContent = modeLabel;
+  document.getElementById('aa-mode-badge').className   = 'aa-badge ' + modeCls;
+  document.getElementById('aa-gear').textContent = v.gearDisplay;
+  document.getElementById('aa-esc' ).textContent = v.escStatus;
+  const connEl = document.getElementById('aa-conn-badge');
+  connEl.textContent = v.isConnected ? '● CONNECTED' : '○ OFFLINE';
+  connEl.className   = 'aa-conn ' + (v.isConnected ? 'on' : 'off');
+  document.getElementById('aa-fps').textContent = ri(v.framesPerSecond) + ' fps — CAN frames/s';
+
+  const isMenu = aaScreen === 'menu';
+  backBar.style.display  = isMenu || aaScreen !== 'dash' ? 'block' : 'none';
+  stripEl.style.display  = isMenu ? 'none' : 'flex';
+
+  const brandHtml = '<span class="brand-open">open</span><span class="brand-rs">RS</span><span class="brand-tail">_</span>';
+  const screenMap = {
+    dash:  [brandHtml,                                    aaDash(v)],
+    awd:   ['AWD — GKN Twinster',                         aaAwd(v)],
+    perf:  ['PERF',                                       aaPerf(v)],
+    temps: ['TEMPS',                                      aaTemps(v)],
+    tune:  ['TUNE — OBD',                                 aaTune(v)],
+    tpms:  ['TPMS+',                                      aaTpms(v)],
+    menu:  [brandHtml + ' <span style="color:var(--dim);font-size:14px">MENU</span>', aaMenu()],
+  };
+
+  const [title, html] = screenMap[aaScreen] || screenMap.dash;
+  titleEl.innerHTML = title;
+  bodyEl.innerHTML = html;
+
+  // highlight active strip button
+  stripEl.querySelectorAll('button').forEach(btn => {
+    btn.classList.toggle('active-nav', btn.dataset.screen === aaScreen);
+  });
+
+  // menu list click
+  if (aaScreen === 'menu') {
+    bodyEl.querySelectorAll('li').forEach(li => {
+      li.addEventListener('click', () => { aaScreen = li.dataset.screen; renderAA(); });
+    });
+  }
+
+  // reset peaks (perf)
+  const rBtn = document.getElementById('aa-reset-btn');
+  if (rBtn) rBtn.addEventListener('click', () => {
+    vs = {...vs, peakLateralG:0, peakLongitudinalG:0, peakBoostPsi:0, peakRpm:0};
+    renderAA();
+  });
+}
+
+/* ── Intervals & events ───────────────────── */
+setInterval(() => {
+  vs = demo(Date.now() / 1000);
+  renderPhone();
+  if (!document.getElementById('aa').classList.contains('hidden')) renderAA();
+}, 200);
+
+// Phone tabs
+document.getElementById('ph-tabs').addEventListener('click', e => {
+  const tab = e.target.closest('.ph-tab');
+  if (!tab) return;
+  activePhoneTab = parseInt(tab.dataset.tab, 10);
+  document.querySelectorAll('.ph-tab').forEach((t, i) => t.classList.toggle('active', i === activePhoneTab));
+  document.querySelectorAll('.ph-page').forEach((p, i) => p.classList.toggle('active', i === activePhoneTab));
+});
+
+// Phone reset peaks
+document.querySelector('.ph-content').addEventListener('click', e => {
+  if (e.target.id === 'reset-peaks-btn') {
+    vs = {...vs, peakLateralG:0, peakLongitudinalG:0, peakBoostPsi:0, peakRpm:0};
+    renderPhone();
+  }
+});
+
+// AA strip
+document.getElementById('aa-strip').addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  aaScreen = btn.dataset.screen;
+  renderAA();
+});
+
+// AA back
+document.getElementById('aa-back-btn').addEventListener('click', () => {
+  aaScreen = 'dash';
+  renderAA();
+});
+
+// Mode switcher
+document.getElementById('btn-phone').addEventListener('click', () => {
+  document.getElementById('btn-phone').classList.add('active');
+  document.getElementById('btn-aa').classList.remove('active');
+  document.getElementById('phone').classList.remove('hidden');
+  document.getElementById('aa').classList.add('hidden');
+});
+document.getElementById('btn-aa').addEventListener('click', () => {
+  document.getElementById('btn-aa').classList.add('active');
+  document.getElementById('btn-phone').classList.remove('active');
+  document.getElementById('phone').classList.add('hidden');
+  document.getElementById('aa').classList.remove('hidden');
+  aaScreen = 'dash';
+  renderAA();
+});
+
+// Initial render
+renderPhone();
+</script>
+</body>
+</html>
