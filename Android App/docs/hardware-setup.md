@@ -2,7 +2,7 @@
 
 ## WiCAN OBD-II Adapter
 
-openRS connects to a [MeatPi WiCAN](https://www.wican.io/) adapter via Wi-Fi TCP.
+openRS connects to a [MeatPi WiCAN](https://www.mouser.com/ProductDetail/MeatPi/WICAN-USB-C3?qs=rQFj71Wb1eVDX2eEy0FC7A%3D%3D) adapter via Wi-Fi TCP.
 
 ### Configuration
 
