@@ -26,14 +26,16 @@ class CanDataService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var connectionJob: Job? = null
 
-    // Lazily built so it picks up the latest saved settings at connect time
+    // Default instance uses hardcoded values; replaced in onCreate() with saved settings.
+    // Field declaration must NOT call getSharedPreferences — context isn't attached yet.
+    private var wican: WiCanConnection = WiCanConnection()
+
+    val connectionState: StateFlow<WiCanConnection.State> get() = wican.state
+
     private fun buildWiCan() = WiCanConnection(
         host = com.openrs.dash.ui.AppSettings.getHost(this),
         port = com.openrs.dash.ui.AppSettings.getPort(this)
     )
-    private var wican = buildWiCan()
-
-    val connectionState: StateFlow<WiCanConnection.State> = wican.state
 
     inner class LocalBinder : Binder() {
         fun getService(): CanDataService = this@CanDataService
@@ -43,6 +45,7 @@ class CanDataService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        wican = buildWiCan() // context is attached here — safe to read SharedPreferences
         createNotificationChannel()
         try {
             startForeground(NOTIFICATION_ID, buildNotification("Ready"))

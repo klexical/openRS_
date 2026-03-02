@@ -99,9 +99,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                 OutlinedButton(
                     onClick = onDismiss,
                     modifier = Modifier.weight(1f),
-                    border = ButtonDefaults.outlinedButtonBorder.copy(
-                        width = 1.dp
-                    ),
+                    border = ButtonDefaults.outlinedButtonBorder(enabled = true),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Dim)
                 ) {
                     Text("CANCEL", fontFamily = Mono, fontSize = 12.sp)
