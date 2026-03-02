@@ -1,9 +1,6 @@
 <p align="center">
-  <img src="docs/images/openrs-banner.svg" width="600" alt="openRS_">
-</p>
-
-<p align="center">
-  <strong>open<span style="color:#00AEEF">RS</span>_ — Open-source real-time telemetry dashboard for the Ford Focus RS MK3</strong>
+  <img src="docs/images/openrs-wordmark.svg" width="320" alt="openRS_"><br/>
+  <sub>Open-source real-time telemetry dashboard for the Ford Focus RS MK3</sub>
 </p>
 
 <p align="center">

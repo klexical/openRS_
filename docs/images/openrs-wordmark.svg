@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 64" width="320" height="64">
+  <rect width="320" height="64" fill="#0A0A0A" rx="6"/>
+  <text font-family="'SF Mono','Consolas','Courier New',monospace" font-size="36" font-weight="700" letter-spacing="1" y="44" x="16">
+    <tspan fill="#F5F6F4">open</tspan><tspan fill="#00AEEF">RS</tspan><tspan fill="#F5F6F4">_</tspan>
+  </text>
+</svg>
