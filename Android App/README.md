@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <a href="https://klexical.github.io/openRS">🚀 Live Emulator</a> •
+  <a href="https://klexical.github.io/openRS_">🚀 Live Emulator</a> •
   <a href="#features">Features</a> •
   <a href="#hardware">Hardware</a> •
   <a href="#quick-start">Quick Start</a> •
@@ -30,7 +30,7 @@
 
 Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It understands the GKN Twinster AWD system, reads TPMS tire pressures directly from the BCM, decodes Ford-specific Mode 22 enhanced PIDs, and presents everything in a dark, glanceable interface tuned for track days.
 
-> **Try it now:** [klexical.github.io/openRS](https://klexical.github.io/openRS) — live browser emulator with animated demo data, no hardware required.
+> **Try it now:** [klexical.github.io/openRS_](https://klexical.github.io/openRS_) — live browser emulator with animated demo data, no hardware required.
 
 ---
 
@@ -131,7 +131,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 Open `browser-emulator/index.html` in any browser, or visit the live version:
 
-**[klexical.github.io/openRS](https://klexical.github.io/openRS)**
+**[klexical.github.io/openRS_](https://klexical.github.io/openRS_)**
 
 - Toggle between **📱 Phone** and **🚗 Android Auto** views
 - All gauges animate with simulated Focus RS data
