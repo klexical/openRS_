@@ -45,3 +45,11 @@ signing.properties
 
 # ═══ Logs ═══════════════════════════════════════════
 *.log
+
+# ═══ Large build tool binaries (never commit) ════════
+*.tar.gz
+*.tar
+temurin*/
+.jdk/
+**/.jdk/
+gradle-*-bin.zip

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ── openRS brand colors ──────────────────────── -->
+    <!-- Ford Nitrous Blue  — primary accent, gauges, highlights -->
+    <color name="nitrous_blue">#FF00AEEF</color>
+    <!-- Ford Frost White   — primary text, labels              -->
+    <color name="frost_white">#FFF5F6F4</color>
+
+    <!-- ── Surface / background palette ────────────── -->
+    <color name="bg_deep">#FF0A0A0A</color>
+    <color name="bg_surface">#FF1A1A1A</color>
+    <color name="bg_border">#FF2A2A2A</color>
+    <color name="text_dim">#FF6A6E72</color>
+
+    <!-- ── Status / alert colors ────────────────────── -->
+    <color name="status_green">#FF00E676</color>
+    <color name="status_red">#FFFF5252</color>
+    <color name="status_orange">#FFFF9800</color>
+    <color name="status_gold">#FFF8E63C</color>
+
+    <!-- ── Aliases used by themes.xml ───────────────── -->
+    <color name="colorPrimary">@color/nitrous_blue</color>
+    <color name="colorOnPrimary">@color/bg_deep</color>
+    <color name="colorBackground">@color/bg_deep</color>
+    <color name="colorOnBackground">@color/frost_white</color>
+    <color name="colorSurface">@color/bg_surface</color>
+    <color name="colorOnSurface">@color/frost_white</color>
+</resources>

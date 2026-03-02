@@ -54,3 +54,7 @@ Our screens use `PaneTemplate` with 4 data-dense rows and an `ActionStrip` for n
 ## Host Validator
 
 For development, we use `ALLOW_ALL_HOSTS_VALIDATOR` in `RSDashCarAppService.kt`. For a Play Store release, replace with specific host package validation.
+
+## Custom UI (unofficial path)
+
+For research on how apps like [aa-torque](https://github.com/agronick/aa-torque) achieve fully customizable Android Auto UIs (themes, multiple dashboards, custom gauges), see **[android-auto-custom-ui-research.md](android-auto-custom-ui-research.md)**.
