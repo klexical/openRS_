@@ -3,12 +3,19 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/twai.h"
 #include "esp_log.h"
 #include <string.h>
 #include <stdlib.h>
 
 static const char *TAG = "focusrs";
+
+// CAN TX callback — set by main via frs_set_can_tx_fn() after CAN is initialised.
+// Using a callback keeps this component independent of main/can.c.
+static frs_can_tx_fn_t s_can_tx = NULL;
+
+void frs_set_can_tx_fn(frs_can_tx_fn_t fn) {
+    s_can_tx = fn;
+}
 
 static frs_state_t s_state = {
     .drive_mode           = FRS_MODE_NORMAL,
@@ -77,24 +84,20 @@ static void frs_send_button_press(void) {
         ESP_LOGW(TAG, "No 0x1B0 template yet — cannot simulate button");
         return;
     }
+    if (!s_can_tx) {
+        ESP_LOGE(TAG, "CAN TX callback not set — call frs_set_can_tx_fn() at startup");
+        return;
+    }
 
-    twai_message_t msg = {
-        .identifier = FRS_CAN_ID_AWD_MSG,
-        .data_length_code = 8,
-        .flags = 0,
-    };
+    uint8_t pressed[8], released[8];
+    memcpy(pressed,  s_state.frame_1b0_template, 8);
+    memcpy(released, s_state.frame_1b0_template, 8);
+    pressed[1]  = FRS_BUTTON_PRESSED;
+    released[1] = FRS_BUTTON_RELEASED;
 
-    // Press
-    memcpy(msg.data, s_state.frame_1b0_template, 8);
-    msg.data[1] = FRS_BUTTON_PRESSED;
-    twai_transmit(&msg, pdMS_TO_TICKS(100));
-
+    s_can_tx(FRS_CAN_ID_AWD_MSG, pressed,  8, 100);
     vTaskDelay(pdMS_TO_TICKS(FRS_BUTTON_HOLD_MS));
-
-    // Release
-    msg.data[1] = FRS_BUTTON_RELEASED;
-    twai_transmit(&msg, pdMS_TO_TICKS(100));
-
+    s_can_tx(FRS_CAN_ID_AWD_MSG, released, 8, 100);
     vTaskDelay(pdMS_TO_TICKS(100));
 }
 

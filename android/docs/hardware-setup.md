@@ -42,8 +42,8 @@ The WiCAN should be in its default configuration:
 
 **Step 2 — Connect your phone to the WiCAN hotspot**
 1. On your phone, open WiFi settings
-2. Connect to the network named `WiCAN_XXXXXX` (last 6 chars of MAC, printed on device)
-3. Default password: `bla2020blabla`
+2. Connect to the network named `WiCAN_XXXXXX` (device ID printed on device label)
+3. Default password: `@meatpi#`
 
 **Step 3 — Verify WiCAN configuration**
 1. Open a browser on your phone → go to `http://192.168.80.1`
@@ -52,10 +52,12 @@ The WiCAN should be in its default configuration:
 
 | Setting | Required Value |
 |---------|----------------|
-| Mode | ELM327 |
-| Protocol | CAN (auto / 500 kbps) |
-| TCP Port | 3333 |
-| WiFi Mode | AP (Access Point) |
+| Protocol | `elm327` |
+| Port Type | `TCP` |
+| Port | `3333` |
+| WiFi Mode | `AP` |
+| CAN Speed | `500 kbps` |
+| BLE | `Disabled` (unless using BLE transport) |
 
 4. If anything differs, update and press **Save** — the device reboots
 
@@ -64,9 +66,9 @@ The WiCAN should be in its default configuration:
 2. Tap **● OFFLINE** in the top-right header → it changes to **● CONNECTED**
 3. The app connects to `192.168.80.1:3333`, runs the ELM327 handshake, and begins streaming data
 
-> **Tip:** The WiCAN WiFi and Android Auto Wireless use different radios. Your phone can be on WiCAN WiFi while AA runs over Bluetooth — they don't conflict.
+> **Tip:** Once connected you can also access the web interface at `http://192.168.80.1`. It is recommended to change the AP password from the default in the Settings tab — anyone nearby while the car is running could otherwise connect.
 
-> **Tip:** The WiCAN will slowly drain the 12V battery if left plugged in with the ignition off. Unplug when parked for extended periods.
+> **Sleep mode:** The WiCAN can be left permanently plugged in without draining the battery. In the Settings tab, enable **Sleep Mode** and set the voltage threshold to ~13.1V. When the engine is off and voltage stays below the threshold for 3 minutes, the WiCAN sleeps and draws less than 1mA. It wakes instantly when the engine starts.
 
 ### Changing the WiCAN IP / Port
 

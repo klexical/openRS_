@@ -1,179 +1,228 @@
-# WiCAN Firmware Update Guide
+# openrs-fw Firmware Update Guide
 
-This guide covers two scenarios:
+> **Status: openrs-fw is in active development — no release binary is available yet.**
+> The source code is published at `https://github.com/klexical/openRS_/tree/main/firmware` and the first compiled release will be published at `https://github.com/klexical/openRS_/releases` when v1.0 is ready.
+> This guide is written in advance so you know exactly what to do the moment the release drops.
 
-| Scenario | When to use |
-|----------|-------------|
-| **A — Official WiCAN firmware** | First-time setup, factory reset, or rolling back |
-| **B — openrs-fw** | Installing the custom Focus RS firmware for drive mode control, BLE transport, and advanced features |
+This guide covers flashing `openrs-fw` — the custom Focus RS firmware — onto your MeatPi WiCAN-USB-C3.
 
----
-
-## Prerequisites
-
-**Hardware required**
-- MeatPi WiCAN-USB-C3 (plugged into the Focus RS OBD-II port)
-- Ignition ON or ACC (WiCAN must be powered)
-- Android phone OR laptop connected to WiCAN's WiFi hotspot
-
-**Software required** *(no installation needed — web-based)*
-- Any modern browser (Chrome recommended)
-- WiCAN web interface at `http://192.168.80.1`
-- Firmware `.bin` file downloaded to your device
+> **Important:** Firmware is loaded via the **Mini USB port** on the device while connected to a computer on your desk. You cannot flash firmware through the OBD-II port — that port is only used for power and CAN data when the device is in use in the car.
 
 ---
 
-## Part A — Official WiCAN Firmware (OTA via Web UI)
+## Stock firmware files (v4.20u beta)
 
-This is the recommended method for day-to-day updates. No tools, no cables, no command line.
-
-### Step 1 — Download the latest firmware
-
-1. Open a browser and go to:
-   ```
-   https://github.com/meatpiHQ/wican-fw/releases/latest
-   ```
-2. Under **Assets**, look for the file matching your hardware variant:
-   - **WiCAN-USB-C3** → download `wican-fw-usb_vXXX.bin`
-   - The version number will be in the filename (e.g., `wican-fw-usb_v310.bin`)
-3. Save the `.bin` file somewhere you can find it (Downloads folder is fine)
+The flash-ready stock firmware package is included in this repo for reference and offline use:
 
 ```
-GitHub Releases page — what you will see:
-┌─────────────────────────────────────────────────────┐
-│ meatpiHQ/wican-fw                             v3.10 │
-│ ─────────────────────────────────────────────────── │
-│ Assets                                          ▼   │
-│   wican-fw-usb_v310.bin              ← download this│
-│   wican-fw-obd_v310.bin                             │
-│   Source code (zip)                                 │
-│   Source code (tar.gz)                              │
-└─────────────────────────────────────────────────────┘
+firmware/stock/
+  bootloader.bin                              ← address 0x0
+  partition-table.bin                         ← address 0x8000
+  ota_data_initial.bin                        ← address 0xd000
+  wican-fw_usb_v420u_beta-01.bin              ← address 0x10000
+
+  wican-fw_usb_v420u_beta-01_flash-package.zip  ← all 4 files zipped
 ```
 
-### Step 2 — Connect your phone to the WiCAN hotspot
+Latest official releases are always at:
+```
+https://github.com/meatpiHQ/wican-fw/releases/latest
+```
+Download the `wican-fw_vXXX_usb.zip` package and extract — it contains the same 4 files.
 
-1. Plug the WiCAN into the OBD-II port with ignition ON
-2. Wait for the LED to go solid (10–15 seconds)
-3. On your phone: **Settings → Wi-Fi**
-4. Connect to the network: `WiCAN_XXXXXX` (last 6 chars of MAC address, printed on the device label)
-5. Default password: `bla2020blabla`
+---
+
+## What you need
+
+**Hardware**
+- MeatPi WiCAN-USB-C3 (on the desk, not in the car)
+- Mini USB data cable — must carry data, not charge-only
+- Windows PC (recommended for the GUI flash tool)
+
+**Software**
+- **ESP32C3 Download Tool V3.9.0** (or later) — the official Espressif GUI flash tool
+  → `https://www.espressif.com/en/support/download/other-tools` → "Flash Download Tools"
+- No installation needed — extract and run the `.exe`
+
+---
+
+## Step 1 — Enter bootloader mode
+
+The ESP32-C3 must be in bootloader mode before the flash tool can communicate with it.
 
 ```
-Wi-Fi networks — what you will see:
-┌─────────────────────────────────────┐
-│ 📶 WiCAN_A3F91C          🔒 ← tap  │
-│     Password: bla2020blabla         │
-│     [ Connected ]                   │
-└─────────────────────────────────────┘
+WiCAN-USB-C3 — PCB layout (top view):
+
+  ┌────────────────────────────────────────┐
+  │                                        │
+  │   [CANH] [CANL] [TR] [GND]            │
+  │                                        │
+  │                          ┌──────────┐  │
+  │                          │  [BOOT]  │  │ ← hold this
+  │                          └──────────┘  │
+  │                               [Mini USB]
+  └────────────────────────────────────────┘
 ```
 
-> **Note:** Your phone will warn "No internet connection" — this is expected. The WiCAN creates a local-only hotspot.
+1. Do **not** plug in the USB cable yet
+2. Press and **hold** the BOOT button on the WiCAN PCB
+3. While holding BOOT, plug the Mini USB cable into the WiCAN and into your computer
+4. Release the BOOT button
+5. The **orange LED** lights up — bootloader mode is active ✓
 
-### Step 3 — Open the WiCAN web interface
+> If the orange LED does not appear: unplug, wait 3 seconds, and repeat firmly — the button must be held at the exact moment USB power is applied.
 
-1. Open **Chrome** on your phone (Safari works too)
-2. Navigate to: `http://192.168.80.1`
-3. The WiCAN web interface loads — it shows a dashboard with CAN status and settings
+---
+
+## Step 2 — Configure the ESP32C3 Download Tool
+
+Open the ESP32C3 Download Tool and set it up exactly as shown below.
+
+### Chip and mode selection (startup dialog)
+
+```
+┌─────────────────────────────────┐
+│  ChipType:  ESP32-C3            │
+│  WorkMode:  develop             │
+│  LoadMode:  USB                 │
+│  [ OK ]                         │
+└─────────────────────────────────┘
+```
+
+### Add the 4 binary files
+
+In the main window, load all 4 files with their exact flash addresses.
+**Tick the checkbox on the left of each row** — unticked files are skipped.
+
+```
+ESP32C3 Download Tool V3.9.0 — SPIDownload tab:
+┌──────────────────────────────────────────────────────────────┐
+│  ☑  bootloader.bin                          @ 0x0           │
+│  ☑  wican-fw_usb_v420u_beta-01.bin          @ 0x10000       │
+│  ☑  partition-table.bin                     @ 0x8000        │
+│  ☑  ota_data_initial.bin                    @ 0xd000        │
+└──────────────────────────────────────────────────────────────┘
+```
+
+> Order does not matter — the addresses tell the tool where each file goes.
+
+### SPI Flash configuration
+
+```
+SpiFlashConfig:
+┌──────────────────────────────────────────────────────────────┐
+│  SPI SPEED:  ● 40MHz   (not 80MHz)                          │
+│  SPI MODE:   ● DIO     (not QIO)                            │
+│  ☑ DoNotChgBin                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+> **These settings matter.** 40MHz + DIO + DoNotChgBin are the confirmed working values for the WiCAN-USB-C3. Using QIO or 80MHz may cause a failed or corrupt flash.
+
+### COM port and baud rate
+
+```
+Download Panel:
+┌──────────────────────────────────────────────────────────────┐
+│  COM:   COMxx  ← select your device port                    │
+│  BAUD:  115200                                               │
+└──────────────────────────────────────────────────────────────┘
+```
+
+> **Baud: 115200** — this is lower than some online guides suggest (1152000) but is the confirmed working rate for this hardware. Use 115200.
+
+To find your COM port: open **Device Manager** → expand **Ports (COM & LPT)** → look for `USB-Serial` or `CH340` — note the number (e.g. `COM5`, `COM111`).
+
+---
+
+## Step 3 — Flash
+
+1. Click **START**
+2. A green progress bar fills from left to right — this takes about 30–60 seconds at 115200 baud
+3. `FINISH` message appears when complete
+
+> If you are recovering a bricked device: click **ERASE** first, wait for completion, then click **START**. This clears bad config data before reflashing.
+
+---
+
+## Step 4 — Verify
+
+1. Unplug the Mini USB cable
+2. Plug the WiCAN into the Focus RS OBD-II port (ignition ON)
+3. Wait for the solid LED (10–20 seconds)
+4. On your phone: **Settings → Wi-Fi** → connect to `WiCAN_XXXXXX`
+   - Password: `@meatpi#`
+5. Open `http://192.168.80.1` in a browser
+6. The WiCAN web interface loads — confirm the firmware version shown
 
 ```
 WiCAN web interface — what you will see:
-┌─────────────────────────────────────────────────┐
-│  WiCAN  [Status] [CAN] [Settings] [Firmware]    │
-│ ─────────────────────────────────────────────── │
-│  Device: WiCAN-USB-C3                           │
-│  Firmware: v2.92                                │
-│  MAC: AA:BB:CC:DD:EE:FF                         │
-│  IP: 192.168.80.1                               │
-│  CAN Status: Idle                               │
-└─────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│  WiCAN  [Status] [CAN] [Settings] [Firmware]        │
+│ ─────────────────────────────────────────────────── │
+│  Device: WiCAN-USB-C3                               │
+│  Firmware: v4.20u                                   │
+│  IP: 192.168.80.1                                   │
+└─────────────────────────────────────────────────────┘
 ```
-
-### Step 4 — Navigate to the Firmware Update page
-
-1. Tap **Settings** in the top navigation
-2. Scroll down to the bottom of the Settings page
-3. Look for the **Firmware Update** section (sometimes labeled **OTA Update**)
-
-```
-Settings page — Firmware Update section:
-┌─────────────────────────────────────────────────┐
-│  Firmware Update                                │
-│  ─────────────────────────────────────────────  │
-│  Current version: v2.92                        │
-│                                                 │
-│  [ Choose File ]  No file selected             │
-│                                                 │
-│  [ Upload & Update ]                           │
-└─────────────────────────────────────────────────┘
-```
-
-### Step 5 — Upload the new firmware
-
-1. Tap **Choose File**
-2. Navigate to your Downloads folder and select the `.bin` file you downloaded in Step 1
-3. The filename will appear next to the button confirming selection
-4. Tap **Upload & Update**
-
-```
-After selecting the file:
-┌─────────────────────────────────────────────────┐
-│  Firmware Update                                │
-│  ─────────────────────────────────────────────  │
-│  [ Choose File ]  wican-fw-usb_v310.bin ✓       │
-│                                                 │
-│  [ Upload & Update ]   ← tap this              │
-└─────────────────────────────────────────────────┘
-```
-
-### Step 6 — Wait for the update to complete
-
-1. A progress bar appears — **do not close the browser or turn off the car during this step**
-2. Upload takes approximately 30–60 seconds depending on file size (~1.5 MB)
-3. When complete, the WiCAN automatically reboots
-4. The LED will flash rapidly, go dark for 2–3 seconds, then come back solid
-
-```
-Update progress — what you will see:
-┌─────────────────────────────────────────────────┐
-│  Uploading firmware...                          │
-│  ████████████████░░░░░░  72%                   │
-│                                                 │
-│  Do not turn off ignition.                      │
-└─────────────────────────────────────────────────┘
-
-After reboot:
-┌─────────────────────────────────────────────────┐
-│  Update successful!                             │
-│  Firmware: v3.10                               │
-│  Rebooting...                                   │
-└─────────────────────────────────────────────────┘
-```
-
-### Step 7 — Reconnect and verify
-
-1. Your phone will lose WiFi connection while the WiCAN reboots
-2. Wait 15 seconds, then reconnect to `WiCAN_XXXXXX`
-3. Navigate back to `http://192.168.80.1`
-4. Confirm the **Firmware** version now shows the new version number
 
 ---
 
-## Part B — openrs-fw (Custom Focus RS Firmware)
+## Configuring WiCAN for openRS_ (after flash)
 
-> **Status:** openrs-fw v1.0 is in active development. This section will be updated with the download link and verified `.bin` file when the first release is published at:
-> ```
-> https://github.com/klexical/openRS_/releases
-> ```
+After flashing, verify these settings in the **Settings** tab at `http://192.168.80.1`:
 
-The flashing process for openrs-fw is **identical** to Part A — it uses the same WiCAN OTA web interface. The only difference is which `.bin` file you select.
+| Setting | Required Value |
+|---------|----------------|
+| Protocol | `elm327` |
+| Port Type | `TCP` |
+| Port | `3333` |
+| WiFi Mode | `AP` (Access Point) |
+| CAN Speed | `500 kbps` |
+| BLE | `Disabled` (AP mode — enable only if using BLE transport) |
 
-### What openrs-fw adds over stock firmware
+If anything differs, update and press **Submit changes** — the device reboots automatically.
+
+> **Sleep mode:** The WiCAN can be left permanently plugged in. Enable Sleep Mode in Settings and set the voltage threshold to ~13.1V — when the engine is off and voltage drops below this for 3 minutes, it sleeps and draws < 1mA. It wakes instantly when the engine starts.
+
+---
+
+## Installing openrs-fw (when available)
+
+When openrs-fw v1.0 is released, the process is identical to the above — just use the openrs-fw files instead:
+
+| File | Address |
+|------|---------|
+| `bootloader.bin` | `0x0` |
+| `partition-table.bin` | `0x8000` |
+| `ota_data_initial.bin` | `0xd000` |
+| `openrs-fw-usb_v100.bin` | `0x10000` |
+
+Same tool, same settings (40MHz, DIO, DoNotChgBin, 115200 baud).
+
+After flashing openrs-fw, the WiFi SSID changes from `WiCAN_XXXXXX` to `openRS_XXXXXX` and the password changes to `openrs2024`.
+
+### Subsequent openrs-fw updates (OTA)
+
+Once openrs-fw is running, all future updates use **OTA via the web UI** — no cables, no bootloader mode needed.
+
+1. Download the new `openrs-fw-usb_vXXX.bin` from `https://github.com/klexical/openRS_/releases`
+2. Connect phone to `openRS_XXXXXX` WiFi
+3. Open `http://192.168.80.1` → **Settings** → scroll to **Firmware Update**
+4. Tap **Choose File** → select the `.bin` → tap **Upload & Update**
+5. Wait 30–60 seconds — **do not turn off the car during this**
+6. Reconnect and verify the new version number
+
+---
+
+## What openrs-fw adds
 
 | Feature | Stock WiCAN | openrs-fw v1.0 |
 |---------|-------------|----------------|
 | ELM327 TCP passthrough | ✅ | ✅ |
 | CAN ATMA monitor mode | ✅ | ✅ |
+| OBD AutoPID (MQTT/HTTP) | ✅ | ✅ |
+| Sleep mode (voltage threshold) | ✅ | ✅ |
 | Focus RS drive mode read | ✅ (via app) | ✅ |
 | **Drive mode write** (N/S/T/D) | ❌ | ✅ |
 | **Boot mode persistence** (NVS) | ❌ | ✅ |
@@ -182,88 +231,43 @@ The flashing process for openrs-fw is **identical** to Part A — it uses the sa
 | **Auto Start/Stop kill** | ❌ | ✅ |
 | **BLE GATT data transport** | ❌ | ✅ |
 | **Auto-discovery** (app finds device) | ❌ | ✅ |
-| Battery sleep (12V threshold) | ❌ | ✅ |
-| Battery voltage API | ❌ | ✅ |
-| OTA updates via web UI | ✅ | ✅ |
-| openrs-fw branding | ❌ | ✅ |
-
-### openrs-fw default configuration
-
-When first flashed, openrs-fw uses these defaults:
-
-| Setting | Default value |
-|---------|---------------|
-| WiFi SSID | `openRS_XXXXXX` |
-| WiFi Password | `openrs2024` |
-| ELM327 TCP Port | `3333` |
-| CAN Bus Speed | `500 kbps` (HS-CAN) |
-| BLE Device Name | `openRS_WiCAN` |
-| Battery sleep threshold | `12.2V` |
-| Boot mode | Last used drive mode |
-
-> **First flash note:** After flashing openrs-fw, the WiFi SSID changes from `WiCAN_XXXXXX` to `openRS_XXXXXX`. Update the WiFi network on your phone and in the app's settings screen.
+| openRS_ branding (SSID, web UI) | ❌ | ✅ |
 
 ---
 
 ## Troubleshooting
 
-### WiCAN web interface not loading
-- Confirm you are connected to the WiCAN WiFi network, not your home or phone hotspot
-- Check that the LED is solid (not flashing) — if flashing, wait longer
-- Try `http://192.168.80.1` with a different browser
-- Power cycle: unplug WiCAN, wait 5 seconds, replug with ignition ON
+### Device not detected — no COM port appears
+- Ensure the Mini USB cable carries data (charge-only cables have no data wires)
+- The orange LED must be lit — if not, bootloader mode was not entered correctly
+- Try a different USB port on your computer
+- Windows: install CH340 drivers from `https://www.wch-ic.com/downloads/CH341SER_EXE.html`
 
-### Update progress bar stalls
-- Wait up to 3 minutes before concluding it has failed
-- If the LED is flashing rapidly, the device is still writing — do not interrupt
-- If no change after 3 minutes, power cycle and retry
+### Orange LED does not light up
+- The BOOT button was not held at the exact moment USB was plugged in
+- Unplug, hold BOOT firmly, plug in while holding, then release
 
-### WiCAN no longer accessible after update
-- The device may have entered safe mode — connect a laptop via USB-C
-- Use the [esptool recovery method](https://github.com/meatpiHQ/wican-fw#recovery) to re-flash
+### Flash fails or device unresponsive after flash
+- Click **ERASE** first, wait for it to complete, then click **START** again
+- Confirm SPI Speed = 40MHz, SPI Mode = DIO, Baud = 115200
 
-### "Wrong firmware type" error
-- You selected the wrong `.bin` variant — ensure you downloaded the `usb_` variant for WiCAN-USB-C3, not `obd_`
-
----
-
-## Advanced: Flashing via esptool (Recovery)
-
-For cases where OTA is not possible (device unresponsive, failed update), use `esptool.py` over USB-C.
-
-**Required software:**
-```bash
-pip install esptool
-```
-
-**Flash command:**
-```bash
-esptool.py --chip esp32c3 --port /dev/ttyUSB0 \
-  --baud 460800 write_flash \
-  0x0 bootloader.bin \
-  0x8000 partition-table.bin \
-  0x10000 wican-fw-usb_vXXX.bin
-```
-
-> Replace `/dev/ttyUSB0` with `COMx` on Windows or `/dev/tty.usbserial-*` on macOS.
-
-The WiCAN-USB-C3 will appear as a USB serial device when plugged into a computer with ignition ON.
+### "Verify failed" or garbled output
+- Wrong SPI mode — ensure DIO is selected, not QIO
 
 ---
 
 ## CAN Data Capture (for drive mode write frame identification)
 
-When testing with the car, capture the full `0x1B0` frame while pressing the drive mode button physically to identify the write frame template for openrs-fw.
+To complete openrs-fw drive mode write support, the full `0x1B0` frame bytes need to be captured from your specific car while physically pressing the drive mode button.
 
-### Using the stock WiCAN ELM327 mode:
-1. Connect the openRS_ app to the WiCAN
+1. Connect the openRS_ app to the WiCAN (stock firmware works for this)
 2. Enable ATMA (Monitor All) mode in the app
-3. Note `0x1B0` frames at idle: `[byte0] 5A [byte2] [byte3] [byte4] [byte5] [byte6] [byte7]`
-4. Press drive mode button physically — note frame change at byte 1: `5A` → `5E`
-5. Record all 8 bytes for both released and pressed states
-6. Submit the captured bytes via GitHub issue for inclusion in openrs-fw
+3. Note the `0x1B0` frame at idle — byte 1 will be `5A` (released)
+4. Press the drive mode button physically on the console — byte 1 changes to `5E` (pressed)
+5. Record all 8 bytes for both states
+6. Submit via GitHub issue at `https://github.com/klexical/openRS_/issues`
 
-**Expected 0x1B0 format (byte 1 = drive mode button):**
+**Expected 0x1B0 format:**
 ```
 Released: XX 5A XX XX XX XX XX XX
 Pressed:  XX 5E XX XX XX XX XX XX

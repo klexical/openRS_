@@ -42,6 +42,11 @@ typedef struct {
     bool     frame_template_valid;
 } frs_state_t;
 
+// ── CAN TX callback (set once from main after CAN is initialised) ─────────
+// Signature: (can_id, data, dlc, timeout_ms) → 0 on success
+typedef int (*frs_can_tx_fn_t)(uint32_t can_id, const uint8_t *data, uint8_t dlc, uint32_t timeout_ms);
+void     frs_set_can_tx_fn(frs_can_tx_fn_t fn);
+
 // ── Public API ────────────────────────────────────────────────
 void     frs_init(void);
 void     frs_parse_can_frame(uint32_t can_id, const uint8_t *data, uint8_t dlc);

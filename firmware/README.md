@@ -49,38 +49,50 @@ Forked from [`meatpiHQ/wican-fw`](https://github.com/meatpiHQ/wican-fw) — the 
 
 ## Build Instructions
 
-### Prerequisites
+A single script handles everything — ESP-IDF installation, cloning wican-fw, applying openrs-fw patches, and packaging the release binaries.
+
+### One-command build
 
 ```bash
-# Install ESP-IDF v5.x
-git clone --recursive https://github.com/espressif/esp-idf.git
-cd esp-idf && ./install.sh esp32c3
-source ./export.sh
-```
-
-### Clone and configure
-
-```bash
-git clone https://github.com/klexical/openRS_
+# From the repo root:
 cd "openRS_/firmware"
-
-# Copy base wican-fw source (see BUILDING.md for full setup)
-idf.py set-target esp32c3
-idf.py menuconfig   # Optional: adjust WiFi defaults in Component config → openrs-fw
+./build.sh
 ```
 
-### Build and flash
+That's it. The script will:
+1. Install ESP-IDF v5.2.3 to `~/esp/esp-idf` if not already present (~5–15 min, one-time)
+2. Clone `meatpiHQ/wican-fw` at the pinned tag into `firmware/.build/wican-fw/`
+3. Copy the `focusrs` component into the wican-fw components directory
+4. Apply targeted source patches (SSID branding, CAN RX hook, REST endpoint)
+5. Build for `esp32c3`
+6. Copy all flash-ready `.bin` files to `firmware/release/`
+
+### Output
+
+```
+firmware/release/
+  bootloader.bin          ← flash at 0x0
+  partition-table.bin     ← flash at 0x8000
+  ota_data_initial.bin    ← flash at 0xd000
+  openrs-fw-usb_v100.bin  ← flash at 0x10000
+```
+
+### Re-running the build
+
+The script is safe to re-run. It skips steps that are already complete (ESP-IDF install, wican-fw clone). To force a clean rebuild:
 
 ```bash
-idf.py build
-idf.py -p /dev/ttyUSB0 flash monitor
+rm -rf firmware/.build
+./firmware/build.sh
 ```
 
-> For OTA updates (WiCAN already running), build only and upload via web UI:
-> ```bash
-> idf.py build
-> # Then upload build/openrs-fw.bin via http://192.168.80.1 Settings → Firmware Update
-> ```
+### If ESP-IDF is already installed
+
+Set `IDF_PATH` to skip the install step:
+
+```bash
+IDF_PATH=~/your/esp-idf/path ./firmware/build.sh
+```
 
 ---
 
