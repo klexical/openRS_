@@ -26,7 +26,7 @@
 
 ## What is openRS_?
 
-**openRS_** is a native Android app that turns your phone or Android Auto head unit into a full telemetry dashboard for the Ford Focus RS MK3. It connects wirelessly to a [MeatPi WiCAN](https://www.wican.io/) adapter over Wi-Fi and decodes **33 live parameters** from the car's CAN bus and ECU — including data Ford never exposes.
+**openRS_** is a native Android app that turns your phone or Android Auto head unit into a full telemetry dashboard for the Ford Focus RS MK3. It connects wirelessly to a [MeatPi WiCAN](https://www.mouser.com/ProductDetail/MeatPi/WICAN-USB-C3?qs=rQFj71Wb1eVDX2eEy0FC7A%3D%3D) adapter over Wi-Fi and decodes **33 live parameters** from the car's CAN bus and ECU — including data Ford never exposes.
 
 Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It understands the GKN Twinster AWD system, reads TPMS tire pressures directly from the BCM, decodes Ford-specific Mode 22 enhanced PIDs, and presents everything in a dark, glanceable interface tuned for track days.
 
@@ -90,7 +90,7 @@ openRS_ uses a novel **time-sliced ATMA + OBD** approach:
 
 | Component | Details |
 |-----------|---------|
-| **MeatPi WiCAN** | [wican.io](https://www.wican.io/) — Wi-Fi ELM327-compatible OBD-II adapter |
+| **MeatPi WiCAN** | [Mouser](https://www.mouser.com/ProductDetail/MeatPi/WICAN-USB-C3?qs=rQFj71Wb1eVDX2eEy0FC7A%3D%3D) — Wi-Fi ELM327-compatible OBD-II adapter |
 | **Ford Focus RS MK3** | 2016–2018 (LZ platform, EcoBoost 2.3L) |
 | **Android phone** | Android 9+ (API 28) with Wi-Fi |
 
