@@ -99,7 +99,6 @@ openRS_ uses a novel **time-sliced ATMA + OBD** approach:
 | Component | Details |
 |-----------|---------|
 | **Android Auto head unit** | Any AA-compatible unit (tested on Sync 3 APIM + AA Wireless) |
-| **2nd WiCAN** | For MS-CAN (0x340 TPMS broadcast at 125 kbps) — not required; BCM method works |
 
 ### Setup
 
