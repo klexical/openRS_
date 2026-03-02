@@ -70,7 +70,7 @@ The head unit displays the same layout as the phone:
 | ESC status | Top-centre | ON / SPORT / OFF |
 | Connection dot | Top-right | ● CONNECTED or ○ OFFLINE |
 | FPS counter | Top-right | CAN frames per second |
-| Tab bar | Below header | DASH / AWD / PERF / TEMPS / TUNE / TPMS |
+| Tab bar | Below header | DASH / AWD / PERF / TEMPS / TUNE / TPMS / CTRL |
 
 Tap tabs to switch. All content is touch-interactive on the SYNC3 screen.
 
@@ -78,21 +78,25 @@ Tap tabs to switch. All content is touch-interactive on the SYNC3 screen.
 
 ## Connecting the WiCAN in AA Wireless Mode
 
-When using AA Wireless, your phone's WiFi is occupied by the AA connection.
-The WiCAN connection still works because:
+When using AA Wireless (e.g. an AAWireless dongle), your phone's WiFi radio is occupied by the AA connection. openrs-fw solves this transparently with dual transport:
 
-- AA Wireless uses **Bluetooth + WiFi Direct** (P2P band) to the head unit
-- Your phone can simultaneously connect to the WiCAN hotspot on the **2.4 GHz** band
-- Both connections coexist — AA on one band, WiCAN data on the other
+| Situation | Transport | What the app does |
+|-----------|-----------|-------------------|
+| Phone-only (no AA Wireless) | WiFi TCP | Connects to `192.168.80.1:3333` as normal |
+| AA Wireless active | BLE GATT | App auto-discovers the WiCAN by BLE, connects on `0xFFE1/FFE2` |
+| USB AA cable | WiFi TCP | WiFi is free — normal WiFi connection |
 
-**Workflow:**
-1. Connect phone to WiCAN WiFi (`WiCAN_XXXXXX`)
-2. AA Wireless connects automatically when you enter the car
-3. Open openRS_ and tap **CONNECT** — data streams through WiCAN while AA projects the UI
+**With openrs-fw (BLE transport, recommended):**
+1. Flash openrs-fw to the WiCAN (see [Firmware Update Guide](firmware-update.md))
+2. Launch openRS_ — it automatically finds the WiCAN by BLE (`openRS_WiCAN`) when WiFi isn't available
+3. Data streams over BLE while AA projects via AA Wireless — no manual switching
 
-If your phone struggles to hold both WiFi connections, configure the WiCAN in **Client mode**
-to join your phone's personal hotspot instead — the WiCAN will always be reachable at a
-fixed IP regardless of AA state.
+**With stock firmware (WiFi only — workaround):**
+1. Configure the WiCAN in **Client mode** so it connects to your phone's personal hotspot
+2. Android can then reach the WiCAN over the hotspot even while AA Wireless is active
+3. Update the IP in **app settings → WiCAN Host** to match the IP your hotspot assigned
+
+> **CTRL tab:** The CTRL tab in the app shows live drive mode and ESC status from CAN in all scenarios. Drive mode write controls become active after flashing openrs-fw.
 
 ---
 

@@ -29,6 +29,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.OpenRSDashApp
+import com.openrs.dash.data.DriveMode
+import com.openrs.dash.data.EscStatus
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.service.CanDataService
 import kotlin.math.abs
@@ -83,6 +85,7 @@ class MainActivity : ComponentActivity() {
                             3 -> TempsPage(vs)
                             4 -> TunePage(vs)
                             5 -> TpmsPage(vs)
+                            6 -> CtrlPage(vs)
                         }
                     }
                 }
@@ -147,7 +150,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable fun TabRow(selected: Int, onSelect: (Int) -> Unit) {
-    val tabs = listOf("DASH", "AWD", "PERF", "TEMPS", "TUNE", "TPMS")
+    val tabs = listOf("DASH", "AWD", "PERF", "TEMPS", "TUNE", "TPMS", "CTRL")
     Row(Modifier.fillMaxWidth().background(Surf).height(36.dp)) {
         tabs.forEachIndexed { i, label ->
             Box(Modifier.weight(1f).fillMaxHeight()
@@ -474,3 +477,104 @@ class MainActivity : ComponentActivity() {
 }
 
 fun toF(c: Double): Int = (c * 9.0 / 5.0 + 32).roundToInt()
+
+// ═══ CTRL PAGE ═══════════════════════════════════════════════
+@Composable fun CtrlPage(v: VehicleState) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+
+        // ── Drive Mode ──────────────────────────────────────
+        CtrlSection("DRIVE MODE — live from CAN 0x1B0") {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                DriveModeBtn(v.driveMode == DriveMode.NORMAL, Accent, "N", Modifier.weight(1f))
+                DriveModeBtn(v.driveMode == DriveMode.SPORT,  Grn,   "S", Modifier.weight(1f))
+                DriveModeBtn(v.driveMode == DriveMode.TRACK,  Org,   "T", Modifier.weight(1f))
+                DriveModeBtn(v.driveMode == DriveMode.DRIFT,  Red,   "D", Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(8.dp))
+            val modeColor = when (v.driveMode) {
+                DriveMode.SPORT -> Grn; DriveMode.TRACK -> Org; DriveMode.DRIFT -> Red; else -> Accent
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("BOOT MODE (NVS)", fontSize = 9.sp, color = Dim, fontFamily = Mono)
+                Text("${v.driveMode.label.uppercase()} — requires openrs-fw",
+                    fontSize = 9.sp, color = modeColor, fontFamily = Mono, fontWeight = FontWeight.SemiBold)
+            }
+        }
+
+        // ── ESC ──────────────────────────────────────────────
+        CtrlSection("ESC — ELECTRONIC STABILITY CONTROL") {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                EscBtn(v.escStatus == EscStatus.ON,      Grn, "ESC ON",  Modifier.weight(1f))
+                EscBtn(v.escStatus == EscStatus.PARTIAL, Org, "SPORT",   Modifier.weight(1f))
+                EscBtn(v.escStatus == EscStatus.OFF,     Red, "ESC OFF", Modifier.weight(1f))
+            }
+        }
+
+        // ── Features ─────────────────────────────────────────
+        CtrlSection("FEATURES — requires openrs-fw v1.0") {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FeatureBtn("LAUNCH CTRL\n○ OFF", Modifier.weight(1f))
+                FeatureBtn("AUTO S/S KILL\n○ OFF", Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(6.dp))
+            Text("⚡  Flash openrs-fw to unlock drive mode write, ESC control, LC & features.",
+                fontSize = 9.sp, color = Dim, fontFamily = Mono)
+        }
+
+        // ── Connection ───────────────────────────────────────
+        CtrlSection("CONNECTION") {
+            InfoRow(listOf(
+                "STATUS"  to if (v.isConnected) "CONNECTED" else "OFFLINE",
+                "MODE"    to v.dataMode))
+            InfoRow(listOf(
+                "FPS"     to "${v.framesPerSecond.roundToInt()}",
+                "12V"     to if (v.batteryVoltage > 0) "%.1fV".format(v.batteryVoltage) else "--"))
+        }
+    }
+}
+
+@Composable fun CtrlSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxWidth()
+        .background(Surf, RoundedCornerShape(8.dp))
+        .border(1.dp, Brd, RoundedCornerShape(8.dp))
+        .padding(12.dp)) {
+        Text(title, fontSize = 9.sp, color = Dim, letterSpacing = 1.5.sp, fontFamily = Mono)
+        Spacer(Modifier.height(10.dp))
+        content()
+    }
+}
+
+@Composable fun DriveModeBtn(isActive: Boolean, color: Color, label: String, modifier: Modifier) {
+    Box(modifier
+        .background(if (isActive) color.copy(alpha = 0.18f) else Color.Transparent, RoundedCornerShape(6.dp))
+        .border(2.dp, if (isActive) color else Brd, RoundedCornerShape(6.dp))
+        .padding(vertical = 10.dp),
+        contentAlignment = Alignment.Center) {
+        Text(label, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = Mono,
+            color = if (isActive) color else Dim)
+    }
+}
+
+@Composable fun EscBtn(isActive: Boolean, color: Color, label: String, modifier: Modifier) {
+    Box(modifier
+        .background(if (isActive) color.copy(alpha = 0.12f) else Color.Transparent, RoundedCornerShape(6.dp))
+        .border(1.dp, if (isActive) color else Brd, RoundedCornerShape(6.dp))
+        .padding(vertical = 8.dp),
+        contentAlignment = Alignment.Center) {
+        Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = Mono,
+            color = if (isActive) color else Dim)
+    }
+}
+
+@Composable fun FeatureBtn(label: String, modifier: Modifier) {
+    Box(modifier
+        .background(Color.Transparent, RoundedCornerShape(6.dp))
+        .border(1.dp, Brd, RoundedCornerShape(6.dp))
+        .padding(vertical = 8.dp),
+        contentAlignment = Alignment.Center) {
+        Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = Mono,
+            color = Dim, textAlign = TextAlign.Center)
+    }
+}

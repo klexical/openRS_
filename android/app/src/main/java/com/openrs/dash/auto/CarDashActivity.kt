@@ -94,6 +94,7 @@ class CarDashActivity : CarActivity(), LifecycleOwner, SavedStateRegistryOwner {
                                 3 -> TempsPage(vs)
                                 4 -> TunePage(vs)
                                 5 -> TpmsPage(vs)
+                                6 -> CtrlPage(vs)
                             }
                         }
                     }
@@ -187,7 +188,7 @@ fun AaHeader(vs: VehicleState, onConnect: () -> Unit, onDisconnect: () -> Unit) 
 // ── AA Tab Row — 44dp height for comfortable head unit touch targets ──────────
 @Composable
 fun AaTabRow(selected: Int, onSelect: (Int) -> Unit) {
-    val tabs = listOf("DASH", "AWD", "PERF", "TEMPS", "TUNE", "TPMS")
+    val tabs = listOf("DASH", "AWD", "PERF", "TEMPS", "TUNE", "TPMS", "CTRL")
     Row(Modifier.fillMaxWidth().background(Surf).height(44.dp)) {
         tabs.forEachIndexed { i, label ->
             Box(

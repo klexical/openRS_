@@ -47,7 +47,7 @@ Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It understan
 
 ## Features
 
-### 6 Phone Tabs + 6 Android Auto Screens
+### 7 Phone Tabs + 7 Android Auto Screens
 
 | Screen | Description |
 |--------|-------------|
@@ -57,6 +57,7 @@ Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It understan
 | **TEMPS** | All 8 temperature sensors with colour-coded warnings + Ready to Race indicator |
 | **TUNE** | AFR actual/desired, ETC, TIP, WGDC, VCT, knock, fuel trims, timing advance |
 | **TPMS** | 4-corner tire pressure (PSI) and temperature with low-pressure alerts |
+| **CTRL** | Drive mode (N/S/T/D) live readout, ESC status, feature toggles — write controls active with openrs-fw |
 
 The Android Auto UI is **visually identical** to the phone app — same gauge boxes, info cells, torque bars, and temp gauges.
 
@@ -274,11 +275,12 @@ Full PID documentation: [`android/docs/pid-reference.md`](android/docs/pid-refer
 - [x] Phase 2 — Hybrid ATMA+OBD with Android Auto (v2.0)
 - [x] Phase 2.5 — TPMS+, AFR, ETC/TIP/WGDC, VCT, multi-ECU (v2.5)
 - [x] Phase 2.6 — Nitrous Blue/Frost White theme, openRS_ branding, live browser emulator
-- [ ] Phase 3 — Custom Activity Android Auto UI (pixel-perfect match to phone)
-- [ ] Phase 4 — UDS Fast Rate Session (~100 Hz via DDDI 0x2C)
-- [ ] Phase 5 — DTC scanning (Service 0x19 + DTC database)
-- [ ] Phase 6 — Data logging + CSV export
-- [ ] Phase 7 — Track map overlay with GPS correlation
+- [x] Phase 3 — Custom Activity Android Auto UI (pixel-perfect match to phone) + CTRL tab
+- [ ] Phase 4 — **openrs-fw v1.0** — custom WiCAN firmware with drive mode write, BLE transport, boot persistence, ESC/LC/ASS controls
+- [ ] Phase 5 — UDS Fast Rate Session (~100 Hz via DDDI 0x2C)
+- [ ] Phase 6 — DTC scanning (Service 0x19 + DTC database)
+- [ ] Phase 7 — Data logging + CSV export
+- [ ] Phase 8 — Track map overlay with GPS correlation
 
 ---
 

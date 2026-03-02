@@ -1,8 +1,25 @@
 # Hardware Setup Guide
 
-## WiCAN OBD-II Adapter
+## WiCAN-USB-C3 Adapter
 
-openRS connects to a [MeatPi WiCAN](https://www.mouser.com/ProductDetail/MeatPi/WICAN-USB-C3?qs=rQFj71Wb1eVDX2eEy0FC7A%3D%3D) adapter via Wi-Fi TCP.
+openRS_ connects to a [MeatPi WiCAN-USB-C3](https://www.mouser.ca/ProductDetail/MeatPi/WICAN-USB-C3?qs=rQFj71Wb1eVDX2eEy0FC7A%3D%3D) USB-CAN adapter via Wi-Fi (primary) or BLE (Android Auto Wireless fallback).
+
+### Hardware Specifications
+
+| Attribute | Value |
+|-----------|-------|
+| **Manufacturer** | MeatPi Electronics |
+| **Part Number** | WICAN-USB-C3 |
+| **Mouser #** | 392-WICAN-USB-C3 |
+| **Microcontroller** | ESP32-C3 |
+| **Interfaces** | CAN bus, USB, Wi-Fi 2.4GHz, BLE 5.0 |
+| **Operating Voltage** | 7.5V – 36V (OBD-II pin 16, always-on) |
+| **Weight** | 40g |
+| **Country of Origin** | Australia |
+| **RoHS** | Compliant |
+| **Price (CAD)** | ~$64.47 (qty 1) |
+
+> **Android Auto Wireless note:** When using an AAWireless dongle, your phone's WiFi radio is occupied by the AA connection and cannot simultaneously connect to WiCAN's hotspot. The openRS_ firmware exposes a BLE GATT data service as a fallback — the app automatically switches between WiFi and BLE depending on what's reachable. No manual switching required.
 
 ### Configuration
 
@@ -58,6 +75,21 @@ If your WiCAN is configured in **Client mode** (joining your phone's hotspot), t
 **Settings → WiCAN Host / Port**
 
 The app saves your last-used values and reconnects automatically.
+
+## Firmware
+
+The WiCAN ships with the official MeatPi firmware. openRS_ works with the stock firmware for all PID telemetry.
+
+For drive mode control, ESC write, Launch Control, BLE transport, and Auto-discovery, flash **openrs-fw**:
+
+| Firmware | Use case | Download |
+|----------|----------|----------|
+| Official WiCAN | Basic PID telemetry (first test) | [GitHub Releases](https://github.com/meatpiHQ/wican-fw/releases/latest) |
+| **openrs-fw v1.0** | Full openRS_ feature set | [openRS_ Releases](https://github.com/klexical/openRS_/releases) |
+
+See the [Firmware Update Guide](firmware-update.md) for step-by-step flashing instructions with screenshots.
+
+---
 
 ## OBD-II Port Pinout (Focus RS MK3)
 
