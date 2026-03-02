@@ -24,11 +24,11 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
-import androidx.lifecycle.ViewTreeLifecycleOwner
+import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
-import androidx.savedstate.ViewTreeSavedStateRegistryOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.google.android.apps.auto.sdk.CarActivity
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.data.VehicleState
@@ -70,8 +70,8 @@ class CarDashActivity : CarActivity(), LifecycleOwner, SavedStateRegistryOwner {
         bindService(svcIntent, conn, Context.BIND_AUTO_CREATE)
 
         val composeView = ComposeView(this).apply {
-            ViewTreeLifecycleOwner.set(this, this@CarDashActivity)
-            ViewTreeSavedStateRegistryOwner.set(this, this@CarDashActivity)
+            setViewTreeLifecycleOwner(this@CarDashActivity)
+            setViewTreeSavedStateRegistryOwner(this@CarDashActivity)
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 val vs by OpenRSDashApp.instance.vehicleState.collectAsState()
