@@ -122,8 +122,8 @@ openRS_ uses a novel **time-sliced ATMA + OBD** approach:
 ### Build & Install
 
 ```bash
-git clone https://github.com/klexical/openRS.git
-cd openRS/"Android App"
+git clone https://github.com/klexical/openRS_.git
+cd "openRS_/android"
 ./gradlew assembleDebug
 adb install app/build/outputs/apk/debug/app-debug.apk
 ```
@@ -136,8 +136,11 @@ Open `android/browser-emulator/index.html` in any browser, or visit the live ver
 
 - Toggle between **📱 Phone** and **🚗 Android Auto** views
 - All gauges animate with simulated Focus RS data
-- Navigate all 6 tabs / AA screens including AWD torque bars, TPMS, temps
-- FPS counter shows live CAN frame rate (12 fps = 12 data packets/sec from WiCAN)
+- Navigate all **7 tabs** / AA screens — DASH, AWD, PERF, TEMPS, TUNE, TPMS, CTRL
+- **CTRL tab**: click drive mode buttons (N/S/T/D) or click the badge in the header to cycle modes
+- **ESC**: click the ESC label in the header or use the CTRL buttons (On/Sport/Off)
+- **Transport badge**: click WiFi / BLE badge in the header to toggle transports
+- FPS counter shows live CAN frame rate
 
 ---
 
@@ -276,7 +279,7 @@ Full PID documentation: [`android/docs/pid-reference.md`](android/docs/pid-refer
 - [x] Phase 2.5 — TPMS+, AFR, ETC/TIP/WGDC, VCT, multi-ECU (v2.5)
 - [x] Phase 2.6 — Nitrous Blue/Frost White theme, openRS_ branding, live browser emulator
 - [x] Phase 3 — Custom Activity Android Auto UI (pixel-perfect match to phone) + CTRL tab
-- [ ] Phase 4 — **openrs-fw v1.0** — custom WiCAN firmware with drive mode write, BLE transport, boot persistence, ESC/LC/ASS controls
+- [x] Phase 4 — **openrs-fw v1.0** — custom WiCAN firmware built and released ([v1.0.0](https://github.com/klexical/openRS_/releases/tag/v1.0.0)) with drive mode write, BLE transport, boot persistence, ESC/LC/ASS controls
 - [ ] Phase 5 — UDS Fast Rate Session (~100 Hz via DDDI 0x2C)
 - [ ] Phase 6 — DTC scanning (Service 0x19 + DTC database)
 - [ ] Phase 7 — Data logging + CSV export

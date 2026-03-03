@@ -5,19 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>openRS_ — Phone &amp; Android Auto Emulator</title>
   <style>
-    /* ── Reset & base ─────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      /* Ford theme colors */
-      --nitrous-blue: #00AEEF;   /* Ford Nitrous Blue  */
-      --frost-white:  #F5F6F4;   /* Ford Frost White   */
-
+      --nitrous-blue: #00AEEF;
+      --frost-white:  #F5F6F4;
       --bg:     #0a0a0a;
       --surf:   #1a1a1a;
       --brd:    #2a2a2a;
-      --txt:    #F5F6F4;         /* Frost White for all primary text */
+      --txt:    #F5F6F4;
       --dim:    #6a6e72;
-      --accent: #00AEEF;         /* Nitrous Blue for all accents     */
+      --accent: #00AEEF;
       --grn:    #00e676;
       --red:    #ff5252;
       --org:    #ff9800;
@@ -35,7 +32,7 @@
       align-items: center;
     }
 
-    /* ── Switcher ─────────────────────────────────────── */
+    /* ── Switcher ── */
     #switcher {
       width: 100%;
       max-width: 500px;
@@ -64,7 +61,7 @@
       color: #000;
     }
 
-    /* ── Phone frame ──────────────────────────────────── */
+    /* ── Phone frame ── */
     #phone {
       width: 100%;
       max-width: 420px;
@@ -75,7 +72,6 @@
     }
     #phone.hidden, #aa.hidden { display: none; }
 
-    /* Header */
     .ph-header {
       display: flex;
       align-items: center;
@@ -89,42 +85,57 @@
     .brand-open { color: #F5F6F4; }
     .brand-rs   { color: #00AEEF; }
     .brand-tail { color: #F5F6F4; }
+
     .ph-badge {
       padding: 2px 8px;
       border-radius: 3px;
       font-size: 11px;
       font-weight: 700;
       color: #000;
+      cursor: pointer;
+      user-select: none;
     }
     .ph-badge.sport  { background: var(--grn); }
     .ph-badge.track  { background: var(--org); }
     .ph-badge.drift  { background: var(--red); }
     .ph-badge.normal { background: var(--accent); }
     .ph-gear { font-size: 20px; font-weight: 700; color: var(--accent); }
-    .ph-esc  { font-size: 10px; color: var(--dim); }
-    .ph-conn { font-size: 10px; font-weight: 700; cursor: pointer; }
+    .ph-esc  { font-size: 10px; color: var(--dim); cursor: pointer; user-select: none; }
+    .ph-conn { font-size: 10px; font-weight: 700; }
     .ph-conn.on  { color: var(--grn); }
     .ph-conn.off { color: var(--red); }
 
-    /* Tabs */
+    .transport-badge {
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 9px;
+      font-weight: 700;
+      cursor: pointer;
+      user-select: none;
+    }
+    .transport-badge.wifi { background: rgba(0,174,239,0.2); color: var(--accent); border: 1px solid var(--accent); }
+    .transport-badge.ble  { background: rgba(0,230,118,0.15); color: var(--grn); border: 1px solid var(--grn); }
+
     .ph-tabs {
       display: flex;
       background: var(--surf);
       border-bottom: 1px solid var(--brd);
       height: 36px;
+      overflow-x: auto;
     }
     .ph-tab {
       flex: 1;
+      min-width: 48px;
       display: flex;
-      flex-direction: column;
       align-items: center;
       justify-content: center;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 600;
       color: var(--dim);
       cursor: pointer;
       position: relative;
-      gap: 2px;
+      white-space: nowrap;
+      padding: 0 4px;
     }
     .ph-tab.active { color: var(--accent); background: rgba(0,168,232,0.08); }
     .ph-tab.active::after {
@@ -139,12 +150,11 @@
       border-radius: 2px;
     }
 
-    /* Pages */
     .ph-content { flex: 1; overflow-y: auto; padding: 8px; background: var(--bg); }
     .ph-page { display: none; }
     .ph-page.active { display: block; }
 
-    /* ── Shared phone components ──────────────────────── */
+    /* ── Shared components ── */
     .gauge-row { display: flex; gap: 8px; margin-bottom: 8px; }
     .gauge-box {
       flex: 1;
@@ -177,87 +187,33 @@
     .c-val.gold { color: var(--gold); }
     .c-val.warm { color: var(--org); }
     .c-val.hot  { color: var(--red); }
+    .c-val.grn  { color: var(--grn); }
 
-    /* AWD */
     .sec-lbl { font-size: 11px; color: var(--dim); text-align: center; margin: 4px 0; }
     .axle-row { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 6px 0; }
-    .wheel-box {
-      width: 88px;
-      background: var(--surf);
-      border: 1px solid var(--brd);
-      border-radius: 6px;
-      padding: 6px;
-      text-align: center;
-    }
+    .wheel-box { width: 88px; background: var(--surf); border: 1px solid var(--brd); border-radius: 6px; padding: 6px; text-align: center; }
     .wb-lbl { font-size: 9px; color: var(--dim); }
     .wb-val { font-size: 16px; font-weight: 700; color: var(--txt); }
     .split-mid { text-align: center; }
     .split-val { font-size: 32px; font-weight: 700; color: var(--accent); }
     .split-sub { font-size: 9px; color: var(--dim); }
-    .torque-bar {
-      width: 100%; max-width: 300px; height: 18px;
-      background: var(--brd); border-radius: 9px;
-      display: flex; margin: 4px auto; overflow: hidden;
-    }
+    .torque-bar { width: 100%; max-width: 300px; height: 18px; background: var(--brd); border-radius: 9px; display: flex; margin: 4px auto; overflow: hidden; }
     .tb-l { height: 100%; background: var(--accent); border-radius: 9px 0 0 9px; }
     .tb-r { height: 100%; background: var(--grn);    border-radius: 0 9px 9px 0; }
 
-    /* Temps */
-    .temp-gauge {
-      flex: 1;
-      background: var(--surf);
-      border: 1px solid var(--brd);
-      border-radius: 8px;
-      padding: 12px;
-      text-align: center;
-    }
+    .temp-gauge { flex: 1; background: var(--surf); border: 1px solid var(--brd); border-radius: 8px; padding: 12px; text-align: center; }
     .tg-lbl  { font-size: 10px; color: var(--dim); letter-spacing: 1px; margin-bottom: 4px; }
     .tg-val  { font-size: 36px; font-weight: 700; color: var(--txt); line-height: 1; }
     .tg-unit { font-size: 10px; color: var(--dim); margin-top: 2px; }
 
-    /* RTR */
-    .rtr {
-      margin-top: 8px;
-      padding: 12px;
-      background: rgba(0,230,118,0.12);
-      border: 1px solid var(--grn);
-      border-radius: 8px;
-      text-align: center;
-      font-size: 20px;
-      font-weight: 700;
-      color: var(--grn);
-      letter-spacing: 2px;
-    }
+    .rtr { margin-top: 8px; padding: 12px; background: rgba(0,230,118,0.12); border: 1px solid var(--grn); border-radius: 8px; text-align: center; font-size: 20px; font-weight: 700; color: var(--grn); letter-spacing: 2px; }
 
-    /* PERF */
-    .reset-btn {
-      display: block;
-      width: 100%;
-      margin-top: 8px;
-      padding: 8px;
-      background: var(--surf);
-      border: 1px solid rgba(255,82,82,0.5);
-      border-radius: 6px;
-      color: var(--red);
-      font-family: var(--mono);
-      font-weight: 700;
-      font-size: 13px;
-      cursor: pointer;
-    }
+    .reset-btn { display: block; width: 100%; margin-top: 8px; padding: 8px; background: var(--surf); border: 1px solid rgba(255,82,82,0.5); border-radius: 6px; color: var(--red); font-family: var(--mono); font-weight: 700; font-size: 13px; cursor: pointer; }
 
-    /* TPMS */
     .tpms-hd  { font-size: 20px; font-weight: 700; color: var(--accent); text-align: center; margin-bottom: 4px; }
     .tpms-sub { font-size: 11px; color: var(--dim); text-align: center; margin-bottom: 12px; }
     .tire-row { display: flex; gap: 10px; justify-content: space-evenly; margin: 8px 0; }
-    .tire-box {
-      flex: 1;
-      max-width: 180px;
-      background: var(--surf);
-      border: 2px solid var(--brd);
-      border-radius: 8px;
-      padding: 12px;
-      text-align: center;
-    }
+    .tire-box { flex: 1; max-width: 180px; background: var(--surf); border: 2px solid var(--brd); border-radius: 8px; padding: 12px; text-align: center; }
     .tire-box.low { border-color: var(--red); }
     .tire-lbl  { font-size: 10px; color: var(--dim); letter-spacing: 1px; margin-bottom: 4px; }
     .tire-psi  { font-size: 38px; font-weight: 700; color: var(--txt); line-height: 1; }
@@ -265,7 +221,81 @@
     .tire-unit { font-size: 12px; color: var(--dim); }
     .tire-temp { font-size: 14px; color: var(--dim); margin-top: 4px; }
 
-    /* ── Android Auto frame ───────────────────────────── */
+    /* ── CTRL page ── */
+    .ctrl-section { margin-bottom: 10px; }
+    .ctrl-title { font-size: 10px; color: var(--dim); letter-spacing: 2px; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid var(--brd); }
+    .mode-btn-row { display: flex; gap: 6px; }
+    .mode-btn {
+      flex: 1;
+      padding: 10px 4px;
+      background: var(--surf);
+      border: 1px solid var(--brd);
+      border-radius: 6px;
+      color: var(--dim);
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s;
+      letter-spacing: 1px;
+    }
+    .mode-btn.active-n { background: rgba(0,174,239,0.2);  border-color: var(--accent); color: var(--accent); }
+    .mode-btn.active-s { background: rgba(0,230,118,0.15); border-color: var(--grn);    color: var(--grn); }
+    .mode-btn.active-t { background: rgba(255,152,0,0.15); border-color: var(--org);    color: var(--org); }
+    .mode-btn.active-d { background: rgba(255,82,82,0.15);  border-color: var(--red);   color: var(--red); }
+    .ctrl-row { display: flex; gap: 8px; align-items: center; margin: 5px 0; }
+    .ctrl-label { font-size: 11px; color: var(--dim); flex: 1; }
+    .ctrl-val   { font-size: 12px; font-weight: 700; color: var(--txt); }
+    .esc-btn-row { display: flex; gap: 6px; }
+    .esc-btn {
+      flex: 1;
+      padding: 8px;
+      background: var(--surf);
+      border: 1px solid var(--brd);
+      border-radius: 6px;
+      color: var(--dim);
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s;
+    }
+    .esc-btn.active-on    { background: rgba(0,230,118,0.15); border-color: var(--grn); color: var(--grn); }
+    .esc-btn.active-sport { background: rgba(255,152,0,0.15); border-color: var(--org); color: var(--org); }
+    .esc-btn.active-off   { background: rgba(255,82,82,0.15);  border-color: var(--red); color: var(--red); }
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--brd); }
+    .toggle-name { font-size: 12px; color: var(--txt); }
+    .toggle-sub  { font-size: 10px; color: var(--dim); margin-top: 2px; }
+    .toggle-pill {
+      width: 44px; height: 24px;
+      background: var(--brd);
+      border-radius: 12px;
+      position: relative;
+      cursor: pointer;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+    .toggle-pill.on { background: var(--accent); }
+    .toggle-pill::after {
+      content: '';
+      position: absolute;
+      top: 3px; left: 3px;
+      width: 18px; height: 18px;
+      background: #fff;
+      border-radius: 50%;
+      transition: left 0.2s;
+    }
+    .toggle-pill.on::after { left: 23px; }
+    .conn-info { background: var(--surf); border: 1px solid var(--brd); border-radius: 8px; padding: 10px; margin-top: 6px; }
+    .conn-row  { display: flex; justify-content: space-between; align-items: center; padding: 3px 0; }
+    .conn-key  { font-size: 10px; color: var(--dim); }
+    .conn-val  { font-size: 11px; font-weight: 700; color: var(--txt); }
+    .fw-note   { margin-top: 8px; padding: 8px; background: rgba(0,174,239,0.08); border: 1px solid rgba(0,174,239,0.3); border-radius: 6px; font-size: 10px; color: var(--dim); text-align: center; }
+    .fw-note span { color: var(--accent); }
+
+    /* ── Android Auto frame ── */
     #aa {
       width: 100%;
       max-width: 820px;
@@ -275,7 +305,6 @@
       background: #111;
     }
 
-    /* AA header bar — 3-col grid: brand | mode·gear·esc | conn */
     .aa-header {
       display: grid;
       grid-template-columns: 1fr auto 1fr;
@@ -284,43 +313,29 @@
       background: var(--surf);
       border-bottom: 2px solid var(--brd);
     }
-    .aa-header-left  { display: flex; align-items: center; gap: 10px; justify-content: flex-start; }
-    .aa-header-center{ display: flex; align-items: center; gap: 10px; justify-content: center; }
-    .aa-header-right { display: flex; align-items: center; gap: 10px; justify-content: flex-end; }
+    .aa-header-left   { display: flex; align-items: center; gap: 8px; justify-content: flex-start; }
+    .aa-header-center { display: flex; align-items: center; gap: 10px; justify-content: center; }
+    .aa-header-right  { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
     .aa-title-txt { font-size: 18px; font-weight: 700; color: var(--txt); letter-spacing: 1px; }
     .aa-badge {
       padding: 3px 10px; border-radius: 4px;
       font-size: 12px; font-weight: 700; color: #000; letter-spacing: 1px;
+      cursor: pointer; user-select: none;
     }
     .aa-badge.sport  { background: var(--grn); }
     .aa-badge.track  { background: var(--org); }
     .aa-badge.drift  { background: var(--red); }
     .aa-badge.normal { background: var(--accent); }
     .aa-gear { font-size: 22px; font-weight: 700; color: var(--accent); }
-    .aa-esc  { font-size: 11px; color: var(--dim); }
+    .aa-esc  { font-size: 11px; color: var(--dim); cursor: pointer; user-select: none; }
     .aa-conn { font-size: 12px; font-weight: 700; }
     .aa-conn.on  { color: var(--grn); }
     .aa-conn.off { color: var(--red); }
     .aa-fps-note { font-size: 10px; color: var(--dim); }
 
-    /* AA content */
-    .aa-body {
-      flex: 1;
-      overflow-y: auto;
-      padding: 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
+    .aa-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 
-    /* AA strip */
-    .aa-strip {
-      display: flex;
-      gap: 10px;
-      padding: 12px 18px;
-      background: var(--surf);
-      border-top: 2px solid var(--brd);
-    }
+    .aa-strip { display: flex; gap: 10px; padding: 12px 18px; background: var(--surf); border-top: 2px solid var(--brd); }
     .aa-strip button {
       flex: 1;
       padding: 12px;
@@ -336,77 +351,114 @@
       transition: background 0.15s;
     }
     .aa-strip button:hover, .aa-strip button.active-nav { background: var(--accent); color: #000; }
-    .aa-back-bar {
-      padding: 8px 18px;
-      background: var(--surf);
-      border-bottom: 1px solid var(--brd);
-    }
-    .aa-back-bar button {
-      padding: 7px 14px;
-      background: transparent;
-      border: 1px solid var(--dim);
-      color: var(--txt);
-      font-family: var(--mono);
-      font-size: 13px;
-      border-radius: 6px;
-      cursor: pointer;
-    }
+    .aa-back-bar { padding: 8px 18px; background: var(--surf); border-bottom: 1px solid var(--brd); }
+    .aa-back-bar button { padding: 7px 14px; background: transparent; border: 1px solid var(--dim); color: var(--txt); font-family: var(--mono); font-size: 13px; border-radius: 6px; cursor: pointer; }
 
-    /* AA menu list */
     .aa-menu-list { list-style: none; }
-    .aa-menu-list li {
-      padding: 16px;
-      border-bottom: 1px solid var(--brd);
-      cursor: pointer;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
+    .aa-menu-list li { padding: 16px; border-bottom: 1px solid var(--brd); cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
     .aa-menu-list li:hover { background: var(--surf); }
     .aa-menu-tit  { font-size: 16px; font-weight: 700; color: var(--accent); letter-spacing: 1px; }
     .aa-menu-desc { font-size: 12px; color: var(--dim); }
 
-    /* AA gauge grid (landscape 3-col) */
     .aa-gauge-row { display: flex; gap: 12px; }
     .aa-gauge-row .gauge-box .g-val { font-size: 38px; }
     .aa-gauge-row .gauge-box.lg .g-val { font-size: 52px; }
 
-    /* AA info rows */
     .aa-info-row { display: flex; gap: 10px; }
     .aa-info-row .cell .c-lbl { font-size: 10px; }
     .aa-info-row .cell .c-val { font-size: 14px; }
 
-    /* AA axle layout */
     .aa-axle { display: flex; align-items: center; gap: 20px; justify-content: center; margin: 6px 0; }
     .aa-axle .wheel-box { width: 110px; }
     .aa-axle .wb-val { font-size: 20px; }
     .aa-axle .split-val { font-size: 40px; }
 
-    /* AA temp row */
     .aa-temp-row { display: flex; gap: 12px; }
     .aa-temp-row .temp-gauge .tg-val { font-size: 42px; }
 
-    /* AA tire row */
     .aa-tire-row { display: flex; gap: 14px; justify-content: space-evenly; }
     .aa-tire-row .tire-box { max-width: none; flex: 1; }
     .aa-tire-row .tire-psi { font-size: 44px; }
+
+    /* AA ctrl grid */
+    .aa-ctrl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .aa-ctrl-panel { background: var(--surf); border: 1px solid var(--brd); border-radius: 8px; padding: 14px; }
+    .aa-ctrl-panel .ctrl-title { margin-bottom: 10px; }
+    .aa-mode-btn-row { display: flex; gap: 8px; }
+    .aa-mode-btn {
+      flex: 1; padding: 14px 4px;
+      background: var(--brd);
+      border: 1px solid var(--brd);
+      border-radius: 6px;
+      color: var(--dim);
+      font-family: var(--mono);
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s;
+      letter-spacing: 1px;
+    }
+    .aa-mode-btn.active-n { background: rgba(0,174,239,0.2);  border-color: var(--accent); color: var(--accent); }
+    .aa-mode-btn.active-s { background: rgba(0,230,118,0.15); border-color: var(--grn);    color: var(--grn); }
+    .aa-mode-btn.active-t { background: rgba(255,152,0,0.15); border-color: var(--org);    color: var(--org); }
+    .aa-mode-btn.active-d { background: rgba(255,82,82,0.15);  border-color: var(--red);   color: var(--red); }
+    .aa-esc-btn-row { display: flex; gap: 8px; }
+    .aa-esc-btn {
+      flex: 1; padding: 12px;
+      background: var(--brd);
+      border: 1px solid var(--brd);
+      border-radius: 6px;
+      color: var(--dim);
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s;
+    }
+    .aa-esc-btn.active-on    { background: rgba(0,230,118,0.15); border-color: var(--grn); color: var(--grn); }
+    .aa-esc-btn.active-sport { background: rgba(255,152,0,0.15); border-color: var(--org); color: var(--org); }
+    .aa-esc-btn.active-off   { background: rgba(255,82,82,0.15);  border-color: var(--red); color: var(--red); }
+    .aa-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--brd); }
+    .aa-toggle-name { font-size: 13px; color: var(--txt); }
+    .aa-toggle-pill {
+      width: 50px; height: 28px;
+      background: var(--brd);
+      border-radius: 14px;
+      position: relative;
+      cursor: pointer;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+    .aa-toggle-pill.on { background: var(--accent); }
+    .aa-toggle-pill::after {
+      content: '';
+      position: absolute;
+      top: 4px; left: 4px;
+      width: 20px; height: 20px;
+      background: #fff;
+      border-radius: 50%;
+      transition: left 0.2s;
+    }
+    .aa-toggle-pill.on::after { left: 26px; }
   </style>
 </head>
 <body>
 
-  <!-- Switcher -->
   <div id="switcher">
     <button id="btn-phone" class="active">📱 PHONE</button>
     <button id="btn-aa">🚗 ANDROID AUTO</button>
   </div>
 
-  <!-- ════════ PHONE UI ════════ -->
+  <!-- ════ PHONE UI ════ -->
   <div id="phone">
     <div class="ph-header">
       <span class="ph-brand"><span class="brand-open">open</span><span class="brand-rs">RS</span><span class="brand-tail">_</span></span>
       <span class="ph-badge sport" id="h-mode">SPORT</span>
       <span class="ph-gear" id="h-gear">3</span>
-      <span class="ph-esc"  id="h-esc">ESC On</span>
+      <span class="ph-esc" id="h-esc">ESC On</span>
+      <span class="transport-badge wifi" id="h-transport">WiFi</span>
       <span class="ph-conn on" id="h-conn">● CONNECTED</span>
     </div>
     <div class="ph-tabs" id="ph-tabs">
@@ -416,6 +468,7 @@
       <div class="ph-tab" data-tab="3">TEMPS</div>
       <div class="ph-tab" data-tab="4">TUNE</div>
       <div class="ph-tab" data-tab="5">TPMS</div>
+      <div class="ph-tab" data-tab="6">CTRL</div>
     </div>
     <div class="ph-content">
       <div id="ph-dash"  class="ph-page active"></div>
@@ -424,23 +477,25 @@
       <div id="ph-temps" class="ph-page"></div>
       <div id="ph-tune"  class="ph-page"></div>
       <div id="ph-tpms"  class="ph-page"></div>
+      <div id="ph-ctrl"  class="ph-page"></div>
     </div>
   </div>
 
-  <!-- ════════ ANDROID AUTO UI ════════ -->
+  <!-- ════ ANDROID AUTO UI ════ -->
   <div id="aa" class="hidden">
     <div class="aa-header">
       <div class="aa-header-left">
-        <span class="aa-title-txt" id="aa-title">RS DASH</span>
+        <span class="aa-title-txt" id="aa-title">openRS_</span>
       </div>
       <div class="aa-header-center">
         <span class="aa-badge sport" id="aa-mode-badge">SPORT</span>
         <span class="aa-gear" id="aa-gear">3</span>
-        <span class="aa-esc"  id="aa-esc">ESC On</span>
+        <span class="aa-esc" id="aa-esc">ESC On</span>
       </div>
       <div class="aa-header-right">
+        <span class="transport-badge wifi" id="aa-transport">WiFi</span>
         <span class="aa-conn on" id="aa-conn-badge">● CONNECTED</span>
-        <span class="aa-fps-note" id="aa-fps">12 fps — CAN frames/s</span>
+        <span class="aa-fps-note" id="aa-fps">12 fps</span>
       </div>
     </div>
     <div class="aa-back-bar" id="aa-back-bar" style="display:none">
@@ -451,12 +506,13 @@
       <button data-screen="awd">AWD</button>
       <button data-screen="perf">PERF</button>
       <button data-screen="temps">TEMPS</button>
+      <button data-screen="ctrl">CTRL ⚡</button>
       <button data-screen="menu">MENU ☰</button>
     </div>
   </div>
 
 <script>
-/* ── Helpers ─────────────────────────────── */
+/* ── Helpers ── */
 const toF  = c => Math.round(c * 9 / 5 + 32);
 const f1   = n => n.toFixed(1);
 const f2   = n => n.toFixed(2);
@@ -464,7 +520,20 @@ const f3   = n => n.toFixed(3);
 const ri   = n => Math.round(n);
 const pct  = n => ri(n) + '%';
 
-/* ── Demo state ───────────────────────────── */
+/* ── Mutable UI state (interactive) ── */
+let uiState = {
+  driveMode: 'Sport',
+  escStatus: 'ESC On',
+  transport: 'WiFi',
+  launchControl: false,
+  assKill: false,
+  bootMode: 'Sport',
+};
+
+const DRIVE_MODES = ['Normal','Sport','Track','Drift'];
+const ESC_MODES   = ['ESC On','ESC Sport','ESC Off'];
+
+/* ── Demo state ── */
 function demo(t) {
   const rpm       = 2800 + Math.sin(t * 0.5) * 800;
   const boostPsi  = (Math.sin(t * 0.3) + 1) * 11.6;
@@ -472,7 +541,6 @@ function demo(t) {
   const speedMph  = speedKph * 0.621371;
   const thr       = 35 + Math.sin(t * 0.4) * 15;
   const brk       = 2 + Math.sin(t) * 0.5;
-  const gear      = 3;
   const rearL     = 40 + Math.sin(t * 0.35) * 25;
   const rearR     = 35 + Math.sin(t * 0.4)  * 20;
   const total     = rearL + rearR;
@@ -489,7 +557,7 @@ function demo(t) {
   const wRR = speedKph * 1.01 + Math.cos(t * 0.95) * 1;
   return {
     rpm, boostPsi, speedKph, speedMph,
-    gear, gearDisplay: String(gear),
+    gear: 3, gearDisplay: '3',
     throttlePct: thr, brakePressure: brk,
     frontRearSplit: (100 - ri(rearPct)) + '/' + ri(rearPct),
     torqueAtTrans: 220,
@@ -510,8 +578,7 @@ function demo(t) {
     awdLeftTorque: ri(rearL), awdRightTorque: ri(rearR),
     totalRearTorque: total, awdMaxTorque: 350,
     rduTempC: rdu, ptuTempC: ptu,
-    rearLeftRightBias: total > 0
-      ? ri(rearL/total*100)+'/'+ri(rearR/total*100) : '50/50',
+    rearLeftRightBias: total > 0 ? ri(rearL/total*100)+'/'+ri(rearR/total*100) : '50/50',
     peakLateralG: 0.72, peakLongitudinalG: 0.55,
     peakBoostPsi: 18.2, peakRpm: 6200,
     chargeAirTempC: 38, catalyticTempC: 420,
@@ -535,11 +602,17 @@ function demo(t) {
     maxTirePressSpread: 2,
     hasTpmsData: true, anyTireLow: false,
     isReadyToRace: oil >= 65 && rdu >= 20 && ptu >= 50,
-    isConnected: true, driveMode: 'Sport', escStatus: 'ESC On'
+    isConnected: true,
+    driveMode: uiState.driveMode,
+    escStatus: uiState.escStatus,
+    transport: uiState.transport,
+    launchControl: uiState.launchControl,
+    assKill: uiState.assKill,
+    bootMode: uiState.bootMode,
   };
 }
 
-/* ── HTML builders ────────────────────────── */
+/* ── HTML builders ── */
 function gaugeBox(lbl, val, unit, large = false) {
   return `<div class="gauge-box${large?' lg':''}">
     <div class="g-lbl">${lbl}</div>
@@ -564,7 +637,7 @@ function wheelBox(lbl, val) {
   return `<div class="wheel-box"><div class="wb-lbl">${lbl}</div><div class="wb-val">${val}</div></div>`;
 }
 
-/* ── Phone pages ──────────────────────────── */
+/* ── Phone page builders ── */
 function dashHtml(v) {
   return `
     <div class="gauge-row">
@@ -707,7 +780,60 @@ function tpmsHtml(v) {
     ${infoRow([['SPREAD', f1(v.maxTirePressSpread)+' PSI'], ...( v.oilLifePct>=0 ? [['OIL LIFE', pct(v.oilLifePct)]] : [] )])}`;
 }
 
-/* ── AA pages (same components, landscape layout) ── */
+function modeBtnCls(mode, target) {
+  if (mode !== target) return '';
+  return {Normal:'active-n', Sport:'active-s', Track:'active-t', Drift:'active-d'}[target] || '';
+}
+function escBtnCls(esc, target) {
+  if (esc !== target) return '';
+  return {'ESC On':'active-on','ESC Sport':'active-sport','ESC Off':'active-off'}[target] || '';
+}
+
+function ctrlHtml(v) {
+  return `
+    <div class="ctrl-section">
+      <div class="ctrl-title">DRIVE MODE</div>
+      <div class="mode-btn-row">
+        <button class="mode-btn ${modeBtnCls(v.driveMode,'Normal')}"  data-mode="Normal">N</button>
+        <button class="mode-btn ${modeBtnCls(v.driveMode,'Sport')}"   data-mode="Sport">S</button>
+        <button class="mode-btn ${modeBtnCls(v.driveMode,'Track')}"   data-mode="Track">T</button>
+        <button class="mode-btn ${modeBtnCls(v.driveMode,'Drift')}"   data-mode="Drift">D</button>
+      </div>
+      <div class="ctrl-row" style="margin-top:6px">
+        <span class="ctrl-label">BOOT MODE (NVS)</span>
+        <span class="ctrl-val">${v.bootMode}</span>
+      </div>
+    </div>
+    <div class="ctrl-section">
+      <div class="ctrl-title">ESC</div>
+      <div class="esc-btn-row">
+        <button class="esc-btn ${escBtnCls(v.escStatus,'ESC On')}"    data-esc="ESC On">ON</button>
+        <button class="esc-btn ${escBtnCls(v.escStatus,'ESC Sport')}" data-esc="ESC Sport">SPORT</button>
+        <button class="esc-btn ${escBtnCls(v.escStatus,'ESC Off')}"   data-esc="ESC Off">OFF</button>
+      </div>
+    </div>
+    <div class="ctrl-section">
+      <div class="ctrl-title">FEATURES</div>
+      <div class="toggle-row" data-toggle="launchControl">
+        <div><div class="toggle-name">Launch Control</div><div class="toggle-sub">Arms LC sequence — foot on clutch + WOT</div></div>
+        <div class="toggle-pill ${v.launchControl?'on':''}" data-toggle="launchControl"></div>
+      </div>
+      <div class="toggle-row" data-toggle="assKill">
+        <div><div class="toggle-name">Auto Start/Stop Kill</div><div class="toggle-sub">Prevents engine from stopping at idle</div></div>
+        <div class="toggle-pill ${v.assKill?'on':''}" data-toggle="assKill"></div>
+      </div>
+    </div>
+    <div class="conn-info">
+      <div class="conn-row"><span class="conn-key">TRANSPORT</span><span class="conn-val" style="color:var(--accent)">${v.transport}</span></div>
+      <div class="conn-row"><span class="conn-key">WiCAN IP</span><span class="conn-val">192.168.80.1</span></div>
+      <div class="conn-row"><span class="conn-key">PORT</span><span class="conn-val">3333</span></div>
+      <div class="conn-row"><span class="conn-key">PROTOCOL</span><span class="conn-val">ELM327 TCP</span></div>
+      <div class="conn-row"><span class="conn-key">CAN SPEED</span><span class="conn-val">500 kbps</span></div>
+    </div>
+    <div class="fw-note">Drive mode write &amp; feature controls require <span>openrs-fw</span> — stock firmware is read-only</div>`;
+}
+
+/* ── AA page builders ── */
 function aaDash(v) {
   return `
     <div class="aa-gauge-row">
@@ -875,10 +1001,57 @@ function aaTpms(v) {
       <div style="flex:1;text-align:center;font-size:11px;color:var(--dim)">FRONT ←→</div>
       <div style="flex:1;text-align:center;font-size:11px;color:var(--dim)">→ REAR</div>
     </div>
-    <div style="height:8px"></div>
-    <div class="aa-info-row">
+    <div class="aa-info-row" style="margin-top:8px">
       ${cell('SPREAD', f1(v.maxTirePressSpread)+' PSI')}
       ${v.oilLifePct>=0 ? cell('OIL LIFE', pct(v.oilLifePct)) : ''}
+    </div>`;
+}
+
+function aaCtrl(v) {
+  return `
+    <div class="aa-ctrl-grid">
+      <div class="aa-ctrl-panel">
+        <div class="ctrl-title">DRIVE MODE</div>
+        <div class="aa-mode-btn-row">
+          <button class="aa-mode-btn ${modeBtnCls(v.driveMode,'Normal')}"  data-mode="Normal">N</button>
+          <button class="aa-mode-btn ${modeBtnCls(v.driveMode,'Sport')}"   data-mode="Sport">S</button>
+          <button class="aa-mode-btn ${modeBtnCls(v.driveMode,'Track')}"   data-mode="Track">T</button>
+          <button class="aa-mode-btn ${modeBtnCls(v.driveMode,'Drift')}"   data-mode="Drift">D</button>
+        </div>
+        <div class="ctrl-row" style="margin-top:8px">
+          <span class="ctrl-label" style="font-size:12px">BOOT MODE (NVS)</span>
+          <span class="ctrl-val">${v.bootMode}</span>
+        </div>
+      </div>
+      <div class="aa-ctrl-panel">
+        <div class="ctrl-title">ESC</div>
+        <div class="aa-esc-btn-row">
+          <button class="aa-esc-btn ${escBtnCls(v.escStatus,'ESC On')}"    data-esc="ESC On">ON</button>
+          <button class="aa-esc-btn ${escBtnCls(v.escStatus,'ESC Sport')}" data-esc="ESC Sport">SPORT</button>
+          <button class="aa-esc-btn ${escBtnCls(v.escStatus,'ESC Off')}"   data-esc="ESC Off">OFF</button>
+        </div>
+      </div>
+    </div>
+    <div class="aa-ctrl-grid" style="margin-top:12px">
+      <div class="aa-ctrl-panel">
+        <div class="ctrl-title">FEATURES</div>
+        <div class="aa-toggle-row" data-toggle="launchControl">
+          <span class="aa-toggle-name">Launch Control</span>
+          <div class="aa-toggle-pill ${v.launchControl?'on':''}" data-toggle="launchControl"></div>
+        </div>
+        <div class="aa-toggle-row" data-toggle="assKill">
+          <span class="aa-toggle-name">Auto Start/Stop Kill</span>
+          <div class="aa-toggle-pill ${v.assKill?'on':''}" data-toggle="assKill"></div>
+        </div>
+      </div>
+      <div class="aa-ctrl-panel">
+        <div class="ctrl-title">CONNECTION</div>
+        <div class="conn-row"><span class="conn-key">TRANSPORT</span><span class="conn-val" style="color:var(--accent)">${v.transport}</span></div>
+        <div class="conn-row"><span class="conn-key">WiCAN IP</span><span class="conn-val">192.168.80.1</span></div>
+        <div class="conn-row"><span class="conn-key">PORT</span><span class="conn-val">3333</span></div>
+        <div class="conn-row"><span class="conn-key">CAN</span><span class="conn-val">500 kbps</span></div>
+        <div class="fw-note" style="margin-top:8px">Write controls require <span>openrs-fw</span></div>
+      </div>
     </div>`;
 }
 
@@ -890,103 +1063,144 @@ function aaMenu() {
     ['temps', 'TEMPS', 'Oil, coolant, RDU, PTU, charge, catalytic'],
     ['tune',  'TUNE',  'AFR, timing, fuel trims, VCT, OBD'],
     ['tpms',  'TPMS',  'Tire pressure & temperature, 4 corners'],
+    ['ctrl',  'CTRL ⚡','Drive mode, ESC, Launch Control, ASS kill, connection'],
   ];
   return `<ul class="aa-menu-list">${items.map(([k,t,d])=>
     `<li data-screen="${k}"><span class="aa-menu-tit">${t}</span><span class="aa-menu-desc">${d}</span></li>`
   ).join('')}</ul>`;
 }
 
-/* ── State & render loop ──────────────────── */
+/* ── State & render ── */
 let vs = demo(0);
 let activePhoneTab = 0;
 let aaScreen = 'dash';
 
-function renderPhone() {
+function updateHeaders() {
   const v = vs;
-  // header
-  const modeLabel = {Sport:'SPORT', Track:'TRACK', Drift:'DRIFT'}[v.driveMode] || 'NORMAL';
-  const modeCls   = {Sport:'sport', Track:'track',  Drift:'drift'}[v.driveMode] || 'normal';
+  const modeLabel = {Normal:'NORMAL',Sport:'SPORT',Track:'TRACK',Drift:'DRIFT'}[v.driveMode] || 'NORMAL';
+  const modeCls   = {Normal:'normal',Sport:'sport',Track:'track',Drift:'drift'}[v.driveMode]  || 'normal';
+  const trCls     = v.transport === 'BLE' ? 'ble' : 'wifi';
+
+  // Phone header
   document.getElementById('h-mode').textContent = modeLabel;
   document.getElementById('h-mode').className   = 'ph-badge ' + modeCls;
   document.getElementById('h-gear').textContent = v.gearDisplay;
   document.getElementById('h-esc' ).textContent = v.escStatus;
+  document.getElementById('h-transport').textContent = v.transport;
+  document.getElementById('h-transport').className   = 'transport-badge ' + trCls;
   document.getElementById('h-conn').textContent = v.isConnected ? '● CONNECTED' : '● OFFLINE';
   document.getElementById('h-conn').className   = 'ph-conn ' + (v.isConnected ? 'on' : 'off');
-  // pages
-  document.getElementById('ph-dash' ).innerHTML = dashHtml(v);
-  document.getElementById('ph-awd'  ).innerHTML = awdHtml(v);
-  document.getElementById('ph-perf' ).innerHTML = perfHtml(v);
-  document.getElementById('ph-temps').innerHTML = tempsHtml(v);
-  document.getElementById('ph-tune' ).innerHTML = tuneHtml(v);
-  document.getElementById('ph-tpms' ).innerHTML = tpmsHtml(v);
-}
 
-function renderAA() {
-  const v = vs;
-  const titleEl   = document.getElementById('aa-title');
-  const backBar   = document.getElementById('aa-back-bar');
-  const bodyEl    = document.getElementById('aa-body');
-  const stripEl   = document.getElementById('aa-strip');
-
-  // header
-  const modeLabel = {Sport:'SPORT', Track:'TRACK', Drift:'DRIFT'}[v.driveMode] || 'NORMAL';
-  const modeCls   = {Sport:'sport', Track:'track',  Drift:'drift'}[v.driveMode] || 'normal';
+  // AA header
   document.getElementById('aa-mode-badge').textContent = modeLabel;
   document.getElementById('aa-mode-badge').className   = 'aa-badge ' + modeCls;
   document.getElementById('aa-gear').textContent = v.gearDisplay;
   document.getElementById('aa-esc' ).textContent = v.escStatus;
+  document.getElementById('aa-transport').textContent = v.transport;
+  document.getElementById('aa-transport').className   = 'transport-badge ' + trCls;
   const connEl = document.getElementById('aa-conn-badge');
   connEl.textContent = v.isConnected ? '● CONNECTED' : '○ OFFLINE';
   connEl.className   = 'aa-conn ' + (v.isConnected ? 'on' : 'off');
-  document.getElementById('aa-fps').textContent = ri(v.framesPerSecond) + ' fps — CAN frames/s';
+  document.getElementById('aa-fps').textContent = Math.round(v.framesPerSecond) + ' fps';
+}
+
+function renderPhone() {
+  updateHeaders();
+  document.getElementById('ph-dash' ).innerHTML = dashHtml(vs);
+  document.getElementById('ph-awd'  ).innerHTML = awdHtml(vs);
+  document.getElementById('ph-perf' ).innerHTML = perfHtml(vs);
+  document.getElementById('ph-temps').innerHTML = tempsHtml(vs);
+  document.getElementById('ph-tune' ).innerHTML = tuneHtml(vs);
+  document.getElementById('ph-tpms' ).innerHTML = tpmsHtml(vs);
+  document.getElementById('ph-ctrl' ).innerHTML = ctrlHtml(vs);
+}
+
+function renderAA() {
+  updateHeaders();
+  const bodyEl  = document.getElementById('aa-body');
+  const backBar = document.getElementById('aa-back-bar');
+  const stripEl = document.getElementById('aa-strip');
+  const titleEl = document.getElementById('aa-title');
 
   const isMenu = aaScreen === 'menu';
-  backBar.style.display  = isMenu || aaScreen !== 'dash' ? 'block' : 'none';
-  stripEl.style.display  = isMenu ? 'none' : 'flex';
+  backBar.style.display = (isMenu || aaScreen !== 'dash') ? 'block' : 'none';
+  stripEl.style.display = isMenu ? 'none' : 'flex';
 
   const brandHtml = '<span class="brand-open">open</span><span class="brand-rs">RS</span><span class="brand-tail">_</span>';
   const screenMap = {
-    dash:  [brandHtml,                                    aaDash(v)],
-    awd:   ['AWD — GKN Twinster',                         aaAwd(v)],
-    perf:  ['PERF',                                       aaPerf(v)],
-    temps: ['TEMPS',                                      aaTemps(v)],
-    tune:  ['TUNE — OBD',                                 aaTune(v)],
-    tpms:  ['TPMS+',                                      aaTpms(v)],
+    dash:  [brandHtml,                   aaDash(vs)],
+    awd:   ['AWD — GKN Twinster',        aaAwd(vs)],
+    perf:  ['PERF',                      aaPerf(vs)],
+    temps: ['TEMPS',                     aaTemps(vs)],
+    tune:  ['TUNE — OBD',               aaTune(vs)],
+    tpms:  ['TPMS+',                     aaTpms(vs)],
+    ctrl:  ['CTRL ⚡',                    aaCtrl(vs)],
     menu:  [brandHtml + ' <span style="color:var(--dim);font-size:14px">MENU</span>', aaMenu()],
   };
 
   const [title, html] = screenMap[aaScreen] || screenMap.dash;
   titleEl.innerHTML = title;
-  bodyEl.innerHTML = html;
+  bodyEl.innerHTML  = html;
 
-  // highlight active strip button
   stripEl.querySelectorAll('button').forEach(btn => {
     btn.classList.toggle('active-nav', btn.dataset.screen === aaScreen);
   });
 
-  // menu list click
   if (aaScreen === 'menu') {
     bodyEl.querySelectorAll('li').forEach(li => {
       li.addEventListener('click', () => { aaScreen = li.dataset.screen; renderAA(); });
     });
   }
 
-  // reset peaks (perf)
   const rBtn = document.getElementById('aa-reset-btn');
   if (rBtn) rBtn.addEventListener('click', () => {
     vs = {...vs, peakLateralG:0, peakLongitudinalG:0, peakBoostPsi:0, peakRpm:0};
     renderAA();
   });
+
+  // CTRL interactivity (AA)
+  bodyEl.querySelectorAll('[data-mode]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      uiState.driveMode = btn.dataset.mode;
+      uiState.bootMode  = btn.dataset.mode;
+      vs = {...vs, driveMode: uiState.driveMode, bootMode: uiState.bootMode};
+      renderAA();
+    });
+  });
+  bodyEl.querySelectorAll('[data-esc]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      uiState.escStatus = btn.dataset.esc;
+      vs = {...vs, escStatus: uiState.escStatus};
+      renderAA();
+    });
+  });
+  bodyEl.querySelectorAll('.aa-toggle-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      const key = pill.dataset.toggle;
+      uiState[key] = !uiState[key];
+      vs = {...vs, [key]: uiState[key]};
+      renderAA();
+    });
+  });
 }
 
-/* ── Intervals & events ───────────────────── */
+/* ── Animation loop ── */
 setInterval(() => {
-  vs = demo(Date.now() / 1000);
+  const base = demo(Date.now() / 1000);
+  vs = {
+    ...base,
+    driveMode: uiState.driveMode,
+    escStatus: uiState.escStatus,
+    transport: uiState.transport,
+    launchControl: uiState.launchControl,
+    assKill: uiState.assKill,
+    bootMode: uiState.bootMode,
+  };
   renderPhone();
   if (!document.getElementById('aa').classList.contains('hidden')) renderAA();
 }, 200);
 
-// Phone tabs
+/* ── Phone tab navigation ── */
 document.getElementById('ph-tabs').addEventListener('click', e => {
   const tab = e.target.closest('.ph-tab');
   if (!tab) return;
@@ -995,15 +1209,77 @@ document.getElementById('ph-tabs').addEventListener('click', e => {
   document.querySelectorAll('.ph-page').forEach((p, i) => p.classList.toggle('active', i === activePhoneTab));
 });
 
-// Phone reset peaks
+/* ── Phone content interactivity (CTRL + peaks) ── */
 document.querySelector('.ph-content').addEventListener('click', e => {
   if (e.target.id === 'reset-peaks-btn') {
     vs = {...vs, peakLateralG:0, peakLongitudinalG:0, peakBoostPsi:0, peakRpm:0};
-    renderPhone();
+    renderPhone(); return;
+  }
+  const modeBtn = e.target.closest('[data-mode]');
+  if (modeBtn && e.target.closest('#ph-ctrl')) {
+    uiState.driveMode = modeBtn.dataset.mode;
+    uiState.bootMode  = modeBtn.dataset.mode;
+    vs = {...vs, driveMode: uiState.driveMode, bootMode: uiState.bootMode};
+    renderPhone(); return;
+  }
+  const escBtn = e.target.closest('[data-esc]');
+  if (escBtn && e.target.closest('#ph-ctrl')) {
+    uiState.escStatus = escBtn.dataset.esc;
+    vs = {...vs, escStatus: uiState.escStatus};
+    renderPhone(); return;
+  }
+  const pill = e.target.closest('.toggle-pill');
+  if (pill) {
+    const key = pill.dataset.toggle;
+    uiState[key] = !uiState[key];
+    vs = {...vs, [key]: uiState[key]};
+    renderPhone(); return;
   }
 });
 
-// AA strip
+/* ── Header interactive: mode badge cycles drive mode ── */
+document.getElementById('h-mode').addEventListener('click', () => {
+  const idx = DRIVE_MODES.indexOf(uiState.driveMode);
+  uiState.driveMode = DRIVE_MODES[(idx + 1) % DRIVE_MODES.length];
+  uiState.bootMode  = uiState.driveMode;
+  vs = {...vs, driveMode: uiState.driveMode, bootMode: uiState.bootMode};
+  renderPhone();
+});
+document.getElementById('aa-mode-badge').addEventListener('click', () => {
+  const idx = DRIVE_MODES.indexOf(uiState.driveMode);
+  uiState.driveMode = DRIVE_MODES[(idx + 1) % DRIVE_MODES.length];
+  uiState.bootMode  = uiState.driveMode;
+  vs = {...vs, driveMode: uiState.driveMode, bootMode: uiState.bootMode};
+  renderAA();
+});
+
+/* ── Header interactive: ESC label cycles ESC mode ── */
+document.getElementById('h-esc').addEventListener('click', () => {
+  const idx = ESC_MODES.indexOf(uiState.escStatus);
+  uiState.escStatus = ESC_MODES[(idx + 1) % ESC_MODES.length];
+  vs = {...vs, escStatus: uiState.escStatus};
+  renderPhone();
+});
+document.getElementById('aa-esc').addEventListener('click', () => {
+  const idx = ESC_MODES.indexOf(uiState.escStatus);
+  uiState.escStatus = ESC_MODES[(idx + 1) % ESC_MODES.length];
+  vs = {...vs, escStatus: uiState.escStatus};
+  renderAA();
+});
+
+/* ── Transport badge cycles WiFi ↔ BLE ── */
+document.getElementById('h-transport').addEventListener('click', () => {
+  uiState.transport = uiState.transport === 'WiFi' ? 'BLE' : 'WiFi';
+  vs = {...vs, transport: uiState.transport};
+  renderPhone();
+});
+document.getElementById('aa-transport').addEventListener('click', () => {
+  uiState.transport = uiState.transport === 'WiFi' ? 'BLE' : 'WiFi';
+  vs = {...vs, transport: uiState.transport};
+  renderAA();
+});
+
+/* ── AA strip ── */
 document.getElementById('aa-strip').addEventListener('click', e => {
   const btn = e.target.closest('button');
   if (!btn) return;
@@ -1011,13 +1287,13 @@ document.getElementById('aa-strip').addEventListener('click', e => {
   renderAA();
 });
 
-// AA back
+/* ── AA back ── */
 document.getElementById('aa-back-btn').addEventListener('click', () => {
   aaScreen = 'dash';
   renderAA();
 });
 
-// Mode switcher
+/* ── Phone ↔ AA switcher ── */
 document.getElementById('btn-phone').addEventListener('click', () => {
   document.getElementById('btn-phone').classList.add('active');
   document.getElementById('btn-aa').classList.remove('active');
@@ -1033,7 +1309,7 @@ document.getElementById('btn-aa').addEventListener('click', () => {
   renderAA();
 });
 
-// Initial render
+/* ── Initial render ── */
 renderPhone();
 </script>
 </body>
