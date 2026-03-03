@@ -5,7 +5,7 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
-## [v1.1] — 2026-03-03
+## [v1.0.1] — 2026-03-03
 
 ### Added
 - **Smart auto-connect** — service auto-starts on launch when already on WiFi; `ConnectivityManager.NetworkCallback` triggers a fresh connection attempt whenever WiFi is (re)gained
@@ -20,7 +20,7 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
-## [v1.0] — 2026-03-01
+## [v1.0.0] — 2026-03-01
 
 ### Added
 - **TPMS screen** — Real tire pressure (PSI) and temperature via BCM Mode 22
