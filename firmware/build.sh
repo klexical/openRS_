@@ -24,8 +24,8 @@ RELEASE_DIR="$SCRIPT_DIR/release"
 PATCHES_DIR="$SCRIPT_DIR/patches"
 COMPONENTS_DIR="$SCRIPT_DIR/components"
 
-# Pinned wican-fw tag for reproducible builds
-WICAN_TAG="v3.10"
+# Pinned wican-fw tag for reproducible builds (matches stock firmware v4.20u_beta-01)
+WICAN_TAG="v4.20u_beta-01"
 
 # ESP-IDF version and install path
 # Defaults to inside the build dir so it works in restricted environments.
@@ -41,8 +41,24 @@ err()  { echo -e "${RED}[openrs-fw]${RST} $*"; exit 1; }
 
 # ── 1. Prerequisites ──────────────────────────────────────────────────────────
 log "Checking prerequisites..."
-command -v git    >/dev/null 2>&1 || err "git is required"
+command -v git >/dev/null 2>&1 || err "git is required"
+
+# ESP-IDF 5.2 on macOS with system Python 3.9 fails package validation due to
+# a Python 3.9 importlib.metadata bug with namespace packages (e.g. ruamel.yaml).
+# Prefer Python 3.11+ from Homebrew if available.
+PYTHON311="/opt/homebrew/bin/python3.11"
+LOCAL_BIN="$BUILD_DIR/bin"
+if [ -x "$PYTHON311" ]; then
+    log "Using Python 3.11 from Homebrew for ESP-IDF environment"
+    mkdir -p "$LOCAL_BIN"
+    ln -sf "$PYTHON311" "$LOCAL_BIN/python3"
+    ln -sf "$PYTHON311" "$LOCAL_BIN/python"
+    export PATH="$LOCAL_BIN:$PATH"
+fi
 command -v python3 >/dev/null 2>&1 || err "python3 is required"
+
+# Ensure Homebrew tools (cmake, ninja) are available
+export PATH="/opt/homebrew/bin:$PATH"
 
 # ── 2. ESP-IDF ────────────────────────────────────────────────────────────────
 if [ ! -f "$IDF_PATH/export.sh" ]; then
@@ -51,12 +67,20 @@ if [ ! -f "$IDF_PATH/export.sh" ]; then
     git clone --depth 1 --branch "$IDF_VERSION" \
         --recurse-submodules --shallow-submodules \
         https://github.com/espressif/esp-idf.git "$IDF_PATH"
-    "$IDF_PATH/install.sh" esp32c3
-    log "ESP-IDF installed."
+    log "ESP-IDF cloned."
 else
     log "ESP-IDF found at $IDF_PATH"
 fi
 
+# Always run install.sh to ensure the Python env and toolchain are complete.
+# This is fast (< 30s) when already installed.
+log "Running ESP-IDF install for esp32c3..."
+"$IDF_PATH/install.sh" esp32c3
+
+# IDF_SKIP_CHECK_DEPENDENCIES bypasses the Python package version check.
+# Needed on macOS with system Python 3.9 where setuptools metadata is not
+# discoverable via importlib.metadata despite the package being installed.
+export IDF_SKIP_CHECK_DEPENDENCIES=1
 # shellcheck disable=SC1091
 source "$IDF_PATH/export.sh"
 
@@ -83,7 +107,31 @@ python3 "$PATCHES_DIR/apply_patches.py" "$WICAN_DIR"
 # ── 6. Build ──────────────────────────────────────────────────────────────────
 log "Building for esp32c3..."
 cd "$WICAN_DIR"
-idf.py set-target esp32c3
+
+# Copy our sdkconfig.defaults and custom partition table CSV before set-target.
+cp "$PATCHES_DIR/sdkconfig.defaults"      "$WICAN_DIR/sdkconfig.defaults"
+cp "$PATCHES_DIR/partitions_openrs.csv"   "$WICAN_DIR/partitions_openrs.csv"
+
+# Run set-target when any required sdkconfig flag is missing.
+# This regenerates sdkconfig from sdkconfig.defaults (picking up BT, WS, custom partition, etc.)
+NEEDS_SET_TARGET=false
+if ! grep -q 'CONFIG_IDF_TARGET="esp32c3"' "$WICAN_DIR/sdkconfig" 2>/dev/null; then
+    NEEDS_SET_TARGET=true
+elif ! grep -q 'CONFIG_BT_ENABLED=y' "$WICAN_DIR/sdkconfig" 2>/dev/null; then
+    NEEDS_SET_TARGET=true
+elif ! grep -q 'CONFIG_HTTPD_WS_SUPPORT=y' "$WICAN_DIR/sdkconfig" 2>/dev/null; then
+    NEEDS_SET_TARGET=true
+elif ! grep -q 'CONFIG_PARTITION_TABLE_CUSTOM=y' "$WICAN_DIR/sdkconfig" 2>/dev/null; then
+    NEEDS_SET_TARGET=true
+fi
+
+if [ "$NEEDS_SET_TARGET" = "true" ]; then
+    log "Running set-target esp32c3 (regenerates sdkconfig with BT, WS, custom partition table)..."
+    idf.py set-target esp32c3
+else
+    log "Target already configured for esp32c3 with required options — skipping set-target"
+fi
+
 idf.py build
 
 # ── 7. Package release files ──────────────────────────────────────────────────
@@ -123,7 +171,7 @@ for f in bootloader.bin partition-table.bin ota_data_initial.bin openrs-fw-usb_v
         partition-table.bin)    ADDR="0x8000"    ;;
         ota_data_initial.bin)   ADDR="0xd000"    ;;
         openrs-fw-usb_v100.bin) ADDR="0x10000"   ;;
-        storage.bin)            ADDR="0x383000"  ;;
+        storage.bin)            ADDR="0x210000"  ;;
     esac
     printf "  %-11s %-40s %s\n" "$ADDR" "$f" "($SIZE)"
 done

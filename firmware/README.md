@@ -4,7 +4,7 @@ Custom ESP32-C3 firmware for the MeatPi WiCAN-USB-C3, purpose-built for the Ford
 
 Forked from [`meatpiHQ/wican-fw`](https://github.com/meatpiHQ/wican-fw) — the proven WiFi/CAN/OTA stack is retained and a Focus RS module is layered on top.
 
-**Current status:** v1.0 in active development.
+**Current status:** v1.0 built and packaged — release binaries in `firmware/release/`.
 
 ---
 
@@ -60,7 +60,7 @@ cd "openRS_/firmware"
 ```
 
 That's it. The script will:
-1. Install ESP-IDF v5.2.3 to `~/esp/esp-idf` if not already present (~5–15 min, one-time)
+1. Install ESP-IDF v5.2.3 to `firmware/.build/esp-idf` if not already present (~5–15 min, one-time)
 2. Clone `meatpiHQ/wican-fw` at the pinned tag into `firmware/.build/wican-fw/`
 3. Copy the `focusrs` component into the wican-fw components directory
 4. Apply targeted source patches (SSID branding, CAN RX hook, REST endpoint)
