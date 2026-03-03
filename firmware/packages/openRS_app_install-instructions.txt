@@ -1,6 +1,6 @@
 ╔══════════════════════════════════════════════════════════════════╗
 ║          openRS_ Android App  —  Install Instructions           ║
-║          v1.1  |  Requires Android 9+ (API 28)                  ║
+║          v1.0.1  |  Requires Android 9+ (API 28)                ║
 ╚══════════════════════════════════════════════════════════════════╝
 
 This app is sideloaded — it is not on the Play Store and must be
@@ -10,7 +10,7 @@ installed manually onto your Android phone.
   FILES IN THIS PACKAGE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  openRS_-v1.1.apk   —   The Android application
+  openRS_-v1.0.1.apk   —   The Android application
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   REQUIREMENTS
@@ -22,7 +22,7 @@ installed manually onto your Android phone.
   - WiCAN configured with ELM327 TCP on port 3333
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  WHAT'S NEW IN v1.1
+  WHAT'S NEW IN v1.0.1
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Smart auto-connect with WiFi gating:
@@ -69,7 +69,7 @@ installed manually onto your Android phone.
   1. Connect your phone to your computer with a USB cable
   2. On the phone, swipe down → tap "Android System — Charging
      this device via USB" → select "File Transfer"
-  3. Copy openRS_-v1.1.apk to your phone's Downloads folder
+  3. Copy openRS_-v1.0.1.apk to your phone's Downloads folder
   4. On the phone, open Files / My Files → Downloads
   5. Tap the APK → Install
 
@@ -81,7 +81,7 @@ installed manually onto your Android phone.
   Method C — ADB (if USB debugging is enabled):
   1. Connect phone to computer via USB with USB debugging enabled
   2. Run in terminal:
-       adb install openRS_-v1.1.apk
+       adb install openRS_-v1.0.1.apk
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   STEP 3 — FIRST LAUNCH SETUP
