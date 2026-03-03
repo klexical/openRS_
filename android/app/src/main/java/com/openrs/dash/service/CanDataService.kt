@@ -5,6 +5,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.Binder
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
@@ -26,11 +30,12 @@ class CanDataService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var connectionJob: Job? = null
 
-    // Default instance uses hardcoded values; replaced in onCreate() with saved settings.
-    // Field declaration must NOT call getSharedPreferences — context isn't attached yet.
     private var wican: WiCanConnection = WiCanConnection()
 
     val connectionState: StateFlow<WiCanConnection.State> get() = wican.state
+
+    private val cm by lazy { getSystemService(ConnectivityManager::class.java) }
+    private var wifiCallback: ConnectivityManager.NetworkCallback? = null
 
     private fun buildWiCan() = WiCanConnection(
         host = com.openrs.dash.ui.AppSettings.getHost(this),
@@ -45,36 +50,83 @@ class CanDataService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        wican = buildWiCan() // context is attached here — safe to read SharedPreferences
+        wican = buildWiCan()
         createNotificationChannel()
         try {
             startForeground(NOTIFICATION_ID, buildNotification("Ready"))
         } catch (e: Exception) { e.printStackTrace() }
+
+        registerWifiCallback()
+        if (isOnWifi()) startConnection()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
     override fun onDestroy() {
+        unregisterWifiCallback()
         scope.cancel()
         super.onDestroy()
     }
 
+    // ── WiFi gating ─────────────────────────────────────────────────────────
+
+    private fun isOnWifi(): Boolean {
+        val network = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(network) ?: return false
+        return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+    }
+
+    private fun registerWifiCallback() {
+        val request = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .build()
+        wifiCallback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                // WiFi gained — reset and attempt connection if not already active
+                if (connectionJob?.isActive != true) startConnection()
+            }
+            override fun onLost(network: Network) {
+                // WiFi lost — stop retrying; connection will fail and notify
+                stopConnection()
+                try { updateNotification("No WiFi") } catch (_: Exception) {}
+            }
+        }
+        try { cm.registerNetworkCallback(request, wifiCallback!!) } catch (_: Exception) {}
+    }
+
+    private fun unregisterWifiCallback() {
+        wifiCallback?.let { cb ->
+            try { cm.unregisterNetworkCallback(cb) } catch (_: Exception) {}
+        }
+        wifiCallback = null
+    }
+
+    // ── Connection control ───────────────────────────────────────────────────
+
     fun startConnection() {
+        if (!isOnWifi()) {
+            try { updateNotification("No WiFi — connect to openRS_ network") } catch (_: Exception) {}
+            return
+        }
         if (connectionJob?.isActive == true) return
-        wican = buildWiCan() // pick up any settings changes
+        wican = buildWiCan()
 
         connectionJob = scope.launch {
             launch {
                 wican.state.collect { state ->
                     val text = when (state) {
-                        is WiCanConnection.State.Connected -> "Connected"
-                        is WiCanConnection.State.Connecting -> "Connecting..."
+                        is WiCanConnection.State.Connected    -> "Connected"
+                        is WiCanConnection.State.Connecting   -> "Connecting…"
                         is WiCanConnection.State.Disconnected -> "Disconnected"
-                        is WiCanConnection.State.Error -> "Error"
+                        is WiCanConnection.State.Idle         -> "Idle — tap openRS_ to retry"
+                        is WiCanConnection.State.Error        -> "Error"
                     }
                     try { updateNotification(text) } catch (_: Exception) {}
                     OpenRSDashApp.instance.vehicleState.update {
-                        it.copy(isConnected = state is WiCanConnection.State.Connected)
+                        it.copy(
+                            isConnected = state is WiCanConnection.State.Connected,
+                            isIdle      = state is WiCanConnection.State.Idle
+                        )
                     }
                 }
             }
@@ -144,8 +196,16 @@ class CanDataService : Service() {
     fun stopConnection() {
         connectionJob?.cancel()
         connectionJob = null
-        OpenRSDashApp.instance.vehicleState.update { it.copy(isConnected = false) }
+        OpenRSDashApp.instance.vehicleState.update { it.copy(isConnected = false, isIdle = false) }
         try { updateNotification("Disconnected") } catch (_: Exception) {}
+    }
+
+    /** Called from UI when user taps the RETRY badge — fresh WiCanConnection + retry. */
+    fun reconnect() {
+        connectionJob?.cancel()
+        connectionJob = null
+        OpenRSDashApp.instance.vehicleState.update { it.copy(isConnected = false, isIdle = false) }
+        startConnection()
     }
 
     fun resetPeaks() {

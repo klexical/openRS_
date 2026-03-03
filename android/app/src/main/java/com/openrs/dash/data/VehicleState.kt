@@ -113,6 +113,8 @@ data class VehicleState(
 
     // ── Connection ──────────────────────────────────────────
     val isConnected: Boolean = false,
+    /** True when all retry attempts exhausted — waiting for manual reconnect. */
+    val isIdle: Boolean = false,
     val framesPerSecond: Double = 0.0,
     val lastUpdate: Long = 0L,
     val dataMode: String = "ATMA"  // "ATMA" or "PID_QUERY" for UI indicator

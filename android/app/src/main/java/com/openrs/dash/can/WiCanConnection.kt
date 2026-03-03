@@ -30,18 +30,26 @@ import java.net.Socket
 class WiCanConnection(
     private val host: String = "192.168.80.1",
     private val port: Int = 3333,
-    private val reconnectDelaySec: Long = 5
+    private val maxRetries: Int = 3
 ) {
     companion object {
-        const val ATMA_WINDOW_MS = 150L   // Time spent in ATMA per cycle
-        const val PID_TIMEOUT_MS = 80L    // Max wait per PID response
-        const val PIDS_PER_CYCLE = 3      // Max PID queries per cycle
+        const val ATMA_WINDOW_MS = 150L
+        const val PID_TIMEOUT_MS = 80L
+        const val PIDS_PER_CYCLE = 3
+
+        // Exponential backoff delays per consecutive failure
+        val BACKOFF_MS = listOf(5_000L, 15_000L, 30_000L)
+
+        // Short wait before retrying after a successful-then-dropped connection
+        const val RECONNECT_DELAY_MS = 5_000L
     }
 
     sealed class State {
         data object Disconnected : State()
         data object Connecting : State()
         data object Connected : State()
+        /** All [maxRetries] attempts failed — waiting for manual reconnect. */
+        data object Idle : State()
         data class Error(val message: String) : State()
     }
 
@@ -65,7 +73,10 @@ class WiCanConnection(
         onObdUpdate: (VehicleState) -> Unit,
         getCurrentState: () -> VehicleState
     ): Flow<Pair<Int, ByteArray>> = flow {
-        while (currentCoroutineContext().isActive) {
+        var failedAttempts = 0
+
+        while (currentCoroutineContext().isActive && failedAttempts < maxRetries) {
+            var connectionSucceeded = false
             try {
                 _state.value = State.Connecting
 
@@ -86,6 +97,8 @@ class WiCanConnection(
                 elmCommand(output, reader, "ATCAF0", 300)
 
                 _state.value = State.Connected
+                connectionSucceeded = true
+                failedAttempts = 0   // reset consecutive-failure counter on first successful connect
 
                 // ── Main hybrid loop ────────────────────────
                 while (currentCoroutineContext().isActive) {
@@ -190,11 +203,29 @@ class WiCanConnection(
                 _state.value = State.Disconnected
                 throw e
             } catch (e: Exception) {
+                // Only count as a failure if we never established the TCP connection;
+                // a drop after a successful session resets the counter above.
+                if (!connectionSucceeded) failedAttempts++
                 _state.value = State.Error(e.message ?: "Connection failed")
             }
 
+            if (!currentCoroutineContext().isActive) break
+
+            if (failedAttempts >= maxRetries) {
+                // Exhausted — go idle and stop the loop.
+                _state.value = State.Idle
+                break
+            }
+
             _state.value = State.Disconnected
-            delay(reconnectDelaySec * 1000)
+            val delayMs = if (connectionSucceeded) {
+                // Was connected before drop — quick 5 s retry
+                RECONNECT_DELAY_MS
+            } else {
+                // Never connected this attempt — exponential backoff
+                BACKOFF_MS.getOrElse(failedAttempts - 1) { 30_000L }
+            }
+            delay(delayMs)
         }
     }.flowOn(Dispatchers.IO)
 

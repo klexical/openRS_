@@ -76,8 +76,10 @@ class MainActivity : ComponentActivity() {
             var tab by remember { mutableIntStateOf(0) }
             MaterialTheme(colorScheme = darkColorScheme(background = Bg, surface = Surf, primary = Accent)) {
                 Column(Modifier.fillMaxSize().background(Bg).statusBarsPadding().navigationBarsPadding()) {
-                    Header(vs, onConnect = { service?.startConnection() },
-                        onDisconnect = { service?.stopConnection() })
+                    Header(vs,
+                        onConnect    = { service?.startConnection() },
+                        onDisconnect = { service?.stopConnection() },
+                        onReconnect  = { service?.reconnect() })
                     TabRow(tab) { tab = it }
                     Box(Modifier.weight(1f)) {
                         when (tab) {
@@ -111,7 +113,7 @@ class MainActivity : ComponentActivity() {
 // UI COMPONENTS
 // ═══════════════════════════════════════════════════════════════
 
-@Composable fun Header(vs: VehicleState, onConnect: () -> Unit, onDisconnect: () -> Unit) {
+@Composable fun Header(vs: VehicleState, onConnect: () -> Unit, onDisconnect: () -> Unit, onReconnect: () -> Unit = {}) {
     var showSettings by remember { mutableStateOf(false) }
     if (showSettings) SettingsDialog(onDismiss = { showSettings = false })
 
@@ -142,12 +144,27 @@ class MainActivity : ComponentActivity() {
         Text(vs.gearDisplay, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = Mono, color = Accent)
         // ESC
         Text(vs.escStatus.label, fontSize = 10.sp, fontFamily = Mono, color = Dim)
-        // Connect button
-        val isConn = vs.isConnected
-        Text(if (isConn) "● CONNECTED" else "○ OFFLINE",
+        // Connection status — three states: connected / idle (gave up) / offline
+        val connLabel = when {
+            vs.isConnected -> "● LIVE"
+            vs.isIdle      -> "⊙ RETRY"
+            else           -> "○ OFFLINE"
+        }
+        val connColor = when {
+            vs.isConnected -> Grn
+            vs.isIdle      -> Gold
+            else           -> Red
+        }
+        Text(connLabel,
             fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = Mono,
-            color = if (isConn) Grn else Red,
-            modifier = Modifier.clickable { if (isConn) onDisconnect() else onConnect() })
+            color = connColor,
+            modifier = Modifier.clickable {
+                when {
+                    vs.isConnected -> onDisconnect()
+                    vs.isIdle      -> onReconnect()
+                    else           -> onConnect()
+                }
+            })
     }
 }
 

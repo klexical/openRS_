@@ -2,6 +2,25 @@
 
 All notable changes to openRS are documented here.
 
+## [2.6.0] — 2026-03-01
+
+### Added
+- **Smart auto-connect** — service auto-starts connection on launch when already on a WiFi network; `ConnectivityManager.NetworkCallback` also triggers a fresh attempt whenever WiFi is (re)gained
+- **Exponential backoff with max 3 attempts** — on connection failure the app waits 5 s → 15 s → 30 s between retries before giving up, eliminating the infinite reconnect loop
+- **Idle state** (`WiCanConnection.State.Idle`) — after 3 consecutive failed TCP connections the service stops retrying and emits Idle; `VehicleState.isIdle` propagates this to the UI
+- **WiFi gating** — connection attempts are blocked when the device has no active WiFi transport (mobile data only); `startConnection()` returns early with a "No WiFi" notification
+- **`reconnect()` method** on `CanDataService` — resets attempt counter and starts a fresh connection; called from the header retry button
+- **Three-state header badge** — `● LIVE` (green) when connected, `⊙ RETRY` (gold) when idle, `○ OFFLINE` (red) otherwise; tapping any badge performs the correct action
+
+### Changed
+- `WiCanConnection` constructor parameter `reconnectDelaySec` replaced with `maxRetries: Int = 3` and internal backoff constants (`BACKOFF_MS`, `RECONNECT_DELAY_MS`)
+- `CanDataService` now auto-starts on `onCreate` (WiFi-gated) instead of requiring a manual button tap every launch
+- `stopConnection()` also clears `isIdle` on `VehicleState`
+- Header connect button label changed from `○ OFFLINE` / `● CONNECTED` to the new three-state labels
+
+### Fixed
+- Continuous connect/disconnect notification spam when MeatPi is not present
+
 ## [2.5.0] — 2026-03-01
 
 ### Added
