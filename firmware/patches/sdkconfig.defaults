@@ -1,0 +1,36 @@
+# openrs-fw sdkconfig defaults for ESP32-C3 (WiCAN-USB-C3 hardware)
+# Applied by: idf.py set-target esp32c3
+
+# Hardware variant: USB
+CONFIG_HARDWARE_VER=3
+
+# WebSocket support — required by config_server.c ws_send/ws_handler
+CONFIG_HTTPD_WS_SUPPORT=y
+
+# HTTP server tuning
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=512
+CONFIG_HTTPD_MAX_URI_LEN=512
+
+# BT stack — required by ble.c (ESP32-C3 supports BLE only, not Classic BT)
+CONFIG_BT_ENABLED=y
+CONFIG_BT_BLUEDROID_ENABLED=y
+CONFIG_BT_BLE_ENABLED=y
+
+# BLE 4.2 legacy advertising API — required by ble.c (esp_ble_gap_start_advertising etc.)
+# Without this, only the extended BT 5.0 advertising APIs are compiled.
+CONFIG_BT_BLE_42_FEATURES_SUPPORTED=y
+
+# FreeRTOS backward compat — wican-fw v4.x uses portTickType (renamed to TickType_t in FreeRTOS 10)
+CONFIG_FREERTOS_ENABLE_BACKWARD_COMPATIBILITY=y
+
+# NVS + FAT filesystem (required by wican-fw config storage)
+CONFIG_FATFS_LFN_HEAP=y
+
+# Flash size — WiCAN-USB-C3 has 4MB flash
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
+
+# Custom partition table — 2MB OTA slots to fit BLE 4.2 + focusrs binary
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_openrs.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0x8000

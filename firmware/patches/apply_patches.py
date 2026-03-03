@@ -48,13 +48,9 @@ def patch_config_server(base):
     path = os.path.join(base, "main", "config_server.c")
     c = read(path)
 
-    # 1. AP password default
-    c = replace_once(c,
-        '"ap_pass":"@meatpi#"',
-        '"ap_pass":"openrs2024"',
-        "AP password default")
+    # AP password: v4.20u already defaults to "@meatpi#", no change needed.
 
-    # 2. Add focusrs include after the last existing include block
+    # 1. Add focusrs include after the last existing include block
     FRS_INCLUDE = '#include "focusrs.h"'
     if FRS_INCLUDE not in c:
         c = replace_once(c,
@@ -62,11 +58,7 @@ def patch_config_server(base):
             '#include "autopid.h"\n#include "focusrs.h"',
             "focusrs include in config_server")
 
-    # 3. Bump max_uri_handlers from 18 to 20
-    c = replace_once(c,
-        "config.max_uri_handlers = 18;",
-        "config.max_uri_handlers = 20;",
-        "max_uri_handlers bump")
+    # v4.20u already has max_uri_handlers = 32; no bump needed.
 
     # 4. Insert the /api/frs handler before config_server_start
     FRS_HANDLER = r"""
@@ -130,7 +122,7 @@ static const httpd_uri_t frs_post_uri = {
 /* ─────────────────────────────────────────────────────────────────────── */
 
 """
-    TARGET_FN = "esp_err_t config_server_start("
+    TARGET_FN = "config_server_start("
     if FRS_HANDLER.strip()[:30] not in c and TARGET_FN in c:
         c = c.replace(TARGET_FN, FRS_HANDLER + TARGET_FN, 1)
         print("  patched: /api/frs handler inserted")
@@ -232,11 +224,20 @@ def patch_cmake(base):
     path = os.path.join(base, "main", "CMakeLists.txt")
     c = read(path)
     if "focusrs" not in c:
-        # Add focusrs to REQUIRES line
-        c = replace_once(c,
-            'REQUIRES "${requires}"',
-            'REQUIRES "${requires}" focusrs',
-            "focusrs in CMakeLists REQUIRES")
+        # Add focusrs to the set(requires ...) variable line.
+        # The variable is then expanded in REQUIRES "${requires}", so this is sufficient.
+        import re as _re
+        c, n = _re.subn(
+            r'(set\(requires\s+[^\)]+?)(filesystem\))',
+            r'\1filesystem focusrs)',
+            c, count=1
+        )
+        if n == 0:
+            print("  WARNING: could not patch CMakeLists.txt set(requires ...) — focusrs NOT added")
+        else:
+            print("  patched: CMakeLists.txt (focusrs added to requires)")
+    else:
+        print("  skipped: focusrs already in CMakeLists.txt")
     write(path, c)
 
 if __name__ == "__main__":

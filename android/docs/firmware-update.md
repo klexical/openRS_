@@ -1,8 +1,7 @@
 # openrs-fw Firmware Update Guide
 
-> **Status: openrs-fw is in active development — no release binary is available yet.**
-> The source code is published at `https://github.com/klexical/openRS_/tree/main/firmware` and the first compiled release will be published at `https://github.com/klexical/openRS_/releases` when v1.0 is ready.
-> This guide is written in advance so you know exactly what to do the moment the release drops.
+> **openrs-fw v1.0 has been built.** Release binaries are in `firmware/release/` in this repository.
+> Source code: `https://github.com/klexical/openRS_/tree/main/firmware`
 
 This guide covers flashing `openrs-fw` — the custom Focus RS firmware — onto your MeatPi WiCAN-USB-C3.
 
@@ -187,16 +186,19 @@ If anything differs, update and press **Submit changes** — the device reboots 
 
 ---
 
-## Installing openrs-fw (when available)
+## Installing openrs-fw v1.0
 
-When openrs-fw v1.0 is released, the process is identical to the above — just use the openrs-fw files instead:
+The process is identical to the stock flash above — use the openrs-fw release files from `firmware/release/`:
 
-| File | Address |
-|------|---------|
-| `bootloader.bin` | `0x0` |
-| `partition-table.bin` | `0x8000` |
-| `ota_data_initial.bin` | `0xd000` |
-| `openrs-fw-usb_v100.bin` | `0x10000` |
+```
+firmware/release/
+  bootloader.bin            ← address 0x0
+  partition-table.bin       ← address 0x8000
+  ota_data_initial.bin      ← address 0xd000
+  openrs-fw-usb_v100.bin    ← address 0x10000
+```
+
+> **Note:** openrs-fw uses a custom partition table with a 2MB OTA slot (vs. 1.75MB stock). You must flash all 4 files — do not mix openrs-fw binaries with stock partition-table.bin.
 
 Same tool, same settings (40MHz, DIO, DoNotChgBin, 115200 baud).
 
