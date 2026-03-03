@@ -1,17 +1,16 @@
 ╔══════════════════════════════════════════════════════════════════╗
 ║          openRS_ Android App  —  Install Instructions           ║
-║          v1.0  |  Requires Android 9+ (API 28)                  ║
+║          v1.1  |  Requires Android 9+ (API 28)                  ║
 ╚══════════════════════════════════════════════════════════════════╝
 
-This is a debug/sideload build. It is not distributed via the
-Play Store — it must be installed manually (sideloaded) onto your
-Android phone.
+This app is sideloaded — it is not on the Play Store and must be
+installed manually onto your Android phone.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   FILES IN THIS PACKAGE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  openRS_-v1.0-debug.apk   —   The Android application
+  openRS_-v1.1.apk   —   The Android application
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   REQUIREMENTS
@@ -21,6 +20,29 @@ Android phone.
   - "Unknown sources" / "Install unknown apps" enabled (see below)
   - MeatPi WiCAN-USB-C3 plugged into the Focus RS OBD-II port
   - WiCAN configured with ELM327 TCP on port 3333
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  WHAT'S NEW IN v1.1
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Smart auto-connect with WiFi gating:
+  - App only attempts connection when your phone is on a WiFi network
+    (no spam on mobile data)
+  - Auto-connects on launch if already on WiFi
+  - Re-connects automatically when WiFi is (re)gained
+
+  Exponential backoff — max 3 attempts (was: infinite loop):
+  - Attempt 1 fails — wait 5 s
+  - Attempt 2 fails — wait 15 s
+  - Attempt 3 fails — stops and shows "RETRY" badge
+
+  Three-state connection badge in the header:
+  - LIVE (green)   — connected and receiving data
+  - RETRY (gold)   — gave up after 3 fails; tap to retry
+  - OFFLINE (red)  — not connected; tap to start
+
+  Status bar notification no longer spams connect/disconnect when
+  the MeatPi is not present.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   STEP 1 — ENABLE UNKNOWN SOURCES
@@ -47,7 +69,7 @@ Android phone.
   1. Connect your phone to your computer with a USB cable
   2. On the phone, swipe down → tap "Android System — Charging
      this device via USB" → select "File Transfer"
-  3. Copy openRS_-v1.0-debug.apk to your phone's Downloads folder
+  3. Copy openRS_-v1.1.apk to your phone's Downloads folder
   4. On the phone, open Files / My Files → Downloads
   5. Tap the APK → Install
 
@@ -59,7 +81,7 @@ Android phone.
   Method C — ADB (if USB debugging is enabled):
   1. Connect phone to computer via USB with USB debugging enabled
   2. Run in terminal:
-       adb install openRS_-v1.0-debug.apk
+       adb install openRS_-v1.1.apk
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   STEP 3 — FIRST LAUNCH SETUP
@@ -73,8 +95,7 @@ Android phone.
   5. Connect your phone's Wi-Fi to the WiCAN network:
        SSID:     WiCAN_XXXXXX  (or openRS_XXXXXX if using openrs-fw)
        Password: @meatpi#      (or openrs2024 for openrs-fw)
-  6. In the app, tap CONNECT — you should see live data within
-     a few seconds once the car is on
+  6. The app auto-connects within a few seconds once the car is on
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ANDROID AUTO SETUP
