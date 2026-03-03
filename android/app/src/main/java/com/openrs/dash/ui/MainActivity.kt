@@ -10,6 +10,7 @@ import android.os.IBinder
 import android.Manifest
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -64,6 +65,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         val perms = mutableListOf<String>()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
             perms.add(Manifest.permission.POST_NOTIFICATIONS)
@@ -73,7 +75,7 @@ class MainActivity : ComponentActivity() {
             val vs by OpenRSDashApp.instance.vehicleState.collectAsState()
             var tab by remember { mutableIntStateOf(0) }
             MaterialTheme(colorScheme = darkColorScheme(background = Bg, surface = Surf, primary = Accent)) {
-                Column(Modifier.fillMaxSize().background(Bg)) {
+                Column(Modifier.fillMaxSize().background(Bg).statusBarsPadding().navigationBarsPadding()) {
                     Header(vs, onConnect = { service?.startConnection() },
                         onDisconnect = { service?.stopConnection() })
                     TabRow(tab) { tab = it }
