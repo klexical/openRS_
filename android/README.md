@@ -58,7 +58,7 @@ Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It understan
 | **TUNE** | AFR actual/desired, ETC, TIP, WGDC, VCT, knock, fuel trims, timing advance |
 | **TPMS** | 4-corner tire pressure with configurable low-pressure alerts (passive CAN 0x340) |
 | **CTRL** | Live drive mode (N/S/T/D), ESC status, Launch Control + Auto S/S Kill (requires openRS_ fw) |
-| **DIAG** | Session diagnostics — frame inventory, decode trace, validation issues, one-tap ZIP export |
+| **DIAG** | Session diagnostics — frame inventory, per-ID change tracking, periodic samples, SLCAN raw log, one-tap ZIP export (SavvyCAN/Kayak compatible) |
 
 The Android Auto UI is **visually identical** to the phone app — same gauge boxes, info cells, torque bars, and temp gauges — using the openRS_ custom Activity approach.
 
@@ -66,27 +66,35 @@ The Android Auto UI is **visually identical** to the phone app — same gauge bo
 
 All data is received passively from the CAN bus via WebSocket SLCAN at ~2100 fps. No OBD polling windows or header switching required.
 
-| CAN ID | Parameters |
-|--------|-----------|
-| 0x090 | RPM, barometric pressure |
-| 0x0F8 | Boost pressure, oil temperature |
-| 0x080 | Throttle, accelerator pedal |
-| 0x130 | Vehicle speed |
-| 0x160 | Longitudinal G-force |
-| 0x180 | Lateral G-force |
-| 0x1B0 | Drive mode (Normal/Sport/Track/Drift) |
-| 0x0C8 | ESC status, e-brake |
-| 0x215 | 4-corner wheel speeds, gear |
-| 0x2C0 | AWD L/R rear torque, RDU temp, AWD max torque |
-| 0x2C2 | PTU temperature |
-| 0x2F0 | Coolant temperature |
-| 0x1A4 | Ambient temperature (MS-CAN bridged) |
-| 0x340 | TPMS — LF/RF/LR/RR tire pressures in PSI (MS-CAN bridged via GWM) |
-| 0x34A | Fuel level |
-| 0x3C0 | Battery voltage |
+| CAN ID | Parameters | Source |
+|--------|-----------|--------|
+| 0x070 | Torque at transmission (Nm) | RS_HS.dbc |
+| 0x076 | Throttle % | RS_HS.dbc |
+| 0x080 | Accelerator pedal %, brake, reverse | RS_HS.dbc |
+| 0x090 | RPM, barometric pressure | RS_HS.dbc |
+| 0x0C8 | Gauge brightness, e-brake | RS_HS.dbc |
+| 0x0F8 | Engine oil temp, boost pressure (gauge + baro), PTU temp | RS_HS.dbc PCMmsg07 |
+| 0x130 | Vehicle speed kph | RS_HS.dbc |
+| 0x160 | Longitudinal G-force | RS_HS.dbc |
+| 0x180 | Lateral G-force | RS_HS.dbc |
+| 0x190 | 4-corner wheel speeds (15-bit Motorola × 0.011343 km/h) | RS_HS.dbc ABSmsg03 |
+| 0x1A4 | Ambient temperature (MS-CAN bridged) | DigiCluster |
+| 0x1B0 | Drive mode (Normal/Sport/Track/Drift) | RS_HS.dbc |
+| 0x1C0 | ESC mode status | RS_HS.dbc |
+| 0x230 | Current gear | RS_HS.dbc |
+| 0x2C0 | AWD L/R rear torque (Nm) | RS_HS.dbc |
+| 0x2F0 | Coolant temp, Intake Air Temp (IAT) | RS_HS.dbc PCMmsg16 |
+| 0x340 | TPMS — LF/RF/LR/RR (PSI, MS-CAN bridged via GWM) + Ambient temp (byte 7) | DigiCluster / RS_HS.dbc PCMmsg17 |
+| 0x34A | Fuel level % | RS_HS.dbc |
+| 0x3C0 | Battery voltage | RS_HS.dbc |
 
-**Tune parameters** (OBD Mode 22 via PCM 0x7E0, decoded in TUNE tab):
-AFR actual/desired, ETC actual/desired, TIP actual/desired, WGDC, VCT intake/exhaust, knock correction, octane adjust ratio, charge air temp, catalytic temp, oil life
+**Polled via OBD Mode 22 (periodic, low-frequency):**
+
+| ECU | Address | PID | Parameter |
+|-----|---------|-----|-----------|
+| PCM | 0x7E0 | Mode 1 + Mode 22 | AFR, ETC, TIP, WGDC, VCT, knock, fuel trims, timing, charge air temp, oil life |
+| BCM | 0x726 (resp. 0x72E) | 0xDD01, 0x4028, 0x4029, 0xDD04 | Odometer, battery SOC, battery temp, cabin temp |
+| AWD module | 0x703 (resp. 0x70B) | 0x1E8A | RDU oil temperature |
 
 ### Settings
 
@@ -221,9 +229,9 @@ See [`docs/android-auto-setup.md`](docs/android-auto-setup.md) for full setup in
 │  Hooks DiagnosticLogger (frame inventory, trace, FPS)           │
 ├──────────────────────────┬──────────────────────────────────────┤
 │     CanDecoder           │   DiagnosticLogger / Exporter        │
-│  16 CAN frame IDs        │   Frame inventory, decode trace      │
-│  DigiCluster-verified    │   Validation engine, ZIP export      │
-│  formulas                │   FileProvider share sheet           │
+│  19 CAN frame IDs        │   Frame inventory + first/last/Δ     │
+│  RS_HS.dbc-verified      │   Periodic samples (30 s), SLCAN log │
+│  formulas                │   Validation engine, ZIP export      │
 ├──────────────────────────┴──────────────────────────────────────┤
 │            WiCanConnection (WebSocket)                          │
 │  ws://192.168.80.1:80/ws │ SLCAN: C/S6/O │ ~2100 fps           │
@@ -243,7 +251,9 @@ See [`docs/android-auto-setup.md`](docs/android-auto-setup.md) for full setup in
 
 **How does TPMS work without OBD queries?** Tire pressure data (CAN ID `0x340`) is broadcast on MS-CAN by the BCM. The Focus RS Gateway Module (GWM) bridges select MS-CAN frames to HS-CAN, so they appear on the bus the WiCAN monitors. No header switching or BCM OBD queries needed.
 
-**How does firmware detection work?** After SLCAN initialisation, the app sends `OPENRS?\r`. openRS_ firmware responds with `OPENRS:<version>`. Stock WiCAN firmware ignores the unknown frame. The first WebSocket message after init is checked and the result latches for the session lifetime. CTRL tab feature buttons unlock when openRS_ firmware is confirmed.
+**How does firmware detection work?** After SLCAN initialisation, the app sends `OPENRS?\r`. openRS_ firmware responds with `OPENRS:<version>`. Stock WiCAN firmware ignores the unknown frame. The first 20 WebSocket messages after init are scanned for the probe response (allowing for queued frames), then the result latches for the session lifetime. CTRL tab feature buttons unlock when openRS_ firmware is confirmed.
+
+**How does the diagnostic system work?** `DiagnosticLogger` (singleton) accumulates three layers of data throughout the session: (1) a per-ID frame inventory with `firstRawHex`, `lastRawHex`, a `hasChanged` flag, and up to 10 periodic raw-hex snapshots per ID sampled every 30 s; (2) a rolling 10 000-entry decode trace; (3) a real-time SLCAN log written to internal storage in standard candump format (`(seconds) can0 ID#DATA`). On export, `DiagnosticExporter` flushes the SLCAN writer and bundles all three artefacts into a ZIP via FileProvider. The SLCAN file is compatible with SavvyCAN, Kayak, and python-can for offline CAN analysis.
 
 ---
 
@@ -302,33 +312,38 @@ android/
 
 Full PID documentation: [`docs/pid-reference.md`](docs/pid-reference.md)
 
-### HS-CAN Frame IDs (500 kbps) — DigiCluster verified
+### HS-CAN Frame IDs (500 kbps) — RS_HS.dbc verified
 
-| ID | Parameters | Formula notes |
-|----|-----------|---------------|
-| 0x080 | Throttle %, accelerator pedal % | bytes 2-3 / 2.55 |
-| 0x090 | RPM, barometric pressure | RPM: `(byte4 & 0x0F) << 8 \| byte5) × 2`; baro: `byte2 × 0.5 kPa` |
-| 0x0C8 | E-brake, ESC status | e-brake: `byte3 & 0x40` |
-| 0x0F8 | Boost kPa, oil temp °C | boost: byte5 (abs kPa); oil: `byte7 − 60` |
+| ID | Parameters | Formula / Source |
+|----|-----------|-----------------|
+| 0x070 | Torque at trans (Nm) | Motorola bits 37–47 |
+| 0x076 | Throttle % | `byte0 × 0.392` |
+| 0x080 | Accel pedal %, brake, reverse | pedal: bits 0–9 LE × 0.1; brake: byte2 bit 1; rev: bit 5 |
+| 0x090 | RPM, barometric pressure | RPM: `((byte4 & 0x0F) << 8 \| byte5) × 2`; baro: `byte2 × 0.5 kPa` |
+| 0x0C8 | Gauge brightness, e-brake | e-brake: `byte3 & 0x40` |
+| 0x0F8 | Engine oil temp, boost pressure, PTU temp | oil: `byte1 − 50 °C`; boost: `byte5 × 0.01 bar (gauge) + baro → kPa abs`; PTU: `byte7 − 60 °C` (RS_HS.dbc PCMmsg07) |
 | 0x130 | Vehicle speed kph | `word(6-7) × 0.01` |
-| 0x160 | Longitudinal G | `((byte6 & 0x03) << 8 \| byte7) × 0.00390625 − 2.0` |
-| 0x180 | Lateral G | `((byte2 & 0x03) << 8 \| byte3) × 0.00390625 − 2.0` |
+| 0x160 | Longitudinal G-force | `((byte6 & 0x03) << 8 \| byte7) × 0.00390625 − 2.0` |
+| 0x180 | Lateral G-force | `((byte2 & 0x03) << 8 \| byte3) × 0.00390625 − 2.0` |
+| 0x190 | 4-corner wheel speeds | 15-bit Motorola per wheel: `((data[N] & 0x7F) << 8 \| data[N+1]) × 0.011343006 km/h` (RS_HS.dbc ABSmsg03) |
 | 0x1A4 | Ambient temp °C | `byte4 signed × 0.25` (MS-CAN bridged) |
-| 0x1B0 | Drive mode | `(byte6 >> 4) & 0x0F` — 0=Normal, 1=Sport, 2=Track, 3=Drift |
-| 0x215 | 4-corner wheel speeds, gear | wheel: `word × 0.01 kph`; gear: byte7 |
-| 0x2C0 | AWD L/R rear torque, RDU temp | torque: bytes 2-3/4-5 scaled; RDU: `byte6 − 40` |
-| 0x2C2 | PTU temperature | `byte5 − 40 °C` |
-| 0x2F0 | Coolant temp °C | `byte5 − 60` |
-| 0x340 | TPMS LF/RF/LR/RR PSI | bytes 2-5 direct PSI (MS-CAN bridged via GWM) |
-| 0x34A | Fuel level % | `byte2 × 100 / 255` |
-| 0x3C0 | Battery voltage | `word(2-3) × 0.001 V` |
+| 0x1B0 | Drive mode | Motorola bit 55, 4-bit: 0=Normal 1=Sport 2=Track 3=Drift |
+| 0x1C0 | ESC mode | Motorola bit 13, 2-bit |
+| 0x230 | Current gear | bits 0–3 |
+| 0x2C0 | AWD L/R rear torque (Nm) | bits 0\|12 and 12\|12 signed Motorola |
+| 0x2F0 | Coolant temp, Intake Air Temp | coolant: `((data[4]&0x03)<<8\|data[5]) − 60 °C`; IAT: `((data[6]&0x03)<<8\|data[7]) × 0.25 − 127 °C` (RS_HS.dbc PCMmsg16) |
+| 0x340 | TPMS LF/RF/LR/RR PSI + Ambient temp | TPMS: bytes 2–5 direct PSI (MS-CAN via GWM); ambient: `byte7 signed × 0.25 °C` (RS_HS.dbc PCMmsg17) |
+| 0x34A | Fuel level % | `byte0 × 0.392` |
+| 0x3C0 | Battery voltage | `byte0 × 0.1 V` |
 
-### ECU Addresses (OBD — TUNE tab)
+### ECU Addresses (OBD — polled)
 
-| ECU | Header | Response | Function |
-|-----|--------|----------|----------|
-| PCM | 0x7E0 | 0x7E8 | AFR, ETC, TIP, WGDC, VCT, knock, oil life |
-| Broadcast | 0x7DF | varies | Standard Mode 1 PIDs |
+| ECU | Request | Response | PIDs / Function |
+|-----|---------|----------|-----------------|
+| PCM | 0x7E0 | 0x7E8 | Mode 22: AFR, ETC, TIP, WGDC, VCT, knock, charge air temp, oil life |
+| Broadcast | 0x7DF | varies | Mode 1: calc load, fuel trims, timing, baro, O2 |
+| BCM | 0x726 | 0x72E | Mode 22: odometer (0xDD01), battery SOC (0x4028), battery temp (0x4029), cabin temp (0xDD04) |
+| AWD module | 0x703 | 0x70B | Mode 22: RDU oil temp (0x1E8A) — `B4 − 40 °C` (polled every 30 s) |
 
 ---
 
@@ -339,6 +354,7 @@ Full PID documentation: [`docs/pid-reference.md`](docs/pid-reference.md)
 - [x] Phase 2.5 — TPMS+, AFR, ETC/TIP/WGDC, VCT, multi-ECU (v2.5)
 - [x] Phase 2.6 — Nitrous Blue/Frost White theme, openRS_ branding, live browser emulator
 - [x] Phase 2.7 — WebSocket SLCAN rewrite (~2100 fps), user settings, diagnostics export, firmware detection (v1.1.0)
+- [x] Phase 2.8 — DBC-verified signal corrections, BCM/AWD polling, IAT, ambient, wheel speeds, SLCAN raw log + per-ID sampling (v1.1.1–v1.1.5)
 - [ ] Phase 3 — Custom Activity Android Auto UI (pixel-perfect match to phone)
 - [ ] Phase 4 — UDS Fast Rate Session (~100 Hz via DDDI 0x2C)
 - [ ] Phase 5 — DTC scanning (Service 0x19 + DTC database)
