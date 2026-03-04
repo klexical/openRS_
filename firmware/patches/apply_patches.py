@@ -65,7 +65,9 @@ def patch_config_server(base):
 
     # v4.20u already has max_uri_handlers = 32; no bump needed.
 
-    # 4. Insert the /api/frs handler before config_server_start
+    # 4. Insert the /api/frs handler before config_server_init (the function that
+    #    registers URI handlers). Using config_server_init as anchor ensures the
+    #    static handler functions are defined at file scope before they're referenced.
     FRS_HANDLER = r"""
 /* ── openrs-fw: Focus RS state endpoint ──────────────────────────────────
  * GET  /api/frs  → JSON with live drive mode, ESC mode, battery voltage
@@ -127,14 +129,16 @@ static const httpd_uri_t frs_post_uri = {
 /* ─────────────────────────────────────────────────────────────────────── */
 
 """
-    TARGET_FN = "config_server_start("
+    # Anchor: the static config_server_init function that registers all URI handlers.
+    # Handler functions must be defined before this function references them.
+    TARGET_FN = "static httpd_handle_t config_server_init("
     if FRS_HANDLER.strip()[:30] not in c and TARGET_FN in c:
         c = c.replace(TARGET_FN, FRS_HANDLER + TARGET_FN, 1)
         print("  patched: /api/frs handler inserted")
     elif FRS_HANDLER.strip()[:30] in c:
         print("  skipped: /api/frs handler already present")
     else:
-        print("  WARNING: could not find config_server_start() — /api/frs handler NOT inserted")
+        print("  WARNING: could not find config_server_init() — /api/frs handler NOT inserted")
 
     # 5. Register the new handlers in config_server_start
     REGISTER_TARGET = "httpd_register_uri_handler(server, &scan_available_pids_uri);"
@@ -143,10 +147,11 @@ static const httpd_uri_t frs_post_uri = {
         "    httpd_register_uri_handler(server, &frs_get_uri);\n"
         "    httpd_register_uri_handler(server, &frs_post_uri);"
     )
-    if REGISTER_TARGET in c and "frs_get_uri" not in c:
+    FRS_REGISTERED_MARKER = "httpd_register_uri_handler(server, &frs_get_uri)"
+    if REGISTER_TARGET in c and FRS_REGISTERED_MARKER not in c:
         c = c.replace(REGISTER_TARGET, FRS_REGISTER, 1)
         print("  patched: /api/frs handlers registered")
-    elif "frs_get_uri" in c:
+    elif FRS_REGISTERED_MARKER in c:
         print("  skipped: /api/frs handlers already registered")
     else:
         print("  WARNING: registration anchor not found — handlers NOT registered")
@@ -164,9 +169,13 @@ def patch_ws_probe(base):
     path = os.path.join(base, "main", "config_server.c")
     c = read(path)
 
+    # In wican-fw v4.20u the ws_handler does NOT call slcan_parse_frame directly.
+    # Instead it copies the payload into an xdev_buffer and posts it to the SLCAN
+    # RX queue via xQueueSend. We intercept right before that queue send so the
+    # OPENRS? message is handled here and never reaches the SLCAN task.
     PROBE_CODE = (
         '\n    /* openrs-fw: firmware identity probe ─────────────────────────────────\n'
-        '     * The Android app sends "OPENRS?\\r" on connect. Reply before SLCAN.\n'
+        '     * Android app sends "OPENRS?\\r" on connect; reply before queuing.\n'
         '     */\n'
         '    if (ws_pkt.payload != NULL && ws_pkt.len >= 7 &&\n'
         '        strncmp((char *)ws_pkt.payload, "OPENRS?", 7) == 0) {\n'
@@ -178,11 +187,12 @@ def patch_ws_probe(base):
         '        rpl.payload    = (uint8_t *)reply;\n'
         '        rpl.len        = strlen(reply);\n'
         '        httpd_ws_send_frame(req, &rpl);\n'
+        '        free(buf);\n'
         '        return ESP_OK;\n'
         '    }\n'
     )
 
-    ANCHOR = "slcan_parse_frame("
+    ANCHOR = "xQueueSend( *xRX_Queue,"
     MARKER = "OPENRS?"
 
     if MARKER in c:
@@ -191,7 +201,7 @@ def patch_ws_probe(base):
         c = c.replace(ANCHOR, PROBE_CODE + "    " + ANCHOR, 1)
         write(path, c)
     else:
-        print("  WARNING: slcan_parse_frame() not found in config_server.c "
+        print("  WARNING: xQueueSend anchor not found in config_server.c "
               "— OPENRS? probe NOT inserted. Check wican-fw source version.")
 
 
