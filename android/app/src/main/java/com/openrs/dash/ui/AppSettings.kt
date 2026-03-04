@@ -4,30 +4,111 @@ import android.content.Context
 import androidx.core.content.edit
 
 /**
- * Thin SharedPreferences wrapper for user-configurable app settings.
+ * Thin SharedPreferences wrapper for all user-configurable app settings.
  * All reads/writes are synchronous and safe to call from any thread.
  */
 object AppSettings {
 
-    private const val PREFS   = "openrs_settings"
-    private const val KEY_HOST = "wican_host"
-    private const val KEY_PORT = "wican_port"
+    private const val PREFS = "openrs_settings"
+
+    // ── Connection ──────────────────────────────────────────────────────────
+    const val KEY_HOST = "wican_host"
+    // Renamed from "wican_port" to discard cached ELM327 port (3333) on upgrade.
+    const val KEY_PORT = "wican_port_ws"
 
     const val DEFAULT_HOST = "192.168.80.1"
-    const val DEFAULT_PORT = 3333
+    const val DEFAULT_PORT = 80
+
+    // ── Units ───────────────────────────────────────────────────────────────
+    const val KEY_SPEED_UNIT  = "speed_unit"    // "MPH" | "KPH"
+    const val KEY_TEMP_UNIT   = "temp_unit"     // "F"   | "C"
+    const val KEY_BOOST_UNIT  = "boost_unit"    // "PSI" | "BAR" | "KPA"
+    const val KEY_TIRE_UNIT   = "tire_unit"     // "PSI" | "BAR"
+
+    const val DEFAULT_SPEED_UNIT  = "MPH"
+    const val DEFAULT_TEMP_UNIT   = "F"
+    const val DEFAULT_BOOST_UNIT  = "PSI"
+    const val DEFAULT_TIRE_UNIT   = "PSI"
+
+    // ── TPMS ────────────────────────────────────────────────────────────────
+    const val KEY_TIRE_LOW_PSI = "tire_low_psi"   // Low pressure warning threshold
+    const val DEFAULT_TIRE_LOW_PSI = 30f
+
+    // ── Display ─────────────────────────────────────────────────────────────
+    const val KEY_SCREEN_ON = "screen_on"
+    const val DEFAULT_SCREEN_ON = true
+
+    // ── Auto-reconnect ──────────────────────────────────────────────────────
+    const val KEY_AUTO_RECONNECT      = "auto_reconnect"
+    const val KEY_RECONNECT_INTERVAL  = "reconnect_interval_sec"
+    const val DEFAULT_AUTO_RECONNECT     = true
+    const val DEFAULT_RECONNECT_INTERVAL = 10   // seconds
+
+    // ── Read helpers ────────────────────────────────────────────────────────
 
     fun getHost(ctx: Context): String =
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(KEY_HOST, DEFAULT_HOST) ?: DEFAULT_HOST
+        prefs(ctx).getString(KEY_HOST, DEFAULT_HOST) ?: DEFAULT_HOST
 
     fun getPort(ctx: Context): Int =
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getInt(KEY_PORT, DEFAULT_PORT)
+        prefs(ctx).getInt(KEY_PORT, DEFAULT_PORT)
+
+    fun getSpeedUnit(ctx: Context): String =
+        prefs(ctx).getString(KEY_SPEED_UNIT, DEFAULT_SPEED_UNIT) ?: DEFAULT_SPEED_UNIT
+
+    fun getTempUnit(ctx: Context): String =
+        prefs(ctx).getString(KEY_TEMP_UNIT, DEFAULT_TEMP_UNIT) ?: DEFAULT_TEMP_UNIT
+
+    fun getBoostUnit(ctx: Context): String =
+        prefs(ctx).getString(KEY_BOOST_UNIT, DEFAULT_BOOST_UNIT) ?: DEFAULT_BOOST_UNIT
+
+    fun getTireUnit(ctx: Context): String =
+        prefs(ctx).getString(KEY_TIRE_UNIT, DEFAULT_TIRE_UNIT) ?: DEFAULT_TIRE_UNIT
+
+    fun getTireLowPsi(ctx: Context): Float =
+        prefs(ctx).getFloat(KEY_TIRE_LOW_PSI, DEFAULT_TIRE_LOW_PSI)
+
+    fun getScreenOn(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_SCREEN_ON, DEFAULT_SCREEN_ON)
+
+    fun getAutoReconnect(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_AUTO_RECONNECT, DEFAULT_AUTO_RECONNECT)
+
+    fun getReconnectInterval(ctx: Context): Int =
+        prefs(ctx).getInt(KEY_RECONNECT_INTERVAL, DEFAULT_RECONNECT_INTERVAL)
+
+    // ── Write helpers ────────────────────────────────────────────────────────
 
     fun save(ctx: Context, host: String, port: Int) {
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit {
+        prefs(ctx).edit {
             putString(KEY_HOST, host.trim())
             putInt(KEY_PORT, port)
         }
     }
+
+    fun saveAll(ctx: Context, p: UserPrefs) {
+        prefs(ctx).edit {
+            putString(KEY_SPEED_UNIT,  p.speedUnit)
+            putString(KEY_TEMP_UNIT,   p.tempUnit)
+            putString(KEY_BOOST_UNIT,  p.boostUnit)
+            putString(KEY_TIRE_UNIT,   p.tireUnit)
+            putFloat (KEY_TIRE_LOW_PSI, p.tireLowPsi)
+            putBoolean(KEY_SCREEN_ON,  p.screenOn)
+            putBoolean(KEY_AUTO_RECONNECT,    p.autoReconnect)
+            putInt   (KEY_RECONNECT_INTERVAL, p.reconnectIntervalSec)
+        }
+    }
+
+    fun load(ctx: Context): UserPrefs = UserPrefs(
+        speedUnit          = getSpeedUnit(ctx),
+        tempUnit           = getTempUnit(ctx),
+        boostUnit          = getBoostUnit(ctx),
+        tireUnit           = getTireUnit(ctx),
+        tireLowPsi         = getTireLowPsi(ctx),
+        screenOn           = getScreenOn(ctx),
+        autoReconnect      = getAutoReconnect(ctx),
+        reconnectIntervalSec = getReconnectInterval(ctx)
+    )
+
+    private fun prefs(ctx: Context) =
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 }

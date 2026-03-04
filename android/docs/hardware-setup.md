@@ -23,15 +23,18 @@ openRS_ connects to a [MeatPi WiCAN-USB-C3](https://www.mouser.ca/ProductDetail/
 
 ### Configuration
 
-The WiCAN should be in its default configuration:
+openRS_ uses the WiCAN's **WebSocket endpoint** — no mode change required in the WiCAN web UI. Stock firmware exposes `ws://192.168.80.1:80/ws` by default.
 
 | Setting | Value |
 |---------|-------|
-| Mode | ELM327 TCP |
 | Wi-Fi SSID | `WiCAN_XXXXXX` |
 | IP Address | `192.168.80.1` |
-| Port | `3333` |
-| Protocol | CAN 500 kbps (auto-detected via `ATSP6`) |
+| WebSocket Port | `80` |
+| WebSocket Path | `/ws` |
+| Protocol | SLCAN (app sends `C` / `S6` / `O` on connect) |
+| CAN Speed | 500 kbps |
+
+> **Note:** The old ELM327 TCP port (3333) is no longer used. If you upgraded from an earlier version of openRS_, go to Settings and verify the port shows **80**, not 3333.
 
 ### First-Time Setup
 
@@ -52,19 +55,18 @@ The WiCAN should be in its default configuration:
 
 | Setting | Required Value |
 |---------|----------------|
-| Protocol | `elm327` |
-| Port Type | `TCP` |
-| Port | `3333` |
 | WiFi Mode | `AP` |
 | CAN Speed | `500 kbps` |
 | BLE | `Disabled` (unless using BLE transport) |
 
-4. If anything differs, update and press **Save** — the device reboots
+> openRS_ connects via **WebSocket on port 80** — no ELM327 TCP configuration is required. The mode dropdown in the WiCAN web UI does not matter for openRS_.
+
+4. If CAN speed differs, update and press **Save** — the device reboots
 
 **Step 4 — Connect openRS_**
 1. Open the openRS_ app
 2. Tap **● OFFLINE** in the top-right header → it changes to **● CONNECTED**
-3. The app connects to `192.168.80.1:3333`, runs the ELM327 handshake, and begins streaming data
+3. The app connects to `ws://192.168.80.1:80/ws`, initialises SLCAN at 500 kbps, and begins streaming the full CAN bus at ~2100 fps
 
 > **Tip:** Once connected you can also access the web interface at `http://192.168.80.1`. It is recommended to change the AP password from the default in the Settings tab — anyone nearby while the car is running could otherwise connect.
 

@@ -5,6 +5,62 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
+## [v1.1.0] — 2026-03-04
+
+### Changed — Architecture (breaking)
+- **WebSocket SLCAN replaces ELM327 TCP** — the app now connects to the WiCAN via WebSocket on port 80 (`ws://192.168.80.1:80/ws`) using the SLCAN protocol instead of ELM327 TCP on port 3333. This provides passive monitoring of the full CAN bus at ~2100 fps vs ~12 fps previously. No WiCAN configuration change is required; the WebSocket endpoint is available in stock WiCAN firmware.
+- **Preference key renamed** — the saved port preference key changed from `wican_port` to `wican_port_ws` to prevent old cached ELM327 port (3333) from being used after upgrade.
+
+### Added — Settings
+- Full settings dialog accessible via gear icon in the header
+- **Speed unit** — MPH or KPH
+- **Temperature unit** — °F or °C
+- **Boost pressure unit** — PSI, BAR, or kPa
+- **Tire pressure unit** — PSI or BAR
+- **Low tire pressure warning threshold** — user-defined PSI (default 30 PSI)
+- **Keep screen on** — prevents screen sleep while connected (default: on)
+- **Auto-reconnect** — automatically reconnects after a dropped connection (default: on)
+- **Reconnect interval** — configurable delay in seconds (default: 10s)
+- All settings persist across app restarts via SharedPreferences
+
+### Added — CAN Decoders
+- **TPMS (0x340)** — tire pressures LF/RF/LR/RR decoded directly from bytes 2-5 in PSI; this frame is broadcast on MS-CAN and bridged to HS-CAN by the Gateway Module (GWM). No OBD queries required.
+- **Ambient temperature (0x1A4)** — byte 4 signed × 0.25 °C, MS-CAN bridged
+- **Barometric pressure** — added to existing `0x090` frame (byte 2 × 0.5 kPa)
+
+### Fixed — CAN Decoders
+- **Drive mode (0x1B0)** — corrected bit extraction to `(byte6 ushr 4) & 0x0F`; was reading wrong bit positions causing drive mode to always show Normal regardless of actual mode
+- **E-brake (0x0C8)** — corrected bit mask to `(byte3 & 0x40) != 0`
+- **AWD max torque (0x2C0)** — fixed formula to prevent negative values
+- Removed `0x0B0` (was producing impossible G-force values — not a confirmed dynamics frame)
+- Removed steering angle and brake pressure from `0x080` (not present in this frame per DigiCluster)
+- All formulas re-validated against DigiCluster `can0_hs.json` and `can1_ms.json`
+
+### Added — openRS_ firmware detection
+- On connection, the app sends `OPENRS?\r` over WebSocket and checks the first response for `OPENRS:<version>`. Stock WiCAN firmware produces no response; openRS_ firmware confirms itself with its version string.
+- CTRL tab feature buttons (Launch Control, Auto S/S Kill) are unlocked when openRS_ firmware is detected
+- "Coming soon" snackbar only shown when running stock WiCAN firmware
+
+### Added — Diagnostics (DIAG tab)
+- New **DIAG** tab (renamed from DEBUG) with full session diagnostics
+- `DiagnosticLogger` — collects frame inventory, decode trace (last 500 events), session events, and FPS timeline
+- `DiagnosticExporter` — packages all data into a ZIP (human-readable `summary.txt` + machine-readable `detail.json`) and shares via Android share sheet
+- **⬆ CAPTURE & SHARE SNAPSHOT** button for one-tap export
+- Frame inventory shows every CAN ID seen, frame count, last raw hex, decoded values, and any validation warnings
+- Validation engine flags physically impossible values (e.g. RPM > 9000, oil temp < −50°C)
+
+### Added — Unit-aware UI
+- All pages (DASH, PERF, TEMPS, TUNE, TPMS) now display values in the user's preferred units
+- TPMS tire pressure low-alert threshold is now the user-configured value (not hardcoded 30 PSI)
+
+### Added — Screen management
+- `view.keepScreenOn` tied to `prefs.screenOn && vs.isConnected` — screen stays on while driving when enabled in settings
+
+### Removed
+- `ObdPids.kt` — dead code; OBD polling path fully replaced by passive WebSocket SLCAN
+
+---
+
 ## [v1.0.2] — 2026-03-03
 
 ### Fixed
