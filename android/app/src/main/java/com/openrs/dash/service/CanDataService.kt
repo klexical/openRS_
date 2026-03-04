@@ -199,6 +199,8 @@ class CanDataService : Service() {
                             batterySoc   = if (obdState.batterySoc  >= 0)   obdState.batterySoc   else current.batterySoc,
                             batteryTempC = if (obdState.batteryTempC > -90) obdState.batteryTempC else current.batteryTempC,
                             cabinTempC   = if (obdState.cabinTempC  > -90)  obdState.cabinTempC   else current.cabinTempC,
+                            // AWD module Mode 22 — RDU oil temp (default −99.0 sentinel)
+                            rduTempC     = if (obdState.rduTempC > -90)     obdState.rduTempC     else current.rduTempC,
                         )
                     }
                 },

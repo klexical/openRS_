@@ -65,6 +65,14 @@ class WiCanConnection(
         private const val BCM_QUERY_GAP_MS     =    300L
         /** Delay after connect before first BCM poll (ms). */
         private const val BCM_INITIAL_DELAY_MS =  5_000L
+
+        // ── AWD module OBD Mode 22 polling ─────────────────────────────────
+        // Request address 0x703, response address 0x70B (GKN AWD module).
+        // RDU oil temp: PID 0x1E8A, 1-byte response, formula: B4 − 40 °C
+        // Source: research/exportedPIDs.txt + research/Daft Racing/log_awd_temp.py
+        const val AWD_RESPONSE_ID = 0x70B
+        private const val AWD_QUERY_RDU_TEMP = "t703803221E8A00000000\r"  // 0x1E8A RDU oil temp
+        private val AWD_QUERIES = listOf(AWD_QUERY_RDU_TEMP)
     }
 
     sealed class State {
@@ -144,7 +152,13 @@ class WiCanConnection(
                 val obdJob = launch {
                     delay(BCM_INITIAL_DELAY_MS)
                     while (isActive) {
+                        // BCM queries (odometer, SOC, battery temp, cabin temp)
                         BCM_QUERIES.forEach { q ->
+                            try { sendWsText(out, q) } catch (_: Exception) { return@forEach }
+                            delay(BCM_QUERY_GAP_MS)
+                        }
+                        // AWD module queries (RDU oil temp)
+                        AWD_QUERIES.forEach { q ->
                             try { sendWsText(out, q) } catch (_: Exception) { return@forEach }
                             delay(BCM_QUERY_GAP_MS)
                         }
@@ -203,6 +217,12 @@ class WiCanConnection(
                     // ── BCM OBD response — parse and forward via callback ───────
                     if (frame.first == BCM_RESPONSE_ID) {
                         parseBcmResponse(frame.second, getCurrentState(), onObdUpdate)
+                        continue
+                    }
+
+                    // ── AWD module OBD response (RDU temp, 0x70B) ──────────────
+                    if (frame.first == AWD_RESPONSE_ID) {
+                        parseAwdResponse(frame.second, getCurrentState(), onObdUpdate)
                         continue
                     }
 
@@ -379,6 +399,29 @@ class WiCanConnection(
             }
             0xDD04 -> {  // Cabin temp: (B4 × 10/9) - 45 °C
                 onObdUpdate(currentState.copy(cabinTempC = (b4 * 10.0 / 9.0) - 45.0))
+            }
+        }
+    }
+
+    /**
+     * Parse an ISO-TP single-frame response from the AWD module (CAN ID 0x70B).
+     *
+     * Supported PIDs:
+     *   0x1E8A  RDU oil temperature — B4 − 40 °C
+     *           Source: research/exportedPIDs.txt + log_awd_temp.py
+     */
+    private fun parseAwdResponse(
+        data: ByteArray,
+        currentState: VehicleState,
+        onObdUpdate: (VehicleState) -> Unit
+    ) {
+        if (data.size < 5) return
+        if ((data[1].toInt() and 0xFF) != 0x62) return  // not positive response
+        val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
+        val b4  = data[4].toInt() and 0xFF
+        when (did) {
+            0x1E8A -> {  // RDU oil temp: B4 − 40 °C
+                onObdUpdate(currentState.copy(rduTempC = (b4 - 40).toDouble()))
             }
         }
     }

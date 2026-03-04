@@ -5,6 +5,48 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
+## [v1.1.4] — 2026-03-04
+
+### Fixed — Boost formula (critical: was reading engine oil temp as boost)
+- CAN frame `0x0F8` (DBC: `PCMmsg07`) carries **three** signals, not two.
+  - `byte[1]` = **EngineOilTemp** — `raw − 50 °C` ← was being decoded as boost (wrong!)
+  - `byte[5]` = **Boost** — `raw × 0.01 bar gauge`; stored as absolute kPa = `raw + barometricPressure`
+  - `byte[7]` = **PTUTemp** — `raw − 60 °C` ← was labelled "oilTemp" (wrong!)
+- v1.1.3 accidentally moved the boost read to `byte[1]`, which is actually engine oil temp. This update restores `byte[5]` as boost (now gauge + baro = absolute) and correctly separates all three signals per the RS_HS.dbc.
+- At idle `byte[5] = 0x00` = 0 kPa gauge = 0 PSI boost (no turbo activity) — this is now correctly displayed as ~0 PSI instead of −14.7 PSI.
+
+### Fixed — Engine oil temp was wrong (was showing PTU temp)
+- Oil temp field was reading `byte[7] − 60`, which is the **PTU (transfer case) temperature**.
+- Corrected to `byte[1] − 50` (engine oil temp per DBC). PTU temp now correctly reads `byte[7] − 60`.
+- Before: "OIL 60°C" was actually PTU temperature. Now both values are correctly separated.
+
+### Fixed — Wheel speed CAN ID wrong (0x215 → 0x190)
+- Wheel speeds were mapped to CAN ID `0x215`, which does not exist on the Focus RS HS-CAN bus.
+- RS_HS.dbc `ABSmsg03` at ID `0x190` carries all four wheel speeds. This ID was visible in diagnostics (67 743 frames logged) but never decoded.
+- Formula corrected to 15-bit Motorola MSB-first, `× 0.011343006 km/h` per DBC (was: 16-bit `− 10 000 × 0.01`).
+- FL/FR/RL/RR now correctly decoded from `((data[N] & 0x7F) << 8) | data[N+1]`.
+
+### Added — Intake Air Temperature (IAT) from CAN 0x2F0
+- `IntakeAirTemp : 49|10@0+ (0.25,−127)` added alongside coolant in the `0x2F0` decoder.
+- Formula: `((data[6] & 0x03) << 8 | data[7]) × 0.25 − 127 °C` (RS_HS.dbc PCMmsg16 verified).
+- Displayed in the TEMPS tab alongside coolant.
+
+### Added — Ambient temperature from CAN 0x340 (PCMmsg17)
+- RS_HS.dbc `PCMmsg17` at `0x340` carries `AmbientAirTemp : 63|8@0−` in byte 7 (`signed × 0.25 °C`).
+- The ambient temp is now decoded alongside the existing TPMS bytes 2-5 decode from the same frame.
+- This provides ambient temp data without needing the MS-CAN bus.
+
+### Added — RDU temperature via AWD module Mode 22 polling
+- Active ISO-TP query now sent to AWD module (`0x703`) every 30 s, polling PID `0x1E8A` (RDU oil temp).
+- Formula: `B4 − 40 °C` (source: research/exportedPIDs.txt + DaftRS log_awd_temp.py).
+- Response intercepted on CAN ID `0x70B`. RDU temp was previously read from `0x2C0` byte 3 (always 0 at idle = −40°C); that was wrong — the signal is not in any passive broadcast.
+- `rduTempC` default changed from `0.0` to `−99.0` (consistent with other "not yet polled" fields).
+
+### Removed — Dead PTU decoder on 0x2C2
+- `ID_PTU_TEMP = 0x2C2` never appears on the HS-CAN bus. PTU temperature is now correctly sourced from `0x0F8` byte 7. The dead decoder and constant have been removed.
+
+---
+
 ## [v1.1.3] — 2026-03-04
 
 ### Fixed — Boost sensor reading always −14.7 PSI
