@@ -149,19 +149,23 @@ object CanDecoder {
             // ── 0x340: TPMS tire pressures — MS-CAN bridged via GWM ───────────
             // DigiCluster can1_ms.json confirmed: direct PSI, bytes 2-5
             //   byte2 = LF, byte3 = RF, byte4 = LR, byte5 = RR
-            // A raw value of 0 means sensor not detected / learning mode.
+            // Sensors sleep when stationary; stale/noise readings can appear.
+            // Valid range: 5–60 PSI. Out-of-range → keep previous stored value.
+            // All-zero → sensors sleeping, no update (retain last known pressure).
             ID_TPMS -> if (n >= 6) {
-                val lf = ubyte(data, 2).toDouble()
-                val rf = ubyte(data, 3).toDouble()
-                val lr = ubyte(data, 4).toDouble()
-                val rr = ubyte(data, 5).toDouble()
-                // Only update if at least one sensor is reporting (non-zero)
-                if (lf == 0.0 && rf == 0.0 && lr == 0.0 && rr == 0.0) null
+                fun validPsi(raw: Int): Double? =
+                    if (raw in 5..60) raw.toDouble() else null
+                val lf = validPsi(ubyte(data, 2))
+                val rf = validPsi(ubyte(data, 3))
+                val lr = validPsi(ubyte(data, 4))
+                val rr = validPsi(ubyte(data, 5))
+                // Only update if at least one sensor has a valid reading
+                if (lf == null && rf == null && lr == null && rr == null) null
                 else state.copy(
-                    tirePressLF = lf,
-                    tirePressRF = rf,
-                    tirePressLR = lr,
-                    tirePressRR = rr,
+                    tirePressLF = lf ?: state.tirePressLF,
+                    tirePressRF = rf ?: state.tirePressRF,
+                    tirePressLR = lr ?: state.tirePressLR,
+                    tirePressRR = rr ?: state.tirePressRR,
                     lastUpdate  = now
                 )
             } else null
@@ -205,12 +209,13 @@ object CanDecoder {
             ) else null
 
             // ── 0x1B0: Drive mode ──────────────────────────────────────────────
-            // DigiCluster: startBit 55, bitLength 4, Motorola (MSB-first).
-            // Bit 55 in standard DBC = byte6 bit7 (MSB of byte 6).
-            // Four bits 55-52 = upper nibble of byte 6.
+            // The drive mode is encoded in the LOWER nibble of byte 6.
+            // The upper nibble carries the previous/transitioning mode value,
+            // which is why reading ushr 4 always shows one mode behind.
+            // Verified against live CAN data: lower nibble (and 0x0F) is correct.
             // 0=Normal, 1=Sport, 2=Track, 3=Drift, 5=Custom
             ID_AWD_MSG -> if (n >= 7) state.copy(
-                driveMode = DriveMode.fromInt((data[6].toInt() and 0xFF) ushr 4),
+                driveMode = DriveMode.fromInt(data[6].toInt() and 0x0F),
                 lastUpdate = now
             ) else null
 

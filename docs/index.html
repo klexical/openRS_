@@ -722,6 +722,11 @@ function demo(t) {
     tireTempLR: 29, tireTempRR: 28,
     maxTirePressSpread: 2,
     hasTpmsData: true, anyTireLow: false,
+    // BCM OBD Mode 22 polled fields (v1.1.1+)
+    odometerKm: 42381,
+    batterySoc: 87,
+    cabinTempC: 21 + Math.sin(t * 0.05) * 0.5,
+    batteryTempC: 18 + Math.sin(t * 0.07) * 1,
     isReadyToRace: oil >= 65 && rdu >= 20 && ptu >= 50,
     isConnected: true,
     driveMode: uiState.driveMode,
@@ -747,11 +752,11 @@ function cell(lbl, val, cls = '') {
 function infoRow(pairs) {
   return `<div class="info-row">${pairs.map(([l,v,c])=>cell(l,v,c)).join('')}</div>`;
 }
-function tempGauge(lbl, val, unit, cls = '') {
+function tempGauge(lbl, val, unit, cls = '', sub = '') {
   return `<div class="temp-gauge">
     <div class="tg-lbl">${lbl}</div>
     <div class="tg-val${cls?' '+cls:''}">${val}</div>
-    <div class="tg-unit">${unit}</div>
+    <div class="tg-unit">${unit}${sub ? '<span style="color:var(--dim);font-size:9px;margin-left:3px">'+sub+'</span>' : ''}</div>
   </div>`;
 }
 function wheelBox(lbl, val) {
@@ -809,7 +814,13 @@ function dashHtml(v) {
     ${infoRow([['THROTTLE', pct(v.throttlePct)],['BRAKE', f1(v.brakePressure)],['AWD', v.frontRearSplit],['TORQUE', ri(v.torqueAtTrans)+' Nm']])}
     ${infoRow([['OIL', displayTemp(v.oilTempC)+tempLabel()],['COOLANT', displayTemp(v.coolantTempC)+tempLabel()],['INTAKE', displayTemp(v.intakeTempC)+tempLabel()],['BATT', f1(v.batteryVoltage)+'V']])}
     ${infoRow([['LAT G', f2(v.lateralG)],['LON G', f2(v.longitudinalG)],['STEER', f1(v.steeringAngle)+'°'],['YAW', f1(v.yawRate)]])}
-    ${infoRow([['FUEL', pct(v.fuelLevelPct)],['LOAD', pct(v.calcLoad)],['AFR', f2(v.commandedAfr)],['FPS', ri(v.framesPerSecond)]])}`;
+    ${infoRow([['FUEL', pct(v.fuelLevelPct)],['LOAD', pct(v.calcLoad)],['AFR', f2(v.commandedAfr)],['FPS', ri(v.framesPerSecond)]])}
+    ${infoRow([
+      ['ODO',  v.odometerKm  >= 0 ? v.odometerKm+' km'              : '--'],
+      ['SOC',  v.batterySoc  >= 0 ? ri(v.batterySoc)+'%'            : '--'],
+      ['12V',  f1(v.batteryVoltage)+'V'],
+      ['MODE', (v.driveMode||'Normal').toUpperCase()]
+    ])}`;
 }
 
 function awdHtml(v) {
@@ -823,7 +834,7 @@ function awdHtml(v) {
       <div class="split-mid"><div class="split-val">${v.frontRearSplit}</div><div class="split-sub">FRONT / REAR</div></div>
       ${wheelBox('FR', f1(v.wheelSpeedFR))}
     </div>
-    <div class="sec-lbl">▼ PTU: ${toF(v.ptuTempC)}°F ▼</div>
+    <div class="sec-lbl">▼ PTU: ${displayTemp(v.ptuTempC)}${tempLabel()} ▼</div>
     <div style="display:flex;justify-content:space-between;max-width:300px;margin:0 auto;font-size:10px;color:var(--dim)">
       <span>L ${v.awdLeftTorque} Nm</span><span>${v.awdRightTorque} Nm R</span>
     </div>
@@ -834,7 +845,7 @@ function awdHtml(v) {
     <div class="axle-row">
       ${wheelBox('RL', f1(v.wheelSpeedRL))}
       <div class="split-mid">
-        <div style="font-size:11px;color:var(--dim)">RDU: ${toF(v.rduTempC)}°F</div>
+        <div style="font-size:11px;color:var(--dim)">RDU: ${displayTemp(v.rduTempC)}${tempLabel()}</div>
         <div class="split-sub">Max: ${v.awdMaxTorque} Nm</div>
       </div>
       ${wheelBox('RR', f1(v.wheelSpeedRR))}
@@ -894,6 +905,15 @@ function tempsHtml(v) {
     <div class="gauge-row">
       ${tempGauge('CHARGE AIR',   displayTemp(v.chargeAirTempC),  tl)}
       ${tempGauge('CATALYTIC',    displayTemp(v.catalyticTempC),  tl, catCls)}
+    </div>
+    <div style="height:8px"></div>
+    <div class="gauge-row">
+      ${v.cabinTempC > -90
+        ? tempGauge('CABIN',    displayTemp(v.cabinTempC),    tl, '', '(BCM)')
+        : tempGauge('CABIN',    '--',                          tl, 'dim', '(BCM — polling)')}
+      ${v.batteryTempC > -90
+        ? tempGauge('BATT TEMP', displayTemp(v.batteryTempC), tl, v.batteryTempC > 60 ? 'hot' : v.batteryTempC > 40 ? 'warm' : '', '(BCM)')
+        : tempGauge('BATT TEMP', '--',                         tl, 'dim', '(BCM — polling)')}
     </div>
     ${v.isReadyToRace ? '<div class="rtr">READY TO RACE</div>' : ''}`;
 }
@@ -1040,6 +1060,12 @@ function aaDash(v) {
       ${cell('LOAD',  pct(v.calcLoad))}
       ${cell('AFR',   f2(v.commandedAfr))}
       ${cell('FPS',   ri(v.framesPerSecond))}
+    </div>
+    <div class="aa-info-row">
+      ${cell('ODO',  v.odometerKm  >= 0 ? v.odometerKm+' km'   : '--')}
+      ${cell('SOC',  v.batterySoc  >= 0 ? ri(v.batterySoc)+'%' : '--')}
+      ${cell('12V',  f1(v.batteryVoltage)+'V')}
+      ${cell('MODE', (v.driveMode||'Normal').toUpperCase())}
     </div>`;
 }
 
@@ -1119,6 +1145,15 @@ function aaTemps(v) {
       ${tempGauge('PTU (TRANSFER)',  displayTemp(v.ptuTempC),       tl, ptuCls)}
       ${tempGauge('CHARGE AIR',     displayTemp(v.chargeAirTempC), tl)}
       ${tempGauge('CATALYTIC',      displayTemp(v.catalyticTempC), tl, catCls)}
+    </div>
+    <div style="height:10px"></div>
+    <div class="aa-temp-row">
+      ${v.cabinTempC > -90
+        ? tempGauge('CABIN',     displayTemp(v.cabinTempC),    tl, '', '(BCM)')
+        : tempGauge('CABIN',     '--',                          tl, 'dim', '(BCM — polling)')}
+      ${v.batteryTempC > -90
+        ? tempGauge('BATT TEMP', displayTemp(v.batteryTempC),  tl, v.batteryTempC > 60 ? 'hot' : v.batteryTempC > 40 ? 'warm' : '', '(BCM)')
+        : tempGauge('BATT TEMP', '--',                          tl, 'dim', '(BCM — polling)')}
     </div>
     ${v.isReadyToRace ? '<div class="rtr">READY TO RACE</div>' : ''}`;
 }
