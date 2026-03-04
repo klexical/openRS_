@@ -72,10 +72,12 @@ object CanDecoder {
             ) else null
 
             // ── 0x0F8: Boost + oil temperature ────────────────────────────────
-            // Boost kPa absolute: byte5   (DigiCluster bits 40-47 motorola, scale 1.0)
-            // Oil temp °C:        byte7 − 60  (DigiCluster bits 56-63, offset −60)
+            // Boost kPa absolute: byte1   (confirmed via diagnostic analysis:
+            //   byte5 is always 0x00 at any RPM; byte1 tracks manifold pressure
+            //   correctly — 61 kPa at cold idle → −5.8 PSI, 87 kPa at warm idle → −2.1 PSI)
+            // Oil temp °C:        byte7 − 60  (DigiCluster verified: 36°C cold, 60°C warm)
             ID_ENGINE_TEMPS -> if (n >= 8) state.copy(
-                boostKpa  = ubyte(data, 5).toDouble(),
+                boostKpa  = ubyte(data, 1).toDouble(),
                 oilTempC  = (ubyte(data, 7) - 60).toDouble(),
                 lastUpdate = now
             ) else null
@@ -293,8 +295,11 @@ object CanDecoder {
         ID_ENGINE_TEMPS -> when {
             state.oilTempC < -50   -> "oilTempC=${"%.0f".format(state.oilTempC)} — check byte7 formula (raw-60)"
             state.oilTempC > 160   -> "oilTempC=${"%.0f".format(state.oilTempC)} — suspiciously hot"
-            state.boostKpa < 40    -> "boostKpa=${state.boostKpa.toInt()} — too low (sensor disconnected?)"
-            state.boostKpa > 280   -> "boostKpa=${state.boostKpa.toInt()} — >26 PSI boost"
+            // Use a fixed string so the LinkedHashSet deduplicates to one entry.
+            // Low MAP kPa at idle is normal (manifold vacuum); only truly impossible
+            // value is 0 (which would mean disconnected/failed MAP sensor).
+            state.boostKpa == 0.0  -> "boostKpa=0 — MAP sensor may be disconnected"
+            state.boostKpa > 280   -> "boostKpa>${state.boostKpa.toInt()} — >26 PSI, check formula"
             else -> null
         }
         ID_SPEED        -> when {

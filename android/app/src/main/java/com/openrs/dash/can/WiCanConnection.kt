@@ -156,7 +156,14 @@ class WiCanConnection(
                 val seenIds   = mutableSetOf<Int>()
                 var debugCount = 0
                 var debugTimer = System.currentTimeMillis()
-                var firmwareChecked = false
+                // Firmware probe: check every incoming message until confirmed.
+                // At ~2000 fps the first WebSocket frame is almost always a CAN
+                // frame, not the probe response — so we can't rely on checking
+                // only the first message. We check all frames and declare "stock"
+                // after PROBE_GRACE_FRAMES normal SLCAN frames with no response.
+                var firmwareKnown = false
+                var probeFramesSeen = 0
+                val PROBE_GRACE_FRAMES = 20
 
                 // ── Main frame loop ─────────────────────────────
                 try {
@@ -166,10 +173,10 @@ class WiCanConnection(
 
                     val msg = payload.toString(Charsets.UTF_8).trimEnd()
 
-                    // Check probe response on first incoming message
-                    if (!firmwareChecked) {
-                        firmwareChecked = true
+                    // Check every message for openRS_ probe response until confirmed
+                    if (!firmwareKnown) {
                         if (msg.startsWith("OPENRS:")) {
+                            firmwareKnown = true
                             val version = msg.removePrefix("OPENRS:").trim()
                             com.openrs.dash.OpenRSDashApp.instance.isOpenRsFirmware.value = true
                             com.openrs.dash.diagnostics.DiagnosticLogger.isOpenRsFirmware = true
@@ -177,12 +184,17 @@ class WiCanConnection(
                             addDebugLine("Firmware: openRS_ $version ✓")
                             com.openrs.dash.diagnostics.DiagnosticLogger.event("FIRMWARE", "openRS_ $version detected")
                             continue
-                        } else {
-                            com.openrs.dash.OpenRSDashApp.instance.isOpenRsFirmware.value = false
-                            com.openrs.dash.diagnostics.DiagnosticLogger.isOpenRsFirmware = false
-                            com.openrs.dash.diagnostics.DiagnosticLogger.firmwareVersion = "WiCAN stock"
-                            addDebugLine("Firmware: WiCAN stock")
-                            com.openrs.dash.diagnostics.DiagnosticLogger.event("FIRMWARE", "WiCAN stock (no openRS_ response)")
+                        } else if (msg.startsWith("t") || msg.startsWith("T")) {
+                            // Count normal SLCAN frames; after grace period declare stock
+                            probeFramesSeen++
+                            if (probeFramesSeen >= PROBE_GRACE_FRAMES) {
+                                firmwareKnown = true
+                                com.openrs.dash.OpenRSDashApp.instance.isOpenRsFirmware.value = false
+                                com.openrs.dash.diagnostics.DiagnosticLogger.isOpenRsFirmware = false
+                                com.openrs.dash.diagnostics.DiagnosticLogger.firmwareVersion = "WiCAN stock"
+                                addDebugLine("Firmware: WiCAN stock")
+                                com.openrs.dash.diagnostics.DiagnosticLogger.event("FIRMWARE", "WiCAN stock (no openRS_ response)")
+                            }
                         }
                     }
 

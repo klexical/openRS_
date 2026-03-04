@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
+import com.openrs.dash.BuildConfig
 import com.openrs.dash.can.CanDecoder
 import java.io.File
 import java.text.SimpleDateFormat
@@ -65,12 +66,13 @@ object DiagnosticExporter {
             putExtra(Intent.EXTRA_STREAM, uri)
             putExtra(Intent.EXTRA_SUBJECT, "openRS_ Diagnostic Report")
             putExtra(Intent.EXTRA_TEXT,
-                "openRS_ diagnostic bundle.\n" +
+                "openRS_ v${BuildConfig.VERSION_NAME} diagnostic bundle.\n" +
                 "• diagnostic_summary_*.txt — human-readable\n" +
                 "• diagnostic_detail_*.json — raw data for analysis\n\n" +
-                "Session: ${DiagnosticLogger.formatDuration(DiagnosticLogger.sessionDurationMs)}\n" +
-                "Firmware: ${DiagnosticLogger.firmwareVersion}\n" +
-                "Host: ${DiagnosticLogger.sessionHost}:${DiagnosticLogger.sessionPort}")
+                "App      : v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})\n" +
+                "Session  : ${DiagnosticLogger.formatDuration(DiagnosticLogger.sessionDurationMs)}\n" +
+                "Firmware : ${DiagnosticLogger.firmwareVersion}\n" +
+                "Host     : ${DiagnosticLogger.sessionHost}:${DiagnosticLogger.sessionPort}")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         ctx.startActivity(Intent.createChooser(intent, "Share openRS_ Diagnostics"))
@@ -85,6 +87,7 @@ object DiagnosticExporter {
 
         appendLine("═══════════════════════════════════════════════════════════")
         appendLine("  openRS_ Diagnostic Report")
+        appendLine("  App       : v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})")
         appendLine("  Generated : $ts")
         appendLine("  Session   : ${log.formatDuration(log.sessionDurationMs)}")
         appendLine("═══════════════════════════════════════════════════════════")
@@ -231,6 +234,8 @@ object DiagnosticExporter {
         // meta
         appendLine("  \"meta\": {")
         appendLine("    \"app\": \"openRS_\",")
+        appendLine("    \"appVersion\": \"${BuildConfig.VERSION_NAME}\",")
+        appendLine("    \"appBuild\": ${BuildConfig.VERSION_CODE},")
         appendLine("    \"generatedAt\": \"$ts\",")
         appendLine("    \"sessionDurationMs\": ${log.sessionDurationMs},")
         appendLine("    \"sessionDurationHuman\": \"${log.formatDuration(log.sessionDurationMs)}\",")

@@ -5,6 +5,24 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
+## [v1.1.3] — 2026-03-04
+
+### Fixed — Boost sensor reading always −14.7 PSI
+- Boost (MAP kPa absolute) was being decoded from byte 5 of CAN frame `0x0F8`, which is always `0x00` on the Focus RS MK3. Diagnostic log analysis confirmed byte 1 carries the manifold absolute pressure and tracks correctly across sessions: `0x3D` (61 kPa → −5.8 PSI at cold idle) and `0x57` (87 kPa → −2.1 PSI at warm idle). Formula corrected to `ubyte(data, 1)`.
+
+### Fixed — Firmware detection showing "WiCAN stock" when openRS_ firmware is installed
+- The probe (`OPENRS?\r`) response was checked only on the **very first** WebSocket frame. At ~2000 frames/sec, the first frame is almost always a CAN frame, not the probe reply, so it was immediately classified as stock. Now checks every incoming frame until the probe response is received OR 20 normal SLCAN frames pass without a response, at which point it falls back to "WiCAN stock".
+
+### Fixed — 34 duplicate boost validation warnings in diagnostic log
+- The validation issue string included the specific kPa value (`boostKpa=37 — too low`), causing the `LinkedHashSet` to grow to 34 entries for each unique vacuum reading at idle. Changed to a single fixed string (`boostKpa=0 — MAP sensor may be disconnected`) that only fires when MAP reads exactly 0, which is the only truly impossible value for a running engine.
+
+### Added — App version in diagnostic log and share email
+- Diagnostic text summary now shows `App: vX.Y.Z (build N)` in the header.
+- JSON `meta` block now includes `appVersion` and `appBuild` fields.
+- Share email body now includes `App: vX.Y.Z (build N)` for easy version identification when reporting issues.
+
+---
+
 ## [v1.1.2] — 2026-03-04
 
 ### Fixed — Drive mode off-by-one
