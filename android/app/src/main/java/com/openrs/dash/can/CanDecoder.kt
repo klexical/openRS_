@@ -32,7 +32,12 @@ object CanDecoder {
     const val ID_SPEED        = 0x130   // Speed bytes 6-7 BE × 0.01 kph
     const val ID_LONG_ACCEL   = 0x160   // Longitudinal G bits 48-57 LE × 0.00390625 − 2.0
     const val ID_LAT_ACCEL    = 0x180   // Lateral G bits 16-25 LE × 0.00390625 − 2.0
-    const val ID_AWD_MSG      = 0x1B0   // DriveMode Motorola bit 55|4  — RS_HS.dbc confirmed
+    // RS_HS.dbc x17E (BO_ 382): DriveModeRequest — lower nibble of byte 0 carries the
+    // steady-state mode (0=Normal 1=Sport 2=Track 3=Drift). Confirmed from a 16-min live log:
+    // 9371 frames, 547 Normal (session start) then 8824 Sport (remainder of drive).
+    // NOTE: 0x1B0 was previously read for drive mode — that signal only fires during
+    // dial TRANSITIONS (button events), not steady-state. 0x17E is the correct source.
+    const val ID_DRIVE_MODE   = 0x17E
     const val ID_ESC_ABS      = 0x1C0   // ESCMode Motorola bit 13|2    — RS_HS.dbc confirmed
     // RS_HS.dbc ABSmsg03 (0x190): FL/FR/RL/RR wheel speeds — 15-bit Motorola × 0.011343006 km/h
     const val ID_WHEEL_SPEEDS = 0x190
@@ -65,7 +70,7 @@ object CanDecoder {
         ID_TORQUE, ID_THROTTLE, ID_PEDALS, ID_ENGINE_RPM,
         ID_GAUGE_ILLUM, ID_ENGINE_TEMPS, ID_SPEED,
         ID_LONG_ACCEL, ID_LAT_ACCEL,
-        ID_AWD_MSG, ID_ESC_ABS,
+        ID_DRIVE_MODE, ID_ESC_ABS,
         ID_WHEEL_SPEEDS, ID_GEAR, ID_AWD_TORQUE, ID_COOLANT,
         ID_TPMS, ID_AMBIENT_TEMP,
         ID_FUEL_LEVEL, ID_BATTERY,
@@ -290,14 +295,15 @@ object CanDecoder {
                 )
             } else null
 
-            // ── 0x1B0: Drive mode ──────────────────────────────────────────────
-            // The drive mode is encoded in the LOWER nibble of byte 6.
-            // The upper nibble carries the previous/transitioning mode value,
-            // which is why reading ushr 4 always shows one mode behind.
-            // Verified against live CAN data: lower nibble (and 0x0F) is correct.
-            // 0=Normal, 1=Sport, 2=Track, 3=Drift, 5=Custom
-            ID_AWD_MSG -> if (n >= 7) state.copy(
-                driveMode = DriveMode.fromInt(data[6].toInt() and 0x0F),
+            // ── 0x17E: Drive mode (DriveModeRequest) ──────────────────────────
+            // RS_HS.dbc BO_ 382 x17E: SG_ DriveModeRequest : 3|4@0+ (1,0) [0|15]
+            // Lower nibble of byte 0 carries the STEADY-STATE selected mode.
+            // The upper nibble alternates between 0xC and 0xD (alive counter bit).
+            // 0=Normal  1=Sport  2=Track  3=Drift
+            // (0x1B0 byte6 was previously used — it only reflects button-press
+            // transitions, not the held mode. 0x17E is the correct steady-state source.)
+            ID_DRIVE_MODE -> if (n >= 1) state.copy(
+                driveMode = DriveMode.fromInt(data[0].toInt() and 0x0F),
                 lastUpdate = now
             ) else null
 
@@ -352,7 +358,7 @@ object CanDecoder {
         ID_AMBIENT_TEMP -> "ambientTempC=${"%.2f".format(state.ambientTempC)}"
         ID_WHEEL_SPEEDS -> "FL=${"%.1f".format(state.wheelSpeedFL)} FR=${"%.1f".format(state.wheelSpeedFR)} RL=${"%.1f".format(state.wheelSpeedRL)} RR=${"%.1f".format(state.wheelSpeedRR)} km/h"
         ID_AWD_TORQUE   -> "L=${"%.0f".format(state.awdLeftTorque)}Nm R=${"%.0f".format(state.awdRightTorque)}Nm"
-        ID_AWD_MSG      -> "driveMode=${state.driveMode.label}"
+        ID_DRIVE_MODE   -> "driveMode=${state.driveMode.label}"
         ID_ESC_ABS      -> "escStatus=${state.escStatus.label}"
         ID_GEAR         -> "gear=${state.gearDisplay}"
         ID_TORQUE       -> "torqueNm=${"%.0f".format(state.torqueAtTrans)}"

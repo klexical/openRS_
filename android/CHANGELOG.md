@@ -5,6 +5,39 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
+## [v1.2.3] — 2026-03-04
+
+### Fixed — Drive mode always showing Normal
+
+The drive mode badge was reading from CAN ID `0x1B0` byte 6 lower nibble. Analysis of a 16-minute, 1.9M-frame live log revealed this is wrong: `0x1B0` byte 6 only changes during dial-turn **transition events** (lasting 50–200 ms), not while a mode is held. Frames counted by mode: Normal 30,642 vs Sport 546 — but separately, `0x17E` showed Normal 547 / Sport 8,824, matching the actual 16-minute session where the driver was in Sport for ~15 minutes.
+
+**Root cause:** `0x1B0` carries AWD/mode transition data; it reverts to Normal between mode-dial clicks. The RS_HS.dbc contains `BO_ 382 x17E` with `SG_ DriveModeRequest : 3|4@0+ (1,0) [0|15]` — the lower nibble of byte 0 is the steady-state selected mode.
+
+**Fix:** Replaced `ID_AWD_MSG = 0x1B0` with `ID_DRIVE_MODE = 0x17E`. Decoder: `data[0].toInt() and 0x0F`.
+
+| Value | Mode   |
+|-------|--------|
+| 0     | Normal |
+| 1     | Sport  |
+| 2     | Track  |
+| 3     | Drift  |
+
+### Fixed — TPMS only showing one tyre (LR)
+
+The passive CAN `0x340` frame (bytes 2–5, per RSdash/DigiCluster `can1_ms.json`) is bridged by the Gateway Module to HS-CAN, but the GWM on this car only populates byte 4 (LR). The other three tyre pressures remain on MS-CAN only and are not accessible via the OBD port passively.
+
+**Fix:** Added BCM Mode 22 polling for all four tyre pressures using PIDs 0x2813 (LF), 0x2814 (RF), 0x2816 (LR), 0x2815 (RR). Formula from `exportedPIDs.txt`:
+
+```
+PSI = (((256×A)+B)/3 + 22/3) × 0.145
+```
+
+Validated: LR via BCM should agree with the passive CAN `0x340` byte 4 reading (35 PSI in the log). Polls run every 30 s alongside the existing BCM cycle. Passive CAN `0x340` continues to provide real-time LR updates between polls.
+
+Also added sentinel guards in `CanDataService.onObdUpdate` to prevent a BCM response captured before the first passive CAN frame from resetting tyre pressures back to the `−1.0` default.
+
+---
+
 ## [v1.2.2] — 2026-03-04
 
 ### Fixed — Gear display always showing Neutral
