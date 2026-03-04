@@ -48,12 +48,12 @@ object CanDecoder {
     const val ID_AMBIENT_TEMP = 0x1A4   // Ambient temp byte4 signed × 0.25 °C (MS-CAN bridged)
 
     // ── RS_HS.dbc SASMmsg01 (0x010): Steering wheel angle ──────────────────
-    // SteeringWheelAngle : 54|15@0+ (0.04395,0) → bits(54,15) × 0.04395 °
-    // SteeringAngleSign  : 39|1@0+ (1,0)        → 1=CW(right) 0=CCW(left)
+    // SteeringWheelAngle : 54|15@0+ (0.04395,0) → (byte6&0x7F)<<8|byte7 × 0.04395 °
+    // SteeringAngleSign  : 39|1@0+ (1,0)        → (byte4>>7)&1 → 1=CW(right) 0=CCW/left
     const val ID_STEERING     = 0x010
 
     // ── RS_HS.dbc ABSmsg10 (0x252): Brake pressure ──────────────────────────
-    // BrakePressureMeasured : 11|12@0+ (1,0) → bits(11,12) raw 0-4095 counts
+    // BrakePressureMeasured : 11|12@0+ (1,0) → (byte1&0x0F)<<8|byte2 raw 0-4095
     // Displayed as 0-100% (raw / 40.95) until bar calibration is confirmed.
     const val ID_BRAKE_PRESS  = 0x252
 
@@ -156,9 +156,16 @@ object CanDecoder {
 
             // ── 0x180: Lateral acceleration + Yaw rate ─────────────────────────
             // RS_HS.dbc ABSmsg02 (10 ms broadcast):
-            //   LatAccelMeasured  : 17|10@0+ (0.00390625,-2) → bits 17-26 Motorola
+            //   LatAccelMeasured  : 17|10@0+ (0.00390625,-2)
             //     = (byte2 & 0x03) << 8 | byte3, × 0.00390625 − 2.0 g
-            //   YawRateMeasured   : 35|12@0+ (0.03663,-75)   → bits(data,35,12) × 0.03663 − 75 °/s
+            //   YawRateMeasured   : 35|12@0+ (0.03663,-75)
+            //     = (byte4 & 0x0F) << 8 | byte5, × 0.03663 − 75.0 °/s
+            //     Range: ±75 °/s (raw 0=−75, raw 2048≈0, raw 4095=+75).
+            //     NOTE: manual extraction required — the yaw signal uses standard DBC
+            //     LSB-first Motorola bit numbering (bit 35 = byte4 pos3), while the
+            //     bits() helper uses MSB-first network addressing, which gives ~37.5°/s
+            //     for a stationary vehicle.  Validated against 0x213 cross-reference and
+            //     physical lat-G / yaw / speed triangle from live log data.
             // Invalid pattern for lat G: byte2 & 0x03 == 0x03 && byte3 == 0xFF
             ID_LAT_ACCEL -> if (n >= 8) {
                 val b2 = data[2].toInt() and 0xFF
@@ -166,19 +173,24 @@ object CanDecoder {
                 if ((b2 and 0x03) == 0x03 && b3 == 0xFF) null
                 else state.copy(
                     lateralG   = ((b2 and 0x03) shl 8 or b3) * 0.00390625 - 2.0,
-                    yawRate    = bits(data, 35, 12) * 0.03663 - 75.0,
+                    yawRate    = ((ubyte(data, 4) and 0x0F) shl 8 or ubyte(data, 5)) * 0.03663 - 75.0,
                     lastUpdate = now
                 )
             } else null
 
             // ── 0x010: Steering wheel angle ────────────────────────────────────
             // RS_HS.dbc SASMmsg01 (10 ms broadcast):
-            //   SteeringWheelAngle : 54|15@0+ (0.04395,0) → bits(data,54,15) × 0.04395 °
-            //   SteeringAngleSign  : 39|1@0+  (1,0)       → 1=CW/right 0=CCW/left
-            // Range: 0 to 1440 °. Sign applied: positive = right (CW), negative = left.
+            //   SteeringWheelAngle : 54|15@0+ (0.04395,0)
+            //     = (byte6 & 0x7F) << 8 | byte7, × 0.04395 °
+            //     Range: 0–1440 °.
+            //   SteeringAngleSign  : 39|1@0+  (1,0)
+            //     = (byte4 >> 7) & 1 → 1=CW/right 0=CCW/left
+            //     NOTE: same DBC convention correction as yaw rate — LSB-first Motorola.
+            //     Manual extraction confirmed correct: shows ≈−360° at full steering lock
+            //     during a U-turn and plausible small angles (≤10°) while parked.
             ID_STEERING -> if (n >= 8) {
-                val angleMag = bits(data, 54, 15) * 0.04395
-                val signBit  = bits(data, 39, 1)
+                val angleMag = ((ubyte(data, 6) and 0x7F) shl 8 or ubyte(data, 7)) * 0.04395
+                val signBit  = (ubyte(data, 4) shr 7) and 1
                 state.copy(
                     steeringAngle = if (signBit == 1) angleMag else -angleMag,
                     lastUpdate    = now
@@ -187,11 +199,15 @@ object CanDecoder {
 
             // ── 0x252: Brake pressure ──────────────────────────────────────────
             // RS_HS.dbc ABSmsg10 (20 ms broadcast):
-            //   BrakePressureMeasured : 11|12@0+ (1,0) → bits(data,11,12) raw 0-4095
+            //   BrakePressureMeasured : 11|12@0+ (1,0)
+            //     = (byte1 & 0x0F) << 8 | byte2, raw 0–4095
+            //     NOTE: same DBC convention correction — LSB-first Motorola.
+            //     bit 11 = byte1 pos3; 4 bits from byte1 low-nibble + byte2 = 12 bits.
             // Units unconfirmed — displayed as 0–100 scale (raw / 40.95) until bar
             // calibration is verified from a live log with known brake pressure.
-            ID_BRAKE_PRESS -> if (n >= 4) state.copy(
-                brakePressure = bits(data, 11, 12) / 40.95,
+            // Live log confirmed: raw=912 at initial brake application → 22.3%.
+            ID_BRAKE_PRESS -> if (n >= 3) state.copy(
+                brakePressure = ((ubyte(data, 1) and 0x0F) shl 8 or ubyte(data, 2)) / 40.95,
                 lastUpdate    = now
             ) else null
 
@@ -434,7 +450,12 @@ object CanDecoder {
     private fun word(data: ByteArray, offset: Int): Int =
         ((data[offset].toInt() and 0xFF) shl 8) or (data[offset + 1].toInt() and 0xFF)
 
-    /** Motorola big-endian bit extraction — MSB at startBit, counting forward. */
+    /**
+     * MSB-first network bit extraction (bit 0 = MSB of byte 0).
+     * Correct for RS_HS.dbc signals written with this convention (torque, ESC, AWD torque).
+     * NOT correct for signals using standard DBC LSB-first Motorola numbering (yaw, steer,
+     * brake, coolant, latG) — those use manual byte extraction with the &-mask/shift pattern.
+     */
     private fun bits(data: ByteArray, startBit: Int, length: Int): Int {
         var value = 0
         for (i in 0 until length) {

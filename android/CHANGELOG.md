@@ -5,6 +5,26 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
+## [v1.2.1] — 2026-03-04
+
+### Fixed — Decoder Bug: Yaw Rate, Steering Angle, Brake Pressure
+
+Three CAN decoder signals were producing physically impossible values due to a mismatch between the `bits()` helper function and the bit numbering convention used for these specific signals in the RS_HS.dbc.
+
+**Root cause:** The `bits()` helper uses MSB-first network bit addressing (bit 0 = MSB of byte 0), which is correct for signals like torque, ESC mode, and AWD torque. However, yaw rate (`35|12`), steering angle (`54|15`), steering sign (`39|1`), and brake pressure (`11|12`) were authored with the standard DBC LSB-first Motorola convention. Using the wrong extractor produced:
+- **Yaw rate:** +37.5 °/s on a stationary vehicle (correct value: ≈ 0 °/s)
+- **Steering angle:** ±239° while parked straight (correct value: ≈ 7.5° off-center)
+- **Brake pressure:** underreported by ~50% at equivalent pedal application
+
+**Fix:** Replaced `bits()` calls with manual `(byteN & mask) << shift | byteM` extraction for the three affected signals, matching the pattern already used for lateral G, longitudinal G, coolant temp, IAT, RPM, and wheel speeds. All corrected formulas validated against a 16-minute live log (1,911,479 frames):
+- Yaw rate now reads ≈ 0 °/s at rest, rising to +45 °/s during a documented U-turn at 17 kph — cross-checked against the lat-G/speed/yaw triangle (≈ 4% error)
+- Steering angle shows ≈ −360° during full-lock left turn and ≈ +83° during parking manoeuvre — both physically consistent
+- Brake pressure confirmed at 22.3% for an initial brake application captured at session start
+
+Updated `bits()` docstring to clarify its MSB-first convention and which signals require it vs manual extraction.
+
+---
+
 ## [v1.2.0] — 2026-03-04
 
 ### Redesign — Full UI/UX Overhaul
@@ -25,9 +45,9 @@ Complete visual and structural redesign of the app. The previous 8-tab layout ha
 - All fonts offline-embedded — no network dependency
 
 ### Added — New CAN Signals
-- **Steering wheel angle** from `0x010` (`SASMmsg01`) — DBC-verified: `bits(54,15) × 0.04395°`, signed via bit 39
-- **Yaw rate** from `0x180` (`ABSmsg02`) — decoded alongside existing lateral G: `bits(35,12) × 0.03663 − 75 °/s`
-- **Brake pressure** from `0x252` (`ABSmsg10`) — DBC-verified: `bits(11,12)` raw 0–4095, displayed 0–100% (bar calibration pending from live log)
+- **Steering wheel angle** from `0x010` (`SASMmsg01`) — DBC-verified: `(byte6&0x7F)<<8|byte7 × 0.04395°`, signed via `byte4 MSB` *(formula corrected in v1.2.1)*
+- **Yaw rate** from `0x180` (`ABSmsg02`) — decoded alongside existing lateral G: `(byte4&0x0F)<<8|byte5 × 0.03663 − 75 °/s` *(formula corrected in v1.2.1)*
+- **Brake pressure** from `0x252` (`ABSmsg10`) — DBC-verified: `(byte1&0x0F)<<8|byte2` raw 0–4095, displayed 0–100% (bar calibration pending from live log) *(formula corrected in v1.2.1)*
 
 ### Added — PCM Mode 22 Polling
 New ISO-TP polling cycle to PCM (`0x7E0` → response `0x7E8`) every 10 seconds:
