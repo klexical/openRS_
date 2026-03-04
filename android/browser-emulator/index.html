@@ -294,6 +294,24 @@
     .conn-val  { font-size: 11px; font-weight: 700; color: var(--txt); }
     .fw-note   { margin-top: 8px; padding: 8px; background: rgba(0,174,239,0.08); border: 1px solid rgba(0,174,239,0.3); border-radius: 6px; font-size: 10px; color: var(--dim); text-align: center; }
     .fw-note span { color: var(--accent); }
+    .fw-locked { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Segmented picker (settings) ── */
+    .seg-group { display: flex; gap: 0; border: 1px solid var(--brd); border-radius: 6px; overflow: hidden; }
+    .seg-btn {
+      padding: 6px 10px;
+      background: var(--brd);
+      border: none;
+      border-right: 1px solid var(--bg);
+      color: var(--dim);
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .seg-btn:last-child { border-right: none; }
+    .seg-btn.seg-active { background: var(--accent); color: #000; }
 
     /* ── Android Auto frame ── */
     #aa {
@@ -460,6 +478,73 @@
       <span class="ph-esc" id="h-esc">ESC On</span>
       <span class="transport-badge wifi" id="h-transport">WiFi</span>
       <span class="ph-conn on" id="h-conn">● CONNECTED</span>
+      <span id="h-settings" style="font-size:14px;cursor:pointer;color:var(--dim);user-select:none" title="Settings">⚙</span>
+    </div>
+
+    <!-- ════ SETTINGS PANEL ════ -->
+    <div id="settings-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:100;align-items:center;justify-content:center">
+      <div style="background:var(--surf);border:1px solid var(--brd);border-radius:12px;width:min(380px,96vw);max-height:88vh;overflow-y:auto;padding:20px;font-family:var(--mono)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <span style="font-size:14px;font-weight:700;letter-spacing:2px;color:var(--accent)">SETTINGS</span>
+          <span id="settings-close" style="font-size:18px;cursor:pointer;color:var(--dim)">✕</span>
+        </div>
+
+        <div style="font-size:10px;color:var(--dim);letter-spacing:2px;border-bottom:1px solid var(--brd);padding-bottom:4px;margin-bottom:10px">UNITS</div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span style="font-size:12px;color:var(--txt)">Speed</span>
+          <div class="seg-group" data-key="speedUnit">
+            <button class="seg-btn" data-val="MPH">MPH</button>
+            <button class="seg-btn" data-val="KPH">KPH</button>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span style="font-size:12px;color:var(--txt)">Temperature</span>
+          <div class="seg-group" data-key="tempUnit">
+            <button class="seg-btn" data-val="F">°F</button>
+            <button class="seg-btn" data-val="C">°C</button>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span style="font-size:12px;color:var(--txt)">Boost pressure</span>
+          <div class="seg-group" data-key="boostUnit">
+            <button class="seg-btn" data-val="PSI">PSI</button>
+            <button class="seg-btn" data-val="BAR">BAR</button>
+            <button class="seg-btn" data-val="KPA">kPa</button>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <span style="font-size:12px;color:var(--txt)">Tire pressure</span>
+          <div class="seg-group" data-key="tireUnit">
+            <button class="seg-btn" data-val="PSI">PSI</button>
+            <button class="seg-btn" data-val="BAR">BAR</button>
+          </div>
+        </div>
+
+        <div style="font-size:10px;color:var(--dim);letter-spacing:2px;border-bottom:1px solid var(--brd);padding-bottom:4px;margin-bottom:10px">TPMS</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div>
+            <div style="font-size:12px;color:var(--txt)">Low tire threshold</div>
+            <div style="font-size:10px;color:var(--dim)">Warn below this PSI</div>
+          </div>
+          <input id="set-tire-low" type="number" min="15" max="50" value="30"
+            style="width:60px;background:var(--bg);border:1px solid var(--brd);border-radius:4px;color:var(--txt);font-family:var(--mono);font-size:13px;padding:5px 8px;text-align:center">
+        </div>
+
+        <div style="font-size:10px;color:var(--dim);letter-spacing:2px;border-bottom:1px solid var(--brd);padding-bottom:4px;margin-bottom:10px">DEMO — FIRMWARE</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div>
+            <div style="font-size:12px;color:var(--txt)">Simulated firmware</div>
+            <div style="font-size:10px;color:var(--dim)">Toggle to see CTRL tab change</div>
+          </div>
+          <div class="seg-group" data-key="firmware">
+            <button class="seg-btn" data-val="openRS_">openRS_</button>
+            <button class="seg-btn" data-val="Stock">Stock</button>
+          </div>
+        </div>
+
+        <button id="settings-save" style="width:100%;padding:10px;background:var(--accent);border:none;border-radius:6px;color:#000;font-family:var(--mono);font-size:13px;font-weight:700;cursor:pointer;letter-spacing:1px">SAVE</button>
+      </div>
     </div>
     <div class="ph-tabs" id="ph-tabs">
       <div class="ph-tab active" data-tab="0">DASH</div>
@@ -469,6 +554,7 @@
       <div class="ph-tab" data-tab="4">TUNE</div>
       <div class="ph-tab" data-tab="5">TPMS</div>
       <div class="ph-tab" data-tab="6">CTRL</div>
+      <div class="ph-tab" data-tab="7">DIAG</div>
     </div>
     <div class="ph-content">
       <div id="ph-dash"  class="ph-page active"></div>
@@ -478,6 +564,7 @@
       <div id="ph-tune"  class="ph-page"></div>
       <div id="ph-tpms"  class="ph-page"></div>
       <div id="ph-ctrl"  class="ph-page"></div>
+      <div id="ph-diag"  class="ph-page"></div>
     </div>
   </div>
 
@@ -520,6 +607,36 @@ const f3   = n => n.toFixed(3);
 const ri   = n => Math.round(n);
 const pct  = n => ri(n) + '%';
 
+/* ── Settings state ── */
+let settings = {
+  speedUnit:   'MPH',   // MPH | KPH
+  tempUnit:    'F',     // F | C
+  boostUnit:   'PSI',   // PSI | BAR | KPA
+  tireUnit:    'PSI',   // PSI | BAR
+  tireLowPsi:  30,
+  firmware:    'openRS_', // openRS_ | Stock
+};
+
+function displaySpeed(kph) {
+  return settings.speedUnit === 'MPH' ? (kph * 0.621371) : kph;
+}
+function speedLabel() { return settings.speedUnit; }
+function displayTemp(c) {
+  return settings.tempUnit === 'F' ? Math.round(c * 9/5 + 32) : Math.round(c);
+}
+function tempLabel() { return settings.tempUnit === 'F' ? '°F' : '°C'; }
+function displayBoost(kpa) {
+  if (settings.boostUnit === 'PSI') return ((kpa - 101.325) * 0.145038).toFixed(1);
+  if (settings.boostUnit === 'BAR') return ((kpa - 101.325) / 100).toFixed(2);
+  return (kpa - 101.325).toFixed(1);  // kPa gauge
+}
+function boostLabel() { return settings.boostUnit; }
+function displayTire(psi) {
+  return settings.tireUnit === 'BAR' ? (psi * 0.0689476).toFixed(2) : psi;
+}
+function tireLabel() { return settings.tireUnit; }
+function isTireLow(psi) { return psi < settings.tireLowPsi; }
+
 /* ── Mutable UI state (interactive) ── */
 let uiState = {
   driveMode: 'Sport',
@@ -555,8 +672,9 @@ function demo(t) {
   const wFR = speedKph * 1.02 + Math.cos(t * 1.1) * 1;
   const wRL = speedKph * 0.97 + Math.sin(t * 0.9) * 1;
   const wRR = speedKph * 1.01 + Math.cos(t * 0.95) * 1;
+  const boostKpa = boostPsi * 6.89476 + 101.325;
   return {
-    rpm, boostPsi, speedKph, speedMph,
+    rpm, boostPsi, boostKpa, speedKph, speedMph,
     gear: 3, gearDisplay: '3',
     throttlePct: thr, brakePressure: brk,
     frontRearSplit: (100 - ri(rearPct)) + '/' + ri(rearPct),
@@ -572,7 +690,7 @@ function demo(t) {
     fuelLevelPct: 72,
     calcLoad: 45 + Math.sin(t) * 10,
     commandedAfr: 14.5 + Math.sin(t * 0.2) * 0.3,
-    framesPerSecond: 12,
+    framesPerSecond: 2100 + Math.round(Math.sin(t * 0.1) * 150),
     wheelSpeedFL: wFL, wheelSpeedFR: wFR,
     wheelSpeedRL: wRL, wheelSpeedRR: wRR,
     awdLeftTorque: ri(rearL), awdRightTorque: ri(rearR),
@@ -637,16 +755,56 @@ function wheelBox(lbl, val) {
   return `<div class="wheel-box"><div class="wb-lbl">${lbl}</div><div class="wb-val">${val}</div></div>`;
 }
 
+/* ── DIAG page builder ── */
+const DEMO_INVENTORY = [
+  { id: '0x090', count: 63241, last: 'T090 00 4F A0 00 16 08',  decoded: 'rpm=2800, baro=101.0kPa', issue: null },
+  { id: '0x0F8', count: 62980, last: 'T0F8 00 00 00 00 00 6B',  decoded: 'boost=107kPa, oil=67°C',  issue: null },
+  { id: '0x130', count: 62710, last: 'T130 00 00 00 00 00 00 1C 2E', decoded: 'speed=72.2kph',     issue: null },
+  { id: '0x180', count: 62450, last: 'T180 00 00 01 A2 00 00 00 00', decoded: 'latG=0.41g',        issue: null },
+  { id: '0x160', count: 62100, last: 'T160 00 00 00 00 00 00 01 E5', decoded: 'lonG=0.22g',        issue: null },
+  { id: '0x1B0', count: 21050, last: 'T1B0 00 00 00 00 00 00 10 00', decoded: 'driveMode=Sport',   issue: null },
+  { id: '0x215', count: 20980, last: 'T215 1C 5E 1C 65 1C 48 1C 72', decoded: 'wFL=72.3 wFR=72.4 wRL=72.1 wRR=72.5 gear=3', issue: null },
+  { id: '0x2C0', count: 18200, last: 'T2C0 00 28 00 23 00 00 00 00', decoded: 'awdL=40Nm awdR=35Nm', issue: null },
+  { id: '0x340', count: 6800,  last: 'T340 00 00 23 22 24 23 00 00', decoded: 'tpms LF=35 RF=34 LR=36 RR=35 PSI', issue: null },
+  { id: '0x1A4', count: 4100,  last: 'T1A4 00 00 00 00 58 00 00 00', decoded: 'ambient=22.0°C',    issue: null },
+];
+function diagHtml(v) {
+  const duration = '00:04:32';
+  const totalFrames = 421600;
+  const uniqueIds   = DEMO_INVENTORY.length;
+  const issues      = 0;
+  const rows = DEMO_INVENTORY.map(f => `
+    <div style="padding:5px 0;border-bottom:1px solid var(--brd)">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <span style="font-size:12px;font-weight:700;color:var(--accent)">${f.id}</span>
+        <span style="font-size:10px;color:var(--dim)">${f.count.toLocaleString()} frames</span>
+      </div>
+      <div style="font-size:10px;color:var(--dim);margin:2px 0">${f.last}</div>
+      <div style="font-size:11px;color:var(--txt)">${f.decoded}</div>
+      ${f.issue ? `<div style="font-size:10px;color:var(--red);margin-top:2px">⚠ ${f.issue}</div>` : ''}
+    </div>`).join('');
+  return `
+    <div style="font-size:12px;font-weight:700;color:var(--org);letter-spacing:1px;margin-bottom:6px">DIAGNOSTICS</div>
+    ${infoRow([['SESSION', duration],['FRAMES', totalFrames.toLocaleString()],['IDs', uniqueIds],['ISSUES', issues,'grn']])}
+    <div style="margin:8px 0;padding:12px;background:var(--surf);border:1px solid var(--accent);border-radius:8px;text-align:center;cursor:pointer" id="snap-btn">
+      <div style="font-size:13px;font-weight:700;color:var(--accent);letter-spacing:1px">⬆ CAPTURE &amp; SHARE SNAPSHOT</div>
+      <div style="font-size:10px;color:var(--dim);margin-top:4px">ZIP includes summary.txt + detail.json — share via Gmail, Drive, etc.</div>
+    </div>
+    <div style="font-size:10px;color:var(--dim);margin-bottom:8px">Snapshot contains: frame inventory, decode trace (500 events), FPS timeline, session events, validation results, settings, VehicleState snapshot.</div>
+    <div style="font-size:11px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--brd);padding-bottom:4px;margin-bottom:4px">FRAME INVENTORY — ${uniqueIds} IDs seen</div>
+    ${rows}`;
+}
+
 /* ── Phone page builders ── */
 function dashHtml(v) {
   return `
     <div class="gauge-row">
-      ${gaugeBox('BOOST', f1(v.boostPsi), 'PSI')}
+      ${gaugeBox('BOOST', displayBoost(v.boostKpa || (v.boostPsi * 6.89476 + 101.325)), boostLabel())}
       ${gaugeBox('RPM',   ri(v.rpm),      '',    true)}
-      ${gaugeBox('SPEED', ri(v.speedMph), 'MPH')}
+      ${gaugeBox('SPEED', ri(displaySpeed(v.speedKph)), speedLabel())}
     </div>
     ${infoRow([['THROTTLE', pct(v.throttlePct)],['BRAKE', f1(v.brakePressure)],['AWD', v.frontRearSplit],['TORQUE', ri(v.torqueAtTrans)+' Nm']])}
-    ${infoRow([['OIL', toF(v.oilTempC)+'°F'],['COOLANT', toF(v.coolantTempC)+'°F'],['INTAKE', toF(v.intakeTempC)+'°F'],['BATT', f1(v.batteryVoltage)+'V']])}
+    ${infoRow([['OIL', displayTemp(v.oilTempC)+tempLabel()],['COOLANT', displayTemp(v.coolantTempC)+tempLabel()],['INTAKE', displayTemp(v.intakeTempC)+tempLabel()],['BATT', f1(v.batteryVoltage)+'V']])}
     ${infoRow([['LAT G', f2(v.lateralG)],['LON G', f2(v.longitudinalG)],['STEER', f1(v.steeringAngle)+'°'],['YAW', f1(v.yawRate)]])}
     ${infoRow([['FUEL', pct(v.fuelLevelPct)],['LOAD', pct(v.calcLoad)],['AFR', f2(v.commandedAfr)],['FPS', ri(v.framesPerSecond)]])}`;
 }
@@ -692,7 +850,7 @@ function perfHtml(v) {
     <div class="info-row">
       ${cell('STEER', f1(v.steeringAngle)+'°')}
       ${cell('YAW',   f1(v.yawRate)+'°/s')}
-      ${cell('SPEED', ri(v.speedMph)+' MPH')}
+      ${cell('SPEED', ri(displaySpeed(v.speedKph))+' '+speedLabel())}
     </div>
     <div class="info-row">
       ${cell('PEAK LAT',   f2(v.peakLateralG)+' g',  'gold')}
@@ -713,25 +871,26 @@ function tempsHtml(v) {
   const rduCls  = v.rduTempC  > 110 ? 'hot' : v.rduTempC  > 100 ? 'warm' : '';
   const ptuCls  = v.ptuTempC  > 110 ? 'hot' : v.ptuTempC  > 100 ? 'warm' : '';
   const catCls  = v.catalyticTempC > 700 ? 'hot' : v.catalyticTempC > 500 ? 'warm' : '';
+  const tl = tempLabel();
   return `
     <div class="gauge-row">
-      ${tempGauge('ENGINE OIL',   toF(v.oilTempC),         '°F (INFERRED)', oilCls)}
-      ${tempGauge('COOLANT',      toF(v.coolantTempC),     '°F',            clntCls)}
+      ${tempGauge('ENGINE OIL',   displayTemp(v.oilTempC),         tl, oilCls)}
+      ${tempGauge('COOLANT',      displayTemp(v.coolantTempC),     tl, clntCls)}
     </div>
     <div style="height:8px"></div>
     <div class="gauge-row">
-      ${tempGauge('INTAKE AIR',   toF(v.intakeTempC),      '°F')}
-      ${tempGauge('AMBIENT',      toF(v.ambientTempC),     '°F')}
+      ${tempGauge('INTAKE AIR',   displayTemp(v.intakeTempC),      tl)}
+      ${tempGauge('AMBIENT',      displayTemp(v.ambientTempC),     tl)}
     </div>
     <div style="height:8px"></div>
     <div class="gauge-row">
-      ${tempGauge('RDU (REAR DIFF)',  toF(v.rduTempC),     '°F', rduCls)}
-      ${tempGauge('PTU (TRANSFER)',   toF(v.ptuTempC),     '°F', ptuCls)}
+      ${tempGauge('RDU (REAR DIFF)',  displayTemp(v.rduTempC),     tl, rduCls)}
+      ${tempGauge('PTU (TRANSFER)',   displayTemp(v.ptuTempC),     tl, ptuCls)}
     </div>
     <div style="height:8px"></div>
     <div class="gauge-row">
-      ${tempGauge('CHARGE AIR',   toF(v.chargeAirTempC),  '°F')}
-      ${tempGauge('CATALYTIC',    toF(v.catalyticTempC),  '°F', catCls)}
+      ${tempGauge('CHARGE AIR',   displayTemp(v.chargeAirTempC),  tl)}
+      ${tempGauge('CATALYTIC',    displayTemp(v.catalyticTempC),  tl, catCls)}
     </div>
     ${v.isReadyToRace ? '<div class="rtr">READY TO RACE</div>' : ''}`;
 }
@@ -753,27 +912,30 @@ function tuneHtml(v) {
 
 function tpmsHtml(v) {
   if (!v.hasTpmsData) return `
-    <div style="text-align:center;padding:32px;color:var(--dim)">Waiting for TPMS data...</div>
-    <div style="text-align:center;font-size:12px;color:var(--dim)">BCM 0x726 • PIDs 0x2813–0x2816</div>`;
-  const tireBox = (lbl, p, tc) => `
-    <div class="tire-box${p<30?' low':''}">
+    <div style="text-align:center;padding:32px;color:var(--dim)">Waiting for TPMS data…</div>
+    <div style="text-align:center;font-size:12px;color:var(--dim)">Passive CAN 0x340 — MS-CAN bridged via GWM</div>`;
+  const tireBox = (lbl, psi) => {
+    const disp = displayTire(psi);
+    const low  = isTireLow(psi);
+    return `
+    <div class="tire-box${low?' low':''}">
       <div class="tire-lbl">${lbl}</div>
-      <div class="tire-psi">${ri(p)}</div>
-      <div class="tire-unit">PSI</div>
-      ${tc > -90 ? `<div class="tire-temp">${toF(tc)}°</div>` : ''}
+      <div class="tire-psi">${typeof disp === 'number' ? (Number.isInteger(disp) ? disp : disp) : disp}</div>
+      <div class="tire-unit">${tireLabel()}</div>
     </div>`;
+  };
   return `
     <div class="tpms-hd">TPMS+</div>
-    <div class="tpms-sub">Real numbers, not just low tire pressure warnings.</div>
+    <div class="tpms-sub">Passive CAN 0x340 — MS-CAN bridged via GWM. Low ≤ ${settings.tireLowPsi} PSI.</div>
     <div class="tire-row">
-      ${tireBox('LF', v.tirePressLF, v.tireTempLF)}
-      ${tireBox('RF', v.tirePressRF, v.tireTempRF)}
+      ${tireBox('LF', v.tirePressLF)}
+      ${tireBox('RF', v.tirePressRF)}
     </div>
     <div class="sec-lbl">FRONT</div>
     <div style="height:8px"></div>
     <div class="tire-row">
-      ${tireBox('LR', v.tirePressLR, v.tireTempLR)}
-      ${tireBox('RR', v.tirePressRR, v.tireTempRR)}
+      ${tireBox('LR', v.tirePressLR)}
+      ${tireBox('RR', v.tirePressRR)}
     </div>
     <div class="sec-lbl">REAR</div>
     <div style="height:8px"></div>
@@ -790,6 +952,8 @@ function escBtnCls(esc, target) {
 }
 
 function ctrlHtml(v) {
+  const isFw = settings.firmware === 'openRS_';
+  const featTitle = isFw ? 'FEATURES — openrs-fw active' : 'FEATURES — requires openrs-fw v1.0';
   return `
     <div class="ctrl-section">
       <div class="ctrl-title">DRIVE MODE</div>
@@ -799,38 +963,48 @@ function ctrlHtml(v) {
         <button class="mode-btn ${modeBtnCls(v.driveMode,'Track')}"   data-mode="Track">T</button>
         <button class="mode-btn ${modeBtnCls(v.driveMode,'Drift')}"   data-mode="Drift">D</button>
       </div>
-      <div class="ctrl-row" style="margin-top:6px">
-        <span class="ctrl-label">BOOT MODE (NVS)</span>
-        <span class="ctrl-val">${v.bootMode}</span>
+      <div class="ctrl-row" style="margin-top:6px;font-size:10px;color:var(--dim);text-align:center">
+        Use the steering wheel button to change drive mode
       </div>
     </div>
     <div class="ctrl-section">
-      <div class="ctrl-title">ESC</div>
+      <div class="ctrl-title">ESC STATUS</div>
       <div class="esc-btn-row">
         <button class="esc-btn ${escBtnCls(v.escStatus,'ESC On')}"    data-esc="ESC On">ON</button>
         <button class="esc-btn ${escBtnCls(v.escStatus,'ESC Sport')}" data-esc="ESC Sport">SPORT</button>
         <button class="esc-btn ${escBtnCls(v.escStatus,'ESC Off')}"   data-esc="ESC Off">OFF</button>
       </div>
+      <div style="font-size:10px;color:var(--dim);margin-top:4px;text-align:center">Live CAN state — use car console to change</div>
     </div>
     <div class="ctrl-section">
-      <div class="ctrl-title">FEATURES</div>
+      <div class="ctrl-title">${featTitle}</div>
       <div class="toggle-row" data-toggle="launchControl">
-        <div><div class="toggle-name">Launch Control</div><div class="toggle-sub">Arms LC sequence — foot on clutch + WOT</div></div>
-        <div class="toggle-pill ${v.launchControl?'on':''}" data-toggle="launchControl"></div>
+        <div>
+          <div class="toggle-name" style="color:${isFw?'var(--txt)':'var(--dim)'}">Launch Control</div>
+          <div class="toggle-sub">Arms LC sequence — foot on clutch + WOT</div>
+        </div>
+        <div class="toggle-pill ${isFw&&v.launchControl?'on':''} ${isFw?'':'fw-locked'}" data-toggle="launchControl" data-fw-required="true"></div>
       </div>
       <div class="toggle-row" data-toggle="assKill">
-        <div><div class="toggle-name">Auto Start/Stop Kill</div><div class="toggle-sub">Prevents engine from stopping at idle</div></div>
-        <div class="toggle-pill ${v.assKill?'on':''}" data-toggle="assKill"></div>
+        <div>
+          <div class="toggle-name" style="color:${isFw?'var(--txt)':'var(--dim)'}">Auto Start/Stop Kill</div>
+          <div class="toggle-sub">Prevents engine from stopping at idle</div>
+        </div>
+        <div class="toggle-pill ${isFw&&v.assKill?'on':''} ${isFw?'':'fw-locked'}" data-toggle="assKill" data-fw-required="true"></div>
       </div>
+      ${isFw
+        ? `<div style="font-size:10px;color:var(--grn);margin-top:6px;text-align:center">✓ openRS_ firmware detected — features unlocked</div>`
+        : `<div style="font-size:10px;color:var(--dim);margin-top:6px;text-align:center">⚡ Flash openrs-fw to enable CAN write, LC, Auto S/S kill &amp; more</div>`
+      }
     </div>
     <div class="conn-info">
       <div class="conn-row"><span class="conn-key">TRANSPORT</span><span class="conn-val" style="color:var(--accent)">${v.transport}</span></div>
       <div class="conn-row"><span class="conn-key">WiCAN IP</span><span class="conn-val">192.168.80.1</span></div>
-      <div class="conn-row"><span class="conn-key">PORT</span><span class="conn-val">3333</span></div>
-      <div class="conn-row"><span class="conn-key">PROTOCOL</span><span class="conn-val">ELM327 TCP</span></div>
+      <div class="conn-row"><span class="conn-key">PORT</span><span class="conn-val">80</span></div>
+      <div class="conn-row"><span class="conn-key">PROTOCOL</span><span class="conn-val">WebSocket SLCAN</span></div>
       <div class="conn-row"><span class="conn-key">CAN SPEED</span><span class="conn-val">500 kbps</span></div>
-    </div>
-    <div class="fw-note">Drive mode write &amp; feature controls require <span>openrs-fw</span> — stock firmware is read-only</div>`;
+      <div class="conn-row"><span class="conn-key">FIRMWARE</span><span class="conn-val" style="color:${isFw?'var(--grn)':'var(--dim)'}">${settings.firmware}</span></div>
+    </div>`;
 }
 
 /* ── AA page builders ── */
@@ -980,22 +1154,24 @@ function aaTune(v) {
 function aaTpms(v) {
   if (!v.hasTpmsData) return `
     <div style="text-align:center;padding:32px;color:var(--dim)">Waiting for TPMS data…</div>
-    <div style="text-align:center;font-size:12px;color:var(--dim)">BCM 0x726 • PIDs 0x2813–0x2816</div>`;
-  const tireBox = (lbl, p, tc) => `
-    <div class="tire-box${p<30?' low':''}">
+    <div style="text-align:center;font-size:12px;color:var(--dim)">Passive CAN 0x340 — MS-CAN bridged via GWM</div>`;
+  const tireBox = (lbl, psi) => {
+    const disp = displayTire(psi);
+    const low  = isTireLow(psi);
+    return `<div class="tire-box${low?' low':''}">
       <div class="tire-lbl">${lbl}</div>
-      <div class="tire-psi">${ri(p)}</div>
-      <div class="tire-unit">PSI</div>
-      ${tc > -90 ? `<div class="tire-temp">${toF(tc)}°</div>` : ''}
+      <div class="tire-psi">${disp}</div>
+      <div class="tire-unit">${tireLabel()}</div>
     </div>`;
+  };
   return `
     <div class="tpms-hd">TPMS+</div>
-    <div class="tpms-sub">Real numbers, not just low tire pressure warnings.</div>
+    <div class="tpms-sub">Passive CAN 0x340 — MS-CAN bridged via GWM</div>
     <div class="aa-tire-row">
-      ${tireBox('LF', v.tirePressLF, v.tireTempLF)}
-      ${tireBox('RF', v.tirePressRF, v.tireTempRF)}
-      ${tireBox('LR', v.tirePressLR, v.tireTempLR)}
-      ${tireBox('RR', v.tirePressRR, v.tireTempRR)}
+      ${tireBox('LF', v.tirePressLF)}
+      ${tireBox('RF', v.tirePressRF)}
+      ${tireBox('LR', v.tirePressLR)}
+      ${tireBox('RR', v.tirePressRR)}
     </div>
     <div style="display:flex;gap:6px;margin-top:4px">
       <div style="flex:1;text-align:center;font-size:11px;color:var(--dim)">FRONT ←→</div>
@@ -1048,7 +1224,8 @@ function aaCtrl(v) {
         <div class="ctrl-title">CONNECTION</div>
         <div class="conn-row"><span class="conn-key">TRANSPORT</span><span class="conn-val" style="color:var(--accent)">${v.transport}</span></div>
         <div class="conn-row"><span class="conn-key">WiCAN IP</span><span class="conn-val">192.168.80.1</span></div>
-        <div class="conn-row"><span class="conn-key">PORT</span><span class="conn-val">3333</span></div>
+        <div class="conn-row"><span class="conn-key">PORT</span><span class="conn-val">80</span></div>
+        <div class="conn-row"><span class="conn-key">PROTOCOL</span><span class="conn-val">WebSocket SLCAN</span></div>
         <div class="conn-row"><span class="conn-key">CAN</span><span class="conn-val">500 kbps</span></div>
         <div class="fw-note" style="margin-top:8px">Write controls require <span>openrs-fw</span></div>
       </div>
@@ -1113,6 +1290,16 @@ function renderPhone() {
   document.getElementById('ph-tune' ).innerHTML = tuneHtml(vs);
   document.getElementById('ph-tpms' ).innerHTML = tpmsHtml(vs);
   document.getElementById('ph-ctrl' ).innerHTML = ctrlHtml(vs);
+  document.getElementById('ph-diag' ).innerHTML = diagHtml(vs);
+
+  // DIAG snapshot button
+  const snap = document.getElementById('snap-btn');
+  if (snap) snap.addEventListener('click', () => {
+    snap.innerHTML = '<div style="font-size:13px;font-weight:700;color:var(--dim)">BUILDING SNAPSHOT…</div>';
+    setTimeout(() => {
+      snap.innerHTML = '<div style="font-size:13px;font-weight:700;color:var(--grn)">✓ SNAPSHOT READY — share dialog would open on device</div><div style="font-size:10px;color:var(--dim);margin-top:4px">This is a browser emulator — on Android this opens the system share sheet</div>';
+    }, 1200);
+  });
 }
 
 function renderAA() {
@@ -1307,6 +1494,44 @@ document.getElementById('btn-aa').addEventListener('click', () => {
   document.getElementById('aa').classList.remove('hidden');
   aaScreen = 'dash';
   renderAA();
+});
+
+/* ── Settings panel ── */
+function syncSettingsUI() {
+  document.getElementById('set-tire-low').value = settings.tireLowPsi;
+  document.querySelectorAll('.seg-group').forEach(grp => {
+    const key = grp.dataset.key;
+    grp.querySelectorAll('.seg-btn').forEach(btn => {
+      btn.classList.toggle('seg-active', btn.dataset.val === String(settings[key]));
+    });
+  });
+}
+function openSettings() {
+  syncSettingsUI();
+  const ov = document.getElementById('settings-overlay');
+  ov.style.display = 'flex';
+}
+function closeSettings() {
+  document.getElementById('settings-overlay').style.display = 'none';
+}
+document.getElementById('h-settings').addEventListener('click', openSettings);
+document.getElementById('settings-close').addEventListener('click', closeSettings);
+document.getElementById('settings-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('settings-overlay')) closeSettings();
+});
+document.getElementById('settings-save').addEventListener('click', () => {
+  settings.tireLowPsi = parseInt(document.getElementById('set-tire-low').value, 10) || 30;
+  closeSettings();
+  renderPhone();
+  if (!document.getElementById('aa').classList.contains('hidden')) renderAA();
+});
+document.getElementById('settings-overlay').addEventListener('click', e => {
+  const btn = e.target.closest('.seg-btn');
+  if (!btn) return;
+  const grp = btn.closest('.seg-group');
+  if (!grp) return;
+  settings[grp.dataset.key] = btn.dataset.val;
+  syncSettingsUI();
 });
 
 /* ── Initial render ── */

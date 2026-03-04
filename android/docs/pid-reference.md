@@ -43,59 +43,53 @@ Complete reference for all OBD-II parameters used by openRS.
 | 0x0461 | Charge Air Temp | `220461` | 2 | (signed(A)×256+B) / 64 | °C | 2 | DigiCluster |
 | 0xF43C | Catalytic Temp | `22F43C` | 2 | (A×256+B) / 10 − 40 | °C | 3 | DigiCluster |
 
-## Mode 22 — TPMS via BCM (Header: 0x726)
+## TPMS — Passive CAN (preferred method, v1.1.0+)
 
-| PID | Name | Request | Bytes | Formula | Unit | Priority | Status |
-|-----|------|---------|-------|---------|------|----------|--------|
-| 0x2813 | Tire Pressure LF | `222813` | 2 | (A×256+B) / 2.9 × 0.145038 | PSI | 6 | Verified |
-| 0x2814 | Tire Pressure RF | `222814` | 2 | (A×256+B) / 2.9 × 0.145038 | PSI | 6 | Verified |
-| 0x2815 | Tire Pressure RR | `222815` | 2 | (A×256+B) / 2.9 × 0.145038 | PSI | 6 | Verified |
-| 0x2816 | Tire Pressure LR | `222816` | 2 | (A×256+B) / 2.9 × 0.145038 | PSI | 6 | Verified |
-| 0x2823 | Tire Temp LF | `222823` | 1 | A − 40 | °C | 6 | ⚠️ Experimental |
-| 0x2824 | Tire Temp RF | `222824` | 1 | A − 40 | °C | 6 | ⚠️ Experimental |
-| 0x2825 | Tire Temp RR | `222825` | 1 | A − 40 | °C | 6 | ⚠️ Experimental |
-| 0x2826 | Tire Temp LR | `222826` | 1 | A − 40 | °C | 6 | ⚠️ Experimental |
+> **Architecture change in v1.1.0:** TPMS data is now decoded from passive CAN frame `0x340`, not OBD Mode 22. The BCM broadcasts this frame on MS-CAN; the Gateway Module (GWM) bridges it to HS-CAN automatically. No OBD queries, no BCM header switching.
 
-### Tire Temperature Notes
+| CAN ID | Parameters | Decode |
+|--------|-----------|--------|
+| 0x340 | Tire pressure LF, RF, LR, RR | bytes 2-5 direct PSI (unsigned) |
 
-The temp PIDs (0x2823–0x2826) are educated guesses based on:
-1. Schrader TPMS sensors confirmed to transmit temperature
-2. OBD4RS app confirms tire temps work on Focus RS
-3. Common Ford pattern: temp PIDs offset +0x10 from pressure PIDs
-4. Standard Ford temp formula: `A − 40 = °C`
+If all four bytes are zero, the TPMS ECU has not sent data yet (engine just started or car is off). The decoder ignores all-zero frames.
 
-If these return NO DATA, try adjacent PIDs or check FORScan BCM PID list.
+## Mode 22 — TPMS via BCM (Header: 0x726) — legacy reference
 
-## CAN Frame IDs (HS-CAN 500 kbps, Passive ATMA)
+> These OBD queries are no longer used by the app. Documented for reference / future use.
 
-| ID | Description | Bytes Used | Decode Formula |
-|----|-------------|------------|----------------|
-| 0x070 | Torque at trans | bits 37–48 | (bits − 500) Nm |
-| 0x076 | Throttle + speed | B0, B2-3 | B0 × 0.392 %, (B2×256+B3) × 0.01 km/h |
-| 0x080 | Pedals + steering | B0, B2-3, B4-5 | Accel %, (word − 20000) × 0.1 °, word × 0.1 bar |
-| 0x090 | RPM + coolant | B0-1, B2 | word × 0.25 RPM, B2 − 40 °C |
-| 0x0B0 | Dynamics | B0-1, B2-3, B4-5 | (word − 32768) × scale |
-| 0x0C8 | Gauge illumination | B0 | Direct brightness level |
-| 0x0F8 | Engine temps | B4, B5, B7 | IAT −40, boost kPa, oil −60 °C |
-| 0x1E3 | Drive mode | bits 0–4 | 0=N, 1=S, 2=T, 3=D |
-| 0x215 | Wheel speeds | B0-7 | 4 × (word − 10000) × 0.01 km/h |
-| 0x217 | ESC status | bits 0–2 | 0=On, 1=Sport, 2=Off |
-| 0x230 | Gear | bits 0–4 | 0=N, 1-6, 7=R |
-| 0x2C0 | AWD torque | bits 0-24, B3 | L/R torque (12-bit each), RDU −40 °C |
-| 0x2C2 | PTU temp | B0 | B0 − 40 °C |
-| 0x34A | Fuel level | B0 | B0 × 0.392 % |
-| 0x34C | Ambient temp | B0 | B0 − 40 °C |
-| 0x3C0 | Battery voltage | B0 | B0 × 0.1 V |
+| PID | Name | Request | Bytes | Formula | Unit | Status |
+|-----|------|---------|-------|---------|------|--------|
+| 0x2813 | Tire Pressure LF | `222813` | 2 | (A×256+B) / 2.9 × 0.145038 | PSI | Legacy |
+| 0x2814 | Tire Pressure RF | `222814` | 2 | (A×256+B) / 2.9 × 0.145038 | PSI | Legacy |
+| 0x2815 | Tire Pressure RR | `222815` | 2 | (A×256+B) / 2.9 × 0.145038 | PSI | Legacy |
+| 0x2816 | Tire Pressure LR | `222816` | 2 | (A×256+B) / 2.9 × 0.145038 | PSI | Legacy |
+| 0x2823 | Tire Temp LF | `222823` | 1 | A − 40 | °C | ⚠️ Unverified |
+| 0x2824 | Tire Temp RF | `222824` | 1 | A − 40 | °C | ⚠️ Unverified |
+| 0x2825 | Tire Temp RR | `222825` | 1 | A − 40 | °C | ⚠️ Unverified |
+| 0x2826 | Tire Temp LR | `222826` | 1 | A − 40 | °C | ⚠️ Unverified |
 
-## Priority Scheduling
+## CAN Frame IDs (HS-CAN 500 kbps) — DigiCluster verified
 
-The hybrid polling system schedules PIDs based on how fast they change:
+All formulas re-validated against DigiCluster `can0_hs.json` and `can1_ms.json`.
 
-| Priority | Cycle | Approx Rate | PIDs |
-|----------|-------|-------------|------|
-| 1 | Every cycle | ~250ms / 4 Hz | Calc Load, STFT, AFR Actual, ETC Actual, TIP Actual |
-| 2 | Every 2nd | ~500ms / 2 Hz | AFR Desired, ETC Desired, TIP Desired, WGDC, Timing, LTFT, Fuel Rail, Ign Corr, Charge Air, Commanded AFR |
-| 3 | Every 3rd | ~750ms / 1.3 Hz | VCT I/E, Octane Adjust, Cat Temp, O2, Baro, AFR Sensor |
+| ID | Description | Decode Formula | Source |
+|----|-------------|----------------|--------|
+| 0x080 | Throttle %, accel pedal % | bytes 2-3 / 2.55 | DigiCluster HS-CAN |
+| 0x090 | RPM, baro pressure | RPM: `((B4&0x0F)<<8\|B5)×2`; baro: `B2×0.5 kPa` | DigiCluster HS-CAN |
+| 0x0C8 | E-brake, ESC | e-brake: `B3&0x40` | DigiCluster HS-CAN |
+| 0x0F8 | Boost kPa, oil temp | boost: B5 absolute kPa; oil: `B7−60 °C` | DigiCluster HS-CAN |
+| 0x130 | Speed kph | `word(B6-B7)×0.01` | DigiCluster HS-CAN |
+| 0x160 | Longitudinal G | `((B6&0x03)<<8\|B7)×0.00390625−2.0` | DigiCluster HS-CAN |
+| 0x180 | Lateral G | `((B2&0x03)<<8\|B3)×0.00390625−2.0` | DigiCluster HS-CAN |
+| 0x1A4 | Ambient temp | `B4 signed × 0.25 °C` | DigiCluster MS-CAN bridged |
+| 0x1B0 | Drive mode | `(B6>>4)&0x0F` — 0=Normal,1=Sport,2=Track,3=Drift | DigiCluster HS-CAN |
+| 0x215 | 4× wheel speeds, gear | wheel: `word×0.01 kph`; gear: B7 | DigiCluster HS-CAN |
+| 0x2C0 | AWD L/R torque, RDU temp | 12-bit words scaled; RDU: `B6−40 °C` | DigiCluster HS-CAN |
+| 0x2C2 | PTU temp | `B5−40 °C` | DigiCluster HS-CAN |
+| 0x2F0 | Coolant temp | `B5−60 °C` | DigiCluster HS-CAN |
+| 0x340 | TPMS LF/RF/LR/RR | bytes 2-5 direct PSI | DigiCluster MS-CAN bridged |
+| 0x34A | Fuel level % | `B2×100/255` | DigiCluster HS-CAN |
+| 0x3C0 | Battery voltage | `word(B2-B3)×0.001 V` | DigiCluster HS-CAN |
 | 6 | Every 6th | ~1.5s / 0.67 Hz | TPMS (8 PIDs), Oil Life |
 
 BCM PIDs (TPMS) are all priority 6 to minimize expensive header switches (~100ms per `ATSH` command).

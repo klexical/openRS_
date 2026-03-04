@@ -16,6 +16,8 @@ import com.openrs.dash.R
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.can.CanDecoder
 import com.openrs.dash.can.WiCanConnection
+import com.openrs.dash.diagnostics.DiagnosticLogger
+import com.openrs.dash.ui.UserPrefsStore
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
@@ -37,10 +39,16 @@ class CanDataService : Service() {
     private val cm by lazy { getSystemService(ConnectivityManager::class.java) }
     private var wifiCallback: ConnectivityManager.NetworkCallback? = null
 
-    private fun buildWiCan() = WiCanConnection(
-        host = com.openrs.dash.ui.AppSettings.getHost(this),
-        port = com.openrs.dash.ui.AppSettings.getPort(this)
-    )
+    private fun buildWiCan(): WiCanConnection {
+        val s = com.openrs.dash.ui.AppSettings
+        val autoReconnect = s.getAutoReconnect(this)
+        return WiCanConnection(
+            host             = s.getHost(this),
+            port             = s.getPort(this),
+            maxRetries       = if (autoReconnect) 3 else 1,
+            reconnectDelayMs = s.getReconnectInterval(this) * 1_000L
+        )
+    }
 
     inner class LocalBinder : Binder() {
         fun getService(): CanDataService = this@CanDataService
@@ -111,6 +119,14 @@ class CanDataService : Service() {
         if (connectionJob?.isActive == true) return
         wican = buildWiCan()
 
+        // Start diagnostic session
+        val s = com.openrs.dash.ui.AppSettings
+        DiagnosticLogger.sessionStart(
+            host  = s.getHost(this),
+            port  = s.getPort(this),
+            prefs = UserPrefsStore.prefs.value
+        )
+
         connectionJob = scope.launch {
             launch {
                 wican.state.collect { state ->
@@ -128,6 +144,7 @@ class CanDataService : Service() {
                             isIdle      = state is WiCanConnection.State.Idle
                         )
                     }
+                    DiagnosticLogger.event("STATE", text)
                 }
             }
 
@@ -185,15 +202,24 @@ class CanDataService : Service() {
                 val current = OpenRSDashApp.instance.vehicleState.value
                 val updated = CanDecoder.decode(canId, data, current)
                 if (updated != null) {
+                    // Log decoded frame for diagnostics
+                    val desc  = CanDecoder.describeDecoded(canId, updated)
+                    val issue = CanDecoder.validateDecoded(canId, updated)
+                    DiagnosticLogger.logFrame(canId, data, updated, desc, issue)
+
                     OpenRSDashApp.instance.vehicleState.value = updated
                         .withPeaksUpdated()
                         .copy(framesPerSecond = wican.fps)
+                } else {
+                    // Unknown / unimplemented ID — still track in inventory
+                    DiagnosticLogger.logUnknownFrame(canId, data)
                 }
             }
         }
     }
 
     fun stopConnection() {
+        DiagnosticLogger.sessionEnd()
         connectionJob?.cancel()
         connectionJob = null
         OpenRSDashApp.instance.vehicleState.update { it.copy(isConnected = false, isIdle = false) }

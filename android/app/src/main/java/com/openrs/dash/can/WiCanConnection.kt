@@ -1,200 +1,176 @@
 package com.openrs.dash.can
 
+import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.data.VehicleState
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import java.io.IOException
+import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.security.SecureRandom
 
 /**
- * Hybrid WiCAN connection — time-sliced ATMA + OBD PID queries.
+ * WiCAN WebSocket SLCAN connection.
  *
- * Strategy:
- *   1. Run ATMA for ~150ms → collect real-time CAN frames (AWD, G-force, wheels, etc.)
- *   2. Break out of ATMA (send any character)
- *   3. Send 2-3 OBD PID requests (calc load, fuel trims, timing, etc.)
- *   4. Parse responses
- *   5. Jump back to ATMA
- *   6. Repeat
+ * Connects to ws://host:80/ws, initializes SLCAN at 500 kbps (S6),
+ * and streams raw HS-CAN frames for CanDecoder.
  *
- * One full cycle: ~250ms = 4 Hz for OBD data, continuous for sniffed data.
- * This matches RSdash's 250ms polling rate while getting MORE data.
+ * The WiCAN ELM327 TCP path cannot reliably send/receive OBD requests
+ * (the firmware's internal ~200 ms timeout cascades into TCP stalls).
+ * The WebSocket monitor path works out-of-the-box at full bus speed.
  *
- * The fast-changing CAN data (RPM, boost, speed, G-force, AWD) arrives
- * during the ATMA window at bus speed. The slow OBD data (fuel trims,
- * timing, temps) gets queried in the gaps. Best of both worlds.
+ * SLCAN speed table in slcan.c:
+ *   sl_bitrate[] = {10K, 20K, 50K, 100K, 125K, 250K, 500K, 800K, 1000K}
+ *   → S6 = 500 kbps (standard SLCAN index 6)
+ *
+ * Frame format from firmware (slcan_parse_frame):
+ *   t{ID3}{DLC}{DATA}   standard 11-bit frame
+ *   T{ID8}{DLC}{DATA}   extended 29-bit frame (rare on HS-CAN)
  */
 class WiCanConnection(
     private val host: String = "192.168.80.1",
-    private val port: Int = 3333,
-    private val maxRetries: Int = 3
+    private val port: Int = 80,
+    private val maxRetries: Int = 3,
+    /** Delay (ms) before reconnecting after a dropped connection. */
+    private val reconnectDelayMs: Long = 5_000L
 ) {
+    // ── DEBUG ONLY (do not commit) ──────────────────────────
+    val debugLines: StateFlow<List<String>> get() = OpenRSDashApp.instance.debugLines
+    private fun addDebugLine(line: String) = OpenRSDashApp.instance.pushDebugLine(line)
+
     companion object {
-        const val ATMA_WINDOW_MS = 150L
-        const val PID_TIMEOUT_MS = 80L
-        const val PIDS_PER_CYCLE = 3
-
-        // Exponential backoff delays per consecutive failure
-        val BACKOFF_MS = listOf(5_000L, 15_000L, 30_000L)
-
-        // Short wait before retrying after a successful-then-dropped connection
+        val  BACKOFF_MS        = listOf(5_000L, 15_000L, 30_000L)
         const val RECONNECT_DELAY_MS = 5_000L
+
+        private const val WS_PATH   = "/ws"
+        // S6 = 500 kbps; standard SLCAN array index 6 (see slcan.c sl_bitrate[])
+        private const val SLCAN_INIT = "C\rS6\rO\r"
     }
 
     sealed class State {
         data object Disconnected : State()
-        data object Connecting : State()
-        data object Connected : State()
+        data object Connecting   : State()
+        data object Connected    : State()
         /** All [maxRetries] attempts failed — waiting for manual reconnect. */
-        data object Idle : State()
-        data class Error(val message: String) : State()
+        data object Idle         : State()
+        data class  Error(val message: String) : State()
     }
 
     private val _state = MutableStateFlow<State>(State.Disconnected)
     val state: StateFlow<State> = _state.asStateFlow()
 
-    private var frameCount = 0
-    private var lastFpsTime = System.currentTimeMillis()
-    private var _fps = 0.0
+    private var frameCount   = 0
+    private var lastFpsTime  = System.currentTimeMillis()
+    private var _fps         = 0.0
     val fps: Double get() = _fps
 
-    private var pidCycle = 0
-    private var currentHeader = ObdPids.HDR_BROADCAST  // Track which ECU we're talking to
+    private val rng = SecureRandom()
 
     /**
-     * Connect and emit CAN frame updates + OBD PID responses.
-     * Returns a Flow of (canId, dataBytes) for CAN frames,
-     * and updates VehicleState directly for OBD responses.
+     * Connect to the WiCAN WebSocket, open the SLCAN channel, and emit
+     * (canId, dataBytes) pairs for every received CAN frame.
+     *
+     * [onObdUpdate] is kept for API compatibility but is never invoked
+     * in this WebSocket-based implementation (no OBD queries needed —
+     * all engine data arrives as broadcast CAN frames).
      */
     fun connectHybrid(
         onObdUpdate: (VehicleState) -> Unit,
         getCurrentState: () -> VehicleState
-    ): Flow<Pair<Int, ByteArray>> = flow {
+    ): Flow<Pair<Int, ByteArray>> = flow<Pair<Int, ByteArray>> {
+
         var failedAttempts = 0
 
         while (currentCoroutineContext().isActive && failedAttempts < maxRetries) {
             var connectionSucceeded = false
             try {
                 _state.value = State.Connecting
+                addDebugLine("--- WebSocket SLCAN ---")
+                addDebugLine("Connecting to ws://$host:$port$WS_PATH")
 
                 val socket = Socket()
-                socket.connect(InetSocketAddress(host, port), 5000)
-                socket.soTimeout = 500
+                socket.connect(InetSocketAddress(host, port), 5_000)
+                socket.soTimeout = 10_000  // 10 s read timeout for frames
 
-                val output = socket.getOutputStream()
-                val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+                val inp = socket.getInputStream()
+                val out = socket.getOutputStream()
 
-                // ── ELM327 Init ─────────────────────────────
-                elmCommand(output, reader, "ATZ", 1000)
-                elmCommand(output, reader, "ATE0", 300)
-                elmCommand(output, reader, "ATH1", 300)
-                elmCommand(output, reader, "ATS0", 300)
-                elmCommand(output, reader, "ATL0", 300)
-                elmCommand(output, reader, "ATSP6", 500)
-                elmCommand(output, reader, "ATCAF0", 300)
+                // ── HTTP → WebSocket upgrade ──────────────────
+                sendHttpUpgrade(out)
+                val headers = readHttpHeaders(inp)
+                if (!headers.contains("101")) {
+                    throw IOException("Upgrade failed: ${headers.take(80).replace('\n', ' ')}")
+                }
+                addDebugLine("WebSocket handshake OK")
+
+                // ── SLCAN init: close, set 500 K, open ────────
+                sendWsText(out, SLCAN_INIT)
+                addDebugLine("SLCAN init sent (C / S6 / O)")
+
+                // ── Probe for openRS_ firmware ─────────────────
+                // Stock WiCAN ignores this; openRS_ responds with "OPENRS:<version>"
+                // The probe response (if any) arrives as the very first WS frame.
+                sendWsText(out, "OPENRS?\r")
+                addDebugLine("Probing firmware...")
 
                 _state.value = State.Connected
                 connectionSucceeded = true
-                failedAttempts = 0   // reset consecutive-failure counter on first successful connect
+                failedAttempts = 0
 
-                // ── Main hybrid loop ────────────────────────
+                // ── New-ID discovery for debug tab ─────────────
+                val seenIds   = mutableSetOf<Int>()
+                var debugCount = 0
+                var debugTimer = System.currentTimeMillis()
+                var firmwareChecked = false
+
+                // ── Main frame loop ─────────────────────────────
                 while (currentCoroutineContext().isActive) {
-                    // ── Phase 1: ATMA sniffing ──────────────
-                    output.write("ATMA\r".toByteArray())
-                    output.flush()
+                    val (opcode, payload) = readWsFrame(inp, out) ?: break
+                    if (opcode == 0x8) break  // close frame
 
-                    val atmaStart = System.currentTimeMillis()
-                    val buf = StringBuilder()
+                    val msg = payload.toString(Charsets.UTF_8).trimEnd()
 
-                    while (System.currentTimeMillis() - atmaStart < ATMA_WINDOW_MS) {
-                        try {
-                            if (reader.ready()) {
-                                val c = reader.read()
-                                if (c == -1) break
-                                buf.append(c.toChar())
-
-                                // Process complete lines
-                                while (true) {
-                                    val idx = buf.indexOfFirst { it == '\r' || it == '\n' }
-                                    if (idx == -1) break
-                                    val line = buf.substring(0, idx).trim()
-                                    buf.delete(0, idx + 1)
-
-                                    val frame = parseLine(line)
-                                    if (frame != null) {
-                                        emit(frame)
-                                        trackFps()
-                                    }
-                                }
-                            } else {
-                                delay(1) // Yield briefly
-                            }
-                        } catch (_: Exception) {
-                            break
+                    // Check probe response on first incoming message
+                    if (!firmwareChecked) {
+                        firmwareChecked = true
+                        if (msg.startsWith("OPENRS:")) {
+                            val version = msg.removePrefix("OPENRS:").trim()
+                            com.openrs.dash.OpenRSDashApp.instance.isOpenRsFirmware.value = true
+                            com.openrs.dash.diagnostics.DiagnosticLogger.isOpenRsFirmware = true
+                            com.openrs.dash.diagnostics.DiagnosticLogger.firmwareVersion = "openRS_ $version"
+                            addDebugLine("Firmware: openRS_ $version ✓")
+                            com.openrs.dash.diagnostics.DiagnosticLogger.event("FIRMWARE", "openRS_ $version detected")
+                            continue
+                        } else {
+                            com.openrs.dash.OpenRSDashApp.instance.isOpenRsFirmware.value = false
+                            com.openrs.dash.diagnostics.DiagnosticLogger.isOpenRsFirmware = false
+                            com.openrs.dash.diagnostics.DiagnosticLogger.firmwareVersion = "WiCAN stock"
+                            addDebugLine("Firmware: WiCAN stock")
+                            com.openrs.dash.diagnostics.DiagnosticLogger.event("FIRMWARE", "WiCAN stock (no openRS_ response)")
                         }
                     }
 
-                    // ── Phase 2: Exit ATMA, query PIDs ──────
-                    // Send any character to break out of ATMA
-                    output.write("\r".toByteArray())
-                    output.flush()
-                    delay(20) // Let ELM settle
-                    drainReader(reader) // Clear any remaining ATMA output
+                    val frame = parseSlcanFrame(msg) ?: continue
 
-                    // Get PIDs for this cycle, grouped by ECU header
-                    val pidGroups = ObdPids.getPidsForCycleGrouped(pidCycle)
-
-                    if (pidGroups.isNotEmpty()) {
-                        var state = getCurrentState().copy(dataMode = "PID_QUERY")
-
-                        // Query each ECU group in order: broadcast first, PCM, then BCM
-                        val headerOrder = listOf(ObdPids.HDR_BROADCAST, ObdPids.HDR_PCM, ObdPids.HDR_BCM)
-
-                        for (header in headerOrder) {
-                            val pids = pidGroups[header] ?: continue
-                            val batch = pids.take(PIDS_PER_CYCLE)
-
-                            // Set the appropriate header
-                            when (header) {
-                                ObdPids.HDR_BROADCAST -> {
-                                    if (currentHeader != ObdPids.HDR_BROADCAST) {
-                                        elmCommand(output, reader, "ATSH7DF", 100)
-                                        currentHeader = ObdPids.HDR_BROADCAST
-                                    }
-                                }
-                                ObdPids.HDR_PCM -> {
-                                    if (currentHeader != ObdPids.HDR_PCM) {
-                                        elmCommand(output, reader, "ATSH7E0", 100)
-                                        currentHeader = ObdPids.HDR_PCM
-                                    }
-                                }
-                                ObdPids.HDR_BCM -> {
-                                    if (currentHeader != ObdPids.HDR_BCM) {
-                                        elmCommand(output, reader, "ATSH726", 100)
-                                        currentHeader = ObdPids.HDR_BCM
-                                    }
-                                }
-                            }
-
-                            for (pid in batch) {
-                                val response = queryPid(output, reader, pid.requestStr)
-                                if (response != null) {
-                                    state = pid.parse(response, state)
-                                }
-                            }
-                        }
-
-                        state = state.copy(dataMode = "ATMA")
-                        onObdUpdate(state)
+                    // Log first occurrence of each new CAN ID
+                    if (seenIds.size < 40 && frame.first !in seenIds) {
+                        seenIds += frame.first
+                        addDebugLine("new ID: 0x%03X".format(frame.first))
                     }
 
-                    pidCycle++
+                    emit(frame)
+                    trackFps()
+                    debugCount++
 
-                    // Reset ATCAF0 in case PID queries changed it
-                    elmCommand(output, reader, "ATCAF0", 50)
+                    val now = System.currentTimeMillis()
+                    if (now - debugTimer >= 3_000) {
+                        addDebugLine("CAN: ${debugCount} frames / 3 s  (${_fps.toInt()} fps)")
+                        com.openrs.dash.diagnostics.DiagnosticLogger.fps(_fps)
+                        debugCount = 0
+                        debugTimer = now
+                    }
                 }
 
                 socket.close()
@@ -203,116 +179,170 @@ class WiCanConnection(
                 _state.value = State.Disconnected
                 throw e
             } catch (e: Exception) {
-                // Only count as a failure if we never established the TCP connection;
-                // a drop after a successful session resets the counter above.
                 if (!connectionSucceeded) failedAttempts++
                 _state.value = State.Error(e.message ?: "Connection failed")
+                addDebugLine("Error: ${e.message}")
             }
 
             if (!currentCoroutineContext().isActive) break
 
             if (failedAttempts >= maxRetries) {
-                // Exhausted — go idle and stop the loop.
                 _state.value = State.Idle
                 break
             }
 
             _state.value = State.Disconnected
-            val delayMs = if (connectionSucceeded) {
-                // Was connected before drop — quick 5 s retry
-                RECONNECT_DELAY_MS
-            } else {
-                // Never connected this attempt — exponential backoff
-                BACKOFF_MS.getOrElse(failedAttempts - 1) { 30_000L }
-            }
+            val delayMs = if (connectionSucceeded) reconnectDelayMs
+                          else BACKOFF_MS.getOrElse(failedAttempts - 1) { 30_000L }
             delay(delayMs)
         }
     }.flowOn(Dispatchers.IO)
 
-    /**
-     * Query a single OBD PID and return the data bytes from the response.
-     * Returns null if no valid response within timeout.
-     */
-    private fun queryPid(output: OutputStream, reader: BufferedReader, command: String): ByteArray? {
-        output.write("$command\r".toByteArray())
-        output.flush()
+    // ── SLCAN frame parser ──────────────────────────────────────────────────
 
-        val start = System.currentTimeMillis()
-        val buf = StringBuilder()
-
-        while (System.currentTimeMillis() - start < PID_TIMEOUT_MS) {
-            if (reader.ready()) {
-                val c = reader.read()
-                if (c == -1) return null
-                buf.append(c.toChar())
-
-                // Look for the > prompt indicating response is complete
-                if (buf.contains(">")) break
-            } else {
-                Thread.sleep(2)
-            }
-        }
-
-        // Parse response: find the hex data line
-        // Mode 1 response: "41 XX DD DD..." (41 = mode 1 response, XX = PID)
-        // Mode 22 response: "62 XX XX DD DD..." (62 = mode 22 response)
-        val lines = buf.toString().split(Regex("[\\r\\n]+"))
-        for (line in lines) {
-            val clean = line.trim().replace(" ", "")
-            // Mode 1 response starts with "41"
-            if (clean.startsWith("41") && clean.length >= 6) {
-                val dataHex = clean.substring(4) // Skip mode+pid bytes
-                return hexToBytes(dataHex)
-            }
-            // Mode 22 response starts with "62"
-            if (clean.startsWith("62") && clean.length >= 8) {
-                val dataHex = clean.substring(6) // Skip mode+pid(2 byte) bytes
-                return hexToBytes(dataHex)
-            }
-        }
-        return null
-    }
-
-    private fun hexToBytes(hex: String): ByteArray? {
-        if (hex.length % 2 != 0) return null
-        if (!hex.all { it in '0'..'9' || it in 'A'..'F' || it in 'a'..'f' }) return null
-        return ByteArray(hex.length / 2) { i ->
-            hex.substring(i * 2, i * 2 + 2).toInt(16).toByte()
+    private fun parseSlcanFrame(msg: String): Pair<Int, ByteArray>? {
+        if (msg.isEmpty()) return null
+        return when (msg[0]) {
+            't' -> parseStdFrame(msg)   // 11-bit standard
+            'T' -> parseExtFrame(msg)   // 29-bit extended (unlikely on HS-CAN)
+            else -> null
         }
     }
 
-    private fun parseLine(line: String): Pair<Int, ByteArray>? {
-        val compact = line.replace(" ", "")  // WiCAN ELM327 outputs "1B0 00 11 22..." with spaces
-        if (compact.length < 5) return null
-        if (!compact.all { it in '0'..'9' || it in 'A'..'F' || it in 'a'..'f' }) return null
-        val id = compact.substring(0, 3).toIntOrNull(16) ?: return null
-        val dataHex = compact.substring(3)
-        if (dataHex.length % 2 != 0) return null
-        val data = ByteArray(dataHex.length / 2) { i ->
-            dataHex.substring(i * 2, i * 2 + 2).toInt(16).toByte()
-        }
-        return Pair(id, data)
+    private fun parseStdFrame(msg: String): Pair<Int, ByteArray>? {
+        // t{ID3}{DLC}{DATA}
+        if (msg.length < 5) return null
+        val id  = msg.substring(1, 4).toIntOrNull(16) ?: return null
+        val dlc = msg[4].digitToIntOrNull(10) ?: return null
+        if (dlc < 0 || dlc > 8 || msg.length < 5 + dlc * 2) return null
+        return Pair(id, parseDataBytes(msg, 5, dlc))
     }
 
-    private suspend fun elmCommand(output: OutputStream, reader: BufferedReader, cmd: String, delayMs: Long) {
-        output.write("$cmd\r".toByteArray())
-        output.flush()
-        delay(delayMs)
-        drainReader(reader)
+    private fun parseExtFrame(msg: String): Pair<Int, ByteArray>? {
+        // T{ID8}{DLC}{DATA}
+        if (msg.length < 10) return null
+        val id  = msg.substring(1, 9).toLongOrNull(16)?.toInt() ?: return null
+        val dlc = msg[9].digitToIntOrNull(10) ?: return null
+        if (dlc < 0 || dlc > 8 || msg.length < 10 + dlc * 2) return null
+        return Pair(id, parseDataBytes(msg, 10, dlc))
     }
 
-    private fun drainReader(reader: BufferedReader) {
+    private fun parseDataBytes(msg: String, start: Int, dlc: Int): ByteArray =
         try {
-            while (reader.ready()) reader.read()
-        } catch (_: Exception) {}
+            ByteArray(dlc) { i -> msg.substring(start + i * 2, start + i * 2 + 2).toInt(16).toByte() }
+        } catch (_: Exception) { ByteArray(0) }
+
+    // ── WebSocket helpers ───────────────────────────────────────────────────
+
+    private fun sendHttpUpgrade(out: OutputStream) {
+        // Static key is fine for local-network, non-TLS usage
+        val key = "dGhlIHNhbXBsZSBub25jZQ=="
+        val req = "GET $WS_PATH HTTP/1.1\r\n" +
+            "Host: $host\r\n" +
+            "Upgrade: websocket\r\n" +
+            "Connection: Upgrade\r\n" +
+            "Sec-WebSocket-Key: $key\r\n" +
+            "Sec-WebSocket-Version: 13\r\n" +
+            "\r\n"
+        out.write(req.toByteArray(Charsets.ISO_8859_1))
+        out.flush()
     }
+
+    private fun readHttpHeaders(inp: InputStream): String {
+        val sb = StringBuilder()
+        while (true) {
+            val b = inp.read()
+            if (b == -1) break
+            sb.append(b.toChar())
+            if (sb.endsWith("\r\n\r\n")) break
+        }
+        return sb.toString()
+    }
+
+    /** Send a masked WebSocket text frame (client → server MUST be masked per RFC 6455). */
+    private fun sendWsText(out: OutputStream, text: String) {
+        val payload = text.toByteArray(Charsets.UTF_8)
+        check(payload.size <= 125) { "Payload too large for single-frame send" }
+        val mask  = ByteArray(4).also { rng.nextBytes(it) }
+        val frame = ByteArray(6 + payload.size)
+        frame[0] = 0x81.toByte()                        // FIN=1, opcode=text(1)
+        frame[1] = (0x80 or payload.size).toByte()      // MASK=1, len
+        mask.copyInto(frame, 2)
+        for (i in payload.indices) frame[6 + i] = (payload[i].toInt() xor mask[i % 4].toInt()).toByte()
+        out.write(frame); out.flush()
+    }
+
+    private fun sendWsPong(out: OutputStream, payload: ByteArray) {
+        val mask  = ByteArray(4).also { rng.nextBytes(it) }
+        val frame = ByteArray(6 + payload.size)
+        frame[0] = 0x8A.toByte()
+        frame[1] = (0x80 or payload.size).toByte()
+        mask.copyInto(frame, 2)
+        for (i in payload.indices) frame[6 + i] = (payload[i].toInt() xor mask[i % 4].toInt()).toByte()
+        out.write(frame); out.flush()
+    }
+
+    private fun readExactly(inp: InputStream, n: Int): ByteArray {
+        if (n == 0) return ByteArray(0)
+        val buf = ByteArray(n); var off = 0
+        while (off < n) {
+            val r = inp.read(buf, off, n - off)
+            if (r == -1) throw IOException("Stream closed")
+            off += r
+        }
+        return buf
+    }
+
+    /**
+     * Read one WebSocket frame.  Handles ping (auto-pong) and pong (ignore).
+     * Returns (opcode, payload) or null if the connection is closed gracefully.
+     */
+    private fun readWsFrame(inp: InputStream, out: OutputStream): Pair<Int, ByteArray>? {
+        while (true) {
+            val b0 = inp.read(); if (b0 == -1) return null
+            val b1 = inp.read(); if (b1 == -1) return null
+
+            val opcode = b0 and 0x0F
+            val masked = (b1 and 0x80) != 0
+            var len    = (b1 and 0x7F)
+
+            len = when {
+                len == 126 -> {
+                    val ext = readExactly(inp, 2)
+                    ((ext[0].toInt() and 0xFF) shl 8) or (ext[1].toInt() and 0xFF)
+                }
+                len == 127 -> {
+                    // 8-byte extended length — skip frame
+                    val lenBytes = readExactly(inp, 8)
+                    val bigLen = lenBytes.fold(0L) { acc, b -> (acc shl 8) or (b.toLong() and 0xFF) }
+                    readExactly(inp, bigLen.toInt())  // discard
+                    continue
+                }
+                else -> len
+            }
+
+            val mask    = if (masked) readExactly(inp, 4) else null
+            val payload = readExactly(inp, len)
+            if (mask != null) {
+                for (i in payload.indices) payload[i] = (payload[i].toInt() xor mask[i % 4].toInt()).toByte()
+            }
+
+            when (opcode) {
+                0x9 -> { sendWsPong(out, payload); continue }  // ping → pong
+                0xA -> continue                                  // pong, ignore
+                else -> return Pair(opcode, payload)
+            }
+        }
+    }
+
+    // ── FPS tracking ────────────────────────────────────────────────────────
 
     private fun trackFps() {
         frameCount++
         val now = System.currentTimeMillis()
-        if (now - lastFpsTime >= 1000) {
-            _fps = frameCount * 1000.0 / (now - lastFpsTime)
-            frameCount = 0
+        if (now - lastFpsTime >= 1_000) {
+            _fps = frameCount * 1_000.0 / (now - lastFpsTime)
+            frameCount  = 0
             lastFpsTime = now
         }
     }

@@ -117,7 +117,7 @@ data class VehicleState(
     val isIdle: Boolean = false,
     val framesPerSecond: Double = 0.0,
     val lastUpdate: Long = 0L,
-    val dataMode: String = "ATMA"  // "ATMA" or "PID_QUERY" for UI indicator
+    val dataMode: String = "CAN"   // "CAN" = WebSocket SLCAN passive monitoring
 ) {
     // ── Computed ─────────────────────────────────────────────
     val boostPsi: Double get() = (boostKpa - 101.325) * 0.14503773
@@ -159,8 +159,9 @@ data class VehicleState(
 
     /** TPMS valid checks */
     val hasTpmsData: Boolean get() = tirePressLF >= 0
-    val anyTireLow: Boolean get() = hasTpmsData &&
-        (tirePressLF < 30 || tirePressRF < 30 || tirePressLR < 30 || tirePressRR < 30)
+    fun anyTireLow(thresholdPsi: Double = 30.0): Boolean = hasTpmsData &&
+        (tirePressLF < thresholdPsi || tirePressRF < thresholdPsi ||
+         tirePressLR < thresholdPsi || tirePressRR < thresholdPsi)
     val maxTirePressSpread: Double get() {
         if (!hasTpmsData) return 0.0
         val all = listOf(tirePressLF, tirePressRF, tirePressLR, tirePressRR)

@@ -74,27 +74,31 @@ class CarDashActivity : CarActivity(), LifecycleOwner, SavedStateRegistryOwner {
             setViewTreeSavedStateRegistryOwner(this@CarDashActivity)
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
-                val vs by OpenRSDashApp.instance.vehicleState.collectAsState()
-                var tab by remember { mutableIntStateOf(0) }
+                val vs    by OpenRSDashApp.instance.vehicleState.collectAsState()
+                val prefs by com.openrs.dash.ui.UserPrefsStore.prefs.collectAsState()
+                var tab   by remember { mutableIntStateOf(0) }
+                val snackbarHostState = remember { SnackbarHostState() }
 
                 MaterialTheme(colorScheme = darkColorScheme(
                     background = Bg, surface = Surf, primary = Accent
                 )) {
-                    Column(Modifier.fillMaxSize().background(Bg)) {
-                        AaHeader(vs,
-                            onConnect    = { service?.startConnection() },
-                            onDisconnect = { service?.stopConnection() }
-                        )
-                        AaTabRow(tab) { tab = it }
-                        Box(Modifier.weight(1f)) {
-                            when (tab) {
-                                0 -> DashPage(vs)
-                                1 -> AwdPage(vs)
-                                2 -> PerfPage(vs, onReset = { service?.resetPeaks() })
-                                3 -> TempsPage(vs)
-                                4 -> TunePage(vs)
-                                5 -> TpmsPage(vs)
-                                6 -> CtrlPage(vs)
+                    Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }, containerColor = Bg) { pad ->
+                        Column(Modifier.fillMaxSize().padding(pad).background(Bg)) {
+                            AaHeader(vs,
+                                onConnect    = { service?.startConnection() },
+                                onDisconnect = { service?.stopConnection() }
+                            )
+                            AaTabRow(tab) { tab = it }
+                            Box(Modifier.weight(1f)) {
+                                when (tab) {
+                                    0 -> DashPage(vs, prefs)
+                                    1 -> AwdPage(vs, prefs)
+                                    2 -> PerfPage(vs, prefs, onReset = { service?.resetPeaks() })
+                                    3 -> TempsPage(vs, prefs)
+                                    4 -> TunePage(vs, prefs)
+                                    5 -> TpmsPage(vs, prefs)
+                                    6 -> CtrlPage(vs, snackbarHostState)
+                                }
                             }
                         }
                     }

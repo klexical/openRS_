@@ -47,7 +47,7 @@ class TpmsScreen(carContext: CarContext) : Screen(carContext) {
                 .build())
             val parts = mutableListOf<String>()
             parts.add("SPREAD  ${"%.1f".format(s.maxTirePressSpread)} PSI")
-            if (s.anyTireLow) parts.add("⚠ LOW TIRE")
+            if (s.anyTireLow()) parts.add("⚠ LOW TIRE")
             if (s.oilLifePct >= 0) parts.add("OIL LIFE  ${s.oilLifePct.roundToInt()}%")
             pane.addRow(Row.Builder()
                 .setTitle("STATUS")
