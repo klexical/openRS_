@@ -1,7 +1,18 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+// ── Release signing ───────────────────────────────────────────────────────────
+// Credentials are read from keystore.properties (gitignored).
+// To set up on a new machine: copy openrs-release.jks + keystore.properties
+// into the android/ directory. See docs/signing-setup.md for details.
+val keystorePropsFile = rootProject.file("keystore.properties")
+val keystoreProps = Properties().also { props ->
+    if (keystorePropsFile.exists()) props.load(keystorePropsFile.inputStream())
 }
 
 android {
@@ -18,12 +29,25 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            val sf = keystoreProps["storeFile"] as? String
+            if (sf != null) {
+                storeFile     = rootProject.file(sf)
+                storePassword = keystoreProps["storePassword"] as String
+                keyAlias      = keystoreProps["keyAlias"]      as String
+                keyPassword   = keystoreProps["keyPassword"]   as String
+            }
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
             isDebuggable = true
         }
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
