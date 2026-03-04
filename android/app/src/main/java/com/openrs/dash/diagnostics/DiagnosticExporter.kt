@@ -19,10 +19,10 @@ import java.util.zip.ZipOutputStream
  * Output: a ZIP containing:
  *   diagnostic_summary_<timestamp>.txt   — human-readable report
  *   diagnostic_detail_<timestamp>.json   — full machine-readable data
+ *   slcan_log_<timestamp>.log            — raw CAN frames in candump format (Option C)
+ *                                          (only present if a SLCAN log was recorded)
  *
- * Upload either file (or the whole ZIP) when reporting issues.
- * The summary is readable in any text editor.
- * The JSON can be parsed/analyzed programmatically.
+ * The SLCAN log is compatible with SavvyCAN, Kayak, and candump for offline analysis.
  */
 object DiagnosticExporter {
 
@@ -35,8 +35,11 @@ object DiagnosticExporter {
     fun export(ctx: Context): Uri? {
         return try {
             val dir = File(ctx.filesDir, "diagnostics").also { it.mkdirs() }
-            val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val ts  = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
             val zipFile = File(dir, "openrs_diag_$ts.zip")
+
+            // Flush SLCAN log before bundling so we capture up-to-the-moment data
+            DiagnosticLogger.flushSlcan()
 
             ZipOutputStream(zipFile.outputStream().buffered()).use { zip ->
                 zip.putNextEntry(ZipEntry("diagnostic_summary_$ts.txt"))
@@ -46,6 +49,14 @@ object DiagnosticExporter {
                 zip.putNextEntry(ZipEntry("diagnostic_detail_$ts.json"))
                 zip.write(buildJson(ts).toByteArray(Charsets.UTF_8))
                 zip.closeEntry()
+
+                // Option C: include SLCAN raw log if one was recorded this session
+                val slcanFile = DiagnosticLogger.slcanLogFile
+                if (slcanFile != null && slcanFile.exists() && slcanFile.length() > 0) {
+                    zip.putNextEntry(ZipEntry("slcan_log_$ts.log"))
+                    slcanFile.inputStream().buffered().use { it.copyTo(zip) }
+                    zip.closeEntry()
+                }
             }
 
             FileProvider.getUriForFile(ctx, AUTHORITY, zipFile)
@@ -61,18 +72,22 @@ object DiagnosticExporter {
             DiagnosticLogger.event("SHARE", "Export failed — nothing to share")
             return
         }
+        val slcanLines = DiagnosticLogger.slcanLineCount
+        val slcanNote  = if (slcanLines > 0) "\n• slcan_log_*.log   — raw CAN frames ($slcanLines lines, SavvyCAN/Kayak compatible)" else ""
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "application/zip"
             putExtra(Intent.EXTRA_STREAM, uri)
             putExtra(Intent.EXTRA_SUBJECT, "openRS_ Diagnostic Report")
-            putExtra(Intent.EXTRA_TEXT,
+            putExtra(
+                Intent.EXTRA_TEXT,
                 "openRS_ v${BuildConfig.VERSION_NAME} diagnostic bundle.\n" +
-                "• diagnostic_summary_*.txt — human-readable\n" +
-                "• diagnostic_detail_*.json — raw data for analysis\n\n" +
+                "• diagnostic_summary_*.txt — human-readable report\n" +
+                "• diagnostic_detail_*.json — full machine-readable data$slcanNote\n\n" +
                 "App      : v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})\n" +
                 "Session  : ${DiagnosticLogger.formatDuration(DiagnosticLogger.sessionDurationMs)}\n" +
                 "Firmware : ${DiagnosticLogger.firmwareVersion}\n" +
-                "Host     : ${DiagnosticLogger.sessionHost}:${DiagnosticLogger.sessionPort}")
+                "Host     : ${DiagnosticLogger.sessionHost}:${DiagnosticLogger.sessionPort}"
+            )
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         ctx.startActivity(Intent.createChooser(intent, "Share openRS_ Diagnostics"))
@@ -121,6 +136,7 @@ object DiagnosticExporter {
             appendLine("  Boost      : ${"%.1f".format((vs.boostKpa - 101.325) * 0.14503773)} PSI  (${vs.boostKpa.toInt()} kPa abs)")
             appendLine("  Coolant    : ${"%.0f".format(vs.coolantTempC)} °C")
             appendLine("  Oil Temp   : ${"%.0f".format(vs.oilTempC)} °C")
+            appendLine("  Intake     : ${"%.0f".format(vs.intakeTempC)} °C")
             appendLine("  Ambient    : ${"%.1f".format(vs.ambientTempC)} °C")
             appendLine("  Baro       : ${"%.1f".format(vs.barometricPressure)} kPa")
             appendLine("  Lat G      : ${"%.3f".format(vs.lateralG)} g")
@@ -142,10 +158,27 @@ object DiagnosticExporter {
             appendLine()
         }
 
-        // ── CAN frame inventory
+        // ── SLCAN log info
+        val slcanLines = log.slcanLineCount
+        val slcanFile  = log.slcanLogFile
+        appendLine("─── SLCAN RAW LOG (Option C) ───────────────────────────────")
+        if (slcanFile != null && slcanLines > 0) {
+            val sizeMb = slcanFile.length() / 1_048_576.0
+            appendLine("  Lines written : $slcanLines")
+            appendLine("  File size     : ${"%.2f".format(sizeMb)} MB (uncompressed)")
+            appendLine("  File included : slcan_log_$ts.log in this ZIP")
+            appendLine("  Compatible with SavvyCAN, Kayak, candump for offline analysis")
+        } else {
+            appendLine("  No SLCAN log recorded (log directory not available this session)")
+        }
+        appendLine()
+
+        // ── CAN frame inventory (Option B)
         val inventory = log.frameInventorySnapshot
-        appendLine("─── CAN FRAME INVENTORY (${inventory.size} unique IDs) ──────────────")
-        appendLine("  Format: ID | count | last raw hex | decoded | issues")
+        val changedCount = inventory.values.count { it.hasChanged }
+        appendLine("─── CAN FRAME INVENTORY  (${inventory.size} unique IDs, $changedCount dynamic) ──")
+        appendLine("  Legend: ✓=decoded  ?=unknown  Δ=bytes changed during session")
+        appendLine("  Format: TAG ID | count | Δ | last raw hex | decoded | issues")
         appendLine()
 
         val knownIds = setOf(
@@ -159,18 +192,38 @@ object DiagnosticExporter {
         )
 
         inventory.entries.sortedBy { it.key }.forEach { (id, info) ->
-            val tag = if (id in knownIds) "✓" else "?"
+            val tag      = if (id in knownIds) "✓" else "?"
+            val changed  = if (info.hasChanged) "Δ" else " "
             val issueStr = if (info.validationIssues.isEmpty()) ""
                            else "  ⚠ ${info.validationIssues.joinToString("; ")}"
-            val decoded = if (info.lastDecoded.isEmpty()) "(no decoder)" else info.lastDecoded
-            appendLine("  $tag 0x%03X | %6d | %-23s | %-40s$issueStr"
+            val decoded  = if (info.lastDecoded.isEmpty()) "(no decoder)" else info.lastDecoded
+            appendLine("  $tag 0x%03X | %6d | $changed | %-23s | %-40s$issueStr"
                 .format(id, info.totalReceived, info.lastRawHex.take(23), decoded.take(40)))
         }
         appendLine()
 
+        // ── Periodic samples for dynamic (changed) frames (Option B)
+        val dynamicIds = inventory.entries.filter { it.value.hasChanged && it.value.periodicSamples.isNotEmpty() }
+            .sortedBy { it.key }
+        if (dynamicIds.isNotEmpty()) {
+            appendLine("─── PERIODIC SAMPLES — dynamic IDs (Option B, 30 s intervals) ─")
+            appendLine("  These show how each frame's bytes evolved during the drive.")
+            appendLine()
+            dynamicIds.forEach { (id, info) ->
+                val tag     = if (id in knownIds) "✓" else "?"
+                val sCount  = info.periodicSamples.size
+                appendLine("  $tag 0x%03X  [first: ${info.firstRawHex}]  ($sCount samples)".format(id))
+                info.periodicSamples.forEach { s ->
+                    appendLine("    +${log.formatDuration(s.relMs)} → ${s.rawHex}")
+                }
+                appendLine("          last: ${info.lastRawHex}")
+                appendLine()
+            }
+        }
+
         // ── Validation issues summary
-        val issues = inventory.values.flatMap { info ->
-            info.validationIssues.map { "0x%03X: $it".format(inventory.entries.first { it.value == info }.key) }
+        val issues = inventory.entries.flatMap { (id, info) ->
+            info.validationIssues.map { "0x%03X: $it".format(id) }
         }
         appendLine("─── VALIDATION ISSUES (${issues.size}) ────────────────────────────────")
         if (issues.isEmpty()) {
@@ -210,7 +263,7 @@ object DiagnosticExporter {
 
         // ── Last 30 decode trace entries
         val trace = log.decodeTrace.takeLast(30)
-        appendLine("─── RECENT DECODE TRACE (last ${trace.size}) ─────────────────────────")
+        appendLine("─── RECENT DECODE TRACE (last ${trace.size} of up to 10,000) ──────────")
         appendLine("  Format: +time | ID | raw hex | decoded | ⚠issue")
         trace.forEach { t ->
             val issStr = if (t.issue != null) "  ⚠ ${t.issue}" else ""
@@ -219,6 +272,7 @@ object DiagnosticExporter {
         appendLine()
         appendLine("═══════════════════════════════════════════════════════════")
         appendLine("  END OF REPORT — full data in diagnostic_detail_$ts.json")
+        if (slcanLines > 0) appendLine("  SLCAN log    — slcan_log_$ts.log  ($slcanLines frames)")
         appendLine("═══════════════════════════════════════════════════════════")
     }
 
@@ -242,7 +296,9 @@ object DiagnosticExporter {
         appendLine("    \"firmware\": \"${log.firmwareVersion}\",")
         appendLine("    \"isOpenRsFirmware\": ${log.isOpenRsFirmware},")
         appendLine("    \"host\": \"${log.sessionHost}\",")
-        appendLine("    \"port\": ${log.sessionPort}")
+        appendLine("    \"port\": ${log.sessionPort},")
+        appendLine("    \"slcanLinesLogged\": ${log.slcanLineCount},")
+        appendLine("    \"slcanFileIncluded\": ${log.slcanLogFile != null && log.slcanLineCount > 0}")
         appendLine("  },")
 
         // settings
@@ -269,17 +325,31 @@ object DiagnosticExporter {
         }
         appendLine("  },")
 
-        // canFrameInventory
+        // canFrameInventory — now includes Option B fields
         val inventory = log.frameInventorySnapshot
         appendLine("  \"canFrameInventory\": {")
         inventory.entries.sortedBy { it.key }.forEachIndexed { idx, (id, info) ->
             val comma = if (idx < inventory.size - 1) "," else ""
             val issuesJson = info.validationIssues.joinToString(",") { "\"${it.replace("\"", "'")}\"" }
+
+            // Periodic samples JSON array
+            val samplesJson = if (info.periodicSamples.isEmpty()) "[]" else buildString {
+                append("[")
+                info.periodicSamples.forEachIndexed { si, s ->
+                    val sc = if (si < info.periodicSamples.size - 1) "," else ""
+                    append("{\"relMs\": ${s.relMs}, \"rawHex\": \"${s.rawHex}\"}$sc")
+                }
+                append("]")
+            }
+
             appendLine("    \"0x%03X\": {".format(id))
             appendLine("      \"totalReceived\": ${info.totalReceived},")
+            appendLine("      \"firstRawHex\": \"${info.firstRawHex}\",")
             appendLine("      \"lastRawHex\": \"${info.lastRawHex}\",")
+            appendLine("      \"hasChanged\": ${info.hasChanged},")
             appendLine("      \"lastDecoded\": \"${info.lastDecoded.replace("\"", "'")}\",")
-            appendLine("      \"validationIssues\": [$issuesJson]")
+            appendLine("      \"validationIssues\": [$issuesJson],")
+            appendLine("      \"periodicSamples\": $samplesJson")
             appendLine("    }$comma")
         }
         appendLine("  },")
@@ -297,7 +367,7 @@ object DiagnosticExporter {
         appendLine("  \"decodeTrace\": [")
         val trace = log.decodeTrace
         trace.forEachIndexed { i, t ->
-            val c = if (i < trace.size - 1) "," else ""
+            val c      = if (i < trace.size - 1) "," else ""
             val issJson = if (t.issue != null) "\"${t.issue.replace("\"", "'")}\"" else "null"
             appendLine("    {\"relMs\": ${t.relMs}, \"id\": \"${t.idHex}\", \"raw\": \"${t.rawHex}\", \"decoded\": \"${t.decoded.replace("\"", "'")}\", \"issue\": $issJson}$c")
         }

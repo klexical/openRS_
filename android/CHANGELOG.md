@@ -5,6 +5,32 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
+## [v1.1.5] — 2026-03-01
+
+### Added — SLCAN raw frame log (Option C)
+- Every CAN frame received during a session is now written in real-time to a `slcan_log_*.log` file inside the diagnostic ZIP.
+- Format is standard **candump** (compatible with SavvyCAN, Kayak, python-can): `(relative_seconds) can0 ID#DATA`.
+- This makes it possible to import the log into SavvyCAN or Kayak after a drive and replay or decode frames offline — no more relying on a single end-of-session snapshot.
+- Logging is capped at **2 000 000 lines** (~83 min at 400 fps average). A session event is emitted when the cap is reached.
+- The ZIP share email now mentions the SLCAN file and its frame count.
+
+### Added — Per-ID first/last/changed tracking + periodic samples (Option B)
+- `FrameInfo` in the diagnostic logger now stores:
+  - `firstRawHex` — the raw bytes seen on the **very first** observation of each CAN ID.
+  - `hasChanged` — a `true/false` flag indicating whether the frame bytes **ever changed** during the session. Static IDs (e.g. configuration frames that never move) are clearly distinguished from dynamic signals (RPM, boost, temperatures).
+  - `periodicSamples` — up to **10 raw-hex snapshots**, taken once every **30 seconds** per ID, across the full session. These show how a signal's bytes evolved over time during a drive.
+- The human-readable summary now includes a **PERIODIC SAMPLES** section listing all dynamic (changed) IDs with their timestamped snapshots, making it possible to see values from mid-drive rather than only the parked end-state.
+- The JSON detail file now includes `firstRawHex`, `hasChanged`, and a `periodicSamples` array per frame ID.
+
+### Increased — Diagnostic capacity limits (previously caused data loss on longer drives)
+| Buffer | Old limit | New limit | Coverage at typical rates |
+|---|---|---|---|
+| Decode trace | 500 events | **10 000 events** | ~100 s of decoded frames |
+| Session events | 300 | **1 000** | Full-session event history |
+| FPS timeline | 200 samples | **7 200 samples** | **2 hours** at 1 sample/s |
+
+---
+
 ## [v1.1.4] — 2026-03-04
 
 ### Fixed — Boost formula (critical: was reading engine oil temp as boost)

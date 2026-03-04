@@ -119,12 +119,13 @@ class CanDataService : Service() {
         if (connectionJob?.isActive == true) return
         wican = buildWiCan()
 
-        // Start diagnostic session
+        // Start diagnostic session (logDir enables Option C SLCAN raw log)
         val s = com.openrs.dash.ui.AppSettings
         DiagnosticLogger.sessionStart(
-            host  = s.getHost(this),
-            port  = s.getPort(this),
-            prefs = UserPrefsStore.prefs.value
+            host   = s.getHost(this),
+            port   = s.getPort(this),
+            prefs  = UserPrefsStore.prefs.value,
+            logDir = java.io.File(filesDir, "diagnostics")
         )
 
         connectionJob = scope.launch {
