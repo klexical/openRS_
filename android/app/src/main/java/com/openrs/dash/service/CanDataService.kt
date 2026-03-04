@@ -186,15 +186,18 @@ class CanDataService : Service() {
                             // Mode 22 — Oil / Knock
                             oilLifePct = obdState.oilLifePct,
                             ignCorrCyl1 = obdState.ignCorrCyl1,
-                            // Mode 22 — TPMS (BCM)
-                            tirePressLF = obdState.tirePressLF,
-                            tirePressRF = obdState.tirePressRF,
-                            tirePressLR = obdState.tirePressLR,
-                            tirePressRR = obdState.tirePressRR,
-                            tireTempLF = obdState.tireTempLF,
-                            tireTempRF = obdState.tireTempRF,
-                            tireTempLR = obdState.tireTempLR,
-                            tireTempRR = obdState.tireTempRR,
+                            // Mode 22 — TPMS (BCM). Use sentinel guard: only overwrite if
+                            // the OBD value is valid (≥ 0). This prevents a BCM response
+                            // captured before the first passive 0x340 frame from resetting
+                            // tire pressures back to the -1.0 default.
+                            tirePressLF = if (obdState.tirePressLF >= 0) obdState.tirePressLF else current.tirePressLF,
+                            tirePressRF = if (obdState.tirePressRF >= 0) obdState.tirePressRF else current.tirePressRF,
+                            tirePressLR = if (obdState.tirePressLR >= 0) obdState.tirePressLR else current.tirePressLR,
+                            tirePressRR = if (obdState.tirePressRR >= 0) obdState.tirePressRR else current.tirePressRR,
+                            tireTempLF = if (obdState.tireTempLF > -90) obdState.tireTempLF else current.tireTempLF,
+                            tireTempRF = if (obdState.tireTempRF > -90) obdState.tireTempRF else current.tireTempRF,
+                            tireTempLR = if (obdState.tireTempLR > -90) obdState.tireTempLR else current.tireTempLR,
+                            tireTempRR = if (obdState.tireTempRR > -90) obdState.tireTempRR else current.tireTempRR,
                             // BCM OBD Mode 22 — new PIDs (sentinel check: only overwrite if valid)
                             odometerKm   = if (obdState.odometerKm  >= 0)   obdState.odometerKm   else current.odometerKm,
                             batterySoc   = if (obdState.batterySoc  >= 0)   obdState.batterySoc   else current.batterySoc,
