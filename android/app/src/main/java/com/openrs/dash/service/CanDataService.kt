@@ -194,6 +194,11 @@ class CanDataService : Service() {
                             tireTempRF = obdState.tireTempRF,
                             tireTempLR = obdState.tireTempLR,
                             tireTempRR = obdState.tireTempRR,
+                            // BCM OBD Mode 22 — new PIDs (sentinel check: only overwrite if valid)
+                            odometerKm   = if (obdState.odometerKm  >= 0)   obdState.odometerKm   else current.odometerKm,
+                            batterySoc   = if (obdState.batterySoc  >= 0)   obdState.batterySoc   else current.batterySoc,
+                            batteryTempC = if (obdState.batteryTempC > -90) obdState.batteryTempC else current.batteryTempC,
+                            cabinTempC   = if (obdState.cabinTempC  > -90)  obdState.cabinTempC   else current.cabinTempC,
                         )
                     }
                 },

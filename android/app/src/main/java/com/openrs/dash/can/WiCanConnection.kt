@@ -44,9 +44,27 @@ class WiCanConnection(
         val  BACKOFF_MS        = listOf(5_000L, 15_000L, 30_000L)
         const val RECONNECT_DELAY_MS = 5_000L
 
-        private const val WS_PATH   = "/ws"
-        // S6 = 500 kbps; standard SLCAN array index 6 (see slcan.c sl_bitrate[])
+        private const val WS_PATH    = "/ws"
         private const val SLCAN_INIT = "C\rS6\rO\r"
+
+        // ── BCM OBD Mode 22 polling (ISO-TP over SLCAN) ────────────────────
+        // Request address 0x726, response address 0x72E (standard Ford BCM).
+        // SLCAN standard frame: t{ID3}{DLC}{DATA_HEX}\r
+        // ISO-TP single-frame: PCI=0x03 (3 payload bytes), Mode=0x22, DID (2 bytes), padding
+        const val BCM_RESPONSE_ID         = 0x72E
+        private const val BCM_QUERY_ODOMETER   = "t72680322DD0100000000\r"  // 0xDD01 odometer
+        private const val BCM_QUERY_SOC        = "t72680322402800000000\r"  // 0x4028 battery SOC
+        private const val BCM_QUERY_BATT_TEMP  = "t72680322402900000000\r"  // 0x4029 battery temp
+        private const val BCM_QUERY_CABIN_TEMP = "t72680322DD0400000000\r"  // 0xDD04 cabin temp
+        private val BCM_QUERIES = listOf(
+            BCM_QUERY_ODOMETER, BCM_QUERY_SOC, BCM_QUERY_BATT_TEMP, BCM_QUERY_CABIN_TEMP
+        )
+        /** How long between complete BCM poll cycles (ms). */
+        private const val BCM_POLL_INTERVAL_MS = 30_000L
+        /** Gap between individual queries in a cycle (ms). */
+        private const val BCM_QUERY_GAP_MS     =    300L
+        /** Delay after connect before first BCM poll (ms). */
+        private const val BCM_INITIAL_DELAY_MS =  5_000L
     }
 
     sealed class State {
@@ -79,7 +97,7 @@ class WiCanConnection(
     fun connectHybrid(
         onObdUpdate: (VehicleState) -> Unit,
         getCurrentState: () -> VehicleState
-    ): Flow<Pair<Int, ByteArray>> = flow<Pair<Int, ByteArray>> {
+    ): Flow<Pair<Int, ByteArray>> = channelFlow<Pair<Int, ByteArray>> {
 
         var failedAttempts = 0
 
@@ -119,6 +137,21 @@ class WiCanConnection(
                 connectionSucceeded = true
                 failedAttempts = 0
 
+                // ── BCM OBD poller — polls 4 Mode 22 PIDs every 30 s ──────────
+                // Sends ISO-TP single-frame requests to BCM (0x726) via SLCAN.
+                // Responses arrive as normal CAN frames on ID 0x72E and are
+                // intercepted in the main frame loop below.
+                val obdJob = launch {
+                    delay(BCM_INITIAL_DELAY_MS)
+                    while (isActive) {
+                        BCM_QUERIES.forEach { q ->
+                            try { sendWsText(out, q) } catch (_: Exception) { return@forEach }
+                            delay(BCM_QUERY_GAP_MS)
+                        }
+                        delay(BCM_POLL_INTERVAL_MS)
+                    }
+                }
+
                 // ── New-ID discovery for debug tab ─────────────
                 val seenIds   = mutableSetOf<Int>()
                 var debugCount = 0
@@ -126,6 +159,7 @@ class WiCanConnection(
                 var firmwareChecked = false
 
                 // ── Main frame loop ─────────────────────────────
+                try {
                 while (currentCoroutineContext().isActive) {
                     val (opcode, payload) = readWsFrame(inp, out) ?: break
                     if (opcode == 0x8) break  // close frame
@@ -154,13 +188,19 @@ class WiCanConnection(
 
                     val frame = parseSlcanFrame(msg) ?: continue
 
+                    // ── BCM OBD response — parse and forward via callback ───────
+                    if (frame.first == BCM_RESPONSE_ID) {
+                        parseBcmResponse(frame.second, getCurrentState(), onObdUpdate)
+                        continue
+                    }
+
                     // Log first occurrence of each new CAN ID
                     if (seenIds.size < 40 && frame.first !in seenIds) {
                         seenIds += frame.first
                         addDebugLine("new ID: 0x%03X".format(frame.first))
                     }
 
-                    emit(frame)
+                    send(frame)
                     trackFps()
                     debugCount++
 
@@ -171,6 +211,9 @@ class WiCanConnection(
                         debugCount = 0
                         debugTimer = now
                     }
+                }
+                } finally {
+                    obdJob.cancel()
                 }
 
                 socket.close()
@@ -259,27 +302,73 @@ class WiCanConnection(
         return sb.toString()
     }
 
-    /** Send a masked WebSocket text frame (client → server MUST be masked per RFC 6455). */
+    /** Send a masked WebSocket text frame (client → server MUST be masked per RFC 6455).
+     *  Synchronized on [out] so the OBD poller coroutine and the pong responder
+     *  don't interleave bytes on the same socket stream. */
     private fun sendWsText(out: OutputStream, text: String) {
         val payload = text.toByteArray(Charsets.UTF_8)
         check(payload.size <= 125) { "Payload too large for single-frame send" }
-        val mask  = ByteArray(4).also { rng.nextBytes(it) }
-        val frame = ByteArray(6 + payload.size)
-        frame[0] = 0x81.toByte()                        // FIN=1, opcode=text(1)
-        frame[1] = (0x80 or payload.size).toByte()      // MASK=1, len
-        mask.copyInto(frame, 2)
-        for (i in payload.indices) frame[6 + i] = (payload[i].toInt() xor mask[i % 4].toInt()).toByte()
-        out.write(frame); out.flush()
+        synchronized(out) {
+            val mask  = ByteArray(4).also { rng.nextBytes(it) }
+            val frame = ByteArray(6 + payload.size)
+            frame[0] = 0x81.toByte()
+            frame[1] = (0x80 or payload.size).toByte()
+            mask.copyInto(frame, 2)
+            for (i in payload.indices) frame[6 + i] = (payload[i].toInt() xor mask[i % 4].toInt()).toByte()
+            out.write(frame); out.flush()
+        }
     }
 
     private fun sendWsPong(out: OutputStream, payload: ByteArray) {
-        val mask  = ByteArray(4).also { rng.nextBytes(it) }
-        val frame = ByteArray(6 + payload.size)
-        frame[0] = 0x8A.toByte()
-        frame[1] = (0x80 or payload.size).toByte()
-        mask.copyInto(frame, 2)
-        for (i in payload.indices) frame[6 + i] = (payload[i].toInt() xor mask[i % 4].toInt()).toByte()
-        out.write(frame); out.flush()
+        synchronized(out) {
+            val mask  = ByteArray(4).also { rng.nextBytes(it) }
+            val frame = ByteArray(6 + payload.size)
+            frame[0] = 0x8A.toByte()
+            frame[1] = (0x80 or payload.size).toByte()
+            mask.copyInto(frame, 2)
+            for (i in payload.indices) frame[6 + i] = (payload[i].toInt() xor mask[i % 4].toInt()).toByte()
+            out.write(frame); out.flush()
+        }
+    }
+
+    /**
+     * Parse an ISO-TP single-frame response from BCM (CAN ID 0x72E) and call
+     * [onObdUpdate] with the relevant field updated in [currentState].
+     *
+     * Response frame layout (from MeatPi vehicle profile, Ford BCM 0x726→0x72E):
+     *   data[0] = PCI (SF: high nibble 0x0, low nibble = payload length)
+     *   data[1] = 0x62 (positive response to Mode 0x22)
+     *   data[2] = DID high byte
+     *   data[3] = DID low byte
+     *   data[4..] = B4, B5, B6… (MeatPi B-notation data bytes)
+     */
+    private fun parseBcmResponse(
+        data: ByteArray,
+        currentState: VehicleState,
+        onObdUpdate: (VehicleState) -> Unit
+    ) {
+        if (data.size < 5) return
+        if ((data[1].toInt() and 0xFF) != 0x62) return  // not positive response
+        val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
+        val b4  = data[4].toInt() and 0xFF
+        when (did) {
+            0xDD01 -> {  // Odometer: [B4:B6] km
+                if (data.size < 7) return
+                val km = (b4 shl 16) or
+                         ((data[5].toInt() and 0xFF) shl 8) or
+                         (data[6].toInt() and 0xFF)
+                onObdUpdate(currentState.copy(odometerKm = km.toLong()))
+            }
+            0x4028 -> {  // Battery SOC: B4 %
+                onObdUpdate(currentState.copy(batterySoc = b4.toDouble()))
+            }
+            0x4029 -> {  // Battery temp: B4 - 40 °C
+                onObdUpdate(currentState.copy(batteryTempC = (b4 - 40).toDouble()))
+            }
+            0xDD04 -> {  // Cabin temp: (B4 × 10/9) - 45 °C
+                onObdUpdate(currentState.copy(cabinTempC = (b4 * 10.0 / 9.0) - 45.0))
+            }
+        }
     }
 
     private fun readExactly(inp: InputStream, n: Int): ByteArray {
