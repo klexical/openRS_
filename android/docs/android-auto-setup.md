@@ -82,9 +82,9 @@ When using AA Wireless (e.g. an AAWireless dongle), your phone's WiFi radio is o
 
 | Situation | Transport | What the app does |
 |-----------|-----------|-------------------|
-| Phone-only (no AA Wireless) | WiFi TCP | Connects to `192.168.80.1:3333` as normal |
+| Phone-only (no AA Wireless) | WiFi WebSocket | Connects to `ws://192.168.80.1:80/ws` (SLCAN) as normal |
 | AA Wireless active | BLE GATT | App auto-discovers the WiCAN by BLE, connects on `0xFFE1/FFE2` |
-| USB AA cable | WiFi TCP | WiFi is free — normal WiFi connection |
+| USB AA cable | WiFi WebSocket | WiFi is free — normal WebSocket connection |
 
 **With openrs-fw (BLE transport, recommended):**
 1. Flash openrs-fw to the WiCAN (see [Firmware Update Guide](firmware-update.md))
