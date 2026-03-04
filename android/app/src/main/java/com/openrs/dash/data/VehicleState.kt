@@ -82,12 +82,12 @@ data class VehicleState(
     val wheelSpeedRL: Double = 0.0,
     val wheelSpeedRR: Double = 0.0,
 
-    // ── AWD / GKN Twinster (CAN Sniffed) ────────────────────
+    // ── AWD / GKN Twinster (CAN Sniffed / Mode 22 polled) ───────────────────
     val awdLeftTorque: Double = 0.0,
     val awdRightTorque: Double = 0.0,
-    val rduTempC: Double = 0.0,
+    val rduTempC: Double = -99.0,   // AWD module Mode 22 PID 0x1E8A; −99 = not yet polled
     val awdMaxTorque: Double = 0.0,
-    val ptuTempC: Double = 0.0,
+    val ptuTempC: Double = 0.0,     // 0x0F8 byte7 − 60 °C (passive broadcast)
 
     // ── Vehicle Status (CAN Sniffed) ────────────────────────
     val driveMode: DriveMode = DriveMode.NORMAL,
