@@ -5,6 +5,36 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
+## [v1.2.2] — 2026-03-04
+
+### Fixed — Gear display always showing Neutral
+
+The Focus RS does not broadcast gear position on the passive HS-CAN bus (`0x230` is absent from every observed log — 1.9 M frames over 16.8 minutes). The `gear` field in `VehicleState` therefore never updated from its default of `0` (Neutral).
+
+**Fix:** Added `derivedGear: Int` as a computed property on `VehicleState`. It calculates the current gear from RPM ÷ vehicle speed using the known Focus RS Getrag MT-82 final-drive ratio and 235/35R19 tyre circumference:
+
+```
+ratio = rpm × 0.03194 / speedKph
+  where 0.03194 = circumferenceM(2.033) × 3.6 / (60 × finalDrive(3.82))
+```
+
+Gear thresholds (midpoints between empirically measured values from a live log):
+
+| Gear | Measured ratio | Threshold |
+|------|---------------|-----------|
+| 1st  | ≈ 3.79        | ≥ 2.99    |
+| 2nd  | ≈ 2.18        | ≥ 2.03    |
+| 3rd  | ≈ 1.89        | ≥ 1.60    |
+| 4th  | ≈ 1.30        | ≥ 1.00    |
+| 5th  | ≈ 0.85        | ≥ 0.74    |
+| 6th  | < 0.74        | —         |
+
+Returns `N` when speed < 3 kph or RPM < 400, and `R` when `reverseStatus` is set.
+
+`gearDisplay` prefers the CAN-sourced `gear` field (for future compatibility if `0x230` ever appears) and falls back to `derivedGear`.
+
+---
+
 ## [v1.2.1] — 2026-03-04
 
 ### Fixed — Decoder Bug: Yaw Rate, Steering Angle, Brake Pressure
