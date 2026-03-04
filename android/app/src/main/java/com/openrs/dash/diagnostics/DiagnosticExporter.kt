@@ -188,7 +188,7 @@ object DiagnosticExporter {
             CanDecoder.ID_DRIVE_MODE, CanDecoder.ID_ESC_ABS, CanDecoder.ID_WHEEL_SPEEDS,
             CanDecoder.ID_GEAR, CanDecoder.ID_AWD_TORQUE,
             CanDecoder.ID_COOLANT, CanDecoder.ID_TPMS, CanDecoder.ID_AMBIENT_TEMP,
-            CanDecoder.ID_FUEL_LEVEL, CanDecoder.ID_BATTERY
+            CanDecoder.ID_FUEL_LEVEL
         )
 
         inventory.entries.sortedBy { it.key }.forEach { (id, info) ->

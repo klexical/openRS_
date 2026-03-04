@@ -45,10 +45,10 @@ data class UserPrefs(
         }
     }
 
-    /** Tire pressure in PSI → display value and label. */
+    /** Tire pressure in PSI → display value and label (1 decimal place for accuracy). */
     fun displayTire(psi: Double): String {
-        return if (tireUnit == "BAR") "%.1f".format(psi * 0.0689476)
-        else "%.0f".format(psi)
+        return if (tireUnit == "BAR") "%.2f".format(psi * 0.0689476)
+        else "%.1f".format(psi)
     }
 
     val tireLabel: String get() = tireUnit  // "PSI" or "BAR"

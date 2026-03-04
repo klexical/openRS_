@@ -41,24 +41,20 @@ void frs_init(void) {
 void frs_parse_can_frame(uint32_t can_id, const uint8_t *data, uint8_t dlc) {
     switch (can_id) {
 
-    case FRS_CAN_ID_DRIVE_MODE:
-        // 0x17E DriveModeRequest: steady-state mode in lower nibble of byte 0.
-        // 0=Normal 1=Sport 2=Track 3=Drift. Confirmed from live log analysis.
-        if (dlc >= 1) {
-            uint8_t raw_mode = data[0] & 0x0F;
+    case FRS_CAN_ID_AWD_MSG:
+        // 0x1B0: drive mode status + button event frame.
+        // Steady-state (byte4==0): byte 6 upper nibble = mode (0=Normal 1=Sport 2=Track 3=Drift).
+        // Button event (byte4!=0): attempt to capture template for write simulation.
+        // 0x17E only reflects Normal/Sport and is NOT used — Track/Drift absent there.
+        if (dlc >= 7 && data[4] == 0x00) {
+            uint8_t raw_mode = (data[6] >> 4) & 0x0F;
             if (raw_mode <= FRS_MODE_DRIFT) {
                 s_state.drive_mode = raw_mode;
             }
-        }
-        break;
-
-    case FRS_CAN_ID_AWD_MSG:
-        // 0x1B0: button transition event only — used for write template capture.
-        // Do NOT read drive mode from here; it only fires on dial button press/release.
-        if (!s_state.frame_template_valid && dlc >= 8 && data[1] == FRS_BUTTON_RELEASED) {
+        } else if (!s_state.frame_template_valid && dlc >= 8 && data[4] != 0x00) {
             memcpy(s_state.frame_1b0_template, data, 8);
             s_state.frame_template_valid = true;
-            ESP_LOGI(TAG, "0x1B0 frame template captured");
+            ESP_LOGI(TAG, "0x1B0 button event template captured (byte4=0x%02X)", data[4]);
         }
         break;
 

@@ -15,9 +15,15 @@ import com.openrs.dash.data.VehicleState
  *  - research/Daft Racing/log_awd_temp.py — AWD temp decoding reference
  *
  * Notes on 0x340: the DBC identifies this as PCMmsg17 (HS-CAN) with AmbientAirTemp
- * in byte 7. DigiCluster can1_ms.json also maps TPMS PSI to bytes 2-5 of 0x340 on
- * MS-CAN. Both decodings are attempted; range filters discard invalid readings.
+ * in byte 7. The GWM does NOT bridge MS-CAN TPMS data to HS-CAN 0x340 — those bytes
+ * are PCM signals unrelated to tire pressure. TPMS comes from BCM Mode 22 polling only.
  * RDU temp is not in any passive broadcast — it arrives via AWD module Mode 22 polling.
+ *
+ * Drive mode source: 0x1B0 byte 6 upper nibble is the only reliable steady-state source.
+ * 0x17E (DriveModeRequest) only reflects Normal/Sport — Track and Drift are never
+ * encoded there. Confirmed by cross-referencing 19 s of Track frames in a live log
+ * (0x1B0 byte6=0x20 at t=86.8-106s; 0x17E nibble stayed at 1=Sport throughout).
+ * Steady-state frames have byte4=0x00; button-event frames have byte4 != 0.
  */
 object CanDecoder {
 
@@ -32,12 +38,11 @@ object CanDecoder {
     const val ID_SPEED        = 0x130   // Speed bytes 6-7 BE × 0.01 kph
     const val ID_LONG_ACCEL   = 0x160   // Longitudinal G bits 48-57 LE × 0.00390625 − 2.0
     const val ID_LAT_ACCEL    = 0x180   // Lateral G bits 16-25 LE × 0.00390625 − 2.0
-    // RS_HS.dbc x17E (BO_ 382): DriveModeRequest — lower nibble of byte 0 carries the
-    // steady-state mode (0=Normal 1=Sport 2=Track 3=Drift). Confirmed from a 16-min live log:
-    // 9371 frames, 547 Normal (session start) then 8824 Sport (remainder of drive).
-    // NOTE: 0x1B0 was previously read for drive mode — that signal only fires during
-    // dial TRANSITIONS (button events), not steady-state. 0x17E is the correct source.
-    const val ID_DRIVE_MODE   = 0x17E
+    // 0x1B0: drive mode status + button event frame.
+    // Steady-state mode is encoded in byte 6 upper nibble (0=Normal 1=Sport 2=Track 3=Drift).
+    // Steady-state frames have byte 4 == 0x00; button-event transitions have byte 4 != 0.
+    // 0x17E (DriveModeRequest) only reflects Normal/Sport — Track and Drift are absent.
+    const val ID_DRIVE_MODE   = 0x1B0
     const val ID_ESC_ABS      = 0x1C0   // ESCMode Motorola bit 13|2    — RS_HS.dbc confirmed
     // RS_HS.dbc ABSmsg03 (0x190): FL/FR/RL/RR wheel speeds — 15-bit Motorola × 0.011343006 km/h
     const val ID_WHEEL_SPEEDS = 0x190
@@ -62,9 +67,11 @@ object CanDecoder {
     // Displayed as 0-100% (raw / 40.95) until bar calibration is confirmed.
     const val ID_BRAKE_PRESS  = 0x252
 
-    // ── Speculative / may not be present on all variants ────────────────────
-    const val ID_FUEL_LEVEL   = 0x34A   // Fuel % byte0 × 0.392 (unconfirmed ID, may need adjustment)
-    const val ID_BATTERY      = 0x3C0   // Battery V byte0 × 0.1 (unconfirmed, may not broadcast)
+    // RS_HS.dbc PCMmsg30 (0x380): FuelLevelFiltered : 17|10@0+ (0.4,0) [0|102] "%"
+    // Motorola big-endian, 10-bit, start bit 17 (MSB). Extract: (data[2]&0x03)<<8|data[3], ×0.4 %
+    // Confirmed from live log: raw=254 → 101.6 % (full tank). Range-filtered 0–110 %.
+    // 12V battery voltage does NOT broadcast on HS-CAN — polled via Mode 01 PID 0x42 in WiCanConnection.
+    const val ID_FUEL_LEVEL   = 0x380
 
     private val KNOWN_IDS = setOf(
         ID_TORQUE, ID_THROTTLE, ID_PEDALS, ID_ENGINE_RPM,
@@ -73,7 +80,7 @@ object CanDecoder {
         ID_DRIVE_MODE, ID_ESC_ABS,
         ID_WHEEL_SPEEDS, ID_GEAR, ID_AWD_TORQUE, ID_COOLANT,
         ID_TPMS, ID_AMBIENT_TEMP,
-        ID_FUEL_LEVEL, ID_BATTERY,
+        ID_FUEL_LEVEL,
         ID_STEERING, ID_BRAKE_PRESS
     )
 
@@ -225,35 +232,13 @@ object CanDecoder {
                 lastUpdate        = now
             ) else null
 
-            // ── 0x340: PCMmsg17 (HS-CAN) + MS-CAN TPMS (if bridged via GWM) ───
+            // ── 0x340: PCMmsg17 (HS-CAN) — AmbientAirTemp only ─────────────────
             // RS_HS.dbc PCMmsg17: AmbientAirTemp : 63|8@0− → byte7 signed × 0.25 °C
-            // DigiCluster can1_ms.json: TPMS PSI bytes 2-5 (LF/RF/LR/RR).
-            // Encoding: 1 raw unit = 3.6 kPa → PSI = raw × 3.6 / 6.895
-            // Confirmed: 0x43 (67 raw) = 35.0 PSI (winter-adjusted from ~40 PSI).
-            // Sensors sleep when stationary — raw 0 → null → retain last known pressure.
-            // Valid result range: 5–80 PSI. Out-of-range → keep last known good value.
+            // Bytes 2-5 are PCM engine signals (NOT TPMS — TPMS is BCM Mode 22 only).
             ID_TPMS -> if (n >= 8) {
-                fun tpmsPsi(raw: Int): Double? {
-                    if (raw == 0) return null
-                    val psi = raw * 3.6 / 6.895
-                    return if (psi < 5.0 || psi > 80.0) null else psi
-                }
-                val lf = tpmsPsi(ubyte(data, 2))
-                val rf = tpmsPsi(ubyte(data, 3))
-                val lr = tpmsPsi(ubyte(data, 4))
-                val rr = tpmsPsi(ubyte(data, 5))
-                // Ambient from byte 7 — signed int8 × 0.25 °C (PCMmsg17)
                 val ambient = data[7].toInt().toDouble() * 0.25
-                val ambientValid = ambient in -50.0..60.0
-                if (lf == null && rf == null && lr == null && rr == null && !ambientValid) null
-                else state.copy(
-                    tirePressLF  = lf ?: state.tirePressLF,
-                    tirePressRF  = rf ?: state.tirePressRF,
-                    tirePressLR  = lr ?: state.tirePressLR,
-                    tirePressRR  = rr ?: state.tirePressRR,
-                    ambientTempC = if (ambientValid) ambient else state.ambientTempC,
-                    lastUpdate   = now
-                )
+                if (ambient !in -50.0..60.0) null
+                else state.copy(ambientTempC = ambient, lastUpdate = now)
             } else null
 
             // ── 0x1A4: Ambient temperature — MS-CAN bridged via GWM ──────────
@@ -295,17 +280,18 @@ object CanDecoder {
                 )
             } else null
 
-            // ── 0x17E: Drive mode (DriveModeRequest) ──────────────────────────
-            // RS_HS.dbc BO_ 382 x17E: SG_ DriveModeRequest : 3|4@0+ (1,0) [0|15]
-            // Lower nibble of byte 0 carries the STEADY-STATE selected mode.
-            // The upper nibble alternates between 0xC and 0xD (alive counter bit).
-            // 0=Normal  1=Sport  2=Track  3=Drift
-            // (0x1B0 byte6 was previously used — it only reflects button-press
-            // transitions, not the held mode. 0x17E is the correct steady-state source.)
-            ID_DRIVE_MODE -> if (n >= 1) state.copy(
-                driveMode = DriveMode.fromInt(data[0].toInt() and 0x0F),
-                lastUpdate = now
-            ) else null
+            // ── 0x1B0: Drive mode steady-state ────────────────────────────────
+            // Byte 6 upper nibble = 0=Normal 1=Sport 2=Track 3=Drift.
+            // Steady-state frames have byte 4 == 0x00.
+            // Button-event transition frames have byte 4 != 0 → ignored for mode tracking.
+            ID_DRIVE_MODE -> if (n >= 7) {
+                val b4 = data[4].toInt() and 0xFF
+                if (b4 != 0) null
+                else state.copy(
+                    driveMode  = DriveMode.fromInt((data[6].toInt() and 0xFF) ushr 4),
+                    lastUpdate = now
+                )
+            } else null
 
             // ── 0x1C0: ESC mode ────────────────────────────────────────────────
             ID_ESC_ABS -> if (n >= 2) state.copy(
@@ -322,15 +308,15 @@ object CanDecoder {
                 torqueAtTrans = (bits(data, 37, 11) - 500).toDouble(), lastUpdate = now
             ) else null
 
-            // ── 0x34A: Fuel level (unconfirmed — may need ID correction) ───────
-            ID_FUEL_LEVEL -> if (n >= 1) state.copy(
-                fuelLevelPct = ubyte(data, 0) * 0.392, lastUpdate = now
-            ) else null
-
-            // ── 0x3C0: Battery voltage (unconfirmed — may not broadcast) ──────
-            ID_BATTERY -> if (n >= 1) state.copy(
-                batteryVoltage = ubyte(data, 0) * 0.1, lastUpdate = now
-            ) else null
+            // ── 0x380: Fuel level filtered ────────────────────────────────────
+            // RS_HS.dbc PCMmsg30: FuelLevelFiltered : 17|10@0+ (0.4,0) [0|102] "%"
+            // Motorola 10-bit: MSB at DBC bit 17 → (data[2]&0x03)<<8 | data[3], × 0.4 %
+            ID_FUEL_LEVEL -> if (n >= 4) {
+                val raw = ((data[2].toInt() and 0x03) shl 8) or (data[3].toInt() and 0xFF)
+                val pct = raw * 0.4
+                if (pct < 0.0 || pct > 110.0) null
+                else state.copy(fuelLevelPct = pct, lastUpdate = now)
+            } else null
 
             else -> null
         }
@@ -354,16 +340,15 @@ object CanDecoder {
         ID_STEERING     -> "steer=${"%.1f".format(state.steeringAngle)}°"
         ID_BRAKE_PRESS  -> "brake=${"%.1f".format(state.brakePressure)}"
         ID_GAUGE_ILLUM  -> "illum=${state.gaugeIllumination}, eBrake=${state.eBrake}"
-        ID_TPMS         -> "lf=${"%.0f".format(state.tirePressLF)} rf=${"%.0f".format(state.tirePressRF)} lr=${"%.0f".format(state.tirePressLR)} rr=${"%.0f".format(state.tirePressRR)} PSI, ambient=${"%.2f".format(state.ambientTempC)}°C"
+        ID_TPMS         -> "ambient=${"%.2f".format(state.ambientTempC)}°C (TPMS from BCM Mode 22)"
         ID_AMBIENT_TEMP -> "ambientTempC=${"%.2f".format(state.ambientTempC)}"
         ID_WHEEL_SPEEDS -> "FL=${"%.1f".format(state.wheelSpeedFL)} FR=${"%.1f".format(state.wheelSpeedFR)} RL=${"%.1f".format(state.wheelSpeedRL)} RR=${"%.1f".format(state.wheelSpeedRR)} km/h"
         ID_AWD_TORQUE   -> "L=${"%.0f".format(state.awdLeftTorque)}Nm R=${"%.0f".format(state.awdRightTorque)}Nm"
-        ID_DRIVE_MODE   -> "driveMode=${state.driveMode.label}"
+        ID_DRIVE_MODE   -> "driveMode=${state.driveMode.label} (0x1B0 byte6)"
         ID_ESC_ABS      -> "escStatus=${state.escStatus.label}"
         ID_GEAR         -> "gear=${state.gearDisplay}"
         ID_TORQUE       -> "torqueNm=${"%.0f".format(state.torqueAtTrans)}"
-        ID_FUEL_LEVEL   -> "fuelPct=${"%.1f".format(state.fuelLevelPct)}"
-        ID_BATTERY      -> "battV=${"%.2f".format(state.batteryVoltage)}"
+        ID_FUEL_LEVEL   -> "fuelPct=${"%.1f".format(state.fuelLevelPct)} (0x380 Motorola)"
         else            -> "(unknown id 0x%03X)".format(id)
     }
 
@@ -422,11 +407,6 @@ object CanDecoder {
         ID_BRAKE_PRESS  -> when {
             state.brakePressure < 0 || state.brakePressure > 110
                 -> "brakePct=${"%.1f".format(state.brakePressure)} outside 0-110 range"
-            else -> null
-        }
-        ID_BATTERY      -> when {
-            state.batteryVoltage in 0.01..9.9  -> "battV=${"%.2f".format(state.batteryVoltage)} — too low, formula may be wrong"
-            state.batteryVoltage > 17.0         -> "battV=${"%.2f".format(state.batteryVoltage)} — too high"
             else -> null
         }
         ID_AMBIENT_TEMP -> when {

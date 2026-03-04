@@ -247,9 +247,6 @@ class MainActivity : ComponentActivity() {
                 UIText(vs.driveMode.label.uppercase(), 11.sp, Color.Black, FontWeight.Bold, 1.sp)
             }
 
-            // Gear
-            MonoText(vs.gearDisplay, 20.sp, Frost, FontWeight.Bold)
-
             // ESC
             UIText(vs.escStatus.label, 10.sp, Mid, FontWeight.Medium, 0.5.sp)
 

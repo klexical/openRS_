@@ -5,6 +5,47 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
+## [v1.2.5] — 2026-03-01
+
+### Fixed — Drive mode Track/Drift now display correctly
+
+Reverted drive mode source from `0x17E` back to `0x1B0`, but with a correctly targeted extraction. Deep log analysis of a 20-minute session (including a brief Track mode segment) proved `0x17E` byte 0 lower nibble **stays at 1 (Sport) even while the car is in Track** — making it unreliable beyond Normal/Sport. The correct source is `0x1B0` byte 6 upper nibble, read only when byte 4 == `0x00` (steady-state frames). Button-event frames (byte 4 ≠ 0) are ignored to prevent transient flicker.
+
+| Byte 6 (upper nibble) | Mode   |
+|-----------------------|--------|
+| 0x0_                  | Normal |
+| 0x1_                  | Sport  |
+| 0x2_                  | Track  |
+| 0x3_                  | Drift  |
+
+### Fixed — Gear indicator removed
+
+The gear position field (CAN ID `0x230`) does not broadcast on this vehicle. The gear display widget has been removed from the UI.
+
+### Fixed — TPMS formula switched to exportedPIDs source of truth
+
+Updated BCM Mode 22 TPMS formula from the DigiCluster `can0_hs.json` formula to the community-validated Focus RS formula from `exportedPIDs.txt`:
+
+> PSI = `(((256×A)+B) / 3.0 + 22.0/3.0) × 0.145`
+
+TPMS now displays one decimal place (e.g. `42.3 PSI`) to reveal variance between tires and aid in validating sensor readings.
+
+Passive TPMS decoding from CAN `0x340` bytes 2–5 has been removed entirely. `0x340` is `PCMmsg17` on HS-CAN — those bytes are PCM engine signals, not tire pressure. TPMS comes exclusively from BCM Mode 22 polling (PIDs `0x2813`–`0x2816`).
+
+### Fixed — Fuel level now reads from correct CAN ID
+
+`0x34A` was never present in logs. The correct source is `0x380` (`PCMmsg30`, `FuelLevelFiltered`), a 10-bit Motorola big-endian signal with factor 0.4 %. Live log confirmed: raw=254 → 101.6 % (full tank).
+
+### Fixed — Battery voltage now polled via OBD-II
+
+12V battery voltage does not broadcast on HS-CAN. Removed the stale `0x3C0` passive decoder. Battery voltage is now polled from the PCM via standard OBD-II **Mode 01 PID `0x42`** ("Control module voltage"), formula: `(A×256+B) / 1000 V`.
+
+### Note — Firmware v1.2 required
+
+Firmware v1.2 corrects the same `0x17E` vs `0x1B0` drive mode bug on the hardware side. See [firmware release fw-v1.2.0](https://github.com/klexical/openRS_/releases/tag/fw-v1.2.0).
+
+---
+
 ## [v1.2.4] — 2026-03-01
 
 ### Fixed — TPMS formula aligned to DigiCluster reference

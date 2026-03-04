@@ -98,10 +98,13 @@ class WiCanConnection(
         private const val PCM_QUERY_CHARGE_AIR  = "t7E080322046100000000\r"  // 0x0461 charge air
         // CAT temp: DigiCluster can0_hs cat_temp_22 — ((A*256)+B)/10 - 40 °C
         private const val PCM_QUERY_CAT_TEMP    = "t7E080322F43C00000000\r"  // 0xF43C catalyst
+        // Battery voltage: OBD-II Mode 01 PID 0x42 "Control module voltage"
+        // Formula: (A*256+B) / 1000 = volts. Standard Ford PCM PID. Response: data[1]=0x41.
+        private const val PCM_QUERY_BATT_VOLT   = "t7E080201420000000000\r"  // Mode 01 PID 0x42
         private val PCM_QUERIES = listOf(
             PCM_QUERY_ETC_ACTUAL, PCM_QUERY_ETC_DESIRED,
             PCM_QUERY_WGDC, PCM_QUERY_KR_CYL1, PCM_QUERY_OAR,
-            PCM_QUERY_CHARGE_AIR, PCM_QUERY_CAT_TEMP
+            PCM_QUERY_CHARGE_AIR, PCM_QUERY_CAT_TEMP, PCM_QUERY_BATT_VOLT
         )
         /** How long between PCM poll cycles (ms). PCM can be polled more frequently than BCM. */
         private const val PCM_POLL_INTERVAL_MS  = 10_000L
@@ -449,13 +452,14 @@ class WiCanConnection(
             0xDD04 -> {  // Cabin temp: (B4 × 10/9) - 45 °C
                 onObdUpdate(currentState.copy(cabinTempC = (b4 * 10.0 / 9.0) - 45.0))
             }
-            // TPMS: DigiCluster can0_hs.json formula — ((A*256)+B)/2.9 kPa × 0.145038 = PSI
-            // A=B4 (high byte), B=B5 (low byte). Same PIDs/address confirmed in DigiCluster.
-            0x2813, 0x2814, 0x2816, 0x2815 -> {
-                if (data.size < 6) return
-                val b5 = data[5].toInt() and 0xFF
-                val psi = (b4 * 256 + b5) / 2.9 * 0.145038
-                if (psi < 5.0 || psi > 70.0) return  // reject implausible readings
+        // TPMS: exportedPIDs.txt formula (source of truth for Ford Focus RS):
+        //   PSI = (((256*A)+B) / 3.0 + 22.0/3.0) * 0.145
+        //   A=B4 (high byte), B=B5 (low byte). PIDs 0x2813-0x2816, BCM address 0x726.
+        0x2813, 0x2814, 0x2816, 0x2815 -> {
+            if (data.size < 6) return
+            val b5 = data[5].toInt() and 0xFF
+            val psi = ((b4 * 256.0 + b5) / 3.0 + 22.0 / 3.0) * 0.145
+            if (psi < 5.0 || psi > 70.0) return  // reject implausible readings
                 onObdUpdate(when (did) {
                     0x2813 -> currentState.copy(tirePressLF = psi)
                     0x2814 -> currentState.copy(tirePressRF = psi)
@@ -508,7 +512,23 @@ class WiCanConnection(
         onObdUpdate: (com.openrs.dash.data.VehicleState) -> Unit
     ) {
         if (data.size < 5) return
-        if ((data[1].toInt() and 0xFF) != 0x62) return
+        val serviceId = data[1].toInt() and 0xFF
+
+        // Mode 01 positive response (0x41) — battery voltage PID 0x42
+        if (serviceId == 0x41) {
+            val pid = data[2].toInt() and 0xFF
+            if (pid == 0x42 && data.size >= 5) {
+                val a = data[3].toInt() and 0xFF
+                val b = data[4].toInt() and 0xFF
+                val volts = (a * 256 + b) / 1000.0
+                if (volts in 8.0..18.0) {
+                    onObdUpdate(currentState.copy(batteryVoltage = volts))
+                }
+            }
+            return
+        }
+
+        if (serviceId != 0x62) return  // not a Mode 22 positive response
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
         val b4s = data[4].toInt()  // signed interpretation
