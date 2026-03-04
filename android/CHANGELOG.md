@@ -5,6 +5,26 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
+## [v1.1.1] — 2026-03-01
+
+### Added — BCM OBD Mode 22 polling
+- Active ISO-TP queries now sent to BCM (CAN address `0x726`) every 30 s via SLCAN, unlocking 4 new data points from the MeatPi Focus RS MK3 vehicle profile:
+  - **Odometer** (`0xDD01`) — displayed on DASH tab as `ODO km`
+  - **Battery SOC** (`0x4028`) — displayed on DASH tab as `SOC %` (12V start/stop battery)
+  - **Battery Temp** (`0x4029`) — displayed on TEMPS tab with BCM label
+  - **Cabin Temp** (`0xDD04`) — displayed on TEMPS tab with BCM label
+- `WiCanConnection` changed from `flow {}` to `channelFlow {}` to allow OBD poller coroutine to run concurrently with the passive CAN receive loop
+- `sendWsText` / `sendWsPong` now use `synchronized(out)` to prevent stream interleaving between OBD poller and keep-alive pong responses
+- New `parseBcmResponse()` function decodes ISO-TP single-frame responses on CAN ID `0x72E` using MeatPi-verified formulas
+
+### Fixed — Browser emulator
+- Settings overlay moved outside `#phone` container so it renders correctly when the Android Auto tab is active (was previously trapped inside the hidden phone div)
+- Android Auto DIAG screen added with full parity to phone DIAG tab (session stats, frame inventory, snapshot button)
+- Android Auto `⚙` settings gear icon wired to the shared settings overlay
+- Firmware-locked feature toggles in AA CTRL panel now flash red and refuse to toggle when Stock firmware is simulated
+
+---
+
 ## [v1.1.0] — 2026-03-04
 
 ### Changed — Architecture (breaking)

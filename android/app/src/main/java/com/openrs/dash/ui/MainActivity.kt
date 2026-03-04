@@ -256,6 +256,11 @@ class MainActivity : ComponentActivity() {
             "LOAD"  to "%.0f".format(v.calcLoad) + "%",
             "AFR"   to "%.2f".format(v.commandedAfr),
             "FPS"   to "${v.framesPerSecond.roundToInt()}"))
+        InfoRow(listOf(
+            "ODO"   to if (v.odometerKm >= 0) "${v.odometerKm} km" else "--",
+            "SOC"   to if (v.batterySoc >= 0) "${v.batterySoc.roundToInt()}%" else "--",
+            "12V"   to "%.1f".format(v.batteryVoltage) + "V",
+            "MODE"  to v.driveMode.label.uppercase()))
     }
 }
 
@@ -369,6 +374,18 @@ class MainActivity : ComponentActivity() {
             TempGauge("CHARGE AIR", p.displayTemp(v.chargeAirTempC), p.tempLabel, Txt, "", Modifier.weight(1f))
             TempGauge("CATALYTIC",  p.displayTemp(v.catalyticTempC), p.tempLabel,
                 tempColor(v.catalyticTempC, 500.0, 700.0), "", Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (v.cabinTempC > -90)
+                TempGauge("CABIN", p.displayTemp(v.cabinTempC), p.tempLabel, Txt, "(BCM)", Modifier.weight(1f))
+            else
+                TempGauge("CABIN", "--", p.tempLabel, Dim, "(BCM — polling)", Modifier.weight(1f))
+            if (v.batteryTempC > -90)
+                TempGauge("BATT TEMP", p.displayTemp(v.batteryTempC), p.tempLabel,
+                    tempColor(v.batteryTempC, 40.0, 60.0), "(BCM)", Modifier.weight(1f))
+            else
+                TempGauge("BATT TEMP", "--", p.tempLabel, Dim, "(BCM — polling)", Modifier.weight(1f))
         }
         if (v.isReadyToRace) {
             Spacer(Modifier.height(8.dp))
