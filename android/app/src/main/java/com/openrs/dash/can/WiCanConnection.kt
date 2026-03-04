@@ -73,6 +73,33 @@ class WiCanConnection(
         const val AWD_RESPONSE_ID = 0x70B
         private const val AWD_QUERY_RDU_TEMP = "t703803221E8A00000000\r"  // 0x1E8A RDU oil temp
         private val AWD_QUERIES = listOf(AWD_QUERY_RDU_TEMP)
+
+        // ── PCM OBD Mode 22 polling (ISO-TP over SLCAN) ────────────────────
+        // Request address 0x7E0 (PCM), response address 0x7E8.
+        // Sources: research/exportedPIDs.txt + research/Digi Cluster/protocol/can0_hs.json
+        const val PCM_RESPONSE_ID = 0x7E8
+        // ETC angles: exportedPIDs [FORD]Throttle Position — ((A*256)+B)*(100/8192) deg
+        private const val PCM_QUERY_ETC_ACTUAL  = "t7E080322093C00000000\r"  // 0x093C ETC actual
+        private const val PCM_QUERY_ETC_DESIRED = "t7E080322091A00000000\r"  // 0x091A ETC desired
+        // Wastegate DC: exportedPIDs [Focus] Turbo Wastegate % — A/128*100
+        private const val PCM_QUERY_WGDC        = "t7E080322046200000000\r"  // 0x0462 WGDC
+        // Knock retard cyl1: exportedPIDs — ((signed(A)*256)+B)/-512
+        private const val PCM_QUERY_KR_CYL1     = "t7E08032203EC00000000\r"  // 0x03EC KR cyl 1
+        // Octane adjust ratio: exportedPIDs — (signed(a)*256+b)/16384
+        private const val PCM_QUERY_OAR         = "t7E08032203E800000000\r"  // 0x03E8 OAR
+        // Charge air temp: DigiCluster can0_hs charge_air_temp_22 — (signed(A)*256+B)/64 °C
+        private const val PCM_QUERY_CHARGE_AIR  = "t7E080322046100000000\r"  // 0x0461 charge air
+        // CAT temp: DigiCluster can0_hs cat_temp_22 — ((A*256)+B)/10 - 40 °C
+        private const val PCM_QUERY_CAT_TEMP    = "t7E080322F43C00000000\r"  // 0xF43C catalyst
+        private val PCM_QUERIES = listOf(
+            PCM_QUERY_ETC_ACTUAL, PCM_QUERY_ETC_DESIRED,
+            PCM_QUERY_WGDC, PCM_QUERY_KR_CYL1, PCM_QUERY_OAR,
+            PCM_QUERY_CHARGE_AIR, PCM_QUERY_CAT_TEMP
+        )
+        /** How long between PCM poll cycles (ms). PCM can be polled more frequently than BCM. */
+        private const val PCM_POLL_INTERVAL_MS  = 10_000L
+        private const val PCM_QUERY_GAP_MS      =    150L
+        private const val PCM_INITIAL_DELAY_MS  =  7_000L
     }
 
     sealed class State {
@@ -166,6 +193,17 @@ class WiCanConnection(
                     }
                 }
 
+                val pcmJob = launch {
+                    delay(PCM_INITIAL_DELAY_MS)
+                    while (isActive) {
+                        PCM_QUERIES.forEach { q ->
+                            try { sendWsText(out, q) } catch (_: Exception) { return@forEach }
+                            delay(PCM_QUERY_GAP_MS)
+                        }
+                        delay(PCM_POLL_INTERVAL_MS)
+                    }
+                }
+
                 // ── New-ID discovery for debug tab ─────────────
                 val seenIds   = mutableSetOf<Int>()
                 var debugCount = 0
@@ -223,6 +261,12 @@ class WiCanConnection(
                         continue
                     }
 
+                    // ── PCM OBD response (ETC, WGDC, KR, OAR, charge air, CAT) ─
+                    if (frame.first == PCM_RESPONSE_ID) {
+                        parsePcmResponse(frame.second, getCurrentState(), onObdUpdate)
+                        continue
+                    }
+
                     // Log first occurrence of each new CAN ID
                     if (seenIds.size < 40 && frame.first !in seenIds) {
                         seenIds += frame.first
@@ -243,6 +287,7 @@ class WiCanConnection(
                 }
                 } finally {
                     obdJob.cancel()
+                    pcmJob.cancel()
                 }
 
                 socket.close()
@@ -420,6 +465,62 @@ class WiCanConnection(
             0x1E8A -> {  // RDU oil temp: B4 − 40 °C
                 onObdUpdate(currentState.copy(rduTempC = (b4 - 40).toDouble()))
             }
+        }
+    }
+
+    /**
+     * Parse an ISO-TP single-frame response from the PCM (CAN ID 0x7E8).
+     *
+     * All PIDs use standard Mode 22 format:
+     *   data[0] = PCI (SF length)
+     *   data[1] = 0x62 (positive response)
+     *   data[2] = DID high byte
+     *   data[3] = DID low byte
+     *   data[4] = B4 (first data byte)
+     *   data[5] = B5 (second data byte, if applicable)
+     *
+     * Sources: research/exportedPIDs.txt, research/Digi Cluster/protocol/can0_hs.json
+     */
+    private fun parsePcmResponse(
+        data: ByteArray,
+        currentState: com.openrs.dash.data.VehicleState,
+        onObdUpdate: (com.openrs.dash.data.VehicleState) -> Unit
+    ) {
+        if (data.size < 5) return
+        if ((data[1].toInt() and 0xFF) != 0x62) return
+        val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
+        val b4  = data[4].toInt() and 0xFF
+        val b4s = data[4].toInt()  // signed interpretation
+        val b5  = if (data.size > 5) data[5].toInt() and 0xFF else 0
+        when (did) {
+            // ETC angle actual — ((A*256)+B) * (100/8192) degrees
+            0x093C -> onObdUpdate(currentState.copy(
+                etcAngleActual = ((b4 shl 8) or b5) * (100.0 / 8192.0)
+            ))
+            // ETC angle desired — same formula
+            0x091A -> onObdUpdate(currentState.copy(
+                etcAngleDesired = ((b4 shl 8) or b5) * (100.0 / 8192.0)
+            ))
+            // Wastegate DC — A/128*100 %
+            0x0462 -> onObdUpdate(currentState.copy(
+                wgdcDesired = b4 * 100.0 / 128.0
+            ))
+            // Knock retard cyl1 — ((signed(A)*256)+B)/-512
+            0x03EC -> onObdUpdate(currentState.copy(
+                ignCorrCyl1 = ((b4s.toByte().toInt() shl 8) or b5) / -512.0
+            ))
+            // Octane adjust ratio — (signed(a)*256+b)/16384
+            0x03E8 -> onObdUpdate(currentState.copy(
+                octaneAdjustRatio = ((b4s.toByte().toInt() shl 8) or b5) / 16384.0
+            ))
+            // Charge air temp — (signed(A)*256+B)/64 °C
+            0x0461 -> onObdUpdate(currentState.copy(
+                chargeAirTempC = ((b4s.toByte().toInt() shl 8) or b5) / 64.0
+            ))
+            // Catalyst temp — ((A*256)+B)/10 - 40 °C
+            0xF43C -> onObdUpdate(currentState.copy(
+                catalyticTempC = ((b4 shl 8) or b5) / 10.0 - 40.0
+            ))
         }
     }
 

@@ -47,6 +47,16 @@ object CanDecoder {
     const val ID_TPMS         = 0x340
     const val ID_AMBIENT_TEMP = 0x1A4   // Ambient temp byte4 signed × 0.25 °C (MS-CAN bridged)
 
+    // ── RS_HS.dbc SASMmsg01 (0x010): Steering wheel angle ──────────────────
+    // SteeringWheelAngle : 54|15@0+ (0.04395,0) → bits(54,15) × 0.04395 °
+    // SteeringAngleSign  : 39|1@0+ (1,0)        → 1=CW(right) 0=CCW(left)
+    const val ID_STEERING     = 0x010
+
+    // ── RS_HS.dbc ABSmsg10 (0x252): Brake pressure ──────────────────────────
+    // BrakePressureMeasured : 11|12@0+ (1,0) → bits(11,12) raw 0-4095 counts
+    // Displayed as 0-100% (raw / 40.95) until bar calibration is confirmed.
+    const val ID_BRAKE_PRESS  = 0x252
+
     // ── Speculative / may not be present on all variants ────────────────────
     const val ID_FUEL_LEVEL   = 0x34A   // Fuel % byte0 × 0.392 (unconfirmed ID, may need adjustment)
     const val ID_BATTERY      = 0x3C0   // Battery V byte0 × 0.1 (unconfirmed, may not broadcast)
@@ -58,7 +68,8 @@ object CanDecoder {
         ID_AWD_MSG, ID_ESC_ABS,
         ID_WHEEL_SPEEDS, ID_GEAR, ID_AWD_TORQUE, ID_COOLANT,
         ID_TPMS, ID_AMBIENT_TEMP,
-        ID_FUEL_LEVEL, ID_BATTERY
+        ID_FUEL_LEVEL, ID_BATTERY,
+        ID_STEERING, ID_BRAKE_PRESS
     )
 
     fun decode(id: Int, data: ByteArray, state: VehicleState): VehicleState? {
@@ -143,18 +154,46 @@ object CanDecoder {
                 )
             } else null
 
-            // ── 0x180: Lateral acceleration ────────────────────────────────────
-            // bits 16-25 little-endian: (byte2 & 0x03) << 8 | byte3, × 0.00390625 − 2.0 g
-            // Range: −2.0 to +1.996 g. Invalid pattern: byte2 & 0x03 == 0x03 && byte3 == 0xFF
-            ID_LAT_ACCEL -> if (n >= 4) {
+            // ── 0x180: Lateral acceleration + Yaw rate ─────────────────────────
+            // RS_HS.dbc ABSmsg02 (10 ms broadcast):
+            //   LatAccelMeasured  : 17|10@0+ (0.00390625,-2) → bits 17-26 Motorola
+            //     = (byte2 & 0x03) << 8 | byte3, × 0.00390625 − 2.0 g
+            //   YawRateMeasured   : 35|12@0+ (0.03663,-75)   → bits(data,35,12) × 0.03663 − 75 °/s
+            // Invalid pattern for lat G: byte2 & 0x03 == 0x03 && byte3 == 0xFF
+            ID_LAT_ACCEL -> if (n >= 8) {
                 val b2 = data[2].toInt() and 0xFF
                 val b3 = data[3].toInt() and 0xFF
                 if ((b2 and 0x03) == 0x03 && b3 == 0xFF) null
                 else state.copy(
                     lateralG   = ((b2 and 0x03) shl 8 or b3) * 0.00390625 - 2.0,
+                    yawRate    = bits(data, 35, 12) * 0.03663 - 75.0,
                     lastUpdate = now
                 )
             } else null
+
+            // ── 0x010: Steering wheel angle ────────────────────────────────────
+            // RS_HS.dbc SASMmsg01 (10 ms broadcast):
+            //   SteeringWheelAngle : 54|15@0+ (0.04395,0) → bits(data,54,15) × 0.04395 °
+            //   SteeringAngleSign  : 39|1@0+  (1,0)       → 1=CW/right 0=CCW/left
+            // Range: 0 to 1440 °. Sign applied: positive = right (CW), negative = left.
+            ID_STEERING -> if (n >= 8) {
+                val angleMag = bits(data, 54, 15) * 0.04395
+                val signBit  = bits(data, 39, 1)
+                state.copy(
+                    steeringAngle = if (signBit == 1) angleMag else -angleMag,
+                    lastUpdate    = now
+                )
+            } else null
+
+            // ── 0x252: Brake pressure ──────────────────────────────────────────
+            // RS_HS.dbc ABSmsg10 (20 ms broadcast):
+            //   BrakePressureMeasured : 11|12@0+ (1,0) → bits(data,11,12) raw 0-4095
+            // Units unconfirmed — displayed as 0–100 scale (raw / 40.95) until bar
+            // calibration is verified from a live log with known brake pressure.
+            ID_BRAKE_PRESS -> if (n >= 4) state.copy(
+                brakePressure = bits(data, 11, 12) / 40.95,
+                lastUpdate    = now
+            ) else null
 
             // ── 0x0C8: Gauge illumination + e-brake ───────────────────────────
             // Brightness: bits 0-4 of byte0  [DigiCluster verified]
@@ -289,7 +328,9 @@ object CanDecoder {
         ID_THROTTLE     -> "throttlePct=${"%.1f".format(state.throttlePct)}"
         ID_PEDALS       -> "accelPct=${"%.1f".format(state.accelPedalPct)}, rev=${state.reverseStatus}"
         ID_LONG_ACCEL   -> "lonG=${"%.4f".format(state.longitudinalG)}g"
-        ID_LAT_ACCEL    -> "latG=${"%.4f".format(state.lateralG)}g"
+        ID_LAT_ACCEL    -> "latG=${"%.4f".format(state.lateralG)}g yaw=${"%.2f".format(state.yawRate)}°/s"
+        ID_STEERING     -> "steer=${"%.1f".format(state.steeringAngle)}°"
+        ID_BRAKE_PRESS  -> "brake=${"%.1f".format(state.brakePressure)}"
         ID_GAUGE_ILLUM  -> "illum=${state.gaugeIllumination}, eBrake=${state.eBrake}"
         ID_TPMS         -> "lf=${"%.0f".format(state.tirePressLF)} rf=${"%.0f".format(state.tirePressRF)} lr=${"%.0f".format(state.tirePressLR)} rr=${"%.0f".format(state.tirePressRR)} PSI, ambient=${"%.2f".format(state.ambientTempC)}°C"
         ID_AMBIENT_TEMP -> "ambientTempC=${"%.2f".format(state.ambientTempC)}"
@@ -347,6 +388,18 @@ object CanDecoder {
         ID_LAT_ACCEL    -> when {
             state.lateralG < -4 || state.lateralG > 4
                 -> "latG=${"%.3f".format(state.lateralG)}g outside ±4g"
+            state.yawRate < -75 || state.yawRate > 75
+                -> "yawRate=${"%.1f".format(state.yawRate)}°/s outside ±75"
+            else -> null
+        }
+        ID_STEERING     -> when {
+            state.steeringAngle < -1440 || state.steeringAngle > 1440
+                -> "steer=${"%.0f".format(state.steeringAngle)}° outside ±1440"
+            else -> null
+        }
+        ID_BRAKE_PRESS  -> when {
+            state.brakePressure < 0 || state.brakePressure > 110
+                -> "brakePct=${"%.1f".format(state.brakePressure)} outside 0-110 range"
             else -> null
         }
         ID_BATTERY      -> when {

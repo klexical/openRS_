@@ -153,8 +153,25 @@ data class VehicleState(
         4 -> "4"; 5 -> "5"; 6 -> "6"; 7 -> "R"; else -> "?"
     }
 
-    val isReadyToRace: Boolean get() =
-        oilTempC >= 65 && rduTempC >= 20 && ptuTempC >= 50
+    /**
+     * Returns null when warming up (with a description of what's still cold),
+     * or an empty string when all thresholds are met (race ready).
+     * Thresholds are conservative safe-margin values:
+     *   Engine Oil  ≥ 80 °C  (viscosity stable for hard use)
+     *   Coolant     ≥ 85 °C  (thermostat fully open, stable operating temp)
+     *   RDU         ≥ 30 °C  (AWD module warm, fluid circulating)
+     *   PTU         ≥ 40 °C  (transfer case warm)
+     */
+    val rtrStatus: String? get() {
+        val cold = mutableListOf<String>()
+        if (oilTempC < 80)                    cold += "Oil ${oilTempC.toInt()}°C < 80°C"
+        if (coolantTempC < 85)                cold += "Coolant ${coolantTempC.toInt()}°C < 85°C"
+        if (rduTempC > -90 && rduTempC < 30)  cold += "RDU ${rduTempC.toInt()}°C < 30°C"
+        if (ptuTempC < 40)                    cold += "PTU ${ptuTempC.toInt()}°C < 40°C"
+        return if (cold.isEmpty()) null else cold.joinToString(" · ")
+    }
+
+    val isReadyToRace: Boolean get() = rtrStatus == null
 
     /** Fuel rail pressure in PSI */
     val fuelRailPsi: Double get() = fuelRailPressure * 0.14503773
