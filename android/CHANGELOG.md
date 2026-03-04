@@ -5,6 +5,55 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
+## [v1.2.0] — 2026-03-04
+
+### Redesign — Full UI/UX Overhaul
+
+Complete visual and structural redesign of the app. The previous 8-tab layout has been consolidated into a more focused, information-dense 5-tab design with a System Drawer for controls.
+
+**Tab structure:**
+- **DASH** — Hero boost/RPM/speed gauges, 8-cell data grid, AWD split bar with animated gradient, G-force row
+- **POWER** — AFR hero cards, throttle & boost grid (ETC, WGDC, TIP), engine management (timing, load, OAR, KR, VCT), fuel trims & misc
+- **CHASSIS** — AWD section (4 wheel speeds + torque bar + deltas), G-Force section (yaw, steering, peaks + inline reset), TPMS section with car outline graphic
+- **TEMPS** — RTR banner (warming up vs race ready with animated dot), 10 temp cards in a 2-col grid, each with a color indicator bar at base
+- **DIAG** — Diagnostic snapshot, live CAN output, frame inventory (unchanged from v1.1.6)
+- **☰ System Drawer** — Drive mode (read-only), ESC status (read-only), Features (firmware-gated), Connection & Diagnostics with snapshot button
+
+### Added — New Font System
+- Embedded **Share Tech Mono** (numeric readouts, data values, technical labels)
+- Embedded **Barlow Condensed** (UI labels, section headers, button text)
+- All fonts offline-embedded — no network dependency
+
+### Added — New CAN Signals
+- **Steering wheel angle** from `0x010` (`SASMmsg01`) — DBC-verified: `bits(54,15) × 0.04395°`, signed via bit 39
+- **Yaw rate** from `0x180` (`ABSmsg02`) — decoded alongside existing lateral G: `bits(35,12) × 0.03663 − 75 °/s`
+- **Brake pressure** from `0x252` (`ABSmsg10`) — DBC-verified: `bits(11,12)` raw 0–4095, displayed 0–100% (bar calibration pending from live log)
+
+### Added — PCM Mode 22 Polling
+New ISO-TP polling cycle to PCM (`0x7E0` → response `0x7E8`) every 10 seconds:
+- **ETC Actual** (`0x093C`) — electronic throttle actual angle
+- **ETC Desired** (`0x091A`) — electronic throttle desired angle
+- **Wastegate DC** (`0x0462`) — turbo wastegate duty cycle %
+- **Knock Retard Cyl 1** (`0x03EC`) — ignition correction cyl 1 (°)
+- **Octane Adjust Ratio** (`0x03E8`) — knock learning OAR
+- **Charge Air Temp** (`0x0461`) — charge air cooler outlet (°C) — verified via DigiCluster can0_hs.json
+- **Catalyst Temp** (`0xF43C`) — catalytic converter temp (°C) — verified via DigiCluster can0_hs.json
+
+### Updated — Ready-to-Race Thresholds
+RTR banner now uses safe conservative warm-up thresholds with status text showing which sensors are still cold:
+- Engine Oil ≥ 80 °C (was 65 °C)
+- Coolant ≥ 85 °C (new)
+- RDU ≥ 30 °C (was 20 °C)
+- PTU ≥ 40 °C (was 50 °C)
+
+### Updated — Header
+- **Pulsing connection dot** replaces text-based LIVE/OFFLINE indicator
+- **Drive mode badge**, **gear number**, **ESC status** all visible at a glance
+- Speed removed from header (shown prominently on DASH tab hero row)
+- ⚙ Settings gear retained
+
+---
+
 ## [v1.1.6] — 2026-03-01
 
 ### Fixed — TPMS formula (tires showing no data)

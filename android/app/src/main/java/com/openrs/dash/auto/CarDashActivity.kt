@@ -92,12 +92,10 @@ class CarDashActivity : CarActivity(), LifecycleOwner, SavedStateRegistryOwner {
                             Box(Modifier.weight(1f)) {
                                 when (tab) {
                                     0 -> DashPage(vs, prefs)
-                                    1 -> AwdPage(vs, prefs)
-                                    2 -> PerfPage(vs, prefs, onReset = { service?.resetPeaks() })
+                                    1 -> PowerPage(vs, prefs)
+                                    2 -> ChassisPage(vs, prefs, onReset = { service?.resetPeaks() })
                                     3 -> TempsPage(vs, prefs)
-                                    4 -> TunePage(vs, prefs)
-                                    5 -> TpmsPage(vs, prefs)
-                                    6 -> CtrlPage(vs, snackbarHostState)
+                                    4 -> DiagPage(emptyList(), vs)
                                 }
                             }
                         }
@@ -136,11 +134,11 @@ fun AaHeader(vs: VehicleState, onConnect: () -> Unit, onDisconnect: () -> Unit) 
         // Left — openRS_ wordmark
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
             Text("open", fontSize = 18.sp, fontWeight = FontWeight.Bold,
-                fontFamily = Mono, color = Color(0xFFF5F6F4))
+                fontFamily = ShareTechMono, color = Frost)
             Text("RS", fontSize = 18.sp, fontWeight = FontWeight.Bold,
-                fontFamily = Mono, color = Accent)
+                fontFamily = ShareTechMono, color = Accent)
             Text("_", fontSize = 18.sp, fontWeight = FontWeight.Bold,
-                fontFamily = Mono, color = Color(0xFFF5F6F4))
+                fontFamily = ShareTechMono, color = Frost)
         }
 
         // Centre — drive mode badge, gear, ESC
@@ -149,22 +147,24 @@ fun AaHeader(vs: VehicleState, onConnect: () -> Unit, onDisconnect: () -> Unit) 
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val (modeColor, modeText) = when (vs.driveMode.label) {
-                "Sport" -> Grn to "SPORT"; "Track" -> Org to "TRACK"
-                "Drift" -> Red to "DRIFT"; else -> Accent to "NORMAL"
+            val modeColor = when (vs.driveMode) {
+                com.openrs.dash.data.DriveMode.SPORT  -> Grn
+                com.openrs.dash.data.DriveMode.TRACK  -> Amber
+                com.openrs.dash.data.DriveMode.DRIFT  -> Red
+                else -> Accent
             }
             Text(
-                modeText, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = Mono,
+                vs.driveMode.label.uppercase(), fontSize = 12.sp,
+                fontWeight = FontWeight.Bold, fontFamily = ShareTechMono,
                 color = Color.Black,
-                modifier = Modifier
-                    .background(modeColor, RoundedCornerShape(3.dp))
+                modifier = Modifier.background(modeColor, RoundedCornerShape(3.dp))
                     .padding(horizontal = 10.dp, vertical = 3.dp)
             )
             Spacer(Modifier.width(12.dp))
             Text(vs.gearDisplay, fontSize = 22.sp, fontWeight = FontWeight.Bold,
-                fontFamily = Mono, color = Accent)
+                fontFamily = ShareTechMono, color = Accent)
             Spacer(Modifier.width(12.dp))
-            Text(vs.escStatus.label, fontSize = 11.sp, fontFamily = Mono, color = Dim)
+            Text(vs.escStatus.label, fontSize = 11.sp, fontFamily = ShareTechMono, color = Dim)
         }
 
         // Right — connection + fps
@@ -176,14 +176,14 @@ fun AaHeader(vs: VehicleState, onConnect: () -> Unit, onDisconnect: () -> Unit) 
             val isConn = vs.isConnected
             Text(
                 if (isConn) "● CONNECTED" else "○ OFFLINE",
-                fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = Mono,
+                fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = ShareTechMono,
                 color = if (isConn) Grn else Red,
                 modifier = Modifier.clickable { if (isConn) onDisconnect() else onConnect() }
             )
             if (isConn) {
                 Spacer(Modifier.width(8.dp))
                 Text("${vs.framesPerSecond.roundToInt()} fps",
-                    fontSize = 10.sp, fontFamily = Mono, color = Dim)
+                    fontSize = 10.sp, fontFamily = ShareTechMono, color = Dim)
             }
         }
     }
@@ -192,7 +192,7 @@ fun AaHeader(vs: VehicleState, onConnect: () -> Unit, onDisconnect: () -> Unit) 
 // ── AA Tab Row — 44dp height for comfortable head unit touch targets ──────────
 @Composable
 fun AaTabRow(selected: Int, onSelect: (Int) -> Unit) {
-    val tabs = listOf("DASH", "AWD", "PERF", "TEMPS", "TUNE", "TPMS", "CTRL")
+    val tabs = listOf("DASH", "POWER", "CHASSIS", "TEMPS", "DIAG")
     Row(Modifier.fillMaxWidth().background(Surf).height(44.dp)) {
         tabs.forEachIndexed { i, label ->
             Box(
@@ -206,7 +206,7 @@ fun AaTabRow(selected: Int, onSelect: (Int) -> Unit) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                        fontFamily = Mono, color = if (i == selected) Accent else Dim
+                        fontFamily = ShareTechMono, color = if (i == selected) Accent else Dim
                     )
                     if (i == selected)
                         Box(Modifier.width(32.dp).height(2.dp).background(Accent))

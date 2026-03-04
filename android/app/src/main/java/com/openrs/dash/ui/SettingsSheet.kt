@@ -58,9 +58,9 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("open", fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = Mono, color = Color(0xFFF5F6F4))
-                    Text("RS", fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = Mono, color = Accent)
-                    Text("_ Settings", fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = Mono, color = Color(0xFFF5F6F4))
+                    Text("open", fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = ShareTechMono, color = Frost)
+                    Text("RS", fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = ShareTechMono, color = Accent)
+                    Text("_ Settings", fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = ShareTechMono, color = Frost)
                 }
                 Text("✕", fontSize = 18.sp, color = Dim, modifier = Modifier.clickable { onDismiss() })
             }
@@ -112,19 +112,19 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                         OutlinedTextField(
                             value = tireLowPsi,
                             onValueChange = { tireLowPsi = it; error = null },
-                            label = { Text("PSI threshold", fontFamily = Mono, fontSize = 10.sp) },
-                            singleLine = true,
-                            modifier = Modifier.width(120.dp),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            colors = outlinedFieldColors(),
-                            textStyle = androidx.compose.ui.text.TextStyle(
-                                fontFamily = Mono, fontSize = 14.sp, color = Txt
-                            )
+                        label = { Text("PSI threshold", fontFamily = ShareTechMono, fontSize = 10.sp) },
+                        singleLine = true,
+                        modifier = Modifier.width(120.dp),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        colors = outlinedFieldColors(),
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost
+                        )
                         )
                     }
                     Spacer(Modifier.height(4.dp))
                     Text("Tires below this value show red. Default: ${AppSettings.DEFAULT_TIRE_LOW_PSI} PSI",
-                        fontSize = 10.sp, color = Dim, fontFamily = Mono)
+                        fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono)
                 }
 
                 // ── Display section ───────────────────────────────────────────
@@ -141,28 +141,28 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     OutlinedTextField(
                         value = host,
                         onValueChange = { host = it; error = null },
-                        label = { Text("Host / IP Address", fontFamily = Mono, fontSize = 11.sp) },
-                        placeholder = { Text(AppSettings.DEFAULT_HOST, fontFamily = Mono, fontSize = 12.sp, color = Dim) },
+                        label = { Text("Host / IP Address", fontFamily = ShareTechMono, fontSize = 11.sp) },
+                        placeholder = { Text(AppSettings.DEFAULT_HOST, fontFamily = ShareTechMono, fontSize = 12.sp, color = Dim) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         colors = outlinedFieldColors(),
-                        textStyle = androidx.compose.ui.text.TextStyle(fontFamily = Mono, fontSize = 14.sp, color = Txt)
+                        textStyle = androidx.compose.ui.text.TextStyle(fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost)
                     )
                     Spacer(Modifier.height(10.dp))
                     OutlinedTextField(
                         value = port,
                         onValueChange = { port = it; error = null },
-                        label = { Text("Port", fontFamily = Mono, fontSize = 11.sp) },
-                        placeholder = { Text(AppSettings.DEFAULT_PORT.toString(), fontFamily = Mono, fontSize = 12.sp, color = Dim) },
+                        label = { Text("Port", fontFamily = ShareTechMono, fontSize = 11.sp) },
+                        placeholder = { Text(AppSettings.DEFAULT_PORT.toString(), fontFamily = ShareTechMono, fontSize = 12.sp, color = Dim) },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth(),
                         colors = outlinedFieldColors(),
-                        textStyle = androidx.compose.ui.text.TextStyle(fontFamily = Mono, fontSize = 14.sp, color = Txt)
+                        textStyle = androidx.compose.ui.text.TextStyle(fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost)
                     )
                     Spacer(Modifier.height(4.dp))
                     Text("Default: ${AppSettings.DEFAULT_HOST}:${AppSettings.DEFAULT_PORT}",
-                        fontSize = 10.sp, color = Dim, fontFamily = Mono)
+                        fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono)
                 }
 
                 // ── Auto-reconnect section ────────────────────────────────────
@@ -178,25 +178,25 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                             OutlinedTextField(
                                 value = reconnectSec,
                                 onValueChange = { reconnectSec = it; error = null },
-                                label = { Text("seconds", fontFamily = Mono, fontSize = 10.sp) },
+                                label = { Text("seconds", fontFamily = ShareTechMono, fontSize = 10.sp) },
                                 singleLine = true,
                                 modifier = Modifier.width(100.dp),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 colors = outlinedFieldColors(),
                                 textStyle = androidx.compose.ui.text.TextStyle(
-                                    fontFamily = Mono, fontSize = 14.sp, color = Txt
+                                    fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost
                                 )
                             )
                         }
                         Spacer(Modifier.height(4.dp))
                         Text("How long to wait between connection attempts. Default: ${AppSettings.DEFAULT_RECONNECT_INTERVAL}s",
-                            fontSize = 10.sp, color = Dim, fontFamily = Mono)
+                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono)
                     }
                 }
 
                 // Error
                 if (error != null) {
-                    Text(error!!, fontSize = 12.sp, color = Red, fontFamily = Mono)
+                    Text(error!!, fontSize = 12.sp, color = Red, fontFamily = ShareTechMono)
                 }
             }
 
@@ -212,7 +212,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     border = ButtonDefaults.outlinedButtonBorder(enabled = true),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Dim)
                 ) {
-                    Text("CANCEL", fontFamily = Mono, fontSize = 12.sp)
+                    Text("CANCEL", fontFamily = ShareTechMono, fontSize = 12.sp)
                 }
                 Button(
                     onClick = {
@@ -243,7 +243,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Color(0xFF0A0A0A))
                 ) {
-                    Text("SAVE", fontFamily = Mono, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("SAVE", fontFamily = ShareTechMono, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 }
             }
         }
@@ -260,7 +260,7 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
             .border(1.dp, Brd, RoundedCornerShape(8.dp))
             .padding(14.dp)
     ) {
-        Text(title, fontSize = 9.sp, color = Dim, letterSpacing = 1.5.sp, fontFamily = Mono)
+        Text(title, fontSize = 9.sp, color = Dim, letterSpacing = 1.5.sp, fontFamily = ShareTechMono)
         Spacer(Modifier.height(12.dp))
         content()
     }
@@ -273,7 +273,7 @@ private fun SettingsRow(label: String, content: @Composable () -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, fontSize = 13.sp, color = Txt, fontFamily = Mono, modifier = Modifier.weight(1f))
+        Text(label, fontSize = 13.sp, color = Frost, fontFamily = ShareTechMono, modifier = Modifier.weight(1f))
         content()
     }
 }
@@ -285,7 +285,7 @@ private fun SettingsSwitchRow(label: String, checked: Boolean, onCheckedChange: 
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, fontSize = 13.sp, color = Txt, fontFamily = Mono, modifier = Modifier.weight(1f))
+        Text(label, fontSize = 13.sp, color = Frost, fontFamily = ShareTechMono, modifier = Modifier.weight(1f))
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
@@ -323,7 +323,7 @@ fun SegmentedPicker(options: List<String>, selected: String, onSelect: (String) 
                     option,
                     fontSize = 11.sp,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                    fontFamily = Mono,
+                    fontFamily = ShareTechMono,
                     color = if (isSelected) Color(0xFF0A0A0A) else Dim
                 )
             }
@@ -338,6 +338,6 @@ private fun outlinedFieldColors() = OutlinedTextFieldDefaults.colors(
     focusedLabelColor     = Accent,
     unfocusedLabelColor   = Dim,
     cursorColor           = Accent,
-    focusedTextColor      = Txt,
-    unfocusedTextColor    = Txt,
+    focusedTextColor      = Frost,
+    unfocusedTextColor    = Frost,
 )
