@@ -10,6 +10,17 @@ Complete reference for all OBD-II parameters used by openRS.
 | BCM | Body Control Module | 0x726 | 0x72E | HS-CAN 500k |
 | Broadcast | All ECUs | 0x7DF | varies | HS-CAN 500k |
 
+## Mode 22 — PCM (Header: 0x7E0) — additional PIDs from MeatPi vehicle profile
+
+The following PCM PIDs were identified in the MeatPi Focus RS vehicle profile. We get most of these from passive CAN, but these are OBD alternatives and may give slightly different (ECU-computed) values.
+
+| PID | Name | Request | Formula | Unit | Passive CAN alternative |
+|-----|------|---------|---------|------|------------------------|
+| 0xF405 | Coolant Temp (PCM) | `22F405` | `B4 − 40` | °C | CAN 0x2F0 |
+| 0xF40F | Intake Air Temp (PCM) | `22F40F` | `B4 − 40` | °C | CAN 0x0F8 |
+| 0x03CA | Intake Air Temp 2 | `2203CA` | `B4 − 40` | °C | Likely `manifoldChargeTempC` — post-intercooler |
+| 0xF42F | Fuel Level (PCM) | `22F42F` | `(B4 / 255) × 100` | % | CAN 0x34A |
+
 ## Mode 1 — Standard OBD-II (Header: 0x7DF)
 
 | PID | Name | Request | Bytes | Formula | Unit | Priority |
@@ -53,20 +64,33 @@ Complete reference for all OBD-II parameters used by openRS.
 
 If all four bytes are zero, the TPMS ECU has not sent data yet (engine just started or car is off). The decoder ignores all-zero frames.
 
-## Mode 22 — TPMS via BCM (Header: 0x726) — legacy reference
+## Mode 22 — BCM (Header: 0x726) — future OBD polling targets
 
-> These OBD queries are no longer used by the app. Documented for reference / future use.
+> These PIDs require OBD queries to the BCM (`ATSH000726`). Not currently polled by the app — passive CAN covers TPMS. Documented as future polling targets.
 
-| PID | Name | Request | Bytes | Formula | Unit | Status |
-|-----|------|---------|-------|---------|------|--------|
-| 0x2813 | Tire Pressure LF | `222813` | 2 | (A×256+B) / 2.9 × 0.145038 | PSI | Legacy |
-| 0x2814 | Tire Pressure RF | `222814` | 2 | (A×256+B) / 2.9 × 0.145038 | PSI | Legacy |
-| 0x2815 | Tire Pressure RR | `222815` | 2 | (A×256+B) / 2.9 × 0.145038 | PSI | Legacy |
-| 0x2816 | Tire Pressure LR | `222816` | 2 | (A×256+B) / 2.9 × 0.145038 | PSI | Legacy |
-| 0x2823 | Tire Temp LF | `222823` | 1 | A − 40 | °C | ⚠️ Unverified |
-| 0x2824 | Tire Temp RF | `222824` | 1 | A − 40 | °C | ⚠️ Unverified |
-| 0x2825 | Tire Temp RR | `222825` | 1 | A − 40 | °C | ⚠️ Unverified |
-| 0x2826 | Tire Temp LR | `222826` | 1 | A − 40 | °C | ⚠️ Unverified |
+### New PIDs (MeatPi vehicle profile — not yet implemented)
+
+| PID | Name | Request | Bytes | Formula | Unit | Notes |
+|-----|------|---------|-------|---------|------|-------|
+| 0xDD01 | **Odometer** | `22DD01` | 3 | `(B4×65536 + B5×256 + B6)` | km | 3-byte direct |
+| 0x4028 | **Battery SOC** | `224028` | 1 | `B4` | % | Start/stop system SoC |
+| 0x4029 | **Battery Temp** | `224029` | 1 | `B4 − 40` | °C | 12V battery temperature |
+| 0xDD04 | **Cabin Temp** | `22DD04` | 1 | `(B4 × 10/9) − 45` | °C | Interior cabin sensor |
+
+### TPMS PIDs — legacy OBD reference (replaced by passive CAN 0x340)
+
+> **Formula correction (v1.1.0):** MeatPi's official Focus RS vehicle profile uses `([B4:B5]/10)/2.036`. Previous documentation used `(A×256+B)/2.9×0.145038`. The MeatPi formula (from real-world calibration) is approximately 1.7% lower for the same raw value. Moot for the app since TPMS is now decoded from passive CAN frame `0x340`.
+
+| PID | Name | Request | Bytes | Formula (MeatPi) | Unit | Status |
+|-----|------|---------|-------|-----------------|------|--------|
+| 0x2813 | Tire Pressure LF | `222813` | 2 | `([B4:B5] / 10) / 2.036` | PSI | Legacy |
+| 0x2814 | Tire Pressure RF | `222814` | 2 | `([B4:B5] / 10) / 2.036` | PSI | Legacy |
+| 0x2815 | Tire Pressure RR | `222815` | 2 | `([B4:B5] / 10) / 2.036` | PSI | Legacy |
+| 0x2816 | Tire Pressure LR | `222816` | 2 | `([B4:B5] / 10) / 2.036` | PSI | Legacy |
+| 0x2823 | Tire Temp LF | `222823` | 1 | `A − 40` | °C | ⚠️ Unverified |
+| 0x2824 | Tire Temp RF | `222824` | 1 | `A − 40` | °C | ⚠️ Unverified |
+| 0x2825 | Tire Temp RR | `222825` | 1 | `A − 40` | °C | ⚠️ Unverified |
+| 0x2826 | Tire Temp LR | `222826` | 1 | `A − 40` | °C | ⚠️ Unverified |
 
 ## CAN Frame IDs (HS-CAN 500 kbps) — DigiCluster verified
 

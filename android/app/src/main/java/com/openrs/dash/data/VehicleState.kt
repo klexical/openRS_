@@ -100,6 +100,12 @@ data class VehicleState(
     val eBrake: Boolean = false,           // Emergency brake status
     val reverseStatus: Boolean = false,    // Reverse gear engaged
 
+    // ── BCM OBD (Mode 22 via BCM 0x726) — future polling ───
+    val odometerKm: Long = -1L,            // 0x22DD01: [B4:B6] km (3-byte)
+    val batterySoc: Double = -1.0,         // 0x224028: B4 % (start/stop SoC)
+    val batteryTempC: Double = -99.0,      // 0x224029: B4-40 °C (12V battery)
+    val cabinTempC: Double = -99.0,        // 0x22DD04: (B4×10/9)-45 °C (interior)
+
     // ── Nutron-only ─────────────────────────────────────────
     val lambdaValue: Double = 0.0,
     val launchControl: Boolean = false,
