@@ -1,6 +1,6 @@
 # OBD PID Reference — Ford Focus RS MK3
 
-Complete reference for all OBD-II parameters used by openRS.
+Complete reference for all OBD-II parameters used by openRS_ (current as of v1.2.0).
 
 ## ECU Address Map
 
@@ -10,9 +10,9 @@ Complete reference for all OBD-II parameters used by openRS.
 | BCM | Body Control Module | 0x726 | 0x72E | HS-CAN 500k |
 | Broadcast | All ECUs | 0x7DF | varies | HS-CAN 500k |
 
-## Mode 22 — PCM (Header: 0x7E0) — additional PIDs from MeatPi vehicle profile
+## Mode 22 — PCM (Header: 0x7E0)
 
-The following PCM PIDs were identified in the MeatPi Focus RS vehicle profile. We get most of these from passive CAN, but these are OBD alternatives and may give slightly different (ECU-computed) values.
+The following PCM Mode 22 PIDs are polled by the app every 10 seconds via ISO-TP over SLCAN (request `0x7E0` → response `0x7E8`). Additional passive CAN alternatives are noted where available.
 
 | PID | Name | Request | Formula | Unit | Passive CAN alternative |
 |-----|------|---------|---------|------|------------------------|
@@ -56,13 +56,15 @@ The following PCM PIDs were identified in the MeatPi Focus RS vehicle profile. W
 
 ## TPMS — Passive CAN (preferred method, v1.1.0+)
 
-> **Architecture change in v1.1.0:** TPMS data is now decoded from passive CAN frame `0x340`, not OBD Mode 22. The BCM broadcasts this frame on MS-CAN; the Gateway Module (GWM) bridges it to HS-CAN automatically. No OBD queries, no BCM header switching.
+> **Architecture change in v1.1.0:** TPMS data is decoded from passive CAN frame `0x340`, not OBD Mode 22. The BCM broadcasts this frame on MS-CAN; the Gateway Module (GWM) bridges it to HS-CAN automatically. No OBD queries, no BCM header switching.
+
+> **Formula update v1.1.6:** Raw bytes are not direct PSI. They are in units of 3.6 kPa each and must be converted: `PSI = raw × 3.6 / 6.895`. Validated against known tire pressures (e.g., raw `0x43` = 67 counts × 3.6 / 6.895 ≈ 35.0 PSI).
 
 | CAN ID | Parameters | Decode |
 |--------|-----------|--------|
-| 0x340 | Tire pressure LF, RF, LR, RR | bytes 2-5 direct PSI (unsigned) |
+| 0x340 | Tire pressure LF (byte 2), RF (byte 3), LR (byte 4), RR (byte 5) | `raw × 3.6 / 6.895 PSI`; raw 0 = sensor sleeping, ignored |
 
-If all four bytes are zero, the TPMS ECU has not sent data yet (engine just started or car is off). The decoder ignores all-zero frames.
+Sensors transmit only when wheels are rolling. If all four bytes are zero, the TPMS ECU has not sent data yet. The decoder ignores raw 0 values.
 
 ## Mode 22 — BCM (Header: 0x726) — future OBD polling targets
 

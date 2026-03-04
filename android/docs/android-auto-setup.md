@@ -70,7 +70,7 @@ The head unit displays the same layout as the phone:
 | ESC status | Top-centre | ON / SPORT / OFF |
 | Connection dot | Top-right | ● CONNECTED or ○ OFFLINE |
 | FPS counter | Top-right | CAN frames per second |
-| Tab bar | Below header | DASH / AWD / PERF / TEMPS / TUNE / TPMS / CTRL |
+| Tab bar | Below header | DASH / POWER / CHASSIS / TEMPS / DIAG |
 
 Tap tabs to switch. All content is touch-interactive on the SYNC3 screen.
 
@@ -96,7 +96,7 @@ When using AA Wireless (e.g. an AAWireless dongle), your phone's WiFi radio is o
 2. Android can then reach the WiCAN over the hotspot even while AA Wireless is active
 3. Update the IP in **app settings → WiCAN Host** to match the IP your hotspot assigned
 
-> **CTRL tab:** The CTRL tab in the app shows live drive mode and ESC status from CAN in all scenarios. Drive mode write controls become active after flashing openrs-fw.
+> **System Drawer (☰):** The System Drawer shows live drive mode and ESC status from CAN. Drive mode write controls and feature buttons (Launch Control, Auto S/S Kill) become active after flashing openrs-fw.
 
 ---
 
