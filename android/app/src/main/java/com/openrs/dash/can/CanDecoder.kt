@@ -39,7 +39,7 @@ object CanDecoder {
     const val ID_LONG_ACCEL   = 0x160   // Longitudinal G bits 48-57 LE × 0.00390625 − 2.0
     const val ID_LAT_ACCEL    = 0x180   // Lateral G bits 16-25 LE × 0.00390625 − 2.0
     // 0x1B0: drive mode status + button event frame.
-    // Steady-state mode is encoded in byte 6 upper nibble (0=Normal 1=Sport 2=Track 3=Drift).
+    // Steady-state mode is encoded in byte 6 upper nibble (0=Normal 1=Sport 2=Drift 3=Track).
     // Steady-state frames have byte 4 == 0x00; button-event transitions have byte 4 != 0.
     // 0x17E (DriveModeRequest) only reflects Normal/Sport — Track and Drift are absent.
     const val ID_DRIVE_MODE   = 0x1B0

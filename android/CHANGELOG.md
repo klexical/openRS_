@@ -5,6 +5,37 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
+## [v1.2.7] — 2026-03-04
+
+### Fixed — Drive mode Track/Drift corrected (requires firmware v1.3)
+
+DBC cross-reference (`VAL_ 432 DriveMode`) and live log confirmation proved the nibble encoding is:
+
+| Byte 6 (upper nibble) | Mode   |
+|-----------------------|--------|
+| 0x0_                  | Normal |
+| 0x1_                  | Sport  |
+| 0x2_                  | **Drift** |
+| 0x3_                  | **Track** |
+
+Previous releases had Track and Drift swapped. This caused "Track" to display as Drift and "Drift" to display as Track when either mode was active.
+
+### Fixed — Connection stability (frequent red-light disconnects)
+
+Root cause: `BCM_POLL_INTERVAL_MS` was lowered from 30 s to 10 s in v1.2.6, tripling OBD TX frequency. Combined with concurrent PCM polling, the WiCAN's TWAI TX queue was saturating at ~1882 fps passive CAN load, causing the passive stream to stall and triggering the 10 s read timeout repeatedly.
+
+Changes:
+- `BCM_POLL_INTERVAL_MS` reverted to **30 s**
+- `PCM_POLL_INTERVAL_MS` set to **30 s**, initial delay offset to **T+20 s** so BCM and PCM cycles never overlap
+- `soTimeout` increased from 10 s to **20 s** as a safety margin for WiCAN startup noise
+- `PCM_QUERY_GAP_MS` increased from 150 ms to **200 ms**
+
+### Removed — Battery voltage OBD query
+
+Mode 01 PID 0x42 ("Control module voltage") is not supported by the Focus RS PCM. The query has been removed. The battery voltage UI field is retained for future investigation.
+
+---
+
 ## [v1.2.6] — 2026-03-01
 
 ### Changed — TPMS polling interval reduced to 10 seconds
@@ -23,8 +54,8 @@ Reverted drive mode source from `0x17E` back to `0x1B0`, but with a correctly ta
 |-----------------------|--------|
 | 0x0_                  | Normal |
 | 0x1_                  | Sport  |
-| 0x2_                  | Track  |
-| 0x3_                  | Drift  |
+| 0x2_                  | Drift  |
+| 0x3_                  | Track  |
 
 ### Fixed — Gear indicator removed
 

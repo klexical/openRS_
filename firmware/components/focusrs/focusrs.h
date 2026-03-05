@@ -8,13 +8,15 @@ extern "C" {
 #endif
 
 // ── Firmware version (returned to Android app via OPENRS? probe) ───────────
-#define OPENRS_FW_VERSION   "v1.2"
+#define OPENRS_FW_VERSION   "v1.3"
 
 // ── Drive mode values ──────────────────────────────────────────
+// Confirmed from live CAN log (0x1B0 byte6 upper nibble, DBC VAL_ 432):
+//   0=Normal  1=Sport  2=Drift  3=Track  (Focus RS specific — Track=3 not in base DBC)
 #define FRS_MODE_NORMAL  0
 #define FRS_MODE_SPORT   1
-#define FRS_MODE_TRACK   2
-#define FRS_MODE_DRIFT   3
+#define FRS_MODE_DRIFT   2
+#define FRS_MODE_TRACK   3
 
 // ── ESC values ─────────────────────────────────────────────────
 #define FRS_ESC_ON       0
@@ -24,10 +26,10 @@ extern "C" {
 // ── CAN IDs ────────────────────────────────────────────────────
 // HS-CAN (OBD pins 6/14 @ 500kbps)
 // 0x1B0: drive mode status + button event frame.
-//   Byte 4 == 0x00 → steady-state; byte 6 upper nibble = mode (0=Normal 1=Sport 2=Track 3=Drift).
+//   Byte 4 == 0x00 → steady-state; byte 6 upper nibble = mode (0=Normal 1=Sport 2=Drift 3=Track).
 //   Byte 4 != 0x00 → button event transition; used for WRITE template capture only.
 // 0x17E (DriveModeRequest) ONLY reflects Normal/Sport — Track and Drift are absent.
-//   Confirmed via live log cross-reference: 0x1B0 byte6=0x20 (Track) while 0x17E stayed at nibble=1.
+//   Confirmed via live log cross-reference: 0x1B0 byte6=0x20 (Drift) while 0x17E stayed at nibble=1.
 #define FRS_CAN_ID_AWD_MSG    0x1B0   // Drive mode status + button event frame
 #define FRS_CAN_ID_ESC_ABS    0x1C0   // ESC mode (bits 13–14)
 

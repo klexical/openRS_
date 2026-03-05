@@ -148,8 +148,8 @@ if [ -z "$APP_BIN" ]; then
     APP_BIN=$(find build -maxdepth 1 -name "*.bin" | grep -v "bootloader\|partition\|ota_data" | head -1)
 fi
 [ -z "$APP_BIN" ] && err "Could not find application .bin in build output"
-cp "$APP_BIN" "$RELEASE_DIR/openrs-fw-usb_v120.bin"
-log "App binary: $(basename "$APP_BIN") → openrs-fw-usb_v120.bin"
+cp "$APP_BIN" "$RELEASE_DIR/openrs-fw-usb_v130.bin"
+log "App binary: $(basename "$APP_BIN") → openrs-fw-usb_v130.bin"
 
 # storage.bin is optional — present only if a custom NVS image was built
 if [ -f "build/storage.bin" ]; then
@@ -162,7 +162,7 @@ log "Build complete! Flash files:"
 echo ""
 echo "  Address     File"
 echo "  ─────────   ────────────────────────────────────────────"
-for f in bootloader.bin partition-table.bin ota_data_initial.bin openrs-fw-usb_v120.bin storage.bin; do
+for f in bootloader.bin partition-table.bin ota_data_initial.bin openrs-fw-usb_v130.bin storage.bin; do
     fp="$RELEASE_DIR/$f"
     [ -f "$fp" ] || continue
     SIZE=$(du -sh "$fp" | cut -f1)
@@ -170,7 +170,7 @@ for f in bootloader.bin partition-table.bin ota_data_initial.bin openrs-fw-usb_v
         bootloader.bin)         ADDR="0x0"       ;;
         partition-table.bin)    ADDR="0x8000"    ;;
         ota_data_initial.bin)   ADDR="0xd000"    ;;
-        openrs-fw-usb_v120.bin) ADDR="0x10000"   ;;
+        openrs-fw-usb_v130.bin) ADDR="0x10000"   ;;
         storage.bin)            ADDR="0x210000"  ;;
     esac
     printf "  %-11s %-40s %s\n" "$ADDR" "$f" "($SIZE)"

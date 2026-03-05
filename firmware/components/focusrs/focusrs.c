@@ -43,12 +43,12 @@ void frs_parse_can_frame(uint32_t can_id, const uint8_t *data, uint8_t dlc) {
 
     case FRS_CAN_ID_AWD_MSG:
         // 0x1B0: drive mode status + button event frame.
-        // Steady-state (byte4==0): byte 6 upper nibble = mode (0=Normal 1=Sport 2=Track 3=Drift).
+        // Steady-state (byte4==0): byte 6 upper nibble = mode (0=Normal 1=Sport 2=Drift 3=Track).
         // Button event (byte4!=0): attempt to capture template for write simulation.
         // 0x17E only reflects Normal/Sport and is NOT used — Track/Drift absent there.
         if (dlc >= 7 && data[4] == 0x00) {
             uint8_t raw_mode = (data[6] >> 4) & 0x0F;
-            if (raw_mode <= FRS_MODE_DRIFT) {
+            if (raw_mode <= FRS_MODE_TRACK) {
                 s_state.drive_mode = raw_mode;
             }
         } else if (!s_state.frame_template_valid && dlc >= 8 && data[4] != 0x00) {
@@ -101,7 +101,7 @@ static void frs_send_button_press(void) {
 }
 
 void frs_set_drive_mode(uint8_t target_mode) {
-    if (target_mode > FRS_MODE_DRIFT) return;
+    if (target_mode > FRS_MODE_TRACK) return;
 
     const uint8_t cycle_len = 4; // N→S→T→D→N
     uint8_t current = s_state.drive_mode;

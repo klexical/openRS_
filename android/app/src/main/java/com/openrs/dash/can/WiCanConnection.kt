@@ -66,8 +66,10 @@ class WiCanConnection(
             BCM_QUERY_ODOMETER, BCM_QUERY_SOC, BCM_QUERY_BATT_TEMP, BCM_QUERY_CABIN_TEMP,
             BCM_QUERY_TPMS_LF, BCM_QUERY_TPMS_RF, BCM_QUERY_TPMS_LR, BCM_QUERY_TPMS_RR
         )
-        /** How long between complete BCM poll cycles (ms). */
-        private const val BCM_POLL_INTERVAL_MS = 10_000L
+        /** How long between complete BCM poll cycles (ms).
+         *  30 s keeps WiCAN TX load low — reducing below ~20 s causes TWAI buffer
+         *  saturation and WebSocket soTimeout disconnects at ~1882 fps passive CAN. */
+        private const val BCM_POLL_INTERVAL_MS = 30_000L
         /** Gap between individual queries in a cycle (ms). */
         private const val BCM_QUERY_GAP_MS     =    300L
         /** Delay after connect before first BCM poll (ms). */
@@ -98,18 +100,17 @@ class WiCanConnection(
         private const val PCM_QUERY_CHARGE_AIR  = "t7E080322046100000000\r"  // 0x0461 charge air
         // CAT temp: DigiCluster can0_hs cat_temp_22 — ((A*256)+B)/10 - 40 °C
         private const val PCM_QUERY_CAT_TEMP    = "t7E080322F43C00000000\r"  // 0xF43C catalyst
-        // Battery voltage: OBD-II Mode 01 PID 0x42 "Control module voltage"
-        // Formula: (A*256+B) / 1000 = volts. Standard Ford PCM PID. Response: data[1]=0x41.
-        private const val PCM_QUERY_BATT_VOLT   = "t7E080201420000000000\r"  // Mode 01 PID 0x42
         private val PCM_QUERIES = listOf(
             PCM_QUERY_ETC_ACTUAL, PCM_QUERY_ETC_DESIRED,
             PCM_QUERY_WGDC, PCM_QUERY_KR_CYL1, PCM_QUERY_OAR,
-            PCM_QUERY_CHARGE_AIR, PCM_QUERY_CAT_TEMP, PCM_QUERY_BATT_VOLT
+            PCM_QUERY_CHARGE_AIR, PCM_QUERY_CAT_TEMP
         )
-        /** How long between PCM poll cycles (ms). PCM can be polled more frequently than BCM. */
-        private const val PCM_POLL_INTERVAL_MS  = 10_000L
-        private const val PCM_QUERY_GAP_MS      =    150L
-        private const val PCM_INITIAL_DELAY_MS  =  7_000L
+        /** How long between PCM poll cycles (ms). Matched to BCM so cycles interleave
+         *  rather than overlap — BCM starts at T+5 s, PCM starts at T+20 s (midpoint
+         *  of BCM's 30 s rest window), keeping WiCAN TX load evenly distributed. */
+        private const val PCM_POLL_INTERVAL_MS  = 30_000L
+        private const val PCM_QUERY_GAP_MS      =    200L
+        private const val PCM_INITIAL_DELAY_MS  = 20_000L
     }
 
     sealed class State {
@@ -155,7 +156,7 @@ class WiCanConnection(
 
                 val socket = Socket()
                 socket.connect(InetSocketAddress(host, port), 5_000)
-                socket.soTimeout = 10_000  // 10 s read timeout for frames
+                socket.soTimeout = 20_000  // 20 s read timeout — tolerates WiCAN TX pauses during OBD polling
 
                 val inp = socket.getInputStream()
                 val out = socket.getOutputStream()
@@ -513,20 +514,6 @@ class WiCanConnection(
     ) {
         if (data.size < 5) return
         val serviceId = data[1].toInt() and 0xFF
-
-        // Mode 01 positive response (0x41) — battery voltage PID 0x42
-        if (serviceId == 0x41) {
-            val pid = data[2].toInt() and 0xFF
-            if (pid == 0x42 && data.size >= 5) {
-                val a = data[3].toInt() and 0xFF
-                val b = data[4].toInt() and 0xFF
-                val volts = (a * 256 + b) / 1000.0
-                if (volts in 8.0..18.0) {
-                    onObdUpdate(currentState.copy(batteryVoltage = volts))
-                }
-            }
-            return
-        }
 
         if (serviceId != 0x62) return  // not a Mode 22 positive response
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
