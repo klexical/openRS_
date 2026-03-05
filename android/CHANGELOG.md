@@ -5,6 +5,16 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
+## [v1.2.9] — 2026-03-05
+
+### Fixed — Odometer always visible; moved to extended diagnostic session
+
+- **Odometer row always shown on Dash tab** — previously hidden until BCM responded; now shows `—` placeholder immediately on connect, populates when data arrives.
+- **BCM DID 0xDD01 moved to extended session loop** — odometer query now opens a UDS extended session (`10 03`) on BCM (0x726) before issuing the Mode 22 read, matching the same pattern used for AWD/PSCM/FENG. Polled every 60 s (extJob) instead of the 30 s default-session BCM cycle.
+- **Emulators synced** — both `docs/index.html` and `android/browser-emulator/index.html` updated to match the v1.2.8 UI (was left on v1.2.7 layout in the v1.2.8 release).
+
+---
+
 ## [v1.2.8] — 2026-03-05
 
 ### Added — Extended diagnostic session polling (UDS 10 03 + Mode 22)

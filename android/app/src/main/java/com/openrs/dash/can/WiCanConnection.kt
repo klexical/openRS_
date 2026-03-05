@@ -52,7 +52,7 @@ class WiCanConnection(
         // SLCAN standard frame: t{ID3}{DLC}{DATA_HEX}\r
         // ISO-TP single-frame: PCI=0x03 (3 payload bytes), Mode=0x22, DID (2 bytes), padding
         const val BCM_RESPONSE_ID         = 0x72E
-        private const val BCM_QUERY_ODOMETER   = "t72680322DD0100000000\r"  // 0xDD01 odometer
+        // 0xDD01 (odometer) is polled via extended session in extJob — not here.
         private const val BCM_QUERY_SOC        = "t72680322402800000000\r"  // 0x4028 battery SOC
         private const val BCM_QUERY_BATT_TEMP  = "t72680322402900000000\r"  // 0x4029 battery temp
         private const val BCM_QUERY_CABIN_TEMP = "t72680322DD0400000000\r"  // 0xDD04 cabin temp
@@ -63,9 +63,11 @@ class WiCanConnection(
         private const val BCM_QUERY_TPMS_LR   = "t72680322281600000000\r"  // 0x2816 LR tyre pressure
         private const val BCM_QUERY_TPMS_RR   = "t72680322281500000000\r"  // 0x2815 RR tyre pressure
         private val BCM_QUERIES = listOf(
-            BCM_QUERY_ODOMETER, BCM_QUERY_SOC, BCM_QUERY_BATT_TEMP, BCM_QUERY_CABIN_TEMP,
+            BCM_QUERY_SOC, BCM_QUERY_BATT_TEMP, BCM_QUERY_CABIN_TEMP,
             BCM_QUERY_TPMS_LF, BCM_QUERY_TPMS_RF, BCM_QUERY_TPMS_LR, BCM_QUERY_TPMS_RR
         )
+        // Odometer: BCM 0x726 DID 0xDD01 — requires extended session (10 03)
+        private const val BCM_QUERY_ODOMETER   = "t72680322DD0100000000\r"
         /** How long between complete BCM poll cycles (ms).
          *  30 s keeps WiCAN TX load low — reducing below ~20 s causes TWAI buffer
          *  saturation and WebSocket soTimeout disconnects at ~1882 fps passive CAN. */
@@ -147,6 +149,7 @@ class WiCanConnection(
         const val RSPROT_RESPONSE_ID  = 0x739   // 0x731 + 8
 
         // Extended session open frames (02 10 03 00 00 00 00 00)
+        private const val EXT_SESSION_BCM    = "t72680210030000000000\r"
         private const val EXT_SESSION_AWD    = "t70380210030000000000\r"
         private const val EXT_SESSION_PSCM   = "t73080210030000000000\r"
         private const val EXT_SESSION_FENG   = "t72780210030000000000\r"
@@ -282,6 +285,12 @@ class WiCanConnection(
                 val extJob = launch {
                     delay(EXT_INITIAL_DELAY_MS)
                     while (isActive) {
+                        // BCM: odometer (0xDD01 — may require extended session)
+                        try {
+                            sendWsText(out, EXT_SESSION_BCM);   delay(EXT_SESSION_GAP_MS)
+                            sendWsText(out, BCM_QUERY_ODOMETER); delay(EXT_QUERY_GAP_MS)
+                        } catch (_: Exception) { }
+
                         // AWD: RDU status (confirmed 0xEE0B)
                         try {
                             sendWsText(out, EXT_SESSION_AWD);   delay(EXT_SESSION_GAP_MS)

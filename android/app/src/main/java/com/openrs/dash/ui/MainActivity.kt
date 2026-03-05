@@ -419,28 +419,29 @@ class MainActivity : ComponentActivity() {
 
         // Odometer row with tap-to-toggle km ↔ mi
         var odomInMiles by remember { mutableStateOf(false) }
-        if (vs.odometerKm >= 0) {
-            val odomLabel = if (odomInMiles) "ODO (mi)" else "ODO (km)"
-            val odomValue = if (odomInMiles)
-                "${"%.0f".format(vs.odometerKm * 0.621371)} mi"
-            else
-                "${"%.0f".format(vs.odometerKm.toDouble())} km"
-            Row(Modifier.fillMaxWidth()) {
-                Box(
-                    Modifier.fillMaxWidth()
-                        .background(Surf, RoundedCornerShape(10.dp))
-                        .border(1.dp, Brd, RoundedCornerShape(10.dp))
-                        .clickable { odomInMiles = !odomInMiles }
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+        val odomLabel = if (odomInMiles) "ODO (mi)" else "ODO (km)"
+        val odomValue = when {
+            vs.odometerKm < 0 -> "—"
+            odomInMiles       -> "${"%.0f".format(vs.odometerKm * 0.621371)} mi"
+            else              -> "${"%.0f".format(vs.odometerKm.toDouble())} km"
+        }
+        Row(Modifier.fillMaxWidth()) {
+            Box(
+                Modifier.fillMaxWidth()
+                    .background(Surf, RoundedCornerShape(10.dp))
+                    .border(1.dp, Brd, RoundedCornerShape(10.dp))
+                    .clickable(enabled = vs.odometerKm >= 0) { odomInMiles = !odomInMiles }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        UIText(odomLabel, 10.sp, Dim, FontWeight.SemiBold, 1.sp)
-                        MonoText(odomValue, 16.sp, Frost)
-                    }
+                    UIText(odomLabel, 10.sp, Dim, FontWeight.SemiBold, 1.sp)
+                    MonoText(odomValue, 16.sp, if (vs.odometerKm >= 0) Frost else Dim)
+                }
+                if (vs.odometerKm >= 0) {
                     UIText("tap to toggle", 9.sp, Dim, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 70.dp))
                 }
             }
