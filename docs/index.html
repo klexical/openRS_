@@ -328,7 +328,6 @@ body{
     </div>
     <div class="header-right">
       <div class="mode-badge" id="hdrMode">NORMAL</div>
-      <div class="gear-num" id="hdrGear">3</div>
       <div class="esc-label" id="hdrEsc">ESC On</div>
       <div class="conn-dot" id="connDot"></div>
       <div class="settings-btn" onclick="toggleSettings()">⚙</div>
@@ -740,7 +739,8 @@ body{
         <div style="font-family:var(--mono);font-size:9px;color:var(--dim)">0x180  ×84,100   latG=+0.42g yaw=12.4°/s</div>
         <div style="font-family:var(--mono);font-size:9px;color:var(--dim)">0x1B0  ×84,000   driveMode=NORMAL</div>
         <div style="font-family:var(--mono);font-size:9px;color:var(--dim)">0x252  ×42,000   brake=0.0%</div>
-        <div style="font-family:var(--mono);font-size:9px;color:var(--dim)">0x340  ×4,200    LF=38.2psi LR=37.8psi...</div>
+        <div style="font-family:var(--mono);font-size:9px;color:var(--dim)">0x340  ×4,200    ambient=22.0°C (TPMS via BCM Mode 22)</div>
+        <div style="font-family:var(--mono);font-size:9px;color:var(--dim)">0x380  ×2,100    fuelPct=72.4% (PCMmsg30 Motorola)</div>
       </div>
     </div><!-- /tab4 -->
 
@@ -833,7 +833,7 @@ body{
 
 <!-- Meta bar -->
 <div class="meta-bar">
-  <div class="version-badge">openRS_ v1.2.0 — Phone Emulator</div>
+  <div class="version-badge">openRS_ v1.2.5 — Phone Emulator</div>
   <p>Interactive mockup · Data is simulated · No real vehicle connection</p>
   <p>Source code &amp; releases: <a href="https://github.com/klexical/openRS_" target="_blank">github.com/klexical/openRS_</a></p>
 </div>
@@ -914,10 +914,7 @@ function sim() {
   setV('yawC',   yaw + '°/s');
   setV('steerC', (steer > 0 ? '+' : '') + steer + '°');
 
-  // Header gear sim
-  const gears = [0,1,2,3,4,5,6];
-  const gIdx = Math.min(6, Math.floor(speed / 15));
-  document.getElementById('hdrGear').textContent = gIdx === 0 ? 'N' : gIdx;
+  // Gear display removed in v1.2.5 (0x230 does not broadcast on this vehicle)
 }
 
 function setV(id, val) {
