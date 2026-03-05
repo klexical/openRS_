@@ -18,12 +18,21 @@ Every time a new app version is released (versionName bump in `build.gradle.kts`
 - OBD polling table: reflect any new/removed PIDs or formula changes
 - Feature descriptions: update if any features were added or removed
 
-## 3. Browser Emulator (`android/browser-emulator/index.html`)
-- **UI matches the app** — if a widget is removed from the app (e.g. gear display), remove it from the emulator too
+## 3. Both Emulators — MUST update BOTH files every release
+
+Files: `docs/index.html` (phone emulator) **and** `android/browser-emulator/index.html` (Android Auto emulator)
+
+These two files are mirrors of the app UI. Every visible change to the app **must** be reflected in both emulators in the same commit/release. Check each category:
+
+- **Version badge** — update `openRS_ vX.Y.Z` text in the `<div class="version-badge">` of both files
+- **Data cell labels** — if any `dc-label` text changed in the app (e.g. "FUEL RAIL" → "HP FUEL"), update it in both emulators
+- **New widgets / rows** — if a new row was added to any tab (e.g. odometer row, new data cell), add matching HTML in both emulators
+- **Removed widgets** — if something was removed from the app (e.g. gear display), remove it from both emulators too
+- **Hamburger drawer sections** — if a new section was added (e.g. "Module Status"), add it to both emulators; if a section heading changed, update it in both
+- **Feature cards** — if a Features card was added, renamed, or its locked/unlocked state changed, reflect that in both emulators
 - **TPMS decimal places** — `displayTire()` must use `.toFixed(1)` for PSI to match the app
-- **Demo data** — simulated values should reflect real-world plausible readings (e.g. TPMS with slight per-tire variance, fuel from correct source)
-- **DIAG inventory** — `DEMO_INVENTORY` CAN ID entries must reflect correct decoding (e.g. 0x340 = ambient temp only, not TPMS)
-- **Formula comments** — update any inline formula comments if the formula changed
+- **Demo data** — simulated values should reflect real-world plausible readings
+- **`toggleOdom()` or any new JS toggle** — if a new interactive element was added to the app, add matching JS in both emulators
 
 ## 4. Firmware (if firmware also changed)
 - `firmware/CHANGELOG.md` or release notes must be written

@@ -399,6 +399,12 @@ body{
         <div class="data-cell"><div class="dc-label">LON G</div><div class="dc-val" id="lonGVal">-0.18g</div></div>
       </div>
 
+      <!-- Odometer with km/mi toggle -->
+      <div id="odomRow" style="background:var(--surf);border:1px solid var(--brd);border-radius:10px;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleOdom()">
+        <div style="font-family:var(--ui);font-size:10px;font-weight:600;letter-spacing:1px;color:var(--dim)" id="odomLabel">ODO (km)</div>
+        <div style="font-family:var(--mono);font-size:16px;color:var(--frost)" id="odomVal">47,382 km</div>
+      </div>
+
     </div><!-- /tab0 -->
 
     <!-- ── POWER tab ─────────────────────────────────────────────────── -->
@@ -431,7 +437,7 @@ body{
       <div class="grid3">
         <div class="data-cell"><div class="dc-label">TIP ACT</div><div class="dc-val" id="tipActVal">+12.1 PSI</div></div>
         <div class="data-cell"><div class="dc-label">TIP DES</div><div class="dc-val" id="tipDesVal">+12.6 PSI</div></div>
-        <div class="data-cell"><div class="dc-label">FUEL RAIL</div><div class="dc-val" id="fuelRailVal">2,180 PSI</div></div>
+        <div class="data-cell"><div class="dc-label">HP FUEL</div><div class="dc-val" id="fuelRailVal">2,180 PSI</div></div>
       </div>
 
       <div class="section-label"><span>Engine Management</span></div>
@@ -797,22 +803,42 @@ body{
     <div class="drawer-divider"></div>
 
     <div class="drawer-section">
-      <div style="font-family:var(--ui);font-size:10px;font-weight:700;letter-spacing:2px;color:var(--dim)">FEATURES — REQUIRES OPENRS-FW V1.0</div>
+      <div style="font-family:var(--ui);font-size:10px;font-weight:700;letter-spacing:2px;color:var(--dim)">FEATURES — OPENRS-FW ACTIVE</div>
       <div style="display:flex;gap:5px;margin:10px 0 6px">
-        <div style="flex:1;border:1px solid var(--brd);border-radius:7px;padding:10px;position:relative;overflow:hidden">
-          <div style="font-family:var(--ui);font-size:11px;font-weight:600;color:var(--dim)">Launch Control</div>
-          <div style="font-family:var(--mono);font-size:10px;color:var(--dim)">○ OFF</div>
-          <div style="position:absolute;inset:0;background:rgba(0,0,0,.35);border-radius:7px"></div>
+        <div style="flex:1;background:var(--surf2);border:1px solid var(--brd);border-radius:7px;padding:10px">
+          <div style="font-family:var(--ui);font-size:11px;font-weight:600;color:var(--frost)">Launch Control</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--amber)">… PROBING</div>
+          <div style="font-family:var(--ui);font-size:9px;color:var(--dim)">5500 RPM</div>
         </div>
-        <div style="flex:1;border:1px solid var(--brd);border-radius:7px;padding:10px;position:relative;overflow:hidden">
-          <div style="font-family:var(--ui);font-size:11px;font-weight:600;color:var(--dim)">Auto S/S Kill</div>
-          <div style="font-family:var(--mono);font-size:10px;color:var(--dim)">○ OFF</div>
-          <div style="position:absolute;inset:0;background:rgba(0,0,0,.35);border-radius:7px"></div>
+        <div style="flex:1;background:var(--surf2);border:1px solid var(--brd);border-radius:7px;padding:10px">
+          <div style="font-family:var(--ui);font-size:11px;font-weight:600;color:var(--frost)">Auto Start-Stop</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--amber)">… PROBING</div>
         </div>
       </div>
-      <div style="font-family:var(--ui);font-size:10px;color:var(--amber)">
-        ⚡ Flash openrs-fw to unlock CAN write, LC, Auto S/S Kill &amp; more.
+      <div style="font-family:var(--ui);font-size:10px;color:var(--grn)">
+        ✓ openRS_ firmware detected — features unlocked.
       </div>
+    </div>
+
+    <div class="drawer-divider"></div>
+
+    <div class="drawer-section">
+      <div style="font-family:var(--ui);font-size:10px;font-weight:700;letter-spacing:2px;color:var(--dim)">MODULE STATUS</div>
+      <div style="display:flex;gap:5px;margin:10px 0 6px">
+        <div style="flex:1;background:var(--surf2);border:1px solid var(--brd);border-radius:7px;padding:8px;text-align:center">
+          <div style="font-family:var(--ui);font-size:11px;font-weight:600;color:var(--frost)">RDU</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--grn)">● ON</div>
+        </div>
+        <div style="flex:1;background:var(--surf2);border:1px solid var(--brd);border-radius:7px;padding:8px;text-align:center">
+          <div style="font-family:var(--ui);font-size:11px;font-weight:600;color:var(--frost)">PDC</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--grn)">● ON</div>
+        </div>
+        <div style="flex:1;background:var(--surf2);border:1px solid var(--brd);border-radius:7px;padding:8px;text-align:center">
+          <div style="font-family:var(--ui);font-size:11px;font-weight:600;color:var(--frost)">FENG</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--grn)">● ON</div>
+        </div>
+      </div>
+      <div style="font-family:var(--ui);font-size:10px;color:var(--dim)">Polled via extended diagnostic session (60 s cycle).</div>
     </div>
 
     <div class="drawer-divider"></div>
@@ -857,6 +883,17 @@ function toggleDrawer() {
   overlay.style.display = open ? 'block' : 'none';
   panel.style.display   = open ? 'flex'  : 'none';
   if (open) panel.style.flexDirection = 'column';
+}
+
+// ── Odometer km/mi toggle ────────────────────────────────────────────────
+let odomKm = true;
+const ODO_KM = 47382;
+function toggleOdom() {
+  odomKm = !odomKm;
+  const miles = Math.round(ODO_KM * 0.621371).toLocaleString();
+  const km    = ODO_KM.toLocaleString();
+  document.getElementById('odomLabel').textContent = odomKm ? 'ODO (km)' : 'ODO (mi)';
+  document.getElementById('odomVal').textContent   = odomKm ? km + ' km'  : miles + ' mi';
 }
 
 // ── Settings toggle ──────────────────────────────────────────────────────
