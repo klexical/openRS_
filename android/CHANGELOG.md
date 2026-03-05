@@ -5,6 +5,14 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
+## [v1.2.6] — 2026-03-01
+
+### Changed — TPMS polling interval reduced to 10 seconds
+
+BCM Mode 22 TPMS polling (`BCM_POLL_INTERVAL_MS`) reduced from 30 s to 10 s. No bus load implications — Ford diagnostic tools poll far more aggressively. Tire pressure readings now refresh every ~12 seconds (10 s interval + ~2.4 s to cycle through all 8 BCM queries at 300 ms gaps).
+
+---
+
 ## [v1.2.5] — 2026-03-01
 
 ### Fixed — Drive mode Track/Drift now display correctly

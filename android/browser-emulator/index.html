@@ -1,1607 +1,929 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>openRS_ — Phone &amp; Android Auto Emulator</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --nitrous-blue: #00AEEF;
-      --frost-white:  #F5F6F4;
-      --bg:     #0a0a0a;
-      --surf:   #1a1a1a;
-      --brd:    #2a2a2a;
-      --txt:    #F5F6F4;
-      --dim:    #6a6e72;
-      --accent: #00AEEF;
-      --grn:    #00e676;
-      --red:    #ff5252;
-      --org:    #ff9800;
-      --gold:   #f8e63c;
-      --mono:   'SF Mono','Consolas','Courier New',monospace;
-    }
-    html, body { height: 100%; }
-    body {
-      background: var(--bg);
-      color: var(--txt);
-      font-family: var(--mono);
-      font-size: 14px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>openRS_ v1.2.0 — Phone Emulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ── Design Tokens ─────────────────────────────────────────────────────── */
+:root{
+  --bg:      #0A0A0A;
+  --surf:    #141414;
+  --surf2:   #1C1C1C;
+  --surf3:   #242424;
+  --brd:     #2A2A2A;
+  --frost:   #F5F6F4;
+  --dim:     #555555;
+  --mid:     #888888;
+  --accent:  #00AEEF;
+  --accentD: #0077A8;
+  --grn:     #22C55E;
+  --amber:   #F59E0B;
+  --red:     #EF4444;
+  --mono:    'Share Tech Mono', monospace;
+  --ui:      'Barlow Condensed', sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:#1a1a2e;
+  min-height:100vh;
+  display:flex;
+  align-items:flex-start;
+  justify-content:center;
+  padding:40px 16px;
+  font-family:var(--ui);
+}
 
-    /* ── Switcher ── */
-    #switcher {
-      width: 100%;
-      max-width: 500px;
-      display: flex;
-      gap: 8px;
-      padding: 8px;
-      background: var(--surf);
-      border-bottom: 1px solid var(--brd);
-    }
-    #switcher button {
-      flex: 1;
-      padding: 9px;
-      background: var(--brd);
-      border: 1px solid var(--brd);
-      color: var(--txt);
-      font-family: var(--mono);
-      font-size: 13px;
-      font-weight: 600;
-      border-radius: 6px;
-      cursor: pointer;
-      letter-spacing: 1px;
-    }
-    #switcher button.active {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #000;
-    }
+/* ── Phone frame ─────────────────────────────────────────────────────── */
+.phone{
+  width:393px;
+  background:var(--bg);
+  border-radius:48px;
+  border:6px solid #333;
+  box-shadow:0 30px 80px rgba(0,0,0,.7), inset 0 0 0 2px #111;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+  min-height:852px;
+  position:relative;
+}
+.notch{
+  height:34px;
+  background:#000;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.notch-bar{
+  width:120px;height:5px;background:#222;border-radius:3px;
+}
 
-    /* ── Phone frame ── */
-    #phone {
-      width: 100%;
-      max-width: 420px;
-      min-height: 0;
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-    }
-    #phone.hidden, #aa.hidden { display: none; }
+/* ── Header ─────────────────────────────────────────────────────────── */
+.header{
+  background:var(--surf);
+  border-bottom:1px solid var(--brd);
+  padding:8px 14px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-shrink:0;
+}
+.logo{display:flex;align-items:center;gap:0}
+.logo span{font-family:var(--ui);font-size:18px;font-weight:700;color:var(--frost)}
+.logo .rs{color:var(--accent)}
+.header-right{display:flex;align-items:center;gap:8px}
+.mode-badge{
+  background:var(--accent);color:#000;
+  font-family:var(--ui);font-size:11px;font-weight:700;letter-spacing:1px;
+  padding:3px 8px;border-radius:4px;
+  transition:background .3s;
+}
+.gear-num{font-family:var(--mono);font-size:20px;font-weight:700;color:var(--frost)}
+.esc-label{font-family:var(--ui);font-size:10px;font-weight:500;color:var(--mid);letter-spacing:.5px}
+.conn-dot{
+  width:9px;height:9px;border-radius:50%;background:var(--grn);
+  animation:pulse 1s ease-in-out infinite alternate;
+}
+@keyframes pulse{to{opacity:.3}}
+.settings-btn{
+  width:28px;height:28px;background:var(--surf2);border:1px solid var(--brd);
+  border-radius:6px;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;font-size:13px;color:var(--mid);
+}
 
-    .ph-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 7px 12px;
-      background: var(--surf);
-      border-bottom: 1px solid var(--brd);
-      gap: 6px;
-    }
-    .ph-brand { font-weight: 700; letter-spacing: 2px; font-size: 14px; }
-    .brand-open { color: #F5F6F4; }
-    .brand-rs   { color: #00AEEF; }
-    .brand-tail { color: #F5F6F4; }
+/* ── Tab bar ─────────────────────────────────────────────────────────── */
+.tabbar{
+  background:var(--surf);border-bottom:1px solid var(--brd);
+  display:flex;align-items:stretch;height:40px;flex-shrink:0;
+}
+.tab{
+  flex:1;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;position:relative;
+  font-family:var(--ui);font-size:11px;font-weight:700;letter-spacing:1px;
+  color:var(--dim);transition:color .2s;
+  flex-direction:column;
+}
+.tab.active{color:var(--accent);background:rgba(0,174,239,.08)}
+.tab.active::after{
+  content:'';position:absolute;bottom:0;left:20%;right:20%;
+  height:2px;background:var(--accent);border-radius:2px 2px 0 0;
+}
+.drawer-btn{
+  width:42px;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;font-size:16px;color:var(--dim);
+}
 
-    .ph-badge {
-      padding: 2px 8px;
-      border-radius: 3px;
-      font-size: 11px;
-      font-weight: 700;
-      color: #000;
-      cursor: pointer;
-      user-select: none;
-    }
-    .ph-badge.sport  { background: var(--grn); }
-    .ph-badge.track  { background: var(--org); }
-    .ph-badge.drift  { background: var(--red); }
-    .ph-badge.normal { background: var(--accent); }
-    .ph-gear { font-size: 20px; font-weight: 700; color: var(--accent); }
-    .ph-esc  { font-size: 10px; color: var(--dim); cursor: pointer; user-select: none; }
-    .ph-conn { font-size: 10px; font-weight: 700; }
-    .ph-conn.on  { color: var(--grn); }
-    .ph-conn.off { color: var(--red); }
+/* ── Content area ────────────────────────────────────────────────────── */
+.content{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:6px}
+.content::-webkit-scrollbar{width:3px}
+.content::-webkit-scrollbar-thumb{background:var(--brd);border-radius:2px}
 
-    .transport-badge {
-      padding: 2px 6px;
-      border-radius: 3px;
-      font-size: 9px;
-      font-weight: 700;
-      cursor: pointer;
-      user-select: none;
-    }
-    .transport-badge.wifi { background: rgba(0,174,239,0.2); color: var(--accent); border: 1px solid var(--accent); }
-    .transport-badge.ble  { background: rgba(0,230,118,0.15); color: var(--grn); border: 1px solid var(--grn); }
+/* ── Shared card styles ──────────────────────────────────────────────── */
+.card{background:var(--surf);border:1px solid var(--brd);border-radius:10px;padding:10px}
+.card2{background:var(--surf2);border:1px solid var(--brd);border-radius:8px;padding:8px}
+.section-label{
+  display:flex;align-items:center;gap:6px;margin-bottom:8px;
+}
+.section-label::before{content:'';width:2px;height:14px;background:var(--accent);flex-shrink:0}
+.section-label span{font-family:var(--ui);font-size:10px;font-weight:700;letter-spacing:2px;color:var(--dim)}
 
-    .ph-tabs {
-      display: flex;
-      background: var(--surf);
-      border-bottom: 1px solid var(--brd);
-      height: 36px;
-      overflow-x: auto;
-    }
-    .ph-tab {
-      flex: 1;
-      min-width: 48px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--dim);
-      cursor: pointer;
-      position: relative;
-      white-space: nowrap;
-      padding: 0 4px;
-    }
-    .ph-tab.active { color: var(--accent); background: rgba(0,168,232,0.08); }
-    .ph-tab.active::after {
-      content: '';
-      position: absolute;
-      bottom: 0;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 28px;
-      height: 2px;
-      background: var(--accent);
-      border-radius: 2px;
-    }
+/* ── Hero gauges ─────────────────────────────────────────────────────── */
+.hero-row{display:flex;gap:6px}
+.hero-gauge{
+  background:var(--surf);border:1px solid var(--brd);border-radius:10px;
+  padding:10px 8px;text-align:center;flex:1;
+}
+.hero-gauge.big{background:var(--surf2);border-color:var(--accentD);position:relative}
+.hero-gauge.big::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:var(--accent);border-radius:10px 10px 0 0;
+}
+.hero-gauge.accent-top{position:relative}
+.hero-gauge.accent-top::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:rgba(0,174,239,.5);border-radius:10px 10px 0 0;
+}
+.hg-label{font-family:var(--ui);font-size:9px;font-weight:600;letter-spacing:1.5px;color:var(--dim)}
+.hg-val{font-family:var(--mono);font-size:34px;line-height:1.1}
+.hg-val.big{font-size:44px;color:var(--accent)}
+.hg-unit{font-family:var(--ui);font-size:10px;letter-spacing:1px;color:var(--dim)}
 
-    .ph-content { flex: 1; overflow-y: auto; padding: 8px; background: var(--bg); }
-    .ph-page { display: none; }
-    .ph-page.active { display: block; }
+/* ── Data grid ───────────────────────────────────────────────────────── */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px}
+.grid4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:5px}
+.data-cell{
+  background:var(--surf);border:1px solid var(--brd);border-radius:8px;
+  padding:6px 7px;
+}
+.dc-label{font-family:var(--ui);font-size:9px;font-weight:600;letter-spacing:1.2px;color:var(--dim)}
+.dc-val{font-family:var(--mono);font-size:14px;color:var(--frost);margin-top:2px}
+.dc-val.accent{color:var(--accent)}
+.dc-val.grn{color:var(--grn)}
+.dc-val.amber{color:var(--amber)}
+.dc-val.red{color:var(--red)}
+.dc-val.dim{color:var(--dim)}
 
-    /* ── Shared components ── */
-    .gauge-row { display: flex; gap: 8px; margin-bottom: 8px; }
-    .gauge-box {
-      flex: 1;
-      background: var(--surf);
-      border: 1px solid var(--brd);
-      border-radius: 8px;
-      padding: 8px;
-      text-align: center;
-    }
-    .gauge-box.lg { flex: 1.5; }
-    .g-lbl { font-size: 10px; color: var(--dim); letter-spacing: 1px; margin-bottom: 2px; }
-    .g-val { font-size: 32px; font-weight: 700; line-height: 1.05; color: var(--txt); }
-    .gauge-box.lg .g-val { font-size: 42px; }
-    .g-unit { font-size: 10px; color: var(--dim); }
+/* ── AWD split bar ───────────────────────────────────────────────────── */
+.awd-bar-container{
+  background:var(--surf);border:1px solid var(--brd);border-radius:10px;padding:10px;
+}
+.awd-bar-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.awd-bar-title{font-family:var(--ui);font-size:10px;font-weight:600;letter-spacing:1.5px;color:var(--dim)}
+.awd-bar-ratio{font-family:var(--mono);font-size:16px;color:var(--accent)}
+.awd-bar{height:8px;background:var(--surf3);border-radius:4px;overflow:hidden;display:flex}
+.awd-bar-front{background:linear-gradient(to right,var(--accent),rgba(0,174,239,.5));border-radius:4px 0 0 4px}
+.awd-bar-rear{background:linear-gradient(to right,rgba(34,197,94,.5),var(--grn));border-radius:0 4px 4px 0}
+.awd-bar-labels{display:flex;justify-content:space-between;margin-top:4px}
+.awd-bar-labels span{font-family:var(--ui);font-size:9px;color:var(--dim)}
 
-    .info-row { display: flex; gap: 6px; margin: 3px 0; }
-    .cell {
-      flex: 1;
-      background: var(--surf);
-      border: 1px solid var(--brd);
-      border-radius: 6px;
-      padding: 5px 8px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      min-width: 0;
-    }
-    .c-lbl { font-size: 9px; color: var(--dim); white-space: nowrap; }
-    .c-val { font-size: 12px; font-weight: 600; color: var(--txt); white-space: nowrap; }
-    .c-val.gold { color: var(--gold); }
-    .c-val.warm { color: var(--org); }
-    .c-val.hot  { color: var(--red); }
-    .c-val.grn  { color: var(--grn); }
+/* ── Temp cards ──────────────────────────────────────────────────────── */
+.temp-card{
+  background:var(--surf);border:1px solid var(--brd);border-radius:12px;
+  padding:12px 12px 0;position:relative;overflow:hidden;
+}
+.temp-card-inner{padding-bottom:12px}
+.tc-label{font-family:var(--ui);font-size:9px;font-weight:600;letter-spacing:1.5px;color:var(--dim)}
+.tc-val{font-family:var(--mono);font-size:34px;margin:5px 0 2px}
+.tc-unit{font-family:var(--ui);font-size:11px;color:var(--dim)}
+.tc-sub{font-family:var(--ui);font-size:9px;color:rgba(85,85,85,.7);margin-left:3px}
+.tc-bar{
+  position:absolute;bottom:0;left:0;right:0;height:3px;
+  border-radius:0 0 12px 12px;
+}
+.tc-bar.cold{background:rgba(0,174,239,.3)}
+.tc-bar.warm{background:rgba(34,197,94,.5)}
+.tc-bar.hot{background:rgba(245,158,11,.6)}
+.tc-bar.crit{background:var(--red)}
 
-    .sec-lbl { font-size: 11px; color: var(--dim); text-align: center; margin: 4px 0; }
-    .axle-row { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 6px 0; }
-    .wheel-box { width: 88px; background: var(--surf); border: 1px solid var(--brd); border-radius: 6px; padding: 6px; text-align: center; }
-    .wb-lbl { font-size: 9px; color: var(--dim); }
-    .wb-val { font-size: 16px; font-weight: 700; color: var(--txt); }
-    .split-mid { text-align: center; }
-    .split-val { font-size: 32px; font-weight: 700; color: var(--accent); }
-    .split-sub { font-size: 9px; color: var(--dim); }
-    .torque-bar { width: 100%; max-width: 300px; height: 18px; background: var(--brd); border-radius: 9px; display: flex; margin: 4px auto; overflow: hidden; }
-    .tb-l { height: 100%; background: var(--accent); border-radius: 9px 0 0 9px; }
-    .tb-r { height: 100%; background: var(--grn);    border-radius: 0 9px 9px 0; }
+/* ── RTR Banner ──────────────────────────────────────────────────────── */
+.rtr-banner{
+  background:var(--surf2);border:1px solid var(--brd);border-radius:10px;
+  padding:12px;display:flex;align-items:center;gap:10px;
+}
+.rtr-dot{
+  width:11px;height:11px;border-radius:50%;flex-shrink:0;
+  animation:pulse 0.8s ease-in-out infinite alternate;
+}
+.rtr-dot.ready{background:var(--grn);animation:none}
+.rtr-dot.warming{background:var(--amber)}
+.rtr-title{font-family:var(--ui);font-size:13px;font-weight:600;letter-spacing:1px;color:var(--frost)}
+.rtr-sub{font-family:var(--ui);font-size:10px;color:var(--dim);margin-top:2px}
 
-    .temp-gauge { flex: 1; background: var(--surf); border: 1px solid var(--brd); border-radius: 8px; padding: 12px; text-align: center; }
-    .tg-lbl  { font-size: 10px; color: var(--dim); letter-spacing: 1px; margin-bottom: 4px; }
-    .tg-val  { font-size: 36px; font-weight: 700; color: var(--txt); line-height: 1; }
-    .tg-unit { font-size: 10px; color: var(--dim); margin-top: 2px; }
+/* ── Chassis wheel cells ──────────────────────────────────────────────── */
+.wheel-cell{
+  background:var(--surf2);border-radius:8px;padding:8px;text-align:center;
+}
+.wc-label{font-family:var(--ui);font-size:9px;font-weight:600;letter-spacing:1px;color:var(--dim)}
+.wc-val{font-family:var(--mono);font-size:16px;color:var(--frost);margin-top:3px}
+.torque-bar{height:10px;background:var(--surf3);border-radius:5px;overflow:hidden;display:flex;margin:6px 0}
+.tb-left{background:linear-gradient(to right,var(--accent),rgba(0,174,239,.4));border-radius:5px 0 0 5px}
+.tb-right{background:linear-gradient(to right,rgba(34,197,94,.4),var(--grn));border-radius:0 5px 5px 0}
 
-    .rtr { margin-top: 8px; padding: 12px; background: rgba(0,230,118,0.12); border: 1px solid var(--grn); border-radius: 8px; text-align: center; font-size: 20px; font-weight: 700; color: var(--grn); letter-spacing: 2px; }
+/* ── TPMS tire cards ─────────────────────────────────────────────────── */
+.tire-card{
+  background:var(--surf2);border:1px solid var(--brd);border-radius:8px;
+  padding:8px 6px;text-align:center;
+}
+.tire-label{font-family:var(--ui);font-size:9px;font-weight:600;letter-spacing:1px;color:var(--dim)}
+.tire-val{font-family:var(--mono);font-size:18px;margin:3px 0}
+.tire-unit{font-family:var(--ui);font-size:9px;color:var(--dim)}
+.car-outline{
+  width:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+}
 
-    .reset-btn { display: block; width: 100%; margin-top: 8px; padding: 8px; background: var(--surf); border: 1px solid rgba(255,82,82,0.5); border-radius: 6px; color: var(--red); font-family: var(--mono); font-weight: 700; font-size: 13px; cursor: pointer; }
+/* ── G-force card ────────────────────────────────────────────────────── */
+.gf-card{
+  background:var(--surf2);border:1px solid var(--brd);border-radius:8px;
+  padding:8px;text-align:center;flex:1;
+}
+.gf-label{font-family:var(--ui);font-size:9px;font-weight:600;letter-spacing:1px;color:var(--dim)}
+.gf-val{font-family:var(--mono);font-size:20px;color:var(--frost);margin:2px 0}
+.gf-peak{font-family:var(--mono);font-size:10px;color:var(--accent)}
 
-    .tpms-hd  { font-size: 20px; font-weight: 700; color: var(--accent); text-align: center; margin-bottom: 4px; }
-    .tpms-sub { font-size: 11px; color: var(--dim); text-align: center; margin-bottom: 12px; }
-    .tire-row { display: flex; gap: 10px; justify-content: space-evenly; margin: 8px 0; }
-    .tire-box { flex: 1; max-width: 180px; background: var(--surf); border: 2px solid var(--brd); border-radius: 8px; padding: 12px; text-align: center; }
-    .tire-box.low { border-color: var(--red); }
-    .tire-lbl  { font-size: 10px; color: var(--dim); letter-spacing: 1px; margin-bottom: 4px; }
-    .tire-psi  { font-size: 38px; font-weight: 700; color: var(--txt); line-height: 1; }
-    .tire-box.low .tire-psi { color: var(--red); }
-    .tire-unit { font-size: 12px; color: var(--dim); }
-    .tire-temp { font-size: 14px; color: var(--dim); margin-top: 4px; }
+/* ── POWER page AFR ──────────────────────────────────────────────────── */
+.afr-card{
+  background:var(--surf);border:1px solid var(--brd);border-radius:10px;
+  padding:8px;text-align:center;flex:1;
+}
+.afr-label{font-family:var(--ui);font-size:9px;font-weight:600;letter-spacing:1px;color:var(--dim)}
+.afr-val{font-family:var(--mono);font-size:26px;margin:4px 0}
+.afr-unit{font-family:var(--ui);font-size:10px;color:var(--dim)}
 
-    /* ── CTRL page ── */
-    .ctrl-section { margin-bottom: 10px; }
-    .ctrl-title { font-size: 10px; color: var(--dim); letter-spacing: 2px; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid var(--brd); }
-    .mode-btn-row { display: flex; gap: 6px; }
-    .mode-btn {
-      flex: 1;
-      padding: 10px 4px;
-      background: var(--surf);
-      border: 1px solid var(--brd);
-      border-radius: 6px;
-      color: var(--dim);
-      font-family: var(--mono);
-      font-size: 13px;
-      font-weight: 700;
-      cursor: pointer;
-      text-align: center;
-      transition: all 0.15s;
-      letter-spacing: 1px;
-    }
-    .mode-btn.active-n { background: rgba(0,174,239,0.2);  border-color: var(--accent); color: var(--accent); }
-    .mode-btn.active-s { background: rgba(0,230,118,0.15); border-color: var(--grn);    color: var(--grn); }
-    .mode-btn.active-t { background: rgba(255,152,0,0.15); border-color: var(--org);    color: var(--org); }
-    .mode-btn.active-d { background: rgba(255,82,82,0.15);  border-color: var(--red);   color: var(--red); }
-    .ctrl-row { display: flex; gap: 8px; align-items: center; margin: 5px 0; }
-    .ctrl-label { font-size: 11px; color: var(--dim); flex: 1; }
-    .ctrl-val   { font-size: 12px; font-weight: 700; color: var(--txt); }
-    .esc-btn-row { display: flex; gap: 6px; }
-    .esc-btn {
-      flex: 1;
-      padding: 8px;
-      background: var(--surf);
-      border: 1px solid var(--brd);
-      border-radius: 6px;
-      color: var(--dim);
-      font-family: var(--mono);
-      font-size: 11px;
-      font-weight: 700;
-      cursor: pointer;
-      text-align: center;
-      transition: all 0.15s;
-    }
-    .esc-btn.active-on    { background: rgba(0,230,118,0.15); border-color: var(--grn); color: var(--grn); }
-    .esc-btn.active-sport { background: rgba(255,152,0,0.15); border-color: var(--org); color: var(--org); }
-    .esc-btn.active-off   { background: rgba(255,82,82,0.15);  border-color: var(--red); color: var(--red); }
-    .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--brd); }
-    .toggle-name { font-size: 12px; color: var(--txt); }
-    .toggle-sub  { font-size: 10px; color: var(--dim); margin-top: 2px; }
-    .toggle-pill {
-      width: 44px; height: 24px;
-      background: var(--brd);
-      border-radius: 12px;
-      position: relative;
-      cursor: pointer;
-      transition: background 0.2s;
-      flex-shrink: 0;
-    }
-    .toggle-pill.on { background: var(--accent); }
-    .toggle-pill::after {
-      content: '';
-      position: absolute;
-      top: 3px; left: 3px;
-      width: 18px; height: 18px;
-      background: #fff;
-      border-radius: 50%;
-      transition: left 0.2s;
-    }
-    .toggle-pill.on::after { left: 23px; }
-    .conn-info { background: var(--surf); border: 1px solid var(--brd); border-radius: 8px; padding: 10px; margin-top: 6px; }
-    .conn-row  { display: flex; justify-content: space-between; align-items: center; padding: 3px 0; }
-    .conn-key  { font-size: 10px; color: var(--dim); }
-    .conn-val  { font-size: 11px; font-weight: 700; color: var(--txt); }
-    .fw-note   { margin-top: 8px; padding: 8px; background: rgba(0,174,239,0.08); border: 1px solid rgba(0,174,239,0.3); border-radius: 6px; font-size: 10px; color: var(--dim); text-align: center; }
-    .fw-note span { color: var(--accent); }
-    .fw-locked { opacity: 0.4; cursor: not-allowed; }
+/* ── System Drawer overlay ───────────────────────────────────────────── */
+.drawer-overlay{
+  position:absolute;inset:0;background:rgba(0,0,0,.7);z-index:50;
+  display:none;cursor:pointer;
+}
+.drawer-panel{
+  position:absolute;bottom:0;left:0;right:0;
+  background:var(--surf);border-radius:20px 20px 0 0;
+  border-top:1px solid var(--brd);border-left:1px solid var(--brd);border-right:1px solid var(--brd);
+  z-index:51;max-height:75%;overflow-y:auto;
+}
+.drawer-handle{
+  height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.drawer-handle-bar{width:40px;height:4px;background:var(--brd);border-radius:2px}
+.drawer-section{padding:0 14px 14px}
+.drawer-divider{height:1px;background:var(--brd)}
+.mode-btn-group{display:flex;gap:5px;margin:10px 0 6px}
+.mode-btn{
+  flex:1;border:1px solid var(--brd);border-radius:7px;
+  padding:9px 4px;text-align:center;cursor:pointer;
+  background:transparent;transition:all .2s;
+}
+.mode-btn.active-n{border-color:var(--accent);background:rgba(0,174,239,.1)}
+.mode-btn.active-s{border-color:var(--grn);background:rgba(34,197,94,.1)}
+.mode-btn.active-t{border-color:var(--amber);background:rgba(245,158,11,.1)}
+.mode-btn.active-d{border-color:var(--red);background:rgba(239,68,68,.1)}
+.mode-btn-letter{font-family:var(--mono);font-size:17px;font-weight:700;color:var(--frost)}
+.mode-btn-name{font-family:var(--ui);font-size:9px;font-weight:500;letter-spacing:.5px;color:var(--dim)}
 
-    /* ── Segmented picker (settings) ── */
-    .seg-group { display: flex; gap: 0; border: 1px solid var(--brd); border-radius: 6px; overflow: hidden; }
-    .seg-btn {
-      padding: 6px 10px;
-      background: var(--brd);
-      border: none;
-      border-right: 1px solid var(--bg);
-      color: var(--dim);
-      font-family: var(--mono);
-      font-size: 11px;
-      font-weight: 600;
-      cursor: pointer;
-      white-space: nowrap;
-    }
-    .seg-btn:last-child { border-right: none; }
-    .seg-btn.seg-active { background: var(--accent); color: #000; }
+/* ── Misc ─────────────────────────────────────────────────────────────── */
+.placeholder{font-family:var(--mono);font-size:14px;color:var(--dim)}
+.reset-btn{
+  background:var(--surf2);border:1px solid var(--brd);border-radius:8px;
+  padding:12px 8px;text-align:center;cursor:pointer;
+  font-family:var(--ui);font-size:11px;font-weight:600;letter-spacing:1.5px;color:var(--dim);
+  flex:1;
+}
+.snapshot-btn{
+  background:rgba(0,174,239,.1);border:1px solid var(--accentD);border-radius:7px;
+  padding:10px;text-align:center;cursor:pointer;
+  font-family:var(--ui);font-size:12px;font-weight:700;letter-spacing:1px;color:var(--accent);
+  margin-top:8px;
+}
+.tab-content{display:none}
+.tab-content.active{display:flex;flex-direction:column;gap:6px}
 
-    /* ── Android Auto frame ── */
-    #aa {
-      width: 100%;
-      max-width: 820px;
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      background: #111;
-    }
-
-    .aa-header {
-      display: grid;
-      grid-template-columns: 1fr auto 1fr;
-      align-items: center;
-      padding: 10px 18px;
-      background: var(--surf);
-      border-bottom: 2px solid var(--brd);
-    }
-    .aa-header-left   { display: flex; align-items: center; gap: 8px; justify-content: flex-start; }
-    .aa-header-center { display: flex; align-items: center; gap: 10px; justify-content: center; }
-    .aa-header-right  { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
-    .aa-title-txt { font-size: 18px; font-weight: 700; color: var(--txt); letter-spacing: 1px; }
-    .aa-badge {
-      padding: 3px 10px; border-radius: 4px;
-      font-size: 12px; font-weight: 700; color: #000; letter-spacing: 1px;
-      cursor: pointer; user-select: none;
-    }
-    .aa-badge.sport  { background: var(--grn); }
-    .aa-badge.track  { background: var(--org); }
-    .aa-badge.drift  { background: var(--red); }
-    .aa-badge.normal { background: var(--accent); }
-    .aa-gear { font-size: 22px; font-weight: 700; color: var(--accent); }
-    .aa-esc  { font-size: 11px; color: var(--dim); cursor: pointer; user-select: none; }
-    .aa-conn { font-size: 12px; font-weight: 700; }
-    .aa-conn.on  { color: var(--grn); }
-    .aa-conn.off { color: var(--red); }
-    .aa-fps-note { font-size: 10px; color: var(--dim); }
-
-    .aa-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
-
-    .aa-strip { display: flex; gap: 10px; padding: 12px 18px; background: var(--surf); border-top: 2px solid var(--brd); }
-    .aa-strip button {
-      flex: 1;
-      padding: 12px;
-      background: var(--brd);
-      border: none;
-      color: var(--txt);
-      font-family: var(--mono);
-      font-size: 14px;
-      font-weight: 700;
-      border-radius: 8px;
-      cursor: pointer;
-      letter-spacing: 1px;
-      transition: background 0.15s;
-    }
-    .aa-strip button:hover, .aa-strip button.active-nav { background: var(--accent); color: #000; }
-    .aa-back-bar { padding: 8px 18px; background: var(--surf); border-bottom: 1px solid var(--brd); }
-    .aa-back-bar button { padding: 7px 14px; background: transparent; border: 1px solid var(--dim); color: var(--txt); font-family: var(--mono); font-size: 13px; border-radius: 6px; cursor: pointer; }
-
-    .aa-menu-list { list-style: none; }
-    .aa-menu-list li { padding: 16px; border-bottom: 1px solid var(--brd); cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
-    .aa-menu-list li:hover { background: var(--surf); }
-    .aa-menu-tit  { font-size: 16px; font-weight: 700; color: var(--accent); letter-spacing: 1px; }
-    .aa-menu-desc { font-size: 12px; color: var(--dim); }
-
-    .aa-gauge-row { display: flex; gap: 12px; }
-    .aa-gauge-row .gauge-box .g-val { font-size: 38px; }
-    .aa-gauge-row .gauge-box.lg .g-val { font-size: 52px; }
-
-    .aa-info-row { display: flex; gap: 10px; }
-    .aa-info-row .cell .c-lbl { font-size: 10px; }
-    .aa-info-row .cell .c-val { font-size: 14px; }
-
-    .aa-axle { display: flex; align-items: center; gap: 20px; justify-content: center; margin: 6px 0; }
-    .aa-axle .wheel-box { width: 110px; }
-    .aa-axle .wb-val { font-size: 20px; }
-    .aa-axle .split-val { font-size: 40px; }
-
-    .aa-temp-row { display: flex; gap: 12px; }
-    .aa-temp-row .temp-gauge .tg-val { font-size: 42px; }
-
-    .aa-tire-row { display: flex; gap: 14px; justify-content: space-evenly; }
-    .aa-tire-row .tire-box { max-width: none; flex: 1; }
-    .aa-tire-row .tire-psi { font-size: 44px; }
-
-    /* AA ctrl grid */
-    .aa-ctrl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .aa-ctrl-panel { background: var(--surf); border: 1px solid var(--brd); border-radius: 8px; padding: 14px; }
-    .aa-ctrl-panel .ctrl-title { margin-bottom: 10px; }
-    .aa-mode-btn-row { display: flex; gap: 8px; }
-    .aa-mode-btn {
-      flex: 1; padding: 14px 4px;
-      background: var(--brd);
-      border: 1px solid var(--brd);
-      border-radius: 6px;
-      color: var(--dim);
-      font-family: var(--mono);
-      font-size: 15px;
-      font-weight: 700;
-      cursor: pointer;
-      text-align: center;
-      transition: all 0.15s;
-      letter-spacing: 1px;
-    }
-    .aa-mode-btn.active-n { background: rgba(0,174,239,0.2);  border-color: var(--accent); color: var(--accent); }
-    .aa-mode-btn.active-s { background: rgba(0,230,118,0.15); border-color: var(--grn);    color: var(--grn); }
-    .aa-mode-btn.active-t { background: rgba(255,152,0,0.15); border-color: var(--org);    color: var(--org); }
-    .aa-mode-btn.active-d { background: rgba(255,82,82,0.15);  border-color: var(--red);   color: var(--red); }
-    .aa-esc-btn-row { display: flex; gap: 8px; }
-    .aa-esc-btn {
-      flex: 1; padding: 12px;
-      background: var(--brd);
-      border: 1px solid var(--brd);
-      border-radius: 6px;
-      color: var(--dim);
-      font-family: var(--mono);
-      font-size: 12px;
-      font-weight: 700;
-      cursor: pointer;
-      text-align: center;
-      transition: all 0.15s;
-    }
-    .aa-esc-btn.active-on    { background: rgba(0,230,118,0.15); border-color: var(--grn); color: var(--grn); }
-    .aa-esc-btn.active-sport { background: rgba(255,152,0,0.15); border-color: var(--org); color: var(--org); }
-    .aa-esc-btn.active-off   { background: rgba(255,82,82,0.15);  border-color: var(--red); color: var(--red); }
-    .aa-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--brd); }
-    .aa-toggle-name { font-size: 13px; color: var(--txt); }
-    .aa-toggle-pill {
-      width: 50px; height: 28px;
-      background: var(--brd);
-      border-radius: 14px;
-      position: relative;
-      cursor: pointer;
-      transition: background 0.2s;
-      flex-shrink: 0;
-    }
-    .aa-toggle-pill.on { background: var(--accent); }
-    .aa-toggle-pill::after {
-      content: '';
-      position: absolute;
-      top: 4px; left: 4px;
-      width: 20px; height: 20px;
-      background: #fff;
-      border-radius: 50%;
-      transition: left 0.2s;
-    }
-    .aa-toggle-pill.on::after { left: 26px; }
-  </style>
+/* ── Emulator meta bar ───────────────────────────────────────────────── */
+.meta-bar{
+  text-align:center;margin-top:20px;margin-bottom:40px;
+}
+.meta-bar p{font-family:var(--ui);font-size:13px;color:#666;margin:3px 0}
+.meta-bar a{color:var(--accent);text-decoration:none}
+.version-badge{
+  display:inline-block;background:var(--surf);border:1px solid var(--brd);
+  border-radius:6px;padding:4px 12px;
+  font-family:var(--mono);font-size:11px;color:var(--mid);
+  margin-bottom:8px;
+}
+</style>
 </head>
 <body>
 
-  <div id="switcher">
-    <button id="btn-phone" class="active">📱 PHONE</button>
-    <button id="btn-aa">🚗 ANDROID AUTO</button>
-  </div>
+<div style="display:flex;flex-direction:column;align-items:center;width:100%">
 
-  <!-- ════ PHONE UI ════ -->
-  <div id="phone">
-    <div class="ph-header">
-      <span class="ph-brand"><span class="brand-open">open</span><span class="brand-rs">RS</span><span class="brand-tail">_</span></span>
-      <span class="ph-badge sport" id="h-mode">SPORT</span>
-      <span class="ph-esc" id="h-esc">ESC On</span>
-      <span class="transport-badge wifi" id="h-transport">WiFi</span>
-      <span class="ph-conn on" id="h-conn">● CONNECTED</span>
-      <span id="h-settings" style="font-size:14px;cursor:pointer;color:var(--dim);user-select:none" title="Settings">⚙</span>
-    </div>
+<!-- Phone -->
+<div class="phone" id="phone">
+  <div class="notch"><div class="notch-bar"></div></div>
 
-    <div class="ph-tabs" id="ph-tabs">
-      <div class="ph-tab active" data-tab="0">DASH</div>
-      <div class="ph-tab" data-tab="1">AWD</div>
-      <div class="ph-tab" data-tab="2">PERF</div>
-      <div class="ph-tab" data-tab="3">TEMPS</div>
-      <div class="ph-tab" data-tab="4">TUNE</div>
-      <div class="ph-tab" data-tab="5">TPMS</div>
-      <div class="ph-tab" data-tab="6">CTRL</div>
-      <div class="ph-tab" data-tab="7">DIAG</div>
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">
+      <span>open</span><span class="rs">RS</span><span>_</span>
     </div>
-    <div class="ph-content">
-      <div id="ph-dash"  class="ph-page active"></div>
-      <div id="ph-awd"   class="ph-page"></div>
-      <div id="ph-perf"  class="ph-page"></div>
-      <div id="ph-temps" class="ph-page"></div>
-      <div id="ph-tune"  class="ph-page"></div>
-      <div id="ph-tpms"  class="ph-page"></div>
-      <div id="ph-ctrl"  class="ph-page"></div>
-      <div id="ph-diag"  class="ph-page"></div>
+    <div class="header-right">
+      <div class="mode-badge" id="hdrMode">NORMAL</div>
+      <div class="esc-label" id="hdrEsc">ESC On</div>
+      <div class="conn-dot" id="connDot"></div>
+      <div class="settings-btn" onclick="toggleSettings()">⚙</div>
     </div>
   </div>
 
-  <!-- ════ SETTINGS PANEL — shared by phone & AA ════ -->
-  <div id="settings-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:200;align-items:center;justify-content:center">
-    <div style="background:var(--surf);border:1px solid var(--brd);border-radius:12px;width:min(380px,96vw);max-height:88vh;overflow-y:auto;padding:20px;font-family:var(--mono)">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-        <span style="font-size:14px;font-weight:700;letter-spacing:2px;color:var(--accent)">SETTINGS</span>
-        <span id="settings-close" style="font-size:18px;cursor:pointer;color:var(--dim)">✕</span>
-      </div>
+  <!-- Tab bar -->
+  <div class="tabbar">
+    <div class="tab active" onclick="showTab(0,this)" data-tab="0">DASH</div>
+    <div class="tab" onclick="showTab(1,this)" data-tab="1">POWER</div>
+    <div class="tab" onclick="showTab(2,this)" data-tab="2">CHASSIS</div>
+    <div class="tab" onclick="showTab(3,this)" data-tab="3">TEMPS</div>
+    <div class="tab" onclick="showTab(4,this)" data-tab="4">DIAG</div>
+    <div class="drawer-btn" onclick="toggleDrawer()">☰</div>
+  </div>
 
-      <div style="font-size:10px;color:var(--dim);letter-spacing:2px;border-bottom:1px solid var(--brd);padding-bottom:4px;margin-bottom:10px">UNITS</div>
+  <!-- ═══ CONTENT ═══════════════════════════════════════════════════════ -->
+  <div class="content">
 
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <span style="font-size:12px;color:var(--txt)">Speed</span>
-        <div class="seg-group" data-key="speedUnit">
-          <button class="seg-btn" data-val="MPH">MPH</button>
-          <button class="seg-btn" data-val="KPH">KPH</button>
+    <!-- ── DASH tab ──────────────────────────────────────────────────── -->
+    <div class="tab-content active" id="tab0">
+
+      <div class="hero-row">
+        <div class="hero-gauge accent-top" style="flex:1">
+          <div class="hg-label">BOOST</div>
+          <div class="hg-val" id="boostVal" style="color:var(--frost)">+12.4</div>
+          <div class="hg-unit">PSI</div>
         </div>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <span style="font-size:12px;color:var(--txt)">Temperature</span>
-        <div class="seg-group" data-key="tempUnit">
-          <button class="seg-btn" data-val="F">°F</button>
-          <button class="seg-btn" data-val="C">°C</button>
+        <div class="hero-gauge big" style="flex:1.3">
+          <div class="hg-label">RPM</div>
+          <div class="hg-val big" id="rpmVal">4,820</div>
+          <div class="hg-unit">×1000</div>
         </div>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <span style="font-size:12px;color:var(--txt)">Boost pressure</span>
-        <div class="seg-group" data-key="boostUnit">
-          <button class="seg-btn" data-val="PSI">PSI</button>
-          <button class="seg-btn" data-val="BAR">BAR</button>
-          <button class="seg-btn" data-val="KPA">kPa</button>
-        </div>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <span style="font-size:12px;color:var(--txt)">Tire pressure</span>
-        <div class="seg-group" data-key="tireUnit">
-          <button class="seg-btn" data-val="PSI">PSI</button>
-          <button class="seg-btn" data-val="BAR">BAR</button>
+        <div class="hero-gauge accent-top" style="flex:1">
+          <div class="hg-label">SPEED</div>
+          <div class="hg-val" id="speedVal" style="color:var(--frost)">87</div>
+          <div class="hg-unit">MPH</div>
         </div>
       </div>
 
-      <div style="font-size:10px;color:var(--dim);letter-spacing:2px;border-bottom:1px solid var(--brd);padding-bottom:4px;margin-bottom:10px">TPMS</div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div class="grid4">
+        <div class="data-cell"><div class="dc-label">THROTTLE</div><div class="dc-val accent" id="throttleVal">78%</div></div>
+        <div class="data-cell"><div class="dc-label">BRAKE</div><div class="dc-val" id="brakeVal">0%</div></div>
+        <div class="data-cell"><div class="dc-label">TORQUE</div><div class="dc-val" id="torqueVal">354 Nm</div></div>
+        <div class="data-cell"><div class="dc-label">OIL</div><div class="dc-val grn" id="dashOilVal">98°F</div></div>
+      </div>
+      <div class="grid4">
+        <div class="data-cell"><div class="dc-label">COOLANT</div><div class="dc-val grn" id="coolantVal">198°F</div></div>
+        <div class="data-cell"><div class="dc-label">INTAKE</div><div class="dc-val" id="intakeVal">72°F</div></div>
+        <div class="data-cell"><div class="dc-label">FUEL</div><div class="dc-val" id="fuelVal">68%</div></div>
+        <div class="data-cell"><div class="dc-label">BATT</div><div class="dc-val" id="battVal">14.2V</div></div>
+      </div>
+
+      <!-- AWD split bar -->
+      <div class="awd-bar-container">
+        <div class="awd-bar-header">
+          <div class="awd-bar-title">AWD SPLIT — FRONT / REAR</div>
+          <div class="awd-bar-ratio" id="awdSplit">62/38</div>
+        </div>
+        <div class="awd-bar">
+          <div class="awd-bar-front" id="awdBarFront" style="flex:62"></div>
+          <div class="awd-bar-rear" id="awdBarRear" style="flex:38"></div>
+        </div>
+        <div class="awd-bar-labels"><span>← FRONT</span><span>REAR →</span></div>
+      </div>
+
+      <div class="grid2">
+        <div class="data-cell"><div class="dc-label">LAT G</div><div class="dc-val" id="latGVal">+0.42g</div></div>
+        <div class="data-cell"><div class="dc-label">LON G</div><div class="dc-val" id="lonGVal">-0.18g</div></div>
+      </div>
+
+    </div><!-- /tab0 -->
+
+    <!-- ── POWER tab ─────────────────────────────────────────────────── -->
+    <div class="tab-content" id="tab1">
+
+      <div style="display:flex;gap:6px">
+        <div class="afr-card">
+          <div class="afr-label">AFR ACT</div>
+          <div class="afr-val" style="color:var(--accent)" id="afrActVal">14.72</div>
+          <div class="afr-unit">:1</div>
+        </div>
+        <div class="afr-card">
+          <div class="afr-label">AFR DES</div>
+          <div class="afr-val" style="color:var(--frost)" id="afrDesVal">14.70</div>
+          <div class="afr-unit">:1</div>
+        </div>
+        <div class="afr-card">
+          <div class="afr-label">LAMBDA</div>
+          <div class="afr-val" style="color:var(--grn)" id="lambdaVal">1.001</div>
+          <div class="afr-unit">λ</div>
+        </div>
+      </div>
+
+      <div class="section-label"><span>Throttle &amp; Boost</span></div>
+      <div class="grid3">
+        <div class="data-cell"><div class="dc-label">ETC ACT</div><div class="dc-val" id="etcActVal">42.3°</div></div>
+        <div class="data-cell"><div class="dc-label">ETC DES</div><div class="dc-val" id="etcDesVal">44.1°</div></div>
+        <div class="data-cell"><div class="dc-label">WGDC</div><div class="dc-val accent" id="wgdcVal">78%</div></div>
+      </div>
+      <div class="grid3">
+        <div class="data-cell"><div class="dc-label">TIP ACT</div><div class="dc-val" id="tipActVal">+12.1 PSI</div></div>
+        <div class="data-cell"><div class="dc-label">TIP DES</div><div class="dc-val" id="tipDesVal">+12.6 PSI</div></div>
+        <div class="data-cell"><div class="dc-label">FUEL RAIL</div><div class="dc-val" id="fuelRailVal">2,180 PSI</div></div>
+      </div>
+
+      <div class="section-label"><span>Engine Management</span></div>
+      <div class="grid3">
+        <div class="data-cell"><div class="dc-label">TIMING</div><div class="dc-val" id="timingVal">24.5°</div></div>
+        <div class="data-cell"><div class="dc-label">LOAD</div><div class="dc-val" id="loadVal">92%</div></div>
+        <div class="data-cell"><div class="dc-label">OAR</div><div class="dc-val" id="oarVal">100%</div></div>
+      </div>
+      <div class="grid3">
+        <div class="data-cell"><div class="dc-label">KR CYL1</div><div class="dc-val grn" id="krVal">0.00°</div></div>
+        <div class="data-cell"><div class="dc-label">VCT-I</div><div class="dc-val" id="vctiVal">18.5°</div></div>
+        <div class="data-cell"><div class="dc-label">VCT-E</div><div class="dc-val" id="vcteVal">—&nbsp;—</div></div>
+      </div>
+
+      <div class="section-label"><span>Fuel Trims &amp; Misc</span></div>
+      <div class="grid3">
+        <div class="data-cell"><div class="dc-label">SHORT FT</div><div class="dc-val grn" id="stftVal">+1.6%</div></div>
+        <div class="data-cell"><div class="dc-label">LONG FT</div><div class="dc-val grn" id="ltftVal">+2.3%</div></div>
+        <div class="data-cell"><div class="dc-label">BARO</div><div class="dc-val" id="baroVal">101 kPa</div></div>
+      </div>
+      <div class="grid3">
+        <div class="data-cell"><div class="dc-label">OIL LIFE</div><div class="dc-val" id="oilLifeVal">87%</div></div>
+        <div class="data-cell"><div class="dc-label">AFR SEN1</div><div class="dc-val dim" id="afrSen1Val">—&nbsp;—</div></div>
+        <div class="data-cell"><div class="dc-label">O2 VOLT</div><div class="dc-val dim" id="o2Val">—&nbsp;—</div></div>
+      </div>
+
+    </div><!-- /tab1 -->
+
+    <!-- ── CHASSIS tab ────────────────────────────────────────────────── -->
+    <div class="tab-content" id="tab2">
+
+      <!-- AWD section -->
+      <div class="card">
+        <div class="section-label"><span>AWD — GKN Twinster</span></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+            <div class="wheel-cell" style="border:1px solid rgba(0,174,239,.4)">
+              <div class="wc-label">FL</div><div class="wc-val" id="wfl">47.2</div>
+            </div>
+            <div class="wheel-cell" style="border:1px solid rgba(34,197,94,.3)">
+              <div class="wc-label">RL</div><div class="wc-val" id="wrl">48.1</div>
+            </div>
+          </div>
+          <div style="flex:0.7;text-align:center">
+            <div style="font-family:var(--mono);font-size:18px;color:var(--accent)" id="awdSplitC">62/38</div>
+            <div style="font-family:var(--ui);font-size:9px;font-weight:600;letter-spacing:1px;color:var(--dim)">F / R</div>
+            <div style="height:12px"></div>
+            <div style="font-family:var(--ui);font-size:8px;font-weight:600;letter-spacing:1px;color:var(--dim)">RDU</div>
+            <div style="font-family:var(--mono);font-size:12px;color:var(--mid)" id="rduC">82°F</div>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+            <div class="wheel-cell" style="border:1px solid rgba(0,174,239,.4)">
+              <div class="wc-label">FR</div><div class="wc-val" id="wfr">47.8</div>
+            </div>
+            <div class="wheel-cell" style="border:1px solid rgba(34,197,94,.3)">
+              <div class="wc-label">RR</div><div class="wc-val" id="wrr">49.2</div>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin:6px 0 3px">
+          <span style="font-family:var(--mono);font-size:10px;color:var(--accent)">L 142 Nm</span>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--grn)">198 Nm R</span>
+        </div>
+        <div class="torque-bar">
+          <div class="tb-left" style="flex:42"></div>
+          <div class="tb-right" style="flex:58"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:4px">
+          <span style="font-family:var(--ui);font-size:9px;color:var(--dim)">REAR BIAS 42/58</span>
+          <span style="font-family:var(--ui);font-size:9px;color:var(--dim)">L/R DELTA 1.1</span>
+        </div>
+        <div class="grid2" style="margin-top:6px">
+          <div class="data-cell"><div class="dc-label">F/R DELTA</div><div class="dc-val">+1.8 km/h</div></div>
+          <div class="data-cell"><div class="dc-label">MAX TQ</div><div class="dc-val">340 Nm</div></div>
+        </div>
+      </div>
+
+      <!-- G-Force section -->
+      <div class="card">
+        <div class="section-label"><span>G-Force &amp; Dynamics</span></div>
+        <div style="display:flex;gap:6px;margin-bottom:6px">
+          <div class="gf-card">
+            <div class="gf-label">LAT G</div>
+            <div class="gf-val" id="latGC">+0.42</div>
+            <div class="gf-peak">↑ 0.81</div>
+          </div>
+          <div class="gf-card">
+            <div class="gf-label">LON G</div>
+            <div class="gf-val" id="lonGC">-0.18</div>
+            <div class="gf-peak">↑ 0.92</div>
+          </div>
+          <div class="gf-card">
+            <div class="gf-label">COMBINED</div>
+            <div class="gf-val" id="combGC">0.46</div>
+            <div class="gf-peak">&nbsp;</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <div class="gf-card">
+            <div class="gf-label">YAW</div>
+            <div class="gf-val" id="yawC">12.4°/s</div>
+          </div>
+          <div class="gf-card">
+            <div class="gf-label">STEER</div>
+            <div class="gf-val" id="steerC">-48.2°</div>
+          </div>
+          <div class="reset-btn" onclick="resetPeaks()">↺ PEAKS</div>
+        </div>
+      </div>
+
+      <!-- TPMS section -->
+      <div class="card">
+        <div class="section-label"><span>TPMS — Tire Pressure</span></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+            <div class="tire-card" style="border-color:var(--brd)">
+              <div class="tire-label">LF</div>
+              <div class="tire-val grn" id="tLF" style="color:var(--grn)">38.2</div>
+              <div class="tire-unit">PSI</div>
+            </div>
+            <div class="tire-card">
+              <div class="tire-label">LR</div>
+              <div class="tire-val grn" id="tLR" style="color:var(--grn)">37.8</div>
+              <div class="tire-unit">PSI</div>
+            </div>
+          </div>
+          <!-- Car outline -->
+          <div style="width:52px;display:flex;align-items:center;justify-content:center">
+            <svg width="44" height="88" viewBox="0 0 44 88" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <!-- Body -->
+              <rect x="10" y="16" width="24" height="56" rx="6" fill="var(--surf2)" stroke="var(--brd)" stroke-width="1"/>
+              <!-- Windows -->
+              <rect x="13" y="24" width="18" height="16" rx="3" fill="var(--surf3)" opacity=".7"/>
+              <!-- Roof line -->
+              <rect x="15" y="20" width="14" height="6" rx="2" fill="var(--surf3)"/>
+            </svg>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+            <div class="tire-card">
+              <div class="tire-label">RF</div>
+              <div class="tire-val grn" id="tRF" style="color:var(--grn)">38.0</div>
+              <div class="tire-unit">PSI</div>
+            </div>
+            <div class="tire-card">
+              <div class="tire-label">RR</div>
+              <div class="tire-val grn" id="tRR" style="color:var(--grn)">37.5</div>
+              <div class="tire-unit">PSI</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /tab2 -->
+
+    <!-- ── TEMPS tab ──────────────────────────────────────────────────── -->
+    <div class="tab-content" id="tab3">
+
+      <!-- RTR Banner -->
+      <div class="rtr-banner" id="rtrBanner">
+        <div class="rtr-dot" id="rtrDot"></div>
         <div>
-          <div style="font-size:12px;color:var(--txt)">Low tire threshold</div>
-          <div style="font-size:10px;color:var(--dim)">Warn below this PSI</div>
-        </div>
-        <input id="set-tire-low" type="number" min="15" max="50" value="30"
-          style="width:60px;background:var(--bg);border:1px solid var(--brd);border-radius:4px;color:var(--txt);font-family:var(--mono);font-size:13px;padding:5px 8px;text-align:center">
-      </div>
-
-      <div style="font-size:10px;color:var(--dim);letter-spacing:2px;border-bottom:1px solid var(--brd);padding-bottom:4px;margin-bottom:10px">DEMO — FIRMWARE</div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <div>
-          <div style="font-size:12px;color:var(--txt)">Simulated firmware</div>
-          <div style="font-size:10px;color:var(--dim)">Toggle to see CTRL tab change</div>
-        </div>
-        <div class="seg-group" data-key="firmware">
-          <button class="seg-btn" data-val="openRS_">openRS_</button>
-          <button class="seg-btn" data-val="Stock">Stock</button>
+          <div class="rtr-title" id="rtrTitle">WARMING UP — NOT RACE READY</div>
+          <div class="rtr-sub" id="rtrSub">Oil 72°C &lt; 80°C · Coolant 78°C &lt; 85°C</div>
         </div>
       </div>
 
-      <button id="settings-save" style="width:100%;padding:10px;background:var(--accent);border:none;border-radius:6px;color:#000;font-family:var(--mono);font-size:13px;font-weight:700;cursor:pointer;letter-spacing:1px">SAVE</button>
-    </div>
-  </div>
+      <div class="grid2">
+        <div class="temp-card">
+          <div class="temp-card-inner">
+            <div class="tc-label">ENGINE OIL</div>
+            <div class="tc-val" id="toil" style="color:var(--frost)">162</div>
+            <div><span class="tc-unit">°F</span><span class="tc-sub">INFERRED</span></div>
+          </div>
+          <div class="tc-bar warm"></div>
+        </div>
+        <div class="temp-card">
+          <div class="temp-card-inner">
+            <div class="tc-label">COOLANT</div>
+            <div class="tc-val" id="tcoolant" style="color:var(--frost)">198</div>
+            <div><span class="tc-unit">°F</span></div>
+          </div>
+          <div class="tc-bar warm"></div>
+        </div>
+      </div>
 
-  <!-- ════ ANDROID AUTO UI ════ -->
-  <div id="aa" class="hidden">
-    <div class="aa-header">
-      <div class="aa-header-left">
-        <span class="aa-title-txt" id="aa-title">openRS_</span>
+      <div class="grid2">
+        <div class="temp-card">
+          <div class="temp-card-inner">
+            <div class="tc-label">INTAKE AIR</div>
+            <div class="tc-val" id="tintake" style="color:var(--frost)">72</div>
+            <div><span class="tc-unit">°F</span></div>
+          </div>
+          <div class="tc-bar cold"></div>
+        </div>
+        <div class="temp-card">
+          <div class="temp-card-inner">
+            <div class="tc-label">AMBIENT</div>
+            <div class="tc-val" id="tambient" style="color:var(--frost)">14</div>
+            <div><span class="tc-unit">°F</span></div>
+          </div>
+          <div class="tc-bar cold"></div>
+        </div>
       </div>
-      <div class="aa-header-center">
-        <span class="aa-badge sport" id="aa-mode-badge">SPORT</span>
-        <span class="aa-esc" id="aa-esc">ESC On</span>
+
+      <div class="grid2">
+        <div class="temp-card">
+          <div class="temp-card-inner">
+            <div class="tc-label">RDU (REAR DIFF)</div>
+            <div class="tc-val" id="trdu" style="color:var(--frost)">82</div>
+            <div><span class="tc-unit">°F</span></div>
+          </div>
+          <div class="tc-bar warm"></div>
+        </div>
+        <div class="temp-card">
+          <div class="temp-card-inner">
+            <div class="tc-label">PTU (TRANSFER)</div>
+            <div class="tc-val" id="tptu" style="color:var(--frost)">118</div>
+            <div><span class="tc-unit">°F</span></div>
+          </div>
+          <div class="tc-bar warm"></div>
+        </div>
       </div>
-      <div class="aa-header-right">
-        <span class="transport-badge wifi" id="aa-transport">WiFi</span>
-        <span class="aa-conn on" id="aa-conn-badge">● CONNECTED</span>
-        <span class="aa-fps-note" id="aa-fps">12 fps</span>
-        <span id="aa-settings" style="font-size:16px;cursor:pointer;color:var(--dim);user-select:none;margin-left:6px" title="Settings">⚙</span>
+
+      <div class="grid2">
+        <div class="temp-card">
+          <div class="temp-card-inner">
+            <div class="tc-label">CHARGE AIR</div>
+            <div class="tc-val dim">—&nbsp;—</div>
+            <div><span class="tc-unit">°F</span><span class="tc-sub">POLLING</span></div>
+          </div>
+          <div class="tc-bar cold"></div>
+        </div>
+        <div class="temp-card">
+          <div class="temp-card-inner">
+            <div class="tc-label">CATALYTIC</div>
+            <div class="tc-val dim">—&nbsp;—</div>
+            <div><span class="tc-unit">°F</span><span class="tc-sub">POLLING</span></div>
+          </div>
+          <div class="tc-bar cold"></div>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="temp-card">
+          <div class="temp-card-inner">
+            <div class="tc-label">CABIN</div>
+            <div class="tc-val dim">—&nbsp;—</div>
+            <div><span class="tc-unit">°F</span><span class="tc-sub">BCM</span></div>
+          </div>
+          <div class="tc-bar cold"></div>
+        </div>
+        <div class="temp-card">
+          <div class="temp-card-inner">
+            <div class="tc-label">BATT TEMP</div>
+            <div class="tc-val dim">—&nbsp;—</div>
+            <div><span class="tc-unit">°F</span><span class="tc-sub">BCM</span></div>
+          </div>
+          <div class="tc-bar cold"></div>
+        </div>
+      </div>
+
+    </div><!-- /tab3 -->
+
+    <!-- ── DIAG tab ──────────────────────────────────────────────────── -->
+    <div class="tab-content" id="tab4">
+      <div style="font-family:var(--ui);font-size:12px;font-weight:700;letter-spacing:2px;color:var(--amber);margin-bottom:6px">DIAGNOSTICS</div>
+
+      <div class="grid3">
+        <div class="data-cell"><div class="dc-label">FPS</div><div class="dc-val" id="diagFps">1,420</div></div>
+        <div class="data-cell"><div class="dc-label">MODE</div><div class="dc-val">CAN</div></div>
+        <div class="data-cell"><div class="dc-label">CONN</div><div class="dc-val grn">LIVE</div></div>
+      </div>
+      <div class="grid3">
+        <div class="data-cell"><div class="dc-label">SESSION</div><div class="dc-val">12:34</div></div>
+        <div class="data-cell"><div class="dc-label">FRAMES</div><div class="dc-val">1.04M</div></div>
+        <div class="data-cell"><div class="dc-label">IDs</div><div class="dc-val">62</div></div>
+      </div>
+
+      <div style="background:var(--surf);border:1px solid rgba(0,174,239,.3);border-radius:7px;padding:10px;text-align:center;margin-top:2px">
+        <div style="font-family:var(--ui);font-size:12px;font-weight:700;letter-spacing:1px;color:var(--accent)">↑ CAPTURE &amp; SHARE SNAPSHOT</div>
+      </div>
+      <div style="font-family:var(--ui);font-size:9px;color:var(--dim);margin-top:2px">
+        Exports a ZIP (summary .txt + full .json + SLCAN raw log) via share sheet.
+      </div>
+
+      <div style="border-top:1px solid var(--brd);margin:8px 0"></div>
+      <div style="font-family:var(--ui);font-size:9px;color:var(--dim)">Live WiCAN output (newest ↓):</div>
+      <div style="margin-top:4px">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--frost)">t0F8 8 00 BA 3E 80 8E 5A 0A 8E</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--frost)">t090 8 02 00 72 05 64 00 00 00</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--frost)">t180 8 00 00 83 F4 01 D3 FF A0</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--frost)">t1B0 8 02 40 00 00 00 00 00 00</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--frost)">t252 8 00 E4 02 00 00 00 00 00</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--frost)">t010 8 00 00 D0 80 26 30 00 00</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--frost)">t340 8 43 00 43 43 43 43 01 B2</div>
+      </div>
+
+      <div style="border-top:1px solid var(--brd);margin:8px 0"></div>
+      <div style="font-family:var(--ui);font-size:9px;font-weight:700;letter-spacing:2px;color:var(--dim)">FRAME INVENTORY (9 IDs shown)</div>
+      <div style="margin-top:4px">
+        <div style="font-family:var(--mono);font-size:9px;color:var(--dim)">0x010  ×84,200   steer=-48.2°</div>
+        <div style="font-family:var(--mono);font-size:9px;color:var(--dim)">0x090  ×84,100   rpm=4820 baro=101</div>
+        <div style="font-family:var(--mono);font-size:9px;color:var(--dim)">0x0F8  ×84,000   boost=183kPa oilTemp=98°C</div>
+        <div style="font-family:var(--mono);font-size:9px;color:var(--dim)">0x130  ×84,000   speed=140kph</div>
+        <div style="font-family:var(--mono);font-size:9px;color:var(--dim)">0x180  ×84,100   latG=+0.42g yaw=12.4°/s</div>
+        <div style="font-family:var(--mono);font-size:9px;color:var(--dim)">0x1B0  ×84,000   driveMode=NORMAL</div>
+        <div style="font-family:var(--mono);font-size:9px;color:var(--dim)">0x252  ×42,000   brake=0.0%</div>
+        <div style="font-family:var(--mono);font-size:9px;color:var(--dim)">0x340  ×4,200    ambient=22.0°C (TPMS via BCM Mode 22)</div>
+        <div style="font-family:var(--mono);font-size:9px;color:var(--dim)">0x380  ×2,100    fuelPct=72.4% (PCMmsg30 Motorola)</div>
+      </div>
+    </div><!-- /tab4 -->
+
+  </div><!-- /content -->
+
+  <!-- ── System Drawer ──────────────────────────────────────────────── -->
+  <div class="drawer-overlay" id="drawerOverlay" onclick="toggleDrawer()"></div>
+  <div class="drawer-panel" id="drawerPanel" style="display:none">
+    <div class="drawer-handle"><div class="drawer-handle-bar"></div></div>
+
+    <div class="drawer-section">
+      <div style="font-family:var(--ui);font-size:10px;font-weight:700;letter-spacing:2px;color:var(--dim)">DRIVE MODE</div>
+      <div class="mode-btn-group">
+        <div class="mode-btn active-n">
+          <div class="mode-btn-letter" style="color:var(--accent)">N</div>
+          <div class="mode-btn-name">NORMAL</div>
+        </div>
+        <div class="mode-btn">
+          <div class="mode-btn-letter">S</div>
+          <div class="mode-btn-name">SPORT</div>
+        </div>
+        <div class="mode-btn">
+          <div class="mode-btn-letter">T</div>
+          <div class="mode-btn-name">TRACK</div>
+        </div>
+        <div class="mode-btn">
+          <div class="mode-btn-letter">D</div>
+          <div class="mode-btn-name">DRIFT</div>
+        </div>
+      </div>
+      <div style="font-family:var(--ui);font-size:10px;color:var(--dim)">
+        Read-only mirror of CAN 0x1B0. Use steering wheel MODE button.
       </div>
     </div>
-    <div class="aa-back-bar" id="aa-back-bar" style="display:none">
-      <button id="aa-back-btn">← Back</button>
+
+    <div class="drawer-divider"></div>
+
+    <div class="drawer-section">
+      <div style="font-family:var(--ui);font-size:10px;font-weight:700;letter-spacing:2px;color:var(--dim)">ESC — ELECTRONIC STABILITY CONTROL</div>
+      <div style="display:flex;gap:5px;margin:10px 0 6px">
+        <div style="flex:1;border:1px solid var(--grn);border-radius:7px;padding:10px 4px;text-align:center;background:rgba(34,197,94,.1)">
+          <div style="font-family:var(--ui);font-size:12px;font-weight:700;color:var(--grn)">ESC ON</div>
+        </div>
+        <div style="flex:1;border:1px solid var(--brd);border-radius:7px;padding:10px 4px;text-align:center">
+          <div style="font-family:var(--ui);font-size:12px;font-weight:700;color:var(--dim)">SPORT</div>
+        </div>
+        <div style="flex:1;border:1px solid var(--brd);border-radius:7px;padding:10px 4px;text-align:center">
+          <div style="font-family:var(--ui);font-size:12px;font-weight:700;color:var(--dim)">ESC OFF</div>
+        </div>
+      </div>
+      <div style="font-family:var(--ui);font-size:10px;color:var(--dim)">Current: ESC On (CAN 0x1C0). Use ESC button in car.</div>
     </div>
-    <div class="aa-body" id="aa-body"></div>
-    <div class="aa-strip" id="aa-strip">
-      <button data-screen="awd">AWD</button>
-      <button data-screen="perf">PERF</button>
-      <button data-screen="temps">TEMPS</button>
-      <button data-screen="ctrl">CTRL ⚡</button>
-      <button data-screen="diag">DIAG</button>
-      <button data-screen="menu">MENU ☰</button>
+
+    <div class="drawer-divider"></div>
+
+    <div class="drawer-section">
+      <div style="font-family:var(--ui);font-size:10px;font-weight:700;letter-spacing:2px;color:var(--dim)">FEATURES — REQUIRES OPENRS-FW V1.0</div>
+      <div style="display:flex;gap:5px;margin:10px 0 6px">
+        <div style="flex:1;border:1px solid var(--brd);border-radius:7px;padding:10px;position:relative;overflow:hidden">
+          <div style="font-family:var(--ui);font-size:11px;font-weight:600;color:var(--dim)">Launch Control</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--dim)">○ OFF</div>
+          <div style="position:absolute;inset:0;background:rgba(0,0,0,.35);border-radius:7px"></div>
+        </div>
+        <div style="flex:1;border:1px solid var(--brd);border-radius:7px;padding:10px;position:relative;overflow:hidden">
+          <div style="font-family:var(--ui);font-size:11px;font-weight:600;color:var(--dim)">Auto S/S Kill</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--dim)">○ OFF</div>
+          <div style="position:absolute;inset:0;background:rgba(0,0,0,.35);border-radius:7px"></div>
+        </div>
+      </div>
+      <div style="font-family:var(--ui);font-size:10px;color:var(--amber)">
+        ⚡ Flash openrs-fw to unlock CAN write, LC, Auto S/S Kill &amp; more.
+      </div>
     </div>
-  </div>
+
+    <div class="drawer-divider"></div>
+
+    <div class="drawer-section">
+      <div style="font-family:var(--ui);font-size:10px;font-weight:700;letter-spacing:2px;color:var(--dim)">CONNECTION &amp; DIAGNOSTICS</div>
+      <div class="grid4" style="margin:10px 0 8px">
+        <div class="data-cell"><div class="dc-label">STATUS</div><div class="dc-val grn">LIVE</div></div>
+        <div class="data-cell"><div class="dc-label">MODE</div><div class="dc-val">CAN</div></div>
+        <div class="data-cell"><div class="dc-label">FPS</div><div class="dc-val">1420</div></div>
+        <div class="data-cell"><div class="dc-label">SESSION</div><div class="dc-val">12:34</div></div>
+      </div>
+      <div class="snapshot-btn">↑ CAPTURE &amp; SHARE SNAPSHOT</div>
+    </div>
+  </div><!-- /drawer-panel -->
+
+</div><!-- /phone -->
+
+<!-- Meta bar -->
+<div class="meta-bar">
+  <div class="version-badge">openRS_ v1.2.6 — Phone Emulator</div>
+  <p>Interactive mockup · Data is simulated · No real vehicle connection</p>
+  <p>Source code &amp; releases: <a href="https://github.com/klexical/openRS_" target="_blank">github.com/klexical/openRS_</a></p>
+</div>
+
+</div><!-- /wrapper -->
 
 <script>
-/* ── Helpers ── */
-const toF  = c => Math.round(c * 9 / 5 + 32);
-const f1   = n => n.toFixed(1);
-const f2   = n => n.toFixed(2);
-const f3   = n => n.toFixed(3);
-const ri   = n => Math.round(n);
-const pct  = n => ri(n) + '%';
-
-/* ── Settings state ── */
-let settings = {
-  speedUnit:   'MPH',   // MPH | KPH
-  tempUnit:    'F',     // F | C
-  boostUnit:   'PSI',   // PSI | BAR | KPA
-  tireUnit:    'PSI',   // PSI | BAR
-  tireLowPsi:  30,
-  firmware:    'openRS_', // openRS_ | Stock
-};
-
-function displaySpeed(kph) {
-  return settings.speedUnit === 'MPH' ? (kph * 0.621371) : kph;
-}
-function speedLabel() { return settings.speedUnit; }
-function displayTemp(c) {
-  return settings.tempUnit === 'F' ? Math.round(c * 9/5 + 32) : Math.round(c);
-}
-function tempLabel() { return settings.tempUnit === 'F' ? '°F' : '°C'; }
-function displayBoost(kpa) {
-  if (settings.boostUnit === 'PSI') return ((kpa - 101.325) * 0.145038).toFixed(1);
-  if (settings.boostUnit === 'BAR') return ((kpa - 101.325) / 100).toFixed(2);
-  return (kpa - 101.325).toFixed(1);  // kPa gauge
-}
-function boostLabel() { return settings.boostUnit; }
-function displayTire(psi) {
-  return settings.tireUnit === 'BAR' ? (psi * 0.0689476).toFixed(2) : psi.toFixed(1);
-}
-function tireLabel() { return settings.tireUnit; }
-function isTireLow(psi) { return psi < settings.tireLowPsi; }
-
-/* ── Mutable UI state (interactive) ── */
-let uiState = {
-  driveMode: 'Sport',
-  escStatus: 'ESC On',
-  transport: 'WiFi',
-  launchControl: false,
-  assKill: false,
-  bootMode: 'Sport',
-};
-
-const DRIVE_MODES = ['Normal','Sport','Track','Drift'];
-const ESC_MODES   = ['ESC On','ESC Sport','ESC Off'];
-
-/* ── Demo state ── */
-function demo(t) {
-  const rpm       = 2800 + Math.sin(t * 0.5) * 800;
-  const boostPsi  = (Math.sin(t * 0.3) + 1) * 11.6;
-  const speedKph  = 72 + Math.sin(t * 0.2) * 20;
-  const speedMph  = speedKph * 0.621371;
-  const thr       = 35 + Math.sin(t * 0.4) * 15;
-  const brk       = 2 + Math.sin(t) * 0.5;
-  const rearL     = 40 + Math.sin(t * 0.35) * 25;
-  const rearR     = 35 + Math.sin(t * 0.4)  * 20;
-  const total     = rearL + rearR;
-  const rearPct   = total > 0 ? Math.min(100, total / 200 * 100) : 0;
-  const oil       = 82 + Math.sin(t * 0.1)  * 3;
-  const clnt      = 88 + Math.sin(t * 0.12) * 2;
-  const rdu       = 45 + Math.sin(t * 0.15) * 5;
-  const ptu       = 55 + Math.sin(t * 0.13) * 4;
-  const latG      = Math.sin(t * 0.6) * 0.4;
-  const lonG      = Math.cos(t * 0.5) * 0.3;
-  const wFL = speedKph * 0.98 + Math.sin(t) * 1;
-  const wFR = speedKph * 1.02 + Math.cos(t * 1.1) * 1;
-  const wRL = speedKph * 0.97 + Math.sin(t * 0.9) * 1;
-  const wRR = speedKph * 1.01 + Math.cos(t * 0.95) * 1;
-  const boostKpa = boostPsi * 6.89476 + 101.325;
-  return {
-    rpm, boostPsi, boostKpa, speedKph, speedMph,
-    gear: 3, gearDisplay: '3',
-    throttlePct: thr, brakePressure: brk,
-    frontRearSplit: (100 - ri(rearPct)) + '/' + ri(rearPct),
-    torqueAtTrans: 220,
-    oilTempC: oil, coolantTempC: clnt,
-    intakeTempC: 32 + Math.sin(t * 0.2) * 5,
-    ambientTempC: 22,
-    batteryVoltage: 13.2 + Math.sin(t * 0.1) * 0.3,
-    lateralG: latG, longitudinalG: lonG,
-    combinedG: Math.sqrt(latG*latG + lonG*lonG),
-    steeringAngle: Math.sin(t * 0.4) * 15,
-    yawRate: Math.sin(t * 0.5) * 5,
-    fuelLevelPct: 72,
-    calcLoad: 45 + Math.sin(t) * 10,
-    commandedAfr: 14.5 + Math.sin(t * 0.2) * 0.3,
-    framesPerSecond: 2100 + Math.round(Math.sin(t * 0.1) * 150),
-    wheelSpeedFL: wFL, wheelSpeedFR: wFR,
-    wheelSpeedRL: wRL, wheelSpeedRR: wRR,
-    awdLeftTorque: ri(rearL), awdRightTorque: ri(rearR),
-    totalRearTorque: total, awdMaxTorque: 350,
-    rduTempC: rdu, ptuTempC: ptu,
-    rearLeftRightBias: total > 0 ? ri(rearL/total*100)+'/'+ri(rearR/total*100) : '50/50',
-    peakLateralG: 0.72, peakLongitudinalG: 0.55,
-    peakBoostPsi: 18.2, peakRpm: 6200,
-    chargeAirTempC: 38, catalyticTempC: 420,
-    afrActual: 14.4 + Math.sin(t*0.2)*0.2, afrDesired: 14.7,
-    lambdaActual: 0.98 + Math.sin(t*0.1)*0.02,
-    etcAngleActual: 45 + Math.sin(t)*5, etcAngleDesired: 48,
-    tipActualPsi: 12 + Math.sin(t*0.3)*2, tipDesiredPsi: 13.5,
-    wgdcDesired: 55 + Math.sin(t*0.4)*15,
-    timingAdvance: 18 + Math.sin(t*0.2)*2,
-    shortFuelTrim: 2.1 + Math.sin(t)*0.5,
-    longFuelTrim: -0.8 + Math.cos(t*0.7)*0.3,
-    fuelRailPsi: 42 + Math.sin(t*0.5)*3,
-    vctIntakeAngle: 25 + Math.sin(t*0.2)*5,
-    vctExhaustAngle: 20 + Math.cos(t*0.2)*3,
-    octaneAdjustRatio: 0.98, barometricPressure: 101,
-    oilLifePct: 67, ignCorrCyl1: 0.00,
-    tirePressLF: 35.2 + Math.sin(t*0.07)*0.4, tirePressRF: 34.8 + Math.sin(t*0.09)*0.3,
-    tirePressLR: 36.1 + Math.sin(t*0.06)*0.5, tirePressRR: 35.6 + Math.sin(t*0.08)*0.4,
-    tireTempLF: 28, tireTempRF: 27,
-    tireTempLR: 29, tireTempRR: 28,
-    maxTirePressSpread: 2,
-    hasTpmsData: true, anyTireLow: false,
-    // BCM OBD Mode 22 polled fields (v1.1.1+)
-    odometerKm: 42381,
-    batterySoc: 87,
-    cabinTempC: 21 + Math.sin(t * 0.05) * 0.5,
-    batteryTempC: 18 + Math.sin(t * 0.07) * 1,
-    isReadyToRace: oil >= 65 && rdu >= 20 && ptu >= 50,
-    isConnected: true,
-    driveMode: uiState.driveMode,
-    escStatus: uiState.escStatus,
-    transport: uiState.transport,
-    launchControl: uiState.launchControl,
-    assKill: uiState.assKill,
-    bootMode: uiState.bootMode,
-  };
+// ── Tab switching ────────────────────────────────────────────────────────
+function showTab(idx, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab' + idx).classList.add('active');
 }
 
-/* ── HTML builders ── */
-function gaugeBox(lbl, val, unit, large = false) {
-  return `<div class="gauge-box${large?' lg':''}">
-    <div class="g-lbl">${lbl}</div>
-    <div class="g-val">${val}</div>
-    ${unit ? `<div class="g-unit">${unit}</div>` : ''}
-  </div>`;
-}
-function cell(lbl, val, cls = '') {
-  return `<div class="cell"><span class="c-lbl">${lbl}</span><span class="c-val${cls?' '+cls:''}">${val}</span></div>`;
-}
-function infoRow(pairs) {
-  return `<div class="info-row">${pairs.map(([l,v,c])=>cell(l,v,c)).join('')}</div>`;
-}
-function tempGauge(lbl, val, unit, cls = '', sub = '') {
-  return `<div class="temp-gauge">
-    <div class="tg-lbl">${lbl}</div>
-    <div class="tg-val${cls?' '+cls:''}">${val}</div>
-    <div class="tg-unit">${unit}${sub ? '<span style="color:var(--dim);font-size:9px;margin-left:3px">'+sub+'</span>' : ''}</div>
-  </div>`;
-}
-function wheelBox(lbl, val) {
-  return `<div class="wheel-box"><div class="wb-lbl">${lbl}</div><div class="wb-val">${val}</div></div>`;
+// ── Drawer ───────────────────────────────────────────────────────────────
+function toggleDrawer() {
+  const overlay = document.getElementById('drawerOverlay');
+  const panel   = document.getElementById('drawerPanel');
+  const open    = panel.style.display !== 'flex';
+  overlay.style.display = open ? 'block' : 'none';
+  panel.style.display   = open ? 'flex'  : 'none';
+  if (open) panel.style.flexDirection = 'column';
 }
 
-/* ── DIAG page builder ── */
-const DEMO_INVENTORY = [
-  { id: '0x090', count: 63241, last: 'T090 00 4F A0 00 16 08',  decoded: 'rpm=2800, baro=101.0kPa', issue: null },
-  { id: '0x0F8', count: 62980, last: 'T0F8 00 57 00 00 00 00 78 8C', decoded: 'oilTempC=37, boost=101kPa, ptuTempC=60', issue: null },
-  { id: '0x130', count: 62710, last: 'T130 00 00 00 00 00 00 1C 2E', decoded: 'speed=72.2kph',     issue: null },
-  { id: '0x180', count: 62450, last: 'T180 00 00 01 A2 00 00 00 00', decoded: 'latG=0.41g',        issue: null },
-  { id: '0x160', count: 62100, last: 'T160 00 00 00 00 00 00 01 E5', decoded: 'lonG=0.22g',        issue: null },
-  { id: '0x1B0', count: 21050, last: 'T1B0 00 00 00 00 00 00 10 00', decoded: 'driveMode=Sport',   issue: null },
-  { id: '0x190', count: 67743, last: 'T190 80 00 80 00 80 00 80 00', decoded: 'FL=0.0 FR=0.0 RL=0.0 RR=0.0 km/h', issue: null },
-  { id: '0x2C0', count: 18200, last: 'T2C0 00 28 00 23 00 00 00 00', decoded: 'awdL=40Nm awdR=35Nm', issue: null },
-  { id: '0x340', count: 6800,  last: 'T340 00 00 23 22 24 23 00 58', decoded: 'ambient=22.0°C (PCMmsg17 — TPMS from BCM Mode 22)', issue: null },
-  { id: '0x380', count: 3200,  last: 'T380 90 93 7C FE 60 4B C0 87', decoded: 'fuelPct=101.6 (0x380 Motorola)', issue: null },
-  { id: '0x1A4', count: 4100,  last: 'T1A4 00 00 00 00 58 00 00 00', decoded: 'ambient=22.0°C',    issue: null },
-];
-function diagHtml(v) {
-  const duration = '00:04:32';
-  const totalFrames = 421600;
-  const uniqueIds   = DEMO_INVENTORY.length;
-  const issues      = 0;
-  const rows = DEMO_INVENTORY.map(f => `
-    <div style="padding:5px 0;border-bottom:1px solid var(--brd)">
-      <div style="display:flex;justify-content:space-between;align-items:baseline">
-        <span style="font-size:12px;font-weight:700;color:var(--accent)">${f.id}</span>
-        <span style="font-size:10px;color:var(--dim)">${f.count.toLocaleString()} frames</span>
-      </div>
-      <div style="font-size:10px;color:var(--dim);margin:2px 0">${f.last}</div>
-      <div style="font-size:11px;color:var(--txt)">${f.decoded}</div>
-      ${f.issue ? `<div style="font-size:10px;color:var(--red);margin-top:2px">⚠ ${f.issue}</div>` : ''}
-    </div>`).join('');
-  return `
-    <div style="font-size:12px;font-weight:700;color:var(--org);letter-spacing:1px;margin-bottom:6px">DIAGNOSTICS</div>
-    ${infoRow([['SESSION', duration],['FRAMES', totalFrames.toLocaleString()],['IDs', uniqueIds],['ISSUES', issues,'grn']])}
-    <div style="margin:8px 0;padding:12px;background:var(--surf);border:1px solid var(--accent);border-radius:8px;text-align:center;cursor:pointer" id="snap-btn">
-      <div style="font-size:13px;font-weight:700;color:var(--accent);letter-spacing:1px">⬆ CAPTURE &amp; SHARE SNAPSHOT</div>
-      <div style="font-size:10px;color:var(--dim);margin-top:4px">ZIP includes summary.txt + detail.json — share via Gmail, Drive, etc.</div>
-    </div>
-    <div style="font-size:10px;color:var(--dim);margin-bottom:8px">Snapshot contains: frame inventory, decode trace (500 events), FPS timeline, session events, validation results, settings, VehicleState snapshot.</div>
-    <div style="font-size:11px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--brd);padding-bottom:4px;margin-bottom:4px">FRAME INVENTORY — ${uniqueIds} IDs seen</div>
-    ${rows}`;
+// ── Settings toggle ──────────────────────────────────────────────────────
+function toggleSettings() {
+  alert('Settings: configure host/port, speed/temp/pressure units, tire low threshold, keep screen on, auto-reconnect interval.\n\n(Open the app to access the full settings panel.)');
 }
 
-/* ── Phone page builders ── */
-function dashHtml(v) {
-  return `
-    <div class="gauge-row">
-      ${gaugeBox('BOOST', displayBoost(v.boostKpa || (v.boostPsi * 6.89476 + 101.325)), boostLabel())}
-      ${gaugeBox('RPM',   ri(v.rpm),      '',    true)}
-      ${gaugeBox('SPEED', ri(displaySpeed(v.speedKph)), speedLabel())}
-    </div>
-    ${infoRow([['THROTTLE', pct(v.throttlePct)],['BRAKE', f1(v.brakePressure)],['AWD', v.frontRearSplit],['TORQUE', ri(v.torqueAtTrans)+' Nm']])}
-    ${infoRow([['OIL', displayTemp(v.oilTempC)+tempLabel()],['COOLANT', displayTemp(v.coolantTempC)+tempLabel()],['INTAKE', displayTemp(v.intakeTempC)+tempLabel()],['BATT', f1(v.batteryVoltage)+'V']])}
-    ${infoRow([['LAT G', f2(v.lateralG)],['LON G', f2(v.longitudinalG)],['STEER', f1(v.steeringAngle)+'°'],['YAW', f1(v.yawRate)]])}
-    ${infoRow([['FUEL', pct(v.fuelLevelPct)],['LOAD', pct(v.calcLoad)],['AFR', f2(v.commandedAfr)],['FPS', ri(v.framesPerSecond)]])}
-    ${infoRow([
-      ['ODO',  v.odometerKm  >= 0 ? v.odometerKm+' km'              : '--'],
-      ['SOC',  v.batterySoc  >= 0 ? ri(v.batterySoc)+'%'            : '--'],
-      ['12V',  f1(v.batteryVoltage)+'V'],
-      ['MODE', (v.driveMode||'Normal').toUpperCase()]
-    ])}`;
+// ── Peak reset ───────────────────────────────────────────────────────────
+function resetPeaks() {
+  document.querySelectorAll('.gf-peak').forEach(el => el.textContent = '↑ 0.00');
 }
 
-function awdHtml(v) {
-  const avgF = (v.wheelSpeedFL + v.wheelSpeedFR) / 2;
-  const avgR = (v.wheelSpeedRL + v.wheelSpeedRR) / 2;
-  const lp   = v.totalRearTorque > 0 ? v.awdLeftTorque / v.totalRearTorque : 0.5;
-  return `
-    <div class="sec-lbl">FRONT AXLE</div>
-    <div class="axle-row">
-      ${wheelBox('FL', f1(v.wheelSpeedFL))}
-      <div class="split-mid"><div class="split-val">${v.frontRearSplit}</div><div class="split-sub">FRONT / REAR</div></div>
-      ${wheelBox('FR', f1(v.wheelSpeedFR))}
-    </div>
-    <div class="sec-lbl">▼ PTU: ${displayTemp(v.ptuTempC)}${tempLabel()} ▼</div>
-    <div style="display:flex;justify-content:space-between;max-width:300px;margin:0 auto;font-size:10px;color:var(--dim)">
-      <span>L ${v.awdLeftTorque} Nm</span><span>${v.awdRightTorque} Nm R</span>
-    </div>
-    <div class="torque-bar">
-      <div class="tb-l" style="flex:${lp}"></div>
-      <div class="tb-r" style="flex:${1-lp}"></div>
-    </div>
-    <div class="axle-row">
-      ${wheelBox('RL', f1(v.wheelSpeedRL))}
-      <div class="split-mid">
-        <div style="font-size:11px;color:var(--dim)">RDU: ${displayTemp(v.rduTempC)}${tempLabel()}</div>
-        <div class="split-sub">Max: ${v.awdMaxTorque} Nm</div>
-      </div>
-      ${wheelBox('RR', f1(v.wheelSpeedRR))}
-    </div>
-    <div class="sec-lbl">REAR AXLE</div>
-    ${infoRow([['F/R DELTA', f1(avgR-avgF)],['L/R DELTA', f1(v.wheelSpeedRR-v.wheelSpeedRL)],['REAR BIAS', v.rearLeftRightBias]])}`;
+// ── Animated sim data ────────────────────────────────────────────────────
+let t = 0;
+function sim() {
+  t += 0.04;
+  const rpm    = Math.round(4200 + Math.sin(t * 0.7) * 1200);
+  const speed  = Math.round(80   + Math.sin(t * 0.5) * 15);
+  const boost  = (12.4 + Math.sin(t * 1.1) * 2.8).toFixed(1);
+  const thr    = Math.max(0, Math.min(100, Math.round(70 + Math.sin(t * 0.8) * 25)));
+  const latG   = (Math.sin(t * 0.6) * 0.65).toFixed(2);
+  const lonG   = (Math.cos(t * 0.9) * 0.55).toFixed(2);
+  const yaw    = (Math.sin(t * 0.6) * 18).toFixed(1);
+  const steer  = (Math.sin(t * 0.6) * 72).toFixed(1);
+  const afr    = (14.7 + Math.sin(t * 1.5) * 0.15).toFixed(2);
+  const lambda = (afr / 14.7).toFixed(3);
+
+  // Dash
+  setV('rpmVal',    rpm.toLocaleString());
+  setV('speedVal',  speed);
+  setV('boostVal',  boost > 0 ? '+' + boost : boost);
+  setV('throttleVal', thr + '%');
+  setV('latGVal',   (latG > 0 ? '+' : '') + latG + 'g');
+  setV('lonGVal',   (lonG > 0 ? '+' : '') + lonG + 'g');
+  const rearPct = Math.max(5, Math.min(60, Math.round(30 + thr * 0.3)));
+  const frntPct = 100 - rearPct;
+  setV('awdSplit',  frntPct + '/' + rearPct);
+  document.getElementById('awdBarFront').style.flex = frntPct;
+  document.getElementById('awdBarRear').style.flex  = rearPct;
+
+  // Power
+  setV('afrActVal', afr);
+  setV('afrDesVal', '14.70');
+  setV('lambdaVal', lambda);
+  setV('wgdcVal',   Math.round(thr * 0.95) + '%');
+
+  // Chassis
+  const ws = (speed * 0.277778).toFixed(1);
+  setV('wfl', ws); setV('wfr', ws);
+  setV('wrl', (speed * 0.277778 + 1.1).toFixed(1));
+  setV('wrr', (speed * 0.277778 + 1.4).toFixed(1));
+  setV('awdSplitC', frntPct + '/' + rearPct);
+  setV('latGC',  (latG > 0 ? '+' : '') + latG);
+  setV('lonGC',  (lonG > 0 ? '+' : '') + lonG);
+  setV('yawC',   yaw + '°/s');
+  setV('steerC', (steer > 0 ? '+' : '') + steer + '°');
+
+  // Gear display removed in v1.2.5 (0x230 does not broadcast on this vehicle)
 }
 
-function perfHtml(v) {
-  return `
-    <div class="info-row">
-      ${cell('LAT G',    f2(v.lateralG)+' g')}
-      ${cell('LON G',    f2(v.longitudinalG)+' g')}
-      ${cell('COMBINED', f2(v.combinedG)+' g')}
-    </div>
-    <div class="info-row">
-      ${cell('STEER', f1(v.steeringAngle)+'°')}
-      ${cell('YAW',   f1(v.yawRate)+'°/s')}
-      ${cell('SPEED', ri(displaySpeed(v.speedKph))+' '+speedLabel())}
-    </div>
-    <div class="info-row">
-      ${cell('PEAK LAT',   f2(v.peakLateralG)+' g',  'gold')}
-      ${cell('PEAK LON',   f2(v.peakLongitudinalG)+' g','gold')}
-      ${cell('PEAK BOOST', f1(v.peakBoostPsi)+' PSI','gold')}
-      ${cell('PEAK RPM',   ri(v.peakRpm),             'gold')}
-    </div>
-    <div class="info-row">
-      ${cell('THROTTLE', pct(v.throttlePct))}
-      ${cell('BRAKE',    f1(v.brakePressure)+' bar')}
-    </div>
-    <button class="reset-btn" id="reset-peaks-btn">RESET PEAKS ↺</button>`;
+function setV(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
 }
 
-function tempsHtml(v) {
-  const oilCls  = v.oilTempC  > 110 ? 'hot' : v.oilTempC  > 100 ? 'warm' : '';
-  const clntCls = v.coolantTempC > 110 ? 'hot' : v.coolantTempC > 100 ? 'warm' : '';
-  const rduCls  = v.rduTempC  > 110 ? 'hot' : v.rduTempC  > 100 ? 'warm' : '';
-  const ptuCls  = v.ptuTempC  > 110 ? 'hot' : v.ptuTempC  > 100 ? 'warm' : '';
-  const catCls  = v.catalyticTempC > 700 ? 'hot' : v.catalyticTempC > 500 ? 'warm' : '';
-  const tl = tempLabel();
-  return `
-    <div class="gauge-row">
-      ${tempGauge('ENGINE OIL',   displayTemp(v.oilTempC),         tl, oilCls)}
-      ${tempGauge('COOLANT',      displayTemp(v.coolantTempC),     tl, clntCls)}
-    </div>
-    <div style="height:8px"></div>
-    <div class="gauge-row">
-      ${tempGauge('INTAKE AIR',   displayTemp(v.intakeTempC),      tl)}
-      ${tempGauge('AMBIENT',      displayTemp(v.ambientTempC),     tl)}
-    </div>
-    <div style="height:8px"></div>
-    <div class="gauge-row">
-      ${tempGauge('RDU (REAR DIFF)',  displayTemp(v.rduTempC),     tl, rduCls)}
-      ${tempGauge('PTU (TRANSFER)',   displayTemp(v.ptuTempC),     tl, ptuCls)}
-    </div>
-    <div style="height:8px"></div>
-    <div class="gauge-row">
-      ${tempGauge('CHARGE AIR',   displayTemp(v.chargeAirTempC),  tl)}
-      ${tempGauge('CATALYTIC',    displayTemp(v.catalyticTempC),  tl, catCls)}
-    </div>
-    <div style="height:8px"></div>
-    <div class="gauge-row">
-      ${v.cabinTempC > -90
-        ? tempGauge('CABIN',    displayTemp(v.cabinTempC),    tl, '', '(BCM)')
-        : tempGauge('CABIN',    '--',                          tl, 'dim', '(BCM — polling)')}
-      ${v.batteryTempC > -90
-        ? tempGauge('BATT TEMP', displayTemp(v.batteryTempC), tl, v.batteryTempC > 60 ? 'hot' : v.batteryTempC > 40 ? 'warm' : '', '(BCM)')
-        : tempGauge('BATT TEMP', '--',                         tl, 'dim', '(BCM — polling)')}
-    </div>
-    ${v.isReadyToRace ? '<div class="rtr">READY TO RACE</div>' : ''}`;
-}
-
-function tuneHtml(v) {
-  return `
-    <div class="gauge-row">
-      ${gaugeBox('AFR ACT', f2(v.afrActual),      ':1')}
-      ${gaugeBox('AFR DES', f1(v.afrDesired),      ':1')}
-      ${gaugeBox('LAMBDA',  f3(v.lambdaActual),    'λ')}
-    </div>
-    ${infoRow([['ETC ACT', f1(v.etcAngleActual)+'°'],['ETC DES', v.etcAngleDesired+'°'],['WGDC', ri(v.wgdcDesired)+'%']])}
-    ${infoRow([['TIP ACT', f1(v.tipActualPsi)+' PSI'],['TIP DES', v.tipDesiredPsi+' PSI'],['KR CYL1', f2(v.ignCorrCyl1)+'°']])}
-    ${infoRow([['LOAD', pct(v.calcLoad)],['TIMING', f1(v.timingAdvance)+'°'],['OAR', ri(v.octaneAdjustRatio*100)+'%']])}
-    ${infoRow([['SHORT FT', f1(v.shortFuelTrim)+'%'],['LONG FT', f1(v.longFuelTrim)+'%'],['FUEL RAIL', ri(v.fuelRailPsi)+' PSI']])}
-    ${infoRow([['VCT-I', f1(v.vctIntakeAngle)+'°'],['VCT-E', f1(v.vctExhaustAngle)+'°'],['CHG AIR', toF(v.chargeAirTempC)+'°F']])}
-    ${infoRow([['CAT TEMP', toF(v.catalyticTempC)+'°F'],['OIL LIFE', v.oilLifePct>=0?pct(v.oilLifePct):'--'],['BARO', ri(v.barometricPressure)+' kPa']])}`;
-}
-
-function tpmsHtml(v) {
-  if (!v.hasTpmsData) return `
-    <div style="text-align:center;padding:32px;color:var(--dim)">Waiting for TPMS data…</div>
-    <div style="text-align:center;font-size:12px;color:var(--dim)">Passive CAN 0x340 — MS-CAN bridged via GWM</div>`;
-  const tireBox = (lbl, psi) => {
-    const disp = displayTire(psi);
-    const low  = isTireLow(psi);
-    return `
-    <div class="tire-box${low?' low':''}">
-      <div class="tire-lbl">${lbl}</div>
-      <div class="tire-psi">${typeof disp === 'number' ? (Number.isInteger(disp) ? disp : disp) : disp}</div>
-      <div class="tire-unit">${tireLabel()}</div>
-    </div>`;
-  };
-  return `
-    <div class="tpms-hd">TPMS+</div>
-    <div class="tpms-sub">Passive CAN 0x340 — MS-CAN bridged via GWM. Low ≤ ${settings.tireLowPsi} PSI.</div>
-    <div class="tire-row">
-      ${tireBox('LF', v.tirePressLF)}
-      ${tireBox('RF', v.tirePressRF)}
-    </div>
-    <div class="sec-lbl">FRONT</div>
-    <div style="height:8px"></div>
-    <div class="tire-row">
-      ${tireBox('LR', v.tirePressLR)}
-      ${tireBox('RR', v.tirePressRR)}
-    </div>
-    <div class="sec-lbl">REAR</div>
-    <div style="height:8px"></div>
-    ${infoRow([['SPREAD', f1(v.maxTirePressSpread)+' PSI'], ...( v.oilLifePct>=0 ? [['OIL LIFE', pct(v.oilLifePct)]] : [] )])}`;
-}
-
-function modeBtnCls(mode, target) {
-  if (mode !== target) return '';
-  return {Normal:'active-n', Sport:'active-s', Track:'active-t', Drift:'active-d'}[target] || '';
-}
-function escBtnCls(esc, target) {
-  if (esc !== target) return '';
-  return {'ESC On':'active-on','ESC Sport':'active-sport','ESC Off':'active-off'}[target] || '';
-}
-
-function ctrlHtml(v) {
-  const isFw = settings.firmware === 'openRS_';
-  const featTitle = isFw ? 'FEATURES — openrs-fw active' : 'FEATURES — requires openrs-fw v1.0';
-  return `
-    <div class="ctrl-section">
-      <div class="ctrl-title">DRIVE MODE</div>
-      <div class="mode-btn-row">
-        <button class="mode-btn ${modeBtnCls(v.driveMode,'Normal')}"  data-mode="Normal">N</button>
-        <button class="mode-btn ${modeBtnCls(v.driveMode,'Sport')}"   data-mode="Sport">S</button>
-        <button class="mode-btn ${modeBtnCls(v.driveMode,'Track')}"   data-mode="Track">T</button>
-        <button class="mode-btn ${modeBtnCls(v.driveMode,'Drift')}"   data-mode="Drift">D</button>
-      </div>
-      <div class="ctrl-row" style="margin-top:6px;font-size:10px;color:var(--dim);text-align:center">
-        Use the steering wheel button to change drive mode
-      </div>
-    </div>
-    <div class="ctrl-section">
-      <div class="ctrl-title">ESC STATUS</div>
-      <div class="esc-btn-row">
-        <button class="esc-btn ${escBtnCls(v.escStatus,'ESC On')}"    data-esc="ESC On">ON</button>
-        <button class="esc-btn ${escBtnCls(v.escStatus,'ESC Sport')}" data-esc="ESC Sport">SPORT</button>
-        <button class="esc-btn ${escBtnCls(v.escStatus,'ESC Off')}"   data-esc="ESC Off">OFF</button>
-      </div>
-      <div style="font-size:10px;color:var(--dim);margin-top:4px;text-align:center">Live CAN state — use car console to change</div>
-    </div>
-    <div class="ctrl-section">
-      <div class="ctrl-title">${featTitle}</div>
-      <div class="toggle-row" data-toggle="launchControl">
-        <div>
-          <div class="toggle-name" style="color:${isFw?'var(--txt)':'var(--dim)'}">Launch Control</div>
-          <div class="toggle-sub">Arms LC sequence — foot on clutch + WOT</div>
-        </div>
-        <div class="toggle-pill ${isFw&&v.launchControl?'on':''} ${isFw?'':'fw-locked'}" data-toggle="launchControl" data-fw-required="true"></div>
-      </div>
-      <div class="toggle-row" data-toggle="assKill">
-        <div>
-          <div class="toggle-name" style="color:${isFw?'var(--txt)':'var(--dim)'}">Auto Start/Stop Kill</div>
-          <div class="toggle-sub">Prevents engine from stopping at idle</div>
-        </div>
-        <div class="toggle-pill ${isFw&&v.assKill?'on':''} ${isFw?'':'fw-locked'}" data-toggle="assKill" data-fw-required="true"></div>
-      </div>
-      ${isFw
-        ? `<div style="font-size:10px;color:var(--grn);margin-top:6px;text-align:center">✓ openRS_ firmware detected — features unlocked</div>`
-        : `<div style="font-size:10px;color:var(--dim);margin-top:6px;text-align:center">⚡ Flash openrs-fw to enable CAN write, LC, Auto S/S kill &amp; more</div>`
-      }
-    </div>
-    <div class="conn-info">
-      <div class="conn-row"><span class="conn-key">TRANSPORT</span><span class="conn-val" style="color:var(--accent)">${v.transport}</span></div>
-      <div class="conn-row"><span class="conn-key">WiCAN IP</span><span class="conn-val">192.168.80.1</span></div>
-      <div class="conn-row"><span class="conn-key">PORT</span><span class="conn-val">80</span></div>
-      <div class="conn-row"><span class="conn-key">PROTOCOL</span><span class="conn-val">WebSocket SLCAN</span></div>
-      <div class="conn-row"><span class="conn-key">CAN SPEED</span><span class="conn-val">500 kbps</span></div>
-      <div class="conn-row"><span class="conn-key">FIRMWARE</span><span class="conn-val" style="color:${isFw?'var(--grn)':'var(--dim)'}">${settings.firmware}</span></div>
-    </div>`;
-}
-
-/* ── AA page builders ── */
-function aaDash(v) {
-  const tl = tempLabel();
-  return `
-    <div class="aa-gauge-row">
-      ${gaugeBox('BOOST', displayBoost(v.boostKpa || (v.boostPsi * 6.89476 + 101.325)), boostLabel())}
-      ${gaugeBox('RPM',   ri(v.rpm),                              '',          true)}
-      ${gaugeBox('SPEED', ri(displaySpeed(v.speedKph)),           speedLabel())}
-    </div>
-    <div class="aa-info-row">
-      ${cell('THROTTLE', pct(v.throttlePct))}
-      ${cell('BRAKE',    f1(v.brakePressure))}
-      ${cell('AWD',      v.frontRearSplit)}
-      ${cell('TORQUE',   ri(v.torqueAtTrans)+' Nm')}
-    </div>
-    <div class="aa-info-row">
-      ${cell('OIL',     displayTemp(v.oilTempC)+tl)}
-      ${cell('COOLANT', displayTemp(v.coolantTempC)+tl)}
-      ${cell('INTAKE',  displayTemp(v.intakeTempC)+tl)}
-      ${cell('BATT',    f1(v.batteryVoltage)+'V')}
-    </div>
-    <div class="aa-info-row">
-      ${cell('LAT G', f2(v.lateralG))}
-      ${cell('LON G', f2(v.longitudinalG))}
-      ${cell('STEER', f1(v.steeringAngle)+'°')}
-      ${cell('YAW',   f1(v.yawRate))}
-      ${cell('FUEL',  pct(v.fuelLevelPct))}
-      ${cell('LOAD',  pct(v.calcLoad))}
-      ${cell('AFR',   f2(v.commandedAfr))}
-      ${cell('FPS',   ri(v.framesPerSecond))}
-    </div>
-    <div class="aa-info-row">
-      ${cell('ODO',  v.odometerKm  >= 0 ? v.odometerKm+' km'   : '--')}
-      ${cell('SOC',  v.batterySoc  >= 0 ? ri(v.batterySoc)+'%' : '--')}
-      ${cell('12V',  f1(v.batteryVoltage)+'V')}
-      ${cell('MODE', (v.driveMode||'Normal').toUpperCase())}
-    </div>`;
-}
-
-function aaAwd(v) {
-  const avgF = (v.wheelSpeedFL + v.wheelSpeedFR) / 2;
-  const avgR = (v.wheelSpeedRL + v.wheelSpeedRR) / 2;
-  const lp   = v.totalRearTorque > 0 ? v.awdLeftTorque / v.totalRearTorque : 0.5;
-  return `
-    <div class="sec-lbl">FRONT AXLE</div>
-    <div class="aa-axle">
-      ${wheelBox('FL', f1(v.wheelSpeedFL))}
-      <div class="split-mid"><div class="split-val">${v.frontRearSplit}</div><div class="split-sub">FRONT / REAR</div></div>
-      ${wheelBox('FR', f1(v.wheelSpeedFR))}
-    </div>
-    <div class="sec-lbl">▼ PTU: ${displayTemp(v.ptuTempC)}${tempLabel()} ▼</div>
-    <div style="display:flex;justify-content:space-between;max-width:400px;margin:0 auto;font-size:11px;color:var(--dim)">
-      <span>L ${v.awdLeftTorque} Nm</span><span>${v.awdRightTorque} Nm R</span>
-    </div>
-    <div class="torque-bar" style="max-width:400px">
-      <div class="tb-l" style="flex:${lp}"></div>
-      <div class="tb-r" style="flex:${1-lp}"></div>
-    </div>
-    <div class="aa-axle">
-      ${wheelBox('RL', f1(v.wheelSpeedRL))}
-      <div class="split-mid">
-        <div style="font-size:13px;color:var(--dim)">RDU: ${displayTemp(v.rduTempC)}${tempLabel()}</div>
-        <div class="split-sub">Max: ${v.awdMaxTorque} Nm</div>
-      </div>
-      ${wheelBox('RR', f1(v.wheelSpeedRR))}
-    </div>
-    <div class="sec-lbl">REAR AXLE</div>
-    <div class="aa-info-row">
-      ${cell('F/R DELTA', f1(avgR-avgF))}
-      ${cell('L/R DELTA', f1(v.wheelSpeedRR-v.wheelSpeedRL))}
-      ${cell('REAR BIAS', v.rearLeftRightBias)}
-    </div>`;
-}
-
-function aaPerf(v) {
-  return `
-    <div class="aa-info-row">
-      ${cell('LAT G',    f2(v.lateralG)+' g')}
-      ${cell('LON G',    f2(v.longitudinalG)+' g')}
-      ${cell('COMBINED', f2(v.combinedG)+' g')}
-      ${cell('STEER',    f1(v.steeringAngle)+'°')}
-      ${cell('YAW',      f1(v.yawRate)+'°/s')}
-      ${cell('SPEED',    ri(displaySpeed(v.speedKph))+' '+speedLabel())}
-    </div>
-    <div class="aa-info-row">
-      ${cell('PEAK LAT',   f2(v.peakLateralG)+' g',                                         'gold')}
-      ${cell('PEAK LON',   f2(v.peakLongitudinalG)+' g',                                    'gold')}
-      ${cell('PEAK BOOST', displayBoost(v.peakBoostPsi * 6.89476 + 101.325)+' '+boostLabel(),'gold')}
-      ${cell('PEAK RPM',   ri(v.peakRpm),                                                    'gold')}
-      ${cell('THROTTLE',   pct(v.throttlePct))}
-      ${cell('BRAKE',      f1(v.brakePressure)+' bar')}
-    </div>
-    <button class="reset-btn" id="aa-reset-btn">RESET PEAKS ↺</button>`;
-}
-
-function aaTemps(v) {
-  const oilCls  = v.oilTempC  > 110 ? 'hot' : v.oilTempC  > 100 ? 'warm' : '';
-  const clntCls = v.coolantTempC > 110 ? 'hot' : v.coolantTempC > 100 ? 'warm' : '';
-  const rduCls  = v.rduTempC  > 110 ? 'hot' : v.rduTempC  > 100 ? 'warm' : '';
-  const ptuCls  = v.ptuTempC  > 110 ? 'hot' : v.ptuTempC  > 100 ? 'warm' : '';
-  const catCls  = v.catalyticTempC > 700 ? 'hot' : v.catalyticTempC > 500 ? 'warm' : '';
-  const tl = tempLabel();
-  return `
-    <div class="aa-temp-row">
-      ${tempGauge('ENGINE OIL',  displayTemp(v.oilTempC),       tl, oilCls)}
-      ${tempGauge('COOLANT',     displayTemp(v.coolantTempC),   tl, clntCls)}
-      ${tempGauge('INTAKE AIR',  displayTemp(v.intakeTempC),    tl)}
-      ${tempGauge('AMBIENT',     displayTemp(v.ambientTempC),   tl)}
-    </div>
-    <div style="height:10px"></div>
-    <div class="aa-temp-row">
-      ${tempGauge('RDU (REAR DIFF)', displayTemp(v.rduTempC),       tl, rduCls)}
-      ${tempGauge('PTU (TRANSFER)',  displayTemp(v.ptuTempC),       tl, ptuCls)}
-      ${tempGauge('CHARGE AIR',     displayTemp(v.chargeAirTempC), tl)}
-      ${tempGauge('CATALYTIC',      displayTemp(v.catalyticTempC), tl, catCls)}
-    </div>
-    <div style="height:10px"></div>
-    <div class="aa-temp-row">
-      ${v.cabinTempC > -90
-        ? tempGauge('CABIN',     displayTemp(v.cabinTempC),    tl, '', '(BCM)')
-        : tempGauge('CABIN',     '--',                          tl, 'dim', '(BCM — polling)')}
-      ${v.batteryTempC > -90
-        ? tempGauge('BATT TEMP', displayTemp(v.batteryTempC),  tl, v.batteryTempC > 60 ? 'hot' : v.batteryTempC > 40 ? 'warm' : '', '(BCM)')
-        : tempGauge('BATT TEMP', '--',                          tl, 'dim', '(BCM — polling)')}
-    </div>
-    ${v.isReadyToRace ? '<div class="rtr">READY TO RACE</div>' : ''}`;
-}
-
-function aaTune(v) {
-  return `
-    <div class="aa-gauge-row">
-      ${gaugeBox('AFR ACT', f2(v.afrActual),   ':1')}
-      ${gaugeBox('AFR DES', f1(v.afrDesired),  ':1')}
-      ${gaugeBox('LAMBDA',  f3(v.lambdaActual),'λ')}
-    </div>
-    <div class="aa-info-row">
-      ${cell('ETC ACT',  f1(v.etcAngleActual)+'°')}
-      ${cell('ETC DES',  v.etcAngleDesired+'°')}
-      ${cell('WGDC',     ri(v.wgdcDesired)+'%')}
-      ${cell('TIP ACT',  f1(v.tipActualPsi)+' PSI')}
-      ${cell('TIP DES',  v.tipDesiredPsi+' PSI')}
-      ${cell('KR CYL1',  f2(v.ignCorrCyl1)+'°')}
-    </div>
-    <div class="aa-info-row">
-      ${cell('LOAD',      pct(v.calcLoad))}
-      ${cell('TIMING',    f1(v.timingAdvance)+'°')}
-      ${cell('OAR',       ri(v.octaneAdjustRatio*100)+'%')}
-      ${cell('SHORT FT',  f1(v.shortFuelTrim)+'%')}
-      ${cell('LONG FT',   f1(v.longFuelTrim)+'%')}
-      ${cell('FUEL RAIL', ri(v.fuelRailPsi)+' PSI')}
-    </div>
-    <div class="aa-info-row">
-      ${cell('VCT-I',    f1(v.vctIntakeAngle)+'°')}
-      ${cell('VCT-E',    f1(v.vctExhaustAngle)+'°')}
-      ${cell('CHG AIR',  displayTemp(v.chargeAirTempC)+tempLabel())}
-      ${cell('CAT TEMP', displayTemp(v.catalyticTempC)+tempLabel())}
-      ${cell('OIL LIFE', v.oilLifePct>=0?pct(v.oilLifePct):'--')}
-      ${cell('BARO',     ri(v.barometricPressure)+' kPa')}
-    </div>`;
-}
-
-function aaTpms(v) {
-  if (!v.hasTpmsData) return `
-    <div style="text-align:center;padding:32px;color:var(--dim)">Waiting for TPMS data…</div>
-    <div style="text-align:center;font-size:12px;color:var(--dim)">Passive CAN 0x340 — MS-CAN bridged via GWM</div>`;
-  const tireBox = (lbl, psi) => {
-    const disp = displayTire(psi);
-    const low  = isTireLow(psi);
-    return `<div class="tire-box${low?' low':''}">
-      <div class="tire-lbl">${lbl}</div>
-      <div class="tire-psi">${disp}</div>
-      <div class="tire-unit">${tireLabel()}</div>
-    </div>`;
-  };
-  return `
-    <div class="tpms-hd">TPMS+</div>
-    <div class="tpms-sub">Passive CAN 0x340 — MS-CAN bridged via GWM</div>
-    <div class="aa-tire-row">
-      ${tireBox('LF', v.tirePressLF)}
-      ${tireBox('RF', v.tirePressRF)}
-      ${tireBox('LR', v.tirePressLR)}
-      ${tireBox('RR', v.tirePressRR)}
-    </div>
-    <div style="display:flex;gap:6px;margin-top:4px">
-      <div style="flex:1;text-align:center;font-size:11px;color:var(--dim)">FRONT ←→</div>
-      <div style="flex:1;text-align:center;font-size:11px;color:var(--dim)">→ REAR</div>
-    </div>
-    <div class="aa-info-row" style="margin-top:8px">
-      ${cell('SPREAD', f1(v.maxTirePressSpread)+' PSI')}
-      ${v.oilLifePct>=0 ? cell('OIL LIFE', pct(v.oilLifePct)) : ''}
-    </div>`;
-}
-
-function aaDiag(v) {
-  // Reuse diagHtml but swap the snap-btn ID to avoid DOM ID clash with phone tab
-  return diagHtml(v).replace('id="snap-btn"', 'id="aa-snap-btn"');
-}
-
-function aaCtrl(v) {
-  const isFw = settings.firmware === 'openRS_';
-  const featTitle = isFw ? 'FEATURES — openrs-fw active' : 'FEATURES — requires openrs-fw';
-  return `
-    <div class="aa-ctrl-grid">
-      <div class="aa-ctrl-panel">
-        <div class="ctrl-title">DRIVE MODE</div>
-        <div class="aa-mode-btn-row">
-          <button class="aa-mode-btn ${modeBtnCls(v.driveMode,'Normal')}"  data-mode="Normal">N</button>
-          <button class="aa-mode-btn ${modeBtnCls(v.driveMode,'Sport')}"   data-mode="Sport">S</button>
-          <button class="aa-mode-btn ${modeBtnCls(v.driveMode,'Track')}"   data-mode="Track">T</button>
-          <button class="aa-mode-btn ${modeBtnCls(v.driveMode,'Drift')}"   data-mode="Drift">D</button>
-        </div>
-        <div style="font-size:10px;color:var(--dim);margin-top:6px;text-align:center">Use steering wheel button to change</div>
-      </div>
-      <div class="aa-ctrl-panel">
-        <div class="ctrl-title">ESC STATUS</div>
-        <div class="aa-esc-btn-row">
-          <button class="aa-esc-btn ${escBtnCls(v.escStatus,'ESC On')}"    data-esc="ESC On">ON</button>
-          <button class="aa-esc-btn ${escBtnCls(v.escStatus,'ESC Sport')}" data-esc="ESC Sport">SPORT</button>
-          <button class="aa-esc-btn ${escBtnCls(v.escStatus,'ESC Off')}"   data-esc="ESC Off">OFF</button>
-        </div>
-        <div style="font-size:10px;color:var(--dim);margin-top:6px;text-align:center">Live CAN state — use car console to change</div>
-      </div>
-    </div>
-    <div class="aa-ctrl-grid" style="margin-top:12px">
-      <div class="aa-ctrl-panel">
-        <div class="ctrl-title">${featTitle}</div>
-        <div class="aa-toggle-row" data-toggle="launchControl">
-          <span class="aa-toggle-name" style="color:${isFw?'var(--txt)':'var(--dim)'}">Launch Control</span>
-          <div class="aa-toggle-pill ${isFw&&v.launchControl?'on':''} ${isFw?'':'fw-locked'}" data-toggle="launchControl" data-fw-required="true"></div>
-        </div>
-        <div class="aa-toggle-row" data-toggle="assKill">
-          <span class="aa-toggle-name" style="color:${isFw?'var(--txt)':'var(--dim)'}">Auto Start/Stop Kill</span>
-          <div class="aa-toggle-pill ${isFw&&v.assKill?'on':''} ${isFw?'':'fw-locked'}" data-toggle="assKill" data-fw-required="true"></div>
-        </div>
-        ${isFw
-          ? `<div style="font-size:10px;color:var(--grn);margin-top:6px;text-align:center">✓ openRS_ firmware — features unlocked</div>`
-          : `<div style="font-size:10px;color:var(--dim);margin-top:6px;text-align:center">⚡ Flash openrs-fw to enable</div>`
-        }
-      </div>
-      <div class="aa-ctrl-panel">
-        <div class="ctrl-title">CONNECTION</div>
-        <div class="conn-row"><span class="conn-key">TRANSPORT</span><span class="conn-val" style="color:var(--accent)">${v.transport}</span></div>
-        <div class="conn-row"><span class="conn-key">WiCAN IP</span><span class="conn-val">192.168.80.1</span></div>
-        <div class="conn-row"><span class="conn-key">PORT</span><span class="conn-val">80</span></div>
-        <div class="conn-row"><span class="conn-key">PROTOCOL</span><span class="conn-val">WebSocket SLCAN</span></div>
-        <div class="conn-row"><span class="conn-key">CAN</span><span class="conn-val">500 kbps</span></div>
-        <div class="conn-row"><span class="conn-key">FIRMWARE</span><span class="conn-val" style="color:${isFw?'var(--grn)':'var(--dim)'}">${settings.firmware}</span></div>
-      </div>
-    </div>`;
-}
-
-function aaMenu() {
-  const items = [
-    ['dash',  'DASH',  'Boost, RPM, speed, temps, AWD, tune data'],
-    ['awd',   'AWD',   'Front/rear split, wheel speeds, RDU/PTU temps'],
-    ['perf',  'PERF',  'G-forces, peaks, reset'],
-    ['temps', 'TEMPS', 'Oil, coolant, RDU, PTU, charge, catalytic'],
-    ['tune',  'TUNE',  'AFR, timing, fuel trims, VCT, OBD'],
-    ['tpms',  'TPMS',  'Tire pressure & temperature, 4 corners'],
-    ['ctrl',  'CTRL ⚡','Drive mode, ESC, Launch Control, ASS kill, connection'],
-    ['diag',  'DIAG',  'Session stats, frame inventory, snapshot export'],
-  ];
-  return `<ul class="aa-menu-list">${items.map(([k,t,d])=>
-    `<li data-screen="${k}"><span class="aa-menu-tit">${t}</span><span class="aa-menu-desc">${d}</span></li>`
-  ).join('')}</ul>`;
-}
-
-/* ── State & render ── */
-let vs = demo(0);
-let activePhoneTab = 0;
-let aaScreen = 'dash';
-
-function updateHeaders() {
-  const v = vs;
-  const modeLabel = {Normal:'NORMAL',Sport:'SPORT',Track:'TRACK',Drift:'DRIFT'}[v.driveMode] || 'NORMAL';
-  const modeCls   = {Normal:'normal',Sport:'sport',Track:'track',Drift:'drift'}[v.driveMode]  || 'normal';
-  const trCls     = v.transport === 'BLE' ? 'ble' : 'wifi';
-
-  // Phone header
-  document.getElementById('h-mode').textContent = modeLabel;
-  document.getElementById('h-mode').className   = 'ph-badge ' + modeCls;
-  // gear display removed in v1.2.5 (0x230 does not broadcast on this vehicle)
-  document.getElementById('h-esc' ).textContent = v.escStatus;
-  document.getElementById('h-transport').textContent = v.transport;
-  document.getElementById('h-transport').className   = 'transport-badge ' + trCls;
-  document.getElementById('h-conn').textContent = v.isConnected ? '● CONNECTED' : '● OFFLINE';
-  document.getElementById('h-conn').className   = 'ph-conn ' + (v.isConnected ? 'on' : 'off');
-
-  // AA header
-  document.getElementById('aa-mode-badge').textContent = modeLabel;
-  document.getElementById('aa-mode-badge').className   = 'aa-badge ' + modeCls;
-  // gear display removed in v1.2.5
-  document.getElementById('aa-esc' ).textContent = v.escStatus;
-  document.getElementById('aa-transport').textContent = v.transport;
-  document.getElementById('aa-transport').className   = 'transport-badge ' + trCls;
-  const connEl = document.getElementById('aa-conn-badge');
-  connEl.textContent = v.isConnected ? '● CONNECTED' : '○ OFFLINE';
-  connEl.className   = 'aa-conn ' + (v.isConnected ? 'on' : 'off');
-  document.getElementById('aa-fps').textContent = Math.round(v.framesPerSecond) + ' fps';
-}
-
-function renderPhone() {
-  updateHeaders();
-  document.getElementById('ph-dash' ).innerHTML = dashHtml(vs);
-  document.getElementById('ph-awd'  ).innerHTML = awdHtml(vs);
-  document.getElementById('ph-perf' ).innerHTML = perfHtml(vs);
-  document.getElementById('ph-temps').innerHTML = tempsHtml(vs);
-  document.getElementById('ph-tune' ).innerHTML = tuneHtml(vs);
-  document.getElementById('ph-tpms' ).innerHTML = tpmsHtml(vs);
-  document.getElementById('ph-ctrl' ).innerHTML = ctrlHtml(vs);
-  document.getElementById('ph-diag' ).innerHTML = diagHtml(vs);
-
-  // DIAG snapshot button
-  const snap = document.getElementById('snap-btn');
-  if (snap) snap.addEventListener('click', () => {
-    snap.innerHTML = '<div style="font-size:13px;font-weight:700;color:var(--dim)">BUILDING SNAPSHOT…</div>';
-    setTimeout(() => {
-      snap.innerHTML = '<div style="font-size:13px;font-weight:700;color:var(--grn)">✓ SNAPSHOT READY — share dialog would open on device</div><div style="font-size:10px;color:var(--dim);margin-top:4px">This is a browser emulator — on Android this opens the system share sheet</div>';
-    }, 1200);
-  });
-}
-
-function renderAA() {
-  updateHeaders();
-  const bodyEl  = document.getElementById('aa-body');
-  const backBar = document.getElementById('aa-back-bar');
-  const stripEl = document.getElementById('aa-strip');
-  const titleEl = document.getElementById('aa-title');
-
-  const isMenu = aaScreen === 'menu';
-  backBar.style.display = (isMenu || aaScreen !== 'dash') ? 'block' : 'none';
-  stripEl.style.display = isMenu ? 'none' : 'flex';
-
-  const brandHtml = '<span class="brand-open">open</span><span class="brand-rs">RS</span><span class="brand-tail">_</span>';
-  const screenMap = {
-    dash:  [brandHtml,                   aaDash(vs)],
-    awd:   ['AWD — GKN Twinster',        aaAwd(vs)],
-    perf:  ['PERF',                      aaPerf(vs)],
-    temps: ['TEMPS',                     aaTemps(vs)],
-    tune:  ['TUNE — OBD',               aaTune(vs)],
-    tpms:  ['TPMS+',                     aaTpms(vs)],
-    ctrl:  ['CTRL ⚡',                    aaCtrl(vs)],
-    diag:  ['DIAG',                      aaDiag(vs)],
-    menu:  [brandHtml + ' <span style="color:var(--dim);font-size:14px">MENU</span>', aaMenu()],
-  };
-
-  const [title, html] = screenMap[aaScreen] || screenMap.dash;
-  titleEl.innerHTML = title;
-  bodyEl.innerHTML  = html;
-
-  stripEl.querySelectorAll('button').forEach(btn => {
-    btn.classList.toggle('active-nav', btn.dataset.screen === aaScreen);
-  });
-
-  if (aaScreen === 'menu') {
-    bodyEl.querySelectorAll('li').forEach(li => {
-      li.addEventListener('click', () => { aaScreen = li.dataset.screen; renderAA(); });
-    });
-  }
-
-  const rBtn = document.getElementById('aa-reset-btn');
-  if (rBtn) rBtn.addEventListener('click', () => {
-    vs = {...vs, peakLateralG:0, peakLongitudinalG:0, peakBoostPsi:0, peakRpm:0};
-    renderAA();
-  });
-
-  // DIAG snapshot button (AA)
-  const aaSnap = document.getElementById('aa-snap-btn');
-  if (aaSnap) aaSnap.addEventListener('click', () => {
-    aaSnap.innerHTML = '<div style="font-size:13px;font-weight:700;color:var(--dim)">BUILDING SNAPSHOT…</div>';
-    setTimeout(() => {
-      aaSnap.innerHTML = '<div style="font-size:13px;font-weight:700;color:var(--grn)">✓ SNAPSHOT READY — share dialog would open on device</div><div style="font-size:10px;color:var(--dim);margin-top:4px">This is a browser emulator — on Android this opens the system share sheet</div>';
-    }, 1200);
-  });
-
-  // CTRL interactivity (AA)
-  bodyEl.querySelectorAll('[data-mode]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      uiState.driveMode = btn.dataset.mode;
-      uiState.bootMode  = btn.dataset.mode;
-      vs = {...vs, driveMode: uiState.driveMode, bootMode: uiState.bootMode};
-      renderAA();
-    });
-  });
-  bodyEl.querySelectorAll('[data-esc]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      uiState.escStatus = btn.dataset.esc;
-      vs = {...vs, escStatus: uiState.escStatus};
-      renderAA();
-    });
-  });
-  bodyEl.querySelectorAll('.aa-toggle-pill').forEach(pill => {
-    pill.addEventListener('click', () => {
-      if (pill.dataset.fwRequired && settings.firmware !== 'openRS_') {
-        // Show a brief flash on the pill to indicate it's locked
-        pill.style.outline = '2px solid var(--red)';
-        setTimeout(() => { pill.style.outline = ''; }, 600);
-        return;
-      }
-      const key = pill.dataset.toggle;
-      uiState[key] = !uiState[key];
-      vs = {...vs, [key]: uiState[key]};
-      renderAA();
-    });
-  });
-}
-
-/* ── Animation loop ── */
-setInterval(() => {
-  const base = demo(Date.now() / 1000);
-  vs = {
-    ...base,
-    driveMode: uiState.driveMode,
-    escStatus: uiState.escStatus,
-    transport: uiState.transport,
-    launchControl: uiState.launchControl,
-    assKill: uiState.assKill,
-    bootMode: uiState.bootMode,
-  };
-  renderPhone();
-  if (!document.getElementById('aa').classList.contains('hidden')) renderAA();
-}, 200);
-
-/* ── Phone tab navigation ── */
-document.getElementById('ph-tabs').addEventListener('click', e => {
-  const tab = e.target.closest('.ph-tab');
-  if (!tab) return;
-  activePhoneTab = parseInt(tab.dataset.tab, 10);
-  document.querySelectorAll('.ph-tab').forEach((t, i) => t.classList.toggle('active', i === activePhoneTab));
-  document.querySelectorAll('.ph-page').forEach((p, i) => p.classList.toggle('active', i === activePhoneTab));
-});
-
-/* ── Phone content interactivity (CTRL + peaks) ── */
-document.querySelector('.ph-content').addEventListener('click', e => {
-  if (e.target.id === 'reset-peaks-btn') {
-    vs = {...vs, peakLateralG:0, peakLongitudinalG:0, peakBoostPsi:0, peakRpm:0};
-    renderPhone(); return;
-  }
-  const modeBtn = e.target.closest('[data-mode]');
-  if (modeBtn && e.target.closest('#ph-ctrl')) {
-    uiState.driveMode = modeBtn.dataset.mode;
-    uiState.bootMode  = modeBtn.dataset.mode;
-    vs = {...vs, driveMode: uiState.driveMode, bootMode: uiState.bootMode};
-    renderPhone(); return;
-  }
-  const escBtn = e.target.closest('[data-esc]');
-  if (escBtn && e.target.closest('#ph-ctrl')) {
-    uiState.escStatus = escBtn.dataset.esc;
-    vs = {...vs, escStatus: uiState.escStatus};
-    renderPhone(); return;
-  }
-  const pill = e.target.closest('.toggle-pill');
-  if (pill) {
-    const key = pill.dataset.toggle;
-    uiState[key] = !uiState[key];
-    vs = {...vs, [key]: uiState[key]};
-    renderPhone(); return;
-  }
-});
-
-/* ── Header interactive: mode badge cycles drive mode ── */
-document.getElementById('h-mode').addEventListener('click', () => {
-  const idx = DRIVE_MODES.indexOf(uiState.driveMode);
-  uiState.driveMode = DRIVE_MODES[(idx + 1) % DRIVE_MODES.length];
-  uiState.bootMode  = uiState.driveMode;
-  vs = {...vs, driveMode: uiState.driveMode, bootMode: uiState.bootMode};
-  renderPhone();
-});
-document.getElementById('aa-mode-badge').addEventListener('click', () => {
-  const idx = DRIVE_MODES.indexOf(uiState.driveMode);
-  uiState.driveMode = DRIVE_MODES[(idx + 1) % DRIVE_MODES.length];
-  uiState.bootMode  = uiState.driveMode;
-  vs = {...vs, driveMode: uiState.driveMode, bootMode: uiState.bootMode};
-  renderAA();
-});
-
-/* ── Header interactive: ESC label cycles ESC mode ── */
-document.getElementById('h-esc').addEventListener('click', () => {
-  const idx = ESC_MODES.indexOf(uiState.escStatus);
-  uiState.escStatus = ESC_MODES[(idx + 1) % ESC_MODES.length];
-  vs = {...vs, escStatus: uiState.escStatus};
-  renderPhone();
-});
-document.getElementById('aa-esc').addEventListener('click', () => {
-  const idx = ESC_MODES.indexOf(uiState.escStatus);
-  uiState.escStatus = ESC_MODES[(idx + 1) % ESC_MODES.length];
-  vs = {...vs, escStatus: uiState.escStatus};
-  renderAA();
-});
-
-/* ── Transport badge cycles WiFi ↔ BLE ── */
-document.getElementById('h-transport').addEventListener('click', () => {
-  uiState.transport = uiState.transport === 'WiFi' ? 'BLE' : 'WiFi';
-  vs = {...vs, transport: uiState.transport};
-  renderPhone();
-});
-document.getElementById('aa-transport').addEventListener('click', () => {
-  uiState.transport = uiState.transport === 'WiFi' ? 'BLE' : 'WiFi';
-  vs = {...vs, transport: uiState.transport};
-  renderAA();
-});
-
-/* ── AA strip ── */
-document.getElementById('aa-strip').addEventListener('click', e => {
-  const btn = e.target.closest('button');
-  if (!btn) return;
-  aaScreen = btn.dataset.screen;
-  renderAA();
-});
-
-/* ── AA back ── */
-document.getElementById('aa-back-btn').addEventListener('click', () => {
-  aaScreen = 'dash';
-  renderAA();
-});
-
-/* ── Phone ↔ AA switcher ── */
-document.getElementById('btn-phone').addEventListener('click', () => {
-  document.getElementById('btn-phone').classList.add('active');
-  document.getElementById('btn-aa').classList.remove('active');
-  document.getElementById('phone').classList.remove('hidden');
-  document.getElementById('aa').classList.add('hidden');
-});
-document.getElementById('btn-aa').addEventListener('click', () => {
-  document.getElementById('btn-aa').classList.add('active');
-  document.getElementById('btn-phone').classList.remove('active');
-  document.getElementById('phone').classList.add('hidden');
-  document.getElementById('aa').classList.remove('hidden');
-  aaScreen = 'dash';
-  renderAA();
-});
-
-/* ── Settings panel ── */
-function syncSettingsUI() {
-  document.getElementById('set-tire-low').value = settings.tireLowPsi;
-  document.querySelectorAll('.seg-group').forEach(grp => {
-    const key = grp.dataset.key;
-    grp.querySelectorAll('.seg-btn').forEach(btn => {
-      btn.classList.toggle('seg-active', btn.dataset.val === String(settings[key]));
-    });
-  });
-}
-function openSettings() {
-  syncSettingsUI();
-  const ov = document.getElementById('settings-overlay');
-  ov.style.display = 'flex';
-}
-function closeSettings() {
-  document.getElementById('settings-overlay').style.display = 'none';
-}
-document.getElementById('h-settings').addEventListener('click', openSettings);
-document.getElementById('aa-settings').addEventListener('click', openSettings);
-document.getElementById('settings-close').addEventListener('click', closeSettings);
-document.getElementById('settings-overlay').addEventListener('click', e => {
-  if (e.target === document.getElementById('settings-overlay')) closeSettings();
-});
-document.getElementById('settings-save').addEventListener('click', () => {
-  settings.tireLowPsi = parseInt(document.getElementById('set-tire-low').value, 10) || 30;
-  closeSettings();
-  renderPhone();
-  if (!document.getElementById('aa').classList.contains('hidden')) renderAA();
-});
-document.getElementById('settings-overlay').addEventListener('click', e => {
-  const btn = e.target.closest('.seg-btn');
-  if (!btn) return;
-  const grp = btn.closest('.seg-group');
-  if (!grp) return;
-  settings[grp.dataset.key] = btn.dataset.val;
-  syncSettingsUI();
-});
-
-/* ── Initial render ── */
-renderPhone();
+setInterval(sim, 80);
+sim();
 </script>
 </body>
 </html>

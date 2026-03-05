@@ -67,7 +67,7 @@ class WiCanConnection(
             BCM_QUERY_TPMS_LF, BCM_QUERY_TPMS_RF, BCM_QUERY_TPMS_LR, BCM_QUERY_TPMS_RR
         )
         /** How long between complete BCM poll cycles (ms). */
-        private const val BCM_POLL_INTERVAL_MS = 30_000L
+        private const val BCM_POLL_INTERVAL_MS = 10_000L
         /** Gap between individual queries in a cycle (ms). */
         private const val BCM_QUERY_GAP_MS     =    300L
         /** Delay after connect before first BCM poll (ms). */
