@@ -1,0 +1,46 @@
+---
+description: openRS_ release checklist — must run before every app version bump and GitHub release
+alwaysApply: false
+globs: android/CHANGELOG.md, android/app/build.gradle.kts
+---
+
+# openRS_ Release Checklist
+
+Every time a new app version is released (versionName bump in `build.gradle.kts`), ALL of the following must be completed **before** committing and pushing:
+
+## 1. CHANGELOG.md
+- `android/CHANGELOG.md` — add a new `## [vX.Y.Z] — YYYY-MM-DD` section at the top
+- Describe every fix and change under clear headings (`### Fixed`, `### Added`, `### Changed`)
+
+## 2. README.md
+- `android/README.md` version badge: `https://img.shields.io/badge/version-X.Y.Z-blue`
+- CAN ID table: reflect any ID additions/removals/corrections
+- OBD polling table: reflect any new/removed PIDs or formula changes
+- Feature descriptions: update if any features were added or removed
+
+## 3. Browser Emulator (`android/browser-emulator/index.html`)
+- **UI matches the app** — if a widget is removed from the app (e.g. gear display), remove it from the emulator too
+- **TPMS decimal places** — `displayTire()` must use `.toFixed(1)` for PSI to match the app
+- **Demo data** — simulated values should reflect real-world plausible readings (e.g. TPMS with slight per-tire variance, fuel from correct source)
+- **DIAG inventory** — `DEMO_INVENTORY` CAN ID entries must reflect correct decoding (e.g. 0x340 = ambient temp only, not TPMS)
+- **Formula comments** — update any inline formula comments if the formula changed
+
+## 4. Firmware (if firmware also changed)
+- `firmware/CHANGELOG.md` or release notes must be written
+- Firmware version bumped in `focusrs.h` (`OPENRS_FW_VERSION`)
+- Compiled binaries must be rebuilt and placed in `firmware/release/`
+- A separate `fw-vX.Y.Z` GitHub release must be created with all 4 flash files
+
+## 5. GitHub Release
+- App release tagged `vX.Y.Z` with `openRS_vX.Y.Z.apk` attached
+- Release notes summarise every user-visible change
+- If firmware changed, reference the firmware release in the app release notes
+
+## Quick Verification
+Before creating the release, ask:
+- [ ] Does `versionName` in `build.gradle.kts` match the CHANGELOG entry?
+- [ ] Does the README version badge match?
+- [ ] Does the emulator match the app UI?
+- [ ] Are any removed widgets also removed from the emulator header?
+- [ ] Are any formula changes reflected in the emulator and README?
+- [ ] Is the APK attached to the GitHub release?

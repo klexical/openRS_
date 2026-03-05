@@ -474,7 +474,6 @@
     <div class="ph-header">
       <span class="ph-brand"><span class="brand-open">open</span><span class="brand-rs">RS</span><span class="brand-tail">_</span></span>
       <span class="ph-badge sport" id="h-mode">SPORT</span>
-      <span class="ph-gear" id="h-gear">3</span>
       <span class="ph-esc" id="h-esc">ESC On</span>
       <span class="transport-badge wifi" id="h-transport">WiFi</span>
       <span class="ph-conn on" id="h-conn">● CONNECTED</span>
@@ -577,7 +576,6 @@
       </div>
       <div class="aa-header-center">
         <span class="aa-badge sport" id="aa-mode-badge">SPORT</span>
-        <span class="aa-gear" id="aa-gear">3</span>
         <span class="aa-esc" id="aa-esc">ESC On</span>
       </div>
       <div class="aa-header-right">
@@ -635,7 +633,7 @@ function displayBoost(kpa) {
 }
 function boostLabel() { return settings.boostUnit; }
 function displayTire(psi) {
-  return settings.tireUnit === 'BAR' ? (psi * 0.0689476).toFixed(2) : psi;
+  return settings.tireUnit === 'BAR' ? (psi * 0.0689476).toFixed(2) : psi.toFixed(1);
 }
 function tireLabel() { return settings.tireUnit; }
 function isTireLow(psi) { return psi < settings.tireLowPsi; }
@@ -716,8 +714,8 @@ function demo(t) {
     vctExhaustAngle: 20 + Math.cos(t*0.2)*3,
     octaneAdjustRatio: 0.98, barometricPressure: 101,
     oilLifePct: 67, ignCorrCyl1: 0.00,
-    tirePressLF: 35, tirePressRF: 34,
-    tirePressLR: 36, tirePressRR: 35,
+    tirePressLF: 35.2 + Math.sin(t*0.07)*0.4, tirePressRF: 34.8 + Math.sin(t*0.09)*0.3,
+    tirePressLR: 36.1 + Math.sin(t*0.06)*0.5, tirePressRR: 35.6 + Math.sin(t*0.08)*0.4,
     tireTempLF: 28, tireTempRF: 27,
     tireTempLR: 29, tireTempRR: 28,
     maxTirePressSpread: 2,
@@ -773,7 +771,8 @@ const DEMO_INVENTORY = [
   { id: '0x1B0', count: 21050, last: 'T1B0 00 00 00 00 00 00 10 00', decoded: 'driveMode=Sport',   issue: null },
   { id: '0x190', count: 67743, last: 'T190 80 00 80 00 80 00 80 00', decoded: 'FL=0.0 FR=0.0 RL=0.0 RR=0.0 km/h', issue: null },
   { id: '0x2C0', count: 18200, last: 'T2C0 00 28 00 23 00 00 00 00', decoded: 'awdL=40Nm awdR=35Nm', issue: null },
-  { id: '0x340', count: 6800,  last: 'T340 00 00 23 22 24 23 00 00', decoded: 'tpms LF=35 RF=34 LR=36 RR=35 PSI', issue: null },
+  { id: '0x340', count: 6800,  last: 'T340 00 00 23 22 24 23 00 58', decoded: 'ambient=22.0°C (PCMmsg17 — TPMS from BCM Mode 22)', issue: null },
+  { id: '0x380', count: 3200,  last: 'T380 90 93 7C FE 60 4B C0 87', decoded: 'fuelPct=101.6 (0x380 Motorola)', issue: null },
   { id: '0x1A4', count: 4100,  last: 'T1A4 00 00 00 00 58 00 00 00', decoded: 'ambient=22.0°C',    issue: null },
 ];
 function diagHtml(v) {
@@ -1311,7 +1310,7 @@ function updateHeaders() {
   // Phone header
   document.getElementById('h-mode').textContent = modeLabel;
   document.getElementById('h-mode').className   = 'ph-badge ' + modeCls;
-  document.getElementById('h-gear').textContent = v.gearDisplay;
+  // gear display removed in v1.2.5 (0x230 does not broadcast on this vehicle)
   document.getElementById('h-esc' ).textContent = v.escStatus;
   document.getElementById('h-transport').textContent = v.transport;
   document.getElementById('h-transport').className   = 'transport-badge ' + trCls;
@@ -1321,7 +1320,7 @@ function updateHeaders() {
   // AA header
   document.getElementById('aa-mode-badge').textContent = modeLabel;
   document.getElementById('aa-mode-badge').className   = 'aa-badge ' + modeCls;
-  document.getElementById('aa-gear').textContent = v.gearDisplay;
+  // gear display removed in v1.2.5
   document.getElementById('aa-esc' ).textContent = v.escStatus;
   document.getElementById('aa-transport').textContent = v.transport;
   document.getElementById('aa-transport').className   = 'transport-badge ' + trCls;
