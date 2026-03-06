@@ -3,7 +3,6 @@ package com.openrs.dash.can
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.EscStatus
 import com.openrs.dash.data.VehicleState
-import com.openrs.dash.diagnostics.DiagnosticLogger
 
 /**
  * Focus RS MK3 HS-CAN passive frame decoder.
@@ -29,11 +28,6 @@ import com.openrs.dash.diagnostics.DiagnosticLogger
  */
 object CanDecoder {
 
-    // ── Instrumentation state (reset each session via resetDebugState()) ─────
-    @Volatile private var lastDriveModeNibble: Int = -1
-    @Volatile private var peakBrakeRaw: Int = 0
-    @Volatile private var lastBrakeRaw: Int = 0
-
     /**
      * Latest 0x420 byte-6 value, used to disambiguate Sport from Track:
      *   0x10 = Normal / Sport  (either mode; use 0x1B0 nibble to tell Normal from Sport)
@@ -43,12 +37,9 @@ object CanDecoder {
      */
     @Volatile private var modeDetail420: Int = 0x10
 
-    /** Call at session start so instrumentation state is fresh per session. */
-    fun resetDebugState() {
-        lastDriveModeNibble = -1
-        peakBrakeRaw        = 0
-        lastBrakeRaw        = 0
-        modeDetail420       = 0x10
+    /** Reset per-session state — call at the start of each new connection. */
+    fun resetSessionState() {
+        modeDetail420 = 0x10
     }
 
     // ── HS-CAN engine / powertrain ──────────────────────────────────────────
@@ -251,18 +242,6 @@ object CanDecoder {
             // Live log confirmed: raw=912 at initial brake application → 22.3%.
             ID_BRAKE_PRESS -> if (n >= 3) {
                 val brakeRaw = (ubyte(data, 1) and 0x0F) shl 8 or ubyte(data, 2)
-                // #region agent log
-                if (brakeRaw > 50 && brakeRaw > peakBrakeRaw) {
-                    // New peak within this brake application
-                    peakBrakeRaw = brakeRaw
-                    DiagnosticLogger.event("DBG_BRAKE",
-                        "0x252 peak raw=$brakeRaw pct=${"%.1f".format(brakeRaw/40.95)}% b1=0x${ubyte(data,1).toString(16).uppercase()} b2=0x${ubyte(data,2).toString(16).uppercase()}")
-                } else if (brakeRaw == 0 && lastBrakeRaw > 0) {
-                    // Brake released — reset peak for next application
-                    peakBrakeRaw = 0
-                }
-                lastBrakeRaw = brakeRaw
-                // #endregion
                 state.copy(brakePressure = brakeRaw / 40.95, lastUpdate = now)
             } else null
 
@@ -345,15 +324,6 @@ object CanDecoder {
                     nibble == 2 -> DriveMode.DRIFT              // DBC VAL_ 432 confirmed
                     else        -> DriveMode.UNKNOWN
                 }
-                // #region agent log
-                if (b4 == 0) {
-                    if (nibble != lastDriveModeNibble || resolvedMode != state.driveMode) {
-                        lastDriveModeNibble = nibble
-                        DiagnosticLogger.event("DBG_DRIVEMODE",
-                            "0x1B0 STEADY nibble=$nibble 0x420=0x${modeDetail420.toString(16).uppercase()} → ${resolvedMode.label}")
-                    }
-                }
-                // #endregion
                 if (b4 != 0) null
                 else state.copy(driveMode = resolvedMode, lastUpdate = now)
             } else null
@@ -363,12 +333,6 @@ object CanDecoder {
             // When b6 changes, immediately re-resolve VehicleState.driveMode.
             ID_DRIVE_MODE_EXT -> if (n >= 7) {
                 val newDetail = ubyte(data, 6)
-                // #region agent log
-                if (newDetail != modeDetail420) {
-                    DiagnosticLogger.event("DBG_DRIVEMODE",
-                        "0x420 b6 changed: 0x${modeDetail420.toString(16).uppercase()} → 0x${newDetail.toString(16).uppercase()}")
-                }
-                // #endregion
                 modeDetail420 = newDetail
                 // Only re-resolve if current mode is Sport or Track (nibble=1 territory)
                 if (state.driveMode == DriveMode.SPORT || state.driveMode == DriveMode.TRACK) {
