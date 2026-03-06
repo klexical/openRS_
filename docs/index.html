@@ -724,6 +724,210 @@ body {
   flex-shrink: 0;
 }
 .version-badge span { color: var(--theme); }
+
+/* ── Settings Overlay ────────────────────────────────────────────────── */
+.settings-overlay {
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.72);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.settings-overlay.open { display: flex; }
+.settings-modal {
+  width: 100%;
+  max-height: calc(100% - 32px);
+  background: var(--surf);
+  border: 1px solid var(--brd);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.settings-modal-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  background: #141414;
+  border-bottom: 1px solid var(--brd);
+  flex-shrink: 0;
+}
+.settings-modal-title-text {
+  font-family: var(--jbm);
+  font-size: 14px;
+  color: var(--frost);
+  letter-spacing: 0.04em;
+}
+.settings-modal-title-text .rs { color: var(--theme); }
+.settings-close-btn {
+  font-size: 16px;
+  color: var(--dim);
+  cursor: pointer;
+  line-height: 1;
+  padding: 2px 4px;
+}
+.settings-close-btn:hover { color: var(--frost); }
+.settings-body {
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.settings-section {
+  background: #141414;
+  border: 1px solid var(--brd);
+  border-radius: 8px;
+  padding: 13px 14px;
+}
+.settings-section-label {
+  font-family: var(--jbm);
+  font-size: 8px;
+  color: var(--dim);
+  letter-spacing: 0.18em;
+  margin-bottom: 12px;
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 11px;
+}
+.settings-row:last-child { margin-bottom: 0; }
+.settings-row-label {
+  font-family: var(--jbm);
+  font-size: 11px;
+  color: var(--frost);
+  flex: 1;
+}
+.seg-picker {
+  display: flex;
+  background: var(--brd);
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+.seg-option {
+  font-family: var(--jbm);
+  font-size: 10px;
+  color: var(--dim);
+  padding: 4px 9px;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+.seg-option.active {
+  background: var(--theme);
+  color: #0A0A0A;
+  font-weight: 700;
+}
+.settings-hint {
+  font-family: var(--jbm);
+  font-size: 9px;
+  color: var(--dim);
+  margin-top: 6px;
+}
+.settings-input {
+  background: var(--surf3);
+  border: 1px solid var(--brd);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-family: var(--jbm);
+  font-size: 12px;
+  color: var(--frost);
+  width: 100%;
+  outline: none;
+  margin-bottom: 8px;
+}
+.settings-input:focus { border-color: var(--theme); }
+.settings-input.short { width: 100px; }
+.settings-input-label {
+  font-family: var(--jbm);
+  font-size: 9px;
+  color: var(--dim);
+  letter-spacing: 0.1em;
+  margin-bottom: 4px;
+}
+.settings-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.settings-switch-label {
+  font-family: var(--jbm);
+  font-size: 11px;
+  color: var(--frost);
+  flex: 1;
+}
+.toggle-track {
+  width: 38px; height: 22px;
+  border-radius: 11px;
+  background: var(--brd);
+  border: 1px solid var(--dim);
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.2s, border-color 0.2s;
+}
+.toggle-track.on {
+  background: var(--theme);
+  border-color: var(--theme);
+}
+.toggle-thumb {
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--dim);
+  position: absolute;
+  top: 2px; left: 2px;
+  transition: left 0.2s, background 0.2s;
+}
+.toggle-track.on .toggle-thumb {
+  left: 18px;
+  background: #0A0A0A;
+}
+.settings-error {
+  font-family: var(--jbm);
+  font-size: 10px;
+  color: #FF4455;
+  margin-top: 4px;
+  display: none;
+}
+.settings-actions {
+  display: flex;
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--brd);
+  background: var(--surf);
+  flex-shrink: 0;
+}
+.settings-btn {
+  flex: 1;
+  padding: 10px;
+  border-radius: 8px;
+  font-family: var(--jbm);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  border: none;
+  outline: none;
+}
+.settings-btn-cancel {
+  background: transparent;
+  border: 1px solid var(--brd);
+  color: var(--dim);
+}
+.settings-btn-cancel:hover { border-color: var(--mid); color: var(--mid); }
+.settings-btn-save {
+  background: var(--theme);
+  color: #0A0A0A;
+}
+.settings-btn-save:hover { opacity: 0.88; }
+#reconnect-interval-row { display: none; }
 </style>
 </head>
 <body>
@@ -741,7 +945,7 @@ body {
         <div class="badge badge-mode sport" id="hdr-mode">SPORT</div>
         <div class="badge badge-esc">ESC ON</div>
         <div class="conn-dot"></div>
-        <div class="gear-btn">⚙</div>
+        <div class="gear-btn" onclick="openSettings()">⚙</div>
       </div>
     </div>
 
@@ -1291,10 +1495,10 @@ body {
       <!-- Settings -->
       <div class="more-section">
         <div class="more-section-title">DISPLAY SETTINGS</div>
-        <div class="settings-row-btn">
+        <div class="settings-row-btn" onclick="openSettings()">
           <div class="settings-row-info">
             <div class="settings-row-sub">Units, TPMS threshold, connection settings</div>
-            <div class="settings-row-val">MPH · °F · PSI</div>
+            <div class="settings-row-val" id="settings-summary">MPH · °F · PSI</div>
           </div>
           <div class="settings-open-lbl">⚙ OPEN</div>
         </div>
@@ -1305,6 +1509,116 @@ body {
 
     <!-- Version badge -->
     <div class="version-badge">openRS_ <span>v2.0</span> · Focus RS MK3 · WiCAN</div>
+
+    <!-- ═══ SETTINGS OVERLAY ═══ -->
+    <div class="settings-overlay" id="settings-overlay" onclick="overlayBgClick(event)">
+      <div class="settings-modal" onclick="event.stopPropagation()">
+
+        <!-- Title bar -->
+        <div class="settings-modal-title">
+          <div class="settings-modal-title-text">open<span class="rs">RS</span>_ Settings</div>
+          <div class="settings-close-btn" onclick="closeSettings()">✕</div>
+        </div>
+
+        <!-- Scrollable body -->
+        <div class="settings-body">
+
+          <!-- UNITS -->
+          <div class="settings-section">
+            <div class="settings-section-label">UNITS</div>
+            <div class="settings-row">
+              <div class="settings-row-label">Speed</div>
+              <div class="seg-picker" id="seg-speed">
+                <div class="seg-option active" onclick="pickSeg('speed','MPH',this)">MPH</div>
+                <div class="seg-option"        onclick="pickSeg('speed','KPH',this)">KPH</div>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-label">Temperature</div>
+              <div class="seg-picker" id="seg-temp">
+                <div class="seg-option active" onclick="pickSeg('temp','°F',this)">°F</div>
+                <div class="seg-option"        onclick="pickSeg('temp','°C',this)">°C</div>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-label">Boost Pressure</div>
+              <div class="seg-picker" id="seg-boost">
+                <div class="seg-option active" onclick="pickSeg('boost','PSI',this)">PSI</div>
+                <div class="seg-option"        onclick="pickSeg('boost','BAR',this)">BAR</div>
+                <div class="seg-option"        onclick="pickSeg('boost','kPa',this)">kPa</div>
+              </div>
+            </div>
+            <div class="settings-row" style="margin-bottom:0">
+              <div class="settings-row-label">Tire Pressure</div>
+              <div class="seg-picker" id="seg-tire">
+                <div class="seg-option active" onclick="pickSeg('tire','PSI',this)">PSI</div>
+                <div class="seg-option"        onclick="pickSeg('tire','BAR',this)">BAR</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TPMS -->
+          <div class="settings-section">
+            <div class="settings-section-label">TPMS</div>
+            <div class="settings-row" style="margin-bottom:4px">
+              <div class="settings-row-label">Low Pressure Warning</div>
+              <input class="settings-input short" id="input-tire-psi" type="number" min="1" max="60" step="0.5" value="32">
+            </div>
+            <div class="settings-hint">Tires below this value show red. Default: 32 PSI</div>
+          </div>
+
+          <!-- DISPLAY -->
+          <div class="settings-section">
+            <div class="settings-section-label">DISPLAY</div>
+            <div class="settings-switch-row">
+              <div class="settings-switch-label">Keep screen on while connected</div>
+              <div class="toggle-track" id="toggle-screen-on" onclick="toggleSwitch('screen-on')">
+                <div class="toggle-thumb"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- WICAN CONNECTION -->
+          <div class="settings-section">
+            <div class="settings-section-label">WICAN CONNECTION</div>
+            <div class="settings-input-label">HOST / IP ADDRESS</div>
+            <input class="settings-input" id="input-host" type="text" value="192.168.80.1" placeholder="192.168.80.1">
+            <div class="settings-input-label">PORT</div>
+            <input class="settings-input" id="input-port" type="number" min="1" max="65535" value="3333" placeholder="3333" style="margin-bottom:4px">
+            <div class="settings-hint">Default: 192.168.80.1:3333</div>
+          </div>
+
+          <!-- AUTO-RECONNECT -->
+          <div class="settings-section">
+            <div class="settings-section-label">AUTO-RECONNECT</div>
+            <div class="settings-switch-row">
+              <div class="settings-switch-label">Auto-reconnect on disconnect</div>
+              <div class="toggle-track" id="toggle-auto-reconnect" onclick="toggleSwitch('auto-reconnect')">
+                <div class="toggle-thumb"></div>
+              </div>
+            </div>
+            <div id="reconnect-interval-row" style="margin-top:12px">
+              <div class="settings-row" style="margin-bottom:4px">
+                <div class="settings-row-label">Retry interval</div>
+                <input class="settings-input short" id="input-reconnect-sec" type="number" min="1" max="60" value="5">
+              </div>
+              <div class="settings-hint">How long to wait between attempts. Default: 5s</div>
+            </div>
+          </div>
+
+          <!-- Validation error -->
+          <div class="settings-error" id="settings-error"></div>
+
+        </div><!-- /settings-body -->
+
+        <!-- Action buttons -->
+        <div class="settings-actions">
+          <button class="settings-btn settings-btn-cancel" onclick="closeSettings()">CANCEL</button>
+          <button class="settings-btn settings-btn-save"   onclick="saveSettings()">SAVE</button>
+        </div>
+      </div><!-- /settings-modal -->
+    </div><!-- /settings-overlay -->
+
   </div><!-- /phone -->
 </div><!-- /page wrapper -->
 
@@ -1402,6 +1716,111 @@ document.addEventListener('DOMContentLoaded', () => {
     btns[i].id = 'mode-' + m;
   });
 });
+
+// ── Settings state ─────────────────────────────────────────────────────────
+const settingsState = {
+  speed: 'MPH', temp: '°F', boost: 'PSI', tire: 'PSI',
+  tirePsi: 32, screenOn: false, autoReconnect: false, reconnectSec: 5,
+  host: '192.168.80.1', port: 3333
+};
+
+function openSettings() {
+  // Sync inputs to current state
+  setActiveSeg('speed',  settingsState.speed);
+  setActiveSeg('temp',   settingsState.temp);
+  setActiveSeg('boost',  settingsState.boost);
+  setActiveSeg('tire',   settingsState.tire);
+  document.getElementById('input-tire-psi').value    = settingsState.tirePsi;
+  document.getElementById('input-host').value        = settingsState.host;
+  document.getElementById('input-port').value        = settingsState.port;
+  document.getElementById('input-reconnect-sec').value = settingsState.reconnectSec;
+  setToggleUI('screen-on',      settingsState.screenOn);
+  setToggleUI('auto-reconnect', settingsState.autoReconnect);
+  document.getElementById('reconnect-interval-row').style.display =
+    settingsState.autoReconnect ? 'block' : 'none';
+  document.getElementById('settings-error').style.display = 'none';
+  document.getElementById('settings-overlay').classList.add('open');
+}
+
+function closeSettings() {
+  document.getElementById('settings-overlay').classList.remove('open');
+}
+
+function overlayBgClick(e) {
+  if (e.target === document.getElementById('settings-overlay')) closeSettings();
+}
+
+// ── Segmented picker ───────────────────────────────────────────────────────
+function pickSeg(key, value, el) {
+  settingsState[key] = value;
+  setActiveSeg(key, value);
+}
+
+function setActiveSeg(key, value) {
+  const picker = document.getElementById('seg-' + key);
+  if (!picker) return;
+  picker.querySelectorAll('.seg-option').forEach(opt => {
+    opt.classList.toggle('active', opt.textContent.trim() === value);
+  });
+}
+
+// ── Toggle switch ──────────────────────────────────────────────────────────
+function toggleSwitch(key) {
+  const camelKey = key === 'screen-on' ? 'screenOn' : 'autoReconnect';
+  settingsState[camelKey] = !settingsState[camelKey];
+  setToggleUI(key, settingsState[camelKey]);
+  if (key === 'auto-reconnect') {
+    document.getElementById('reconnect-interval-row').style.display =
+      settingsState.autoReconnect ? 'block' : 'none';
+  }
+}
+
+function setToggleUI(key, on) {
+  const track = document.getElementById('toggle-' + key);
+  if (!track) return;
+  track.classList.toggle('on', on);
+}
+
+// ── Save ───────────────────────────────────────────────────────────────────
+function saveSettings() {
+  const errEl = document.getElementById('settings-error');
+  errEl.style.display = 'none';
+
+  const host       = document.getElementById('input-host').value.trim();
+  const port       = parseInt(document.getElementById('input-port').value, 10);
+  const tirePsi    = parseFloat(document.getElementById('input-tire-psi').value);
+  const reconnSec  = parseInt(document.getElementById('input-reconnect-sec').value, 10);
+
+  if (!host) {
+    errEl.textContent = 'Host cannot be empty'; errEl.style.display = 'block'; return;
+  }
+  if (isNaN(port) || port < 1 || port > 65535) {
+    errEl.textContent = 'Port must be 1–65535'; errEl.style.display = 'block'; return;
+  }
+  if (isNaN(tirePsi) || tirePsi <= 0) {
+    errEl.textContent = 'Tire threshold must be > 0'; errEl.style.display = 'block'; return;
+  }
+  if (settingsState.autoReconnect && (isNaN(reconnSec) || reconnSec < 1)) {
+    errEl.textContent = 'Retry interval must be ≥ 1 s'; errEl.style.display = 'block'; return;
+  }
+
+  // Commit to state
+  settingsState.host        = host;
+  settingsState.port        = port;
+  settingsState.tirePsi     = tirePsi;
+  settingsState.reconnectSec = reconnSec;
+
+  // Update the summary row in MORE tab
+  updateSettingsSummary();
+  closeSettings();
+}
+
+function updateSettingsSummary() {
+  const s = settingsState;
+  const boostLabel = s.boost === 'kPa' ? 'kPa' : s.boost;
+  document.getElementById('settings-summary').textContent =
+    `${s.speed} · ${s.temp} · ${boostLabel}`;
+}
 </script>
 </body>
 </html>
