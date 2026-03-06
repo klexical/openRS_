@@ -50,6 +50,19 @@ android {
         }
     }
 
+    // Rename output APKs: openRS_v2.0.1-staging-debug.apk / openRS_v2.0.1.apk
+    applicationVariants.all {
+        val variant = this
+        variant.outputs.all {
+            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            output.outputFileName = when (variant.buildType.name) {
+                "debug"   -> "openRS_v${variant.versionName}-staging-debug.apk"
+                "release" -> "openRS_v${variant.versionName}.apk"
+                else      -> output.outputFileName
+            }
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
