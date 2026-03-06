@@ -3,6 +3,7 @@ package com.openrs.dash.can
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.EscStatus
 import com.openrs.dash.data.VehicleState
+import com.openrs.dash.diagnostics.DiagnosticLogger
 
 /**
  * Focus RS MK3 HS-CAN passive frame decoder.
@@ -26,6 +27,18 @@ import com.openrs.dash.data.VehicleState
  * Steady-state frames have byte4=0x00; button-event frames have byte4 != 0.
  */
 object CanDecoder {
+
+    // ── Instrumentation state (reset each session via resetDebugState()) ─────
+    @Volatile private var lastDriveModeNibble: Int = -1
+    @Volatile private var peakBrakeRaw: Int = 0
+    @Volatile private var lastBrakeRaw: Int = 0
+
+    /** Call at session start so instrumentation state is fresh per session. */
+    fun resetDebugState() {
+        lastDriveModeNibble = -1
+        peakBrakeRaw        = 0
+        lastBrakeRaw        = 0
+    }
 
     // ── HS-CAN engine / powertrain ──────────────────────────────────────────
     const val ID_TORQUE       = 0x070   // Torque at trans (Motorola bits 37-47)
@@ -223,8 +236,16 @@ object CanDecoder {
             ID_BRAKE_PRESS -> if (n >= 3) {
                 val brakeRaw = (ubyte(data, 1) and 0x0F) shl 8 or ubyte(data, 2)
                 // #region agent log
-                if (brakeRaw > 10) android.util.Log.d("openRS_brake",
-                    "0x252 raw=$brakeRaw pct=${"%.1f".format(brakeRaw/40.95)} b0=${ubyte(data,0)} b1=${ubyte(data,1)} b2=${ubyte(data,2)}")
+                if (brakeRaw > 50 && brakeRaw > peakBrakeRaw) {
+                    // New peak within this brake application
+                    peakBrakeRaw = brakeRaw
+                    DiagnosticLogger.event("DBG_BRAKE",
+                        "0x252 peak raw=$brakeRaw pct=${"%.1f".format(brakeRaw/40.95)}% b1=0x${ubyte(data,1).toString(16).uppercase()} b2=0x${ubyte(data,2).toString(16).uppercase()}")
+                } else if (brakeRaw == 0 && lastBrakeRaw > 0) {
+                    // Brake released — reset peak for next application
+                    peakBrakeRaw = 0
+                }
+                lastBrakeRaw = brakeRaw
                 // #endregion
                 state.copy(brakePressure = brakeRaw / 40.95, lastUpdate = now)
             } else null
@@ -296,8 +317,18 @@ object CanDecoder {
                 val b6 = data[6].toInt() and 0xFF
                 val nibble = b6 ushr 4
                 // #region agent log
-                android.util.Log.d("openRS_drivemode",
-                    "0x1B0 b4=0x${b4.toString(16)} b6=0x${b6.toString(16)} nibble=$nibble ${if(b4!=0) "[EVENT-filtered]" else "[STEADY->"+DriveMode.fromInt(nibble).label+"]"}")
+                if (b4 == 0) {
+                    // Log every steady-state decode; log every occurrence when nibble > 1 (Track/Drift)
+                    if (nibble != lastDriveModeNibble || nibble > 1) {
+                        lastDriveModeNibble = nibble
+                        DiagnosticLogger.event("DBG_DRIVEMODE",
+                            "0x1B0 STEADY nibble=$nibble(${DriveMode.fromInt(nibble).label}) b6=0x${b6.toString(16).uppercase()}")
+                    }
+                } else if (nibble > 1) {
+                    // Always log event frames that carry Track/Drift nibble values
+                    DiagnosticLogger.event("DBG_DRIVEMODE",
+                        "0x1B0 EVENT nibble=$nibble(${DriveMode.fromInt(nibble).label}) b4=0x${b4.toString(16).uppercase()} b6=0x${b6.toString(16).uppercase()}")
+                }
                 // #endregion
                 if (b4 != 0) null
                 else state.copy(driveMode = DriveMode.fromInt(nibble), lastUpdate = now)

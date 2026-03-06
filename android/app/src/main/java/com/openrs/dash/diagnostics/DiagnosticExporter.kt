@@ -68,6 +68,27 @@ object DiagnosticExporter {
                     slcanFile.inputStream().buffered().use { it.copyTo(zip) }
                     zip.closeEntry()
                 }
+
+                // Debug instrumentation log: DBG_DRIVEMODE and DBG_BRAKE events extracted
+                val debugEvents = DiagnosticLogger.sessionEvents
+                    .filter { it.type.startsWith("DBG_") }
+                if (debugEvents.isNotEmpty()) {
+                    zip.putNextEntry(ZipEntry("debug_log_$ts.txt"))
+                    val debugText = buildString {
+                        appendLine("openRS_ debug instrumentation log — $ts")
+                        appendLine("Session duration: ${DiagnosticLogger.formatDuration(DiagnosticLogger.sessionDurationMs)}")
+                        appendLine("─".repeat(60))
+                        appendLine()
+                        debugEvents.forEach { ev ->
+                            appendLine("+${DiagnosticLogger.formatDuration(ev.relMs)}  [${ev.type}]  ${ev.message}")
+                        }
+                        appendLine()
+                        appendLine("─".repeat(60))
+                        appendLine("Total debug events: ${debugEvents.size}")
+                    }
+                    zip.write(debugText.toByteArray(Charsets.UTF_8))
+                    zip.closeEntry()
+                }
             }
 
             FileProvider.getUriForFile(ctx, AUTHORITY, zipFile)
@@ -201,6 +222,8 @@ object DiagnosticExporter {
         }
         val slcanLines = DiagnosticLogger.slcanLineCount
         val slcanNote  = if (slcanLines > 0) "\n• slcan_log_*.log   — raw CAN frames ($slcanLines lines, SavvyCAN/Kayak compatible)" else ""
+        val debugCount = DiagnosticLogger.sessionEvents.count { it.type.startsWith("DBG_") }
+        val debugNote  = if (debugCount > 0) "\n• debug_log_*.txt   — instrumentation events ($debugCount entries)" else ""
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "application/zip"
             putExtra(Intent.EXTRA_STREAM, uri)
@@ -209,7 +232,7 @@ object DiagnosticExporter {
                 Intent.EXTRA_TEXT,
                 "openRS_ v${BuildConfig.VERSION_NAME} diagnostic bundle.\n" +
                 "• diagnostic_summary_*.txt — human-readable report\n" +
-                "• diagnostic_detail_*.json — full machine-readable data$slcanNote\n\n" +
+                "• diagnostic_detail_*.json — full machine-readable data$slcanNote$debugNote\n\n" +
                 "App      : v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})\n" +
                 "Session  : ${DiagnosticLogger.formatDuration(DiagnosticLogger.sessionDurationMs)}\n" +
                 "Firmware : ${DiagnosticLogger.firmwareVersion}\n" +

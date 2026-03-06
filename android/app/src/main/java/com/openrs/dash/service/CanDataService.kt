@@ -136,6 +136,7 @@ class CanDataService : Service() {
             prefs  = UserPrefsStore.prefs.value,
             logDir = java.io.File(filesDir, "diagnostics")
         )
+        com.openrs.dash.can.CanDecoder.resetDebugState()
 
         connectionJob = scope.launch {
             launch {
