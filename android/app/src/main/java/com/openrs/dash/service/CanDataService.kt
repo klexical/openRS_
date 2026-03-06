@@ -24,7 +24,8 @@ import kotlinx.coroutines.flow.*
 class CanDataService : Service() {
 
     companion object {
-        const val CHANNEL_ID = "openrs_can_channel"
+        // v2: channel recreated with IMPORTANCE_MIN (old channel importance was locked by Android)
+        const val CHANNEL_ID = "openrs_can_v2"
         const val NOTIFICATION_ID = 1
     }
 
