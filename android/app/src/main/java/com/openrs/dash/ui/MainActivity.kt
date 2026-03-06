@@ -16,6 +16,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -46,6 +47,7 @@ import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.EscStatus
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.service.CanDataService
+import com.openrs.dash.ui.trip.TripPage
 import kotlin.math.roundToInt
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -185,8 +187,10 @@ class MainActivity : ComponentActivity() {
             val vs          by OpenRSDashApp.instance.vehicleState.collectAsState()
             val prefs       by UserPrefsStore.prefs.collectAsState()
             val debugLines  by OpenRSDashApp.instance.debugLines.collectAsState()
+            val tripState   by OpenRSDashApp.instance.tripState.collectAsState()
             var tab         by remember { mutableIntStateOf(0) }
-            var settingsOpen by remember { mutableStateOf(false) }
+            var settingsOpen    by remember { mutableStateOf(false) }
+            var showTripOverlay by remember { mutableStateOf(false) }
             val snackbarHostState = remember { SnackbarHostState() }
 
             val view = LocalView.current
@@ -218,7 +222,8 @@ class MainActivity : ComponentActivity() {
                                     onSettings   = { settingsOpen = true },
                                     onConnect    = { service?.startConnection() },
                                     onDisconnect = { service?.stopConnection() },
-                                    onReconnect  = { service?.reconnect() }
+                                    onReconnect  = { service?.reconnect() },
+                                    onTrip       = { showTripOverlay = true }
                                 )
                                 TabBar(tab, onSelect = { tab = it })
                                 Box(Modifier.weight(1f)) {
@@ -236,6 +241,22 @@ class MainActivity : ComponentActivity() {
                             // Settings sheet (triggered from header ⚙ or MORE tab)
                             if (settingsOpen) {
                                 SettingsDialog(onDismiss = { settingsOpen = false })
+                            }
+
+                            // Trip Map overlay — full-screen, slides up over tabs
+                            AnimatedVisibility(
+                                visible = showTripOverlay,
+                                enter   = slideInVertically(initialOffsetY = { it }),
+                                exit    = slideOutVertically(targetOffsetY = { it })
+                            ) {
+                                TripPage(
+                                    tripState    = tripState,
+                                    vehicleState = vs,
+                                    prefs        = prefs,
+                                    onStartTrip  = { OpenRSDashApp.instance.tripRecorder.startTrip() },
+                                    onEndTrip    = { OpenRSDashApp.instance.tripRecorder.stopTrip() },
+                                    onDismiss    = { showTripOverlay = false }
+                                )
                             }
                         }
                     }
@@ -265,7 +286,8 @@ class MainActivity : ComponentActivity() {
     onSettings: () -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
-    onReconnect: () -> Unit
+    onReconnect: () -> Unit,
+    onTrip: () -> Unit = {}
 ) {
     val accent = LocalThemeAccent.current
     val modeColor = when (vs.driveMode) {
@@ -352,6 +374,19 @@ class MainActivity : ComponentActivity() {
                 contentAlignment = Alignment.Center
             ) {
                 UIText("⚙", 13.sp, Mid)
+            }
+
+            // Trip Map
+            Box(
+                Modifier
+                    .height(28.dp)
+                    .background(accent.copy(alpha = 0.10f), RoundedCornerShape(6.dp))
+                    .border(1.dp, accent.copy(alpha = 0.28f), RoundedCornerShape(6.dp))
+                    .clickable { onTrip() }
+                    .padding(horizontal = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                MonoLabel("TRIP", 9.sp, accent, FontWeight.Bold, 0.15.sp)
             }
         }
     }
