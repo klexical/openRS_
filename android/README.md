@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.0.1-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-2.1.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/platform-Android-brightgreen?logo=android" alt="Platform">
   <img src="https://img.shields.io/badge/Kotlin-2.0-purple?logo=kotlin" alt="Kotlin">
   <img src="https://img.shields.io/badge/Jetpack_Compose-Material3-4285F4?logo=jetpackcompose" alt="Compose">
@@ -80,8 +80,9 @@ All data is received passively from the CAN bus via WebSocket SLCAN at ~2100 fps
 | 0x180 | Lateral G-force **+ Yaw rate** | RS_HS.dbc ABSmsg02 |
 | 0x190 | 4-corner wheel speeds (15-bit Motorola × 0.011343 km/h) | RS_HS.dbc ABSmsg03 |
 | 0x1A4 | Ambient temperature (MS-CAN bridged) | DigiCluster |
-| 0x1B0 | Drive mode (Normal/Sport/Track/Drift) — byte 6 upper nibble, steady-state frames only (byte 4 == 0) | RS_HS.dbc |
+| 0x1B0 | Drive mode (Normal/Sport+Track/Drift) — byte 6 upper nibble, steady-state frames only (byte 4 == 0). Combined with 0x420 to resolve Sport vs Track. | RS_HS.dbc AWDmsg01 |
 | 0x1C0 | ESC mode status | RS_HS.dbc |
+| 0x420 | Track mode indicator — byte 6: `0x10` = Normal/Sport, `0x11` = Track (~600 ms broadcast) | Empirical (3 sessions) |
 | 0x252 | Brake pressure (0–100% normalised, raw 0–4095 ADC counts) | RS_HS.dbc ABSmsg10 |
 | 0x2C0 | AWD L/R rear torque (Nm) | RS_HS.dbc |
 | 0x2F0 | Coolant temp, Intake Air Temp (IAT) | RS_HS.dbc PCMmsg16 |
@@ -299,7 +300,8 @@ Full PID documentation: [`docs/pid-reference.md`](docs/pid-reference.md)
 | 0x180 | Lateral G-force + Yaw rate | latG: `bits(17,10) × 0.00390625 − 2.0 g`; yaw: `bits(35,12) × 0.03663 − 75 °/s` — RS_HS.dbc ABSmsg02 |
 | 0x190 | 4-corner wheel speeds | 15-bit Motorola per wheel × 0.011343 km/h — RS_HS.dbc ABSmsg03 |
 | 0x1A4 | Ambient temp °C | `byte4 signed × 0.25` (MS-CAN bridged) |
-| 0x1B0 | Drive mode | Motorola bit 55, 4-bit: 0=Normal 1=Sport 2=Track 3=Drift |
+| 0x1B0 | Drive mode | Motorola bit 55, upper nibble byte 6: `0`=Normal `1`=Sport-or-Track `2`=Drift. Combined with 0x420 b6 to resolve Sport vs Track. |
+| 0x420 | Track mode indicator | byte 6: `0x10`=Normal/Sport · `0x11`=Track (~600 ms) |
 | 0x1C0 | ESC mode | Motorola bit 13, 2-bit |
 | 0x230 | Current gear | bits 0–3 |
 | 0x252 | Brake pressure | `bits(11,12)` raw ADC 0–4095, displayed 0–100% — RS_HS.dbc ABSmsg10 |

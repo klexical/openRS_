@@ -5,6 +5,26 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
+## [v2.1.0] — 2026-03-06
+
+### Added
+
+- **Trip page**: new TRIP overlay accessible from the app header with a live OSMDroid map (CartoDB Dark Matter tiles), GPS track recording, and weather data via OpenWeatherMap.
+
+### Fixed
+
+- **Notification permanently removed**: the persistent "Idle — tap openRS_ to retry" banner no longer appears. The foreground service has been replaced with a plain background service — no notification permission is requested at first launch and nothing ever appears in the notification shade.
+- **Track drive mode**: the app now correctly identifies Track mode. `0x1B0` alone cannot distinguish Sport from Track; the fix adds `0x420` byte 6 as a second signal (`0x10` = Sport, `0x11` = Track), cross-validated against DBC and three live sessions.
+- **Drift drive mode**: corrected to map to `0x1B0` nibble 2 (DBC `VAL_ 432` confirmed).
+- **RPM hero card**: was showing a decimal (e.g. `0.85`) instead of a whole number. Now displays an integer (e.g. `3200 RPM`).
+- **G-sensor stuck at ±1.992 g**: the invalid-frame guard was rejecting `0xFF` but not `0xFE`. Both are now treated as invalid and ignored.
+
+### Removed
+
+- `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_CONNECTED_DEVICE`, `FOREGROUND_SERVICE_LOCATION`, and `POST_NOTIFICATIONS` permissions stripped from the manifest.
+
+---
+
 ## [v2.0.1] — 2026-03-06
 
 ### Stability
