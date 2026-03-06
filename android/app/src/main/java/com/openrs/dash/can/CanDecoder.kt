@@ -39,7 +39,8 @@ object CanDecoder {
     const val ID_LONG_ACCEL   = 0x160   // Longitudinal G bits 48-57 LE × 0.00390625 − 2.0
     const val ID_LAT_ACCEL    = 0x180   // Lateral G bits 16-25 LE × 0.00390625 − 2.0
     // 0x1B0: drive mode status + button event frame.
-    // Steady-state mode is encoded in byte 6 upper nibble (0=Normal 1=Sport 2=Drift 3=Track).
+    // Steady-state mode is encoded in byte 6 upper nibble (0=Normal 1=Sport 2=Track 3=Drift).
+    // Track=nibble 2 (0x20) confirmed from prior live-log reference at 86.8-106s.
     // Steady-state frames have byte 4 == 0x00; button-event transitions have byte 4 != 0.
     // 0x17E (DriveModeRequest) only reflects Normal/Sport — Track and Drift are absent.
     const val ID_DRIVE_MODE   = 0x1B0
@@ -160,7 +161,7 @@ object CanDecoder {
             ID_LONG_ACCEL -> if (n >= 8) {
                 val b6 = data[6].toInt() and 0xFF
                 val b7 = data[7].toInt() and 0xFF
-                if ((b6 and 0x03) == 0x03 && b7 == 0xFF) null
+                if ((b6 and 0x03) == 0x03 && b7 >= 0xFE) null
                 else state.copy(
                     longitudinalG = ((b6 and 0x03) shl 8 or b7) * 0.00390625 - 2.0,
                     lastUpdate    = now
@@ -183,7 +184,7 @@ object CanDecoder {
             ID_LAT_ACCEL -> if (n >= 8) {
                 val b2 = data[2].toInt() and 0xFF
                 val b3 = data[3].toInt() and 0xFF
-                if ((b2 and 0x03) == 0x03 && b3 == 0xFF) null
+                if ((b2 and 0x03) == 0x03 && b3 >= 0xFE) null
                 else state.copy(
                     lateralG   = ((b2 and 0x03) shl 8 or b3) * 0.00390625 - 2.0,
                     yawRate    = ((ubyte(data, 4) and 0x0F) shl 8 or ubyte(data, 5)) * 0.03663 - 75.0,
@@ -219,10 +220,14 @@ object CanDecoder {
             // Units unconfirmed — displayed as 0–100 scale (raw / 40.95) until bar
             // calibration is verified from a live log with known brake pressure.
             // Live log confirmed: raw=912 at initial brake application → 22.3%.
-            ID_BRAKE_PRESS -> if (n >= 3) state.copy(
-                brakePressure = ((ubyte(data, 1) and 0x0F) shl 8 or ubyte(data, 2)) / 40.95,
-                lastUpdate    = now
-            ) else null
+            ID_BRAKE_PRESS -> if (n >= 3) {
+                val brakeRaw = (ubyte(data, 1) and 0x0F) shl 8 or ubyte(data, 2)
+                // #region agent log
+                if (brakeRaw > 10) android.util.Log.d("openRS_brake",
+                    "0x252 raw=$brakeRaw pct=${"%.1f".format(brakeRaw/40.95)} b0=${ubyte(data,0)} b1=${ubyte(data,1)} b2=${ubyte(data,2)}")
+                // #endregion
+                state.copy(brakePressure = brakeRaw / 40.95, lastUpdate = now)
+            } else null
 
             // ── 0x0C8: Gauge illumination + e-brake ───────────────────────────
             // Brightness: bits 0-4 of byte0  [DigiCluster verified]
@@ -282,17 +287,20 @@ object CanDecoder {
             } else null
 
             // ── 0x1B0: Drive mode steady-state ────────────────────────────────
-            // Byte 6 upper nibble: DriveMode.fromInt mapping is 0=Normal 1=Sport 2=Drift 3=Track.
-            // TODO(L-1): Confirm Track vs Drift byte values from a live SLCAN log with known modes.
+            // Byte 6 upper nibble: DriveMode.fromInt mapping is 0=Normal 1=Sport 2=Track 3=Drift.
+            // Track=nibble 2 (byte6=0x20) confirmed from prior live log; Drift=nibble 3 follows ordering.
             // Steady-state frames have byte 4 == 0x00.
             // Button-event transition frames have byte 4 != 0 → ignored for mode tracking.
             ID_DRIVE_MODE -> if (n >= 7) {
                 val b4 = data[4].toInt() and 0xFF
+                val b6 = data[6].toInt() and 0xFF
+                val nibble = b6 ushr 4
+                // #region agent log
+                android.util.Log.d("openRS_drivemode",
+                    "0x1B0 b4=0x${b4.toString(16)} b6=0x${b6.toString(16)} nibble=$nibble ${if(b4!=0) "[EVENT-filtered]" else "[STEADY->"+DriveMode.fromInt(nibble).label+"]"}")
+                // #endregion
                 if (b4 != 0) null
-                else state.copy(
-                    driveMode  = DriveMode.fromInt((data[6].toInt() and 0xFF) ushr 4),
-                    lastUpdate = now
-                )
+                else state.copy(driveMode = DriveMode.fromInt(nibble), lastUpdate = now)
             } else null
 
             // ── 0x1C0: ESC mode ────────────────────────────────────────────────

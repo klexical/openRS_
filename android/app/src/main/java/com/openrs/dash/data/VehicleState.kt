@@ -262,7 +262,7 @@ enum class DriveMode(val label: String) {
     DRIFT("Drift"), UNKNOWN("--"), CUSTOM("Custom");
     companion object {
         fun fromInt(v: Int): DriveMode = when (v) {
-            0 -> NORMAL; 1 -> SPORT; 2 -> DRIFT; 3 -> TRACK; 5 -> CUSTOM; else -> UNKNOWN
+            0 -> NORMAL; 1 -> SPORT; 2 -> TRACK; 3 -> DRIFT; 5 -> CUSTOM; else -> UNKNOWN
         }
     }
 }
