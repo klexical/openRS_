@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>openRS_ v2.0.1 — Phone Emulator</title>
+<title>openRS_ v2.1.0 — Phone Emulator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@400;700&family=Barlow+Condensed:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -946,6 +946,7 @@ body {
         <div class="badge badge-esc">ESC ON</div>
         <div class="conn-dot"></div>
         <div class="gear-btn" onclick="openSettings()">⚙</div>
+        <div class="trip-btn" onclick="alert('Trip page — map + GPS recording')" style="font-size:9px;font-weight:700;letter-spacing:0.15em;padding:0 8px;height:28px;display:flex;align-items:center;background:rgba(255,160,0,0.10);border:1px solid rgba(255,160,0,0.28);border-radius:6px;cursor:pointer;color:var(--theme)">TRIP</div>
       </div>
     </div>
 
@@ -1508,7 +1509,7 @@ body {
     </div>
 
     <!-- Version badge -->
-    <div class="version-badge">openRS_ <span>v2.0.1</span> · Focus RS MK3 · WiCAN</div>
+    <div class="version-badge">openRS_ <span>v2.1.0</span> · Focus RS MK3 · WiCAN</div>
 
     <!-- ═══ SETTINGS OVERLAY ═══ -->
     <div class="settings-overlay" id="settings-overlay" onclick="overlayBgClick(event)">
