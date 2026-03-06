@@ -6,10 +6,12 @@ import android.net.Uri
 import androidx.core.content.FileProvider
 import com.openrs.dash.BuildConfig
 import com.openrs.dash.can.CanDecoder
+import com.openrs.dash.data.TripState
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -66,6 +68,7 @@ object DiagnosticExporter {
                     slcanFile.inputStream().buffered().use { it.copyTo(zip) }
                     zip.closeEntry()
                 }
+
             }
 
             FileProvider.getUriForFile(ctx, AUTHORITY, zipFile)
@@ -73,6 +76,122 @@ object DiagnosticExporter {
             DiagnosticLogger.event("EXPORT_ERROR", e.message ?: "unknown")
             null
         }
+    }
+
+    /**
+     * Exports the completed trip as a GPX file (with embedded OBD telemetry extensions),
+     * packages it in a ZIP alongside a plain-text summary, then launches a share sheet.
+     */
+    fun shareTrip(ctx: Context, tripState: TripState) {
+        if (tripState.points.isEmpty()) return
+        try {
+            val dir = File(ctx.filesDir, "diagnostics").also { it.mkdirs() }
+            val ts  = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val zipFile = File(dir, "openrs_trip_$ts.zip")
+
+            ZipOutputStream(zipFile.outputStream().buffered()).use { zip ->
+                // GPX track
+                zip.putNextEntry(ZipEntry("trip_$ts.gpx"))
+                zip.write(buildGpx(tripState, ts).toByteArray(Charsets.UTF_8))
+                zip.closeEntry()
+
+                // Plain-text summary
+                zip.putNextEntry(ZipEntry("trip_summary_$ts.txt"))
+                zip.write(buildTripSummaryText(tripState).toByteArray(Charsets.UTF_8))
+                zip.closeEntry()
+            }
+
+            val uri = FileProvider.getUriForFile(ctx, AUTHORITY, zipFile)
+            val ptCount = tripState.points.size
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/zip"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, "openRS_ Trip Export")
+                putExtra(
+                    Intent.EXTRA_TEXT,
+                    "openRS_ v${BuildConfig.VERSION_NAME} trip export.\n" +
+                    "• trip_$ts.gpx         — GPS track + telemetry (GPX 1.1)\n" +
+                    "• trip_summary_$ts.txt  — human-readable trip report\n\n" +
+                    "$ptCount waypoints recorded."
+                )
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            ctx.startActivity(Intent.createChooser(intent, "Share Trip Data"))
+        } catch (e: Exception) {
+            DiagnosticLogger.event("TRIP_EXPORT_ERROR", e.message ?: "unknown")
+        }
+    }
+
+    private fun buildGpx(tripState: TripState, ts: String): String {
+        val isoFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
+        return buildString {
+            appendLine("""<?xml version="1.0" encoding="UTF-8"?>""")
+            appendLine("""<gpx version="1.1" creator="openRS_ v${BuildConfig.VERSION_NAME}" """)
+            appendLine("""    xmlns="http://www.topografix.com/GPX/1/1" """)
+            appendLine("""    xmlns:openrs="https://github.com/klex/openRS_">""")
+            appendLine("  <metadata>")
+            appendLine("    <name>openRS_ Trip $ts</name>")
+            appendLine("    <time>${isoFmt.format(Date(tripState.startTime))}</time>")
+            appendLine("  </metadata>")
+            appendLine("  <trk>")
+            appendLine("    <name>Focus RS MK3 Trip</name>")
+            appendLine("    <trkseg>")
+            tripState.points.forEach { pt ->
+                appendLine("""      <trkpt lat="${pt.lat}" lon="${pt.lng}">""")
+                appendLine("        <ele>0</ele>")
+                appendLine("        <time>${isoFmt.format(Date(pt.timestamp))}</time>")
+                appendLine("        <extensions>")
+                appendLine("          <openrs:speed>${"%.1f".format(pt.speedKph)}</openrs:speed>")
+                appendLine("          <openrs:rpm>${pt.rpm.toInt()}</openrs:rpm>")
+                appendLine("          <openrs:gear>${pt.gear}</openrs:gear>")
+                appendLine("          <openrs:boostPsi>${"%.2f".format(pt.boostPsi)}</openrs:boostPsi>")
+                appendLine("          <openrs:coolantC>${"%.1f".format(pt.coolantTempC)}</openrs:coolantC>")
+                appendLine("          <openrs:oilC>${"%.1f".format(pt.oilTempC)}</openrs:oilC>")
+                appendLine("          <openrs:ambientC>${"%.1f".format(pt.ambientTempC)}</openrs:ambientC>")
+                appendLine("          <openrs:rduC>${"%.1f".format(pt.rduTempC)}</openrs:rduC>")
+                appendLine("          <openrs:ptuC>${"%.1f".format(pt.ptuTempC)}</openrs:ptuC>")
+                appendLine("          <openrs:fuelPct>${"%.1f".format(pt.fuelLevelPct)}</openrs:fuelPct>")
+                appendLine("          <openrs:lateralG>${"%.3f".format(pt.lateralG)}</openrs:lateralG>")
+                appendLine("          <openrs:driveMode>${pt.driveMode.label}</openrs:driveMode>")
+                appendLine("        </extensions>")
+                appendLine("      </trkpt>")
+            }
+            appendLine("    </trkseg>")
+            appendLine("  </trk>")
+            append("</gpx>")
+        }
+    }
+
+    private fun buildTripSummaryText(tripState: TripState): String = buildString {
+        val elapsedSec = tripState.elapsedMs / 1000L
+        appendLine("═══════════════════════════════════════════════════════════")
+        appendLine("  openRS_ Trip Summary")
+        appendLine("  App         : v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})")
+        appendLine("  Points      : ${tripState.points.size}")
+        appendLine("═══════════════════════════════════════════════════════════")
+        appendLine()
+        appendLine("  Distance    : ${"%.2f".format(tripState.cumulativeDistanceKm)} km  (${"%.2f".format(tripState.cumulativeDistanceKm * 0.621371)} mi)")
+        appendLine("  Duration    : ${elapsedSec / 3600}h ${(elapsedSec % 3600) / 60}m ${elapsedSec % 60}s")
+        appendLine("  Avg Speed   : ${"%.1f".format(tripState.avgSpeedKph)} km/h")
+        appendLine("  Max Speed   : ${"%.1f".format(tripState.maxSpeedKph)} km/h")
+        appendLine()
+        appendLine("  Fuel Used   : ${"%.2f".format(tripState.fuelUsedL)} L  (start ${tripState.startFuelPct.toInt()}% → end ${tripState.latestFuelPct.toInt()}%)")
+        appendLine("  L/100km     : ${"%.1f".format(tripState.avgFuelL100km)}")
+        appendLine("  MPG         : ${"%.1f".format(tripState.avgFuelMpg)}")
+        appendLine()
+        appendLine("  Peak RPM    : ${"%.0f".format(tripState.peakRpm)}")
+        appendLine("  Avg RPM     : ${"%.0f".format(tripState.avgRpm)}")
+        appendLine("  Peak Boost  : ${"%.1f".format(tripState.peakBoostPsi)} PSI")
+        appendLine("  Peak Lat G  : ${"%.2f".format(tripState.peakLateralG)} g")
+        appendLine()
+        appendLine("  Drive mode breakdown:")
+        tripState.driveModeBreakdown.entries.sortedByDescending { it.value }.forEach { (mode, frac) ->
+            appendLine("    ${mode.label.padEnd(10)} : ${"%.0f".format(frac * 100)}%")
+        }
+        appendLine()
+        appendLine("═══════════════════════════════════════════════════════════")
     }
 
     /** Create and fire an Android share intent for the diagnostic ZIP. */
@@ -195,8 +314,8 @@ object DiagnosticExporter {
             CanDecoder.ID_TORQUE, CanDecoder.ID_THROTTLE, CanDecoder.ID_PEDALS,
             CanDecoder.ID_ENGINE_RPM, CanDecoder.ID_GAUGE_ILLUM, CanDecoder.ID_ENGINE_TEMPS,
             CanDecoder.ID_SPEED, CanDecoder.ID_LONG_ACCEL, CanDecoder.ID_LAT_ACCEL,
-            CanDecoder.ID_DRIVE_MODE, CanDecoder.ID_ESC_ABS, CanDecoder.ID_WHEEL_SPEEDS,
-            CanDecoder.ID_GEAR, CanDecoder.ID_AWD_TORQUE,
+            CanDecoder.ID_DRIVE_MODE, CanDecoder.ID_DRIVE_MODE_EXT, CanDecoder.ID_ESC_ABS,
+            CanDecoder.ID_WHEEL_SPEEDS, CanDecoder.ID_GEAR, CanDecoder.ID_AWD_TORQUE,
             CanDecoder.ID_COOLANT, CanDecoder.ID_TPMS, CanDecoder.ID_AMBIENT_TEMP,
             CanDecoder.ID_FUEL_LEVEL, CanDecoder.ID_STEERING, CanDecoder.ID_BRAKE_PRESS
         )

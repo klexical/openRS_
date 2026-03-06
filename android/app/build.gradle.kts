@@ -15,6 +15,11 @@ val keystoreProps = Properties().also { props ->
     if (keystorePropsFile.exists()) props.load(keystorePropsFile.inputStream())
 }
 
+val localPropsFile = rootProject.file("local.properties")
+val localProps = Properties().also { props ->
+    if (localPropsFile.exists()) props.load(localPropsFile.inputStream())
+}
+
 android {
     namespace = "com.openrs.dash"
     compileSdk = 35
@@ -27,6 +32,10 @@ android {
         versionName = "2.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "OPENWEATHER_API_KEY",
+            "\"${localProps["OPENWEATHER_API_KEY"] ?: ""}\"")
+
     }
 
     signingConfigs {
@@ -37,6 +46,19 @@ android {
                 storePassword = keystoreProps["storePassword"] as String
                 keyAlias      = keystoreProps["keyAlias"]      as String
                 keyPassword   = keystoreProps["keyPassword"]   as String
+            }
+        }
+    }
+
+    // Rename output APKs: openRS_v2.0.1-staging-debug.apk / openRS_v2.0.1.apk
+    applicationVariants.all {
+        val variant = this
+        variant.outputs.all {
+            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            output.outputFileName = when (variant.buildType.name) {
+                "debug"   -> "openRS_v${variant.versionName}-staging-debug.apk"
+                "release" -> "openRS_v${variant.versionName}.apk"
+                else      -> output.outputFileName
             }
         }
     }
@@ -92,6 +114,11 @@ dependencies {
     // ── AndroidX Core ───────────────────────────────────────
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+
+    // ── Trip Map ────────────────────────────────────────────
+    implementation("org.osmdroid:osmdroid-android:6.1.18")
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // ── Testing ─────────────────────────────────────────────
     testImplementation("junit:junit:4.13.2")

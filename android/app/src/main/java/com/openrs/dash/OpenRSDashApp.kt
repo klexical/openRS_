@@ -1,7 +1,11 @@
 package com.openrs.dash
 
 import android.app.Application
+import com.openrs.dash.data.TripState
 import com.openrs.dash.data.VehicleState
+import com.openrs.dash.service.TripRecorder
+import com.openrs.dash.service.WeatherRepository
+import com.openrs.dash.BuildConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,6 +44,18 @@ class OpenRSDashApp : Application() {
 
     /** True once openRS_ firmware is confirmed via WebSocket probe on connect. */
     val isOpenRsFirmware = MutableStateFlow(false)
+
+    /** Trip recorder — lazy so it initialises only when the trip overlay is first opened. */
+    val tripRecorder: TripRecorder by lazy {
+        TripRecorder(
+            context          = this,
+            vehicleStateFlow = vehicleState.asStateFlow(),
+            weatherRepo      = WeatherRepository(BuildConfig.OPENWEATHER_API_KEY)
+        )
+    }
+
+    /** Convenience accessor for the trip state flow. */
+    val tripState: StateFlow<TripState> get() = tripRecorder.tripState
 
     override fun onCreate() {
         super.onCreate()
