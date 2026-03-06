@@ -270,8 +270,11 @@ class CanDataService : Service() {
 
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
-            CHANNEL_ID, "openRS_ CAN Data", NotificationManager.IMPORTANCE_LOW
-        ).apply { description = "WiCAN connection status" }
+            CHANNEL_ID, "openRS_ CAN Data", NotificationManager.IMPORTANCE_MIN
+        ).apply {
+            description = "WiCAN connection status"
+            setShowBadge(false)
+        }
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
@@ -280,6 +283,8 @@ class CanDataService : Service() {
             .setContentTitle("openRS_")
             .setContentText(text)
             .setSmallIcon(R.drawable.ic_notification)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
             .setOngoing(true).setSilent(true).build()
 
     private fun updateNotification(text: String) {

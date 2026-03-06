@@ -261,8 +261,11 @@ enum class DriveMode(val label: String) {
     NORMAL("Normal"), SPORT("Sport"), TRACK("Track"),
     DRIFT("Drift"), UNKNOWN("--"), CUSTOM("Custom");
     companion object {
+        // DBC VAL_ 432 DriveMode: 0=Normal, 1=Sport, 2=Drift.
+        // Track is not distinct on 0x1B0 (AWD treats Sport+Track identically).
+        // Track is resolved in CanDecoder via 0x420 b6=0x11.
         fun fromInt(v: Int): DriveMode = when (v) {
-            0 -> NORMAL; 1 -> SPORT; 2 -> TRACK; 3 -> DRIFT; 5 -> CUSTOM; else -> UNKNOWN
+            0 -> NORMAL; 1 -> SPORT; 2 -> DRIFT; else -> UNKNOWN
         }
     }
 }
