@@ -1,0 +1,97 @@
+package com.openrs.dash.data
+
+import kotlin.math.*
+
+/** Type of notable peak event — used to drop map markers during recording. */
+enum class PeakType(val label: String) {
+    RPM("Peak RPM"),
+    BOOST("Peak Boost"),
+    LATERAL_G("Peak Lat-G")
+}
+
+/** A notable peak moment, stored so the map can drop a pin at its GPS coordinate. */
+data class PeakEvent(
+    val type: PeakType,
+    val value: Double,
+    val lat: Double,
+    val lng: Double,
+    val timestamp: Long
+)
+
+/**
+ * Live state of the active (or most recently completed) trip.
+ *
+ * Running totals ([cumulativeDistanceKm], [rpmSum], [rpmSamples]) are accumulated by
+ * [TripRecorder] one GPS sample at a time to avoid iterating the full [points] list
+ * on every update.
+ *
+ * Fuel economy uses the Focus RS MK3 tank capacity of [TANK_L] = 49.8 L and the delta
+ * between [startFuelPct] and the latest [TripPoint.fuelLevelPct].
+ */
+data class TripState(
+    val isRecording: Boolean = false,
+    val points: List<TripPoint> = emptyList(),
+    val startFuelPct: Double = 0.0,
+    val startTime: Long = 0L,
+    val currentWeather: WeatherData? = null,
+    // ── Running accumulators (updated incrementally, not recomputed each frame) ──
+    val cumulativeDistanceKm: Double = 0.0,
+    val rpmSum: Double = 0.0,
+    val rpmSamples: Long = 0L,
+    // ── Session peaks ────────────────────────────────────────────────────────
+    val maxSpeedKph: Double = 0.0,
+    val peakRpm: Double = 0.0,
+    val peakBoostPsi: Double = 0.0,
+    val peakLateralG: Double = 0.0,
+    val peakEvents: List<PeakEvent> = emptyList(),
+    val rtrAchievedPoint: TripPoint? = null
+) {
+    // ── Computed properties ───────────────────────────────────────────────────
+
+    val latestFuelPct: Double
+        get() = points.lastOrNull()?.fuelLevelPct ?: startFuelPct
+
+    val fuelUsedL: Double
+        get() = ((startFuelPct - latestFuelPct) / 100.0 * TANK_L).coerceAtLeast(0.0)
+
+    val avgFuelL100km: Double
+        get() = if (cumulativeDistanceKm < 0.1) 0.0
+                else fuelUsedL / cumulativeDistanceKm * 100.0
+
+    /** US MPG converted from L/100km. */
+    val avgFuelMpg: Double
+        get() {
+            val l100 = avgFuelL100km
+            return if (l100 < 0.01) 0.0 else 282.48 / l100
+        }
+
+    val avgRpm: Double
+        get() = if (rpmSamples > 0L) rpmSum / rpmSamples else 0.0
+
+    val avgSpeedKph: Double
+        get() = if (points.isEmpty()) 0.0 else points.sumOf { it.speedKph } / points.size
+
+    val elapsedMs: Long
+        get() = if (startTime > 0L) System.currentTimeMillis() - startTime else 0L
+
+    /** Fraction of trip points in each drive mode (values sum to 1.0). */
+    val driveModeBreakdown: Map<DriveMode, Float>
+        get() {
+            if (points.isEmpty()) return emptyMap()
+            return points.groupBy { it.driveMode }
+                .mapValues { (_, pts) -> pts.size.toFloat() / points.size }
+        }
+
+    companion object {
+        const val TANK_L = 49.8
+
+        fun haversineKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+            val r = 6371.0
+            val dLat = Math.toRadians(lat2 - lat1)
+            val dLon = Math.toRadians(lon2 - lon1)
+            val a = sin(dLat / 2).pow(2) +
+                    cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * sin(dLon / 2).pow(2)
+            return r * 2.0 * atan2(sqrt(a), sqrt(1.0 - a))
+        }
+    }
+}

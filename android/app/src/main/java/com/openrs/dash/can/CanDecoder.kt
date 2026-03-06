@@ -19,13 +19,28 @@ import com.openrs.dash.data.VehicleState
  * are PCM signals unrelated to tire pressure. TPMS comes from BCM Mode 22 polling only.
  * RDU temp is not in any passive broadcast — it arrives via AWD module Mode 22 polling.
  *
- * Drive mode source: 0x1B0 byte 6 upper nibble is the only reliable steady-state source.
- * 0x17E (DriveModeRequest) only reflects Normal/Sport — Track and Drift are never
- * encoded there. Confirmed by cross-referencing 19 s of Track frames in a live log
- * (0x1B0 byte6=0x20 at t=86.8-106s; 0x17E nibble stayed at 1=Sport throughout).
- * Steady-state frames have byte4=0x00; button-event frames have byte4 != 0.
+ * Drive mode: TWO signals required (HS-CAN).
+ *   0x1B0 AWDmsg01 byte6 nibble (DBC VAL_ 432): 0=Normal, 1=Sport+Track, 2=Drift.
+ *   0x420 byte6 (empirical, ~600ms): 0x10=Normal/Sport, 0x11=Track.
+ *   Combined: nibble=0→Normal; nibble=1+0x10→Sport; nibble=1+0x11→Track; nibble=2→Drift.
+ *   Definitive rsDriveMode is at MS-CAN 0x345 (not captured via OBD-II HS-CAN).
+ * Steady-state 0x1B0 frames have byte4=0x00; button-event frames have byte4 != 0.
  */
 object CanDecoder {
+
+    /**
+     * Latest 0x420 byte-6 value, used to disambiguate Sport from Track:
+     *   0x10 = Normal / Sport  (either mode; use 0x1B0 nibble to tell Normal from Sport)
+     *   0x11 = Track           (confirmed across sessions S1, S2, S3)
+     * Drift is detected directly via 0x1B0 nibble=2 (DBC VAL_ 432 confirmed).
+     * Defaults to 0x10 so cold-start shows Sport correctly if 0x420 hasn't arrived yet.
+     */
+    @Volatile private var modeDetail420: Int = 0x10
+
+    /** Reset per-session state — call at the start of each new connection. */
+    fun resetSessionState() {
+        modeDetail420 = 0x10
+    }
 
     // ── HS-CAN engine / powertrain ──────────────────────────────────────────
     const val ID_TORQUE       = 0x070   // Torque at trans (Motorola bits 37-47)
@@ -38,10 +53,10 @@ object CanDecoder {
     const val ID_SPEED        = 0x130   // Speed bytes 6-7 BE × 0.01 kph
     const val ID_LONG_ACCEL   = 0x160   // Longitudinal G bits 48-57 LE × 0.00390625 − 2.0
     const val ID_LAT_ACCEL    = 0x180   // Lateral G bits 16-25 LE × 0.00390625 − 2.0
-    // 0x1B0: drive mode status + button event frame.
-    // Steady-state mode is encoded in byte 6 upper nibble (0=Normal 1=Sport 2=Drift 3=Track).
-    // Steady-state frames have byte 4 == 0x00; button-event transitions have byte 4 != 0.
-    // 0x17E (DriveModeRequest) only reflects Normal/Sport — Track and Drift are absent.
+    // 0x1B0 (AWDmsg01): DriveMode bit 55|4 Motorola = byte6 upper nibble.
+    // DBC VAL_ 432: 0=Normal, 1=Sport(+Track), 2=Drift. Track is indistinct here.
+    // Use 0x420 b6=0x11 to lift nibble=1 to TRACK when Track is engaged.
+    // Steady-state: byte4=0x00; button-event transitions: byte4 != 0.
     const val ID_DRIVE_MODE   = 0x1B0
     const val ID_ESC_ABS      = 0x1C0   // ESCMode Motorola bit 13|2    — RS_HS.dbc confirmed
     // RS_HS.dbc ABSmsg03 (0x190): FL/FR/RL/RR wheel speeds — 15-bit Motorola × 0.011343006 km/h
@@ -67,6 +82,12 @@ object CanDecoder {
     // Displayed as 0-100% (raw / 40.95) until bar calibration is confirmed.
     const val ID_BRAKE_PRESS  = 0x252
 
+    // 0x420: empirically confirmed Track indicator (~600 ms broadcast).
+    // DBC only documents LaunchControlStatus (bit 50, 1-bit) for this ID.
+    // byte 6: 0x10=Normal/Sport, 0x11=Track (confirmed 3 sessions).
+    // Drift uses 0x1B0 nibble=2 directly; 0x420 not required for Drift.
+    const val ID_DRIVE_MODE_EXT = 0x420
+
     // RS_HS.dbc PCMmsg30 (0x380): FuelLevelFiltered : 17|10@0+ (0.4,0) [0|102] "%"
     // Motorola big-endian, 10-bit, start bit 17 (MSB). Extract: (data[2]&0x03)<<8|data[3], ×0.4 %
     // Confirmed from live log: raw=254 → 101.6 % (full tank). Range-filtered 0–110 %.
@@ -78,7 +99,7 @@ object CanDecoder {
         ID_TORQUE, ID_THROTTLE, ID_PEDALS, ID_ENGINE_RPM,
         ID_GAUGE_ILLUM, ID_ENGINE_TEMPS, ID_SPEED,
         ID_LONG_ACCEL, ID_LAT_ACCEL,
-        ID_DRIVE_MODE, ID_ESC_ABS,
+        ID_DRIVE_MODE, ID_DRIVE_MODE_EXT, ID_ESC_ABS,
         ID_WHEEL_SPEEDS, ID_GEAR, ID_AWD_TORQUE, ID_COOLANT,
         ID_TPMS, ID_AMBIENT_TEMP,
         ID_FUEL_LEVEL,
@@ -160,7 +181,7 @@ object CanDecoder {
             ID_LONG_ACCEL -> if (n >= 8) {
                 val b6 = data[6].toInt() and 0xFF
                 val b7 = data[7].toInt() and 0xFF
-                if ((b6 and 0x03) == 0x03 && b7 == 0xFF) null
+                if ((b6 and 0x03) == 0x03 && b7 >= 0xFE) null
                 else state.copy(
                     longitudinalG = ((b6 and 0x03) shl 8 or b7) * 0.00390625 - 2.0,
                     lastUpdate    = now
@@ -183,7 +204,7 @@ object CanDecoder {
             ID_LAT_ACCEL -> if (n >= 8) {
                 val b2 = data[2].toInt() and 0xFF
                 val b3 = data[3].toInt() and 0xFF
-                if ((b2 and 0x03) == 0x03 && b3 == 0xFF) null
+                if ((b2 and 0x03) == 0x03 && b3 >= 0xFE) null
                 else state.copy(
                     lateralG   = ((b2 and 0x03) shl 8 or b3) * 0.00390625 - 2.0,
                     yawRate    = ((ubyte(data, 4) and 0x0F) shl 8 or ubyte(data, 5)) * 0.03663 - 75.0,
@@ -219,10 +240,10 @@ object CanDecoder {
             // Units unconfirmed — displayed as 0–100 scale (raw / 40.95) until bar
             // calibration is verified from a live log with known brake pressure.
             // Live log confirmed: raw=912 at initial brake application → 22.3%.
-            ID_BRAKE_PRESS -> if (n >= 3) state.copy(
-                brakePressure = ((ubyte(data, 1) and 0x0F) shl 8 or ubyte(data, 2)) / 40.95,
-                lastUpdate    = now
-            ) else null
+            ID_BRAKE_PRESS -> if (n >= 3) {
+                val brakeRaw = (ubyte(data, 1) and 0x0F) shl 8 or ubyte(data, 2)
+                state.copy(brakePressure = brakeRaw / 40.95, lastUpdate = now)
+            } else null
 
             // ── 0x0C8: Gauge illumination + e-brake ───────────────────────────
             // Brightness: bits 0-4 of byte0  [DigiCluster verified]
@@ -282,17 +303,42 @@ object CanDecoder {
             } else null
 
             // ── 0x1B0: Drive mode steady-state ────────────────────────────────
-            // Byte 6 upper nibble: DriveMode.fromInt mapping is 0=Normal 1=Sport 2=Drift 3=Track.
-            // TODO(L-1): Confirm Track vs Drift byte values from a live SLCAN log with known modes.
-            // Steady-state frames have byte 4 == 0x00.
-            // Button-event transition frames have byte 4 != 0 → ignored for mode tracking.
+            // Byte 6 upper nibble: 0=Normal, 1=Sport-or-higher.
+            // 0x1B0 alone cannot differentiate Sport from Track/Drift.
+            // Combine with 0x420 byte-6 (modeDetail420):
+            //   nibble=0             → NORMAL  (0x420 ignored)
+            //   nibble=1 + 0x10     → SPORT
+            //   nibble=1 + 0x11     → TRACK  (confirmed S2+S3)
+            //   nibble=1 + 0x12     → DRIFT  (hypothesised)
+            //   nibble=1 + other    → SPORT fallback
             ID_DRIVE_MODE -> if (n >= 7) {
                 val b4 = data[4].toInt() and 0xFF
+                val b6 = data[6].toInt() and 0xFF
+                val nibble = b6 ushr 4
+                val resolvedMode = when {
+                    nibble == 0 -> DriveMode.NORMAL
+                    nibble == 1 -> when (modeDetail420) {
+                        0x11 -> DriveMode.TRACK                 // 0x420 b6=0x11 → Track confirmed
+                        else -> DriveMode.SPORT                 // 0x10 or unknown → Sport
+                    }
+                    nibble == 2 -> DriveMode.DRIFT              // DBC VAL_ 432 confirmed
+                    else        -> DriveMode.UNKNOWN
+                }
                 if (b4 != 0) null
-                else state.copy(
-                    driveMode  = DriveMode.fromInt((data[6].toInt() and 0xFF) ushr 4),
-                    lastUpdate = now
-                )
+                else state.copy(driveMode = resolvedMode, lastUpdate = now)
+            } else null
+
+            // ── 0x420: Track mode indicator (~600 ms) ────────────────────────
+            // byte 6: 0x10=Sport/Normal, 0x11=Track (confirmed 3 sessions).
+            // When b6 changes, immediately re-resolve VehicleState.driveMode.
+            ID_DRIVE_MODE_EXT -> if (n >= 7) {
+                val newDetail = ubyte(data, 6)
+                modeDetail420 = newDetail
+                // Only re-resolve if current mode is Sport or Track (nibble=1 territory)
+                if (state.driveMode == DriveMode.SPORT || state.driveMode == DriveMode.TRACK) {
+                    val resolved = if (newDetail == 0x11) DriveMode.TRACK else DriveMode.SPORT
+                    state.copy(driveMode = resolved, lastUpdate = now)
+                } else null
             } else null
 
             // ── 0x1C0: ESC mode ────────────────────────────────────────────────

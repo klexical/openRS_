@@ -16,6 +16,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -46,6 +47,7 @@ import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.EscStatus
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.service.CanDataService
+import com.openrs.dash.ui.trip.TripPage
 import kotlin.math.roundToInt
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -173,6 +175,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         enableEdgeToEdge()
         UserPrefsStore.load(this)
 
@@ -185,8 +188,10 @@ class MainActivity : ComponentActivity() {
             val vs          by OpenRSDashApp.instance.vehicleState.collectAsState()
             val prefs       by UserPrefsStore.prefs.collectAsState()
             val debugLines  by OpenRSDashApp.instance.debugLines.collectAsState()
+            val tripState   by OpenRSDashApp.instance.tripState.collectAsState()
             var tab         by remember { mutableIntStateOf(0) }
-            var settingsOpen by remember { mutableStateOf(false) }
+            var settingsOpen    by remember { mutableStateOf(false) }
+            var showTripOverlay by remember { mutableStateOf(false) }
             val snackbarHostState = remember { SnackbarHostState() }
 
             val view = LocalView.current
@@ -203,40 +208,63 @@ class MainActivity : ComponentActivity() {
                         primary    = prefs.themeAccent
                     )
                 ) {
-                    Scaffold(
-                        snackbarHost  = { SnackbarHost(snackbarHostState) },
-                        containerColor = Bg
-                    ) { innerPadding ->
-                        Box(
-                            Modifier.fillMaxSize().padding(innerPadding)
-                                .background(Bg).statusBarsPadding().navigationBarsPadding()
-                        ) {
-                            Column(Modifier.fillMaxSize()) {
-                                AppHeader(
-                                    vs           = vs,
-                                    prefs        = prefs,
-                                    onSettings   = { settingsOpen = true },
-                                    onConnect    = { service?.startConnection() },
-                                    onDisconnect = { service?.stopConnection() },
-                                    onReconnect  = { service?.reconnect() }
-                                )
-                                TabBar(tab, onSelect = { tab = it })
-                                Box(Modifier.weight(1f)) {
-                                    when (tab) {
-                                        0 -> DashPage(vs, prefs)
-                                        1 -> PowerPage(vs, prefs)
-                                        2 -> ChassisPage(vs, prefs, onReset = { service?.resetPeaks() })
-                                        3 -> TempsPage(vs, prefs)
-                                        4 -> DiagPage(debugLines, vs)
-                                        5 -> MorePage(vs, prefs, snackbarHostState, onSettings = { settingsOpen = true })
+                    // Outer Box so TripPage can overlay the entire screen,
+                    // outside Scaffold — Scaffold's inset consumption is scoped
+                    // to its own content, not to siblings of the Scaffold.
+                    Box(Modifier.fillMaxSize()) {
+                        Scaffold(
+                            snackbarHost  = { SnackbarHost(snackbarHostState) },
+                            containerColor = Bg
+                        ) { innerPadding ->
+                            Box(
+                                Modifier.fillMaxSize().padding(innerPadding)
+                                    .background(Bg).statusBarsPadding().navigationBarsPadding()
+                            ) {
+                                Column(Modifier.fillMaxSize()) {
+                                    AppHeader(
+                                        vs           = vs,
+                                        prefs        = prefs,
+                                        onSettings   = { settingsOpen = true },
+                                        onConnect    = { service?.startConnection() },
+                                        onDisconnect = { service?.stopConnection() },
+                                        onReconnect  = { service?.reconnect() },
+                                        onTrip       = { showTripOverlay = true }
+                                    )
+                                    TabBar(tab, onSelect = { tab = it })
+                                    Box(Modifier.weight(1f)) {
+                                        when (tab) {
+                                            0 -> DashPage(vs, prefs)
+                                            1 -> PowerPage(vs, prefs)
+                                            2 -> ChassisPage(vs, prefs, onReset = { service?.resetPeaks() })
+                                            3 -> TempsPage(vs, prefs)
+                                            4 -> DiagPage(debugLines, vs)
+                                            5 -> MorePage(vs, prefs, snackbarHostState, onSettings = { settingsOpen = true })
+                                        }
                                     }
                                 }
-                            }
 
-                            // Settings sheet (triggered from header ⚙ or MORE tab)
-                            if (settingsOpen) {
-                                SettingsDialog(onDismiss = { settingsOpen = false })
+                                // Settings sheet (triggered from header ⚙ or MORE tab)
+                                if (settingsOpen) {
+                                    SettingsDialog(onDismiss = { settingsOpen = false })
+                                }
                             }
+                        }
+
+                        // Trip Map overlay — sibling of Scaffold, outside its inset
+                        // consumption scope, so TripPage's statusBarsPadding() is reliable.
+                        AnimatedVisibility(
+                            visible = showTripOverlay,
+                            enter   = slideInVertically(initialOffsetY = { it }),
+                            exit    = slideOutVertically(targetOffsetY = { it })
+                        ) {
+                            TripPage(
+                                tripState    = tripState,
+                                vehicleState = vs,
+                                prefs        = prefs,
+                                onStartTrip  = { OpenRSDashApp.instance.tripRecorder.startTrip() },
+                                onEndTrip    = { OpenRSDashApp.instance.tripRecorder.stopTrip() },
+                                onDismiss    = { showTripOverlay = false }
+                            )
                         }
                     }
                 }
@@ -246,7 +274,7 @@ class MainActivity : ComponentActivity() {
 
     private fun startSvc() {
         val i = Intent(this, CanDataService::class.java)
-        try { startForegroundService(i) } catch (_: Exception) { startService(i) }
+        startService(i)
         bindService(i, conn, Context.BIND_AUTO_CREATE)
     }
 
@@ -265,7 +293,8 @@ class MainActivity : ComponentActivity() {
     onSettings: () -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
-    onReconnect: () -> Unit
+    onReconnect: () -> Unit,
+    onTrip: () -> Unit = {}
 ) {
     val accent = LocalThemeAccent.current
     val modeColor = when (vs.driveMode) {
@@ -352,6 +381,19 @@ class MainActivity : ComponentActivity() {
                 contentAlignment = Alignment.Center
             ) {
                 UIText("⚙", 13.sp, Mid)
+            }
+
+            // Trip Map
+            Box(
+                Modifier
+                    .height(28.dp)
+                    .background(accent.copy(alpha = 0.10f), RoundedCornerShape(6.dp))
+                    .border(1.dp, accent.copy(alpha = 0.28f), RoundedCornerShape(6.dp))
+                    .clickable { onTrip() }
+                    .padding(horizontal = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                MonoLabel("TRIP", 9.sp, accent, FontWeight.Bold, 0.15.sp)
             }
         }
     }
@@ -517,7 +559,7 @@ class MainActivity : ComponentActivity() {
                 modifier = Modifier.weight(1f)
             )
             HeroCard(
-                unit = "×1000", value = "%.2f".format(vs.rpm / 1000.0), label = "RPM",
+                unit = "RPM", value = "${vs.rpm.toInt()}", label = "ENGINE",
                 valueColor = Red,
                 borderAccent = Red.copy(alpha = 0.2f),
                 modifier = Modifier.weight(1f)
