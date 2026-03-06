@@ -1,8 +1,5 @@
 package com.openrs.dash.service
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.net.ConnectivityManager
@@ -11,8 +8,6 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.os.Binder
 import android.os.IBinder
-import androidx.core.app.NotificationCompat
-import com.openrs.dash.R
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.can.CanDecoder
 import com.openrs.dash.can.WiCanConnection
@@ -22,12 +17,6 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
 class CanDataService : Service() {
-
-    companion object {
-        // v2: channel recreated with IMPORTANCE_MIN (old channel importance was locked by Android)
-        const val CHANNEL_ID = "openrs_can_v2"
-        const val NOTIFICATION_ID = 1
-    }
 
     private val binder = LocalBinder()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -60,20 +49,6 @@ class CanDataService : Service() {
     override fun onCreate() {
         super.onCreate()
         wican = buildWiCan()
-        createNotificationChannel()
-        try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                startForeground(
-                    NOTIFICATION_ID,
-                    buildNotification("Ready"),
-                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
-                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
-                )
-            } else {
-                startForeground(NOTIFICATION_ID, buildNotification("Ready"))
-            }
-        } catch (e: Exception) { e.printStackTrace() }
-
         registerWifiCallback()
         if (isOnWifi()) startConnection()
     }
@@ -104,9 +79,7 @@ class CanDataService : Service() {
                 if (connectionJob?.isActive != true) startConnection()
             }
             override fun onLost(network: Network) {
-                // WiFi lost — stop retrying; connection will fail and notify
                 stopConnection()
-                try { updateNotification("No WiFi") } catch (_: Exception) {}
             }
         }
         try { cm.registerNetworkCallback(request, wifiCallback!!) } catch (_: Exception) {}
@@ -122,10 +95,7 @@ class CanDataService : Service() {
     // ── Connection control ───────────────────────────────────────────────────
 
     fun startConnection() {
-        if (!isOnWifi()) {
-            try { updateNotification("No WiFi — connect to openRS_ network") } catch (_: Exception) {}
-            return
-        }
+        if (!isOnWifi()) return
         if (connectionJob?.isActive == true) return
         wican = buildWiCan()
 
@@ -142,21 +112,13 @@ class CanDataService : Service() {
         connectionJob = scope.launch {
             launch {
                 wican.state.collect { state ->
-                    val text = when (state) {
-                        is WiCanConnection.State.Connected    -> "Connected"
-                        is WiCanConnection.State.Connecting   -> "Connecting…"
-                        is WiCanConnection.State.Disconnected -> "Disconnected"
-                        is WiCanConnection.State.Idle         -> "Idle — tap openRS_ to retry"
-                        is WiCanConnection.State.Error        -> "Error"
-                    }
-                    try { updateNotification(text) } catch (_: Exception) {}
                     OpenRSDashApp.instance.vehicleState.update {
                         it.copy(
                             isConnected = state is WiCanConnection.State.Connected,
                             isIdle      = state is WiCanConnection.State.Idle
                         )
                     }
-                    DiagnosticLogger.event("STATE", text)
+                    DiagnosticLogger.event("STATE", state::class.simpleName ?: "Unknown")
                 }
             }
 
@@ -243,7 +205,6 @@ class CanDataService : Service() {
         connectionJob?.cancel()
         connectionJob = null
         OpenRSDashApp.instance.vehicleState.update { it.copy(isConnected = false, isIdle = false) }
-        try { updateNotification("Disconnected") } catch (_: Exception) {}
     }
 
     /** Called from UI when user taps the RETRY badge — fresh WiCanConnection + retry. */
@@ -269,27 +230,4 @@ class CanDataService : Service() {
         OpenRSDashApp.instance.vehicleState.update { it.withPeaksReset() }
     }
 
-    private fun createNotificationChannel() {
-        val channel = NotificationChannel(
-            CHANNEL_ID, "openRS_ CAN Data", NotificationManager.IMPORTANCE_MIN
-        ).apply {
-            description = "WiCAN connection status"
-            setShowBadge(false)
-        }
-        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
-    }
-
-    private fun buildNotification(text: String): Notification =
-        NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("openRS_")
-            .setContentText(text)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setPriority(NotificationCompat.PRIORITY_MIN)
-            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
-            .setOngoing(true).setSilent(true).build()
-
-    private fun updateNotification(text: String) {
-        getSystemService(NotificationManager::class.java)
-            .notify(NOTIFICATION_ID, buildNotification(text))
-    }
 }

@@ -274,7 +274,7 @@ class MainActivity : ComponentActivity() {
 
     private fun startSvc() {
         val i = Intent(this, CanDataService::class.java)
-        try { startForegroundService(i) } catch (_: Exception) { startService(i) }
+        startService(i)
         bindService(i, conn, Context.BIND_AUTO_CREATE)
     }
 
