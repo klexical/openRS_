@@ -33,11 +33,9 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("String", "MAPS_API_KEY",
-            "\"${localProps["MAPS_API_KEY"] ?: ""}\"")
         buildConfigField("String", "OPENWEATHER_API_KEY",
             "\"${localProps["OPENWEATHER_API_KEY"] ?: ""}\"")
-        manifestPlaceholders["MAPS_API_KEY"] = localProps["MAPS_API_KEY"] ?: ""
+
     }
 
     signingConfigs {
@@ -105,7 +103,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
 
     // ── Trip Map ────────────────────────────────────────────
-    implementation("com.google.maps.android:maps-compose:4.3.3")
+    implementation("org.osmdroid:osmdroid-android:6.1.18")
     implementation("com.google.android.gms:play-services-location:21.3.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 

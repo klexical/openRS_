@@ -1,6 +1,7 @@
 package com.openrs.dash.ui.trip
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -32,9 +33,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -42,31 +44,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.google.android.gms.maps.CameraUpdateFactory
-import com.google.android.gms.maps.model.LatLng
-import com.google.maps.android.compose.Circle
-import com.google.maps.android.compose.GoogleMap
-import com.google.maps.android.compose.MapProperties
-import com.google.android.gms.maps.model.MapStyleOptions
-import com.google.maps.android.compose.MapUiSettings
-import com.google.maps.android.compose.Marker
-import com.google.maps.android.compose.MarkerState
-import com.google.maps.android.compose.Polyline
-import com.google.maps.android.compose.rememberCameraPositionState
-import com.openrs.dash.R
+import androidx.compose.ui.viewinterop.AndroidView
+import com.openrs.dash.BuildConfig
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.PeakType
 import com.openrs.dash.data.TripState
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.data.WeatherData
 import com.openrs.dash.ui.Accent
-import com.openrs.dash.ui.Bg
 import com.openrs.dash.ui.BarlowCond
+import com.openrs.dash.ui.Bg
 import com.openrs.dash.ui.Brd
 import com.openrs.dash.ui.DataCell
 import com.openrs.dash.ui.Dim
@@ -81,20 +75,47 @@ import com.openrs.dash.ui.Orange
 import com.openrs.dash.ui.OrbitronFamily
 import com.openrs.dash.ui.Surf
 import com.openrs.dash.ui.Surf2
-import com.openrs.dash.ui.Surf3
 import com.openrs.dash.ui.UIText
 import com.openrs.dash.ui.UserPrefs
 import com.openrs.dash.ui.Warn
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import org.osmdroid.config.Configuration
+import org.osmdroid.tileprovider.tilesource.XYTileSource
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.Marker
 
-/** Which parameter colors the route polyline. */
+/** CartoDB Dark Matter tiles — dark-themed OSM tiles, free for personal use. */
+private fun cartoDarkTiles() = XYTileSource(
+    "CartoDB.DarkMatter", 1, 19, 256, ".png",
+    arrayOf(
+        "https://a.basemaps.cartocdn.com/dark_all/",
+        "https://b.basemaps.cartocdn.com/dark_all/",
+        "https://c.basemaps.cartocdn.com/dark_all/",
+        "https://d.basemaps.cartocdn.com/dark_all/"
+    ),
+    "© OpenStreetMap contributors © CARTO"
+)
+
+/** Programmatic cyan position dot for the current GPS location marker. */
+private fun createPositionDot(ctx: Context): android.graphics.drawable.Drawable {
+    val size = 32
+    val bmp  = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bmp)
+    val paint  = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    paint.color = android.graphics.Color.WHITE
+    paint.style = android.graphics.Paint.Style.FILL
+    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 1f, paint)
+    paint.color = android.graphics.Color.argb(255, 0, 210, 255)  // #00D2FF
+    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 5f, paint)
+    return android.graphics.drawable.BitmapDrawable(ctx.resources, bmp)
+}
+
+/** Which parameter drives the route polyline color. */
 private enum class ColorMode { SPEED, DRIVE_MODE }
 
 /**
- * Full-screen trip overlay — Google Map with live telemetry HUD.
+ * Full-screen trip overlay — OpenStreetMap (CartoDB Dark Matter) with live telemetry HUD.
  *
  * Triggered from [AppHeader]'s TRIP button; rendered inside the outermost Box in
  * MainActivity so it covers the tab bar and header completely.
@@ -109,11 +130,11 @@ fun TripPage(
     onEndTrip: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    val ctx = LocalContext.current
+    val ctx    = LocalContext.current
     val accent = LocalThemeAccent.current
-    val scope = rememberCoroutineScope()
+    val scope  = rememberCoroutineScope()
 
-    // ── Permission ────────────────────────────────────────────────────────────
+    // ── Location permission ───────────────────────────────────────────────────
     var hasLocationPerm by remember {
         mutableStateOf(
             ctx.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) ==
@@ -129,20 +150,9 @@ fun TripPage(
 
     // ── Trip summary sheet ─────────────────────────────────────────────────────
     var showSummary by remember { mutableStateOf(false) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState  = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // ── Camera ────────────────────────────────────────────────────────────────
-    val cameraPositionState = rememberCameraPositionState()
-    val lastPoint = tripState.points.lastOrNull()
-    LaunchedEffect(lastPoint) {
-        lastPoint?.let {
-            cameraPositionState.animate(
-                CameraUpdateFactory.newLatLngZoom(LatLng(it.lat, it.lng), 15f)
-            )
-        }
-    }
-
-    // ── Polyline segments (rebuilt only when point list grows) ─────────────────
+    // ── Polyline segments — rebuilt only when point list grows or mode changes ──
     val segments = remember(tripState.points.size, colorMode) {
         tripState.points.zipWithNext().map { (a, b) ->
             val color = when (colorMode) {
@@ -156,14 +166,14 @@ fun TripPage(
                     }
                 }
                 ColorMode.DRIVE_MODE -> when (a.driveMode) {
-                    DriveMode.SPORT   -> Warn
-                    DriveMode.TRACK   -> Ok
-                    DriveMode.DRIFT   -> Orange
-                    DriveMode.CUSTOM  -> accent
-                    else              -> Accent
+                    DriveMode.SPORT  -> Warn
+                    DriveMode.TRACK  -> Ok
+                    DriveMode.DRIFT  -> Orange
+                    DriveMode.CUSTOM -> accent
+                    else             -> Accent
                 }
             }
-            listOf(LatLng(a.lat, a.lng), LatLng(b.lat, b.lng)) to color
+            listOf(GeoPoint(a.lat, a.lng), GeoPoint(b.lat, b.lng)) to color
         }
     }
 
@@ -174,8 +184,11 @@ fun TripPage(
             TripHeader(
                 isRecording = tripState.isRecording,
                 colorMode   = colorMode,
-                onColorMode = { colorMode = if (colorMode == ColorMode.SPEED) ColorMode.DRIVE_MODE else ColorMode.SPEED },
-                onDismiss   = onDismiss
+                onColorMode = {
+                    colorMode = if (colorMode == ColorMode.SPEED) ColorMode.DRIVE_MODE
+                                else ColorMode.SPEED
+                },
+                onDismiss = onDismiss
             )
 
             // ── Map ──────────────────────────────────────────────────────────
@@ -185,68 +198,13 @@ fun TripPage(
                     .weight(0.55f)
             ) {
                 if (hasLocationPerm) {
-                    GoogleMap(
-                        modifier = Modifier.fillMaxSize(),
-                        cameraPositionState = cameraPositionState,
-                        properties = MapProperties(
-                            mapStyleOptions = MapStyleOptions.loadRawResourceStyle(
-                                ctx, R.raw.map_style_dark
-                            )
-                        ),
-                        uiSettings = MapUiSettings(
-                            zoomControlsEnabled  = false,
-                            mapToolbarEnabled    = false,
-                            myLocationButtonEnabled = false,
-                            compassEnabled       = false
-                        )
-                    ) {
-                        // Route polyline
-                        key(tripState.points.size, colorMode) {
-                            segments.forEach { (pts, color) ->
-                                Polyline(
-                                    points = pts,
-                                    color  = color,
-                                    width  = 10f
-                                )
-                            }
-                        }
+                    OsmTripMap(
+                        tripState = tripState,
+                        segments  = segments,
+                        modifier  = Modifier.fillMaxSize()
+                    )
 
-                        // Current position dot
-                        lastPoint?.let { pt ->
-                            Circle(
-                                center      = LatLng(pt.lat, pt.lng),
-                                radius      = 6.0,
-                                fillColor   = accent,
-                                strokeColor = Frost,
-                                strokeWidth = 3f
-                            )
-                        }
-
-                        // Peak event markers
-                        tripState.peakEvents.forEach { event ->
-                            val snippet = when (event.type) {
-                                PeakType.RPM       -> "%.0f rpm".format(event.value)
-                                PeakType.BOOST     -> "%.1f psi".format(event.value)
-                                PeakType.LATERAL_G -> "%.2f g".format(event.value)
-                            }
-                            Marker(
-                                state   = MarkerState(LatLng(event.lat, event.lng)),
-                                title   = event.type.label,
-                                snippet = snippet
-                            )
-                        }
-
-                        // Race-Ready first-achieved marker
-                        tripState.rtrAchievedPoint?.let { pt ->
-                            Marker(
-                                state   = MarkerState(LatLng(pt.lat, pt.lng)),
-                                title   = "Race Ready",
-                                snippet = "RTR achieved here"
-                            )
-                        }
-                    }
-
-                    // Weather overlay (top-right of map)
+                    // Weather overlay (top-right corner of map)
                     tripState.currentWeather?.let { weather ->
                         WeatherCard(
                             weather  = weather,
@@ -257,7 +215,7 @@ fun TripPage(
                         )
                     }
 
-                    // Legend strip (bottom of map)
+                    // Color legend strip (bottom-left of map)
                     ColorLegend(
                         colorMode = colorMode,
                         modifier  = Modifier
@@ -283,9 +241,7 @@ fun TripPage(
                             Spacer(Modifier.height(4.dp))
                             Button(
                                 onClick = {
-                                    permLauncher.launch(
-                                        Manifest.permission.ACCESS_FINE_LOCATION
-                                    )
+                                    permLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = accent)
                             ) {
@@ -307,104 +263,43 @@ fun TripPage(
             ) {
                 // Row 1 — Speed · RPM · Gear · Avg RPM
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    DataCell(
-                        "SPD",
+                    DataCell("SPD",
                         "${prefs.displaySpeed(vehicleState.speedKph)} ${prefs.speedLabel}",
-                        modifier = Modifier.weight(1f)
-                    )
-                    DataCell(
-                        "RPM",
-                        "%.0f".format(vehicleState.rpm),
-                        modifier = Modifier.weight(1f)
-                    )
-                    DataCell(
-                        "GEAR",
-                        vehicleState.gearDisplay,
-                        modifier = Modifier.weight(1f)
-                    )
-                    DataCell(
-                        "AVG RPM",
-                        "%.0f".format(tripState.avgRpm),
-                        modifier = Modifier.weight(1f)
-                    )
+                        modifier = Modifier.weight(1f))
+                    DataCell("RPM",     "%.0f".format(vehicleState.rpm),       modifier = Modifier.weight(1f))
+                    DataCell("GEAR",    vehicleState.gearDisplay,               modifier = Modifier.weight(1f))
+                    DataCell("AVG RPM", "%.0f".format(tripState.avgRpm),        modifier = Modifier.weight(1f))
                 }
 
                 // Row 2 — Coolant · Oil · Ambient · Fuel %
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    DataCell(
-                        "CLT",
-                        "${prefs.displayTemp(vehicleState.coolantTempC)}${prefs.tempLabel}",
-                        modifier = Modifier.weight(1f)
-                    )
-                    DataCell(
-                        "OIL",
-                        "${prefs.displayTemp(vehicleState.oilTempC)}${prefs.tempLabel}",
-                        modifier = Modifier.weight(1f)
-                    )
-                    DataCell(
-                        "AMB",
-                        "${prefs.displayTemp(vehicleState.ambientTempC)}${prefs.tempLabel}",
-                        modifier = Modifier.weight(1f)
-                    )
-                    DataCell(
-                        "FUEL",
-                        "%.0f%%".format(vehicleState.fuelLevelPct),
-                        modifier = Modifier.weight(1f)
-                    )
+                    DataCell("CLT",  "${prefs.displayTemp(vehicleState.coolantTempC)}${prefs.tempLabel}", modifier = Modifier.weight(1f))
+                    DataCell("OIL",  "${prefs.displayTemp(vehicleState.oilTempC)}${prefs.tempLabel}",     modifier = Modifier.weight(1f))
+                    DataCell("AMB",  "${prefs.displayTemp(vehicleState.ambientTempC)}${prefs.tempLabel}", modifier = Modifier.weight(1f))
+                    DataCell("FUEL", "%.0f%%".format(vehicleState.fuelLevelPct),                          modifier = Modifier.weight(1f))
                 }
 
                 // Row 3 — RDU · PTU · Fuel used · Economy
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    DataCell(
-                        "RDU",
+                    DataCell("RDU",
                         if (vehicleState.rduTempC > -90)
-                            "${prefs.displayTemp(vehicleState.rduTempC)}${prefs.tempLabel}"
-                        else "--",
-                        modifier = Modifier.weight(1f)
-                    )
-                    DataCell(
-                        "PTU",
-                        "${prefs.displayTemp(vehicleState.ptuTempC)}${prefs.tempLabel}",
-                        modifier = Modifier.weight(1f)
-                    )
-                    DataCell(
-                        "USED",
-                        "%.2fL".format(tripState.fuelUsedL),
-                        modifier = Modifier.weight(1f)
-                    )
+                            "${prefs.displayTemp(vehicleState.rduTempC)}${prefs.tempLabel}" else "--",
+                        modifier = Modifier.weight(1f))
+                    DataCell("PTU",  "${prefs.displayTemp(vehicleState.ptuTempC)}${prefs.tempLabel}", modifier = Modifier.weight(1f))
+                    DataCell("USED", "%.2fL".format(tripState.fuelUsedL),                             modifier = Modifier.weight(1f))
                     val (econVal, econUnit) = if (prefs.speedUnit == "MPH")
-                        "%.1f".format(tripState.avgFuelMpg) to "MPG"
+                        "%.1f".format(tripState.avgFuelMpg)      to "MPG"
                     else
                         "%.1f".format(tripState.avgFuelL100km) to "L/100"
-                    DataCell(
-                        "ECON",
-                        "$econVal $econUnit",
-                        modifier = Modifier.weight(1f)
-                    )
+                    DataCell("ECON", "$econVal $econUnit",                                             modifier = Modifier.weight(1f))
                 }
 
                 // Row 4 — Wheel speeds
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    DataCell(
-                        "FL",
-                        "${prefs.displaySpeed(vehicleState.wheelSpeedFL)} ${prefs.speedLabel}",
-                        modifier = Modifier.weight(1f)
-                    )
-                    DataCell(
-                        "FR",
-                        "${prefs.displaySpeed(vehicleState.wheelSpeedFR)} ${prefs.speedLabel}",
-                        modifier = Modifier.weight(1f)
-                    )
-                    DataCell(
-                        "RL",
-                        "${prefs.displaySpeed(vehicleState.wheelSpeedRL)} ${prefs.speedLabel}",
-                        modifier = Modifier.weight(1f)
-                    )
-                    DataCell(
-                        "RR",
-                        "${prefs.displaySpeed(vehicleState.wheelSpeedRR)} ${prefs.speedLabel}",
-                        modifier = Modifier.weight(1f)
-                    )
+                    DataCell("FL", "${prefs.displaySpeed(vehicleState.wheelSpeedFL)} ${prefs.speedLabel}", modifier = Modifier.weight(1f))
+                    DataCell("FR", "${prefs.displaySpeed(vehicleState.wheelSpeedFR)} ${prefs.speedLabel}", modifier = Modifier.weight(1f))
+                    DataCell("RL", "${prefs.displaySpeed(vehicleState.wheelSpeedRL)} ${prefs.speedLabel}", modifier = Modifier.weight(1f))
+                    DataCell("RR", "${prefs.displaySpeed(vehicleState.wheelSpeedRR)} ${prefs.speedLabel}", modifier = Modifier.weight(1f))
                 }
 
                 Spacer(Modifier.weight(1f))
@@ -416,16 +311,15 @@ fun TripPage(
                             showSummary = tripState.points.isNotEmpty()
                             onEndTrip()
                         } else {
-                            if (!hasLocationPerm) {
+                            if (!hasLocationPerm)
                                 permLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-                            } else {
+                            else
                                 onStartTrip()
-                            }
                         }
                     },
                     modifier = Modifier.fillMaxWidth().height(44.dp),
-                    shape  = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(
+                    shape    = RoundedCornerShape(8.dp),
+                    colors   = ButtonDefaults.buttonColors(
                         containerColor = if (tripState.isRecording) Orange else accent
                     )
                 ) {
@@ -459,6 +353,109 @@ fun TripPage(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// OSM MAP
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * OpenStreetMap map using CartoDB Dark Matter tiles.
+ * Polyline segments and markers are rebuilt whenever [tripState] changes.
+ * Camera auto-follows the latest recorded point, guarded against constant
+ * redraws by a non-state int ref.
+ */
+@Composable
+private fun OsmTripMap(
+    tripState: TripState,
+    segments: List<Pair<List<GeoPoint>, Color>>,
+    modifier: Modifier = Modifier
+) {
+    val ctx = LocalContext.current
+    val lastCameraSizeRef = remember { intArrayOf(-1) }
+
+    AndroidView(
+        factory = { context ->
+            Configuration.getInstance().apply {
+                load(context, context.getSharedPreferences("osmdroid", Context.MODE_PRIVATE))
+                userAgentValue = "openRS_/${BuildConfig.VERSION_NAME}"
+            }
+            MapView(context).apply {
+                setTileSource(cartoDarkTiles())
+                setMultiTouchControls(true)
+                isTilesScaledToDpi = true
+                controller.setZoom(15.0)
+                zoomController.setVisibility(
+                    org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER
+                )
+            }
+        },
+        update = { mapView ->
+            mapView.overlays.clear()
+
+            // Route polyline segments
+            segments.forEach { (geoPoints, color) ->
+                if (geoPoints.size >= 2) {
+                    org.osmdroid.views.overlay.Polyline(mapView).apply {
+                        setPoints(geoPoints)
+                        outlinePaint.color       = color.toArgb()
+                        outlinePaint.strokeWidth = 10f
+                        outlinePaint.strokeCap   = android.graphics.Paint.Cap.ROUND
+                        outlinePaint.isAntiAlias = true
+                    }.also { mapView.overlays.add(it) }
+                }
+            }
+
+            // Current position dot
+            tripState.points.lastOrNull()?.let { pt ->
+                Marker(mapView).apply {
+                    position = GeoPoint(pt.lat, pt.lng)
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    icon  = createPositionDot(ctx)
+                    title = null
+                }.also { mapView.overlays.add(it) }
+            }
+
+            // Peak event markers
+            tripState.peakEvents.forEach { event ->
+                Marker(mapView).apply {
+                    position = GeoPoint(event.lat, event.lng)
+                    title    = event.type.label
+                    snippet  = when (event.type) {
+                        PeakType.RPM       -> "%.0f rpm".format(event.value)
+                        PeakType.BOOST     -> "%.1f psi".format(event.value)
+                        PeakType.LATERAL_G -> "%.2f g".format(event.value)
+                    }
+                }.also { mapView.overlays.add(it) }
+            }
+
+            // Race-Ready marker
+            tripState.rtrAchievedPoint?.let { pt ->
+                Marker(mapView).apply {
+                    position = GeoPoint(pt.lat, pt.lng)
+                    title    = "Race Ready"
+                    snippet  = "RTR achieved here"
+                }.also { mapView.overlays.add(it) }
+            }
+
+            // Camera: animate only when a new GPS point is added
+            val currentSize = tripState.points.size
+            if (currentSize != lastCameraSizeRef[0]) {
+                tripState.points.lastOrNull()?.let { pt ->
+                    mapView.controller.animateTo(GeoPoint(pt.lat, pt.lng))
+                }
+                lastCameraSizeRef[0] = currentSize
+            }
+
+            mapView.invalidate()
+        },
+        modifier = modifier
+    )
+
+    // OSMDroid lifecycle
+    DisposableEffect(Unit) {
+        onDispose { /* AndroidView handles detach */ }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // TRIP HEADER
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -470,7 +467,6 @@ private fun TripHeader(
     onDismiss: () -> Unit
 ) {
     val accent = LocalThemeAccent.current
-
     val infiniteTransition = rememberInfiniteTransition(label = "rec")
     val recAlpha by infiniteTransition.animateFloat(
         initialValue = 1f, targetValue = 0.2f, label = "recDot",
@@ -486,7 +482,6 @@ private fun TripHeader(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Back button
         Box(
             Modifier
                 .size(28.dp)
@@ -494,13 +489,10 @@ private fun TripHeader(
                 .border(1.dp, Brd, RoundedCornerShape(6.dp))
                 .clickable { onDismiss() },
             contentAlignment = Alignment.Center
-        ) {
-            UIText("←", 14.sp, Mid)
-        }
+        ) { UIText("←", 14.sp, Mid) }
 
         Spacer(Modifier.width(8.dp))
 
-        // Title + REC indicator
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -509,16 +501,13 @@ private fun TripHeader(
             MonoLabel("TRIP MAP", 11.sp, Frost, FontWeight.Bold, 0.2.sp)
             if (isRecording) {
                 Box(
-                    Modifier
-                        .size(7.dp)
-                        .clip(CircleShape)
+                    Modifier.size(7.dp).clip(CircleShape)
                         .background(Orange.copy(alpha = recAlpha))
                 )
                 MonoLabel("REC", 9.sp, Orange, FontWeight.Bold, 0.2.sp)
             }
         }
 
-        // Color mode toggle
         Box(
             Modifier
                 .background(Surf2, RoundedCornerShape(4.dp))
@@ -535,15 +524,11 @@ private fun TripHeader(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// WEATHER CARD OVERLAY
+// WEATHER CARD
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
-private fun WeatherCard(
-    weather: WeatherData,
-    prefs: UserPrefs,
-    modifier: Modifier = Modifier
-) {
+private fun WeatherCard(weather: WeatherData, prefs: UserPrefs, modifier: Modifier = Modifier) {
     val tempStr = prefs.displayTemp(weather.tempC) + prefs.tempLabel
     val windStr = if (prefs.speedUnit == "MPH")
         "%.0f mph".format(weather.windMps * 2.237)
@@ -577,7 +562,7 @@ private fun WeatherCard(
 @Composable
 private fun ColorLegend(colorMode: ColorMode, modifier: Modifier = Modifier) {
     val accent = LocalThemeAccent.current
-    val items: List<Pair<androidx.compose.ui.graphics.Color, String>> = when (colorMode) {
+    val items: List<Pair<Color, String>> = when (colorMode) {
         ColorMode.SPEED -> listOf(
             Ok     to "<60",
             Accent to "60–100",
@@ -603,12 +588,7 @@ private fun ColorLegend(colorMode: ColorMode, modifier: Modifier = Modifier) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(3.dp)
             ) {
-                Box(
-                    Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(color)
-                )
+                Box(Modifier.size(8.dp).clip(CircleShape).background(color))
                 MonoLabel(label, 7.sp, Mid, letterSpacing = 0.1.sp)
             }
         }
@@ -616,44 +596,33 @@ private fun ColorLegend(colorMode: ColorMode, modifier: Modifier = Modifier) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TRIP SUMMARY SHEET CONTENT
+// TRIP SUMMARY SHEET
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
-private fun TripSummaryContent(
-    tripState: TripState,
-    prefs: UserPrefs,
-    onClose: () -> Unit
-) {
-    val ctx = LocalContext.current
+private fun TripSummaryContent(tripState: TripState, prefs: UserPrefs, onClose: () -> Unit) {
     val accent = LocalThemeAccent.current
 
-    val distStr = "%.2f".format(
+    val distStr = "%.2f %s".format(
         if (prefs.speedUnit == "MPH") tripState.cumulativeDistanceKm * 0.621371
-        else tripState.cumulativeDistanceKm
-    ) + " ${if (prefs.speedUnit == "MPH") "mi" else "km"}"
-
-    val elapsedSec  = tripState.elapsedMs / 1000L
-    val elapsedStr  = "%d:%02d:%02d".format(elapsedSec / 3600, (elapsedSec % 3600) / 60, elapsedSec % 60)
-
-    val maxSpeedStr = prefs.displaySpeed(tripState.maxSpeedKph) + " " + prefs.speedLabel
-    val avgSpeedStr = prefs.displaySpeed(tripState.avgSpeedKph) + " " + prefs.speedLabel
-
+        else tripState.cumulativeDistanceKm,
+        if (prefs.speedUnit == "MPH") "mi" else "km"
+    )
+    val elapsedSec = tripState.elapsedMs / 1000L
+    val elapsedStr = "%d:%02d:%02d".format(elapsedSec / 3600, (elapsedSec % 3600) / 60, elapsedSec % 60)
     val (econVal, econUnit) = if (prefs.speedUnit == "MPH")
-        "%.1f".format(tripState.avgFuelMpg) to "MPG"
+        "%.1f".format(tripState.avgFuelMpg)      to "MPG"
     else
         "%.1f".format(tripState.avgFuelL100km) to "L/100km"
 
     Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment     = Alignment.CenterVertically
         ) {
             MonoLabel("TRIP SUMMARY", 11.sp, accent, FontWeight.Bold, 0.2.sp)
             Box(
@@ -662,59 +631,53 @@ private fun TripSummaryContent(
                     .border(1.dp, Brd, RoundedCornerShape(6.dp))
                     .clickable { onClose() }
                     .padding(horizontal = 10.dp, vertical = 5.dp)
-            ) {
-                MonoLabel("CLOSE", 9.sp, Mid, letterSpacing = 0.15.sp)
-            }
+            ) { MonoLabel("CLOSE", 9.sp, Mid, letterSpacing = 0.15.sp) }
         }
 
-        // Stats grid
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SummaryCell("DISTANCE", distStr, Modifier.weight(1f))
+            SummaryCell("DISTANCE", distStr,    Modifier.weight(1f))
             SummaryCell("DURATION", elapsedStr, Modifier.weight(1f))
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SummaryCell("MAX SPEED", maxSpeedStr, Modifier.weight(1f))
-            SummaryCell("AVG SPEED", avgSpeedStr, Modifier.weight(1f))
+            SummaryCell("MAX SPEED", prefs.displaySpeed(tripState.maxSpeedKph) + " " + prefs.speedLabel, Modifier.weight(1f))
+            SummaryCell("AVG SPEED", prefs.displaySpeed(tripState.avgSpeedKph) + " " + prefs.speedLabel, Modifier.weight(1f))
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SummaryCell("FUEL USED", "%.2f L".format(tripState.fuelUsedL), Modifier.weight(1f))
-            SummaryCell(econUnit, econVal, Modifier.weight(1f))
+            SummaryCell(econUnit, econVal,                                  Modifier.weight(1f))
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SummaryCell("PEAK RPM",   "%.0f".format(tripState.peakRpm),    Modifier.weight(1f))
+            SummaryCell("PEAK RPM",   "%.0f".format(tripState.peakRpm),         Modifier.weight(1f))
             SummaryCell("PEAK BOOST", "%.1f PSI".format(tripState.peakBoostPsi), Modifier.weight(1f))
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SummaryCell("AVG RPM",    "%.0f".format(tripState.avgRpm),      Modifier.weight(1f))
-            SummaryCell("PEAK LAT G", "%.2f g".format(tripState.peakLateralG), Modifier.weight(1f))
+            SummaryCell("AVG RPM",    "%.0f".format(tripState.avgRpm),           Modifier.weight(1f))
+            SummaryCell("PEAK LAT G", "%.2f g".format(tripState.peakLateralG),   Modifier.weight(1f))
         }
 
-        // Drive mode breakdown
         if (tripState.driveModeBreakdown.isNotEmpty()) {
             MonoLabel("DRIVE MODE BREAKDOWN", 9.sp, Dim, letterSpacing = 0.2.sp)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                tripState.driveModeBreakdown.entries
-                    .sortedByDescending { it.value }
-                    .forEach { (mode, frac) ->
-                        val modeColor = when (mode) {
-                            DriveMode.SPORT  -> Warn
-                            DriveMode.TRACK  -> Ok
-                            DriveMode.DRIFT  -> Orange
-                            DriveMode.CUSTOM -> accent
-                            else             -> Accent
-                        }
-                        Box(
-                            Modifier
-                                .background(modeColor.copy(alpha = 0.12f), RoundedCornerShape(4.dp))
-                                .border(1.dp, modeColor.copy(alpha = 0.35f), RoundedCornerShape(4.dp))
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            MonoLabel(
-                                "${mode.label.uppercase()} ${"%.0f".format(frac * 100)}%",
-                                9.sp, modeColor, letterSpacing = 0.1.sp
-                            )
-                        }
+                tripState.driveModeBreakdown.entries.sortedByDescending { it.value }.forEach { (mode, frac) ->
+                    val modeColor = when (mode) {
+                        DriveMode.SPORT  -> Warn
+                        DriveMode.TRACK  -> Ok
+                        DriveMode.DRIFT  -> Orange
+                        DriveMode.CUSTOM -> accent
+                        else             -> Accent
                     }
+                    Box(
+                        Modifier
+                            .background(modeColor.copy(alpha = 0.12f), RoundedCornerShape(4.dp))
+                            .border(1.dp, modeColor.copy(alpha = 0.35f), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        MonoLabel(
+                            "${mode.label.uppercase()} ${"%.0f".format(frac * 100)}%",
+                            9.sp, modeColor, letterSpacing = 0.1.sp
+                        )
+                    }
+                }
             }
         }
 
