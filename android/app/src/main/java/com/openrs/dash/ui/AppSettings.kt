@@ -44,6 +44,10 @@ object AppSettings {
     const val DEFAULT_AUTO_RECONNECT     = true
     const val DEFAULT_RECONNECT_INTERVAL = 10   // seconds
 
+    // ── Diagnostics ──────────────────────────────────────────────────────────
+    const val KEY_MAX_DIAG_ZIPS     = "max_diag_zips"
+    const val DEFAULT_MAX_DIAG_ZIPS = 5          // keep last N ZIP exports
+
     // ── Theme ────────────────────────────────────────────────────────────────
     const val KEY_THEME_ID     = "theme_id"
     const val DEFAULT_THEME_ID = "cyan"          // RS Nitrous Blue default
@@ -84,6 +88,9 @@ object AppSettings {
     fun getReconnectInterval(ctx: Context): Int =
         prefs(ctx).getInt(KEY_RECONNECT_INTERVAL, DEFAULT_RECONNECT_INTERVAL)
 
+    fun getMaxDiagZips(ctx: Context): Int =
+        prefs(ctx).getInt(KEY_MAX_DIAG_ZIPS, DEFAULT_MAX_DIAG_ZIPS)
+
     fun getThemeId(ctx: Context): String =
         prefs(ctx).getString(KEY_THEME_ID, DEFAULT_THEME_ID) ?: DEFAULT_THEME_ID
 
@@ -109,6 +116,7 @@ object AppSettings {
             putBoolean(KEY_SCREEN_ON,  p.screenOn)
             putBoolean(KEY_AUTO_RECONNECT,    p.autoReconnect)
             putInt   (KEY_RECONNECT_INTERVAL, p.reconnectIntervalSec)
+            putInt   (KEY_MAX_DIAG_ZIPS,      p.maxDiagZips)
             putString(KEY_THEME_ID,    p.themeId)
             putString(KEY_TEMP_PRESET, p.tempPreset)
         }
@@ -123,6 +131,7 @@ object AppSettings {
         screenOn             = getScreenOn(ctx),
         autoReconnect        = getAutoReconnect(ctx),
         reconnectIntervalSec = getReconnectInterval(ctx),
+        maxDiagZips          = getMaxDiagZips(ctx),
         themeId              = getThemeId(ctx),
         tempPreset           = getTempPreset(ctx)
     )

@@ -1007,8 +1007,11 @@ private fun fuelTrimColor(trim: Double) = when {
                 if (vs.rduTempC > -90) p.displayTemp(vs.rduTempC) else "— —", p.tempLabel,
                 vs.rduTempC.takeIf { it > -90 } ?: 0.0,
                 p.rduWarnC, p.rduCritC, if (vs.rduTempC <= -90) "POLLING" else ""),
-            TempSpec("PTU (TRANSFER)", p.displayTemp(vs.ptuTempC), p.tempLabel, vs.ptuTempC,
-                p.rduWarnC, p.rduCritC, ""),
+            // M-8 fix: show "— —" and "POLLING" until first 0x0F8 frame sets the sentinel
+            TempSpec("PTU (TRANSFER)",
+                if (vs.ptuTempC > -90) p.displayTemp(vs.ptuTempC) else "— —", p.tempLabel,
+                vs.ptuTempC.takeIf { it > -90 } ?: 0.0,
+                p.rduWarnC, p.rduCritC, if (vs.ptuTempC <= -90) "POLLING" else ""),
             TempSpec("CHARGE AIR",
                 if (vs.chargeAirTempC != 0.0) p.displayTemp(vs.chargeAirTempC) else "— —", p.tempLabel,
                 vs.chargeAirTempC, 60.0, 80.0, if (vs.chargeAirTempC == 0.0) "POLLING" else ""),
@@ -1214,7 +1217,11 @@ private fun tempColorShade(c: Double, warnC: Double, critC: Double) = when {
                 .border(1.dp, if (!exporting) accent.copy(0.3f) else Dim.copy(0.3f), RoundedCornerShape(10.dp))
                 .clickable(enabled = !exporting) {
                     exporting = true
-                    scope.launch { DiagnosticExporter.share(ctx); exporting = false }
+                    // M-6 fix: run ZIP export on IO dispatcher to avoid ANR on large sessions
+                    scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                        DiagnosticExporter.share(ctx)
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { exporting = false }
+                    }
                 }
                 .padding(vertical = 13.dp),
             contentAlignment = Alignment.Center
@@ -1500,7 +1507,11 @@ private fun tempColorShade(c: Double, warnC: Double, critC: Double) = when {
                     .border(1.dp, accent.copy(0.3f), RoundedCornerShape(10.dp))
                     .clickable(enabled = !exporting) {
                         exporting = true
-                        scope.launch { DiagnosticExporter.share(ctx); exporting = false }
+                        // M-6 fix: run ZIP export on IO dispatcher to avoid ANR on large sessions
+                        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                            DiagnosticExporter.share(ctx)
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { exporting = false }
+                        }
                     }
                     .padding(vertical = 13.dp),
                 contentAlignment = Alignment.Center

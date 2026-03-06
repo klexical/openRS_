@@ -88,7 +88,7 @@ data class VehicleState(
     val awdRightTorque: Double = 0.0,
     val rduTempC: Double = -99.0,   // AWD module Mode 22 PID 0x1E8A; −99 = not yet polled
     val awdMaxTorque: Double = 0.0,
-    val ptuTempC: Double = 0.0,     // 0x0F8 byte7 − 60 °C (passive broadcast)
+    val ptuTempC: Double = -99.0,   // 0x0F8 byte7 − 60 °C; −99 = not yet received (M-8)
 
     // ── Vehicle Status (CAN Sniffed) ────────────────────────
     val driveMode: DriveMode = DriveMode.NORMAL,
@@ -207,10 +207,11 @@ data class VehicleState(
      */
     val rtrStatus: String? get() {
         val cold = mutableListOf<String>()
-        if (oilTempC < 80)                    cold += "Oil ${oilTempC.toInt()}°C < 80°C"
-        if (coolantTempC < 85)                cold += "Coolant ${coolantTempC.toInt()}°C < 85°C"
-        if (rduTempC > -90 && rduTempC < 30)  cold += "RDU ${rduTempC.toInt()}°C < 30°C"
-        if (ptuTempC < 40)                    cold += "PTU ${ptuTempC.toInt()}°C < 40°C"
+        if (oilTempC < 80)                          cold += "Oil ${oilTempC.toInt()}°C < 80°C"
+        if (coolantTempC < 85)                      cold += "Coolant ${coolantTempC.toInt()}°C < 85°C"
+        if (rduTempC > -90 && rduTempC < 30)        cold += "RDU ${rduTempC.toInt()}°C < 30°C"
+        // M-8 fix: guard sentinel −99 so PTU doesn't show as cold before first 0x0F8 frame
+        if (ptuTempC > -90 && ptuTempC < 40)        cold += "PTU ${ptuTempC.toInt()}°C < 40°C"
         return if (cold.isEmpty()) null else cold.joinToString(" · ")
     }
 
@@ -225,13 +226,19 @@ data class VehicleState(
 
     /** TPMS valid checks */
     val hasTpmsData: Boolean get() = tirePressLF >= 0
-    fun anyTireLow(thresholdPsi: Double = 30.0): Boolean = hasTpmsData &&
-        (tirePressLF < thresholdPsi || tirePressRF < thresholdPsi ||
-         tirePressLR < thresholdPsi || tirePressRR < thresholdPsi)
+    /**
+     * M-3 fix: warn only on tires that have valid data (≥ 0).
+     * Tires still carrying their −1.0 sentinel (no sensor, dead battery, or not yet polled)
+     * are excluded so we don't fire false warnings before all four have been read.
+     * This also handles edge cases like missing/aftermarket sensors on one or more corners.
+     */
+    fun anyTireLow(thresholdPsi: Double = 30.0): Boolean =
+        listOf(tirePressLF, tirePressRF, tirePressLR, tirePressRR)
+            .any { it in 0.0..<thresholdPsi }
     val maxTirePressSpread: Double get() {
-        if (!hasTpmsData) return 0.0
-        val all = listOf(tirePressLF, tirePressRF, tirePressLR, tirePressRR)
-        return all.max() - all.min()
+        val valid = listOf(tirePressLF, tirePressRF, tirePressLR, tirePressRR).filter { it >= 0 }
+        if (valid.size < 2) return 0.0
+        return valid.max() - valid.min()
     }
 
     fun withPeaksUpdated(): VehicleState {

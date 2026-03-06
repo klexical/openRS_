@@ -210,20 +210,18 @@ class CanDataService : Service() {
                 },
                 getCurrentState = { OpenRSDashApp.instance.vehicleState.value }
             ).collect { (canId, data) ->
-                val current = OpenRSDashApp.instance.vehicleState.value
-                val updated = CanDecoder.decode(canId, data, current)
-                if (updated != null) {
-                    // Log decoded frame for diagnostics
-                    val desc  = CanDecoder.describeDecoded(canId, updated)
-                    val issue = CanDecoder.validateDecoded(canId, updated)
-                    DiagnosticLogger.logFrame(canId, data, updated, desc, issue)
-
-                    OpenRSDashApp.instance.vehicleState.value = updated
-                        .withPeaksUpdated()
-                        .copy(framesPerSecond = wican.fps)
-                } else {
-                    // Unknown / unimplemented ID — still track in inventory
-                    DiagnosticLogger.logUnknownFrame(canId, data)
+                // C-3 fix: use .update{} so concurrent OBD writes are never clobbered
+                OpenRSDashApp.instance.vehicleState.update { current ->
+                    val updated = CanDecoder.decode(canId, data, current)
+                    if (updated != null) {
+                        val desc  = CanDecoder.describeDecoded(canId, updated)
+                        val issue = CanDecoder.validateDecoded(canId, updated)
+                        DiagnosticLogger.logFrame(canId, data, updated, desc, issue)
+                        updated.withPeaksUpdated().copy(framesPerSecond = wican.fps)
+                    } else {
+                        DiagnosticLogger.logUnknownFrame(canId, data)
+                        current
+                    }
                 }
             }
         }
@@ -241,7 +239,18 @@ class CanDataService : Service() {
     fun reconnect() {
         connectionJob?.cancel()
         connectionJob = null
-        OpenRSDashApp.instance.vehicleState.update { it.copy(isConnected = false, isIdle = false) }
+        // L-6 fix: reset OBD-polled fields to sentinels so stale values from the
+        // previous session don't persist for up to 30 s while new polls complete.
+        OpenRSDashApp.instance.vehicleState.update {
+            it.copy(
+                isConnected  = false, isIdle = false,
+                tirePressLF  = -1.0,  tirePressRF  = -1.0,
+                tirePressLR  = -1.0,  tirePressRR  = -1.0,
+                rduTempC     = -99.0, ptuTempC     = -99.0,
+                odometerKm   = -1L,   batterySoc   = -1.0,
+                batteryTempC = -99.0, cabinTempC   = -99.0
+            )
+        }
         startConnection()
     }
 

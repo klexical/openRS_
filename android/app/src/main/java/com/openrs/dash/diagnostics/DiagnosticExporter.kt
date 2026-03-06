@@ -38,6 +38,15 @@ object DiagnosticExporter {
             val ts  = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
             val zipFile = File(dir, "openrs_diag_$ts.zip")
 
+            // L-7 fix: delete oldest ZIPs when over the user-configured limit
+            val maxKeep = com.openrs.dash.ui.UserPrefsStore.prefs.value.maxDiagZips
+            val existing = dir.listFiles { f -> f.name.startsWith("openrs_diag_") && f.name.endsWith(".zip") }
+            if (existing != null && existing.size >= maxKeep) {
+                existing.sortedBy { it.lastModified() }
+                    .take((existing.size - maxKeep + 1).coerceAtLeast(0))
+                    .forEach { it.delete() }
+            }
+
             // Flush SLCAN log before bundling so we capture up-to-the-moment data
             DiagnosticLogger.flushSlcan()
 
@@ -181,6 +190,7 @@ object DiagnosticExporter {
         appendLine("  Format: TAG ID | count | Δ | last raw hex | decoded | issues")
         appendLine()
 
+        // L-4 fix: added ID_STEERING and ID_BRAKE_PRESS (were missing, showed as "?" in report)
         val knownIds = setOf(
             CanDecoder.ID_TORQUE, CanDecoder.ID_THROTTLE, CanDecoder.ID_PEDALS,
             CanDecoder.ID_ENGINE_RPM, CanDecoder.ID_GAUGE_ILLUM, CanDecoder.ID_ENGINE_TEMPS,
@@ -188,7 +198,7 @@ object DiagnosticExporter {
             CanDecoder.ID_DRIVE_MODE, CanDecoder.ID_ESC_ABS, CanDecoder.ID_WHEEL_SPEEDS,
             CanDecoder.ID_GEAR, CanDecoder.ID_AWD_TORQUE,
             CanDecoder.ID_COOLANT, CanDecoder.ID_TPMS, CanDecoder.ID_AMBIENT_TEMP,
-            CanDecoder.ID_FUEL_LEVEL
+            CanDecoder.ID_FUEL_LEVEL, CanDecoder.ID_STEERING, CanDecoder.ID_BRAKE_PRESS
         )
 
         inventory.entries.sortedBy { it.key }.forEach { (id, info) ->

@@ -3,7 +3,12 @@ package com.openrs.dash.auto.screens
 import androidx.car.app.CarContext
 import androidx.car.app.Screen
 import androidx.car.app.model.*
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import com.openrs.dash.OpenRSDashApp
+import com.openrs.dash.data.VehicleState
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.collectLatest
 import kotlin.math.roundToInt
 
 /**
@@ -17,11 +22,38 @@ class TpmsScreen(carContext: CarContext) : Screen(carContext) {
         const val WARN_SPREAD_PSI = 5.0
     }
 
+    // M-2 fix: add lifecycle-aware collection so the screen refreshes on state changes.
+    // Previously onGetTemplate() read a point-in-time snapshot with no invalidate() ever called.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var collectJob: Job? = null
+    private var last = VehicleState()
+
+    init {
+        lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) {
+                collectJob = scope.launch {
+                    OpenRSDashApp.instance.vehicleState.collectLatest { s ->
+                        if (changed(last, s)) { last = s; invalidate() }
+                    }
+                }
+            }
+            override fun onStop(owner: LifecycleOwner) { collectJob?.cancel() }
+        })
+    }
+
+    private fun changed(o: VehicleState, n: VehicleState): Boolean {
+        if (o.tirePressLF != n.tirePressLF || o.tirePressRF != n.tirePressRF) return true
+        if (o.tirePressLR != n.tirePressLR || o.tirePressRR != n.tirePressRR) return true
+        if (o.hasTpmsData != n.hasTpmsData) return true
+        if (o.oilLifePct != n.oilLifePct) return true
+        return false
+    }
+
     private fun tF(tempC: Double): String =
         if (tempC > -90) "${(tempC * 9.0 / 5.0 + 32).roundToInt()}°" else ""
 
     override fun onGetTemplate(): Template {
-        val s = OpenRSDashApp.instance.vehicleState.value
+        val s = last
         val hasTpms = s.hasTpmsData
         val pane = Pane.Builder()
 

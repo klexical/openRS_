@@ -190,7 +190,12 @@ object DiagnosticLogger {
         event("SESSION", "Started — $host:$port")
     }
 
-    fun sessionEnd() = event("SESSION", "Ended after ${formatDuration(sessionDurationMs)}")
+    fun sessionEnd() {
+        event("SESSION", "Ended after ${formatDuration(sessionDurationMs)}")
+        // L-9 fix: flush the SLCAN writer so up to 999 buffered frames are not lost
+        // when the session ends between the 1,000-line periodic flush points.
+        flushSlcan()
+    }
 
     /**
      * Flush SLCAN log to disk without closing.

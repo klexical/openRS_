@@ -18,18 +18,19 @@ import kotlin.math.roundToInt
  */
 class TempsScreen(carContext: CarContext) : Screen(carContext) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var collectJob: Job? = null
     private var last = VehicleState()
 
     init {
         lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
-                scope.launch {
+                collectJob = scope.launch {
                     OpenRSDashApp.instance.vehicleState.collectLatest { s ->
                         if (changed(last, s)) { last = s; invalidate() }
                     }
                 }
             }
-            override fun onStop(owner: LifecycleOwner) { scope.cancel() }
+            override fun onStop(owner: LifecycleOwner) { collectJob?.cancel() }
         })
     }
 

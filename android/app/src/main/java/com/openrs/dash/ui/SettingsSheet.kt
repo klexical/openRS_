@@ -37,6 +37,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
     var screenOn        by remember { mutableStateOf(current.screenOn) }
     var autoReconnect   by remember { mutableStateOf(current.autoReconnect) }
     var reconnectSec    by remember { mutableStateOf(current.reconnectIntervalSec.toString()) }
+    var maxDiagZips     by remember { mutableStateOf(current.maxDiagZips.toString()) }
     var error           by remember { mutableStateOf<String?>(null) }
 
     Dialog(
@@ -194,6 +195,27 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     }
                 }
 
+                // ── Diagnostics section ───────────────────────────────────────
+                SettingsSection("DIAGNOSTICS") {
+                    SettingsRow("Max saved ZIP exports") {
+                        OutlinedTextField(
+                            value = maxDiagZips,
+                            onValueChange = { maxDiagZips = it; error = null },
+                            label = { Text("count", fontFamily = ShareTechMono, fontSize = 10.sp) },
+                            singleLine = true,
+                            modifier = Modifier.width(90.dp),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            colors = outlinedFieldColors(),
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost
+                            )
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text("Oldest ZIPs are removed when this limit is exceeded. Default: ${AppSettings.DEFAULT_MAX_DIAG_ZIPS}",
+                        fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono)
+                }
+
                 // Error
                 if (error != null) {
                     Text(error!!, fontSize = 12.sp, color = Red, fontFamily = ShareTechMono)
@@ -218,23 +240,30 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     onClick = {
                         val p = port.toIntOrNull()
                         val threshold = tireLowPsi.toFloatOrNull()
-                        val retryInt = reconnectSec.toIntOrNull()
+                        // M-10 fix: only validate the retry interval field when auto-reconnect
+                        // is enabled. When disabled the field is hidden and may hold a stale
+                        // string; fall back to the default so SAVE never gets permanently stuck.
+                        val retryInt = if (autoReconnect) reconnectSec.toIntOrNull()
+                                       else reconnectSec.toIntOrNull() ?: AppSettings.DEFAULT_RECONNECT_INTERVAL
+                        val maxZips = maxDiagZips.toIntOrNull()
                         when {
                             host.isBlank() -> error = "Host cannot be empty"
                             p == null || p !in 1..65535 -> error = "Port must be 1–65535"
                             threshold == null || threshold <= 0 -> error = "Tire threshold must be > 0"
-                            retryInt == null || retryInt < 1 -> error = "Retry interval must be ≥ 1 s"
+                            autoReconnect && (retryInt == null || retryInt < 1) -> error = "Retry interval must be ≥ 1 s"
+                            maxZips == null || maxZips < 1 -> error = "Max ZIPs must be ≥ 1"
                             else -> {
                                 AppSettings.save(ctx, host, p)
                                 UserPrefsStore.update(ctx) { it.copy(
-                                    speedUnit           = speedUnit,
-                                    tempUnit            = tempUnit,
-                                    boostUnit           = boostUnit,
-                                    tireUnit            = tireUnit,
-                                    tireLowPsi          = threshold,
-                                    screenOn            = screenOn,
-                                    autoReconnect       = autoReconnect,
-                                    reconnectIntervalSec = retryInt
+                                    speedUnit            = speedUnit,
+                                    tempUnit             = tempUnit,
+                                    boostUnit            = boostUnit,
+                                    tireUnit             = tireUnit,
+                                    tireLowPsi           = threshold,
+                                    screenOn             = screenOn,
+                                    autoReconnect        = autoReconnect,
+                                    reconnectIntervalSec = retryInt ?: AppSettings.DEFAULT_RECONNECT_INTERVAL,
+                                    maxDiagZips          = maxZips
                                 )}
                                 onDismiss()
                             }

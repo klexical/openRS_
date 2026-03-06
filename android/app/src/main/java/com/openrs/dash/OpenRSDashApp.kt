@@ -5,6 +5,7 @@ import com.openrs.dash.data.VehicleState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 /**
  * Application singleton.
@@ -29,10 +30,12 @@ class OpenRSDashApp : Application() {
     fun pushDebugLine(line: String) {
         val trimmed = line.trim()
         if (trimmed.isEmpty()) return
-        val current = _debugLines.value.toMutableList()
-        if (current.size >= 100) current.removeAt(0)
-        current.add(trimmed)
-        _debugLines.value = current
+        // M-4 fix: use .update{} for atomic read-modify-write — prevents lost lines
+        // when obdJob, pcmJob, and the main loop call this concurrently on IO threads.
+        _debugLines.update { list ->
+            val next = if (list.size >= 100) list.drop(1) else list
+            next + trimmed
+        }
     }
 
     /** True once openRS_ firmware is confirmed via WebSocket probe on connect. */

@@ -19,18 +19,21 @@ import kotlin.math.roundToInt
  */
 class MainDashScreen(carContext: CarContext) : Screen(carContext) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    // M-1 fix: cancel the collection job only — not the whole scope.
+    // Cancelling the scope permanently prevents new coroutines after the first onStop.
+    private var collectJob: Job? = null
     private var last = VehicleState()
 
     init {
         lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
-                scope.launch {
+                collectJob = scope.launch {
                     OpenRSDashApp.instance.vehicleState.collectLatest { s ->
                         if (changed(last, s)) { last = s; invalidate() }
                     }
                 }
             }
-            override fun onStop(owner: LifecycleOwner) { scope.cancel() }
+            override fun onStop(owner: LifecycleOwner) { collectJob?.cancel() }
         })
     }
 

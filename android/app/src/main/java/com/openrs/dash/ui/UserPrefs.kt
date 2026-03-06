@@ -19,6 +19,7 @@ data class UserPrefs(
     val screenOn: Boolean           = AppSettings.DEFAULT_SCREEN_ON,
     val autoReconnect: Boolean      = AppSettings.DEFAULT_AUTO_RECONNECT,
     val reconnectIntervalSec: Int   = AppSettings.DEFAULT_RECONNECT_INTERVAL,
+    val maxDiagZips: Int            = AppSettings.DEFAULT_MAX_DIAG_ZIPS, // max diagnostic ZIPs to keep
     val themeId: String             = AppSettings.DEFAULT_THEME_ID,      // RS paint color theme
     val tempPreset: String          = AppSettings.DEFAULT_TEMP_PRESET    // "street"|"track"|"race"
 ) {
@@ -131,8 +132,12 @@ object UserPrefsStore {
     }
 
     fun update(ctx: Context, block: (UserPrefs) -> UserPrefs) {
-        val newPrefs = block(_prefs.value)
-        _prefs.value = newPrefs
-        AppSettings.saveAll(ctx, newPrefs)
+        // M-7 fix: use .update{} for atomic read-modify-write — prevents one rapid
+        // tap (e.g. theme + preset) from silently overwriting the other.
+        _prefs.update { current ->
+            val newPrefs = block(current)
+            AppSettings.saveAll(ctx, newPrefs)
+            newPrefs
+        }
     }
 }

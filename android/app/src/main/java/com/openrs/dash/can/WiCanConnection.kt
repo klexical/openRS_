@@ -216,6 +216,8 @@ class WiCanConnection(
                 addDebugLine("Connecting to ws://$host:$port$WS_PATH")
 
                 val socket = Socket()
+                // C-1 fix: always close the socket on exit, even when an exception is thrown
+                try {
                 socket.connect(InetSocketAddress(host, port), 5_000)
                 socket.soTimeout = 20_000  // 20 s read timeout — tolerates WiCAN TX pauses during OBD polling
 
@@ -402,8 +404,8 @@ class WiCanConnection(
                         continue
                     }
 
-                    // Log first occurrence of each new CAN ID
-                    if (seenIds.size < 40 && frame.first !in seenIds) {
+                    // Log first occurrence of each new CAN ID (L-10: raised cap to 200)
+                    if (seenIds.size < 200 && frame.first !in seenIds) {
                         seenIds += frame.first
                         addDebugLine("new ID: 0x%03X".format(frame.first))
                     }
@@ -421,11 +423,15 @@ class WiCanConnection(
                     }
                 }
                 } finally {
+                    // C-2 fix: cancel all three poller jobs on any exit path
                     obdJob.cancel()
                     pcmJob.cancel()
+                    extJob.cancel()
                 }
-
-                socket.close()
+                } finally {
+                    // C-1 fix: always close socket regardless of how the block exits
+                    try { socket.close() } catch (_: Exception) {}
+                }
 
             } catch (e: CancellationException) {
                 _state.value = State.Disconnected
@@ -690,8 +696,8 @@ class WiCanConnection(
             0x0319 -> onObdUpdate(currentState.copy(
                 vctExhaustAngle = ((b4s.toByte().toInt() shl 8) or b5) / 16.0
             ))
-            // Oil life — A % direct (0-255 raw → 0-100 % via A)
-            0x054B -> onObdUpdate(currentState.copy(oilLifePct = b4.toDouble()))
+            // Oil life — A % direct; raw byte is 0-255 but Ford encodes 0-100, clamp to be safe
+            0x054B -> onObdUpdate(currentState.copy(oilLifePct = b4.toDouble().coerceIn(0.0, 100.0)))
             // HP fuel rail pressure — ((A*256)+B)*1.45038 PSI (Ford DID.csv)
             0xF422 -> onObdUpdate(currentState.copy(
                 hpFuelRailPsi = ((b4 shl 8) or b5) * 1.45038
@@ -802,9 +808,10 @@ class WiCanConnection(
                     ((ext[0].toInt() and 0xFF) shl 8) or (ext[1].toInt() and 0xFF)
                 }
                 len == 127 -> {
-                    // 8-byte extended length — skip frame
+                    // 8-byte extended length — skip frame; guard against overflow/OOM
                     val lenBytes = readExactly(inp, 8)
                     val bigLen = lenBytes.fold(0L) { acc, b -> (acc shl 8) or (b.toLong() and 0xFF) }
+                    if (bigLen < 0 || bigLen > 1_048_576L) throw IOException("WS frame too large: $bigLen bytes")
                     readExactly(inp, bigLen.toInt())  // discard
                     continue
                 }

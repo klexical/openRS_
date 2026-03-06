@@ -5,6 +5,45 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
+## [v2.0.1] — 2026-03-06
+
+### Fixed
+
+#### Critical — reliability / data integrity
+- **Socket leak (C-1)**: TCP socket was not closed when an exception occurred during the WebSocket handshake or SLCAN init. Wrapped in `try-finally` to guarantee closure on every exit path.
+- **extJob never cancelled (C-2)**: The extended diagnostic session poller (`extJob`) was missing from the `finally` block that cancels `obdJob`/`pcmJob`, causing it to keep running after a disconnect. Added to the cancel block alongside the other pollers.
+- **CAN / OBD write race (C-3)**: `vehicleState.value = updated` in the CAN frame collector could clobber a concurrent OBD update. Changed to `.update{}` for atomic read-modify-write.
+
+#### Medium — correctness / lifecycle
+- **Android Auto screen freeze (M-1)**: All 5 AA screens (`MainDashScreen`, `AwdDetailScreen`, `TempsScreen`, `TuneScreen`, `PerformanceScreen`) called `scope.cancel()` on `onStop`, permanently destroying the scope. Subsequent `onStart` events launched coroutines into a dead scope. Fixed by cancelling only `collectJob`, not the scope.
+- **TPMS screen never refreshes (M-2)**: `TpmsScreen` read a point-in-time snapshot in `onGetTemplate()` with no `invalidate()` mechanism. Added lifecycle observer + `collectLatest` loop matching the other AA screens.
+- **False tire pressure warnings (M-3)**: `anyTireLow()` checked all four tires including those still at their `−1.0` sentinel (no sensor, dead sensor battery, or not yet polled). Now only warns on tires with valid data (`≥ 0.0`), accommodating missing or aftermarket sensors.
+- **Debug log race (M-4)**: `pushDebugLine()` performed a non-atomic read-copy-modify-assign on `_debugLines`. Under concurrent calls from `obdJob`, `pcmJob`, and the main frame loop, lines could be silently lost. Replaced with `.update{}`.
+- **Diagnostic export ANR risk (M-6)**: `DiagnosticExporter.share()` was called on the Compose `scope` (main thread). On sessions with large SLCAN logs the ZIP build could block the UI thread long enough to trigger an ANR. Dispatched to `Dispatchers.IO`.
+- **Settings prefs race (M-7)**: `UserPrefsStore.update()` read `_prefs.value` then wrote it back as two separate operations. Rapid back-to-back saves (e.g. theme + preset picker) could silently discard one. Replaced with `.update{}`.
+- **PTU temp shows 0 before first frame (M-8)**: `ptuTempC` defaulted to `0.0`, making it appear as a valid −60 °C reading (byte `0x00 − 60`) and causing the RTR warm-up check to always flag PTU as cold at startup. Changed default to `−99.0` (sentinel). UI now shows `"— —"` / `"POLLING"` until the first `0x0F8` frame arrives, matching the RDU pattern.
+- **Unbounded validation issue set (M-9)**: `validateDecoded()` embedded live values in issue key strings (e.g. `"rpm<0 (−50) — ..."`). Because `LinkedHashSet` deduplicates by key, a slightly different value each time would create a new entry per frame, growing indefinitely. Keys are now static category strings; dynamic readings remain in the decode trace.
+- **Settings save blocked when auto-reconnect off (M-10)**: The reconnect interval field was validated even when auto-reconnect was disabled (field hidden). An empty/invalid string permanently blocked the SAVE button. Validation is now skipped when `autoReconnect = false`.
+
+#### Low — minor correctness / polish
+- **Dead code in fuel level decoder (L-2)**: `if (pct < 0.0) null` was unreachable after `coerceIn(0.0, 100.0)`. Removed.
+- **Oil life % unclamped (L-3)**: `parsePcmResponse` stored the raw `b4` byte directly for DID `0x054B`. Added `coerceIn(0.0, 100.0)` to guard against unexpected raw values.
+- **Steering + brake IDs missing from diagnostic report (L-4)**: `DiagnosticExporter.knownIds` was missing `ID_STEERING` (0x010) and `ID_BRAKE_PRESS` (0x252). Both showed as `?` in the inventory even though they are decoded. Added.
+- **WebSocket 64-bit frame overflow (L-5)**: A 64-bit extended-length frame with `bigLen > Int.MAX_VALUE` would silently overflow `.toInt()`, potentially allocating a huge or negative buffer. Added an explicit guard (`> 1 MB → throw IOException`).
+- **Stale sensor values persist after reconnect (L-6)**: On reconnect, OBD-polled fields (tire pressures, temperatures, odometer, SOC) retained values from the previous session for up to 30 s until the first poll cycle completed. All sentinel-guarded OBD fields are now reset to their defaults in `reconnect()`.
+- **Diagnostic ZIP accumulation (L-7)**: Exports accumulated unboundedly in `files/diagnostics/`. Added a user-configurable limit ("Max saved ZIP exports") in Settings — default 5. Oldest ZIPs are deleted when the limit is exceeded at export time.
+- **SLCAN log not flushed on session end (L-9)**: `sessionEnd()` logged the event but did not flush the `BufferedWriter`. Up to 999 lines could be lost if the session ended between periodic 1,000-line flush points. `flushSlcan()` is now called on `sessionEnd()`.
+- **New CAN ID log capped at 40 (L-10)**: `seenIds` cap raised from 40 to 200 so newly observed IDs are logged throughout a full drive session rather than just the first few seconds.
+
+### Added
+- **Max saved ZIPs setting**: New field in Settings → Diagnostics section. Lets the user control how many diagnostic ZIP exports are kept on-device. Default: 5.
+
+### Tracked (pending data)
+- **M-5 — 12V battery voltage PID**: `batteryVoltage` field is wired up but never populated. PID 0x42 (Mode 01 control module voltage) needs to be confirmed or an alternative located from a live log. Tracked with a `TODO(M-5)` comment in `CanDecoder.kt`.
+- **L-1 — Drive mode Track/Drift byte order**: `DriveMode.fromInt` maps `2=Drift, 3=Track`, but the comment above the decoder says `2=Track, 3=Drift`. Needs confirmation from a live SLCAN log with known modes. Tracked with a `TODO(L-1)` comment in `CanDecoder.kt`.
+
+---
+
 ## [v2.0.0] — 2026-03-06
 
 ### Redesign — F1-Style Telemetry Interface

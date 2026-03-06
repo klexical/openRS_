@@ -71,6 +71,7 @@ object CanDecoder {
     // Motorola big-endian, 10-bit, start bit 17 (MSB). Extract: (data[2]&0x03)<<8|data[3], ×0.4 %
     // Confirmed from live log: raw=254 → 101.6 % (full tank). Range-filtered 0–110 %.
     // 12V battery voltage does NOT broadcast on HS-CAN — polled via Mode 01 PID 0x42 in WiCanConnection.
+    // TODO(M-5): Find correct PID for 12V battery voltage on Focus RS MK3 and add to PCM_QUERIES/parsePcmResponse.
     const val ID_FUEL_LEVEL   = 0x380
 
     private val KNOWN_IDS = setOf(
@@ -281,7 +282,8 @@ object CanDecoder {
             } else null
 
             // ── 0x1B0: Drive mode steady-state ────────────────────────────────
-            // Byte 6 upper nibble = 0=Normal 1=Sport 2=Track 3=Drift.
+            // Byte 6 upper nibble: DriveMode.fromInt mapping is 0=Normal 1=Sport 2=Drift 3=Track.
+            // TODO(L-1): Confirm Track vs Drift byte values from a live SLCAN log with known modes.
             // Steady-state frames have byte 4 == 0x00.
             // Button-event transition frames have byte 4 != 0 → ignored for mode tracking.
             ID_DRIVE_MODE -> if (n >= 7) {
@@ -311,11 +313,11 @@ object CanDecoder {
             // ── 0x380: Fuel level filtered ────────────────────────────────────
             // RS_HS.dbc PCMmsg30: FuelLevelFiltered : 17|10@0+ (0.4,0) [0|102] "%"
             // Motorola 10-bit: MSB at DBC bit 17 → (data[2]&0x03)<<8 | data[3], × 0.4 %
+            // L-2 fix: removed dead `if (pct < 0.0) null` — unreachable after coerceIn(0..100)
             ID_FUEL_LEVEL -> if (n >= 4) {
                 val raw = ((data[2].toInt() and 0x03) shl 8) or (data[3].toInt() and 0xFF)
                 val pct = (raw * 0.4).coerceIn(0.0, 100.0)  // clamp: DBC range [0|102], cap at 100
-                if (pct < 0.0) null
-                else state.copy(fuelLevelPct = pct, lastUpdate = now)
+                state.copy(fuelLevelPct = pct, lastUpdate = now)
             } else null
 
             else -> null
@@ -356,62 +358,60 @@ object CanDecoder {
      * Returns a validation warning string if the decoded value appears physically impossible,
      * or null if everything looks reasonable. Flags are shown in the diagnostic report.
      */
+    /**
+     * M-9 fix: issue keys are normalised (no dynamic values embedded) so LinkedHashSet
+     * deduplication works correctly and the set doesn't grow unbounded over a session.
+     * Dynamic readings are accessible in the decode trace; issues track categories only.
+     */
     fun validateDecoded(id: Int, state: VehicleState): String? = when (id) {
         ID_ENGINE_RPM   -> when {
-            state.rpm < 0          -> "rpm<0 (${state.rpm.toInt()}) — formula may extract wrong bytes"
-            state.rpm > 9000       -> "rpm>9000 (${state.rpm.toInt()}) — formula may extract wrong bytes"
+            state.rpm < 0          -> "rpm<0 — formula may extract wrong bytes"
+            state.rpm > 9000       -> "rpm>9000 — formula may extract wrong bytes"
             state.barometricPressure < 60 || state.barometricPressure > 115
-                                   -> "baro=${"%.1f".format(state.barometricPressure)}kPa outside 60-115 range"
+                                   -> "baro outside 60-115 kPa range"
             else -> null
         }
         ID_ENGINE_TEMPS -> when {
-            state.oilTempC < -50   -> "oilTempC=${"%.0f".format(state.oilTempC)} — check byte1 formula (raw-50)"
-            state.oilTempC > 160   -> "oilTempC=${"%.0f".format(state.oilTempC)} — suspiciously hot"
-            state.ptuTempC < -60   -> "ptuTempC=${"%.0f".format(state.ptuTempC)} — check byte7 formula (raw-60)"
-            state.ptuTempC > 200   -> "ptuTempC=${"%.0f".format(state.ptuTempC)} — suspiciously hot"
-            // Boost stored as absolute kPa (gauge + baro); at idle ≈ baro (~96-103 kPa).
-            // Only warn on implausible extremes — boostKpa=0 means baro not yet populated.
-            state.boostKpa < 60.0  -> "boostKpa=${"%.0f".format(state.boostKpa)} — too low (baro not populated?)"
-            state.boostKpa > 400.0 -> "boostKpa=${"%.0f".format(state.boostKpa)} — >43 PSI, check formula"
+            state.oilTempC < -50   -> "oilTempC<-50 — check byte1 formula (raw-50)"
+            state.oilTempC > 160   -> "oilTempC>160 — suspiciously hot"
+            state.ptuTempC > -90 && state.ptuTempC < -60 -> "ptuTempC<-60 — check byte7 formula (raw-60)"
+            state.ptuTempC > 200   -> "ptuTempC>200 — suspiciously hot"
+            state.boostKpa < 60.0  -> "boostKpa<60 — too low (baro not populated?)"
+            state.boostKpa > 400.0 -> "boostKpa>400 — >43 PSI, check formula"
             else -> null
         }
         ID_SPEED        -> when {
-            state.speedKph < 0     -> "speedKph<0 (${"%.2f".format(state.speedKph)}) — formula wrong"
-            state.speedKph > 320   -> "speedKph>320 (${"%.1f".format(state.speedKph)}) — formula wrong"
+            state.speedKph < 0     -> "speedKph<0 — formula wrong"
+            state.speedKph > 320   -> "speedKph>320 — formula wrong"
             else -> null
         }
         ID_COOLANT      -> when {
-            state.coolantTempC < -50  -> "coolantTempC=${"%.0f".format(state.coolantTempC)} — check 10-bit formula (raw-60)"
-            state.coolantTempC > 135  -> "coolantTempC=${"%.0f".format(state.coolantTempC)} — critically hot"
-            state.intakeTempC < -50   -> "iatTempC=${"%.0f".format(state.intakeTempC)} — check 10-bit formula (raw×0.25-127)"
-            state.intakeTempC > 80    -> "iatTempC=${"%.0f".format(state.intakeTempC)} — suspiciously hot"
+            state.coolantTempC < -50  -> "coolantTempC<-50 — check 10-bit formula (raw-60)"
+            state.coolantTempC > 135  -> "coolantTempC>135 — critically hot"
+            state.intakeTempC < -50   -> "iatTempC<-50 — check 10-bit formula (raw×0.25-127)"
+            state.intakeTempC > 80    -> "iatTempC>80 — suspiciously hot"
             else -> null
         }
         ID_LONG_ACCEL   -> when {
-            state.longitudinalG < -4 || state.longitudinalG > 4
-                -> "lonG=${"%.3f".format(state.longitudinalG)}g outside ±4g"
+            state.longitudinalG < -4 || state.longitudinalG > 4 -> "lonG outside ±4g"
             else -> null
         }
         ID_LAT_ACCEL    -> when {
-            state.lateralG < -4 || state.lateralG > 4
-                -> "latG=${"%.3f".format(state.lateralG)}g outside ±4g"
-            state.yawRate < -75 || state.yawRate > 75
-                -> "yawRate=${"%.1f".format(state.yawRate)}°/s outside ±75"
+            state.lateralG < -4 || state.lateralG > 4 -> "latG outside ±4g"
+            state.yawRate < -75 || state.yawRate > 75  -> "yawRate outside ±75 °/s"
             else -> null
         }
         ID_STEERING     -> when {
-            state.steeringAngle < -1440 || state.steeringAngle > 1440
-                -> "steer=${"%.0f".format(state.steeringAngle)}° outside ±1440"
+            state.steeringAngle < -1440 || state.steeringAngle > 1440 -> "steer outside ±1440°"
             else -> null
         }
         ID_BRAKE_PRESS  -> when {
-            state.brakePressure < 0 || state.brakePressure > 110
-                -> "brakePct=${"%.1f".format(state.brakePressure)} outside 0-110 range"
+            state.brakePressure < 0 || state.brakePressure > 110 -> "brakePct outside 0-110 range"
             else -> null
         }
         ID_AMBIENT_TEMP -> when {
-            state.ambientTempC < -50 -> "ambientTempC=${"%.1f".format(state.ambientTempC)} — check signed×0.25 formula"
-            state.ambientTempC > 60  -> "ambientTempC=${"%.1f".format(state.ambientTempC)} — suspiciously hot"
+            state.ambientTempC < -50 -> "ambientTempC<-50 — check signed×0.25 formula"
+            state.ambientTempC > 60  -> "ambientTempC>60 — suspiciously hot"
             else -> null
         }
         ID_TPMS         -> when {
@@ -421,8 +421,8 @@ object CanDecoder {
             else -> null
         }
         ID_PEDALS       -> when {
-            state.accelPedalPct < 0   -> "accelPct<0 (${"%.1f".format(state.accelPedalPct)}) — formula wrong"
-            state.accelPedalPct > 105 -> "accelPct>105 (${"%.1f".format(state.accelPedalPct)}) — formula wrong"
+            state.accelPedalPct < 0   -> "accelPct<0 — formula wrong"
+            state.accelPedalPct > 105 -> "accelPct>105 — formula wrong"
             else -> null
         }
         else -> null
