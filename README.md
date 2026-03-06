@@ -1,7 +1,7 @@
-<p align="center">
+<div align="center">
   <img src="assets/images/openrs-wordmark.svg" width="320" alt="openRS_"><br/>
   <sub>Open-source real-time telemetry dashboard for the Ford Focus RS MK3</sub>
-</p>
+</div>
 
 <p align="center">
   <a href="https://klexical.github.io/openRS_">🚀 Live Emulator</a> •
