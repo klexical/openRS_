@@ -1,5 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 56" width="300" height="56">
-  <text font-family="'SF Mono','Consolas','Courier New',monospace" font-size="42" font-weight="700" letter-spacing="1" y="44" x="0">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 64" width="320" height="64">
+  <rect width="320" height="64" fill="#05070A" rx="8"/>
+  <text font-family="'SF Mono','Consolas','Courier New',monospace" font-size="42" font-weight="700" letter-spacing="1" text-anchor="middle" y="46" x="160">
     <tspan fill="#F5F6F4">open</tspan><tspan fill="#00AEEF">RS</tspan><tspan fill="#F5F6F4">_</tspan>
   </text>
 </svg>
