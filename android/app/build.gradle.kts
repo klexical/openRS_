@@ -15,6 +15,11 @@ val keystoreProps = Properties().also { props ->
     if (keystorePropsFile.exists()) props.load(keystorePropsFile.inputStream())
 }
 
+val localPropsFile = rootProject.file("local.properties")
+val localProps = Properties().also { props ->
+    if (localPropsFile.exists()) props.load(localPropsFile.inputStream())
+}
+
 android {
     namespace = "com.openrs.dash"
     compileSdk = 35
@@ -27,6 +32,12 @@ android {
         versionName = "2.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "MAPS_API_KEY",
+            "\"${localProps["MAPS_API_KEY"] ?: ""}\"")
+        buildConfigField("String", "OPENWEATHER_API_KEY",
+            "\"${localProps["OPENWEATHER_API_KEY"] ?: ""}\"")
+        manifestPlaceholders["MAPS_API_KEY"] = localProps["MAPS_API_KEY"] ?: ""
     }
 
     signingConfigs {
@@ -92,6 +103,11 @@ dependencies {
     // ── AndroidX Core ───────────────────────────────────────
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+
+    // ── Trip Map ────────────────────────────────────────────
+    implementation("com.google.maps.android:maps-compose:4.3.3")
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // ── Testing ─────────────────────────────────────────────
     testImplementation("junit:junit:4.13.2")
