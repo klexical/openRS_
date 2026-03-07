@@ -7,6 +7,7 @@ import androidx.core.content.FileProvider
 import com.openrs.dash.BuildConfig
 import com.openrs.dash.can.CanDecoder
 import com.openrs.dash.data.TripState
+import com.openrs.dash.data.VehicleState
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -87,6 +88,16 @@ object DiagnosticExporter {
         try {
             val dir = File(ctx.filesDir, "diagnostics").also { it.mkdirs() }
             val ts  = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+
+            // Prune old trip ZIPs (keep at most maxDiagZips files, matching diagnostic pruning)
+            val maxKeep = com.openrs.dash.ui.UserPrefsStore.prefs.value.maxDiagZips
+            val oldTrips = dir.listFiles { f -> f.name.startsWith("openrs_trip_") && f.name.endsWith(".zip") }
+            if (oldTrips != null && oldTrips.size >= maxKeep) {
+                oldTrips.sortedBy { it.lastModified() }
+                    .take((oldTrips.size - maxKeep + 1).coerceAtLeast(0))
+                    .forEach { it.delete() }
+            }
+
             val zipFile = File(dir, "openrs_trip_$ts.zip")
 
             ZipOutputStream(zipFile.outputStream().buffered()).use { zip ->
@@ -316,7 +327,7 @@ object DiagnosticExporter {
             CanDecoder.ID_SPEED, CanDecoder.ID_LONG_ACCEL, CanDecoder.ID_LAT_ACCEL,
             CanDecoder.ID_DRIVE_MODE, CanDecoder.ID_DRIVE_MODE_EXT, CanDecoder.ID_ESC_ABS,
             CanDecoder.ID_WHEEL_SPEEDS, CanDecoder.ID_GEAR, CanDecoder.ID_AWD_TORQUE,
-            CanDecoder.ID_COOLANT, CanDecoder.ID_TPMS, CanDecoder.ID_AMBIENT_TEMP,
+            CanDecoder.ID_COOLANT, CanDecoder.ID_PCM_AMBIENT, CanDecoder.ID_AMBIENT_TEMP,
             CanDecoder.ID_FUEL_LEVEL, CanDecoder.ID_STEERING, CanDecoder.ID_BRAKE_PRESS
         )
 
@@ -447,8 +458,9 @@ object DiagnosticExporter {
         // vehicleState
         appendLine("  \"vehicleState\": {")
         if (vs != null) {
-            vs.toJsonFields().entries.forEachIndexed { i, (k, v) ->
-                val comma = if (i < vs.toJsonFields().size - 1) "," else ""
+            val fields = vs.toJsonFields().entries.toList()
+            fields.forEachIndexed { i, (k, v) ->
+                val comma = if (i < fields.size - 1) "," else ""
                 appendLine("    \"$k\": $v$comma")
             }
         }
@@ -459,7 +471,7 @@ object DiagnosticExporter {
         appendLine("  \"canFrameInventory\": {")
         inventory.entries.sortedBy { it.key }.forEachIndexed { idx, (id, info) ->
             val comma = if (idx < inventory.size - 1) "," else ""
-            val issuesJson = info.validationIssues.joinToString(",") { "\"${it.replace("\"", "'")}\"" }
+            val issuesJson = info.validationIssues.joinToString(",") { "\"${it.jsonEscape()}\"" }
 
             // Periodic samples JSON array
             val samplesJson = if (info.periodicSamples.isEmpty()) "[]" else buildString {
@@ -515,8 +527,16 @@ object DiagnosticExporter {
     }
 }
 
+/** Minimal JSON string escaping: backslash, double-quote, newlines, tabs. */
+private fun String.jsonEscape(): String = this
+    .replace("\\", "\\\\")
+    .replace("\"", "\\\"")
+    .replace("\n", "\\n")
+    .replace("\r", "\\r")
+    .replace("\t", "\\t")
+
 /** Serialize VehicleState to a Map<String, Any> for JSON output. */
-private fun com.openrs.dash.data.VehicleState.toJsonFields(): Map<String, String> = linkedMapOf(
+private fun VehicleState.toJsonFields(): Map<String, String> = linkedMapOf(
     "rpm"               to "${"%.1f".format(rpm)}",
     "speedKph"          to "${"%.2f".format(speedKph)}",
     "speedMph"          to "${"%.2f".format(speedKph * 0.621371)}",

@@ -18,6 +18,7 @@ import com.openrs.dash.data.PeakType
 import com.openrs.dash.data.TripPoint
 import com.openrs.dash.data.TripState
 import com.openrs.dash.data.VehicleState
+import com.openrs.dash.ui.UserPrefsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -60,14 +61,21 @@ class TripRecorder(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var recorderJob: Job? = null
 
+    /** Internal buffer so GPS appends are O(1) amortized; copied to TripState on each GPS fix. */
+    private val pointsBuffer = ArrayList<TripPoint>(3600)
+
     fun startTrip() {
-        if (_tripState.value.isRecording) return
-        val vs = vehicleStateFlow.value
-        _tripState.value = TripState(
-            isRecording  = true,
-            startFuelPct = vs.fuelLevelPct,
-            startTime    = System.currentTimeMillis()
-        )
+        _tripState.update { current ->
+            if (current.isRecording) return@update current
+            val vs = vehicleStateFlow.value
+            pointsBuffer.clear()
+            TripState(
+                isRecording  = true,
+                startFuelPct = vs.fuelLevelPct,
+                startTime    = System.currentTimeMillis()
+            )
+        }
+        if (!_tripState.value.isRecording) return
         recorderJob = scope.launch {
             fetchInitialWeather()
             var lastWeatherMs = System.currentTimeMillis()
@@ -82,6 +90,8 @@ class TripRecorder(
                 }
 
                 val vs = vehicleStateFlow.value
+                val prefs = UserPrefsStore.prefs.value
+                val isRaceReady = prefs.isRaceReady(vs.oilTempC, vs.coolantTempC)
                 val point = TripPoint(
                     lat          = location.latitude,
                     lng          = location.longitude,
@@ -102,26 +112,35 @@ class TripRecorder(
                     wheelSpeedRR = vs.wheelSpeedRR,
                     lateralG     = vs.lateralG,
                     driveMode    = vs.driveMode,
-                    isRaceReady  = vs.isReadyToRace
+                    isRaceReady  = isRaceReady
                 )
+                pointsBuffer.add(point)
 
                 _tripState.update { state ->
-                    val prev     = state.points.lastOrNull()
-                    val segDist  = if (prev != null)
+                    val prev    = if (pointsBuffer.size >= 2) pointsBuffer[pointsBuffer.size - 2] else null
+                    val segDist = if (prev != null)
                         TripState.haversineKm(prev.lat, prev.lng, point.lat, point.lng)
                     else 0.0
 
-                    val newRpmSamples = if (vs.rpm > 400) state.rpmSamples + 1 else state.rpmSamples
-                    val newRpmSum     = if (vs.rpm > 400) state.rpmSum + vs.rpm else state.rpmSum
+                    val newRpmSamples   = if (vs.rpm > 400) state.rpmSamples + 1 else state.rpmSamples
+                    val newRpmSum       = if (vs.rpm > 400) state.rpmSum + vs.rpm else state.rpmSum
+                    val newSpeedSum     = state.speedSum + vs.speedKph
+                    val newSpeedSamples = state.speedSamples + 1
+                    val newModeCounts   = state.modeCounts.toMutableMap().also {
+                        it[vs.driveMode] = (it[vs.driveMode] ?: 0) + 1
+                    }
 
                     val peaks = buildPeakEvents(state, vs, point, now)
-                    val rtrPt = state.rtrAchievedPoint ?: if (vs.isReadyToRace) point else null
+                    val rtrPt = state.rtrAchievedPoint ?: if (isRaceReady) point else null
 
                     state.copy(
-                        points                = state.points + point,
+                        points                = pointsBuffer.toList(),
                         cumulativeDistanceKm  = state.cumulativeDistanceKm + segDist,
                         rpmSum                = newRpmSum,
                         rpmSamples            = newRpmSamples,
+                        speedSum              = newSpeedSum,
+                        speedSamples          = newSpeedSamples,
+                        modeCounts            = newModeCounts,
                         maxSpeedKph           = maxOf(state.maxSpeedKph, vs.speedKph),
                         peakRpm               = maxOf(state.peakRpm, vs.rpm),
                         peakBoostPsi          = maxOf(state.peakBoostPsi, vs.boostPsi),
@@ -142,6 +161,7 @@ class TripRecorder(
 
     fun resetTrip() {
         stopTrip()
+        pointsBuffer.clear()
         _tripState.value = TripState()
     }
 

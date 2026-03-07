@@ -116,11 +116,6 @@ data class VehicleState(
     val lcRpmTarget: Int = -1,             // RSProt 0x731 probe: LC RPM setpoint (-1 = unknown)
     val assEnabled: Boolean? = null,       // RSProt 0x731 probe: auto start-stop status
 
-    // ── Legacy Nutron-only (unused, kept for compat) ─────────
-    val lambdaValue: Double = 0.0,
-    val launchControl: Boolean = false,
-    val driftFury: Boolean = false,
-
     // ── Peaks ───────────────────────────────────────────────
     val peakBoostPsi: Double = 0.0,
     val peakRpm: Double = 0.0,

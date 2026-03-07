@@ -96,7 +96,7 @@ object DiagnosticLogger {
 
     private val lock = Any()
 
-    val frameInventory = LinkedHashMap<Int, FrameInfo>()
+    private val frameInventory = LinkedHashMap<Int, FrameInfo>()
     private val decodeTraceDeque   = ArrayDeque<TraceEvent>()
     private val sessionEventsDeque = ArrayDeque<SessionEvent>()
     private val fpsTimelineDeque   = ArrayDeque<FpsPoint>()
@@ -126,7 +126,14 @@ object DiagnosticLogger {
     val fpsTimeline: List<FpsPoint>
         get() = synchronized(lock) { fpsTimelineDeque.toList() }
     val frameInventorySnapshot: Map<Int, FrameInfo>
-        get() = synchronized(lock) { frameInventory.toMap() }
+        get() = synchronized(lock) {
+            frameInventory.mapValues { (_, info) ->
+                info.copy(
+                    validationIssues = LinkedHashSet(info.validationIssues),
+                    periodicSamples  = ArrayDeque(info.periodicSamples)
+                )
+            }
+        }
 
     /** The SLCAN log file (Option C). Null if no logDir was supplied at session start. */
     val slcanLogFile: File?    get() = synchronized(lock) { _slcanFile }

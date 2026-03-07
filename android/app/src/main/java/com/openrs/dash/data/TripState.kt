@@ -38,6 +38,9 @@ data class TripState(
     val cumulativeDistanceKm: Double = 0.0,
     val rpmSum: Double = 0.0,
     val rpmSamples: Long = 0L,
+    val speedSum: Double = 0.0,
+    val speedSamples: Long = 0L,
+    val modeCounts: Map<DriveMode, Int> = emptyMap(),
     // ── Session peaks ────────────────────────────────────────────────────────
     val maxSpeedKph: Double = 0.0,
     val peakRpm: Double = 0.0,
@@ -69,7 +72,7 @@ data class TripState(
         get() = if (rpmSamples > 0L) rpmSum / rpmSamples else 0.0
 
     val avgSpeedKph: Double
-        get() = if (points.isEmpty()) 0.0 else points.sumOf { it.speedKph } / points.size
+        get() = if (speedSamples > 0L) speedSum / speedSamples else 0.0
 
     val elapsedMs: Long
         get() = if (startTime > 0L) System.currentTimeMillis() - startTime else 0L
@@ -77,9 +80,9 @@ data class TripState(
     /** Fraction of trip points in each drive mode (values sum to 1.0). */
     val driveModeBreakdown: Map<DriveMode, Float>
         get() {
-            if (points.isEmpty()) return emptyMap()
-            return points.groupBy { it.driveMode }
-                .mapValues { (_, pts) -> pts.size.toFloat() / points.size }
+            val total = modeCounts.values.sum()
+            if (total == 0) return emptyMap()
+            return modeCounts.mapValues { (_, count) -> count.toFloat() / total }
         }
 
     companion object {
