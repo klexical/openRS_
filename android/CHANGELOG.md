@@ -5,6 +5,23 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
+## [v2.2.1] — 2026-03-06
+
+### Added
+
+- **DTC Scanner**: New section at the top of the DIAG tab — tap "SCAN ALL MODULES" to query PCM, BCM, ABS, AWD, and PSCM for active, pending, and permanent fault codes via UDS Service 0x19. Results show each code, its description (from a bundled 873-code database), and fault status. Multi-module ISO-TP assembly with flow-control handles responses of any length.
+- **DTC database**: 873 Ford-specific DTC descriptions bundled as `res/raw/dtc_database.json`. Loaded once on first scan.
+- **Trip CSV export**: Trip ZIPs now include a `trip_<ts>.csv` alongside the existing GPX and summary text. The CSV has one row per GPS waypoint with 20 columns: timestamp, lat/lng, speed, RPM, gear, boost, temps (coolant, oil, ambient, RDU, PTU), fuel %, all four wheel speeds, lateral G, drive mode, and race-ready flag.
+- **MeatPi Pro adapter support**: `MeatPiConnection.kt` is now fully implemented — TCP SLCAN (raw bytes, no WebSocket overhead), identical OBD polling as WiCAN (BCM, PCM, AWD, extended session), and DTC scan support. Adapter selection (WiCAN / MeatPi Pro) added to Settings under a new ADAPTER section.
+- **MeatPi microSD logging toggle**: Settings → ADAPTER → "MicroSD logging" switch for MeatPi Pro users to enable onboard raw CAN logging.
+
+### Changed
+
+- **`CanDataService`**: OBD merge logic extracted to `mergeObdState()` and CAN frame processing to `processCanFrame()` — eliminates duplication between WiCAN and MeatPi paths.
+- **`DiagPage`**: receives `onScanDtcs` lambda from `MainActivity` (same pattern as `onReset` in ChassisPage), keeping the composable decoupled from the service.
+
+---
+
 ## [v2.2.0] — 2026-03-06
 
 ### Added

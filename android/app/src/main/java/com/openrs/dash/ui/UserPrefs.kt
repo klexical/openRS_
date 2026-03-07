@@ -22,7 +22,9 @@ data class UserPrefs(
     val reconnectIntervalSec: Int   = AppSettings.DEFAULT_RECONNECT_INTERVAL,
     val maxDiagZips: Int            = AppSettings.DEFAULT_MAX_DIAG_ZIPS, // max diagnostic ZIPs to keep
     val themeId: String             = AppSettings.DEFAULT_THEME_ID,      // RS paint color theme
-    val tempPreset: String          = AppSettings.DEFAULT_TEMP_PRESET    // "street"|"track"|"race"
+    val tempPreset: String          = AppSettings.DEFAULT_TEMP_PRESET,   // "street"|"track"|"race"
+    val adapterType: String         = AppSettings.DEFAULT_ADAPTER_TYPE,  // "WICAN" | "MEATPI"
+    val meatPiMicroSdLog: Boolean   = false                               // MeatPi Pro microSD logging
 ) {
     // ── Unit-conversion helpers used by UI ─────────────────────────────────
 

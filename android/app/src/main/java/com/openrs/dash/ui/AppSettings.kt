@@ -56,6 +56,18 @@ object AppSettings {
     const val KEY_TEMP_PRESET     = "temp_preset"
     const val DEFAULT_TEMP_PRESET = "street"     // "street" | "track" | "race"
 
+    // ── Adapter type ─────────────────────────────────────────────────────────
+    const val KEY_ADAPTER_TYPE     = "adapter_type"
+    const val DEFAULT_ADAPTER_TYPE = "WICAN"     // "WICAN" | "MEATPI"
+
+    // ── MeatPi MS-CAN port ───────────────────────────────────────────────────
+    const val KEY_MSCAN_PORT     = "mscan_port"
+    const val DEFAULT_MSCAN_PORT = 3334
+
+    // ── MeatPi microSD logging ────────────────────────────────────────────────
+    const val KEY_MEATPI_MICROSD     = "meatpi_microsd"
+    const val DEFAULT_MEATPI_MICROSD = false
+
     // ── Read helpers ────────────────────────────────────────────────────────
 
     fun getHost(ctx: Context): String =
@@ -97,6 +109,15 @@ object AppSettings {
     fun getTempPreset(ctx: Context): String =
         prefs(ctx).getString(KEY_TEMP_PRESET, DEFAULT_TEMP_PRESET) ?: DEFAULT_TEMP_PRESET
 
+    fun getAdapterType(ctx: Context): String =
+        prefs(ctx).getString(KEY_ADAPTER_TYPE, DEFAULT_ADAPTER_TYPE) ?: DEFAULT_ADAPTER_TYPE
+
+    fun getMscanPort(ctx: Context): Int =
+        prefs(ctx).getInt(KEY_MSCAN_PORT, DEFAULT_MSCAN_PORT)
+
+    fun getMeatPiMicroSd(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_MEATPI_MICROSD, DEFAULT_MEATPI_MICROSD)
+
     // ── Write helpers ────────────────────────────────────────────────────────
 
     fun save(ctx: Context, host: String, port: Int) {
@@ -119,6 +140,8 @@ object AppSettings {
             putInt   (KEY_MAX_DIAG_ZIPS,      p.maxDiagZips)
             putString(KEY_THEME_ID,    p.themeId)
             putString(KEY_TEMP_PRESET, p.tempPreset)
+            putString(KEY_ADAPTER_TYPE, p.adapterType)
+            putBoolean(KEY_MEATPI_MICROSD, p.meatPiMicroSdLog)
         }
     }
 
@@ -133,7 +156,9 @@ object AppSettings {
         reconnectIntervalSec = getReconnectInterval(ctx),
         maxDiagZips          = getMaxDiagZips(ctx),
         themeId              = getThemeId(ctx),
-        tempPreset           = getTempPreset(ctx)
+        tempPreset           = getTempPreset(ctx),
+        adapterType          = getAdapterType(ctx),
+        meatPiMicroSdLog     = getMeatPiMicroSd(ctx)
     )
 
     private fun prefs(ctx: Context) =

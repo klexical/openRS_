@@ -4,7 +4,11 @@ import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticLogger
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -191,6 +195,146 @@ class WiCanConnection(
 
     private val rng = SecureRandom()
 
+    // ── DTC scan infrastructure ──────────────────────────────────────────────
+    /** Live OutputStream reference — set while connected, null otherwise. */
+    @Volatile private var _wsOut: OutputStream? = null
+
+    /** Frames routed here while a DTC scan is active (service 0x59 responses
+     *  and ISO-TP first/consecutive frames on watched response CAN IDs). */
+    private val _dtcChannel = Channel<Pair<Int, ByteArray>>(128)
+
+    /** Mutex prevents concurrent DTC scans from racing each other. */
+    private val _dtcMutex = Mutex()
+
+    /** Set of response CAN IDs that belong to the current DTC scan. */
+    @Volatile private var _dtcWatchIds: Set<Int> = emptySet()
+
+    /** True while a DTC scan is in progress — frames on [_dtcWatchIds] are
+     *  routed to [_dtcChannel] instead of the normal parsers. */
+    @Volatile private var _dtcScanActive: Boolean = false
+
+    /** Describes one ECU module to scan for DTCs. */
+    data class DtcModuleSpec(
+        val name: String,
+        val requestId: Int,
+        val responseId: Int
+    )
+
+    /**
+     * Performs a one-shot DTC scan across [modules] using UDS Service 0x19
+     * (ReadDTCInformation, sub-function 0x02, status mask 0xFF).
+     *
+     * Returns a map of module name → assembled ISO-TP payload bytes.
+     * Returns an empty map if the connection is not live.
+     * Must be called from a coroutine — suspends while collecting responses.
+     */
+    suspend fun performDtcScan(modules: List<DtcModuleSpec>): Map<String, ByteArray> =
+        _dtcMutex.withLock {
+            val out = _wsOut ?: return emptyMap()
+            val results = mutableMapOf<String, ByteArray>()
+
+            _dtcWatchIds = modules.map { it.responseId }.toSet()
+            _dtcScanActive = true
+
+            // Drain any stale frames before starting
+            while (_dtcChannel.tryReceive().isSuccess) { /* discard */ }
+
+            try {
+                for (module in modules) {
+                    val reqFrame = buildDtcRequestFrame(module.requestId)
+                    try { sendWsText(out, reqFrame) } catch (_: Exception) { continue }
+
+                    val payload = assembleIsotpResponse(
+                        responseId = module.responseId,
+                        requestId  = module.requestId,
+                        out        = out,
+                        timeoutMs  = 2_500L
+                    )
+                    if (payload != null) results[module.name] = payload
+
+                    delay(350L)
+                }
+            } finally {
+                _dtcScanActive = false
+                _dtcWatchIds   = emptySet()
+            }
+            results
+        }
+
+    /** Build a SLCAN frame that sends UDS 0x19 02 FF to [requestId] with DLC 8. */
+    private fun buildDtcRequestFrame(requestId: Int): String =
+        "t%03X8031902FF00000000\r".format(requestId)
+
+    /** Build a SLCAN ISO-TP flow-control frame (FC, ContinueToSend) to [requestId]. */
+    private fun buildFlowControlFrame(requestId: Int): String =
+        "t%03X83000000000000000\r".format(requestId)
+
+    /**
+     * Waits for and assembles an ISO-TP response on [responseId].
+     *
+     * Handles:
+     *   Single frame (SF, PCI high nibble 0x0): returns payload bytes directly.
+     *   First frame (FF, PCI high nibble 0x1): sends FC, then collects consecutive
+     *     frames (CF, PCI high nibble 0x2) until all bytes are received.
+     *
+     * Returns null if no response arrives within [timeoutMs] or on error.
+     */
+    private suspend fun assembleIsotpResponse(
+        responseId: Int,
+        requestId: Int,
+        out: OutputStream,
+        timeoutMs: Long
+    ): ByteArray? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        var totalLen = 0
+        var received = 0
+        val buf = ByteArrayOutputStream()
+        var seqNext = 1
+
+        while (System.currentTimeMillis() < deadline) {
+            val remaining = deadline - System.currentTimeMillis()
+            if (remaining <= 0) break
+
+            val frame = withTimeoutOrNull(remaining) { _dtcChannel.receive() }
+                ?: break
+
+            if (frame.first != responseId) continue
+            val data = frame.second
+            if (data.isEmpty()) continue
+
+            when ((data[0].toInt() and 0xF0) shr 4) {
+                0 -> {
+                    // Single frame
+                    val len = data[0].toInt() and 0x0F
+                    if (len <= 0 || data.size < len + 1) return null
+                    return data.copyOfRange(1, 1 + len)
+                }
+                1 -> {
+                    // First frame
+                    totalLen = ((data[0].toInt() and 0x0F) shl 8) or (data[1].toInt() and 0xFF)
+                    val firstBytes = minOf(6, data.size - 2)
+                    if (firstBytes > 0) buf.write(data, 2, firstBytes)
+                    received = firstBytes
+                    try { sendWsText(out, buildFlowControlFrame(requestId)) } catch (_: Exception) { }
+                }
+                2 -> {
+                    // Consecutive frame
+                    val seq = data[0].toInt() and 0x0F
+                    if (seq != seqNext) break
+                    seqNext = (seqNext + 1) and 0x0F
+                    val need = totalLen - received
+                    val take = minOf(7, data.size - 1, need)
+                    if (take <= 0) break
+                    buf.write(data, 1, take)
+                    received += take
+                    if (received >= totalLen) return buf.toByteArray()
+                }
+            }
+        }
+
+        return if (buf.size() > 0) buf.toByteArray() else null
+    }
+
     /**
      * Connect to the WiCAN WebSocket, open the SLCAN channel, and emit
      * (canId, dataBytes) pairs for every received CAN frame.
@@ -241,6 +385,7 @@ class WiCanConnection(
                 addDebugLine("Probing firmware...")
 
                 _state.value = State.Connected
+                _wsOut = out
                 connectionSucceeded = true
                 failedAttempts = 0
 
@@ -366,6 +511,14 @@ class WiCanConnection(
 
                     val frame = parseSlcanFrame(msg) ?: continue
 
+                    // ── DTC scan intercept ─────────────────────────────────────
+                    // While a scan is active, route frames on watched response IDs
+                    // to the DTC channel instead of the normal OBD parsers.
+                    if (_dtcScanActive && frame.first in _dtcWatchIds) {
+                        _dtcChannel.trySend(frame)
+                        continue
+                    }
+
                     // ── BCM OBD response — parse and forward via callback ───────
                     if (frame.first == BCM_RESPONSE_ID) {
                         parseBcmResponse(frame.second, getCurrentState(), onObdUpdate)
@@ -428,6 +581,8 @@ class WiCanConnection(
                 }
                 } finally {
                     // C-1 fix: always close socket regardless of how the block exits
+                    _wsOut = null
+                    _dtcScanActive = false
                     try { socket.close() } catch (_: Exception) {}
                 }
 

@@ -38,6 +38,8 @@ fun SettingsDialog(onDismiss: () -> Unit) {
     var autoReconnect   by remember { mutableStateOf(current.autoReconnect) }
     var reconnectSec    by remember { mutableStateOf(current.reconnectIntervalSec.toString()) }
     var maxDiagZips     by remember { mutableStateOf(current.maxDiagZips.toString()) }
+    var adapterType     by remember { mutableStateOf(current.adapterType) }
+    var meatPiMicroSd   by remember { mutableStateOf(current.meatPiMicroSdLog) }
     var error           by remember { mutableStateOf<String?>(null) }
 
     Dialog(
@@ -137,8 +139,32 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     )
                 }
 
+                // ── Adapter section ───────────────────────────────────────────
+                SettingsSection("ADAPTER") {
+                    SettingsRow("Hardware") {
+                        SegmentedPicker(
+                            options  = listOf("WiCAN", "MeatPi"),
+                            selected = if (adapterType == "MEATPI") "MeatPi" else "WiCAN",
+                            onSelect = { adapterType = if (it == "MeatPi") "MEATPI" else "WICAN" }
+                        )
+                    }
+                    if (adapterType == "MEATPI") {
+                        Spacer(Modifier.height(12.dp))
+                        SettingsSwitchRow(
+                            label          = "MicroSD logging (MeatPi Pro)",
+                            checked        = meatPiMicroSd,
+                            onCheckedChange = { meatPiMicroSd = it }
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "When enabled, openRS_ requests that the MeatPi Pro log raw CAN frames to its microSD card.",
+                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono
+                        )
+                    }
+                }
+
                 // ── Connection section ────────────────────────────────────────
-                SettingsSection("WICAN CONNECTION") {
+                SettingsSection(if (adapterType == "MEATPI") "MEATPI CONNECTION" else "WICAN CONNECTION") {
                     OutlinedTextField(
                         value = host,
                         onValueChange = { host = it; error = null },
@@ -263,7 +289,9 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                                     screenOn             = screenOn,
                                     autoReconnect        = autoReconnect,
                                     reconnectIntervalSec = retryInt ?: AppSettings.DEFAULT_RECONNECT_INTERVAL,
-                                    maxDiagZips          = maxZips
+                                    maxDiagZips          = maxZips,
+                                    adapterType          = adapterType,
+                                    meatPiMicroSdLog     = meatPiMicroSd
                                 )}
                                 onDismiss()
                             }
