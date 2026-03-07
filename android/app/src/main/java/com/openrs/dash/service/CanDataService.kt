@@ -74,6 +74,17 @@ class CanDataService : Service() {
         if (isMeatPi) DtcScanner(this).scanMeatPi(meatpi)
         else          DtcScanner(this).scan(wican)
 
+    /**
+     * Sends UDS Service 0x14 to clear all DTCs from every supported ECU.
+     * Suspends for up to ~12 seconds while waiting for acknowledgements.
+     *
+     * Returns a map of module name → true if that ECU confirmed the clear.
+     * An empty map means the adapter is not connected.
+     */
+    suspend fun clearDtcs(): Map<String, Boolean> =
+        if (isMeatPi) DtcScanner(this).clearDtcsMeatPi(meatpi)
+        else          DtcScanner(this).clearDtcs(wican)
+
     override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onCreate() {

@@ -16,8 +16,16 @@ object AppSettings {
     // Renamed from "wican_port" to discard cached ELM327 port (3333) on upgrade.
     const val KEY_PORT = "wican_port_ws"
 
+    // WiCAN (stock / openRS_ firmware) defaults — WebSocket SLCAN on port 80
     const val DEFAULT_HOST = "192.168.80.1"
     const val DEFAULT_PORT = 80
+
+    // MeatPi Pro defaults — raw TCP SLCAN.
+    // IP:   192.168.0.10  (WiCAN Pro AP mode default, confirmed factory reset docs)
+    // Port: 35000         (configurable in WiCAN Pro web UI; recommended default per
+    //                      MeatPi examples — port 23 is also valid if set in web UI)
+    const val DEFAULT_HOST_MEATPI = "192.168.0.10"
+    const val DEFAULT_PORT_MEATPI = 35000
 
     // ── Units ───────────────────────────────────────────────────────────────
     const val KEY_SPEED_UNIT  = "speed_unit"    // "MPH" | "KPH"
@@ -60,11 +68,10 @@ object AppSettings {
     const val KEY_ADAPTER_TYPE     = "adapter_type"
     const val DEFAULT_ADAPTER_TYPE = "WICAN"     // "WICAN" | "MEATPI"
 
-    // ── MeatPi MS-CAN port ───────────────────────────────────────────────────
-    const val KEY_MSCAN_PORT     = "mscan_port"
-    const val DEFAULT_MSCAN_PORT = 3334
-
-    // ── MeatPi microSD logging ────────────────────────────────────────────────
+    // ── MeatPi microSD logging reminder ─────────────────────────────────────
+    // SD logging on the WiCAN Pro is configured via its web UI (http://192.168.0.10/).
+    // There is no SLCAN command to enable it remotely. This pref persists the user's
+    // intent so we can surface a reminder/link in Settings.
     const val KEY_MEATPI_MICROSD     = "meatpi_microsd"
     const val DEFAULT_MEATPI_MICROSD = false
 
@@ -111,9 +118,6 @@ object AppSettings {
 
     fun getAdapterType(ctx: Context): String =
         prefs(ctx).getString(KEY_ADAPTER_TYPE, DEFAULT_ADAPTER_TYPE) ?: DEFAULT_ADAPTER_TYPE
-
-    fun getMscanPort(ctx: Context): Int =
-        prefs(ctx).getInt(KEY_MSCAN_PORT, DEFAULT_MSCAN_PORT)
 
     fun getMeatPiMicroSd(ctx: Context): Boolean =
         prefs(ctx).getBoolean(KEY_MEATPI_MICROSD, DEFAULT_MEATPI_MICROSD)

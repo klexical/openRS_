@@ -46,6 +46,20 @@ class DtcScanner(private val ctx: Context) {
         return raw.flatMap { (moduleName, payload) -> parsePayload(moduleName, payload) }
     }
 
+    /**
+     * Sends UDS Service 0x14 (ClearDiagnosticInformation, group 0xFFFFFF) to all
+     * target ECUs via WiCAN.
+     *
+     * Returns a map of module name → true when the ECU acknowledged the clear.
+     * A missing key means no response was received from that module.
+     */
+    suspend fun clearDtcs(wican: WiCanConnection): Map<String, Boolean> =
+        wican.performDtcClear(MODULES)
+
+    /** Same as [clearDtcs] but uses the MeatPi Pro adapter. */
+    suspend fun clearDtcsMeatPi(meatpi: MeatPiConnection): Map<String, Boolean> =
+        meatpi.performDtcClear(MODULES)
+
     // ── ISO-TP payload → DtcResult list ──────────────────────────────────────
 
     private fun parsePayload(module: String, payload: ByteArray): List<DtcResult> {

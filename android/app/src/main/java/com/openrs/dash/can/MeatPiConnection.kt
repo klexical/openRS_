@@ -28,8 +28,8 @@ import java.net.Socket
  * DTC scanning uses the same [performDtcScan] mechanism.
  */
 class MeatPiConnection(
-    private val host: String = "192.168.4.1",
-    private val port: Int = 3333,
+    private val host: String = "192.168.0.10",
+    private val port: Int = 35000,
     private val maxRetries: Int = 3,
     private val reconnectDelayMs: Long = 5_000L
 ) {
@@ -38,8 +38,9 @@ class MeatPiConnection(
     companion object {
         val BACKOFF_MS = listOf(5_000L, 15_000L, 30_000L)
 
-        private const val SLCAN_INIT_HS = "C\rS6\rO\r"   // HS-CAN 500 kbps
-        private const val SLCAN_INIT_MS = "C\rS4\rO\r"   // MS-CAN 125 kbps
+        // CAN bus bitrate is configured via the WiCAN Pro web UI (http://192.168.0.10/).
+        // This init string opens the SLCAN channel at the bitrate already set on the device.
+        private const val SLCAN_INIT_HS = "C\rS6\rO\r"
 
         // ── OBD polling frames (identical to WiCanConnection) ─────────────────
         // BCM (0x726 → 0x72E)
@@ -342,6 +343,36 @@ class MeatPiConnection(
                     val payload = assembleIsotpResponse(module.responseId, module.requestId, out, 2_500L)
                     if (payload != null) results[module.name] = payload
                     delay(350L)
+                }
+            } finally {
+                _dtcScanActive = false
+                _dtcWatchIds   = emptySet()
+            }
+            results
+        }
+
+    /**
+     * Sends UDS Service 0x14 (ClearDiagnosticInformation, group 0xFFFFFF) to each module.
+     * Returns module name → true if the ECU responded with 0x54 (positive response).
+     */
+    suspend fun performDtcClear(modules: List<WiCanConnection.DtcModuleSpec>): Map<String, Boolean> =
+        _dtcMutex.withLock {
+            val out = _tcpOut ?: return emptyMap()
+            val results = mutableMapOf<String, Boolean>()
+
+            _dtcWatchIds = modules.map { it.responseId }.toSet()
+            _dtcScanActive = true
+            while (_dtcChannel.tryReceive().isSuccess) { /* drain stale */ }
+
+            try {
+                for (module in modules) {
+                    val reqFrame = "t%03X80414FFFFFF000000\r".format(module.requestId)
+                    try { sendFrame(out, reqFrame) } catch (_: Exception) { continue }
+                    val payload = assembleIsotpResponse(module.responseId, module.requestId, out, 2_000L)
+                    results[module.name] = payload != null &&
+                        payload.isNotEmpty() &&
+                        (payload[0].toInt() and 0xFF) == 0x54
+                    delay(300L)
                 }
             } finally {
                 _dtcScanActive = false
