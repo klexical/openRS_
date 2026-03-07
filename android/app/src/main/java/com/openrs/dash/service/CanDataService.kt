@@ -57,6 +57,7 @@ class CanDataService : Service() {
 
     override fun onDestroy() {
         unregisterWifiCallback()
+        stopConnection()   // flush sessionEnd() before scope is torn down
         scope.cancel()
         super.onDestroy()
     }
@@ -94,7 +95,7 @@ class CanDataService : Service() {
 
     // ── Connection control ───────────────────────────────────────────────────
 
-    fun startConnection() {
+    @Synchronized fun startConnection() {
         if (!isOnWifi()) return
         if (connectionJob?.isActive == true) return
         wican = buildWiCan()
@@ -200,7 +201,7 @@ class CanDataService : Service() {
         }
     }
 
-    fun stopConnection() {
+    @Synchronized fun stopConnection() {
         DiagnosticLogger.sessionEnd()
         connectionJob?.cancel()
         connectionJob = null

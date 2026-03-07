@@ -53,7 +53,7 @@ import kotlin.math.roundToInt
         SectionLabel("DIAGNOSTICS")
         Spacer(Modifier.height(4.dp))
 
-        val sessionMs  = DiagnosticLogger.sessionDurationMs
+        val sessionMs  = remember(vs.framesPerSecond) { DiagnosticLogger.sessionDurationMs }
         val frameCount = inv.values.sumOf { it.totalReceived }
         val issueCount = inv.values.sumOf { it.validationIssues.size }
 

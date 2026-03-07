@@ -3,6 +3,8 @@ package com.openrs.dash.diagnostics
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import androidx.core.content.FileProvider
 import com.openrs.dash.BuildConfig
 import com.openrs.dash.can.CanDecoder
@@ -127,7 +129,9 @@ object DiagnosticExporter {
                 )
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            ctx.startActivity(Intent.createChooser(intent, "Share Trip Data"))
+            Handler(Looper.getMainLooper()).post {
+                ctx.startActivity(Intent.createChooser(intent, "Share Trip Data"))
+            }
         } catch (e: Exception) {
             DiagnosticLogger.event("TRIP_EXPORT_ERROR", e.message ?: "unknown")
         }
@@ -229,7 +233,9 @@ object DiagnosticExporter {
             )
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        ctx.startActivity(Intent.createChooser(intent, "Share openRS_ Diagnostics"))
+            Handler(Looper.getMainLooper()).post {
+                ctx.startActivity(Intent.createChooser(intent, "Share openRS_ Diagnostics"))
+            }
     }
 
     // ── Text summary ─────────────────────────────────────────────────────────

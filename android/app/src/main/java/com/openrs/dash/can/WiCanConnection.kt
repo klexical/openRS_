@@ -37,8 +37,6 @@ class WiCanConnection(
     /** Delay (ms) before reconnecting after a dropped connection. */
     private val reconnectDelayMs: Long = 5_000L
 ) {
-    // ── DEBUG ONLY (do not commit) ──────────────────────────
-    val debugLines: StateFlow<List<String>> get() = OpenRSDashApp.instance.debugLines
     private fun addDebugLine(line: String) = OpenRSDashApp.instance.pushDebugLine(line)
 
     companion object {
@@ -255,12 +253,12 @@ class WiCanConnection(
                     while (isActive) {
                         // BCM queries (odometer, SOC, battery temp, cabin temp)
                         BCM_QUERIES.forEach { q ->
-                            try { sendWsText(out, q) } catch (_: Exception) { return@forEach }
+                            try { sendWsText(out, q) } catch (_: Exception) { }
                             delay(BCM_QUERY_GAP_MS)
                         }
                         // AWD module queries (RDU oil temp)
                         AWD_QUERIES.forEach { q ->
-                            try { sendWsText(out, q) } catch (_: Exception) { return@forEach }
+                            try { sendWsText(out, q) } catch (_: Exception) { }
                             delay(BCM_QUERY_GAP_MS)
                         }
                         delay(BCM_POLL_INTERVAL_MS)
@@ -271,7 +269,7 @@ class WiCanConnection(
                     delay(PCM_INITIAL_DELAY_MS)
                     while (isActive) {
                         PCM_QUERIES.forEach { q ->
-                            try { sendWsText(out, q) } catch (_: Exception) { return@forEach }
+                            try { sendWsText(out, q) } catch (_: Exception) { }
                             delay(PCM_QUERY_GAP_MS)
                         }
                         delay(PCM_POLL_INTERVAL_MS)
@@ -493,8 +491,8 @@ class WiCanConnection(
     // ── WebSocket helpers ───────────────────────────────────────────────────
 
     private fun sendHttpUpgrade(out: OutputStream) {
-        // Static key is fine for local-network, non-TLS usage
-        val key = "dGhlIHNhbXBsZSBub25jZQ=="
+        val keyBytes = ByteArray(16).also { SecureRandom().nextBytes(it) }
+        val key = android.util.Base64.encodeToString(keyBytes, android.util.Base64.NO_WRAP)
         val req = "GET $WS_PATH HTTP/1.1\r\n" +
             "Host: $host\r\n" +
             "Upgrade: websocket\r\n" +
@@ -813,6 +811,7 @@ class WiCanConnection(
                     val bigLen = lenBytes.fold(0L) { acc, b -> (acc shl 8) or (b.toLong() and 0xFF) }
                     if (bigLen < 0 || bigLen > 1_048_576L) throw IOException("WS frame too large: $bigLen bytes")
                     readExactly(inp, bigLen.toInt())  // discard
+                    DiagnosticLogger.event("WS", "Skipped 64-bit frame: $bigLen bytes")
                     continue
                 }
                 else -> len

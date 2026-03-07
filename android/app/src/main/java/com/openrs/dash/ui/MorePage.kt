@@ -240,7 +240,7 @@ import kotlinx.coroutines.withContext
                     valueColor = if (vs.isConnected) Ok else Red, modifier = Modifier.weight(1f))
                 DataCell("MODE", vs.dataMode, modifier = Modifier.weight(1f))
                 DataCell("FPS",  "${vs.framesPerSecond.toInt()}", modifier = Modifier.weight(1f))
-                DataCell("SESSION", DiagnosticLogger.formatDuration(DiagnosticLogger.sessionDurationMs),
+                DataCell("SESSION", DiagnosticLogger.formatDuration(remember(vs.framesPerSecond) { DiagnosticLogger.sessionDurationMs }),
                     modifier = Modifier.weight(1f))
             }
             Spacer(Modifier.height(10.dp))
@@ -298,7 +298,16 @@ import kotlinx.coroutines.withContext
     }
 }
 
-// ── Theme Picker — Q-3: uses UserPrefs.themeAccent as single source of truth ──
+/** Returns the accent Color for a theme ID without allocating a full UserPrefs instance. */
+private fun themeAccentColor(id: String): androidx.compose.ui.graphics.Color = when (id) {
+    "red"    -> androidx.compose.ui.graphics.Color(0xFFFF2233)
+    "orange" -> androidx.compose.ui.graphics.Color(0xFFFF6600)
+    "green"  -> androidx.compose.ui.graphics.Color(0xFF00FF88)
+    "purple" -> androidx.compose.ui.graphics.Color(0xFF8C7AFF)
+    "silver" -> androidx.compose.ui.graphics.Color(0xFFAAC4DD)
+    else     -> androidx.compose.ui.graphics.Color(0xFF00D2FF)
+}
+
 @Composable fun ThemePicker(p: UserPrefs) {
     val ctx = LocalContext.current
     val themes = listOf(
@@ -313,16 +322,12 @@ import kotlinx.coroutines.withContext
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             themes.take(3).forEach { (id, name) ->
-                val isActive = p.themeId == id
-                val color    = UserPrefs(themeId = id).themeAccent
-                ThemeChip(id, name, color, isActive, ctx, p, Modifier.weight(1f))
+                ThemeChip(id, name, themeAccentColor(id), p.themeId == id, ctx, p, Modifier.weight(1f))
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             themes.drop(3).forEach { (id, name) ->
-                val isActive = p.themeId == id
-                val color    = UserPrefs(themeId = id).themeAccent
-                ThemeChip(id, name, color, isActive, ctx, p, Modifier.weight(1f))
+                ThemeChip(id, name, themeAccentColor(id), p.themeId == id, ctx, p, Modifier.weight(1f))
             }
         }
     }

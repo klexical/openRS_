@@ -34,6 +34,25 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 ### Removed
 
 - Legacy `VehicleState` fields `lambdaValue`, `launchControl`, and `driftFury` (unused; carried forward from prototype).
+- Redundant `debugLines` pass-through property on `WiCanConnection` — callers now use `OpenRSDashApp.instance.debugLines` directly.
+
+### Stability / Threading
+
+- **`CanDataService.startConnection()` / `stopConnection()`**: marked `@Synchronized` — prevents a race condition where the WiFi callback thread and the main thread could both enter `startConnection()` simultaneously, initialising two `WiCanConnection` instances and leaking the first.
+- **`onDestroy()`**: now calls `stopConnection()` before cancelling the coroutine scope, ensuring `DiagnosticLogger.sessionEnd()` is always flushed when the service is torn down (previously the final frames of a session could be lost).
+- **`startActivity()` from background thread**: `DiagnosticExporter.share()` and `shareTrip()` now post the `startActivity(Intent.createChooser(...))` call through `Handler(Looper.getMainLooper())` — prevents an `android.view.ViewRootImpl$CalledFromWrongThreadException` crash on Android 10+ when the share sheet is triggered from `Dispatchers.IO`.
+- **OBD query burst on send failure**: removed `return@forEach` from the BCM, AWD, and PCM query loops — the inter-query `delay()` now always fires even when a frame fails to send, preventing a rapid burst of retries when the connection is flapping.
+
+### Performance
+
+- **`sessionDurationMs` memoised**: `DiagPage` and `MorePage` now read `sessionDurationMs` at most once per 1 Hz FPS tick (via `remember(vs.framesPerSecond)`), cutting per-frame string allocations from `formatDuration`.
+- **`ThemePicker`**: replaced 6 throwaway `UserPrefs(themeId = id)` allocations per recomposition with a lightweight private `themeAccentColor(id)` helper function.
+
+### Correctness
+
+- **PTU temperature thresholds**: `TempsPage` PTU card now uses dedicated `UserPrefs.ptuWarnC` / `ptuCritC` thresholds (street 95/110°C, track 85/100°C, race 75/90°C) rather than sharing the RDU values — the PTU (transfer case) is a different assembly with higher operating limits.
+- **WebSocket handshake key**: `WiCanConnection` now generates a fresh 16-byte random key per connection (RFC 6455 compliant) instead of reusing the static RFC example key.
+- **64-bit WebSocket frames**: oversized frames (len=127) that are discarded now emit a `DiagnosticLogger.event("WS", ...)` entry so they appear in the diagnostic export.
 
 ---
 
