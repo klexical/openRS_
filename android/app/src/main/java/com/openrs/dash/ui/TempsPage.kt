@@ -68,7 +68,7 @@ import com.openrs.dash.data.VehicleState
             TempSpec("PTU (TRANSFER)",
                 if (vs.ptuTempC > -90) p.displayTemp(vs.ptuTempC) else "— —", p.tempLabel,
                 vs.ptuTempC.takeIf { it > -90 } ?: 0.0,
-                p.rduWarnC, p.rduCritC, if (vs.ptuTempC <= -90) "POLLING" else ""),
+                p.ptuWarnC, p.ptuCritC, if (vs.ptuTempC <= -90) "POLLING" else ""),
             TempSpec("CHARGE AIR",
                 if (vs.chargeAirTempC != 0.0) p.displayTemp(vs.chargeAirTempC) else "— —", p.tempLabel,
                 vs.chargeAirTempC, 60.0, 80.0, if (vs.chargeAirTempC == 0.0) "POLLING" else ""),
