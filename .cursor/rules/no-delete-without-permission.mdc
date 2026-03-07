@@ -3,19 +3,4 @@ description: Never delete files or directories without explicit user permission
 alwaysApply: true
 ---
 
-# No Deletion Without Explicit Permission
-
-**NEVER** delete, remove, or `git rm` any file or directory on this computer without the user explicitly saying "yes, delete it" or "you have permission to delete".
-
-## Applies To
-- `delete_file` tool calls
-- Shell commands: `rm`, `git rm`, `rmdir`, `trash`, etc.
-- Any operation that destroys or removes files from disk or git history
-
-## Required Before Any Deletion
-- State exactly what will be deleted and why
-- Wait for explicit user approval before proceeding
-
-## Example
-- ❌ Deciding to `git rm -r docs/` as part of a refactor without asking
-- ✅ "I need to delete `docs/` — do I have your permission to remove it?"
+NEVER delete, remove, or `git rm` any file or directory (including via `rm`, `rmdir`, `trash`) without the user explicitly saying "yes, delete it". Always state exactly what will be deleted and why, then wait for approval before proceeding.

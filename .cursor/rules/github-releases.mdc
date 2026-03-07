@@ -1,30 +1,7 @@
 ---
 description: Always publish a GitHub Release when committing a new app version
-alwaysApply: true
+alwaysApply: false
+globs: android/app/build.gradle.kts, android/CHANGELOG.md, android/dist/**
 ---
 
-# GitHub Releases on App Version Bumps
-
-Whenever a new app version is committed and pushed, **always** create a GitHub Release immediately after pushing — do not wait for the user to ask.
-
-## Steps (in order)
-
-1. Commit and push the code changes as normal.
-2. Create a git tag matching the version (e.g. `android-v1.2.4`) pointing at the new commit.
-3. Push the tag: `git push origin <tag>`.
-4. Create the GitHub release with `gh release create`, attaching the APK from `android/dist/`:
-
-```bash
-gh release create android-v<X.Y.Z> \
-  "android/dist/openRS_v<X.Y.Z>.apk#openRS_v<X.Y.Z>.apk" \
-  --title "openRS_ v<X.Y.Z> — <short description>" \
-  --latest \
-  --notes "<release notes>"
-```
-
-## Rules
-
-- Mark the newest release as `--latest`.
-- Release notes must summarise **what changed and why** (not just "bug fixes").
-- APK must be the signed release build from `android/dist/`, not a debug build.
-- If multiple versions are committed in one session, create a release for each one.
+On every version bump: commit → create and push tag `android-vX.Y.Z` → run `gh release create android-vX.Y.Z "android/dist/openRS_vX.Y.Z.apk#openRS_vX.Y.Z.apk" --title "openRS_ vX.Y.Z — <short description>" --latest --notes "<release notes>"`. APK must be the signed build from `android/dist/`, not debug. Release notes must explain what changed and why. Create a separate release for each version if multiple are bumped in one session.
