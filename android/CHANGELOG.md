@@ -5,6 +5,33 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
+## [v2.2.0] — 2026-03-06
+
+### Added
+
+- **Share Trip button**: Trip Summary sheet now has a "↑ SHARE TRIP DATA" button that exports the trip as a ZIP and triggers the system share sheet — wires up `DiagnosticExporter.shareTrip()` from the UI.
+
+### Improved
+
+- **UI architecture**: `MainActivity.kt` has been split into dedicated files — `Theme.kt` (design tokens, fonts, typography), `Components.kt` (shared composables), and one file per tab: `DashPage.kt`, `PowerPage.kt`, `ChassisPage.kt`, `TempsPage.kt`, `DiagPage.kt`, `MorePage.kt`. Significantly reduces `MainActivity.kt` size and improves maintainability.
+- **Performance — `TripRecorder`**: eliminated O(n²) list copies on every GPS waypoint by introducing an `ArrayList` buffer. Average and mode breakdown now use O(1) incremental accumulators (`speedSum`, `speedSamples`, `modeCounts`) instead of re-scanning the full point list on each update.
+- **Performance — `DiagPage`**: `DiagnosticLogger.frameInventorySnapshot` is now called once per composition pass instead of once per rendered row, eliminating redundant deep-copies.
+- **`DiagnosticExporter`**: JSON string values are now properly escaped (backslash, quote, control characters). Old trip ZIPs are pruned on share to match the existing diagnostic ZIP pruning behaviour.
+- **`DiagnosticLogger`**: `frameInventory` is now private; `frameInventorySnapshot` returns a proper deep-copy of all `FrameInfo` fields including `validationIssues` and `periodicSamples`, preventing external mutation.
+
+### Fixed
+
+- **`CanDecoder`**: `ID_TPMS` constant renamed to `ID_PCM_AMBIENT` (0x340 carries ambient temperature, not TYRE pressures). `describeDecoded` now shows the resolved drive mode string for `ID_DRIVE_MODE_EXT` (0x420). Dead TPMS validation branch removed.
+- **`WiCanConnection`**: removed unused `RECONNECT_DELAY_MS` constant; replaced fully-qualified type names with short names after adding imports.
+- **`TripRecorder`**: RTR (race-ready) gate now uses `UserPrefs.isRaceReady()` consistently, matching the Temps page — eliminates the two separate definitions of the same threshold logic.
+- **`ThemePicker`**: accent colours are read from `UserPrefs(themeId = id).themeAccent` instead of a duplicated inline hex map, so theme colours stay in sync with a single source of truth.
+
+### Removed
+
+- Legacy `VehicleState` fields `lambdaValue`, `launchControl`, and `driftFury` (unused; carried forward from prototype).
+
+---
+
 ## [v2.1.0] — 2026-03-06
 
 ### Added

@@ -67,9 +67,9 @@ object CanDecoder {
     const val ID_COOLANT      = 0x2F0
 
     // ── RS_HS.dbc PCMmsg17 (0x340): AmbientAirTemp byte7 signed ×0.25°C ──────
-    // DigiCluster can1_ms.json also maps MS-CAN TPMS PSI to bytes 2-5 at 0x340.
-    // Both signals are decoded; range filters discard invalid readings.
-    const val ID_TPMS         = 0x340
+    // NOTE: This ID is PCMmsg17, NOT a TPMS broadcast. TPMS data comes from BCM Mode 22
+    // polling only. The name ID_PCM_AMBIENT reflects the actual decoded signal.
+    const val ID_PCM_AMBIENT  = 0x340
     const val ID_AMBIENT_TEMP = 0x1A4   // Ambient temp byte4 signed × 0.25 °C (MS-CAN bridged)
 
     // ── RS_HS.dbc SASMmsg01 (0x010): Steering wheel angle ──────────────────
@@ -101,7 +101,7 @@ object CanDecoder {
         ID_LONG_ACCEL, ID_LAT_ACCEL,
         ID_DRIVE_MODE, ID_DRIVE_MODE_EXT, ID_ESC_ABS,
         ID_WHEEL_SPEEDS, ID_GEAR, ID_AWD_TORQUE, ID_COOLANT,
-        ID_TPMS, ID_AMBIENT_TEMP,
+        ID_PCM_AMBIENT, ID_AMBIENT_TEMP,
         ID_FUEL_LEVEL,
         ID_STEERING, ID_BRAKE_PRESS
     )
@@ -257,7 +257,7 @@ object CanDecoder {
             // ── 0x340: PCMmsg17 (HS-CAN) — AmbientAirTemp only ─────────────────
             // RS_HS.dbc PCMmsg17: AmbientAirTemp : 63|8@0− → byte7 signed × 0.25 °C
             // Bytes 2-5 are PCM engine signals (NOT TPMS — TPMS is BCM Mode 22 only).
-            ID_TPMS -> if (n >= 8) {
+            ID_PCM_AMBIENT -> if (n >= 8) {
                 val ambient = data[7].toInt().toDouble() * 0.25
                 if (ambient !in -50.0..60.0) null
                 else state.copy(ambientTempC = ambient, lastUpdate = now)
@@ -388,7 +388,8 @@ object CanDecoder {
         ID_STEERING     -> "steer=${"%.1f".format(state.steeringAngle)}°"
         ID_BRAKE_PRESS  -> "brake=${"%.1f".format(state.brakePressure)}"
         ID_GAUGE_ILLUM  -> "illum=${state.gaugeIllumination}, eBrake=${state.eBrake}"
-        ID_TPMS         -> "ambient=${"%.2f".format(state.ambientTempC)}°C (TPMS from BCM Mode 22)"
+        ID_PCM_AMBIENT  -> "ambient=${"%.2f".format(state.ambientTempC)}°C (PCMmsg17)"
+        ID_DRIVE_MODE_EXT -> "driveMode=${state.driveMode.label} (resolved via 0x420+0x1B0)"
         ID_AMBIENT_TEMP -> "ambientTempC=${"%.2f".format(state.ambientTempC)}"
         ID_WHEEL_SPEEDS -> "FL=${"%.1f".format(state.wheelSpeedFL)} FR=${"%.1f".format(state.wheelSpeedFR)} RL=${"%.1f".format(state.wheelSpeedRL)} RR=${"%.1f".format(state.wheelSpeedRR)} km/h"
         ID_AWD_TORQUE   -> "L=${"%.0f".format(state.awdLeftTorque)}Nm R=${"%.0f".format(state.awdRightTorque)}Nm"
@@ -403,11 +404,9 @@ object CanDecoder {
     /**
      * Returns a validation warning string if the decoded value appears physically impossible,
      * or null if everything looks reasonable. Flags are shown in the diagnostic report.
-     */
-    /**
-     * M-9 fix: issue keys are normalised (no dynamic values embedded) so LinkedHashSet
+     *
+     * M-9: issue keys are normalised (no dynamic values embedded) so LinkedHashSet
      * deduplication works correctly and the set doesn't grow unbounded over a session.
-     * Dynamic readings are accessible in the decode trace; issues track categories only.
      */
     fun validateDecoded(id: Int, state: VehicleState): String? = when (id) {
         ID_ENGINE_RPM   -> when {
@@ -458,12 +457,6 @@ object CanDecoder {
         ID_AMBIENT_TEMP -> when {
             state.ambientTempC < -50 -> "ambientTempC<-50 — check signed×0.25 formula"
             state.ambientTempC > 60  -> "ambientTempC>60 — suspiciously hot"
-            else -> null
-        }
-        ID_TPMS         -> when {
-            state.tirePressLF > 0 && (state.tirePressLF > 80 || state.tirePressRF > 80 ||
-             state.tirePressLR > 80 || state.tirePressRR > 80)
-                -> "tire pressure > 80 PSI — formula may be wrong"
             else -> null
         }
         ID_PEDALS       -> when {
