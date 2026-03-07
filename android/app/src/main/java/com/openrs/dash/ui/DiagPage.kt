@@ -47,7 +47,8 @@ import kotlin.math.roundToInt
 @Composable fun DiagPage(
     lines: List<String>,
     vs: VehicleState,
-    onScanDtcs: (suspend () -> List<DtcResult>)?
+    onScanDtcs: (suspend () -> List<DtcResult>)?,
+    onClearDtcs: (suspend () -> Map<String, Boolean>)? = null
 ) {
     val ctx    = LocalContext.current
     val scope  = rememberCoroutineScope()
@@ -56,8 +57,10 @@ import kotlin.math.roundToInt
 
     // DTC scan state
     var dtcScanning  by remember { mutableStateOf(false) }
+    var dtcClearing  by remember { mutableStateOf(false) }
     var dtcResults   by remember { mutableStateOf<List<DtcResult>?>(null) }
     var dtcError     by remember { mutableStateOf<String?>(null) }
+    var dtcClearStatus by remember { mutableStateOf<String?>(null) }
 
     // P-4: snapshot once so the size/values are consistent within one composition
     val inv = remember(vs.framesPerSecond) { DiagnosticLogger.frameInventorySnapshot }
@@ -68,24 +71,26 @@ import kotlin.math.roundToInt
         SectionLabel("DTC SCANNER")
         Spacer(Modifier.height(4.dp))
 
+        val dtcBusy = dtcScanning || dtcClearing
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             // Scan button
             Box(
                 Modifier.weight(1f)
                     .background(
-                        if (!dtcScanning && vs.isConnected && onScanDtcs != null)
+                        if (!dtcBusy && vs.isConnected && onScanDtcs != null)
                             Brush.horizontalGradient(listOf(accent.copy(0.12f), accent.copy(0.06f)))
                         else Brush.horizontalGradient(listOf(Dim.copy(0.1f), Dim.copy(0.05f))),
                         RoundedCornerShape(10.dp)
                     )
                     .border(
                         1.dp,
-                        if (!dtcScanning && vs.isConnected && onScanDtcs != null) accent.copy(0.35f) else Dim.copy(0.2f),
+                        if (!dtcBusy && vs.isConnected && onScanDtcs != null) accent.copy(0.35f) else Dim.copy(0.2f),
                         RoundedCornerShape(10.dp)
                     )
-                    .clickable(enabled = !dtcScanning && vs.isConnected && onScanDtcs != null) {
+                    .clickable(enabled = !dtcBusy && vs.isConnected && onScanDtcs != null) {
                         dtcScanning = true
                         dtcError = null
+                        dtcClearStatus = null
                         scope.launch(Dispatchers.IO) {
                             val result = try { onScanDtcs?.invoke() } catch (_: Exception) { null }
                             withContext(Dispatchers.Main) {
@@ -108,32 +113,101 @@ import kotlin.math.roundToInt
                         else -> "⟳  SCAN ALL MODULES"
                     },
                     11.sp,
-                    if (!dtcScanning && vs.isConnected && onScanDtcs != null) accent else Dim,
+                    if (!dtcBusy && vs.isConnected && onScanDtcs != null) accent else Dim,
                     letterSpacing = 0.08.sp
                 )
             }
 
-            // Clear button — only shown when results exist
-            if (dtcResults != null && dtcResults!!.isNotEmpty()) {
+            // Dismiss button — clears results from the display
+            if (dtcResults != null) {
                 Box(
                     Modifier.width(72.dp)
                         .background(Color(0xFF1A0A0A), RoundedCornerShape(10.dp))
-                        .border(1.dp, Red.copy(0.35f), RoundedCornerShape(10.dp))
-                        .clickable(enabled = !dtcScanning) { dtcResults = null; dtcError = null }
+                        .border(1.dp, Dim.copy(0.3f), RoundedCornerShape(10.dp))
+                        .clickable(enabled = !dtcBusy) { dtcResults = null; dtcError = null; dtcClearStatus = null }
                         .padding(vertical = 13.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    MonoLabel("CLEAR", 10.sp, Red.copy(0.8f))
+                    MonoLabel("DISMISS", 9.sp, Dim)
                 }
+            }
+        }
+
+        // Clear Fault Codes button — shown when there are stored faults and adapter is connected
+        val hasFaults = dtcResults?.isNotEmpty() == true
+        if (hasFaults || dtcClearing) {
+            Spacer(Modifier.height(6.dp))
+            Box(
+                Modifier.fillMaxWidth()
+                    .background(
+                        if (!dtcBusy && vs.isConnected && onClearDtcs != null)
+                            Color(0xFF1A0606)
+                        else Color(0xFF120404),
+                        RoundedCornerShape(10.dp)
+                    )
+                    .border(
+                        1.dp,
+                        if (!dtcBusy && vs.isConnected && onClearDtcs != null) Red.copy(0.45f) else Red.copy(0.15f),
+                        RoundedCornerShape(10.dp)
+                    )
+                    .clickable(enabled = !dtcBusy && vs.isConnected && onClearDtcs != null) {
+                        dtcClearing = true
+                        dtcError = null
+                        dtcClearStatus = null
+                        scope.launch(Dispatchers.IO) {
+                            val ack = try { onClearDtcs?.invoke() } catch (_: Exception) { null }
+                            withContext(Dispatchers.Main) {
+                                dtcClearing = false
+                                if (ack == null) {
+                                    dtcError = "Clear failed — no response from ECUs"
+                                } else {
+                                    val ok  = ack.count { it.value }
+                                    val all = ack.size
+                                    dtcClearStatus = if (ok == all)
+                                        "Cleared: ${ack.keys.joinToString(", ")}  ($ok/$all)"
+                                    else
+                                        "Partial: ${ack.entries.joinToString(", ") { "${it.key}:${if (it.value) "✓" else "✗"}" }}"
+                                    // Auto-dismiss stale results after clearing
+                                    dtcResults = null
+                                }
+                            }
+                        }
+                    }
+                    .padding(vertical = 13.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                MonoLabel(
+                    if (dtcClearing) "CLEARING..." else "⚠  CLEAR FAULT CODES (0x14)",
+                    11.sp,
+                    if (!dtcBusy && vs.isConnected && onClearDtcs != null) Red.copy(0.9f) else Red.copy(0.35f),
+                    letterSpacing = 0.06.sp
+                )
             }
         }
 
         Spacer(Modifier.height(4.dp))
         MonoLabel(
-            if (dtcScanning) "Querying PCM, BCM, ABS, AWD, PSCM..."
-            else "Reads active, pending, and permanent fault codes from all modules.",
+            when {
+                dtcScanning  -> "Querying PCM, BCM, ABS, AWD, PSCM..."
+                dtcClearing  -> "Sending UDS 0x14 to all modules — do not disconnect..."
+                dtcClearStatus != null -> ""
+                else         -> "Reads active, pending, and permanent fault codes from all modules."
+            },
             9.sp, Dim, modifier = Modifier.padding(bottom = 6.dp)
         )
+
+        // Clear status confirmation
+        if (dtcClearStatus != null) {
+            Box(
+                Modifier.fillMaxWidth()
+                    .background(Color(0xFF060E06), RoundedCornerShape(8.dp))
+                    .border(1.dp, Ok.copy(0.3f), RoundedCornerShape(8.dp))
+                    .padding(10.dp)
+            ) {
+                MonoLabel("✓  ${dtcClearStatus}", 10.sp, Ok)
+            }
+            Spacer(Modifier.height(6.dp))
+        }
 
         // Error
         if (dtcError != null) {

@@ -261,9 +261,55 @@ class WiCanConnection(
             results
         }
 
+    /**
+     * Sends UDS Service 0x14 (ClearDiagnosticInformation, group 0xFFFFFF — all DTCs)
+     * to each module in [modules].
+     *
+     * Returns a map of module name → true when the ECU responded with 0x54 (positive),
+     * false if no response or a negative response was received.
+     * Returns an empty map if the connection is not live.
+     */
+    suspend fun performDtcClear(modules: List<DtcModuleSpec>): Map<String, Boolean> =
+        _dtcMutex.withLock {
+            val out = _wsOut ?: return emptyMap()
+            val results = mutableMapOf<String, Boolean>()
+
+            _dtcWatchIds = modules.map { it.responseId }.toSet()
+            _dtcScanActive = true
+
+            while (_dtcChannel.tryReceive().isSuccess) { /* drain stale frames */ }
+
+            try {
+                for (module in modules) {
+                    val reqFrame = buildDtcClearFrame(module.requestId)
+                    try { sendWsText(out, reqFrame) } catch (_: Exception) { continue }
+
+                    val payload = assembleIsotpResponse(
+                        responseId = module.responseId,
+                        requestId  = module.requestId,
+                        out        = out,
+                        timeoutMs  = 2_000L
+                    )
+                    // UDS positive response to 0x14 is 0x54
+                    results[module.name] = payload != null &&
+                        payload.isNotEmpty() &&
+                        (payload[0].toInt() and 0xFF) == 0x54
+                    delay(300L)
+                }
+            } finally {
+                _dtcScanActive = false
+                _dtcWatchIds   = emptySet()
+            }
+            results
+        }
+
     /** Build a SLCAN frame that sends UDS 0x19 02 FF to [requestId] with DLC 8. */
     private fun buildDtcRequestFrame(requestId: Int): String =
         "t%03X8031902FF00000000\r".format(requestId)
+
+    /** Build a SLCAN frame that sends UDS 0x14 FF FF FF to [requestId] with DLC 8. */
+    private fun buildDtcClearFrame(requestId: Int): String =
+        "t%03X80414FFFFFF000000\r".format(requestId)
 
     /** Build a SLCAN ISO-TP flow-control frame (FC, ContinueToSend) to [requestId]. */
     private fun buildFlowControlFrame(requestId: Int): String =

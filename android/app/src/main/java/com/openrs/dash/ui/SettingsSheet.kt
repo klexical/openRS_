@@ -151,25 +151,29 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     if (adapterType == "MEATPI") {
                         Spacer(Modifier.height(12.dp))
                         SettingsSwitchRow(
-                            label          = "MicroSD logging",
+                            label          = "MicroSD logging reminder",
                             checked        = meatPiMicroSd,
                             onCheckedChange = { meatPiMicroSd = it }
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "When enabled, openRS_ requests that the MeatPi Pro log raw CAN frames to its microSD card.",
+                            "SD logging is configured in the WiCAN Pro web UI at http://192.168.0.10/ — " +
+                            "enable it there under the SD card section. This toggle is a local reminder only.",
                             fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono
                         )
                     }
                 }
 
                 // ── Connection section ────────────────────────────────────────
-                SettingsSection(if (adapterType == "MEATPI") "MEATPI CONNECTION" else "WICAN CONNECTION") {
+                val isMeatPi = adapterType == "MEATPI"
+                val defaultHost = if (isMeatPi) AppSettings.DEFAULT_HOST_MEATPI else AppSettings.DEFAULT_HOST
+                val defaultPort = if (isMeatPi) AppSettings.DEFAULT_PORT_MEATPI else AppSettings.DEFAULT_PORT
+                SettingsSection(if (isMeatPi) "MEATPI PRO CONNECTION" else "WICAN CONNECTION") {
                     OutlinedTextField(
                         value = host,
                         onValueChange = { host = it; error = null },
                         label = { Text("Host / IP Address", fontFamily = ShareTechMono, fontSize = 11.sp) },
-                        placeholder = { Text(AppSettings.DEFAULT_HOST, fontFamily = ShareTechMono, fontSize = 12.sp, color = Dim) },
+                        placeholder = { Text(defaultHost, fontFamily = ShareTechMono, fontSize = 12.sp, color = Dim) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         colors = outlinedFieldColors(),
@@ -180,7 +184,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                         value = port,
                         onValueChange = { port = it; error = null },
                         label = { Text("Port", fontFamily = ShareTechMono, fontSize = 11.sp) },
-                        placeholder = { Text(AppSettings.DEFAULT_PORT.toString(), fontFamily = ShareTechMono, fontSize = 12.sp, color = Dim) },
+                        placeholder = { Text(defaultPort.toString(), fontFamily = ShareTechMono, fontSize = 12.sp, color = Dim) },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth(),
@@ -188,8 +192,13 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                         textStyle = androidx.compose.ui.text.TextStyle(fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost)
                     )
                     Spacer(Modifier.height(4.dp))
-                    Text("Default: ${AppSettings.DEFAULT_HOST}:${AppSettings.DEFAULT_PORT}",
-                        fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono)
+                    Text(
+                        if (isMeatPi)
+                            "Default: $defaultHost:$defaultPort  (TCP SLCAN — configure port in WiCAN Pro web UI)"
+                        else
+                            "Default: $defaultHost:$defaultPort",
+                        fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono
+                    )
                 }
 
                 // ── Auto-reconnect section ────────────────────────────────────
