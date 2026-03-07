@@ -11,8 +11,8 @@ import kotlin.math.sqrt
 data class VehicleState(
     // ── Engine (CAN Sniffed) ────────────────────────────────
     val rpm: Double = 0.0,
-    val coolantTempC: Double = 0.0,
-    val oilTempC: Double = 0.0,
+    val coolantTempC: Double = -99.0,  // -99 = not yet received from 0x430/0x3E8
+    val oilTempC: Double = -99.0,      // -99 = not yet received from 0x3E8
     val intakeTempC: Double = 0.0,
     val boostKpa: Double = 101.325,
     val throttlePct: Double = 0.0,
@@ -202,8 +202,8 @@ data class VehicleState(
      */
     val rtrStatus: String? get() {
         val cold = mutableListOf<String>()
-        if (oilTempC < 80)                          cold += "Oil ${oilTempC.toInt()}°C < 80°C"
-        if (coolantTempC < 85)                      cold += "Coolant ${coolantTempC.toInt()}°C < 85°C"
+        if (oilTempC > -90 && oilTempC < 80)           cold += "Oil ${oilTempC.toInt()}°C < 80°C"
+        if (coolantTempC > -90 && coolantTempC < 85)   cold += "Coolant ${coolantTempC.toInt()}°C < 85°C"
         if (rduTempC > -90 && rduTempC < 30)        cold += "RDU ${rduTempC.toInt()}°C < 30°C"
         // M-8 fix: guard sentinel −99 so PTU doesn't show as cold before first 0x0F8 frame
         if (ptuTempC > -90 && ptuTempC < 40)        cold += "PTU ${ptuTempC.toInt()}°C < 40°C"
@@ -229,7 +229,7 @@ data class VehicleState(
      */
     fun anyTireLow(thresholdPsi: Double = 30.0): Boolean =
         listOf(tirePressLF, tirePressRF, tirePressLR, tirePressRR)
-            .any { it in 0.0..<thresholdPsi }
+            .any { it in 0.01..<thresholdPsi }
     val maxTirePressSpread: Double get() {
         val valid = listOf(tirePressLF, tirePressRF, tirePressLR, tirePressRR).filter { it >= 0 }
         if (valid.size < 2) return 0.0

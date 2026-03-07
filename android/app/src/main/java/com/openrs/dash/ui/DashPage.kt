@@ -100,11 +100,15 @@ import kotlin.math.roundToInt
 
         // ── Temps Quick ────────────────────────────────────────────────────
         SectionLabel("TEMPS QUICK")
-        val oilColor  = tempColorShade(vs.oilTempC, p.oilWarnC, p.oilCritC)
-        val coolColor = tempColorShade(vs.coolantTempC, p.coolWarnC, p.coolCritC)
+        val oilColor  = if (vs.oilTempC > -90) tempColorShade(vs.oilTempC, p.oilWarnC, p.oilCritC) else Mid
+        val coolColor = if (vs.coolantTempC > -90) tempColorShade(vs.coolantTempC, p.coolWarnC, p.coolCritC) else Mid
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DataCell("OIL",      "${p.displayTemp(vs.oilTempC)}${p.tempLabel}",     valueColor = oilColor,  modifier = Modifier.weight(1f))
-            DataCell("COOLANT",  "${p.displayTemp(vs.coolantTempC)}${p.tempLabel}", valueColor = coolColor, modifier = Modifier.weight(1f))
+            DataCell("OIL",
+                if (vs.oilTempC > -90) "${p.displayTemp(vs.oilTempC)}${p.tempLabel}" else "—",
+                valueColor = oilColor, modifier = Modifier.weight(1f))
+            DataCell("COOLANT",
+                if (vs.coolantTempC > -90) "${p.displayTemp(vs.coolantTempC)}${p.tempLabel}" else "—",
+                valueColor = coolColor, modifier = Modifier.weight(1f))
             DataCell("INTAKE",   "${p.displayTemp(vs.intakeTempC)}${p.tempLabel}",  modifier = Modifier.weight(1f))
             DataCell("OIL LIFE", if (vs.oilLifePct >= 0) "${vs.oilLifePct.roundToInt()}%" else "—", modifier = Modifier.weight(1f))
         }

@@ -16,15 +16,20 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **UI architecture**: `MainActivity.kt` has been split into dedicated files — `Theme.kt` (design tokens, fonts, typography), `Components.kt` (shared composables), and one file per tab: `DashPage.kt`, `PowerPage.kt`, `ChassisPage.kt`, `TempsPage.kt`, `DiagPage.kt`, `MorePage.kt`. Significantly reduces `MainActivity.kt` size and improves maintainability.
 - **Performance — `TripRecorder`**: eliminated O(n²) list copies on every GPS waypoint by introducing an `ArrayList` buffer. Average and mode breakdown now use O(1) incremental accumulators (`speedSum`, `speedSamples`, `modeCounts`) instead of re-scanning the full point list on each update.
 - **Performance — `DiagPage`**: `DiagnosticLogger.frameInventorySnapshot` is now called once per composition pass instead of once per rendered row, eliminating redundant deep-copies.
-- **`DiagnosticExporter`**: JSON string values are now properly escaped (backslash, quote, control characters). Old trip ZIPs are pruned on share to match the existing diagnostic ZIP pruning behaviour.
+- **`DiagnosticExporter`**: JSON string values are now properly escaped (backslash, quote, control characters) including `firmwareVersion` and `sessionHost` in the meta block. Old trip ZIPs are pruned on share to match the existing diagnostic ZIP pruning behaviour.
 - **`DiagnosticLogger`**: `frameInventory` is now private; `frameInventorySnapshot` returns a proper deep-copy of all `FrameInfo` fields including `validationIssues` and `periodicSamples`, preventing external mutation.
 
 ### Fixed
 
-- **`CanDecoder`**: `ID_TPMS` constant renamed to `ID_PCM_AMBIENT` (0x340 carries ambient temperature, not TYRE pressures). `describeDecoded` now shows the resolved drive mode string for `ID_DRIVE_MODE_EXT` (0x420). Dead TPMS validation branch removed.
+- **Keep screen on**: "Keep screen on" setting now activates whenever the setting is enabled, regardless of connection state. Previously a brief WiFi dropout mid-drive could let the screen time out and lock.
+- **PTU temperature in Trip HUD**: PTU cell now shows "—" before the first 0x0F8 CAN frame arrives instead of displaying the raw −99°C sentinel value.
+- **Coolant / oil temp before first CAN frame**: defaults changed from `0.0` to `−99` sentinel. The RTR banner no longer incorrectly shows "Warming Up — Oil 0°C < 80°C" before any engine data arrives. Dashboard and Temps page show "—" for these fields while data is pending. `isRaceReady()` skips the check at sentinel so a car that's already warm isn't penalised on first connect.
+- **Tire low warning false positive**: `anyTireLow()` lower bound changed from `0.0` to `0.01` to match `isTireLow()` — prevents a theoretical false trigger at exactly 0.0 PSI.
+- **Trip recorder reset race**: `pointsBuffer` is now `@Volatile` and reset by reference assignment instead of `clear()`, eliminating a narrow race where a cancelled coroutine could still be mid-`add()` when the main thread cleared the list.
+- **`CanDecoder`**: `ID_TPMS` constant renamed to `ID_PCM_AMBIENT` (0x340 carries ambient temperature, not TPMS). `describeDecoded` now shows the resolved drive mode string for `ID_DRIVE_MODE_EXT` (0x420). Dead TPMS validation branch removed.
 - **`WiCanConnection`**: removed unused `RECONNECT_DELAY_MS` constant; replaced fully-qualified type names with short names after adding imports.
-- **`TripRecorder`**: RTR (race-ready) gate now uses `UserPrefs.isRaceReady()` consistently, matching the Temps page — eliminates the two separate definitions of the same threshold logic.
-- **`ThemePicker`**: accent colours are read from `UserPrefs(themeId = id).themeAccent` instead of a duplicated inline hex map, so theme colours stay in sync with a single source of truth.
+- **`TripRecorder`**: RTR (race-ready) gate now uses `UserPrefs.isRaceReady()` consistently, matching the Temps page.
+- **`ThemePicker`**: accent colours read from `UserPrefs(themeId = id).themeAccent` — single source of truth, no duplicated hex map.
 
 ### Removed
 

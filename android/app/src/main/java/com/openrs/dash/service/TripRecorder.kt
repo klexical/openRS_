@@ -62,13 +62,13 @@ class TripRecorder(
     private var recorderJob: Job? = null
 
     /** Internal buffer so GPS appends are O(1) amortized; copied to TripState on each GPS fix. */
-    private val pointsBuffer = ArrayList<TripPoint>(3600)
+    @Volatile private var pointsBuffer = ArrayList<TripPoint>(3600)
 
     fun startTrip() {
         _tripState.update { current ->
             if (current.isRecording) return@update current
             val vs = vehicleStateFlow.value
-            pointsBuffer.clear()
+            pointsBuffer = ArrayList(3600)
             TripState(
                 isRecording  = true,
                 startFuelPct = vs.fuelLevelPct,
@@ -161,7 +161,9 @@ class TripRecorder(
 
     fun resetTrip() {
         stopTrip()
-        pointsBuffer.clear()
+        // Replace the reference atomically — the cancelled job may still hold the old
+        // reference and add to it momentarily, but that list is simply orphaned (no clear race).
+        pointsBuffer = ArrayList(3600)
         _tripState.value = TripState()
     }
 

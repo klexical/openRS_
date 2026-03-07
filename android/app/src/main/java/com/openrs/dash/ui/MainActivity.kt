@@ -77,8 +77,8 @@ class MainActivity : ComponentActivity() {
             val snackbarHostState = remember { SnackbarHostState() }
 
             val view = LocalView.current
-            LaunchedEffect(prefs.screenOn, vs.isConnected) {
-                view.keepScreenOn = prefs.screenOn && vs.isConnected
+            LaunchedEffect(prefs.screenOn) {
+                view.keepScreenOn = prefs.screenOn
             }
 
             CompositionLocalProvider(LocalThemeAccent provides prefs.themeAccent) {

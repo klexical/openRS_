@@ -49,10 +49,14 @@ import com.openrs.dash.data.VehicleState
 
         SectionLabel("TEMPERATURES")
         val tempItems = listOf(
-            TempSpec("ENGINE OIL",    p.displayTemp(vs.oilTempC),     p.tempLabel, vs.oilTempC,
-                p.oilWarnC, p.oilCritC, "INFERRED"),
-            TempSpec("COOLANT",       p.displayTemp(vs.coolantTempC), p.tempLabel, vs.coolantTempC,
-                p.coolWarnC, p.coolCritC, ""),
+            TempSpec("ENGINE OIL",
+                if (vs.oilTempC > -90) p.displayTemp(vs.oilTempC) else "— —", p.tempLabel,
+                vs.oilTempC.takeIf { it > -90 } ?: 0.0,
+                p.oilWarnC, p.oilCritC, if (vs.oilTempC <= -90) "WARMING" else "INFERRED"),
+            TempSpec("COOLANT",
+                if (vs.coolantTempC > -90) p.displayTemp(vs.coolantTempC) else "— —", p.tempLabel,
+                vs.coolantTempC.takeIf { it > -90 } ?: 0.0,
+                p.coolWarnC, p.coolCritC, if (vs.coolantTempC <= -90) "WARMING" else ""),
             TempSpec("INTAKE AIR",    p.displayTemp(vs.intakeTempC),  p.tempLabel, vs.intakeTempC,
                 p.intakeWarnC, p.intakeCritC, ""),
             TempSpec("AMBIENT",       p.displayTemp(vs.ambientTempC), p.tempLabel, vs.ambientTempC,
@@ -123,9 +127,10 @@ data class TempSpec(
             if (!isReady) {
                 val oilMin  = when (p.tempPreset) { "race" -> 85.0; "track" -> 80.0; else -> 70.0 }
                 val coolMin = when (p.tempPreset) { "race" -> 80.0; "track" -> 75.0; else -> 70.0 }
+                val oilStr     = if (vs.oilTempC > -90) "${p.displayTemp(vs.oilTempC)}${p.tempLabel}" else "—"
+                val coolantStr = if (vs.coolantTempC > -90) "${p.displayTemp(vs.coolantTempC)}${p.tempLabel}" else "—"
                 MonoLabel(
-                    "Oil ${p.displayTemp(vs.oilTempC)}${p.tempLabel} < ${p.displayTemp(oilMin)}  " +
-                    "· Coolant ${p.displayTemp(vs.coolantTempC)}${p.tempLabel} < ${p.displayTemp(coolMin)}",
+                    "Oil $oilStr < ${p.displayTemp(oilMin)}  · Coolant $coolantStr < ${p.displayTemp(coolMin)}",
                     9.sp, Warn, modifier = Modifier.padding(top = 2.dp)
                 )
             }
