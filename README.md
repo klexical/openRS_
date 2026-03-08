@@ -303,45 +303,9 @@ android/
 
 ---
 
-## CAN Frame Reference
+## Full PID Reference
 
-Full PID documentation: [`android/docs/pid-reference.md`](android/docs/pid-reference.md)
-
-### HS-CAN Frame IDs (500 kbps) — RS_HS.dbc verified
-
-| ID | Parameters | Formula / Source |
-|----|-----------|-----------------|
-| 0x010 | Steering wheel angle (°) | `bits(54,15) × 0.04395`; sign from bit 39 (1=CW/right) — RS_HS.dbc SASMmsg01 |
-| 0x070 | Torque at trans (Nm) | Motorola bits 37–47 |
-| 0x076 | Throttle % | `byte0 × 0.392` |
-| 0x080 | Accel pedal %, brake, reverse | pedal: bits 0–9 LE × 0.1; brake: byte2 bit 1; rev: bit 5 |
-| 0x090 | RPM, barometric pressure | RPM: `((byte4 & 0x0F) << 8 \| byte5) × 2`; baro: `byte2 × 0.5 kPa` |
-| 0x0C8 | Gauge brightness, e-brake | e-brake: `byte3 & 0x40` |
-| 0x0F8 | Engine oil temp, boost pressure, PTU temp | oil: `byte1 − 50 °C`; boost: `byte5 kPa abs`; PTU: `byte7 − 60 °C` (RS_HS.dbc PCMmsg07) |
-| 0x130 | Vehicle speed kph | `word(6-7) × 0.01` |
-| 0x160 | Longitudinal G-force | `bits(49,10) × 0.00390625 − 2.0 g` — RS_HS.dbc |
-| 0x180 | Lateral G-force + Yaw rate | latG: `bits(17,10) × 0.00390625 − 2.0 g`; yaw: `bits(35,12) × 0.03663 − 75 °/s` — RS_HS.dbc ABSmsg02 |
-| 0x190 | 4-corner wheel speeds | 15-bit Motorola per wheel × 0.011343 km/h — RS_HS.dbc ABSmsg03 |
-| 0x1A4 | Ambient temp °C | `byte4 signed × 0.25` (MS-CAN bridged) |
-| 0x1B0 | Drive mode | Motorola bit 55, upper nibble byte 6: `0`=Normal `1`=Sport-or-Track `2`=Drift. Combined with 0x420 b6 to resolve Sport vs Track. |
-| 0x420 | Track mode indicator | byte 6: `0x10`=Normal/Sport · `0x11`=Track (~600 ms) |
-| 0x1C0 | ESC mode | Motorola bit 13, 2-bit |
-| 0x230 | Current gear | bits 0–3 |
-| 0x252 | Brake pressure | `bits(11,12)` raw ADC 0–4095, displayed 0–100% — RS_HS.dbc ABSmsg10 |
-| 0x2C0 | AWD L/R rear torque (Nm) | bits 0\|12 and 12\|12 signed Motorola |
-| 0x2F0 | Coolant temp, Intake Air Temp | coolant: `((data[4]&0x03)<<8\|data[5]) − 60 °C`; IAT: `((data[6]&0x03)<<8\|data[7]) × 0.25 − 127 °C` |
-| 0x340 | Ambient temp (PCMmsg17) | `byte7 signed × 0.25 °C` — **not** TPMS (see 0x1A4 for secondary ambient) |
-| 0x380 | Fuel level % (FuelLevelFiltered) | Motorola 10-bit: `((data[2]&0x03)<<8\|data[3]) × 0.4` |
-| 0x3C0 | Battery voltage | `byte0 × 0.1 V` |
-
-### ECU Addresses (OBD — polled)
-
-| ECU | Request | Response | PIDs / Function | Interval |
-|-----|---------|----------|-----------------|----------|
-| PCM | 0x7E0 | 0x7E8 | ETC actual (0x093C), ETC desired (0x091A), WGDC (0x0462), KR cyl 1 (0x03EC), OAR (0x03E8), Charge Air Temp (0x0461), Catalyst Temp (0xF43C) | 10 s |
-| Broadcast | 0x7DF | varies | Mode 1: calc load, fuel trims, timing, baro, O2, AFR | 30 s |
-| BCM | 0x726 | 0x72E | Odometer (0xDD01), battery SOC (0x4028), battery temp (0x4029), cabin temp (0xDD04) | 30 s |
-| AWD module | 0x703 | 0x70B | RDU oil temp (0x1E8A) — `B4 − 40 °C` | 30 s |
+Complete decode formulas, byte-level breakdowns, and all Mode 22 PIDs: [`android/docs/pid-reference.md`](android/docs/pid-reference.md)
 
 ---
 
