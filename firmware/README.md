@@ -1,6 +1,6 @@
 # openrs-fw
 
-Custom ESP32-C3 firmware for the MeatPi WiCAN-USB-C3, purpose-built for the Ford Focus RS MK3.
+Custom ESP32-C3 firmware for the MeatPi WiCAN-USB-C3, purpose-built for the Ford Focus RS MK3. Part of the [openRS_ project](../README.md).
 
 Forked from [`meatpiHQ/wican-fw`](https://github.com/meatpiHQ/wican-fw) — the proven WiFi/CAN/OTA stack is retained and a Focus RS module is layered on top.
 
@@ -198,6 +198,8 @@ firmware/
 ---
 
 ## Roadmap
+
+For the full project roadmap (app + firmware), see the [root README](../README.md#roadmap).
 
 ### fw-v1.4.x — Verification and Stability
 
