@@ -10,7 +10,6 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.ByteArrayOutputStream
-import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetSocketAddress
@@ -34,101 +33,8 @@ class MeatPiConnection(
 ) {
     private fun addDebugLine(line: String) = OpenRSDashApp.instance.pushDebugLine(line)
 
-    companion object {
-        val BACKOFF_MS = listOf(5_000L, 15_000L, 30_000L)
-
-        // CAN bus bitrate is configured via the WiCAN Pro web UI (http://192.168.0.10/).
-        // This init string opens the SLCAN channel at the bitrate already set on the device.
-        private const val SLCAN_INIT_HS = "C\rS6\rO\r"
-
-        // ── OBD polling frames (identical to WiCanConnection) ─────────────────
-        // BCM (0x726 → 0x72E)
-        const val BCM_RESPONSE_ID   = 0x72E
-        private const val BCM_QUERY_SOC        = "t72680322402800000000\r"
-        private const val BCM_QUERY_BATT_TEMP  = "t72680322402900000000\r"
-        private const val BCM_QUERY_CABIN_TEMP = "t72680322DD0400000000\r"
-        private const val BCM_QUERY_TPMS_LF   = "t72680322281300000000\r"
-        private const val BCM_QUERY_TPMS_RF   = "t72680322281400000000\r"
-        private const val BCM_QUERY_TPMS_LR   = "t72680322281600000000\r"
-        private const val BCM_QUERY_TPMS_RR   = "t72680322281500000000\r"
-        private val BCM_QUERIES = listOf(
-            BCM_QUERY_SOC, BCM_QUERY_BATT_TEMP, BCM_QUERY_CABIN_TEMP,
-            BCM_QUERY_TPMS_LF, BCM_QUERY_TPMS_RF, BCM_QUERY_TPMS_LR, BCM_QUERY_TPMS_RR
-        )
-        private const val BCM_QUERY_ODOMETER   = "t72680322DD0100000000\r"
-        private const val BCM_POLL_INTERVAL_MS = 30_000L
-        private const val BCM_QUERY_GAP_MS     =    300L
-        private const val BCM_INITIAL_DELAY_MS =  5_000L
-
-        // AWD (0x703 → 0x70B)
-        const val AWD_RESPONSE_ID = 0x70B
-        private const val AWD_QUERY_RDU_TEMP   = "t703803221E8A00000000\r"
-        private val AWD_QUERIES = listOf(AWD_QUERY_RDU_TEMP)
-
-        // PCM (0x7E0 → 0x7E8)
-        const val PCM_RESPONSE_ID = 0x7E8
-        private const val PCM_QUERY_ETC_ACTUAL   = "t7E080322093C00000000\r"
-        private const val PCM_QUERY_ETC_DESIRED  = "t7E080322091A00000000\r"
-        private const val PCM_QUERY_WGDC         = "t7E080322046200000000\r"
-        private const val PCM_QUERY_KR_CYL1      = "t7E08032203EC00000000\r"
-        private const val PCM_QUERY_OAR          = "t7E08032203E800000000\r"
-        private const val PCM_QUERY_CHARGE_AIR   = "t7E080322046100000000\r"
-        private const val PCM_QUERY_CAT_TEMP     = "t7E080322F43C00000000\r"
-        private const val PCM_QUERY_AFR_ACTUAL   = "t7E080322F43400000000\r"
-        private const val PCM_QUERY_AFR_DESIRED  = "t7E080322F44400000000\r"
-        private const val PCM_QUERY_TIP_ACTUAL   = "t7E080322033e00000000\r"
-        private const val PCM_QUERY_TIP_DESIRED  = "t7E080322046600000000\r"
-        private const val PCM_QUERY_VCT_INTAKE   = "t7E080322031800000000\r"
-        private const val PCM_QUERY_VCT_EXHAUST  = "t7E080322031900000000\r"
-        private const val PCM_QUERY_OIL_LIFE     = "t7E080322054B00000000\r"
-        private const val PCM_QUERY_HP_FUEL_RAIL = "t7E080322F42200000000\r"
-        private const val PCM_QUERY_FUEL_LEVEL   = "t7E080322F42F00000000\r"
-        private val PCM_QUERIES = listOf(
-            PCM_QUERY_ETC_ACTUAL, PCM_QUERY_ETC_DESIRED,
-            PCM_QUERY_WGDC, PCM_QUERY_KR_CYL1, PCM_QUERY_OAR,
-            PCM_QUERY_CHARGE_AIR, PCM_QUERY_CAT_TEMP,
-            PCM_QUERY_AFR_ACTUAL, PCM_QUERY_AFR_DESIRED,
-            PCM_QUERY_TIP_ACTUAL, PCM_QUERY_TIP_DESIRED,
-            PCM_QUERY_VCT_INTAKE, PCM_QUERY_VCT_EXHAUST,
-            PCM_QUERY_OIL_LIFE, PCM_QUERY_HP_FUEL_RAIL, PCM_QUERY_FUEL_LEVEL
-        )
-        private const val PCM_POLL_INTERVAL_MS = 30_000L
-        private const val PCM_QUERY_GAP_MS     =    200L
-        private const val PCM_INITIAL_DELAY_MS = 20_000L
-
-        // Extended session (UDS 10 03)
-        const val PSCM_RESPONSE_ID   = 0x738
-        const val FENG_RESPONSE_ID   = 0x72F
-        const val RSPROT_RESPONSE_ID = 0x739
-        private const val EXT_SESSION_BCM    = "t72680210030000000000\r"
-        private const val EXT_SESSION_AWD    = "t70380210030000000000\r"
-        private const val EXT_SESSION_PSCM   = "t73080210030000000000\r"
-        private const val EXT_SESSION_FENG   = "t72780210030000000000\r"
-        private const val EXT_SESSION_RSPROT = "t73180210030000000000\r"
-        private const val AWD_QUERY_RDU_STATUS = "t70380322ee0b00000000\r"
-        private const val PSCM_QUERY_PDC       = "t73080322fd0700000000\r"
-        private const val FENG_QUERY_STATUS    = "t72780322ee0300000000\r"
-        private val RSPROT_PROBE_QUERIES = listOf(
-            "t73180322de0000000000\r", "t73180322de0100000000\r",
-            "t73180322de0200000000\r", "t73180322ee0100000000\r",
-            "t73180322fd0100000000\r"
-        )
-        private const val EXT_POLL_INTERVAL_MS = 60_000L
-        private const val EXT_INITIAL_DELAY_MS = 15_000L
-        private const val EXT_SESSION_GAP_MS   =    150L
-        private const val EXT_QUERY_GAP_MS     =    300L
-    }
-
-    sealed class State {
-        data object Disconnected : State()
-        data object Connecting   : State()
-        data object Connected    : State()
-        data object Idle         : State()
-        data class  Error(val message: String) : State()
-    }
-
-    private val _state = MutableStateFlow<State>(State.Disconnected)
-    val state: StateFlow<State> = _state.asStateFlow()
+    private val _state = MutableStateFlow<AdapterState>(AdapterState.Disconnected)
+    val state: StateFlow<AdapterState> = _state.asStateFlow()
 
     private var frameCount  = 0
     private var lastFpsTime = System.currentTimeMillis()
@@ -142,7 +48,6 @@ class MeatPiConnection(
     @Volatile private var _dtcWatchIds: Set<Int> = emptySet()
     @Volatile private var _dtcScanActive: Boolean = false
 
-    /** Identifies the MeatPi Pro firmware version (reported via OPENRS: probe or TCP). */
     @Volatile var firmwareVersion: String = "MeatPi Pro"
         private set
 
@@ -158,35 +63,28 @@ class MeatPiConnection(
         while (currentCoroutineContext().isActive && failedAttempts < maxRetries) {
             var connectionSucceeded = false
             try {
-                _state.value = State.Connecting
+                _state.value = AdapterState.Connecting
                 addDebugLine("--- MeatPi Pro TCP SLCAN ---")
                 addDebugLine("Connecting to $host:$port")
 
                 val socket = Socket()
                 try {
                     socket.connect(InetSocketAddress(host, port), 5_000)
-                    // 5 s read timeout: fast enough to detect dead connections on an active
-                    // CAN bus, and ensures coroutine cancellation is handled within 5 s if
-                    // the cancel watcher below can't close the socket first.
                     socket.soTimeout = 5_000
 
                     val inp = socket.getInputStream()
                     val out = socket.getOutputStream()
 
-                    // Cancel watcher: when this coroutine scope is cancelled (e.g. stopConnection),
-                    // immediately close the socket so inp.read() is interrupted without waiting
-                    // for soTimeout to fire.
                     val cancelWatcher = launch {
                         try { awaitCancellation() }
                         finally { try { socket.close() } catch (_: Exception) { } }
                     }
 
-                    // Init HS-CAN at 500 kbps
-                    out.write(SLCAN_INIT_HS.toByteArray(Charsets.ISO_8859_1))
+                    out.write(ObdConstants.SLCAN_INIT.toByteArray(Charsets.ISO_8859_1))
                     out.flush()
                     addDebugLine("SLCAN init sent (C / S6 / O)")
 
-                    _state.value = State.Connected
+                    _state.value = AdapterState.Connected
                     _tcpOut = out
                     connectionSucceeded = true
                     failedAttempts = 0
@@ -196,49 +94,49 @@ class MeatPiConnection(
 
                     // ── BCM OBD poller ────────────────────────────────────────
                     val obdJob = launch {
-                        delay(BCM_INITIAL_DELAY_MS)
+                        delay(ObdConstants.BCM_INITIAL_DELAY_MS)
                         while (isActive) {
-                            BCM_QUERIES.forEach { q ->
+                            ObdConstants.BCM_QUERIES.forEach { q ->
                                 try { sendFrame(out, q) } catch (_: Exception) { }
-                                delay(BCM_QUERY_GAP_MS)
+                                delay(ObdConstants.BCM_QUERY_GAP_MS)
                             }
-                            AWD_QUERIES.forEach { q ->
+                            ObdConstants.AWD_QUERIES.forEach { q ->
                                 try { sendFrame(out, q) } catch (_: Exception) { }
-                                delay(BCM_QUERY_GAP_MS)
+                                delay(ObdConstants.BCM_QUERY_GAP_MS)
                             }
-                            delay(BCM_POLL_INTERVAL_MS)
+                            delay(ObdConstants.BCM_POLL_INTERVAL_MS)
                         }
                     }
 
                     // ── PCM OBD poller ────────────────────────────────────────
                     val pcmJob = launch {
-                        delay(PCM_INITIAL_DELAY_MS)
+                        delay(ObdConstants.PCM_INITIAL_DELAY_MS)
                         while (isActive) {
-                            PCM_QUERIES.forEach { q ->
+                            ObdConstants.PCM_QUERIES.forEach { q ->
                                 try { sendFrame(out, q) } catch (_: Exception) { }
-                                delay(PCM_QUERY_GAP_MS)
+                                delay(ObdConstants.PCM_QUERY_GAP_MS)
                             }
-                            delay(PCM_POLL_INTERVAL_MS)
+                            delay(ObdConstants.PCM_POLL_INTERVAL_MS)
                         }
                     }
 
                     // ── Extended session poller ───────────────────────────────
                     val extJob = launch {
-                        delay(EXT_INITIAL_DELAY_MS)
+                        delay(ObdConstants.EXT_INITIAL_DELAY_MS)
                         while (isActive) {
-                            try { sendFrame(out, EXT_SESSION_BCM);   delay(EXT_SESSION_GAP_MS)
-                                  sendFrame(out, BCM_QUERY_ODOMETER); delay(EXT_QUERY_GAP_MS) } catch (_: Exception) { }
-                            try { sendFrame(out, EXT_SESSION_AWD);   delay(EXT_SESSION_GAP_MS)
-                                  sendFrame(out, AWD_QUERY_RDU_STATUS); delay(EXT_QUERY_GAP_MS) } catch (_: Exception) { }
-                            try { sendFrame(out, EXT_SESSION_PSCM);  delay(EXT_SESSION_GAP_MS)
-                                  sendFrame(out, PSCM_QUERY_PDC);    delay(EXT_QUERY_GAP_MS) } catch (_: Exception) { }
-                            try { sendFrame(out, EXT_SESSION_FENG);  delay(EXT_SESSION_GAP_MS)
-                                  sendFrame(out, FENG_QUERY_STATUS); delay(EXT_QUERY_GAP_MS) } catch (_: Exception) { }
-                            RSPROT_PROBE_QUERIES.forEach { q ->
-                                try { sendFrame(out, EXT_SESSION_RSPROT); delay(EXT_SESSION_GAP_MS)
-                                      sendFrame(out, q);                  delay(EXT_QUERY_GAP_MS) } catch (_: Exception) { }
+                            try { sendFrame(out, ObdConstants.EXT_SESSION_BCM);   delay(ObdConstants.EXT_SESSION_GAP_MS)
+                                  sendFrame(out, ObdConstants.BCM_QUERY_ODOMETER); delay(ObdConstants.EXT_QUERY_GAP_MS) } catch (_: Exception) { }
+                            try { sendFrame(out, ObdConstants.EXT_SESSION_AWD);   delay(ObdConstants.EXT_SESSION_GAP_MS)
+                                  sendFrame(out, ObdConstants.AWD_QUERY_RDU_STATUS); delay(ObdConstants.EXT_QUERY_GAP_MS) } catch (_: Exception) { }
+                            try { sendFrame(out, ObdConstants.EXT_SESSION_PSCM);  delay(ObdConstants.EXT_SESSION_GAP_MS)
+                                  sendFrame(out, ObdConstants.PSCM_QUERY_PDC);    delay(ObdConstants.EXT_QUERY_GAP_MS) } catch (_: Exception) { }
+                            try { sendFrame(out, ObdConstants.EXT_SESSION_FENG);  delay(ObdConstants.EXT_SESSION_GAP_MS)
+                                  sendFrame(out, ObdConstants.FENG_QUERY_STATUS); delay(ObdConstants.EXT_QUERY_GAP_MS) } catch (_: Exception) { }
+                            ObdConstants.RSPROT_PROBE_QUERIES.forEach { q ->
+                                try { sendFrame(out, ObdConstants.EXT_SESSION_RSPROT); delay(ObdConstants.EXT_SESSION_GAP_MS)
+                                      sendFrame(out, q);                               delay(ObdConstants.EXT_QUERY_GAP_MS) } catch (_: Exception) { }
                             }
-                            delay(EXT_POLL_INTERVAL_MS)
+                            delay(ObdConstants.EXT_POLL_INTERVAL_MS)
                         }
                     }
 
@@ -250,37 +148,35 @@ class MeatPiConnection(
                     try {
                         while (currentCoroutineContext().isActive) {
                             val line = try { readSlcanLine(inp) } catch (_: Exception) { null } ?: break
-                            val frame = parseSlcanFrame(line) ?: continue
+                            val frame = SlcanParser.parse(line) ?: continue
 
-                            // DTC scan intercept
                             if (_dtcScanActive && frame.first in _dtcWatchIds) {
                                 _dtcChannel.trySend(frame)
                                 continue
                             }
 
-                            // OBD response routing (same logic as WiCanConnection)
-                            if (frame.first == BCM_RESPONSE_ID) {
-                                parseBcmResponse(frame.second, getCurrentState(), onObdUpdate)
+                            if (frame.first == ObdConstants.BCM_RESPONSE_ID) {
+                                ObdResponseParser.parseBcmResponse(frame.second, getCurrentState(), onObdUpdate)
                                 continue
                             }
-                            if (frame.first == AWD_RESPONSE_ID) {
-                                parseAwdResponse(frame.second, getCurrentState(), onObdUpdate)
+                            if (frame.first == ObdConstants.AWD_RESPONSE_ID) {
+                                ObdResponseParser.parseAwdResponse(frame.second, getCurrentState(), onObdUpdate)
                                 continue
                             }
-                            if (frame.first == PCM_RESPONSE_ID) {
-                                parsePcmResponse(frame.second, getCurrentState(), onObdUpdate)
+                            if (frame.first == ObdConstants.PCM_RESPONSE_ID) {
+                                ObdResponseParser.parsePcmResponse(frame.second, getCurrentState(), onObdUpdate)
                                 continue
                             }
-                            if (frame.first == PSCM_RESPONSE_ID) {
-                                parsePscmResponse(frame.second, getCurrentState(), onObdUpdate)
+                            if (frame.first == ObdConstants.PSCM_RESPONSE_ID) {
+                                ObdResponseParser.parsePscmResponse(frame.second, getCurrentState(), onObdUpdate)
                                 continue
                             }
-                            if (frame.first == FENG_RESPONSE_ID) {
-                                parseFengResponse(frame.second, getCurrentState(), onObdUpdate)
+                            if (frame.first == ObdConstants.FENG_RESPONSE_ID) {
+                                ObdResponseParser.parseFengResponse(frame.second, getCurrentState(), onObdUpdate)
                                 continue
                             }
-                            if (frame.first == RSPROT_RESPONSE_ID) {
-                                parseRsprotResponse(frame.second, getCurrentState(), onObdUpdate)
+                            if (frame.first == ObdConstants.RSPROT_RESPONSE_ID) {
+                                ObdResponseParser.parseRsprotResponse(frame.second, getCurrentState(), onObdUpdate) { addDebugLine(it) }
                                 continue
                             }
 
@@ -314,24 +210,24 @@ class MeatPiConnection(
                 }
 
             } catch (e: CancellationException) {
-                _state.value = State.Disconnected
+                _state.value = AdapterState.Disconnected
                 throw e
             } catch (e: Exception) {
                 if (!connectionSucceeded) failedAttempts++
-                _state.value = State.Error(e.message ?: "Connection failed")
+                _state.value = AdapterState.Error(e.message ?: "Connection failed")
                 addDebugLine("Error: ${e.message}")
             }
 
             if (!currentCoroutineContext().isActive) break
 
             if (failedAttempts >= maxRetries) {
-                _state.value = State.Idle
+                _state.value = AdapterState.Idle
                 break
             }
 
-            _state.value = State.Disconnected
+            _state.value = AdapterState.Disconnected
             val delayMs = if (connectionSucceeded) reconnectDelayMs
-                          else BACKOFF_MS.getOrElse(failedAttempts - 1) { 30_000L }
+                          else ObdConstants.BACKOFF_MS.getOrElse(failedAttempts - 1) { 30_000L }
             delay(delayMs)
         }
     }.flowOn(Dispatchers.IO)
@@ -362,10 +258,6 @@ class MeatPiConnection(
             results
         }
 
-    /**
-     * Sends UDS Service 0x14 (ClearDiagnosticInformation, group 0xFFFFFF) to each module.
-     * Returns module name → true if the ECU responded with 0x54 (positive response).
-     */
     suspend fun performDtcClear(modules: List<DtcModuleSpec>): Map<String, Boolean> =
         _dtcMutex.withLock {
             val out = _tcpOut ?: return emptyMap()
@@ -434,148 +326,21 @@ class MeatPiConnection(
 
     // ── TCP SLCAN I/O ─────────────────────────────────────────────────────────
 
-    /** Read one SLCAN frame (terminated by 0x0D) from the TCP stream. Returns null on EOF. */
     private fun readSlcanLine(inp: InputStream): String? {
         val sb = StringBuilder()
         while (true) {
             val b = inp.read()
             if (b == -1) return null
-            if (b == 0x0D) break            // \r terminates SLCAN frame
+            if (b == 0x0D) break
             sb.append(b.toChar())
         }
         return sb.toString()
     }
 
-    /** Send a SLCAN frame string (already includes trailing \r) to the TCP socket.
-     *  Synchronized so OBD pollers and DTC scanner don't interleave bytes. */
     private fun sendFrame(out: OutputStream, frame: String) {
         synchronized(out) {
             out.write(frame.toByteArray(Charsets.ISO_8859_1))
             out.flush()
-        }
-    }
-
-    // ── SLCAN frame parser ────────────────────────────────────────────────────
-
-    private fun parseSlcanFrame(msg: String): Pair<Int, ByteArray>? {
-        if (msg.isEmpty()) return null
-        return when (msg[0]) {
-            't' -> parseStdFrame(msg)
-            'T' -> parseExtFrame(msg)
-            else -> null
-        }
-    }
-
-    private fun parseStdFrame(msg: String): Pair<Int, ByteArray>? {
-        if (msg.length < 5) return null
-        val id  = msg.substring(1, 4).toIntOrNull(16) ?: return null
-        val dlc = msg[4].digitToIntOrNull(10) ?: return null
-        if (dlc < 0 || dlc > 8 || msg.length < 5 + dlc * 2) return null
-        return Pair(id, parseDataBytes(msg, 5, dlc))
-    }
-
-    private fun parseExtFrame(msg: String): Pair<Int, ByteArray>? {
-        if (msg.length < 10) return null
-        val id  = msg.substring(1, 9).toLongOrNull(16)?.toInt() ?: return null
-        val dlc = msg[9].digitToIntOrNull(10) ?: return null
-        if (dlc < 0 || dlc > 8 || msg.length < 10 + dlc * 2) return null
-        return Pair(id, parseDataBytes(msg, 10, dlc))
-    }
-
-    private fun parseDataBytes(msg: String, start: Int, dlc: Int): ByteArray =
-        try {
-            ByteArray(dlc) { i -> msg.substring(start + i*2, start + i*2 + 2).toInt(16).toByte() }
-        } catch (_: Exception) { ByteArray(0) }
-
-    // ── OBD response parsers (identical formulas to WiCanConnection) ──────────
-
-    private fun parseBcmResponse(data: ByteArray, s: VehicleState, cb: (VehicleState) -> Unit) {
-        if (data.size < 5 || (data[1].toInt() and 0xFF) != 0x62) return
-        val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
-        val b4  = data[4].toInt() and 0xFF
-        when (did) {
-            0xDD01 -> { if (data.size < 7) return
-                val km = (b4 shl 16) or ((data[5].toInt() and 0xFF) shl 8) or (data[6].toInt() and 0xFF)
-                cb(s.copy(odometerKm = km.toLong())) }
-            0x4028 -> cb(s.copy(batterySoc = b4.toDouble()))
-            0x4029 -> cb(s.copy(batteryTempC = (b4 - 40).toDouble()))
-            0xDD04 -> cb(s.copy(cabinTempC = (b4 * 10.0 / 9.0) - 45.0))
-            0x2813, 0x2814, 0x2816, 0x2815 -> {
-                if (data.size < 6) return
-                val b5 = data[5].toInt() and 0xFF
-                val psi = ((b4 * 256.0 + b5) / 3.0 + 22.0 / 3.0) * 0.145
-                if (psi < 5.0 || psi > 70.0) return
-                cb(when (did) {
-                    0x2813 -> s.copy(tirePressLF = psi)
-                    0x2814 -> s.copy(tirePressRF = psi)
-                    0x2816 -> s.copy(tirePressLR = psi)
-                    else   -> s.copy(tirePressRR = psi)
-                })
-            }
-        }
-    }
-
-    private fun parseAwdResponse(data: ByteArray, s: VehicleState, cb: (VehicleState) -> Unit) {
-        if (data.size < 5 || (data[1].toInt() and 0xFF) != 0x62) return
-        val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
-        val b4  = data[4].toInt() and 0xFF
-        when (did) {
-            0x1E8A -> cb(s.copy(rduTempC = (b4 - 40).toDouble()))
-            0xEE0B -> cb(s.copy(rduEnabled = b4 == 0x01))
-        }
-    }
-
-    private fun parsePcmResponse(data: ByteArray, s: VehicleState, cb: (VehicleState) -> Unit) {
-        if (data.size < 5 || (data[1].toInt() and 0xFF) != 0x62) return
-        val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
-        val b4  = data[4].toInt() and 0xFF
-        val b4s = data[4].toInt()
-        val b5  = if (data.size > 5) data[5].toInt() and 0xFF else 0
-        when (did) {
-            0x093C -> cb(s.copy(etcAngleActual  = ((b4 shl 8) or b5) * (100.0 / 8192.0)))
-            0x091A -> cb(s.copy(etcAngleDesired = ((b4 shl 8) or b5) * (100.0 / 8192.0)))
-            0x0462 -> cb(s.copy(wgdcDesired = b4 * 100.0 / 128.0))
-            0x03EC -> cb(s.copy(ignCorrCyl1 = ((b4s.toByte().toInt() shl 8) or b5) / -512.0))
-            0x03E8 -> cb(s.copy(octaneAdjustRatio = ((b4s.toByte().toInt() shl 8) or b5) / 16384.0))
-            0x0461 -> cb(s.copy(chargeAirTempC = ((b4s.toByte().toInt() shl 8) or b5) / 64.0))
-            0xF43C -> cb(s.copy(catalyticTempC = ((b4 shl 8) or b5) / 10.0 - 40.0))
-            0xF434 -> { val afr = ((b4 shl 8) or b5) * 0.0004486
-                        cb(s.copy(afrActual = afr, lambdaActual = afr / 14.7)) }
-            0xF444 -> cb(s.copy(afrDesired = b4 * 0.1144))
-            0x033E -> cb(s.copy(tipActualKpa  = ((b4 shl 8) or b5) / 903.81))
-            0x0466 -> cb(s.copy(tipDesiredKpa = ((b4 shl 8) or b5) / 903.81))
-            0x0318 -> cb(s.copy(vctIntakeAngle  = ((b4s.toByte().toInt() shl 8) or b5) / 16.0))
-            0x0319 -> cb(s.copy(vctExhaustAngle = ((b4s.toByte().toInt() shl 8) or b5) / 16.0))
-            0x054B -> cb(s.copy(oilLifePct = b4.toDouble().coerceIn(0.0, 100.0)))
-            0xF422 -> cb(s.copy(hpFuelRailPsi = ((b4 shl 8) or b5) * 1.45038))
-            0xF42F -> cb(s.copy(fuelLevelPct = (b4 * 100.0 / 255.0).coerceIn(0.0, 100.0)))
-        }
-    }
-
-    private fun parsePscmResponse(data: ByteArray, s: VehicleState, cb: (VehicleState) -> Unit) {
-        if (data.size < 5 || (data[1].toInt() and 0xFF) != 0x62) return
-        val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
-        val b4  = data[4].toInt() and 0xFF
-        when (did) { 0xFD07 -> cb(s.copy(pdcEnabled = b4 == 0x01)) }
-    }
-
-    private fun parseFengResponse(data: ByteArray, s: VehicleState, cb: (VehicleState) -> Unit) {
-        if (data.size < 5 || (data[1].toInt() and 0xFF) != 0x62) return
-        val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
-        val b4  = data[4].toInt() and 0xFF
-        when (did) { 0xEE03 -> cb(s.copy(fengEnabled = b4 == 0x01)) }
-    }
-
-    private fun parseRsprotResponse(data: ByteArray, s: VehicleState, cb: (VehicleState) -> Unit) {
-        if (data.size < 5 || (data[1].toInt() and 0xFF) != 0x62) return
-        val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
-        val b4  = data[4].toInt() and 0xFF
-        val b5  = if (data.size > 5) data[5].toInt() and 0xFF else 0
-        addDebugLine("RSProt 0x%04X → B4=0x%02X B5=0x%02X".format(did, b4, b5))
-        when (did) {
-            0xDE00 -> cb(s.copy(lcArmed = b4 == 0x01))
-            0xDE01 -> cb(s.copy(lcRpmTarget = (b4 shl 8) or b5))
-            0xDE02 -> cb(s.copy(assEnabled = b4 == 0x01))
         }
     }
 

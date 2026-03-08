@@ -17,7 +17,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +64,7 @@ import kotlin.math.roundToInt
     var dtcResults   by remember { mutableStateOf<List<DtcResult>?>(null) }
     var dtcError     by remember { mutableStateOf<String?>(null) }
     var dtcClearStatus by remember { mutableStateOf<String?>(null) }
+    var showClearConfirm by remember { mutableStateOf(false) }
 
     // P-4: snapshot once so the size/values are consistent within one composition
     val inv = remember(vs.framesPerSecond) { DiagnosticLogger.frameInventorySnapshot }
@@ -151,6 +155,39 @@ import kotlin.math.roundToInt
                         RoundedCornerShape(10.dp)
                     )
                     .clickable(enabled = !dtcBusy && vs.isConnected && onClearDtcs != null) {
+                        showClearConfirm = true
+                    }
+                    .padding(vertical = 13.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                MonoLabel(
+                    if (dtcClearing) "CLEARING..." else "⚠  CLEAR FAULT CODES (0x14)",
+                    11.sp,
+                    if (!dtcBusy && vs.isConnected && onClearDtcs != null) Red.copy(0.9f) else Red.copy(0.35f),
+                    letterSpacing = 0.06.sp
+                )
+            }
+        }
+
+        // ── Clear DTC confirmation dialog ────────────────────────────────────
+        if (showClearConfirm) {
+            AlertDialog(
+                onDismissRequest = { showClearConfirm = false },
+                containerColor = Color(0xFF141414),
+                titleContentColor = Frost,
+                textContentColor = Dim,
+                title = { Text("Clear All Fault Codes?", fontFamily = ShareTechMono, fontSize = 14.sp) },
+                text = {
+                    Text(
+                        "This sends UDS Service 0x14 to all ECU modules (PCM, BCM, ABS, AWD, PSCM) " +
+                        "to clear stored, pending, and permanent DTCs.\n\n" +
+                        "Cleared codes may return if the underlying condition persists.",
+                        fontFamily = ShareTechMono, fontSize = 11.sp
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showClearConfirm = false
                         dtcClearing = true
                         dtcError = null
                         dtcClearStatus = null
@@ -169,23 +206,21 @@ import kotlin.math.roundToInt
                                             "Cleared: ${ack.keys.joinToString(", ")}  ($ok/$all)"
                                         else
                                             "Partial: ${ack.entries.joinToString(", ") { "${it.key}:${if (it.value) "✓" else "✗"}" }}"
-                                        // Auto-dismiss stale results after clearing
                                         dtcResults = null
                                     }
                                 }
                             }
                         }
+                    }) {
+                        Text("CLEAR", fontFamily = ShareTechMono, color = Red, fontSize = 12.sp)
                     }
-                    .padding(vertical = 13.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                MonoLabel(
-                    if (dtcClearing) "CLEARING..." else "⚠  CLEAR FAULT CODES (0x14)",
-                    11.sp,
-                    if (!dtcBusy && vs.isConnected && onClearDtcs != null) Red.copy(0.9f) else Red.copy(0.35f),
-                    letterSpacing = 0.06.sp
-                )
-            }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showClearConfirm = false }) {
+                        Text("CANCEL", fontFamily = ShareTechMono, color = Dim, fontSize = 12.sp)
+                    }
+                }
+            )
         }
 
         Spacer(Modifier.height(4.dp))

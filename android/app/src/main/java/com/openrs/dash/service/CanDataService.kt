@@ -9,6 +9,7 @@ import android.net.NetworkRequest
 import android.os.Binder
 import android.os.IBinder
 import com.openrs.dash.OpenRSDashApp
+import com.openrs.dash.can.AdapterState
 import com.openrs.dash.can.CanDecoder
 import com.openrs.dash.can.MeatPiConnection
 import com.openrs.dash.can.WiCanConnection
@@ -33,8 +34,6 @@ class CanDataService : Service() {
     /** True when the currently selected adapter is MeatPi Pro. */
     private val isMeatPi: Boolean
         get() = AppSettings.getAdapterType(this) == "MEATPI"
-
-    val connectionState: StateFlow<WiCanConnection.State> get() = wican.state
 
     private val cm by lazy { getSystemService(ConnectivityManager::class.java) }
     private var wifiCallback: ConnectivityManager.NetworkCallback? = null
@@ -164,8 +163,8 @@ class CanDataService : Service() {
                 wican.state.collect { state ->
                     OpenRSDashApp.instance.vehicleState.update {
                         it.copy(
-                            isConnected = state is WiCanConnection.State.Connected,
-                            isIdle      = state is WiCanConnection.State.Idle
+                            isConnected = state is AdapterState.Connected,
+                            isIdle      = state is AdapterState.Idle
                         )
                     }
                     DiagnosticLogger.event("STATE", state::class.simpleName ?: "Unknown")
@@ -187,8 +186,8 @@ class CanDataService : Service() {
                 meatpi.state.collect { state ->
                     OpenRSDashApp.instance.vehicleState.update {
                         it.copy(
-                            isConnected = state is MeatPiConnection.State.Connected,
-                            isIdle      = state is MeatPiConnection.State.Idle
+                            isConnected = state is AdapterState.Connected,
+                            isIdle      = state is AdapterState.Idle
                         )
                     }
                     DiagnosticLogger.event("STATE", state::class.simpleName ?: "Unknown")

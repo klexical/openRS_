@@ -25,6 +25,19 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **Settings adapter switch**: switching the adapter picker now auto-populates host/port with the correct defaults for the selected adapter (only when the current value still matches the other adapter's default — custom IPs are preserved).
 - **`DtcModuleSpec`**: moved from nested class in `WiCanConnection` to `com.openrs.dash.data.DtcModuleSpec`, removing the `WiCanConnection` import dependency from `MeatPiConnection` and `DtcScanner`.
 
+### Refactored
+
+- **Shared `AdapterState`**: connection lifecycle sealed class (`Disconnected`, `Connecting`, `Connected`, `Idle`, `Error`) extracted from both `WiCanConnection` and `MeatPiConnection` into `com.openrs.dash.can.AdapterState`. `CanDataService` now references `AdapterState` uniformly instead of adapter-specific inner classes.
+- **Shared `ObdConstants`**: ~120 lines of duplicated OBD query strings, response CAN IDs, and polling intervals extracted into `com.openrs.dash.can.ObdConstants`. Both adapters now reference the single source of truth.
+- **Shared `ObdResponseParser`**: ~150 lines of duplicated OBD response parsers (`parseBcmResponse`, `parseAwdResponse`, `parsePcmResponse`, `parsePscmResponse`, `parseFengResponse`, `parseRsprotResponse`) extracted into `com.openrs.dash.can.ObdResponseParser`. Zero behavioral change — identical formulas, single copy.
+- **Shared `SlcanParser`**: SLCAN frame parsing (`parseStdFrame`, `parseExtFrame`, `parseDataBytes`) extracted into `com.openrs.dash.can.SlcanParser`. Both adapters now call `SlcanParser.parse()`.
+- **Dead `connectionState` removed**: `CanDataService.connectionState` (which only returned WiCAN state regardless of adapter) was unused by any caller — removed.
+- **DTC clear confirmation dialog**: tapping "CLEAR FAULT CODES" now shows a Material 3 `AlertDialog` explaining the action before proceeding. Prevents accidental clears.
+
+### Removed
+
+- **`HardwareAdapter.kt`**: unused interface and `AdapterType` enum (never implemented). `GpsData` data class was also only referenced within this file.
+
 ### Fixed
 
 - **`MeatPiConnection` cancel latency**: TCP socket now closes immediately when the coroutine is cancelled (via a cancel-watcher child job), instead of waiting up to 20 s for `soTimeout`. `soTimeout` also reduced from 20 s → 5 s as a secondary safeguard.
