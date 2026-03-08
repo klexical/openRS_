@@ -51,7 +51,7 @@ Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It understan
 
 ## Features
 
-### 5 Tabs + System Drawer
+### 6 Tabs
 
 | Screen | Description |
 |--------|-------------|
@@ -59,8 +59,8 @@ Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It understan
 | **POWER** | AFR hero cards (actual/desired/lambda), Throttle & Boost (ETC actual/desired, WGDC, TIP, fuel rail PSI), Engine Management (timing, load, OAR, KR CYL1, VCT-I/E), Fuel Trims & Misc |
 | **CHASSIS** | AWD detail (4 wheel speeds, torque bar, F/R delta, L/R delta, rear bias), G-Force section (yaw, steering, peaks + inline reset), TPMS with car outline |
 | **TEMPS** | Animated Ready-to-Race banner, 10 temperature cards each with a colour indicator bar (oil, coolant, intake, ambient, RDU, PTU, charge air, catalytic, cabin, battery) |
-| **DIAG** | Session diagnostics — frame inventory, per-ID change tracking, periodic samples, SLCAN raw log, one-tap ZIP export (SavvyCAN/Kayak compatible) |
-| **☰ System Drawer** | Drive mode (N/S/T/D, read-only mirror of CAN), ESC status (read-only), firmware-gated features (Launch Control, Auto S/S Kill), Connection & snapshot button |
+| **DIAG** | DTC Scanner (full-module scan, count badges, freeze-frame, clear), session diagnostics — frame inventory, per-ID change tracking, periodic samples, SLCAN raw log, one-tap ZIP export (SavvyCAN/Kayak compatible) |
+| **MORE** | Drive mode (N/S/T/D, read-only mirror of CAN), ESC status (read-only), firmware-gated features (Launch Control, Auto S/S Kill), connection & snapshot, diagnostic export |
 
 ### Live Parameters — WebSocket SLCAN (passive at full bus speed)
 
@@ -126,6 +126,9 @@ All display preferences are configurable and persist across restarts:
 | Keep screen on | on / off | on |
 | Auto-reconnect | on / off | on |
 | Reconnect interval | seconds | 10 s |
+| Adapter | WiCAN / MeatPi Pro | WiCAN |
+| MicroSD logging reminder | on / off | off (MeatPi Pro only) |
+| Max saved ZIP exports | count | 5 |
 
 ---
 
@@ -136,6 +139,7 @@ All display preferences are configurable and persist across restarts:
 | Component | Details |
 |-----------|---------|
 | **MeatPi WiCAN** | [Mouser](https://www.mouser.com/ProductDetail/MeatPi/WICAN-USB-C3?qs=rQFj71Wb1eVDX2eEy0FC7A%3D%3D) — Wi-Fi ELM327-compatible OBD-II adapter |
+| **MeatPi WiCAN Pro** (optional) | [MeatPi](https://www.meatpi.com/) — Wi-Fi + GPS + MicroSD, raw TCP SLCAN |
 | **Ford Focus RS MK3** | 2016–2018 (LZ platform, EcoBoost 2.3L) |
 | **Android phone** | Android 9+ (API 28) with Wi-Fi |
 
@@ -174,7 +178,7 @@ Open `docs/index.html` in any browser, or visit the live version:
 **[klexical.github.io/openRS_](https://klexical.github.io/openRS_)**
 
 - All tabs animate with simulated Focus RS data (RPM, boost, speed, AWD, temps, TPMS)
-- ☰ System Drawer opens showing drive mode, ESC, features, diagnostics
+- MORE tab shows drive mode, ESC, features, diagnostics
 - ⚙ Settings button demonstrates the settings dialog
 
 ---
@@ -184,35 +188,39 @@ Open `docs/index.html` in any browser, or visit the live version:
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
 │  Phone UI — Jetpack Compose + Material 3                             │
-│  ┌──────┬───────┬─────────┬───────┬──────┐  ╔════════════════════╗  │
-│  │ DASH │ POWER │ CHASSIS │ TEMPS │ DIAG │  ║  ☰ System Drawer  ║  │
-│  └──────┴───────┴─────────┴───────┴──────┘  ╚════════════════════╝  │
-│  Header: logo · drive mode badge · gear · ESC · pulsing dot · ⚙     │
+│  ┌──────┬───────┬─────────┬───────┬──────┬──────┐                   │
+│  │ DASH │ POWER │ CHASSIS │ TEMPS │ DIAG │ MORE │                   │
+│  └──────┴───────┴─────────┴───────┴──────┴──────┘                   │
+│  Header: logo · drive mode badge · ESC · pulsing dot · ⚙            │
 ├──────────────────────────────────────────────────────────────────────┤
 │  UserPrefsStore (StateFlow) — units, thresholds, reconnect settings  │
 ├──────────────────────────────────────────────────────────────────────┤
 │                  VehicleState (StateFlow)                            │
 │         Immutable data class · 90+ fields · peaks · RTR status       │
 ├──────────────────────────────────────────────────────────────────────┤
-│                  CanDataService (Foreground)                          │
+│                  CanDataService (Background)                         │
 │   Decodes CAN → VehicleState → notifies UI                           │
 │   Hooks DiagnosticLogger (frame inventory, trace, FPS, SLCAN log)    │
 ├──────────────────────┬───────────────────────────────────────────────┤
-│  CanDecoder          │  DiagnosticLogger / Exporter                  │
+│  CanDecoder          │  DiagnosticLogger / Exporter / DtcScanner     │
 │  21 CAN frame IDs    │  Per-ID first/last/Δ tracking                 │
 │  RS_HS.dbc-verified  │  Periodic samples (30 s), SLCAN candump log   │
 │  Motorola extraction │  Validation engine, ZIP export via FileProvider│
 ├──────────────────────┴───────────────────────────────────────────────┤
-│                  WiCanConnection (WebSocket)                          │
-│  ws://192.168.80.1:80/ws │ SLCAN: C / S6 / O  │  ~2100 fps          │
-│  Firmware probe (OPENRS?) — 3 s time window, latches for session     │
+│  ObdConstants / ObdResponseParser / SlcanParser  (shared layer)      │
+├──────────────────────────────────────────────────────────────────────┤
+│  WiCanConnection (WebSocket)  │  MeatPiConnection (TCP)              │
+│  ws://192.168.80.1:80/ws      │  tcp://192.168.0.10:35000            │
+│  SLCAN: C / S6 / O · ~2100 fps│  Raw SLCAN + OBD polling            │
+│  Firmware probe (OPENRS?)     │                                      │
+├──────────────────────────────────────────────────────────────────────┤
 │  PCM polling (0x7E0): ETC, WGDC, KR, OAR, charge air, CAT temp      │
 │  BCM polling (0x726): odometer, SOC, battery temp, cabin temp        │
 │  AWD polling (0x703): RDU oil temp                                   │
-├──────────────────────────────────────────────────────────────────────┤
-│               MeatPi WiCAN USB-C3                                    │
-│         Wi-Fi AP · WebSocket :80/ws · SLCAN                          │
 ├──────────────────────┬───────────────────────────────────────────────┤
+│  MeatPi WiCAN USB-C3 │  MeatPi WiCAN Pro (optional)                 │
+│  Wi-Fi AP · WS :80/ws│  Wi-Fi AP · TCP :35000 · GPS · MicroSD       │
+├──────────────────────┴───────────────────────────────────────────────┤
 │  HS-CAN 500k         │  MS-CAN 125k (bridged via GWM)               │
 │  0x010–0x3C0 frames  │  TPMS 0x340, Ambient 0x1A4                   │
 └──────────────────────┴───────────────────────────────────────────────┘
@@ -224,7 +232,7 @@ Open `docs/index.html` in any browser, or visit the live version:
 
 **How does TPMS work without OBD queries?** Tire pressure data (CAN ID `0x340`) is broadcast on MS-CAN by the BCM. The Focus RS Gateway Module (GWM) bridges select MS-CAN frames to HS-CAN, so they appear on the bus the WiCAN monitors. No header switching or BCM OBD queries needed. Raw values are converted to PSI using the formula `raw × 3.6 / 6.895` (3.6 kPa per unit).
 
-**How does firmware detection work?** After SLCAN initialisation, the app sends `OPENRS?\r`. openRS_ firmware responds with `OPENRS:<version>`. Stock WiCAN firmware ignores the frame. Every incoming CAN frame for the first **3 seconds** is scanned for the probe response — this time-based window ensures the probe reply is not missed even on high-throughput buses (~1700 fps). After 3 seconds without a response, the firmware latches as "WiCAN stock" for the session. The System Drawer feature buttons unlock when openRS_ firmware is confirmed.
+**How does firmware detection work?** After SLCAN initialisation, the app sends `OPENRS?\r`. openRS_ firmware responds with `OPENRS:<version>`. Stock WiCAN firmware ignores the frame. Every incoming CAN frame for the first **3 seconds** is scanned for the probe response — this time-based window ensures the probe reply is not missed even on high-throughput buses (~1700 fps). After 3 seconds without a response, the firmware latches as "WiCAN stock" for the session. The MORE tab feature buttons unlock when openRS_ firmware is confirmed.
 
 **How does the diagnostic system work?** `DiagnosticLogger` (singleton) accumulates three layers of data throughout the session: (1) a per-ID frame inventory with `firstRawHex`, `lastRawHex`, a `hasChanged` flag, and up to 10 periodic raw-hex snapshots per ID sampled every 30 s; (2) a rolling 10 000-entry decode trace; (3) a real-time SLCAN log written to internal storage in standard candump format (`(seconds) can0 ID#DATA`). On export, `DiagnosticExporter` flushes the SLCAN writer and bundles all three artefacts into a ZIP via FileProvider. The SLCAN file is compatible with SavvyCAN, Kayak, and python-can for offline CAN analysis.
 
@@ -237,22 +245,37 @@ android/
 ├── app/src/main/
 │   ├── java/com/openrs/dash/
 │   │   ├── OpenRSDashApp.kt              # Application singleton + isOpenRsFirmware flag
-│   │   ├── auto/                          # Android Auto (paused)
-│   │   │   ├── CarDashActivity.kt        # Custom AA Activity (full Compose UI, mirrors phone)
-│   │   │   ├── RSDashCarAppService.kt    # AA entry point (Car App Library)
-│   │   │   └── RSDashSession.kt          # AA session manager
-│   │   ├── can/                           # CAN bus layer
+│   │   ├── can/
+│   │   │   ├── AdapterState.kt           # Shared connection state sealed class
 │   │   │   ├── CanDecoder.kt             # 21 CAN frame decoders (RS_HS.dbc-verified)
-│   │   │   └── WiCanConnection.kt        # WebSocket SLCAN + firmware probe + OBD polling
+│   │   │   ├── MeatPiConnection.kt       # MeatPi Pro raw TCP SLCAN + OBD polling
+│   │   │   ├── ObdConstants.kt           # Shared OBD query strings + CAN IDs + timing
+│   │   │   ├── ObdResponseParser.kt      # Shared OBD Mode 22 response parsers
+│   │   │   ├── SlcanParser.kt            # Shared SLCAN frame parser
+│   │   │   └── WiCanConnection.kt        # WiCAN WebSocket SLCAN + firmware probe
 │   │   ├── data/
-│   │   │   └── VehicleState.kt           # Immutable state (90+ fields, peaks, RTR status)
+│   │   │   ├── DtcModuleSpec.kt          # ECU module descriptor for DTC operations
+│   │   │   ├── DtcResult.kt              # DTC result + status enum
+│   │   │   ├── TripPoint.kt              # GPS waypoint with telemetry
+│   │   │   ├── TripState.kt              # Trip accumulator
+│   │   │   └── VehicleState.kt           # Immutable state (90+ fields, peaks, RTR)
 │   │   ├── diagnostics/
-│   │   │   ├── DiagnosticLogger.kt       # Session-scoped frame/event collector + SLCAN log
-│   │   │   └── DiagnosticExporter.kt     # ZIP builder + FileProvider share
+│   │   │   ├── DiagnosticExporter.kt     # ZIP builder + FileProvider share + CSV
+│   │   │   ├── DiagnosticLogger.kt       # Session-scoped collector + SLCAN log
+│   │   │   ├── DtcDatabase.kt            # Bundled 873-code Ford DTC lookup
+│   │   │   └── DtcScanner.kt            # DTC scan/clear orchestrator
 │   │   ├── service/
-│   │   │   └── CanDataService.kt         # Foreground service + DiagnosticLogger hooks
+│   │   │   └── CanDataService.kt         # Background service + DiagnosticLogger hooks
 │   │   └── ui/
-│   │       ├── MainActivity.kt           # Compose UI (5 tabs + System Drawer + Header)
+│   │       ├── MainActivity.kt           # Compose entry (6 tabs + header)
+│   │       ├── DashPage.kt               # DASH tab
+│   │       ├── PowerPage.kt              # POWER tab
+│   │       ├── ChassisPage.kt            # CHASSIS tab
+│   │       ├── TempsPage.kt              # TEMPS tab
+│   │       ├── DiagPage.kt               # DIAG tab (DTC scanner + diagnostics)
+│   │       ├── MorePage.kt               # MORE tab
+│   │       ├── Theme.kt                  # Design tokens, fonts, colors
+│   │       ├── Components.kt             # Shared composables
 │   │       ├── AppSettings.kt            # SharedPreferences wrapper
 │   │       ├── UserPrefs.kt              # Observable preferences (StateFlow)
 │   │       └── SettingsSheet.kt          # Settings dialog
@@ -263,14 +286,13 @@ android/
 │       │   ├── barlow_condensed_medium.ttf
 │       │   ├── barlow_condensed_semibold.ttf
 │       │   └── barlow_condensed_bold.ttf
+│       ├── raw/dtc_database.json          # Bundled 873-code Ford DTC lookup
 │       ├── values/strings.xml
 │       ├── values/themes.xml
 │       ├── xml/file_paths.xml            # FileProvider path config
 │       └── mipmap-*/ic_launcher*.png     # App icon (all densities)
 ├── docs/
 │   ├── index.html                        # Browser emulator (phone, rebuilt v1.2.0)
-│   ├── android-auto-setup.md
-│   ├── android-auto-custom-ui-research.md
 │   ├── hardware-setup.md
 │   ├── firmware-update.md
 │   ├── pid-reference.md
@@ -325,19 +347,19 @@ Full PID documentation: [`docs/pid-reference.md`](docs/pid-reference.md)
 ## Roadmap
 
 - [x] Phase 1 — CAN sniffing + basic OBD (v1.0)
-- [x] Phase 2 — Hybrid ATMA+OBD with Android Auto (v2.0)
+- [x] Phase 2 — Hybrid ATMA+OBD (v2.0)
 - [x] Phase 2.5 — TPMS+, AFR, ETC/TIP/WGDC, VCT, multi-ECU polling (v2.5)
 - [x] Phase 2.6 — Nitrous Blue/Frost White theme, openRS_ branding, live browser emulator
 - [x] Phase 2.7 — WebSocket SLCAN rewrite (~2100 fps), user settings, diagnostics export, firmware detection (v1.1.0)
 - [x] Phase 2.8 — DBC-verified signal corrections, BCM/AWD polling, IAT, ambient, wheel speeds, SLCAN raw log + per-ID sampling (v1.1.1–v1.1.5)
 - [x] Phase 2.9 — TPMS formula fix, firmware detection timing fix, app version in logs (v1.1.6)
-- [x] Phase 3 — Full UI redesign: 5-tab layout, new fonts, System Drawer, new CAN signals (steering, yaw, brake), PCM Mode 22 polling, updated RTR thresholds (v1.2.0)
+- [x] Phase 3 — Full UI redesign: 6-tab layout, new fonts, new CAN signals (steering, yaw, brake), PCM Mode 22 polling, updated RTR thresholds (v1.2.0)
 - [ ] Phase 4 — UDS Fast Rate Session (~100 Hz via DDDI 0x2C) — high-frequency AFR, boost, load
 - [ ] Phase 5 — Brake pressure bar calibration from live log data
-- [ ] Phase 6 — DTC scanning (Service 0x19 + DTC database)
-- [ ] Phase 7 — CSV data logging + lap timer
+- [x] Phase 6 — DTC scanning (bundled 873-code Ford DTC database, full-module scan + clear) (v2.2.0)
+- [x] Phase 7 — CSV data logging + ZIP export (v2.2.0)
 - [ ] Phase 8 — Track map overlay with GPS correlation
-- [ ] Phase 9 — Android Auto (pending Google distribution workaround)
+- [ ] Phase 9 — MeatPi Pro GPS integration
 
 ---
 

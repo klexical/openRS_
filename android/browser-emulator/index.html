@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>openRS_ v2.2.0 — Phone Emulator</title>
+<title>openRS_ v2.2.1 — Phone Emulator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@400;700&family=Barlow+Condensed:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -933,7 +933,7 @@ body {
 <body>
 
 <div style="display:flex;flex-direction:column;align-items:center">
-  <p class="page-title">open<span>RS</span>_ <span>v2.2.0</span> — Phone Emulator</p>
+  <p class="page-title">open<span>RS</span>_ <span>v2.2.1</span> — Phone Emulator</p>
 
   <div class="phone">
     <div class="notch"><div class="notch-bar"></div></div>
@@ -1317,6 +1317,48 @@ body {
 
     <!-- ═══ DIAG PAGE ═══ -->
     <div class="page" id="page4">
+      <!-- DTC Scanner -->
+      <div class="section-label"><span>DTC SCANNER</span></div>
+      <div style="display:flex;gap:6px">
+        <div class="diag-btn" id="dtc-scan-btn" style="flex:1;background:linear-gradient(90deg,rgba(0,210,255,0.12),rgba(0,210,255,0.06));border-color:rgba(0,210,255,0.35)" onclick="runDtcScan()">⟳  SCAN ALL MODULES</div>
+      </div>
+      <div style="font-family:var(--jbm);font-size:9px;color:var(--dim);padding:0 2px 6px">
+        Reads active, pending, and permanent fault codes from all modules.
+      </div>
+      <div id="dtc-results" style="display:none">
+        <div style="background:var(--surf2);border:1px solid var(--brd);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:6px">
+          <div style="font-family:var(--jbm);font-size:9px;color:var(--theme);letter-spacing:0.12em">PCM</div>
+          <div style="display:flex;gap:8px;padding:3px 0">
+            <span style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--orange);width:54px">P0234</span>
+            <div style="flex:1">
+              <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--mid)">Turbocharger Overboost Condition</div>
+              <div style="font-family:var(--jbm);font-size:8px;color:rgba(255,77,0,0.7)">Active</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;padding:3px 0">
+            <span style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--warn);width:54px">P0299</span>
+            <div style="flex:1">
+              <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--mid)">Turbocharger Underboost Condition</div>
+              <div style="font-family:var(--jbm);font-size:8px;color:rgba(255,204,0,0.7)">Pending</div>
+            </div>
+          </div>
+          <div style="font-family:var(--jbm);font-size:9px;color:var(--theme);letter-spacing:0.12em;margin-top:4px">ABS</div>
+          <div style="display:flex;gap:8px;padding:3px 0">
+            <span style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim);width:54px">C0034</span>
+            <div style="flex:1">
+              <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--mid)">Wheel Speed Sensor Circuit</div>
+              <div style="font-family:var(--jbm);font-size:8px;color:rgba(61,90,114,0.7)">Unknown</div>
+            </div>
+          </div>
+        </div>
+        <div style="font-family:var(--jbm);font-size:9px;color:var(--dim);padding:4px 2px 2px">3 fault code(s) found across 2 module(s).</div>
+        <div style="display:flex;gap:6px;margin-top:4px">
+          <div class="diag-btn" id="dtc-clear-btn" style="flex:1;background:rgba(26,6,6,1);border-color:rgba(255,68,85,0.45);color:rgba(255,68,85,0.9)" onclick="clearDtcDemo()">⚠  CLEAR FAULT CODES (0x14)</div>
+          <div style="width:72px;background:#1A0A0A;border:1px solid rgba(61,90,114,0.3);border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:var(--jbm);font-size:9px;color:var(--dim)" onclick="document.getElementById('dtc-results').style.display='none'">DISMISS</div>
+        </div>
+      </div>
+      <div style="height:1px;background:var(--brd);margin:6px 0"></div>
+
       <div class="section-label"><span>DIAGNOSTICS</span></div>
 
       <div class="cell-row">
@@ -1509,7 +1551,7 @@ body {
     </div>
 
     <!-- Version badge -->
-    <div class="version-badge">openRS_ <span>v2.2.0</span> · Focus RS MK3 · WiCAN</div>
+    <div class="version-badge">openRS_ <span>v2.2.1</span> · Focus RS MK3 · WiCAN</div>
 
     <!-- ═══ SETTINGS OVERLAY ═══ -->
     <div class="settings-overlay" id="settings-overlay" onclick="overlayBgClick(event)">
@@ -1579,14 +1621,35 @@ body {
             </div>
           </div>
 
+          <!-- ADAPTER -->
+          <div class="settings-section">
+            <div class="settings-section-label">ADAPTER</div>
+            <div class="settings-row">
+              <div class="settings-row-label">Hardware</div>
+              <div class="seg-picker" id="seg-adapter">
+                <div class="seg-option active" onclick="pickAdapter('WiCAN',this)">WiCAN</div>
+                <div class="seg-option"        onclick="pickAdapter('MeatPi Pro',this)">MeatPi Pro</div>
+              </div>
+            </div>
+            <div id="meatpi-microsd-row" style="display:none;margin-top:12px">
+              <div class="settings-switch-row">
+                <div class="settings-switch-label">MicroSD logging reminder</div>
+                <div class="toggle-track" id="toggle-microsd" onclick="toggleSwitch('microsd')">
+                  <div class="toggle-thumb"></div>
+                </div>
+              </div>
+              <div class="settings-hint" style="margin-top:6px">SD logging is configured in the WiCAN Pro web UI — this toggle is a local reminder only.</div>
+            </div>
+          </div>
+
           <!-- WICAN CONNECTION -->
           <div class="settings-section">
-            <div class="settings-section-label">WICAN CONNECTION</div>
+            <div class="settings-section-label" id="conn-section-label">WICAN CONNECTION</div>
             <div class="settings-input-label">HOST / IP ADDRESS</div>
             <input class="settings-input" id="input-host" type="text" value="192.168.80.1" placeholder="192.168.80.1">
             <div class="settings-input-label">PORT</div>
-            <input class="settings-input" id="input-port" type="number" min="1" max="65535" value="3333" placeholder="3333" style="margin-bottom:4px">
-            <div class="settings-hint">Default: 192.168.80.1:3333</div>
+            <input class="settings-input" id="input-port" type="number" min="1" max="65535" value="80" placeholder="80" style="margin-bottom:4px">
+            <div class="settings-hint">Default: 192.168.80.1:80</div>
           </div>
 
           <!-- AUTO-RECONNECT -->
@@ -1605,6 +1668,16 @@ body {
               </div>
               <div class="settings-hint">How long to wait between attempts. Default: 5s</div>
             </div>
+          </div>
+
+          <!-- DIAGNOSTICS -->
+          <div class="settings-section">
+            <div class="settings-section-label">DIAGNOSTICS</div>
+            <div class="settings-row" style="margin-bottom:4px">
+              <div class="settings-row-label">Max saved ZIP exports</div>
+              <input class="settings-input short" id="input-max-zips" type="number" min="1" max="50" value="5">
+            </div>
+            <div class="settings-hint">Oldest ZIPs are removed when this limit is exceeded. Default: 5</div>
           </div>
 
           <!-- Validation error -->
@@ -1722,7 +1795,7 @@ document.addEventListener('DOMContentLoaded', () => {
 const settingsState = {
   speed: 'MPH', temp: '°F', boost: 'PSI', tire: 'PSI',
   tirePsi: 32, screenOn: false, autoReconnect: false, reconnectSec: 5,
-  host: '192.168.80.1', port: 3333
+  host: '192.168.80.1', port: 80, adapter: 'WiCAN', microSd: false, maxZips: 5
 };
 
 function openSettings() {
@@ -1821,6 +1894,52 @@ function updateSettingsSummary() {
   const boostLabel = s.boost === 'kPa' ? 'kPa' : s.boost;
   document.getElementById('settings-summary').textContent =
     `${s.speed} · ${s.temp} · ${boostLabel}`;
+}
+
+// ── DTC Scanner demo ────────────────────────────────────────────────────────
+function runDtcScan() {
+  const btn = document.getElementById('dtc-scan-btn');
+  btn.textContent = 'SCANNING...';
+  btn.style.pointerEvents = 'none';
+  setTimeout(() => {
+    btn.textContent = '⟳  SCAN ALL MODULES';
+    btn.style.pointerEvents = '';
+    document.getElementById('dtc-results').style.display = 'block';
+  }, 2000);
+}
+
+function clearDtcDemo() {
+  const btn = document.getElementById('dtc-clear-btn');
+  if (!confirm('Clear All Fault Codes?\n\nThis sends UDS Service 0x14 to all ECU modules (PCM, BCM, ABS, AWD, PSCM) to clear stored, pending, and permanent DTCs.\n\nCleared codes may return if the underlying condition persists.')) return;
+  btn.textContent = 'CLEARING...';
+  btn.style.pointerEvents = 'none';
+  setTimeout(() => {
+    document.getElementById('dtc-results').innerHTML =
+      '<div style="background:rgba(6,14,6,1);border:1px solid rgba(0,255,136,0.3);border-radius:8px;padding:10px">' +
+      '<span style="font-family:var(--jbm);font-size:10px;color:var(--ok)">✓  Cleared: PCM, BCM, ABS, AWD, PSCM  (5/5)</span></div>';
+  }, 1500);
+}
+
+// ── Adapter picker ──────────────────────────────────────────────────────────
+let currentAdapter = 'WiCAN';
+function pickAdapter(value, el) {
+  currentAdapter = value;
+  document.querySelectorAll('#seg-adapter .seg-option').forEach(opt => {
+    opt.classList.toggle('active', opt.textContent.trim() === value);
+  });
+  const isMeatPi = value === 'MeatPi Pro';
+  document.getElementById('meatpi-microsd-row').style.display = isMeatPi ? 'block' : 'none';
+  document.getElementById('conn-section-label').textContent = isMeatPi ? 'MEATPI PRO CONNECTION' : 'WICAN CONNECTION';
+  // Auto-populate defaults
+  const hostInput = document.getElementById('input-host');
+  const portInput = document.getElementById('input-port');
+  if (isMeatPi && hostInput.value === '192.168.80.1' && portInput.value === '80') {
+    hostInput.value = '192.168.0.10';
+    portInput.value = '35000';
+  } else if (!isMeatPi && hostInput.value === '192.168.0.10' && portInput.value === '35000') {
+    hostInput.value = '192.168.80.1';
+    portInput.value = '80';
+  }
 }
 </script>
 </body>
