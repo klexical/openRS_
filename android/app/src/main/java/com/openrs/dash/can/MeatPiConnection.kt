@@ -1,6 +1,7 @@
 package com.openrs.dash.can
 
 import com.openrs.dash.OpenRSDashApp
+import com.openrs.dash.data.DtcModuleSpec
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticLogger
 import kotlinx.coroutines.*
@@ -16,16 +17,14 @@ import java.net.InetSocketAddress
 import java.net.Socket
 
 /**
- * MeatPi Pro adapter — SLCAN over raw TCP.
+ * MeatPi Pro (WiCAN PRO) adapter — SLCAN over raw TCP.
  *
- * The MeatPi Pro connects over TCP rather than WebSocket.
- * SLCAN frames are delimited by `\r` (0x0D) without any framing overhead.
- *
- * Default: TCP to 192.168.4.1:3333 (HS-CAN, 500 kbps)
- * Optional: TCP to host:msCan port for MS-CAN (125 kbps) — see [connectMsCan].
+ * Connects to the device's TCP SLCAN socket (default 192.168.0.10:35000 in AP mode).
+ * SLCAN frames are delimited by `\r` (0x0D) — no WebSocket framing overhead.
+ * The SLCAN port and CAN bitrate are configured in the WiCAN Pro web UI (http://192.168.0.10/).
  *
  * OBD polling is identical to WiCAN: ISO-TP single-frame requests to PCM/BCM/AWD etc.
- * DTC scanning uses the same [performDtcScan] mechanism.
+ * DTC scanning (Service 0x19) and clearing (Service 0x14) use [performDtcScan] / [performDtcClear].
  */
 class MeatPiConnection(
     private val host: String = "192.168.0.10",
@@ -166,10 +165,21 @@ class MeatPiConnection(
                 val socket = Socket()
                 try {
                     socket.connect(InetSocketAddress(host, port), 5_000)
-                    socket.soTimeout = 20_000
+                    // 5 s read timeout: fast enough to detect dead connections on an active
+                    // CAN bus, and ensures coroutine cancellation is handled within 5 s if
+                    // the cancel watcher below can't close the socket first.
+                    socket.soTimeout = 5_000
 
                     val inp = socket.getInputStream()
                     val out = socket.getOutputStream()
+
+                    // Cancel watcher: when this coroutine scope is cancelled (e.g. stopConnection),
+                    // immediately close the socket so inp.read() is interrupted without waiting
+                    // for soTimeout to fire.
+                    val cancelWatcher = launch {
+                        try { awaitCancellation() }
+                        finally { try { socket.close() } catch (_: Exception) { } }
+                    }
 
                     // Init HS-CAN at 500 kbps
                     out.write(SLCAN_INIT_HS.toByteArray(Charsets.ISO_8859_1))
@@ -239,7 +249,7 @@ class MeatPiConnection(
                     // ── Main frame loop ───────────────────────────────────────
                     try {
                         while (currentCoroutineContext().isActive) {
-                            val line = readSlcanLine(inp) ?: break
+                            val line = try { readSlcanLine(inp) } catch (_: Exception) { null } ?: break
                             val frame = parseSlcanFrame(line) ?: continue
 
                             // DTC scan intercept
@@ -292,6 +302,7 @@ class MeatPiConnection(
                             }
                         }
                     } finally {
+                        cancelWatcher.cancel()
                         obdJob.cancel()
                         pcmJob.cancel()
                         extJob.cancel()
@@ -327,7 +338,7 @@ class MeatPiConnection(
 
     // ── DTC scan ──────────────────────────────────────────────────────────────
 
-    suspend fun performDtcScan(modules: List<WiCanConnection.DtcModuleSpec>): Map<String, ByteArray> =
+    suspend fun performDtcScan(modules: List<DtcModuleSpec>): Map<String, ByteArray> =
         _dtcMutex.withLock {
             val out = _tcpOut ?: return emptyMap()
             val results = mutableMapOf<String, ByteArray>()
@@ -355,7 +366,7 @@ class MeatPiConnection(
      * Sends UDS Service 0x14 (ClearDiagnosticInformation, group 0xFFFFFF) to each module.
      * Returns module name → true if the ECU responded with 0x54 (positive response).
      */
-    suspend fun performDtcClear(modules: List<WiCanConnection.DtcModuleSpec>): Map<String, Boolean> =
+    suspend fun performDtcClear(modules: List<DtcModuleSpec>): Map<String, Boolean> =
         _dtcMutex.withLock {
             val out = _tcpOut ?: return emptyMap()
             val results = mutableMapOf<String, Boolean>()

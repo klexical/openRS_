@@ -98,7 +98,7 @@ import kotlin.math.roundToInt
                                 if (result != null) {
                                     dtcResults = result
                                 } else {
-                                    dtcError = if (!vs.isConnected) "Not connected" else "Scan failed"
+                                    dtcError = "Scan failed — check adapter connection"
                                 }
                             }
                         }
@@ -158,17 +158,20 @@ import kotlin.math.roundToInt
                             val ack = try { onClearDtcs?.invoke() } catch (_: Exception) { null }
                             withContext(Dispatchers.Main) {
                                 dtcClearing = false
-                                if (ack == null) {
-                                    dtcError = "Clear failed — no response from ECUs"
-                                } else {
-                                    val ok  = ack.count { it.value }
-                                    val all = ack.size
-                                    dtcClearStatus = if (ok == all)
-                                        "Cleared: ${ack.keys.joinToString(", ")}  ($ok/$all)"
-                                    else
-                                        "Partial: ${ack.entries.joinToString(", ") { "${it.key}:${if (it.value) "✓" else "✗"}" }}"
-                                    // Auto-dismiss stale results after clearing
-                                    dtcResults = null
+                                when {
+                                    ack == null || ack.isEmpty() -> {
+                                        dtcError = "Clear failed — no response from ECUs"
+                                    }
+                                    else -> {
+                                        val ok  = ack.count { it.value }
+                                        val all = ack.size
+                                        dtcClearStatus = if (ok == all)
+                                            "Cleared: ${ack.keys.joinToString(", ")}  ($ok/$all)"
+                                        else
+                                            "Partial: ${ack.entries.joinToString(", ") { "${it.key}:${if (it.value) "✓" else "✗"}" }}"
+                                        // Auto-dismiss stale results after clearing
+                                        dtcResults = null
+                                    }
                                 }
                             }
                         }
@@ -186,15 +189,16 @@ import kotlin.math.roundToInt
         }
 
         Spacer(Modifier.height(4.dp))
-        MonoLabel(
-            when {
-                dtcScanning  -> "Querying PCM, BCM, ABS, AWD, PSCM..."
-                dtcClearing  -> "Sending UDS 0x14 to all modules — do not disconnect..."
-                dtcClearStatus != null -> ""
-                else         -> "Reads active, pending, and permanent fault codes from all modules."
-            },
-            9.sp, Dim, modifier = Modifier.padding(bottom = 6.dp)
-        )
+        if (dtcClearStatus == null) {
+            MonoLabel(
+                when {
+                    dtcScanning -> "Querying PCM, BCM, ABS, AWD, PSCM..."
+                    dtcClearing -> "Sending UDS 0x14 to all modules — do not disconnect..."
+                    else        -> "Reads active, pending, and permanent fault codes from all modules."
+                },
+                9.sp, Dim, modifier = Modifier.padding(bottom = 6.dp)
+            )
+        }
 
         // Clear status confirmation
         if (dtcClearStatus != null) {

@@ -5,7 +5,7 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
-## [v2.2.1] — 2026-03-06
+## [v2.2.1] — 2026-03-08
 
 ### Added
 
@@ -20,8 +20,17 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 - **`CanDataService`**: OBD merge logic extracted to `mergeObdState()` and CAN frame processing to `processCanFrame()` — eliminates duplication between WiCAN and MeatPi paths. Added `clearDtcs()` suspend function (mirrors `scanDtcs()`).
 - **`DiagPage`**: receives `onScanDtcs` and `onClearDtcs` lambdas from `MainActivity`, keeping the composable decoupled from the service.
-- **MeatPi Pro defaults**: corrected default connection to `192.168.0.10:35000` (official WiCAN Pro AP address and SLCAN TCP port) — previous placeholder `192.168.4.1:3333` was wrong. The SLCAN port is user-configurable in the WiCAN Pro web UI; `35000` matches the reference in official MeatPi documentation.
-- **MicroSD toggle clarified**: The setting is now labelled "MicroSD logging reminder" with a note that SD logging is managed entirely through the WiCAN Pro web UI — there is no SLCAN command to enable it remotely.
+- **MeatPi Pro defaults**: corrected default connection to `192.168.0.10:35000` (official WiCAN Pro AP address and SLCAN TCP port). The SLCAN port is user-configurable in the WiCAN Pro web UI; `35000` matches official MeatPi documentation.
+- **MicroSD toggle clarified**: labelled "MicroSD logging reminder" — SD logging is managed in the WiCAN Pro web UI, no SLCAN command exists to enable it remotely.
+- **Settings adapter switch**: switching the adapter picker now auto-populates host/port with the correct defaults for the selected adapter (only when the current value still matches the other adapter's default — custom IPs are preserved).
+- **`DtcModuleSpec`**: moved from nested class in `WiCanConnection` to `com.openrs.dash.data.DtcModuleSpec`, removing the `WiCanConnection` import dependency from `MeatPiConnection` and `DtcScanner`.
+
+### Fixed
+
+- **`MeatPiConnection` cancel latency**: TCP socket now closes immediately when the coroutine is cancelled (via a cancel-watcher child job), instead of waiting up to 20 s for `soTimeout`. `soTimeout` also reduced from 20 s → 5 s as a secondary safeguard.
+- **DTC clear false-success banner**: "Cleared (0/0)" no longer shown when the `ack` map is empty (all sends failed). Empty or null `ack` now shows the "Clear failed" error.
+- **DTC scan error message**: no longer reads stale captured `vs.isConnected` — now always shows `"Scan failed — check adapter connection"`.
+- **`DiagPage` ghost spacing**: empty `MonoLabel("")` removed; the hint label is now conditionally omitted when the clear-status confirmation box is already visible.
 
 ---
 

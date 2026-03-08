@@ -1,6 +1,7 @@
 package com.openrs.dash.can
 
 import com.openrs.dash.OpenRSDashApp
+import com.openrs.dash.data.DtcModuleSpec
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticLogger
 import kotlinx.coroutines.*
@@ -212,13 +213,6 @@ class WiCanConnection(
     /** True while a DTC scan is in progress — frames on [_dtcWatchIds] are
      *  routed to [_dtcChannel] instead of the normal parsers. */
     @Volatile private var _dtcScanActive: Boolean = false
-
-    /** Describes one ECU module to scan for DTCs. */
-    data class DtcModuleSpec(
-        val name: String,
-        val requestId: Int,
-        val responseId: Int
-    )
 
     /**
      * Performs a one-shot DTC scan across [modules] using UDS Service 0x19

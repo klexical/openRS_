@@ -3,6 +3,7 @@ package com.openrs.dash.diagnostics
 import android.content.Context
 import com.openrs.dash.can.MeatPiConnection
 import com.openrs.dash.can.WiCanConnection
+import com.openrs.dash.data.DtcModuleSpec
 import com.openrs.dash.data.DtcResult
 import com.openrs.dash.data.DtcStatus
 
@@ -20,11 +21,11 @@ class DtcScanner(private val ctx: Context) {
 
     companion object {
         private val MODULES = listOf(
-            WiCanConnection.DtcModuleSpec("PCM",  0x7E0, 0x7E8),
-            WiCanConnection.DtcModuleSpec("BCM",  0x726, 0x72E),
-            WiCanConnection.DtcModuleSpec("ABS",  0x760, 0x768),
-            WiCanConnection.DtcModuleSpec("AWD",  0x703, 0x70B),
-            WiCanConnection.DtcModuleSpec("PSCM", 0x730, 0x738)
+            DtcModuleSpec("PCM",  0x7E0, 0x7E8),
+            DtcModuleSpec("BCM",  0x726, 0x72E),
+            DtcModuleSpec("ABS",  0x760, 0x768),
+            DtcModuleSpec("AWD",  0x703, 0x70B),
+            DtcModuleSpec("PSCM", 0x730, 0x738)
         )
     }
 

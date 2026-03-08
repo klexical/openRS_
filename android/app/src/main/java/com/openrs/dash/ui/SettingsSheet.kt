@@ -145,7 +145,26 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                         SegmentedPicker(
                             options  = listOf("WiCAN", "MeatPi Pro"),
                             selected = if (adapterType == "MEATPI") "MeatPi Pro" else "WiCAN",
-                            onSelect = { adapterType = if (it == "MeatPi Pro") "MEATPI" else "WICAN" }
+                            onSelect = { selected ->
+                                val newType = if (selected == "MeatPi Pro") "MEATPI" else "WICAN"
+                                if (newType != adapterType) {
+                                    // Auto-populate connection fields with the correct defaults when
+                                    // switching adapters — but only if the current values still match
+                                    // the OTHER adapter's defaults (preserves any custom IP/port).
+                                    if (newType == "MEATPI" &&
+                                        host == AppSettings.DEFAULT_HOST &&
+                                        port == AppSettings.DEFAULT_PORT.toString()) {
+                                        host = AppSettings.DEFAULT_HOST_MEATPI
+                                        port = AppSettings.DEFAULT_PORT_MEATPI.toString()
+                                    } else if (newType == "WICAN" &&
+                                        host == AppSettings.DEFAULT_HOST_MEATPI &&
+                                        port == AppSettings.DEFAULT_PORT_MEATPI.toString()) {
+                                        host = AppSettings.DEFAULT_HOST
+                                        port = AppSettings.DEFAULT_PORT.toString()
+                                    }
+                                    adapterType = newType
+                                }
+                            }
                         )
                     }
                     if (adapterType == "MEATPI") {
