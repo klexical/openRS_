@@ -12,14 +12,14 @@ Complete reference for all OBD-II parameters used by openRS_ (current as of v2.2
 
 ## Mode 22 — PCM (Header: 0x7E0)
 
-The following PCM Mode 22 PIDs are polled by the app every 10 seconds via ISO-TP over SLCAN (request `0x7E0` → response `0x7E8`). Additional passive CAN alternatives are noted where available.
+The following PCM Mode 22 PIDs are polled by the app every 30 seconds via ISO-TP over SLCAN (request `0x7E0` → response `0x7E8`). Additional passive CAN alternatives are noted where available.
 
 | PID | Name | Request | Formula | Unit | Passive CAN alternative |
 |-----|------|---------|---------|------|------------------------|
 | 0xF405 | Coolant Temp (PCM) | `22F405` | `B4 − 40` | °C | CAN 0x2F0 |
 | 0xF40F | Intake Air Temp (PCM) | `22F40F` | `B4 − 40` | °C | CAN 0x0F8 |
 | 0x03CA | Intake Air Temp 2 | `2203CA` | `B4 − 40` | °C | Likely `manifoldChargeTempC` — post-intercooler |
-| 0xF42F | Fuel Level (PCM) | `22F42F` | `(B4 / 255) × 100` | % | CAN 0x34A |
+| 0xF42F | Fuel Level (PCM) | `22F42F` | `(B4 / 255) × 100` | % | CAN 0x380 |
 
 ## Mode 1 — Standard OBD-II (Header: 0x7DF)
 
@@ -54,17 +54,16 @@ The following PCM Mode 22 PIDs are polled by the app every 10 seconds via ISO-TP
 | 0x0461 | Charge Air Temp | `220461` | 2 | (signed(A)×256+B) / 64 | °C | 2 | DigiCluster |
 | 0xF43C | Catalytic Temp | `22F43C` | 2 | (A×256+B) / 10 − 40 | °C | 3 | DigiCluster |
 
-## TPMS — Passive CAN (preferred method, v1.1.0+)
+## TPMS — BCM Mode 22 (current method, v1.1.6+)
 
-> **Architecture change in v1.1.0:** TPMS data is decoded from passive CAN frame `0x340`, not OBD Mode 22. The BCM broadcasts this frame on MS-CAN; the Gateway Module (GWM) bridges it to HS-CAN automatically. No OBD queries, no BCM header switching.
+> **Architecture note:** TPMS data is polled from the BCM via Mode 22 (PIDs 0x2813–0x2816) every 30 seconds. Earlier versions (v1.1.0–v1.1.5) attempted to decode TPMS from passive CAN frame `0x340`, but that frame was found to carry PCM ambient temperature only (PCMmsg17) — not tire pressures. The BCM Mode 22 approach returns validated pressure data.
 
-> **Formula update v1.1.6:** Raw bytes are not direct PSI. They are in units of 3.6 kPa each and must be converted: `PSI = raw × 3.6 / 6.895`. Validated against known tire pressures (e.g., raw `0x43` = 67 counts × 3.6 / 6.895 ≈ 35.0 PSI).
-
-| CAN ID | Parameters | Decode |
-|--------|-----------|--------|
-| 0x340 | Tire pressure LF (byte 2), RF (byte 3), LR (byte 4), RR (byte 5) | `raw × 3.6 / 6.895 PSI`; raw 0 = sensor sleeping, ignored |
-
-Sensors transmit only when wheels are rolling. If all four bytes are zero, the TPMS ECU has not sent data yet. The decoder ignores raw 0 values.
+| PID | Name | Request | Formula | Unit |
+|-----|------|---------|---------|------|
+| 0x2813 | Tire Pressure LF | `222813` | `(((256×A)+B)/3 + 22/3) × 0.145` | PSI |
+| 0x2814 | Tire Pressure RF | `222814` | `(((256×A)+B)/3 + 22/3) × 0.145` | PSI |
+| 0x2815 | Tire Pressure RR | `222815` | `(((256×A)+B)/3 + 22/3) × 0.145` | PSI |
+| 0x2816 | Tire Pressure LR | `222816` | `(((256×A)+B)/3 + 22/3) × 0.145` | PSI |
 
 ## Mode 22 — BCM (Header: 0x726)
 
@@ -77,9 +76,9 @@ Sensors transmit only when wheels are rolling. If all four bytes are zero, the T
 | 0x4029 | **Battery Temp** | `224029` | 1 | `B4 − 40` | °C | 12V battery temperature |
 | 0xDD04 | **Cabin Temp** | `22DD04` | 1 | `(B4 × 10/9) − 45` | °C | Interior cabin sensor |
 
-### TPMS PIDs — legacy OBD reference (replaced by passive CAN 0x340)
+### TPMS PIDs — alternative formula reference
 
-> **Formula correction (v1.1.0):** MeatPi's official Focus RS vehicle profile uses `([B4:B5]/10)/2.036`. Previous documentation used `(A×256+B)/2.9×0.145038`. The MeatPi formula (from real-world calibration) is approximately 1.7% lower for the same raw value. Moot for the app since TPMS is now decoded from passive CAN frame `0x340`.
+> **Formula note:** MeatPi's official Focus RS vehicle profile uses `([B4:B5]/10)/2.036`. The app uses `(((256×A)+B)/3 + 22/3) × 0.145`, which was validated against known tire pressures on the Focus RS MK3.
 
 | PID | Name | Request | Bytes | Formula (MeatPi) | Unit | Status |
 |-----|------|---------|-------|-----------------|------|--------|
@@ -107,10 +106,9 @@ All formulas re-validated against DigiCluster `can0_hs.json` and `can1_ms.json`.
 | 0x180 | Lateral G | `((B2&0x03)<<8\|B3)×0.00390625−2.0` | DigiCluster HS-CAN |
 | 0x1A4 | Ambient temp | `B4 signed × 0.25 °C` | DigiCluster MS-CAN bridged |
 | 0x1B0 | Drive mode | `(B6>>4)&0x0F` — 0=Normal,1=Sport,2=Track,3=Drift | DigiCluster HS-CAN |
-| 0x215 | 4× wheel speeds, gear | wheel: `word×0.01 kph`; gear: B7 | DigiCluster HS-CAN |
-| 0x2C0 | AWD L/R torque, RDU temp | 12-bit words scaled; RDU: `B6−40 °C` | DigiCluster HS-CAN |
-| 0x2C2 | PTU temp | `B5−40 °C` | DigiCluster HS-CAN |
-| 0x2F0 | Coolant temp | `B5−60 °C` | DigiCluster HS-CAN |
-| 0x340 | TPMS LF/RF/LR/RR | bytes 2-5 direct PSI | DigiCluster MS-CAN bridged |
-| 0x34A | Fuel level % | `B2×100/255` | DigiCluster HS-CAN |
+| 0x190 | 4× wheel speeds | FL/FR/RL/RR: 15-bit Motorola × 0.011343006 kph | RS_HS.dbc ABSmsg03 |
+| 0x2C0 | AWD L/R torque | 12-bit words scaled | DigiCluster HS-CAN |
+| 0x2F0 | Coolant temp, IAT | coolant: `((B4&0x03)<<8\|B5) − 60 °C`; IAT: `((B6&0x03)<<8\|B7) × 0.25 − 127 °C` | RS_HS.dbc PCMmsg16 |
+| 0x340 | Ambient temp (PCMmsg17) | `byte7 signed × 0.25 °C` — **not** TPMS | RS_HS.dbc PCMmsg17 |
+| 0x380 | Fuel level % (FuelLevelFiltered) | Motorola 10-bit: `((data[2]&0x03)<<8\|data[3]) × 0.4` | RS_HS.dbc PCMmsg30 |
 | 0x3C0 | Battery voltage | `word(B2-B3)×0.001 V` | DigiCluster HS-CAN |

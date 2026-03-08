@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/openrs-wordmark.svg" width="320" alt="openRS_"><br/>
+  <img src="../assets/images/openrs-wordmark.svg" width="320" alt="openRS_"><br/>
   <sub>Open-source real-time telemetry dashboard for the Ford Focus RS MK3</sub>
 </p>
 
@@ -95,7 +95,7 @@ All data is received passively from the CAN bus via WebSocket SLCAN at ~2100 fps
 
 | ECU | Request | Response | PIDs / Function | Interval |
 |-----|---------|----------|-----------------|----------|
-| PCM | 0x7E0 | 0x7E8 | ETC actual (0x093C), ETC desired (0x091A), WGDC (0x0462), KR cyl 1 (0x03EC), OAR (0x03E8), Charge Air Temp (0x0461), Catalyst Temp (0xF43C), **Battery voltage Mode 01 PID 0x42** `(A×256+B)/1000 V` | 10 s |
+| PCM | 0x7E0 | 0x7E8 | ETC actual (0x093C), ETC desired (0x091A), WGDC (0x0462), KR cyl 1 (0x03EC), OAR (0x03E8), Charge Air Temp (0x0461), Catalyst Temp (0xF43C), **Battery voltage Mode 01 PID 0x42** `(A×256+B)/1000 V` | 30 s |
 | BCM | 0x726 | 0x72E | Odometer (0xDD01), Battery SOC (0x4028), Battery temp (0x4029), Cabin temp (0xDD04), **TPMS LF/RF/LR/RR** (0x2813–0x2816) `(((256×A)+B)/3 + 22/3) × 0.145 PSI` | 30 s |
 | AWD module | 0x703 | 0x70B | RDU oil temp (0x1E8A) — `B4 − 40 °C` | 30 s |
 
@@ -222,7 +222,7 @@ Open `browser-emulator/index.html` in any browser, or visit the live version:
 │  Wi-Fi AP · WS :80/ws│  Wi-Fi AP · TCP :35000 · GPS · MicroSD       │
 ├──────────────────────┴───────────────────────────────────────────────┤
 │  HS-CAN 500k         │  MS-CAN 125k (bridged via GWM)               │
-│  0x010–0x3C0 frames  │  TPMS 0x340, Ambient 0x1A4                   │
+│  0x010–0x3C0 frames  │  Ambient 0x340/0x1A4 (GWM bridged)            │
 └──────────────────────┴───────────────────────────────────────────────┘
 ```
 
@@ -230,7 +230,7 @@ Open `browser-emulator/index.html` in any browser, or visit the live version:
 
 **Why WebSocket SLCAN instead of ELM327 TCP?** ELM327's `ATMA` command is not fully implemented in WiCAN firmware. WebSocket SLCAN bypasses ELM327 entirely — the app does a manual HTTP 101 Upgrade handshake, sends `C` / `S6` / `O` (close/500kbps/open), and receives raw SLCAN frames. This delivers the full HS-CAN bus at ~2100 fps vs ~12 fps with polled OBD.
 
-**How does TPMS work without OBD queries?** Tire pressure data (CAN ID `0x340`) is broadcast on MS-CAN by the BCM. The Focus RS Gateway Module (GWM) bridges select MS-CAN frames to HS-CAN, so they appear on the bus the WiCAN monitors. No header switching or BCM OBD queries needed. Raw values are converted to PSI using the formula `raw × 3.6 / 6.895` (3.6 kPa per unit).
+**How does TPMS work?** Tire pressures are polled from the BCM via Mode 22 (PIDs 0x2813–0x2816) every 30 seconds. Earlier versions decoded TPMS from passive CAN frame 0x340 (MS-CAN bridged via GWM), but this was found to carry PCM ambient temperature only — not tire pressures. The BCM Mode 22 approach is slower (~30 s refresh) but returns validated pressure data with the formula `(((256×A)+B)/3 + 22/3) × 0.145 PSI`.
 
 **How does firmware detection work?** After SLCAN initialisation, the app sends `OPENRS?\r`. openRS_ firmware responds with `OPENRS:<version>`. Stock WiCAN firmware ignores the frame. Every incoming CAN frame for the first **3 seconds** is scanned for the probe response — this time-based window ensures the probe reply is not missed even on high-throughput buses (~1700 fps). After 3 seconds without a response, the firmware latches as "WiCAN stock" for the session. The MORE tab feature buttons unlock when openRS_ firmware is confirmed.
 
@@ -292,11 +292,14 @@ android/
 │       ├── xml/file_paths.xml            # FileProvider path config
 │       └── mipmap-*/ic_launcher*.png     # App icon (all densities)
 ├── docs/
-│   ├── index.html                        # Browser emulator (phone, rebuilt v1.2.0)
+│   ├── images/openrs-banner.svg          # Banner image
 │   ├── hardware-setup.md
 │   ├── firmware-update.md
 │   ├── pid-reference.md
 │   └── signing-setup.md                  # Release keystore setup guide
+├── browser-emulator/
+│   ├── index.html                        # Browser emulator (phone UI mirror)
+│   └── README.md
 └── README.md
 ```
 
@@ -329,8 +332,8 @@ Full PID documentation: [`docs/pid-reference.md`](docs/pid-reference.md)
 | 0x252 | Brake pressure | `bits(11,12)` raw ADC 0–4095, displayed 0–100% — RS_HS.dbc ABSmsg10 |
 | 0x2C0 | AWD L/R rear torque (Nm) | bits 0\|12 and 12\|12 signed Motorola |
 | 0x2F0 | Coolant temp, Intake Air Temp | coolant: `((data[4]&0x03)<<8\|data[5]) − 60 °C`; IAT: `((data[6]&0x03)<<8\|data[7]) × 0.25 − 127 °C` |
-| 0x340 | TPMS LF/RF/LR/RR + Ambient temp | TPMS: `byte × 3.6 / 6.895 PSI` (MS-CAN via GWM); ambient: `byte7 signed × 0.25 °C` |
-| 0x34A | Fuel level % | `byte0 × 0.392` |
+| 0x340 | Ambient temp (PCMmsg17) | `byte7 signed × 0.25 °C` — **not** TPMS (see 0x1A4 for secondary ambient) |
+| 0x380 | Fuel level % (FuelLevelFiltered) | Motorola 10-bit: `((data[2]&0x03)<<8\|data[3]) × 0.4` |
 | 0x3C0 | Battery voltage | `byte0 × 0.1 V` |
 
 ### ECU Addresses (OBD — polled)

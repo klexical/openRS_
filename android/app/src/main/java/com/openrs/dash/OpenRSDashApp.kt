@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.update
  * Application singleton.
  *
  * Holds the shared VehicleState flow that the CanDataService writes to
- * and both the phone UI and Android Auto screens observe.
+ * and all UI composables observe.
  */
 class OpenRSDashApp : Application() {
 

@@ -48,9 +48,8 @@ OBD queries are grouped by ECU and sent at fixed intervals defined in `ObdConsta
 
 | ECU | Interval | Parameters |
 |-----|----------|------------|
-| PCM (Mode 22) | 10 s | ETC, WGDC, KR, OAR, charge air temp, catalyst temp |
-| Broadcast (Mode 1) | 30 s | Calc load, fuel trims, timing, baro, O2, AFR |
-| BCM (Mode 22) | 30 s | Odometer, battery SOC, battery temp, cabin temp |
+| PCM (Mode 22) | 30 s | ETC, WGDC, KR, OAR, charge air temp, catalyst temp, battery voltage (Mode 01 0x42) |
+| BCM (Mode 22) | 30 s | Odometer, battery SOC, battery temp, cabin temp, **TPMS LF/RF/LR/RR** (0x2813–0x2816) |
 | AWD module | 30 s | RDU oil temp |
 
 ### Connection Architecture
