@@ -2,7 +2,7 @@
 
 ## WiCAN-USB-C3 Adapter
 
-openRS_ connects to a [MeatPi WiCAN-USB-C3](https://www.mouser.ca/ProductDetail/MeatPi/WICAN-USB-C3?qs=rQFj71Wb1eVDX2eEy0FC7A%3D%3D) USB-CAN adapter via Wi-Fi (primary) or BLE (Android Auto Wireless fallback).
+openRS_ connects to a [MeatPi WiCAN-USB-C3](https://www.mouser.ca/ProductDetail/MeatPi/WICAN-USB-C3?qs=rQFj71Wb1eVDX2eEy0FC7A%3D%3D) USB-CAN adapter via Wi-Fi (primary) or BLE (fallback when WiFi is unavailable).
 
 ### Hardware Specifications
 
@@ -19,7 +19,7 @@ openRS_ connects to a [MeatPi WiCAN-USB-C3](https://www.mouser.ca/ProductDetail/
 | **RoHS** | Compliant |
 | **Price (CAD)** | ~$64.47 (qty 1) |
 
-> **Android Auto Wireless note:** When using an AAWireless dongle, your phone's WiFi radio is occupied by the AA connection and cannot simultaneously connect to WiCAN's hotspot. The openRS_ firmware exposes a BLE GATT data service as a fallback — the app automatically switches between WiFi and BLE depending on what's reachable. No manual switching required.
+> **BLE fallback note:** If your phone's WiFi radio is occupied (e.g. by a wireless projection dongle), the openRS_ firmware exposes a BLE GATT data service as a fallback — the app can connect over BLE when WiFi isn't available. No manual switching required.
 
 ### Configuration
 
@@ -89,7 +89,7 @@ For drive mode control, ESC write, Launch Control, BLE transport, and Auto-disco
 | Firmware | Use case | Download |
 |----------|----------|----------|
 | Official WiCAN | Basic PID telemetry (first test) | [GitHub Releases](https://github.com/meatpiHQ/wican-fw/releases/latest) |
-| **openrs-fw v1.0** | Full openRS_ feature set | [openRS_ Releases](https://github.com/klexical/openRS_/releases) |
+| **openrs-fw v1.3** | Full openRS_ feature set | [openRS_ Releases](https://github.com/klexical/openRS_/releases) |
 
 See the [Firmware Update Guide](firmware-update.md) for step-by-step flashing instructions with screenshots.
 
@@ -109,11 +109,6 @@ See the [Firmware Update Guide](firmware-update.md) for step-by-step flashing in
 
 openRS uses the HS-CAN bus (pins 6/14) for all data. The standard WiCAN connects to HS-CAN automatically.
 
-## Tested Head Units
+## OBD-II Port Location
 
-| Unit | Type | AA Connection | Status |
-|------|------|---------------|--------|
-| Ford Sync 3 | OEM | USB | ✅ Works |
-| Kenwood DMX907S | Aftermarket | USB + Wireless | ✅ Works |
-| Pioneer DMH-WT76NEX | Aftermarket | USB | ✅ Works |
-| Android Auto DHU | Desktop emulator | ADB | ✅ Works (dev only) |
+The Focus RS MK3 OBD-II port is under the steering column, to the left of the hood release lever. The WiCAN's angled connector faces down to avoid knee contact.

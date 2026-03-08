@@ -121,11 +121,11 @@ Do NOT mix these files with the stock firmware package.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   In the web UI at http://192.168.80.1 → Settings:
-    Protocol:   elm327
-    Port Type:  TCP
-    Port:       3333
     CAN Speed:  500 kbps
     Sleep Mode: Enabled  (voltage threshold ~13.1V)
+
+  openRS_ connects via WebSocket (ws://192.168.80.1:80/ws) — the
+  Protocol/Port settings in the web UI do not affect the app.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   FUTURE UPDATES (OTA)

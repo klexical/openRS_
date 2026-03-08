@@ -1,5 +1,7 @@
 # Android Auto Custom UI: aa-torque vs Official Templates (Research)
 
+> **Note:** Android Auto support was removed from openRS_ in v2.0.1. This document is preserved as research for potential future AA integration. See the [Roadmap](../README.md#roadmap) for current plans.
+
 This document summarizes how **aa-torque** ([agronick/aa-torque](https://github.com/agronick/aa-torque)) achieves a “fully customizable” Android Auto UI (themes, multiple dashboards, custom gauges, expressions) and how that differs from the **official AndroidX Car App Library** approach used by openRS.
 
 ---

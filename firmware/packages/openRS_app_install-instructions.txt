@@ -1,6 +1,6 @@
 ╔══════════════════════════════════════════════════════════════════╗
 ║          openRS_ Android App  —  Install Instructions           ║
-║          v1.0.2  |  Requires Android 9+ (API 28)                ║
+║          v2.2.1  |  Requires Android 9+ (API 28)                ║
 ╚══════════════════════════════════════════════════════════════════╝
 
 This app is sideloaded — it is not on the Play Store and must be
@@ -10,15 +10,7 @@ installed manually onto your Android phone.
   FILES IN THIS PACKAGE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  openRS_-v1.0.2.apk   —   The Android application
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  WHAT'S NEW IN v1.0.2
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  ATMA frame parsing fix: WiCAN ELM327 outputs CAN frames with spaces.
-  The app now strips spaces before parsing, so all gauge telemetry
-  (RPM, boost, speed, AWD, temps, etc.) is received and displayed.
+  openRS_v2.2.1.apk   —   The Android application
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   REQUIREMENTS
@@ -27,9 +19,8 @@ installed manually onto your Android phone.
   - Android phone running Android 9.0 (Pie) or later
   - "Unknown sources" / "Install unknown apps" enabled (see below)
   - MeatPi WiCAN-USB-C3 plugged into the Focus RS OBD-II port
-  - WiCAN configured with ELM327 TCP on port 3333
+  - Phone connected to the WiCAN Wi-Fi hotspot
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   STEP 1 — ENABLE UNKNOWN SOURCES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -55,7 +46,7 @@ installed manually onto your Android phone.
   1. Connect your phone to your computer with a USB cable
   2. On the phone, swipe down → tap "Android System — Charging
      this device via USB" → select "File Transfer"
-  3. Copy openRS_-v1.0.2.apk to your phone's Downloads folder
+  3. Copy openRS_v2.2.1.apk to your phone's Downloads folder
   4. On the phone, open Files / My Files → Downloads
   5. Tap the APK → Install
 
@@ -67,55 +58,37 @@ installed manually onto your Android phone.
   Method C — ADB (if USB debugging is enabled):
   1. Connect phone to computer via USB with USB debugging enabled
   2. Run in terminal:
-       adb install openRS_-v1.0.2.apk
+       adb install openRS_v2.2.1.apk
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   STEP 3 — FIRST LAUNCH SETUP
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  1. Open the openRS_ app
-  2. Tap the ⚙ settings icon (top right of the header)
-  3. Set WiCAN Host: 192.168.80.1
-     Set WiCAN Port: 3333
-  4. Tap Save
-  5. Connect your phone's Wi-Fi to the WiCAN network:
+  1. Connect your phone's Wi-Fi to the WiCAN network:
        SSID:     WiCAN_XXXXXX  (or openRS_XXXXXX if using openrs-fw)
        Password: @meatpi#      (or openrs2024 for openrs-fw)
-  6. The app auto-connects within a few seconds once the car is on
+  2. Open the openRS_ app
+  3. The app auto-connects via WebSocket (ws://192.168.80.1:80/ws)
+     and begins streaming CAN data at ~2100 fps
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ANDROID AUTO SETUP
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  openRS_ supports Android Auto with a custom full-screen UI that
-  is identical to the phone app.
-
-  Requirements:
-  - Android Auto installed on your phone
-  - "Unknown sources" enabled in Android Auto developer settings:
-    1. Open Android Auto → three-dot menu → About
-    2. Tap the version number 10 times to unlock developer mode
-    3. Three-dot menu → Developer settings
-    4. Enable "Unknown sources"
-  - AA Wireless dongle (optional) or wired USB connection
-
-  Once installed and "Unknown sources" is enabled in AA, the
-  openRS_ app will appear in the Android Auto launcher.
+  If your WiCAN uses a different IP (e.g. client mode), update it in
+  the app: Settings → WiCAN Host / Port.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   WHAT'S IN THE APP
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  7 screens (Phone + Android Auto):
+  6 tabs:
 
-  DASH   Boost, RPM, speed, gear, throttle, AWD split, temps, G-forces
-  AWD    GKN Twinster detail — L/R torque bars, 4-corner wheel speeds
-  PERF   G-force peaks, yaw, steering with reset
-  TEMPS  8 temperature sensors with colour-coded warnings + Ready to Race
-  TUNE   AFR, ETC, TIP, WGDC, VCT, knock, fuel trims, timing advance
-  TPMS   4-corner tire pressure (PSI) + temperature
-  CTRL   Drive mode (N/S/T/D), ESC, Launch Control, ASS kill
-         (write controls require openrs-fw)
+  DASH     Boost, RPM, speed, throttle, brake, AWD split, temps, G-forces
+  POWER    AFR (actual/desired/lambda), ETC, TIP, WGDC, VCT, knock, fuel trims
+  CHASSIS  AWD detail — L/R torque, 4 wheel speeds, G-force, yaw, TPMS
+  TEMPS    10 temperature sensors with colour-coded warnings + Ready to Race
+  DIAG     DTC scan/clear (5 modules), session diagnostics, SLCAN log, ZIP export
+  MORE     Drive mode (N/S/T/D), ESC, firmware features (LC, ASS), snapshot
+
+  TRIP overlay accessible from the app header — GPS recording, OSM map,
+  weather, peak markers, trip summary + share (GPX/CSV/TXT ZIP).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   MORE INFO
@@ -124,4 +97,3 @@ installed manually onto your Android phone.
   Project:         https://github.com/klexical/openRS_
   Live emulator:   https://klexical.github.io/openRS_
   Hardware guide:  https://github.com/klexical/openRS_/blob/main/android/docs/hardware-setup.md
-  AA setup guide:  https://github.com/klexical/openRS_/blob/main/android/docs/android-auto-setup.md

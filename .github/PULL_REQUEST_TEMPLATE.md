@@ -9,9 +9,9 @@ Brief description of the changes.
 
 ## Testing
 - [ ] Tested on phone UI
-- [ ] Tested on Android Auto
 - [ ] Tested with real WiCAN + Focus RS
 - [ ] Unit tests pass (`./gradlew test`)
+- [ ] Browser emulator updated (if UI changed)
 
 ## New PIDs (if applicable)
 | PID | ECU | Mode | Formula | Source |

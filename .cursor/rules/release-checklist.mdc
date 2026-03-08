@@ -18,30 +18,31 @@ Every time a new app version is released (versionName bump in `build.gradle.kts`
 - OBD polling table: reflect any new/removed PIDs or formula changes
 - Feature descriptions: update if any features were added or removed
 
-## 3. Both Emulators — MUST update BOTH files every release
+## 3. Browser Emulator
 
-Files: `docs/index.html` (phone emulator) **and** `android/browser-emulator/index.html` (Android Auto emulator)
+File: `android/browser-emulator/index.html`
 
-These two files are mirrors of the app UI. Every visible change to the app **must** be reflected in both emulators in the same commit/release. Check each category:
+This file mirrors the app UI. Every visible change to the app **must** be reflected in the emulator in the same commit/release. Check each category:
 
-- **Version badge** — update `openRS_ vX.Y.Z` text in the `<div class="version-badge">` of both files
-- **Data cell labels** — if any `dc-label` text changed in the app (e.g. "FUEL RAIL" → "HP FUEL"), update it in both emulators
-- **New widgets / rows** — if a new row was added to any tab (e.g. odometer row, new data cell), add matching HTML in both emulators
-- **Removed widgets** — if something was removed from the app (e.g. gear display), remove it from both emulators too
-- **Hamburger drawer sections** — if a new section was added (e.g. "Module Status"), add it to both emulators; if a section heading changed, update it in both
-- **Feature cards** — if a Features card was added, renamed, or its locked/unlocked state changed, reflect that in both emulators
+- **Version badge** — update `openRS_ vX.Y.Z` text in the `<div class="version-badge">`
+- **Data cell labels** — if any `dc-label` text changed in the app (e.g. "FUEL RAIL" → "HP FUEL"), update it in the emulator
+- **New widgets / rows** — if a new row was added to any tab (e.g. odometer row, new data cell), add matching HTML in the emulator
+- **Removed widgets** — if something was removed from the app (e.g. gear display), remove it from the emulator too
+- **Hamburger drawer sections** — if a new section was added (e.g. "Module Status"), add it to the emulator; if a section heading changed, update it
+- **Feature cards** — if a Features card was added, renamed, or its locked/unlocked state changed, reflect that in the emulator
 - **TPMS decimal places** — `displayTire()` must use `.toFixed(1)` for PSI to match the app
 - **Demo data** — simulated values should reflect real-world plausible readings
-- **`toggleOdom()` or any new JS toggle** — if a new interactive element was added to the app, add matching JS in both emulators
+- **`toggleOdom()` or any new JS toggle** — if a new interactive element was added to the app, add matching JS in the emulator
 
 ## 4. Firmware (if firmware also changed)
 - `firmware/CHANGELOG.md` or release notes must be written
 - Firmware version bumped in `focusrs.h` (`OPENRS_FW_VERSION`)
+- `firmware/patches/apply_patches.py` — `OPENRS_FW_VERSION` must match `focusrs.h`
 - Compiled binaries must be rebuilt and placed in `firmware/release/`
 - A separate `fw-vX.Y.Z` GitHub release must be created with all 4 flash files
 
 ## 5. GitHub Release
-- App release tagged `vX.Y.Z` with `openRS_vX.Y.Z.apk` attached
+- App release tagged `android-vX.Y.Z` with `openRS_vX.Y.Z.apk` attached
 - Release notes summarise every user-visible change
 - If firmware changed, reference the firmware release in the app release notes
 
@@ -50,6 +51,6 @@ Before creating the release, ask:
 - [ ] Does `versionName` in `build.gradle.kts` match the CHANGELOG entry?
 - [ ] Does the README version badge match?
 - [ ] Does the emulator match the app UI?
-- [ ] Are any removed widgets also removed from the emulator header?
+- [ ] Are any removed widgets also removed from the emulator?
 - [ ] Are any formula changes reflected in the emulator and README?
 - [ ] Is the APK attached to the GitHub release?

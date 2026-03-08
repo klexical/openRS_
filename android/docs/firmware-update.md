@@ -1,6 +1,6 @@
 # openrs-fw Firmware Update Guide
 
-> **openrs-fw v1.0 has been built.** Release binaries are in `firmware/release/` in this repository.
+> **openrs-fw v1.3** is the current release. Binaries are in `firmware/release/` in this repository.
 > Source code: `https://github.com/klexical/openRS_/tree/main/firmware`
 
 This guide covers flashing `openrs-fw` — the custom Focus RS firmware — onto your MeatPi WiCAN-USB-C3.
@@ -180,12 +180,11 @@ After flashing, verify these settings in the **Settings** tab at `http://192.168
 
 | Setting | Required Value |
 |---------|----------------|
-| Protocol | `elm327` |
-| Port Type | `TCP` |
-| Port | `3333` |
 | WiFi Mode | `AP` (Access Point) |
 | CAN Speed | `500 kbps` |
-| BLE | `Disabled` (AP mode — enable only if using BLE transport) |
+| BLE | `Disabled` (unless using BLE transport) |
+
+> **Note:** openRS_ connects via **WebSocket on port 80** (`ws://192.168.80.1:80/ws`), not the ELM327 TCP port (3333). The protocol/port settings in the WiCAN web UI do not affect the WebSocket endpoint.
 
 If anything differs, update and press **Submit changes** — the device reboots automatically.
 
@@ -193,7 +192,7 @@ If anything differs, update and press **Submit changes** — the device reboots 
 
 ---
 
-## Installing openrs-fw v1.0
+## Installing openrs-fw
 
 The process is identical to the stock flash above — use the openrs-fw release files from `firmware/release/`:
 
@@ -226,7 +225,7 @@ Once openrs-fw is running, all future updates use **OTA via the web UI** — no 
 
 ## What openrs-fw adds
 
-| Feature | Stock WiCAN | openrs-fw v1.0 |
+| Feature | Stock WiCAN | openrs-fw |
 |---------|-------------|----------------|
 | ELM327 TCP passthrough | ✅ | ✅ |
 | CAN ATMA monitor mode | ✅ | ✅ |

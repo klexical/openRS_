@@ -1,6 +1,6 @@
 # OBD PID Reference — Ford Focus RS MK3
 
-Complete reference for all OBD-II parameters used by openRS_ (current as of v1.2.0).
+Complete reference for all OBD-II parameters used by openRS_ (current as of v2.2.1).
 
 ## ECU Address Map
 
@@ -66,11 +66,9 @@ The following PCM Mode 22 PIDs are polled by the app every 10 seconds via ISO-TP
 
 Sensors transmit only when wheels are rolling. If all four bytes are zero, the TPMS ECU has not sent data yet. The decoder ignores raw 0 values.
 
-## Mode 22 — BCM (Header: 0x726) — future OBD polling targets
+## Mode 22 — BCM (Header: 0x726)
 
-> These PIDs require OBD queries to the BCM (`ATSH000726`). Not currently polled by the app — passive CAN covers TPMS. Documented as future polling targets.
-
-### New PIDs (MeatPi vehicle profile — not yet implemented)
+> These PIDs are polled every 30 seconds via ISO-TP over SLCAN (request `0x726` → response `0x72E`).
 
 | PID | Name | Request | Bytes | Formula | Unit | Notes |
 |-----|------|---------|-------|---------|------|-------|
@@ -116,6 +114,3 @@ All formulas re-validated against DigiCluster `can0_hs.json` and `can1_ms.json`.
 | 0x340 | TPMS LF/RF/LR/RR | bytes 2-5 direct PSI | DigiCluster MS-CAN bridged |
 | 0x34A | Fuel level % | `B2×100/255` | DigiCluster HS-CAN |
 | 0x3C0 | Battery voltage | `word(B2-B3)×0.001 V` | DigiCluster HS-CAN |
-| 6 | Every 6th | ~1.5s / 0.67 Hz | TPMS (8 PIDs), Oil Life |
-
-BCM PIDs (TPMS) are all priority 6 to minimize expensive header switches (~100ms per `ATSH` command).

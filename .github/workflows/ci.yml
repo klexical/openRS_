@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, staging ]
   pull_request:
     branches: [ main ]
 
@@ -10,6 +10,9 @@ jobs:
   build:
     name: Build & Test
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
 
     steps:
       - name: Checkout
@@ -35,12 +38,15 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: openRS-debug
-          path: app/build/outputs/apk/debug/*.apk
+          path: android/app/build/outputs/apk/debug/*.apk
           retention-days: 14
 
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
 
     steps:
       - name: Checkout
@@ -61,6 +67,9 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     needs: [ build, lint ]
+    defaults:
+      run:
+        working-directory: android
 
     steps:
       - name: Checkout
@@ -80,5 +89,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: openRS-release
-          path: app/build/outputs/apk/release/*.apk
+          path: android/app/build/outputs/apk/release/*.apk
           retention-days: 30

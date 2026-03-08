@@ -25,7 +25,7 @@ Copy `openrs-release.jks` and `keystore.properties` into the `android/` director
 ```bash
 cd android
 ./gradlew assembleRelease
-# Output: app/build/outputs/apk/release/app-release.apk  (signed)
+# Output: app/build/outputs/apk/release/openRS_vX.Y.Z.apk  (signed)
 ```
 
 > **Keep the keystore backed up.** If you lose it, any existing installs cannot be updated in-place — Android ties APK updates to the signing certificate.

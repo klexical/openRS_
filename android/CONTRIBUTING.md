@@ -1,14 +1,14 @@
-# Contributing to openRS
+# Contributing to openRS_
 
-Thanks for your interest in contributing to openRS! This project aims to give Focus RS owners the telemetry dashboard Ford never made.
+Thanks for your interest in contributing to openRS_! This project aims to give Focus RS owners the telemetry dashboard Ford never made.
 
 ## Getting Started
 
 1. **Fork** the repository and clone your fork
-2. Create a **feature branch** from `main`: `git checkout -b feature/your-feature`
+2. Create a **feature branch** from `staging`: `git checkout -b feature/your-feature`
 3. Make your changes
 4. **Test** on a real device if possible (especially CAN/OBD changes)
-5. Submit a **pull request** against `main`
+5. Submit a **pull request** against `staging`
 
 ## Development Environment
 
@@ -29,10 +29,11 @@ Thanks for your interest in contributing to openRS! This project aims to give Fo
 ### Adding a New OBD PID
 
 1. Add the field to `VehicleState.kt` with a sensible default
-2. Add the `ObdPid` entry in `ObdPids.kt` with the correct header, priority, and parse function
-3. Add the merge line in `CanDataService.kt` → `onObdUpdate`
-4. Add UI display in the appropriate screen(s)
-5. Document the PID in `docs/pid-reference.md`
+2. Add the query string to `ObdConstants.kt` in the appropriate ECU query array (e.g. `PCM_QUERIES`, `BCM_QUERIES`)
+3. Add the response parser in `ObdResponseParser.kt` (e.g. inside `parsePcmResponse()` or `parseBcmResponse()`)
+4. Wire the merge in `CanDataService.kt` → `mergeObdState()`
+5. Add UI display in the appropriate tab composable
+6. Document the PID in `docs/pid-reference.md`
 
 ### Adding a New CAN Frame
 
@@ -41,24 +42,32 @@ Thanks for your interest in contributing to openRS! This project aims to give Fo
 3. Add the decode case in the `when` block
 4. Add the field(s) to `VehicleState.kt`
 
-### Priority Levels for OBD PIDs
+### OBD Polling Intervals
 
-| Priority | Update Rate | Use For |
-|----------|-------------|---------|
-| 1 | Every cycle (~250ms) | Fast-changing: AFR, throttle, boost |
-| 2 | Every 2nd cycle (~500ms) | Moderate: fuel trims, timing, WGDC |
-| 3 | Every 3rd cycle (~750ms) | Slow: temperatures, O2, barometric |
-| 6 | Every 6th cycle (~1.5s) | Very slow: TPMS, oil life |
+OBD queries are grouped by ECU and sent at fixed intervals defined in `ObdConstants.kt`:
 
-### Multi-ECU Notes
+| ECU | Interval | Parameters |
+|-----|----------|------------|
+| PCM (Mode 22) | 10 s | ETC, WGDC, KR, OAR, charge air temp, catalyst temp |
+| Broadcast (Mode 1) | 30 s | Calc load, fuel trims, timing, baro, O2, AFR |
+| BCM (Mode 22) | 30 s | Odometer, battery SOC, battery temp, cabin temp |
+| AWD module | 30 s | RDU oil temp |
 
-Switching ELM327 headers (`ATSH`) costs ~100ms. Always group PIDs by ECU and avoid unnecessary header switches. BCM queries (TPMS) should be priority 6 to minimize switches.
+### Connection Architecture
+
+openRS_ connects to the WiCAN adapter via **WebSocket SLCAN** (`ws://192.168.80.1:80/ws`). The app sends SLCAN init commands (`C` / `S6` / `O`) on connect and receives passive CAN frames at ~2100 fps. OBD queries are sent as SLCAN transmit frames interleaved with the passive stream.
+
+Two adapter backends exist:
+- `WiCanConnection.kt` — WebSocket SLCAN (MeatPi WiCAN)
+- `MeatPiConnection.kt` — Raw TCP SLCAN (MeatPi WiCAN Pro, `192.168.0.10:35000`)
+
+Both share `ObdConstants.kt`, `ObdResponseParser.kt`, `SlcanParser.kt`, and `AdapterState.kt`.
 
 ## Pull Request Checklist
 
 - [ ] Code builds without warnings
 - [ ] New PIDs are documented with formula source
-- [ ] UI changes work on both phone and Android Auto
+- [ ] UI changes tested on phone
 - [ ] No hardcoded strings (use `strings.xml` for user-visible text)
 - [ ] Commit messages are descriptive
 
@@ -66,14 +75,16 @@ Switching ELM327 headers (`ATSH`) costs ~100ms. Always group PIDs by ECU and avo
 
 Please include:
 - Device model and Android version
-- WiCAN firmware version
+- WiCAN firmware version (stock or openrs-fw)
 - Which screen/tab the issue occurs on
 - Relevant logcat output (`adb logcat -s openRS`)
 
 ## PID Research
 
 We especially need help with:
+- **12V battery voltage** — CAN ID 0x3C0 formula needs live verification
 - **Tire temperature PIDs** (0x2823–0x2826): These are educated guesses. If you have FORScan, please verify!
+- **Brake pressure calibration** — CAN ID 0x252 raw ADC 0–4095, need reference-pressure data
 - **MS-CAN parameters**: Accessible on the medium-speed bus at 125 kbps
 - **Additional BCM/IPC PIDs**: The BCM has hundreds of PIDs we haven't mapped
 

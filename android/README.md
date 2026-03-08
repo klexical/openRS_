@@ -167,13 +167,13 @@ All display preferences are configurable and persist across restarts:
 git clone https://github.com/klexical/openRS_.git
 cd openRS_/android
 ./gradlew assembleRelease
-# Output: app/build/outputs/apk/release/app-release.apk
+# Output: app/build/outputs/apk/release/openRS_v2.2.1.apk
 # (Requires keystore — see docs/signing-setup.md)
 ```
 
 ### Browser Emulator (no hardware required)
 
-Open `docs/index.html` in any browser, or visit the live version:
+Open `browser-emulator/index.html` in any browser, or visit the live version:
 
 **[klexical.github.io/openRS_](https://klexical.github.io/openRS_)**
 
@@ -346,20 +346,45 @@ Full PID documentation: [`docs/pid-reference.md`](docs/pid-reference.md)
 
 ## Roadmap
 
+### Completed
+
 - [x] Phase 1 — CAN sniffing + basic OBD (v1.0)
 - [x] Phase 2 — Hybrid ATMA+OBD (v2.0)
 - [x] Phase 2.5 — TPMS+, AFR, ETC/TIP/WGDC, VCT, multi-ECU polling (v2.5)
 - [x] Phase 2.6 — Nitrous Blue/Frost White theme, openRS_ branding, live browser emulator
-- [x] Phase 2.7 — WebSocket SLCAN rewrite (~2100 fps), user settings, diagnostics export, firmware detection (v1.1.0)
+- [x] Phase 2.7 — WebSocket SLCAN rewrite (~2100 fps), user settings, diagnostics export, firmware detection (fw-v1.1.0)
 - [x] Phase 2.8 — DBC-verified signal corrections, BCM/AWD polling, IAT, ambient, wheel speeds, SLCAN raw log + per-ID sampling (v1.1.1–v1.1.5)
 - [x] Phase 2.9 — TPMS formula fix, firmware detection timing fix, app version in logs (v1.1.6)
 - [x] Phase 3 — Full UI redesign: 6-tab layout, new fonts, new CAN signals (steering, yaw, brake), PCM Mode 22 polling, updated RTR thresholds (v1.2.0)
-- [ ] Phase 4 — UDS Fast Rate Session (~100 Hz via DDDI 0x2C) — high-frequency AFR, boost, load
-- [ ] Phase 5 — Brake pressure bar calibration from live log data
-- [x] Phase 6 — DTC scanning (bundled 873-code Ford DTC database, full-module scan + clear) (v2.2.0)
-- [x] Phase 7 — CSV data logging + ZIP export (v2.2.0)
-- [ ] Phase 8 — Track map overlay with GPS correlation
-- [ ] Phase 9 — MeatPi Pro GPS integration
+- [x] Phase 4 — Trip recording: GPS trip page with OSM map (CartoDB Dark Matter), weather overlay via OpenWeatherMap, speed-colored polyline, peak markers (RPM, boost, lateral G), RTR marker, live telemetry HUD, trip summary (v2.1.0)
+- [x] Phase 5 — UI architecture split: per-tab composables (`DashPage`, `PowerPage`, `ChassisPage`, `TempsPage`, `DiagPage`, `MorePage`), shared `Theme.kt` and `Components.kt`, share trip export (v2.2.0)
+- [x] Phase 6 — DTC scanning: bundled 873-code Ford DTC database, full-module scan (PCM, BCM, ABS, AWD, PSCM) + clear via UDS 0x19/0x14 (v2.2.1)
+- [x] Phase 7 — Data export + MeatPi Pro: trip ZIP (GPX/CSV/TXT), diagnostics ZIP (SLCAN/JSON), raw TCP SLCAN adapter support (`192.168.0.10:35000`), adapter selection in settings (v2.2.1)
+
+### Planned
+
+- [ ] Phase 8 — Polish and sensor gaps (v2.3.x)
+  - BLE transport in Android app (firmware GATT bridge exists in `ble_transport.c`, app needs `BleConnection.kt`)
+  - 12V battery voltage PID — CAN ID 0x3C0 in table but not decoded; formula needs live verification
+  - Tire temperature PIDs (0x2823–0x2826) — listed in `pid-reference.md` as unverified, formula `A − 40 °C`
+  - Brake pressure bar calibration — CAN ID 0x252 raw ADC 0–4095, needs reference-pressure data for PSI mapping
+- [ ] Phase 9 — Track day intelligence (v2.4.x)
+  - Lap timer with geofence start/finish — auto-detect lap crossings, display lap times and deltas
+  - Track map overlay enhancements — selectable data channel for polyline coloring (boost, G-force, throttle), sector timing, post-session replay/scrubber
+  - Trip comparison — overlay two recorded trips for side-by-side analysis (best lap vs. current, before/after tune)
+- [ ] Phase 10 — Hardware expansion (v2.5.x)
+  - MeatPi Pro GPS integration — feed onboard GPS into `TripRecorder` as an alternative to phone GPS
+  - MS-CAN support — second adapter on MS-CAN bus for additional BCM parameters, HVAC, instrument cluster data
+- [ ] Phase 11 — High-frequency telemetry (v3.x)
+  - UDS Fast Rate Session — DynamicallyDefineDataIdentifier (0x2C) to group AFR, boost, load into a composite DID, then ReadDataByPeriodicIdentifier (0x2A) at ~100 Hz
+  - Ring-buffer sampling in `VehicleState` for high-rate UI updates
+  - Prototype on a single DID first, then expand
+
+### Future / Exploratory
+
+- Android Auto — official AndroidX Car App (template-based, Play Store friendly), unofficial aauto-sdk (full custom UI, requires sideloading), or hybrid. See [`android-auto-custom-ui-research.md`](docs/android-auto-custom-ui-research.md)
+- Data streaming to external apps — expose live telemetry via local broadcast or content provider for RaceChrono, Harry's LapTimer, etc.
+- Video overlay export — combine trip data with dashcam footage, burn telemetry gauges into video frames
 
 ---
 
@@ -368,6 +393,7 @@ Full PID documentation: [`docs/pid-reference.md`](docs/pid-reference.md)
 Pull requests welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 If you have a Focus RS and FORScan/OBDLink, we'd love help verifying:
+- 12V battery voltage — CAN ID 0x3C0 formula (`byte0 × 0.1 V` vs `word(B2-B3) × 0.001 V`)
 - Brake pressure bar calibration (raw ADC 0–4095 from `0x252`, need known-pressure reference)
 - Tire temperature PIDs (0x2823–0x2826) — currently experimental
 - Additional BCM Mode 22 PIDs

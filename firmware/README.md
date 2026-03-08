@@ -4,7 +4,7 @@ Custom ESP32-C3 firmware for the MeatPi WiCAN-USB-C3, purpose-built for the Ford
 
 Forked from [`meatpiHQ/wican-fw`](https://github.com/meatpiHQ/wican-fw) — the proven WiFi/CAN/OTA stack is retained and a Focus RS module is layered on top.
 
-**Current status:** v1.0 built and packaged — release binaries in `firmware/release/`.
+**Current status:** v1.3.0 — release binaries in `firmware/release/`.
 
 ---
 
@@ -25,7 +25,7 @@ Forked from [`meatpiHQ/wican-fw`](https://github.com/meatpiHQ/wican-fw) — the 
 - **Launch Control enable/disable**
 - **Auto Start/Stop kill**
 - **BLE GATT transport** — exposes ELM327 stream over BLE 5.0
-  - Auto-selected by the openRS_ app when WiFi is occupied (AA Wireless)
+  - Fallback when the phone's WiFi radio is occupied (e.g. wireless projection)
   - Coexists with WiFi — both active simultaneously
 - **Battery protection** — configurable voltage threshold (default 12.2V) for sleep mode
 - **Battery voltage REST API** (`GET /status` → includes `battery_mv`)
@@ -194,6 +194,22 @@ firmware/
 └── docs/
     └── BUILDING.md              ← detailed build environment setup
 ```
+
+---
+
+## Roadmap
+
+### fw-v1.4.x — Verification and Stability
+
+- **ESC write frame capture and implementation** — `frs_set_esc()` in `focusrs.c` is stubbed pending empirical CAN frame capture from a live vehicle
+- **Drive mode 0x1B0 write template completion** — full 8-byte frame template needs capture from a live car (non-button bytes)
+- **BLE stability improvements** — test coexistence under sustained high-throughput CAN + BLE + WiFi load
+
+### fw-v2.x — Expanded Capability
+
+- **Dual-CAN (MS-CAN)** — add MS-CAN at 125 kbps alongside HS-CAN at 500 kbps (if WiCAN Pro hardware supports dual TWAI)
+- **On-device data logging** — log CAN frames to onboard flash/SD for post-session retrieval without a connected phone
+- **GPS passthrough** — for MeatPi Pro, relay onboard GPS coordinates to the Android app over the existing WebSocket/TCP channel
 
 ---
 

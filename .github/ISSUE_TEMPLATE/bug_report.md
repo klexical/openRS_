@@ -24,8 +24,7 @@ What actually happened.
 - **Phone**: (e.g., Pixel 8 Pro)
 - **Android version**: (e.g., Android 15)
 - **WiCAN firmware**: (e.g., v3.47)
-- **Head unit** (if AA): (e.g., Sync 3, Kenwood DMX)
-- **openRS version**: (e.g., 2.5.0)
+- **openRS_ version**: (e.g., v2.2.1)
 - **Car model year**: (e.g., 2017 Focus RS)
 
 ## Logcat Output
