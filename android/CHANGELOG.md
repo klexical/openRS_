@@ -5,6 +5,48 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
+## [v2.2.1] — 2026-03-08
+
+### Added
+
+- **DTC Scanner**: New section at the top of the DIAG tab — tap "SCAN ALL MODULES" to query PCM, BCM, ABS, AWD, and PSCM for active, pending, and permanent fault codes via UDS Service 0x19. Results show each code, its description (from a bundled 873-code database), and fault status. Multi-module ISO-TP assembly with flow-control handles responses of any length.
+- **DTC Clear Fault Codes**: "CLEAR FAULT CODES (0x14)" button appears in the DIAG tab after a scan returns results. Sends UDS Service 0x14 (ClearDiagnosticInformation, group 0xFFFFFF) to all five ECUs and reports per-module acknowledgement (✓/✗). Results are auto-dismissed after a successful clear.
+- **DTC database**: 873 Ford-specific DTC descriptions bundled as `res/raw/dtc_database.json`. Loaded once on first scan.
+- **Trip CSV export**: Trip ZIPs now include a `trip_<ts>.csv` alongside the existing GPX and summary text. The CSV has one row per GPS waypoint with 20 columns: timestamp, lat/lng, speed, RPM, gear, boost, temps (coolant, oil, ambient, RDU, PTU), fuel %, all four wheel speeds, lateral G, drive mode, and race-ready flag.
+- **MeatPi Pro adapter support**: `MeatPiConnection.kt` is now fully implemented — raw TCP SLCAN (default `192.168.0.10:35000`), identical OBD polling as WiCAN (BCM, PCM, AWD, extended session), DTC scan and DTC clear support. Adapter selection (WiCAN / MeatPi Pro) added to Settings under a new ADAPTER section.
+- **MeatPi microSD logging reminder**: Settings → ADAPTER → "MicroSD logging reminder" switch — a local note that directs users to enable SD logging via the WiCAN Pro web UI at `http://192.168.0.10/`.
+
+### Changed
+
+- **`CanDataService`**: OBD merge logic extracted to `mergeObdState()` and CAN frame processing to `processCanFrame()` — eliminates duplication between WiCAN and MeatPi paths. Added `clearDtcs()` suspend function (mirrors `scanDtcs()`).
+- **`DiagPage`**: receives `onScanDtcs` and `onClearDtcs` lambdas from `MainActivity`, keeping the composable decoupled from the service.
+- **MeatPi Pro defaults**: corrected default connection to `192.168.0.10:35000` (official WiCAN Pro AP address and SLCAN TCP port). The SLCAN port is user-configurable in the WiCAN Pro web UI; `35000` matches official MeatPi documentation.
+- **MicroSD toggle clarified**: labelled "MicroSD logging reminder" — SD logging is managed in the WiCAN Pro web UI, no SLCAN command exists to enable it remotely.
+- **Settings adapter switch**: switching the adapter picker now auto-populates host/port with the correct defaults for the selected adapter (only when the current value still matches the other adapter's default — custom IPs are preserved).
+- **`DtcModuleSpec`**: moved from nested class in `WiCanConnection` to `com.openrs.dash.data.DtcModuleSpec`, removing the `WiCanConnection` import dependency from `MeatPiConnection` and `DtcScanner`.
+
+### Refactored
+
+- **Shared `AdapterState`**: connection lifecycle sealed class (`Disconnected`, `Connecting`, `Connected`, `Idle`, `Error`) extracted from both `WiCanConnection` and `MeatPiConnection` into `com.openrs.dash.can.AdapterState`. `CanDataService` now references `AdapterState` uniformly instead of adapter-specific inner classes.
+- **Shared `ObdConstants`**: ~120 lines of duplicated OBD query strings, response CAN IDs, and polling intervals extracted into `com.openrs.dash.can.ObdConstants`. Both adapters now reference the single source of truth.
+- **Shared `ObdResponseParser`**: ~150 lines of duplicated OBD response parsers (`parseBcmResponse`, `parseAwdResponse`, `parsePcmResponse`, `parsePscmResponse`, `parseFengResponse`, `parseRsprotResponse`) extracted into `com.openrs.dash.can.ObdResponseParser`. Zero behavioral change — identical formulas, single copy.
+- **Shared `SlcanParser`**: SLCAN frame parsing (`parseStdFrame`, `parseExtFrame`, `parseDataBytes`) extracted into `com.openrs.dash.can.SlcanParser`. Both adapters now call `SlcanParser.parse()`.
+- **Dead `connectionState` removed**: `CanDataService.connectionState` (which only returned WiCAN state regardless of adapter) was unused by any caller — removed.
+- **DTC clear confirmation dialog**: tapping "CLEAR FAULT CODES" now shows a Material 3 `AlertDialog` explaining the action before proceeding. Prevents accidental clears.
+
+### Removed
+
+- **`HardwareAdapter.kt`**: unused interface and `AdapterType` enum (never implemented). `GpsData` data class was also only referenced within this file.
+
+### Fixed
+
+- **`MeatPiConnection` cancel latency**: TCP socket now closes immediately when the coroutine is cancelled (via a cancel-watcher child job), instead of waiting up to 20 s for `soTimeout`. `soTimeout` also reduced from 20 s → 5 s as a secondary safeguard.
+- **DTC clear false-success banner**: "Cleared (0/0)" no longer shown when the `ack` map is empty (all sends failed). Empty or null `ack` now shows the "Clear failed" error.
+- **DTC scan error message**: no longer reads stale captured `vs.isConnected` — now always shows `"Scan failed — check adapter connection"`.
+- **`DiagPage` ghost spacing**: empty `MonoLabel("")` removed; the hint label is now conditionally omitted when the clear-status confirmation box is already visible.
+
+---
+
 ## [v2.2.0] — 2026-03-06
 
 ### Added

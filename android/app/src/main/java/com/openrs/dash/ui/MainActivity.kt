@@ -115,7 +115,12 @@ class MainActivity : ComponentActivity() {
                                             1 -> PowerPage(vs, prefs)
                                             2 -> ChassisPage(vs, prefs, onReset = { service?.resetPeaks() })
                                             3 -> TempsPage(vs, prefs)
-                                            4 -> DiagPage(debugLines, vs)
+                                            4 -> DiagPage(
+                                                debugLines,
+                                                vs,
+                                                onScanDtcs  = service?.let { svc -> { svc.scanDtcs() } },
+                                                onClearDtcs = service?.let { svc -> { svc.clearDtcs() } }
+                                            )
                                             5 -> MorePage(vs, prefs, snackbarHostState, onSettings = { settingsOpen = true })
                                         }
                                     }

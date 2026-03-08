@@ -9,9 +9,15 @@ import android.net.NetworkRequest
 import android.os.Binder
 import android.os.IBinder
 import com.openrs.dash.OpenRSDashApp
+import com.openrs.dash.can.AdapterState
 import com.openrs.dash.can.CanDecoder
+import com.openrs.dash.can.MeatPiConnection
 import com.openrs.dash.can.WiCanConnection
+import com.openrs.dash.data.DtcResult
+import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticLogger
+import com.openrs.dash.diagnostics.DtcScanner
+import com.openrs.dash.ui.AppSettings
 import com.openrs.dash.ui.UserPrefsStore
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -22,17 +28,31 @@ class CanDataService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var connectionJob: Job? = null
 
-    private var wican: WiCanConnection = WiCanConnection()
+    private var wican: WiCanConnection   = WiCanConnection()
+    private var meatpi: MeatPiConnection = MeatPiConnection()
 
-    val connectionState: StateFlow<WiCanConnection.State> get() = wican.state
+    /** True when the currently selected adapter is MeatPi Pro. */
+    private val isMeatPi: Boolean
+        get() = AppSettings.getAdapterType(this) == "MEATPI"
 
     private val cm by lazy { getSystemService(ConnectivityManager::class.java) }
     private var wifiCallback: ConnectivityManager.NetworkCallback? = null
 
     private fun buildWiCan(): WiCanConnection {
-        val s = com.openrs.dash.ui.AppSettings
+        val s = AppSettings
         val autoReconnect = s.getAutoReconnect(this)
         return WiCanConnection(
+            host             = s.getHost(this),
+            port             = s.getPort(this),
+            maxRetries       = if (autoReconnect) 3 else 1,
+            reconnectDelayMs = s.getReconnectInterval(this) * 1_000L
+        )
+    }
+
+    private fun buildMeatPi(): MeatPiConnection {
+        val s = AppSettings
+        val autoReconnect = s.getAutoReconnect(this)
+        return MeatPiConnection(
             host             = s.getHost(this),
             port             = s.getPort(this),
             maxRetries       = if (autoReconnect) 3 else 1,
@@ -43,6 +63,26 @@ class CanDataService : Service() {
     inner class LocalBinder : Binder() {
         fun getService(): CanDataService = this@CanDataService
     }
+
+    /**
+     * Performs a full DTC scan across all Focus RS ECUs.
+     * Suspends for up to ~15 seconds while querying all modules.
+     * Returns an empty list if the adapter is not connected.
+     */
+    suspend fun scanDtcs(): List<DtcResult> =
+        if (isMeatPi) DtcScanner(this).scanMeatPi(meatpi)
+        else          DtcScanner(this).scan(wican)
+
+    /**
+     * Sends UDS Service 0x14 to clear all DTCs from every supported ECU.
+     * Suspends for up to ~12 seconds while waiting for acknowledgements.
+     *
+     * Returns a map of module name → true if that ECU confirmed the clear.
+     * An empty map means the adapter is not connected.
+     */
+    suspend fun clearDtcs(): Map<String, Boolean> =
+        if (isMeatPi) DtcScanner(this).clearDtcsMeatPi(meatpi)
+        else          DtcScanner(this).clearDtcs(wican)
 
     override fun onBind(intent: Intent?): IBinder = binder
 
@@ -98,10 +138,8 @@ class CanDataService : Service() {
     @Synchronized fun startConnection() {
         if (!isOnWifi()) return
         if (connectionJob?.isActive == true) return
-        wican = buildWiCan()
 
-        // Start diagnostic session (logDir enables Option C SLCAN raw log)
-        val s = com.openrs.dash.ui.AppSettings
+        val s = AppSettings
         DiagnosticLogger.sessionStart(
             host   = s.getHost(this),
             port   = s.getPort(this),
@@ -110,93 +148,118 @@ class CanDataService : Service() {
         )
         CanDecoder.resetSessionState()
 
+        if (isMeatPi) {
+            meatpi = buildMeatPi()
+            startMeatPiConnection()
+        } else {
+            wican = buildWiCan()
+            startWiCanConnection()
+        }
+    }
+
+    private fun startWiCanConnection() {
         connectionJob = scope.launch {
             launch {
                 wican.state.collect { state ->
                     OpenRSDashApp.instance.vehicleState.update {
                         it.copy(
-                            isConnected = state is WiCanConnection.State.Connected,
-                            isIdle      = state is WiCanConnection.State.Idle
+                            isConnected = state is AdapterState.Connected,
+                            isIdle      = state is AdapterState.Idle
                         )
                     }
                     DiagnosticLogger.event("STATE", state::class.simpleName ?: "Unknown")
                 }
             }
 
-            // Use hybrid mode: ATMA + OBD PID queries
             wican.connectHybrid(
-                onObdUpdate = { obdState ->
-                    // Merge OBD fields into current state (don't overwrite CAN fields)
-                    OpenRSDashApp.instance.vehicleState.update { current ->
-                        current.copy(
-                            // Mode 1
-                            calcLoad = obdState.calcLoad,
-                            shortFuelTrim = obdState.shortFuelTrim,
-                            longFuelTrim = obdState.longFuelTrim,
-                            timingAdvance = obdState.timingAdvance,
-                            fuelRailPressure = obdState.fuelRailPressure,
-                            barometricPressure = obdState.barometricPressure,
-                            commandedAfr = obdState.commandedAfr,
-                            o2Voltage = obdState.o2Voltage,
-                            afrSensor1 = obdState.afrSensor1,
-                            // Mode 22 — PCM temps
-                            chargeAirTempC = obdState.chargeAirTempC,
-                            manifoldChargeTempC = obdState.manifoldChargeTempC,
-                            octaneAdjustRatio = obdState.octaneAdjustRatio,
-                            catalyticTempC = obdState.catalyticTempC,
-                            // Mode 22 — AFR
-                            afrActual = obdState.afrActual,
-                            afrDesired = obdState.afrDesired,
-                            lambdaActual = obdState.lambdaActual,
-                            // Mode 22 — ETC / TIP / WGDC
-                            etcAngleActual = obdState.etcAngleActual,
-                            etcAngleDesired = obdState.etcAngleDesired,
-                            tipActualKpa = obdState.tipActualKpa,
-                            tipDesiredKpa = obdState.tipDesiredKpa,
-                            wgdcDesired = obdState.wgdcDesired,
-                            // Mode 22 — VCT
-                            vctIntakeAngle = obdState.vctIntakeAngle,
-                            vctExhaustAngle = obdState.vctExhaustAngle,
-                            // Mode 22 — Oil / Knock
-                            oilLifePct = obdState.oilLifePct,
-                            ignCorrCyl1 = obdState.ignCorrCyl1,
-                            // Mode 22 — TPMS (BCM). Use sentinel guard: only overwrite if
-                            // the OBD value is valid (≥ 0). This prevents a BCM response
-                            // captured before the first passive 0x340 frame from resetting
-                            // tire pressures back to the -1.0 default.
-                            tirePressLF = if (obdState.tirePressLF >= 0) obdState.tirePressLF else current.tirePressLF,
-                            tirePressRF = if (obdState.tirePressRF >= 0) obdState.tirePressRF else current.tirePressRF,
-                            tirePressLR = if (obdState.tirePressLR >= 0) obdState.tirePressLR else current.tirePressLR,
-                            tirePressRR = if (obdState.tirePressRR >= 0) obdState.tirePressRR else current.tirePressRR,
-                            tireTempLF = if (obdState.tireTempLF > -90) obdState.tireTempLF else current.tireTempLF,
-                            tireTempRF = if (obdState.tireTempRF > -90) obdState.tireTempRF else current.tireTempRF,
-                            tireTempLR = if (obdState.tireTempLR > -90) obdState.tireTempLR else current.tireTempLR,
-                            tireTempRR = if (obdState.tireTempRR > -90) obdState.tireTempRR else current.tireTempRR,
-                            // BCM OBD Mode 22 — new PIDs (sentinel check: only overwrite if valid)
-                            odometerKm   = if (obdState.odometerKm  >= 0)   obdState.odometerKm   else current.odometerKm,
-                            batterySoc   = if (obdState.batterySoc  >= 0)   obdState.batterySoc   else current.batterySoc,
-                            batteryTempC = if (obdState.batteryTempC > -90) obdState.batteryTempC else current.batteryTempC,
-                            cabinTempC   = if (obdState.cabinTempC  > -90)  obdState.cabinTempC   else current.cabinTempC,
-                            // AWD module Mode 22 — RDU oil temp (default −99.0 sentinel)
-                            rduTempC     = if (obdState.rduTempC > -90)     obdState.rduTempC     else current.rduTempC,
-                        )
-                    }
-                },
+                onObdUpdate = { obdState -> mergeObdState(obdState) },
                 getCurrentState = { OpenRSDashApp.instance.vehicleState.value }
             ).collect { (canId, data) ->
-                // C-3 fix: use .update{} so concurrent OBD writes are never clobbered
-                OpenRSDashApp.instance.vehicleState.update { current ->
-                    val updated = CanDecoder.decode(canId, data, current)
-                    if (updated != null) {
-                        val desc  = CanDecoder.describeDecoded(canId, updated)
-                        val issue = CanDecoder.validateDecoded(canId, updated)
-                        DiagnosticLogger.logFrame(canId, data, updated, desc, issue)
-                        updated.withPeaksUpdated().copy(framesPerSecond = wican.fps)
-                    } else {
-                        DiagnosticLogger.logUnknownFrame(canId, data)
-                        current
+                processCanFrame(canId, data, wican.fps)
+            }
+        }
+    }
+
+    private fun startMeatPiConnection() {
+        connectionJob = scope.launch {
+            launch {
+                meatpi.state.collect { state ->
+                    OpenRSDashApp.instance.vehicleState.update {
+                        it.copy(
+                            isConnected = state is AdapterState.Connected,
+                            isIdle      = state is AdapterState.Idle
+                        )
                     }
+                    DiagnosticLogger.event("STATE", state::class.simpleName ?: "Unknown")
                 }
+            }
+
+            meatpi.connectHybrid(
+                onObdUpdate = { obdState -> mergeObdState(obdState) },
+                getCurrentState = { OpenRSDashApp.instance.vehicleState.value }
+            ).collect { (canId, data) ->
+                processCanFrame(canId, data, meatpi.fps)
+            }
+        }
+    }
+
+    private fun mergeObdState(obdState: VehicleState) {
+        OpenRSDashApp.instance.vehicleState.update { current ->
+            current.copy(
+                calcLoad = obdState.calcLoad,
+                shortFuelTrim = obdState.shortFuelTrim,
+                longFuelTrim = obdState.longFuelTrim,
+                timingAdvance = obdState.timingAdvance,
+                fuelRailPressure = obdState.fuelRailPressure,
+                barometricPressure = obdState.barometricPressure,
+                commandedAfr = obdState.commandedAfr,
+                o2Voltage = obdState.o2Voltage,
+                afrSensor1 = obdState.afrSensor1,
+                chargeAirTempC = obdState.chargeAirTempC,
+                manifoldChargeTempC = obdState.manifoldChargeTempC,
+                octaneAdjustRatio = obdState.octaneAdjustRatio,
+                catalyticTempC = obdState.catalyticTempC,
+                afrActual = obdState.afrActual,
+                afrDesired = obdState.afrDesired,
+                lambdaActual = obdState.lambdaActual,
+                etcAngleActual = obdState.etcAngleActual,
+                etcAngleDesired = obdState.etcAngleDesired,
+                tipActualKpa = obdState.tipActualKpa,
+                tipDesiredKpa = obdState.tipDesiredKpa,
+                wgdcDesired = obdState.wgdcDesired,
+                vctIntakeAngle = obdState.vctIntakeAngle,
+                vctExhaustAngle = obdState.vctExhaustAngle,
+                oilLifePct = obdState.oilLifePct,
+                ignCorrCyl1 = obdState.ignCorrCyl1,
+                tirePressLF = if (obdState.tirePressLF >= 0) obdState.tirePressLF else current.tirePressLF,
+                tirePressRF = if (obdState.tirePressRF >= 0) obdState.tirePressRF else current.tirePressRF,
+                tirePressLR = if (obdState.tirePressLR >= 0) obdState.tirePressLR else current.tirePressLR,
+                tirePressRR = if (obdState.tirePressRR >= 0) obdState.tirePressRR else current.tirePressRR,
+                tireTempLF = if (obdState.tireTempLF > -90) obdState.tireTempLF else current.tireTempLF,
+                tireTempRF = if (obdState.tireTempRF > -90) obdState.tireTempRF else current.tireTempRF,
+                tireTempLR = if (obdState.tireTempLR > -90) obdState.tireTempLR else current.tireTempLR,
+                tireTempRR = if (obdState.tireTempRR > -90) obdState.tireTempRR else current.tireTempRR,
+                odometerKm   = if (obdState.odometerKm  >= 0)   obdState.odometerKm   else current.odometerKm,
+                batterySoc   = if (obdState.batterySoc  >= 0)   obdState.batterySoc   else current.batterySoc,
+                batteryTempC = if (obdState.batteryTempC > -90) obdState.batteryTempC else current.batteryTempC,
+                cabinTempC   = if (obdState.cabinTempC  > -90)  obdState.cabinTempC   else current.cabinTempC,
+                rduTempC     = if (obdState.rduTempC > -90)     obdState.rduTempC     else current.rduTempC,
+            )
+        }
+    }
+
+    private fun processCanFrame(canId: Int, data: ByteArray, fps: Double) {
+        // C-3 fix: use .update{} so concurrent OBD writes are never clobbered
+        OpenRSDashApp.instance.vehicleState.update { current ->
+            val updated = CanDecoder.decode(canId, data, current)
+            if (updated != null) {
+                val desc  = CanDecoder.describeDecoded(canId, updated)
+                val issue = CanDecoder.validateDecoded(canId, updated)
+                DiagnosticLogger.logFrame(canId, data, updated, desc, issue)
+                updated.withPeaksUpdated().copy(framesPerSecond = fps)
+            } else {
+                DiagnosticLogger.logUnknownFrame(canId, data)
+                current
             }
         }
     }
@@ -208,7 +271,7 @@ class CanDataService : Service() {
         OpenRSDashApp.instance.vehicleState.update { it.copy(isConnected = false, isIdle = false) }
     }
 
-    /** Called from UI when user taps the RETRY badge — fresh WiCanConnection + retry. */
+    /** Called from UI when user taps the RETRY badge — fresh adapter + retry. */
     fun reconnect() {
         connectionJob?.cancel()
         connectionJob = null

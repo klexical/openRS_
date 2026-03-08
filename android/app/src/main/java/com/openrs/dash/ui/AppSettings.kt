@@ -16,8 +16,16 @@ object AppSettings {
     // Renamed from "wican_port" to discard cached ELM327 port (3333) on upgrade.
     const val KEY_PORT = "wican_port_ws"
 
+    // WiCAN (stock / openRS_ firmware) defaults — WebSocket SLCAN on port 80
     const val DEFAULT_HOST = "192.168.80.1"
     const val DEFAULT_PORT = 80
+
+    // MeatPi Pro defaults — raw TCP SLCAN.
+    // IP:   192.168.0.10  (WiCAN Pro AP mode default, confirmed factory reset docs)
+    // Port: 35000         (configurable in WiCAN Pro web UI; recommended default per
+    //                      MeatPi examples — port 23 is also valid if set in web UI)
+    const val DEFAULT_HOST_MEATPI = "192.168.0.10"
+    const val DEFAULT_PORT_MEATPI = 35000
 
     // ── Units ───────────────────────────────────────────────────────────────
     const val KEY_SPEED_UNIT  = "speed_unit"    // "MPH" | "KPH"
@@ -55,6 +63,17 @@ object AppSettings {
     // ── Temperature preset ───────────────────────────────────────────────────
     const val KEY_TEMP_PRESET     = "temp_preset"
     const val DEFAULT_TEMP_PRESET = "street"     // "street" | "track" | "race"
+
+    // ── Adapter type ─────────────────────────────────────────────────────────
+    const val KEY_ADAPTER_TYPE     = "adapter_type"
+    const val DEFAULT_ADAPTER_TYPE = "WICAN"     // "WICAN" | "MEATPI"
+
+    // ── MeatPi microSD logging reminder ─────────────────────────────────────
+    // SD logging on the WiCAN Pro is configured via its web UI (http://192.168.0.10/).
+    // There is no SLCAN command to enable it remotely. This pref persists the user's
+    // intent so we can surface a reminder/link in Settings.
+    const val KEY_MEATPI_MICROSD     = "meatpi_microsd"
+    const val DEFAULT_MEATPI_MICROSD = false
 
     // ── Read helpers ────────────────────────────────────────────────────────
 
@@ -97,6 +116,12 @@ object AppSettings {
     fun getTempPreset(ctx: Context): String =
         prefs(ctx).getString(KEY_TEMP_PRESET, DEFAULT_TEMP_PRESET) ?: DEFAULT_TEMP_PRESET
 
+    fun getAdapterType(ctx: Context): String =
+        prefs(ctx).getString(KEY_ADAPTER_TYPE, DEFAULT_ADAPTER_TYPE) ?: DEFAULT_ADAPTER_TYPE
+
+    fun getMeatPiMicroSd(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_MEATPI_MICROSD, DEFAULT_MEATPI_MICROSD)
+
     // ── Write helpers ────────────────────────────────────────────────────────
 
     fun save(ctx: Context, host: String, port: Int) {
@@ -119,6 +144,8 @@ object AppSettings {
             putInt   (KEY_MAX_DIAG_ZIPS,      p.maxDiagZips)
             putString(KEY_THEME_ID,    p.themeId)
             putString(KEY_TEMP_PRESET, p.tempPreset)
+            putString(KEY_ADAPTER_TYPE, p.adapterType)
+            putBoolean(KEY_MEATPI_MICROSD, p.meatPiMicroSdLog)
         }
     }
 
@@ -133,7 +160,9 @@ object AppSettings {
         reconnectIntervalSec = getReconnectInterval(ctx),
         maxDiagZips          = getMaxDiagZips(ctx),
         themeId              = getThemeId(ctx),
-        tempPreset           = getTempPreset(ctx)
+        tempPreset           = getTempPreset(ctx),
+        adapterType          = getAdapterType(ctx),
+        meatPiMicroSdLog     = getMeatPiMicroSd(ctx)
     )
 
     private fun prefs(ctx: Context) =

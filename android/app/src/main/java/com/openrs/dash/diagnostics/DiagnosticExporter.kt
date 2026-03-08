@@ -8,6 +8,7 @@ import android.os.Looper
 import androidx.core.content.FileProvider
 import com.openrs.dash.BuildConfig
 import com.openrs.dash.can.CanDecoder
+import com.openrs.dash.data.DtcResult
 import com.openrs.dash.data.TripState
 import com.openrs.dash.data.VehicleState
 import java.io.File
@@ -83,9 +84,11 @@ object DiagnosticExporter {
 
     /**
      * Exports the completed trip as a GPX file (with embedded OBD telemetry extensions),
-     * packages it in a ZIP alongside a plain-text summary, then launches a share sheet.
+     * a CSV spreadsheet, and a plain-text summary — packaged in a ZIP, then shared.
+     *
+     * @param dtcResults Optional DTC scan results to include as dtc_scan_<ts>.txt.
      */
-    fun shareTrip(ctx: Context, tripState: TripState) {
+    fun shareTrip(ctx: Context, tripState: TripState, dtcResults: List<DtcResult>? = null) {
         if (tripState.points.isEmpty()) return
         try {
             val dir = File(ctx.filesDir, "diagnostics").also { it.mkdirs() }
@@ -108,14 +111,28 @@ object DiagnosticExporter {
                 zip.write(buildGpx(tripState, ts).toByteArray(Charsets.UTF_8))
                 zip.closeEntry()
 
+                // CSV telemetry log
+                zip.putNextEntry(ZipEntry("trip_$ts.csv"))
+                zip.write(buildTripCsv(tripState).toByteArray(Charsets.UTF_8))
+                zip.closeEntry()
+
                 // Plain-text summary
                 zip.putNextEntry(ZipEntry("trip_summary_$ts.txt"))
                 zip.write(buildTripSummaryText(tripState).toByteArray(Charsets.UTF_8))
                 zip.closeEntry()
+
+                // DTC scan results (optional)
+                if (!dtcResults.isNullOrEmpty()) {
+                    zip.putNextEntry(ZipEntry("dtc_scan_$ts.txt"))
+                    zip.write(buildDtcText(dtcResults).toByteArray(Charsets.UTF_8))
+                    zip.closeEntry()
+                }
             }
 
             val uri = FileProvider.getUriForFile(ctx, AUTHORITY, zipFile)
             val ptCount = tripState.points.size
+            val dtcNote = if (!dtcResults.isNullOrEmpty())
+                "\n• dtc_scan_$ts.txt       — ${dtcResults.size} fault code(s)" else ""
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "application/zip"
                 putExtra(Intent.EXTRA_STREAM, uri)
@@ -124,7 +141,8 @@ object DiagnosticExporter {
                     Intent.EXTRA_TEXT,
                     "openRS_ v${BuildConfig.VERSION_NAME} trip export.\n" +
                     "• trip_$ts.gpx         — GPS track + telemetry (GPX 1.1)\n" +
-                    "• trip_summary_$ts.txt  — human-readable trip report\n\n" +
+                    "• trip_$ts.csv         — telemetry spreadsheet (all TripPoint fields)\n" +
+                    "• trip_summary_$ts.txt  — human-readable trip report$dtcNote\n\n" +
                     "$ptCount waypoints recorded."
                 )
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -206,6 +224,77 @@ object DiagnosticExporter {
             appendLine("    ${mode.label.padEnd(10)} : ${"%.0f".format(frac * 100)}%")
         }
         appendLine()
+        appendLine("═══════════════════════════════════════════════════════════")
+    }
+
+    /**
+     * Build a CSV spreadsheet of every [TripPoint] in [tripState].
+     *
+     * Columns (all in SI units where applicable):
+     *   timestamp_ms, lat, lng, speed_kph, rpm, gear, boost_psi,
+     *   coolant_c, oil_c, ambient_c, rdu_c, ptu_c, fuel_pct,
+     *   wheel_fl_kph, wheel_fr_kph, wheel_rl_kph, wheel_rr_kph,
+     *   lateral_g, drive_mode, race_ready
+     */
+    fun buildTripCsv(tripState: TripState): String = buildString {
+        // Header
+        appendLine(
+            "timestamp_ms,lat,lng,speed_kph,rpm,gear,boost_psi," +
+            "coolant_c,oil_c,ambient_c,rdu_c,ptu_c,fuel_pct," +
+            "wheel_fl_kph,wheel_fr_kph,wheel_rl_kph,wheel_rr_kph," +
+            "lateral_g,drive_mode,race_ready"
+        )
+        tripState.points.forEach { pt ->
+            appendLine(
+                "${pt.timestamp}," +
+                "${"%.6f".format(pt.lat)}," +
+                "${"%.6f".format(pt.lng)}," +
+                "${"%.2f".format(pt.speedKph)}," +
+                "${"%.0f".format(pt.rpm)}," +
+                "${csvEscape(pt.gear)}," +
+                "${"%.3f".format(pt.boostPsi)}," +
+                "${"%.1f".format(pt.coolantTempC)}," +
+                "${"%.1f".format(pt.oilTempC)}," +
+                "${"%.1f".format(pt.ambientTempC)}," +
+                "${"%.1f".format(pt.rduTempC)}," +
+                "${"%.1f".format(pt.ptuTempC)}," +
+                "${"%.1f".format(pt.fuelLevelPct)}," +
+                "${"%.2f".format(pt.wheelSpeedFL)}," +
+                "${"%.2f".format(pt.wheelSpeedFR)}," +
+                "${"%.2f".format(pt.wheelSpeedRL)}," +
+                "${"%.2f".format(pt.wheelSpeedRR)}," +
+                "${"%.4f".format(pt.lateralG)}," +
+                "${csvEscape(pt.driveMode.label)}," +
+                "${pt.isRaceReady}"
+            )
+        }
+    }
+
+    private fun csvEscape(value: String): String =
+        if (value.contains(',') || value.contains('"') || value.contains('\n'))
+            "\"${value.replace("\"", "\"\"")}\"" else value
+
+    /**
+     * Build a plain-text DTC scan report for inclusion in the trip ZIP.
+     */
+    private fun buildDtcText(dtcResults: List<DtcResult>): String = buildString {
+        appendLine("═══════════════════════════════════════════════════════════")
+        appendLine("  openRS_ DTC Scan Report")
+        appendLine("  App : v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})")
+        appendLine("═══════════════════════════════════════════════════════════")
+        appendLine()
+        val grouped = dtcResults.groupBy { it.module }
+        val order   = listOf("PCM", "BCM", "ABS", "AWD", "PSCM")
+        for (mod in order) {
+            val codes = grouped[mod] ?: continue
+            appendLine("─── $mod ────────────────────────────────────────────────────")
+            codes.forEach { dtc ->
+                val desc = if (dtc.description.isNotEmpty()) dtc.description else "(no description)"
+                appendLine("  ${dtc.code}  [${dtc.status.label}]  $desc")
+            }
+            appendLine()
+        }
+        appendLine("Total: ${dtcResults.size} fault code(s) across ${dtcResults.map { it.module }.distinct().size} module(s)")
         appendLine("═══════════════════════════════════════════════════════════")
     }
 
