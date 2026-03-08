@@ -4,7 +4,7 @@ Custom ESP32-C3 firmware for the MeatPi WiCAN-USB-C3, purpose-built for the Ford
 
 Forked from [`meatpiHQ/wican-fw`](https://github.com/meatpiHQ/wican-fw) — the proven WiFi/CAN/OTA stack is retained and a Focus RS module is layered on top.
 
-**Current status:** v1.3.0 — release binaries in `firmware/release/`.
+**Current status:** v1.3 — release binaries in `firmware/release/`.
 
 ---
 
@@ -74,7 +74,7 @@ firmware/release/
   bootloader.bin          ← flash at 0x0
   partition-table.bin     ← flash at 0x8000
   ota_data_initial.bin    ← flash at 0xd000
-  openrs-fw-usb_v100.bin  ← flash at 0x10000
+  openrs-fw-usb_v130.bin  ← flash at 0x10000
 ```
 
 ### Re-running the build
@@ -103,7 +103,7 @@ All endpoints inherit from wican-fw and extend it:
 ### `GET /status`
 ```json
 {
-  "version": "openrs-fw v1.0",
+  "version": "openrs-fw v1.3",
   "connected": true,
   "can_bitrate": 500000,
   "battery_mv": 13420,

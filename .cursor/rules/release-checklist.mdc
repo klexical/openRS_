@@ -28,7 +28,7 @@ This file mirrors the app UI. Every visible change to the app **must** be reflec
 - **Data cell labels** — if any `dc-label` text changed in the app (e.g. "FUEL RAIL" → "HP FUEL"), update it in the emulator
 - **New widgets / rows** — if a new row was added to any tab (e.g. odometer row, new data cell), add matching HTML in the emulator
 - **Removed widgets** — if something was removed from the app (e.g. gear display), remove it from the emulator too
-- **Hamburger drawer sections** — if a new section was added (e.g. "Module Status"), add it to the emulator; if a section heading changed, update it
+- **MORE tab sections** — if a new section was added (e.g. "Module Status"), add it to the emulator; if a section heading changed, update it
 - **Feature cards** — if a Features card was added, renamed, or its locked/unlocked state changed, reflect that in the emulator
 - **TPMS decimal places** — `displayTire()` must use `.toFixed(1)` for PSI to match the app
 - **Demo data** — simulated values should reflect real-world plausible readings
