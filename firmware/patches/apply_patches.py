@@ -18,7 +18,7 @@ Modifications applied:
 
 # Version string returned to the Android app when it sends "OPENRS?\r".
 # Must match OPENRS_FW_VERSION in components/focusrs/focusrs.h.
-OPENRS_FW_VERSION = "v1.3"
+OPENRS_FW_VERSION = "v1.4"
 
 import sys
 import os

@@ -89,7 +89,7 @@ For drive mode control, ESC write, Launch Control, BLE transport, and Auto-disco
 | Firmware | Use case | Download |
 |----------|----------|----------|
 | Official WiCAN | Basic PID telemetry (first test) | [GitHub Releases](https://github.com/meatpiHQ/wican-fw/releases/latest) |
-| **openrs-fw v1.3** | Full openRS_ feature set | [openRS_ Releases](https://github.com/klexical/openRS_/releases) |
+| **openrs-fw v1.4** | Full openRS_ feature set | [openRS_ Releases](https://github.com/klexical/openRS_/releases) |
 
 See the [Firmware Update Guide](firmware-update.md) for step-by-step flashing instructions with screenshots.
 

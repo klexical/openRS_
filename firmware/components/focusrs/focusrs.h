@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 // ── Firmware version (returned to Android app via OPENRS? probe) ───────────
-#define OPENRS_FW_VERSION   "v1.3"
+#define OPENRS_FW_VERSION   "v1.4"
 
 // ── Drive mode values ──────────────────────────────────────────
 // Confirmed from live CAN log (0x1B0 byte6 upper nibble, DBC VAL_ 432):
