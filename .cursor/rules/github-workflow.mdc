@@ -19,10 +19,7 @@ Every issue gets **type + priority + area** labels:
 
 ## Milestones
 
-- **v2.3.0 — Tech Debt + Polish** — audit findings, broken tests, stale docs, CI fixes
-- **v2.3.x — Sensor Gaps (Phase 8)** — BLE transport, 12V battery, tire temps
-- **v2.4.x — Track Day (Phase 9)** — lap timer, track map, trip comparison
-- **v2.5.x — Hardware Expansion (Phase 10)** — MeatPi Pro GPS, MS-CAN
+Milestones map to roadmap phases. Check current milestones with `gh milestone list` — don't hardcode them here.
 
 ## Development workflow
 
