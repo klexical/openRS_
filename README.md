@@ -146,10 +146,16 @@ All display preferences are configurable and persist across restarts:
 ### Setup
 
 1. Plug the WiCAN into the OBD-II port (under the steering column)
-2. Connect your phone to the WiCAN's Wi-Fi network (`WiCAN_XXXXXX`, password `@meatpi#`)
+2. Connect your phone to the WiCAN's Wi-Fi network:
+
+| Firmware | SSID | Password |
+|----------|------|----------|
+| **Stock WiCAN** | `WiCAN_XXXXXX` | `@meatpi#` |
+| **openrs-fw** | `openRS_XXXXXX` | `openrs2024` |
+
 3. Install openRS_ and tap the connection dot in the header
 
-> **Note:** openRS_ uses the WiCAN's **WebSocket endpoint** (`ws://192.168.80.1:80/ws`) in SLCAN mode — no ELM327 TCP mode required. The WebSocket interface is available in stock WiCAN firmware with no configuration change. To access openRS_ firmware features (Launch Control, Auto S/S Kill, CAN write), flash `openrs-fw` to the WiCAN.
+> **Stock firmware** works out of the box — openRS_ connects via WebSocket SLCAN (`ws://192.168.80.1:80/ws`) with no configuration changes needed. For full functionality (drive mode write, Launch Control, Auto S/S Kill, ESC control), flash **openrs-fw** to the WiCAN. See the [firmware update guide](android/docs/firmware-update.md) for instructions.
 
 ---
 
