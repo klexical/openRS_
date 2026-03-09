@@ -43,9 +43,11 @@ This file mirrors the app UI. Every visible change to the app **must** be reflec
 - A separate `fw-vX.Y.Z` GitHub release must be created with all 4 flash files
 
 ## 5. GitHub Release
-- App release tagged `android-vX.Y.Z` with `openRS_vX.Y.Z.apk` attached
-- Release notes summarise every user-visible change
-- If firmware changed, reference the firmware release in the app release notes
+- Commit, then create and push tag: `git tag android-vX.Y.Z && git push origin android-vX.Y.Z`
+- Create release: `gh release create android-vX.Y.Z "android/dist/openRS_vX.Y.Z.apk#openRS_vX.Y.Z.apk" --title "openRS_ vX.Y.Z — <short description>" --latest --notes "<release notes>"`
+- APK must be the **signed** build from `android/dist/`, not debug
+- Release notes must summarise every user-visible change
+- If firmware changed, create a separate `fw-vX.Y` release and reference it in the app release notes
 
 ## 6. GitHub Issues Milestone
 - Check the milestone for this release (e.g. `v2.3.0 — Tech Debt + Polish`)

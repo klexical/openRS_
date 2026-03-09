@@ -1,7 +1,0 @@
----
-description: Always publish a GitHub Release when committing a new app version
-alwaysApply: false
-globs: android/app/build.gradle.kts, android/CHANGELOG.md, android/dist/**
----
-
-On every version bump: commit → create and push tag `android-vX.Y.Z` → run `gh release create android-vX.Y.Z "android/dist/openRS_vX.Y.Z.apk#openRS_vX.Y.Z.apk" --title "openRS_ vX.Y.Z — <short description>" --latest --notes "<release notes>"`. APK must be the signed build from `android/dist/`, not debug. Release notes must explain what changed and why. Create a separate release for each version if multiple are bumped in one session.
