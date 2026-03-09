@@ -61,10 +61,23 @@ void frs_nvs_save_boot_mode(uint8_t mode) {
     nvs_write_u8(KEY_BOOT_MODE, mode);
 }
 
+void frs_nvs_save_esc(uint8_t mode) {
+    nvs_write_u8(KEY_ESC, mode);
+}
+
 void frs_nvs_save_lc(bool enabled) {
     nvs_write_u8(KEY_LC, enabled ? 1 : 0);
 }
 
 void frs_nvs_save_ass_kill(bool enabled) {
     nvs_write_u8(KEY_ASS, enabled ? 1 : 0);
+}
+
+void frs_nvs_save_sleep_threshold(uint16_t mv) {
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NS, NVS_READWRITE, &h);
+    if (err != ESP_OK) return;
+    err = nvs_set_u16(h, KEY_SLEEP_MV, mv);
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
 }

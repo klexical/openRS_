@@ -1,5 +1,10 @@
 #pragma once
 
+// NOTE: This is a forward-declaration header only. BLE transport in openrs-fw v1.x
+// is handled by wican-fw's built-in ble.c. This header defines the interface for a
+// future standalone BLE GATT implementation (fw-v2.x). Do NOT call these functions
+// in v1.x — they have no implementation and will cause link errors.
+
 #include <stdint.h>
 #include <stdbool.h>
 

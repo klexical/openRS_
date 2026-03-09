@@ -64,10 +64,10 @@ void     frs_set_drive_mode(uint8_t mode);   // sends CAN + updates NVS boot mod
 void     frs_set_esc(uint8_t esc_mode);
 void     frs_set_lc(bool enabled);
 void     frs_set_ass_kill(bool enabled);
-frs_state_t *frs_get_state(void);
+void     frs_set_sleep_threshold(float volts);
+frs_state_t  frs_get_state_copy(void);  // Thread-safe snapshot
+frs_state_t *frs_get_state(void);      // Direct pointer (use from same task only)
 
-// ── REST handler helpers ─────────────────────────────────────
-void     frs_handle_settings_post(const char *key, const char *value);
 
 #ifdef __cplusplus
 }

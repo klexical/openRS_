@@ -113,13 +113,16 @@ All endpoints inherit from wican-fw and extend it. Example responses below are i
 }
 ```
 
-### `POST /settings`
+### `POST /api/frs`
+
+All POST requests require `"token": "openrs"` for basic access control.
+
 ```json
-{ "driveMode": 1 }      // 0=Normal, 1=Sport, 2=Track, 3=Drift
-{ "escMode": 0 }         // 0=On, 1=Sport, 2=Off
-{ "enableLC": true }     // Launch Control
-{ "killASS": true }      // Auto Start/Stop kill
-{ "sleepVoltage": 12.2 } // Battery sleep threshold (V)
+{ "token": "openrs", "driveMode": 1 }      // 0=Normal, 1=Sport, 2=Drift, 3=Track
+{ "token": "openrs", "escMode": 0 }         // 0=On, 1=Sport, 2=Off
+{ "token": "openrs", "enableLC": true }     // Launch Control
+{ "token": "openrs", "killASS": true }      // Auto Start/Stop kill
+{ "token": "openrs", "sleepVoltage": 12.2 } // Battery sleep threshold (V)
 ```
 
 ### `GET /pids`
@@ -145,7 +148,7 @@ The BLE interface is protocol-compatible with the WiFi TCP interface. The openRS
 ### Reading current mode (HS-CAN, passive)
 | CAN ID | Byte | Bits | Value mapping |
 |--------|------|------|---------------|
-| `0x1B0` | — | 55–58 (4-bit Motorola) | 0=Normal, 1=Sport, 2=Track, 3=Drift |
+| `0x1B0` | — | 55–58 (4-bit Motorola) | 0=Normal, 1=Sport, 2=Drift, 3=Track |
 
 ### Writing mode (button simulation)
 | Action | CAN ID | Byte 1 | Notes |

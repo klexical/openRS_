@@ -1,5 +1,5 @@
 # openrs-fw partition table for ESP32-C3 (4MB flash)
-# OTA layout with 2MB app slots to accommodate BLE 4.2 + focusrs features
+# Single 2MB OTA slot (no rollback) to accommodate BLE 4.2 + focusrs binary size
 # Name,   Type, SubType, Offset,   Size, Flags
 nvs,      data, nvs,     0x9000,   16K,
 otadata,  data, ota,     0xD000,    8K,

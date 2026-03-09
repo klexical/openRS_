@@ -7,14 +7,13 @@ Usage: python3 apply_patches.py <path-to-wican-fw>
 Modifications applied:
   1. wifi_network.c   — AP SSID prefix: WiCAN_ → openRS_
   2. config_server.c  — AP password default: @meatpi# → openrs2024
-  3. config_server.c  — Add /api/frs GET+POST endpoint
-  4. config_server.c  — Bump max_uri_handlers 18 → 20
-  5. config_server.c  — OPENRS? WebSocket probe handler (responds OPENRS:<version>)
-  6. main.c           — #include "focusrs.h"
-  7. main.c           — frs_init() call after nvs_flash_init()
-  8. main.c           — frs_parse_can_frame() call in can_rx_task
-  9. main.c           — frs_set_can_tx_fn() registration in app_main
- 10. main/CMakeLists  — add focusrs to REQUIRES
+  3. config_server.c  — Add /api/frs GET+POST endpoint (token-authenticated)
+  4. config_server.c  — OPENRS? WebSocket probe handler (responds OPENRS:<version>)
+  5. main.c           — #include "focusrs.h"
+  6. main.c           — frs_init() call after nvs_flash_init() in app_main
+  7. main.c           — frs_parse_can_frame() call in can_rx_task
+  8. main.c           — frs_set_can_tx_fn() registration via static openrs_can_tx shim
+  9. main/CMakeLists  — add focusrs to REQUIRES
 """
 
 # Version string returned to the Android app when it sends "OPENRS?\r".
@@ -53,7 +52,8 @@ def patch_config_server(base):
     path = os.path.join(base, "main", "config_server.c")
     c = read(path)
 
-    # AP password: v4.20u already defaults to "@meatpi#", no change needed.
+    # AP password: change from stock "@meatpi#" to "openrs2024"
+    c = replace_once(c, '"@meatpi#"', '"openrs2024"', "AP password default")
 
     # 1. Add focusrs include after the last existing include block
     FRS_INCLUDE = '#include "focusrs.h"'
@@ -75,7 +75,8 @@ def patch_config_server(base):
  */
 static esp_err_t frs_get_handler(httpd_req_t *req)
 {
-    frs_state_t *s = frs_get_state();
+    frs_state_t snap = frs_get_state_copy();
+    frs_state_t *s = &snap;
     char json[256];
     snprintf(json, sizeof(json),
         "{\"driveMode\":%d,\"bootMode\":%d,\"escMode\":%d,"
@@ -91,25 +92,36 @@ static esp_err_t frs_get_handler(httpd_req_t *req)
 
 static esp_err_t frs_post_handler(httpd_req_t *req)
 {
-    char buf[256] = {0};
+    char buf[512] = {0};
     int  received = httpd_req_recv(req, buf, sizeof(buf) - 1);
     if (received <= 0) {
         httpd_resp_send_500(req);
         return ESP_FAIL;
     }
     cJSON *root = cJSON_Parse(buf);
-    if (root) {
-        cJSON *item;
-        if ((item = cJSON_GetObjectItem(root, "driveMode")) && cJSON_IsNumber(item))
-            frs_set_drive_mode((uint8_t)item->valueint);
-        if ((item = cJSON_GetObjectItem(root, "escMode")) && cJSON_IsNumber(item))
-            frs_set_esc((uint8_t)item->valueint);
-        if ((item = cJSON_GetObjectItem(root, "enableLC")) && cJSON_IsBool(item))
-            frs_set_lc(cJSON_IsTrue(item));
-        if ((item = cJSON_GetObjectItem(root, "killASS")) && cJSON_IsBool(item))
-            frs_set_ass_kill(cJSON_IsTrue(item));
-        cJSON_Delete(root);
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+        return ESP_FAIL;
     }
+    /* Require {"token":"openrs"} in every POST for basic access control. */
+    cJSON *tok = cJSON_GetObjectItem(root, "token");
+    if (!tok || !cJSON_IsString(tok) || strcmp(tok->valuestring, "openrs") != 0) {
+        cJSON_Delete(root);
+        httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Missing or invalid token");
+        return ESP_FAIL;
+    }
+    cJSON *item;
+    if ((item = cJSON_GetObjectItem(root, "driveMode")) && cJSON_IsNumber(item))
+        frs_set_drive_mode((uint8_t)item->valueint);
+    if ((item = cJSON_GetObjectItem(root, "escMode")) && cJSON_IsNumber(item))
+        frs_set_esc((uint8_t)item->valueint);
+    if ((item = cJSON_GetObjectItem(root, "enableLC")) && cJSON_IsBool(item))
+        frs_set_lc(cJSON_IsTrue(item));
+    if ((item = cJSON_GetObjectItem(root, "killASS")) && cJSON_IsBool(item))
+        frs_set_ass_kill(cJSON_IsTrue(item));
+    if ((item = cJSON_GetObjectItem(root, "sleepVoltage")) && cJSON_IsNumber(item))
+        frs_set_sleep_threshold((float)item->valuedouble);
+    cJSON_Delete(root);
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     return httpd_resp_send(req, "{\"ok\":true}", 11);
 }
@@ -218,12 +230,18 @@ def patch_main(base):
             "focusrs.h include in main.c")
 
     # 2. frs_init() after nvs_flash_init in app_main
-    NVS_INIT = "ESP_ERROR_CHECK(nvs_flash_init());"
-    FRS_INIT  = "ESP_ERROR_CHECK(nvs_flash_init());\n    frs_init();"
+    #    wican-fw has two nvs_flash_init calls. The one in app_main is preceded by
+    #    "void app_main(void)". We use a regex to match nvs_flash_init only inside app_main.
     if "frs_init();" not in c:
-        # There are two nvs_flash_init calls (one in app_main). Pick the one in app_main
-        # by targeting the line that has dev_status_init before it.
-        c = replace_once(c, NVS_INIT, FRS_INIT, "frs_init() call")
+        import re as _re2
+        pattern = r'(void\s+app_main\s*\(void\)\s*\{[^}]*?)(ESP_ERROR_CHECK\(nvs_flash_init\(\)\);)'
+        replacement = r'\1ESP_ERROR_CHECK(nvs_flash_init());\n    frs_init();'
+        c_new, n = _re2.subn(pattern, replacement, c, count=1, flags=_re2.DOTALL)
+        if n > 0:
+            c = c_new
+            print("  patched: frs_init() after nvs_flash_init in app_main")
+        else:
+            print("  WARNING: could not find nvs_flash_init inside app_main — frs_init() NOT inserted")
 
     # 3. frs_parse_can_frame in can_rx_task
     RX_ANCHOR = "process_led(1);"
@@ -238,17 +256,6 @@ def patch_main(base):
     # 4. frs_set_can_tx_fn — register after can_enable() calls complete in app_main
     # Hook after the first can_enable() in app_main (REALDASH block)
     CAN_TX_ANCHOR = "wc_mdns_init((char*)uid, hardware_version, firmware_version);"
-    CAN_TX_HOOK = (
-        "wc_mdns_init((char*)uid, hardware_version, firmware_version);\n\n"
-        "    // openrs-fw: provide CAN TX function to focusrs component\n"
-        "    frs_set_can_tx_fn([](uint32_t id, const uint8_t *d, uint8_t dlc, uint32_t tms) -> int {\n"
-        "        twai_message_t m = {.identifier=id, .data_length_code=dlc, .flags=0};\n"
-        "        memcpy(m.data, d, dlc);\n"
-        "        return (int)can_send(&m, pdMS_TO_TICKS(tms));\n"
-        "    });"
-    )
-    # Note: wican-fw main.c is C not C++, so we can't use lambdas.
-    # Use a plain static function instead.
     CAN_TX_FN = (
         "\n/* openrs-fw: CAN TX shim for focusrs component */\n"
         "static int openrs_can_tx(uint32_t id, const uint8_t *data, uint8_t dlc, uint32_t tms)\n"

@@ -46,13 +46,13 @@ command -v git >/dev/null 2>&1 || err "git is required"
 # ESP-IDF 5.2 on macOS with system Python 3.9 fails package validation due to
 # a Python 3.9 importlib.metadata bug with namespace packages (e.g. ruamel.yaml).
 # Prefer Python 3.11+ from Homebrew if available.
-PYTHON311="/opt/homebrew/bin/python3.11"
+PREFERRED_PYTHON="$(command -v python3.11 2>/dev/null || command -v python3.12 2>/dev/null || true)"
 LOCAL_BIN="$BUILD_DIR/bin"
-if [ -x "$PYTHON311" ]; then
-    log "Using Python 3.11 from Homebrew for ESP-IDF environment"
+if [ -n "$PREFERRED_PYTHON" ] && [ -x "$PREFERRED_PYTHON" ]; then
+    log "Using $PREFERRED_PYTHON for ESP-IDF environment"
     mkdir -p "$LOCAL_BIN"
-    ln -sf "$PYTHON311" "$LOCAL_BIN/python3"
-    ln -sf "$PYTHON311" "$LOCAL_BIN/python"
+    ln -sf "$PREFERRED_PYTHON" "$LOCAL_BIN/python3"
+    ln -sf "$PREFERRED_PYTHON" "$LOCAL_BIN/python"
     export PATH="$LOCAL_BIN:$PATH"
 fi
 command -v python3 >/dev/null 2>&1 || err "python3 is required"
