@@ -6,8 +6,20 @@ The release APK is signed with a project-specific keystore. Both the keystore fi
 
 | File | Location | Description |
 |------|----------|-------------|
-| `openrs-release.jks` | `android/openrs-release.jks` | RSA-2048 release keystore, valid 10 000 days |
+| `openrs-release.jks` | `android/openrs-release.jks` | Release keystore, valid 10 000 days |
 | `keystore.properties` | `android/keystore.properties` | Credentials read by `build.gradle.kts` |
+
+## Generating a new keystore
+
+```bash
+keytool -genkeypair -v \
+  -keystore openrs-release.jks \
+  -alias openrs \
+  -keyalg RSA -keysize 4096 \
+  -validity 10000
+```
+
+> **Recommendation:** Use RSA-4096 for new keystores. Existing RSA-2048 keys remain valid but 4096-bit is current best practice. Alternatively, use EC keys: `-keyalg EC -groupname secp256r1`.
 
 ## keystore.properties format
 

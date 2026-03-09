@@ -201,7 +201,7 @@ firmware/release/
   bootloader.bin            ← address 0x0
   partition-table.bin       ← address 0x8000
   ota_data_initial.bin      ← address 0xd000
-  openrs-fw-usb_v100.bin    ← address 0x10000
+  openrs-fw-usb_v130.bin    ← address 0x10000
 ```
 
 > **Note:** openrs-fw uses a custom partition table with a 2MB OTA slot (vs. 1.75MB stock). You must flash all 4 files — do not mix openrs-fw binaries with stock partition-table.bin.
@@ -234,7 +234,7 @@ Once openrs-fw is running, all future updates use **OTA via the web UI** — no 
 | Focus RS drive mode read | ✅ (via app) | ✅ |
 | **Drive mode write** (N/S/T/D) | ❌ | ✅ |
 | **Boot mode persistence** (NVS) | ❌ | ✅ |
-| **ESC write** (On/Sport/Off) | ❌ | ✅ |
+| **ESC write** (On/Sport/Off) | ❌ | ⚠️ Stub (pending CAN frame capture) |
 | **Launch Control enable** | ❌ | ✅ |
 | **Auto Start/Stop kill** | ❌ | ✅ |
 | **BLE GATT data transport** | ❌ | ✅ |

@@ -48,7 +48,7 @@ OBD queries are grouped by ECU and sent at fixed intervals defined in `ObdConsta
 
 | ECU | Interval | Parameters |
 |-----|----------|------------|
-| PCM (Mode 22) | 30 s | ETC, WGDC, KR, OAR, charge air temp, catalyst temp, battery voltage (Mode 01 0x42) |
+| PCM (Mode 22) | 30 s | ETC, WGDC, KR, OAR, charge air temp, catalyst temp |
 | BCM (Mode 22) | 30 s | Odometer, battery SOC, battery temp, cabin temp, **TPMS LF/RF/LR/RR** (0x2813–0x2816) |
 | AWD module | 30 s | RDU oil temp |
 
@@ -81,7 +81,7 @@ Please include:
 ## PID Research
 
 We especially need help with:
-- **12V battery voltage** — CAN ID 0x3C0 formula needs live verification
+- **12V battery voltage** — CAN ID 0x3C0 does not broadcast on this vehicle; needs alternative source (BCM PID, or other CAN ID)
 - **Tire temperature PIDs** (0x2823–0x2826): These are educated guesses. If you have FORScan, please verify!
 - **Brake pressure calibration** — CAN ID 0x252 raw ADC 0–4095, need reference-pressure data
 - **MS-CAN parameters**: Accessible on the medium-speed bus at 125 kbps

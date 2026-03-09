@@ -3,6 +3,8 @@
 All notable changes to the openRS_ Android app are documented here.
 Firmware changes are tracked separately in [firmware releases](https://github.com/klexical/openRS_/releases).
 
+> **Note on tab names:** The app's tab structure has evolved over time. v1.0–v1.1 used DASH/PERF/TEMPS/TUNE/TPMS/CTRL/DIAG. v1.2.0 redesigned to DASH/POWER/CHASSIS/TEMPS/DIAG + System Drawer. v2.0.0 replaced the drawer with a MORE tab, giving the current 6-tab layout: DASH/POWER/CHASSIS/TEMPS/DIAG/MORE. Historical entries below use the tab names that were current at the time of each release.
+
 ---
 
 ## [v2.2.1] — 2026-03-08
@@ -385,11 +387,11 @@ The drive mode badge was reading from CAN ID `0x1B0` byte 6 lower nibble. Analys
 | 2     | Track  |
 | 3     | Drift  |
 
-### Fixed — TPMS only showing one tyre (LR)
+### Fixed — TPMS only showing one tire (LR)
 
-The passive CAN `0x340` frame (bytes 2–5, per RSdash/DigiCluster `can1_ms.json`) is bridged by the Gateway Module to HS-CAN, but the GWM on this car only populates byte 4 (LR). The other three tyre pressures remain on MS-CAN only and are not accessible via the OBD port passively.
+The passive CAN `0x340` frame (bytes 2–5, per RSdash/DigiCluster `can1_ms.json`) is bridged by the Gateway Module to HS-CAN, but the GWM on this car only populates byte 4 (LR). The other three tire pressures remain on MS-CAN only and are not accessible via the OBD port passively.
 
-**Fix:** Added BCM Mode 22 polling for all four tyre pressures using PIDs 0x2813 (LF), 0x2814 (RF), 0x2816 (LR), 0x2815 (RR). Formula from `exportedPIDs.txt`:
+**Fix:** Added BCM Mode 22 polling for all four tire pressures using PIDs 0x2813 (LF), 0x2814 (RF), 0x2816 (LR), 0x2815 (RR). Formula from `exportedPIDs.txt`:
 
 ```
 PSI = (((256×A)+B)/3 + 22/3) × 0.145
@@ -397,7 +399,7 @@ PSI = (((256×A)+B)/3 + 22/3) × 0.145
 
 Validated: LR via BCM should agree with the passive CAN `0x340` byte 4 reading (35 PSI in the log). Polls run every 30 s alongside the existing BCM cycle. Passive CAN `0x340` continues to provide real-time LR updates between polls.
 
-Also added sentinel guards in `CanDataService.onObdUpdate` to prevent a BCM response captured before the first passive CAN frame from resetting tyre pressures back to the `−1.0` default.
+Also added sentinel guards in `CanDataService.onObdUpdate` to prevent a BCM response captured before the first passive CAN frame from resetting tire pressures back to the `−1.0` default.
 
 ---
 
@@ -407,7 +409,7 @@ Also added sentinel guards in `CanDataService.onObdUpdate` to prevent a BCM resp
 
 The Focus RS does not broadcast gear position on the passive HS-CAN bus (`0x230` is absent from every observed log — 1.9 M frames over 16.8 minutes). The `gear` field in `VehicleState` therefore never updated from its default of `0` (Neutral).
 
-**Fix:** Added `derivedGear: Int` as a computed property on `VehicleState`. It calculates the current gear from RPM ÷ vehicle speed using the known Focus RS Getrag MT-82 final-drive ratio and 235/35R19 tyre circumference:
+**Fix:** Added `derivedGear: Int` as a computed property on `VehicleState`. It calculates the current gear from RPM ÷ vehicle speed using the known Focus RS Getrag MT-82 final-drive ratio and 235/35R19 tire circumference:
 
 ```
 ratio = rpm × 0.03194 / speedKph

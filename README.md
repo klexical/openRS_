@@ -95,7 +95,7 @@ All data is received passively from the CAN bus via WebSocket SLCAN at ~2100 fps
 
 | ECU | Request | Response | PIDs / Function | Interval |
 |-----|---------|----------|-----------------|----------|
-| PCM | 0x7E0 | 0x7E8 | ETC actual (0x093C), ETC desired (0x091A), WGDC (0x0462), KR cyl 1 (0x03EC), OAR (0x03E8), Charge Air Temp (0x0461), Catalyst Temp (0xF43C), **Battery voltage Mode 01 PID 0x42** `(A×256+B)/1000 V` | 30 s |
+| PCM | 0x7E0 | 0x7E8 | ETC actual (0x093C), ETC desired (0x091A), WGDC (0x0462), KR cyl 1 (0x03EC), OAR (0x03E8), Charge Air Temp (0x0461), Catalyst Temp (0xF43C) | 30 s |
 | BCM | 0x726 | 0x72E | Odometer (0xDD01), Battery SOC (0x4028), Battery temp (0x4029), Cabin temp (0xDD04), **TPMS LF/RF/LR/RR** (0x2813–0x2816) `(((256×A)+B)/3 + 22/3) × 0.145 PSI` | 30 s |
 | AWD module | 0x703 | 0x70B | RDU oil temp (0x1E8A) — `B4 − 40 °C` | 30 s |
 
@@ -346,7 +346,7 @@ Complete decode formulas, byte-level breakdowns, and all Mode 22 PIDs: [`android
 Pull requests welcome. See [CONTRIBUTING.md](android/CONTRIBUTING.md) for guidelines.
 
 If you have a Focus RS and FORScan/OBDLink, we'd love help verifying:
-- 12V battery voltage — CAN ID 0x3C0 formula (`byte0 × 0.1 V` vs `word(B2-B3) × 0.001 V`)
+- 12V battery voltage — CAN ID 0x3C0 does not broadcast; needs alternative source (BCM PID or other CAN ID)
 - Brake pressure bar calibration (raw ADC 0–4095 from `0x252`, need known-pressure reference)
 - Tire temperature PIDs (0x2823–0x2826) — currently experimental
 - Additional BCM Mode 22 PIDs

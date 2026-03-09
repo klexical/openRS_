@@ -1,0 +1,11 @@
+# Copy this file to local.properties and update the path to your Android SDK.
+# local.properties is gitignored and should NOT be committed.
+
+# macOS (default Android Studio location):
+sdk.dir=/Users/<username>/Library/Android/sdk
+
+# Linux:
+# sdk.dir=/home/<username>/Android/Sdk
+
+# Windows:
+# sdk.dir=C\:\\Users\\<username>\\AppData\\Local\\Android\\Sdk

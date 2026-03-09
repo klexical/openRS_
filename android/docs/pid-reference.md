@@ -17,7 +17,7 @@ The following PCM Mode 22 PIDs are polled by the app every 30 seconds via ISO-TP
 | PID | Name | Request | Formula | Unit | Passive CAN alternative |
 |-----|------|---------|---------|------|------------------------|
 | 0xF405 | Coolant Temp (PCM) | `22F405` | `B4 − 40` | °C | CAN 0x2F0 |
-| 0xF40F | Intake Air Temp (PCM) | `22F40F` | `B4 − 40` | °C | CAN 0x0F8 |
+| 0xF40F | Intake Air Temp (PCM) | `22F40F` | `B4 − 40` | °C | CAN 0x2F0 |
 | 0x03CA | Intake Air Temp 2 | `2203CA` | `B4 − 40` | °C | Likely `manifoldChargeTempC` — post-intercooler |
 | 0xF42F | Fuel Level (PCM) | `22F42F` | `(B4 / 255) × 100` | % | CAN 0x380 |
 
@@ -50,7 +50,7 @@ The following PCM Mode 22 PIDs are polled by the app every 30 seconds via ISO-TP
 | 0x0319 | VCT Exhaust Angle | `220319` | 2 | (signed(A)×256+B) / 16 | ° | 3 | DigiCluster |
 | 0x03EC | Ign Correction Cyl1 | `2203EC` | 2 | (signed(A)×256+B) / −512 | ° | 2 | DigiCluster |
 | 0x054B | Oil Life | `22054B` | 1 | A | % | 6 | DigiCluster |
-| 0x0543 | Octane Adjust Ratio | `220543` | 1 | A / 255 | ratio | 3 | DigiCluster |
+| 0x03E8 | Octane Adjust Ratio | `2203E8` | 2 | (signed(A)×256+B) / 16384 | ratio | 3 | DigiCluster |
 | 0x0461 | Charge Air Temp | `220461` | 2 | (signed(A)×256+B) / 64 | °C | 2 | DigiCluster |
 | 0xF43C | Catalytic Temp | `22F43C` | 2 | (A×256+B) / 10 − 40 | °C | 3 | DigiCluster |
 
@@ -99,16 +99,16 @@ All formulas re-validated against DigiCluster `can0_hs.json` and `can1_ms.json`.
 |----|-------------|----------------|--------|
 | 0x080 | Throttle %, accel pedal % | bytes 2-3 / 2.55 | DigiCluster HS-CAN |
 | 0x090 | RPM, baro pressure | RPM: `((B4&0x0F)<<8\|B5)×2`; baro: `B2×0.5 kPa` | DigiCluster HS-CAN |
-| 0x0C8 | E-brake, ESC | e-brake: `B3&0x40` | DigiCluster HS-CAN |
-| 0x0F8 | Boost kPa, oil temp | boost: B5 absolute kPa; oil: `B7−60 °C` | DigiCluster HS-CAN |
+| 0x0C8 | Gauge brightness, e-brake | brightness: `B0&0x1F`; e-brake: `B3&0x40` | DigiCluster HS-CAN |
+| 0x0F8 | Oil temp, boost, PTU temp | oil: `B1−50 °C`; boost: B5 absolute kPa; PTU: `B7−60 °C` | RS_HS.dbc PCMmsg07 |
 | 0x130 | Speed kph | `word(B6-B7)×0.01` | DigiCluster HS-CAN |
 | 0x160 | Longitudinal G | `((B6&0x03)<<8\|B7)×0.00390625−2.0` | DigiCluster HS-CAN |
 | 0x180 | Lateral G | `((B2&0x03)<<8\|B3)×0.00390625−2.0` | DigiCluster HS-CAN |
 | 0x1A4 | Ambient temp | `B4 signed × 0.25 °C` | DigiCluster MS-CAN bridged |
-| 0x1B0 | Drive mode | `(B6>>4)&0x0F` — 0=Normal,1=Sport,2=Track,3=Drift | DigiCluster HS-CAN |
+| 0x1B0 | Drive mode | `(B6>>4)&0x0F` — 0=Normal,1=Sport,2=Drift,3=Track | RS_HS.dbc AWDmsg01 |
+| 0x1C0 | ESC mode status | ESC operating mode (On / Sport / Off) | RS_HS.dbc |
 | 0x190 | 4× wheel speeds | FL/FR/RL/RR: 15-bit Motorola × 0.011343006 kph | RS_HS.dbc ABSmsg03 |
 | 0x2C0 | AWD L/R torque | 12-bit words scaled | DigiCluster HS-CAN |
 | 0x2F0 | Coolant temp, IAT | coolant: `((B4&0x03)<<8\|B5) − 60 °C`; IAT: `((B6&0x03)<<8\|B7) × 0.25 − 127 °C` | RS_HS.dbc PCMmsg16 |
 | 0x340 | Ambient temp (PCMmsg17) | `byte7 signed × 0.25 °C` — **not** TPMS | RS_HS.dbc PCMmsg17 |
 | 0x380 | Fuel level % (FuelLevelFiltered) | Motorola 10-bit: `((data[2]&0x03)<<8\|data[3]) × 0.4` | RS_HS.dbc PCMmsg30 |
-| 0x3C0 | Battery voltage | `word(B2-B3)×0.001 V` | DigiCluster HS-CAN |

@@ -98,7 +98,7 @@ IDF_PATH=~/your/esp-idf/path ./firmware/build.sh
 
 ## REST API
 
-All endpoints inherit from wican-fw and extend it:
+All endpoints inherit from wican-fw and extend it. Example responses below are illustrative — actual values will reflect your device's live state:
 
 ### `GET /status`
 ```json
@@ -191,8 +191,7 @@ firmware/
 │       ├── CMakeLists.txt
 │       ├── ble_transport.h
 │       └── ble_transport.c      ← GATT server, ELM327 notify characteristic
-└── docs/
-    └── BUILDING.md              ← detailed build environment setup
+└── build.sh                     ← one-command build script
 ```
 
 ---
