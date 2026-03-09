@@ -47,6 +47,11 @@ This file mirrors the app UI. Every visible change to the app **must** be reflec
 - Release notes summarise every user-visible change
 - If firmware changed, reference the firmware release in the app release notes
 
+## 6. GitHub Issues Milestone
+- Check the milestone for this release (e.g. `v2.3.0 — Tech Debt + Polish`)
+- Verify all issues addressed in this release are closed (commits should auto-close via `fixes #N`)
+- Move any unfinished issues to the next milestone
+
 ## Quick Verification
 Before creating the release, ask:
 - [ ] Does `versionName` in `build.gradle.kts` match the CHANGELOG entry?
@@ -55,3 +60,4 @@ Before creating the release, ask:
 - [ ] Are any removed widgets also removed from the emulator?
 - [ ] Are any formula changes reflected in the emulator and README?
 - [ ] Is the APK attached to the GitHub release?
+- [ ] Are all addressed issues in the milestone closed?
