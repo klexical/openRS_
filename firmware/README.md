@@ -33,7 +33,9 @@ Forked from [`meatpiHQ/wican-fw`](https://github.com/meatpiHQ/wican-fw) — the 
 
 ---
 
-## Hardware Target
+## Hardware Compatibility
+
+### Primary Target — WiCAN-USB-C3
 
 | Field | Value |
 |-------|-------|
@@ -44,6 +46,23 @@ Forked from [`meatpiHQ/wican-fw`](https://github.com/meatpiHQ/wican-fw) — the 
 | CAN Speed | 500 kbps (HS-CAN) |
 | WiFi | 2.4GHz 802.11 b/g/n |
 | BLE | Bluetooth 5.0 LE |
+
+### WiCAN Pro — Experimental Support
+
+The **MeatPi WiCAN Pro** is a higher-end adapter with onboard GPS, MicroSD logging, and a raw TCP SLCAN interface (port 35000). The openRS_ Android app supports the Pro for **passive CAN + OBD polling** out of the box — no firmware flash needed.
+
+| Feature | Status |
+|---------|--------|
+| Raw TCP SLCAN connection | ✅ Working |
+| Passive CAN frame reception | ✅ Working |
+| OBD polling (PCM/BCM/AWD/PSCM) | ✅ Working |
+| DTC scan & clear | ✅ Working |
+| openrs-fw detection (`OPENRS?` probe) | ⚠️ v1.4+ (pending Pro hardware verification) |
+| GPS NMEA passthrough | ❌ Not yet implemented |
+| MicroSD remote control | ❌ Not yet implemented |
+| openrs-fw firmware port | ❌ Requires Pro hardware analysis |
+
+> **Note:** Firmware-gated features (drive mode write, LC, ASS kill, ESC control) require openrs-fw. Porting openrs-fw to the Pro's hardware is tracked in [Phase 10 — Hardware Expansion](../README.md).
 
 ---
 

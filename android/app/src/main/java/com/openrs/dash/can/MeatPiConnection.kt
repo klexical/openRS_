@@ -84,13 +84,14 @@ class MeatPiConnection(
                     out.flush()
                     addDebugLine("SLCAN init sent (C / S6 / O)")
 
+                    out.write("OPENRS?\r".toByteArray(Charsets.ISO_8859_1))
+                    out.flush()
+                    addDebugLine("Probing firmware...")
+
                     _state.value = AdapterState.Connected
                     _tcpOut = out
                     connectionSucceeded = true
                     failedAttempts = 0
-
-                    DiagnosticLogger.firmwareVersion = firmwareVersion
-                    DiagnosticLogger.isOpenRsFirmware = false
 
                     // ── BCM OBD poller ────────────────────────────────────────
                     val obdJob = launch {
@@ -143,11 +144,37 @@ class MeatPiConnection(
                     val seenIds   = mutableSetOf<Int>()
                     var debugCount = 0
                     var debugTimer = System.currentTimeMillis()
+                    var firmwareKnown = false
+                    val probeStartMs  = System.currentTimeMillis()
+                    val PROBE_GRACE_MS = 3_000L
 
                     // ── Main frame loop ───────────────────────────────────────
                     try {
                         while (currentCoroutineContext().isActive) {
                             val line = try { readSlcanLine(inp) } catch (_: Exception) { null } ?: break
+
+                            if (!firmwareKnown) {
+                                if (line.startsWith("OPENRS:")) {
+                                    firmwareKnown = true
+                                    val version = line.removePrefix("OPENRS:").trim()
+                                    firmwareVersion = "openRS_ $version"
+                                    OpenRSDashApp.instance.isOpenRsFirmware.value = true
+                                    DiagnosticLogger.isOpenRsFirmware = true
+                                    DiagnosticLogger.firmwareVersion = firmwareVersion
+                                    addDebugLine("Firmware: openRS_ $version ✓")
+                                    DiagnosticLogger.event("FIRMWARE", "openRS_ $version detected (TCP)")
+                                    continue
+                                } else if (System.currentTimeMillis() - probeStartMs >= PROBE_GRACE_MS) {
+                                    firmwareKnown = true
+                                    firmwareVersion = "MeatPi Pro"
+                                    OpenRSDashApp.instance.isOpenRsFirmware.value = false
+                                    DiagnosticLogger.isOpenRsFirmware = false
+                                    DiagnosticLogger.firmwareVersion = firmwareVersion
+                                    addDebugLine("Firmware: MeatPi Pro stock (3 s timeout)")
+                                    DiagnosticLogger.event("FIRMWARE", "MeatPi Pro stock (no openRS_ response in 3 s)")
+                                }
+                            }
+
                             val frame = SlcanParser.parse(line) ?: continue
 
                             if (_dtcScanActive && frame.first in _dtcWatchIds) {

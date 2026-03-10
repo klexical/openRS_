@@ -9,11 +9,12 @@ Modifications applied:
   2. config_server.c  — AP password default: @meatpi# → openrs2024
   3. config_server.c  — Add /api/frs GET+POST endpoint (token-authenticated)
   4. config_server.c  — OPENRS? WebSocket probe handler (responds OPENRS:<version>)
-  5. main.c           — #include "focusrs.h"
-  6. main.c           — frs_init() call after nvs_flash_init() in app_main
-  7. main.c           — frs_parse_can_frame() call in can_rx_task
-  8. main.c           — frs_set_can_tx_fn() registration via static openrs_can_tx shim
-  9. main/CMakeLists  — add focusrs to REQUIRES
+  5. slcan.c           — OPENRS? TCP probe handler for WiCAN Pro raw TCP SLCAN
+  6. main.c           — #include "focusrs.h"
+  7. main.c           — frs_init() call after nvs_flash_init() in app_main
+  8. main.c           — frs_parse_can_frame() call in can_rx_task
+  9. main.c           — frs_set_can_tx_fn() registration via static openrs_can_tx shim
+ 10. main/CMakeLists  — add focusrs to REQUIRES
 """
 
 # Version string returned to the Android app when it sends "OPENRS?\r".
@@ -217,6 +218,71 @@ def patch_ws_probe(base):
               "— OPENRS? probe NOT inserted. Check wican-fw source version.")
 
 
+def patch_tcp_probe(base):
+    """Insert an OPENRS? identity probe into the SLCAN TCP receive path.
+
+    The WiCAN Pro uses raw TCP SLCAN (port 35000) instead of WebSocket. The
+    WebSocket probe in config_server.c never fires for TCP connections. This
+    patch adds a check in slcan.c's slcan_parse_str() — the function that
+    processes every incoming SLCAN line regardless of transport — so the probe
+    works for both WiCAN (WebSocket) and WiCAN Pro (TCP).
+
+    NOTE: This targets wican-fw v4.20+. If the anchor function signature
+    changes in a future release, the patch will print a WARNING and skip.
+    Verify with actual WiCAN Pro hardware once available.
+    """
+    path = os.path.join(base, "main", "slcan.c")
+    if not os.path.exists(path):
+        print("  WARNING: slcan.c not found — TCP probe NOT inserted (expected for non-Pro builds)")
+        return
+    c = read(path)
+
+    MARKER = "OPENRS_TCP_PROBE"
+    if MARKER in c:
+        print("  skipped: TCP OPENRS? probe already present in slcan.c")
+        return
+
+    # slcan_parse_str receives the raw line from any transport. We intercept at
+    # the top of this function so "OPENRS?\r" never reaches the SLCAN command
+    # parser. The reply is written back via the TCP socket fd stored in the
+    # connection context.
+    #
+    # Anchor: the function signature. In wican-fw v4.20u it is:
+    #   int8_t slcan_parse_str(char *buf, uint8_t len)
+    # We insert our check immediately after the opening brace.
+    ANCHOR = "int8_t slcan_parse_str(char *buf, uint8_t len)\n{"
+    PROBE_BLOCK = (
+        'int8_t slcan_parse_str(char *buf, uint8_t len)\n'
+        '{\n'
+        '    /* ' + MARKER + ': respond to firmware identity probe over any transport.\n'
+        '     * WiCAN Pro uses raw TCP SLCAN — the WebSocket probe in config_server.c\n'
+        '     * does not fire. This catch-all ensures the app gets a reply. */\n'
+        '    if (len >= 7 && strncmp(buf, "OPENRS?", 7) == 0) {\n'
+        '        extern int slcan_tcp_send(const char *data, int data_len);\n'
+        '        const char *reply = "OPENRS:' + OPENRS_FW_VERSION + '\\r\\n";\n'
+        '        slcan_tcp_send(reply, strlen(reply));\n'
+        '        return 0;\n'
+        '    }\n'
+    )
+
+    if ANCHOR in c:
+        c = c.replace(ANCHOR, PROBE_BLOCK, 1)
+        write(path, c)
+    else:
+        # Try alternate signature (some versions use different formatting)
+        ALT_ANCHOR = "int8_t slcan_parse_str(char *buf, uint8_t len) {"
+        if ALT_ANCHOR in c:
+            ALT_PROBE = PROBE_BLOCK.replace(
+                "int8_t slcan_parse_str(char *buf, uint8_t len)\n{",
+                "int8_t slcan_parse_str(char *buf, uint8_t len) {"
+            )
+            c = c.replace(ALT_ANCHOR, ALT_PROBE, 1)
+            write(path, c)
+        else:
+            print("  WARNING: slcan_parse_str() anchor not found in slcan.c "
+                  "— TCP OPENRS? probe NOT inserted. Check wican-fw source version.")
+
+
 def patch_main(base):
     path = os.path.join(base, "main", "main.c")
     c = read(path)
@@ -318,6 +384,7 @@ if __name__ == "__main__":
     patch_wifi_network(base)
     patch_config_server(base)
     patch_ws_probe(base)
+    patch_tcp_probe(base)
     patch_main(base)
     patch_cmake(base)
     print("\nAll patches applied successfully.\n")
