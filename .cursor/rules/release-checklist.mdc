@@ -36,27 +36,46 @@ This file mirrors the app UI. Every visible change to the app **must** be reflec
 - **`toggleOdom()` or any new JS toggle** — if a new interactive element was added to the app, add matching JS in the emulator
 
 ## 4. Firmware (if firmware also changed)
-- `firmware/CHANGELOG.md` or release notes must be written
+- `firmware/CHANGELOG.md` must be updated
 - Firmware version bumped in `focusrs.h` (`OPENRS_FW_VERSION`)
 - `firmware/patches/apply_patches.py` — `OPENRS_FW_VERSION` must match `focusrs.h`
-- Compiled binaries must be rebuilt and placed in `firmware/release/`
-- A separate `fw-vX.Y` GitHub release must be created with all 4 flash files
+- Compiled binaries rebuilt for each device target: `./build.sh --target usb` and/or `./build.sh --target pro`
+- Release binaries placed in `firmware/release/` (named `openrs-fw-usb_vXXX.bin`, `openrs-fw-pro_vXXX.bin`)
+- Firmware releases are **per-device** — each device gets its own GitHub release (see below)
 
 ## 5. Pre-release (staging → testing)
 When pushing significant changes to `staging` that aren't ready for `main`:
-- Tag: `git tag <component>-vX.Y.Z-rc.N` (e.g. `fw-v1.4-rc.1`, `android-v2.3.0-rc.1`)
-- Push tag: `git push origin <tag>`
-- Create pre-release: `gh release create <tag> --prerelease --target staging --title "<title>" --notes "<notes>"`
+
+### Tagging convention
+- Android: `android-vX.Y.Z-rc.N`
+- Firmware USB: `fw-usb-vX.Y-rc.N`
+- Firmware Pro: `fw-pro-vX.Y-rc.N`
+
+### Steps
+- Tag: `git tag <tag> staging && git push origin <tag>`
+- Create: `gh release create <tag> --prerelease --target staging --title "<title>" --notes "<notes>"`
+- Attach: unsigned/debug APKs or firmware `.bin` files for testers
 - Pre-releases show on the Releases page with a badge but do NOT replace the "Latest" stable release
-- Attach unsigned/debug APKs or source-only firmware for testers
 - When ready to ship: promote to stable release (see step 6)
 
+### Firmware: separate releases per device
+- Each device target gets its own pre-release (e.g. `fw-usb-v1.4-rc.1` and `fw-pro-v1.4-rc.1`)
+- Attach only that device's flash files (bootloader, partition-table, ota_data, app binary)
+- Pro releases are only created after the build is verified on actual hardware
+
 ## 6. GitHub Release (stable)
-- Merge `staging` → `main`, then tag on main: `git tag android-vX.Y.Z && git push origin android-vX.Y.Z`
-- Create release: `gh release create android-vX.Y.Z "android/dist/openRS_vX.Y.Z.apk#openRS_vX.Y.Z.apk" --title "openRS_ vX.Y.Z — <short description>" --latest --notes "<release notes>"`
+
+### Android app
+- Merge `staging` → `main`, then tag: `git tag android-vX.Y.Z && git push origin android-vX.Y.Z`
+- Create: `gh release create android-vX.Y.Z "android/dist/openRS_vX.Y.Z.apk#openRS_vX.Y.Z.apk" --title "openRS_ vX.Y.Z — <short description>" --latest --notes "<notes>"`
 - APK must be the **signed** build from `android/dist/`, not debug
 - Release notes must summarise every user-visible change
-- If firmware changed, create a separate `fw-vX.Y` release and reference it in the app release notes
+
+### Firmware (per device)
+- Tag: `git tag fw-usb-vX.Y && git push origin fw-usb-vX.Y` (and/or `fw-pro-vX.Y`)
+- Create: `gh release create fw-usb-vX.Y firmware/release/bootloader.bin firmware/release/openrs-fw-usb_vXXX.bin firmware/release/ota_data_initial.bin firmware/release/partition-table.bin --title "openrs-fw USB vX.Y" --notes "<notes>"`
+- USB and Pro get separate releases — versions may diverge over time
+- Reference firmware releases in the app release notes if both ship together
 
 ## 7. GitHub Issues Milestone
 - Check the milestone for this release (e.g. `v2.3.0 — Tech Debt + Polish`)
