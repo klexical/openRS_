@@ -113,7 +113,7 @@ Do NOT mix these files with the stock firmware package.
   2. Plug the WiCAN into the Focus RS OBD-II port (ignition ON)
   3. Wait 10–20 seconds for the LED to stabilise
   4. On your phone: Settings → Wi-Fi → connect to openRS_XXXXXX
-     Password: openrs2024
+     Password: openrs_2026
   5. Open http://192.168.80.1 — the openRS_ web UI loads ✓
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

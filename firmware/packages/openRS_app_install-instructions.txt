@@ -66,7 +66,7 @@ installed manually onto your Android phone.
 
   1. Connect your phone's Wi-Fi to the WiCAN network:
        SSID:     WiCAN_XXXXXX  (or openRS_XXXXXX if using openrs-fw)
-       Password: @meatpi#      (or openrs2024 for openrs-fw)
+       Password: @meatpi#      (or openrs_2026 for openrs-fw)
   2. Open the openRS_ app
   3. The app auto-connects via WebSocket (ws://192.168.80.1:80/ws)
      and begins streaming CAN data at ~2100 fps

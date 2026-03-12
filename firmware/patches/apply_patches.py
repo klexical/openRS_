@@ -11,7 +11,7 @@ Supports two build targets via device profiles:
 
 Common patches (both targets):
   1. wifi_network.c   — AP SSID prefix: WiCAN_ → openRS_
-  2. config_server.c  — AP password default: @meatpi# → openrs2024
+  2. config_server.c  — AP password default: @meatpi# → openrs_2026
   3. config_server.c  — #include "focusrs.h"
   4. config_server.c  — Add /api/frs GET+POST endpoint (token-authenticated)
   5. config_server.c  — Register /api/frs URI handlers
@@ -84,7 +84,7 @@ def patch_config_server(base):
     path = os.path.join(base, "main", "config_server.c")
     c = read(path)
 
-    c = replace_once(c, '"@meatpi#"', '"openrs2024"', "AP password default")
+    c = replace_once(c, '"@meatpi#"', '"openrs_2026"', "AP password default")
 
     FRS_INCLUDE = '#include "focusrs.h"'
     if FRS_INCLUDE not in c:
