@@ -95,6 +95,61 @@ See the [Firmware Update Guide](firmware-update.md) for step-by-step flashing in
 
 ---
 
+## WiCAN Pro Adapter
+
+openRS_ also supports the [MeatPi WiCAN Pro](https://www.meatpi.com/) via raw TCP SLCAN. The Pro adds GPS, MicroSD logging, and an ESP32-S3 with more memory, but requires a one-time configuration change before openRS_ can connect.
+
+### Hardware Specifications
+
+| Attribute | Value |
+|-----------|-------|
+| **Manufacturer** | MeatPi Electronics |
+| **Microcontroller** | ESP32-S3 (dual-core, 16 MB flash, 8 MB PSRAM) |
+| **Interfaces** | CAN bus, USB-C, Wi-Fi 2.4 GHz, BLE 5.0, GPS, MicroSD |
+| **Operating Voltage** | 7.5V – 36V (OBD-II pin 16, always-on) |
+| **Extras** | GPS passthrough, on-device MicroSD CAN logging |
+
+### First-Time Setup
+
+**Step 1 — Physical install**
+1. Plug the WiCAN Pro into the OBD-II port (same location as USB-C3)
+2. Turn the car to ACC or RUN — the Pro LED will flash then go solid
+
+**Step 2 — Connect to the Pro's hotspot**
+1. Connect your phone to `WiCAN_XXXXXX` (default password `@meatpi#`)
+2. Default AP address: `192.168.0.10`
+
+**Step 3 — Set protocol to SLCAN (required)**
+
+> **This is the critical step.** The WiCAN Pro does **not** default to SLCAN mode. Without this change, openRS_ will connect but receive zero CAN frames.
+
+1. Open a browser → go to `http://192.168.0.10`
+2. In the **CAN** or **Protocol** settings, change the mode to **SLCAN**
+3. Set CAN speed to **500 kbps** (if not already)
+4. Confirm the TCP port is **35000**
+5. Press **Save** — the device reboots
+
+| Setting | Required Value |
+|---------|----------------|
+| Protocol / Mode | **SLCAN** |
+| CAN Speed | `500 kbps` |
+| TCP Port | `35000` |
+
+**Step 4 — Configure openRS_**
+1. Open the app → Settings (gear icon)
+2. Change **Adapter** to **MeatPi Pro**
+3. Host auto-fills to `192.168.0.10`, port to `35000` — verify these match your Pro's config
+4. Tap **Save**, then tap the connection dot to disconnect and reconnect
+
+**Step 5 — Verify connection**
+1. Go to **DIAG** tab → check the Live CAN Output section
+2. You should see `Connecting to 192.168.0.10:35000` → `SLCAN init sent` → CAN frames flowing
+3. FPS should climb to ~2000+ within seconds
+
+> **Symptom if SLCAN is not set:** The app will show `SLCAN init sent (C / S6 / O)` repeating in a loop with 0 frames and 0 FPS. The TCP connection succeeds but no CAN data flows because the Pro is in a different protocol mode (e.g. ELM327).
+
+---
+
 ## OBD-II Port Pinout (Focus RS MK3)
 
 | Pin | Signal | Notes |

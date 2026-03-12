@@ -157,6 +157,8 @@ All display preferences are configurable and persist across restarts:
 
 > **Stock firmware** works out of the box — openRS_ connects via WebSocket SLCAN (`ws://192.168.80.1:80/ws`) with no configuration changes needed. For full functionality (drive mode write, Launch Control, Auto S/S Kill, ESC control), flash **openrs-fw** to the WiCAN. See the [firmware update guide](android/docs/firmware-update.md) for instructions.
 
+> **WiCAN Pro users:** The Pro defaults to ELM327 mode. You **must** open the Pro's web UI (`http://192.168.0.10`), set the protocol to **SLCAN**, CAN speed to **500 kbps**, and TCP port to **35000**, then reboot. Without this step the app connects but receives zero CAN frames. In the openRS_ app, switch the adapter to **MeatPi Pro** in Settings. See the [hardware setup guide](android/docs/hardware-setup.md#wican-pro-adapter) for full instructions.
+
 ---
 
 ## Quick Start

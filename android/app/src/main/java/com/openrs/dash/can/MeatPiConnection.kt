@@ -70,7 +70,7 @@ class MeatPiConnection(
                 val socket = Socket()
                 try {
                     socket.connect(InetSocketAddress(host, port), 5_000)
-                    socket.soTimeout = 5_000
+                    socket.soTimeout = 20_000
 
                     val inp = socket.getInputStream()
                     val out = socket.getOutputStream()
