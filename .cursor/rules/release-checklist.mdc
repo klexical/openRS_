@@ -67,9 +67,11 @@ When pushing significant changes to `staging` that aren't ready for `main`:
 
 ### Android app
 - Merge `staging` → `main`, then tag: `git tag android-vX.Y.Z && git push origin android-vX.Y.Z`
-- Create: `gh release create android-vX.Y.Z "android/dist/openRS_vX.Y.Z.apk#openRS_vX.Y.Z.apk" --title "openRS_ vX.Y.Z — <short description>" --latest --notes "<notes>"`
-- APK must be the **signed** build from `android/dist/`, not debug
+- Create release: `gh release create android-vX.Y.Z --title "openRS_ vX.Y.Z — <short description>" --latest --notes "<notes>"`
+- **APK is attached automatically** by the `publish-release` CI job when the `android-v*` tag is pushed
+- The CI job builds a signed release APK using GitHub Secrets (`KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`) — ensure these are configured in the repo settings
 - Release notes must summarise every user-visible change
+- Verify the APK appears on the release page after CI completes
 
 ### Firmware (per device)
 - Tag: `git tag fw-usb-vX.Y && git push origin fw-usb-vX.Y` (and/or `fw-pro-vX.Y`)
