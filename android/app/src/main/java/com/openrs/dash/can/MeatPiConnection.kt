@@ -59,9 +59,11 @@ class MeatPiConnection(
     ): Flow<Pair<Int, ByteArray>> = channelFlow<Pair<Int, ByteArray>> {
 
         var failedAttempts = 0
+        var consecutiveDrops = 0
 
         while (currentCoroutineContext().isActive && failedAttempts < maxRetries) {
             var connectionSucceeded = false
+            var connectedAtMs = 0L
             try {
                 _state.value = AdapterState.Connecting
                 addDebugLine("--- MeatPi Pro TCP SLCAN ---")
@@ -91,6 +93,7 @@ class MeatPiConnection(
                     _state.value = AdapterState.Connected
                     _tcpOut = out
                     connectionSucceeded = true
+                    connectedAtMs = System.currentTimeMillis()
                     failedAttempts = 0
 
                     // ── BCM OBD poller ────────────────────────────────────────
@@ -151,7 +154,9 @@ class MeatPiConnection(
                     // ── Main frame loop ───────────────────────────────────────
                     try {
                         while (currentCoroutineContext().isActive) {
-                            val line = try { readSlcanLine(inp) } catch (_: Exception) { null } ?: break
+                            val line = try { readSlcanLine(inp) } catch (e: Exception) {
+                                android.util.Log.d("MEATPI", "readSlcanLine failed", e); null
+                            } ?: break
 
                             if (!firmwareKnown) {
                                 if (line.startsWith("OPENRS:")) {
@@ -253,8 +258,18 @@ class MeatPiConnection(
             }
 
             _state.value = AdapterState.Disconnected
-            val delayMs = if (connectionSucceeded) reconnectDelayMs
-                          else ObdConstants.BACKOFF_MS.getOrElse(failedAttempts - 1) { 30_000L }
+            val delayMs = if (connectionSucceeded) {
+                val uptime = System.currentTimeMillis() - connectedAtMs
+                if (uptime < 30_000) {
+                    consecutiveDrops++
+                    minOf(consecutiveDrops * reconnectDelayMs, 60_000L)
+                } else {
+                    consecutiveDrops = 0
+                    reconnectDelayMs
+                }
+            } else {
+                ObdConstants.BACKOFF_MS.getOrElse(failedAttempts - 1) { 30_000L }
+            }
             delay(delayMs)
         }
     }.flowOn(Dispatchers.IO)

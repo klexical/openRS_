@@ -2,13 +2,18 @@ package com.openrs.dash.service
 
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.os.Binder
+import android.os.Build
 import android.os.IBinder
+import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import com.openrs.dash.OpenRSDashApp
+import com.openrs.dash.R
 import com.openrs.dash.can.AdapterState
 import com.openrs.dash.can.CanDecoder
 import com.openrs.dash.can.MeatPiConnection
@@ -123,14 +128,47 @@ class CanDataService : Service() {
                 stopConnection()
             }
         }
-        try { cm.registerNetworkCallback(request, wifiCallback!!) } catch (_: Exception) {}
+        try { cm.registerNetworkCallback(request, wifiCallback!!) } catch (e: Exception) {
+            android.util.Log.w("CAN", "registerNetworkCallback failed", e)
+        }
     }
 
     private fun unregisterWifiCallback() {
         wifiCallback?.let { cb ->
-            try { cm.unregisterNetworkCallback(cb) } catch (_: Exception) {}
+            try { cm.unregisterNetworkCallback(cb) } catch (e: Exception) {
+                android.util.Log.w("CAN", "unregisterNetworkCallback failed", e)
+            }
         }
         wifiCallback = null
+    }
+
+    // ── Foreground notification ──────────────────────────────────────────────
+
+    private companion object {
+        const val NOTIF_ID = 1
+    }
+
+    private fun goForeground() {
+        val notification = NotificationCompat.Builder(this, OpenRSDashApp.CHANNEL_CAN)
+            .setContentTitle("openRS_")
+            .setContentText("Connected to vehicle")
+            .setSmallIcon(R.drawable.ic_notification)
+            .setOngoing(true)
+            .setSilent(true)
+            .build()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ServiceCompat.startForeground(
+                this, NOTIF_ID, notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+            )
+        } else {
+            startForeground(NOTIF_ID, notification)
+        }
+    }
+
+    private fun leaveForeground() {
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
     }
 
     // ── Connection control ───────────────────────────────────────────────────
@@ -138,6 +176,8 @@ class CanDataService : Service() {
     @Synchronized fun startConnection() {
         if (!isOnWifi()) return
         if (connectionJob?.isActive == true) return
+
+        goForeground()
 
         val s = AppSettings
         DiagnosticLogger.sessionStart(
@@ -269,6 +309,7 @@ class CanDataService : Service() {
         connectionJob?.cancel()
         connectionJob = null
         OpenRSDashApp.instance.vehicleState.update { it.copy(isConnected = false, isIdle = false) }
+        leaveForeground()
     }
 
     /** Called from UI when user taps the RETRY badge — fresh adapter + retry. */

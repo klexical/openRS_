@@ -195,9 +195,11 @@ class WiCanConnection(
     ): Flow<Pair<Int, ByteArray>> = channelFlow<Pair<Int, ByteArray>> {
 
         var failedAttempts = 0
+        var consecutiveDrops = 0
 
         while (currentCoroutineContext().isActive && failedAttempts < maxRetries) {
             var connectionSucceeded = false
+            var connectedAtMs = 0L
             try {
                 _state.value = AdapterState.Connecting
                 addDebugLine("--- WebSocket SLCAN ---")
@@ -227,6 +229,7 @@ class WiCanConnection(
                 _state.value = AdapterState.Connected
                 _wsOut = out
                 connectionSucceeded = true
+                connectedAtMs = System.currentTimeMillis()
                 failedAttempts = 0
 
                 // ── BCM OBD poller ───────────────────────────────────────────
@@ -403,8 +406,18 @@ class WiCanConnection(
             }
 
             _state.value = AdapterState.Disconnected
-            val delayMs = if (connectionSucceeded) reconnectDelayMs
-                          else ObdConstants.BACKOFF_MS.getOrElse(failedAttempts - 1) { 30_000L }
+            val delayMs = if (connectionSucceeded) {
+                val uptime = System.currentTimeMillis() - connectedAtMs
+                if (uptime < 30_000) {
+                    consecutiveDrops++
+                    minOf(consecutiveDrops * reconnectDelayMs, 60_000L)
+                } else {
+                    consecutiveDrops = 0
+                    reconnectDelayMs
+                }
+            } else {
+                ObdConstants.BACKOFF_MS.getOrElse(failedAttempts - 1) { 30_000L }
+            }
             delay(delayMs)
         }
     }.flowOn(Dispatchers.IO)
@@ -412,7 +425,7 @@ class WiCanConnection(
     // ── WebSocket helpers ───────────────────────────────────────────────────
 
     private fun sendHttpUpgrade(out: OutputStream) {
-        val keyBytes = ByteArray(16).also { SecureRandom().nextBytes(it) }
+        val keyBytes = ByteArray(16).also { rng.nextBytes(it) }
         val key = android.util.Base64.encodeToString(keyBytes, android.util.Base64.NO_WRAP)
         val req = "GET $WS_PATH HTTP/1.1\r\n" +
             "Host: $host\r\n" +

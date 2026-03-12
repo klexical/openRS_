@@ -1,5 +1,6 @@
 package com.openrs.dash.can
 
+import android.util.Log
 import com.openrs.dash.data.VehicleState
 
 /**
@@ -17,12 +18,18 @@ import com.openrs.dash.data.VehicleState
  */
 object ObdResponseParser {
 
+    private const val TAG = "OBD"
+
+    private fun logMalformed(module: String, data: ByteArray, reason: String) {
+        Log.w(TAG, "$module: $reason [${data.joinToString(" ") { "%02X".format(it) }}]")
+    }
+
     fun parseBcmResponse(
         data: ByteArray,
         currentState: VehicleState,
         onObdUpdate: (VehicleState) -> Unit
     ) {
-        if (data.size < 5) return
+        if (data.size < 5) { logMalformed("BCM", data, "too short (${data.size} < 5)"); return }
         if ((data[1].toInt() and 0xFF) != 0x62) return
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
@@ -63,7 +70,7 @@ object ObdResponseParser {
         currentState: VehicleState,
         onObdUpdate: (VehicleState) -> Unit
     ) {
-        if (data.size < 5) return
+        if (data.size < 5) { logMalformed("AWD", data, "too short (${data.size} < 5)"); return }
         if ((data[1].toInt() and 0xFF) != 0x62) return
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
@@ -82,7 +89,7 @@ object ObdResponseParser {
         currentState: VehicleState,
         onObdUpdate: (VehicleState) -> Unit
     ) {
-        if (data.size < 5) return
+        if (data.size < 5) { logMalformed("PCM", data, "too short (${data.size} < 5)"); return }
         if ((data[1].toInt() and 0xFF) != 0x62) return
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
@@ -139,7 +146,7 @@ object ObdResponseParser {
         currentState: VehicleState,
         onObdUpdate: (VehicleState) -> Unit
     ) {
-        if (data.size < 5) return
+        if (data.size < 5) { logMalformed("PSCM", data, "too short (${data.size} < 5)"); return }
         if ((data[1].toInt() and 0xFF) != 0x62) return
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
@@ -154,7 +161,7 @@ object ObdResponseParser {
         currentState: VehicleState,
         onObdUpdate: (VehicleState) -> Unit
     ) {
-        if (data.size < 5) return
+        if (data.size < 5) { logMalformed("FENG", data, "too short (${data.size} < 5)"); return }
         if ((data[1].toInt() and 0xFF) != 0x62) return
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
@@ -174,7 +181,7 @@ object ObdResponseParser {
         onObdUpdate: (VehicleState) -> Unit,
         onDebug: ((String) -> Unit)? = null
     ) {
-        if (data.size < 5) return
+        if (data.size < 5) { logMalformed("RSProt", data, "too short (${data.size} < 5)"); return }
         if ((data[1].toInt() and 0xFF) != 0x62) return
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF

@@ -7,9 +7,6 @@ import android.content.ServiceConnection
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
-import android.view.WindowManager
-import com.openrs.dash.diagnostics.DiagnosticLogger
-import com.openrs.dash.diagnostics.DiagnosticExporter
 import kotlinx.coroutines.launch
 import android.Manifest
 import androidx.activity.ComponentActivity
@@ -154,7 +151,7 @@ class MainActivity : ComponentActivity() {
 
     private fun startSvc() {
         val i = Intent(this, CanDataService::class.java)
-        startService(i)
+        androidx.core.content.ContextCompat.startForegroundService(this, i)
         bindService(i, conn, Context.BIND_AUTO_CREATE)
     }
 

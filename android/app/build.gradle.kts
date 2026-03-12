@@ -50,7 +50,7 @@ android {
         }
     }
 
-    // Rename output APKs: openRS_v2.0.1-staging-debug.apk / openRS_v2.0.1.apk
+    // Rename output APKs: openRS_v{version}-staging-debug.apk / openRS_v{version}.apk
     applicationVariants.all {
         val variant = this
         variant.outputs.all {

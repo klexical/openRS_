@@ -1,6 +1,9 @@
 package com.openrs.dash
 
 import android.app.Application
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.os.Build
 import com.openrs.dash.data.TripState
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.service.TripRecorder
@@ -20,6 +23,7 @@ import kotlinx.coroutines.flow.update
 class OpenRSDashApp : Application() {
 
     companion object {
+        const val CHANNEL_CAN = "openrs_can"
         lateinit var instance: OpenRSDashApp
             private set
     }
@@ -60,5 +64,21 @@ class OpenRSDashApp : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        createNotificationChannel()
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_CAN,
+                "Vehicle Connection",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Shown while openRS_ is connected to the vehicle"
+                setShowBadge(false)
+            }
+            getSystemService(NotificationManager::class.java)
+                .createNotificationChannel(channel)
+        }
     }
 }

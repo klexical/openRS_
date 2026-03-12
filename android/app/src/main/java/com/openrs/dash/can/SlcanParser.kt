@@ -1,5 +1,7 @@
 package com.openrs.dash.can
 
+import android.util.Log
+
 /**
  * Stateless SLCAN frame parser shared by all adapter implementations.
  *
@@ -37,5 +39,5 @@ object SlcanParser {
     private fun parseDataBytes(msg: String, start: Int, dlc: Int): ByteArray =
         try {
             ByteArray(dlc) { i -> msg.substring(start + i * 2, start + i * 2 + 2).toInt(16).toByte() }
-        } catch (_: Exception) { ByteArray(0) }
+        } catch (e: Exception) { Log.w("SLCAN", "parseDataBytes failed: ${msg.take(30)}", e); ByteArray(0) }
 }

@@ -13,11 +13,21 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 - **Drive mode Sport/Track disambiguation** (#74): Sport mode incorrectly displayed as Track. Root cause: both modes produce `0x420 byte6=0x11` — the decoder only checked byte6. The real discriminator is byte7 bit 0 (`0=Sport, 1=Track`). Confirmed via live SLCAN capture (344k frames, WiCAN Pro session). `modeDetail420` now stores `byte6<<8|byte7`.
 - **MeatPi Pro TCP socket timeout** increased from 5s to 20s, matching the WiCAN WebSocket timeout. The aggressive 5s timeout caused unnecessary disconnect/reconnect cycles during brief CAN traffic pauses.
+- **Reconnect loop hammering** (#37): when a connection succeeded but dropped quickly (< 30 s), the reconnect delay was a flat 5 s and `failedAttempts` was reset every time — creating an infinite rapid-reconnect loop. Consecutive short-lived connections now apply escalating backoff (5 s → 10 s → ... → 60 s cap). Stable connections (> 30 s uptime) still use the configured reconnect delay. Applied to both `WiCanConnection` and `MeatPiConnection`.
+- **Stale APK version comment** (#30): `build.gradle.kts` APK rename comment referenced `v2.0.1`; updated to use `{version}` placeholder since the version is dynamic.
+- **Unused imports** (#29, #16): removed `WindowManager`, `DiagnosticLogger`, `DiagnosticExporter` imports from `MainActivity.kt`.
 
 ### Added
 
+- **Foreground service with persistent notification** (#33): `CanDataService` now calls `startForeground()` with a low-priority "Connected to vehicle" notification while a CAN session is active. This prevents Android from killing the service when the app is backgrounded. Notification channel created in `OpenRSDashApp`, `foregroundServiceType="connectedDevice"` declared in manifest. Notification is removed when the connection stops.
+- **OBD response malformed-frame logging** (#38): all six `ObdResponseParser` methods (`BCM`, `AWD`, `PCM`, `PSCM`, `FENG`, `RSProt`) now `Log.w` when a frame is too short to parse, including the raw hex bytes. Previously these were silent early returns.
+- **Silent catch-block logging** (#4): critical `catch` blocks in `SlcanParser`, `MeatPiConnection` (readSlcanLine), and `CanDataService` (network callback registration) now log the exception instead of swallowing it. OBD polling send catches remain silent (expected failures during disconnect).
 - **WiCAN Pro setup documentation**: hardware-setup.md now includes a full WiCAN Pro section with first-time setup instructions. Prominently documents the critical requirement to set the Pro's protocol to **SLCAN** in its web UI (the Pro defaults to ELM327 mode).
 - **OPENRS? firmware probe for TCP**: `MeatPiConnection` now sends the `OPENRS?` probe after SLCAN init, enabling firmware detection on the WiCAN Pro (stock vs openrs-fw).
+
+### Changed
+
+- **SecureRandom reuse** (#17): `WiCanConnection.sendHttpUpgrade()` was creating a new `SecureRandom` instance per connection. Now reuses the existing `rng` field.
 
 ---
 
