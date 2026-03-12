@@ -7,6 +7,20 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
+## [v2.2.2] — 2026-03-12 (pre-release)
+
+### Fixed
+
+- **Drive mode Sport/Track disambiguation** (#74): Sport mode incorrectly displayed as Track. Root cause: both modes produce `0x420 byte6=0x11` — the decoder only checked byte6. The real discriminator is byte7 bit 0 (`0=Sport, 1=Track`). Confirmed via live SLCAN capture (344k frames, WiCAN Pro session). `modeDetail420` now stores `byte6<<8|byte7`.
+- **MeatPi Pro TCP socket timeout** increased from 5s to 20s, matching the WiCAN WebSocket timeout. The aggressive 5s timeout caused unnecessary disconnect/reconnect cycles during brief CAN traffic pauses.
+
+### Added
+
+- **WiCAN Pro setup documentation**: hardware-setup.md now includes a full WiCAN Pro section with first-time setup instructions. Prominently documents the critical requirement to set the Pro's protocol to **SLCAN** in its web UI (the Pro defaults to ELM327 mode).
+- **OPENRS? firmware probe for TCP**: `MeatPiConnection` now sends the `OPENRS?` probe after SLCAN init, enabling firmware detection on the WiCAN Pro (stock vs openrs-fw).
+
+---
+
 ## [v2.2.1] — 2026-03-08
 
 ### Added
