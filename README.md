@@ -151,7 +151,7 @@ All display preferences are configurable and persist across restarts:
 | Firmware | SSID | Password |
 |----------|------|----------|
 | **Stock WiCAN** | `WiCAN_XXXXXX` | `@meatpi#` |
-| **openrs-fw** | `openRS_XXXXXX` | `openrs2024` |
+| **openrs-fw** | `openRS_XXXXXX` | `openrs_2026` |
 
 3. Install openRS_ and tap the connection dot in the header
 

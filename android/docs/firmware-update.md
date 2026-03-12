@@ -208,7 +208,7 @@ firmware/release/
 
 Same tool, same settings (40MHz, DIO, DoNotChgBin, 115200 baud).
 
-After flashing openrs-fw, the WiFi SSID changes from `WiCAN_XXXXXX` to `openRS_XXXXXX` and the password changes to `openrs2024`.
+After flashing openrs-fw, the WiFi SSID changes from `WiCAN_XXXXXX` to `openRS_XXXXXX` and the password changes to `openrs_2026`.
 
 ### Subsequent openrs-fw updates (OTA)
 

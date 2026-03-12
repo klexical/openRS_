@@ -27,7 +27,7 @@ All notable changes to the openrs-fw firmware are documented here.
 
 ### Fixed
 - Drive mode cycle math corrected to use CAN-to-position lookup table ([#53](https://github.com/klexical/openRS_/issues/53))
-- WiFi AP password changed from stock `@meatpi#` to `openrs2024` ([#54](https://github.com/klexical/openRS_/issues/54))
+- WiFi AP password changed from stock `@meatpi#` to `openrs_2026` ([#54](https://github.com/klexical/openRS_/issues/54))
 - Removed dead code: unused `frs_handle_settings_post()` and `CAN_TX_HOOK` lambda ([#62](https://github.com/klexical/openRS_/issues/62), [#63](https://github.com/klexical/openRS_/issues/63))
 - `nvs_flash_init` patch now uses regex to target only the call inside `app_main()` ([#64](https://github.com/klexical/openRS_/issues/64))
 - Python path detection uses `command -v` instead of hardcoded macOS path ([#65](https://github.com/klexical/openRS_/issues/65))
