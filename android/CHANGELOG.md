@@ -7,7 +7,7 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
-## [v2.2.2] — 2026-03-12 (pre-release)
+## [v2.2.2] — 2026-03-12
 
 ### Fixed
 
