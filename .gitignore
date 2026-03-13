@@ -56,3 +56,4 @@ gradle-*-bin.zip
 
 # ═══ Firmware build cache (wican-fw clone + ESP-IDF) ═
 firmware/.build/
+__pycache__/

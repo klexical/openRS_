@@ -141,3 +141,37 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: android/app/build/outputs/apk/release/openRS_v${{ steps.version.outputs.version }}.apk
+
+  verify-firmware:
+    name: Verify Firmware Binaries
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for manifest files
+        id: check
+        run: |
+          if ls firmware/release/BUILD_MANIFEST_*.json 1>/dev/null 2>&1; then
+            echo "has_manifest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_manifest=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify firmware binaries match manifest
+        if: steps.check.outputs.has_manifest == 'true'
+        run: bash firmware/verify-release.sh
+
+      - name: Fail if binaries exist without manifest
+        run: |
+          for bin in firmware/release/openrs-fw-*.bin; do
+            [ -f "$bin" ] || continue
+            NAME=$(basename "$bin")
+            TARGET_HINT=$(echo "$NAME" | sed -n 's/openrs-fw-\(usb\|pro\)_.*/\1/p')
+            if [ -n "$TARGET_HINT" ] && [ ! -f "firmware/release/BUILD_MANIFEST_${TARGET_HINT}.json" ]; then
+              echo "::error::$NAME exists but BUILD_MANIFEST_${TARGET_HINT}.json is missing — binary may be stale. Rebuild with: ./build.sh --target $TARGET_HINT"
+              exit 1
+            fi
+          done
+          echo "All firmware binaries have matching manifests."
