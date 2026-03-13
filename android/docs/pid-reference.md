@@ -1,6 +1,6 @@
 # OBD PID Reference — Ford Focus RS MK3
 
-Complete reference for all OBD-II parameters used by openRS_ (current as of v2.2.1).
+Complete reference for all OBD-II parameters used by openRS_ (current as of v2.2.2).
 
 ## ECU Address Map
 
@@ -8,20 +8,24 @@ Complete reference for all OBD-II parameters used by openRS_ (current as of v2.2
 |-----|------|----------------|-----------------|-----|
 | PCM | Powertrain Control Module | 0x7E0 | 0x7E8 | HS-CAN 500k |
 | BCM | Body Control Module | 0x726 | 0x72E | HS-CAN 500k |
-| Broadcast | All ECUs | 0x7DF | varies | HS-CAN 500k |
+| AWD | AWD / RDU Module | 0x703 | 0x70B | HS-CAN 500k |
 
 ## Mode 22 — PCM (Header: 0x7E0)
 
 The following PCM Mode 22 PIDs are polled by the app every 30 seconds via ISO-TP over SLCAN (request `0x7E0` → response `0x7E8`). Additional passive CAN alternatives are noted where available.
 
-| PID | Name | Request | Formula | Unit | Passive CAN alternative |
-|-----|------|---------|---------|------|------------------------|
-| 0xF405 | Coolant Temp (PCM) | `22F405` | `B4 − 40` | °C | CAN 0x2F0 |
-| 0xF40F | Intake Air Temp (PCM) | `22F40F` | `B4 − 40` | °C | CAN 0x2F0 |
-| 0x03CA | Intake Air Temp 2 | `2203CA` | `B4 − 40` | °C | Likely `manifoldChargeTempC` — post-intercooler |
-| 0xF42F | Fuel Level (PCM) | `22F42F` | `(B4 / 255) × 100` | % | CAN 0x380 |
+> **Reference PIDs:** Some PIDs below are documented for reference but are **not actively polled** — they have passive CAN equivalents that provide the same data at full bus speed.
 
-## Mode 1 — Standard OBD-II (Header: 0x7DF)
+| PID | Name | Request | Formula | Unit | Polled? | Passive CAN alternative |
+|-----|------|---------|---------|------|---------|------------------------|
+| 0xF405 | Coolant Temp (PCM) | `22F405` | `B4 − 40` | °C | No (reference) | CAN 0x2F0 |
+| 0xF40F | Intake Air Temp (PCM) | `22F40F` | `B4 − 40` | °C | No (reference) | CAN 0x2F0 |
+| 0x03CA | Intake Air Temp 2 | `2203CA` | `B4 − 40` | °C | No (reference) | Likely post-intercooler charge air |
+| 0xF42F | Fuel Level (PCM) | `22F42F` | `(B4 / 255) × 100` | % | ✅ 30 s | CAN 0x380 (also decoded) |
+
+## Mode 1 — Standard OBD-II (Reference Only)
+
+> **Not polled by the app.** These Mode 1 PIDs are documented for reference. openRS_ uses Ford-enhanced Mode 22 PIDs via PCM header 0x7E0 instead.
 
 | PID | Name | Request | Bytes | Formula | Unit | Priority |
 |-----|------|---------|-------|---------|------|----------|
@@ -41,17 +45,18 @@ The following PCM Mode 22 PIDs are polled by the app every 30 seconds via ISO-TP
 |-----|------|---------|-------|---------|------|----------|--------|
 | 0xF434 | AFR Actual | `22F434` | 2 | (A×256+B) × 0.0004486 | :1 | 1 | DigiCluster |
 | 0xF444 | AFR Desired | `22F444` | 1 | A × 0.1144 | :1 | 2 | DigiCluster |
-| 0x093C | ETC Angle Actual | `22093C` | 2 | (A×256+B) / 512 | ° | 1 | DigiCluster |
-| 0x091A | ETC Angle Desired | `22091A` | 2 | (A×256+B) / 512 | ° | 2 | DigiCluster |
+| 0x093C | ETC Angle Actual | `22093C` | 2 | (A×256+B) × (100/8192) | % | 1 | DigiCluster |
+| 0x091A | ETC Angle Desired | `22091A` | 2 | (A×256+B) × (100/8192) | % | 2 | DigiCluster |
 | 0x033E | TIP Actual | `22033E` | 2 | (A×256+B) / 903.81 | kPa | 1 | DigiCluster |
 | 0x0466 | TIP Desired | `220466` | 2 | (A×256+B) / 903.81 | kPa | 2 | DigiCluster |
-| 0x0462 | WGDC Desired | `220462` | 2 | (A×256+B) / 327.68 | % | 2 | DigiCluster |
+| 0x0462 | WGDC Desired | `220462` | 1 | B4 × 100/128 | % | 2 | DigiCluster |
 | 0x0318 | VCT Intake Angle | `220318` | 2 | (signed(A)×256+B) / 16 | ° | 3 | DigiCluster |
 | 0x0319 | VCT Exhaust Angle | `220319` | 2 | (signed(A)×256+B) / 16 | ° | 3 | DigiCluster |
 | 0x03EC | Ign Correction Cyl1 | `2203EC` | 2 | (signed(A)×256+B) / −512 | ° | 2 | DigiCluster |
 | 0x054B | Oil Life | `22054B` | 1 | A | % | 6 | DigiCluster |
 | 0x03E8 | Octane Adjust Ratio | `2203E8` | 2 | (signed(A)×256+B) / 16384 | ratio | 3 | DigiCluster |
 | 0x0461 | Charge Air Temp | `220461` | 2 | (signed(A)×256+B) / 64 | °C | 2 | DigiCluster |
+| 0xF422 | HP Fuel Rail Pressure | `22F422` | 2 | (A×256+B) × 1.45038 | PSI | 2 | DigiCluster |
 | 0xF43C | Catalytic Temp | `22F43C` | 2 | (A×256+B) / 10 − 40 | °C | 3 | DigiCluster |
 
 ## TPMS — BCM Mode 22 (current method, v1.1.6+)

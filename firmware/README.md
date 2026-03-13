@@ -30,7 +30,7 @@ Forked from [`meatpiHQ/wican-fw`](https://github.com/meatpiHQ/wican-fw) — the 
   - Fallback when the phone's WiFi radio is occupied (e.g. wireless projection)
   - Coexists with WiFi — both active simultaneously
 - **Battery protection** — configurable voltage threshold (default 12.2V) for sleep mode
-- **Battery voltage REST API** (`GET /status` → includes `battery_mv`)
+- **Battery voltage REST API** (`GET /api/frs` → includes `battery_mv`)
 - Branded as `openRS_` (SSID: `openRS_XXXXXX`, BLE: `openRS_WiCAN`)
 
 ---
@@ -113,11 +113,15 @@ The script will:
 
 ```
 firmware/release/
-  bootloader.bin          ← flash at 0x0
-  partition-table.bin     ← flash at 0x8000
-  ota_data_initial.bin    ← flash at 0xd000
-  openrs-fw-usb_v140.bin  ← flash at 0x10000  (USB build)
-  openrs-fw-pro_v140.bin  ← flash at 0x10000  (Pro build)
+  bootloader_usb.bin          ← flash at 0x0      (USB build)
+  partition-table_usb.bin     ← flash at 0x8000
+  ota_data_initial_usb.bin    ← flash at 0xd000
+  openrs-fw-usb_v140.bin      ← flash at 0x10000
+
+  bootloader_pro.bin          ← flash at 0x0      (Pro build)
+  partition-table_pro.bin     ← flash at 0x8000
+  ota_data_initial_pro.bin    ← flash at 0xd000
+  openrs-fw-pro_v140.bin      ← flash at 0x10000
 ```
 
 ### Building both targets
@@ -217,8 +221,7 @@ The BLE interface is protocol-compatible with the WiFi TCP interface. The openRS
 
 | Key | Type | Description |
 |-----|------|-------------|
-| `rs_drivemode` | uint8 | Last selected drive mode (0–3) |
-| `rs_bootmode` | uint8 | Mode to set on next boot |
+| `rs_bootmode` | uint8 | Persisted drive mode — set on next boot (0=Normal, 1=Sport, 2=Drift, 3=Track) |
 | `rs_esc` | uint8 | ESC state |
 | `rs_lc` | bool | Launch control enabled |
 | `rs_ass_kill` | bool | Auto S/S kill enabled |
@@ -242,8 +245,7 @@ firmware/
 │   │   └── focusrs_nvs.h
 │   └── ble_transport/                 ← BLE GATT ELM327 bridge
 │       ├── CMakeLists.txt
-│       ├── ble_transport.h
-│       └── ble_transport.c
+│       └── ble_transport.h
 ├── patches/
 │   ├── apply_patches.py               ← patch script (--target usb|pro)
 │   ├── profiles/

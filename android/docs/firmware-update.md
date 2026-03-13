@@ -156,8 +156,13 @@ To find your COM port: open **Device Manager** → expand **Ports (COM & LPT)** 
 1. Unplug the Mini USB cable
 2. Plug the WiCAN into the Focus RS OBD-II port (ignition ON)
 3. Wait for the solid LED (10–20 seconds)
-4. On your phone: **Settings → Wi-Fi** → connect to `WiCAN_XXXXXX`
-   - Password: `@meatpi#`
+4. On your phone: **Settings → Wi-Fi** → connect to the WiCAN network:
+
+| Firmware | SSID | Password |
+|----------|------|----------|
+| **Stock WiCAN** | `WiCAN_XXXXXX` | `@meatpi#` |
+| **openrs-fw** | `openRS_XXXXXX` | `openrs_2026` |
+
 5. Open `http://192.168.80.1` in a browser
 6. The WiCAN web interface loads — confirm the firmware version shown
 
@@ -198,10 +203,10 @@ The process is identical to the stock flash above — use the openrs-fw release 
 
 ```
 firmware/release/
-  bootloader.bin            ← address 0x0
-  partition-table.bin       ← address 0x8000
-  ota_data_initial.bin      ← address 0xd000
-  openrs-fw-usb_v140.bin    ← address 0x10000
+  bootloader_usb.bin          ← address 0x0
+  partition-table_usb.bin     ← address 0x8000
+  ota_data_initial_usb.bin    ← address 0xd000
+  openrs-fw-usb_v140.bin      ← address 0x10000
 ```
 
 > **Note:** openrs-fw uses a custom partition table with a 2MB OTA slot (vs. 1.75MB stock). You must flash all 4 files — do not mix openrs-fw binaries with stock partition-table.bin.

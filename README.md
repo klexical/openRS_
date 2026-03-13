@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.2.1-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-2.2.2-blue" alt="Version">
   <img src="https://img.shields.io/badge/platform-Android-brightgreen?logo=android" alt="Platform">
   <img src="https://img.shields.io/badge/Kotlin-2.0-purple?logo=kotlin" alt="Kotlin">
   <img src="https://img.shields.io/badge/Jetpack_Compose-Material3-4285F4?logo=jetpackcompose" alt="Compose">
@@ -44,7 +44,9 @@ Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It understan
 | **Surface 2** | `#1C1C1C` | Inset cards, hero RPM gauge |
 
 **Fonts** (offline-embedded):
-- **Share Tech Mono** — all numeric readouts and raw data values
+- **Orbitron** — hero gauge values (RPM, speed, boost)
+- **JetBrains Mono** — secondary numeric readouts
+- **Share Tech Mono** — raw data values and diagnostic output
 - **Barlow Condensed** — all UI labels, section headers, and button text
 
 ---
@@ -55,7 +57,7 @@ Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It understan
 
 | Screen | Description |
 |--------|-------------|
-| **DASH** | Hero boost/RPM/speed gauges, 8-cell data grid (throttle, brake, torque, oil, coolant, intake, fuel, battery), animated AWD split bar, G-force row |
+| **DASH** | Hero boost/RPM/speed gauges, Inputs & Resources section (throttle, brake, fuel, battery), Temps Quick section (oil, coolant, intake, oil life), G-Force section (lat G, lon G, torque), animated AWD split bar |
 | **POWER** | AFR hero cards (actual/desired/lambda), Throttle & Boost (ETC actual/desired, WGDC, TIP, fuel rail PSI), Engine Management (timing, load, OAR, KR CYL1, VCT-I/E), Fuel Trims & Misc |
 | **CHASSIS** | AWD detail (4 wheel speeds, torque bar, F/R delta, L/R delta, rear bias), G-Force section (yaw, steering, peaks + inline reset), TPMS with car outline |
 | **TEMPS** | Animated Ready-to-Race banner, 10 temperature cards each with a colour indicator bar (oil, coolant, intake, ambient, RDU, PTU, charge air, catalytic, cabin, battery) |
@@ -95,22 +97,21 @@ All data is received passively from the CAN bus via WebSocket SLCAN at ~2100 fps
 
 | ECU | Request | Response | PIDs / Function | Interval |
 |-----|---------|----------|-----------------|----------|
-| PCM | 0x7E0 | 0x7E8 | ETC actual (0x093C), ETC desired (0x091A), WGDC (0x0462), KR cyl 1 (0x03EC), OAR (0x03E8), Charge Air Temp (0x0461), Catalyst Temp (0xF43C) | 30 s |
-| BCM | 0x726 | 0x72E | Odometer (0xDD01), Battery SOC (0x4028), Battery temp (0x4029), Cabin temp (0xDD04), **TPMS LF/RF/LR/RR** (0x2813–0x2816) `(((256×A)+B)/3 + 22/3) × 0.145 PSI` | 30 s |
-| AWD module | 0x703 | 0x70B | RDU oil temp (0x1E8A) — `B4 − 40 °C` | 30 s |
+| PCM | 0x7E0 | 0x7E8 | ETC actual (0x093C), ETC desired (0x091A), WGDC (0x0462), KR cyl 1 (0x03EC), OAR (0x03E8), Charge Air Temp (0x0461), Catalyst Temp (0xF43C), AFR actual (0xF434), AFR desired (0xF444), TIP actual (0x033E), TIP desired (0x0466), VCT intake (0x0318), VCT exhaust (0x0319), Oil Life (0x054B), HP Fuel Rail (0xF422), Fuel Level (0xF42F) | 30 s |
+| BCM | 0x726 | 0x72E | Battery SOC (0x4028), Battery temp (0x4029), Cabin temp (0xDD04), **TPMS LF/RF/LR/RR** (0x2813–0x2816) `(((256×A)+B)/3 + 22/3) × 0.145 PSI` | 30 s |
+| BCM (ext) | 0x726 | 0x72E | Odometer (0xDD01) — requires extended diagnostic session | 60 s |
+| AWD module | 0x703 | 0x70B | RDU oil temp (0x1E8A) — `B4 − 40 °C` | 60 s |
 
 ### Ready-to-Race Thresholds
 
-The TEMPS tab displays a warming-up / race-ready banner based on four sensors reaching safe operating temperatures:
+The TEMPS tab displays a warming-up / race-ready banner based on **oil** and **coolant** temperatures. Thresholds are preset-based — configurable via Street / Track / Race in Settings:
 
-| Sensor | Threshold | Rationale |
-|--------|-----------|-----------|
-| Engine Oil | ≥ 80 °C | Viscosity stable for hard use |
-| Coolant | ≥ 85 °C | Thermostat fully open, stable temp |
-| RDU | ≥ 30 °C | AWD module warm, fluid circulating |
-| PTU | ≥ 40 °C | Transfer case warm |
+| Sensor | Street | Track | Race |
+|--------|--------|-------|------|
+| Engine Oil | ≥ 70 °C | ≥ 80 °C | ≥ 85 °C |
+| Coolant | ≥ 70 °C | ≥ 75 °C | ≥ 80 °C |
 
-The banner shows which sensors are still below threshold with live °C values.
+The banner shows which sensors are still below threshold with live °C values. A value of −99 °C (not yet received) is treated as passing to avoid blocking warm cars on reconnect.
 
 ### Settings
 
@@ -123,6 +124,8 @@ All display preferences are configurable and persist across restarts:
 | Boost pressure | PSI / BAR / kPa | PSI |
 | Tire pressure | PSI / BAR | PSI |
 | Low tire threshold | PSI (any value) | 30 PSI |
+| Threshold preset | Street / Track / Race | Street |
+| Theme | RS paint colours (Nitrous Blue, Frozen White, etc.) | Nitrous Blue |
 | Keep screen on | on / off | on |
 | Auto-reconnect | on / off | on |
 | Reconnect interval | seconds | 10 s |
@@ -175,7 +178,7 @@ All display preferences are configurable and persist across restarts:
 git clone https://github.com/klexical/openRS_.git
 cd openRS_/android
 ./gradlew assembleRelease
-# Output: app/build/outputs/apk/release/openRS_v2.2.1.apk
+# Output: app/build/outputs/apk/release/openRS_v2.2.2.apk
 # (Requires keystore — see android/docs/signing-setup.md)
 ```
 
@@ -222,9 +225,11 @@ Open `android/browser-emulator/index.html` in any browser, or visit the live ver
 │  SLCAN: C / S6 / O · ~2100 fps│  Raw SLCAN + OBD polling            │
 │  Firmware probe (OPENRS?)     │                                      │
 ├──────────────────────────────────────────────────────────────────────┤
-│  PCM polling (0x7E0): ETC, WGDC, KR, OAR, charge air, CAT temp      │
-│  BCM polling (0x726): odometer, SOC, battery temp, cabin temp        │
-│  AWD polling (0x703): RDU oil temp                                   │
+│  PCM polling (0x7E0/30s): ETC, WGDC, KR, OAR, AFR, TIP, VCT,       │
+│    charge air, CAT temp, oil life, HP fuel rail, fuel level          │
+│  BCM polling (0x726/30s): SOC, battery temp, cabin temp, TPMS×4     │
+│  BCM ext (0x726/60s): odometer (extended diagnostic session)         │
+│  AWD polling (0x703/60s): RDU oil temp                               │
 ├──────────────────────┬───────────────────────────────────────────────┤
 │  MeatPi WiCAN USB-C3 │  MeatPi WiCAN Pro (optional)                 │
 │  Wi-Fi AP · WS :80/ws│  Wi-Fi AP · TCP :35000 · GPS · MicroSD       │
@@ -289,8 +294,12 @@ android/
 │   │       └── SettingsSheet.kt          # Settings dialog
 │   └── res/
 │       ├── font/                          # Embedded fonts
-│       │   ├── share_tech_mono.ttf       # Numeric readouts
-│       │   ├── barlow_condensed_regular.ttf
+│       │   ├── orbitron_regular.ttf      # Hero gauge values
+│       │   ├── orbitron_bold.ttf
+│       │   ├── jetbrains_mono_regular.ttf # Secondary numeric readouts
+│       │   ├── jetbrains_mono_bold.ttf
+│       │   ├── share_tech_mono.ttf       # Raw data / diagnostics
+│       │   ├── barlow_condensed_regular.ttf # UI labels
 │       │   ├── barlow_condensed_medium.ttf
 │       │   ├── barlow_condensed_semibold.ttf
 │       │   └── barlow_condensed_bold.ttf
@@ -300,7 +309,7 @@ android/
 │       ├── xml/file_paths.xml            # FileProvider path config
 │       └── mipmap-*/ic_launcher*.png     # App icon (all densities)
 ├── browser-emulator/
-│   └── index.html                        # Standalone browser emulator (v2.2.1)
+│   └── index.html                        # Standalone browser emulator (v2.2.2)
 ├── docs/
 │   ├── hardware-setup.md
 │   ├── firmware-update.md

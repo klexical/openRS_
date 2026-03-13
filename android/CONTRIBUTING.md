@@ -20,7 +20,7 @@ Thanks for your interest in contributing to openRS_! This project aims to give F
 ## Code Style
 
 - Follow standard [Kotlin coding conventions](https://kotlinlang.org/docs/coding-conventions.html)
-- Use `ktlint` for formatting (CI will check)
+- Follow [Kotlin coding conventions](https://kotlinlang.org/docs/coding-conventions.html) for formatting
 - Keep the monospace/dark theme aesthetic in UI code
 - Document CAN frame IDs and PID formulas with source references
 
@@ -48,9 +48,10 @@ OBD queries are grouped by ECU and sent at fixed intervals defined in `ObdConsta
 
 | ECU | Interval | Parameters |
 |-----|----------|------------|
-| PCM (Mode 22) | 30 s | ETC, WGDC, KR, OAR, charge air temp, catalyst temp |
-| BCM (Mode 22) | 30 s | Odometer, battery SOC, battery temp, cabin temp, **TPMS LF/RF/LR/RR** (0x2813–0x2816) |
-| AWD module | 30 s | RDU oil temp |
+| PCM (Mode 22) | 30 s | ETC, WGDC, KR, OAR, AFR, TIP, VCT, charge air, catalyst temp, oil life, HP fuel rail, fuel level |
+| BCM (Mode 22) | 30 s | Battery SOC, battery temp, cabin temp, **TPMS LF/RF/LR/RR** (0x2813–0x2816) |
+| BCM extended session | 60 s | Odometer (0xDD01) |
+| AWD module (ext session) | 60 s | RDU oil temp |
 
 ### Connection Architecture
 

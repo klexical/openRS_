@@ -148,4 +148,4 @@ So the “fully customizable” experience in aa-torque comes from **using the u
 
 ---
 
-*Document generated from research on aa-torque and aauto-sdk for the openRS project. Last updated: 2025-03.*
+*Document generated from research on aa-torque and aauto-sdk for the openRS project. Last updated: 2026-03.*
