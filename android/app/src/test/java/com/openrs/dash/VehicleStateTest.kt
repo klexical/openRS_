@@ -84,13 +84,13 @@ class VehicleStateTest {
 
         val hasData = VehicleState(tirePressLF = 35.0, tirePressRF = 35.0, tirePressLR = 35.0, tirePressRR = 35.0)
         assertTrue(hasData.hasTpmsData)
-        assertFalse(hasData.anyTireLow)
+        assertFalse(hasData.anyTireLow())
     }
 
     @Test
     fun `low tire pressure detection`() {
         val lowTire = VehicleState(tirePressLF = 25.0, tirePressRF = 35.0, tirePressLR = 35.0, tirePressRR = 35.0)
-        assertTrue(lowTire.anyTireLow)
+        assertTrue(lowTire.anyTireLow())
     }
 
     @Test
