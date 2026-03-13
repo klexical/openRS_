@@ -7,7 +7,7 @@ Usage:
 
 Supports two build targets via device profiles:
   usb  — WiCAN USB-C3 (ESP32-C3), wican-fw v4.20u  [default]
-  pro  — WiCAN Pro (ESP32-S3), wican-fw v4.48p      [UNVERIFIED]
+  pro  — WiCAN Pro (ESP32-S3), wican-fw v4.48p      [PENDING HW TEST]
 
 Common patches (both targets):
   1. wifi_network.c   — AP SSID prefix: WiCAN_ → openRS_
@@ -70,21 +70,38 @@ def load_profile(target):
 # ── Common patches (all targets) ────────────────────────────────────────────
 
 def patch_wifi_network(base):
-    """Change AP SSID prefix from WiCAN_ to openRS_."""
-    path = os.path.join(base, "main", "wifi_network.c")
-    c = read(path)
-    c = replace_once(c,
-        '"WiCAN_%02x%02x%02x%02x%02x%02x"',
-        '"openRS_%02x%02x%02x%02x%02x%02x"',
-        "AP SSID prefix")
-    write(path, c)
+    """Change AP SSID prefix from WiCAN_ to openRS_.
+
+    USB: the sprintf lives in wifi_network.c.
+    Pro: the sprintf moved to main.c in newer firmware.
+    """
+    SSID_OLD = '"WiCAN_%02x%02x%02x%02x%02x%02x"'
+    SSID_NEW = '"openRS_%02x%02x%02x%02x%02x%02x"'
+
+    for fname in ["wifi_network.c", "main.c"]:
+        path = os.path.join(base, "main", fname)
+        c = read(path)
+        if SSID_OLD in c:
+            c = c.replace(SSID_OLD, SSID_NEW, 1)
+            write(path, c)
+            print(f"  patched: {fname} (AP SSID prefix)")
+            return
+    print("  WARNING: could not find AP SSID format string in wifi_network.c or main.c")
 
 def patch_config_server(base):
     """Add focusrs include, AP password change, and /api/frs REST endpoints."""
     path = os.path.join(base, "main", "config_server.c")
     c = read(path)
 
-    c = replace_once(c, '"@meatpi#"', '"openrs_2026"', "AP password default")
+    # USB: literal "…" in code.  Pro: escaped \"…\" inside a C string literal.
+    if '"@meatpi#"' in c:
+        c = c.replace('"@meatpi#"', '"openrs_2026"', 1)
+        print("  patched: AP password default")
+    elif r'\"@meatpi#\"' in c:
+        c = c.replace(r'\"@meatpi#\"', r'\"openrs_2026\"', 1)
+        print("  patched: AP password default (escaped)")
+    else:
+        print("  WARNING: could not find @meatpi# default password")
 
     FRS_INCLUDE = '#include "focusrs.h"'
     if FRS_INCLUDE not in c:
@@ -166,14 +183,23 @@ static const httpd_uri_t frs_post_uri = {
 /* ─────────────────────────────────────────────────────────────────────── */
 
 """
-    TARGET_FN = "static httpd_handle_t config_server_init("
-    if FRS_HANDLER.strip()[:30] not in c and TARGET_FN in c:
-        c = c.replace(TARGET_FN, FRS_HANDLER + TARGET_FN, 1)
-        print("  patched: /api/frs handler inserted")
+    # Insert handler code before the first function that references it.
+    # USB: handlers are registered inside config_server_init().
+    # Pro: handlers are registered in a separate register_server_uris() that
+    #      appears earlier in the file, so we must insert before that instead.
+    TARGET_FN_PRO = "static void register_server_uris(void)"
+    TARGET_FN_USB = "static httpd_handle_t config_server_init("
+    if FRS_HANDLER.strip()[:30] not in c:
+        if TARGET_FN_PRO in c:
+            c = c.replace(TARGET_FN_PRO, FRS_HANDLER + TARGET_FN_PRO, 1)
+            print("  patched: /api/frs handler inserted (before register_server_uris)")
+        elif TARGET_FN_USB in c:
+            c = c.replace(TARGET_FN_USB, FRS_HANDLER + TARGET_FN_USB, 1)
+            print("  patched: /api/frs handler inserted (before config_server_init)")
+        else:
+            print("  WARNING: could not find insertion point — /api/frs handler NOT inserted")
     elif FRS_HANDLER.strip()[:30] in c:
         print("  skipped: /api/frs handler already present")
-    else:
-        print("  WARNING: could not find config_server_init() — /api/frs handler NOT inserted")
 
     REGISTER_TARGET = "httpd_register_uri_handler(server, &scan_available_pids_uri);"
     FRS_REGISTER = (
@@ -215,6 +241,14 @@ def patch_slcan_probe(base):
     # The probe intercepts at the top of slcan_parse_str, before the existing
     # buffer copy and command parsing. Uses the slcan_response callback to reply
     # back to the originating transport (TCP socket or WebSocket frame).
+    # USB signature: slcan_response(char*, uint32_t, QueueHandle_t*)  — 3 args
+    # Pro signature: slcan_response(char*, uint32_t, QueueHandle_t*, char*)  — 4 args
+    has_4arg = "char* cmd_str" in c or ("slcan_response" in c and "q, NULL)" in c)
+    response_call = (
+        '            slcan_response((char *)reply, strlen(reply), q, NULL);\n'
+        if has_4arg else
+        '            slcan_response((char *)reply, strlen(reply), q);\n'
+    )
     PROBE_CODE = (
         '\n    /* ' + MARKER + ': firmware identity probe ──────────────────────────\n'
         '     * Android app sends "OPENRS?\\r" after connecting. Intercept here\n'
@@ -222,7 +256,7 @@ def patch_slcan_probe(base):
         '    if (len >= 7 && strncmp((char *)buf, "OPENRS?", 7) == 0) {\n'
         '        const char *reply = "OPENRS:' + OPENRS_FW_VERSION + '\\r\\n";\n'
         '        if (slcan_response != NULL) {\n'
-        '            slcan_response((char *)reply, strlen(reply), q);\n'
+        + response_call +
         '        }\n'
         '        return NULL;\n'
         '    }\n'
@@ -247,24 +281,32 @@ def patch_main_common(base):
     path = os.path.join(base, "main", "main.c")
     c = read(path)
 
-    # 1. focusrs include
+    # 1. focusrs include — anchor differs between firmware versions
     FRS_INC = '#include "focusrs.h"'
     if FRS_INC not in c:
-        c = replace_once(c,
-            '#include "debug_logs_config.h"',
-            '#include "debug_logs_config.h"\n#include "focusrs.h"',
-            "focusrs.h include in main.c")
-
-    # 2. frs_init() after nvs_flash_init in app_main (regex to target only app_main's call)
-    if "frs_init();" not in c:
-        pattern = r'(void\s+app_main\s*\(void\)\s*\{[^}]*?)(ESP_ERROR_CHECK\(nvs_flash_init\(\)\);)'
-        replacement = r'\1ESP_ERROR_CHECK(nvs_flash_init());\n    frs_init();'
-        c_new, n = re.subn(pattern, replacement, c, count=1, flags=re.DOTALL)
-        if n > 0:
-            c = c_new
-            print("  patched: frs_init() after nvs_flash_init in app_main")
+        for inc_anchor in ['#include "debug_logs_config.h"', '#include "debug_logs.h"',
+                           '#include "config_server.h"']:
+            if inc_anchor in c:
+                c = c.replace(inc_anchor, inc_anchor + '\n' + FRS_INC, 1)
+                print(f"  patched: focusrs.h include (after {inc_anchor})")
+                break
         else:
-            print("  WARNING: could not find nvs_flash_init inside app_main — frs_init() NOT inserted")
+            print("  WARNING: could not find include anchor for focusrs.h")
+
+    # 2. frs_init() after nvs_flash_init block in app_main
+    # USB: ESP_ERROR_CHECK(nvs_flash_init());
+    # Pro: uses ret = nvs_flash_init() + ESP_ERROR_CHECK(ret);
+    if "frs_init();" not in c:
+        for init_anchor in ["ESP_ERROR_CHECK(nvs_flash_init());", "ESP_ERROR_CHECK(ret);"]:
+            pattern = r'(void\s+app_main\s*\(void\)\s*\{.*?)(' + re.escape(init_anchor) + r')'
+            c_new, n = re.subn(pattern, r'\1' + init_anchor + r'\n    frs_init();',
+                               c, count=1, flags=re.DOTALL)
+            if n > 0:
+                c = c_new
+                print(f"  patched: frs_init() after {init_anchor}")
+                break
+        else:
+            print("  WARNING: could not find nvs init anchor in app_main — frs_init() NOT inserted")
 
     # 3. frs_parse_can_frame in can_rx_task
     RX_ANCHOR = "process_led(1);"
@@ -284,15 +326,18 @@ def patch_cmake(base):
     path = os.path.join(base, "main", "CMakeLists.txt")
     c = read(path)
     if "focusrs" not in c:
-        c, n = re.subn(
-            r'(set\(requires\s+[^\)]+?)(filesystem\))',
-            r'\1filesystem focusrs)',
-            c, count=1
+        # Match the closing paren of set(requires ...) — handles both single-line
+        # (USB: "filesystem)") and multi-line (Pro: "ws_server\n)") formats.
+        c_new, n = re.subn(
+            r'(set\(requires\b.*?)\)',
+            r'\1    focusrs\n)',
+            c, count=1, flags=re.DOTALL
         )
-        if n == 0:
-            print("  WARNING: could not patch CMakeLists.txt set(requires ...) — focusrs NOT added")
-        else:
+        if n > 0:
+            c = c_new
             print("  patched: CMakeLists.txt (focusrs added to requires)")
+        else:
+            print("  WARNING: could not patch CMakeLists.txt set(requires ...) — focusrs NOT added")
     else:
         print("  skipped: focusrs already in CMakeLists.txt")
     write(path, c)
@@ -387,6 +432,69 @@ def patch_can_tx(base, profile):
     else:
         print("  skipped: openrs_can_tx already present in main.c")
 
+def patch_upstream_bugfixes(base):
+    """Fix upstream wican-fw bugs that cause build failures."""
+
+    # 1. dev_status.c: missing #include <string.h> (needed for memset)
+    path = os.path.join(base, "main", "dev_status.c")
+    if os.path.exists(path):
+        c = read(path)
+        if '#include <string.h>' not in c and '#include <stdio.h>' in c:
+            c = c.replace('#include <stdio.h>', '#include <stdio.h>\n#include <string.h>', 1)
+            write(path, c)
+            print("  patched: dev_status.c (missing string.h)")
+        else:
+            print("  skipped: dev_status.c already has string.h or not applicable")
+
+    # 2. autopid.h: missing FreeRTOS includes for SemaphoreHandle_t / QueueHandle_t
+    autopid_h = os.path.join(base, "components", "autopid", "autopid.h")
+    if os.path.exists(autopid_h):
+        c = read(autopid_h)
+        if 'freertos/FreeRTOS.h' not in c and '#include <esp_err.h>' in c:
+            c = c.replace(
+                '#include <esp_err.h>',
+                '#include <esp_err.h>\n'
+                '#include "freertos/FreeRTOS.h"\n'
+                '#include "freertos/semphr.h"\n'
+                '#include "freertos/queue.h"',
+                1
+            )
+            write(autopid_h, c)
+            print("  patched: autopid.h (missing FreeRTOS includes)")
+        else:
+            print("  skipped: autopid.h already has FreeRTOS includes")
+
+    # 3. cert_manager_http.c: chmod() not available on ESP-IDF (no POSIX perms)
+    cert_http = os.path.join(base, "components", "cert_manager", "cert_manager_http.c")
+    if os.path.exists(cert_http):
+        c = read(cert_http)
+        if 'chmod(path,0600)' in c:
+            c = c.replace('chmod(path,0600);',
+                          '// chmod not available on ESP-IDF (no POSIX permissions)', 1)
+            write(cert_http, c)
+            print("  patched: cert_manager_http.c (removed chmod call)")
+        else:
+            print("  skipped: cert_manager_http.c already patched or no chmod call")
+
+    # 4. Disable MBEDTLS_FATAL_WARNINGS — mbedtls sets -Werror on CMAKE_C_FLAGS
+    #    which poisons *all* components globally, turning upstream warnings into
+    #    fatal errors. Must be set before project() in the top-level CMakeLists.
+    top_cmake = os.path.join(base, "CMakeLists.txt")
+    if os.path.exists(top_cmake):
+        c = read(top_cmake)
+        if 'MBEDTLS_FATAL_WARNINGS' not in c:
+            c = c.replace(
+                'project(',
+                '# openrs-fw: disable mbedtls -Werror (pollutes CMAKE_C_FLAGS globally)\n'
+                'set(MBEDTLS_FATAL_WARNINGS OFF CACHE BOOL "" FORCE)\n\n'
+                'project(',
+                1
+            )
+            write(top_cmake, c)
+            print("  patched: CMakeLists.txt (disabled MBEDTLS_FATAL_WARNINGS)")
+        else:
+            print("  skipped: CMakeLists.txt already has MBEDTLS_FATAL_WARNINGS override")
+
 # ── Entry point ──────────────────────────────────────────────────────────────
 
 def main():
@@ -415,26 +523,29 @@ def main():
     print(f"Target: {profile['description']} (wican-fw {profile['wican_tag']})\n")
 
     # Common patches (all targets)
-    print("[1/7] WiFi network...")
+    print("[1/8] WiFi network...")
     patch_wifi_network(base)
 
-    print("[2/7] Config server (REST API, password, includes)...")
+    print("[2/8] Config server (REST API, password, includes)...")
     patch_config_server(base)
 
-    print("[3/7] SLCAN probe (universal, all transports)...")
+    print("[3/8] SLCAN probe (universal, all transports)...")
     patch_slcan_probe(base)
 
-    print("[4/7] WebSocket probe (transport-specific)...")
+    print("[4/8] WebSocket probe (transport-specific)...")
     patch_ws_probe(base, profile)
 
-    print("[5/7] Main (focusrs init, CAN RX hook)...")
+    print("[5/8] Main (focusrs init, CAN RX hook)...")
     patch_main_common(base)
 
-    print("[6/7] CAN TX shim (write support)...")
+    print("[6/8] CAN TX shim (write support)...")
     patch_can_tx(base, profile)
 
-    print("[7/7] CMakeLists (focusrs dependency)...")
+    print("[7/8] CMakeLists (focusrs dependency)...")
     patch_cmake(base)
+
+    print("[8/8] Upstream bugfixes...")
+    patch_upstream_bugfixes(base)
 
     print(f"\nAll patches applied for target '{profile['name']}'.")
     if not profile["verified"]:

@@ -8,7 +8,7 @@
 #
 #  Targets:
 #    usb  — WiCAN USB-C3 (ESP32-C3, wican-fw v4.20u)     [default]
-#    pro  — WiCAN Pro    (ESP32-S3, wican-fw v4.48p)      [UNVERIFIED]
+#    pro  — WiCAN Pro    (ESP32-S3, wican-fw v4.48p)
 #
 #  Output:
 #    firmware/release/  ← flash-ready .bin files
@@ -67,7 +67,7 @@ case "$TARGET" in
         SDKCONFIG_FILE="sdkconfig.defaults.pro"
         PARTITIONS_FILE="partitions_openrs_pro.csv"
         OUTPUT_BIN="openrs-fw-pro_v140.bin"
-        TARGET_DESC="WiCAN Pro (ESP32-S3) [UNVERIFIED]"
+        TARGET_DESC="WiCAN Pro (ESP32-S3)"
         ;;
 esac
 
@@ -94,15 +94,6 @@ log "Upstream tag: $WICAN_TAG"
 log "Checking prerequisites..."
 command -v git >/dev/null 2>&1 || err "git is required"
 
-PREFERRED_PYTHON="$(command -v python3.11 2>/dev/null || command -v python3.12 2>/dev/null || true)"
-LOCAL_BIN="$SCRIPT_DIR/.build/bin"
-if [ -n "$PREFERRED_PYTHON" ] && [ -x "$PREFERRED_PYTHON" ]; then
-    log "Using $PREFERRED_PYTHON for ESP-IDF environment"
-    mkdir -p "$LOCAL_BIN"
-    ln -sf "$PREFERRED_PYTHON" "$LOCAL_BIN/python3"
-    ln -sf "$PREFERRED_PYTHON" "$LOCAL_BIN/python"
-    export PATH="$LOCAL_BIN:$PATH"
-fi
 command -v python3 >/dev/null 2>&1 || err "python3 is required"
 
 export PATH="/opt/homebrew/bin:$PATH"
@@ -168,6 +159,15 @@ if [ "$NEEDS_SET_TARGET" = "true" ]; then
     idf.py set-target "$IDF_TARGET"
 else
     log "Target already configured for $IDF_TARGET with required options — skipping set-target"
+fi
+
+# Delete stale dependencies.lock if present — force fresh resolution.
+# Works around persistent hash mismatches for git-sourced components
+# (e.g. meatpihq/usb_host_ch34x_vcp) where the upstream content changed
+# after the lock was generated.
+if [ -f "$WICAN_DIR/dependencies.lock" ]; then
+    rm -f "$WICAN_DIR/dependencies.lock"
+    log "Removed stale dependencies.lock (will be regenerated)"
 fi
 
 idf.py build
