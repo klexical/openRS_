@@ -39,8 +39,15 @@ This file mirrors the app UI. Every visible change to the app **must** be reflec
 - `firmware/CHANGELOG.md` must be updated
 - Firmware version bumped in `focusrs.h` (`OPENRS_FW_VERSION`)
 - `firmware/patches/apply_patches.py` — `OPENRS_FW_VERSION` must match `focusrs.h`
-- Compiled binaries rebuilt for each device target: `./build.sh --target usb` and/or `./build.sh --target pro`
+- **Binaries MUST be rebuilt from source**: `./build.sh --target usb` and/or `./build.sh --target pro`
+  - Do NOT rename or copy a previous version's binary — this does nothing; the old code is still compiled in
+  - `build.sh` generates `firmware/release/BUILD_MANIFEST_<target>.json` with SHA-256 hashes, git commit, and build timestamp
+- **Run `./firmware/verify-release.sh`** before committing — it checks:
+  - Every binary's SHA-256 matches the manifest
+  - No binary is identical to a different version (catches copy/rename)
+  - Manifest git commit matches HEAD
 - Release binaries placed in `firmware/release/` (named `openrs-fw-usb_vXXX.bin`, `openrs-fw-pro_vXXX.bin`)
+- Commit the manifest alongside the binaries — CI will reject stale binaries on push to main
 - Firmware releases are **per-device** — each device gets its own GitHub release (see below)
 
 ## 5. Pre-release (staging → testing)
@@ -74,6 +81,7 @@ When pushing significant changes to `staging` that aren't ready for `main`:
 - Verify the APK appears on the release page after CI completes
 
 ### Firmware (per device)
+- Run `./firmware/verify-release.sh` — must pass before creating the release
 - Tag: `git tag fw-usb-vX.Y && git push origin fw-usb-vX.Y` (and/or `fw-pro-vX.Y`)
 - Create: `gh release create fw-usb-vX.Y firmware/release/bootloader.bin firmware/release/openrs-fw-usb_vXXX.bin firmware/release/ota_data_initial.bin firmware/release/partition-table.bin --title "openrs-fw USB vX.Y" --notes "<notes>"`
 - USB and Pro get separate releases — versions may diverge over time
@@ -92,4 +100,6 @@ Before creating the release, ask:
 - [ ] Are any removed widgets also removed from the emulator?
 - [ ] Are any formula changes reflected in the emulator and README?
 - [ ] Is the APK attached to the GitHub release?
+- [ ] (Firmware) Does `./firmware/verify-release.sh` pass?
+- [ ] (Firmware) Is `BUILD_MANIFEST_<target>.json` committed alongside the binaries?
 - [ ] Are all addressed issues in the milestone closed?

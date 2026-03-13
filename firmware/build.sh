@@ -192,7 +192,39 @@ if [ -f "build/storage.bin" ]; then
     cp build/storage.bin "$RELEASE_DIR/storage.bin"
 fi
 
-# ── 8. Summary ────────────────────────────────────────────────────────────────
+# ── 8. Build manifest ───────────────────────────────────────────────────────
+# Records what was built, when, and from which source. Used by
+# verify-release.sh and CI to catch stale/renamed binaries.
+log "Writing build manifest..."
+FW_VERSION=$(grep -o 'OPENRS_FW_VERSION.*"[^"]*"' "$COMPONENTS_DIR/focusrs/focusrs.h" | grep -o '"[^"]*"' | tr -d '"')
+GIT_SHA=$(git -C "$SCRIPT_DIR/.." rev-parse HEAD 2>/dev/null || echo "unknown")
+GIT_DIRTY=$(git -C "$SCRIPT_DIR/.." diff --quiet 2>/dev/null && echo "false" || echo "true")
+APP_SHA256=$(shasum -a 256 "$RELEASE_DIR/$OUTPUT_BIN" | cut -d' ' -f1)
+BOOT_SHA256=$(shasum -a 256 "$RELEASE_DIR/bootloader.bin" | cut -d' ' -f1)
+PART_SHA256=$(shasum -a 256 "$RELEASE_DIR/partition-table.bin" | cut -d' ' -f1)
+OTA_SHA256=$(shasum -a 256 "$RELEASE_DIR/ota_data_initial.bin" | cut -d' ' -f1)
+
+cat > "$RELEASE_DIR/BUILD_MANIFEST_${TARGET}.json" <<MANIFEST
+{
+  "target": "$TARGET",
+  "firmware_version": "$FW_VERSION",
+  "output_bin": "$OUTPUT_BIN",
+  "upstream_tag": "$WICAN_TAG",
+  "idf_target": "$IDF_TARGET",
+  "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "git_commit": "$GIT_SHA",
+  "git_dirty": $GIT_DIRTY,
+  "sha256": {
+    "$OUTPUT_BIN": "$APP_SHA256",
+    "bootloader.bin": "$BOOT_SHA256",
+    "partition-table.bin": "$PART_SHA256",
+    "ota_data_initial.bin": "$OTA_SHA256"
+  }
+}
+MANIFEST
+log "Manifest: $RELEASE_DIR/BUILD_MANIFEST_${TARGET}.json"
+
+# ── 9. Summary ────────────────────────────────────────────────────────────────
 echo ""
 log "Build complete! Target: $TARGET_DESC"
 log "Flash files:"
