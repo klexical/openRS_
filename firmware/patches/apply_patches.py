@@ -26,7 +26,7 @@ USB-only patches:
  12. main.c           — openrs_can_tx shim + frs_set_can_tx_fn() registration
 
 Pro-only patches:
-  (CAN TX registration pending — requires hardware to identify anchor)
+  (same CAN TX shim as USB — wc_mdns_init anchor confirmed in v4.48p)
 """
 
 OPENRS_FW_VERSION = "v1.4"

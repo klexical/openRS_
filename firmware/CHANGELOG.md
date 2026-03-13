@@ -33,10 +33,10 @@ All notable changes to the openrs-fw firmware are documented here.
 - Python path detection uses `command -v` instead of hardcoded macOS path ([#65](https://github.com/klexical/openRS_/issues/65))
 - Partition table comment corrected to "Single 2MB OTA slot" ([#66](https://github.com/klexical/openRS_/issues/66))
 
-### Pro Target (Unverified)
+### Pro Target (Pending Hardware Test)
 - Pro profile created targeting wican-fw `v4.48p` (ESP32-S3, 16MB flash, 8MB PSRAM)
-- Common patches (focusrs include, init, CAN RX, REST API, SLCAN probe) have matching anchors in v4.48p
-- CAN TX registration anchor (`wc_mdns_init`) is absent in Pro firmware — write features pending hardware analysis
+- All patches (focusrs include, init, CAN RX, CAN TX, REST API, SLCAN probe) have matching anchors in v4.48p
+- CAN TX registration uses the same `wc_mdns_init` anchor as USB (confirmed at line 1109 of Pro main.c)
 - WebSocket probe skipped for Pro (universal SLCAN probe covers TCP transport)
 
 ---

@@ -59,9 +59,9 @@ The **MeatPi WiCAN Pro** is a higher-end adapter with onboard GPS, MicroSD loggi
 | Passive CAN frame reception (app) | ✅ Working |
 | OBD polling PCM/BCM/AWD/PSCM (app) | ✅ Working |
 | DTC scan and clear (app) | ✅ Working |
-| openrs-fw build (`build.sh --target pro`) | ⚠️ Compiles (unverified flash) |
+| openrs-fw build (`build.sh --target pro`) | ⚠️ Compiles (pending hardware test) |
 | openrs-fw `OPENRS?` probe (slcan.c) | ⚠️ Patched (pending hardware test) |
-| CAN write (drive mode, ESC, LC, ASS) | ❌ CAN TX anchor TBD |
+| CAN write (drive mode, ESC, LC, ASS) | ⚠️ Patched (pending hardware test) |
 | GPS NMEA passthrough | ❌ Not yet implemented |
 | MicroSD remote control | ❌ Not yet implemented |
 
@@ -75,7 +75,7 @@ The **MeatPi WiCAN Pro** is a higher-end adapter with onboard GPS, MicroSD loggi
 | CAN Driver | TWAI |
 | CAN Speed | 500 kbps (HS-CAN) |
 
-> **Note:** The Pro build target patches onto wican-fw v4.48p (the latest Pro release), giving it all of MeatPi's latest fixes including improved AutoPID, WireGuard, and CAN filter support. CAN write features require identifying the Pro-specific CAN TX registration anchor — tracked in [#73](https://github.com/klexical/openRS_/issues/73).
+> **Note:** The Pro build target patches onto wican-fw v4.48p (the latest Pro release), giving it all of MeatPi's latest fixes including improved AutoPID, WireGuard, and CAN filter support. All openrs-fw features (CAN read, CAN write, REST API, OPENRS? probe) are patched — pending hardware flash test. See [#76](https://github.com/klexical/openRS_/issues/76) for the test checklist.
 
 ---
 

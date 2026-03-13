@@ -1,8 +1,8 @@
 """Device profile: WiCAN Pro (ESP32-S3) — wican-fw v4.48p.
 
-UNVERIFIED — requires actual WiCAN Pro hardware for build and flash testing.
-Anchor strings extracted from the v4.48p tag via GitHub API; some anchors that
-exist in the USB build are MISSING in the Pro firmware and marked as None.
+Anchors verified against v4.48p source (main.c line 1109, config_server.c).
+The Pro's main.c is ~2x larger than USB but shares the same wc_mdns_init()
+anchor for CAN TX registration and the same process_led(1) anchor for CAN RX.
 """
 
 PROFILE = {
@@ -24,19 +24,21 @@ PROFILE = {
         # slcan.c handles firmware detection for all transports (TCP and WS).
         "ws_probe_queue": None,
 
-        # wc_mdns_init() is absent in the Pro's main.c. The CAN TX registration
-        # needs a different anchor. TODO: identify the right insertion point after
-        # the last can_enable() block in app_main once we have the hardware.
-        "can_tx_register": None,
-        "can_tx_register_replacement": None,
+        # wc_mdns_init() IS present in the Pro's main.c (line 1109 in v4.48p) —
+        # same anchor string as USB. CAN TX registration hooks after it.
+        "can_tx_register": "wc_mdns_init((char*)uid, hardware_version, firmware_version);",
+        "can_tx_register_replacement": (
+            "wc_mdns_init((char*)uid, hardware_version, firmware_version);\n\n"
+            "    // openrs-fw: register CAN TX callback for drive mode write\n"
+            "    frs_set_can_tx_fn(openrs_can_tx);"
+        ),
     },
 
     # Pro uses TCP SLCAN — the universal slcan.c probe covers firmware detection.
     "has_ws_probe": False,
 
-    # CAN TX (write) support requires finding the Pro-specific anchor.
-    # Read-only features (passive CAN, OBD polling, REST GET) work without it.
-    "has_can_tx": False,
+    # CAN TX supported — same wc_mdns_init anchor as USB, verified in v4.48p source.
+    "has_can_tx": True,
 
     "verified": False,
 }
