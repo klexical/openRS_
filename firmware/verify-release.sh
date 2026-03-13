@@ -60,8 +60,10 @@ for MANIFEST in "${MANIFESTS[@]}"; do
     BUILT_AT=$(python3 -c "import json; print(json.load(open('$MANIFEST'))['built_at'])")
     pass "Manifest parsed — $FW_VERSION built at $BUILT_AT"
 
-    # 2. SHA-256 verification
-    for BIN_NAME in "$OUTPUT_BIN" bootloader.bin partition-table.bin ota_data_initial.bin; do
+    # 2. SHA-256 verification — iterate all keys from the manifest's sha256 object
+    BIN_NAMES=$(python3 -c "import json; [print(k) for k in json.load(open('$MANIFEST'))['sha256'].keys()]")
+    while IFS= read -r BIN_NAME; do
+        [ -z "$BIN_NAME" ] && continue
         BIN_PATH="$RELEASE_DIR/$BIN_NAME"
         if [ ! -f "$BIN_PATH" ]; then
             fail "$BIN_NAME — file missing"
@@ -76,7 +78,7 @@ for MANIFEST in "${MANIFESTS[@]}"; do
             echo "       expected: $EXPECTED"
             echo "       actual:   $ACTUAL"
         fi
-    done
+    done <<< "$BIN_NAMES"
 
     # 3. Git commit check
     CURRENT_HEAD=$(git -C "$SCRIPT_DIR/.." rev-parse HEAD 2>/dev/null || echo "unknown")

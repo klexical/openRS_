@@ -176,9 +176,13 @@ idf.py build
 log "Packaging release files..."
 mkdir -p "$RELEASE_DIR"
 
-cp build/bootloader/bootloader.bin           "$RELEASE_DIR/bootloader.bin"
-cp build/partition_table/partition-table.bin "$RELEASE_DIR/partition-table.bin"
-cp build/ota_data_initial.bin                "$RELEASE_DIR/ota_data_initial.bin"
+BOOT_BIN="bootloader_${TARGET}.bin"
+PART_BIN="partition-table_${TARGET}.bin"
+OTA_BIN="ota_data_initial_${TARGET}.bin"
+
+cp build/bootloader/bootloader.bin           "$RELEASE_DIR/$BOOT_BIN"
+cp build/partition_table/partition-table.bin "$RELEASE_DIR/$PART_BIN"
+cp build/ota_data_initial.bin                "$RELEASE_DIR/$OTA_BIN"
 
 APP_BIN=$(find build -maxdepth 1 -name "wican-fw*.bin" | grep -v "bootloader" | head -1)
 if [ -z "$APP_BIN" ]; then
@@ -200,9 +204,9 @@ FW_VERSION=$(grep -o 'OPENRS_FW_VERSION.*"[^"]*"' "$COMPONENTS_DIR/focusrs/focus
 GIT_SHA=$(git -C "$SCRIPT_DIR/.." rev-parse HEAD 2>/dev/null || echo "unknown")
 GIT_DIRTY=$(git -C "$SCRIPT_DIR/.." diff --quiet 2>/dev/null && echo "false" || echo "true")
 APP_SHA256=$(shasum -a 256 "$RELEASE_DIR/$OUTPUT_BIN" | cut -d' ' -f1)
-BOOT_SHA256=$(shasum -a 256 "$RELEASE_DIR/bootloader.bin" | cut -d' ' -f1)
-PART_SHA256=$(shasum -a 256 "$RELEASE_DIR/partition-table.bin" | cut -d' ' -f1)
-OTA_SHA256=$(shasum -a 256 "$RELEASE_DIR/ota_data_initial.bin" | cut -d' ' -f1)
+BOOT_SHA256=$(shasum -a 256 "$RELEASE_DIR/$BOOT_BIN" | cut -d' ' -f1)
+PART_SHA256=$(shasum -a 256 "$RELEASE_DIR/$PART_BIN" | cut -d' ' -f1)
+OTA_SHA256=$(shasum -a 256 "$RELEASE_DIR/$OTA_BIN" | cut -d' ' -f1)
 
 cat > "$RELEASE_DIR/BUILD_MANIFEST_${TARGET}.json" <<MANIFEST
 {
@@ -216,9 +220,9 @@ cat > "$RELEASE_DIR/BUILD_MANIFEST_${TARGET}.json" <<MANIFEST
   "git_dirty": $GIT_DIRTY,
   "sha256": {
     "$OUTPUT_BIN": "$APP_SHA256",
-    "bootloader.bin": "$BOOT_SHA256",
-    "partition-table.bin": "$PART_SHA256",
-    "ota_data_initial.bin": "$OTA_SHA256"
+    "$BOOT_BIN": "$BOOT_SHA256",
+    "$PART_BIN": "$PART_SHA256",
+    "$OTA_BIN": "$OTA_SHA256"
   }
 }
 MANIFEST
@@ -231,16 +235,16 @@ log "Flash files:"
 echo ""
 echo "  Address     File"
 echo "  ─────────   ────────────────────────────────────────────"
-for f in bootloader.bin partition-table.bin ota_data_initial.bin "$OUTPUT_BIN" storage.bin; do
+for f in "$BOOT_BIN" "$PART_BIN" "$OTA_BIN" "$OUTPUT_BIN" storage.bin; do
     fp="$RELEASE_DIR/$f"
     [ -f "$fp" ] || continue
     SIZE=$(du -sh "$fp" | cut -f1)
     case "$f" in
-        bootloader.bin)       ADDR="0x0"       ;;
-        partition-table.bin)  ADDR="0x8000"    ;;
-        ota_data_initial.bin) ADDR="0xd000"    ;;
-        "$OUTPUT_BIN")        ADDR="0x10000"   ;;
-        storage.bin)          ADDR="0x210000"  ;;
+        "$BOOT_BIN")   ADDR="0x0"       ;;
+        "$PART_BIN")   ADDR="0x8000"    ;;
+        "$OTA_BIN")    ADDR="0xd000"    ;;
+        "$OUTPUT_BIN") ADDR="0x10000"   ;;
+        storage.bin)   ADDR="0x210000"  ;;
     esac
     printf "  %-11s %-40s %s\n" "$ADDR" "$f" "($SIZE)"
 done
