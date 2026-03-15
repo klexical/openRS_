@@ -199,9 +199,13 @@ object DiagnosticLogger {
 
     fun sessionEnd() {
         event("SESSION", "Ended after ${formatDuration(sessionDurationMs)}")
-        // L-9 fix: flush the SLCAN writer so up to 999 buffered frames are not lost
-        // when the session ends between the 1,000-line periodic flush points.
-        flushSlcan()
+        synchronized(lock) {
+            try {
+                slcanWriter?.flush()
+                slcanWriter?.close()
+            } catch (_: Exception) {}
+            slcanWriter = null
+        }
     }
 
     /**
@@ -298,6 +302,17 @@ object DiagnosticLogger {
             }
 
             writeSlcanLine(relMs, canId, rawData)
+        }
+    }
+
+    /**
+     * Log an OBD response frame to the SLCAN raw log only.
+     * OBD responses (0x7E8, 0x72E, 0x70B, etc.) are consumed before reaching
+     * processCanFrame, so this ensures they still appear in the SLCAN export.
+     */
+    fun logObdFrame(canId: Int, rawData: ByteArray) {
+        synchronized(lock) {
+            writeSlcanLine(relativeMs(), canId, rawData)
         }
     }
 

@@ -52,23 +52,23 @@ import kotlin.math.roundToInt
 
         SectionLabel("ENGINE MANAGEMENT")
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DataCell("TIMING", if (vs.timingAdvance != 0.0) "${"%.1f".format(vs.timingAdvance)}°" else ph, modifier = Modifier.weight(1f))
+            DataCell("TIMING", if (vs.calcLoad > 0) "${"%.1f".format(vs.timingAdvance)}°" else ph, modifier = Modifier.weight(1f))
             DataCell("LOAD",   if (vs.calcLoad > 0) "${"%.0f".format(vs.calcLoad)}%" else ph,              modifier = Modifier.weight(1f))
-            DataCell("OAR",    if (vs.octaneAdjustRatio != 0.0) "${"%.0f".format(vs.octaneAdjustRatio * 100)}%" else ph, modifier = Modifier.weight(1f))
+            DataCell("OAR",    if (vs.calcLoad > 0) "${"%.0f".format(vs.octaneAdjustRatio * 100)}%" else ph, modifier = Modifier.weight(1f))
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val krColor = if (vs.ignCorrCyl1 < -1.0) Warn else Ok
-            DataCell("KR CYL1", if (vs.ignCorrCyl1 != 0.0) "${"%.2f".format(vs.ignCorrCyl1)}°" else ph, valueColor = krColor, modifier = Modifier.weight(1f))
-            DataCell("VCT-I",   if (vs.vctIntakeAngle != 0.0) "${"%.1f".format(vs.vctIntakeAngle)}°" else ph, modifier = Modifier.weight(1f))
-            DataCell("VCT-E",   if (vs.vctExhaustAngle != 0.0) "${"%.1f".format(vs.vctExhaustAngle)}°" else ph, modifier = Modifier.weight(1f))
+            DataCell("KR CYL1", if (vs.calcLoad > 0) "${"%.2f".format(vs.ignCorrCyl1)}°" else ph, valueColor = krColor, modifier = Modifier.weight(1f))
+            DataCell("VCT-I",   if (vs.calcLoad > 0) "${"%.1f".format(vs.vctIntakeAngle)}°" else ph, modifier = Modifier.weight(1f))
+            DataCell("VCT-E",   if (vs.calcLoad > 0) "${"%.1f".format(vs.vctExhaustAngle)}°" else ph, modifier = Modifier.weight(1f))
         }
 
         SectionLabel("FUEL TRIMS & AFR")
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val stftColor = fuelTrimColor(vs.shortFuelTrim)
             val ltftColor = fuelTrimColor(vs.longFuelTrim)
-            DataCell("SHORT FT", if (vs.shortFuelTrim != 0.0) "${"%.1f".format(vs.shortFuelTrim)}%" else ph, valueColor = stftColor, modifier = Modifier.weight(1f))
-            DataCell("LONG FT",  if (vs.longFuelTrim != 0.0) "${"%.1f".format(vs.longFuelTrim)}%" else ph,  valueColor = ltftColor, modifier = Modifier.weight(1f))
+            DataCell("SHORT FT", if (vs.calcLoad > 0) "${"%.1f".format(vs.shortFuelTrim)}%" else ph, valueColor = stftColor, modifier = Modifier.weight(1f))
+            DataCell("LONG FT",  if (vs.calcLoad > 0) "${"%.1f".format(vs.longFuelTrim)}%" else ph,  valueColor = ltftColor, modifier = Modifier.weight(1f))
             DataCell("BARO",     "${vs.barometricPressure.roundToInt()} kPa", modifier = Modifier.weight(1f))
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

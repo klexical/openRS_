@@ -99,8 +99,11 @@ import kotlin.math.roundToInt
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             DataCell("REAR BIAS", vs.rearLeftRightBias, modifier = Modifier.weight(1f))
-            DataCell("L/R DELTA", "${"%.1f".format(lrDelta)} km/h", modifier = Modifier.weight(1f))
-            DataCell("F/R DELTA", "${"%.1f".format(frDelta)} km/h", modifier = Modifier.weight(1f))
+            val spdLabel = if (p.speedUnit == "MPH") "mph" else "km/h"
+            val lrDisp = if (p.speedUnit == "MPH") lrDelta * 0.621371 else lrDelta
+            val frDisp = if (p.speedUnit == "MPH") frDelta * 0.621371 else frDelta
+            DataCell("L/R DELTA", "${"%.1f".format(lrDisp)} $spdLabel", modifier = Modifier.weight(1f))
+            DataCell("F/R DELTA", "${"%.1f".format(frDisp)} $spdLabel", modifier = Modifier.weight(1f))
         }
     }
 }

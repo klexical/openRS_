@@ -96,7 +96,11 @@ import kotlin.math.roundToInt
                         dtcError = null
                         dtcClearStatus = null
                         scope.launch(Dispatchers.IO) {
-                            val result = try { onScanDtcs?.invoke() } catch (_: Exception) { null }
+                            val result = try {
+                                onScanDtcs?.invoke()
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
+                            } catch (_: Exception) { null }
                             withContext(Dispatchers.Main) {
                                 dtcScanning = false
                                 if (result != null) {
@@ -192,7 +196,11 @@ import kotlin.math.roundToInt
                         dtcError = null
                         dtcClearStatus = null
                         scope.launch(Dispatchers.IO) {
-                            val ack = try { onClearDtcs?.invoke() } catch (_: Exception) { null }
+                            val ack = try {
+                                onClearDtcs?.invoke()
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
+                            } catch (_: Exception) { null }
                             withContext(Dispatchers.Main) {
                                 dtcClearing = false
                                 when {
