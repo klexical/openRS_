@@ -24,6 +24,7 @@ import androidx.compose.ui.window.DialogProperties
 @Composable
 fun SettingsDialog(onDismiss: () -> Unit) {
     val ctx = LocalContext.current
+    val accent = LocalThemeAccent.current
     val current by UserPrefsStore.prefs.collectAsState()
 
     // Local mutable state — only committed on SAVE
@@ -62,7 +63,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("open", fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = ShareTechMono, color = Frost)
-                    Text("RS", fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = ShareTechMono, color = Accent)
+                    Text("RS", fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = ShareTechMono, color = accent)
                     Text("_ Settings", fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = ShareTechMono, color = Frost)
                 }
                 Text("✕", fontSize = 18.sp, color = Dim, modifier = Modifier.clickable { onDismiss() })
@@ -326,7 +327,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                         }
                     },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Color(0xFF0A0A0A))
+                    colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Color(0xFF0A0A0A))
                 ) {
                     Text("SAVE", fontFamily = ShareTechMono, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 }
@@ -376,7 +377,7 @@ private fun SettingsSwitchRow(label: String, checked: Boolean, onCheckedChange: 
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
                 checkedThumbColor  = Color(0xFF0A0A0A),
-                checkedTrackColor  = Accent,
+                checkedTrackColor  = LocalThemeAccent.current,
                 uncheckedThumbColor = Dim,
                 uncheckedTrackColor = Brd
             )
@@ -386,6 +387,7 @@ private fun SettingsSwitchRow(label: String, checked: Boolean, onCheckedChange: 
 
 @Composable
 fun SegmentedPicker(options: List<String>, selected: String, onSelect: (String) -> Unit) {
+    val pickerAccent = LocalThemeAccent.current
     Row(
         Modifier
             .background(Brd, RoundedCornerShape(6.dp))
@@ -397,7 +399,7 @@ fun SegmentedPicker(options: List<String>, selected: String, onSelect: (String) 
             Box(
                 Modifier
                     .background(
-                        if (isSelected) Accent else Color.Transparent,
+                        if (isSelected) pickerAccent else Color.Transparent,
                         RoundedCornerShape(4.dp)
                     )
                     .clickable { onSelect(option) }
@@ -417,12 +419,15 @@ fun SegmentedPicker(options: List<String>, selected: String, onSelect: (String) 
 }
 
 @Composable
-private fun outlinedFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedBorderColor    = Accent,
-    unfocusedBorderColor  = Brd,
-    focusedLabelColor     = Accent,
-    unfocusedLabelColor   = Dim,
-    cursorColor           = Accent,
-    focusedTextColor      = Frost,
-    unfocusedTextColor    = Frost,
-)
+private fun outlinedFieldColors(): TextFieldColors {
+    val a = LocalThemeAccent.current
+    return OutlinedTextFieldDefaults.colors(
+        focusedBorderColor    = a,
+        unfocusedBorderColor  = Brd,
+        focusedLabelColor     = a,
+        unfocusedLabelColor   = Dim,
+        cursorColor           = a,
+        focusedTextColor      = Frost,
+        unfocusedTextColor    = Frost,
+    )
+}

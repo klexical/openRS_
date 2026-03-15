@@ -74,9 +74,11 @@ class CanDataService : Service() {
      * Suspends for up to ~15 seconds while querying all modules.
      * Returns an empty list if the adapter is not connected.
      */
-    suspend fun scanDtcs(): List<DtcResult> =
-        if (isMeatPi) DtcScanner(this).scanMeatPi(meatpi)
-        else          DtcScanner(this).scan(wican)
+    suspend fun scanDtcs(): List<DtcResult> {
+        val (useMeatPi, w, m) = synchronized(this) { Triple(isMeatPi, wican, meatpi) }
+        return if (useMeatPi) DtcScanner(this).scanMeatPi(m)
+               else           DtcScanner(this).scan(w)
+    }
 
     /**
      * Sends UDS Service 0x14 to clear all DTCs from every supported ECU.
@@ -85,9 +87,11 @@ class CanDataService : Service() {
      * Returns a map of module name → true if that ECU confirmed the clear.
      * An empty map means the adapter is not connected.
      */
-    suspend fun clearDtcs(): Map<String, Boolean> =
-        if (isMeatPi) DtcScanner(this).clearDtcsMeatPi(meatpi)
-        else          DtcScanner(this).clearDtcs(wican)
+    suspend fun clearDtcs(): Map<String, Boolean> {
+        val (useMeatPi, w, m) = synchronized(this) { Triple(isMeatPi, wican, meatpi) }
+        return if (useMeatPi) DtcScanner(this).clearDtcsMeatPi(m)
+               else           DtcScanner(this).clearDtcs(w)
+    }
 
     override fun onBind(intent: Intent?): IBinder = binder
 
@@ -148,10 +152,10 @@ class CanDataService : Service() {
         const val NOTIF_ID = 1
     }
 
-    private fun goForeground() {
+    private fun goForeground(text: String = "Connecting to vehicle…") {
         val notification = NotificationCompat.Builder(this, OpenRSDashApp.CHANNEL_CAN)
             .setContentTitle("openRS_")
-            .setContentText("Connected to vehicle")
+            .setContentText(text)
             .setSmallIcon(R.drawable.ic_notification)
             .setOngoing(true)
             .setSilent(true)
@@ -165,6 +169,18 @@ class CanDataService : Service() {
         } else {
             startForeground(NOTIF_ID, notification)
         }
+    }
+
+    private fun updateNotification(text: String) {
+        val notification = NotificationCompat.Builder(this, OpenRSDashApp.CHANNEL_CAN)
+            .setContentTitle("openRS_")
+            .setContentText(text)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setOngoing(true)
+            .setSilent(true)
+            .build()
+        getSystemService(android.app.NotificationManager::class.java)
+            .notify(NOTIF_ID, notification)
     }
 
     private fun leaveForeground() {
@@ -207,6 +223,11 @@ class CanDataService : Service() {
                             isIdle      = state is AdapterState.Idle
                         )
                     }
+                    when (state) {
+                        is AdapterState.Connected -> updateNotification("Connected to vehicle")
+                        is AdapterState.Idle      -> updateNotification("Disconnected — tap to retry")
+                        else                      -> updateNotification("Connecting to vehicle…")
+                    }
                     DiagnosticLogger.event("STATE", state::class.simpleName ?: "Unknown")
                 }
             }
@@ -229,6 +250,11 @@ class CanDataService : Service() {
                             isConnected = state is AdapterState.Connected,
                             isIdle      = state is AdapterState.Idle
                         )
+                    }
+                    when (state) {
+                        is AdapterState.Connected -> updateNotification("Connected to vehicle")
+                        is AdapterState.Idle      -> updateNotification("Disconnected — tap to retry")
+                        else                      -> updateNotification("Connecting to vehicle…")
                     }
                     DiagnosticLogger.event("STATE", state::class.simpleName ?: "Unknown")
                 }
@@ -284,6 +310,13 @@ class CanDataService : Service() {
                 batteryTempC = if (obdState.batteryTempC > -90) obdState.batteryTempC else current.batteryTempC,
                 cabinTempC   = if (obdState.cabinTempC  > -90)  obdState.cabinTempC   else current.cabinTempC,
                 rduTempC     = if (obdState.rduTempC > -90)     obdState.rduTempC     else current.rduTempC,
+                hpFuelRailPsi = if (obdState.hpFuelRailPsi >= 0) obdState.hpFuelRailPsi else current.hpFuelRailPsi,
+                rduEnabled   = obdState.rduEnabled   ?: current.rduEnabled,
+                pdcEnabled   = obdState.pdcEnabled   ?: current.pdcEnabled,
+                fengEnabled  = obdState.fengEnabled  ?: current.fengEnabled,
+                lcArmed      = obdState.lcArmed      ?: current.lcArmed,
+                lcRpmTarget  = if (obdState.lcRpmTarget >= 0) obdState.lcRpmTarget else current.lcRpmTarget,
+                assEnabled   = obdState.assEnabled   ?: current.assEnabled,
             )
         }
     }
@@ -313,7 +346,7 @@ class CanDataService : Service() {
     }
 
     /** Called from UI when user taps the RETRY badge — fresh adapter + retry. */
-    fun reconnect() {
+    @Synchronized fun reconnect() {
         connectionJob?.cancel()
         connectionJob = null
         // L-6 fix: reset OBD-polled fields to sentinels so stale values from the

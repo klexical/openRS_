@@ -96,4 +96,9 @@ object ObdConstants {
     const val EXT_INITIAL_DELAY_MS = 15_000L
     const val EXT_SESSION_GAP_MS   =    150L
     const val EXT_QUERY_GAP_MS     =    300L
+
+    val OBD_RESPONSE_IDS = setOf(
+        BCM_RESPONSE_ID, AWD_RESPONSE_ID, PCM_RESPONSE_ID,
+        PSCM_RESPONSE_ID, FENG_RESPONSE_ID, RSPROT_RESPONSE_ID
+    )
 }

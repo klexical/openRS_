@@ -7,6 +7,37 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
+## [v2.2.3] — 2026-03-15
+
+### Fixed
+
+- **Trip GPS permission broken** (#85): `ACCESS_FINE_LOCATION` was missing from `AndroidManifest.xml`. The "Grant Access" button on the Trip page fired the runtime request, but Android silently ignored it because the permission was undeclared.
+- **Module Status / LC / ASS never populate** (#86): `mergeObdState()` omitted 7 fields — `rduEnabled`, `pdcEnabled`, `fengEnabled`, `lcArmed`, `lcRpmTarget`, `assEnabled`, `hpFuelRailPsi` — so OBD-parsed extended session data never reached the UI.
+- **Diagnostic export missing ~24 OBD fields** (#87): `DiagnosticExporter.toJsonFields()` and the text summary excluded most Mode 22 parameters (ETC, WGDC, KR, OAR, TIP, VCT, oil life, HP fuel rail, charge air, catalyst, odometer, battery SOC/temp, cabin temp, module status flags). All now included in both JSON and text reports.
+- **OBD response frames excluded from SLCAN log** (#88): OBD responses (0x7E8, 0x72E, 0x70B, 0x738, 0x72F, 0x739) were consumed by `ObdResponseParser` before reaching `DiagnosticLogger`. Added `logObdFrame()` in both `WiCanConnection` and `MeatPiConnection` so OBD traffic appears in the SLCAN export.
+- **`reconnect()` not `@Synchronized`** (#81): Concurrent calls from the WiFi callback and UI could race on `connectionJob`, causing orphaned connections.
+- **SLCAN writer never closed on `sessionEnd()`** (#81): The `BufferedWriter` leaked until the next `sessionStart()`. Now properly closed inside a synchronized block.
+- **Connection dot untappable in a car** (#81): The 8dp circle had no touch padding. Wrapped in a 48×48dp tap target (Material minimum).
+- **`TripRecorder.startTrip()` double-start** (#77): If called while already recording, a second coroutine would be launched, orphaning the first. Now guarded by `recorderJob?.isActive` check.
+- **Trip recording stuck on permission revocation** (#83): If location permission was revoked mid-trip, the coroutine failed silently but `isRecording` stayed `true`. Wrapped location collection in `try/finally` that resets state.
+- **DTC scan/clear adapter reference unsynchronized** (#83): `scanDtcs()` and `clearDtcs()` read `wican`/`meatpi` references without holding the lock. Captured inside `synchronized(this)` to prevent use of stale references during reconnect.
+- **DiagPage swallows `CancellationException`** (#83): Generic `catch (_: Exception)` blocks caught and discarded `CancellationException`, breaking structured concurrency. Now rethrown.
+- **PowerPage `!= 0.0` sentinel hides real zero readings** (#82): `timingAdvance`, `ignCorrCyl1`, `vctIntakeAngle`, `vctExhaustAngle`, `octaneAdjustRatio`, and fuel trims used `!= 0.0` as "has data" — hiding legitimate zero values. Now gate on `calcLoad > 0` (OBD data is present).
+- **Inconsistent temperature sentinels** (#82): `chargeAirTempC` and `catalyticTempC` used `0.0` as default, meaning a real 0°C reading showed as "no data". Changed defaults to `-99.0` and guards to `> -90`, matching all other temperature fields.
+- **ChassisPage wheel speed delta ignores unit preference** (#82): L/R and F/R delta values always showed "km/h" regardless of the user's speed unit setting. Now respects `prefs.speedUnit`.
+
+### Improved
+
+- **SettingsSheet respects theme accent** (#82): Title bar, SAVE button, Switch tracks, SegmentedPicker, and text field focus colors now use `LocalThemeAccent.current` instead of hardcoded cyan.
+- **`LocalThemeAccent` → `staticCompositionLocalOf`** (#82): Theme accent changes only on settings save. `staticCompositionLocalOf` avoids unnecessary per-slot recomposition tracking.
+- **MeatPiConnection TCP buffering** (#83): Wrapped raw `InputStream` in `BufferedInputStream`, reducing ~50,000 kernel syscalls/sec (byte-by-byte reads at 2100 fps) to buffered block reads.
+- **Foreground notification** now shows "Connecting…" while attempting connection, "Connected to vehicle" once live, and "Disconnected — tap to retry" when idle. Previously always said "Connected" even during connection attempts.
+- **Removed double inset padding** — `statusBarsPadding()`/`navigationBarsPadding()` was redundant with Scaffold's `innerPadding`, causing a gap at the top on some devices.
+- **`install-debug.sh`** (#10): Now resolves the project directory from the script's location, so it works when invoked from any working directory.
+- Compose BOM update (#14) deferred — the jump to 2026.02.01 caused ANR crashes; staying on 2024.11.00 until a safe incremental update path is validated.
+
+---
+
 ## [v2.2.2] — 2026-03-12
 
 ### Fixed

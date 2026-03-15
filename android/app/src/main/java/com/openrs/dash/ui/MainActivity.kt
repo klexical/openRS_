@@ -93,7 +93,7 @@ class MainActivity : ComponentActivity() {
                         ) { innerPadding ->
                             Box(
                                 Modifier.fillMaxSize().padding(innerPadding)
-                                    .background(Bg).statusBarsPadding().navigationBarsPadding()
+                                    .background(Bg)
                             ) {
                                 Column(Modifier.fillMaxSize()) {
                                     AppHeader(
@@ -235,16 +235,21 @@ class MainActivity : ComponentActivity() {
             }
 
             Box(
-                Modifier.size(8.dp).clip(CircleShape)
-                    .background(connColor.copy(alpha = if (vs.isConnected) dotAlpha else 1f))
+                Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                     .clickable {
                         when {
                             vs.isConnected -> onDisconnect()
                             vs.isIdle      -> onReconnect()
                             else           -> onConnect()
                         }
-                    }
-            )
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    Modifier.size(8.dp).clip(CircleShape)
+                        .background(connColor.copy(alpha = if (vs.isConnected) dotAlpha else 1f))
+                )
+            }
 
             Box(
                 Modifier.size(28.dp)
