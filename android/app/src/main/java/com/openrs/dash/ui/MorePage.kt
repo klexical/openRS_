@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.OpenRSDashApp
+import com.openrs.dash.can.FirmwareApi
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.EscStatus
 import com.openrs.dash.data.VehicleState
@@ -59,6 +60,10 @@ import kotlinx.coroutines.withContext
     val ctx    = LocalContext.current
     var exporting by remember { mutableStateOf(false) }
     val accent = LocalThemeAccent.current
+    val canControl = isFw && vs.isConnected
+    val host = remember { AppSettings.getHost(ctx) }
+    var pendingDriveMode by remember { mutableStateOf<DriveMode?>(null) }
+    var pendingEsc       by remember { mutableStateOf<EscStatus?>(null) }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp),
@@ -78,21 +83,48 @@ import kotlinx.coroutines.withContext
                             DriveMode.DRIFT -> Red
                             else            -> accent
                         }
+                        val isPending = pendingDriveMode == mode && !isActive
                         Column(
                             Modifier.weight(1f)
-                                .background(if (isActive) modeAccent.copy(0.1f) else Surf2, RoundedCornerShape(10.dp))
-                                .border(1.dp, if (isActive) modeAccent else Brd, RoundedCornerShape(10.dp))
+                                .background(
+                                    if (isActive) modeAccent.copy(0.1f)
+                                    else if (isPending) modeAccent.copy(0.05f)
+                                    else Surf2,
+                                    RoundedCornerShape(10.dp)
+                                )
+                                .border(
+                                    if (isPending) 1.5.dp else 1.dp,
+                                    if (isActive || isPending) modeAccent else Brd,
+                                    RoundedCornerShape(10.dp)
+                                )
+                                .clickable(enabled = canControl && !isActive) {
+                                    pendingDriveMode = mode
+                                    scope.launch {
+                                        val result = FirmwareApi.setDriveMode(host, mode.toFirmwareInt())
+                                        if (result.isFailure) {
+                                            snackbarHostState.showSnackbar("Drive mode command failed")
+                                        }
+                                        pendingDriveMode = null
+                                    }
+                                }
                                 .padding(vertical = 12.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            HeroNum(letter, 20.sp, if (isActive) modeAccent else Frost)
+                            HeroNum(letter, 20.sp, if (isActive) modeAccent else if (isPending) modeAccent.copy(0.6f) else Frost)
                             Spacer(Modifier.height(2.dp))
-                            MonoLabel(mode.label.uppercase(), 8.sp, if (isActive) modeAccent else Dim, letterSpacing = 0.1.sp)
+                            MonoLabel(
+                                if (isPending) "..." else mode.label.uppercase(),
+                                8.sp, if (isActive) modeAccent else Dim, letterSpacing = 0.1.sp
+                            )
                         }
                     }
             }
             Spacer(Modifier.height(6.dp))
-            MonoLabel("Read-only mirror of CAN 0x1B0. Use steering wheel MODE button.", 9.sp, Dim)
+            MonoLabel(
+                if (canControl) "Tap to change \u00B7 Live from CAN 0x1B0"
+                else "Read-only mirror of CAN 0x1B0. Use steering wheel MODE button.",
+                9.sp, Dim
+            )
         }
 
         HorizontalDivider(color = Brd)
@@ -103,22 +135,49 @@ import kotlinx.coroutines.withContext
                 listOf(EscStatus.ON to "ESC ON", EscStatus.PARTIAL to "SPORT", EscStatus.OFF to "ESC OFF")
                     .forEach { (status, label) ->
                         val isActive = vs.escStatus == status
+                        val isPending = pendingEsc == status && !isActive
                         val color = when (status) {
                             EscStatus.ON -> Ok; EscStatus.PARTIAL -> Warn; else -> Red
                         }
                         Box(
                             Modifier.weight(1f)
-                                .background(if (isActive) color.copy(0.1f) else Surf2, RoundedCornerShape(10.dp))
-                                .border(1.dp, if (isActive) color else Brd, RoundedCornerShape(10.dp))
+                                .background(
+                                    if (isActive) color.copy(0.1f)
+                                    else if (isPending) color.copy(0.05f)
+                                    else Surf2,
+                                    RoundedCornerShape(10.dp)
+                                )
+                                .border(
+                                    if (isPending) 1.5.dp else 1.dp,
+                                    if (isActive || isPending) color else Brd,
+                                    RoundedCornerShape(10.dp)
+                                )
+                                .clickable(enabled = canControl && !isActive) {
+                                    pendingEsc = status
+                                    scope.launch {
+                                        val result = FirmwareApi.setEscMode(host, status.toFirmwareInt())
+                                        if (result.isFailure) {
+                                            snackbarHostState.showSnackbar("ESC command failed")
+                                        }
+                                        pendingEsc = null
+                                    }
+                                }
                                 .padding(vertical = 12.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            MonoLabel(label, 10.sp, if (isActive) color else Dim, letterSpacing = 0.08.sp)
+                            MonoLabel(
+                                if (isPending) "..." else label,
+                                10.sp, if (isActive) color else Dim, letterSpacing = 0.08.sp
+                            )
                         }
                     }
             }
             Spacer(Modifier.height(6.dp))
-            MonoLabel("Current: ${vs.escStatus.label} (CAN 0x1C0). Use ESC button in car.", 9.sp, Dim)
+            MonoLabel(
+                if (canControl) "Tap to change \u00B7 Live from CAN 0x1C0"
+                else "Current: ${vs.escStatus.label} (CAN 0x1C0). Use ESC button in car.",
+                9.sp, Dim
+            )
         }
 
         HorizontalDivider(color = Brd)

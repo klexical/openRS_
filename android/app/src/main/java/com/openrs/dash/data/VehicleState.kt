@@ -258,6 +258,12 @@ data class VehicleState(
 enum class DriveMode(val label: String) {
     NORMAL("Normal"), SPORT("Sport"), TRACK("Track"),
     DRIFT("Drift"), UNKNOWN("--"), CUSTOM("Custom");
+
+    /** Maps to firmware REST API `driveMode` field (0=N, 1=S, 2=D, 3=T). */
+    fun toFirmwareInt(): Int = when (this) {
+        NORMAL -> 0; SPORT -> 1; DRIFT -> 2; TRACK -> 3; else -> 0
+    }
+
     companion object {
         // DBC VAL_ 432 DriveMode: 0=Normal, 1=Sport, 2=Drift.
         // Track is not distinct on 0x1B0 (AWD treats Sport+Track identically).
@@ -270,6 +276,12 @@ enum class DriveMode(val label: String) {
 
 enum class EscStatus(val label: String) {
     ON("ESC On"), PARTIAL("ESC Sport"), OFF("ESC Off"), UNKNOWN("--");
+
+    /** Maps to firmware REST API `escMode` field (0=On, 1=Sport, 2=Off). */
+    fun toFirmwareInt(): Int = when (this) {
+        ON -> 0; PARTIAL -> 1; OFF -> 2; else -> 0
+    }
+
     companion object {
         // CAN 0x1C0 byte1 bits[5:4]: 0=On, 1=Off (long press), 2=Sport (short press)
         fun fromInt(v: Int): EscStatus = when (v) {
