@@ -36,7 +36,7 @@
 | 3.4 | Steering wheel button mapping | Hardware | Long | Low | `idea` |
 | 8.1 | Decoder regression tests | Dev & Reliability | Near | High | `idea` |
 | 8.2 | Frame coverage heatmap | Dev & Reliability | Near | Medium | `idea` |
-| 8.3 | Crash telemetry capture | Dev & Reliability | Near | Medium | `idea` |
+| 8.3 | Crash telemetry capture | Dev & Reliability | Near | Medium | `shipped` [#97](https://github.com/klexical/openRS_/issues/97) |
 | 8.4 | DBC file export | Dev & Reliability | Medium | Medium | `idea` |
 | 8.5 | WiCAN Pro GPS heatmap | Dev & Reliability | Long | High | `idea` |
 | — | Brake pressure calibration | Data & Analysis | Near | Medium | `idea` |
@@ -916,7 +916,7 @@ configuration.
 
 ### 8.3 Crash Telemetry Capture
 
-**Near-term · Medium**
+**Shipped in v2.2.4** — [#97](https://github.com/klexical/openRS_/issues/97)
 
 A ring buffer of the last 100 VehicleState snapshots (~5 s at 20 Hz) captured
 to a crash report file on uncaught exception. Correlates app crashes with

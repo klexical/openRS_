@@ -19,7 +19,7 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 ### Added
 
 - **App version display in Settings** (#90): Shows `openRS_ vX.Y.Z` in the settings dialog footer using `BuildConfig.VERSION_NAME`.
-- **Crash telemetry capture** ([#97](https://github.com/klexical/openRS_/issues/97), [roadmap Phase 8.0](https://github.com/klexical/openRS_/blob/main/README.md#roadmap)): New `CrashTelemetryBuffer` maintains a rolling ring of the last 100 VehicleState snapshots. On uncaught exception, `CrashReporter` flushes the buffer + stack trace to `crash_telemetry_<ts>.json`. Crash files are automatically bundled into the next diagnostic ZIP export.
+- **Crash telemetry capture** ([#97](https://github.com/klexical/openRS_/issues/97), [feature roadmap §8.3](https://github.com/klexical/openRS_/blob/main/docs/feature-roadmap.md#83-crash-telemetry-capture)): New `CrashTelemetryBuffer` maintains a rolling ring of the last 100 VehicleState snapshots. On uncaught exception, `CrashReporter` flushes the buffer + stack trace to `crash_telemetry_<ts>.json`. Crash files are automatically bundled into the next diagnostic ZIP export.
 
 ---
 
