@@ -2,25 +2,20 @@ package com.openrs.dash.can
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import java.util.concurrent.TimeUnit
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.InetSocketAddress
+import java.net.Socket
 
 /**
  * Thin HTTP client for the openrs-fw REST API (`POST /api/frs`).
- * Used to send drive mode and ESC commands from the app to the firmware.
+ *
+ * Uses a raw TCP socket instead of OkHttp so the request always goes
+ * over the WiCAN WiFi network. Android routes OkHttp/URLConnection
+ * through cellular when the active WiFi has no internet — which is
+ * always the case with the WiCAN AP.
  */
 object FirmwareApi {
-
-    private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
-
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(3, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.SECONDS)
-        .writeTimeout(5, TimeUnit.SECONDS)
-        .build()
 
     suspend fun setDriveMode(host: String, mode: Int): Result<Unit> =
         post(host, """{"token":"openrs","driveMode":$mode}""")
@@ -31,13 +26,30 @@ object FirmwareApi {
     private suspend fun post(host: String, json: String): Result<Unit> =
         withContext(Dispatchers.IO) {
             try {
-                val request = Request.Builder()
-                    .url("http://$host/api/frs")
-                    .post(json.toRequestBody(JSON_MEDIA))
-                    .build()
-                client.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) Result.success(Unit)
-                    else Result.failure(RuntimeException("HTTP ${response.code}"))
+                val port = if (':' in host) host.substringAfter(':').toInt() else 80
+                val hostname = host.substringBefore(':')
+
+                Socket().use { socket ->
+                    socket.connect(InetSocketAddress(hostname, port), 3_000)
+                    socket.soTimeout = 5_000
+
+                    val request = "POST /api/frs HTTP/1.1\r\n" +
+                        "Host: $host\r\n" +
+                        "Content-Type: application/json\r\n" +
+                        "Content-Length: ${json.length}\r\n" +
+                        "Connection: close\r\n" +
+                        "\r\n" +
+                        json
+
+                    socket.getOutputStream().apply {
+                        write(request.toByteArray(Charsets.ISO_8859_1))
+                        flush()
+                    }
+
+                    val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+                    val statusLine = reader.readLine() ?: ""
+                    if (statusLine.contains("200")) Result.success(Unit)
+                    else Result.failure(RuntimeException(statusLine))
                 }
             } catch (e: Exception) {
                 Result.failure(e)
