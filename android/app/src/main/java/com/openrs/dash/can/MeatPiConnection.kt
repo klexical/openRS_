@@ -74,7 +74,7 @@ class MeatPiConnection(
                     socket.connect(InetSocketAddress(host, port), 5_000)
                     socket.soTimeout = 20_000
 
-                    val inp = socket.getInputStream()
+                    val inp = socket.getInputStream().buffered()
                     val out = socket.getOutputStream()
 
                     val cancelWatcher = launch {
@@ -185,6 +185,10 @@ class MeatPiConnection(
                             if (_dtcScanActive && frame.first in _dtcWatchIds) {
                                 _dtcChannel.trySend(frame)
                                 continue
+                            }
+
+                            if (frame.first in ObdConstants.OBD_RESPONSE_IDS) {
+                                DiagnosticLogger.logObdFrame(frame.first, frame.second)
                             }
 
                             if (frame.first == ObdConstants.BCM_RESPONSE_ID) {

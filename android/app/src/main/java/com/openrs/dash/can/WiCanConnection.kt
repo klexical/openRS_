@@ -336,6 +336,10 @@ class WiCanConnection(
                         continue
                     }
 
+                    if (frame.first in ObdConstants.OBD_RESPONSE_IDS) {
+                        DiagnosticLogger.logObdFrame(frame.first, frame.second)
+                    }
+
                     if (frame.first == ObdConstants.BCM_RESPONSE_ID) {
                         ObdResponseParser.parseBcmResponse(frame.second, getCurrentState(), onObdUpdate)
                         continue

@@ -387,6 +387,26 @@ object DiagnosticExporter {
             appendLine("  AWD L/R    : ${"%.0f".format(vs.awdLeftTorque)} / ${"%.0f".format(vs.awdRightTorque)} Nm")
             appendLine("  RDU Temp   : ${"%.0f".format(vs.rduTempC)} °C")
             appendLine("  PTU Temp   : ${"%.0f".format(vs.ptuTempC)} °C")
+            appendLine("  ETC Act/Des: ${"%.1f".format(vs.etcAngleActual)}° / ${"%.1f".format(vs.etcAngleDesired)}°")
+            appendLine("  WGDC       : ${"%.1f".format(vs.wgdcDesired)} %")
+            appendLine("  KR Cyl1    : ${"%.2f".format(vs.ignCorrCyl1)}°")
+            appendLine("  OAR        : ${"%.4f".format(vs.octaneAdjustRatio)}")
+            appendLine("  TIP Act/Des: ${"%.1f".format(vs.tipActualKpa)} / ${"%.1f".format(vs.tipDesiredKpa)} kPa")
+            appendLine("  VCT I/E    : ${"%.1f".format(vs.vctIntakeAngle)}° / ${"%.1f".format(vs.vctExhaustAngle)}°")
+            appendLine("  Oil Life   : ${"%.0f".format(vs.oilLifePct)} %")
+            appendLine("  HP Fuel Rl : ${"%.0f".format(vs.hpFuelRailPsi)} PSI")
+            appendLine("  Charge Air : ${"%.1f".format(vs.chargeAirTempC)} °C")
+            appendLine("  Catalyst   : ${"%.0f".format(vs.catalyticTempC)} °C")
+            appendLine("  Odometer   : ${vs.odometerKm} km")
+            appendLine("  Batt SOC   : ${"%.0f".format(vs.batterySoc)} %")
+            appendLine("  Batt Temp  : ${"%.1f".format(vs.batteryTempC)} °C")
+            appendLine("  Cabin Temp : ${"%.1f".format(vs.cabinTempC)} °C")
+            appendLine("  RDU Active : ${vs.rduEnabled ?: "—"}")
+            appendLine("  PDC Active : ${vs.pdcEnabled ?: "—"}")
+            appendLine("  FENG Active: ${vs.fengEnabled ?: "—"}")
+            appendLine("  LC Armed   : ${vs.lcArmed ?: "—"}")
+            appendLine("  LC RPM     : ${if (vs.lcRpmTarget >= 0) vs.lcRpmTarget.toString() else "—"}")
+            appendLine("  ASS Active : ${vs.assEnabled ?: "—"}")
             appendLine("  FPS        : ${"%.0f".format(vs.framesPerSecond)}")
             appendLine("  Data Mode  : ${vs.dataMode}")
             appendLine()
@@ -676,6 +696,29 @@ private fun VehicleState.toJsonFields(): Map<String, String> = linkedMapOf(
     "afrActual"         to "${"%.3f".format(afrActual)}",
     "afrDesired"        to "${"%.2f".format(afrDesired)}",
     "lambdaActual"      to "${"%.4f".format(lambdaActual)}",
+    "etcAngleActual"    to "${"%.2f".format(etcAngleActual)}",
+    "etcAngleDesired"   to "${"%.2f".format(etcAngleDesired)}",
+    "wgdcDesired"       to "${"%.2f".format(wgdcDesired)}",
+    "ignCorrCyl1"       to "${"%.2f".format(ignCorrCyl1)}",
+    "octaneAdjustRatio" to "${"%.4f".format(octaneAdjustRatio)}",
+    "chargeAirTempC"    to "${"%.1f".format(chargeAirTempC)}",
+    "catalyticTempC"    to "${"%.1f".format(catalyticTempC)}",
+    "tipActualKpa"      to "${"%.2f".format(tipActualKpa)}",
+    "tipDesiredKpa"     to "${"%.2f".format(tipDesiredKpa)}",
+    "vctIntakeAngle"    to "${"%.2f".format(vctIntakeAngle)}",
+    "vctExhaustAngle"   to "${"%.2f".format(vctExhaustAngle)}",
+    "oilLifePct"        to "${"%.1f".format(oilLifePct)}",
+    "hpFuelRailPsi"     to "${"%.1f".format(hpFuelRailPsi)}",
+    "odometerKm"        to "$odometerKm",
+    "batterySoc"        to "${"%.1f".format(batterySoc)}",
+    "batteryTempC"      to "${"%.1f".format(batteryTempC)}",
+    "cabinTempC"        to "${"%.1f".format(cabinTempC)}",
+    "rduEnabled"        to "${rduEnabled}",
+    "pdcEnabled"        to "${pdcEnabled}",
+    "fengEnabled"       to "${fengEnabled}",
+    "lcArmed"           to "${lcArmed}",
+    "lcRpmTarget"       to "$lcRpmTarget",
+    "assEnabled"        to "${assEnabled}",
     "peakBoostPsi"      to "${"%.2f".format(peakBoostPsi)}",
     "peakRpm"           to "${"%.0f".format(peakRpm)}",
     "peakLateralG"      to "${"%.3f".format(peakLateralG)}",
