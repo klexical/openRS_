@@ -169,6 +169,19 @@ All endpoints inherit from wican-fw and extend it. Example responses below are i
 }
 ```
 
+### `GET /api/frs`
+```json
+{
+  "driveMode": 0,
+  "bootMode": 0,
+  "escMode": 0,
+  "lcEnabled": false,
+  "assKill": false,
+  "battMv": 12000,
+  "sleepMv": 12200
+}
+```
+
 ### `POST /api/frs`
 
 All POST requests require `"token": "openrs"` for basic access control.

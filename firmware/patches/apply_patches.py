@@ -93,13 +93,12 @@ def patch_config_server(base):
     path = os.path.join(base, "main", "config_server.c")
     c = read(path)
 
-    # USB: literal "…" in code.  Pro: escaped \"…\" inside a C string literal.
-    if '"@meatpi#"' in c:
+    if '\\"@meatpi#\\"' in c:
+        c = c.replace('\\"@meatpi#\\"', '\\"openrs_2026\\"', 1)
+        print("  patched: AP password default (escaped C string)")
+    elif '"@meatpi#"' in c:
         c = c.replace('"@meatpi#"', '"openrs_2026"', 1)
-        print("  patched: AP password default")
-    elif r'\"@meatpi#\"' in c:
-        c = c.replace(r'\"@meatpi#\"', r'\"openrs_2026\"', 1)
-        print("  patched: AP password default (escaped)")
+        print("  patched: AP password default (literal)")
     else:
         print("  WARNING: could not find @meatpi# default password")
 
@@ -112,21 +111,22 @@ def patch_config_server(base):
 
     FRS_HANDLER = r"""
 /* ── openrs-fw: Focus RS state endpoint ──────────────────────────────────
- * GET  /api/frs  → JSON with live drive mode, ESC mode, battery voltage
- * POST /api/frs  → body: {"driveMode":0-3} {"escMode":0-2} {"enableLC":true} {"killASS":true}
+ * GET  /api/frs  → JSON with drive mode, ESC, battery, sleep threshold
+ * POST /api/frs  → body: {"driveMode":0-3} {"escMode":0-2} {"enableLC":true} {"killASS":true} {"sleepVoltage":11500}
  */
 static esp_err_t frs_get_handler(httpd_req_t *req)
 {
     frs_state_t snap = frs_get_state_copy();
     frs_state_t *s = &snap;
-    char json[256];
+    char json[384];
     snprintf(json, sizeof(json),
         "{\"driveMode\":%d,\"bootMode\":%d,\"escMode\":%d,"
-        "\"lcEnabled\":%s,\"assKill\":%s,\"battMv\":%lu}",
+        "\"lcEnabled\":%s,\"assKill\":%s,\"battMv\":%lu,\"sleepMv\":%u}",
         s->drive_mode, s->boot_mode, s->esc_mode,
         s->lc_enabled ? "true" : "false",
         s->ass_kill   ? "true" : "false",
-        (unsigned long)s->battery_mv);
+        (unsigned long)s->battery_mv,
+        (unsigned)s->sleep_threshold_mv);
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     return httpd_resp_send(req, json, strlen(json));
