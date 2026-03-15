@@ -115,7 +115,14 @@ log "Running ESP-IDF install for $IDF_TARGET..."
 
 export IDF_SKIP_CHECK_DEPENDENCIES=1
 # shellcheck disable=SC1091
+# export.sh's Python package check can fail on macOS due to ruamel.yaml
+# namespace packaging issues, even when all packages actually import fine.
+# Allow the failure — the PATH and env vars are set before the check runs.
+set +e
 source "$IDF_PATH/export.sh"
+set -e
+# Verify idf.py is actually available after sourcing
+command -v idf.py >/dev/null 2>&1 || err "idf.py not found after sourcing export.sh — ESP-IDF setup is broken"
 
 # ── 3. Clone wican-fw ─────────────────────────────────────────────────────────
 mkdir -p "$BUILD_DIR"
