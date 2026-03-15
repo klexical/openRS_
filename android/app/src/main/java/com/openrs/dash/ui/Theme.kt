@@ -1,7 +1,7 @@
 package com.openrs.dash.ui
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.Font
@@ -42,7 +42,7 @@ val Amber get() = Warn
 val Red   get() = Orange
 
 // ── CompositionLocal for theme accent ─────────────────────────────────────
-val LocalThemeAccent = compositionLocalOf { Accent }
+val LocalThemeAccent = staticCompositionLocalOf { Accent }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // FONTS

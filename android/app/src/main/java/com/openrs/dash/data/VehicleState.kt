@@ -31,10 +31,10 @@ data class VehicleState(
     val afrSensor1: Double = 0.0,          // PID 24: air-fuel ratio
 
     // ── Engine (OBD Mode 22 — Ford Enhanced) ────────────────
-    val chargeAirTempC: Double = 0.0,      // Charge air cooler outlet temp
-    val manifoldChargeTempC: Double = 0.0, // Manifold charge temperature
+    val chargeAirTempC: Double = -99.0,     // Charge air cooler outlet temp; -99 = not yet polled
+    val manifoldChargeTempC: Double = -99.0, // Manifold charge temperature; -99 = not yet polled
     val octaneAdjustRatio: Double = 0.0,   // Octane adjust ratio (knock learning)
-    val catalyticTempC: Double = 0.0,      // Catalytic converter temperature
+    val catalyticTempC: Double = -99.0,    // Catalytic converter temperature; -99 = not yet polled
 
     // ── AFR / Fueling (Mode 22 via PCM 0x7E0) ─────────────
     val afrActual: Double = 0.0,           // 0xF434: Wideband AFR actual
