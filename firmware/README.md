@@ -4,7 +4,7 @@ Custom firmware for MeatPi WiCAN adapters, purpose-built for the Ford Focus RS M
 
 Forked from [`meatpiHQ/wican-fw`](https://github.com/meatpiHQ/wican-fw) — the proven WiFi/CAN/OTA stack is retained and a Focus RS module (`focusrs`) is layered on top.
 
-**Current status:** v1.4 — release binaries in `firmware/release/`.
+**Current status:** v1.5 — release binaries in `firmware/release/`.
 
 **Supported devices:** WiCAN USB-C3 (verified), WiCAN Pro (experimental).
 
@@ -21,11 +21,12 @@ Forked from [`meatpiHQ/wican-fw`](https://github.com/meatpiHQ/wican-fw) — the 
 
 ### Focus RS additions (openrs-fw)
 - **Drive mode write** — send N/S/T/D directly from the app
-  - Immediately changes the physical drive mode (CAN 0x1B0 button simulation)
+  - Simulates the physical drive mode button on CAN ID 0x305 (byte 5, bit 2)
   - Persists selected mode to NVS — car boots in that mode next ignition on
-- **ESC control** — On / Sport / Off via CAN
+- **ESC control** — On / Sport / Off via CAN button simulation (0x260 byte 6, bit 4)
 - **Launch Control enable/disable**
-- **Auto Start/Stop kill**
+- **Auto Start/Stop kill** — simulates ASS button on CAN 0x260 (byte 1, bit 0)
+- **Boot apply** — on startup, automatically applies persisted drive mode, ESC mode, and ASS kill
 - **BLE GATT transport** — exposes ELM327 stream over BLE 5.0
   - Fallback when the phone's WiFi radio is occupied (e.g. wireless projection)
   - Coexists with WiFi — both active simultaneously
@@ -98,8 +99,8 @@ The `--target` flag selects the device profile:
 
 | Target | Device | SoC | Upstream tag | Output binary |
 |--------|--------|-----|-------------|---------------|
-| `usb` (default) | WiCAN USB-C3 | ESP32-C3 | `v4.20u_beta-01` | `openrs-fw-usb_v140.bin` |
-| `pro` | WiCAN Pro | ESP32-S3 | `v4.48p` | `openrs-fw-pro_v140.bin` |
+| `usb` (default) | WiCAN USB-C3 | ESP32-C3 | `v4.20u_beta-01` | `openrs-fw-usb_v150.bin` |
+| `pro` | WiCAN Pro | ESP32-S3 | `v4.48p` | `openrs-fw-pro_v150.bin` |
 
 The script will:
 1. Install ESP-IDF v5.2.3 to `firmware/.build/esp-idf` if not already present (~5–15 min, one-time)
@@ -116,12 +117,12 @@ firmware/release/
   bootloader_usb.bin          ← flash at 0x0      (USB build)
   partition-table_usb.bin     ← flash at 0x8000
   ota_data_initial_usb.bin    ← flash at 0xd000
-  openrs-fw-usb_v140.bin      ← flash at 0x10000
+  openrs-fw-usb_v150.bin      ← flash at 0x10000
 
   bootloader_pro.bin          ← flash at 0x0      (Pro build)
   partition-table_pro.bin     ← flash at 0x8000
   ota_data_initial_pro.bin    ← flash at 0xd000
-  openrs-fw-pro_v140.bin      ← flash at 0x10000
+  openrs-fw-pro_v150.bin      ← flash at 0x10000
 ```
 
 ### Building both targets
@@ -159,7 +160,7 @@ All endpoints inherit from wican-fw and extend it. Example responses below are i
 ### `GET /status`
 ```json
 {
-  "version": "openrs-fw v1.4",
+  "version": "openrs-fw v1.5",
   "connected": true,
   "can_bitrate": 500000,
   "battery_mv": 13420,
@@ -175,6 +176,7 @@ All endpoints inherit from wican-fw and extend it. Example responses below are i
   "driveMode": 0,
   "bootMode": 0,
   "escMode": 0,
+  "bootEsc": 0,
   "lcEnabled": false,
   "assKill": false,
   "battMv": 12000,
@@ -220,13 +222,21 @@ The BLE interface is protocol-compatible with the WiFi TCP interface. The openRS
 | `0x1B0` | B6 | upper nibble | 0=Normal, 1=Sport/Track (ambiguous), 2=Drift |
 | `0x420` | B6+B7 | B6: mode group, B7 bit 0: detail | B6=0x10 Normal, 0x11 Sport/Track, 0x12 Drift; B7 bit0: 0=Sport, 1=Track |
 
-### Writing mode (button simulation)
-| Action | CAN ID | Byte 1 | Notes |
-|--------|--------|--------|-------|
-| Button press | `0x1B0` | `0x5E` | Hold ~150ms |
-| Button release | `0x1B0` | `0x5A` | Other bytes = template captured from car |
+### Writing mode (button simulation on 0x305)
+| Action | CAN ID | Byte | Bit | Notes |
+|--------|--------|------|-----|-------|
+| Button press | `0x305` | B5 (data[4]) | bit 2 | Set `\|= 0x04`, send 3 frames at 80ms intervals |
+| Button release | `0x305` | B5 (data[4]) | bit 2 | Car's own next frame clears the bit |
 
-> **Note:** The full 8-byte frame template for 0x1B0 (the non-button bytes) must be captured from a live vehicle to populate the write frame correctly. Template values will be added after first car test. See `firmware-update.md` for capture instructions.
+Confirmed on 2018 Focus RS: steady-state byte 5 = `0x08`, pressed = `0x0C`. Template captured from live CAN bus at runtime. Each press cycles N→S→T→D→N.
+
+### ESC button simulation (0x260)
+| Action | CAN ID | Byte | Bit | Notes |
+|--------|--------|------|-----|-------|
+| ESC Off button | `0x260` | B6 (data[5]) | bit 4 | Set `\|= 0x10`, same 3-frame pattern |
+| ASS button | `0x260` | B1 (data[0]) | bit 0 | Set `\|= 0x01`, same 3-frame pattern |
+
+ESC cycles On→Sport→Off→On (3 states). ASS is a toggle (press to disable).
 
 ---
 
@@ -270,8 +280,8 @@ firmware/
 │   ├── partitions_openrs_usb.csv      ← 4MB flash, single OTA
 │   └── partitions_openrs_pro.csv      ← 16MB flash, dual OTA
 ├── release/                           ← flash-ready binaries
-│   ├── openrs-fw-usb_v140.bin
-│   └── openrs-fw-pro_v140.bin
+│   ├── openrs-fw-usb_v150.bin
+│   └── openrs-fw-pro_v150.bin
 └── stock/                             ← stock wican-fw binaries (reference)
 ```
 
@@ -281,11 +291,11 @@ firmware/
 
 For the full project roadmap (app + firmware), see the [root README](../README.md#roadmap).
 
-### fw-v1.4.x — Verification and Stability
+### fw-v1.5.x — Verification and Stability
 
-- **ESC write frame capture and implementation** — `frs_set_esc()` in `focusrs.c` is stubbed pending empirical CAN frame capture from a live vehicle
-- **Drive mode 0x1B0 write template completion** — full 8-byte frame template needs capture from a live car (non-button bytes)
 - **BLE stability improvements** — test coexistence under sustained high-throughput CAN + BLE + WiFi load
+- **Drive mode boot-apply reliability** — confirm boot-apply task timing works across cold start and warm restart
+- **ESC cycle confirmation** — verify On→Sport→Off→On cycle order on additional vehicles
 
 ### fw-v2.x — Expanded Capability
 
@@ -300,7 +310,7 @@ For the full project roadmap (app + firmware), see the [root README](../README.m
 openrs-fw is part of the openRS_ project. Issues and PRs welcome at:
 `https://github.com/klexical/openRS_`
 
-Focus RS-specific CAN frame data (0x1B0 write frame template, ESC frames) is actively being collected during car testing. If you have captured frames from your own RS, please open an issue with your data.
+CAN frame data was validated on a 2018 Focus RS MK3. If you have captured frames from a different model year, please open an issue with your data.
 
 ---
 

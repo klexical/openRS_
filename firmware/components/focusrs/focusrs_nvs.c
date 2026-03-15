@@ -28,8 +28,10 @@ void frs_nvs_load(frs_state_t *state) {
     if (nvs_get_u8(h, KEY_BOOT_MODE, &u8) == ESP_OK)
         state->boot_mode = u8;
 
-    if (nvs_get_u8(h, KEY_ESC, &u8) == ESP_OK)
+    if (nvs_get_u8(h, KEY_ESC, &u8) == ESP_OK) {
         state->esc_mode = u8;
+        state->boot_esc = u8;
+    }
 
     uint8_t lc = 0, ass = 0;
     nvs_get_u8(h, KEY_LC,  &lc);
