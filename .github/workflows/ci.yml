@@ -133,14 +133,22 @@ jobs:
       - name: Build release APK
         run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon
 
-      - name: Extract version from tag
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#android-v}" >> "$GITHUB_OUTPUT"
+      - name: Find release APK
+        id: apk
+        run: |
+          APK=$(ls android/app/build/outputs/apk/release/openRS_v*.apk 2>/dev/null | head -1)
+          if [ -z "$APK" ]; then
+            echo "::error::No release APK found in android/app/build/outputs/apk/release/"
+            exit 1
+          fi
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+          echo "Found APK: $APK"
+        working-directory: .
 
       - name: Attach APK to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: android/app/build/outputs/apk/release/openRS_v${{ steps.version.outputs.version }}.apk
+          files: ${{ steps.apk.outputs.path }}
 
   verify-firmware:
     name: Verify Firmware Binaries
