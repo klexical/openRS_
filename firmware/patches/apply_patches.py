@@ -162,7 +162,7 @@ static esp_err_t frs_post_handler(httpd_req_t *req)
     if ((item = cJSON_GetObjectItem(root, "killASS")) && cJSON_IsBool(item))
         frs_set_ass_kill(cJSON_IsTrue(item));
     if ((item = cJSON_GetObjectItem(root, "sleepVoltage")) && cJSON_IsNumber(item))
-        frs_set_sleep_threshold((float)item->valuedouble);
+        frs_set_sleep_threshold((float)(item->valuedouble / 1000.0));
     cJSON_Delete(root);
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     return httpd_resp_send(req, "{\"ok\":true}", 11);
