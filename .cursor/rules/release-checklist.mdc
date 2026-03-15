@@ -25,7 +25,7 @@ File: `android/browser-emulator/index.html`
 
 This file mirrors the app UI. Every visible change to the app **must** be reflected in the emulator in the same commit/release. Check each category:
 
-- **Version badge** — update `openRS_ vX.Y.Z` text in the `<div class="version-badge">`
+- **Version badge** — update `openRS_ vX.Y.Z` text in the `<div class="version-badge">` and `<div class="settings-version">`
 - **Data cell labels** — if any `dc-label` text changed in the app (e.g. "FUEL RAIL" → "HP FUEL"), update it in the emulator
 - **New widgets / rows** — if a new row was added to any tab (e.g. odometer row, new data cell), add matching HTML in the emulator
 - **Removed widgets** — if something was removed from the app (e.g. gear display), remove it from the emulator too

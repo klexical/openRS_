@@ -896,11 +896,19 @@ body {
   margin-top: 4px;
   display: none;
 }
+.settings-version {
+  text-align: center;
+  font-family: var(--stm);
+  font-size: 10px;
+  color: var(--dim);
+  padding: 8px 0 0;
+  border-top: 1px solid var(--brd);
+  background: var(--surf);
+}
 .settings-actions {
   display: flex;
   gap: 10px;
   padding: 12px 16px;
-  border-top: 1px solid var(--brd);
   background: var(--surf);
   flex-shrink: 0;
 }
@@ -1684,6 +1692,9 @@ body {
           <div class="settings-error" id="settings-error"></div>
 
         </div><!-- /settings-body -->
+
+        <!-- Version label -->
+        <div class="settings-version">openRS_ v2.2.3</div>
 
         <!-- Action buttons -->
         <div class="settings-actions">

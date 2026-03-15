@@ -16,6 +16,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import com.openrs.dash.BuildConfig
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -279,6 +281,14 @@ fun SettingsDialog(onDismiss: () -> Unit) {
 
             // ── Action buttons ───────────────────────────────────────────────
             HorizontalDivider(color = Brd)
+            Text(
+                "openRS_ v${BuildConfig.VERSION_NAME}",
+                fontSize = 10.sp,
+                color = Dim,
+                fontFamily = ShareTechMono,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                textAlign = TextAlign.Center
+            )
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
