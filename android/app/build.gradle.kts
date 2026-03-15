@@ -93,6 +93,10 @@ android {
         jvmTarget = "17"
     }
 
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
     lint {
         abortOnError = false
         warningsAsErrors = false

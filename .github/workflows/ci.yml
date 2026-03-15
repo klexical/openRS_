@@ -5,7 +5,7 @@ on:
     branches: [ main, staging ]
     tags: [ 'android-v*' ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, staging ]
 
 jobs:
   build:
