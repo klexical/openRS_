@@ -84,6 +84,14 @@ class CanDecoderTest {
         assertEquals(0.0, result!!.throttlePct, 0.01)
     }
 
+    @Test
+    fun `decode throttle sets throttleHasSource`() {
+        val data = byteArrayOf(0x80.toByte())
+        val result = CanDecoder.decode(0x076, data, blank)
+        assertNotNull(result)
+        assertTrue(result!!.throttleHasSource)
+    }
+
     // ── 0x080: Pedals (accel + reverse) ─────────────────────────────────────
 
     @Test

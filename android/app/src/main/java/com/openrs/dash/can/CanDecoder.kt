@@ -169,6 +169,7 @@ object CanDecoder {
             // ── 0x076: Throttle position ───────────────────────────────────────
             ID_THROTTLE -> if (n >= 1) state.copy(
                 throttlePct = ubyte(data, 0) * 0.392,
+                throttleHasSource = true,
                 lastUpdate  = now
             ) else null
 

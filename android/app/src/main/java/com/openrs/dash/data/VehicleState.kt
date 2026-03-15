@@ -16,6 +16,7 @@ data class VehicleState(
     val intakeTempC: Double = 0.0,
     val boostKpa: Double = 101.325,
     val throttlePct: Double = 0.0,
+    val throttleHasSource: Boolean = false,
     val accelPedalPct: Double = 0.0,
     val torqueAtTrans: Double = 0.0,
 

@@ -66,12 +66,16 @@ import kotlin.math.roundToInt
         // ── Inputs & Resources bar grid ─────────────────────────────────────
         SectionLabel("INPUTS & RESOURCES")
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            BarCard(
-                name = "THROTTLE", value = "${vs.throttlePct.roundToInt()}%",
-                fraction = (vs.throttlePct / 100.0).toFloat(),
-                barBrush = Brush.horizontalGradient(listOf(accent.copy(0.4f), accent)),
-                modifier = Modifier.weight(1f)
-            )
+            run {
+                val thr = if (vs.throttleHasSource) vs.throttlePct else vs.accelPedalPct
+                BarCard(
+                    name = if (vs.throttleHasSource) "THROTTLE" else "PEDAL",
+                    value = "${thr.roundToInt()}%",
+                    fraction = (thr / 100.0).toFloat(),
+                    barBrush = Brush.horizontalGradient(listOf(accent.copy(0.4f), accent)),
+                    modifier = Modifier.weight(1f)
+                )
+            }
             BarCard(
                 name = "BRAKE", value = "$brakeStr%",
                 fraction = (vs.brakePressure / 100.0).toFloat().coerceIn(0f, 1f),
