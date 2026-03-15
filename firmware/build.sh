@@ -58,7 +58,7 @@ case "$TARGET" in
         IDF_TARGET="esp32c3"
         SDKCONFIG_FILE="sdkconfig.defaults.usb"
         PARTITIONS_FILE="partitions_openrs_usb.csv"
-        OUTPUT_BIN="openrs-fw-usb_v140.bin"
+        OUTPUT_BIN="openrs-fw-usb_v150.bin"
         TARGET_DESC="WiCAN USB-C3 (ESP32-C3)"
         ;;
     pro)
@@ -66,7 +66,7 @@ case "$TARGET" in
         IDF_TARGET="esp32s3"
         SDKCONFIG_FILE="sdkconfig.defaults.pro"
         PARTITIONS_FILE="partitions_openrs_pro.csv"
-        OUTPUT_BIN="openrs-fw-pro_v140.bin"
+        OUTPUT_BIN="openrs-fw-pro_v150.bin"
         TARGET_DESC="WiCAN Pro (ESP32-S3)"
         ;;
 esac
@@ -257,4 +257,4 @@ for f in "$BOOT_BIN" "$PART_BIN" "$OTA_BIN" "$OUTPUT_BIN" storage.bin; do
 done
 echo ""
 log "Release directory: $RELEASE_DIR"
-log "Ready to flash. See firmware/docs/firmware-update.md for instructions."
+log "Ready to flash. See android/docs/firmware-update.md for instructions."

@@ -29,7 +29,7 @@ Pro-only patches:
   (same CAN TX shim as USB — wc_mdns_init anchor confirmed in v4.48p)
 """
 
-OPENRS_FW_VERSION = "v1.4"
+OPENRS_FW_VERSION = "v1.5"
 
 import sys
 import os
@@ -120,9 +120,9 @@ static esp_err_t frs_get_handler(httpd_req_t *req)
     frs_state_t *s = &snap;
     char json[384];
     snprintf(json, sizeof(json),
-        "{\"driveMode\":%d,\"bootMode\":%d,\"escMode\":%d,"
+        "{\"driveMode\":%d,\"bootMode\":%d,\"escMode\":%d,\"bootEsc\":%d,"
         "\"lcEnabled\":%s,\"assKill\":%s,\"battMv\":%lu,\"sleepMv\":%u}",
-        s->drive_mode, s->boot_mode, s->esc_mode,
+        s->drive_mode, s->boot_mode, s->esc_mode, s->boot_esc,
         s->lc_enabled ? "true" : "false",
         s->ass_kill   ? "true" : "false",
         (unsigned long)s->battery_mv,
