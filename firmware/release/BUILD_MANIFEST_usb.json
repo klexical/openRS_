@@ -4,12 +4,12 @@
   "output_bin": "openrs-fw-usb_v150.bin",
   "upstream_tag": "v4.20u_beta-01",
   "idf_target": "esp32c3",
-  "built_at": "2026-03-16T00:58:52Z",
-  "git_commit": "858e51196cbf6aa35396dee50a8543badba98286",
+  "built_at": "2026-03-16T01:04:51Z",
+  "git_commit": "b1cd266c58771dc6f6b88fb6b9a46f8152f8b831",
   "git_dirty": true,
   "sha256": {
-    "openrs-fw-usb_v150.bin": "2de1fb2d87b583ff642ea590eb4ea82e9e7cc40aa2622c626034b64cfa84dd55",
-    "bootloader_usb.bin": "3a9272031ecc75059ef04d5ceb217ead43b6c1ff566c7699a541bb83f0b8226f",
+    "openrs-fw-usb_v150.bin": "ecfc7ebb341e40c1ef53bb12f70636a81c92f04ad3161536c66f9ae4652f97a4",
+    "bootloader_usb.bin": "39cf744139df5c343516aca54afcd99a6cc9386b19e0bd9eedfb90daf3d374f4",
     "partition-table_usb.bin": "98d193a613ff7e9d14269ccfdb11e4bc652339d41d8b6f1aedea9fd7a9e2185e",
     "ota_data_initial_usb.bin": "7d2c7ac4888bfd75cd5f56e8d61f69595121183afc81556c876732fd3782c62f"
   }
