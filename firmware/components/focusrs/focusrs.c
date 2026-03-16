@@ -32,6 +32,7 @@ static frs_state_t s_state = {
 
 void frs_init(void) {
     s_state_mutex = xSemaphoreCreateMutex();
+    configASSERT(s_state_mutex);
     frs_nvs_load(&s_state);
     ESP_LOGI(TAG, "openrs-fw %s — Focus RS module init", OPENRS_FW_VERSION);
     ESP_LOGI(TAG, "Boot mode: %d, ESC: %d, LC: %d, ASS kill: %d",
@@ -46,7 +47,6 @@ void frs_parse_can_frame(uint32_t can_id, const uint8_t *data, uint8_t dlc) {
     switch (can_id) {
 
     case FRS_CAN_ID_AWD_MSG:
-        // Read-only: extract drive mode from status frame
         if (dlc >= 7 && data[4] == 0x00) {
             uint8_t raw_mode = (data[6] >> 4) & 0x0F;
             if (raw_mode <= FRS_MODE_TRACK) {
@@ -65,7 +65,6 @@ void frs_parse_can_frame(uint32_t can_id, const uint8_t *data, uint8_t dlc) {
         break;
 
     case FRS_CAN_ID_DRIVE_MODE_BTN:
-        // Capture template when button is NOT pressed (steady state)
         if (dlc >= 8 && !(data[FRS_DM_BTN_BYTE] & FRS_DM_BTN_BIT)) {
             memcpy(s_state.frame_305_template, data, 8);
             s_state.frame_305_valid = true;
@@ -73,7 +72,6 @@ void frs_parse_can_frame(uint32_t can_id, const uint8_t *data, uint8_t dlc) {
         break;
 
     case FRS_CAN_ID_BODY_CTRL:
-        // Capture template when neither ESC nor ASS button is pressed
         if (dlc >= 8 &&
             !(data[FRS_ESC_BTN_BYTE] & FRS_ESC_BTN_BIT) &&
             !(data[FRS_ASS_BTN_BYTE] & FRS_ASS_BTN_BIT)) {
@@ -140,15 +138,19 @@ static void frs_send_button_long(uint32_t can_id,
 }
 
 // ── Drive mode write ─────────────────────────────────────────
-// Simulates the physical drive mode button on CAN ID 0x305.
-// Each press cycles: Normal → Sport → Track → Drift → Normal.
+// Copies template under mutex to avoid torn reads on dual-core S3.
 static void frs_send_dm_button(void) {
+    uint8_t tmpl[8];
+    xSemaphoreTake(s_state_mutex, portMAX_DELAY);
     if (!s_state.frame_305_valid) {
+        xSemaphoreGive(s_state_mutex);
         ESP_LOGW(TAG, "No 0x305 template yet — cannot simulate drive mode button");
         return;
     }
-    frs_send_button(FRS_CAN_ID_DRIVE_MODE_BTN,
-                    s_state.frame_305_template,
+    memcpy(tmpl, s_state.frame_305_template, 8);
+    xSemaphoreGive(s_state_mutex);
+
+    frs_send_button(FRS_CAN_ID_DRIVE_MODE_BTN, tmpl,
                     FRS_DM_BTN_BYTE, FRS_DM_BTN_BIT);
 }
 
@@ -161,14 +163,20 @@ static void frs_drive_mode_task(void *arg) {
     // CAN values:            0  1  3  2
     static const uint8_t can_to_pos[] = {0, 1, 3, 2};
     const uint8_t cycle_len = 4;
+
+    xSemaphoreTake(s_state_mutex, portMAX_DELAY);
     uint8_t current = s_state.drive_mode;
+    xSemaphoreGive(s_state_mutex);
+
     uint8_t cur_pos = can_to_pos[current];
     uint8_t tgt_pos = can_to_pos[target_mode];
     uint8_t cycle_dist = (tgt_pos - cur_pos + cycle_len) % cycle_len;
 
     if (cycle_dist == 0) {
         ESP_LOGI(TAG, "Drive mode: already in %d — no change", current);
+        xSemaphoreTake(s_state_mutex, portMAX_DELAY);
         s_pending_mode = 0xFF;
+        xSemaphoreGive(s_state_mutex);
         vTaskDelete(NULL);
         return;
     }
@@ -187,19 +195,27 @@ static void frs_drive_mode_task(void *arg) {
         vTaskDelay(pdMS_TO_TICKS(150));
     }
 
+    xSemaphoreTake(s_state_mutex, portMAX_DELAY);
     s_state.boot_mode = target_mode;
-    frs_nvs_save_boot_mode(target_mode);
     s_pending_mode = 0xFF;
+    xSemaphoreGive(s_state_mutex);
+
+    frs_nvs_save_boot_mode(target_mode);
     vTaskDelete(NULL);
 }
 
 void frs_set_drive_mode(uint8_t target_mode) {
     if (target_mode > FRS_MODE_TRACK) return;
+
+    xSemaphoreTake(s_state_mutex, portMAX_DELAY);
     if (s_pending_mode != 0xFF) {
+        xSemaphoreGive(s_state_mutex);
         ESP_LOGW(TAG, "Drive mode change already in progress");
         return;
     }
     s_pending_mode = target_mode;
+    xSemaphoreGive(s_state_mutex);
+
     xTaskCreate(frs_drive_mode_task, "frs_dm", 2048,
                 (void *)(uintptr_t)target_mode, 5, NULL);
 }
@@ -210,22 +226,32 @@ void frs_set_drive_mode(uint8_t target_mode) {
 //   Long press (~5s): activates ESC Off from On or Sport
 //   Short press from Off: returns to On
 static void frs_send_esc_short(void) {
+    uint8_t tmpl[8];
+    xSemaphoreTake(s_state_mutex, portMAX_DELAY);
     if (!s_state.frame_260_valid) {
+        xSemaphoreGive(s_state_mutex);
         ESP_LOGW(TAG, "No 0x260 template yet — cannot simulate ESC button");
         return;
     }
-    frs_send_button(FRS_CAN_ID_BODY_CTRL,
-                    s_state.frame_260_template,
+    memcpy(tmpl, s_state.frame_260_template, 8);
+    xSemaphoreGive(s_state_mutex);
+
+    frs_send_button(FRS_CAN_ID_BODY_CTRL, tmpl,
                     FRS_ESC_BTN_BYTE, FRS_ESC_BTN_BIT);
 }
 
 static void frs_send_esc_long(void) {
+    uint8_t tmpl[8];
+    xSemaphoreTake(s_state_mutex, portMAX_DELAY);
     if (!s_state.frame_260_valid) {
+        xSemaphoreGive(s_state_mutex);
         ESP_LOGW(TAG, "No 0x260 template yet — cannot simulate ESC long press");
         return;
     }
-    frs_send_button_long(FRS_CAN_ID_BODY_CTRL,
-                         s_state.frame_260_template,
+    memcpy(tmpl, s_state.frame_260_template, 8);
+    xSemaphoreGive(s_state_mutex);
+
+    frs_send_button_long(FRS_CAN_ID_BODY_CTRL, tmpl,
                          FRS_ESC_BTN_BYTE, FRS_ESC_BTN_BIT,
                          FRS_ESC_LONG_PRESS_MS);
 }
@@ -234,11 +260,16 @@ static uint8_t s_pending_esc = 0xFF;
 
 static void frs_esc_mode_task(void *arg) {
     uint8_t target_esc = (uint8_t)(uintptr_t)arg;
+
+    xSemaphoreTake(s_state_mutex, portMAX_DELAY);
     uint8_t current = s_state.esc_mode;
+    xSemaphoreGive(s_state_mutex);
 
     if (current == target_esc) {
         ESP_LOGI(TAG, "ESC: already in %d — no change", current);
+        xSemaphoreTake(s_state_mutex, portMAX_DELAY);
         s_pending_esc = 0xFF;
+        xSemaphoreGive(s_state_mutex);
         vTaskDelete(NULL);
         return;
     }
@@ -246,60 +277,69 @@ static void frs_esc_mode_task(void *arg) {
     ESP_LOGI(TAG, "ESC mode: %d → %d via 0x260", current, target_esc);
 
     if (target_esc == FRS_ESC_OFF) {
-        // Long press (~5s) to enter ESC Off from any state
         ESP_LOGI(TAG, "ESC: long press for Off");
         frs_send_esc_long();
     } else if (target_esc == FRS_ESC_SPORT) {
         if (current == FRS_ESC_OFF) {
-            // Off → On (short), then On → Sport (short)
             ESP_LOGI(TAG, "ESC: Off → On → Sport (2 short presses)");
             frs_send_esc_short();
             vTaskDelay(pdMS_TO_TICKS(1000));
             frs_send_esc_short();
         } else {
-            // On → Sport (short)
             frs_send_esc_short();
         }
     } else {
-        // Target is On
         if (current == FRS_ESC_OFF || current == FRS_ESC_SPORT) {
-            // Off → On or Sport → On (short press)
             frs_send_esc_short();
         }
     }
 
+    xSemaphoreTake(s_state_mutex, portMAX_DELAY);
     s_state.boot_esc = target_esc;
-    frs_nvs_save_esc(target_esc);
     s_pending_esc = 0xFF;
+    xSemaphoreGive(s_state_mutex);
+
+    frs_nvs_save_esc(target_esc);
     vTaskDelete(NULL);
 }
 
 void frs_set_esc(uint8_t esc_mode) {
     if (esc_mode > FRS_ESC_OFF) return;
+
+    xSemaphoreTake(s_state_mutex, portMAX_DELAY);
     if (s_pending_esc != 0xFF) {
+        xSemaphoreGive(s_state_mutex);
         ESP_LOGW(TAG, "ESC mode change already in progress");
         return;
     }
     s_pending_esc = esc_mode;
+    xSemaphoreGive(s_state_mutex);
+
     xTaskCreate(frs_esc_mode_task, "frs_esc", 2048,
                 (void *)(uintptr_t)esc_mode, 5, NULL);
 }
 
 // ── Auto Start/Stop kill ─────────────────────────────────────
-// Simulates the ASS button on CAN ID 0x260 byte 1 bit 0.
-// A single press toggles ASS on/off.
 static void frs_send_ass_button(void) {
+    uint8_t tmpl[8];
+    xSemaphoreTake(s_state_mutex, portMAX_DELAY);
     if (!s_state.frame_260_valid) {
+        xSemaphoreGive(s_state_mutex);
         ESP_LOGW(TAG, "No 0x260 template yet — cannot simulate ASS button");
         return;
     }
-    frs_send_button(FRS_CAN_ID_BODY_CTRL,
-                    s_state.frame_260_template,
+    memcpy(tmpl, s_state.frame_260_template, 8);
+    xSemaphoreGive(s_state_mutex);
+
+    frs_send_button(FRS_CAN_ID_BODY_CTRL, tmpl,
                     FRS_ASS_BTN_BYTE, FRS_ASS_BTN_BIT);
 }
 
 void frs_set_ass_kill(bool enabled) {
+    xSemaphoreTake(s_state_mutex, portMAX_DELAY);
     s_state.ass_kill = enabled;
+    xSemaphoreGive(s_state_mutex);
+
     frs_nvs_save_ass_kill(enabled);
     ESP_LOGI(TAG, "Auto S/S kill: %s", enabled ? "ON" : "OFF");
 
@@ -310,7 +350,10 @@ void frs_set_ass_kill(bool enabled) {
 
 // ── Launch control (NVS-only, no CAN write) ──────────────────
 void frs_set_lc(bool enabled) {
+    xSemaphoreTake(s_state_mutex, portMAX_DELAY);
     s_state.lc_enabled = enabled;
+    xSemaphoreGive(s_state_mutex);
+
     frs_nvs_save_lc(enabled);
     ESP_LOGI(TAG, "Launch control: %s", enabled ? "ON" : "OFF");
 }
@@ -319,7 +362,11 @@ void frs_set_lc(bool enabled) {
 void frs_set_sleep_threshold(float volts) {
     if (volts < 10.0f || volts > 15.0f) return;
     uint16_t mv = (uint16_t)(volts * 1000.0f);
+
+    xSemaphoreTake(s_state_mutex, portMAX_DELAY);
     s_state.sleep_threshold_mv = mv;
+    xSemaphoreGive(s_state_mutex);
+
     frs_nvs_save_sleep_threshold(mv);
     ESP_LOGI(TAG, "Sleep threshold: %.1fV (%umV)", volts, mv);
 }
@@ -328,48 +375,54 @@ void frs_set_sleep_threshold(float volts) {
 // Waits for CAN templates to be captured, then applies persisted
 // boot mode, ESC mode, and ASS kill settings.
 static void frs_boot_apply_task(void *arg) {
-    // Wait for the CAN bus to stabilise and templates to be captured.
-    // 0x305 at ~10 Hz and 0x260 at ~50 Hz — should be valid within 1s.
     const int max_wait_ms = 10000;
     const int poll_ms = 200;
     int waited = 0;
 
     while (waited < max_wait_ms) {
-        if (s_state.frame_305_valid && s_state.frame_260_valid) break;
+        xSemaphoreTake(s_state_mutex, portMAX_DELAY);
+        bool ready = s_state.frame_305_valid && s_state.frame_260_valid;
+        xSemaphoreGive(s_state_mutex);
+        if (ready) break;
         vTaskDelay(pdMS_TO_TICKS(poll_ms));
         waited += poll_ms;
     }
 
-    if (!s_state.frame_305_valid || !s_state.frame_260_valid) {
+    xSemaphoreTake(s_state_mutex, portMAX_DELAY);
+    bool f305 = s_state.frame_305_valid;
+    bool f260 = s_state.frame_260_valid;
+    uint8_t boot_mode  = s_state.boot_mode;
+    uint8_t drive_mode = s_state.drive_mode;
+    uint8_t boot_esc   = s_state.boot_esc;
+    uint8_t esc_mode   = s_state.esc_mode;
+    bool ass_kill      = s_state.ass_kill;
+    xSemaphoreGive(s_state_mutex);
+
+    if (!f305 || !f260) {
         ESP_LOGW(TAG, "Boot apply: templates not captured after %dms "
                  "(305=%d, 260=%d) — skipping",
-                 max_wait_ms, s_state.frame_305_valid, s_state.frame_260_valid);
+                 max_wait_ms, f305, f260);
         vTaskDelete(NULL);
         return;
     }
 
     ESP_LOGI(TAG, "Boot apply: templates ready after %dms", waited);
 
-    // Apply boot drive mode if different from current
-    if (s_state.boot_mode != s_state.drive_mode &&
-        s_state.boot_mode <= FRS_MODE_TRACK) {
+    if (boot_mode != drive_mode && boot_mode <= FRS_MODE_TRACK) {
         ESP_LOGI(TAG, "Boot apply: drive mode %d → %d",
-                 s_state.drive_mode, s_state.boot_mode);
-        frs_set_drive_mode(s_state.boot_mode);
+                 drive_mode, boot_mode);
+        frs_set_drive_mode(boot_mode);
         vTaskDelay(pdMS_TO_TICKS(3000));
     }
 
-    // Apply boot ESC mode if different from live CAN value
-    if (s_state.boot_esc != s_state.esc_mode &&
-        s_state.boot_esc <= FRS_ESC_OFF) {
+    if (boot_esc != esc_mode && boot_esc <= FRS_ESC_OFF) {
         ESP_LOGI(TAG, "Boot apply: ESC %d → %d",
-                 s_state.esc_mode, s_state.boot_esc);
-        frs_set_esc(s_state.boot_esc);
+                 esc_mode, boot_esc);
+        frs_set_esc(boot_esc);
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
 
-    // Apply ASS kill if persisted
-    if (s_state.ass_kill) {
+    if (ass_kill) {
         ESP_LOGI(TAG, "Boot apply: sending ASS kill button press");
         frs_send_ass_button();
     }
@@ -391,6 +444,8 @@ frs_state_t frs_get_state_copy(void) {
     return copy;
 }
 
+// DEPRECATED: raw pointer, not thread-safe on dual-core (Pro).
+// Use frs_get_state_copy() instead.
 frs_state_t *frs_get_state(void) {
     return &s_state;
 }

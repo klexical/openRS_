@@ -25,12 +25,21 @@ void frs_nvs_load(frs_state_t *state) {
     uint8_t u8;
     uint16_t u16;
 
-    if (nvs_get_u8(h, KEY_BOOT_MODE, &u8) == ESP_OK)
-        state->boot_mode = u8;
+    if (nvs_get_u8(h, KEY_BOOT_MODE, &u8) == ESP_OK) {
+        if (u8 <= FRS_MODE_TRACK) {
+            state->boot_mode = u8;
+        } else {
+            ESP_LOGW(TAG, "NVS boot_mode out of range (%d) — using default", u8);
+        }
+    }
 
     if (nvs_get_u8(h, KEY_ESC, &u8) == ESP_OK) {
-        state->esc_mode = u8;
-        state->boot_esc = u8;
+        if (u8 <= FRS_ESC_OFF) {
+            state->esc_mode = u8;
+            state->boot_esc = u8;
+        } else {
+            ESP_LOGW(TAG, "NVS esc_mode out of range (%d) — using default", u8);
+        }
     }
 
     uint8_t lc = 0, ass = 0;
@@ -39,8 +48,13 @@ void frs_nvs_load(frs_state_t *state) {
     state->lc_enabled = (lc != 0);
     state->ass_kill   = (ass != 0);
 
-    if (nvs_get_u16(h, KEY_SLEEP_MV, &u16) == ESP_OK)
-        state->sleep_threshold_mv = u16;
+    if (nvs_get_u16(h, KEY_SLEEP_MV, &u16) == ESP_OK) {
+        if (u16 >= 10000 && u16 <= 15000) {
+            state->sleep_threshold_mv = u16;
+        } else {
+            ESP_LOGW(TAG, "NVS sleep_thresh out of range (%u) — using default", u16);
+        }
+    }
 
     nvs_close(h);
     ESP_LOGI(TAG, "Loaded: boot=%d esc=%d lc=%d ass=%d sleep=%lumV",

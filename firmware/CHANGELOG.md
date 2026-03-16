@@ -6,6 +6,12 @@ All notable changes to the openrs-fw firmware are documented here.
 
 ## v1.5 — 2026-03-16
 
+### Fixed (Pro-specific)
+- **Data race on dual-core ESP32-S3** — all `frs_set_*` functions, `s_pending_mode`, `s_pending_esc`, and CAN template reads now protected by `s_state_mutex`. On the Pro (ESP32-S3, dual-core), CAN RX on Core 0 and REST API handler on Core 1 could corrupt `s_state` simultaneously — worst case: wrong number of drive mode presses or torn template reads during CAN TX. Button send helpers (`frs_send_dm_button`, `frs_send_esc_short/long`, `frs_send_ass_button`) now copy templates under mutex before transmitting. ([#78](https://github.com/klexical/openRS_/issues/78))
+- **NVS value clamping** — `boot_mode`, `esc_mode`, and `sleep_threshold_mv` are now range-checked on NVS load. If flash is corrupted, out-of-range values are rejected with a warning instead of causing undefined behavior (e.g. `boot_mode > 3` would index past `can_to_pos[4]`). ([#12](https://github.com/klexical/openRS_/issues/12))
+- **REST API CORS wildcard removed** — `Access-Control-Allow-Origin: *` stripped from both GET and POST `/api/frs` handlers. The Android app uses direct HTTP (not a browser), so CORS headers were unnecessary and allowed any webpage on a device connected to the WiCAN WiFi to silently POST drive mode / ESC changes. ([#79](https://github.com/klexical/openRS_/issues/79))
+- **Pro profile missing `frs_boot_apply()`** — added to `pro.py` `can_tx_register_replacement` so the Pro auto-applies NVS settings (drive mode, ESC, ASS kill) after CAN templates are captured at boot, matching USB behavior.
+
 ### Fixed
 - **Drive mode button simulation uses correct CAN ID** — changed from 0x1B0 (status frame, ignored by car) to **0x305 byte 5 bit 2** (actual button input). 0x1B0 is the AWD status/torque output frame — the car's drive mode controller does not listen for button input on it. Confirmed via SLCAN log on 2018 Focus RS: steady-state byte 5 = `0x08`, pressed = `0x0C`. ([#101](https://github.com/klexical/openRS_/issues/101))
 - **Drive mode activation press** — the Focus RS instrument cluster requires an activation press before cycling begins. First press opens the mode selector GUI on the cluster (no mode change); subsequent presses cycle through N→S→T→D→N. Firmware now sends **1 activation press + N cycle presses** automatically, so a single tap in the app reaches the desired mode without double-tapping. Confirmed via car test: user had to tap twice in rc.1, single tap works after this fix.

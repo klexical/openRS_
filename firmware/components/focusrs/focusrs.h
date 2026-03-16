@@ -95,7 +95,7 @@ void     frs_set_ass_kill(bool enabled);     // sends CAN + updates NVS
 void     frs_set_sleep_threshold(float volts);
 void     frs_boot_apply(void);         // Apply NVS settings after CAN templates captured
 frs_state_t  frs_get_state_copy(void);  // Thread-safe snapshot
-frs_state_t *frs_get_state(void);      // Direct pointer (use from same task only)
+frs_state_t *frs_get_state(void);      // DEPRECATED: not thread-safe on dual-core
 
 
 #ifdef __cplusplus
