@@ -184,7 +184,7 @@ static void frs_drive_mode_task(void *arg) {
 
     for (uint8_t i = 0; i < presses; i++) {
         frs_send_dm_button();
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(150));
     }
 
     s_state.boot_mode = target_mode;
