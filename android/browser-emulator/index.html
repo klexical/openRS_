@@ -17,15 +17,15 @@
   --frost:    #E8F4FF;
   --dim:      #3D5A72;
   --mid:      #7A9AB8;
-  --accent:   #00D2FF;
-  --accentD:  #0099BB;
+  --accent:   #0091EA;
+  --accentD:  #006DB3;
   --orange:   #FF4D00;
   --ok:       #00FF88;
   --warn:     #FFCC00;
   --orbitron: 'Orbitron', monospace;
   --jbm:      'JetBrains Mono', monospace;
   --ui:       'Barlow Condensed', sans-serif;
-  --theme:    #00D2FF;   /* updated by JS for theme picker */
+  --theme:    #0091EA;   /* updated by JS for theme picker */
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -93,16 +93,16 @@ body {
   letter-spacing: 0.08em;
 }
 .badge-mode {
-  background: rgba(0,210,255,0.12);
-  border: 1px solid rgba(0,210,255,0.3);
+  background: rgba(0,145,234,0.12);
+  border: 1px solid rgba(0,145,234,0.3);
   color: var(--theme);
 }
 .badge-mode.sport  { background: rgba(0,255,136,0.1);  border-color: rgba(0,255,136,0.3);  color: var(--ok); }
 .badge-mode.track  { background: rgba(255,204,0,0.1);  border-color: rgba(255,204,0,0.3);  color: var(--warn); }
 .badge-mode.drift  { background: rgba(255,77,0,0.1);   border-color: rgba(255,77,0,0.3);   color: var(--orange); }
 .badge-esc {
-  background: rgba(0,210,255,0.08);
-  border: 1px solid rgba(0,210,255,0.2);
+  background: rgba(0,145,234,0.08);
+  border: 1px solid rgba(0,145,234,0.2);
   color: var(--theme);
 }
 .conn-dot {
@@ -141,8 +141,8 @@ body {
   transition: background 0.15s;
   gap: 2px;
 }
-.tab:hover { background: rgba(0,210,255,0.03); }
-.tab.active { background: rgba(0,210,255,0.05); }
+.tab:hover { background: rgba(0,145,234,0.03); }
+.tab.active { background: rgba(0,145,234,0.05); }
 .tab-icon {
   font-family: var(--jbm);
   font-size: 13px;
@@ -265,7 +265,7 @@ body {
   overflow: hidden;
 }
 .bar-fill { height: 100%; border-radius: 2px; }
-.bar-fill.cyan   { background: linear-gradient(90deg, rgba(0,210,255,0.4), #00D2FF); }
+.bar-fill.cyan   { background: linear-gradient(90deg, rgba(0,145,234,0.4), #0091EA); }
 .bar-fill.red    { background: linear-gradient(90deg, rgba(255,77,0,0.4), #FF4D00); }
 .bar-fill.ok     { background: linear-gradient(90deg, rgba(0,255,136,0.4), #00FF88); }
 .bar-fill.warn   { background: linear-gradient(90deg, rgba(255,204,0,0.4), #FFCC00); }
@@ -322,7 +322,7 @@ body {
 .awd-pct-label { font-family: var(--jbm); font-size: 8px; color: var(--dim); letter-spacing: 0.12em; }
 .awd-pct-val   { font-family: var(--orbitron); font-size: 18px; font-weight: 700; }
 .awd-bar-wrap  { flex: 1; height: 10px; background: var(--surf3); border-radius: 5px; overflow: hidden; display: flex; }
-.awd-bar-front { background: linear-gradient(90deg, var(--theme), rgba(0,210,255,0.5)); }
+.awd-bar-front { background: linear-gradient(90deg, var(--theme), rgba(0,145,234,0.5)); }
 .awd-bar-rear  { background: linear-gradient(90deg, rgba(0,255,136,0.5), var(--ok)); }
 .awd-torques {
   display: flex;
@@ -363,7 +363,7 @@ body {
   flex-direction: column;
   gap: 2px;
 }
-.wheel-cell.front { border: 1px solid rgba(0,210,255,0.35); }
+.wheel-cell.front { border: 1px solid rgba(0,145,234,0.35); }
 .wheel-cell.rear  { border: 1px solid rgba(0,255,136,0.3); }
 .wheel-pos  { font-family: var(--jbm); font-size: 9px; color: var(--dim); letter-spacing: 0.12em; }
 .wheel-spd  { font-family: 'Share Tech Mono', monospace; font-size: 16px; color: var(--frost); }
@@ -531,8 +531,8 @@ body {
   font-size: 12px;
   letter-spacing: 0.1em;
   cursor: pointer;
-  background: linear-gradient(90deg, rgba(0,210,255,0.1), rgba(0,210,255,0.05));
-  border-color: rgba(0,210,255,0.3);
+  background: linear-gradient(90deg, rgba(0,145,234,0.1), rgba(0,145,234,0.05));
+  border-color: rgba(0,145,234,0.3);
   color: var(--theme);
 }
 .console-box {
@@ -582,7 +582,7 @@ body {
   transition: all 0.15s;
 }
 .mode-btn.active {
-  background: rgba(0,210,255,0.1);
+  background: rgba(0,145,234,0.1);
   border-color: var(--theme);
 }
 .mode-btn.active-sport { background: rgba(0,255,136,0.1); border-color: var(--ok); }
@@ -1187,7 +1187,7 @@ body {
           <span style="color:var(--mid)">98 Nm R</span>
         </div>
         <div style="height:8px;background:var(--surf3);border-radius:4px;overflow:hidden;display:flex">
-          <div style="flex:60;background:linear-gradient(90deg,var(--theme),rgba(0,210,255,0.4));border-radius:4px 0 0 4px"></div>
+          <div style="flex:60;background:linear-gradient(90deg,var(--theme),rgba(0,145,234,0.4));border-radius:4px 0 0 4px"></div>
           <div style="flex:40;background:linear-gradient(90deg,rgba(0,255,136,0.4),var(--ok));border-radius:0 4px 4px 0"></div>
         </div>
         <div class="cell-row">
@@ -1328,7 +1328,7 @@ body {
       <!-- DTC Scanner -->
       <div class="section-label"><span>DTC SCANNER</span></div>
       <div style="display:flex;gap:6px">
-        <div class="diag-btn" id="dtc-scan-btn" style="flex:1;background:linear-gradient(90deg,rgba(0,210,255,0.12),rgba(0,210,255,0.06));border-color:rgba(0,210,255,0.35)" onclick="runDtcScan()">⟳  SCAN ALL MODULES</div>
+        <div class="diag-btn" id="dtc-scan-btn" style="flex:1;background:linear-gradient(90deg,rgba(0,145,234,0.12),rgba(0,145,234,0.06));border-color:rgba(0,145,234,0.35)" onclick="runDtcScan()">⟳  SCAN ALL MODULES</div>
       </div>
       <div style="font-family:var(--jbm);font-size:9px;color:var(--dim);padding:0 2px 6px">
         Reads active, pending, and permanent fault codes from all modules.
@@ -1497,31 +1497,31 @@ body {
         <div class="more-section-title">THEME — RS PAINT COLOUR</div>
         <div class="theme-grid">
           <div class="theme-row">
-            <div class="theme-chip active" id="theme-cyan" onclick="setTheme('cyan','#00D2FF')" style="border-color:#00D2FF;background:rgba(0,210,255,0.1)">
-              <div class="theme-dot" style="background:#00D2FF"></div>
-              <div class="theme-name" style="color:#00D2FF">Nitrous Blue</div>
+            <div class="theme-chip active" id="theme-cyan" onclick="setTheme('cyan','#0091EA')" style="border-color:#0091EA;background:rgba(0,145,234,0.1)">
+              <div class="theme-dot" style="background:#0091EA"></div>
+              <div class="theme-name" style="color:#0091EA">Nitrous Blue</div>
             </div>
-            <div class="theme-chip" id="theme-red" onclick="setTheme('red','#FF2233')">
-              <div class="theme-dot" style="background:#FF2233"></div>
+            <div class="theme-chip" id="theme-red" onclick="setTheme('red','#D62828')">
+              <div class="theme-dot" style="background:#D62828"></div>
               <div class="theme-name">Race Red</div>
             </div>
-            <div class="theme-chip" id="theme-orange" onclick="setTheme('orange','#FF6600')">
-              <div class="theme-dot" style="background:#FF6600"></div>
-              <div class="theme-name">Tangerine</div>
+            <div class="theme-chip" id="theme-orange" onclick="setTheme('orange','#D45500')">
+              <div class="theme-dot" style="background:#D45500"></div>
+              <div class="theme-name">Deep Orange</div>
             </div>
           </div>
           <div class="theme-row">
-            <div class="theme-chip" id="theme-green" onclick="setTheme('green','#00FF88')">
-              <div class="theme-dot" style="background:#00FF88"></div>
-              <div class="theme-name">Mean Green</div>
+            <div class="theme-chip" id="theme-grey" onclick="setTheme('grey','#6B7580')">
+              <div class="theme-dot" style="background:#6B7580"></div>
+              <div class="theme-name">Stealth Grey</div>
             </div>
-            <div class="theme-chip" id="theme-purple" onclick="setTheme('purple','#8C7AFF')">
-              <div class="theme-dot" style="background:#8C7AFF"></div>
-              <div class="theme-name">Stealth</div>
+            <div class="theme-chip" id="theme-black" onclick="setTheme('black','#3A3D44')">
+              <div class="theme-dot" style="background:#3A3D44"></div>
+              <div class="theme-name">Shadow Black</div>
             </div>
-            <div class="theme-chip" id="theme-silver" onclick="setTheme('silver','#AAC4DD')">
-              <div class="theme-dot" style="background:#AAC4DD"></div>
-              <div class="theme-name">Silver</div>
+            <div class="theme-chip" id="theme-white" onclick="setTheme('white','#E8ECF0')">
+              <div class="theme-dot" style="background:#E8ECF0"></div>
+              <div class="theme-name">Frozen White</div>
             </div>
           </div>
         </div>
@@ -1741,10 +1741,10 @@ function setPreset(id) {
 
 // ── Theme picker ───────────────────────────────────────────────────────────
 let currentTheme = 'cyan';
-const themeIds = ['cyan','red','orange','green','purple','silver'];
+const themeIds = ['cyan','red','orange','grey','black','white'];
 const themeColorMap = {
-  cyan: '#00D2FF', red: '#FF2233', orange: '#FF6600',
-  green: '#00FF88', purple: '#8C7AFF', silver: '#AAC4DD'
+  cyan: '#0091EA', red: '#D62828', orange: '#D45500',
+  grey: '#6B7580', black: '#3A3D44', white: '#E8ECF0'
 };
 function setTheme(id, color) {
   const root = document.documentElement;

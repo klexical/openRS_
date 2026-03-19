@@ -25,8 +25,8 @@ Milestones map to roadmap phases. Check current milestones with `gh milestone li
 
 1. Pick an issue from the current milestone
 2. Branch from `staging` (e.g. `fix/broken-can-decoder-tests`)
-3. Reference the issue in commits: `fix: correct CanDecoderTest CAN IDs (fixes #1)`
-4. PRs auto-close referenced issues when merged to `staging`
+3. Reference the issue in commits: `fix: correct CanDecoderTest CAN IDs (refs #1)`
+4. Do **not** use `fixes #N` / `closes #N` in commit messages — issues are closed manually when `staging` is merged to `main` (see `issue-lifecycle.mdc`)
 
 ## When you discover a bug or tech-debt during other work
 

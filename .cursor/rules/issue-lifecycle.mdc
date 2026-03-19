@@ -1,0 +1,36 @@
+---
+description: GitHub issue lifecycle — when to comment, when to close, staging vs main
+alwaysApply: true
+---
+
+# Issue Lifecycle
+
+## Implemented in staging (RC phase)
+
+When an issue's fix lands in `staging` as part of a release candidate:
+
+1. **Add a comment** noting the exact version/RC and a one-line technical summary:
+   ```
+   Implemented in `fw-usb-v1.5-rc.3`. TWAI bus-off recovery added to focusrs.c —
+   frs_attempt_recovery() monitors TX error counter. Will close when staging is merged to main.
+   ```
+2. **Do NOT close the issue yet.** Issues stay open while the fix is in RC/staging.
+
+## Closing issues
+
+Issues are closed **only** when `staging` is merged to `main` for a stable release:
+
+1. After the `staging → main` merge, batch-close all issues whose fixes are included.
+2. Use `gh issue close <number> --comment "Shipped in <stable-version>."` for each.
+3. The closing comment should reference the stable version tag (e.g. `android-v2.2.4`, `fw-usb-v1.5`).
+
+## Umbrella issues
+
+Umbrella tracking issues (e.g. "Drive mode phase 2") remain open until **all** sub-items are resolved and shipped to main. Add progress comments as sub-items land in staging.
+
+## Comment format
+
+Keep issue comments concise and technical:
+- **Version/RC tag**: backtick-wrapped, e.g. `` `android-v2.2.4-rc.3` ``
+- **What changed**: file name, function, CAN ID, or formula — not vague descriptions
+- **Closing note**: "Will close when staging is merged to main."

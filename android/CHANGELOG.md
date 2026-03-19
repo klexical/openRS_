@@ -9,6 +9,11 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ## [v2.2.4] — 2026-03-19
 
+### Fixed (rc.4 — correct RS MK3 paint theme colours)
+- **Theme colours didn't match actual Focus RS MK3 paint catalogue**: 4 of 6 themes were paints never offered on the MK3 (Tangerine Scream = Focus ST, Mean Green = never RS, Stealth = purple instead of grey, Moondust Silver = not on MK3). Nitrous Blue (`#00D2FF`) was too cyan; Race Red (`#FF2233`) was too neon-pink.
+- **New palette uses verified MK3 paint options**: Nitrous Blue `#0091EA`, Race Red `#D62828`, Deep Orange `#D45500` (Heritage Edition), Stealth Grey `#6B7580`, Shadow Black `#3A3D44`, Frozen White `#E8ECF0`.
+- Updated `UserPrefs.kt`, `MorePage.kt`, `Theme.kt`, `colors.xml`, `TripPage.kt` map marker, and browser emulator (CSS variables, 17 hardcoded rgba refs, JS theme map, theme chip HTML).
+
 ### Added (rc.3 — passive odometer from CAN 0x360)
 - **Passive odometer decode from CAN 0x360** ([#103](https://github.com/klexical/openRS_/issues/103)): Community contributor @adamsouthern [discovered](https://github.com/klexical/openRS_/discussions/102) that CAN ID 0x360 passively broadcasts the odometer at ~5 Hz. Bytes [5:6] big-endian, 16-bit unsigned, 1 km per bit. Added as the 22nd decoder in `CanDecoder.kt`. Replaces the Mode 22 extended-session poll (DID 0xDD01) as the primary real-time odometer source. Cross-verified against our own diagnostic logs from car tests on 2026-03-16 and 2026-03-18 (~42K km car).
 - **Mode 22 odometer reduced to once-on-connect** ([#103](https://github.com/klexical/openRS_/issues/103)): The UDS extended diagnostic session for odometer (BCM 0x726 → `10 03` + `22 DD 01`) was the heaviest OBD operation, running every 60 seconds. Now polls **once on connect** to get the full 24-bit value (up to 16.7M km), then uses the passive 0x360 broadcast for real-time updates. This also sets `odometerRolloverOffset` for cars past 65,535 km where the 16-bit value has rolled over.
