@@ -9,6 +9,13 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ## [v2.2.4] — 2026-03-19
 
+### Fixed (rc.5 — full repo audit)
+- **MeatPi users got WiCAN defaults on first run** — `AppSettings.getHost()` / `getPort()` always returned WiCAN defaults (192.168.80.1:80) even when adapter was set to MeatPi. Now checks adapter type and returns MeatPi defaults (192.168.0.10:35000) when no user-configured value exists.
+- **Hardcoded colors outside theme system** — replaced 6 raw `Color(0xFF...)` in `SettingsSheet.kt` and `DiagPage.kt` with new `SurfUp` and `OnAccent` theme tokens.
+- **Theme color duplication** — RS paint accent colors were defined in two separate `when` blocks (`UserPrefs.kt` and `MorePage.kt`). Centralized into `RsPaints` list and `rsPaintAccent()` / `rsPaintName()` in `Theme.kt`.
+- **Stale CAN ID comments** in `VehicleState.kt` (referenced 0x430/0x3E8 instead of 0x0F8/0x2F0), stale `TODO(M-5)` in `CanDecoder.kt` (battery voltage now handled via Mode 22 DID 0x0304), hex case inconsistency in `ObdConstants.kt` (033e→033E), unused `kotlinx.coroutines.launch` import in `MainActivity.kt`.
+- **`VehicleState.dataMode`** deprecated — unused field, always "CAN".
+
 ### Fixed (rc.4 — correct RS MK3 paint theme colours)
 - **Theme colours didn't match actual Focus RS MK3 paint catalogue**: 4 of 6 themes were paints never offered on the MK3 (Tangerine Scream = Focus ST, Mean Green = never RS, Stealth = purple instead of grey, Moondust Silver = not on MK3). Nitrous Blue (`#00D2FF`) was too cyan; Race Red (`#FF2233`) was too neon-pink.
 - **New palette uses verified MK3 paint options**: Nitrous Blue `#0091EA`, Race Red `#D62828`, Deep Orange `#D45500` (Heritage Edition), Stealth Grey `#6B7580`, Shadow Black `#3A3D44`, Frozen White `#E8ECF0`.
