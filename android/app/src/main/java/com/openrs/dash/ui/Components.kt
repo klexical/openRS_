@@ -68,8 +68,10 @@ import androidx.compose.ui.unit.sp
     label: String,
     valueColor: Color,
     modifier: Modifier = Modifier,
-    borderAccent: Color? = null
+    borderAccent: Color? = null,
+    peak: String = ""
 ) {
+    val accent = LocalThemeAccent.current
     val brd = borderAccent ?: Brd
     Column(
         modifier
@@ -81,7 +83,11 @@ import androidx.compose.ui.unit.sp
         MonoLabel(unit, 8.sp, Dim, letterSpacing = 0.18.sp)
         Spacer(Modifier.height(4.dp))
         HeroNum(value, 26.sp, valueColor, Modifier.fillMaxWidth())
-        Spacer(Modifier.height(4.dp))
+        if (peak.isNotEmpty()) {
+            MonoText(peak, 9.sp, accent, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        } else {
+            Spacer(Modifier.height(4.dp))
+        }
         MonoLabel(label, 8.sp, Dim, letterSpacing = 0.15.sp)
     }
 }

@@ -41,18 +41,20 @@ import kotlin.math.roundToInt
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // ── Hero Row: BOOST | RPM | SPEED ──────────────────────────────────
+        // ── Hero Row: BOOST | RPM | SPEED (with ▲ session peaks) ─────────
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             HeroCard(
                 unit = boostLbl, value = boostVal, label = "BOOST",
                 valueColor = Warn,
                 borderAccent = Warn.copy(alpha = 0.25f),
+                peak = "▲ ${"%.1f".format(vs.peakBoostPsi)}",
                 modifier = Modifier.weight(1f)
             )
             HeroCard(
                 unit = "RPM", value = "${vs.rpm.toInt()}", label = "ENGINE",
                 valueColor = Red,
                 borderAccent = Red.copy(alpha = 0.2f),
+                peak = "▲ ${vs.peakRpm.toInt()}",
                 modifier = Modifier.weight(1f)
             )
             HeroCard(
@@ -63,26 +65,21 @@ import kotlin.math.roundToInt
             )
         }
 
-        // ── Gear + Session Peaks ─────────────────────────────────────────
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            HeroCard(
-                unit = "", value = vs.gearDisplay, label = "GEAR",
-                valueColor = Frost,
-                borderAccent = Frost.copy(alpha = 0.15f),
-                modifier = Modifier.weight(0.6f)
-            )
-            HeroCard(
-                unit = "PSI", value = "${"%.1f".format(vs.peakBoostPsi)}", label = "PK BOOST",
-                valueColor = Warn.copy(alpha = 0.7f),
-                borderAccent = Warn.copy(alpha = 0.15f),
-                modifier = Modifier.weight(1f)
-            )
-            HeroCard(
-                unit = "RPM", value = "${vs.peakRpm.toInt()}", label = "PK RPM",
-                valueColor = Red.copy(alpha = 0.7f),
-                borderAccent = Red.copy(alpha = 0.15f),
-                modifier = Modifier.weight(1f)
-            )
+        // ── Gear — rally-style full-width hero ──────────────────────────
+        Box(
+            Modifier.fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(listOf(accent.copy(alpha = 0.04f), Surf2)),
+                    RoundedCornerShape(16.dp)
+                )
+                .border(2.dp, accent.copy(alpha = 0.25f), RoundedCornerShape(16.dp))
+                .padding(vertical = 18.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                HeroNum(vs.gearDisplay, 72.sp, Frost)
+                MonoLabel("G E A R", 8.sp, Dim, letterSpacing = 4.sp)
+            }
         }
 
         // ── Launch Control indicator (CAN 0x420 — any drive mode) ─────────
