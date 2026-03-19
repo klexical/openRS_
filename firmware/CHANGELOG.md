@@ -6,6 +6,15 @@ All notable changes to the openrs-fw firmware are documented here.
 
 ## v1.5 — 2026-03-18
 
+### Fixed (rc.4 — full repo audit hardening)
+- **CAN TX shim missing DLC bounds check** — `openrs_can_tx` in `apply_patches.py` did not validate `dlc <= 8` before `memcpy(msg.data, data, dlc)`. A malformed call could overflow `msg.data`. Now clamps to 8 and copies only `msg.data_length_code` bytes.
+- **Mutex creation not guarded** — `configASSERT(s_state_mutex)` in `frs_init()` is a no-op in release builds. If `xSemaphoreCreateMutex()` returns NULL, subsequent operations would crash. Now uses explicit NULL check with `ESP_LOGE` + `abort()`.
+- **NVS write failures silently ignored** — `frs_nvs_save_boot_mode()`, `frs_nvs_save_esc()`, `frs_nvs_save_lc()`, `frs_nvs_save_ass_kill()`, and `frs_nvs_save_sleep_threshold()` now log failures with `esp_err_to_name()`.
+- **TWAI RECOVERING timeout not logged** — the RECOVERING branch in `frs_attempt_recovery()` exited the retry loop silently on timeout, unlike the BUS_OFF branch. Now logs `ESP_LOGE`.
+- **UDS RX queue silently dropped responses** — `xQueueSend(..., 0)` used zero timeout; under heavy 0x768 traffic, responses were lost. Now uses `pdMS_TO_TICKS(50)` timeout and logs drops with CAN ID.
+- **`frs_uds_send` missing NULL check** — added `!payload` guard alongside existing `!tx` check.
+- **POST handler missing explicit null-termination** — `httpd_req_recv()` result was not explicitly null-terminated before `cJSON_Parse()`. Safe due to zero-init, but now explicit.
+
 ### Fixed (rc.3 — CAN TX robustness, ESC injection, drive mode timing)
 - **Drive mode freezes permanently after button injection** — the ESP32 TWAI controller could enter bus-off state during 0x305 frame injection (same-ID data-phase collisions with the car's broadcast). Once in bus-off, ALL CAN TX and RX stopped with no recovery path. Added automatic bus-off detection via `twai_get_status_info()` and recovery via `twai_initiate_recovery()` + `twai_start()`. The CAN bus now self-heals within 500ms of a bus-off event.
 - **ESC button presses never registered from the app** — the firmware injected 0x260 frames at 80ms intervals (12.5 Hz), but the BCM broadcasts 0x260 at 40 Hz. The ABS module saw the "pressed" bit in only ~24% of frames — too brief to register. Increased ESC/ASS injection rate to **10ms intervals (100 Hz)**, outpacing the BCM so the ABS module sees the pressed bit in >60% of frames on the bus. Matches the "spam" approach confirmed working by the focusrs.org CAN decoding project.
