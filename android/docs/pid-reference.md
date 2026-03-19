@@ -54,7 +54,7 @@ The following PCM Mode 22 PIDs are polled by the app every 30 seconds via ISO-TP
 | 0x0318 | VCT Intake Angle | `220318` | 2 | (signed(A)×256+B) / 16 | ° | 3 | DigiCluster |
 | 0x0319 | VCT Exhaust Angle | `220319` | 2 | (signed(A)×256+B) / 16 | ° | 3 | DigiCluster |
 | 0x03EC | Ign Correction Cyl1 | `2203EC` | 2 | (signed(A)×256+B) / −512 | ° | 2 | DigiCluster |
-| 0x054B | Oil Life | `22054B` | 1 | A | % | 6 | DigiCluster |
+| 0x054B | Oil Life | `22054B` | 1 | A | % | 3 | DigiCluster |
 | 0x03E8 | Octane Adjust Ratio | `2203E8` | 2 | (signed(A)×256+B) / 16384 | ratio | 3 | DigiCluster |
 | 0x0461 | Charge Air Temp | `220461` | 2 | (signed(A)×256+B) / 64 | °C | 2 | DigiCluster |
 | 0xF422 | HP Fuel Rail Pressure | `22F422` | 2 | (A×256+B) × 1.45038 | PSI | 2 | DigiCluster |
@@ -103,6 +103,9 @@ All formulas re-validated against DigiCluster `can0_hs.json` and `can1_ms.json`.
 
 | ID | Description | Decode Formula | Source |
 |----|-------------|----------------|--------|
+| 0x010 | Steering wheel angle | `((B6&0x7F)<<8\|B7)×0.04395`; sign: `B4 bit 7` (1=right, 0=left) | RS_HS.dbc |
+| 0x070 | Torque at transmission | Motorola `bits(37,11) − 500` Nm | RS_HS.dbc |
+| 0x076 | Throttle % (ECU) | `B0 × 0.392` — may not broadcast on all tunes | RS_HS.dbc |
 | 0x080 | Throttle %, accel pedal % | bytes 2-3 / 2.55 | DigiCluster HS-CAN |
 | 0x090 | RPM, baro pressure | RPM: `((B4&0x0F)<<8\|B5)×2`; baro: `B2×0.5 kPa` | DigiCluster HS-CAN |
 | 0x0C8 | Gauge brightness, e-brake, ignition status | brightness: `B0&0x1F`; e-brake: `B3&0x40`; ignition: `B2&0x1F` (0=KeyOut..7=Running..9=Cranking) | DigiCluster HS-CAN + RS_HS.dbc |
@@ -115,6 +118,8 @@ All formulas re-validated against DigiCluster `can0_hs.json` and `can1_ms.json`.
 | 0x420 | Drive mode (detail), launch control | B6: 0x10=Normal, 0x11=Sport/Track, 0x12=Drift; B7 bit0: 0=Sport, 1=Track; LC: `(B6>>2)&1` | RS_HS.dbc + empirical (2026-03-11) |
 | 0x1C0 | ESC mode status | `bits(10,2)`: 0=On, 1=Off, 2=Sport, 3=Launch (byte1 bits 5–4) | RS_HS.dbc VAL_ 448 + SLCAN-verified |
 | 0x190 | 4× wheel speeds | FL/FR/RL/RR: 15-bit Motorola × 0.011343006 kph | RS_HS.dbc ABSmsg03 |
+| 0x230 | Gear position | `bits(0,4)` — 0=Park/Neutral, 1–6=gears, 7=Reverse | RS_HS.dbc |
+| 0x252 | Brake pressure | `((B1&0x0F)<<8\|B2) / 40.95` — 12-bit ADC, normalised 0–100% | RS_HS.dbc ABSmsg10 |
 | 0x2C0 | AWD L/R torque | 12-bit words scaled | DigiCluster HS-CAN |
 | 0x2F0 | Coolant temp, IAT | coolant: `((B4&0x03)<<8\|B5) − 60 °C`; IAT: `((B6&0x03)<<8\|B7) × 0.25 − 127 °C` | RS_HS.dbc PCMmsg16 |
 | 0x340 | Ambient temp (PCMmsg17) | `byte7 signed × 0.25 °C` — **not** TPMS | RS_HS.dbc PCMmsg17 |

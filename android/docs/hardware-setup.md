@@ -89,7 +89,7 @@ For drive mode control, ESC write, Launch Control, BLE transport, and Auto-disco
 | Firmware | Use case | Download |
 |----------|----------|----------|
 | Official WiCAN | Basic PID telemetry (first test) | [GitHub Releases](https://github.com/meatpiHQ/wican-fw/releases/latest) |
-| **openrs-fw v1.4** | Full openRS_ feature set | [openRS_ Releases](https://github.com/klexical/openRS_/releases) |
+| **openrs-fw v1.5** | Full openRS_ feature set | [openRS_ Releases](https://github.com/klexical/openRS_/releases) |
 
 See the [Firmware Update Guide](firmware-update.md) for step-by-step flashing instructions with screenshots.
 
@@ -158,7 +158,7 @@ openRS_ also supports the [MeatPi WiCAN Pro](https://www.meatpi.com/) via raw TC
 | 5 | Signal Ground | |
 | 6 | HS-CAN High | 500 kbps — primary bus |
 | 14 | HS-CAN Low | 500 kbps — primary bus |
-| 3 | MS-CAN High | 125 kbps — secondary bus (TPMS broadcast) |
+| 3 | MS-CAN High | 125 kbps — secondary bus (ambient temp, bridged via GWM) |
 | 11 | MS-CAN Low | 125 kbps — secondary bus |
 | 16 | Battery +12V | Always on |
 

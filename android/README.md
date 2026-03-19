@@ -4,7 +4,6 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.2.4-blue" alt="Version">
   <img src="https://img.shields.io/badge/Kotlin-2.0-purple?logo=kotlin" alt="Kotlin">
   <img src="https://img.shields.io/badge/Jetpack_Compose-Material3-4285F4?logo=jetpackcompose" alt="Compose">
 </p>

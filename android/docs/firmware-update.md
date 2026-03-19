@@ -1,6 +1,6 @@
 # openrs-fw Firmware Update Guide
 
-> **openrs-fw v1.4** is the current release. Binaries are in `firmware/release/` in this repository.
+> **openrs-fw v1.5** is the current release. Binaries are in `firmware/release/` in this repository.
 > Source code: `https://github.com/klexical/openRS_/tree/main/firmware`
 
 This guide covers flashing `openrs-fw` — the custom Focus RS firmware — onto your MeatPi WiCAN-USB-C3.
@@ -206,7 +206,7 @@ firmware/release/
   bootloader_usb.bin          ← address 0x0
   partition-table_usb.bin     ← address 0x8000
   ota_data_initial_usb.bin    ← address 0xd000
-  openrs-fw-usb_v140.bin      ← address 0x10000
+  openrs-fw-usb_v150.bin      ← address 0x10000
 ```
 
 > **Note:** openrs-fw uses a custom partition table with a 2MB OTA slot (vs. 1.75MB stock). You must flash all 4 files — do not mix openrs-fw binaries with stock partition-table.bin.
@@ -239,7 +239,7 @@ Once openrs-fw is running, all future updates use **OTA via the web UI** — no 
 | Focus RS drive mode read | ✅ (via app) | ✅ |
 | **Drive mode write** (N/S/T/D) | ❌ | ✅ |
 | **Boot mode persistence** (NVS) | ❌ | ✅ |
-| **ESC write** (On/Sport/Off) | ❌ | ⚠️ Stub (pending CAN frame capture) |
+| **ESC write** (On/Sport/Off) | ❌ | ✅ |
 | **Launch Control enable** | ❌ | ✅ |
 | **Auto Start/Stop kill** | ❌ | ✅ |
 | **BLE GATT data transport** | ❌ | ✅ |
@@ -269,19 +269,14 @@ Once openrs-fw is running, all future updates use **OTA via the web UI** — no 
 
 ---
 
-## CAN Data Capture (for drive mode write frame identification)
+## CAN Button Simulation (how drive mode / ESC write works)
 
-To complete openrs-fw drive mode write support, the full `0x1B0` frame bytes need to be captured from your specific car while physically pressing the drive mode button.
+openrs-fw v1.5 simulates physical button presses on the CAN bus:
 
-1. Connect the openRS_ app to the WiCAN (stock firmware works for this)
-2. Enable ATMA (Monitor All) mode in the app
-3. Note the `0x1B0` frame at idle — byte 1 will be `5A` (released)
-4. Press the drive mode button physically on the console — byte 1 changes to `5E` (pressed)
-5. Record all 8 bytes for both states
-6. Submit via GitHub issue at `https://github.com/klexical/openRS_/issues`
+| Control | CAN ID | Bit | Method |
+|---------|--------|-----|--------|
+| Drive mode button | 0x305 | byte 5, bit 2 | Short press × N (activation + cycle) |
+| ESC button | 0x260 | byte 6, bit 4 | Short press (On↔Sport), long 5s hold (Off) |
+| Auto Start/Stop button | 0x260 | byte 1, bit 0 | Single short press |
 
-**Expected 0x1B0 format:**
-```
-Released: XX 5A XX XX XX XX XX XX
-Pressed:  XX 5E XX XX XX XX XX XX
-```
+The firmware captures a clean template frame from the live CAN bus at runtime (when no buttons are pressed), then injects frames with the button bit set. No manual frame capture is required — the process is fully automatic.
