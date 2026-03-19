@@ -1,0 +1,27 @@
+---
+description: Always build and attach binary artifacts when creating GitHub releases
+alwaysApply: true
+---
+
+# Release Artifacts
+
+When creating a GitHub release, **always build and attach the binary artifacts** before considering the release complete.
+
+## Android releases (`android-v*`)
+
+1. Build the debug APK: `cd android && ./gradlew assembleDebug`
+2. Upload to the release: `gh release upload <tag> android/app/build/outputs/apk/debug/openRS_v*.apk`
+3. The APK filename follows the pattern `openRS_v{version}-staging-debug.apk`
+
+## Firmware releases (`fw-usb-v*`, `fw-pro-v*`)
+
+1. Clean build for the target: `cd firmware && rm -rf .build/<target>/wican-fw && bash build.sh --target <usb|pro>`
+2. Upload all flash files: `gh release upload <tag> firmware/release/openrs-fw-<target>_v*.bin firmware/release/bootloader_<target>.bin firmware/release/partition-table_<target>.bin firmware/release/ota_data_initial_<target>.bin`
+3. Include SHA256 hashes from `firmware/release/BUILD_MANIFEST_<target>.json` in the release notes
+
+## Checklist
+
+A release is not complete until:
+- [ ] Binary artifacts are built from the tagged commit
+- [ ] Artifacts are uploaded to the GitHub release
+- [ ] Older pre-releases for the same component are demoted (see `release-lifecycle.mdc`)
