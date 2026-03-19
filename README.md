@@ -75,21 +75,21 @@ All data is received passively from the CAN bus via WebSocket SLCAN at ~2100 fps
 | 0x076 | Throttle % | RS_HS.dbc |
 | 0x080 | Accelerator pedal %, brake pedal, reverse | RS_HS.dbc |
 | 0x090 | RPM, barometric pressure | RS_HS.dbc |
-| 0x0C8 | Gauge brightness, e-brake | RS_HS.dbc |
+| 0x0C8 | Gauge brightness, e-brake, **ignition status** | RS_HS.dbc |
 | 0x0F8 | Engine oil temp, boost pressure (gauge + baro), PTU temp | RS_HS.dbc PCMmsg07 |
 | 0x130 | Vehicle speed kph | RS_HS.dbc |
 | 0x160 | Longitudinal G-force | RS_HS.dbc |
-| 0x180 | Lateral G-force **+ Yaw rate** | RS_HS.dbc ABSmsg02 |
+| 0x180 | Lateral G-force, **yaw rate**, **vertical G** | RS_HS.dbc ABSmsg02 |
 | 0x190 | 4-corner wheel speeds (15-bit Motorola × 0.011343 km/h) | RS_HS.dbc ABSmsg03 |
 | 0x1A4 | Ambient temperature (MS-CAN bridged) | DigiCluster |
 | 0x1B0 | Drive mode (Normal/Sport+Track/Drift) — byte 6 upper nibble, steady-state frames only (byte 4 == 0). Combined with 0x420 to resolve Sport vs Track. | RS_HS.dbc AWDmsg01 |
-| 0x1C0 | ESC mode status | RS_HS.dbc |
-| 0x420 | Track mode indicator — byte 6: `0x10` = Normal/Sport, `0x11` = Track (~600 ms broadcast) | Empirical (3 sessions) |
+| 0x1C0 | ESC mode status (On/Off/Sport/**Launch**) | RS_HS.dbc |
+| 0x420 | Track mode indicator, **launch control status** — byte 6: `0x10` = Normal/Sport, `0x11` = Track; bit 50 = LC active (~600 ms) | RS_HS.dbc + empirical |
 | 0x252 | Brake pressure (0–100% normalised, raw 0–4095 ADC counts) | RS_HS.dbc ABSmsg10 |
 | 0x2C0 | AWD L/R rear torque (Nm) | RS_HS.dbc |
 | 0x2F0 | Coolant temp, Intake Air Temp (IAT) | RS_HS.dbc PCMmsg16 |
 | 0x340 | Ambient temperature only (byte 7 signed × 0.25 °C) — **not** TPMS | RS_HS.dbc PCMmsg17 |
-| 0x360 | Odometer — bytes [5:6] BE, 16-bit unsigned, 1 km/bit (~5 Hz). Max 65,535 km. | Community [#102](https://github.com/klexical/openRS_/discussions/102) verified |
+| 0x360 | Odometer, **engine status** — odo: bytes [5:6] BE, 16-bit, 1 km/bit (~5 Hz); engine: byte 0 (0=Idle, 2=Off, 183=Running, 186=Kill, 191=RecentStart) | RS_HS.dbc + community [#102](https://github.com/klexical/openRS_/discussions/102) |
 | 0x380 | Fuel level % (FuelLevelFiltered — Motorola 10-bit, factor 0.4 %) | RS_HS.dbc PCMmsg30 |
 
 > **Note:** `0x230` (gear position) and `0x3C0` (battery voltage) do not broadcast on this vehicle. Battery voltage is polled via OBD. Gear display has been removed.
@@ -98,7 +98,7 @@ All data is received passively from the CAN bus via WebSocket SLCAN at ~2100 fps
 
 | ECU | Request | Response | PIDs / Function | Interval |
 |-----|---------|----------|-----------------|----------|
-| PCM | 0x7E0 | 0x7E8 | ETC actual (0x093C), ETC desired (0x091A), WGDC (0x0462), KR cyl 1 (0x03EC), OAR (0x03E8), Charge Air Temp (0x0461), Catalyst Temp (0xF43C), AFR actual (0xF434), AFR desired (0xF444), TIP actual (0x033E), TIP desired (0x0466), VCT intake (0x0318), VCT exhaust (0x0319), Oil Life (0x054B), HP Fuel Rail (0xF422), Fuel Level (0xF42F) | 30 s |
+| PCM | 0x7E0 | 0x7E8 | ETC actual (0x093C), ETC desired (0x091A), WGDC (0x0462), KR cyl 1 (0x03EC), OAR (0x03E8), Charge Air Temp (0x0461), Catalyst Temp (0xF43C), AFR actual (0xF434), AFR desired (0xF444), TIP actual (0x033E), TIP desired (0x0466), VCT intake (0x0318), VCT exhaust (0x0319), Oil Life (0x054B), HP Fuel Rail (0xF422), Fuel Level (0xF42F), **Battery Voltage** (0x0304) | 30 s |
 | BCM | 0x726 | 0x72E | Battery SOC (0x4028), Battery temp (0x4029), Cabin temp (0xDD04), **TPMS LF/RF/LR/RR** (0x2813–0x2816) `(((256×A)+B)/3 + 22/3) × 0.145 PSI` | 30 s |
 | BCM (ext) | 0x726 | 0x72E | Odometer (0xDD01) — extended session, **once on connect** (passive CAN 0x360 handles real-time) | once |
 | AWD module | 0x703 | 0x70B | RDU oil temp (0x1E8A) — `B4 − 40 °C` | 60 s |
@@ -227,7 +227,7 @@ Open `android/browser-emulator/index.html` in any browser, or visit the live ver
 │  Firmware probe (OPENRS?)     │                                      │
 ├──────────────────────────────────────────────────────────────────────┤
 │  PCM polling (0x7E0/30s): ETC, WGDC, KR, OAR, AFR, TIP, VCT,       │
-│    charge air, CAT temp, oil life, HP fuel rail, fuel level          │
+│    charge air, CAT temp, oil life, HP fuel rail, fuel level, bat V   │
 │  BCM polling (0x726/30s): SOC, battery temp, cabin temp, TPMS×4     │
 │  BCM ext (0x726/once): odometer (extended session, once on connect)   │
 │  AWD polling (0x703/60s): RDU oil temp                               │
@@ -344,7 +344,7 @@ Complete decode formulas, byte-level breakdowns, and all Mode 22 PIDs: [`android
 - [x] Phase 6 — DTC scanning: 873-code Ford DTC database, full-module scan + clear via UDS 0x19/0x14 (v2.2.1)
 - [x] Phase 7 — Data export + MeatPi Pro: trip ZIP (GPX/CSV/TXT), diagnostics ZIP, raw TCP SLCAN adapter support (v2.2.1)
 - [x] Phase 7.5 — Sensor data + polish: GPS permission fix, Module Status/LC/ASS live OBD, full diagnostic export (~24 new fields), SLCAN OBD frame capture, code review fixes (v2.2.3)
-- [x] Phase 8.0 — Car test fixes + crash telemetry: ESC decode fix, throttle fallback to accel pedal, battery voltage OBD, FENG/RSProt probe timeout→N/A, crash telemetry ring buffer, app version display (v2.2.4)
+- [x] Phase 8.0 — Car test fixes + signal expansion: ESC decode fix, throttle fallback, battery voltage OBD, crash telemetry ring buffer, passive odometer (CAN 0x360), tap-to-change drive mode/ESC, RS MK3 theme colour correction, MeatPi default fix, free CAN signal extraction (vertical G, launch control, engine status, ignition status, ESC Launch mode), full repo audit hardening (v2.2.4)
 
 ### Planned
 
