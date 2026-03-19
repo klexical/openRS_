@@ -9,6 +9,14 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ## [v2.2.4] — 2026-03-19
 
+### Added (rc.9 — header redesign, hero card polish)
+- **F1 telemetry header**: Redesigned app header from a single cramped row to a two-part F1 pit-wall layout. Top row: logo, tappable connection pill (LIVE/IDLE/OFF with pulsing dot), TRIP button, and settings gear. Bottom row: telemetry strip with five real-time cells — MODE (drive mode with color coding), ESC (stability status), CONN (live FPS counter), IGN (ignition state), and E-BRK (parking brake).
+- **Session peak speed on DASH hero card**: New `VehicleState.peakSpeedKph` tracked alongside existing peak boost and peak RPM. SPEED hero card now shows "▲ 145" (in the user's selected unit) matching the BOOST and RPM cards.
+- **RC version suffix in Settings**: Settings dialog footer now shows `openRS_ v2.2.4-rc.9` for pre-release builds. Driven by `BuildConfig.RC_SUFFIX` from `gradle.properties` — automatically cleared for stable releases.
+
+### Fixed (rc.9)
+- **SPEED hero card shorter than BOOST/RPM cards**: BOOST and RPM had peak text lines while SPEED had a 4dp spacer. Added `IntrinsicSize.Max` to the hero Row and `fillMaxHeight()` to all cards so they stretch to uniform height.
+
 ### Added (rc.8 — surface undisplayed signals, UX fixes)
 - **Rally-style gear indicator on DASH tab**: Full-width hero card below the BOOST/RPM/SPEED row with a large 72sp Orbitron gear number and theme accent border glow. `VehicleState.gearDisplay` uses CAN 0x230 when available, falling back to the `derivedGear` algorithm (calibrated from live 16-minute log with known gear ratios for the Focus RS 6-speed manual: 1st≈3.79, 2nd≈2.18, 3rd≈1.89, 4th≈1.30, 5th≈0.85).
 - **Session peak boost & peak RPM embedded in hero cards**: `VehicleState.peakBoostPsi` and `VehicleState.peakRpm` now shown as "▲" accent text directly inside the BOOST and RPM hero cards (GfCard pattern from CHASSIS tab), replacing the separate peak cards. `HeroCard` component gains optional `peak` parameter.
