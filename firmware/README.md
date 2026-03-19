@@ -280,8 +280,12 @@ firmware/
 │   ├── partitions_openrs_usb.csv      ← 4MB flash, single OTA
 │   └── partitions_openrs_pro.csv      ← 16MB flash, dual OTA
 ├── release/                           ← flash-ready binaries
-│   ├── openrs-fw-usb_v150.bin
-│   └── openrs-fw-pro_v150.bin
+│   ├── openrs-fw-usb_v150.bin        ← current (v1.5)
+│   ├── openrs-fw-pro_v150.bin        ← current (v1.5)
+│   ├── bootloader_usb.bin / bootloader_pro.bin
+│   ├── partition-table_usb.bin / partition-table_pro.bin
+│   ├── ota_data_initial_usb.bin / ota_data_initial_pro.bin
+│   └── BUILD_MANIFEST_usb.json / BUILD_MANIFEST_pro.json
 └── stock/                             ← stock wican-fw binaries (reference)
 ```
 

@@ -108,7 +108,7 @@ All notable changes to the openrs-fw firmware are documented here.
 
 ---
 
-## v1.3 — Initial release
+## v1.3 — Initial public release
 
 - Drive mode read/write via CAN 0x1B0 button simulation
 - ESC control (On / Sport / Off)
@@ -119,3 +119,17 @@ All notable changes to the openrs-fw firmware are documented here.
 - REST API (`GET /api/frs`, `POST /api/frs`)
 - NVS persistence for all settings
 - AP branding: `openRS_XXXXXX`
+
+---
+
+## v1.2 — 2026-03-03
+
+### Fixed
+- **Drive mode read used wrong CAN ID** — firmware read drive mode from `0x17E` (button event frames, only present during presses) instead of `0x1B0` (steady-state AWD status, always broadcasting). Corrected to `0x1B0` to match the Android app's passive decoder.
+
+---
+
+## v1.1 — 2026-03-01
+
+### Added
+- **`OPENRS?` probe response** — firmware responds to the Android app's `OPENRS?\r` SLCAN probe with `OPENRS:v1.1`, enabling the app to detect openRS_ firmware vs stock WiCAN and unlock the drive mode / ESC feature buttons on the MORE tab.
