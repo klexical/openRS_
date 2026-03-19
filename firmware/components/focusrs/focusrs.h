@@ -54,14 +54,27 @@ extern "C" {
 #define FRS_ASS_BTN_BYTE    0
 #define FRS_ASS_BTN_BIT     0x01
 
-// Short press: 3 frames at ~80ms intervals (~240ms hold).
-// Physical button presses last ~250ms on the real console.
+// Drive mode press: 3 frames at ~80ms intervals (~240ms hold).
 #define FRS_BUTTON_TX_COUNT         3
 #define FRS_BUTTON_TX_INTERVAL_MS   80
 
-// ESC Off requires a long press (~5 seconds hold).
-// Send frames at 80ms intervals for 5 seconds = ~62 frames.
+// Drive mode inter-press timing — two-stage for reliability.
+// Press 1 opens the mode selector GUI; subsequent presses cycle modes.
+#define FRS_DM_ACTIVATION_DELAY_MS  500
+#define FRS_DM_CYCLE_DELAY_MS       300
+
+// ESC / ASS injection rate — must outpace BCM's 40 Hz broadcast on 0x260.
+// 10 ms intervals = 100 Hz → ABS module sees the pressed bit in >50% of frames.
+#define FRS_ESC_BTN_TX_INTERVAL_MS  10
+#define FRS_ESC_SHORT_PRESS_MS      300
 #define FRS_ESC_LONG_PRESS_MS       5000
+
+// CAN TX — abort a button sequence after this many consecutive failures.
+#define FRS_TX_MAX_CONSECUTIVE_ERR  5
+
+// ── UDS diagnostic addresses ──────────────────────────────────
+#define FRS_UDS_ABS_TX   0x760    // ABS/AdvanceTrac module request
+#define FRS_UDS_ABS_RX   0x768    // ABS/AdvanceTrac module response
 
 // ── State struct ───────────────────────────────────────────────
 typedef struct {
@@ -78,12 +91,17 @@ typedef struct {
     bool     frame_305_valid;
     uint8_t  frame_260_template[8];   // 0x260 body control (ESC + ASS)
     bool     frame_260_valid;
+    // CAN bus health
+    uint8_t  can_tx_errors;       // Consecutive TX failures (reset on success)
+    bool     can_bus_off;         // TWAI controller in bus-off state
+    bool     abs_reachable;       // ABS module responded to UDS probe
 } frs_state_t;
 
 // ── CAN TX callback (set once from main after CAN is initialised) ─────────
 // Signature: (can_id, data, dlc, timeout_ms) → 0 on success
 typedef int (*frs_can_tx_fn_t)(uint32_t can_id, const uint8_t *data, uint8_t dlc, uint32_t timeout_ms);
-void     frs_set_can_tx_fn(frs_can_tx_fn_t fn);
+void              frs_set_can_tx_fn(frs_can_tx_fn_t fn);
+frs_can_tx_fn_t   frs_get_can_tx(void);
 
 // ── Public API ────────────────────────────────────────────────
 void     frs_init(void);
@@ -96,6 +114,11 @@ void     frs_set_sleep_threshold(float volts);
 void     frs_boot_apply(void);         // Apply NVS settings after CAN templates captured
 frs_state_t  frs_get_state_copy(void);  // Thread-safe snapshot
 frs_state_t *frs_get_state(void);      // DEPRECATED: not thread-safe on dual-core
+
+// ── UDS diagnostic API ──────────────────────────────────────
+void frs_uds_init(void);
+void frs_uds_handle_response(uint32_t can_id, const uint8_t *data, uint8_t dlc);
+void frs_uds_probe_abs(void);
 
 
 #ifdef __cplusplus

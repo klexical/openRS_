@@ -118,15 +118,19 @@ static esp_err_t frs_get_handler(httpd_req_t *req)
 {
     frs_state_t snap = frs_get_state_copy();
     frs_state_t *s = &snap;
-    char json[384];
+    char json[512];
     snprintf(json, sizeof(json),
         "{\"driveMode\":%d,\"bootMode\":%d,\"escMode\":%d,\"bootEsc\":%d,"
-        "\"lcEnabled\":%s,\"assKill\":%s,\"battMv\":%lu,\"sleepMv\":%u}",
+        "\"lcEnabled\":%s,\"assKill\":%s,\"battMv\":%lu,\"sleepMv\":%u,"
+        "\"canTxErrors\":%d,\"canBusOff\":%s,\"absReachable\":%s}",
         s->drive_mode, s->boot_mode, s->esc_mode, s->boot_esc,
         s->lc_enabled ? "true" : "false",
         s->ass_kill   ? "true" : "false",
         (unsigned long)s->battery_mv,
-        (unsigned)s->sleep_threshold_mv);
+        (unsigned)s->sleep_threshold_mv,
+        s->can_tx_errors,
+        s->can_bus_off    ? "true" : "false",
+        s->abs_reachable  ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, json, strlen(json));
 }

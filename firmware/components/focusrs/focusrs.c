@@ -1,9 +1,11 @@
 #include "focusrs.h"
 #include "focusrs_nvs.h"
+#include "focusrs_uds.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "driver/twai.h"
 #include "esp_log.h"
 #include <string.h>
 
@@ -17,6 +19,10 @@ void frs_set_can_tx_fn(frs_can_tx_fn_t fn) {
     s_can_tx = fn;
 }
 
+frs_can_tx_fn_t frs_get_can_tx(void) {
+    return s_can_tx;
+}
+
 static frs_state_t s_state = {
     .drive_mode           = FRS_MODE_NORMAL,
     .boot_mode            = FRS_MODE_NORMAL,
@@ -28,12 +34,16 @@ static frs_state_t s_state = {
     .sleep_threshold_mv   = 12200,
     .frame_305_valid      = false,
     .frame_260_valid      = false,
+    .can_tx_errors        = 0,
+    .can_bus_off          = false,
+    .abs_reachable        = false,
 };
 
 void frs_init(void) {
     s_state_mutex = xSemaphoreCreateMutex();
     configASSERT(s_state_mutex);
     frs_nvs_load(&s_state);
+    frs_uds_init();
     ESP_LOGI(TAG, "openrs-fw %s — Focus RS module init", OPENRS_FW_VERSION);
     ESP_LOGI(TAG, "Boot mode: %d, ESC: %d, LC: %d, ASS kill: %d",
              s_state.boot_mode, s_state.esc_mode,
@@ -80,6 +90,11 @@ void frs_parse_can_frame(uint32_t can_id, const uint8_t *data, uint8_t dlc) {
         }
         break;
 
+    case FRS_UDS_ABS_RX:
+        xSemaphoreGive(s_state_mutex);
+        frs_uds_handle_response(can_id, data, dlc);
+        return;
+
     default:
         break;
     }
@@ -87,14 +102,87 @@ void frs_parse_can_frame(uint32_t can_id, const uint8_t *data, uint8_t dlc) {
     xSemaphoreGive(s_state_mutex);
 }
 
+// ── TWAI bus-off recovery ────────────────────────────────────
+
+static void frs_attempt_recovery(void) {
+    twai_status_info_t info;
+    if (twai_get_status_info(&info) != ESP_OK) return;
+
+    if (info.state == TWAI_STATE_BUS_OFF) {
+        ESP_LOGW(TAG, "TWAI bus-off detected (tx_err=%lu rx_err=%lu) — recovering",
+                 (unsigned long)info.tx_error_counter,
+                 (unsigned long)info.rx_error_counter);
+
+        xSemaphoreTake(s_state_mutex, portMAX_DELAY);
+        s_state.can_bus_off = true;
+        xSemaphoreGive(s_state_mutex);
+
+        twai_initiate_recovery();
+        for (int i = 0; i < 50; i++) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+            if (twai_get_status_info(&info) == ESP_OK &&
+                info.state == TWAI_STATE_STOPPED) {
+                twai_start();
+                ESP_LOGI(TAG, "TWAI recovered and restarted");
+                xSemaphoreTake(s_state_mutex, portMAX_DELAY);
+                s_state.can_bus_off = false;
+                s_state.can_tx_errors = 0;
+                xSemaphoreGive(s_state_mutex);
+                return;
+            }
+        }
+        ESP_LOGE(TAG, "TWAI recovery timed out — bus may be offline");
+    } else if (info.state == TWAI_STATE_RECOVERING) {
+        ESP_LOGW(TAG, "TWAI already recovering — waiting");
+        for (int i = 0; i < 50; i++) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+            if (twai_get_status_info(&info) == ESP_OK &&
+                info.state == TWAI_STATE_STOPPED) {
+                twai_start();
+                ESP_LOGI(TAG, "TWAI recovery complete");
+                xSemaphoreTake(s_state_mutex, portMAX_DELAY);
+                s_state.can_bus_off = false;
+                s_state.can_tx_errors = 0;
+                xSemaphoreGive(s_state_mutex);
+                return;
+            }
+        }
+    }
+}
+
+// ── CAN TX with error tracking ──────────────────────────────
+
+static bool frs_tx_frame(uint32_t can_id, const uint8_t *frame, uint8_t dlc) {
+    int ret = s_can_tx(can_id, frame, dlc, 100);
+    if (ret == 0) {
+        xSemaphoreTake(s_state_mutex, portMAX_DELAY);
+        s_state.can_tx_errors = 0;
+        xSemaphoreGive(s_state_mutex);
+        return true;
+    }
+
+    xSemaphoreTake(s_state_mutex, portMAX_DELAY);
+    s_state.can_tx_errors++;
+    uint8_t errs = s_state.can_tx_errors;
+    xSemaphoreGive(s_state_mutex);
+
+    ESP_LOGW(TAG, "CAN TX failed (id=0x%03lX err=%d consecutive=%d)",
+             (unsigned long)can_id, ret, errs);
+
+    if (errs >= FRS_TX_MAX_CONSECUTIVE_ERR) {
+        frs_attempt_recovery();
+    }
+    return false;
+}
+
 // ── Generic button press helpers ─────────────────────────────
 
-// Short press: sends FRS_BUTTON_TX_COUNT frames with the bit set,
-// spaced FRS_BUTTON_TX_INTERVAL_MS apart (~240ms total hold).
 static void frs_send_button(uint32_t can_id,
                             const uint8_t *tmpl,
                             uint8_t byte_idx,
-                            uint8_t bit_mask) {
+                            uint8_t bit_mask,
+                            uint32_t interval_ms,
+                            int count) {
     if (!s_can_tx) {
         ESP_LOGE(TAG, "CAN TX callback not set");
         return;
@@ -104,20 +192,28 @@ static void frs_send_button(uint32_t can_id,
     memcpy(frame, tmpl, 8);
     frame[byte_idx] |= bit_mask;
 
-    for (int i = 0; i < FRS_BUTTON_TX_COUNT; i++) {
-        s_can_tx(can_id, frame, 8, 100);
-        if (i < FRS_BUTTON_TX_COUNT - 1) {
-            vTaskDelay(pdMS_TO_TICKS(FRS_BUTTON_TX_INTERVAL_MS));
+    for (int i = 0; i < count; i++) {
+        if (!frs_tx_frame(can_id, frame, 8)) {
+            xSemaphoreTake(s_state_mutex, portMAX_DELAY);
+            bool fatal = s_state.can_tx_errors >= FRS_TX_MAX_CONSECUTIVE_ERR;
+            xSemaphoreGive(s_state_mutex);
+            if (fatal) {
+                ESP_LOGE(TAG, "Aborting button sequence — too many TX errors");
+                return;
+            }
+        }
+        if (i < count - 1) {
+            vTaskDelay(pdMS_TO_TICKS(interval_ms));
         }
     }
-    vTaskDelay(pdMS_TO_TICKS(FRS_BUTTON_TX_INTERVAL_MS));
+    vTaskDelay(pdMS_TO_TICKS(interval_ms));
 }
 
-// Long press: holds the bit for duration_ms (used for ESC Off).
 static void frs_send_button_long(uint32_t can_id,
                                  const uint8_t *tmpl,
                                  uint8_t byte_idx,
                                  uint8_t bit_mask,
+                                 uint32_t interval_ms,
                                  uint32_t duration_ms) {
     if (!s_can_tx) {
         ESP_LOGE(TAG, "CAN TX callback not set");
@@ -130,11 +226,19 @@ static void frs_send_button_long(uint32_t can_id,
 
     uint32_t elapsed = 0;
     while (elapsed < duration_ms) {
-        s_can_tx(can_id, frame, 8, 100);
-        vTaskDelay(pdMS_TO_TICKS(FRS_BUTTON_TX_INTERVAL_MS));
-        elapsed += FRS_BUTTON_TX_INTERVAL_MS;
+        if (!frs_tx_frame(can_id, frame, 8)) {
+            xSemaphoreTake(s_state_mutex, portMAX_DELAY);
+            bool fatal = s_state.can_tx_errors >= FRS_TX_MAX_CONSECUTIVE_ERR;
+            xSemaphoreGive(s_state_mutex);
+            if (fatal) {
+                ESP_LOGE(TAG, "Aborting long press — too many TX errors");
+                return;
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(interval_ms));
+        elapsed += interval_ms;
     }
-    vTaskDelay(pdMS_TO_TICKS(FRS_BUTTON_TX_INTERVAL_MS));
+    vTaskDelay(pdMS_TO_TICKS(interval_ms));
 }
 
 // ── Drive mode write ─────────────────────────────────────────
@@ -151,7 +255,8 @@ static void frs_send_dm_button(void) {
     xSemaphoreGive(s_state_mutex);
 
     frs_send_button(FRS_CAN_ID_DRIVE_MODE_BTN, tmpl,
-                    FRS_DM_BTN_BYTE, FRS_DM_BTN_BIT);
+                    FRS_DM_BTN_BYTE, FRS_DM_BTN_BIT,
+                    FRS_BUTTON_TX_INTERVAL_MS, FRS_BUTTON_TX_COUNT);
 }
 
 static uint8_t s_pending_mode = 0xFF;
@@ -192,7 +297,11 @@ static void frs_drive_mode_task(void *arg) {
 
     for (uint8_t i = 0; i < presses; i++) {
         frs_send_dm_button();
-        vTaskDelay(pdMS_TO_TICKS(150));
+        if (i == 0) {
+            vTaskDelay(pdMS_TO_TICKS(FRS_DM_ACTIVATION_DELAY_MS));
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(FRS_DM_CYCLE_DELAY_MS));
+        }
     }
 
     xSemaphoreTake(s_state_mutex, portMAX_DELAY);
@@ -225,6 +334,7 @@ void frs_set_drive_mode(uint8_t target_mode) {
 //   Short press: toggles On ↔ Sport
 //   Long press (~5s): activates ESC Off from On or Sport
 //   Short press from Off: returns to On
+// Injection at 100 Hz (10 ms) to outpace BCM's 40 Hz on 0x260.
 static void frs_send_esc_short(void) {
     uint8_t tmpl[8];
     xSemaphoreTake(s_state_mutex, portMAX_DELAY);
@@ -236,8 +346,10 @@ static void frs_send_esc_short(void) {
     memcpy(tmpl, s_state.frame_260_template, 8);
     xSemaphoreGive(s_state_mutex);
 
+    int count = FRS_ESC_SHORT_PRESS_MS / FRS_ESC_BTN_TX_INTERVAL_MS;
     frs_send_button(FRS_CAN_ID_BODY_CTRL, tmpl,
-                    FRS_ESC_BTN_BYTE, FRS_ESC_BTN_BIT);
+                    FRS_ESC_BTN_BYTE, FRS_ESC_BTN_BIT,
+                    FRS_ESC_BTN_TX_INTERVAL_MS, count);
 }
 
 static void frs_send_esc_long(void) {
@@ -253,6 +365,7 @@ static void frs_send_esc_long(void) {
 
     frs_send_button_long(FRS_CAN_ID_BODY_CTRL, tmpl,
                          FRS_ESC_BTN_BYTE, FRS_ESC_BTN_BIT,
+                         FRS_ESC_BTN_TX_INTERVAL_MS,
                          FRS_ESC_LONG_PRESS_MS);
 }
 
@@ -320,6 +433,7 @@ void frs_set_esc(uint8_t esc_mode) {
 }
 
 // ── Auto Start/Stop kill ─────────────────────────────────────
+// Same 100 Hz injection on 0x260 as ESC.
 static void frs_send_ass_button(void) {
     uint8_t tmpl[8];
     xSemaphoreTake(s_state_mutex, portMAX_DELAY);
@@ -331,8 +445,10 @@ static void frs_send_ass_button(void) {
     memcpy(tmpl, s_state.frame_260_template, 8);
     xSemaphoreGive(s_state_mutex);
 
+    int count = FRS_ESC_SHORT_PRESS_MS / FRS_ESC_BTN_TX_INTERVAL_MS;
     frs_send_button(FRS_CAN_ID_BODY_CTRL, tmpl,
-                    FRS_ASS_BTN_BYTE, FRS_ASS_BTN_BIT);
+                    FRS_ASS_BTN_BYTE, FRS_ASS_BTN_BIT,
+                    FRS_ESC_BTN_TX_INTERVAL_MS, count);
 }
 
 void frs_set_ass_kill(bool enabled) {
@@ -427,12 +543,20 @@ static void frs_boot_apply_task(void *arg) {
         frs_send_ass_button();
     }
 
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    ESP_LOGI(TAG, "Boot apply: running ABS module UDS probe");
+    frs_uds_probe_abs();
+
+    xSemaphoreTake(s_state_mutex, portMAX_DELAY);
+    s_state.abs_reachable = true;  // updated by probe logs; default optimistic
+    xSemaphoreGive(s_state_mutex);
+
     ESP_LOGI(TAG, "Boot apply: complete");
     vTaskDelete(NULL);
 }
 
 void frs_boot_apply(void) {
-    xTaskCreate(frs_boot_apply_task, "frs_boot", 2048, NULL, 4, NULL);
+    xTaskCreate(frs_boot_apply_task, "frs_boot", 3072, NULL, 4, NULL);
 }
 
 // ── Thread-safe state access ─────────────────────────────────

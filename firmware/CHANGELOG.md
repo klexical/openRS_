@@ -4,7 +4,24 @@ All notable changes to the openrs-fw firmware are documented here.
 
 ---
 
-## v1.5 — 2026-03-16
+## v1.5 — 2026-03-18
+
+### Fixed (rc.3 — CAN TX robustness, ESC injection, drive mode timing)
+- **Drive mode freezes permanently after button injection** — the ESP32 TWAI controller could enter bus-off state during 0x305 frame injection (same-ID data-phase collisions with the car's broadcast). Once in bus-off, ALL CAN TX and RX stopped with no recovery path. Added automatic bus-off detection via `twai_get_status_info()` and recovery via `twai_initiate_recovery()` + `twai_start()`. The CAN bus now self-heals within 500ms of a bus-off event.
+- **ESC button presses never registered from the app** — the firmware injected 0x260 frames at 80ms intervals (12.5 Hz), but the BCM broadcasts 0x260 at 40 Hz. The ABS module saw the "pressed" bit in only ~24% of frames — too brief to register. Increased ESC/ASS injection rate to **10ms intervals (100 Hz)**, outpacing the BCM so the ABS module sees the pressed bit in >60% of frames on the bus. Matches the "spam" approach confirmed working by the focusrs.org CAN decoding project.
+- **Track mode unreachable — car showed Sport instead** — the flat 150ms inter-press delay was too fast for the cluster's mode selector GUI. The activation press opens the GUI (~300ms render time), but press 2 arrived at 150ms before the GUI was ready, causing missed inputs. Replaced with two-stage timing: **500ms after activation press** (GUI open), **300ms between cycle presses** (mode transition animation). Normal→Track now completes in ~1.6s vs ~1.2s previously, but reliably hits the target mode.
+- **CAN TX errors silently ignored** — `s_can_tx()` return value was never checked. Failed transmissions (error-passive, bus-off, timeout) were invisible. Now every TX attempt is checked; consecutive failures are counted and logged with CAN ID and error code. After 5 consecutive failures, the button sequence aborts early and bus-off recovery is triggered.
+
+### Added (rc.3)
+- **UDS ABS module probe** — on boot (after CAN templates captured), the firmware sends a `TesterPresent` (0x3E) request to the ABS/AdvanceTrac module at CAN ID 0x760 and probes ESC-related DIDs (0xDD01, 0xDD04, 0x4003) via `ReadDataByIdentifier` (0x22). Responses are logged to serial for offline analysis. This is Phase 1 discovery for future UDS-based ESC control as an alternative to button injection.
+- **`focusrs_uds.c` / `focusrs_uds.h`** — minimal ISO-TP single-frame UDS transport layer. Supports send (max 7-byte payload), blocking receive with timeout, and a FreeRTOS queue for async response routing from the CAN RX callback.
+- **CAN health in REST API** — `GET /api/frs` response now includes `canTxErrors` (consecutive failure count), `canBusOff` (boolean, true if TWAI is in bus-off), and `absReachable` (boolean, true if ABS module responded to UDS probe).
+
+### Changed (rc.3)
+- Drive mode inter-press timing changed from flat 150ms to two-stage: 500ms activation + 300ms cycle (`FRS_DM_ACTIVATION_DELAY_MS`, `FRS_DM_CYCLE_DELAY_MS`)
+- ESC and ASS button injection interval changed from 80ms to 10ms (`FRS_ESC_BTN_TX_INTERVAL_MS`). Short press duration is 300ms (30 frames), long press remains 5000ms (500 frames).
+- `frs_send_button()` and `frs_send_button_long()` now accept `interval_ms` and `count`/`duration_ms` parameters instead of using hardcoded constants, allowing different rates for 0x305 (80ms) and 0x260 (10ms).
+- REST API `GET /api/frs` JSON buffer increased from 384 to 512 bytes to accommodate new fields.
 
 ### Fixed (Pro-specific)
 - **Data race on dual-core ESP32-S3** — all `frs_set_*` functions, `s_pending_mode`, `s_pending_esc`, and CAN template reads now protected by `s_state_mutex`. On the Pro (ESP32-S3, dual-core), CAN RX on Core 0 and REST API handler on Core 1 could corrupt `s_state` simultaneously — worst case: wrong number of drive mode presses or torn template reads during CAN TX. Button send helpers (`frs_send_dm_button`, `frs_send_esc_short/long`, `frs_send_ass_button`) now copy templates under mutex before transmitting. ([#78](https://github.com/klexical/openRS_/issues/78))
