@@ -9,6 +9,15 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ## [v2.2.4] — 2026-03-19
 
+### Added (rc.6 — free CAN signals from RS_HS.dbc)
+- **Vertical G from CAN 0x180** ([#104](https://github.com/klexical/openRS_/issues/104)): Extracted `VertAccelMeasured` (bytes 0-1, 10-bit × 0.00390625 − 2.0 g) from the same ABSmsg02 frame that already provides lateral G and yaw rate. Completes the 3-axis accelerometer picture. Zero new CAN bus traffic.
+- **Launch control status from CAN 0x420** ([#105](https://github.com/klexical/openRS_/issues/105)): Extracted `LaunchControlStatus` (bit 50) from the same drive mode detail frame. New `launchControlActive` boolean in VehicleState. Zero new CAN bus traffic.
+- **Engine status from CAN 0x360** ([#106](https://github.com/klexical/openRS_/issues/106)): Extracted `engine_status` (byte 0) from the same frame that provides odometer. Values: 0=Idling, 2=Off, 183=Running, 186=Kill, 191=RecentlyStarted. Foundation for smart auto-disconnect and trip boundary detection.
+- **Ignition status from CAN 0x0C8** ([#107](https://github.com/klexical/openRS_/issues/107)): Extracted `IgnitionStatus` (byte 2, bits 0-4) from the same frame that provides gauge brightness and e-brake. Values: 0=KeyOut, 4=Accessory, 6=IgnOn, 7=Running, 9=Cranking.
+
+### Fixed (rc.6)
+- **ESC "Launch" mode showed as "--"** ([#108](https://github.com/klexical/openRS_/issues/108)): `EscStatus.fromInt()` only handled values 0-2. DBC defines value 3 = Launch (RS_HS.dbc `VAL_ 448`). Added `LAUNCH("Launch")` to the enum. ESC chip on MORE page now correctly displays "Launch" when launch control is active.
+
 ### Fixed (rc.5 — full repo audit)
 - **MeatPi users got WiCAN defaults on first run** — `AppSettings.getHost()` / `getPort()` always returned WiCAN defaults (192.168.80.1:80) even when adapter was set to MeatPi. Now checks adapter type and returns MeatPi defaults (192.168.0.10:35000) when no user-configured value exists.
 - **Hardcoded colors outside theme system** — replaced 6 raw `Color(0xFF...)` in `SettingsSheet.kt` and `DiagPage.kt` with new `SurfUp` and `OnAccent` theme tokens.
