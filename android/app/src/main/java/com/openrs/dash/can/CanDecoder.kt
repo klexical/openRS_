@@ -218,12 +218,15 @@ object CanDecoder {
             //     physical lat-G / yaw / speed triangle from live log data.
             // Invalid pattern for lat G: byte2 & 0x03 == 0x03 && byte3 == 0xFF
             ID_LAT_ACCEL -> if (n >= 8) {
+                val b0 = data[0].toInt() and 0xFF
+                val b1 = data[1].toInt() and 0xFF
                 val b2 = data[2].toInt() and 0xFF
                 val b3 = data[3].toInt() and 0xFF
                 if ((b2 and 0x03) == 0x03 && b3 >= 0xFE) null
                 else state.copy(
                     lateralG   = ((b2 and 0x03) shl 8 or b3) * 0.00390625 - 2.0,
                     yawRate    = ((ubyte(data, 4) and 0x0F) shl 8 or ubyte(data, 5)) * 0.03663 - 75.0,
+                    verticalG  = ((b0 and 0x03) shl 8 or b1) * 0.00390625 - 2.0,
                     lastUpdate = now
                 )
             } else null
@@ -267,6 +270,7 @@ object CanDecoder {
             ID_GAUGE_ILLUM -> if (n >= 4) state.copy(
                 gaugeIllumination = data[0].toInt() and 0x1F,
                 eBrake            = (data[3].toInt() and 0x40) != 0,
+                ignitionStatus    = if (n >= 3) (ubyte(data, 2) and 0x1F) else state.ignitionStatus,
                 lastUpdate        = now
             ) else null
 
@@ -348,11 +352,12 @@ object CanDecoder {
             ID_DRIVE_MODE_EXT -> if (n >= 8) {
                 val newDetail = (ubyte(data, 6) shl 8) or ubyte(data, 7)
                 modeDetail420 = newDetail
+                val lcActive = (ubyte(data, 6) shr 2) and 1 == 1
                 if (state.driveMode == DriveMode.SPORT || state.driveMode == DriveMode.TRACK) {
                     val resolved = if ((newDetail and 0x01) != 0) DriveMode.TRACK
                                    else DriveMode.SPORT
-                    state.copy(driveMode = resolved, lastUpdate = now)
-                } else null
+                    state.copy(driveMode = resolved, launchControlActive = lcActive, lastUpdate = now)
+                } else state.copy(launchControlActive = lcActive, lastUpdate = now)
             } else null
 
             // ── 0x1C0: ESC mode ────────────────────────────────────────────────
@@ -378,6 +383,7 @@ object CanDecoder {
                 val km16 = word(data, 5).toLong()
                 state.copy(
                     odometerKm = km16 + state.odometerRolloverOffset,
+                    engineStatus = ubyte(data, 0),
                     lastUpdate = now
                 )
             } else null
@@ -410,12 +416,12 @@ object CanDecoder {
         ID_THROTTLE     -> "throttlePct=${"%.1f".format(state.throttlePct)}"
         ID_PEDALS       -> "accelPct=${"%.1f".format(state.accelPedalPct)}, rev=${state.reverseStatus}"
         ID_LONG_ACCEL   -> "lonG=${"%.4f".format(state.longitudinalG)}g"
-        ID_LAT_ACCEL    -> "latG=${"%.4f".format(state.lateralG)}g yaw=${"%.2f".format(state.yawRate)}°/s"
+        ID_LAT_ACCEL    -> "latG=${"%.4f".format(state.lateralG)}g yaw=${"%.2f".format(state.yawRate)}°/s vertG=${"%.4f".format(state.verticalG)}g"
         ID_STEERING     -> "steer=${"%.1f".format(state.steeringAngle)}°"
         ID_BRAKE_PRESS  -> "brake=${"%.1f".format(state.brakePressure)}"
-        ID_GAUGE_ILLUM  -> "illum=${state.gaugeIllumination}, eBrake=${state.eBrake}"
+        ID_GAUGE_ILLUM  -> "illum=${state.gaugeIllumination}, eBrake=${state.eBrake}, ign=${state.ignitionStatus}"
         ID_PCM_AMBIENT  -> "ambient=${"%.2f".format(state.ambientTempC)}°C (PCMmsg17)"
-        ID_DRIVE_MODE_EXT -> "driveMode=${state.driveMode.label} (resolved via 0x420+0x1B0)"
+        ID_DRIVE_MODE_EXT -> "driveMode=${state.driveMode.label} lc=${state.launchControlActive} (resolved via 0x420+0x1B0)"
         ID_AMBIENT_TEMP -> "ambientTempC=${"%.2f".format(state.ambientTempC)}"
         ID_WHEEL_SPEEDS -> "FL=${"%.1f".format(state.wheelSpeedFL)} FR=${"%.1f".format(state.wheelSpeedFR)} RL=${"%.1f".format(state.wheelSpeedRL)} RR=${"%.1f".format(state.wheelSpeedRR)} km/h"
         ID_AWD_TORQUE   -> "L=${"%.0f".format(state.awdLeftTorque)}Nm R=${"%.0f".format(state.awdRightTorque)}Nm"
@@ -424,7 +430,7 @@ object CanDecoder {
         ID_GEAR         -> "gear=${state.gearDisplay}"
         ID_TORQUE       -> "torqueNm=${"%.0f".format(state.torqueAtTrans)}"
         ID_FUEL_LEVEL   -> "fuelPct=${"%.1f".format(state.fuelLevelPct)} (0x380 Motorola)"
-        ID_ODOMETER     -> "odometerKm=${state.odometerKm} (0x360 passive)"
+        ID_ODOMETER     -> "odometerKm=${state.odometerKm} engStatus=${state.engineStatus} (0x360 passive)"
         else            -> "(unknown id 0x%03X)".format(id)
     }
 
@@ -471,6 +477,7 @@ object CanDecoder {
         ID_LAT_ACCEL    -> when {
             state.lateralG < -4 || state.lateralG > 4 -> "latG outside ±4g"
             state.yawRate < -75 || state.yawRate > 75  -> "yawRate outside ±75 °/s"
+            state.verticalG < -4 || state.verticalG > 4 -> "vertG outside ±4g"
             else -> null
         }
         ID_STEERING     -> when {

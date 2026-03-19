@@ -105,18 +105,18 @@ All formulas re-validated against DigiCluster `can0_hs.json` and `can1_ms.json`.
 |----|-------------|----------------|--------|
 | 0x080 | Throttle %, accel pedal % | bytes 2-3 / 2.55 | DigiCluster HS-CAN |
 | 0x090 | RPM, baro pressure | RPM: `((B4&0x0F)<<8\|B5)×2`; baro: `B2×0.5 kPa` | DigiCluster HS-CAN |
-| 0x0C8 | Gauge brightness, e-brake | brightness: `B0&0x1F`; e-brake: `B3&0x40` | DigiCluster HS-CAN |
+| 0x0C8 | Gauge brightness, e-brake, ignition status | brightness: `B0&0x1F`; e-brake: `B3&0x40`; ignition: `B2&0x1F` (0=KeyOut..7=Running..9=Cranking) | DigiCluster HS-CAN + RS_HS.dbc |
 | 0x0F8 | Oil temp, boost, PTU temp | oil: `B1−50 °C`; boost: B5 absolute kPa; PTU: `B7−60 °C` | RS_HS.dbc PCMmsg07 |
 | 0x130 | Speed kph | `word(B6-B7)×0.01` | DigiCluster HS-CAN |
 | 0x160 | Longitudinal G | `((B6&0x03)<<8\|B7)×0.00390625−2.0` | DigiCluster HS-CAN |
-| 0x180 | Lateral G | `((B2&0x03)<<8\|B3)×0.00390625−2.0` | DigiCluster HS-CAN |
+| 0x180 | Lateral G, yaw rate, vertical G | latG: `((B2&0x03)<<8\|B3)×0.00390625−2.0`; yaw: `((B4&0x0F)<<8\|B5)×0.03663−75 °/s`; vertG: `((B0&0x03)<<8\|B1)×0.00390625−2.0` | RS_HS.dbc ABSmsg02 |
 | 0x1A4 | Ambient temp | `B4 signed × 0.25 °C` | DigiCluster MS-CAN bridged |
 | 0x1B0 | Drive mode (coarse) | `(B6>>4)&0x0F` — 0=Normal, 1=Sport/Track, 2=Drift | RS_HS.dbc AWDmsg01 |
-| 0x420 | Drive mode (detail) | B6: 0x10=Normal, 0x11=Sport/Track, 0x12=Drift; B7 bit0: 0=Sport, 1=Track | Empirical (confirmed 2026-03-11) |
-| 0x1C0 | ESC mode status | `bits(10,2)`: 0=On, 1=Off, 2=Sport (byte1 bits 5–4) | SLCAN-verified 2026-03-15 |
+| 0x420 | Drive mode (detail), launch control | B6: 0x10=Normal, 0x11=Sport/Track, 0x12=Drift; B7 bit0: 0=Sport, 1=Track; LC: `(B6>>2)&1` | RS_HS.dbc + empirical (2026-03-11) |
+| 0x1C0 | ESC mode status | `bits(10,2)`: 0=On, 1=Off, 2=Sport, 3=Launch (byte1 bits 5–4) | RS_HS.dbc VAL_ 448 + SLCAN-verified |
 | 0x190 | 4× wheel speeds | FL/FR/RL/RR: 15-bit Motorola × 0.011343006 kph | RS_HS.dbc ABSmsg03 |
 | 0x2C0 | AWD L/R torque | 12-bit words scaled | DigiCluster HS-CAN |
 | 0x2F0 | Coolant temp, IAT | coolant: `((B4&0x03)<<8\|B5) − 60 °C`; IAT: `((B6&0x03)<<8\|B7) × 0.25 − 127 °C` | RS_HS.dbc PCMmsg16 |
 | 0x340 | Ambient temp (PCMmsg17) | `byte7 signed × 0.25 °C` — **not** TPMS | RS_HS.dbc PCMmsg17 |
-| 0x360 | Odometer (km) | `(data[5]<<8\|data[6])` — 16-bit BE, 1 km/bit. Max 65,535 km. Mode 22 fallback for rollover. | Community [#102](https://github.com/klexical/openRS_/discussions/102) + car test verified |
+| 0x360 | Odometer (km), engine status | odo: `(data[5]<<8\|data[6])` — 16-bit BE, 1 km/bit; engine: `data[0]` (0=Idle, 2=Off, 183=Running, 186=Kill, 191=RecentStart) | RS_HS.dbc + community [#102](https://github.com/klexical/openRS_/discussions/102) |
 | 0x380 | Fuel level % (FuelLevelFiltered) | Motorola 10-bit: `((data[2]&0x03)<<8\|data[3]) × 0.4` | RS_HS.dbc PCMmsg30 |

@@ -77,6 +77,7 @@ data class VehicleState(
     val yawRate: Double = 0.0,
     val lateralG: Double = 0.0,
     val longitudinalG: Double = 0.0,
+    val verticalG: Double = 0.0,
 
     // ── Wheel Speeds (CAN Sniffed) ──────────────────────────
     val wheelSpeedFL: Double = 0.0,
@@ -101,6 +102,9 @@ data class VehicleState(
     val gaugeIllumination: Int = 0,        // 0x0C8: gauge brightness level
     val eBrake: Boolean = false,           // Emergency brake status
     val reverseStatus: Boolean = false,    // Reverse gear engaged
+    val launchControlActive: Boolean = false, // 0x420 bit 50: launch control armed
+    val engineStatus: Int = -1,            // 0x360 byte 0: 0=Idle, 2=Off, 183=Running, 186=Kill, 191=RecentStart
+    val ignitionStatus: Int = -1,          // 0x0C8 byte2 bits 0-4: 0=KeyOut..7=Running..9=Cranking
 
     // ── BCM OBD (Mode 22 via BCM 0x726) ────────────────────
     val odometerKm: Long = -1L,            // 0x360 passive (16-bit) + rollover offset, or 0x22DD01 (24-bit)
@@ -277,7 +281,7 @@ enum class DriveMode(val label: String) {
 }
 
 enum class EscStatus(val label: String) {
-    ON("ESC On"), PARTIAL("ESC Sport"), OFF("ESC Off"), UNKNOWN("--");
+    ON("ESC On"), PARTIAL("ESC Sport"), OFF("ESC Off"), LAUNCH("Launch"), UNKNOWN("--");
 
     /** Maps to firmware REST API `escMode` field (0=On, 1=Sport, 2=Off). */
     fun toFirmwareInt(): Int = when (this) {
@@ -285,9 +289,9 @@ enum class EscStatus(val label: String) {
     }
 
     companion object {
-        // CAN 0x1C0 byte1 bits[5:4]: 0=On, 1=Off (long press), 2=Sport (short press)
+        // CAN 0x1C0 ESCMode: 0=Normal, 1=ESC Off, 2=Sport, 3=Launch (RS_HS.dbc VAL_ 448)
         fun fromInt(v: Int): EscStatus = when (v) {
-            0 -> ON; 1 -> OFF; 2 -> PARTIAL; else -> UNKNOWN
+            0 -> ON; 1 -> OFF; 2 -> PARTIAL; 3 -> LAUNCH; else -> UNKNOWN
         }
     }
 }
