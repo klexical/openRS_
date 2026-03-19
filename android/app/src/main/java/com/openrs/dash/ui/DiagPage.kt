@@ -335,6 +335,20 @@ import kotlin.math.roundToInt
             DataCell("E-BRAKE", if (vs.eBrake) "ON" else "OFF",
                 valueColor = if (vs.eBrake) Warn else Dim, modifier = Modifier.weight(1f))
         }
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            DataCell("BATT V", "${"%.1f".format(vs.batteryVoltage)}V", modifier = Modifier.weight(1f))
+            DataCell("BATT SoC", if (vs.batterySoc >= 0) "${vs.batterySoc.roundToInt()}%" else "—",
+                valueColor = when {
+                    vs.batterySoc < 0   -> Dim
+                    vs.batterySoc < 50  -> Red
+                    vs.batterySoc < 70  -> Warn
+                    else                -> Ok
+                }, modifier = Modifier.weight(1f))
+            DataCell("BATT TEMP",
+                if (vs.batteryTempC > -90) "${vs.batteryTempC.roundToInt()}°C" else "—",
+                modifier = Modifier.weight(1f))
+        }
 
         if (issueCount > 0) {
             Spacer(Modifier.height(6.dp))

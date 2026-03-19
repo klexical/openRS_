@@ -63,6 +63,28 @@ import kotlin.math.roundToInt
             )
         }
 
+        // ── Gear + Session Peaks ─────────────────────────────────────────
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            HeroCard(
+                unit = "", value = vs.gearDisplay, label = "GEAR",
+                valueColor = Frost,
+                borderAccent = Frost.copy(alpha = 0.15f),
+                modifier = Modifier.weight(0.6f)
+            )
+            HeroCard(
+                unit = "PSI", value = "${"%.1f".format(vs.peakBoostPsi)}", label = "PK BOOST",
+                valueColor = Warn.copy(alpha = 0.7f),
+                borderAccent = Warn.copy(alpha = 0.15f),
+                modifier = Modifier.weight(1f)
+            )
+            HeroCard(
+                unit = "RPM", value = "${vs.peakRpm.toInt()}", label = "PK RPM",
+                valueColor = Red.copy(alpha = 0.7f),
+                borderAccent = Red.copy(alpha = 0.15f),
+                modifier = Modifier.weight(1f)
+            )
+        }
+
         // ── Launch Control indicator (CAN 0x420 — any drive mode) ─────────
         if (vs.launchControlActive) {
             Box(

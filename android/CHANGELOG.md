@@ -9,6 +9,20 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ## [v2.2.4] — 2026-03-19
 
+### Added (rc.8 — surface undisplayed signals, UX fixes)
+- **Current gear display on DASH tab**: New second hero row shows `VehicleState.gearDisplay` (CAN 0x230 with RPM/speed-derived fallback) alongside session peak boost (PSI) and peak RPM. Gear display uses `derivedGear` algorithm (calibrated from live 16-minute log with known gear ratios for the Focus RS 6-speed manual: 1st≈3.79, 2nd≈2.18, 3rd≈1.89, 4th≈1.30, 5th≈0.85) when CAN 0x230 is not broadcasting.
+- **Session peak boost & peak RPM on DASH tab**: `VehicleState.peakBoostPsi` and `VehicleState.peakRpm` (tracked in `withPeaksUpdated()` on every state update) now visible as "PK BOOST" and "PK RPM" cards in the new hero row 2. Previously only shown in trip summaries.
+- **Battery SoC, voltage, and temperature on DIAG tab**: New data row shows `VehicleState.batteryVoltage` (OBD Mode 22 DID 0x0304), `VehicleState.batterySoc` (BCM 0x726 DID 0x4028, start/stop SoC %), and `VehicleState.batteryTempC` (BCM 0x726 DID 0x4029, A−40 °C). SoC cell color-coded: red < 50%, amber < 70%, green ≥ 70%.
+- **Commanded AFR (lambda) on POWER tab**: `VehicleState.commandedAfr` (OBD Mode 01 PID 0x44, 0-2 lambda) now shown as "CMD AFR" in the FUEL TRIMS & AFR section. Complements the Mode 22 wideband AFR fields already present.
+- **Low-pressure fuel rail on POWER tab**: `VehicleState.fuelRailPsi` (OBD Mode 01 PID 0x22, kPa→PSI) now shown as "LP FUEL" alongside the existing "HP FUEL" (Mode 22 DID 0xF422). Provides the low-pressure supply rail reading as a comparison to the direct-injection HP rail.
+- **Manifold charge temperature on TEMPS tab**: `VehicleState.manifoldChargeTempC` (Mode 22 DID, °C) added to the temperature grid between CHARGE AIR and CATALYTIC. Warn at 60°C, critical at 90°C.
+- **AWD max torque, PTU/RDU temps on CHASSIS tab**: When `VehicleState.awdMaxTorque > 0`, a new row appears in the AWD section showing AWD MAX (Nm), PTU TEMP, and RDU TEMP. Consolidates drivetrain thermal data alongside the torque split visualization.
+- **TPMS pressure spread warning on CHASSIS tab**: When `VehicleState.maxTirePressSpread ≥ 4.0 PSI` and no tire is individually low, a "⚠ PRESSURE IMBALANCE — X.X PSI spread" amber banner appears. Alerts to uneven pressure across corners without triggering the more severe "LOW TIRE PRESSURE" warning.
+- **No-internet hint on Trip page**: When `VehicleState.isConnected == true`, a subtle floating label ("No internet on adapter WiFi — tiles may be cached") appears at the bottom-right of the map. Addresses [#95](https://github.com/klexical/openRS_/issues/95) with a UX hint while a proper offline tile solution is developed.
+
+### Fixed (rc.8)
+- **Race-Ready banner ignored RDU and PTU temps**: `RtrBanner` on TEMPS tab used `UserPrefs.isRaceReady(oilTempC, coolantTempC)` which only checked oil and coolant. Now uses `VehicleState.rtrStatus` which also factors in RDU ≥ 30°C and PTU ≥ 40°C — matching the full warmup logic already defined in VehicleState. Banner now shows the complete breakdown (e.g. "Oil 72°C < 80°C · RDU 22°C < 30°C") instead of hardcoded threshold text.
+
 ### Added (rc.7 — surface rc.6 signals in UI)
 - **Vertical G readout on CHASSIS tab** ([#104](https://github.com/klexical/openRS_/issues/104)): `VehicleState.verticalG` (CAN 0x180 bytes 0-1, decoded in rc.6) now displayed as VERT G card in G-Force row 1 alongside LAT G and LON G. COMBINED G moved to row 2 with YAW and STEER. RESET PEAKS button refactored to full-width bar below the cards.
 - **Launch Control active banner on DASH tab** ([#105](https://github.com/klexical/openRS_/issues/105)): `VehicleState.launchControlActive` (CAN 0x420 bit 50, decoded in rc.6) now surfaces as a conditional "⚡ LAUNCH CONTROL ACTIVE" banner below the hero cards (BOOST / RPM / SPEED). Visible only when LC is engaged — applies to any drive mode (user puts car in 1st gear and holds at LC RPM set by tune). Banner hidden when `launchControlActive == false` to avoid clutter.

@@ -291,6 +291,18 @@ fun TripPage(
                             .padding(8.dp)
                     )
 
+                    if (vehicleState.isConnected) {
+                        Box(
+                            Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(8.dp)
+                                .background(Bg.copy(alpha = 0.82f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 6.dp, vertical = 3.dp)
+                        ) {
+                            MonoLabel("No internet on adapter WiFi — tiles may be cached", 7.sp, Dim)
+                        }
+                    }
+
                 } else {
                     // Permission prompt — push content below status bar
                     Box(

@@ -105,6 +105,17 @@ import kotlin.math.roundToInt
             DataCell("L/R DELTA", "${"%.1f".format(lrDisp)} $spdLabel", modifier = Modifier.weight(1f))
             DataCell("F/R DELTA", "${"%.1f".format(frDisp)} $spdLabel", modifier = Modifier.weight(1f))
         }
+        if (vs.awdMaxTorque > 0) {
+            Spacer(Modifier.height(4.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DataCell("AWD MAX", "${vs.awdMaxTorque.roundToInt()} Nm", modifier = Modifier.weight(1f))
+                val ptuStr = if (vs.ptuTempC > -90) "${p.displayTemp(vs.ptuTempC)}${p.tempLabel}" else "—"
+                DataCell("PTU TEMP", ptuStr, modifier = Modifier.weight(1f))
+                DataCell("RDU TEMP",
+                    if (vs.rduTempC > -90) "${p.displayTemp(vs.rduTempC)}${p.tempLabel}" else "—",
+                    modifier = Modifier.weight(1f))
+            }
+        }
     }
 }
 
@@ -185,6 +196,19 @@ import kotlin.math.roundToInt
                     contentAlignment = Alignment.Center
                 ) {
                     MonoLabel("⚠ LOW TIRE PRESSURE", 10.sp, Red, letterSpacing = 0.2.sp)
+                }
+            }
+            val spread = vs.maxTirePressSpread
+            if (spread >= 4.0 && !vs.anyTireLow(lowThreshold)) {
+                Spacer(Modifier.height(10.dp))
+                Box(
+                    Modifier.fillMaxWidth()
+                        .background(Warn.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+                        .border(1.dp, Warn.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                        .padding(10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    MonoLabel("⚠ PRESSURE IMBALANCE — ${"%.1f".format(spread)} PSI spread", 10.sp, Warn, letterSpacing = 0.1.sp)
                 }
             }
         }
