@@ -281,8 +281,12 @@ fun SettingsDialog(onDismiss: () -> Unit) {
 
             // ── Action buttons ───────────────────────────────────────────────
             HorizontalDivider(color = Brd)
+            val versionLabel = buildString {
+                append("openRS_ v${BuildConfig.VERSION_NAME}")
+                if (BuildConfig.RC_SUFFIX.isNotEmpty()) append("-${BuildConfig.RC_SUFFIX}")
+            }
             Text(
-                "openRS_ v${BuildConfig.VERSION_NAME}",
+                versionLabel,
                 fontSize = 10.sp,
                 color = Dim,
                 fontFamily = ShareTechMono,

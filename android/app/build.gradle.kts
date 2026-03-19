@@ -36,6 +36,9 @@ android {
         buildConfigField("String", "OPENWEATHER_API_KEY",
             "\"${localProps["OPENWEATHER_API_KEY"] ?: ""}\"")
 
+        val rc = project.findProperty("rcSuffix")?.toString()?.trim().orEmpty()
+        buildConfigField("String", "RC_SUFFIX", "\"$rc\"")
+
     }
 
     signingConfigs {

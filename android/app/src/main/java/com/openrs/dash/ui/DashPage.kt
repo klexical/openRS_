@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -42,26 +43,26 @@ import kotlin.math.roundToInt
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         // ── Hero Row: BOOST | RPM | SPEED (with ▲ session peaks) ─────────
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             HeroCard(
                 unit = boostLbl, value = boostVal, label = "BOOST",
                 valueColor = Warn,
                 borderAccent = Warn.copy(alpha = 0.25f),
                 peak = "▲ ${"%.1f".format(vs.peakBoostPsi)}",
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).fillMaxHeight()
             )
             HeroCard(
                 unit = "RPM", value = "${vs.rpm.toInt()}", label = "ENGINE",
                 valueColor = Red,
                 borderAccent = Red.copy(alpha = 0.2f),
                 peak = "▲ ${vs.peakRpm.toInt()}",
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).fillMaxHeight()
             )
             HeroCard(
                 unit = p.speedLabel, value = p.displaySpeed(vs.speedKph), label = "SPEED",
                 valueColor = accent,
                 borderAccent = accent.copy(alpha = 0.25f),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).fillMaxHeight()
             )
         }
 

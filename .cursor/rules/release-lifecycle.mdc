@@ -1,29 +1,79 @@
 ---
-description: GitHub release lifecycle — demote superseded pre-releases when creating new ones
+description: GitHub release lifecycle — one rolling pre-release per version stream, updated in place
 alwaysApply: true
 ---
 
 # Release Lifecycle
 
-When creating a new pre-release (`gh release create --prerelease`), **immediately demote all older pre-releases** for the same component (firmware target or android):
+## Rolling Pre-releases (RC workflow)
 
-1. List releases: `gh release list --limit 20`
-2. For each older release of the same component that is still marked **Pre-release**, run:
+Each version stream gets **one pre-release** that is updated in place as RCs progress. Never create a new release for each RC — edit the existing one.
+
+### Version streams
+- Android: `android-v{X.Y.Z}-rc`
+- Firmware USB: `fw-usb-v{X.Y}-rc`
+- Firmware Pro: `fw-pro-v{X.Y}-rc`
+
+### Creating the first RC (e.g. rc.1)
+
+1. Set `rcSuffix=rc.1` in `android/gradle.properties` (for Android streams)
+2. Commit, tag, and push:
+   ```bash
+   git tag -a android-v2.2.4-rc.1 -m "v2.2.4-rc.1"
+   git push origin android-v2.2.4-rc.1
+   gh release create android-v2.2.4-rc.1 --prerelease --target staging \
+     --title "android-v2.2.4-rc.1" --notes "<notes>" <artifacts>
    ```
-   gh release edit <old-tag> --prerelease=false
+
+### Updating to a new RC (e.g. rc.1 → rc.8)
+
+Instead of creating a new release, **update the existing one**:
+
+1. **Update `rcSuffix`** in `android/gradle.properties` to the new RC number (e.g. `rcSuffix=rc.8`)
+
+2. **Move the tag** to the new commit:
+   ```bash
+   git tag -d android-v2.2.4-rc.1
+   git push origin :refs/tags/android-v2.2.4-rc.1
+   git tag -a android-v2.2.4-rc.8 -m "v2.2.4-rc.8: <summary>"
+   git push origin android-v2.2.4-rc.8
    ```
-3. Only the **latest** RC for a given component should carry the Pre-release label at any time.
 
-### Scope
+2. **Edit the release** — update tag, title, and notes:
+   ```bash
+   gh release edit android-v2.2.4-rc.1 --tag android-v2.2.4-rc.8 \
+     --title "android-v2.2.4-rc.8" --notes "<updated notes>"
+   ```
+   If `gh release edit` doesn't support `--tag`, delete and recreate:
+   ```bash
+   gh release delete android-v2.2.4-rc.1 --yes
+   gh release create android-v2.2.4-rc.8 --prerelease --target staging \
+     --title "android-v2.2.4-rc.8" --notes "<notes>" <artifacts>
+   ```
 
-- Firmware: `fw-usb-*`, `fw-pro-*` are separate components — demote within each independently.
-- Android: `android-*` is its own component.
+3. **Replace artifacts** (APK / firmware binaries):
+   ```bash
+   gh release delete-asset android-v2.2.4-rc.8 openRS_v2.2.4.apk --yes
+   gh release upload android-v2.2.4-rc.8 android/app/build/outputs/apk/release/openRS_v2.2.4.apk
+   ```
 
-### Example
+### Result
+- Only **one pre-release per version stream** exists at any time
+- The release notes contain the full cumulative changelog (current RC + "Previous RCs" section)
+- No cleanup needed — the releases page stays clean
 
-Creating `fw-usb-v1.5-rc.3` while `fw-usb-v1.5-rc.2` and `fw-usb-v1.5-rc.1` are Pre-release:
+## Promoting to Stable
 
-```bash
-gh release edit fw-usb-v1.5-rc.2 --prerelease=false
-gh release edit fw-usb-v1.5-rc.1 --prerelease=false
-```
+When the RC is ready for production:
+
+1. **Clear `rcSuffix`** — set `rcSuffix=` (empty) in `android/gradle.properties`
+2. Merge `staging` → `main`
+3. Create a new **stable release** tag (e.g. `android-v2.2.4`)
+4. Delete the RC pre-release
+5. Create the stable release with `--latest`
+
+## Scope
+
+- Firmware USB (`fw-usb-*`) and Pro (`fw-pro-*`) are separate streams
+- Android (`android-*`) is its own stream
+- Each stream has at most **one** pre-release at a time
