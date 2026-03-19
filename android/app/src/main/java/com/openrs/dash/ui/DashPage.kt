@@ -62,6 +62,7 @@ import kotlin.math.roundToInt
                 unit = p.speedLabel, value = p.displaySpeed(vs.speedKph), label = "SPEED",
                 valueColor = accent,
                 borderAccent = accent.copy(alpha = 0.25f),
+                peak = "▲ ${p.displaySpeed(vs.peakSpeedKph)}",
                 modifier = Modifier.weight(1f).fillMaxHeight()
             )
         }

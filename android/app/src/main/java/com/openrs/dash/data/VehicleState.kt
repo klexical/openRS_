@@ -127,6 +127,7 @@ data class VehicleState(
     // ── Peaks ───────────────────────────────────────────────
     val peakBoostPsi: Double = 0.0,
     val peakRpm: Double = 0.0,
+    val peakSpeedKph: Double = 0.0,
     val peakLateralG: Double = 0.0,
     val peakLongitudinalG: Double = 0.0,
 
@@ -250,13 +251,14 @@ data class VehicleState(
         return copy(
             peakBoostPsi = max(peakBoostPsi, psi),
             peakRpm = max(peakRpm, rpm),
+            peakSpeedKph = max(peakSpeedKph, speedKph),
             peakLateralG = max(peakLateralG, abs(lateralG)),
             peakLongitudinalG = max(peakLongitudinalG, abs(longitudinalG))
         )
     }
 
     fun withPeaksReset(): VehicleState = copy(
-        peakBoostPsi = 0.0, peakRpm = 0.0,
+        peakBoostPsi = 0.0, peakRpm = 0.0, peakSpeedKph = 0.0,
         peakLateralG = 0.0, peakLongitudinalG = 0.0
     )
 }

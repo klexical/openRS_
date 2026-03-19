@@ -116,26 +116,29 @@ class VehicleStateTest {
 
     @Test
     fun `peak tracking updates higher values`() {
-        val state = VehicleState(boostKpa = 250.0, rpm = 6000.0, peakBoostPsi = 10.0, peakRpm = 5000.0)
+        val state = VehicleState(boostKpa = 250.0, rpm = 6000.0, speedKph = 180.0, peakBoostPsi = 10.0, peakRpm = 5000.0, peakSpeedKph = 150.0)
         val updated = state.withPeaksUpdated()
         assertTrue(updated.peakBoostPsi > 10.0)
         assertEquals(6000.0, updated.peakRpm, 0.1)
+        assertEquals(180.0, updated.peakSpeedKph, 0.1)
     }
 
     @Test
     fun `peak tracking does not lower peaks`() {
-        val state = VehicleState(boostKpa = 101.325, rpm = 3000.0, peakBoostPsi = 20.0, peakRpm = 7000.0)
+        val state = VehicleState(boostKpa = 101.325, rpm = 3000.0, speedKph = 80.0, peakBoostPsi = 20.0, peakRpm = 7000.0, peakSpeedKph = 200.0)
         val updated = state.withPeaksUpdated()
         assertEquals(20.0, updated.peakBoostPsi, 0.01)
         assertEquals(7000.0, updated.peakRpm, 0.01)
+        assertEquals(200.0, updated.peakSpeedKph, 0.01)
     }
 
     @Test
     fun `peak reset clears all peaks`() {
-        val state = VehicleState(peakBoostPsi = 25.0, peakRpm = 7000.0, peakLateralG = 1.2, peakLongitudinalG = 0.9)
+        val state = VehicleState(peakBoostPsi = 25.0, peakRpm = 7000.0, peakSpeedKph = 250.0, peakLateralG = 1.2, peakLongitudinalG = 0.9)
         val reset = state.withPeaksReset()
         assertEquals(0.0, reset.peakBoostPsi, 0.01)
         assertEquals(0.0, reset.peakRpm, 0.01)
+        assertEquals(0.0, reset.peakSpeedKph, 0.01)
         assertEquals(0.0, reset.peakLateralG, 0.01)
         assertEquals(0.0, reset.peakLongitudinalG, 0.01)
     }
