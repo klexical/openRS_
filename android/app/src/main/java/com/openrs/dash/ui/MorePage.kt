@@ -172,6 +172,18 @@ import kotlinx.coroutines.withContext
                         }
                     }
             }
+            if (vs.escStatus == EscStatus.LAUNCH) {
+                Spacer(Modifier.height(6.dp))
+                Box(
+                    Modifier.fillMaxWidth()
+                        .background(Warn.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                        .border(1.dp, Warn.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                        .padding(10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    MonoLabel("⚡ ESC LAUNCH MODE", 10.sp, Warn, letterSpacing = 0.1.sp)
+                }
+            }
             Spacer(Modifier.height(6.dp))
             MonoLabel(
                 if (canControl) "Tap to change \u00B7 Live from CAN 0x1C0"
@@ -193,18 +205,22 @@ import kotlinx.coroutines.withContext
                 ) {
                     UIText("Launch Control", 12.sp, Frost, FontWeight.SemiBold)
                     Spacer(Modifier.height(4.dp))
-                    val lcText = when {
-                        vs.lcArmed == true  -> "● ARMED"
-                        vs.lcArmed == false -> "○ STANDBY"
-                        isFw && !vs.rsprotTimedOut -> "… PROBING"
-                        else                -> "○ N/A"
+                    if (vs.launchControlActive) {
+                        MonoText("⚡ ACTIVE", 10.sp, Warn)
+                    } else {
+                        val lcText = when {
+                            vs.lcArmed == true  -> "● ARMED"
+                            vs.lcArmed == false -> "○ STANDBY"
+                            isFw && !vs.rsprotTimedOut -> "… PROBING"
+                            else                -> "○ N/A"
+                        }
+                        val lcColor = when {
+                            vs.lcArmed == true            -> Ok
+                            isFw && !vs.rsprotTimedOut    -> Warn
+                            else                          -> Dim
+                        }
+                        MonoText(lcText, 10.sp, lcColor)
                     }
-                    val lcColor = when {
-                        vs.lcArmed == true            -> Ok
-                        isFw && !vs.rsprotTimedOut    -> Warn
-                        else                          -> Dim
-                    }
-                    MonoText(lcText, 10.sp, lcColor)
                     if (vs.lcRpmTarget > 0) {
                         Spacer(Modifier.height(2.dp))
                         MonoLabel("${vs.lcRpmTarget} RPM", 9.sp, Dim)

@@ -63,6 +63,19 @@ import kotlin.math.roundToInt
             )
         }
 
+        // ── Launch Control indicator (CAN 0x420 — any drive mode) ─────────
+        if (vs.launchControlActive) {
+            Box(
+                Modifier.fillMaxWidth()
+                    .background(Warn.copy(alpha = 0.12f), RoundedCornerShape(10.dp))
+                    .border(1.5.dp, Warn.copy(alpha = 0.6f), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                MonoLabel("⚡ LAUNCH CONTROL ACTIVE", 12.sp, Warn, letterSpacing = 0.2.sp)
+            }
+        }
+
         // ── Inputs & Resources bar grid ─────────────────────────────────────
         SectionLabel("INPUTS & RESOURCES")
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

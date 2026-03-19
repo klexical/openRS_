@@ -119,22 +119,24 @@ import kotlin.math.roundToInt
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GfCard("LAT G",    "${"%.2f".format(vs.lateralG)}",      "▲ ${"%.2f".format(vs.peakLateralG)}",     Modifier.weight(1f))
             GfCard("LON G",    "${"%.2f".format(vs.longitudinalG)}", "▲ ${"%.2f".format(vs.peakLongitudinalG)}", Modifier.weight(1f))
-            GfCard("COMBINED", "${"%.2f".format(vs.combinedG)}",     "", Modifier.weight(1f))
+            GfCard("VERT G",   "${"%.2f".format(vs.verticalG)}",    "", Modifier.weight(1f))
         }
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            GfCard("YAW",   "${"%.1f".format(vs.yawRate)}°/s",    "", Modifier.weight(1f))
-            GfCard("STEER", "${"%.1f".format(vs.steeringAngle)}°", "", Modifier.weight(1f))
-            Box(
-                Modifier.weight(1f)
-                    .background(Surf2, RoundedCornerShape(10.dp))
-                    .border(1.dp, Brd, RoundedCornerShape(10.dp))
-                    .clickable { onReset() }
-                    .padding(vertical = 12.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                MonoLabel("↺ PEAKS", 10.sp, Dim, letterSpacing = 0.15.sp)
-            }
+            GfCard("YAW",      "${"%.1f".format(vs.yawRate)}°/s",    "", Modifier.weight(1f))
+            GfCard("STEER",    "${"%.1f".format(vs.steeringAngle)}°", "", Modifier.weight(1f))
+            GfCard("COMBINED", "${"%.2f".format(vs.combinedG)}",     "", Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(6.dp))
+        Box(
+            Modifier.fillMaxWidth()
+                .background(Surf2, RoundedCornerShape(8.dp))
+                .border(1.dp, Brd, RoundedCornerShape(8.dp))
+                .clickable { onReset() }
+                .padding(vertical = 8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            MonoLabel("↺ RESET PEAKS", 9.sp, Dim, letterSpacing = 0.15.sp)
         }
     }
 }

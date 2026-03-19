@@ -328,6 +328,13 @@ import kotlin.math.roundToInt
             DataCell("FRAMES",  "$frameCount",                              modifier = Modifier.weight(1f))
             DataCell("IDs",     "${inv.size}",                              modifier = Modifier.weight(1f))
         }
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            DataCell("ENGINE", engineStatusLabel(vs.engineStatus), modifier = Modifier.weight(1f))
+            DataCell("IGNITION", ignitionStatusLabel(vs.ignitionStatus), modifier = Modifier.weight(1f))
+            DataCell("E-BRAKE", if (vs.eBrake) "ON" else "OFF",
+                valueColor = if (vs.eBrake) Warn else Dim, modifier = Modifier.weight(1f))
+        }
 
         if (issueCount > 0) {
             Spacer(Modifier.height(6.dp))
@@ -420,6 +427,26 @@ import kotlin.math.roundToInt
             }
         }
     }
+}
+
+internal fun engineStatusLabel(v: Int): String = when (v) {
+    -1  -> "—"
+    0   -> "Idle"
+    2   -> "Off"
+    183 -> "Running"
+    186 -> "Kill"
+    191 -> "Start"
+    else -> "0x%02X".format(v)
+}
+
+internal fun ignitionStatusLabel(v: Int): String = when (v) {
+    -1  -> "—"
+    0   -> "Key Out"
+    1   -> "Key In"
+    4   -> "Acc"
+    7   -> "Run"
+    9   -> "Crank"
+    else -> "$v"
 }
 
 // ── DTC result row composable ─────────────────────────────────────────────
