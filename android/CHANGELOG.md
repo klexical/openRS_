@@ -9,12 +9,12 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ## [v2.2.4] — 2026-03-19
 
-### Added (rc.7 — surface new signals in UI)
-- **Vertical G on CHASSIS tab**: Replaced COMBINED card in row 1 with VERT G readout. COMBINED moved to row 2 alongside YAW and STEER. RESET PEAKS button now spans full width below.
-- **Launch Control banner on DASH tab**: Eye-catching "⚡ LAUNCH CONTROL ACTIVE" banner appears below the hero cards when LC is engaged (any drive mode — 1st gear at LC RPM). Hidden when inactive.
-- **Engine status, ignition status, e-brake on DIAG tab**: New row in DIAGNOSTICS section shows engine state (Idle/Off/Running/Kill/Start), ignition state (Key Out/Acc/Run/Crank), and e-brake status.
-- **ESC Launch mode on MORE tab**: When ESC reports value 3 (Launch), a highlighted "⚡ ESC LAUNCH MODE" banner appears below the ESC chips.
-- **CAN-based LC active on MORE tab**: Launch Control card now shows "⚡ ACTIVE" from passive CAN 0x420 when LC is engaged, independent of firmware OBD probe state.
+### Added (rc.7 — surface rc.6 signals in UI)
+- **Vertical G readout on CHASSIS tab** ([#104](https://github.com/klexical/openRS_/issues/104)): `VehicleState.verticalG` (CAN 0x180 bytes 0-1, decoded in rc.6) now displayed as VERT G card in G-Force row 1 alongside LAT G and LON G. COMBINED G moved to row 2 with YAW and STEER. RESET PEAKS button refactored to full-width bar below the cards.
+- **Launch Control active banner on DASH tab** ([#105](https://github.com/klexical/openRS_/issues/105)): `VehicleState.launchControlActive` (CAN 0x420 bit 50, decoded in rc.6) now surfaces as a conditional "⚡ LAUNCH CONTROL ACTIVE" banner below the hero cards (BOOST / RPM / SPEED). Visible only when LC is engaged — applies to any drive mode (user puts car in 1st gear and holds at LC RPM set by tune). Banner hidden when `launchControlActive == false` to avoid clutter.
+- **Engine status, ignition status, e-brake on DIAG tab** ([#106](https://github.com/klexical/openRS_/issues/106), [#107](https://github.com/klexical/openRS_/issues/107)): New data row in DIAGNOSTICS section displays `VehicleState.engineStatus` (CAN 0x360 byte 0: Idle/Off/Running/Kill/Start), `VehicleState.ignitionStatus` (CAN 0x0C8 byte 2 bits 0-4: Key Out/Acc/Run/Crank), and `VehicleState.eBrake` (CAN 0x0C8 byte 3 bit 6). Helper functions `engineStatusLabel()` and `ignitionStatusLabel()` map raw int values to human-readable labels.
+- **ESC Launch mode indicator on MORE tab** ([#108](https://github.com/klexical/openRS_/issues/108)): When `VehicleState.escStatus == EscStatus.LAUNCH` (CAN 0x1C0 value 3), a "⚡ ESC LAUNCH MODE" banner appears below the ESC ON / SPORT / ESC OFF chips. The three main chips don't include LAUNCH as a tappable option (it's a car-initiated state, not user-selectable via CAN write).
+- **CAN-based LC active on MORE tab** ([#105](https://github.com/klexical/openRS_/issues/105)): Launch Control card in the openRS-FW section now shows "⚡ ACTIVE" from passive CAN 0x420 (`launchControlActive`) when LC is engaged, taking priority over the firmware OBD probe state (`lcArmed`). This means LC engagement is visible even on stock WiCAN firmware (no openrs-fw required for the passive CAN signal).
 
 ### Added (rc.6 — free CAN signals from RS_HS.dbc)
 - **Vertical G from CAN 0x180** ([#104](https://github.com/klexical/openRS_/issues/104)): Extracted `VertAccelMeasured` (bytes 0-1, 10-bit × 0.00390625 − 2.0 g) from the same ABSmsg02 frame that already provides lateral G and yaw rate. Completes the 3-axis accelerometer picture. Zero new CAN bus traffic.
