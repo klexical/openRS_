@@ -30,8 +30,8 @@ val Dim     = Color(0xFF3D5A72)     // Muted / dim text
 val Mid     = Color(0xFF7A9AB8)     // Medium emphasis
 
 // Accent colors
-val Accent  = Color(0xFF00D2FF)     // Cyan — primary interactive
-val AccentD = Color(0xFF0099BB)     // Darker cyan
+val Accent  = Color(0xFF0091EA)     // Nitrous Blue — primary interactive
+val AccentD = Color(0xFF006DB3)     // Darker Nitrous Blue
 val Orange  = Color(0xFFFF4D00)     // Orange-red — aggressive/hot
 val Ok      = Color(0xFF00FF88)     // Neon green — good/ok
 val Warn    = Color(0xFFFFCC00)     // Gold — attention/warm
