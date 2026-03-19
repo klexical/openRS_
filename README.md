@@ -37,7 +37,7 @@ Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It understan
 
 | Token | Hex | Usage |
 |-------|-----|-------|
-| **Nitrous Blue** | `#00AEEF` | Accent colour — gauges, highlights, active states, "RS" in logo |
+| **Nitrous Blue** | `#0091EA` | Accent colour — gauges, highlights, active states, "RS" in logo |
 | **Frost White** | `#F5F6F4` | Primary text — labels, readouts, "open" and "_" in logo |
 | **Deep Black** | `#0A0A0A` | Background |
 | **Surface** | `#141414` | Cards, tab bar |
@@ -215,7 +215,7 @@ Open `android/browser-emulator/index.html` in any browser, or visit the live ver
 │   Hooks DiagnosticLogger (frame inventory, trace, FPS, SLCAN log)    │
 ├──────────────────────┬───────────────────────────────────────────────┤
 │  CanDecoder          │  DiagnosticLogger / Exporter / DtcScanner     │
-│  21 CAN frame IDs    │  Per-ID first/last/Δ tracking                 │
+│  22 CAN frame IDs    │  Per-ID first/last/Δ tracking                 │
 │  RS_HS.dbc-verified  │  Periodic samples (30 s), SLCAN candump log   │
 │  Motorola extraction │  Validation engine, ZIP export via FileProvider│
 ├──────────────────────┴───────────────────────────────────────────────┤
@@ -229,7 +229,7 @@ Open `android/browser-emulator/index.html` in any browser, or visit the live ver
 │  PCM polling (0x7E0/30s): ETC, WGDC, KR, OAR, AFR, TIP, VCT,       │
 │    charge air, CAT temp, oil life, HP fuel rail, fuel level          │
 │  BCM polling (0x726/30s): SOC, battery temp, cabin temp, TPMS×4     │
-│  BCM ext (0x726/60s): odometer (extended diagnostic session)         │
+│  BCM ext (0x726/once): odometer (extended session, once on connect)   │
 │  AWD polling (0x703/60s): RDU oil temp                               │
 ├──────────────────────┬───────────────────────────────────────────────┤
 │  MeatPi WiCAN USB-C3 │  MeatPi WiCAN Pro (optional)                 │
@@ -261,7 +261,7 @@ android/
 │   │   ├── OpenRSDashApp.kt              # Application singleton + isOpenRsFirmware flag
 │   │   ├── can/
 │   │   │   ├── AdapterState.kt           # Shared connection state sealed class
-│   │   │   ├── CanDecoder.kt             # 21 CAN frame decoders (RS_HS.dbc-verified)
+│   │   │   ├── CanDecoder.kt             # 22 CAN frame decoders (RS_HS.dbc-verified)
 │   │   │   ├── MeatPiConnection.kt       # MeatPi Pro raw TCP SLCAN + OBD polling
 │   │   │   ├── ObdConstants.kt           # Shared OBD query strings + CAN IDs + timing
 │   │   │   ├── ObdResponseParser.kt      # Shared OBD Mode 22 response parsers

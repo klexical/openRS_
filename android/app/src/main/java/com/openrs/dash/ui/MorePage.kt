@@ -359,26 +359,12 @@ import kotlinx.coroutines.withContext
     }
 }
 
-/** Returns the accent Color for a theme ID without allocating a full UserPrefs instance. */
-private fun themeAccentColor(id: String): androidx.compose.ui.graphics.Color = when (id) {
-    "red"    -> androidx.compose.ui.graphics.Color(0xFFD62828)
-    "orange" -> androidx.compose.ui.graphics.Color(0xFFD45500)
-    "grey"   -> androidx.compose.ui.graphics.Color(0xFF6B7580)
-    "black"  -> androidx.compose.ui.graphics.Color(0xFF3A3D44)
-    "white"  -> androidx.compose.ui.graphics.Color(0xFFE8ECF0)
-    else     -> androidx.compose.ui.graphics.Color(0xFF0091EA)
-}
+/** Returns the accent Color for a theme ID from the centralized RS paint palette. */
+private fun themeAccentColor(id: String): androidx.compose.ui.graphics.Color = rsPaintAccent(id)
 
 @Composable fun ThemePicker(p: UserPrefs) {
     val ctx = LocalContext.current
-    val themes = listOf(
-        "cyan"   to "Nitrous Blue",
-        "red"    to "Race Red",
-        "orange" to "Deep Orange",
-        "grey"   to "Stealth Grey",
-        "black"  to "Shadow Black",
-        "white"  to "Frozen White"
-    )
+    val themes = RsPaints.map { it.id to it.name }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

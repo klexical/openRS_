@@ -29,6 +29,10 @@ val Frost   = Color(0xFFE8F4FF)     // Primary text (near-white, blue tint)
 val Dim     = Color(0xFF3D5A72)     // Muted / dim text
 val Mid     = Color(0xFF7A9AB8)     // Medium emphasis
 
+// Elevated surfaces and on-accent contrast
+val SurfUp  = Color(0xFF141414)     // Elevated surface (modal headers, cards)
+val OnAccent = Color(0xFF0A0A0A)    // Dark text/content on accent-colored buttons
+
 // Accent colors
 val Accent  = Color(0xFF0091EA)     // Nitrous Blue — primary interactive
 val AccentD = Color(0xFF006DB3)     // Darker Nitrous Blue
@@ -40,6 +44,23 @@ val Warn    = Color(0xFFFFCC00)     // Gold — attention/warm
 val Grn   get() = Ok
 val Amber get() = Warn
 val Red   get() = Orange
+
+// ── RS MK3 paint theme palette ────────────────────────────────────────────
+data class RsPaint(val id: String, val name: String, val accent: Color)
+
+val RsPaints = listOf(
+    RsPaint("cyan",   "Nitrous Blue",  Color(0xFF0091EA)),
+    RsPaint("red",    "Race Red",      Color(0xFFD62828)),
+    RsPaint("orange", "Deep Orange",   Color(0xFFD45500)),
+    RsPaint("grey",   "Stealth Grey",  Color(0xFF6B7580)),
+    RsPaint("black",  "Shadow Black",  Color(0xFF3A3D44)),
+    RsPaint("white",  "Frozen White",  Color(0xFFE8ECF0)),
+)
+
+private val paintMap = RsPaints.associateBy { it.id }
+
+fun rsPaintAccent(id: String): Color = paintMap[id]?.accent ?: Accent
+fun rsPaintName(id: String): String  = paintMap[id]?.name  ?: "Nitrous Blue"
 
 // ── CompositionLocal for theme accent ─────────────────────────────────────
 val LocalThemeAccent = staticCompositionLocalOf { Accent }

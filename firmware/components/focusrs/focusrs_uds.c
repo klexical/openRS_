@@ -29,13 +29,15 @@ void frs_uds_handle_response(uint32_t can_id, const uint8_t *data, uint8_t dlc) 
     uds_frame_t frame;
     frame.len = (dlc > 8) ? 8 : dlc;
     memcpy(frame.data, data, frame.len);
-    xQueueSend(s_uds_rx_queue, &frame, 0);
+    if (xQueueSend(s_uds_rx_queue, &frame, pdMS_TO_TICKS(50)) != pdTRUE) {
+        ESP_LOGW(TAG, "UDS RX queue full — response dropped (id=0x%03lX)", (unsigned long)can_id);
+    }
 }
 
 // ── ISO-TP single-frame send (max 7 payload bytes) ──────────
 int frs_uds_send(uint32_t target_id, const uint8_t *payload, uint8_t len) {
     frs_can_tx_fn_t tx = frs_get_can_tx();
-    if (!tx || len > 7 || len == 0) return -1;
+    if (!tx || !payload || len > 7 || len == 0) return -1;
 
     uint8_t frame[8];
     memset(frame, 0xAA, 8);  // padding

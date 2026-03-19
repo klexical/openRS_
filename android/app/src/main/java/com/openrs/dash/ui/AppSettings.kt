@@ -77,11 +77,18 @@ object AppSettings {
 
     // ── Read helpers ────────────────────────────────────────────────────────
 
-    fun getHost(ctx: Context): String =
-        prefs(ctx).getString(KEY_HOST, DEFAULT_HOST) ?: DEFAULT_HOST
+    fun getHost(ctx: Context): String {
+        val p = prefs(ctx)
+        val stored = p.getString(KEY_HOST, null)
+        if (stored != null) return stored
+        return if (getAdapterType(ctx) == "MEATPI") DEFAULT_HOST_MEATPI else DEFAULT_HOST
+    }
 
-    fun getPort(ctx: Context): Int =
-        prefs(ctx).getInt(KEY_PORT, DEFAULT_PORT)
+    fun getPort(ctx: Context): Int {
+        val p = prefs(ctx)
+        if (p.contains(KEY_PORT)) return p.getInt(KEY_PORT, DEFAULT_PORT)
+        return if (getAdapterType(ctx) == "MEATPI") DEFAULT_PORT_MEATPI else DEFAULT_PORT
+    }
 
     fun getSpeedUnit(ctx: Context): String =
         prefs(ctx).getString(KEY_SPEED_UNIT, DEFAULT_SPEED_UNIT) ?: DEFAULT_SPEED_UNIT

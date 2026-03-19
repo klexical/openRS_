@@ -83,13 +83,14 @@ When pushing significant changes to `staging` that aren't ready for `main`:
 ### Firmware (per device)
 - Run `./firmware/verify-release.sh` — must pass before creating the release
 - Tag: `git tag fw-usb-vX.Y && git push origin fw-usb-vX.Y` (and/or `fw-pro-vX.Y`)
-- Create: `gh release create fw-usb-vX.Y firmware/release/bootloader.bin firmware/release/openrs-fw-usb_vXXX.bin firmware/release/ota_data_initial.bin firmware/release/partition-table.bin --title "openrs-fw USB vX.Y" --notes "<notes>"`
+- Create: `gh release create fw-usb-vX.Y firmware/release/bootloader_usb.bin firmware/release/openrs-fw-usb_vXXX.bin firmware/release/ota_data_initial_usb.bin firmware/release/partition-table_usb.bin --title "openrs-fw USB vX.Y" --notes "<notes>"` (use `_pro` suffixes for Pro releases)
 - USB and Pro get separate releases — versions may diverge over time
 - Reference firmware releases in the app release notes if both ship together
 
 ## 7. GitHub Issues Milestone
 - Check the milestone for this release (e.g. `v2.3.0 — Tech Debt + Polish`)
-- Verify all issues addressed in this release are closed (commits should auto-close via `fixes #N`)
+- Verify all implemented issues have staging comments per `issue-lifecycle.mdc` (use `refs #N` in commits, NOT `fixes #N`)
+- On stable release (staging merged to main): batch-close all shipped issues with `gh issue close <N> --comment "Shipped in <version>."`
 - Move any unfinished issues to the next milestone
 
 ## Quick Verification
@@ -102,4 +103,4 @@ Before creating the release, ask:
 - [ ] Is the APK attached to the GitHub release?
 - [ ] (Firmware) Does `./firmware/verify-release.sh` pass?
 - [ ] (Firmware) Is `BUILD_MANIFEST_<target>.json` committed alongside the binaries?
-- [ ] Are all addressed issues in the milestone closed?
+- [ ] Do all addressed issues have staging comments per `issue-lifecycle.mdc`?

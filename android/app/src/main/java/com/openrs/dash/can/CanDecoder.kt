@@ -100,7 +100,7 @@ object CanDecoder {
     // Motorola big-endian, 10-bit, start bit 17 (MSB). Extract: (data[2]&0x03)<<8|data[3], ×0.4 %
     // Confirmed from live log: raw=254 → 101.6 % (full tank). Range-filtered 0–110 %.
     // 12V battery voltage does NOT broadcast on HS-CAN — polled via Mode 01 PID 0x42 in WiCanConnection.
-    // TODO(M-5): Find correct PID for 12V battery voltage on Focus RS MK3 and add to PCM_QUERIES/parsePcmResponse.
+    // 12V battery voltage is now polled via PCM Mode 22 DID 0x0304 in ObdResponseParser (refs #92).
     const val ID_FUEL_LEVEL   = 0x380
 
     // BCMmsg_x360 (0x360): Odometer — bytes [5:6] big-endian, 16-bit unsigned, 1 km/bit.

@@ -11,8 +11,8 @@ import kotlin.math.sqrt
 data class VehicleState(
     // ── Engine (CAN Sniffed) ────────────────────────────────
     val rpm: Double = 0.0,
-    val coolantTempC: Double = -99.0,  // -99 = not yet received from 0x430/0x3E8
-    val oilTempC: Double = -99.0,      // -99 = not yet received from 0x3E8
+    val coolantTempC: Double = -99.0,  // -99 = not yet received (CAN 0x2F0 / 0x0F8)
+    val oilTempC: Double = -99.0,      // -99 = not yet received (CAN 0x0F8)
     val intakeTempC: Double = 0.0,
     val boostKpa: Double = 101.325,
     val throttlePct: Double = 0.0,
@@ -132,7 +132,8 @@ data class VehicleState(
     val isIdle: Boolean = false,
     val framesPerSecond: Double = 0.0,
     val lastUpdate: Long = 0L,
-    val dataMode: String = "CAN"   // "CAN" = WebSocket SLCAN passive monitoring
+    @Deprecated("Unused — always CAN. Remove in next major version.")
+    val dataMode: String = "CAN"
 ) {
     // ── Computed ─────────────────────────────────────────────
     val boostPsi: Double get() = (boostKpa - 101.325) * 0.14503773

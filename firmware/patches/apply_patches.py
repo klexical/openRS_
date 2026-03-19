@@ -143,6 +143,7 @@ static esp_err_t frs_post_handler(httpd_req_t *req)
         httpd_resp_send_500(req);
         return ESP_FAIL;
     }
+    buf[received] = '\0';
     cJSON *root = cJSON_Parse(buf);
     if (!root) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
@@ -421,8 +422,8 @@ def patch_can_tx(base, profile):
         "    twai_message_t msg;\n"
         "    memset(&msg, 0, sizeof(msg));\n"
         "    msg.identifier      = id;\n"
-        "    msg.data_length_code = dlc;\n"
-        "    memcpy(msg.data, data, dlc);\n"
+        "    msg.data_length_code = (dlc > 8) ? 8 : dlc;\n"
+        "    memcpy(msg.data, data, msg.data_length_code);\n"
         "    return (int)can_send(&msg, pdMS_TO_TICKS(tms));\n"
         "}\n"
     )

@@ -58,7 +58,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
         ) {
             // ── Title bar ────────────────────────────────────────────────────
             Row(
-                Modifier.fillMaxWidth().background(Color(0xFF141414), RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
+                Modifier.fillMaxWidth().background(SurfUp, RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
                     .padding(horizontal = 20.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -337,7 +337,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                         }
                     },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Color(0xFF0A0A0A))
+                    colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = OnAccent)
                 ) {
                     Text("SAVE", fontFamily = ShareTechMono, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 }
@@ -352,7 +352,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
 private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(
         Modifier.fillMaxWidth()
-            .background(Color(0xFF141414), RoundedCornerShape(8.dp))
+            .background(SurfUp, RoundedCornerShape(8.dp))
             .border(1.dp, Brd, RoundedCornerShape(8.dp))
             .padding(14.dp)
     ) {
@@ -386,7 +386,7 @@ private fun SettingsSwitchRow(label: String, checked: Boolean, onCheckedChange: 
             checked = checked,
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
-                checkedThumbColor  = Color(0xFF0A0A0A),
+                checkedThumbColor  = OnAccent,
                 checkedTrackColor  = LocalThemeAccent.current,
                 uncheckedThumbColor = Dim,
                 uncheckedTrackColor = Brd
@@ -421,7 +421,7 @@ fun SegmentedPicker(options: List<String>, selected: String, onSelect: (String) 
                     fontSize = 11.sp,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                     fontFamily = ShareTechMono,
-                    color = if (isSelected) Color(0xFF0A0A0A) else Dim
+                    color = if (isSelected) OnAccent else Dim
                 )
             }
         }

@@ -70,24 +70,10 @@ data class UserPrefs(
     // ── Theme system ────────────────────────────────────────────────────────
 
     /** Primary accent color for this RS paint theme (actual MK3 paint catalogue). */
-    val themeAccent: Color get() = when (themeId) {
-        "red"     -> Color(0xFFD62828)  // Race Red
-        "orange"  -> Color(0xFFD45500)  // Deep Orange (Heritage Edition)
-        "grey"    -> Color(0xFF6B7580)  // Stealth Grey
-        "black"   -> Color(0xFF3A3D44)  // Shadow Black
-        "white"   -> Color(0xFFE8ECF0)  // Frozen White
-        else      -> Color(0xFF0091EA)  // Nitrous Blue (default)
-    }
+    val themeAccent: Color get() = rsPaintAccent(themeId)
 
     /** Display name for the current theme. */
-    val themeName: String get() = when (themeId) {
-        "red"    -> "Race Red"
-        "orange" -> "Deep Orange"
-        "grey"   -> "Stealth Grey"
-        "black"  -> "Shadow Black"
-        "white"  -> "Frozen White"
-        else     -> "Nitrous Blue"
-    }
+    val themeName: String get() = rsPaintName(themeId)
 
     // ── Temperature thresholds (preset-based) ───────────────────────────────
 

@@ -177,7 +177,7 @@ import kotlin.math.roundToInt
         if (showClearConfirm) {
             AlertDialog(
                 onDismissRequest = { showClearConfirm = false },
-                containerColor = Color(0xFF141414),
+                containerColor = SurfUp,
                 titleContentColor = Frost,
                 textContentColor = Dim,
                 title = { Text("Clear All Fault Codes?", fontFamily = ShareTechMono, fontSize = 14.sp) },

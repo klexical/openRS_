@@ -41,7 +41,10 @@ static frs_state_t s_state = {
 
 void frs_init(void) {
     s_state_mutex = xSemaphoreCreateMutex();
-    configASSERT(s_state_mutex);
+    if (!s_state_mutex) {
+        ESP_LOGE(TAG, "FATAL: failed to create state mutex");
+        abort();
+    }
     frs_nvs_load(&s_state);
     frs_uds_init();
     ESP_LOGI(TAG, "openrs-fw %s — Focus RS module init", OPENRS_FW_VERSION);
@@ -147,6 +150,7 @@ static void frs_attempt_recovery(void) {
                 return;
             }
         }
+        ESP_LOGE(TAG, "TWAI RECOVERING wait timed out — bus may be offline");
     }
 }
 
