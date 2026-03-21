@@ -21,7 +21,7 @@ Forked from [`meatpiHQ/wican-fw`](https://github.com/meatpiHQ/wican-fw) — the 
 
 ### Focus RS additions (openrs-fw)
 - **Drive mode write** — send N/S/T/D directly from the app
-  - Simulates the physical drive mode button on CAN ID 0x305 (byte 4, bit 4)
+  - Simulates the physical drive mode button on CAN ID 0x305 (byte 4, bit 2)
   - Uses 0x420 to disambiguate Sport from Track (0x1B0 alone is ambiguous)
   - Persists selected mode to NVS — car boots in that mode next ignition on
 - **ESC control** — On / Sport / Off via CAN button simulation (0x260 byte 5, bit 4)

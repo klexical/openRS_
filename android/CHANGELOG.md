@@ -9,7 +9,8 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ## [v2.2.4] — 2026-03-19
 
-### Fixed (rc.10 — diagnostic log bug fixes)
+### Fixed (rc.10 — WiFi routing, diagnostic log bug fixes)
+- **REST API commands never reached firmware** — `FirmwareApi.kt` used a bare `Socket()` for HTTP POST to the WiCAN AP (192.168.80.1). Android 10+ detects the WiCAN WiFi as "no internet" and silently routes new sockets through cellular, causing all drive mode and ESC commands to time out. Now resolves the WiFi `Network` via `ConnectivityManager` and creates sockets through `Network.socketFactory`, guaranteeing traffic stays on the WiCAN WiFi regardless of internet validation. This was the root cause of both drive mode and ESC buttons being completely non-functional from the app.
 - **Ignition status showed raw number "30" instead of "RUN"** — `CanDecoder.kt` extracted ignition from 0x0C8 byte2 using wrong bit mask (`and 0x1F`, bits 0-4). Correct field is bits 3-6 (`(shr 3) and 0x0F`). Verified against SLCAN diagnostic: byte2=`0x3E` now correctly decodes to 7="Run". All 10 periodic samples validate.
 - **Odometer showed 109,756 km instead of correct 67,500 km** — `CanDecoder.kt` read 0x360 bytes[5:6] as a 16-bit wrapped odometer (44,220), then DID 0xDD01 added a +65,536 rollover offset → 109,756. The actual odometer is at bytes[3:5] as a full 24-bit value (frame `C4 C0 3F 01 07 AC BC B2` → `01 07 AC` = 67,500 km, matching the physical odometer exactly). Fixed to read 24-bit from bytes[3:5], eliminating the need for rollover offset entirely. DID 0xDD01 handler simplified to a straight 24-bit read (was already correct). Verified against real car diagnostic session (2026-03-21).
 - **Engine status 196 (0xC4) shown as hex instead of label** — added cold-start engine state to the incomplete value table (0x360 byte0). Display now correctly handles this uncatalogued state.

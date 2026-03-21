@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 // ── Firmware version (returned to Android app via OPENRS? probe) ───────────
-#define OPENRS_FW_VERSION   "v1.5"
+#define OPENRS_FW_VERSION   "v1.5-rc.5"
 
 // ── Drive mode values ──────────────────────────────────────────
 // Confirmed from live CAN log (0x1B0 byte6 upper nibble, DBC VAL_ 432):
@@ -33,9 +33,9 @@ extern "C" {
 // 0x1C0: ESC mode status (MSB-first bits 10–11, byte1 bits 5–4).
 #define FRS_CAN_ID_ESC_ABS          0x1C0
 // 0x305: drive mode BUTTON input frame.
-//   Byte 4 bit 4 = button pressed. Confirmed via SLCAN diagnostic 2026-03-21:
-//   physical press sets byte4 from 0x08 to 0x18 (bit 4 = 0x10).
-//   Previous bit 2 (0x04) was incorrect — produced 0x0C with no mode change.
+//   Byte 4 bit 2 = button pressed. Re-confirmed via SLCAN diagnostic 2026-03-21:
+//   physical press sets byte4 from 0x08 to 0x0C/0x0F (bit 2 = 0x04).
+//   Bit 4 (0x10) is a BCM status indicator for the mode selector GUI, not the button.
 #define FRS_CAN_ID_DRIVE_MODE_BTN   0x305
 // 0x260: body control frame — ESC button + Auto Start/Stop button.
 //   ESC Off button: byte 6 bit 4 (data[5] |= 0x10).
@@ -43,9 +43,9 @@ extern "C" {
 #define FRS_CAN_ID_BODY_CTRL        0x260
 
 // ── Button simulation parameters ───────────────────────────────
-// Drive mode button (0x305): byte index 4, bit 4
+// Drive mode button (0x305): byte index 4, bit 2
 #define FRS_DM_BTN_BYTE     4
-#define FRS_DM_BTN_BIT      0x10
+#define FRS_DM_BTN_BIT      0x04
 
 // ESC Off button (0x260): byte index 5, bit 4
 #define FRS_ESC_BTN_BYTE    5
