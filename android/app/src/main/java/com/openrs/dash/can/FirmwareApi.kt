@@ -1,5 +1,9 @@
 package com.openrs.dash.can
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
@@ -10,28 +14,46 @@ import java.net.Socket
 /**
  * Thin HTTP client for the openrs-fw REST API (`POST /api/frs`).
  *
- * Uses a raw TCP socket instead of OkHttp so the request always goes
- * over the WiCAN WiFi network. Android routes OkHttp/URLConnection
- * through cellular when the active WiFi has no internet — which is
- * always the case with the WiCAN AP.
+ * Creates sockets through the WiFi [Network]'s socket factory so
+ * Android routes traffic to the WiCAN AP even when it has no internet.
+ * Without explicit binding, Android 10+ silently routes new sockets
+ * through cellular, causing all commands to time out.
  */
 object FirmwareApi {
 
-    suspend fun setDriveMode(host: String, mode: Int): Result<Unit> =
-        post(host, """{"token":"openrs","driveMode":$mode}""")
+    suspend fun setDriveMode(ctx: Context, host: String, mode: Int): Result<Unit> =
+        post(ctx, host, """{"token":"openrs","driveMode":$mode}""")
 
-    suspend fun setEscMode(host: String, mode: Int): Result<Unit> =
-        post(host, """{"token":"openrs","escMode":$mode}""")
+    suspend fun setEscMode(ctx: Context, host: String, mode: Int): Result<Unit> =
+        post(ctx, host, """{"token":"openrs","escMode":$mode}""")
 
-    private suspend fun post(host: String, json: String): Result<Unit> =
+    private fun findWifiNetwork(ctx: Context): Network? {
+        val cm = ctx.getSystemService(ConnectivityManager::class.java)
+        val active = cm.activeNetwork
+        if (active != null) {
+            val caps = cm.getNetworkCapabilities(active)
+            if (caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true) return active
+        }
+        @Suppress("DEPRECATION")
+        for (net in cm.allNetworks) {
+            val caps = cm.getNetworkCapabilities(net) ?: continue
+            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return net
+        }
+        return null
+    }
+
+    private suspend fun post(ctx: Context, host: String, json: String): Result<Unit> =
         withContext(Dispatchers.IO) {
             try {
                 val port = if (':' in host) host.substringAfter(':').toInt() else 80
                 val hostname = host.substringBefore(':')
 
-                Socket().use { socket ->
-                    socket.connect(InetSocketAddress(hostname, port), 3_000)
-                    socket.soTimeout = 5_000
+                val wifi = findWifiNetwork(ctx)
+                val socket = wifi?.socketFactory?.createSocket() ?: Socket()
+
+                socket.use { s ->
+                    s.connect(InetSocketAddress(hostname, port), 3_000)
+                    s.soTimeout = 5_000
 
                     val request = "POST /api/frs HTTP/1.1\r\n" +
                         "Host: $host\r\n" +
@@ -41,12 +63,12 @@ object FirmwareApi {
                         "\r\n" +
                         json
 
-                    socket.getOutputStream().apply {
+                    s.getOutputStream().apply {
                         write(request.toByteArray(Charsets.ISO_8859_1))
                         flush()
                     }
 
-                    val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+                    val reader = BufferedReader(InputStreamReader(s.getInputStream()))
                     val statusLine = reader.readLine() ?: ""
                     if (statusLine.contains("200")) Result.success(Unit)
                     else Result.failure(RuntimeException(statusLine))

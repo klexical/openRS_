@@ -100,7 +100,7 @@ import kotlinx.coroutines.withContext
                                 .clickable(enabled = canControl && !isActive) {
                                     pendingDriveMode = mode
                                     scope.launch {
-                                        val result = FirmwareApi.setDriveMode(host, mode.toFirmwareInt())
+                                        val result = FirmwareApi.setDriveMode(ctx, host, mode.toFirmwareInt())
                                         if (result.isFailure) {
                                             snackbarHostState.showSnackbar("Drive mode command failed")
                                         }
@@ -155,7 +155,7 @@ import kotlinx.coroutines.withContext
                                 .clickable(enabled = canControl && !isActive) {
                                     pendingEsc = status
                                     scope.launch {
-                                        val result = FirmwareApi.setEscMode(host, status.toFirmwareInt())
+                                        val result = FirmwareApi.setEscMode(ctx, host, status.toFirmwareInt())
                                         if (result.isFailure) {
                                             snackbarHostState.showSnackbar("ESC command failed")
                                         }
