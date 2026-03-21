@@ -24,10 +24,32 @@ object ObdConstants {
     const val BCM_QUERY_TPMS_RF   = "t72680322281400000000\r"
     const val BCM_QUERY_TPMS_LR   = "t72680322281600000000\r"
     const val BCM_QUERY_TPMS_RR   = "t72680322281500000000\r"
+
+    // TPMS "last received sensor" — returns sensor ID + pressure + temp in one
+    // multi-frame response (12 bytes). Polled every BCM cycle; each response
+    // contains whichever tire the BCM heard from most recently.
+    const val BCM_QUERY_TPMS_LAST = "t72680322280B00000000\r"
+
     val BCM_QUERIES = listOf(
         BCM_QUERY_SOC, BCM_QUERY_BATT_TEMP, BCM_QUERY_CABIN_TEMP,
-        BCM_QUERY_TPMS_LF, BCM_QUERY_TPMS_RF, BCM_QUERY_TPMS_LR, BCM_QUERY_TPMS_RR
+        BCM_QUERY_TPMS_LF, BCM_QUERY_TPMS_RF, BCM_QUERY_TPMS_LR, BCM_QUERY_TPMS_RR,
+        BCM_QUERY_TPMS_LAST
     )
+
+    // TPMS sensor ID queries — polled once on connect to build the ID→position map.
+    // Each returns a 4-byte sensor ID in a single-frame response.
+    const val BCM_QUERY_TPMS_ID_LF = "t72680322280F00000000\r"
+    const val BCM_QUERY_TPMS_ID_RF = "t72680322281000000000\r"
+    const val BCM_QUERY_TPMS_ID_RR = "t72680322281100000000\r"
+    const val BCM_QUERY_TPMS_ID_LR = "t72680322281200000000\r"
+    val BCM_TPMS_ID_QUERIES = listOf(
+        BCM_QUERY_TPMS_ID_LF, BCM_QUERY_TPMS_ID_RF,
+        BCM_QUERY_TPMS_ID_RR, BCM_QUERY_TPMS_ID_LR
+    )
+
+    // ISO-TP Flow Control frame sent to BCM (0x726) after receiving a First Frame
+    const val BCM_FLOW_CONTROL = "t72683000000000000000\r"
+
     const val BCM_QUERY_ODOMETER   = "t72680322DD0100000000\r"
     const val BCM_POLL_INTERVAL_MS = 30_000L
     const val BCM_QUERY_GAP_MS     =    300L
