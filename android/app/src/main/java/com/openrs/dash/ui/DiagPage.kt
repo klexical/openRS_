@@ -450,6 +450,7 @@ internal fun engineStatusLabel(v: Int): String = when (v) {
     183 -> "Running"
     186 -> "Kill"
     191 -> "Start"
+    196 -> "Warmup"
     else -> "0x%02X".format(v)
 }
 

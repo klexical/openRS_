@@ -123,5 +123,5 @@ All formulas re-validated against DigiCluster `can0_hs.json` and `can1_ms.json`.
 | 0x2C0 | AWD L/R torque | 12-bit words scaled | DigiCluster HS-CAN |
 | 0x2F0 | Coolant temp, IAT | coolant: `((B4&0x03)<<8\|B5) − 60 °C`; IAT: `((B6&0x03)<<8\|B7) × 0.25 − 127 °C` | RS_HS.dbc PCMmsg16 |
 | 0x340 | Ambient temp (PCMmsg17) | `byte7 signed × 0.25 °C` — **not** TPMS | RS_HS.dbc PCMmsg17 |
-| 0x360 | Odometer (km), engine status | odo: `(data[5]<<8\|data[6])` — 16-bit BE, 1 km/bit; engine: `data[0]` (0=Idle, 2=Off, 183=Running, 186=Kill, 191=RecentStart) | RS_HS.dbc + community [#102](https://github.com/klexical/openRS_/discussions/102) |
+| 0x360 | Odometer (km), engine status | odo: `(data[3]<<16\|data[4]<<8\|data[5])` — 24-bit BE, 1 km/bit; engine: `data[0]` (0=Idle, 2=Off, 183=Running, 186=Kill, 191=RecentStart, 196=Warmup) | RS_HS.dbc + community [#102](https://github.com/klexical/openRS_/discussions/102) |
 | 0x380 | Fuel level % (FuelLevelFiltered) | Motorola 10-bit: `((data[2]&0x03)<<8\|data[3]) × 0.4` | RS_HS.dbc PCMmsg30 |

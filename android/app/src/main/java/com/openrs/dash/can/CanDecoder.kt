@@ -103,11 +103,11 @@ object CanDecoder {
     // 12V battery voltage is now polled via PCM Mode 22 DID 0x0304 in ObdResponseParser (refs #92).
     const val ID_FUEL_LEVEL   = 0x380
 
-    // BCMmsg_x360 (0x360): Odometer — bytes [5:6] big-endian, 16-bit unsigned, 1 km/bit.
-    // ~5 Hz broadcast. Replaces Mode 22 DID 0xDD01 for real-time updates.
-    // Range: 0–65,535 km. Cars over 65K km need Mode 22 once on connect for rollover offset.
+    // BCMmsg_x360 (0x360): Odometer — bytes [3:5] big-endian, 24-bit unsigned, 1 km/bit.
+    // ~5 Hz broadcast. Full 24-bit value matches DID 0xDD01 exactly (no rollover needed).
     // Community-verified: Discussion #102 (@adamsouthern, 14-point linear test on 40K km car).
-    // Cross-confirmed from our own diagnostic logs (42K km car, tests 2026-03-16 and 2026-03-18).
+    // Corrected byte offset: was [5:6] (16-bit), now [3:5] (24-bit). Verified against
+    // real car at 67,500 km: bytes 01 07 AC = 67500 km (diagnostic session 2026-03-21).
     const val ID_ODOMETER     = 0x360
 
     private val KNOWN_IDS = setOf(
@@ -264,13 +264,14 @@ object CanDecoder {
                 state.copy(brakePressure = brakeRaw / 40.95, lastUpdate = now)
             } else null
 
-            // ── 0x0C8: Gauge illumination + e-brake ───────────────────────────
+            // ── 0x0C8: Gauge illumination + e-brake + ignition ─────────────────
             // Brightness: bits 0-4 of byte0  [DigiCluster verified]
             // E-brake:    bit 6 of byte3      [DigiCluster verified]
+            // Ignition:   bits 3-6 of byte2   [Confirmed via SLCAN: 0x3E→7=Run, 0x3A→7=Run]
             ID_GAUGE_ILLUM -> if (n >= 4) state.copy(
                 gaugeIllumination = data[0].toInt() and 0x1F,
                 eBrake            = (data[3].toInt() and 0x40) != 0,
-                ignitionStatus    = if (n >= 3) (ubyte(data, 2) and 0x1F) else state.ignitionStatus,
+                ignitionStatus    = if (n >= 3) ((ubyte(data, 2) shr 3) and 0x0F) else state.ignitionStatus,
                 lastUpdate        = now
             ) else null
 
@@ -376,13 +377,14 @@ object CanDecoder {
             ) else null
 
             // ── 0x360: Odometer (passive broadcast) ─────────────────────────
-            // BCMmsg_x360: bytes [5:6] big-endian, 16-bit unsigned, 1 km/bit.
-            // odometerRolloverOffset is set once from Mode 22 (24-bit) on connect;
-            // it's 0 for cars under 65,536 km.
-            ID_ODOMETER -> if (n >= 7) {
-                val km16 = word(data, 5).toLong()
+            // BCMmsg_x360: bytes [3:5] big-endian, 24-bit unsigned, 1 km/bit.
+            // Full odometer — no rollover offset needed.
+            ID_ODOMETER -> if (n >= 6) {
+                val km24 = ((ubyte(data, 3).toLong() shl 16) or
+                            (ubyte(data, 4).toLong() shl 8) or
+                             ubyte(data, 5).toLong())
                 state.copy(
-                    odometerKm = km16 + state.odometerRolloverOffset,
+                    odometerKm = km24,
                     engineStatus = ubyte(data, 0),
                     lastUpdate = now
                 )

@@ -57,6 +57,11 @@ Instead of creating a new release, **update the existing one**:
    gh release upload android-v2.2.4-rc.8 android/app/build/outputs/apk/release/openRS_v2.2.4.apk
    ```
 
+4. **Ensure the release is not in draft** (tag moves can flip it to draft):
+   ```bash
+   gh release edit android-v2.2.4-rc.8 --draft=false --prerelease
+   ```
+
 ### Result
 - Only **one pre-release per version stream** exists at any time
 - The release notes contain the full cumulative changelog (current RC + "Previous RCs" section)

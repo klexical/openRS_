@@ -89,7 +89,7 @@ All data is received passively from the CAN bus via WebSocket SLCAN at ~2100 fps
 | 0x2C0 | AWD L/R rear torque (Nm) | RS_HS.dbc |
 | 0x2F0 | Coolant temp, Intake Air Temp (IAT) | RS_HS.dbc PCMmsg16 |
 | 0x340 | Ambient temperature only (byte 7 signed × 0.25 °C) — **not** TPMS | RS_HS.dbc PCMmsg17 |
-| 0x360 | Odometer, **engine status** — odo: bytes [5:6] BE, 16-bit, 1 km/bit (~5 Hz); engine: byte 0 (0=Idle, 2=Off, 183=Running, 186=Kill, 191=RecentStart) | RS_HS.dbc + community [#102](https://github.com/klexical/openRS_/discussions/102) |
+| 0x360 | Odometer, **engine status** — odo: bytes [3:5] BE, 24-bit, 1 km/bit (~5 Hz); engine: byte 0 (0=Idle, 2=Off, 183=Running, 186=Kill, 191=RecentStart, 196=Warmup) | RS_HS.dbc + community [#102](https://github.com/klexical/openRS_/discussions/102) |
 | 0x380 | Fuel level % (FuelLevelFiltered — Motorola 10-bit, factor 0.4 %) | RS_HS.dbc PCMmsg30 |
 
 > **Note:** `0x230` (gear position) and `0x3C0` (battery voltage) do not broadcast on this vehicle. Battery voltage is polled via OBD. Gear display has been removed.

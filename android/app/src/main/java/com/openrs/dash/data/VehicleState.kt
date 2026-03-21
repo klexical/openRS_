@@ -104,11 +104,11 @@ data class VehicleState(
     val reverseStatus: Boolean = false,    // Reverse gear engaged
     val launchControlActive: Boolean = false, // 0x420 bit 50: launch control armed
     val engineStatus: Int = -1,            // 0x360 byte 0: 0=Idle, 2=Off, 183=Running, 186=Kill, 191=RecentStart
-    val ignitionStatus: Int = -1,          // 0x0C8 byte2 bits 0-4: 0=KeyOut..7=Running..9=Cranking
+    val ignitionStatus: Int = -1,          // 0x0C8 byte2 bits 3-6: 0=KeyOut..7=Running..9=Cranking
 
     // ── BCM OBD (Mode 22 via BCM 0x726) ────────────────────
-    val odometerKm: Long = -1L,            // 0x360 passive (16-bit) + rollover offset, or 0x22DD01 (24-bit)
-    val odometerRolloverOffset: Long = 0,  // (mode22 / 65536) * 65536 — set once from Mode 22
+    val odometerKm: Long = -1L,            // 0x360 bytes[3:5] 24-bit, or 0x22DD01 24-bit (once on connect)
+    val odometerRolloverOffset: Long = 0,  // legacy — kept for CanDataService merge compat
     val batterySoc: Double = -1.0,         // 0x224028: B4 % (start/stop SoC)
     val batteryTempC: Double = -99.0,      // 0x224029: B4-40 °C (12V battery)
     val cabinTempC: Double = -99.0,        // 0x22DD04: (B4×10/9)-45 °C (interior)

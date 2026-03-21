@@ -270,9 +270,9 @@ class ObdResponseParserTest {
     // ── BCM Responses (0x72E) ───────────────────────────────────────────────
 
     @Test
-    fun `BCM - odometer`() {
-        // DID 0xDD01: 3-byte km = (B4 << 16) | (B5 << 8) | B6
-        // 50000 km = 0x00C350 -> B4=0x00, B5=0xC3, B6=0x50
+    fun `BCM - odometer sub-65K`() {
+        // DID 0xDD01: 3-byte = (B4 << 16) | (B5 << 8) | B6
+        // 50,000 km = 0x00C350
         var result: VehicleState? = null
         ObdResponseParser.parseBcmResponse(
             makeResponse(0xDD, 0x01, 0x00, 0xC3, 0x50),
@@ -280,6 +280,18 @@ class ObdResponseParserTest {
         ) { result = it }
         assertNotNull(result)
         assertEquals(50000L, result!!.odometerKm)
+    }
+
+    @Test
+    fun `BCM - odometer above 65K`() {
+        // Real car: 67,500 km = 0x0107AC → B4=0x01, B5=0x07, B6=0xAC
+        var result: VehicleState? = null
+        ObdResponseParser.parseBcmResponse(
+            makeResponse(0xDD, 0x01, 0x01, 0x07, 0xAC.toByte().toInt()),
+            blank
+        ) { result = it }
+        assertNotNull(result)
+        assertEquals(67500L, result!!.odometerKm)
     }
 
     @Test
