@@ -6,6 +6,11 @@ All notable changes to the openrs-fw firmware are documented here.
 
 ## v1.5 — 2026-03-18
 
+### Fixed (rc.5 — drive mode + odometer + ignition from diagnostic analysis)
+- **Drive mode button simulation used wrong bit** — `FRS_DM_BTN_BIT` was `0x04` (bit 2) but the physical drive mode button is **bit 4 (`0x10`)**. SLCAN diagnostic confirmed: physical press sets byte4 from `0x08` to `0x18` (bit 4). Firmware injections using bit 2 (`0x0C`) produced zero mode changes. ([diagnostic log 2026-03-21])
+- **Sport/Track disambiguation missing from firmware** — 0x1B0 reports nibble=1 for both Sport and Track. Added 0x420 parsing (`mode_420_detail` byte7 bit0: 0=Sport, 1=Track) to firmware CAN decoder, matching the Android app's two-frame resolution. Prevents wrong cycle-distance calculation when car is in Track but firmware thinks Sport.
+- **ESC injection enhanced logging** — added diagnostic logging to `frs_set_esc()` entry point (pending state, frame validity, current mode) to trace why ESC injection was never observed in diagnostic logs.
+
 ### Fixed (rc.4 — full repo audit hardening)
 - **CAN TX shim missing DLC bounds check** — `openrs_can_tx` in `apply_patches.py` did not validate `dlc <= 8` before `memcpy(msg.data, data, dlc)`. A malformed call could overflow `msg.data`. Now clamps to 8 and copies only `msg.data_length_code` bytes.
 - **Mutex creation not guarded** — `configASSERT(s_state_mutex)` in `frs_init()` is a no-op in release builds. If `xSemaphoreCreateMutex()` returns NULL, subsequent operations would crash. Now uses explicit NULL check with `ESP_LOGE` + `abort()`.

@@ -33,8 +33,9 @@ extern "C" {
 // 0x1C0: ESC mode status (MSB-first bits 10–11, byte1 bits 5–4).
 #define FRS_CAN_ID_ESC_ABS          0x1C0
 // 0x305: drive mode BUTTON input frame.
-//   Byte 5 bit 2 = button pressed. Confirmed on 2018 Focus RS via SLCAN log.
-//   Steady state: byte[4]=0x08; pressed: byte[4]=0x0C.
+//   Byte 4 bit 4 = button pressed. Confirmed via SLCAN diagnostic 2026-03-21:
+//   physical press sets byte4 from 0x08 to 0x18 (bit 4 = 0x10).
+//   Previous bit 2 (0x04) was incorrect — produced 0x0C with no mode change.
 #define FRS_CAN_ID_DRIVE_MODE_BTN   0x305
 // 0x260: body control frame — ESC button + Auto Start/Stop button.
 //   ESC Off button: byte 6 bit 4 (data[5] |= 0x10).
@@ -42,9 +43,9 @@ extern "C" {
 #define FRS_CAN_ID_BODY_CTRL        0x260
 
 // ── Button simulation parameters ───────────────────────────────
-// Drive mode button (0x305): byte index 4, bit 2
+// Drive mode button (0x305): byte index 4, bit 4
 #define FRS_DM_BTN_BYTE     4
-#define FRS_DM_BTN_BIT      0x04
+#define FRS_DM_BTN_BIT      0x10
 
 // ESC Off button (0x260): byte index 5, bit 4
 #define FRS_ESC_BTN_BYTE    5
@@ -80,6 +81,7 @@ extern "C" {
 typedef struct {
     uint8_t  drive_mode;          // Current drive mode from CAN (FRS_MODE_*)
     uint8_t  boot_mode;           // Drive mode to apply on next ignition (NVS)
+    uint8_t  mode_420_detail;     // 0x420 byte7 — bit0 disambiguates Sport(0)/Track(1)
     uint8_t  esc_mode;            // Current ESC mode from CAN (FRS_ESC_*)
     uint8_t  boot_esc;            // ESC mode to apply on next ignition (NVS)
     bool     lc_enabled;          // Launch control
