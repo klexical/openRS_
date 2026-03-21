@@ -65,10 +65,10 @@ data class VehicleState(
     val tirePressRF: Double = -1.0,        // 0x2814: RF pressure (PSI)
     val tirePressLR: Double = -1.0,        // 0x2816: LR pressure (PSI)
     val tirePressRR: Double = -1.0,        // 0x2815: RR pressure (PSI)
-    val tireTempLF: Double = -99.0,        // 0x2823: LF temp (°F) — experimental
-    val tireTempRF: Double = -99.0,        // 0x2824: RF temp (°F) — experimental
-    val tireTempLR: Double = -99.0,        // 0x2826: LR temp (°F) — experimental
-    val tireTempRR: Double = -99.0,        // 0x2825: RR temp (°F) — experimental
+    val tireTempLF: Double = -99.0,        // TPMS sensor temp (°C); -99 = not yet received
+    val tireTempRF: Double = -99.0,        // TPMS sensor temp (°C); -99 = not yet received
+    val tireTempLR: Double = -99.0,        // TPMS sensor temp (°C); -99 = not yet received
+    val tireTempRR: Double = -99.0,        // TPMS sensor temp (°C); -99 = not yet received
 
     // ── Dynamics (CAN Sniffed) ──────────────────────────────
     val speedKph: Double = 0.0,
@@ -231,6 +231,8 @@ data class VehicleState(
 
     /** TPMS valid checks */
     val hasTpmsData: Boolean get() = tirePressLF >= 0
+    val hasTireTempData: Boolean get() =
+        tireTempLF > -90 || tireTempRF > -90 || tireTempLR > -90 || tireTempRR > -90
     /**
      * M-3 fix: warn only on tires that have valid data (≥ 0).
      * Tires still carrying their −1.0 sentinel (no sensor, dead battery, or not yet polled)
