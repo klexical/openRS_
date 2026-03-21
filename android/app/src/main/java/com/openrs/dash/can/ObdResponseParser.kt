@@ -57,6 +57,69 @@ object ObdResponseParser {
                     else   -> currentState.copy(tirePressRR = psi)
                 })
             }
+            // TPMS sensor IDs — 4-byte ID per tire position, polled once on connect
+            0x280F, 0x2810, 0x2811, 0x2812 -> {
+                if (data.size < 8) return
+                val sensorId = ((b4.toLong() shl 24) or
+                    ((data[5].toInt() and 0xFF).toLong() shl 16) or
+                    ((data[6].toInt() and 0xFF).toLong() shl 8) or
+                    (data[7].toInt() and 0xFF).toLong())
+                onObdUpdate(when (did) {
+                    0x280F -> currentState.copy(tpmsSensorIdLF = sensorId)
+                    0x2810 -> currentState.copy(tpmsSensorIdRF = sensorId)
+                    0x2811 -> currentState.copy(tpmsSensorIdRR = sensorId)
+                    else   -> currentState.copy(tpmsSensorIdLR = sensorId)
+                })
+            }
+        }
+    }
+
+    /**
+     * Parse a reassembled multi-frame BCM response (ISO-TP payload without PCI byte).
+     *
+     * Used for DID 0x280B "last received TPMS sensor" which returns 12 bytes:
+     *   [0x62] [DID hi] [DID lo] [ID0..ID3] [press_hi] [press_lo] [temp] [status] [checksum]
+     *
+     * The 4-byte sensor ID is matched against the stored per-tire IDs from
+     * 0x280F-0x2812 to determine which tire position the data belongs to.
+     * Pressure formula: (A*256+B) / 20  PSI
+     * Temperature formula: raw - 40  °C
+     */
+    fun parseBcmReassembled(
+        payload: ByteArray,
+        currentState: VehicleState,
+        onObdUpdate: (VehicleState) -> Unit
+    ) {
+        if (payload.size < 4) return
+        if ((payload[0].toInt() and 0xFF) != 0x62) return
+        val did = ((payload[1].toInt() and 0xFF) shl 8) or (payload[2].toInt() and 0xFF)
+        when (did) {
+            0x280B -> {
+                if (payload.size < 10) {
+                    logMalformed("BCM-MF", payload, "0x280B too short (${payload.size} < 10)")
+                    return
+                }
+                val sensorId = ((payload[3].toInt() and 0xFF).toLong() shl 24) or
+                    ((payload[4].toInt() and 0xFF).toLong() shl 16) or
+                    ((payload[5].toInt() and 0xFF).toLong() shl 8) or
+                    (payload[6].toInt() and 0xFF).toLong()
+                val tempRaw = payload[9].toInt() and 0xFF
+                val tempC = (tempRaw - 40).toDouble()
+                if (tempC < -40 || tempC > 120) return
+
+                val s = currentState
+                val updated = when (sensorId) {
+                    s.tpmsSensorIdLF -> s.copy(tireTempLF = tempC)
+                    s.tpmsSensorIdRF -> s.copy(tireTempRF = tempC)
+                    s.tpmsSensorIdRR -> s.copy(tireTempRR = tempC)
+                    s.tpmsSensorIdLR -> s.copy(tireTempLR = tempC)
+                    else -> {
+                        Log.d(TAG, "0x280B unknown sensor ID %08X".format(sensorId))
+                        null
+                    }
+                }
+                if (updated != null) onObdUpdate(updated)
+            }
         }
     }
 

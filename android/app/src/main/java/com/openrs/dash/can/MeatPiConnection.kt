@@ -95,10 +95,15 @@ class MeatPiConnection(
                     connectionSucceeded = true
                     connectedAtMs = System.currentTimeMillis()
                     failedAttempts = 0
+                    val bcmIsoTp = IsoTpBuffer()
 
                     // ── BCM OBD poller ────────────────────────────────────────
                     val obdJob = launch {
                         delay(ObdConstants.BCM_INITIAL_DELAY_MS)
+                        ObdConstants.BCM_TPMS_ID_QUERIES.forEach { q ->
+                            try { sendFrame(out, q) } catch (_: Exception) { }
+                            delay(ObdConstants.BCM_QUERY_GAP_MS)
+                        }
                         while (isActive) {
                             ObdConstants.BCM_QUERIES.forEach { q ->
                                 try { sendFrame(out, q) } catch (_: Exception) { }
@@ -211,7 +216,14 @@ class MeatPiConnection(
                             }
 
                             if (frame.first == ObdConstants.BCM_RESPONSE_ID) {
-                                ObdResponseParser.parseBcmResponse(frame.second, getCurrentState(), onObdUpdate)
+                                val (reassembled, isFF, isSF) = bcmIsoTp.feed(frame.second)
+                                if (isFF) {
+                                    try { sendFrame(out, ObdConstants.BCM_FLOW_CONTROL) } catch (_: Exception) {}
+                                }
+                                if (reassembled != null) {
+                                    if (isSF) ObdResponseParser.parseBcmResponse(frame.second, getCurrentState(), onObdUpdate)
+                                    else      ObdResponseParser.parseBcmReassembled(reassembled, getCurrentState(), onObdUpdate)
+                                }
                                 continue
                             }
                             if (frame.first == ObdConstants.AWD_RESPONSE_ID) {

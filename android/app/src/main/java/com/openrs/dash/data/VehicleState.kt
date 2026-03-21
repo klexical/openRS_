@@ -69,6 +69,10 @@ data class VehicleState(
     val tireTempRF: Double = -99.0,        // TPMS sensor temp (°C); -99 = not yet received
     val tireTempLR: Double = -99.0,        // TPMS sensor temp (°C); -99 = not yet received
     val tireTempRR: Double = -99.0,        // TPMS sensor temp (°C); -99 = not yet received
+    val tpmsSensorIdLF: Long = -1L,        // 0x280F: 4-byte TPMS sensor ID for LF
+    val tpmsSensorIdRF: Long = -1L,        // 0x2810: 4-byte TPMS sensor ID for RF
+    val tpmsSensorIdRR: Long = -1L,        // 0x2811: 4-byte TPMS sensor ID for RR
+    val tpmsSensorIdLR: Long = -1L,        // 0x2812: 4-byte TPMS sensor ID for LR
 
     // ── Dynamics (CAN Sniffed) ──────────────────────────────
     val speedKph: Double = 0.0,
