@@ -165,7 +165,7 @@ class WiCanConnection(
                 }
                 1 -> {
                     totalLen = ((data[0].toInt() and 0x0F) shl 8) or (data[1].toInt() and 0xFF)
-                    val firstBytes = minOf(6, data.size - 2)
+                    val firstBytes = minOf(6, totalLen, data.size - 2)  // cap by totalLen (#129)
                     if (firstBytes > 0) buf.write(data, 2, firstBytes)
                     received = firstBytes
                     try { sendWsText(out, buildFlowControlFrame(requestId)) } catch (_: Exception) { }

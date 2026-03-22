@@ -422,7 +422,7 @@ class MeatPiConnection(
                 }
                 1 -> {
                     totalLen = ((data[0].toInt() and 0x0F) shl 8) or (data[1].toInt() and 0xFF)
-                    val fb = minOf(6, data.size - 2); if (fb > 0) buf.write(data, 2, fb); received = fb
+                    val fb = minOf(6, totalLen, data.size - 2); if (fb > 0) buf.write(data, 2, fb); received = fb  // cap by totalLen (#129)
                     val fcFrame = "t%03X83000000000000000\r".format(requestId)
                     try { sendFrame(out, fcFrame) } catch (_: Exception) { }
                 }
