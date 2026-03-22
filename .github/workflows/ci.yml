@@ -86,11 +86,20 @@ jobs:
       - name: Build release APK
         run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon
 
+      # Gradle renames release APKs to openRS_v{versionName}.apk (see app/build.gradle.kts)
+      - name: Verify release APK exists
+        run: |
+          ls -la android/app/build/outputs/apk/release/openRS_v*.apk
+          test -n "$(ls android/app/build/outputs/apk/release/openRS_v*.apk 2>/dev/null)" || {
+            echo "::error::Expected openRS_v*.apk in release/ — check build.gradle.kts outputFileName"
+            exit 1
+          }
+
       - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
           name: openRS-release
-          path: android/app/build/outputs/apk/release/*.apk
+          path: android/app/build/outputs/apk/release/openRS_v*.apk
           retention-days: 30
 
   publish-release:
