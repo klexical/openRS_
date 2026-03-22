@@ -1,0 +1,23 @@
+---
+description: Browser emulator changes bypass staging — push directly to main
+alwaysApply: true
+globs:
+  - android/browser-emulator/**
+---
+
+# Browser Emulator Workflow
+
+The browser emulator (`android/browser-emulator/`) is a standalone HTML demo with no build step, no tests, and no impact on app or firmware artifacts. It does **not** go through the staging branch.
+
+## Rules
+
+1. **Push emulator changes directly to `main`** — never to `staging`
+2. If you are on `staging` when making emulator changes, `git checkout main`, commit there, then switch back
+3. Emulator updates do **not** require a new release tag or GitHub Release — they are documentation/demo artifacts
+4. The emulator must stay in sync with the latest stable Android app release (see `release-documentation.mdc`)
+
+## When to update the emulator
+
+- After every stable Android release that changes UI layout, tabs, data cells, or settings
+- When new features (tabs, hero cards, sections, settings pickers) ship in the app
+- See the checklist in `release-documentation.mdc` for the full list of touchpoints
