@@ -40,7 +40,7 @@
 | 8.4 | DBC file export | Dev & Reliability | Medium | Medium | `idea` |
 | 8.5 | WiCAN Pro GPS heatmap | Dev & Reliability | Long | High | `idea` |
 | — | Brake pressure calibration | Data & Analysis | Near | Medium | `idea` |
-| — | Tire temp PIDs (0x2823–26) | Data & Analysis | Near | Medium | `idea` |
+| — | Tire temperatures (BCM 0x280B + sensor IDs 0x280F–0x2812; 0x2823–0x2826 unsupported) | Data & Analysis | Near | Medium | `shipped` v2.2.4 [#119](https://github.com/klexical/openRS_/issues/119) |
 | — | Predictive alerts | Data & Analysis | Medium | Medium | `idea` |
 | — | Session replay | Data & Analysis | Medium | Medium | `idea` |
 | — | Launch control stats | Track Day | Long | Medium | `idea` |
@@ -49,7 +49,7 @@
 | — | openRS\_ cloud sessions | Community | Long | Medium | `idea` |
 | — | GPS sector heatmap per param | Dev & Reliability | Long | High | `idea` |
 
-**Status key:** `idea` · `specified` · `in-progress` · `shipped`
+**Status key:** `idea` · `specified` · `in-progress` · `shipped` (may include issue links; shipped scope can differ from the original issue title if the approach changed.)
 
 ---
 
@@ -1021,7 +1021,7 @@ section. They are captured here for completeness.
 | Feature | Horizon | Priority | Notes |
 |---------|---------|----------|-------|
 | Brake pressure calibration | Near | Medium | ADC mapping UI for raw 0-4095 from 0x252 |
-| Tire temp PIDs (0x2823-26) | Near | Medium | Experimental BCM PIDs — needs hardware verification |
+| Tire temperatures (BCM Mode 22) | Near | Medium | **Shipped v2.2.4** — [#119](https://github.com/klexical/openRS_/issues/119). Per-tire PIDs 0x2823–0x2826 are unsupported on this BCM; app uses 0x280B + 0x280F–0x2812. See `android/docs/pid-reference.md`. |
 | Predictive alerts | Medium | Medium | Rules engine on live data (e.g. "oil temp rising fast") |
 | Session replay | Medium | Medium | SLCAN playback transport through existing decoder |
 | Launch control stats | Long | Medium | Per-launch table + correlation |
@@ -1036,4 +1036,4 @@ section. They are captured here for completeness.
 appropriate labels (`enhancement`, priority, area) and link it back to this
 document. Update the Status column in the overview table to `in-progress`.*
 
-*Last updated: March 2026 — v2.2.x baseline*
+*Last updated: March 2026 — tire temp row marked shipped (v2.2.4, #119); v2.2.x baseline for other items*
