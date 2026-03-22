@@ -313,7 +313,7 @@ android/
 ├── browser-emulator/
 │   └── index.html                        # Standalone browser emulator (v2.2.4)
 ├── docs/
-│   ├── focus-rs-a4.png                   # Focus RS wireframe source (TPMS UI)
+│   ├── images/focus-rs-a4.png             # Focus RS wireframe source (TPMS UI)
 │   ├── hardware-setup.md
 │   ├── firmware-update.md
 │   ├── pid-reference.md
