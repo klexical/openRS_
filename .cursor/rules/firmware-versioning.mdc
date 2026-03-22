@@ -8,38 +8,52 @@ alwaysApply: false
 
 ## Two independent version lines
 
-| Target | Hardware | Version line | App display format |
-|--------|----------|-------------|-------------------|
-| USB | WiCAN USB-C3 (ESP32-C3) | `v1.5.x` | `openRS_ USB v1.5-rc.5` |
-| PRO | WiCAN Pro (ESP32-S3) | `v1.0.x` | `openRS_ PRO v1.0` |
+| Target | Hardware | Version line | App display | Binary filename | Release tag |
+|--------|----------|-------------|-------------|-----------------|-------------|
+| USB | WiCAN USB-C3 (ESP32-C3) | `v1.5.x` | `openRS_ USB v1.5` | `openrs-fw-usb_v1.5.bin` | `fw-usb-v1.5` |
+| PRO | WiCAN Pro (ESP32-S3) | `v1.0.x` | `openRS_ PRO v1.0` | `openrs-fw-pro_v1.0.bin` | `fw-pro-v1.0` |
 
 USB and PRO are **separate products** with independent version numbers. They share the same `focusrs` component source but have different upstream bases, SoCs, and release cadences.
 
-## Version string locations
+## Checklist when bumping a version
 
-Two places define the version string. **Both must match** for each target:
+All **five** locations must be updated together. Missing one causes mismatched versions:
 
-1. **`firmware/components/focusrs/focusrs.h`** — `OPENRS_FW_VERSION` (compile-time, used in ESP log output)
-2. **`firmware/patches/apply_patches.py`** — `OPENRS_FW_VERSION` (injected into SLCAN/WebSocket probe response)
+1. **`firmware/patches/apply_patches.py`** — `OPENRS_FW_VERSIONS` dict (keyed by `"usb"` / `"pro"`)
+2. **`firmware/components/focusrs/focusrs.h`** — `OPENRS_FW_VERSION` default (patched at build time, but keep source as the USB default)
+3. **`firmware/build.sh`** — `OUTPUT_BIN` in the target's `case` block (filename must match version, e.g. `openrs-fw-pro_v1.1.bin`)
+4. **GitHub release tag** — `fw-{target}-v{X.Y}` (stable) or `fw-{target}-v{X.Y}-rc.{N}` (pre-release)
+5. **GitHub release title** — human-readable, e.g. `openRS_ Firmware v1.0 (WiCAN Pro)`
 
-Both files use a dict keyed by target name (`"usb"` / `"pro"`).
+## Filename convention
 
-## How the app displays it
+Binary filenames encode the target and version: `openrs-fw-{target}_v{X.Y}.bin`
 
-The firmware responds to `OPENRS?` with `OPENRS:<version>`. The Android app prepends `"openRS_ "`:
-- USB firmware `"USB v1.5-rc.5"` shows as **"openRS_ USB v1.5-rc.5"**
-- PRO firmware `"PRO v1.0"` shows as **"openRS_ PRO v1.0"**
+- `openrs-fw-pro_v1.0.bin`
+- `openrs-fw-usb_v1.5.bin`
+- RC builds use the same filename (the binary is replaced in-place on the rolling pre-release)
 
-The `USB` or `PRO` prefix is part of the version string so users can identify which hardware variant they're running.
+When bumping the version, **rename the OUTPUT_BIN in build.sh** so the filename matches. Old filenames must be `git rm`'d.
 
-## When bumping versions
+## Version string format
 
-- Bump USB and PRO independently. A USB release does not require a PRO release.
-- Update both `focusrs.h` and `apply_patches.py` version dicts.
-- Clear the build cache (`rm -rf firmware/.build/<target>`) if only `apply_patches.py` changed, since patched sources are cached.
-- RC suffixes: `PRO v1.0-rc.2`, `USB v1.5-rc.6`. Stable releases drop the suffix: `PRO v1.0`, `USB v1.5`.
+The version string includes the target prefix so users can identify hardware:
+- `"PRO v1.0"` or `"PRO v1.0-rc.2"` (RC)
+- `"USB v1.5"` or `"USB v1.5-rc.6"` (RC)
 
-## GitHub release tags
+The app prepends `"openRS_ "`, resulting in: **"openRS_ PRO v1.0"**
 
-- USB: `fw-usb-v1.5-rc.5` (pre-release) or `fw-usb-v1.5` (stable)
-- PRO: `fw-pro-v1.0-rc.1` (pre-release) or `fw-pro-v1.0` (stable)
+## How patching works
+
+`apply_patches.py` receives `--target` from `build.sh` and:
+1. Selects the version from `OPENRS_FW_VERSIONS[target]`
+2. Patches the **build copy** of `focusrs.h` with the target-specific version
+3. Injects the version into the SLCAN and WebSocket probe responses
+
+`build.sh` reads the version from the **patched** `focusrs.h` in the build dir (not the source dir) for the build manifest.
+
+## Build cache
+
+Clear the build cache (`rm -rf firmware/.build/<target>`) when:
+- `apply_patches.py` version dict changed (patched sources are cached)
+- Switching between RC and stable (to ensure probe response is re-patched)

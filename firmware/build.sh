@@ -58,7 +58,7 @@ case "$TARGET" in
         IDF_TARGET="esp32c3"
         SDKCONFIG_FILE="sdkconfig.defaults.usb"
         PARTITIONS_FILE="partitions_openrs_usb.csv"
-        OUTPUT_BIN="openrs-fw-usb_v150.bin"
+        OUTPUT_BIN="openrs-fw-usb_v1.5.bin"
         TARGET_DESC="WiCAN USB-C3 (ESP32-C3)"
         ;;
     pro)
