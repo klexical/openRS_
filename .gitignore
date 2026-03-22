@@ -60,3 +60,8 @@ __pycache__/
 
 # ═══ Temporary diagnostic log extractions ══════════
 tmp_diag*/
+
+# ═══ Local Claude Code orientation (never commit) ══════
+CLAUDE.md
+android/CLAUDE.md
+.claude/
