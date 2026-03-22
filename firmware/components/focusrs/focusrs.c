@@ -275,9 +275,10 @@ static void frs_send_dm_button(void) {
     memcpy(tmpl, s_state.frame_305_template, 8);
     xSemaphoreGive(s_state_mutex);
 
-    frs_send_button(FRS_CAN_ID_DRIVE_MODE_BTN, tmpl,
-                    FRS_DM_BTN_BYTE, FRS_DM_BTN_BIT,
-                    FRS_BUTTON_TX_INTERVAL_MS, FRS_BUTTON_TX_COUNT);
+    frs_send_button_long(FRS_CAN_ID_DRIVE_MODE_BTN, tmpl,
+                         FRS_DM_BTN_BYTE, FRS_DM_BTN_BIT,
+                         FRS_BUTTON_TX_INTERVAL_MS,
+                         FRS_BUTTON_TX_DURATION_MS);
 }
 
 static uint8_t s_pending_mode = 0xFF;
@@ -307,18 +308,30 @@ static void frs_drive_mode_task(void *arg) {
         return;
     }
 
-    // The Focus RS drive mode button has two stages:
-    //   Press 1: opens the mode selector GUI on the cluster (no mode change)
-    //   Press 2+: cycles through modes (N→S→T→D→N)
-    // So total presses = 1 (activation) + cycle_distance.
-    uint8_t presses = 1 + cycle_dist;
+    // Check if the mode selector GUI is already open (bit 4 set on 0x305).
+    // This happens after a recent physical button press or a prior firmware
+    // command whose GUI hasn't timed out yet. If open, skip the activation
+    // press to avoid an off-by-one cycle error.
+    xSemaphoreTake(s_state_mutex, portMAX_DELAY);
+    bool gui_open = s_state.frame_305_valid &&
+        (s_state.frame_305_template[FRS_DM_BTN_BYTE] & FRS_DM_GUI_OPEN_BIT);
+    xSemaphoreGive(s_state_mutex);
 
-    ESP_LOGI(TAG, "Drive mode: %d → %d (1 activation + %d cycle = %d presses via 0x305)",
-             current, target_mode, cycle_dist, presses);
+    uint8_t presses = gui_open ? cycle_dist : (1 + cycle_dist);
+
+    ESP_LOGI(TAG, "Drive mode: %d → %d (cur_pos=%d tgt_pos=%d dist=%d → %d presses, "
+             "gui_open=%d, %dms/press, activation=%dms, cycle=%dms)",
+             current, target_mode, cur_pos, tgt_pos, cycle_dist, presses,
+             gui_open, FRS_BUTTON_TX_DURATION_MS, FRS_DM_ACTIVATION_DELAY_MS,
+             FRS_DM_CYCLE_DELAY_MS);
 
     for (uint8_t i = 0; i < presses; i++) {
+        bool is_activation = !gui_open && (i == 0);
+        ESP_LOGI(TAG, "Drive mode: press %d/%d (%s, 0x305 byte4 |= 0x%02X for %dms)",
+                 i + 1, presses, is_activation ? "activation" : "cycle",
+                 FRS_DM_BTN_BIT, FRS_BUTTON_TX_DURATION_MS);
         frs_send_dm_button();
-        if (i == 0) {
+        if (is_activation) {
             vTaskDelay(pdMS_TO_TICKS(FRS_DM_ACTIVATION_DELAY_MS));
         } else {
             vTaskDelay(pdMS_TO_TICKS(FRS_DM_CYCLE_DELAY_MS));
@@ -524,7 +537,8 @@ static void frs_boot_apply_task(void *arg) {
 
     while (waited < max_wait_ms) {
         xSemaphoreTake(s_state_mutex, portMAX_DELAY);
-        bool ready = s_state.frame_305_valid && s_state.frame_260_valid;
+        bool ready = s_state.frame_305_valid && s_state.frame_260_valid
+                     && s_can_tx != NULL;
         xSemaphoreGive(s_state_mutex);
         if (ready) break;
         vTaskDelay(pdMS_TO_TICKS(poll_ms));

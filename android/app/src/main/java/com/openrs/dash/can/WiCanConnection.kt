@@ -338,6 +338,7 @@ class WiCanConnection(
                             firmwareKnown = true
                             val version = msg.removePrefix("OPENRS:").trim()
                             OpenRSDashApp.instance.isOpenRsFirmware.value = true
+                            OpenRSDashApp.instance.firmwareVersionLabel.value = "openRS_ $version"
                             DiagnosticLogger.isOpenRsFirmware = true
                             DiagnosticLogger.firmwareVersion = "openRS_ $version"
                             addDebugLine("Firmware: openRS_ $version ✓")
@@ -346,6 +347,7 @@ class WiCanConnection(
                         } else if (System.currentTimeMillis() - probeStartMs >= PROBE_GRACE_MS) {
                             firmwareKnown = true
                             OpenRSDashApp.instance.isOpenRsFirmware.value = false
+                            OpenRSDashApp.instance.firmwareVersionLabel.value = "WiCAN stock"
                             DiagnosticLogger.isOpenRsFirmware = false
                             DiagnosticLogger.firmwareVersion = "WiCAN stock"
                             addDebugLine("Firmware: WiCAN stock (3 s timeout)")

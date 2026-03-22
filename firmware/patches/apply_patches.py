@@ -29,7 +29,7 @@ Pro-only patches:
   (same CAN TX shim as USB — wc_mdns_init anchor confirmed in v4.48p)
 """
 
-OPENRS_FW_VERSION = "v1.5"
+OPENRS_FW_VERSION = "v1.5-rc.5"
 
 import sys
 import os

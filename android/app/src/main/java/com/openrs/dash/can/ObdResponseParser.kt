@@ -84,6 +84,9 @@ object ObdResponseParser {
      * 0x280F-0x2812 to determine which tire position the data belongs to.
      * Pressure formula: (A*256+B) / 20  PSI
      * Temperature formula: raw - 40  °C
+     *
+     * Status byte: values < 6 indicate cached/stale data (discarded).
+     * Live readings have status >= 6. See github.com/klexical/openRS_/issues/119.
      */
     fun parseBcmReassembled(
         payload: ByteArray,
@@ -95,8 +98,13 @@ object ObdResponseParser {
         val did = ((payload[1].toInt() and 0xFF) shl 8) or (payload[2].toInt() and 0xFF)
         when (did) {
             0x280B -> {
-                if (payload.size < 10) {
-                    logMalformed("BCM-MF", payload, "0x280B too short (${payload.size} < 10)")
+                if (payload.size < 11) {
+                    logMalformed("BCM-MF", payload, "0x280B too short (${payload.size} < 11)")
+                    return
+                }
+                val status = payload[10].toInt() and 0xFF
+                if (status < 6) {
+                    Log.d(TAG, "0x280B status=$status (stale/cached), discarding")
                     return
                 }
                 val sensorId = ((payload[3].toInt() and 0xFF).toLong() shl 24) or

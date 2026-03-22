@@ -56,6 +56,7 @@ import kotlinx.coroutines.withContext
     onSettings: () -> Unit
 ) {
     val isFw   by OpenRSDashApp.instance.isOpenRsFirmware.collectAsState()
+    val fwLabel by OpenRSDashApp.instance.firmwareVersionLabel.collectAsState()
     val scope  = rememberCoroutineScope()
     val ctx    = LocalContext.current
     var exporting by remember { mutableStateOf(false) }
@@ -100,9 +101,15 @@ import kotlinx.coroutines.withContext
                                 .clickable(enabled = canControl && !isActive) {
                                     pendingDriveMode = mode
                                     scope.launch {
+                                        DiagnosticLogger.event("DM_CMD",
+                                            "Sending driveMode=${mode.toFirmwareInt()} (${mode.label}) to $host")
                                         val result = FirmwareApi.setDriveMode(ctx, host, mode.toFirmwareInt())
                                         if (result.isFailure) {
+                                            DiagnosticLogger.event("DM_CMD",
+                                                "FAILED: ${result.exceptionOrNull()?.message}")
                                             snackbarHostState.showSnackbar("Drive mode command failed")
+                                        } else {
+                                            DiagnosticLogger.event("DM_CMD", "OK (HTTP 200)")
                                         }
                                         pendingDriveMode = null
                                     }
@@ -155,9 +162,15 @@ import kotlinx.coroutines.withContext
                                 .clickable(enabled = canControl && !isActive) {
                                     pendingEsc = status
                                     scope.launch {
+                                        DiagnosticLogger.event("ESC_CMD",
+                                            "Sending escMode=${status.toFirmwareInt()} (${status.label}) to $host")
                                         val result = FirmwareApi.setEscMode(ctx, host, status.toFirmwareInt())
                                         if (result.isFailure) {
+                                            DiagnosticLogger.event("ESC_CMD",
+                                                "FAILED: ${result.exceptionOrNull()?.message}")
                                             snackbarHostState.showSnackbar("ESC command failed")
+                                        } else {
+                                            DiagnosticLogger.event("ESC_CMD", "OK (HTTP 200)")
                                         }
                                         pendingEsc = null
                                     }
@@ -257,11 +270,13 @@ import kotlinx.coroutines.withContext
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                MonoLabel(
-                    if (isFw) "✓  openRS_ firmware detected — features active."
-                    else "⚡  Flash openrs-fw to unlock CAN write, LC, Auto Start-Stop & more.",
-                    9.sp, if (isFw) Ok else Red, letterSpacing = 0.05.sp
-                )
+                Column {
+                    MonoLabel(
+                        if (isFw) "✓  $fwLabel detected"
+                        else "⚡  Flash openrs-fw to unlock CAN write, LC, Auto Start-Stop & more.",
+                        9.sp, if (isFw) Ok else Red, letterSpacing = 0.05.sp
+                    )
+                }
             }
         }
 

@@ -55,14 +55,21 @@ extern "C" {
 #define FRS_ASS_BTN_BYTE    0
 #define FRS_ASS_BTN_BIT     0x01
 
-// Drive mode press: 3 frames at ~80ms intervals (~240ms hold).
-#define FRS_BUTTON_TX_COUNT         3
-#define FRS_BUTTON_TX_INTERVAL_MS   80
+// Drive mode press: must outpace BCM's ~10 Hz broadcast on 0x305.
+// 10 ms intervals = 100 Hz → BCM sees pressed bit in majority of frames.
+// 300ms hold gives 30 injected frames per press vs ~3 BCM frames.
+#define FRS_BUTTON_TX_INTERVAL_MS   10
+#define FRS_BUTTON_TX_DURATION_MS   300
 
 // Drive mode inter-press timing — two-stage for reliability.
 // Press 1 opens the mode selector GUI; subsequent presses cycle modes.
-#define FRS_DM_ACTIVATION_DELAY_MS  500
-#define FRS_DM_CYCLE_DELAY_MS       300
+// If the GUI is already open (physical button or prior command), the
+// activation press is skipped and only cycle presses are sent.
+#define FRS_DM_ACTIVATION_DELAY_MS  800
+#define FRS_DM_CYCLE_DELAY_MS       500
+
+// 0x305 byte4 bit 4 — BCM sets this when the mode selector GUI is visible.
+#define FRS_DM_GUI_OPEN_BIT         0x10
 
 // ESC / ASS injection rate — must outpace BCM's 40 Hz broadcast on 0x260.
 // 10 ms intervals = 100 Hz → ABS module sees the pressed bit in >50% of frames.

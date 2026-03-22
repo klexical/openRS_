@@ -51,6 +51,9 @@ class OpenRSDashApp : Application() {
     /** True once openRS_ firmware is confirmed via WebSocket probe on connect. */
     val isOpenRsFirmware = MutableStateFlow(false)
 
+    /** Human-readable firmware version label (e.g. "openRS_ v1.5-rc.5"). */
+    val firmwareVersionLabel = MutableStateFlow("")
+
     /** Trip recorder — lazy so it initialises only when the trip overlay is first opened. */
     val tripRecorder: TripRecorder by lazy {
         TripRecorder(

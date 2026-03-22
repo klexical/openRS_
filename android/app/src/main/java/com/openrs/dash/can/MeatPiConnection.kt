@@ -188,6 +188,7 @@ class MeatPiConnection(
                                     val version = line.removePrefix("OPENRS:").trim()
                                     firmwareVersion = "openRS_ $version"
                                     OpenRSDashApp.instance.isOpenRsFirmware.value = true
+                                    OpenRSDashApp.instance.firmwareVersionLabel.value = firmwareVersion
                                     DiagnosticLogger.isOpenRsFirmware = true
                                     DiagnosticLogger.firmwareVersion = firmwareVersion
                                     addDebugLine("Firmware: openRS_ $version ✓")
@@ -197,6 +198,7 @@ class MeatPiConnection(
                                     firmwareKnown = true
                                     firmwareVersion = "MeatPi Pro"
                                     OpenRSDashApp.instance.isOpenRsFirmware.value = false
+                                    OpenRSDashApp.instance.firmwareVersionLabel.value = firmwareVersion
                                     DiagnosticLogger.isOpenRsFirmware = false
                                     DiagnosticLogger.firmwareVersion = firmwareVersion
                                     addDebugLine("Firmware: MeatPi Pro stock (3 s timeout)")
