@@ -8,7 +8,7 @@ Thanks for your interest in contributing! This project gives Focus RS MK3 owners
 |------|-------|
 | **Android app** | [`android/CONTRIBUTING.md`](android/CONTRIBUTING.md) — build setup, architecture, adding PIDs/CAN signals, PR checklist |
 | **Firmware** | [`firmware/README.md`](firmware/README.md) — build instructions, directory structure, CAN frame reference |
-| **Documentation** | PRs against any `.md` file welcome — see the [docs source of truth](README.md) |
+| **Documentation** | PRs against any `.md` file welcome — branch from `main`, PR to `main` (never route docs through `staging`). See [docs source of truth](README.md) |
 
 ## Quick Links
 
