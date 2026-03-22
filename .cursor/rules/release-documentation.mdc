@@ -1,0 +1,51 @@
+---
+description: Keep documentation in sync when shipping releases
+alwaysApply: true
+---
+
+# Release Documentation Checklist
+
+When promoting an RC to stable or shipping a new release, update **all** of these before the final commit:
+
+## Documentation touchpoints
+
+1. **Root `README.md`**
+   - Features table (tab descriptions, new capabilities)
+   - CAN table / OBD polling table (new signals, changed formulas)
+   - Architecture diagram (header layout, new components)
+   - Settings table (new user-facing options)
+   - Contributing section (remove verified items from wishlist)
+   - Roadmap (move completed items, update planned phases)
+   - Project structure tree (new files, renamed files)
+
+2. **`firmware/README.md`**
+   - Version string at top ("Current versions: ...")
+   - Hardware compatibility table (status changes, e.g. experimental to verified)
+   - Build output table (binary filenames must match current versions)
+   - Release directory listing (binary filenames)
+   - Drive mode / ESC / CAN frame docs (timing, bit positions, behavior changes)
+   - REST API examples (version in response)
+   - Directory structure (new source files)
+   - Roadmap section (next priorities)
+
+3. **`android/README.md`**
+   - Project structure tree (new files)
+
+4. **`android/docs/pid-reference.md`**
+   - New PIDs, changed formulas, confirmed/unconfirmed status updates
+   - Architecture notes for new polling approaches
+
+5. **GitHub issues**
+   - Close any issues resolved by the release, with a comment citing the release version
+   - Check for superseded issues that should be closed as duplicates
+
+## Binary filenames
+
+When a firmware version changes, the binary filename must match. Update `OUTPUT_BIN` in `build.sh` and `git rm` the old filename. See `firmware-versioning.mdc` for the full checklist.
+
+## Don't forget
+
+- Stale "experimental" / "pending hardware test" / "unverified" labels in docs
+- Roadmap items that are now complete
+- Contributing wishlist items that are now resolved
+- File trees that reference old filenames
