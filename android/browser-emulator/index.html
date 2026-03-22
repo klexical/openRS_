@@ -272,37 +272,38 @@ body {
   letter-spacing: 0.06em;
   opacity: 0.75;
 }
-/* ── Gear Hero ──────────────────────────────────────────────────────── */
+/* ── Gear Hero (matches DashPage.kt: rally full-width — value on top, G E A R below) ── */
 .gear-hero {
-  background: var(--surf2);
-  border: 1px solid var(--brd);
-  border-radius: 16px;
-  padding: 14px 12px;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  text-align: center;
+  border-radius: 16px;
+  padding: 18px 12px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--theme) 4%, transparent) 0%,
+    var(--surf2) 100%
+  );
+  border: 2px solid color-mix(in srgb, var(--theme) 25%, transparent);
   position: relative;
   overflow: hidden;
 }
-.gear-hero::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(0,145,234,0.03));
-  pointer-events: none;
-}
-.gear-hero-left {
-  font-family: var(--jbm);
-  font-size: 10px;
-  color: var(--dim);
-  letter-spacing: 0.3em;
-}
 .gear-hero-val {
   font-family: var(--orbitron);
-  font-size: 38px;
-  font-weight: 900;
-  color: var(--theme);
-  line-height: 1;
+  font-size: clamp(3rem, 11vmin, 4.5rem);
+  font-weight: 700;
+  color: var(--frost);
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+}
+.gear-hero-label {
+  font-family: var(--jbm);
+  font-size: 8px;
+  color: var(--dim);
+  letter-spacing: 0.28em;
+  margin-top: 4px;
 }
 
 /* ── Bar Cards ───────────────────────────────────────────────────────── */
@@ -507,19 +508,26 @@ body {
   border-radius: 16px;
   padding: 14px;
 }
-.tire-grid { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
-.tire-col  { flex: 1; display: flex; flex-direction: column; gap: 10px; }
-.tire-center { width: 56px; display: flex; align-items: center; justify-content: center; }
+.tire-grid { display: flex; gap: 6px; align-items: stretch; margin-top: 10px; }
+.tire-col  { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.tire-center {
+  flex: 0 0 auto;
+  width: 64px;
+  min-height: 124px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .tire-cell {
   background: var(--surf2);
   border: 1px solid var(--brd);
   border-radius: 10px;
-  padding: 8px 7px;
+  padding: 6px 5px;
   text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
 }
 .tire-pos  { font-family: var(--jbm); font-size: 9px; color: var(--dim); letter-spacing: 0.12em; }
 .tire-psi  { font-family: var(--orbitron); font-size: 18px; font-weight: 700; }
@@ -528,17 +536,33 @@ body {
 .tire-temp { font-family: var(--orbitron); font-size: 13px; font-weight: 700; }
 .tire-temp-unit { font-family: var(--jbm); font-size: 7px; color: var(--dim); letter-spacing: 0.08em; }
 .car-outline {
-  width: 48px; height: 96px;
+  width: 100%;
+  height: 100%;
+  min-height: 118px;
   display: flex;
   align-items: center;
   justify-content: center;
+  pointer-events: none;
 }
-.car-outline svg { width: 42px; height: 90px; }
+/* TPMS wireframe: img + SVG #carTintFilter (see updateCarTintMatrix) — same idea as Android tint */
+.car-outline-img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 128px;
+  max-height: 72px;
+  object-fit: contain;
+  transform: rotate(90deg);
+  transform-origin: center center;
+  opacity: 1;
+  filter: url(#carTintFilter) drop-shadow(0 0 8px rgba(0, 0, 0, 0.14));
+}
 .temp-legend {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
-  gap: 12px;
+  justify-content: space-evenly;
+  gap: 6px 8px;
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--brd);
@@ -1053,6 +1077,14 @@ body {
 </style>
 </head>
 <body>
+  <!-- SVG filter: tints TPMS wireframe to RS paint (--theme). CSS mask was unreliable in some browsers. -->
+  <svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" aria-hidden="true" style="position:absolute;overflow:hidden;pointer-events:none">
+    <defs>
+      <filter id="carTintFilter" color-interpolation-filters="sRGB">
+        <feColorMatrix id="carTintMatrix" type="matrix" values="0.2126 0.7152 0.0722 0 0 0.2126 0.7152 0.0722 0 0 0.2126 0.7152 0.0722 0 0 0 0 0 1 0"/>
+      </filter>
+    </defs>
+  </svg>
 
 <div style="display:flex;flex-direction:column;align-items:center">
   <p class="page-title">open<span>RS</span>_ <span>v2.2.4</span> — Phone Emulator</p>
@@ -1101,29 +1133,29 @@ body {
       <!-- Hero Row -->
       <div class="hero-row">
         <div class="hero-card">
-          <div class="hero-unit">PSI</div>
-          <div class="hero-val gold">+12.4</div>
+          <div class="hero-unit" id="em-boost-unit">PSI</div>
+          <div class="hero-val gold" id="em-boost">+12.4</div>
           <div class="hero-label">BOOST</div>
-          <div class="hero-peak">▲ 15.2</div>
+          <div class="hero-peak" id="em-boost-peak">▲ 15.2</div>
         </div>
         <div class="hero-card">
           <div class="hero-unit">RPM</div>
-          <div class="hero-val red">5820</div>
+          <div class="hero-val red" id="em-rpm">5820</div>
           <div class="hero-label">ENGINE</div>
-          <div class="hero-peak">▲ 6200</div>
+          <div class="hero-peak" id="em-rpm-peak">▲ 6200</div>
         </div>
         <div class="hero-card">
-          <div class="hero-unit">MPH</div>
-          <div class="hero-val cyan">87</div>
+          <div class="hero-unit" id="em-speed-unit">MPH</div>
+          <div class="hero-val cyan" id="em-speed">87</div>
           <div class="hero-label">SPEED</div>
-          <div class="hero-peak">▲ 95</div>
+          <div class="hero-peak" id="em-speed-peak">▲ 95</div>
         </div>
       </div>
 
-      <!-- Gear Hero -->
+      <!-- Gear Hero — same layout as DashPage.kt (HeroNum + MonoLabel "G E A R") -->
       <div class="gear-hero">
-        <div class="gear-hero-left">G E A R</div>
-        <div class="gear-hero-val">4</div>
+        <div class="gear-hero-val" id="em-gear">4</div>
+        <div class="gear-hero-label">G E A R</div>
       </div>
 
       <!-- Bar Grid: Inputs -->
@@ -1133,25 +1165,25 @@ body {
           <div class="bar-card">
             <div class="bar-header">
               <span class="bar-name">THROTTLE</span>
-              <span class="bar-value">78%</span>
+              <span class="bar-value" id="em-throttle-pct">78%</span>
             </div>
-            <div class="bar-track"><div class="bar-fill cyan" style="width:78%"></div></div>
+            <div class="bar-track"><div class="bar-fill cyan" id="em-throttle-bar" style="width:78%"></div></div>
           </div>
           <div class="bar-card">
             <div class="bar-header">
               <span class="bar-name">BRAKE</span>
-              <span class="bar-value">0%</span>
+              <span class="bar-value" id="em-brake-pct">0%</span>
             </div>
-            <div class="bar-track"><div class="bar-fill red" style="width:0%"></div></div>
+            <div class="bar-track"><div class="bar-fill red" id="em-brake-bar" style="width:0%"></div></div>
           </div>
         </div>
         <div class="bar-row">
           <div class="bar-card">
             <div class="bar-header">
               <span class="bar-name">FUEL</span>
-              <span class="bar-value">72%</span>
+              <span class="bar-value" id="em-fuel-pct">72%</span>
             </div>
-            <div class="bar-track"><div class="bar-fill ok" style="width:72%"></div></div>
+            <div class="bar-track"><div class="bar-fill ok" id="em-fuel-bar" style="width:72%"></div></div>
           </div>
           <div class="bar-card">
             <div class="bar-header">
@@ -1169,36 +1201,36 @@ body {
         <div class="awd-inner">
           <div class="awd-pct">
             <span class="awd-pct-label">FRONT</span>
-            <span class="awd-pct-val" style="color:var(--theme)">60%</span>
+            <span class="awd-pct-val" style="color:var(--theme)" id="em-awd-front-pct">60%</span>
           </div>
           <div class="awd-bar-wrap">
-            <div class="awd-bar-front" style="flex:60"></div>
-            <div class="awd-bar-rear"  style="flex:40"></div>
+            <div class="awd-bar-front" id="em-awd-bar-front" style="flex:60"></div>
+            <div class="awd-bar-rear" id="em-awd-bar-rear" style="flex:40"></div>
           </div>
           <div class="awd-pct">
             <span class="awd-pct-label">REAR</span>
-            <span class="awd-pct-val" style="color:var(--ok)">40%</span>
+            <span class="awd-pct-val" style="color:var(--ok)" id="em-awd-rear-pct">40%</span>
           </div>
         </div>
         <div class="awd-torques">
-          <span style="color:var(--theme)">L 147 Nm</span>
-          <span style="color:var(--mid)">60/40</span>
-          <span style="color:var(--ok)">98 Nm R</span>
+          <span style="color:var(--theme)" id="em-awd-tq-l">L 147 Nm</span>
+          <span style="color:var(--mid)" id="em-awd-split-mid">60/40</span>
+          <span style="color:var(--ok)" id="em-awd-tq-r">98 Nm R</span>
         </div>
       </div>
 
       <!-- Quick Temps -->
       <div class="section-label"><span>TEMPS QUICK</span></div>
       <div class="cell-row">
-        <div class="data-cell"><div class="cell-label">OIL</div><div class="cell-value ok">112°F</div></div>
-        <div class="data-cell"><div class="cell-label">COOLANT</div><div class="cell-value ok">196°F</div></div>
-        <div class="data-cell"><div class="cell-label">INTAKE</div><div class="cell-value">82°F</div></div>
+        <div class="data-cell"><div class="cell-label">OIL</div><div class="cell-value ok" id="em-quick-oil">112°F</div></div>
+        <div class="data-cell"><div class="cell-label">COOLANT</div><div class="cell-value ok" id="em-quick-cool">196°F</div></div>
+        <div class="data-cell"><div class="cell-label">INTAKE</div><div class="cell-value" id="em-quick-intake">82°F</div></div>
         <div class="data-cell"><div class="cell-label">OIL LIFE</div><div class="cell-value">73%</div></div>
       </div>
       <div class="cell-row">
-        <div class="data-cell"><div class="cell-label">LAT G</div><div class="cell-value">0.84g</div></div>
-        <div class="data-cell"><div class="cell-label">LON G</div><div class="cell-value">0.32g</div></div>
-        <div class="data-cell"><div class="cell-label">TORQUE</div><div class="cell-value">284 Nm</div></div>
+        <div class="data-cell"><div class="cell-label">LAT G</div><div class="cell-value" id="em-quick-latg">0.84g</div></div>
+        <div class="data-cell"><div class="cell-label">LON G</div><div class="cell-value" id="em-quick-long">0.32g</div></div>
+        <div class="data-cell"><div class="cell-label">TORQUE</div><div class="cell-value" id="em-torque">284 Nm</div></div>
       </div>
 
       <!-- Odometer -->
@@ -1236,7 +1268,7 @@ body {
         <div class="data-cell"><div class="cell-label">WGDC</div><div class="cell-value cyan">82%</div></div>
       </div>
       <div class="cell-row">
-        <div class="data-cell"><div class="cell-label">TIP ACT</div><div class="cell-value">12.1 PSI</div></div>
+        <div class="data-cell"><div class="cell-label">TIP ACT</div><div class="cell-value" id="em-tip-act">12.1 PSI</div></div>
         <div class="data-cell"><div class="cell-label">TIP DES</div><div class="cell-value">12.4 PSI</div></div>
         <div class="data-cell"><div class="cell-label">HP FUEL</div><div class="cell-value">2186 PSI</div></div>
       </div>
@@ -1274,18 +1306,18 @@ body {
         <div class="gf-row">
           <div class="gf-cell">
             <div class="gf-label">LAT G</div>
-            <div class="gf-val">0.84</div>
-            <div class="gf-peak">▲ 1.12</div>
+            <div class="gf-val" id="em-gf-lat">0.84</div>
+            <div class="gf-peak" id="em-gf-lat-peak">▲ 1.12</div>
           </div>
           <div class="gf-cell">
             <div class="gf-label">LON G</div>
-            <div class="gf-val">0.32</div>
-            <div class="gf-peak">▲ 0.88</div>
+            <div class="gf-val" id="em-gf-lon">0.32</div>
+            <div class="gf-peak" id="em-gf-lon-peak">▲ 0.88</div>
           </div>
           <div class="gf-cell">
             <div class="gf-label">VERT G</div>
-            <div class="gf-val">1.01</div>
-            <div class="gf-peak">▲ 1.24</div>
+            <div class="gf-val" id="em-gf-vert">1.01</div>
+            <div class="gf-peak" id="em-gf-vert-peak">▲ 1.24</div>
           </div>
         </div>
         <div class="gf-row">
@@ -1310,32 +1342,32 @@ body {
         <div class="section-label"><span>AWD — GKN TWINSTER</span></div>
         <div class="wheel-grid">
           <div class="wheel-col">
-            <div class="wheel-cell front"><div class="wheel-pos">FL</div><div class="wheel-spd">86.4</div></div>
-            <div class="wheel-cell rear"><div class="wheel-pos">RL</div><div class="wheel-spd">88.1</div></div>
+            <div class="wheel-cell front"><div class="wheel-pos">FL</div><div class="wheel-spd" id="em-wfl">86.4</div></div>
+            <div class="wheel-cell rear"><div class="wheel-pos">RL</div><div class="wheel-spd" id="em-wrl">88.1</div></div>
           </div>
           <div class="wheel-center">
-            <div class="split-val">60/40</div>
+            <div class="split-val" id="em-split-full">60/40</div>
             <div class="split-sub">F / R</div>
             <div class="rdu-label">RDU</div>
-            <div class="rdu-val">82°F</div>
+            <div class="rdu-val" id="em-rdu-full">82°F</div>
           </div>
           <div class="wheel-col">
-            <div class="wheel-cell front"><div class="wheel-pos">FR</div><div class="wheel-spd">86.8</div></div>
-            <div class="wheel-cell rear"><div class="wheel-pos">RR</div><div class="wheel-spd">87.9</div></div>
+            <div class="wheel-cell front"><div class="wheel-pos">FR</div><div class="wheel-spd" id="em-wfr">86.8</div></div>
+            <div class="wheel-cell rear"><div class="wheel-pos">RR</div><div class="wheel-spd" id="em-wrr">87.9</div></div>
           </div>
         </div>
         <div class="awd-torques">
-          <span style="color:var(--theme)">L 147 Nm</span>
-          <span style="color:var(--mid)">98 Nm R</span>
+          <span style="color:var(--theme)" id="em-awd-tq-l2">L 147 Nm</span>
+          <span style="color:var(--mid)" id="em-awd-tq-r2">98 Nm R</span>
         </div>
-        <div style="height:8px;background:var(--surf3);border-radius:4px;overflow:hidden;display:flex">
-          <div style="flex:60;background:linear-gradient(90deg,var(--theme),rgba(0,145,234,0.4));border-radius:4px 0 0 4px"></div>
-          <div style="flex:40;background:linear-gradient(90deg,rgba(0,255,136,0.4),var(--ok));border-radius:0 4px 4px 0"></div>
+        <div style="height:8px;background:var(--surf3);border-radius:4px;overflow:hidden;display:flex" id="em-awd-full-track">
+          <div id="em-awd-full-front" style="flex:60;background:linear-gradient(90deg,var(--theme),rgba(0,145,234,0.4));border-radius:4px 0 0 4px"></div>
+          <div id="em-awd-full-rear" style="flex:40;background:linear-gradient(90deg,rgba(0,255,136,0.4),var(--ok));border-radius:0 4px 4px 0"></div>
         </div>
         <div class="cell-row">
-          <div class="data-cell"><div class="cell-label">REAR BIAS</div><div class="cell-value">60/40</div></div>
-          <div class="data-cell"><div class="cell-label">L/R DELTA</div><div class="cell-value">0.2 km/h</div></div>
-          <div class="data-cell"><div class="cell-label">F/R DELTA</div><div class="cell-value">1.7 km/h</div></div>
+          <div class="data-cell"><div class="cell-label">REAR BIAS</div><div class="cell-value" id="em-rear-bias">60/40</div></div>
+          <div class="data-cell"><div class="cell-label">L/R DELTA</div><div class="cell-value" id="em-lr-delta">0.2 km/h</div></div>
+          <div class="data-cell"><div class="cell-label">F/R DELTA</div><div class="cell-value" id="em-fr-delta">1.7 km/h</div></div>
         </div>
       </div>
 
@@ -1346,68 +1378,56 @@ body {
           <div class="tire-col">
             <div class="tire-cell">
               <div class="tire-pos">LF</div>
-              <div class="tire-psi" style="color:var(--ok)">36.4</div>
+              <div class="tire-psi" style="color:var(--ok)" id="em-tire-psi-lf">36.4</div>
               <div class="tire-unit">PSI</div>
               <div class="tire-divider"></div>
-              <div class="tire-temp" style="color:var(--ok)">78</div>
+              <div class="tire-temp" id="em-tire-temp-lf" data-temp-f="78">78</div>
               <div class="tire-temp-unit">°F</div>
             </div>
             <div class="tire-cell">
               <div class="tire-pos">LR</div>
-              <div class="tire-psi" style="color:var(--ok)">36.1</div>
+              <div class="tire-psi" style="color:var(--ok)" id="em-tire-psi-lr">36.1</div>
               <div class="tire-unit">PSI</div>
               <div class="tire-divider"></div>
-              <div class="tire-temp" style="color:var(--ok)">81</div>
+              <div class="tire-temp" id="em-tire-temp-lr" data-temp-f="81">81</div>
               <div class="tire-temp-unit">°F</div>
             </div>
           </div>
           <div class="tire-center">
-            <div class="car-outline" id="car-wireframe">
-              <svg viewBox="0 0 42 90" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M9 82 C9 86 11 88 14 88 L28 88 C31 88 33 86 33 82 L33 72 C33 70 32 68 30 67 L28 66 L28 60 L30 58 C32 56 33 53 33 50 L33 30 C33 26 32 23 30 21 L27 17 C25 13 23 10 21 8 C19 10 17 13 15 17 L12 21 C10 23 9 26 9 30 L9 50 C9 53 10 56 12 58 L14 60 L14 66 L12 67 C10 68 9 70 9 72 Z" stroke="var(--theme)" stroke-width="1.2" fill="none" opacity="0.7"/>
-                <path d="M14 24 L14 18 C14 16 16 14 18 13 L21 12 L24 13 C26 14 28 16 28 18 L28 24 C28 25 27 26 26 26 L16 26 C15 26 14 25 14 24 Z" stroke="var(--theme)" stroke-width="0.8" fill="none" opacity="0.4"/>
-                <path d="M14 72 L14 78 C14 80 16 82 18 82 L24 82 C26 82 28 80 28 78 L28 72" stroke="var(--theme)" stroke-width="0.8" fill="none" opacity="0.4"/>
-                <line x1="14" y1="40" x2="28" y2="40" stroke="var(--theme)" stroke-width="0.6" opacity="0.25"/>
-                <line x1="14" y1="50" x2="28" y2="50" stroke="var(--theme)" stroke-width="0.6" opacity="0.25"/>
-                <circle cx="13" cy="30" r="1" fill="var(--theme)" opacity="0.5"/>
-                <circle cx="29" cy="30" r="1" fill="var(--theme)" opacity="0.5"/>
-              </svg>
+            <div class="car-outline" id="car-wireframe" aria-label="Focus RS outline">
+              <img class="car-outline-img" id="car-wireframe-img" src="focus-rs-a4.png" alt="" />
             </div>
           </div>
           <div class="tire-col">
             <div class="tire-cell">
               <div class="tire-pos">RF</div>
-              <div class="tire-psi" style="color:var(--ok)">36.6</div>
+              <div class="tire-psi" style="color:var(--ok)" id="em-tire-psi-rf">36.6</div>
               <div class="tire-unit">PSI</div>
               <div class="tire-divider"></div>
-              <div class="tire-temp" style="color:var(--ok)">76</div>
+              <div class="tire-temp" id="em-tire-temp-rf" data-temp-f="76">76</div>
               <div class="tire-temp-unit">°F</div>
             </div>
             <div class="tire-cell">
               <div class="tire-pos">RR</div>
-              <div class="tire-psi" style="color:var(--ok)">36.2</div>
+              <div class="tire-psi" style="color:var(--ok)" id="em-tire-psi-rr">36.2</div>
               <div class="tire-unit">PSI</div>
               <div class="tire-divider"></div>
-              <div class="tire-temp" style="color:var(--warn)">104</div>
+              <div class="tire-temp" id="em-tire-temp-rr" data-temp-f="104">104</div>
               <div class="tire-temp-unit">°F</div>
             </div>
           </div>
         </div>
-        <div class="temp-legend">
-          <div class="legend-item"><div class="legend-dot" style="background:var(--ok)"></div><div class="legend-text">COLD &lt; 100°F</div></div>
-          <div class="legend-item"><div class="legend-dot" style="background:var(--warn)"></div><div class="legend-text">WARM 100–160°F</div></div>
-          <div class="legend-item"><div class="legend-dot" style="background:var(--orange)"></div><div class="legend-text">HOT &gt; 160°F</div></div>
-        </div>
+        <div class="temp-legend" id="tpms-legend"></div>
       </div>
     </div>
 
     <!-- ═══ TEMPS PAGE ═══ -->
     <div class="page" id="page3">
       <!-- RTR Banner -->
-      <div class="rtr-banner ready">
-        <div class="rtr-dot ready"></div>
+      <div class="rtr-banner ready" id="em-rtr-banner">
+        <div class="rtr-dot ready" id="em-rtr-dot"></div>
         <div>
-          <div class="rtr-title">RACE READY</div>
+          <div class="rtr-title" id="em-rtr-title">RACE READY</div>
         </div>
       </div>
 
@@ -1432,31 +1452,31 @@ body {
               <div class="temp-label">ENGINE OIL</div>
               <div class="temp-sub">INFERRED</div>
             </div>
-            <div class="temp-val" style="color:var(--ok)">234</div>
+            <div class="temp-val" style="color:var(--ok)" id="em-temp-oil">234</div>
             <div class="temp-unit">°F</div>
-            <div class="temp-bar-wrap"><div class="temp-bar-fill" style="width:56%;background:var(--ok)"></div></div>
+            <div class="temp-bar-wrap"><div class="temp-bar-fill" id="em-temp-oil-bar" style="width:56%;background:var(--ok)"></div></div>
           </div>
           <div class="temp-card">
             <div class="temp-header">
               <div class="temp-label">COOLANT</div>
             </div>
-            <div class="temp-val" style="color:var(--ok)">196</div>
+            <div class="temp-val" style="color:var(--ok)" id="em-temp-cool">196</div>
             <div class="temp-unit">°F</div>
-            <div class="temp-bar-wrap"><div class="temp-bar-fill" style="width:62%;background:var(--ok)"></div></div>
+            <div class="temp-bar-wrap"><div class="temp-bar-fill" id="em-temp-cool-bar" style="width:62%;background:var(--ok)"></div></div>
           </div>
         </div>
         <div class="temp-row">
           <div class="temp-card">
             <div class="temp-header"><div class="temp-label">INTAKE AIR</div></div>
-            <div class="temp-val" style="color:var(--frost)">82</div>
+            <div class="temp-val" style="color:var(--frost)" id="em-temp-intake">82</div>
             <div class="temp-unit">°F</div>
-            <div class="temp-bar-wrap"><div class="temp-bar-fill" style="width:28%;background:var(--ok)"></div></div>
+            <div class="temp-bar-wrap"><div class="temp-bar-fill" id="em-temp-intake-bar" style="width:28%;background:var(--ok)"></div></div>
           </div>
           <div class="temp-card">
             <div class="temp-header"><div class="temp-label">AMBIENT</div></div>
-            <div class="temp-val" style="color:var(--frost)">54</div>
+            <div class="temp-val" style="color:var(--frost)" id="em-temp-amb">54</div>
             <div class="temp-unit">°F</div>
-            <div class="temp-bar-wrap"><div class="temp-bar-fill" style="width:15%;background:var(--ok)"></div></div>
+            <div class="temp-bar-wrap"><div class="temp-bar-fill" id="em-temp-amb-bar" style="width:15%;background:var(--ok)"></div></div>
           </div>
         </div>
         <div class="temp-row">
@@ -1464,17 +1484,17 @@ body {
             <div class="temp-header">
               <div class="temp-label">RDU (REAR)</div>
             </div>
-            <div class="temp-val" style="color:var(--ok)">82</div>
+            <div class="temp-val" style="color:var(--ok)" id="em-temp-rdu">82</div>
             <div class="temp-unit">°F</div>
-            <div class="temp-bar-wrap"><div class="temp-bar-fill" style="width:30%;background:var(--ok)"></div></div>
+            <div class="temp-bar-wrap"><div class="temp-bar-fill" id="em-temp-rdu-bar" style="width:30%;background:var(--ok)"></div></div>
           </div>
           <div class="temp-card">
             <div class="temp-header">
               <div class="temp-label">PTU (TRANSFER)</div>
             </div>
-            <div class="temp-val" style="color:var(--ok)">78</div>
+            <div class="temp-val" style="color:var(--ok)" id="em-temp-ptu">78</div>
             <div class="temp-unit">°F</div>
-            <div class="temp-bar-wrap"><div class="temp-bar-fill" style="width:28%;background:var(--ok)"></div></div>
+            <div class="temp-bar-wrap"><div class="temp-bar-fill" id="em-temp-ptu-bar" style="width:28%;background:var(--ok)"></div></div>
           </div>
         </div>
         <div class="temp-row">
@@ -1485,11 +1505,34 @@ body {
             <div class="temp-bar-wrap"><div class="temp-bar-fill" style="width:0%"></div></div>
           </div>
           <div class="temp-card">
+            <div class="temp-header"><div class="temp-label">MANIFOLD</div><div class="temp-sub">POLLING</div></div>
+            <div class="temp-val" style="color:var(--dim)">— —</div>
+            <div class="temp-unit">°F</div>
+            <div class="temp-bar-wrap"><div class="temp-bar-fill" style="width:0%"></div></div>
+          </div>
+        </div>
+        <div class="temp-row">
+          <div class="temp-card">
             <div class="temp-header"><div class="temp-label">CATALYTIC</div><div class="temp-sub">POLLING</div></div>
             <div class="temp-val" style="color:var(--dim)">— —</div>
             <div class="temp-unit">°F</div>
             <div class="temp-bar-wrap"><div class="temp-bar-fill" style="width:0%"></div></div>
           </div>
+          <div class="temp-card">
+            <div class="temp-header"><div class="temp-label">CABIN</div><div class="temp-sub">BCM</div></div>
+            <div class="temp-val" style="color:var(--frost)" id="em-temp-cabin">72</div>
+            <div class="temp-unit">°F</div>
+            <div class="temp-bar-wrap"><div class="temp-bar-fill" id="em-temp-cabin-bar" style="width:22%;background:var(--ok)"></div></div>
+          </div>
+        </div>
+        <div class="temp-row">
+          <div class="temp-card">
+            <div class="temp-header"><div class="temp-label">BATT TEMP</div><div class="temp-sub">BCM</div></div>
+            <div class="temp-val" style="color:var(--ok)" id="em-temp-batt">82</div>
+            <div class="temp-unit">°F</div>
+            <div class="temp-bar-wrap"><div class="temp-bar-fill" id="em-temp-batt-bar" style="width:35%;background:var(--ok)"></div></div>
+          </div>
+          <div style="flex:1"></div>
         </div>
       </div>
     </div>
@@ -1581,10 +1624,10 @@ body {
         <div class="frame-row"><span class="frame-id">0x0B0</span><span class="frame-cnt">×48271</span><span class="frame-name">throttle/rpm/torque</span></div>
         <div class="frame-row"><span class="frame-id">0x1B0</span><span class="frame-cnt">×48271</span><span class="frame-name">drive_mode</span></div>
         <div class="frame-row"><span class="frame-id">0x1C0</span><span class="frame-cnt">×48271</span><span class="frame-name">esc_status</span></div>
-        <div class="frame-row"><span class="frame-id">0x214</span><span class="frame-cnt">×24135</span><span class="frame-name">lateral_g</span></div>
+        <div class="frame-row"><span class="frame-id">0x180</span><span class="frame-cnt">×24135</span><span class="frame-name">lateral_g / yaw / vert_g</span></div>
+        <div class="frame-row"><span class="frame-id">0x190</span><span class="frame-cnt">×48271</span><span class="frame-name">wheel_speeds</span></div>
         <div class="frame-row"><span class="frame-id">0x380</span><span class="frame-cnt">×4827</span><span class="frame-name">fuel_level</span></div>
         <div class="frame-row"><span class="frame-id">0x703</span><span class="frame-cnt">×12068</span><span class="frame-name">awd_twinster</span></div>
-        <div class="frame-row"><span class="frame-id">0x3C0</span><span class="frame-cnt">×12068</span><span class="frame-name">wheel_speeds</span></div>
       </div>
     </div>
 
@@ -1669,6 +1712,23 @@ body {
           </div>
         </div>
         <div class="mode-hint">Polled via extended diagnostic session (60 s cycle).</div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Live data: trip CSV playback or synthetic -->
+      <div class="more-section">
+        <div class="more-section-title">LIVE DATA</div>
+        <span style="display:none"><input type="file" id="em-trip-file" accept=".csv,text/csv" /></span>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px">
+          <button type="button" class="diag-btn" style="flex:1;min-width:130px" onclick="document.getElementById('em-trip-file').click()">LOAD TRIP CSV</button>
+          <button type="button" class="diag-btn" style="flex:0 0 auto;padding:8px 12px" id="em-live-pause" onclick="emulatorLiveTogglePause()">PAUSE</button>
+          <button type="button" class="diag-btn" style="flex:0 0 auto;padding:8px 12px" onclick="emulatorLiveClearCsv()">USE SYNTHETIC</button>
+        </div>
+        <div id="em-live-status" style="font-family:var(--jbm);font-size:9px;color:var(--dim);line-height:1.5;margin-bottom:6px"></div>
+        <div style="font-family:var(--jbm);font-size:8px;color:var(--dim);opacity:0.88;line-height:1.45">
+          Load <code style="font-size:9px;color:var(--frost)">trip_*.csv</code> from a trip ZIP export (same columns as the app). Loops continuously. Raw SLCAN <code style="font-size:9px">.log</code> files are not supported here — use the CSV inside the trip ZIP for replay.
+        </div>
       </div>
 
       <div class="divider"></div>
@@ -1780,18 +1840,11 @@ body {
                 <div class="seg-option"        onclick="pickSeg('boost','kPa',this)">kPa</div>
               </div>
             </div>
-            <div class="settings-row">
+            <div class="settings-row" style="margin-bottom:0">
               <div class="settings-row-label">Tire Pressure</div>
               <div class="seg-picker" id="seg-tire">
                 <div class="seg-option active" onclick="pickSeg('tire','PSI',this)">PSI</div>
                 <div class="seg-option"        onclick="pickSeg('tire','BAR',this)">BAR</div>
-              </div>
-            </div>
-            <div class="settings-row" style="margin-bottom:0">
-              <div class="settings-row-label">Tire Temperature</div>
-              <div class="seg-picker" id="seg-tireTemp">
-                <div class="seg-option active" onclick="pickSeg('tireTemp','°F',this)">°F</div>
-                <div class="seg-option"        onclick="pickSeg('tireTemp','°C',this)">°C</div>
               </div>
             </div>
           </div>
@@ -1946,9 +1999,31 @@ const themeColorMap = {
   cyan: '#0091EA', red: '#D62828', orange: '#D45500',
   grey: '#6B7580', black: '#3A3D44', white: '#E8ECF0'
 };
+/**
+ * Luminance × theme RGB (like tint) — boosted so swatches read closer to full RS paint brightness.
+ * Pure multiply caps output ~0.7; BOOST + small offsets lift toward the theme chip color.
+ */
+function updateCarTintMatrix(hex) {
+  const m = document.getElementById('carTintMatrix');
+  if (!m) return;
+  const n = hex.replace('#', '');
+  const r = parseInt(n.slice(0, 2), 16) / 255;
+  const g = parseInt(n.slice(2, 4), 16) / 255;
+  const b = parseInt(n.slice(4, 6), 16) / 255;
+  const BOOST = 1.45;
+  const OFF = 0.055;
+  const v = [
+    r * 0.2126 * BOOST, r * 0.7152 * BOOST, r * 0.0722 * BOOST, 0, r * OFF,
+    g * 0.2126 * BOOST, g * 0.7152 * BOOST, g * 0.0722 * BOOST, 0, g * OFF,
+    b * 0.2126 * BOOST, b * 0.7152 * BOOST, b * 0.0722 * BOOST, 0, b * OFF,
+    0, 0, 0, 1, 0
+  ].join(' ');
+  m.setAttribute('values', v);
+}
 function setTheme(id, color) {
   const root = document.documentElement;
   root.style.setProperty('--theme', color);
+  updateCarTintMatrix(color);
 
   themeIds.forEach(t => {
     const chip = document.getElementById('theme-' + t);
@@ -1988,34 +2063,89 @@ function setMode(mode) {
   }
 }
 
-// Assign IDs to mode buttons after DOM load
+// Assign IDs to mode buttons after DOM load; restore saved emulator settings
 document.addEventListener('DOMContentLoaded', () => {
   const btns = document.querySelectorAll('.mode-btn');
   ['normal','sport','track','drift'].forEach((m, i) => {
     btns[i].id = 'mode-' + m;
   });
+  loadSettingsFromStorage();
+  updateCarTintMatrix(themeColorMap[currentTheme]);
+  const tripIn = document.getElementById('em-trip-file');
+  if (tripIn) tripIn.addEventListener('change', onEmTripFileChange);
+  emulatorLiveStart();
 });
 
-// ── Settings state ─────────────────────────────────────────────────────────
+// ── Settings state (persisted via localStorage) ────────────────────────────
+const LS_KEY = 'openrs_emulator_settings_v1';
 const settingsState = {
-  speed: 'MPH', temp: '°F', boost: 'PSI', tire: 'PSI', tireTemp: '°F',
+  speed: 'MPH', temp: '°F', boost: 'PSI', tire: 'PSI',
   tirePsi: 32, screenOn: false, autoReconnect: false, reconnectSec: 5,
   host: '192.168.80.1', port: 80, adapter: 'WiCAN', microSd: false, maxZips: 5
 };
 
-function openSettings() {
-  // Sync inputs to current state
+function applyAdapterUiOnly(value) {
+  document.querySelectorAll('#seg-adapter .seg-option').forEach(opt => {
+    opt.classList.toggle('active', opt.textContent.trim() === value);
+  });
+  const isMeatPi = value === 'MeatPi Pro';
+  document.getElementById('meatpi-microsd-row').style.display = isMeatPi ? 'block' : 'none';
+  document.getElementById('conn-section-label').textContent = isMeatPi ? 'MEATPI PRO CONNECTION' : 'WICAN CONNECTION';
+}
+
+function applySettingsToUI() {
   setActiveSeg('speed',  settingsState.speed);
   setActiveSeg('temp',   settingsState.temp);
   setActiveSeg('boost',  settingsState.boost);
   setActiveSeg('tire',   settingsState.tire);
-  setActiveSeg('tireTemp', settingsState.tireTemp);
+  document.getElementById('input-tire-psi').value = settingsState.tirePsi;
+  document.getElementById('input-host').value = settingsState.host;
+  document.getElementById('input-port').value = settingsState.port;
+  document.getElementById('input-reconnect-sec').value = settingsState.reconnectSec;
+  document.getElementById('input-max-zips').value = settingsState.maxZips;
+  setToggleUI('screen-on', settingsState.screenOn);
+  setToggleUI('auto-reconnect', settingsState.autoReconnect);
+  setToggleUI('microsd', settingsState.microSd);
+  applyAdapterUiOnly(settingsState.adapter);
+  document.getElementById('reconnect-interval-row').style.display =
+    settingsState.autoReconnect ? 'block' : 'none';
+  updateSettingsSummary();
+  refreshTpmsTempsAndLegend();
+  if (emulatorLive.lastSample) applyEmulatorSample(emulatorLive.lastSample);
+}
+
+function loadSettingsFromStorage() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) {
+      const o = JSON.parse(raw);
+      Object.assign(settingsState, o);
+      delete settingsState.tireTemp;
+    }
+  } catch (e) { /* ignore */ }
+  applySettingsToUI();
+}
+
+function persistSettingsToStorage() {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(settingsState));
+  } catch (e) { /* ignore */ }
+}
+
+function openSettings() {
+  setActiveSeg('speed',  settingsState.speed);
+  setActiveSeg('temp',   settingsState.temp);
+  setActiveSeg('boost',  settingsState.boost);
+  setActiveSeg('tire',   settingsState.tire);
   document.getElementById('input-tire-psi').value    = settingsState.tirePsi;
   document.getElementById('input-host').value        = settingsState.host;
   document.getElementById('input-port').value        = settingsState.port;
   document.getElementById('input-reconnect-sec').value = settingsState.reconnectSec;
+  document.getElementById('input-max-zips').value      = settingsState.maxZips;
   setToggleUI('screen-on',      settingsState.screenOn);
   setToggleUI('auto-reconnect', settingsState.autoReconnect);
+  setToggleUI('microsd',        settingsState.microSd);
+  applyAdapterUiOnly(settingsState.adapter);
   document.getElementById('reconnect-interval-row').style.display =
     settingsState.autoReconnect ? 'block' : 'none';
   document.getElementById('settings-error').style.display = 'none';
@@ -2031,9 +2161,490 @@ function overlayBgClick(e) {
 }
 
 // ── Segmented picker ───────────────────────────────────────────────────────
+/** Tire temp band colors — same Celsius thresholds as ChassisPage.kt / tireTempColor */
+function tireTempColorFromF(f) {
+  const c = (f - 32) * 5 / 9;
+  if (c < 15) return 'var(--mid)';
+  if (c <= 27) return 'var(--ok)';
+  if (c <= 40) return 'var(--warn)';
+  return 'var(--orange)';
+}
+function displayTempFromF(f) {
+  if (settingsState.temp === '°F') return String(Math.round(f));
+  return String(Math.round((f - 32) * 5 / 9));
+}
+/** Matches TireTempLegend in ChassisPage.kt (fmt from °C band edges) */
+function buildTpmsLegendHtml() {
+  const isF = settingsState.temp === '°F';
+  const fmt = (c) => (isF ? String(Math.floor(c * 9 / 5) + 32) : String(c));
+  const deg = isF ? 'F' : 'C';
+  const items = [
+    { c: 'var(--mid)', t: '&lt;' + fmt(15) + '°' + deg },
+    { c: 'var(--ok)', t: fmt(15) + '–' + fmt(27) + '°' + deg },
+    { c: 'var(--warn)', t: fmt(28) + '–' + fmt(40) + '°' + deg },
+    { c: 'var(--orange)', t: '&gt;' + fmt(40) + '°' + deg }
+  ];
+  return items.map(({ c, t }) =>
+    '<div class="legend-item"><div class="legend-dot" style="background:' + c + '"></div><div class="legend-text">' + t + '</div></div>'
+  ).join('');
+}
+function refreshTpmsTempsAndLegend() {
+  document.querySelectorAll('.tire-temp[data-temp-f]').forEach((el) => {
+    const f = parseFloat(el.getAttribute('data-temp-f'), 10);
+    el.textContent = displayTempFromF(f);
+    el.style.color = tireTempColorFromF(f);
+  });
+  const unit = settingsState.temp === '°F' ? '°F' : '°C';
+  document.querySelectorAll('.tire-temp-unit').forEach((el) => { el.textContent = unit; });
+  const leg = document.getElementById('tpms-legend');
+  if (leg) leg.innerHTML = buildTpmsLegendHtml();
+}
+
+// ═══ Live emulator: synthetic + optional trip CSV (same columns as DiagnosticExporter.buildTripCsv) ═══
+const emulatorLive = {
+  mode: 'synthetic',
+  csvRows: null,
+  csvIndex: 0,
+  paused: false,
+  timer: null,
+  t0: 0,
+  lastSample: null,
+  peakRpm: 0,
+  peakBoost: 0,
+  peakSpeedKph: 0,
+  peakGfLat: 0,
+  lastFps: 1800
+};
+
+function parseCsvLine(line) {
+  const out = [];
+  let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') { inQ = !inQ; continue; }
+    if (c === ',' && !inQ) { out.push(cur); cur = ''; continue; }
+    cur += c;
+  }
+  out.push(cur);
+  return out;
+}
+
+function parseTripCsv(text) {
+  const lines = text.trim().split(/\r?\n/).filter((l) => l.length);
+  if (lines.length < 2) return [];
+  const headers = parseCsvLine(lines[0]).map((h) => h.trim().toLowerCase());
+  const idx = {};
+  headers.forEach((h, i) => { idx[h] = i; });
+  const keys = ['timestamp_ms', 'speed_kph', 'rpm', 'gear', 'boost_psi', 'coolant_c', 'oil_c', 'ambient_c', 'rdu_c', 'ptu_c', 'fuel_pct', 'wheel_fl_kph', 'wheel_fr_kph', 'wheel_rl_kph', 'wheel_rr_kph', 'lateral_g', 'drive_mode', 'race_ready'];
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const c = parseCsvLine(lines[i]);
+    if (c.length < 3) continue;
+    const row = {};
+    keys.forEach((key) => {
+      const j = idx[key];
+      if (j == null) return;
+      const raw = (c[j] || '').trim();
+      if (key === 'gear' || key === 'drive_mode') {
+        row[key] = raw.replace(/^"|"$/g, '');
+        return;
+      }
+      if (key === 'race_ready') {
+        row[key] = raw === 'true' || raw === '1';
+        return;
+      }
+      const n = parseFloat(raw);
+      row[key] = isNaN(n) ? raw : n;
+    });
+    if (row.timestamp_ms == null || isNaN(Number(row.timestamp_ms))) row.timestamp_ms = i * 100;
+    rows.push(row);
+  }
+  return rows;
+}
+
+function spdUnit() { return settingsState.speed === 'MPH' ? 'mph' : 'km/h'; }
+function fmtWheelSpd(kph) {
+  const v = settingsState.speed === 'MPH' ? kph * 0.621371 : kph;
+  return v.toFixed(1);
+}
+function formatBoostDisplay(psi) {
+  const b = settingsState.boost;
+  if (b === 'PSI') return '+' + psi.toFixed(1);
+  if (b === 'BAR') return '+' + (psi * 0.0689476).toFixed(2);
+  return '+' + Math.round(psi * 6.89476);
+}
+function formatSpeedDisp(kph) {
+  const v = settingsState.speed === 'MPH' ? kph * 0.621371 : kph;
+  return String(Math.round(v));
+}
+function displayTempNumFromC(c) {
+  if (c == null || c <= -90) return '—';
+  if (settingsState.temp === '°F') return String(Math.round(c * 9 / 5 + 32));
+  return String(Math.round(c));
+}
+function tempUnitStr() { return settingsState.temp === '°F' ? '°F' : '°C'; }
+function setTempCard(id, c) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (c == null || isNaN(c) || c <= -90) {
+    el.textContent = '—';
+    const bar = document.getElementById(id + '-bar');
+    if (bar) bar.style.width = '0%';
+    return;
+  }
+  el.textContent = displayTempNumFromC(c);
+  const u = el.parentElement && el.parentElement.querySelector('.temp-unit');
+  if (u) u.textContent = tempUnitStr();
+  const bar = document.getElementById(id + '-bar');
+  if (bar) {
+    const t = settingsState.temp === '°F' ? c * 9 / 5 + 32 : c;
+    const lo = settingsState.temp === '°F' ? 32 : 0;
+    const hi = settingsState.temp === '°F' ? 280 : 140;
+    const pct = Math.max(6, Math.min(100, Math.round(((t - lo) / (hi - lo)) * 100)));
+    bar.style.width = pct + '%';
+  }
+}
+function setTeleModeFromLabel(label) {
+  const el = document.getElementById('tele-mode');
+  if (!el) return;
+  const n = String(label || 'NORMAL').toUpperCase().replace(/[^A-Z0-9\- ]/g, '').trim().slice(0, 12);
+  el.textContent = n || 'NORMAL';
+  const c = (n.includes('TRACK') || n.includes('RACE')) ? 'var(--warn)'
+    : n.includes('SPORT') ? 'var(--ok)'
+      : (n.includes('DRIFT') || n.includes('SLIP')) ? 'var(--orange)' : 'var(--theme)';
+  el.style.color = c;
+}
+
+function syntheticSample(t) {
+  const r1 = t * 0.38;
+  const r2 = t * 0.27;
+  const rpm = 2800 + 3200 * Math.sin(r1) + 400 * Math.sin(r2 * 1.3) + (Math.random() - 0.5) * 80;
+  const speedKph = 35 + 48 * Math.sin(r1 * 0.85) + 12 * Math.sin(r2) + (Math.random() - 0.5) * 3;
+  const boost = Math.max(0, 6 + 10 * Math.max(0, Math.sin(r1 * 0.9)) + (Math.random() - 0.5) * 0.4);
+  const latG = 0.15 + 0.55 * Math.sin(r2 * 1.1) + (Math.random() - 0.5) * 0.08;
+  const lonG = 0.1 + 0.35 * Math.cos(r1 * 0.6);
+  const vertG = 0.98 + 0.12 * Math.sin(r2);
+  const wBase = Math.max(5, speedKph);
+  const wfl = wBase + (Math.random() - 0.5) * 1.2;
+  const wfr = wBase + (Math.random() - 0.5) * 1.2 + 0.3;
+  const wrl = wBase + 0.8 + (Math.random() - 0.5) * 1.0;
+  const wrr = wBase + 0.9 + (Math.random() - 0.5) * 1.0;
+  const oilC = 88 + 35 * Math.sin(r1 * 0.2) + (Math.random() - 0.5) * 2;
+  const coolC = 82 + 28 * Math.sin(r1 * 0.15) + (Math.random() - 0.5) * 1.5;
+  const ambC = 12 + 8 * Math.sin(r2 * 0.1);
+  const intakeC = ambC + 18 + Math.max(0, (rpm - 3000) / 500);
+  const rduC = coolC - 5 + (Math.random() - 0.5) * 3;
+  const ptuC = coolC - 8 + (Math.random() - 0.5) * 3;
+  const throttle = Math.min(100, Math.max(0, (rpm - 700) / 65 + 8 * Math.sin(r1)));
+  const brake = speedKph < 25 && Math.sin(r1) < -0.4 ? Math.min(40, 15 + Math.random() * 20) : Math.random() * 4;
+  const gear = rpm > 5200 ? '3' : rpm > 4000 ? '4' : rpm > 2800 ? '5' : rpm > 1800 ? '6' : 'N';
+  const raceReady = rpm > 4200 && boost > 12;
+  return {
+    speed_kph: speedKph,
+    rpm,
+    gear,
+    boost_psi: boost,
+    coolant_c: coolC,
+    oil_c: oilC,
+    ambient_c: ambC,
+    rdu_c: rduC,
+    ptu_c: ptuC,
+    fuel_pct: 58 + Math.sin(r1 * 0.05) * 8,
+    wheel_fl_kph: wfl,
+    wheel_fr_kph: wfr,
+    wheel_rl_kph: wrl,
+    wheel_rr_kph: wrr,
+    lateral_g: latG,
+    drive_mode: latG > 0.35 ? 'SPORT' : 'NORMAL',
+    race_ready: raceReady,
+    _synth: true,
+    _throttle: throttle,
+    _brake: brake,
+    _lonG: lonG,
+    _vertG: vertG,
+    _intake_c: intakeC,
+    _cabin_c: ambC + 18,
+    _batt_c: ambC + 22,
+    _tireF: [72 + Math.sin(t) * 8, 74 + Math.sin(t * 1.1) * 8, 71 + Math.sin(t * 0.9) * 8, 78 + Math.sin(t * 1.2) * 12]
+  };
+}
+
+function applyEmulatorSample(row) {
+  if (!row) return;
+  const s = row;
+  const rpm = +s.rpm || 0;
+  const speedKph = +s.speed_kph || 0;
+  const boost = +s.boost_psi || 0;
+  emulatorLive.peakRpm = Math.max(emulatorLive.peakRpm, rpm);
+  emulatorLive.peakBoost = Math.max(emulatorLive.peakBoost, boost);
+  emulatorLive.peakSpeedKph = Math.max(emulatorLive.peakSpeedKph, speedKph);
+  const latG = +s.lateral_g || 0;
+  emulatorLive.peakGfLat = Math.max(emulatorLive.peakGfLat, Math.abs(latG));
+
+  const el = (id, v) => { const n = document.getElementById(id); if (n) n.textContent = v; };
+  el('em-boost', formatBoostDisplay(boost));
+  el('em-boost-peak', '▲ ' + formatBoostDisplay(emulatorLive.peakBoost).replace(/^\+/, ''));
+  el('em-rpm', String(Math.round(rpm)));
+  el('em-rpm-peak', '▲ ' + Math.round(emulatorLive.peakRpm));
+  el('em-speed', formatSpeedDisp(speedKph));
+  el('em-speed-peak', '▲ ' + formatSpeedDisp(emulatorLive.peakSpeedKph));
+  el('em-gear', String(s.gear != null ? s.gear : '—'));
+
+  const bu = document.getElementById('em-boost-unit');
+  if (bu) bu.textContent = settingsState.boost === 'kPa' ? 'kPa' : settingsState.boost;
+  const su = document.getElementById('em-speed-unit');
+  if (su) su.textContent = settingsState.speed;
+
+  const throttle = s._throttle != null ? s._throttle : Math.min(100, Math.max(0, (rpm - 800) / 55));
+  const brake = s._brake != null ? s._brake : 0;
+  el('em-throttle-pct', Math.round(throttle) + '%');
+  const tb = document.getElementById('em-throttle-bar');
+  if (tb) tb.style.width = Math.min(100, throttle) + '%';
+  el('em-brake-pct', Math.round(brake) + '%');
+  const bb = document.getElementById('em-brake-bar');
+  if (bb) bb.style.width = Math.min(100, brake) + '%';
+  const fuel = +s.fuel_pct;
+  if (!isNaN(fuel)) {
+    el('em-fuel-pct', Math.round(fuel) + '%');
+    const fb = document.getElementById('em-fuel-bar');
+    if (fb) fb.style.width = Math.min(100, fuel) + '%';
+  }
+
+  const wfl = +s.wheel_fl_kph, wfr = +s.wheel_fr_kph, wrl = +s.wheel_rl_kph, wrr = +s.wheel_rr_kph;
+  if (!isNaN(wfl)) el('em-wfl', fmtWheelSpd(wfl));
+  if (!isNaN(wfr)) el('em-wfr', fmtWheelSpd(wfr));
+  if (!isNaN(wrl)) el('em-wrl', fmtWheelSpd(wrl));
+  if (!isNaN(wrr)) el('em-wrr', fmtWheelSpd(wrr));
+  const avgF = (wfl + wfr) / 2, avgR = (wrl + wrr) / 2;
+  let frontPct = 55;
+  if (!isNaN(avgF) && !isNaN(avgR) && avgF + avgR > 1) {
+    frontPct = Math.round((avgF / (avgF + avgR)) * 100);
+    frontPct = Math.max(35, Math.min(75, frontPct));
+  }
+  const rearPct = 100 - frontPct;
+  el('em-awd-front-pct', frontPct + '%');
+  el('em-awd-rear-pct', rearPct + '%');
+  const bf = document.getElementById('em-awd-bar-front');
+  const br = document.getElementById('em-awd-bar-rear');
+  if (bf) bf.style.flex = frontPct;
+  if (br) br.style.flex = rearPct;
+  el('em-awd-tq-l', 'L ' + (120 + Math.round(frontPct * 0.9)) + ' Nm');
+  el('em-awd-tq-r', (80 + Math.round(rearPct * 0.85)) + ' Nm R');
+  el('em-awd-split-mid', frontPct + '/' + rearPct);
+  el('em-split-full', frontPct + '/' + rearPct);
+  el('em-rear-bias', frontPct + '/' + rearPct);
+  const bf2 = document.getElementById('em-awd-full-front');
+  const br2 = document.getElementById('em-awd-full-rear');
+  if (bf2) bf2.style.flex = frontPct;
+  if (br2) br2.style.flex = rearPct;
+  el('em-awd-tq-l2', 'L ' + (120 + Math.round(frontPct * 0.9)) + ' Nm');
+  el('em-awd-tq-r2', (80 + Math.round(rearPct * 0.85)) + ' Nm R');
+  if (!isNaN(wfl) && !isNaN(wrr)) {
+    const lr = Math.abs(wrr - wrl);
+    const fr = Math.abs(avgR - avgF);
+    el('em-lr-delta', lr.toFixed(1) + ' ' + spdUnit());
+    el('em-fr-delta', fr.toFixed(1) + ' ' + spdUnit());
+  }
+
+  const lonG = s._lonG != null ? +s._lonG : 0.25 * Math.sin((performance.now() - emulatorLive.t0) / 900);
+  const vertG = s._vertG != null ? +s._vertG : 1.0;
+  el('em-quick-latg', latG.toFixed(2) + 'g');
+  el('em-quick-long', lonG.toFixed(2) + 'g');
+  el('em-gf-lat', latG.toFixed(2));
+  el('em-gf-lon', lonG.toFixed(2));
+  el('em-gf-vert', vertG.toFixed(2));
+  el('em-gf-lat-peak', '▲ ' + emulatorLive.peakGfLat.toFixed(2));
+  el('em-gf-lon-peak', '▲ ' + Math.max(0.5, Math.abs(lonG)).toFixed(2));
+  el('em-gf-vert-peak', '▲ ' + Math.max(1, vertG).toFixed(2));
+
+  const oilC = +s.oil_c, coolC = +s.coolant_c, ambC = +s.ambient_c;
+  const rduC = +s.rdu_c, ptuC = +s.ptu_c;
+  const intakeC = s._intake_c != null ? +s._intake_c : (isNaN(ambC) ? 25 : ambC + 20);
+  const cabinC = s._cabin_c != null ? +s._cabin_c : (isNaN(ambC) ? 22 : ambC + 18);
+  const battC = s._batt_c != null ? +s._batt_c : (isNaN(ambC) ? 24 : ambC + 20);
+  const qOil = document.getElementById('em-quick-oil');
+  const qCool = document.getElementById('em-quick-cool');
+  const qIn = document.getElementById('em-quick-intake');
+  if (qOil && !isNaN(oilC)) qOil.textContent = displayTempNumFromC(oilC) + tempUnitStr();
+  if (qCool && !isNaN(coolC)) qCool.textContent = displayTempNumFromC(coolC) + tempUnitStr();
+  if (qIn && !isNaN(intakeC)) qIn.textContent = displayTempNumFromC(intakeC) + tempUnitStr();
+  setTempCard('em-temp-oil', oilC);
+  setTempCard('em-temp-cool', coolC);
+  setTempCard('em-temp-intake', intakeC);
+  setTempCard('em-temp-amb', ambC);
+  setTempCard('em-temp-rdu', rduC);
+  setTempCard('em-temp-ptu', ptuC);
+  setTempCard('em-temp-cabin', cabinC);
+  setTempCard('em-temp-batt', battC);
+
+  const rduStr = !isNaN(rduC) && rduC > -90 ? displayTempNumFromC(rduC) + tempUnitStr() : '—';
+  el('em-rdu-full', rduStr);
+
+  const torque = Math.round(rpm * 0.045 + boost * 8);
+  el('em-torque', torque + ' Nm');
+
+  const tip = document.getElementById('em-tip-act');
+  if (tip) {
+    const bst = settingsState.boost === 'PSI' ? boost.toFixed(1) + ' PSI'
+      : settingsState.boost === 'BAR' ? (boost * 0.0689476).toFixed(2) + ' BAR'
+        : Math.round(boost * 6.89476) + ' kPa';
+    tip.textContent = bst;
+  }
+
+  if (s.drive_mode) setTeleModeFromLabel(s.drive_mode);
+
+  const rr = !!s.race_ready;
+  const banner = document.getElementById('em-rtr-banner');
+  const dot = document.getElementById('em-rtr-dot');
+  const rtitle = document.getElementById('em-rtr-title');
+  if (banner) {
+    banner.classList.toggle('ready', rr);
+    banner.classList.toggle('warming', !rr);
+  }
+  if (dot) {
+    dot.classList.toggle('ready', rr);
+    dot.classList.toggle('warming', !rr);
+  }
+  if (rtitle) rtitle.textContent = rr ? 'RACE READY' : 'WARMING UP';
+
+  const tireF = s._tireF;
+  const setTireCell = (psiId, tempId, psi, tempF) => {
+    const p = document.getElementById(psiId);
+    if (p) p.textContent = psi.toFixed(1);
+    const te = document.getElementById(tempId);
+    if (te) te.setAttribute('data-temp-f', String(tempF));
+  };
+  if (tireF && tireF.length === 4) {
+    setTireCell('em-tire-psi-lf', 'em-tire-temp-lf', 36.2 + (Math.random() - 0.5) * 0.4, tireF[0]);
+    setTireCell('em-tire-psi-lr', 'em-tire-temp-lr', 35.9 + (Math.random() - 0.5) * 0.4, tireF[1]);
+    setTireCell('em-tire-psi-rf', 'em-tire-temp-rf', 36.4 + (Math.random() - 0.5) * 0.4, tireF[2]);
+    setTireCell('em-tire-psi-rr', 'em-tire-temp-rr', 36.0 + (Math.random() - 0.5) * 0.4, tireF[3]);
+  } else {
+    const base = 36 + (Math.random() - 0.5) * 0.5;
+    const tf = 65 + Math.abs(latG) * 40 + (Math.random() - 0.5) * 6;
+    setTireCell('em-tire-psi-lf', 'em-tire-temp-lf', base, tf + 2);
+    setTireCell('em-tire-psi-lr', 'em-tire-temp-lr', base - 0.3, tf + 5);
+    setTireCell('em-tire-psi-rf', 'em-tire-temp-rf', base + 0.2, tf);
+    setTireCell('em-tire-psi-rr', 'em-tire-temp-rr', base - 0.2, tf + 28);
+  }
+
+  emulatorLive.lastFps = 1600 + Math.floor(Math.random() * 400);
+  const tfps = document.getElementById('tele-fps');
+  if (tfps) tfps.textContent = String(emulatorLive.lastFps);
+
+  refreshTpmsTempsAndLegend();
+}
+
+function emulatorLiveTick() {
+  let sample;
+  if (emulatorLive.mode === 'csv' && emulatorLive.csvRows && emulatorLive.csvRows.length) {
+    sample = emulatorLive.csvRows[emulatorLive.csvIndex];
+    emulatorLive.csvIndex = (emulatorLive.csvIndex + 1) % emulatorLive.csvRows.length;
+  } else {
+    sample = syntheticSample((performance.now() - emulatorLive.t0) / 1000);
+  }
+  emulatorLive.lastSample = sample;
+  try { applyEmulatorSample(sample); } catch (e) { /* ignore */ }
+}
+
+function emulatorLiveStop() {
+  if (emulatorLive.timer) {
+    clearTimeout(emulatorLive.timer);
+    emulatorLive.timer = null;
+  }
+}
+
+function emulatorLiveSchedule() {
+  emulatorLiveStop();
+  function tick() {
+    if (emulatorLive.paused) return;
+    emulatorLiveTick();
+    emulatorLive.timer = setTimeout(tick, 80);
+  }
+  emulatorLive.timer = setTimeout(tick, 80);
+}
+
+function emulatorLiveStart() {
+  emulatorLive.paused = false;
+  emulatorLive.t0 = performance.now();
+  emulatorLive.peakRpm = 0;
+  emulatorLive.peakBoost = 0;
+  emulatorLive.peakSpeedKph = 0;
+  emulatorLive.peakGfLat = 0;
+  const p = document.getElementById('em-live-pause');
+  if (p) p.textContent = 'PAUSE';
+  emulatorLiveSchedule();
+  updateEmLiveStatus();
+}
+
+function emulatorLiveTogglePause() {
+  emulatorLive.paused = !emulatorLive.paused;
+  const btn = document.getElementById('em-live-pause');
+  if (btn) btn.textContent = emulatorLive.paused ? 'RESUME' : 'PAUSE';
+  if (emulatorLive.paused) emulatorLiveStop();
+  else emulatorLiveSchedule();
+  updateEmLiveStatus();
+}
+
+function emulatorLiveClearCsv() {
+  emulatorLive.mode = 'synthetic';
+  emulatorLive.csvRows = null;
+  emulatorLive.csvIndex = 0;
+  emulatorLive.peakRpm = 0;
+  emulatorLive.peakBoost = 0;
+  emulatorLive.peakSpeedKph = 0;
+  emulatorLive.peakGfLat = 0;
+  updateEmLiveStatus();
+}
+
+function updateEmLiveStatus() {
+  const el = document.getElementById('em-live-status');
+  if (!el) return;
+  const st = emulatorLive.paused ? ' · PAUSED' : ' · running';
+  if (emulatorLive.mode === 'csv' && emulatorLive.csvRows && emulatorLive.csvRows.length) {
+    el.textContent = 'Trip CSV · ' + emulatorLive.csvRows.length + ' samples · looping' + st;
+  } else {
+    el.textContent = 'Synthetic simulation (no CSV loaded)' + st;
+  }
+}
+
+function onEmTripFileChange(e) {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const rows = parseTripCsv(String(reader.result || ''));
+    if (!rows.length) {
+      alert('Could not parse CSV. Expected a trip export header (timestamp_ms, speed_kph, rpm, …).');
+      return;
+    }
+    emulatorLive.csvRows = rows;
+    emulatorLive.mode = 'csv';
+    emulatorLive.csvIndex = 0;
+    emulatorLive.peakRpm = 0;
+    emulatorLive.peakBoost = 0;
+    emulatorLive.peakSpeedKph = 0;
+    emulatorLive.peakGfLat = 0;
+    emulatorLive.paused = false;
+    emulatorLiveStop();
+    emulatorLiveSchedule();
+    const p = document.getElementById('em-live-pause');
+    if (p) p.textContent = 'PAUSE';
+    updateEmLiveStatus();
+  };
+  reader.readAsText(f);
+  e.target.value = '';
+}
+
 function pickSeg(key, value, el) {
   settingsState[key] = value;
   setActiveSeg(key, value);
+  if (key === 'temp') {
+    if (emulatorLive.lastSample) applyEmulatorSample(emulatorLive.lastSample);
+    else refreshTpmsTempsAndLegend();
+  } else if (key === 'speed' || key === 'boost' || key === 'tire') {
+    if (emulatorLive.lastSample) applyEmulatorSample(emulatorLive.lastSample);
+  }
 }
 
 function setActiveSeg(key, value) {
@@ -2085,11 +2696,19 @@ function saveSettings() {
     errEl.textContent = 'Retry interval must be ≥ 1 s'; errEl.style.display = 'block'; return;
   }
 
-  // Commit to state
-  settingsState.host        = host;
-  settingsState.port        = port;
-  settingsState.tirePsi     = tirePsi;
+  const maxZips = parseInt(document.getElementById('input-max-zips').value, 10);
+  if (isNaN(maxZips) || maxZips < 1 || maxZips > 50) {
+    errEl.textContent = 'Max ZIP exports must be 1–50'; errEl.style.display = 'block'; return;
+  }
+
+  // Commit to state (units/boost/tire/toggles already live in settingsState via pickSeg/toggleSwitch)
+  settingsState.host = host;
+  settingsState.port = port;
+  settingsState.tirePsi = tirePsi;
   settingsState.reconnectSec = reconnSec;
+  settingsState.maxZips = maxZips;
+
+  persistSettingsToStorage();
 
   // Update the summary row in MORE tab
   updateSettingsSummary();
@@ -2128,16 +2747,10 @@ function clearDtcDemo() {
 }
 
 // ── Adapter picker ──────────────────────────────────────────────────────────
-let currentAdapter = 'WiCAN';
 function pickAdapter(value, el) {
-  currentAdapter = value;
-  document.querySelectorAll('#seg-adapter .seg-option').forEach(opt => {
-    opt.classList.toggle('active', opt.textContent.trim() === value);
-  });
+  settingsState.adapter = value;
+  applyAdapterUiOnly(value);
   const isMeatPi = value === 'MeatPi Pro';
-  document.getElementById('meatpi-microsd-row').style.display = isMeatPi ? 'block' : 'none';
-  document.getElementById('conn-section-label').textContent = isMeatPi ? 'MEATPI PRO CONNECTION' : 'WICAN CONNECTION';
-  // Auto-populate defaults
   const hostInput = document.getElementById('input-host');
   const portInput = document.getElementById('input-port');
   if (isMeatPi && hostInput.value === '192.168.80.1' && portInput.value === '80') {

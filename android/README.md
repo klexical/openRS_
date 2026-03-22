@@ -110,7 +110,8 @@ android/
 │   ├── pid-reference.md
 │   └── signing-setup.md                  # Release keystore setup guide
 ├── browser-emulator/
-│   ├── index.html                        # Browser emulator (phone UI mirror)
+│   ├── index.html                        # Browser emulator (phone UI mirror; synthetic + optional trip CSV replay)
+│   ├── focus-rs-a4.png                  # TPMS center graphic (copy of docs/images)
 │   └── README.md
 └── README.md
 ```
