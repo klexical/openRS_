@@ -66,7 +66,7 @@ case "$TARGET" in
         IDF_TARGET="esp32s3"
         SDKCONFIG_FILE="sdkconfig.defaults.pro"
         PARTITIONS_FILE="partitions_openrs_pro.csv"
-        OUTPUT_BIN="openrs-fw-pro_v150.bin"
+        OUTPUT_BIN="openrs-fw-pro_v1.0.bin"
         TARGET_DESC="WiCAN Pro (ESP32-S3)"
         ;;
 esac
