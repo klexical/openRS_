@@ -43,9 +43,15 @@ When promoting an RC to stable or shipping a new release, update **all** of thes
 
 When a firmware version changes, the binary filename must match. Update `OUTPUT_BIN` in `build.sh` and `git rm` the old filename. See `firmware-versioning.mdc` for the full checklist.
 
+6. **Browser emulator** (`android/browser-emulator/index.html`)
+   - Must mirror every visible app change (see `release-checklist.mdc` section 3 for full details)
+   - Version badge, new/removed widgets, tab changes, data labels, feature cards, demo data
+   - This is the public-facing demo -- it must match the shipped app
+
 ## Don't forget
 
 - Stale "experimental" / "pending hardware test" / "unverified" labels in docs
 - Roadmap items that are now complete
 - Contributing wishlist items that are now resolved
 - File trees that reference old filenames
+- Browser emulator parity with app UI
