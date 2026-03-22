@@ -43,6 +43,19 @@ Open `browser-emulator/index.html` in any browser, or visit the live version:
 
 **[klexical.github.io/openRS_](https://klexical.github.io/openRS_)**
 
+#### GitHub Pages (live site)
+
+Deployment is handled by **GitHub Actions** — [`.github/workflows/deploy-pages.yml`](../.github/workflows/deploy-pages.yml):
+
+| Trigger | When |
+|--------|------|
+| **Automatic** | Push to **`main`** that touches `android/browser-emulator/**` |
+| **Manual** | **Actions** → *Deploy Emulator to GitHub Pages* → **Run workflow** |
+
+**One-time repo setup:** **Settings** → **Pages** → **Build and deployment** → set source to **GitHub Actions** (not “Deploy from a branch”). The workflow uses the `github-pages` environment.
+
+If the URL looks **out of date**: open the latest workflow run on `main`, confirm it’s green, then hard-refresh the browser (cache) or wait a minute for CDN propagation.
+
 ---
 
 ## Project Structure
