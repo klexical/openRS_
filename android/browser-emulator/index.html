@@ -65,15 +65,19 @@ body {
 .notch { height: 32px; background: #000; display: flex; align-items: center; justify-content: center; }
 .notch-bar { width: 110px; height: 5px; background: #1a1a1a; border-radius: 3px; }
 
-/* ── App Header ──────────────────────────────────────────────────────── */
+/* ── App Header (two-row F1 layout) ─────────────────────────────────── */
 .app-header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 16px;
+  flex-direction: column;
   background: var(--surf);
   border-bottom: 1px solid var(--brd);
   flex-shrink: 0;
+}
+.hdr-row1 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px 4px;
 }
 .logo {
   font-family: var(--orbitron);
@@ -84,33 +88,29 @@ body {
 }
 .logo .rs { color: var(--theme); }
 .header-right { display: flex; align-items: center; gap: 8px; }
-.badge {
+.conn-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  cursor: pointer;
   font-family: var(--jbm);
   font-size: 9px;
   font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 4px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
+  transition: all 0.2s;
 }
-.badge-mode {
-  background: rgba(0,145,234,0.12);
-  border: 1px solid rgba(0,145,234,0.3);
-  color: var(--theme);
-}
-.badge-mode.sport  { background: rgba(0,255,136,0.1);  border-color: rgba(0,255,136,0.3);  color: var(--ok); }
-.badge-mode.track  { background: rgba(255,204,0,0.1);  border-color: rgba(255,204,0,0.3);  color: var(--warn); }
-.badge-mode.drift  { background: rgba(255,77,0,0.1);   border-color: rgba(255,77,0,0.3);   color: var(--orange); }
-.badge-esc {
-  background: rgba(0,145,234,0.08);
-  border: 1px solid rgba(0,145,234,0.2);
-  color: var(--theme);
-}
-.conn-dot {
-  width: 8px; height: 8px;
+.conn-pill.live  { background: rgba(0,255,136,0.1); border: 1px solid rgba(0,255,136,0.3); color: var(--ok); }
+.conn-pill.idle  { background: rgba(255,204,0,0.08); border: 1px solid rgba(255,204,0,0.25); color: var(--warn); }
+.conn-pill.off   { background: rgba(255,68,85,0.08); border: 1px solid rgba(255,68,85,0.25); color: #FF4455; }
+.conn-pill-dot {
+  width: 6px; height: 6px;
   border-radius: 50%;
-  background: var(--ok);
-  animation: pulse 1s ease-in-out infinite alternate;
 }
+.conn-pill.live .conn-pill-dot { background: var(--ok); animation: pulse 1s ease-in-out infinite alternate; }
+.conn-pill.idle .conn-pill-dot { background: var(--warn); }
+.conn-pill.off  .conn-pill-dot { background: #FF4455; }
 @keyframes pulse { from { opacity: 1; } to { opacity: 0.3; } }
 .gear-btn {
   width: 28px; height: 28px;
@@ -120,6 +120,39 @@ body {
   display: flex; align-items: center; justify-content: center;
   font-size: 13px; color: var(--dim);
   cursor: pointer;
+}
+/* ── Telemetry Strip (row 2) ────────────────────────────────────────── */
+.tele-strip {
+  display: flex;
+  align-items: center;
+  padding: 2px 12px 6px;
+  gap: 0;
+}
+.tele-cell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 2px 0;
+}
+.tele-label {
+  font-family: var(--jbm);
+  font-size: 7px;
+  color: var(--dim);
+  letter-spacing: 0.12em;
+}
+.tele-val {
+  font-family: var(--jbm);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.tele-div {
+  width: 1px;
+  height: 20px;
+  background: var(--brd);
+  flex-shrink: 0;
 }
 
 /* ── Tab Bar ─────────────────────────────────────────────────────────── */
@@ -231,6 +264,45 @@ body {
   font-size: 8px;
   color: var(--dim);
   letter-spacing: 0.15em;
+}
+.hero-peak {
+  font-family: var(--jbm);
+  font-size: 8px;
+  color: var(--theme);
+  letter-spacing: 0.06em;
+  opacity: 0.75;
+}
+/* ── Gear Hero ──────────────────────────────────────────────────────── */
+.gear-hero {
+  background: var(--surf2);
+  border: 1px solid var(--brd);
+  border-radius: 16px;
+  padding: 14px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+  overflow: hidden;
+}
+.gear-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(0,145,234,0.03));
+  pointer-events: none;
+}
+.gear-hero-left {
+  font-family: var(--jbm);
+  font-size: 10px;
+  color: var(--dim);
+  letter-spacing: 0.3em;
+}
+.gear-hero-val {
+  font-family: var(--orbitron);
+  font-size: 38px;
+  font-weight: 900;
+  color: var(--theme);
+  line-height: 1;
 }
 
 /* ── Bar Cards ───────────────────────────────────────────────────────── */
@@ -413,6 +485,20 @@ body {
   color: var(--dim);
   letter-spacing: 0.15em;
 }
+.reset-btn-full {
+  background: var(--surf2);
+  border: 1px solid var(--brd);
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-family: var(--jbm);
+  font-size: 9px;
+  color: var(--dim);
+  letter-spacing: 0.15em;
+}
 
 /* ── TPMS Section ────────────────────────────────────────────────────── */
 .tpms-card {
@@ -438,11 +524,39 @@ body {
 .tire-pos  { font-family: var(--jbm); font-size: 9px; color: var(--dim); letter-spacing: 0.12em; }
 .tire-psi  { font-family: var(--orbitron); font-size: 18px; font-weight: 700; }
 .tire-unit { font-family: var(--jbm); font-size: 8px; color: var(--dim); letter-spacing: 0.1em; }
+.tire-divider { width: 70%; height: 1px; background: var(--brd); margin: 2px 0; }
+.tire-temp { font-family: var(--orbitron); font-size: 13px; font-weight: 700; }
+.tire-temp-unit { font-family: var(--jbm); font-size: 7px; color: var(--dim); letter-spacing: 0.08em; }
 .car-outline {
   width: 48px; height: 96px;
-  background: var(--surf2);
-  border: 1px solid var(--brd);
-  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.car-outline svg { width: 42px; height: 90px; }
+.temp-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--brd);
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.legend-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+}
+.legend-text {
+  font-family: var(--jbm);
+  font-size: 7px;
+  color: var(--dim);
+  letter-spacing: 0.08em;
 }
 
 /* ── RTR Banner ──────────────────────────────────────────────────────── */
@@ -946,15 +1060,29 @@ body {
   <div class="phone">
     <div class="notch"><div class="notch-bar"></div></div>
 
-    <!-- App Header -->
+    <!-- App Header (two-row F1 layout) -->
     <div class="app-header">
-      <div class="logo">open<span class="rs">RS</span>_</div>
-      <div class="header-right">
-        <div class="badge badge-mode sport" id="hdr-mode">SPORT</div>
-        <div class="badge badge-esc">ESC ON</div>
-        <div class="conn-dot"></div>
-        <div class="gear-btn" onclick="openSettings()">⚙</div>
-        <div class="trip-btn" onclick="alert('Trip page — map + GPS recording')" style="font-size:9px;font-weight:700;letter-spacing:0.15em;padding:0 8px;height:28px;display:flex;align-items:center;background:rgba(255,160,0,0.10);border:1px solid rgba(255,160,0,0.28);border-radius:6px;cursor:pointer;color:var(--theme)">TRIP</div>
+      <div class="hdr-row1">
+        <div class="logo">open<span class="rs">RS</span>_</div>
+        <div class="header-right">
+          <div class="conn-pill live" id="conn-pill" onclick="cycleConn()">
+            <div class="conn-pill-dot"></div>
+            <span id="conn-pill-label">LIVE</span>
+          </div>
+          <div class="trip-btn" onclick="alert('Trip page — map + GPS recording')" style="font-size:9px;font-weight:700;letter-spacing:0.15em;padding:0 8px;height:28px;display:flex;align-items:center;background:rgba(255,160,0,0.10);border:1px solid rgba(255,160,0,0.28);border-radius:6px;cursor:pointer;color:var(--theme)">TRIP</div>
+          <div class="gear-btn" onclick="openSettings()">⚙</div>
+        </div>
+      </div>
+      <div class="tele-strip">
+        <div class="tele-cell"><div class="tele-label">MODE</div><div class="tele-val" id="tele-mode" style="color:var(--ok)">SPORT</div></div>
+        <div class="tele-div"></div>
+        <div class="tele-cell"><div class="tele-label">ESC</div><div class="tele-val" id="tele-esc" style="color:var(--ok)">ON</div></div>
+        <div class="tele-div"></div>
+        <div class="tele-cell"><div class="tele-label">CONN</div><div class="tele-val" id="tele-fps" style="color:var(--frost)">1882</div></div>
+        <div class="tele-div"></div>
+        <div class="tele-cell"><div class="tele-label">IGN</div><div class="tele-val" id="tele-ign" style="color:var(--ok)">RUN</div></div>
+        <div class="tele-div"></div>
+        <div class="tele-cell"><div class="tele-label">E-BRK</div><div class="tele-val" id="tele-ebrk" style="color:var(--dim)">OFF</div></div>
       </div>
     </div>
 
@@ -976,17 +1104,26 @@ body {
           <div class="hero-unit">PSI</div>
           <div class="hero-val gold">+12.4</div>
           <div class="hero-label">BOOST</div>
+          <div class="hero-peak">▲ 15.2</div>
         </div>
         <div class="hero-card">
           <div class="hero-unit">RPM</div>
           <div class="hero-val red">5820</div>
           <div class="hero-label">ENGINE</div>
+          <div class="hero-peak">▲ 6200</div>
         </div>
         <div class="hero-card">
           <div class="hero-unit">MPH</div>
           <div class="hero-val cyan">87</div>
           <div class="hero-label">SPEED</div>
+          <div class="hero-peak">▲ 95</div>
         </div>
+      </div>
+
+      <!-- Gear Hero -->
+      <div class="gear-hero">
+        <div class="gear-hero-left">G E A R</div>
+        <div class="gear-hero-val">4</div>
       </div>
 
       <!-- Bar Grid: Inputs -->
@@ -1146,8 +1283,9 @@ body {
             <div class="gf-peak">▲ 0.88</div>
           </div>
           <div class="gf-cell">
-            <div class="gf-label">COMBINED</div>
-            <div class="gf-val">0.90</div>
+            <div class="gf-label">VERT G</div>
+            <div class="gf-val">1.01</div>
+            <div class="gf-peak">▲ 1.24</div>
           </div>
         </div>
         <div class="gf-row">
@@ -1159,8 +1297,12 @@ body {
             <div class="gf-label">STEER</div>
             <div class="gf-val">-18.2°</div>
           </div>
-          <div class="reset-btn">↺ PEAKS</div>
+          <div class="gf-cell">
+            <div class="gf-label">COMBINED</div>
+            <div class="gf-val">0.90</div>
+          </div>
         </div>
+        <div class="reset-btn-full">↺ RESET PEAKS</div>
       </div>
 
       <!-- AWD Twinster Full -->
@@ -1199,33 +1341,62 @@ body {
 
       <!-- TPMS -->
       <div class="tpms-card">
-        <div class="section-label"><span>TPMS — TIRE PRESSURE</span></div>
+        <div class="section-label"><span>TPMS — PRESSURE &amp; TEMPERATURE</span></div>
         <div class="tire-grid">
           <div class="tire-col">
             <div class="tire-cell">
               <div class="tire-pos">LF</div>
               <div class="tire-psi" style="color:var(--ok)">36.4</div>
               <div class="tire-unit">PSI</div>
+              <div class="tire-divider"></div>
+              <div class="tire-temp" style="color:var(--ok)">78</div>
+              <div class="tire-temp-unit">°F</div>
             </div>
             <div class="tire-cell">
               <div class="tire-pos">LR</div>
               <div class="tire-psi" style="color:var(--ok)">36.1</div>
               <div class="tire-unit">PSI</div>
+              <div class="tire-divider"></div>
+              <div class="tire-temp" style="color:var(--ok)">81</div>
+              <div class="tire-temp-unit">°F</div>
             </div>
           </div>
-          <div class="tire-center"><div class="car-outline"></div></div>
+          <div class="tire-center">
+            <div class="car-outline" id="car-wireframe">
+              <svg viewBox="0 0 42 90" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M9 82 C9 86 11 88 14 88 L28 88 C31 88 33 86 33 82 L33 72 C33 70 32 68 30 67 L28 66 L28 60 L30 58 C32 56 33 53 33 50 L33 30 C33 26 32 23 30 21 L27 17 C25 13 23 10 21 8 C19 10 17 13 15 17 L12 21 C10 23 9 26 9 30 L9 50 C9 53 10 56 12 58 L14 60 L14 66 L12 67 C10 68 9 70 9 72 Z" stroke="var(--theme)" stroke-width="1.2" fill="none" opacity="0.7"/>
+                <path d="M14 24 L14 18 C14 16 16 14 18 13 L21 12 L24 13 C26 14 28 16 28 18 L28 24 C28 25 27 26 26 26 L16 26 C15 26 14 25 14 24 Z" stroke="var(--theme)" stroke-width="0.8" fill="none" opacity="0.4"/>
+                <path d="M14 72 L14 78 C14 80 16 82 18 82 L24 82 C26 82 28 80 28 78 L28 72" stroke="var(--theme)" stroke-width="0.8" fill="none" opacity="0.4"/>
+                <line x1="14" y1="40" x2="28" y2="40" stroke="var(--theme)" stroke-width="0.6" opacity="0.25"/>
+                <line x1="14" y1="50" x2="28" y2="50" stroke="var(--theme)" stroke-width="0.6" opacity="0.25"/>
+                <circle cx="13" cy="30" r="1" fill="var(--theme)" opacity="0.5"/>
+                <circle cx="29" cy="30" r="1" fill="var(--theme)" opacity="0.5"/>
+              </svg>
+            </div>
+          </div>
           <div class="tire-col">
             <div class="tire-cell">
               <div class="tire-pos">RF</div>
               <div class="tire-psi" style="color:var(--ok)">36.6</div>
               <div class="tire-unit">PSI</div>
+              <div class="tire-divider"></div>
+              <div class="tire-temp" style="color:var(--ok)">76</div>
+              <div class="tire-temp-unit">°F</div>
             </div>
             <div class="tire-cell">
               <div class="tire-pos">RR</div>
               <div class="tire-psi" style="color:var(--ok)">36.2</div>
               <div class="tire-unit">PSI</div>
+              <div class="tire-divider"></div>
+              <div class="tire-temp" style="color:var(--warn)">104</div>
+              <div class="tire-temp-unit">°F</div>
             </div>
           </div>
+        </div>
+        <div class="temp-legend">
+          <div class="legend-item"><div class="legend-dot" style="background:var(--ok)"></div><div class="legend-text">COLD &lt; 100°F</div></div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--warn)"></div><div class="legend-text">WARM 100–160°F</div></div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--orange)"></div><div class="legend-text">HOT &gt; 160°F</div></div>
         </div>
       </div>
     </div>
@@ -1379,6 +1550,16 @@ body {
         <div class="data-cell"><div class="cell-label">FRAMES</div><div class="cell-value">1.4M</div></div>
         <div class="data-cell"><div class="cell-label">IDs</div><div class="cell-value">24</div></div>
       </div>
+      <div class="cell-row">
+        <div class="data-cell"><div class="cell-label">ENGINE</div><div class="cell-value ok">RUN</div></div>
+        <div class="data-cell"><div class="cell-label">IGNITION</div><div class="cell-value ok">ON</div></div>
+        <div class="data-cell"><div class="cell-label">E-BRAKE</div><div class="cell-value dim">OFF</div></div>
+      </div>
+      <div class="cell-row">
+        <div class="data-cell"><div class="cell-label">BATT V</div><div class="cell-value">14.2V</div></div>
+        <div class="data-cell"><div class="cell-label">BATT SoC</div><div class="cell-value ok">92%</div></div>
+        <div class="data-cell"><div class="cell-label">BATT TEMP</div><div class="cell-value ok">82°F</div></div>
+      </div>
 
       <button class="diag-btn" onclick="this.textContent='BUILDING...'">↑  CAPTURE &amp; SHARE SNAPSHOT</button>
       <div style="font-family:var(--jbm);font-size:9px;color:var(--dim);padding:0 2px">
@@ -1430,7 +1611,7 @@ body {
             <div class="mode-name">DRIFT</div>
           </div>
         </div>
-        <div class="mode-hint">Read-only mirror of CAN 0x1B0. Use steering wheel MODE button.</div>
+        <div class="mode-hint">Tap to change with openRS_ firmware. CAN 0x1B0.</div>
       </div>
 
       <div class="divider"></div>
@@ -1462,7 +1643,7 @@ body {
             <div class="feat-status" style="color:var(--ok)">● ACTIVE</div>
           </div>
         </div>
-        <div class="fw-banner ok">✓  openRS_ firmware detected — features active.</div>
+        <div class="fw-banner ok" id="fw-banner">✓  openRS_ USB v1.5 detected</div>
       </div>
 
       <div class="divider"></div>
@@ -1599,11 +1780,18 @@ body {
                 <div class="seg-option"        onclick="pickSeg('boost','kPa',this)">kPa</div>
               </div>
             </div>
-            <div class="settings-row" style="margin-bottom:0">
+            <div class="settings-row">
               <div class="settings-row-label">Tire Pressure</div>
               <div class="seg-picker" id="seg-tire">
                 <div class="seg-option active" onclick="pickSeg('tire','PSI',this)">PSI</div>
                 <div class="seg-option"        onclick="pickSeg('tire','BAR',this)">BAR</div>
+              </div>
+            </div>
+            <div class="settings-row" style="margin-bottom:0">
+              <div class="settings-row-label">Tire Temperature</div>
+              <div class="seg-picker" id="seg-tireTemp">
+                <div class="seg-option active" onclick="pickSeg('tireTemp','°F',this)">°F</div>
+                <div class="seg-option"        onclick="pickSeg('tireTemp','°C',this)">°C</div>
               </div>
             </div>
           </div>
@@ -1718,6 +1906,18 @@ function switchTab(i) {
   });
 }
 
+// ── Connection pill cycling ────────────────────────────────────────────────
+const connStates = ['live','idle','off'];
+const connLabels = { live: 'LIVE', idle: 'IDLE', off: 'OFF' };
+let connIdx = 0;
+function cycleConn() {
+  connIdx = (connIdx + 1) % connStates.length;
+  const state = connStates[connIdx];
+  const pill = document.getElementById('conn-pill');
+  pill.className = 'conn-pill ' + state;
+  document.getElementById('conn-pill-label').textContent = connLabels[state];
+}
+
 // ── Odometer toggle ────────────────────────────────────────────────────────
 let odomInMiles = false;
 const ODO_KM = 48291;
@@ -1768,24 +1968,18 @@ function setTheme(id, color) {
     }
   });
   currentTheme = id;
-
-  // Update header mode badge border to also reflect new theme
-  document.querySelector('.badge-esc').style.color = color;
-  document.querySelector('.badge-esc').style.borderColor = color + '40';
-  document.querySelector('.badge-esc').style.background = color + '12';
 }
 
 // ── Drive mode (visual only) ───────────────────────────────────────────────
-const modeBadge = document.getElementById('hdr-mode');
+const modeColors = { normal: 'var(--theme)', sport: 'var(--ok)', track: 'var(--warn)', drift: 'var(--orange)' };
+const modeLabels = { normal: 'NORMAL', sport: 'SPORT', track: 'TRACK', drift: 'DRIFT' };
 function setMode(mode) {
-  const modeClasses = { normal: '', sport: 'sport', track: 'track', drift: 'drift' };
-  const modeLabels  = { normal: 'NORMAL', sport: 'SPORT', track: 'TRACK', drift: 'DRIFT' };
-  modeBadge.className = 'badge badge-mode ' + (modeClasses[mode] || '');
-  modeBadge.textContent = modeLabels[mode];
+  const teleMode = document.getElementById('tele-mode');
+  teleMode.textContent = modeLabels[mode] || mode.toUpperCase();
+  teleMode.style.color = modeColors[mode] || 'var(--theme)';
   document.querySelectorAll('.mode-btn').forEach(b => {
     b.className = 'mode-btn';
   });
-  const modeMap = { sport: 'mode-sport', track: 'mode-track', drift: 'mode-drift' };
   if (mode !== 'normal') {
     const el = document.getElementById('mode-' + mode);
     if (el) el.className = 'mode-btn active-' + mode;
@@ -1804,7 +1998,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── Settings state ─────────────────────────────────────────────────────────
 const settingsState = {
-  speed: 'MPH', temp: '°F', boost: 'PSI', tire: 'PSI',
+  speed: 'MPH', temp: '°F', boost: 'PSI', tire: 'PSI', tireTemp: '°F',
   tirePsi: 32, screenOn: false, autoReconnect: false, reconnectSec: 5,
   host: '192.168.80.1', port: 80, adapter: 'WiCAN', microSd: false, maxZips: 5
 };
@@ -1815,6 +2009,7 @@ function openSettings() {
   setActiveSeg('temp',   settingsState.temp);
   setActiveSeg('boost',  settingsState.boost);
   setActiveSeg('tire',   settingsState.tire);
+  setActiveSeg('tireTemp', settingsState.tireTemp);
   document.getElementById('input-tire-psi').value    = settingsState.tirePsi;
   document.getElementById('input-host').value        = settingsState.host;
   document.getElementById('input-port').value        = settingsState.port;
