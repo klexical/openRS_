@@ -92,7 +92,7 @@ Decoding `0x280B` data bytes (after `62 280B`):
 - **Sensor ID** (4 bytes): matched against 0x280F-0x2812 map to determine tire position
 - **Pressure** (2 bytes): `(A*256+B) / 20` PSI
 - **Temperature** (1 byte): `raw - 40` C
-- **Status** (1 byte): sensor status flags
+- **Status** (1 byte): values < 6 indicate cached/stale data (discarded by the app), values >= 6 indicate live sensor data. Discovered by @adamsouthern ([#119](https://github.com/klexical/openRS_/issues/119)).
 - **Checksum** (1 byte): validation byte
 
 ## Mode 22 — BCM (Header: 0x726)

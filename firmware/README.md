@@ -4,9 +4,9 @@ Custom firmware for MeatPi WiCAN adapters, purpose-built for the Ford Focus RS M
 
 Forked from [`meatpiHQ/wican-fw`](https://github.com/meatpiHQ/wican-fw) — the proven WiFi/CAN/OTA stack is retained and a Focus RS module (`focusrs`) is layered on top.
 
-**Current status:** v1.5 — release binaries in `firmware/release/`.
+**Current versions:** USB v1.5, PRO v1.0 — release binaries in `firmware/release/`.
 
-**Supported devices:** WiCAN USB-C3 (verified), WiCAN Pro (experimental).
+**Supported devices:** WiCAN USB-C3 (verified), WiCAN Pro (verified).
 
 ---
 
@@ -51,9 +51,9 @@ Forked from [`meatpiHQ/wican-fw`](https://github.com/meatpiHQ/wican-fw) — the 
 | WiFi | 2.4GHz 802.11 b/g/n |
 | BLE | Bluetooth 5.0 LE |
 
-### WiCAN Pro — Experimental Support
+### WiCAN Pro — Verified
 
-The **MeatPi WiCAN Pro** is a higher-end adapter with onboard GPS, MicroSD logging, and a raw TCP SLCAN interface (port 35000). The openRS_ Android app supports the Pro for **passive CAN + OBD polling** out of the box with stock firmware.
+The **MeatPi WiCAN Pro** is a higher-end adapter with onboard GPS, MicroSD logging, and a raw TCP SLCAN interface (port 35000). openRS_ firmware PRO v1.0 is the first stable release for this hardware.
 
 | Feature | Status |
 |---------|--------|
@@ -61,9 +61,11 @@ The **MeatPi WiCAN Pro** is a higher-end adapter with onboard GPS, MicroSD loggi
 | Passive CAN frame reception (app) | ✅ Working |
 | OBD polling PCM/BCM/AWD/PSCM (app) | ✅ Working |
 | DTC scan and clear (app) | ✅ Working |
-| openrs-fw build (`build.sh --target pro`) | ⚠️ Compiles (pending hardware test) |
-| openrs-fw `OPENRS?` probe (slcan.c) | ⚠️ Patched (pending hardware test) |
-| CAN write (drive mode, ESC, LC, ASS) | ⚠️ Patched (pending hardware test) |
+| openrs-fw build (`build.sh --target pro`) | ✅ Working |
+| openrs-fw `OPENRS?` probe (slcan.c) | ✅ Working |
+| CAN write (drive mode) | ✅ Working |
+| CAN write (ESC) | ⚠️ Under investigation ([#125](https://github.com/klexical/openRS_/issues/125)) |
+| CAN write (LC, ASS) | ✅ Working |
 | GPS NMEA passthrough | ❌ Not yet implemented |
 | MicroSD remote control | ❌ Not yet implemented |
 
@@ -77,7 +79,7 @@ The **MeatPi WiCAN Pro** is a higher-end adapter with onboard GPS, MicroSD loggi
 | CAN Driver | TWAI |
 | CAN Speed | 500 kbps (HS-CAN) |
 
-> **Note:** The Pro build target patches onto wican-fw v4.48p (the latest Pro release), giving it all of MeatPi's latest fixes including improved AutoPID, WireGuard, and CAN filter support. All openrs-fw features (CAN read, CAN write, REST API, OPENRS? probe) are patched — pending hardware flash test. See [#76](https://github.com/klexical/openRS_/issues/76) for the test checklist.
+> **Note:** The Pro build target patches onto wican-fw v4.48p (the latest Pro release), giving it all of MeatPi's latest fixes including improved AutoPID, WireGuard, and CAN filter support. All openrs-fw features (CAN read, CAN write, REST API, OPENRS? probe) are verified working. Drive mode control and boot apply confirmed on real hardware. ESC write is under investigation ([#125](https://github.com/klexical/openRS_/issues/125)).
 
 ---
 
@@ -100,8 +102,8 @@ The `--target` flag selects the device profile:
 
 | Target | Device | SoC | Upstream tag | Output binary |
 |--------|--------|-----|-------------|---------------|
-| `usb` (default) | WiCAN USB-C3 | ESP32-C3 | `v4.20u_beta-01` | `openrs-fw-usb_v150.bin` |
-| `pro` | WiCAN Pro | ESP32-S3 | `v4.48p` | `openrs-fw-pro_v150.bin` |
+| `usb` (default) | WiCAN USB-C3 | ESP32-C3 | `v4.20u_beta-01` | `openrs-fw-usb_v1.5.bin` |
+| `pro` | WiCAN Pro | ESP32-S3 | `v4.48p` | `openrs-fw-pro_v1.0.bin` |
 
 The script will:
 1. Install ESP-IDF v5.2.3 to `firmware/.build/esp-idf` if not already present (~5–15 min, one-time)
@@ -118,12 +120,12 @@ firmware/release/
   bootloader_usb.bin          ← flash at 0x0      (USB build)
   partition-table_usb.bin     ← flash at 0x8000
   ota_data_initial_usb.bin    ← flash at 0xd000
-  openrs-fw-usb_v150.bin      ← flash at 0x10000
+  openrs-fw-usb_v1.5.bin      ← flash at 0x10000
 
   bootloader_pro.bin          ← flash at 0x0      (Pro build)
   partition-table_pro.bin     ← flash at 0x8000
   ota_data_initial_pro.bin    ← flash at 0xd000
-  openrs-fw-pro_v150.bin      ← flash at 0x10000
+  openrs-fw-pro_v1.0.bin      ← flash at 0x10000
 ```
 
 ### Building both targets
@@ -161,7 +163,7 @@ All endpoints inherit from wican-fw and extend it. Example responses below are i
 ### `GET /status`
 ```json
 {
-  "version": "openrs-fw v1.5",
+  "version": "openrs-fw USB v1.5",
   "connected": true,
   "can_bitrate": 500000,
   "battery_mv": 13420,
@@ -226,10 +228,11 @@ The BLE interface is protocol-compatible with the WiFi TCP interface. The openRS
 ### Writing mode (button simulation on 0x305)
 | Action | CAN ID | Byte | Bit | Notes |
 |--------|--------|------|-----|-------|
-| Button press | `0x305` | B4 (data[4]) | bit 4 | Set `\|= 0x10`, send 3 frames at 80ms intervals |
-| Button release | `0x305` | B4 (data[4]) | bit 4 | Car's own next frame clears the bit |
+| Button press | `0x305` | B4 (data[4]) | bit 2 | Set `\|= 0x04`, inject at 100 Hz for 300ms |
+| Button release | `0x305` | B4 (data[4]) | bit 2 | Car's own next frame clears the bit |
+| GUI detection | `0x305` | B4 (data[4]) | bit 4 | `0x10` = mode selector GUI visible on cluster |
 
-Confirmed via SLCAN diagnostic 2026-03-21: steady-state byte 4 = `0x08`, pressed = `0x18`. Template captured from live CAN bus at runtime. Each press cycles N→S→T→D→N.
+Confirmed via SLCAN diagnostic 2026-03-21: bit 2 (`0x04`) is the button input, bit 4 (`0x10`) is the BCM GUI indicator. Template captured from live CAN bus at runtime. Each press cycles N→S→T→D→N. Firmware detects GUI-open state and skips activation press when already visible.
 
 ### ESC button simulation (0x260)
 | Action | CAN ID | Byte | Bit | Notes |
@@ -266,7 +269,9 @@ firmware/
 │   │   ├── focusrs.h
 │   │   ├── focusrs.c                  ← drive mode read/write, ESC, LC, ASS
 │   │   ├── focusrs_nvs.c             ← NVS persistence
-│   │   └── focusrs_nvs.h
+│   │   ├── focusrs_nvs.h
+│   │   ├── focusrs_uds.c             ← UDS ABS probe
+│   │   └── focusrs_uds.h
 │   └── ble_transport/                 ← BLE GATT ELM327 bridge
 │       ├── CMakeLists.txt
 │       └── ble_transport.h
@@ -281,8 +286,8 @@ firmware/
 │   ├── partitions_openrs_usb.csv      ← 4MB flash, single OTA
 │   └── partitions_openrs_pro.csv      ← 16MB flash, dual OTA
 ├── release/                           ← flash-ready binaries
-│   ├── openrs-fw-usb_v150.bin        ← current (v1.5)
-│   ├── openrs-fw-pro_v150.bin        ← current (v1.5)
+│   ├── openrs-fw-usb_v1.5.bin       ← current (USB v1.5)
+│   ├── openrs-fw-pro_v1.0.bin       ← current (PRO v1.0)
 │   ├── bootloader_usb.bin / bootloader_pro.bin
 │   ├── partition-table_usb.bin / partition-table_pro.bin
 │   ├── ota_data_initial_usb.bin / ota_data_initial_pro.bin
@@ -296,11 +301,11 @@ firmware/
 
 For the full project roadmap (app + firmware), see the [root README](../README.md#roadmap).
 
-### fw-v1.5.x — Verification and Stability
+### Next — ESC Fix and Polish
 
+- **ESC write fix** ([#125](https://github.com/klexical/openRS_/issues/125)) — app commands reach the firmware but the ABS module does not respond. Requires investigation of 0x260 injection timing and byte offsets.
 - **BLE stability improvements** — test coexistence under sustained high-throughput CAN + BLE + WiFi load
-- **Drive mode boot-apply reliability** — confirm boot-apply task timing works across cold start and warm restart
-- **ESC cycle confirmation** — verify On→Sport→Off→On cycle order on additional vehicles
+- **Drive mode boot-apply edge cases** — test cold start, warm restart, and rapid mode switching scenarios
 
 ### fw-v2.x — Expanded Capability
 

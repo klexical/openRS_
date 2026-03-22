@@ -62,7 +62,7 @@ Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It understan
 | **CHASSIS** | AWD detail (4 wheel speeds, torque bar, F/R delta, L/R delta, rear bias), G-Force section (yaw, steering, peaks + inline reset), TPMS with Focus RS wireframe, tire pressure + temperature (color-coded), temperature range legend |
 | **TEMPS** | Animated Ready-to-Race banner, 10 temperature cards each with a colour indicator bar (oil, coolant, intake, ambient, RDU, PTU, charge air, catalytic, cabin, battery) |
 | **DIAG** | DTC Scanner (full-module scan, count badges, freeze-frame, clear), session diagnostics — frame inventory, per-ID change tracking, periodic samples, SLCAN raw log (incl. OBD response frames), one-tap ZIP export with all OBD fields (SavvyCAN/Kayak compatible) |
-| **MORE** | Drive mode (N/S/T/D, read-only mirror of CAN), ESC status (read-only), firmware-gated features (Launch Control, Auto S/S Kill), Module Status (RDU/PDC/FENG live OBD), connection & snapshot, diagnostic export, Trip GPS recording |
+| **MORE** | Drive mode (N/S/T/D, tap-to-change with openRS_ firmware), ESC status, firmware version display, firmware-gated features (Launch Control, Auto S/S Kill), Module Status (RDU/PDC/FENG live OBD), connection & snapshot, diagnostic export, Trip GPS recording |
 
 ### Live Parameters — WebSocket SLCAN (passive at full bus speed)
 
@@ -203,7 +203,8 @@ Open `android/browser-emulator/index.html` in any browser, or visit the live ver
 │  ┌──────┬───────┬─────────┬───────┬──────┬──────┐                   │
 │  │ DASH │ POWER │ CHASSIS │ TEMPS │ DIAG │ MORE │                   │
 │  └──────┴───────┴─────────┴───────┴──────┴──────┘                   │
-│  Header: logo · drive mode badge · ESC · pulsing dot · ⚙            │
+│  Header: logo · connection pill · TRIP · ⚙                            │
+│  F1 Telemetry Strip: MODE · ESC · CONN/FPS · IGN · E-BRK             │
 ├──────────────────────────────────────────────────────────────────────┤
 │  UserPrefsStore (StateFlow) — units, thresholds, reconnect settings  │
 ├──────────────────────────────────────────────────────────────────────┤
@@ -312,6 +313,7 @@ android/
 ├── browser-emulator/
 │   └── index.html                        # Standalone browser emulator (v2.2.4)
 ├── docs/
+│   ├── focus-rs-a4.png                   # Focus RS wireframe source (TPMS UI)
 │   ├── hardware-setup.md
 │   ├── firmware-update.md
 │   ├── pid-reference.md
@@ -348,7 +350,7 @@ Complete decode formulas, byte-level breakdowns, and all Mode 22 PIDs: [`android
 
 ### Planned
 
-- [ ] Phase 8.5 — Polish and sensor gaps: BLE transport in app, tire temperature PIDs, brake pressure calibration (v2.3.x)
+- [ ] Phase 8.5 — Polish and sensor gaps: BLE transport in app, ESC write fix ([#125](https://github.com/klexical/openRS_/issues/125)), brake pressure calibration (v2.3.x)
 - [ ] Phase 9 — Track day intelligence: lap timer with geofence, track map overlay enhancements, trip comparison (v2.4.x)
 - [ ] Phase 10 — Hardware expansion: MeatPi Pro GPS integration, MS-CAN support (v2.5.x)
 - [ ] Phase 11 — High-frequency telemetry: UDS Fast Rate Session via DDDI 0x2C (~100 Hz) (v3.x)
@@ -370,7 +372,6 @@ Pull requests welcome. See [CONTRIBUTING.md](android/CONTRIBUTING.md) for guidel
 If you have a Focus RS and FORScan/OBDLink, we'd love help verifying:
 - 12V battery voltage — CAN ID 0x3C0 does not broadcast; needs alternative source (BCM PID or other CAN ID)
 - Brake pressure bar calibration (raw ADC 0–4095 from `0x252`, need known-pressure reference)
-- Tire temperature PIDs (0x2823–0x2826) — currently experimental
 - Additional BCM Mode 22 PIDs
 - MS-CAN parameters (requires second adapter)
 
