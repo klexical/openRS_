@@ -1,0 +1,1148 @@
+ABS	  	ABS
+ABS_DIAGSTATE	  	Diagnostic State
+AYC	  	AYC
+BFLHPC	  kPa	Brake Fluid Line Hydraulic Pressure (Calculated Value)
+BOO_ABS	  	Brake ON/OFF
+BRKHYDPRESS	  kPa	Brake Fluid Line Hydraulic Pressure
+BST_REL_SW	  	Booster Release Switch State
+BTC	  	BTC
+BTCS	  	BTCS -201D
+DYNOMODE	  	Brake Two-Wheel Dyno Mode
+ECU_Int_Temp	  °C	ECU Internal Temperature
+EFPS	  	ABS Evacuate and Fill Process Status
+EngDragCntrl	  	Engine Drag Control
+GLOBTIM	  s	Global real time
+HDC	  	HDC
+HYD_PMP_ST	  	Hydraulic Pump State
+IVCS	  	Inlet Valves Calibration Status
+LASCV	  G	Longitudinal Acceleration Rate Compensation Value
+LAT_ACCL	  G	Lateral accelerometer
+LAT_ACC_CLC	  G	Lateral Acceleration (Calculated Value)
+LF_DUMP	  	Left Front Dump
+LF_ISO	  	Left Front Isolation valve
+LF_RR_TC_ISO2	  	Left Front/Right Rear Traction Control Valve 1
+LF_RR_TC_SUP2	  	Left Front/Right Rear Traction Control Supply 1
+LF_WSPD	  km/h	Left front wheel speed sensor
+LONG_ACCL	  G	Longitudinal Accelerometer Sensor Input
+LR_DUMP	  	Left Rear Dump
+LR_ISO	  	Left Rear Isolation Valve
+LR_WSPD	  km/h	Left rear wheel speed sensor
+MAINECUV	  V	Main ECU voltage supply
+MCIVCS	  	Master Cylinder Isolation Valve Calibration State
+OUTTMP	  °C	External Temperature From Sensor
+PMP_MTR	  	Hydraulic Pump Motor
+POWER_MODE	  	Power Mode Status
+PRK_BRAKE	  	Parking brake Switch
+REGEN_BRAKING	  	Regenerative Braking Mode
+RF_DUMP	  	Right Front Dump
+RF_ISO	  	Right Front Isolation Valve
+RF_LR_TC_ISO2	  	Right Front/Left Rear Traction Control Valve 2
+RF_LR_TC_SUP2	  	Right Front/Left Rear Traction Control Supply 2
+RF_WSPD	  km/h	Right front wheel speed sensor
+RR_DUMP	  	Right Rear Dump
+RR_ISO	  	Right Rear Isolation Valve
+RR_WSPD	  km/h	Right rear wheel speed sensor
+RSC	  	RSC
+R_GEAR_SW	  	Reverse gear switch
+SELTESTDTC	   	Number of On Demand DTCs
+STR_ANG_ABS	  °	Steering wheel angle sensor
+STR_ANG_RAW	  °	Steering Wheel Angle - Raw
+S_LAMP	  	Rear Stop Lamp
+TC_HILL_SW	  	Hill Descent Control switch status
+TC_SW_STAT	  	Traction Control switch status
+TC_SYS_STAT	  	Traction Control system status
+TOTAL_DIST	  km	Total Vehicle Distance
+TSCntrl	  	Trailer Sway
+VAC_BST_ST	  	Active Vacuum Booster State
+VPWR_ABS	  V	Module supply voltage
+VSS	  km/h	Vehicle Speed
+YAW_RATE	  1/min	ABS Yaw Rate Value
+YAW_RATE_C	  1/min	Yaw Rate (Calculated Value)
+CENTER_SPKR	  	CENTER SPEAKER STATUS
+CENTR2_SPKR	  	CENTER 2 SPEAKER STATUS
+CENTR_TWEET	  	CENTER TWEETER STATUS
+CHN_FREQ	  MHz	Channel Frequency
+LF_MR_SPKR	  	LEFT FRONT MID RANGE SPEAKER STATUS
+LF_SPKR	  	LEFT FRONT SPEAKER STATUS
+LF_TWEETER	  	LEFT FRONT TWEETER STATUS
+LR_SPKR	  	LEFT REAR SPEAKER STATUS
+LR_TWEETER	  	LEFT REAR TWEETER STATUS
+RCENTR_SPKR	  	REAR CENTER SPEAKER STATUS
+RF_MR_SPKR	  	RIGHT FRONT MID RANGE SPEAKER STATUS
+RF_SPKR	  	RIGHT FRONT SPEAKER STATUS
+RF_TWEETER	  	RIGHT FRONT TWEETER STATUS
+RR_SPKR	  	RIGHT REAR SPEAKER STATUS
+RR_TWEETER	  	RIGHT REAR TWEETER STATUS
+SUBWOOFER	  	SUBWOOFER STATUS
+SUBWOOFER2	  	SUBWOOFER 2 STATUS
+TOTAL_DIST	  km	Total Vehicle Distance
+APIM_M_P	  	ECU Mono Primary Source
+APIM_P_C	  	ECU Phone Call
+APIM_S_P	  	ECU Stereo Primary Source
+APIM_S_S	  	ECU Stereo Secondary Source
+BATMOD	  V	Battery Module Voltage
+BT_CONN	  	Bluetooth Device Connected
+BT_PAIR	  	Bluetooth Device Paired
+GPS_ALTITUDE	  m	GPS Altitude
+GPS_FIX	  	GPS Fix
+GPS_HEADING	  °	GPS Heading
+GPS_LATITUDE	  °	global position latitude
+GPS_LONGITUDE	  °	global position longitude
+GPS_SPEED	  km/h	GPS Speed
+KEYPOS	  	Ignition key input
+USBDEVICE1	  	USB Port #1 Device Connected
+USBDEVICE2	  	USB Port #2 Device Connected
+VSS	  km/h	Vehicle Speed
+AWD_BLDC_SPD	  1/min	Brushless Direct Current Pump Motor Speed
+AWD_Clt_EBL	  	EOL Request Mode
+AWD_Clt_L_SPT	  Nm	EOL Setpoint Torque Left
+AWD_Clt_R_SPT	  Nm	EOL Setpoint Torque Right
+AWD_DMD_PRES	  kPa	Rear Drive Unit Demanded Hydraulic Pressure
+AWD_ECU_TMP	  °C	All Wheel Drive Module Temperature
+AWD_MTR_CURR	  A	Hydraulic Pump Motor Current Load
+AWD_REQ_TRQ_L	  Nm	Left Side Requested Torque
+AWD_REQ_TRQ_R	  Nm	Right Side Requested Torque
+AWD_SWTCH_ST	  	All Wheel Drive Module Mode Select Switch Status
+CALC_BLDC_SPD	  1/min	Brushless Direct Current Pump Motor Speed
+CAL_COUP_TQ_L	  Nm	Calculated Left Coupling Torque
+CAL_COUP_TQ_R	  Nm	Calculated Right Coupling Torque
+CLTCH_LPRS_RW	  kPa	Left Clutch Supply Pressure Raw
+CLTCH_LTMP_INF	  °C	Left Clutch Temperature Inferred
+CLTCH_L_CUR	  A	Left Clutch Solenoid  Measured Control Current
+CLTCH_MAX_TMP	  °C	Clutch Maximum Reported Temp
+CLTCH_RPRS_RW	  kPa	Right Clutch Supply Pressure Raw
+CLTCH_RTMP_INF	  °C	Right Clutch Temperature Inferred
+CLTCH_R_CUR	  A	Right Clutch Solenoid Measured Control Current
+CLTCH_TMP_TH	   	Clutch Temperature Above Threshold Counter
+CLT_VLV_PW_L	  %	Left Clutch Control Valve Pulse Width
+CLT_VLV_PW_R	  %	Right Clutch Control Valve Pulse Width
+COUP_SPD_DIF_L	  1/min	Left Clutch Coupling Speed Difference
+COUP_SPD_DIF_R	  1/min	Right Clutch Coupling Speed Difference
+ECU_TMP_TH	   	ECU Temperature Above Threshold Counter
+GLOBTIM	  s	Global real time
+MAINECUV	  V	Main ECU voltage supply
+OUTTMP	  °C	External Temperature From Sensor
+POWER_MODE	  	Power Mode Status
+REF_COUP_PRES_L	  kPa	Left Clutch Reference Coupling Pressure
+REF_COUP_PRES_R	  kPa	Right Clutch Reference Coupling Pressure
+R_DIFF_OIL_TMP	  °C	Rear Drive Unit Differential Oil Temperature
+SPEED_DIF_FR	  1/min	All Wheel Drive Front To Rear Speed Difference
+TOTDIST	  km	Total Distance
+TRANS_OIL_TMP	  °C	Rear Drive Unit Sump Oil Temperature
+VLV_REF_CUR_L	  A	Left Clutch Valve Reference Current
+VLV_REF_CUR_R	  A	Right Clutch Valve Reference Current
+VSPD	  km/h	Vehicle Speed
+WHL_SPD_LF	  1/min	AWD Left Front Wheel Speed
+WHL_SPD_LR	  1/min	AWD Left Rear Wheel Speed
+WHL_SPD_RF	  1/min	AWD Right Front Wheel Speed
+WHL_SPD_RR	  1/min	AWD Right Rear Wheel Speed
+ALARM_1	  	Last Alarm Trigger 1
+ALARM_2	  	Last Alarm Trigger 2
+ALARM_3	  	Last Alarm Trigger 3
+ALARM_4	  	Last Alarm Trigger 4
+ALARM_5	  	Last Alarm Trigger 5
+ANTITHFT_HRN	  	Anti-Theft Horn Status
+BARO	  kPa	Barometric Pressure
+BATTERY_AGE	   	Vehicle Battery - Days in Service
+BATT_INT_OC	  	BATT_INT_OC
+BAT_CURRENT	  A	Vehicle Battery - Current
+BAT_MON_REG	  	Battery Monitor / Regenerative Charge State
+BAT_ST_CHRG	  %	Vehicle Battery - State of Charge
+BAT_TEMP	  °C	Vehicle Battery - Estimated Temperature
+BAT_V_DSD	  V	Battery Charging Voltage Desired
+BCM_STATE	  	ECU Operating States
+BRAKE_LMP_SW	  	Brake Lamp Switch
+BRK_FLUID	  	Brake Fluid Level
+CC_CAN_SW	  	SPC Cancel Switch
+CC_OFF_SW	  	SPC Off Switch
+CC_ON_SW	  	SPC On switch
+CC_RES_SW	  	SPC Resume Switch
+CC_SETM_SW	  	SPC Set Minus Switch
+CC_SETP_SW	  	SPC Set Plus Switch
+CNTRL_LOCK_S	  	Central lock status
+CRASH	  	Crash Sensed Status
+CUM_CHG_ON	   	Cumulative Battery Charge When Ignition Is On
+CUM_DIS_OFF	   	Cumulative Discharge From Battery When Engine Is Off
+CUM_DIS_RUN	   	Cumulative Discharge From Battery When Engine Is On
+CUM_DIS_SLP	   	Cumulative Discharge From Battery in Sleep Mode
+CV_MON_DATA_NC	  	CV Monitor Data Not Correct
+DOOR_LK/UL_SW	  	Central Door Lock Switch
+DOOR_SW_DRVR	  	Drivers Door Ajar Switch Status
+DOOR_SW_LR	  	Left Rear Door Ajar Switch
+DOOR_SW_LUGG	  	Luggage Compartment Lid Ajar Switch
+DOOR_SW_PSGR	  	Passenger Door Ajar Switch Status
+DOOR_SW_RR	  	Right Rear Door Ajar Switch
+ENGINE_RPM	  1/min	Engine Speed
+ENG_SPD_QF	  	Engine speed QF
+ERT_ENTRIES	   	ERT_ENTRIES
+EVAP_VOLT	  V	evaporator temperature signal voltage
+EVT1_AGE_IGN	   	TPMS Last Warning Event #1 - Age In Ignition Cycles Since The Event
+EVT1_ODOMTR	  km	TPMS Last Warning Event #1 - Odometer Reading
+EVT1_PRESS	  kPa	TPMS Last Warning Event #1 - Measured Sensor Pressure
+EVT1_PRES_BP	  kPa	TPMS Last Warning Event #1 - Sensor Pressure Barometrically Compensated
+EVT1_SNSR_ID	   	TPMS Last Warning Event #1 - Transmitter ID
+EVT1_SNSR_ST	   	TPMS Last Warning Event #1 - Sensor Status
+EVT1_TEMP	  °C	TPMS Last Warning Event #1 - Sensor Temperature
+EVT1_TR_LOC	  	TPMS Last Warning Event #1 - Last Learned Transmitter Location
+EVT1_WRN_ST	  	TPMS Last Warning Event #1 - Sensor Warning Status
+EVT2_AGE_IGN	   	TPMS Last Warning Event #2 - Age In Ignition Cycles Since The Event
+EVT2_ODOMTR	  km	TPMS Last Warning Event #2 - Odometer Reading
+EVT2_PRESS	  kPa	TPMS Last Warning Event #2 - Measured Sensor Pressure
+EVT2_PRES_BP	  kPa	TPMS Last Warning Event #2 - Sensor Pressure Barometrically Compensated
+EVT2_SNSR_ID	   	TPMS Last Warning Event #2 - Transmitter ID
+EVT2_SNSR_ST	   	TPMS Last Warning Event #2 - Sensor Status
+EVT2_TEMP	  °C	TPMS Last Warning Event #2 - Sensor Temperature
+EVT2_TR_LOC	  	TPMS Last Warning Event #2 - Last Learned Transmitter Location
+EVT2_WRN_ST	  	TPMS Last Warning Event #2 - Sensor Warning Status
+EVT3_AGE_IGN	   	TPMS Last Warning Event #3 - Age In Ignition Cycles Since The Event
+EVT3_ODOMTR	  km	TPMS Last Warning Event #3 - Odometer Reading
+EVT3_PRESS	  kPa	TPMS Last Warning Event #3 - Measured Sensor Pressure
+EVT3_PRES_BP	  kPa	TPMS Last Warning Event #3 - Sensor Pressure Barometrically Compensated
+EVT3_SNSR_ID	   	TPMS Last Warning Event #3 - Transmitter ID
+EVT3_SNSR_ST	   	TPMS Last Warning Event #3 - Sensor Status
+EVT3_TEMP	  °C	TPMS Last Warning Event #3 - Sensor Temperature
+EVT3_TR_LOC	  	TPMS Last Warning Event #3 - Last Learned Transmitter Location
+EVT3_WRN_ST	  	TPMS Last Warning Event #3 - Sensor Warning Status
+EVT4_AGE_IGN	   	TPMS Last Warning Event #4 - Age In Ignition Cycles Since The Event
+EVT4_ODOMTR	  km	TPMS Last Warning Event #4 - Odometer Reading
+EVT4_PRESS	  kPa	TPMS Last Warning Event #4 - Measured Sensor Pressure
+EVT4_PRES_BP	  kPa	TPMS Last Warning Event #4 - Sensor Pressure Barometrically Compensated
+EVT4_SNSR_ID	   	TPMS Last Warning Event #4 - Transmitter ID
+EVT4_SNSR_ST	   	TPMS Last Warning Event #4 - Sensor Status
+EVT4_TEMP	  °C	TPMS Last Warning Event #4 - Sensor Temperature
+EVT4_TR_LOC	  	TPMS Last Warning Event #4 - Last Learned Transmitter Location
+EVT4_WRN_ST	  	TPMS Last Warning Event #4 - Sensor Warning Status
+EVT5_AGE_IGN	   	TPMS Last Warning Event #5 - Age In Ignition Cycles Since The Event
+EVT5_ODOMTR	  km	TPMS Last Warning Event #5 - Odometer Reading
+EVT5_PRESS	  kPa	TPMS Last Warning Event #5 - Measured Sensor Pressure
+EVT5_PRES_BP	  kPa	TPMS Last Warning Event #5 - Sensor Pressure Barometrically Compensated
+EVT5_SNSR_ID	   	TPMS Last Warning Event #5 - Transmitter ID
+EVT5_SNSR_ST	   	TPMS Last Warning Event #5 - Sensor Status
+EVT5_TEMP	  °C	TPMS Last Warning Event #5 - Sensor Temperature
+EVT5_TR_LOC	  	TPMS Last Warning Event #5 - Last Learned Transmitter Location
+EVT5_WRN_ST	  	TPMS Last Warning Event #5 - Sensor Warning Status
+FOG_LAMPS	  	Front Fog Lamps Request
+FOG_L_SW_STK	  	Front Fog Lamp Button Stuck
+FOG_R_SW_STK	  	Rear Fog Lamp Button Stuck
+FP_RELAY	  	Fuel pump relay
+FRNT_WPR_VOR	  	Front Wiper Voltage Out Of Range
+FRNT_WSH_VOR	  	Front Washer Voltage Out Of Range
+FRNWIPER_Prk	  	Front Wiper Park Switch
+F_DR_RLS_STK	  	Fuel Lid Unlock Button Stuck
+HAZARD_LP_SW	  	Hazard Switch Signal
+HIGH BEAMS	  	High Beam
+HI_LOW_ICOM	  	High Low Beam Illegal Combination
+HOOD_SW	  	Hood Ajar Switch
+HORN	  	Horn Output
+IFC_D703	   	Internal Module Fail Code
+IGN_SW_ACC	  	Ignition Switch Accessory Position
+IGN_SW_KEY_IN	  	Ignition Key In / Out
+IGN_SW_RUN	  	Ignition Switch - Run Position
+IN-CAR_TEMP	  °C	Inside Car Temperature
+INT_LTS1_PWM	  %	Interior Lights 1 PWM Output
+INT_LTS2_PWM	  %	Interior Lights 2 PWM Output
+KEY_LRN_MODE	  	PATS Delivery Mode
+KEY_POSITION	  	Ignition Key Status
+LED_UNIT_0	  	Light Emitting Diode Unit 0
+LED_UNIT_1	  	Light Emitting Diode Unit 1
+LED_UNIT_2	  	Light Emitting Diode Unit 2
+LED_UNIT_3	  	Light Emitting Diode Unit 3
+LED_UNIT_4	  	Light Emitting Diode Unit 4
+LED_UNIT_5	  	Light Emitting Diode Unit 5
+LED_UNIT_6	  	Light Emitting Diode Unit 6
+LED_UNIT_7	  	Light Emitting Diode Unit 7
+LED_UNIT_8	  	Light Emitting Diode Unit 8
+LED_UNIT_9	  	Light Emitting Diode Unit 9
+LI_PLATE_LMP	  	License Plate Light
+LK_ALL_LOCK	  	All Door Lock
+LK_UNLCK_SUP	  	Central Unlock Supply
+LOW_BEAM_LT	  	Left Headlamp Low Beam
+LOW_BEAM_RT	  	Right Headlamp Low Beam
+LSCMbB_NOT_DEN	  	Low Speed Collison Mitigation Not Denied
+LSCMbB_PL_MON	  	Low Speed Collison Mitigation Plausibility Monitoring
+LSWPK_AD_VOR	  	Left Switch Pack A/D Convertor Voltage Out Of Range
+LSWPK_CC_STK	  	Left Switch Pack Cruise Control Button Stuck
+LT_SW_INVLD	  	Exterior Light Switch - Invalid Position
+MIN_KEYS_RQD	   	Minimum number of keys required
+MOD_SUP_V	  V	Module Supply Voltage
+MOD_SW_ASSERT	   	Control Module Software Assertion Info
+NO_SGNL_ABS	  	Missing Signal - Anti-lock Brake System Module
+NO_SGNL_ECM	  	Missing Signal - Engine Control Module
+NO_SGNL_FDSM	  	Missing Signal - Front Display Sensing Module
+NUM_REM	   	Number Of Remote Keys
+ODDTC_BCM	   	Number of Trouble Codes Set Due to Diagnostic Test
+PARK_BRK_SW	  	Parking Brake Switch Input
+PATS_ACC_TYP	  	Security Access type Timed / Coded
+PCM_ID	  	PCM ID Status Stored
+PCM_VERIFY	  	PCM Verify OK
+PLCRD_TP_BCK	  kPa	Rear Tire Placard Pressure
+PLCRD_TP_FRT	  kPa	Front Tire Placard Pressure
+POS_LAMP_LT	  	Left Position Lights Duty Cycle
+POS_LAMP_RT	  	Right Position Lights Duty Cycle
+PROGRMD_KEY	  	Programmed (Master) Key Present
+PUSH_BTN_STRT	  	Push Button Start Request
+PWR_MODE_KEY	  	Power Mode Key State
+PWR_MODE_QF	  	Power Mode Quality Factor
+REALTIME	  s	Total time ECU has been active
+REAR_WPR_VOR	  	Rear Wiper Voltage Out Of Range
+RKE_MESSAGE	  	Remote Key Message
+ROLL_CALL_F	  	Roll Call Finished
+RPM_UPDATE	  	RPM update bit received in valid time
+RSWPK_AD_VOR	  	Right Switch Pack A/D Convertor Voltage Out Of Range
+RSWPK_CC_STK	  	Right Switch Pack Cruise Control Button Stuck
+RVRS_LMPS	  	Reverse Lamp
+R_DEFRST_RLY	  	Rear Defrost Relay Status
+R_DEFRST_SW	  	Rear Defrost Switch
+SCL_STAT_BOLT	  	SCL Status-- Bolt
+SCL_STAT_FLT	  	SCL Status-- Fault
+SCL_STAT_SFTY	  	SCL Status-- Safety Reqs
+SCL_STAT_UNIT	  	SCL Status-- Unit
+SPEED_UPDATE	  	Speed update bit received in valid time
+SPI_FAILURE	  	SPI_FAILURE
+START_ENABLD	  	Vehicle Enable Status
+STOP_LMP_CHM	  	Central High Mounted Stop Lamp
+STOP_LMP_LT	  	Left Stop Lamp Duty Cycle
+STOP_LMP_RT	  	Right Stop Lamp Duty Cycle
+SWPK_INCMPTL	  	Switch Pack Incompatible With Vehicle
+TARG1_AUT_FLT	  	Target1 Auth Fault
+TARG1_CHL_FLT	  	Target1 Challenge Fault
+TOTAL_DIST	  km	Total Vehicle Distance
+TPMS_STATUS	  	Tire Pressure Monitoring System Status
+TPM_L_PRESS	  kPa	TPMS Last Received Measured Pressure
+TPM_L_SR_CS	   	TPMS Last Received Sensor Check Sum
+TPM_L_SR_ID	   	TPMS Last Received Sensor ID
+TPM_L_STAT	   	TPMS Last Received Sensor Status
+TPM_L_TEMP	  °C	TPMS Last Received Temperature
+TPM_PRES_LF	  kPa	Left Front Tire Pressure
+TPM_PRES_LRO	  kPa	Left Rear Outer Tire Pressure
+TPM_PRES_RF	  kPa	Right Front Tire Pressure
+TPM_PRES_RRO	  kPa	Right Rear Outer Tire Pressure
+TPM_S_ID_LF	   	TPMS Tire Sensor ID Left Front
+TPM_S_ID_LRO	   	TPMS Tire Sensor ID Left Rear Outer
+TPM_S_ID_RF	   	TPMS Tire Sensor ID Right Front
+TPM_S_ID_RRO	   	TPMS Tire Sensor ID Right Rear Outer
+TPM_WRN_LMP	  	Tire Pressure Monitoring System Indicator
+TRNK/LG_RLS	  	Trunk/Liftgate Release Output
+TRNK/LG_R_SW	  	Trunk/Liftgate Release Switch
+TRNK_RLS_STK	  	Trunk Lid Unlock Button Stuck
+TRN_BM_ICOM	  	Turn and High/Low Beam Illegal Combination
+TRN_SIG_ICOM	  	Side Turn Illegal Combination
+TURN_SW_ICOM	  	Turn Stalk Illegal Combination
+TURN_SW_STK	  	Turn Stalk Stuck Position or Button
+VEHICLE_MODE	  	Vehicle Mode
+VEHICLE_SPD	  km/h	Vehicle Speed
+VEH_SPD_QF	  	Vehicle Speed QF
+VOICE_B_STK	  	Voice Control Button Stuck
+V_BATT_BCM	  V	Battery Voltage
+WASH_RLY_F	  	Front Washer Pump Relay
+WASH_RLY_R	  	Rear Washer Pump Relay
+WPR_ADJ_VOR	  	Wiper Adjust Voltage Out Of Range
+WPR_FRNT_HI	  	Front Wiper Hi/Lo Control
+WPR_RLY_FRNT	  	Front Wiper Relay
+WPR_RLY_REAR	  	Rear Wiper Relay
+WPR_SW_ICOM	  	Wiper Stalk Illegal Combination
+WPR_SW_STK	  	Wiper Stalk Stuck Position or Button
+BSI_LED	  %	Blind Spot Information LED Duty Cycle
+CS_LED	  	Child Safety LED
+CS_SW	  	Child Safety Switch
+DAWL	  	Door Open/Ajar Warning Light Output
+DDM_STATE	  	ECU Operating States
+DIMM	  %	Illumination dimming level
+FDDUTS	  	Front Driver Door Unlock Trim Switch
+FDLMMS	  	Front Door Lock and Mirror Motor Status
+FDL_LED	  %	Front Door Lock Status LED Duty Cycle
+FL_WDW	  	Front Left Door Window Switch
+FPWMS	  	Front Power Window Motor Status
+FR_WDW	  	Front Right Door Window Switch
+GLOBTIM	  s	Global real time
+H_MIRROR	  	Side Mirror Heating Output Control
+IC_VPWR	  V	Module supply voltage
+INCARTMP	  °C	In car temperature
+LR_DLOCK_SW	  	Rear Driver Door Lock Switch
+MAINECUV	  V	Main ECU voltage supply
+MIRROR_FOLD	  	Mirrors Fold/Unfold Switch
+MIRROR_L_LED	  	Mirror Selection LED Left
+MIRROR_R_LED	  	Mirror Selection LED Right
+MIRROR_SEL	  	Mirror Selection Switch
+MIR_SW_L	  	Mirror Switch  (Left)
+OUTTMP	  °C	External Temperature From Sensor
+P_LAMP	  	Puddle Lamp Control
+RDLMS	  	Rear Door Lock Motor Status
+RL_WDW	  	Rear Left Door Window Switch
+RPWMS	  	Rear Power Window Motor Status
+RR_WDW	  	Rear Right Door Window Switch
+SELTESTDTC	   	Diagnostic Trouble Codes
+SMT_LAMP	  	Side Mirror Turn Signal Lamp Control
+SR_SW_DD	  	Set / Reset Switch Status - Driver Door
+TOTAL_DIST	  km	Total Vehicle Distance
+BTNPWR_FCIM	  	Power Button
+BTN_AMFM	  	AM/FM Button
+BTN_EJECT	  	Eject Button
+BTN_SEEKDOWN	  	Seek Down Button
+BTN_SEEKLEFT	  	Seek Left Button
+BTN_SEEKRIGHT	  	Seek Right Button
+BTN_SEEKUP	  	Seek Up Button
+BTN_SOUND	  	Sound Button
+KEYPOS_FCIM	  	Ignition key input
+VPWR_FCIM	  V	Module supply voltage
+CSPM_DR_FAIL_CT	   	Critical Software Param Monitor - Data Range Failure Counter
+CSPM_IL_OP_CT	   	Critical Software Param Monitor - Illegal Operation Code Counter
+CSPM_LT_OF_CT	   	Critical Software Param Monitor - Loop or Idle Time Overflow Counter
+CSPM_MIN_I_TM	   	Critical Software Param Monitor - Minimum Idle-Time
+CSPM_PWR_D_CT	   	Critical Software Param Monitor - Micro Power Drop and Recover Counter
+CSPM_PWR_ON_CT	   	Critical Software Param Monitor - Power ON Reset Counter
+CSPM_STK_OF_CT	   	Critical Software Param Monitor - Stack Overflow Counter
+CSPM_WD_TMR_CT	   	Critical Software Param Monitor - Watchdog Timer Reset Counter
+FUEL_LEVEL_A	  V	Fuel Level Sensor A
+FUEL_LEVEL_B	  V	Fuel Level Sensor B
+GFM2_STATE	  	ECU Operating States
+MODE_SEL_SW	  	Drivers Mode Select Switch
+FHS	  mm	Front Height Sensor
+F_CALIB_HCM	   	Rear Sensor Value during Calibration
+F_LEVEL	  V	Front Level Sensor
+NOTCSDTDT	   	Number of diagnostic trouble codes set due to diagnostic test
+RHS	  mm	Rear height sensor
+R_CALIB_HCM	   	Front Sensor Value during Calibration
+SWA	  °	steering wheel angle
+VOLTS_HCM	  V	Module Supply Voltage
+VSS	  km/h	Vehicle speed sensor
+AIRTEMP_RF	  °C	Discharge Air Temperature, Right Floor
+AIRTEMP_RP	  °C	Discharge Air Temperature, Right Panel
+AIR_MODE_DPOS	  %	air mode actuator
+BLOWRSPD	  %	Blower Motor Speed
+CCM_SW_SCRN_L	  	Screen Left
+CC_SW_AC	  	A/C Switch
+CC_SW_AUTO	  	Auto
+CC_SW_DEFRST	  	Defrost
+CC_SW_DL_ZN	  	Dual Zone
+CC_SW_FAN+	  	Fan +
+CC_SW_FAN-	  	Fan -
+CC_SW_FLOOR	  	Floor
+CC_SW_OFF	  	Off
+CC_SW_PANEL	  	Panel
+CC_SW_RECIR	  	Recirculation Switch
+DEFROST_DR	  %	Defrost Door Position
+INT_TEMP	  °C	Interior Temperature Sensor
+LBLND_DR	  %	Left Blend Door Position
+LDFTEMP	  °C	Left Discharge Floor Temperature
+LDPT	  °C	Left Discharge Panel Temperature
+NOTCSDTDT	   	Number of diagnostic trouble codes set due to diagnostic test
+RBLND_DR	  %	Right Blend Door Position
+RECIRC_DPOS	  	A/C Recirculating Servo Position Status
+SOLAR_SSR_L	  Watt	Solar Radiation Sensor (Left)
+SOLAR_SSR_R	  Watt	Solar Radiation Sensor (Right)
+VPWR	  V	Module Supply Voltage
+EOT_GAUGE_PP	  °C	Engine Oil Temperature
+ICM_State	  	D100
+ILLUMINATE	  %	Illumination
+OIL_PRESS	  %	Oil Pressure
+TURBO_GAUGE	  kPa	Turbo Boost Gauge Pointer Position
+ABS_LAMP	  	ABS Warning Lamp
+AHBC_CP	  	Auto High Beam Customer Preference
+AIRBAG_LAMP	  	Airbag Warning Indicator
+AIRBAG_LMP	  	Airbag Warning Indicator
+AIRBAG_L_REQ	  	Airbag Warning Light
+BRK_LAMP	  	Brake Warning Lamp
+BRK_LAMP	  	Brake Warning Lamp
+BTN_L_DOWN	  	Down Button (S2)
+BTN_L_LEFT	  	Left Button (S3)
+BTN_L_RIGHT	  	Right Button (S4)
+BTN_L_SET	  	Set Button
+BTN_L_UP	  	Up Button (S1)
+BTN_R_DOWN	  	Down Button (S2)
+BTN_R_LEFT	  	Left Button (S3)
+BTN_R_RIGHT	  	Right Button (S4)
+BTN_R_SET	  	Set Button
+BTN_R_UP	  	Up Button (S1)
+CHARGE_LMP	  	Warning Lamp Status 1 - Charge Warning
+CRUISE	  	Cruise control lamp
+ChildLock_ST	  	Child Lock Status
+DIMon_CP	  	Driver Inattention Monitor Customer Preference
+DISP_UNITS	  	DISPLAY UNITS
+DLA_IPC_NUM_DCAF_PID	  °C	DL_IPC_NUM_DCAF
+DLA_NUM_DB83_PID	   	DL_NUM_DB83_PID
+DLA_NUM_DCAE_PID	  °C	DL_NUM_DCAE_PID
+DOOR_SW_DRVR	  	Drivers Door Ajar Switch Status
+DOOR_SW_LR	  	Left Rear Door Ajar Switch
+DOOR_SW_LUGG	  	Luggage Compartment Lid Ajar Switch
+DOOR_SW_PSGR	  	Passenger Door Ajar Switch Status
+DOOR_SW_RR	  	Right Rear Door Ajar Switch
+ENGCOOLNT	  %	Temperature Gauge
+EPB_LAMP	  	Parking brake lamp
+FROST_IND	  	Frost warning
+FROST_LAMP	  	Frost warning
+FROST_LAMP	  	Frost warning
+FUELLEVEL	  %	Fuel Gauge Indicator Control
+FUELLVL1	   	Fuel Level Analog Input 1 Status
+FUELLVL2	   	Fuel Level Analog Input 2 Status
+F_FOG_IND	  	Front Fog Lamp Indicator
+GEAR_DISP	  	Gear Display 1
+GENINFO	  	General Info
+GENWARN_1	  	General Warning Indicator 1 (Red)
+GENWARN_1	  	General Warning Indicator 1 (Red)
+GENWARN_2	  	General Warning Indicator 2 (Amber)
+HIGH_BEAM	  	High Beam Indicator
+HOOD_SW	  	Hood Ajar Switch
+IC_STATE	  	ECU Operating States
+ILLUMINATE	  %	Illumination
+IN-CAR_TEMP	  °C	Inside Car Temperature
+IVD_LAMP	  	Traction control lamp
+LAMPS_ON	  	Lights on Warning
+LCD_ILLUMINAT	  %	LCD Illumination Level
+LDW_CP	  	Lane Departure Warning Customer Preference
+LH_TURN_L	  	Left Turn signal Lamp Status
+LMP_ABS	  	Indicators - ABS
+LOFUELL	  	Low Fuel Warning Indication
+MAINECUV	  V	Main ECU voltage supply
+MIL	  	Malfunction Indicator Lamp
+MIL	  	Malfunction Indicator Lamp
+MODULE_VOLT	  V	Control Module Voltage
+ODDTC_IC	   	Number of On Demand DTCs
+ODOMETER	  km	Vehicle Odometer
+ODO_TRIP_A	  km	Trip Odometer
+ODO_TRIP_B	  km	Trip Odometer
+OIL_P_LOW	  	Oil Pressure Low Indicator
+OS	  km	Odometer Store
+OUTDR_TMP	  °C	Outdoor Air Temperature
+PBA_LMP	  	Park Brake Applied Lamp
+PWR_MODE_KEY	  	Power Mode Key State
+PWR_MODE_QF	  	Power Mode Quality Factor
+REALTIME	  s	Total time ECU has been active
+RH_TURN_L	  	Right Turn signal Lamp Status
+RIL	  	Restraints Indicator Lamp
+R_FOG_IND	  	Rear Fog Lamp Indicator
+SBELT_D_ST	  	Driver Seatbelt Sensor Status
+SBELT_P_ST	  	Passenger Seatbelt Sensor Status
+SBLT_LAMP	  	Safety Belt Warning Lamp
+SHIFT_LAMP	  	Performance Shift Lamp
+SPDOMETER	  %	Speedometer
+STAB_TC_LMP	  	Traction Control Off Indicator
+TACH_IND	  %	Tachometer Gauge Indicator Control
+TC/IVD/RSC	  	Traction Control Off Indicator
+TC/IVD/RSCLMP	  	Traction Control Indicator
+TOTAL_DIST	  km	Total Vehicle Distance
+TPMS	  	Tire Pressure System Fault
+TPMWARN_LMP	  	Tire Pressure Telltale Status
+TRAILER_LMP	  	Instrument cluster trailer indicator
+VEH_MODE	  	Vehicle Mode Signal
+W_ABS	  	Antilock Braking System Warning
+W_BLIND_SPOT	  	Blind Spot Detection Warning
+W_BRAKE	  	Brake Warning
+W_CC	  	Adaptive Cruise Control Warning
+W_CHRG	  	Charging system fault.
+W_FWD_COLL	  	Forward Collision Warning
+W_LOW_FUEL	  	Low Fuel Warning
+W_LOW_WASH	  	Low washer fluid warning
+W_LW_OL_PRS	  	Low Oil Pressure Warning Activated
+W_OVR_TMP	  	Engine Coolant Over Temperature Condition
+W_PARK_AID	  	Park Aid Malfunction Warning
+W_PEPS	  	Passive Entry Passive Start Warning
+W_PWERTRAIN	  	Powertrain Failure Indicator (non-MIL)
+W_SBLT	  	Seatbelt warning enable
+W_SERV_STEER	  	Service Steering Warning
+W_TC/IVD/RSC	  	Traction Control, Interactive Vehicle Dynamics or Ride Stability Control Event or Fault
+W_THFT	  	Anti-Theft Indicator
+AAT	  °C	Ambient Air Temperature
+BARO	  kPa	Barometric pressure
+CATEMP11	  °C	Catalyst Temperature Bank 1, Sensor 1
+ECT	  °C	Engine coolant temperature
+EQ_RAT	  %	Desired Equivalence Ratio (Lambda)
+EQ_RAT11	   	Equivalence Ratio (Lambda) (Bank 1, Sensor 1)
+EVAP_PCT	  %	Commanded Evaporative Purge
+EVAP_VP	  kPa	Evaporative System Vapor Pressure
+FLI	  %	Fuel Level
+FRP	  kPa	Fuel Rail Pressure
+FUELSYS1	  	Fuel system status (Open/Closed loop) - Bank 1
+FUELSYS2	  	Fuel system status (Open/Closed loop) - Bank 2
+IAT	  °C	Intake Air Temperature
+LOAD_ABS	  %	Engine load
+LOAD_PCT	  %	Engine load
+LONGFT1	  %	Long term fuel trim 1
+MAP	  kPa	Manifold absolute pressure sensor
+MIL_DIST	  km	The distance travelled since the MIL was activated.
+O2S11	  mA	Heated Exhaust Gas Oxygen Sensor (bank 1, sensor 1)
+O2S12	  V	Heated Exhaust Gas Oxygen Sensor (bank 1, sensor 2)
+OBDSUP	  	On Board Diagnostic Requirements Supported
+RPM	  1/min	Engine Revolutions Per Minute
+RUNTM	  s	Time since start (s)
+SHRTFT1	  %	Short term fuel trim 1
+SPARKADV	  °	Spark Advance
+TAC_PCT	  %	Commanded Throttle Actuator Control
+TP	  %	Throttle Position
+TP_B	  %	Absolute Throttle Position B
+TP_D	  %	Accelerator Pedal Position D
+TP_E	  %	Accelerator Pedal Position E
+TP_R	  %	Relative Throttle Position
+VPWR	  V	Control Module Voltage
+VSS	  km/h	Vehicle Speed
+AUTO_OFF	  	Auto off strategy
+FLT_COND	  	Fault condition
+FNT_SENS	  	Parking aid front sensor status
+FRT_CONFIG	  	Front Sensors Configured
+F_TONE_STAT	  	Front Tone Status
+LRI_DIST	  m	Left Rear Inner Parking Aid Sensor Distance
+LRO_DIST	  m	Left Rear Outer Parking Aid Sensor Distance
+MUTE_STAT	  	Mute Status
+PAM_LED_HI	  	LED High Side Driven
+PAM_SW_ST	  	Parking Aid Cancel Switch
+PAM_Status	  	Parking aid input status
+PARK_LED	  	Parking aid LED state
+PARK_SYS	  	Parking aid system status
+REAR_SENS	  	Parking aid rear sensor status
+RRI_DIST	  m	Right Rear Inner Parking Aid Sensor Distance
+RRO_DIST	  m	Right Rear Outer Parking Aid Sensor Distance
+R_TONE_STAT	  	Rear Tone Status
+SEN_DET_LFI	  	Sensor Detection Status Left Front Inner
+SEN_DET_LFO	  	Sensor Detection Status Left Front Outer
+SEN_DET_LRI	  	Sensor Detection Status Left Rear Inner
+SEN_DET_LRO	  	Sensor Detection Status Left Rear Outer
+SEN_DET_RFI	  	Sensor Detection Status Right Front Inner
+SEN_DET_RFO	  	Sensor Detection Status Right Front Outer
+SEN_DET_RRI	  	Sensor Detection Status Right Rear Inner
+SEN_DET_RRO	  	Sensor Detection Status Right Rear Outer
+SPEED_ACT	  	Vehicle Speed Above Activation Threshold
+SPEED_DEACT	  	Vehicle Speed Above Deactivation Threshold
+TRAILINS	  	Trailer installed
+TRANSGR	  	Transmission gear position
+VSS	  km/h	Vehicle Speed Input
+AAT	  °C	Ambient Air Temperature
+AAT	  °C	Ambient Air Temperature
+AAT_UR	  	Ambient Air Temperature Sensor Input Unreliable
+AAT_V	  V	Ambient Air Temperature Sensor Voltage
+ACC_CMD	  	Air Conditioning Compressor Commanded State
+ACP_PRESS	  kPa	A/C pressure sensor
+ACP_V	  V	A/C Pressure Sensor Voltage
+AC_CLTH_F	  	A/C Clutch Output Fault
+AC_DIS_TRQ	  	A/C Compressor Is Being Disabled Because There Is Insufficient Engine Torque Available For Operation Of The A/C Compressor
+AC_REQ	  	Air Conditioning Request Signal
+AC_RMNR_F	  	A/C Request Message Is Not Being Received - Failure Mode
+ADPT1_F	  	Adaptive Fuel table 1 Status
+AEIS_ACTION	   	Number of Drive Cycles where Automatic Engine Idle Shutdown Occurred
+AEIS_POSS	   	Number of Drive Cycles in which Automatic Engine Idle Shutdown Possible
+AF_MOD11	  	PCM control of air fuel to check O2S11 status.
+AIRSUP_DC	  	secondary air system supported
+APP	  %	Accelerator Pedal Position
+APP1	  V	Accelerator pedal position sensor 1
+APP2	  V	Accelerator pedal position sensor 2
+APP_D	  %	Accelerator Pedal Position D
+APP_E	  %	Accelerator Pedal Position E
+APP_FLT	  	Accelerator Pedal Position Sensor Status
+APP_MAXDIFF	  °	Maximum angle difference between APP1 and APP2
+APP_MODE	  	Accelerator Pedal Position
+AST	  ms	Time Since Engine Start
+AXLECC_STAT	  	Axle Ratio Status of Central Vehicle Configuration
+BARO	  kPa	Barometric pressure
+BARO_UR	  	Barometric Pressure Unreliable
+BARO_V	  V	Barometric pressure
+BBPS_DYN_QF	  	Brake Booster Pressure Sensor Dynamic Performance Quality Factor
+BBPS_INR_QF	  	Brake Booster Pressure Sensor In Range Quality Factor
+BBP_ASSIST	  	Status Of The Actively Controlled Brake Booster Pressure Assist Output
+BBP_CORR	  kPa	Brake Booster Pressure as Vacuum - Corrected
+BBP_VAC_MGR	  	Brake Booster Pressure Control - Vacuum Management Request States
+BOO1	  	Brake Pedal Position
+BOO2	  	Brake Pressure Applied
+BRKOVRD_POSS	   	Number of Drive Cycles in which Brake Override Accelerator Action Possible
+BRKOVR_ACTION	   	Number of Drive Cycles where Brake Override Accelerator Action Occurred
+BRK_BOOST_PRS	  kPa	Brake Booster Pressure - Measured
+BRK_BOOST_V	  V	Brake Booster Pressure Sensor Voltage
+CAC_T	  °C	Charge Air Cooler Temperature
+CAC_UR	  	Charge Air Cooler Temperature Sensor Unreliable
+CANVENT_F	  	Canister Venting Status
+CATEMP11	  °C	Catalyst Temperature Bank 1, Sensor 1
+CATSUP_DC	  	Catalyst
+CAT_EVAL	  	Catalyst Monitor Evaluated
+CCMSUP_DC	  	CCMON$I
+CCM_EVAL	  	Comprehensive Components Monitor Evaluated
+CHT2	  °C	Cylinder Head Temperature Sensor 2
+CHT2_F	  	Cylinder Head Temperature Sensor 2 Status
+CHT2_V	  V	Cylinder Head Temperature 2 Voltage
+CLR_DIST	  km	Distance since diagnostic trouble codes cleared
+CMP1_EXH_F	  	Camshaft Position Sensor Bank 1 Exhaust Status
+CMP1_INTK_F	  	Camshaft Position Sensor Bank 1 Intake Status
+COOLPMP_A_STAT	  	Coolant Pump 'A' Control Diagnostic Status
+COOLPMP_CMD	  	Coolant Pump 'A' Is Commanded On
+CPP_BOT	  	Clutch Pedal At or Near Bottom of Travel
+CPP_PERCENT	  %	Clutch Pedal Depression - Corrected
+CPP_SIG_CHK	  	Clutch Pedal Status Check Signal
+CPP_STATUS	  	Clutch Pedal Status
+CPP_TOP	  	Clutch Pedal Beyond Top of Travel Switch Point
+CRNKCAS_PRS	  kPa	Crankcase Pressure (Gauge) - Measured
+CRNKCAS_P_UR	  	Crankcase Pressure Sensor Circuit Input Is Currently Unreliable
+CRNKCAS_P_V	  V	Crankcase Pressure Sensor Circuit Input Voltage
+CYL_1_ACCL	   	Acceleration value of cylinder 1
+CYL_2_ACCL	   	Acceleration value of cylinder 2
+CYL_3_ACCL	   	Acceleration value of cylinder 3
+CYL_4_ACCL	   	Acceleration value of cylinder 4
+DECHOKE	  	Crank fueling disabled
+DIST_AEIS	  km	Distance Since Automatic Engine Idle Shutdown occurred
+DIST_BRKOVRD	  km	Distance Since Brake Override Accelerator Action occurred
+DTCCNT	   	DTC Count (includes those needing no action)
+ECT	  °C	Engine coolant temperature
+ECT_F	  	Engine Coolant Temperature Status
+ECT_V	  V	Engine coolant temperature sensor voltage
+EGRSUP_DC	  	EGR system monitoring
+EGR_EVAL	  	Exhaust Gas Recirculation System Evaluated
+ENGOFF_TIMER	  s	Timer since Engine Off
+ENG_CRANK	  	Engine Cranking
+EQRAT11_CMD	  :1	Commanded Equivalence Ratio (Air to Fuel Mixture) Bank 1
+EQ_RAT11	  :1	Equivalence Ratio (Lambda) (Bank 1, Sensor 1)
+ETCDIAG_CODE	   	Electronic Throttle Control Diagnostics code used for technical assistance
+ETC_ACT	  °	Electronic Throttle Control Actual
+ETC_CLNR_CNTR	   	Count of Drive Cycles where a required Throttle cleaning cycle completed while engine was not running
+ETC_CLNR_STAT	  	Update Status for this Drive Cycle for Throttle Cleaning Cycle when Engine Not Running Counter
+ETC_CNTR_DRVCYL	   	Count of All Drive Cycles for Throttle Metrics
+ETC_CNTR_STAT	  	Update Status for Throttle Metrics Drive Cycle Counter
+ETC_DIST_EVENT	  km	Distance Traveled Since Most Recent Reset or Change for Throttle Counters
+ETC_DSD	  °	Electronic Throttle Control Desired
+ETC_ICE_CNTR	   	Count of Drive Cycles during which Throttle Ice Breaker mode was detected and temperature was in range
+ETC_ICE_STAT	  	Update Status for this Drive Cycle Throttle Ice Breaker when Cold Enough for Ice Counter
+ETC_OSBTR_CNTR	   	Count of Drive Cycles detecting moderate Throttle obstruction during engine running
+ETC_OSBTR_STAT	  	Update Status for this Drive Cycle for moderate Throttle Obstruction during Engine Running Counter
+ETC_REASON_2nd	  	Reason for Second Most Recent Change of Throttle Counters
+ETC_REASON_LAST	  	Reason for Most Recent Change of Throttle Counters
+ETC_TRIM	  °	Learned Value of Throttle Angle Offset
+ETC_TRIM_LRN	  	Throttle Angle Offset has Learned
+EVAP020C	  	EVAP Monitor 0.020 Leak Check Complete
+EVAPCP	  %	Evaporative Emission Canister Purge Valve duty cycle
+EVAPCV	  	Evaporative Emission Canister Vent Valve
+EVAPCV	  %	Evaporative Emission Canister Vent Valve
+EVAPCV_F	  	Evaporative Emission Canister Purge Fault
+EVAPSOAK	  	EVAP Monitor Soak Time Conditions Met
+EVAPSUP_DC	  	Evap system
+EVAPVM_F	  	Evaporative Emission Vapour Management Fault
+EVAP_EVAL	  	Evaporative System Monitor Evaluated
+EVAP_PCT	  %	Commanded Evaporative Purge
+EVAP_VP	  kPa	Evaporative System Vapor Pressure
+EVBV	  	EVAP Vapor Blocking Valve
+EVBV	  %	EVAP Vapor Blocking Valve
+EVBV_F	  	EVAP Vapor Blocking Valve Status
+EVC_A_CMD	  %	Exhaust Flow Control Valve -A- Commanded
+EVC_A_STAT	  	Exhaust Flow Control Valve -A- Fault Status
+FLI	  %	Fuel Level
+FLPA	  kPa	Fuel Pressure Sensor B (Low Side) - Absolute Pressure - Raw
+FLP_DSD	  kPa	Low Side Fuel Pressure Desired
+FLP_V	  V	Fuel Pressure Sensor B (Low Side) Voltage
+FP	  	Fuel pump
+FP	  %	Fuel pump
+FPM	  %	Fuel pump monitor
+FPM2	  %	Fuel Pump 2 Monitor
+FP_F	  	Fuel Pump Fault
+FRP	  kPa	Fuel Rail Pressure
+FRPC_STAT	  	Fuel Rail System Control Pressure Status
+FRP_DSD	  kPa	Fuel Rail Pressure Desired
+FRP_F	  	Fuel Rail Pressure Transducer Status
+FRP_V	  V	Fuel Rail Pressure
+FTBRAKE	  	Foot Brake - Foot brake state used by strategy
+FTP_F	  	Fuel Tank Pressure Transducer Status
+FTP_V	  V	Fuel Tank Pressure Sensor Voltage
+FUELMON_CMP	  	Fuel system monitor completed this drive cycle
+FUELMON_RDY	  	Fuel System Monitor Evaluated
+FUELSYS	  	Fuel System Status (Open/Closed Loop)
+FUEL_TYPE	  	Type of fuel currently being utilized by the vehicle
+F_VCV	  %	Fuel Volume Control Valve
+F_VCV_F	  	Fuel Volume Control Valve Status
+GEAR_NTRL_CHK	  	Gear Neutral Signal Check
+GENBPLUS_CORR_I	  A	Generator Current Sensor Corrected value
+GENBPLUS_IMXINF	  A	Maximum Generator Current available at present conditions - Inferred
+GENFIL	  	Generator Fault Indicator Lamp
+GENREG_ELEC_F	  	Generator Regulator reporting Electrical Fault
+GENREG_INVCMD	  	Generator Regulator receiving Invalid Commands
+GENREG_MECH_F	  	Generator Regulator reporting Mechanical Fault
+GENREG_NOCMD	  	Generator Regulator indicating Missing Commands
+GENREG_OVRTMP	  	Generator Regulator indicating Over Temperature
+GENVDSD	  V	Generator Voltage Desired
+GRILL_A_BLCK	  	Grille Shutter A Is Blocked - Unable To Achieve The Commanded Position
+GRILL_A_CMD	  %	Grill Shutter A Position - Commanded
+GRILL_A_ELEC_F	  	Grille Shutter Module A - Indicates An Electrical Fault
+GRILL_A_OVRT	  	Grille Shutter Module A - Indicates An Over Temperature Condition.
+GRILL_A_POS_F	  	Grille Shutter A Actuator Fault - End Stop Not Found Or Found Where Not Expected
+GRILL_A_UNDRV	  	Grille Shutter Module A - Indicates An Under Voltage Condition
+GRILL_CMDCAL	  	The Grille Shutter Module Either Is Requesting A Command To Perform Or Is Performing The End Point Calibration Process
+GRILL_LOSTCOMM	  	Lost Communication with Grille Shutter Control Module 'A'
+GRNTRL_POS_COR	  %	Gear Neutral Sensor Position - Corrected (Transmission Range Selector)
+GS_A_POS_M	  %	Grill Shutter A Position - Measured
+HCATSUP_DC	  	Heated Catalyst
+HCAT_EVAL	  	Heated Catalyst Monitor Evaluated
+HFC	  	Fan control high speed
+HFC_F	  	Fan Control High Fault
+HTR11	  	Heated Exhaust Gas Oxygen Sensor Heater (bank 1, sensor 1)
+HTR11F	  	Heater control for O2S11 Fault
+HTR12	  	Heated Exhaust Gas Oxygen Sensor Heater (bank 1, sensor 2)
+HTR12F	  	Heater control for O2S12 Fault
+HTRCM12	  A	Heater Current Monitor for Heated Exhaust Oxygen Sensor 12
+HTRSUP_DC	  	oxygen sensor heater monitor supported
+HTRX1	  	Heater control for Heated Exhaust Oxygen Sensor 11 and Heated Exhaust Oxygen Sensor 21
+HTRX2	  	Heater control for Heated Exhaust Oxygen Sensor 12 & Heated Exhaust Oxygen Sensor 22
+IAC_MODE	  	Idle Air Control
+IAT	  V	Intake Air Temperature
+IAT	  °C	Intake Air Temperature
+IAT1_UR	  	Intake Air Temperature Sensor 1 Input Unreliable
+IAT2	  °C	Intake Air Temperature 2
+IAT2_V	  V	Intake Air Temperature 2
+IAT_F	  	Inlet Air Temperature Sensor Status
+IC_TYPECC_STAT	  	Instrument Cluster Status of Central Vehicle Configuration
+INJ1_F	  	Injector 1 Fault
+INJ1_STAT	  	Injector 1 Status
+INJ2_F	  	Injector 2 Fault
+INJ2_STAT	  	Injector 2 Status
+INJ3_F	  	Injector 3 Fault
+INJ3_STAT	  	Injector 3 Status
+INJ4_F	  	Injector 4 Fault
+INJ4_STAT	  	Injector 4 Status
+INJPWR_M	  V	Injector Power Monitor
+INJ_F	  	Injector fault
+IN_GEAR	  	In Gear -Transmission is applying a load to engine
+KEYST	  	Ignition Key Status
+KNK_CNTR_CYL1	   	Cylinder 1 Knock/Combustion Performance Counter
+KNK_CNTR_CYL2	   	Cylinder 2 Knock/Combustion Performance Counter
+KNK_CNTR_CYL3	   	Cylinder 3 Knock/Combustion Performance Counter
+KNK_CNTR_CYL4	   	Cylinder 4 Knock/Combustion Performance Counter
+KNK_RATE_LRND	  %	Learned Knock/Combustion Performance Detection Rate
+KNOCK_1	   	Knock sensor 1
+KNOCK_2	   	Knock sensor 2
+KNOCK_SPRK	  °	Knock Control Spark Adjustment
+LFC	  	Fan control low speed
+LFC_F	  	Fan Control Low Fault
+LFT1_C1_USED	  	Long Term Fuel Trim Bank 1 Cell 1 Is Used
+LFT1_C2_USED	  	Long Term Fuel Trim Bank 1 Cell 2 Is Used
+LFT1_C3_USED	  	Long Term Fuel Trim Bank 1 Cell 3 Is Used
+LFT1_C4_USED	  	Long Term Fuel Trim Bank 1 Cell 4 Is Used
+LFT1_CELL1	  %	Long Term Fuel Trim (Percent Rich) Bank 1 Cell 1
+LFT1_CELL2	  %	Long Term Fuel Trim (Percent Rich) Bank 1 Cell 2
+LFT1_CELL3	  %	Long Term Fuel Trim (Percent Rich) Bank 1 Cell 3
+LFT1_CELL4	  %	Long Term Fuel Trim (Percent Rich) Bank 1 Cell 4
+LOAD	  %	Calculated Load Value
+LOAD_ABS	  %	Absolute Load Value
+LONGFT1	  %	Long term fuel trim 1
+MAF_F	  	Mass Air Flow Sensor Status
+MAP	  kPa	Manifold absolute pressure sensor
+MAP_F	  	Manifold Absolute Pressure Sensor Status
+MAP_V	  V	Manifold absolute pressure sensor
+MFC	  	Medium Fan Control
+MFC_F	  	Medium Fan Control Status
+MFF_INGEAR	  	Transmission In Gear at Time Of Misfire
+MFF_LOAD	  %	Engine Load At Time Of Misfire
+MFF_RPM	  1/min	Engine RPM At Time Of Misfire
+MFF_RUN	  s	Engine Running Time At Time Of Misfire
+MFF_SOAK	  s	Engine Off Soak Time Prior to Misfire
+MFF_TCC_LOCK	  	Torque Converter Clutch at Time Of Misfire
+MFF_THR_ANG	  %	Throttle Angle at Time Of Misfire
+MFF_TRIP	   	Number Of Trips Since The Time Of Misfire
+MFF_VSS	  km/h	Vehicle Speed At Time Of Misfire
+MIL	  	Malfunction Indicator Lamp
+MIL_DIST	  km	The distance travelled since the MIL was activated.
+MISFIRE	  	Engine Misfire currently detected
+MISFIRE_MON	  	Misfire Monitor Status
+MISFSUP_DC	  	misfire monitor supported
+MISF_EVAL	  	Misfire Monitor Evaluated
+MP_LRN	  	Misfire Profile Correction Learned
+NPS_NTRL_OK	  	Neutral Position Sensor is in Neutral with No Fault
+NUM_MISFIRE	   	Misfire Events During Latest Misfire Cycle
+O2S11_CUR	  mA	Exhaust Gas Oxygen Sensor Current Bank 1 Sensor 1
+O2S11_F	  	Heated Exhaust Oxygen Sensor 11 Status
+O2S11_HTR	  %	Commanded duty cycle for the O2S11 heater output.
+O2S11_IMPED	  V	O2S11 sensor impedance is expressed as a voltage.
+O2S11_READY	  	O2S11 is warm and ready to operate.
+O2S11_STAT	  	O2S11 Status
+O2S11_TR	  Ω	Oxygen Sensor Trim Circuit Resistance 11 - NTK sensor
+O2S12	  V	Heated Exhaust Gas Oxygen Sensor (bank 1, sensor 2)
+O2S12.STFT	  %	Short Term Fuel Trim (Bank 1, Sensor 2)
+O2S12.VOLT	  V	Heated Exhaust Gas Oxygen Sensor (bank 1, sensor 2)
+O2SHTR_EVAL	  	Heated Exhaust Oxygen Sensor Heater System Evaluated
+O2SSUP_DC	  	oxygen sensor monitor supported
+O2S_EVAL	  	Oxygen Sensor Monitor Evaluated
+O2_DS1_ERR	  V	Downstream Closed Loop Input Error Bank 1
+O2_DS_DISBL	  	Downstream Oxygen Sensor Fuel Control Disabled.
+OBDMON_EVAL	  	All OBD drive cycle monitors have completed.
+OCTADJ_R_LRND	  %	Learned Relative Octane Adjustment
+OIL_LOW_SW	  	Low Engine Oil Pressure Switch
+OIL_REMAINING	  %	Engine Oil Life Remaining
+OSS_F	  	Output Shaft Speed Reliable
+OTS_STAT	  	One-Touch Start Status
+P2610_ECUCLOCK	  	DTC P2610 Was Set Because Engine Off Timer Did Not Agree with ECU Clock Hardware
+P2610_INFTIMER	  	DTC P2610 Was Set Because Engine Off Timer Did Not Agree with Inferred Engine Off Time
+P2610_LOSSCOM	  	Reason for DTC P2610 is the loss of communication with the module that provides Engine Off Time
+PATSENABL	  	Vehicle Enable Status
+PATS_TYPE	  	Security Access type Timed / Coded
+PCV_PWM	  %	Pressure control valve PWM
+POWRPCK_STATE	  	Power Pack State
+PROG_FLOWTRACE1	   	Program Flow Trace Information - 1
+PROG_FLOWTRACE2	   	Program Flow Trace Information - 2
+REALTIME	  s	Total time ECU has been active
+REV_SW	  	Reverse switch
+RO2FT1	  %	Rear O2 Fuel Trim - Bank 1
+RPM	  1/min	Engine Revolutions Per Minute
+RPMDSD	  1/min	Desired Idle Speed RPM
+RUNTM	  s	Time Since Engine Start
+SAIR_EVAL	  	Secondary Air System Evaluated
+SHRTFT1	  %	Short term fuel trim 1
+SIL	  	Shift Indicator Lamp
+SOFTWARE_ID	   	ECU Software Identifier
+SPARKADV	  °	Spark Advance
+SPARKADV	  °	Spark Advance
+SPDCTRLCC_STAT	  	Speed Control Status of Central Vehicle Configuration
+SS_ABS_TC_IN	  	Antilock Brake And Traction Control Summary
+SS_CTRL_CRANK	  	Main Control Crank Command And Hardware Feedback
+SS_CTRL_STATE	  	Main Control State Machine
+SS_DISABL_00	  	Scheduler System Of Stop-Start Feature Disabled Due To Vehicle Configuration Does Not Support Stop-Start Feature
+SS_DISABL_01	  	Scheduler System Of Stop-Start Feature Disabled Due To The Driver Commanding The Engine Off
+SS_DISABL_02	  	Scheduler System Of Stop-Start Feature Disabled Due To Restraint Deployment Indicated
+SS_DISABL_03	  	Scheduler System Of Stop-Start Feature Disabled Due To Driver Presence Not Confirmed For System Induced Start
+SS_DISABL_04	  	Scheduler System Of Stop-Start Feature Disabled Due To Strategy Preventing An Auto-Stopped Engine From Auto-Starting
+SS_DISABL_05	  	Scheduler System Of Stop-Start Feature Disabled Due To Driver Door Opened While Auto-Stopped or Driver Door Open Fault
+SS_DISABL_06	  	Scheduler System Of Stop-Start Feature Disabled Due To Engine Control System Failed To Confirm Commanded Stop
+SS_DISABL_07	  	Scheduler System Of Stop-Start Feature Disabled Due To Engine Control System Failed To Confirm Commanded Start
+SS_DISABL_08	  	Scheduler System Of Stop-Start Feature Disabled Due To A Stalled Engine
+SS_DISABL_09	  	Scheduler System Of Stop-Start Feature Disabled Due To The Manual Transmission Engine Stall Recovery Feature Aborting
+SS_DISABL_10	  	Scheduler System Of Stop-Start Feature Disabled Due To Indicated Vehicle Speed Quality
+SS_DISABL_11	  	Scheduler System Of Stop-Start Feature Disabled Due To Indicated Accelerator Pedal Quality
+SS_DISABL_12	  	Scheduler System Of Stop-Start Feature Disabled Due To Indicated Transmission Range Selector Quality
+SS_DISABL_13	  	Scheduler System Of Stop-Start Feature Disabled Due To Indicated Automatic Transmission Fault
+SS_DISABL_14	  	Scheduler System Of Stop-Start Feature Disabled Due To Indicated Engine Control System Fault
+SS_DISABL_15	  	Scheduler System Of Stop-Start Feature Disabled Due To Indicated Charging System Fault
+SS_DISABL_16	  	Scheduler System Of Stop-Start Feature Disabled Due To Indicated Brake System Fault
+SS_DISABL_17	  	Scheduler System Of Stop-Start Feature Disabled Due To Stop-Start Feature Monitor
+SS_DISABL_18	  	Scheduler System Of Stop-Start Feature Disabled Due To Clutch Pedal System
+SS_DISABL_19	  	Scheduler System Of Stop-Start Feature Disabled Due To Gear Neutral System
+SS_DISABL_20	  	Scheduler System Of Stop-Start Feature Disabled Due To Indicated Vehicle Life Cycle State Being 'Manufacturing' Or 'Transport'
+SS_DRVR INPUTS	  	Monitor Driver Inputs APP, Brake, TR or Cruise
+SS_INHIB_EC00	  	The Stop-Start Feature Is Inhibited By Engine Control Due To Engine Coolant Temperature Too Low Or Too High
+SS_INHIB_EC01	  	The Stop-Start Inhibited By Engine Control Due To Barometric Pressure Being Too Low
+SS_INHIB_EC02	  	The Stop-Start Inhibited By Engine Control Due To Fuel Rail Pressure At Idle Being Too Low
+SS_INHIB_EC03	  	The Stop-Start Inhibited By Engine Control Due To Insufficient Time Since A Driver Initiated Start
+SS_INHIB_EC04	  	The Stop-Start Feature Is Inhibited By Engine Control Due To Fuel Rail Temperature Being Too High
+SS_INHIB_EC05	  	The Stop-Start Inhibited By Engine Control Due To Cranking Time Being Too Long
+SS_INHIB_EC06	  	The Stop-Start Inhibited By Engine Control Due To Low Fuel Level
+SS_INHIB_EC07	  	The Stop-Start Inhibited By Engine Control Due To Catalyst Monitoring Function
+SS_INHIB_EC08	  	The Stop-Start Inhibited By Engine Control Due To Purge Control Function
+SS_INHIB_EC09	  	The Stop-Start Inhibited By Engine Control Due To Adaptive Fuel Control Function
+SS_INHIB_EC10	  	The Stop-Start Inhibited By Engine Control Due To Turbocharger Bearing Oil Temperature Too High
+SS_INHIB_EC11	  	The Stop-Start Feature Is Inhibited By Engine Control Due To Waiting For EVAP Monitor To Complete
+SS_INHIB_EC12	  	The Stop-Start Feature Is Inhibited By Engine Control Due To Anti-Theft System (Immobilizer)
+SS_INHIB_EC13	  	The Stop-Start Feature Is Inhibited By Engine Control Due To Collision (Fuel Pump Cutoff Request Received)
+SS_INHIB_EC14	  	The Stop-Start Feature Is Inhibited By Engine Control Due To Fail Safe Cooling Strategy
+SS_INHIB_EC15	  	The Stop-Start Feature Is Inhibited By Engine Control Due To Stop-Start Level 2 Safety Monitor Tripping
+SS_INHIB_EC16	  	The Stop-Start Feature Is Inhibited By Engine Control Due To Fuel Control Adaption Active
+SS_INHIB_EC17	  	The Stop-Start Inhibited By Engine Control Due To Gasoline Or Diesel Particulate Filter (GPF or DPF) Regeneration
+SS_INHIB_EC18	  	The Stop-Start Inhibited By Engine Control Due To Gasoline Or Diesel Particulate Filter (GPF or DPF) Soot Overload
+SS_INHIB_EC19	  	The Stop-Start Feature Is Inhibited By Engine Control Due To Exhaust After Treatment Strategy Request
+SS_INHIB_EC20	  	The Stop-Start Inhibited By Engine Control Due To Air Mass Adaption
+SS_INHIB_EC21	  	The Stop-Start Inhibited By Engine Control Due To Adaptation Of Minimum Pilot
+SS_INHIB_EC22	  	The Stop-Start Inhibited By Engine Control Due To Gasoline Or Diesel Particulate Filter (GPF or DPF) Regeneration
+SS_INHIB_EC23	  	The Stop-Start Inhibited By Engine Control Due To Turbocharger Bearing Oil Temperature Too High
+SS_INHIB_EC24	  	The Stop-Start Inhibited By Engine Control Due To Gasoline Or Diesel Particulate Filter (GPF or DPF) Soot Overload
+SS_INHIB_EC26	  	The Stop-Start Inhibited By Engine Control Due To Bulk Oil Temperature In The Oil Pan Too Low
+SS_INHIB_EC27	  	The Stop-Start Inhibited By Engine Control Due To Engine Management System Pre-Shutdown Operational Range Inhibit Condition
+SS_INHIB_G1_00	  	The Stop-Start Feature Is Inhibited The Stop-Start Feature Requires Auto-Stopping The Engine Due To Driver Actions - Expected Operation
+SS_INHIB_G1_01	  	The Stop-Start Feature Is Aborting An Auto-Start
+SS_INHIB_G1_02	  	The Stop-Start Feature Is Inhibited By Accelerator Pedal Application
+SS_INHIB_G1_03	  	The Stop-Start Feature Is Inhibited By Driver Selection Of Reverse Gear
+SS_INHIB_G1_04	  	The Stop-Start Feature Is Inhibited By Driver Application Of Clutch Pedal
+SS_INHIB_G1_05	  	The Stop-Start Feature Is Inhibited By Driver Release Of Brake Pedal
+SS_INHIB_G1_06	  	The Stop-Start Feature Is Inhibited For Application Of Accelerator Pedal While Automatic Transmission Is In Forward Gear
+SS_INHIB_G1_07	  	The Stop-Start Feature Is Inhibited For Application Of Accelerator Pedal While Automatic Transmission Is In Park Or Neutral
+SS_INHIB_G1_08	  	The Stop-Start Feature Is Inhibited During Transmission Range Selector Transition To The Drive Position
+SS_INHIB_G1_09	  	The Stop-Start Feature Is Inhibited Because The Automatic Transmission Is Operating In Low
+SS_INHIB_G1_10	  	The Stop-Start Feature Is Inhibited Because The Automatic Transmission Is Operating In Manual/Sport
+SS_INHIB_G1_11	  	The Stop-Start Feature Is Inhibited Because The Automatic Transmission Is Operating In Park
+SS_INHIB_G1_12	  	The Stop-Start Feature Is Inhibited Because The Automatic Transmission Is Operating In Neutral
+SS_INHIB_G1_13	  	The Stop-Start Feature Is Inhibited Because The Automatic Transmission Is Operating In Overdrive Cancel Mode
+SS_INHIB_G1_14	  	The Stop-Start Feature Is Inhibited For A Period After Transmission Range Selector Transition From Park Or Neutral Position
+SS_INHIB_G1_15	  	The Stop-Start Feature Is Inhibited Due To Vehicle Speed Above Threshold During An Automatic Stop
+SS_INHIB_G1_16	  	The Stop-Start Feature Is Inhibited For Being In Engine Auto-Stop For Too Long (Engine Will Be Started)
+SS_INHIB_G1_17	  	The Stop-Start Feature Is Inhibited Because The Driver Door Is Open
+SS_INHIB_G1_18	  	The Stop-Start Feature Is Inhibited After A Stop-Start System Induced (not a driver action) Engine Auto-Start
+SS_INHIB_G1_19	  	The Stop-Start Feature Is Inhibited For Minimum Period After Every Engine Auto-Start
+SS_INHIB_G1_20	  	The Stop-Start Feature Is Inhibited - At Limit For Number Of Engine Auto-Starts Permitted Without Moving The Vehicle
+SS_INHIB_G1_21	  	The Stop-Start Feature Is Inhibited Because The Vehicle Speed Is Above Threshold
+SS_INHIB_G1_22	  	The Stop-Start Feature Is Inhibited Due To The Initiation/Operation Of The Manual Transmission Engine Stall Recovery Feature
+SS_INHIB_G1_23	  	The Stop-Start Feature Is Inhibited For Minimum Period After A Driver Initiated (e.g., Key/Button/Remote) Start
+SS_INHIB_G2_00	  	The Stop-Start Feature Is Inhibited Because The Driver's Seat Belt Is Not Fastened
+SS_INHIB_G2_01	  	The Stop-Start Feature Is Inhibited Because The HVAC System Requires The Engine To Run
+SS_INHIB_G2_02	  	The Stop-Start Feature Is Inhibited Because The Steering System Requires The Engine To Run
+SS_INHIB_G2_03	  	The Stop-Start Feature Is Inhibited Because The Braking System Requires The Engine To Run
+SS_INHIB_G2_04	  	The Stop-Start Feature Is Inhibited Because The Stop-Start Menu In The Cluster Has Been Selected
+SS_INHIB_G2_05	  	The Stop-Start Feature Is Inhibited Because The Parking Aid Camera Is Operating
+SS_INHIB_G2_06	  	The Stop-Start Feature Is Inhibited Because The Semi-Assisted Parallel Parking Feature Is Operating
+SS_INHIB_G2_07	  	The Stop-Start Feature Is Inhibited Because The Brake System Requires Booster Vacuum
+SS_INHIB_G2_08	  	The Stop-Start Feature Is Inhibited Due To Battery Energy Management
+SS_INHIB_G2_09	  	The Stop-Start Feature Is Inhibited Because Of The Voltage Quality Monitor
+SS_INHIB_G2_10	  	The Stop-Start Feature Is Inhibited Because Of Vehicle Operation With A Trailer
+SS_INHIB_G2_11	  	The Stop-Start Feature Is Inhibited Because Of Vehicle Operation On A Hill/Grade
+SS_INHIB_G2_12	  	The Stop-Start Feature Is Inhibited Because The Terrain Management System Is Operating
+SS_INHIB_G2_13	  	The Stop-Start Feature Is Inhibited Because Of Ambient Air Temperature
+SS_INHIB_G2_14	  	The Stop-Start Feature Is Inhibited Because The Fuel Operated Heater Is Operating
+SS_INHIB_G2_15	  	The Stop-Start Feature Is Inhibited Because The Electronic Parking Brake System Is Operating
+SS_INHIB_G2_16	  	The Stop-Start Feature Is Inhibited Because The Air Suspension Feature Is Operating
+SS_INHIB_G2_17	  	The Stop-Start Feature Is Inhibited Due To Keyless Vehicle Secure Idle Feature Is Operating
+SS_INHIB_G2_18	  	The Stop-Start Feature Is Inhibited Due To The Vehicle Operating In Low Gear
+SS_INHIB_G2_19	  	The Stop-Start Feature Is Inhibited Due To The Engine Management System
+SS_INHIB_G2_20	  	The Stop-Start Feature Is Inhibited Due To The Transmission Management System
+SS_INHIB_G2_21	  	The Stop-Start Feature Is Inhibited By Off-Board Service Tool
+SS_INHIB_G2_22	  	The Stop-Start Feature Is Inhibited By HVAC System Electrical Power Demands
+SS_INHIB_G2_23	  	The Stop-Start Feature Is Inhibited Due To Operation Of The Power Tail Gate Feature
+SS_INHIB_G2_24	  	The Stop-Start Feature Is Inhibited Because The DC-AC Inverter Is Operating
+SS_INHIB_G2_25	  	The Stop-Start Feature Is Inhibited Due To Operation Of A Power Window
+SS_INHIB_G2_26	  	The Stop-Start Feature Is Inhibited Due To Monitoring Of Current Limits By The Electrical Power Management System
+SS_INHIB_G2_27	  	The Stop-Start Feature Is Inhibited By Stop-Start Plausibility Monitor
+SS_INHIB_G2_28	  	The Stop-Start Feature Is Inhibited Due To Low Engine Coolant Temperature
+SS_INHIB_G2_29	  	The Stop-Start Feature Is Inhibited - At Limit For Number Of Engine Auto-Starts Permitted While Wipers Are Active
+SS_MON_STATE	  	Monitor State Machine
+SS_MON_TIMER	   	Monitor State Machine Transition Timer
+SS_OUTOP	  	Stop-Start Coordination - Out Of Operation
+SS_SHIFTER_IN	  	Monitor Shift Lever Position Input
+SS_SPEED_INPUT	  	Vehicle Speed and Powertrain Shaft Speeds Summary
+SS_START_ERR	  	Stop-Start Coordination - Start Error
+SS_STOP_ERR	  	Stop-Start Coordination - Stop Error
+SS_STRTR_HEAT	  	(Start-Stop) Starter Motor Heat State
+STARTER_CNTS	   	Starter Motor Activation Counter
+STARTER_PROT	  	Starter Motor Protection Status
+STARTREQ_CAN	  	Start engine request received over CAN network
+START_KEY	  	Key Position for Start Indicated
+STRT_RLY	  	Starter Motor Relay Enable
+STR_CRNKV_PER	  %	Percent of Expected Starter Voltage For Cranking
+SYNC	  	CMP and CKP Synchronized
+TAC_PCT	  %	Commanded Throttle Actuator Control
+TCBP	  kPa	Measured Boost at Throttle Inlet Pressure Sensor
+TCBP_DSD	  kPa	Desired Boost Pressure
+TCBP_UR	  	Turbocharger Boost Sensor Input Unreliable
+TCBP_V	  V	Throttle Inlet Pressure Sensor Voltage
+TCFT	  °C	Transfer Case Fluid Temperature
+TCFT_F	  	Transfer Case Fluid Sensor Status
+TCFT_V	  V	Transfer Case Fluid Sensor Voltage
+TFT_F	  	Transmission Fluid Temperature Status
+TIRECC_STAT	  	Tire Size Status of Central Vehicle Configuration
+TOTAL_DIST	  km	Total Vehicle Distance
+TP	  %	Throttle Position
+TP1	  V	Throttle Position Sensor 1
+TP1_LRN_TRIM	  °	Throttle Position Sensor 1 Learned Offset
+TP2	  V	Throttle Position Sensor 2
+TP2_LRN_TRIM	  °	Throttle Position Sensor 2 Learned Offset
+TP_B	  %	Throttle Position Sensor 2
+TP_F	  	Throttle Position Sensor Status
+TP_MAXDIFF	  °	Maximum Angle Difference between TP1 sensor and TP2 sensor
+TP_REL	  %	Relative Throttle Position
+TQ_CNTRL	  	Torque Control Requested
+TR_NEUTRAL_RAW	  %	Neutral Sensor Raw Value
+TR_NTRL_A_FRQ	  Hz	Transmission Range Selector - Neutral Position Sensor "A" Frequency - Measured
+TR_NTRL_B_FRQ	  Hz	Transmission Range Selector - Neutral Position Sensor "B" Frequency - Measured
+TR_NTRL_RAW2	  %	Transmission Range Selector - Neutral Sensor 2 Raw Value
+TURBO_BP1_STAT	  	Turbocharger Bypass 1 Status
+TURBO_BPASS	  	Turbocharger Bypass Valve 1
+TURBO_INLET_F	  	Turbocharger Inlet Sensor Status
+TURBO_OVER	  	Turbocharger Overboost Condition
+TURBO_UNDER	  	Turbocharger Underboost Condition
+TURBO_WGATE	  %	Turbocharger Wastegate
+TWGATE_STAT	  	Turbocharger Wastegate Status
+VCT1_EXH_F	  	Variable Cam Timing Bank 1 Exhaust Status
+VCT1_INTK_F	  	Variable Cam Timing Bank 1 Intake Status
+VCTSYS	  	VCT System status (open/closed loop)
+VCT_EXH_ACT1	  °	Actual Exhaust B Camshaft Position Bank 1
+VCT_EXH_DC1	  %	Exhaust B Camshaft Position Duty Cycle Bank 1
+VCT_EXH_DIF1	  °	Exhaust B Camshaft Desired Minus Actual Bank 1
+VCT_EXH_DSD	  °	Variable Camshaft Timing Exhaust Angle Desired
+VCT_INTK_DSD	  °	Variable Camshaft Timing Intake Desired Angle
+VCT_INT_ACT1	  °	Actual Intake A Camshaft Position Bank 1
+VCT_INT_DC1	  %	Intake A Camshaft Position Duty Cycle Bank 1
+VCT_INT_DIF1	  °	Intake A Camshaft Desired Minus Actual Bank 1
+VEH_SPD_LO_LIM	  km/h	Lower Vehicle SpeedLimit for Dealer configuration
+VEH_SPD_UP_LIM	  km/h	Upper Vehicle Speed Limit for Dealer configuration
+VINCC_STAT	  	Vehicle Identification Number Status of Central Vehicle Configuration
+VPWR	  V	Control Module Voltage
+VREF	  V	Reference Voltage
+VSS	  km/h	Vehicle Speed
+VSS	  km/h	Vehicle Speed
+WARM_UPS	   	Number Of Warm-ups Since DTCs Cleared
+BSI_LED	  %	Blind Spot Information LED Duty Cycle
+DAWL	  	Door Open/Ajar Warning Light Output
+DIMM	  %	Illumination dimming level
+FDLMMS	  	Front Door Lock and Mirror Motor Status
+FDL_LED	  %	Front Door Lock Status LED Duty Cycle
+FPDUTS	  	Front Passenger Door Unlock Trim Switch
+FPWMS	  	Front Power Window Motor Status
+FR_DLOCK_SW	  	Front Right Door Lock / Unlock Switch
+FR_UD_SW	  	Front Right Door Window Switch
+GLOBTIM	  s	Global real time
+H_MIRROR	  	Side Mirror Heating Output Control
+IC_VPWR	  V	Module supply voltage
+INCARTMP	  °C	In car temperature
+MAINECUV	  V	Main ECU voltage supply
+OUTTMP	  °C	External Temperature From Sensor
+PDM_STATE	  	ECU Operating States
+P_LAMP	  	Puddle Lamp Control
+RDLMS	  	Rear Door Lock Motor Status
+RPWMS	  	Rear Power Window Motor Status
+RR_DLOCK_SW	  	Rear Right Door Lock Switch
+RR_UD_SW	  	Rear Right Door Window Switch
+SELTESTDTC	   	Diagnostic Trouble Codes
+SMT_LAMP	  	Side Mirror Turn Signal Lamp Control
+TOTAL_DIST	  km	Total Vehicle Distance
+EPAS_MOTOR_CUR	  A	EPAS Motor Current
+GLOBTIM	  s	Global real time
+MOD_SUP_V	  V	Module Supply Voltage
+MOD_SUP_V	  V	Module Supply Voltage
+OUTTMP	  °C	External Temperature From Sensor
+PSCM_DState	  	Active Diagnostic Session
+PSCM_INT_TEMP	  °C	PSCM Internal Temperature
+RPM	  1/min	Engine Revolutions Per Minute
+SSHFT_TQ_S2	  Nm	Steering Shaft Torque Sensor #2
+ST_DTC_CNT	   	Number of DTCs set due to diagnostic test.
+SW_ANGLE	  °	Steering Wheel Angle
+TOTAL_DIST	  km	Total Vehicle Distance
+VSS	  km/h	Vehicle Speed
+BLT_CUR_D	  mA	Seatbelt Sensor Current - Driver
+BLT_CUR_P	  mA	Seatbelt Sensor Current - Passenger
+DEPLOY_00_R	  Ω	Driver Frontal Stage 1 Deployment Control Resistance
+DEPLOY_05_R	  Ω	Passenger Frontal Stage 1 Deployment Control Resistance
+DEPLOY_10_R	  Ω	Driver Side Airbag Deployment Control Resistance
+DEPLOY_11_R	  Ω	Left Curtain Deployment Control 1 Resistance
+DEPLOY_13_R	  Ω	Passenger Side Airbag Deployment Control Resistance
+DEPLOY_14_R	  Ω	Right Curtain Deployment Control 1 Resistance
+DEPLOY_23_R	  Ω	Driver Seatbelt Retractor Pretensioner Deployment Control Resistance
+DEPLOY_24_R	  Ω	Passenger Seatbelt Retractor Pretensioner Deployment Control Resistance
+ECU_VPWR_RCM	  V	Module supply voltage
+FUEL_CUT_RQ	  	Fuel Cutoff Request Status
+OCS_SENSTAT	  	Occupant Classification Sensor Status
+REST_STAT_P	  	Passenger Restraint Device Status
+R_2_C_ST	  	Second Row Center Seatbelt Sensor State
+R_2_L_ST	  	Second Row Left Seatbelt Sensor State
+R_2_R_ST	  	Second Row Right Seatbelt Sensor State
+R_3_C_ST	  	Third Row Center Seatbelt Sensor State
+R_3_L_ST	  	Third Row Left Seatbelt Sensor State
+R_3_R_ST	  	Third Row Right Seatbelt Sensor State
+SBELT_D_ST	  	Driver Seatbelt Sensor Status
+SBELT_P_ST	  	Passenger Seatbelt Sensor Status
+SELTESTDTC	   	Diagnostic Trouble Codes
+V_ID_14229_RCM	  	Occupant Classification System Vehicle Identification
+ADS	  	Active Diagnostic Session
+BCM_ID	  	Body Control Module Identification Stored
+BCM_VFY	  	Body Control Module Identification Verified
+ECU_VPWR	  V	Module supply voltage
+FL_LK_BUT	  	Left front Lock button
+FL_UNLK_SW	  	Left front unlock pull switch
+FR_LK_BUT	  	Right front Lock button
+FR_UNLK_SW	  	Right front unlock pull switch
+GLOBTIM	  s	Global real time
+IG_SW_ST	  	Ignition Switch State
+INCARTMP	  °C	In car temperature
+MAINECUV	  V	Main ECU voltage supply
+MASTERKEY	  	Master Key Present
+MIN_KEYS	   	Minimum number of keys required
+PATS_ACC_TYP	  	Security Access type Timed / Coded
+POWER_MODE	  	Power Mode Status
+TOTAL_DIST	  km	Total Vehicle Distance
+GLOBTIM	  s	Global real time
+MAINECUV	  V	Main ECU voltage supply
+Module_DState	  	Active Diagnostic Session
+OUTTMP	  °C	External Temperature From Sensor
+PWR_MODE_KEY	  	Power Mode Key State
+PWR_MODE_QF	  	Power Mode Quality Factor
+ST_DTC_CNT	   	Number of DTCs set due to diagnostic test.
+SW_ANGLE	  °	steering wheel angle
+SW_ANG_DIR	  	Steering Wheel Angle Steering Direction
+SW_ANG_RATE	  1/min	Steering Wheel Angle Change Rate (Short Filtered)
+SW_ANG_SENS	  	Steering Wheel Angle Sensor Status
+SW_ANG_VEL	  1/min	Steering Wheel Angle Velocity
+SW_ANG_VLDR	  	Steering Wheel Angle Velocity-Steering Direction
+TOTAL_DIST	  km	Total Vehicle Distance
+VBAT_SASM	  V	Battery Voltage
