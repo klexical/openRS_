@@ -103,15 +103,6 @@ data class UserPrefs(
         else    -> "Street"
     }
 
-    /** RTR check: are all critical temps below their warm-up thresholds for the current preset? */
-    fun isRaceReady(oilC: Double, coolantC: Double): Boolean {
-        val oilMin     = when (tempPreset) { "race" -> 85.0; "track" -> 80.0; else -> 70.0 }
-        val coolantMin = when (tempPreset) { "race" -> 80.0; "track" -> 75.0; else -> 70.0 }
-        // Treat sentinel -99 as "not yet received" — skip check rather than blocking warm cars
-        val oilOk     = oilC <= -90     || oilC >= oilMin
-        val coolantOk = coolantC <= -90 || coolantC >= coolantMin
-        return oilOk && coolantOk
-    }
 }
 
 /**

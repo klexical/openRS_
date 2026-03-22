@@ -264,10 +264,14 @@ import kotlin.math.roundToInt
 
         // Results
         val results = dtcResults
+        // Fix B: hold the last non-null snapshot so the exit animation doesn't go blank
+        // when dtcResults is set to null by DISMISS before AnimatedVisibility finishes.
+        var lastResults by remember { mutableStateOf<List<DtcResult>?>(null) }
+        if (results != null) lastResults = results
         AnimatedVisibility(visible = results != null) {
-            if (results != null) {
+            lastResults?.let { r ->
                 Column(Modifier.fillMaxWidth()) {
-                    if (results.isEmpty()) {
+                    if (r.isEmpty()) {
                         Box(
                             Modifier.fillMaxWidth()
                                 .background(Color(0xFF060E0A), RoundedCornerShape(10.dp))
@@ -279,7 +283,7 @@ import kotlin.math.roundToInt
                         }
                     } else {
                         // Group by module
-                        val grouped = results.groupBy { it.module }
+                        val grouped = r.groupBy { it.module }
                         val moduleOrder = listOf("PCM", "BCM", "ABS", "AWD", "PSCM")
                         Column(
                             Modifier.fillMaxWidth()
@@ -299,7 +303,7 @@ import kotlin.math.roundToInt
                     }
                     Spacer(Modifier.height(8.dp))
                     MonoLabel(
-                        "${results.size} fault code(s) found across ${results.map { it.module }.distinct().size} module(s).",
+                        "${r.size} fault code(s) found across ${r.map { it.module }.distinct().size} module(s).",
                         9.sp, Dim, modifier = Modifier.padding(bottom = 10.dp)
                     )
                 }

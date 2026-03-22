@@ -77,8 +77,15 @@ class CanDataService : Service() {
      */
     suspend fun scanDtcs(): List<DtcResult> {
         val (useMeatPi, w, m) = synchronized(this) { Triple(isMeatPi, wican, meatpi) }
-        return if (useMeatPi) DtcScanner(this).scanMeatPi(m)
-               else           DtcScanner(this).scan(w)
+        return try {
+            if (useMeatPi) DtcScanner(this).scanMeatPi(m)
+            else           DtcScanner(this).scan(w)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("CAN", "DTC scan failed", e)
+            throw e
+        }
     }
 
     /**
@@ -86,12 +93,19 @@ class CanDataService : Service() {
      * Suspends for up to ~12 seconds while waiting for acknowledgements.
      *
      * Returns a map of module name → true if that ECU confirmed the clear.
-     * An empty map means the adapter is not connected.
+     * An empty map means the adapter is not connected or the clear failed.
      */
     suspend fun clearDtcs(): Map<String, Boolean> {
         val (useMeatPi, w, m) = synchronized(this) { Triple(isMeatPi, wican, meatpi) }
-        return if (useMeatPi) DtcScanner(this).clearDtcsMeatPi(m)
-               else           DtcScanner(this).clearDtcs(w)
+        return try {
+            if (useMeatPi) DtcScanner(this).clearDtcsMeatPi(m)
+            else           DtcScanner(this).clearDtcs(w)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("CAN", "DTC clear failed", e)
+            emptyMap()
+        }
     }
 
     /**

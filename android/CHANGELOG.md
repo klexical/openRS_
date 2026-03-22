@@ -32,6 +32,12 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 ### Changed (rc.1)
 - **Release checklist and emulator workflow rules updated** — browser emulator updates are now deferred to stable releases only, skipped for staging/RC builds. `release-checklist.mdc` and `emulator-workflow.mdc` updated to match.
 
+### Fixed (rc.2)
+- **DtcScanner exceptions now caught at service layer** — `CanDataService.scanDtcs()` and `clearDtcs()` had no exception handling: a mid-scan adapter disconnect would propagate uncaught to any caller that did not wrap the call. `scanDtcs()` now logs and rethrows; `clearDtcs()` logs and returns `emptyMap()` (DiagPage renders this as "Clear failed — no response from ECUs"). Addresses sub-item in [#83](https://github.com/klexical/openRS_/issues/83).
+- **DTC results blank during dismiss animation** — tapping DISMISS set `dtcResults = null`, but `AnimatedVisibility` was still playing its exit animation. The inner `if (results != null)` guard evaluated false immediately, rendering blank content for the animation duration. Fixed by capturing the last non-null results in a `remember`-backed `lastResults` variable and using that inside the animation block. Addresses sub-item in [#81](https://github.com/klexical/openRS_/issues/81).
+- **Race-ready RTR check inconsistent between TEMPS banner and TripRecorder** — `UserPrefs.isRaceReady()` used preset-based oil/coolant-only thresholds (e.g. race preset: oil ≥ 85°C, coolant ≥ 80°C) while `VehicleState.rtrStatus` (used by the TEMPS banner since rc.8) uses fixed thresholds that also include RDU, PTU, and clutch temps. `TripRecorder` called `prefs.isRaceReady()` so a trip point could be marked RTR-achieved at a different threshold than what the banner showed. Removed `UserPrefs.isRaceReady()`; `TripRecorder` now uses `vs.isReadyToRace` (= `rtrStatus == null`) — one truth source for RTR across banner, trip recording, and CSV export. Addresses sub-item in [#81](https://github.com/klexical/openRS_/issues/81).
+- **`AppSettings.save()` vs `saveAll()` undocumented field split** — `save()` only persists host/port; `saveAll()` persists all `UserPrefs` fields except host/port. The intentional split was not documented, leaving a footgun for future contributors who might call only `saveAll()` and silently lose connection settings. Both methods now have KDoc explaining which keys each covers and why they are separate. Addresses sub-item in [#83](https://github.com/klexical/openRS_/issues/83).
+
 ---
 
 ## [v2.2.4] — 2026-03-19

@@ -131,6 +131,13 @@ object AppSettings {
 
     // ── Write helpers ────────────────────────────────────────────────────────
 
+    /**
+     * Saves connection endpoint only (host and port).
+     * Called from SettingsSheet when the user edits the connection address.
+     *
+     * NOTE: intentionally does NOT write [UserPrefs] fields (units, theme, etc.).
+     * Those are persisted by [saveAll]. The two methods cover disjoint key sets.
+     */
     fun save(ctx: Context, host: String, port: Int) {
         prefs(ctx).edit {
             putString(KEY_HOST, host.trim())
@@ -138,6 +145,13 @@ object AppSettings {
         }
     }
 
+    /**
+     * Saves all [UserPrefs] display and behaviour fields.
+     * Called from [UserPrefsStore.update] on every preference change.
+     *
+     * NOTE: intentionally does NOT write host/port — those are managed by [save].
+     * The two methods cover disjoint key sets.
+     */
     fun saveAll(ctx: Context, p: UserPrefs) {
         prefs(ctx).edit {
             putString(KEY_SPEED_UNIT,  p.speedUnit)
