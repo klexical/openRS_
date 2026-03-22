@@ -27,7 +27,7 @@
 
 **openRS_** is a native Android app that turns your phone into a full telemetry dashboard for the Ford Focus RS MK3. It connects wirelessly to a [MeatPi WiCAN](https://www.mouser.com/ProductDetail/MeatPi/WICAN-USB-C3?qs=rQFj71Wb1eVDX2eEy0FC7A%3D%3D) adapter over Wi-Fi and passively monitors the full CAN bus at ~2100 fps — decoding every parameter the car broadcasts in real time.
 
-Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It understands the GKN Twinster AWD system, polls TPMS tire pressures from the BCM via Mode 22 (PIDs 0x2813–0x2816) with the Focus RS-validated formula, decodes Ford-specific parameters across HS-CAN and MS-CAN, and presents everything in a dark, glanceable interface tuned for track days.
+Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It understands the GKN Twinster AWD system, polls TPMS tire pressures and temperatures from the BCM via Mode 22 (pressures via PIDs 0x2813-0x2816, temperatures via the "last received sensor" PID 0x280B with sensor ID mapping from 0x280F-0x2812), decodes Ford-specific parameters across HS-CAN and MS-CAN, and presents everything in a dark, glanceable interface tuned for track days.
 
 > **Try it now:** [klexical.github.io/openRS_](https://klexical.github.io/openRS_) — live browser emulator with animated demo data, no hardware required.
 
@@ -59,7 +59,7 @@ Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It understan
 |--------|-------------|
 | **DASH** | Hero boost/RPM/speed gauges, Inputs & Resources section (throttle, brake, fuel, battery), Temps Quick section (oil, coolant, intake, oil life), G-Force section (lat G, lon G, torque), animated AWD split bar |
 | **POWER** | AFR hero cards (actual/desired/lambda), Throttle & Boost (ETC actual/desired, WGDC, TIP, fuel rail PSI), Engine Management (timing, load, OAR, KR CYL1, VCT-I/E), Fuel Trims & Misc |
-| **CHASSIS** | AWD detail (4 wheel speeds, torque bar, F/R delta, L/R delta, rear bias), G-Force section (yaw, steering, peaks + inline reset), TPMS with car outline |
+| **CHASSIS** | AWD detail (4 wheel speeds, torque bar, F/R delta, L/R delta, rear bias), G-Force section (yaw, steering, peaks + inline reset), TPMS with Focus RS wireframe, tire pressure + temperature (color-coded), temperature range legend |
 | **TEMPS** | Animated Ready-to-Race banner, 10 temperature cards each with a colour indicator bar (oil, coolant, intake, ambient, RDU, PTU, charge air, catalytic, cabin, battery) |
 | **DIAG** | DTC Scanner (full-module scan, count badges, freeze-frame, clear), session diagnostics — frame inventory, per-ID change tracking, periodic samples, SLCAN raw log (incl. OBD response frames), one-tap ZIP export with all OBD fields (SavvyCAN/Kayak compatible) |
 | **MORE** | Drive mode (N/S/T/D, read-only mirror of CAN), ESC status (read-only), firmware-gated features (Launch Control, Auto S/S Kill), Module Status (RDU/PDC/FENG live OBD), connection & snapshot, diagnostic export, Trip GPS recording |
@@ -89,7 +89,7 @@ All data is received passively from the CAN bus via WebSocket SLCAN at ~2100 fps
 | 0x2C0 | AWD L/R rear torque (Nm) | RS_HS.dbc |
 | 0x2F0 | Coolant temp, Intake Air Temp (IAT) | RS_HS.dbc PCMmsg16 |
 | 0x340 | Ambient temperature only (byte 7 signed × 0.25 °C) — **not** TPMS | RS_HS.dbc PCMmsg17 |
-| 0x360 | Odometer, **engine status** — odo: bytes [5:6] BE, 16-bit, 1 km/bit (~5 Hz); engine: byte 0 (0=Idle, 2=Off, 183=Running, 186=Kill, 191=RecentStart) | RS_HS.dbc + community [#102](https://github.com/klexical/openRS_/discussions/102) |
+| 0x360 | Odometer, **engine status** — odo: bytes [3:5] BE, 24-bit, 1 km/bit (~5 Hz); engine: byte 0 (0=Idle, 2=Off, 183=Running, 186=Kill, 191=RecentStart, 196=Warmup) | RS_HS.dbc + community [#102](https://github.com/klexical/openRS_/discussions/102) |
 | 0x380 | Fuel level % (FuelLevelFiltered — Motorola 10-bit, factor 0.4 %) | RS_HS.dbc PCMmsg30 |
 
 > **Note:** `0x230` (gear position) and `0x3C0` (battery voltage) do not broadcast on this vehicle. Battery voltage is polled via OBD. Gear display has been removed.
@@ -99,8 +99,8 @@ All data is received passively from the CAN bus via WebSocket SLCAN at ~2100 fps
 | ECU | Request | Response | PIDs / Function | Interval |
 |-----|---------|----------|-----------------|----------|
 | PCM | 0x7E0 | 0x7E8 | ETC actual (0x093C), ETC desired (0x091A), WGDC (0x0462), KR cyl 1 (0x03EC), OAR (0x03E8), Charge Air Temp (0x0461), Catalyst Temp (0xF43C), AFR actual (0xF434), AFR desired (0xF444), TIP actual (0x033E), TIP desired (0x0466), VCT intake (0x0318), VCT exhaust (0x0319), Oil Life (0x054B), HP Fuel Rail (0xF422), Fuel Level (0xF42F), **Battery Voltage** (0x0304) | 30 s |
-| BCM | 0x726 | 0x72E | Battery SOC (0x4028), Battery temp (0x4029), Cabin temp (0xDD04), **TPMS LF/RF/LR/RR** (0x2813–0x2816) `(((256×A)+B)/3 + 22/3) × 0.145 PSI` | 30 s |
-| BCM (ext) | 0x726 | 0x72E | Odometer (0xDD01) — extended session, **once on connect** (passive CAN 0x360 handles real-time) | once |
+| BCM | 0x726 | 0x72E | Battery SOC (0x4028), Battery temp (0x4029), Cabin temp (0xDD04), **TPMS pressure LF/RF/LR/RR** (0x2813-0x2816) `(((256*A)+B)/3 + 22/3) * 0.145 PSI`, **TPMS last sensor** (0x280B) `temp = raw - 40 C, pressure = (A*256+B)/20 PSI` (multi-frame ISO-TP, matched by sensor ID) | 30 s |
+| BCM (once) | 0x726 | 0x72E | Odometer (0xDD01) -- extended session, **TPMS sensor IDs** (0x280F LF, 0x2810 RF, 0x2811 RR, 0x2812 LR) -- 4-byte IDs for 0x280B matching | once |
 | AWD module | 0x703 | 0x70B | RDU oil temp (0x1E8A) — `B4 − 40 °C` | 60 s |
 
 ### Ready-to-Race Thresholds
@@ -228,8 +228,8 @@ Open `android/browser-emulator/index.html` in any browser, or visit the live ver
 ├──────────────────────────────────────────────────────────────────────┤
 │  PCM polling (0x7E0/30s): ETC, WGDC, KR, OAR, AFR, TIP, VCT,       │
 │    charge air, CAT temp, oil life, HP fuel rail, fuel level, bat V   │
-│  BCM polling (0x726/30s): SOC, battery temp, cabin temp, TPMS×4     │
-│  BCM ext (0x726/once): odometer (extended session, once on connect)   │
+│  BCM polling (0x726/30s): SOC, bat temp, cabin temp, TPMS×4 + 0x280B │
+│  BCM once (0x726): odometer (ext session), TPMS sensor IDs×4         │
 │  AWD polling (0x703/60s): RDU oil temp                               │
 ├──────────────────────┬───────────────────────────────────────────────┤
 │  MeatPi WiCAN USB-C3 │  MeatPi WiCAN Pro (optional)                 │
@@ -244,7 +244,7 @@ Open `android/browser-emulator/index.html` in any browser, or visit the live ver
 
 **Why WebSocket SLCAN instead of ELM327 TCP?** ELM327's `ATMA` command is not fully implemented in WiCAN firmware. WebSocket SLCAN bypasses ELM327 entirely — the app does a manual HTTP 101 Upgrade handshake, sends `C` / `S6` / `O` (close/500kbps/open), and receives raw SLCAN frames. This delivers the full HS-CAN bus at ~2100 fps vs ~12 fps with polled OBD.
 
-**How does TPMS work?** Tire pressures are polled from the BCM via Mode 22 (PIDs 0x2813–0x2816) every 30 seconds. Earlier versions decoded TPMS from passive CAN frame 0x340 (MS-CAN bridged via GWM), but this was found to carry PCM ambient temperature only — not tire pressures. The BCM Mode 22 approach is slower (~30 s refresh) but returns validated pressure data with the formula `(((256×A)+B)/3 + 22/3) × 0.145 PSI`.
+**How does TPMS work?** Tire pressures are polled from the BCM via Mode 22 (PIDs 0x2813-0x2816) every 30 seconds using the formula `(((256*A)+B)/3 + 22/3) * 0.145 PSI`. Tire temperatures use a two-step approach discovered by @adamsouthern (issue #119): on connect, the app polls sensor IDs from PIDs 0x280F-0x2812 (4-byte ID per tire position). Then every 30s cycle it polls PID 0x280B ("last received TPMS sensor") which returns whichever sensor the BCM heard from most recently: 4-byte sensor ID + pressure (`(A*256+B)/20` PSI) + temperature (`raw - 40` C). The sensor ID is matched against the stored map to assign the temperature to the correct tire. The 0x280B response is 12 bytes (multi-frame ISO-TP), so the app sends a Flow Control frame after the First Frame and reassembles the payload. Per-tire temperature PIDs 0x2823-0x2826 were confirmed unsupported by the BCM (`7F 22 31`). Earlier versions decoded TPMS from passive CAN frame 0x340 (MS-CAN bridged via GWM), but this was found to carry PCM ambient temperature only.
 
 **How does firmware detection work?** After SLCAN initialisation, the app sends `OPENRS?\r`. openRS_ firmware responds with `OPENRS:<version>`. Stock WiCAN firmware ignores the frame. Every incoming CAN frame for the first **3 seconds** is scanned for the probe response — this time-based window ensures the probe reply is not missed even on high-throughput buses (~1700 fps). After 3 seconds without a response, the firmware latches as "WiCAN stock" for the session. The MORE tab feature buttons unlock when openRS_ firmware is confirmed.
 

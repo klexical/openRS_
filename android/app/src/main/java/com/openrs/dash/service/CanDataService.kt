@@ -305,18 +305,26 @@ class CanDataService : Service() {
                 tireTempRF = if (obdState.tireTempRF > -90) obdState.tireTempRF else current.tireTempRF,
                 tireTempLR = if (obdState.tireTempLR > -90) obdState.tireTempLR else current.tireTempLR,
                 tireTempRR = if (obdState.tireTempRR > -90) obdState.tireTempRR else current.tireTempRR,
+                tpmsSensorIdLF = if (obdState.tpmsSensorIdLF >= 0) obdState.tpmsSensorIdLF else current.tpmsSensorIdLF,
+                tpmsSensorIdRF = if (obdState.tpmsSensorIdRF >= 0) obdState.tpmsSensorIdRF else current.tpmsSensorIdRF,
+                tpmsSensorIdRR = if (obdState.tpmsSensorIdRR >= 0) obdState.tpmsSensorIdRR else current.tpmsSensorIdRR,
+                tpmsSensorIdLR = if (obdState.tpmsSensorIdLR >= 0) obdState.tpmsSensorIdLR else current.tpmsSensorIdLR,
                 odometerKm   = if (obdState.odometerKm  >= 0)   obdState.odometerKm   else current.odometerKm,
+                odometerRolloverOffset = if (obdState.odometerRolloverOffset > 0) obdState.odometerRolloverOffset else current.odometerRolloverOffset,
                 batterySoc   = if (obdState.batterySoc  >= 0)   obdState.batterySoc   else current.batterySoc,
                 batteryTempC = if (obdState.batteryTempC > -90) obdState.batteryTempC else current.batteryTempC,
                 cabinTempC   = if (obdState.cabinTempC  > -90)  obdState.cabinTempC   else current.cabinTempC,
                 rduTempC     = if (obdState.rduTempC > -90)     obdState.rduTempC     else current.rduTempC,
                 hpFuelRailPsi = if (obdState.hpFuelRailPsi >= 0) obdState.hpFuelRailPsi else current.hpFuelRailPsi,
+                batteryVoltage = if (obdState.batteryVoltage > 0) obdState.batteryVoltage else current.batteryVoltage,
                 rduEnabled   = obdState.rduEnabled   ?: current.rduEnabled,
                 pdcEnabled   = obdState.pdcEnabled   ?: current.pdcEnabled,
                 fengEnabled  = obdState.fengEnabled  ?: current.fengEnabled,
+                fengTimedOut = obdState.fengTimedOut || current.fengTimedOut,
                 lcArmed      = obdState.lcArmed      ?: current.lcArmed,
                 lcRpmTarget  = if (obdState.lcRpmTarget >= 0) obdState.lcRpmTarget else current.lcRpmTarget,
                 assEnabled   = obdState.assEnabled   ?: current.assEnabled,
+                rsprotTimedOut = obdState.rsprotTimedOut || current.rsprotTimedOut,
             )
         }
     }
@@ -357,7 +365,8 @@ class CanDataService : Service() {
                 tirePressLF  = -1.0,  tirePressRF  = -1.0,
                 tirePressLR  = -1.0,  tirePressRR  = -1.0,
                 rduTempC     = -99.0, ptuTempC     = -99.0,
-                odometerKm   = -1L,   batterySoc   = -1.0,
+                odometerKm   = -1L,   odometerRolloverOffset = 0,
+                batterySoc   = -1.0,
                 batteryTempC = -99.0, cabinTempC   = -99.0
             )
         }

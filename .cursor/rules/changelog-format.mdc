@@ -1,0 +1,50 @@
+---
+description: Changelog formatting — RC-by-RC tracking with comprehensive entries
+globs: "**/CHANGELOG.md"
+alwaysApply: false
+---
+
+# Changelog Format
+
+## RC-by-RC Tracking
+
+When a version goes through multiple release candidates, **show each RC's changes explicitly** under the version heading. Use `(rc.N)` suffixes on section headers to group changes by RC. The final stable entry inherits all RC sections.
+
+### Ordering
+
+List RCs in **reverse chronological order** (newest RC first). Within each RC, use standard sections (Fixed, Added, Changed). A brief description after the RC number helps readers scan quickly.
+
+```markdown
+## v1.5 — 2026-03-19
+
+### Fixed (rc.3 — CAN TX robustness)
+- Entry from third release candidate
+
+### Added (rc.3)
+- ...
+
+### Changed (rc.3)
+- ...
+
+### Fixed (rc.2 — Pro-specific)
+- Entry from second release candidate
+
+### Fixed (rc.1 — drive mode + ESC)
+- Entry from first release candidate
+
+### Added (rc.1)
+- ...
+
+### Changed (rc.1)
+- ...
+```
+
+## Rules
+
+1. **Never flatten RC history** — when promoting to the next RC, keep all prior RC sections intact and append the new one. This creates a readable audit trail.
+2. **Never mix RC boundaries** — every entry belongs to exactly one RC. Never use labels like `(rc.1 → rc.2)`. If a feature was introduced in rc.1 and modified in rc.2, put the original under `(rc.1)` and the modification under `Changed (rc.2)`.
+3. **Each entry must be technical** — include the CAN ID, byte position, formula, issue number, or root cause. No vague descriptions like "fixed a bug."
+4. **Link issues** where applicable: `([#103](https://github.com/klexical/openRS_/issues/103))`
+5. **Use standard sections**: Fixed, Added, Changed, Removed, Improved.
+6. **Both changelogs** (`android/CHANGELOG.md` and `firmware/CHANGELOG.md`) follow this format.
+7. **GitHub release notes** mirror the CHANGELOG.md entry for that version/RC. Don't write release notes that diverge from the changelog.

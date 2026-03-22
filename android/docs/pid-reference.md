@@ -62,14 +62,38 @@ The following PCM Mode 22 PIDs are polled by the app every 30 seconds via ISO-TP
 
 ## TPMS — BCM Mode 22 (current method, v1.1.6+)
 
-> **Architecture note:** TPMS data is polled from the BCM via Mode 22 (PIDs 0x2813–0x2816) every 30 seconds. Earlier versions (v1.1.0–v1.1.5) attempted to decode TPMS from passive CAN frame `0x340`, but that frame was found to carry PCM ambient temperature only (PCMmsg17) — not tire pressures. The BCM Mode 22 approach returns validated pressure data.
+> **Architecture note:** TPMS data is polled from the BCM via Mode 22 every 30 seconds. Tire pressures use per-tire PIDs 0x2813-0x2816. Tire temperatures use PID 0x280B ("last received TPMS sensor") which returns the most recently heard sensor's ID, pressure, temp, status, and checksum in a 12-byte multi-frame ISO-TP response. On connect, sensor IDs are polled once from 0x280F-0x2812 to build a position map. Per-tire temperature PIDs 0x2823-0x2826 were confirmed unsupported (`7F 22 31` -- see issue #119). Earlier versions (v1.1.0-v1.1.5) attempted to decode TPMS from passive CAN frame `0x340`, but that carries PCM ambient temperature only.
+
+### Tire pressure (per-tire, single-frame)
 
 | PID | Name | Request | Formula | Unit |
 |-----|------|---------|---------|------|
-| 0x2813 | Tire Pressure LF | `222813` | `(((256×A)+B)/3 + 22/3) × 0.145` | PSI |
-| 0x2814 | Tire Pressure RF | `222814` | `(((256×A)+B)/3 + 22/3) × 0.145` | PSI |
-| 0x2815 | Tire Pressure RR | `222815` | `(((256×A)+B)/3 + 22/3) × 0.145` | PSI |
-| 0x2816 | Tire Pressure LR | `222816` | `(((256×A)+B)/3 + 22/3) × 0.145` | PSI |
+| 0x2813 | Tire Pressure LF | `222813` | `(((256*A)+B)/3 + 22/3) * 0.145` | PSI |
+| 0x2814 | Tire Pressure RF | `222814` | `(((256*A)+B)/3 + 22/3) * 0.145` | PSI |
+| 0x2815 | Tire Pressure RR | `222815` | `(((256*A)+B)/3 + 22/3) * 0.145` | PSI |
+| 0x2816 | Tire Pressure LR | `222816` | `(((256*A)+B)/3 + 22/3) * 0.145` | PSI |
+
+### Sensor IDs (per-tire, polled once on connect, single-frame)
+
+| PID | Position | Request | Bytes | Notes |
+|-----|----------|---------|-------|-------|
+| 0x280F | LF | `22280F` | 4 | 4-byte unique sensor ID |
+| 0x2810 | RF | `222810` | 4 | 4-byte unique sensor ID |
+| 0x2811 | RR | `222811` | 4 | 4-byte unique sensor ID |
+| 0x2812 | LR | `222812` | 4 | 4-byte unique sensor ID |
+
+### Last received sensor (polled every 30s cycle, multi-frame ISO-TP)
+
+| PID | Name | Request | Response layout | Notes |
+|-----|------|---------|-----------------|-------|
+| 0x280B | Last received TPMS sensor | `22280B` | `62 280B [ID0..ID3] [press_hi press_lo] [temp] [status] [checksum]` | 12-byte payload, requires FC frame after FF |
+
+Decoding `0x280B` data bytes (after `62 280B`):
+- **Sensor ID** (4 bytes): matched against 0x280F-0x2812 map to determine tire position
+- **Pressure** (2 bytes): `(A*256+B) / 20` PSI
+- **Temperature** (1 byte): `raw - 40` C
+- **Status** (1 byte): sensor status flags
+- **Checksum** (1 byte): validation byte
 
 ## Mode 22 — BCM (Header: 0x726)
 
@@ -82,9 +106,9 @@ The following PCM Mode 22 PIDs are polled by the app every 30 seconds via ISO-TP
 | 0x4029 | **Battery Temp** | `224029` | 1 | `B4 − 40` | °C | 12V battery temperature |
 | 0xDD04 | **Cabin Temp** | `22DD04` | 1 | `(B4 × 10/9) − 45` | °C | Interior cabin sensor |
 
-### TPMS PIDs — alternative formula reference
+### TPMS PIDs -- alternative/legacy formula reference
 
-> **Formula note:** MeatPi's official Focus RS vehicle profile uses `([B4:B5]/10)/2.036`. The app uses `(((256×A)+B)/3 + 22/3) × 0.145`, which was validated against known tire pressures on the Focus RS MK3.
+> **Formula note:** MeatPi's official Focus RS vehicle profile uses `([B4:B5]/10)/2.036`. The app uses `(((256*A)+B)/3 + 22/3) * 0.145`, which was validated against known tire pressures on the Focus RS MK3.
 
 | PID | Name | Request | Bytes | Formula (MeatPi) | Unit | Status |
 |-----|------|---------|-------|-----------------|------|--------|
@@ -92,10 +116,10 @@ The following PCM Mode 22 PIDs are polled by the app every 30 seconds via ISO-TP
 | 0x2814 | Tire Pressure RF | `222814` | 2 | `([B4:B5] / 10) / 2.036` | PSI | Legacy |
 | 0x2815 | Tire Pressure RR | `222815` | 2 | `([B4:B5] / 10) / 2.036` | PSI | Legacy |
 | 0x2816 | Tire Pressure LR | `222816` | 2 | `([B4:B5] / 10) / 2.036` | PSI | Legacy |
-| 0x2823 | Tire Temp LF | `222823` | 1 | `A − 40` | °C | ⚠️ Unverified |
-| 0x2824 | Tire Temp RF | `222824` | 1 | `A − 40` | °C | ⚠️ Unverified |
-| 0x2825 | Tire Temp RR | `222825` | 1 | `A − 40` | °C | ⚠️ Unverified |
-| 0x2826 | Tire Temp LR | `222826` | 1 | `A − 40` | °C | ⚠️ Unverified |
+| 0x2823 | Tire Temp LF | `222823` | 1 | `A - 40` | C | **Unsupported** (`7F 22 31`) |
+| 0x2824 | Tire Temp RF | `222824` | 1 | `A - 40` | C | **Unsupported** (`7F 22 31`) |
+| 0x2825 | Tire Temp RR | `222825` | 1 | `A - 40` | C | **Unsupported** (`7F 22 31`) |
+| 0x2826 | Tire Temp LR | `222826` | 1 | `A - 40` | C | **Unsupported** (`7F 22 31`) |
 
 ## CAN Frame IDs (HS-CAN 500 kbps) — DigiCluster verified
 
@@ -123,5 +147,5 @@ All formulas re-validated against DigiCluster `can0_hs.json` and `can1_ms.json`.
 | 0x2C0 | AWD L/R torque | 12-bit words scaled | DigiCluster HS-CAN |
 | 0x2F0 | Coolant temp, IAT | coolant: `((B4&0x03)<<8\|B5) − 60 °C`; IAT: `((B6&0x03)<<8\|B7) × 0.25 − 127 °C` | RS_HS.dbc PCMmsg16 |
 | 0x340 | Ambient temp (PCMmsg17) | `byte7 signed × 0.25 °C` — **not** TPMS | RS_HS.dbc PCMmsg17 |
-| 0x360 | Odometer (km), engine status | odo: `(data[5]<<8\|data[6])` — 16-bit BE, 1 km/bit; engine: `data[0]` (0=Idle, 2=Off, 183=Running, 186=Kill, 191=RecentStart) | RS_HS.dbc + community [#102](https://github.com/klexical/openRS_/discussions/102) |
+| 0x360 | Odometer (km), engine status | odo: `(data[3]<<16\|data[4]<<8\|data[5])` — 24-bit BE, 1 km/bit; engine: `data[0]` (0=Idle, 2=Off, 183=Running, 186=Kill, 191=RecentStart, 196=Warmup) | RS_HS.dbc + community [#102](https://github.com/klexical/openRS_/discussions/102) |
 | 0x380 | Fuel level % (FuelLevelFiltered) | Motorola 10-bit: `((data[2]&0x03)<<8\|data[3]) × 0.4` | RS_HS.dbc PCMmsg30 |

@@ -1,0 +1,37 @@
+---
+description: Always build and attach binary artifacts when creating GitHub releases
+alwaysApply: true
+---
+
+# Release Artifacts
+
+When creating or updating a GitHub release, **always build and attach fresh binary artifacts** before considering the release complete. Never update release metadata (tag, title, notes) without also replacing the binaries — stale binaries on a new tag are actively harmful.
+
+## Android releases (`android-v*`)
+
+1. Build the release APK: `cd android && ./gradlew assembleRelease`
+2. Output: `android/app/build/outputs/apk/release/openRS_v{version}.apk`
+3. Upload: `gh release upload <tag> android/app/build/outputs/apk/release/openRS_v*.apk`
+
+## Firmware releases (`fw-usb-v*`, `fw-pro-v*`)
+
+1. Clean build for the target: `cd firmware && rm -rf .build/<target>/wican-fw && bash build.sh --target <usb|pro>`
+2. Upload all four flash files: `gh release upload <tag> firmware/release/openrs-fw-<target>_v*.bin firmware/release/bootloader_<target>.bin firmware/release/partition-table_<target>.bin firmware/release/ota_data_initial_<target>.bin`
+3. Include SHA256 hashes from `firmware/release/BUILD_MANIFEST_<target>.json` in the release notes
+4. **Requires ESP-IDF toolchain** — if not available, do NOT update the firmware release. Note it for the user.
+
+## Updating artifacts on a rolling RC release
+
+When updating an existing RC pre-release (see `release-lifecycle.mdc`):
+1. **Build first** — always build fresh artifacts before any tag/release changes
+2. Delete the old artifact: `gh release delete-asset <tag> <old-filename> --yes`
+3. Upload the new artifact: `gh release upload <new-tag> <artifact>`
+4. Update SHA256 checksums in release notes if firmware
+
+## Checklist
+
+A release is **not complete** until:
+- [ ] Binary artifacts are **freshly built** from the current source (not carried over from a previous RC)
+- [ ] Artifacts are uploaded to the GitHub release
+- [ ] SHA256 checksums match the uploaded binaries (firmware)
+- [ ] Only one pre-release exists per version stream (see `release-lifecycle.mdc`)

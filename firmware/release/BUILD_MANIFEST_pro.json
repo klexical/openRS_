@@ -1,15 +1,15 @@
 {
   "target": "pro",
-  "firmware_version": "v1.4",
-  "output_bin": "openrs-fw-pro_v140.bin",
+  "firmware_version": "PRO v1.0",
+  "output_bin": "openrs-fw-pro_v150.bin",
   "upstream_tag": "v4.48p",
   "idf_target": "esp32s3",
-  "built_at": "2026-03-13T02:44:15Z",
-  "git_commit": "eb5a556d992ea7e912dda185d9f128d016a6dabf",
+  "built_at": "2026-03-22T02:00:24Z",
+  "git_commit": "9639a8f4eb91569a68dbe1b467040964e21d2542",
   "git_dirty": true,
   "sha256": {
-    "openrs-fw-pro_v140.bin": "5caeb442f5b61399b350f1d451b4062a70328b0979089b7d3279085fcf56bb93",
-    "bootloader_pro.bin": "bc7834aa339356eeae03fdfab27b6bfabf23d7499e7ef00ac1f3d5486cc43f25",
+    "openrs-fw-pro_v150.bin": "fe699a87472045e04ac5ca9a0eb75bc58071b1eb6af1261ecbd2de36beab8a59",
+    "bootloader_pro.bin": "0bcafd21661d14a2e97dbba619d82c3e9b887fa1cddaead43b76ff2febbfc771",
     "partition-table_pro.bin": "0d08abf355882a26bc8c0aceb15844a90df8fddeaa944ee72b0ddf5254c02b0a",
     "ota_data_initial_pro.bin": "7d2c7ac4888bfd75cd5f56e8d61f69595121183afc81556c876732fd3782c62f"
   }

@@ -6,6 +6,12 @@ All notable changes to the openrs-fw firmware are documented here.
 
 ## v1.5 — 2026-03-18
 
+### Fixed (rc.5 — WiFi routing, drive mode bit, diagnostic traceability)
+- **Drive mode button bit reverted to 0x04 (bit 2)** — re-analysis of three SLCAN diagnostic sessions (2026-03-21) with exclusively physical button presses confirmed the actual drive mode button is **bit 2 (`0x04`)** on 0x305 byte 4. Physical presses consistently produce `0x0C`/`0x0F` values with a ~4-5 s delay to mode change. Bit 4 (`0x10`) is a BCM status indicator for the mode selector GUI, not the button input. Reverts the incorrect rc.5 change.
+- **Sport/Track disambiguation missing from firmware** — 0x1B0 reports nibble=1 for both Sport and Track. Added 0x420 parsing (`mode_420_detail` byte7 bit0: 0=Sport, 1=Track) to firmware CAN decoder, matching the Android app's two-frame resolution. Prevents wrong cycle-distance calculation when car is in Track but firmware thinks Sport.
+- **ESC injection enhanced logging** — added diagnostic logging to `frs_set_esc()` entry point (pending state, frame validity, current mode) to trace why ESC injection was never observed in diagnostic logs.
+- **Firmware version string now includes RC suffix** — `OPENRS_FW_VERSION` changed from `"v1.5"` to `"v1.5-rc.5"` so the Android app's diagnostic log can identify exactly which firmware build is running. Eliminates the ambiguity between rc.4 and rc.5 that complicated the 2026-03-21 diagnostic analysis.
+
 ### Fixed (rc.4 — full repo audit hardening)
 - **CAN TX shim missing DLC bounds check** — `openrs_can_tx` in `apply_patches.py` did not validate `dlc <= 8` before `memcpy(msg.data, data, dlc)`. A malformed call could overflow `msg.data`. Now clamps to 8 and copies only `msg.data_length_code` bytes.
 - **Mutex creation not guarded** — `configASSERT(s_state_mutex)` in `frs_init()` is a no-op in release builds. If `xSemaphoreCreateMutex()` returns NULL, subsequent operations would crash. Now uses explicit NULL check with `ESP_LOGE` + `abort()`.

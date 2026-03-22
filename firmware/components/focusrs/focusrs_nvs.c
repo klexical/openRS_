@@ -25,11 +25,22 @@ void frs_nvs_load(frs_state_t *state) {
     uint8_t u8;
     uint16_t u16;
 
-    if (nvs_get_u8(h, KEY_BOOT_MODE, &u8) == ESP_OK)
-        state->boot_mode = u8;
+    if (nvs_get_u8(h, KEY_BOOT_MODE, &u8) == ESP_OK) {
+        if (u8 <= FRS_MODE_TRACK) {
+            state->boot_mode = u8;
+        } else {
+            ESP_LOGW(TAG, "NVS boot_mode out of range (%d) — using default", u8);
+        }
+    }
 
-    if (nvs_get_u8(h, KEY_ESC, &u8) == ESP_OK)
-        state->esc_mode = u8;
+    if (nvs_get_u8(h, KEY_ESC, &u8) == ESP_OK) {
+        if (u8 <= FRS_ESC_OFF) {
+            state->esc_mode = u8;
+            state->boot_esc = u8;
+        } else {
+            ESP_LOGW(TAG, "NVS esc_mode out of range (%d) — using default", u8);
+        }
+    }
 
     uint8_t lc = 0, ass = 0;
     nvs_get_u8(h, KEY_LC,  &lc);
@@ -37,8 +48,13 @@ void frs_nvs_load(frs_state_t *state) {
     state->lc_enabled = (lc != 0);
     state->ass_kill   = (ass != 0);
 
-    if (nvs_get_u16(h, KEY_SLEEP_MV, &u16) == ESP_OK)
-        state->sleep_threshold_mv = u16;
+    if (nvs_get_u16(h, KEY_SLEEP_MV, &u16) == ESP_OK) {
+        if (u16 >= 10000 && u16 <= 15000) {
+            state->sleep_threshold_mv = u16;
+        } else {
+            ESP_LOGW(TAG, "NVS sleep_thresh out of range (%u) — using default", u16);
+        }
+    }
 
     nvs_close(h);
     ESP_LOGI(TAG, "Loaded: boot=%d esc=%d lc=%d ass=%d sleep=%lumV",
@@ -58,26 +74,34 @@ static esp_err_t nvs_write_u8(const char *key, uint8_t val) {
 }
 
 void frs_nvs_save_boot_mode(uint8_t mode) {
-    nvs_write_u8(KEY_BOOT_MODE, mode);
+    esp_err_t err = nvs_write_u8(KEY_BOOT_MODE, mode);
+    if (err != ESP_OK) ESP_LOGW(TAG, "NVS write boot_mode failed: %s", esp_err_to_name(err));
 }
 
 void frs_nvs_save_esc(uint8_t mode) {
-    nvs_write_u8(KEY_ESC, mode);
+    esp_err_t err = nvs_write_u8(KEY_ESC, mode);
+    if (err != ESP_OK) ESP_LOGW(TAG, "NVS write esc failed: %s", esp_err_to_name(err));
 }
 
 void frs_nvs_save_lc(bool enabled) {
-    nvs_write_u8(KEY_LC, enabled ? 1 : 0);
+    esp_err_t err = nvs_write_u8(KEY_LC, enabled ? 1 : 0);
+    if (err != ESP_OK) ESP_LOGW(TAG, "NVS write lc failed: %s", esp_err_to_name(err));
 }
 
 void frs_nvs_save_ass_kill(bool enabled) {
-    nvs_write_u8(KEY_ASS, enabled ? 1 : 0);
+    esp_err_t err = nvs_write_u8(KEY_ASS, enabled ? 1 : 0);
+    if (err != ESP_OK) ESP_LOGW(TAG, "NVS write ass_kill failed: %s", esp_err_to_name(err));
 }
 
 void frs_nvs_save_sleep_threshold(uint16_t mv) {
     nvs_handle_t h;
     esp_err_t err = nvs_open(NS, NVS_READWRITE, &h);
-    if (err != ESP_OK) return;
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "NVS open for sleep_thresh failed: %s", esp_err_to_name(err));
+        return;
+    }
     err = nvs_set_u16(h, KEY_SLEEP_MV, mv);
     if (err == ESP_OK) err = nvs_commit(h);
+    if (err != ESP_OK) ESP_LOGW(TAG, "NVS write sleep_thresh failed: %s", esp_err_to_name(err));
     nvs_close(h);
 }

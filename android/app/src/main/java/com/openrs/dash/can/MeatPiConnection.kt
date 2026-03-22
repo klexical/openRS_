@@ -95,10 +95,15 @@ class MeatPiConnection(
                     connectionSucceeded = true
                     connectedAtMs = System.currentTimeMillis()
                     failedAttempts = 0
+                    val bcmIsoTp = IsoTpBuffer()
 
                     // ── BCM OBD poller ────────────────────────────────────────
                     val obdJob = launch {
                         delay(ObdConstants.BCM_INITIAL_DELAY_MS)
+                        ObdConstants.BCM_TPMS_ID_QUERIES.forEach { q ->
+                            try { sendFrame(out, q) } catch (_: Exception) { }
+                            delay(ObdConstants.BCM_QUERY_GAP_MS)
+                        }
                         while (isActive) {
                             ObdConstants.BCM_QUERIES.forEach { q ->
                                 try { sendFrame(out, q) } catch (_: Exception) { }
@@ -124,21 +129,40 @@ class MeatPiConnection(
                         }
                     }
 
+                    // ── Probe-timeout counters (shared with frame loop below) ──
+                    val fengMisses   = java.util.concurrent.atomic.AtomicInteger(0)
+                    val rsprotMisses = java.util.concurrent.atomic.AtomicInteger(0)
+                    val PROBE_TIMEOUT_CYCLES = 3
+
                     // ── Extended session poller ───────────────────────────────
                     val extJob = launch {
                         delay(ObdConstants.EXT_INITIAL_DELAY_MS)
+                        var odometerPolled = false
                         while (isActive) {
-                            try { sendFrame(out, ObdConstants.EXT_SESSION_BCM);   delay(ObdConstants.EXT_SESSION_GAP_MS)
-                                  sendFrame(out, ObdConstants.BCM_QUERY_ODOMETER); delay(ObdConstants.EXT_QUERY_GAP_MS) } catch (_: Exception) { }
+                            if (!odometerPolled) {
+                                try { sendFrame(out, ObdConstants.EXT_SESSION_BCM);   delay(ObdConstants.EXT_SESSION_GAP_MS)
+                                      sendFrame(out, ObdConstants.BCM_QUERY_ODOMETER); delay(ObdConstants.EXT_QUERY_GAP_MS)
+                                      odometerPolled = true } catch (_: Exception) { }
+                            }
                             try { sendFrame(out, ObdConstants.EXT_SESSION_AWD);   delay(ObdConstants.EXT_SESSION_GAP_MS)
                                   sendFrame(out, ObdConstants.AWD_QUERY_RDU_STATUS); delay(ObdConstants.EXT_QUERY_GAP_MS) } catch (_: Exception) { }
                             try { sendFrame(out, ObdConstants.EXT_SESSION_PSCM);  delay(ObdConstants.EXT_SESSION_GAP_MS)
                                   sendFrame(out, ObdConstants.PSCM_QUERY_PDC);    delay(ObdConstants.EXT_QUERY_GAP_MS) } catch (_: Exception) { }
-                            try { sendFrame(out, ObdConstants.EXT_SESSION_FENG);  delay(ObdConstants.EXT_SESSION_GAP_MS)
-                                  sendFrame(out, ObdConstants.FENG_QUERY_STATUS); delay(ObdConstants.EXT_QUERY_GAP_MS) } catch (_: Exception) { }
-                            ObdConstants.RSPROT_PROBE_QUERIES.forEach { q ->
-                                try { sendFrame(out, ObdConstants.EXT_SESSION_RSPROT); delay(ObdConstants.EXT_SESSION_GAP_MS)
-                                      sendFrame(out, q);                               delay(ObdConstants.EXT_QUERY_GAP_MS) } catch (_: Exception) { }
+                            if (fengMisses.get() < PROBE_TIMEOUT_CYCLES) {
+                                try { sendFrame(out, ObdConstants.EXT_SESSION_FENG);  delay(ObdConstants.EXT_SESSION_GAP_MS)
+                                      sendFrame(out, ObdConstants.FENG_QUERY_STATUS); delay(ObdConstants.EXT_QUERY_GAP_MS) } catch (_: Exception) { }
+                                if (fengMisses.incrementAndGet() >= PROBE_TIMEOUT_CYCLES) {
+                                    onObdUpdate(getCurrentState().copy(fengTimedOut = true))
+                                }
+                            }
+                            if (rsprotMisses.get() < PROBE_TIMEOUT_CYCLES) {
+                                ObdConstants.RSPROT_PROBE_QUERIES.forEach { q ->
+                                    try { sendFrame(out, ObdConstants.EXT_SESSION_RSPROT); delay(ObdConstants.EXT_SESSION_GAP_MS)
+                                          sendFrame(out, q);                               delay(ObdConstants.EXT_QUERY_GAP_MS) } catch (_: Exception) { }
+                                }
+                                if (rsprotMisses.incrementAndGet() >= PROBE_TIMEOUT_CYCLES) {
+                                    onObdUpdate(getCurrentState().copy(rsprotTimedOut = true))
+                                }
                             }
                             delay(ObdConstants.EXT_POLL_INTERVAL_MS)
                         }
@@ -164,6 +188,7 @@ class MeatPiConnection(
                                     val version = line.removePrefix("OPENRS:").trim()
                                     firmwareVersion = "openRS_ $version"
                                     OpenRSDashApp.instance.isOpenRsFirmware.value = true
+                                    OpenRSDashApp.instance.firmwareVersionLabel.value = firmwareVersion
                                     DiagnosticLogger.isOpenRsFirmware = true
                                     DiagnosticLogger.firmwareVersion = firmwareVersion
                                     addDebugLine("Firmware: openRS_ $version ✓")
@@ -173,6 +198,7 @@ class MeatPiConnection(
                                     firmwareKnown = true
                                     firmwareVersion = "MeatPi Pro"
                                     OpenRSDashApp.instance.isOpenRsFirmware.value = false
+                                    OpenRSDashApp.instance.firmwareVersionLabel.value = firmwareVersion
                                     DiagnosticLogger.isOpenRsFirmware = false
                                     DiagnosticLogger.firmwareVersion = firmwareVersion
                                     addDebugLine("Firmware: MeatPi Pro stock (3 s timeout)")
@@ -192,7 +218,14 @@ class MeatPiConnection(
                             }
 
                             if (frame.first == ObdConstants.BCM_RESPONSE_ID) {
-                                ObdResponseParser.parseBcmResponse(frame.second, getCurrentState(), onObdUpdate)
+                                val (reassembled, isFF, isSF) = bcmIsoTp.feed(frame.second)
+                                if (isFF) {
+                                    try { sendFrame(out, ObdConstants.BCM_FLOW_CONTROL) } catch (_: Exception) {}
+                                }
+                                if (reassembled != null) {
+                                    if (isSF) ObdResponseParser.parseBcmResponse(frame.second, getCurrentState(), onObdUpdate)
+                                    else      ObdResponseParser.parseBcmReassembled(reassembled, getCurrentState(), onObdUpdate)
+                                }
                                 continue
                             }
                             if (frame.first == ObdConstants.AWD_RESPONSE_ID) {
@@ -208,10 +241,12 @@ class MeatPiConnection(
                                 continue
                             }
                             if (frame.first == ObdConstants.FENG_RESPONSE_ID) {
+                                fengMisses.set(0)
                                 ObdResponseParser.parseFengResponse(frame.second, getCurrentState(), onObdUpdate)
                                 continue
                             }
                             if (frame.first == ObdConstants.RSPROT_RESPONSE_ID) {
+                                rsprotMisses.set(0)
                                 ObdResponseParser.parseRsprotResponse(frame.second, getCurrentState(), onObdUpdate) { addDebugLine(it) }
                                 continue
                             }

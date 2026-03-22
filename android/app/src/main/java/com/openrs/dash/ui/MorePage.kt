@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.OpenRSDashApp
+import com.openrs.dash.can.FirmwareApi
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.EscStatus
 import com.openrs.dash.data.VehicleState
@@ -55,10 +56,15 @@ import kotlinx.coroutines.withContext
     onSettings: () -> Unit
 ) {
     val isFw   by OpenRSDashApp.instance.isOpenRsFirmware.collectAsState()
+    val fwLabel by OpenRSDashApp.instance.firmwareVersionLabel.collectAsState()
     val scope  = rememberCoroutineScope()
     val ctx    = LocalContext.current
     var exporting by remember { mutableStateOf(false) }
     val accent = LocalThemeAccent.current
+    val canControl = isFw && vs.isConnected
+    val host = remember { AppSettings.getHost(ctx) }
+    var pendingDriveMode by remember { mutableStateOf<DriveMode?>(null) }
+    var pendingEsc       by remember { mutableStateOf<EscStatus?>(null) }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp),
@@ -78,21 +84,54 @@ import kotlinx.coroutines.withContext
                             DriveMode.DRIFT -> Red
                             else            -> accent
                         }
+                        val isPending = pendingDriveMode == mode && !isActive
                         Column(
                             Modifier.weight(1f)
-                                .background(if (isActive) modeAccent.copy(0.1f) else Surf2, RoundedCornerShape(10.dp))
-                                .border(1.dp, if (isActive) modeAccent else Brd, RoundedCornerShape(10.dp))
+                                .background(
+                                    if (isActive) modeAccent.copy(0.1f)
+                                    else if (isPending) modeAccent.copy(0.05f)
+                                    else Surf2,
+                                    RoundedCornerShape(10.dp)
+                                )
+                                .border(
+                                    if (isPending) 1.5.dp else 1.dp,
+                                    if (isActive || isPending) modeAccent else Brd,
+                                    RoundedCornerShape(10.dp)
+                                )
+                                .clickable(enabled = canControl && !isActive) {
+                                    pendingDriveMode = mode
+                                    scope.launch {
+                                        DiagnosticLogger.event("DM_CMD",
+                                            "Sending driveMode=${mode.toFirmwareInt()} (${mode.label}) to $host")
+                                        val result = FirmwareApi.setDriveMode(ctx, host, mode.toFirmwareInt())
+                                        if (result.isFailure) {
+                                            DiagnosticLogger.event("DM_CMD",
+                                                "FAILED: ${result.exceptionOrNull()?.message}")
+                                            snackbarHostState.showSnackbar("Drive mode command failed")
+                                        } else {
+                                            DiagnosticLogger.event("DM_CMD", "OK (HTTP 200)")
+                                        }
+                                        pendingDriveMode = null
+                                    }
+                                }
                                 .padding(vertical = 12.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            HeroNum(letter, 20.sp, if (isActive) modeAccent else Frost)
+                            HeroNum(letter, 20.sp, if (isActive) modeAccent else if (isPending) modeAccent.copy(0.6f) else Frost)
                             Spacer(Modifier.height(2.dp))
-                            MonoLabel(mode.label.uppercase(), 8.sp, if (isActive) modeAccent else Dim, letterSpacing = 0.1.sp)
+                            MonoLabel(
+                                if (isPending) "..." else mode.label.uppercase(),
+                                8.sp, if (isActive) modeAccent else Dim, letterSpacing = 0.1.sp
+                            )
                         }
                     }
             }
             Spacer(Modifier.height(6.dp))
-            MonoLabel("Read-only mirror of CAN 0x1B0. Use steering wheel MODE button.", 9.sp, Dim)
+            MonoLabel(
+                if (canControl) "Tap to change \u00B7 Live from CAN 0x1B0"
+                else "Read-only mirror of CAN 0x1B0. Use steering wheel MODE button.",
+                9.sp, Dim
+            )
         }
 
         HorizontalDivider(color = Brd)
@@ -103,22 +142,67 @@ import kotlinx.coroutines.withContext
                 listOf(EscStatus.ON to "ESC ON", EscStatus.PARTIAL to "SPORT", EscStatus.OFF to "ESC OFF")
                     .forEach { (status, label) ->
                         val isActive = vs.escStatus == status
+                        val isPending = pendingEsc == status && !isActive
                         val color = when (status) {
                             EscStatus.ON -> Ok; EscStatus.PARTIAL -> Warn; else -> Red
                         }
                         Box(
                             Modifier.weight(1f)
-                                .background(if (isActive) color.copy(0.1f) else Surf2, RoundedCornerShape(10.dp))
-                                .border(1.dp, if (isActive) color else Brd, RoundedCornerShape(10.dp))
+                                .background(
+                                    if (isActive) color.copy(0.1f)
+                                    else if (isPending) color.copy(0.05f)
+                                    else Surf2,
+                                    RoundedCornerShape(10.dp)
+                                )
+                                .border(
+                                    if (isPending) 1.5.dp else 1.dp,
+                                    if (isActive || isPending) color else Brd,
+                                    RoundedCornerShape(10.dp)
+                                )
+                                .clickable(enabled = canControl && !isActive) {
+                                    pendingEsc = status
+                                    scope.launch {
+                                        DiagnosticLogger.event("ESC_CMD",
+                                            "Sending escMode=${status.toFirmwareInt()} (${status.label}) to $host")
+                                        val result = FirmwareApi.setEscMode(ctx, host, status.toFirmwareInt())
+                                        if (result.isFailure) {
+                                            DiagnosticLogger.event("ESC_CMD",
+                                                "FAILED: ${result.exceptionOrNull()?.message}")
+                                            snackbarHostState.showSnackbar("ESC command failed")
+                                        } else {
+                                            DiagnosticLogger.event("ESC_CMD", "OK (HTTP 200)")
+                                        }
+                                        pendingEsc = null
+                                    }
+                                }
                                 .padding(vertical = 12.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            MonoLabel(label, 10.sp, if (isActive) color else Dim, letterSpacing = 0.08.sp)
+                            MonoLabel(
+                                if (isPending) "..." else label,
+                                10.sp, if (isActive) color else Dim, letterSpacing = 0.08.sp
+                            )
                         }
                     }
             }
+            if (vs.escStatus == EscStatus.LAUNCH) {
+                Spacer(Modifier.height(6.dp))
+                Box(
+                    Modifier.fillMaxWidth()
+                        .background(Warn.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                        .border(1.dp, Warn.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                        .padding(10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    MonoLabel("⚡ ESC LAUNCH MODE", 10.sp, Warn, letterSpacing = 0.1.sp)
+                }
+            }
             Spacer(Modifier.height(6.dp))
-            MonoLabel("Current: ${vs.escStatus.label} (CAN 0x1C0). Use ESC button in car.", 9.sp, Dim)
+            MonoLabel(
+                if (canControl) "Tap to change \u00B7 Live from CAN 0x1C0"
+                else "Current: ${vs.escStatus.label} (CAN 0x1C0). Use ESC button in car.",
+                9.sp, Dim
+            )
         }
 
         HorizontalDivider(color = Brd)
@@ -134,18 +218,22 @@ import kotlinx.coroutines.withContext
                 ) {
                     UIText("Launch Control", 12.sp, Frost, FontWeight.SemiBold)
                     Spacer(Modifier.height(4.dp))
-                    val lcText = when {
-                        vs.lcArmed == true  -> "● ARMED"
-                        vs.lcArmed == false -> "○ STANDBY"
-                        isFw                -> "… PROBING"
-                        else                -> "○ N/A"
+                    if (vs.launchControlActive) {
+                        MonoText("⚡ ACTIVE", 10.sp, Warn)
+                    } else {
+                        val lcText = when {
+                            vs.lcArmed == true  -> "● ARMED"
+                            vs.lcArmed == false -> "○ STANDBY"
+                            isFw && !vs.rsprotTimedOut -> "… PROBING"
+                            else                -> "○ N/A"
+                        }
+                        val lcColor = when {
+                            vs.lcArmed == true            -> Ok
+                            isFw && !vs.rsprotTimedOut    -> Warn
+                            else                          -> Dim
+                        }
+                        MonoText(lcText, 10.sp, lcColor)
                     }
-                    val lcColor = when {
-                        vs.lcArmed == true -> Ok
-                        isFw               -> Warn
-                        else               -> Dim
-                    }
-                    MonoText(lcText, 10.sp, lcColor)
                     if (vs.lcRpmTarget > 0) {
                         Spacer(Modifier.height(2.dp))
                         MonoLabel("${vs.lcRpmTarget} RPM", 9.sp, Dim)
@@ -162,13 +250,13 @@ import kotlinx.coroutines.withContext
                     val assText = when {
                         vs.assEnabled == true  -> "● ACTIVE"
                         vs.assEnabled == false -> "○ OFF"
-                        isFw                   -> "… PROBING"
+                        isFw && !vs.rsprotTimedOut -> "… PROBING"
                         else                   -> "○ N/A"
                     }
                     val assColor = when {
-                        vs.assEnabled == true -> Ok
-                        isFw                  -> Warn
-                        else                  -> Dim
+                        vs.assEnabled == true            -> Ok
+                        isFw && !vs.rsprotTimedOut       -> Warn
+                        else                             -> Dim
                     }
                     MonoText(assText, 10.sp, assColor)
                 }
@@ -182,11 +270,13 @@ import kotlinx.coroutines.withContext
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                MonoLabel(
-                    if (isFw) "✓  openRS_ firmware detected — features active."
-                    else "⚡  Flash openrs-fw to unlock CAN write, LC, Auto Start-Stop & more.",
-                    9.sp, if (isFw) Ok else Red, letterSpacing = 0.05.sp
-                )
+                Column {
+                    MonoLabel(
+                        if (isFw) "✓  $fwLabel detected"
+                        else "⚡  Flash openrs-fw to unlock CAN write, LC, Auto Start-Stop & more.",
+                        9.sp, if (isFw) Ok else Red, letterSpacing = 0.05.sp
+                    )
+                }
             }
         }
 
@@ -195,11 +285,12 @@ import kotlinx.coroutines.withContext
         // ── Module Status ────────────────────────────────────────────────
         MoreSection("MODULE STATUS") {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                data class ModuleInfo(val label: String, val state: Boolean?, val timedOut: Boolean, val subtitle: String)
                 listOf(
-                    Triple("RDU",  vs.rduEnabled,  "Rear Drive Unit"),
-                    Triple("PDC",  vs.pdcEnabled,  "Pull Drift Comp"),
-                    Triple("FENG", vs.fengEnabled, "Engine Sound")
-                ).forEach { (label, state, subtitle) ->
+                    ModuleInfo("RDU",  vs.rduEnabled,  false, "Rear Drive Unit"),
+                    ModuleInfo("PDC",  vs.pdcEnabled,  false, "Pull Drift Comp"),
+                    ModuleInfo("FENG", vs.fengEnabled, vs.fengTimedOut, "Engine Sound")
+                ).forEach { (label, state, timedOut, subtitle) ->
                     Column(
                         Modifier.weight(1f)
                             .background(Surf2, RoundedCornerShape(10.dp))
@@ -209,10 +300,11 @@ import kotlinx.coroutines.withContext
                     ) {
                         UIText(label, 12.sp, Frost, FontWeight.SemiBold)
                         Spacer(Modifier.height(4.dp))
-                        val (dot, col) = when (state) {
-                            true  -> "● ON"  to Ok
-                            false -> "○ OFF" to Dim
-                            null  -> "…"     to Warn
+                        val (dot, col) = when {
+                            state == true  -> "● ON"  to Ok
+                            state == false -> "○ OFF" to Dim
+                            timedOut       -> "○ N/A" to Dim
+                            else           -> "…"     to Warn
                         }
                         MonoText(dot, 10.sp, col)
                         Spacer(Modifier.height(2.dp))
@@ -298,26 +390,12 @@ import kotlinx.coroutines.withContext
     }
 }
 
-/** Returns the accent Color for a theme ID without allocating a full UserPrefs instance. */
-private fun themeAccentColor(id: String): androidx.compose.ui.graphics.Color = when (id) {
-    "red"    -> androidx.compose.ui.graphics.Color(0xFFFF2233)
-    "orange" -> androidx.compose.ui.graphics.Color(0xFFFF6600)
-    "green"  -> androidx.compose.ui.graphics.Color(0xFF00FF88)
-    "purple" -> androidx.compose.ui.graphics.Color(0xFF8C7AFF)
-    "silver" -> androidx.compose.ui.graphics.Color(0xFFAAC4DD)
-    else     -> androidx.compose.ui.graphics.Color(0xFF00D2FF)
-}
+/** Returns the accent Color for a theme ID from the centralized RS paint palette. */
+private fun themeAccentColor(id: String): androidx.compose.ui.graphics.Color = rsPaintAccent(id)
 
 @Composable fun ThemePicker(p: UserPrefs) {
     val ctx = LocalContext.current
-    val themes = listOf(
-        "cyan"   to "Nitrous Blue",
-        "red"    to "Race Red",
-        "orange" to "Tangerine",
-        "green"  to "Mean Green",
-        "purple" to "Stealth",
-        "silver" to "Silver"
-    )
+    val themes = RsPaints.map { it.id to it.name }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

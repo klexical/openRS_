@@ -2,7 +2,7 @@
 <resources>
     <!-- ── openRS brand colors ──────────────────────── -->
     <!-- Ford Nitrous Blue  — primary accent, gauges, highlights -->
-    <color name="nitrous_blue">#FF00AEEF</color>
+    <color name="nitrous_blue">#FF0091EA</color>
     <!-- Ford Frost White   — primary text, labels              -->
     <color name="frost_white">#FFF5F6F4</color>
 

@@ -231,10 +231,15 @@ class WiCanConnection(
                 connectionSucceeded = true
                 connectedAtMs = System.currentTimeMillis()
                 failedAttempts = 0
+                val bcmIsoTp = IsoTpBuffer()
 
                 // ── BCM OBD poller ───────────────────────────────────────────
                 val obdJob = launch {
                     delay(ObdConstants.BCM_INITIAL_DELAY_MS)
+                    ObdConstants.BCM_TPMS_ID_QUERIES.forEach { q ->
+                        try { sendWsText(out, q) } catch (_: Exception) { }
+                        delay(ObdConstants.BCM_QUERY_GAP_MS)
+                    }
                     while (isActive) {
                         ObdConstants.BCM_QUERIES.forEach { q ->
                             try { sendWsText(out, q) } catch (_: Exception) { }
@@ -259,14 +264,23 @@ class WiCanConnection(
                     }
                 }
 
+                // ── Probe-timeout counters (shared with frame loop below) ──
+                val fengMisses   = java.util.concurrent.atomic.AtomicInteger(0)
+                val rsprotMisses = java.util.concurrent.atomic.AtomicInteger(0)
+                val PROBE_TIMEOUT_CYCLES = 3
+
                 // ── Extended diagnostic session poller ───────────────────────
                 val extJob = launch {
                     delay(ObdConstants.EXT_INITIAL_DELAY_MS)
+                    var odometerPolled = false
                     while (isActive) {
-                        try {
-                            sendWsText(out, ObdConstants.EXT_SESSION_BCM);   delay(ObdConstants.EXT_SESSION_GAP_MS)
-                            sendWsText(out, ObdConstants.BCM_QUERY_ODOMETER); delay(ObdConstants.EXT_QUERY_GAP_MS)
-                        } catch (_: Exception) { }
+                        if (!odometerPolled) {
+                            try {
+                                sendWsText(out, ObdConstants.EXT_SESSION_BCM);   delay(ObdConstants.EXT_SESSION_GAP_MS)
+                                sendWsText(out, ObdConstants.BCM_QUERY_ODOMETER); delay(ObdConstants.EXT_QUERY_GAP_MS)
+                                odometerPolled = true
+                            } catch (_: Exception) { }
+                        }
 
                         try {
                             sendWsText(out, ObdConstants.EXT_SESSION_AWD);   delay(ObdConstants.EXT_SESSION_GAP_MS)
@@ -278,16 +292,26 @@ class WiCanConnection(
                             sendWsText(out, ObdConstants.PSCM_QUERY_PDC);    delay(ObdConstants.EXT_QUERY_GAP_MS)
                         } catch (_: Exception) { }
 
-                        try {
-                            sendWsText(out, ObdConstants.EXT_SESSION_FENG);  delay(ObdConstants.EXT_SESSION_GAP_MS)
-                            sendWsText(out, ObdConstants.FENG_QUERY_STATUS); delay(ObdConstants.EXT_QUERY_GAP_MS)
-                        } catch (_: Exception) { }
-
-                        ObdConstants.RSPROT_PROBE_QUERIES.forEach { q ->
+                        if (fengMisses.get() < PROBE_TIMEOUT_CYCLES) {
                             try {
-                                sendWsText(out, ObdConstants.EXT_SESSION_RSPROT); delay(ObdConstants.EXT_SESSION_GAP_MS)
-                                sendWsText(out, q);                               delay(ObdConstants.EXT_QUERY_GAP_MS)
+                                sendWsText(out, ObdConstants.EXT_SESSION_FENG);  delay(ObdConstants.EXT_SESSION_GAP_MS)
+                                sendWsText(out, ObdConstants.FENG_QUERY_STATUS); delay(ObdConstants.EXT_QUERY_GAP_MS)
                             } catch (_: Exception) { }
+                            if (fengMisses.incrementAndGet() >= PROBE_TIMEOUT_CYCLES) {
+                                onObdUpdate(getCurrentState().copy(fengTimedOut = true))
+                            }
+                        }
+
+                        if (rsprotMisses.get() < PROBE_TIMEOUT_CYCLES) {
+                            ObdConstants.RSPROT_PROBE_QUERIES.forEach { q ->
+                                try {
+                                    sendWsText(out, ObdConstants.EXT_SESSION_RSPROT); delay(ObdConstants.EXT_SESSION_GAP_MS)
+                                    sendWsText(out, q);                               delay(ObdConstants.EXT_QUERY_GAP_MS)
+                                } catch (_: Exception) { }
+                            }
+                            if (rsprotMisses.incrementAndGet() >= PROBE_TIMEOUT_CYCLES) {
+                                onObdUpdate(getCurrentState().copy(rsprotTimedOut = true))
+                            }
                         }
 
                         delay(ObdConstants.EXT_POLL_INTERVAL_MS)
@@ -314,6 +338,7 @@ class WiCanConnection(
                             firmwareKnown = true
                             val version = msg.removePrefix("OPENRS:").trim()
                             OpenRSDashApp.instance.isOpenRsFirmware.value = true
+                            OpenRSDashApp.instance.firmwareVersionLabel.value = "openRS_ $version"
                             DiagnosticLogger.isOpenRsFirmware = true
                             DiagnosticLogger.firmwareVersion = "openRS_ $version"
                             addDebugLine("Firmware: openRS_ $version ✓")
@@ -322,6 +347,7 @@ class WiCanConnection(
                         } else if (System.currentTimeMillis() - probeStartMs >= PROBE_GRACE_MS) {
                             firmwareKnown = true
                             OpenRSDashApp.instance.isOpenRsFirmware.value = false
+                            OpenRSDashApp.instance.firmwareVersionLabel.value = "WiCAN stock"
                             DiagnosticLogger.isOpenRsFirmware = false
                             DiagnosticLogger.firmwareVersion = "WiCAN stock"
                             addDebugLine("Firmware: WiCAN stock (3 s timeout)")
@@ -341,7 +367,14 @@ class WiCanConnection(
                     }
 
                     if (frame.first == ObdConstants.BCM_RESPONSE_ID) {
-                        ObdResponseParser.parseBcmResponse(frame.second, getCurrentState(), onObdUpdate)
+                        val (reassembled, isFF, isSF) = bcmIsoTp.feed(frame.second)
+                        if (isFF) {
+                            try { sendWsText(out, ObdConstants.BCM_FLOW_CONTROL) } catch (_: Exception) {}
+                        }
+                        if (reassembled != null) {
+                            if (isSF) ObdResponseParser.parseBcmResponse(frame.second, getCurrentState(), onObdUpdate)
+                            else      ObdResponseParser.parseBcmReassembled(reassembled, getCurrentState(), onObdUpdate)
+                        }
                         continue
                     }
                     if (frame.first == ObdConstants.AWD_RESPONSE_ID) {
@@ -357,10 +390,12 @@ class WiCanConnection(
                         continue
                     }
                     if (frame.first == ObdConstants.FENG_RESPONSE_ID) {
+                        fengMisses.set(0)
                         ObdResponseParser.parseFengResponse(frame.second, getCurrentState(), onObdUpdate)
                         continue
                     }
                     if (frame.first == ObdConstants.RSPROT_RESPONSE_ID) {
+                        rsprotMisses.set(0)
                         ObdResponseParser.parseRsprotResponse(frame.second, getCurrentState(), onObdUpdate) { addDebugLine(it) }
                         continue
                     }

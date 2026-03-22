@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -20,11 +21,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.openrs.dash.R
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SHARED UI COMPONENTS — used across two or more tab pages
@@ -68,8 +73,10 @@ import androidx.compose.ui.unit.sp
     label: String,
     valueColor: Color,
     modifier: Modifier = Modifier,
-    borderAccent: Color? = null
+    borderAccent: Color? = null,
+    peak: String = ""
 ) {
+    val accent = LocalThemeAccent.current
     val brd = borderAccent ?: Brd
     Column(
         modifier
@@ -81,7 +88,11 @@ import androidx.compose.ui.unit.sp
         MonoLabel(unit, 8.sp, Dim, letterSpacing = 0.18.sp)
         Spacer(Modifier.height(4.dp))
         HeroNum(value, 26.sp, valueColor, Modifier.fillMaxWidth())
-        Spacer(Modifier.height(4.dp))
+        if (peak.isNotEmpty()) {
+            MonoText(peak, 9.sp, accent, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        } else {
+            Spacer(Modifier.height(4.dp))
+        }
         MonoLabel(label, 8.sp, Dim, letterSpacing = 0.15.sp)
     }
 }
@@ -169,8 +180,11 @@ import androidx.compose.ui.unit.sp
     }
 }
 
-/** Tire pressure card — colour-coded by pressure range */
-@Composable fun TireCard(label: String, psi: Double, p: UserPrefs, lowThreshold: Double) {
+/** Tire pressure card with optional temperature — colour-coded by pressure/temp range */
+@Composable fun TireCard(
+    label: String, psi: Double, p: UserPrefs, lowThreshold: Double,
+    tempC: Double = -99.0
+) {
     val isLow     = psi in 0.0..(lowThreshold - 0.001)
     val isMissing = psi < 0
     val tireColor = when {
@@ -179,6 +193,7 @@ import androidx.compose.ui.unit.sp
         psi > 40.0 -> Warn
         else       -> Ok
     }
+    val hasTemp = tempC > -90
     Column(
         Modifier.fillMaxWidth()
             .background(Surf2, RoundedCornerShape(10.dp))
@@ -190,24 +205,40 @@ import androidx.compose.ui.unit.sp
         Spacer(Modifier.height(4.dp))
         HeroNum(if (isMissing) "—" else p.displayTire(psi), 18.sp, tireColor)
         MonoLabel(p.tireLabel, 8.sp, Dim, letterSpacing = 0.1.sp)
+        if (hasTemp) {
+            Box(Modifier.fillMaxWidth(0.7f).height(1.dp).padding(vertical = 0.dp)
+                .background(Brd))
+            Spacer(Modifier.height(3.dp))
+            MonoText(
+                p.displayTemp(tempC) + p.tempLabel,
+                10.sp,
+                tireTempColor(tempC)
+            )
+        }
     }
 }
 
-/** Simple car-shaped placeholder used in the TPMS section */
-@Composable fun CarOutlinePlaceholder(compact: Boolean = false) {
-    val w = if (compact) 48.dp else 72.dp
-    val h = if (compact) 96.dp else 128.dp
+fun tireTempColor(tempC: Double): Color = when {
+    tempC < 15.0 -> Mid
+    tempC <= 27.0 -> Ok
+    tempC <= 40.0 -> Warn
+    else -> Orange
+}
+
+/** Focus RS MK3 top-down wireframe — tinted to the active theme accent color */
+@Composable fun FocusRsOutline(compact: Boolean = false) {
+    val accent = LocalThemeAccent.current
+    val w = if (compact) 52.dp else 72.dp
+    val h = if (compact) 110.dp else 150.dp
     Box(Modifier.width(w).height(h), contentAlignment = Alignment.Center) {
-        Box(Modifier.width(w * 0.7f).height(h * 0.7f)
-            .background(Surf2, RoundedCornerShape(10.dp))
-            .border(1.dp, Brd.copy(alpha = 0.7f), RoundedCornerShape(10.dp)))
-        Box(Modifier.size(w * 0.18f, h * 0.14f).offset(x = -w * 0.4f, y = -h * 0.28f)
-            .background(Surf3, RoundedCornerShape(3.dp)).border(1.dp, Dim, RoundedCornerShape(3.dp)))
-        Box(Modifier.size(w * 0.18f, h * 0.14f).offset(x = w * 0.4f, y = -h * 0.28f)
-            .background(Surf3, RoundedCornerShape(3.dp)).border(1.dp, Dim, RoundedCornerShape(3.dp)))
-        Box(Modifier.size(w * 0.18f, h * 0.14f).offset(x = -w * 0.4f, y = h * 0.28f)
-            .background(Surf3, RoundedCornerShape(3.dp)).border(1.dp, Dim, RoundedCornerShape(3.dp)))
-        Box(Modifier.size(w * 0.18f, h * 0.14f).offset(x = w * 0.4f, y = h * 0.28f)
-            .background(Surf3, RoundedCornerShape(3.dp)).border(1.dp, Dim, RoundedCornerShape(3.dp)))
+        androidx.compose.foundation.Image(
+            painter = painterResource(R.drawable.focus_rs_wireframe),
+            contentDescription = "Focus RS",
+            colorFilter = ColorFilter.tint(accent, BlendMode.SrcIn),
+            modifier = Modifier.fillMaxSize()
+        )
     }
 }
+
+@Deprecated("Use FocusRsOutline", replaceWith = ReplaceWith("FocusRsOutline(compact)"))
+@Composable fun CarOutlinePlaceholder(compact: Boolean = false) = FocusRsOutline(compact)

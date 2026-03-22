@@ -1,0 +1,95 @@
+---
+description: GitHub release lifecycle — one rolling pre-release per version stream, updated in place
+alwaysApply: true
+---
+
+# Release Lifecycle
+
+## Rolling Pre-releases (RC workflow)
+
+Each version stream gets **one pre-release** that is updated in place as RCs progress. Never create a new release for each RC — edit the existing one.
+
+### Version streams
+- Android: `android-v{X.Y.Z}-rc`
+- Firmware USB: `fw-usb-v{X.Y}-rc`
+- Firmware Pro: `fw-pro-v{X.Y}-rc`
+
+### Creating the first RC (e.g. rc.1)
+
+1. Set `rcSuffix=rc.1` in `android/gradle.properties` (for Android streams)
+2. Commit, tag, and push:
+   ```bash
+   git tag -a android-v2.2.4-rc.1 -m "v2.2.4-rc.1"
+   git push origin android-v2.2.4-rc.1
+   gh release create android-v2.2.4-rc.1 --prerelease --target staging \
+     --title "android-v2.2.4-rc.1" --notes "<notes>" <artifacts>
+   ```
+
+### Updating to a new RC (e.g. rc.1 → rc.8)
+
+Instead of creating a new release, **update the existing one**.
+
+> **CRITICAL: Build artifacts FIRST, before touching tags or release metadata.**
+> Never update a release's tag/title/notes without also replacing the attached binaries.
+> Stale binaries on a new RC tag are worse than no release — users get old code labelled as new.
+
+1. **Build all artifacts** for the streams being updated:
+   - Android: `cd android && ./gradlew assembleRelease` → produces `app/build/outputs/apk/release/openRS_v*.apk`
+   - Firmware USB: `cd firmware && bash build.sh --target usb` → produces `firmware/release/openrs-fw-usb_v*.bin` + manifest
+   - Firmware Pro: `cd firmware && bash build.sh --target pro` → produces `firmware/release/openrs-fw-pro_v*.bin` + manifest
+   - **If a build tool is unavailable** (e.g. ESP-IDF not installed), do NOT update that stream's release. Skip it and note it for the user.
+
+2. **Update `rcSuffix`** in `android/gradle.properties` to the new RC number (e.g. `rcSuffix=rc.8`)
+
+3. **Move the tag** to the new commit:
+   ```bash
+   git tag -d android-v2.2.4-rc.1
+   git push origin :refs/tags/android-v2.2.4-rc.1
+   git tag -a android-v2.2.4-rc.8 -m "v2.2.4-rc.8: <summary>"
+   git push origin android-v2.2.4-rc.8
+   ```
+
+4. **Replace artifacts** — delete old, upload freshly built:
+   ```bash
+   gh release delete-asset android-v2.2.4-rc.8 openRS_v2.2.4.apk --yes
+   gh release upload android-v2.2.4-rc.8 android/app/build/outputs/apk/release/openRS_v2.2.4.apk
+   ```
+   For firmware, replace all four flash files per target.
+
+5. **Edit the release** — update tag, title, and notes:
+   ```bash
+   gh release edit android-v2.2.4-rc.1 --tag android-v2.2.4-rc.8 \
+     --title "android-v2.2.4-rc.8" --notes "<updated notes>"
+   ```
+   If `gh release edit` doesn't support `--tag`, delete and recreate:
+   ```bash
+   gh release delete android-v2.2.4-rc.1 --yes
+   gh release create android-v2.2.4-rc.8 --prerelease --target staging \
+     --title "android-v2.2.4-rc.8" --notes "<notes>" <artifacts>
+   ```
+
+6. **Ensure the release is not in draft** (tag moves can flip it to draft):
+   ```bash
+   gh release edit android-v2.2.4-rc.8 --draft=false --prerelease
+   ```
+
+### Result
+- Only **one pre-release per version stream** exists at any time
+- The release notes contain the full cumulative changelog (current RC + "Previous RCs" section)
+- No cleanup needed — the releases page stays clean
+
+## Promoting to Stable
+
+When the RC is ready for production:
+
+1. **Clear `rcSuffix`** — set `rcSuffix=` (empty) in `android/gradle.properties`
+2. Merge `staging` → `main`
+3. Create a new **stable release** tag (e.g. `android-v2.2.4`)
+4. Delete the RC pre-release
+5. Create the stable release with `--latest`
+
+## Scope
+
+- Firmware USB (`fw-usb-*`) and Pro (`fw-pro-*`) are separate streams
+- Android (`android-*`) is its own stream
+- Each stream has at most **one** pre-release at a time

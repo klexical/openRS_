@@ -7,7 +7,7 @@ import android.content.ServiceConnection
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
-import kotlinx.coroutines.launch
+
 import android.Manifest
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -26,6 +26,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -162,7 +163,7 @@ class MainActivity : ComponentActivity() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// HEADER
+// HEADER — F1 Telemetry Bar
 // ═══════════════════════════════════════════════════════════════════════════
 @Composable fun AppHeader(
     vs: VehicleState,
@@ -174,12 +175,6 @@ class MainActivity : ComponentActivity() {
     onTrip: () -> Unit = {}
 ) {
     val accent = LocalThemeAccent.current
-    val modeColor = when (vs.driveMode) {
-        DriveMode.SPORT  -> Ok
-        DriveMode.TRACK  -> Warn
-        DriveMode.DRIFT  -> Red
-        else             -> accent
-    }
 
     val infiniteTransition = rememberInfiniteTransition(label = "conn")
     val dotAlpha by infiniteTransition.animateFloat(
@@ -191,89 +186,115 @@ class MainActivity : ComponentActivity() {
         vs.isIdle      -> Warn
         else           -> Red
     }
+    val connLabel = when {
+        vs.isConnected -> "LIVE"
+        vs.isIdle      -> "IDLE"
+        else           -> "OFF"
+    }
 
-    Row(
-        Modifier.fillMaxWidth()
-            .background(Surf)
-            .border(width = 1.dp, color = Brd, shape = RoundedCornerShape(0.dp))
-            .padding(horizontal = 16.dp, vertical = 9.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(0.dp)) {
-            Text(
-                "open", fontSize = 18.sp, fontFamily = OrbitronFamily,
-                color = Frost, fontWeight = FontWeight.Bold, letterSpacing = 0.05.sp
-            )
-            Text(
-                "RS", fontSize = 18.sp, fontFamily = OrbitronFamily,
-                color = accent, fontWeight = FontWeight.Bold, letterSpacing = 0.05.sp
-            )
-            Text(
-                "_", fontSize = 18.sp, fontFamily = OrbitronFamily,
-                color = Frost, fontWeight = FontWeight.Bold, letterSpacing = 0.05.sp
-            )
+    Column(Modifier.fillMaxWidth().background(Surf)) {
+        // ── Top row: logo | connection pill + trip + settings ────────
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("open", fontSize = 18.sp, fontFamily = OrbitronFamily,
+                    color = Frost, fontWeight = FontWeight.Bold, letterSpacing = 0.05.sp)
+                Text("RS", fontSize = 18.sp, fontFamily = OrbitronFamily,
+                    color = accent, fontWeight = FontWeight.Bold, letterSpacing = 0.05.sp)
+                Text("_", fontSize = 18.sp, fontFamily = OrbitronFamily,
+                    color = Frost, fontWeight = FontWeight.Bold, letterSpacing = 0.05.sp)
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(
+                    Modifier
+                        .background(connColor.copy(alpha = 0.08f), RoundedCornerShape(4.dp))
+                        .border(1.dp, connColor.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                        .clickable {
+                            when {
+                                vs.isConnected -> onDisconnect()
+                                vs.isIdle      -> onReconnect()
+                                else           -> onConnect()
+                            }
+                        }
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Box(Modifier.size(6.dp).clip(CircleShape)
+                            .background(connColor.copy(alpha = if (vs.isConnected) dotAlpha else 1f)))
+                        MonoLabel(connLabel, 8.sp, connColor, FontWeight.Bold, 0.08.sp)
+                    }
+                }
+
+                Box(
+                    Modifier.height(28.dp)
+                        .background(accent.copy(alpha = 0.10f), RoundedCornerShape(6.dp))
+                        .border(1.dp, accent.copy(alpha = 0.28f), RoundedCornerShape(6.dp))
+                        .clickable { onTrip() }
+                        .padding(horizontal = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    MonoLabel("TRIP", 9.sp, accent, FontWeight.Bold, 0.15.sp)
+                }
+
+                Box(
+                    Modifier.size(28.dp)
+                        .background(Surf2, RoundedCornerShape(6.dp))
+                        .border(1.dp, Brd, RoundedCornerShape(6.dp))
+                        .clickable { onSettings() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    UIText("⚙", 13.sp, Mid)
+                }
+            }
         }
 
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Box(
-                Modifier
-                    .background(modeColor.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
-                    .border(1.dp, modeColor.copy(alpha = 0.4f), RoundedCornerShape(4.dp))
-                    .padding(horizontal = 8.dp, vertical = 3.dp)
-            ) {
-                MonoLabel(vs.driveMode.label.uppercase(), 10.sp, modeColor, FontWeight.Bold, 0.1.sp)
+        // ── Telemetry strip — F1 pit-wall style ─────────────────────
+        Row(
+            Modifier.fillMaxWidth()
+                .background(Surf2)
+                .border(width = 1.dp, color = Brd.copy(alpha = 0.5f)),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val modeColor = when (vs.driveMode) {
+                DriveMode.SPORT -> Ok; DriveMode.TRACK -> Warn; DriveMode.DRIFT -> Red; else -> accent
             }
+            val escColor = when (vs.escStatus) {
+                EscStatus.OFF -> Red; EscStatus.PARTIAL -> Warn; EscStatus.LAUNCH -> Warn; else -> accent
+            }
+            val eBrakeColor = if (vs.eBrake) Warn else Ok
+            val fpsStr = if (vs.isConnected) "${vs.framesPerSecond.toInt()} FPS" else "—"
 
-            Box(
-                Modifier
-                    .background(accent.copy(alpha = 0.08f), RoundedCornerShape(4.dp))
-                    .border(1.dp, accent.copy(alpha = 0.25f), RoundedCornerShape(4.dp))
-                    .padding(horizontal = 6.dp, vertical = 3.dp)
-            ) {
-                MonoLabel(vs.escStatus.label, 9.sp, accent, letterSpacing = 0.08.sp)
-            }
-
-            Box(
-                Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                    .clickable {
-                        when {
-                            vs.isConnected -> onDisconnect()
-                            vs.isIdle      -> onReconnect()
-                            else           -> onConnect()
-                        }
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Box(
-                    Modifier.size(8.dp).clip(CircleShape)
-                        .background(connColor.copy(alpha = if (vs.isConnected) dotAlpha else 1f))
-                )
-            }
-
-            Box(
-                Modifier.size(28.dp)
-                    .background(Surf2, RoundedCornerShape(6.dp))
-                    .border(1.dp, Brd, RoundedCornerShape(6.dp))
-                    .clickable { onSettings() },
-                contentAlignment = Alignment.Center
-            ) {
-                UIText("⚙", 13.sp, Mid)
-            }
-
-            Box(
-                Modifier
-                    .height(28.dp)
-                    .background(accent.copy(alpha = 0.10f), RoundedCornerShape(6.dp))
-                    .border(1.dp, accent.copy(alpha = 0.28f), RoundedCornerShape(6.dp))
-                    .clickable { onTrip() }
-                    .padding(horizontal = 8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                MonoLabel("TRIP", 9.sp, accent, FontWeight.Bold, 0.15.sp)
-            }
+            TeleCell("MODE", vs.driveMode.label.uppercase(), modeColor, Modifier.weight(1f))
+            TeleDivider()
+            TeleCell("ESC", vs.escStatus.label.uppercase(), escColor, Modifier.weight(1f))
+            TeleDivider()
+            TeleCell("CONN", fpsStr, if (vs.isConnected) Ok else Dim, Modifier.weight(1f))
+            TeleDivider()
+            TeleCell("IGN", ignitionStatusLabel(vs.ignitionStatus).uppercase(), Frost, Modifier.weight(1f))
+            TeleDivider()
+            TeleCell("E-BRK", if (vs.eBrake) "ON" else "OFF", eBrakeColor, Modifier.weight(1f))
         }
     }
+}
+
+@Composable private fun TeleCell(label: String, value: String, valueColor: Color, modifier: Modifier = Modifier) {
+    Column(
+        modifier.padding(vertical = 5.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        MonoLabel(label, 7.sp, Dim, letterSpacing = 0.08.sp)
+        MonoText(value, 10.sp, valueColor, fontWeight = FontWeight.Bold,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+    }
+}
+
+@Composable private fun TeleDivider() {
+    Box(Modifier.width(1.dp).height(22.dp).background(Brd.copy(alpha = 0.4f)))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

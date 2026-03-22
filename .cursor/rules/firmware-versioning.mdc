@@ -1,0 +1,45 @@
+---
+description: Firmware versioning rules for PRO and USB hardware targets
+globs: firmware/**
+alwaysApply: false
+---
+
+# Firmware Versioning
+
+## Two independent version lines
+
+| Target | Hardware | Version line | App display format |
+|--------|----------|-------------|-------------------|
+| USB | WiCAN USB-C3 (ESP32-C3) | `v1.5.x` | `openRS_ USB v1.5-rc.5` |
+| PRO | WiCAN Pro (ESP32-S3) | `v1.0.x` | `openRS_ PRO v1.0` |
+
+USB and PRO are **separate products** with independent version numbers. They share the same `focusrs` component source but have different upstream bases, SoCs, and release cadences.
+
+## Version string locations
+
+Two places define the version string. **Both must match** for each target:
+
+1. **`firmware/components/focusrs/focusrs.h`** — `OPENRS_FW_VERSION` (compile-time, used in ESP log output)
+2. **`firmware/patches/apply_patches.py`** — `OPENRS_FW_VERSION` (injected into SLCAN/WebSocket probe response)
+
+Both files use a dict keyed by target name (`"usb"` / `"pro"`).
+
+## How the app displays it
+
+The firmware responds to `OPENRS?` with `OPENRS:<version>`. The Android app prepends `"openRS_ "`:
+- USB firmware `"USB v1.5-rc.5"` shows as **"openRS_ USB v1.5-rc.5"**
+- PRO firmware `"PRO v1.0"` shows as **"openRS_ PRO v1.0"**
+
+The `USB` or `PRO` prefix is part of the version string so users can identify which hardware variant they're running.
+
+## When bumping versions
+
+- Bump USB and PRO independently. A USB release does not require a PRO release.
+- Update both `focusrs.h` and `apply_patches.py` version dicts.
+- Clear the build cache (`rm -rf firmware/.build/<target>`) if only `apply_patches.py` changed, since patched sources are cached.
+- RC suffixes: `PRO v1.0-rc.2`, `USB v1.5-rc.6`. Stable releases drop the suffix: `PRO v1.0`, `USB v1.5`.
+
+## GitHub release tags
+
+- USB: `fw-usb-v1.5-rc.5` (pre-release) or `fw-usb-v1.5` (stable)
+- PRO: `fw-pro-v1.0-rc.1` (pre-release) or `fw-pro-v1.0` (stable)

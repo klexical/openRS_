@@ -115,7 +115,7 @@ private fun createPositionDot(ctx: Context): android.graphics.drawable.Drawable 
     paint.color = android.graphics.Color.WHITE
     paint.style = android.graphics.Paint.Style.FILL
     canvas.drawCircle(size / 2f, size / 2f, size / 2f - 1f, paint)
-    paint.color = android.graphics.Color.argb(255, 0, 210, 255)  // #00D2FF
+    paint.color = android.graphics.Color.argb(255, 0, 145, 234)  // #0091EA Nitrous Blue
     canvas.drawCircle(size / 2f, size / 2f, size / 2f - 5f, paint)
     return android.graphics.drawable.BitmapDrawable(ctx.resources, bmp)
 }
@@ -290,6 +290,18 @@ fun TripPage(
                             .align(Alignment.BottomStart)
                             .padding(8.dp)
                     )
+
+                    if (vehicleState.isConnected) {
+                        Box(
+                            Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(8.dp)
+                                .background(Bg.copy(alpha = 0.82f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 6.dp, vertical = 3.dp)
+                        ) {
+                            MonoLabel("No internet on adapter WiFi — tiles may be cached", 7.sp, Dim)
+                        }
+                    }
 
                 } else {
                     // Permission prompt — push content below status bar

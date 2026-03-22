@@ -24,8 +24,9 @@ PROFILE = {
         "can_tx_register": "wc_mdns_init((char*)uid, hardware_version, firmware_version);",
         "can_tx_register_replacement": (
             "wc_mdns_init((char*)uid, hardware_version, firmware_version);\n\n"
-            "    // openrs-fw: register CAN TX callback for drive mode write\n"
-            "    frs_set_can_tx_fn(openrs_can_tx);"
+            "    // openrs-fw: register CAN TX callback and apply boot settings\n"
+            "    frs_set_can_tx_fn(openrs_can_tx);\n"
+            "    frs_boot_apply();"
         ),
     },
 

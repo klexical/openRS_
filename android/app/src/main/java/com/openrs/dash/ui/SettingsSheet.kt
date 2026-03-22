@@ -16,6 +16,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import com.openrs.dash.BuildConfig
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -56,7 +58,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
         ) {
             // ── Title bar ────────────────────────────────────────────────────
             Row(
-                Modifier.fillMaxWidth().background(Color(0xFF141414), RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
+                Modifier.fillMaxWidth().background(SurfUp, RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
                     .padding(horizontal = 20.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -279,6 +281,18 @@ fun SettingsDialog(onDismiss: () -> Unit) {
 
             // ── Action buttons ───────────────────────────────────────────────
             HorizontalDivider(color = Brd)
+            val versionLabel = buildString {
+                append("openRS_ v${BuildConfig.VERSION_NAME}")
+                if (BuildConfig.RC_SUFFIX.isNotEmpty()) append("-${BuildConfig.RC_SUFFIX}")
+            }
+            Text(
+                versionLabel,
+                fontSize = 10.sp,
+                color = Dim,
+                fontFamily = ShareTechMono,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                textAlign = TextAlign.Center
+            )
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -327,7 +341,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                         }
                     },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Color(0xFF0A0A0A))
+                    colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = OnAccent)
                 ) {
                     Text("SAVE", fontFamily = ShareTechMono, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 }
@@ -342,7 +356,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
 private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(
         Modifier.fillMaxWidth()
-            .background(Color(0xFF141414), RoundedCornerShape(8.dp))
+            .background(SurfUp, RoundedCornerShape(8.dp))
             .border(1.dp, Brd, RoundedCornerShape(8.dp))
             .padding(14.dp)
     ) {
@@ -376,7 +390,7 @@ private fun SettingsSwitchRow(label: String, checked: Boolean, onCheckedChange: 
             checked = checked,
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
-                checkedThumbColor  = Color(0xFF0A0A0A),
+                checkedThumbColor  = OnAccent,
                 checkedTrackColor  = LocalThemeAccent.current,
                 uncheckedThumbColor = Dim,
                 uncheckedTrackColor = Brd
@@ -411,7 +425,7 @@ fun SegmentedPicker(options: List<String>, selected: String, onSelect: (String) 
                     fontSize = 11.sp,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                     fontFamily = ShareTechMono,
-                    color = if (isSelected) Color(0xFF0A0A0A) else Dim
+                    color = if (isSelected) OnAccent else Dim
                 )
             }
         }

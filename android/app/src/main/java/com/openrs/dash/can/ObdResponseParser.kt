@@ -36,10 +36,10 @@ object ObdResponseParser {
         when (did) {
             0xDD01 -> {
                 if (data.size < 7) return
-                val km = (b4 shl 16) or
+                val km = ((b4 shl 16) or
                          ((data[5].toInt() and 0xFF) shl 8) or
-                         (data[6].toInt() and 0xFF)
-                onObdUpdate(currentState.copy(odometerKm = km.toLong()))
+                          (data[6].toInt() and 0xFF)).toLong()
+                onObdUpdate(currentState.copy(odometerKm = km))
             }
             0x4028 -> onObdUpdate(currentState.copy(batterySoc = b4.toDouble()))
             0x4029 -> onObdUpdate(currentState.copy(batteryTempC = (b4 - 40).toDouble()))
@@ -56,6 +56,77 @@ object ObdResponseParser {
                     0x2816 -> currentState.copy(tirePressLR = psi)
                     else   -> currentState.copy(tirePressRR = psi)
                 })
+            }
+            // TPMS sensor IDs — 4-byte ID per tire position, polled once on connect
+            0x280F, 0x2810, 0x2811, 0x2812 -> {
+                if (data.size < 8) return
+                val sensorId = ((b4.toLong() shl 24) or
+                    ((data[5].toInt() and 0xFF).toLong() shl 16) or
+                    ((data[6].toInt() and 0xFF).toLong() shl 8) or
+                    (data[7].toInt() and 0xFF).toLong())
+                onObdUpdate(when (did) {
+                    0x280F -> currentState.copy(tpmsSensorIdLF = sensorId)
+                    0x2810 -> currentState.copy(tpmsSensorIdRF = sensorId)
+                    0x2811 -> currentState.copy(tpmsSensorIdRR = sensorId)
+                    else   -> currentState.copy(tpmsSensorIdLR = sensorId)
+                })
+            }
+        }
+    }
+
+    /**
+     * Parse a reassembled multi-frame BCM response (ISO-TP payload without PCI byte).
+     *
+     * Used for DID 0x280B "last received TPMS sensor" which returns 12 bytes:
+     *   [0x62] [DID hi] [DID lo] [ID0..ID3] [press_hi] [press_lo] [temp] [status] [checksum]
+     *
+     * The 4-byte sensor ID is matched against the stored per-tire IDs from
+     * 0x280F-0x2812 to determine which tire position the data belongs to.
+     * Pressure formula: (A*256+B) / 20  PSI
+     * Temperature formula: raw - 40  °C
+     *
+     * Status byte: values < 6 indicate cached/stale data (discarded).
+     * Live readings have status >= 6. See github.com/klexical/openRS_/issues/119.
+     */
+    fun parseBcmReassembled(
+        payload: ByteArray,
+        currentState: VehicleState,
+        onObdUpdate: (VehicleState) -> Unit
+    ) {
+        if (payload.size < 4) return
+        if ((payload[0].toInt() and 0xFF) != 0x62) return
+        val did = ((payload[1].toInt() and 0xFF) shl 8) or (payload[2].toInt() and 0xFF)
+        when (did) {
+            0x280B -> {
+                if (payload.size < 11) {
+                    logMalformed("BCM-MF", payload, "0x280B too short (${payload.size} < 11)")
+                    return
+                }
+                val status = payload[10].toInt() and 0xFF
+                if (status < 6) {
+                    Log.d(TAG, "0x280B status=$status (stale/cached), discarding")
+                    return
+                }
+                val sensorId = ((payload[3].toInt() and 0xFF).toLong() shl 24) or
+                    ((payload[4].toInt() and 0xFF).toLong() shl 16) or
+                    ((payload[5].toInt() and 0xFF).toLong() shl 8) or
+                    (payload[6].toInt() and 0xFF).toLong()
+                val tempRaw = payload[9].toInt() and 0xFF
+                val tempC = (tempRaw - 40).toDouble()
+                if (tempC < -40 || tempC > 120) return
+
+                val s = currentState
+                val updated = when (sensorId) {
+                    s.tpmsSensorIdLF -> s.copy(tireTempLF = tempC)
+                    s.tpmsSensorIdRF -> s.copy(tireTempRF = tempC)
+                    s.tpmsSensorIdRR -> s.copy(tireTempRR = tempC)
+                    s.tpmsSensorIdLR -> s.copy(tireTempLR = tempC)
+                    else -> {
+                        Log.d(TAG, "0x280B unknown sensor ID %08X".format(sensorId))
+                        null
+                    }
+                }
+                if (updated != null) onObdUpdate(updated)
             }
         }
     }
@@ -136,6 +207,9 @@ object ObdResponseParser {
             ))
             0xF42F -> onObdUpdate(currentState.copy(
                 fuelLevelPct = (b4 * 100.0 / 255.0).coerceIn(0.0, 100.0)
+            ))
+            0x0304 -> onObdUpdate(currentState.copy(
+                batteryVoltage = ((b4 shl 8) or b5) / 2048.0
             ))
         }
     }

@@ -25,7 +25,7 @@ File: `android/browser-emulator/index.html`
 
 This file mirrors the app UI. Every visible change to the app **must** be reflected in the emulator in the same commit/release. Check each category:
 
-- **Version badge** — update `openRS_ vX.Y.Z` text in the `<div class="version-badge">`
+- **Version badge** — update `openRS_ vX.Y.Z` text in the `<div class="version-badge">` and `<div class="settings-version">`
 - **Data cell labels** — if any `dc-label` text changed in the app (e.g. "FUEL RAIL" → "HP FUEL"), update it in the emulator
 - **New widgets / rows** — if a new row was added to any tab (e.g. odometer row, new data cell), add matching HTML in the emulator
 - **Removed widgets** — if something was removed from the app (e.g. gear display), remove it from the emulator too
@@ -53,20 +53,23 @@ This file mirrors the app UI. Every visible change to the app **must** be reflec
 ## 5. Pre-release (staging → testing)
 When pushing significant changes to `staging` that aren't ready for `main`:
 
-### Tagging convention
-- Android: `android-vX.Y.Z-rc.N`
-- Firmware USB: `fw-usb-vX.Y-rc.N`
-- Firmware Pro: `fw-pro-vX.Y-rc.N`
+### Rolling RC release (see `release-lifecycle.mdc`)
+- Each version stream gets **one pre-release** that is updated in place
+- Never create a new release for each RC — edit/replace the existing one
+- Tag convention: `android-vX.Y.Z-rc.N`, `fw-usb-vX.Y-rc.N`, `fw-pro-vX.Y-rc.N`
 
-### Steps
-- Tag: `git tag <tag> staging && git push origin <tag>`
-- Create: `gh release create <tag> --prerelease --target staging --title "<title>" --notes "<notes>"`
-- Attach: unsigned/debug APKs or firmware `.bin` files for testers
-- Pre-releases show on the Releases page with a badge but do NOT replace the "Latest" stable release
-- When ready to ship: promote to stable release (see step 6)
+### First RC
+- Tag: `git tag -a <tag> -m "<summary>" && git push origin <tag>`
+- Create: `gh release create <tag> --prerelease --target staging --title "<tag>" --notes "<notes>"`
+- Attach: release APK or firmware `.bin` files
+
+### Subsequent RCs
+- **Update the existing release** — do NOT create a new one
+- Move the tag, replace artifacts, update notes (see `release-lifecycle.mdc` for exact commands)
+- Release notes should include current RC changes + "Previous RCs" summary section
 
 ### Firmware: separate releases per device
-- Each device target gets its own pre-release (e.g. `fw-usb-v1.4-rc.1` and `fw-pro-v1.4-rc.1`)
+- Each device target gets its own pre-release (e.g. `fw-usb-v1.5-rc.4` and `fw-pro-v1.5-rc.4`)
 - Attach only that device's flash files (bootloader, partition-table, ota_data, app binary)
 - Pro releases are only created after the build is verified on actual hardware
 
@@ -83,13 +86,14 @@ When pushing significant changes to `staging` that aren't ready for `main`:
 ### Firmware (per device)
 - Run `./firmware/verify-release.sh` — must pass before creating the release
 - Tag: `git tag fw-usb-vX.Y && git push origin fw-usb-vX.Y` (and/or `fw-pro-vX.Y`)
-- Create: `gh release create fw-usb-vX.Y firmware/release/bootloader.bin firmware/release/openrs-fw-usb_vXXX.bin firmware/release/ota_data_initial.bin firmware/release/partition-table.bin --title "openrs-fw USB vX.Y" --notes "<notes>"`
+- Create: `gh release create fw-usb-vX.Y firmware/release/bootloader_usb.bin firmware/release/openrs-fw-usb_vXXX.bin firmware/release/ota_data_initial_usb.bin firmware/release/partition-table_usb.bin --title "openrs-fw USB vX.Y" --notes "<notes>"` (use `_pro` suffixes for Pro releases)
 - USB and Pro get separate releases — versions may diverge over time
 - Reference firmware releases in the app release notes if both ship together
 
 ## 7. GitHub Issues Milestone
 - Check the milestone for this release (e.g. `v2.3.0 — Tech Debt + Polish`)
-- Verify all issues addressed in this release are closed (commits should auto-close via `fixes #N`)
+- Verify all implemented issues have staging comments per `issue-lifecycle.mdc` (use `refs #N` in commits, NOT `fixes #N`)
+- On stable release (staging merged to main): batch-close all shipped issues with `gh issue close <N> --comment "Shipped in <version>."`
 - Move any unfinished issues to the next milestone
 
 ## Quick Verification
@@ -102,4 +106,4 @@ Before creating the release, ask:
 - [ ] Is the APK attached to the GitHub release?
 - [ ] (Firmware) Does `./firmware/verify-release.sh` pass?
 - [ ] (Firmware) Is `BUILD_MANIFEST_<target>.json` committed alongside the binaries?
-- [ ] Are all addressed issues in the milestone closed?
+- [ ] Do all addressed issues have staging comments per `issue-lifecycle.mdc`?

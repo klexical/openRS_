@@ -21,9 +21,10 @@ Forked from [`meatpiHQ/wican-fw`](https://github.com/meatpiHQ/wican-fw) — the 
 
 ### Focus RS additions (openrs-fw)
 - **Drive mode write** — send N/S/T/D directly from the app
-  - Simulates the physical drive mode button on CAN ID 0x305 (byte 5, bit 2)
+  - Simulates the physical drive mode button on CAN ID 0x305 (byte 4, bit 2)
+  - Uses 0x420 to disambiguate Sport from Track (0x1B0 alone is ambiguous)
   - Persists selected mode to NVS — car boots in that mode next ignition on
-- **ESC control** — On / Sport / Off via CAN button simulation (0x260 byte 6, bit 4)
+- **ESC control** — On / Sport / Off via CAN button simulation (0x260 byte 5, bit 4)
 - **Launch Control enable/disable**
 - **Auto Start/Stop kill** — simulates ASS button on CAN 0x260 (byte 1, bit 0)
 - **Boot apply** — on startup, automatically applies persisted drive mode, ESC mode, and ASS kill
@@ -225,10 +226,10 @@ The BLE interface is protocol-compatible with the WiFi TCP interface. The openRS
 ### Writing mode (button simulation on 0x305)
 | Action | CAN ID | Byte | Bit | Notes |
 |--------|--------|------|-----|-------|
-| Button press | `0x305` | B5 (data[4]) | bit 2 | Set `\|= 0x04`, send 3 frames at 80ms intervals |
-| Button release | `0x305` | B5 (data[4]) | bit 2 | Car's own next frame clears the bit |
+| Button press | `0x305` | B4 (data[4]) | bit 4 | Set `\|= 0x10`, send 3 frames at 80ms intervals |
+| Button release | `0x305` | B4 (data[4]) | bit 4 | Car's own next frame clears the bit |
 
-Confirmed on 2018 Focus RS: steady-state byte 5 = `0x08`, pressed = `0x0C`. Template captured from live CAN bus at runtime. Each press cycles N→S→T→D→N.
+Confirmed via SLCAN diagnostic 2026-03-21: steady-state byte 4 = `0x08`, pressed = `0x18`. Template captured from live CAN bus at runtime. Each press cycles N→S→T→D→N.
 
 ### ESC button simulation (0x260)
 | Action | CAN ID | Byte | Bit | Notes |

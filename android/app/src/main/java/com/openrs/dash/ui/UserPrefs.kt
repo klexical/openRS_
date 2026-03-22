@@ -69,25 +69,11 @@ data class UserPrefs(
 
     // ── Theme system ────────────────────────────────────────────────────────
 
-    /** Primary accent color for this RS paint theme. */
-    val themeAccent: Color get() = when (themeId) {
-        "red"     -> Color(0xFFFF2233)  // Race Red
-        "orange"  -> Color(0xFFFF6600)  // Tangerine Scream
-        "green"   -> Color(0xFF00FF88)  // Mean Green
-        "purple"  -> Color(0xFF8C7AFF)  // Stealth
-        "silver"  -> Color(0xFFAAC4DD)  // Moondust Silver
-        else      -> Color(0xFF00D2FF)  // Nitrous Blue (default)
-    }
+    /** Primary accent color for this RS paint theme (actual MK3 paint catalogue). */
+    val themeAccent: Color get() = rsPaintAccent(themeId)
 
     /** Display name for the current theme. */
-    val themeName: String get() = when (themeId) {
-        "red"    -> "Race Red"
-        "orange" -> "Tangerine Scream"
-        "green"  -> "Mean Green"
-        "purple" -> "Stealth"
-        "silver" -> "Moondust Silver"
-        else     -> "Nitrous Blue"
-    }
+    val themeName: String get() = rsPaintName(themeId)
 
     // ── Temperature thresholds (preset-based) ───────────────────────────────
 

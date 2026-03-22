@@ -11,11 +11,12 @@ import kotlin.math.sqrt
 data class VehicleState(
     // ── Engine (CAN Sniffed) ────────────────────────────────
     val rpm: Double = 0.0,
-    val coolantTempC: Double = -99.0,  // -99 = not yet received from 0x430/0x3E8
-    val oilTempC: Double = -99.0,      // -99 = not yet received from 0x3E8
+    val coolantTempC: Double = -99.0,  // -99 = not yet received (CAN 0x2F0 / 0x0F8)
+    val oilTempC: Double = -99.0,      // -99 = not yet received (CAN 0x0F8)
     val intakeTempC: Double = 0.0,
     val boostKpa: Double = 101.325,
     val throttlePct: Double = 0.0,
+    val throttleHasSource: Boolean = false,
     val accelPedalPct: Double = 0.0,
     val torqueAtTrans: Double = 0.0,
 
@@ -64,10 +65,14 @@ data class VehicleState(
     val tirePressRF: Double = -1.0,        // 0x2814: RF pressure (PSI)
     val tirePressLR: Double = -1.0,        // 0x2816: LR pressure (PSI)
     val tirePressRR: Double = -1.0,        // 0x2815: RR pressure (PSI)
-    val tireTempLF: Double = -99.0,        // 0x2823: LF temp (°F) — experimental
-    val tireTempRF: Double = -99.0,        // 0x2824: RF temp (°F) — experimental
-    val tireTempLR: Double = -99.0,        // 0x2826: LR temp (°F) — experimental
-    val tireTempRR: Double = -99.0,        // 0x2825: RR temp (°F) — experimental
+    val tireTempLF: Double = -99.0,        // TPMS sensor temp (°C); -99 = not yet received
+    val tireTempRF: Double = -99.0,        // TPMS sensor temp (°C); -99 = not yet received
+    val tireTempLR: Double = -99.0,        // TPMS sensor temp (°C); -99 = not yet received
+    val tireTempRR: Double = -99.0,        // TPMS sensor temp (°C); -99 = not yet received
+    val tpmsSensorIdLF: Long = -1L,        // 0x280F: 4-byte TPMS sensor ID for LF
+    val tpmsSensorIdRF: Long = -1L,        // 0x2810: 4-byte TPMS sensor ID for RF
+    val tpmsSensorIdRR: Long = -1L,        // 0x2811: 4-byte TPMS sensor ID for RR
+    val tpmsSensorIdLR: Long = -1L,        // 0x2812: 4-byte TPMS sensor ID for LR
 
     // ── Dynamics (CAN Sniffed) ──────────────────────────────
     val speedKph: Double = 0.0,
@@ -76,6 +81,7 @@ data class VehicleState(
     val yawRate: Double = 0.0,
     val lateralG: Double = 0.0,
     val longitudinalG: Double = 0.0,
+    val verticalG: Double = 0.0,
 
     // ── Wheel Speeds (CAN Sniffed) ──────────────────────────
     val wheelSpeedFL: Double = 0.0,
@@ -100,9 +106,13 @@ data class VehicleState(
     val gaugeIllumination: Int = 0,        // 0x0C8: gauge brightness level
     val eBrake: Boolean = false,           // Emergency brake status
     val reverseStatus: Boolean = false,    // Reverse gear engaged
+    val launchControlActive: Boolean = false, // 0x420 bit 50: launch control armed
+    val engineStatus: Int = -1,            // 0x360 byte 0: 0=Idle, 2=Off, 183=Running, 186=Kill, 191=RecentStart
+    val ignitionStatus: Int = -1,          // 0x0C8 byte2 bits 3-6: 0=KeyOut..7=Running..9=Cranking
 
     // ── BCM OBD (Mode 22 via BCM 0x726) ────────────────────
-    val odometerKm: Long = -1L,            // 0x22DD01: [B4:B6] km (3-byte)
+    val odometerKm: Long = -1L,            // 0x360 bytes[3:5] 24-bit, or 0x22DD01 24-bit (once on connect)
+    val odometerRolloverOffset: Long = 0,  // legacy — kept for CanDataService merge compat
     val batterySoc: Double = -1.0,         // 0x224028: B4 % (start/stop SoC)
     val batteryTempC: Double = -99.0,      // 0x224029: B4-40 °C (12V battery)
     val cabinTempC: Double = -99.0,        // 0x22DD04: (B4×10/9)-45 °C (interior)
@@ -112,13 +122,16 @@ data class VehicleState(
     val rduEnabled: Boolean? = null,       // AWD 0x703 DID 0xEE0B: rear drive unit active
     val pdcEnabled: Boolean? = null,       // PSCM 0x730 DID 0xFD07: pull drift compensation
     val fengEnabled: Boolean? = null,      // 0x727  DID 0xEE03: fake engine noise generator
+    val fengTimedOut: Boolean = false,     // true after 3 probe cycles with no FENG response
     val lcArmed: Boolean? = null,          // RSProt 0x731 probe: launch control armed
     val lcRpmTarget: Int = -1,             // RSProt 0x731 probe: LC RPM setpoint (-1 = unknown)
     val assEnabled: Boolean? = null,       // RSProt 0x731 probe: auto start-stop status
+    val rsprotTimedOut: Boolean = false,   // true after 3 probe cycles with no RSProt response
 
     // ── Peaks ───────────────────────────────────────────────
     val peakBoostPsi: Double = 0.0,
     val peakRpm: Double = 0.0,
+    val peakSpeedKph: Double = 0.0,
     val peakLateralG: Double = 0.0,
     val peakLongitudinalG: Double = 0.0,
 
@@ -128,7 +141,8 @@ data class VehicleState(
     val isIdle: Boolean = false,
     val framesPerSecond: Double = 0.0,
     val lastUpdate: Long = 0L,
-    val dataMode: String = "CAN"   // "CAN" = WebSocket SLCAN passive monitoring
+    @Deprecated("Unused — always CAN. Remove in next major version.")
+    val dataMode: String = "CAN"
 ) {
     // ── Computed ─────────────────────────────────────────────
     val boostPsi: Double get() = (boostKpa - 101.325) * 0.14503773
@@ -221,6 +235,8 @@ data class VehicleState(
 
     /** TPMS valid checks */
     val hasTpmsData: Boolean get() = tirePressLF >= 0
+    val hasTireTempData: Boolean get() =
+        tireTempLF > -90 || tireTempRF > -90 || tireTempLR > -90 || tireTempRR > -90
     /**
      * M-3 fix: warn only on tires that have valid data (≥ 0).
      * Tires still carrying their −1.0 sentinel (no sensor, dead battery, or not yet polled)
@@ -241,13 +257,14 @@ data class VehicleState(
         return copy(
             peakBoostPsi = max(peakBoostPsi, psi),
             peakRpm = max(peakRpm, rpm),
+            peakSpeedKph = max(peakSpeedKph, speedKph),
             peakLateralG = max(peakLateralG, abs(lateralG)),
             peakLongitudinalG = max(peakLongitudinalG, abs(longitudinalG))
         )
     }
 
     fun withPeaksReset(): VehicleState = copy(
-        peakBoostPsi = 0.0, peakRpm = 0.0,
+        peakBoostPsi = 0.0, peakRpm = 0.0, peakSpeedKph = 0.0,
         peakLateralG = 0.0, peakLongitudinalG = 0.0
     )
 }
@@ -255,6 +272,12 @@ data class VehicleState(
 enum class DriveMode(val label: String) {
     NORMAL("Normal"), SPORT("Sport"), TRACK("Track"),
     DRIFT("Drift"), UNKNOWN("--"), CUSTOM("Custom");
+
+    /** Maps to firmware REST API `driveMode` field (0=N, 1=S, 2=D, 3=T). */
+    fun toFirmwareInt(): Int = when (this) {
+        NORMAL -> 0; SPORT -> 1; DRIFT -> 2; TRACK -> 3; else -> 0
+    }
+
     companion object {
         // DBC VAL_ 432 DriveMode: 0=Normal, 1=Sport, 2=Drift.
         // Track is not distinct on 0x1B0 (AWD treats Sport+Track identically).
@@ -266,10 +289,17 @@ enum class DriveMode(val label: String) {
 }
 
 enum class EscStatus(val label: String) {
-    ON("ESC On"), PARTIAL("ESC Sport"), OFF("ESC Off"), UNKNOWN("--");
+    ON("ESC On"), PARTIAL("ESC Sport"), OFF("ESC Off"), LAUNCH("Launch"), UNKNOWN("--");
+
+    /** Maps to firmware REST API `escMode` field (0=On, 1=Sport, 2=Off). */
+    fun toFirmwareInt(): Int = when (this) {
+        ON -> 0; PARTIAL -> 1; OFF -> 2; else -> 0
+    }
+
     companion object {
+        // CAN 0x1C0 ESCMode: 0=Normal, 1=ESC Off, 2=Sport, 3=Launch (RS_HS.dbc VAL_ 448)
         fun fromInt(v: Int): EscStatus = when (v) {
-            0 -> ON; 1 -> PARTIAL; 2 -> OFF; else -> UNKNOWN
+            0 -> ON; 1 -> OFF; 2 -> PARTIAL; 3 -> LAUNCH; else -> UNKNOWN
         }
     }
 }

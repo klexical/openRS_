@@ -9,6 +9,8 @@ import com.openrs.dash.data.VehicleState
 import com.openrs.dash.service.TripRecorder
 import com.openrs.dash.service.WeatherRepository
 import com.openrs.dash.BuildConfig
+import com.openrs.dash.diagnostics.CrashReporter
+import com.openrs.dash.diagnostics.CrashTelemetryBuffer
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,6 +51,9 @@ class OpenRSDashApp : Application() {
     /** True once openRS_ firmware is confirmed via WebSocket probe on connect. */
     val isOpenRsFirmware = MutableStateFlow(false)
 
+    /** Human-readable firmware version label (e.g. "openRS_ v1.5-rc.5"). */
+    val firmwareVersionLabel = MutableStateFlow("")
+
     /** Trip recorder — lazy so it initialises only when the trip overlay is first opened. */
     val tripRecorder: TripRecorder by lazy {
         TripRecorder(
@@ -64,6 +69,8 @@ class OpenRSDashApp : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        CrashReporter.install(this)
+        CrashTelemetryBuffer.startCollecting()
         createNotificationChannel()
     }
 

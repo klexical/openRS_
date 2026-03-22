@@ -73,6 +73,18 @@ object DiagnosticExporter {
                     zip.closeEntry()
                 }
 
+                // Crash telemetry: include any crash_telemetry_*.json files, then delete
+                val diagDir = File(ctx.filesDir, "diagnostics")
+                if (diagDir.isDirectory) {
+                    diagDir.listFiles { f -> f.name.startsWith("crash_telemetry_") && f.name.endsWith(".json") }
+                        ?.forEach { crashFile ->
+                            zip.putNextEntry(ZipEntry(crashFile.name))
+                            crashFile.inputStream().buffered().use { it.copyTo(zip) }
+                            zip.closeEntry()
+                            crashFile.delete()
+                        }
+                }
+
             }
 
             FileProvider.getUriForFile(ctx, AUTHORITY, zipFile)

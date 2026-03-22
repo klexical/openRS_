@@ -72,6 +72,9 @@ import com.openrs.dash.data.VehicleState
             TempSpec("CHARGE AIR",
                 if (vs.chargeAirTempC > -90) p.displayTemp(vs.chargeAirTempC) else "— —", p.tempLabel,
                 vs.chargeAirTempC, 60.0, 80.0, if (vs.chargeAirTempC <= -90) "POLLING" else ""),
+            TempSpec("MANIFOLD",
+                if (vs.manifoldChargeTempC > -90) p.displayTemp(vs.manifoldChargeTempC) else "— —", p.tempLabel,
+                vs.manifoldChargeTempC, 60.0, 90.0, if (vs.manifoldChargeTempC <= -90) "POLLING" else ""),
             TempSpec("CATALYTIC",
                 if (vs.catalyticTempC > -90) p.displayTemp(vs.catalyticTempC) else "— —", p.tempLabel,
                 vs.catalyticTempC, 700.0, 800.0, if (vs.catalyticTempC <= -90) "POLLING" else ""),
@@ -97,7 +100,8 @@ data class TempSpec(
 )
 
 @Composable fun RtrBanner(vs: VehicleState, p: UserPrefs) {
-    val isReady = p.isRaceReady(vs.oilTempC, vs.coolantTempC)
+    val warmupDetail = vs.rtrStatus
+    val isReady = warmupDetail == null
     val dotColor = if (isReady) Ok else Warn
     val infiniteTransition = rememberInfiniteTransition(label = "rtr")
     val dotAlpha by infiniteTransition.animateFloat(
@@ -124,15 +128,8 @@ data class TempSpec(
                 if (isReady) "RACE READY" else "WARMING UP — NOT RACE READY",
                 13.sp, Frost, FontWeight.SemiBold, 0.5.sp
             )
-            if (!isReady) {
-                val oilMin  = when (p.tempPreset) { "race" -> 85.0; "track" -> 80.0; else -> 70.0 }
-                val coolMin = when (p.tempPreset) { "race" -> 80.0; "track" -> 75.0; else -> 70.0 }
-                val oilStr     = if (vs.oilTempC > -90) "${p.displayTemp(vs.oilTempC)}${p.tempLabel}" else "—"
-                val coolantStr = if (vs.coolantTempC > -90) "${p.displayTemp(vs.coolantTempC)}${p.tempLabel}" else "—"
-                MonoLabel(
-                    "Oil $oilStr < ${p.displayTemp(oilMin)}  · Coolant $coolantStr < ${p.displayTemp(coolMin)}",
-                    9.sp, Warn, modifier = Modifier.padding(top = 2.dp)
-                )
+            if (!isReady && warmupDetail != null) {
+                MonoLabel(warmupDetail, 9.sp, Warn, modifier = Modifier.padding(top = 2.dp))
             }
         }
     }

@@ -65,7 +65,7 @@ object CanDecoder {
     // Use 0x420 b6=0x11 to lift nibble=1 to TRACK when Track is engaged.
     // Steady-state: byte4=0x00; button-event transitions: byte4 != 0.
     const val ID_DRIVE_MODE   = 0x1B0
-    const val ID_ESC_ABS      = 0x1C0   // ESCMode Motorola bit 13|2    — RS_HS.dbc confirmed
+    const val ID_ESC_ABS      = 0x1C0   // ESCMode MSB-first bit 10|2 — corrected from DBC 13|2
     // RS_HS.dbc ABSmsg03 (0x190): FL/FR/RL/RR wheel speeds — 15-bit Motorola × 0.011343006 km/h
     const val ID_WHEEL_SPEEDS = 0x190
     const val ID_GEAR         = 0x230   // Gear bits 0-3
@@ -100,8 +100,15 @@ object CanDecoder {
     // Motorola big-endian, 10-bit, start bit 17 (MSB). Extract: (data[2]&0x03)<<8|data[3], ×0.4 %
     // Confirmed from live log: raw=254 → 101.6 % (full tank). Range-filtered 0–110 %.
     // 12V battery voltage does NOT broadcast on HS-CAN — polled via Mode 01 PID 0x42 in WiCanConnection.
-    // TODO(M-5): Find correct PID for 12V battery voltage on Focus RS MK3 and add to PCM_QUERIES/parsePcmResponse.
+    // 12V battery voltage is now polled via PCM Mode 22 DID 0x0304 in ObdResponseParser (refs #92).
     const val ID_FUEL_LEVEL   = 0x380
+
+    // BCMmsg_x360 (0x360): Odometer — bytes [3:5] big-endian, 24-bit unsigned, 1 km/bit.
+    // ~5 Hz broadcast. Full 24-bit value matches DID 0xDD01 exactly (no rollover needed).
+    // Community-verified: Discussion #102 (@adamsouthern, 14-point linear test on 40K km car).
+    // Corrected byte offset: was [5:6] (16-bit), now [3:5] (24-bit). Verified against
+    // real car at 67,500 km: bytes 01 07 AC = 67500 km (diagnostic session 2026-03-21).
+    const val ID_ODOMETER     = 0x360
 
     private val KNOWN_IDS = setOf(
         ID_TORQUE, ID_THROTTLE, ID_PEDALS, ID_ENGINE_RPM,
@@ -110,7 +117,7 @@ object CanDecoder {
         ID_DRIVE_MODE, ID_DRIVE_MODE_EXT, ID_ESC_ABS,
         ID_WHEEL_SPEEDS, ID_GEAR, ID_AWD_TORQUE, ID_COOLANT,
         ID_PCM_AMBIENT, ID_AMBIENT_TEMP,
-        ID_FUEL_LEVEL,
+        ID_FUEL_LEVEL, ID_ODOMETER,
         ID_STEERING, ID_BRAKE_PRESS
     )
 
@@ -169,6 +176,7 @@ object CanDecoder {
             // ── 0x076: Throttle position ───────────────────────────────────────
             ID_THROTTLE -> if (n >= 1) state.copy(
                 throttlePct = ubyte(data, 0) * 0.392,
+                throttleHasSource = true,
                 lastUpdate  = now
             ) else null
 
@@ -210,12 +218,15 @@ object CanDecoder {
             //     physical lat-G / yaw / speed triangle from live log data.
             // Invalid pattern for lat G: byte2 & 0x03 == 0x03 && byte3 == 0xFF
             ID_LAT_ACCEL -> if (n >= 8) {
+                val b0 = data[0].toInt() and 0xFF
+                val b1 = data[1].toInt() and 0xFF
                 val b2 = data[2].toInt() and 0xFF
                 val b3 = data[3].toInt() and 0xFF
                 if ((b2 and 0x03) == 0x03 && b3 >= 0xFE) null
                 else state.copy(
                     lateralG   = ((b2 and 0x03) shl 8 or b3) * 0.00390625 - 2.0,
                     yawRate    = ((ubyte(data, 4) and 0x0F) shl 8 or ubyte(data, 5)) * 0.03663 - 75.0,
+                    verticalG  = ((b0 and 0x03) shl 8 or b1) * 0.00390625 - 2.0,
                     lastUpdate = now
                 )
             } else null
@@ -253,12 +264,14 @@ object CanDecoder {
                 state.copy(brakePressure = brakeRaw / 40.95, lastUpdate = now)
             } else null
 
-            // ── 0x0C8: Gauge illumination + e-brake ───────────────────────────
+            // ── 0x0C8: Gauge illumination + e-brake + ignition ─────────────────
             // Brightness: bits 0-4 of byte0  [DigiCluster verified]
             // E-brake:    bit 6 of byte3      [DigiCluster verified]
+            // Ignition:   bits 3-6 of byte2   [Confirmed via SLCAN: 0x3E→7=Run, 0x3A→7=Run]
             ID_GAUGE_ILLUM -> if (n >= 4) state.copy(
                 gaugeIllumination = data[0].toInt() and 0x1F,
                 eBrake            = (data[3].toInt() and 0x40) != 0,
+                ignitionStatus    = if (n >= 3) ((ubyte(data, 2) shr 3) and 0x0F) else state.ignitionStatus,
                 lastUpdate        = now
             ) else null
 
@@ -340,16 +353,17 @@ object CanDecoder {
             ID_DRIVE_MODE_EXT -> if (n >= 8) {
                 val newDetail = (ubyte(data, 6) shl 8) or ubyte(data, 7)
                 modeDetail420 = newDetail
+                val lcActive = (ubyte(data, 6) shr 2) and 1 == 1
                 if (state.driveMode == DriveMode.SPORT || state.driveMode == DriveMode.TRACK) {
                     val resolved = if ((newDetail and 0x01) != 0) DriveMode.TRACK
                                    else DriveMode.SPORT
-                    state.copy(driveMode = resolved, lastUpdate = now)
-                } else null
+                    state.copy(driveMode = resolved, launchControlActive = lcActive, lastUpdate = now)
+                } else state.copy(launchControlActive = lcActive, lastUpdate = now)
             } else null
 
             // ── 0x1C0: ESC mode ────────────────────────────────────────────────
             ID_ESC_ABS -> if (n >= 2) state.copy(
-                escStatus = EscStatus.fromInt(bits(data, 13, 2)), lastUpdate = now
+                escStatus = EscStatus.fromInt(bits(data, 10, 2)), lastUpdate = now
             ) else null
 
             // ── 0x230: Current gear ────────────────────────────────────────────
@@ -361,6 +375,20 @@ object CanDecoder {
             ID_TORQUE -> if (n >= 6) state.copy(
                 torqueAtTrans = (bits(data, 37, 11) - 500).toDouble(), lastUpdate = now
             ) else null
+
+            // ── 0x360: Odometer (passive broadcast) ─────────────────────────
+            // BCMmsg_x360: bytes [3:5] big-endian, 24-bit unsigned, 1 km/bit.
+            // Full odometer — no rollover offset needed.
+            ID_ODOMETER -> if (n >= 6) {
+                val km24 = ((ubyte(data, 3).toLong() shl 16) or
+                            (ubyte(data, 4).toLong() shl 8) or
+                             ubyte(data, 5).toLong())
+                state.copy(
+                    odometerKm = km24,
+                    engineStatus = ubyte(data, 0),
+                    lastUpdate = now
+                )
+            } else null
 
             // ── 0x380: Fuel level filtered ────────────────────────────────────
             // RS_HS.dbc PCMmsg30: FuelLevelFiltered : 17|10@0+ (0.4,0) [0|102] "%"
@@ -390,12 +418,12 @@ object CanDecoder {
         ID_THROTTLE     -> "throttlePct=${"%.1f".format(state.throttlePct)}"
         ID_PEDALS       -> "accelPct=${"%.1f".format(state.accelPedalPct)}, rev=${state.reverseStatus}"
         ID_LONG_ACCEL   -> "lonG=${"%.4f".format(state.longitudinalG)}g"
-        ID_LAT_ACCEL    -> "latG=${"%.4f".format(state.lateralG)}g yaw=${"%.2f".format(state.yawRate)}°/s"
+        ID_LAT_ACCEL    -> "latG=${"%.4f".format(state.lateralG)}g yaw=${"%.2f".format(state.yawRate)}°/s vertG=${"%.4f".format(state.verticalG)}g"
         ID_STEERING     -> "steer=${"%.1f".format(state.steeringAngle)}°"
         ID_BRAKE_PRESS  -> "brake=${"%.1f".format(state.brakePressure)}"
-        ID_GAUGE_ILLUM  -> "illum=${state.gaugeIllumination}, eBrake=${state.eBrake}"
+        ID_GAUGE_ILLUM  -> "illum=${state.gaugeIllumination}, eBrake=${state.eBrake}, ign=${state.ignitionStatus}"
         ID_PCM_AMBIENT  -> "ambient=${"%.2f".format(state.ambientTempC)}°C (PCMmsg17)"
-        ID_DRIVE_MODE_EXT -> "driveMode=${state.driveMode.label} (resolved via 0x420+0x1B0)"
+        ID_DRIVE_MODE_EXT -> "driveMode=${state.driveMode.label} lc=${state.launchControlActive} (resolved via 0x420+0x1B0)"
         ID_AMBIENT_TEMP -> "ambientTempC=${"%.2f".format(state.ambientTempC)}"
         ID_WHEEL_SPEEDS -> "FL=${"%.1f".format(state.wheelSpeedFL)} FR=${"%.1f".format(state.wheelSpeedFR)} RL=${"%.1f".format(state.wheelSpeedRL)} RR=${"%.1f".format(state.wheelSpeedRR)} km/h"
         ID_AWD_TORQUE   -> "L=${"%.0f".format(state.awdLeftTorque)}Nm R=${"%.0f".format(state.awdRightTorque)}Nm"
@@ -404,6 +432,7 @@ object CanDecoder {
         ID_GEAR         -> "gear=${state.gearDisplay}"
         ID_TORQUE       -> "torqueNm=${"%.0f".format(state.torqueAtTrans)}"
         ID_FUEL_LEVEL   -> "fuelPct=${"%.1f".format(state.fuelLevelPct)} (0x380 Motorola)"
+        ID_ODOMETER     -> "odometerKm=${state.odometerKm} engStatus=${state.engineStatus} (0x360 passive)"
         else            -> "(unknown id 0x%03X)".format(id)
     }
 
@@ -450,6 +479,7 @@ object CanDecoder {
         ID_LAT_ACCEL    -> when {
             state.lateralG < -4 || state.lateralG > 4 -> "latG outside ±4g"
             state.yawRate < -75 || state.yawRate > 75  -> "yawRate outside ±75 °/s"
+            state.verticalG < -4 || state.verticalG > 4 -> "vertG outside ±4g"
             else -> null
         }
         ID_STEERING     -> when {
@@ -468,6 +498,11 @@ object CanDecoder {
         ID_PEDALS       -> when {
             state.accelPedalPct < 0   -> "accelPct<0 — formula wrong"
             state.accelPedalPct > 105 -> "accelPct>105 — formula wrong"
+            else -> null
+        }
+        ID_ODOMETER     -> when {
+            state.odometerKm < 0      -> "odometerKm<0 — rollover offset may be wrong"
+            state.odometerKm > 500000 -> "odometerKm>500K — unlikely for Focus RS"
             else -> null
         }
         else -> null

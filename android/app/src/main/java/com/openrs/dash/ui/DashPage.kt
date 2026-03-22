@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -41,37 +42,74 @@ import kotlin.math.roundToInt
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // ── Hero Row: BOOST | RPM | SPEED ──────────────────────────────────
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // ── Hero Row: BOOST | RPM | SPEED (with ▲ session peaks) ─────────
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             HeroCard(
                 unit = boostLbl, value = boostVal, label = "BOOST",
                 valueColor = Warn,
                 borderAccent = Warn.copy(alpha = 0.25f),
-                modifier = Modifier.weight(1f)
+                peak = "▲ ${"%.1f".format(vs.peakBoostPsi)}",
+                modifier = Modifier.weight(1f).fillMaxHeight()
             )
             HeroCard(
                 unit = "RPM", value = "${vs.rpm.toInt()}", label = "ENGINE",
                 valueColor = Red,
                 borderAccent = Red.copy(alpha = 0.2f),
-                modifier = Modifier.weight(1f)
+                peak = "▲ ${vs.peakRpm.toInt()}",
+                modifier = Modifier.weight(1f).fillMaxHeight()
             )
             HeroCard(
                 unit = p.speedLabel, value = p.displaySpeed(vs.speedKph), label = "SPEED",
                 valueColor = accent,
                 borderAccent = accent.copy(alpha = 0.25f),
-                modifier = Modifier.weight(1f)
+                peak = "▲ ${p.displaySpeed(vs.peakSpeedKph)}",
+                modifier = Modifier.weight(1f).fillMaxHeight()
             )
+        }
+
+        // ── Gear — rally-style full-width hero ──────────────────────────
+        Box(
+            Modifier.fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(listOf(accent.copy(alpha = 0.04f), Surf2)),
+                    RoundedCornerShape(16.dp)
+                )
+                .border(2.dp, accent.copy(alpha = 0.25f), RoundedCornerShape(16.dp))
+                .padding(vertical = 18.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                HeroNum(vs.gearDisplay, 72.sp, Frost)
+                MonoLabel("G E A R", 8.sp, Dim, letterSpacing = 4.sp)
+            }
+        }
+
+        // ── Launch Control indicator (CAN 0x420 — any drive mode) ─────────
+        if (vs.launchControlActive) {
+            Box(
+                Modifier.fillMaxWidth()
+                    .background(Warn.copy(alpha = 0.12f), RoundedCornerShape(10.dp))
+                    .border(1.5.dp, Warn.copy(alpha = 0.6f), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                MonoLabel("⚡ LAUNCH CONTROL ACTIVE", 12.sp, Warn, letterSpacing = 0.2.sp)
+            }
         }
 
         // ── Inputs & Resources bar grid ─────────────────────────────────────
         SectionLabel("INPUTS & RESOURCES")
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            BarCard(
-                name = "THROTTLE", value = "${vs.throttlePct.roundToInt()}%",
-                fraction = (vs.throttlePct / 100.0).toFloat(),
-                barBrush = Brush.horizontalGradient(listOf(accent.copy(0.4f), accent)),
-                modifier = Modifier.weight(1f)
-            )
+            run {
+                val thr = if (vs.throttleHasSource) vs.throttlePct else vs.accelPedalPct
+                BarCard(
+                    name = if (vs.throttleHasSource) "THROTTLE" else "PEDAL",
+                    value = "${thr.roundToInt()}%",
+                    fraction = (thr / 100.0).toFloat(),
+                    barBrush = Brush.horizontalGradient(listOf(accent.copy(0.4f), accent)),
+                    modifier = Modifier.weight(1f)
+                )
+            }
             BarCard(
                 name = "BRAKE", value = "$brakeStr%",
                 fraction = (vs.brakePressure / 100.0).toFloat().coerceIn(0f, 1f),

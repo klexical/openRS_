@@ -84,6 +84,14 @@ class CanDecoderTest {
         assertEquals(0.0, result!!.throttlePct, 0.01)
     }
 
+    @Test
+    fun `decode throttle sets throttleHasSource`() {
+        val data = byteArrayOf(0x80.toByte())
+        val result = CanDecoder.decode(0x076, data, blank)
+        assertNotNull(result)
+        assertTrue(result!!.throttleHasSource)
+    }
+
     // ── 0x080: Pedals (accel + reverse) ─────────────────────────────────────
 
     @Test
@@ -245,6 +253,37 @@ class CanDecoderTest {
         assertNotNull(result)
         assertEquals(31, result!!.gaugeIllumination)
         assertFalse(result.eBrake)
+    }
+
+    @Test
+    fun `decode ignition status running from real frame`() {
+        // Real frame from diagnostic log: DF 87 3E F0 10 38 C6 43
+        // byte2 = 0x3E → bits 3-6 = (0x3E >> 3) & 0x0F = 7 = Running
+        val data = byteArrayOf(0xDF.toByte(), 0x87.toByte(), 0x3E, 0xF0.toByte(),
+                               0x10, 0x38, 0xC6.toByte(), 0x43)
+        val result = CanDecoder.decode(0x0C8, data, blank)
+        assertNotNull(result)
+        assertEquals(7, result!!.ignitionStatus)
+        assertTrue(result.eBrake)
+        assertEquals(31, result.gaugeIllumination)
+    }
+
+    @Test
+    fun `decode ignition status key out`() {
+        // byte2 = 0x00 → bits 3-6 = 0 = Key Out
+        val data = byteArrayOf(0x0F, 0x00, 0x00, 0x00)
+        val result = CanDecoder.decode(0x0C8, data, blank)
+        assertNotNull(result)
+        assertEquals(0, result!!.ignitionStatus)
+    }
+
+    @Test
+    fun `decode ignition status accessory`() {
+        // 4 = Acc → byte2 bits 3-6 = 4 → byte2 = 4 << 3 = 0x20
+        val data = byteArrayOf(0x0F, 0x00, 0x20, 0x00)
+        val result = CanDecoder.decode(0x0C8, data, blank)
+        assertNotNull(result)
+        assertEquals(4, result!!.ignitionStatus)
     }
 
     // ── 0x340: PCM Ambient Temp ─────────────────────────────────────────────
@@ -440,13 +479,12 @@ class CanDecoderTest {
     }
 
     // ── 0x1C0: ESC/ABS ─────────────────────────────────────────────────────
+    // bits(10, 2) = byte1 bits [5:4]. Mapping: 0=On, 1=Off, 2=Sport.
+    // Real CAN data: 0xC0=On, 0xD0=Off, 0xE0=Sport (SLCAN-verified 2026-03-15).
 
     @Test
     fun `decode ESC on`() {
-        // bits(13, 2) -> ESC mode. 0 = On.
-        // bit13 = byte1 bit2, bit14 = byte1 bit1 (MSB-first numbering)
-        // 0 = 0b00 -> byte1 bits 2-1 = 00 -> byte1 = 0x00
-        val data = byteArrayOf(0x00, 0x00)
+        val data = byteArrayOf(0x77, 0xC0.toByte())
         val result = CanDecoder.decode(0x1C0, data, blank)
         assertNotNull(result)
         assertEquals(EscStatus.ON, result!!.escStatus)
@@ -454,9 +492,7 @@ class CanDecoderTest {
 
     @Test
     fun `decode ESC sport`() {
-        // bits(13, 2) = 1 -> PARTIAL/Sport
-        // bit13 = 0, bit14 = 1 -> byte1 bit2 = 0, bit1 = 1 -> byte1 = 0x02
-        val data = byteArrayOf(0x00, 0x02)
+        val data = byteArrayOf(0x77, 0xE0.toByte())
         val result = CanDecoder.decode(0x1C0, data, blank)
         assertNotNull(result)
         assertEquals(EscStatus.PARTIAL, result!!.escStatus)
@@ -464,9 +500,7 @@ class CanDecoderTest {
 
     @Test
     fun `decode ESC off`() {
-        // bits(13, 2) = 2 -> OFF
-        // bit13 = 1, bit14 = 0 -> byte1 bit2 = 1, bit1 = 0 -> byte1 = 0x04
-        val data = byteArrayOf(0x00, 0x04)
+        val data = byteArrayOf(0x77, 0xD0.toByte())
         val result = CanDecoder.decode(0x1C0, data, blank)
         assertNotNull(result)
         assertEquals(EscStatus.OFF, result!!.escStatus)
@@ -538,11 +572,40 @@ class CanDecoderTest {
 
     @Test
     fun `decode 0x420 does not re-resolve when in Normal`() {
-        // If current mode is Normal, 0x420 returns null (no re-resolution needed)
+        // If current mode is Normal, 0x420 still updates launchControlActive
+        // but does NOT re-resolve driveMode to Track
         val normalState = blank.copy(driveMode = DriveMode.NORMAL)
         val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0xCD.toByte())
         val result = CanDecoder.decode(0x420, data, normalState)
-        assertNull(result)
+        assertNotNull(result)
+        assertEquals(DriveMode.NORMAL, result!!.driveMode)
+    }
+
+    // ── 0x360: Odometer (24-bit) + engine status ──────────────────────────
+
+    @Test
+    fun `decode 0x360 odometer 24-bit from real frame`() {
+        // Real frame from 67,500 km car: C4 C0 3F 01 07 AC BC B2
+        // bytes[3:5] = 01 07 AC = 67500
+        val data = byteArrayOf(
+            0xC4.toByte(), 0xC0.toByte(), 0x3F, 0x01, 0x07,
+            0xAC.toByte(), 0xBC.toByte(), 0xB2.toByte()
+        )
+        val result = CanDecoder.decode(0x360, data, blank)
+        assertNotNull(result)
+        assertEquals(67500L, result!!.odometerKm)
+        assertEquals(0xC4, result.engineStatus)
+    }
+
+    @Test
+    fun `decode 0x360 odometer sub-65K`() {
+        // 40,000 km = 0x009C40 → byte3=0x00, byte4=0x9C, byte5=0x40
+        val data = byteArrayOf(
+            0x00, 0x00, 0x00, 0x00, 0x9C.toByte(), 0x40, 0x00, 0x00
+        )
+        val result = CanDecoder.decode(0x360, data, blank)
+        assertNotNull(result)
+        assertEquals(40000L, result!!.odometerKm)
     }
 
     // ── Unknown CAN ID ──────────────────────────────────────────────────────

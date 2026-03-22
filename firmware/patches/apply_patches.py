@@ -29,7 +29,11 @@ Pro-only patches:
   (same CAN TX shim as USB — wc_mdns_init anchor confirmed in v4.48p)
 """
 
-OPENRS_FW_VERSION = "v1.4"
+OPENRS_FW_VERSIONS = {
+    "usb": "USB v1.5-rc.5",
+    "pro": "PRO v1.0",
+}
+OPENRS_FW_VERSION = None  # set per-target in main()
 
 import sys
 import os
@@ -118,17 +122,20 @@ static esp_err_t frs_get_handler(httpd_req_t *req)
 {
     frs_state_t snap = frs_get_state_copy();
     frs_state_t *s = &snap;
-    char json[384];
+    char json[512];
     snprintf(json, sizeof(json),
-        "{\"driveMode\":%d,\"bootMode\":%d,\"escMode\":%d,"
-        "\"lcEnabled\":%s,\"assKill\":%s,\"battMv\":%lu,\"sleepMv\":%u}",
-        s->drive_mode, s->boot_mode, s->esc_mode,
+        "{\"driveMode\":%d,\"bootMode\":%d,\"escMode\":%d,\"bootEsc\":%d,"
+        "\"lcEnabled\":%s,\"assKill\":%s,\"battMv\":%lu,\"sleepMv\":%u,"
+        "\"canTxErrors\":%d,\"canBusOff\":%s,\"absReachable\":%s}",
+        s->drive_mode, s->boot_mode, s->esc_mode, s->boot_esc,
         s->lc_enabled ? "true" : "false",
         s->ass_kill   ? "true" : "false",
         (unsigned long)s->battery_mv,
-        (unsigned)s->sleep_threshold_mv);
+        (unsigned)s->sleep_threshold_mv,
+        s->can_tx_errors,
+        s->can_bus_off    ? "true" : "false",
+        s->abs_reachable  ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     return httpd_resp_send(req, json, strlen(json));
 }
 
@@ -140,6 +147,7 @@ static esp_err_t frs_post_handler(httpd_req_t *req)
         httpd_resp_send_500(req);
         return ESP_FAIL;
     }
+    buf[received] = '\0';
     cJSON *root = cJSON_Parse(buf);
     if (!root) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
@@ -164,7 +172,6 @@ static esp_err_t frs_post_handler(httpd_req_t *req)
     if ((item = cJSON_GetObjectItem(root, "sleepVoltage")) && cJSON_IsNumber(item))
         frs_set_sleep_threshold((float)(item->valuedouble / 1000.0));
     cJSON_Delete(root);
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     return httpd_resp_send(req, "{\"ok\":true}", 11);
 }
 
@@ -419,8 +426,8 @@ def patch_can_tx(base, profile):
         "    twai_message_t msg;\n"
         "    memset(&msg, 0, sizeof(msg));\n"
         "    msg.identifier      = id;\n"
-        "    msg.data_length_code = dlc;\n"
-        "    memcpy(msg.data, data, dlc);\n"
+        "    msg.data_length_code = (dlc > 8) ? 8 : dlc;\n"
+        "    memcpy(msg.data, data, msg.data_length_code);\n"
         "    return (int)can_send(&msg, pdMS_TO_TICKS(tms));\n"
         "}\n"
     )
@@ -515,12 +522,28 @@ def main():
 
     profile = load_profile(args.target)
 
+    global OPENRS_FW_VERSION
+    OPENRS_FW_VERSION = OPENRS_FW_VERSIONS[args.target]
+
     if not profile["verified"]:
         print(f"\n  *** WARNING: target '{args.target}' is UNVERIFIED ***")
         print(f"  *** Patches may fail — verify with actual hardware ***\n")
 
     print(f"\nApplying openrs-fw patches to: {base}")
-    print(f"Target: {profile['description']} (wican-fw {profile['wican_tag']})\n")
+    print(f"Target: {profile['description']} (wican-fw {profile['wican_tag']})")
+    print(f"Firmware version: {OPENRS_FW_VERSION}\n")
+
+    # Patch focusrs.h with the target-specific version string
+    focusrs_h = os.path.join(base, "components", "focusrs", "focusrs.h")
+    if os.path.isfile(focusrs_h):
+        h = read(focusrs_h)
+        h = re.sub(
+            r'#define\s+OPENRS_FW_VERSION\s+"[^"]+"',
+            f'#define OPENRS_FW_VERSION   "{OPENRS_FW_VERSION}"',
+            h,
+        )
+        write(focusrs_h, h)
+        print(f"  focusrs.h: OPENRS_FW_VERSION = \"{OPENRS_FW_VERSION}\"")
 
     # Common patches (all targets)
     print("[1/8] WiFi network...")

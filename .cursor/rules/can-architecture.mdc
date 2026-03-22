@@ -20,7 +20,10 @@ globs: android/app/**/can/*.kt, android/docs/pid-reference.md, README.md
 | Ambient temp | 0x340 / 0x1A4 | — | 0x340 = PCMmsg17, 0x1A4 = MS-CAN bridged |
 
 ## Polling intervals
-All ECU polling is **30 seconds**: PCM (0x7E0), BCM (0x726), AWD (0x703). There is no 10s interval.
+- PCM (0x7E0) and BCM (0x726) standard polls: **30 seconds**
+- BCM extended session (odometer 0xDD01): **once on connect** (passive CAN 0x360 for real-time)
+- AWD (0x703) extended session (RDU oil temp): **60 seconds**
+- There is no 10s interval.
 
 ## Removed / deprecated
 - **Android Auto** — removed in v2.0.1. Do not reference AA in code comments or docs.
