@@ -17,8 +17,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -28,6 +33,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.data.VehicleState
+import com.openrs.dash.ui.anim.ShiftLightBar
+import com.openrs.dash.ui.anim.SparklineData
 import kotlin.math.roundToInt
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -38,6 +45,38 @@ import kotlin.math.roundToInt
     val (boostVal, boostLbl) = p.displayBoost(vs.boostKpa)
     val brakeStr = "%.0f".format(vs.brakePressure.coerceIn(0.0, 100.0))
 
+    // ── Animated values ──────────────────────────────────────────────────
+    val animRpm by animateFloatAsState(vs.rpm.toFloat(), spring(stiffness = Spring.StiffnessHigh), label = "rpm")
+    val animSpeed by animateFloatAsState(vs.speedKph.toFloat(), spring(stiffness = Spring.StiffnessHigh), label = "spd")
+    val animBoost by animateFloatAsState(vs.boostKpa.toFloat(), spring(stiffness = Spring.StiffnessMediumLow), label = "bst")
+    val thr = if (vs.throttleHasSource) vs.throttlePct else vs.accelPedalPct
+    val animThr by animateFloatAsState(thr.toFloat(), spring(stiffness = Spring.StiffnessHigh), label = "thr")
+    val animBrake by animateFloatAsState(vs.brakePressure.toFloat().coerceIn(0f, 100f), spring(stiffness = Spring.StiffnessHigh), label = "brk")
+    val animFuel by animateFloatAsState(vs.fuelLevelPct.toFloat(), tween(800), label = "fuel")
+    val animBatt by animateFloatAsState(vs.batteryVoltage.toFloat(), tween(800), label = "batt")
+
+    // ── Sparkline data (sampled at ~4 Hz) ────────────────────────────────
+    val boostSpark  = remember { SparklineData(60) }
+    val rpmSpark    = remember { SparklineData(60) }
+    val speedSpark  = remember { SparklineData(60) }
+    val thrSpark    = remember { SparklineData(60) }
+    val brakeSpark  = remember { SparklineData(60) }
+    val lastSample  = remember { mutableLongStateOf(0L) }
+    val now = vs.lastUpdate
+    if (now - lastSample.longValue >= 250L) {
+        lastSample.longValue = now
+        boostSpark.push(vs.boostKpa.toFloat())
+        rpmSpark.push(vs.rpm.toFloat())
+        speedSpark.push(vs.speedKph.toFloat())
+        thrSpark.push(thr.toFloat())
+        brakeSpark.push(vs.brakePressure.toFloat().coerceIn(0f, 100f))
+    }
+
+    // ── Formatted animated values ────────────────────────────────────────
+    val (animBoostVal, _) = p.displayBoost(animBoost.toDouble())
+    val animSpeedStr = p.displaySpeed(animSpeed.toDouble())
+    val animRpmStr = "${animRpm.toInt()}"
+
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -45,27 +84,33 @@ import kotlin.math.roundToInt
         // ── Hero Row: BOOST | RPM | SPEED (with ▲ session peaks) ─────────
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             HeroCard(
-                unit = boostLbl, value = boostVal, label = "BOOST",
+                unit = boostLbl, value = animBoostVal, label = "BOOST",
                 valueColor = Warn,
                 borderAccent = Warn.copy(alpha = 0.25f),
                 peak = "▲ ${"%.1f".format(vs.peakBoostPsi)}",
-                modifier = Modifier.weight(1f).fillMaxHeight()
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                sparklineData = boostSpark.snapshot()
             )
             HeroCard(
-                unit = "RPM", value = "${vs.rpm.toInt()}", label = "ENGINE",
+                unit = "RPM", value = animRpmStr, label = "ENGINE",
                 valueColor = Orange,
                 borderAccent = Orange.copy(alpha = 0.2f),
                 peak = "▲ ${vs.peakRpm.toInt()}",
-                modifier = Modifier.weight(1f).fillMaxHeight()
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                sparklineData = rpmSpark.snapshot()
             )
             HeroCard(
-                unit = p.speedLabel, value = p.displaySpeed(vs.speedKph), label = "SPEED",
+                unit = p.speedLabel, value = animSpeedStr, label = "SPEED",
                 valueColor = accent,
                 borderAccent = accent.copy(alpha = 0.25f),
                 peak = "▲ ${p.displaySpeed(vs.peakSpeedKph)}",
-                modifier = Modifier.weight(1f).fillMaxHeight()
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                sparklineData = speedSpark.snapshot()
             )
         }
+
+        // ── Shift Light Bar ──────────────────────────────────────────────
+        ShiftLightBar(rpm = animRpm, modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp))
 
         // ── Gear — rally-style full-width hero ──────────────────────────
         Box(
@@ -124,35 +169,38 @@ import kotlin.math.roundToInt
         // ── Inputs & Resources bar grid ─────────────────────────────────────
         SectionLabel("INPUTS & RESOURCES")
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            run {
-                val thr = if (vs.throttleHasSource) vs.throttlePct else vs.accelPedalPct
-                BarCard(
-                    name = if (vs.throttleHasSource) "THROTTLE" else "PEDAL",
-                    value = "${thr.roundToInt()}%",
-                    fraction = (thr / 100.0).toFloat(),
-                    barBrush = Brush.horizontalGradient(listOf(accent.copy(0.4f), accent)),
-                    modifier = Modifier.weight(1f)
-                )
-            }
             BarCard(
-                name = "BRAKE", value = "$brakeStr%",
-                fraction = (vs.brakePressure / 100.0).toFloat().coerceIn(0f, 1f),
+                name = if (vs.throttleHasSource) "THROTTLE" else "PEDAL",
+                value = "${animThr.roundToInt()}%",
+                fraction = (animThr / 100f),
+                barBrush = Brush.horizontalGradient(listOf(accent.copy(0.4f), accent)),
+                modifier = Modifier.weight(1f),
+                barGlowColor = accent,
+                sparklineData = thrSpark.snapshot()
+            )
+            BarCard(
+                name = "BRAKE", value = "${animBrake.roundToInt()}%",
+                fraction = (animBrake / 100f).coerceIn(0f, 1f),
                 barBrush = Brush.horizontalGradient(listOf(Orange.copy(0.4f), Orange)),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                barGlowColor = Orange,
+                sparklineData = brakeSpark.snapshot()
             )
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             BarCard(
-                name = "FUEL", value = "${vs.fuelLevelPct.roundToInt()}%",
-                fraction = (vs.fuelLevelPct / 100.0).toFloat(),
+                name = "FUEL", value = "${animFuel.roundToInt()}%",
+                fraction = (animFuel / 100f),
                 barBrush = Brush.horizontalGradient(listOf(Ok.copy(0.4f), Ok)),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                barGlowColor = Ok
             )
             BarCard(
-                name = "BATTERY", value = "${"%.1f".format(vs.batteryVoltage)}V",
-                fraction = ((vs.batteryVoltage - 10.0) / 6.0).toFloat().coerceIn(0f, 1f),
+                name = "BATTERY", value = "${"%.1f".format(animBatt)}V",
+                fraction = ((animBatt - 10f) / 6f).coerceIn(0f, 1f),
                 barBrush = Brush.horizontalGradient(listOf(Warn.copy(0.4f), Warn)),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                barGlowColor = Warn
             )
         }
 

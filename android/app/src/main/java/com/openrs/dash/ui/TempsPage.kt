@@ -135,7 +135,10 @@ data class TempSpec(
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(Modifier.size(10.dp).clip(CircleShape).background(dotColor.copy(alpha = dotAlpha)))
+        Box(contentAlignment = Alignment.Center) {
+            Box(Modifier.size(18.dp).clip(CircleShape).background(dotColor.copy(alpha = 0.2f * dotAlpha)))
+            Box(Modifier.size(10.dp).clip(CircleShape).background(dotColor.copy(alpha = dotAlpha)))
+        }
         Spacer(Modifier.width(12.dp))
         Column {
             UIText(

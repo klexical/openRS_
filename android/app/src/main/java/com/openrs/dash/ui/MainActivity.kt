@@ -26,6 +26,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
@@ -232,8 +233,12 @@ class MainActivity : ComponentActivity() {
                     contentAlignment = Alignment.Center
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Box(Modifier.size(6.dp).clip(CircleShape)
-                            .background(connColor.copy(alpha = dotAlpha)))
+                        Box(contentAlignment = Alignment.Center) {
+                            Box(Modifier.size(14.dp).clip(CircleShape)
+                                .background(connColor.copy(alpha = 0.25f * dotAlpha)))
+                            Box(Modifier.size(6.dp).clip(CircleShape)
+                                .background(connColor.copy(alpha = dotAlpha)))
+                        }
                         MonoLabel(connLabel, 8.sp, connColor, FontWeight.Bold, 0.08.sp)
                     }
                 }
@@ -342,6 +347,14 @@ class MainActivity : ComponentActivity() {
                         Modifier.align(Alignment.BottomCenter)
                             .fillMaxWidth(0.6f).height(2.dp)
                             .background(accent, RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
+                    )
+                    Box(
+                        Modifier.align(Alignment.BottomCenter)
+                            .fillMaxWidth(0.7f).height(6.dp)
+                            .background(
+                                Brush.verticalGradient(listOf(accent.copy(alpha = 0.12f), Color.Transparent)),
+                                RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp)
+                            )
                     )
                 }
             }

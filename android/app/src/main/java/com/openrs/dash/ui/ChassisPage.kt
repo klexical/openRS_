@@ -1,5 +1,8 @@
 package com.openrs.dash.ui
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -8,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,12 +24,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.data.VehicleState
+import com.openrs.dash.ui.anim.GForcePlot
+import com.openrs.dash.ui.anim.RingBuffer
 import kotlin.math.roundToInt
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -137,6 +146,19 @@ import kotlin.math.roundToInt
 }
 
 @Composable fun GForceSection(vs: VehicleState, onReset: () -> Unit) {
+    val accent = LocalThemeAccent.current
+    val animLatG by animateFloatAsState(vs.lateralG.toFloat(), spring(stiffness = Spring.StiffnessHigh), label = "latG")
+    val animLonG by animateFloatAsState(vs.longitudinalG.toFloat(), spring(stiffness = Spring.StiffnessHigh), label = "lonG")
+
+    // G-force trail (sampled at ~10 Hz)
+    val gTrail = remember { RingBuffer<Pair<Float, Float>>(30) }
+    val lastTrailTime = remember { mutableLongStateOf(0L) }
+    val now = vs.lastUpdate
+    if (now - lastTrailTime.longValue >= 100L) {
+        lastTrailTime.longValue = now
+        gTrail.push(vs.lateralG.toFloat() to vs.longitudinalG.toFloat())
+    }
+
     Column(
         Modifier.fillMaxWidth()
             .background(Surf, RoundedCornerShape(16.dp))
@@ -144,16 +166,29 @@ import kotlin.math.roundToInt
             .padding(14.dp)
     ) {
         SectionLabel("G-FORCE & DYNAMICS")
+
+        // G-Force dot plot
+        GForcePlot(
+            lateralG = animLatG,
+            longitudinalG = animLonG,
+            trail = gTrail.toList(),
+            modifier = Modifier.fillMaxWidth().aspectRatio(1f).padding(8.dp),
+            dotColor = accent
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        // Condensed numeric readout
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            GfCard("LAT G",    "${"%.2f".format(vs.lateralG)}",      "▲ ${"%.2f".format(vs.peakLateralG)}",     Modifier.weight(1f))
-            GfCard("LON G",    "${"%.2f".format(vs.longitudinalG)}", "▲ ${"%.2f".format(vs.peakLongitudinalG)}", Modifier.weight(1f))
-            GfCard("VERT G",   "${"%.2f".format(vs.verticalG)}",    "", Modifier.weight(1f))
+            DataCell("LAT G",  "${"%.2f".format(animLatG)}",  modifier = Modifier.weight(1f))
+            DataCell("LON G",  "${"%.2f".format(animLonG)}",  modifier = Modifier.weight(1f))
+            DataCell("VERT G", "${"%.2f".format(vs.verticalG)}", modifier = Modifier.weight(1f))
         }
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            GfCard("YAW",      "${"%.1f".format(vs.yawRate)}°/s",    "", Modifier.weight(1f))
-            GfCard("STEER",    "${"%.1f".format(vs.steeringAngle)}°", "", Modifier.weight(1f))
-            GfCard("COMBINED", "${"%.2f".format(vs.combinedG)}",     "", Modifier.weight(1f))
+            DataCell("YAW",      "${"%.1f".format(vs.yawRate)}°/s",    modifier = Modifier.weight(1f))
+            DataCell("STEER",    "${"%.1f".format(vs.steeringAngle)}°", modifier = Modifier.weight(1f))
+            DataCell("COMBINED", "${"%.2f".format(vs.combinedG)}",     modifier = Modifier.weight(1f))
         }
         Spacer(Modifier.height(6.dp))
         Box(
