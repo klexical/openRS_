@@ -2,6 +2,7 @@ package com.openrs.dash.ui.anim
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -9,6 +10,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.openrs.dash.ui.Accent
 import com.openrs.dash.ui.Dim
@@ -27,6 +29,22 @@ fun GForcePlot(
     maxG: Float = 1.5f,
     dotColor: Color = Accent
 ) {
+    val density = LocalDensity.current
+    val textPaint = remember(density) {
+        android.graphics.Paint().apply {
+            color = android.graphics.Color.argb(100, 61, 90, 114)
+            textSize = with(density) { 9.dp.toPx() }
+            isAntiAlias = true
+        }
+    }
+    val axisPaint = remember(density) {
+        android.graphics.Paint().apply {
+            color = android.graphics.Color.argb(90, 61, 90, 114)
+            textSize = with(density) { 10.dp.toPx() }
+            isAntiAlias = true
+        }
+    }
+
     Canvas(modifier) {
         val cx = size.width / 2f
         val cy = size.height / 2f
@@ -50,11 +68,6 @@ fun GForcePlot(
         drawLine(Dim.copy(alpha = 0.12f), Offset(cx - radius, cy), Offset(cx + radius, cy), 1.dp.toPx())
 
         // Ring labels
-        val textPaint = android.graphics.Paint().apply {
-            color = android.graphics.Color.argb(100, 61, 90, 114)
-            textSize = 9.dp.toPx()
-            isAntiAlias = true
-        }
         for (g in ringSteps) {
             val r = g * scale
             val labelX = cx + r * 0.71f + 4.dp.toPx()
@@ -63,12 +76,7 @@ fun GForcePlot(
         }
 
         // Axis labels
-        val axisPaint = android.graphics.Paint().apply {
-            color = android.graphics.Color.argb(90, 61, 90, 114)
-            textSize = 10.dp.toPx()
-            textAlign = android.graphics.Paint.Align.CENTER
-            isAntiAlias = true
-        }
+        axisPaint.textAlign = android.graphics.Paint.Align.CENTER
         drawContext.canvas.nativeCanvas.drawText("ACCEL", cx, cy - radius - 6.dp.toPx(), axisPaint)
         drawContext.canvas.nativeCanvas.drawText("BRAKE", cx, cy + radius + 14.dp.toPx(), axisPaint)
         axisPaint.textAlign = android.graphics.Paint.Align.LEFT

@@ -59,6 +59,12 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **RPM shift light bar on DASH tab** — 18 LED-style segments (`ShiftLightBar.kt`) filling left-to-right by RPM: green 0–4000, yellow 4000–5500, red 5500–6800. All segments flash at redline (≥6500 RPM).
 - **Shared animation utilities** (`ui/anim/` subpackage) — `RingBuffer.kt` (generic ring buffer), `GlowModifiers.kt` (radial and rectangular glow modifiers), `Sparkline.kt` (sparkline data + Canvas composable).
 
+### Fixed (rc.4 — visual polish)
+- **GForcePlot Paint objects allocated every frame** — `textPaint` and `axisPaint` were created inside the Canvas lambda, producing ~120 allocations/sec at 60 Hz. Extracted to `remember(density)` outside the draw block.
+
+### Added (rc.4 — visual polish)
+- **RingBuffer unit tests** — 9 test cases covering empty state, insertion order, capacity wraparound, clear/re-push, and generic type support.
+
 ---
 
 ## [v2.2.4] — 2026-03-19
