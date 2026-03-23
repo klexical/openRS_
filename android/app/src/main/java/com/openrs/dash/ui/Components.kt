@@ -21,9 +21,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import com.openrs.dash.ui.anim.Sparkline
+import com.openrs.dash.ui.anim.neonGlowRect
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
@@ -74,7 +77,8 @@ import com.openrs.dash.R
     valueColor: Color,
     modifier: Modifier = Modifier,
     borderAccent: Color? = null,
-    peak: String = ""
+    peak: String = "",
+    sparklineData: List<Float>? = null
 ) {
     val accent = LocalThemeAccent.current
     val brd = borderAccent ?: Brd
@@ -87,11 +91,28 @@ import com.openrs.dash.R
     ) {
         MonoLabel(unit, 8.sp, Dim, letterSpacing = 0.18.sp)
         Spacer(Modifier.height(4.dp))
-        HeroNum(value, 26.sp, valueColor, Modifier.fillMaxWidth())
+        Box(
+            Modifier.fillMaxWidth().drawBehind {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        listOf(valueColor.copy(alpha = 0.18f), Color.Transparent),
+                        center = center,
+                        radius = size.minDimension * 0.9f
+                    )
+                )
+            },
+            contentAlignment = Alignment.Center
+        ) {
+            HeroNum(value, 26.sp, valueColor, Modifier.fillMaxWidth())
+        }
         if (peak.isNotEmpty()) {
             MonoText(peak, 9.sp, accent, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         } else {
             Spacer(Modifier.height(4.dp))
+        }
+        if (sparklineData != null && sparklineData.size >= 2) {
+            Spacer(Modifier.height(4.dp))
+            Sparkline(sparklineData, valueColor, Modifier.fillMaxWidth().height(22.dp).padding(horizontal = 4.dp))
         }
         MonoLabel(label, 8.sp, Dim, letterSpacing = 0.15.sp)
     }
@@ -103,7 +124,9 @@ import com.openrs.dash.R
     value: String,
     fraction: Float,
     barBrush: Brush,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    barGlowColor: Color? = null,
+    sparklineData: List<Float>? = null
 ) {
     Column(
         modifier
@@ -123,7 +146,12 @@ import com.openrs.dash.R
             Box(
                 Modifier.fillMaxWidth(fraction.coerceIn(0f, 1f)).fillMaxHeight()
                     .background(barBrush, RoundedCornerShape(2.dp))
+                    .then(if (barGlowColor != null) Modifier.neonGlowRect(barGlowColor) else Modifier)
             )
+        }
+        if (sparklineData != null && sparklineData.size >= 2) {
+            Spacer(Modifier.height(6.dp))
+            Sparkline(sparklineData, barGlowColor ?: Accent, Modifier.fillMaxWidth().height(28.dp))
         }
     }
 }
@@ -173,7 +201,20 @@ import com.openrs.dash.R
     ) {
         MonoLabel(label, 8.sp, Dim, letterSpacing = 0.12.sp)
         Spacer(Modifier.height(3.dp))
-        MonoText(value, 18.sp, Frost, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        Box(
+            Modifier.fillMaxWidth().drawBehind {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        listOf(accent.copy(alpha = 0.12f), Color.Transparent),
+                        center = center,
+                        radius = size.minDimension * 0.8f
+                    )
+                )
+            },
+            contentAlignment = Alignment.Center
+        ) {
+            MonoText(value, 18.sp, Frost, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        }
         if (peak.isNotEmpty()) {
             MonoText(peak, 9.sp, accent, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         }
