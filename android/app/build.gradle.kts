@@ -110,6 +110,7 @@ android {
     lint {
         abortOnError = false
         warningsAsErrors = false
+        checkReleaseBuilds = false  // AGP 8.7 lint crashes with Compose BOM 2025.11.00
     }
 }
 
