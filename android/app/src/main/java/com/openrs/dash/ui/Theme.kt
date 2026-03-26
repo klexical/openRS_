@@ -11,6 +11,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Text
+import android.content.res.Configuration
+import androidx.compose.ui.platform.LocalConfiguration
 import com.openrs.dash.R
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -26,7 +28,7 @@ val Surf3   = Color(0xFF141B26)
 // Borders and text
 val Brd     = Color(0xFF162030)     // Default border (dark navy)
 val Frost   = Color(0xFFE8F4FF)     // Primary text (near-white, blue tint)
-val Dim     = Color(0xFF3D5A72)     // Muted / dim text
+val Dim     = Color(0xFF547A96)     // Muted / dim text (WCAG AA ≥ 4.5:1 on Surf2)
 val Mid     = Color(0xFF7A9AB8)     // Medium emphasis
 
 // Elevated surfaces and on-accent contrast
@@ -140,3 +142,13 @@ val BarlowCond    = FontFamily(
     fontWeight = fontWeight, letterSpacing = letterSpacing, textAlign = textAlign,
     modifier = modifier
 )
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RESPONSIVE LAYOUT HELPER
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Returns true when the screen is in landscape or wider than 600dp */
+@Composable fun isWideLayout(): Boolean {
+    val config = LocalConfiguration.current
+    return config.orientation == Configuration.ORIENTATION_LANDSCAPE || config.screenWidthDp > 600
+}

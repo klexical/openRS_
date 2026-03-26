@@ -77,6 +77,12 @@ data class VehicleState(
     val tpmsSensorIdRR: Long = -1L,        // 0x2811: 4-byte TPMS sensor ID for RR
     val tpmsSensorIdLR: Long = -1L,        // 0x2812: 4-byte TPMS sensor ID for LR
 
+    // ── TPMS Session Start (first valid reading per session) ──
+    val tireStartLF: Double = -1.0,        // Session-start LF pressure (PSI); -1 = not yet captured
+    val tireStartRF: Double = -1.0,        // Session-start RF pressure (PSI); -1 = not yet captured
+    val tireStartLR: Double = -1.0,        // Session-start LR pressure (PSI); -1 = not yet captured
+    val tireStartRR: Double = -1.0,        // Session-start RR pressure (PSI); -1 = not yet captured
+
     // ── Dynamics (CAN Sniffed) ──────────────────────────────
     val speedKph: Double = 0.0,
     val steeringAngle: Double = 0.0,
@@ -163,6 +169,11 @@ data class VehicleState(
     val peakSpeedKph: Double = 0.0,
     val peakLateralG: Double = 0.0,
     val peakLongitudinalG: Double = 0.0,
+    val peakOilTempC: Double = -99.0,
+    val peakCoolantTempC: Double = -99.0,
+    val peakRduTempC: Double = -99.0,
+    val peakPtuTempC: Double = -99.0,
+    val peakChargeAirTempC: Double = -99.0,
 
     // ── Connection ──────────────────────────────────────────
     val isConnected: Boolean = false,
@@ -289,13 +300,28 @@ data class VehicleState(
             peakRpm = max(peakRpm, rpm),
             peakSpeedKph = max(peakSpeedKph, speedKph),
             peakLateralG = max(peakLateralG, abs(lateralG)),
-            peakLongitudinalG = max(peakLongitudinalG, abs(longitudinalG))
+            peakLongitudinalG = max(peakLongitudinalG, abs(longitudinalG)),
+            peakOilTempC = if (oilTempC > -90) max(peakOilTempC, oilTempC) else peakOilTempC,
+            peakCoolantTempC = if (coolantTempC > -90) max(peakCoolantTempC, coolantTempC) else peakCoolantTempC,
+            peakRduTempC = if (rduTempC > -90) max(peakRduTempC, rduTempC) else peakRduTempC,
+            peakPtuTempC = if (ptuTempC > -90) max(peakPtuTempC, ptuTempC) else peakPtuTempC,
+            peakChargeAirTempC = if (chargeAirTempC > -90) max(peakChargeAirTempC, chargeAirTempC) else peakChargeAirTempC,
+            // Capture session-start tire pressures (first valid reading only)
+            tireStartLF = if (tireStartLF < 0 && tirePressLF > 0) tirePressLF else tireStartLF,
+            tireStartRF = if (tireStartRF < 0 && tirePressRF > 0) tirePressRF else tireStartRF,
+            tireStartLR = if (tireStartLR < 0 && tirePressLR > 0) tirePressLR else tireStartLR,
+            tireStartRR = if (tireStartRR < 0 && tirePressRR > 0) tirePressRR else tireStartRR
         )
     }
 
     fun withPeaksReset(): VehicleState = copy(
         peakBoostPsi = 0.0, peakRpm = 0.0, peakSpeedKph = 0.0,
-        peakLateralG = 0.0, peakLongitudinalG = 0.0
+        peakLateralG = 0.0, peakLongitudinalG = 0.0,
+        peakOilTempC = -99.0, peakCoolantTempC = -99.0,
+        peakRduTempC = -99.0, peakPtuTempC = -99.0,
+        peakChargeAirTempC = -99.0,
+        tireStartLF = -1.0, tireStartRF = -1.0,
+        tireStartLR = -1.0, tireStartRR = -1.0
     )
 }
 

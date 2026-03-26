@@ -116,6 +116,32 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **PidRegistry formula evaluator tests** — 16 tests covering arithmetic, `signed()` two's-complement, unary minus, operator precedence, parentheses, and edge cases (`PidRegistryTest.kt`).
 - **RingBuffer capacity=0 test** — verifies `IllegalArgumentException` on zero capacity.
 
+### Added (rc.8 — UI/UX overhaul)
+- **Swipe tab navigation via HorizontalPager** — replaced raw `when(tab)` with `HorizontalPager` in `MainActivity.kt`. Users can swipe left/right between all 6 tabs. Tab bar syncs bidirectionally with pager state via `animateScrollToPage`. ([#131](https://github.com/klexical/openRS_/issues/131), [#138](https://github.com/klexical/openRS_/issues/138))
+- **Animated gear transition** — gear display on DASH tab now uses `AnimatedContent` with `slideInVertically + fadeIn` / `slideOutVertically + fadeOut` for smooth gear change animations at 72sp. ([#132](https://github.com/klexical/openRS_/issues/132))
+- **Haptic feedback on interactive controls** — `HapticFeedbackType.Confirm` added to tab selection (`MainActivity.kt`), drive mode and ESC buttons (`MorePage.kt`), temperature preset pills (`TempsPage.kt`), and settings segmented pickers (`SettingsSheet.kt`). ([#133](https://github.com/klexical/openRS_/issues/133))
+- **Placeholder pulse animation** — `DataCell` and `AfrCard` in `Components.kt` auto-detect `"— —"` placeholder values and animate alpha 0.3↔0.7 via `rememberInfiniteTransition`. Distinguishes "waiting for data" from "value is zero." ([#135](https://github.com/klexical/openRS_/issues/135))
+- **NRC code decoding in DID Prober** — `nrcLabel()` function in `DidProberSection.kt` maps 11 common UDS NRC codes (0x10–0x78) to human-readable descriptions. "NRC 0x31" now shows "request out of range." ([#136](https://github.com/klexical/openRS_/issues/136))
+- **Long-press copy DID code in PID Browser** — `combinedClickable` with `onLongClick` in `PidBrowserSection.kt` copies DID hex codes to clipboard with Toast confirmation. ([#137](https://github.com/klexical/openRS_/issues/137))
+- **Knock retard flash animation** — `PowerPage.kt` KR C1-C4 cells animate background color via `animateColorAsState` to a warm `Warn` glow (0.08 alpha → transparent over 400ms) when knock correction crosses -1.0°. ([#139](https://github.com/klexical/openRS_/issues/139))
+- **Connection status banner** — contextual banner below tab bar shows adapter type, IP:port, and "DISCONNECTED" status with dismiss button. Auto-resets on successful connection. ([#140](https://github.com/klexical/openRS_/issues/140))
+- **Temperature session peaks** — 5 new peak fields in `VehicleState` (oil, coolant, RDU, PTU, charge air) tracked via `withPeaksUpdated()`. Displayed as "▲" annotations in `TempsPage.kt`. ([#141](https://github.com/klexical/openRS_/issues/141))
+- **DID Prober ETA and export** — ETA display during probe ("~4 min remaining") based on average probe time. EXPORT button copies results as TSV to clipboard. ([#142](https://github.com/klexical/openRS_/issues/142))
+- **Settings reset-to-defaults** — RESET button in `SettingsSheet.kt` restores all fields to `AppSettings.DEFAULT_*` values with inline "Defaults restored" confirmation. ([#143](https://github.com/klexical/openRS_/issues/143))
+- **Collapsible sections on Power page** — `SectionLabel` extended with `collapsible`/`expanded`/`onToggle` params. Three Power page sections wrapped in `AnimatedVisibility` with expand/collapse chevrons. ([#144](https://github.com/klexical/openRS_/issues/144))
+- **Pinned dash metrics strip** — `MiniMetricStrip` composable in `DashPage.kt` appears when scroll position exceeds 220px, showing compact BOOST/RPM/SPEED values for persistent context. ([#145](https://github.com/klexical/openRS_/issues/145))
+- **TPMS delta arrows** — `tpmsDeltaText()` helper in `ChassisPage.kt` computes pressure trend vs session start. `TireCard` extended with `deltaText` param showing ▲/▼ arrows color-coded green (rising) or orange (falling). ([#146](https://github.com/klexical/openRS_/issues/146))
+- **Landscape and split-screen layout support** — `isWideLayout()` composable helper in `Theme.kt` detects landscape/wide screens. Responsive grids across `DashPage`, `TempsPage`, `ChassisPage`, `TripPage`, and `CustomDashPage`. ([#147](https://github.com/klexical/openRS_/issues/147))
+- **Floating HUD overlay** — `HudOverlayService.kt` using `TYPE_APPLICATION_OVERLAY` displays 2-3 key metrics on top of any app. Draggable, close button, collects `vehicleState` flow at 4 Hz. Toggle in `MorePage`. `SYSTEM_ALERT_WINDOW` permission added. ([#148](https://github.com/klexical/openRS_/issues/148))
+- **Animated car diagram** — `CarDiagram.kt` Canvas-based top-down car visualization with live tire pressure, wheel speed, and AWD torque distribution overlays. Replaces `FocusRsOutline` in TPMS section of `ChassisPage`. ([#149](https://github.com/klexical/openRS_/issues/149))
+- **Session history browser** — Room database (`SessionDatabase.kt`) with `SessionEntity` and `SnapshotEntity`. `CanDataService` records sessions automatically. `SessionHistorySection` in `MorePage` shows expandable session cards with 30-day auto-prune. ([#150](https://github.com/klexical/openRS_/issues/150))
+- **Custom dashboard builder** — `DashLayout.kt` data model with 31 available metrics. `CustomDashPage.kt` full-screen overlay with responsive gauge grid and `DashBuilderSheet` editor. Layouts persisted via `AppSettings.saveCustomDash()`/`loadCustomDash()`. ([#151](https://github.com/klexical/openRS_/issues/151))
+
+### Changed (rc.8)
+- **Dim label contrast improved** — `Dim` color bumped from `#3D5A72` to `#547A96` in `Theme.kt` for WCAG AA compliance (≥4.5:1 contrast ratio on Surf2 background). ([#134](https://github.com/klexical/openRS_/issues/134))
+- **Compose BOM upgraded** — `2024.11.00` → `2025.11.00` (Compose UI 1.7.5 → 1.9.4). Enables `HapticFeedbackType.Confirm` and `HorizontalPager` from stable Foundation APIs.
+- **KSP annotation processing added** — Room compiler uses KSP (`com.google.devtools.ksp` v2.0.21-1.0.27) instead of KAPT for faster builds.
+
 ---
 
 ## [v2.2.4] — 2026-03-19

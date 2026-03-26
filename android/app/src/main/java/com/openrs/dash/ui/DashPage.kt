@@ -17,6 +17,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -80,8 +89,11 @@ import kotlin.math.roundToInt
     val animSpeedStr = p.displaySpeed(animSpeed.toDouble())
     val animRpmStr = "${animRpm.toInt()}"
 
+    val scrollState = rememberScrollState()
+
+    Box(Modifier.fillMaxSize()) {
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp),
+        Modifier.fillMaxSize().verticalScroll(scrollState).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         // ── Hero Row: BOOST | RPM | SPEED (with ▲ session peaks) ─────────
@@ -127,7 +139,16 @@ import kotlin.math.roundToInt
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                HeroNum(vs.gearDisplay, 72.sp, Frost)
+                AnimatedContent(
+                    targetState = vs.gearDisplay,
+                    transitionSpec = {
+                        (slideInVertically { -it } + fadeIn()) togetherWith
+                        (slideOutVertically { it } + fadeOut())
+                    },
+                    label = "gear"
+                ) { gear ->
+                    HeroNum(gear, 72.sp, Frost)
+                }
                 MonoLabel("G E A R", 8.sp, Dim, letterSpacing = 4.sp)
             }
         }
@@ -171,40 +192,79 @@ import kotlin.math.roundToInt
 
         // ── Inputs & Resources bar grid ─────────────────────────────────────
         SectionLabel("INPUTS & RESOURCES")
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            BarCard(
-                name = if (vs.throttleHasSource) "THROTTLE" else "PEDAL",
-                value = "${animThr.roundToInt()}%",
-                fraction = (animThr / 100f),
-                barBrush = Brush.horizontalGradient(listOf(accent.copy(0.4f), accent)),
-                modifier = Modifier.weight(1f),
-                barGlowColor = accent,
-                sparklineData = thrSpark.snapshot()
-            )
-            BarCard(
-                name = "BRAKE", value = "${animBrake.roundToInt()}%",
-                fraction = (animBrake / 100f).coerceIn(0f, 1f),
-                barBrush = Brush.horizontalGradient(listOf(Orange.copy(0.4f), Orange)),
-                modifier = Modifier.weight(1f),
-                barGlowColor = Orange,
-                sparklineData = brakeSpark.snapshot()
-            )
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            BarCard(
-                name = "FUEL", value = "${animFuel.roundToInt()}%",
-                fraction = (animFuel / 100f),
-                barBrush = Brush.horizontalGradient(listOf(Ok.copy(0.4f), Ok)),
-                modifier = Modifier.weight(1f),
-                barGlowColor = Ok
-            )
-            BarCard(
-                name = "BATTERY", value = "${"%.1f".format(animBatt)}V",
-                fraction = ((animBatt - 10f) / 6f).coerceIn(0f, 1f),
-                barBrush = Brush.horizontalGradient(listOf(Warn.copy(0.4f), Warn)),
-                modifier = Modifier.weight(1f),
-                barGlowColor = Warn
-            )
+        val wide = isWideLayout()
+        if (wide) {
+            // Landscape / wide: single row of 4 BarCards
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                BarCard(
+                    name = if (vs.throttleHasSource) "THROTTLE" else "PEDAL",
+                    value = "${animThr.roundToInt()}%",
+                    fraction = (animThr / 100f),
+                    barBrush = Brush.horizontalGradient(listOf(accent.copy(0.4f), accent)),
+                    modifier = Modifier.weight(1f),
+                    barGlowColor = accent,
+                    sparklineData = thrSpark.snapshot()
+                )
+                BarCard(
+                    name = "BRAKE", value = "${animBrake.roundToInt()}%",
+                    fraction = (animBrake / 100f).coerceIn(0f, 1f),
+                    barBrush = Brush.horizontalGradient(listOf(Orange.copy(0.4f), Orange)),
+                    modifier = Modifier.weight(1f),
+                    barGlowColor = Orange,
+                    sparklineData = brakeSpark.snapshot()
+                )
+                BarCard(
+                    name = "FUEL", value = "${animFuel.roundToInt()}%",
+                    fraction = (animFuel / 100f),
+                    barBrush = Brush.horizontalGradient(listOf(Ok.copy(0.4f), Ok)),
+                    modifier = Modifier.weight(1f),
+                    barGlowColor = Ok
+                )
+                BarCard(
+                    name = "BATTERY", value = "${"%.1f".format(animBatt)}V",
+                    fraction = ((animBatt - 10f) / 6f).coerceIn(0f, 1f),
+                    barBrush = Brush.horizontalGradient(listOf(Warn.copy(0.4f), Warn)),
+                    modifier = Modifier.weight(1f),
+                    barGlowColor = Warn
+                )
+            }
+        } else {
+            // Portrait: two rows of 2 BarCards
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                BarCard(
+                    name = if (vs.throttleHasSource) "THROTTLE" else "PEDAL",
+                    value = "${animThr.roundToInt()}%",
+                    fraction = (animThr / 100f),
+                    barBrush = Brush.horizontalGradient(listOf(accent.copy(0.4f), accent)),
+                    modifier = Modifier.weight(1f),
+                    barGlowColor = accent,
+                    sparklineData = thrSpark.snapshot()
+                )
+                BarCard(
+                    name = "BRAKE", value = "${animBrake.roundToInt()}%",
+                    fraction = (animBrake / 100f).coerceIn(0f, 1f),
+                    barBrush = Brush.horizontalGradient(listOf(Orange.copy(0.4f), Orange)),
+                    modifier = Modifier.weight(1f),
+                    barGlowColor = Orange,
+                    sparklineData = brakeSpark.snapshot()
+                )
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                BarCard(
+                    name = "FUEL", value = "${animFuel.roundToInt()}%",
+                    fraction = (animFuel / 100f),
+                    barBrush = Brush.horizontalGradient(listOf(Ok.copy(0.4f), Ok)),
+                    modifier = Modifier.weight(1f),
+                    barGlowColor = Ok
+                )
+                BarCard(
+                    name = "BATTERY", value = "${"%.1f".format(animBatt)}V",
+                    fraction = ((animBatt - 10f) / 6f).coerceIn(0f, 1f),
+                    barBrush = Brush.horizontalGradient(listOf(Warn.copy(0.4f), Warn)),
+                    modifier = Modifier.weight(1f),
+                    barGlowColor = Warn
+                )
+            }
         }
 
         // ── AWD Split ──────────────────────────────────────────────────────
@@ -263,6 +323,42 @@ import kotlin.math.roundToInt
                     modifier = Modifier.align(Alignment.CenterEnd).padding(end = 74.dp))
             }
         }
+    }
+
+    // ── Pinned Metric Strip (visible when hero row scrolls out of view) ──
+    AnimatedVisibility(
+        visible = scrollState.value > 220,
+        enter = expandVertically() + fadeIn(),
+        exit = shrinkVertically() + fadeOut(),
+        modifier = Modifier.align(Alignment.TopCenter)
+    ) {
+        MiniMetricStrip(animBoostVal, boostLbl, animRpmStr, animSpeedStr, p.speedLabel)
+    }
+    } // end outer Box
+}
+
+/** Compact sticky row: BOOST / RPM / SPEED — shown when the hero row scrolls off-screen. */
+@Composable private fun MiniMetricStrip(
+    boostVal: String, boostLbl: String,
+    rpmStr: String, speedStr: String, speedLbl: String
+) {
+    Row(
+        Modifier.fillMaxWidth()
+            .background(Surf)
+            .border(width = 1.dp, color = Brd,
+                shape = RoundedCornerShape(bottomStart = 0.dp, bottomEnd = 0.dp))
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        MonoLabel("BOOST:", 9.sp, Dim)
+        MonoLabel("$boostVal $boostLbl", 9.sp, Frost)
+        MonoLabel("  |  ", 9.sp, Dim)
+        MonoLabel("RPM:", 9.sp, Dim)
+        MonoLabel(rpmStr, 9.sp, Frost)
+        MonoLabel("  |  ", 9.sp, Dim)
+        MonoLabel("SPD:", 9.sp, Dim)
+        MonoLabel("$speedStr $speedLbl", 9.sp, Frost)
     }
 }
 

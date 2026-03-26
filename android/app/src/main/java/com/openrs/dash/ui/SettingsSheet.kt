@@ -13,7 +13,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -44,6 +46,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
     var adapterType     by remember { mutableStateOf(current.adapterType) }
     var meatPiMicroSd   by remember { mutableStateOf(current.meatPiMicroSdLog) }
     var error           by remember { mutableStateOf<String?>(null) }
+    var resetConfirm    by remember { mutableStateOf(false) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -293,6 +296,16 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 textAlign = TextAlign.Center
             )
+            if (resetConfirm) {
+                Text(
+                    "Defaults restored — tap SAVE to apply",
+                    fontSize = 10.sp,
+                    color = Ok,
+                    fontFamily = ShareTechMono,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                    textAlign = TextAlign.Center
+                )
+            }
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -304,6 +317,29 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Dim)
                 ) {
                     Text("CANCEL", fontFamily = ShareTechMono, fontSize = 12.sp)
+                }
+                TextButton(
+                    onClick = {
+                        host          = AppSettings.DEFAULT_HOST
+                        port          = AppSettings.DEFAULT_PORT.toString()
+                        speedUnit     = AppSettings.DEFAULT_SPEED_UNIT
+                        tempUnit      = AppSettings.DEFAULT_TEMP_UNIT
+                        boostUnit     = AppSettings.DEFAULT_BOOST_UNIT
+                        tireUnit      = AppSettings.DEFAULT_TIRE_UNIT
+                        tireLowPsi    = AppSettings.DEFAULT_TIRE_LOW_PSI.toString()
+                        screenOn      = AppSettings.DEFAULT_SCREEN_ON
+                        autoReconnect = AppSettings.DEFAULT_AUTO_RECONNECT
+                        reconnectSec  = AppSettings.DEFAULT_RECONNECT_INTERVAL.toString()
+                        maxDiagZips   = AppSettings.DEFAULT_MAX_DIAG_ZIPS.toString()
+                        adapterType   = AppSettings.DEFAULT_ADAPTER_TYPE
+                        meatPiMicroSd = AppSettings.DEFAULT_MEATPI_MICROSD
+                        error         = null
+                        resetConfirm  = true
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.textButtonColors(contentColor = Dim)
+                ) {
+                    Text("RESET", fontFamily = ShareTechMono, fontSize = 12.sp)
                 }
                 Button(
                     onClick = {
@@ -402,6 +438,7 @@ private fun SettingsSwitchRow(label: String, checked: Boolean, onCheckedChange: 
 @Composable
 fun SegmentedPicker(options: List<String>, selected: String, onSelect: (String) -> Unit) {
     val pickerAccent = LocalThemeAccent.current
+    val haptic = LocalHapticFeedback.current
     Row(
         Modifier
             .background(Brd, RoundedCornerShape(6.dp))
@@ -416,7 +453,7 @@ fun SegmentedPicker(options: List<String>, selected: String, onSelect: (String) 
                         if (isSelected) pickerAccent else Color.Transparent,
                         RoundedCornerShape(4.dp)
                     )
-                    .clickable { onSelect(option) }
+                    .clickable { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onSelect(option) }
                     .padding(horizontal = 10.dp, vertical = 5.dp),
                 contentAlignment = Alignment.Center
             ) {

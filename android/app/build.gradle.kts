@@ -4,6 +4,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.devtools.ksp")
 }
 
 // ── Release signing ───────────────────────────────────────────────────────────
@@ -114,7 +115,7 @@ android {
 
 dependencies {
     // ── Jetpack Compose (Phone UI) ──────────────────────────
-    val composeBom = platform("androidx.compose:compose-bom:2024.11.00")
+    val composeBom = platform("androidx.compose:compose-bom:2025.11.00")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
@@ -127,6 +128,12 @@ dependencies {
     // ── AndroidX Core ───────────────────────────────────────
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+
+    // ── Room (Session History) ──────────────────────────────
+    val roomVersion = "2.6.1"
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+    ksp("androidx.room:room-compiler:$roomVersion")
 
     // ── Trip Map ────────────────────────────────────────────
     implementation("org.osmdroid:osmdroid-android:6.1.18")

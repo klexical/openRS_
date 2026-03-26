@@ -19,6 +19,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -28,16 +30,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.EscStatus
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.service.CanDataService
 import com.openrs.dash.ui.trip.TripPage
+import androidx.compose.ui.platform.LocalContext
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ACTIVITY
@@ -70,9 +76,11 @@ class MainActivity : ComponentActivity() {
             val prefs       by UserPrefsStore.prefs.collectAsState()
             val debugLines  by OpenRSDashApp.instance.debugLines.collectAsState()
             val tripState   by OpenRSDashApp.instance.tripState.collectAsState()
-            var tab         by remember { mutableIntStateOf(0) }
+            val pagerState  = rememberPagerState(pageCount = { 6 })
+            val pagerScope  = rememberCoroutineScope()
             var settingsOpen    by remember { mutableStateOf(false) }
             var showTripOverlay by remember { mutableStateOf(false) }
+            var showCustomDash  by remember { mutableStateOf(false) }
             val snackbarHostState = remember { SnackbarHostState() }
 
             val view = LocalView.current
@@ -107,9 +115,17 @@ class MainActivity : ComponentActivity() {
                                         onReconnect  = { service?.reconnect() },
                                         onTrip       = { showTripOverlay = true }
                                     )
-                                    TabBar(tab, onSelect = { tab = it })
-                                    Box(Modifier.weight(1f)) {
-                                        when (tab) {
+                                    TabBar(pagerState.currentPage, onSelect = { page ->
+                                        pagerScope.launch { pagerState.animateScrollToPage(page) }
+                                    })
+                                    ConnectionBanner(vs)
+                                    HorizontalPager(
+                                        state = pagerState,
+                                        modifier = Modifier.weight(1f),
+                                        beyondViewportPageCount = 0,
+                                        key = { it }
+                                    ) { page ->
+                                        when (page) {
                                             0 -> DashPage(vs, prefs)
                                             1 -> PowerPage(vs, prefs)
                                             2 -> ChassisPage(vs, prefs, onReset = { service?.resetPeaks() })
@@ -125,7 +141,7 @@ class MainActivity : ComponentActivity() {
                                                     q
                                                 }
                                             )
-                                            5 -> MorePage(vs, prefs, snackbarHostState, onSettings = { settingsOpen = true })
+                                            5 -> MorePage(vs, prefs, snackbarHostState, onSettings = { settingsOpen = true }, onCustomDash = { showCustomDash = true })
                                         }
                                     }
                                 }
@@ -148,6 +164,18 @@ class MainActivity : ComponentActivity() {
                                 onStartTrip  = { OpenRSDashApp.instance.tripRecorder.startTrip() },
                                 onEndTrip    = { OpenRSDashApp.instance.tripRecorder.stopTrip() },
                                 onDismiss    = { showTripOverlay = false }
+                            )
+                        }
+
+                        AnimatedVisibility(
+                            visible = showCustomDash,
+                            enter   = slideInVertically(initialOffsetY = { it }),
+                            exit    = slideOutVertically(targetOffsetY = { it })
+                        ) {
+                            CustomDashPage(
+                                vehicleState = vs,
+                                prefs        = prefs,
+                                onDismiss    = { showCustomDash = false }
                             )
                         }
                     }
@@ -315,6 +343,7 @@ class MainActivity : ComponentActivity() {
 // ═══════════════════════════════════════════════════════════════════════════
 @Composable fun TabBar(selected: Int, onSelect: (Int) -> Unit) {
     val accent = LocalThemeAccent.current
+    val haptic = LocalHapticFeedback.current
     val tabs = listOf(
         "⚡" to "DASH",
         "◈" to "POWER",
@@ -333,7 +362,7 @@ class MainActivity : ComponentActivity() {
             val isActive = i == selected
             Box(
                 Modifier.weight(1f).fillMaxHeight()
-                    .clickable { onSelect(i) }
+                    .clickable { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onSelect(i) }
                     .background(if (isActive) accent.copy(alpha = 0.05f) else androidx.compose.ui.graphics.Color.Transparent),
                 contentAlignment = Alignment.Center
             ) {
@@ -358,6 +387,52 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CONNECTION BANNER — contextual disconnected state
+// ═══════════════════════════════════════════════════════════════════════════
+@Composable
+private fun ConnectionBanner(vs: VehicleState) {
+    val ctx = LocalContext.current
+    var dismissed by remember { mutableStateOf(false) }
+
+    // Reset dismissed state when connection succeeds
+    LaunchedEffect(vs.isConnected) {
+        if (vs.isConnected) dismissed = false
+    }
+
+    val adapterType = AppSettings.getAdapterType(ctx)
+    val host = AppSettings.getHost(ctx)
+    val port = AppSettings.getPort(ctx)
+    val adapterLabel = if (adapterType == "MEATPI") "MeatPi Pro" else "WiCAN"
+
+    AnimatedVisibility(
+        visible = !vs.isConnected && !dismissed,
+        enter = expandVertically() + fadeIn(),
+        exit  = shrinkVertically() + fadeOut()
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 6.dp)
+                .background(Orange.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+                .border(1.dp, Orange.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+                .padding(horizontal = 10.dp, vertical = 8.dp)
+        ) {
+            MonoLabel(
+                "$adapterLabel  —  $host:$port  —  DISCONNECTED",
+                9.sp, Orange, letterSpacing = 0.1.sp,
+                modifier = Modifier.align(Alignment.CenterStart).padding(end = 24.dp)
+            )
+            MonoLabel(
+                "\u2715", 12.sp, Dim,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .clickable { dismissed = true }
+            )
         }
     }
 }

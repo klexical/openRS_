@@ -16,10 +16,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,7 +30,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -53,6 +57,7 @@ fun DidProberSection(
     val ctx = LocalContext.current
     val accent = LocalThemeAccent.current
     val scope = rememberCoroutineScope()
+    val clipboardManager = LocalClipboardManager.current
 
     var catalogData by remember { mutableStateOf(ForscanCatalog.catalog) }
     LaunchedEffect(Unit) {
@@ -71,6 +76,7 @@ fun DidProberSection(
     var cancelled by remember { mutableStateOf(false) }
     var progress by remember { mutableIntStateOf(0) }
     var total by remember { mutableIntStateOf(0) }
+    var probeStartMs by remember { mutableLongStateOf(0L) }
     val results = remember { mutableStateListOf<ProbeEntry>() }
     var expanded by remember { mutableStateOf(false) }
 
@@ -144,6 +150,7 @@ fun DidProberSection(
                         cancelled = false
                         results.clear()
                         progress = 0
+                        probeStartMs = System.currentTimeMillis()
 
                         val dids = generateCandidateDids(selectedModule)
                         total = dids.size
@@ -181,7 +188,18 @@ fun DidProberSection(
             ) {
                 MonoLabel(
                     when {
-                        probing -> "PROBING $progress / $total ..."
+                        probing -> {
+                            val eta = if (progress > 0) {
+                                val elapsed = System.currentTimeMillis() - probeStartMs
+                                val avgPerProbe = elapsed / progress
+                                val remainingMs = avgPerProbe * (total - progress)
+                                val remainingSec = (remainingMs / 1000).toInt()
+                                if (remainingSec >= 60) "~${remainingSec / 60} min"
+                                else "~${remainingSec} sec"
+                            } else ""
+                            if (eta.isNotEmpty()) "PROBING $progress / $total — $eta"
+                            else "PROBING $progress / $total ..."
+                        }
                         !vs.isConnected -> "CONNECT TO PROBE"
                         else -> "▶  PROBE ${selectedModule.id}"
                     },
@@ -274,6 +292,36 @@ fun DidProberSection(
                     }
                 }
             }
+
+            if (!probing) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(accent.copy(0.12f), RoundedCornerShape(8.dp))
+                        .border(1.dp, accent.copy(0.35f), RoundedCornerShape(8.dp))
+                        .clickable {
+                            val tsv = buildString {
+                                appendLine("DID\tSTATUS\tRESPONSE")
+                                results.sortedWith(
+                                    compareByDescending<ProbeEntry> { it.status == "FOUND" }
+                                        .thenBy { it.did }
+                                ).forEach { entry ->
+                                    val didHex = "0x%04X".format(entry.did)
+                                    val resp = entry.responseHex.ifEmpty { "\u2014" }
+                                    appendLine("$didHex\t${entry.status}\t$resp")
+                                }
+                            }
+                            clipboardManager.setText(AnnotatedString(tsv))
+                            Toast
+                                .makeText(ctx, "Copied ${results.size} results to clipboard", Toast.LENGTH_SHORT)
+                                .show()
+                        }
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    MonoLabel("EXPORT", 10.sp, accent, letterSpacing = 0.08.sp)
+                }
+            }
         }
     }
 
@@ -342,9 +390,25 @@ private fun classifyResponse(did: Int, data: ByteArray?): ProbeEntry {
             data.drop(4).joinToString(" ") { "%02X".format(it) }
         )
         0x7F -> {
-            val nrc = if (data.size > 3) "%02X".format(data[3].toInt() and 0xFF) else "??"
-            ProbeEntry(did, "NRC", "NRC=$nrc")
+            val code = if (data.size > 3) data[3].toInt() and 0xFF else null
+            val label = if (code != null) "NRC 0x%02X — %s".format(code, nrcLabel(code)) else "NRC ??"
+            ProbeEntry(did, "NRC", label)
         }
         else -> ProbeEntry(did, "TIMEOUT", data.joinToString(" ") { "%02X".format(it) })
     }
+}
+
+private fun nrcLabel(code: Int): String = when (code) {
+    0x10 -> "general reject"
+    0x11 -> "service not supported"
+    0x12 -> "sub-function not supported"
+    0x13 -> "incorrect message length"
+    0x14 -> "response too long"
+    0x22 -> "conditions not correct"
+    0x31 -> "request out of range"
+    0x33 -> "security access denied"
+    0x35 -> "invalid key"
+    0x72 -> "general programming failure"
+    0x78 -> "request correctly received, response pending"
+    else -> "NRC 0x%02X".format(code)
 }

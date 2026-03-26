@@ -78,7 +78,7 @@ object ObdResponseParser {
      * Parse a reassembled multi-frame BCM response (ISO-TP payload without PCI byte).
      *
      * Used for DID 0x280B "last received TPMS sensor" which returns 12 bytes:
-     *   [0x62] [DID hi] [DID lo] [ID0..ID3] [press_hi] [press_lo] [temp] [status] [checksum]
+     *   {0x62} {DID hi} {DID lo} {ID0..ID3} {press_hi} {press_lo} {temp} {status} {checksum}
      *
      * The 4-byte sensor ID is matched against the stored per-tire IDs from
      * 0x280F-0x2812 to determine which tire position the data belongs to.

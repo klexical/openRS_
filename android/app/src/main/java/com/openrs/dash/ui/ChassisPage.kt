@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -33,8 +34,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.data.VehicleState
+import com.openrs.dash.ui.anim.CarDiagram
 import com.openrs.dash.ui.anim.GForcePlot
 import com.openrs.dash.ui.anim.RingBuffer
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -168,11 +171,15 @@ import kotlin.math.roundToInt
         SectionLabel("G-FORCE & DYNAMICS")
 
         // G-Force dot plot
+        val gPlotModifier = if (isWideLayout())
+            Modifier.fillMaxWidth().aspectRatio(1f).heightIn(max = 280.dp).padding(8.dp)
+        else
+            Modifier.fillMaxWidth().aspectRatio(1f).padding(8.dp)
         GForcePlot(
             lateralG = animLatG,
             longitudinalG = animLonG,
             trail = gTrail.toList(),
-            modifier = Modifier.fillMaxWidth().aspectRatio(1f).padding(8.dp),
+            modifier = gPlotModifier,
             dotColor = accent
         )
 
@@ -226,17 +233,23 @@ import kotlin.math.roundToInt
             }
         } else {
             val lowThreshold = p.tireLowPsi.toDouble()
+            val deltaLF = tpmsDeltaText(vs.tirePressLF, vs.tireStartLF)
+            val deltaRF = tpmsDeltaText(vs.tirePressRF, vs.tireStartRF)
+            val deltaLR = tpmsDeltaText(vs.tirePressLR, vs.tireStartLR)
+            val deltaRR = tpmsDeltaText(vs.tirePressRR, vs.tireStartRR)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TireCard("LF", vs.tirePressLF, p, lowThreshold, vs.tireTempLF)
-                    TireCard("LR", vs.tirePressLR, p, lowThreshold, vs.tireTempLR)
+                    TireCard("LF", vs.tirePressLF, p, lowThreshold, vs.tireTempLF, deltaLF)
+                    TireCard("LR", vs.tirePressLR, p, lowThreshold, vs.tireTempLR, deltaLR)
                 }
-                Box(Modifier.width(60.dp), contentAlignment = Alignment.Center) {
-                    FocusRsOutline(compact = true)
-                }
+                CarDiagram(
+                    vs = vs,
+                    prefs = p,
+                    modifier = Modifier.width(120.dp).aspectRatio(0.6f)
+                )
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TireCard("RF", vs.tirePressRF, p, lowThreshold, vs.tireTempRF)
-                    TireCard("RR", vs.tirePressRR, p, lowThreshold, vs.tireTempRR)
+                    TireCard("RF", vs.tirePressRF, p, lowThreshold, vs.tireTempRF, deltaRF)
+                    TireCard("RR", vs.tirePressRR, p, lowThreshold, vs.tireTempRR, deltaRR)
                 }
             }
             if (hasTempData) {
@@ -295,4 +308,13 @@ import kotlin.math.roundToInt
         Box(Modifier.size(5.dp).background(color, CircleShape))
         MonoLabel(label, 7.sp, color)
     }
+}
+
+/** Formats a TPMS delta string with arrow prefix. Returns "" when delta is below threshold or data is missing. */
+private fun tpmsDeltaText(currentPsi: Double, startPsi: Double): String {
+    if (startPsi < 0 || currentPsi <= 0) return ""
+    val delta = currentPsi - startPsi
+    if (abs(delta) <= 0.5) return ""
+    return if (delta > 0) "\u25B2 +${"%.1f".format(delta)}"
+    else "\u25BC ${"%.1f".format(delta)}"
 }

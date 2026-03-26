@@ -2,6 +2,10 @@ package com.openrs.dash.ui
 
 import android.content.Context
 import androidx.core.content.edit
+import com.openrs.dash.data.DashCell
+import com.openrs.dash.data.DashLayout
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Thin SharedPreferences wrapper for all user-configurable app settings.
@@ -77,6 +81,9 @@ object AppSettings {
 
     // ── Odometer display ──────────────────────────────────────────────────
     const val KEY_ODOM_IN_MILES = "odom_in_miles"
+
+    // ── Custom dashboard ────────────────────────────────────────────────
+    const val KEY_CUSTOM_DASH = "custom_dash_json"
 
     // ── Read helpers ────────────────────────────────────────────────────────
 
@@ -197,6 +204,45 @@ object AppSettings {
         meatPiMicroSdLog     = getMeatPiMicroSd(ctx),
         odomInMiles          = getOdomInMiles(ctx)
     )
+
+    // ── Custom dashboard persistence ────────────────────────────────────
+
+    /** Serialize a [DashLayout] to JSON and persist to SharedPreferences. */
+    fun saveCustomDash(ctx: Context, layout: DashLayout) {
+        val arr = JSONArray()
+        for (cell in layout.cells) {
+            val obj = JSONObject()
+            obj.put("fieldKey", cell.fieldKey)
+            obj.put("displayType", cell.displayType)
+            obj.put("label", cell.label)
+            arr.put(obj)
+        }
+        val root = JSONObject()
+        root.put("name", layout.name)
+        root.put("cells", arr)
+        prefs(ctx).edit { putString(KEY_CUSTOM_DASH, root.toString()) }
+    }
+
+    /** Load the persisted custom dashboard layout, or null if none saved. */
+    fun loadCustomDash(ctx: Context): DashLayout? {
+        val json = prefs(ctx).getString(KEY_CUSTOM_DASH, null) ?: return null
+        return try {
+            val root = JSONObject(json)
+            val arr = root.getJSONArray("cells")
+            val cells = mutableListOf<DashCell>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                cells += DashCell(
+                    fieldKey = obj.getString("fieldKey"),
+                    displayType = obj.getString("displayType"),
+                    label = obj.getString("label")
+                )
+            }
+            DashLayout(name = root.optString("name", "Custom"), cells = cells)
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     private fun prefs(ctx: Context) =
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

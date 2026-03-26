@@ -8,6 +8,11 @@
 -keep class com.openrs.dash.data.EscStatus { *; }
 
 
+# Room entities (session history database)
+-keep class com.openrs.dash.data.SessionEntity { *; }
+-keep class com.openrs.dash.data.SnapshotEntity { *; }
+-keep class com.openrs.dash.data.SessionDatabase { *; }
+
 # Kotlin coroutines
 -dontwarn kotlinx.coroutines.**
 -keep class kotlinx.coroutines.** { *; }

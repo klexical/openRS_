@@ -543,7 +543,7 @@ class ObdResponseParserTest {
 
     /**
      * Build a reassembled ISO-TP payload for DID 0x280B.
-     * Layout: [0x62] [DID hi] [DID lo] [ID0..ID3] [press_hi] [press_lo] [temp] [status]
+     * Layout: {0x62} {DID hi} {DID lo} {ID0..ID3} {press_hi} {press_lo} {temp} {status}
      * Total 11 bytes minimum.
      */
     private fun make280BPayload(

@@ -1,11 +1,14 @@
 package com.openrs.dash.ui
 
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,7 +30,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -261,6 +266,7 @@ private fun ModuleRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PidRow(
     pid: com.openrs.dash.data.ForscanPid,
@@ -268,10 +274,27 @@ private fun PidRow(
 ) {
     val isMonitored = pid.status == "monitored"
     val hasUnit = pid.unit.isNotEmpty()
-    Row(
+    val hasDid = pid.did.isNotEmpty()
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
+    val rowModifier = if (hasDid) {
         Modifier
             .fillMaxWidth()
-            .padding(vertical = 3.dp),
+            .combinedClickable(
+                onClick = {},
+                onLongClick = {
+                    clipboardManager.setText(AnnotatedString(pid.did))
+                    Toast.makeText(context, "Copied ${pid.did}", Toast.LENGTH_SHORT).show()
+                }
+            )
+            .padding(vertical = 3.dp)
+    } else {
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp)
+    }
+    Row(
+        rowModifier,
         verticalAlignment = Alignment.Top
     ) {
         MonoLabel(

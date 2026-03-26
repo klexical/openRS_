@@ -20,7 +20,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,22 +35,34 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.can.BusyException
 import com.openrs.dash.can.FirmwareApi
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.EscStatus
+import com.openrs.dash.data.SessionDatabase
+import com.openrs.dash.data.SessionEntity
+import com.openrs.dash.data.SnapshotEntity
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticExporter
 import com.openrs.dash.diagnostics.DiagnosticLogger
+import com.openrs.dash.service.HudOverlayService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MORE PAGE
@@ -55,12 +71,14 @@ import kotlinx.coroutines.withContext
     vs: VehicleState,
     p: UserPrefs,
     snackbarHostState: SnackbarHostState,
-    onSettings: () -> Unit
+    onSettings: () -> Unit,
+    onCustomDash: () -> Unit = {}
 ) {
     val isFw   by OpenRSDashApp.instance.isOpenRsFirmware.collectAsState()
     val fwLabel by OpenRSDashApp.instance.firmwareVersionLabel.collectAsState()
     val scope  = rememberCoroutineScope()
     val ctx    = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     var exporting by remember { mutableStateOf(false) }
     val accent = LocalThemeAccent.current
     val canControl = isFw && vs.isConnected
@@ -102,6 +120,7 @@ import kotlinx.coroutines.withContext
                                     RoundedCornerShape(10.dp)
                                 )
                                 .clickable(enabled = canControl && !isActive && pendingDriveMode == null) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
                                     pendingDriveMode = mode
                                     scope.launch {
                                         DiagnosticLogger.event("DM_CMD",
@@ -185,6 +204,7 @@ import kotlinx.coroutines.withContext
                                     RoundedCornerShape(10.dp)
                                 )
                                 .clickable(enabled = canControl && !isActive) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
                                     pendingEsc = status
                                     scope.launch {
                                         DiagnosticLogger.event("ESC_CMD",
@@ -350,6 +370,41 @@ import kotlinx.coroutines.withContext
 
         HorizontalDivider(color = Brd)
 
+        // ── Custom Dashboard ──────────────────────────────────────────────
+        MoreSection("CUSTOM DASHBOARD") {
+            val savedLayout = remember { AppSettings.loadCustomDash(ctx) }
+            val gaugeCount = savedLayout?.cells?.size ?: 0
+            Box(
+                Modifier.fillMaxWidth()
+                    .background(
+                        Brush.horizontalGradient(listOf(accent.copy(0.1f), accent.copy(0.05f))),
+                        RoundedCornerShape(10.dp)
+                    )
+                    .border(1.dp, accent.copy(0.3f), RoundedCornerShape(10.dp))
+                    .clickable { onCustomDash() }
+                    .padding(horizontal = 14.dp, vertical = 13.dp)
+            ) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        UIText("Open Custom Dashboard", 12.sp, Frost, FontWeight.SemiBold)
+                        Spacer(Modifier.height(2.dp))
+                        MonoLabel(
+                            if (gaugeCount > 0) "$gaugeCount gauges configured"
+                            else "Build a custom gauge layout",
+                            9.sp, Dim
+                        )
+                    }
+                    MonoLabel("\u25B6 OPEN", 10.sp, accent, letterSpacing = 0.1.sp)
+                }
+            }
+        }
+
+        HorizontalDivider(color = Brd)
+
         // ── Connection & Diagnostics ─────────────────────────────────────
         MoreSection("CONNECTION & DIAGNOSTICS") {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -384,8 +439,62 @@ import kotlinx.coroutines.withContext
 
         HorizontalDivider(color = Brd)
 
+        // ── Session History ────────────────────────────────────────────────
+        SessionHistorySection()
+
+        HorizontalDivider(color = Brd)
+
         // ── Display Settings ─────────────────────────────────────────────
         MoreSection("DISPLAY SETTINGS") {
+            // ── Floating HUD toggle ──────────────────────────────────────
+            var hudRunning by remember { mutableStateOf(false) }
+            Box(
+                Modifier.fillMaxWidth()
+                    .background(
+                        if (hudRunning) Ok.copy(alpha = 0.06f) else Surf2,
+                        RoundedCornerShape(10.dp)
+                    )
+                    .border(
+                        1.dp,
+                        if (hudRunning) Ok.copy(alpha = 0.3f) else Brd,
+                        RoundedCornerShape(10.dp)
+                    )
+                    .clickable {
+                        if (hudRunning) {
+                            ctx.stopService(Intent(ctx, HudOverlayService::class.java))
+                            hudRunning = false
+                        } else {
+                            if (!Settings.canDrawOverlays(ctx)) {
+                                val intent = Intent(
+                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:${ctx.packageName}")
+                                )
+                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                ctx.startActivity(intent)
+                            } else {
+                                ctx.startService(Intent(ctx, HudOverlayService::class.java))
+                                hudRunning = true
+                            }
+                        }
+                    }
+                    .padding(horizontal = 14.dp, vertical = 13.dp)
+            ) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Column {
+                        UIText("Floating HUD", 12.sp, Frost, FontWeight.SemiBold)
+                        Spacer(Modifier.height(2.dp))
+                        MonoLabel("Boost, RPM & oil temp overlay for track days", 9.sp, Dim)
+                    }
+                    MonoLabel(
+                        if (hudRunning) "\u25CF ON" else "\u25CB OFF",
+                        10.sp,
+                        if (hudRunning) Ok else Dim,
+                        letterSpacing = 0.1.sp
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            // ── Settings button ──────────────────────────────────────────
             Box(
                 Modifier.fillMaxWidth()
                     .background(Surf2, RoundedCornerShape(10.dp))
@@ -454,4 +563,221 @@ import kotlinx.coroutines.withContext
         MonoLabel(name, 8.sp, if (isActive) color else Dim, letterSpacing = 0.1.sp,
             modifier = Modifier.fillMaxWidth(), fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal)
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SESSION HISTORY
+// ═══════════════════════════════════════════════════════════════════════════
+
+private val sessionDateFormat = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
+
+@Composable fun SessionHistorySection() {
+    val ctx = LocalContext.current
+    val accent = LocalThemeAccent.current
+    val prefs by UserPrefsStore.prefs.collectAsState()
+    var sessions by remember { mutableStateOf<List<SessionEntity>>(emptyList()) }
+    var expandedId by remember { mutableStateOf<Long?>(null) }
+    var snapshots by remember { mutableStateOf<List<SnapshotEntity>>(emptyList()) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            sessions = SessionDatabase.getInstance(ctx).sessionDao().getRecentSessions(10)
+        }
+    }
+
+    MoreSection("SESSION HISTORY") {
+        if (sessions.isEmpty()) {
+            Box(
+                Modifier.fillMaxWidth()
+                    .background(Surf2, RoundedCornerShape(10.dp))
+                    .border(1.dp, Brd, RoundedCornerShape(10.dp))
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                MonoLabel("No sessions recorded yet", 10.sp, Dim)
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                sessions.forEach { session ->
+                    val isExpanded = expandedId == session.id
+                    SessionCard(
+                        session = session,
+                        prefs = prefs,
+                        isExpanded = isExpanded,
+                        snapshots = if (isExpanded) snapshots else emptyList(),
+                        onToggle = {
+                            if (isExpanded) {
+                                expandedId = null
+                                snapshots = emptyList()
+                            } else {
+                                expandedId = session.id
+                                scope.launch(Dispatchers.IO) {
+                                    val loaded = SessionDatabase.getInstance(ctx)
+                                        .sessionDao().getSnapshots(session.id)
+                                    withContext(Dispatchers.Main) { snapshots = loaded }
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        MonoLabel("Last 10 sessions. Auto-pruned after 30 days.", 9.sp, Dim)
+    }
+}
+
+@Composable private fun SessionCard(
+    session: SessionEntity,
+    prefs: UserPrefs,
+    isExpanded: Boolean,
+    snapshots: List<SnapshotEntity>,
+    onToggle: () -> Unit
+) {
+    val accent = LocalThemeAccent.current
+    val dateStr = sessionDateFormat.format(Date(session.startTime))
+    val durationMs = if (session.endTime > 0) session.endTime - session.startTime else 0L
+    val durationStr = formatSessionDuration(durationMs)
+    val isActive = session.endTime == 0L
+
+    Column(
+        Modifier.fillMaxWidth()
+            .background(Surf2, RoundedCornerShape(10.dp))
+            .border(1.dp, if (isActive) accent.copy(0.4f) else Brd, RoundedCornerShape(10.dp))
+            .clickable { onToggle() }
+            .padding(12.dp)
+    ) {
+        // Header row: date + duration
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                MonoLabel(dateStr, 10.sp, Frost, FontWeight.SemiBold)
+                if (isActive) {
+                    MonoLabel("LIVE", 8.sp, Ok, FontWeight.Bold, letterSpacing = 0.1.sp)
+                }
+            }
+            MonoLabel(
+                if (isActive) "active" else durationStr,
+                9.sp,
+                if (isActive) accent else Dim
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+
+        // Peak metrics row
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            SessionMetric(
+                label = "RPM",
+                value = if (session.peakRpm > 0) "${session.peakRpm.toInt()}" else "--",
+                modifier = Modifier.weight(1f)
+            )
+            SessionMetric(
+                label = "BOOST",
+                value = if (session.peakBoostPsi > 0) String.format("%.1f", session.peakBoostPsi)
+                        else "--",
+                unit = "PSI",
+                modifier = Modifier.weight(1f)
+            )
+            SessionMetric(
+                label = "SPEED",
+                value = if (session.peakSpeedKph > 0) {
+                    val speed = if (prefs.speedUnit == "MPH")
+                        session.peakSpeedKph * 0.621371 else session.peakSpeedKph
+                    "${speed.toInt()}"
+                } else "--",
+                unit = prefs.speedLabel,
+                modifier = Modifier.weight(1f)
+            )
+            SessionMetric(
+                label = "OIL",
+                value = if (session.peakOilTempC > -90) {
+                    prefs.displayTemp(session.peakOilTempC)
+                } else "--",
+                unit = prefs.tempLabel,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        // Expanded: snapshot summary
+        AnimatedVisibility(
+            visible = isExpanded,
+            enter = expandVertically(),
+            exit = shrinkVertically()
+        ) {
+            Column(Modifier.padding(top = 10.dp)) {
+                if (snapshots.isEmpty()) {
+                    MonoLabel("No snapshots in this session", 9.sp, Dim)
+                } else {
+                    Box(
+                        Modifier.fillMaxWidth().height(1.dp).background(Brd)
+                    )
+                    Spacer(Modifier.height(8.dp))
+
+                    // Summary stats from snapshots
+                    val avgRpm = snapshots.map { it.rpm }.average()
+                    val maxRpm = snapshots.maxOf { it.rpm }
+                    val avgSpeed = snapshots.map { it.speedKph }.average()
+                    val maxThrottle = snapshots.maxOf { it.throttlePct }
+
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        SessionMetric("AVG RPM", "${avgRpm.toInt()}", modifier = Modifier.weight(1f))
+                        SessionMetric("MAX RPM", "${maxRpm.toInt()}", modifier = Modifier.weight(1f))
+                        SessionMetric(
+                            "AVG SPEED",
+                            if (prefs.speedUnit == "MPH") "${(avgSpeed * 0.621371).toInt()}"
+                            else "${avgSpeed.toInt()}",
+                            unit = prefs.speedLabel,
+                            modifier = Modifier.weight(1f)
+                        )
+                        SessionMetric("THROTTLE", "${maxThrottle.toInt()}%", modifier = Modifier.weight(1f))
+                    }
+
+                    Spacer(Modifier.height(6.dp))
+                    MonoLabel(
+                        "${snapshots.size} snapshots \u00B7 ${session.totalFrames} CAN frames",
+                        8.sp, Dim
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable private fun SessionMetric(
+    label: String,
+    value: String,
+    unit: String = "",
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier
+            .background(Surf, RoundedCornerShape(6.dp))
+            .border(1.dp, Brd, RoundedCornerShape(6.dp))
+            .padding(horizontal = 6.dp, vertical = 5.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        MonoLabel(label, 7.sp, Dim, letterSpacing = 0.12.sp)
+        Spacer(Modifier.height(2.dp))
+        MonoText(value, 12.sp, Frost)
+        if (unit.isNotEmpty()) {
+            MonoLabel(unit, 7.sp, Dim)
+        }
+    }
+}
+
+private fun formatSessionDuration(ms: Long): String {
+    if (ms <= 0) return "--"
+    val totalSec = ms / 1000
+    val h = totalSec / 3600
+    val m = (totalSec % 3600) / 60
+    val s = totalSec % 60
+    return if (h > 0) String.format("%dh %02dm", h, m)
+           else String.format("%dm %02ds", m, s)
 }

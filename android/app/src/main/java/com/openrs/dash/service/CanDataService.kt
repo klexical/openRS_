@@ -20,6 +20,9 @@ import com.openrs.dash.can.MeatPiConnection
 import com.openrs.dash.can.PidRegistry
 import com.openrs.dash.can.WiCanConnection
 import com.openrs.dash.data.DtcResult
+import com.openrs.dash.data.SessionDatabase
+import com.openrs.dash.data.SessionEntity
+import com.openrs.dash.data.SnapshotEntity
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticLogger
 import com.openrs.dash.diagnostics.DtcScanner
@@ -43,6 +46,12 @@ class CanDataService : Service() {
 
     private val cm by lazy { getSystemService(ConnectivityManager::class.java) }
     private var wifiCallback: ConnectivityManager.NetworkCallback? = null
+
+    // ── Session History ──────────────────────────────────────────────────────
+    private val sessionDb by lazy { SessionDatabase.getInstance(this) }
+    private var currentSessionId: Long = -1L
+    private var snapshotJob: Job? = null
+    private var sessionFrameCount: Long = 0L
 
     private fun buildWiCan(): WiCanConnection {
         val s = AppSettings
@@ -213,6 +222,82 @@ class CanDataService : Service() {
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
     }
 
+    // ── Session History helpers ─────────────────────────────────────────────
+
+    private fun startSessionRecording() {
+        scope.launch(Dispatchers.IO) {
+            // Prune sessions older than 30 days
+            val cutoff = System.currentTimeMillis() - 30L * 24 * 60 * 60 * 1000
+            try {
+                sessionDb.sessionDao().deleteOldSnapshots(cutoff)
+                sessionDb.sessionDao().deleteOldSessions(cutoff)
+            } catch (e: Exception) {
+                android.util.Log.w("CAN", "Session prune failed", e)
+            }
+
+            // Create a new session
+            val session = SessionEntity(startTime = System.currentTimeMillis())
+            currentSessionId = sessionDb.sessionDao().insertSession(session)
+            sessionFrameCount = 0L
+            android.util.Log.d("CAN", "Session $currentSessionId started")
+
+            // Start periodic snapshots every 5 seconds
+            snapshotJob = scope.launch(Dispatchers.IO) {
+                while (isActive) {
+                    delay(5_000L)
+                    val sid = currentSessionId
+                    if (sid < 0) continue
+                    val vs = OpenRSDashApp.instance.vehicleState.value
+                    if (!vs.isConnected) continue
+                    try {
+                        sessionDb.sessionDao().insertSnapshot(
+                            SnapshotEntity(
+                                sessionId  = sid,
+                                timestamp  = System.currentTimeMillis(),
+                                rpm        = vs.rpm,
+                                speedKph   = vs.speedKph,
+                                boostKpa   = vs.boostKpa,
+                                oilTempC   = vs.oilTempC,
+                                coolantTempC = vs.coolantTempC,
+                                throttlePct = vs.throttlePct
+                            )
+                        )
+                    } catch (e: Exception) {
+                        android.util.Log.w("CAN", "Snapshot insert failed", e)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun stopSessionRecording() {
+        snapshotJob?.cancel()
+        snapshotJob = null
+        val sid = currentSessionId
+        if (sid < 0) return
+        currentSessionId = -1L
+        scope.launch(Dispatchers.IO) {
+            try {
+                val vs = OpenRSDashApp.instance.vehicleState.value
+                val existing = sessionDb.sessionDao().getSession(sid) ?: return@launch
+                sessionDb.sessionDao().updateSession(
+                    existing.copy(
+                        endTime        = System.currentTimeMillis(),
+                        peakRpm        = vs.peakRpm,
+                        peakBoostPsi   = vs.peakBoostPsi,
+                        peakOilTempC   = vs.peakOilTempC,
+                        peakCoolantTempC = vs.peakCoolantTempC,
+                        peakSpeedKph   = vs.peakSpeedKph,
+                        totalFrames    = sessionFrameCount
+                    )
+                )
+                android.util.Log.d("CAN", "Session $sid ended (${sessionFrameCount} frames)")
+            } catch (e: Exception) {
+                android.util.Log.w("CAN", "Session end failed", e)
+            }
+        }
+    }
+
     // ── Connection control ───────────────────────────────────────────────────
 
     @Synchronized fun startConnection() {
@@ -229,6 +314,7 @@ class CanDataService : Service() {
             logDir = java.io.File(filesDir, "diagnostics")
         )
         CanDecoder.resetSessionState()
+        startSessionRecording()
 
         if (isMeatPi) {
             meatpi = buildMeatPi()
@@ -381,6 +467,7 @@ class CanDataService : Service() {
     }
 
     private fun processCanFrame(canId: Int, data: ByteArray, fps: Double) {
+        sessionFrameCount++
         // C-3 fix: use .update{} so concurrent OBD writes are never clobbered
         OpenRSDashApp.instance.vehicleState.update { current ->
             val updated = CanDecoder.decode(canId, data, current)
@@ -397,6 +484,7 @@ class CanDataService : Service() {
     }
 
     @Synchronized fun stopConnection() {
+        stopSessionRecording()
         DiagnosticLogger.sessionEnd()
         connectionJob?.cancel()
         connectionJob = null
