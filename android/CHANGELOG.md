@@ -79,6 +79,13 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **TPMS displayed −40°C during sensor initialisation** — `ObdResponseParser.parseBcmReassembled()` accepted raw temp byte `0x00` as valid, which decoded to −40°C via the standard offset. Now discards `0x00` as an uninitialised sensor reading. Also removed the `< -40` floor from the range check since the offset formula cannot produce values below −40°C. ([#130](https://github.com/klexical/openRS_/issues/130))
 - **BCM 0x280B tire temperature unit tests** — 5 new tests covering valid temp decode, uninitialised `0x00` discard, stale status discard, unknown sensor ID rejection, and short payload handling.
 
+### Fixed (rc.6 — polarity re-correction + probe export)
+- **Sport/Track 0x420 polarity re-corrected** — rc.5's polarity fix was still backwards. SLCAN log analysis (2026-03-25 drive session) definitively proves `0x11CC` (bit0=0) = Sport and `0x11CD` (bit0=1) = Track. The app now displays the correct mode. Default `modeDetail420` changed from `0x10CD` to `0x10CC`. Five drive mode unit tests updated to match.
+- **Drive mode CAN confirmation timeout bumped to 8s** — real-world SLCAN logs show the mode change CAN frame (`0x420`) arrives ~5.3s after the HTTP command, just exceeding the previous 5s window. Increased to 80 × 100ms = 8s in `MorePage.kt`.
+
+### Added (rc.6)
+- **DID probe results included in diagnostic ZIP export** — `DiagnosticLogger` now stores probe sessions; `DidProberSection` logs results after each scan completes. `DiagnosticExporter` writes a "DID PROBE RESULTS" section in the summary text and a `probeResults` array in the JSON detail file. Previously, probe results were ephemeral Compose state lost on navigation.
+
 ---
 
 ## [v2.2.4] — 2026-03-19
