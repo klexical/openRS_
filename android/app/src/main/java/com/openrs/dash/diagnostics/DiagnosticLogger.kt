@@ -92,6 +92,18 @@ object DiagnosticLogger {
 
     data class FpsPoint(val relMs: Long, val fps: Double)
 
+    /** A single DID probe result from the DID Prober. */
+    data class ProbeResult(val did: Int, val status: String, val responseHex: String)
+
+    /** One completed DID probe session (one module scan). */
+    data class ProbeSession(
+        val relMs: Long,
+        val module: String,
+        val requestId: Int,
+        val responseId: Int,
+        val results: List<ProbeResult>
+    )
+
     // ── Internal state ───────────────────────────────────────────────────────
 
     private val lock = Any()
@@ -100,6 +112,7 @@ object DiagnosticLogger {
     private val decodeTraceDeque   = ArrayDeque<TraceEvent>()
     private val sessionEventsDeque = ArrayDeque<SessionEvent>()
     private val fpsTimelineDeque   = ArrayDeque<FpsPoint>()
+    private val probeSessionsList  = mutableListOf<ProbeSession>()
 
     /** Tracks when we last took a periodic sample for each CAN ID (Option B). */
     private val lastSampleTimeMs = HashMap<Int, Long>()
@@ -125,6 +138,8 @@ object DiagnosticLogger {
         get() = synchronized(lock) { sessionEventsDeque.toList() }
     val fpsTimeline: List<FpsPoint>
         get() = synchronized(lock) { fpsTimelineDeque.toList() }
+    val probeSessions: List<ProbeSession>
+        get() = synchronized(lock) { probeSessionsList.toList() }
     val frameInventorySnapshot: Map<Int, FrameInfo>
         get() = synchronized(lock) {
             frameInventory.mapValues { (_, info) ->
@@ -173,6 +188,7 @@ object DiagnosticLogger {
             decodeTraceDeque.clear()
             sessionEventsDeque.clear()
             fpsTimelineDeque.clear()
+            probeSessionsList.clear()
             lastSampleTimeMs.clear()
 
             // Option C: open SLCAN log file
@@ -342,6 +358,23 @@ object DiagnosticLogger {
             // Flush to disk every 1 000 lines to limit data loss on crash
             if (slcanLinesWritten % 1_000L == 0L) w.flush()
         } catch (_: Exception) {}
+    }
+
+    // ── DID Probe results ────────────────────────────────────────────────────
+
+    fun recordProbeSession(
+        module: String,
+        requestId: Int,
+        responseId: Int,
+        results: List<ProbeResult>
+    ) {
+        synchronized(lock) {
+            probeSessionsList.add(
+                ProbeSession(relativeMs(), module, requestId, responseId, results)
+            )
+        }
+        val found = results.count { it.status == "FOUND" }
+        event("PROBE", "$module scan complete: ${results.size} probed, $found found")
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

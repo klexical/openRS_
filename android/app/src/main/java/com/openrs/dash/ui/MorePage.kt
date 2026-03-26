@@ -116,9 +116,9 @@ import kotlinx.coroutines.withContext
                                             snackbarHostState.showSnackbar(msg)
                                         } else {
                                             DiagnosticLogger.event("DM_CMD", "OK (HTTP 200)")
-                                            // Watch CAN for confirmation (up to 5s).
+                                            // Watch CAN for confirmation (up to 8s).
                                             var confirmed = false
-                                            for (i in 0 until 50) {
+                                            for (i in 0 until 80) {
                                                 delay(100)
                                                 if (vs.driveMode == mode) {
                                                     confirmed = true
@@ -127,7 +127,7 @@ import kotlinx.coroutines.withContext
                                             }
                                             if (!confirmed) {
                                                 DiagnosticLogger.event("DM_CMD",
-                                                    "No CAN confirmation after 5s (current=${vs.driveMode}, target=$mode)")
+                                                    "No CAN confirmation after 8s (current=${vs.driveMode}, target=$mode)")
                                                 snackbarHostState.showSnackbar(
                                                     "Mode change didn't take effect — try again")
                                             }

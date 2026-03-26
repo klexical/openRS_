@@ -32,6 +32,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.openrs.dash.diagnostics.DiagnosticLogger
 import com.openrs.dash.data.ForscanCatalog
 import com.openrs.dash.data.ForscanModule
 import com.openrs.dash.data.VehicleState
@@ -159,6 +160,17 @@ fun DidProberSection(
                                 kotlinx.coroutines.delay(100L)
                             }
                             probing = false
+                            // Log probe results for diagnostic export
+                            if (results.isNotEmpty()) {
+                                DiagnosticLogger.recordProbeSession(
+                                    module = selectedModule.id,
+                                    requestId = requestId,
+                                    responseId = responseId,
+                                    results = results.map {
+                                        DiagnosticLogger.ProbeResult(it.did, it.status, it.responseHex)
+                                    }
+                                )
+                            }
                         }
                     }
                     .padding(vertical = 12.dp),

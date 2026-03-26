@@ -556,6 +556,23 @@ object DiagnosticExporter {
             appendLine("  +${log.formatDuration(t.relMs)} | ${t.idHex} | ${t.rawHex.take(23).padEnd(23)} | ${t.decoded.take(35)}$issStr")
         }
         appendLine()
+        // ── DID probe results
+        val probes = log.probeSessions
+        if (probes.isNotEmpty()) {
+            appendLine("─── DID PROBE RESULTS (${probes.size} session${if (probes.size > 1) "s" else ""}) ──────────────────")
+            probes.forEach { ps ->
+                val found   = ps.results.count { it.status == "FOUND" }
+                val nrc     = ps.results.count { it.status == "NRC" }
+                val timeout = ps.results.count { it.status == "TIMEOUT" }
+                appendLine("  ${ps.module} (0x${"%03X".format(ps.requestId)}→0x${"%03X".format(ps.responseId)}) @ +${log.formatDuration(ps.relMs)}")
+                appendLine("    ${ps.results.size} probed — $found found, $nrc rejected, $timeout timeout")
+                ps.results.filter { it.status == "FOUND" }.forEach { r ->
+                    appendLine("    ✓ 0x${"%04X".format(r.did)}  ${r.responseHex}")
+                }
+            }
+            appendLine()
+        }
+
         appendLine("═══════════════════════════════════════════════════════════")
         appendLine("  END OF REPORT — full data in diagnostic_detail_$ts.json")
         if (slcanLines > 0) appendLine("  SLCAN log    — slcan_log_$ts.log  ($slcanLines frames)")
@@ -666,6 +683,29 @@ object DiagnosticExporter {
         evts.forEachIndexed { i, ev ->
             val c = if (i < evts.size - 1) "," else ""
             appendLine("    {\"relMs\": ${ev.relMs}, \"type\": \"${ev.type}\", \"message\": \"${ev.message.replace("\"", "'")}\"}$c")
+        }
+        appendLine("  ],")
+
+        // probeResults
+        appendLine("  \"probeResults\": [")
+        val probes = log.probeSessions
+        probes.forEachIndexed { pi, ps ->
+            val found = ps.results.count { it.status == "FOUND" }
+            appendLine("    {")
+            appendLine("      \"relMs\": ${ps.relMs},")
+            appendLine("      \"module\": \"${ps.module}\",")
+            appendLine("      \"requestId\": \"0x${"%03X".format(ps.requestId)}\",")
+            appendLine("      \"responseId\": \"0x${"%03X".format(ps.responseId)}\",")
+            appendLine("      \"totalProbed\": ${ps.results.size},")
+            appendLine("      \"found\": $found,")
+            appendLine("      \"results\": [")
+            ps.results.forEachIndexed { ri, r ->
+                val rc = if (ri < ps.results.size - 1) "," else ""
+                appendLine("        {\"did\": \"0x${"%04X".format(r.did)}\", \"status\": \"${r.status}\", \"response\": \"${r.responseHex.replace("\"", "'")}\"}$rc")
+            }
+            appendLine("      ]")
+            val pc = if (pi < probes.size - 1) "," else ""
+            appendLine("    }$pc")
         }
         appendLine("  ]")
 
