@@ -22,6 +22,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
@@ -62,14 +63,16 @@ import kotlin.math.roundToInt
     val thrSpark    = remember { SparklineData(60) }
     val brakeSpark  = remember { SparklineData(60) }
     val lastSample  = remember { mutableLongStateOf(0L) }
-    val now = vs.lastUpdate
-    if (now - lastSample.longValue >= 250L) {
-        lastSample.longValue = now
-        boostSpark.push(vs.boostKpa.toFloat())
-        rpmSpark.push(vs.rpm.toFloat())
-        speedSpark.push(vs.speedKph.toFloat())
-        thrSpark.push(thr.toFloat())
-        brakeSpark.push(vs.brakePressure.toFloat().coerceIn(0f, 100f))
+    SideEffect {
+        val now = vs.lastUpdate
+        if (now - lastSample.longValue >= 250L) {
+            lastSample.longValue = now
+            boostSpark.push(vs.boostKpa.toFloat())
+            rpmSpark.push(vs.rpm.toFloat())
+            speedSpark.push(vs.speedKph.toFloat())
+            thrSpark.push(thr.toFloat())
+            brakeSpark.push(vs.brakePressure.toFloat().coerceIn(0f, 100f))
+        }
     }
 
     // ── Formatted animated values ────────────────────────────────────────

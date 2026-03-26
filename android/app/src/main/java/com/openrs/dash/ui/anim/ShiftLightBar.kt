@@ -37,16 +37,19 @@ fun ShiftLightBar(
     segmentCount: Int = 18
 ) {
     val isRedline = rpm >= redlineRpm * 0.955f  // ~6500 RPM
-    val flashTransition = rememberInfiniteTransition(label = "shift")
-    val flashAlpha by flashTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 0.15f,
-        animationSpec = infiniteRepeatable(
-            tween(120, easing = LinearEasing),
-            RepeatMode.Reverse
-        ),
-        label = "shiftFlash"
-    )
+    val flashAlpha = if (isRedline) {
+        val flashTransition = rememberInfiniteTransition(label = "shift")
+        val alpha by flashTransition.animateFloat(
+            initialValue = 1f,
+            targetValue = 0.15f,
+            animationSpec = infiniteRepeatable(
+                tween(120, easing = LinearEasing),
+                RepeatMode.Reverse
+            ),
+            label = "shiftFlash"
+        )
+        alpha
+    } else 1f
 
     Row(
         modifier,

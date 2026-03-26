@@ -64,7 +64,8 @@ import kotlinx.coroutines.withContext
     var exporting by remember { mutableStateOf(false) }
     val accent = LocalThemeAccent.current
     val canControl = isFw && vs.isConnected
-    val host = remember { AppSettings.getHost(ctx) }
+    val prefs by UserPrefsStore.prefs.collectAsState()
+    val host = remember(prefs) { AppSettings.getHost(ctx) }
     var pendingDriveMode by remember { mutableStateOf<DriveMode?>(null) }
     var pendingEsc       by remember { mutableStateOf<EscStatus?>(null) }
 
@@ -117,17 +118,20 @@ import kotlinx.coroutines.withContext
                                         } else {
                                             DiagnosticLogger.event("DM_CMD", "OK (HTTP 200)")
                                             // Watch CAN for confirmation (up to 8s).
+                                            // Read live state each iteration — vs is an immutable snapshot.
                                             var confirmed = false
                                             for (i in 0 until 80) {
                                                 delay(100)
-                                                if (vs.driveMode == mode) {
+                                                val live = OpenRSDashApp.instance.vehicleState.value
+                                                if (live.driveMode == mode) {
                                                     confirmed = true
                                                     break
                                                 }
                                             }
                                             if (!confirmed) {
+                                                val live = OpenRSDashApp.instance.vehicleState.value
                                                 DiagnosticLogger.event("DM_CMD",
-                                                    "No CAN confirmation after 8s (current=${vs.driveMode}, target=$mode)")
+                                                    "No CAN confirmation after 8s (current=${live.driveMode}, target=$mode)")
                                                 snackbarHostState.showSnackbar(
                                                     "Mode change didn't take effect — try again")
                                             }

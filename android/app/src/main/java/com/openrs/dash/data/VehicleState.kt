@@ -13,7 +13,7 @@ data class VehicleState(
     val rpm: Double = 0.0,
     val coolantTempC: Double = -99.0,  // -99 = not yet received (CAN 0x2F0 / 0x0F8)
     val oilTempC: Double = -99.0,      // -99 = not yet received (CAN 0x0F8)
-    val intakeTempC: Double = 0.0,
+    val intakeTempC: Double = -99.0,  // -99 = not yet received (CAN 0x2F0)
     val boostKpa: Double = 101.325,
     val throttlePct: Double = 0.0,
     val throttleHasSource: Boolean = false,
@@ -128,7 +128,7 @@ data class VehicleState(
     val gear: Int = 0,
     val batteryVoltage: Double = 0.0,
     val fuelLevelPct: Double = 0.0,
-    val ambientTempC: Double = 0.0,
+    val ambientTempC: Double = -99.0,  // -99 = not yet received (CAN 0x1A4)
     val gaugeIllumination: Int = 0,        // 0x0C8: gauge brightness level
     val eBrake: Boolean = false,           // Emergency brake status
     val reverseStatus: Boolean = false,    // Reverse gear engaged
@@ -275,7 +275,7 @@ data class VehicleState(
      */
     fun anyTireLow(thresholdPsi: Double = 30.0): Boolean =
         listOf(tirePressLF, tirePressRF, tirePressLR, tirePressRR)
-            .any { it in 0.01..<thresholdPsi }
+            .any { it in 0.0..<thresholdPsi }
     val maxTirePressSpread: Double get() {
         val valid = listOf(tirePressLF, tirePressRF, tirePressLR, tirePressRR).filter { it >= 0 }
         if (valid.size < 2) return 0.0

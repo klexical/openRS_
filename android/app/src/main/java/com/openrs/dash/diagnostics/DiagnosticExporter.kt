@@ -474,7 +474,7 @@ object DiagnosticExporter {
             CanDecoder.ID_DRIVE_MODE, CanDecoder.ID_DRIVE_MODE_EXT, CanDecoder.ID_ESC_ABS,
             CanDecoder.ID_WHEEL_SPEEDS, CanDecoder.ID_GEAR, CanDecoder.ID_AWD_TORQUE,
             CanDecoder.ID_COOLANT, CanDecoder.ID_PCM_AMBIENT, CanDecoder.ID_AMBIENT_TEMP,
-            CanDecoder.ID_FUEL_LEVEL, CanDecoder.ID_STEERING, CanDecoder.ID_BRAKE_PRESS
+            CanDecoder.ID_FUEL_LEVEL, CanDecoder.ID_ODOMETER, CanDecoder.ID_STEERING, CanDecoder.ID_BRAKE_PRESS
         )
 
         inventory.entries.sortedBy { it.key }.forEach { (id, info) ->
@@ -651,7 +651,7 @@ object DiagnosticExporter {
             appendLine("      \"firstRawHex\": \"${info.firstRawHex}\",")
             appendLine("      \"lastRawHex\": \"${info.lastRawHex}\",")
             appendLine("      \"hasChanged\": ${info.hasChanged},")
-            appendLine("      \"lastDecoded\": \"${info.lastDecoded.replace("\"", "'")}\",")
+            appendLine("      \"lastDecoded\": \"${info.lastDecoded.jsonEscape()}\",")
             appendLine("      \"validationIssues\": [$issuesJson],")
             appendLine("      \"periodicSamples\": $samplesJson")
             appendLine("    }$comma")
@@ -672,8 +672,8 @@ object DiagnosticExporter {
         val trace = log.decodeTrace
         trace.forEachIndexed { i, t ->
             val c      = if (i < trace.size - 1) "," else ""
-            val issJson = if (t.issue != null) "\"${t.issue.replace("\"", "'")}\"" else "null"
-            appendLine("    {\"relMs\": ${t.relMs}, \"id\": \"${t.idHex}\", \"raw\": \"${t.rawHex}\", \"decoded\": \"${t.decoded.replace("\"", "'")}\", \"issue\": $issJson}$c")
+            val issJson = if (t.issue != null) "\"${t.issue.jsonEscape()}\"" else "null"
+            appendLine("    {\"relMs\": ${t.relMs}, \"id\": \"${t.idHex}\", \"raw\": \"${t.rawHex}\", \"decoded\": \"${t.decoded.jsonEscape()}\", \"issue\": $issJson}$c")
         }
         appendLine("  ],")
 
@@ -682,7 +682,7 @@ object DiagnosticExporter {
         val evts = log.sessionEvents
         evts.forEachIndexed { i, ev ->
             val c = if (i < evts.size - 1) "," else ""
-            appendLine("    {\"relMs\": ${ev.relMs}, \"type\": \"${ev.type}\", \"message\": \"${ev.message.replace("\"", "'")}\"}$c")
+            appendLine("    {\"relMs\": ${ev.relMs}, \"type\": \"${ev.type}\", \"message\": \"${ev.message.jsonEscape()}\"}$c")
         }
         appendLine("  ],")
 
@@ -701,7 +701,7 @@ object DiagnosticExporter {
             appendLine("      \"results\": [")
             ps.results.forEachIndexed { ri, r ->
                 val rc = if (ri < ps.results.size - 1) "," else ""
-                appendLine("        {\"did\": \"0x${"%04X".format(r.did)}\", \"status\": \"${r.status}\", \"response\": \"${r.responseHex.replace("\"", "'")}\"}$rc")
+                appendLine("        {\"did\": \"0x${"%04X".format(r.did)}\", \"status\": \"${r.status}\", \"response\": \"${r.responseHex.jsonEscape()}\"}$rc")
             }
             appendLine("      ]")
             val pc = if (pi < probes.size - 1) "," else ""
@@ -713,13 +713,14 @@ object DiagnosticExporter {
     }
 }
 
-/** Minimal JSON string escaping: backslash, double-quote, newlines, tabs. */
+/** JSON string escaping: backslash, double-quote, newlines, tabs, and </script> sequences. */
 private fun String.jsonEscape(): String = this
     .replace("\\", "\\\\")
     .replace("\"", "\\\"")
     .replace("\n", "\\n")
     .replace("\r", "\\r")
     .replace("\t", "\\t")
+    .replace("</", "<\\/")
 
 /** Serialize VehicleState to a Map<String, Any> for JSON output. */
 private fun VehicleState.toJsonFields(): Map<String, String> = linkedMapOf(

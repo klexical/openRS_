@@ -45,6 +45,7 @@ fun GForcePlot(
         }
     }
 
+    val ringSteps = remember { listOf(0.5f, 1.0f, 1.5f) }
     Canvas(modifier) {
         val cx = size.width / 2f
         val cy = size.height / 2f
@@ -52,7 +53,6 @@ fun GForcePlot(
         val scale = radius / maxG
 
         // Concentric rings
-        val ringSteps = listOf(0.5f, 1.0f, 1.5f)
         for (g in ringSteps) {
             val r = g * scale
             drawCircle(

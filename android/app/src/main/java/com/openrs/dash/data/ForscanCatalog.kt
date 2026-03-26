@@ -80,7 +80,8 @@ object ForscanCatalog {
                     }
                     catalog = ForscanCatalogData(totalPids, monitoredPids, modules)
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                android.util.Log.e("ForscanCatalog", "Failed to load catalog", e)
                 catalog = ForscanCatalogData(0, 0, emptyList())
             }
             loaded = true

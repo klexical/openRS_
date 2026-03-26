@@ -148,13 +148,16 @@ fun DidProberSection(
                         val dids = generateCandidateDids(selectedModule)
                         total = dids.size
 
-                        scope.launch(Dispatchers.IO) {
+                        scope.launch {
                             val sendFn = onSendRawQuery ?: return@launch
                             for (did in dids) {
                                 if (cancelled) break
                                 val frame = "t%03X80322%04X00000000\r".format(requestId, did)
-                                val resp = sendFn(responseId, frame, 1_000L)
+                                val resp = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                                    sendFn(responseId, frame, 1_000L)
+                                }
                                 val entry = classifyResponse(did, resp)
+                                // State mutations on Main thread (default dispatcher)
                                 results.add(entry)
                                 progress = results.size
                                 kotlinx.coroutines.delay(100L)

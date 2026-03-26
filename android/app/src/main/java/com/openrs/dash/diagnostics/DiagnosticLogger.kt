@@ -50,6 +50,9 @@ object DiagnosticLogger {
      */
     private const val MAX_SLCAN_LINES    = 2_000_000L
 
+    /** Maximum DID probe sessions stored per diagnostic session. */
+    private const val MAX_PROBE_SESSIONS = 50
+
     // ── Data models ─────────────────────────────────────────────────────────
 
     /**
@@ -357,7 +360,15 @@ object DiagnosticLogger {
             slcanLinesWritten++
             // Flush to disk every 1 000 lines to limit data loss on crash
             if (slcanLinesWritten % 1_000L == 0L) w.flush()
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            // Log the first write failure so disk-full isn't completely silent
+            if (!slcanCapReached) {
+                slcanCapReached = true
+                sessionEventsDeque.addLast(
+                    SessionEvent(relMs, "SLCAN", "SLCAN write failed: ${e.message}")
+                )
+            }
+        }
     }
 
     // ── DID Probe results ────────────────────────────────────────────────────
@@ -372,6 +383,7 @@ object DiagnosticLogger {
             probeSessionsList.add(
                 ProbeSession(relativeMs(), module, requestId, responseId, results)
             )
+            while (probeSessionsList.size > MAX_PROBE_SESSIONS) probeSessionsList.removeFirst()
         }
         val found = results.count { it.status == "FOUND" }
         event("PROBE", "$module scan complete: ${results.size} probed, $found found")

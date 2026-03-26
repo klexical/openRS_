@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -34,6 +35,8 @@ fun Sparkline(
     fillAlpha: Float = 0.20f
 ) {
     if (data.size < 2) return
+    val linePath = remember { Path() }
+    val fillPath = remember { Path() }
     Canvas(modifier) {
         val w = size.width
         val h = size.height
@@ -42,8 +45,8 @@ fun Sparkline(
         val range = (maxVal - minVal).coerceAtLeast(0.01f)
         val step = w / (data.size - 1)
 
-        val linePath = Path()
-        val fillPath = Path()
+        linePath.reset()
+        fillPath.reset()
 
         data.forEachIndexed { i, v ->
             val x = i * step

@@ -111,6 +111,9 @@ object ObdResponseParser {
                     ((payload[4].toInt() and 0xFF).toLong() shl 16) or
                     ((payload[5].toInt() and 0xFF).toLong() shl 8) or
                     (payload[6].toInt() and 0xFF).toLong()
+                val pressA = payload[7].toInt() and 0xFF
+                val pressB = payload[8].toInt() and 0xFF
+                val psi = (pressA * 256 + pressB) / 20.0
                 val tempRaw = payload[9].toInt() and 0xFF
                 if (tempRaw == 0) return   // sensor initializing — no valid temp yet (#130)
                 val tempC = (tempRaw - 40).toDouble()
@@ -118,10 +121,10 @@ object ObdResponseParser {
 
                 val s = currentState
                 val updated = when (sensorId) {
-                    s.tpmsSensorIdLF -> s.copy(tireTempLF = tempC)
-                    s.tpmsSensorIdRF -> s.copy(tireTempRF = tempC)
-                    s.tpmsSensorIdRR -> s.copy(tireTempRR = tempC)
-                    s.tpmsSensorIdLR -> s.copy(tireTempLR = tempC)
+                    s.tpmsSensorIdLF -> s.copy(tireTempLF = tempC, tirePressLF = psi)
+                    s.tpmsSensorIdRF -> s.copy(tireTempRF = tempC, tirePressRF = psi)
+                    s.tpmsSensorIdRR -> s.copy(tireTempRR = tempC, tirePressRR = psi)
+                    s.tpmsSensorIdLR -> s.copy(tireTempLR = tempC, tirePressLR = psi)
                     else -> {
                         Log.d(TAG, "0x280B unknown sensor ID %08X".format(sensorId))
                         null

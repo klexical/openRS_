@@ -62,7 +62,7 @@ object FirmwareApi {
                 val request = "POST /api/frs HTTP/1.1\r\n" +
                     "Host: $host\r\n" +
                     "Content-Type: application/json\r\n" +
-                    "Content-Length: ${json.length}\r\n" +
+                    "Content-Length: ${json.toByteArray(Charsets.ISO_8859_1).size}\r\n" +
                     "Connection: close\r\n" +
                     "\r\n" +
                     json

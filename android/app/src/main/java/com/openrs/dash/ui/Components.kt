@@ -281,5 +281,3 @@ fun tireTempColor(tempC: Double): Color = when {
     }
 }
 
-@Deprecated("Use FocusRsOutline", replaceWith = ReplaceWith("FocusRsOutline(compact)"))
-@Composable fun CarOutlinePlaceholder(compact: Boolean = false) = FocusRsOutline(compact)

@@ -243,6 +243,11 @@ class WiCanConnection(
                 val inp = socket.getInputStream()
                 val out = socket.getOutputStream()
 
+                val cancelWatcher = launch {
+                    try { awaitCancellation() }
+                    finally { try { socket.close() } catch (_: Exception) { } }
+                }
+
                 sendHttpUpgrade(out)
                 val headers = readHttpHeaders(inp)
                 if (!headers.contains("101")) {
@@ -456,6 +461,7 @@ class WiCanConnection(
                     }
                 }
                 } finally {
+                    cancelWatcher.cancel()
                     obdJob.cancel()
                     pcmJob.cancel()
                     extJob.cancel()
@@ -581,9 +587,16 @@ class WiCanConnection(
                     val lenBytes = readExactly(inp, 8)
                     val bigLen = lenBytes.fold(0L) { acc, b -> (acc shl 8) or (b.toLong() and 0xFF) }
                     if (bigLen < 0 || bigLen > 1_048_576L) throw IOException("WS frame too large: $bigLen bytes")
-                    readExactly(inp, bigLen.toInt())
-                    DiagnosticLogger.event("WS", "Skipped 64-bit frame: $bigLen bytes")
-                    continue
+                    val mask64 = if (masked) readExactly(inp, 4) else null
+                    val payload64 = readExactly(inp, bigLen.toInt())
+                    if (mask64 != null) {
+                        for (i in payload64.indices) payload64[i] = (payload64[i].toInt() xor mask64[i % 4].toInt()).toByte()
+                    }
+                    when (opcode) {
+                        0x9 -> { sendWsPong(out, payload64); continue }
+                        0xA -> continue
+                        else -> return Pair(opcode, payload64)
+                    }
                 }
                 else -> len
             }

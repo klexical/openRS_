@@ -96,4 +96,11 @@ class RingBufferTest {
         buf.push(-0.2f to 0.1f)
         assertEquals(listOf(1.0f to 0.8f, -0.2f to 0.1f), buf.toList())
     }
+
+    // ── Invalid capacity ──────────────────────────────────────────────────────
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `capacity zero throws IllegalArgumentException`() {
+        RingBuffer<Int>(0)
+    }
 }

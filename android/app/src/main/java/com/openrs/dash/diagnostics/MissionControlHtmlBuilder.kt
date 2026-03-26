@@ -157,6 +157,7 @@ object MissionControlHtmlBuilder {
         val fps = log.fpsTimeline
         val events = log.sessionEvents
         val trace = log.decodeTrace
+        val probes = log.probeSessions
 
         // If there's no diagnostic data at all, return null literal
         if (inventory.isEmpty() && fps.isEmpty() && events.isEmpty() && trace.isEmpty()) {
@@ -211,6 +212,28 @@ object MissionControlHtmlBuilder {
             }
             append("],")
 
+            // Probe results
+            append("\"probeResults\":[")
+            probes.forEachIndexed { i, ps ->
+                if (i > 0) append(',')
+                append("{\"relMs\":${ps.relMs},")
+                append("\"module\":\"${ps.module.jsonEscape()}\",")
+                append("\"requestId\":\"0x%03X\",".format(ps.requestId))
+                append("\"responseId\":\"0x%03X\",".format(ps.responseId))
+                val found = ps.results.count { it.status == "FOUND" }
+                append("\"totalProbed\":${ps.results.size},")
+                append("\"found\":$found,")
+                append("\"results\":[")
+                ps.results.forEachIndexed { ri, r ->
+                    if (ri > 0) append(',')
+                    append("{\"did\":\"0x%04X\",".format(r.did))
+                    append("\"status\":\"${r.status.jsonEscape()}\",")
+                    append("\"response\":\"${r.responseHex.jsonEscape()}\"}")
+                }
+                append("]}")
+            }
+            append("],")
+
             // Decode trace
             append("\"decodeTrace\":[")
             trace.forEachIndexed { i, t ->
@@ -242,11 +265,12 @@ object MissionControlHtmlBuilder {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /** Minimal JSON string escaping: backslash, double-quote, newlines, tabs. */
+    /** Minimal JSON string escaping: backslash, double-quote, newlines, tabs, script breakout. */
     private fun String.jsonEscape(): String = this
         .replace("\\", "\\\\")
         .replace("\"", "\\\"")
         .replace("\n", "\\n")
         .replace("\r", "\\r")
         .replace("\t", "\\t")
+        .replace("</", "<\\/")
 }

@@ -22,11 +22,11 @@ import com.openrs.dash.data.VehicleState
  * Drive mode: TWO signals required (HS-CAN).
  *   0x1B0 AWDmsg01 byte6 nibble (DBC VAL_ 432): 0=Normal, 1=Sport+Track, 2=Drift.
  *   0x420 byte6+byte7 (empirical, ~600ms):
- *     byte6=0x10 → Normal;  byte6=0x11, byte7 bit0=1 → Sport;
- *     byte6=0x11, byte7 bit0=0 → Track;  byte6=0x12 → Drift.
- *   Combined: nibble=0→Normal; nibble=1+bit0=1→Sport; nibble=1+bit0=0→Track; nibble=2→Drift.
- *   Verified via button-cycle CAN capture (2026-03-24): Normal→Sport→Track→Drift.
- *     Normal 0x10/0xC4 → Sport 0x11/0xCD → Track 0x11/0xCC → Drift 0x12/0xC4.
+ *     byte6=0x10 → Normal;  byte6=0x11, byte7 bit0=0 → Sport (0xCC);
+ *     byte6=0x11, byte7 bit0=1 → Track (0xCD);  byte6=0x12 → Drift.
+ *   Combined: nibble=0→Normal; nibble=1+bit0=0→Sport; nibble=1+bit0=1→Track; nibble=2→Drift.
+ *   Verified via SLCAN log analysis (2026-03-25, user-confirmed Sport = 0x11CC):
+ *     Normal 0x10/0xC4 → Sport 0x11/0xCC → Track 0x11/0xCD → Drift 0x12/0xC4.
  *   Definitive rsDriveMode is at MS-CAN 0x345 (not captured via OBD-II HS-CAN).
  * Steady-state 0x1B0 frames have byte4=0x00; button-event frames have byte4 != 0.
  */
@@ -271,17 +271,16 @@ object CanDecoder {
             ID_GAUGE_ILLUM -> if (n >= 4) state.copy(
                 gaugeIllumination = data[0].toInt() and 0x1F,
                 eBrake            = (data[3].toInt() and 0x40) != 0,
-                ignitionStatus    = if (n >= 3) ((ubyte(data, 2) shr 3) and 0x0F) else state.ignitionStatus,
+                ignitionStatus    = (ubyte(data, 2) shr 3) and 0x0F,
                 lastUpdate        = now
             ) else null
 
             // ── 0x340: PCMmsg17 (HS-CAN) — AmbientAirTemp only ─────────────────
             // RS_HS.dbc PCMmsg17: AmbientAirTemp : 63|8@0− → byte7 signed × 0.25 °C
             // Bytes 2-5 are PCM engine signals (NOT TPMS — TPMS is BCM Mode 22 only).
+            // Signed byte range [-128,127] × 0.25 = [-32.0, 31.75] — always in valid range.
             ID_PCM_AMBIENT -> if (n >= 8) {
-                val ambient = data[7].toInt().toDouble() * 0.25
-                if (ambient !in -50.0..60.0) null
-                else state.copy(ambientTempC = ambient, lastUpdate = now)
+                state.copy(ambientTempC = data[7].toInt().toDouble() * 0.25, lastUpdate = now)
             } else null
 
             // ── 0x1A4: Ambient temperature — MS-CAN bridged via GWM ──────────

@@ -73,6 +73,7 @@ object PidRegistry {
         val pid = entry.pid
         if (pid.field.isEmpty() || pid.formula.isEmpty()) return null
         val value = evaluateFormula(pid.formula, b4, b5) ?: return null
+        if (value.isInfinite() || value.isNaN()) return null
         return Pair(pid.field, value)
     }
 

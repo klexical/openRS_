@@ -26,7 +26,7 @@ frs_can_tx_fn_t frs_get_can_tx(void) {
 static frs_state_t s_state = {
     .drive_mode           = FRS_MODE_NORMAL,
     .boot_mode            = FRS_MODE_NORMAL,
-    .mode_420_detail      = 0xC4,
+    .mode_420_detail      = 0xCD,
     .esc_mode             = FRS_ESC_ON,
     .boot_esc             = FRS_ESC_ON,
     .lc_enabled           = false,
@@ -66,9 +66,9 @@ void frs_parse_can_frame(uint32_t can_id, const uint8_t *data, uint8_t dlc) {
             if (raw_mode == 0) s_state.drive_mode = FRS_MODE_NORMAL;
             else if (raw_mode == 1) {
                 // 0x1B0 nibble=1 is ambiguous (Sport OR Track).
-                // Disambiguate via 0x420 detail: bit0=0→Sport, bit0=1→Track.
+                // Disambiguate via 0x420 detail: bit0=1→Sport, bit0=0→Track.
                 s_state.drive_mode = (s_state.mode_420_detail & 0x01)
-                    ? FRS_MODE_TRACK : FRS_MODE_SPORT;
+                    ? FRS_MODE_SPORT : FRS_MODE_TRACK;
             }
             else if (raw_mode == 2) s_state.drive_mode = FRS_MODE_DRIFT;
         }
@@ -80,7 +80,7 @@ void frs_parse_can_frame(uint32_t can_id, const uint8_t *data, uint8_t dlc) {
             uint8_t b6 = data[6];
             if (b6 == 0x11) {
                 s_state.drive_mode = (data[7] & 0x01)
-                    ? FRS_MODE_TRACK : FRS_MODE_SPORT;
+                    ? FRS_MODE_SPORT : FRS_MODE_TRACK;
             }
         }
         break;
@@ -283,84 +283,132 @@ static void frs_send_dm_button(void) {
 
 static uint8_t s_pending_mode = 0xFF;
 
-static void frs_drive_mode_task(void *arg) {
-    uint8_t target_mode = (uint8_t)(uintptr_t)arg;
+// ── Closed-loop drive mode controller ────────────────────────
+// Replaces the old open-loop "count presses and fire" approach.
+// After each button press, polls s_state.drive_mode (updated in
+// real-time by frs_parse_can_frame from 0x1B0 + 0x420) to confirm
+// the mode actually changed before sending the next press.
+//
+// This eliminates cycle-distance math, fixed timing assumptions,
+// and GUI timeout vulnerabilities. Self-corrects if a press is
+// missed or the GUI closes mid-sequence.
 
-    // Physical button cycle: N→S→T→D→N
-    // CAN values:            0  1  3  2
-    static const uint8_t can_to_pos[] = {0, 1, 3, 2};
-    const uint8_t cycle_len = 4;
-
+static bool frs_dm_is_gui_open(void) {
+    bool open = false;
     xSemaphoreTake(s_state_mutex, portMAX_DELAY);
-    uint8_t current = s_state.drive_mode;
-    xSemaphoreGive(s_state_mutex);
-
-    uint8_t cur_pos = can_to_pos[current];
-    uint8_t tgt_pos = can_to_pos[target_mode];
-    uint8_t cycle_dist = (tgt_pos - cur_pos + cycle_len) % cycle_len;
-
-    if (cycle_dist == 0) {
-        ESP_LOGI(TAG, "Drive mode: already in %d — no change", current);
-        xSemaphoreTake(s_state_mutex, portMAX_DELAY);
-        s_pending_mode = 0xFF;
-        xSemaphoreGive(s_state_mutex);
-        vTaskDelete(NULL);
-        return;
-    }
-
-    // Check if the mode selector GUI is already open (bit 4 set on 0x305).
-    // This happens after a recent physical button press or a prior firmware
-    // command whose GUI hasn't timed out yet. If open, skip the activation
-    // press to avoid an off-by-one cycle error.
-    xSemaphoreTake(s_state_mutex, portMAX_DELAY);
-    bool gui_open = s_state.frame_305_valid &&
+    open = s_state.frame_305_valid &&
         (s_state.frame_305_template[FRS_DM_BTN_BYTE] & FRS_DM_GUI_OPEN_BIT);
     xSemaphoreGive(s_state_mutex);
+    return open;
+}
 
-    uint8_t presses = gui_open ? cycle_dist : (1 + cycle_dist);
+static uint8_t frs_dm_read_mode(void) {
+    xSemaphoreTake(s_state_mutex, portMAX_DELAY);
+    uint8_t mode = s_state.drive_mode;
+    xSemaphoreGive(s_state_mutex);
+    return mode;
+}
 
-    ESP_LOGI(TAG, "Drive mode: %d → %d (cur_pos=%d tgt_pos=%d dist=%d → %d presses, "
-             "gui_open=%d, %dms/press, activation=%dms, cycle=%dms)",
-             current, target_mode, cur_pos, tgt_pos, cycle_dist, presses,
-             gui_open, FRS_BUTTON_TX_DURATION_MS, FRS_DM_ACTIVATION_DELAY_MS,
-             FRS_DM_CYCLE_DELAY_MS);
+static void frs_drive_mode_task(void *arg) {
+    uint8_t target = (uint8_t)(uintptr_t)arg;
+    uint8_t current = frs_dm_read_mode();
 
-    for (uint8_t i = 0; i < presses; i++) {
-        bool is_activation = !gui_open && (i == 0);
-        ESP_LOGI(TAG, "Drive mode: press %d/%d (%s, 0x305 byte4 |= 0x%02X for %dms)",
-                 i + 1, presses, is_activation ? "activation" : "cycle",
-                 FRS_DM_BTN_BIT, FRS_BUTTON_TX_DURATION_MS);
-        frs_send_dm_button();
-        if (is_activation) {
-            vTaskDelay(pdMS_TO_TICKS(FRS_DM_ACTIVATION_DELAY_MS));
-        } else {
-            vTaskDelay(pdMS_TO_TICKS(FRS_DM_CYCLE_DELAY_MS));
-        }
+    if (current == target) {
+        ESP_LOGI(TAG, "Drive mode: already in %d — no change", current);
+        goto done;
     }
 
+    ESP_LOGI(TAG, "Drive mode: %d → %d (closed-loop, max %d steps)",
+             current, target, FRS_DM_MAX_STEPS);
+
+    for (int step = 0; step < FRS_DM_MAX_STEPS; step++) {
+        bool gui_open = frs_dm_is_gui_open();
+        bool is_activation = !gui_open;
+
+        ESP_LOGI(TAG, "Drive mode: step %d — press (%s), current=%d target=%d",
+                 step + 1, is_activation ? "activation" : "cycle",
+                 current, target);
+
+        // Send one button press.
+        frs_send_dm_button();
+
+        // Wait for CAN confirmation that the mode changed.
+        uint8_t before = current;
+        bool confirmed = false;
+        int retries = 0;
+
+        while (retries <= FRS_DM_PRESS_RETRY) {
+            int waited = 0;
+            while (waited < FRS_DM_CONFIRM_TIMEOUT_MS) {
+                vTaskDelay(pdMS_TO_TICKS(FRS_DM_CONFIRM_POLL_MS));
+                waited += FRS_DM_CONFIRM_POLL_MS;
+                current = frs_dm_read_mode();
+                if (current != before) {
+                    confirmed = true;
+                    break;
+                }
+            }
+            if (confirmed) break;
+
+            // Mode didn't change — retry this press.
+            retries++;
+            if (retries <= FRS_DM_PRESS_RETRY) {
+                ESP_LOGW(TAG, "Drive mode: no change after %dms, retry %d/%d "
+                         "(gui_open=%d)",
+                         FRS_DM_CONFIRM_TIMEOUT_MS, retries,
+                         FRS_DM_PRESS_RETRY, frs_dm_is_gui_open());
+                frs_send_dm_button();
+            }
+        }
+
+        if (!confirmed) {
+            ESP_LOGE(TAG, "Drive mode: step %d — no CAN confirmation after %d "
+                     "retries, aborting (stuck at %d, wanted %d)",
+                     step + 1, FRS_DM_PRESS_RETRY, current, target);
+            goto done;
+        }
+
+        ESP_LOGI(TAG, "Drive mode: step %d — confirmed mode=%d", step + 1, current);
+
+        // Reached target?
+        if (current == target) {
+            ESP_LOGI(TAG, "Drive mode: reached target %d in %d step(s)",
+                     target, step + 1);
+            xSemaphoreTake(s_state_mutex, portMAX_DELAY);
+            s_state.boot_mode = target;
+            xSemaphoreGive(s_state_mutex);
+            frs_nvs_save_boot_mode(target);
+            goto done;
+        }
+
+        // Not at target yet — GUI should still be open, continue cycling.
+    }
+
+    ESP_LOGE(TAG, "Drive mode: exhausted %d steps without reaching target %d "
+             "(current=%d)", FRS_DM_MAX_STEPS, target, current);
+
+done:
     xSemaphoreTake(s_state_mutex, portMAX_DELAY);
-    s_state.boot_mode = target_mode;
     s_pending_mode = 0xFF;
     xSemaphoreGive(s_state_mutex);
-
-    frs_nvs_save_boot_mode(target_mode);
     vTaskDelete(NULL);
 }
 
-void frs_set_drive_mode(uint8_t target_mode) {
-    if (target_mode > FRS_MODE_TRACK) return;
+bool frs_set_drive_mode(uint8_t target_mode) {
+    if (target_mode > FRS_MODE_TRACK) return false;
 
     xSemaphoreTake(s_state_mutex, portMAX_DELAY);
     if (s_pending_mode != 0xFF) {
         xSemaphoreGive(s_state_mutex);
         ESP_LOGW(TAG, "Drive mode change already in progress");
-        return;
+        return false;
     }
     s_pending_mode = target_mode;
     xSemaphoreGive(s_state_mutex);
 
     xTaskCreate(frs_drive_mode_task, "frs_dm", 2048,
                 (void *)(uintptr_t)target_mode, 5, NULL);
+    return true;
 }
 
 // ── ESC mode write ───────────────────────────────────────────

@@ -160,12 +160,10 @@ class VehicleStateTest {
     }
 
     @Test
-    fun `flat tire (0 PSI) is not flagged as low`() {
-        // Current implementation uses 0.01..< threshold which excludes 0.0
-        // A flat tire reading of exactly 0.0 PSI won't trigger the warning.
-        // This test documents the current behavior.
+    fun `flat tire (0 PSI) is flagged as low`() {
+        // 0.0 PSI = flat tire → should trigger low-pressure warning
         val flatTire = VehicleState(tirePressLF = 0.0, tirePressRF = 35.0, tirePressLR = 35.0, tirePressRR = 35.0)
-        assertFalse(flatTire.anyTireLow())
+        assertTrue(flatTire.anyTireLow())
     }
 
     @Test

@@ -6,6 +6,8 @@ package com.openrs.dash.ui.anim
  */
 class RingBuffer<T>(val capacity: Int) {
 
+    init { require(capacity > 0) { "RingBuffer capacity must be > 0" } }
+
     @Suppress("UNCHECKED_CAST")
     private val buffer = arrayOfNulls<Any>(capacity)
     private var head = 0

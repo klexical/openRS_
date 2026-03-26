@@ -161,8 +161,11 @@ static esp_err_t frs_post_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
     cJSON *item;
-    if ((item = cJSON_GetObjectItem(root, "driveMode")) && cJSON_IsNumber(item))
-        frs_set_drive_mode((uint8_t)item->valueint);
+    bool busy = false;
+    if ((item = cJSON_GetObjectItem(root, "driveMode")) && cJSON_IsNumber(item)) {
+        if (!frs_set_drive_mode((uint8_t)item->valueint))
+            busy = true;
+    }
     if ((item = cJSON_GetObjectItem(root, "escMode")) && cJSON_IsNumber(item))
         frs_set_esc((uint8_t)item->valueint);
     if ((item = cJSON_GetObjectItem(root, "enableLC")) && cJSON_IsBool(item))
@@ -172,6 +175,8 @@ static esp_err_t frs_post_handler(httpd_req_t *req)
     if ((item = cJSON_GetObjectItem(root, "sleepVoltage")) && cJSON_IsNumber(item))
         frs_set_sleep_threshold((float)(item->valuedouble / 1000.0));
     cJSON_Delete(root);
+    if (busy)
+        return httpd_resp_send(req, "{\"ok\":false,\"busy\":true}", 24);
     return httpd_resp_send(req, "{\"ok\":true}", 11);
 }
 

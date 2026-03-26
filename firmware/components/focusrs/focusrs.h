@@ -63,12 +63,15 @@ extern "C" {
 #define FRS_BUTTON_TX_INTERVAL_MS   10
 #define FRS_BUTTON_TX_DURATION_MS   300
 
-// Drive mode inter-press timing — two-stage for reliability.
-// Press 1 opens the mode selector GUI; subsequent presses cycle modes.
-// If the GUI is already open (physical button or prior command), the
-// activation press is skipped and only cycle presses are sent.
-#define FRS_DM_ACTIVATION_DELAY_MS  800
-#define FRS_DM_CYCLE_DELAY_MS       500
+// Closed-loop drive mode controller.
+// After each button press, the firmware polls s_state.drive_mode (updated
+// in real-time by frs_parse_can_frame from 0x1B0 + 0x420) to confirm the
+// mode actually changed before sending the next press. This eliminates
+// cycle-distance math, fixed timing assumptions, and GUI timeout issues.
+#define FRS_DM_CONFIRM_TIMEOUT_MS   1500  // max wait for CAN mode change per press
+#define FRS_DM_CONFIRM_POLL_MS      50    // poll interval while waiting
+#define FRS_DM_MAX_STEPS            5     // safety cap (4-mode cycle + 1 retry margin)
+#define FRS_DM_PRESS_RETRY          2     // retries per step if no change detected
 
 // 0x305 byte4 bit 4 — BCM sets this when the mode selector GUI is visible.
 #define FRS_DM_GUI_OPEN_BIT         0x10
@@ -90,7 +93,7 @@ extern "C" {
 typedef struct {
     uint8_t  drive_mode;          // Current drive mode from CAN (FRS_MODE_*)
     uint8_t  boot_mode;           // Drive mode to apply on next ignition (NVS)
-    uint8_t  mode_420_detail;     // 0x420 byte7 — bit0 disambiguates Sport(0)/Track(1)
+    uint8_t  mode_420_detail;     // 0x420 byte7 — bit0 disambiguates Sport(1)/Track(0)
     uint8_t  esc_mode;            // Current ESC mode from CAN (FRS_ESC_*)
     uint8_t  boot_esc;            // ESC mode to apply on next ignition (NVS)
     bool     lc_enabled;          // Launch control
@@ -117,7 +120,7 @@ frs_can_tx_fn_t   frs_get_can_tx(void);
 // ── Public API ────────────────────────────────────────────────
 void     frs_init(void);
 void     frs_parse_can_frame(uint32_t can_id, const uint8_t *data, uint8_t dlc);
-void     frs_set_drive_mode(uint8_t mode);   // sends CAN + updates NVS boot mode
+bool     frs_set_drive_mode(uint8_t mode);   // closed-loop CAN + NVS; false = busy
 void     frs_set_esc(uint8_t esc_mode);      // sends CAN + updates NVS
 void     frs_set_lc(bool enabled);
 void     frs_set_ass_kill(bool enabled);     // sends CAN + updates NVS

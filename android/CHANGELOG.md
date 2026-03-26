@@ -86,6 +86,36 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 ### Added (rc.6)
 - **DID probe results included in diagnostic ZIP export** — `DiagnosticLogger` now stores probe sessions; `DidProberSection` logs results after each scan completes. `DiagnosticExporter` writes a "DID PROBE RESULTS" section in the summary text and a `probeResults` array in the JSON detail file. Previously, probe results were ephemeral Compose state lost on navigation.
 
+### Fixed (rc.7 — full release audit)
+- **Drive mode confirmation read stale state** — `MorePage` confirmation loop captured `vs` at composition time; inside the coroutine it never saw CAN updates. Now reads `OpenRSDashApp.instance.vehicleState.value` each poll iteration. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **DID prober mutated Compose state from IO thread** — `DidProberSection` launched the probe loop on `Dispatchers.IO`, then called `results.add()` on `mutableStateListOf` off the Main thread. Restructured to run the coroutine on Main, wrapping only the network call in `withContext(IO)`. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **DiagnosticExporter JSON escaped quotes incorrectly** — five `.replace("\"", "'")` calls in JSON serialization converted double-quotes to single-quotes instead of properly escaping them. Replaced with a `.jsonEscape()` extension that handles `\`, `"`, `\n`, `\r`, `\t`, and `</` (script breakout prevention). ([#82](https://github.com/klexical/openRS_/issues/82))
+- **WebSocket 64-bit length path ignored mask bytes** — `WiCanConnection` large-frame path read the 8-byte extended length but skipped the 4-byte mask, causing the payload to be read from the wrong offset and unmasked incorrectly. Now reads and applies the mask per RFC 6455. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **DashPage sparkline push during composition** — `boostHistory.push()` was called inside the composable body, a side effect during composition. Moved into a `SideEffect {}` block. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **ShiftLightBar infinite animation ran when not at redline** — `rememberInfiniteTransition` ticked continuously regardless of RPM. Now only instantiated when `isRedline` is true. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **`intakeTempC` and `ambientTempC` defaulted to 0.0 instead of sentinel** — zero is a valid temperature reading, masking "not yet received" as 0°C/32°F. Changed defaults to `-99.0` matching all other temperature fields. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **PidRegistry formula evaluator returned Infinity/NaN** — division by zero in catalog formulas produced `Infinity` which propagated to `genericValues`. Now returns `null` for infinite or NaN results. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **RingBuffer accepted capacity=0** — would cause division-by-zero in modular index arithmetic. Added `require(capacity > 0)` in `init`. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **Sparkline Path objects allocated every frame** — `Path()` was created inside the `Canvas` lambda (~60 alloc/sec). Hoisted to `remember` with `.reset()` at draw time. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **WiCanConnection socket not closed on cancellation** — coroutine cancellation didn't close the TCP socket, leaving it open until GC. Added a `cancelWatcher` coroutine that closes the socket in its `finally` block. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **MorePage host didn't update when settings changed** — `AppSettings.getHost()` was called once and cached. Now keyed on `UserPrefs` via `remember(prefs)`. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **SLCAN write failures silently swallowed** — `DiagnosticLogger.writeSlcanLine()` caught all exceptions with no logging. Now logs the first write failure as a session event. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **Probe sessions had no cap** — `DiagnosticLogger.probeSessionsList` could grow unbounded. Capped at 50 sessions with LRU eviction. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **TPMS 0x280B missing pressure alongside temperature** — `ObdResponseParser.parseBcmReassembled()` extracted temperature from the multi-frame payload but ignored the pressure bytes. Now reads pressure from `payload[7..8]` and updates the corresponding tire pressure field. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **Flat tire (0.0 PSI) not flagged as low** — `anyTireLow()` range started at `0.01`, excluding exactly 0.0 PSI. Changed to `0.0..<threshold`. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **FirmwareApi Content-Length byte count incorrect** — `json.length` (char count) was used instead of `json.toByteArray().size` (byte count), which diverges for non-ASCII characters. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **ForscanCatalog load failure silently swallowed** — exception was caught with no logging. Now logs with `Log.e`. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **`SlcanParser.parseDataBytes` returned empty array on hex error** — callers couldn't distinguish "no data" from "parse failure". Now returns `null` on error; both callers updated to skip with `?.let`. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **Mission Control JSON missing probe results** — `MissionControlHtmlBuilder.buildDiagJson()` didn't include DID probe sessions. Added `probeResults` array. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **Odometer CAN ID missing from diagnostic known-IDs set** — `DiagnosticExporter.knownIds` didn't include `ID_ODOMETER`, so odometer frames appeared as "unknown" in the frame inventory. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **CanDecoder stale header comment** — top-of-file comments still referenced old pre-rc.6 polarity. Updated to match corrected `bit0=0→Sport (0xCC)`.
+- **Deprecated `CarOutlinePlaceholder` alias removed** — dead code in `Components.kt`, replaced by `FocusRsOutline` in rc.4.
+
+### Added (rc.7)
+- **IsoTpBuffer unit tests** — 12 tests covering single-frame, multi-frame reassembly, out-of-order CF rejection, sequence wrap, FF reset, and edge cases (`IsoTpBufferTest.kt`).
+- **PidRegistry formula evaluator tests** — 16 tests covering arithmetic, `signed()` two's-complement, unary minus, operator precedence, parentheses, and edge cases (`PidRegistryTest.kt`).
+- **RingBuffer capacity=0 test** — verifies `IllegalArgumentException` on zero capacity.
+
 ---
 
 ## [v2.2.4] — 2026-03-19
