@@ -1,9 +1,10 @@
-name: Deploy Emulator to GitHub Pages
+name: Deploy Sapphire to GitHub Pages
 
 on:
   push:
     branches: [ main ]
     paths:
+      - 'web/**'
       - 'android/browser-emulator/**'
   workflow_dispatch:
 
@@ -18,7 +19,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy to GitHub Pages
+    name: Build & Deploy
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -28,13 +29,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build Sapphire
+        working-directory: web
+        run: npm run build
+
+      # Include browser emulator at /emulator subpath
+      - name: Copy emulator
+        run: cp -r android/browser-emulator dist/emulator || true
+        working-directory: web
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: android/browser-emulator
+          path: web/dist
 
       - name: Deploy to GitHub Pages
         id: deployment
