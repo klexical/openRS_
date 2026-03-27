@@ -46,7 +46,7 @@ jobs:
 
       # Include browser emulator at /emulator subpath
       - name: Copy emulator
-        run: cp -r android/browser-emulator dist/emulator || true
+        run: cp -r ../android/browser-emulator dist/emulator
         working-directory: web
 
       - name: Setup Pages
