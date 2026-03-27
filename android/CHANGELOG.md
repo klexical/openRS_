@@ -143,6 +143,23 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **KSP annotation processing added** — Room compiler uses KSP (`com.google.devtools.ksp` v2.0.21-1.0.27) instead of KAPT for faster builds.
 - **Unified Chassis section ("Neon Connect" layout)** — merged the separate TPMS and AWD sections into a single `UnifiedChassisSection` in `ChassisPage.kt`. Tire cards (FL/RL left, FR/RR right) flank the RS wireframe with colored accent edge bars matching tire status. Cards show PSI, delta arrows, wheel speed, temp, and a temperature fill bar. Diamond-shaped wheel markers replace dots on the wireframe. AWD metrics (torque bar, bias, deltas, temps, clutch data) sit below in the same card, eliminating duplicate wheel speed displays. ([#149](https://github.com/klexical/openRS_/issues/149))
 
+### Added (rc.9 — chassis redesign, Sapphire dashboard)
+- **Chassis TPMS redesign** — `NeonTireCard` rebuilt with full position names ("Front Left"), hero PSI + unit side-by-side (22sp), prominent temperature (14sp, color-coded via `tireTempColor()`), temperature progress bar, and session delta arrows. Warning banner identifies specific low tire(s) by name. Always shows full layout (no static wireframe placeholder for waiting state). TPMS footer row with recommended threshold + "Updated Xs ago" timestamp. ([#153](https://github.com/klexical/openRS_/issues/153))
+- **AWD rear axle diagram** — Canvas-drawn drivetrain in `ChassisPage.kt`: wheels (accent L / green R), clutch packs with temps, RDU box with temp, PTU box with F/R split label, propshaft line, torque flow arrows scaled to L/R distribution. Replaces old plain torque bar. ([#154](https://github.com/klexical/openRS_/issues/154))
+- **Chassis lead lines** — Canvas overlay in `UnifiedChassisSection` draws connector lines from tire card edges to wheel positions on car wireframe using `onGloballyPositioned` + `positionInRoot()`. ([#155](https://github.com/klexical/openRS_/issues/155))
+- **Crash history UI** — `CrashHistorySection` in `DiagPage.kt` shows crash file count, timestamps, and exception types. Crash files retained after export (not deleted). ([#161](https://github.com/klexical/openRS_/issues/161))
+- **DID prober export** — probe sessions included as CSV files in diagnostic ZIP exports via `DiagnosticExporter`. ([#160](https://github.com/klexical/openRS_/issues/160))
+- **What's New dialog** — `WhatsNewDialog.kt` with version-keyed highlights. Shown on first launch after update, version tracking via `AppSettings.lastSeenVersion`. ([#159](https://github.com/klexical/openRS_/issues/159))
+- **Sapphire web dashboard integration** — `MorePage` "WEB DASHBOARD" section with Sapphire button (opens URL in browser). Sapphire link added to trip export share text in `DiagnosticExporter`. Sapphire highlight in What's New v2.2.5 list. ([#162](https://github.com/klexical/openRS_/issues/162))
+
+### Fixed (rc.9)
+- **Drive mode cold-start race condition** — added `has420Arrived` gate in `CanDecoder.kt` that prevents Sport/Track resolution until the first `0x420` frame is received. Confirmation loop in `MorePage` now waits 2s settling delay after HTTP 200 and uses 15s timeout (was 8s). Diagnostic logging of `modeDetail420` on failure. Root cause: firmware closed-loop controller overshoots on cold ECU (SLCAN-proven). ([#153](https://github.com/klexical/openRS_/issues/153))
+
+### Changed (rc.9)
+- **More tab cleanup** — moved theme picker and HUD toggle to `SettingsSheet`. Removed duplicate snapshot button, settings button, and entire CONNECTION & DIAGNOSTICS section from `MorePage`. ([#156](https://github.com/klexical/openRS_/issues/156), [#157](https://github.com/klexical/openRS_/issues/157), [#158](https://github.com/klexical/openRS_/issues/158))
+- **Settings visual overhaul** — replaced `SurfUp` (neutral grey `#141414`) with blue-tinted palette (`Bg`, `Surf2`, `Surf3`) matching the cockpit aesthetic throughout `SettingsSheet.kt`. ([#158](https://github.com/klexical/openRS_/issues/158))
+- **Tire font sizes** — temperature increased to 14sp with color coding, hero PSI to 22sp. ([#153](https://github.com/klexical/openRS_/issues/153))
+
 ---
 
 ## [v2.2.4] — 2026-03-19
