@@ -73,7 +73,7 @@ object DiagnosticExporter {
                     zip.closeEntry()
                 }
 
-                // Crash telemetry: include any crash_telemetry_*.json files, then delete
+                // Crash telemetry: include any crash_telemetry_*.json files (kept for history)
                 val diagDir = File(ctx.filesDir, "diagnostics")
                 if (diagDir.isDirectory) {
                     diagDir.listFiles { f -> f.name.startsWith("crash_telemetry_") && f.name.endsWith(".json") }
@@ -81,8 +81,24 @@ object DiagnosticExporter {
                             zip.putNextEntry(ZipEntry(crashFile.name))
                             crashFile.inputStream().buffered().use { it.copyTo(zip) }
                             zip.closeEntry()
-                            crashFile.delete()
                         }
+                }
+
+                // DID probe sessions: one CSV per scanned module
+                val probes = DiagnosticLogger.probeSessions
+                if (probes.isNotEmpty()) {
+                    probes.forEachIndexed { idx, session ->
+                        val name = "did_probe_${session.module.lowercase()}_${idx + 1}.csv"
+                        zip.putNextEntry(ZipEntry(name))
+                        val csv = buildString {
+                            appendLine("DID,Status,ResponseHex")
+                            session.results.forEach { r ->
+                                appendLine("0x${"%04X".format(r.did)},${r.status},${r.responseHex}")
+                            }
+                        }
+                        zip.write(csv.toByteArray(Charsets.UTF_8))
+                        zip.closeEntry()
+                    }
                 }
 
                 // Mission Control HTML dashboard (diagnostic-only, no trip data)
@@ -173,7 +189,8 @@ object DiagnosticExporter {
                     "• trip_$ts.csv            — telemetry spreadsheet (all TripPoint fields)\n" +
                     "• trip_summary_$ts.txt     — human-readable trip report$dtcNote\n" +
                     "• mission_control_$ts.html — interactive dashboard (open in browser)\n\n" +
-                    "$ptCount waypoints recorded."
+                    "$ptCount waypoints recorded.\n\n" +
+                    "View in Sapphire → https://klexical.github.io/openRS_/"
                 )
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
@@ -329,6 +346,20 @@ object DiagnosticExporter {
     }
 
     /** Create and fire an Android share intent for the diagnostic ZIP. */
+    /** Returns crash telemetry files sorted by newest first. */
+    fun crashFiles(ctx: Context): List<File> {
+        val dir = File(ctx.filesDir, "diagnostics")
+        if (!dir.isDirectory) return emptyList()
+        return dir.listFiles { f -> f.name.startsWith("crash_telemetry_") && f.name.endsWith(".json") }
+            ?.sortedByDescending { it.lastModified() }
+            ?: emptyList()
+    }
+
+    /** Delete all crash telemetry files. */
+    fun clearCrashHistory(ctx: Context) {
+        crashFiles(ctx).forEach { it.delete() }
+    }
+
     fun share(ctx: Context) {
         val uri = export(ctx) ?: run {
             DiagnosticLogger.event("SHARE", "Export failed — nothing to share")

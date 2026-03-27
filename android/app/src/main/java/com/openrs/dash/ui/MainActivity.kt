@@ -83,6 +83,14 @@ class MainActivity : ComponentActivity() {
             var showCustomDash  by remember { mutableStateOf(false) }
             val snackbarHostState = remember { SnackbarHostState() }
 
+            // What's New — show once after version update
+            val whatsNewCtx = LocalContext.current
+            var showWhatsNew by remember {
+                val lastSeen = AppSettings.getLastSeenVersion(whatsNewCtx)
+                val current = com.openrs.dash.BuildConfig.VERSION_NAME
+                mutableStateOf(lastSeen != current)
+            }
+
             val view = LocalView.current
             LaunchedEffect(prefs.screenOn) {
                 view.keepScreenOn = prefs.screenOn
@@ -148,6 +156,13 @@ class MainActivity : ComponentActivity() {
 
                                 if (settingsOpen) {
                                     SettingsDialog(onDismiss = { settingsOpen = false })
+                                }
+
+                                if (showWhatsNew) {
+                                    WhatsNewDialog(onDismiss = {
+                                        showWhatsNew = false
+                                        AppSettings.setLastSeenVersion(whatsNewCtx, com.openrs.dash.BuildConfig.VERSION_NAME)
+                                    })
                                 }
                             }
                         }

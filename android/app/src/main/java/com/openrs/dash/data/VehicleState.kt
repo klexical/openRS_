@@ -77,6 +77,8 @@ data class VehicleState(
     val tpmsSensorIdRR: Long = -1L,        // 0x2811: 4-byte TPMS sensor ID for RR
     val tpmsSensorIdLR: Long = -1L,        // 0x2812: 4-byte TPMS sensor ID for LR
 
+    val tpmsLastUpdate: Long = 0L,           // System.currentTimeMillis() of last TPMS pressure update
+
     // ── TPMS Session Start (first valid reading per session) ──
     val tireStartLF: Double = -1.0,        // Session-start LF pressure (PSI); -1 = not yet captured
     val tireStartRF: Double = -1.0,        // Session-start RF pressure (PSI); -1 = not yet captured

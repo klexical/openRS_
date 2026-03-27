@@ -50,11 +50,12 @@ object ObdResponseParser {
                 val b5 = data[5].toInt() and 0xFF
                 val psi = ((b4 * 256.0 + b5) / 3.0 + 22.0 / 3.0) * 0.145
                 if (psi < 5.0 || psi > 70.0) return
+                val now = System.currentTimeMillis()
                 onObdUpdate(when (did) {
-                    0x2813 -> currentState.copy(tirePressLF = psi)
-                    0x2814 -> currentState.copy(tirePressRF = psi)
-                    0x2816 -> currentState.copy(tirePressLR = psi)
-                    else   -> currentState.copy(tirePressRR = psi)
+                    0x2813 -> currentState.copy(tirePressLF = psi, tpmsLastUpdate = now)
+                    0x2814 -> currentState.copy(tirePressRF = psi, tpmsLastUpdate = now)
+                    0x2816 -> currentState.copy(tirePressLR = psi, tpmsLastUpdate = now)
+                    else   -> currentState.copy(tirePressRR = psi, tpmsLastUpdate = now)
                 })
             }
             // TPMS sensor IDs — 4-byte ID per tire position, polled once on connect
@@ -120,11 +121,12 @@ object ObdResponseParser {
                 if (tempC > 120) return
 
                 val s = currentState
+                val now = System.currentTimeMillis()
                 val updated = when (sensorId) {
-                    s.tpmsSensorIdLF -> s.copy(tireTempLF = tempC, tirePressLF = psi)
-                    s.tpmsSensorIdRF -> s.copy(tireTempRF = tempC, tirePressRF = psi)
-                    s.tpmsSensorIdRR -> s.copy(tireTempRR = tempC, tirePressRR = psi)
-                    s.tpmsSensorIdLR -> s.copy(tireTempLR = tempC, tirePressLR = psi)
+                    s.tpmsSensorIdLF -> s.copy(tireTempLF = tempC, tirePressLF = psi, tpmsLastUpdate = now)
+                    s.tpmsSensorIdRF -> s.copy(tireTempRF = tempC, tirePressRF = psi, tpmsLastUpdate = now)
+                    s.tpmsSensorIdRR -> s.copy(tireTempRR = tempC, tirePressRR = psi, tpmsLastUpdate = now)
+                    s.tpmsSensorIdLR -> s.copy(tireTempLR = tempC, tirePressLR = psi, tpmsLastUpdate = now)
                     else -> {
                         Log.d(TAG, "0x280B unknown sensor ID %08X".format(sensorId))
                         null

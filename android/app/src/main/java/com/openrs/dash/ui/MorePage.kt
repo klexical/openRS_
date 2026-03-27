@@ -41,11 +41,9 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import android.content.Intent
-import android.net.Uri
-import android.provider.Settings
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.can.BusyException
+import com.openrs.dash.can.CanDecoder
 import com.openrs.dash.can.FirmwareApi
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.EscStatus
@@ -53,9 +51,9 @@ import com.openrs.dash.data.SessionDatabase
 import com.openrs.dash.data.SessionEntity
 import com.openrs.dash.data.SnapshotEntity
 import com.openrs.dash.data.VehicleState
-import com.openrs.dash.diagnostics.DiagnosticExporter
 import com.openrs.dash.diagnostics.DiagnosticLogger
-import com.openrs.dash.service.HudOverlayService
+import android.content.Intent
+import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -63,6 +61,8 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MORE PAGE
@@ -79,7 +79,6 @@ import java.util.Locale
     val scope  = rememberCoroutineScope()
     val ctx    = LocalContext.current
     val haptic = LocalHapticFeedback.current
-    var exporting by remember { mutableStateOf(false) }
     val accent = LocalThemeAccent.current
     val canControl = isFw && vs.isConnected
     val prefs by UserPrefsStore.prefs.collectAsState()
@@ -136,10 +135,15 @@ import java.util.Locale
                                             snackbarHostState.showSnackbar(msg)
                                         } else {
                                             DiagnosticLogger.event("DM_CMD", "OK (HTTP 200)")
-                                            // Watch CAN for confirmation (up to 8s).
+                                            // Settling delay: firmware needs time to press the
+                                            // mode button and ECU needs time to broadcast the
+                                            // new mode on 0x420 (~600 ms interval). SLCAN data
+                                            // (2026-03-26) showed 4s firmware delay on cold start.
+                                            delay(2_000)
+                                            // Watch CAN for confirmation (up to 15s after settling).
                                             // Read live state each iteration — vs is an immutable snapshot.
                                             var confirmed = false
-                                            for (i in 0 until 80) {
+                                            for (i in 0 until 150) {
                                                 delay(100)
                                                 val live = OpenRSDashApp.instance.vehicleState.value
                                                 if (live.driveMode == mode) {
@@ -150,7 +154,7 @@ import java.util.Locale
                                             if (!confirmed) {
                                                 val live = OpenRSDashApp.instance.vehicleState.value
                                                 DiagnosticLogger.event("DM_CMD",
-                                                    "No CAN confirmation after 8s (current=${live.driveMode}, target=$mode)")
+                                                    "No CAN confirmation after 17s (current=${live.driveMode}, target=$mode, modeDetail420=0x${CanDecoder.modeDetail420Hex})")
                                                 snackbarHostState.showSnackbar(
                                                     "Mode change didn't take effect — try again")
                                             }
@@ -363,13 +367,6 @@ import java.util.Locale
 
         HorizontalDivider(color = Brd)
 
-        // ── RS Theme ─────────────────────────────────────────────────────
-        MoreSection("THEME — RS PAINT COLOUR") {
-            ThemePicker(p)
-        }
-
-        HorizontalDivider(color = Brd)
-
         // ── Custom Dashboard ──────────────────────────────────────────────
         MoreSection("CUSTOM DASHBOARD") {
             val savedLayout = remember { AppSettings.loadCustomDash(ctx) }
@@ -405,35 +402,33 @@ import java.util.Locale
 
         HorizontalDivider(color = Brd)
 
-        // ── Connection & Diagnostics ─────────────────────────────────────
-        MoreSection("CONNECTION & DIAGNOSTICS") {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                DataCell("STATUS", if (vs.isConnected) "LIVE" else "OFFLINE",
-                    valueColor = if (vs.isConnected) Ok else Orange, modifier = Modifier.weight(1f))
-                DataCell("MODE", vs.dataMode, modifier = Modifier.weight(1f))
-                DataCell("FPS",  "${vs.framesPerSecond.toInt()}", modifier = Modifier.weight(1f))
-                DataCell("SESSION", DiagnosticLogger.formatDuration(remember(vs.framesPerSecond) { DiagnosticLogger.sessionDurationMs }),
-                    modifier = Modifier.weight(1f))
-            }
-            Spacer(Modifier.height(10.dp))
+        // ── Sapphire Web Dashboard ───────────────────────────────────────
+        MoreSection("WEB DASHBOARD") {
             Box(
                 Modifier.fillMaxWidth()
-                    .background(Brush.horizontalGradient(listOf(accent.copy(0.1f), accent.copy(0.05f))), RoundedCornerShape(10.dp))
-                    .border(1.dp, accent.copy(0.3f), RoundedCornerShape(10.dp))
-                    .clickable(enabled = !exporting) {
-                        exporting = true
-                        scope.launch(Dispatchers.IO) {
-                            DiagnosticExporter.share(ctx)
-                            withContext(Dispatchers.Main) { exporting = false }
-                        }
+                    .background(
+                        Brush.horizontalGradient(listOf(accent.copy(0.08f), accent.copy(0.03f))),
+                        RoundedCornerShape(10.dp)
+                    )
+                    .border(1.dp, accent.copy(0.2f), RoundedCornerShape(10.dp))
+                    .clickable {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(SAPPHIRE_URL))
+                        ctx.startActivity(intent)
                     }
-                    .padding(vertical = 13.dp),
-                contentAlignment = Alignment.Center
+                    .padding(horizontal = 14.dp, vertical = 13.dp)
             ) {
-                MonoLabel(
-                    if (exporting) "BUILDING..." else "↑  CAPTURE & SHARE SNAPSHOT",
-                    12.sp, accent, letterSpacing = 0.1.sp
-                )
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        MonoLabel("SAPPHIRE", 11.sp, accent, fontWeight = FontWeight.Bold, letterSpacing = 0.15.sp)
+                        Spacer(Modifier.weight(1f))
+                        MonoLabel("↗ OPEN", 10.sp, accent, letterSpacing = 0.1.sp)
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    MonoLabel(
+                        "Analyse trip & diagnostic data in your browser. Drop an export ZIP to explore charts, maps, and CAN data.",
+                        9.sp, Dim
+                    )
+                }
             }
         }
 
@@ -441,77 +436,6 @@ import java.util.Locale
 
         // ── Session History ────────────────────────────────────────────────
         SessionHistorySection()
-
-        HorizontalDivider(color = Brd)
-
-        // ── Display Settings ─────────────────────────────────────────────
-        MoreSection("DISPLAY SETTINGS") {
-            // ── Floating HUD toggle ──────────────────────────────────────
-            var hudRunning by remember { mutableStateOf(false) }
-            Box(
-                Modifier.fillMaxWidth()
-                    .background(
-                        if (hudRunning) Ok.copy(alpha = 0.06f) else Surf2,
-                        RoundedCornerShape(10.dp)
-                    )
-                    .border(
-                        1.dp,
-                        if (hudRunning) Ok.copy(alpha = 0.3f) else Brd,
-                        RoundedCornerShape(10.dp)
-                    )
-                    .clickable {
-                        if (hudRunning) {
-                            ctx.stopService(Intent(ctx, HudOverlayService::class.java))
-                            hudRunning = false
-                        } else {
-                            if (!Settings.canDrawOverlays(ctx)) {
-                                val intent = Intent(
-                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                    Uri.parse("package:${ctx.packageName}")
-                                )
-                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                ctx.startActivity(intent)
-                            } else {
-                                ctx.startService(Intent(ctx, HudOverlayService::class.java))
-                                hudRunning = true
-                            }
-                        }
-                    }
-                    .padding(horizontal = 14.dp, vertical = 13.dp)
-            ) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column {
-                        UIText("Floating HUD", 12.sp, Frost, FontWeight.SemiBold)
-                        Spacer(Modifier.height(2.dp))
-                        MonoLabel("Boost, RPM & oil temp overlay for track days", 9.sp, Dim)
-                    }
-                    MonoLabel(
-                        if (hudRunning) "\u25CF ON" else "\u25CB OFF",
-                        10.sp,
-                        if (hudRunning) Ok else Dim,
-                        letterSpacing = 0.1.sp
-                    )
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            // ── Settings button ──────────────────────────────────────────
-            Box(
-                Modifier.fillMaxWidth()
-                    .background(Surf2, RoundedCornerShape(10.dp))
-                    .border(1.dp, Brd, RoundedCornerShape(10.dp))
-                    .clickable { onSettings() }
-                    .padding(horizontal = 14.dp, vertical = 13.dp)
-            ) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column {
-                        MonoLabel("Units, TPMS threshold, connection settings", 9.sp, Dim)
-                        Spacer(Modifier.height(2.dp))
-                        UIText("${p.speedLabel} · ${p.tempLabel} · ${p.boostUnit}", 12.sp, Frost)
-                    }
-                    MonoLabel("⚙ OPEN", 10.sp, accent, letterSpacing = 0.1.sp)
-                }
-            }
-        }
 
         Spacer(Modifier.height(4.dp))
     }

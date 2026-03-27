@@ -19,7 +19,11 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import com.openrs.dash.BuildConfig
+import com.openrs.dash.service.HudOverlayService
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -56,12 +60,12 @@ fun SettingsDialog(onDismiss: () -> Unit) {
             Modifier
                 .fillMaxWidth(0.95f)
                 .fillMaxHeight(0.92f)
-                .background(Surf, RoundedCornerShape(12.dp))
+                .background(Bg, RoundedCornerShape(12.dp))
                 .border(1.dp, Brd, RoundedCornerShape(12.dp))
         ) {
             // ── Title bar ────────────────────────────────────────────────────
             Row(
-                Modifier.fillMaxWidth().background(SurfUp, RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
+                Modifier.fillMaxWidth().background(Surf3, RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
                     .padding(horizontal = 20.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -143,6 +147,73 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                         checked = screenOn,
                         onCheckedChange = { screenOn = it }
                     )
+                }
+
+                // ── Theme section ────────────────────────────────────────────
+                SettingsSection("THEME — RS PAINT COLOUR") {
+                    ThemePicker(current)
+                }
+
+                // ── Floating HUD section ─────────────────────────────────────
+                SettingsSection("FLOATING HUD") {
+                    val hasOverlayPerm = Settings.canDrawOverlays(ctx)
+                    if (!hasOverlayPerm) {
+                        Text(
+                            "Overlay permission required to display the floating HUD over other apps.",
+                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Box(
+                            Modifier.fillMaxWidth()
+                                .background(LocalThemeAccent.current.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+                                .border(1.dp, LocalThemeAccent.current.copy(0.3f), RoundedCornerShape(8.dp))
+                                .clickable {
+                                    ctx.startActivity(
+                                        Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                            Uri.parse("package:${ctx.packageName}"))
+                                    )
+                                }
+                                .padding(12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("GRANT OVERLAY PERMISSION", fontSize = 11.sp, color = LocalThemeAccent.current,
+                                fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        Text(
+                            "Show a compact boost / RPM / oil overlay on top of other apps. Useful for track days with a nav app.",
+                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Box(
+                                Modifier.weight(1f)
+                                    .background(Ok.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+                                    .border(1.dp, Ok.copy(0.3f), RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        ctx.startService(Intent(ctx, HudOverlayService::class.java))
+                                    }
+                                    .padding(12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("START HUD", fontSize = 11.sp, color = Ok,
+                                    fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
+                            }
+                            Box(
+                                Modifier.weight(1f)
+                                    .background(Orange.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+                                    .border(1.dp, Orange.copy(0.3f), RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        ctx.stopService(Intent(ctx, HudOverlayService::class.java))
+                                    }
+                                    .padding(12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("STOP HUD", fontSize = 11.sp, color = Orange,
+                                    fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
                 }
 
                 // ── Adapter section ───────────────────────────────────────────
@@ -276,6 +347,24 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                         fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono)
                 }
 
+                // ── What's New ────────────────────────────────────────────────
+                var showWhatsNewLocal by remember { mutableStateOf(false) }
+                Box(
+                    Modifier.fillMaxWidth()
+                        .background(Surf2, RoundedCornerShape(8.dp))
+                        .border(1.dp, Brd, RoundedCornerShape(8.dp))
+                        .clickable { showWhatsNewLocal = true }
+                        .padding(14.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("WHAT'S NEW IN v${BuildConfig.VERSION_NAME}", fontSize = 11.sp,
+                        color = accent, fontFamily = ShareTechMono, fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.1.sp)
+                }
+                if (showWhatsNewLocal) {
+                    WhatsNewDialog(onDismiss = { showWhatsNewLocal = false })
+                }
+
                 // Error
                 if (error != null) {
                     Text(error!!, fontSize = 12.sp, color = Orange, fontFamily = ShareTechMono)
@@ -392,7 +481,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
 private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(
         Modifier.fillMaxWidth()
-            .background(SurfUp, RoundedCornerShape(8.dp))
+            .background(Surf2, RoundedCornerShape(8.dp))
             .border(1.dp, Brd, RoundedCornerShape(8.dp))
             .padding(14.dp)
     ) {

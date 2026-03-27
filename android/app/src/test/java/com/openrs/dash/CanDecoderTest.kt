@@ -518,9 +518,16 @@ class CanDecoderTest {
     }
 
     @Test
-    fun `decode drive mode Sport (default modeDetail420)`() {
-        // byte6 upper nibble = 1, modeDetail420 default = 0x10CC (bit0=0) -> Sport
+    fun `decode drive mode Sport requires 0x420 gate`() {
+        // byte6 upper nibble = 1 but no 0x420 received yet -> null (gate blocks)
         val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00)
+        val blocked = CanDecoder.decode(0x1B0, data, blank)
+        assertNull(blocked)
+
+        // After receiving a 0x420 frame (Sport indicator), 0x1B0 nibble=1 resolves to Sport
+        val ext420 = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0xCC.toByte())
+        CanDecoder.decode(0x420, ext420, blank.copy(driveMode = DriveMode.NORMAL))
+
         val result = CanDecoder.decode(0x1B0, data, blank)
         assertNotNull(result)
         assertEquals(DriveMode.SPORT, result!!.driveMode)
@@ -630,16 +637,24 @@ class CanDecoderTest {
     // ── Session state reset ─────────────────────────────────────────────────
 
     @Test
-    fun `resetSessionState clears modeDetail420`() {
-        // Set Track via 0x420 (bit0=1 = Track)
+    fun `resetSessionState clears modeDetail420 and has420Arrived`() {
+        // Set Track via 0x420 (bit0=1 = Track) — also sets has420Arrived
         val sportState = blank.copy(driveMode = DriveMode.SPORT)
         val extData = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0xCD.toByte())
         CanDecoder.decode(0x420, extData, sportState)
 
-        // Reset should clear back to default (0x10CC, bit0=0 -> Sport)
+        // Reset should clear modeDetail420 AND has420Arrived
         CanDecoder.resetSessionState()
 
+        // After reset, 0x1B0 nibble=1 should return null (0x420 gate not yet passed)
         val modeData = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00)
+        val blocked = CanDecoder.decode(0x1B0, modeData, blank)
+        assertNull(blocked)
+
+        // Re-prime with 0x420 Sport indicator, then 0x1B0 resolves to Sport
+        val sportExt = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0xCC.toByte())
+        CanDecoder.decode(0x420, sportExt, blank.copy(driveMode = DriveMode.NORMAL))
+
         val result = CanDecoder.decode(0x1B0, modeData, blank)
         assertNotNull(result)
         assertEquals(DriveMode.SPORT, result!!.driveMode)

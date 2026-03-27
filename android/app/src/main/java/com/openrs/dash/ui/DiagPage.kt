@@ -390,6 +390,10 @@ import kotlin.math.roundToInt
 
         HorizontalDivider(color = Brd)
         Spacer(Modifier.height(10.dp))
+        CrashHistorySection()
+        Spacer(Modifier.height(14.dp))
+        HorizontalDivider(color = Brd)
+        Spacer(Modifier.height(10.dp))
         DidProberSection(vs, onSendRawQuery)
         Spacer(Modifier.height(14.dp))
         HorizontalDivider(color = Brd)
@@ -501,4 +505,75 @@ private fun DtcRow(dtc: DtcResult) {
             MonoLabel(dtc.status.label, 8.sp, statusColor.copy(0.7f))
         }
     }
+}
+
+// ── Crash History Section ──────────────────────────────────────────────────
+
+@Composable
+private fun CrashHistorySection() {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val dateFmt = remember { java.text.SimpleDateFormat("MMM dd, HH:mm:ss", java.util.Locale.getDefault()) }
+
+    var crashFiles by remember { mutableStateOf(DiagnosticExporter.crashFiles(ctx)) }
+
+    SectionLabel("CRASH HISTORY")
+    Spacer(Modifier.height(4.dp))
+
+    if (crashFiles.isEmpty()) {
+        Box(
+            Modifier.fillMaxWidth()
+                .background(Surf2, RoundedCornerShape(10.dp))
+                .border(1.dp, Brd, RoundedCornerShape(10.dp))
+                .padding(14.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            MonoLabel("No crash reports", 10.sp, Dim)
+        }
+    } else {
+        Column(
+            Modifier.fillMaxWidth()
+                .background(Surf2, RoundedCornerShape(10.dp))
+                .border(1.dp, Brd, RoundedCornerShape(10.dp))
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            MonoLabel("${crashFiles.size} crash report(s)", 10.sp, Orange, letterSpacing = 0.1.sp)
+            Spacer(Modifier.height(2.dp))
+            crashFiles.take(20).forEach { file ->
+                val ts = dateFmt.format(java.util.Date(file.lastModified()))
+                Row(
+                    Modifier.fillMaxWidth()
+                        .background(Surf, RoundedCornerShape(6.dp))
+                        .border(1.dp, Brd, RoundedCornerShape(6.dp))
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MonoLabel(ts, 9.sp, Frost)
+                    MonoLabel(file.name.removePrefix("crash_telemetry_").removeSuffix(".json"), 8.sp, Dim)
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Box(
+                Modifier.fillMaxWidth()
+                    .background(Orange.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+                    .border(1.dp, Orange.copy(0.3f), RoundedCornerShape(8.dp))
+                    .clickable {
+                        scope.launch(Dispatchers.IO) {
+                            DiagnosticExporter.clearCrashHistory(ctx)
+                            withContext(Dispatchers.Main) {
+                                crashFiles = emptyList()
+                            }
+                        }
+                    }
+                    .padding(10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                MonoLabel("CLEAR CRASH HISTORY", 10.sp, Orange, letterSpacing = 0.1.sp)
+            }
+        }
+    }
+    Spacer(Modifier.height(4.dp))
+    MonoLabel("Crash reports are auto-included in diagnostic ZIP exports.", 9.sp, Dim)
 }

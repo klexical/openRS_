@@ -82,6 +82,9 @@ object AppSettings {
     // ── Odometer display ──────────────────────────────────────────────────
     const val KEY_ODOM_IN_MILES = "odom_in_miles"
 
+    // ── What's New ──────────────────────────────────────────────────────
+    const val KEY_LAST_SEEN_VERSION = "last_seen_version"
+
     // ── Custom dashboard ────────────────────────────────────────────────
     const val KEY_CUSTOM_DASH = "custom_dash_json"
 
@@ -138,6 +141,13 @@ object AppSettings {
 
     fun getMeatPiMicroSd(ctx: Context): Boolean =
         prefs(ctx).getBoolean(KEY_MEATPI_MICROSD, DEFAULT_MEATPI_MICROSD)
+
+    fun getLastSeenVersion(ctx: Context): String =
+        prefs(ctx).getString(KEY_LAST_SEEN_VERSION, "") ?: ""
+
+    fun setLastSeenVersion(ctx: Context, version: String) {
+        prefs(ctx).edit { putString(KEY_LAST_SEEN_VERSION, version) }
+    }
 
     fun getOdomInMiles(ctx: Context): Boolean {
         val p = prefs(ctx)

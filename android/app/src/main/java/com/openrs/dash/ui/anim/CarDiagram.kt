@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
@@ -17,39 +16,26 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.TextMeasurer
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.drawText
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.openrs.dash.R
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.ui.Dim
-import com.openrs.dash.ui.Frost
 import com.openrs.dash.ui.LocalThemeAccent
 import com.openrs.dash.ui.Ok
 import com.openrs.dash.ui.Orange
-import com.openrs.dash.ui.ShareTechMono
-import com.openrs.dash.ui.Surf3
 import com.openrs.dash.ui.UnitConversions
 import com.openrs.dash.ui.UserPrefs
 import kotlin.math.roundToInt
 
 /**
- * Focus RS MK3 wireframe with diamond wheel markers and F/R torque
- * split bar overlaid at physical wheel positions.
+ * Focus RS MK3 wireframe with tire highlight markers at wheel positions.
  *
  * Designed to sit between flanking tire cards in the unified
  * Chassis section ("Neon Connect" layout). Connector lines are
- * drawn by the parent composable via [wheelAnchors].
+ * drawn by the parent composable via [WHEEL_ANCHORS].
  */
 @Composable
 fun CarDiagram(
@@ -58,8 +44,6 @@ fun CarDiagram(
     modifier: Modifier = Modifier
 ) {
     val accent = LocalThemeAccent.current
-    val density = LocalDensity.current
-    val textMeasurer = rememberTextMeasurer()
 
     // Tire status colors — animated transitions
     val lowThreshold = prefs.tireLowPsi.toDouble()
@@ -75,28 +59,6 @@ fun CarDiagram(
     val rrColor by animateColorAsState(
         tireStatusColor(vs.tirePressRR, lowThreshold), tween(400), label = "rrCol"
     )
-
-    val rearPct = vs.rearTorquePct.roundToInt()
-    val frontPct = 100 - rearPct
-    val splitLabel = "F $frontPct% / R $rearPct%"
-
-    val splitStyle = remember(density) {
-        TextStyle(
-            fontFamily = ShareTechMono,
-            fontSize = with(density) { 10.sp },
-            color = Frost,
-            fontWeight = FontWeight.Normal,
-            textAlign = TextAlign.Center
-        )
-    }
-    val splitLabelStyle = remember(density) {
-        TextStyle(
-            fontFamily = ShareTechMono,
-            fontSize = with(density) { 8.sp },
-            color = Dim,
-            textAlign = TextAlign.Center
-        )
-    }
 
     Box(modifier, contentAlignment = Alignment.Center) {
         // RS wireframe image — tinted to theme accent
@@ -114,16 +76,11 @@ fun CarDiagram(
                 val w = size.width
                 val h = size.height
 
-                // Diamond markers at wheel positions
-                val diamondSize = 5.dp.toPx()
-                drawDiamondMarker(w * 0.14f, h * 0.26f, diamondSize, flColor)
-                drawDiamondMarker(w * 0.86f, h * 0.26f, diamondSize, frColor)
-                drawDiamondMarker(w * 0.14f, h * 0.74f, diamondSize, rlColor)
-                drawDiamondMarker(w * 0.86f, h * 0.74f, diamondSize, rrColor)
-
-                // AWD torque split (center)
-                drawTorqueSplit(w, h, frontPct, rearPct, splitLabel, accent,
-                    textMeasurer, splitStyle, splitLabelStyle)
+                // Tire highlight rectangles at wheel positions
+                drawTireHighlight(w * 0.14f, h * 0.26f, flColor)
+                drawTireHighlight(w * 0.86f, h * 0.26f, frColor)
+                drawTireHighlight(w * 0.14f, h * 0.74f, rlColor)
+                drawTireHighlight(w * 0.86f, h * 0.74f, rrColor)
             }
         )
     }
@@ -133,86 +90,53 @@ fun CarDiagram(
 // Drawing helpers
 // ═════════════════════════════════════════════════════════════════════════════
 
-/** Diamond-shaped wheel marker with glow. */
-private fun DrawScope.drawDiamondMarker(
-    cx: Float, cy: Float, size: Float, color: Color
-) {
-    // Outer glow diamond
-    val glowPath = Path().apply {
-        moveTo(cx, cy - size * 1.6f)
-        lineTo(cx + size * 1.6f, cy)
-        lineTo(cx, cy + size * 1.6f)
-        lineTo(cx - size * 1.6f, cy)
-        close()
-    }
-    drawPath(glowPath, color.copy(alpha = 0.2f))
+/** Tire highlight rectangle with layered glow — matches wheel arch positions. */
+private fun DrawScope.drawTireHighlight(cx: Float, cy: Float, color: Color) {
+    val tireW = 10.dp.toPx()   // narrow cross-section (top-down view)
+    val tireH = 20.dp.toPx()   // elongated along car's length
+    val cr = CornerRadius(3.dp.toPx())
 
-    // Filled diamond
-    val path = Path().apply {
-        moveTo(cx, cy - size)
-        lineTo(cx + size, cy)
-        lineTo(cx, cy + size)
-        lineTo(cx - size, cy)
-        close()
-    }
-    drawPath(path, color)
-
-    // Edge stroke for definition
-    drawPath(path, color.copy(alpha = 0.7f), style = Stroke(width = 1f))
-}
-
-private fun DrawScope.drawTorqueSplit(
-    w: Float, h: Float,
-    frontPct: Int, rearPct: Int,
-    splitLabel: String,
-    accent: Color,
-    textMeasurer: TextMeasurer,
-    splitStyle: TextStyle,
-    labelStyle: TextStyle
-) {
-    val barW = 6.dp.toPx()
-    val barH = h * 0.28f
-    val barX = w / 2f - barW / 2f
-    val barY = h / 2f - barH / 2f
-
-    // Background bar
+    // Outer bloom
+    val bloom = 5.dp.toPx()
     drawRoundRect(
-        color = Surf3,
-        topLeft = Offset(barX, barY),
-        size = Size(barW, barH),
-        cornerRadius = CornerRadius(3.dp.toPx())
+        color = color.copy(alpha = 0.12f),
+        topLeft = Offset(cx - tireW / 2 - bloom, cy - tireH / 2 - bloom),
+        size = Size(tireW + bloom * 2, tireH + bloom * 2),
+        cornerRadius = CornerRadius(cr.x + bloom)
     )
 
-    // Front portion (accent, from top)
-    val frontH = barH * (frontPct / 100f).coerceIn(0.02f, 0.98f)
+    // Mid glow
+    val mid = 2.dp.toPx()
     drawRoundRect(
-        color = accent.copy(alpha = 0.8f),
-        topLeft = Offset(barX, barY),
-        size = Size(barW, frontH),
-        cornerRadius = CornerRadius(3.dp.toPx())
+        color = color.copy(alpha = 0.3f),
+        topLeft = Offset(cx - tireW / 2 - mid, cy - tireH / 2 - mid),
+        size = Size(tireW + mid * 2, tireH + mid * 2),
+        cornerRadius = CornerRadius(cr.x + mid)
     )
 
-    // Rear portion (green, from bottom)
-    val rearH = barH - frontH
+    // Tire body
     drawRoundRect(
-        color = Ok.copy(alpha = 0.8f),
-        topLeft = Offset(barX, barY + frontH),
-        size = Size(barW, rearH),
-        cornerRadius = CornerRadius(3.dp.toPx())
+        color = color.copy(alpha = 0.65f),
+        topLeft = Offset(cx - tireW / 2, cy - tireH / 2),
+        size = Size(tireW, tireH),
+        cornerRadius = cr
     )
 
-    // "F/R" label above bar
-    val frLabel = textMeasurer.measure("F/R", labelStyle)
-    drawText(
-        frLabel,
-        topLeft = Offset(w / 2f - frLabel.size.width / 2f, barY - frLabel.size.height - 2.dp.toPx())
+    // Inner bright core
+    drawRoundRect(
+        color = color.copy(alpha = 0.95f),
+        topLeft = Offset(cx - tireW * 0.3f, cy - tireH * 0.3f),
+        size = Size(tireW * 0.6f, tireH * 0.6f),
+        cornerRadius = CornerRadius(2.dp.toPx())
     )
 
-    // Split text below bar
-    val splitResult = textMeasurer.measure(splitLabel, splitStyle)
-    drawText(
-        splitResult,
-        topLeft = Offset(w / 2f - splitResult.size.width / 2f, barY + barH + 3.dp.toPx())
+    // Edge definition stroke
+    drawRoundRect(
+        color = color.copy(alpha = 0.5f),
+        topLeft = Offset(cx - tireW / 2, cy - tireH / 2),
+        size = Size(tireW, tireH),
+        cornerRadius = cr,
+        style = Stroke(width = 1f)
     )
 }
 

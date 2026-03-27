@@ -44,9 +44,22 @@ object CanDecoder {
      */
     @Volatile private var modeDetail420: Int = 0x10CC
 
+    /**
+     * True once at least one 0x420 frame has arrived in this session.
+     * Until then, 0x1B0 nibble=1 is reported as UNKNOWN to prevent
+     * misreading Sport/Track from stale modeDetail420 defaults.
+     * See: cold-start race condition where firmware overshoot caused
+     * Drift instead of Sport (SLCAN evidence 2026-03-26).
+     */
+    @Volatile private var has420Arrived: Boolean = false
+
+    /** Current modeDetail420 as hex string — for diagnostic logging. */
+    val modeDetail420Hex: String get() = "%04X".format(modeDetail420)
+
     /** Reset per-session state — call at the start of each new connection. */
     fun resetSessionState() {
         modeDetail420 = 0x10CC
+        has420Arrived = false
     }
 
     // ── HS-CAN engine / powertrain ──────────────────────────────────────────
@@ -336,12 +349,13 @@ object CanDecoder {
                 val nibble = b6 ushr 4
                 val resolvedMode = when {
                     nibble == 0 -> DriveMode.NORMAL
-                    nibble == 1 -> if ((modeDetail420 and 0x01) != 0) DriveMode.TRACK
+                    nibble == 1 -> if (!has420Arrived) null   // wait for 0x420 before resolving Sport/Track
+                                  else if ((modeDetail420 and 0x01) != 0) DriveMode.TRACK
                                   else DriveMode.SPORT
                     nibble == 2 -> DriveMode.DRIFT
                     else        -> DriveMode.UNKNOWN
                 }
-                if (b4 != 0) null
+                if (b4 != 0 || resolvedMode == null) null
                 else state.copy(driveMode = resolvedMode, lastUpdate = now)
             } else null
 
@@ -352,6 +366,7 @@ object CanDecoder {
             ID_DRIVE_MODE_EXT -> if (n >= 8) {
                 val newDetail = (ubyte(data, 6) shl 8) or ubyte(data, 7)
                 modeDetail420 = newDetail
+                has420Arrived = true
                 val lcActive = (ubyte(data, 6) shr 2) and 1 == 1
                 if (state.driveMode == DriveMode.SPORT || state.driveMode == DriveMode.TRACK) {
                     val resolved = if ((newDetail and 0x01) != 0) DriveMode.TRACK
