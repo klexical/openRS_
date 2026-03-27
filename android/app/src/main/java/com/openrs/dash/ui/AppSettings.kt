@@ -2,6 +2,10 @@ package com.openrs.dash.ui
 
 import android.content.Context
 import androidx.core.content.edit
+import com.openrs.dash.data.DashCell
+import com.openrs.dash.data.DashLayout
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Thin SharedPreferences wrapper for all user-configurable app settings.
@@ -75,6 +79,15 @@ object AppSettings {
     const val KEY_MEATPI_MICROSD     = "meatpi_microsd"
     const val DEFAULT_MEATPI_MICROSD = false
 
+    // ── Odometer display ──────────────────────────────────────────────────
+    const val KEY_ODOM_IN_MILES = "odom_in_miles"
+
+    // ── What's New ──────────────────────────────────────────────────────
+    const val KEY_LAST_SEEN_VERSION = "last_seen_version"
+
+    // ── Custom dashboard ────────────────────────────────────────────────
+    const val KEY_CUSTOM_DASH = "custom_dash_json"
+
     // ── Read helpers ────────────────────────────────────────────────────────
 
     fun getHost(ctx: Context): String {
@@ -129,8 +142,29 @@ object AppSettings {
     fun getMeatPiMicroSd(ctx: Context): Boolean =
         prefs(ctx).getBoolean(KEY_MEATPI_MICROSD, DEFAULT_MEATPI_MICROSD)
 
+    fun getLastSeenVersion(ctx: Context): String =
+        prefs(ctx).getString(KEY_LAST_SEEN_VERSION, "") ?: ""
+
+    fun setLastSeenVersion(ctx: Context, version: String) {
+        prefs(ctx).edit { putString(KEY_LAST_SEEN_VERSION, version) }
+    }
+
+    fun getOdomInMiles(ctx: Context): Boolean {
+        val p = prefs(ctx)
+        // Backward compat: if key absent, derive from speed unit.
+        return if (p.contains(KEY_ODOM_IN_MILES)) p.getBoolean(KEY_ODOM_IN_MILES, true)
+        else getSpeedUnit(ctx) == "MPH"
+    }
+
     // ── Write helpers ────────────────────────────────────────────────────────
 
+    /**
+     * Saves connection endpoint only (host and port).
+     * Called from SettingsSheet when the user edits the connection address.
+     *
+     * NOTE: intentionally does NOT write [UserPrefs] fields (units, theme, etc.).
+     * Those are persisted by [saveAll]. The two methods cover disjoint key sets.
+     */
     fun save(ctx: Context, host: String, port: Int) {
         prefs(ctx).edit {
             putString(KEY_HOST, host.trim())
@@ -138,6 +172,13 @@ object AppSettings {
         }
     }
 
+    /**
+     * Saves all [UserPrefs] display and behaviour fields.
+     * Called from [UserPrefsStore.update] on every preference change.
+     *
+     * NOTE: intentionally does NOT write host/port — those are managed by [save].
+     * The two methods cover disjoint key sets.
+     */
     fun saveAll(ctx: Context, p: UserPrefs) {
         prefs(ctx).edit {
             putString(KEY_SPEED_UNIT,  p.speedUnit)
@@ -153,6 +194,7 @@ object AppSettings {
             putString(KEY_TEMP_PRESET, p.tempPreset)
             putString(KEY_ADAPTER_TYPE, p.adapterType)
             putBoolean(KEY_MEATPI_MICROSD, p.meatPiMicroSdLog)
+            putBoolean(KEY_ODOM_IN_MILES, p.odomInMiles)
         }
     }
 
@@ -169,8 +211,48 @@ object AppSettings {
         themeId              = getThemeId(ctx),
         tempPreset           = getTempPreset(ctx),
         adapterType          = getAdapterType(ctx),
-        meatPiMicroSdLog     = getMeatPiMicroSd(ctx)
+        meatPiMicroSdLog     = getMeatPiMicroSd(ctx),
+        odomInMiles          = getOdomInMiles(ctx)
     )
+
+    // ── Custom dashboard persistence ────────────────────────────────────
+
+    /** Serialize a [DashLayout] to JSON and persist to SharedPreferences. */
+    fun saveCustomDash(ctx: Context, layout: DashLayout) {
+        val arr = JSONArray()
+        for (cell in layout.cells) {
+            val obj = JSONObject()
+            obj.put("fieldKey", cell.fieldKey)
+            obj.put("displayType", cell.displayType)
+            obj.put("label", cell.label)
+            arr.put(obj)
+        }
+        val root = JSONObject()
+        root.put("name", layout.name)
+        root.put("cells", arr)
+        prefs(ctx).edit { putString(KEY_CUSTOM_DASH, root.toString()) }
+    }
+
+    /** Load the persisted custom dashboard layout, or null if none saved. */
+    fun loadCustomDash(ctx: Context): DashLayout? {
+        val json = prefs(ctx).getString(KEY_CUSTOM_DASH, null) ?: return null
+        return try {
+            val root = JSONObject(json)
+            val arr = root.getJSONArray("cells")
+            val cells = mutableListOf<DashCell>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                cells += DashCell(
+                    fieldKey = obj.getString("fieldKey"),
+                    displayType = obj.getString("displayType"),
+                    label = obj.getString("label")
+                )
+            }
+            DashLayout(name = root.optString("name", "Custom"), cells = cells)
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     private fun prefs(ctx: Context) =
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

@@ -518,9 +518,16 @@ class CanDecoderTest {
     }
 
     @Test
-    fun `decode drive mode Sport (default modeDetail420)`() {
-        // byte6 upper nibble = 1, modeDetail420 default = 0x10C4 (bit0=0) -> Sport
+    fun `decode drive mode Sport requires 0x420 gate`() {
+        // byte6 upper nibble = 1 but no 0x420 received yet -> null (gate blocks)
         val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00)
+        val blocked = CanDecoder.decode(0x1B0, data, blank)
+        assertNull(blocked)
+
+        // After receiving a 0x420 frame (Sport indicator), 0x1B0 nibble=1 resolves to Sport
+        val ext420 = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0xCC.toByte())
+        CanDecoder.decode(0x420, ext420, blank.copy(driveMode = DriveMode.NORMAL))
+
         val result = CanDecoder.decode(0x1B0, data, blank)
         assertNotNull(result)
         assertEquals(DriveMode.SPORT, result!!.driveMode)
@@ -562,7 +569,7 @@ class CanDecoderTest {
 
     @Test
     fun `decode 0x420 re-resolves Sport to Track`() {
-        // State has Sport, 0x420 arrives with bit0=1 -> resolve to Track
+        // State has Sport, 0x420 arrives with bit0=1 (0xCD) -> resolve to Track
         val sportState = blank.copy(driveMode = DriveMode.SPORT)
         val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0xCD.toByte())
         val result = CanDecoder.decode(0x420, data, sportState)
@@ -571,11 +578,21 @@ class CanDecoderTest {
     }
 
     @Test
+    fun `decode 0x420 re-resolves Track to Sport`() {
+        // State has Track, 0x420 arrives with bit0=0 (0xCC) -> resolve to Sport
+        val trackState = blank.copy(driveMode = DriveMode.TRACK)
+        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0xCC.toByte())
+        val result = CanDecoder.decode(0x420, data, trackState)
+        assertNotNull(result)
+        assertEquals(DriveMode.SPORT, result!!.driveMode)
+    }
+
+    @Test
     fun `decode 0x420 does not re-resolve when in Normal`() {
         // If current mode is Normal, 0x420 still updates launchControlActive
-        // but does NOT re-resolve driveMode to Track
+        // but does NOT re-resolve driveMode
         val normalState = blank.copy(driveMode = DriveMode.NORMAL)
-        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0xCD.toByte())
+        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0xCC.toByte())
         val result = CanDecoder.decode(0x420, data, normalState)
         assertNotNull(result)
         assertEquals(DriveMode.NORMAL, result!!.driveMode)
@@ -620,18 +637,103 @@ class CanDecoderTest {
     // ── Session state reset ─────────────────────────────────────────────────
 
     @Test
-    fun `resetSessionState clears modeDetail420`() {
-        // Set Track via 0x420
+    fun `resetSessionState clears modeDetail420 and has420Arrived`() {
+        // Set Track via 0x420 (bit0=1 = Track) — also sets has420Arrived
         val sportState = blank.copy(driveMode = DriveMode.SPORT)
         val extData = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0xCD.toByte())
         CanDecoder.decode(0x420, extData, sportState)
 
-        // Reset should clear back to default (0x10C4, bit0=0 -> Sport)
+        // Reset should clear modeDetail420 AND has420Arrived
         CanDecoder.resetSessionState()
 
+        // After reset, 0x1B0 nibble=1 should return null (0x420 gate not yet passed)
         val modeData = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00)
+        val blocked = CanDecoder.decode(0x1B0, modeData, blank)
+        assertNull(blocked)
+
+        // Re-prime with 0x420 Sport indicator, then 0x1B0 resolves to Sport
+        val sportExt = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0xCC.toByte())
+        CanDecoder.decode(0x420, sportExt, blank.copy(driveMode = DriveMode.NORMAL))
+
         val result = CanDecoder.decode(0x1B0, modeData, blank)
         assertNotNull(result)
         assertEquals(DriveMode.SPORT, result!!.driveMode)
+    }
+
+    // ── 0x180: Vertical G ─────────────────────────────────────────────────────
+
+    @Test
+    fun `decode verticalG from 0x180`() {
+        // verticalG = ((byte0 & 0x03) << 8 | byte1) * 0.00390625 - 2.0
+        // raw 612 -> 612 * 0.00390625 - 2.0 = 2.390625 - 2.0 = 0.390625 g
+        // 612 = 0x0264 -> byte0 = 0x02, byte1 = 0x64
+        val data = byteArrayOf(0x02, 0x64, 0x02, 0x00, 0x08, 0x00, 0x00, 0x00)
+        val result = CanDecoder.decode(0x180, data, blank)
+        assertNotNull(result)
+        assertEquals(0.390625, result!!.verticalG, 0.001)
+    }
+
+    // ── 0x180: Non-zero lateral G ─────────────────────────────────────────────
+
+    @Test
+    fun `decode non-zero lateral G from 0x180`() {
+        // lateralG = ((byte2 & 0x03) << 8 | byte3) * 0.00390625 - 2.0
+        // raw 612 -> 612 * 0.00390625 - 2.0 = 0.390625 g
+        // 612 = 0x0264 -> byte2 = 0x02, byte3 = 0x64
+        val data = byteArrayOf(0x02, 0x00, 0x02, 0x64, 0x08, 0x00, 0x00, 0x00)
+        val result = CanDecoder.decode(0x180, data, blank)
+        assertNotNull(result)
+        assertEquals(0.390625, result!!.lateralG, 0.001)
+    }
+
+    // ── 0x420: Launch control active ──────────────────────────────────────────
+
+    @Test
+    fun `decode launchControlActive from 0x420`() {
+        // lcActive = (byte6 >> 2) & 1 == 1
+        // byte6 = 0x11 = 0b00010001, bit2 = 0 -> lcActive = false
+        // byte6 = 0x15 = 0b00010101, bit2 = 1 -> lcActive = true
+        // Use byte6 with bit2 set: 0x11 | 0x04 = 0x15
+        val sportState = blank.copy(driveMode = DriveMode.SPORT)
+        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x15, 0xCC.toByte())
+        val result = CanDecoder.decode(0x420, data, sportState)
+        assertNotNull(result)
+        assertTrue(result!!.launchControlActive)
+    }
+
+    @Test
+    fun `decode launchControlActive false from 0x420`() {
+        // byte6 = 0x11, bit2 = 0 -> lcActive = false
+        val sportState = blank.copy(driveMode = DriveMode.SPORT)
+        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0xCC.toByte())
+        val result = CanDecoder.decode(0x420, data, sportState)
+        assertNotNull(result)
+        assertFalse(result!!.launchControlActive)
+    }
+
+    // ── 0x420: Preserves DRIFT mode ───────────────────────────────────────────
+
+    @Test
+    fun `decode 0x420 preserves DRIFT mode`() {
+        // When in DRIFT, 0x420 should NOT re-resolve driveMode (only Sport/Track re-resolve)
+        val driftState = blank.copy(driveMode = DriveMode.DRIFT)
+        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0xCC.toByte())
+        val result = CanDecoder.decode(0x420, data, driftState)
+        assertNotNull(result)
+        assertEquals(DriveMode.DRIFT, result!!.driveMode)
+    }
+
+    // ── 0x070: Negative torque ────────────────────────────────────────────────
+
+    @Test
+    fun `decode negative torque from 0x070`() {
+        // torqueAtTrans = bits(37, 11) - 500
+        // raw 300 -> 300 - 500 = -200 Nm
+        // bits 37-47 MSB-first: (byte4 & 0x07) << 8 | byte5
+        // 300 = 0x12C -> byte4 low 3 bits = 0x01, byte5 = 0x2C
+        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x01, 0x2C)
+        val result = CanDecoder.decode(0x070, data, blank)
+        assertNotNull(result)
+        assertEquals(-200.0, result!!.torqueAtTrans, 1.0)
     }
 }

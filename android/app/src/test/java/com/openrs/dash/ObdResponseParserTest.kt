@@ -538,4 +538,85 @@ class ObdResponseParserTest {
         assertNotNull(result)
         assertTrue(result!!.assEnabled!!)
     }
+
+    // ── BCM Reassembled (0x280B multi-frame TPMS) ─────────────────────────────
+
+    /**
+     * Build a reassembled ISO-TP payload for DID 0x280B.
+     * Layout: {0x62} {DID hi} {DID lo} {ID0..ID3} {press_hi} {press_lo} {temp} {status}
+     * Total 11 bytes minimum.
+     */
+    private fun make280BPayload(
+        sensorId: Long,
+        tempRaw: Int,
+        status: Int = 0x06,
+        pressHi: Int = 0x02,
+        pressLo: Int = 0xBB
+    ): ByteArray = byteArrayOf(
+        0x62, 0x28, 0x0B,
+        (sensorId shr 24 and 0xFF).toByte(),
+        (sensorId shr 16 and 0xFF).toByte(),
+        (sensorId shr 8  and 0xFF).toByte(),
+        (sensorId         and 0xFF).toByte(),
+        pressHi.toByte(), pressLo.toByte(),
+        tempRaw.toByte(),
+        status.toByte()
+    )
+
+    private val sensorLF = 0x11223344L
+    private val stateWithSensorIds = blank.copy(tpmsSensorIdLF = sensorLF)
+
+    @Test
+    fun `BCM reassembled - 0x280B valid temp updates tireTempLF`() {
+        // tempRaw=0x3B (59) → 59−40 = 19°C (matches Adam's log in #130)
+        var result: VehicleState? = null
+        ObdResponseParser.parseBcmReassembled(
+            make280BPayload(sensorId = sensorLF, tempRaw = 0x3B),
+            stateWithSensorIds
+        ) { result = it }
+        assertNotNull(result)
+        assertEquals(19.0, result!!.tireTempLF, 0.01)
+    }
+
+    @Test
+    fun `BCM reassembled - 0x280B tempRaw 0x00 discarded as uninitialized`() {
+        // Raw 0x00 = sensor still initializing; must NOT store −40°C (#130)
+        var result: VehicleState? = null
+        ObdResponseParser.parseBcmReassembled(
+            make280BPayload(sensorId = sensorLF, tempRaw = 0x00),
+            stateWithSensorIds
+        ) { result = it }
+        assertNull(result)
+    }
+
+    @Test
+    fun `BCM reassembled - 0x280B stale status discarded`() {
+        // status < 6 → cached/stale data, should be ignored
+        var result: VehicleState? = null
+        ObdResponseParser.parseBcmReassembled(
+            make280BPayload(sensorId = sensorLF, tempRaw = 0x3B, status = 0x03),
+            stateWithSensorIds
+        ) { result = it }
+        assertNull(result)
+    }
+
+    @Test
+    fun `BCM reassembled - 0x280B unknown sensor ID ignored`() {
+        var result: VehicleState? = null
+        ObdResponseParser.parseBcmReassembled(
+            make280BPayload(sensorId = 0xDEADBEEF, tempRaw = 0x3B),
+            stateWithSensorIds
+        ) { result = it }
+        assertNull(result)
+    }
+
+    @Test
+    fun `BCM reassembled - 0x280B short payload ignored`() {
+        var result: VehicleState? = null
+        ObdResponseParser.parseBcmReassembled(
+            byteArrayOf(0x62, 0x28, 0x0B, 0x00, 0x00),
+            stateWithSensorIds
+        ) { result = it }
+        assertNull(result)
+    }
 }

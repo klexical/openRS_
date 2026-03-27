@@ -18,6 +18,7 @@ The browser emulator (`android/browser-emulator/`) is a standalone HTML demo wit
 
 ## When to update the emulator
 
+- **Only on stable releases** (staging → main promotion), never during staging/RC builds
 - After every stable Android release that changes UI layout, tabs, data cells, or settings
 - When new features (tabs, hero cards, sections, settings pickers) ship in the app
 - See the checklist in `release-documentation.mdc` for the full list of touchpoints

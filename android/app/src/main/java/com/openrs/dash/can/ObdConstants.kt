@@ -57,8 +57,21 @@ object ObdConstants {
 
     // ── AWD module OBD Mode 22 (0x703 → 0x70B) ──────────────────────────────
     const val AWD_RESPONSE_ID      = 0x70B
-    const val AWD_QUERY_RDU_TEMP   = "t703803221E8A00000000\r"
-    val AWD_QUERIES = listOf(AWD_QUERY_RDU_TEMP)
+    const val AWD_QUERY_RDU_TEMP       = "t703803221E8A00000000\r"
+    const val AWD_QUERY_CLUTCH_TEMP_L  = "t703803221E8B00000000\r"  // candidate: left clutch temp
+    const val AWD_QUERY_CLUTCH_TEMP_R  = "t703803221E8C00000000\r"  // candidate: right clutch temp
+    const val AWD_QUERY_REQ_TORQUE_L   = "t703803221E9000000000\r"  // candidate: left requested torque
+    const val AWD_QUERY_REQ_TORQUE_R   = "t703803221E9100000000\r"  // candidate: right requested torque
+    const val AWD_QUERY_DMD_PRESSURE   = "t703803221E9200000000\r"  // candidate: demanded pressure
+    const val AWD_QUERY_PUMP_CURRENT   = "t703803221E9300000000\r"  // candidate: pump motor current
+    const val AWD_QUERY_TRANS_OIL_TEMP = "t703803221E8000000000\r"  // candidate: sump oil temp
+    val AWD_QUERIES = listOf(
+        AWD_QUERY_RDU_TEMP,
+        AWD_QUERY_CLUTCH_TEMP_L, AWD_QUERY_CLUTCH_TEMP_R,
+        AWD_QUERY_REQ_TORQUE_L, AWD_QUERY_REQ_TORQUE_R,
+        AWD_QUERY_DMD_PRESSURE, AWD_QUERY_PUMP_CURRENT,
+        AWD_QUERY_TRANS_OIL_TEMP
+    )
 
     // ── PCM OBD Mode 22 (0x7E0 → 0x7E8) ─────────────────────────────────────
     const val PCM_RESPONSE_ID = 0x7E8
@@ -67,6 +80,9 @@ object ObdConstants {
     const val PCM_QUERY_ETC_DESIRED  = "t7E080322091A00000000\r"
     const val PCM_QUERY_WGDC         = "t7E080322046200000000\r"
     const val PCM_QUERY_KR_CYL1      = "t7E08032203EC00000000\r"
+    const val PCM_QUERY_KR_CYL2      = "t7E08032203ED00000000\r"
+    const val PCM_QUERY_KR_CYL3      = "t7E08032203EE00000000\r"
+    const val PCM_QUERY_KR_CYL4      = "t7E08032203EF00000000\r"
     const val PCM_QUERY_OAR          = "t7E08032203E800000000\r"
     const val PCM_QUERY_CHARGE_AIR   = "t7E080322046100000000\r"
     const val PCM_QUERY_CAT_TEMP     = "t7E080322F43C00000000\r"
@@ -82,7 +98,9 @@ object ObdConstants {
     const val PCM_QUERY_BATTERY     = "t7E080322030400000000\r"
     val PCM_QUERIES = listOf(
         PCM_QUERY_ETC_ACTUAL, PCM_QUERY_ETC_DESIRED,
-        PCM_QUERY_WGDC, PCM_QUERY_KR_CYL1, PCM_QUERY_OAR,
+        PCM_QUERY_WGDC,
+        PCM_QUERY_KR_CYL1, PCM_QUERY_KR_CYL2, PCM_QUERY_KR_CYL3, PCM_QUERY_KR_CYL4,
+        PCM_QUERY_OAR,
         PCM_QUERY_CHARGE_AIR, PCM_QUERY_CAT_TEMP,
         PCM_QUERY_AFR_ACTUAL, PCM_QUERY_AFR_DESIRED,
         PCM_QUERY_TIP_ACTUAL, PCM_QUERY_TIP_DESIRED,
@@ -93,6 +111,18 @@ object ObdConstants {
     const val PCM_POLL_INTERVAL_MS  = 30_000L
     const val PCM_QUERY_GAP_MS      =    200L
     const val PCM_INITIAL_DELAY_MS  = 20_000L
+
+    // ── IPC module (candidate 0x720 → 0x728, DIDs TBD) ───────────────────────
+    // Address unconfirmed — common Ford IPC addresses: 0x720, 0x760.
+    // Use the DID prober to discover the correct address and valid DIDs.
+    const val IPC_REQUEST_ID  = 0x720
+    const val IPC_RESPONSE_ID = 0x728
+
+    // ── HVAC module (candidate 0x733 → 0x73B, DIDs TBD) ──────────────────────
+    // Address unconfirmed — common Ford HVAC addresses: 0x733, 0x764.
+    // Use the DID prober to discover the correct address and valid DIDs.
+    const val HVAC_REQUEST_ID  = 0x733
+    const val HVAC_RESPONSE_ID = 0x73B
 
     // ── Extended diagnostic session (UDS 10 03 + Mode 22) ────────────────────
     const val PSCM_RESPONSE_ID   = 0x738
@@ -123,6 +153,11 @@ object ObdConstants {
 
     val OBD_RESPONSE_IDS = setOf(
         BCM_RESPONSE_ID, AWD_RESPONSE_ID, PCM_RESPONSE_ID,
-        PSCM_RESPONSE_ID, FENG_RESPONSE_ID, RSPROT_RESPONSE_ID
+        PSCM_RESPONSE_ID, FENG_RESPONSE_ID, RSPROT_RESPONSE_ID,
+        HVAC_RESPONSE_ID, IPC_RESPONSE_ID
     )
+
+    /** Build a Mode 22 SLCAN query frame for any ECU request ID + DID. */
+    fun buildSlcanQuery(requestId: Int, did: Int): String =
+        "t%03X80322%04X00000000\r".format(requestId, did)
 }

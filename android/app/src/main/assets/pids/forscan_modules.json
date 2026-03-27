@@ -1,0 +1,6411 @@
+{
+  "version": 1,
+  "source": "FORScan Extended PID List — Focus RS MK3",
+  "total_pids": 1148,
+  "monitored_pids": 33,
+  "modules": [
+    {
+      "id": "ABS",
+      "name": "Anti-Lock Brake System",
+      "pid_count": 60,
+      "pids": [
+        {
+          "name": "ABS",
+          "description": "ABS",
+          "status": "available"
+        },
+        {
+          "name": "ABS_DIAGSTATE",
+          "description": "Diagnostic State",
+          "status": "available"
+        },
+        {
+          "name": "AYC",
+          "description": "AYC",
+          "status": "available"
+        },
+        {
+          "name": "BFLHPC",
+          "description": "Brake Fluid Line Hydraulic Pressure (Calculated Value)",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "BOO_ABS",
+          "description": "Brake ON/OFF",
+          "status": "available"
+        },
+        {
+          "name": "BRKHYDPRESS",
+          "description": "Brake Fluid Line Hydraulic Pressure",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "BST_REL_SW",
+          "description": "Booster Release Switch State",
+          "status": "available"
+        },
+        {
+          "name": "BTC",
+          "description": "BTC",
+          "status": "available"
+        },
+        {
+          "name": "BTCS",
+          "description": "BTCS -201D",
+          "status": "available"
+        },
+        {
+          "name": "DYNOMODE",
+          "description": "Brake Two-Wheel Dyno Mode",
+          "status": "available"
+        },
+        {
+          "name": "ECU_Int_Temp",
+          "description": "ECU Internal Temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "EFPS",
+          "description": "ABS Evacuate and Fill Process Status",
+          "status": "available"
+        },
+        {
+          "name": "EngDragCntrl",
+          "description": "Engine Drag Control",
+          "status": "available"
+        },
+        {
+          "name": "GLOBTIM",
+          "description": "Global real time",
+          "unit": "s",
+          "status": "available"
+        },
+        {
+          "name": "HDC",
+          "description": "HDC",
+          "status": "available"
+        },
+        {
+          "name": "HYD_PMP_ST",
+          "description": "Hydraulic Pump State",
+          "status": "available"
+        },
+        {
+          "name": "IVCS",
+          "description": "Inlet Valves Calibration Status",
+          "status": "available"
+        },
+        {
+          "name": "LASCV",
+          "description": "Longitudinal Acceleration Rate Compensation Value",
+          "unit": "G",
+          "status": "available"
+        },
+        {
+          "name": "LAT_ACCL",
+          "description": "Lateral accelerometer",
+          "unit": "G",
+          "status": "available"
+        },
+        {
+          "name": "LAT_ACC_CLC",
+          "description": "Lateral Acceleration (Calculated Value)",
+          "unit": "G",
+          "status": "available"
+        },
+        {
+          "name": "LF_DUMP",
+          "description": "Left Front Dump",
+          "status": "available"
+        },
+        {
+          "name": "LF_ISO",
+          "description": "Left Front Isolation valve",
+          "status": "available"
+        },
+        {
+          "name": "LF_RR_TC_ISO2",
+          "description": "Left Front/Right Rear Traction Control Valve 1",
+          "status": "available"
+        },
+        {
+          "name": "LF_RR_TC_SUP2",
+          "description": "Left Front/Right Rear Traction Control Supply 1",
+          "status": "available"
+        },
+        {
+          "name": "LF_WSPD",
+          "description": "Left front wheel speed sensor",
+          "unit": "km/h",
+          "status": "available"
+        },
+        {
+          "name": "LONG_ACCL",
+          "description": "Longitudinal Accelerometer Sensor Input",
+          "unit": "G",
+          "status": "available"
+        },
+        {
+          "name": "LR_DUMP",
+          "description": "Left Rear Dump",
+          "status": "available"
+        },
+        {
+          "name": "LR_ISO",
+          "description": "Left Rear Isolation Valve",
+          "status": "available"
+        },
+        {
+          "name": "LR_WSPD",
+          "description": "Left rear wheel speed sensor",
+          "unit": "km/h",
+          "status": "available"
+        },
+        {
+          "name": "MAINECUV",
+          "description": "Main ECU voltage supply",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "MCIVCS",
+          "description": "Master Cylinder Isolation Valve Calibration State",
+          "status": "available"
+        },
+        {
+          "name": "OUTTMP",
+          "description": "External Temperature From Sensor",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "PMP_MTR",
+          "description": "Hydraulic Pump Motor",
+          "status": "available"
+        },
+        {
+          "name": "POWER_MODE",
+          "description": "Power Mode Status",
+          "status": "available"
+        },
+        {
+          "name": "PRK_BRAKE",
+          "description": "Parking brake Switch",
+          "status": "available"
+        },
+        {
+          "name": "REGEN_BRAKING",
+          "description": "Regenerative Braking Mode",
+          "status": "available"
+        },
+        {
+          "name": "RF_DUMP",
+          "description": "Right Front Dump",
+          "status": "available"
+        },
+        {
+          "name": "RF_ISO",
+          "description": "Right Front Isolation Valve",
+          "status": "available"
+        },
+        {
+          "name": "RF_LR_TC_ISO2",
+          "description": "Right Front/Left Rear Traction Control Valve 2",
+          "status": "available"
+        },
+        {
+          "name": "RF_LR_TC_SUP2",
+          "description": "Right Front/Left Rear Traction Control Supply 2",
+          "status": "available"
+        },
+        {
+          "name": "RF_WSPD",
+          "description": "Right front wheel speed sensor",
+          "unit": "km/h",
+          "status": "available"
+        },
+        {
+          "name": "RR_DUMP",
+          "description": "Right Rear Dump",
+          "status": "available"
+        },
+        {
+          "name": "RR_ISO",
+          "description": "Right Rear Isolation Valve",
+          "status": "available"
+        },
+        {
+          "name": "RR_WSPD",
+          "description": "Right rear wheel speed sensor",
+          "unit": "km/h",
+          "status": "available"
+        },
+        {
+          "name": "RSC",
+          "description": "RSC",
+          "status": "available"
+        },
+        {
+          "name": "R_GEAR_SW",
+          "description": "Reverse gear switch",
+          "status": "available"
+        },
+        {
+          "name": "SELTESTDTC",
+          "description": "Number of On Demand DTCs",
+          "status": "available"
+        },
+        {
+          "name": "STR_ANG_ABS",
+          "description": "Steering wheel angle sensor",
+          "unit": "°",
+          "status": "available"
+        },
+        {
+          "name": "STR_ANG_RAW",
+          "description": "Steering Wheel Angle - Raw",
+          "unit": "°",
+          "status": "available"
+        },
+        {
+          "name": "S_LAMP",
+          "description": "Rear Stop Lamp",
+          "status": "available"
+        },
+        {
+          "name": "TC_HILL_SW",
+          "description": "Hill Descent Control switch status",
+          "status": "available"
+        },
+        {
+          "name": "TC_SW_STAT",
+          "description": "Traction Control switch status",
+          "status": "available"
+        },
+        {
+          "name": "TC_SYS_STAT",
+          "description": "Traction Control system status",
+          "status": "available"
+        },
+        {
+          "name": "TOTAL_DIST",
+          "description": "Total Vehicle Distance",
+          "unit": "km",
+          "status": "available"
+        },
+        {
+          "name": "TSCntrl",
+          "description": "Trailer Sway",
+          "status": "available"
+        },
+        {
+          "name": "VAC_BST_ST",
+          "description": "Active Vacuum Booster State",
+          "status": "available"
+        },
+        {
+          "name": "VPWR_ABS",
+          "description": "Module supply voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "VSS",
+          "description": "Vehicle Speed",
+          "unit": "km/h",
+          "status": "available"
+        },
+        {
+          "name": "YAW_RATE",
+          "description": "ABS Yaw Rate Value",
+          "unit": "1/min",
+          "status": "available"
+        },
+        {
+          "name": "YAW_RATE_C",
+          "description": "Yaw Rate (Calculated Value)",
+          "unit": "1/min",
+          "status": "available"
+        }
+      ]
+    },
+    {
+      "id": "ACM",
+      "name": "Audio Control Module",
+      "pid_count": 18,
+      "pids": [
+        {
+          "name": "CENTER_SPKR",
+          "description": "CENTER SPEAKER STATUS",
+          "status": "available"
+        },
+        {
+          "name": "CENTR2_SPKR",
+          "description": "CENTER 2 SPEAKER STATUS",
+          "status": "available"
+        },
+        {
+          "name": "CENTR_TWEET",
+          "description": "CENTER TWEETER STATUS",
+          "status": "available"
+        },
+        {
+          "name": "CHN_FREQ",
+          "description": "Channel Frequency",
+          "unit": "MHz",
+          "status": "available"
+        },
+        {
+          "name": "LF_MR_SPKR",
+          "description": "LEFT FRONT MID RANGE SPEAKER STATUS",
+          "status": "available"
+        },
+        {
+          "name": "LF_SPKR",
+          "description": "LEFT FRONT SPEAKER STATUS",
+          "status": "available"
+        },
+        {
+          "name": "LF_TWEETER",
+          "description": "LEFT FRONT TWEETER STATUS",
+          "status": "available"
+        },
+        {
+          "name": "LR_SPKR",
+          "description": "LEFT REAR SPEAKER STATUS",
+          "status": "available"
+        },
+        {
+          "name": "LR_TWEETER",
+          "description": "LEFT REAR TWEETER STATUS",
+          "status": "available"
+        },
+        {
+          "name": "RCENTR_SPKR",
+          "description": "REAR CENTER SPEAKER STATUS",
+          "status": "available"
+        },
+        {
+          "name": "RF_MR_SPKR",
+          "description": "RIGHT FRONT MID RANGE SPEAKER STATUS",
+          "status": "available"
+        },
+        {
+          "name": "RF_SPKR",
+          "description": "RIGHT FRONT SPEAKER STATUS",
+          "status": "available"
+        },
+        {
+          "name": "RF_TWEETER",
+          "description": "RIGHT FRONT TWEETER STATUS",
+          "status": "available"
+        },
+        {
+          "name": "RR_SPKR",
+          "description": "RIGHT REAR SPEAKER STATUS",
+          "status": "available"
+        },
+        {
+          "name": "RR_TWEETER",
+          "description": "RIGHT REAR TWEETER STATUS",
+          "status": "available"
+        },
+        {
+          "name": "SUBWOOFER",
+          "description": "SUBWOOFER STATUS",
+          "status": "available"
+        },
+        {
+          "name": "SUBWOOFER2",
+          "description": "SUBWOOFER 2 STATUS",
+          "status": "available"
+        },
+        {
+          "name": "TOTAL_DIST",
+          "description": "Total Vehicle Distance",
+          "unit": "km",
+          "status": "available"
+        }
+      ]
+    },
+    {
+      "id": "APIM",
+      "name": "Accessory Protocol Interface",
+      "pid_count": 17,
+      "pids": [
+        {
+          "name": "APIM_M_P",
+          "description": "ECU Mono Primary Source",
+          "status": "available"
+        },
+        {
+          "name": "APIM_P_C",
+          "description": "ECU Phone Call",
+          "status": "available"
+        },
+        {
+          "name": "APIM_S_P",
+          "description": "ECU Stereo Primary Source",
+          "status": "available"
+        },
+        {
+          "name": "APIM_S_S",
+          "description": "ECU Stereo Secondary Source",
+          "status": "available"
+        },
+        {
+          "name": "BATMOD",
+          "description": "Battery Module Voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "BT_CONN",
+          "description": "Bluetooth Device Connected",
+          "status": "available"
+        },
+        {
+          "name": "BT_PAIR",
+          "description": "Bluetooth Device Paired",
+          "status": "available"
+        },
+        {
+          "name": "GPS_ALTITUDE",
+          "description": "GPS Altitude",
+          "unit": "m",
+          "status": "available"
+        },
+        {
+          "name": "GPS_FIX",
+          "description": "GPS Fix",
+          "status": "available"
+        },
+        {
+          "name": "GPS_HEADING",
+          "description": "GPS Heading",
+          "unit": "°",
+          "status": "available"
+        },
+        {
+          "name": "GPS_LATITUDE",
+          "description": "global position latitude",
+          "unit": "°",
+          "status": "available"
+        },
+        {
+          "name": "GPS_LONGITUDE",
+          "description": "global position longitude",
+          "unit": "°",
+          "status": "available"
+        },
+        {
+          "name": "GPS_SPEED",
+          "description": "GPS Speed",
+          "unit": "km/h",
+          "status": "available"
+        },
+        {
+          "name": "KEYPOS",
+          "description": "Ignition key input",
+          "status": "available"
+        },
+        {
+          "name": "USBDEVICE1",
+          "description": "USB Port #1 Device Connected",
+          "status": "available"
+        },
+        {
+          "name": "USBDEVICE2",
+          "description": "USB Port #2 Device Connected",
+          "status": "available"
+        },
+        {
+          "name": "VSS",
+          "description": "Vehicle Speed",
+          "unit": "km/h",
+          "status": "available"
+        }
+      ]
+    },
+    {
+      "id": "AWD",
+      "name": "All-Wheel Drive Module",
+      "pid_count": 43,
+      "can_request_id": "0x703",
+      "can_response_id": "0x70B",
+      "pids": [
+        {
+          "name": "AWD_BLDC_SPD",
+          "description": "Brushless Direct Current Pump Motor Speed",
+          "unit": "1/min",
+          "status": "available"
+        },
+        {
+          "name": "AWD_Clt_EBL",
+          "description": "EOL Request Mode",
+          "status": "available"
+        },
+        {
+          "name": "AWD_Clt_L_SPT",
+          "description": "EOL Setpoint Torque Left",
+          "unit": "Nm",
+          "status": "available"
+        },
+        {
+          "name": "AWD_Clt_R_SPT",
+          "description": "EOL Setpoint Torque Right",
+          "unit": "Nm",
+          "status": "available"
+        },
+        {
+          "name": "AWD_DMD_PRES",
+          "description": "Rear Drive Unit Demanded Hydraulic Pressure",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "AWD_ECU_TMP",
+          "description": "All Wheel Drive Module Temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "AWD_MTR_CURR",
+          "description": "Hydraulic Pump Motor Current Load",
+          "unit": "A",
+          "status": "available"
+        },
+        {
+          "name": "AWD_REQ_TRQ_L",
+          "description": "Left Side Requested Torque",
+          "unit": "Nm",
+          "status": "available"
+        },
+        {
+          "name": "AWD_REQ_TRQ_R",
+          "description": "Right Side Requested Torque",
+          "unit": "Nm",
+          "status": "available"
+        },
+        {
+          "name": "AWD_SWTCH_ST",
+          "description": "All Wheel Drive Module Mode Select Switch Status",
+          "status": "available"
+        },
+        {
+          "name": "CALC_BLDC_SPD",
+          "description": "Brushless Direct Current Pump Motor Speed",
+          "unit": "1/min",
+          "status": "available"
+        },
+        {
+          "name": "CAL_COUP_TQ_L",
+          "description": "Calculated Left Coupling Torque",
+          "unit": "Nm",
+          "status": "available"
+        },
+        {
+          "name": "CAL_COUP_TQ_R",
+          "description": "Calculated Right Coupling Torque",
+          "unit": "Nm",
+          "status": "available"
+        },
+        {
+          "name": "CLTCH_LPRS_RW",
+          "description": "Left Clutch Supply Pressure Raw",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "CLTCH_LTMP_INF",
+          "description": "Left Clutch Temperature Inferred",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "CLTCH_L_CUR",
+          "description": "Left Clutch Solenoid  Measured Control Current",
+          "unit": "A",
+          "status": "available"
+        },
+        {
+          "name": "CLTCH_MAX_TMP",
+          "description": "Clutch Maximum Reported Temp",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "CLTCH_RPRS_RW",
+          "description": "Right Clutch Supply Pressure Raw",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "CLTCH_RTMP_INF",
+          "description": "Right Clutch Temperature Inferred",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "CLTCH_R_CUR",
+          "description": "Right Clutch Solenoid Measured Control Current",
+          "unit": "A",
+          "status": "available"
+        },
+        {
+          "name": "CLTCH_TMP_TH",
+          "description": "Clutch Temperature Above Threshold Counter",
+          "status": "available"
+        },
+        {
+          "name": "CLT_VLV_PW_L",
+          "description": "Left Clutch Control Valve Pulse Width",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "CLT_VLV_PW_R",
+          "description": "Right Clutch Control Valve Pulse Width",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "COUP_SPD_DIF_L",
+          "description": "Left Clutch Coupling Speed Difference",
+          "unit": "1/min",
+          "status": "available"
+        },
+        {
+          "name": "COUP_SPD_DIF_R",
+          "description": "Right Clutch Coupling Speed Difference",
+          "unit": "1/min",
+          "status": "available"
+        },
+        {
+          "name": "ECU_TMP_TH",
+          "description": "ECU Temperature Above Threshold Counter",
+          "status": "available"
+        },
+        {
+          "name": "GLOBTIM",
+          "description": "Global real time",
+          "unit": "s",
+          "status": "available"
+        },
+        {
+          "name": "MAINECUV",
+          "description": "Main ECU voltage supply",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "OUTTMP",
+          "description": "External Temperature From Sensor",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "POWER_MODE",
+          "description": "Power Mode Status",
+          "status": "available"
+        },
+        {
+          "name": "REF_COUP_PRES_L",
+          "description": "Left Clutch Reference Coupling Pressure",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "REF_COUP_PRES_R",
+          "description": "Right Clutch Reference Coupling Pressure",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "R_DIFF_OIL_TMP",
+          "description": "Rear Drive Unit Differential Oil Temperature",
+          "unit": "°C",
+          "status": "monitored",
+          "did": "0x1E8A",
+          "bytes": 1,
+          "formula": "A-40.0",
+          "field": "rduTempC",
+          "poll_group": "awd_standard"
+        },
+        {
+          "name": "SPEED_DIF_FR",
+          "description": "All Wheel Drive Front To Rear Speed Difference",
+          "unit": "1/min",
+          "status": "available"
+        },
+        {
+          "name": "TOTDIST",
+          "description": "Total Distance",
+          "unit": "km",
+          "status": "available"
+        },
+        {
+          "name": "TRANS_OIL_TMP",
+          "description": "Rear Drive Unit Sump Oil Temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "VLV_REF_CUR_L",
+          "description": "Left Clutch Valve Reference Current",
+          "unit": "A",
+          "status": "available"
+        },
+        {
+          "name": "VLV_REF_CUR_R",
+          "description": "Right Clutch Valve Reference Current",
+          "unit": "A",
+          "status": "available"
+        },
+        {
+          "name": "VSPD",
+          "description": "Vehicle Speed",
+          "unit": "km/h",
+          "status": "available"
+        },
+        {
+          "name": "WHL_SPD_LF",
+          "description": "AWD Left Front Wheel Speed",
+          "unit": "1/min",
+          "status": "available"
+        },
+        {
+          "name": "WHL_SPD_LR",
+          "description": "AWD Left Rear Wheel Speed",
+          "unit": "1/min",
+          "status": "available"
+        },
+        {
+          "name": "WHL_SPD_RF",
+          "description": "AWD Right Front Wheel Speed",
+          "unit": "1/min",
+          "status": "available"
+        },
+        {
+          "name": "WHL_SPD_RR",
+          "description": "AWD Right Rear Wheel Speed",
+          "unit": "1/min",
+          "status": "available"
+        }
+      ]
+    },
+    {
+      "id": "BCM",
+      "name": "Body Control Module",
+      "pid_count": 206,
+      "can_request_id": "0x726",
+      "can_response_id": "0x72E",
+      "pids": [
+        {
+          "name": "ALARM_1",
+          "description": "Last Alarm Trigger 1",
+          "status": "available"
+        },
+        {
+          "name": "ALARM_2",
+          "description": "Last Alarm Trigger 2",
+          "status": "available"
+        },
+        {
+          "name": "ALARM_3",
+          "description": "Last Alarm Trigger 3",
+          "status": "available"
+        },
+        {
+          "name": "ALARM_4",
+          "description": "Last Alarm Trigger 4",
+          "status": "available"
+        },
+        {
+          "name": "ALARM_5",
+          "description": "Last Alarm Trigger 5",
+          "status": "available"
+        },
+        {
+          "name": "ANTITHFT_HRN",
+          "description": "Anti-Theft Horn Status",
+          "status": "available"
+        },
+        {
+          "name": "BARO",
+          "description": "Barometric Pressure",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "BATTERY_AGE",
+          "description": "Vehicle Battery - Days in Service",
+          "status": "available"
+        },
+        {
+          "name": "BATT_INT_OC",
+          "description": "BATT_INT_OC",
+          "status": "available"
+        },
+        {
+          "name": "BAT_CURRENT",
+          "description": "Vehicle Battery - Current",
+          "unit": "A",
+          "status": "available"
+        },
+        {
+          "name": "BAT_MON_REG",
+          "description": "Battery Monitor / Regenerative Charge State",
+          "status": "available"
+        },
+        {
+          "name": "BAT_ST_CHRG",
+          "description": "Vehicle Battery - State of Charge",
+          "unit": "%",
+          "status": "monitored",
+          "did": "0x4028",
+          "bytes": 1,
+          "formula": "A",
+          "field": "batterySoc",
+          "poll_group": "bcm_standard"
+        },
+        {
+          "name": "BAT_TEMP",
+          "description": "Vehicle Battery - Estimated Temperature",
+          "unit": "°C",
+          "status": "monitored",
+          "did": "0x4029",
+          "bytes": 1,
+          "formula": "A-40.0",
+          "field": "batteryTempC",
+          "poll_group": "bcm_standard"
+        },
+        {
+          "name": "BAT_V_DSD",
+          "description": "Battery Charging Voltage Desired",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "BCM_STATE",
+          "description": "ECU Operating States",
+          "status": "available"
+        },
+        {
+          "name": "BRAKE_LMP_SW",
+          "description": "Brake Lamp Switch",
+          "status": "available"
+        },
+        {
+          "name": "BRK_FLUID",
+          "description": "Brake Fluid Level",
+          "status": "available"
+        },
+        {
+          "name": "CC_CAN_SW",
+          "description": "SPC Cancel Switch",
+          "status": "available"
+        },
+        {
+          "name": "CC_OFF_SW",
+          "description": "SPC Off Switch",
+          "status": "available"
+        },
+        {
+          "name": "CC_ON_SW",
+          "description": "SPC On switch",
+          "status": "available"
+        },
+        {
+          "name": "CC_RES_SW",
+          "description": "SPC Resume Switch",
+          "status": "available"
+        },
+        {
+          "name": "CC_SETM_SW",
+          "description": "SPC Set Minus Switch",
+          "status": "available"
+        },
+        {
+          "name": "CC_SETP_SW",
+          "description": "SPC Set Plus Switch",
+          "status": "available"
+        },
+        {
+          "name": "CNTRL_LOCK_S",
+          "description": "Central lock status",
+          "status": "available"
+        },
+        {
+          "name": "CRASH",
+          "description": "Crash Sensed Status",
+          "status": "available"
+        },
+        {
+          "name": "CUM_CHG_ON",
+          "description": "Cumulative Battery Charge When Ignition Is On",
+          "status": "available"
+        },
+        {
+          "name": "CUM_DIS_OFF",
+          "description": "Cumulative Discharge From Battery When Engine Is Off",
+          "status": "available"
+        },
+        {
+          "name": "CUM_DIS_RUN",
+          "description": "Cumulative Discharge From Battery When Engine Is On",
+          "status": "available"
+        },
+        {
+          "name": "CUM_DIS_SLP",
+          "description": "Cumulative Discharge From Battery in Sleep Mode",
+          "status": "available"
+        },
+        {
+          "name": "CV_MON_DATA_NC",
+          "description": "CV Monitor Data Not Correct",
+          "status": "available"
+        },
+        {
+          "name": "DOOR_LK/UL_SW",
+          "description": "Central Door Lock Switch",
+          "status": "available"
+        },
+        {
+          "name": "DOOR_SW_DRVR",
+          "description": "Drivers Door Ajar Switch Status",
+          "status": "available"
+        },
+        {
+          "name": "DOOR_SW_LR",
+          "description": "Left Rear Door Ajar Switch",
+          "status": "available"
+        },
+        {
+          "name": "DOOR_SW_LUGG",
+          "description": "Luggage Compartment Lid Ajar Switch",
+          "status": "available"
+        },
+        {
+          "name": "DOOR_SW_PSGR",
+          "description": "Passenger Door Ajar Switch Status",
+          "status": "available"
+        },
+        {
+          "name": "DOOR_SW_RR",
+          "description": "Right Rear Door Ajar Switch",
+          "status": "available"
+        },
+        {
+          "name": "ENGINE_RPM",
+          "description": "Engine Speed",
+          "unit": "1/min",
+          "status": "available"
+        },
+        {
+          "name": "ENG_SPD_QF",
+          "description": "Engine speed QF",
+          "status": "available"
+        },
+        {
+          "name": "ERT_ENTRIES",
+          "description": "ERT_ENTRIES",
+          "status": "available"
+        },
+        {
+          "name": "EVAP_VOLT",
+          "description": "evaporator temperature signal voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "EVT1_AGE_IGN",
+          "description": "TPMS Last Warning Event #1 - Age In Ignition Cycles Since The Event",
+          "status": "available"
+        },
+        {
+          "name": "EVT1_ODOMTR",
+          "description": "TPMS Last Warning Event #1 - Odometer Reading",
+          "unit": "km",
+          "status": "available"
+        },
+        {
+          "name": "EVT1_PRESS",
+          "description": "TPMS Last Warning Event #1 - Measured Sensor Pressure",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "EVT1_PRES_BP",
+          "description": "TPMS Last Warning Event #1 - Sensor Pressure Barometrically Compensated",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "EVT1_SNSR_ID",
+          "description": "TPMS Last Warning Event #1 - Transmitter ID",
+          "status": "available"
+        },
+        {
+          "name": "EVT1_SNSR_ST",
+          "description": "TPMS Last Warning Event #1 - Sensor Status",
+          "status": "available"
+        },
+        {
+          "name": "EVT1_TEMP",
+          "description": "TPMS Last Warning Event #1 - Sensor Temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "EVT1_TR_LOC",
+          "description": "TPMS Last Warning Event #1 - Last Learned Transmitter Location",
+          "status": "available"
+        },
+        {
+          "name": "EVT1_WRN_ST",
+          "description": "TPMS Last Warning Event #1 - Sensor Warning Status",
+          "status": "available"
+        },
+        {
+          "name": "EVT2_AGE_IGN",
+          "description": "TPMS Last Warning Event #2 - Age In Ignition Cycles Since The Event",
+          "status": "available"
+        },
+        {
+          "name": "EVT2_ODOMTR",
+          "description": "TPMS Last Warning Event #2 - Odometer Reading",
+          "unit": "km",
+          "status": "available"
+        },
+        {
+          "name": "EVT2_PRESS",
+          "description": "TPMS Last Warning Event #2 - Measured Sensor Pressure",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "EVT2_PRES_BP",
+          "description": "TPMS Last Warning Event #2 - Sensor Pressure Barometrically Compensated",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "EVT2_SNSR_ID",
+          "description": "TPMS Last Warning Event #2 - Transmitter ID",
+          "status": "available"
+        },
+        {
+          "name": "EVT2_SNSR_ST",
+          "description": "TPMS Last Warning Event #2 - Sensor Status",
+          "status": "available"
+        },
+        {
+          "name": "EVT2_TEMP",
+          "description": "TPMS Last Warning Event #2 - Sensor Temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "EVT2_TR_LOC",
+          "description": "TPMS Last Warning Event #2 - Last Learned Transmitter Location",
+          "status": "available"
+        },
+        {
+          "name": "EVT2_WRN_ST",
+          "description": "TPMS Last Warning Event #2 - Sensor Warning Status",
+          "status": "available"
+        },
+        {
+          "name": "EVT3_AGE_IGN",
+          "description": "TPMS Last Warning Event #3 - Age In Ignition Cycles Since The Event",
+          "status": "available"
+        },
+        {
+          "name": "EVT3_ODOMTR",
+          "description": "TPMS Last Warning Event #3 - Odometer Reading",
+          "unit": "km",
+          "status": "available"
+        },
+        {
+          "name": "EVT3_PRESS",
+          "description": "TPMS Last Warning Event #3 - Measured Sensor Pressure",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "EVT3_PRES_BP",
+          "description": "TPMS Last Warning Event #3 - Sensor Pressure Barometrically Compensated",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "EVT3_SNSR_ID",
+          "description": "TPMS Last Warning Event #3 - Transmitter ID",
+          "status": "available"
+        },
+        {
+          "name": "EVT3_SNSR_ST",
+          "description": "TPMS Last Warning Event #3 - Sensor Status",
+          "status": "available"
+        },
+        {
+          "name": "EVT3_TEMP",
+          "description": "TPMS Last Warning Event #3 - Sensor Temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "EVT3_TR_LOC",
+          "description": "TPMS Last Warning Event #3 - Last Learned Transmitter Location",
+          "status": "available"
+        },
+        {
+          "name": "EVT3_WRN_ST",
+          "description": "TPMS Last Warning Event #3 - Sensor Warning Status",
+          "status": "available"
+        },
+        {
+          "name": "EVT4_AGE_IGN",
+          "description": "TPMS Last Warning Event #4 - Age In Ignition Cycles Since The Event",
+          "status": "available"
+        },
+        {
+          "name": "EVT4_ODOMTR",
+          "description": "TPMS Last Warning Event #4 - Odometer Reading",
+          "unit": "km",
+          "status": "available"
+        },
+        {
+          "name": "EVT4_PRESS",
+          "description": "TPMS Last Warning Event #4 - Measured Sensor Pressure",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "EVT4_PRES_BP",
+          "description": "TPMS Last Warning Event #4 - Sensor Pressure Barometrically Compensated",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "EVT4_SNSR_ID",
+          "description": "TPMS Last Warning Event #4 - Transmitter ID",
+          "status": "available"
+        },
+        {
+          "name": "EVT4_SNSR_ST",
+          "description": "TPMS Last Warning Event #4 - Sensor Status",
+          "status": "available"
+        },
+        {
+          "name": "EVT4_TEMP",
+          "description": "TPMS Last Warning Event #4 - Sensor Temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "EVT4_TR_LOC",
+          "description": "TPMS Last Warning Event #4 - Last Learned Transmitter Location",
+          "status": "available"
+        },
+        {
+          "name": "EVT4_WRN_ST",
+          "description": "TPMS Last Warning Event #4 - Sensor Warning Status",
+          "status": "available"
+        },
+        {
+          "name": "EVT5_AGE_IGN",
+          "description": "TPMS Last Warning Event #5 - Age In Ignition Cycles Since The Event",
+          "status": "available"
+        },
+        {
+          "name": "EVT5_ODOMTR",
+          "description": "TPMS Last Warning Event #5 - Odometer Reading",
+          "unit": "km",
+          "status": "available"
+        },
+        {
+          "name": "EVT5_PRESS",
+          "description": "TPMS Last Warning Event #5 - Measured Sensor Pressure",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "EVT5_PRES_BP",
+          "description": "TPMS Last Warning Event #5 - Sensor Pressure Barometrically Compensated",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "EVT5_SNSR_ID",
+          "description": "TPMS Last Warning Event #5 - Transmitter ID",
+          "status": "available"
+        },
+        {
+          "name": "EVT5_SNSR_ST",
+          "description": "TPMS Last Warning Event #5 - Sensor Status",
+          "status": "available"
+        },
+        {
+          "name": "EVT5_TEMP",
+          "description": "TPMS Last Warning Event #5 - Sensor Temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "EVT5_TR_LOC",
+          "description": "TPMS Last Warning Event #5 - Last Learned Transmitter Location",
+          "status": "available"
+        },
+        {
+          "name": "EVT5_WRN_ST",
+          "description": "TPMS Last Warning Event #5 - Sensor Warning Status",
+          "status": "available"
+        },
+        {
+          "name": "FOG_LAMPS",
+          "description": "Front Fog Lamps Request",
+          "status": "available"
+        },
+        {
+          "name": "FOG_L_SW_STK",
+          "description": "Front Fog Lamp Button Stuck",
+          "status": "available"
+        },
+        {
+          "name": "FOG_R_SW_STK",
+          "description": "Rear Fog Lamp Button Stuck",
+          "status": "available"
+        },
+        {
+          "name": "FP_RELAY",
+          "description": "Fuel pump relay",
+          "status": "available"
+        },
+        {
+          "name": "FRNT_WPR_VOR",
+          "description": "Front Wiper Voltage Out Of Range",
+          "status": "available"
+        },
+        {
+          "name": "FRNT_WSH_VOR",
+          "description": "Front Washer Voltage Out Of Range",
+          "status": "available"
+        },
+        {
+          "name": "FRNWIPER_Prk",
+          "description": "Front Wiper Park Switch",
+          "status": "available"
+        },
+        {
+          "name": "F_DR_RLS_STK",
+          "description": "Fuel Lid Unlock Button Stuck",
+          "status": "available"
+        },
+        {
+          "name": "HAZARD_LP_SW",
+          "description": "Hazard Switch Signal",
+          "status": "available"
+        },
+        {
+          "name": "HIGH BEAMS",
+          "description": "High Beam",
+          "status": "available"
+        },
+        {
+          "name": "HI_LOW_ICOM",
+          "description": "High Low Beam Illegal Combination",
+          "status": "available"
+        },
+        {
+          "name": "HOOD_SW",
+          "description": "Hood Ajar Switch",
+          "status": "available"
+        },
+        {
+          "name": "HORN",
+          "description": "Horn Output",
+          "status": "available"
+        },
+        {
+          "name": "IFC_D703",
+          "description": "Internal Module Fail Code",
+          "status": "available"
+        },
+        {
+          "name": "IGN_SW_ACC",
+          "description": "Ignition Switch Accessory Position",
+          "status": "available"
+        },
+        {
+          "name": "IGN_SW_KEY_IN",
+          "description": "Ignition Key In / Out",
+          "status": "available"
+        },
+        {
+          "name": "IGN_SW_RUN",
+          "description": "Ignition Switch - Run Position",
+          "status": "available"
+        },
+        {
+          "name": "IN-CAR_TEMP",
+          "description": "Inside Car Temperature",
+          "unit": "°C",
+          "status": "monitored",
+          "did": "0xDD04",
+          "bytes": 1,
+          "formula": "A*10.0/9.0-45.0",
+          "field": "cabinTempC",
+          "poll_group": "bcm_standard"
+        },
+        {
+          "name": "INT_LTS1_PWM",
+          "description": "Interior Lights 1 PWM Output",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "INT_LTS2_PWM",
+          "description": "Interior Lights 2 PWM Output",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "KEY_LRN_MODE",
+          "description": "PATS Delivery Mode",
+          "status": "available"
+        },
+        {
+          "name": "KEY_POSITION",
+          "description": "Ignition Key Status",
+          "status": "available"
+        },
+        {
+          "name": "LED_UNIT_0",
+          "description": "Light Emitting Diode Unit 0",
+          "status": "available"
+        },
+        {
+          "name": "LED_UNIT_1",
+          "description": "Light Emitting Diode Unit 1",
+          "status": "available"
+        },
+        {
+          "name": "LED_UNIT_2",
+          "description": "Light Emitting Diode Unit 2",
+          "status": "available"
+        },
+        {
+          "name": "LED_UNIT_3",
+          "description": "Light Emitting Diode Unit 3",
+          "status": "available"
+        },
+        {
+          "name": "LED_UNIT_4",
+          "description": "Light Emitting Diode Unit 4",
+          "status": "available"
+        },
+        {
+          "name": "LED_UNIT_5",
+          "description": "Light Emitting Diode Unit 5",
+          "status": "available"
+        },
+        {
+          "name": "LED_UNIT_6",
+          "description": "Light Emitting Diode Unit 6",
+          "status": "available"
+        },
+        {
+          "name": "LED_UNIT_7",
+          "description": "Light Emitting Diode Unit 7",
+          "status": "available"
+        },
+        {
+          "name": "LED_UNIT_8",
+          "description": "Light Emitting Diode Unit 8",
+          "status": "available"
+        },
+        {
+          "name": "LED_UNIT_9",
+          "description": "Light Emitting Diode Unit 9",
+          "status": "available"
+        },
+        {
+          "name": "LI_PLATE_LMP",
+          "description": "License Plate Light",
+          "status": "available"
+        },
+        {
+          "name": "LK_ALL_LOCK",
+          "description": "All Door Lock",
+          "status": "available"
+        },
+        {
+          "name": "LK_UNLCK_SUP",
+          "description": "Central Unlock Supply",
+          "status": "available"
+        },
+        {
+          "name": "LOW_BEAM_LT",
+          "description": "Left Headlamp Low Beam",
+          "status": "available"
+        },
+        {
+          "name": "LOW_BEAM_RT",
+          "description": "Right Headlamp Low Beam",
+          "status": "available"
+        },
+        {
+          "name": "LSCMbB_NOT_DEN",
+          "description": "Low Speed Collison Mitigation Not Denied",
+          "status": "available"
+        },
+        {
+          "name": "LSCMbB_PL_MON",
+          "description": "Low Speed Collison Mitigation Plausibility Monitoring",
+          "status": "available"
+        },
+        {
+          "name": "LSWPK_AD_VOR",
+          "description": "Left Switch Pack A/D Convertor Voltage Out Of Range",
+          "status": "available"
+        },
+        {
+          "name": "LSWPK_CC_STK",
+          "description": "Left Switch Pack Cruise Control Button Stuck",
+          "status": "available"
+        },
+        {
+          "name": "LT_SW_INVLD",
+          "description": "Exterior Light Switch - Invalid Position",
+          "status": "available"
+        },
+        {
+          "name": "MIN_KEYS_RQD",
+          "description": "Minimum number of keys required",
+          "status": "available"
+        },
+        {
+          "name": "MOD_SUP_V",
+          "description": "Module Supply Voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "MOD_SW_ASSERT",
+          "description": "Control Module Software Assertion Info",
+          "status": "available"
+        },
+        {
+          "name": "NO_SGNL_ABS",
+          "description": "Missing Signal - Anti-lock Brake System Module",
+          "status": "available"
+        },
+        {
+          "name": "NO_SGNL_ECM",
+          "description": "Missing Signal - Engine Control Module",
+          "status": "available"
+        },
+        {
+          "name": "NO_SGNL_FDSM",
+          "description": "Missing Signal - Front Display Sensing Module",
+          "status": "available"
+        },
+        {
+          "name": "NUM_REM",
+          "description": "Number Of Remote Keys",
+          "status": "available"
+        },
+        {
+          "name": "ODDTC_BCM",
+          "description": "Number of Trouble Codes Set Due to Diagnostic Test",
+          "status": "available"
+        },
+        {
+          "name": "PARK_BRK_SW",
+          "description": "Parking Brake Switch Input",
+          "status": "available"
+        },
+        {
+          "name": "PATS_ACC_TYP",
+          "description": "Security Access type Timed / Coded",
+          "status": "available"
+        },
+        {
+          "name": "PCM_ID",
+          "description": "PCM ID Status Stored",
+          "status": "available"
+        },
+        {
+          "name": "PCM_VERIFY",
+          "description": "PCM Verify OK",
+          "status": "available"
+        },
+        {
+          "name": "PLCRD_TP_BCK",
+          "description": "Rear Tire Placard Pressure",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "PLCRD_TP_FRT",
+          "description": "Front Tire Placard Pressure",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "POS_LAMP_LT",
+          "description": "Left Position Lights Duty Cycle",
+          "status": "available"
+        },
+        {
+          "name": "POS_LAMP_RT",
+          "description": "Right Position Lights Duty Cycle",
+          "status": "available"
+        },
+        {
+          "name": "PROGRMD_KEY",
+          "description": "Programmed (Master) Key Present",
+          "status": "available"
+        },
+        {
+          "name": "PUSH_BTN_STRT",
+          "description": "Push Button Start Request",
+          "status": "available"
+        },
+        {
+          "name": "PWR_MODE_KEY",
+          "description": "Power Mode Key State",
+          "status": "available"
+        },
+        {
+          "name": "PWR_MODE_QF",
+          "description": "Power Mode Quality Factor",
+          "status": "available"
+        },
+        {
+          "name": "REALTIME",
+          "description": "Total time ECU has been active",
+          "unit": "s",
+          "status": "available"
+        },
+        {
+          "name": "REAR_WPR_VOR",
+          "description": "Rear Wiper Voltage Out Of Range",
+          "status": "available"
+        },
+        {
+          "name": "RKE_MESSAGE",
+          "description": "Remote Key Message",
+          "status": "available"
+        },
+        {
+          "name": "ROLL_CALL_F",
+          "description": "Roll Call Finished",
+          "status": "available"
+        },
+        {
+          "name": "RPM_UPDATE",
+          "description": "RPM update bit received in valid time",
+          "status": "available"
+        },
+        {
+          "name": "RSWPK_AD_VOR",
+          "description": "Right Switch Pack A/D Convertor Voltage Out Of Range",
+          "status": "available"
+        },
+        {
+          "name": "RSWPK_CC_STK",
+          "description": "Right Switch Pack Cruise Control Button Stuck",
+          "status": "available"
+        },
+        {
+          "name": "RVRS_LMPS",
+          "description": "Reverse Lamp",
+          "status": "available"
+        },
+        {
+          "name": "R_DEFRST_RLY",
+          "description": "Rear Defrost Relay Status",
+          "status": "available"
+        },
+        {
+          "name": "R_DEFRST_SW",
+          "description": "Rear Defrost Switch",
+          "status": "available"
+        },
+        {
+          "name": "SCL_STAT_BOLT",
+          "description": "SCL Status-- Bolt",
+          "status": "available"
+        },
+        {
+          "name": "SCL_STAT_FLT",
+          "description": "SCL Status-- Fault",
+          "status": "available"
+        },
+        {
+          "name": "SCL_STAT_SFTY",
+          "description": "SCL Status-- Safety Reqs",
+          "status": "available"
+        },
+        {
+          "name": "SCL_STAT_UNIT",
+          "description": "SCL Status-- Unit",
+          "status": "available"
+        },
+        {
+          "name": "SPEED_UPDATE",
+          "description": "Speed update bit received in valid time",
+          "status": "available"
+        },
+        {
+          "name": "SPI_FAILURE",
+          "description": "SPI_FAILURE",
+          "status": "available"
+        },
+        {
+          "name": "START_ENABLD",
+          "description": "Vehicle Enable Status",
+          "status": "available"
+        },
+        {
+          "name": "STOP_LMP_CHM",
+          "description": "Central High Mounted Stop Lamp",
+          "status": "available"
+        },
+        {
+          "name": "STOP_LMP_LT",
+          "description": "Left Stop Lamp Duty Cycle",
+          "status": "available"
+        },
+        {
+          "name": "STOP_LMP_RT",
+          "description": "Right Stop Lamp Duty Cycle",
+          "status": "available"
+        },
+        {
+          "name": "SWPK_INCMPTL",
+          "description": "Switch Pack Incompatible With Vehicle",
+          "status": "available"
+        },
+        {
+          "name": "TARG1_AUT_FLT",
+          "description": "Target1 Auth Fault",
+          "status": "available"
+        },
+        {
+          "name": "TARG1_CHL_FLT",
+          "description": "Target1 Challenge Fault",
+          "status": "available"
+        },
+        {
+          "name": "TOTAL_DIST",
+          "description": "Total Vehicle Distance",
+          "unit": "km",
+          "status": "monitored",
+          "did": "0xDD01"
+        },
+        {
+          "name": "TPMS_STATUS",
+          "description": "Tire Pressure Monitoring System Status",
+          "status": "available"
+        },
+        {
+          "name": "TPM_L_PRESS",
+          "description": "TPMS Last Received Measured Pressure",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "TPM_L_SR_CS",
+          "description": "TPMS Last Received Sensor Check Sum",
+          "status": "available"
+        },
+        {
+          "name": "TPM_L_SR_ID",
+          "description": "TPMS Last Received Sensor ID",
+          "status": "available"
+        },
+        {
+          "name": "TPM_L_STAT",
+          "description": "TPMS Last Received Sensor Status",
+          "status": "available"
+        },
+        {
+          "name": "TPM_L_TEMP",
+          "description": "TPMS Last Received Temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "TPM_PRES_LF",
+          "description": "Left Front Tire Pressure",
+          "unit": "kPa",
+          "status": "monitored",
+          "did": "0x2813"
+        },
+        {
+          "name": "TPM_PRES_LRO",
+          "description": "Left Rear Outer Tire Pressure",
+          "unit": "kPa",
+          "status": "monitored",
+          "did": "0x2816"
+        },
+        {
+          "name": "TPM_PRES_RF",
+          "description": "Right Front Tire Pressure",
+          "unit": "kPa",
+          "status": "monitored",
+          "did": "0x2814"
+        },
+        {
+          "name": "TPM_PRES_RRO",
+          "description": "Right Rear Outer Tire Pressure",
+          "unit": "kPa",
+          "status": "monitored",
+          "did": "0x2815"
+        },
+        {
+          "name": "TPM_S_ID_LF",
+          "description": "TPMS Tire Sensor ID Left Front",
+          "status": "monitored",
+          "did": "0x280F"
+        },
+        {
+          "name": "TPM_S_ID_LRO",
+          "description": "TPMS Tire Sensor ID Left Rear Outer",
+          "status": "monitored",
+          "did": "0x2812"
+        },
+        {
+          "name": "TPM_S_ID_RF",
+          "description": "TPMS Tire Sensor ID Right Front",
+          "status": "monitored",
+          "did": "0x2810"
+        },
+        {
+          "name": "TPM_S_ID_RRO",
+          "description": "TPMS Tire Sensor ID Right Rear Outer",
+          "status": "monitored",
+          "did": "0x2811"
+        },
+        {
+          "name": "TPM_WRN_LMP",
+          "description": "Tire Pressure Monitoring System Indicator",
+          "status": "available"
+        },
+        {
+          "name": "TRNK/LG_RLS",
+          "description": "Trunk/Liftgate Release Output",
+          "status": "available"
+        },
+        {
+          "name": "TRNK/LG_R_SW",
+          "description": "Trunk/Liftgate Release Switch",
+          "status": "available"
+        },
+        {
+          "name": "TRNK_RLS_STK",
+          "description": "Trunk Lid Unlock Button Stuck",
+          "status": "available"
+        },
+        {
+          "name": "TRN_BM_ICOM",
+          "description": "Turn and High/Low Beam Illegal Combination",
+          "status": "available"
+        },
+        {
+          "name": "TRN_SIG_ICOM",
+          "description": "Side Turn Illegal Combination",
+          "status": "available"
+        },
+        {
+          "name": "TURN_SW_ICOM",
+          "description": "Turn Stalk Illegal Combination",
+          "status": "available"
+        },
+        {
+          "name": "TURN_SW_STK",
+          "description": "Turn Stalk Stuck Position or Button",
+          "status": "available"
+        },
+        {
+          "name": "VEHICLE_MODE",
+          "description": "Vehicle Mode",
+          "status": "available"
+        },
+        {
+          "name": "VEHICLE_SPD",
+          "description": "Vehicle Speed",
+          "unit": "km/h",
+          "status": "available"
+        },
+        {
+          "name": "VEH_SPD_QF",
+          "description": "Vehicle Speed QF",
+          "status": "available"
+        },
+        {
+          "name": "VOICE_B_STK",
+          "description": "Voice Control Button Stuck",
+          "status": "available"
+        },
+        {
+          "name": "V_BATT_BCM",
+          "description": "Battery Voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "WASH_RLY_F",
+          "description": "Front Washer Pump Relay",
+          "status": "available"
+        },
+        {
+          "name": "WASH_RLY_R",
+          "description": "Rear Washer Pump Relay",
+          "status": "available"
+        },
+        {
+          "name": "WPR_ADJ_VOR",
+          "description": "Wiper Adjust Voltage Out Of Range",
+          "status": "available"
+        },
+        {
+          "name": "WPR_FRNT_HI",
+          "description": "Front Wiper Hi/Lo Control",
+          "status": "available"
+        },
+        {
+          "name": "WPR_RLY_FRNT",
+          "description": "Front Wiper Relay",
+          "status": "available"
+        },
+        {
+          "name": "WPR_RLY_REAR",
+          "description": "Rear Wiper Relay",
+          "status": "available"
+        },
+        {
+          "name": "WPR_SW_ICOM",
+          "description": "Wiper Stalk Illegal Combination",
+          "status": "available"
+        },
+        {
+          "name": "WPR_SW_STK",
+          "description": "Wiper Stalk Stuck Position or Button",
+          "status": "available"
+        }
+      ]
+    },
+    {
+      "id": "DDM",
+      "name": "Driver Door Module",
+      "pid_count": 33,
+      "pids": [
+        {
+          "name": "BSI_LED",
+          "description": "Blind Spot Information LED Duty Cycle",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "CS_LED",
+          "description": "Child Safety LED",
+          "status": "available"
+        },
+        {
+          "name": "CS_SW",
+          "description": "Child Safety Switch",
+          "status": "available"
+        },
+        {
+          "name": "DAWL",
+          "description": "Door Open/Ajar Warning Light Output",
+          "status": "available"
+        },
+        {
+          "name": "DDM_STATE",
+          "description": "ECU Operating States",
+          "status": "available"
+        },
+        {
+          "name": "DIMM",
+          "description": "Illumination dimming level",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "FDDUTS",
+          "description": "Front Driver Door Unlock Trim Switch",
+          "status": "available"
+        },
+        {
+          "name": "FDLMMS",
+          "description": "Front Door Lock and Mirror Motor Status",
+          "status": "available"
+        },
+        {
+          "name": "FDL_LED",
+          "description": "Front Door Lock Status LED Duty Cycle",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "FL_WDW",
+          "description": "Front Left Door Window Switch",
+          "status": "available"
+        },
+        {
+          "name": "FPWMS",
+          "description": "Front Power Window Motor Status",
+          "status": "available"
+        },
+        {
+          "name": "FR_WDW",
+          "description": "Front Right Door Window Switch",
+          "status": "available"
+        },
+        {
+          "name": "GLOBTIM",
+          "description": "Global real time",
+          "unit": "s",
+          "status": "available"
+        },
+        {
+          "name": "H_MIRROR",
+          "description": "Side Mirror Heating Output Control",
+          "status": "available"
+        },
+        {
+          "name": "IC_VPWR",
+          "description": "Module supply voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "INCARTMP",
+          "description": "In car temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "LR_DLOCK_SW",
+          "description": "Rear Driver Door Lock Switch",
+          "status": "available"
+        },
+        {
+          "name": "MAINECUV",
+          "description": "Main ECU voltage supply",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "MIRROR_FOLD",
+          "description": "Mirrors Fold/Unfold Switch",
+          "status": "available"
+        },
+        {
+          "name": "MIRROR_L_LED",
+          "description": "Mirror Selection LED Left",
+          "status": "available"
+        },
+        {
+          "name": "MIRROR_R_LED",
+          "description": "Mirror Selection LED Right",
+          "status": "available"
+        },
+        {
+          "name": "MIRROR_SEL",
+          "description": "Mirror Selection Switch",
+          "status": "available"
+        },
+        {
+          "name": "MIR_SW_L",
+          "description": "Mirror Switch  (Left)",
+          "status": "available"
+        },
+        {
+          "name": "OUTTMP",
+          "description": "External Temperature From Sensor",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "P_LAMP",
+          "description": "Puddle Lamp Control",
+          "status": "available"
+        },
+        {
+          "name": "RDLMS",
+          "description": "Rear Door Lock Motor Status",
+          "status": "available"
+        },
+        {
+          "name": "RL_WDW",
+          "description": "Rear Left Door Window Switch",
+          "status": "available"
+        },
+        {
+          "name": "RPWMS",
+          "description": "Rear Power Window Motor Status",
+          "status": "available"
+        },
+        {
+          "name": "RR_WDW",
+          "description": "Rear Right Door Window Switch",
+          "status": "available"
+        },
+        {
+          "name": "SELTESTDTC",
+          "description": "Diagnostic Trouble Codes",
+          "status": "available"
+        },
+        {
+          "name": "SMT_LAMP",
+          "description": "Side Mirror Turn Signal Lamp Control",
+          "status": "available"
+        },
+        {
+          "name": "SR_SW_DD",
+          "description": "Set / Reset Switch Status - Driver Door",
+          "status": "available"
+        },
+        {
+          "name": "TOTAL_DIST",
+          "description": "Total Vehicle Distance",
+          "unit": "km",
+          "status": "available"
+        }
+      ]
+    },
+    {
+      "id": "FCIM",
+      "name": "Front Controls Interface",
+      "pid_count": 10,
+      "pids": [
+        {
+          "name": "BTNPWR_FCIM",
+          "description": "Power Button",
+          "status": "available"
+        },
+        {
+          "name": "BTN_AMFM",
+          "description": "AM/FM Button",
+          "status": "available"
+        },
+        {
+          "name": "BTN_EJECT",
+          "description": "Eject Button",
+          "status": "available"
+        },
+        {
+          "name": "BTN_SEEKDOWN",
+          "description": "Seek Down Button",
+          "status": "available"
+        },
+        {
+          "name": "BTN_SEEKLEFT",
+          "description": "Seek Left Button",
+          "status": "available"
+        },
+        {
+          "name": "BTN_SEEKRIGHT",
+          "description": "Seek Right Button",
+          "status": "available"
+        },
+        {
+          "name": "BTN_SEEKUP",
+          "description": "Seek Up Button",
+          "status": "available"
+        },
+        {
+          "name": "BTN_SOUND",
+          "description": "Sound Button",
+          "status": "available"
+        },
+        {
+          "name": "KEYPOS_FCIM",
+          "description": "Ignition key input",
+          "status": "available"
+        },
+        {
+          "name": "VPWR_FCIM",
+          "description": "Module supply voltage",
+          "unit": "V",
+          "status": "available"
+        }
+      ]
+    },
+    {
+      "id": "GFM2",
+      "name": "Generic Function Module",
+      "pid_count": 12,
+      "pids": [
+        {
+          "name": "CSPM_DR_FAIL_CT",
+          "description": "Critical Software Param Monitor - Data Range Failure Counter",
+          "status": "available"
+        },
+        {
+          "name": "CSPM_IL_OP_CT",
+          "description": "Critical Software Param Monitor - Illegal Operation Code Counter",
+          "status": "available"
+        },
+        {
+          "name": "CSPM_LT_OF_CT",
+          "description": "Critical Software Param Monitor - Loop or Idle Time Overflow Counter",
+          "status": "available"
+        },
+        {
+          "name": "CSPM_MIN_I_TM",
+          "description": "Critical Software Param Monitor - Minimum Idle-Time",
+          "status": "available"
+        },
+        {
+          "name": "CSPM_PWR_D_CT",
+          "description": "Critical Software Param Monitor - Micro Power Drop and Recover Counter",
+          "status": "available"
+        },
+        {
+          "name": "CSPM_PWR_ON_CT",
+          "description": "Critical Software Param Monitor - Power ON Reset Counter",
+          "status": "available"
+        },
+        {
+          "name": "CSPM_STK_OF_CT",
+          "description": "Critical Software Param Monitor - Stack Overflow Counter",
+          "status": "available"
+        },
+        {
+          "name": "CSPM_WD_TMR_CT",
+          "description": "Critical Software Param Monitor - Watchdog Timer Reset Counter",
+          "status": "available"
+        },
+        {
+          "name": "FUEL_LEVEL_A",
+          "description": "Fuel Level Sensor A",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "FUEL_LEVEL_B",
+          "description": "Fuel Level Sensor B",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "GFM2_STATE",
+          "description": "ECU Operating States",
+          "status": "available"
+        },
+        {
+          "name": "MODE_SEL_SW",
+          "description": "Drivers Mode Select Switch",
+          "status": "available"
+        }
+      ]
+    },
+    {
+      "id": "HCM",
+      "name": "Height Control Module",
+      "pid_count": 9,
+      "pids": [
+        {
+          "name": "FHS",
+          "description": "Front Height Sensor",
+          "unit": "mm",
+          "status": "available"
+        },
+        {
+          "name": "F_CALIB_HCM",
+          "description": "Rear Sensor Value during Calibration",
+          "status": "available"
+        },
+        {
+          "name": "F_LEVEL",
+          "description": "Front Level Sensor",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "NOTCSDTDT",
+          "description": "Number of diagnostic trouble codes set due to diagnostic test",
+          "status": "available"
+        },
+        {
+          "name": "RHS",
+          "description": "Rear height sensor",
+          "unit": "mm",
+          "status": "available"
+        },
+        {
+          "name": "R_CALIB_HCM",
+          "description": "Front Sensor Value during Calibration",
+          "status": "available"
+        },
+        {
+          "name": "SWA",
+          "description": "steering wheel angle",
+          "unit": "°",
+          "status": "available"
+        },
+        {
+          "name": "VOLTS_HCM",
+          "description": "Module Supply Voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "VSS",
+          "description": "Vehicle speed sensor",
+          "unit": "km/h",
+          "status": "available"
+        }
+      ]
+    },
+    {
+      "id": "HVAC",
+      "name": "Climate Control Module",
+      "pid_count": 26,
+      "can_request_id": "0x733",
+      "can_response_id": "0x73B",
+      "pids": [
+        {
+          "name": "AIRTEMP_RF",
+          "description": "Discharge Air Temperature, Right Floor",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "AIRTEMP_RP",
+          "description": "Discharge Air Temperature, Right Panel",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "AIR_MODE_DPOS",
+          "description": "air mode actuator",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "BLOWRSPD",
+          "description": "Blower Motor Speed",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "CCM_SW_SCRN_L",
+          "description": "Screen Left",
+          "status": "available"
+        },
+        {
+          "name": "CC_SW_AC",
+          "description": "A/C Switch",
+          "status": "available"
+        },
+        {
+          "name": "CC_SW_AUTO",
+          "description": "Auto",
+          "status": "available"
+        },
+        {
+          "name": "CC_SW_DEFRST",
+          "description": "Defrost",
+          "status": "available"
+        },
+        {
+          "name": "CC_SW_DL_ZN",
+          "description": "Dual Zone",
+          "status": "available"
+        },
+        {
+          "name": "CC_SW_FAN+",
+          "description": "Fan +",
+          "status": "available"
+        },
+        {
+          "name": "CC_SW_FAN-",
+          "description": "Fan -",
+          "status": "available"
+        },
+        {
+          "name": "CC_SW_FLOOR",
+          "description": "Floor",
+          "status": "available"
+        },
+        {
+          "name": "CC_SW_OFF",
+          "description": "Off",
+          "status": "available"
+        },
+        {
+          "name": "CC_SW_PANEL",
+          "description": "Panel",
+          "status": "available"
+        },
+        {
+          "name": "CC_SW_RECIR",
+          "description": "Recirculation Switch",
+          "status": "available"
+        },
+        {
+          "name": "DEFROST_DR",
+          "description": "Defrost Door Position",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "INT_TEMP",
+          "description": "Interior Temperature Sensor",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "LBLND_DR",
+          "description": "Left Blend Door Position",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "LDFTEMP",
+          "description": "Left Discharge Floor Temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "LDPT",
+          "description": "Left Discharge Panel Temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "NOTCSDTDT",
+          "description": "Number of diagnostic trouble codes set due to diagnostic test",
+          "status": "available"
+        },
+        {
+          "name": "RBLND_DR",
+          "description": "Right Blend Door Position",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "RECIRC_DPOS",
+          "description": "A/C Recirculating Servo Position Status",
+          "status": "available"
+        },
+        {
+          "name": "SOLAR_SSR_L",
+          "description": "Solar Radiation Sensor (Left)",
+          "unit": "Watt",
+          "status": "available"
+        },
+        {
+          "name": "SOLAR_SSR_R",
+          "description": "Solar Radiation Sensor (Right)",
+          "unit": "Watt",
+          "status": "available"
+        },
+        {
+          "name": "VPWR",
+          "description": "Module Supply Voltage",
+          "unit": "V",
+          "status": "available"
+        }
+      ]
+    },
+    {
+      "id": "ICM",
+      "name": "Instrument Cluster Module",
+      "pid_count": 5,
+      "pids": [
+        {
+          "name": "EOT_GAUGE_PP",
+          "description": "Engine Oil Temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "ICM_State",
+          "description": "D100",
+          "status": "available"
+        },
+        {
+          "name": "ILLUMINATE",
+          "description": "Illumination",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "OIL_PRESS",
+          "description": "Oil Pressure",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "TURBO_GAUGE",
+          "description": "Turbo Boost Gauge Pointer Position",
+          "unit": "kPa",
+          "status": "available"
+        }
+      ]
+    },
+    {
+      "id": "IPC",
+      "name": "Instrument Panel Cluster",
+      "pid_count": 105,
+      "can_request_id": "0x720",
+      "can_response_id": "0x728",
+      "pids": [
+        {
+          "name": "ABS_LAMP",
+          "description": "ABS Warning Lamp",
+          "status": "available"
+        },
+        {
+          "name": "AHBC_CP",
+          "description": "Auto High Beam Customer Preference",
+          "status": "available"
+        },
+        {
+          "name": "AIRBAG_LAMP",
+          "description": "Airbag Warning Indicator",
+          "status": "available"
+        },
+        {
+          "name": "AIRBAG_LMP",
+          "description": "Airbag Warning Indicator",
+          "status": "available"
+        },
+        {
+          "name": "AIRBAG_L_REQ",
+          "description": "Airbag Warning Light",
+          "status": "available"
+        },
+        {
+          "name": "BRK_LAMP",
+          "description": "Brake Warning Lamp",
+          "status": "available"
+        },
+        {
+          "name": "BRK_LAMP",
+          "description": "Brake Warning Lamp",
+          "status": "available"
+        },
+        {
+          "name": "BTN_L_DOWN",
+          "description": "Down Button (S2)",
+          "status": "available"
+        },
+        {
+          "name": "BTN_L_LEFT",
+          "description": "Left Button (S3)",
+          "status": "available"
+        },
+        {
+          "name": "BTN_L_RIGHT",
+          "description": "Right Button (S4)",
+          "status": "available"
+        },
+        {
+          "name": "BTN_L_SET",
+          "description": "Set Button",
+          "status": "available"
+        },
+        {
+          "name": "BTN_L_UP",
+          "description": "Up Button (S1)",
+          "status": "available"
+        },
+        {
+          "name": "BTN_R_DOWN",
+          "description": "Down Button (S2)",
+          "status": "available"
+        },
+        {
+          "name": "BTN_R_LEFT",
+          "description": "Left Button (S3)",
+          "status": "available"
+        },
+        {
+          "name": "BTN_R_RIGHT",
+          "description": "Right Button (S4)",
+          "status": "available"
+        },
+        {
+          "name": "BTN_R_SET",
+          "description": "Set Button",
+          "status": "available"
+        },
+        {
+          "name": "BTN_R_UP",
+          "description": "Up Button (S1)",
+          "status": "available"
+        },
+        {
+          "name": "CHARGE_LMP",
+          "description": "Warning Lamp Status 1 - Charge Warning",
+          "status": "available"
+        },
+        {
+          "name": "CRUISE",
+          "description": "Cruise control lamp",
+          "status": "available"
+        },
+        {
+          "name": "ChildLock_ST",
+          "description": "Child Lock Status",
+          "status": "available"
+        },
+        {
+          "name": "DIMon_CP",
+          "description": "Driver Inattention Monitor Customer Preference",
+          "status": "available"
+        },
+        {
+          "name": "DISP_UNITS",
+          "description": "DISPLAY UNITS",
+          "status": "available"
+        },
+        {
+          "name": "DLA_IPC_NUM_DCAF_PID",
+          "description": "DL_IPC_NUM_DCAF",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "DLA_NUM_DB83_PID",
+          "description": "DL_NUM_DB83_PID",
+          "status": "available"
+        },
+        {
+          "name": "DLA_NUM_DCAE_PID",
+          "description": "DL_NUM_DCAE_PID",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "DOOR_SW_DRVR",
+          "description": "Drivers Door Ajar Switch Status",
+          "status": "available"
+        },
+        {
+          "name": "DOOR_SW_LR",
+          "description": "Left Rear Door Ajar Switch",
+          "status": "available"
+        },
+        {
+          "name": "DOOR_SW_LUGG",
+          "description": "Luggage Compartment Lid Ajar Switch",
+          "status": "available"
+        },
+        {
+          "name": "DOOR_SW_PSGR",
+          "description": "Passenger Door Ajar Switch Status",
+          "status": "available"
+        },
+        {
+          "name": "DOOR_SW_RR",
+          "description": "Right Rear Door Ajar Switch",
+          "status": "available"
+        },
+        {
+          "name": "ENGCOOLNT",
+          "description": "Temperature Gauge",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "EPB_LAMP",
+          "description": "Parking brake lamp",
+          "status": "available"
+        },
+        {
+          "name": "FROST_IND",
+          "description": "Frost warning",
+          "status": "available"
+        },
+        {
+          "name": "FROST_LAMP",
+          "description": "Frost warning",
+          "status": "available"
+        },
+        {
+          "name": "FROST_LAMP",
+          "description": "Frost warning",
+          "status": "available"
+        },
+        {
+          "name": "FUELLEVEL",
+          "description": "Fuel Gauge Indicator Control",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "FUELLVL1",
+          "description": "Fuel Level Analog Input 1 Status",
+          "status": "available"
+        },
+        {
+          "name": "FUELLVL2",
+          "description": "Fuel Level Analog Input 2 Status",
+          "status": "available"
+        },
+        {
+          "name": "F_FOG_IND",
+          "description": "Front Fog Lamp Indicator",
+          "status": "available"
+        },
+        {
+          "name": "GEAR_DISP",
+          "description": "Gear Display 1",
+          "status": "available"
+        },
+        {
+          "name": "GENINFO",
+          "description": "General Info",
+          "status": "available"
+        },
+        {
+          "name": "GENWARN_1",
+          "description": "General Warning Indicator 1 (Red)",
+          "status": "available"
+        },
+        {
+          "name": "GENWARN_1",
+          "description": "General Warning Indicator 1 (Red)",
+          "status": "available"
+        },
+        {
+          "name": "GENWARN_2",
+          "description": "General Warning Indicator 2 (Amber)",
+          "status": "available"
+        },
+        {
+          "name": "HIGH_BEAM",
+          "description": "High Beam Indicator",
+          "status": "available"
+        },
+        {
+          "name": "HOOD_SW",
+          "description": "Hood Ajar Switch",
+          "status": "available"
+        },
+        {
+          "name": "IC_STATE",
+          "description": "ECU Operating States",
+          "status": "available"
+        },
+        {
+          "name": "ILLUMINATE",
+          "description": "Illumination",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "IN-CAR_TEMP",
+          "description": "Inside Car Temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "IVD_LAMP",
+          "description": "Traction control lamp",
+          "status": "available"
+        },
+        {
+          "name": "LAMPS_ON",
+          "description": "Lights on Warning",
+          "status": "available"
+        },
+        {
+          "name": "LCD_ILLUMINAT",
+          "description": "LCD Illumination Level",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "LDW_CP",
+          "description": "Lane Departure Warning Customer Preference",
+          "status": "available"
+        },
+        {
+          "name": "LH_TURN_L",
+          "description": "Left Turn signal Lamp Status",
+          "status": "available"
+        },
+        {
+          "name": "LMP_ABS",
+          "description": "Indicators - ABS",
+          "status": "available"
+        },
+        {
+          "name": "LOFUELL",
+          "description": "Low Fuel Warning Indication",
+          "status": "available"
+        },
+        {
+          "name": "MAINECUV",
+          "description": "Main ECU voltage supply",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "MIL",
+          "description": "Malfunction Indicator Lamp",
+          "status": "available"
+        },
+        {
+          "name": "MIL",
+          "description": "Malfunction Indicator Lamp",
+          "status": "available"
+        },
+        {
+          "name": "MODULE_VOLT",
+          "description": "Control Module Voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "ODDTC_IC",
+          "description": "Number of On Demand DTCs",
+          "status": "available"
+        },
+        {
+          "name": "ODOMETER",
+          "description": "Vehicle Odometer",
+          "unit": "km",
+          "status": "available"
+        },
+        {
+          "name": "ODO_TRIP_A",
+          "description": "Trip Odometer",
+          "unit": "km",
+          "status": "available"
+        },
+        {
+          "name": "ODO_TRIP_B",
+          "description": "Trip Odometer",
+          "unit": "km",
+          "status": "available"
+        },
+        {
+          "name": "OIL_P_LOW",
+          "description": "Oil Pressure Low Indicator",
+          "status": "available"
+        },
+        {
+          "name": "OS",
+          "description": "Odometer Store",
+          "unit": "km",
+          "status": "available"
+        },
+        {
+          "name": "OUTDR_TMP",
+          "description": "Outdoor Air Temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "PBA_LMP",
+          "description": "Park Brake Applied Lamp",
+          "status": "available"
+        },
+        {
+          "name": "PWR_MODE_KEY",
+          "description": "Power Mode Key State",
+          "status": "available"
+        },
+        {
+          "name": "PWR_MODE_QF",
+          "description": "Power Mode Quality Factor",
+          "status": "available"
+        },
+        {
+          "name": "REALTIME",
+          "description": "Total time ECU has been active",
+          "unit": "s",
+          "status": "available"
+        },
+        {
+          "name": "RH_TURN_L",
+          "description": "Right Turn signal Lamp Status",
+          "status": "available"
+        },
+        {
+          "name": "RIL",
+          "description": "Restraints Indicator Lamp",
+          "status": "available"
+        },
+        {
+          "name": "R_FOG_IND",
+          "description": "Rear Fog Lamp Indicator",
+          "status": "available"
+        },
+        {
+          "name": "SBELT_D_ST",
+          "description": "Driver Seatbelt Sensor Status",
+          "status": "available"
+        },
+        {
+          "name": "SBELT_P_ST",
+          "description": "Passenger Seatbelt Sensor Status",
+          "status": "available"
+        },
+        {
+          "name": "SBLT_LAMP",
+          "description": "Safety Belt Warning Lamp",
+          "status": "available"
+        },
+        {
+          "name": "SHIFT_LAMP",
+          "description": "Performance Shift Lamp",
+          "status": "available"
+        },
+        {
+          "name": "SPDOMETER",
+          "description": "Speedometer",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "STAB_TC_LMP",
+          "description": "Traction Control Off Indicator",
+          "status": "available"
+        },
+        {
+          "name": "TACH_IND",
+          "description": "Tachometer Gauge Indicator Control",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "TC/IVD/RSC",
+          "description": "Traction Control Off Indicator",
+          "status": "available"
+        },
+        {
+          "name": "TC/IVD/RSCLMP",
+          "description": "Traction Control Indicator",
+          "status": "available"
+        },
+        {
+          "name": "TOTAL_DIST",
+          "description": "Total Vehicle Distance",
+          "unit": "km",
+          "status": "available"
+        },
+        {
+          "name": "TPMS",
+          "description": "Tire Pressure System Fault",
+          "status": "available"
+        },
+        {
+          "name": "TPMWARN_LMP",
+          "description": "Tire Pressure Telltale Status",
+          "status": "available"
+        },
+        {
+          "name": "TRAILER_LMP",
+          "description": "Instrument cluster trailer indicator",
+          "status": "available"
+        },
+        {
+          "name": "VEH_MODE",
+          "description": "Vehicle Mode Signal",
+          "status": "available"
+        },
+        {
+          "name": "W_ABS",
+          "description": "Antilock Braking System Warning",
+          "status": "available"
+        },
+        {
+          "name": "W_BLIND_SPOT",
+          "description": "Blind Spot Detection Warning",
+          "status": "available"
+        },
+        {
+          "name": "W_BRAKE",
+          "description": "Brake Warning",
+          "status": "available"
+        },
+        {
+          "name": "W_CC",
+          "description": "Adaptive Cruise Control Warning",
+          "status": "available"
+        },
+        {
+          "name": "W_CHRG",
+          "description": "Charging system fault.",
+          "status": "available"
+        },
+        {
+          "name": "W_FWD_COLL",
+          "description": "Forward Collision Warning",
+          "status": "available"
+        },
+        {
+          "name": "W_LOW_FUEL",
+          "description": "Low Fuel Warning",
+          "status": "available"
+        },
+        {
+          "name": "W_LOW_WASH",
+          "description": "Low washer fluid warning",
+          "status": "available"
+        },
+        {
+          "name": "W_LW_OL_PRS",
+          "description": "Low Oil Pressure Warning Activated",
+          "status": "available"
+        },
+        {
+          "name": "W_OVR_TMP",
+          "description": "Engine Coolant Over Temperature Condition",
+          "status": "available"
+        },
+        {
+          "name": "W_PARK_AID",
+          "description": "Park Aid Malfunction Warning",
+          "status": "available"
+        },
+        {
+          "name": "W_PEPS",
+          "description": "Passive Entry Passive Start Warning",
+          "status": "available"
+        },
+        {
+          "name": "W_PWERTRAIN",
+          "description": "Powertrain Failure Indicator (non-MIL)",
+          "status": "available"
+        },
+        {
+          "name": "W_SBLT",
+          "description": "Seatbelt warning enable",
+          "status": "available"
+        },
+        {
+          "name": "W_SERV_STEER",
+          "description": "Service Steering Warning",
+          "status": "available"
+        },
+        {
+          "name": "W_TC/IVD/RSC",
+          "description": "Traction Control, Interactive Vehicle Dynamics or Ride Stability Control Event or Fault",
+          "status": "available"
+        },
+        {
+          "name": "W_THFT",
+          "description": "Anti-Theft Indicator",
+          "status": "available"
+        }
+      ]
+    },
+    {
+      "id": "OBDII",
+      "name": "Standard OBD-II",
+      "pid_count": 33,
+      "can_request_id": "0x7E0",
+      "can_response_id": "0x7E8",
+      "pids": [
+        {
+          "name": "AAT",
+          "description": "Ambient Air Temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "BARO",
+          "description": "Barometric pressure",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "CATEMP11",
+          "description": "Catalyst Temperature Bank 1, Sensor 1",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "ECT",
+          "description": "Engine coolant temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "EQ_RAT",
+          "description": "Desired Equivalence Ratio (Lambda)",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "EQ_RAT11",
+          "description": "Equivalence Ratio (Lambda) (Bank 1, Sensor 1)",
+          "status": "available"
+        },
+        {
+          "name": "EVAP_PCT",
+          "description": "Commanded Evaporative Purge",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "EVAP_VP",
+          "description": "Evaporative System Vapor Pressure",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "FLI",
+          "description": "Fuel Level",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "FRP",
+          "description": "Fuel Rail Pressure",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "FUELSYS1",
+          "description": "Fuel system status (Open/Closed loop) - Bank 1",
+          "status": "available"
+        },
+        {
+          "name": "FUELSYS2",
+          "description": "Fuel system status (Open/Closed loop) - Bank 2",
+          "status": "available"
+        },
+        {
+          "name": "IAT",
+          "description": "Intake Air Temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "LOAD_ABS",
+          "description": "Engine load",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "LOAD_PCT",
+          "description": "Engine load",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "LONGFT1",
+          "description": "Long term fuel trim 1",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "MAP",
+          "description": "Manifold absolute pressure sensor",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "MIL_DIST",
+          "description": "The distance travelled since the MIL was activated.",
+          "unit": "km",
+          "status": "available"
+        },
+        {
+          "name": "O2S11",
+          "description": "Heated Exhaust Gas Oxygen Sensor (bank 1, sensor 1)",
+          "unit": "mA",
+          "status": "available"
+        },
+        {
+          "name": "O2S12",
+          "description": "Heated Exhaust Gas Oxygen Sensor (bank 1, sensor 2)",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "OBDSUP",
+          "description": "On Board Diagnostic Requirements Supported",
+          "status": "available"
+        },
+        {
+          "name": "RPM",
+          "description": "Engine Revolutions Per Minute",
+          "unit": "1/min",
+          "status": "available"
+        },
+        {
+          "name": "RUNTM",
+          "description": "Time since start (s)",
+          "unit": "s",
+          "status": "available"
+        },
+        {
+          "name": "SHRTFT1",
+          "description": "Short term fuel trim 1",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "SPARKADV",
+          "description": "Spark Advance",
+          "unit": "°",
+          "status": "available"
+        },
+        {
+          "name": "TAC_PCT",
+          "description": "Commanded Throttle Actuator Control",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "TP",
+          "description": "Throttle Position",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "TP_B",
+          "description": "Absolute Throttle Position B",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "TP_D",
+          "description": "Accelerator Pedal Position D",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "TP_E",
+          "description": "Accelerator Pedal Position E",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "TP_R",
+          "description": "Relative Throttle Position",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "VPWR",
+          "description": "Control Module Voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "VSS",
+          "description": "Vehicle Speed",
+          "unit": "km/h",
+          "status": "available"
+        }
+      ]
+    },
+    {
+      "id": "PAM",
+      "name": "Parking Aid Module",
+      "pid_count": 30,
+      "pids": [
+        {
+          "name": "AUTO_OFF",
+          "description": "Auto off strategy",
+          "status": "available"
+        },
+        {
+          "name": "FLT_COND",
+          "description": "Fault condition",
+          "status": "available"
+        },
+        {
+          "name": "FNT_SENS",
+          "description": "Parking aid front sensor status",
+          "status": "available"
+        },
+        {
+          "name": "FRT_CONFIG",
+          "description": "Front Sensors Configured",
+          "status": "available"
+        },
+        {
+          "name": "F_TONE_STAT",
+          "description": "Front Tone Status",
+          "status": "available"
+        },
+        {
+          "name": "LRI_DIST",
+          "description": "Left Rear Inner Parking Aid Sensor Distance",
+          "unit": "m",
+          "status": "available"
+        },
+        {
+          "name": "LRO_DIST",
+          "description": "Left Rear Outer Parking Aid Sensor Distance",
+          "unit": "m",
+          "status": "available"
+        },
+        {
+          "name": "MUTE_STAT",
+          "description": "Mute Status",
+          "status": "available"
+        },
+        {
+          "name": "PAM_LED_HI",
+          "description": "LED High Side Driven",
+          "status": "available"
+        },
+        {
+          "name": "PAM_SW_ST",
+          "description": "Parking Aid Cancel Switch",
+          "status": "available"
+        },
+        {
+          "name": "PAM_Status",
+          "description": "Parking aid input status",
+          "status": "available"
+        },
+        {
+          "name": "PARK_LED",
+          "description": "Parking aid LED state",
+          "status": "available"
+        },
+        {
+          "name": "PARK_SYS",
+          "description": "Parking aid system status",
+          "status": "available"
+        },
+        {
+          "name": "REAR_SENS",
+          "description": "Parking aid rear sensor status",
+          "status": "available"
+        },
+        {
+          "name": "RRI_DIST",
+          "description": "Right Rear Inner Parking Aid Sensor Distance",
+          "unit": "m",
+          "status": "available"
+        },
+        {
+          "name": "RRO_DIST",
+          "description": "Right Rear Outer Parking Aid Sensor Distance",
+          "unit": "m",
+          "status": "available"
+        },
+        {
+          "name": "R_TONE_STAT",
+          "description": "Rear Tone Status",
+          "status": "available"
+        },
+        {
+          "name": "SEN_DET_LFI",
+          "description": "Sensor Detection Status Left Front Inner",
+          "status": "available"
+        },
+        {
+          "name": "SEN_DET_LFO",
+          "description": "Sensor Detection Status Left Front Outer",
+          "status": "available"
+        },
+        {
+          "name": "SEN_DET_LRI",
+          "description": "Sensor Detection Status Left Rear Inner",
+          "status": "available"
+        },
+        {
+          "name": "SEN_DET_LRO",
+          "description": "Sensor Detection Status Left Rear Outer",
+          "status": "available"
+        },
+        {
+          "name": "SEN_DET_RFI",
+          "description": "Sensor Detection Status Right Front Inner",
+          "status": "available"
+        },
+        {
+          "name": "SEN_DET_RFO",
+          "description": "Sensor Detection Status Right Front Outer",
+          "status": "available"
+        },
+        {
+          "name": "SEN_DET_RRI",
+          "description": "Sensor Detection Status Right Rear Inner",
+          "status": "available"
+        },
+        {
+          "name": "SEN_DET_RRO",
+          "description": "Sensor Detection Status Right Rear Outer",
+          "status": "available"
+        },
+        {
+          "name": "SPEED_ACT",
+          "description": "Vehicle Speed Above Activation Threshold",
+          "status": "available"
+        },
+        {
+          "name": "SPEED_DEACT",
+          "description": "Vehicle Speed Above Deactivation Threshold",
+          "status": "available"
+        },
+        {
+          "name": "TRAILINS",
+          "description": "Trailer installed",
+          "status": "available"
+        },
+        {
+          "name": "TRANSGR",
+          "description": "Transmission gear position",
+          "status": "available"
+        },
+        {
+          "name": "VSS",
+          "description": "Vehicle Speed Input",
+          "unit": "km/h",
+          "status": "available"
+        }
+      ]
+    },
+    {
+      "id": "PCM",
+      "name": "Powertrain Control Module",
+      "pid_count": 448,
+      "can_request_id": "0x7E0",
+      "can_response_id": "0x7E8",
+      "pids": [
+        {
+          "name": "AAT",
+          "description": "Ambient Air Temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "AAT",
+          "description": "Ambient Air Temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "AAT_UR",
+          "description": "Ambient Air Temperature Sensor Input Unreliable",
+          "status": "available"
+        },
+        {
+          "name": "AAT_V",
+          "description": "Ambient Air Temperature Sensor Voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "ACC_CMD",
+          "description": "Air Conditioning Compressor Commanded State",
+          "status": "available"
+        },
+        {
+          "name": "ACP_PRESS",
+          "description": "A/C pressure sensor",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "ACP_V",
+          "description": "A/C Pressure Sensor Voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "AC_CLTH_F",
+          "description": "A/C Clutch Output Fault",
+          "status": "available"
+        },
+        {
+          "name": "AC_DIS_TRQ",
+          "description": "A/C Compressor Is Being Disabled Because There Is Insufficient Engine Torque Available For Operation Of The A/C Compressor",
+          "status": "available"
+        },
+        {
+          "name": "AC_REQ",
+          "description": "Air Conditioning Request Signal",
+          "status": "available"
+        },
+        {
+          "name": "AC_RMNR_F",
+          "description": "A/C Request Message Is Not Being Received - Failure Mode",
+          "status": "available"
+        },
+        {
+          "name": "ADPT1_F",
+          "description": "Adaptive Fuel table 1 Status",
+          "status": "available"
+        },
+        {
+          "name": "AEIS_ACTION",
+          "description": "Number of Drive Cycles where Automatic Engine Idle Shutdown Occurred",
+          "status": "available"
+        },
+        {
+          "name": "AEIS_POSS",
+          "description": "Number of Drive Cycles in which Automatic Engine Idle Shutdown Possible",
+          "status": "available"
+        },
+        {
+          "name": "AF_MOD11",
+          "description": "PCM control of air fuel to check O2S11 status.",
+          "status": "available"
+        },
+        {
+          "name": "AIRSUP_DC",
+          "description": "secondary air system supported",
+          "status": "available"
+        },
+        {
+          "name": "APP",
+          "description": "Accelerator Pedal Position",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "APP1",
+          "description": "Accelerator pedal position sensor 1",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "APP2",
+          "description": "Accelerator pedal position sensor 2",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "APP_D",
+          "description": "Accelerator Pedal Position D",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "APP_E",
+          "description": "Accelerator Pedal Position E",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "APP_FLT",
+          "description": "Accelerator Pedal Position Sensor Status",
+          "status": "available"
+        },
+        {
+          "name": "APP_MAXDIFF",
+          "description": "Maximum angle difference between APP1 and APP2",
+          "unit": "°",
+          "status": "available"
+        },
+        {
+          "name": "APP_MODE",
+          "description": "Accelerator Pedal Position",
+          "status": "available"
+        },
+        {
+          "name": "AST",
+          "description": "Time Since Engine Start",
+          "unit": "ms",
+          "status": "available"
+        },
+        {
+          "name": "AXLECC_STAT",
+          "description": "Axle Ratio Status of Central Vehicle Configuration",
+          "status": "available"
+        },
+        {
+          "name": "BARO",
+          "description": "Barometric pressure",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "BARO_UR",
+          "description": "Barometric Pressure Unreliable",
+          "status": "available"
+        },
+        {
+          "name": "BARO_V",
+          "description": "Barometric pressure",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "BBPS_DYN_QF",
+          "description": "Brake Booster Pressure Sensor Dynamic Performance Quality Factor",
+          "status": "available"
+        },
+        {
+          "name": "BBPS_INR_QF",
+          "description": "Brake Booster Pressure Sensor In Range Quality Factor",
+          "status": "available"
+        },
+        {
+          "name": "BBP_ASSIST",
+          "description": "Status Of The Actively Controlled Brake Booster Pressure Assist Output",
+          "status": "available"
+        },
+        {
+          "name": "BBP_CORR",
+          "description": "Brake Booster Pressure as Vacuum - Corrected",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "BBP_VAC_MGR",
+          "description": "Brake Booster Pressure Control - Vacuum Management Request States",
+          "status": "available"
+        },
+        {
+          "name": "BOO1",
+          "description": "Brake Pedal Position",
+          "status": "available"
+        },
+        {
+          "name": "BOO2",
+          "description": "Brake Pressure Applied",
+          "status": "available"
+        },
+        {
+          "name": "BRKOVRD_POSS",
+          "description": "Number of Drive Cycles in which Brake Override Accelerator Action Possible",
+          "status": "available"
+        },
+        {
+          "name": "BRKOVR_ACTION",
+          "description": "Number of Drive Cycles where Brake Override Accelerator Action Occurred",
+          "status": "available"
+        },
+        {
+          "name": "BRK_BOOST_PRS",
+          "description": "Brake Booster Pressure - Measured",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "BRK_BOOST_V",
+          "description": "Brake Booster Pressure Sensor Voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "CAC_T",
+          "description": "Charge Air Cooler Temperature",
+          "unit": "°C",
+          "status": "monitored",
+          "did": "0x0461",
+          "bytes": 2,
+          "formula": "signed(A*256+B)/64.0",
+          "field": "chargeAirTempC",
+          "poll_group": "pcm_standard"
+        },
+        {
+          "name": "CAC_UR",
+          "description": "Charge Air Cooler Temperature Sensor Unreliable",
+          "status": "available"
+        },
+        {
+          "name": "CANVENT_F",
+          "description": "Canister Venting Status",
+          "status": "available"
+        },
+        {
+          "name": "CATEMP11",
+          "description": "Catalyst Temperature Bank 1, Sensor 1",
+          "unit": "°C",
+          "status": "monitored",
+          "did": "0xF43C",
+          "bytes": 2,
+          "formula": "(A*256+B)/10.0-40.0",
+          "field": "catalyticTempC",
+          "poll_group": "pcm_standard"
+        },
+        {
+          "name": "CATSUP_DC",
+          "description": "Catalyst",
+          "status": "available"
+        },
+        {
+          "name": "CAT_EVAL",
+          "description": "Catalyst Monitor Evaluated",
+          "status": "available"
+        },
+        {
+          "name": "CCMSUP_DC",
+          "description": "CCMON$I",
+          "status": "available"
+        },
+        {
+          "name": "CCM_EVAL",
+          "description": "Comprehensive Components Monitor Evaluated",
+          "status": "available"
+        },
+        {
+          "name": "CHT2",
+          "description": "Cylinder Head Temperature Sensor 2",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "CHT2_F",
+          "description": "Cylinder Head Temperature Sensor 2 Status",
+          "status": "available"
+        },
+        {
+          "name": "CHT2_V",
+          "description": "Cylinder Head Temperature 2 Voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "CLR_DIST",
+          "description": "Distance since diagnostic trouble codes cleared",
+          "unit": "km",
+          "status": "available"
+        },
+        {
+          "name": "CMP1_EXH_F",
+          "description": "Camshaft Position Sensor Bank 1 Exhaust Status",
+          "status": "available"
+        },
+        {
+          "name": "CMP1_INTK_F",
+          "description": "Camshaft Position Sensor Bank 1 Intake Status",
+          "status": "available"
+        },
+        {
+          "name": "COOLPMP_A_STAT",
+          "description": "Coolant Pump 'A' Control Diagnostic Status",
+          "status": "available"
+        },
+        {
+          "name": "COOLPMP_CMD",
+          "description": "Coolant Pump 'A' Is Commanded On",
+          "status": "available"
+        },
+        {
+          "name": "CPP_BOT",
+          "description": "Clutch Pedal At or Near Bottom of Travel",
+          "status": "available"
+        },
+        {
+          "name": "CPP_PERCENT",
+          "description": "Clutch Pedal Depression - Corrected",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "CPP_SIG_CHK",
+          "description": "Clutch Pedal Status Check Signal",
+          "status": "available"
+        },
+        {
+          "name": "CPP_STATUS",
+          "description": "Clutch Pedal Status",
+          "status": "available"
+        },
+        {
+          "name": "CPP_TOP",
+          "description": "Clutch Pedal Beyond Top of Travel Switch Point",
+          "status": "available"
+        },
+        {
+          "name": "CRNKCAS_PRS",
+          "description": "Crankcase Pressure (Gauge) - Measured",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "CRNKCAS_P_UR",
+          "description": "Crankcase Pressure Sensor Circuit Input Is Currently Unreliable",
+          "status": "available"
+        },
+        {
+          "name": "CRNKCAS_P_V",
+          "description": "Crankcase Pressure Sensor Circuit Input Voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "CYL_1_ACCL",
+          "description": "Acceleration value of cylinder 1",
+          "status": "available"
+        },
+        {
+          "name": "CYL_2_ACCL",
+          "description": "Acceleration value of cylinder 2",
+          "status": "available"
+        },
+        {
+          "name": "CYL_3_ACCL",
+          "description": "Acceleration value of cylinder 3",
+          "status": "available"
+        },
+        {
+          "name": "CYL_4_ACCL",
+          "description": "Acceleration value of cylinder 4",
+          "status": "available"
+        },
+        {
+          "name": "DECHOKE",
+          "description": "Crank fueling disabled",
+          "status": "available"
+        },
+        {
+          "name": "DIST_AEIS",
+          "description": "Distance Since Automatic Engine Idle Shutdown occurred",
+          "unit": "km",
+          "status": "available"
+        },
+        {
+          "name": "DIST_BRKOVRD",
+          "description": "Distance Since Brake Override Accelerator Action occurred",
+          "unit": "km",
+          "status": "available"
+        },
+        {
+          "name": "DTCCNT",
+          "description": "DTC Count (includes those needing no action)",
+          "status": "available"
+        },
+        {
+          "name": "ECT",
+          "description": "Engine coolant temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "ECT_F",
+          "description": "Engine Coolant Temperature Status",
+          "status": "available"
+        },
+        {
+          "name": "ECT_V",
+          "description": "Engine coolant temperature sensor voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "EGRSUP_DC",
+          "description": "EGR system monitoring",
+          "status": "available"
+        },
+        {
+          "name": "EGR_EVAL",
+          "description": "Exhaust Gas Recirculation System Evaluated",
+          "status": "available"
+        },
+        {
+          "name": "ENGOFF_TIMER",
+          "description": "Timer since Engine Off",
+          "unit": "s",
+          "status": "available"
+        },
+        {
+          "name": "ENG_CRANK",
+          "description": "Engine Cranking",
+          "status": "available"
+        },
+        {
+          "name": "EQRAT11_CMD",
+          "description": "Commanded Equivalence Ratio (Air to Fuel Mixture) Bank 1",
+          "unit": ":1",
+          "status": "monitored",
+          "did": "0xF444",
+          "bytes": 1,
+          "formula": "A*0.1144",
+          "field": "afrDesired",
+          "poll_group": "pcm_standard"
+        },
+        {
+          "name": "EQ_RAT11",
+          "description": "Equivalence Ratio (Lambda) (Bank 1, Sensor 1)",
+          "unit": ":1",
+          "status": "monitored",
+          "did": "0xF434",
+          "bytes": 2,
+          "formula": "(A*256+B)*0.0004486",
+          "field": "afrActual",
+          "poll_group": "pcm_standard"
+        },
+        {
+          "name": "ETCDIAG_CODE",
+          "description": "Electronic Throttle Control Diagnostics code used for technical assistance",
+          "status": "available"
+        },
+        {
+          "name": "ETC_ACT",
+          "description": "Electronic Throttle Control Actual",
+          "unit": "°",
+          "status": "monitored",
+          "did": "0x093C",
+          "bytes": 2,
+          "formula": "(A*256+B)*(100.0/8192.0)",
+          "field": "etcAngleActual",
+          "poll_group": "pcm_standard"
+        },
+        {
+          "name": "ETC_CLNR_CNTR",
+          "description": "Count of Drive Cycles where a required Throttle cleaning cycle completed while engine was not running",
+          "status": "available"
+        },
+        {
+          "name": "ETC_CLNR_STAT",
+          "description": "Update Status for this Drive Cycle for Throttle Cleaning Cycle when Engine Not Running Counter",
+          "status": "available"
+        },
+        {
+          "name": "ETC_CNTR_DRVCYL",
+          "description": "Count of All Drive Cycles for Throttle Metrics",
+          "status": "available"
+        },
+        {
+          "name": "ETC_CNTR_STAT",
+          "description": "Update Status for Throttle Metrics Drive Cycle Counter",
+          "status": "available"
+        },
+        {
+          "name": "ETC_DIST_EVENT",
+          "description": "Distance Traveled Since Most Recent Reset or Change for Throttle Counters",
+          "unit": "km",
+          "status": "available"
+        },
+        {
+          "name": "ETC_DSD",
+          "description": "Electronic Throttle Control Desired",
+          "unit": "°",
+          "status": "monitored",
+          "did": "0x091A",
+          "bytes": 2,
+          "formula": "(A*256+B)*(100.0/8192.0)",
+          "field": "etcAngleDesired",
+          "poll_group": "pcm_standard"
+        },
+        {
+          "name": "ETC_ICE_CNTR",
+          "description": "Count of Drive Cycles during which Throttle Ice Breaker mode was detected and temperature was in range",
+          "status": "available"
+        },
+        {
+          "name": "ETC_ICE_STAT",
+          "description": "Update Status for this Drive Cycle Throttle Ice Breaker when Cold Enough for Ice Counter",
+          "status": "available"
+        },
+        {
+          "name": "ETC_OSBTR_CNTR",
+          "description": "Count of Drive Cycles detecting moderate Throttle obstruction during engine running",
+          "status": "available"
+        },
+        {
+          "name": "ETC_OSBTR_STAT",
+          "description": "Update Status for this Drive Cycle for moderate Throttle Obstruction during Engine Running Counter",
+          "status": "available"
+        },
+        {
+          "name": "ETC_REASON_2nd",
+          "description": "Reason for Second Most Recent Change of Throttle Counters",
+          "status": "available"
+        },
+        {
+          "name": "ETC_REASON_LAST",
+          "description": "Reason for Most Recent Change of Throttle Counters",
+          "status": "available"
+        },
+        {
+          "name": "ETC_TRIM",
+          "description": "Learned Value of Throttle Angle Offset",
+          "unit": "°",
+          "status": "available"
+        },
+        {
+          "name": "ETC_TRIM_LRN",
+          "description": "Throttle Angle Offset has Learned",
+          "status": "available"
+        },
+        {
+          "name": "EVAP020C",
+          "description": "EVAP Monitor 0.020 Leak Check Complete",
+          "status": "available"
+        },
+        {
+          "name": "EVAPCP",
+          "description": "Evaporative Emission Canister Purge Valve duty cycle",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "EVAPCV",
+          "description": "Evaporative Emission Canister Vent Valve",
+          "status": "available"
+        },
+        {
+          "name": "EVAPCV",
+          "description": "Evaporative Emission Canister Vent Valve",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "EVAPCV_F",
+          "description": "Evaporative Emission Canister Purge Fault",
+          "status": "available"
+        },
+        {
+          "name": "EVAPSOAK",
+          "description": "EVAP Monitor Soak Time Conditions Met",
+          "status": "available"
+        },
+        {
+          "name": "EVAPSUP_DC",
+          "description": "Evap system",
+          "status": "available"
+        },
+        {
+          "name": "EVAPVM_F",
+          "description": "Evaporative Emission Vapour Management Fault",
+          "status": "available"
+        },
+        {
+          "name": "EVAP_EVAL",
+          "description": "Evaporative System Monitor Evaluated",
+          "status": "available"
+        },
+        {
+          "name": "EVAP_PCT",
+          "description": "Commanded Evaporative Purge",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "EVAP_VP",
+          "description": "Evaporative System Vapor Pressure",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "EVBV",
+          "description": "EVAP Vapor Blocking Valve",
+          "status": "available"
+        },
+        {
+          "name": "EVBV",
+          "description": "EVAP Vapor Blocking Valve",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "EVBV_F",
+          "description": "EVAP Vapor Blocking Valve Status",
+          "status": "available"
+        },
+        {
+          "name": "EVC_A_CMD",
+          "description": "Exhaust Flow Control Valve -A- Commanded",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "EVC_A_STAT",
+          "description": "Exhaust Flow Control Valve -A- Fault Status",
+          "status": "available"
+        },
+        {
+          "name": "FLI",
+          "description": "Fuel Level",
+          "unit": "%",
+          "status": "monitored",
+          "did": "0xF42F",
+          "bytes": 1,
+          "formula": "A*100.0/255.0",
+          "field": "fuelLevelPct",
+          "poll_group": "pcm_standard"
+        },
+        {
+          "name": "FLPA",
+          "description": "Fuel Pressure Sensor B (Low Side) - Absolute Pressure - Raw",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "FLP_DSD",
+          "description": "Low Side Fuel Pressure Desired",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "FLP_V",
+          "description": "Fuel Pressure Sensor B (Low Side) Voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "FP",
+          "description": "Fuel pump",
+          "status": "available"
+        },
+        {
+          "name": "FP",
+          "description": "Fuel pump",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "FPM",
+          "description": "Fuel pump monitor",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "FPM2",
+          "description": "Fuel Pump 2 Monitor",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "FP_F",
+          "description": "Fuel Pump Fault",
+          "status": "available"
+        },
+        {
+          "name": "FRP",
+          "description": "Fuel Rail Pressure",
+          "unit": "kPa",
+          "status": "monitored",
+          "did": "0xF422",
+          "bytes": 2,
+          "formula": "(A*256+B)*1.45038",
+          "field": "hpFuelRailPsi",
+          "poll_group": "pcm_standard"
+        },
+        {
+          "name": "FRPC_STAT",
+          "description": "Fuel Rail System Control Pressure Status",
+          "status": "available"
+        },
+        {
+          "name": "FRP_DSD",
+          "description": "Fuel Rail Pressure Desired",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "FRP_F",
+          "description": "Fuel Rail Pressure Transducer Status",
+          "status": "available"
+        },
+        {
+          "name": "FRP_V",
+          "description": "Fuel Rail Pressure",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "FTBRAKE",
+          "description": "Foot Brake - Foot brake state used by strategy",
+          "status": "available"
+        },
+        {
+          "name": "FTP_F",
+          "description": "Fuel Tank Pressure Transducer Status",
+          "status": "available"
+        },
+        {
+          "name": "FTP_V",
+          "description": "Fuel Tank Pressure Sensor Voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "FUELMON_CMP",
+          "description": "Fuel system monitor completed this drive cycle",
+          "status": "available"
+        },
+        {
+          "name": "FUELMON_RDY",
+          "description": "Fuel System Monitor Evaluated",
+          "status": "available"
+        },
+        {
+          "name": "FUELSYS",
+          "description": "Fuel System Status (Open/Closed Loop)",
+          "status": "available"
+        },
+        {
+          "name": "FUEL_TYPE",
+          "description": "Type of fuel currently being utilized by the vehicle",
+          "status": "available"
+        },
+        {
+          "name": "F_VCV",
+          "description": "Fuel Volume Control Valve",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "F_VCV_F",
+          "description": "Fuel Volume Control Valve Status",
+          "status": "available"
+        },
+        {
+          "name": "GEAR_NTRL_CHK",
+          "description": "Gear Neutral Signal Check",
+          "status": "available"
+        },
+        {
+          "name": "GENBPLUS_CORR_I",
+          "description": "Generator Current Sensor Corrected value",
+          "unit": "A",
+          "status": "available"
+        },
+        {
+          "name": "GENBPLUS_IMXINF",
+          "description": "Maximum Generator Current available at present conditions - Inferred",
+          "unit": "A",
+          "status": "available"
+        },
+        {
+          "name": "GENFIL",
+          "description": "Generator Fault Indicator Lamp",
+          "status": "available"
+        },
+        {
+          "name": "GENREG_ELEC_F",
+          "description": "Generator Regulator reporting Electrical Fault",
+          "status": "available"
+        },
+        {
+          "name": "GENREG_INVCMD",
+          "description": "Generator Regulator receiving Invalid Commands",
+          "status": "available"
+        },
+        {
+          "name": "GENREG_MECH_F",
+          "description": "Generator Regulator reporting Mechanical Fault",
+          "status": "available"
+        },
+        {
+          "name": "GENREG_NOCMD",
+          "description": "Generator Regulator indicating Missing Commands",
+          "status": "available"
+        },
+        {
+          "name": "GENREG_OVRTMP",
+          "description": "Generator Regulator indicating Over Temperature",
+          "status": "available"
+        },
+        {
+          "name": "GENVDSD",
+          "description": "Generator Voltage Desired",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "GRILL_A_BLCK",
+          "description": "Grille Shutter A Is Blocked - Unable To Achieve The Commanded Position",
+          "status": "available"
+        },
+        {
+          "name": "GRILL_A_CMD",
+          "description": "Grill Shutter A Position - Commanded",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "GRILL_A_ELEC_F",
+          "description": "Grille Shutter Module A - Indicates An Electrical Fault",
+          "status": "available"
+        },
+        {
+          "name": "GRILL_A_OVRT",
+          "description": "Grille Shutter Module A - Indicates An Over Temperature Condition.",
+          "status": "available"
+        },
+        {
+          "name": "GRILL_A_POS_F",
+          "description": "Grille Shutter A Actuator Fault - End Stop Not Found Or Found Where Not Expected",
+          "status": "available"
+        },
+        {
+          "name": "GRILL_A_UNDRV",
+          "description": "Grille Shutter Module A - Indicates An Under Voltage Condition",
+          "status": "available"
+        },
+        {
+          "name": "GRILL_CMDCAL",
+          "description": "The Grille Shutter Module Either Is Requesting A Command To Perform Or Is Performing The End Point Calibration Process",
+          "status": "available"
+        },
+        {
+          "name": "GRILL_LOSTCOMM",
+          "description": "Lost Communication with Grille Shutter Control Module 'A'",
+          "status": "available"
+        },
+        {
+          "name": "GRNTRL_POS_COR",
+          "description": "Gear Neutral Sensor Position - Corrected (Transmission Range Selector)",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "GS_A_POS_M",
+          "description": "Grill Shutter A Position - Measured",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "HCATSUP_DC",
+          "description": "Heated Catalyst",
+          "status": "available"
+        },
+        {
+          "name": "HCAT_EVAL",
+          "description": "Heated Catalyst Monitor Evaluated",
+          "status": "available"
+        },
+        {
+          "name": "HFC",
+          "description": "Fan control high speed",
+          "status": "available"
+        },
+        {
+          "name": "HFC_F",
+          "description": "Fan Control High Fault",
+          "status": "available"
+        },
+        {
+          "name": "HTR11",
+          "description": "Heated Exhaust Gas Oxygen Sensor Heater (bank 1, sensor 1)",
+          "status": "available"
+        },
+        {
+          "name": "HTR11F",
+          "description": "Heater control for O2S11 Fault",
+          "status": "available"
+        },
+        {
+          "name": "HTR12",
+          "description": "Heated Exhaust Gas Oxygen Sensor Heater (bank 1, sensor 2)",
+          "status": "available"
+        },
+        {
+          "name": "HTR12F",
+          "description": "Heater control for O2S12 Fault",
+          "status": "available"
+        },
+        {
+          "name": "HTRCM12",
+          "description": "Heater Current Monitor for Heated Exhaust Oxygen Sensor 12",
+          "unit": "A",
+          "status": "available"
+        },
+        {
+          "name": "HTRSUP_DC",
+          "description": "oxygen sensor heater monitor supported",
+          "status": "available"
+        },
+        {
+          "name": "HTRX1",
+          "description": "Heater control for Heated Exhaust Oxygen Sensor 11 and Heated Exhaust Oxygen Sensor 21",
+          "status": "available"
+        },
+        {
+          "name": "HTRX2",
+          "description": "Heater control for Heated Exhaust Oxygen Sensor 12 & Heated Exhaust Oxygen Sensor 22",
+          "status": "available"
+        },
+        {
+          "name": "IAC_MODE",
+          "description": "Idle Air Control",
+          "status": "available"
+        },
+        {
+          "name": "IAT",
+          "description": "Intake Air Temperature",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "IAT",
+          "description": "Intake Air Temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "IAT1_UR",
+          "description": "Intake Air Temperature Sensor 1 Input Unreliable",
+          "status": "available"
+        },
+        {
+          "name": "IAT2",
+          "description": "Intake Air Temperature 2",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "IAT2_V",
+          "description": "Intake Air Temperature 2",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "IAT_F",
+          "description": "Inlet Air Temperature Sensor Status",
+          "status": "available"
+        },
+        {
+          "name": "IC_TYPECC_STAT",
+          "description": "Instrument Cluster Status of Central Vehicle Configuration",
+          "status": "available"
+        },
+        {
+          "name": "INJ1_F",
+          "description": "Injector 1 Fault",
+          "status": "available"
+        },
+        {
+          "name": "INJ1_STAT",
+          "description": "Injector 1 Status",
+          "status": "available"
+        },
+        {
+          "name": "INJ2_F",
+          "description": "Injector 2 Fault",
+          "status": "available"
+        },
+        {
+          "name": "INJ2_STAT",
+          "description": "Injector 2 Status",
+          "status": "available"
+        },
+        {
+          "name": "INJ3_F",
+          "description": "Injector 3 Fault",
+          "status": "available"
+        },
+        {
+          "name": "INJ3_STAT",
+          "description": "Injector 3 Status",
+          "status": "available"
+        },
+        {
+          "name": "INJ4_F",
+          "description": "Injector 4 Fault",
+          "status": "available"
+        },
+        {
+          "name": "INJ4_STAT",
+          "description": "Injector 4 Status",
+          "status": "available"
+        },
+        {
+          "name": "INJPWR_M",
+          "description": "Injector Power Monitor",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "INJ_F",
+          "description": "Injector fault",
+          "status": "available"
+        },
+        {
+          "name": "IN_GEAR",
+          "description": "In Gear -Transmission is applying a load to engine",
+          "status": "available"
+        },
+        {
+          "name": "KEYST",
+          "description": "Ignition Key Status",
+          "status": "available"
+        },
+        {
+          "name": "KNK_CNTR_CYL1",
+          "description": "Cylinder 1 Knock/Combustion Performance Counter",
+          "status": "monitored",
+          "did": "0x03EC",
+          "bytes": 2,
+          "formula": "signed(A*256+B)/-512.0",
+          "field": "ignCorrCyl1",
+          "poll_group": "pcm_standard"
+        },
+        {
+          "name": "KNK_CNTR_CYL2",
+          "description": "Cylinder 2 Knock/Combustion Performance Counter",
+          "status": "monitored",
+          "did": "0x03ED",
+          "bytes": 2,
+          "formula": "signed(A*256+B)/-512.0",
+          "field": "ignCorrCyl2",
+          "poll_group": "pcm_standard"
+        },
+        {
+          "name": "KNK_CNTR_CYL3",
+          "description": "Cylinder 3 Knock/Combustion Performance Counter",
+          "status": "monitored",
+          "did": "0x03EE",
+          "bytes": 2,
+          "formula": "signed(A*256+B)/-512.0",
+          "field": "ignCorrCyl3",
+          "poll_group": "pcm_standard"
+        },
+        {
+          "name": "KNK_CNTR_CYL4",
+          "description": "Cylinder 4 Knock/Combustion Performance Counter",
+          "status": "monitored",
+          "did": "0x03EF",
+          "bytes": 2,
+          "formula": "signed(A*256+B)/-512.0",
+          "field": "ignCorrCyl4",
+          "poll_group": "pcm_standard"
+        },
+        {
+          "name": "KNK_RATE_LRND",
+          "description": "Learned Knock/Combustion Performance Detection Rate",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "KNOCK_1",
+          "description": "Knock sensor 1",
+          "status": "available"
+        },
+        {
+          "name": "KNOCK_2",
+          "description": "Knock sensor 2",
+          "status": "available"
+        },
+        {
+          "name": "KNOCK_SPRK",
+          "description": "Knock Control Spark Adjustment",
+          "unit": "°",
+          "status": "available"
+        },
+        {
+          "name": "LFC",
+          "description": "Fan control low speed",
+          "status": "available"
+        },
+        {
+          "name": "LFC_F",
+          "description": "Fan Control Low Fault",
+          "status": "available"
+        },
+        {
+          "name": "LFT1_C1_USED",
+          "description": "Long Term Fuel Trim Bank 1 Cell 1 Is Used",
+          "status": "available"
+        },
+        {
+          "name": "LFT1_C2_USED",
+          "description": "Long Term Fuel Trim Bank 1 Cell 2 Is Used",
+          "status": "available"
+        },
+        {
+          "name": "LFT1_C3_USED",
+          "description": "Long Term Fuel Trim Bank 1 Cell 3 Is Used",
+          "status": "available"
+        },
+        {
+          "name": "LFT1_C4_USED",
+          "description": "Long Term Fuel Trim Bank 1 Cell 4 Is Used",
+          "status": "available"
+        },
+        {
+          "name": "LFT1_CELL1",
+          "description": "Long Term Fuel Trim (Percent Rich) Bank 1 Cell 1",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "LFT1_CELL2",
+          "description": "Long Term Fuel Trim (Percent Rich) Bank 1 Cell 2",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "LFT1_CELL3",
+          "description": "Long Term Fuel Trim (Percent Rich) Bank 1 Cell 3",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "LFT1_CELL4",
+          "description": "Long Term Fuel Trim (Percent Rich) Bank 1 Cell 4",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "LOAD",
+          "description": "Calculated Load Value",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "LOAD_ABS",
+          "description": "Absolute Load Value",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "LONGFT1",
+          "description": "Long term fuel trim 1",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "MAF_F",
+          "description": "Mass Air Flow Sensor Status",
+          "status": "available"
+        },
+        {
+          "name": "MAP",
+          "description": "Manifold absolute pressure sensor",
+          "unit": "kPa",
+          "status": "available"
+        },
+        {
+          "name": "MAP_F",
+          "description": "Manifold Absolute Pressure Sensor Status",
+          "status": "available"
+        },
+        {
+          "name": "MAP_V",
+          "description": "Manifold absolute pressure sensor",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "MFC",
+          "description": "Medium Fan Control",
+          "status": "available"
+        },
+        {
+          "name": "MFC_F",
+          "description": "Medium Fan Control Status",
+          "status": "available"
+        },
+        {
+          "name": "MFF_INGEAR",
+          "description": "Transmission In Gear at Time Of Misfire",
+          "status": "available"
+        },
+        {
+          "name": "MFF_LOAD",
+          "description": "Engine Load At Time Of Misfire",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "MFF_RPM",
+          "description": "Engine RPM At Time Of Misfire",
+          "unit": "1/min",
+          "status": "available"
+        },
+        {
+          "name": "MFF_RUN",
+          "description": "Engine Running Time At Time Of Misfire",
+          "unit": "s",
+          "status": "available"
+        },
+        {
+          "name": "MFF_SOAK",
+          "description": "Engine Off Soak Time Prior to Misfire",
+          "unit": "s",
+          "status": "available"
+        },
+        {
+          "name": "MFF_TCC_LOCK",
+          "description": "Torque Converter Clutch at Time Of Misfire",
+          "status": "available"
+        },
+        {
+          "name": "MFF_THR_ANG",
+          "description": "Throttle Angle at Time Of Misfire",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "MFF_TRIP",
+          "description": "Number Of Trips Since The Time Of Misfire",
+          "status": "available"
+        },
+        {
+          "name": "MFF_VSS",
+          "description": "Vehicle Speed At Time Of Misfire",
+          "unit": "km/h",
+          "status": "available"
+        },
+        {
+          "name": "MIL",
+          "description": "Malfunction Indicator Lamp",
+          "status": "available"
+        },
+        {
+          "name": "MIL_DIST",
+          "description": "The distance travelled since the MIL was activated.",
+          "unit": "km",
+          "status": "available"
+        },
+        {
+          "name": "MISFIRE",
+          "description": "Engine Misfire currently detected",
+          "status": "available"
+        },
+        {
+          "name": "MISFIRE_MON",
+          "description": "Misfire Monitor Status",
+          "status": "available"
+        },
+        {
+          "name": "MISFSUP_DC",
+          "description": "misfire monitor supported",
+          "status": "available"
+        },
+        {
+          "name": "MISF_EVAL",
+          "description": "Misfire Monitor Evaluated",
+          "status": "available"
+        },
+        {
+          "name": "MP_LRN",
+          "description": "Misfire Profile Correction Learned",
+          "status": "available"
+        },
+        {
+          "name": "NPS_NTRL_OK",
+          "description": "Neutral Position Sensor is in Neutral with No Fault",
+          "status": "available"
+        },
+        {
+          "name": "NUM_MISFIRE",
+          "description": "Misfire Events During Latest Misfire Cycle",
+          "status": "available"
+        },
+        {
+          "name": "O2S11_CUR",
+          "description": "Exhaust Gas Oxygen Sensor Current Bank 1 Sensor 1",
+          "unit": "mA",
+          "status": "available"
+        },
+        {
+          "name": "O2S11_F",
+          "description": "Heated Exhaust Oxygen Sensor 11 Status",
+          "status": "available"
+        },
+        {
+          "name": "O2S11_HTR",
+          "description": "Commanded duty cycle for the O2S11 heater output.",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "O2S11_IMPED",
+          "description": "O2S11 sensor impedance is expressed as a voltage.",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "O2S11_READY",
+          "description": "O2S11 is warm and ready to operate.",
+          "status": "available"
+        },
+        {
+          "name": "O2S11_STAT",
+          "description": "O2S11 Status",
+          "status": "available"
+        },
+        {
+          "name": "O2S11_TR",
+          "description": "Oxygen Sensor Trim Circuit Resistance 11 - NTK sensor",
+          "unit": "Ω",
+          "status": "available"
+        },
+        {
+          "name": "O2S12",
+          "description": "Heated Exhaust Gas Oxygen Sensor (bank 1, sensor 2)",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "O2S12.STFT",
+          "description": "Short Term Fuel Trim (Bank 1, Sensor 2)",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "O2S12.VOLT",
+          "description": "Heated Exhaust Gas Oxygen Sensor (bank 1, sensor 2)",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "O2SHTR_EVAL",
+          "description": "Heated Exhaust Oxygen Sensor Heater System Evaluated",
+          "status": "available"
+        },
+        {
+          "name": "O2SSUP_DC",
+          "description": "oxygen sensor monitor supported",
+          "status": "available"
+        },
+        {
+          "name": "O2S_EVAL",
+          "description": "Oxygen Sensor Monitor Evaluated",
+          "status": "available"
+        },
+        {
+          "name": "O2_DS1_ERR",
+          "description": "Downstream Closed Loop Input Error Bank 1",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "O2_DS_DISBL",
+          "description": "Downstream Oxygen Sensor Fuel Control Disabled.",
+          "status": "available"
+        },
+        {
+          "name": "OBDMON_EVAL",
+          "description": "All OBD drive cycle monitors have completed.",
+          "status": "available"
+        },
+        {
+          "name": "OCTADJ_R_LRND",
+          "description": "Learned Relative Octane Adjustment",
+          "unit": "%",
+          "status": "monitored",
+          "did": "0x03E8",
+          "bytes": 2,
+          "formula": "signed(A*256+B)/16384.0",
+          "field": "octaneAdjustRatio",
+          "poll_group": "pcm_standard"
+        },
+        {
+          "name": "OIL_LOW_SW",
+          "description": "Low Engine Oil Pressure Switch",
+          "status": "available"
+        },
+        {
+          "name": "OIL_REMAINING",
+          "description": "Engine Oil Life Remaining",
+          "unit": "%",
+          "status": "monitored",
+          "did": "0x054B",
+          "bytes": 1,
+          "formula": "A",
+          "field": "oilLifePct",
+          "poll_group": "pcm_standard"
+        },
+        {
+          "name": "OSS_F",
+          "description": "Output Shaft Speed Reliable",
+          "status": "available"
+        },
+        {
+          "name": "OTS_STAT",
+          "description": "One-Touch Start Status",
+          "status": "available"
+        },
+        {
+          "name": "P2610_ECUCLOCK",
+          "description": "DTC P2610 Was Set Because Engine Off Timer Did Not Agree with ECU Clock Hardware",
+          "status": "available"
+        },
+        {
+          "name": "P2610_INFTIMER",
+          "description": "DTC P2610 Was Set Because Engine Off Timer Did Not Agree with Inferred Engine Off Time",
+          "status": "available"
+        },
+        {
+          "name": "P2610_LOSSCOM",
+          "description": "Reason for DTC P2610 is the loss of communication with the module that provides Engine Off Time",
+          "status": "available"
+        },
+        {
+          "name": "PATSENABL",
+          "description": "Vehicle Enable Status",
+          "status": "available"
+        },
+        {
+          "name": "PATS_TYPE",
+          "description": "Security Access type Timed / Coded",
+          "status": "available"
+        },
+        {
+          "name": "PCV_PWM",
+          "description": "Pressure control valve PWM",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "POWRPCK_STATE",
+          "description": "Power Pack State",
+          "status": "available"
+        },
+        {
+          "name": "PROG_FLOWTRACE1",
+          "description": "Program Flow Trace Information - 1",
+          "status": "available"
+        },
+        {
+          "name": "PROG_FLOWTRACE2",
+          "description": "Program Flow Trace Information - 2",
+          "status": "available"
+        },
+        {
+          "name": "REALTIME",
+          "description": "Total time ECU has been active",
+          "unit": "s",
+          "status": "available"
+        },
+        {
+          "name": "REV_SW",
+          "description": "Reverse switch",
+          "status": "available"
+        },
+        {
+          "name": "RO2FT1",
+          "description": "Rear O2 Fuel Trim - Bank 1",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "RPM",
+          "description": "Engine Revolutions Per Minute",
+          "unit": "1/min",
+          "status": "available"
+        },
+        {
+          "name": "RPMDSD",
+          "description": "Desired Idle Speed RPM",
+          "unit": "1/min",
+          "status": "available"
+        },
+        {
+          "name": "RUNTM",
+          "description": "Time Since Engine Start",
+          "unit": "s",
+          "status": "available"
+        },
+        {
+          "name": "SAIR_EVAL",
+          "description": "Secondary Air System Evaluated",
+          "status": "available"
+        },
+        {
+          "name": "SHRTFT1",
+          "description": "Short term fuel trim 1",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "SIL",
+          "description": "Shift Indicator Lamp",
+          "status": "available"
+        },
+        {
+          "name": "SOFTWARE_ID",
+          "description": "ECU Software Identifier",
+          "status": "available"
+        },
+        {
+          "name": "SPARKADV",
+          "description": "Spark Advance",
+          "unit": "°",
+          "status": "available"
+        },
+        {
+          "name": "SPARKADV",
+          "description": "Spark Advance",
+          "unit": "°",
+          "status": "available"
+        },
+        {
+          "name": "SPDCTRLCC_STAT",
+          "description": "Speed Control Status of Central Vehicle Configuration",
+          "status": "available"
+        },
+        {
+          "name": "SS_ABS_TC_IN",
+          "description": "Antilock Brake And Traction Control Summary",
+          "status": "available"
+        },
+        {
+          "name": "SS_CTRL_CRANK",
+          "description": "Main Control Crank Command And Hardware Feedback",
+          "status": "available"
+        },
+        {
+          "name": "SS_CTRL_STATE",
+          "description": "Main Control State Machine",
+          "status": "available"
+        },
+        {
+          "name": "SS_DISABL_00",
+          "description": "Scheduler System Of Stop-Start Feature Disabled Due To Vehicle Configuration Does Not Support Stop-Start Feature",
+          "status": "available"
+        },
+        {
+          "name": "SS_DISABL_01",
+          "description": "Scheduler System Of Stop-Start Feature Disabled Due To The Driver Commanding The Engine Off",
+          "status": "available"
+        },
+        {
+          "name": "SS_DISABL_02",
+          "description": "Scheduler System Of Stop-Start Feature Disabled Due To Restraint Deployment Indicated",
+          "status": "available"
+        },
+        {
+          "name": "SS_DISABL_03",
+          "description": "Scheduler System Of Stop-Start Feature Disabled Due To Driver Presence Not Confirmed For System Induced Start",
+          "status": "available"
+        },
+        {
+          "name": "SS_DISABL_04",
+          "description": "Scheduler System Of Stop-Start Feature Disabled Due To Strategy Preventing An Auto-Stopped Engine From Auto-Starting",
+          "status": "available"
+        },
+        {
+          "name": "SS_DISABL_05",
+          "description": "Scheduler System Of Stop-Start Feature Disabled Due To Driver Door Opened While Auto-Stopped or Driver Door Open Fault",
+          "status": "available"
+        },
+        {
+          "name": "SS_DISABL_06",
+          "description": "Scheduler System Of Stop-Start Feature Disabled Due To Engine Control System Failed To Confirm Commanded Stop",
+          "status": "available"
+        },
+        {
+          "name": "SS_DISABL_07",
+          "description": "Scheduler System Of Stop-Start Feature Disabled Due To Engine Control System Failed To Confirm Commanded Start",
+          "status": "available"
+        },
+        {
+          "name": "SS_DISABL_08",
+          "description": "Scheduler System Of Stop-Start Feature Disabled Due To A Stalled Engine",
+          "status": "available"
+        },
+        {
+          "name": "SS_DISABL_09",
+          "description": "Scheduler System Of Stop-Start Feature Disabled Due To The Manual Transmission Engine Stall Recovery Feature Aborting",
+          "status": "available"
+        },
+        {
+          "name": "SS_DISABL_10",
+          "description": "Scheduler System Of Stop-Start Feature Disabled Due To Indicated Vehicle Speed Quality",
+          "status": "available"
+        },
+        {
+          "name": "SS_DISABL_11",
+          "description": "Scheduler System Of Stop-Start Feature Disabled Due To Indicated Accelerator Pedal Quality",
+          "status": "available"
+        },
+        {
+          "name": "SS_DISABL_12",
+          "description": "Scheduler System Of Stop-Start Feature Disabled Due To Indicated Transmission Range Selector Quality",
+          "status": "available"
+        },
+        {
+          "name": "SS_DISABL_13",
+          "description": "Scheduler System Of Stop-Start Feature Disabled Due To Indicated Automatic Transmission Fault",
+          "status": "available"
+        },
+        {
+          "name": "SS_DISABL_14",
+          "description": "Scheduler System Of Stop-Start Feature Disabled Due To Indicated Engine Control System Fault",
+          "status": "available"
+        },
+        {
+          "name": "SS_DISABL_15",
+          "description": "Scheduler System Of Stop-Start Feature Disabled Due To Indicated Charging System Fault",
+          "status": "available"
+        },
+        {
+          "name": "SS_DISABL_16",
+          "description": "Scheduler System Of Stop-Start Feature Disabled Due To Indicated Brake System Fault",
+          "status": "available"
+        },
+        {
+          "name": "SS_DISABL_17",
+          "description": "Scheduler System Of Stop-Start Feature Disabled Due To Stop-Start Feature Monitor",
+          "status": "available"
+        },
+        {
+          "name": "SS_DISABL_18",
+          "description": "Scheduler System Of Stop-Start Feature Disabled Due To Clutch Pedal System",
+          "status": "available"
+        },
+        {
+          "name": "SS_DISABL_19",
+          "description": "Scheduler System Of Stop-Start Feature Disabled Due To Gear Neutral System",
+          "status": "available"
+        },
+        {
+          "name": "SS_DISABL_20",
+          "description": "Scheduler System Of Stop-Start Feature Disabled Due To Indicated Vehicle Life Cycle State Being 'Manufacturing' Or 'Transport'",
+          "status": "available"
+        },
+        {
+          "name": "SS_DRVR INPUTS",
+          "description": "Monitor Driver Inputs APP, Brake, TR or Cruise",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC00",
+          "description": "The Stop-Start Feature Is Inhibited By Engine Control Due To Engine Coolant Temperature Too Low Or Too High",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC01",
+          "description": "The Stop-Start Inhibited By Engine Control Due To Barometric Pressure Being Too Low",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC02",
+          "description": "The Stop-Start Inhibited By Engine Control Due To Fuel Rail Pressure At Idle Being Too Low",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC03",
+          "description": "The Stop-Start Inhibited By Engine Control Due To Insufficient Time Since A Driver Initiated Start",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC04",
+          "description": "The Stop-Start Feature Is Inhibited By Engine Control Due To Fuel Rail Temperature Being Too High",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC05",
+          "description": "The Stop-Start Inhibited By Engine Control Due To Cranking Time Being Too Long",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC06",
+          "description": "The Stop-Start Inhibited By Engine Control Due To Low Fuel Level",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC07",
+          "description": "The Stop-Start Inhibited By Engine Control Due To Catalyst Monitoring Function",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC08",
+          "description": "The Stop-Start Inhibited By Engine Control Due To Purge Control Function",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC09",
+          "description": "The Stop-Start Inhibited By Engine Control Due To Adaptive Fuel Control Function",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC10",
+          "description": "The Stop-Start Inhibited By Engine Control Due To Turbocharger Bearing Oil Temperature Too High",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC11",
+          "description": "The Stop-Start Feature Is Inhibited By Engine Control Due To Waiting For EVAP Monitor To Complete",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC12",
+          "description": "The Stop-Start Feature Is Inhibited By Engine Control Due To Anti-Theft System (Immobilizer)",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC13",
+          "description": "The Stop-Start Feature Is Inhibited By Engine Control Due To Collision (Fuel Pump Cutoff Request Received)",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC14",
+          "description": "The Stop-Start Feature Is Inhibited By Engine Control Due To Fail Safe Cooling Strategy",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC15",
+          "description": "The Stop-Start Feature Is Inhibited By Engine Control Due To Stop-Start Level 2 Safety Monitor Tripping",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC16",
+          "description": "The Stop-Start Feature Is Inhibited By Engine Control Due To Fuel Control Adaption Active",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC17",
+          "description": "The Stop-Start Inhibited By Engine Control Due To Gasoline Or Diesel Particulate Filter (GPF or DPF) Regeneration",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC18",
+          "description": "The Stop-Start Inhibited By Engine Control Due To Gasoline Or Diesel Particulate Filter (GPF or DPF) Soot Overload",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC19",
+          "description": "The Stop-Start Feature Is Inhibited By Engine Control Due To Exhaust After Treatment Strategy Request",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC20",
+          "description": "The Stop-Start Inhibited By Engine Control Due To Air Mass Adaption",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC21",
+          "description": "The Stop-Start Inhibited By Engine Control Due To Adaptation Of Minimum Pilot",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC22",
+          "description": "The Stop-Start Inhibited By Engine Control Due To Gasoline Or Diesel Particulate Filter (GPF or DPF) Regeneration",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC23",
+          "description": "The Stop-Start Inhibited By Engine Control Due To Turbocharger Bearing Oil Temperature Too High",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC24",
+          "description": "The Stop-Start Inhibited By Engine Control Due To Gasoline Or Diesel Particulate Filter (GPF or DPF) Soot Overload",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC26",
+          "description": "The Stop-Start Inhibited By Engine Control Due To Bulk Oil Temperature In The Oil Pan Too Low",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_EC27",
+          "description": "The Stop-Start Inhibited By Engine Control Due To Engine Management System Pre-Shutdown Operational Range Inhibit Condition",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G1_00",
+          "description": "The Stop-Start Feature Is Inhibited The Stop-Start Feature Requires Auto-Stopping The Engine Due To Driver Actions - Expected Operation",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G1_01",
+          "description": "The Stop-Start Feature Is Aborting An Auto-Start",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G1_02",
+          "description": "The Stop-Start Feature Is Inhibited By Accelerator Pedal Application",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G1_03",
+          "description": "The Stop-Start Feature Is Inhibited By Driver Selection Of Reverse Gear",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G1_04",
+          "description": "The Stop-Start Feature Is Inhibited By Driver Application Of Clutch Pedal",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G1_05",
+          "description": "The Stop-Start Feature Is Inhibited By Driver Release Of Brake Pedal",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G1_06",
+          "description": "The Stop-Start Feature Is Inhibited For Application Of Accelerator Pedal While Automatic Transmission Is In Forward Gear",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G1_07",
+          "description": "The Stop-Start Feature Is Inhibited For Application Of Accelerator Pedal While Automatic Transmission Is In Park Or Neutral",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G1_08",
+          "description": "The Stop-Start Feature Is Inhibited During Transmission Range Selector Transition To The Drive Position",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G1_09",
+          "description": "The Stop-Start Feature Is Inhibited Because The Automatic Transmission Is Operating In Low",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G1_10",
+          "description": "The Stop-Start Feature Is Inhibited Because The Automatic Transmission Is Operating In Manual/Sport",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G1_11",
+          "description": "The Stop-Start Feature Is Inhibited Because The Automatic Transmission Is Operating In Park",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G1_12",
+          "description": "The Stop-Start Feature Is Inhibited Because The Automatic Transmission Is Operating In Neutral",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G1_13",
+          "description": "The Stop-Start Feature Is Inhibited Because The Automatic Transmission Is Operating In Overdrive Cancel Mode",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G1_14",
+          "description": "The Stop-Start Feature Is Inhibited For A Period After Transmission Range Selector Transition From Park Or Neutral Position",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G1_15",
+          "description": "The Stop-Start Feature Is Inhibited Due To Vehicle Speed Above Threshold During An Automatic Stop",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G1_16",
+          "description": "The Stop-Start Feature Is Inhibited For Being In Engine Auto-Stop For Too Long (Engine Will Be Started)",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G1_17",
+          "description": "The Stop-Start Feature Is Inhibited Because The Driver Door Is Open",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G1_18",
+          "description": "The Stop-Start Feature Is Inhibited After A Stop-Start System Induced (not a driver action) Engine Auto-Start",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G1_19",
+          "description": "The Stop-Start Feature Is Inhibited For Minimum Period After Every Engine Auto-Start",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G1_20",
+          "description": "The Stop-Start Feature Is Inhibited - At Limit For Number Of Engine Auto-Starts Permitted Without Moving The Vehicle",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G1_21",
+          "description": "The Stop-Start Feature Is Inhibited Because The Vehicle Speed Is Above Threshold",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G1_22",
+          "description": "The Stop-Start Feature Is Inhibited Due To The Initiation/Operation Of The Manual Transmission Engine Stall Recovery Feature",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G1_23",
+          "description": "The Stop-Start Feature Is Inhibited For Minimum Period After A Driver Initiated (e.g., Key/Button/Remote) Start",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_00",
+          "description": "The Stop-Start Feature Is Inhibited Because The Driver's Seat Belt Is Not Fastened",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_01",
+          "description": "The Stop-Start Feature Is Inhibited Because The HVAC System Requires The Engine To Run",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_02",
+          "description": "The Stop-Start Feature Is Inhibited Because The Steering System Requires The Engine To Run",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_03",
+          "description": "The Stop-Start Feature Is Inhibited Because The Braking System Requires The Engine To Run",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_04",
+          "description": "The Stop-Start Feature Is Inhibited Because The Stop-Start Menu In The Cluster Has Been Selected",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_05",
+          "description": "The Stop-Start Feature Is Inhibited Because The Parking Aid Camera Is Operating",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_06",
+          "description": "The Stop-Start Feature Is Inhibited Because The Semi-Assisted Parallel Parking Feature Is Operating",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_07",
+          "description": "The Stop-Start Feature Is Inhibited Because The Brake System Requires Booster Vacuum",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_08",
+          "description": "The Stop-Start Feature Is Inhibited Due To Battery Energy Management",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_09",
+          "description": "The Stop-Start Feature Is Inhibited Because Of The Voltage Quality Monitor",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_10",
+          "description": "The Stop-Start Feature Is Inhibited Because Of Vehicle Operation With A Trailer",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_11",
+          "description": "The Stop-Start Feature Is Inhibited Because Of Vehicle Operation On A Hill/Grade",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_12",
+          "description": "The Stop-Start Feature Is Inhibited Because The Terrain Management System Is Operating",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_13",
+          "description": "The Stop-Start Feature Is Inhibited Because Of Ambient Air Temperature",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_14",
+          "description": "The Stop-Start Feature Is Inhibited Because The Fuel Operated Heater Is Operating",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_15",
+          "description": "The Stop-Start Feature Is Inhibited Because The Electronic Parking Brake System Is Operating",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_16",
+          "description": "The Stop-Start Feature Is Inhibited Because The Air Suspension Feature Is Operating",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_17",
+          "description": "The Stop-Start Feature Is Inhibited Due To Keyless Vehicle Secure Idle Feature Is Operating",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_18",
+          "description": "The Stop-Start Feature Is Inhibited Due To The Vehicle Operating In Low Gear",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_19",
+          "description": "The Stop-Start Feature Is Inhibited Due To The Engine Management System",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_20",
+          "description": "The Stop-Start Feature Is Inhibited Due To The Transmission Management System",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_21",
+          "description": "The Stop-Start Feature Is Inhibited By Off-Board Service Tool",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_22",
+          "description": "The Stop-Start Feature Is Inhibited By HVAC System Electrical Power Demands",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_23",
+          "description": "The Stop-Start Feature Is Inhibited Due To Operation Of The Power Tail Gate Feature",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_24",
+          "description": "The Stop-Start Feature Is Inhibited Because The DC-AC Inverter Is Operating",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_25",
+          "description": "The Stop-Start Feature Is Inhibited Due To Operation Of A Power Window",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_26",
+          "description": "The Stop-Start Feature Is Inhibited Due To Monitoring Of Current Limits By The Electrical Power Management System",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_27",
+          "description": "The Stop-Start Feature Is Inhibited By Stop-Start Plausibility Monitor",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_28",
+          "description": "The Stop-Start Feature Is Inhibited Due To Low Engine Coolant Temperature",
+          "status": "available"
+        },
+        {
+          "name": "SS_INHIB_G2_29",
+          "description": "The Stop-Start Feature Is Inhibited - At Limit For Number Of Engine Auto-Starts Permitted While Wipers Are Active",
+          "status": "available"
+        },
+        {
+          "name": "SS_MON_STATE",
+          "description": "Monitor State Machine",
+          "status": "available"
+        },
+        {
+          "name": "SS_MON_TIMER",
+          "description": "Monitor State Machine Transition Timer",
+          "status": "available"
+        },
+        {
+          "name": "SS_OUTOP",
+          "description": "Stop-Start Coordination - Out Of Operation",
+          "status": "available"
+        },
+        {
+          "name": "SS_SHIFTER_IN",
+          "description": "Monitor Shift Lever Position Input",
+          "status": "available"
+        },
+        {
+          "name": "SS_SPEED_INPUT",
+          "description": "Vehicle Speed and Powertrain Shaft Speeds Summary",
+          "status": "available"
+        },
+        {
+          "name": "SS_START_ERR",
+          "description": "Stop-Start Coordination - Start Error",
+          "status": "available"
+        },
+        {
+          "name": "SS_STOP_ERR",
+          "description": "Stop-Start Coordination - Stop Error",
+          "status": "available"
+        },
+        {
+          "name": "SS_STRTR_HEAT",
+          "description": "(Start-Stop) Starter Motor Heat State",
+          "status": "available"
+        },
+        {
+          "name": "STARTER_CNTS",
+          "description": "Starter Motor Activation Counter",
+          "status": "available"
+        },
+        {
+          "name": "STARTER_PROT",
+          "description": "Starter Motor Protection Status",
+          "status": "available"
+        },
+        {
+          "name": "STARTREQ_CAN",
+          "description": "Start engine request received over CAN network",
+          "status": "available"
+        },
+        {
+          "name": "START_KEY",
+          "description": "Key Position for Start Indicated",
+          "status": "available"
+        },
+        {
+          "name": "STRT_RLY",
+          "description": "Starter Motor Relay Enable",
+          "status": "available"
+        },
+        {
+          "name": "STR_CRNKV_PER",
+          "description": "Percent of Expected Starter Voltage For Cranking",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "SYNC",
+          "description": "CMP and CKP Synchronized",
+          "status": "available"
+        },
+        {
+          "name": "TAC_PCT",
+          "description": "Commanded Throttle Actuator Control",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "TCBP",
+          "description": "Measured Boost at Throttle Inlet Pressure Sensor",
+          "unit": "kPa",
+          "status": "monitored",
+          "did": "0x033E",
+          "bytes": 2,
+          "formula": "(A*256+B)/903.81",
+          "field": "tipActualKpa",
+          "poll_group": "pcm_standard"
+        },
+        {
+          "name": "TCBP_DSD",
+          "description": "Desired Boost Pressure",
+          "unit": "kPa",
+          "status": "monitored",
+          "did": "0x0466",
+          "bytes": 2,
+          "formula": "(A*256+B)/903.81",
+          "field": "tipDesiredKpa",
+          "poll_group": "pcm_standard"
+        },
+        {
+          "name": "TCBP_UR",
+          "description": "Turbocharger Boost Sensor Input Unreliable",
+          "status": "available"
+        },
+        {
+          "name": "TCBP_V",
+          "description": "Throttle Inlet Pressure Sensor Voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "TCFT",
+          "description": "Transfer Case Fluid Temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "TCFT_F",
+          "description": "Transfer Case Fluid Sensor Status",
+          "status": "available"
+        },
+        {
+          "name": "TCFT_V",
+          "description": "Transfer Case Fluid Sensor Voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "TFT_F",
+          "description": "Transmission Fluid Temperature Status",
+          "status": "available"
+        },
+        {
+          "name": "TIRECC_STAT",
+          "description": "Tire Size Status of Central Vehicle Configuration",
+          "status": "available"
+        },
+        {
+          "name": "TOTAL_DIST",
+          "description": "Total Vehicle Distance",
+          "unit": "km",
+          "status": "available"
+        },
+        {
+          "name": "TP",
+          "description": "Throttle Position",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "TP1",
+          "description": "Throttle Position Sensor 1",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "TP1_LRN_TRIM",
+          "description": "Throttle Position Sensor 1 Learned Offset",
+          "unit": "°",
+          "status": "available"
+        },
+        {
+          "name": "TP2",
+          "description": "Throttle Position Sensor 2",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "TP2_LRN_TRIM",
+          "description": "Throttle Position Sensor 2 Learned Offset",
+          "unit": "°",
+          "status": "available"
+        },
+        {
+          "name": "TP_B",
+          "description": "Throttle Position Sensor 2",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "TP_F",
+          "description": "Throttle Position Sensor Status",
+          "status": "available"
+        },
+        {
+          "name": "TP_MAXDIFF",
+          "description": "Maximum Angle Difference between TP1 sensor and TP2 sensor",
+          "unit": "°",
+          "status": "available"
+        },
+        {
+          "name": "TP_REL",
+          "description": "Relative Throttle Position",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "TQ_CNTRL",
+          "description": "Torque Control Requested",
+          "status": "available"
+        },
+        {
+          "name": "TR_NEUTRAL_RAW",
+          "description": "Neutral Sensor Raw Value",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "TR_NTRL_A_FRQ",
+          "description": "Transmission Range Selector - Neutral Position Sensor \"A\" Frequency - Measured",
+          "unit": "Hz",
+          "status": "available"
+        },
+        {
+          "name": "TR_NTRL_B_FRQ",
+          "description": "Transmission Range Selector - Neutral Position Sensor \"B\" Frequency - Measured",
+          "unit": "Hz",
+          "status": "available"
+        },
+        {
+          "name": "TR_NTRL_RAW2",
+          "description": "Transmission Range Selector - Neutral Sensor 2 Raw Value",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "TURBO_BP1_STAT",
+          "description": "Turbocharger Bypass 1 Status",
+          "status": "available"
+        },
+        {
+          "name": "TURBO_BPASS",
+          "description": "Turbocharger Bypass Valve 1",
+          "status": "available"
+        },
+        {
+          "name": "TURBO_INLET_F",
+          "description": "Turbocharger Inlet Sensor Status",
+          "status": "available"
+        },
+        {
+          "name": "TURBO_OVER",
+          "description": "Turbocharger Overboost Condition",
+          "status": "available"
+        },
+        {
+          "name": "TURBO_UNDER",
+          "description": "Turbocharger Underboost Condition",
+          "status": "available"
+        },
+        {
+          "name": "TURBO_WGATE",
+          "description": "Turbocharger Wastegate",
+          "unit": "%",
+          "status": "monitored",
+          "did": "0x0462",
+          "bytes": 1,
+          "formula": "A*100.0/128.0",
+          "field": "wgdcDesired",
+          "poll_group": "pcm_standard"
+        },
+        {
+          "name": "TWGATE_STAT",
+          "description": "Turbocharger Wastegate Status",
+          "status": "available"
+        },
+        {
+          "name": "VCT1_EXH_F",
+          "description": "Variable Cam Timing Bank 1 Exhaust Status",
+          "status": "available"
+        },
+        {
+          "name": "VCT1_INTK_F",
+          "description": "Variable Cam Timing Bank 1 Intake Status",
+          "status": "available"
+        },
+        {
+          "name": "VCTSYS",
+          "description": "VCT System status (open/closed loop)",
+          "status": "available"
+        },
+        {
+          "name": "VCT_EXH_ACT1",
+          "description": "Actual Exhaust B Camshaft Position Bank 1",
+          "unit": "°",
+          "status": "available"
+        },
+        {
+          "name": "VCT_EXH_DC1",
+          "description": "Exhaust B Camshaft Position Duty Cycle Bank 1",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "VCT_EXH_DIF1",
+          "description": "Exhaust B Camshaft Desired Minus Actual Bank 1",
+          "unit": "°",
+          "status": "available"
+        },
+        {
+          "name": "VCT_EXH_DSD",
+          "description": "Variable Camshaft Timing Exhaust Angle Desired",
+          "unit": "°",
+          "status": "monitored",
+          "did": "0x0319",
+          "bytes": 2,
+          "formula": "signed(A*256+B)/16.0",
+          "field": "vctExhaustAngle",
+          "poll_group": "pcm_standard"
+        },
+        {
+          "name": "VCT_INTK_DSD",
+          "description": "Variable Camshaft Timing Intake Desired Angle",
+          "unit": "°",
+          "status": "monitored",
+          "did": "0x0318",
+          "bytes": 2,
+          "formula": "signed(A*256+B)/16.0",
+          "field": "vctIntakeAngle",
+          "poll_group": "pcm_standard"
+        },
+        {
+          "name": "VCT_INT_ACT1",
+          "description": "Actual Intake A Camshaft Position Bank 1",
+          "unit": "°",
+          "status": "available"
+        },
+        {
+          "name": "VCT_INT_DC1",
+          "description": "Intake A Camshaft Position Duty Cycle Bank 1",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "VCT_INT_DIF1",
+          "description": "Intake A Camshaft Desired Minus Actual Bank 1",
+          "unit": "°",
+          "status": "available"
+        },
+        {
+          "name": "VEH_SPD_LO_LIM",
+          "description": "Lower Vehicle SpeedLimit for Dealer configuration",
+          "unit": "km/h",
+          "status": "available"
+        },
+        {
+          "name": "VEH_SPD_UP_LIM",
+          "description": "Upper Vehicle Speed Limit for Dealer configuration",
+          "unit": "km/h",
+          "status": "available"
+        },
+        {
+          "name": "VINCC_STAT",
+          "description": "Vehicle Identification Number Status of Central Vehicle Configuration",
+          "status": "available"
+        },
+        {
+          "name": "VPWR",
+          "description": "Control Module Voltage",
+          "unit": "V",
+          "status": "monitored",
+          "did": "0x0304",
+          "bytes": 2,
+          "formula": "(A*256+B)/2048.0",
+          "field": "batteryVoltage",
+          "poll_group": "pcm_standard"
+        },
+        {
+          "name": "VREF",
+          "description": "Reference Voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "VSS",
+          "description": "Vehicle Speed",
+          "unit": "km/h",
+          "status": "available"
+        },
+        {
+          "name": "VSS",
+          "description": "Vehicle Speed",
+          "unit": "km/h",
+          "status": "available"
+        },
+        {
+          "name": "WARM_UPS",
+          "description": "Number Of Warm-ups Since DTCs Cleared",
+          "status": "available"
+        }
+      ]
+    },
+    {
+      "id": "PDM",
+      "name": "Passenger Door Module",
+      "pid_count": 24,
+      "pids": [
+        {
+          "name": "BSI_LED",
+          "description": "Blind Spot Information LED Duty Cycle",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "DAWL",
+          "description": "Door Open/Ajar Warning Light Output",
+          "status": "available"
+        },
+        {
+          "name": "DIMM",
+          "description": "Illumination dimming level",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "FDLMMS",
+          "description": "Front Door Lock and Mirror Motor Status",
+          "status": "available"
+        },
+        {
+          "name": "FDL_LED",
+          "description": "Front Door Lock Status LED Duty Cycle",
+          "unit": "%",
+          "status": "available"
+        },
+        {
+          "name": "FPDUTS",
+          "description": "Front Passenger Door Unlock Trim Switch",
+          "status": "available"
+        },
+        {
+          "name": "FPWMS",
+          "description": "Front Power Window Motor Status",
+          "status": "available"
+        },
+        {
+          "name": "FR_DLOCK_SW",
+          "description": "Front Right Door Lock / Unlock Switch",
+          "status": "available"
+        },
+        {
+          "name": "FR_UD_SW",
+          "description": "Front Right Door Window Switch",
+          "status": "available"
+        },
+        {
+          "name": "GLOBTIM",
+          "description": "Global real time",
+          "unit": "s",
+          "status": "available"
+        },
+        {
+          "name": "H_MIRROR",
+          "description": "Side Mirror Heating Output Control",
+          "status": "available"
+        },
+        {
+          "name": "IC_VPWR",
+          "description": "Module supply voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "INCARTMP",
+          "description": "In car temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "MAINECUV",
+          "description": "Main ECU voltage supply",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "OUTTMP",
+          "description": "External Temperature From Sensor",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "PDM_STATE",
+          "description": "ECU Operating States",
+          "status": "available"
+        },
+        {
+          "name": "P_LAMP",
+          "description": "Puddle Lamp Control",
+          "status": "available"
+        },
+        {
+          "name": "RDLMS",
+          "description": "Rear Door Lock Motor Status",
+          "status": "available"
+        },
+        {
+          "name": "RPWMS",
+          "description": "Rear Power Window Motor Status",
+          "status": "available"
+        },
+        {
+          "name": "RR_DLOCK_SW",
+          "description": "Rear Right Door Lock Switch",
+          "status": "available"
+        },
+        {
+          "name": "RR_UD_SW",
+          "description": "Rear Right Door Window Switch",
+          "status": "available"
+        },
+        {
+          "name": "SELTESTDTC",
+          "description": "Diagnostic Trouble Codes",
+          "status": "available"
+        },
+        {
+          "name": "SMT_LAMP",
+          "description": "Side Mirror Turn Signal Lamp Control",
+          "status": "available"
+        },
+        {
+          "name": "TOTAL_DIST",
+          "description": "Total Vehicle Distance",
+          "unit": "km",
+          "status": "available"
+        }
+      ]
+    },
+    {
+      "id": "PSCM",
+      "name": "Power Steering Control Module",
+      "pid_count": 13,
+      "can_request_id": "0x730",
+      "can_response_id": "0x738",
+      "pids": [
+        {
+          "name": "EPAS_MOTOR_CUR",
+          "description": "EPAS Motor Current",
+          "unit": "A",
+          "status": "available"
+        },
+        {
+          "name": "GLOBTIM",
+          "description": "Global real time",
+          "unit": "s",
+          "status": "available"
+        },
+        {
+          "name": "MOD_SUP_V",
+          "description": "Module Supply Voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "MOD_SUP_V",
+          "description": "Module Supply Voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "OUTTMP",
+          "description": "External Temperature From Sensor",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "PSCM_DState",
+          "description": "Active Diagnostic Session",
+          "status": "available"
+        },
+        {
+          "name": "PSCM_INT_TEMP",
+          "description": "PSCM Internal Temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "RPM",
+          "description": "Engine Revolutions Per Minute",
+          "unit": "1/min",
+          "status": "available"
+        },
+        {
+          "name": "SSHFT_TQ_S2",
+          "description": "Steering Shaft Torque Sensor #2",
+          "unit": "Nm",
+          "status": "available"
+        },
+        {
+          "name": "ST_DTC_CNT",
+          "description": "Number of DTCs set due to diagnostic test.",
+          "status": "available"
+        },
+        {
+          "name": "SW_ANGLE",
+          "description": "Steering Wheel Angle",
+          "unit": "°",
+          "status": "available"
+        },
+        {
+          "name": "TOTAL_DIST",
+          "description": "Total Vehicle Distance",
+          "unit": "km",
+          "status": "available"
+        },
+        {
+          "name": "VSS",
+          "description": "Vehicle Speed",
+          "unit": "km/h",
+          "status": "available"
+        }
+      ]
+    },
+    {
+      "id": "RCM",
+      "name": "Restraints Control Module",
+      "pid_count": 24,
+      "pids": [
+        {
+          "name": "BLT_CUR_D",
+          "description": "Seatbelt Sensor Current - Driver",
+          "unit": "mA",
+          "status": "available"
+        },
+        {
+          "name": "BLT_CUR_P",
+          "description": "Seatbelt Sensor Current - Passenger",
+          "unit": "mA",
+          "status": "available"
+        },
+        {
+          "name": "DEPLOY_00_R",
+          "description": "Driver Frontal Stage 1 Deployment Control Resistance",
+          "unit": "Ω",
+          "status": "available"
+        },
+        {
+          "name": "DEPLOY_05_R",
+          "description": "Passenger Frontal Stage 1 Deployment Control Resistance",
+          "unit": "Ω",
+          "status": "available"
+        },
+        {
+          "name": "DEPLOY_10_R",
+          "description": "Driver Side Airbag Deployment Control Resistance",
+          "unit": "Ω",
+          "status": "available"
+        },
+        {
+          "name": "DEPLOY_11_R",
+          "description": "Left Curtain Deployment Control 1 Resistance",
+          "unit": "Ω",
+          "status": "available"
+        },
+        {
+          "name": "DEPLOY_13_R",
+          "description": "Passenger Side Airbag Deployment Control Resistance",
+          "unit": "Ω",
+          "status": "available"
+        },
+        {
+          "name": "DEPLOY_14_R",
+          "description": "Right Curtain Deployment Control 1 Resistance",
+          "unit": "Ω",
+          "status": "available"
+        },
+        {
+          "name": "DEPLOY_23_R",
+          "description": "Driver Seatbelt Retractor Pretensioner Deployment Control Resistance",
+          "unit": "Ω",
+          "status": "available"
+        },
+        {
+          "name": "DEPLOY_24_R",
+          "description": "Passenger Seatbelt Retractor Pretensioner Deployment Control Resistance",
+          "unit": "Ω",
+          "status": "available"
+        },
+        {
+          "name": "ECU_VPWR_RCM",
+          "description": "Module supply voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "FUEL_CUT_RQ",
+          "description": "Fuel Cutoff Request Status",
+          "status": "available"
+        },
+        {
+          "name": "OCS_SENSTAT",
+          "description": "Occupant Classification Sensor Status",
+          "status": "available"
+        },
+        {
+          "name": "REST_STAT_P",
+          "description": "Passenger Restraint Device Status",
+          "status": "available"
+        },
+        {
+          "name": "R_2_C_ST",
+          "description": "Second Row Center Seatbelt Sensor State",
+          "status": "available"
+        },
+        {
+          "name": "R_2_L_ST",
+          "description": "Second Row Left Seatbelt Sensor State",
+          "status": "available"
+        },
+        {
+          "name": "R_2_R_ST",
+          "description": "Second Row Right Seatbelt Sensor State",
+          "status": "available"
+        },
+        {
+          "name": "R_3_C_ST",
+          "description": "Third Row Center Seatbelt Sensor State",
+          "status": "available"
+        },
+        {
+          "name": "R_3_L_ST",
+          "description": "Third Row Left Seatbelt Sensor State",
+          "status": "available"
+        },
+        {
+          "name": "R_3_R_ST",
+          "description": "Third Row Right Seatbelt Sensor State",
+          "status": "available"
+        },
+        {
+          "name": "SBELT_D_ST",
+          "description": "Driver Seatbelt Sensor Status",
+          "status": "available"
+        },
+        {
+          "name": "SBELT_P_ST",
+          "description": "Passenger Seatbelt Sensor Status",
+          "status": "available"
+        },
+        {
+          "name": "SELTESTDTC",
+          "description": "Diagnostic Trouble Codes",
+          "status": "available"
+        },
+        {
+          "name": "V_ID_14229_RCM",
+          "description": "Occupant Classification System Vehicle Identification",
+          "status": "available"
+        }
+      ]
+    },
+    {
+      "id": "SCCM",
+      "name": "Steering Column Control Module",
+      "pid_count": 17,
+      "pids": [
+        {
+          "name": "ADS",
+          "description": "Active Diagnostic Session",
+          "status": "available"
+        },
+        {
+          "name": "BCM_ID",
+          "description": "Body Control Module Identification Stored",
+          "status": "available"
+        },
+        {
+          "name": "BCM_VFY",
+          "description": "Body Control Module Identification Verified",
+          "status": "available"
+        },
+        {
+          "name": "ECU_VPWR",
+          "description": "Module supply voltage",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "FL_LK_BUT",
+          "description": "Left front Lock button",
+          "status": "available"
+        },
+        {
+          "name": "FL_UNLK_SW",
+          "description": "Left front unlock pull switch",
+          "status": "available"
+        },
+        {
+          "name": "FR_LK_BUT",
+          "description": "Right front Lock button",
+          "status": "available"
+        },
+        {
+          "name": "FR_UNLK_SW",
+          "description": "Right front unlock pull switch",
+          "status": "available"
+        },
+        {
+          "name": "GLOBTIM",
+          "description": "Global real time",
+          "unit": "s",
+          "status": "available"
+        },
+        {
+          "name": "IG_SW_ST",
+          "description": "Ignition Switch State",
+          "status": "available"
+        },
+        {
+          "name": "INCARTMP",
+          "description": "In car temperature",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "MAINECUV",
+          "description": "Main ECU voltage supply",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "MASTERKEY",
+          "description": "Master Key Present",
+          "status": "available"
+        },
+        {
+          "name": "MIN_KEYS",
+          "description": "Minimum number of keys required",
+          "status": "available"
+        },
+        {
+          "name": "PATS_ACC_TYP",
+          "description": "Security Access type Timed / Coded",
+          "status": "available"
+        },
+        {
+          "name": "POWER_MODE",
+          "description": "Power Mode Status",
+          "status": "available"
+        },
+        {
+          "name": "TOTAL_DIST",
+          "description": "Total Vehicle Distance",
+          "unit": "km",
+          "status": "available"
+        }
+      ]
+    },
+    {
+      "id": "SASM",
+      "name": "Steering Angle Sensor Module",
+      "pid_count": 15,
+      "pids": [
+        {
+          "name": "GLOBTIM",
+          "description": "Global real time",
+          "unit": "s",
+          "status": "available"
+        },
+        {
+          "name": "MAINECUV",
+          "description": "Main ECU voltage supply",
+          "unit": "V",
+          "status": "available"
+        },
+        {
+          "name": "Module_DState",
+          "description": "Active Diagnostic Session",
+          "status": "available"
+        },
+        {
+          "name": "OUTTMP",
+          "description": "External Temperature From Sensor",
+          "unit": "°C",
+          "status": "available"
+        },
+        {
+          "name": "PWR_MODE_KEY",
+          "description": "Power Mode Key State",
+          "status": "available"
+        },
+        {
+          "name": "PWR_MODE_QF",
+          "description": "Power Mode Quality Factor",
+          "status": "available"
+        },
+        {
+          "name": "ST_DTC_CNT",
+          "description": "Number of DTCs set due to diagnostic test.",
+          "status": "available"
+        },
+        {
+          "name": "SW_ANGLE",
+          "description": "steering wheel angle",
+          "unit": "°",
+          "status": "available"
+        },
+        {
+          "name": "SW_ANG_DIR",
+          "description": "Steering Wheel Angle Steering Direction",
+          "status": "available"
+        },
+        {
+          "name": "SW_ANG_RATE",
+          "description": "Steering Wheel Angle Change Rate (Short Filtered)",
+          "unit": "1/min",
+          "status": "available"
+        },
+        {
+          "name": "SW_ANG_SENS",
+          "description": "Steering Wheel Angle Sensor Status",
+          "status": "available"
+        },
+        {
+          "name": "SW_ANG_VEL",
+          "description": "Steering Wheel Angle Velocity",
+          "unit": "1/min",
+          "status": "available"
+        },
+        {
+          "name": "SW_ANG_VLDR",
+          "description": "Steering Wheel Angle Velocity-Steering Direction",
+          "status": "available"
+        },
+        {
+          "name": "TOTAL_DIST",
+          "description": "Total Vehicle Distance",
+          "unit": "km",
+          "status": "available"
+        },
+        {
+          "name": "VBAT_SASM",
+          "description": "Battery Voltage",
+          "unit": "V",
+          "status": "available"
+        }
+      ]
+    }
+  ]
+}

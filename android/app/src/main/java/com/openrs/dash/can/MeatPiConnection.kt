@@ -51,6 +51,31 @@ class MeatPiConnection(
     @Volatile var firmwareVersion: String = "MeatPi Pro"
         private set
 
+    suspend fun sendRawQuery(
+        responseId: Int,
+        frame: String,
+        timeoutMs: Long = 1_500L
+    ): ByteArray? = _dtcMutex.withLock {
+        val out = _tcpOut ?: return null
+        _dtcWatchIds = setOf(responseId)
+        _dtcScanActive = true
+        while (_dtcChannel.tryReceive().isSuccess) { /* drain stale */ }
+        try {
+            sendFrame(out, frame)
+            val deadline = System.currentTimeMillis() + timeoutMs
+            while (System.currentTimeMillis() < deadline) {
+                val remaining = deadline - System.currentTimeMillis()
+                if (remaining <= 0) break
+                val resp = withTimeoutOrNull(remaining) { _dtcChannel.receive() } ?: break
+                if (resp.first == responseId) return@withLock resp.second
+            }
+            null
+        } finally {
+            _dtcScanActive = false
+            _dtcWatchIds = emptySet()
+        }
+    }
+
     // ── Connection ────────────────────────────────────────────────────────────
 
     fun connectHybrid(
@@ -240,6 +265,14 @@ class MeatPiConnection(
                                 ObdResponseParser.parsePscmResponse(frame.second, getCurrentState(), onObdUpdate)
                                 continue
                             }
+                            if (frame.first == ObdConstants.HVAC_RESPONSE_ID) {
+                                ObdResponseParser.parseHvacResponse(frame.second, getCurrentState(), onObdUpdate)
+                                continue
+                            }
+                            if (frame.first == ObdConstants.IPC_RESPONSE_ID) {
+                                ObdResponseParser.parseIpcResponse(frame.second, getCurrentState(), onObdUpdate)
+                                continue
+                            }
                             if (frame.first == ObdConstants.FENG_RESPONSE_ID) {
                                 fengMisses.set(0)
                                 ObdResponseParser.parseFengResponse(frame.second, getCurrentState(), onObdUpdate)
@@ -389,7 +422,7 @@ class MeatPiConnection(
                 }
                 1 -> {
                     totalLen = ((data[0].toInt() and 0x0F) shl 8) or (data[1].toInt() and 0xFF)
-                    val fb = minOf(6, data.size - 2); if (fb > 0) buf.write(data, 2, fb); received = fb
+                    val fb = minOf(6, totalLen, data.size - 2); if (fb > 0) buf.write(data, 2, fb); received = fb  // cap by totalLen (#129)
                     val fcFrame = "t%03X83000000000000000\r".format(requestId)
                     try { sendFrame(out, fcFrame) } catch (_: Exception) { }
                 }
@@ -413,6 +446,7 @@ class MeatPiConnection(
             val b = inp.read()
             if (b == -1) return null
             if (b == 0x0D) break
+            if (sb.length > 32) return null  // guard against \r-less runaway frames (#127)
             sb.append(b.toChar())
         }
         return sb.toString()

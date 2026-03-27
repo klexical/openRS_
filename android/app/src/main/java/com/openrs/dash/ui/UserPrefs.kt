@@ -11,6 +11,14 @@ import kotlinx.coroutines.flow.update
  * User-configurable display and connection preferences.
  * Observable via [UserPrefsStore.prefs] so all Compose UI reacts to changes instantly.
  */
+/** Unit conversion constants — shared across UI. */
+object UnitConversions {
+    const val KM_TO_MI = 0.621371
+    const val STD_ATM_KPA = 101.325
+    const val KPA_TO_PSI = 0.14503773
+    const val PSI_TO_BAR = 0.0689476
+}
+
 data class UserPrefs(
     val speedUnit: String           = AppSettings.DEFAULT_SPEED_UNIT,   // "MPH" | "KPH"
     val tempUnit: String            = AppSettings.DEFAULT_TEMP_UNIT,    // "F"   | "C"
@@ -24,7 +32,8 @@ data class UserPrefs(
     val themeId: String             = AppSettings.DEFAULT_THEME_ID,      // RS paint color theme
     val tempPreset: String          = AppSettings.DEFAULT_TEMP_PRESET,   // "street"|"track"|"race"
     val adapterType: String         = AppSettings.DEFAULT_ADAPTER_TYPE,  // "WICAN" | "MEATPI"
-    val meatPiMicroSdLog: Boolean   = false                               // MeatPi Pro microSD logging
+    val meatPiMicroSdLog: Boolean   = false,                              // MeatPi Pro microSD logging
+    val odomInMiles: Boolean        = speedUnit == "MPH"                  // Odometer display: true=mi, false=km
 ) {
     // ── Unit-conversion helpers used by UI ─────────────────────────────────
 
@@ -37,24 +46,24 @@ data class UserPrefs(
 
     fun displaySpeed(kph: Double): String {
         return if (speedUnit == "KPH") "%.0f".format(kph)
-        else "%.0f".format(kph * 0.621371)
+        else "%.0f".format(kph * UnitConversions.KM_TO_MI)
     }
 
     val speedLabel: String get() = speedUnit  // "KPH" or "MPH"
 
     /** Boost pressure from absolute kPa. Returns (value, label) pair. */
     fun displayBoost(boostKpa: Double): Pair<String, String> {
-        val psi = (boostKpa - 101.325) * 0.14503773
+        val psi = (boostKpa - UnitConversions.STD_ATM_KPA) * UnitConversions.KPA_TO_PSI
         return when (boostUnit) {
-            "BAR" -> "%.2f".format(psi * 0.0689476) to "BAR"
-            "KPA" -> "%.0f".format(boostKpa - 101.325) to "kPa"
+            "BAR" -> "%.2f".format(psi * UnitConversions.PSI_TO_BAR) to "BAR"
+            "KPA" -> "%.0f".format(boostKpa - UnitConversions.STD_ATM_KPA) to "kPa"
             else  -> "%.1f".format(psi) to "PSI"
         }
     }
 
     /** Tire pressure in PSI → display value and label (1 decimal place for accuracy). */
     fun displayTire(psi: Double): String {
-        return if (tireUnit == "BAR") "%.2f".format(psi * 0.0689476)
+        return if (tireUnit == "BAR") "%.2f".format(psi * UnitConversions.PSI_TO_BAR)
         else "%.1f".format(psi)
     }
 
@@ -62,7 +71,7 @@ data class UserPrefs(
 
     /** Low-pressure threshold in whichever unit is selected. */
     val tireLowDisplay: Float
-        get() = if (tireUnit == "BAR") (tireLowPsi * 0.0689476f) else tireLowPsi
+        get() = if (tireUnit == "BAR") (tireLowPsi * UnitConversions.PSI_TO_BAR.toFloat()) else tireLowPsi
 
     /** Whether a raw PSI value is below the warning threshold. */
     fun isTireLow(psi: Double): Boolean = psi in 0.01..tireLowPsi.toDouble()
@@ -103,15 +112,6 @@ data class UserPrefs(
         else    -> "Street"
     }
 
-    /** RTR check: are all critical temps below their warm-up thresholds for the current preset? */
-    fun isRaceReady(oilC: Double, coolantC: Double): Boolean {
-        val oilMin     = when (tempPreset) { "race" -> 85.0; "track" -> 80.0; else -> 70.0 }
-        val coolantMin = when (tempPreset) { "race" -> 80.0; "track" -> 75.0; else -> 70.0 }
-        // Treat sentinel -99 as "not yet received" — skip check rather than blocking warm cars
-        val oilOk     = oilC <= -90     || oilC >= oilMin
-        val coolantOk = coolantC <= -90 || coolantC >= coolantMin
-        return oilOk && coolantOk
-    }
 }
 
 /**
@@ -129,10 +129,11 @@ object UserPrefsStore {
     fun update(ctx: Context, block: (UserPrefs) -> UserPrefs) {
         // M-7 fix: use .update{} for atomic read-modify-write — prevents one rapid
         // tap (e.g. theme + preset) from silently overwriting the other.
+        // Persist AFTER CAS succeeds so a retry never writes stale prefs to disk.
+        var winner: UserPrefs? = null
         _prefs.update { current ->
-            val newPrefs = block(current)
-            AppSettings.saveAll(ctx, newPrefs)
-            newPrefs
+            block(current).also { winner = it }
         }
+        winner?.let { AppSettings.saveAll(ctx, it) }
     }
 }

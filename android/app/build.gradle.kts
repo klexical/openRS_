@@ -4,6 +4,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.devtools.ksp")
 }
 
 // ── Release signing ───────────────────────────────────────────────────────────
@@ -28,8 +29,8 @@ android {
         applicationId = "com.openrs.dash"
         minSdk = 28
         targetSdk = 35
-        versionCode = 30
-        versionName = "2.2.4"
+        versionCode = 31
+        versionName = "2.2.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -53,14 +54,20 @@ android {
         }
     }
 
-    // Rename output APKs: openRS_v{version}-staging-debug.apk / openRS_v{version}.apk
+    // Rename output APKs:
+    //   debug:   openRS_v{version}-staging-debug.apk
+    //   release: openRS_v{version}-{rcSuffix}.apk  (or openRS_v{version}.apk when no RC)
+    val rc = project.findProperty("rcSuffix")?.toString()?.trim().orEmpty()
     applicationVariants.all {
         val variant = this
         variant.outputs.all {
             val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
             output.outputFileName = when (variant.buildType.name) {
                 "debug"   -> "openRS_v${variant.versionName}-staging-debug.apk"
-                "release" -> "openRS_v${variant.versionName}.apk"
+                "release" -> if (rc.isNotEmpty())
+                                 "openRS_v${variant.versionName}-${rc}.apk"
+                             else
+                                 "openRS_v${variant.versionName}.apk"
                 else      -> output.outputFileName
             }
         }
@@ -103,12 +110,13 @@ android {
     lint {
         abortOnError = false
         warningsAsErrors = false
+        checkReleaseBuilds = false  // AGP 8.7 lint crashes with Compose BOM 2025.11.00
     }
 }
 
 dependencies {
     // ── Jetpack Compose (Phone UI) ──────────────────────────
-    val composeBom = platform("androidx.compose:compose-bom:2024.11.00")
+    val composeBom = platform("androidx.compose:compose-bom:2025.11.00")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
@@ -121,6 +129,12 @@ dependencies {
     // ── AndroidX Core ───────────────────────────────────────
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+
+    // ── Room (Session History) ──────────────────────────────
+    val roomVersion = "2.6.1"
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+    ksp("androidx.room:room-compiler:$roomVersion")
 
     // ── Trip Map ────────────────────────────────────────────
     implementation("org.osmdroid:osmdroid-android:6.1.18")

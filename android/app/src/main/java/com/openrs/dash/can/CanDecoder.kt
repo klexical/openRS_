@@ -22,10 +22,10 @@ import com.openrs.dash.data.VehicleState
  * Drive mode: TWO signals required (HS-CAN).
  *   0x1B0 AWDmsg01 byte6 nibble (DBC VAL_ 432): 0=Normal, 1=Sport+Track, 2=Drift.
  *   0x420 byte6+byte7 (empirical, ~600ms):
- *     byte6=0x10 → Normal;  byte6=0x11, byte7 bit0=0 → Sport;
- *     byte6=0x11, byte7 bit0=1 → Track;  byte6=0x12 → Drift.
+ *     byte6=0x10 → Normal;  byte6=0x11, byte7 bit0=0 → Sport (0xCC);
+ *     byte6=0x11, byte7 bit0=1 → Track (0xCD);  byte6=0x12 → Drift.
  *   Combined: nibble=0→Normal; nibble=1+bit0=0→Sport; nibble=1+bit0=1→Track; nibble=2→Drift.
- *   Confirmed via live SLCAN capture (Pro session 2026-03-11):
+ *   Verified via SLCAN log analysis (2026-03-25, user-confirmed Sport = 0x11CC):
  *     Normal 0x10/0xC4 → Sport 0x11/0xCC → Track 0x11/0xCD → Drift 0x12/0xC4.
  *   Definitive rsDriveMode is at MS-CAN 0x345 (not captured via OBD-II HS-CAN).
  * Steady-state 0x1B0 frames have byte4=0x00; button-event frames have byte4 != 0.
@@ -34,19 +34,32 @@ object CanDecoder {
 
     /**
      * Latest 0x420 byte6<<8|byte7, used to disambiguate Sport from Track.
-     * Confirmed mapping (SLCAN capture 2026-03-11):
+     * Corrected mapping (SLCAN capture 2026-03-25, user-confirmed Sport):
      *   0x10C4 = Normal          (byte6=0x10)
      *   0x11CC = Sport           (byte6=0x11, byte7 bit0=0)
      *   0x11CD = Track           (byte6=0x11, byte7 bit0=1)
      *   0x12C4 = Drift           (byte6=0x12)
      * Drift is detected directly via 0x1B0 nibble=2 (DBC VAL_ 432 confirmed).
-     * Defaults to 0x10C4 so cold-start shows Sport correctly if 0x420 hasn't arrived yet.
+     * Defaults to 0x10CC so cold-start shows Sport correctly if 0x420 hasn't arrived yet.
      */
-    @Volatile private var modeDetail420: Int = 0x10C4
+    @Volatile private var modeDetail420: Int = 0x10CC
+
+    /**
+     * True once at least one 0x420 frame has arrived in this session.
+     * Until then, 0x1B0 nibble=1 is reported as UNKNOWN to prevent
+     * misreading Sport/Track from stale modeDetail420 defaults.
+     * See: cold-start race condition where firmware overshoot caused
+     * Drift instead of Sport (SLCAN evidence 2026-03-26).
+     */
+    @Volatile private var has420Arrived: Boolean = false
+
+    /** Current modeDetail420 as hex string — for diagnostic logging. */
+    val modeDetail420Hex: String get() = "%04X".format(modeDetail420)
 
     /** Reset per-session state — call at the start of each new connection. */
     fun resetSessionState() {
-        modeDetail420 = 0x10C4
+        modeDetail420 = 0x10CC
+        has420Arrived = false
     }
 
     // ── HS-CAN engine / powertrain ──────────────────────────────────────────
@@ -62,7 +75,7 @@ object CanDecoder {
     const val ID_LAT_ACCEL    = 0x180   // Lateral G bits 16-25 LE × 0.00390625 − 2.0
     // 0x1B0 (AWDmsg01): DriveMode bit 55|4 Motorola = byte6 upper nibble.
     // DBC VAL_ 432: 0=Normal, 1=Sport(+Track), 2=Drift. Track is indistinct here.
-    // Use 0x420 b6=0x11 to lift nibble=1 to TRACK when Track is engaged.
+    // Use 0x420 b6=0x11 + byte7 bit0 to disambiguate Sport (bit0=0) from Track (bit0=1).
     // Steady-state: byte4=0x00; button-event transitions: byte4 != 0.
     const val ID_DRIVE_MODE   = 0x1B0
     const val ID_ESC_ABS      = 0x1C0   // ESCMode MSB-first bit 10|2 — corrected from DBC 13|2
@@ -93,7 +106,7 @@ object CanDecoder {
     // DBC only documents LaunchControlStatus (bit 50, 1-bit) for this ID.
     // byte6: 0x10=Normal, 0x11=Sport/Track, 0x12=Drift.
     // byte7 bit 0 disambiguates: 0=Sport (0xCC), 1=Track (0xCD).
-    // Confirmed via live SLCAN capture (Pro session 2026-03-11).
+    // Corrected via SLCAN capture (2026-03-25, user-confirmed Sport = 0xCC).
     const val ID_DRIVE_MODE_EXT = 0x420
 
     // RS_HS.dbc PCMmsg30 (0x380): FuelLevelFiltered : 17|10@0+ (0.4,0) [0|102] "%"
@@ -271,17 +284,16 @@ object CanDecoder {
             ID_GAUGE_ILLUM -> if (n >= 4) state.copy(
                 gaugeIllumination = data[0].toInt() and 0x1F,
                 eBrake            = (data[3].toInt() and 0x40) != 0,
-                ignitionStatus    = if (n >= 3) ((ubyte(data, 2) shr 3) and 0x0F) else state.ignitionStatus,
+                ignitionStatus    = (ubyte(data, 2) shr 3) and 0x0F,
                 lastUpdate        = now
             ) else null
 
             // ── 0x340: PCMmsg17 (HS-CAN) — AmbientAirTemp only ─────────────────
             // RS_HS.dbc PCMmsg17: AmbientAirTemp : 63|8@0− → byte7 signed × 0.25 °C
             // Bytes 2-5 are PCM engine signals (NOT TPMS — TPMS is BCM Mode 22 only).
+            // Signed byte range [-128,127] × 0.25 = [-32.0, 31.75] — always in valid range.
             ID_PCM_AMBIENT -> if (n >= 8) {
-                val ambient = data[7].toInt().toDouble() * 0.25
-                if (ambient !in -50.0..60.0) null
-                else state.copy(ambientTempC = ambient, lastUpdate = now)
+                state.copy(ambientTempC = data[7].toInt().toDouble() * 0.25, lastUpdate = now)
             } else null
 
             // ── 0x1A4: Ambient temperature — MS-CAN bridged via GWM ──────────
@@ -328,8 +340,8 @@ object CanDecoder {
             // 0x1B0 alone cannot differentiate Sport from Track.
             // Combine with 0x420 (modeDetail420 = byte6<<8|byte7):
             //   nibble=0                          → NORMAL
-            //   nibble=1, 0x420 byte7 bit0 = 1    → TRACK  (0x11CD confirmed)
             //   nibble=1, 0x420 byte7 bit0 = 0    → SPORT  (0x11CC confirmed)
+            //   nibble=1, 0x420 byte7 bit0 = 1    → TRACK  (0x11CD confirmed)
             //   nibble=2                          → DRIFT  (DBC VAL_ 432 confirmed)
             ID_DRIVE_MODE -> if (n >= 7) {
                 val b4 = data[4].toInt() and 0xFF
@@ -337,12 +349,13 @@ object CanDecoder {
                 val nibble = b6 ushr 4
                 val resolvedMode = when {
                     nibble == 0 -> DriveMode.NORMAL
-                    nibble == 1 -> if ((modeDetail420 and 0x01) != 0) DriveMode.TRACK
+                    nibble == 1 -> if (!has420Arrived) null   // wait for 0x420 before resolving Sport/Track
+                                  else if ((modeDetail420 and 0x01) != 0) DriveMode.TRACK
                                   else DriveMode.SPORT
                     nibble == 2 -> DriveMode.DRIFT
                     else        -> DriveMode.UNKNOWN
                 }
-                if (b4 != 0) null
+                if (b4 != 0 || resolvedMode == null) null
                 else state.copy(driveMode = resolvedMode, lastUpdate = now)
             } else null
 
@@ -353,6 +366,7 @@ object CanDecoder {
             ID_DRIVE_MODE_EXT -> if (n >= 8) {
                 val newDetail = (ubyte(data, 6) shl 8) or ubyte(data, 7)
                 modeDetail420 = newDetail
+                has420Arrived = true
                 val lcActive = (ubyte(data, 6) shr 2) and 1 == 1
                 if (state.driveMode == DriveMode.SPORT || state.driveMode == DriveMode.TRACK) {
                     val resolved = if ((newDetail and 0x01) != 0) DriveMode.TRACK

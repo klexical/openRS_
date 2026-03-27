@@ -25,7 +25,7 @@ object SlcanParser {
         val id  = msg.substring(1, 4).toIntOrNull(16) ?: return null
         val dlc = msg[4].digitToIntOrNull(10) ?: return null
         if (dlc < 0 || dlc > 8 || msg.length < 5 + dlc * 2) return null
-        return Pair(id, parseDataBytes(msg, 5, dlc))
+        return parseDataBytes(msg, 5, dlc)?.let { Pair(id, it) }
     }
 
     private fun parseExtFrame(msg: String): Pair<Int, ByteArray>? {
@@ -33,11 +33,11 @@ object SlcanParser {
         val id  = msg.substring(1, 9).toLongOrNull(16)?.toInt() ?: return null
         val dlc = msg[9].digitToIntOrNull(10) ?: return null
         if (dlc < 0 || dlc > 8 || msg.length < 10 + dlc * 2) return null
-        return Pair(id, parseDataBytes(msg, 10, dlc))
+        return parseDataBytes(msg, 10, dlc)?.let { Pair(id, it) }
     }
 
-    private fun parseDataBytes(msg: String, start: Int, dlc: Int): ByteArray =
+    private fun parseDataBytes(msg: String, start: Int, dlc: Int): ByteArray? =
         try {
             ByteArray(dlc) { i -> msg.substring(start + i * 2, start + i * 2 + 2).toInt(16).toByte() }
-        } catch (e: Exception) { Log.w("SLCAN", "parseDataBytes failed: ${msg.take(30)}", e); ByteArray(0) }
+        } catch (e: Exception) { Log.w("SLCAN", "parseDataBytes failed: ${msg.take(30)}", e); null }
 }

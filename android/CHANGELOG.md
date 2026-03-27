@@ -7,6 +7,161 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
+## [v2.2.5] — 2026-03-27
+
+### Added (rc.1 — FORScan PID catalog, data-driven decode, DID prober)
+- **FORScan PID catalog integrated as JSON asset** — 1,149 PIDs across 8 ECU modules (PCM, OBDII, BCM, ABS, AWD, HVAC, IPC, PSCM) loaded from `forscan_modules.json` at runtime via `ForscanCatalog.kt`. Generator script at `android/scripts/gen_forscan_catalog.py`.
+- **PID Browser on DIAG tab** — expandable section listing all 1,149 FORScan PIDs grouped by ECU module with coverage mini-bars, CAN ID badges, and aggregate stats.
+- **DID Prober on DIAG tab** — interactive Mode 22 scanner that probes candidate DID ranges on any ECU. Classifies each DID as FOUND / NRC / TIMEOUT with progress bar and hex response data. Requires active adapter connection.
+- **Data-driven PID decode system (PidRegistry)** — `PidRegistry.kt` loads the FORScan catalog at startup, decodes responses via formula evaluation, and stores results in `VehicleState.genericValues`. New PIDs can be added via JSON without modifying Kotlin code.
+- **Per-cylinder knock correction (cylinders 2–4)** — PCM now polls DIDs 0x03ED–0x03EF alongside existing cylinder 1 (0x03EC). Displayed on POWER tab in the knock correction section.
+- **AWD module expansion — 7 new PIDs** — clutch temp L/R (0x1E8B/0x1E8C), requested torque L/R (0x1E90/0x1E91), demanded pressure (0x1E92), pump motor current (0x1E93), transmission oil temp (0x1E80). Shown on CHASSIS and TEMPS tabs.
+- **HVAC module scaffolding** — response handler for ECU 0x733→0x73B with 6 new `VehicleState` fields. ECU address is a candidate — use the DID prober to confirm.
+- **IPC warning lamps scaffolding** — response handler for ECU 0x720→0x728 with 6 warning lamp fields. Summary banner on DASH tab shows active warnings when populated. ECU address is a candidate — use the DID prober to confirm.
+- **`buildSlcanQuery()` helper in ObdConstants** — generates Mode 22 SLCAN query frames for any ECU request ID + DID, replacing hardcoded frame strings.
+
+### Fixed (rc.1)
+- **PidRegistry never initialized** — `PidRegistry.ensureLoaded()` was never called, so all data-driven PID decoding was silently non-functional. Added call in `CanDataService.onCreate()`.
+- **`mergeObdState` dropped `genericValues`** — PidRegistry-decoded values were computed but silently lost during state merge. Now merges correctly.
+- **`mergeObdState` missing HVAC and IPC fields** — all 12 new fields were parsed but dropped during state merge.
+- **Dead code removed** — `DidProber.kt` was never referenced; deleted. `DidProberSection.kt` inlines all probing logic.
+- **`MeatPiConnection.readSlcanLine` could hang indefinitely** — continuous bytes without a `\r` terminator caused an infinite loop. Added a 32-byte max-line guard. ([#127](https://github.com/klexical/openRS_/issues/127))
+- **`IsoTpBuffer` CF sequence numbers not validated** — duplicate or out-of-order Consecutive Frames silently corrupted TPMS readings. Sequence tracking added. ([#128](https://github.com/klexical/openRS_/issues/128))
+- **ISO-TP First Frame `firstBytes` not capped by `totalLen`** — bytes to copy from FF ignored `totalLen`. Changed to `minOf(6, totalLen, data.size - 2)`. ([#129](https://github.com/klexical/openRS_/issues/129))
+
+### Changed (rc.1)
+- **Release checklist and emulator workflow rules updated** — browser emulator updates deferred to stable releases only, skipped for staging/RC builds.
+
+### Fixed (rc.2)
+- **DtcScanner exceptions now caught at service layer** — mid-scan adapter disconnect propagated uncaught to callers. `scanDtcs()` now logs and rethrows; `clearDtcs()` returns `emptyMap()`. (addresses [#83](https://github.com/klexical/openRS_/issues/83))
+- **DTC results blank during dismiss animation** — `AnimatedVisibility` exit rendered blank content because `results` was already null. Fixed with a `remember`-backed `lastResults` variable. (addresses [#81](https://github.com/klexical/openRS_/issues/81))
+- **Race-ready RTR check inconsistent between TEMPS banner and TripRecorder** — `UserPrefs.isRaceReady()` used different thresholds than `VehicleState.rtrStatus`. Removed `isRaceReady()`; `TripRecorder` now uses `vs.isReadyToRace` — one truth source. (addresses [#81](https://github.com/klexical/openRS_/issues/81))
+- **`AppSettings.save()` vs `saveAll()` undocumented field split** — `save()` persists host/port, `saveAll()` persists everything else. The intentional split was undocumented. Both methods now have KDoc explaining the separation. (addresses [#83](https://github.com/klexical/openRS_/issues/83))
+
+### Fixed (rc.3 — code review umbrella cleanup)
+- **Misleading `Red` color alias removed** — `val Red get() = Orange` in `Theme.kt` returned orange, not red. Alias removed; 35 call sites now reference `Orange` directly. (addresses [#82](https://github.com/klexical/openRS_/issues/82))
+- **TempsPage RTR dot animation ticked as no-op when race-ready** — animation oscillated between `1f` and `1f` when ready, running every frame with no visual effect. Now gated on warmup state. (addresses [#82](https://github.com/klexical/openRS_/issues/82))
+- **MainActivity connection dot animation ran when disconnected** — `rememberInfiniteTransition` ticked continuously regardless of connection state. Now only runs when connected. (addresses [#82](https://github.com/klexical/openRS_/issues/82))
+- **Odometer unit toggle reset on tab switch** — `remember { mutableStateOf(false) }` hardcoded km default. Initial value now derives from `prefs.speedUnit == "MPH"`. (addresses [#82](https://github.com/klexical/openRS_/issues/82))
+- **UserPrefs.update race with SharedPreferences** — `saveAll()` ran inside the `StateFlow.update` CAS lambda, persisting stale data on retry. Now runs after CAS succeeds. (addresses [#83](https://github.com/klexical/openRS_/issues/83))
+- **Redundant `themeAccentColor()` wrapper removed** — `MorePage.kt` one-liner delegating to `rsPaintAccent()`. Call sites now invoke `rsPaintAccent()` directly. (addresses [#81](https://github.com/klexical/openRS_/issues/81))
+- **Conversion magic numbers extracted to named constants** — `KM_TO_MI`, `STD_ATM_KPA`, `KPA_TO_PSI`, `PSI_TO_BAR` consolidated into `UnitConversions` object in `UserPrefs.kt`. 10 occurrences replaced across 4 files. (addresses [#82](https://github.com/klexical/openRS_/issues/82))
+
+### Added (rc.4 — visual polish)
+- **Neon glow effects on hero values** — soft radial gradient bloom behind Orbitron values in each hero card's accent color. Same treatment on `GfCard` values. Works on all API levels ≥ 28 (no `RenderEffect`).
+- **Neon glow on progress bars** — `BarCard` gains optional `barGlowColor` for a soft light bleed above and below the bar. Applied to THROTTLE, BRAKE, FUEL, and BATTERY bars.
+- **Connection dot glow ring** — semi-transparent backing circle on the connection status dot, synced to pulse animation. Same treatment on the RTR banner dot.
+- **Active tab indicator glow** — vertical gradient glow beneath the accent underline on the selected tab.
+- **Animated value transitions** — all DASH tab numeric displays use `animateFloatAsState` with spring physics. Fast values (RPM, speed) use stiff springs; slow values (fuel, battery) use tween. Sentinel values bypass animation.
+- **Sparkline mini-charts in HeroCards** — 22dp Canvas sparklines showing ~15s of value history via a 60-sample ring buffer at ~4 Hz. Applied to BOOST, RPM, and SPEED hero cards.
+- **Sparkline mini-charts in BarCards** — 28dp sparklines below progress bars. Applied to THROTTLE and BRAKE bars.
+- **G-Force dot plot on CHASSIS tab** — 2D visualization (`GForcePlot.kt`) with concentric G rings, live dot with glow halo, and a 30-sample comet trail. Replaces the six `GfCard` text boxes while preserving all numeric readouts.
+- **RPM shift light bar on DASH tab** — 18 LED-style segments (`ShiftLightBar.kt`) filling left-to-right by RPM: green 0–4000, yellow 4000–5500, red 5500–6800. All segments flash at redline (≥6500 RPM).
+- **Shared animation utilities** (`ui/anim/` subpackage) — `RingBuffer.kt` (generic ring buffer), `GlowModifiers.kt` (radial and rectangular glow modifiers), `Sparkline.kt` (sparkline data + Canvas composable).
+
+### Fixed (rc.4 — visual polish)
+- **GForcePlot Paint objects allocated every frame** — `textPaint` and `axisPaint` were created inside the Canvas lambda, producing ~120 allocations/sec at 60 Hz. Extracted to `remember(density)` outside the draw block.
+- **Odometer mi/km toggle lost on tab switch** — the rc.3 fix improved the initial value but the toggle still used ephemeral `remember` state destroyed on recomposition. Now persisted to SharedPreferences via a new `odomInMiles` field in `UserPrefs`/`AppSettings`. Survives tab switches and app restarts. (addresses [#82](https://github.com/klexical/openRS_/issues/82))
+- **Drive mode commands silently dropped with HTTP 200** — firmware returned `{"ok":true}` even when `s_pending_mode` rejected a command, so the app showed success when nothing happened. `FirmwareApi.kt` now parses the response body for `"busy":true` and shows "Mode change in progress — please wait". After a successful command, the app watches `VehicleState.driveMode` for up to 5 seconds and warns if the mode didn't take effect.
+
+### Added (rc.4 — visual polish)
+- **RingBuffer unit tests** — 9 test cases covering empty state, insertion order, capacity wraparound, clear/re-push, and generic type support.
+
+### Added (rc.5 — Mission Control dashboard)
+- **Mission Control HTML dashboard in exports** — trip and diagnostic ZIP exports now include a self-contained `mission_control_<ts>.html` file. Open in any browser for an interactive post-session analysis dashboard with no network or dependencies required. `MissionControlHtmlBuilder.kt` reads the HTML template from `res/raw`, inlines uPlot CSS/JS from assets, and serializes trip + diagnostic data into embedded JSON.
+- **Trip dashboard tab** — 8 summary cards (distance, duration, fuel, avg speed, peak RPM/boost/lat G, efficiency), 7 cursor-synced uPlot time-series charts (RPM, boost, speed, temperatures, lateral G, fuel, wheel speeds), SVG Mercator GPS map with speed/drive-mode coloring and peak event markers, stats panel with drive mode breakdown bar.
+- **Diagnostics dashboard tab** — sortable CAN frame inventory table with expandable detail rows (first/last hex, periodic samples, validation issues), FPS timeline chart, session events table with type badges, filterable decode trace table (last 500 of up to 10,000 entries).
+- **File loader tab** — drag-and-drop or browse to load additional `trip_*.csv` or `diagnostic_detail_*.json` files from other sessions into the same viewer. CSV parser computes summary stats (distance, fuel economy, peaks, mode breakdown) on the fly.
+
+### Fixed (rc.5)
+- **Sport/Track 0x420 bit0 polarity inverted** — `CanDecoder` had bit0=1→Track and bit0=0→Sport, but the actual car button cycle (Normal→Sport→Track→Drift) shows bit0=1 is Sport (0x11CD) and bit0=0 is Track (0x11CC). This caused the app to display the wrong mode and the firmware's closed-loop controller to overshoot by one step (tap Sport → car goes to Track). Swapped polarity in both 0x1B0 and 0x420 handlers. Default `modeDetail420` changed from `0x10C4` to `0x10CD`.
+- **Every drive mode command timed out with "Read timed out"** — `FirmwareApi.post()` read the HTTP response body in a `readLine()` loop until EOF, but the ESP-IDF HTTP server doesn't close the connection within the 5s `soTimeout`. Now parses `Content-Length` from headers and reads exactly that many bytes.
+- **TPMS displayed −40°C during sensor initialisation** — `ObdResponseParser.parseBcmReassembled()` accepted raw temp byte `0x00` as valid, which decoded to −40°C via the standard offset. Now discards `0x00` as an uninitialised sensor reading. Also removed the `< -40` floor from the range check since the offset formula cannot produce values below −40°C. ([#130](https://github.com/klexical/openRS_/issues/130))
+- **BCM 0x280B tire temperature unit tests** — 5 new tests covering valid temp decode, uninitialised `0x00` discard, stale status discard, unknown sensor ID rejection, and short payload handling.
+
+### Fixed (rc.6 — polarity re-correction + probe export)
+- **Sport/Track 0x420 polarity re-corrected** — rc.5's polarity fix was still backwards. SLCAN log analysis (2026-03-25 drive session) definitively proves `0x11CC` (bit0=0) = Sport and `0x11CD` (bit0=1) = Track. The app now displays the correct mode. Default `modeDetail420` changed from `0x10CD` to `0x10CC`. Five drive mode unit tests updated to match.
+- **Drive mode CAN confirmation timeout bumped to 8s** — real-world SLCAN logs show the mode change CAN frame (`0x420`) arrives ~5.3s after the HTTP command, just exceeding the previous 5s window. Increased to 80 × 100ms = 8s in `MorePage.kt`.
+
+### Added (rc.6)
+- **DID probe results included in diagnostic ZIP export** — `DiagnosticLogger` now stores probe sessions; `DidProberSection` logs results after each scan completes. `DiagnosticExporter` writes a "DID PROBE RESULTS" section in the summary text and a `probeResults` array in the JSON detail file. Previously, probe results were ephemeral Compose state lost on navigation.
+
+### Fixed (rc.7 — full release audit)
+- **Drive mode confirmation read stale state** — `MorePage` confirmation loop captured `vs` at composition time; inside the coroutine it never saw CAN updates. Now reads `OpenRSDashApp.instance.vehicleState.value` each poll iteration. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **DID prober mutated Compose state from IO thread** — `DidProberSection` launched the probe loop on `Dispatchers.IO`, then called `results.add()` on `mutableStateListOf` off the Main thread. Restructured to run the coroutine on Main, wrapping only the network call in `withContext(IO)`. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **DiagnosticExporter JSON escaped quotes incorrectly** — five `.replace("\"", "'")` calls in JSON serialization converted double-quotes to single-quotes instead of properly escaping them. Replaced with a `.jsonEscape()` extension that handles `\`, `"`, `\n`, `\r`, `\t`, and `</` (script breakout prevention). ([#82](https://github.com/klexical/openRS_/issues/82))
+- **WebSocket 64-bit length path ignored mask bytes** — `WiCanConnection` large-frame path read the 8-byte extended length but skipped the 4-byte mask, causing the payload to be read from the wrong offset and unmasked incorrectly. Now reads and applies the mask per RFC 6455. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **DashPage sparkline push during composition** — `boostHistory.push()` was called inside the composable body, a side effect during composition. Moved into a `SideEffect {}` block. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **ShiftLightBar infinite animation ran when not at redline** — `rememberInfiniteTransition` ticked continuously regardless of RPM. Now only instantiated when `isRedline` is true. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **`intakeTempC` and `ambientTempC` defaulted to 0.0 instead of sentinel** — zero is a valid temperature reading, masking "not yet received" as 0°C/32°F. Changed defaults to `-99.0` matching all other temperature fields. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **PidRegistry formula evaluator returned Infinity/NaN** — division by zero in catalog formulas produced `Infinity` which propagated to `genericValues`. Now returns `null` for infinite or NaN results. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **RingBuffer accepted capacity=0** — would cause division-by-zero in modular index arithmetic. Added `require(capacity > 0)` in `init`. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **Sparkline Path objects allocated every frame** — `Path()` was created inside the `Canvas` lambda (~60 alloc/sec). Hoisted to `remember` with `.reset()` at draw time. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **WiCanConnection socket not closed on cancellation** — coroutine cancellation didn't close the TCP socket, leaving it open until GC. Added a `cancelWatcher` coroutine that closes the socket in its `finally` block. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **MorePage host didn't update when settings changed** — `AppSettings.getHost()` was called once and cached. Now keyed on `UserPrefs` via `remember(prefs)`. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **SLCAN write failures silently swallowed** — `DiagnosticLogger.writeSlcanLine()` caught all exceptions with no logging. Now logs the first write failure as a session event. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **Probe sessions had no cap** — `DiagnosticLogger.probeSessionsList` could grow unbounded. Capped at 50 sessions with LRU eviction. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **TPMS 0x280B missing pressure alongside temperature** — `ObdResponseParser.parseBcmReassembled()` extracted temperature from the multi-frame payload but ignored the pressure bytes. Now reads pressure from `payload[7..8]` and updates the corresponding tire pressure field. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **Flat tire (0.0 PSI) not flagged as low** — `anyTireLow()` range started at `0.01`, excluding exactly 0.0 PSI. Changed to `0.0..<threshold`. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **FirmwareApi Content-Length byte count incorrect** — `json.length` (char count) was used instead of `json.toByteArray().size` (byte count), which diverges for non-ASCII characters. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **ForscanCatalog load failure silently swallowed** — exception was caught with no logging. Now logs with `Log.e`. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **`SlcanParser.parseDataBytes` returned empty array on hex error** — callers couldn't distinguish "no data" from "parse failure". Now returns `null` on error; both callers updated to skip with `?.let`. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **Mission Control JSON missing probe results** — `MissionControlHtmlBuilder.buildDiagJson()` didn't include DID probe sessions. Added `probeResults` array. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **Odometer CAN ID missing from diagnostic known-IDs set** — `DiagnosticExporter.knownIds` didn't include `ID_ODOMETER`, so odometer frames appeared as "unknown" in the frame inventory. ([#82](https://github.com/klexical/openRS_/issues/82))
+- **CanDecoder stale header comment** — top-of-file comments still referenced old pre-rc.6 polarity. Updated to match corrected `bit0=0→Sport (0xCC)`.
+- **Deprecated `CarOutlinePlaceholder` alias removed** — dead code in `Components.kt`, replaced by `FocusRsOutline` in rc.4.
+
+### Added (rc.7)
+- **IsoTpBuffer unit tests** — 12 tests covering single-frame, multi-frame reassembly, out-of-order CF rejection, sequence wrap, FF reset, and edge cases (`IsoTpBufferTest.kt`).
+- **PidRegistry formula evaluator tests** — 16 tests covering arithmetic, `signed()` two's-complement, unary minus, operator precedence, parentheses, and edge cases (`PidRegistryTest.kt`).
+- **RingBuffer capacity=0 test** — verifies `IllegalArgumentException` on zero capacity.
+
+### Added (rc.8 — UI/UX overhaul)
+- **Swipe tab navigation via HorizontalPager** — replaced raw `when(tab)` with `HorizontalPager` in `MainActivity.kt`. Users can swipe left/right between all 6 tabs. Tab bar syncs bidirectionally with pager state via `animateScrollToPage`. ([#131](https://github.com/klexical/openRS_/issues/131), [#138](https://github.com/klexical/openRS_/issues/138))
+- **Animated gear transition** — gear display on DASH tab now uses `AnimatedContent` with `slideInVertically + fadeIn` / `slideOutVertically + fadeOut` for smooth gear change animations at 72sp. ([#132](https://github.com/klexical/openRS_/issues/132))
+- **Haptic feedback on interactive controls** — `HapticFeedbackType.Confirm` added to tab selection (`MainActivity.kt`), drive mode and ESC buttons (`MorePage.kt`), temperature preset pills (`TempsPage.kt`), and settings segmented pickers (`SettingsSheet.kt`). ([#133](https://github.com/klexical/openRS_/issues/133))
+- **Placeholder pulse animation** — `DataCell` and `AfrCard` in `Components.kt` auto-detect `"— —"` placeholder values and animate alpha 0.3↔0.7 via `rememberInfiniteTransition`. Distinguishes "waiting for data" from "value is zero." ([#135](https://github.com/klexical/openRS_/issues/135))
+- **NRC code decoding in DID Prober** — `nrcLabel()` function in `DidProberSection.kt` maps 11 common UDS NRC codes (0x10–0x78) to human-readable descriptions. "NRC 0x31" now shows "request out of range." ([#136](https://github.com/klexical/openRS_/issues/136))
+- **Long-press copy DID code in PID Browser** — `combinedClickable` with `onLongClick` in `PidBrowserSection.kt` copies DID hex codes to clipboard with Toast confirmation. ([#137](https://github.com/klexical/openRS_/issues/137))
+- **Knock retard flash animation** — `PowerPage.kt` KR C1-C4 cells animate background color via `animateColorAsState` to a warm `Warn` glow (0.08 alpha → transparent over 400ms) when knock correction crosses -1.0°. ([#139](https://github.com/klexical/openRS_/issues/139))
+- **Connection status banner** — contextual banner below tab bar shows adapter type, IP:port, and "DISCONNECTED" status with dismiss button. Auto-resets on successful connection. ([#140](https://github.com/klexical/openRS_/issues/140))
+- **Temperature session peaks** — 5 new peak fields in `VehicleState` (oil, coolant, RDU, PTU, charge air) tracked via `withPeaksUpdated()`. Displayed as "▲" annotations in `TempsPage.kt`. ([#141](https://github.com/klexical/openRS_/issues/141))
+- **DID Prober ETA and export** — ETA display during probe ("~4 min remaining") based on average probe time. EXPORT button copies results as TSV to clipboard. ([#142](https://github.com/klexical/openRS_/issues/142))
+- **Settings reset-to-defaults** — RESET button in `SettingsSheet.kt` restores all fields to `AppSettings.DEFAULT_*` values with inline "Defaults restored" confirmation. ([#143](https://github.com/klexical/openRS_/issues/143))
+- **Collapsible sections on Power page** — `SectionLabel` extended with `collapsible`/`expanded`/`onToggle` params. Three Power page sections wrapped in `AnimatedVisibility` with expand/collapse chevrons. ([#144](https://github.com/klexical/openRS_/issues/144))
+- **Pinned dash metrics strip** — `MiniMetricStrip` composable in `DashPage.kt` appears when scroll position exceeds 220px, showing compact BOOST/RPM/SPEED values for persistent context. ([#145](https://github.com/klexical/openRS_/issues/145))
+- **TPMS delta arrows** — `tpmsDeltaText()` helper in `ChassisPage.kt` computes pressure trend vs session start. `TireCard` extended with `deltaText` param showing ▲/▼ arrows color-coded green (rising) or orange (falling). ([#146](https://github.com/klexical/openRS_/issues/146))
+- **Landscape and split-screen layout support** — `isWideLayout()` composable helper in `Theme.kt` detects landscape/wide screens. Responsive grids across `DashPage`, `TempsPage`, `ChassisPage`, `TripPage`, and `CustomDashPage`. ([#147](https://github.com/klexical/openRS_/issues/147))
+- **Floating HUD overlay** — `HudOverlayService.kt` using `TYPE_APPLICATION_OVERLAY` displays 2-3 key metrics on top of any app. Draggable, close button, collects `vehicleState` flow at 4 Hz. Toggle in `MorePage`. `SYSTEM_ALERT_WINDOW` permission added. ([#148](https://github.com/klexical/openRS_/issues/148))
+- **Animated car diagram** — `CarDiagram.kt` Canvas-based top-down car visualization with live tire pressure, wheel speed, and AWD torque distribution overlays. Replaces `FocusRsOutline` in TPMS section of `ChassisPage`. ([#149](https://github.com/klexical/openRS_/issues/149))
+- **Session history browser** — Room database (`SessionDatabase.kt`) with `SessionEntity` and `SnapshotEntity`. `CanDataService` records sessions automatically. `SessionHistorySection` in `MorePage` shows expandable session cards with 30-day auto-prune. ([#150](https://github.com/klexical/openRS_/issues/150))
+- **Custom dashboard builder** — `DashLayout.kt` data model with 31 available metrics. `CustomDashPage.kt` full-screen overlay with responsive gauge grid and `DashBuilderSheet` editor. Layouts persisted via `AppSettings.saveCustomDash()`/`loadCustomDash()`. ([#151](https://github.com/klexical/openRS_/issues/151))
+
+### Changed (rc.8)
+- **Dim label contrast improved** — `Dim` color bumped from `#3D5A72` to `#547A96` in `Theme.kt` for WCAG AA compliance (≥4.5:1 contrast ratio on Surf2 background). ([#134](https://github.com/klexical/openRS_/issues/134))
+- **Compose BOM upgraded** — `2024.11.00` → `2025.11.00` (Compose UI 1.7.5 → 1.9.4). Enables `HapticFeedbackType.Confirm` and `HorizontalPager` from stable Foundation APIs.
+- **KSP annotation processing added** — Room compiler uses KSP (`com.google.devtools.ksp` v2.0.21-1.0.27) instead of KAPT for faster builds.
+- **Unified Chassis section ("Neon Connect" layout)** — merged the separate TPMS and AWD sections into a single `UnifiedChassisSection` in `ChassisPage.kt`. Tire cards (FL/RL left, FR/RR right) flank the RS wireframe with colored accent edge bars matching tire status. Cards show PSI, delta arrows, wheel speed, temp, and a temperature fill bar. Diamond-shaped wheel markers replace dots on the wireframe. AWD metrics (torque bar, bias, deltas, temps, clutch data) sit below in the same card, eliminating duplicate wheel speed displays. ([#149](https://github.com/klexical/openRS_/issues/149))
+
+### Added (rc.9 — chassis redesign, Sapphire dashboard)
+- **Chassis TPMS redesign** — `NeonTireCard` rebuilt with full position names ("Front Left"), hero PSI + unit side-by-side (22sp), prominent temperature (14sp, color-coded via `tireTempColor()`), temperature progress bar, and session delta arrows. Warning banner identifies specific low tire(s) by name. Always shows full layout (no static wireframe placeholder for waiting state). TPMS footer row with recommended threshold + "Updated Xs ago" timestamp. ([#153](https://github.com/klexical/openRS_/issues/153))
+- **AWD rear axle diagram** — Canvas-drawn drivetrain in `ChassisPage.kt`: wheels (accent L / green R), clutch packs with temps, RDU box with temp, PTU box with F/R split label, propshaft line, torque flow arrows scaled to L/R distribution. Replaces old plain torque bar. ([#154](https://github.com/klexical/openRS_/issues/154))
+- **Chassis lead lines** — Canvas overlay in `UnifiedChassisSection` draws connector lines from tire card edges to wheel positions on car wireframe using `onGloballyPositioned` + `positionInRoot()`. ([#155](https://github.com/klexical/openRS_/issues/155))
+- **Crash history UI** — `CrashHistorySection` in `DiagPage.kt` shows crash file count, timestamps, and exception types. Crash files retained after export (not deleted). ([#161](https://github.com/klexical/openRS_/issues/161))
+- **DID prober export** — probe sessions included as CSV files in diagnostic ZIP exports via `DiagnosticExporter`. ([#160](https://github.com/klexical/openRS_/issues/160))
+- **What's New dialog** — `WhatsNewDialog.kt` with version-keyed highlights. Shown on first launch after update, version tracking via `AppSettings.lastSeenVersion`. ([#159](https://github.com/klexical/openRS_/issues/159))
+- **Sapphire web dashboard integration** — `MorePage` "WEB DASHBOARD" section with Sapphire button (opens URL in browser). Sapphire link added to trip export share text in `DiagnosticExporter`. Sapphire highlight in What's New v2.2.5 list. ([#162](https://github.com/klexical/openRS_/issues/162))
+
+### Fixed (rc.9)
+- **Drive mode cold-start race condition** — added `has420Arrived` gate in `CanDecoder.kt` that prevents Sport/Track resolution until the first `0x420` frame is received. Confirmation loop in `MorePage` now waits 2s settling delay after HTTP 200 and uses 15s timeout (was 8s). Diagnostic logging of `modeDetail420` on failure. Root cause: firmware closed-loop controller overshoots on cold ECU (SLCAN-proven). ([#153](https://github.com/klexical/openRS_/issues/153))
+
+### Changed (rc.9)
+- **More tab cleanup** — moved theme picker and HUD toggle to `SettingsSheet`. Removed duplicate snapshot button, settings button, and entire CONNECTION & DIAGNOSTICS section from `MorePage`. ([#156](https://github.com/klexical/openRS_/issues/156), [#157](https://github.com/klexical/openRS_/issues/157), [#158](https://github.com/klexical/openRS_/issues/158))
+- **Settings visual overhaul** — replaced `SurfUp` (neutral grey `#141414`) with blue-tinted palette (`Bg`, `Surf2`, `Surf3`) matching the cockpit aesthetic throughout `SettingsSheet.kt`. ([#158](https://github.com/klexical/openRS_/issues/158))
+- **Tire font sizes** — temperature increased to 14sp with color coding, hero PSI to 22sp. ([#153](https://github.com/klexical/openRS_/issues/153))
+
+---
+
 ## [v2.2.4] — 2026-03-19
 
 ### Added (rc.10.1 -- TPMS tire temperature polling + UI, Focus RS wireframe)

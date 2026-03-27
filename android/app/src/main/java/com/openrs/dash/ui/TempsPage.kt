@@ -30,7 +30,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,15 +50,18 @@ import com.openrs.dash.data.VehicleState
         TempPresetBadge(p)
 
         SectionLabel("TEMPERATURES")
+        fun peakStr(peakC: Double) = if (peakC > -90) "\u25B2 ${p.displayTemp(peakC)}${p.tempLabel}" else ""
         val tempItems = listOf(
             TempSpec("ENGINE OIL",
                 if (vs.oilTempC > -90) p.displayTemp(vs.oilTempC) else "— —", p.tempLabel,
                 vs.oilTempC.takeIf { it > -90 } ?: 0.0,
-                p.oilWarnC, p.oilCritC, if (vs.oilTempC <= -90) "WARMING" else "INFERRED"),
+                p.oilWarnC, p.oilCritC, if (vs.oilTempC <= -90) "WARMING" else "INFERRED",
+                peakStr(vs.peakOilTempC)),
             TempSpec("COOLANT",
                 if (vs.coolantTempC > -90) p.displayTemp(vs.coolantTempC) else "— —", p.tempLabel,
                 vs.coolantTempC.takeIf { it > -90 } ?: 0.0,
-                p.coolWarnC, p.coolCritC, if (vs.coolantTempC <= -90) "WARMING" else ""),
+                p.coolWarnC, p.coolCritC, if (vs.coolantTempC <= -90) "WARMING" else "",
+                peakStr(vs.peakCoolantTempC)),
             TempSpec("INTAKE AIR",    p.displayTemp(vs.intakeTempC),  p.tempLabel, vs.intakeTempC,
                 p.intakeWarnC, p.intakeCritC, ""),
             TempSpec("AMBIENT",       p.displayTemp(vs.ambientTempC), p.tempLabel, vs.ambientTempC,
@@ -64,14 +69,17 @@ import com.openrs.dash.data.VehicleState
             TempSpec("RDU (REAR)",
                 if (vs.rduTempC > -90) p.displayTemp(vs.rduTempC) else "— —", p.tempLabel,
                 vs.rduTempC.takeIf { it > -90 } ?: 0.0,
-                p.rduWarnC, p.rduCritC, if (vs.rduTempC <= -90) "POLLING" else ""),
+                p.rduWarnC, p.rduCritC, if (vs.rduTempC <= -90) "POLLING" else "",
+                peakStr(vs.peakRduTempC)),
             TempSpec("PTU (TRANSFER)",
                 if (vs.ptuTempC > -90) p.displayTemp(vs.ptuTempC) else "— —", p.tempLabel,
                 vs.ptuTempC.takeIf { it > -90 } ?: 0.0,
-                p.ptuWarnC, p.ptuCritC, if (vs.ptuTempC <= -90) "POLLING" else ""),
+                p.ptuWarnC, p.ptuCritC, if (vs.ptuTempC <= -90) "POLLING" else "",
+                peakStr(vs.peakPtuTempC)),
             TempSpec("CHARGE AIR",
                 if (vs.chargeAirTempC > -90) p.displayTemp(vs.chargeAirTempC) else "— —", p.tempLabel,
-                vs.chargeAirTempC, 60.0, 80.0, if (vs.chargeAirTempC <= -90) "POLLING" else ""),
+                vs.chargeAirTempC, 60.0, 80.0, if (vs.chargeAirTempC <= -90) "POLLING" else "",
+                peakStr(vs.peakChargeAirTempC)),
             TempSpec("MANIFOLD",
                 if (vs.manifoldChargeTempC > -90) p.displayTemp(vs.manifoldChargeTempC) else "— —", p.tempLabel,
                 vs.manifoldChargeTempC, 60.0, 90.0, if (vs.manifoldChargeTempC <= -90) "POLLING" else ""),
@@ -84,11 +92,21 @@ import com.openrs.dash.data.VehicleState
             TempSpec("BATT TEMP",
                 if (vs.batteryTempC > -90) p.displayTemp(vs.batteryTempC) else "— —", p.tempLabel,
                 vs.batteryTempC.takeIf { it > -90 } ?: 0.0, 40.0, 60.0, "BCM"),
+            TempSpec("CLT LEFT",
+                if (vs.awdClutchTempL > -90) p.displayTemp(vs.awdClutchTempL) else "— —", p.tempLabel,
+                vs.awdClutchTempL.takeIf { it > -90 } ?: 0.0, 90.0, 120.0, "AWD"),
+            TempSpec("CLT RIGHT",
+                if (vs.awdClutchTempR > -90) p.displayTemp(vs.awdClutchTempR) else "— —", p.tempLabel,
+                vs.awdClutchTempR.takeIf { it > -90 } ?: 0.0, 90.0, 120.0, "AWD"),
+            TempSpec("TRANS OIL",
+                if (vs.transOilTempC > -90) p.displayTemp(vs.transOilTempC) else "— —", p.tempLabel,
+                vs.transOilTempC.takeIf { it > -90 } ?: 0.0, 100.0, 130.0, "AWD"),
         )
-        tempItems.chunked(2).forEach { pair ->
+        val columns = if (isWideLayout()) 3 else 2
+        tempItems.chunked(columns).forEach { group ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                pair.forEach { spec -> TempCard(spec, Modifier.weight(1f)) }
-                if (pair.size == 1) Spacer(Modifier.weight(1f))
+                group.forEach { spec -> TempCard(spec, Modifier.weight(1f)) }
+                repeat(columns - group.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }
@@ -96,18 +114,24 @@ import com.openrs.dash.data.VehicleState
 
 data class TempSpec(
     val label: String, val value: String, val unit: String,
-    val tempC: Double, val warnC: Double, val critC: Double, val sub: String
+    val tempC: Double, val warnC: Double, val critC: Double, val sub: String,
+    val peakDisplay: String = ""
 )
 
 @Composable fun RtrBanner(vs: VehicleState, p: UserPrefs) {
     val warmupDetail = vs.rtrStatus
     val isReady = warmupDetail == null
     val dotColor = if (isReady) Ok else Warn
-    val infiniteTransition = rememberInfiniteTransition(label = "rtr")
-    val dotAlpha by infiniteTransition.animateFloat(
-        initialValue = 1f, targetValue = if (isReady) 1f else 0.3f, label = "rtrDot",
-        animationSpec = infiniteRepeatable(tween(800, easing = EaseInOut), RepeatMode.Reverse)
-    )
+    val dotAlpha = if (isReady) {
+        1f
+    } else {
+        val infiniteTransition = rememberInfiniteTransition(label = "rtr")
+        val anim by infiniteTransition.animateFloat(
+            initialValue = 1f, targetValue = 0.3f, label = "rtrDot",
+            animationSpec = infiniteRepeatable(tween(800, easing = EaseInOut), RepeatMode.Reverse)
+        )
+        anim
+    }
     val bannerBrush = if (isReady)
         Brush.horizontalGradient(listOf(Ok.copy(alpha = 0.08f), Ok.copy(alpha = 0.04f)))
     else
@@ -121,7 +145,10 @@ data class TempSpec(
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(Modifier.size(10.dp).clip(CircleShape).background(dotColor.copy(alpha = dotAlpha)))
+        Box(contentAlignment = Alignment.Center) {
+            Box(Modifier.size(18.dp).clip(CircleShape).background(dotColor.copy(alpha = 0.2f * dotAlpha)))
+            Box(Modifier.size(10.dp).clip(CircleShape).background(dotColor.copy(alpha = dotAlpha)))
+        }
         Spacer(Modifier.width(12.dp))
         Column {
             UIText(
@@ -137,6 +164,7 @@ data class TempSpec(
 
 @Composable fun TempPresetBadge(p: UserPrefs) {
     val ctx = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     Row(
         Modifier.fillMaxWidth()
             .background(Surf2, RoundedCornerShape(10.dp))
@@ -153,12 +181,12 @@ data class TempSpec(
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf("street" to "STREET", "track" to "TRACK", "race" to "RACE").forEach { (id, label) ->
                 val isActive = p.tempPreset == id
-                val color    = when (id) { "race" -> Red; "track" -> Warn; else -> Ok }
+                val color    = when (id) { "race" -> Orange; "track" -> Warn; else -> Ok }
                 Box(
                     Modifier
                         .background(if (isActive) color.copy(alpha = 0.15f) else Surf3, RoundedCornerShape(6.dp))
                         .border(1.dp, if (isActive) color.copy(alpha = 0.5f) else Brd, RoundedCornerShape(6.dp))
-                        .clickable { UserPrefsStore.update(ctx) { it.copy(tempPreset = id) } }
+                        .clickable { haptic.performHapticFeedback(HapticFeedbackType.Confirm); UserPrefsStore.update(ctx) { it.copy(tempPreset = id) } }
                         .padding(horizontal = 10.dp, vertical = 5.dp)
                 ) {
                     MonoLabel(label, 9.sp, if (isActive) color else Dim, letterSpacing = 0.1.sp)
@@ -175,7 +203,7 @@ data class TempSpec(
         spec.tempC <= 0         -> Surf3
         spec.tempC < spec.warnC -> Ok.copy(alpha = 0.6f)
         spec.tempC < spec.critC -> Warn.copy(alpha = 0.7f)
-        else                    -> Red
+        else                    -> Orange
     }
     val isPlaceholder = spec.value == "— —"
 
@@ -191,9 +219,17 @@ data class TempSpec(
             }
             Spacer(Modifier.height(6.dp))
             if (isPlaceholder) {
-                MonoText("— —", 24.sp, Dim)
+                val phAlpha by rememberInfiniteTransition(label = "ph").animateFloat(
+                    initialValue = 0.3f, targetValue = 0.7f,
+                    animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "phA"
+                )
+                MonoText("— —", 24.sp, Dim.copy(alpha = phAlpha))
             } else {
                 HeroNum(spec.value, 24.sp, tempColor)
+            }
+            if (spec.peakDisplay.isNotEmpty()) {
+                val accent = LocalThemeAccent.current
+                MonoText(spec.peakDisplay, 9.sp, accent)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 MonoLabel(spec.unit, 10.sp, Dim)

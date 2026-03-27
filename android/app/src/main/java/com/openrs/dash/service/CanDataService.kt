@@ -17,8 +17,12 @@ import com.openrs.dash.R
 import com.openrs.dash.can.AdapterState
 import com.openrs.dash.can.CanDecoder
 import com.openrs.dash.can.MeatPiConnection
+import com.openrs.dash.can.PidRegistry
 import com.openrs.dash.can.WiCanConnection
 import com.openrs.dash.data.DtcResult
+import com.openrs.dash.data.SessionDatabase
+import com.openrs.dash.data.SessionEntity
+import com.openrs.dash.data.SnapshotEntity
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticLogger
 import com.openrs.dash.diagnostics.DtcScanner
@@ -42,6 +46,12 @@ class CanDataService : Service() {
 
     private val cm by lazy { getSystemService(ConnectivityManager::class.java) }
     private var wifiCallback: ConnectivityManager.NetworkCallback? = null
+
+    // ── Session History ──────────────────────────────────────────────────────
+    private val sessionDb by lazy { SessionDatabase.getInstance(this) }
+    private var currentSessionId: Long = -1L
+    private var snapshotJob: Job? = null
+    private var sessionFrameCount: Long = 0L
 
     private fun buildWiCan(): WiCanConnection {
         val s = AppSettings
@@ -76,8 +86,15 @@ class CanDataService : Service() {
      */
     suspend fun scanDtcs(): List<DtcResult> {
         val (useMeatPi, w, m) = synchronized(this) { Triple(isMeatPi, wican, meatpi) }
-        return if (useMeatPi) DtcScanner(this).scanMeatPi(m)
-               else           DtcScanner(this).scan(w)
+        return try {
+            if (useMeatPi) DtcScanner(this).scanMeatPi(m)
+            else           DtcScanner(this).scan(w)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("CAN", "DTC scan failed", e)
+            throw e
+        }
     }
 
     /**
@@ -85,18 +102,36 @@ class CanDataService : Service() {
      * Suspends for up to ~12 seconds while waiting for acknowledgements.
      *
      * Returns a map of module name → true if that ECU confirmed the clear.
-     * An empty map means the adapter is not connected.
+     * An empty map means the adapter is not connected or the clear failed.
      */
     suspend fun clearDtcs(): Map<String, Boolean> {
         val (useMeatPi, w, m) = synchronized(this) { Triple(isMeatPi, wican, meatpi) }
-        return if (useMeatPi) DtcScanner(this).clearDtcsMeatPi(m)
-               else           DtcScanner(this).clearDtcs(w)
+        return try {
+            if (useMeatPi) DtcScanner(this).clearDtcsMeatPi(m)
+            else           DtcScanner(this).clearDtcs(w)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("CAN", "DTC clear failed", e)
+            emptyMap()
+        }
+    }
+
+    /**
+     * Send a single Mode 22 (or arbitrary) SLCAN frame and wait for a response.
+     * Used by the DID prober to test individual DIDs against an ECU.
+     */
+    suspend fun sendRawQuery(responseId: Int, frame: String, timeoutMs: Long = 1_500L): ByteArray? {
+        val (useMeatPi, w, m) = synchronized(this) { Triple(isMeatPi, wican, meatpi) }
+        return if (useMeatPi) m.sendRawQuery(responseId, frame, timeoutMs)
+               else           w.sendRawQuery(responseId, frame, timeoutMs)
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onCreate() {
         super.onCreate()
+        PidRegistry.ensureLoaded(this)
         wican = buildWiCan()
         registerWifiCallback()
         if (isOnWifi()) startConnection()
@@ -187,6 +222,82 @@ class CanDataService : Service() {
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
     }
 
+    // ── Session History helpers ─────────────────────────────────────────────
+
+    private fun startSessionRecording() {
+        scope.launch(Dispatchers.IO) {
+            // Prune sessions older than 30 days
+            val cutoff = System.currentTimeMillis() - 30L * 24 * 60 * 60 * 1000
+            try {
+                sessionDb.sessionDao().deleteOldSnapshots(cutoff)
+                sessionDb.sessionDao().deleteOldSessions(cutoff)
+            } catch (e: Exception) {
+                android.util.Log.w("CAN", "Session prune failed", e)
+            }
+
+            // Create a new session
+            val session = SessionEntity(startTime = System.currentTimeMillis())
+            currentSessionId = sessionDb.sessionDao().insertSession(session)
+            sessionFrameCount = 0L
+            android.util.Log.d("CAN", "Session $currentSessionId started")
+
+            // Start periodic snapshots every 5 seconds
+            snapshotJob = scope.launch(Dispatchers.IO) {
+                while (isActive) {
+                    delay(5_000L)
+                    val sid = currentSessionId
+                    if (sid < 0) continue
+                    val vs = OpenRSDashApp.instance.vehicleState.value
+                    if (!vs.isConnected) continue
+                    try {
+                        sessionDb.sessionDao().insertSnapshot(
+                            SnapshotEntity(
+                                sessionId  = sid,
+                                timestamp  = System.currentTimeMillis(),
+                                rpm        = vs.rpm,
+                                speedKph   = vs.speedKph,
+                                boostKpa   = vs.boostKpa,
+                                oilTempC   = vs.oilTempC,
+                                coolantTempC = vs.coolantTempC,
+                                throttlePct = vs.throttlePct
+                            )
+                        )
+                    } catch (e: Exception) {
+                        android.util.Log.w("CAN", "Snapshot insert failed", e)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun stopSessionRecording() {
+        snapshotJob?.cancel()
+        snapshotJob = null
+        val sid = currentSessionId
+        if (sid < 0) return
+        currentSessionId = -1L
+        scope.launch(Dispatchers.IO) {
+            try {
+                val vs = OpenRSDashApp.instance.vehicleState.value
+                val existing = sessionDb.sessionDao().getSession(sid) ?: return@launch
+                sessionDb.sessionDao().updateSession(
+                    existing.copy(
+                        endTime        = System.currentTimeMillis(),
+                        peakRpm        = vs.peakRpm,
+                        peakBoostPsi   = vs.peakBoostPsi,
+                        peakOilTempC   = vs.peakOilTempC,
+                        peakCoolantTempC = vs.peakCoolantTempC,
+                        peakSpeedKph   = vs.peakSpeedKph,
+                        totalFrames    = sessionFrameCount
+                    )
+                )
+                android.util.Log.d("CAN", "Session $sid ended (${sessionFrameCount} frames)")
+            } catch (e: Exception) {
+                android.util.Log.w("CAN", "Session end failed", e)
+            }
+        }
+    }
+
     // ── Connection control ───────────────────────────────────────────────────
 
     @Synchronized fun startConnection() {
@@ -203,6 +314,7 @@ class CanDataService : Service() {
             logDir = java.io.File(filesDir, "diagnostics")
         )
         CanDecoder.resetSessionState()
+        startSessionRecording()
 
         if (isMeatPi) {
             meatpi = buildMeatPi()
@@ -297,6 +409,9 @@ class CanDataService : Service() {
                 vctExhaustAngle = obdState.vctExhaustAngle,
                 oilLifePct = obdState.oilLifePct,
                 ignCorrCyl1 = obdState.ignCorrCyl1,
+                ignCorrCyl2 = obdState.ignCorrCyl2,
+                ignCorrCyl3 = obdState.ignCorrCyl3,
+                ignCorrCyl4 = obdState.ignCorrCyl4,
                 tirePressLF = if (obdState.tirePressLF >= 0) obdState.tirePressLF else current.tirePressLF,
                 tirePressRF = if (obdState.tirePressRF >= 0) obdState.tirePressRF else current.tirePressRF,
                 tirePressLR = if (obdState.tirePressLR >= 0) obdState.tirePressLR else current.tirePressLR,
@@ -315,6 +430,13 @@ class CanDataService : Service() {
                 batteryTempC = if (obdState.batteryTempC > -90) obdState.batteryTempC else current.batteryTempC,
                 cabinTempC   = if (obdState.cabinTempC  > -90)  obdState.cabinTempC   else current.cabinTempC,
                 rduTempC     = if (obdState.rduTempC > -90)     obdState.rduTempC     else current.rduTempC,
+                awdClutchTempL = if (obdState.awdClutchTempL > -90) obdState.awdClutchTempL else current.awdClutchTempL,
+                awdClutchTempR = if (obdState.awdClutchTempR > -90) obdState.awdClutchTempR else current.awdClutchTempR,
+                awdReqTorqueL  = if (obdState.awdReqTorqueL > 0) obdState.awdReqTorqueL else current.awdReqTorqueL,
+                awdReqTorqueR  = if (obdState.awdReqTorqueR > 0) obdState.awdReqTorqueR else current.awdReqTorqueR,
+                awdDmdPressure = if (obdState.awdDmdPressure > 0) obdState.awdDmdPressure else current.awdDmdPressure,
+                awdPumpCurrent = if (obdState.awdPumpCurrent > 0) obdState.awdPumpCurrent else current.awdPumpCurrent,
+                transOilTempC  = if (obdState.transOilTempC > -90) obdState.transOilTempC else current.transOilTempC,
                 hpFuelRailPsi = if (obdState.hpFuelRailPsi >= 0) obdState.hpFuelRailPsi else current.hpFuelRailPsi,
                 batteryVoltage = if (obdState.batteryVoltage > 0) obdState.batteryVoltage else current.batteryVoltage,
                 rduEnabled   = obdState.rduEnabled   ?: current.rduEnabled,
@@ -325,11 +447,27 @@ class CanDataService : Service() {
                 lcRpmTarget  = if (obdState.lcRpmTarget >= 0) obdState.lcRpmTarget else current.lcRpmTarget,
                 assEnabled   = obdState.assEnabled   ?: current.assEnabled,
                 rsprotTimedOut = obdState.rsprotTimedOut || current.rsprotTimedOut,
+                genericValues = if (obdState.genericValues.isNotEmpty())
+                    current.genericValues + obdState.genericValues
+                else current.genericValues,
+                hvacBlowerPct       = if (obdState.hvacBlowerPct >= 0) obdState.hvacBlowerPct else current.hvacBlowerPct,
+                hvacInteriorTempC   = if (obdState.hvacInteriorTempC > -90) obdState.hvacInteriorTempC else current.hvacInteriorTempC,
+                hvacDischargeRfTempC= if (obdState.hvacDischargeRfTempC > -90) obdState.hvacDischargeRfTempC else current.hvacDischargeRfTempC,
+                hvacBlendDoorL      = if (obdState.hvacBlendDoorL >= 0) obdState.hvacBlendDoorL else current.hvacBlendDoorL,
+                hvacBlendDoorR      = if (obdState.hvacBlendDoorR >= 0) obdState.hvacBlendDoorR else current.hvacBlendDoorR,
+                hvacDefrostDoor     = if (obdState.hvacDefrostDoor >= 0) obdState.hvacDefrostDoor else current.hvacDefrostDoor,
+                warnMil         = obdState.warnMil         ?: current.warnMil,
+                warnAbs         = obdState.warnAbs         ?: current.warnAbs,
+                warnBrake       = obdState.warnBrake       ?: current.warnBrake,
+                warnCharge      = obdState.warnCharge      ?: current.warnCharge,
+                warnOilPressure = obdState.warnOilPressure ?: current.warnOilPressure,
+                warnTempHigh    = obdState.warnTempHigh    ?: current.warnTempHigh,
             )
         }
     }
 
     private fun processCanFrame(canId: Int, data: ByteArray, fps: Double) {
+        sessionFrameCount++
         // C-3 fix: use .update{} so concurrent OBD writes are never clobbered
         OpenRSDashApp.instance.vehicleState.update { current ->
             val updated = CanDecoder.decode(canId, data, current)
@@ -346,6 +484,7 @@ class CanDataService : Service() {
     }
 
     @Synchronized fun stopConnection() {
+        stopSessionRecording()
         DiagnosticLogger.sessionEnd()
         connectionJob?.cancel()
         connectionJob = null

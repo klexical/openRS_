@@ -51,7 +51,8 @@ import kotlin.math.roundToInt
     lines: List<String>,
     vs: VehicleState,
     onScanDtcs: (suspend () -> List<DtcResult>)?,
-    onClearDtcs: (suspend () -> Map<String, Boolean>)? = null
+    onClearDtcs: (suspend () -> Map<String, Boolean>)? = null,
+    onSendRawQuery: (suspend (responseId: Int, frame: String, timeoutMs: Long) -> ByteArray?)? = null
 ) {
     val ctx    = LocalContext.current
     val scope  = rememberCoroutineScope()
@@ -155,7 +156,7 @@ import kotlin.math.roundToInt
                     )
                     .border(
                         1.dp,
-                        if (!dtcBusy && vs.isConnected && onClearDtcs != null) Red.copy(0.45f) else Red.copy(0.15f),
+                        if (!dtcBusy && vs.isConnected && onClearDtcs != null) Orange.copy(0.45f) else Orange.copy(0.15f),
                         RoundedCornerShape(10.dp)
                     )
                     .clickable(enabled = !dtcBusy && vs.isConnected && onClearDtcs != null) {
@@ -167,7 +168,7 @@ import kotlin.math.roundToInt
                 MonoLabel(
                     if (dtcClearing) "CLEARING..." else "⚠  CLEAR FAULT CODES (0x14)",
                     11.sp,
-                    if (!dtcBusy && vs.isConnected && onClearDtcs != null) Red.copy(0.9f) else Red.copy(0.35f),
+                    if (!dtcBusy && vs.isConnected && onClearDtcs != null) Orange.copy(0.9f) else Orange.copy(0.35f),
                     letterSpacing = 0.06.sp
                 )
             }
@@ -220,7 +221,7 @@ import kotlin.math.roundToInt
                             }
                         }
                     }) {
-                        Text("CLEAR", fontFamily = ShareTechMono, color = Red, fontSize = 12.sp)
+                        Text("CLEAR", fontFamily = ShareTechMono, color = Orange, fontSize = 12.sp)
                     }
                 },
                 dismissButton = {
@@ -263,10 +264,14 @@ import kotlin.math.roundToInt
 
         // Results
         val results = dtcResults
+        // Fix B: hold the last non-null snapshot so the exit animation doesn't go blank
+        // when dtcResults is set to null by DISMISS before AnimatedVisibility finishes.
+        var lastResults by remember { mutableStateOf<List<DtcResult>?>(null) }
+        if (results != null) lastResults = results
         AnimatedVisibility(visible = results != null) {
-            if (results != null) {
+            lastResults?.let { r ->
                 Column(Modifier.fillMaxWidth()) {
-                    if (results.isEmpty()) {
+                    if (r.isEmpty()) {
                         Box(
                             Modifier.fillMaxWidth()
                                 .background(Color(0xFF060E0A), RoundedCornerShape(10.dp))
@@ -278,7 +283,7 @@ import kotlin.math.roundToInt
                         }
                     } else {
                         // Group by module
-                        val grouped = results.groupBy { it.module }
+                        val grouped = r.groupBy { it.module }
                         val moduleOrder = listOf("PCM", "BCM", "ABS", "AWD", "PSCM")
                         Column(
                             Modifier.fillMaxWidth()
@@ -298,7 +303,7 @@ import kotlin.math.roundToInt
                     }
                     Spacer(Modifier.height(8.dp))
                     MonoLabel(
-                        "${results.size} fault code(s) found across ${results.map { it.module }.distinct().size} module(s).",
+                        "${r.size} fault code(s) found across ${r.map { it.module }.distinct().size} module(s).",
                         9.sp, Dim, modifier = Modifier.padding(bottom = 10.dp)
                     )
                 }
@@ -319,7 +324,7 @@ import kotlin.math.roundToInt
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             DataCell("FPS",    "${vs.framesPerSecond.roundToInt()}", modifier = Modifier.weight(1f))
             DataCell("STATUS", if (vs.isConnected) "LIVE" else "OFF",
-                valueColor = if (vs.isConnected) Ok else Red, modifier = Modifier.weight(1f))
+                valueColor = if (vs.isConnected) Ok else Orange, modifier = Modifier.weight(1f))
             DataCell("MODE",   vs.dataMode, modifier = Modifier.weight(1f))
         }
         Spacer(Modifier.height(6.dp))
@@ -341,7 +346,7 @@ import kotlin.math.roundToInt
             DataCell("BATT SoC", if (vs.batterySoc >= 0) "${vs.batterySoc.roundToInt()}%" else "—",
                 valueColor = when {
                     vs.batterySoc < 0   -> Dim
-                    vs.batterySoc < 50  -> Red
+                    vs.batterySoc < 50  -> Orange
                     vs.batterySoc < 70  -> Warn
                     else                -> Ok
                 }, modifier = Modifier.weight(1f))
@@ -383,6 +388,14 @@ import kotlin.math.roundToInt
         MonoLabel("Exports ZIP (summary + raw log + JSON) via share sheet.", 9.sp, Dim,
             modifier = Modifier.padding(bottom = 12.dp))
 
+        HorizontalDivider(color = Brd)
+        Spacer(Modifier.height(10.dp))
+        CrashHistorySection()
+        Spacer(Modifier.height(14.dp))
+        HorizontalDivider(color = Brd)
+        Spacer(Modifier.height(10.dp))
+        DidProberSection(vs, onSendRawQuery)
+        Spacer(Modifier.height(14.dp))
         HorizontalDivider(color = Brd)
         Spacer(Modifier.height(10.dp))
         SectionLabel("LIVE CAN OUTPUT")
@@ -440,6 +453,11 @@ import kotlin.math.roundToInt
                 }
             }
         }
+
+        Spacer(Modifier.height(14.dp))
+        HorizontalDivider(color = Brd)
+        Spacer(Modifier.height(10.dp))
+        PidBrowserSection()
     }
 }
 
@@ -469,7 +487,7 @@ internal fun ignitionStatusLabel(v: Int): String = when (v) {
 @Composable
 private fun DtcRow(dtc: DtcResult) {
     val statusColor = when (dtc.status) {
-        DtcStatus.ACTIVE    -> Red
+        DtcStatus.ACTIVE    -> Orange
         DtcStatus.PENDING   -> Warn
         DtcStatus.PERMANENT -> Color(0xFFFF8C00)
         DtcStatus.UNKNOWN   -> Dim
@@ -487,4 +505,75 @@ private fun DtcRow(dtc: DtcResult) {
             MonoLabel(dtc.status.label, 8.sp, statusColor.copy(0.7f))
         }
     }
+}
+
+// ── Crash History Section ──────────────────────────────────────────────────
+
+@Composable
+private fun CrashHistorySection() {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val dateFmt = remember { java.text.SimpleDateFormat("MMM dd, HH:mm:ss", java.util.Locale.getDefault()) }
+
+    var crashFiles by remember { mutableStateOf(DiagnosticExporter.crashFiles(ctx)) }
+
+    SectionLabel("CRASH HISTORY")
+    Spacer(Modifier.height(4.dp))
+
+    if (crashFiles.isEmpty()) {
+        Box(
+            Modifier.fillMaxWidth()
+                .background(Surf2, RoundedCornerShape(10.dp))
+                .border(1.dp, Brd, RoundedCornerShape(10.dp))
+                .padding(14.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            MonoLabel("No crash reports", 10.sp, Dim)
+        }
+    } else {
+        Column(
+            Modifier.fillMaxWidth()
+                .background(Surf2, RoundedCornerShape(10.dp))
+                .border(1.dp, Brd, RoundedCornerShape(10.dp))
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            MonoLabel("${crashFiles.size} crash report(s)", 10.sp, Orange, letterSpacing = 0.1.sp)
+            Spacer(Modifier.height(2.dp))
+            crashFiles.take(20).forEach { file ->
+                val ts = dateFmt.format(java.util.Date(file.lastModified()))
+                Row(
+                    Modifier.fillMaxWidth()
+                        .background(Surf, RoundedCornerShape(6.dp))
+                        .border(1.dp, Brd, RoundedCornerShape(6.dp))
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MonoLabel(ts, 9.sp, Frost)
+                    MonoLabel(file.name.removePrefix("crash_telemetry_").removeSuffix(".json"), 8.sp, Dim)
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Box(
+                Modifier.fillMaxWidth()
+                    .background(Orange.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+                    .border(1.dp, Orange.copy(0.3f), RoundedCornerShape(8.dp))
+                    .clickable {
+                        scope.launch(Dispatchers.IO) {
+                            DiagnosticExporter.clearCrashHistory(ctx)
+                            withContext(Dispatchers.Main) {
+                                crashFiles = emptyList()
+                            }
+                        }
+                    }
+                    .padding(10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                MonoLabel("CLEAR CRASH HISTORY", 10.sp, Orange, letterSpacing = 0.1.sp)
+            }
+        }
+    }
+    Spacer(Modifier.height(4.dp))
+    MonoLabel("Crash reports are auto-included in diagnostic ZIP exports.", 9.sp, Dim)
 }

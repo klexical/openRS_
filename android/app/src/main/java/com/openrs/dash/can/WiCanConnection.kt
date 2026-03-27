@@ -165,7 +165,7 @@ class WiCanConnection(
                 }
                 1 -> {
                     totalLen = ((data[0].toInt() and 0x0F) shl 8) or (data[1].toInt() and 0xFF)
-                    val firstBytes = minOf(6, data.size - 2)
+                    val firstBytes = minOf(6, totalLen, data.size - 2)  // cap by totalLen (#129)
                     if (firstBytes > 0) buf.write(data, 2, firstBytes)
                     received = firstBytes
                     try { sendWsText(out, buildFlowControlFrame(requestId)) } catch (_: Exception) { }
@@ -185,6 +185,36 @@ class WiCanConnection(
         }
 
         return if (buf.size() > 0) buf.toByteArray() else null
+    }
+
+    /**
+     * Send a single SLCAN frame and wait for a response from [responseId].
+     * Reuses the DTC channel/mutex infrastructure.
+     * Returns the raw data bytes of the first matching response, or null on timeout.
+     */
+    suspend fun sendRawQuery(
+        responseId: Int,
+        frame: String,
+        timeoutMs: Long = 1_500L
+    ): ByteArray? = _dtcMutex.withLock {
+        val out = _wsOut ?: return null
+        _dtcWatchIds = setOf(responseId)
+        _dtcScanActive = true
+        while (_dtcChannel.tryReceive().isSuccess) { /* drain stale */ }
+        try {
+            sendWsText(out, frame)
+            val deadline = System.currentTimeMillis() + timeoutMs
+            while (System.currentTimeMillis() < deadline) {
+                val remaining = deadline - System.currentTimeMillis()
+                if (remaining <= 0) break
+                val resp = withTimeoutOrNull(remaining) { _dtcChannel.receive() } ?: break
+                if (resp.first == responseId) return@withLock resp.second
+            }
+            null
+        } finally {
+            _dtcScanActive = false
+            _dtcWatchIds = emptySet()
+        }
     }
 
     // ── Connection ───────────────────────────────────────────────────────────
@@ -212,6 +242,11 @@ class WiCanConnection(
 
                 val inp = socket.getInputStream()
                 val out = socket.getOutputStream()
+
+                val cancelWatcher = launch {
+                    try { awaitCancellation() }
+                    finally { try { socket.close() } catch (_: Exception) { } }
+                }
 
                 sendHttpUpgrade(out)
                 val headers = readHttpHeaders(inp)
@@ -389,6 +424,14 @@ class WiCanConnection(
                         ObdResponseParser.parsePscmResponse(frame.second, getCurrentState(), onObdUpdate)
                         continue
                     }
+                    if (frame.first == ObdConstants.HVAC_RESPONSE_ID) {
+                        ObdResponseParser.parseHvacResponse(frame.second, getCurrentState(), onObdUpdate)
+                        continue
+                    }
+                    if (frame.first == ObdConstants.IPC_RESPONSE_ID) {
+                        ObdResponseParser.parseIpcResponse(frame.second, getCurrentState(), onObdUpdate)
+                        continue
+                    }
                     if (frame.first == ObdConstants.FENG_RESPONSE_ID) {
                         fengMisses.set(0)
                         ObdResponseParser.parseFengResponse(frame.second, getCurrentState(), onObdUpdate)
@@ -418,6 +461,7 @@ class WiCanConnection(
                     }
                 }
                 } finally {
+                    cancelWatcher.cancel()
                     obdJob.cancel()
                     pcmJob.cancel()
                     extJob.cancel()
@@ -543,9 +587,16 @@ class WiCanConnection(
                     val lenBytes = readExactly(inp, 8)
                     val bigLen = lenBytes.fold(0L) { acc, b -> (acc shl 8) or (b.toLong() and 0xFF) }
                     if (bigLen < 0 || bigLen > 1_048_576L) throw IOException("WS frame too large: $bigLen bytes")
-                    readExactly(inp, bigLen.toInt())
-                    DiagnosticLogger.event("WS", "Skipped 64-bit frame: $bigLen bytes")
-                    continue
+                    val mask64 = if (masked) readExactly(inp, 4) else null
+                    val payload64 = readExactly(inp, bigLen.toInt())
+                    if (mask64 != null) {
+                        for (i in payload64.indices) payload64[i] = (payload64[i].toInt() xor mask64[i % 4].toInt()).toByte()
+                    }
+                    when (opcode) {
+                        0x9 -> { sendWsPong(out, payload64); continue }
+                        0xA -> continue
+                        else -> return Pair(opcode, payload64)
+                    }
                 }
                 else -> len
             }

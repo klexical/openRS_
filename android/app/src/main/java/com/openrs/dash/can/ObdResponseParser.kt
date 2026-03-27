@@ -50,11 +50,12 @@ object ObdResponseParser {
                 val b5 = data[5].toInt() and 0xFF
                 val psi = ((b4 * 256.0 + b5) / 3.0 + 22.0 / 3.0) * 0.145
                 if (psi < 5.0 || psi > 70.0) return
+                val now = System.currentTimeMillis()
                 onObdUpdate(when (did) {
-                    0x2813 -> currentState.copy(tirePressLF = psi)
-                    0x2814 -> currentState.copy(tirePressRF = psi)
-                    0x2816 -> currentState.copy(tirePressLR = psi)
-                    else   -> currentState.copy(tirePressRR = psi)
+                    0x2813 -> currentState.copy(tirePressLF = psi, tpmsLastUpdate = now)
+                    0x2814 -> currentState.copy(tirePressRF = psi, tpmsLastUpdate = now)
+                    0x2816 -> currentState.copy(tirePressLR = psi, tpmsLastUpdate = now)
+                    else   -> currentState.copy(tirePressRR = psi, tpmsLastUpdate = now)
                 })
             }
             // TPMS sensor IDs — 4-byte ID per tire position, polled once on connect
@@ -78,7 +79,7 @@ object ObdResponseParser {
      * Parse a reassembled multi-frame BCM response (ISO-TP payload without PCI byte).
      *
      * Used for DID 0x280B "last received TPMS sensor" which returns 12 bytes:
-     *   [0x62] [DID hi] [DID lo] [ID0..ID3] [press_hi] [press_lo] [temp] [status] [checksum]
+     *   {0x62} {DID hi} {DID lo} {ID0..ID3} {press_hi} {press_lo} {temp} {status} {checksum}
      *
      * The 4-byte sensor ID is matched against the stored per-tire IDs from
      * 0x280F-0x2812 to determine which tire position the data belongs to.
@@ -111,16 +112,21 @@ object ObdResponseParser {
                     ((payload[4].toInt() and 0xFF).toLong() shl 16) or
                     ((payload[5].toInt() and 0xFF).toLong() shl 8) or
                     (payload[6].toInt() and 0xFF).toLong()
+                val pressA = payload[7].toInt() and 0xFF
+                val pressB = payload[8].toInt() and 0xFF
+                val psi = (pressA * 256 + pressB) / 20.0
                 val tempRaw = payload[9].toInt() and 0xFF
+                if (tempRaw == 0) return   // sensor initializing — no valid temp yet (#130)
                 val tempC = (tempRaw - 40).toDouble()
-                if (tempC < -40 || tempC > 120) return
+                if (tempC > 120) return
 
                 val s = currentState
+                val now = System.currentTimeMillis()
                 val updated = when (sensorId) {
-                    s.tpmsSensorIdLF -> s.copy(tireTempLF = tempC)
-                    s.tpmsSensorIdRF -> s.copy(tireTempRF = tempC)
-                    s.tpmsSensorIdRR -> s.copy(tireTempRR = tempC)
-                    s.tpmsSensorIdLR -> s.copy(tireTempLR = tempC)
+                    s.tpmsSensorIdLF -> s.copy(tireTempLF = tempC, tirePressLF = psi, tpmsLastUpdate = now)
+                    s.tpmsSensorIdRF -> s.copy(tireTempRF = tempC, tirePressRF = psi, tpmsLastUpdate = now)
+                    s.tpmsSensorIdRR -> s.copy(tireTempRR = tempC, tirePressRR = psi, tpmsLastUpdate = now)
+                    s.tpmsSensorIdLR -> s.copy(tireTempLR = tempC, tirePressLR = psi, tpmsLastUpdate = now)
                     else -> {
                         Log.d(TAG, "0x280B unknown sensor ID %08X".format(sensorId))
                         null
@@ -145,9 +151,26 @@ object ObdResponseParser {
         if ((data[1].toInt() and 0xFF) != 0x62) return
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
+        val b5  = if (data.size > 5) data[5].toInt() and 0xFF else 0
         when (did) {
             0x1E8A -> onObdUpdate(currentState.copy(rduTempC = (b4 - 40).toDouble()))
+            0x1E8B -> onObdUpdate(currentState.copy(awdClutchTempL = (b4 - 40).toDouble()))
+            0x1E8C -> onObdUpdate(currentState.copy(awdClutchTempR = (b4 - 40).toDouble()))
+            0x1E90 -> onObdUpdate(currentState.copy(awdReqTorqueL = ((b4 shl 8) or b5).toDouble()))
+            0x1E91 -> onObdUpdate(currentState.copy(awdReqTorqueR = ((b4 shl 8) or b5).toDouble()))
+            0x1E92 -> onObdUpdate(currentState.copy(awdDmdPressure = ((b4 shl 8) or b5).toDouble()))
+            0x1E93 -> onObdUpdate(currentState.copy(awdPumpCurrent = b4 * 0.1))
+            0x1E80 -> onObdUpdate(currentState.copy(transOilTempC = (b4 - 40).toDouble()))
             0xEE0B -> onObdUpdate(currentState.copy(rduEnabled = b4 == 0x01))
+            else -> {
+                val decoded = PidRegistry.decode(ObdConstants.AWD_RESPONSE_ID, did, b4)
+                if (decoded != null) {
+                    val (field, value) = decoded
+                    onObdUpdate(currentState.copy(
+                        genericValues = currentState.genericValues + (field to value)
+                    ))
+                }
+            }
         }
     }
 
@@ -178,6 +201,15 @@ object ObdResponseParser {
             ))
             0x03EC -> onObdUpdate(currentState.copy(
                 ignCorrCyl1 = ((b4s.toByte().toInt() shl 8) or b5) / -512.0
+            ))
+            0x03ED -> onObdUpdate(currentState.copy(
+                ignCorrCyl2 = ((b4s.toByte().toInt() shl 8) or b5) / -512.0
+            ))
+            0x03EE -> onObdUpdate(currentState.copy(
+                ignCorrCyl3 = ((b4s.toByte().toInt() shl 8) or b5) / -512.0
+            ))
+            0x03EF -> onObdUpdate(currentState.copy(
+                ignCorrCyl4 = ((b4s.toByte().toInt() shl 8) or b5) / -512.0
             ))
             0x03E8 -> onObdUpdate(currentState.copy(
                 octaneAdjustRatio = ((b4s.toByte().toInt() shl 8) or b5) / 16384.0
@@ -210,6 +242,63 @@ object ObdResponseParser {
             ))
             0x0304 -> onObdUpdate(currentState.copy(
                 batteryVoltage = ((b4 shl 8) or b5) / 2048.0
+            ))
+            else -> {
+                val decoded = PidRegistry.decode(ObdConstants.PCM_RESPONSE_ID, did, b4, b5)
+                if (decoded != null) {
+                    val (field, value) = decoded
+                    onObdUpdate(currentState.copy(
+                        genericValues = currentState.genericValues + (field to value)
+                    ))
+                }
+            }
+        }
+    }
+
+    /**
+     * HVAC module (CAN ID 0x73B).
+     * DIDs are candidate values — will be confirmed via DID prober.
+     * Uses [PidRegistry] fallback for any formula-equipped PIDs in the catalog.
+     */
+    fun parseHvacResponse(
+        data: ByteArray,
+        currentState: VehicleState,
+        onObdUpdate: (VehicleState) -> Unit
+    ) {
+        if (data.size < 5) { logMalformed("HVAC", data, "too short (${data.size} < 5)"); return }
+        if ((data[1].toInt() and 0xFF) != 0x62) return
+        val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
+        val b4  = data[4].toInt() and 0xFF
+        val b5  = if (data.size > 5) data[5].toInt() and 0xFF else 0
+        val decoded = PidRegistry.decode(ObdConstants.HVAC_RESPONSE_ID, did, b4, b5)
+        if (decoded != null) {
+            val (field, value) = decoded
+            onObdUpdate(currentState.copy(
+                genericValues = currentState.genericValues + (field to value)
+            ))
+        }
+    }
+
+    /**
+     * IPC / Instrument Panel Cluster (CAN ID 0x728).
+     * DIDs are candidate values — will be confirmed via DID prober.
+     * Uses [PidRegistry] fallback for any formula-equipped PIDs in the catalog.
+     */
+    fun parseIpcResponse(
+        data: ByteArray,
+        currentState: VehicleState,
+        onObdUpdate: (VehicleState) -> Unit
+    ) {
+        if (data.size < 5) { logMalformed("IPC", data, "too short (${data.size} < 5)"); return }
+        if ((data[1].toInt() and 0xFF) != 0x62) return
+        val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
+        val b4  = data[4].toInt() and 0xFF
+        val b5  = if (data.size > 5) data[5].toInt() and 0xFF else 0
+        val decoded = PidRegistry.decode(ObdConstants.IPC_RESPONSE_ID, did, b4, b5)
+        if (decoded != null) {
+            val (field, value) = decoded
+            onObdUpdate(currentState.copy(
+                genericValues = currentState.genericValues + (field to value)
             ))
         }
     }

@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>openRS_ Mission Control</title>
+<style>
+{{UPLOT_CSS}}
+
+/* ── Design Tokens ──────────────────────────────────────────────── */
+:root {
+  --bg:      #05070A; --surf:    #0A0D12; --surf2:   #0F141C;
+  --surf3:   #141B26; --brd:     #162030; --frost:   #E8F4FF;
+  --dim:     #3D5A72; --mid:     #7A9AB8;
+  --accent:  #0091EA; --accentD: #006DB3;
+  --orange:  #FF4D00; --ok:      #00FF88; --warn:    #FFCC00;
+  --orb:     'Orbitron', 'Courier New', monospace;
+  --jbm:     'JetBrains Mono', 'Courier New', monospace;
+  --ui:      'Barlow Condensed', -apple-system, sans-serif;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { background: var(--bg); }
+body {
+  background: var(--bg); color: var(--frost); font-family: var(--ui);
+  font-size: 14px; line-height: 1.5; padding: 0; margin: 0;
+  min-height: 100vh;
+}
+a { color: var(--accent); text-decoration: none; }
+
+/* ── Layout ─────────────────────────────────────────────────────── */
+.container { max-width: 1280px; margin: 0 auto; padding: 16px 20px; }
+.header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 0; border-bottom: 1px solid var(--brd); margin-bottom: 20px;
+}
+.header h1 {
+  font-family: var(--orb); font-size: 18px; font-weight: 700;
+  letter-spacing: 0.12em; color: var(--frost);
+}
+.header h1 span { color: var(--accent); }
+.header .meta { font-family: var(--jbm); font-size: 12px; color: var(--dim); }
+
+/* ── Tabs ───────────────────────────────────────────────────────── */
+.tabs {
+  display: flex; gap: 4px; margin-bottom: 20px;
+  border-bottom: 1px solid var(--brd); padding-bottom: 0;
+}
+.tab {
+  font-family: var(--orb); font-size: 11px; letter-spacing: 0.1em;
+  padding: 8px 16px; cursor: pointer; color: var(--dim);
+  border-bottom: 2px solid transparent; transition: all 0.2s;
+  background: none; border-top: none; border-left: none; border-right: none;
+}
+.tab:hover { color: var(--mid); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ── Summary Cards ──────────────────────────────────────────────── */
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.card {
+  background: var(--surf); border: 1px solid var(--brd); border-radius: 8px;
+  padding: 12px 16px; text-align: center;
+}
+.card .label { font-family: var(--orb); font-size: 9px; letter-spacing: 0.15em; color: var(--dim); margin-bottom: 4px; }
+.card .value { font-family: var(--jbm); font-size: 22px; font-weight: 700; color: var(--frost); }
+.card .unit  { font-family: var(--jbm); font-size: 11px; color: var(--dim); margin-left: 2px; }
+
+/* ── Section Headers ────────────────────────────────────────────── */
+.section { margin-bottom: 24px; }
+.section-hdr {
+  font-family: var(--orb); font-size: 11px; letter-spacing: 0.12em;
+  color: var(--dim); padding: 8px 0; border-bottom: 1px solid var(--brd);
+  margin-bottom: 12px; cursor: pointer; user-select: none;
+  display: flex; align-items: center; gap: 8px;
+}
+.section-hdr::before { content: '\25BE'; font-size: 10px; transition: transform 0.2s; }
+.section-hdr.collapsed::before { transform: rotate(-90deg); }
+.section-body { transition: max-height 0.3s ease; overflow: hidden; }
+.section-body.collapsed { max-height: 0 !important; }
+
+/* ── Charts ─────────────────────────────────────────────────────── */
+.chart-row { margin-bottom: 8px; background: var(--surf); border: 1px solid var(--brd); border-radius: 8px; padding: 8px; overflow: hidden; }
+.chart-row .chart-label {
+  font-family: var(--orb); font-size: 9px; letter-spacing: 0.12em;
+  color: var(--dim); padding: 0 4px 4px; display: flex;
+  justify-content: space-between; align-items: center;
+}
+.chart-row .chart-label .peak {
+  font-family: var(--jbm); font-size: 10px; color: var(--accent);
+}
+
+/* ── GPS Map ────────────────────────────────────────────────────── */
+.map-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 768px) { .map-stats { grid-template-columns: 1fr; } }
+.map-box {
+  background: var(--surf); border: 1px solid var(--brd); border-radius: 8px;
+  padding: 12px; position: relative; min-height: 320px;
+}
+.map-box svg { width: 100%; height: 100%; }
+.map-legend {
+  display: flex; gap: 12px; margin-top: 8px;
+  font-family: var(--jbm); font-size: 10px; color: var(--dim);
+}
+.map-legend .swatch { display: inline-block; width: 12px; height: 3px; border-radius: 1px; margin-right: 4px; vertical-align: middle; }
+.map-toggle {
+  display: flex; gap: 4px; margin-top: 8px;
+}
+.map-toggle button {
+  font-family: var(--orb); font-size: 9px; letter-spacing: 0.08em;
+  padding: 4px 10px; border: 1px solid var(--brd); border-radius: 4px;
+  background: var(--surf2); color: var(--dim); cursor: pointer;
+}
+.map-toggle button.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+
+/* ── Stats Panel ────────────────────────────────────────────────── */
+.stats-panel {
+  background: var(--surf); border: 1px solid var(--brd); border-radius: 8px;
+  padding: 16px;
+}
+.stat-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 0; border-bottom: 1px solid var(--surf2);
+}
+.stat-row:last-child { border-bottom: none; }
+.stat-label { font-family: var(--orb); font-size: 9px; letter-spacing: 0.1em; color: var(--dim); }
+.stat-value { font-family: var(--jbm); font-size: 13px; color: var(--frost); }
+.mode-bar-wrap { margin-top: 12px; }
+.mode-bar-label {
+  display: flex; justify-content: space-between;
+  font-family: var(--jbm); font-size: 11px; color: var(--dim); margin-bottom: 3px;
+}
+.mode-bar {
+  height: 6px; border-radius: 3px; overflow: hidden; display: flex;
+  background: var(--surf2);
+}
+.mode-bar div { height: 100%; }
+
+/* ── Diagnostics Tables ─────────────────────────────────────────── */
+.diag-tabs {
+  display: flex; gap: 2px; margin-bottom: 12px;
+}
+.diag-tab {
+  font-family: var(--orb); font-size: 10px; letter-spacing: 0.08em;
+  padding: 6px 12px; cursor: pointer; color: var(--dim);
+  background: var(--surf); border: 1px solid var(--brd); border-radius: 4px 4px 0 0;
+  border-bottom: none;
+}
+.diag-tab.active { color: var(--accent); background: var(--surf2); }
+.diag-panel { display: none; }
+.diag-panel.active { display: block; }
+
+.data-table {
+  width: 100%; border-collapse: collapse;
+  font-family: var(--jbm); font-size: 11px;
+}
+.data-table th {
+  text-align: left; padding: 6px 8px; color: var(--dim);
+  border-bottom: 1px solid var(--brd); cursor: pointer; user-select: none;
+  font-family: var(--orb); font-size: 9px; letter-spacing: 0.08em;
+}
+.data-table th:hover { color: var(--mid); }
+.data-table th .sort-arrow { font-size: 8px; margin-left: 4px; }
+.data-table td {
+  padding: 5px 8px; border-bottom: 1px solid var(--surf2); color: var(--frost);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 300px;
+}
+.data-table tr:hover td { background: var(--surf2); }
+.data-table .expand-btn {
+  cursor: pointer; color: var(--accent); font-size: 10px; margin-right: 4px;
+}
+.data-table .sub-row td {
+  padding: 3px 8px 3px 28px; color: var(--dim); font-size: 10px;
+  border-bottom: 1px solid var(--surf3);
+}
+.data-table .changed { color: var(--ok); }
+.data-table .issue { color: var(--orange); }
+
+/* Event type badges */
+.badge {
+  font-family: var(--orb); font-size: 8px; letter-spacing: 0.06em;
+  padding: 2px 6px; border-radius: 3px; display: inline-block;
+}
+.badge-session { background: var(--accentD); color: var(--frost); }
+.badge-error   { background: var(--orange); color: var(--bg); }
+.badge-slcan   { background: var(--surf3); color: var(--dim); }
+.badge-firmware { background: #00663a; color: var(--ok); }
+
+/* Search bar */
+.search-bar {
+  display: flex; gap: 8px; margin-bottom: 12px; align-items: center;
+}
+.search-bar input {
+  font-family: var(--jbm); font-size: 12px; padding: 6px 10px;
+  background: var(--surf2); color: var(--frost); border: 1px solid var(--brd);
+  border-radius: 4px; flex: 1; outline: none;
+}
+.search-bar input:focus { border-color: var(--accent); }
+.search-bar .count { font-family: var(--jbm); font-size: 11px; color: var(--dim); white-space: nowrap; }
+.scrollable { max-height: 400px; overflow-y: auto; }
+.scrollable::-webkit-scrollbar { width: 6px; }
+.scrollable::-webkit-scrollbar-track { background: var(--surf); }
+.scrollable::-webkit-scrollbar-thumb { background: var(--brd); border-radius: 3px; }
+
+/* ── File Loader ────────────────────────────────────────────────── */
+.drop-zone {
+  border: 2px dashed var(--brd); border-radius: 12px;
+  padding: 60px 40px; text-align: center; transition: all 0.2s;
+  cursor: pointer;
+}
+.drop-zone:hover, .drop-zone.drag-over {
+  border-color: var(--accent); background: rgba(0,145,234,0.05);
+}
+.drop-zone h3 {
+  font-family: var(--orb); font-size: 14px; color: var(--mid);
+  margin-bottom: 8px; letter-spacing: 0.1em;
+}
+.drop-zone p { font-family: var(--jbm); font-size: 12px; color: var(--dim); margin-bottom: 16px; }
+.drop-zone .browse-btn {
+  font-family: var(--orb); font-size: 11px; letter-spacing: 0.08em;
+  padding: 8px 20px; border: 1px solid var(--accent); border-radius: 4px;
+  background: transparent; color: var(--accent); cursor: pointer;
+}
+.drop-zone .browse-btn:hover { background: var(--accent); color: var(--bg); }
+.drop-zone input[type="file"] { display: none; }
+
+/* ── Map marker ─────────────────────────────────────────────────── */
+.map-marker {
+  transition: cx 0.1s, cy 0.1s;
+}
+.map-tooltip {
+  position: absolute; background: var(--surf2); border: 1px solid var(--brd);
+  border-radius: 4px; padding: 6px 10px; font-family: var(--jbm);
+  font-size: 10px; color: var(--frost); pointer-events: none;
+  white-space: nowrap; z-index: 10; display: none;
+}
+
+/* ── Responsive ─────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .container { padding: 8px 10px; }
+  .cards { grid-template-columns: repeat(2, 1fr); }
+  .card .value { font-size: 18px; }
+  .header h1 { font-size: 14px; }
+}
+
+/* ── Print ──────────────────────────────────────────────────────── */
+@media print {
+  body { background: #fff; color: #000; }
+  .tabs, .map-toggle, .drop-zone, .search-bar { display: none; }
+  .card { border-color: #ccc; }
+  .section-body { max-height: none !important; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <!-- Header -->
+  <div class="header">
+    <h1>open<span>RS_</span> MISSION CONTROL</h1>
+    <div class="meta" id="headerMeta"></div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs" id="mainTabs"></div>
+
+  <!-- Trip Panel -->
+  <div class="tab-panel" id="panelTrip">
+    <div class="cards" id="summaryCards"></div>
+
+    <div class="section">
+      <div class="section-hdr" onclick="toggleSection(this)">TIME-SERIES</div>
+      <div class="section-body" id="chartsBody">
+        <div id="chartRpm" class="chart-row"><div class="chart-label"><span>RPM</span><span class="peak" id="peakRpm"></span></div><div class="chart-container"></div></div>
+        <div id="chartBoost" class="chart-row"><div class="chart-label"><span>BOOST PSI</span><span class="peak" id="peakBoost"></span></div><div class="chart-container"></div></div>
+        <div id="chartSpeed" class="chart-row"><div class="chart-label"><span>SPEED KPH</span><span class="peak" id="peakSpeed"></span></div><div class="chart-container"></div></div>
+        <div id="chartTemps" class="chart-row"><div class="chart-label"><span>TEMPERATURES</span><span class="peak" id="peakTemps"></span></div><div class="chart-container"></div></div>
+        <div id="chartLatG" class="chart-row"><div class="chart-label"><span>LATERAL G</span><span class="peak" id="peakLatG"></span></div><div class="chart-container"></div></div>
+        <div id="chartFuel" class="chart-row"><div class="chart-label"><span>FUEL %</span><span class="peak" id="peakFuel"></span></div><div class="chart-container"></div></div>
+        <div id="chartWheels" class="chart-row"><div class="chart-label"><span>WHEEL SPEEDS</span><span class="peak" id="peakWheels"></span></div><div class="chart-container"></div></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-hdr" onclick="toggleSection(this)">MAP &amp; STATS</div>
+      <div class="section-body">
+        <div class="map-stats">
+          <div>
+            <div class="map-box" id="mapBox">
+              <svg id="mapSvg" viewBox="0 0 600 400"></svg>
+              <div class="map-tooltip" id="mapTooltip"></div>
+            </div>
+            <div class="map-toggle" id="mapToggle">
+              <button class="active" onclick="setMapMode('speed')">SPEED</button>
+              <button onclick="setMapMode('mode')">DRIVE MODE</button>
+            </div>
+            <div class="map-legend" id="mapLegend"></div>
+          </div>
+          <div class="stats-panel" id="statsPanel"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Diagnostics Panel -->
+  <div class="tab-panel" id="panelDiag">
+    <div class="diag-tabs" id="diagTabs"></div>
+    <div class="diag-panel active" id="diagInventory"></div>
+    <div class="diag-panel" id="diagFps">
+      <div class="chart-row"><div class="chart-label"><span>FRAMES PER SECOND</span></div><div class="chart-container" id="fpsChartContainer"></div></div>
+    </div>
+    <div class="diag-panel" id="diagEvents"></div>
+    <div class="diag-panel" id="diagTrace"></div>
+  </div>
+
+  <!-- Load File Panel -->
+  <div class="tab-panel" id="panelLoad">
+    <div class="drop-zone" id="dropZone">
+      <h3>LOAD EXPORT FILE</h3>
+      <p>Drop a trip CSV or diagnostic JSON here</p>
+      <button class="browse-btn" onclick="document.getElementById('fileInput').click()">BROWSE FILES</button>
+      <input type="file" id="fileInput" accept=".csv,.json">
+      <p style="margin-top:16px;font-size:11px">Accepts: trip_*.csv, diagnostic_detail_*.json</p>
+    </div>
+  </div>
+</div>
+
+<script>
+{{UPLOT_JS}}
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   openRS_ Mission Control Dashboard
+   ═══════════════════════════════════════════════════════════════════ */
+
+// ── Embedded Data (injected by MissionControlHtmlBuilder) ──────────
+const TRIP_DATA = {{TRIP_JSON}};
+const DIAG_DATA = {{DIAG_JSON}};
+const META      = {{META_JSON}};
+
+// ── State ──────────────────────────────────────────────────────────
+let charts = [];
+let mapMode = 'speed';
+let currentTab = null;
+const syncKey = uPlot.sync('mc');
+
+// ── Color Helpers ──────────────────────────────────────────────────
+const C = {
+  accent: '#0091EA', accentD: '#006DB3', ok: '#00FF88', warn: '#FFCC00',
+  orange: '#FF4D00', frost: '#E8F4FF', dim: '#3D5A72', mid: '#7A9AB8',
+  bg: '#05070A', surf: '#0A0D12', surf2: '#0F141C', brd: '#162030'
+};
+
+function speedColor(kph) {
+  if (kph < 40)  return C.ok;
+  if (kph < 80)  return C.accent;
+  if (kph < 130) return C.warn;
+  return C.orange;
+}
+
+const MODE_COLORS = {
+  'Normal': C.ok, 'Sport': C.accent, 'Track': C.orange,
+  'Drift': C.warn, 'Custom': C.mid, 'Unknown': C.dim
+};
+function modeColor(m) { return MODE_COLORS[m] || C.dim; }
+
+// ── Utility ────────────────────────────────────────────────────────
+function fmt(v, d) { return v == null ? '—' : Number(v).toFixed(d || 0); }
+function fmtDuration(ms) {
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  return (h > 0 ? h + 'h ' : '') + m + 'm ' + sec + 's';
+}
+function fmtNumber(n) { return n == null ? '—' : Number(n).toLocaleString(undefined, {maximumFractionDigits: 1}); }
+
+// ── Tab System ─────────────────────────────────────────────────────
+function initTabs() {
+  const tabBar = document.getElementById('mainTabs');
+  const tabs = [];
+  if (TRIP_DATA) tabs.push({id: 'panelTrip', label: 'TRIP'});
+  if (DIAG_DATA) tabs.push({id: 'panelDiag', label: 'DIAGNOSTICS'});
+  tabs.push({id: 'panelLoad', label: 'LOAD FILE'});
+
+  tabs.forEach((t, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'tab' + (i === 0 ? ' active' : '');
+    btn.textContent = t.label;
+    btn.onclick = () => switchTab(t.id, btn);
+    tabBar.appendChild(btn);
+  });
+  if (tabs.length > 0) {
+    document.getElementById(tabs[0].id).classList.add('active');
+    currentTab = tabs[0].id;
+  }
+}
+
+function switchTab(panelId, btn) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+  document.getElementById(panelId).classList.add('active');
+  btn.classList.add('active');
+  currentTab = panelId;
+  // Resize charts when switching to a tab with charts
+  if (panelId === 'panelTrip' || panelId === 'panelDiag') {
+    setTimeout(() => charts.forEach(c => { if (c && c.root && c.root.offsetParent) c.setSize({width: c.root.parentElement.clientWidth, height: c.opts.height}); }), 50);
+  }
+}
+
+// ── Section Collapse ───────────────────────────────────────────────
+function toggleSection(hdr) {
+  hdr.classList.toggle('collapsed');
+  const body = hdr.nextElementSibling;
+  body.classList.toggle('collapsed');
+}
+
+// ── Header Meta ────────────────────────────────────────────────────
+function initHeader() {
+  const el = document.getElementById('headerMeta');
+  if (!META) return;
+  const parts = [];
+  if (META.version) parts.push('v' + META.version);
+  if (META.generatedAt) {
+    const d = META.generatedAt;
+    parts.push(d.substring(0,4) + '-' + d.substring(4,6) + '-' + d.substring(6,8));
+  }
+  if (META.firmware) parts.push(META.firmware);
+  el.textContent = parts.join('  |  ');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  TRIP DASHBOARD
+// ═══════════════════════════════════════════════════════════════════
+
+function initTrip() {
+  if (!TRIP_DATA) return;
+  initSummaryCards();
+  initCharts();
+  initMap();
+  initStatsPanel();
+}
+
+// ── Summary Cards ──────────────────────────────────────────────────
+function initSummaryCards() {
+  const s = TRIP_DATA.summary;
+  const el = document.getElementById('summaryCards');
+  const items = [
+    {label: 'DISTANCE', value: fmt(s.distanceKm, 1), unit: 'km'},
+    {label: 'DURATION', value: fmtDuration(s.durationMs), unit: ''},
+    {label: 'FUEL USED', value: fmt(s.fuelUsedL, 1), unit: 'L'},
+    {label: 'AVG SPEED', value: fmt(s.avgSpeedKph, 1), unit: 'kph'},
+    {label: 'PEAK RPM', value: fmtNumber(s.peakRpm), unit: 'rpm'},
+    {label: 'PEAK BOOST', value: fmt(s.peakBoostPsi, 1), unit: 'psi'},
+    {label: 'PEAK LAT G', value: fmt(s.peakLateralG, 2), unit: 'g'},
+    {label: 'EFFICIENCY', value: fmt(s.avgFuelL100km, 1), unit: 'L/100km'},
+  ];
+  el.innerHTML = items.map(i =>
+    '<div class="card"><div class="label">' + i.label + '</div>' +
+    '<div class="value">' + i.value + '<span class="unit">' + i.unit + '</span></div></div>'
+  ).join('');
+}
+
+// ── Chart Builder ──────────────────────────────────────────────────
+function makeChart(containerId, seriesDefs, data, opts) {
+  const container = document.querySelector('#' + containerId + ' .chart-container');
+  if (!container) return null;
+  const width = container.clientWidth || 800;
+  const height = opts.height || 140;
+
+  const baseOpts = {
+    width: width,
+    height: height,
+    cursor: { sync: { key: syncKey.key, setSeries: true }, drag: { x: true, y: false } },
+    scales: { x: { time: true } },
+    axes: [
+      {
+        stroke: C.dim, grid: { stroke: C.brd, width: 1 },
+        ticks: { stroke: C.brd }, font: '10px JetBrains Mono, monospace',
+        values: (u, vals) => vals.map(v => {
+          const d = new Date(v * 1000);
+          return d.getHours().toString().padStart(2,'0') + ':' +
+                 d.getMinutes().toString().padStart(2,'0') + ':' +
+                 d.getSeconds().toString().padStart(2,'0');
+        })
+      },
+      {
+        stroke: C.dim, grid: { stroke: C.brd, width: 1 },
+        ticks: { stroke: C.brd }, font: '10px JetBrains Mono, monospace',
+        size: 50, ...(opts.yAxis || {})
+      }
+    ],
+    series: [
+      {}, // x-axis placeholder
+      ...seriesDefs
+    ],
+    legend: { show: seriesDefs.length > 1 },
+  };
+
+  // Merge additional y-axes for multi-series
+  if (opts.extraAxes) {
+    baseOpts.axes.push(...opts.extraAxes);
+  }
+
+  const chart = new uPlot(baseOpts, data, container);
+  charts.push(chart);
+  return chart;
+}
+
+function initCharts() {
+  const pts = TRIP_DATA.points;
+  if (!pts || pts.length === 0) return;
+
+  // Time axis (seconds since epoch for uPlot)
+  const ts = pts.map(p => p.t / 1000);
+  const s = TRIP_DATA.summary;
+
+  // Peak labels
+  document.getElementById('peakRpm').textContent = 'PEAK ' + fmtNumber(s.peakRpm);
+  document.getElementById('peakBoost').textContent = 'PEAK ' + fmt(s.peakBoostPsi, 1) + ' PSI';
+  document.getElementById('peakSpeed').textContent = 'MAX ' + fmt(s.maxSpeedKph, 1) + ' KPH';
+  document.getElementById('peakLatG').textContent = 'PEAK ' + fmt(s.peakLateralG, 2) + ' G';
+  const fuelStart = pts[0] ? pts[0].fuel : 0;
+  const fuelEnd = pts[pts.length - 1] ? pts[pts.length - 1].fuel : 0;
+  document.getElementById('peakFuel').textContent = fmt(fuelStart, 0) + '% \u2192 ' + fmt(fuelEnd, 0) + '%';
+
+  // RPM
+  makeChart('chartRpm',
+    [{label: 'RPM', stroke: C.accent, width: 1.5, fill: 'rgba(0,145,234,0.08)'}],
+    [ts, pts.map(p => p.rpm)],
+    {height: 150, yAxis: {label: 'RPM'}}
+  );
+
+  // Boost
+  makeChart('chartBoost',
+    [{label: 'PSI', stroke: C.ok, width: 1.5, fill: 'rgba(0,255,136,0.06)'}],
+    [ts, pts.map(p => p.boost)],
+    {height: 140, yAxis: {label: 'PSI'}}
+  );
+
+  // Speed
+  makeChart('chartSpeed',
+    [{label: 'KPH', stroke: C.warn, width: 1.5, fill: 'rgba(255,204,0,0.06)'}],
+    [ts, pts.map(p => p.spd)],
+    {height: 140, yAxis: {label: 'KPH'}}
+  );
+
+  // Temperatures (multi-line)
+  makeChart('chartTemps',
+    [
+      {label: 'Coolant', stroke: C.orange, width: 1.5},
+      {label: 'Oil', stroke: C.warn, width: 1.5},
+      {label: 'RDU', stroke: C.accent, width: 1.5},
+      {label: 'PTU', stroke: C.ok, width: 1.5},
+      {label: 'Ambient', stroke: C.dim, width: 1, dash: [4, 2]},
+    ],
+    [ts, pts.map(p => p.cool), pts.map(p => p.oil), pts.map(p => p.rdu), pts.map(p => p.ptu), pts.map(p => p.amb)],
+    {height: 180, yAxis: {label: '\u00B0C'}}
+  );
+
+  // Lateral G
+  makeChart('chartLatG',
+    [{label: 'G', stroke: C.accent, width: 1.5, fill: 'rgba(0,145,234,0.06)'}],
+    [ts, pts.map(p => p.latg)],
+    {height: 120, yAxis: {label: 'G'}}
+  );
+
+  // Fuel
+  makeChart('chartFuel',
+    [{label: '%', stroke: C.warn, width: 1.5, fill: 'rgba(255,204,0,0.06)'}],
+    [ts, pts.map(p => p.fuel)],
+    {height: 100, yAxis: {label: '%'}}
+  );
+
+  // Wheel Speeds (4-line)
+  makeChart('chartWheels',
+    [
+      {label: 'FL', stroke: C.accent, width: 1},
+      {label: 'FR', stroke: C.accentD, width: 1},
+      {label: 'RL', stroke: C.ok, width: 1},
+      {label: 'RR', stroke: '#00cc6e', width: 1},
+    ],
+    [ts, pts.map(p => p.wfl), pts.map(p => p.wfr), pts.map(p => p.wrl), pts.map(p => p.wrr)],
+    {height: 160, yAxis: {label: 'KPH'}}
+  );
+
+  // Hook cursor sync to map marker
+  charts.forEach(c => {
+    c.over.addEventListener('mousemove', () => {
+      const idx = c.cursor.idx;
+      if (idx != null && idx >= 0 && idx < pts.length) updateMapMarker(idx);
+    });
+    c.over.addEventListener('mouseleave', () => hideMapMarker());
+  });
+}
+
+// ── GPS Map (SVG) ──────────────────────────────────────────────────
+let mapPts = [];
+let mapBounds = null;
+let mapSvgEl = null;
+
+function initMap() {
+  const pts = TRIP_DATA ? TRIP_DATA.points : null;
+  if (!pts || pts.length < 2) return;
+  mapSvgEl = document.getElementById('mapSvg');
+  mapPts = pts;
+
+  // Compute bounds
+  let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+  pts.forEach(p => {
+    if (p.lat < minLat) minLat = p.lat;
+    if (p.lat > maxLat) maxLat = p.lat;
+    if (p.lng < minLng) minLng = p.lng;
+    if (p.lng > maxLng) maxLng = p.lng;
+  });
+
+  // Mercator projection helper
+  function toY(lat) { return Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI / 180) / 2)); }
+
+  const padding = 30;
+  const svgW = 600, svgH = 400;
+  const plotW = svgW - padding * 2, plotH = svgH - padding * 2;
+
+  const minY = toY(minLat), maxY = toY(maxLat);
+  const dLng = maxLng - minLng || 0.001;
+  const dY = maxY - minY || 0.001;
+
+  // Aspect-ratio-correct scaling
+  const scaleX = plotW / dLng;
+  const scaleY = plotH / dY;
+  const scale = Math.min(scaleX, scaleY);
+  const offX = padding + (plotW - dLng * scale) / 2;
+  const offY = padding + (plotH - dY * scale) / 2;
+
+  function project(lat, lng) {
+    const x = offX + (lng - minLng) * scale;
+    const y = offY + plotH - (toY(lat) - minY) * scale;
+    return {x, y};
+  }
+
+  mapBounds = {project, pts, svgW, svgH};
+  drawMap();
+}
+
+function drawMap() {
+  if (!mapSvgEl || !mapBounds) return;
+  const {project, pts} = mapBounds;
+  const svg = mapSvgEl;
+  svg.innerHTML = '';
+
+  // Draw segments colored by current mode
+  const segSize = Math.max(1, Math.floor(pts.length / 500)); // downsample for performance
+  for (let i = 0; i < pts.length - 1; i += segSize) {
+    const p0 = project(pts[i].lat, pts[i].lng);
+    const j = Math.min(i + segSize, pts.length - 1);
+    const p1 = project(pts[j].lat, pts[j].lng);
+    const color = mapMode === 'speed' ? speedColor(pts[i].spd) : modeColor(pts[i].mode);
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', p0.x); line.setAttribute('y1', p0.y);
+    line.setAttribute('x2', p1.x); line.setAttribute('y2', p1.y);
+    line.setAttribute('stroke', color); line.setAttribute('stroke-width', '2.5');
+    line.setAttribute('stroke-linecap', 'round'); line.setAttribute('opacity', '0.85');
+    svg.appendChild(line);
+  }
+
+  // Start / end markers
+  const start = project(pts[0].lat, pts[0].lng);
+  const end = project(pts[pts.length - 1].lat, pts[pts.length - 1].lng);
+  [['start', start, C.ok], ['end', end, C.orange]].forEach(([id, p, col]) => {
+    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    c.setAttribute('cx', p.x); c.setAttribute('cy', p.y);
+    c.setAttribute('r', '5'); c.setAttribute('fill', col);
+    c.setAttribute('stroke', C.bg); c.setAttribute('stroke-width', '2');
+    svg.appendChild(c);
+  });
+
+  // Peak markers
+  if (TRIP_DATA.summary.peakEvents) {
+    TRIP_DATA.summary.peakEvents.forEach(pe => {
+      if (pe.lat == null || pe.lng == null) return;
+      const p = project(pe.lat, pe.lng);
+      const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      c.setAttribute('cx', p.x); c.setAttribute('cy', p.y);
+      c.setAttribute('r', '4'); c.setAttribute('fill', 'none');
+      c.setAttribute('stroke', C.warn); c.setAttribute('stroke-width', '2');
+      svg.appendChild(c);
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', p.x + 7); t.setAttribute('y', p.y + 3);
+      t.setAttribute('fill', C.warn); t.setAttribute('font-size', '9');
+      t.setAttribute('font-family', 'JetBrains Mono, monospace');
+      t.textContent = pe.type;
+      svg.appendChild(t);
+    });
+  }
+
+  // Cursor marker (hidden by default)
+  const marker = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  marker.setAttribute('id', 'cursorMarker');
+  marker.classList.add('map-marker');
+  marker.setAttribute('r', '6'); marker.setAttribute('fill', C.accent);
+  marker.setAttribute('stroke', C.frost); marker.setAttribute('stroke-width', '2');
+  marker.setAttribute('display', 'none');
+  svg.appendChild(marker);
+
+  // Legend
+  const legendEl = document.getElementById('mapLegend');
+  if (mapMode === 'speed') {
+    legendEl.innerHTML =
+      '<span><span class="swatch" style="background:' + C.ok + '"></span>&lt;40</span>' +
+      '<span><span class="swatch" style="background:' + C.accent + '"></span>40-80</span>' +
+      '<span><span class="swatch" style="background:' + C.warn + '"></span>80-130</span>' +
+      '<span><span class="swatch" style="background:' + C.orange + '"></span>&gt;130 kph</span>';
+  } else {
+    legendEl.innerHTML = Object.entries(MODE_COLORS).map(([m, c]) =>
+      '<span><span class="swatch" style="background:' + c + '"></span>' + m + '</span>'
+    ).join('');
+  }
+
+  // Toggle button states
+  document.querySelectorAll('.map-toggle button').forEach(b => {
+    b.classList.toggle('active', (b.textContent === 'SPEED' && mapMode === 'speed') ||
+                                  (b.textContent === 'DRIVE MODE' && mapMode === 'mode'));
+  });
+}
+
+function setMapMode(mode) {
+  mapMode = mode;
+  drawMap();
+}
+
+function updateMapMarker(idx) {
+  if (!mapBounds || !mapPts[idx]) return;
+  const marker = document.getElementById('cursorMarker');
+  if (!marker) return;
+  const p = mapBounds.project(mapPts[idx].lat, mapPts[idx].lng);
+  marker.setAttribute('cx', p.x);
+  marker.setAttribute('cy', p.y);
+  marker.setAttribute('display', '');
+
+  // Tooltip
+  const tip = document.getElementById('mapTooltip');
+  const pt = mapPts[idx];
+  tip.innerHTML = fmt(pt.spd, 0) + ' kph | ' + pt.gear + ' | ' + fmt(pt.boost, 1) + ' psi | ' + pt.mode;
+  tip.style.display = 'block';
+  const box = document.getElementById('mapBox');
+  const rect = box.getBoundingClientRect();
+  const svgRect = mapSvgEl.getBoundingClientRect();
+  const px = (p.x / 600) * svgRect.width;
+  const py = (p.y / 400) * svgRect.height;
+  tip.style.left = (px + 12) + 'px';
+  tip.style.top = (py - 8) + 'px';
+}
+
+function hideMapMarker() {
+  const marker = document.getElementById('cursorMarker');
+  if (marker) marker.setAttribute('display', 'none');
+  document.getElementById('mapTooltip').style.display = 'none';
+}
+
+// ── Stats Panel ────────────────────────────────────────────────────
+function initStatsPanel() {
+  const s = TRIP_DATA.summary;
+  const el = document.getElementById('statsPanel');
+
+  let html = '<div class="section-hdr" style="cursor:default;margin-top:0">SESSION PEAKS</div>';
+  const stats = [
+    ['PEAK RPM', fmtNumber(s.peakRpm)],
+    ['PEAK BOOST', fmt(s.peakBoostPsi, 1) + ' PSI'],
+    ['MAX SPEED', fmt(s.maxSpeedKph, 1) + ' KPH'],
+    ['PEAK LAT G', fmt(s.peakLateralG, 2) + ' G'],
+    ['AVG RPM', fmtNumber(s.avgRpm)],
+    ['AVG SPEED', fmt(s.avgSpeedKph, 1) + ' KPH'],
+    ['FUEL ECONOMY', fmt(s.avgFuelL100km, 1) + ' L/100km'],
+    ['MPG', fmt(s.avgFuelMpg, 1)],
+    ['POINTS', TRIP_DATA.points.length.toLocaleString()],
+  ];
+  stats.forEach(([l, v]) => {
+    html += '<div class="stat-row"><span class="stat-label">' + l + '</span><span class="stat-value">' + v + '</span></div>';
+  });
+
+  // Mode breakdown
+  if (s.modeBreakdown && Object.keys(s.modeBreakdown).length > 0) {
+    html += '<div class="mode-bar-wrap">';
+    html += '<div class="section-hdr" style="cursor:default;margin-top:12px">DRIVE MODE BREAKDOWN</div>';
+    const sorted = Object.entries(s.modeBreakdown).sort((a, b) => b[1] - a[1]);
+    sorted.forEach(([mode, frac]) => {
+      const pct = (frac * 100).toFixed(0);
+      const color = modeColor(mode);
+      html += '<div class="mode-bar-label"><span>' + mode + '</span><span>' + pct + '%</span></div>';
+      html += '<div class="mode-bar"><div style="width:' + pct + '%;background:' + color + '"></div></div>';
+    });
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  DIAGNOSTICS DASHBOARD
+// ═══════════════════════════════════════════════════════════════════
+
+function initDiag() {
+  if (!DIAG_DATA) return;
+
+  // Sub-tabs
+  const tabBar = document.getElementById('diagTabs');
+  const panels = [
+    {id: 'diagInventory', label: 'CAN INVENTORY'},
+    {id: 'diagFps', label: 'FPS TIMELINE'},
+    {id: 'diagEvents', label: 'EVENTS'},
+    {id: 'diagTrace', label: 'DECODE TRACE'},
+  ];
+  panels.forEach((p, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'diag-tab' + (i === 0 ? ' active' : '');
+    btn.textContent = p.label;
+    btn.onclick = () => {
+      document.querySelectorAll('.diag-tab').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.diag-panel').forEach(el => el.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(p.id).classList.add('active');
+      // Resize FPS chart if shown
+      if (p.id === 'diagFps') setTimeout(() => charts.forEach(c => { if (c && c.root && c.root.offsetParent) c.setSize({width: c.root.parentElement.clientWidth, height: c.opts.height}); }), 50);
+    };
+    tabBar.appendChild(btn);
+  });
+
+  initCanInventory();
+  initFpsTimeline();
+  initSessionEvents();
+  initDecodeTrace();
+}
+
+// ── CAN Inventory ──────────────────────────────────────────────────
+function initCanInventory() {
+  const inv = DIAG_DATA.canFrameInventory;
+  if (!inv) return;
+  const el = document.getElementById('diagInventory');
+
+  const entries = Object.entries(inv).sort((a, b) => parseInt(a[0]) - parseInt(b[0]));
+  let html = '<div class="scrollable"><table class="data-table"><thead><tr>' +
+    '<th onclick="sortTable(this,0)">ID <span class="sort-arrow"></span></th>' +
+    '<th onclick="sortTable(this,1)">COUNT <span class="sort-arrow"></span></th>' +
+    '<th onclick="sortTable(this,2)">CHANGED <span class="sort-arrow"></span></th>' +
+    '<th onclick="sortTable(this,3)">LAST DECODED <span class="sort-arrow"></span></th>' +
+    '</tr></thead><tbody>';
+
+  entries.forEach(([id, info]) => {
+    const idHex = '0x' + parseInt(id).toString(16).toUpperCase().padStart(3, '0');
+    const changed = info.hasChanged ? '<span class="changed">\u2713</span>' : '\u2014';
+    html += '<tr onclick="toggleInventoryDetail(this)">' +
+      '<td><span class="expand-btn">\u25B8</span>' + idHex + '</td>' +
+      '<td>' + (info.totalReceived || 0).toLocaleString() + '</td>' +
+      '<td>' + changed + '</td>' +
+      '<td>' + escHtml(info.lastDecoded || '') + '</td></tr>';
+
+    // Expandable sub-row
+    html += '<tr class="sub-row" style="display:none"><td colspan="4">';
+    html += '<strong>First:</strong> ' + escHtml(info.firstRawHex || '') + '<br>';
+    html += '<strong>Last:</strong> ' + escHtml(info.lastRawHex || '') + '<br>';
+    if (info.validationIssues && info.validationIssues.length > 0) {
+      html += '<span class="issue"><strong>Issues:</strong> ' + info.validationIssues.map(escHtml).join(', ') + '</span><br>';
+    }
+    if (info.periodicSamples && info.periodicSamples.length > 0) {
+      html += '<strong>Samples:</strong><br>';
+      info.periodicSamples.forEach(s => {
+        html += '  ' + fmtDuration(s.relMs) + ' \u2014 ' + escHtml(s.rawHex) + '<br>';
+      });
+    }
+    html += '</td></tr>';
+  });
+
+  html += '</tbody></table></div>';
+  el.innerHTML = html;
+}
+
+function toggleInventoryDetail(row) {
+  const sub = row.nextElementSibling;
+  if (sub && sub.classList.contains('sub-row')) {
+    const visible = sub.style.display !== 'none';
+    sub.style.display = visible ? 'none' : 'table-row';
+    const btn = row.querySelector('.expand-btn');
+    if (btn) btn.textContent = visible ? '\u25B8' : '\u25BE';
+  }
+}
+
+// ── FPS Timeline ───────────────────────────────────────────────────
+function initFpsTimeline() {
+  const fps = DIAG_DATA.fpsTimeline;
+  if (!fps || fps.length === 0) return;
+
+  const startSec = (META && META.sessionStartMs) ? META.sessionStartMs / 1000 : 0;
+  const ts = fps.map(f => startSec + f.relMs / 1000);
+  const vals = fps.map(f => f.fps);
+
+  const container = document.getElementById('fpsChartContainer');
+  const width = container.clientWidth || 800;
+
+  const chart = new uPlot({
+    width: width, height: 160,
+    scales: { x: { time: true } },
+    axes: [
+      { stroke: C.dim, grid: { stroke: C.brd }, ticks: { stroke: C.brd }, font: '10px JetBrains Mono, monospace' },
+      { stroke: C.dim, grid: { stroke: C.brd }, ticks: { stroke: C.brd }, font: '10px JetBrains Mono, monospace', size: 50 }
+    ],
+    series: [
+      {},
+      { label: 'FPS', stroke: C.ok, width: 1.5, fill: 'rgba(0,255,136,0.06)' }
+    ],
+    legend: { show: false }
+  }, [ts, vals], container);
+  charts.push(chart);
+}
+
+// ── Session Events ─────────────────────────────────────────────────
+function initSessionEvents() {
+  const events = DIAG_DATA.sessionEvents;
+  if (!events) return;
+  const el = document.getElementById('diagEvents');
+
+  let html = '<div class="scrollable"><table class="data-table"><thead><tr>' +
+    '<th>TIME</th><th>TYPE</th><th>MESSAGE</th></tr></thead><tbody>';
+
+  events.forEach(ev => {
+    const badge = badgeClass(ev.type);
+    html += '<tr><td>' + fmtDuration(ev.relMs) + '</td>' +
+      '<td><span class="badge ' + badge + '">' + escHtml(ev.type) + '</span></td>' +
+      '<td>' + escHtml(ev.message) + '</td></tr>';
+  });
+
+  html += '</tbody></table></div>';
+  el.innerHTML = html;
+}
+
+function badgeClass(type) {
+  const t = (type || '').toUpperCase();
+  if (t.includes('ERROR')) return 'badge-error';
+  if (t.includes('SESSION')) return 'badge-session';
+  if (t.includes('SLCAN')) return 'badge-slcan';
+  if (t.includes('FIRMWARE')) return 'badge-firmware';
+  return 'badge-session';
+}
+
+// ── Decode Trace ───────────────────────────────────────────────────
+let traceData = [];
+function initDecodeTrace() {
+  traceData = DIAG_DATA.decodeTrace || [];
+  const el = document.getElementById('diagTrace');
+
+  let html = '<div class="search-bar">' +
+    '<input type="text" id="traceSearch" placeholder="Filter by CAN ID (e.g. 0x0F8)" oninput="filterTrace()">' +
+    '<span class="count" id="traceCount">' + traceData.length + ' events</span></div>';
+  html += '<div class="scrollable" id="traceBody"></div>';
+  el.innerHTML = html;
+  renderTrace(traceData);
+}
+
+function filterTrace() {
+  const q = document.getElementById('traceSearch').value.trim().toUpperCase();
+  const filtered = q ? traceData.filter(e => e.id && e.id.toUpperCase().includes(q)) : traceData;
+  document.getElementById('traceCount').textContent = filtered.length + ' events';
+  renderTrace(filtered);
+}
+
+function renderTrace(data) {
+  // Limit to last 500 for rendering performance
+  const slice = data.slice(-500);
+  let html = '<table class="data-table"><thead><tr>' +
+    '<th>TIME</th><th>ID</th><th>RAW</th><th>DECODED</th><th>ISSUE</th></tr></thead><tbody>';
+  slice.forEach(ev => {
+    const issueHtml = ev.issue ? '<span class="issue">' + escHtml(ev.issue) + '</span>' : '';
+    html += '<tr><td>' + fmtDuration(ev.relMs) + '</td>' +
+      '<td>' + escHtml(ev.id || '') + '</td>' +
+      '<td>' + escHtml(ev.raw || '') + '</td>' +
+      '<td>' + escHtml(ev.decoded || '') + '</td>' +
+      '<td>' + issueHtml + '</td></tr>';
+  });
+  html += '</tbody></table>';
+  document.getElementById('traceBody').innerHTML = html;
+}
+
+// ── Table Sorting ──────────────────────────────────────────────────
+function sortTable(th, colIdx) {
+  const table = th.closest('table');
+  const tbody = table.querySelector('tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr:not(.sub-row)'));
+  const asc = th.dataset.sort !== 'asc';
+  th.dataset.sort = asc ? 'asc' : 'desc';
+
+  // Clear other sort indicators
+  table.querySelectorAll('th').forEach(h => {
+    h.querySelector('.sort-arrow').textContent = '';
+  });
+  th.querySelector('.sort-arrow').textContent = asc ? '\u25B4' : '\u25BE';
+
+  rows.sort((a, b) => {
+    let va = a.cells[colIdx].textContent.trim();
+    let vb = b.cells[colIdx].textContent.trim();
+    // Try numeric
+    const na = parseFloat(va.replace(/[^0-9.-]/g, ''));
+    const nb = parseFloat(vb.replace(/[^0-9.-]/g, ''));
+    if (!isNaN(na) && !isNaN(nb)) return asc ? na - nb : nb - na;
+    return asc ? va.localeCompare(vb) : vb.localeCompare(va);
+  });
+
+  rows.forEach(row => {
+    tbody.appendChild(row);
+    // Move sub-row after its parent
+    const sub = row.nextElementSibling;
+    // Since we moved the row, need to find the sub-row by data
+    // Sub-rows follow immediately after their parent in original HTML
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  FILE LOADER
+// ═══════════════════════════════════════════════════════════════════
+
+function initFileLoader() {
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+
+  ['dragenter', 'dragover'].forEach(ev => {
+    dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  });
+  ['dragleave', 'drop'].forEach(ev => {
+    dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.remove('drag-over'); });
+  });
+
+  dropZone.addEventListener('drop', e => {
+    const file = e.dataTransfer.files[0];
+    if (file) loadFile(file);
+  });
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) loadFile(fileInput.files[0]);
+  });
+}
+
+function loadFile(file) {
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const text = e.target.result;
+    if (file.name.endsWith('.json')) {
+      try {
+        const data = JSON.parse(text);
+        if (data.canFrameInventory) {
+          // Diagnostic JSON
+          Object.assign(DIAG_DATA || {}, data);
+          // If DIAG_DATA was null, we need to create it
+          if (!window.DIAG_DATA_LOADED) {
+            window.DIAG_DATA_LOADED = true;
+            // Re-init diag
+            initDiag();
+            // Add diagnostics tab if not present
+            addTabIfMissing('panelDiag', 'DIAGNOSTICS');
+          }
+          switchToPanel('panelDiag');
+        }
+      } catch (err) {
+        alert('Failed to parse JSON: ' + err.message);
+      }
+    } else if (file.name.endsWith('.csv')) {
+      try {
+        const parsed = parseTripCsv(text);
+        if (parsed) {
+          // Overwrite trip data
+          TRIP_DATA.points = parsed.points;
+          TRIP_DATA.summary = parsed.summary;
+          // Clear and re-init
+          charts.forEach(c => { if (c.root && c.root.parentElement) c.root.parentElement.removeChild(c.root); });
+          charts = [];
+          initTrip();
+          addTabIfMissing('panelTrip', 'TRIP');
+          switchToPanel('panelTrip');
+        }
+      } catch (err) {
+        alert('Failed to parse CSV: ' + err.message);
+      }
+    } else {
+      alert('Unsupported file type. Use .csv or .json files.');
+    }
+  };
+  reader.readAsText(file);
+}
+
+function parseTripCsv(text) {
+  const lines = text.trim().split('\n');
+  if (lines.length < 2) return null;
+  const header = lines[0].split(',');
+  // Validate expected header
+  if (!header.includes('timestamp_ms') || !header.includes('lat')) return null;
+
+  const colIdx = {};
+  header.forEach((h, i) => colIdx[h.trim()] = i);
+
+  const points = [];
+  let maxSpd = 0, maxRpm = 0, maxBoost = 0, maxLatG = 0;
+  let rpmSum = 0, spdSum = 0, rpmN = 0, spdN = 0;
+  const modeCounts = {};
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(',');
+    if (cols.length < header.length) continue;
+    const g = (key) => parseFloat(cols[colIdx[key]] || '0');
+    const s = (key) => (cols[colIdx[key]] || '').replace(/"/g, '').trim();
+
+    const pt = {
+      t: g('timestamp_ms'), lat: g('lat'), lng: g('lng'),
+      spd: g('speed_kph'), rpm: g('rpm'), gear: s('gear'),
+      boost: g('boost_psi'), cool: g('coolant_c'), oil: g('oil_c'),
+      amb: g('ambient_c'), rdu: g('rdu_c'), ptu: g('ptu_c'),
+      fuel: g('fuel_pct'), wfl: g('wheel_fl_kph'), wfr: g('wheel_fr_kph'),
+      wrl: g('wheel_rl_kph'), wrr: g('wheel_rr_kph'),
+      latg: g('lateral_g'), mode: s('drive_mode'), rtr: s('race_ready') === 'true'
+    };
+    points.push(pt);
+
+    if (pt.spd > maxSpd) maxSpd = pt.spd;
+    if (pt.rpm > maxRpm) maxRpm = pt.rpm;
+    if (pt.boost > maxBoost) maxBoost = pt.boost;
+    if (Math.abs(pt.latg) > maxLatG) maxLatG = Math.abs(pt.latg);
+    if (pt.rpm > 400) { rpmSum += pt.rpm; rpmN++; }
+    spdSum += pt.spd; spdN++;
+    modeCounts[pt.mode] = (modeCounts[pt.mode] || 0) + 1;
+  }
+
+  if (points.length === 0) return null;
+
+  const totalSamples = Object.values(modeCounts).reduce((a, b) => a + b, 0);
+  const modeBreakdown = {};
+  Object.entries(modeCounts).forEach(([m, c]) => modeBreakdown[m] = c / totalSamples);
+
+  // Compute distance (Haversine)
+  let distKm = 0;
+  for (let i = 1; i < points.length; i++) {
+    distKm += haversine(points[i - 1].lat, points[i - 1].lng, points[i].lat, points[i].lng);
+  }
+
+  const durationMs = points[points.length - 1].t - points[0].t;
+  const fuelUsed = points[0].fuel - points[points.length - 1].fuel;
+  const fuelUsedL = (fuelUsed / 100) * 49.8;
+
+  return {
+    points,
+    summary: {
+      distanceKm: distKm, durationMs: durationMs,
+      startFuelPct: points[0].fuel, endFuelPct: points[points.length - 1].fuel,
+      fuelUsedL: fuelUsedL, avgFuelL100km: distKm > 0 ? (fuelUsedL / distKm) * 100 : 0,
+      avgFuelMpg: distKm > 0 ? 282.48 / ((fuelUsedL / distKm) * 100) : 0,
+      avgSpeedKph: spdN > 0 ? spdSum / spdN : 0,
+      maxSpeedKph: maxSpd, peakRpm: maxRpm, peakBoostPsi: maxBoost,
+      peakLateralG: maxLatG, avgRpm: rpmN > 0 ? rpmSum / rpmN : 0,
+      modeBreakdown: modeBreakdown, peakEvents: []
+    }
+  };
+}
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function addTabIfMissing(panelId, label) {
+  const existing = document.querySelector('.tab[data-panel="' + panelId + '"]');
+  if (existing) return;
+  const tabBar = document.getElementById('mainTabs');
+  const loadTab = Array.from(tabBar.children).find(b => b.textContent === 'LOAD FILE');
+  const btn = document.createElement('button');
+  btn.className = 'tab';
+  btn.textContent = label;
+  btn.dataset.panel = panelId;
+  btn.onclick = () => switchTab(panelId, btn);
+  if (loadTab) tabBar.insertBefore(btn, loadTab);
+  else tabBar.appendChild(btn);
+}
+
+function switchToPanel(panelId) {
+  const btn = document.querySelector('.tab[data-panel="' + panelId + '"]') ||
+    Array.from(document.querySelectorAll('.tab')).find(b => {
+      const label = b.textContent;
+      return (panelId === 'panelTrip' && label === 'TRIP') ||
+             (panelId === 'panelDiag' && label === 'DIAGNOSTICS');
+    });
+  if (btn) switchTab(panelId, btn);
+}
+
+// ── Helpers ────────────────────────────────────────────────────────
+function escHtml(s) {
+  if (!s) return '';
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ── Window resize ──────────────────────────────────────────────────
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    charts.forEach(c => {
+      if (c && c.root && c.root.offsetParent) {
+        c.setSize({width: c.root.parentElement.clientWidth, height: c.opts.height});
+      }
+    });
+  }, 150);
+});
+
+// ── Init ───────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  initHeader();
+  initTabs();
+  initTrip();
+  initDiag();
+  initFileLoader();
+});
+</script>
+</body>
+</html>

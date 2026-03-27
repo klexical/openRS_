@@ -13,7 +13,7 @@ data class VehicleState(
     val rpm: Double = 0.0,
     val coolantTempC: Double = -99.0,  // -99 = not yet received (CAN 0x2F0 / 0x0F8)
     val oilTempC: Double = -99.0,      // -99 = not yet received (CAN 0x0F8)
-    val intakeTempC: Double = 0.0,
+    val intakeTempC: Double = -99.0,  // -99 = not yet received (CAN 0x2F0)
     val boostKpa: Double = 101.325,
     val throttlePct: Double = 0.0,
     val throttleHasSource: Boolean = false,
@@ -59,6 +59,9 @@ data class VehicleState(
 
     // ── Ignition Correction (Mode 22 via PCM 0x7E0) ───────
     val ignCorrCyl1: Double = 0.0,         // 0x03EC: Knock correction cyl 1 (deg)
+    val ignCorrCyl2: Double = 0.0,         // 0x03ED: Knock correction cyl 2 (deg)
+    val ignCorrCyl3: Double = 0.0,         // 0x03EE: Knock correction cyl 3 (deg)
+    val ignCorrCyl4: Double = 0.0,         // 0x03EF: Knock correction cyl 4 (deg)
 
     // ── TPMS (Mode 22 via BCM 0x726) ──────────────────────
     val tirePressLF: Double = -1.0,        // 0x2813: LF pressure (PSI)
@@ -73,6 +76,14 @@ data class VehicleState(
     val tpmsSensorIdRF: Long = -1L,        // 0x2810: 4-byte TPMS sensor ID for RF
     val tpmsSensorIdRR: Long = -1L,        // 0x2811: 4-byte TPMS sensor ID for RR
     val tpmsSensorIdLR: Long = -1L,        // 0x2812: 4-byte TPMS sensor ID for LR
+
+    val tpmsLastUpdate: Long = 0L,           // System.currentTimeMillis() of last TPMS pressure update
+
+    // ── TPMS Session Start (first valid reading per session) ──
+    val tireStartLF: Double = -1.0,        // Session-start LF pressure (PSI); -1 = not yet captured
+    val tireStartRF: Double = -1.0,        // Session-start RF pressure (PSI); -1 = not yet captured
+    val tireStartLR: Double = -1.0,        // Session-start LR pressure (PSI); -1 = not yet captured
+    val tireStartRR: Double = -1.0,        // Session-start RR pressure (PSI); -1 = not yet captured
 
     // ── Dynamics (CAN Sniffed) ──────────────────────────────
     val speedKph: Double = 0.0,
@@ -95,6 +106,29 @@ data class VehicleState(
     val rduTempC: Double = -99.0,   // AWD module Mode 22 PID 0x1E8A; −99 = not yet polled
     val awdMaxTorque: Double = 0.0,
     val ptuTempC: Double = -99.0,   // 0x0F8 byte7 − 60 °C; −99 = not yet received (M-8)
+    val awdClutchTempL: Double = -99.0,  // AWD 0x703: left clutch temp inferred (°C)
+    val awdClutchTempR: Double = -99.0,  // AWD 0x703: right clutch temp inferred (°C)
+    val awdReqTorqueL: Double = 0.0,     // AWD 0x703: left side requested torque (Nm)
+    val awdReqTorqueR: Double = 0.0,     // AWD 0x703: right side requested torque (Nm)
+    val awdDmdPressure: Double = 0.0,    // AWD 0x703: demanded hydraulic pressure
+    val awdPumpCurrent: Double = 0.0,    // AWD 0x703: pump motor current (A)
+    val transOilTempC: Double = -99.0,   // AWD 0x703: sump oil temperature (°C)
+
+    // ── HVAC / Climate (Mode 22 via HVAC ECU, DIDs TBD) ──────
+    val hvacBlowerPct: Double = -1.0,      // Blower motor speed (%)
+    val hvacInteriorTempC: Double = -99.0, // Interior temp sensor (°C)
+    val hvacDischargeRfTempC: Double = -99.0, // Discharge air temp, right floor (°C)
+    val hvacBlendDoorL: Double = -1.0,     // Left blend door position (%)
+    val hvacBlendDoorR: Double = -1.0,     // Right blend door position (%)
+    val hvacDefrostDoor: Double = -1.0,    // Defrost door position (%)
+
+    // ── IPC Warning Lamps (Mode 22 via IPC ECU, DIDs TBD) ─────
+    val warnMil: Boolean? = null,         // MIL (check engine) lamp
+    val warnAbs: Boolean? = null,         // ABS warning lamp
+    val warnBrake: Boolean? = null,       // Brake warning lamp
+    val warnCharge: Boolean? = null,      // Battery/charge warning lamp
+    val warnOilPressure: Boolean? = null, // Oil pressure warning lamp
+    val warnTempHigh: Boolean? = null,    // High coolant temp warning
 
     // ── Vehicle Status (CAN Sniffed) ────────────────────────
     val driveMode: DriveMode = DriveMode.NORMAL,
@@ -102,7 +136,7 @@ data class VehicleState(
     val gear: Int = 0,
     val batteryVoltage: Double = 0.0,
     val fuelLevelPct: Double = 0.0,
-    val ambientTempC: Double = 0.0,
+    val ambientTempC: Double = -99.0,  // -99 = not yet received (CAN 0x1A4)
     val gaugeIllumination: Int = 0,        // 0x0C8: gauge brightness level
     val eBrake: Boolean = false,           // Emergency brake status
     val reverseStatus: Boolean = false,    // Reverse gear engaged
@@ -128,12 +162,20 @@ data class VehicleState(
     val assEnabled: Boolean? = null,       // RSProt 0x731 probe: auto start-stop status
     val rsprotTimedOut: Boolean = false,   // true after 3 probe cycles with no RSProt response
 
+    // ── Generic PID values (data-driven, no dedicated fields) ──
+    val genericValues: Map<String, Double> = emptyMap(),
+
     // ── Peaks ───────────────────────────────────────────────
     val peakBoostPsi: Double = 0.0,
     val peakRpm: Double = 0.0,
     val peakSpeedKph: Double = 0.0,
     val peakLateralG: Double = 0.0,
     val peakLongitudinalG: Double = 0.0,
+    val peakOilTempC: Double = -99.0,
+    val peakCoolantTempC: Double = -99.0,
+    val peakRduTempC: Double = -99.0,
+    val peakPtuTempC: Double = -99.0,
+    val peakChargeAirTempC: Double = -99.0,
 
     // ── Connection ──────────────────────────────────────────
     val isConnected: Boolean = false,
@@ -219,8 +261,9 @@ data class VehicleState(
         if (oilTempC > -90 && oilTempC < 80)           cold += "Oil ${oilTempC.toInt()}°C < 80°C"
         if (coolantTempC > -90 && coolantTempC < 85)   cold += "Coolant ${coolantTempC.toInt()}°C < 85°C"
         if (rduTempC > -90 && rduTempC < 30)        cold += "RDU ${rduTempC.toInt()}°C < 30°C"
-        // M-8 fix: guard sentinel −99 so PTU doesn't show as cold before first 0x0F8 frame
         if (ptuTempC > -90 && ptuTempC < 40)        cold += "PTU ${ptuTempC.toInt()}°C < 40°C"
+        if (awdClutchTempL > -90 && awdClutchTempL < 25) cold += "CLT-L ${awdClutchTempL.toInt()}°C < 25°C"
+        if (awdClutchTempR > -90 && awdClutchTempR < 25) cold += "CLT-R ${awdClutchTempR.toInt()}°C < 25°C"
         return if (cold.isEmpty()) null else cold.joinToString(" · ")
     }
 
@@ -245,7 +288,7 @@ data class VehicleState(
      */
     fun anyTireLow(thresholdPsi: Double = 30.0): Boolean =
         listOf(tirePressLF, tirePressRF, tirePressLR, tirePressRR)
-            .any { it in 0.01..<thresholdPsi }
+            .any { it in 0.0..<thresholdPsi }
     val maxTirePressSpread: Double get() {
         val valid = listOf(tirePressLF, tirePressRF, tirePressLR, tirePressRR).filter { it >= 0 }
         if (valid.size < 2) return 0.0
@@ -259,13 +302,28 @@ data class VehicleState(
             peakRpm = max(peakRpm, rpm),
             peakSpeedKph = max(peakSpeedKph, speedKph),
             peakLateralG = max(peakLateralG, abs(lateralG)),
-            peakLongitudinalG = max(peakLongitudinalG, abs(longitudinalG))
+            peakLongitudinalG = max(peakLongitudinalG, abs(longitudinalG)),
+            peakOilTempC = if (oilTempC > -90) max(peakOilTempC, oilTempC) else peakOilTempC,
+            peakCoolantTempC = if (coolantTempC > -90) max(peakCoolantTempC, coolantTempC) else peakCoolantTempC,
+            peakRduTempC = if (rduTempC > -90) max(peakRduTempC, rduTempC) else peakRduTempC,
+            peakPtuTempC = if (ptuTempC > -90) max(peakPtuTempC, ptuTempC) else peakPtuTempC,
+            peakChargeAirTempC = if (chargeAirTempC > -90) max(peakChargeAirTempC, chargeAirTempC) else peakChargeAirTempC,
+            // Capture session-start tire pressures (first valid reading only)
+            tireStartLF = if (tireStartLF < 0 && tirePressLF > 0) tirePressLF else tireStartLF,
+            tireStartRF = if (tireStartRF < 0 && tirePressRF > 0) tirePressRF else tireStartRF,
+            tireStartLR = if (tireStartLR < 0 && tirePressLR > 0) tirePressLR else tireStartLR,
+            tireStartRR = if (tireStartRR < 0 && tirePressRR > 0) tirePressRR else tireStartRR
         )
     }
 
     fun withPeaksReset(): VehicleState = copy(
         peakBoostPsi = 0.0, peakRpm = 0.0, peakSpeedKph = 0.0,
-        peakLateralG = 0.0, peakLongitudinalG = 0.0
+        peakLateralG = 0.0, peakLongitudinalG = 0.0,
+        peakOilTempC = -99.0, peakCoolantTempC = -99.0,
+        peakRduTempC = -99.0, peakPtuTempC = -99.0,
+        peakChargeAirTempC = -99.0,
+        tireStartLF = -1.0, tireStartRF = -1.0,
+        tireStartLR = -1.0, tireStartRR = -1.0
     )
 }
 

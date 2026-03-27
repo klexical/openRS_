@@ -14,6 +14,7 @@ class IsoTpBuffer {
     private var payload: ByteArray? = null
     private var expected = 0
     private var received = 0
+    private var seqNext = 1
 
     /**
      * Feed a raw 8-byte CAN frame.
@@ -38,10 +39,17 @@ class IsoTpBuffer {
                 val n = minOf(6, expected, data.size - 2)
                 System.arraycopy(data, 2, payload!!, 0, n)
                 received = n
+                seqNext = 1
                 Triple(null, true, false)
             }
             2 -> {
                 val buf = payload ?: return Triple(null, false, false)
+                val seq = data[0].toInt() and 0x0F
+                if (seq != seqNext) {  // out-of-order or duplicate CF (#128)
+                    payload = null; received = 0; seqNext = 1
+                    return Triple(null, false, false)
+                }
+                seqNext = (seqNext + 1) and 0x0F
                 val remaining = expected - received
                 val n = minOf(7, remaining, data.size - 1)
                 System.arraycopy(data, 1, buf, received, n)

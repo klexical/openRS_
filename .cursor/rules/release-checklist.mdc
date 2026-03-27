@@ -19,11 +19,13 @@ Every time a new app version is released (versionName bump in `build.gradle.kts`
 - Feature descriptions: update if any features were added or removed
 - Do NOT update `android/README.md` with shared content — it links to root
 
-## 3. Browser Emulator
+## 3. Browser Emulator (stable releases only)
 
 File: `android/browser-emulator/index.html`
 
-This file mirrors the app UI. Every visible change to the app **must** be reflected in the emulator in the same commit/release. Check each category:
+**Skip this section for staging/RC builds.** The emulator is updated only when promoting to a stable release on `main`. See `emulator-workflow.mdc`.
+
+When updating for a stable release, check each category:
 
 - **Version badge** — update `openRS_ vX.Y.Z` text in the `<div class="version-badge">` and `<div class="settings-version">`
 - **Data cell labels** — if any `dc-label` text changed in the app (e.g. "FUEL RAIL" → "HP FUEL"), update it in the emulator
@@ -100,9 +102,9 @@ When pushing significant changes to `staging` that aren't ready for `main`:
 Before creating the release, ask:
 - [ ] Does `versionName` in `build.gradle.kts` match the CHANGELOG entry?
 - [ ] Does the **root** README version badge match?
-- [ ] Does the emulator match the app UI?
-- [ ] Are any removed widgets also removed from the emulator?
-- [ ] Are any formula changes reflected in the emulator and README?
+- [ ] (Stable only) Does the emulator match the app UI?
+- [ ] (Stable only) Are any removed widgets also removed from the emulator?
+- [ ] Are any formula changes reflected in the README?
 - [ ] Is the APK attached to the GitHub release?
 - [ ] (Firmware) Does `./firmware/verify-release.sh` pass?
 - [ ] (Firmware) Is `BUILD_MANIFEST_<target>.json` committed alongside the binaries?

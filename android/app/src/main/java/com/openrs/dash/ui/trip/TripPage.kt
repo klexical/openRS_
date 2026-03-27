@@ -61,6 +61,9 @@ import com.openrs.dash.data.PeakType
 import com.openrs.dash.data.TripState
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.data.WeatherData
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import com.openrs.dash.ui.Accent
 import com.openrs.dash.ui.BarlowCond
 import com.openrs.dash.ui.Bg
@@ -79,12 +82,14 @@ import com.openrs.dash.ui.OrbitronFamily
 import com.openrs.dash.ui.Surf
 import com.openrs.dash.ui.Surf2
 import com.openrs.dash.ui.UIText
+import com.openrs.dash.ui.UnitConversions
 import com.openrs.dash.ui.UserPrefs
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.google.android.gms.location.LocationServices
 import com.openrs.dash.ui.Warn
+import com.openrs.dash.ui.isWideLayout
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.osmdroid.config.Configuration
@@ -209,227 +214,239 @@ fun TripPage(
     }
     // Edge-to-edge: no top padding on outer Box — map fills behind status bar,
     // floating controls are positioned below the status bar using topPad.
-    Box(Modifier.fillMaxSize().background(Bg)) {
-        Column(Modifier.fillMaxSize()) {
+    val wideLayout = isWideLayout()
 
-            // ── Map (edge-to-edge, floating controls) ────────────────────────
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .weight(0.55f)
-            ) {
-                if (hasLocationPerm) {
-                    OsmTripMap(
-                        tripState = tripState,
-                        segments  = segments,
-                        modifier  = Modifier.fillMaxSize()
-                    )
+    // ── Map content (shared between portrait and landscape) ─────────────
+    val mapContent: @Composable (Modifier) -> Unit = { mapModifier ->
+        Box(mapModifier) {
+            if (hasLocationPerm) {
+                OsmTripMap(
+                    tripState = tripState,
+                    segments  = segments,
+                    modifier  = Modifier.fillMaxSize()
+                )
 
-                    // ── Floating back arrow (top-left, below status bar) ──────
-                    Box(
-                        Modifier
-                            .align(Alignment.TopStart)
-                            .padding(top = topPad + 8.dp, start = 12.dp)
-                            .size(32.dp)
-                            .background(Bg.copy(alpha = 0.82f), RoundedCornerShape(8.dp))
-                            .border(1.dp, Brd, RoundedCornerShape(8.dp))
-                            .clickable { onDismiss() },
-                        contentAlignment = Alignment.Center
-                    ) { UIText("←", 14.sp, Mid) }
+                // ── Floating back arrow (top-left, below status bar) ──────
+                Box(
+                    Modifier
+                        .align(Alignment.TopStart)
+                        .padding(top = topPad + 8.dp, start = 12.dp)
+                        .size(32.dp)
+                        .background(Bg.copy(alpha = 0.82f), RoundedCornerShape(8.dp))
+                        .border(1.dp, Brd, RoundedCornerShape(8.dp))
+                        .clickable { onDismiss() },
+                    contentAlignment = Alignment.Center
+                ) { UIText("←", 14.sp, Mid) }
 
-                    // ── Floating SPD/MODE toggle (top-right, below status bar) ─
-                    Box(
-                        Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(top = topPad + 8.dp, end = 12.dp)
-                            .background(Bg.copy(alpha = 0.82f), RoundedCornerShape(4.dp))
-                            .border(1.dp, Brd, RoundedCornerShape(4.dp))
-                            .clickable {
-                                colorMode = if (colorMode == ColorMode.SPEED) ColorMode.DRIVE_MODE
-                                            else ColorMode.SPEED
-                            }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        MonoLabel(
-                            if (colorMode == ColorMode.SPEED) "SPD" else "MODE",
-                            9.sp, accent, FontWeight.Bold, 0.15.sp
-                        )
-                    }
-
-                    // ── Floating REC indicator (top-center, only when recording) ─
-                    if (tripState.isRecording) {
-                        Row(
-                            Modifier
-                                .align(Alignment.TopCenter)
-                                .padding(top = topPad + 10.dp)
-                                .background(Bg.copy(alpha = 0.82f), RoundedCornerShape(4.dp))
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(5.dp)
-                        ) {
-                            Box(Modifier.size(7.dp).clip(CircleShape).background(Orange.copy(alpha = recAlpha)))
-                            MonoLabel("REC", 9.sp, Orange, FontWeight.Bold, 0.2.sp)
+                // ── Floating SPD/MODE toggle (top-right, below status bar) ─
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = topPad + 8.dp, end = 12.dp)
+                        .background(Bg.copy(alpha = 0.82f), RoundedCornerShape(4.dp))
+                        .border(1.dp, Brd, RoundedCornerShape(4.dp))
+                        .clickable {
+                            colorMode = if (colorMode == ColorMode.SPEED) ColorMode.DRIVE_MODE
+                                        else ColorMode.SPEED
                         }
-                    }
-
-                    // ── Weather overlay (top-right corner, below SPD toggle) ──
-                    tripState.currentWeather?.let { weather ->
-                        WeatherCard(
-                            weather  = weather,
-                            prefs    = prefs,
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(top = topPad + 46.dp, end = 8.dp)
-                        )
-                    }
-
-                    // ── Color legend strip (bottom-left of map) ───────────────
-                    ColorLegend(
-                        colorMode = colorMode,
-                        modifier  = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(8.dp)
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    MonoLabel(
+                        if (colorMode == ColorMode.SPEED) "SPD" else "MODE",
+                        9.sp, accent, FontWeight.Bold, 0.15.sp
                     )
+                }
 
-                    if (vehicleState.isConnected) {
+                // ── Floating REC indicator (top-center, only when recording) ─
+                if (tripState.isRecording) {
+                    Row(
+                        Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = topPad + 10.dp)
+                            .background(Bg.copy(alpha = 0.82f), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Box(Modifier.size(7.dp).clip(CircleShape).background(Orange.copy(alpha = recAlpha)))
+                        MonoLabel("REC", 9.sp, Orange, FontWeight.Bold, 0.2.sp)
+                    }
+                }
+
+                // ── Weather overlay (top-right corner, below SPD toggle) ──
+                tripState.currentWeather?.let { weather ->
+                    WeatherCard(
+                        weather  = weather,
+                        prefs    = prefs,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = topPad + 46.dp, end = 8.dp)
+                    )
+                }
+
+                // ── Color legend strip (bottom-left of map) ───────────────
+                ColorLegend(
+                    colorMode = colorMode,
+                    modifier  = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(8.dp)
+                )
+
+                if (vehicleState.isConnected) {
+                    Box(
+                        Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(8.dp)
+                            .background(Bg.copy(alpha = 0.82f), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 6.dp, vertical = 3.dp)
+                    ) {
+                        MonoLabel("No internet on adapter WiFi — tiles may be cached", 7.sp, Dim)
+                    }
+                }
+
+            } else {
+                // Permission prompt — push content below status bar
+                Box(
+                    Modifier.fillMaxSize().background(Surf).padding(top = topPad),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.padding(24.dp)
+                    ) {
+                        // Back arrow floated even on permission screen
                         Box(
                             Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(8.dp)
-                                .background(Bg.copy(alpha = 0.82f), RoundedCornerShape(4.dp))
-                                .padding(horizontal = 6.dp, vertical = 3.dp)
+                                .align(Alignment.Start)
+                                .size(32.dp)
+                                .background(Surf2, RoundedCornerShape(8.dp))
+                                .border(1.dp, Brd, RoundedCornerShape(8.dp))
+                                .clickable { onDismiss() },
+                            contentAlignment = Alignment.Center
+                        ) { UIText("←", 14.sp, Mid) }
+                        MonoText(
+                            "Location access required\nfor trip tracking",
+                            14.sp, Mid, textAlign = TextAlign.Center
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Button(
+                            onClick = {
+                                permLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = accent)
                         ) {
-                            MonoLabel("No internet on adapter WiFi — tiles may be cached", 7.sp, Dim)
-                        }
-                    }
-
-                } else {
-                    // Permission prompt — push content below status bar
-                    Box(
-                        Modifier.fillMaxSize().background(Surf).padding(top = topPad),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                            modifier = Modifier.padding(24.dp)
-                        ) {
-                            // Back arrow floated even on permission screen
-                            Box(
-                                Modifier
-                                    .align(Alignment.Start)
-                                    .size(32.dp)
-                                    .background(Surf2, RoundedCornerShape(8.dp))
-                                    .border(1.dp, Brd, RoundedCornerShape(8.dp))
-                                    .clickable { onDismiss() },
-                                contentAlignment = Alignment.Center
-                            ) { UIText("←", 14.sp, Mid) }
-                            MonoText(
-                                "Location access required\nfor trip tracking",
-                                14.sp, Mid, textAlign = TextAlign.Center
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Button(
-                                onClick = {
-                                    permLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = accent)
-                            ) {
-                                MonoText("GRANT ACCESS", 12.sp, Bg, FontWeight.Bold)
-                            }
+                            MonoText("GRANT ACCESS", 12.sp, Bg, FontWeight.Bold)
                         }
                     }
                 }
             }
+        }
+    }
 
-            // ── Live HUD ─────────────────────────────────────────────────────
-            Column(
-                Modifier
+    // ── HUD content (shared between portrait and landscape) ─────────────
+    val hudContent: @Composable (Modifier) -> Unit = { hudModifier ->
+        Column(
+            hudModifier
+                .background(Surf)
+                .padding(horizontal = 8.dp, vertical = 6.dp)
+                .then(if (wideLayout) Modifier.verticalScroll(rememberScrollState()) else Modifier),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // Row 1 — Speed · RPM · Gear · Avg RPM
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                DataCell("SPD",
+                    "${prefs.displaySpeed(vehicleState.speedKph)} ${prefs.speedLabel}",
+                    modifier = Modifier.weight(1f))
+                DataCell("RPM",     "%.0f".format(vehicleState.rpm),       modifier = Modifier.weight(1f))
+                DataCell("GEAR",    vehicleState.gearDisplay,               modifier = Modifier.weight(1f))
+                DataCell("AVG RPM", "%.0f".format(tripState.avgRpm),        modifier = Modifier.weight(1f))
+            }
+
+            // Row 2 — Coolant · Oil · Ambient · Fuel %
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                DataCell("CLT",
+                    if (vehicleState.coolantTempC > -90)
+                        "${prefs.displayTemp(vehicleState.coolantTempC)}${prefs.tempLabel}" else "--",
+                    modifier = Modifier.weight(1f))
+                DataCell("OIL",
+                    if (vehicleState.oilTempC > -90)
+                        "${prefs.displayTemp(vehicleState.oilTempC)}${prefs.tempLabel}" else "--",
+                    modifier = Modifier.weight(1f))
+                DataCell("AMB",  "${prefs.displayTemp(vehicleState.ambientTempC)}${prefs.tempLabel}", modifier = Modifier.weight(1f))
+                DataCell("FUEL", "%.0f%%".format(vehicleState.fuelLevelPct),                          modifier = Modifier.weight(1f))
+            }
+
+            // Row 3 — RDU · PTU · Fuel used · Economy
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                DataCell("RDU",
+                    if (vehicleState.rduTempC > -90)
+                        "${prefs.displayTemp(vehicleState.rduTempC)}${prefs.tempLabel}" else "--",
+                    modifier = Modifier.weight(1f))
+                DataCell("PTU",
+                    if (vehicleState.ptuTempC > -90)
+                        "${prefs.displayTemp(vehicleState.ptuTempC)}${prefs.tempLabel}" else "--",
+                    modifier = Modifier.weight(1f))
+                DataCell("USED", "%.2fL".format(tripState.fuelUsedL),                             modifier = Modifier.weight(1f))
+                val (econVal, econUnit) = if (prefs.speedUnit == "MPH")
+                    "%.1f".format(tripState.avgFuelMpg)      to "MPG"
+                else
+                    "%.1f".format(tripState.avgFuelL100km) to "L/100"
+                DataCell("ECON", "$econVal $econUnit",                                             modifier = Modifier.weight(1f))
+            }
+
+            // Row 4 — Wheel speeds
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                DataCell("FL", "${prefs.displaySpeed(vehicleState.wheelSpeedFL)} ${prefs.speedLabel}", modifier = Modifier.weight(1f))
+                DataCell("FR", "${prefs.displaySpeed(vehicleState.wheelSpeedFR)} ${prefs.speedLabel}", modifier = Modifier.weight(1f))
+                DataCell("RL", "${prefs.displaySpeed(vehicleState.wheelSpeedRL)} ${prefs.speedLabel}", modifier = Modifier.weight(1f))
+                DataCell("RR", "${prefs.displaySpeed(vehicleState.wheelSpeedRR)} ${prefs.speedLabel}", modifier = Modifier.weight(1f))
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            // Start / End Trip button
+            Button(
+                onClick = {
+                    if (tripState.isRecording) {
+                        showSummary = tripState.points.isNotEmpty()
+                        onEndTrip()
+                    } else {
+                        if (!hasLocationPerm)
+                            permLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                        else
+                            onStartTrip()
+                    }
+                },
+                modifier = Modifier
                     .fillMaxWidth()
-                    .weight(0.45f)
-                    .background(Surf)
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                    .height(44.dp)
+                    .padding(bottom = bottomPad),
+                shape    = RoundedCornerShape(8.dp),
+                colors   = ButtonDefaults.buttonColors(
+                    containerColor = if (tripState.isRecording) Orange else accent
+                )
             ) {
-                // Row 1 — Speed · RPM · Gear · Avg RPM
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    DataCell("SPD",
-                        "${prefs.displaySpeed(vehicleState.speedKph)} ${prefs.speedLabel}",
-                        modifier = Modifier.weight(1f))
-                    DataCell("RPM",     "%.0f".format(vehicleState.rpm),       modifier = Modifier.weight(1f))
-                    DataCell("GEAR",    vehicleState.gearDisplay,               modifier = Modifier.weight(1f))
-                    DataCell("AVG RPM", "%.0f".format(tripState.avgRpm),        modifier = Modifier.weight(1f))
-                }
+                MonoText(
+                    if (tripState.isRecording) "END TRIP" else "START TRIP",
+                    13.sp, Bg, FontWeight.Bold
+                )
+            }
+        }
+    }
 
-                // Row 2 — Coolant · Oil · Ambient · Fuel %
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    DataCell("CLT",
-                        if (vehicleState.coolantTempC > -90)
-                            "${prefs.displayTemp(vehicleState.coolantTempC)}${prefs.tempLabel}" else "--",
-                        modifier = Modifier.weight(1f))
-                    DataCell("OIL",
-                        if (vehicleState.oilTempC > -90)
-                            "${prefs.displayTemp(vehicleState.oilTempC)}${prefs.tempLabel}" else "--",
-                        modifier = Modifier.weight(1f))
-                    DataCell("AMB",  "${prefs.displayTemp(vehicleState.ambientTempC)}${prefs.tempLabel}", modifier = Modifier.weight(1f))
-                    DataCell("FUEL", "%.0f%%".format(vehicleState.fuelLevelPct),                          modifier = Modifier.weight(1f))
-                }
-
-                // Row 3 — RDU · PTU · Fuel used · Economy
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    DataCell("RDU",
-                        if (vehicleState.rduTempC > -90)
-                            "${prefs.displayTemp(vehicleState.rduTempC)}${prefs.tempLabel}" else "--",
-                        modifier = Modifier.weight(1f))
-                    DataCell("PTU",
-                        if (vehicleState.ptuTempC > -90)
-                            "${prefs.displayTemp(vehicleState.ptuTempC)}${prefs.tempLabel}" else "--",
-                        modifier = Modifier.weight(1f))
-                    DataCell("USED", "%.2fL".format(tripState.fuelUsedL),                             modifier = Modifier.weight(1f))
-                    val (econVal, econUnit) = if (prefs.speedUnit == "MPH")
-                        "%.1f".format(tripState.avgFuelMpg)      to "MPG"
-                    else
-                        "%.1f".format(tripState.avgFuelL100km) to "L/100"
-                    DataCell("ECON", "$econVal $econUnit",                                             modifier = Modifier.weight(1f))
-                }
-
-                // Row 4 — Wheel speeds
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    DataCell("FL", "${prefs.displaySpeed(vehicleState.wheelSpeedFL)} ${prefs.speedLabel}", modifier = Modifier.weight(1f))
-                    DataCell("FR", "${prefs.displaySpeed(vehicleState.wheelSpeedFR)} ${prefs.speedLabel}", modifier = Modifier.weight(1f))
-                    DataCell("RL", "${prefs.displaySpeed(vehicleState.wheelSpeedRL)} ${prefs.speedLabel}", modifier = Modifier.weight(1f))
-                    DataCell("RR", "${prefs.displaySpeed(vehicleState.wheelSpeedRR)} ${prefs.speedLabel}", modifier = Modifier.weight(1f))
-                }
-
-                Spacer(Modifier.weight(1f))
-
-                // Start / End Trip button
-                Button(
-                    onClick = {
-                        if (tripState.isRecording) {
-                            showSummary = tripState.points.isNotEmpty()
-                            onEndTrip()
-                        } else {
-                            if (!hasLocationPerm)
-                                permLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-                            else
-                                onStartTrip()
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(44.dp)
-                        .padding(bottom = bottomPad),
-                    shape    = RoundedCornerShape(8.dp),
-                    colors   = ButtonDefaults.buttonColors(
-                        containerColor = if (tripState.isRecording) Orange else accent
-                    )
-                ) {
-                    MonoText(
-                        if (tripState.isRecording) "END TRIP" else "START TRIP",
-                        13.sp, Bg, FontWeight.Bold
-                    )
-                }
+    Box(Modifier.fillMaxSize().background(Bg)) {
+        if (wideLayout) {
+            // Landscape: side-by-side — map left (60%), HUD right (40%)
+            Row(Modifier.fillMaxSize()) {
+                mapContent(Modifier.weight(0.6f).fillMaxHeight())
+                hudContent(Modifier.weight(0.4f).fillMaxHeight())
+            }
+        } else {
+            // Portrait: stacked — map top (55%), HUD bottom (45%)
+            Column(Modifier.fillMaxSize()) {
+                mapContent(Modifier.fillMaxWidth().weight(0.55f))
+                hudContent(Modifier.fillMaxWidth().weight(0.45f))
             }
         }
 
@@ -718,7 +735,7 @@ private fun TripSummaryContent(tripState: TripState, prefs: UserPrefs, onClose: 
     var sharing by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
 
     val distStr = "%.2f %s".format(
-        if (prefs.speedUnit == "MPH") tripState.cumulativeDistanceKm * 0.621371
+        if (prefs.speedUnit == "MPH") tripState.cumulativeDistanceKm * UnitConversions.KM_TO_MI
         else tripState.cumulativeDistanceKm,
         if (prefs.speedUnit == "MPH") "mi" else "km"
     )

@@ -2,6 +2,7 @@ package com.openrs.dash.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,13 +18,22 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import com.openrs.dash.ui.anim.Sparkline
+import com.openrs.dash.ui.anim.neonGlowRect
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
@@ -35,13 +45,25 @@ import com.openrs.dash.R
 // SHARED UI COMPONENTS — used across two or more tab pages
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Section label: small text with extending horizontal rule */
-@Composable fun SectionLabel(text: String, modifier: Modifier = Modifier) {
+/** Section label: small text with extending horizontal rule. Optionally collapsible. */
+@Composable fun SectionLabel(
+    text: String,
+    modifier: Modifier = Modifier,
+    collapsible: Boolean = false,
+    expanded: Boolean = true,
+    onToggle: (() -> Unit)? = null
+) {
     Row(
-        modifier.padding(bottom = 8.dp),
+        modifier
+            .padding(bottom = 8.dp)
+            .then(if (collapsible && onToggle != null)
+                Modifier.clickable { onToggle() } else Modifier),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        if (collapsible) {
+            MonoLabel(if (expanded) "\u25BE" else "\u25B8", 9.sp, Dim)
+        }
         MonoLabel(text, 9.sp, Dim, letterSpacing = 0.2.sp)
         Box(Modifier.weight(1f).height(1.dp).background(Brd))
     }
@@ -54,6 +76,15 @@ import com.openrs.dash.R
     valueColor: Color = Frost,
     modifier: Modifier = Modifier
 ) {
+    val isPlaceholder = value == "— —"
+    val displayColor = if (isPlaceholder) {
+        val alpha by rememberInfiniteTransition(label = "ph").animateFloat(
+            initialValue = 0.3f, targetValue = 0.7f,
+            animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "phA"
+        )
+        Dim.copy(alpha = alpha)
+    } else valueColor
+
     Column(
         modifier
             .background(Surf2, RoundedCornerShape(10.dp))
@@ -62,7 +93,7 @@ import com.openrs.dash.R
     ) {
         MonoLabel(label, 8.sp, Dim, letterSpacing = 0.15.sp)
         Spacer(Modifier.height(3.dp))
-        MonoText(value, 14.sp, valueColor)
+        MonoText(value, 14.sp, displayColor)
     }
 }
 
@@ -74,7 +105,8 @@ import com.openrs.dash.R
     valueColor: Color,
     modifier: Modifier = Modifier,
     borderAccent: Color? = null,
-    peak: String = ""
+    peak: String = "",
+    sparklineData: List<Float>? = null
 ) {
     val accent = LocalThemeAccent.current
     val brd = borderAccent ?: Brd
@@ -87,11 +119,28 @@ import com.openrs.dash.R
     ) {
         MonoLabel(unit, 8.sp, Dim, letterSpacing = 0.18.sp)
         Spacer(Modifier.height(4.dp))
-        HeroNum(value, 26.sp, valueColor, Modifier.fillMaxWidth())
+        Box(
+            Modifier.fillMaxWidth().drawBehind {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        listOf(valueColor.copy(alpha = 0.18f), Color.Transparent),
+                        center = center,
+                        radius = size.minDimension * 0.9f
+                    )
+                )
+            },
+            contentAlignment = Alignment.Center
+        ) {
+            HeroNum(value, 26.sp, valueColor, Modifier.fillMaxWidth())
+        }
         if (peak.isNotEmpty()) {
             MonoText(peak, 9.sp, accent, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         } else {
             Spacer(Modifier.height(4.dp))
+        }
+        if (sparklineData != null && sparklineData.size >= 2) {
+            Spacer(Modifier.height(4.dp))
+            Sparkline(sparklineData, valueColor, Modifier.fillMaxWidth().height(22.dp).padding(horizontal = 4.dp))
         }
         MonoLabel(label, 8.sp, Dim, letterSpacing = 0.15.sp)
     }
@@ -103,7 +152,9 @@ import com.openrs.dash.R
     value: String,
     fraction: Float,
     barBrush: Brush,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    barGlowColor: Color? = null,
+    sparklineData: List<Float>? = null
 ) {
     Column(
         modifier
@@ -123,13 +174,27 @@ import com.openrs.dash.R
             Box(
                 Modifier.fillMaxWidth(fraction.coerceIn(0f, 1f)).fillMaxHeight()
                     .background(barBrush, RoundedCornerShape(2.dp))
+                    .then(if (barGlowColor != null) Modifier.neonGlowRect(barGlowColor) else Modifier)
             )
+        }
+        if (sparklineData != null && sparklineData.size >= 2) {
+            Spacer(Modifier.height(6.dp))
+            Sparkline(sparklineData, barGlowColor ?: Accent, Modifier.fillMaxWidth().height(28.dp))
         }
     }
 }
 
 /** AFR/lambda numeric card — used on Power page */
 @Composable fun AfrCard(label: String, value: String, unit: String, valueColor: Color, modifier: Modifier) {
+    val isPlaceholder = value == "— —"
+    val displayColor = if (isPlaceholder) {
+        val alpha by rememberInfiniteTransition(label = "ph").animateFloat(
+            initialValue = 0.3f, targetValue = 0.7f,
+            animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "phA"
+        )
+        Dim.copy(alpha = alpha)
+    } else valueColor
+
     Column(
         modifier
             .background(Surf2, RoundedCornerShape(12.dp))
@@ -139,7 +204,7 @@ import com.openrs.dash.R
     ) {
         MonoLabel(label, 8.sp, Dim, letterSpacing = 0.12.sp)
         Spacer(Modifier.height(4.dp))
-        HeroNum(value, 22.sp, valueColor, Modifier.fillMaxWidth())
+        HeroNum(value, 22.sp, displayColor, Modifier.fillMaxWidth())
         MonoLabel(unit, 9.sp, Dim)
     }
 }
@@ -173,23 +238,37 @@ import com.openrs.dash.R
     ) {
         MonoLabel(label, 8.sp, Dim, letterSpacing = 0.12.sp)
         Spacer(Modifier.height(3.dp))
-        MonoText(value, 18.sp, Frost, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        Box(
+            Modifier.fillMaxWidth().drawBehind {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        listOf(accent.copy(alpha = 0.12f), Color.Transparent),
+                        center = center,
+                        radius = size.minDimension * 0.8f
+                    )
+                )
+            },
+            contentAlignment = Alignment.Center
+        ) {
+            MonoText(value, 18.sp, Frost, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        }
         if (peak.isNotEmpty()) {
             MonoText(peak, 9.sp, accent, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         }
     }
 }
 
-/** Tire pressure card with optional temperature — colour-coded by pressure/temp range */
+/** Tire pressure card with optional temperature and delta trend — colour-coded by pressure/temp range */
 @Composable fun TireCard(
     label: String, psi: Double, p: UserPrefs, lowThreshold: Double,
-    tempC: Double = -99.0
+    tempC: Double = -99.0,
+    deltaText: String = ""
 ) {
     val isLow     = psi in 0.0..(lowThreshold - 0.001)
     val isMissing = psi < 0
     val tireColor = when {
         isMissing  -> Dim
-        isLow      -> Red
+        isLow      -> Orange
         psi > 40.0 -> Warn
         else       -> Ok
     }
@@ -197,7 +276,7 @@ import com.openrs.dash.R
     Column(
         Modifier.fillMaxWidth()
             .background(Surf2, RoundedCornerShape(10.dp))
-            .border(1.dp, if (isLow) Red.copy(0.5f) else Brd, RoundedCornerShape(10.dp))
+            .border(1.dp, if (isLow) Orange.copy(0.5f) else Brd, RoundedCornerShape(10.dp))
             .padding(8.dp, 7.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -205,6 +284,10 @@ import com.openrs.dash.R
         Spacer(Modifier.height(4.dp))
         HeroNum(if (isMissing) "—" else p.displayTire(psi), 18.sp, tireColor)
         MonoLabel(p.tireLabel, 8.sp, Dim, letterSpacing = 0.1.sp)
+        if (deltaText.isNotEmpty()) {
+            val deltaColor = if (deltaText.startsWith("\u25B2")) Ok else Orange
+            MonoText(deltaText, 8.sp, deltaColor)
+        }
         if (hasTemp) {
             Box(Modifier.fillMaxWidth(0.7f).height(1.dp).padding(vertical = 0.dp)
                 .background(Brd))
@@ -240,5 +323,3 @@ fun tireTempColor(tempC: Double): Color = when {
     }
 }
 
-@Deprecated("Use FocusRsOutline", replaceWith = ReplaceWith("FocusRsOutline(compact)"))
-@Composable fun CarOutlinePlaceholder(compact: Boolean = false) = FocusRsOutline(compact)

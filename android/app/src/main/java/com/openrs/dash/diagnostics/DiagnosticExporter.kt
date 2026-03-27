@@ -73,7 +73,7 @@ object DiagnosticExporter {
                     zip.closeEntry()
                 }
 
-                // Crash telemetry: include any crash_telemetry_*.json files, then delete
+                // Crash telemetry: include any crash_telemetry_*.json files (kept for history)
                 val diagDir = File(ctx.filesDir, "diagnostics")
                 if (diagDir.isDirectory) {
                     diagDir.listFiles { f -> f.name.startsWith("crash_telemetry_") && f.name.endsWith(".json") }
@@ -81,10 +81,34 @@ object DiagnosticExporter {
                             zip.putNextEntry(ZipEntry(crashFile.name))
                             crashFile.inputStream().buffered().use { it.copyTo(zip) }
                             zip.closeEntry()
-                            crashFile.delete()
                         }
                 }
 
+                // DID probe sessions: one CSV per scanned module
+                val probes = DiagnosticLogger.probeSessions
+                if (probes.isNotEmpty()) {
+                    probes.forEachIndexed { idx, session ->
+                        val name = "did_probe_${session.module.lowercase()}_${idx + 1}.csv"
+                        zip.putNextEntry(ZipEntry(name))
+                        val csv = buildString {
+                            appendLine("DID,Status,ResponseHex")
+                            session.results.forEach { r ->
+                                appendLine("0x${"%04X".format(r.did)},${r.status},${r.responseHex}")
+                            }
+                        }
+                        zip.write(csv.toByteArray(Charsets.UTF_8))
+                        zip.closeEntry()
+                    }
+                }
+
+                // Mission Control HTML dashboard (diagnostic-only, no trip data)
+                val mcFile = MissionControlHtmlBuilder.build(ctx, null, ts)
+                if (mcFile != null) {
+                    zip.putNextEntry(ZipEntry("mission_control_$ts.html"))
+                    mcFile.inputStream().buffered().use { it.copyTo(zip) }
+                    zip.closeEntry()
+                    mcFile.delete()
+                }
             }
 
             FileProvider.getUriForFile(ctx, AUTHORITY, zipFile)
@@ -139,6 +163,15 @@ object DiagnosticExporter {
                     zip.write(buildDtcText(dtcResults).toByteArray(Charsets.UTF_8))
                     zip.closeEntry()
                 }
+
+                // Mission Control HTML dashboard
+                val mcFile = MissionControlHtmlBuilder.build(ctx, tripState, ts)
+                if (mcFile != null) {
+                    zip.putNextEntry(ZipEntry("mission_control_$ts.html"))
+                    mcFile.inputStream().buffered().use { it.copyTo(zip) }
+                    zip.closeEntry()
+                    mcFile.delete()
+                }
             }
 
             val uri = FileProvider.getUriForFile(ctx, AUTHORITY, zipFile)
@@ -152,10 +185,12 @@ object DiagnosticExporter {
                 putExtra(
                     Intent.EXTRA_TEXT,
                     "openRS_ v${BuildConfig.VERSION_NAME} trip export.\n" +
-                    "• trip_$ts.gpx         — GPS track + telemetry (GPX 1.1)\n" +
-                    "• trip_$ts.csv         — telemetry spreadsheet (all TripPoint fields)\n" +
-                    "• trip_summary_$ts.txt  — human-readable trip report$dtcNote\n\n" +
-                    "$ptCount waypoints recorded."
+                    "• trip_$ts.gpx            — GPS track + telemetry (GPX 1.1)\n" +
+                    "• trip_$ts.csv            — telemetry spreadsheet (all TripPoint fields)\n" +
+                    "• trip_summary_$ts.txt     — human-readable trip report$dtcNote\n" +
+                    "• mission_control_$ts.html — interactive dashboard (open in browser)\n\n" +
+                    "$ptCount waypoints recorded.\n\n" +
+                    "View in Sapphire → https://klexical.github.io/openRS_/"
                 )
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
@@ -311,6 +346,20 @@ object DiagnosticExporter {
     }
 
     /** Create and fire an Android share intent for the diagnostic ZIP. */
+    /** Returns crash telemetry files sorted by newest first. */
+    fun crashFiles(ctx: Context): List<File> {
+        val dir = File(ctx.filesDir, "diagnostics")
+        if (!dir.isDirectory) return emptyList()
+        return dir.listFiles { f -> f.name.startsWith("crash_telemetry_") && f.name.endsWith(".json") }
+            ?.sortedByDescending { it.lastModified() }
+            ?: emptyList()
+    }
+
+    /** Delete all crash telemetry files. */
+    fun clearCrashHistory(ctx: Context) {
+        crashFiles(ctx).forEach { it.delete() }
+    }
+
     fun share(ctx: Context) {
         val uri = export(ctx) ?: run {
             DiagnosticLogger.event("SHARE", "Export failed — nothing to share")
@@ -325,8 +374,9 @@ object DiagnosticExporter {
             putExtra(
                 Intent.EXTRA_TEXT,
                 "openRS_ v${BuildConfig.VERSION_NAME} diagnostic bundle.\n" +
-                "• diagnostic_summary_*.txt — human-readable report\n" +
-                "• diagnostic_detail_*.json — full machine-readable data$slcanNote\n\n" +
+                "• diagnostic_summary_*.txt  — human-readable report\n" +
+                "• diagnostic_detail_*.json  — full machine-readable data$slcanNote\n" +
+                "• mission_control_*.html    — interactive dashboard (open in browser)\n\n" +
                 "App      : v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})\n" +
                 "Session  : ${DiagnosticLogger.formatDuration(DiagnosticLogger.sessionDurationMs)}\n" +
                 "Firmware : ${DiagnosticLogger.firmwareVersion}\n" +
@@ -455,7 +505,7 @@ object DiagnosticExporter {
             CanDecoder.ID_DRIVE_MODE, CanDecoder.ID_DRIVE_MODE_EXT, CanDecoder.ID_ESC_ABS,
             CanDecoder.ID_WHEEL_SPEEDS, CanDecoder.ID_GEAR, CanDecoder.ID_AWD_TORQUE,
             CanDecoder.ID_COOLANT, CanDecoder.ID_PCM_AMBIENT, CanDecoder.ID_AMBIENT_TEMP,
-            CanDecoder.ID_FUEL_LEVEL, CanDecoder.ID_STEERING, CanDecoder.ID_BRAKE_PRESS
+            CanDecoder.ID_FUEL_LEVEL, CanDecoder.ID_ODOMETER, CanDecoder.ID_STEERING, CanDecoder.ID_BRAKE_PRESS
         )
 
         inventory.entries.sortedBy { it.key }.forEach { (id, info) ->
@@ -537,6 +587,23 @@ object DiagnosticExporter {
             appendLine("  +${log.formatDuration(t.relMs)} | ${t.idHex} | ${t.rawHex.take(23).padEnd(23)} | ${t.decoded.take(35)}$issStr")
         }
         appendLine()
+        // ── DID probe results
+        val probes = log.probeSessions
+        if (probes.isNotEmpty()) {
+            appendLine("─── DID PROBE RESULTS (${probes.size} session${if (probes.size > 1) "s" else ""}) ──────────────────")
+            probes.forEach { ps ->
+                val found   = ps.results.count { it.status == "FOUND" }
+                val nrc     = ps.results.count { it.status == "NRC" }
+                val timeout = ps.results.count { it.status == "TIMEOUT" }
+                appendLine("  ${ps.module} (0x${"%03X".format(ps.requestId)}→0x${"%03X".format(ps.responseId)}) @ +${log.formatDuration(ps.relMs)}")
+                appendLine("    ${ps.results.size} probed — $found found, $nrc rejected, $timeout timeout")
+                ps.results.filter { it.status == "FOUND" }.forEach { r ->
+                    appendLine("    ✓ 0x${"%04X".format(r.did)}  ${r.responseHex}")
+                }
+            }
+            appendLine()
+        }
+
         appendLine("═══════════════════════════════════════════════════════════")
         appendLine("  END OF REPORT — full data in diagnostic_detail_$ts.json")
         if (slcanLines > 0) appendLine("  SLCAN log    — slcan_log_$ts.log  ($slcanLines frames)")
@@ -615,7 +682,7 @@ object DiagnosticExporter {
             appendLine("      \"firstRawHex\": \"${info.firstRawHex}\",")
             appendLine("      \"lastRawHex\": \"${info.lastRawHex}\",")
             appendLine("      \"hasChanged\": ${info.hasChanged},")
-            appendLine("      \"lastDecoded\": \"${info.lastDecoded.replace("\"", "'")}\",")
+            appendLine("      \"lastDecoded\": \"${info.lastDecoded.jsonEscape()}\",")
             appendLine("      \"validationIssues\": [$issuesJson],")
             appendLine("      \"periodicSamples\": $samplesJson")
             appendLine("    }$comma")
@@ -636,8 +703,8 @@ object DiagnosticExporter {
         val trace = log.decodeTrace
         trace.forEachIndexed { i, t ->
             val c      = if (i < trace.size - 1) "," else ""
-            val issJson = if (t.issue != null) "\"${t.issue.replace("\"", "'")}\"" else "null"
-            appendLine("    {\"relMs\": ${t.relMs}, \"id\": \"${t.idHex}\", \"raw\": \"${t.rawHex}\", \"decoded\": \"${t.decoded.replace("\"", "'")}\", \"issue\": $issJson}$c")
+            val issJson = if (t.issue != null) "\"${t.issue.jsonEscape()}\"" else "null"
+            appendLine("    {\"relMs\": ${t.relMs}, \"id\": \"${t.idHex}\", \"raw\": \"${t.rawHex}\", \"decoded\": \"${t.decoded.jsonEscape()}\", \"issue\": $issJson}$c")
         }
         appendLine("  ],")
 
@@ -646,7 +713,30 @@ object DiagnosticExporter {
         val evts = log.sessionEvents
         evts.forEachIndexed { i, ev ->
             val c = if (i < evts.size - 1) "," else ""
-            appendLine("    {\"relMs\": ${ev.relMs}, \"type\": \"${ev.type}\", \"message\": \"${ev.message.replace("\"", "'")}\"}$c")
+            appendLine("    {\"relMs\": ${ev.relMs}, \"type\": \"${ev.type}\", \"message\": \"${ev.message.jsonEscape()}\"}$c")
+        }
+        appendLine("  ],")
+
+        // probeResults
+        appendLine("  \"probeResults\": [")
+        val probes = log.probeSessions
+        probes.forEachIndexed { pi, ps ->
+            val found = ps.results.count { it.status == "FOUND" }
+            appendLine("    {")
+            appendLine("      \"relMs\": ${ps.relMs},")
+            appendLine("      \"module\": \"${ps.module}\",")
+            appendLine("      \"requestId\": \"0x${"%03X".format(ps.requestId)}\",")
+            appendLine("      \"responseId\": \"0x${"%03X".format(ps.responseId)}\",")
+            appendLine("      \"totalProbed\": ${ps.results.size},")
+            appendLine("      \"found\": $found,")
+            appendLine("      \"results\": [")
+            ps.results.forEachIndexed { ri, r ->
+                val rc = if (ri < ps.results.size - 1) "," else ""
+                appendLine("        {\"did\": \"0x${"%04X".format(r.did)}\", \"status\": \"${r.status}\", \"response\": \"${r.responseHex.jsonEscape()}\"}$rc")
+            }
+            appendLine("      ]")
+            val pc = if (pi < probes.size - 1) "," else ""
+            appendLine("    }$pc")
         }
         appendLine("  ]")
 
@@ -654,13 +744,14 @@ object DiagnosticExporter {
     }
 }
 
-/** Minimal JSON string escaping: backslash, double-quote, newlines, tabs. */
+/** JSON string escaping: backslash, double-quote, newlines, tabs, and </script> sequences. */
 private fun String.jsonEscape(): String = this
     .replace("\\", "\\\\")
     .replace("\"", "\\\"")
     .replace("\n", "\\n")
     .replace("\r", "\\r")
     .replace("\t", "\\t")
+    .replace("</", "<\\/")
 
 /** Serialize VehicleState to a Map<String, Any> for JSON output. */
 private fun VehicleState.toJsonFields(): Map<String, String> = linkedMapOf(

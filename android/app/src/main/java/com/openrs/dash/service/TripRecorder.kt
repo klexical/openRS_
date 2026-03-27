@@ -18,7 +18,6 @@ import com.openrs.dash.data.PeakType
 import com.openrs.dash.data.TripPoint
 import com.openrs.dash.data.TripState
 import com.openrs.dash.data.VehicleState
-import com.openrs.dash.ui.UserPrefsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -93,8 +92,7 @@ class TripRecorder(
                     }
 
                     val vs = vehicleStateFlow.value
-                    val prefs = UserPrefsStore.prefs.value
-                    val isRaceReady = prefs.isRaceReady(vs.oilTempC, vs.coolantTempC)
+                    val isRaceReady = vs.isReadyToRace
                     val point = TripPoint(
                         lat          = location.latitude,
                         lng          = location.longitude,

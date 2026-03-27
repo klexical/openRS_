@@ -13,6 +13,8 @@ When creating or updating a GitHub release, **always build and attach fresh bina
 2. Output: `android/app/build/outputs/apk/release/openRS_v{version}.apk`
 3. Upload: `gh release upload <tag> android/app/build/outputs/apk/release/openRS_v*.apk`
 
+**Only the signed release APK goes on a GitHub release.** Never attach the debug or staging-debug APK (`*-staging-debug.apk`) to a release — it is 7× larger, unminified, and not representative of the production build. Debug APKs are CI artifacts only (14-day retention via `actions/upload-artifact`, not release assets).
+
 ## Firmware releases (`fw-usb-v*`, `fw-pro-v*`)
 
 1. Clean build for the target: `cd firmware && rm -rf .build/<target>/wican-fw && bash build.sh --target <usb|pro>`
