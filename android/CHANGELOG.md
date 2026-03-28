@@ -7,6 +7,15 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
+## [v2.2.6] — unreleased
+
+### Added (rc.1 — drive mode reliability)
+- **Pre-flight diagnostic logging for drive mode commands** — logs current mode, modeDetail420 hex value, and firmware version before every drive mode command for traceability. (`MorePage.kt`)
+- **Auto-correction on drive mode overshoot** — if CAN confirms a mode change but to the wrong mode (e.g. Track instead of Sport), the app automatically sends a corrective command and monitors for confirmation, with snackbar feedback throughout. (`MorePage.kt`)
+- **`has420Received` accessor on CanDecoder** — exposes whether at least one 0x420 frame has been received, for diagnostic logging. (`CanDecoder.kt`)
+
+---
+
 ## [v2.2.5] — 2026-03-27
 
 ### Added (rc.1 — FORScan PID catalog, data-driven decode, DID prober)

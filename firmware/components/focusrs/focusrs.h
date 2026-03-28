@@ -10,7 +10,7 @@ extern "C" {
 // ── Firmware version (returned to Android app via OPENRS? probe) ───────────
 // Actual value is patched per-target by apply_patches.py.
 // USB → "USB v1.6"   PRO → "PRO v1.1"
-#define OPENRS_FW_VERSION   "USB v1.6"
+#define OPENRS_FW_VERSION   "USB v1.61"
 
 // ── Drive mode values ──────────────────────────────────────────
 // Confirmed from live CAN log (0x1B0 byte6 upper nibble, DBC VAL_ 432):
@@ -63,15 +63,21 @@ extern "C" {
 #define FRS_BUTTON_TX_INTERVAL_MS   10
 #define FRS_BUTTON_TX_DURATION_MS   300
 
-// Closed-loop drive mode controller.
-// After each button press, the firmware polls s_state.drive_mode (updated
-// in real-time by frs_parse_can_frame from 0x1B0 + 0x420) to confirm the
-// mode actually changed before sending the next press. This eliminates
-// cycle-distance math, fixed timing assumptions, and GUI timeout issues.
-#define FRS_DM_CONFIRM_TIMEOUT_MS   1500  // max wait for CAN mode change per press
-#define FRS_DM_CONFIRM_POLL_MS      50    // poll interval while waiting
-#define FRS_DM_MAX_STEPS            5     // safety cap (4-mode cycle + 1 retry margin)
-#define FRS_DM_PRESS_RETRY          2     // retries per step if no change detected
+// Hybrid scroll-then-wait drive mode controller.
+// Sends the calculated number of scroll presses (open-loop), then waits
+// for the car's ~4-second auto-confirm before checking CAN. This avoids
+// the old closed-loop issue where 1.5s retry timeouts caused extra
+// scroll presses during the auto-confirm window, overshooting the target.
+//
+// Focus RS mode selector behaviour (owner's manual):
+//   1. First press → mode list appears, current mode highlighted
+//   2. Each press → highlight scrolls forward (N→S→T→D→N)
+//   3. Wait ~4s (or press OK) → highlighted mode is SET, CAN updates
+#define FRS_DM_SCROLL_DELAY_MS      400   // delay between scroll presses
+#define FRS_DM_ACTIVATION_DELAY_MS  400   // delay after activation press
+#define FRS_DM_CONFIRM_WAIT_MS      6000  // wait for auto-confirm after scrolling
+#define FRS_DM_CONFIRM_POLL_MS      50    // poll interval during confirm wait
+#define FRS_DM_MAX_ATTEMPTS         2     // retry entire sequence if wrong mode confirmed
 
 // 0x305 byte4 bit 4 — BCM sets this when the mode selector GUI is visible.
 #define FRS_DM_GUI_OPEN_BIT         0x10

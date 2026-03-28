@@ -56,6 +56,9 @@ object CanDecoder {
     /** Current modeDetail420 as hex string — for diagnostic logging. */
     val modeDetail420Hex: String get() = "%04X".format(modeDetail420)
 
+    /** Whether at least one 0x420 frame has been received — for diagnostic logging. */
+    val has420Received: Boolean get() = has420Arrived
+
     /** Reset per-session state — call at the start of each new connection. */
     fun resetSessionState() {
         modeDetail420 = 0x10CC

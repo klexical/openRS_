@@ -123,6 +123,9 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
                                     pendingDriveMode = mode
                                     scope.launch {
                                         DiagnosticLogger.event("DM_CMD",
+                                            "Pre-flight: current=${vs.driveMode}, modeDetail=0x${CanDecoder.modeDetail420Hex}, " +
+                                            "fw=${OpenRSDashApp.instance.firmwareVersionLabel.value}")
+                                        DiagnosticLogger.event("DM_CMD",
                                             "Sending driveMode=${mode.toFirmwareInt()} (${mode.label}) to $host")
                                         val result = FirmwareApi.setDriveMode(ctx, host, mode.toFirmwareInt())
                                         if (result.isFailure) {
@@ -153,10 +156,39 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
                                             }
                                             if (!confirmed) {
                                                 val live = OpenRSDashApp.instance.vehicleState.value
-                                                DiagnosticLogger.event("DM_CMD",
-                                                    "No CAN confirmation after 17s (current=${live.driveMode}, target=$mode, modeDetail420=0x${CanDecoder.modeDetail420Hex})")
-                                                snackbarHostState.showSnackbar(
-                                                    "Mode change didn't take effect — try again")
+                                                val landed = live.driveMode
+                                                if (landed != mode && landed != DriveMode.UNKNOWN
+                                                    && landed != vs.driveMode) {
+                                                    // Mode changed, but to wrong one — auto-correct.
+                                                    DiagnosticLogger.event("DM_CMD",
+                                                        "Overshoot: landed=${landed.label}, expected=${mode.label} — auto-correcting")
+                                                    snackbarHostState.showSnackbar(
+                                                        "Landed on ${landed.label} instead of ${mode.label} — correcting\u2026")
+                                                    val retry = FirmwareApi.setDriveMode(ctx, host, mode.toFirmwareInt())
+                                                    if (retry.isSuccess) {
+                                                        delay(2_000)
+                                                        var corrected = false
+                                                        for (j in 0 until 150) {
+                                                            delay(100)
+                                                            val rl = OpenRSDashApp.instance.vehicleState.value
+                                                            if (rl.driveMode == mode) { corrected = true; break }
+                                                        }
+                                                        if (corrected) {
+                                                            DiagnosticLogger.event("DM_CMD", "Auto-correction succeeded")
+                                                        } else {
+                                                            val rl = OpenRSDashApp.instance.vehicleState.value
+                                                            DiagnosticLogger.event("DM_CMD",
+                                                                "Auto-correction failed (current=${rl.driveMode}, target=$mode)")
+                                                            snackbarHostState.showSnackbar("Mode correction failed — try again manually")
+                                                        }
+                                                    }
+                                                } else {
+                                                    DiagnosticLogger.event("DM_CMD",
+                                                        "No CAN confirmation after 17s (current=${landed}, target=$mode, " +
+                                                        "modeDetail420=0x${CanDecoder.modeDetail420Hex})")
+                                                    snackbarHostState.showSnackbar(
+                                                        "Mode change didn't take effect — try again")
+                                                }
                                             }
                                         }
                                         pendingDriveMode = null

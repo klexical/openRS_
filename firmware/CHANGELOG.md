@@ -4,6 +4,17 @@ All notable changes to the openrs-fw firmware are documented here.
 
 ---
 
+## v1.61 (USB) / v1.2 (PRO) — 2026-03-27
+
+### Fixed
+- **Drive mode overshoot — car landed on Track instead of Sport** — the v1.6 closed-loop controller polled CAN for confirmation after each button press with a 1.5s timeout (`FRS_DM_CONFIRM_TIMEOUT_MS`). The Focus RS mode selector GUI requires ~4 seconds of inactivity (or an OK press) to auto-confirm the highlighted mode — CAN does not update during scrolling. Each 1.5s timeout triggered a retry press that scrolled the highlight one position past the target. For Normal→Sport: activation + 2 retry presses = Track highlighted, auto-confirm at ~4s set Track. Replaced with a **hybrid scroll-then-wait controller**: pre-calculates scroll distance using `can_to_pos[]` mapping, sends all scroll presses open-loop with 400ms spacing, then waits up to 6 seconds for the auto-confirm. If the wrong mode is confirmed, retries the entire sequence once from the new position.
+
+### Changed
+- Drive mode timing constants replaced: removed `FRS_DM_CONFIRM_TIMEOUT_MS` (1500ms) / `FRS_DM_MAX_STEPS` (5) / `FRS_DM_PRESS_RETRY` (2); added `FRS_DM_SCROLL_DELAY_MS` (400ms), `FRS_DM_ACTIVATION_DELAY_MS` (400ms), `FRS_DM_CONFIRM_WAIT_MS` (6000ms), `FRS_DM_MAX_ATTEMPTS` (2).
+- Firmware version string corrected — v1.6 build output contained stale `"USB v1.5"` due to dirty build directory. Now `"USB v1.61"` / `"PRO v1.2"`.
+
+---
+
 ## v1.6 (USB) / v1.1 (PRO) — 2026-03-25
 
 ### Fixed

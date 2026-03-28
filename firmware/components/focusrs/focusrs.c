@@ -283,15 +283,18 @@ static void frs_send_dm_button(void) {
 
 static uint8_t s_pending_mode = 0xFF;
 
-// ── Closed-loop drive mode controller ────────────────────────
-// Replaces the old open-loop "count presses and fire" approach.
-// After each button press, polls s_state.drive_mode (updated in
-// real-time by frs_parse_can_frame from 0x1B0 + 0x420) to confirm
-// the mode actually changed before sending the next press.
+// ── Hybrid scroll-then-wait drive mode controller ────────────
+// Focus RS mode selector behaviour (owner's manual):
+//   1. First press → mode list appears, current mode highlighted
+//   2. Each press → highlight scrolls forward (N→S→T→D→N)
+//   3. Wait ~4s (or press OK) → highlighted mode is SET, CAN updates
 //
-// This eliminates cycle-distance math, fixed timing assumptions,
-// and GUI timeout vulnerabilities. Self-corrects if a press is
-// missed or the GUI closes mid-sequence.
+// CAN (0x1B0/0x420) does NOT update during scrolling — only after
+// the auto-confirm. Previous closed-loop approach retried during the
+// confirm window, scrolling past the target (e.g. Sport → Track).
+//
+// New approach: pre-calculate scroll count, send all presses, then
+// wait for auto-confirm. Verify the result; retry if wrong.
 
 static bool frs_dm_is_gui_open(void) {
     bool open = false;
@@ -309,6 +312,12 @@ static uint8_t frs_dm_read_mode(void) {
     return mode;
 }
 
+// Button cycle order: Normal(0) → Sport(1) → Track(2) → Drift(3) → Normal
+// CAN mode values:    Normal=0,   Sport=1,    Drift=2,    Track=3
+// Map CAN mode value to cycle position:
+static const uint8_t can_to_pos[] = { 0, 1, 3, 2 };  // N=0, S=1, D=3, T=2
+#define DM_CYCLE_LEN 4
+
 static void frs_drive_mode_task(void *arg) {
     uint8_t target = (uint8_t)(uintptr_t)arg;
     uint8_t current = frs_dm_read_mode();
@@ -318,62 +327,80 @@ static void frs_drive_mode_task(void *arg) {
         goto done;
     }
 
-    ESP_LOGI(TAG, "Drive mode: %d → %d (closed-loop, max %d steps)",
-             current, target, FRS_DM_MAX_STEPS);
+    ESP_LOGI(TAG, "Drive mode: %d → %d (scroll-then-wait)", current, target);
 
-    for (int step = 0; step < FRS_DM_MAX_STEPS; step++) {
-        bool gui_open = frs_dm_is_gui_open();
-        bool is_activation = !gui_open;
-
-        ESP_LOGI(TAG, "Drive mode: step %d — press (%s), current=%d target=%d",
-                 step + 1, is_activation ? "activation" : "cycle",
-                 current, target);
-
-        // Send one button press.
-        frs_send_dm_button();
-
-        // Wait for CAN confirmation that the mode changed.
-        uint8_t before = current;
-        bool confirmed = false;
-        int retries = 0;
-
-        while (retries <= FRS_DM_PRESS_RETRY) {
-            int waited = 0;
-            while (waited < FRS_DM_CONFIRM_TIMEOUT_MS) {
-                vTaskDelay(pdMS_TO_TICKS(FRS_DM_CONFIRM_POLL_MS));
-                waited += FRS_DM_CONFIRM_POLL_MS;
-                current = frs_dm_read_mode();
-                if (current != before) {
-                    confirmed = true;
-                    break;
-                }
-            }
-            if (confirmed) break;
-
-            // Mode didn't change — retry this press.
-            retries++;
-            if (retries <= FRS_DM_PRESS_RETRY) {
-                ESP_LOGW(TAG, "Drive mode: no change after %dms, retry %d/%d "
-                         "(gui_open=%d)",
-                         FRS_DM_CONFIRM_TIMEOUT_MS, retries,
-                         FRS_DM_PRESS_RETRY, frs_dm_is_gui_open());
-                frs_send_dm_button();
-            }
+    for (int attempt = 0; attempt < FRS_DM_MAX_ATTEMPTS; attempt++) {
+        current = frs_dm_read_mode();
+        if (current == target) {
+            ESP_LOGI(TAG, "Drive mode: target %d reached before attempt %d",
+                     target, attempt);
+            break;
         }
 
-        if (!confirmed) {
-            ESP_LOGE(TAG, "Drive mode: step %d — no CAN confirmation after %d "
-                     "retries, aborting (stuck at %d, wanted %d)",
-                     step + 1, FRS_DM_PRESS_RETRY, current, target);
+        // Calculate scroll distance in cycle order.
+        uint8_t cur_pos = can_to_pos[current];
+        uint8_t tgt_pos = can_to_pos[target];
+        uint8_t cycle_dist = (tgt_pos - cur_pos + DM_CYCLE_LEN) % DM_CYCLE_LEN;
+
+        ESP_LOGI(TAG, "Drive mode: attempt %d/%d — cur=%d(pos%d) tgt=%d(pos%d) "
+                 "scrolls=%d",
+                 attempt + 1, FRS_DM_MAX_ATTEMPTS,
+                 current, cur_pos, target, tgt_pos, cycle_dist);
+
+        if (cycle_dist == 0) {
+            ESP_LOGW(TAG, "Drive mode: cycle_dist=0 but current!=target — abort");
             goto done;
         }
 
-        ESP_LOGI(TAG, "Drive mode: step %d — confirmed mode=%d", step + 1, current);
+        // Step 1: Activation press if GUI not already open.
+        bool gui_open = frs_dm_is_gui_open();
+        if (!gui_open) {
+            ESP_LOGI(TAG, "Drive mode: activation press");
+            frs_send_dm_button();
+            vTaskDelay(pdMS_TO_TICKS(FRS_DM_ACTIVATION_DELAY_MS));
+        } else {
+            ESP_LOGI(TAG, "Drive mode: GUI already open, skipping activation");
+        }
 
-        // Reached target?
+        // Step 2: Send scroll presses (open-loop).
+        for (uint8_t i = 0; i < cycle_dist; i++) {
+            ESP_LOGI(TAG, "Drive mode: scroll press %d/%d", i + 1, cycle_dist);
+            frs_send_dm_button();
+            if (i < cycle_dist - 1) {
+                vTaskDelay(pdMS_TO_TICKS(FRS_DM_SCROLL_DELAY_MS));
+            }
+        }
+
+        // Step 3: Wait for auto-confirm — poll CAN for mode change.
+        ESP_LOGI(TAG, "Drive mode: waiting up to %dms for auto-confirm",
+                 FRS_DM_CONFIRM_WAIT_MS);
+
+        bool mode_changed = false;
+        int waited = 0;
+        while (waited < FRS_DM_CONFIRM_WAIT_MS) {
+            vTaskDelay(pdMS_TO_TICKS(FRS_DM_CONFIRM_POLL_MS));
+            waited += FRS_DM_CONFIRM_POLL_MS;
+            uint8_t now = frs_dm_read_mode();
+            if (now != current) {
+                mode_changed = true;
+                current = now;
+                ESP_LOGI(TAG, "Drive mode: CAN confirmed mode=%d after %dms",
+                         current, waited);
+                break;
+            }
+        }
+
+        if (!mode_changed) {
+            ESP_LOGE(TAG, "Drive mode: no CAN confirmation after %dms — "
+                     "stuck at %d, wanted %d",
+                     FRS_DM_CONFIRM_WAIT_MS, current, target);
+            goto done;
+        }
+
+        // Step 4: Check if we landed on the right mode.
         if (current == target) {
-            ESP_LOGI(TAG, "Drive mode: reached target %d in %d step(s)",
-                     target, step + 1);
+            ESP_LOGI(TAG, "Drive mode: SUCCESS — reached %d on attempt %d",
+                     target, attempt + 1);
             xSemaphoreTake(s_state_mutex, portMAX_DELAY);
             s_state.boot_mode = target;
             xSemaphoreGive(s_state_mutex);
@@ -381,11 +408,14 @@ static void frs_drive_mode_task(void *arg) {
             goto done;
         }
 
-        // Not at target yet — GUI should still be open, continue cycling.
+        // Wrong mode confirmed — will retry from current position.
+        ESP_LOGW(TAG, "Drive mode: landed on %d instead of %d — "
+                 "retrying (%d/%d)",
+                 current, target, attempt + 1, FRS_DM_MAX_ATTEMPTS);
     }
 
-    ESP_LOGE(TAG, "Drive mode: exhausted %d steps without reaching target %d "
-             "(current=%d)", FRS_DM_MAX_STEPS, target, current);
+    ESP_LOGE(TAG, "Drive mode: exhausted %d attempts — current=%d, wanted %d",
+             FRS_DM_MAX_ATTEMPTS, frs_dm_read_mode(), target);
 
 done:
     xSemaphoreTake(s_state_mutex, portMAX_DELAY);
