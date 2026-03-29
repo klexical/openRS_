@@ -36,6 +36,9 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **Mission Control HTML removed** — `MissionControlHtmlBuilder.kt`, `mission_control.html`, and uPlot assets (`uplot.min.css`, `uplot.min.js`) deleted. Sapphire web dashboard is the replacement. HTML generation blocks removed from `DiagnosticExporter`. ([#167](https://github.com/klexical/openRS_/issues/167))
 - **Firmware updated** — openrs-fw-pro v1.2, openrs-fw-usb v1.61.
 
+### Fixed (rc.2)
+- **What's New dialog blank on v2.2.6** — `versionHighlights` map had no `"2.2.6"` entry, so the dialog immediately dismissed. Added v2.2.6 highlights and a fallback that shows the latest entry when no exact version match exists. (`WhatsNewDialog.kt`)
+
 ---
 
 ## [v2.2.5] — 2026-03-27
