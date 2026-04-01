@@ -108,6 +108,10 @@ object AppSettings {
     const val KEY_EDGE_SHIFT_RPM     = "edge_shift_rpm"
     const val DEFAULT_EDGE_SHIFT_RPM = 6800
 
+    // ── App updates ────────────────────────────────────────────────────────
+    const val KEY_UPDATE_CHANNEL     = "update_channel"
+    const val DEFAULT_UPDATE_CHANNEL = "stable"    // "stable" | "beta"
+
     // ── Odometer display ──────────────────────────────────────────────────
     const val KEY_ODOM_IN_MILES = "odom_in_miles"
 
@@ -202,6 +206,9 @@ object AppSettings {
     fun getEdgeShiftRpm(ctx: Context): Int =
         prefs(ctx).getInt(KEY_EDGE_SHIFT_RPM, DEFAULT_EDGE_SHIFT_RPM)
 
+    fun getUpdateChannel(ctx: Context): String =
+        prefs(ctx).getString(KEY_UPDATE_CHANNEL, DEFAULT_UPDATE_CHANNEL) ?: DEFAULT_UPDATE_CHANNEL
+
     fun getOdomInMiles(ctx: Context): Boolean {
         val p = prefs(ctx)
         // Backward compat: if key absent, derive from speed unit.
@@ -256,6 +263,7 @@ object AppSettings {
             putInt    (KEY_EDGE_SHIFT_RPM, p.edgeShiftRpm)
             putBoolean(KEY_AUTO_RECORD_DRIVES, p.autoRecordDrives)
             putInt    (KEY_MAX_SAVED_DRIVES, p.maxSavedDrives)
+            putString (KEY_UPDATE_CHANNEL, p.updateChannel)
         }
     }
 
@@ -281,7 +289,8 @@ object AppSettings {
         edgeShiftIntensity   = getEdgeShiftIntensity(ctx),
         edgeShiftRpm         = getEdgeShiftRpm(ctx),
         autoRecordDrives     = getAutoRecordDrives(ctx),
-        maxSavedDrives       = getMaxSavedDrives(ctx)
+        maxSavedDrives       = getMaxSavedDrives(ctx),
+        updateChannel        = getUpdateChannel(ctx)
     )
 
     // ── Custom dashboard persistence ────────────────────────────────────

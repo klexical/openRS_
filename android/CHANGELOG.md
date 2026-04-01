@@ -99,6 +99,19 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **OSMDroid dependency** — removed from `build.gradle.kts`. (`build.gradle.kts`)
 - **Session history from MorePage** — drive history now lives in the MAP tab. (`MorePage.kt`)
 
+### Added (rc.6 — Quick Mode Dock, in-app updates, code review cleanup)
+- **Quick Mode Dock** — tap the MODE cell in the telemetry strip to open a dropdown drive mode selector (N/S/T/D) from any tab. Staggered entrance animation, haptic feedback, auto-dismiss on success. (`DriveModeDock.kt`, `MainActivity.kt`)
+- **Shared drive mode command flow** — `executeDriveModeChange()` suspend function extracted from MorePage. REST POST → 2s settle → 15s CAN poll → auto-correct on overshoot. Returns `DriveCommandResult` sealed class. Used by both MorePage and DriveModeDock. (`DriveCommand.kt`)
+- **In-app update system** — background update checker against GitHub Releases API. Supports stable/beta channels, downloads APK to internal storage, prompts install via `ACTION_INSTALL_PACKAGE`. Settings section for channel picker, check/download/install controls with progress bar. (`update/UpdateManager.kt`, `update/UpdateChecker.kt`, `update/AppVersion.kt`, `update/UpdateState.kt`, `SettingsSheet.kt`, `AppSettings.kt`, `UserPrefs.kt`)
+- **74 new unit tests** — `AppVersionTest` (30 tests: version parsing, comparison, RC/beta ordering), `DtcScannerTest` (28 tests: SAE J2012 DTC decoding, UDS status bits, payload parsing), `UserPrefsTest` (16 tests: unit conversions, sentinel edge cases). Total suite now 319 tests across 11 files.
+
+### Changed (rc.6 — Quick Mode Dock, in-app updates, code review cleanup)
+- **DiagnosticExporter split into 3 files** — 883-line god object broken into `DiagnosticExporter.kt` (ZIP orchestration + share intents, ~210 lines), `DiagnosticReportBuilder.kt` (summary text + JSON detail), and `DriveExportBuilder.kt` (GPX, CSV, drive summary, DTC report). Crash/probe file bundling extracted into private helpers. (addresses [#83](https://github.com/klexical/openRS_/issues/83))
+- **Diagnostic JSON built with JSONObject** — hand-rolled string concatenation in `buildJson()` replaced with `org.json.JSONObject`/`JSONArray`. Eliminates manual comma tracking, bracket nesting, and custom `jsonEscape()` helper. Escaping handled automatically; full-precision numeric values in output. (addresses [#83](https://github.com/klexical/openRS_/issues/83))
+- **DiagnosticLogger hex conversion optimized** — pre-allocated 256-entry hex lookup table replaces per-byte `"%02X".format()` calls. `toSpacedHex()`/`toCompactHex()` use `StringBuilder` with pre-known capacity. Hex strings built outside `synchronized(lock)` block, reducing lock hold time at ~2100 fps. (addresses [#83](https://github.com/klexical/openRS_/issues/83))
+- **DtcScanner refactored for testability** — `decodeDtcCode()`, `classifyStatus()`, `parsePayload()` moved from instance `private` to `companion object internal`, enabling unit tests without Android Context. (`DtcScanner.kt`)
+- **Drive mode command logic extracted from MorePage** — 60 lines of inline command/polling/auto-correct code replaced by a single `executeDriveModeChange()` call. (`MorePage.kt`, `DriveCommand.kt`)
+
 ---
 
 ## [v2.2.5] — 2026-03-27

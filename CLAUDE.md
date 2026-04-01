@@ -27,6 +27,9 @@ can/
   IsoTpBuffer.kt          — ISO-TP SF/FF/CF reassembly; caller sends BCM_FLOW_CONTROL after FF
   FirmwareApi.kt          — REST POST to openRS_ firmware /api/frs (drive mode, ESC)
                             Parses response body for {"busy":true}; throws BusyException
+  DriveCommand.kt         — Shared drive mode command flow: executeDriveModeChange() suspend function
+                            REST POST → 2s settle → 15s CAN poll → auto-correct on overshoot
+                            Returns DriveCommandResult sealed class; used by MorePage + DriveModeDock
 data/
   VehicleState.kt         — Immutable data class ~95 fields. See sentinel rules below.
   ForscanCatalog.kt       — Lazy loader for assets/pids/forscan_modules.json (1,149 PIDs)
@@ -38,8 +41,11 @@ data/
 diagnostics/
   DtcScanner.kt           — UDS 0x19/02 scan across PCM(7E0)/BCM(726)/ABS(760)/AWD(703)/PSCM(730)
   DiagnosticLogger.kt     — Thread-safe singleton: frame inventory (opt B), decode trace, SLCAN log (opt C)
-  DiagnosticExporter.kt   — ZIP builder (inventory+trace+JSON+SLCAN+DID probe CSVs); shareDrive()→unified GPX+CSV+summary+diagnostics
-                            Crash telemetry files retained after export (not deleted); crashFiles()/clearCrashHistory()
+                            Pre-allocated hex lookup table; hex conversion outside lock for reduced contention
+  DiagnosticExporter.kt   — ZIP orchestrator + share intents + crash history; delegates format generation
+                            to DiagnosticReportBuilder and DriveExportBuilder
+  DiagnosticReportBuilder.kt — Diagnostic summary text + JSON detail (JSONObject/JSONArray, no hand-rolled strings)
+  DriveExportBuilder.kt   — Pure-function builders: GPX track, CSV telemetry, drive summary, DTC report
   DtcDatabase.kt          — 873-code bundled Ford DTC lookup (from res/raw/dtc_database.json)
   CrashReporter.kt        — Installs UncaughtExceptionHandler; persists CrashTelemetryBuffer to disk
   CrashTelemetryBuffer.kt — 100-snapshot ring buffer of VehicleState; flushed on crash to JSON
@@ -54,6 +60,9 @@ ui/
   MainActivity.kt         — 7-tab Compose host (DASH/POWER/CHASSIS/TEMPS/MAP/DIAG/MORE)
                             Binds CanDataService via LocalBinder; passes callbacks to child composables
                             Location permission requested at startup; REC indicator in AppHeader
+                            Quick Mode Dock: tap MODE cell in telemetry strip → dropdown drive mode selector
+  DriveModeDock.kt        — Quick-access drive mode dock (N/S/T/D) with staggered entrance animation
+                            Drops down from header via AnimatedVisibility; auto-dismisses on success
   AppSettings.kt          — SharedPreferences wrapper; prefs file: "openrs_settings"
                             rememberSectionExpanded() composable for persistent collapsible sections
   UserPrefs.kt            — Observable prefs data class + unit-conversion helpers
@@ -82,6 +91,11 @@ ui/
   trip/
     DrivePage.kt          — MAP tab: live mode (Google Maps + HUD + controls) + history mode (drive list)
     DriveMap.kt           — Google Maps Compose wrapper: dark styled, color-segmented polylines, peak markers
+update/
+  UpdateManager.kt        — In-app update orchestrator: check → download → install via GitHub Releases API
+  UpdateChecker.kt        — GitHub Releases API client; compares installed vs latest version per channel
+  AppVersion.kt           — Semver + RC/beta parsing and comparison for update eligibility
+  UpdateState.kt          — Sealed class: Idle / Checking / Available / Downloading / ReadyToInstall / Error
 ```
 
 ## ECU Addresses
@@ -187,6 +201,7 @@ ScreenOn: true  |  AutoReconnect: true  |  MaxDiagZips: 5
 AdapterType: "WICAN"  (alt: "MEATPI")
 EdgeShiftLight: false  |  EdgeShiftColor: "accent"  |  EdgeShiftIntensity: "high"  |  EdgeShiftRpm: 6800
 AutoRecordDrives: false  |  MaxSavedDrives: 50
+UpdateChannel: "stable"  (alt: "beta")
 Prefs file: "openrs_settings"
 ```
 
@@ -209,7 +224,7 @@ cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{ver}.apk  (main release)
 ./gradlew assembleRelease -PrcSuffix=rc.5  # → openRS_v{ver}-rc.5.apk
-./gradlew test                             # 243 unit tests across 8 files
+./gradlew test                             # 319 unit tests across 11 files
 bash scripts/install-debug.sh              # quick build + ADB install + launch
 ```
 
@@ -223,12 +238,15 @@ RC builds MUST use `-PrcSuffix` so the APK filename reflects the RC version.
 android/app/src/test/java/com/openrs/dash/
   CanDecoderTest.kt           — 69 tests: all 22 CAN ID decoders
   ObdResponseParserTest.kt    — 46 tests: PCM/BCM/AWD/PSCM/FENG/RSProt DIDs
+  DriveStateTest.kt           — 39 tests: fuel economy, averages, haversine, peaks, sentinels
   VehicleStateTest.kt         — 31 tests: conversions, AWD split, peaks, TPMS, RTR
+  AppVersionTest.kt           — 30 tests: version code/name, RC suffix, build config
+  DtcScannerTest.kt           — 28 tests: SAE J2012 DTC decoding, UDS status bit priority, payload parsing
   SlcanParserTest.kt          — 20 tests: standard/extended frames, error cases
   PidRegistryTest.kt          — 18 tests: catalog loading, DID lookup, fallback decoding
+  UserPrefsTest.kt            — 16 tests: conversion math (temp, speed, boost, tire), sentinel edge cases
   IsoTpBufferTest.kt          — 12 tests: SF/FF/CF reassembly, edge cases
   RingBufferTest.kt           — 10 tests: capacity, overflow, iteration
-  DriveStateTest.kt           — 37 tests: fuel economy, averages, haversine, peaks, sentinels
 ```
 
 ## Branch / Release Workflow

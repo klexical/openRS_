@@ -25,8 +25,12 @@ import android.provider.Settings
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.Brush
+import android.content.pm.PackageManager
 import com.openrs.dash.BuildConfig
 import com.openrs.dash.service.HudOverlayService
+import com.openrs.dash.update.UpdateManager
+import com.openrs.dash.update.UpdateState
+import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -60,6 +64,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
     var edgeShiftColor  by remember { mutableStateOf(current.edgeShiftColor) }
     var edgeShiftIntensity by remember { mutableStateOf(current.edgeShiftIntensity) }
     var edgeShiftRpm    by remember { mutableStateOf(current.edgeShiftRpm.toString()) }
+    var updateChannel   by remember { mutableStateOf(current.updateChannel) }
     var error           by remember { mutableStateOf<String?>(null) }
     var resetConfirm    by remember { mutableStateOf(false) }
 
@@ -489,6 +494,12 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                         fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono)
                 }
 
+                // ── App Updates section ───────────────────────────────────────
+                AppUpdatesSection(
+                    updateChannel = updateChannel,
+                    onChannelChange = { updateChannel = it }
+                )
+
                 // ── What's New ────────────────────────────────────────────────
                 var showWhatsNewLocal by remember { mutableStateOf(false) }
                 Box(
@@ -570,6 +581,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                         edgeShiftColor    = AppSettings.DEFAULT_EDGE_SHIFT_COLOR
                         edgeShiftIntensity = AppSettings.DEFAULT_EDGE_SHIFT_INTENSITY
                         edgeShiftRpm      = AppSettings.DEFAULT_EDGE_SHIFT_RPM.toString()
+                        updateChannel = AppSettings.DEFAULT_UPDATE_CHANNEL
                         error         = null
                         resetConfirm  = true
                     },
@@ -623,7 +635,8 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                                     edgeShiftIntensity   = edgeShiftIntensity,
                                     edgeShiftRpm         = shiftRpm ?: AppSettings.DEFAULT_EDGE_SHIFT_RPM,
                                     autoRecordDrives     = autoRecordDrives,
-                                    maxSavedDrives       = maxDrives ?: AppSettings.DEFAULT_MAX_SAVED_DRIVES
+                                    maxSavedDrives       = maxDrives ?: AppSettings.DEFAULT_MAX_SAVED_DRIVES,
+                                    updateChannel        = updateChannel
                                 )}
                                 onDismiss()
                             }
@@ -734,6 +747,202 @@ fun SegmentedPicker(options: List<String>, selected: String, onSelect: (String) 
                     fontFamily = ShareTechMono,
                     color = if (isSelected) OnAccent else Dim
                 )
+            }
+        }
+    }
+}
+
+// ── App Updates section ──────────────────────────────────────────────────────
+
+@Composable
+private fun AppUpdatesSection(
+    updateChannel: String,
+    onChannelChange: (String) -> Unit
+) {
+    val ctx = LocalContext.current
+    val accent = LocalThemeAccent.current
+    val scope = rememberCoroutineScope()
+    val updateState by UpdateManager.state.collectAsState()
+
+    SettingsSection("APP UPDATES") {
+        // ── Channel picker ──────────────────────────────────────────────
+        SettingsRow("Update channel") {
+            SegmentedPicker(
+                options = listOf("stable", "beta"),
+                selected = updateChannel,
+                onSelect = onChannelChange
+            )
+        }
+        Spacer(Modifier.height(2.dp))
+        Text(
+            if (updateChannel == "beta") "Includes pre-release (RC) builds from GitHub"
+            else "Only stable releases from GitHub",
+            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono
+        )
+
+        Spacer(Modifier.height(14.dp))
+
+        // ── Check for updates button ────────────────────────────────────
+        Box(
+            Modifier.fillMaxWidth()
+                .background(Surf2, RoundedCornerShape(8.dp))
+                .border(1.dp, Brd, RoundedCornerShape(8.dp))
+                .clickable {
+                    scope.launch {
+                        UpdateManager.checkForUpdate(ctx, updateChannel)
+                    }
+                }
+                .padding(14.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("CHECK FOR UPDATES", fontSize = 11.sp,
+                color = accent, fontFamily = ShareTechMono, fontWeight = FontWeight.Bold,
+                letterSpacing = 0.1.sp)
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        // ── Status display ──────────────────────────────────────────────
+        when (val state = updateState) {
+            is UpdateState.Idle -> {
+                // Nothing to show
+            }
+
+            is UpdateState.Checking -> {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = accent,
+                        strokeWidth = 2.dp
+                    )
+                    Text("Checking for updates...", fontSize = 11.sp, color = Dim, fontFamily = ShareTechMono)
+                }
+            }
+
+            is UpdateState.Available -> {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "v${state.version.displayName} available" +
+                            if (state.isPrerelease) "  (pre-release)" else "",
+                        fontSize = 12.sp, color = Ok, fontFamily = ShareTechMono,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (state.fileSizeBytes > 0) {
+                        Text(
+                            "%.1f MB".format(state.fileSizeBytes / 1_048_576.0),
+                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono
+                        )
+                    }
+                    if (state.releaseNotes.isNotEmpty()) {
+                        Text(
+                            state.releaseNotes.take(300) +
+                                if (state.releaseNotes.length > 300) "..." else "",
+                            fontSize = 10.sp, color = Mid, fontFamily = ShareTechMono,
+                            lineHeight = 14.sp
+                        )
+                    }
+
+                    // Check install permission before showing download button
+                    val canInstall = ctx.packageManager.canRequestPackageInstalls()
+                    if (!canInstall) {
+                        Text(
+                            "Allow app installs from openRS_ in system settings to continue",
+                            fontSize = 10.sp, color = Orange, fontFamily = ShareTechMono
+                        )
+                        Box(
+                            Modifier.fillMaxWidth()
+                                .background(Orange.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                                .border(1.dp, Orange.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                .clickable {
+                                    val intent = Intent(
+                                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                        Uri.parse("package:${ctx.packageName}")
+                                    )
+                                    ctx.startActivity(intent)
+                                }
+                                .padding(12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("OPEN INSTALL SETTINGS", fontSize = 11.sp,
+                                color = Orange, fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        Box(
+                            Modifier.fillMaxWidth()
+                                .background(accent.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                                .border(1.dp, accent.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                .clickable {
+                                    scope.launch {
+                                        UpdateManager.downloadUpdate(ctx, state.downloadUrl)
+                                    }
+                                }
+                                .padding(12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("DOWNLOAD", fontSize = 11.sp,
+                                color = accent, fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
+            is UpdateState.Downloading -> {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (state.progress >= 0) {
+                        LinearProgressIndicator(
+                            progress = { state.progress },
+                            modifier = Modifier.fillMaxWidth().height(4.dp),
+                            color = accent,
+                            trackColor = Brd
+                        )
+                        Text(
+                            "Downloading... ${(state.progress * 100).toInt()}%  " +
+                                "(%.1f / %.1f MB)".format(
+                                    state.bytesDownloaded / 1_048_576.0,
+                                    state.totalBytes / 1_048_576.0
+                                ),
+                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono
+                        )
+                    } else {
+                        LinearProgressIndicator(
+                            modifier = Modifier.fillMaxWidth().height(4.dp),
+                            color = accent,
+                            trackColor = Brd
+                        )
+                        Text(
+                            "Downloading... %.1f MB".format(state.bytesDownloaded / 1_048_576.0),
+                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono
+                        )
+                    }
+                }
+            }
+
+            is UpdateState.ReadyToInstall -> {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Download complete", fontSize = 11.sp, color = Ok, fontFamily = ShareTechMono)
+                    Box(
+                        Modifier.fillMaxWidth()
+                            .background(Ok.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                            .border(1.dp, Ok.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                            .clickable { UpdateManager.installApk(ctx, state.apkFile) }
+                            .padding(12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("INSTALL", fontSize = 11.sp,
+                            color = Ok, fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            is UpdateState.Error -> {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(state.message, fontSize = 11.sp, color = Orange, fontFamily = ShareTechMono)
+                    Text("Tap 'Check for updates' to retry",
+                        fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono)
+                }
             }
         }
     }

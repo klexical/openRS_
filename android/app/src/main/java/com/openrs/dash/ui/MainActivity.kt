@@ -46,7 +46,10 @@ import com.openrs.dash.data.VehicleState
 import com.openrs.dash.service.CanDataService
 import com.openrs.dash.ui.anim.EdgeShiftLight
 import com.openrs.dash.ui.anim.bloomGlow
+import com.openrs.dash.ui.anim.pressClick
 import com.openrs.dash.ui.trip.DrivePage
+import com.openrs.dash.update.UpdateManager
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.platform.LocalContext
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -86,6 +89,8 @@ class MainActivity : ComponentActivity() {
             val pagerScope  = rememberCoroutineScope()
             var settingsOpen    by remember { mutableStateOf(false) }
             var showCustomDash  by remember { mutableStateOf(false) }
+            var dockOpen        by remember { mutableStateOf(false) }
+            val isFw            by OpenRSDashApp.instance.isOpenRsFirmware.collectAsState()
             val snackbarHostState = remember { SnackbarHostState() }
 
             // "Going live" connection sweep
@@ -105,6 +110,16 @@ class MainActivity : ComponentActivity() {
                 val lastSeen = AppSettings.getLastSeenVersion(whatsNewCtx)
                 val current = com.openrs.dash.BuildConfig.VERSION_NAME
                 mutableStateOf(lastSeen != current)
+            }
+
+            // Background update check — silent, non-intrusive
+            LaunchedEffect(Unit) {
+                UpdateManager.cleanupOldDownloads(whatsNewCtx)
+                UpdateManager.checkForUpdate(
+                    whatsNewCtx,
+                    channel = prefs.updateChannel,
+                    silent = true
+                )
             }
 
             val view = LocalView.current
@@ -137,12 +152,38 @@ class MainActivity : ComponentActivity() {
                                         onConnect    = { service?.startConnection() },
                                         onDisconnect = { service?.stopConnection() },
                                         onReconnect  = { service?.reconnect() },
-                                        driveState   = driveState
+                                        driveState   = driveState,
+                                        onModeClick  = { dockOpen = !dockOpen }
                                     )
                                     TabBar(pagerState.currentPage, onSelect = { page ->
                                         pagerScope.launch { pagerState.animateScrollToPage(page) }
                                     })
+
+                                    // ── Quick Mode Dock ──────────────────
+                                    val dockCtx = LocalContext.current
+                                    AnimatedVisibility(
+                                        visible = dockOpen,
+                                        enter = expandVertically(
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                stiffness = Spring.StiffnessMediumLow
+                                            )
+                                        ) + fadeIn(),
+                                        exit = shrinkVertically(tween(200)) + fadeOut(tween(200))
+                                    ) {
+                                        DriveModeDock(
+                                            vs = vs,
+                                            canControl = isFw && vs.isConnected,
+                                            host = remember(prefs) { AppSettings.getHost(dockCtx) },
+                                            snackbarHostState = snackbarHostState,
+                                            onDismiss = { dockOpen = false }
+                                        )
+                                    }
+
                                     ConnectionBanner(vs)
+                                    // Auto-dismiss dock on tab change
+                                    LaunchedEffect(pagerState.currentPage) { dockOpen = false }
+
                                     HorizontalPager(
                                         state = pagerState,
                                         modifier = Modifier.weight(1f),
@@ -172,6 +213,17 @@ class MainActivity : ComponentActivity() {
                                                 onResetSession = { service?.resetSession() }
                                             )
                                             6 -> MorePage(vs, prefs, snackbarHostState, onSettings = { settingsOpen = true }, onCustomDash = { showCustomDash = true })
+                                        }
+                                        // Scrim overlay — tap to dismiss dock
+                                        if (dockOpen) {
+                                            Box(
+                                                Modifier.fillMaxSize()
+                                                    .background(Color.Black.copy(alpha = 0.12f))
+                                                    .clickable(
+                                                        interactionSource = remember { MutableInteractionSource() },
+                                                        indication = null
+                                                    ) { dockOpen = false }
+                                            )
                                         }
                                         }
                                     }
@@ -262,7 +314,8 @@ class MainActivity : ComponentActivity() {
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onReconnect: () -> Unit,
-    driveState: com.openrs.dash.data.DriveState = com.openrs.dash.data.DriveState()
+    driveState: com.openrs.dash.data.DriveState = com.openrs.dash.data.DriveState(),
+    onModeClick: () -> Unit = {}
 ) {
     val accent = LocalThemeAccent.current
 
@@ -356,6 +409,16 @@ class MainActivity : ComponentActivity() {
                     contentAlignment = Alignment.Center
                 ) {
                     UIText("⚙", 13.sp, Mid)
+                    // Update-available badge dot
+                    if (UpdateManager.hasUpdate) {
+                        Box(
+                            Modifier.align(Alignment.TopEnd)
+                                .offset(x = 2.dp, y = (-2).dp)
+                                .size(7.dp)
+                                .clip(CircleShape)
+                                .background(Ok)
+                        )
+                    }
                 }
             }
         }
@@ -376,7 +439,37 @@ class MainActivity : ComponentActivity() {
             val eBrakeColor = if (vs.eBrake) Warn else Ok
             val fpsStr = if (vs.isConnected) "${vs.framesPerSecond.toInt()} FPS" else "—"
 
-            TeleCell("MODE", vs.driveMode.label.uppercase(), modeColor, Modifier.weight(1f))
+            // MODE cell — pulsing accent bar (matches tab indicator style)
+            val pulseT = rememberInfiniteTransition(label = "modeBar")
+            val barAlpha by pulseT.animateFloat(
+                initialValue = 0.3f, targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    tween(2000, easing = EaseInOut), RepeatMode.Reverse
+                ), label = "modeBarA"
+            )
+            Box(
+                Modifier.weight(1f)
+                    .defaultMinSize(minHeight = 44.dp)
+                    .pressClick { onModeClick() },
+                contentAlignment = Alignment.Center
+            ) {
+                TeleCell("MODE", vs.driveMode.label.uppercase(), modeColor, Modifier.fillMaxWidth())
+                // Accent bar + glow — same style as TabBar indicator, but pulsing
+                Box(Modifier.align(Alignment.BottomCenter)
+                    .fillMaxWidth(0.6f).height(2.dp)
+                    .background(modeColor.copy(alpha = barAlpha),
+                        RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
+                )
+                Box(Modifier.align(Alignment.BottomCenter)
+                    .fillMaxWidth(0.7f).height(6.dp)
+                    .background(
+                        Brush.verticalGradient(listOf(
+                            modeColor.copy(alpha = 0.12f * barAlpha), Color.Transparent
+                        )),
+                        RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp)
+                    )
+                )
+            }
             TeleDivider()
             TeleCell("ESC", vs.escStatus.label.uppercase(), escColor, Modifier.weight(1f))
             TeleDivider()

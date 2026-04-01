@@ -53,6 +53,29 @@ object DiagnosticLogger {
     /** Maximum DID probe sessions stored per diagnostic session. */
     private const val MAX_PROBE_SESSIONS = 50
 
+    // ── Pre-allocated hex lookup (eliminates per-byte format() calls) ────────
+
+    /** 256-entry table: index 0→"00", 1→"01", …, 255→"FF". */
+    private val HEX = Array(256) { "%02X".format(it) }
+
+    /** Convert bytes to space-separated hex (e.g. "0F 8A 01") using lookup table. */
+    private fun ByteArray.toSpacedHex(): String {
+        if (isEmpty()) return ""
+        val sb = StringBuilder(size * 3 - 1)
+        for (i in indices) {
+            if (i > 0) sb.append(' ')
+            sb.append(HEX[this[i].toInt() and 0xFF])
+        }
+        return sb.toString()
+    }
+
+    /** Convert bytes to compact hex (e.g. "0F8A01") using lookup table. */
+    private fun ByteArray.toCompactHex(): String {
+        val sb = StringBuilder(size * 2)
+        for (b in this) sb.append(HEX[b.toInt() and 0xFF])
+        return sb.toString()
+    }
+
     // ── Data models ─────────────────────────────────────────────────────────
 
     /**
@@ -265,9 +288,13 @@ object DiagnosticLogger {
         decoded: String,
         issue: String?
     ) {
+        // Pre-compute hex strings outside lock — no allocations under contention
+        val rawHex     = rawData.toSpacedHex()
+        val compactHex = rawData.toCompactHex()
+        val idHex      = "0x%03X".format(canId)
+
         synchronized(lock) {
-            val relMs  = relativeMs()
-            val rawHex = rawData.joinToString(" ") { "%02X".format(it) }
+            val relMs = relativeMs()
 
             // ── Option B: enriched frame inventory ───────────────────────────
             val info = frameInventory.getOrPut(canId) { FrameInfo() }
@@ -287,13 +314,13 @@ object DiagnosticLogger {
             }
 
             // ── Rolling decode trace ─────────────────────────────────────────
-            decodeTraceDeque.addLast(TraceEvent(relMs, "0x%03X".format(canId), rawHex, decoded, issue))
+            decodeTraceDeque.addLast(TraceEvent(relMs, idHex, rawHex, decoded, issue))
             while (decodeTraceDeque.size > MAX_TRACE) decodeTraceDeque.removeFirst()
 
             lastVehicleState = newState
 
             // ── Option C: SLCAN raw log ──────────────────────────────────────
-            writeSlcanLine(relMs, canId, rawData)
+            writeSlcanLine(relMs, canId, compactHex)
         }
     }
 
@@ -302,9 +329,12 @@ object DiagnosticLogger {
      * Updates inventory count and writes SLCAN line; no decode trace entry.
      */
     fun logUnknownFrame(canId: Int, rawData: ByteArray) {
+        // Pre-compute hex strings outside lock
+        val rawHex     = rawData.toSpacedHex()
+        val compactHex = rawData.toCompactHex()
+
         synchronized(lock) {
-            val relMs  = relativeMs()
-            val rawHex = rawData.joinToString(" ") { "%02X".format(it) }
+            val relMs = relativeMs()
 
             val info = frameInventory.getOrPut(canId) { FrameInfo() }
             info.totalReceived++
@@ -320,7 +350,7 @@ object DiagnosticLogger {
                 lastSampleTimeMs[canId] = relMs
             }
 
-            writeSlcanLine(relMs, canId, rawData)
+            writeSlcanLine(relMs, canId, compactHex)
         }
     }
 
@@ -330,8 +360,9 @@ object DiagnosticLogger {
      * processCanFrame, so this ensures they still appear in the SLCAN export.
      */
     fun logObdFrame(canId: Int, rawData: ByteArray) {
+        val compactHex = rawData.toCompactHex()
         synchronized(lock) {
-            writeSlcanLine(relativeMs(), canId, rawData)
+            writeSlcanLine(relativeMs(), canId, compactHex)
         }
     }
 
@@ -339,8 +370,11 @@ object DiagnosticLogger {
      * Write a single candump-format line to the SLCAN log.
      * Must be called within [synchronized](lock).
      * Stops silently once MAX_SLCAN_LINES is reached.
+     *
+     * @param compactHex pre-built compact hex string (e.g. "0F8A01020304") —
+     *                   computed outside the lock to reduce contention.
      */
-    private fun writeSlcanLine(relMs: Long, canId: Int, rawData: ByteArray) {
+    private fun writeSlcanLine(relMs: Long, canId: Int, compactHex: String) {
         val w = slcanWriter ?: return
         if (slcanLinesWritten >= MAX_SLCAN_LINES) {
             if (!slcanCapReached) {
@@ -355,8 +389,7 @@ object DiagnosticLogger {
         }
         try {
             val seconds = relMs / 1000.0
-            val dataHex = rawData.joinToString("") { "%02X".format(it) }
-            w.write("(%10.3f) can0 %03X#%s\n".format(seconds, canId, dataHex))
+            w.write("(%10.3f) can0 %03X#%s\n".format(seconds, canId, compactHex))
             slcanLinesWritten++
             // Flush to disk every 1 000 lines to limit data loss on crash
             if (slcanLinesWritten % 1_000L == 0L) w.flush()

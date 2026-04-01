@@ -2,34 +2,26 @@ package com.openrs.dash.diagnostics
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import androidx.core.content.FileProvider
 import com.openrs.dash.BuildConfig
-import com.openrs.dash.can.CanDecoder
 import com.openrs.dash.data.DriveEntity
 import com.openrs.dash.data.DrivePointEntity
 import com.openrs.dash.data.DtcResult
-import com.openrs.dash.data.VehicleState
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.TimeZone
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * Builds and shares the openRS_ diagnostic bundle.
+ * Orchestrates diagnostic and drive data export: ZIP packaging, Android share
+ * intents, and crash history management.
  *
- * Output: a ZIP containing:
- *   diagnostic_summary_<timestamp>.txt   — human-readable report
- *   diagnostic_detail_<timestamp>.json   — full machine-readable data
- *   slcan_log_<timestamp>.log            — raw CAN frames in candump format (Option C)
- *                                          (only present if a SLCAN log was recorded)
- *
- * The SLCAN log is compatible with SavvyCAN, Kayak, and candump for offline analysis.
+ * Format generation is delegated to [DiagnosticReportBuilder] (summary text +
+ * JSON detail) and [DriveExportBuilder] (GPX, CSV, drive summary, DTC report).
  */
 object DiagnosticExporter {
 
@@ -39,13 +31,13 @@ object DiagnosticExporter {
      * Export the current diagnostic session to a ZIP file in the app's
      * internal files directory, then return a shareable URI via FileProvider.
      */
-    fun export(ctx: Context): Uri? {
+    fun export(ctx: Context): android.net.Uri? {
         return try {
             val dir = File(ctx.filesDir, "diagnostics").also { it.mkdirs() }
             val ts  = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
             val zipFile = File(dir, "openrs_diag_$ts.zip")
 
-            // L-7 fix: delete oldest ZIPs when over the user-configured limit
+            // Delete oldest ZIPs when over the user-configured limit
             val maxKeep = com.openrs.dash.ui.UserPrefsStore.prefs.value.maxDiagZips
             val existing = dir.listFiles { f -> f.name.startsWith("openrs_diag_") && f.name.endsWith(".zip") }
             if (existing != null && existing.size >= maxKeep) {
@@ -59,14 +51,14 @@ object DiagnosticExporter {
 
             ZipOutputStream(zipFile.outputStream().buffered()).use { zip ->
                 zip.putNextEntry(ZipEntry("diagnostic_summary_$ts.txt"))
-                zip.write(buildSummary(ts).toByteArray(Charsets.UTF_8))
+                zip.write(DiagnosticReportBuilder.buildSummaryText(ts).toByteArray(Charsets.UTF_8))
                 zip.closeEntry()
 
                 zip.putNextEntry(ZipEntry("diagnostic_detail_$ts.json"))
-                zip.write(buildJson(ts).toByteArray(Charsets.UTF_8))
+                zip.write(DiagnosticReportBuilder.buildDetailJson(ts).toByteArray(Charsets.UTF_8))
                 zip.closeEntry()
 
-                // Option C: include SLCAN raw log if one was recorded this session
+                // SLCAN raw log if one was recorded this session
                 val slcanFile = DiagnosticLogger.slcanLogFile
                 if (slcanFile != null && slcanFile.exists() && slcanFile.length() > 0) {
                     zip.putNextEntry(ZipEntry("slcan_log_$ts.log"))
@@ -74,34 +66,11 @@ object DiagnosticExporter {
                     zip.closeEntry()
                 }
 
-                // Crash telemetry: include any crash_telemetry_*.json files (kept for history)
-                val diagDir = File(ctx.filesDir, "diagnostics")
-                if (diagDir.isDirectory) {
-                    diagDir.listFiles { f -> f.name.startsWith("crash_telemetry_") && f.name.endsWith(".json") }
-                        ?.forEach { crashFile ->
-                            zip.putNextEntry(ZipEntry(crashFile.name))
-                            crashFile.inputStream().buffered().use { it.copyTo(zip) }
-                            zip.closeEntry()
-                        }
-                }
+                // Crash telemetry files
+                addCrashFiles(ctx, zip)
 
                 // DID probe sessions: one CSV per scanned module
-                val probes = DiagnosticLogger.probeSessions
-                if (probes.isNotEmpty()) {
-                    probes.forEachIndexed { idx, session ->
-                        val name = "did_probe_${session.module.lowercase()}_${idx + 1}.csv"
-                        zip.putNextEntry(ZipEntry(name))
-                        val csv = buildString {
-                            appendLine("DID,Status,ResponseHex")
-                            session.results.forEach { r ->
-                                appendLine("0x${"%04X".format(r.did)},${r.status},${r.responseHex}")
-                            }
-                        }
-                        zip.write(csv.toByteArray(Charsets.UTF_8))
-                        zip.closeEntry()
-                    }
-                }
-
+                addProbeFiles(zip)
             }
 
             FileProvider.getUriForFile(ctx, AUTHORITY, zipFile)
@@ -145,31 +114,31 @@ object DiagnosticExporter {
                 // Drive GPX (if GPS data available)
                 if (drive.hasGps && points.isNotEmpty()) {
                     zip.putNextEntry(ZipEntry("drive_$ts.gpx"))
-                    zip.write(buildDriveGpx(drive, points, ts).toByteArray(Charsets.UTF_8))
+                    zip.write(DriveExportBuilder.buildGpx(drive, points, ts).toByteArray(Charsets.UTF_8))
                     zip.closeEntry()
 
                     zip.putNextEntry(ZipEntry("drive_$ts.csv"))
-                    zip.write(buildDriveCsv(points).toByteArray(Charsets.UTF_8))
+                    zip.write(DriveExportBuilder.buildCsv(points).toByteArray(Charsets.UTF_8))
                     zip.closeEntry()
                 }
 
                 // Drive summary (always included)
                 zip.putNextEntry(ZipEntry("drive_summary_$ts.txt"))
-                zip.write(buildDriveSummary(drive, points).toByteArray(Charsets.UTF_8))
+                zip.write(DriveExportBuilder.buildSummary(drive, points).toByteArray(Charsets.UTF_8))
                 zip.closeEntry()
 
                 // Diagnostic data (if requested and available)
                 if (includeDiagnostics) {
                     DiagnosticLogger.flushSlcan()
 
-                    val summary = buildSummary(ts)
+                    val summary = DiagnosticReportBuilder.buildSummaryText(ts)
                     if (summary.isNotEmpty()) {
                         zip.putNextEntry(ZipEntry("diagnostic_summary_$ts.txt"))
                         zip.write(summary.toByteArray(Charsets.UTF_8))
                         zip.closeEntry()
                     }
 
-                    val detail = buildJson(ts)
+                    val detail = DiagnosticReportBuilder.buildDetailJson(ts)
                     if (detail.isNotEmpty()) {
                         zip.putNextEntry(ZipEntry("diagnostic_detail_$ts.json"))
                         zip.write(detail.toByteArray(Charsets.UTF_8))
@@ -183,37 +152,14 @@ object DiagnosticExporter {
                         zip.closeEntry()
                     }
 
-                    val crashDir = File(ctx.filesDir, "diagnostics")
-                    if (crashDir.isDirectory) {
-                        crashDir.listFiles { f -> f.name.startsWith("crash_telemetry_") && f.name.endsWith(".json") }
-                            ?.forEach { crash ->
-                                zip.putNextEntry(ZipEntry(crash.name))
-                                crash.inputStream().buffered().use { it.copyTo(zip) }
-                                zip.closeEntry()
-                            }
-                    }
-
-                    val probes = DiagnosticLogger.probeSessions
-                    if (probes.isNotEmpty()) {
-                        probes.forEachIndexed { idx, session ->
-                            val name = "did_probe_${session.module.lowercase()}_${idx + 1}.csv"
-                            zip.putNextEntry(ZipEntry(name))
-                            val csv = buildString {
-                                appendLine("DID,Status,ResponseHex")
-                                session.results.forEach { r ->
-                                    appendLine("0x${"%04X".format(r.did)},${r.status},${r.responseHex}")
-                                }
-                            }
-                            zip.write(csv.toByteArray(Charsets.UTF_8))
-                            zip.closeEntry()
-                        }
-                    }
+                    addCrashFiles(ctx, zip)
+                    addProbeFiles(zip)
                 }
 
                 // DTC results (optional)
                 if (!dtcResults.isNullOrEmpty()) {
                     zip.putNextEntry(ZipEntry("dtc_scan_$ts.txt"))
-                    zip.write(buildDtcText(dtcResults).toByteArray(Charsets.UTF_8))
+                    zip.write(DriveExportBuilder.buildDtcText(dtcResults).toByteArray(Charsets.UTF_8))
                     zip.closeEntry()
                 }
             }
@@ -239,163 +185,6 @@ object DiagnosticExporter {
         }
     }
 
-    private fun buildDriveGpx(drive: DriveEntity, points: List<DrivePointEntity>, ts: String): String {
-        val isoFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
-            timeZone = TimeZone.getTimeZone("UTC")
-        }
-        return buildString {
-            appendLine("""<?xml version="1.0" encoding="UTF-8"?>""")
-            appendLine("""<gpx version="1.1" creator="openRS_ v${BuildConfig.VERSION_NAME}" """)
-            appendLine("""    xmlns="http://www.topografix.com/GPX/1/1" """)
-            appendLine("""    xmlns:openrs="https://github.com/klex/openRS_">""")
-            appendLine("  <metadata>")
-            appendLine("    <name>openRS_ Drive $ts</name>")
-            appendLine("    <time>${isoFmt.format(Date(drive.startTime))}</time>")
-            appendLine("  </metadata>")
-            appendLine("  <trk>")
-            appendLine("    <name>Focus RS MK3 Drive</name>")
-
-            // Split into segments at pause gaps (>5s between consecutive points)
-            appendLine("    <trkseg>")
-            var prevTimestamp = 0L
-            points.forEach { pt ->
-                if (prevTimestamp > 0 && pt.timestamp - prevTimestamp > 5000) {
-                    // Pause gap — close segment and start new one
-                    appendLine("    </trkseg>")
-                    appendLine("    <trkseg>")
-                }
-                appendLine("""      <trkpt lat="${pt.lat}" lon="${pt.lng}">""")
-                appendLine("        <ele>0</ele>")
-                appendLine("        <time>${isoFmt.format(Date(pt.timestamp))}</time>")
-                appendLine("        <extensions>")
-                appendLine("          <openrs:speed>${"%.1f".format(pt.speedKph)}</openrs:speed>")
-                appendLine("          <openrs:rpm>${pt.rpm}</openrs:rpm>")
-                appendLine("          <openrs:gear>${pt.gear}</openrs:gear>")
-                appendLine("          <openrs:boostPsi>${"%.2f".format(pt.boostPsi)}</openrs:boostPsi>")
-                appendLine("          <openrs:coolantC>${"%.1f".format(pt.coolantTempC)}</openrs:coolantC>")
-                appendLine("          <openrs:oilC>${"%.1f".format(pt.oilTempC)}</openrs:oilC>")
-                appendLine("          <openrs:ambientC>${"%.1f".format(pt.ambientTempC)}</openrs:ambientC>")
-                appendLine("          <openrs:rduC>${"%.1f".format(pt.rduTempC)}</openrs:rduC>")
-                appendLine("          <openrs:ptuC>${"%.1f".format(pt.ptuTempC)}</openrs:ptuC>")
-                appendLine("          <openrs:fuelPct>${"%.1f".format(pt.fuelLevelPct)}</openrs:fuelPct>")
-                appendLine("          <openrs:lateralG>${"%.3f".format(pt.lateralG)}</openrs:lateralG>")
-                appendLine("          <openrs:driveMode>${pt.driveMode}</openrs:driveMode>")
-                appendLine("        </extensions>")
-                appendLine("      </trkpt>")
-                prevTimestamp = pt.timestamp
-            }
-            appendLine("    </trkseg>")
-            appendLine("  </trk>")
-            append("</gpx>")
-        }
-    }
-
-    private fun buildDriveCsv(points: List<DrivePointEntity>): String = buildString {
-        appendLine(
-            "timestamp_ms,lat,lng,speed_kph,rpm,gear,boost_psi," +
-            "coolant_c,oil_c,ambient_c,rdu_c,ptu_c,fuel_pct," +
-            "tire_press_lf_psi,tire_press_rf_psi,tire_press_lr_psi,tire_press_rr_psi," +
-            "tire_temp_lf_c,tire_temp_rf_c,tire_temp_lr_c,tire_temp_rr_c," +
-            "wheel_fl_kph,wheel_fr_kph,wheel_rl_kph,wheel_rr_kph," +
-            "lateral_g,throttle_pct,drive_mode,race_ready"
-        )
-        points.forEach { pt ->
-            appendLine(
-                "${pt.timestamp}," +
-                "${"%.6f".format(pt.lat)}," +
-                "${"%.6f".format(pt.lng)}," +
-                "${"%.2f".format(pt.speedKph)}," +
-                "${pt.rpm}," +
-                "${csvEscape(pt.gear)}," +
-                "${"%.3f".format(pt.boostPsi)}," +
-                "${"%.1f".format(pt.coolantTempC)}," +
-                "${"%.1f".format(pt.oilTempC)}," +
-                "${"%.1f".format(pt.ambientTempC)}," +
-                "${"%.1f".format(pt.rduTempC)}," +
-                "${"%.1f".format(pt.ptuTempC)}," +
-                "${"%.1f".format(pt.fuelLevelPct)}," +
-                "${"%.1f".format(pt.tirePressLF)}," +
-                "${"%.1f".format(pt.tirePressRF)}," +
-                "${"%.1f".format(pt.tirePressLR)}," +
-                "${"%.1f".format(pt.tirePressRR)}," +
-                "${"%.1f".format(pt.tireTempLF)}," +
-                "${"%.1f".format(pt.tireTempRF)}," +
-                "${"%.1f".format(pt.tireTempLR)}," +
-                "${"%.1f".format(pt.tireTempRR)}," +
-                "${"%.2f".format(pt.wheelSpeedFL)}," +
-                "${"%.2f".format(pt.wheelSpeedFR)}," +
-                "${"%.2f".format(pt.wheelSpeedRL)}," +
-                "${"%.2f".format(pt.wheelSpeedRR)}," +
-                "${"%.4f".format(pt.lateralG)}," +
-                "${"%.1f".format(pt.throttlePct)}," +
-                "${csvEscape(pt.driveMode)}," +
-                "${pt.isRaceReady}"
-            )
-        }
-    }
-
-    private fun buildDriveSummary(drive: DriveEntity, points: List<DrivePointEntity>): String = buildString {
-        val durationMs = if (drive.endTime > 0) drive.endTime - drive.startTime else 0L
-        val elapsedSec = durationMs / 1000L
-        appendLine("═══════════════════════════════════════════════════════════")
-        appendLine("  openRS_ Drive Summary")
-        appendLine("  App         : v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})")
-        appendLine("  Points      : ${points.size}")
-        appendLine("═══════════════════════════════════════════════════════════")
-        appendLine()
-        appendLine("  Distance    : ${"%.2f".format(drive.distanceKm)} km  (${"%.2f".format(drive.distanceKm * 0.621371)} mi)")
-        appendLine("  Duration    : ${elapsedSec / 3600}h ${(elapsedSec % 3600) / 60}m ${elapsedSec % 60}s")
-        appendLine("  Avg Speed   : ${"%.1f".format(drive.avgSpeedKph)} km/h")
-        appendLine("  Max Speed   : ${"%.1f".format(drive.maxSpeedKph)} km/h")
-        appendLine()
-        appendLine("  Fuel Used   : ${"%.2f".format(drive.fuelUsedL)} L")
-        appendLine("  Peak RPM    : ${drive.peakRpm}")
-        appendLine("  Peak Boost  : ${"%.1f".format(drive.peakBoostPsi)} PSI")
-        appendLine("  Peak Lat G  : ${"%.2f".format(drive.peakLateralG)} g")
-        appendLine()
-        if (drive.driveModeBreakdown != "{}") {
-            appendLine("  Drive mode breakdown:")
-            try {
-                val json = org.json.JSONObject(drive.driveModeBreakdown)
-                json.keys().forEach { key ->
-                    val pct = json.getDouble(key) * 100
-                    appendLine("    ${key.padEnd(10)} : ${"%.0f".format(pct)}%")
-                }
-            } catch (_: Exception) {}
-        }
-        appendLine()
-        appendLine("═══════════════════════════════════════════════════════════")
-    }
-
-    private fun csvEscape(value: String): String =
-        if (value.contains(',') || value.contains('"') || value.contains('\n'))
-            "\"${value.replace("\"", "\"\"")}\"" else value
-
-    /**
-     * Build a plain-text DTC scan report for inclusion in the trip ZIP.
-     */
-    private fun buildDtcText(dtcResults: List<DtcResult>): String = buildString {
-        appendLine("═══════════════════════════════════════════════════════════")
-        appendLine("  openRS_ DTC Scan Report")
-        appendLine("  App : v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})")
-        appendLine("═══════════════════════════════════════════════════════════")
-        appendLine()
-        val grouped = dtcResults.groupBy { it.module }
-        val order   = listOf("PCM", "BCM", "ABS", "AWD", "PSCM")
-        for (mod in order) {
-            val codes = grouped[mod] ?: continue
-            appendLine("─── $mod ────────────────────────────────────────────────────")
-            codes.forEach { dtc ->
-                val desc = if (dtc.description.isNotEmpty()) dtc.description else "(no description)"
-                appendLine("  ${dtc.code}  [${dtc.status.label}]  $desc")
-            }
-            appendLine()
-        }
-        appendLine("Total: ${dtcResults.size} fault code(s) across ${dtcResults.map { it.module }.distinct().size} module(s)")
-        appendLine("═══════════════════════════════════════════════════════════")
-    }
-
-    /** Create and fire an Android share intent for the diagnostic ZIP. */
     /** Returns crash telemetry files sorted by newest first. */
     fun crashFiles(ctx: Context): List<File> {
         val dir = File(ctx.filesDir, "diagnostics")
@@ -410,6 +199,7 @@ object DiagnosticExporter {
         crashFiles(ctx).forEach { it.delete() }
     }
 
+    /** Create and fire an Android share intent for the diagnostic ZIP. */
     fun share(ctx: Context) {
         val uri = export(ctx) ?: run {
             DiagnosticLogger.event("SHARE", "Export failed — nothing to share")
@@ -433,451 +223,40 @@ object DiagnosticExporter {
             )
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-            Handler(Looper.getMainLooper()).post {
-                ctx.startActivity(Intent.createChooser(intent, "Share openRS_ Diagnostics"))
+        Handler(Looper.getMainLooper()).post {
+            ctx.startActivity(Intent.createChooser(intent, "Share openRS_ Diagnostics"))
+        }
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    /** Add crash telemetry JSON files to the ZIP. */
+    private fun addCrashFiles(ctx: Context, zip: ZipOutputStream) {
+        val diagDir = File(ctx.filesDir, "diagnostics")
+        if (!diagDir.isDirectory) return
+        diagDir.listFiles { f -> f.name.startsWith("crash_telemetry_") && f.name.endsWith(".json") }
+            ?.forEach { crashFile ->
+                zip.putNextEntry(ZipEntry(crashFile.name))
+                crashFile.inputStream().buffered().use { it.copyTo(zip) }
+                zip.closeEntry()
             }
     }
 
-    // ── Text summary ─────────────────────────────────────────────────────────
-
-    private fun buildSummary(ts: String): String = buildString {
-        val log = DiagnosticLogger
-        val vs  = log.lastVehicleState
-        val p   = log.sessionPrefs
-
-        appendLine("═══════════════════════════════════════════════════════════")
-        appendLine("  openRS_ Diagnostic Report")
-        appendLine("  App       : v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})")
-        appendLine("  Generated : $ts")
-        appendLine("  Session   : ${log.formatDuration(log.sessionDurationMs)}")
-        appendLine("═══════════════════════════════════════════════════════════")
-        appendLine()
-
-        // ── Connection
-        appendLine("─── CONNECTION ────────────────────────────────────────────")
-        appendLine("  Host     : ${log.sessionHost}:${log.sessionPort}")
-        appendLine("  Firmware : ${log.firmwareVersion}")
-        val connEvent = log.sessionEvents.lastOrNull { it.type == "SESSION" }
-        if (connEvent != null) appendLine("  Last evt : ${connEvent.message}")
-        appendLine()
-
-        // ── Settings
-        if (p != null) {
-            appendLine("─── SETTINGS ───────────────────────────────────────────────")
-            appendLine("  Speed     : ${p.speedUnit}")
-            appendLine("  Temp      : ${p.tempUnit}")
-            appendLine("  Boost     : ${p.boostUnit}")
-            appendLine("  Tires     : ${p.tireUnit}")
-            appendLine("  TireLow   : ${p.tireLowPsi} PSI")
-            appendLine("  AutoRecon : ${p.autoReconnect} / ${p.reconnectIntervalSec}s")
-            appendLine()
-        }
-
-        // ── Vehicle state snapshot
-        if (vs != null) {
-            appendLine("─── VEHICLE STATE SNAPSHOT ─────────────────────────────────")
-            appendLine("  RPM        : ${vs.rpm.toInt()}")
-            appendLine("  Speed      : ${"%.1f".format(vs.speedKph)} kph / ${"%.1f".format(vs.speedKph * 0.621371)} mph")
-            appendLine("  Boost      : ${"%.1f".format((vs.boostKpa - 101.325) * 0.14503773)} PSI  (${vs.boostKpa.toInt()} kPa abs)")
-            appendLine("  Coolant    : ${"%.0f".format(vs.coolantTempC)} °C")
-            appendLine("  Oil Temp   : ${"%.0f".format(vs.oilTempC)} °C")
-            appendLine("  Intake     : ${"%.0f".format(vs.intakeTempC)} °C")
-            appendLine("  Ambient    : ${"%.1f".format(vs.ambientTempC)} °C")
-            appendLine("  Baro       : ${"%.1f".format(vs.barometricPressure)} kPa")
-            appendLine("  Lat G      : ${"%.3f".format(vs.lateralG)} g")
-            appendLine("  Lon G      : ${"%.3f".format(vs.longitudinalG)} g")
-            appendLine("  Drive Mode : ${vs.driveMode.label}")
-            appendLine("  ESC        : ${vs.escStatus.label}")
-            appendLine("  Gear       : ${vs.gearDisplay}")
-            appendLine("  Battery    : ${"%.1f".format(vs.batteryVoltage)} V")
-            appendLine("  Fuel       : ${"%.0f".format(vs.fuelLevelPct)} %")
-            appendLine("  Throttle   : ${"%.1f".format(vs.throttlePct)} %")
-            appendLine("  Torque     : ${"%.0f".format(vs.torqueAtTrans)} Nm")
-            appendLine("  TPMS LF/RF : ${"%.0f".format(vs.tirePressLF)} / ${"%.0f".format(vs.tirePressRF)} PSI")
-            appendLine("  TPMS LR/RR : ${"%.0f".format(vs.tirePressLR)} / ${"%.0f".format(vs.tirePressRR)} PSI")
-            appendLine("  AWD L/R    : ${"%.0f".format(vs.awdLeftTorque)} / ${"%.0f".format(vs.awdRightTorque)} Nm")
-            appendLine("  RDU Temp   : ${"%.0f".format(vs.rduTempC)} °C")
-            appendLine("  PTU Temp   : ${"%.0f".format(vs.ptuTempC)} °C")
-            appendLine("  ETC Act/Des: ${"%.1f".format(vs.etcAngleActual)}° / ${"%.1f".format(vs.etcAngleDesired)}°")
-            appendLine("  WGDC       : ${"%.1f".format(vs.wgdcDesired)} %")
-            appendLine("  KR Cyl1    : ${"%.2f".format(vs.ignCorrCyl1)}°")
-            appendLine("  OAR        : ${"%.4f".format(vs.octaneAdjustRatio)}")
-            appendLine("  TIP Act/Des: ${"%.1f".format(vs.tipActualKpa)} / ${"%.1f".format(vs.tipDesiredKpa)} kPa")
-            appendLine("  VCT I/E    : ${"%.1f".format(vs.vctIntakeAngle)}° / ${"%.1f".format(vs.vctExhaustAngle)}°")
-            appendLine("  Oil Life   : ${"%.0f".format(vs.oilLifePct)} %")
-            appendLine("  HP Fuel Rl : ${"%.0f".format(vs.hpFuelRailPsi)} PSI")
-            appendLine("  Charge Air : ${"%.1f".format(vs.chargeAirTempC)} °C")
-            appendLine("  Catalyst   : ${"%.0f".format(vs.catalyticTempC)} °C")
-            appendLine("  Odometer   : ${vs.odometerKm} km")
-            appendLine("  Batt SOC   : ${"%.0f".format(vs.batterySoc)} %")
-            appendLine("  Batt Temp  : ${"%.1f".format(vs.batteryTempC)} °C")
-            appendLine("  Cabin Temp : ${"%.1f".format(vs.cabinTempC)} °C")
-            appendLine("  RDU Active : ${vs.rduEnabled ?: "—"}")
-            appendLine("  PDC Active : ${vs.pdcEnabled ?: "—"}")
-            appendLine("  FENG Active: ${vs.fengEnabled ?: "—"}")
-            appendLine("  LC Armed   : ${vs.lcArmed ?: "—"}")
-            appendLine("  LC RPM     : ${if (vs.lcRpmTarget >= 0) vs.lcRpmTarget.toString() else "—"}")
-            appendLine("  ASS Active : ${vs.assEnabled ?: "—"}")
-            appendLine("  FPS        : ${"%.0f".format(vs.framesPerSecond)}")
-            appendLine("  Data Mode  : ${vs.dataMode}")
-            appendLine()
-        }
-
-        // ── SLCAN log info
-        val slcanLines = log.slcanLineCount
-        val slcanFile  = log.slcanLogFile
-        appendLine("─── SLCAN RAW LOG (Option C) ───────────────────────────────")
-        if (slcanFile != null && slcanLines > 0) {
-            val sizeMb = slcanFile.length() / 1_048_576.0
-            appendLine("  Lines written : $slcanLines")
-            appendLine("  File size     : ${"%.2f".format(sizeMb)} MB (uncompressed)")
-            appendLine("  File included : slcan_log_$ts.log in this ZIP")
-            appendLine("  Compatible with SavvyCAN, Kayak, candump for offline analysis")
-        } else {
-            appendLine("  No SLCAN log recorded (log directory not available this session)")
-        }
-        appendLine()
-
-        // ── CAN frame inventory (Option B)
-        val inventory = log.frameInventorySnapshot
-        val changedCount = inventory.values.count { it.hasChanged }
-        appendLine("─── CAN FRAME INVENTORY  (${inventory.size} unique IDs, $changedCount dynamic) ──")
-        appendLine("  Legend: ✓=decoded  ?=unknown  Δ=bytes changed during session")
-        appendLine("  Format: TAG ID | count | Δ | last raw hex | decoded | issues")
-        appendLine()
-
-        // L-4 fix: added ID_STEERING and ID_BRAKE_PRESS (were missing, showed as "?" in report)
-        val knownIds = setOf(
-            CanDecoder.ID_TORQUE, CanDecoder.ID_THROTTLE, CanDecoder.ID_PEDALS,
-            CanDecoder.ID_ENGINE_RPM, CanDecoder.ID_GAUGE_ILLUM, CanDecoder.ID_ENGINE_TEMPS,
-            CanDecoder.ID_SPEED, CanDecoder.ID_LONG_ACCEL, CanDecoder.ID_LAT_ACCEL,
-            CanDecoder.ID_DRIVE_MODE, CanDecoder.ID_DRIVE_MODE_EXT, CanDecoder.ID_ESC_ABS,
-            CanDecoder.ID_WHEEL_SPEEDS, CanDecoder.ID_GEAR, CanDecoder.ID_AWD_TORQUE,
-            CanDecoder.ID_COOLANT, CanDecoder.ID_PCM_AMBIENT, CanDecoder.ID_AMBIENT_TEMP,
-            CanDecoder.ID_FUEL_LEVEL, CanDecoder.ID_ODOMETER, CanDecoder.ID_STEERING, CanDecoder.ID_BRAKE_PRESS
-        )
-
-        inventory.entries.sortedBy { it.key }.forEach { (id, info) ->
-            val tag      = if (id in knownIds) "✓" else "?"
-            val changed  = if (info.hasChanged) "Δ" else " "
-            val issueStr = if (info.validationIssues.isEmpty()) ""
-                           else "  ⚠ ${info.validationIssues.joinToString("; ")}"
-            val decoded  = if (info.lastDecoded.isEmpty()) "(no decoder)" else info.lastDecoded
-            appendLine("  $tag 0x%03X | %6d | $changed | %-23s | %-40s$issueStr"
-                .format(id, info.totalReceived, info.lastRawHex.take(23), decoded.take(40)))
-        }
-        appendLine()
-
-        // ── Periodic samples for dynamic (changed) frames (Option B)
-        val dynamicIds = inventory.entries.filter { it.value.hasChanged && it.value.periodicSamples.isNotEmpty() }
-            .sortedBy { it.key }
-        if (dynamicIds.isNotEmpty()) {
-            appendLine("─── PERIODIC SAMPLES — dynamic IDs (Option B, 30 s intervals) ─")
-            appendLine("  These show how each frame's bytes evolved during the drive.")
-            appendLine()
-            dynamicIds.forEach { (id, info) ->
-                val tag     = if (id in knownIds) "✓" else "?"
-                val sCount  = info.periodicSamples.size
-                appendLine("  $tag 0x%03X  [first: ${info.firstRawHex}]  ($sCount samples)".format(id))
-                info.periodicSamples.forEach { s ->
-                    appendLine("    +${log.formatDuration(s.relMs)} → ${s.rawHex}")
-                }
-                appendLine("          last: ${info.lastRawHex}")
-                appendLine()
-            }
-        }
-
-        // ── Validation issues summary
-        val issues = inventory.entries.flatMap { (id, info) ->
-            info.validationIssues.map { "0x%03X: $it".format(id) }
-        }
-        appendLine("─── VALIDATION ISSUES (${issues.size}) ────────────────────────────────")
-        if (issues.isEmpty()) {
-            appendLine("  None — all decoded values within expected physical ranges")
-        } else {
-            issues.forEach { appendLine("  ⚠ $it") }
-        }
-        appendLine()
-
-        // ── FPS timeline
-        val fps = log.fpsTimeline
-        appendLine("─── FPS TIMELINE (${fps.size} samples) ────────────────────────────")
-        if (fps.isEmpty()) {
-            appendLine("  No FPS data recorded")
-        } else {
-            val minFps = fps.minOf { it.fps }
-            val maxFps = fps.maxOf { it.fps }
-            val avgFps = fps.map { it.fps }.average()
-            appendLine("  Min: ${"%.0f".format(minFps)}  Max: ${"%.0f".format(maxFps)}  Avg: ${"%.0f".format(avgFps)}")
-            appendLine("  Last 10 samples:")
-            fps.takeLast(10).forEach { pt ->
-                appendLine("    +${log.formatDuration(pt.relMs)} → ${"%.0f".format(pt.fps)} fps")
-            }
-        }
-        appendLine()
-
-        // ── Session events
-        appendLine("─── SESSION EVENTS ─────────────────────────────────────────")
-        if (log.sessionEvents.isEmpty()) {
-            appendLine("  (none)")
-        } else {
-            log.sessionEvents.forEach { ev ->
-                appendLine("  +${log.formatDuration(ev.relMs)} [${ev.type}] ${ev.message}")
-            }
-        }
-        appendLine()
-
-        // ── Last 30 decode trace entries
-        val trace = log.decodeTrace.takeLast(30)
-        appendLine("─── RECENT DECODE TRACE (last ${trace.size} of up to 10,000) ──────────")
-        appendLine("  Format: +time | ID | raw hex | decoded | ⚠issue")
-        trace.forEach { t ->
-            val issStr = if (t.issue != null) "  ⚠ ${t.issue}" else ""
-            appendLine("  +${log.formatDuration(t.relMs)} | ${t.idHex} | ${t.rawHex.take(23).padEnd(23)} | ${t.decoded.take(35)}$issStr")
-        }
-        appendLine()
-        // ── DID probe results
-        val probes = log.probeSessions
-        if (probes.isNotEmpty()) {
-            appendLine("─── DID PROBE RESULTS (${probes.size} session${if (probes.size > 1) "s" else ""}) ──────────────────")
-            probes.forEach { ps ->
-                val found   = ps.results.count { it.status == "FOUND" }
-                val nrc     = ps.results.count { it.status == "NRC" }
-                val timeout = ps.results.count { it.status == "TIMEOUT" }
-                appendLine("  ${ps.module} (0x${"%03X".format(ps.requestId)}→0x${"%03X".format(ps.responseId)}) @ +${log.formatDuration(ps.relMs)}")
-                appendLine("    ${ps.results.size} probed — $found found, $nrc rejected, $timeout timeout")
-                ps.results.filter { it.status == "FOUND" }.forEach { r ->
-                    appendLine("    ✓ 0x${"%04X".format(r.did)}  ${r.responseHex}")
+    /** Add DID probe session CSVs to the ZIP. */
+    private fun addProbeFiles(zip: ZipOutputStream) {
+        val probes = DiagnosticLogger.probeSessions
+        if (probes.isEmpty()) return
+        probes.forEachIndexed { idx, session ->
+            val name = "did_probe_${session.module.lowercase()}_${idx + 1}.csv"
+            zip.putNextEntry(ZipEntry(name))
+            val csv = buildString {
+                appendLine("DID,Status,ResponseHex")
+                session.results.forEach { r ->
+                    appendLine("0x${"%04X".format(r.did)},${r.status},${r.responseHex}")
                 }
             }
-            appendLine()
+            zip.write(csv.toByteArray(Charsets.UTF_8))
+            zip.closeEntry()
         }
-
-        appendLine("═══════════════════════════════════════════════════════════")
-        appendLine("  END OF REPORT — full data in diagnostic_detail_$ts.json")
-        if (slcanLines > 0) appendLine("  SLCAN log    — slcan_log_$ts.log  ($slcanLines frames)")
-        appendLine("═══════════════════════════════════════════════════════════")
-    }
-
-    // ── JSON detail ───────────────────────────────────────────────────────────
-
-    private fun buildJson(ts: String): String = buildString {
-        val log = DiagnosticLogger
-        val vs  = log.lastVehicleState
-        val p   = log.sessionPrefs
-
-        appendLine("{")
-
-        // meta
-        appendLine("  \"meta\": {")
-        appendLine("    \"app\": \"openRS_\",")
-        appendLine("    \"appVersion\": \"${BuildConfig.VERSION_NAME}\",")
-        appendLine("    \"appBuild\": ${BuildConfig.VERSION_CODE},")
-        appendLine("    \"generatedAt\": \"$ts\",")
-        appendLine("    \"sessionDurationMs\": ${log.sessionDurationMs},")
-        appendLine("    \"sessionDurationHuman\": \"${log.formatDuration(log.sessionDurationMs)}\",")
-        appendLine("    \"firmware\": \"${log.firmwareVersion.jsonEscape()}\",")
-        appendLine("    \"isOpenRsFirmware\": ${log.isOpenRsFirmware},")
-        appendLine("    \"host\": \"${log.sessionHost.jsonEscape()}\",")
-        appendLine("    \"port\": ${log.sessionPort},")
-        appendLine("    \"slcanLinesLogged\": ${log.slcanLineCount},")
-        appendLine("    \"slcanFileIncluded\": ${log.slcanLogFile != null && log.slcanLineCount > 0}")
-        appendLine("  },")
-
-        // settings
-        if (p != null) {
-            appendLine("  \"settings\": {")
-            appendLine("    \"speedUnit\": \"${p.speedUnit}\",")
-            appendLine("    \"tempUnit\": \"${p.tempUnit}\",")
-            appendLine("    \"boostUnit\": \"${p.boostUnit}\",")
-            appendLine("    \"tireUnit\": \"${p.tireUnit}\",")
-            appendLine("    \"tireLowPsi\": ${p.tireLowPsi},")
-            appendLine("    \"screenOn\": ${p.screenOn},")
-            appendLine("    \"autoReconnect\": ${p.autoReconnect},")
-            appendLine("    \"reconnectIntervalSec\": ${p.reconnectIntervalSec}")
-            appendLine("  },")
-        }
-
-        // vehicleState
-        appendLine("  \"vehicleState\": {")
-        if (vs != null) {
-            val fields = vs.toJsonFields().entries.toList()
-            fields.forEachIndexed { i, (k, v) ->
-                val comma = if (i < fields.size - 1) "," else ""
-                appendLine("    \"$k\": $v$comma")
-            }
-        }
-        appendLine("  },")
-
-        // canFrameInventory — now includes Option B fields
-        val inventory = log.frameInventorySnapshot
-        appendLine("  \"canFrameInventory\": {")
-        inventory.entries.sortedBy { it.key }.forEachIndexed { idx, (id, info) ->
-            val comma = if (idx < inventory.size - 1) "," else ""
-            val issuesJson = info.validationIssues.joinToString(",") { "\"${it.jsonEscape()}\"" }
-
-            // Periodic samples JSON array
-            val samplesJson = if (info.periodicSamples.isEmpty()) "[]" else buildString {
-                append("[")
-                info.periodicSamples.forEachIndexed { si, s ->
-                    val sc = if (si < info.periodicSamples.size - 1) "," else ""
-                    append("{\"relMs\": ${s.relMs}, \"rawHex\": \"${s.rawHex}\"}$sc")
-                }
-                append("]")
-            }
-
-            appendLine("    \"0x%03X\": {".format(id))
-            appendLine("      \"totalReceived\": ${info.totalReceived},")
-            appendLine("      \"firstRawHex\": \"${info.firstRawHex}\",")
-            appendLine("      \"lastRawHex\": \"${info.lastRawHex}\",")
-            appendLine("      \"hasChanged\": ${info.hasChanged},")
-            appendLine("      \"lastDecoded\": \"${info.lastDecoded.jsonEscape()}\",")
-            appendLine("      \"validationIssues\": [$issuesJson],")
-            appendLine("      \"periodicSamples\": $samplesJson")
-            appendLine("    }$comma")
-        }
-        appendLine("  },")
-
-        // fpsTimeline
-        appendLine("  \"fpsTimeline\": [")
-        val fps = log.fpsTimeline
-        fps.forEachIndexed { i, pt ->
-            val c = if (i < fps.size - 1) "," else ""
-            appendLine("    {\"relMs\": ${pt.relMs}, \"fps\": ${"%.1f".format(pt.fps)}}$c")
-        }
-        appendLine("  ],")
-
-        // decodeTrace (all MAX_TRACE entries)
-        appendLine("  \"decodeTrace\": [")
-        val trace = log.decodeTrace
-        trace.forEachIndexed { i, t ->
-            val c      = if (i < trace.size - 1) "," else ""
-            val issJson = if (t.issue != null) "\"${t.issue.jsonEscape()}\"" else "null"
-            appendLine("    {\"relMs\": ${t.relMs}, \"id\": \"${t.idHex}\", \"raw\": \"${t.rawHex}\", \"decoded\": \"${t.decoded.jsonEscape()}\", \"issue\": $issJson}$c")
-        }
-        appendLine("  ],")
-
-        // sessionEvents
-        appendLine("  \"sessionEvents\": [")
-        val evts = log.sessionEvents
-        evts.forEachIndexed { i, ev ->
-            val c = if (i < evts.size - 1) "," else ""
-            appendLine("    {\"relMs\": ${ev.relMs}, \"type\": \"${ev.type}\", \"message\": \"${ev.message.jsonEscape()}\"}$c")
-        }
-        appendLine("  ],")
-
-        // probeResults
-        appendLine("  \"probeResults\": [")
-        val probes = log.probeSessions
-        probes.forEachIndexed { pi, ps ->
-            val found = ps.results.count { it.status == "FOUND" }
-            appendLine("    {")
-            appendLine("      \"relMs\": ${ps.relMs},")
-            appendLine("      \"module\": \"${ps.module}\",")
-            appendLine("      \"requestId\": \"0x${"%03X".format(ps.requestId)}\",")
-            appendLine("      \"responseId\": \"0x${"%03X".format(ps.responseId)}\",")
-            appendLine("      \"totalProbed\": ${ps.results.size},")
-            appendLine("      \"found\": $found,")
-            appendLine("      \"results\": [")
-            ps.results.forEachIndexed { ri, r ->
-                val rc = if (ri < ps.results.size - 1) "," else ""
-                appendLine("        {\"did\": \"0x${"%04X".format(r.did)}\", \"status\": \"${r.status}\", \"response\": \"${r.responseHex.jsonEscape()}\"}$rc")
-            }
-            appendLine("      ]")
-            val pc = if (pi < probes.size - 1) "," else ""
-            appendLine("    }$pc")
-        }
-        appendLine("  ]")
-
-        append("}")
     }
 }
-
-/** JSON string escaping: backslash, double-quote, newlines, tabs, and </script> sequences. */
-private fun String.jsonEscape(): String = this
-    .replace("\\", "\\\\")
-    .replace("\"", "\\\"")
-    .replace("\n", "\\n")
-    .replace("\r", "\\r")
-    .replace("\t", "\\t")
-    .replace("</", "<\\/")
-
-/** Serialize VehicleState to a Map<String, Any> for JSON output. */
-private fun VehicleState.toJsonFields(): Map<String, String> = linkedMapOf(
-    "rpm"               to "${"%.1f".format(rpm)}",
-    "speedKph"          to "${"%.2f".format(speedKph)}",
-    "speedMph"          to "${"%.2f".format(speedKph * 0.621371)}",
-    "boostKpa"          to "${"%.2f".format(boostKpa)}",
-    "boostPsi"          to "${"%.2f".format((boostKpa - 101.325) * 0.14503773)}",
-    "coolantTempC"      to "${"%.1f".format(coolantTempC)}",
-    "oilTempC"          to "${"%.1f".format(oilTempC)}",
-    "intakeTempC"       to "${"%.1f".format(intakeTempC)}",
-    "ambientTempC"      to "${"%.2f".format(ambientTempC)}",
-    "barometricPressure" to "${"%.1f".format(barometricPressure)}",
-    "throttlePct"       to "${"%.1f".format(throttlePct)}",
-    "accelPedalPct"     to "${"%.1f".format(accelPedalPct)}",
-    "torqueAtTrans"     to "${"%.1f".format(torqueAtTrans)}",
-    "lateralG"          to "${"%.4f".format(lateralG)}",
-    "longitudinalG"     to "${"%.4f".format(longitudinalG)}",
-    "steeringAngle"     to "${"%.1f".format(steeringAngle)}",
-    "yawRate"           to "${"%.1f".format(yawRate)}",
-    "brakePressure"     to "${"%.2f".format(brakePressure)}",
-    "wheelSpeedFL"      to "${"%.2f".format(wheelSpeedFL)}",
-    "wheelSpeedFR"      to "${"%.2f".format(wheelSpeedFR)}",
-    "wheelSpeedRL"      to "${"%.2f".format(wheelSpeedRL)}",
-    "wheelSpeedRR"      to "${"%.2f".format(wheelSpeedRR)}",
-    "driveMode"         to "\"${driveMode.label}\"",
-    "escStatus"         to "\"${escStatus.label}\"",
-    "gear"              to "$gear",
-    "gearDisplay"       to "\"$gearDisplay\"",
-    "batteryVoltage"    to "${"%.2f".format(batteryVoltage)}",
-    "fuelLevelPct"      to "${"%.1f".format(fuelLevelPct)}",
-    "tirePressLF"       to "${"%.1f".format(tirePressLF)}",
-    "tirePressRF"       to "${"%.1f".format(tirePressRF)}",
-    "tirePressLR"       to "${"%.1f".format(tirePressLR)}",
-    "tirePressRR"       to "${"%.1f".format(tirePressRR)}",
-    "awdLeftTorque"     to "${"%.1f".format(awdLeftTorque)}",
-    "awdRightTorque"    to "${"%.1f".format(awdRightTorque)}",
-    "awdMaxTorque"      to "${"%.1f".format(awdMaxTorque)}",
-    "rduTempC"          to "${"%.1f".format(rduTempC)}",
-    "ptuTempC"          to "${"%.1f".format(ptuTempC)}",
-    "calcLoad"          to "${"%.1f".format(calcLoad)}",
-    "timingAdvance"     to "${"%.1f".format(timingAdvance)}",
-    "shortFuelTrim"     to "${"%.2f".format(shortFuelTrim)}",
-    "longFuelTrim"      to "${"%.2f".format(longFuelTrim)}",
-    "afrActual"         to "${"%.3f".format(afrActual)}",
-    "afrDesired"        to "${"%.2f".format(afrDesired)}",
-    "lambdaActual"      to "${"%.4f".format(lambdaActual)}",
-    "etcAngleActual"    to "${"%.2f".format(etcAngleActual)}",
-    "etcAngleDesired"   to "${"%.2f".format(etcAngleDesired)}",
-    "wgdcDesired"       to "${"%.2f".format(wgdcDesired)}",
-    "ignCorrCyl1"       to "${"%.2f".format(ignCorrCyl1)}",
-    "octaneAdjustRatio" to "${"%.4f".format(octaneAdjustRatio)}",
-    "chargeAirTempC"    to "${"%.1f".format(chargeAirTempC)}",
-    "catalyticTempC"    to "${"%.1f".format(catalyticTempC)}",
-    "tipActualKpa"      to "${"%.2f".format(tipActualKpa)}",
-    "tipDesiredKpa"     to "${"%.2f".format(tipDesiredKpa)}",
-    "vctIntakeAngle"    to "${"%.2f".format(vctIntakeAngle)}",
-    "vctExhaustAngle"   to "${"%.2f".format(vctExhaustAngle)}",
-    "oilLifePct"        to "${"%.1f".format(oilLifePct)}",
-    "hpFuelRailPsi"     to "${"%.1f".format(hpFuelRailPsi)}",
-    "odometerKm"        to "$odometerKm",
-    "batterySoc"        to "${"%.1f".format(batterySoc)}",
-    "batteryTempC"      to "${"%.1f".format(batteryTempC)}",
-    "cabinTempC"        to "${"%.1f".format(cabinTempC)}",
-    "rduEnabled"        to "${rduEnabled}",
-    "pdcEnabled"        to "${pdcEnabled}",
-    "fengEnabled"       to "${fengEnabled}",
-    "lcArmed"           to "${lcArmed}",
-    "lcRpmTarget"       to "$lcRpmTarget",
-    "assEnabled"        to "${assEnabled}",
-    "peakBoostPsi"      to "${"%.2f".format(peakBoostPsi)}",
-    "peakRpm"           to "${"%.0f".format(peakRpm)}",
-    "peakLateralG"      to "${"%.3f".format(peakLateralG)}",
-    "peakLongitudinalG" to "${"%.3f".format(peakLongitudinalG)}",
-    "eBrake"            to "$eBrake",
-    "reverseStatus"     to "$reverseStatus",
-    "framesPerSecond"   to "${"%.1f".format(framesPerSecond)}",
-    "isConnected"       to "$isConnected",
-    "dataMode"          to "\"$dataMode\""
-)

@@ -39,8 +39,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.can.BusyException
-import com.openrs.dash.can.CanDecoder
+import com.openrs.dash.can.DriveCommandResult
 import com.openrs.dash.can.FirmwareApi
+import com.openrs.dash.can.executeDriveModeChange
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.EscStatus
 import com.openrs.dash.data.VehicleState
@@ -112,74 +113,16 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
                                     haptic.performHapticFeedback(HapticFeedbackType.Confirm)
                                     pendingDriveMode = mode
                                     scope.launch {
-                                        DiagnosticLogger.event("DM_CMD",
-                                            "Pre-flight: current=${vs.driveMode}, modeDetail=0x${CanDecoder.modeDetail420Hex}, " +
-                                            "fw=${OpenRSDashApp.instance.firmwareVersionLabel.value}")
-                                        DiagnosticLogger.event("DM_CMD",
-                                            "Sending driveMode=${mode.toFirmwareInt()} (${mode.label}) to $host")
-                                        val result = FirmwareApi.setDriveMode(ctx, host, mode.toFirmwareInt())
-                                        if (result.isFailure) {
-                                            val ex = result.exceptionOrNull()
-                                            DiagnosticLogger.event("DM_CMD",
-                                                "FAILED: ${ex?.message}")
-                                            val msg = if (ex is BusyException)
-                                                "Mode change in progress — please wait"
-                                            else "Drive mode command failed"
-                                            snackbarHostState.showSnackbar(msg)
-                                        } else {
-                                            DiagnosticLogger.event("DM_CMD", "OK (HTTP 200)")
-                                            // Settling delay: firmware needs time to press the
-                                            // mode button and ECU needs time to broadcast the
-                                            // new mode on 0x420 (~600 ms interval). SLCAN data
-                                            // (2026-03-26) showed 4s firmware delay on cold start.
-                                            delay(2_000)
-                                            // Watch CAN for confirmation (up to 15s after settling).
-                                            // Read live state each iteration — vs is an immutable snapshot.
-                                            var confirmed = false
-                                            for (i in 0 until 150) {
-                                                delay(100)
-                                                val live = OpenRSDashApp.instance.vehicleState.value
-                                                if (live.driveMode == mode) {
-                                                    confirmed = true
-                                                    break
-                                                }
-                                            }
-                                            if (!confirmed) {
-                                                val live = OpenRSDashApp.instance.vehicleState.value
-                                                val landed = live.driveMode
-                                                if (landed != mode && landed != DriveMode.UNKNOWN
-                                                    && landed != vs.driveMode) {
-                                                    // Mode changed, but to wrong one — auto-correct.
-                                                    DiagnosticLogger.event("DM_CMD",
-                                                        "Overshoot: landed=${landed.label}, expected=${mode.label} — auto-correcting")
-                                                    snackbarHostState.showSnackbar(
-                                                        "Landed on ${landed.label} instead of ${mode.label} — correcting\u2026")
-                                                    val retry = FirmwareApi.setDriveMode(ctx, host, mode.toFirmwareInt())
-                                                    if (retry.isSuccess) {
-                                                        delay(2_000)
-                                                        var corrected = false
-                                                        for (j in 0 until 150) {
-                                                            delay(100)
-                                                            val rl = OpenRSDashApp.instance.vehicleState.value
-                                                            if (rl.driveMode == mode) { corrected = true; break }
-                                                        }
-                                                        if (corrected) {
-                                                            DiagnosticLogger.event("DM_CMD", "Auto-correction succeeded")
-                                                        } else {
-                                                            val rl = OpenRSDashApp.instance.vehicleState.value
-                                                            DiagnosticLogger.event("DM_CMD",
-                                                                "Auto-correction failed (current=${rl.driveMode}, target=$mode)")
-                                                            snackbarHostState.showSnackbar("Mode correction failed — try again manually")
-                                                        }
-                                                    }
-                                                } else {
-                                                    DiagnosticLogger.event("DM_CMD",
-                                                        "No CAN confirmation after 17s (current=${landed}, target=$mode, " +
-                                                        "modeDetail420=0x${CanDecoder.modeDetail420Hex})")
-                                                    snackbarHostState.showSnackbar(
-                                                        "Mode change didn't take effect — try again")
-                                                }
-                                            }
+                                        when (val r = executeDriveModeChange(ctx, host, mode, vs.driveMode)) {
+                                            is DriveCommandResult.Success -> { /* CAN state already updated */ }
+                                            is DriveCommandResult.Busy ->
+                                                snackbarHostState.showSnackbar("Mode change in progress \u2014 please wait")
+                                            is DriveCommandResult.Failed ->
+                                                snackbarHostState.showSnackbar(r.message)
+                                            is DriveCommandResult.CorrectionFailed ->
+                                                snackbarHostState.showSnackbar("Mode correction failed \u2014 try again manually")
+                                            is DriveCommandResult.NoConfirmation ->
+                                                snackbarHostState.showSnackbar("Mode change didn\u2019t take effect \u2014 try again")
                                         }
                                         pendingDriveMode = null
                                     }
