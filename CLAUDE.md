@@ -70,7 +70,7 @@ ui/
                             bloomGlow (double-layer radial), scanLine (CRT sweep)
     Sparkline.kt          — Inline trend chart with glow line + live endpoint dot + gradient fill
     StaggeredEntrance.kt  — StaggeredColumn: fade+slide-up with 40ms stagger delay per child
-    InteractionModifiers.kt — pressScale() modifier for tactile button press feedback
+    InteractionModifiers.kt — pressClick() modifier: clickable + scale-down press feedback combined
   PidBrowserSection.kt    — DIAG tab: expandable FORScan catalog per module with coverage bar
   DidProberSection.kt     — DIAG tab: interactive Mode 22 scanner for any ECU+DID
   WhatsNewDialog.kt       — Version changelog dialog; shown on first launch after update
