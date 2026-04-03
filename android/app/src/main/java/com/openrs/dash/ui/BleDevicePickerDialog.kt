@@ -22,9 +22,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,6 +38,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import com.openrs.dash.can.BleDeviceScanner
 
 /**
@@ -51,10 +60,39 @@ fun BleDevicePickerDialog(
     val scanner = remember { BleDeviceScanner(ctx) }
     val devices by scanner.devices.collectAsState()
     val scanning by scanner.scanning.collectAsState()
+    var permDenied by remember { mutableStateOf(false) }
 
-    // Start scanning when dialog opens, stop when it closes
+    // BLE permissions needed at scan time (not just at app startup)
+    val blePerms = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+        } else {
+            arrayOf(Manifest.permission.BLUETOOTH, Manifest.permission.BLUETOOTH_ADMIN)
+        }
+    }
+
+    fun hasPerms(): Boolean = blePerms.all {
+        ContextCompat.checkSelfPermission(ctx, it) == PackageManager.PERMISSION_GRANTED
+    }
+
+    val permLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        if (results.values.all { it }) {
+            permDenied = false
+            scanner.startScan()
+        } else {
+            permDenied = true
+        }
+    }
+
+    // Start scanning when dialog opens (with permission check), stop when it closes
     DisposableEffect(Unit) {
-        scanner.startScan()
+        if (hasPerms()) {
+            scanner.startScan()
+        } else {
+            permLauncher.launch(blePerms)
+        }
         onDispose { scanner.stopScan() }
     }
 
@@ -75,7 +113,34 @@ fun BleDevicePickerDialog(
 
             Spacer(Modifier.height(16.dp))
 
-            if (devices.isEmpty() && !scanning) {
+            if (permDenied) {
+                // Permission denied — show message
+                Box(
+                    Modifier.fillMaxWidth()
+                        .background(Surf2, RoundedCornerShape(10.dp))
+                        .border(1.dp, Brd, RoundedCornerShape(10.dp))
+                        .padding(20.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        MonoLabel("Bluetooth permission required", 11.sp, Orange)
+                        Spacer(Modifier.height(8.dp))
+                        MonoLabel("Grant permission in Settings > Apps > openRS_", 9.sp, Dim)
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Box(
+                    Modifier.fillMaxWidth()
+                        .background(accent.copy(alpha = 0.1f), RoundedCornerShape(10.dp))
+                        .border(1.dp, accent.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                        .clickable { permLauncher.launch(blePerms) }
+                        .padding(12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    MonoLabel("REQUEST PERMISSION", 10.sp, accent,
+                        fontWeight = FontWeight.Bold, letterSpacing = 0.1.sp)
+                }
+            } else if (devices.isEmpty() && !scanning) {
                 // No devices found after scan completed
                 Box(
                     Modifier.fillMaxWidth()
@@ -96,7 +161,10 @@ fun BleDevicePickerDialog(
                     Modifier.fillMaxWidth()
                         .background(accent.copy(alpha = 0.1f), RoundedCornerShape(10.dp))
                         .border(1.dp, accent.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
-                        .clickable { scanner.startScan() }
+                        .clickable {
+                            if (hasPerms()) scanner.startScan()
+                            else permLauncher.launch(blePerms)
+                        }
                         .padding(12.dp),
                     contentAlignment = Alignment.Center
                 ) {

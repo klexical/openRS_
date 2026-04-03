@@ -63,14 +63,13 @@ fun DriveMap(
     isPaused: Boolean = false,
     hasLocationPermission: Boolean = false,
     mapType: MapType = MapType.NORMAL,
+    cameraPositionState: CameraPositionState = rememberCameraPositionState(),
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val mapStyleOptions = remember {
         MapStyleOptions.loadRawResourceStyle(context, R.raw.google_map_style_dark)
     }
-
-    val cameraPositionState = rememberCameraPositionState()
 
     // Auto-center on first point or current location (idle)
     LaunchedEffect(currentLat, currentLng, points.firstOrNull()) {
@@ -117,11 +116,11 @@ fun DriveMap(
         )
     }
 
-    val uiSettings = remember(hasLocationPermission) {
+    val uiSettings = remember {
         MapUiSettings(
             zoomControlsEnabled = false,
             mapToolbarEnabled = false,
-            myLocationButtonEnabled = hasLocationPermission,
+            myLocationButtonEnabled = false,
             compassEnabled = true
         )
     }

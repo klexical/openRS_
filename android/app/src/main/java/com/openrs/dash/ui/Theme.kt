@@ -1,7 +1,9 @@
 package com.openrs.dash.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.Font
@@ -19,17 +21,44 @@ import com.openrs.dash.R
 // DESIGN SYSTEM — F1 PALETTE
 // ═══════════════════════════════════════════════════════════════════════════
 
-// Core backgrounds (deep navy-black)
-val Bg      = Color(0xFF05070A)
-val Surf    = Color(0xFF0A0D12)
-val Surf2   = Color(0xFF0F141C)
-val Surf3   = Color(0xFF141B26)
+// ── Brightness scaling ────────────────────────────────────────────────────
+// 0.0 = Night (current ultra-dark), 1.0 = Sunlight (brighter for daylight)
+// Compose snapshot system tracks reads — all composables auto-recompose.
+private val _brightness = mutableFloatStateOf(0f)
+fun setBrightness(v: Float) { _brightness.floatValue = v.coerceIn(0f, 1f) }
+fun getBrightness(): Float = _brightness.floatValue
 
-// Borders and text
-val Brd     = Color(0xFF162030)     // Default border (dark navy)
+// Night base palette
+private val BaseBg    = Color(0xFF05070A)
+private val BaseSurf  = Color(0xFF0A0D12)
+private val BaseSurf2 = Color(0xFF0F141C)
+private val BaseSurf3 = Color(0xFF141B26)
+private val BaseBrd   = Color(0xFF162030)
+private val BaseDim   = Color(0xFF547A96)
+private val BaseMid   = Color(0xFF7A9AB8)
+
+// Sunlight bright palette
+private val BrightBg    = Color(0xFF1A2535)
+private val BrightSurf  = Color(0xFF1F2A3A)
+private val BrightSurf2 = Color(0xFF253445)
+private val BrightSurf3 = Color(0xFF2B3A4E)
+private val BrightBrd   = Color(0xFF2E4560)
+private val BrightDim   = Color(0xFF8AAABB)
+private val BrightMid   = Color(0xFFB0D0E8)
+
+// Core backgrounds — brightness-scaled
+val Bg:    Color get() = lerp(BaseBg,    BrightBg,    _brightness.floatValue)
+val Surf:  Color get() = lerp(BaseSurf,  BrightSurf,  _brightness.floatValue)
+val Surf2: Color get() = lerp(BaseSurf2, BrightSurf2, _brightness.floatValue)
+val Surf3: Color get() = lerp(BaseSurf3, BrightSurf3, _brightness.floatValue)
+
+// Borders and text — brightness-scaled
+val Brd:   Color get() = lerp(BaseBrd,   BrightBrd,   _brightness.floatValue)
+val Dim:   Color get() = lerp(BaseDim,   BrightDim,   _brightness.floatValue)
+val Mid:   Color get() = lerp(BaseMid,   BrightMid,   _brightness.floatValue)
+
+// Fixed colors (not affected by brightness)
 val Frost   = Color(0xFFE8F4FF)     // Primary text (near-white, blue tint)
-val Dim     = Color(0xFF547A96)     // Muted / dim text (WCAG AA ≥ 4.5:1 on Surf2)
-val Mid     = Color(0xFF7A9AB8)     // Medium emphasis
 
 // Elevated surfaces and on-accent contrast
 val SurfUp  = Color(0xFF141414)     // Elevated surface (modal headers, cards)

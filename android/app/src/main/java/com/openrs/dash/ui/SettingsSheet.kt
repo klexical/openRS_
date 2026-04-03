@@ -266,6 +266,54 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     ThemePicker(current)
                 }
 
+                // ── Brightness / Visibility section ─────────────────────────
+                SettingsSection("VISIBILITY") {
+                    val presetName = when {
+                        current.brightness <= 0.01f -> "NIGHT"
+                        (current.brightness - 0.5f).let { it > -0.01f && it < 0.01f } -> "DAY"
+                        current.brightness >= 0.99f -> "SUN"
+                        else -> ""
+                    }
+                    SettingsRow("Preset") {
+                        SegmentedPicker(
+                            options = listOf("NIGHT", "DAY", "SUN"),
+                            selected = presetName,
+                            onSelect = { sel ->
+                                val v = when (sel) {
+                                    "DAY" -> 0.5f
+                                    "SUN" -> 1.0f
+                                    else  -> 0f
+                                }
+                                UserPrefsStore.update(ctx) { it.copy(brightness = v) }
+                                setBrightness(v)
+                            }
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Fine-tune",
+                        fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Slider(
+                        value = current.brightness,
+                        onValueChange = { v ->
+                            UserPrefsStore.update(ctx) { it.copy(brightness = v) }
+                            setBrightness(v)
+                        },
+                        valueRange = 0f..1f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = LocalThemeAccent.current,
+                            activeTrackColor = LocalThemeAccent.current,
+                            inactiveTrackColor = Brd
+                        )
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Dark", fontSize = 9.sp, color = Dim, fontFamily = ShareTechMono)
+                        Text("Bright", fontSize = 9.sp, color = Dim, fontFamily = ShareTechMono)
+                    }
+                }
+
                 // ── Floating HUD section ─────────────────────────────────────
                 SettingsSection("FLOATING HUD") {
                     val hasOverlayPerm = Settings.canDrawOverlays(ctx)

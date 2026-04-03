@@ -18,12 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
@@ -71,26 +65,6 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
             Color.Transparent, accent.copy(alpha = 0.3f), accent.copy(alpha = 0.15f), Color.Transparent
         ))
     ))
-}
-
-/** Animated hero number — vertical slide transition on digit changes.
- *  Target state is the formatted string, so it only triggers when the displayed text changes. */
-@Composable fun AnimatedHeroNum(
-    text: String,
-    fontSize: androidx.compose.ui.unit.TextUnit,
-    color: Color = Frost,
-    modifier: Modifier = Modifier
-) {
-    AnimatedContent(
-        targetState = text,
-        transitionSpec = {
-            (slideInVertically { -it / 2 } + fadeIn(tween(150))) togetherWith
-            (slideOutVertically { it / 2 } + fadeOut(tween(100)))
-        },
-        label = "heroRoll"
-    ) { value ->
-        HeroNum(value, fontSize, color, modifier)
-    }
 }
 
 /** Section label: small text with extending neon horizontal rule. Optionally collapsible. */
@@ -199,7 +173,7 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
             },
             contentAlignment = Alignment.Center
         ) {
-            AnimatedHeroNum(value, 26.sp, valueColor, Modifier.fillMaxWidth())
+            HeroNum(value, 26.sp, valueColor, Modifier.fillMaxWidth())
         }
         if (peak.isNotEmpty()) {
             MonoText(peak, 9.sp, accent, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())

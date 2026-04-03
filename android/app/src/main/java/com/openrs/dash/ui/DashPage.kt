@@ -472,7 +472,7 @@ import kotlin.math.roundToInt
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column {
                 MonoLabel("FRONT", 8.sp, Dim, letterSpacing = 0.12.sp)
-                AnimatedHeroNum("${(100 - rearPct).roundToInt()}%", 18.sp, accent)
+                HeroNum("${(100 - rearPct).roundToInt()}%", 18.sp, accent)
             }
             Box(Modifier.weight(1f).padding(horizontal = 12.dp).height(10.dp)) {
                 Row(Modifier.matchParentSize().background(Surf3, RoundedCornerShape(5.dp))) {
@@ -501,7 +501,7 @@ import kotlin.math.roundToInt
             }
             Column(horizontalAlignment = Alignment.End) {
                 MonoLabel("REAR", 8.sp, Dim, letterSpacing = 0.12.sp)
-                AnimatedHeroNum("${rearPct.roundToInt()}%", 18.sp, Ok)
+                HeroNum("${rearPct.roundToInt()}%", 18.sp, Ok)
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -582,7 +582,7 @@ internal fun tempColorShade(c: Double, warnC: Double, critC: Double) = when {
             PerformanceTimer.State.ARMED    -> Warn
             else -> Frost
         }
-        AnimatedHeroNum(timeStr, 42.sp, timeColor)
+        HeroNum(timeStr, 42.sp, timeColor)
         MonoLabel("seconds", 8.sp, Dim)
 
         // Status / details row

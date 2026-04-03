@@ -43,7 +43,8 @@ data class UserPrefs(
     val edgeShiftRpm: Int           = AppSettings.DEFAULT_EDGE_SHIFT_RPM,    // shift point RPM
     val autoRecordDrives: Boolean   = AppSettings.DEFAULT_AUTO_RECORD_DRIVES,  // auto-start on connect
     val maxSavedDrives: Int         = AppSettings.DEFAULT_MAX_SAVED_DRIVES,    // oldest pruned when exceeded
-    val updateChannel: String       = AppSettings.DEFAULT_UPDATE_CHANNEL       // "stable" | "beta"
+    val updateChannel: String       = AppSettings.DEFAULT_UPDATE_CHANNEL,      // "stable" | "beta"
+    val brightness: Float           = 0f                                       // 0.0=Night, 0.5=Day, 1.0=Sun
 ) {
     // ── Unit-conversion helpers used by UI ─────────────────────────────────
 

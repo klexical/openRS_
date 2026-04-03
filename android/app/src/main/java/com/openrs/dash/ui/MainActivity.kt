@@ -72,6 +72,7 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge()
         UserPrefsStore.load(this)
+        setBrightness(AppSettings.getBrightness(this))
 
         val perms = mutableListOf<String>()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
@@ -132,6 +133,11 @@ class MainActivity : ComponentActivity() {
             val view = LocalView.current
             LaunchedEffect(prefs.screenOn) {
                 view.keepScreenOn = prefs.screenOn
+            }
+
+            // Apply brightness to theme color system
+            LaunchedEffect(prefs.brightness) {
+                setBrightness(prefs.brightness)
             }
 
             CompositionLocalProvider(LocalThemeAccent provides prefs.themeAccent) {
@@ -301,7 +307,11 @@ class MainActivity : ComponentActivity() {
 
     private fun startSvc() {
         val i = Intent(this, CanDataService::class.java)
-        androidx.core.content.ContextCompat.startForegroundService(this, i)
+        try {
+            androidx.core.content.ContextCompat.startForegroundService(this, i)
+        } catch (e: Exception) {
+            android.util.Log.w("CAN", "startForegroundService failed — falling back to bind", e)
+        }
         bindService(i, conn, Context.BIND_AUTO_CREATE)
     }
 

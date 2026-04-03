@@ -372,7 +372,12 @@ class CanDataService : Service() {
         if (!isTransportReady()) return
         if (connectionJob?.isActive == true) return
 
-        goForeground()
+        try {
+            goForeground()
+        } catch (e: Exception) {
+            android.util.Log.w("CAN", "Cannot go foreground — skipping connection start", e)
+            return
+        }
 
         val s = AppSettings
         val connMethod = s.getConnectionMethod(this)

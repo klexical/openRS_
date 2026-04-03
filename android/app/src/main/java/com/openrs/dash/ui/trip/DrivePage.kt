@@ -33,7 +33,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.MapType
+import com.google.maps.android.compose.rememberCameraPositionState
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.data.DriveDatabase
 import com.openrs.dash.data.DriveEntity
@@ -119,6 +122,7 @@ fun DrivePage(
     )
 
     val isLive = vehicleState.isConnected || driveState.isRecording
+    val cameraPositionState = rememberCameraPositionState()
 
     Column(Modifier.fillMaxSize().background(Bg)) {
         // ── Map section ──────────────────────────────────────────────
@@ -133,17 +137,21 @@ fun DrivePage(
                 emptyList()
             }
 
+            val currentLat = driveState.currentLocation?.latitude ?: idleLocation?.latitude
+            val currentLng = driveState.currentLocation?.longitude ?: idleLocation?.longitude
+
             DriveMap(
                 points = mapPoints,
                 colorMode = colorMode,
                 peakEvents = driveState.peakEvents,
                 rtrPoint = driveState.rtrAchievedPoint,
-                currentLat = driveState.currentLocation?.latitude ?: idleLocation?.latitude,
-                currentLng = driveState.currentLocation?.longitude ?: idleLocation?.longitude,
+                currentLat = currentLat,
+                currentLng = currentLng,
                 isRecording = driveState.isRecording,
                 isPaused = driveState.isPaused,
                 hasLocationPermission = hasLocationPerm,
-                mapType = mapType
+                mapType = mapType,
+                cameraPositionState = cameraPositionState
             )
 
             // ── Floating controls (top-right stack) ─────────────────
@@ -203,6 +211,49 @@ fun DrivePage(
                             )
                             MonoText(weather.description, 8.sp, Dim)
                         }
+                    }
+                }
+
+                // Zoom in
+                Box(
+                    Modifier.clip(RoundedCornerShape(6.dp))
+                        .background(Surf.copy(alpha = 0.85f))
+                        .border(1.dp, Brd, RoundedCornerShape(6.dp))
+                        .clickable { scope.launch { cameraPositionState.animate(CameraUpdateFactory.zoomIn()) } }
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    MonoText("+", 12.sp, Frost, FontWeight.Bold)
+                }
+
+                // Zoom out
+                Box(
+                    Modifier.clip(RoundedCornerShape(6.dp))
+                        .background(Surf.copy(alpha = 0.85f))
+                        .border(1.dp, Brd, RoundedCornerShape(6.dp))
+                        .clickable { scope.launch { cameraPositionState.animate(CameraUpdateFactory.zoomOut()) } }
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    MonoText("\u2212", 12.sp, Frost, FontWeight.Bold)
+                }
+
+                // Locate / recenter
+                if (currentLat != null && currentLng != null) {
+                    Box(
+                        Modifier.clip(RoundedCornerShape(6.dp))
+                            .background(Surf.copy(alpha = 0.85f))
+                            .border(1.dp, Brd, RoundedCornerShape(6.dp))
+                            .clickable {
+                                scope.launch {
+                                    cameraPositionState.animate(
+                                        CameraUpdateFactory.newLatLngZoom(
+                                            LatLng(currentLat, currentLng), 15f
+                                        ), 500
+                                    )
+                                }
+                            }
+                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                    ) {
+                        MonoText("\u25CE", 12.sp, accent, FontWeight.Bold)
                     }
                 }
             }

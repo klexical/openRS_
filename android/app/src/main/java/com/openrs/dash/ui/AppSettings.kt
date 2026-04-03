@@ -80,6 +80,10 @@ object AppSettings {
     const val KEY_THEME_ID     = "theme_id"
     const val DEFAULT_THEME_ID = "cyan"          // RS Nitrous Blue default
 
+    // ── Brightness ──────────────────────────────────────────────────────────
+    const val KEY_BRIGHTNESS     = "brightness"
+    const val DEFAULT_BRIGHTNESS = 0f            // 0.0=Night, 0.5=Day, 1.0=Sun
+
     // ── Temperature preset ───────────────────────────────────────────────────
     const val KEY_TEMP_PRESET     = "temp_preset"
     const val DEFAULT_TEMP_PRESET = "street"     // "street" | "track" | "race"
@@ -185,6 +189,9 @@ object AppSettings {
 
     fun getThemeId(ctx: Context): String =
         prefs(ctx).getString(KEY_THEME_ID, DEFAULT_THEME_ID) ?: DEFAULT_THEME_ID
+
+    fun getBrightness(ctx: Context): Float =
+        prefs(ctx).getFloat(KEY_BRIGHTNESS, DEFAULT_BRIGHTNESS)
 
     fun getTempPreset(ctx: Context): String =
         prefs(ctx).getString(KEY_TEMP_PRESET, DEFAULT_TEMP_PRESET) ?: DEFAULT_TEMP_PRESET
@@ -313,6 +320,7 @@ object AppSettings {
             putBoolean(KEY_AUTO_RECORD_DRIVES, p.autoRecordDrives)
             putInt    (KEY_MAX_SAVED_DRIVES, p.maxSavedDrives)
             putString (KEY_UPDATE_CHANNEL, p.updateChannel)
+            putFloat  (KEY_BRIGHTNESS, p.brightness)
         }
     }
 
@@ -340,7 +348,8 @@ object AppSettings {
         edgeShiftRpm         = getEdgeShiftRpm(ctx),
         autoRecordDrives     = getAutoRecordDrives(ctx),
         maxSavedDrives       = getMaxSavedDrives(ctx),
-        updateChannel        = getUpdateChannel(ctx)
+        updateChannel        = getUpdateChannel(ctx),
+        brightness           = getBrightness(ctx)
     )
 
     // ── Custom dashboard persistence ────────────────────────────────────

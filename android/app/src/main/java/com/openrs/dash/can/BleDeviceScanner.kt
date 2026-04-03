@@ -66,7 +66,13 @@ class BleDeviceScanner(private val context: Context) {
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
 
-        s.startScan(listOf(filter), settings, scanCallback)
+        try {
+            s.startScan(listOf(filter), settings, scanCallback)
+        } catch (e: SecurityException) {
+            android.util.Log.w("BLE", "BLUETOOTH_SCAN permission not granted", e)
+            _scanning.value = false
+            return
+        }
 
         // Auto-stop after 10 seconds
         android.os.Handler(context.mainLooper).postDelayed(stopRunnable, 10_000L)

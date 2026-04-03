@@ -83,14 +83,20 @@ ui/
                             Fields: adapterType, connectionMethod, host, port, + all unit/UI prefs
   Components.kt           — Shared composables: HeroCard (valueFraction glow), DataCell, BarCard,
                             TireCard, GfCard, WheelCell, AfrCard, SectionLabel (animated chevron),
-                            NeonDivider, AnimatedHeroNum, FocusRsOutline, tireTempColor()
+                            NeonDivider, FocusRsOutline, tireTempColor()
                             All cards use neonBorder() instead of flat border()
+                            HeroCard uses plain HeroNum (instant display, no animation)
   DesignTokens.kt         — Tokens object: PagePad, CardGap, SectionGap, InnerH/V,
                             CardShape(12dp), HeroShape(14dp), CardRadius, HeroRadius, CardBorder
-  Theme.kt                — Color tokens (see below), typography (Orbitron/JetBrains/ShareTech/Barlow)
+  Theme.kt                — Color tokens (brightness-scaled, see below), typography (Orbitron/JetBrains/ShareTech/Barlow)
+                            setBrightness(Float) / getBrightness() — 0.0=Night, 0.5=Day, 1.0=Sun
+                            7 base colors (Bg/Surf/Surf2/Surf3/Brd/Dim/Mid) are computed getters via lerp
   BleDevicePickerDialog.kt — BLE device picker: scan filtered to 0xFFE0, RSSI bars, dark neon aesthetic
+                            Runtime BLE permission request (BLUETOOTH_SCAN + BLUETOOTH_CONNECT on API 31+)
+                            Permission-denied UI state with retry button
   SettingsSheet.kt        — Settings drawer: units, TPMS threshold, shift light, adapter, connection,
                             reconnect, drives (auto-record, max saved), diag, theme picker (RS paint colours)
+                            Visibility section: NIGHT/DAY/SUN presets + continuous brightness slider
                             2-way adapter picker (MeatPi USB / Pro) + connection method toggle (WiFi / Bluetooth)
                             Accent left-bar titles, gradient section backgrounds, animated SegmentedPicker
   anim/
@@ -106,6 +112,8 @@ ui/
   WhatsNewDialog.kt       — Version changelog dialog; shown on first launch after update
   trip/
     DrivePage.kt          — MAP tab: live mode (Google Maps + HUD + controls) + history mode (drive list)
+                            Hoists cameraPositionState; floating controls: color mode, map type, weather,
+                            zoom in (+), zoom out (−), locate/recenter (◎)
     DriveMap.kt           — Google Maps Compose wrapper: 6 color modes (SPD/MODE/BOOST/THRTL/G-LAT/TEMP),
                             start/finish flags, pause markers, peak markers (RPM/boost/lat-G/speed),
                             zoom-to-fit, map type cycling, blue dot location, color legend
@@ -200,12 +208,20 @@ data[5] = B5,  data[6] = B6 …
 - Android 10+ silently routes new sockets through cellular when WiFi has no internet — `WiFiFirmwareApi` uses `Network.socketFactory` via `ConnectivityManager` to force all traffic on WiFi. BLE transport avoids this entirely (not a "network" in Android's routing model)
 - **BLE auto-reconnect** — `autoConnect=true` on `connectGatt()` after first successful connection. Android handles reconnection when device returns to range. 15s timeout covers slow auto-reconnect; on timeout, `SlcanConnection` retry logic takes over
 - **BLE MTU** — `requestMtu(247)` requested after service discovery. If `requestMtu()` returns false (unsupported), proceeds with 23-byte default. SLCAN frames mostly fit; longer frames arrive as multiple BLE notifications and are reassembled by `lineBuffer`
+- **BLE permissions must be requested at scan time** — `BleDevicePickerDialog` handles runtime permission requests (BLUETOOTH_SCAN + BLUETOOTH_CONNECT on API 31+). Do NOT rely solely on `MainActivity.onCreate()` permission requests — the user may switch to Bluetooth after app startup. `BleDeviceScanner.startScan()` also has a SecurityException safety net
+- **Foreground service start from background** — `CanDataService.startConnection()` wraps `goForeground()` in try/catch because WiFi/Bluetooth callbacks can fire when the app is backgrounded. `MainActivity.startSvc()` also catches `ForegroundServiceStartNotAllowedException`
+- **Brightness colors are computed getters** — `Bg`, `Surf`, `Surf2`, `Surf3`, `Brd`, `Dim`, `Mid` in Theme.kt are `val ... get() = lerp(base, bright, brightness)` backed by `mutableFloatStateOf`. They are NOT static vals. Compose snapshot system tracks reads automatically. Call `setBrightness()` to change; all composables recompose. Do not cache these colors in non-composable contexts
+- **MAP tab camera state is hoisted** — `cameraPositionState` lives in `DrivePage`, passed to `DriveMap` as a parameter. This allows DrivePage to control zoom and recenter. Google Maps native My Location button is disabled; custom `◎` button replaces it
 
 ## Theme Colors
 
+Bg/Surf/Surf2/Surf3/Brd/Dim/Mid are brightness-scaled via `lerp(Night, Sun, brightness)`.
+Frost, accents, and semantic colors (Ok/Warn/Orange) are fixed.
+
 ```
-Bg      #05070A   Surf    #0A0D12   Surf2  #0F141C   Surf3  #141B26
-Frost   #E8F4FF   Dim     #3D5A72   Mid    #7A9AB8   Brd    #162030
+Night (0.0):  Bg #05070A  Surf #0A0D12  Surf2 #0F141C  Surf3 #141B26  Brd #162030  Dim #547A96  Mid #7A9AB8
+Sun   (1.0):  Bg #1A2535  Surf #1F2A3A  Surf2 #253445  Surf3 #2B3A4E  Brd #2E4560  Dim #8AAABB  Mid #B0D0E8
+Frost   #E8F4FF   Dim     #547A96   Mid    #7A9AB8   Brd    #162030
 Accent  #0091EA   AccentD #006DB3   Orange #FF4D00   Ok     #00FF88   Warn #FFCC00
 ```
 
@@ -223,6 +239,7 @@ ConnectionMethod: "WIFI"  (alt: "BLUETOOTH")
 EdgeShiftLight: false  |  EdgeShiftColor: "accent"  |  EdgeShiftIntensity: "high"  |  EdgeShiftRpm: 6800
 AutoRecordDrives: false  |  MaxSavedDrives: 50
 UpdateChannel: "stable"  (alt: "beta")
+Brightness: 0.0  (0.0=Night, 0.5=Day, 1.0=Sun)
 Prefs file: "openrs_settings"
 ```
 
