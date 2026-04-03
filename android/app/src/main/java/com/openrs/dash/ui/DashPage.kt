@@ -122,7 +122,7 @@ import kotlin.math.roundToInt
                 peak = "▲ ${"%.1f".format(vs.peakBoostPsi)}",
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 sparklineData = boostSpark.snapshot(),
-                valueFraction = (vs.boostKpa.toFloat() / 180f).coerceIn(0f, 1f)
+                valueFraction = (vs.boostPsi.toFloat() / 30f).coerceIn(0f, 1f)
             )
             HeroCard(
                 unit = "RPM", value = animRpmStr, label = "ENGINE",
@@ -148,13 +148,14 @@ import kotlin.math.roundToInt
         ShiftLightBar(rpm = animRpm, modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp))
 
         // ── Gear — rally-style full-width hero ──────────────────────────
+        val gearActive = vs.isConnected && (vs.rpm > 0 || vs.speedKph > 0)
         Box(
             Modifier.fillMaxWidth()
                 .background(
-                    Brush.verticalGradient(listOf(accent.copy(alpha = 0.04f), Surf2)),
+                    Brush.verticalGradient(listOf(accent.copy(alpha = if (gearActive) 0.04f else 0f), Surf2)),
                     RoundedCornerShape(16.dp)
                 )
-                .border(2.dp, accent.copy(alpha = 0.25f), RoundedCornerShape(16.dp))
+                .border(2.dp, if (gearActive) accent.copy(alpha = 0.25f) else Brd.copy(alpha = 0.15f), RoundedCornerShape(16.dp))
                 .padding(vertical = 18.dp),
             contentAlignment = Alignment.Center
         ) {

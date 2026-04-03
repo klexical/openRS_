@@ -1,11 +1,14 @@
 import { useStore } from '../../store'
 import { NavRail } from './NavRail'
 import { Header } from './Header'
+import { ErrorBoundary } from '../ErrorBoundary'
 import { DashboardPanel } from '../panels/DashboardPanel'
 import { TripPanel } from '../panels/TripPanel'
 import { DiagnosticsPanel } from '../panels/DiagnosticsPanel'
+import { ComparePanel } from '../panels/ComparePanel'
 import { SessionsPanel } from '../panels/SessionsPanel'
 import { ImportPanel } from '../panels/ImportPanel'
+import { SettingsPanel } from '../panels/SettingsPanel'
 
 export function Shell() {
   const activePanel = useStore((s) => s.activePanel)
@@ -16,11 +19,15 @@ export function Shell() {
       <div className="flex flex-col flex-1 overflow-hidden">
         <Header />
         <main className="flex-1 overflow-y-auto p-6">
-          {activePanel === 'dashboard' && <DashboardPanel />}
-          {activePanel === 'trip' && <TripPanel />}
-          {activePanel === 'diagnostics' && <DiagnosticsPanel />}
-          {activePanel === 'sessions' && <SessionsPanel />}
-          {activePanel === 'import' && <ImportPanel />}
+          <ErrorBoundary key={activePanel} fallbackLabel={`Error loading ${activePanel} panel`}>
+            {activePanel === 'dashboard' && <DashboardPanel />}
+            {activePanel === 'trip' && <TripPanel />}
+            {activePanel === 'diagnostics' && <DiagnosticsPanel />}
+            {activePanel === 'compare' && <ComparePanel />}
+            {activePanel === 'sessions' && <SessionsPanel />}
+            {activePanel === 'import' && <ImportPanel />}
+            {activePanel === 'settings' && <SettingsPanel />}
+          </ErrorBoundary>
         </main>
       </div>
     </div>

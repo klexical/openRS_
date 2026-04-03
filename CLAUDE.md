@@ -26,8 +26,10 @@ can/
   BleSlcanTransport.kt    — BLE GATT transport: service 0xFFE0, RX char FFE1, TX char FFE2
                             Auto-reconnect (autoConnect=true after first success), MTU 247 w/ fallback
   BleDeviceScanner.kt     — BLE device discovery filtered to service UUID 0xFFE0
+                            WARNING: 0xFFE0 is shared by many cheap BLE devices (LED controllers, HM-10 clones)
   SlcanConnection.kt      — Shared connection: retry, SLCAN init, firmware probe, OBD pollers,
                             frame dispatch, DTC scan/clear, ISO-TP reassembly, FPS tracking.
+                            SLCAN handshake: waits 3s for valid frame after init before declaring Connected
                             Constructor takes transportFactory: () -> SlcanTransport
                             Command response channel routes +FRS: lines separately from SLCAN frames
   AdapterState.kt         — Disconnected / Connecting / Connected / Idle / Error (sealed class)
@@ -84,7 +86,9 @@ ui/
   Components.kt           — Shared composables: HeroCard (valueFraction glow), DataCell, BarCard,
                             TireCard, GfCard, WheelCell, AfrCard, SectionLabel (animated chevron),
                             NeonDivider, FocusRsOutline, tireTempColor()
-                            All cards use neonBorder() instead of flat border()
+                            Glow is data-gated: neonBorder only renders when live data present.
+                            HeroCard glow scales with valueFraction (0=dormant, no border/glow).
+                            DataCell/BarCard/GfCard/AfrCard suppress glow on placeholder "— —".
                             HeroCard uses plain HeroNum (instant display, no animation)
   DesignTokens.kt         — Tokens object: PagePad, CardGap, SectionGap, InnerH/V,
                             CardShape(12dp), HeroShape(14dp), CardRadius, HeroRadius, CardBorder
@@ -93,6 +97,7 @@ ui/
                             7 base colors (Bg/Surf/Surf2/Surf3/Brd/Dim/Mid) are computed getters via lerp
   BleDevicePickerDialog.kt — BLE device picker: scan filtered to 0xFFE0, RSSI bars, dark neon aesthetic
                             Runtime BLE permission request (BLUETOOTH_SCAN + BLUETOOTH_CONNECT on API 31+)
+                            Unknown device hint: orange "not a known adapter" for non-WiCAN/MeatPi names
                             Permission-denied UI state with retry button
   SettingsSheet.kt        — Settings drawer: units, TPMS threshold, shift light, adapter, connection,
                             reconnect, drives (auto-record, max saved), diag, theme picker (RS paint colours)
@@ -135,6 +140,7 @@ update/
 | PSCM   | 0x730   | 0x738    | extended                        |
 | FENG   | 0x727   | 0x72F    | extended                        |
 | RSProt | 0x731   | 0x739    | extended                        |
+| GFM    | 0x7D2   | 0x7DA    | default (DTC scanning only)     |
 | IPC    | 0x720   | 0x728    | scaffolded — not yet active     |
 | HVAC   | 0x733   | 0x73B    | scaffolded — not yet active     |
 
@@ -142,7 +148,7 @@ update/
 
 ```
 0x010  steering angle (Motorola 15-bit + sign)
-0x070  torque at trans (Motorola 11-bit bits 37-47, offset −500 Nm)
+0x070  torque at trans (Motorola 11-bit bits 37-47, offset −500 Nm) + RS suspension button (byte7 bit7)
 0x076  throttle % (byte0 × 0.392)
 0x080  accel pedal (bits 0-9 LE × 0.1%), reverse (bit 5)
 0x090  RPM (bytes 4-5) + baro (byte2 × 0.5 kPa)
@@ -155,6 +161,7 @@ update/
 0x1A4  ambient temp from MS-CAN bridge (byte4 signed × 0.25°C)
 0x1B0  drive mode nibble (byte6>>4); combine with 0x420 to distinguish Sport vs Track
 0x1C0  ESC mode (2-bit at bit position 10)
+0x225  launch control engaged (byte5 bit3)
 0x230  gear (4-bit) — does NOT broadcast on this car
 0x252  brake pressure (12-bit Motorola)
 0x2C0  AWD left/right torque (12-bit each at bits 0, 12)
@@ -206,12 +213,14 @@ data[5] = B5,  data[6] = B6 …
 - `fengTimedOut` / `rsprotTimedOut` = true after 3 failed probe cycles — do not suggest retrying indefinitely
 - **Drive mode cold-start gate** — `has420Arrived` flag in CanDecoder prevents Sport/Track resolution until the first `0x420` frame is received. Without this gate, `0x1B0` nibble=1 resolves against stale `modeDetail420` default during the 0-600ms blind window after connection, causing wrong mode flashes. The drive mode confirmation loop in MorePage adds a 2s post-command settling delay, a 15s timeout, and auto-correction if the car lands on the wrong mode (sends a corrective command automatically).
 - Android 10+ silently routes new sockets through cellular when WiFi has no internet — `WiFiFirmwareApi` uses `Network.socketFactory` via `ConnectivityManager` to force all traffic on WiFi. BLE transport avoids this entirely (not a "network" in Android's routing model)
+- **BLE 0xFFE0 UUID is NOT unique to WiCAN** — many cheap BLE peripherals (SP105E LED controllers, HM-10 clone modules) advertise the same 0xFFE0 service with FFE1/FFE2 characteristics. The BLE scan filter passes them through. `BleDevicePickerDialog` shows an orange "not a known adapter" hint for unrecognized device names. `SlcanConnection` has a 3s SLCAN handshake that rejects non-SLCAN devices before declaring Connected
 - **BLE auto-reconnect** — `autoConnect=true` on `connectGatt()` after first successful connection. Android handles reconnection when device returns to range. 15s timeout covers slow auto-reconnect; on timeout, `SlcanConnection` retry logic takes over
 - **BLE MTU** — `requestMtu(247)` requested after service discovery. If `requestMtu()` returns false (unsupported), proceeds with 23-byte default. SLCAN frames mostly fit; longer frames arrive as multiple BLE notifications and are reassembled by `lineBuffer`
 - **BLE permissions must be requested at scan time** — `BleDevicePickerDialog` handles runtime permission requests (BLUETOOTH_SCAN + BLUETOOTH_CONNECT on API 31+). Do NOT rely solely on `MainActivity.onCreate()` permission requests — the user may switch to Bluetooth after app startup. `BleDeviceScanner.startScan()` also has a SecurityException safety net
 - **Foreground service start from background** — `CanDataService.startConnection()` wraps `goForeground()` in try/catch because WiFi/Bluetooth callbacks can fire when the app is backgrounded. `MainActivity.startSvc()` also catches `ForegroundServiceStartNotAllowedException`
 - **Brightness colors are computed getters** — `Bg`, `Surf`, `Surf2`, `Surf3`, `Brd`, `Dim`, `Mid` in Theme.kt are `val ... get() = lerp(base, bright, brightness)` backed by `mutableFloatStateOf`. They are NOT static vals. Compose snapshot system tracks reads automatically. Call `setBrightness()` to change; all composables recompose. Do not cache these colors in non-composable contexts
 - **MAP tab camera state is hoisted** — `cameraPositionState` lives in `DrivePage`, passed to `DriveMap` as a parameter. This allows DrivePage to control zoom and recenter. Google Maps native My Location button is disabled; custom `◎` button replaces it
+- **MAP tab disables pager swipe** — `HorizontalPager` sets `userScrollEnabled = pagerState.currentPage != 4` so pinch-to-zoom and pan gestures don't conflict with tab swiping. Users navigate away via the tab bar. Google logo cannot be removed (Maps Platform ToS requirement)
 
 ## Theme Colors
 
@@ -264,7 +273,7 @@ cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{ver}.apk  (main release)
 ./gradlew assembleRelease -PrcSuffix=rc.5  # → openRS_v{ver}-rc.5.apk
-./gradlew test                             # 319 unit tests across 11 files
+./gradlew test                             # 327 unit tests across 11 files
 bash scripts/install-debug.sh              # quick build + ADB install + launch
 ```
 
@@ -276,8 +285,8 @@ RC builds MUST use `-PrcSuffix` so the APK filename reflects the RC version.
 
 ```
 android/app/src/test/java/com/openrs/dash/
-  CanDecoderTest.kt           — 69 tests: all 22 CAN ID decoders
-  ObdResponseParserTest.kt    — 46 tests: PCM/BCM/AWD/PSCM/FENG/RSProt DIDs
+  CanDecoderTest.kt           — 75 tests: all 23 CAN ID decoders (incl. 0x225 LC engaged, 0x070 suspension button)
+  ObdResponseParserTest.kt    — 48 tests: PCM/BCM/AWD/PSCM/FENG/RSProt DIDs (incl. spark advance, charging voltage)
   DriveStateTest.kt           — 39 tests: fuel economy, averages, haversine, peaks, sentinels
   VehicleStateTest.kt         — 31 tests: conversions, AWD split, peaks, TPMS, RTR
   AppVersionTest.kt           — 30 tests: version code/name, RC suffix, build config
@@ -357,11 +366,23 @@ web/
   src/
     components/
       layout/          — Shell, NavRail, Header
-      panels/          — DashboardPanel, TripPanel, DiagnosticsPanel, SessionsPanel
-      charts/          — TimeSeriesChart, GpsMap (Recharts + Leaflet)
-      ui/              — MetricCard, SectionLabel, DataCell, Button
-    store/             — Zustand store (sessions, active panel, UI state)
-    lib/               — ZIP import, IndexedDB, unit conversions
+      panels/          — DashboardPanel, TripPanel, DiagnosticsPanel, ComparePanel,
+                         SessionsPanel, ImportPanel, SettingsPanel
+      charts/          — TimeSeriesChart, GpsMap, ComparisonChart, GaugeChart, Sparkline,
+                         ModeTimeline (Recharts + Leaflet)
+      ui/              — MetricCard, SectionLabel, SearchBar, ExportDropdown, DeltaCard,
+                         TpmsSummaryCard, EmptyState
+    store/
+      index.ts         — Zustand store (sessions, panels, compare, nav)
+      settings.ts      — Settings store (units, theme) — localStorage persisted
+    lib/
+      import.ts        — ZIP import pipeline (drive_*.csv + drive_summary_*)
+      db.ts            — IndexedDB (idb) CRUD
+      format.ts        — Formatters + useUnitFormatters() hook
+      units.ts         — Metric/imperial conversion (speed, distance, temp, boost, tire, fuel)
+      export.ts        — CSV/JSON session export + browser download
+      compare.ts       — Multi-session KPI deltas + time normalization
+      mapColors.ts     — GPS map color mode thresholds
     styles/            — Design tokens (openRS_ palette)
     types/             — Session, trip, diagnostic, vehicle state types
 ```

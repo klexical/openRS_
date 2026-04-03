@@ -111,11 +111,11 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
         Dim.copy(alpha = alpha)
     } else valueColor
 
-    val glowColor = if (!isPlaceholder && valueColor != Frost) valueColor.copy(alpha = 0.2f) else Brd.copy(alpha = 0.4f)
+    val glowColor = if (!isPlaceholder && valueColor != Frost) valueColor.copy(alpha = 0.2f) else Brd.copy(alpha = 0.15f)
     Column(
         modifier
             .background(Surf2, CardShape)
-            .neonBorder(glowColor, Tokens.CardRadius)
+            .then(if (!isPlaceholder) Modifier.neonBorder(glowColor, Tokens.CardRadius) else Modifier)
             .padding(horizontal = InnerH, vertical = InnerV)
     ) {
         MonoLabel(label, 8.sp, Dim, letterSpacing = 0.15.sp)
@@ -140,20 +140,21 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
     val accent = LocalThemeAccent.current
     val animFrac by animateFloatAsState(valueFraction.coerceIn(0f, 1f),
         spring(stiffness = Spring.StiffnessMediumLow), label = "heroFrac")
-    val glowAlpha = 0.08f + animFrac * 0.25f
-    val borderAlpha = 0.15f + animFrac * 0.45f
+    val hasData = animFrac > 0.01f
+    val glowAlpha = animFrac * 0.3f
+    val borderAlpha = animFrac * 0.55f
     val glowCol = borderAccent ?: accent.copy(alpha = borderAlpha)
     Column(
         modifier
             .background(Surf2, HeroShape)
-            .neonBorder(glowCol, Tokens.HeroRadius, alpha = borderAlpha, animated = animFrac > 0.5f)
+            .then(if (hasData) Modifier.neonBorder(glowCol, Tokens.HeroRadius, alpha = borderAlpha, animated = animFrac > 0.5f) else Modifier)
             .padding(horizontal = HeroInnerH, vertical = HeroInnerV),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         MonoLabel(unit, 8.sp, Dim, letterSpacing = 0.18.sp)
         Spacer(Modifier.height(4.dp))
         Box(
-            Modifier.fillMaxWidth().drawBehind {
+            Modifier.fillMaxWidth().then(if (hasData) Modifier.drawBehind {
                 // Outer diffuse glow
                 drawCircle(
                     brush = Brush.radialGradient(
@@ -170,7 +171,7 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
                         radius = size.minDimension * 0.7f
                     )
                 )
-            },
+            } else Modifier),
             contentAlignment = Alignment.Center
         ) {
             HeroNum(value, 26.sp, valueColor, Modifier.fillMaxWidth())
@@ -198,10 +199,11 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
     barGlowColor: Color? = null,
     sparklineData: List<Float>? = null
 ) {
+    val hasData = fraction > 0f
     Column(
         modifier
             .background(Surf2, CardShape)
-            .neonBorder(barGlowColor?.copy(alpha = 0.2f) ?: Brd.copy(alpha = 0.3f), Tokens.CardRadius)
+            .then(if (hasData && barGlowColor != null) Modifier.neonBorder(barGlowColor.copy(alpha = 0.2f), Tokens.CardRadius) else Modifier)
             .padding(InnerH)
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -216,7 +218,7 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
             Box(
                 Modifier.fillMaxWidth(fraction.coerceIn(0f, 1f)).fillMaxHeight()
                     .background(barBrush, RoundedCornerShape(2.dp))
-                    .then(if (barGlowColor != null) Modifier.neonGlowRect(barGlowColor) else Modifier)
+                    .then(if (hasData && barGlowColor != null) Modifier.neonGlowRect(barGlowColor) else Modifier)
             )
         }
         if (sparklineData != null && sparklineData.size >= 2) {
@@ -240,7 +242,7 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
     Column(
         modifier
             .background(Surf2, CardShape)
-            .neonBorder(Brd.copy(alpha = 0.3f), Tokens.CardRadius)
+            .then(if (!isPlaceholder) Modifier.neonBorder(Brd.copy(alpha = 0.3f), Tokens.CardRadius) else Modifier)
             .padding(InnerH),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -254,11 +256,12 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
 /** Wheel speed cell — front/rear accent colour */
 @Composable fun WheelCell(label: String, speed: String, front: Boolean) {
     val accent = LocalThemeAccent.current
+    val isPlaceholder = speed == "— —" || speed == "0"
     val borderColor = if (front) accent.copy(alpha = 0.35f) else Ok.copy(alpha = 0.3f)
     Column(
         Modifier.fillMaxWidth()
             .background(Surf2, Tokens.CardShape)
-            .neonBorder(borderColor, Tokens.CardRadius, alpha = 0.3f)
+            .then(if (!isPlaceholder) Modifier.neonBorder(borderColor, Tokens.CardRadius, alpha = 0.3f) else Modifier)
             .padding(InnerV),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -271,17 +274,18 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
 /** G-force / dynamics numeric card */
 @Composable fun GfCard(label: String, value: String, peak: String, modifier: Modifier) {
     val accent = LocalThemeAccent.current
+    val isPlaceholder = value == "— —" || value == "0.00"
     Column(
         modifier
             .background(Surf2, RoundedCornerShape(Tokens.GfRadius))
-            .neonBorder(accent.copy(alpha = 0.15f), Tokens.GfRadius)
+            .then(if (!isPlaceholder) Modifier.neonBorder(accent.copy(alpha = 0.15f), Tokens.GfRadius) else Modifier)
             .padding(InnerV),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         MonoLabel(label, 8.sp, Dim, letterSpacing = 0.12.sp)
         Spacer(Modifier.height(3.dp))
         Box(
-            Modifier.fillMaxWidth().drawBehind {
+            Modifier.fillMaxWidth().then(if (!isPlaceholder) Modifier.drawBehind {
                 drawCircle(
                     brush = Brush.radialGradient(
                         listOf(accent.copy(alpha = 0.12f), Color.Transparent),
@@ -289,7 +293,7 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
                         radius = size.minDimension * 0.8f
                     )
                 )
-            },
+            } else Modifier),
             contentAlignment = Alignment.Center
         ) {
             MonoText(value, 18.sp, Frost, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())

@@ -9,8 +9,8 @@ import com.openrs.dash.data.VehicleState
  *
  * Sources:
  *  - RS_HS.dbc  — authoritative HS-CAN signal database (DBC format)
- *  - DigiCluster can0_hs.json  — HS-CAN @ 500 kbps confirmed signals
- *  - DigiCluster can1_ms.json  — MS-CAN @ 125 kbps signals
+ *  - can0_hs.json  — HS-CAN @ 500 kbps confirmed signals
+ *  - can1_ms.json  — MS-CAN @ 125 kbps signals
  *  - research/exportedPIDs.txt — Torque app Mode 22 PID export
  *  - research/Daft Racing/log_awd_temp.py — AWD temp decoding reference
  *
@@ -70,7 +70,8 @@ object CanDecoder {
     }
 
     // ── HS-CAN engine / powertrain ──────────────────────────────────────────
-    const val ID_TORQUE       = 0x070   // Torque at trans (Motorola bits 37-47)
+    const val ID_TORQUE       = 0x070   // Torque at trans (Motorola bits 37-47) + RS suspension button (byte7 bit7)
+    const val ID_LAUNCH_CTRL  = 0x225   // Launch control engaged (byte5 bit3)
     const val ID_THROTTLE     = 0x076   // Throttle % (byte 0 × 0.392) — may not broadcast on all tunes
     const val ID_PEDALS       = 0x080   // Accel pedal (bits 0-9 LE ×0.1 %), brake (bit 2), reverse (bit 5)
     const val ID_ENGINE_RPM   = 0x090   // RPM (byte4 low-nib|byte5 × 2), baro (byte2 × 0.5 kPa)
@@ -144,7 +145,7 @@ object CanDecoder {
     const val ID_ODOMETER     = 0x360
 
     private val KNOWN_IDS = setOf(
-        ID_TORQUE, ID_THROTTLE, ID_PEDALS, ID_ENGINE_RPM,
+        ID_TORQUE, ID_LAUNCH_CTRL, ID_THROTTLE, ID_PEDALS, ID_ENGINE_RPM,
         ID_CLUTCH, ID_GAUGE_ILLUM, ID_ENGINE_TEMPS, ID_SPEED,
         ID_LONG_ACCEL, ID_LAT_ACCEL, ID_WHEEL_ROT,
         ID_DRIVE_MODE, ID_DRIVE_MODE_EXT, ID_ESC_ABS,
@@ -162,8 +163,8 @@ object CanDecoder {
         return when (id) {
 
             // ── 0x090: RPM + barometric pressure ──────────────────────────────
-            // RPM:  (byte4 & 0x0F) << 8 | byte5  × 2   [DigiCluster bits 36-47 motorola]
-            // Baro: byte2 × 0.5 kPa                      [DigiCluster bits 16-23 motorola]
+            // RPM:  (byte4 & 0x0F) << 8 | byte5  × 2   [Motorola bits 36-47]
+            // Baro: byte2 × 0.5 kPa                      [Motorola bits 16-23]
             ID_ENGINE_RPM -> if (n >= 6) state.copy(
                 rpm                = ((data[4].toInt() and 0x0F) shl 8 or (data[5].toInt() and 0xFF)) * 2.0,
                 barometricPressure = ubyte(data, 2) * 0.5,
@@ -188,7 +189,7 @@ object CanDecoder {
             } else null
 
             // ── 0x130: Vehicle speed ───────────────────────────────────────────
-            // bytes 6-7 big-endian × 0.01 km/h  [DigiCluster verified]
+            // bytes 6-7 big-endian × 0.01 km/h  [verified]
             ID_SPEED -> if (n >= 8) state.copy(
                 speedKph   = word(data, 6) * 0.01,
                 lastUpdate = now
@@ -214,10 +215,10 @@ object CanDecoder {
             ) else null
 
             // ── 0x080: Accelerator pedal + reverse ────────────────────────────
-            // Accel pedal: bits 0-9 little-endian × 0.1 %  [DigiCluster verified]
-            // Reverse:     bit 5 of byte0                   [DigiCluster verified]
+            // Accel pedal: bits 0-9 little-endian × 0.1 %  [verified]
+            // Reverse:     bit 5 of byte0                   [verified]
             // NOTE: brake is boolean (bit 2) but brakePressure field not set here —
-            //       DigiCluster has no brake pressure on HS-CAN 0x080.
+            //       No brake pressure on HS-CAN 0x080.
             ID_PEDALS -> if (n >= 2) state.copy(
                 accelPedalPct = ((data[0].toInt() and 0x03) shl 8 or (data[1].toInt() and 0xFF)) * 0.1,
                 reverseStatus = (data[0].toInt() and 0x20) != 0,
@@ -298,8 +299,8 @@ object CanDecoder {
             } else null
 
             // ── 0x0C8: Gauge illumination + e-brake + ignition ─────────────────
-            // Brightness: bits 0-4 of byte0  [DigiCluster verified]
-            // E-brake:    bit 6 of byte3      [DigiCluster verified]
+            // Brightness: bits 0-4 of byte0  [verified]
+            // E-brake:    bit 6 of byte3      [verified]
             // Ignition:   bits 3-6 of byte2   [Confirmed via SLCAN: 0x3E→7=Run, 0x3A→7=Run]
             ID_GAUGE_ILLUM -> if (n >= 4) state.copy(
                 gaugeIllumination = data[0].toInt() and 0x1F,
@@ -317,7 +318,7 @@ object CanDecoder {
             } else null
 
             // ── 0x1A4: Ambient temperature — MS-CAN bridged via GWM ──────────
-            // DigiCluster can1_ms.json: byte4 signed int8 × 0.25 °C
+            // can1_ms.json: byte4 signed int8 × 0.25 °C
             ID_AMBIENT_TEMP -> if (n >= 5) state.copy(
                 ambientTempC = data[4].toInt().toDouble() * 0.25,
                 lastUpdate   = now
@@ -400,15 +401,24 @@ object CanDecoder {
                 escStatus = EscStatus.fromInt(bits(data, 10, 2)), lastUpdate = now
             ) else null
 
+            // ── 0x225: Launch control engaged ─────────────────────────────────
+            // byte5 bit3: 1 = launch control actively engaged
+            ID_LAUNCH_CTRL -> if (n >= 6) state.copy(
+                launchControlEngaged = (ubyte(data, 5) shr 3) and 1 == 1,
+                lastUpdate = now
+            ) else null
+
             // ── 0x230: Current gear ────────────────────────────────────────────
             ID_GEAR -> if (n >= 1) state.copy(
                 gear = bits(data, 0, 4), lastUpdate = now
             ) else null
 
-            // ── 0x070: Torque at transmission ─────────────────────────────────
-            ID_TORQUE -> if (n >= 6) state.copy(
-                torqueAtTrans = (bits(data, 37, 11) - 500).toDouble(), lastUpdate = now
-            ) else null
+            // ── 0x070: Torque at transmission + RS suspension button ──────────
+            ID_TORQUE -> if (n >= 6) {
+                val torque = (bits(data, 37, 11) - 500).toDouble()
+                val suspBtn = if (n >= 8) (ubyte(data, 7) shr 7) and 1 == 1 else state.suspensionButtonPressed
+                state.copy(torqueAtTrans = torque, suspensionButtonPressed = suspBtn, lastUpdate = now)
+            } else null
 
             // ── 0x360: Odometer (passive broadcast) ─────────────────────────
             // BCMmsg_x360: bytes [3:5] big-endian, 24-bit unsigned, 1 km/bit.
@@ -509,7 +519,8 @@ object CanDecoder {
         ID_DRIVE_MODE   -> "driveMode=${state.driveMode.label} (0x1B0 byte6)"
         ID_ESC_ABS      -> "escStatus=${state.escStatus.label}"
         ID_GEAR         -> "gear=${state.gearDisplay}"
-        ID_TORQUE       -> "torqueNm=${"%.0f".format(state.torqueAtTrans)}"
+        ID_TORQUE       -> "torqueNm=${"%.0f".format(state.torqueAtTrans)} suspBtn=${state.suspensionButtonPressed}"
+        ID_LAUNCH_CTRL  -> "lcEngaged=${state.launchControlEngaged}"
         ID_CLUTCH       -> "clutchPct=${"%.1f".format(state.clutchPedalPct)}"
         ID_WHEEL_ROT    -> "rotFL=${state.wheelRotFL} FR=${state.wheelRotFR} RL=${state.wheelRotRL} RR=${state.wheelRotRR} avgFront=${"%.2f".format(state.avgFrontWheelSpeedKph)}kph"
         ID_FUEL_LEVEL   -> "fuelPct=${"%.1f".format(state.fuelLevelPct)} (0x380 Motorola)"

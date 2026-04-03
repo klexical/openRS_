@@ -105,8 +105,8 @@ import kotlin.math.roundToInt
             Column {
                 Spacer(Modifier.height(4.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    DataCell("STATUS", if (vs.isConnected) "LIVE" else "OFF",
-                        valueColor = if (vs.isConnected) Ok else Orange, modifier = Modifier.weight(1f))
+                    DataCell("STATUS", if (vs.isConnected) "LIVE" else "— —",
+                        valueColor = if (vs.isConnected) Ok else Dim, modifier = Modifier.weight(1f))
                     DataCell("FPS",    "${vs.framesPerSecond.roundToInt()}", modifier = Modifier.weight(1f))
                     DataCell("DTCs", if (dtcResults != null) "$dtcCount" else "—",
                         valueColor = if (dtcCount > 0) Orange else if (dtcResults != null) Ok else Dim,
@@ -137,6 +137,9 @@ import kotlin.math.roundToInt
                         }, modifier = Modifier.weight(1f))
                     DataCell("BATT TEMP",
                         if (vs.batteryTempC > -90) "${vs.batteryTempC.roundToInt()}°C" else "—",
+                        modifier = Modifier.weight(1f))
+                    DataCell("CHG TGT",
+                        if (vs.batteryChargingVoltageDesired >= 0) "${"%.1f".format(vs.batteryChargingVoltageDesired)}V" else "—",
                         modifier = Modifier.weight(1f))
                 }
 

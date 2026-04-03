@@ -201,6 +201,7 @@ class MainActivity : ComponentActivity() {
                                         state = pagerState,
                                         modifier = Modifier.weight(1f),
                                         beyondViewportPageCount = 0,
+                                        userScrollEnabled = pagerState.currentPage != 4,
                                         key = { it }
                                     ) { page ->
                                         val pageOffset = (pagerState.currentPage - page) +
@@ -492,6 +493,10 @@ class MainActivity : ComponentActivity() {
                 )
             }
             TeleDivider()
+            if (vs.launchControlEngaged) {
+                TeleCell("LC", "ENGAGED", Warn, Modifier.weight(1f))
+                TeleDivider()
+            }
             TeleCell("ESC", vs.escStatus.label.uppercase(), escColor, Modifier.weight(1f))
             TeleDivider()
             TeleCell("CONN", fpsStr, if (vs.isConnected) Ok else Dim, Modifier.weight(1f))

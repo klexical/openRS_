@@ -222,6 +222,14 @@ fun BleDevicePickerDialog(
     }
 }
 
+/** Known adapter name patterns — devices not matching these get a warning hint. */
+private val KNOWN_ADAPTER_NAMES = listOf("wican", "meatpi", "openrs")
+
+private fun isKnownAdapter(name: String): Boolean {
+    val lower = name.lowercase()
+    return KNOWN_ADAPTER_NAMES.any { lower.contains(it) }
+}
+
 @Composable
 private fun DeviceRow(
     name: String,
@@ -230,6 +238,7 @@ private fun DeviceRow(
     onClick: () -> Unit
 ) {
     val accent = LocalThemeAccent.current
+    val known = isKnownAdapter(name)
     val signalBars = when {
         rssi > -50  -> 5
         rssi > -60  -> 4
@@ -273,7 +282,11 @@ private fun DeviceRow(
         Column(Modifier.weight(1f)) {
             MonoLabel(name, 11.sp, Frost, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(2.dp))
-            MonoLabel(address, 9.sp, Dim, letterSpacing = 0.05.sp)
+            if (known) {
+                MonoLabel(address, 9.sp, Dim, letterSpacing = 0.05.sp)
+            } else {
+                MonoLabel("$address  \u2022  not a known adapter", 9.sp, Orange, letterSpacing = 0.05.sp)
+            }
         }
 
         MonoLabel("${rssi}dB", 9.sp, Dim)

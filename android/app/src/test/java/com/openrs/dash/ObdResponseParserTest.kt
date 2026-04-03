@@ -620,4 +620,34 @@ class ObdResponseParserTest {
         ) { result = it }
         assertNull(result)
     }
+
+    // ── PCM: Spark Advance (DID 0x116B) ─────────────────────────────────────
+
+    @Test
+    fun `PCM - spark advance`() {
+        // DID 0x116B: B4 * 0.25 deg
+        // B4 = 56 -> 56 * 0.25 = 14.0 degrees
+        var result: VehicleState? = null
+        ObdResponseParser.parsePcmResponse(
+            makeResponse(0x11, 0x6B, 56),
+            blank
+        ) { result = it }
+        assertNotNull(result)
+        assertEquals(14.0, result!!.sparkAdvance, 0.01)
+    }
+
+    // ── BCM: Battery Charging Voltage Desired (DID 0x411D) ──────────────────
+
+    @Test
+    fun `BCM - battery charging voltage desired`() {
+        // DID 0x411D: B4 * 0.1 V
+        // B4 = 143 -> 143 * 0.1 = 14.3 V
+        var result: VehicleState? = null
+        ObdResponseParser.parseBcmResponse(
+            makeResponse(0x41, 0x1D, 143),
+            blank
+        ) { result = it }
+        assertNotNull(result)
+        assertEquals(14.3, result!!.batteryChargingVoltageDesired, 0.01)
+    }
 }

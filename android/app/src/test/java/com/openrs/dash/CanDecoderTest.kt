@@ -842,4 +842,59 @@ class CanDecoderTest {
         // Should be null — page 0 and 1 not received after reset
         assertNull(result)
     }
+
+    // ── 0x225: Launch Control Engaged ───────────────────────────────────────
+
+    @Test
+    fun `decode launch control engaged from 0x225`() {
+        // byte5 bit3 set = LC engaged
+        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x08)
+        val result = CanDecoder.decode(0x225, data, blank)
+        assertNotNull(result)
+        assertTrue(result!!.launchControlEngaged)
+    }
+
+    @Test
+    fun `decode launch control not engaged from 0x225`() {
+        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+        val result = CanDecoder.decode(0x225, data, blank)
+        assertNotNull(result)
+        assertFalse(result!!.launchControlEngaged)
+    }
+
+    @Test
+    fun `decode 0x225 short data returns null`() {
+        val data = byteArrayOf(0x00, 0x00, 0x00)
+        val result = CanDecoder.decode(0x225, data, blank)
+        assertNull(result)
+    }
+
+    // ── 0x070: Suspension button (extended from torque decode) ──────────────
+
+    @Test
+    fun `decode suspension button pressed from 0x070`() {
+        // byte7 bit7 set = suspension button pressed; torque data in bits 37-47
+        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x07, 0xF4.toByte(), 0x00, 0x80.toByte())
+        val result = CanDecoder.decode(0x070, data, blank)
+        assertNotNull(result)
+        assertTrue(result!!.suspensionButtonPressed)
+    }
+
+    @Test
+    fun `decode suspension button not pressed from 0x070`() {
+        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x07, 0xF4.toByte(), 0x00, 0x00)
+        val result = CanDecoder.decode(0x070, data, blank)
+        assertNotNull(result)
+        assertFalse(result!!.suspensionButtonPressed)
+    }
+
+    @Test
+    fun `decode torque from 0x070 with 6 bytes preserves suspension state`() {
+        // Only 6 bytes — should decode torque but preserve existing suspension state
+        val stateWithSusp = blank.copy(suspensionButtonPressed = true)
+        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x07, 0xF4.toByte())
+        val result = CanDecoder.decode(0x070, data, stateWithSusp)
+        assertNotNull(result)
+        assertTrue(result!!.suspensionButtonPressed) // preserved from input state
+    }
 }

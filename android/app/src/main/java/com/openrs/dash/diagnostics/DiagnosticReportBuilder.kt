@@ -97,7 +97,7 @@ internal object DiagnosticReportBuilder {
             appendLine("  LC RPM     : ${if (vs.lcRpmTarget >= 0) vs.lcRpmTarget.toString() else "—"}")
             appendLine("  ASS Active : ${vs.assEnabled ?: "—"}")
             appendLine("  FPS        : ${"%.0f".format(vs.framesPerSecond)}")
-            appendLine("  Data Mode  : ${vs.dataMode}")
+            appendLine("  Data Mode  : CAN")
             appendLine()
         }
 
@@ -441,5 +441,5 @@ private fun VehicleState.toJsonObject(): JSONObject = JSONObject().apply {
     put("reverseStatus", reverseStatus)
     put("framesPerSecond", framesPerSecond)
     put("isConnected", isConnected)
-    put("dataMode", dataMode)
+    put("dataMode", "CAN")
 }

@@ -107,6 +107,36 @@ class SlcanConnection(
                 transport.writeLine("OPENRS?\r")
                 addDebugLine("Probing firmware...")
 
+                // ── SLCAN handshake: wait for first valid response ────────
+                // Non-SLCAN BLE devices (e.g. LED controllers sharing the
+                // 0xFFE0 service UUID) will never send a valid frame.
+                val HANDSHAKE_TIMEOUT_MS = 3_000L
+                val handshakeDeadline = System.currentTimeMillis() + HANDSHAKE_TIMEOUT_MS
+                var handshakeOk = false
+                var firstLine: String? = null
+                while (System.currentTimeMillis() < handshakeDeadline) {
+                    val remaining = handshakeDeadline - System.currentTimeMillis()
+                    if (remaining <= 0) break
+                    val line = withTimeoutOrNull(remaining) {
+                        try { transport.readLine() } catch (_: Exception) { null }
+                    }
+                    if (line == null) break  // transport closed or timed out
+                    // Accept firmware probe response OR any parseable SLCAN frame
+                    if (line.startsWith("OPENRS:") || SlcanParser.parse(line) != null) {
+                        handshakeOk = true
+                        firstLine = line
+                        break
+                    }
+                    // Some adapters echo back init commands — keep waiting
+                }
+                if (!handshakeOk) {
+                    addDebugLine("No SLCAN response — device may not be a WiCAN adapter")
+                    throw RuntimeException(
+                        "Device did not respond to SLCAN init — may not be a CAN adapter"
+                    )
+                }
+                addDebugLine("SLCAN handshake OK")
+
                 _state.value = AdapterState.Connected
                 _transport = transport
                 connectionSucceeded = true
@@ -192,6 +222,19 @@ class SlcanConnection(
                 var firmwareKnown = false
                 val probeStartMs  = System.currentTimeMillis()
                 val PROBE_GRACE_MS = 3_000L
+
+                // Process the first line captured during handshake
+                if (firstLine != null && firstLine.startsWith("OPENRS:")) {
+                    firmwareKnown = true
+                    val version = firstLine.removePrefix("OPENRS:").trim()
+                    firmwareVersion = "openRS_ $version"
+                    OpenRSDashApp.instance.isOpenRsFirmware.value = true
+                    OpenRSDashApp.instance.firmwareVersionLabel.value = firmwareVersion
+                    DiagnosticLogger.isOpenRsFirmware = true
+                    DiagnosticLogger.firmwareVersion = firmwareVersion
+                    addDebugLine("Firmware: openRS_ $version \u2713")
+                    DiagnosticLogger.event("FIRMWARE", "openRS_ $version detected (${transport.label})")
+                }
 
                 // ── Main frame loop ───────────────────────────────────────
                 try {

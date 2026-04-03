@@ -69,10 +69,14 @@ import com.openrs.dash.ui.anim.neonGlowRect
                 vs.coolantTempC.takeIf { it > -90 } ?: 0.0,
                 p.coolWarnC, p.coolCritC, if (vs.coolantTempC <= -90) "WARMING" else "",
                 peakStr(vs.peakCoolantTempC)),
-            TempSpec("INTAKE AIR",    p.displayTemp(vs.intakeTempC),  p.tempLabel, vs.intakeTempC,
-                p.intakeWarnC, p.intakeCritC, ""),
-            TempSpec("AMBIENT",       p.displayTemp(vs.ambientTempC), p.tempLabel, vs.ambientTempC,
-                40.0, 50.0, ""),
+            TempSpec("INTAKE AIR",
+                if (vs.intakeTempC > -90) p.displayTemp(vs.intakeTempC) else "— —", p.tempLabel,
+                vs.intakeTempC.takeIf { it > -90 } ?: 0.0,
+                p.intakeWarnC, p.intakeCritC, if (vs.intakeTempC <= -90) "POLLING" else ""),
+            TempSpec("AMBIENT",
+                if (vs.ambientTempC > -90) p.displayTemp(vs.ambientTempC) else "— —", p.tempLabel,
+                vs.ambientTempC.takeIf { it > -90 } ?: 0.0,
+                40.0, 50.0, if (vs.ambientTempC <= -90) "POLLING" else ""),
             TempSpec("RDU (REAR)",
                 if (vs.rduTempC > -90) p.displayTemp(vs.rduTempC) else "— —", p.tempLabel,
                 vs.rduTempC.takeIf { it > -90 } ?: 0.0,
@@ -233,7 +237,7 @@ data class TempSpec(
     Box(
         modifier
             .background(Surf2, RoundedCornerShape(14.dp))
-            .neonBorder(borderGlow, 14.dp)
+            .then(if (!isPlaceholder) Modifier.neonBorder(borderGlow, 14.dp) else Modifier)
     ) {
         Column(Modifier.padding(12.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {

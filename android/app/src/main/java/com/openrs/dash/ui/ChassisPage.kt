@@ -66,8 +66,8 @@ import kotlin.math.roundToInt
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(PagePad),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        GForceSection(vs, onReset)
         UnifiedChassisSection(vs, p)
+        GForceSection(vs, onReset)
     }
 }
 
@@ -428,8 +428,8 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
     }
     val tempStyle = remember(density) {
         TextStyle(
-            fontFamily = ShareTechMono, fontSize = with(density) { 8.sp },
-            color = Dim, fontWeight = FontWeight.Normal, textAlign = TextAlign.Center
+            fontFamily = ShareTechMono, fontSize = with(density) { 10.sp },
+            color = Frost.copy(alpha = 0.8f), fontWeight = FontWeight.Normal, textAlign = TextAlign.Center
         )
     }
 
@@ -437,7 +437,7 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
 
     // ── Rear axle diagram ──
     Canvas(
-        Modifier.fillMaxWidth().height(130.dp)
+        Modifier.fillMaxWidth().height(140.dp)
     ) {
         val w = size.width
         val h = size.height
@@ -447,12 +447,12 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
 
         // ── Component positions ──
         val wheelR = 14.dp.toPx()
-        val rduW = 48.dp.toPx()
-        val rduH = 28.dp.toPx()
+        val rduW = 54.dp.toPx()
+        val rduH = 34.dp.toPx()
         val cltW = 16.dp.toPx()
         val cltH = 22.dp.toPx()
-        val ptuW = 36.dp.toPx()
-        val ptuH = 18.dp.toPx()
+        val ptuW = 42.dp.toPx()
+        val ptuH = 22.dp.toPx()
 
         val leftWheelX = wheelR + 6.dp.toPx()
         val rightWheelX = w - wheelR - 6.dp.toPx()
@@ -639,6 +639,15 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
 
     // ── Data cells below the diagram ──
     Spacer(Modifier.height(8.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        DataCell("PTU TEMP", if (vs.ptuTempC > -90) "${p.displayTemp(vs.ptuTempC)}${p.tempLabel}" else "— —",
+            modifier = Modifier.weight(1f))
+        DataCell("F / R SPLIT", splitLabel,
+            modifier = Modifier.weight(1f))
+        DataCell("RDU TEMP", if (vs.rduTempC > -90) "${p.displayTemp(vs.rduTempC)}${p.tempLabel}" else "— —",
+            modifier = Modifier.weight(1f))
+    }
+    Spacer(Modifier.height(4.dp))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         DataCell("REAR BIAS", vs.rearLeftRightBias, modifier = Modifier.weight(1f))
         val spdLabel = if (p.speedUnit == "MPH") "mph" else "km/h"

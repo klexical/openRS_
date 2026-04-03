@@ -57,6 +57,9 @@ data class VehicleState(
     val oilLifePct: Double = -1.0,         // 0x054B: Oil life remaining (%)
     val hpFuelRailPsi: Double = -1.0,      // 0xF422: HP fuel rail pressure (PSI, direct injection)
 
+    // ── Spark / Ignition (Mode 22 via PCM 0x7E0) ──────────
+    val sparkAdvance: Double = -1.0,       // 0x116B: spark advance (deg × 0.25); -1 = not yet polled
+
     // ── Ignition Correction (Mode 22 via PCM 0x7E0) ───────
     val ignCorrCyl1: Double = 0.0,         // 0x03EC: Knock correction cyl 1 (deg)
     val ignCorrCyl2: Double = 0.0,         // 0x03ED: Knock correction cyl 2 (deg)
@@ -154,15 +157,17 @@ data class VehicleState(
     val eBrake: Boolean = false,           // Emergency brake status
     val reverseStatus: Boolean = false,    // Reverse gear engaged
     val launchControlActive: Boolean = false, // 0x420 bit 50: launch control armed
+    val launchControlEngaged: Boolean = false, // 0x225 byte5 bit3: LC actively engaged
+    val suspensionButtonPressed: Boolean = false, // 0x070 byte7 bit7: RS suspension button
     val engineStatus: Int = -1,            // 0x360 byte 0: 0=Idle, 2=Off, 183=Running, 186=Kill, 191=RecentStart
     val ignitionStatus: Int = -1,          // 0x0C8 byte2 bits 3-6: 0=KeyOut..7=Running..9=Cranking
 
     // ── BCM OBD (Mode 22 via BCM 0x726) ────────────────────
     val odometerKm: Long = -1L,            // 0x360 bytes[3:5] 24-bit, or 0x22DD01 24-bit (once on connect)
-    val odometerRolloverOffset: Long = 0,  // legacy — kept for CanDataService merge compat
     val batterySoc: Double = -1.0,         // 0x224028: B4 % (start/stop SoC)
     val batteryTempC: Double = -99.0,      // 0x224029: B4-40 °C (12V battery)
     val cabinTempC: Double = -99.0,        // 0x22DD04: (B4×10/9)-45 °C (interior)
+    val batteryChargingVoltageDesired: Double = -1.0, // 0x411D: charging system target voltage (V)
 
     // ── Extended Session OBD (Mode 22 + extended session 0x03) ─
     // Sources: Daft Racing rset.py (confirmed DIDs), RSProt (probed)
@@ -196,8 +201,6 @@ data class VehicleState(
     val isIdle: Boolean = false,
     val framesPerSecond: Double = 0.0,
     val lastUpdate: Long = 0L,
-    @Deprecated("Unused — always CAN. Remove in next major version.")
-    val dataMode: String = "CAN"
 ) {
     // ── Computed ─────────────────────────────────────────────
     val boostPsi: Double get() = (boostKpa - 101.325) * 0.14503773

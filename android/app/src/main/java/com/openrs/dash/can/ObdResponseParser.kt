@@ -44,6 +44,7 @@ object ObdResponseParser {
             0x4028 -> onObdUpdate(currentState.copy(batterySoc = b4.toDouble()))
             0x4029 -> onObdUpdate(currentState.copy(batteryTempC = (b4 - 40).toDouble()))
             0xDD04 -> onObdUpdate(currentState.copy(cabinTempC = (b4 * 10.0 / 9.0) - 45.0))
+            0x411D -> onObdUpdate(currentState.copy(batteryChargingVoltageDesired = b4 * 0.1))
             // TPMS: PSI = (((256*A)+B) / 3.0 + 22.0/3.0) * 0.145
             0x2813, 0x2814, 0x2816, 0x2815 -> {
                 if (data.size < 6) return
@@ -244,6 +245,9 @@ object ObdResponseParser {
             0x0304 -> onObdUpdate(currentState.copy(
                 batteryVoltage = ((b4 shl 8) or b5) / 2048.0
             ))
+            // Spark advance: B4 × 0.25 deg
+            // TODO: verify single-byte vs two-byte on real car
+            0x116B -> onObdUpdate(currentState.copy(sparkAdvance = b4 * 0.25))
             else -> {
                 val decoded = PidRegistry.decode(ObdConstants.PCM_RESPONSE_ID, did, b4, b5)
                 if (decoded != null) {

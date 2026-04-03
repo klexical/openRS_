@@ -24,7 +24,8 @@ class DtcScanner(private val ctx: Context) {
             DtcModuleSpec("BCM",  0x726, 0x72E),
             DtcModuleSpec("ABS",  0x760, 0x768),
             DtcModuleSpec("AWD",  0x703, 0x70B),
-            DtcModuleSpec("PSCM", 0x730, 0x738)
+            DtcModuleSpec("PSCM", 0x730, 0x738),
+            DtcModuleSpec("GFM",  0x7D2, 0x7DA)
         )
 
         // ── Pure parsing helpers (no Context dependency) ─────────────────────

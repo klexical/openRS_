@@ -479,7 +479,6 @@ class CanDataService : Service() {
                 tpmsSensorIdRR = if (obdState.tpmsSensorIdRR >= 0) obdState.tpmsSensorIdRR else current.tpmsSensorIdRR,
                 tpmsSensorIdLR = if (obdState.tpmsSensorIdLR >= 0) obdState.tpmsSensorIdLR else current.tpmsSensorIdLR,
                 odometerKm   = if (obdState.odometerKm  >= 0)   obdState.odometerKm   else current.odometerKm,
-                odometerRolloverOffset = if (obdState.odometerRolloverOffset > 0) obdState.odometerRolloverOffset else current.odometerRolloverOffset,
                 batterySoc   = if (obdState.batterySoc  >= 0)   obdState.batterySoc   else current.batterySoc,
                 batteryTempC = if (obdState.batteryTempC > -90) obdState.batteryTempC else current.batteryTempC,
                 cabinTempC   = if (obdState.cabinTempC  > -90)  obdState.cabinTempC   else current.cabinTempC,
@@ -563,7 +562,7 @@ class CanDataService : Service() {
                 tirePressLF  = -1.0,  tirePressRF  = -1.0,
                 tirePressLR  = -1.0,  tirePressRR  = -1.0,
                 rduTempC     = -99.0, ptuTempC     = -99.0,
-                odometerKm   = -1L,   odometerRolloverOffset = 0,
+                odometerKm   = -1L,
                 batterySoc   = -1.0,
                 batteryTempC = -99.0, cabinTempC   = -99.0
             )

@@ -10,8 +10,10 @@ const navItems: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: '◈' },
   { id: 'trip', label: 'Trip', icon: '◎' },
   { id: 'diagnostics', label: 'Diagnostics', icon: '⬡' },
+  { id: 'compare', label: 'Compare', icon: '⟺' },
   { id: 'sessions', label: 'Sessions', icon: '▤' },
   { id: 'import', label: 'Import', icon: '⊕' },
+  { id: 'settings', label: 'Settings', icon: '⚙' },
 ]
 
 export function NavRail() {

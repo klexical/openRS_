@@ -42,3 +42,40 @@ export function fmtPsi(psi: number): string {
   if (psi < 0) return '—'
   return `${fmtNumber(psi)} PSI`
 }
+
+// ── Unit-aware formatting hook ──
+
+import { useSettings } from '../store/settings'
+import {
+  fmtSpeed as unitFmtSpeed,
+  fmtDistance as unitFmtDistance,
+  fmtTemp as unitFmtTemp,
+  fmtBoost as unitFmtBoost,
+  fmtTirePress as unitFmtTirePress,
+  fmtFuelEconomy as unitFmtFuelEconomy,
+  speedUnit,
+  distanceUnit,
+  tempUnit,
+  fuelEconomyUnit,
+} from './units'
+
+/** Returns formatters bound to the user's current unit preferences. */
+export function useUnitFormatters() {
+  const { unitSystem, boostUnit, tirePressUnit } = useSettings()
+
+  return {
+    speed: (kph: number) => unitFmtSpeed(kph, unitSystem),
+    speedUnit: speedUnit(unitSystem),
+    distance: (km: number) => unitFmtDistance(km, unitSystem),
+    distanceUnit: distanceUnit(unitSystem),
+    temp: (c: number) => unitFmtTemp(c, unitSystem),
+    tempUnit: tempUnit(unitSystem),
+    boost: (psi: number) => unitFmtBoost(psi, boostUnit),
+    boostUnit,
+    tirePress: (psi: number) => unitFmtTirePress(psi, tirePressUnit),
+    tirePressUnit,
+    fuelEconomy: (lPer100km: number) => unitFmtFuelEconomy(lPer100km, unitSystem),
+    fuelEconomyUnit: fuelEconomyUnit(unitSystem),
+    unitSystem,
+  }
+}
