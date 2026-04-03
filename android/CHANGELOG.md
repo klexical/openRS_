@@ -160,6 +160,44 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **MAP tab zoom controls** — custom `+`/`−` buttons for zoom in/out and `◎` button to recenter on current location at zoom 15. `cameraPositionState` hoisted from `DriveMap` to `DrivePage` for shared control. Pinch-to-zoom and all native gestures retained. (`DrivePage.kt`, `DriveMap.kt`)
 - **Brightness/visibility system** — 7 base color tokens (Bg/Surf/Surf2/Surf3/Brd/Dim/Mid) now computed via `lerp()` between Night and Sun endpoints, backed by `mutableFloatStateOf`. Presets: Night (0.0), Day (0.5), Sun (1.0) plus continuous slider in Settings. Accents, Frost, and semantic colors (Ok/Warn/Orange) unchanged. Zero consumer changes — Compose snapshot system tracks reads automatically. (`Theme.kt`, `AppSettings.kt`, `UserPrefs.kt`, `SettingsSheet.kt`, `MainActivity.kt`)
 
+### Added (rc.8 — new signals, glow gates, Sapphire V2)
+- **Launch control engaged from CAN 0x225** — decodes byte5 bit3 to `launchControlEngaged: Boolean`. Distinct from `launchControlActive` (0x420) and `lcArmed` (RSProt extended session). Shown in header telemetry strip as "LC ENGAGED" when active. (`CanDecoder.kt`, `MainActivity.kt`)
+- **RS suspension button from CAN 0x070** — decodes byte7 bit7 to `suspensionButtonPressed: Boolean`. Extends existing torque decode on the same frame. Data-only for diagnostics, no dedicated UI element. (`CanDecoder.kt`)
+- **Spark advance from PCM DID 0x116B** — `sparkAdvance: Double` (B4 × 0.25°). Displayed as "SPARK" in POWER tab Engine Management row alongside timing, load, and OAR. (`ObdResponseParser.kt`, `ObdConstants.kt`, `PowerPage.kt`)
+- **Battery charging voltage target from BCM DID 0x411D** — `batteryChargingVoltageDesired: Double` (B4 × 0.1V). Displayed as "CHG TGT" in DIAG tab battery section. (`ObdResponseParser.kt`, `ObdConstants.kt`, `DiagPage.kt`)
+- **GFM (Generic Function Module) DTC scanning** — 0x7D2→0x7DA added to DTC scanner module list for broader diagnostic coverage. (`DtcScanner.kt`)
+- **Data-gated neon glow** — all card components (HeroCard, DataCell, BarCard, WheelCell, GfCard, AfrCard) now suppress glow borders and bloom effects when displaying placeholder values ("— —") or when disconnected. HeroCard glow scales proportionally with `valueFraction` (0 = dormant, no border/glow). Cards look inert until live data arrives. (`Components.kt`, `DashPage.kt`, `ChassisPage.kt`)
+- **BLE unknown adapter hint** — `BleDevicePickerDialog` shows orange "not a known adapter" warning for BLE devices whose names don't match "wican", "meatpi", or "openrs" patterns. Helps avoid pairing with random 0xFFE0 devices. (`BleDevicePickerDialog.kt`)
+- **Chassis page PTU/RDU temp row** — drivetrain temperature row added to car diagram showing PTU and RDU temps with sentinel-aware placeholders. Component sizes increased for readability (canvas 130→140dp, font 8→10sp). G-Force section moved above chassis diagram. (`ChassisPage.kt`)
+- **SLCAN handshake logging** — `SlcanConnection` logs firmware probe results and transport type during SLCAN handshake for diagnostic traceability. (`SlcanConnection.kt`)
+- **8 new unit tests** — launch control engaged (0x225: 2 tests), suspension button (0x070: 2 tests + short-frame safety), spark advance (0x116B: 1 test), charging voltage (0x411D: 1 test). 327 total across 11 files. (`CanDecoderTest.kt`, `ObdResponseParserTest.kt`)
+
+### Fixed (rc.8)
+- **sparkAdvance sentinel value** — default was `0.0`, indistinguishable from a valid 0° advance reading. Changed to `-1.0` to match the OBD scalar sentinel convention. (`VehicleState.kt`)
+- **Boost hero glow fraction used wrong unit** — `valueFraction` divided kPa by 180 instead of PSI by 30, causing incorrect glow intensity on the boost HeroCard. (`DashPage.kt`)
+- **Temps tab missing POLLING placeholder** — intake air and ambient temperature showed "0.0°" before first OBD response. Now show "— —" with "POLLING" status label when sentinel value present. (`TempsPage.kt`)
+- **MAP tab swipe conflict** — horizontal pager swipe was enabled on the MAP tab, conflicting with pinch-to-zoom and pan gestures on Google Maps. Pager swipe now disabled when on page 4 (MAP). (`MainActivity.kt`)
+
+### Changed (rc.8)
+- **Deprecated VehicleState fields removed** — `dataMode` and `odometerRolloverOffset` removed to free JVM bytecode slots. `dataMode` hardcoded to "CAN" in diagnostic reports. (`VehicleState.kt`, `DiagnosticReportBuilder.kt`, `CanDataService.kt`)
+
+### Added (rc.8 — Sapphire V2)
+- **Sapphire web dashboard V2** — complete overhaul of the post-session analytics dashboard with 7 new panels, 7 new chart components, and 129 vitest tests. (`web/`)
+- **Compare panel** — multi-session comparison with KPI delta cards (green=improvement, orange=regression), 5 overlaid time-series charts on normalized time axis, split GPS maps. (`ComparePanel.tsx`, `ComparisonChart.tsx`, `DeltaCard.tsx`, `compare.ts`)
+- **Settings panel** — unit preferences (speed, temp, boost, tire pressure, fuel economy), RS paint color theme grid, data management. Persisted to localStorage via Zustand. (`SettingsPanel.tsx`, `settings.ts`, `units.ts`)
+- **GPS map with 6 color modes** — Leaflet + CartoDB Dark Matter with color-segmented polylines matching Android DriveMap color modes (SPD/MODE/BOOST/THRTL/G-LAT/TEMP). Start/finish/pause/peak markers, color legend. (`GpsMap.tsx`, `mapColors.ts`)
+- **Gauge charts** — semi-circular SVG gauges for peak RPM, boost, speed, and lateral G on the dashboard panel. (`GaugeChart.tsx`)
+- **G-Force scatter plot** — lat-G vs speed colored by speed band or drive mode, downsampled to 2000 points. (`GForceScatter.tsx`)
+- **Temperature stack chart** — stacked area chart showing thermal soak patterns across coolant, oil, RDU, and PTU. (`TempStackChart.tsx`)
+- **RPM/Boost histograms** — equal-width bin distribution charts for RPM and boost on the trip panel. (`Histogram.tsx`)
+- **Mode timeline** — segmented bar chart of drive mode transitions with hover tooltips and transition count. (`ModeTimeline.tsx`)
+- **Sparkline metric cards** — inline trend charts with glow line and gradient fill for speed and RPM on dashboard. (`Sparkline.tsx`)
+- **Session management overhaul** — inline rename, search/filter bar, sort by date/name/distance/peak speed, bulk select + delete, tag system. (`SessionsPanel.tsx`, `SearchBar.tsx`)
+- **CSV/JSON export** — per-session data export with browser download. (`export.ts`, `ExportDropdown.tsx`)
+- **TPMS summary card** — 4-corner tire visualization with color-coded pressure thresholds. (`TpmsSummaryCard.tsx`)
+- **Error boundary** — class component wrapping all panels with retry button, resets on panel switch. (`ErrorBoundary.tsx`)
+- **129 vitest tests** — import pipeline (54), unit conversions (27), map colors (20), comparisons (16), formatters (17), store operations (15). (`web/src/lib/*.test.ts`, `web/src/store/store.test.ts`)
+
 ---
 
 ## [v2.2.5] — 2026-03-27
