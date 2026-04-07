@@ -7,7 +7,7 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ---
 
-## [v2.2.6] — unreleased
+## [v2.2.6] — 2026-04-06
 
 ### Added (rc.1 — drive mode reliability)
 - **Pre-flight diagnostic logging for drive mode commands** — logs current mode, modeDetail420 hex value, and firmware version before every drive mode command for traceability. (`MorePage.kt`)
@@ -246,6 +246,12 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **BottomNavBar height tokenized** — hardcoded `38.dp` replaced with `Tokens.NavBarHeight` (now 45.dp) and a 6dp top padding added so icons sit further from the top edge of the frosted glass strip. (`BottomNavBar.kt`, `DesignTokens.kt`)
 - **CI build provenance attestation** — release workflow now generates a SLSA build provenance attestation via `actions/attest-build-provenance@v2` for every signed release APK. Verify-firmware job restricted to tag pushes only. (`.github/workflows/ci.yml`)
 - **Removed deleted firmware RC binaries** — `openrs-fw-pro_v1.2-rc.1.bin` and `openrs-fw-usb_v1.61-rc.1.bin` removed from `firmware/release/`; the stable `v1.2.bin` / `v1.61.bin` files in the same directory remain the current firmware.
+
+### Fixed (stable — in-app updater rolling-RC bug)
+- **UpdateChecker now reads version from APK filename, not git tag** — the rolling-RC release pattern reuses the same git tag (e.g. `android-v2.2.6-rc.7`) across multiple RCs while the APK filename advances (`openRS_v2.2.6-rc.10.apk`). `UpdateChecker.parseReleases` was reading the version from `tag_name`, so RCs newer than the tag's named RC were silently filtered out as "older than installed" for users on the beta channel. Added `AppVersion.fromApkFilename()` and switched the parser to prefer the APK filename, with tag parsing as a fallback. 6 new unit tests guard the rolling-RC scenario. Total suite now 344 tests across 11 files. (`AppVersion.kt`, `UpdateChecker.kt`, `AppVersionTest.kt`)
+
+### Changed (stable)
+- **`versionCode` 33 → 34** — required for OTA update detection. `versionName` stays `2.2.6`. (`build.gradle.kts`)
 
 ---
 
