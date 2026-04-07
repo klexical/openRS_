@@ -348,6 +348,21 @@ Never route README.md, assets/, or docs/ through staging.
 4. Close umbrella issues only when ALL sub-items are checked off
 5. Add/update `versionHighlights` entry in `WhatsNewDialog.kt` for the new version — dialog falls back to the latest entry if missing, but every release should have its own highlights
 
+**Stable release cleanup (run as the FINAL step before reporting "shipped"):**
+6. **Delete superseded RC pre-releases AND their tags:**
+   ```
+   gh release delete android-v{ver}-rc.{N} --yes --cleanup-tag
+   gh release delete fw-usb-v{ver}-rc.{N}  --yes --cleanup-tag   # if firmware RC shipped
+   gh release delete fw-pro-v{ver}-rc.{N}  --yes --cleanup-tag   # if firmware RC shipped
+   ```
+   `--cleanup-tag` removes the rolling-RC git tag so it doesn't linger.
+7. **Mark the Android release as Latest** (NOT firmware — most users only care about the app):
+   ```
+   gh release edit android-v{ver} --latest
+   ```
+   GitHub auto-marks the most recently published release as Latest. If firmware was the last to publish, you MUST override or the app appears stale on the repo landing page.
+8. **Verify with `gh release list --limit 10`:** no `Pre-release` rows for this version, Android shows `Latest`, no orphaned RC tags. If the user has to point this out, the release flow was incomplete.
+
 ## Changelog Format (`android/CHANGELOG.md`)
 
 Every release follows the same structure. Consistency matters — do not deviate.
