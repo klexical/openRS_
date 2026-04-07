@@ -34,10 +34,27 @@ data class AppVersion(
 
     companion object {
         private val TAG_REGEX = Regex("""android-v(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?""")
+        private val APK_REGEX = Regex("""openRS_v(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?\.apk""")
 
         /** Parse a GitHub release tag like `android-v2.2.6` or `android-v2.2.6-rc.5`. */
         fun fromTagName(tag: String): AppVersion? {
             val m = TAG_REGEX.matchEntire(tag) ?: return null
+            return AppVersion(
+                major = m.groupValues[1].toInt(),
+                minor = m.groupValues[2].toInt(),
+                patch = m.groupValues[3].toInt(),
+                rc = m.groupValues[4].takeIf { it.isNotEmpty() }?.toInt()
+            )
+        }
+
+        /**
+         * Parse an APK asset filename like `openRS_v2.2.6.apk` or `openRS_v2.2.6-rc.10.apk`.
+         * Used as the authoritative version source for release detection — the rolling-RC
+         * tag pattern keeps the same git tag across multiple RCs, so the APK filename is
+         * the only place the actual RC number is recorded.
+         */
+        fun fromApkFilename(name: String): AppVersion? {
+            val m = APK_REGEX.matchEntire(name) ?: return null
             return AppVersion(
                 major = m.groupValues[1].toInt(),
                 minor = m.groupValues[2].toInt(),

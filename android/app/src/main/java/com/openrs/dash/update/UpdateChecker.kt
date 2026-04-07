@@ -92,26 +92,34 @@ object UpdateChecker {
             // Stable channel: skip pre-releases. Beta channel: consider all.
             if (channel == "stable" && isPrerelease) continue
 
-            val tagName = rel.optString("tag_name", "")
-            val version = AppVersion.fromTagName(tagName) ?: continue
-
-            // Only consider versions newer than what's installed
-            if (version <= current) continue
-
-            // Find the APK asset
+            // Find the APK asset first — its filename is the authoritative version source.
+            // The rolling-RC tag pattern reuses the same git tag across multiple RCs, so
+            // the tag_name lags behind reality. The APK filename always reflects the
+            // actual RC number that was uploaded.
             val assets = rel.optJSONArray("assets") ?: continue
             var apkUrl: String? = null
             var apkSize = 0L
+            var apkName: String? = null
             for (j in 0 until assets.length()) {
                 val asset = assets.getJSONObject(j)
                 val name = asset.optString("name", "")
                 if (name.startsWith("openRS_") && name.endsWith(".apk")) {
                     apkUrl = asset.optString("browser_download_url", "")
                     apkSize = asset.optLong("size", 0)
+                    apkName = name
                     break
                 }
             }
-            if (apkUrl.isNullOrEmpty()) continue
+            if (apkUrl.isNullOrEmpty() || apkName == null) continue
+
+            // Prefer the APK filename version; fall back to tag if filename doesn't parse.
+            val tagName = rel.optString("tag_name", "")
+            val version = AppVersion.fromApkFilename(apkName)
+                ?: AppVersion.fromTagName(tagName)
+                ?: continue
+
+            // Only consider versions newer than what's installed
+            if (version <= current) continue
 
             val releaseNotes = rel.optString("body", "").trim()
 

@@ -238,4 +238,52 @@ class AppVersionTest {
         val v = AppVersion.fromTagName(tag)!!
         assertEquals("2.2.6-rc.5", v.displayName)
     }
+
+    // ── APK filename parsing ────────────────────────────────────────────────
+
+    @Test
+    fun `parse stable APK filename`() {
+        val v = AppVersion.fromApkFilename("openRS_v2.2.6.apk")
+        assertNotNull(v)
+        assertEquals(2, v!!.major)
+        assertEquals(2, v.minor)
+        assertEquals(6, v.patch)
+        assertNull(v.rc)
+    }
+
+    @Test
+    fun `parse RC APK filename`() {
+        val v = AppVersion.fromApkFilename("openRS_v2.2.6-rc.10.apk")
+        assertNotNull(v)
+        assertEquals(2, v!!.major)
+        assertEquals(2, v.minor)
+        assertEquals(6, v.patch)
+        assertEquals(10, v.rc)
+    }
+
+    @Test
+    fun `APK filename rc number wins over rolling tag`() {
+        // The bug this guards against: rolling-RC tag stays at rc.7 across multiple
+        // RCs, but the APK filename advances. The APK is the authoritative source.
+        val tag = AppVersion.fromTagName("android-v2.2.6-rc.7")!!
+        val apk = AppVersion.fromApkFilename("openRS_v2.2.6-rc.10.apk")!!
+        assertTrue(apk > tag)
+        assertEquals(10, apk.rc)
+    }
+
+    @Test
+    fun `reject APK filename without openRS prefix`() {
+        assertNull(AppVersion.fromApkFilename("v2.2.6.apk"))
+    }
+
+    @Test
+    fun `reject APK filename without apk extension`() {
+        assertNull(AppVersion.fromApkFilename("openRS_v2.2.6"))
+    }
+
+    @Test
+    fun `reject debug APK filename with extra suffix`() {
+        // openRS_v2.2.6-staging-debug.apk shouldn't parse as a release version
+        assertNull(AppVersion.fromApkFilename("openRS_v2.2.6-staging-debug.apk"))
+    }
 }
