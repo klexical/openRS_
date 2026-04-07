@@ -109,6 +109,8 @@ jobs:
     needs: [ build, lint ]
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     defaults:
       run:
         working-directory: android
@@ -154,6 +156,11 @@ jobs:
           echo "Found APK: $APK"
         working-directory: .
 
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ steps.apk.outputs.path }}
+
       - name: Attach APK to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -162,7 +169,7 @@ jobs:
   verify-firmware:
     name: Verify Firmware Binaries
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
+    if: startsWith(github.ref, 'refs/tags/')
     steps:
       - name: Checkout
         uses: actions/checkout@v4

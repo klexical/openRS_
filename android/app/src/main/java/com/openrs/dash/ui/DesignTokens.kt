@@ -10,7 +10,7 @@ import androidx.compose.ui.unit.dp
 object Tokens {
     // ── Page-level spacing ──────────────────────────────────────────────
     val PagePad       = 12.dp
-    val NavBarHeight    = 38.dp
+    val NavBarHeight    = 45.dp
     val StatusBarHeight = 34.dp
     val CardGap         = 10.dp
     val SectionGap    = 14.dp

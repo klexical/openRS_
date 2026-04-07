@@ -42,12 +42,17 @@ can/
                             Returns DriveCommandResult sealed class; used by MorePage + DriveModeDock
 data/
   VehicleState.kt         — Immutable data class ~95 fields. See sentinel rules below.
-  ForscanCatalog.kt       — Lazy loader for assets/pids/forscan_modules.json (1,149 PIDs)
-  TripState.kt            — PeakType enum (RPM/BOOST/LATERAL_G/SPEED) + PeakEvent data class
+  DashLayout.kt           — Custom dashboard layout: DashCell grid, AVAILABLE_FIELDS catalog; JSON via AppSettings
   DriveDatabase.kt        — Room DB v3: DriveEntity (with name column), DrivePointEntity, DriveDao, migrations v1→v2→v3
   DriveState.kt           — Live drive state flow: isRecording, isPaused, peaks, recentPoints, fuel
   DtcResult.kt            — module, code, description, status (ACTIVE/PENDING/PERMANENT/UNKNOWN)
   DtcModuleSpec.kt        — name, requestId, responseId for DTC scan targets
+  ForscanCatalog.kt       — Lazy loader for assets/pids/forscan_modules.json (1,149 PIDs)
+  FuelEconomy.kt          — Real-time fuel economy: 60s rolling window, instant/avg, distance-to-empty
+  PerformanceTimer.kt     — 0-60 / 0-100 timer using CAN speed: IDLE → ARMED → RUNNING → FINISHED
+  SessionDatabase.kt      — Room DB for session snapshots: SessionEntity, SnapshotEntity, SessionDao
+  TripState.kt            — PeakType enum (RPM/BOOST/LATERAL_G/SPEED) + PeakEvent data class
+  WeatherData.kt          — OpenWeatherMap snapshot: temp, wind, humidity, icon-to-emoji mapping
 diagnostics/
   DtcScanner.kt           — UDS 0x19/02 scan across PCM(7E0)/BCM(726)/ABS(760)/AWD(703)/PSCM(730)
   DiagnosticLogger.kt     — Thread-safe singleton: frame inventory (opt B), decode trace, SLCAN log (opt C)
@@ -67,6 +72,7 @@ service/
   DriveRecorder.kt        — Room-backed drive recorder: start/stop/pause/resume, 1 Hz GPS + telemetry
                             FusedLocationProviderClient @ 1 Hz; batch writes (30 points/flush); peak tracking
   WeatherRepository.kt    — OpenWeatherMap /data/2.5/weather (BuildConfig.OPENWEATHER_API_KEY)
+  HudOverlayService.kt    — Floating HUD overlay (boost/RPM/oil temp); piggybacks CanDataService notification
 ui/
   MainActivity.kt         — 7-tab Compose host (DASH/POWER/CHASSIS/TEMPS/MAP/DIAG/MORE)
                             Binds CanDataService via LocalBinder; passes callbacks to child composables
@@ -78,6 +84,13 @@ ui/
                             Scaffold uses contentWindowInsets=statusBars (content extends behind nav bar)
                             hazeSource on content Box inside Scaffold (NOT outer Box — see Haze gotcha)
                             enableEdgeToEdge with transparent navigation bar style
+  DashPage.kt              — DASH tab: RPM, boost, speed heroes + supporting data cells
+  PowerPage.kt             — POWER tab: AFR, spark advance, fuel trims, torque
+  ChassisPage.kt           — CHASSIS tab: AWD torque split, tire pressures, wheel speeds, CarDiagram
+  TempsPage.kt             — TEMPS tab: coolant, oil, intake, charge air, PTU, RDU temperatures
+  DiagPage.kt              — DIAG tab: DTC scan/clear, PID browser, DID prober, diagnostic export
+  MorePage.kt              — MORE tab: drive mode selector, perf timer, fuel economy, settings
+  CustomDashPage.kt        — Custom dashboard: user-configurable gauge grid from DashLayout
   BottomNavBar.kt         — Custom bottom nav: 7 vector icons, frosted glass via Haze (hazeEffect),
                             spring-animated neon indicator, stamped bevel gradient, pressClick + haptics
                             Height: 38dp (icons) + sysNavPad (gesture area). Tokens.NavBarHeight = 38dp
@@ -124,6 +137,9 @@ ui/
     Sparkline.kt          — Inline trend chart with glow line + live endpoint dot + gradient fill
     StaggeredEntrance.kt  — StaggeredColumn: fade+slide-up with 40ms stagger delay per child
     InteractionModifiers.kt — pressClick() modifier: clickable + scale-down press feedback combined
+    RingBuffer.kt           — Fixed-capacity generic ring buffer: push/toList/clear; used by GForcePlot
+    ShiftLightBar.kt        — Horizontal LED-style shift indicator: green→yellow→red fill, redline flash
+    CarDiagram.kt           — Focus RS wireframe with tire highlights at wheel positions
   PidBrowserSection.kt    — DIAG tab: expandable FORScan catalog per module with coverage bar
   DidProberSection.kt     — DIAG tab: interactive Mode 22 scanner for any ECU+DID
   WhatsNewDialog.kt       — Version changelog dialog; shown on first launch after update

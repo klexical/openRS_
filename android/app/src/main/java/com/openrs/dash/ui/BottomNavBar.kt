@@ -75,7 +75,7 @@ fun BottomNavBar(
         modifier
             .fillMaxWidth()
             // Total height = nav items + system gesture inset (frost fills to screen edge)
-            .height(38.dp + sysNavPad)
+            .height(Tokens.NavBarHeight + sysNavPad)
             // ── Frosted glass via Haze backdrop blur ────────────────
             .hazeEffect(
                 state = hazeState,
@@ -165,7 +165,7 @@ fun BottomNavBar(
         }
 
         // ── Nav items (padded above system gesture bar) ─────────────
-        Row(Modifier.fillMaxWidth().height(38.dp)) {
+        Row(Modifier.fillMaxWidth().height(Tokens.NavBarHeight).padding(top = 6.dp)) {
             navItems.forEachIndexed { i, item ->
                 val isActive = i == selected
                 val tint = if (isActive) accent else Dim

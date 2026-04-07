@@ -19,6 +19,7 @@ object ObdConstants {
 
     const val BCM_QUERY_SOC        = "t72680322402800000000\r"
     const val BCM_QUERY_BATT_TEMP  = "t72680322402900000000\r"
+    const val BCM_QUERY_BATT_CURRENT = "t72680322409000000000\r"  // 0x4090: ((A*256+B)/16)-511.7 amps
     const val BCM_QUERY_CABIN_TEMP = "t72680322DD0400000000\r"
     const val BCM_QUERY_CHARGE_V_DESIRED = "t72680322411D00000000\r"
     const val BCM_QUERY_TPMS_LF   = "t72680322281300000000\r"
@@ -32,7 +33,7 @@ object ObdConstants {
     const val BCM_QUERY_TPMS_LAST = "t72680322280B00000000\r"
 
     val BCM_QUERIES = listOf(
-        BCM_QUERY_SOC, BCM_QUERY_BATT_TEMP, BCM_QUERY_CABIN_TEMP,
+        BCM_QUERY_SOC, BCM_QUERY_BATT_TEMP, BCM_QUERY_BATT_CURRENT, BCM_QUERY_CABIN_TEMP,
         BCM_QUERY_CHARGE_V_DESIRED,
         BCM_QUERY_TPMS_LF, BCM_QUERY_TPMS_RF, BCM_QUERY_TPMS_LR, BCM_QUERY_TPMS_RR,
         BCM_QUERY_TPMS_LAST
@@ -67,12 +68,19 @@ object ObdConstants {
     const val AWD_QUERY_DMD_PRESSURE   = "t703803221E9200000000\r"  // candidate: demanded pressure
     const val AWD_QUERY_PUMP_CURRENT   = "t703803221E9300000000\r"  // candidate: pump motor current
     const val AWD_QUERY_TRANS_OIL_TEMP = "t703803221E8000000000\r"  // candidate: sump oil temp
+    // Per-clutch hydraulic actuator telemetry (focusrs.org RDU tuning thread)
+    const val AWD_QUERY_CLUTCH_CUR_L   = "t703803221E9E00000000\r"  // 0x1E9E: ((sgn(A)*256)+B)/128 amps
+    const val AWD_QUERY_CLUTCH_CUR_R   = "t703803221E9F00000000\r"  // 0x1E9F: ((sgn(A)*256)+B)/128 amps
+    const val AWD_QUERY_CLUTCH_PRESS_L = "t703803221ED100000000\r"  // 0x1ED1: ((sgn(A)*256)+B)*2 mBar
+    const val AWD_QUERY_CLUTCH_PRESS_R = "t703803221ED200000000\r"  // 0x1ED2: ((sgn(A)*256)+B)*2 mBar
     val AWD_QUERIES = listOf(
         AWD_QUERY_RDU_TEMP,
         AWD_QUERY_CLUTCH_TEMP_L, AWD_QUERY_CLUTCH_TEMP_R,
         AWD_QUERY_REQ_TORQUE_L, AWD_QUERY_REQ_TORQUE_R,
         AWD_QUERY_DMD_PRESSURE, AWD_QUERY_PUMP_CURRENT,
-        AWD_QUERY_TRANS_OIL_TEMP
+        AWD_QUERY_TRANS_OIL_TEMP,
+        AWD_QUERY_CLUTCH_CUR_L, AWD_QUERY_CLUTCH_CUR_R,
+        AWD_QUERY_CLUTCH_PRESS_L, AWD_QUERY_CLUTCH_PRESS_R
     )
 
     // ── PCM OBD Mode 22 (0x7E0 → 0x7E8) ─────────────────────────────────────
@@ -99,6 +107,9 @@ object ObdConstants {
     const val PCM_QUERY_FUEL_LEVEL   = "t7E080322F42F00000000\r"
     const val PCM_QUERY_BATTERY      = "t7E080322030400000000\r"
     const val PCM_QUERY_SPARK_ADV   = "t7E080322116B00000000\r"
+    // Fuel trims via Ford fast-path 22F4xx (maps to OBD Mode 01 PIDs at Mode 22 rates)
+    const val PCM_QUERY_STFT         = "t7E080322F40600000000\r"  // 0xF406: A*100/128 - 100 (%)
+    const val PCM_QUERY_LTFT         = "t7E080322F40700000000\r"  // 0xF407: A*100/128 - 100 (%)
     val PCM_QUERIES = listOf(
         PCM_QUERY_ETC_ACTUAL, PCM_QUERY_ETC_DESIRED,
         PCM_QUERY_WGDC,
@@ -109,7 +120,8 @@ object ObdConstants {
         PCM_QUERY_TIP_ACTUAL, PCM_QUERY_TIP_DESIRED,
         PCM_QUERY_VCT_INTAKE, PCM_QUERY_VCT_EXHAUST,
         PCM_QUERY_OIL_LIFE, PCM_QUERY_HP_FUEL_RAIL, PCM_QUERY_FUEL_LEVEL,
-        PCM_QUERY_BATTERY, PCM_QUERY_SPARK_ADV
+        PCM_QUERY_BATTERY, PCM_QUERY_SPARK_ADV,
+        PCM_QUERY_STFT, PCM_QUERY_LTFT
     )
     const val PCM_POLL_INTERVAL_MS  = 30_000L
     const val PCM_QUERY_GAP_MS      =    200L

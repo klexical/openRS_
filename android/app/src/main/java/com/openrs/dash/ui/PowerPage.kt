@@ -111,8 +111,9 @@ import kotlin.math.roundToInt
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val stftColor = fuelTrimColor(vs.shortFuelTrim)
                     val ltftColor = fuelTrimColor(vs.longFuelTrim)
-                    DataCell("SHORT FT", if (vs.calcLoad > 0) "${"%.1f".format(vs.shortFuelTrim)}%" else ph, valueColor = stftColor, modifier = Modifier.weight(1f))
-                    DataCell("LONG FT",  if (vs.calcLoad > 0) "${"%.1f".format(vs.longFuelTrim)}%" else ph,  valueColor = ltftColor, modifier = Modifier.weight(1f))
+                    val hasFuelTrims = vs.isConnected && vs.rpm > 0
+                    DataCell("SHORT FT", if (hasFuelTrims) "${"%.1f".format(vs.shortFuelTrim)}%" else ph, valueColor = stftColor, modifier = Modifier.weight(1f))
+                    DataCell("LONG FT",  if (hasFuelTrims) "${"%.1f".format(vs.longFuelTrim)}%" else ph,  valueColor = ltftColor, modifier = Modifier.weight(1f))
                     DataCell("BARO",     "${vs.barometricPressure.roundToInt()} kPa", modifier = Modifier.weight(1f))
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -4,7 +4,7 @@
 #  Clones wican-fw, integrates the focusrs component, applies patches, builds.
 #
 #  Usage:
-#    ./firmware/build.sh [--target usb|pro]
+#    ./firmware/build.sh [--target usb|pro] [--rc rc.N]
 #
 #  Targets:
 #    usb  — WiCAN USB-C3 (ESP32-C3, wican-fw v4.20u)     [default]
@@ -22,6 +22,7 @@ set -euo pipefail
 
 # ── Parse arguments ──────────────────────────────────────────────────────────
 TARGET="usb"
+RC_SUFFIX=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --target)
@@ -32,9 +33,17 @@ while [[ $# -gt 0 ]]; do
             TARGET="${1#*=}"
             shift
             ;;
+        --rc)
+            RC_SUFFIX="$2"
+            shift 2
+            ;;
+        --rc=*)
+            RC_SUFFIX="${1#*=}"
+            shift
+            ;;
         *)
             echo "Unknown argument: $1"
-            echo "Usage: $0 [--target usb|pro]"
+            echo "Usage: $0 [--target usb|pro] [--rc rc.N]"
             exit 1
             ;;
     esac
@@ -58,7 +67,7 @@ case "$TARGET" in
         IDF_TARGET="esp32c3"
         SDKCONFIG_FILE="sdkconfig.defaults.usb"
         PARTITIONS_FILE="partitions_openrs_usb.csv"
-        OUTPUT_BIN="openrs-fw-usb_v1.61.bin"
+        BASE_BIN="openrs-fw-usb_v1.61"
         TARGET_DESC="WiCAN USB-C3 (ESP32-C3)"
         ;;
     pro)
@@ -66,10 +75,17 @@ case "$TARGET" in
         IDF_TARGET="esp32s3"
         SDKCONFIG_FILE="sdkconfig.defaults.pro"
         PARTITIONS_FILE="partitions_openrs_pro.csv"
-        OUTPUT_BIN="openrs-fw-pro_v1.2.bin"
+        BASE_BIN="openrs-fw-pro_v1.2"
         TARGET_DESC="WiCAN Pro (ESP32-S3)"
         ;;
 esac
+
+# ── Apply RC suffix to output filename ──────────────────────────────────────
+if [ -n "$RC_SUFFIX" ]; then
+    OUTPUT_BIN="${BASE_BIN}-${RC_SUFFIX}.bin"
+else
+    OUTPUT_BIN="${BASE_BIN}.bin"
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="$SCRIPT_DIR/.build/$TARGET"
@@ -89,6 +105,9 @@ err()  { echo -e "${RED}[openrs-fw:$TARGET]${RST} $*"; exit 1; }
 
 log "Build target: $TARGET_DESC"
 log "Upstream tag: $WICAN_TAG"
+if [ -n "$RC_SUFFIX" ]; then
+    log "RC suffix: $RC_SUFFIX → $OUTPUT_BIN"
+fi
 
 # ── 1. Prerequisites ──────────────────────────────────────────────────────────
 log "Checking prerequisites..."

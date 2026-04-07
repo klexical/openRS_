@@ -141,8 +141,6 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
         spring(stiffness = Spring.StiffnessMediumLow), label = "heroFrac")
     val hasData = animFrac > 0.01f
     val glowAlpha = animFrac * 0.3f
-    val borderAlpha = animFrac * 0.55f
-    val glowCol = borderAccent ?: accent.copy(alpha = borderAlpha)
     Column(
         modifier
             .cardGlow(color = borderAccent ?: accent, cornerRadius = Tokens.HeroRadius)
@@ -258,7 +256,6 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
 @Composable fun WheelCell(label: String, speed: String, front: Boolean) {
     val accent = LocalThemeAccent.current
     val isPlaceholder = speed == "— —" || speed == "0"
-    val borderColor = if (front) accent.copy(alpha = 0.35f) else Ok.copy(alpha = 0.3f)
     Column(
         Modifier.fillMaxWidth()
             .cardGlow(cornerRadius = Tokens.CardRadius)

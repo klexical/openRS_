@@ -198,11 +198,14 @@ class MainActivity : ComponentActivity() {
                                     // Auto-dismiss dock on tab change
                                     LaunchedEffect(selectedTab) { dockOpen = false }
 
+                                    val pagerScrollEnabled by remember {
+                                        derivedStateOf { !(selectedTab == 4 && mapTouched) }
+                                    }
                                     HorizontalPager(
                                         state = pagerState,
                                         modifier = Modifier.weight(1f),
                                         beyondViewportPageCount = 1,
-                                        userScrollEnabled = !(selectedTab == 4 && mapTouched), // disable pager swipe while touching map
+                                        userScrollEnabled = pagerScrollEnabled, // disable pager swipe while touching map
                                         key = { it }
                                     ) { page ->
                                         Box(Modifier.fillMaxSize()) {
@@ -278,9 +281,12 @@ class MainActivity : ComponentActivity() {
 
                         // ── Bottom Nav Bar (overlay — content extends behind) ──
                         val navScope = rememberCoroutineScope()
+                        val onSelectNav = remember<(Int) -> Unit> {
+                            { page -> navScope.launch { pagerState.animateScrollToPage(page) } }
+                        }
                         BottomNavBar(
                             selected = selectedTab,
-                            onSelect = { navScope.launch { pagerState.animateScrollToPage(it) } },
+                            onSelect = onSelectNav,
                             hazeState = hazeState,
                             modifier = Modifier.align(Alignment.BottomCenter)
                         )

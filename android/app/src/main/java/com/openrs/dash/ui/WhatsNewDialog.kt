@@ -33,6 +33,11 @@ import com.openrs.dash.BuildConfig
  */
 private val versionHighlights: Map<String, List<String>> = mapOf(
     "2.2.6" to listOf(
+        "Fuel trim drift tracker — short/long-term fuel trims (STFT/LTFT) on POWER tab FUEL section",
+        "AWD clutch hydraulics — left/right actuator current and hydraulic pressure on CHASSIS tab",
+        "Battery current monitoring — live charging/discharging amps on DIAG tab",
+        "Live button input feedback — drive mode, suspension, ASS, and ESC defeat buttons on DIAG tab",
+        "Critical fix — several Mode 22 PIDs were silently dropped before reaching the UI; now resolved",
         "Bottom nav bar — frosted glass with vector icons, spring-animated indicator, edge-to-edge",
         "Compact status bar — MODE/ESC pills, connection dot, settings gear in a single row",
         "MAP tab with Google Maps — live color-coded routes (6 modes), drive history, peak markers",

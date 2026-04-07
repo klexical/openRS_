@@ -130,6 +130,14 @@ import kotlin.math.roundToInt
                 Spacer(Modifier.height(6.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     DataCell("BATT V", "${"%.1f".format(vs.batteryVoltage)}V", modifier = Modifier.weight(1f))
+                    DataCell("BATT A",
+                        if (vs.batteryCurrentA > -900) "${"%+.1f".format(vs.batteryCurrentA)} A" else "—",
+                        valueColor = when {
+                            vs.batteryCurrentA <= -900 -> Dim
+                            vs.batteryCurrentA >  0.5  -> Ok       // charging
+                            vs.batteryCurrentA < -0.5  -> Frost    // discharging
+                            else                       -> Mid      // resting
+                        }, modifier = Modifier.weight(1f))
                     DataCell("BATT SoC", if (vs.batterySoc >= 0) "${vs.batterySoc.roundToInt()}%" else "—",
                         valueColor = when {
                             vs.batterySoc < 0   -> Dim
@@ -137,11 +145,32 @@ import kotlin.math.roundToInt
                             vs.batterySoc < 70  -> Warn
                             else                -> Ok
                         }, modifier = Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     DataCell("BATT TEMP",
                         if (vs.batteryTempC > -90) "${vs.batteryTempC.roundToInt()}°C" else "—",
                         modifier = Modifier.weight(1f))
                     DataCell("CHG TGT",
                         if (vs.batteryChargingVoltageDesired >= 0) "${"%.1f".format(vs.batteryChargingVoltageDesired)}V" else "—",
+                        modifier = Modifier.weight(1f))
+                    Spacer(Modifier.weight(1f))
+                }
+
+                // ── Live button inputs (0x070, 0x260, 0x305) ─────────────────
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    DataCell("MODE BTN", if (vs.driveModeButtonPressed) "HELD" else "—",
+                        valueColor = if (vs.driveModeButtonPressed) accent else Dim,
+                        modifier = Modifier.weight(1f))
+                    DataCell("SUSP BTN", if (vs.suspensionButtonPressed) "HELD" else "—",
+                        valueColor = if (vs.suspensionButtonPressed) accent else Dim,
+                        modifier = Modifier.weight(1f))
+                    DataCell("ASS BTN", if (vs.autoStartStopButtonPressed) "HELD" else "—",
+                        valueColor = if (vs.autoStartStopButtonPressed) accent else Dim,
+                        modifier = Modifier.weight(1f))
+                    DataCell("ESC BTN", if (vs.escOffButtonPressed) "HELD" else "—",
+                        valueColor = if (vs.escOffButtonPressed) Orange else Dim,
                         modifier = Modifier.weight(1f))
                 }
 

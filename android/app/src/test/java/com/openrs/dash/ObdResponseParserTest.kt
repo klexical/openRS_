@@ -650,4 +650,149 @@ class ObdResponseParserTest {
         assertNotNull(result)
         assertEquals(14.3, result!!.batteryChargingVoltageDesired, 0.01)
     }
+
+    // ── BCM: Battery Current (DID 0x4090) ───────────────────────────────────
+
+    @Test
+    fun `BCM - battery current idle`() {
+        // DID 0x4090: ((A*256+B)/16) - 511.7 amps
+        // A=0x20, B=0x00 -> (8192/16) - 511.7 = 512 - 511.7 = 0.3 A
+        var result: VehicleState? = null
+        ObdResponseParser.parseBcmResponse(
+            makeResponse(0x40, 0x90, 0x20, 0x00),
+            blank
+        ) { result = it }
+        assertNotNull(result)
+        assertEquals(0.3, result!!.batteryCurrentA, 0.01)
+    }
+
+    @Test
+    fun `BCM - battery current charging`() {
+        // A=0x21, B=0x00 -> (8448/16) - 511.7 = 528 - 511.7 = 16.3 A
+        var result: VehicleState? = null
+        ObdResponseParser.parseBcmResponse(
+            makeResponse(0x40, 0x90, 0x21, 0x00),
+            blank
+        ) { result = it }
+        assertNotNull(result)
+        assertEquals(16.3, result!!.batteryCurrentA, 0.01)
+    }
+
+    @Test
+    fun `BCM - battery current discharging`() {
+        // A=0x1F, B=0x00 -> (7936/16) - 511.7 = 496 - 511.7 = -15.7 A
+        var result: VehicleState? = null
+        ObdResponseParser.parseBcmResponse(
+            makeResponse(0x40, 0x90, 0x1F, 0x00),
+            blank
+        ) { result = it }
+        assertNotNull(result)
+        assertEquals(-15.7, result!!.batteryCurrentA, 0.01)
+    }
+
+    // ── PCM: Fuel Trims via Ford fast-path 22F4xx (DIDs 0xF406 / 0xF407) ───
+
+    @Test
+    fun `PCM - short fuel trim zero`() {
+        // DID 0xF406: A * 100/128 - 100
+        // A=128 -> 128 * 100/128 - 100 = 0% (perfect trim)
+        var result: VehicleState? = null
+        ObdResponseParser.parsePcmResponse(
+            makeResponse(0xF4, 0x06, 128),
+            blank
+        ) { result = it }
+        assertNotNull(result)
+        assertEquals(0.0, result!!.shortFuelTrim, 0.01)
+    }
+
+    @Test
+    fun `PCM - short fuel trim lean correction`() {
+        // A=192 -> 192 * 100/128 - 100 = 50% (adding fuel)
+        var result: VehicleState? = null
+        ObdResponseParser.parsePcmResponse(
+            makeResponse(0xF4, 0x06, 192),
+            blank
+        ) { result = it }
+        assertNotNull(result)
+        assertEquals(50.0, result!!.shortFuelTrim, 0.01)
+    }
+
+    @Test
+    fun `PCM - long fuel trim rich correction`() {
+        // DID 0xF407: same formula
+        // A=64 -> 64 * 100/128 - 100 = -50% (pulling fuel)
+        var result: VehicleState? = null
+        ObdResponseParser.parsePcmResponse(
+            makeResponse(0xF4, 0x07, 64),
+            blank
+        ) { result = it }
+        assertNotNull(result)
+        assertEquals(-50.0, result!!.longFuelTrim, 0.01)
+    }
+
+    // ── AWD: Per-clutch hydraulic actuators (0x1E9E/9F current, 0x1ED1/D2 pressure) ─
+
+    @Test
+    fun `AWD - left clutch actuator current positive`() {
+        // DID 0x1E9E: ((signed(A)*256)+B)/128 amps
+        // A=0x00, B=0x80 -> (0 + 128)/128 = 1.0 A
+        var result: VehicleState? = null
+        ObdResponseParser.parseAwdResponse(
+            makeResponse(0x1E, 0x9E, 0x00, 0x80),
+            blank
+        ) { result = it }
+        assertNotNull(result)
+        assertEquals(1.0, result!!.awdClutchCurL, 0.01)
+    }
+
+    @Test
+    fun `AWD - left clutch actuator current negative`() {
+        // A=0xFF (signed -1), B=0x80 -> ((-1*256)+128)/128 = -128/128 = -1.0 A
+        var result: VehicleState? = null
+        ObdResponseParser.parseAwdResponse(
+            makeResponse(0x1E, 0x9E, 0xFF, 0x80),
+            blank
+        ) { result = it }
+        assertNotNull(result)
+        assertEquals(-1.0, result!!.awdClutchCurL, 0.01)
+    }
+
+    @Test
+    fun `AWD - right clutch actuator current`() {
+        // DID 0x1E9F: same formula
+        // A=0x01, B=0x00 -> (256 + 0)/128 = 2.0 A
+        var result: VehicleState? = null
+        ObdResponseParser.parseAwdResponse(
+            makeResponse(0x1E, 0x9F, 0x01, 0x00),
+            blank
+        ) { result = it }
+        assertNotNull(result)
+        assertEquals(2.0, result!!.awdClutchCurR, 0.01)
+    }
+
+    @Test
+    fun `AWD - left clutch pressure`() {
+        // DID 0x1ED1: ((signed(A)*256)+B)*2 mBar
+        // A=0x01, B=0xF4 -> ((1*256) + 244) * 2 = 1000 mBar
+        var result: VehicleState? = null
+        ObdResponseParser.parseAwdResponse(
+            makeResponse(0x1E, 0xD1, 0x01, 0xF4),
+            blank
+        ) { result = it }
+        assertNotNull(result)
+        assertEquals(1000.0, result!!.awdClutchPressureL, 0.1)
+    }
+
+    @Test
+    fun `AWD - right clutch pressure`() {
+        // DID 0x1ED2: same formula
+        // A=0x02, B=0x00 -> (512 + 0) * 2 = 1024 mBar
+        var result: VehicleState? = null
+        ObdResponseParser.parseAwdResponse(
+            makeResponse(0x1E, 0xD2, 0x02, 0x00),
+            blank
+        ) { result = it }
+        assertNotNull(result)
+        assertEquals(1024.0, result!!.awdClutchPressureR, 0.1)
+    }
 }

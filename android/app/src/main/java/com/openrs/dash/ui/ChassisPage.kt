@@ -674,6 +674,21 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
             DataCell("PEAK", "${vs.awdMaxTorque.roundToInt()} Nm", modifier = Modifier.weight(1f))
         }
     }
+    // Per-clutch hydraulic actuators (0x1E9E/9F current, 0x1ED1/D2 pressure)
+    val hasClutchCur  = vs.awdClutchCurL > -900 || vs.awdClutchCurR > -900
+    val hasClutchPres = vs.awdClutchPressureL >= 0 || vs.awdClutchPressureR >= 0
+    if (hasClutchCur || hasClutchPres) {
+        Spacer(Modifier.height(4.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            DataCell("CLT-L A", if (vs.awdClutchCurL > -900) "${"%.1f".format(vs.awdClutchCurL)} A" else "—", modifier = Modifier.weight(1f))
+            DataCell("CLT-R A", if (vs.awdClutchCurR > -900) "${"%.1f".format(vs.awdClutchCurR)} A" else "—", modifier = Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(4.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            DataCell("CLT-L P", if (vs.awdClutchPressureL >= 0) "${"%.1f".format(vs.awdClutchPressureL / 1000.0)} bar" else "—", modifier = Modifier.weight(1f))
+            DataCell("CLT-R P", if (vs.awdClutchPressureR >= 0) "${"%.1f".format(vs.awdClutchPressureR / 1000.0)} bar" else "—", modifier = Modifier.weight(1f))
+        }
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

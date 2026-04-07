@@ -22,8 +22,8 @@ data class VehicleState(
 
     // ── Engine (OBD Mode 1) ─────────────────────────────────
     val calcLoad: Double = 0.0,            // PID 04: 0-100%
-    val shortFuelTrim: Double = 0.0,       // PID 06: -100 to +99.2%
-    val longFuelTrim: Double = 0.0,        // PID 07: -100 to +99.2%
+    val shortFuelTrim: Double = 0.0,       // PCM 0xF406 (Ford fast-path 22F4xx): A*100/128 - 100 (%)
+    val longFuelTrim: Double = 0.0,        // PCM 0xF407 (Ford fast-path 22F4xx): A*100/128 - 100 (%)
     val timingAdvance: Double = 0.0,       // PID 0E: -64 to +63.5 degrees
     val fuelRailPressure: Double = 0.0,    // PID 22: 0-5177.3 kPa
     val barometricPressure: Double = 0.0,  // PID 33: 0-255 kPa
@@ -126,14 +126,10 @@ data class VehicleState(
     val awdDmdPressure: Double = 0.0,    // AWD 0x703: demanded hydraulic pressure
     val awdPumpCurrent: Double = 0.0,    // AWD 0x703: pump motor current (A)
     val transOilTempC: Double = -99.0,   // AWD 0x703: sump oil temperature (°C)
-
-    // ── HVAC / Climate (Mode 22 via HVAC ECU, DIDs TBD) ──────
-    val hvacBlowerPct: Double = -1.0,      // Blower motor speed (%)
-    val hvacInteriorTempC: Double = -99.0, // Interior temp sensor (°C)
-    val hvacDischargeRfTempC: Double = -99.0, // Discharge air temp, right floor (°C)
-    val hvacBlendDoorL: Double = -1.0,     // Left blend door position (%)
-    val hvacBlendDoorR: Double = -1.0,     // Right blend door position (%)
-    val hvacDefrostDoor: Double = -1.0,    // Defrost door position (%)
+    val awdClutchCurL: Double = -999.0,  // AWD 0x1E9E: left clutch actuator current (A, signed); -999 = not yet polled
+    val awdClutchCurR: Double = -999.0,  // AWD 0x1E9F: right clutch actuator current (A, signed); -999 = not yet polled
+    val awdClutchPressureL: Double = -1.0, // AWD 0x1ED1: left clutch hydraulic pressure (mBar); -1 = not yet polled
+    val awdClutchPressureR: Double = -1.0, // AWD 0x1ED2: right clutch hydraulic pressure (mBar); -1 = not yet polled
 
     // ── IPC Warning Lamps (Mode 22 via IPC ECU, DIDs TBD) ─────
     val warnMil: Boolean? = null,         // MIL (check engine) lamp
@@ -159,6 +155,9 @@ data class VehicleState(
     val launchControlActive: Boolean = false, // 0x420 bit 50: launch control armed
     val launchControlEngaged: Boolean = false, // 0x225 byte5 bit3: LC actively engaged
     val suspensionButtonPressed: Boolean = false, // 0x070 byte7 bit7: RS suspension button
+    val driveModeButtonPressed: Boolean = false, // 0x305 byte4 bit5: drive mode toggle (held)
+    val autoStartStopButtonPressed: Boolean = false, // 0x260 byte0 bit7: ASS button (held)
+    val escOffButtonPressed: Boolean = false, // 0x260 byte5 bit3: ESC defeat button (held)
     val engineStatus: Int = -1,            // 0x360 byte 0: 0=Idle, 2=Off, 183=Running, 186=Kill, 191=RecentStart
     val ignitionStatus: Int = -1,          // 0x0C8 byte2 bits 3-6: 0=KeyOut..7=Running..9=Cranking
 
@@ -168,6 +167,7 @@ data class VehicleState(
     val batteryTempC: Double = -99.0,      // 0x224029: B4-40 °C (12V battery)
     val cabinTempC: Double = -99.0,        // 0x22DD04: (B4×10/9)-45 °C (interior)
     val batteryChargingVoltageDesired: Double = -1.0, // 0x411D: charging system target voltage (V)
+    val batteryCurrentA: Double = -999.0,  // 0x4090: ((A*256+B)/16)-511.7 amps (signed: + = charging, - = discharging); -999 = not yet polled
 
     // ── Extended Session OBD (Mode 22 + extended session 0x03) ─
     // Sources: Daft Racing rset.py (confirmed DIDs), RSProt (probed)

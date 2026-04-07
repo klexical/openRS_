@@ -225,6 +225,28 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **Tab crossfade** — 15% opacity dip during pager transitions removed. (`MainActivity.kt`)
 - **TabBar + TeleCell composables** — inline emoji-based tab bar and full-width telemetry strip removed; replaced by `BottomNavBar` and `StatusPill`. (`MainActivity.kt`)
 
+### Added (rc.10 — Tier 1 PIDs, button decoders, merge fix)
+- **Fuel trim drift tracker (STFT/LTFT)** — short-term and long-term fuel trims decoded from PCM DIDs `0xF406` / `0xF407` (`A * 100/128 - 100`, signed %), surfaced in the POWER tab FUEL section. Implements roadmap item 2.2. (`ObdConstants.kt`, `ObdResponseParser.kt`, `VehicleState.kt`, `PowerPage.kt`, `WiCanConnection.kt`, `MeatPiConnection.kt`)
+- **AWD clutch hydraulics** — left/right actuator current (DIDs `0x1E9E` / `0x1E9F`, signed Amps) and left/right hydraulic pressure (DIDs `0x1ED1` / `0x1ED2`, mBar) decoded from the AWD module under extended session. New row on the CHASSIS tab next to the existing clutch temp display. Sentinel `-999.0` for currents (so 0 A is a valid live reading) and `-1.0` for pressures. (`ObdConstants.kt`, `ObdResponseParser.kt`, `VehicleState.kt`, `ChassisPage.kt`)
+- **Battery current monitoring** — live charging/discharging amps from BCM DID `0x4090` (`((A*256+B)/16) - 511.7`). Added to the DIAG tab battery row with charge/discharge color coding (green = charging, frost = discharging, dim mid = resting). (`ObdConstants.kt`, `ObdResponseParser.kt`, `VehicleState.kt`, `DiagPage.kt`, `BcmPoller`)
+- **Live button input feedback** — new CAN decoders for `0x305` (drive mode toggle button, byte4 bit5) and `0x260` (Auto Start/Stop byte0 bit7, ESC defeat byte5 bit3). Surfaced as a 4-cell live HELD/idle row on the DIAG tab next to the existing suspension button indicator. Helps validate steering-wheel/console inputs without an oscilloscope. (`CanDecoder.kt`, `VehicleState.kt`, `DiagPage.kt`)
+- **8 new CAN decoder unit tests** — `0x305` (pressed/released/short data) and `0x260` (ASS pressed, ESC pressed, both pressed, both released, short data). Total suite now 338 tests across 11 files. (`CanDecoderTest.kt`)
+
+### Fixed (rc.10 — Tier 1 PIDs, button decoders, merge fix)
+- **Critical: `mergeObdState` allowlist silently dropped 7 fields** — the OBD response merge in `CanDataService` enumerates fields explicitly to coalesce parser updates back into central `VehicleState`. The new Tier 1 PIDs (STFT/LTFT, AWD clutch current/pressure, battery current, charging voltage desired, spark advance) were parsed correctly but never reached the UI because they were missing from the merge. Added all 7 with sentinel-aware gating. Without this fix, none of the rc.10 PID work would have rendered. (`CanDataService.kt`)
+- **`batteryCurrentA` default flipped from `0.0` to `-999.0`** — a battery at rest can legitimately read 0 A, so `0.0` could not distinguish "not yet polled" from "actually zero". Sentinel updated and DIAG tab gates display on `> -900`. (`VehicleState.kt`, `DiagPage.kt`)
+- **AWD clutch sentinels** — `awdClutchCurL/R` defaulted to `0.0` (a valid value); changed to `-999.0`. `awdClutchPressureL/R` defaulted to `0.0`; changed to `-1.0`. CHASSIS tab cells now show `—` until first data arrives instead of misleading zeros. (`VehicleState.kt`, `ChassisPage.kt`)
+- **POWER tab FUEL trims gated on wrong field** — STFT/LTFT cells were hidden until `calcLoad > 0`, but `calcLoad` is a separate Mode 22 PID that may arrive after STFT/LTFT. Replaced with `vs.isConnected && vs.rpm > 0` so trims display as soon as the engine is running. (`PowerPage.kt`)
+- **MainActivity recomposition churn on pager swipe** — `userScrollEnabled` was a fresh expression on every recompose; wrapped in `derivedStateOf`. `BottomNavBar onSelect` lambda was also re-allocated each frame; hoisted to a `remember`-cached closure. (`MainActivity.kt`)
+
+### Changed (rc.10 — Tier 1 PIDs, button decoders, merge fix)
+- **DIAG battery row reorganized** — from 4 cells in one row to 2 rows of 3 cells (BATT V / BATT A / BATT SoC, then BATT TEMP / CHG TGT / spacer) to fit the new BATT A reading while matching the rest of the DIAG tab's 3-per-row convention. (`DiagPage.kt`)
+- **`versionCode` 32 → 33** — required for OTA update detection. `versionName` stays `2.2.6`. (`build.gradle.kts`)
+- **`firmware/build.sh --rc rc.N` flag** — output filename now accepts an RC suffix (`openrs-fw-usb_v1.61-rc.N.bin`, `openrs-fw-pro_v1.2-rc.N.bin`) so RC firmware builds can be cleanly versioned alongside stable. No firmware source changes for rc.10 — existing v1.61 / v1.2 binaries remain current. (`firmware/build.sh`)
+- **BottomNavBar height tokenized** — hardcoded `38.dp` replaced with `Tokens.NavBarHeight` (now 45.dp) and a 6dp top padding added so icons sit further from the top edge of the frosted glass strip. (`BottomNavBar.kt`, `DesignTokens.kt`)
+- **CI build provenance attestation** — release workflow now generates a SLSA build provenance attestation via `actions/attest-build-provenance@v2` for every signed release APK. Verify-firmware job restricted to tag pushes only. (`.github/workflows/ci.yml`)
+- **Removed deleted firmware RC binaries** — `openrs-fw-pro_v1.2-rc.1.bin` and `openrs-fw-usb_v1.61-rc.1.bin` removed from `firmware/release/`; the stable `v1.2.bin` / `v1.61.bin` files in the same directory remain the current firmware.
+
 ---
 
 ## [v2.2.5] — 2026-03-27

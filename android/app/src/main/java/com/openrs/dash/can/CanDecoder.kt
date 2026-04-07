@@ -126,6 +126,15 @@ object CanDecoder {
     // Corrected via SLCAN capture (2026-03-25, user-confirmed Sport = 0xCC).
     const val ID_DRIVE_MODE_EXT = 0x420
 
+    // ── Steering wheel button events (community-discovered) ────────────────
+    // 0x260: Auto Start Stop button (B1b0 / Bit 7), ESC Off button (B6b4 / Bit 43).
+    // Source: Google Sheets community CAN map. Bits = 1 while button is held.
+    const val ID_BUTTONS_260   = 0x260
+
+    // 0x305: Drive Mode button (B5b2 / Bit 37). Bit = 1 while button is held.
+    // Lets us see button-press events ahead of the resolved mode change on 0x1B0+0x420.
+    const val ID_DRIVE_MODE_BTN = 0x305
+
     // RS_HS.dbc PCMmsg30 (0x380): FuelLevelFiltered : 17|10@0+ (0.4,0) [0|102] "%"
     // Motorola big-endian, 10-bit, start bit 17 (MSB). Extract: (data[2]&0x03)<<8|data[3], ×0.4 %
     // Confirmed from live log: raw=254 → 101.6 % (full tank). Range-filtered 0–110 %.
@@ -152,7 +161,8 @@ object CanDecoder {
         ID_WHEEL_SPEEDS, ID_GEAR, ID_AWD_TORQUE, ID_COOLANT,
         ID_PCM_AMBIENT, ID_AMBIENT_TEMP,
         ID_FUEL_LEVEL, ID_ODOMETER, ID_VIN_MUX,
-        ID_STEERING, ID_BRAKE_PRESS
+        ID_STEERING, ID_BRAKE_PRESS,
+        ID_BUTTONS_260, ID_DRIVE_MODE_BTN
     )
 
     fun decode(id: Int, data: ByteArray, state: VehicleState): VehicleState? {
@@ -405,6 +415,23 @@ object CanDecoder {
             // byte5 bit3: 1 = launch control actively engaged
             ID_LAUNCH_CTRL -> if (n >= 6) state.copy(
                 launchControlEngaged = (ubyte(data, 5) shr 3) and 1 == 1,
+                lastUpdate = now
+            ) else null
+
+            // ── 0x260: Auto Start Stop button + ESC Off button ────────────────
+            // ASS button:  byte0 bit7 (Bit 7 / B1b0 in spreadsheet notation)
+            // ESC Off btn: byte5 bit3 (Bit 43 / B6b4 in spreadsheet notation)
+            // Both are momentary — high while held, low when released.
+            ID_BUTTONS_260 -> if (n >= 6) state.copy(
+                autoStartStopButtonPressed = (ubyte(data, 0) shr 7) and 1 == 1,
+                escOffButtonPressed        = (ubyte(data, 5) shr 3) and 1 == 1,
+                lastUpdate = now
+            ) else null
+
+            // ── 0x305: Drive mode button ──────────────────────────────────────
+            // byte4 bit5 (Bit 37 / B5b2 in spreadsheet notation), 1 while held.
+            ID_DRIVE_MODE_BTN -> if (n >= 5) state.copy(
+                driveModeButtonPressed = (ubyte(data, 4) shr 5) and 1 == 1,
                 lastUpdate = now
             ) else null
 
