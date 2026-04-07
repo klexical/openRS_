@@ -1,6 +1,6 @@
 # openRS_ Browser Emulator
 
-Simulates the openRS_ phone UI in the browser (no device or WiCAN required).
+Simulates the openRS_ phone UI in the browser (no device or MeatPi adapter required). Mirrors the v2.2.6 stable feature set: 7-tab layout including the new MAP tab, Tier 1 PIDs (STFT/LTFT, AWD clutch hydraulics, battery current), button-input feedback, and the in-app update channel.
 
 ## How to run
 
@@ -17,10 +17,11 @@ Simulates the openRS_ phone UI in the browser (no device or WiCAN required).
 
 ## Settings
 
-- Defaults match the Android app (`AppSettings` / `UserPrefs`): keep screen on **on**, auto-reconnect **on**, retry interval **10 s** (plus WiCAN host/port, units, etc.). Values persist in `localStorage` (`openrs_emulator_settings_v1`).
+- Defaults match the Android app (`AppSettings` / `UserPrefs`): keep screen on **on**, auto-reconnect **on**, retry interval **10 s** (plus host/port, units, etc.). Values persist in `localStorage` (`openrs_emulator_settings_v1`).
 
 ## What it demonstrates
 
-- Same structure and labels as the real app (`MainActivity` + 6 tabs).
+- Same structure and labels as the real app (`MainActivity` + 7 tabs).
 - Demo data driven by the live engine above (RPM, boost, temps, AWD, TPMS, etc.).
+- MAP tab placeholder: stylised SVG preview of the live drive route with HUD overlay, color-mode picker, and zoom/recenter controls (the real app uses Google Maps Compose with 6 colour modes, peak markers, and weather card).
 - No backend: everything runs in the browser.

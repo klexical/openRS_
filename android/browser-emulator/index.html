@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>openRS_ v2.2.4 — Phone Emulator</title>
+<title>openRS_ v2.2.6 — Phone Emulator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@400;700&family=Barlow+Condensed:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1087,7 +1087,7 @@ body {
   </svg>
 
 <div style="display:flex;flex-direction:column;align-items:center">
-  <p class="page-title">open<span>RS</span>_ <span>v2.2.4</span> — Phone Emulator</p>
+  <p class="page-title">open<span>RS</span>_ <span>v2.2.6</span> — Phone Emulator</p>
 
   <div class="phone">
     <div class="notch"><div class="notch-bar"></div></div>
@@ -1124,8 +1124,9 @@ body {
       <div class="tab" onclick="switchTab(1)" id="tab1"><div class="tab-icon">◈</div><div class="tab-label">POWER</div></div>
       <div class="tab" onclick="switchTab(2)" id="tab2"><div class="tab-icon">◎</div><div class="tab-label">CHASSIS</div></div>
       <div class="tab" onclick="switchTab(3)" id="tab3"><div class="tab-icon">△</div><div class="tab-label">TEMPS</div></div>
-      <div class="tab" onclick="switchTab(4)" id="tab4"><div class="tab-icon">≡</div><div class="tab-label">DIAG</div></div>
-      <div class="tab" onclick="switchTab(5)" id="tab5"><div class="tab-icon">☰</div><div class="tab-label">MORE</div></div>
+      <div class="tab" onclick="switchTab(4)" id="tab4"><div class="tab-icon">⊕</div><div class="tab-label">MAP</div></div>
+      <div class="tab" onclick="switchTab(5)" id="tab5"><div class="tab-icon">≡</div><div class="tab-label">DIAG</div></div>
+      <div class="tab" onclick="switchTab(6)" id="tab6"><div class="tab-icon">☰</div><div class="tab-label">MORE</div></div>
     </div>
 
     <!-- ═══ DASH PAGE ═══ -->
@@ -1287,14 +1288,14 @@ body {
 
       <div class="section-label"><span>FUEL TRIMS &amp; AFR</span></div>
       <div class="cell-row">
-        <div class="data-cell"><div class="cell-label">SHORT FT</div><div class="cell-value ok">+1.6%</div></div>
-        <div class="data-cell"><div class="cell-label">LONG FT</div><div class="cell-value ok">-0.8%</div></div>
-        <div class="data-cell"><div class="cell-label">BARO</div><div class="cell-value">101 kPa</div></div>
+        <div class="data-cell"><div class="cell-label">STFT</div><div class="cell-value ok">+1.6%</div></div>
+        <div class="data-cell"><div class="cell-label">LTFT</div><div class="cell-value ok">-0.8%</div></div>
+        <div class="data-cell"><div class="cell-label">SPK ADV</div><div class="cell-value">18.5°</div></div>
       </div>
       <div class="cell-row">
-        <div class="data-cell"><div class="cell-label">OIL LIFE</div><div class="cell-value">73%</div></div>
+        <div class="data-cell"><div class="cell-label">CHRG V DES</div><div class="cell-value">14.6V</div></div>
         <div class="data-cell"><div class="cell-label">AFR SEN1</div><div class="cell-value">14.18</div></div>
-        <div class="data-cell"><div class="cell-label">O2 VOLT</div><div class="cell-value">0.834V</div></div>
+        <div class="data-cell"><div class="cell-label">BARO</div><div class="cell-value">101 kPa</div></div>
       </div>
     </div>
 
@@ -1368,6 +1369,16 @@ body {
           <div class="data-cell"><div class="cell-label">REAR BIAS</div><div class="cell-value" id="em-rear-bias">60/40</div></div>
           <div class="data-cell"><div class="cell-label">L/R DELTA</div><div class="cell-value" id="em-lr-delta">0.2 km/h</div></div>
           <div class="data-cell"><div class="cell-label">F/R DELTA</div><div class="cell-value" id="em-fr-delta">1.7 km/h</div></div>
+        </div>
+        <div class="cell-row">
+          <div class="data-cell"><div class="cell-label">CLUTCH I L</div><div class="cell-value">2.34 A</div></div>
+          <div class="data-cell"><div class="cell-label">CLUTCH I R</div><div class="cell-value">1.81 A</div></div>
+          <div class="data-cell"><div class="cell-label">CL TEMP L</div><div class="cell-value ok">68°F</div></div>
+        </div>
+        <div class="cell-row">
+          <div class="data-cell"><div class="cell-label">PRESS L</div><div class="cell-value">3420 mB</div></div>
+          <div class="data-cell"><div class="cell-label">PRESS R</div><div class="cell-value">2680 mB</div></div>
+          <div class="data-cell"><div class="cell-label">CL TEMP R</div><div class="cell-value ok">66°F</div></div>
         </div>
       </div>
 
@@ -1537,8 +1548,127 @@ body {
       </div>
     </div>
 
-    <!-- ═══ DIAG PAGE ═══ -->
+    <!-- ═══ MAP PAGE ═══ -->
     <div class="page" id="page4">
+      <div class="section-label"><span>LIVE DRIVE — GOOGLE MAPS</span></div>
+      <div style="background:var(--surf2);border:1px solid var(--brd);border-radius:14px;padding:0;overflow:hidden;position:relative;height:300px">
+        <!-- Stylised map placeholder (real app uses Google Maps Compose) -->
+        <svg viewBox="0 0 360 300" preserveAspectRatio="xMidYMid slice" style="display:block;width:100%;height:100%">
+          <defs>
+            <linearGradient id="mapGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#0a1320"/>
+              <stop offset="1" stop-color="#040810"/>
+            </linearGradient>
+            <linearGradient id="routeGrad" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stop-color="#0091EA"/>
+              <stop offset="0.5" stop-color="#00FF88"/>
+              <stop offset="1" stop-color="#FFCC00"/>
+            </linearGradient>
+          </defs>
+          <rect width="360" height="300" fill="url(#mapGrad)"/>
+          <!-- grid -->
+          <g stroke="#0f1828" stroke-width="0.5">
+            <line x1="0" y1="60" x2="360" y2="60"/>
+            <line x1="0" y1="120" x2="360" y2="120"/>
+            <line x1="0" y1="180" x2="360" y2="180"/>
+            <line x1="0" y1="240" x2="360" y2="240"/>
+            <line x1="60" y1="0" x2="60" y2="300"/>
+            <line x1="120" y1="0" x2="120" y2="300"/>
+            <line x1="180" y1="0" x2="180" y2="300"/>
+            <line x1="240" y1="0" x2="240" y2="300"/>
+            <line x1="300" y1="0" x2="300" y2="300"/>
+          </g>
+          <!-- minor roads -->
+          <g stroke="#162030" stroke-width="2" fill="none" opacity="0.7">
+            <path d="M0,80 L120,80 L160,150 L300,150 L360,180"/>
+            <path d="M0,210 L100,210 L140,260 L300,260"/>
+            <path d="M40,0 L40,100 L80,140 L80,300"/>
+            <path d="M280,0 L280,80 L320,120 L320,300"/>
+          </g>
+          <!-- live drive route (gradient) -->
+          <path d="M30,250 Q70,200 120,210 T210,170 Q260,140 280,90 L320,60"
+                stroke="url(#routeGrad)" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+          <!-- start flag -->
+          <circle cx="30" cy="250" r="6" fill="#00FF88"/>
+          <text x="40" y="254" font-family="JetBrains Mono" font-size="9" fill="#00FF88">START</text>
+          <!-- peak marker -->
+          <circle cx="200" cy="172" r="4" fill="#FFCC00"/>
+          <text x="208" y="170" font-family="JetBrains Mono" font-size="8" fill="#FFCC00">PEAK 1.18g</text>
+          <!-- car (current pos) -->
+          <circle cx="320" cy="60" r="6" fill="#0091EA" stroke="#E8F4FF" stroke-width="1.5"/>
+        </svg>
+        <!-- HUD overlay top-left -->
+        <div style="position:absolute;top:10px;left:10px;background:rgba(5,7,10,0.78);border:1px solid rgba(0,145,234,0.35);border-radius:10px;padding:6px 10px;font-family:var(--jbm);font-size:9px;color:var(--frost);backdrop-filter:blur(8px)">
+          <div style="display:flex;gap:14px">
+            <span><span style="color:var(--dim)">SPD</span> 87 mph</span>
+            <span><span style="color:var(--dim)">RPM</span> 5820</span>
+          </div>
+          <div style="display:flex;gap:14px;margin-top:2px">
+            <span><span style="color:var(--dim)">BST</span> +12.4 PSI</span>
+            <span><span style="color:var(--dim)">G</span> 0.84</span>
+          </div>
+        </div>
+        <!-- Color-mode selector top-right -->
+        <div style="position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:4px">
+          <div style="background:rgba(0,145,234,0.18);border:1px solid var(--theme);border-radius:7px;padding:4px 8px;font-family:var(--jbm);font-size:8px;color:var(--theme);font-weight:700;letter-spacing:0.1em">SPD</div>
+          <div style="background:rgba(5,7,10,0.78);border:1px solid var(--brd);border-radius:7px;padding:4px 8px;font-family:var(--jbm);font-size:8px;color:var(--mid);letter-spacing:0.1em">MODE</div>
+          <div style="background:rgba(5,7,10,0.78);border:1px solid var(--brd);border-radius:7px;padding:4px 8px;font-family:var(--jbm);font-size:8px;color:var(--mid);letter-spacing:0.1em">BOOST</div>
+          <div style="background:rgba(5,7,10,0.78);border:1px solid var(--brd);border-radius:7px;padding:4px 8px;font-family:var(--jbm);font-size:8px;color:var(--mid);letter-spacing:0.1em">G-LAT</div>
+        </div>
+        <!-- Recenter / zoom controls bottom-right -->
+        <div style="position:absolute;bottom:10px;right:10px;display:flex;flex-direction:column;gap:4px">
+          <div style="width:30px;height:30px;background:rgba(5,7,10,0.85);border:1px solid var(--brd);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--frost)">+</div>
+          <div style="width:30px;height:30px;background:rgba(5,7,10,0.85);border:1px solid var(--brd);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--frost)">−</div>
+          <div style="width:30px;height:30px;background:rgba(0,145,234,0.18);border:1px solid var(--theme);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--theme)">◎</div>
+        </div>
+      </div>
+
+      <div class="cell-row" style="margin-top:8px">
+        <div class="data-cell"><div class="cell-label">DIST</div><div class="cell-value">12.4 mi</div></div>
+        <div class="data-cell"><div class="cell-label">AVG SPD</div><div class="cell-value">52 mph</div></div>
+        <div class="data-cell"><div class="cell-label">PEAK G</div><div class="cell-value warn">1.18</div></div>
+      </div>
+      <div class="cell-row">
+        <div class="data-cell"><div class="cell-label">PEAK RPM</div><div class="cell-value red">6420</div></div>
+        <div class="data-cell"><div class="cell-label">PEAK BST</div><div class="cell-value warn">+15.6 PSI</div></div>
+        <div class="data-cell"><div class="cell-label">DURATION</div><div class="cell-value">14:22</div></div>
+      </div>
+
+      <!-- Weather card -->
+      <div class="section-label"><span>WEATHER</span></div>
+      <div style="background:var(--surf2);border:1px solid var(--brd);border-radius:12px;padding:12px;display:flex;align-items:center;gap:14px">
+        <div style="font-size:32px">⛅</div>
+        <div style="flex:1">
+          <div style="font-family:var(--ui);font-size:13px;font-weight:600;color:var(--frost)">Partly cloudy</div>
+          <div style="font-family:var(--jbm);font-size:9px;color:var(--mid);margin-top:2px">54°F · wind 8 mph WSW · humidity 62%</div>
+        </div>
+      </div>
+
+      <!-- Drive history snippet -->
+      <div class="section-label"><span>DRIVE HISTORY</span></div>
+      <div style="background:var(--surf2);border:1px solid var(--brd);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-family:var(--ui);font-size:12px;color:var(--frost);font-weight:600">Sapphire loop</div>
+            <div style="font-family:var(--jbm);font-size:9px;color:var(--mid)">Apr 6 · 14:22 · 12.4 mi</div>
+          </div>
+          <div style="background:rgba(0,255,136,0.12);border:1px solid rgba(0,255,136,0.35);border-radius:6px;padding:2px 6px;font-family:var(--jbm);font-size:8px;color:var(--ok)">RECENT</div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--brd);padding-top:8px">
+          <div>
+            <div style="font-family:var(--ui);font-size:12px;color:var(--frost);font-weight:600">Track day — Sonoma</div>
+            <div style="font-family:var(--jbm);font-size:9px;color:var(--mid)">Apr 4 · 1h 42m · peak 1.42g</div>
+          </div>
+          <div style="background:rgba(255,204,0,0.12);border:1px solid rgba(255,204,0,0.35);border-radius:6px;padding:2px 6px;font-family:var(--jbm);font-size:8px;color:var(--warn)">SAVED</div>
+        </div>
+      </div>
+      <div style="font-family:var(--jbm);font-size:8px;color:var(--dim);padding:6px 2px;line-height:1.5">
+        Live tracking powered by Room-backed DriveRecorder @ 1 Hz. Per-drive export: GPX / CSV / summary. Six route colour modes (speed, mode, boost, throttle, lat-G, temp).
+      </div>
+    </div>
+
+    <!-- ═══ DIAG PAGE ═══ -->
+    <div class="page" id="page5">
       <!-- DTC Scanner -->
       <div class="section-label"><span>DTC SCANNER</span></div>
       <div style="display:flex;gap:6px">
@@ -1601,7 +1731,12 @@ body {
       <div class="cell-row">
         <div class="data-cell"><div class="cell-label">BATT V</div><div class="cell-value">14.2V</div></div>
         <div class="data-cell"><div class="cell-label">BATT SoC</div><div class="cell-value ok">92%</div></div>
-        <div class="data-cell"><div class="cell-label">BATT TEMP</div><div class="cell-value ok">82°F</div></div>
+        <div class="data-cell"><div class="cell-label">BATT I</div><div class="cell-value ok">+18.4 A</div></div>
+      </div>
+      <div class="cell-row">
+        <div class="data-cell"><div class="cell-label">MODE BTN</div><div class="cell-value dim">IDLE</div></div>
+        <div class="data-cell"><div class="cell-label">SUSP BTN</div><div class="cell-value dim">IDLE</div></div>
+        <div class="data-cell"><div class="cell-label">ESC BTN</div><div class="cell-value dim">IDLE</div></div>
       </div>
 
       <button class="diag-btn" onclick="this.textContent='BUILDING...'">↑  CAPTURE &amp; SHARE SNAPSHOT</button>
@@ -1632,7 +1767,7 @@ body {
     </div>
 
     <!-- ═══ MORE PAGE ═══ -->
-    <div class="page" id="page5">
+    <div class="page" id="page6">
       <!-- Drive Mode -->
       <div class="more-section">
         <div class="more-section-title">DRIVE MODE</div>
@@ -1654,7 +1789,7 @@ body {
             <div class="mode-name">DRIFT</div>
           </div>
         </div>
-        <div class="mode-hint">Tap to change with openRS_ firmware. CAN 0x1B0.</div>
+        <div class="mode-hint">Tap to change with openrs-fw (Wi-Fi REST or BLE AT+FRS). Auto-correct if the car lands on the wrong mode.</div>
       </div>
 
       <div class="divider"></div>
@@ -1686,7 +1821,20 @@ body {
             <div class="feat-status" style="color:var(--ok)">● ACTIVE</div>
           </div>
         </div>
-        <div class="fw-banner ok" id="fw-banner">✓  openRS_ USB v1.5 detected</div>
+        <div class="fw-banner ok" id="fw-banner">✓  openrs-fw USB v1.61 detected</div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- App Updates -->
+      <div class="more-section">
+        <div class="more-section-title">APP UPDATES</div>
+        <div class="cell-row">
+          <div class="data-cell"><div class="cell-label">CHANNEL</div><div class="cell-value">STABLE</div></div>
+          <div class="data-cell"><div class="cell-label">INSTALLED</div><div class="cell-value">v2.2.6</div></div>
+          <div class="data-cell"><div class="cell-label">LATEST</div><div class="cell-value ok">v2.2.6</div></div>
+        </div>
+        <div class="mode-hint">Stable + beta channels via GitHub Releases API. Network pinned to internet route while connected to adapter Wi-Fi.</div>
       </div>
 
       <div class="divider"></div>
@@ -1800,7 +1948,7 @@ body {
     </div>
 
     <!-- Version badge -->
-    <div class="version-badge">openRS_ <span>v2.2.4</span> · Focus RS MK3 · WiCAN</div>
+    <div class="version-badge">openRS_ <span>v2.2.6</span> · Focus RS MK3 · MeatPi USB / Pro</div>
 
     <!-- ═══ SETTINGS OVERLAY ═══ -->
     <div class="settings-overlay" id="settings-overlay" onclick="overlayBgClick(event)">
@@ -1935,7 +2083,7 @@ body {
         </div><!-- /settings-body -->
 
         <!-- Version label -->
-        <div class="settings-version">openRS_ v2.2.4</div>
+        <div class="settings-version">openRS_ v2.2.6</div>
 
         <!-- Action buttons -->
         <div class="settings-actions">
