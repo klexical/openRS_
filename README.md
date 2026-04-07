@@ -31,7 +31,7 @@
 
 ## What is openRS_?
 
-**openRS_** is a native Android app that turns your phone into a full telemetry dashboard for the Ford Focus RS MK3. It connects wirelessly to a [MeatPi WiCAN](https://www.mouser.com/ProductDetail/MeatPi/WICAN-USB-C3?qs=rQFj71Wb1eVDX2eEy0FC7A%3D%3D) adapter over Wi-Fi and passively monitors the full CAN bus at ~2100 fps — decoding every parameter the car broadcasts in real time.
+**openRS_** is a native Android app that turns your phone into a full telemetry dashboard for the Ford Focus RS MK3. It connects to a [MeatPi USB (C3)](https://www.mouser.com/ProductDetail/MeatPi/WICAN-USB-C3?qs=rQFj71Wb1eVDX2eEy0FC7A%3D%3D) or [MeatPi Pro (S3)](https://www.meatpi.com/) adapter — over **Wi-Fi or Bluetooth Low Energy** — and passively monitors the full CAN bus at ~2100 fps, decoding every parameter the car broadcasts in real time.
 
 Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It understands the GKN Twinster AWD system, polls TPMS tire pressures and temperatures from the BCM, decodes Ford-specific parameters across HS-CAN and MS-CAN, and presents everything in a dark, glanceable interface tuned for track days. A bundled **FORScan PID catalog** covers 1,149 PIDs across 8 ECU modules (PCM, OBDII, BCM, ABS, AWD, HVAC, IPC, PSCM) — and new parameters can be added from the catalog via JSON without touching code.
 
@@ -53,23 +53,26 @@ Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It understan
 </div>
 
 <p align="center">
-  <sub>DASH &nbsp;·&nbsp; POWER &nbsp;·&nbsp; CHASSIS &nbsp;·&nbsp; TEMPS &nbsp;·&nbsp; DIAG &nbsp;·&nbsp; MORE</sub>
+  <sub>DASH &nbsp;·&nbsp; POWER &nbsp;·&nbsp; CHASSIS &nbsp;·&nbsp; TEMPS &nbsp;·&nbsp; MAP &nbsp;·&nbsp; DIAG &nbsp;·&nbsp; MORE</sub>
 </p>
 
 ---
 
 ## Features
 
-### 6 Tabs
+### 7 Tabs
 
 | Screen | Description |
 |--------|-------------|
 | **DASH** | Hero boost/RPM/speed gauges (with session peak values), 0-60 / 0-100 performance timer, real-time fuel economy (idle L/hr, instant/average MPG or L/100km, DTE), throttle/brake/clutch/fuel/battery, Temps Quick (oil, coolant, intake, oil life), G-forces (lat, lon, torque), animated AWD split bar, IPC warning lamp banner (CEL, ABS, BRK, CHRG, OIL, TEMP) |
-| **POWER** | AFR hero cards (actual/desired/lambda), commanded AFR (CMD AFR), ETC actual/desired, WGDC, TIP, HP fuel rail PSI, low-pressure fuel rail (LP FUEL), timing, engine load, OAR, per-cylinder knock correction (KR C1–C4, colour-coded), VCT intake/exhaust, fuel trims |
-| **CHASSIS** | AWD detail (4 wheel speeds, wheel rotation counts, torque bar, F/R delta, L/R delta, rear bias, clutch temps L/R, trans oil temp), G-force + yaw + steering with peak reset, TPMS Focus RS wireframe (pressure + temp, 3-tier colour-coded Low/Warn/High thresholds), pressure spread warning (⚠ PRESSURE IMBALANCE when spread ≥ 4 PSI), temperature range legend |
+| **POWER** | AFR hero cards (actual/desired/lambda), commanded AFR (CMD AFR), ETC actual/desired, WGDC, TIP, HP fuel rail PSI, low-pressure fuel rail (LP FUEL), timing, engine load, OAR, per-cylinder knock correction (KR C1–C4, colour-coded), VCT intake/exhaust, **STFT/LTFT short/long-term fuel trims** |
+| **CHASSIS** | AWD detail (4 wheel speeds, wheel rotation counts, torque bar, F/R delta, L/R delta, rear bias, clutch temps L/R, **clutch actuator current L/R**, **hydraulic pressure L/R**, trans oil temp), G-force + yaw + steering with peak reset, TPMS Focus RS wireframe (pressure + temp, 3-tier colour-coded Low/Warn/High thresholds), pressure spread warning (⚠ PRESSURE IMBALANCE when spread ≥ 4 PSI), temperature range legend |
 | **TEMPS** | Animated Ready-to-Race banner, 14 temperature cards each with a colour indicator bar (oil, coolant, intake, ambient, RDU, PTU, charge air, manifold charge, catalytic, cabin, battery, clutch L, clutch R, trans oil) |
-| **DIAG** | DTC Scanner (full-module scan, count badges, freeze-frame, clear), DID Prober (scan any ECU for valid Mode 22 DIDs), PID Browser (1,149 FORScan PIDs across 8 modules, searchable), frame inventory with per-ID change tracking, SLCAN raw log, one-tap ZIP export (SavvyCAN/Kayak compatible) |
-| **MORE** | Drive mode (N/S/T/D, tap-to-change with openRS_ firmware), ESC status, firmware version display, firmware-gated features (Launch Control, Auto S/S Kill), Module Status (RDU/PDC/FENG live OBD), passive VIN decode (CAN 0x40A), connection & snapshot, Trip GPS recording |
+| **MAP** | Live drive tracking with **Google Maps** — 6 colour modes (speed, drive mode, boost, throttle, lateral G, temp), start/finish markers, peak event markers (RPM/boost/lat-G/speed), pause markers, route stats HUD, weather card, custom recenter / zoom controls. Drive history grouped by date with status badges, swipe-to-delete, per-drive export (GPX/CSV/summary). |
+| **DIAG** | DTC Scanner (full-module scan including GFM 0x7D2, count badges, freeze-frame, clear), DID Prober (scan any ECU for valid Mode 22 DIDs), PID Browser (1,149 FORScan PIDs across 8 modules, searchable), frame inventory with per-ID change tracking, SLCAN raw log, **live button input feedback** (drive mode toggle, suspension, ASS, ESC defeat), **battery row with charge/discharge current**, one-tap ZIP export (SavvyCAN/Kayak compatible) |
+| **MORE** | Drive mode (N/S/T/D, tap-to-change with openrs-fw firmware), ESC status, firmware version display, firmware-gated features (Launch Control, Auto S/S Kill), Module Status (RDU/PDC/FENG live OBD), passive VIN decode (CAN 0x40A), connection & snapshot, in-app update checker (stable + beta channels) |
+
+A frosted-glass **bottom nav bar** with vector icons + spring-animated indicator persists across all tabs. **Quick Mode Dock** drops down from the status bar's MODE pill from any tab for one-tap drive mode changes.
 
 ### Ready-to-Race Thresholds
 
@@ -98,7 +101,13 @@ The banner shows which sensors are still below threshold with live °C values. A
 | Keep screen on | on / off | on |
 | Auto-reconnect | on / off | on |
 | Reconnect interval | seconds | 10 s |
-| Adapter | WiCAN / MeatPi Pro | WiCAN |
+| Adapter | MeatPi USB (C3) / MeatPi Pro (S3) | MeatPi USB |
+| Connection method | Wi-Fi / Bluetooth Low Energy | Wi-Fi |
+| BLE device | scan + pick from in-app dialog | — |
+| Update channel | Stable / Beta | Stable |
+| Auto-record drives | on / off | off |
+| Max saved drives | count | 50 |
+| Visibility | Night / Day / Sun preset + brightness slider (0.0–1.0) | Night |
 | MicroSD logging reminder | on / off | off (MeatPi Pro only) |
 | Max saved ZIP exports | count | 5 |
 | Odometer display | Miles / km | Miles |
@@ -162,30 +171,38 @@ All data is received passively from the CAN bus via WebSocket SLCAN at ~2100 fps
 
 ## Hardware
 
-### Required
+### Required (one of)
 
 | Component | Details |
 |-----------|---------|
-| **MeatPi WiCAN** | [Mouser](https://www.mouser.com/ProductDetail/MeatPi/WICAN-USB-C3?qs=rQFj71Wb1eVDX2eEy0FC7A%3D%3D) — Wi-Fi ELM327-compatible OBD-II adapter |
-| **MeatPi WiCAN Pro** (optional) | [MeatPi](https://www.meatpi.com/) — Wi-Fi + GPS + MicroSD, raw TCP SLCAN |
+| **MeatPi USB (C3)** | [Mouser](https://www.mouser.com/ProductDetail/MeatPi/WICAN-USB-C3?qs=rQFj71Wb1eVDX2eEy0FC7A%3D%3D) — ESP32-C3, Wi-Fi + BLE, WebSocket SLCAN at `ws://192.168.80.1:80/ws` |
+| **MeatPi Pro (S3)** | [MeatPi](https://www.meatpi.com/) — ESP32-S3, Wi-Fi + BLE + GPS + MicroSD, raw TCP SLCAN at `tcp://192.168.0.10:35000` |
 | **Ford Focus RS MK3** | 2016–2018 (LZ platform, EcoBoost 2.3L) |
-| **Android phone** | Android 9+ (API 28) with Wi-Fi |
+| **Android phone** | Android 9+ (API 28) with Wi-Fi or Bluetooth Low Energy |
 
 ### Setup
 
-1. Plug the WiCAN into the OBD-II port (under the steering column)
-2. Connect your phone to the WiCAN's Wi-Fi network:
+1. Plug the adapter into the OBD-II port (under the steering column)
+2. Choose your transport in **Settings → Adapter** and **Settings → Connection method**:
 
-| Firmware | SSID | Password |
-|----------|------|----------|
-| **Stock WiCAN** | `WiCAN_XXXXXX` | `@meatpi#` |
-| **openrs-fw** | `openRS_XXXXXX` | `openrs_2026` |
+**Wi-Fi** — connect your phone to the adapter's Wi-Fi network:
 
-3. Install openRS_ and tap the connection dot in the header
+| Adapter / Firmware | SSID | Password |
+|--------------------|------|----------|
+| **Stock MeatPi USB** | `WiCAN_XXXXXX` | `@meatpi#` |
+| **openrs-fw USB** | `openRS_XXXXXX` | `openrs_2026` |
+| **Stock MeatPi Pro** | `MeatPi_PRO_XXXXXX` | `@meatpi#` |
+| **openrs-fw Pro** | `openRS_PRO_XXXXXX` | `openrs_2026` |
 
-> **Stock firmware** works out of the box — openRS_ connects via WebSocket SLCAN (`ws://192.168.80.1:80/ws`) with no configuration changes needed. For full functionality (drive mode write, Launch Control, Auto S/S Kill, ESC control), flash **openrs-fw** to the WiCAN. See the [firmware update guide](android/docs/firmware-update.md) for instructions.
+**Bluetooth Low Energy** — pair the adapter via the in-app BLE picker (BLUETOOTH_SCAN + CONNECT permissions requested at scan time, RSSI bars, filtered by service UUID `0xFFE0`).
 
-> **WiCAN Pro users:** The Pro defaults to ELM327 mode. You **must** open the Pro's web UI (`http://192.168.0.10`), set the protocol to **SLCAN**, CAN speed to **500 kbps**, and TCP port to **35000**, then reboot. In the openRS_ app, switch the adapter to **MeatPi Pro** in Settings. See the [hardware setup guide](android/docs/hardware-setup.md#wican-pro-adapter) for full instructions.
+3. Install openRS_ and tap the connection dot in the header.
+
+> **Stock firmware** works out of the box for passive monitoring. For full functionality (drive mode write, Launch Control, Auto S/S Kill, ESC control), flash **openrs-fw** to the adapter — v1.61 (USB) or v1.2 (Pro). See the [firmware update guide](android/docs/firmware-update.md).
+
+> **MeatPi Pro users:** The Pro defaults to ELM327 mode. You **must** open the Pro's web UI (`http://192.168.0.10`), set the protocol to **SLCAN**, CAN speed to **500 kbps**, and TCP port to **35000**, then reboot. See the [hardware setup guide](android/docs/hardware-setup.md#wican-pro-adapter) for full instructions.
+
+> **BLE vs Wi-Fi:** BLE leaves your phone's Wi-Fi free for internet (weather, maps, in-app updates). Wi-Fi delivers slightly higher CAN throughput. The app supports both transports for both adapters.
 
 ---
 
@@ -237,48 +254,59 @@ Drop an export ZIP from the app into the web dashboard to explore your session d
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  Phone UI — Jetpack Compose + Material 3                             │
-│  ┌──────┬───────┬─────────┬───────┬──────┬──────┐                   │
-│  │ DASH │ POWER │ CHASSIS │ TEMPS │ DIAG │ MORE │                   │
-│  └──────┴───────┴─────────┴───────┴──────┴──────┘                   │
-│  Header: logo · connection pill · TRIP · ⚙                            │
-│  F1 Telemetry Strip: MODE · ESC · CONN/FPS · IGN · E-BRK             │
+│  Phone UI — Jetpack Compose + Material 3 + Haze (frosted glass)      │
+│  ┌──────┬───────┬─────────┬───────┬─────┬──────┬──────┐             │
+│  │ DASH │ POWER │ CHASSIS │ TEMPS │ MAP │ DIAG │ MORE │             │
+│  └──────┴───────┴─────────┴───────┴─────┴──────┴──────┘             │
+│  HorizontalPager swipe · BottomNavBar overlay · Quick Mode Dock      │
+│  Compact status bar: MODE pill · ESC · conn dot · ⚙                  │
+│  Visibility: Night/Day/Sun brightness lerp (live recompose)          │
 ├──────────────────────────────────────────────────────────────────────┤
-│  UserPrefsStore (StateFlow) — units, thresholds, reconnect settings  │
+│  UserPrefsStore (StateFlow) — units, thresholds, brightness, BLE    │
 ├──────────────────────────────────────────────────────────────────────┤
 │                  VehicleState (StateFlow)                            │
-│    Immutable data class · 95+ fields · genericValues map · RTR       │
+│    Immutable data class · ~110 fields · genericValues map · RTR      │
+│    + DriveState (live recording, peaks, fuel economy)                │
 ├──────────────────────────────────────────────────────────────────────┤
-│                  CanDataService (Background)                         │
+│              CanDataService (Foreground Service)                     │
 │   Decodes CAN → VehicleState → notifies UI                           │
-│   Hooks DiagnosticLogger, TripRecorder, WeatherRepository            │
+│   Auto-reconnect (Wi-Fi + BLE) · DriveRecorder · CrashReporter       │
+│   Auto-record on connect (if enabled)                                │
 ├──────────────────────┬───────────────────────────────────────────────┤
 │  CanDecoder          │  DiagnosticLogger / Exporter / DtcScanner     │
-│  25 CAN frame IDs    │  Per-ID first/last/Δ tracking                 │
-│  RS_HS.dbc-verified  │  Periodic samples (30 s), SLCAN candump log   │
-│  Motorola extraction │  Validation engine, ZIP export via FileProvider│
+│  22+ HS-CAN decoders │  DriveExportBuilder · DiagnosticReportBuilder │
+│  has420Arrived gate  │  Per-ID first/last/Δ tracking + JSON export   │
+│  RS_HS.dbc-verified  │  GFM (0x7D2) DTC scan support                 │
 ├──────────────────────┼───────────────────────────────────────────────┤
-│  CrashReporter       │  FirmwareApi (REST POST /api/frs)             │
-│  100-snapshot ring   │  Drive mode, ESC, WiFi-forced socket          │
+│  DriveRecorder       │  FirmwareApi (Wi-Fi REST + BLE AT+FRS)        │
+│  Room DB · 1 Hz GPS  │  DriveCommand: settle → poll → auto-correct   │
+│  Peak tracking       │  Network.socketFactory pins Wi-Fi route       │
 ├──────────────────────┴───────────────────────────────────────────────┤
 │  PidRegistry — data-driven decode from FORScan catalog (JSON)        │
 │  1,149 PIDs · 8 modules · formula evaluator · genericValues output   │
 ├──────────────────────────────────────────────────────────────────────┤
 │  ObdConstants / ObdResponseParser / SlcanParser / IsoTpBuffer        │
+│  PCM/BCM/AWD/PSCM/FENG/RSProt response parsers                       │
 ├──────────────────────────────────────────────────────────────────────┤
-│  WiCanConnection (WebSocket)  │  MeatPiConnection (TCP)              │
-│  ws://192.168.80.1:80/ws      │  tcp://192.168.0.10:35000            │
-│  SLCAN: C / S6 / O · ~2100 fps│  Raw SLCAN + OBD polling            │
-│  Firmware probe (OPENRS?)     │  sendRawQuery() for DID prober       │
-├──────────────────────────────────────────────────────────────────────┤
+│  SlcanConnection — shared connection lifecycle                       │
+│  Constructor: transportFactory: () -> SlcanTransport                 │
+│  3s SLCAN handshake · firmware probe · ISO-TP reassembly             │
+├─────────────────┬─────────────────────┬──────────────────────────────┤
+│ WebSocketSlcan  │  TcpSlcanTransport  │  BleSlcanTransport           │
+│ Transport       │  raw TCP            │  BLE GATT (FFE0/FFE1/FFE2)   │
+│ ws://.80.1/ws   │  tcp://.0.10:35000  │  MTU 247 · auto-reconnect    │
+│ MeatPi USB Wi-Fi│  MeatPi Pro Wi-Fi   │  Both adapters               │
+├─────────────────┴─────────────────────┴──────────────────────────────┤
 │  PCM (0x7E0/30s) · BCM (0x726/30s) · AWD (0x703/60s)                │
-│  HVAC (0x733, candidate) · IPC (0x720, candidate)                    │
+│  STFT/LTFT · AWD clutch hydraulics · battery current · spark adv     │
+│  GFM (0x7D2) DTC scan · IPC/HVAC scaffolded                          │
 ├──────────────────────┬───────────────────────────────────────────────┤
-│  MeatPi WiCAN USB-C3 │  MeatPi WiCAN Pro (optional)                 │
-│  Wi-Fi AP · WS :80/ws│  Wi-Fi AP · TCP :35000 · GPS · MicroSD       │
+│  MeatPi USB (C3)     │  MeatPi Pro (S3)                              │
+│  ESP32-C3 · Wi-Fi+BLE│  ESP32-S3 · Wi-Fi+BLE+GPS+MicroSD             │
+│  openrs-fw v1.61     │  openrs-fw v1.2                               │
 ├──────────────────────┴───────────────────────────────────────────────┤
-│  HS-CAN 500k         │  MS-CAN 125k (bridged via GWM)               │
-│  0x010–0x3C0 frames  │  Ambient 0x340/0x1A4 (GWM bridged)            │
+│  HS-CAN 500k         │  MS-CAN 125k (bridged via GWM)                │
+│  0x010–0x420 frames  │  Ambient 0x340/0x1A4 (GWM bridged)            │
 └──────────────────────┴───────────────────────────────────────────────┘
 ```
 
@@ -326,56 +354,92 @@ web/                                         # Sapphire — post-session analyti
 android/
 ├── app/src/main/
 │   ├── assets/pids/
-│   │   └── forscan_modules.json          # Bundled FORScan catalog (1,149 PIDs, 8 modules)
+│   │   ├── forscan_modules.json          # Bundled FORScan catalog (1,149 PIDs, 8 modules)
+│   │   └── combined_catalog.json         # Merged PID catalog
 │   ├── java/com/openrs/dash/
-│   │   ├── OpenRSDashApp.kt              # Application singleton + isOpenRsFirmware flag
+│   │   ├── OpenRSDashApp.kt              # App singleton + driveDb/Recorder/State
 │   │   ├── can/
-│   │   │   ├── AdapterState.kt           # Shared connection state sealed class
-│   │   │   ├── CanDecoder.kt             # 25 CAN frame decoders (RS_HS.dbc-verified)
-│   │   │   ├── FirmwareApi.kt            # REST POST to openRS_ firmware /api/frs
+│   │   │   ├── AdapterState.kt           # Disconnected/Connecting/Connected/Idle/Error
+│   │   │   ├── BleDeviceScanner.kt       # BLE discovery filtered to 0xFFE0
+│   │   │   ├── BleSlcanTransport.kt      # BLE GATT transport (FFE0/FFE1/FFE2 + MTU 247)
+│   │   │   ├── CanDecoder.kt             # 22+ CAN decoders + has420Arrived gate
+│   │   │   ├── DriveCommand.kt           # Shared drive mode command flow (settle/poll/auto-correct)
+│   │   │   ├── FirmwareApi.kt            # WiFiFirmwareApi (REST) + BleFirmwareApi (AT+FRS)
 │   │   │   ├── IsoTpBuffer.kt            # ISO-TP SF/FF/CF reassembly
-│   │   │   ├── MeatPiConnection.kt       # MeatPi Pro raw TCP SLCAN + OBD polling
 │   │   │   ├── ObdConstants.kt           # Shared OBD query strings + CAN IDs + timing
-│   │   │   ├── ObdResponseParser.kt      # Shared OBD Mode 22 response parsers
-│   │   │   ├── PidRegistry.kt            # Data-driven PID decode via JSON catalog + formula evaluator
+│   │   │   ├── ObdResponseParser.kt      # Mode 22 dispatch (PCM/BCM/AWD/PSCM/FENG/RSProt)
+│   │   │   ├── PidRegistry.kt            # Data-driven catalog decoder (formula evaluator)
+│   │   │   ├── SlcanConnection.kt        # Shared connection lifecycle (transportFactory)
 │   │   │   ├── SlcanParser.kt            # Shared SLCAN frame parser
-│   │   │   └── WiCanConnection.kt        # WiCAN WebSocket SLCAN + firmware probe
+│   │   │   ├── SlcanTransport.kt         # Transport interface (open/read/write/close)
+│   │   │   ├── TcpSlcanTransport.kt      # MeatPi Pro raw TCP transport
+│   │   │   └── WebSocketSlcanTransport.kt # MeatPi USB WebSocket transport
 │   │   ├── data/
-│   │   │   ├── DtcModuleSpec.kt          # ECU module descriptor for DTC operations
-│   │   │   ├── DtcResult.kt              # DTC result + status enum
-│   │   │   ├── ForscanCatalog.kt         # Data classes for JSON catalog deserialization
-│   │   │   ├── TripPoint.kt              # GPS waypoint with telemetry
-│   │   │   ├── TripState.kt              # Trip accumulator
-│   │   │   └── VehicleState.kt           # Immutable state (95+ fields, genericValues, peaks, RTR)
+│   │   │   ├── DashLayout.kt             # Custom dashboard cell grid
+│   │   │   ├── DriveDatabase.kt          # Room DB v3: drives + drive points
+│   │   │   ├── DriveState.kt             # Live drive state (recording/peaks/fuel)
+│   │   │   ├── DtcModuleSpec.kt          # ECU descriptor for DTC scan
+│   │   │   ├── DtcResult.kt              # DTC + status enum
+│   │   │   ├── ForscanCatalog.kt         # JSON catalog data classes
+│   │   │   ├── FuelEconomy.kt            # Real-time fuel economy (60s rolling window)
+│   │   │   ├── PerformanceTimer.kt       # 0-60 / 0-100 timer state machine
+│   │   │   ├── SessionDatabase.kt        # Room DB for session snapshots
+│   │   │   ├── TripState.kt              # Peak event types
+│   │   │   ├── VehicleState.kt           # Immutable state (~110 fields, genericValues)
+│   │   │   └── WeatherData.kt            # OpenWeatherMap snapshot
 │   │   ├── diagnostics/
-│   │   │   ├── CrashReporter.kt          # UncaughtExceptionHandler + telemetry persistence
+│   │   │   ├── CrashReporter.kt          # UncaughtExceptionHandler + persistence
 │   │   │   ├── CrashTelemetryBuffer.kt   # 100-snapshot VehicleState ring buffer
-│   │   │   ├── DiagnosticExporter.kt     # ZIP builder + FileProvider share + CSV
+│   │   │   ├── DiagnosticExporter.kt     # ZIP orchestrator + share intents
 │   │   │   ├── DiagnosticLogger.kt       # Session-scoped collector + SLCAN log
+│   │   │   ├── DiagnosticReportBuilder.kt # Summary text + JSON detail (JSONObject)
+│   │   │   ├── DriveExportBuilder.kt     # GPX / CSV / drive summary builders
 │   │   │   ├── DtcDatabase.kt            # Bundled 873-code Ford DTC lookup
-│   │   │   └── DtcScanner.kt             # DTC scan/clear orchestrator
+│   │   │   └── DtcScanner.kt             # DTC scan/clear (PCM/BCM/ABS/AWD/PSCM/GFM)
 │   │   ├── service/
-│   │   │   ├── CanDataService.kt         # Background service + DiagnosticLogger hooks
-│   │   │   ├── TripRecorder.kt           # FusedLocationProviderClient @ 1 Hz GPS
-│   │   │   └── WeatherRepository.kt      # OpenWeatherMap API integration
+│   │   │   ├── CanDataService.kt         # Foreground service + auto-reconnect (Wi-Fi+BLE)
+│   │   │   ├── DriveRecorder.kt          # Room-backed 1 Hz GPS + telemetry recorder
+│   │   │   ├── HudOverlayService.kt      # Floating HUD overlay
+│   │   │   └── WeatherRepository.kt      # OpenWeatherMap integration
+│   │   ├── update/
+│   │   │   ├── AppVersion.kt             # Semver + RC parsing (incl. APK filename)
+│   │   │   ├── UpdateChecker.kt          # GitHub Releases API client
+│   │   │   ├── UpdateManager.kt          # Check/download/install orchestrator
+│   │   │   └── UpdateState.kt            # Sealed state class
 │   │   └── ui/
-│   │       ├── MainActivity.kt           # Compose entry (6 tabs + header)
+│   │       ├── MainActivity.kt           # 7-tab Compose host (HorizontalPager + BottomNavBar)
 │   │       ├── DashPage.kt               # DASH tab
-│   │       ├── PowerPage.kt              # POWER tab
-│   │       ├── ChassisPage.kt            # CHASSIS tab
+│   │       ├── PowerPage.kt              # POWER tab (incl. STFT/LTFT)
+│   │       ├── ChassisPage.kt            # CHASSIS tab (incl. clutch hydraulics)
 │   │       ├── TempsPage.kt              # TEMPS tab
-│   │       ├── DiagPage.kt               # DIAG tab (DTC scanner + DID prober + PID browser)
-│   │       ├── DidProberSection.kt       # DID prober composable
-│   │       ├── PidBrowserSection.kt      # FORScan PID browser composable
+│   │       ├── DiagPage.kt               # DIAG tab
 │   │       ├── MorePage.kt               # MORE tab
-│   │       ├── Theme.kt                  # Design tokens, fonts, colors
-│   │       ├── Components.kt             # Shared composables
-│   │       ├── AppSettings.kt            # SharedPreferences wrapper
-│   │       ├── UserPrefs.kt              # Observable preferences (StateFlow)
-│   │       ├── SettingsSheet.kt          # Settings dialog
+│   │       ├── CustomDashPage.kt         # Custom dashboard
+│   │       ├── BottomNavBar.kt           # Frosted-glass nav (Haze + spring indicator)
+│   │       ├── DriveModeDock.kt          # Quick Mode Dock dropdown
+│   │       ├── PidBrowserSection.kt      # PID browser composable
+│   │       ├── DidProberSection.kt       # DID prober composable
+│   │       ├── BleDevicePickerDialog.kt  # BLE device picker (RSSI + permissions)
+│   │       ├── SettingsSheet.kt          # Settings drawer (units/visibility/adapter)
 │   │       ├── WhatsNewDialog.kt         # Version changelog dialog
+│   │       ├── Theme.kt                  # Brightness-scaled color tokens
+│   │       ├── DesignTokens.kt           # Spacing/shape tokens
+│   │       ├── Components.kt             # HeroCard/DataCell/BarCard/TireCard/AfrCard
+│   │       ├── AppSettings.kt            # SharedPreferences wrapper
+│   │       ├── UserPrefs.kt              # Observable prefs + UserPrefsStore
+│   │       ├── trip/
+│   │       │   ├── DrivePage.kt          # MAP tab (live + history)
+│   │       │   └── DriveMap.kt           # Google Maps Compose wrapper (6 color modes)
 │   │       └── anim/
-│   │           └── EdgeShiftLight.kt     # Peripheral shift light overlay
+│   │           ├── CarDiagram.kt         # Focus RS wireframe (TPMS)
+│   │           ├── EdgeShiftLight.kt     # Peripheral shift light overlay
+│   │           ├── GForcePlot.kt         # 2D scatter w/ trail + peak labels
+│   │           ├── GlowModifiers.kt      # cardGlow + bloomGlow modifiers
+│   │           ├── InteractionModifiers.kt # pressClick (clickable + scale)
+│   │           ├── RingBuffer.kt         # Generic fixed-capacity ring buffer
+│   │           ├── ShiftLightBar.kt      # Horizontal shift LED indicator
+│   │           ├── Sparkline.kt          # Inline trend chart
+│   │           └── StaggeredEntrance.kt  # Staggered fade+slide-up
 │   └── res/
 │       ├── font/                          # Embedded fonts
 │       │   ├── orbitron_regular.ttf      # Hero gauge values
@@ -445,9 +509,9 @@ Complete decode formulas, byte-level breakdowns, and all Mode 22 PIDs: [`android
 
 ### Planned
 
-- [ ] Phase 8.5 — Polish and sensor gaps: BLE transport in app, ESC write fix ([#125](https://github.com/klexical/openRS_/issues/125)), brake pressure calibration (v2.3.x)
-- [ ] Phase 9 — Track day intelligence: lap timer with geofence, track map overlay enhancements, trip comparison (v2.4.x)
-- [ ] Phase 10 — Hardware expansion: MeatPi Pro GPS integration, MS-CAN support (v2.5.x)
+- [ ] Phase 8.6 — Tier 2 PIDs (Apr 2026 research): MAP/baro/engine load, oil pressure, PTU oil temp, panel illumination, COBB-style WG canister pressure + knock counters (v2.3.x)
+- [ ] Phase 9 — Track day intelligence: lap timer with geofence, track map overlay enhancements, drive comparison enhancements (v2.4.x)
+- [ ] Phase 10 — Hardware expansion: MeatPi Pro on-board GPS integration, MS-CAN second adapter (v2.5.x)
 - [ ] Phase 11 — High-frequency telemetry: UDS Fast Rate Session via DDDI 0x2C (~100 Hz) (v3.x)
 
 ### Future / Exploratory
@@ -476,7 +540,13 @@ Complete decode formulas, byte-level breakdowns, and all Mode 22 PIDs: [`android
 - [x] Phase 7.5 — Sensor data + polish: GPS permission fix, Module Status/LC/ASS live OBD, full diagnostic export (~24 new fields), SLCAN OBD frame capture, code review fixes (v2.2.3)
 - [x] Phase 8.0 — Car test fixes + signal expansion: ESC decode fix, throttle fallback, battery voltage OBD, crash telemetry ring buffer, passive odometer (CAN 0x360), tap-to-change drive mode/ESC, RS MK3 theme colour correction, MeatPi default fix, free CAN signal extraction (vertical G, launch control, engine status, ignition status, ESC Launch mode), full repo audit hardening (v2.2.4)
 - [x] Phase 8.1 — FORScan PID catalog (1,149 PIDs, 8 modules), data-driven decode (PidRegistry + formula evaluator), DID prober, PID browser, AWD expansion (clutch temps L/R, trans oil temp, req torques, demanded pressure, pump current), per-cylinder knock correction (KR C1–C4), HVAC/IPC scaffolding, warning lamp banner (v2.2.5)
-- [x] Phase 8.2 — Drive mode reliability (pre-flight logging, auto-correction on overshoot), 0-60/0-100 performance timer, real-time fuel economy (idle/instant/average/DTE), clutch pedal (CAN 0x138), passive VIN decode (CAN 0x40A), wheel rotation counts (CAN 0x1E0), 3-tier TPMS thresholds, TPMS + temps in trip CSV exports, peripheral edge shift light, crash telemetry ring buffer (v2.2.6)
+- [x] Phase 8.2 — Drive mode reliability (pre-flight logging, auto-correction on overshoot), 0-60/0-100 performance timer, real-time fuel economy (idle/instant/average/DTE), clutch pedal (CAN 0x138), passive VIN decode (CAN 0x40A), wheel rotation counts (CAN 0x1E0), 3-tier TPMS thresholds, TPMS + temps in trip CSV exports, peripheral edge shift light, crash telemetry ring buffer (v2.2.5)
+- [x] Phase 8.3 — MAP tab + drive recorder: Google Maps integration with 6 colour modes (speed/mode/boost/throttle/lat-G/temp), Room-backed `DriveRecorder` with 1 Hz GPS + telemetry, drive history with date grouping, per-drive GPX/CSV/summary export, weather card, hoisted camera state, peak markers (v2.2.6 rc.1–rc.6)
+- [x] Phase 8.4 — BLE GATT transport: `BleSlcanTransport` (FFE0/FFE1/FFE2, MTU 247, auto-reconnect), `BleDeviceScanner`, in-app device picker with RSSI bars, adapter naming refactor (MeatPi USB / Pro × Wi-Fi / BLE), Wi-Fi coexistence banner, `BleFirmwareApi` (`AT+FRS=`), `Network.socketFactory` Wi-Fi route pinning (v2.2.6 rc.7)
+- [x] Phase 8.5 — Drive mode cold-start gate (`has420Arrived`), corrective auto-loop in MorePage, hybrid scroll-then-wait firmware (USB v1.61 / Pro v1.2 with `AT+FRS` BLE channel), drive mode reliability under reconnect (v2.2.6 rc.7)
+- [x] Phase 8.6 — Tier 1 PIDs (Apr 2026 research): STFT/LTFT, AWD clutch actuator current L/R, AWD hydraulic pressure L/R, battery current; new CAN decoders for `0x305` mode toggle button, `0x260` ASS/ESC defeat buttons, `0x225` LC engaged, `0x070` suspension button; spark advance + charging voltage desired; GFM (`0x7D2`) DTC scanning; critical `mergeObdState()` allowlist fix (v2.2.6 rc.8)
+- [x] Phase 8.7 — UI overhaul: bottom nav bar (Haze frosted glass + spring indicator), compact status bar (78dp → 34dp), Quick Mode Dock, G-Force plot redesign, visibility presets (Night/Day/Sun + brightness slider with live `lerp` recompose), hybrid glow system (ambient `cardGlow` + accent glow gates), `AggressiveNum` typography, 0.5dp card borders (v2.2.6 rc.9)
+- [x] Phase 8.8 — In-app updater: GitHub Releases API client, stable + beta channels, `Network.socketFactory` to bypass adapter Wi-Fi for download, **rolling-RC tag bug fix** (`UpdateChecker` reads version from APK filename, not git tag), CI build provenance attestation via SLSA, lint advisory in CI, 344 unit tests across 11 files, Sapphire V2 web dashboard rewrite (129 vitest tests) (v2.2.6 stable)
 
 </details>
 

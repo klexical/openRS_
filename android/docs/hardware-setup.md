@@ -1,8 +1,21 @@
 # Hardware Setup Guide
 
-## WiCAN-USB-C3 Adapter
+openRS_ supports two MeatPi adapters, each with both **Wi-Fi** and **Bluetooth Low Energy** transports:
 
-openRS_ connects to a [MeatPi WiCAN-USB-C3](https://www.mouser.ca/ProductDetail/MeatPi/WICAN-USB-C3?qs=rQFj71Wb1eVDX2eEy0FC7A%3D%3D) USB-CAN adapter via Wi-Fi (primary) or BLE (fallback when WiFi is unavailable).
+| Adapter | Hardware | Protocol | Default Wi-Fi target |
+|---------|----------|----------|-----------------------|
+| **MeatPi USB (C3)** | ESP32-C3 | WebSocket SLCAN | `ws://192.168.80.1:80/ws` |
+| **MeatPi Pro (S3)** | ESP32-S3 + GPS + MicroSD | Raw TCP SLCAN | `tcp://192.168.0.10:35000` |
+
+Both adapters expose a BLE GATT service (UUID `0xFFE0` / RX `0xFFE1` / TX `0xFFE2`) when running openrs-fw firmware (v1.61 USB / v1.2 Pro). Choose the transport in **Settings → Adapter** + **Settings → Connection method**.
+
+> **Wi-Fi vs BLE:** BLE leaves your phone's Wi-Fi free for cellular hand-off (weather, maps, in-app updates). Wi-Fi delivers slightly higher CAN throughput. Both transports drive the same `SlcanConnection` lifecycle.
+
+---
+
+## MeatPi USB (C3) Adapter
+
+openRS_ connects to a [MeatPi USB-C3](https://www.mouser.ca/ProductDetail/MeatPi/WICAN-USB-C3?qs=rQFj71Wb1eVDX2eEy0FC7A%3D%3D) USB-CAN adapter via Wi-Fi or BLE.
 
 ### Hardware Specifications
 
@@ -76,9 +89,24 @@ openRS_ uses the WiCAN's **WebSocket endpoint** — no mode change required in t
 
 If your WiCAN is configured in **Client mode** (joining your phone's hotspot), the IP address will be different from `192.168.80.1`. You can update the connection target inside the app:
 
-**Settings → WiCAN Host / Port**
+**Settings → Host / Port**
 
 The app saves your last-used values and reconnects automatically.
+
+### Bluetooth Low Energy (BLE) Setup
+
+openrs-fw exposes a BLE GATT SLCAN transport that lets the app connect without occupying your phone's Wi-Fi radio. This is the recommended transport when you also want internet access (weather, maps, in-app updates).
+
+1. Open openRS_ → **Settings → Connection method → Bluetooth Low Energy**
+2. Tap **Pick BLE device** — Android will request `BLUETOOTH_SCAN` + `BLUETOOTH_CONNECT` permissions on first use
+3. The picker scans for devices advertising service UUID `0xFFE0` and shows live RSSI bars
+4. Select your adapter — the app saves the MAC address and reconnects automatically on future launches
+
+> **0xFFE0 is not unique to WiCAN.** Many cheap BLE peripherals (LED strip controllers, HM-10 clones) advertise the same service. The picker shows an orange "not a known adapter" hint for unrecognised device names, and `SlcanConnection` runs a 3-second handshake that rejects non-SLCAN devices before declaring the connection live.
+
+> **Auto-reconnect:** After the first successful BLE connection, the transport uses `autoConnect=true` so Android will silently re-establish the link when the device returns to range. App-side retry logic takes over if the auto-reconnect window times out.
+
+> **MTU 247:** The transport requests an MTU of 247 after service discovery. If the adapter doesn't support it, BLE falls back to the 23-byte default and longer SLCAN frames are reassembled by `lineBuffer`.
 
 ## Firmware
 
@@ -89,15 +117,15 @@ For drive mode control, ESC write, Launch Control, BLE transport, and Auto-disco
 | Firmware | Use case | Download |
 |----------|----------|----------|
 | Official WiCAN | Basic PID telemetry (first test) | [GitHub Releases](https://github.com/meatpiHQ/wican-fw/releases/latest) |
-| **openrs-fw v1.5** | Full openRS_ feature set | [openRS_ Releases](https://github.com/klexical/openRS_/releases) |
+| **openrs-fw USB v1.61** | Full openRS_ feature set + BLE `AT+FRS` channel | [openRS_ Releases](https://github.com/klexical/openRS_/releases/tag/fw-usb-v1.61) |
 
 See the [Firmware Update Guide](firmware-update.md) for step-by-step flashing instructions with screenshots.
 
 ---
 
-## WiCAN Pro Adapter
+## MeatPi Pro (S3) Adapter
 
-openRS_ also supports the [MeatPi WiCAN Pro](https://www.meatpi.com/) via raw TCP SLCAN. The Pro adds GPS, MicroSD logging, and an ESP32-S3 with more memory, but requires a one-time configuration change before openRS_ can connect.
+openRS_ also supports the [MeatPi Pro](https://www.meatpi.com/) via raw TCP SLCAN. The Pro adds GPS, MicroSD logging, and an ESP32-S3 with more memory, but requires a one-time configuration change before openRS_ can connect.
 
 ### Hardware Specifications
 

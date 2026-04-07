@@ -1,9 +1,15 @@
 # openrs-fw Firmware Update Guide
 
-> **openrs-fw v1.5** is the current release. Binaries are in `firmware/release/` in this repository.
-> Source code: `https://github.com/klexical/openRS_/tree/main/firmware`
+> **Current releases:**
+> - **openrs-fw USB v1.61** (WiCAN USB-C3 / ESP32-C3) — [GitHub release](https://github.com/klexical/openRS_/releases/tag/fw-usb-v1.61)
+> - **openrs-fw Pro v1.2** (WiCAN Pro / ESP32-S3) — [GitHub release](https://github.com/klexical/openRS_/releases/tag/fw-pro-v1.2)
+>
+> Binaries are in `firmware/release/` in this repository.
+> Source: `https://github.com/klexical/openRS_/tree/main/firmware`
+>
+> Both v1.61 USB and v1.2 Pro ship the **hybrid scroll-then-wait drive mode controller** and the **`AT+FRS=` BLE command channel** so the app can request drive mode changes over either Wi-Fi REST or BLE GATT.
 
-This guide covers flashing `openrs-fw` — the custom Focus RS firmware — onto your MeatPi WiCAN-USB-C3.
+This guide covers flashing `openrs-fw` — the custom Focus RS firmware — onto your MeatPi USB (C3) or Pro (S3).
 
 > **Important:** Firmware is loaded via the **Mini USB port** on the device while connected to a computer on your desk. You cannot flash firmware through the OBD-II port — that port is only used for power and CAN data when the device is in use in the car.
 
