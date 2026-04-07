@@ -1,7 +1,7 @@
 import JSZip from 'jszip'
 import type {
-  Session, SessionMeta, TripData, TripPoint, TripSummary,
-  DiagnosticData, CanFrame, FpsSample, SessionEvent, DecodeEntry, ProbeResult,
+  Session, SessionMeta, TripData, TripPoint, TripSummary, PeakEvent,
+  DiagnosticData, DtcEntry, CanFrame, FpsSample, SessionEvent, DecodeEntry, ProbeResult,
 } from '../types/session'
 
 /** Import a ZIP file exported by the openRS_ Android app. */
@@ -10,7 +10,8 @@ export async function importZip(file: File): Promise<Session> {
   const id = crypto.randomUUID()
 
   const trip = await parseTripData(zip)
-  const diagnostics = await parseDiagnosticData(zip)
+  const dtcResults = await parseDtcData(zip)
+  const diagnostics = await parseDiagnosticData(zip, dtcResults)
   const meta = await parseMeta(zip, file.name)
 
   const name = buildSessionName(meta, trip, file.name)
@@ -19,6 +20,7 @@ export async function importZip(file: File): Promise<Session> {
     id,
     name,
     importedAt: Date.now(),
+    tags: [],
     trip,
     diagnostics,
     meta,
@@ -28,7 +30,9 @@ export async function importZip(file: File): Promise<Session> {
 // ── Trip CSV parsing ──
 
 async function parseTripData(zip: JSZip): Promise<TripData | null> {
-  const csvFile = Object.keys(zip.files).find((f) => f.startsWith('trip_') && f.endsWith('.csv'))
+  const csvFile = Object.keys(zip.files).find(
+    (f) => (f.startsWith('trip_') || f.startsWith('drive_')) && f.endsWith('.csv')
+  )
   if (!csvFile) return null
 
   const csv = await zip.files[csvFile].async('string')
@@ -51,27 +55,37 @@ async function parseTripData(zip: JSZip): Promise<TripData | null> {
 
 function parseTripRow(row: Record<string, string>): TripPoint {
   return {
-    ts: parseFloat(row['timestamp'] || row['ts'] || '0'),
+    ts: parseFloat(row['timestamp_ms'] || row['timestamp'] || row['ts'] || '0'),
     lat: parseFloat(row['lat'] || '0'),
     lng: parseFloat(row['lng'] || row['lon'] || '0'),
     rpm: parseFloat(row['rpm'] || '0'),
     boostPsi: parseFloat(row['boostPsi'] || row['boost_psi'] || '0'),
     speedKph: parseFloat(row['speedKph'] || row['speed_kph'] || '0'),
     coolantC: parseFloat(row['coolantC'] || row['coolant_c'] || '-99'),
-    oilTempC: parseFloat(row['oilTempC'] || row['oil_temp_c'] || '-99'),
-    rduTempC: parseFloat(row['rduTempC'] || row['rdu_temp_c'] || '-99'),
-    ptuTempC: parseFloat(row['ptuTempC'] || row['ptu_temp_c'] || '-99'),
+    oilTempC: parseFloat(row['oilTempC'] || row['oil_c'] || row['oil_temp_c'] || '-99'),
+    rduTempC: parseFloat(row['rduTempC'] || row['rdu_c'] || row['rdu_temp_c'] || '-99'),
+    ptuTempC: parseFloat(row['ptuTempC'] || row['ptu_c'] || row['ptu_temp_c'] || '-99'),
     ambientC: parseFloat(row['ambientC'] || row['ambient_c'] || '-99'),
-    latG: parseFloat(row['latG'] || row['lat_g'] || '0'),
+    latG: parseFloat(row['latG'] || row['lateral_g'] || row['lat_g'] || '0'),
     longG: parseFloat(row['longG'] || row['long_g'] || '0'),
     fuelPct: parseFloat(row['fuelPct'] || row['fuel_pct'] || '-1'),
-    wheelSpeedFL: parseFloat(row['wheelSpeedFL'] || row['ws_fl'] || '0'),
-    wheelSpeedFR: parseFloat(row['wheelSpeedFR'] || row['ws_fr'] || '0'),
-    wheelSpeedRL: parseFloat(row['wheelSpeedRL'] || row['ws_rl'] || '0'),
-    wheelSpeedRR: parseFloat(row['wheelSpeedRR'] || row['ws_rr'] || '0'),
+    wheelSpeedFL: parseFloat(row['wheelSpeedFL'] || row['wheel_fl_kph'] || row['ws_fl'] || '0'),
+    wheelSpeedFR: parseFloat(row['wheelSpeedFR'] || row['wheel_fr_kph'] || row['ws_fr'] || '0'),
+    wheelSpeedRL: parseFloat(row['wheelSpeedRL'] || row['wheel_rl_kph'] || row['ws_rl'] || '0'),
+    wheelSpeedRR: parseFloat(row['wheelSpeedRR'] || row['wheel_rr_kph'] || row['ws_rr'] || '0'),
     driveMode: row['driveMode'] || row['drive_mode'] || 'NORMAL',
     awdTorqueL: parseFloat(row['awdTorqueL'] || row['awd_torque_l'] || '0'),
     awdTorqueR: parseFloat(row['awdTorqueR'] || row['awd_torque_r'] || '0'),
+    gear: row['gear'] || '',
+    throttlePct: parseFloat(row['throttlePct'] || row['throttle_pct'] || '-1'),
+    tirePressLF: parseFloat(row['tirePressLF'] || row['tire_press_lf_psi'] || '-1'),
+    tirePressRF: parseFloat(row['tirePressRF'] || row['tire_press_rf_psi'] || '-1'),
+    tirePressLR: parseFloat(row['tirePressLR'] || row['tire_press_lr_psi'] || '-1'),
+    tirePressRR: parseFloat(row['tirePressRR'] || row['tire_press_rr_psi'] || '-1'),
+    tireTempLF: parseFloat(row['tireTempLF'] || row['tire_temp_lf_c'] || '-99'),
+    tireTempRF: parseFloat(row['tireTempRF'] || row['tire_temp_rf_c'] || '-99'),
+    tireTempLR: parseFloat(row['tireTempLR'] || row['tire_temp_lr_c'] || '-99'),
+    tireTempRR: parseFloat(row['tireTempRR'] || row['tire_temp_rr_c'] || '-99'),
   }
 }
 
@@ -117,7 +131,7 @@ function computeSummary(points: TripPoint[]): TripSummary {
   return {
     distanceKm,
     durationMs,
-    fuelUsedL: 0, // TODO: compute from fuel % delta
+    fuelUsedL: computeFuelUsedL(points),
     avgSpeedKph: avg(speedArr),
     peakRpm: Math.max(...rpmArr),
     peakBoostPsi: Math.max(...boostArr),
@@ -127,13 +141,11 @@ function computeSummary(points: TripPoint[]): TripSummary {
     peakCoolantC: coolantArr.length > 0 ? Math.max(...coolantArr) : -99,
     peakOilTempC: oilArr.length > 0 ? Math.max(...oilArr) : -99,
     avgRpm: avg(rpmArr),
-    avgFuelEconomy: 0,
+    avgFuelEconomy: computeAvgFuelEconomy(computeFuelUsedL(points), distanceKm),
     modeBreakdown,
     peakEvents,
   }
 }
-
-type PeakEvent = { type: string; value: number; ts: number; lat: number; lng: number }
 
 function emptySummary(): TripSummary {
   return {
@@ -158,13 +170,67 @@ function haversine(lat1: number, lon1: number, lat2: number, lon2: number): numb
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
+const FOCUS_RS_TANK_LITRES = 52.3
+
+function computeFuelUsedL(points: TripPoint[]): number {
+  const validFuel = points.map((p) => p.fuelPct).filter((v) => v >= 0)
+  if (validFuel.length < 2) return 0
+  const delta = validFuel[0] - validFuel[validFuel.length - 1]
+  return delta > 0 ? (delta / 100) * FOCUS_RS_TANK_LITRES : 0
+}
+
+function computeAvgFuelEconomy(fuelUsedL: number, distanceKm: number): number {
+  if (fuelUsedL <= 0 || distanceKm <= 0.1) return 0
+  return (fuelUsedL / distanceKm) * 100 // L/100km
+}
+
+// ── DTC text parsing ──
+
+async function parseDtcData(zip: JSZip): Promise<DtcEntry[]> {
+  const dtcFile = Object.keys(zip.files).find(
+    (f) => f.startsWith('dtc_scan_') && f.endsWith('.txt')
+  )
+  if (!dtcFile) return []
+
+  const text = await zip.files[dtcFile].async('string')
+  const results: DtcEntry[] = []
+  let currentModule = ''
+
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim()
+    // Module header: ─── PCM ───...
+    const modMatch = trimmed.match(/^─+\s+(\w+)\s+─/)
+    if (modMatch) {
+      currentModule = modMatch[1]
+      continue
+    }
+    // DTC line:   P0101  [STORED]  description
+    const dtcMatch = trimmed.match(/^([A-Z]\d{4})\s+\[(\w+)]\s+(.*)/)
+    if (dtcMatch && currentModule) {
+      results.push({
+        module: currentModule,
+        code: dtcMatch[1],
+        status: dtcMatch[2],
+        description: dtcMatch[3].trim(),
+      })
+    }
+  }
+  return results
+}
+
 // ── Diagnostic JSON parsing ──
 
-async function parseDiagnosticData(zip: JSZip): Promise<DiagnosticData | null> {
+async function parseDiagnosticData(zip: JSZip, dtcResults: DtcEntry[]): Promise<DiagnosticData | null> {
   const jsonFile = Object.keys(zip.files).find(
     (f) => f.startsWith('diagnostic_detail_') && f.endsWith('.json')
   )
-  if (!jsonFile) return null
+  if (!jsonFile) {
+    // No diagnostic JSON, but we may still have DTC results
+    if (dtcResults.length > 0) {
+      return { canInventory: [], fpsTimeline: [], sessionEvents: [], decodeTrace: [], probeResults: [], dtcResults }
+    }
+    return null
+  }
 
   const raw = await zip.files[jsonFile].async('string')
   const data = JSON.parse(raw)
@@ -175,6 +241,7 @@ async function parseDiagnosticData(zip: JSZip): Promise<DiagnosticData | null> {
     sessionEvents: parseSessionEvents(data),
     decodeTrace: parseDecodeTrace(data),
     probeResults: parseProbeResults(data),
+    dtcResults,
   }
 }
 
@@ -239,7 +306,7 @@ function parseProbeResults(data: Record<string, unknown>): ProbeResult[] {
 async function parseMeta(zip: JSZip, filename: string): Promise<SessionMeta> {
   // Try to find summary text for metadata
   const summaryFile = Object.keys(zip.files).find(
-    (f) => f.startsWith('diagnostic_summary_') || f.startsWith('trip_summary_')
+    (f) => f.startsWith('diagnostic_summary_') || f.startsWith('trip_summary_') || f.startsWith('drive_summary_')
   )
 
   let appVersion = 'unknown'

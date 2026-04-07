@@ -4,8 +4,10 @@ const panelTitles: Record<string, string> = {
   dashboard: 'Dashboard',
   trip: 'Trip Analysis',
   diagnostics: 'Diagnostics',
+  compare: 'Compare Sessions',
   sessions: 'Session Library',
   import: 'Import Data',
+  settings: 'Settings',
 }
 
 export function Header() {

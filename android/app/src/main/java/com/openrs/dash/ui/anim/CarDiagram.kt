@@ -26,6 +26,7 @@ import com.openrs.dash.ui.Dim
 import com.openrs.dash.ui.LocalThemeAccent
 import com.openrs.dash.ui.Ok
 import com.openrs.dash.ui.Orange
+import com.openrs.dash.ui.Warn
 import com.openrs.dash.ui.UnitConversions
 import com.openrs.dash.ui.UserPrefs
 import kotlin.math.roundToInt
@@ -46,18 +47,20 @@ fun CarDiagram(
     val accent = LocalThemeAccent.current
 
     // Tire status colors — animated transitions
-    val lowThreshold = prefs.tireLowPsi.toDouble()
+    val lowThreshold  = prefs.tireLowPsi.toDouble()
+    val warnThreshold = prefs.tireWarnPsi.toDouble()
+    val highThreshold = prefs.tireHighPsi.toDouble()
     val flColor by animateColorAsState(
-        tireStatusColor(vs.tirePressLF, lowThreshold), tween(400), label = "flCol"
+        tireStatusColor(vs.tirePressLF, lowThreshold, warnThreshold, highThreshold), tween(400), label = "flCol"
     )
     val frColor by animateColorAsState(
-        tireStatusColor(vs.tirePressRF, lowThreshold), tween(400), label = "frCol"
+        tireStatusColor(vs.tirePressRF, lowThreshold, warnThreshold, highThreshold), tween(400), label = "frCol"
     )
     val rlColor by animateColorAsState(
-        tireStatusColor(vs.tirePressLR, lowThreshold), tween(400), label = "rlCol"
+        tireStatusColor(vs.tirePressLR, lowThreshold, warnThreshold, highThreshold), tween(400), label = "rlCol"
     )
     val rrColor by animateColorAsState(
-        tireStatusColor(vs.tirePressRR, lowThreshold), tween(400), label = "rrCol"
+        tireStatusColor(vs.tirePressRR, lowThreshold, warnThreshold, highThreshold), tween(400), label = "rrCol"
     )
 
     Box(modifier, contentAlignment = Alignment.Center) {
@@ -158,11 +161,17 @@ val WHEEL_ANCHORS = listOf(
 // Formatting helpers
 // ═════════════════════════════════════════════════════════════════════════════
 
-internal fun tireStatusColor(psi: Double, lowThreshold: Double): Color = when {
-    psi < 0            -> Dim       // no data yet
-    psi < lowThreshold -> Orange    // low pressure
-    psi > 40.0         -> Orange    // over-inflated
-    else               -> Ok        // normal
+internal fun tireStatusColor(
+    psi: Double,
+    lowThreshold: Double,
+    warnThreshold: Double = 34.0,
+    highThreshold: Double = 50.0
+): Color = when {
+    psi < 0              -> Dim       // no data yet
+    psi < lowThreshold   -> Orange    // critically under-inflated
+    psi < warnThreshold  -> Warn      // getting low
+    psi > highThreshold  -> Orange    // over-inflated
+    else                 -> Ok        // optimal range
 }
 
 internal fun formatTirePressure(psi: Double, prefs: UserPrefs): String {

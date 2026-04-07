@@ -40,9 +40,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
+import com.openrs.dash.ui.Tokens.CardBorder
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.openrs.dash.data.AVAILABLE_FIELDS
 import com.openrs.dash.data.DashCell
 import com.openrs.dash.data.DashLayout
@@ -62,6 +67,13 @@ fun CustomDashPage(
 ) {
     val ctx = LocalContext.current
     val accent = LocalThemeAccent.current
+    val view = LocalView.current
+    val density = LocalDensity.current
+    val topPad = remember(view) {
+        val insets = ViewCompat.getRootWindowInsets(view)
+            ?.getInsets(WindowInsetsCompat.Type.systemBars())
+        if (insets != null) with(density) { insets.top.toDp() } else 0.dp
+    }
     val wide = isWideLayout()
     val columns = if (wide) 3 else 2
 
@@ -82,7 +94,8 @@ fun CustomDashPage(
                 Modifier
                     .fillMaxWidth()
                     .background(Surf)
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                    .padding(top = topPad + 10.dp, bottom = 10.dp)
+                    .padding(horizontal = 14.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -90,7 +103,7 @@ fun CustomDashPage(
                     Box(
                         Modifier
                             .background(Surf2, RoundedCornerShape(6.dp))
-                            .border(1.dp, Brd, RoundedCornerShape(6.dp))
+                            .border(CardBorder, Brd, RoundedCornerShape(6.dp))
                             .clickable { onDismiss() }
                             .padding(horizontal = 10.dp, vertical = 6.dp)
                     ) {
@@ -102,7 +115,7 @@ fun CustomDashPage(
                 Box(
                     Modifier
                         .background(accent.copy(alpha = 0.10f), RoundedCornerShape(6.dp))
-                        .border(1.dp, accent.copy(alpha = 0.28f), RoundedCornerShape(6.dp))
+                        .border(CardBorder, accent.copy(alpha = 0.28f), RoundedCornerShape(6.dp))
                         .clickable { showEditor = true }
                         .padding(horizontal = 10.dp, vertical = 6.dp)
                 ) {
@@ -347,7 +360,7 @@ private fun DashBuilderSheet(
                 Modifier
                     .fillMaxWidth()
                     .background(Surf2, RoundedCornerShape(10.dp))
-                    .border(1.dp, accent.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                    .border(CardBorder, accent.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
                     .clickable { showAddPicker = !showAddPicker }
                     .padding(vertical = 12.dp),
                 contentAlignment = Alignment.Center
@@ -385,7 +398,7 @@ private fun DashBuilderSheet(
                                 Modifier
                                     .fillMaxWidth()
                                     .background(Surf2, RoundedCornerShape(8.dp))
-                                    .border(1.dp, Brd, RoundedCornerShape(8.dp))
+                                    .border(CardBorder, Brd, RoundedCornerShape(8.dp))
                                     .clickable {
                                         editCells.add(field)
                                         // Auto-close picker if all fields added
@@ -427,7 +440,7 @@ private fun DashBuilderSheet(
                         ),
                         RoundedCornerShape(10.dp)
                     )
-                    .border(1.dp, accent.copy(0.4f), RoundedCornerShape(10.dp))
+                    .border(CardBorder, accent.copy(0.4f), RoundedCornerShape(10.dp))
                     .clickable {
                         onSave(DashLayout(cells = editCells.toList()))
                     }
@@ -460,7 +473,7 @@ private fun EditorCellRow(
         Modifier
             .fillMaxWidth()
             .background(Surf2, RoundedCornerShape(8.dp))
-            .border(1.dp, Brd, RoundedCornerShape(8.dp))
+            .border(CardBorder, Brd, RoundedCornerShape(8.dp))
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -519,7 +532,7 @@ private fun EditorCellRow(
                 .size(24.dp)
                 .clip(CircleShape)
                 .background(Orange.copy(alpha = 0.1f))
-                .border(1.dp, Orange.copy(alpha = 0.3f), CircleShape)
+                .border(CardBorder, Orange.copy(alpha = 0.3f), CircleShape)
                 .clickable { onRemove() },
             contentAlignment = Alignment.Center
         ) {

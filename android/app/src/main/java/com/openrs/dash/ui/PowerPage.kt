@@ -17,13 +17,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.Column
+import com.openrs.dash.ui.Tokens.PagePad
+import com.openrs.dash.ui.Tokens.CardGap
 import com.openrs.dash.data.VehicleState
+import com.openrs.dash.ui.anim.StaggeredColumn
 import kotlin.math.roundToInt
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -34,12 +37,14 @@ import kotlin.math.roundToInt
     val hasAfr = vs.afrActual > 0
     val ph = "— —"
 
-    val expandedSections = remember { mutableStateMapOf<String, Boolean>() }
-    fun isExpanded(key: String) = expandedSections.getOrDefault(key, true)
+    var throttleExpanded by rememberSectionExpanded("POWER_THROTTLE")
+    var engineExpanded   by rememberSectionExpanded("POWER_ENGINE")
+    var fuelExpanded     by rememberSectionExpanded("POWER_FUEL")
 
-    androidx.compose.foundation.layout.Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .padding(start = PagePad, end = PagePad, top = PagePad, bottom = PagePad + Tokens.NavBarHeight),
+        verticalArrangement = Arrangement.spacedBy(CardGap)
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AfrCard("AFR ACT",  if (hasAfr) "%.2f".format(vs.afrActual)    else ph, ":1",
@@ -50,9 +55,9 @@ import kotlin.math.roundToInt
                 if (hasAfr) Ok else Dim,     Modifier.weight(1f))
         }
 
-        SectionLabel("THROTTLE & BOOST", collapsible = true, expanded = isExpanded("THROTTLE"), onToggle = { expandedSections["THROTTLE"] = !isExpanded("THROTTLE") })
-        AnimatedVisibility(visible = isExpanded("THROTTLE"), enter = expandVertically(), exit = shrinkVertically()) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SectionLabel("THROTTLE & BOOST", collapsible = true, expanded = throttleExpanded, onToggle = { throttleExpanded = !throttleExpanded })
+        AnimatedVisibility(visible = throttleExpanded, enter = expandVertically(), exit = shrinkVertically()) {
+            Column(verticalArrangement = Arrangement.spacedBy(CardGap)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     DataCell("ETC ACT", if (vs.etcAngleActual > 0) "${"%.1f".format(vs.etcAngleActual)}°" else ph, modifier = Modifier.weight(1f))
                     DataCell("ETC DES", if (vs.etcAngleDesired > 0) "${"%.1f".format(vs.etcAngleDesired)}°" else ph, modifier = Modifier.weight(1f))
@@ -69,13 +74,14 @@ import kotlin.math.roundToInt
             }
         }
 
-        SectionLabel("ENGINE MANAGEMENT", collapsible = true, expanded = isExpanded("ENGINE"), onToggle = { expandedSections["ENGINE"] = !isExpanded("ENGINE") })
-        AnimatedVisibility(visible = isExpanded("ENGINE"), enter = expandVertically(), exit = shrinkVertically()) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SectionLabel("ENGINE MANAGEMENT", collapsible = true, expanded = engineExpanded, onToggle = { engineExpanded = !engineExpanded })
+        AnimatedVisibility(visible = engineExpanded, enter = expandVertically(), exit = shrinkVertically()) {
+            Column(verticalArrangement = Arrangement.spacedBy(CardGap)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     DataCell("TIMING", if (vs.calcLoad > 0) "${"%.1f".format(vs.timingAdvance)}°" else ph, modifier = Modifier.weight(1f))
                     DataCell("LOAD",   if (vs.calcLoad > 0) "${"%.0f".format(vs.calcLoad)}%" else ph,              modifier = Modifier.weight(1f))
                     DataCell("OAR",    if (vs.calcLoad > 0) "${"%.0f".format(vs.octaneAdjustRatio * 100)}%" else ph, modifier = Modifier.weight(1f))
+                    DataCell("SPARK",  if (vs.calcLoad > 0) "${"%.1f".format(vs.sparkAdvance)}°" else ph, modifier = Modifier.weight(1f))
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     DataCell("VCT-I",   if (vs.calcLoad > 0) "${"%.1f".format(vs.vctIntakeAngle)}°" else ph, modifier = Modifier.weight(1f))
@@ -99,14 +105,15 @@ import kotlin.math.roundToInt
             }
         }
 
-        SectionLabel("FUEL TRIMS & AFR", collapsible = true, expanded = isExpanded("FUEL"), onToggle = { expandedSections["FUEL"] = !isExpanded("FUEL") })
-        AnimatedVisibility(visible = isExpanded("FUEL"), enter = expandVertically(), exit = shrinkVertically()) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SectionLabel("FUEL TRIMS & AFR", collapsible = true, expanded = fuelExpanded, onToggle = { fuelExpanded = !fuelExpanded })
+        AnimatedVisibility(visible = fuelExpanded, enter = expandVertically(), exit = shrinkVertically()) {
+            Column(verticalArrangement = Arrangement.spacedBy(CardGap)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val stftColor = fuelTrimColor(vs.shortFuelTrim)
                     val ltftColor = fuelTrimColor(vs.longFuelTrim)
-                    DataCell("SHORT FT", if (vs.calcLoad > 0) "${"%.1f".format(vs.shortFuelTrim)}%" else ph, valueColor = stftColor, modifier = Modifier.weight(1f))
-                    DataCell("LONG FT",  if (vs.calcLoad > 0) "${"%.1f".format(vs.longFuelTrim)}%" else ph,  valueColor = ltftColor, modifier = Modifier.weight(1f))
+                    val hasFuelTrims = vs.isConnected && vs.rpm > 0
+                    DataCell("SHORT FT", if (hasFuelTrims) "${"%.1f".format(vs.shortFuelTrim)}%" else ph, valueColor = stftColor, modifier = Modifier.weight(1f))
+                    DataCell("LONG FT",  if (hasFuelTrims) "${"%.1f".format(vs.longFuelTrim)}%" else ph,  valueColor = ltftColor, modifier = Modifier.weight(1f))
                     DataCell("BARO",     "${vs.barometricPressure.roundToInt()} kPa", modifier = Modifier.weight(1f))
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -16,22 +16,24 @@ Common patches (both targets):
   4. config_server.c  — Add /api/frs GET+POST endpoint (token-authenticated)
   5. config_server.c  — Register /api/frs URI handlers
   6. slcan.c          — OPENRS? probe in slcan_parse_str (all transports)
-  7. main.c           — #include "focusrs.h"
-  8. main.c           — frs_init() call after nvs_flash_init() in app_main
-  9. main.c           — frs_parse_can_frame() call in can_rx_task
- 10. main/CMakeLists  — add focusrs to REQUIRES
+  7. slcan.c          — #include "focusrs.h"
+  8. slcan.c          — AT+FRS command handler in slcan_parse_str (BLE command channel)
+  9. main.c           — #include "focusrs.h"
+ 10. main.c           — frs_init() call after nvs_flash_init() in app_main
+ 11. main.c           — frs_parse_can_frame() call in can_rx_task
+ 12. main/CMakeLists  — add focusrs to REQUIRES
 
 USB-only patches:
- 11. config_server.c  — OPENRS? WebSocket probe (xQueueSend intercept)
- 12. main.c           — openrs_can_tx shim + frs_set_can_tx_fn() registration
+ 13. config_server.c  — OPENRS? WebSocket probe (xQueueSend intercept)
+ 14. main.c           — openrs_can_tx shim + frs_set_can_tx_fn() registration
 
 Pro-only patches:
   (same CAN TX shim as USB — wc_mdns_init anchor confirmed in v4.48p)
 """
 
 OPENRS_FW_VERSIONS = {
-    "usb": "USB v1.6",
-    "pro": "PRO v1.1",
+    "usb": "USB v1.61-rc.1",
+    "pro": "PRO v1.2-rc.1",
 }
 OPENRS_FW_VERSION = None  # set per-target in main()
 
@@ -308,6 +310,88 @@ def patch_slcan_probe(base):
     print("  WARNING: slcan_parse_str() anchor not found in slcan.c "
           "— OPENRS? probe NOT inserted. Check wican-fw source version.")
 
+def patch_slcan_frs_command(base):
+    """Insert AT+FRS command handler in slcan_parse_str() — BLE command channel.
+
+    Intercepts AT+FRS=key,value and AT+FRS? commands before the SLCAN parser.
+    Routes to frs_handle_at_command() in the focusrs component. Works over all
+    transports (BLE, TCP, WebSocket) since it's in the shared SLCAN path.
+    """
+    path = os.path.join(base, "main", "slcan.c")
+    if not os.path.exists(path):
+        print("  WARNING: slcan.c not found — AT+FRS command NOT inserted")
+        return
+    c = read(path)
+
+    MARKER = "OPENRS_FRS_COMMAND"
+    if MARKER in c:
+        print("  skipped: AT+FRS command handler already present")
+        return
+
+    # 1. Add focusrs.h include if not present
+    FRS_INC = '#include "focusrs.h"'
+    if FRS_INC not in c:
+        for inc_anchor in ['#include "can.h"', '#include "slcan.h"']:
+            if inc_anchor in c:
+                c = c.replace(inc_anchor, inc_anchor + '\n' + FRS_INC, 1)
+                print("  patched: slcan.c (focusrs.h include)")
+                break
+        else:
+            print("  WARNING: could not find include anchor in slcan.c for focusrs.h")
+    else:
+        print("  skipped: focusrs.h already included in slcan.c")
+
+    # 2. Insert AT+FRS interception in slcan_parse_str
+    # Detect callback signature (3-arg USB vs 4-arg Pro)
+    has_4arg = "char* cmd_str" in c or ("slcan_response" in c and "q, NULL)" in c)
+    response_call = (
+        '            slcan_response(resp, (uint32_t)resp_len, q, NULL);\n'
+        if has_4arg else
+        '            slcan_response(resp, (uint32_t)resp_len, q);\n'
+    )
+
+    FRS_CODE = (
+        '\n    /* ' + MARKER + ': BLE command channel ─────────────────────────────\n'
+        '     * App sends "AT+FRS=key,value\\r" or "AT+FRS?\\r" over any transport.\n'
+        '     * Routes to focusrs component — same handlers as REST /api/frs. */\n'
+        '    if (len >= 7 && strncmp((char *)buf, "AT+FRS", 6) == 0) {\n'
+        '        char at_cmd[64];\n'
+        '        int at_len = (int)len - 6;\n'
+        "        for (int j = 6; j < len; j++) {\n"
+        "            if (buf[j] == '\\r') { at_len = j - 6; break; }\n"
+        "        }\n"
+        '        if (at_len >= (int)sizeof(at_cmd)) at_len = (int)sizeof(at_cmd) - 1;\n'
+        '        memcpy(at_cmd, &buf[6], at_len);\n'
+        "        at_cmd[at_len] = '\\0';\n"
+        '        char resp[256];\n'
+        '        int resp_len = frs_handle_at_command(at_cmd, resp, sizeof(resp));\n'
+        '        if (resp_len > 0 && slcan_response != NULL) {\n'
+        + response_call +
+        '        }\n'
+        '        return NULL;\n'
+        '    }\n'
+    )
+
+    # Insert after the OPENRS_SLCAN_PROBE block if present, otherwise at function start
+    if "OPENRS_SLCAN_PROBE" in c:
+        # Find the end of the OPENRS probe's if-block: "return NULL;\n    }\n"
+        probe_idx = c.index("OPENRS_SLCAN_PROBE")
+        block_end_str = "return NULL;\n    }\n"
+        block_end = c.index(block_end_str, probe_idx)
+        insert_pos = block_end + len(block_end_str)
+        c = c[:insert_pos] + FRS_CODE + c[insert_pos:]
+        write(path, c)
+    else:
+        # No OPENRS probe — insert at function body start
+        ANCHOR = "char* slcan_parse_str(uint8_t *buf, uint8_t len, twai_message_t *frame, QueueHandle_t *q)\n{"
+        ALT_ANCHOR = "char* slcan_parse_str(uint8_t *buf, uint8_t len, twai_message_t *frame, QueueHandle_t *q) {"
+        for anchor in [ANCHOR, ALT_ANCHOR]:
+            if anchor in c:
+                c = c.replace(anchor, anchor + FRS_CODE, 1)
+                write(path, c)
+                return
+        print("  WARNING: slcan_parse_str() anchor not found — AT+FRS command NOT inserted")
+
 def patch_main_common(base):
     """Apply common main.c patches: focusrs include, init, CAN RX hook."""
     path = os.path.join(base, "main", "main.c")
@@ -578,28 +662,31 @@ def main():
         print(f"  focusrs.h: OPENRS_FW_VERSION = \"{OPENRS_FW_VERSION}\"")
 
     # Common patches (all targets)
-    print("[1/8] WiFi network...")
+    print("[1/9] WiFi network...")
     patch_wifi_network(base)
 
-    print("[2/8] Config server (REST API, password, includes)...")
+    print("[2/9] Config server (REST API, password, includes)...")
     patch_config_server(base)
 
-    print("[3/8] SLCAN probe (universal, all transports)...")
+    print("[3/9] SLCAN probe (universal, all transports)...")
     patch_slcan_probe(base)
 
-    print("[4/8] WebSocket probe (transport-specific)...")
+    print("[4/9] SLCAN FRS command (BLE command channel)...")
+    patch_slcan_frs_command(base)
+
+    print("[5/9] WebSocket probe (transport-specific)...")
     patch_ws_probe(base, profile)
 
-    print("[5/8] Main (focusrs init, CAN RX hook)...")
+    print("[6/9] Main (focusrs init, CAN RX hook)...")
     patch_main_common(base)
 
-    print("[6/8] CAN TX shim (write support)...")
+    print("[7/9] CAN TX shim (write support)...")
     patch_can_tx(base, profile)
 
-    print("[7/8] CMakeLists (focusrs dependency)...")
+    print("[8/9] CMakeLists (focusrs dependency)...")
     patch_cmake(base)
 
-    print("[8/8] Upstream bugfixes...")
+    print("[9/9] Upstream bugfixes...")
     patch_upstream_bugfixes(base)
 
     print(f"\nAll patches applied for target '{profile['name']}'.")

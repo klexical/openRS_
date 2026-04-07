@@ -1,6 +1,10 @@
 package com.openrs.dash.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,7 +22,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,12 +36,15 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.data.DtcResult
 import com.openrs.dash.data.DtcStatus
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticExporter
 import com.openrs.dash.diagnostics.DiagnosticLogger
+import com.openrs.dash.ui.Tokens.CardBorder
+import com.openrs.dash.ui.anim.pressClick
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -52,7 +58,8 @@ import kotlin.math.roundToInt
     vs: VehicleState,
     onScanDtcs: (suspend () -> List<DtcResult>)?,
     onClearDtcs: (suspend () -> Map<String, Boolean>)? = null,
-    onSendRawQuery: (suspend (responseId: Int, frame: String, timeoutMs: Long) -> ByteArray?)? = null
+    onSendRawQuery: (suspend (responseId: Int, frame: String, timeoutMs: Long) -> ByteArray?)? = null,
+    onResetSession: () -> Unit = {}
 ) {
     val ctx    = LocalContext.current
     val scope  = rememberCoroutineScope()
@@ -70,111 +77,373 @@ import kotlin.math.roundToInt
     // P-4: snapshot once so the size/values are consistent within one composition
     val inv = remember(vs.framesPerSecond) { DiagnosticLogger.frameInventorySnapshot }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
+    // Collapsible section states (persisted in SharedPreferences)
+    var diagExpanded        by rememberSectionExpanded("DIAG_DIAGNOSTICS")
+    var dtcExpanded         by rememberSectionExpanded("DIAG_DTC_SCANNER")
+    var crashExpanded       by rememberSectionExpanded("DIAG_CRASH_HISTORY", default = false)
+    var didProberExpanded   by rememberSectionExpanded("DIAG_DID_PROBER", default = false)
+    var canOutputExpanded   by rememberSectionExpanded("DIAG_CAN_OUTPUT", default = false)
+    var frameInvExpanded    by rememberSectionExpanded("DIAG_FRAME_INV", default = false)
+    var pidBrowserExpanded  by rememberSectionExpanded("DIAG_PID_BROWSER", default = false)
+    var showAllFrames       by remember { mutableStateOf(false) }
 
-        // ── DTC Scanner ───────────────────────────────────────────────────────
-        SectionLabel("DTC SCANNER")
-        Spacer(Modifier.height(4.dp))
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+        .padding(start = Tokens.PagePad, end = Tokens.PagePad, top = Tokens.PagePad, bottom = Tokens.PagePad + Tokens.NavBarHeight)) {
 
+        val frameCount = inv.values.sumOf { it.totalReceived }
+        val dtcCount = dtcResults?.size ?: 0
         val dtcBusy = dtcScanning || dtcClearing
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            // Scan button
-            Box(
-                Modifier.weight(1f)
-                    .background(
-                        if (!dtcBusy && vs.isConnected && onScanDtcs != null)
-                            Brush.horizontalGradient(listOf(accent.copy(0.12f), accent.copy(0.06f)))
-                        else Brush.horizontalGradient(listOf(Dim.copy(0.1f), Dim.copy(0.05f))),
-                        RoundedCornerShape(10.dp)
-                    )
-                    .border(
-                        1.dp,
-                        if (!dtcBusy && vs.isConnected && onScanDtcs != null) accent.copy(0.35f) else Dim.copy(0.2f),
-                        RoundedCornerShape(10.dp)
-                    )
-                    .clickable(enabled = !dtcBusy && vs.isConnected && onScanDtcs != null) {
-                        dtcScanning = true
-                        dtcError = null
-                        dtcClearStatus = null
-                        scope.launch(Dispatchers.IO) {
-                            val result = try {
-                                onScanDtcs?.invoke()
-                            } catch (e: kotlinx.coroutines.CancellationException) {
-                                throw e
-                            } catch (_: Exception) { null }
-                            withContext(Dispatchers.Main) {
-                                dtcScanning = false
-                                if (result != null) {
-                                    dtcResults = result
-                                } else {
-                                    dtcError = "Scan failed — check adapter connection"
-                                }
+        val sessionMs  = remember(vs.framesPerSecond) { DiagnosticLogger.sessionDurationMs }
+        val issueCount = inv.values.sumOf { it.validationIssues.size }
+
+        // ── Diagnostics (collapsible, expanded by default) ────────────────
+        SectionLabel("DIAGNOSTICS", collapsible = true, expanded = diagExpanded,
+            onToggle = { diagExpanded = !diagExpanded })
+        AnimatedVisibility(
+            visible = diagExpanded,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Column {
+                Spacer(Modifier.height(4.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    DataCell("STATUS", if (vs.isConnected) "LIVE" else "— —",
+                        valueColor = if (vs.isConnected) Ok else Dim, modifier = Modifier.weight(1f))
+                    DataCell("FPS",    "${vs.framesPerSecond.roundToInt()}", modifier = Modifier.weight(1f))
+                    DataCell("DTCs", if (dtcResults != null) "$dtcCount" else "—",
+                        valueColor = if (dtcCount > 0) Orange else if (dtcResults != null) Ok else Dim,
+                        modifier = Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    DataCell("SESSION", DiagnosticLogger.formatDuration(sessionMs), modifier = Modifier.weight(1f))
+                    DataCell("FRAMES",  "$frameCount",                              modifier = Modifier.weight(1f))
+                    DataCell("IDs",     "${inv.size}",                              modifier = Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    DataCell("ENGINE", engineStatusLabel(vs.engineStatus), modifier = Modifier.weight(1f))
+                    DataCell("IGNITION", ignitionStatusLabel(vs.ignitionStatus), modifier = Modifier.weight(1f))
+                    DataCell("E-BRAKE", if (vs.eBrake) "ON" else "OFF",
+                        valueColor = if (vs.eBrake) Warn else Dim, modifier = Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    DataCell("BATT V", "${"%.1f".format(vs.batteryVoltage)}V", modifier = Modifier.weight(1f))
+                    DataCell("BATT A",
+                        if (vs.batteryCurrentA > -900) "${"%+.1f".format(vs.batteryCurrentA)} A" else "—",
+                        valueColor = when {
+                            vs.batteryCurrentA <= -900 -> Dim
+                            vs.batteryCurrentA >  0.5  -> Ok       // charging
+                            vs.batteryCurrentA < -0.5  -> Frost    // discharging
+                            else                       -> Mid      // resting
+                        }, modifier = Modifier.weight(1f))
+                    DataCell("BATT SoC", if (vs.batterySoc >= 0) "${vs.batterySoc.roundToInt()}%" else "—",
+                        valueColor = when {
+                            vs.batterySoc < 0   -> Dim
+                            vs.batterySoc < 50  -> Orange
+                            vs.batterySoc < 70  -> Warn
+                            else                -> Ok
+                        }, modifier = Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    DataCell("BATT TEMP",
+                        if (vs.batteryTempC > -90) "${vs.batteryTempC.roundToInt()}°C" else "—",
+                        modifier = Modifier.weight(1f))
+                    DataCell("CHG TGT",
+                        if (vs.batteryChargingVoltageDesired >= 0) "${"%.1f".format(vs.batteryChargingVoltageDesired)}V" else "—",
+                        modifier = Modifier.weight(1f))
+                    Spacer(Modifier.weight(1f))
+                }
+
+                // ── Live button inputs (0x070, 0x260, 0x305) ─────────────────
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    DataCell("MODE BTN", if (vs.driveModeButtonPressed) "HELD" else "—",
+                        valueColor = if (vs.driveModeButtonPressed) accent else Dim,
+                        modifier = Modifier.weight(1f))
+                    DataCell("SUSP BTN", if (vs.suspensionButtonPressed) "HELD" else "—",
+                        valueColor = if (vs.suspensionButtonPressed) accent else Dim,
+                        modifier = Modifier.weight(1f))
+                    DataCell("ASS BTN", if (vs.autoStartStopButtonPressed) "HELD" else "—",
+                        valueColor = if (vs.autoStartStopButtonPressed) accent else Dim,
+                        modifier = Modifier.weight(1f))
+                    DataCell("ESC BTN", if (vs.escOffButtonPressed) "HELD" else "—",
+                        valueColor = if (vs.escOffButtonPressed) Orange else Dim,
+                        modifier = Modifier.weight(1f))
+                }
+
+                if (issueCount > 0) {
+                    Spacer(Modifier.height(6.dp))
+                    MonoLabel("⚠ $issueCount validation issue(s) — capture snapshot to review", 9.sp, Warn)
+                }
+
+                Spacer(Modifier.height(12.dp))
+                Box(
+                    Modifier.fillMaxWidth()
+                        .background(
+                            if (!exporting) Brush.horizontalGradient(listOf(accent.copy(0.1f), accent.copy(0.05f)))
+                            else Brush.horizontalGradient(listOf(Dim.copy(0.1f), Dim.copy(0.05f))),
+                            RoundedCornerShape(10.dp)
+                        )
+                        .border(CardBorder, if (!exporting) accent.copy(0.3f) else Dim.copy(0.3f), RoundedCornerShape(10.dp))
+                        .clickable(enabled = !exporting) {
+                            exporting = true
+                            scope.launch(Dispatchers.IO) {
+                                DiagnosticExporter.share(ctx)
+                                withContext(Dispatchers.Main) { exporting = false }
                             }
                         }
-                    }
-                    .padding(vertical = 13.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                MonoLabel(
-                    when {
-                        dtcScanning -> "SCANNING..."
-                        !vs.isConnected -> "CONNECT TO SCAN"
-                        else -> "⟳  SCAN ALL MODULES"
-                    },
-                    11.sp,
-                    if (!dtcBusy && vs.isConnected && onScanDtcs != null) accent else Dim,
-                    letterSpacing = 0.08.sp
-                )
-            }
-
-            // Dismiss button — clears results from the display
-            if (dtcResults != null) {
-                Box(
-                    Modifier.width(72.dp)
-                        .background(Color(0xFF1A0A0A), RoundedCornerShape(10.dp))
-                        .border(1.dp, Dim.copy(0.3f), RoundedCornerShape(10.dp))
-                        .clickable(enabled = !dtcBusy) { dtcResults = null; dtcError = null; dtcClearStatus = null }
                         .padding(vertical = 13.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    MonoLabel("DISMISS", 9.sp, Dim)
+                    MonoLabel(
+                        if (exporting) "BUILDING..." else "↑  CAPTURE & SHARE SNAPSHOT",
+                        12.sp, if (!exporting) accent else Dim, letterSpacing = 0.1.sp
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                MonoLabel("Exports ZIP (summary + raw log + JSON) via share sheet.", 9.sp, Dim,
+                    modifier = Modifier.padding(bottom = 12.dp))
+
+                // ── Reset Session ────────────────────────────────────────────────
+                if (vs.isConnected) {
+                    var confirmReset by remember { mutableStateOf(false) }
+                    Row(
+                        Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        MonoLabel("SESSION", 9.sp, Dim, letterSpacing = 0.2.sp)
+                        Spacer(Modifier.weight(1f))
+                        if (confirmReset) {
+                            MonoLabel("Reset all data?", 10.sp, Orange)
+                            Spacer(Modifier.width(8.dp))
+                            Box(
+                                Modifier
+                                    .background(Orange.copy(0.15f), RoundedCornerShape(6.dp))
+                                    .border(CardBorder, Orange.copy(0.4f), RoundedCornerShape(6.dp))
+                                    .clickable {
+                                        onResetSession()
+                                        confirmReset = false
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                MonoLabel("CONFIRM", 10.sp, Orange, FontWeight.Bold, 0.1.sp)
+                            }
+                            Box(
+                                Modifier
+                                    .background(Surf2, RoundedCornerShape(6.dp))
+                                    .border(CardBorder, Brd, RoundedCornerShape(6.dp))
+                                    .clickable { confirmReset = false }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                MonoLabel("CANCEL", 10.sp, Dim, FontWeight.Bold, 0.1.sp)
+                            }
+                        } else {
+                            Box(
+                                Modifier
+                                    .background(Surf2, RoundedCornerShape(6.dp))
+                                    .border(CardBorder, Brd, RoundedCornerShape(6.dp))
+                                    .clickable { confirmReset = true }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                MonoLabel("RESET SESSION", 10.sp, Frost, FontWeight.Bold, 0.1.sp)
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        // Clear Fault Codes button — shown when there are stored faults and adapter is connected
-        val hasFaults = dtcResults?.isNotEmpty() == true
-        if (hasFaults || dtcClearing) {
-            Spacer(Modifier.height(6.dp))
-            Box(
-                Modifier.fillMaxWidth()
-                    .background(
-                        if (!dtcBusy && vs.isConnected && onClearDtcs != null)
-                            Color(0xFF1A0606)
-                        else Color(0xFF120404),
-                        RoundedCornerShape(10.dp)
-                    )
-                    .border(
-                        1.dp,
-                        if (!dtcBusy && vs.isConnected && onClearDtcs != null) Orange.copy(0.45f) else Orange.copy(0.15f),
-                        RoundedCornerShape(10.dp)
-                    )
-                    .clickable(enabled = !dtcBusy && vs.isConnected && onClearDtcs != null) {
-                        showClearConfirm = true
+        Spacer(Modifier.height(Tokens.SectionGap))
+
+        // ── DTC Scanner (collapsible, expanded by default) ────────────────
+        SectionLabel("DTC SCANNER", collapsible = true, expanded = dtcExpanded,
+            onToggle = { dtcExpanded = !dtcExpanded })
+        AnimatedVisibility(
+            visible = dtcExpanded,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Column {
+                Spacer(Modifier.height(4.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // Scan button
+                    Box(
+                        Modifier.weight(1f)
+                            .background(
+                                if (!dtcBusy && vs.isConnected && onScanDtcs != null)
+                                    Brush.horizontalGradient(listOf(accent.copy(0.12f), accent.copy(0.06f)))
+                                else Brush.horizontalGradient(listOf(Dim.copy(0.1f), Dim.copy(0.05f))),
+                                RoundedCornerShape(10.dp)
+                            )
+                            .border(
+                                1.dp,
+                                if (!dtcBusy && vs.isConnected && onScanDtcs != null) accent.copy(0.35f) else Dim.copy(0.2f),
+                                RoundedCornerShape(10.dp)
+                            )
+                            .pressClick(enabled = !dtcBusy && vs.isConnected && onScanDtcs != null) {
+                                dtcScanning = true
+                                dtcError = null
+                                dtcClearStatus = null
+                                scope.launch(Dispatchers.IO) {
+                                    val result = try {
+                                        onScanDtcs?.invoke()
+                                    } catch (e: kotlinx.coroutines.CancellationException) {
+                                        throw e
+                                    } catch (_: Exception) { null }
+                                    withContext(Dispatchers.Main) {
+                                        dtcScanning = false
+                                        if (result != null) {
+                                            dtcResults = result
+                                        } else {
+                                            dtcError = "Scan failed — check adapter connection"
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(vertical = 13.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        MonoLabel(
+                            when {
+                                dtcScanning -> "SCANNING..."
+                                !vs.isConnected -> "CONNECT TO SCAN"
+                                else -> "⟳  SCAN ALL MODULES"
+                            },
+                            11.sp,
+                            if (!dtcBusy && vs.isConnected && onScanDtcs != null) accent else Dim,
+                            letterSpacing = 0.08.sp
+                        )
                     }
-                    .padding(vertical = 13.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                MonoLabel(
-                    if (dtcClearing) "CLEARING..." else "⚠  CLEAR FAULT CODES (0x14)",
-                    11.sp,
-                    if (!dtcBusy && vs.isConnected && onClearDtcs != null) Orange.copy(0.9f) else Orange.copy(0.35f),
-                    letterSpacing = 0.06.sp
-                )
+
+                    // Dismiss button — clears results from the display
+                    if (dtcResults != null) {
+                        Box(
+                            Modifier.width(72.dp)
+                                .background(Color(0xFF1A0A0A), RoundedCornerShape(10.dp))
+                                .border(CardBorder, Dim.copy(0.3f), RoundedCornerShape(10.dp))
+                                .clickable(enabled = !dtcBusy) { dtcResults = null; dtcError = null; dtcClearStatus = null }
+                                .padding(vertical = 13.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            MonoLabel("DISMISS", 9.sp, Dim)
+                        }
+                    }
+                }
+
+                // Clear Fault Codes button — shown when there are stored faults and adapter is connected
+                val hasFaults = dtcResults?.isNotEmpty() == true
+                if (hasFaults || dtcClearing) {
+                    Spacer(Modifier.height(6.dp))
+                    Box(
+                        Modifier.fillMaxWidth()
+                            .background(
+                                if (!dtcBusy && vs.isConnected && onClearDtcs != null)
+                                    Color(0xFF1A0606)
+                                else Color(0xFF120404),
+                                RoundedCornerShape(10.dp)
+                            )
+                            .border(
+                                1.dp,
+                                if (!dtcBusy && vs.isConnected && onClearDtcs != null) Orange.copy(0.45f) else Orange.copy(0.15f),
+                                RoundedCornerShape(10.dp)
+                            )
+                            .clickable(enabled = !dtcBusy && vs.isConnected && onClearDtcs != null) {
+                                showClearConfirm = true
+                            }
+                            .padding(vertical = 13.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        MonoLabel(
+                            if (dtcClearing) "CLEARING..." else "⚠  CLEAR FAULT CODES (0x14)",
+                            11.sp,
+                            if (!dtcBusy && vs.isConnected && onClearDtcs != null) Orange.copy(0.9f) else Orange.copy(0.35f),
+                            letterSpacing = 0.06.sp
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(4.dp))
+                if (dtcClearStatus == null) {
+                    MonoLabel(
+                        when {
+                            dtcScanning -> "Querying PCM, BCM, ABS, AWD, PSCM..."
+                            dtcClearing -> "Sending UDS 0x14 to all modules — do not disconnect..."
+                            else        -> "Reads active, pending, and permanent fault codes from all modules."
+                        },
+                        9.sp, Dim, modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                }
+
+                // Clear status confirmation
+                if (dtcClearStatus != null) {
+                    Box(
+                        Modifier.fillMaxWidth()
+                            .background(Color(0xFF060E06), RoundedCornerShape(8.dp))
+                            .border(CardBorder, Ok.copy(0.3f), RoundedCornerShape(8.dp))
+                            .padding(10.dp)
+                    ) {
+                        MonoLabel("✓  ${dtcClearStatus}", 10.sp, Ok)
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
+
+                // Error
+                if (dtcError != null) {
+                    MonoLabel("⚠ ${dtcError}", 10.sp, Warn, modifier = Modifier.padding(bottom = 6.dp))
+                }
+
+                // Results
+                val results = dtcResults
+                var lastResults by remember { mutableStateOf<List<DtcResult>?>(null) }
+                if (results != null) lastResults = results
+                AnimatedVisibility(visible = results != null) {
+                    lastResults?.let { r ->
+                        Column(Modifier.fillMaxWidth()) {
+                            if (r.isEmpty()) {
+                                Box(
+                                    Modifier.fillMaxWidth()
+                                        .background(Color(0xFF060E0A), RoundedCornerShape(10.dp))
+                                        .border(CardBorder, Ok.copy(0.25f), RoundedCornerShape(10.dp))
+                                        .padding(14.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    MonoLabel("✓  NO FAULT CODES — all modules clean", 11.sp, Ok)
+                                }
+                            } else {
+                                val grouped = r.groupBy { it.module }
+                                val moduleOrder = listOf("PCM", "BCM", "ABS", "AWD", "PSCM")
+                                Column(
+                                    Modifier.fillMaxWidth()
+                                        .background(Surf2, RoundedCornerShape(10.dp))
+                                        .border(CardBorder, Brd, RoundedCornerShape(10.dp))
+                                        .padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    for (moduleName in moduleOrder) {
+                                        val moduleDtcs = grouped[moduleName] ?: continue
+                                        MonoLabel(moduleName, 9.sp, accent, letterSpacing = 1.sp)
+                                        moduleDtcs.forEach { dtc ->
+                                            DtcRow(dtc)
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            MonoLabel(
+                                "${r.size} fault code(s) found across ${r.map { it.module }.distinct().size} module(s).",
+                                9.sp, Dim, modifier = Modifier.padding(bottom = 10.dp)
+                            )
+                        }
+                    }
+                }
             }
         }
 
-        // ── Clear DTC confirmation dialog ────────────────────────────────────
+        // ── Clear DTC confirmation dialog (outside collapsible so it always works) ──
         if (showClearConfirm) {
             AlertDialog(
                 onDismissRequest = { showClearConfirm = false },
@@ -232,196 +501,67 @@ import kotlin.math.roundToInt
             )
         }
 
-        Spacer(Modifier.height(4.dp))
-        if (dtcClearStatus == null) {
-            MonoLabel(
-                when {
-                    dtcScanning -> "Querying PCM, BCM, ABS, AWD, PSCM..."
-                    dtcClearing -> "Sending UDS 0x14 to all modules — do not disconnect..."
-                    else        -> "Reads active, pending, and permanent fault codes from all modules."
-                },
-                9.sp, Dim, modifier = Modifier.padding(bottom = 6.dp)
-            )
+        Spacer(Modifier.height(Tokens.SectionGap))
+
+        // ── Crash History (collapsed by default) ─────────────────────────────
+        SectionLabel("CRASH HISTORY", collapsible = true, expanded = crashExpanded,
+            onToggle = { crashExpanded = !crashExpanded })
+        AnimatedVisibility(
+            visible = crashExpanded,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Column { CrashHistorySection() }
         }
 
-        // Clear status confirmation
-        if (dtcClearStatus != null) {
-            Box(
-                Modifier.fillMaxWidth()
-                    .background(Color(0xFF060E06), RoundedCornerShape(8.dp))
-                    .border(1.dp, Ok.copy(0.3f), RoundedCornerShape(8.dp))
-                    .padding(10.dp)
-            ) {
-                MonoLabel("✓  ${dtcClearStatus}", 10.sp, Ok)
-            }
-            Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(Tokens.SectionGap))
+
+        // ── DID Prober (collapsed by default) ────────────────────────────────
+        SectionLabel("DID PROBER", collapsible = true, expanded = didProberExpanded,
+            onToggle = { didProberExpanded = !didProberExpanded })
+        AnimatedVisibility(
+            visible = didProberExpanded,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Column { DidProberSection(vs, onSendRawQuery) }
         }
 
-        // Error
-        if (dtcError != null) {
-            MonoLabel("⚠ ${dtcError}", 10.sp, Warn, modifier = Modifier.padding(bottom = 6.dp))
-        }
+        Spacer(Modifier.height(Tokens.SectionGap))
 
-        // Results
-        val results = dtcResults
-        // Fix B: hold the last non-null snapshot so the exit animation doesn't go blank
-        // when dtcResults is set to null by DISMISS before AnimatedVisibility finishes.
-        var lastResults by remember { mutableStateOf<List<DtcResult>?>(null) }
-        if (results != null) lastResults = results
-        AnimatedVisibility(visible = results != null) {
-            lastResults?.let { r ->
-                Column(Modifier.fillMaxWidth()) {
-                    if (r.isEmpty()) {
-                        Box(
-                            Modifier.fillMaxWidth()
-                                .background(Color(0xFF060E0A), RoundedCornerShape(10.dp))
-                                .border(1.dp, Ok.copy(0.25f), RoundedCornerShape(10.dp))
-                                .padding(14.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            MonoLabel("✓  NO FAULT CODES — all modules clean", 11.sp, Ok)
-                        }
+        // ── Live CAN Output (collapsed by default) ───────────────────────────
+        SectionLabel("LIVE CAN OUTPUT", collapsible = true, expanded = canOutputExpanded,
+            onToggle = { canOutputExpanded = !canOutputExpanded })
+        AnimatedVisibility(
+            visible = canOutputExpanded,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Column {
+                Spacer(Modifier.height(4.dp))
+                Column(
+                    Modifier.fillMaxWidth()
+                        .background(Color(0xFF060810), Tokens.CardShape)
+                        .border(Tokens.CardBorder, Brd, Tokens.CardShape)
+                        .padding(Tokens.InnerV)
+                ) {
+                    val displayLines = lines.takeLast(20)
+                    if (displayLines.isEmpty() && vs.isConnected) {
+                        MonoLabel("Connected — waiting for first CAN frame...", 10.sp, Warn)
+                    } else if (displayLines.isEmpty()) {
+                        MonoLabel("Connect to WiCAN to see raw output.", 10.sp, Dim)
                     } else {
-                        // Group by module
-                        val grouped = r.groupBy { it.module }
-                        val moduleOrder = listOf("PCM", "BCM", "ABS", "AWD", "PSCM")
-                        Column(
-                            Modifier.fillMaxWidth()
-                                .background(Surf2, RoundedCornerShape(10.dp))
-                                .border(1.dp, Brd, RoundedCornerShape(10.dp))
-                                .padding(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            for (moduleName in moduleOrder) {
-                                val moduleDtcs = grouped[moduleName] ?: continue
-                                MonoLabel(moduleName, 9.sp, accent, letterSpacing = 1.sp)
-                                moduleDtcs.forEach { dtc ->
-                                    DtcRow(dtc)
+                        displayLines.forEach { line ->
+                            val parts = line.trim().split(" ", limit = 2)
+                            Row(Modifier.padding(vertical = 1.dp)) {
+                                if (parts.size >= 2) {
+                                    MonoLabel(parts[0], 10.sp, Warn, letterSpacing = 0.05.sp)
+                                    Spacer(Modifier.width(12.dp))
+                                    MonoText(parts[1], 10.sp, Mid)
+                                } else {
+                                    MonoText(line, 10.sp, Mid)
                                 }
                             }
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    MonoLabel(
-                        "${r.size} fault code(s) found across ${r.map { it.module }.distinct().size} module(s).",
-                        9.sp, Dim, modifier = Modifier.padding(bottom = 10.dp)
-                    )
-                }
-            }
-        }
-
-        HorizontalDivider(color = Brd)
-        Spacer(Modifier.height(10.dp))
-
-        // ── Session stats + export ────────────────────────────────────────────
-        SectionLabel("DIAGNOSTICS")
-        Spacer(Modifier.height(4.dp))
-
-        val sessionMs  = remember(vs.framesPerSecond) { DiagnosticLogger.sessionDurationMs }
-        val frameCount = inv.values.sumOf { it.totalReceived }
-        val issueCount = inv.values.sumOf { it.validationIssues.size }
-
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            DataCell("FPS",    "${vs.framesPerSecond.roundToInt()}", modifier = Modifier.weight(1f))
-            DataCell("STATUS", if (vs.isConnected) "LIVE" else "OFF",
-                valueColor = if (vs.isConnected) Ok else Orange, modifier = Modifier.weight(1f))
-            DataCell("MODE",   vs.dataMode, modifier = Modifier.weight(1f))
-        }
-        Spacer(Modifier.height(6.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            DataCell("SESSION", DiagnosticLogger.formatDuration(sessionMs), modifier = Modifier.weight(1f))
-            DataCell("FRAMES",  "$frameCount",                              modifier = Modifier.weight(1f))
-            DataCell("IDs",     "${inv.size}",                              modifier = Modifier.weight(1f))
-        }
-        Spacer(Modifier.height(6.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            DataCell("ENGINE", engineStatusLabel(vs.engineStatus), modifier = Modifier.weight(1f))
-            DataCell("IGNITION", ignitionStatusLabel(vs.ignitionStatus), modifier = Modifier.weight(1f))
-            DataCell("E-BRAKE", if (vs.eBrake) "ON" else "OFF",
-                valueColor = if (vs.eBrake) Warn else Dim, modifier = Modifier.weight(1f))
-        }
-        Spacer(Modifier.height(6.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            DataCell("BATT V", "${"%.1f".format(vs.batteryVoltage)}V", modifier = Modifier.weight(1f))
-            DataCell("BATT SoC", if (vs.batterySoc >= 0) "${vs.batterySoc.roundToInt()}%" else "—",
-                valueColor = when {
-                    vs.batterySoc < 0   -> Dim
-                    vs.batterySoc < 50  -> Orange
-                    vs.batterySoc < 70  -> Warn
-                    else                -> Ok
-                }, modifier = Modifier.weight(1f))
-            DataCell("BATT TEMP",
-                if (vs.batteryTempC > -90) "${vs.batteryTempC.roundToInt()}°C" else "—",
-                modifier = Modifier.weight(1f))
-        }
-
-        if (issueCount > 0) {
-            Spacer(Modifier.height(6.dp))
-            MonoLabel("⚠ $issueCount validation issue(s) — capture snapshot to review", 9.sp, Warn)
-        }
-
-        Spacer(Modifier.height(12.dp))
-        Box(
-            Modifier.fillMaxWidth()
-                .background(
-                    if (!exporting) Brush.horizontalGradient(listOf(accent.copy(0.1f), accent.copy(0.05f)))
-                    else Brush.horizontalGradient(listOf(Dim.copy(0.1f), Dim.copy(0.05f))),
-                    RoundedCornerShape(10.dp)
-                )
-                .border(1.dp, if (!exporting) accent.copy(0.3f) else Dim.copy(0.3f), RoundedCornerShape(10.dp))
-                .clickable(enabled = !exporting) {
-                    exporting = true
-                    scope.launch(Dispatchers.IO) {
-                        DiagnosticExporter.share(ctx)
-                        withContext(Dispatchers.Main) { exporting = false }
-                    }
-                }
-                .padding(vertical = 13.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            MonoLabel(
-                if (exporting) "BUILDING..." else "↑  CAPTURE & SHARE SNAPSHOT",
-                12.sp, if (!exporting) accent else Dim, letterSpacing = 0.1.sp
-            )
-        }
-        Spacer(Modifier.height(4.dp))
-        MonoLabel("Exports ZIP (summary + raw log + JSON) via share sheet.", 9.sp, Dim,
-            modifier = Modifier.padding(bottom = 12.dp))
-
-        HorizontalDivider(color = Brd)
-        Spacer(Modifier.height(10.dp))
-        CrashHistorySection()
-        Spacer(Modifier.height(14.dp))
-        HorizontalDivider(color = Brd)
-        Spacer(Modifier.height(10.dp))
-        DidProberSection(vs, onSendRawQuery)
-        Spacer(Modifier.height(14.dp))
-        HorizontalDivider(color = Brd)
-        Spacer(Modifier.height(10.dp))
-        SectionLabel("LIVE CAN OUTPUT")
-        Spacer(Modifier.height(4.dp))
-
-        Column(
-            Modifier.fillMaxWidth()
-                .background(androidx.compose.ui.graphics.Color(0xFF060810), RoundedCornerShape(10.dp))
-                .border(1.dp, Brd, RoundedCornerShape(10.dp))
-                .padding(10.dp)
-        ) {
-            val displayLines = lines.takeLast(20)
-            if (displayLines.isEmpty() && vs.isConnected) {
-                MonoLabel("Connected — waiting for first CAN frame...", 10.sp, Warn)
-            } else if (displayLines.isEmpty()) {
-                MonoLabel("Connect to WiCAN to see raw output.", 10.sp, Dim)
-            } else {
-                displayLines.forEach { line ->
-                    val parts = line.trim().split(" ", limit = 2)
-                    Row(Modifier.padding(vertical = 1.dp)) {
-                        if (parts.size >= 2) {
-                            MonoLabel(parts[0], 10.sp, Warn, letterSpacing = 0.05.sp)
-                            Spacer(Modifier.width(12.dp))
-                            MonoText(parts[1], 10.sp, Mid)
-                        } else {
-                            MonoText(line, 10.sp, Mid)
                         }
                     }
                 }
@@ -429,35 +569,64 @@ import kotlin.math.roundToInt
         }
 
         if (inv.isNotEmpty()) {
-            Spacer(Modifier.height(14.dp))
-            SectionLabel("FRAME INVENTORY (${inv.size} IDs)")
-            Spacer(Modifier.height(4.dp))
-            Column(
-                Modifier.fillMaxWidth()
-                    .background(Surf2, RoundedCornerShape(10.dp))
-                    .border(1.dp, Brd, RoundedCornerShape(10.dp))
-                    .padding(10.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+            Spacer(Modifier.height(Tokens.SectionGap))
+
+            // ── Frame Inventory (collapsed by default) ───────────────────────
+            SectionLabel("FRAME INVENTORY (${inv.size} IDs)", collapsible = true,
+                expanded = frameInvExpanded, onToggle = { frameInvExpanded = !frameInvExpanded })
+            AnimatedVisibility(
+                visible = frameInvExpanded,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
             ) {
-                inv.entries.sortedBy { it.key }.forEach { (id, info) ->
-                    val decoded  = if (info.lastDecoded.isEmpty()) "(no decoder)" else info.lastDecoded
-                    val issColor = if (info.validationIssues.isNotEmpty()) Warn else Mid
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        MonoText("0x%03X".format(id), 9.sp, accent)
-                        MonoText("×${info.totalReceived}", 9.sp, Dim)
-                        MonoText(decoded.take(32), 9.sp, issColor, modifier = Modifier.weight(1f).padding(start = 8.dp))
-                    }
-                    info.validationIssues.forEach { issue ->
-                        MonoLabel("  ⚠ $issue", 8.sp, Warn)
+                Column {
+                    Spacer(Modifier.height(4.dp))
+                    val sortedEntries = inv.entries.sortedBy { it.key }
+                    val visibleEntries = if (showAllFrames) sortedEntries else sortedEntries.take(15)
+                    Column(
+                        Modifier.fillMaxWidth()
+                            .background(Surf2, Tokens.CardShape)
+                            .border(Tokens.CardBorder, Brd, Tokens.CardShape)
+                            .padding(Tokens.InnerV),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        visibleEntries.forEach { (id, info) ->
+                            val decoded  = if (info.lastDecoded.isEmpty()) "(no decoder)" else info.lastDecoded
+                            val issColor = if (info.validationIssues.isNotEmpty()) Warn else Mid
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                MonoText("0x%03X".format(id), 9.sp, accent)
+                                MonoText("×${info.totalReceived}", 9.sp, Dim)
+                                MonoText(decoded.take(32), 9.sp, issColor, modifier = Modifier.weight(1f).padding(start = 8.dp))
+                            }
+                            info.validationIssues.forEach { issue ->
+                                MonoLabel("  ⚠ $issue", 8.sp, Warn)
+                            }
+                        }
+                        if (!showAllFrames && sortedEntries.size > 15) {
+                            Spacer(Modifier.height(4.dp))
+                            MonoLabel(
+                                "Show all ${sortedEntries.size} IDs ▸",
+                                10.sp, accent,
+                                modifier = Modifier.clickable { showAllFrames = true }.padding(vertical = 4.dp)
+                            )
+                        }
                     }
                 }
             }
         }
 
-        Spacer(Modifier.height(14.dp))
-        HorizontalDivider(color = Brd)
-        Spacer(Modifier.height(10.dp))
-        PidBrowserSection()
+        Spacer(Modifier.height(Tokens.SectionGap))
+
+        // ── PID Browser (collapsed by default) ───────────────────────────────
+        SectionLabel("PID BROWSER", collapsible = true, expanded = pidBrowserExpanded,
+            onToggle = { pidBrowserExpanded = !pidBrowserExpanded })
+        AnimatedVisibility(
+            visible = pidBrowserExpanded,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Column { PidBrowserSection() }
+        }
     }
 }
 
@@ -517,14 +686,11 @@ private fun CrashHistorySection() {
 
     var crashFiles by remember { mutableStateOf(DiagnosticExporter.crashFiles(ctx)) }
 
-    SectionLabel("CRASH HISTORY")
-    Spacer(Modifier.height(4.dp))
-
     if (crashFiles.isEmpty()) {
         Box(
             Modifier.fillMaxWidth()
                 .background(Surf2, RoundedCornerShape(10.dp))
-                .border(1.dp, Brd, RoundedCornerShape(10.dp))
+                .border(CardBorder, Brd, RoundedCornerShape(10.dp))
                 .padding(14.dp),
             contentAlignment = Alignment.Center
         ) {
@@ -534,7 +700,7 @@ private fun CrashHistorySection() {
         Column(
             Modifier.fillMaxWidth()
                 .background(Surf2, RoundedCornerShape(10.dp))
-                .border(1.dp, Brd, RoundedCornerShape(10.dp))
+                .border(CardBorder, Brd, RoundedCornerShape(10.dp))
                 .padding(10.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
@@ -545,7 +711,7 @@ private fun CrashHistorySection() {
                 Row(
                     Modifier.fillMaxWidth()
                         .background(Surf, RoundedCornerShape(6.dp))
-                        .border(1.dp, Brd, RoundedCornerShape(6.dp))
+                        .border(CardBorder, Brd, RoundedCornerShape(6.dp))
                         .padding(8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
@@ -558,7 +724,7 @@ private fun CrashHistorySection() {
             Box(
                 Modifier.fillMaxWidth()
                     .background(Orange.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
-                    .border(1.dp, Orange.copy(0.3f), RoundedCornerShape(8.dp))
+                    .border(CardBorder, Orange.copy(0.3f), RoundedCornerShape(8.dp))
                     .clickable {
                         scope.launch(Dispatchers.IO) {
                             DiagnosticExporter.clearCrashHistory(ctx)

@@ -2,4 +2,6 @@
 <paths>
     <!-- Allows sharing diagnostic ZIPs from the app's internal files/diagnostics/ directory -->
     <files-path name="diagnostics" path="diagnostics/" />
+    <!-- Allows FileProvider to serve downloaded APK updates for installation -->
+    <cache-path name="updates" path="updates/" />
 </paths>

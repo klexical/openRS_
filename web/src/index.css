@@ -49,3 +49,54 @@
     background: #3D5A72;
   }
 }
+
+/* ── Print styles ── */
+@media print {
+  html, body {
+    background: white !important;
+    color: #111 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Hide nav rail, header chrome, and interactive elements */
+  nav,
+  header,
+  button,
+  select,
+  input,
+  .no-print {
+    display: none !important;
+  }
+
+  /* Let main content fill the page */
+  main {
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  /* Cards and panels — white bg, visible borders */
+  [class*="bg-surf"],
+  [class*="bg-bg"] {
+    background: white !important;
+    border-color: #ccc !important;
+  }
+
+  /* Text readability */
+  [class*="text-frost"],
+  [class*="text-dim"],
+  [class*="text-mid"] {
+    color: #111 !important;
+  }
+
+  /* Charts: preserve colors but ensure visibility */
+  .recharts-wrapper {
+    page-break-inside: avoid;
+  }
+
+  /* Maps: fixed height for print */
+  .leaflet-container {
+    height: 300px !important;
+    page-break-inside: avoid;
+  }
+}

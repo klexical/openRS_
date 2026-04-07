@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import com.openrs.dash.ui.Tokens.CardBorder
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -31,6 +32,25 @@ import com.openrs.dash.BuildConfig
  * Key = versionName (e.g. "2.2.5"), Value = list of user-facing highlights.
  */
 private val versionHighlights: Map<String, List<String>> = mapOf(
+    "2.2.6" to listOf(
+        "Fuel trim drift tracker — short/long-term fuel trims (STFT/LTFT) on POWER tab FUEL section",
+        "AWD clutch hydraulics — left/right actuator current and hydraulic pressure on CHASSIS tab",
+        "Battery current monitoring — live charging/discharging amps on DIAG tab",
+        "Live button input feedback — drive mode, suspension, ASS, and ESC defeat buttons on DIAG tab",
+        "Critical fix — several Mode 22 PIDs were silently dropped before reaching the UI; now resolved",
+        "Bottom nav bar — frosted glass with vector icons, spring-animated indicator, edge-to-edge",
+        "Compact status bar — MODE/ESC pills, connection dot, settings gear in a single row",
+        "MAP tab with Google Maps — live color-coded routes (6 modes), drive history, peak markers",
+        "BLE transport — connect over Bluetooth Low Energy, freeing WiFi for internet",
+        "Brightness control — Night/Day/Sun presets + slider for any lighting condition",
+        "G-Force Plot redesign — rectangular grid, auto-scaling axes, 120-dot trail, peak labels",
+        "Quick Mode Dock — tap MODE pill to change drive modes from any tab",
+        "In-app updates — check and install new versions directly from the app",
+        "0-60 / 0-100 performance timer — arm from MORE tab, times via CAN speed at ~100 Hz",
+        "Real-time fuel economy — instant/average MPG or L/100km plus distance to empty",
+        "Configurable TPMS thresholds — low/warn/high pressure with 4-zone color coding",
+        "Passive VIN decode — 17-char VIN assembled from CAN 0x40A, shown on MORE tab"
+    ),
     "2.2.5" to listOf(
         "FORScan PID catalog — 1,149 PIDs across 8 ECU modules, browsable on DIAG tab",
         "DID Prober — interactive Mode 22 scanner for any ECU + DID range",
@@ -53,7 +73,9 @@ private val versionHighlights: Map<String, List<String>> = mapOf(
 fun WhatsNewDialog(onDismiss: () -> Unit) {
     val accent = LocalThemeAccent.current
     val version = BuildConfig.VERSION_NAME
-    val highlights = versionHighlights[version] ?: return onDismiss()
+    val highlights = versionHighlights[version]
+        ?: versionHighlights.values.lastOrNull()
+        ?: return onDismiss()
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -63,7 +85,7 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
             Modifier
                 .fillMaxWidth(0.92f)
                 .background(Bg, RoundedCornerShape(12.dp))
-                .border(1.dp, Brd, RoundedCornerShape(12.dp))
+                .border(CardBorder, Brd, RoundedCornerShape(12.dp))
         ) {
             // Title bar
             Row(
@@ -92,7 +114,7 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
                     Row(
                         Modifier.fillMaxWidth()
                             .background(Surf2, RoundedCornerShape(8.dp))
-                            .border(1.dp, Brd, RoundedCornerShape(8.dp))
+                            .border(CardBorder, Brd, RoundedCornerShape(8.dp))
                             .padding(12.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalAlignment = Alignment.Top

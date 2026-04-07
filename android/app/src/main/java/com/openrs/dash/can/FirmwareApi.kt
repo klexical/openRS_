@@ -6,6 +6,7 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.InetSocketAddress
@@ -13,6 +14,77 @@ import java.net.Socket
 
 /** Firmware rejected the command because a mode change is already in progress. */
 class BusyException : RuntimeException("Drive mode change already in progress")
+
+/**
+ * Transport-agnostic interface for sending firmware commands.
+ *
+ * Two implementations:
+ * - [FirmwareApi] (WiFi): REST POST to `/api/frs` over WiFi
+ * - [BleFirmwareApi] (BLE): `AT+FRS=key,value\r` via SLCAN transport
+ *
+ * Both route to the same firmware handler functions — different entry points,
+ * identical behaviour.
+ */
+interface FirmwareCommandSender {
+    suspend fun setDriveMode(mode: Int): Result<Unit>
+    suspend fun setEscMode(mode: Int): Result<Unit>
+}
+
+/**
+ * BLE firmware command sender — sends `AT+FRS` commands via the SLCAN transport.
+ *
+ * Commands are written to the same transport (BLE GATT, TCP, or WebSocket) that
+ * carries SLCAN frames. Responses (`+FRS:OK`, `+FRS:BUSY`, `+FRS:ERROR,msg`) are
+ * routed to [SlcanConnection.commandResponseChannel] by the frame dispatch loop.
+ */
+class BleFirmwareApi(private val connection: SlcanConnection) : FirmwareCommandSender {
+
+    override suspend fun setDriveMode(mode: Int): Result<Unit> =
+        sendCommand("driveMode", mode.toString())
+
+    override suspend fun setEscMode(mode: Int): Result<Unit> =
+        sendCommand("escMode", mode.toString())
+
+    private suspend fun sendCommand(key: String, value: String): Result<Unit> {
+        val transport = connection.transport
+            ?: return Result.failure(RuntimeException("Not connected"))
+
+        // Drain any stale responses
+        while (connection.commandResponseChannel.tryReceive().isSuccess) { }
+
+        transport.writeLine("AT+FRS=$key,$value\r")
+
+        // Wait up to 5 seconds for response
+        val response = withTimeoutOrNull(5_000L) {
+            connection.commandResponseChannel.receive()
+        } ?: return Result.failure(RuntimeException("AT+FRS timeout"))
+
+        return when {
+            response.contains("OK") -> Result.success(Unit)
+            response.contains("BUSY") -> Result.failure(BusyException())
+            response.contains("ERROR") -> {
+                val msg = response.substringAfter("ERROR,").trimEnd('\r')
+                Result.failure(RuntimeException(msg))
+            }
+            else -> Result.failure(RuntimeException("Unexpected: $response"))
+        }
+    }
+}
+
+/**
+ * WiFi firmware command sender — REST POST to `/api/frs`.
+ * Wraps the existing [FirmwareApi] static methods.
+ */
+class WiFiFirmwareApi(
+    private val ctx: Context,
+    private val host: String
+) : FirmwareCommandSender {
+    override suspend fun setDriveMode(mode: Int): Result<Unit> =
+        FirmwareApi.setDriveMode(ctx, host, mode)
+
+    override suspend fun setEscMode(mode: Int): Result<Unit> =
+        FirmwareApi.setEscMode(ctx, host, mode)
+}
 
 /**
  * Thin HTTP client for the openrs-fw REST API (`POST /api/frs`).

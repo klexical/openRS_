@@ -35,6 +35,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import com.openrs.dash.ui.Tokens.CardBorder
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.data.ForscanCatalog
@@ -83,7 +84,7 @@ fun PidBrowserSection() {
         Modifier
             .fillMaxWidth()
             .background(Surf2, RoundedCornerShape(10.dp))
-            .border(1.dp, Brd, RoundedCornerShape(10.dp))
+            .border(CardBorder, Brd, RoundedCornerShape(10.dp))
             .padding(6.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
@@ -119,7 +120,7 @@ private fun CoverageBanner(catalog: ForscanCatalogData, accent: androidx.compose
         Modifier
             .fillMaxWidth()
             .background(accent.copy(alpha = 0.06f), RoundedCornerShape(10.dp))
-            .border(1.dp, accent.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
+            .border(CardBorder, accent.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
             .padding(12.dp)
     ) {
         Row(
@@ -167,7 +168,7 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
                 Modifier
                     .fillMaxWidth()
                     .background(Surf2, RoundedCornerShape(8.dp))
-                    .border(1.dp, Brd, RoundedCornerShape(8.dp))
+                    .border(CardBorder, Brd, RoundedCornerShape(8.dp))
                     .padding(horizontal = 10.dp, vertical = 9.dp)
             ) {
                 if (query.isEmpty()) {

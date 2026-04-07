@@ -3,9 +3,9 @@ package com.openrs.dash.can
 /**
  * Connection state shared by all CAN adapter implementations.
  *
- * [WiCanConnection] and [MeatPiConnection] both expose a
- * `StateFlow<AdapterState>` so the service and UI layer can
- * observe connection lifecycle without knowing the adapter type.
+ * [SlcanConnection] exposes a `StateFlow<AdapterState>` so the service
+ * and UI layer can observe connection lifecycle without knowing the
+ * transport type.
  */
 sealed class AdapterState {
     data object Disconnected : AdapterState()

@@ -4,7 +4,7 @@ Custom firmware for MeatPi WiCAN adapters, purpose-built for the Ford Focus RS M
 
 Forked from [`meatpiHQ/wican-fw`](https://github.com/meatpiHQ/wican-fw) — the proven WiFi/CAN/OTA stack is retained and a Focus RS module (`focusrs`) is layered on top.
 
-**Current versions:** USB v1.5, PRO v1.0 — release binaries in `firmware/release/`.
+**Current versions:** USB v1.61-rc.1, PRO v1.2-rc.1 — release binaries in `firmware/release/`.
 
 **Supported devices:** WiCAN USB-C3 (verified), WiCAN Pro (verified).
 
@@ -63,6 +63,7 @@ The **MeatPi WiCAN Pro** is a higher-end adapter with onboard GPS, MicroSD loggi
 | DTC scan and clear (app) | ✅ Working |
 | openrs-fw build (`build.sh --target pro`) | ✅ Working |
 | openrs-fw `OPENRS?` probe (slcan.c) | ✅ Working |
+| openrs-fw `AT+FRS` command channel (slcan.c) | ✅ Implemented — pending flash test |
 | CAN write (drive mode) | ✅ Working |
 | CAN write (ESC) | ⚠️ Under investigation ([#125](https://github.com/klexical/openRS_/issues/125)) |
 | CAN write (LC, ASS) | ✅ Working |
@@ -109,7 +110,7 @@ The script will:
 1. Install ESP-IDF v5.2.3 to `firmware/.build/esp-idf` if not already present (~5–15 min, one-time)
 2. Clone `meatpiHQ/wican-fw` at the target's pinned tag into `firmware/.build/<target>/wican-fw/`
 3. Copy the shared `focusrs` component into the wican-fw components directory
-4. Apply target-specific source patches (SSID branding, CAN RX hook, REST endpoint, OPENRS? probe)
+4. Apply target-specific source patches (SSID branding, CAN RX hook, REST endpoint, OPENRS? probe, AT+FRS command channel)
 5. Build for the target SoC
 6. Copy all flash-ready `.bin` files to `firmware/release/`
 
@@ -213,7 +214,43 @@ Returns current vehicle PID values (same format as Nutron RSdash).
 | ELM327 RX | `FFE1` | Write | Send AT commands / OBD requests |
 | ELM327 TX | `FFE2` | Notify | Receive ELM327 responses |
 
-The BLE interface is protocol-compatible with the WiFi TCP interface. The openRS_ Android app uses the same ELM327 parser for both transports.
+The BLE interface is protocol-compatible with the WiFi TCP interface. The openRS_ Android app uses the same SLCAN parser for both transports.
+
+### AT+FRS Command Channel (BLE + TCP + WebSocket)
+
+The `AT+FRS` command protocol provides a second entry point for firmware commands (drive mode, ESC, LC, ASS, sleep voltage) alongside the REST `/api/frs` endpoint. Commands are intercepted in `slcan_parse_str()` before the SLCAN parser, so they work over **any** transport — BLE GATT, TCP, or WebSocket.
+
+**Set command:** `AT+FRS=key,value\r`
+
+| Key | Value | Equivalent REST | Handler |
+|-----|-------|-----------------|---------|
+| `driveMode` | `0`-`3` (Normal/Sport/Drift/Track) | `POST /api/frs {"driveMode":N}` | `frs_set_drive_mode()` |
+| `escMode` | `0`-`2` (On/Sport/Off) | `POST /api/frs {"escMode":N}` | `frs_set_esc()` |
+| `enableLC` | `true`/`false`/`1`/`0` | `POST /api/frs {"enableLC":bool}` | `frs_set_lc()` |
+| `killASS` | `true`/`false`/`1`/`0` | `POST /api/frs {"killASS":bool}` | `frs_set_ass_kill()` |
+| `sleepVoltage` | `10000`-`15000` (millivolts) | `POST /api/frs {"sleepVoltage":N}` | `frs_set_sleep_threshold()` |
+
+**Query command:** `AT+FRS?\r`
+
+**Responses (firmware → app):**
+
+| Response | Meaning |
+|----------|---------|
+| `+FRS:OK\r` | Command accepted |
+| `+FRS:BUSY\r` | Drive mode change already in progress |
+| `+FRS:ERROR,message\r` | Invalid syntax, value, or unknown key |
+| `+FRS:driveMode=N,escMode=N,lcEnabled=bool,assKill=bool,battMv=N,sleepMv=N\r` | State query response |
+
+**Examples:**
+```
+→  AT+FRS=driveMode,1\r          ←  +FRS:OK\r
+→  AT+FRS=escMode,2\r            ←  +FRS:OK\r
+→  AT+FRS=driveMode,1\r          ←  +FRS:BUSY\r         (change in progress)
+→  AT+FRS?\r                     ←  +FRS:driveMode=1,escMode=0,lcEnabled=false,assKill=false,battMv=12600,sleepMv=12200\r
+→  AT+FRS=driveMode,9\r          ←  +FRS:ERROR,invalid mode\r
+```
+
+> **Note:** No authentication token is required for AT+FRS commands (unlike the REST endpoint which requires `{"token":"openrs"}`). BLE pairing provides the access control layer.
 
 ---
 

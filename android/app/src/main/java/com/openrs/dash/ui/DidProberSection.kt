@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -30,10 +29,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import com.openrs.dash.ui.Tokens.CardBorder
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.diagnostics.DiagnosticLogger
@@ -57,7 +55,6 @@ fun DidProberSection(
     val ctx = LocalContext.current
     val accent = LocalThemeAccent.current
     val scope = rememberCoroutineScope()
-    val clipboardManager = LocalClipboardManager.current
 
     var catalogData by remember { mutableStateOf(ForscanCatalog.catalog) }
     LaunchedEffect(Unit) {
@@ -91,7 +88,7 @@ fun DidProberSection(
         Modifier
             .fillMaxWidth()
             .background(Surf2, RoundedCornerShape(10.dp))
-            .border(1.dp, Brd, RoundedCornerShape(10.dp))
+            .border(CardBorder, Brd, RoundedCornerShape(10.dp))
             .padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -214,7 +211,7 @@ fun DidProberSection(
                     Modifier
                         .width(72.dp)
                         .background(Orange.copy(0.08f), RoundedCornerShape(8.dp))
-                        .border(1.dp, Orange.copy(0.3f), RoundedCornerShape(8.dp))
+                        .border(CardBorder, Orange.copy(0.3f), RoundedCornerShape(8.dp))
                         .clickable {
                             cancelled = true
                             probing = false
@@ -293,35 +290,6 @@ fun DidProberSection(
                 }
             }
 
-            if (!probing) {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .background(accent.copy(0.12f), RoundedCornerShape(8.dp))
-                        .border(1.dp, accent.copy(0.35f), RoundedCornerShape(8.dp))
-                        .clickable {
-                            val tsv = buildString {
-                                appendLine("DID\tSTATUS\tRESPONSE")
-                                results.sortedWith(
-                                    compareByDescending<ProbeEntry> { it.status == "FOUND" }
-                                        .thenBy { it.did }
-                                ).forEach { entry ->
-                                    val didHex = "0x%04X".format(entry.did)
-                                    val resp = entry.responseHex.ifEmpty { "\u2014" }
-                                    appendLine("$didHex\t${entry.status}\t$resp")
-                                }
-                            }
-                            clipboardManager.setText(AnnotatedString(tsv))
-                            Toast
-                                .makeText(ctx, "Copied ${results.size} results to clipboard", Toast.LENGTH_SHORT)
-                                .show()
-                        }
-                        .padding(vertical = 10.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    MonoLabel("EXPORT", 10.sp, accent, letterSpacing = 0.08.sp)
-                }
-            }
         }
     }
 

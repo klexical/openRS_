@@ -9,6 +9,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,15 +38,20 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.openrs.dash.ui.Tokens.CardBorder
+import com.openrs.dash.ui.Tokens.PagePad
+import com.openrs.dash.ui.Tokens.CardGap
 import com.openrs.dash.data.VehicleState
+import com.openrs.dash.ui.anim.StaggeredColumn
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TEMPS PAGE
 // ═══════════════════════════════════════════════════════════════════════════
 @Composable fun TempsPage(vs: VehicleState, p: UserPrefs) {
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .padding(start = PagePad, end = PagePad, top = PagePad, bottom = PagePad + Tokens.NavBarHeight),
+        verticalArrangement = Arrangement.spacedBy(CardGap)
     ) {
         RtrBanner(vs, p)
         TempPresetBadge(p)
@@ -62,10 +69,14 @@ import com.openrs.dash.data.VehicleState
                 vs.coolantTempC.takeIf { it > -90 } ?: 0.0,
                 p.coolWarnC, p.coolCritC, if (vs.coolantTempC <= -90) "WARMING" else "",
                 peakStr(vs.peakCoolantTempC)),
-            TempSpec("INTAKE AIR",    p.displayTemp(vs.intakeTempC),  p.tempLabel, vs.intakeTempC,
-                p.intakeWarnC, p.intakeCritC, ""),
-            TempSpec("AMBIENT",       p.displayTemp(vs.ambientTempC), p.tempLabel, vs.ambientTempC,
-                40.0, 50.0, ""),
+            TempSpec("INTAKE AIR",
+                if (vs.intakeTempC > -90) p.displayTemp(vs.intakeTempC) else "— —", p.tempLabel,
+                vs.intakeTempC.takeIf { it > -90 } ?: 0.0,
+                p.intakeWarnC, p.intakeCritC, if (vs.intakeTempC <= -90) "POLLING" else ""),
+            TempSpec("AMBIENT",
+                if (vs.ambientTempC > -90) p.displayTemp(vs.ambientTempC) else "— —", p.tempLabel,
+                vs.ambientTempC.takeIf { it > -90 } ?: 0.0,
+                40.0, 50.0, if (vs.ambientTempC <= -90) "POLLING" else ""),
             TempSpec("RDU (REAR)",
                 if (vs.rduTempC > -90) p.displayTemp(vs.rduTempC) else "— —", p.tempLabel,
                 vs.rduTempC.takeIf { it > -90 } ?: 0.0,
@@ -103,10 +114,11 @@ import com.openrs.dash.data.VehicleState
                 vs.transOilTempC.takeIf { it > -90 } ?: 0.0, 100.0, 130.0, "AWD"),
         )
         val columns = if (isWideLayout()) 3 else 2
-        tempItems.chunked(columns).forEach { group ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                group.forEach { spec -> TempCard(spec, Modifier.weight(1f)) }
-                repeat(columns - group.size) { Spacer(Modifier.weight(1f)) }
+        val rows = tempItems.chunked(columns)
+        StaggeredColumn(itemCount = rows.size, modifier = Modifier.fillMaxWidth()) { index, entranceModifier ->
+            Row(entranceModifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                rows[index].forEach { spec -> TempCard(spec, Modifier.weight(1f)) }
+                repeat(columns - rows[index].size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }
@@ -141,7 +153,7 @@ data class TempSpec(
     Row(
         Modifier.fillMaxWidth()
             .background(bannerBrush, RoundedCornerShape(12.dp))
-            .border(1.dp, bannerBorder, RoundedCornerShape(12.dp))
+            .border(CardBorder, bannerBorder, RoundedCornerShape(12.dp))
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -155,7 +167,7 @@ data class TempSpec(
                 if (isReady) "RACE READY" else "WARMING UP — NOT RACE READY",
                 13.sp, Frost, FontWeight.SemiBold, 0.5.sp
             )
-            if (!isReady && warmupDetail != null) {
+            if (!isReady) {
                 MonoLabel(warmupDetail, 9.sp, Warn, modifier = Modifier.padding(top = 2.dp))
             }
         }
@@ -168,7 +180,7 @@ data class TempSpec(
     Row(
         Modifier.fillMaxWidth()
             .background(Surf2, RoundedCornerShape(10.dp))
-            .border(1.dp, Brd, RoundedCornerShape(10.dp))
+            .border(CardBorder, Brd, RoundedCornerShape(10.dp))
             .padding(12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -185,7 +197,7 @@ data class TempSpec(
                 Box(
                     Modifier
                         .background(if (isActive) color.copy(alpha = 0.15f) else Surf3, RoundedCornerShape(6.dp))
-                        .border(1.dp, if (isActive) color.copy(alpha = 0.5f) else Brd, RoundedCornerShape(6.dp))
+                        .border(CardBorder, if (isActive) color.copy(alpha = 0.5f) else Brd, RoundedCornerShape(6.dp))
                         .clickable { haptic.performHapticFeedback(HapticFeedbackType.Confirm); UserPrefsStore.update(ctx) { it.copy(tempPreset = id) } }
                         .padding(horizontal = 10.dp, vertical = 5.dp)
                 ) {
@@ -206,11 +218,26 @@ data class TempSpec(
         else                    -> Orange
     }
     val isPlaceholder = spec.value == "— —"
+    val isWarn = !isPlaceholder && spec.tempC >= spec.warnC
+    val borderGlow = when {
+        isPlaceholder           -> Brd.copy(alpha = 0.3f)
+        spec.tempC >= spec.critC -> Orange.copy(alpha = 0.4f)
+        spec.tempC >= spec.warnC -> Warn.copy(alpha = 0.3f)
+        else                    -> Ok.copy(alpha = 0.1f)
+    }
+
+    // Peak fraction for tick mark
+    val peakBarPct = if (spec.peakDisplay.isNotEmpty() && spec.critC > 0) {
+        // Extract peak temp from peakDisplay string (format "▲ 123°F")
+        val peakStr = spec.peakDisplay.removePrefix("▲ ").replace(Regex("[^0-9.-]"), "")
+        val peakVal = peakStr.toDoubleOrNull() ?: 0.0
+        (peakVal / spec.critC).toFloat().coerceIn(0f, 1f)
+    } else 0f
 
     Box(
         modifier
             .background(Surf2, RoundedCornerShape(14.dp))
-            .border(1.dp, Brd, RoundedCornerShape(14.dp))
+            .border(CardBorder, if (!isPlaceholder) borderGlow else Brd.copy(alpha = 0.15f), RoundedCornerShape(14.dp))
     ) {
         Column(Modifier.padding(12.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -225,7 +252,21 @@ data class TempSpec(
                 )
                 MonoText("— —", 24.sp, Dim.copy(alpha = phAlpha))
             } else {
-                HeroNum(spec.value, 24.sp, tempColor)
+                // Value with bloom glow when above warn threshold
+                Box(
+                    Modifier.fillMaxWidth()
+                        .then(if (isWarn) Modifier.drawBehind {
+                            drawCircle(
+                                brush = Brush.radialGradient(
+                                    listOf(tempColor.copy(alpha = 0.15f), Color.Transparent),
+                                    center = center,
+                                    radius = size.minDimension * 0.9f
+                                )
+                            )
+                        } else Modifier)
+                ) {
+                    HeroNum(spec.value, 24.sp, tempColor)
+                }
             }
             if (spec.peakDisplay.isNotEmpty()) {
                 val accent = LocalThemeAccent.current
@@ -237,7 +278,20 @@ data class TempSpec(
             Spacer(Modifier.height(8.dp))
             Box(Modifier.fillMaxWidth().height(3.dp).background(Surf3, RoundedCornerShape(2.dp))) {
                 if (!isPlaceholder && barPct > 0) {
-                    Box(Modifier.fillMaxWidth(barPct).height(3.dp).background(barColor, RoundedCornerShape(2.dp)))
+                    Box(Modifier.fillMaxWidth(barPct).height(3.dp)
+                        .background(barColor, RoundedCornerShape(2.dp))
+                    )
+                }
+                // Peak tick mark
+                if (peakBarPct > 0.05f) {
+                    val accent = LocalThemeAccent.current
+                    Box(
+                        Modifier.fillMaxWidth(peakBarPct)
+                            .height(3.dp),
+                        contentAlignment = Alignment.CenterEnd
+                    ) {
+                        Box(Modifier.width(1.5.dp).height(5.dp).background(accent.copy(alpha = 0.6f)))
+                    }
                 }
             }
         }

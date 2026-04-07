@@ -54,6 +54,8 @@ import com.openrs.dash.ui.anim.GForcePlot
 import com.openrs.dash.ui.anim.RingBuffer
 import com.openrs.dash.ui.anim.WHEEL_ANCHORS
 import com.openrs.dash.ui.anim.tireStatusColor
+import com.openrs.dash.ui.Tokens.CardBorder
+import com.openrs.dash.ui.Tokens.PagePad
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -62,11 +64,12 @@ import kotlin.math.roundToInt
 // ═══════════════════════════════════════════════════════════════════════════
 @Composable fun ChassisPage(vs: VehicleState, p: UserPrefs, onReset: () -> Unit) {
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .padding(start = PagePad, end = PagePad, top = PagePad, bottom = PagePad + Tokens.NavBarHeight),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        GForceSection(vs, onReset)
         UnifiedChassisSection(vs, p)
+        GForceSection(vs, onReset)
     }
 }
 
@@ -106,7 +109,7 @@ import kotlin.math.roundToInt
     Column(
         Modifier.fillMaxWidth()
             .background(Surf, RoundedCornerShape(16.dp))
-            .border(1.dp, Brd, RoundedCornerShape(16.dp))
+            .border(CardBorder, Brd, RoundedCornerShape(16.dp))
             .padding(14.dp)
     ) {
         SectionLabel("CHASSIS — TIRES & AWD")
@@ -218,7 +221,7 @@ import kotlin.math.roundToInt
             Column(
                 Modifier.fillMaxWidth()
                     .background(Orange.copy(alpha = 0.1f), RoundedCornerShape(10.dp))
-                    .border(1.dp, Orange.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                    .border(CardBorder, Orange.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
                     .padding(12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -240,7 +243,7 @@ import kotlin.math.roundToInt
             Box(
                 Modifier.fillMaxWidth()
                     .background(Warn.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
-                    .border(1.dp, Warn.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+                    .border(CardBorder, Warn.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
                     .padding(12.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -268,6 +271,20 @@ import kotlin.math.roundToInt
                 }
             } else "Awaiting data"
             MonoLabel(updatedText, 8.sp, Dim.copy(alpha = 0.7f))
+        }
+
+        // ── Wheel Rotation Counts (CAN 0x1E0) ──
+        val hasRotation = vs.wheelRotFL > 0 || vs.wheelRotFR > 0 || vs.wheelRotRL > 0 || vs.wheelRotRR > 0
+        if (hasRotation) {
+            Spacer(Modifier.height(10.dp))
+            MonoLabel("WHEEL ROTATION", 8.sp, Dim.copy(alpha = 0.7f), letterSpacing = 0.1.sp)
+            Spacer(Modifier.height(4.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                DataCell("FL", "${vs.wheelRotFL}", modifier = Modifier.weight(1f))
+                DataCell("FR", "${vs.wheelRotFR}", modifier = Modifier.weight(1f))
+                DataCell("RL", "${vs.wheelRotRL}", modifier = Modifier.weight(1f))
+                DataCell("RR", "${vs.wheelRotRR}", modifier = Modifier.weight(1f))
+            }
         }
 
         // ── AWD Drivetrain Section (always visible) ──
@@ -306,7 +323,7 @@ private fun NeonTireCard(
     Column(
         Modifier.fillMaxWidth()
             .background(bgColor, RoundedCornerShape(12.dp))
-            .border(1.dp, borderColor, RoundedCornerShape(12.dp))
+            .border(CardBorder, borderColor, RoundedCornerShape(12.dp))
             .padding(horizontal = 10.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -413,8 +430,8 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
     }
     val tempStyle = remember(density) {
         TextStyle(
-            fontFamily = ShareTechMono, fontSize = with(density) { 8.sp },
-            color = Dim, fontWeight = FontWeight.Normal, textAlign = TextAlign.Center
+            fontFamily = ShareTechMono, fontSize = with(density) { 10.sp },
+            color = Frost.copy(alpha = 0.8f), fontWeight = FontWeight.Normal, textAlign = TextAlign.Center
         )
     }
 
@@ -422,7 +439,7 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
 
     // ── Rear axle diagram ──
     Canvas(
-        Modifier.fillMaxWidth().height(130.dp)
+        Modifier.fillMaxWidth().height(140.dp)
     ) {
         val w = size.width
         val h = size.height
@@ -432,12 +449,12 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
 
         // ── Component positions ──
         val wheelR = 14.dp.toPx()
-        val rduW = 48.dp.toPx()
-        val rduH = 28.dp.toPx()
+        val rduW = 54.dp.toPx()
+        val rduH = 34.dp.toPx()
         val cltW = 16.dp.toPx()
         val cltH = 22.dp.toPx()
-        val ptuW = 36.dp.toPx()
-        val ptuH = 18.dp.toPx()
+        val ptuW = 42.dp.toPx()
+        val ptuH = 22.dp.toPx()
 
         val leftWheelX = wheelR + 6.dp.toPx()
         val rightWheelX = w - wheelR - 6.dp.toPx()
@@ -625,6 +642,15 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
     // ── Data cells below the diagram ──
     Spacer(Modifier.height(8.dp))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        DataCell("PTU TEMP", if (vs.ptuTempC > -90) "${p.displayTemp(vs.ptuTempC)}${p.tempLabel}" else "— —",
+            modifier = Modifier.weight(1f))
+        DataCell("F / R SPLIT", splitLabel,
+            modifier = Modifier.weight(1f))
+        DataCell("RDU TEMP", if (vs.rduTempC > -90) "${p.displayTemp(vs.rduTempC)}${p.tempLabel}" else "— —",
+            modifier = Modifier.weight(1f))
+    }
+    Spacer(Modifier.height(4.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         DataCell("REAR BIAS", vs.rearLeftRightBias, modifier = Modifier.weight(1f))
         val spdLabel = if (p.speedUnit == "MPH") "mph" else "km/h"
         val lrDisp = if (p.speedUnit == "MPH") lrDelta * UnitConversions.KM_TO_MI else lrDelta
@@ -648,6 +674,21 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
             DataCell("PEAK", "${vs.awdMaxTorque.roundToInt()} Nm", modifier = Modifier.weight(1f))
         }
     }
+    // Per-clutch hydraulic actuators (0x1E9E/9F current, 0x1ED1/D2 pressure)
+    val hasClutchCur  = vs.awdClutchCurL > -900 || vs.awdClutchCurR > -900
+    val hasClutchPres = vs.awdClutchPressureL >= 0 || vs.awdClutchPressureR >= 0
+    if (hasClutchCur || hasClutchPres) {
+        Spacer(Modifier.height(4.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            DataCell("CLT-L A", if (vs.awdClutchCurL > -900) "${"%.1f".format(vs.awdClutchCurL)} A" else "—", modifier = Modifier.weight(1f))
+            DataCell("CLT-R A", if (vs.awdClutchCurR > -900) "${"%.1f".format(vs.awdClutchCurR)} A" else "—", modifier = Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(4.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            DataCell("CLT-L P", if (vs.awdClutchPressureL >= 0) "${"%.1f".format(vs.awdClutchPressureL / 1000.0)} bar" else "—", modifier = Modifier.weight(1f))
+            DataCell("CLT-R P", if (vs.awdClutchPressureR >= 0) "${"%.1f".format(vs.awdClutchPressureR / 1000.0)} bar" else "—", modifier = Modifier.weight(1f))
+        }
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -659,7 +700,7 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
     val animLonG by animateFloatAsState(vs.longitudinalG.toFloat(), spring(stiffness = Spring.StiffnessHigh), label = "lonG")
 
     // G-force trail (sampled at ~10 Hz)
-    val gTrail = remember { RingBuffer<Pair<Float, Float>>(30) }
+    val gTrail = remember { RingBuffer<Pair<Float, Float>>(120) }
     val lastTrailTime = remember { mutableLongStateOf(0L) }
     val now = vs.lastUpdate
     if (now - lastTrailTime.longValue >= 100L) {
@@ -670,7 +711,7 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
     Column(
         Modifier.fillMaxWidth()
             .background(Surf, RoundedCornerShape(16.dp))
-            .border(1.dp, Brd, RoundedCornerShape(16.dp))
+            .border(CardBorder, Brd, RoundedCornerShape(16.dp))
             .padding(14.dp)
     ) {
         SectionLabel("G-FORCE & DYNAMICS")
@@ -684,6 +725,8 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
             lateralG = animLatG,
             longitudinalG = animLonG,
             trail = gTrail.toList(),
+            peakLatG = vs.peakLateralG.toFloat(),
+            peakLonG = vs.peakLongitudinalG.toFloat(),
             modifier = gPlotModifier,
             dotColor = accent
         )
@@ -706,7 +749,7 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
         Box(
             Modifier.fillMaxWidth()
                 .background(Surf2, RoundedCornerShape(8.dp))
-                .border(1.dp, Brd, RoundedCornerShape(8.dp))
+                .border(CardBorder, Brd, RoundedCornerShape(8.dp))
                 .clickable { onReset() }
                 .padding(vertical = 8.dp),
             contentAlignment = Alignment.Center

@@ -61,6 +61,10 @@ __pycache__/
 # ═══ Temporary diagnostic log extractions ══════════
 tmp_diag*/
 
+# ═══ Private research reference (never commit) ════════
+docs/focus-rs-reference.md
+stargate/
+
 # ═══ Local Claude Code orientation (never commit) ══════
 CLAUDE.md
 android/CLAUDE.md

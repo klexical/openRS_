@@ -44,6 +44,15 @@ object ObdResponseParser {
             0x4028 -> onObdUpdate(currentState.copy(batterySoc = b4.toDouble()))
             0x4029 -> onObdUpdate(currentState.copy(batteryTempC = (b4 - 40).toDouble()))
             0xDD04 -> onObdUpdate(currentState.copy(cabinTempC = (b4 * 10.0 / 9.0) - 45.0))
+            0x411D -> onObdUpdate(currentState.copy(batteryChargingVoltageDesired = b4 * 0.1))
+            // Battery current: ((A*256+B)/16) - 511.7 amps; signed (+ charging, − discharging)
+            0x4090 -> {
+                if (data.size < 6) return
+                val b5 = data[5].toInt() and 0xFF
+                onObdUpdate(currentState.copy(
+                    batteryCurrentA = ((b4 * 256 + b5) / 16.0) - 511.7
+                ))
+            }
             // TPMS: PSI = (((256*A)+B) / 3.0 + 22.0/3.0) * 0.145
             0x2813, 0x2814, 0x2816, 0x2815 -> {
                 if (data.size < 6) return
@@ -151,6 +160,7 @@ object ObdResponseParser {
         if ((data[1].toInt() and 0xFF) != 0x62) return
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
+        val b4s = data[4].toInt()
         val b5  = if (data.size > 5) data[5].toInt() and 0xFF else 0
         when (did) {
             0x1E8A -> onObdUpdate(currentState.copy(rduTempC = (b4 - 40).toDouble()))
@@ -161,6 +171,19 @@ object ObdResponseParser {
             0x1E92 -> onObdUpdate(currentState.copy(awdDmdPressure = ((b4 shl 8) or b5).toDouble()))
             0x1E93 -> onObdUpdate(currentState.copy(awdPumpCurrent = b4 * 0.1))
             0x1E80 -> onObdUpdate(currentState.copy(transOilTempC = (b4 - 40).toDouble()))
+            // Per-clutch hydraulic actuator currents/pressures (focusrs.org RDU thread)
+            0x1E9E -> onObdUpdate(currentState.copy(
+                awdClutchCurL = ((b4s.toByte().toInt() shl 8) or b5) / 128.0
+            ))
+            0x1E9F -> onObdUpdate(currentState.copy(
+                awdClutchCurR = ((b4s.toByte().toInt() shl 8) or b5) / 128.0
+            ))
+            0x1ED1 -> onObdUpdate(currentState.copy(
+                awdClutchPressureL = (((b4s.toByte().toInt() shl 8) or b5) * 2).toDouble()
+            ))
+            0x1ED2 -> onObdUpdate(currentState.copy(
+                awdClutchPressureR = (((b4s.toByte().toInt() shl 8) or b5) * 2).toDouble()
+            ))
             0xEE0B -> onObdUpdate(currentState.copy(rduEnabled = b4 == 0x01))
             else -> {
                 val decoded = PidRegistry.decode(ObdConstants.AWD_RESPONSE_ID, did, b4)
@@ -238,11 +261,18 @@ object ObdResponseParser {
                 hpFuelRailPsi = ((b4 shl 8) or b5) * 1.45038
             ))
             0xF42F -> onObdUpdate(currentState.copy(
-                fuelLevelPct = (b4 * 100.0 / 255.0).coerceIn(0.0, 100.0)
+                genericValues = currentState.genericValues +
+                    ("FuelLevel_OBD" to (b4 * 100.0 / 255.0).coerceIn(0.0, 100.0))
             ))
             0x0304 -> onObdUpdate(currentState.copy(
                 batteryVoltage = ((b4 shl 8) or b5) / 2048.0
             ))
+            // Spark advance: B4 × 0.25 deg
+            // TODO: verify single-byte vs two-byte on real car
+            0x116B -> onObdUpdate(currentState.copy(sparkAdvance = b4 * 0.25))
+            // Fuel trims via Ford fast-path 22F4xx: A * 100/128 - 100 (%)
+            0xF406 -> onObdUpdate(currentState.copy(shortFuelTrim = b4 * 100.0 / 128.0 - 100.0))
+            0xF407 -> onObdUpdate(currentState.copy(longFuelTrim  = b4 * 100.0 / 128.0 - 100.0))
             else -> {
                 val decoded = PidRegistry.decode(ObdConstants.PCM_RESPONSE_ID, did, b4, b5)
                 if (decoded != null) {

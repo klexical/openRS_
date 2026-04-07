@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.2.5-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-2.2.6-blue" alt="Version">
   <img src="https://img.shields.io/badge/platform-Android-brightgreen?logo=android" alt="Platform">
   <img src="https://img.shields.io/badge/Kotlin-2.0-purple?logo=kotlin" alt="Kotlin">
   <img src="https://img.shields.io/badge/Jetpack_Compose-Material3-4285F4?logo=jetpackcompose" alt="Compose">
@@ -64,12 +64,12 @@ Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It understan
 
 | Screen | Description |
 |--------|-------------|
-| **DASH** | Hero boost/RPM/speed gauges (with session peak values), throttle/brake/fuel/battery, Temps Quick (oil, coolant, intake, oil life), G-forces (lat, lon, torque), animated AWD split bar, IPC warning lamp banner (CEL, ABS, BRK, CHRG, OIL, TEMP) |
+| **DASH** | Hero boost/RPM/speed gauges (with session peak values), 0-60 / 0-100 performance timer, real-time fuel economy (idle L/hr, instant/average MPG or L/100km, DTE), throttle/brake/clutch/fuel/battery, Temps Quick (oil, coolant, intake, oil life), G-forces (lat, lon, torque), animated AWD split bar, IPC warning lamp banner (CEL, ABS, BRK, CHRG, OIL, TEMP) |
 | **POWER** | AFR hero cards (actual/desired/lambda), commanded AFR (CMD AFR), ETC actual/desired, WGDC, TIP, HP fuel rail PSI, low-pressure fuel rail (LP FUEL), timing, engine load, OAR, per-cylinder knock correction (KR C1–C4, colour-coded), VCT intake/exhaust, fuel trims |
-| **CHASSIS** | AWD detail (4 wheel speeds, torque bar, F/R delta, L/R delta, rear bias, clutch temps L/R, trans oil temp), G-force + yaw + steering with peak reset, TPMS Focus RS wireframe (pressure + temp, colour-coded), pressure spread warning (⚠ PRESSURE IMBALANCE when spread ≥ 4 PSI), temperature range legend |
+| **CHASSIS** | AWD detail (4 wheel speeds, wheel rotation counts, torque bar, F/R delta, L/R delta, rear bias, clutch temps L/R, trans oil temp), G-force + yaw + steering with peak reset, TPMS Focus RS wireframe (pressure + temp, 3-tier colour-coded Low/Warn/High thresholds), pressure spread warning (⚠ PRESSURE IMBALANCE when spread ≥ 4 PSI), temperature range legend |
 | **TEMPS** | Animated Ready-to-Race banner, 14 temperature cards each with a colour indicator bar (oil, coolant, intake, ambient, RDU, PTU, charge air, manifold charge, catalytic, cabin, battery, clutch L, clutch R, trans oil) |
 | **DIAG** | DTC Scanner (full-module scan, count badges, freeze-frame, clear), DID Prober (scan any ECU for valid Mode 22 DIDs), PID Browser (1,149 FORScan PIDs across 8 modules, searchable), frame inventory with per-ID change tracking, SLCAN raw log, one-tap ZIP export (SavvyCAN/Kayak compatible) |
-| **MORE** | Drive mode (N/S/T/D, tap-to-change with openRS_ firmware), ESC status, firmware version display, firmware-gated features (Launch Control, Auto S/S Kill), Module Status (RDU/PDC/FENG live OBD), connection & snapshot, Trip GPS recording |
+| **MORE** | Drive mode (N/S/T/D, tap-to-change with openRS_ firmware), ESC status, firmware version display, firmware-gated features (Launch Control, Auto S/S Kill), Module Status (RDU/PDC/FENG live OBD), passive VIN decode (CAN 0x40A), connection & snapshot, Trip GPS recording |
 
 ### Ready-to-Race Thresholds
 
@@ -101,6 +101,13 @@ The banner shows which sensors are still below threshold with live °C values. A
 | Adapter | WiCAN / MeatPi Pro | WiCAN |
 | MicroSD logging reminder | on / off | off (MeatPi Pro only) |
 | Max saved ZIP exports | count | 5 |
+| Odometer display | Miles / km | Miles |
+| Edge shift light | on / off | off |
+| Shift light colour | Accent / White / Progressive | Accent |
+| Shift light intensity | Low / Medium / High | High |
+| Shift light RPM | RPM threshold | 6800 |
+| Tire warn threshold | PSI | 32 PSI |
+| Tire high threshold | PSI | 40 PSI |
 
 <details>
 <summary><strong>Live CAN Parameters — WebSocket SLCAN (passive at full bus speed)</strong></summary>
@@ -117,8 +124,10 @@ All data is received passively from the CAN bus via WebSocket SLCAN at ~2100 fps
 | 0x0C8 | Gauge brightness, e-brake, **ignition status** | RS_HS.dbc |
 | 0x0F8 | Engine oil temp, boost pressure (gauge + baro), PTU temp | RS_HS.dbc PCMmsg07 |
 | 0x130 | Vehicle speed kph | RS_HS.dbc |
+| 0x138 | Clutch pedal position (%) — 10-bit Motorola × 0.1% | RS_HS.dbc PCMmsg10 |
 | 0x160 | Longitudinal G-force | RS_HS.dbc |
 | 0x180 | Lateral G-force, **yaw rate**, **vertical G** | RS_HS.dbc ABSmsg02 |
+| 0x1E0 | Wheel rotation counts (4 × 8-bit rolling FL/FR/RL/RR) + average front wheel speed | RS_HS.dbc ABSmsg06 |
 | 0x190 | 4-corner wheel speeds (15-bit Motorola × 0.011343 km/h) | RS_HS.dbc ABSmsg03 |
 | 0x1A4 | Ambient temperature (MS-CAN bridged) | community research |
 | 0x1B0 | Drive mode (Normal/Sport+Track/Drift) — byte 6 upper nibble, steady-state frames only (byte 4 == 0). Combined with 0x420 to resolve Sport vs Track. | RS_HS.dbc AWDmsg01 |
@@ -130,6 +139,7 @@ All data is received passively from the CAN bus via WebSocket SLCAN at ~2100 fps
 | 0x340 | Ambient temperature only (byte 7 signed × 0.25 °C) — **not** TPMS | RS_HS.dbc PCMmsg17 |
 | 0x360 | Odometer, **engine status** — odo: bytes [3:5] BE, 24-bit, 1 km/bit (~5 Hz); engine: byte 0 (0=Idle, 2=Off, 183=Running, 186=Kill, 191=RecentStart, 196=Warmup) | RS_HS.dbc + community [#102](https://github.com/klexical/openRS_/discussions/102) |
 | 0x380 | Fuel level % (FuelLevelFiltered — Motorola 10-bit, factor 0.4 %) | RS_HS.dbc PCMmsg30 |
+| 0x40A | Multiplexed VIN decode (3 pages × 6 bytes → 17-char VIN) + odometer | community (@adamsouthern) |
 
 > **Note:** `0x230` (gear position) and `0x3C0` (battery voltage) do not broadcast on this vehicle. Battery voltage is polled via OBD. Gear display has been removed.
 
@@ -193,7 +203,7 @@ All data is received passively from the CAN bus via WebSocket SLCAN at ~2100 fps
 git clone https://github.com/klexical/openRS_.git
 cd openRS_/android
 ./gradlew assembleRelease
-# Output: app/build/outputs/apk/release/openRS_v2.2.5.apk
+# Output: app/build/outputs/apk/release/openRS_v2.2.6.apk
 # (Requires keystore — see android/docs/signing-setup.md)
 ```
 
@@ -237,21 +247,24 @@ Drop an export ZIP from the app into the web dashboard to explore your session d
 │  UserPrefsStore (StateFlow) — units, thresholds, reconnect settings  │
 ├──────────────────────────────────────────────────────────────────────┤
 │                  VehicleState (StateFlow)                            │
-│    Immutable data class · 90+ fields · genericValues map · RTR       │
+│    Immutable data class · 95+ fields · genericValues map · RTR       │
 ├──────────────────────────────────────────────────────────────────────┤
 │                  CanDataService (Background)                         │
 │   Decodes CAN → VehicleState → notifies UI                           │
-│   Hooks DiagnosticLogger (frame inventory, trace, FPS, SLCAN log)    │
+│   Hooks DiagnosticLogger, TripRecorder, WeatherRepository            │
 ├──────────────────────┬───────────────────────────────────────────────┤
 │  CanDecoder          │  DiagnosticLogger / Exporter / DtcScanner     │
-│  22 CAN frame IDs    │  Per-ID first/last/Δ tracking                 │
+│  25 CAN frame IDs    │  Per-ID first/last/Δ tracking                 │
 │  RS_HS.dbc-verified  │  Periodic samples (30 s), SLCAN candump log   │
 │  Motorola extraction │  Validation engine, ZIP export via FileProvider│
+├──────────────────────┼───────────────────────────────────────────────┤
+│  CrashReporter       │  FirmwareApi (REST POST /api/frs)             │
+│  100-snapshot ring   │  Drive mode, ESC, WiFi-forced socket          │
 ├──────────────────────┴───────────────────────────────────────────────┤
 │  PidRegistry — data-driven decode from FORScan catalog (JSON)        │
 │  1,149 PIDs · 8 modules · formula evaluator · genericValues output   │
 ├──────────────────────────────────────────────────────────────────────┤
-│  ObdConstants / ObdResponseParser / SlcanParser  (shared layer)      │
+│  ObdConstants / ObdResponseParser / SlcanParser / IsoTpBuffer        │
 ├──────────────────────────────────────────────────────────────────────┤
 │  WiCanConnection (WebSocket)  │  MeatPiConnection (TCP)              │
 │  ws://192.168.80.1:80/ws      │  tcp://192.168.0.10:35000            │
@@ -318,7 +331,9 @@ android/
 │   │   ├── OpenRSDashApp.kt              # Application singleton + isOpenRsFirmware flag
 │   │   ├── can/
 │   │   │   ├── AdapterState.kt           # Shared connection state sealed class
-│   │   │   ├── CanDecoder.kt             # 22 CAN frame decoders (RS_HS.dbc-verified)
+│   │   │   ├── CanDecoder.kt             # 25 CAN frame decoders (RS_HS.dbc-verified)
+│   │   │   ├── FirmwareApi.kt            # REST POST to openRS_ firmware /api/frs
+│   │   │   ├── IsoTpBuffer.kt            # ISO-TP SF/FF/CF reassembly
 │   │   │   ├── MeatPiConnection.kt       # MeatPi Pro raw TCP SLCAN + OBD polling
 │   │   │   ├── ObdConstants.kt           # Shared OBD query strings + CAN IDs + timing
 │   │   │   ├── ObdResponseParser.kt      # Shared OBD Mode 22 response parsers
@@ -331,14 +346,18 @@ android/
 │   │   │   ├── ForscanCatalog.kt         # Data classes for JSON catalog deserialization
 │   │   │   ├── TripPoint.kt              # GPS waypoint with telemetry
 │   │   │   ├── TripState.kt              # Trip accumulator
-│   │   │   └── VehicleState.kt           # Immutable state (90+ fields, genericValues, peaks, RTR)
+│   │   │   └── VehicleState.kt           # Immutable state (95+ fields, genericValues, peaks, RTR)
 │   │   ├── diagnostics/
+│   │   │   ├── CrashReporter.kt          # UncaughtExceptionHandler + telemetry persistence
+│   │   │   ├── CrashTelemetryBuffer.kt   # 100-snapshot VehicleState ring buffer
 │   │   │   ├── DiagnosticExporter.kt     # ZIP builder + FileProvider share + CSV
 │   │   │   ├── DiagnosticLogger.kt       # Session-scoped collector + SLCAN log
 │   │   │   ├── DtcDatabase.kt            # Bundled 873-code Ford DTC lookup
 │   │   │   └── DtcScanner.kt             # DTC scan/clear orchestrator
 │   │   ├── service/
-│   │   │   └── CanDataService.kt         # Background service + DiagnosticLogger hooks
+│   │   │   ├── CanDataService.kt         # Background service + DiagnosticLogger hooks
+│   │   │   ├── TripRecorder.kt           # FusedLocationProviderClient @ 1 Hz GPS
+│   │   │   └── WeatherRepository.kt      # OpenWeatherMap API integration
 │   │   └── ui/
 │   │       ├── MainActivity.kt           # Compose entry (6 tabs + header)
 │   │       ├── DashPage.kt               # DASH tab
@@ -353,7 +372,10 @@ android/
 │   │       ├── Components.kt             # Shared composables
 │   │       ├── AppSettings.kt            # SharedPreferences wrapper
 │   │       ├── UserPrefs.kt              # Observable preferences (StateFlow)
-│   │       └── SettingsSheet.kt          # Settings dialog
+│   │       ├── SettingsSheet.kt          # Settings dialog
+│   │       ├── WhatsNewDialog.kt         # Version changelog dialog
+│   │       └── anim/
+│   │           └── EdgeShiftLight.kt     # Peripheral shift light overlay
 │   └── res/
 │       ├── font/                          # Embedded fonts
 │       │   ├── orbitron_regular.ttf      # Hero gauge values
@@ -391,10 +413,17 @@ android/
 | Token | Hex | Usage |
 |-------|-----|-------|
 | **Nitrous Blue** | `#0091EA` | Accent colour — gauges, highlights, active states, "RS" in logo |
-| **Frost White** | `#F5F6F4` | Primary text — labels, readouts, "open" and "_" in logo |
-| **Deep Black** | `#0A0A0A` | Background |
-| **Surface** | `#141414` | Cards, tab bar |
-| **Surface 2** | `#1C1C1C` | Inset cards, hero RPM gauge |
+| **Frost White** | `#E8F4FF` | Primary text — labels, readouts, "open" and "_" in logo |
+| **Bg** | `#05070A` | Background |
+| **Surface** | `#0A0D12` | Cards, tab bar |
+| **Surface 2** | `#0F141C` | Inset cards, hero RPM gauge |
+| **Surface 3** | `#141B26` | Elevated surfaces |
+| **Dim** | `#547A96` | Muted text (WCAG AA ≥ 4.5:1) |
+| **Mid** | `#7A9AB8` | Medium emphasis text |
+| **Border** | `#162030` | Card/section borders |
+| **Ok** | `#00FF88` | Neon green — good/ready |
+| **Warn** | `#FFCC00` | Gold — attention/warm |
+| **Orange** | `#FF4D00` | Orange-red — hot/aggressive |
 
 **Fonts** (offline-embedded):
 - **Orbitron** — hero gauge values (RPM, speed, boost)
@@ -447,6 +476,7 @@ Complete decode formulas, byte-level breakdowns, and all Mode 22 PIDs: [`android
 - [x] Phase 7.5 — Sensor data + polish: GPS permission fix, Module Status/LC/ASS live OBD, full diagnostic export (~24 new fields), SLCAN OBD frame capture, code review fixes (v2.2.3)
 - [x] Phase 8.0 — Car test fixes + signal expansion: ESC decode fix, throttle fallback, battery voltage OBD, crash telemetry ring buffer, passive odometer (CAN 0x360), tap-to-change drive mode/ESC, RS MK3 theme colour correction, MeatPi default fix, free CAN signal extraction (vertical G, launch control, engine status, ignition status, ESC Launch mode), full repo audit hardening (v2.2.4)
 - [x] Phase 8.1 — FORScan PID catalog (1,149 PIDs, 8 modules), data-driven decode (PidRegistry + formula evaluator), DID prober, PID browser, AWD expansion (clutch temps L/R, trans oil temp, req torques, demanded pressure, pump current), per-cylinder knock correction (KR C1–C4), HVAC/IPC scaffolding, warning lamp banner (v2.2.5)
+- [x] Phase 8.2 — Drive mode reliability (pre-flight logging, auto-correction on overshoot), 0-60/0-100 performance timer, real-time fuel economy (idle/instant/average/DTE), clutch pedal (CAN 0x138), passive VIN decode (CAN 0x40A), wheel rotation counts (CAN 0x1E0), 3-tier TPMS thresholds, TPMS + temps in trip CSV exports, peripheral edge shift light, crash telemetry ring buffer (v2.2.6)
 
 </details>
 
@@ -457,7 +487,6 @@ Complete decode formulas, byte-level breakdowns, and all Mode 22 PIDs: [`android
 Pull requests welcome. See [CONTRIBUTING.md](android/CONTRIBUTING.md) for guidelines.
 
 If you have a Focus RS and FORScan/OBDLink, we'd love help verifying:
-- 12V battery voltage — CAN ID 0x3C0 does not broadcast; needs alternative source (BCM PID or other CAN ID)
 - Brake pressure bar calibration (raw ADC 0–4095 from `0x252`, need known-pressure reference)
 - HVAC / IPC ECU address and DID confirmation (use built-in DID prober)
 - MS-CAN parameters (requires second adapter)

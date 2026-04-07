@@ -4,9 +4,10 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
-import com.openrs.dash.data.TripState
+import com.openrs.dash.data.DriveDatabase
+import com.openrs.dash.data.DriveState
 import com.openrs.dash.data.VehicleState
-import com.openrs.dash.service.TripRecorder
+import com.openrs.dash.service.DriveRecorder
 import com.openrs.dash.service.WeatherRepository
 import com.openrs.dash.BuildConfig
 import com.openrs.dash.diagnostics.CrashReporter
@@ -54,17 +55,21 @@ class OpenRSDashApp : Application() {
     /** Human-readable firmware version label (e.g. "openRS_ v1.5-rc.5"). */
     val firmwareVersionLabel = MutableStateFlow("")
 
-    /** Trip recorder — lazy so it initialises only when the trip overlay is first opened. */
-    val tripRecorder: TripRecorder by lazy {
-        TripRecorder(
+    /** Drive database — shared across DriveRecorder, CanDataService, and UI. */
+    val driveDb: DriveDatabase by lazy { DriveDatabase.getInstance(this) }
+
+    /** Drive recorder — owned by CanDataService, but accessible globally for UI. */
+    val driveRecorder: DriveRecorder by lazy {
+        DriveRecorder(
             context          = this,
             vehicleStateFlow = vehicleState.asStateFlow(),
-            weatherRepo      = WeatherRepository(BuildConfig.OPENWEATHER_API_KEY)
+            weatherRepo      = WeatherRepository(BuildConfig.OPENWEATHER_API_KEY),
+            db               = driveDb
         )
     }
 
-    /** Convenience accessor for the trip state flow. */
-    val tripState: StateFlow<TripState> get() = tripRecorder.tripState
+    /** Live drive state flow — observed by MAP tab. */
+    val driveState: StateFlow<DriveState> get() = driveRecorder.driveState
 
     override fun onCreate() {
         super.onCreate()

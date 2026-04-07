@@ -3,7 +3,255 @@
 All notable changes to the openRS_ Android app are documented here.
 Firmware changes are tracked separately in [firmware releases](https://github.com/klexical/openRS_/releases).
 
-> **Note on tab names:** The app's tab structure has evolved over time. v1.0–v1.1 used DASH/PERF/TEMPS/TUNE/TPMS/CTRL/DIAG. v1.2.0 redesigned to DASH/POWER/CHASSIS/TEMPS/DIAG + System Drawer. v2.0.0 replaced the drawer with a MORE tab, giving the current 6-tab layout: DASH/POWER/CHASSIS/TEMPS/DIAG/MORE. Historical entries below use the tab names that were current at the time of each release.
+> **Note on tab names:** The app's tab structure has evolved over time. v1.0–v1.1 used DASH/PERF/TEMPS/TUNE/TPMS/CTRL/DIAG. v1.2.0 redesigned to DASH/POWER/CHASSIS/TEMPS/DIAG + System Drawer. v2.0.0 replaced the drawer with a MORE tab (6-tab layout). v2.2.6-rc.5 added a MAP tab for drive tracking (7-tab layout: DASH/POWER/CHASSIS/TEMPS/MAP/DIAG/MORE). Historical entries below use the tab names that were current at the time of each release.
+
+---
+
+## [v2.2.6] — 2026-04-06
+
+### Added (rc.1 — drive mode reliability)
+- **Pre-flight diagnostic logging for drive mode commands** — logs current mode, modeDetail420 hex value, and firmware version before every drive mode command for traceability. (`MorePage.kt`)
+- **Auto-correction on drive mode overshoot** — if CAN confirms a mode change but to the wrong mode (e.g. Track instead of Sport), the app automatically sends a corrective command and monitors for confirmation, with snackbar feedback throughout. (`MorePage.kt`)
+- **`has420Received` accessor on CanDecoder** — exposes whether at least one 0x420 frame has been received, for diagnostic logging. (`CanDecoder.kt`)
+
+### Added (rc.2 — CAN decoders, performance, economy)
+- **Clutch pedal position from CAN 0x138** — decodes 10-bit clutch pedal percentage from PCMmsg10. Displayed on DASH tab below the throttle/brake bars (only visible when pedal is pressed). (`CanDecoder.kt`, `DashPage.kt`) ([#109](https://github.com/klexical/openRS_/issues/109))
+- **Wheel rotation counts from CAN 0x1E0** — decodes 4 per-wheel rotation counters and average front wheel speed from ABSmsg06. Displayed in a WHEEL ROTATION row within the TPMS section on CHASSIS tab. (`CanDecoder.kt`, `ChassisPage.kt`) ([#110](https://github.com/klexical/openRS_/issues/110))
+- **Passive VIN decode from CAN 0x40A** — assembles 17-character VIN from 3 multiplexed pages (mux bytes C1 00/01/02). Displayed on MORE tab in a VEHICLE IDENTIFICATION section. (`CanDecoder.kt`, `MorePage.kt`) ([#126](https://github.com/klexical/openRS_/issues/126))
+- **0-60 / 0-100 performance timer** — singleton `PerformanceTimer` with IDLE/ARMED/RUNNING/FINISHED states, driven by CAN speed data at ~100 Hz. Tracks launch RPM, peak boost, elapsed time, and session best. Displayed on DASH tab with tap-to-toggle target and arm/reset controls. (`PerformanceTimer.kt`, `DashPage.kt`) ([#117](https://github.com/klexical/openRS_/issues/117))
+- **Real-time fuel economy** — singleton `FuelEconomy` using a 60-second rolling window of fuel level + speed-integrated distance. Computes instant/average L/100km or MPG, idle fuel rate, and distance to empty. Displayed on DASH tab (appears after 10s of driving). (`FuelEconomy.kt`, `DashPage.kt`) ([#118](https://github.com/klexical/openRS_/issues/118))
+- **Configurable TPMS thresholds** — low/warn/high pressure thresholds replace the single hardcoded 40 PSI cutoff. 4-zone color logic: orange (critically low), yellow (getting low), green (optimal), orange (over-inflated). Settings sheet has 3 input fields with validation. (`AppSettings.kt`, `UserPrefs.kt`, `Components.kt`, `CarDiagram.kt`, `SettingsSheet.kt`) ([#168](https://github.com/klexical/openRS_/issues/168))
+- **Reset session button on DIAG tab** — 2-step confirmation (RESET SESSION then CONFIRM/CANCEL) below the Capture Snapshot button. Resets CanDecoder state, VehicleState, FuelEconomy, and PerformanceTimer. Only visible when connected. (`DiagPage.kt`, `CanDataService.kt`) ([#169](https://github.com/klexical/openRS_/issues/169))
+- **12 new CAN decoder unit tests** — clutch pedal (3), wheel rotation (2), VIN assembly (4 including multi-page, non-C1 mux skip, short data, reset clears state), plus existing test updates. (`CanDecoderTest.kt`)
+
+### Fixed (rc.2)
+- **Trip buttons hidden on small devices** — HUD content on TripPage restructured from weight-based spacer push to scrollable content + fixed footer pattern. Button always visible regardless of screen size. PR #166 by @adamsouthern. (`TripPage.kt`) ([#165](https://github.com/klexical/openRS_/issues/165))
+- **Battery voltage truncated to 1 decimal place** — changed format from `"%.1f"` to `"%.2f"` on both landscape and portrait BarCard layouts. (`DashPage.kt`) ([#172](https://github.com/klexical/openRS_/issues/172))
+- **Custom Dashboard header behind system status bar** — added WindowInsets-based top padding calculation so the header row clears the status bar on all devices. (`CustomDashPage.kt`) ([#171](https://github.com/klexical/openRS_/issues/171))
+- **ForegroundServiceStartNotAllowedException crash** — NetworkCallback.onAvailable wrapped startConnection() in try-catch for the Android 12+ restriction on starting foreground services from background context. (`CanDataService.kt`) ([#173](https://github.com/klexical/openRS_/issues/173))
+- **Throttle label showed "PEDAL" before data arrived** — conditional label removed, now always displays "THROTTLE". (`DashPage.kt`)
+
+### Changed (rc.2)
+- **Session history collapsible** — session history section on MORE tab uses SectionLabel with collapsible toggle and AnimatedVisibility, collapsed by default. ([#170](https://github.com/klexical/openRS_/issues/170))
+- **Mission Control HTML removed** — `MissionControlHtmlBuilder.kt`, `mission_control.html`, and uPlot assets (`uplot.min.css`, `uplot.min.js`) deleted. Sapphire web dashboard is the replacement. HTML generation blocks removed from `DiagnosticExporter`. ([#167](https://github.com/klexical/openRS_/issues/167))
+- **Firmware updated** — openrs-fw-pro v1.2, openrs-fw-usb v1.61.
+
+### Fixed (rc.2)
+- **What's New dialog blank on v2.2.6** — `versionHighlights` map had no `"2.2.6"` entry, so the dialog immediately dismissed. Added v2.2.6 highlights and a fallback that shows the latest entry when no exact version match exists. (`WhatsNewDialog.kt`)
+
+### Added (rc.3 — field-test fixes)
+- **TPMS pressure + temperature in trip CSV exports** — `TripPoint` now captures all 8 TPMS fields (4 pressures + 4 temps) at each GPS fix. Exported as `tire_press_{lf,rf,lr,rr}_psi` and `tire_temp_{lf,rf,lr,rr}_c` columns. Enables post-session cold→hot tire pressure analysis. (`TripPoint.kt`, `TripRecorder.kt`, `DiagnosticExporter.kt`) ([#84](https://github.com/klexical/openRS_/issues/84))
+
+### Fixed (rc.3 — field-test fixes)
+- **Fuel economy never appeared** — OBD DID 0xF42F and CAN 0x380 both wrote to the same `fuelLevelPct` field. CAN fires at ~3 fps and OBD once per 30s, creating a sawtooth pattern that broke the 60-second rolling window calculation. OBD 0xF42F now stores its value in `genericValues["FuelLevel_OBD"]` for diagnostic visibility; CAN 0x380 is the sole source for fuel economy. (`ObdResponseParser.kt`) ([#118](https://github.com/klexical/openRS_/issues/118))
+- **DID prober EXPORT button removed** — clipboard copy of 500+ TSV lines was impractical. Probe results are already included in the diagnostic ZIP as CSV files. Removed button and unused imports. (`DidProberSection.kt`)
+
+### Added (rc.4 — visual polish)
+- **Neon glow border system** — 4 new Compose modifiers (`neonBorder`, `neonPulse`, `bloomGlow`, `scanLine`) replace flat `border()` on all card components with gradient-based glow effects. Animated pulse on hero-tier cards, static glow on secondary cards. (`GlowModifiers.kt`) ([#82](https://github.com/klexical/openRS_/issues/82))
+- **Design token consolidation** — new `DesignTokens.kt` provides single-source-of-truth spacing, shapes, and sizing constants (`Tokens.PagePad`, `CardGap`, `SectionGap`, `CardShape`, `HeroShape`, etc.) replacing hardcoded dp values across UI files.
+- **NeonDivider composable** — accent-colored horizontal gradient divider replacing solid `Brd` rules in section headers. (`Components.kt`)
+- **AnimatedHeroNum composable** — `AnimatedContent` wrapper with vertical slide transitions for hero value changes. Targets formatted string to avoid per-frame recomposition. (`Components.kt`)
+- **Staggered card entrance animations** — `StaggeredColumn` composable with 40ms per-child fade+slide-up entrance effect. (`StaggeredEntrance.kt`)
+- **Press feedback modifier** — `pressScale()` modifier provides tactile scale-down on press with spring-back physics for interactive elements. (`InteractionModifiers.kt`)
+- **Peripheral edge shift light** — multi-zone screen-edge glow overlay with three phases keyed to RPM: breathing (70%), progressive fill (81%), flash (95.5%). Configurable color (accent/white/progressive), intensity (low/med/high), and RPM threshold. (`EdgeShiftLight.kt`, `AppSettings.kt`, `UserPrefs.kt`)
+- **DiagPage summary strip** — 3-cell overview row (STATUS/FPS/DTCs) at top of DIAG tab for at-a-glance diagnostics without scrolling. (`DiagPage.kt`)
+- **DiagPage collapsible sections** — CRASH HISTORY, DID PROBER, LIVE CAN OUTPUT, FRAME INVENTORY, and PID BROWSER sections now collapsed by default with animated expand/collapse. Frame inventory limited to 15 visible rows with "Show all" toggle. (`DiagPage.kt`)
+- **HeroCard value-driven glow intensity** — `valueFraction` parameter (0.0–1.0) scales bloom glow and border alpha proportionally. Applied to RPM/6800, boost/180kPa, speed/250kph on DASH tab. (`Components.kt`, `DashPage.kt`)
+- **CRT scan line on DASH tab** — faint horizontal light sweep across the dashboard when connected, 4-second cycle at 6% alpha. (`DashPage.kt`)
+- **Connection "going live" sweep** — one-shot 800ms accent light band sweeping top-to-bottom across the entire app when adapter connects. (`MainActivity.kt`)
+- **Tab crossfade during swipe** — subtle 15% opacity dip on pages during horizontal pager transitions. (`MainActivity.kt`)
+- **Connection dot bloom** — `bloomGlow` halo behind the connection status dot when connected. (`MainActivity.kt`)
+- **Sparkline glow enhancement** — polyline drawn with 2.5× width ghost layer for glow effect, plus live endpoint dot with bloom halo. (`Sparkline.kt`)
+- **SettingsSheet visual upgrade** — accent left-bar section titles, gradient section backgrounds, animated `SegmentedPicker` with color transitions. (`SettingsSheet.kt`)
+- **SectionLabel chevron animation** — smooth rotation animation on collapse/expand chevron via `animateFloatAsState` + `graphicsLayer`. (`Components.kt`)
+- **AnimatedHeroNum applied to all hero values** — HeroCards, performance timer, and AWD split percentages now use animated vertical slide transitions on value changes. (`Components.kt`, `DashPage.kt`)
+- **Press feedback on interactive buttons** — drive mode buttons, ESC buttons, DTC scan button, and performance timer controls now scale down on press with spring-back physics via `pressClick()`. (`MorePage.kt`, `DiagPage.kt`, `DashPage.kt`)
+- **Tab bar sliding neon indicator** — active tab indicator converted from per-tab conditional to a single sliding `Box` with spring-animated position. (`MainActivity.kt`)
+- **G-Force Plot Compose text rendering** — replaced Android Canvas `drawText` with Compose `rememberTextMeasurer` + JetBrains Mono for consistent typography. Trail points now have radial gradient halos, crosshairs use accent color. (`GForcePlot.kt`)
+- **AWD torque flow animation** — animated flow dots travel along the torque split bar proportional to torque delta between left/right. Direction indicates dominant side. (`DashPage.kt`)
+- **Enhanced TempCard** — neon glow border (color tracks temp status), radial bloom behind value when above warn threshold, progress bar gets `neonGlowRect` when in warn zone, peak tick mark on progress bar. (`TempsPage.kt`)
+- **Staggered entrance on TempsPage** — temperature card grid rows animate in with staggered fade+slide-up on composition. (`TempsPage.kt`)
+- **Design token migration** — `Tokens.PagePad` and `Tokens.CardGap` now used across DashPage, PowerPage, ChassisPage, TempsPage, and MorePage replacing hardcoded `12.dp` and `10.dp` values.
+
+### Fixed (rc.4 — visual polish)
+- **Gear detection thresholds recalibrated for dual final drive** — previous thresholds were derived from a single log with a 3.82 average final drive. Updated to use midpoints between official MMT6 overall ratios (dual final drive 4.063 gears 1-4, 2.955 gears 5-6 per 2016 Owner's Manual p242). (`VehicleState.kt`)
+
+### Added (rc.5 — drive system overhaul)
+- **MAP tab with Google Maps** — new first-class tab (DASH/POWER/CHASSIS/TEMPS/MAP/DIAG/MORE) replacing the old TripPage overlay. Live mode shows Google Maps with dark styling, color-segmented route polylines, and peak markers. History mode lists saved drives with tap-to-view on map. Swapped OSMDroid for `play-services-maps:19.0.0` + `maps-compose:6.4.1`. (`DrivePage.kt`, `DriveMap.kt`, `google_map_style_dark.json`)
+- **Room-backed DriveRecorder** — replaces the in-memory TripRecorder with persistent drive tracking. Start/stop/pause/resume controls with 1 Hz GPS + telemetry capture. Batch writes (30 points/flush), peak tracking with GPS coordinates, weather refresh every 15 min. Room migration v1→v2 preserves existing sessions as drives with `hasGps=false`. (`DriveRecorder.kt`, `DriveDatabase.kt`, `DriveState.kt`)
+- **Unified drive+diagnostic export** — single ZIP from both MAP tab history and DIAG tab containing GPX, CSV, drive summary, and diagnostic data. GPX uses `<trkseg>` breaks for pause gaps. `DriveEntity.sessionId` links drives to diagnostic sessions. (`DiagnosticExporter.kt`)
+- **Auto-record drives setting** — opt-in toggle in Settings (OFF by default) that starts/stops drive recording on adapter connect/disconnect. Max saved drives configurable (default 50), oldest pruned automatically. (`SettingsSheet.kt`, `AppSettings.kt`, `CanDataService.kt`)
+- **REC indicator in AppHeader** — pulsing orange dot with "REC" label next to the connection pill when actively recording. (`MainActivity.kt`)
+- **Persistent collapsible section states** — section expanded/collapsed preferences saved to SharedPreferences via `rememberSectionExpanded()` composable. Survives tab switches, app kills, and updates. Applied to all 10 collapsible sections across POWER and DIAG tabs. (`AppSettings.kt`, `PowerPage.kt`, `DiagPage.kt`)
+- **37 DriveState unit tests** — fuel economy calculations, averages, haversine distance, peak tracking, sentinel defaults, entity immutability. Total suite now 243 tests across 8 files. (`DriveStateTest.kt`)
+
+### Fixed (rc.5 — drive system overhaul)
+- **Temps tab completely blank** — `StaggeredColumn` used `visibleState.currentState` to drive animation targets, which lags behind on first composition and left all children at alpha 0. Changed to `visibleState.targetState` which is `true` immediately. DASH and POWER tabs may have been intermittently affected. (`StaggeredEntrance.kt`)
+
+### Changed (rc.5 — drive system overhaul)
+- **DiagPage reorganized** — removed duplicate STATUS/FPS summary strip from top. DIAGNOSTICS section moved to top position with DTC count merged in. DTC SCANNER moved below DIAGNOSTICS. Both sections now collapsible. Section order: DIAGNOSTICS → DTC SCANNER → CRASH HISTORY → DID PROBER → LIVE CAN OUTPUT → FRAME INVENTORY → PID BROWSER. (`DiagPage.kt`)
+- **MAP pill removed from AppHeader** — redundant with the MAP tab in the tab bar. Connection pill, REC indicator, and settings gear shift to fill the gap. (`MainActivity.kt`)
+- **Location permission at startup** — `ACCESS_FINE_LOCATION` requested in `MainActivity.onCreate()` alongside notification permission. Foreground service type updated to `connectedDevice|location`. (`MainActivity.kt`, `AndroidManifest.xml`)
+
+### Removed (rc.5 — drive system overhaul)
+- **TripRecorder, TripPage, TripPoint** — old in-memory trip system fully replaced by DriveRecorder/DrivePage. (`TripRecorder.kt`, `TripPage.kt`, `TripPoint.kt`)
+- **TripState gutted** — reduced to `PeakType` enum + `PeakEvent` data class only (still used by DriveRecorder/DriveMap). (`TripState.kt`)
+- **OSMDroid dependency** — removed from `build.gradle.kts`. (`build.gradle.kts`)
+- **Session history from MorePage** — drive history now lives in the MAP tab. (`MorePage.kt`)
+
+### Added (rc.6 — Quick Mode Dock, in-app updates, code review cleanup)
+- **Quick Mode Dock** — tap the MODE cell in the telemetry strip to open a dropdown drive mode selector (N/S/T/D) from any tab. Staggered entrance animation, haptic feedback, auto-dismiss on success. (`DriveModeDock.kt`, `MainActivity.kt`)
+- **Shared drive mode command flow** — `executeDriveModeChange()` suspend function extracted from MorePage. REST POST → 2s settle → 15s CAN poll → auto-correct on overshoot. Returns `DriveCommandResult` sealed class. Used by both MorePage and DriveModeDock. (`DriveCommand.kt`)
+- **In-app update system** — background update checker against GitHub Releases API. Supports stable/beta channels, downloads APK to internal storage, prompts install via `ACTION_INSTALL_PACKAGE`. Settings section for channel picker, check/download/install controls with progress bar. (`update/UpdateManager.kt`, `update/UpdateChecker.kt`, `update/AppVersion.kt`, `update/UpdateState.kt`, `SettingsSheet.kt`, `AppSettings.kt`, `UserPrefs.kt`)
+- **74 new unit tests** — `AppVersionTest` (30 tests: version parsing, comparison, RC/beta ordering), `DtcScannerTest` (28 tests: SAE J2012 DTC decoding, UDS status bits, payload parsing), `UserPrefsTest` (16 tests: unit conversions, sentinel edge cases). Total suite now 319 tests across 11 files.
+
+### Changed (rc.6 — Quick Mode Dock, in-app updates, code review cleanup)
+- **DiagnosticExporter split into 3 files** — 883-line god object broken into `DiagnosticExporter.kt` (ZIP orchestration + share intents, ~210 lines), `DiagnosticReportBuilder.kt` (summary text + JSON detail), and `DriveExportBuilder.kt` (GPX, CSV, drive summary, DTC report). Crash/probe file bundling extracted into private helpers. (addresses [#83](https://github.com/klexical/openRS_/issues/83))
+- **Diagnostic JSON built with JSONObject** — hand-rolled string concatenation in `buildJson()` replaced with `org.json.JSONObject`/`JSONArray`. Eliminates manual comma tracking, bracket nesting, and custom `jsonEscape()` helper. Escaping handled automatically; full-precision numeric values in output. (addresses [#83](https://github.com/klexical/openRS_/issues/83))
+- **DiagnosticLogger hex conversion optimized** — pre-allocated 256-entry hex lookup table replaces per-byte `"%02X".format()` calls. `toSpacedHex()`/`toCompactHex()` use `StringBuilder` with pre-known capacity. Hex strings built outside `synchronized(lock)` block, reducing lock hold time at ~2100 fps. (addresses [#83](https://github.com/klexical/openRS_/issues/83))
+- **DtcScanner refactored for testability** — `decodeDtcCode()`, `classifyStatus()`, `parsePayload()` moved from instance `private` to `companion object internal`, enabling unit tests without Android Context. (`DtcScanner.kt`)
+- **Drive mode command logic extracted from MorePage** — 60 lines of inline command/polling/auto-correct code replaced by a single `executeDriveModeChange()` call. (`MorePage.kt`, `DriveCommand.kt`)
+
+### Fixed (rc.7 — MAP tab overhaul)
+- **Foreground service crash on startup** — `goForeground()` was only called inside `startConnection()`, which is gated by `isOnWifi()`. When not on WiFi, `startForeground()` never fired within the 5-second Android deadline, causing `ForegroundServiceDidNotStartInTimeException`. Fixed by calling `goForeground()` unconditionally as the first call in `CanDataService.onCreate()`. Also fixes the missing notification bar. Regression introduced in rc.5 when `ACCESS_FINE_LOCATION` was added to always-requested permissions, removing the synchronous `else startSvc()` fallback. (`CanDataService.kt`)
+- **MAP tab doesn't show location without car connection** — `driveState.currentLocation` only populated by DriveRecorder during active recording. Enabled `isMyLocationEnabled` + `myLocationButtonEnabled` on GoogleMap for native blue dot. Added one-shot `FusedLocationProviderClient.lastLocation` to center camera on user's position when MAP tab opens idle. (`DriveMap.kt`, `DrivePage.kt`)
+
+### Added (rc.7 — MAP tab overhaul)
+- **4 new map color modes** — BOOST (boostPsi thresholds: vacuum/low/mid/full), THRTL (throttlePct: coasting/light/moderate/full-send), G-LAT (lateralG: straight/gentle/spirited/high-G), TEMP (oilTempC: cold/warming/operating/hot). Color mode toggle now cycles through all 6 modes (SPD → MODE → BOOST → THRTL → G-LAT → TEMP). (`DriveMap.kt`, `DrivePage.kt`)
+- **Color legend strip** — floating overlay at bottom-center of map showing what colors mean for the current mode. Updates when color mode changes. (`DrivePage.kt`, `DriveMap.kt`)
+- **Map type toggle** — floating button below color mode to cycle Normal → Satellite → Terrain. Dark style applied only on Normal. (`DrivePage.kt`, `DriveMap.kt`)
+- **Start / Finish markers** — green pin at first drive point, red pin at last point. Shows on both live recording and historic drive playback. (`DriveMap.kt`)
+- **Peak speed marker** — new `PeakType.SPEED` alongside existing RPM, BOOST, LATERAL_G. Tracks and displays peak speed with value label on map. (`TripState.kt`, `DriveRecorder.kt`, `DriveMap.kt`)
+- **Pause point markers** — small yellow markers with pause bars icon at locations where recording was paused. Detects 5-second timestamp gaps between consecutive points. (`DriveMap.kt`)
+- **Zoom to fit route** — when loading a historic drive, camera auto-zooms to fit the entire route using `LatLngBounds`. (`DriveMap.kt`)
+- **Route stats overlay** — floating HUD at bottom-left of map showing distance, duration, and average speed. Shows for both live recording and historic drive review. (`DrivePage.kt`)
+- **Drive history grouped by date** — section headers: "Today", "Yesterday", "Mar 29". Drives sorted newest first within each group. (`DrivePage.kt`)
+- **Status badges on drives** — color-coded: green "COMPLETE" (finished with GPS), orange "ACTIVE" (still recording), dim "NO GPS" (legacy migrated drive). (`DrivePage.kt`)
+- **Summary stats per drive** — distance, peak speed, peak RPM, peak boost, peak lateral G displayed on each drive card. (`DrivePage.kt`)
+- **Drive naming** — tap drive name to rename (e.g. "Tail of the Dragon"). Stored in `DriveEntity.name` column. Room migration v2→v3 adds the column. (`DriveDatabase.kt`, `DrivePage.kt`)
+- **Swipe to delete** — swipe drive history items end-to-start to delete. Red background with DELETE label. (`DrivePage.kt`)
+- **Export button per drive** — SHARE button wired to `DiagnosticExporter.shareDrive()` with GPX, CSV, and drive summary in a ZIP. (`DrivePage.kt`)
+- **GPS indicator on drive cards** — small green dot with "GPS" label for drives with location data. (`DrivePage.kt`)
+- **Empty state improvement** — "No drives recorded yet" replaced with hint: "Connect to your car and tap START to record your first drive". (`DrivePage.kt`)
+
+### Changed (rc.7 — MAP tab overhaul)
+- **Room database v3** — migration v2→v3 adds `name TEXT DEFAULT NULL` column to drives table for user-assigned drive names. (`DriveDatabase.kt`)
+
+### Added (rc.7 — BLE transport)
+- **BLE GATT transport** — connect to MeatPi adapters over Bluetooth Low Energy instead of WiFi, freeing cellular/WiFi for internet (weather, Google Maps, in-app updates). SLCAN over GATT service `0xFFE0` with write char `FFE1` and notify char `FFE2`. Auto-reconnect on subsequent connections (`autoConnect=true`), MTU 247 with 23-byte fallback. (`BleSlcanTransport.kt`, `BleDeviceScanner.kt`)
+- **BLE device picker** — scan dialog filtered to service UUID `0xFFE0` with RSSI signal strength bars. Saves device MAC + name for automatic reconnection across app restarts. (`BleDevicePickerDialog.kt`, `AppSettings.kt`)
+- **BT indicator in header** — "BT" label in connection pill when connected via Bluetooth. (`MainActivity.kt`)
+- **WiFi coexistence banner** — dismissible warning when using Bluetooth and phone's WiFi is active: "WiFi connected — internet may be blocked. Forget adapter WiFi for best BLE experience." (`MainActivity.kt`)
+- **Transport-aware diagnostic logging** — `sessionTransport` field in DiagnosticLogger. Transport label (e.g. "Bluetooth (WiCAN_ABC / AA:BB:CC:DD:EE:FF)" or "TCP SLCAN (192.168.0.10:35000)") included in text summary, JSON detail, SLCAN log header, and share intent. (`DiagnosticLogger.kt`, `DiagnosticReportBuilder.kt`, `DiagnosticExporter.kt`)
+
+### Changed (rc.7 — BLE transport)
+- **Transport interface extraction** — connection layer refactored to transport-agnostic architecture. `SlcanTransport` interface with `TcpSlcanTransport`, `WebSocketSlcanTransport`, and `BleSlcanTransport` implementations. `SlcanConnection` shared base class handles retry, SLCAN init, OBD pollers, DTC scan/clear, and ISO-TP reassembly. Deleted `MeatPiConnection.kt` (473 lines) and `WiCanConnection.kt` (629 lines). (`can/`)
+- **Adapter naming refactor** — adapters renamed from "WiCAN"/"MeatPi" to "MeatPi USB (C3)"/"MeatPi Pro (S3)". Bluetooth separated from adapter type into its own `connectionMethod` field (`"WIFI"`/`"BLUETOOTH"`). Settings UI: 2-way adapter picker + separate connection method toggle. Legacy migration handles old `"WICAN"`, `"MEATPI"`, `"BLUETOOTH"` values. (`AppSettings.kt`, `UserPrefs.kt`, `SettingsSheet.kt`)
+- **FirmwareApi abstracted for transport** — `FirmwareCommandSender` interface with `WiFiFirmwareApi` (REST `/api/frs`) and `BleFirmwareApi` (`AT+FRS=` over SLCAN transport). `DriveCommand`, `DriveModeDock`, and `MorePage` use the interface for transport-agnostic firmware commands. (`FirmwareApi.kt`, `DriveCommand.kt`)
+
+### Fixed (rc.7.1 — field-test fixes)
+- **BLE permission crash on scan** — `BleDevicePickerDialog` called `scanner.startScan()` without runtime BLE permissions. `MainActivity.onCreate()` only requested permissions if `connectionMethod == "BLUETOOTH"` at startup, but users start on WiFi and switch later. Dialog now uses `rememberLauncherForActivityResult(RequestMultiplePermissions)` to check/request BLUETOOTH_SCAN + BLUETOOTH_CONNECT before scanning. Permission-denied UI state added with retry button. (`BleDevicePickerDialog.kt`)
+- **BLE SecurityException safety net** — `BleDeviceScanner.startScan()` wraps `scanner.startScan()` in try/catch for SecurityException as a fallback if permissions are revoked mid-scan. (`BleDeviceScanner.kt`)
+- **Foreground service start from background** — `CanDataService.startConnection()` wraps `goForeground()` in try/catch because WiFi/BT callbacks can fire when the app is backgrounded. `MainActivity.startSvc()` also catches `ForegroundServiceStartNotAllowedException`. (`CanDataService.kt`, `MainActivity.kt`)
+- **AnimatedHeroNum illegible at high update rates** — the vertical slide+fade animation (150ms/100ms) introduced in rc.4 made RPM, boost, and speed hero values unreadable when data updates at ~100 Hz. Reverted all hero cards and AWD split percentages to plain `HeroNum` for instant static display. (`Components.kt`, `DashPage.kt`)
+- **MAP tab location button hidden** — Google Maps native My Location button was behind the floating controls column at `Alignment.TopEnd`. Disabled native button; custom locate button added (see Added below). (`DriveMap.kt`)
+
+### Added (rc.7.1 — field-test fixes)
+- **MAP tab zoom controls** — custom `+`/`−` buttons for zoom in/out and `◎` button to recenter on current location at zoom 15. `cameraPositionState` hoisted from `DriveMap` to `DrivePage` for shared control. Pinch-to-zoom and all native gestures retained. (`DrivePage.kt`, `DriveMap.kt`)
+- **Brightness/visibility system** — 7 base color tokens (Bg/Surf/Surf2/Surf3/Brd/Dim/Mid) now computed via `lerp()` between Night and Sun endpoints, backed by `mutableFloatStateOf`. Presets: Night (0.0), Day (0.5), Sun (1.0) plus continuous slider in Settings. Accents, Frost, and semantic colors (Ok/Warn/Orange) unchanged. Zero consumer changes — Compose snapshot system tracks reads automatically. (`Theme.kt`, `AppSettings.kt`, `UserPrefs.kt`, `SettingsSheet.kt`, `MainActivity.kt`)
+
+### Added (rc.8 — new signals, glow gates, Sapphire V2)
+- **Launch control engaged from CAN 0x225** — decodes byte5 bit3 to `launchControlEngaged: Boolean`. Distinct from `launchControlActive` (0x420) and `lcArmed` (RSProt extended session). Shown in header telemetry strip as "LC ENGAGED" when active. (`CanDecoder.kt`, `MainActivity.kt`)
+- **RS suspension button from CAN 0x070** — decodes byte7 bit7 to `suspensionButtonPressed: Boolean`. Extends existing torque decode on the same frame. Data-only for diagnostics, no dedicated UI element. (`CanDecoder.kt`)
+- **Spark advance from PCM DID 0x116B** — `sparkAdvance: Double` (B4 × 0.25°). Displayed as "SPARK" in POWER tab Engine Management row alongside timing, load, and OAR. (`ObdResponseParser.kt`, `ObdConstants.kt`, `PowerPage.kt`)
+- **Battery charging voltage target from BCM DID 0x411D** — `batteryChargingVoltageDesired: Double` (B4 × 0.1V). Displayed as "CHG TGT" in DIAG tab battery section. (`ObdResponseParser.kt`, `ObdConstants.kt`, `DiagPage.kt`)
+- **GFM (Generic Function Module) DTC scanning** — 0x7D2→0x7DA added to DTC scanner module list for broader diagnostic coverage. (`DtcScanner.kt`)
+- **Data-gated neon glow** — all card components (HeroCard, DataCell, BarCard, WheelCell, GfCard, AfrCard) now suppress glow borders and bloom effects when displaying placeholder values ("— —") or when disconnected. HeroCard glow scales proportionally with `valueFraction` (0 = dormant, no border/glow). Cards look inert until live data arrives. (`Components.kt`, `DashPage.kt`, `ChassisPage.kt`)
+- **BLE unknown adapter hint** — `BleDevicePickerDialog` shows orange "not a known adapter" warning for BLE devices whose names don't match "wican", "meatpi", or "openrs" patterns. Helps avoid pairing with random 0xFFE0 devices. (`BleDevicePickerDialog.kt`)
+- **Chassis page PTU/RDU temp row** — drivetrain temperature row added to car diagram showing PTU and RDU temps with sentinel-aware placeholders. Component sizes increased for readability (canvas 130→140dp, font 8→10sp). G-Force section moved above chassis diagram. (`ChassisPage.kt`)
+- **SLCAN handshake logging** — `SlcanConnection` logs firmware probe results and transport type during SLCAN handshake for diagnostic traceability. (`SlcanConnection.kt`)
+- **8 new unit tests** — launch control engaged (0x225: 2 tests), suspension button (0x070: 2 tests + short-frame safety), spark advance (0x116B: 1 test), charging voltage (0x411D: 1 test). 327 total across 11 files. (`CanDecoderTest.kt`, `ObdResponseParserTest.kt`)
+
+### Fixed (rc.8)
+- **sparkAdvance sentinel value** — default was `0.0`, indistinguishable from a valid 0° advance reading. Changed to `-1.0` to match the OBD scalar sentinel convention. (`VehicleState.kt`)
+- **Boost hero glow fraction used wrong unit** — `valueFraction` divided kPa by 180 instead of PSI by 30, causing incorrect glow intensity on the boost HeroCard. (`DashPage.kt`)
+- **Temps tab missing POLLING placeholder** — intake air and ambient temperature showed "0.0°" before first OBD response. Now show "— —" with "POLLING" status label when sentinel value present. (`TempsPage.kt`)
+- **MAP tab swipe conflict** — horizontal pager swipe was enabled on the MAP tab, conflicting with pinch-to-zoom and pan gestures on Google Maps. Pager swipe now disabled when on page 4 (MAP). (`MainActivity.kt`)
+
+### Changed (rc.8)
+- **Deprecated VehicleState fields removed** — `dataMode` and `odometerRolloverOffset` removed to free JVM bytecode slots. `dataMode` hardcoded to "CAN" in diagnostic reports. (`VehicleState.kt`, `DiagnosticReportBuilder.kt`, `CanDataService.kt`)
+
+### Added (rc.8 — Sapphire V2)
+- **Sapphire web dashboard V2** — complete overhaul of the post-session analytics dashboard with 7 new panels, 7 new chart components, and 129 vitest tests. (`web/`)
+- **Compare panel** — multi-session comparison with KPI delta cards (green=improvement, orange=regression), 5 overlaid time-series charts on normalized time axis, split GPS maps. (`ComparePanel.tsx`, `ComparisonChart.tsx`, `DeltaCard.tsx`, `compare.ts`)
+- **Settings panel** — unit preferences (speed, temp, boost, tire pressure, fuel economy), RS paint color theme grid, data management. Persisted to localStorage via Zustand. (`SettingsPanel.tsx`, `settings.ts`, `units.ts`)
+- **GPS map with 6 color modes** — Leaflet + CartoDB Dark Matter with color-segmented polylines matching Android DriveMap color modes (SPD/MODE/BOOST/THRTL/G-LAT/TEMP). Start/finish/pause/peak markers, color legend. (`GpsMap.tsx`, `mapColors.ts`)
+- **Gauge charts** — semi-circular SVG gauges for peak RPM, boost, speed, and lateral G on the dashboard panel. (`GaugeChart.tsx`)
+- **G-Force scatter plot** — lat-G vs speed colored by speed band or drive mode, downsampled to 2000 points. (`GForceScatter.tsx`)
+- **Temperature stack chart** — stacked area chart showing thermal soak patterns across coolant, oil, RDU, and PTU. (`TempStackChart.tsx`)
+- **RPM/Boost histograms** — equal-width bin distribution charts for RPM and boost on the trip panel. (`Histogram.tsx`)
+- **Mode timeline** — segmented bar chart of drive mode transitions with hover tooltips and transition count. (`ModeTimeline.tsx`)
+- **Sparkline metric cards** — inline trend charts with glow line and gradient fill for speed and RPM on dashboard. (`Sparkline.tsx`)
+- **Session management overhaul** — inline rename, search/filter bar, sort by date/name/distance/peak speed, bulk select + delete, tag system. (`SessionsPanel.tsx`, `SearchBar.tsx`)
+- **CSV/JSON export** — per-session data export with browser download. (`export.ts`, `ExportDropdown.tsx`)
+- **TPMS summary card** — 4-corner tire visualization with color-coded pressure thresholds. (`TpmsSummaryCard.tsx`)
+- **Error boundary** — class component wrapping all panels with retry button, resets on panel switch. (`ErrorBoundary.tsx`)
+- **129 vitest tests** — import pipeline (54), unit conversions (27), map colors (20), comparisons (16), formatters (17), store operations (15). (`web/src/lib/*.test.ts`, `web/src/store/store.test.ts`)
+
+### Added (rc.9 — UI overhaul)
+- **Bottom nav bar with frosted glass** — new `BottomNavBar` using Haze backdrop blur, 7 custom vector icons (replacing emoji tab labels), spring-animated neon indicator, stamped bevel gradient, pressClick + haptics. Height: 38dp + system gesture bar padding. Content extends behind the nav bar for edge-to-edge feel. (`BottomNavBar.kt`, `MainActivity.kt`)
+- **`cardGlow()` modifier** — subtle outer shadow + top specular highlight providing ambient depth on all card components, replacing decorative neon effects. (`GlowModifiers.kt`, `Components.kt`)
+- **`AggressiveNum` composable** — Orbitron Bold with 0.5sp letter-spacing for DataCell, BarCard, and WheelCell numeric values, replacing `MonoText` for a sharper aesthetic. (`Theme.kt`, `Components.kt`)
+- **G-Force Plot redesign** — rectangular grid with auto-scaling axes (`ceilToQuarter`), corner brackets, 120-dot age-graded trail (up from 30), peak labels (lateral G, accel G), dense grid lines, scale numbers, and "LAT G" / "ACCEL / BRAKE G" axis titles. (`GForcePlot.kt`, `ChassisPage.kt`)
+- **E-Brake warning banner** — dismissible animated banner when electronic parking brake is engaged. Auto-reappears on re-engagement. (`MainActivity.kt`)
+- **MAP tab touch isolation** — `pointerInput` on map Box tracks touch state; parent `HorizontalPager` disables swipe while map is touched, preventing conflicts with Google Maps pan/pinch gestures. (`DrivePage.kt`, `MainActivity.kt`)
+- **StatusPill composable** — compact MODE and ESC pills in the status bar with value-colored backgrounds and pulsing accent bar on MODE. Replaces full-width telemetry strip. (`MainActivity.kt`)
+- **LC flashing pill** — animated flashing "LC" badge in the status bar when launch control is engaged. (`MainActivity.kt`)
+- **7 custom vector nav icons** — purpose-drawn vector drawables for DASH/POWER/CHASSIS/TEMPS/MAP/DIAG/MORE replacing Unicode emoji tab labels. (`res/drawable/ic_nav_*.xml`)
+
+### Changed (rc.9 — UI overhaul)
+- **AppHeader compacted to single-row status bar** — two-row header (logo row + full-width telemetry strip with IGN/CONN/E-BRK cells) replaced by a single 34dp row with logo, MODE/ESC pills, and connection controls. Frees ~50dp of vertical screen space. (`MainActivity.kt`)
+- **Navigation moved to bottom overlay** — tab bar relocated from below header to bottom-of-screen overlay outside Scaffold. Scaffold uses `contentWindowInsets = statusBars`; all pages add `Tokens.NavBarHeight` as bottom scroll padding. (`MainActivity.kt`, all page files)
+- **Edge-to-edge with transparent system nav bar** — `enableEdgeToEdge` with `SystemBarStyle.dark(TRANSPARENT)` removes the system navigation bar scrim. (`MainActivity.kt`)
+- **Card borders thinned to 0.5dp** — `Tokens.CardBorder` reduced from 1dp to 0.5dp across ~50 border declarations for lighter visual weight. (`DesignTokens.kt`, all UI files)
+- **Performance timer moved to MORE tab** — `PerformanceTimerSection` relocated from DASH tab to MORE tab under its own section header, decluttering the main dashboard. (`DashPage.kt`, `MorePage.kt`)
+- **Haze dependency added** — `dev.chrisbanes.haze:haze:1.5.1` for backdrop blur / glassmorphism on the bottom nav bar. (`build.gradle.kts`)
+- **Drive mode hint text improved** — "Read-only mirror of CAN 0x1B0" replaced with user-friendly "Displays current Drive Mode — openRS_ firmware unlocks tap control". (`MorePage.kt`, `DriveModeDock.kt`)
+
+### Removed (rc.9 — UI overhaul)
+- **Decorative neon effects** — `neonBorder`, `neonGlow`, `neonGlowRect`, `neonPulse`, `scanLine` modifiers removed from `GlowModifiers.kt`. Replaced by `cardGlow()` for ambient depth and thin 0.5dp borders. (`GlowModifiers.kt`, `Components.kt`, `TempsPage.kt`, `DriveModeDock.kt`)
+- **"Going live" connection sweep** — 800ms accent light band on adapter connect removed. (`MainActivity.kt`)
+- **CRT scan line** — faint horizontal sweep effect on DASH tab removed. (`DashPage.kt`)
+- **Tab crossfade** — 15% opacity dip during pager transitions removed. (`MainActivity.kt`)
+- **TabBar + TeleCell composables** — inline emoji-based tab bar and full-width telemetry strip removed; replaced by `BottomNavBar` and `StatusPill`. (`MainActivity.kt`)
+
+### Added (rc.10 — Tier 1 PIDs, button decoders, merge fix)
+- **Fuel trim drift tracker (STFT/LTFT)** — short-term and long-term fuel trims decoded from PCM DIDs `0xF406` / `0xF407` (`A * 100/128 - 100`, signed %), surfaced in the POWER tab FUEL section. Implements roadmap item 2.2. (`ObdConstants.kt`, `ObdResponseParser.kt`, `VehicleState.kt`, `PowerPage.kt`, `WiCanConnection.kt`, `MeatPiConnection.kt`)
+- **AWD clutch hydraulics** — left/right actuator current (DIDs `0x1E9E` / `0x1E9F`, signed Amps) and left/right hydraulic pressure (DIDs `0x1ED1` / `0x1ED2`, mBar) decoded from the AWD module under extended session. New row on the CHASSIS tab next to the existing clutch temp display. Sentinel `-999.0` for currents (so 0 A is a valid live reading) and `-1.0` for pressures. (`ObdConstants.kt`, `ObdResponseParser.kt`, `VehicleState.kt`, `ChassisPage.kt`)
+- **Battery current monitoring** — live charging/discharging amps from BCM DID `0x4090` (`((A*256+B)/16) - 511.7`). Added to the DIAG tab battery row with charge/discharge color coding (green = charging, frost = discharging, dim mid = resting). (`ObdConstants.kt`, `ObdResponseParser.kt`, `VehicleState.kt`, `DiagPage.kt`, `BcmPoller`)
+- **Live button input feedback** — new CAN decoders for `0x305` (drive mode toggle button, byte4 bit5) and `0x260` (Auto Start/Stop byte0 bit7, ESC defeat byte5 bit3). Surfaced as a 4-cell live HELD/idle row on the DIAG tab next to the existing suspension button indicator. Helps validate steering-wheel/console inputs without an oscilloscope. (`CanDecoder.kt`, `VehicleState.kt`, `DiagPage.kt`)
+- **8 new CAN decoder unit tests** — `0x305` (pressed/released/short data) and `0x260` (ASS pressed, ESC pressed, both pressed, both released, short data). Total suite now 338 tests across 11 files. (`CanDecoderTest.kt`)
+
+### Fixed (rc.10 — Tier 1 PIDs, button decoders, merge fix)
+- **Critical: `mergeObdState` allowlist silently dropped 7 fields** — the OBD response merge in `CanDataService` enumerates fields explicitly to coalesce parser updates back into central `VehicleState`. The new Tier 1 PIDs (STFT/LTFT, AWD clutch current/pressure, battery current, charging voltage desired, spark advance) were parsed correctly but never reached the UI because they were missing from the merge. Added all 7 with sentinel-aware gating. Without this fix, none of the rc.10 PID work would have rendered. (`CanDataService.kt`)
+- **`batteryCurrentA` default flipped from `0.0` to `-999.0`** — a battery at rest can legitimately read 0 A, so `0.0` could not distinguish "not yet polled" from "actually zero". Sentinel updated and DIAG tab gates display on `> -900`. (`VehicleState.kt`, `DiagPage.kt`)
+- **AWD clutch sentinels** — `awdClutchCurL/R` defaulted to `0.0` (a valid value); changed to `-999.0`. `awdClutchPressureL/R` defaulted to `0.0`; changed to `-1.0`. CHASSIS tab cells now show `—` until first data arrives instead of misleading zeros. (`VehicleState.kt`, `ChassisPage.kt`)
+- **POWER tab FUEL trims gated on wrong field** — STFT/LTFT cells were hidden until `calcLoad > 0`, but `calcLoad` is a separate Mode 22 PID that may arrive after STFT/LTFT. Replaced with `vs.isConnected && vs.rpm > 0` so trims display as soon as the engine is running. (`PowerPage.kt`)
+- **MainActivity recomposition churn on pager swipe** — `userScrollEnabled` was a fresh expression on every recompose; wrapped in `derivedStateOf`. `BottomNavBar onSelect` lambda was also re-allocated each frame; hoisted to a `remember`-cached closure. (`MainActivity.kt`)
+
+### Changed (rc.10 — Tier 1 PIDs, button decoders, merge fix)
+- **DIAG battery row reorganized** — from 4 cells in one row to 2 rows of 3 cells (BATT V / BATT A / BATT SoC, then BATT TEMP / CHG TGT / spacer) to fit the new BATT A reading while matching the rest of the DIAG tab's 3-per-row convention. (`DiagPage.kt`)
+- **`versionCode` 32 → 33** — required for OTA update detection. `versionName` stays `2.2.6`. (`build.gradle.kts`)
+- **`firmware/build.sh --rc rc.N` flag** — output filename now accepts an RC suffix (`openrs-fw-usb_v1.61-rc.N.bin`, `openrs-fw-pro_v1.2-rc.N.bin`) so RC firmware builds can be cleanly versioned alongside stable. No firmware source changes for rc.10 — existing v1.61 / v1.2 binaries remain current. (`firmware/build.sh`)
+- **BottomNavBar height tokenized** — hardcoded `38.dp` replaced with `Tokens.NavBarHeight` (now 45.dp) and a 6dp top padding added so icons sit further from the top edge of the frosted glass strip. (`BottomNavBar.kt`, `DesignTokens.kt`)
+- **CI build provenance attestation** — release workflow now generates a SLSA build provenance attestation via `actions/attest-build-provenance@v2` for every signed release APK. Verify-firmware job restricted to tag pushes only. (`.github/workflows/ci.yml`)
+- **Removed deleted firmware RC binaries** — `openrs-fw-pro_v1.2-rc.1.bin` and `openrs-fw-usb_v1.61-rc.1.bin` removed from `firmware/release/`; the stable `v1.2.bin` / `v1.61.bin` files in the same directory remain the current firmware.
+
+### Fixed (stable — in-app updater rolling-RC bug)
+- **UpdateChecker now reads version from APK filename, not git tag** — the rolling-RC release pattern reuses the same git tag (e.g. `android-v2.2.6-rc.7`) across multiple RCs while the APK filename advances (`openRS_v2.2.6-rc.10.apk`). `UpdateChecker.parseReleases` was reading the version from `tag_name`, so RCs newer than the tag's named RC were silently filtered out as "older than installed" for users on the beta channel. Added `AppVersion.fromApkFilename()` and switched the parser to prefer the APK filename, with tag parsing as a fallback. 6 new unit tests guard the rolling-RC scenario. Total suite now 344 tests across 11 files. (`AppVersion.kt`, `UpdateChecker.kt`, `AppVersionTest.kt`)
+
+### Changed (stable)
+- **`versionCode` 33 → 34** — required for OTA update detection. `versionName` stays `2.2.6`. (`build.gradle.kts`)
 
 ---
 

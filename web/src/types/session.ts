@@ -3,6 +3,8 @@ export interface Session {
   id: string
   name: string
   importedAt: number
+  /** User-assigned tags for filtering/grouping. */
+  tags: string[]
   /** Trip data (may be absent for diagnostic-only exports). */
   trip: TripData | null
   /** Diagnostic data (may be absent for trip-only exports). */
@@ -47,6 +49,16 @@ export interface TripPoint {
   driveMode: string
   awdTorqueL: number
   awdTorqueR: number
+  gear: string
+  throttlePct: number
+  tirePressLF: number
+  tirePressRF: number
+  tirePressLR: number
+  tirePressRR: number
+  tireTempLF: number
+  tireTempRF: number
+  tireTempLR: number
+  tireTempRR: number
 }
 
 export interface TripSummary {
@@ -83,6 +95,14 @@ export interface DiagnosticData {
   sessionEvents: SessionEvent[]
   decodeTrace: DecodeEntry[]
   probeResults: ProbeResult[]
+  dtcResults: DtcEntry[]
+}
+
+export interface DtcEntry {
+  module: string      // "PCM" | "BCM" | "ABS" | "AWD" | "PSCM"
+  code: string        // e.g. "P0101"
+  status: string      // "STORED" | "PENDING" | "PERMANENT" | "ACTIVE"
+  description: string
 }
 
 export interface CanFrame {

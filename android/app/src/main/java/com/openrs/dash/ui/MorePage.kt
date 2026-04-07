@@ -20,11 +20,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,25 +39,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.OpenRSDashApp
-import com.openrs.dash.can.BusyException
-import com.openrs.dash.can.CanDecoder
-import com.openrs.dash.can.FirmwareApi
+import com.openrs.dash.can.DriveCommandResult
+import com.openrs.dash.can.FirmwareCommandSender
+import com.openrs.dash.can.executeDriveModeChange
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.EscStatus
-import com.openrs.dash.data.SessionDatabase
-import com.openrs.dash.data.SessionEntity
-import com.openrs.dash.data.SnapshotEntity
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticLogger
 import android.content.Intent
 import android.net.Uri
-import kotlinx.coroutines.Dispatchers
+import com.openrs.dash.ui.Tokens.CardBorder
+import com.openrs.dash.ui.Tokens.PagePad
+import com.openrs.dash.ui.anim.pressClick
+import com.openrs.dash.data.PerformanceTimer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import kotlin.math.roundToInt
 
 private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
 
@@ -72,7 +66,8 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
     p: UserPrefs,
     snackbarHostState: SnackbarHostState,
     onSettings: () -> Unit,
-    onCustomDash: () -> Unit = {}
+    onCustomDash: () -> Unit = {},
+    firmwareApi: FirmwareCommandSender? = null
 ) {
     val isFw   by OpenRSDashApp.instance.isOpenRsFirmware.collectAsState()
     val fwLabel by OpenRSDashApp.instance.firmwareVersionLabel.collectAsState()
@@ -81,13 +76,12 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
     val haptic = LocalHapticFeedback.current
     val accent = LocalThemeAccent.current
     val canControl = isFw && vs.isConnected
-    val prefs by UserPrefsStore.prefs.collectAsState()
-    val host = remember(prefs) { AppSettings.getHost(ctx) }
     var pendingDriveMode by remember { mutableStateOf<DriveMode?>(null) }
     var pendingEsc       by remember { mutableStateOf<EscStatus?>(null) }
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .padding(start = PagePad, end = PagePad, top = PagePad, bottom = PagePad + Tokens.NavBarHeight),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
 
@@ -118,46 +112,20 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
                                     if (isActive || isPending) modeAccent else Brd,
                                     RoundedCornerShape(10.dp)
                                 )
-                                .clickable(enabled = canControl && !isActive && pendingDriveMode == null) {
+                                .pressClick(enabled = canControl && firmwareApi != null && !isActive && pendingDriveMode == null) {
                                     haptic.performHapticFeedback(HapticFeedbackType.Confirm)
                                     pendingDriveMode = mode
                                     scope.launch {
-                                        DiagnosticLogger.event("DM_CMD",
-                                            "Sending driveMode=${mode.toFirmwareInt()} (${mode.label}) to $host")
-                                        val result = FirmwareApi.setDriveMode(ctx, host, mode.toFirmwareInt())
-                                        if (result.isFailure) {
-                                            val ex = result.exceptionOrNull()
-                                            DiagnosticLogger.event("DM_CMD",
-                                                "FAILED: ${ex?.message}")
-                                            val msg = if (ex is BusyException)
-                                                "Mode change in progress — please wait"
-                                            else "Drive mode command failed"
-                                            snackbarHostState.showSnackbar(msg)
-                                        } else {
-                                            DiagnosticLogger.event("DM_CMD", "OK (HTTP 200)")
-                                            // Settling delay: firmware needs time to press the
-                                            // mode button and ECU needs time to broadcast the
-                                            // new mode on 0x420 (~600 ms interval). SLCAN data
-                                            // (2026-03-26) showed 4s firmware delay on cold start.
-                                            delay(2_000)
-                                            // Watch CAN for confirmation (up to 15s after settling).
-                                            // Read live state each iteration — vs is an immutable snapshot.
-                                            var confirmed = false
-                                            for (i in 0 until 150) {
-                                                delay(100)
-                                                val live = OpenRSDashApp.instance.vehicleState.value
-                                                if (live.driveMode == mode) {
-                                                    confirmed = true
-                                                    break
-                                                }
-                                            }
-                                            if (!confirmed) {
-                                                val live = OpenRSDashApp.instance.vehicleState.value
-                                                DiagnosticLogger.event("DM_CMD",
-                                                    "No CAN confirmation after 17s (current=${live.driveMode}, target=$mode, modeDetail420=0x${CanDecoder.modeDetail420Hex})")
-                                                snackbarHostState.showSnackbar(
-                                                    "Mode change didn't take effect — try again")
-                                            }
+                                        when (val r = executeDriveModeChange(firmwareApi!!, mode, vs.driveMode)) {
+                                            is DriveCommandResult.Success -> { /* CAN state already updated */ }
+                                            is DriveCommandResult.Busy ->
+                                                snackbarHostState.showSnackbar("Mode change in progress \u2014 please wait")
+                                            is DriveCommandResult.Failed ->
+                                                snackbarHostState.showSnackbar(r.message)
+                                            is DriveCommandResult.CorrectionFailed ->
+                                                snackbarHostState.showSnackbar("Mode correction failed \u2014 try again manually")
+                                            is DriveCommandResult.NoConfirmation ->
+                                                snackbarHostState.showSnackbar("Mode change didn\u2019t take effect \u2014 try again")
                                         }
                                         pendingDriveMode = null
                                     }
@@ -176,8 +144,8 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
             }
             Spacer(Modifier.height(6.dp))
             MonoLabel(
-                if (canControl) "Tap to change \u00B7 Live from CAN 0x1B0"
-                else "Read-only mirror of CAN 0x1B0. Use steering wheel MODE button.",
+                if (canControl) "Tap to change \u00B7 Quick Mode Dock"
+                else "Displays current Drive Mode \u2014 openRS_ firmware unlocks tap control",
                 9.sp, Dim
             )
         }
@@ -207,19 +175,19 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
                                     if (isActive || isPending) color else Brd,
                                     RoundedCornerShape(10.dp)
                                 )
-                                .clickable(enabled = canControl && !isActive) {
+                                .pressClick(enabled = canControl && firmwareApi != null && !isActive) {
                                     haptic.performHapticFeedback(HapticFeedbackType.Confirm)
                                     pendingEsc = status
                                     scope.launch {
                                         DiagnosticLogger.event("ESC_CMD",
-                                            "Sending escMode=${status.toFirmwareInt()} (${status.label}) to $host")
-                                        val result = FirmwareApi.setEscMode(ctx, host, status.toFirmwareInt())
+                                            "Sending escMode=${status.toFirmwareInt()} (${status.label})")
+                                        val result = firmwareApi!!.setEscMode(status.toFirmwareInt())
                                         if (result.isFailure) {
                                             DiagnosticLogger.event("ESC_CMD",
                                                 "FAILED: ${result.exceptionOrNull()?.message}")
                                             snackbarHostState.showSnackbar("ESC command failed")
                                         } else {
-                                            DiagnosticLogger.event("ESC_CMD", "OK (HTTP 200)")
+                                            DiagnosticLogger.event("ESC_CMD", "OK")
                                         }
                                         pendingEsc = null
                                     }
@@ -239,7 +207,7 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
                 Box(
                     Modifier.fillMaxWidth()
                         .background(Warn.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                        .border(1.dp, Warn.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                        .border(CardBorder, Warn.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
                         .padding(10.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -262,7 +230,7 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
                 Column(
                     Modifier.weight(1f)
                         .background(Surf2, RoundedCornerShape(10.dp))
-                        .border(1.dp, Brd, RoundedCornerShape(10.dp))
+                        .border(CardBorder, Brd, RoundedCornerShape(10.dp))
                         .padding(12.dp)
                 ) {
                     UIText("Launch Control", 12.sp, Frost, FontWeight.SemiBold)
@@ -291,7 +259,7 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
                 Column(
                     Modifier.weight(1f)
                         .background(Surf2, RoundedCornerShape(10.dp))
-                        .border(1.dp, Brd, RoundedCornerShape(10.dp))
+                        .border(CardBorder, Brd, RoundedCornerShape(10.dp))
                         .padding(12.dp)
                 ) {
                     UIText("Auto Start-Stop", 12.sp, Frost, FontWeight.SemiBold)
@@ -314,7 +282,7 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
             Row(
                 Modifier.fillMaxWidth()
                     .background(if (isFw) Ok.copy(alpha = 0.06f) else Orange.copy(alpha = 0.06f), RoundedCornerShape(8.dp))
-                    .border(1.dp, if (isFw) Ok.copy(0.2f) else Orange.copy(0.2f), RoundedCornerShape(8.dp))
+                    .border(CardBorder, if (isFw) Ok.copy(0.2f) else Orange.copy(0.2f), RoundedCornerShape(8.dp))
                     .padding(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -343,7 +311,7 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
                     Column(
                         Modifier.weight(1f)
                             .background(Surf2, RoundedCornerShape(10.dp))
-                            .border(1.dp, Brd, RoundedCornerShape(10.dp))
+                            .border(CardBorder, Brd, RoundedCornerShape(10.dp))
                             .padding(10.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
@@ -367,6 +335,25 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
 
         HorizontalDivider(color = Brd)
 
+        // ── VIN (passive CAN 0x40A) ──────────────────────────────────────
+        if (vs.vin.isNotEmpty()) {
+            MoreSection("VEHICLE IDENTIFICATION") {
+                Row(
+                    Modifier.fillMaxWidth()
+                        .background(Surf2, RoundedCornerShape(8.dp))
+                        .border(CardBorder, Brd, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MonoLabel("VIN", 9.sp, Dim, letterSpacing = 0.1.sp)
+                    Spacer(Modifier.weight(1f))
+                    MonoText(vs.vin, 12.sp, Frost)
+                }
+            }
+
+            HorizontalDivider(color = Brd)
+        }
+
         // ── Custom Dashboard ──────────────────────────────────────────────
         MoreSection("CUSTOM DASHBOARD") {
             val savedLayout = remember { AppSettings.loadCustomDash(ctx) }
@@ -377,7 +364,7 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
                         Brush.horizontalGradient(listOf(accent.copy(0.1f), accent.copy(0.05f))),
                         RoundedCornerShape(10.dp)
                     )
-                    .border(1.dp, accent.copy(0.3f), RoundedCornerShape(10.dp))
+                    .border(CardBorder, accent.copy(0.3f), RoundedCornerShape(10.dp))
                     .clickable { onCustomDash() }
                     .padding(horizontal = 14.dp, vertical = 13.dp)
             ) {
@@ -402,6 +389,18 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
 
         HorizontalDivider(color = Brd)
 
+        // ── Performance Timer ────────────────────────────────────────────
+        val timerState by PerformanceTimer.state.collectAsState()
+        SideEffect {
+            if (timerState.state == PerformanceTimer.State.ARMED ||
+                timerState.state == PerformanceTimer.State.RUNNING) {
+                PerformanceTimer.onSpeedUpdate(vs.speedKph, vs.rpm, vs.boostPsi)
+            }
+        }
+        PerformanceTimerSection(timerState, accent)
+
+        HorizontalDivider(color = Brd)
+
         // ── Sapphire Web Dashboard ───────────────────────────────────────
         MoreSection("WEB DASHBOARD") {
             Box(
@@ -410,7 +409,7 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
                         Brush.horizontalGradient(listOf(accent.copy(0.08f), accent.copy(0.03f))),
                         RoundedCornerShape(10.dp)
                     )
-                    .border(1.dp, accent.copy(0.2f), RoundedCornerShape(10.dp))
+                    .border(CardBorder, accent.copy(0.2f), RoundedCornerShape(10.dp))
                     .clickable {
                         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(SAPPHIRE_URL))
                         ctx.startActivity(intent)
@@ -431,11 +430,6 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
                 }
             }
         }
-
-        HorizontalDivider(color = Brd)
-
-        // ── Session History ────────────────────────────────────────────────
-        SessionHistorySection()
 
         Spacer(Modifier.height(4.dp))
     }
@@ -473,7 +467,7 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
     Column(
         modifier
             .background(if (isActive) color.copy(alpha = 0.12f) else Surf2, RoundedCornerShape(10.dp))
-            .border(2.dp, if (isActive) color else Brd, RoundedCornerShape(10.dp))
+            .border(1.dp, if (isActive) color else Brd, RoundedCornerShape(10.dp))
             .clickable { UserPrefsStore.update(ctx) { it.copy(themeId = id) } }
             .padding(vertical = 10.dp, horizontal = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -490,218 +484,119 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SESSION HISTORY
+// PERFORMANCE TIMER SECTION
 // ═══════════════════════════════════════════════════════════════════════════
 
-private val sessionDateFormat = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
-
-@Composable fun SessionHistorySection() {
-    val ctx = LocalContext.current
-    val accent = LocalThemeAccent.current
-    val prefs by UserPrefsStore.prefs.collectAsState()
-    var sessions by remember { mutableStateOf<List<SessionEntity>>(emptyList()) }
-    var expandedId by remember { mutableStateOf<Long?>(null) }
-    var snapshots by remember { mutableStateOf<List<SnapshotEntity>>(emptyList()) }
-    val scope = rememberCoroutineScope()
-
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            sessions = SessionDatabase.getInstance(ctx).sessionDao().getRecentSessions(10)
-        }
-    }
-
-    MoreSection("SESSION HISTORY") {
-        if (sessions.isEmpty()) {
-            Box(
-                Modifier.fillMaxWidth()
-                    .background(Surf2, RoundedCornerShape(10.dp))
-                    .border(1.dp, Brd, RoundedCornerShape(10.dp))
-                    .padding(16.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                MonoLabel("No sessions recorded yet", 10.sp, Dim)
-            }
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                sessions.forEach { session ->
-                    val isExpanded = expandedId == session.id
-                    SessionCard(
-                        session = session,
-                        prefs = prefs,
-                        isExpanded = isExpanded,
-                        snapshots = if (isExpanded) snapshots else emptyList(),
-                        onToggle = {
-                            if (isExpanded) {
-                                expandedId = null
-                                snapshots = emptyList()
-                            } else {
-                                expandedId = session.id
-                                scope.launch(Dispatchers.IO) {
-                                    val loaded = SessionDatabase.getInstance(ctx)
-                                        .sessionDao().getSnapshots(session.id)
-                                    withContext(Dispatchers.Main) { snapshots = loaded }
-                                }
-                            }
-                        }
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.height(6.dp))
-        MonoLabel("Last 10 sessions. Auto-pruned after 30 days.", 9.sp, Dim)
-    }
-}
-
-@Composable private fun SessionCard(
-    session: SessionEntity,
-    prefs: UserPrefs,
-    isExpanded: Boolean,
-    snapshots: List<SnapshotEntity>,
-    onToggle: () -> Unit
+@Composable private fun PerformanceTimerSection(
+    ts: PerformanceTimer.TimerState,
+    accent: androidx.compose.ui.graphics.Color
 ) {
-    val accent = LocalThemeAccent.current
-    val dateStr = sessionDateFormat.format(Date(session.startTime))
-    val durationMs = if (session.endTime > 0) session.endTime - session.startTime else 0L
-    val durationStr = formatSessionDuration(durationMs)
-    val isActive = session.endTime == 0L
-
-    Column(
-        Modifier.fillMaxWidth()
-            .background(Surf2, RoundedCornerShape(10.dp))
-            .border(1.dp, if (isActive) accent.copy(0.4f) else Brd, RoundedCornerShape(10.dp))
-            .clickable { onToggle() }
-            .padding(12.dp)
-    ) {
-        // Header row: date + duration
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+    MoreSection("PERFORMANCE TIMER") {
+        Column(
+            Modifier.fillMaxWidth()
+                .background(Surf2, RoundedCornerShape(12.dp))
+                .border(CardBorder, when (ts.state) {
+                    PerformanceTimer.State.RUNNING  -> accent.copy(0.6f)
+                    PerformanceTimer.State.ARMED    -> Warn.copy(0.4f)
+                    PerformanceTimer.State.FINISHED -> Ok.copy(0.4f)
+                    else -> Brd
+                }, RoundedCornerShape(12.dp))
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
+            // Header row: target toggle
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                MonoLabel(dateStr, 10.sp, Frost, FontWeight.SemiBold)
-                if (isActive) {
-                    MonoLabel("LIVE", 8.sp, Ok, FontWeight.Bold, letterSpacing = 0.1.sp)
+                Box(
+                    Modifier
+                        .background(Surf, RoundedCornerShape(6.dp))
+                        .border(CardBorder, Brd, RoundedCornerShape(6.dp))
+                        .clickable {
+                            val next = if (ts.target == PerformanceTimer.Target.ZERO_TO_60)
+                                PerformanceTimer.Target.ZERO_TO_100
+                            else PerformanceTimer.Target.ZERO_TO_60
+                            if (ts.state == PerformanceTimer.State.IDLE) PerformanceTimer.arm(next)
+                            else if (ts.state == PerformanceTimer.State.FINISHED) {
+                                PerformanceTimer.reset()
+                                PerformanceTimer.arm(next)
+                            }
+                        }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    MonoLabel(ts.target.label, 9.sp, Frost, letterSpacing = 0.1.sp)
                 }
             }
-            MonoLabel(
-                if (isActive) "active" else durationStr,
-                9.sp,
-                if (isActive) accent else Dim
-            )
-        }
-        Spacer(Modifier.height(8.dp))
 
-        // Peak metrics row
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            SessionMetric(
-                label = "RPM",
-                value = if (session.peakRpm > 0) "${session.peakRpm.toInt()}" else "--",
-                modifier = Modifier.weight(1f)
-            )
-            SessionMetric(
-                label = "BOOST",
-                value = if (session.peakBoostPsi > 0) String.format("%.1f", session.peakBoostPsi)
-                        else "--",
-                unit = "PSI",
-                modifier = Modifier.weight(1f)
-            )
-            SessionMetric(
-                label = "SPEED",
-                value = if (session.peakSpeedKph > 0) {
-                    val speed = if (prefs.speedUnit == "MPH")
-                        session.peakSpeedKph * 0.621371 else session.peakSpeedKph
-                    "${speed.toInt()}"
-                } else "--",
-                unit = prefs.speedLabel,
-                modifier = Modifier.weight(1f)
-            )
-            SessionMetric(
-                label = "OIL",
-                value = if (session.peakOilTempC > -90) {
-                    prefs.displayTemp(session.peakOilTempC)
-                } else "--",
-                unit = prefs.tempLabel,
-                modifier = Modifier.weight(1f)
-            )
-        }
+            // Timer display
+            val timeStr = when (ts.state) {
+                PerformanceTimer.State.IDLE     -> "—.——"
+                PerformanceTimer.State.ARMED    -> "0.00"
+                PerformanceTimer.State.RUNNING  -> "%.2f".format(ts.elapsedMs / 1000.0)
+                PerformanceTimer.State.FINISHED -> "%.2f".format(ts.resultMs / 1000.0)
+            }
+            val timeColor = when (ts.state) {
+                PerformanceTimer.State.RUNNING  -> accent
+                PerformanceTimer.State.FINISHED -> Ok
+                PerformanceTimer.State.ARMED    -> Warn
+                else -> Frost
+            }
+            HeroNum(timeStr, 42.sp, timeColor)
+            MonoLabel("seconds", 8.sp, Dim)
 
-        // Expanded: snapshot summary
-        AnimatedVisibility(
-            visible = isExpanded,
-            enter = expandVertically(),
-            exit = shrinkVertically()
-        ) {
-            Column(Modifier.padding(top = 10.dp)) {
-                if (snapshots.isEmpty()) {
-                    MonoLabel("No snapshots in this session", 9.sp, Dim)
-                } else {
+            // Status / details row
+            when (ts.state) {
+                PerformanceTimer.State.IDLE -> {
                     Box(
-                        Modifier.fillMaxWidth().height(1.dp).background(Brd)
-                    )
-                    Spacer(Modifier.height(8.dp))
-
-                    // Summary stats from snapshots
-                    val avgRpm = snapshots.map { it.rpm }.average()
-                    val maxRpm = snapshots.maxOf { it.rpm }
-                    val avgSpeed = snapshots.map { it.speedKph }.average()
-                    val maxThrottle = snapshots.maxOf { it.throttlePct }
-
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        SessionMetric("AVG RPM", "${avgRpm.toInt()}", modifier = Modifier.weight(1f))
-                        SessionMetric("MAX RPM", "${maxRpm.toInt()}", modifier = Modifier.weight(1f))
-                        SessionMetric(
-                            "AVG SPEED",
-                            if (prefs.speedUnit == "MPH") "${(avgSpeed * 0.621371).toInt()}"
-                            else "${avgSpeed.toInt()}",
-                            unit = prefs.speedLabel,
-                            modifier = Modifier.weight(1f)
-                        )
-                        SessionMetric("THROTTLE", "${maxThrottle.toInt()}%", modifier = Modifier.weight(1f))
+                        Modifier
+                            .background(accent.copy(0.12f), RoundedCornerShape(6.dp))
+                            .border(CardBorder, accent.copy(0.3f), RoundedCornerShape(6.dp))
+                            .pressClick { PerformanceTimer.arm(ts.target) }
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        MonoLabel("ARM TIMER", 10.sp, accent, FontWeight.Bold)
                     }
-
-                    Spacer(Modifier.height(6.dp))
-                    MonoLabel(
-                        "${snapshots.size} snapshots \u00B7 ${session.totalFrames} CAN frames",
-                        8.sp, Dim
-                    )
+                }
+                PerformanceTimer.State.ARMED -> {
+                    MonoLabel("Waiting for launch…", 10.sp, Warn)
+                }
+                PerformanceTimer.State.RUNNING -> {
+                    MonoLabel("Launch RPM: ${ts.launchRpm.roundToInt()}", 9.sp, Dim)
+                }
+                PerformanceTimer.State.FINISHED -> {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DataCell("LAUNCH", "${ts.launchRpm.roundToInt()} RPM", modifier = Modifier.weight(1f))
+                        DataCell("BOOST", "${"%.1f".format(ts.peakBoostPsi)} PSI", modifier = Modifier.weight(1f))
+                        if (ts.bestResultMs > 0) {
+                            DataCell("BEST", "${"%.2f".format(ts.bestResultMs / 1000.0)}s", modifier = Modifier.weight(1f))
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(
+                            Modifier
+                                .background(accent.copy(0.12f), RoundedCornerShape(6.dp))
+                                .border(CardBorder, accent.copy(0.3f), RoundedCornerShape(6.dp))
+                                .pressClick { PerformanceTimer.reset(); PerformanceTimer.arm(ts.target) }
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            MonoLabel("GO AGAIN", 10.sp, accent, FontWeight.Bold)
+                        }
+                        Box(
+                            Modifier
+                                .background(Surf, RoundedCornerShape(6.dp))
+                                .border(CardBorder, Brd, RoundedCornerShape(6.dp))
+                                .clickable { PerformanceTimer.reset() }
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            MonoLabel("RESET", 10.sp, Dim)
+                        }
+                    }
                 }
             }
         }
     }
 }
 
-@Composable private fun SessionMetric(
-    label: String,
-    value: String,
-    unit: String = "",
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier
-            .background(Surf, RoundedCornerShape(6.dp))
-            .border(1.dp, Brd, RoundedCornerShape(6.dp))
-            .padding(horizontal = 6.dp, vertical = 5.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        MonoLabel(label, 7.sp, Dim, letterSpacing = 0.12.sp)
-        Spacer(Modifier.height(2.dp))
-        MonoText(value, 12.sp, Frost)
-        if (unit.isNotEmpty()) {
-            MonoLabel(unit, 7.sp, Dim)
-        }
-    }
-}
-
-private fun formatSessionDuration(ms: Long): String {
-    if (ms <= 0) return "--"
-    val totalSec = ms / 1000
-    val h = totalSec / 3600
-    val m = (totalSec % 3600) / 60
-    val s = totalSec % 60
-    return if (h > 0) String.format("%dh %02dm", h, m)
-           else String.format("%dm %02ds", m, s)
-}

@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useActiveSession } from '../../store'
 import { EmptyState } from '../ui/EmptyState'
 import { SectionLabel } from '../ui/SectionLabel'
+import { TimeSeriesChart } from '../charts/TimeSeriesChart'
 import { colors } from '../../styles/tokens'
+import type { DtcEntry } from '../../types/session'
 
 export function DiagnosticsPanel() {
   const session = useActiveSession()
@@ -18,6 +20,8 @@ export function DiagnosticsPanel() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-2">
+      {diag.dtcResults.length > 0 && <DtcTable entries={diag.dtcResults} />}
+      {diag.fpsTimeline.length > 0 && <FpsChart data={diag.fpsTimeline} />}
       {diag.canInventory.length > 0 && <CanInventoryTable frames={diag.canInventory} />}
       {diag.sessionEvents.length > 0 && <EventsTable events={diag.sessionEvents} />}
       {diag.probeResults.length > 0 && <ProbeTable probes={diag.probeResults} />}
@@ -215,6 +219,85 @@ function DecodeTraceTable({ entries }: { entries: { ts: number; canId: string; r
           </table>
         </div>
       </div>
+    </>
+  )
+}
+
+// ── DTC Fault Codes ──
+
+function DtcTable({ entries }: { entries: DtcEntry[] }) {
+  const statusColor = (s: string) => {
+    const sl = s.toUpperCase()
+    if (sl === 'ACTIVE' || sl === 'STORED') return colors.orange
+    if (sl === 'PENDING') return colors.warn
+    if (sl === 'PERMANENT') return colors.red
+    return colors.dim
+  }
+
+  return (
+    <>
+      <SectionLabel>Fault Codes ({entries.length})</SectionLabel>
+      <div className="rounded-lg border border-brd bg-surf2 overflow-hidden">
+        <div className="max-h-[400px] overflow-y-auto">
+          <table className="w-full text-xs font-mono">
+            <thead className="sticky top-0 bg-surf3">
+              <tr className="text-left text-dim uppercase tracking-wider">
+                <th className="px-3 py-2 w-16">Module</th>
+                <th className="px-3 py-2 w-20">Code</th>
+                <th className="px-3 py-2 w-24">Status</th>
+                <th className="px-3 py-2">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((dtc, i) => (
+                <tr key={i} className="border-t border-brd hover:bg-surf3/50 transition-colors">
+                  <td className="px-3 py-1.5 text-accent">{dtc.module}</td>
+                  <td className="px-3 py-1.5 text-frost font-semibold">{dtc.code}</td>
+                  <td className="px-3 py-1.5">
+                    <span
+                      className="inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold"
+                      style={{
+                        color: statusColor(dtc.status),
+                        backgroundColor: statusColor(dtc.status) + '18',
+                      }}
+                    >
+                      {dtc.status}
+                    </span>
+                  </td>
+                  <td className="px-3 py-1.5 text-mid">{dtc.description}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ── FPS Timeline ──
+
+function FpsChart({ data }: { data: { ts: number; fps: number }[] }) {
+  const chartData = useMemo(() => {
+    const t0 = data[0]?.ts ?? 0
+    return data.map((d) => ({ ts: (d.ts - t0) / 1000, fps: d.fps }))
+  }, [data])
+
+  const fmtTime = (sec: number) => {
+    const m = Math.floor(sec / 60)
+    const s = Math.round(sec % 60)
+    return `${m}:${s.toString().padStart(2, '0')}`
+  }
+
+  return (
+    <>
+      <SectionLabel>App FPS Timeline</SectionLabel>
+      <TimeSeriesChart
+        data={chartData}
+        series={[{ key: 'fps', label: 'FPS', color: colors.ok }]}
+        xFormatter={fmtTime}
+        height={140}
+      />
     </>
   )
 }

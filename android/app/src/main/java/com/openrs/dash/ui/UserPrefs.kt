@@ -25,15 +25,26 @@ data class UserPrefs(
     val boostUnit: String           = AppSettings.DEFAULT_BOOST_UNIT,   // "PSI" | "BAR" | "KPA"
     val tireUnit: String            = AppSettings.DEFAULT_TIRE_UNIT,    // "PSI" | "BAR"
     val tireLowPsi: Float           = AppSettings.DEFAULT_TIRE_LOW_PSI,
+    val tireWarnPsi: Float          = AppSettings.DEFAULT_TIRE_WARN_PSI,
+    val tireHighPsi: Float          = AppSettings.DEFAULT_TIRE_HIGH_PSI,
     val screenOn: Boolean           = AppSettings.DEFAULT_SCREEN_ON,
     val autoReconnect: Boolean      = AppSettings.DEFAULT_AUTO_RECONNECT,
     val reconnectIntervalSec: Int   = AppSettings.DEFAULT_RECONNECT_INTERVAL,
     val maxDiagZips: Int            = AppSettings.DEFAULT_MAX_DIAG_ZIPS, // max diagnostic ZIPs to keep
     val themeId: String             = AppSettings.DEFAULT_THEME_ID,      // RS paint color theme
     val tempPreset: String          = AppSettings.DEFAULT_TEMP_PRESET,   // "street"|"track"|"race"
-    val adapterType: String         = AppSettings.DEFAULT_ADAPTER_TYPE,  // "WICAN" | "MEATPI"
+    val adapterType: String         = AppSettings.DEFAULT_ADAPTER_TYPE,  // "MEATPI_USB" | "MEATPI_PRO"
+    val connectionMethod: String    = AppSettings.DEFAULT_CONNECTION_METHOD, // "WIFI" | "BLUETOOTH"
     val meatPiMicroSdLog: Boolean   = false,                              // MeatPi Pro microSD logging
-    val odomInMiles: Boolean        = speedUnit == "MPH"                  // Odometer display: true=mi, false=km
+    val odomInMiles: Boolean        = speedUnit == "MPH",                 // Odometer display: true=mi, false=km
+    val edgeShiftLight: Boolean     = AppSettings.DEFAULT_EDGE_SHIFT_LIGHT,  // peripheral edge glow
+    val edgeShiftColor: String      = AppSettings.DEFAULT_EDGE_SHIFT_COLOR,  // "accent"|"white"|"progressive"
+    val edgeShiftIntensity: String  = AppSettings.DEFAULT_EDGE_SHIFT_INTENSITY, // "low"|"med"|"high"
+    val edgeShiftRpm: Int           = AppSettings.DEFAULT_EDGE_SHIFT_RPM,    // shift point RPM
+    val autoRecordDrives: Boolean   = AppSettings.DEFAULT_AUTO_RECORD_DRIVES,  // auto-start on connect
+    val maxSavedDrives: Int         = AppSettings.DEFAULT_MAX_SAVED_DRIVES,    // oldest pruned when exceeded
+    val updateChannel: String       = AppSettings.DEFAULT_UPDATE_CHANNEL,      // "stable" | "beta"
+    val brightness: Float           = 0f                                       // 0.0=Night, 0.5=Day, 1.0=Sun
 ) {
     // ── Unit-conversion helpers used by UI ─────────────────────────────────
 

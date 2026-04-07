@@ -22,8 +22,8 @@ data class VehicleState(
 
     // ── Engine (OBD Mode 1) ─────────────────────────────────
     val calcLoad: Double = 0.0,            // PID 04: 0-100%
-    val shortFuelTrim: Double = 0.0,       // PID 06: -100 to +99.2%
-    val longFuelTrim: Double = 0.0,        // PID 07: -100 to +99.2%
+    val shortFuelTrim: Double = 0.0,       // PCM 0xF406 (Ford fast-path 22F4xx): A*100/128 - 100 (%)
+    val longFuelTrim: Double = 0.0,        // PCM 0xF407 (Ford fast-path 22F4xx): A*100/128 - 100 (%)
     val timingAdvance: Double = 0.0,       // PID 0E: -64 to +63.5 degrees
     val fuelRailPressure: Double = 0.0,    // PID 22: 0-5177.3 kPa
     val barometricPressure: Double = 0.0,  // PID 33: 0-255 kPa
@@ -57,6 +57,9 @@ data class VehicleState(
     val oilLifePct: Double = -1.0,         // 0x054B: Oil life remaining (%)
     val hpFuelRailPsi: Double = -1.0,      // 0xF422: HP fuel rail pressure (PSI, direct injection)
 
+    // ── Spark / Ignition (Mode 22 via PCM 0x7E0) ──────────
+    val sparkAdvance: Double = -1.0,       // 0x116B: spark advance (deg × 0.25); -1 = not yet polled
+
     // ── Ignition Correction (Mode 22 via PCM 0x7E0) ───────
     val ignCorrCyl1: Double = 0.0,         // 0x03EC: Knock correction cyl 1 (deg)
     val ignCorrCyl2: Double = 0.0,         // 0x03ED: Knock correction cyl 2 (deg)
@@ -85,6 +88,9 @@ data class VehicleState(
     val tireStartLR: Double = -1.0,        // Session-start LR pressure (PSI); -1 = not yet captured
     val tireStartRR: Double = -1.0,        // Session-start RR pressure (PSI); -1 = not yet captured
 
+    // ── Driver Inputs (CAN Sniffed) ─────────────────────────
+    val clutchPedalPct: Double = 0.0,  // CAN 0x138: clutch pedal position 0-100%
+
     // ── Dynamics (CAN Sniffed) ──────────────────────────────
     val speedKph: Double = 0.0,
     val steeringAngle: Double = 0.0,
@@ -100,6 +106,13 @@ data class VehicleState(
     val wheelSpeedRL: Double = 0.0,
     val wheelSpeedRR: Double = 0.0,
 
+    // ── Wheel Rotation Counts (CAN 0x1E0 ABSmsg06) ────────
+    val wheelRotFL: Int = 0,           // 8-bit rolling counter 0-255
+    val wheelRotFR: Int = 0,
+    val wheelRotRL: Int = 0,
+    val wheelRotRR: Int = 0,
+    val avgFrontWheelSpeedKph: Double = 0.0,
+
     // ── AWD / GKN Twinster (CAN Sniffed / Mode 22 polled) ───────────────────
     val awdLeftTorque: Double = 0.0,
     val awdRightTorque: Double = 0.0,
@@ -113,14 +126,10 @@ data class VehicleState(
     val awdDmdPressure: Double = 0.0,    // AWD 0x703: demanded hydraulic pressure
     val awdPumpCurrent: Double = 0.0,    // AWD 0x703: pump motor current (A)
     val transOilTempC: Double = -99.0,   // AWD 0x703: sump oil temperature (°C)
-
-    // ── HVAC / Climate (Mode 22 via HVAC ECU, DIDs TBD) ──────
-    val hvacBlowerPct: Double = -1.0,      // Blower motor speed (%)
-    val hvacInteriorTempC: Double = -99.0, // Interior temp sensor (°C)
-    val hvacDischargeRfTempC: Double = -99.0, // Discharge air temp, right floor (°C)
-    val hvacBlendDoorL: Double = -1.0,     // Left blend door position (%)
-    val hvacBlendDoorR: Double = -1.0,     // Right blend door position (%)
-    val hvacDefrostDoor: Double = -1.0,    // Defrost door position (%)
+    val awdClutchCurL: Double = -999.0,  // AWD 0x1E9E: left clutch actuator current (A, signed); -999 = not yet polled
+    val awdClutchCurR: Double = -999.0,  // AWD 0x1E9F: right clutch actuator current (A, signed); -999 = not yet polled
+    val awdClutchPressureL: Double = -1.0, // AWD 0x1ED1: left clutch hydraulic pressure (mBar); -1 = not yet polled
+    val awdClutchPressureR: Double = -1.0, // AWD 0x1ED2: right clutch hydraulic pressure (mBar); -1 = not yet polled
 
     // ── IPC Warning Lamps (Mode 22 via IPC ECU, DIDs TBD) ─────
     val warnMil: Boolean? = null,         // MIL (check engine) lamp
@@ -129,6 +138,9 @@ data class VehicleState(
     val warnCharge: Boolean? = null,      // Battery/charge warning lamp
     val warnOilPressure: Boolean? = null, // Oil pressure warning lamp
     val warnTempHigh: Boolean? = null,    // High coolant temp warning
+
+    // ── Vehicle Identification (CAN 0x40A multiplexed) ──────
+    val vin: String = "",                  // 17-char VIN assembled from mux pages C1 00/01/02
 
     // ── Vehicle Status (CAN Sniffed) ────────────────────────
     val driveMode: DriveMode = DriveMode.NORMAL,
@@ -141,15 +153,21 @@ data class VehicleState(
     val eBrake: Boolean = false,           // Emergency brake status
     val reverseStatus: Boolean = false,    // Reverse gear engaged
     val launchControlActive: Boolean = false, // 0x420 bit 50: launch control armed
+    val launchControlEngaged: Boolean = false, // 0x225 byte5 bit3: LC actively engaged
+    val suspensionButtonPressed: Boolean = false, // 0x070 byte7 bit7: RS suspension button
+    val driveModeButtonPressed: Boolean = false, // 0x305 byte4 bit5: drive mode toggle (held)
+    val autoStartStopButtonPressed: Boolean = false, // 0x260 byte0 bit7: ASS button (held)
+    val escOffButtonPressed: Boolean = false, // 0x260 byte5 bit3: ESC defeat button (held)
     val engineStatus: Int = -1,            // 0x360 byte 0: 0=Idle, 2=Off, 183=Running, 186=Kill, 191=RecentStart
     val ignitionStatus: Int = -1,          // 0x0C8 byte2 bits 3-6: 0=KeyOut..7=Running..9=Cranking
 
     // ── BCM OBD (Mode 22 via BCM 0x726) ────────────────────
     val odometerKm: Long = -1L,            // 0x360 bytes[3:5] 24-bit, or 0x22DD01 24-bit (once on connect)
-    val odometerRolloverOffset: Long = 0,  // legacy — kept for CanDataService merge compat
     val batterySoc: Double = -1.0,         // 0x224028: B4 % (start/stop SoC)
     val batteryTempC: Double = -99.0,      // 0x224029: B4-40 °C (12V battery)
     val cabinTempC: Double = -99.0,        // 0x22DD04: (B4×10/9)-45 °C (interior)
+    val batteryChargingVoltageDesired: Double = -1.0, // 0x411D: charging system target voltage (V)
+    val batteryCurrentA: Double = -999.0,  // 0x4090: ((A*256+B)/16)-511.7 amps (signed: + = charging, - = discharging); -999 = not yet polled
 
     // ── Extended Session OBD (Mode 22 + extended session 0x03) ─
     // Sources: Daft Racing rset.py (confirmed DIDs), RSProt (probed)
@@ -183,8 +201,6 @@ data class VehicleState(
     val isIdle: Boolean = false,
     val framesPerSecond: Double = 0.0,
     val lastUpdate: Long = 0L,
-    @Deprecated("Unused — always CAN. Remove in next major version.")
-    val dataMode: String = "CAN"
 ) {
     // ── Computed ─────────────────────────────────────────────
     val boostPsi: Double get() = (boostKpa - 101.325) * 0.14503773
@@ -212,16 +228,18 @@ data class VehicleState(
     /**
      * Gear estimated from RPM ÷ vehicle speed.
      * The Focus RS does not broadcast gear position on passive HS-CAN (0x230 is absent
-     * from every observed log). This calculation uses empirically calibrated thresholds
-     * derived from a live 16-minute log, with known gear ratios confirmed via the
-     * RPM/speed/ratio triangle at multiple speed points.
+     * from every observed log).
      *
      * Formula:  ratio = rpm × GEAR_FACTOR / speedKph
      *   where GEAR_FACTOR = tireCircumferenceM(235/35R19=2.033) × 3.6 / (60 × finalDrive(3.82))
      *                      = 0.03194
      *
-     * Measured ratios from live log: 1st≈3.79  2nd≈2.18  3rd≈1.89  4th≈1.30  5th≈0.85
-     * Thresholds sit at midpoints between adjacent measured values.
+     * Official MMT6 ratios (2016 Ford Focus RS Owner's Manual, p242):
+     *   1st=3.23  2nd=1.95  3rd=1.32  4th=1.03  5th=1.13  6th=0.94
+     *   Dual final drive: 4.063 (gears 1-4), 2.955 (gears 5-6)
+     *   Overall: 1st=13.12  2nd=7.92  3rd=5.36  4th=4.18  5th=3.34  6th=2.78
+     *   Code-equivalent ratios (÷3.82): 1st=3.43  2nd=2.07  3rd=1.40  4th=1.09  5th=0.87  6th=0.73
+     * Thresholds sit at midpoints between adjacent code-equivalent values.
      * Returns 0 (N) when speed < 3 kph or RPM < 400. Returns 7 for reverse.
      */
     val derivedGear: Int get() {
@@ -229,11 +247,11 @@ data class VehicleState(
         if (speedKph < 3.0 || rpm < 400) return 0
         val ratio = rpm * 0.03194 / speedKph
         return when {
-            ratio >= 2.99 -> 1
-            ratio >= 2.03 -> 2
-            ratio >= 1.60 -> 3
-            ratio >= 1.00 -> 4
-            ratio >= 0.74 -> 5
+            ratio >= 2.75 -> 1
+            ratio >= 1.74 -> 2
+            ratio >= 1.25 -> 3
+            ratio >= 0.98 -> 4
+            ratio >= 0.80 -> 5
             else          -> 6
         }
     }

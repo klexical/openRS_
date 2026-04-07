@@ -301,15 +301,15 @@ composables with no UI changes — just a second data source populating
 The Focus RS has both HS-CAN (500k, OBD pins 6/14) and MS-CAN (125k, OBD
 pins 3/11). A custom Y-harness splits the OBD connector so one WiCAN handles
 HS-CAN and a second handles MS-CAN. The app already has dual-adapter
-architecture (`WiCanConnection` + `MeatPiConnection`) — a third connection type
-would unlock HVAC state, factory display parameters, and the true MS-CAN
-ambient temperature.
+architecture (`SlcanConnection` + pluggable `SlcanTransport`) — a second
+transport instance would unlock HVAC state, factory display parameters, and
+the true MS-CAN ambient temperature.
 
 - Hardware: custom OBD-II Y-harness, 16-pin female to two 16-pin male
 - Pin routing: both male connectors share pins 4, 5, 16 (grounds + battery)
 - HS-CAN WiCAN: pins 6 (CAN-H) + 14 (CAN-L) on connector A
 - MS-CAN WiCAN: pins 3 (MS-CAN-H) + 11 (MS-CAN-L) on connector B
-- Software: `MsCanConnection.kt` — identical to `WiCanConnection` but S5
+- Software: second `SlcanConnection` with `WebSocketSlcanTransport` using S5
   (125 kbps) instead of S6
 - App: settings toggle to enable second adapter, connection dot shows both
   adapter states

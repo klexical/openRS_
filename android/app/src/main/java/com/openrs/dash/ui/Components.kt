@@ -19,9 +19,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -29,23 +32,41 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import com.openrs.dash.ui.anim.Sparkline
-import com.openrs.dash.ui.anim.neonGlowRect
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.R
+import com.openrs.dash.ui.anim.cardGlow
+import com.openrs.dash.ui.Tokens.CardBorder
+import com.openrs.dash.ui.Tokens.CardShape
+import com.openrs.dash.ui.Tokens.HeroShape
+import com.openrs.dash.ui.Tokens.InnerH
+import com.openrs.dash.ui.Tokens.InnerV
+import com.openrs.dash.ui.Tokens.HeroInnerH
+import com.openrs.dash.ui.Tokens.HeroInnerV
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SHARED UI COMPONENTS — used across two or more tab pages
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Section label: small text with extending horizontal rule. Optionally collapsible. */
+/** Neon accent divider — replaces solid Brd horizontal rules. */
+@Composable fun NeonDivider(modifier: Modifier = Modifier) {
+    val accent = LocalThemeAccent.current
+    Box(modifier.fillMaxWidth().height(1.dp).background(
+        Brush.horizontalGradient(listOf(
+            Color.Transparent, accent.copy(alpha = 0.3f), accent.copy(alpha = 0.15f), Color.Transparent
+        ))
+    ))
+}
+
+/** Section label: small text with extending neon horizontal rule. Optionally collapsible. */
 @Composable fun SectionLabel(
     text: String,
     modifier: Modifier = Modifier,
@@ -62,10 +83,14 @@ import com.openrs.dash.R
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         if (collapsible) {
-            MonoLabel(if (expanded) "\u25BE" else "\u25B8", 9.sp, Dim)
+            val rotation by animateFloatAsState(
+                targetValue = if (expanded) 0f else -90f,
+                animationSpec = spring(stiffness = Spring.StiffnessMedium), label = "chevRot"
+            )
+            MonoLabel("\u25BE", 9.sp, Dim, modifier = Modifier.graphicsLayer { rotationZ = rotation })
         }
-        MonoLabel(text, 9.sp, Dim, letterSpacing = 0.2.sp)
-        Box(Modifier.weight(1f).height(1.dp).background(Brd))
+        MonoLabel(text, 9.sp, Dim, letterSpacing = 0.3.sp)
+        NeonDivider(Modifier.weight(1f))
     }
 }
 
@@ -87,17 +112,19 @@ import com.openrs.dash.R
 
     Column(
         modifier
-            .background(Surf2, RoundedCornerShape(10.dp))
-            .border(1.dp, Brd, RoundedCornerShape(10.dp))
-            .padding(horizontal = 10.dp, vertical = 8.dp)
+            .cardGlow(cornerRadius = Tokens.CardRadius)
+            .background(Surf2, CardShape)
+            .border(CardBorder, Brd.copy(alpha = 0.15f), CardShape)
+            .padding(horizontal = InnerH, vertical = InnerV)
     ) {
-        MonoLabel(label, 8.sp, Dim, letterSpacing = 0.15.sp)
+        MonoLabel(label, 8.sp, Dim)
         Spacer(Modifier.height(3.dp))
-        MonoText(value, 14.sp, displayColor)
+        AggressiveNum(value, 14.sp, displayColor)
     }
 }
 
-/** Hero card — large Orbitron number for BOOST / SPEED / RPM */
+/** Hero card — large Orbitron number for BOOST / SPEED / RPM.
+ *  @param valueFraction 0.0–1.0 drives glow intensity (0=idle, 1=max). */
 @Composable fun HeroCard(
     unit: String,
     value: String,
@@ -106,29 +133,43 @@ import com.openrs.dash.R
     modifier: Modifier = Modifier,
     borderAccent: Color? = null,
     peak: String = "",
-    sparklineData: List<Float>? = null
+    sparklineData: List<Float>? = null,
+    valueFraction: Float = 0f
 ) {
     val accent = LocalThemeAccent.current
-    val brd = borderAccent ?: Brd
+    val animFrac by animateFloatAsState(valueFraction.coerceIn(0f, 1f),
+        spring(stiffness = Spring.StiffnessMediumLow), label = "heroFrac")
+    val hasData = animFrac > 0.01f
+    val glowAlpha = animFrac * 0.3f
     Column(
         modifier
-            .background(Surf2, RoundedCornerShape(16.dp))
-            .border(1.dp, brd, RoundedCornerShape(16.dp))
-            .padding(horizontal = 8.dp, vertical = 14.dp),
+            .cardGlow(color = borderAccent ?: accent, cornerRadius = Tokens.HeroRadius)
+            .background(Surf2, HeroShape)
+            .border(CardBorder, Brd.copy(alpha = 0.15f), HeroShape)
+            .padding(horizontal = HeroInnerH, vertical = HeroInnerV),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         MonoLabel(unit, 8.sp, Dim, letterSpacing = 0.18.sp)
         Spacer(Modifier.height(4.dp))
         Box(
-            Modifier.fillMaxWidth().drawBehind {
+            Modifier.fillMaxWidth().then(if (hasData) Modifier.drawBehind {
+                // Outer diffuse glow
                 drawCircle(
                     brush = Brush.radialGradient(
-                        listOf(valueColor.copy(alpha = 0.18f), Color.Transparent),
+                        listOf(valueColor.copy(alpha = glowAlpha * 0.5f), Color.Transparent),
                         center = center,
-                        radius = size.minDimension * 0.9f
+                        radius = size.minDimension * 1.2f
                     )
                 )
-            },
+                // Inner bright core
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        listOf(valueColor.copy(alpha = glowAlpha), Color.Transparent),
+                        center = center,
+                        radius = size.minDimension * 0.7f
+                    )
+                )
+            } else Modifier),
             contentAlignment = Alignment.Center
         ) {
             HeroNum(value, 26.sp, valueColor, Modifier.fillMaxWidth())
@@ -156,15 +197,17 @@ import com.openrs.dash.R
     barGlowColor: Color? = null,
     sparklineData: List<Float>? = null
 ) {
+    val hasData = fraction > 0f
     Column(
         modifier
-            .background(Surf2, RoundedCornerShape(12.dp))
-            .border(1.dp, Brd, RoundedCornerShape(12.dp))
-            .padding(12.dp)
+            .cardGlow(cornerRadius = Tokens.CardRadius)
+            .background(Surf2, CardShape)
+            .border(CardBorder, Brd.copy(alpha = 0.15f), CardShape)
+            .padding(InnerH)
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            MonoLabel(name, 9.sp, Dim, letterSpacing = 0.15.sp)
-            MonoText(value, 13.sp, Frost)
+            MonoLabel(name, 9.sp, Dim)
+            AggressiveNum(value, 13.sp, Frost)
         }
         Spacer(Modifier.height(7.dp))
         Box(
@@ -174,7 +217,6 @@ import com.openrs.dash.R
             Box(
                 Modifier.fillMaxWidth(fraction.coerceIn(0f, 1f)).fillMaxHeight()
                     .background(barBrush, RoundedCornerShape(2.dp))
-                    .then(if (barGlowColor != null) Modifier.neonGlowRect(barGlowColor) else Modifier)
             )
         }
         if (sparklineData != null && sparklineData.size >= 2) {
@@ -197,9 +239,10 @@ import com.openrs.dash.R
 
     Column(
         modifier
-            .background(Surf2, RoundedCornerShape(12.dp))
-            .border(1.dp, Brd, RoundedCornerShape(12.dp))
-            .padding(10.dp),
+            .cardGlow(cornerRadius = Tokens.CardRadius)
+            .background(Surf2, CardShape)
+            .border(CardBorder, Brd.copy(alpha = 0.15f), CardShape)
+            .padding(InnerH),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         MonoLabel(label, 8.sp, Dim, letterSpacing = 0.12.sp)
@@ -212,34 +255,37 @@ import com.openrs.dash.R
 /** Wheel speed cell — front/rear accent colour */
 @Composable fun WheelCell(label: String, speed: String, front: Boolean) {
     val accent = LocalThemeAccent.current
-    val borderColor = if (front) accent.copy(alpha = 0.35f) else Ok.copy(alpha = 0.3f)
+    val isPlaceholder = speed == "— —" || speed == "0"
     Column(
         Modifier.fillMaxWidth()
-            .background(Surf2, RoundedCornerShape(10.dp))
-            .border(1.dp, borderColor, RoundedCornerShape(10.dp))
-            .padding(8.dp),
+            .cardGlow(cornerRadius = Tokens.CardRadius)
+            .background(Surf2, Tokens.CardShape)
+            .border(CardBorder, Brd.copy(alpha = 0.15f), Tokens.CardShape)
+            .padding(InnerV),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         MonoLabel(label, 9.sp, Dim, letterSpacing = 0.12.sp)
         Spacer(Modifier.height(2.dp))
-        MonoText(speed, 16.sp, Frost)
+        AggressiveNum(speed, 15.sp, Frost)
     }
 }
 
 /** G-force / dynamics numeric card */
 @Composable fun GfCard(label: String, value: String, peak: String, modifier: Modifier) {
     val accent = LocalThemeAccent.current
+    val isPlaceholder = value == "— —" || value == "0.00"
     Column(
         modifier
-            .background(Surf2, RoundedCornerShape(10.dp))
-            .border(1.dp, Brd, RoundedCornerShape(10.dp))
-            .padding(8.dp),
+            .cardGlow(cornerRadius = Tokens.GfRadius)
+            .background(Surf2, RoundedCornerShape(Tokens.GfRadius))
+            .border(CardBorder, Brd.copy(alpha = 0.15f), RoundedCornerShape(Tokens.GfRadius))
+            .padding(InnerV),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         MonoLabel(label, 8.sp, Dim, letterSpacing = 0.12.sp)
         Spacer(Modifier.height(3.dp))
         Box(
-            Modifier.fillMaxWidth().drawBehind {
+            Modifier.fillMaxWidth().then(if (!isPlaceholder) Modifier.drawBehind {
                 drawCircle(
                     brush = Brush.radialGradient(
                         listOf(accent.copy(alpha = 0.12f), Color.Transparent),
@@ -247,7 +293,7 @@ import com.openrs.dash.R
                         radius = size.minDimension * 0.8f
                     )
                 )
-            },
+            } else Modifier),
             contentAlignment = Alignment.Center
         ) {
             MonoText(value, 18.sp, Frost, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
@@ -264,20 +310,32 @@ import com.openrs.dash.R
     tempC: Double = -99.0,
     deltaText: String = ""
 ) {
-    val isLow     = psi in 0.0..(lowThreshold - 0.001)
     val isMissing = psi < 0
+    val warnThreshold = p.tireWarnPsi.toDouble()
+    val highThreshold = p.tireHighPsi.toDouble()
+    val isLow     = psi in 0.0..(lowThreshold - 0.001)
+    val isWarn    = psi in lowThreshold..(warnThreshold - 0.001)
     val tireColor = when {
-        isMissing  -> Dim
-        isLow      -> Orange
-        psi > 40.0 -> Warn
-        else       -> Ok
+        isMissing       -> Dim
+        isLow           -> Orange        // critically under-inflated
+        isWarn          -> Warn          // getting low
+        psi > highThreshold -> Orange   // over-inflated
+        else            -> Ok            // optimal range
     }
     val hasTemp = tempC > -90
+    val tireBorderColor = when {
+        isMissing -> Brd.copy(alpha = 0.3f)
+        isLow     -> Orange.copy(alpha = 0.5f)
+        isWarn    -> Warn.copy(alpha = 0.3f)
+        psi > highThreshold -> Orange.copy(alpha = 0.3f)
+        else      -> Ok.copy(alpha = 0.15f)
+    }
     Column(
         Modifier.fillMaxWidth()
-            .background(Surf2, RoundedCornerShape(10.dp))
-            .border(1.dp, if (isLow) Orange.copy(0.5f) else Brd, RoundedCornerShape(10.dp))
-            .padding(8.dp, 7.dp),
+            .cardGlow(color = tireColor, intensity = 0.04f, cornerRadius = Tokens.CardRadius)
+            .background(Surf2, CardShape)
+            .border(CardBorder, tireBorderColor, CardShape)
+            .padding(InnerV, 7.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         MonoLabel(label, 9.sp, Dim, letterSpacing = 0.12.sp)
