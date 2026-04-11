@@ -13,11 +13,51 @@ import { fmtNumber, fmtDuration, useUnitFormatters } from '../../lib/format'
 import { colors } from '../../styles/tokens'
 
 export function DashboardPanel() {
+  // ── Hooks (must run on every render path — keep above any early return) ──
   const session = useActiveSession()
   const sessions = useStore((s) => s.sessions)
   const setActivePanel = useStore((s) => s.setActivePanel)
   const fmt = useUnitFormatters()
 
+  const trip = session?.trip?.summary
+  const points = session?.trip?.points
+  const diag = session?.diagnostics
+
+  // Sparkline data arrays
+  const rpmData = useMemo(() => points?.map((p) => p.rpm) ?? [], [points])
+  const speedData = useMemo(() => points?.map((p) => p.speedKph) ?? [], [points])
+  const boostData = useMemo(() => points?.map((p) => p.boostPsi) ?? [], [points])
+
+  // TPMS: walk the trip in reverse and pick each corner's most recent valid
+  // reading independently. Tires are polled out-of-phase via Mode 22 DIDs, so
+  // any single timestamp will usually have at least one corner still at the
+  // -1 / -99 sentinel. Sourcing per-corner avoids showing blanks when valid
+  // data exists earlier in the drive.
+  const tpmsData = useMemo(() => {
+    if (!points || points.length === 0) return null
+    const result = {
+      pressLF: -1, pressRF: -1, pressLR: -1, pressRR: -1,
+      tempLF: -99, tempRF: -99, tempLR: -99, tempRR: -99,
+    }
+    let need = 8
+    for (let i = points.length - 1; i >= 0 && need > 0; i--) {
+      const p = points[i]
+      if (result.pressLF < 0 && p.tirePressLF >= 0) { result.pressLF = p.tirePressLF; need-- }
+      if (result.pressRF < 0 && p.tirePressRF >= 0) { result.pressRF = p.tirePressRF; need-- }
+      if (result.pressLR < 0 && p.tirePressLR >= 0) { result.pressLR = p.tirePressLR; need-- }
+      if (result.pressRR < 0 && p.tirePressRR >= 0) { result.pressRR = p.tirePressRR; need-- }
+      if (result.tempLF <= -90 && p.tireTempLF > -90) { result.tempLF = p.tireTempLF; need-- }
+      if (result.tempRF <= -90 && p.tireTempRF > -90) { result.tempRF = p.tireTempRF; need-- }
+      if (result.tempLR <= -90 && p.tireTempLR > -90) { result.tempLR = p.tireTempLR; need-- }
+      if (result.tempRR <= -90 && p.tireTempRR > -90) { result.tempRR = p.tireTempRR; need-- }
+    }
+    const anyValid =
+      result.pressLF >= 0 || result.pressRF >= 0 || result.pressLR >= 0 || result.pressRR >= 0 ||
+      result.tempLF > -90 || result.tempRF > -90 || result.tempLR > -90 || result.tempRR > -90
+    return anyValid ? result : null
+  }, [points])
+
+  // ── Early returns (after all hooks) ──
   if (sessions.length === 0) {
     return (
       <EmptyState
@@ -55,34 +95,6 @@ export function DashboardPanel() {
       />
     )
   }
-
-  const trip = session.trip?.summary
-  const points = session.trip?.points
-  const diag = session.diagnostics
-
-  // Sparkline data arrays
-  const rpmData = useMemo(() => points?.map((p) => p.rpm) ?? [], [points])
-  const speedData = useMemo(() => points?.map((p) => p.speedKph) ?? [], [points])
-  const boostData = useMemo(() => points?.map((p) => p.boostPsi) ?? [], [points])
-
-  // TPMS: get last valid reading from trip points
-  const tpmsData = useMemo(() => {
-    if (!points || points.length === 0) return null
-    const last = [...points].reverse().find((p) =>
-      p.tirePressLF >= 0 || p.tirePressRF >= 0 || p.tirePressLR >= 0 || p.tirePressRR >= 0
-    )
-    if (!last) return null
-    return {
-      pressLF: last.tirePressLF,
-      pressRF: last.tirePressRF,
-      pressLR: last.tirePressLR,
-      pressRR: last.tirePressRR,
-      tempLF: last.tireTempLF,
-      tempRF: last.tireTempRF,
-      tempLR: last.tireTempLR,
-      tempRR: last.tireTempRR,
-    }
-  }, [points])
 
   return (
     <div className="max-w-6xl mx-auto">

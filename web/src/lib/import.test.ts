@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import JSZip from 'jszip'
-import { importZip } from './import'
+import { importZip, ImportError } from './import'
 
 // Helper: build a ZIP blob and wrap as File
 async function buildZipFile(files: Record<string, string>, name = 'test.zip'): Promise<File> {
@@ -205,6 +205,25 @@ U0100  [ACTIVE]  Lost communication with ECM
     expect(session.meta.appVersion).toBe('openRS_ v2.2.6')
     expect(session.meta.firmwareVersion).toBe('v1.61')
     expect(session.meta.sessionStart).toBe('2026-04-01 14:30:00')
+  })
+
+  it('throws ImportError when required CSV columns are missing', async () => {
+    // Header has lat/lng/speed but no timestamp and no rpm
+    const csv = 'lat,lng,speedKph\n51.5,-0.13,80'
+    const file = await buildZipFile({ 'drive_bad.csv': csv })
+    await expect(importZip(file)).rejects.toBeInstanceOf(ImportError)
+    await expect(importZip(file)).rejects.toThrow(/missing required columns/i)
+  })
+
+  it('strips UTF-8 BOM from the start of the CSV', async () => {
+    // Prepend a BOM to the header line — without stripping, the first column
+    // name becomes "\uFEFFtimestamp_ms" and parseTripRow falls through to defaults.
+    const csv = '\uFEFF' + [CSV_HEADER, makeCsvRow(1000000, { rpm: 4200 })].join('\n')
+    const file = await buildZipFile({ 'drive_bom.csv': csv })
+    const session = await importZip(file)
+    expect(session.trip).not.toBeNull()
+    expect(session.trip!.points[0].ts).toBe(1000000)
+    expect(session.trip!.points[0].rpm).toBe(4200)
   })
 
   it('handles alternate CSV column names (snake_case)', async () => {

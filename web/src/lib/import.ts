@@ -4,6 +4,14 @@ import type {
   DiagnosticData, DtcEntry, CanFrame, FpsSample, SessionEvent, DecodeEntry, ProbeResult,
 } from '../types/session'
 
+/** Thrown when an imported ZIP cannot be parsed — surfaced to the user via ImportPanel. */
+export class ImportError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ImportError'
+  }
+}
+
 /** Import a ZIP file exported by the openRS_ Android app. */
 export async function importZip(file: File): Promise<Session> {
   const zip = await JSZip.loadAsync(file)
@@ -29,19 +37,38 @@ export async function importZip(file: File): Promise<Session> {
 
 // ── Trip CSV parsing ──
 
+// Required column synonyms — at least one variant from each group must be
+// present in the CSV header for it to be considered a valid trip export.
+const REQUIRED_COLUMN_GROUPS: { name: string; aliases: string[] }[] = [
+  { name: 'timestamp', aliases: ['timestamp_ms', 'timestamp', 'ts'] },
+  { name: 'rpm', aliases: ['rpm'] },
+]
+
 async function parseTripData(zip: JSZip): Promise<TripData | null> {
   const csvFile = Object.keys(zip.files).find(
     (f) => (f.startsWith('trip_') || f.startsWith('drive_')) && f.endsWith('.csv')
   )
   if (!csvFile) return null
 
-  const csv = await zip.files[csvFile].async('string')
+  // Strip UTF-8 BOM if present — `.split('\n')` would otherwise leave \uFEFF
+  // glued to the first header, breaking field-name lookup in parseTripRow.
+  const csv = (await zip.files[csvFile].async('string')).replace(/^\uFEFF/, '')
   const lines = csv.trim().split('\n')
   if (lines.length < 2) return null
 
   const headers = lines[0].split(',').map((h) => h.trim())
-  const points: TripPoint[] = []
 
+  // Validate headers — surface a clear error instead of silently producing
+  // structurally-valid TripPoints filled with garbage values.
+  const headerSet = new Set(headers)
+  const missing = REQUIRED_COLUMN_GROUPS
+    .filter((g) => !g.aliases.some((a) => headerSet.has(a)))
+    .map((g) => `${g.name} (one of: ${g.aliases.join(', ')})`)
+  if (missing.length > 0) {
+    throw new ImportError(`CSV ${csvFile} is missing required columns: ${missing.join('; ')}`)
+  }
+
+  const points: TripPoint[] = []
   for (let i = 1; i < lines.length; i++) {
     const vals = lines[i].split(',')
     if (vals.length < headers.length) continue

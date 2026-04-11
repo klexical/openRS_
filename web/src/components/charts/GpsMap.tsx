@@ -79,7 +79,19 @@ function ZoomToFit({ points }: { points: TripPoint[] }) {
 export function GpsMap({ points, peakEvents, height = '55vh' }: GpsMapProps) {
   const [colorMode, setColorMode] = useState<ColorMode>('speed')
 
-  const segments = useMemo(() => buildColorSegments(points, colorMode), [points, colorMode])
+  // Precompute all 6 color-mode segment sets up front. Toggling between modes
+  // then becomes a key lookup instead of a full O(N) re-walk of the trip.
+  // For long drives the difference is the difference between a frame stall
+  // and a frame.
+  const segmentsByMode = useMemo(() => {
+    const map = {} as Record<ColorMode, ColorSegment[]>
+    for (const m of colorModes) {
+      map[m.id] = buildColorSegments(points, m.id)
+    }
+    return map
+  }, [points])
+
+  const segments = segmentsByMode[colorMode]
   const legend = useMemo(() => colorLegend(colorMode), [colorMode])
 
   // Detect pause points (>5s gap)

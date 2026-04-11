@@ -104,7 +104,7 @@ export function SettingsPanel() {
           ))}
         </div>
         <p className="text-[10px] font-mono text-dim mt-3">
-          Theme accent colors are cosmetic — chart colors remain fixed for readability.
+          Theme accent applies across the app's UI chrome. Chart series colors remain fixed for legend readability.
         </p>
       </div>
 

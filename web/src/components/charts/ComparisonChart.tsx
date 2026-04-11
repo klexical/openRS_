@@ -29,16 +29,18 @@ export function ComparisonChart({ sessions, dataKey, label, yFormatter, height =
     })
   }, [])
 
-  // Build merged data: each row has { t, s0_rpm, s1_rpm, ... }
-  const { chartData, seriesInfo } = useMemo(() => {
-    const bins = 200
-    const resampled = sessions.map((s) => {
-      const pts = s.trip?.points
-      if (!pts || pts.length < 2) return []
-      return resampleNormalized(normalizePoints(pts), bins)
-    })
+  // Resample once per session set — keyed only on `sessions` so switching the
+  // selected dataKey (RPM → boost → speed) is an O(bins) row build instead of
+  // re-resampling every trip from scratch every time.
+  const bins = 200
+  const resampled = useMemo(() => sessions.map((s) => {
+    const pts = s.trip?.points
+    if (!pts || pts.length < 2) return []
+    return resampleNormalized(normalizePoints(pts), bins)
+  }), [sessions])
 
-    // Build merged rows
+  // Build merged data: each row has { t, s0, s1, ... } projected for dataKey.
+  const { chartData, seriesInfo } = useMemo(() => {
     const rows: Record<string, number>[] = []
     for (let i = 0; i < bins; i++) {
       const row: Record<string, number> = { t: i / (bins - 1) * 100 } // 0..100%
@@ -57,7 +59,7 @@ export function ComparisonChart({ sessions, dataKey, label, yFormatter, height =
     }))
 
     return { chartData: rows, seriesInfo: info }
-  }, [sessions, dataKey])
+  }, [resampled, sessions, dataKey])
 
   if (chartData.length === 0) return null
 

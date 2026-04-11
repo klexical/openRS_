@@ -2,9 +2,27 @@ import type { KpiDelta } from '../../lib/compare'
 import { fmtNumber, fmtDuration } from '../../lib/format'
 import { colors } from '../../styles/tokens'
 
+// Per-unit threshold below which a delta is considered "no meaningful change".
+// 0.01 makes sense for L/100km or G but is invisible at RPM/ms scale, so each
+// unit gets its own floor that roughly matches what the displayed precision
+// would round to.
+function neutralThreshold(unit: string): number {
+  switch (unit) {
+    case 'ms':       return 50         // 50 ms ≈ frame-level noise
+    case 'RPM':      return 10
+    case 'kph':      return 0.5
+    case 'PSI':      return 0.1
+    case '°C':       return 0.5
+    case 'km':       return 0.05
+    case 'L/100km':  return 0.05
+    case 'G':        return 0.01
+    default:         return 0.01
+  }
+}
+
 export function DeltaCard({ delta }: { delta: KpiDelta }) {
   const improved = delta.higherIsBetter ? delta.diff > 0 : delta.diff < 0
-  const neutral = Math.abs(delta.diff) < 0.01
+  const neutral = Math.abs(delta.diff) < neutralThreshold(delta.unit)
   const arrowColor = neutral ? colors.dim : improved ? colors.ok : colors.orange
   const arrow = neutral ? '—' : delta.diff > 0 ? '▲' : '▼'
 

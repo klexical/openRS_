@@ -3,6 +3,41 @@ import type { Session } from '../types/session'
 
 export type PanelId = 'dashboard' | 'trip' | 'diagnostics' | 'sessions' | 'compare' | 'import' | 'settings'
 
+// Persistence: keep nav location across page refreshes. Settings already
+// persist via localStorage in store/settings.ts; this mirrors that pattern
+// for the main store's view-state fields without pulling in zustand/middleware.
+const VIEW_KEY = 'sapphire_view'
+const VALID_PANELS: ReadonlySet<PanelId> = new Set([
+  'dashboard', 'trip', 'diagnostics', 'sessions', 'compare', 'import', 'settings',
+])
+
+interface PersistedView {
+  activePanel: PanelId
+  activeSessionId: string | null
+}
+
+function loadView(): PersistedView {
+  try {
+    const raw = localStorage.getItem(VIEW_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<PersistedView>
+      const panel = parsed.activePanel && VALID_PANELS.has(parsed.activePanel)
+        ? parsed.activePanel
+        : 'dashboard'
+      const sid = typeof parsed.activeSessionId === 'string' ? parsed.activeSessionId : null
+      return { activePanel: panel, activeSessionId: sid }
+    }
+  } catch { /* ignore */ }
+  return { activePanel: 'dashboard', activeSessionId: null }
+}
+
+function persistView(partial: Partial<PersistedView>) {
+  try {
+    const current = loadView()
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ ...current, ...partial }))
+  } catch { /* ignore */ }
+}
+
 interface SapphireState {
   /** Currently active nav panel. */
   activePanel: PanelId
@@ -35,23 +70,31 @@ interface SapphireState {
   toggleNav: () => void
 }
 
+const initialView = loadView()
+
 export const useStore = create<SapphireState>((set) => ({
-  activePanel: 'dashboard',
-  setActivePanel: (panel) => set({ activePanel: panel }),
+  activePanel: initialView.activePanel,
+  setActivePanel: (panel) => { persistView({ activePanel: panel }); set({ activePanel: panel }) },
 
   sessions: [],
   setSessions: (sessions) => set({ sessions }),
   addSession: (session) => set((s) => ({ sessions: [...s.sessions, session] })),
-  removeSession: (id) => set((s) => ({
-    sessions: s.sessions.filter((sess) => sess.id !== id),
-    activeSessionId: s.activeSessionId === id ? null : s.activeSessionId,
-    compareSessionIds: s.compareSessionIds.filter((cid) => cid !== id),
-  })),
+  removeSession: (id) => set((s) => {
+    const nextActive = s.activeSessionId === id ? null : s.activeSessionId
+    if (nextActive !== s.activeSessionId) persistView({ activeSessionId: nextActive })
+    return {
+      sessions: s.sessions.filter((sess) => sess.id !== id),
+      activeSessionId: nextActive,
+      compareSessionIds: s.compareSessionIds.filter((cid) => cid !== id),
+    }
+  }),
   removeSessions: (ids) => set((s) => {
     const idSet = new Set(ids)
+    const nextActive = s.activeSessionId && idSet.has(s.activeSessionId) ? null : s.activeSessionId
+    if (nextActive !== s.activeSessionId) persistView({ activeSessionId: nextActive })
     return {
       sessions: s.sessions.filter((sess) => !idSet.has(sess.id)),
-      activeSessionId: s.activeSessionId && idSet.has(s.activeSessionId) ? null : s.activeSessionId,
+      activeSessionId: nextActive,
       compareSessionIds: s.compareSessionIds.filter((cid) => !idSet.has(cid)),
     }
   }),
@@ -64,8 +107,8 @@ export const useStore = create<SapphireState>((set) => ({
     sessions: s.sessions.map((sess) => sess.id === id ? { ...sess, tags } : sess),
   })),
 
-  activeSessionId: null,
-  setActiveSessionId: (id) => set({ activeSessionId: id }),
+  activeSessionId: initialView.activeSessionId,
+  setActiveSessionId: (id) => { persistView({ activeSessionId: id }); set({ activeSessionId: id }) },
 
   compareSessionIds: [],
   toggleCompareSession: (id) => set((s) => {

@@ -24,7 +24,7 @@ describe('pointColor — speed mode', () => {
     expect(pointColor(pt({ speedKph: 30 }), 'speed')).toBe(colors.ok)
   })
   it('60-100 kph returns accent (cyan)', () => {
-    expect(pointColor(pt({ speedKph: 80 }), 'speed')).toBe(colors.accent)
+    expect(pointColor(pt({ speedKph: 80 }), 'speed')).toBe(colors.cyan)
   })
   it('100-140 kph returns warn (yellow)', () => {
     expect(pointColor(pt({ speedKph: 120 }), 'speed')).toBe(colors.warn)
@@ -36,7 +36,7 @@ describe('pointColor — speed mode', () => {
 
 describe('pointColor — mode', () => {
   it('Normal → accent', () => {
-    expect(pointColor(pt({ driveMode: 'Normal' }), 'mode')).toBe(colors.accent)
+    expect(pointColor(pt({ driveMode: 'Normal' }), 'mode')).toBe(colors.cyan)
   })
   it('Sport → warn', () => {
     expect(pointColor(pt({ driveMode: 'Sport' }), 'mode')).toBe(colors.warn)
@@ -51,7 +51,7 @@ describe('pointColor — mode', () => {
 
 describe('pointColor — boost', () => {
   it('vacuum (<0) returns accent', () => {
-    expect(pointColor(pt({ boostPsi: -5 }), 'boost')).toBe(colors.accent)
+    expect(pointColor(pt({ boostPsi: -5 }), 'boost')).toBe(colors.cyan)
   })
   it('0-8 PSI returns ok', () => {
     expect(pointColor(pt({ boostPsi: 5 }), 'boost')).toBe(colors.ok)
@@ -66,7 +66,7 @@ describe('pointColor — boost', () => {
 
 describe('pointColor — latG', () => {
   it('<0.3g returns accent', () => {
-    expect(pointColor(pt({ latG: 0.1 }), 'latG')).toBe(colors.accent)
+    expect(pointColor(pt({ latG: 0.1 }), 'latG')).toBe(colors.cyan)
   })
   it('0.3-0.6g returns ok', () => {
     expect(pointColor(pt({ latG: 0.4 }), 'latG')).toBe(colors.ok)
@@ -84,7 +84,7 @@ describe('pointColor — latG', () => {
 
 describe('pointColor — throttle', () => {
   it('<25% returns accent', () => {
-    expect(pointColor(pt({ throttlePct: 10 }), 'throttle')).toBe(colors.accent)
+    expect(pointColor(pt({ throttlePct: 10 }), 'throttle')).toBe(colors.cyan)
   })
   it('25-50% returns ok', () => {
     expect(pointColor(pt({ throttlePct: 40 }), 'throttle')).toBe(colors.ok)
@@ -108,7 +108,7 @@ describe('pointColor — oilTemp', () => {
     expect(pointColor(pt({ oilTempC: 115 }), 'oilTemp')).toBe(colors.orange)
   })
   it('sub-zero returns accent', () => {
-    expect(pointColor(pt({ oilTempC: -5 }), 'oilTemp')).toBe(colors.accent)
+    expect(pointColor(pt({ oilTempC: -5 }), 'oilTemp')).toBe(colors.cyan)
   })
 })
 
@@ -145,7 +145,7 @@ describe('peakMarkerStyle', () => {
 
   it('boost returns accent color, 1 decimal', () => {
     const s = peakMarkerStyle('boost')
-    expect(s.color).toBe(colors.accent)
+    expect(s.color).toBe(colors.cyan)
     expect(s.decimals).toBe(1)
   })
 

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useStore } from '../../store'
 import { EmptyState } from '../ui/EmptyState'
 import { SearchBar } from '../ui/SearchBar'
@@ -21,11 +21,39 @@ export function SessionsPanel() {
   const setActivePanel = useStore((s) => s.setActivePanel)
 
   const [search, setSearch] = useState('')
+  // Debounced query — filter/sort only re-runs once typing pauses, so a 200+
+  // session library doesn't relayout the list on every keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('date')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [tagEditId, setTagEditId] = useState<string | null>(null)
+
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(search), 150)
+    return () => clearTimeout(handle)
+  }, [search])
+
+  // Filter + sort (must run on every render path — keep above the early return)
+  const filtered = useMemo(() => {
+    let list = sessions
+    if (debouncedSearch) {
+      const q = debouncedSearch.toLowerCase()
+      list = list.filter((s) =>
+        s.name.toLowerCase().includes(q) ||
+        (s.tags ?? []).some((t) => t.toLowerCase().includes(q))
+      )
+    }
+    return [...list].sort((a, b) => {
+      switch (sortKey) {
+        case 'name': return a.name.localeCompare(b.name)
+        case 'distance': return (b.trip?.summary.distanceKm ?? 0) - (a.trip?.summary.distanceKm ?? 0)
+        case 'speed': return (b.trip?.summary.peakSpeedKph ?? 0) - (a.trip?.summary.peakSpeedKph ?? 0)
+        default: return b.importedAt - a.importedAt
+      }
+    })
+  }, [sessions, debouncedSearch, sortKey])
 
   if (sessions.length === 0) {
     return (
@@ -46,26 +74,6 @@ export function SessionsPanel() {
     )
   }
 
-  // Filter + sort
-  const filtered = useMemo(() => {
-    let list = sessions
-    if (search) {
-      const q = search.toLowerCase()
-      list = list.filter((s) =>
-        s.name.toLowerCase().includes(q) ||
-        (s.tags ?? []).some((t) => t.toLowerCase().includes(q))
-      )
-    }
-    return [...list].sort((a, b) => {
-      switch (sortKey) {
-        case 'name': return a.name.localeCompare(b.name)
-        case 'distance': return (b.trip?.summary.distanceKm ?? 0) - (a.trip?.summary.distanceKm ?? 0)
-        case 'speed': return (b.trip?.summary.peakSpeedKph ?? 0) - (a.trip?.summary.peakSpeedKph ?? 0)
-        default: return b.importedAt - a.importedAt
-      }
-    })
-  }, [sessions, search, sortKey])
-
   const handleDelete = async (id: string) => {
     await dbDelete(id)
     removeSession(id)
@@ -74,9 +82,21 @@ export function SessionsPanel() {
 
   const handleBulkDelete = async () => {
     const ids = [...selectedIds]
-    await Promise.all(ids.map(dbDelete))
-    removeSessions(ids)
-    setSelectedIds(new Set())
+    // Use allSettled so a single failed delete doesn't strand the rest of the
+    // batch in an inconsistent state — only remove from the store the IDs that
+    // actually deleted from IndexedDB, and warn about the rest.
+    const results = await Promise.allSettled(ids.map((id) => dbDelete(id)))
+    const succeeded: string[] = []
+    const failed: string[] = []
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled') succeeded.push(ids[i])
+      else failed.push(ids[i])
+    })
+    if (succeeded.length > 0) removeSessions(succeeded)
+    setSelectedIds(failed.length > 0 ? new Set(failed) : new Set())
+    if (failed.length > 0) {
+      console.warn('[Sapphire] Failed to delete sessions from IndexedDB:', failed)
+    }
   }
 
   const handleSelect = (id: string) => {
