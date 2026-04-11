@@ -253,6 +253,10 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 ### Changed (stable)
 - **`versionCode` 33 → 34** — required for OTA update detection. `versionName` stays `2.2.6`. (`build.gradle.kts`)
 
+### Fixed (post-release rebuild — 2026-04-10)
+- **Trip-CSV export silently aborted on trip-only sessions** — `DiagnosticExporter` built the diagnostic summary/detail reports before writing the trip CSV, and a null dereference during summary construction for sessions with no diagnostic snapshot would short-circuit the whole export including the CSV. Decoupled the trip-CSV writer from the diagnostic report builder so trip-only sessions export cleanly and Sapphire (the web analytics dashboard) actually gets a CSV to import. (`DiagnosticExporter.kt`)
+- **`openRS_v2.2.6.apk` rebuilt in place** with the fix above. `versionCode` and `versionName` are unchanged (still 34 / 2.2.6), so the in-app updater does **not** notify existing installs — users who need the fix can manually reinstall from the release page.
+
 ---
 
 ## [v2.2.5] — 2026-03-27
