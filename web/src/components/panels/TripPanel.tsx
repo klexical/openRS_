@@ -13,61 +13,82 @@ import { useUnitFormatters } from '../../lib/format'
 import { colors, chartColors } from '../../styles/tokens'
 
 export function TripPanel() {
+  // ── Hooks (must run on every render path — keep above any early return) ──
   const session = useActiveSession()
   const fmt = useUnitFormatters()
 
+  const trip = session?.trip ?? null
+  // Stabilize points identity so downstream useMemo deps don't churn every render
+  const points = useMemo(() => trip?.points ?? [], [trip])
+  const t0 = points[0]?.ts ?? 0
+  const peakEvents = trip?.summary.peakEvents ?? []
+
+  // Build chart data with relative time in seconds.
+  // Sentinel-aware helpers return null instead of 0 so Recharts renders gaps for
+  // missing data instead of misleading dips, and explicitly reject NaN/Infinity
+  // so a malformed CSV row can't poison downstream rendering.
+  const chartData = useMemo(() => {
+    const safeTemp = (v: number) => (Number.isFinite(v) && v > -90 ? v : null)
+    const safePct = (v: number) => (Number.isFinite(v) && v >= 0 ? v : null)
+    const safeNum = (v: number) => (Number.isFinite(v) ? v : null)
+    return points.map((p) => ({
+      ts: (p.ts - t0) / 1000,
+      rpm: safeNum(p.rpm),
+      boostPsi: safeNum(p.boostPsi),
+      speedKph: safeNum(p.speedKph),
+      coolantC: safeTemp(p.coolantC),
+      oilTempC: safeTemp(p.oilTempC),
+      rduTempC: safeTemp(p.rduTempC),
+      ptuTempC: safeTemp(p.ptuTempC),
+      latG: safeNum(p.latG),
+      fuelPct: safePct(p.fuelPct),
+      wsFL: safeNum(p.wheelSpeedFL),
+      wsFR: safeNum(p.wheelSpeedFR),
+      wsRL: safeNum(p.wheelSpeedRL),
+      wsRR: safeNum(p.wheelSpeedRR),
+      awdL: safeNum(p.awdTorqueL),
+      awdR: safeNum(p.awdTorqueR),
+      throttlePct: safePct(p.throttlePct),
+      tirePressLF: safePct(p.tirePressLF),
+      tirePressRF: safePct(p.tirePressRF),
+      tirePressLR: safePct(p.tirePressLR),
+      tirePressRR: safePct(p.tirePressRR),
+      tireTempLF: safeTemp(p.tireTempLF),
+      tireTempRF: safeTemp(p.tireTempRF),
+      tireTempLR: safeTemp(p.tireTempLR),
+      tireTempRR: safeTemp(p.tireTempRR),
+    }))
+  }, [points, t0])
+
+  const hasThrottle = useMemo(() => points.some((p) => p.throttlePct >= 0), [points])
+  const hasTpmsPress = useMemo(() => points.some((p) => p.tirePressLF >= 0 || p.tirePressRF >= 0), [points])
+  const hasTpmsTemp = useMemo(() => points.some((p) => p.tireTempLF > -90 || p.tireTempRF > -90), [points])
+
+  // ── Early returns (after all hooks) ──
   if (!session) {
     return <EmptyState icon="◎" title="No Session Selected" description="Select a session to view trip data." />
   }
 
-  const trip = session.trip
-  if (!trip || trip.points.length === 0) {
-    return <EmptyState icon="◎" title="No Trip Data" description="This session does not contain trip data." />
+  if (!trip || points.length === 0) {
+    const hasDiagnostics = !!session.diagnostics
+    return (
+      <EmptyState
+        icon="◎"
+        title="No Trip Data"
+        description={
+          hasDiagnostics
+            ? "This session contains diagnostic data but no drive recording. To export trip data, open the openRS_ app → MAP tab → drive history → tap a drive → Share."
+            : "This session does not contain trip data."
+        }
+      />
+    )
   }
-
-  const points = trip.points
-  const t0 = points[0].ts
-  const peakEvents = trip.summary.peakEvents
-
-  // Build chart data with relative time in seconds
-  const chartData = useMemo(() => points.map((p) => ({
-    ts: (p.ts - t0) / 1000,
-    rpm: p.rpm,
-    boostPsi: p.boostPsi,
-    speedKph: p.speedKph,
-    coolantC: p.coolantC > -90 ? p.coolantC : 0,
-    oilTempC: p.oilTempC > -90 ? p.oilTempC : 0,
-    rduTempC: p.rduTempC > -90 ? p.rduTempC : 0,
-    ptuTempC: p.ptuTempC > -90 ? p.ptuTempC : 0,
-    latG: p.latG,
-    fuelPct: p.fuelPct >= 0 ? p.fuelPct : 0,
-    wsFL: p.wheelSpeedFL,
-    wsFR: p.wheelSpeedFR,
-    wsRL: p.wheelSpeedRL,
-    wsRR: p.wheelSpeedRR,
-    awdL: p.awdTorqueL,
-    awdR: p.awdTorqueR,
-    throttlePct: p.throttlePct >= 0 ? p.throttlePct : 0,
-    tirePressLF: p.tirePressLF >= 0 ? p.tirePressLF : 0,
-    tirePressRF: p.tirePressRF >= 0 ? p.tirePressRF : 0,
-    tirePressLR: p.tirePressLR >= 0 ? p.tirePressLR : 0,
-    tirePressRR: p.tirePressRR >= 0 ? p.tirePressRR : 0,
-    tireTempLF: p.tireTempLF > -90 ? p.tireTempLF : 0,
-    tireTempRF: p.tireTempRF > -90 ? p.tireTempRF : 0,
-    tireTempLR: p.tireTempLR > -90 ? p.tireTempLR : 0,
-    tireTempRR: p.tireTempRR > -90 ? p.tireTempRR : 0,
-  })), [points, t0])
 
   const fmtTime = (sec: number) => {
     const m = Math.floor(sec / 60)
     const s = Math.round(sec % 60)
     return `${m}:${s.toString().padStart(2, '0')}`
   }
-
-  // Check data availability
-  const hasThrottle = points.some((p) => p.throttlePct >= 0)
-  const hasTpmsPress = points.some((p) => p.tirePressLF >= 0 || p.tirePressRF >= 0)
-  const hasTpmsTemp = points.some((p) => p.tireTempLF > -90 || p.tireTempRF > -90)
 
   const syncId = 'trip-charts'
 

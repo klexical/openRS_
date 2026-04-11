@@ -111,11 +111,14 @@ object DiagnosticExporter {
             val zipFile = File(dir, "openrs_export_$ts.zip")
 
             ZipOutputStream(zipFile.outputStream().buffered()).use { zip ->
-                // Drive GPX (if GPS data available)
-                if (drive.hasGps && points.isNotEmpty()) {
-                    zip.putNextEntry(ZipEntry("drive_$ts.gpx"))
-                    zip.write(DriveExportBuilder.buildGpx(drive, points, ts).toByteArray(Charsets.UTF_8))
-                    zip.closeEntry()
+                // Drive telemetry: CSV is valuable even without GPS (per-row signal stream),
+                // but GPX requires a coordinate stream so it's gated separately.
+                if (points.isNotEmpty()) {
+                    if (drive.hasGps) {
+                        zip.putNextEntry(ZipEntry("drive_$ts.gpx"))
+                        zip.write(DriveExportBuilder.buildGpx(drive, points, ts).toByteArray(Charsets.UTF_8))
+                        zip.closeEntry()
+                    }
 
                     zip.putNextEntry(ZipEntry("drive_$ts.csv"))
                     zip.write(DriveExportBuilder.buildCsv(points).toByteArray(Charsets.UTF_8))
