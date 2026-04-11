@@ -64,6 +64,34 @@ describe('computeDeltas', () => {
     const deltas = computeDeltas(base, comp)
     expect(deltas.find((d) => d.label === 'Peak RPM')).toBeUndefined()
   })
+
+  // Regression: previously the pctChange divided by Math.abs(baseValue), which
+  // inverted the sign for any metric where the diff was negative. The signed
+  // percentage now matches the diff so 'good or bad' decisions stay in
+  // higherIsBetter, not in the percentage sign.
+  it('uses signed pctChange for lower-is-better metrics', () => {
+    // 25% faster lap: duration drops from 600s to 450s
+    const base = makeSummary({ durationMs: 600000 })
+    const comp = makeSummary({ durationMs: 450000 })
+    const delta = computeDeltas(base, comp).find((d) => d.label === 'Duration')
+
+    expect(delta).toBeDefined()
+    expect(delta!.diff).toBe(-150000)
+    expect(delta!.pctChange).toBeCloseTo(-25, 5)
+    expect(delta!.higherIsBetter).toBe(false)
+  })
+
+  it('uses signed pctChange for higher-is-better metrics', () => {
+    // Slower lap: peak speed drops from 160 to 140 → -12.5%
+    const base = makeSummary({ peakSpeedKph: 160 })
+    const comp = makeSummary({ peakSpeedKph: 140 })
+    const delta = computeDeltas(base, comp).find((d) => d.label === 'Peak Speed')
+
+    expect(delta).toBeDefined()
+    expect(delta!.diff).toBe(-20)
+    expect(delta!.pctChange).toBeCloseTo(-12.5, 5)
+    expect(delta!.higherIsBetter).toBe(true)
+  })
 })
 
 describe('normalizePoints', () => {

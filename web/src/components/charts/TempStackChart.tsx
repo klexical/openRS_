@@ -20,13 +20,17 @@ const series = [
 
 export function TempStackChart({ points, syncId }: Props) {
   const data = useMemo(() => {
+    // Stacked AreaChart can't render null cleanly (each layer needs a numeric
+    // baseline), so we floor invalid sentinels at 0 but explicitly reject NaN
+    // first — otherwise NaN > -90 is false and the stack drops with no warning.
+    const safeTemp = (v: number) => (Number.isFinite(v) && v > -90 ? v : 0)
     const t0 = points[0]?.ts ?? 0
     return points.map((p) => ({
       ts: (p.ts - t0) / 1000,
-      coolantC: p.coolantC > -90 ? p.coolantC : 0,
-      oilTempC: p.oilTempC > -90 ? p.oilTempC : 0,
-      rduTempC: p.rduTempC > -90 ? p.rduTempC : 0,
-      ptuTempC: p.ptuTempC > -90 ? p.ptuTempC : 0,
+      coolantC: safeTemp(p.coolantC),
+      oilTempC: safeTemp(p.oilTempC),
+      rduTempC: safeTemp(p.rduTempC),
+      ptuTempC: safeTemp(p.ptuTempC),
     }))
   }, [points])
 

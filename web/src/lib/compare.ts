@@ -52,7 +52,11 @@ export function computeDeltas(base: TripSummary, comp: TripSummary): KpiDelta[] 
       if (!isFinite(baseValue) || !isFinite(compValue)) return null
       if (baseValue === 0 && compValue === 0) return null
       const diff = compValue - baseValue
-      const pctChange = baseValue !== 0 ? (diff / Math.abs(baseValue)) * 100 : 0
+      // Use the natural sign of baseValue so the percentage carries the same sign as
+      // the diff. The "is this delta good or bad?" judgement lives in `higherIsBetter`,
+      // not in the percentage sign — so a 25%-faster (lower-duration) session reads as
+      // a -25% delta on duration, not +25%.
+      const pctChange = baseValue !== 0 ? (diff / baseValue) * 100 : 0
       return { label, unit, baseValue, compValue, diff, pctChange, higherIsBetter }
     })
     .filter(Boolean) as KpiDelta[]
