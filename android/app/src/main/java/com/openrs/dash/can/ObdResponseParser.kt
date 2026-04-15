@@ -39,19 +39,19 @@ object ObdResponseParser {
                 val km = ((b4 shl 16) or
                          ((data[5].toInt() and 0xFF) shl 8) or
                           (data[6].toInt() and 0xFF)).toLong()
-                onObdUpdate(currentState.copy(odometerKm = km))
+                onObdUpdate(currentState.copy(odometerKm = km).markFresh("odometerKm"))
             }
-            0x4028 -> onObdUpdate(currentState.copy(batterySoc = b4.toDouble()))
-            0x4029 -> onObdUpdate(currentState.copy(batteryTempC = (b4 - 40).toDouble()))
-            0xDD04 -> onObdUpdate(currentState.copy(cabinTempC = (b4 * 10.0 / 9.0) - 45.0))
-            0x411D -> onObdUpdate(currentState.copy(batteryChargingVoltageDesired = b4 * 0.1))
+            0x4028 -> onObdUpdate(currentState.copy(batterySoc = b4.toDouble()).markFresh("batterySoc"))
+            0x4029 -> onObdUpdate(currentState.copy(batteryTempC = (b4 - 40).toDouble()).markFresh("batteryTempC"))
+            0xDD04 -> onObdUpdate(currentState.copy(cabinTempC = (b4 * 10.0 / 9.0) - 45.0).markFresh("cabinTempC"))
+            0x411D -> onObdUpdate(currentState.copy(batteryChargingVoltageDesired = b4 * 0.1).markFresh("batteryChargingVoltageDesired"))
             // Battery current: ((A*256+B)/16) - 511.7 amps; signed (+ charging, − discharging)
             0x4090 -> {
                 if (data.size < 6) return
                 val b5 = data[5].toInt() and 0xFF
                 onObdUpdate(currentState.copy(
                     batteryCurrentA = ((b4 * 256 + b5) / 16.0) - 511.7
-                ))
+                ).markFresh("batteryCurrentA"))
             }
             // TPMS: PSI = (((256*A)+B) / 3.0 + 22.0/3.0) * 0.145
             0x2813, 0x2814, 0x2816, 0x2815 -> {
@@ -61,10 +61,10 @@ object ObdResponseParser {
                 if (psi < 5.0 || psi > 70.0) return
                 val now = System.currentTimeMillis()
                 onObdUpdate(when (did) {
-                    0x2813 -> currentState.copy(tirePressLF = psi, tpmsLastUpdate = now)
-                    0x2814 -> currentState.copy(tirePressRF = psi, tpmsLastUpdate = now)
-                    0x2816 -> currentState.copy(tirePressLR = psi, tpmsLastUpdate = now)
-                    else   -> currentState.copy(tirePressRR = psi, tpmsLastUpdate = now)
+                    0x2813 -> currentState.copy(tirePressLF = psi, tpmsLastUpdate = now).markFresh("tirePressLF")
+                    0x2814 -> currentState.copy(tirePressRF = psi, tpmsLastUpdate = now).markFresh("tirePressRF")
+                    0x2816 -> currentState.copy(tirePressLR = psi, tpmsLastUpdate = now).markFresh("tirePressLR")
+                    else   -> currentState.copy(tirePressRR = psi, tpmsLastUpdate = now).markFresh("tirePressRR")
                 })
             }
             // TPMS sensor IDs — 4-byte ID per tire position, polled once on connect
@@ -133,9 +133,13 @@ object ObdResponseParser {
                 val now = System.currentTimeMillis()
                 val updated = when (sensorId) {
                     s.tpmsSensorIdLF -> s.copy(tireTempLF = tempC, tirePressLF = psi, tpmsLastUpdate = now)
+                        .markFresh("tireTempLF", "tirePressLF")
                     s.tpmsSensorIdRF -> s.copy(tireTempRF = tempC, tirePressRF = psi, tpmsLastUpdate = now)
+                        .markFresh("tireTempRF", "tirePressRF")
                     s.tpmsSensorIdRR -> s.copy(tireTempRR = tempC, tirePressRR = psi, tpmsLastUpdate = now)
+                        .markFresh("tireTempRR", "tirePressRR")
                     s.tpmsSensorIdLR -> s.copy(tireTempLR = tempC, tirePressLR = psi, tpmsLastUpdate = now)
+                        .markFresh("tireTempLR", "tirePressLR")
                     else -> {
                         Log.d(TAG, "0x280B unknown sensor ID %08X".format(sensorId))
                         null
@@ -163,35 +167,33 @@ object ObdResponseParser {
         val b4s = data[4].toInt()
         val b5  = if (data.size > 5) data[5].toInt() and 0xFF else 0
         when (did) {
-            0x1E8A -> onObdUpdate(currentState.copy(rduTempC = (b4 - 40).toDouble()))
-            0x1E8B -> onObdUpdate(currentState.copy(awdClutchTempL = (b4 - 40).toDouble()))
-            0x1E8C -> onObdUpdate(currentState.copy(awdClutchTempR = (b4 - 40).toDouble()))
-            0x1E90 -> onObdUpdate(currentState.copy(awdReqTorqueL = ((b4 shl 8) or b5).toDouble()))
-            0x1E91 -> onObdUpdate(currentState.copy(awdReqTorqueR = ((b4 shl 8) or b5).toDouble()))
-            0x1E92 -> onObdUpdate(currentState.copy(awdDmdPressure = ((b4 shl 8) or b5).toDouble()))
-            0x1E93 -> onObdUpdate(currentState.copy(awdPumpCurrent = b4 * 0.1))
-            0x1E80 -> onObdUpdate(currentState.copy(transOilTempC = (b4 - 40).toDouble()))
+            0x1E8A -> onObdUpdate(currentState.copy(rduTempC = (b4 - 40).toDouble()).markFresh("rduTempC"))
+            0x1E8B -> onObdUpdate(currentState.copy(awdClutchTempL = (b4 - 40).toDouble()).markFresh("awdClutchTempL"))
+            0x1E8C -> onObdUpdate(currentState.copy(awdClutchTempR = (b4 - 40).toDouble()).markFresh("awdClutchTempR"))
+            0x1E90 -> onObdUpdate(currentState.copy(awdReqTorqueL = ((b4 shl 8) or b5).toDouble()).markFresh("awdReqTorqueL"))
+            0x1E91 -> onObdUpdate(currentState.copy(awdReqTorqueR = ((b4 shl 8) or b5).toDouble()).markFresh("awdReqTorqueR"))
+            0x1E92 -> onObdUpdate(currentState.copy(awdDmdPressure = ((b4 shl 8) or b5).toDouble()).markFresh("awdDmdPressure"))
+            0x1E93 -> onObdUpdate(currentState.copy(awdPumpCurrent = b4 * 0.1).markFresh("awdPumpCurrent"))
+            0x1E80 -> onObdUpdate(currentState.copy(transOilTempC = (b4 - 40).toDouble()).markFresh("transOilTempC"))
             // Per-clutch hydraulic actuator currents/pressures (focusrs.org RDU thread)
             0x1E9E -> onObdUpdate(currentState.copy(
                 awdClutchCurL = ((b4s.toByte().toInt() shl 8) or b5) / 128.0
-            ))
+            ).markFresh("awdClutchCurL"))
             0x1E9F -> onObdUpdate(currentState.copy(
                 awdClutchCurR = ((b4s.toByte().toInt() shl 8) or b5) / 128.0
-            ))
+            ).markFresh("awdClutchCurR"))
             0x1ED1 -> onObdUpdate(currentState.copy(
                 awdClutchPressureL = (((b4s.toByte().toInt() shl 8) or b5) * 2).toDouble()
-            ))
+            ).markFresh("awdClutchPressureL"))
             0x1ED2 -> onObdUpdate(currentState.copy(
                 awdClutchPressureR = (((b4s.toByte().toInt() shl 8) or b5) * 2).toDouble()
-            ))
-            0xEE0B -> onObdUpdate(currentState.copy(rduEnabled = b4 == 0x01))
+            ).markFresh("awdClutchPressureR"))
+            0xEE0B -> onObdUpdate(currentState.copy(rduEnabled = b4 == 0x01).markFresh("rduEnabled"))
             else -> {
                 val decoded = PidRegistry.decode(ObdConstants.AWD_RESPONSE_ID, did, b4)
                 if (decoded != null) {
                     val (field, value) = decoded
-                    onObdUpdate(currentState.copy(
-                        genericValues = currentState.genericValues + (field to value)
-                    ))
+                    onObdUpdate(currentState.putGeneric(field, value))
                 }
             }
         }
@@ -215,71 +217,69 @@ object ObdResponseParser {
         when (did) {
             0x093C -> onObdUpdate(currentState.copy(
                 etcAngleActual = ((b4 shl 8) or b5) * (100.0 / 8192.0)
-            ))
+            ).markFresh("etcAngleActual"))
             0x091A -> onObdUpdate(currentState.copy(
                 etcAngleDesired = ((b4 shl 8) or b5) * (100.0 / 8192.0)
-            ))
+            ).markFresh("etcAngleDesired"))
             0x0462 -> onObdUpdate(currentState.copy(
                 wgdcDesired = b4 * 100.0 / 128.0
-            ))
+            ).markFresh("wgdcDesired"))
             0x03EC -> onObdUpdate(currentState.copy(
                 ignCorrCyl1 = ((b4s.toByte().toInt() shl 8) or b5) / -512.0
-            ))
+            ).markFresh("ignCorrCyl1"))
             0x03ED -> onObdUpdate(currentState.copy(
                 ignCorrCyl2 = ((b4s.toByte().toInt() shl 8) or b5) / -512.0
-            ))
+            ).markFresh("ignCorrCyl2"))
             0x03EE -> onObdUpdate(currentState.copy(
                 ignCorrCyl3 = ((b4s.toByte().toInt() shl 8) or b5) / -512.0
-            ))
+            ).markFresh("ignCorrCyl3"))
             0x03EF -> onObdUpdate(currentState.copy(
                 ignCorrCyl4 = ((b4s.toByte().toInt() shl 8) or b5) / -512.0
-            ))
+            ).markFresh("ignCorrCyl4"))
             0x03E8 -> onObdUpdate(currentState.copy(
                 octaneAdjustRatio = ((b4s.toByte().toInt() shl 8) or b5) / 16384.0
-            ))
+            ).markFresh("octaneAdjustRatio"))
             0x0461 -> onObdUpdate(currentState.copy(
                 chargeAirTempC = ((b4s.toByte().toInt() shl 8) or b5) / 64.0
-            ))
+            ).markFresh("chargeAirTempC"))
             0xF43C -> onObdUpdate(currentState.copy(
                 catalyticTempC = ((b4 shl 8) or b5) / 10.0 - 40.0
-            ))
+            ).markFresh("catalyticTempC"))
             0xF434 -> {
                 val afr = ((b4 shl 8) or b5) * 0.0004486
-                onObdUpdate(currentState.copy(afrActual = afr, lambdaActual = afr / 14.7))
+                onObdUpdate(currentState.copy(afrActual = afr, lambdaActual = afr / 14.7)
+                    .markFresh("afrActual", "lambdaActual"))
             }
-            0xF444 -> onObdUpdate(currentState.copy(afrDesired = b4 * 0.1144))
-            0x033E -> onObdUpdate(currentState.copy(tipActualKpa  = ((b4 shl 8) or b5) / 903.81))
-            0x0466 -> onObdUpdate(currentState.copy(tipDesiredKpa = ((b4 shl 8) or b5) / 903.81))
+            0xF444 -> onObdUpdate(currentState.copy(afrDesired = b4 * 0.1144).markFresh("afrDesired"))
+            0x033E -> onObdUpdate(currentState.copy(tipActualKpa  = ((b4 shl 8) or b5) / 903.81).markFresh("tipActualKpa"))
+            0x0466 -> onObdUpdate(currentState.copy(tipDesiredKpa = ((b4 shl 8) or b5) / 903.81).markFresh("tipDesiredKpa"))
             0x0318 -> onObdUpdate(currentState.copy(
                 vctIntakeAngle = ((b4s.toByte().toInt() shl 8) or b5) / 16.0
-            ))
+            ).markFresh("vctIntakeAngle"))
             0x0319 -> onObdUpdate(currentState.copy(
                 vctExhaustAngle = ((b4s.toByte().toInt() shl 8) or b5) / 16.0
-            ))
-            0x054B -> onObdUpdate(currentState.copy(oilLifePct = b4.toDouble().coerceIn(0.0, 100.0)))
+            ).markFresh("vctExhaustAngle"))
+            0x054B -> onObdUpdate(currentState.copy(oilLifePct = b4.toDouble().coerceIn(0.0, 100.0)).markFresh("oilLifePct"))
             0xF422 -> onObdUpdate(currentState.copy(
                 hpFuelRailPsi = ((b4 shl 8) or b5) * 1.45038
-            ))
-            0xF42F -> onObdUpdate(currentState.copy(
-                genericValues = currentState.genericValues +
-                    ("FuelLevel_OBD" to (b4 * 100.0 / 255.0).coerceIn(0.0, 100.0))
+            ).markFresh("hpFuelRailPsi"))
+            0xF42F -> onObdUpdate(currentState.putGeneric(
+                "FuelLevel_OBD", (b4 * 100.0 / 255.0).coerceIn(0.0, 100.0)
             ))
             0x0304 -> onObdUpdate(currentState.copy(
                 batteryVoltage = ((b4 shl 8) or b5) / 2048.0
-            ))
+            ).markFresh("batteryVoltage"))
             // Spark advance: B4 × 0.25 deg
             // TODO: verify single-byte vs two-byte on real car
-            0x116B -> onObdUpdate(currentState.copy(sparkAdvance = b4 * 0.25))
+            0x116B -> onObdUpdate(currentState.copy(sparkAdvance = b4 * 0.25).markFresh("sparkAdvance"))
             // Fuel trims via Ford fast-path 22F4xx: A * 100/128 - 100 (%)
-            0xF406 -> onObdUpdate(currentState.copy(shortFuelTrim = b4 * 100.0 / 128.0 - 100.0))
-            0xF407 -> onObdUpdate(currentState.copy(longFuelTrim  = b4 * 100.0 / 128.0 - 100.0))
+            0xF406 -> onObdUpdate(currentState.copy(shortFuelTrim = b4 * 100.0 / 128.0 - 100.0).markFresh("shortFuelTrim"))
+            0xF407 -> onObdUpdate(currentState.copy(longFuelTrim  = b4 * 100.0 / 128.0 - 100.0).markFresh("longFuelTrim"))
             else -> {
                 val decoded = PidRegistry.decode(ObdConstants.PCM_RESPONSE_ID, did, b4, b5)
                 if (decoded != null) {
                     val (field, value) = decoded
-                    onObdUpdate(currentState.copy(
-                        genericValues = currentState.genericValues + (field to value)
-                    ))
+                    onObdUpdate(currentState.putGeneric(field, value))
                 }
             }
         }
@@ -303,9 +303,7 @@ object ObdResponseParser {
         val decoded = PidRegistry.decode(ObdConstants.HVAC_RESPONSE_ID, did, b4, b5)
         if (decoded != null) {
             val (field, value) = decoded
-            onObdUpdate(currentState.copy(
-                genericValues = currentState.genericValues + (field to value)
-            ))
+            onObdUpdate(currentState.putGeneric(field, value))
         }
     }
 
@@ -327,9 +325,7 @@ object ObdResponseParser {
         val decoded = PidRegistry.decode(ObdConstants.IPC_RESPONSE_ID, did, b4, b5)
         if (decoded != null) {
             val (field, value) = decoded
-            onObdUpdate(currentState.copy(
-                genericValues = currentState.genericValues + (field to value)
-            ))
+            onObdUpdate(currentState.putGeneric(field, value))
         }
     }
 
@@ -344,7 +340,7 @@ object ObdResponseParser {
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
         when (did) {
-            0xFD07 -> onObdUpdate(currentState.copy(pdcEnabled = b4 == 0x01))
+            0xFD07 -> onObdUpdate(currentState.copy(pdcEnabled = b4 == 0x01).markFresh("pdcEnabled"))
         }
     }
 
@@ -359,7 +355,7 @@ object ObdResponseParser {
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
         when (did) {
-            0xEE03 -> onObdUpdate(currentState.copy(fengEnabled = b4 == 0x01))
+            0xEE03 -> onObdUpdate(currentState.copy(fengEnabled = b4 == 0x01).markFresh("fengEnabled"))
         }
     }
 
@@ -383,9 +379,9 @@ object ObdResponseParser {
         onDebug?.invoke("RSProt 0x%04X → B4=0x%02X B5=0x%02X".format(did, b4, b5))
 
         when (did) {
-            0xDE00 -> onObdUpdate(currentState.copy(lcArmed = b4 == 0x01))
-            0xDE01 -> onObdUpdate(currentState.copy(lcRpmTarget = (b4 shl 8) or b5))
-            0xDE02 -> onObdUpdate(currentState.copy(assEnabled = b4 == 0x01))
+            0xDE00 -> onObdUpdate(currentState.copy(lcArmed = b4 == 0x01).markFresh("lcArmed"))
+            0xDE01 -> onObdUpdate(currentState.copy(lcRpmTarget = (b4 shl 8) or b5).markFresh("lcRpmTarget"))
+            0xDE02 -> onObdUpdate(currentState.copy(assEnabled = b4 == 0x01).markFresh("assEnabled"))
             0xEE01 -> onDebug?.invoke("RSProt 0xEE01 → $b4 (candidate)")
             0xFD01 -> onDebug?.invoke("RSProt 0xFD01 → $b4 (candidate)")
         }

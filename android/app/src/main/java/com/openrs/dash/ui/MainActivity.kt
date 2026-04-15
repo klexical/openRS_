@@ -32,6 +32,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
@@ -50,7 +51,7 @@ import com.openrs.dash.ui.anim.bloomGlow
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import com.openrs.dash.ui.anim.pressClick
-import com.openrs.dash.ui.trip.DrivePage
+import com.openrs.dash.ui.trip.TripPage
 import com.openrs.dash.update.UpdateManager
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -71,16 +72,25 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { startSvc() }
 
+    /** Re-applies edge-to-edge with status/nav bar icon tint matching the current ThemeMode. */
+    private fun applySystemBarStyle() {
+        val transparent = android.graphics.Color.TRANSPARENT
+        val style = if (isDayModeNow()) {
+            androidx.activity.SystemBarStyle.light(transparent, transparent)
+        } else {
+            androidx.activity.SystemBarStyle.dark(transparent)
+        }
+        enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        enableEdgeToEdge(
-            navigationBarStyle = androidx.activity.SystemBarStyle.dark(
-                android.graphics.Color.TRANSPARENT
-            )
-        )
         UserPrefsStore.load(this)
-        setBrightness(AppSettings.getBrightness(this))
+        setThemeMode(runCatching { ThemeMode.valueOf(AppSettings.getThemeMode(this)) }
+            .getOrDefault(ThemeMode.NIGHT))
+        applySystemBarStyle()
+        setClassicFonts(AppSettings.getClassicFonts(this))
 
         val perms = mutableListOf<String>()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
@@ -101,7 +111,7 @@ class MainActivity : ComponentActivity() {
             val prefs       by UserPrefsStore.prefs.collectAsState()
             val debugLines  by OpenRSDashApp.instance.debugLines.collectAsState()
             val driveState  by OpenRSDashApp.instance.driveState.collectAsState()
-            val pagerState  = rememberPagerState(pageCount = { 7 })
+            val pagerState  = rememberPagerState(pageCount = { 5 })
             val selectedTab by remember { derivedStateOf { pagerState.currentPage } }
             var mapTouched  by remember { mutableStateOf(false) }
             val hazeState   = remember { HazeState() }
@@ -135,9 +145,14 @@ class MainActivity : ComponentActivity() {
                 view.keepScreenOn = prefs.screenOn
             }
 
-            // Apply brightness to theme color system
-            LaunchedEffect(prefs.brightness) {
-                setBrightness(prefs.brightness)
+            // Apply theme mode + classic fonts toggle to theme system
+            LaunchedEffect(prefs.themeMode) {
+                setThemeMode(runCatching { ThemeMode.valueOf(prefs.themeMode) }
+                    .getOrDefault(ThemeMode.NIGHT))
+                applySystemBarStyle()
+            }
+            LaunchedEffect(prefs.classicFonts) {
+                setClassicFonts(prefs.classicFonts)
             }
 
             CompositionLocalProvider(LocalThemeAccent provides prefs.themeAccent) {
@@ -199,7 +214,7 @@ class MainActivity : ComponentActivity() {
                                     LaunchedEffect(selectedTab) { dockOpen = false }
 
                                     val pagerScrollEnabled by remember {
-                                        derivedStateOf { !(selectedTab == 4 && mapTouched) }
+                                        derivedStateOf { !(selectedTab == 3 && mapTouched) }
                                     }
                                     HorizontalPager(
                                         state = pagerState,
@@ -208,26 +223,41 @@ class MainActivity : ComponentActivity() {
                                         userScrollEnabled = pagerScrollEnabled, // disable pager swipe while touching map
                                         key = { it }
                                     ) { page ->
-                                        Box(Modifier.fillMaxSize()) {
+                                        // C4: crossfade content as pages settle.
+                                        // currentPageOffsetFraction ∈ [-0.5, 0.5]; peak centre fades to full alpha.
+                                        val pageAlpha = 1f - (kotlin.math.abs(
+                                            (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+                                        ).coerceIn(0f, 1f) * 0.6f)
+                                        Box(
+                                            Modifier.fillMaxSize().graphicsLayer { alpha = pageAlpha }
+                                        ) {
                                             when (page) {
-                                                0 -> DashPage(vs, prefs)
-                                                1 -> PowerPage(vs, prefs)
-                                                2 -> ChassisPage(vs, prefs, onReset = { service?.resetPeaks() })
-                                                3 -> TempsPage(vs, prefs)
-                                                4 -> DrivePage(driveState, vs, prefs, onMapTouched = { mapTouched = it })
-                                                5 -> DiagPage(
-                                                    debugLines,
-                                                    vs,
-                                                    onScanDtcs  = service?.let { svc -> { svc.scanDtcs() } },
-                                                    onClearDtcs = service?.let { svc -> { svc.clearDtcs() } },
+                                                0 -> DrivePage(vs, prefs)
+                                                1 -> PerfPage(vs, prefs, onReset = { service?.resetPeaks() })
+                                                2 -> TempsPage(vs, prefs)
+                                                3 -> TripPage(driveState, vs, prefs, onMapTouched = { mapTouched = it })
+                                                4 -> GaragePage(
+                                                    debugLines = debugLines,
+                                                    vs = vs,
+                                                    p = prefs,
+                                                    snackbarHostState = snackbarHostState,
+                                                    onCustomDash = { showCustomDash = true },
+                                                    firmwareApi = service?.firmwareApi,
+                                                    onScanDtcs = service?.let { svc ->
+                                                        val fn: suspend () -> List<com.openrs.dash.data.DtcResult> = { svc.scanDtcs() }
+                                                        fn
+                                                    },
+                                                    onClearDtcs = service?.let { svc ->
+                                                        val fn: suspend () -> Map<String, Boolean> = { svc.clearDtcs() }
+                                                        fn
+                                                    },
                                                     onSendRawQuery = service?.let { svc ->
                                                         val q: suspend (Int, String, Long) -> ByteArray? =
                                                             { r, f, t -> svc.sendRawQuery(r, f, t) }
                                                         q
                                                     },
-                                                    onResetSession = { service?.resetSession() }
+                                                    onResetSession = { service?.resetSession() },
                                                 )
-                                                6 -> MorePage(vs, prefs, snackbarHostState, onSettings = { settingsOpen = true }, onCustomDash = { showCustomDash = true }, firmwareApi = service?.firmwareApi)
                                             }
                                             // Scrim overlay — tap to dismiss dock
                                             if (dockOpen) {
@@ -284,11 +314,13 @@ class MainActivity : ComponentActivity() {
                         val onSelectNav = remember<(Int) -> Unit> {
                             { page -> navScope.launch { pagerState.animateScrollToPage(page) } }
                         }
+                        val activeDtcs by OpenRSDashApp.instance.activeDtcCount.collectAsState()
                         BottomNavBar(
                             selected = selectedTab,
                             onSelect = onSelectNav,
                             hazeState = hazeState,
-                            modifier = Modifier.align(Alignment.BottomCenter)
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                            badges = listOf(false, false, false, false, activeDtcs > 0)
                         )
 
                     }
@@ -314,8 +346,38 @@ class MainActivity : ComponentActivity() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// HEADER — Compact Status Bar
+// HEADER — Contextual status bar (v3.0 B3)
+//
+// Priority-driven single row. Anomalies (E-brake, launch control, firmware
+// download, disconnect) take over the center region and render as a
+// color-coded banner. Bookends (logo left, REC dot + connection pill + gear
+// right) are always visible so the user never loses the ability to change
+// connection or open Settings.
 // ═══════════════════════════════════════════════════════════════════════════
+
+private sealed class HeaderContext {
+    data object Normal : HeaderContext()                     // → MODE + ESC pills
+    data object EBrake : HeaderContext()                     // ⚠ E-BRAKE ACTIVE
+    data object LaunchControl : HeaderContext()              // ⚡ LAUNCH CONTROL
+    data class Updating(val progress: Float) : HeaderContext() // ↻ UPDATE xx%
+    data object Reconnecting : HeaderContext()               // ○ RECONNECTING…
+    data object Offline : HeaderContext()                    // TAP TO CONNECT
+}
+
+@Composable
+private fun resolveHeaderContext(vs: VehicleState): HeaderContext {
+    val updateState by UpdateManager.state.collectAsState()
+    val dl = updateState as? com.openrs.dash.update.UpdateState.Downloading
+    return when {
+        vs.eBrake                                -> HeaderContext.EBrake
+        vs.launchControlEngaged                  -> HeaderContext.LaunchControl
+        dl != null                               -> HeaderContext.Updating(dl.progress)
+        !vs.isConnected && vs.isIdle             -> HeaderContext.Reconnecting
+        !vs.isConnected                          -> HeaderContext.Offline
+        else                                     -> HeaderContext.Normal
+    }
+}
+
 @Composable fun AppHeader(
     vs: VehicleState,
     prefs: UserPrefs,
@@ -328,7 +390,6 @@ class MainActivity : ComponentActivity() {
 ) {
     val accent = LocalThemeAccent.current
 
-    // Connection state
     val dotAlpha = if (vs.isConnected) {
         val infiniteTransition = rememberInfiniteTransition(label = "conn")
         val anim by infiniteTransition.animateFloat(
@@ -348,22 +409,15 @@ class MainActivity : ComponentActivity() {
         else           -> "OFF"
     }
 
-    // Mode / ESC colors
-    val modeColor = when (vs.driveMode) {
-        DriveMode.SPORT -> Ok; DriveMode.TRACK -> Warn; DriveMode.DRIFT -> Orange; else -> accent
-    }
-    val escColor = when (vs.escStatus) {
-        EscStatus.OFF -> Orange; EscStatus.PARTIAL -> Warn; EscStatus.LAUNCH -> Warn; else -> accent
-    }
+    val ctx = resolveHeaderContext(vs)
 
     Row(
         Modifier.fillMaxWidth()
             .height(Tokens.StatusBarHeight)
             .background(Surf)
             .drawBehind {
-                // Bottom border
                 drawLine(
-                    color = Brd.copy(alpha = 0.3f),
+                    color = Brd.copy(alpha = borderAlpha(0.3f)),
                     start = androidx.compose.ui.geometry.Offset(0f, size.height),
                     end = androidx.compose.ui.geometry.Offset(size.width, size.height),
                     strokeWidth = 1.dp.toPx()
@@ -384,61 +438,27 @@ class MainActivity : ComponentActivity() {
 
         Spacer(Modifier.weight(1f))
 
-        // ── Center: MODE pill + ESC pill ────────────────────────
-        Row(
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // LC pill — flashing when launch control engaged
-            AnimatedVisibility(
-                visible = vs.launchControlEngaged,
-                enter = expandHorizontally() + fadeIn(),
-                exit = shrinkHorizontally() + fadeOut()
-            ) {
-                val flashAlpha by rememberInfiniteTransition(label = "lcFlash").animateFloat(
-                    initialValue = 1f, targetValue = 0f,
-                    animationSpec = infiniteRepeatable(tween(200), RepeatMode.Reverse),
-                    label = "lcFlashA"
+        // ── Center: priority-driven content ─────────────────────
+        AnimatedContent(
+            targetState = ctx::class,
+            transitionSpec = { (fadeIn() togetherWith fadeOut()) },
+            label = "headerCtx",
+            contentKey = { it }
+        ) { _ ->
+            when (ctx) {
+                HeaderContext.EBrake        -> HeaderBanner("⚠  E-BRAKE ACTIVE", Orange)
+                HeaderContext.LaunchControl -> HeaderBannerFlashing("⚡  LAUNCH CONTROL", Warn)
+                is HeaderContext.Updating   -> HeaderBanner(
+                    "↻  UPDATE  ${((ctx as HeaderContext.Updating).progress.coerceIn(0f, 1f) * 100).toInt()}%",
+                    accent
                 )
-                Row {
-                    Box(
-                        Modifier
-                            .alpha(flashAlpha)
-                            .background(Warn, RoundedCornerShape(4.dp))
-                            .border(CardBorder, Warn, RoundedCornerShape(4.dp))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        MonoLabel("LC", 8.sp, Bg, FontWeight.Bold, 0.05.sp)
-                    }
-                    Spacer(Modifier.width(6.dp))
-                }
+                HeaderContext.Reconnecting  -> HeaderBannerPulsing("○  RECONNECTING…", Warn)
+                HeaderContext.Offline       -> Box(
+                    Modifier.clickable { onConnect() }.padding(horizontal = 2.dp),
+                    contentAlignment = Alignment.Center
+                ) { MonoLabel("TAP TO CONNECT", 9.sp, Orange, FontWeight.Bold, 0.12.sp) }
+                HeaderContext.Normal        -> NormalStatus(vs, accent, onModeClick)
             }
-
-            // MODE pill
-            val pulseT = rememberInfiniteTransition(label = "modeBar")
-            val barAlpha by pulseT.animateFloat(
-                initialValue = 0.3f, targetValue = 1f,
-                animationSpec = infiniteRepeatable(
-                    tween(2000, easing = EaseInOut), RepeatMode.Reverse
-                ), label = "modeBarA"
-            )
-            StatusPill(
-                label = "MODE",
-                value = vs.driveMode.label.uppercase(),
-                valueColor = modeColor,
-                onClick = onModeClick,
-                pulseBarColor = modeColor,
-                pulseBarAlpha = barAlpha
-            )
-
-            Spacer(Modifier.width(6.dp))
-
-            // ESC pill (onClick = null for now, future dock)
-            StatusPill(
-                label = "ESC",
-                value = vs.escStatus.label.uppercase(),
-                valueColor = escColor,
-                onClick = null
-            )
         }
 
         Spacer(Modifier.weight(1f))
@@ -448,17 +468,48 @@ class MainActivity : ComponentActivity() {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // REC dot (pulsing, no text)
-            if (driveState.isRecording && !driveState.isPaused) {
+            val ctx = LocalContext.current
+            val autoRecOn = remember(ctx) { AppSettings.getAutoRecordDrives(ctx) }
+            val autoRecArmed = autoRecOn && vs.isConnected &&
+                !driveState.isRecording && vs.rpm <= 400.0
+            if (driveState.isRecording) {
+                val paused = driveState.isPaused
                 val recAlpha by rememberInfiniteTransition(label = "headerRec").animateFloat(
-                    initialValue = 1f, targetValue = 0.2f,
-                    animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+                    initialValue = if (paused) 0.5f else 1f,
+                    targetValue  = if (paused) 0.15f else 0.2f,
+                    animationSpec = infiniteRepeatable(
+                        tween(if (paused) 1400 else 700),
+                        RepeatMode.Reverse
+                    ),
                     label = "headerRecAlpha"
                 )
-                Box(Modifier.size(6.dp).clip(CircleShape).background(Orange.copy(alpha = recAlpha)))
+                val dotColor = if (paused) Warn else Orange
+                val label    = if (paused) "PAUSED" else "REC"
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Box(Modifier.size(6.dp).clip(CircleShape).background(dotColor.copy(alpha = recAlpha)))
+                    MonoLabel(label, 7.sp, dotColor, FontWeight.Bold, 0.08.sp)
+                }
+            } else if (autoRecArmed) {
+                val armedAlpha by rememberInfiniteTransition(label = "headerArmed").animateFloat(
+                    initialValue = 0.7f, targetValue = 0.25f,
+                    animationSpec = infiniteRepeatable(tween(1600), RepeatMode.Reverse),
+                    label = "headerArmedAlpha"
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Box(
+                        Modifier.size(6.dp).clip(CircleShape)
+                            .border(CardBorder, Mid.copy(alpha = armedAlpha), CircleShape)
+                    )
+                    MonoLabel("ARMED", 7.sp, Mid.copy(alpha = armedAlpha), FontWeight.Bold, 0.08.sp)
+                }
             }
 
-            // Connection pill (compact)
             Box(
                 Modifier
                     .background(connColor.copy(alpha = 0.08f), RoundedCornerShape(4.dp))
@@ -485,7 +536,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // Settings gear (matches pill height)
             Box(
                 Modifier
                     .background(Surf2, RoundedCornerShape(4.dp))
@@ -506,6 +556,92 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun NormalStatus(vs: VehicleState, accent: Color, onModeClick: () -> Unit) {
+    val modeColor = when (vs.driveMode) {
+        DriveMode.SPORT -> Ok; DriveMode.TRACK -> Warn; DriveMode.DRIFT -> Orange; else -> accent
+    }
+    val escColor = when (vs.escStatus) {
+        EscStatus.OFF -> Orange; EscStatus.PARTIAL -> Warn; EscStatus.LAUNCH -> Warn; else -> accent
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        // C7: pulse bar only animates while a mode change is in flight.
+        val pending = com.openrs.dash.can.driveModePending.value != null
+        val pulseT = rememberInfiniteTransition(label = "modeBar")
+        val animAlpha by pulseT.animateFloat(
+            initialValue = 0.3f, targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(2000, easing = EaseInOut), RepeatMode.Reverse),
+            label = "modeBarA"
+        )
+        val barAlpha = if (pending) animAlpha else 0f
+        StatusPill(
+            label = "MODE",
+            value = vs.driveMode.label.uppercase(),
+            valueColor = modeColor,
+            onClick = onModeClick,
+            pulseBarColor = if (pending) modeColor else null,
+            pulseBarAlpha = barAlpha
+        )
+        Spacer(Modifier.width(6.dp))
+        StatusPill(
+            label = "ESC",
+            value = vs.escStatus.label.uppercase(),
+            valueColor = escColor,
+            onClick = null
+        )
+    }
+}
+
+@Composable
+private fun HeaderBanner(text: String, color: Color) {
+    Box(
+        Modifier
+            .background(color.copy(alpha = 0.14f), RoundedCornerShape(4.dp))
+            .border(CardBorder, color.copy(alpha = 0.55f), RoundedCornerShape(4.dp))
+            .padding(horizontal = 10.dp, vertical = 3.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        MonoLabel(text, 9.sp, color, FontWeight.Bold, 0.12.sp)
+    }
+}
+
+@Composable
+private fun HeaderBannerFlashing(text: String, color: Color) {
+    val flash by rememberInfiniteTransition(label = "hdrFlash").animateFloat(
+        initialValue = 1f, targetValue = 0.35f,
+        animationSpec = infiniteRepeatable(tween(220), RepeatMode.Reverse),
+        label = "hdrFlashA"
+    )
+    Box(
+        Modifier
+            .alpha(flash)
+            .background(color.copy(alpha = 0.20f), RoundedCornerShape(4.dp))
+            .border(CardBorder, color.copy(alpha = 0.7f), RoundedCornerShape(4.dp))
+            .padding(horizontal = 10.dp, vertical = 3.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        MonoLabel(text, 9.sp, color, FontWeight.Bold, 0.12.sp)
+    }
+}
+
+@Composable
+private fun HeaderBannerPulsing(text: String, color: Color) {
+    val pulse by rememberInfiniteTransition(label = "hdrPulse").animateFloat(
+        initialValue = 0.4f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(900, easing = EaseInOut), RepeatMode.Reverse),
+        label = "hdrPulseA"
+    )
+    Box(
+        Modifier
+            .background(color.copy(alpha = 0.10f * pulse), RoundedCornerShape(4.dp))
+            .border(CardBorder, color.copy(alpha = 0.45f * pulse), RoundedCornerShape(4.dp))
+            .padding(horizontal = 10.dp, vertical = 3.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        MonoLabel(text, 9.sp, color, FontWeight.Bold, 0.12.sp)
     }
 }
 
@@ -612,7 +748,8 @@ private fun ConnectionBanner(vs: VehicleState) {
     val adapterLabel = if (adapterType == "MEATPI_PRO") "MeatPi Pro" else "MeatPi USB"
     val addressLabel: String
     if (connMethod == "BLUETOOTH") {
-        val name = AppSettings.getBleDeviceName(ctx) ?: "BLE"
+        val raw = AppSettings.getBleDeviceName(ctx) ?: "BLE"
+        val name = if (raw.length > 12) raw.take(12) + "\u2026" else raw
         addressLabel = "BT — $name"
     } else {
         addressLabel = "${AppSettings.getHost(ctx)}:${AppSettings.getPort(ctx)}"

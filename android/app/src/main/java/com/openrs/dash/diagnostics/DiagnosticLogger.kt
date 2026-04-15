@@ -291,14 +291,14 @@ object DiagnosticLogger {
         decoded: String,
         issue: String?
     ) {
-        // Pre-compute hex strings outside lock — no allocations under contention
+        // Pre-compute hex + SLCAN line outside lock — no allocations under contention
         val rawHex     = rawData.toSpacedHex()
         val compactHex = rawData.toCompactHex()
         val idHex      = "0x%03X".format(canId)
+        val relMs      = relativeMs()
+        val slcanLine  = buildSlcanLine(relMs, canId, compactHex)
 
         synchronized(lock) {
-            val relMs = relativeMs()
-
             // ── Option B: enriched frame inventory ───────────────────────────
             val info = frameInventory.getOrPut(canId) { FrameInfo() }
             info.totalReceived++
@@ -323,7 +323,7 @@ object DiagnosticLogger {
             lastVehicleState = newState
 
             // ── Option C: SLCAN raw log ──────────────────────────────────────
-            writeSlcanLine(relMs, canId, compactHex)
+            writePreformattedSlcanLine(relMs, slcanLine)
         }
     }
 
@@ -332,13 +332,13 @@ object DiagnosticLogger {
      * Updates inventory count and writes SLCAN line; no decode trace entry.
      */
     fun logUnknownFrame(canId: Int, rawData: ByteArray) {
-        // Pre-compute hex strings outside lock
+        // Pre-compute hex + SLCAN line outside lock
         val rawHex     = rawData.toSpacedHex()
         val compactHex = rawData.toCompactHex()
+        val relMs      = relativeMs()
+        val slcanLine  = buildSlcanLine(relMs, canId, compactHex)
 
         synchronized(lock) {
-            val relMs = relativeMs()
-
             val info = frameInventory.getOrPut(canId) { FrameInfo() }
             info.totalReceived++
             if (info.firstRawHex.isEmpty()) info.firstRawHex = rawHex
@@ -353,7 +353,7 @@ object DiagnosticLogger {
                 lastSampleTimeMs[canId] = relMs
             }
 
-            writeSlcanLine(relMs, canId, compactHex)
+            writePreformattedSlcanLine(relMs, slcanLine)
         }
     }
 
@@ -364,20 +364,25 @@ object DiagnosticLogger {
      */
     fun logObdFrame(canId: Int, rawData: ByteArray) {
         val compactHex = rawData.toCompactHex()
+        val relMs      = relativeMs()
+        val slcanLine  = buildSlcanLine(relMs, canId, compactHex)
         synchronized(lock) {
-            writeSlcanLine(relativeMs(), canId, compactHex)
+            writePreformattedSlcanLine(relMs, slcanLine)
         }
     }
 
+    /** Build a candump-format line outside the lock to keep hot-path holds short. */
+    private fun buildSlcanLine(relMs: Long, canId: Int, compactHex: String): String {
+        val seconds = relMs / 1000.0
+        return "(%10.3f) can0 %03X#%s\n".format(seconds, canId, compactHex)
+    }
+
     /**
-     * Write a single candump-format line to the SLCAN log.
+     * Write a pre-formatted candump line to the SLCAN log.
      * Must be called within [synchronized](lock).
      * Stops silently once MAX_SLCAN_LINES is reached.
-     *
-     * @param compactHex pre-built compact hex string (e.g. "0F8A01020304") —
-     *                   computed outside the lock to reduce contention.
      */
-    private fun writeSlcanLine(relMs: Long, canId: Int, compactHex: String) {
+    private fun writePreformattedSlcanLine(relMs: Long, line: String) {
         val w = slcanWriter ?: return
         if (slcanLinesWritten >= MAX_SLCAN_LINES) {
             if (!slcanCapReached) {
@@ -391,8 +396,7 @@ object DiagnosticLogger {
             return
         }
         try {
-            val seconds = relMs / 1000.0
-            w.write("(%10.3f) can0 %03X#%s\n".format(seconds, canId, compactHex))
+            w.write(line)
             slcanLinesWritten++
             // Flush to disk every 1 000 lines to limit data loss on crash
             if (slcanLinesWritten % 1_000L == 0L) w.flush()

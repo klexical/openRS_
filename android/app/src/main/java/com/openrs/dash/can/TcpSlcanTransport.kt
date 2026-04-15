@@ -21,6 +21,8 @@ class TcpSlcanTransport(
     private var socket: Socket? = null
     private var inp: InputStream? = null
     private var out: OutputStream? = null
+    /** Reused per-frame line buffer — SLCAN frames cap at ~26 chars. */
+    private val lineBuf = StringBuilder(32)
 
     override val label: String get() = "TCP $host:$port"
     override val stockFirmwareLabel: String get() = "MeatPi Pro"
@@ -36,15 +38,15 @@ class TcpSlcanTransport(
 
     override suspend fun readLine(): String? = withContext(Dispatchers.IO) {
         val input = inp ?: return@withContext null
-        val sb = StringBuilder()
+        lineBuf.setLength(0)
         while (true) {
             val b = input.read()
             if (b == -1) return@withContext null
             if (b == 0x0D) break
-            if (sb.length > 32) return@withContext null  // guard runaway frames (#127)
-            sb.append(b.toChar())
+            if (lineBuf.length > 32) return@withContext null  // guard runaway frames (#127)
+            lineBuf.append(b.toChar())
         }
-        sb.toString()
+        lineBuf.toString()
     }
 
     override suspend fun writeLine(frame: String) = withContext(Dispatchers.IO) {

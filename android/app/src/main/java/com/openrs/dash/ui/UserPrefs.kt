@@ -44,7 +44,10 @@ data class UserPrefs(
     val autoRecordDrives: Boolean   = AppSettings.DEFAULT_AUTO_RECORD_DRIVES,  // auto-start on connect
     val maxSavedDrives: Int         = AppSettings.DEFAULT_MAX_SAVED_DRIVES,    // oldest pruned when exceeded
     val updateChannel: String       = AppSettings.DEFAULT_UPDATE_CHANNEL,      // "stable" | "beta"
-    val brightness: Float           = 0f                                       // 0.0=Night, 0.5=Day, 1.0=Sun
+    val brightness: Float           = 0f,                                      // deprecated v3.0 (kept for migration)
+    val themeMode: String           = AppSettings.DEFAULT_THEME_MODE,          // "NIGHT" | "DAY" | "AUTO"
+    val classicFonts: Boolean       = AppSettings.DEFAULT_CLASSIC_FONTS,       // Orbitron revival toggle
+    val driveAutoZoom: Boolean      = AppSettings.DEFAULT_DRIVE_AUTO_ZOOM,     // DRIVE tab hero auto-zoom above threshold
 ) {
     // ── Unit-conversion helpers used by UI ─────────────────────────────────
 

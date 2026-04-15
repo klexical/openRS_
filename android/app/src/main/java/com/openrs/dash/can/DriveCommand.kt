@@ -1,6 +1,7 @@
 package com.openrs.dash.can
 
 import android.content.Context
+import androidx.compose.runtime.mutableStateOf
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.diagnostics.DiagnosticLogger
@@ -16,6 +17,9 @@ sealed class DriveCommandResult {
     object CorrectionFailed : DriveCommandResult()
     object NoConfirmation : DriveCommandResult()
 }
+
+/** Shared in-flight command state. Header reads this to gate MODE-pill pulse. */
+val driveModePending = mutableStateOf<DriveMode?>(null)
 
 /**
  * Executes the full drive mode change flow:

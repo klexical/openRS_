@@ -110,6 +110,19 @@ interface DriveDao {
     @Query("UPDATE drives SET name = :name WHERE id = :id")
     fun updateDriveName(id: Long, name: String?)
 
+    /**
+     * Drives whose endTime is still 0 — i.e. they were active (recording or
+     * paused) when the app was killed or crashed. The in-memory recorder
+     * state is lost at app restart, so these need to be finalized on the
+     * next launch to keep "endTime == 0" meaning "truly in progress."
+     */
+    @Query("SELECT * FROM drives WHERE endTime = 0 ORDER BY startTime DESC")
+    fun getUnfinishedDrives(): List<DriveEntity>
+
+    /** Max point timestamp for a drive — used to close out an orphan cleanly. */
+    @Query("SELECT MAX(timestamp) FROM drive_points WHERE driveId = :driveId")
+    fun getLastPointTimestamp(driveId: Long): Long?
+
     // ── Drive points (telemetry at ~1 Hz) ────────────────────
     @Insert
     fun insertPoints(points: List<DrivePointEntity>)

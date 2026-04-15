@@ -79,6 +79,32 @@ class DriveRecorder(
     /** Previous point for distance calculation. */
     @Volatile private var prevPoint: DrivePointEntity? = null
 
+    /**
+     * Timestamp of the most recent [pauseDrive] call, or 0 when not paused.
+     * Used by the auto-record pipeline to decide whether a resume is valid
+     * (recent pause) or whether to finalize and start fresh.
+     */
+    @Volatile private var pausedAtMs: Long = 0L
+
+    init {
+        // Finalize any drives left with endTime=0 from a previous app session
+        // (app killed mid-drive, crash, etc.). In-memory pause state is lost
+        // at restart, so these cannot be resumed — close them out cleanly so
+        // "endTime == 0" keeps meaning "truly in progress."
+        scope.launch(Dispatchers.IO) {
+            try {
+                val orphans = dao.getUnfinishedDrives()
+                for (orphan in orphans) {
+                    val lastPt = dao.getLastPointTimestamp(orphan.id) ?: orphan.startTime
+                    dao.updateDrive(orphan.copy(endTime = lastPt))
+                    Log.d(TAG, "Finalized orphan drive ${orphan.id} (endTime=$lastPt)")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Orphan drive cleanup failed", e)
+            }
+        }
+    }
+
     // ── Public API ───────────────────────────────────────────────────────────
 
     /**
@@ -148,17 +174,28 @@ class DriveRecorder(
     }
 
     fun pauseDrive() {
+        pausedAtMs = System.currentTimeMillis()
         _driveState.update { it.copy(isPaused = true) }
         // Flush any buffered points immediately
         flushBuffer()
     }
 
     fun resumeDrive() {
+        pausedAtMs = 0L
         prevPoint = null  // Gap in polyline — next point won't connect to prev
         _driveState.update { it.copy(isPaused = false) }
     }
 
+    /**
+     * Milliseconds elapsed since the drive was paused, or 0 when not paused.
+     * Used by auto-record to decide whether a paused drive is recent enough
+     * to resume or has gone stale and should be finalized.
+     */
+    fun pausedDurationMs(): Long =
+        if (pausedAtMs > 0L) System.currentTimeMillis() - pausedAtMs else 0L
+
     fun stopDrive() {
+        pausedAtMs = 0L
         recorderJob?.cancel()
         recorderJob = null
         flushBuffer()
@@ -421,6 +458,53 @@ class DriveRecorder(
                     .addOnFailureListener { cont.resume(null) }
             }
         }
+
+    /**
+     * Returns a live snapshot of the active drive (drive entity + all persisted
+     * points) for export. Flushes any buffered points synchronously first so the
+     * caller sees up-to-the-moment data. Does NOT stop recording — safe to call
+     * while a drive is in progress.
+     *
+     * Returns null when no drive is currently recording. The returned
+     * [DriveEntity] has live accumulators (distance/peaks/avg) applied from
+     * [DriveState], so summaries reflect the in-flight session rather than the
+     * zeroed Room record.
+     */
+    suspend fun snapshotActiveDrive(): Pair<DriveEntity, List<DrivePointEntity>>? {
+        val state = _driveState.value
+        if (!state.isRecording || state.driveId <= 0L) return null
+
+        return withContext(Dispatchers.IO) {
+            try {
+                // Synchronous flush — avoid a race with the point query below.
+                val pending = ArrayList(pointsBuffer)
+                pointsBuffer.clear()
+                if (pending.isNotEmpty()) {
+                    dao.insertPoints(pending)
+                }
+
+                val drive = dao.getDrive(state.driveId) ?: return@withContext null
+                val allPoints = dao.getPoints(state.driveId)
+
+                // Apply live state so the exported summary isn't the zeroed
+                // skeleton that gets written at drive start.
+                val liveDrive = drive.copy(
+                    distanceKm   = state.cumulativeDistanceKm,
+                    avgSpeedKph  = state.avgSpeedKph,
+                    maxSpeedKph  = state.maxSpeedKph,
+                    peakRpm      = state.peakRpm.toInt(),
+                    peakBoostPsi = state.peakBoostPsi,
+                    peakLateralG = state.peakLateralG,
+                    fuelUsedL    = state.fuelUsedL,
+                    weatherSummary = state.currentWeather?.description
+                )
+                Pair(liveDrive, allPoints)
+            } catch (e: Exception) {
+                Log.w(TAG, "snapshotActiveDrive failed", e)
+                null
+            }
+        }
+    }
 
     companion object {
         private const val TAG = "DriveRecorder"

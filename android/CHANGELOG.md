@@ -3,7 +3,77 @@
 All notable changes to the openRS_ Android app are documented here.
 Firmware changes are tracked separately in [firmware releases](https://github.com/klexical/openRS_/releases).
 
-> **Note on tab names:** The app's tab structure has evolved over time. v1.0–v1.1 used DASH/PERF/TEMPS/TUNE/TPMS/CTRL/DIAG. v1.2.0 redesigned to DASH/POWER/CHASSIS/TEMPS/DIAG + System Drawer. v2.0.0 replaced the drawer with a MORE tab (6-tab layout). v2.2.6-rc.5 added a MAP tab for drive tracking (7-tab layout: DASH/POWER/CHASSIS/TEMPS/MAP/DIAG/MORE). Historical entries below use the tab names that were current at the time of each release.
+> **Note on tab names:** The app's tab structure has evolved over time. v1.0–v1.1 used DASH/PERF/TEMPS/TUNE/TPMS/CTRL/DIAG. v1.2.0 redesigned to DASH/POWER/CHASSIS/TEMPS/DIAG + System Drawer. v2.0.0 replaced the drawer with a MORE tab (6-tab layout). v2.2.6-rc.5 added a MAP tab for drive tracking (7-tab layout: DASH/POWER/CHASSIS/TEMPS/MAP/DIAG/MORE). v2.2.7-rc.1 restructured to a 5-tab layout (DRIVE/PERF/THERMAL/TRIP/GARAGE) with the "Daylight" UI overhaul. Historical entries below use the tab names that were current at the time of each release.
+
+---
+
+## [v2.2.7] — unreleased
+
+### Added (rc.1 — "Daylight" UI overhaul)
+- **5-tab layout** — restructured navigation: DRIVE (curated live cockpit), PERF (POWER + G-force), THERMAL (powertrain temps + chassis/TPMS), TRIP (live HUD + history), GARAGE (settings + diagnostics via segmented picker). Replaces the 7-tab DASH/POWER/CHASSIS/TEMPS/MAP/DIAG/MORE layout.
+- **ThemeMode (NIGHT / DAY / AUTO)** — true light/dark theme system replaces the brightness slider. Hand-tuned DAY palette; AUTO switches on a 06:00–19:00 schedule. (`ui/Theme.kt`, `ui/SettingsSheet.kt`)
+- **ULTRA AMOLED theme** — pure-black `#000000` background option clamps surface tones for OLED panels; saves power and eliminates passenger side-eye bloom on night drives. Three-way `when` on the 6 surface colors only — semantic colors unchanged.
+- **Rajdhani typography** — automotive-style numerics (medium/semibold/bold) for DRIVE/DataNum/Hero values. Orbitron retired from primary use.
+- **Tabular numerals** — `fontFeatureSettings = "tnum"` on numeric text styles eliminates lateral shimmy on fast-changing values like RPM, speed, and temps.
+- **FieldState availability tracking** — `VehicleState.fieldLastUpdateMs` map + `markFresh()` in OBD parsers. UI surfaces WARMING / AVAILABLE / STALE / UNAVAILABLE sub-labels on TempsPage cells, GARAGE/DIAG battery cells, and TPMS tire cards. (`data/FieldState.kt`, `data/VehicleState.kt`)
+- **ThermalBand color/pattern encoding** — central `ThermalBand {COLD/NOMINAL/HOT/CRITICAL}` + `AfrBand {RICH/STOICH/LEAN}` helpers map values to theme-aware colors. DataCell renders a chevron pattern indicator so state is encoded by shape + color, not color alone (improves color-blind readability). (`data/ThermalBand.kt`)
+- **Settings navigator overhaul** — categorized layout (DISPLAY / UNITS / CONNECTION / DRIVES / DIAGNOSTICS / ABOUT) with fuzzy search (exact → prefix → substring → subsequence ranking + match-count chip), breadcrumb back nav, per-setting `?` help toggles. Replaces the 1148-line flat scroll. Cog in the status bar is the sole entry point. (`ui/SettingsSheet.kt`)
+- **SATELLITE map default** — TripPage opens to satellite imagery; DAY mode uses Google's default light basemap, NIGHT keeps the openRS_ dark style on NORMAL only.
+- **Adaptive zoom on DRIVE** — gear label inflates 72→140sp and the page auto-zooms above 16 kph for 3s after each acceleration event. Setting `driveAutoZoom` defaults ON.
+- **Diagnostic export bundles active drive** — exporting from DIAG with a recording in progress now folds `drive_*.csv` + `drive_*.gpx` + `drive_summary_*.txt` into the diagnostic ZIP. Sapphire imports gain trip context. (`diagnostics/DiagnosticExporter.kt`, `service/DriveRecorder.kt`)
+- **Drive-mode change haptic feedback** — `HapticFeedbackType.Confirm` on success, `Reject` on Busy/Failed/CorrectionFailed/NoConfirmation. Confirms the transition without watching the MODE pill. (`ui/MorePage.kt`, `ui/DriveModeDock.kt`)
+- **DTC badge on GARAGE nav icon** — small Warn dot appears when an active DTC is found; clears on visit/clear. Surfaced via `OpenRSDashApp.activeDtcCount: MutableStateFlow<Int>` so users on DRIVE see codes without needing to open GARAGE.
+- **Peak-hold long-press on hero cards** — long-press BOOST/RPM/SPEED on DRIVE flips the value to the session peak for 3s with `LongPress` haptic; unit label changes to `PEAK · X`. Opt-in via nullable param so unrelated heroes keep normal touch behavior. (`ui/Components.kt`, `ui/DrivePage.kt`)
+- **Drag-to-reorder on Custom Dashboard** — long-press the arrow column on any gauge in the dash builder to drag-reorder. Dragged item elevates with accent border + slight scale; threshold-based swap with `TextHandleMove` haptic per swap. Up/down arrows kept as accessibility fallback. (`ui/CustomDashPage.kt`)
+- **DTC scan abort** — long scans now show `■ ABORT (Ns)` in Warn while running; tap to cancel the in-flight `dtcScanJob`. (`ui/DiagPage.kt`)
+- **Auto-record ARMED indicator** — when auto-record is enabled, connected, not yet recording, and RPM ≤ 400, a Mid-color `ARMED` chip pulses every 1600ms so the user knows the recorder is waiting on the engine. (`ui/MainActivity.kt`)
+- **DRIVE disconnected banner** — when CAN is disconnected, the page dims to 50% and shows `CAN disconnected — last update Xs ago` so stale values are obvious.
+- **Fuel-critical pulse** — fuel cell background pulses Warn at 1.4s when level is in 0.01–9.99% range. Above 10% renders identically to today.
+- **Gear-change pop** — DRIVE hero gear label gets a 1.05× spring bounce + `TextHandleMove` haptic on each shift. Skips initial composition.
+- **REC pause indicator** — REC dot survives pause: changes to Warn color with 1400ms pulse and a `PAUSED` label.
+- **Drive-mode pill pulse + dock dim during in-flight commands** — header MODE pill pulses while a drive-mode command is in flight; non-pending DriveModeDock buttons dim to 0.5α. Wired through new shared `driveModePending: MutableState<DriveMode?>`. (`can/DriveCommand.kt`)
+- **DriveCard selection animation on TripPage** — selecting a drive now animates the border/bg via `animateColorAsState` and reveals SHARE/RENAME actions with `AnimatedVisibility` (fadeIn + expandVertically). (`ui/trip/TripPage.kt`)
+- **Snackbar host replaces remaining Toasts** — PID catalog "Copied {DID}" now uses a Compose `SnackbarHostState` threaded from DiagPage. Themed and config-change-safe. (`ui/PidBrowserSection.kt`, `ui/DiagPage.kt`)
+- **Card depth in DAY mode** — `cardGlow()` switches from a radial halo to a soft directional drop-shadow in DAY (NIGHT/ULTRA path unchanged). Reads as elevation, not bloom, against the lighter background. (`ui/anim/GlowModifiers.kt`)
+- **Status bar icon tint follows theme** — `enableEdgeToEdge` now applies `SystemBarStyle.dark`/`light` based on `ThemeMode` so system clock/battery/signal stay legible in both DAY and NIGHT.
+- **Bottom nav bar accessibility** — each tab gets `Role.Tab` semantics + `contentDescription`. TalkBack now announces tabs.
+- **TripPage empty-state copy** — empty-state text adapts to whether AutoRecord is enabled, guiding users to the correct setting.
+- **Settings help coverage expansion** — edge-shift Color/Intensity/ShiftRpm + Auto-reconnect toggle now have help strings via the `?` toggle.
+- **DAY-mode muted-text contrast floor** — `textMutedAlpha(base)` floors alpha at 0.55 in DAY (vs 0.35 in NIGHT). Applied across placeholder pulse + GForcePlot axis labels for WCAG-friendlier contrast in bright conditions.
+- **HeroCard valueFraction border glow** — border alpha lerps with valueFraction (dormant 0.15 → active 0.35).
+- **Pager crossfade between tabs** — `currentPageOffsetFraction` drives `graphicsLayer.alpha` so swipes between tabs cross-fade rather than hard-cut.
+- **Pre-allocated hex lookup in DiagnosticLogger** — `format()` + hex conversion moved outside the lock; lock-scope reduction is the real win for SLCAN log throughput.
+
+### Fixed (rc.1)
+- **Auto-record started drives without a CAN connection** — enabling Auto Record Drives previously began recording the moment the phone joined the adapter WiFi, even with the car off. Rewired to gate on `vs.isConnected && vs.rpm > 400`. `stopConnection()` now `pauseDrive()` (not `stopDrive()`); a 15-minute resume window seamlessly continues the same session across brief disconnects, with orphan cleanup on app start. (`service/CanDataService.kt`, `service/DriveRecorder.kt`, `data/DriveDatabase.kt`)
+- **PTU visually stacked on RDU in chassis diagram** — PTU was drawn at canvas-center X like RDU, making them look like a single stacked component. Moved off-center left, raised the canvas, angled the propshaft from PTU right-bottom to RDU top-center. (`ui/ChassisPage.kt`)
+- **BLE scan never found adapter** — scan timeout extended 10s → 18s (some adapters advertise at 2–5s intervals), added optional filterless mode (orange "SHOW ALL BLE DEVICES" button) and an empty-state hint with power-cycle/WiFi-coexistence guidance. (`can/BleDeviceScanner.kt`, `ui/BleDevicePickerDialog.kt`)
+- **Battery voltage rounded to 1 decimal** — formula was correct but UI hid real variation (14.74 vs 15.30V). Now 2 decimals in DiagPage, DashLayout, and DiagnosticReportBuilder.
+- **`ObdResponseParser.mergeObdState` map churn** — generic-PID decode was allocating a fresh `LinkedHashMap` per response. Switched to a delta-builder so a single `copy(genericValues = genericValues + delta)` runs per response.
+- **`SlcanParser` per-frame substring allocations** — three `msg.substring()` calls plus a `ByteArray { msg.substring(...).toInt(16) }` builder per frame ran ~1k allocations/sec on 500 kbps HS-CAN. Replaced with index-based hex parse. Pure refactor; covered by existing 20-case `SlcanParserTest`. (`can/SlcanParser.kt`)
+- **`ShiftLightBar` allocated infinite transition on every redline cross** — hoisted `rememberInfiniteTransition` to the composable root, gated the value with `if (isRedline) ... else 0f`. Mirrors the A3 fix in `EdgeShiftLight`.
+- **`TcpSlcanTransport` / `BleSlcanTransport` line-buffer churn** — class-level `StringBuilder` reuse with reset after each frame instead of per-line allocation.
+- **Sparkline `snapshot()` recomputed every frame** — wrapped in `remember(lastSample)` so the snapshot only re-runs when a new sample arrives. (`ui/DrivePage.kt`)
+- **`onObdUpdate` fanned out off the main thread** — wrapped in `launch(Dispatchers.Main.immediate)` at the CanDataService binding site.
+- **`TextStyle` allocations in GForcePlot/Sparkline** — hoisted out of `remember(density)` so they're not effectively per-composition.
+- **`PidRegistry` init-once sanity** — added a single debug log behind the lazy builder + verified one print per process before removal.
+- **Redline flash too aggressive** — peak alpha 0.35 → 0.20, rectangle clamped to top 40% of screen.
+- **BLE device name overflow in connection banner** — truncated to 12 chars + ellipsis.
+- **`TempCard` placeholder pulse jittery** — pulseMs varies by state (WARMING 800 / AVAILABLE 900 / STALE+UNAVAILABLE 1200).
+- **DAY-mode card border alpha too thin** — `borderAlpha(base)` doubles alpha in DAY (floor 0.25, ceiling 0.85). Applied across status bar bottom + 7 Components.kt borders + 1 DrivePage border.
+
+### Changed (rc.1)
+- **Brightness slider replaced** — the linear lerp brightness slider is gone. Theme is now ThemeMode (NIGHT / DAY / AUTO / ULTRA). Color tokens stay snapshot-driven.
+- **`@Immutable` annotation on `VehicleState`** — Compose treats the data class as stable, dropping recompositions when unrelated fields change.
+- **`Brush.radialGradient` hoisted in glow modifiers** — reused via `remember` instead of allocated per-composition.
+- **Hero numerics no longer animated** — RPM/speed/boost render raw values (springs were causing perceived lag on fast-changing readings). Throttle/brake BarCard springs kept since their rate of change is slower.
+- **Trip live page** — TripPage replaces the live-mode pane with a LiveHud and surfaced controls for color mode/map type/weather/zoom/recenter directly on the map.
+- **DiagPage developer sections collapsed** — CRASH HISTORY / DID PROBER / LIVE CAN OUTPUT / FRAME INVENTORY / PID BROWSER now live under a single collapsible `DEVELOPER` section (each sub-section still individually collapsible).
+
+### Removed (rc.1)
+- **`PerformanceTimer`** — class deleted along with TripPage `CompactPerfTimer` and MorePage `PerformanceTimerSection` references. Will return as a TripPage feature later if requested.
+- **Prototype directory** — `ui/prototype/` (7 files: PrototypePreview + 5 tab previews + PrototypeChrome) plus the debug-only entry button in SettingsSheet.
+- **Old ChassisPage** — file removed; the `UnifiedChassisSection` migrated into THERMAL alongside the powertrain temps.
 
 ---
 

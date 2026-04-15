@@ -61,6 +61,7 @@ fun BleDevicePickerDialog(
     val scanner = remember { BleDeviceScanner(ctx) }
     val devices by scanner.devices.collectAsState()
     val scanning by scanner.scanning.collectAsState()
+    val filterless by scanner.filterless.collectAsState()
     var permDenied by remember { mutableStateOf(false) }
 
     // BLE permissions needed at scan time (not just at app startup)
@@ -147,23 +148,35 @@ fun BleDevicePickerDialog(
                     Modifier.fillMaxWidth()
                         .background(Surf2, RoundedCornerShape(10.dp))
                         .border(CardBorder, Brd, RoundedCornerShape(10.dp))
-                        .padding(20.dp),
+                        .padding(16.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        MonoLabel("No devices found", 11.sp, Dim)
+                        MonoLabel(
+                            if (filterless) "No BLE devices found at all"
+                            else "No adapter found",
+                            11.sp, Dim
+                        )
                         Spacer(Modifier.height(8.dp))
-                        MonoLabel("Make sure your WiCAN is powered on", 9.sp, Dim)
+                        MonoLabel("If your adapter is powered on:", 9.sp, Dim)
+                        Spacer(Modifier.height(4.dp))
+                        MonoLabel("• Power-cycle it after enabling BLE", 9.sp, Dim)
+                        MonoLabel("• Forget its WiFi on this phone (WiFi+BLE", 9.sp, Dim)
+                        MonoLabel("   can't run simultaneously on ESP32)", 9.sp, Dim)
+                        if (!filterless) {
+                            Spacer(Modifier.height(4.dp))
+                            MonoLabel("• Or try Show All Devices below", 9.sp, Dim)
+                        }
                     }
                 }
                 Spacer(Modifier.height(12.dp))
-                // Retry button
+                // Retry button (same filter mode)
                 Box(
                     Modifier.fillMaxWidth()
                         .background(accent.copy(alpha = 0.1f), RoundedCornerShape(10.dp))
                         .border(CardBorder, accent.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
                         .clickable {
-                            if (hasPerms()) scanner.startScan()
+                            if (hasPerms()) scanner.startScan(filterless = filterless)
                             else permLauncher.launch(blePerms)
                         }
                         .padding(12.dp),
@@ -172,7 +185,46 @@ fun BleDevicePickerDialog(
                     MonoLabel("SCAN AGAIN", 10.sp, accent,
                         fontWeight = FontWeight.Bold, letterSpacing = 0.1.sp)
                 }
+                // Filterless fallback — only offered from a failed filtered scan
+                if (!filterless) {
+                    Spacer(Modifier.height(6.dp))
+                    Box(
+                        Modifier.fillMaxWidth()
+                            .background(Surf2, RoundedCornerShape(10.dp))
+                            .border(CardBorder, Orange.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                            .clickable {
+                                if (hasPerms()) scanner.startScan(filterless = true)
+                                else permLauncher.launch(blePerms)
+                            }
+                            .padding(12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        MonoLabel("SHOW ALL BLE DEVICES", 10.sp, Orange,
+                            fontWeight = FontWeight.Bold, letterSpacing = 0.1.sp)
+                    }
+                    Spacer(Modifier.height(2.dp))
+                    MonoLabel(
+                        "Bypasses the SLCAN service filter — use if your adapter is missing from the filtered scan.",
+                        9.sp, Dim
+                    )
+                }
             } else {
+                // Filterless-mode warning banner — results include non-SLCAN peripherals
+                if (filterless) {
+                    Box(
+                        Modifier.fillMaxWidth()
+                            .background(Orange.copy(alpha = 0.10f), RoundedCornerShape(10.dp))
+                            .border(CardBorder, Orange.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                            .padding(10.dp)
+                    ) {
+                        MonoLabel(
+                            "Showing all BLE devices. Most won't be SLCAN adapters — tap one to try connecting anyway.",
+                            9.sp, Orange
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                }
+
                 // Device list
                 devices.forEach { device ->
                     DeviceRow(
@@ -195,7 +247,11 @@ fun BleDevicePickerDialog(
                             .padding(20.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        MonoLabel("Searching for WiCAN devices...", 10.sp, Dim)
+                        MonoLabel(
+                            if (filterless) "Searching for all BLE devices..."
+                            else "Searching for WiCAN devices...",
+                            10.sp, Dim
+                        )
                     }
                 }
             }

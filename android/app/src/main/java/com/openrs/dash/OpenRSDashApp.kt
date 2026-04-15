@@ -49,6 +49,11 @@ class OpenRSDashApp : Application() {
         }
     }
 
+    /** Count of active DTCs from the most recent scan. Updated by DiagPage
+     *  after a successful scan; cleared when the user clears codes. Feeds the
+     *  GARAGE-tab badge in BottomNavBar. */
+    val activeDtcCount = MutableStateFlow(0)
+
     /** True once openRS_ firmware is confirmed via WebSocket probe on connect. */
     val isOpenRsFirmware = MutableStateFlow(false)
 

@@ -1,5 +1,6 @@
 package com.openrs.dash.data
 
+import androidx.compose.runtime.Immutable
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -8,6 +9,7 @@ import kotlin.math.sqrt
 /**
  * Complete Focus RS MK3 telemetry — all CAN sniffed + OBD Mode 1/22 parameters.
  */
+@Immutable
 data class VehicleState(
     // ── Engine (CAN Sniffed) ────────────────────────────────
     val rpm: Double = 0.0,
@@ -201,7 +203,37 @@ data class VehicleState(
     val isIdle: Boolean = false,
     val framesPerSecond: Double = 0.0,
     val lastUpdate: Long = 0L,
+
+    // ── Per-field freshness (v3.0) ───────────────────────────
+    // Key = stable field tag. Value = epoch ms of last successful decode.
+    // Read by UI to classify FieldState (Warming/Available/Stale/Unavailable).
+    // Written by ObdResponseParser + PidRegistry on every successful decode.
+    val fieldLastUpdateMs: Map<String, Long> = emptyMap(),
 ) {
+    /** Stamp one or more field tags as fresh (used by Mode 22 + catalog decoders). */
+    fun markFresh(vararg tags: String, now: Long = System.currentTimeMillis()): VehicleState {
+        if (tags.isEmpty()) return this
+        val updated = HashMap<String, Long>(fieldLastUpdateMs.size + tags.size)
+        updated.putAll(fieldLastUpdateMs)
+        for (tag in tags) updated[tag] = now
+        return copy(fieldLastUpdateMs = updated)
+    }
+
+    /**
+     * Write [value] into [genericValues] under [field] and stamp the field as fresh,
+     * all in a single `.copy()`. Used by catalog-fallback decoders so each generic-PID
+     * update costs one VehicleState copy instead of `copy(...).markFresh(...)` chained.
+     */
+    fun putGeneric(field: String, value: Double, now: Long = System.currentTimeMillis()): VehicleState {
+        val newGenerics = HashMap<String, Double>(genericValues.size + 1).apply {
+            putAll(genericValues); put(field, value)
+        }
+        val newFreshness = HashMap<String, Long>(fieldLastUpdateMs.size + 1).apply {
+            putAll(fieldLastUpdateMs); put(field, now)
+        }
+        return copy(genericValues = newGenerics, fieldLastUpdateMs = newFreshness)
+    }
+
     // ── Computed ─────────────────────────────────────────────
     val boostPsi: Double get() = (boostKpa - 101.325) * 0.14503773
     val speedMph: Double get() = speedKph * 0.621371

@@ -32,6 +32,24 @@ import com.openrs.dash.BuildConfig
  * Key = versionName (e.g. "2.2.5"), Value = list of user-facing highlights.
  */
 private val versionHighlights: Map<String, List<String>> = mapOf(
+    "2.2.7" to listOf(
+        "\"Daylight\" UI overhaul — 5 tabs (DRIVE/PERF/THERMAL/TRIP/GARAGE) and a true light/dark theme",
+        "Theme picker — NIGHT / DAY / AUTO + ULTRA pure-black AMOLED option (replaces the brightness slider)",
+        "Rajdhani typography with tabular numerals — calmer, no-shimmy hero values",
+        "Field availability sub-labels — WARMING / STALE / N/A surfaced on temps, battery, and TPMS",
+        "Settings overhauled — categorized navigator with fuzzy search and per-setting help",
+        "Drive-mode change haptics + status-bar MODE pill pulses while a command is in flight",
+        "Long-press hero cards on DRIVE — flips BOOST/RPM/SPEED to session peak for 3s",
+        "DTC badge on the GARAGE tab — see active codes from any page",
+        "Drag-to-reorder on Custom Dashboard — long-press the arrow column to drag",
+        "TripPage SATELLITE default + select-card animates to reveal SHARE/RENAME",
+        "Adaptive zoom on DRIVE — gear inflates and the page auto-zooms above 16 kph",
+        "Fixed: Auto-record no longer starts when only WiFi is connected — gates on RPM > 400 with seamless pause/resume",
+        "Fixed: BLE scan timeout extended + filterless fallback to find stubborn adapters",
+        "Fixed: Battery voltage now shows 2 decimals everywhere (14.74 vs 14.7)",
+        "Fixed: PTU/RDU no longer visually stack on the chassis diagram",
+        "Performance: SLCAN parser, glow modifiers, ShiftLightBar, transports — significant allocation churn removed in the hot paths"
+    ),
     "2.2.6" to listOf(
         "Fuel trim drift tracker — short/long-term fuel trims (STFT/LTFT) on POWER tab FUEL section",
         "AWD clutch hydraulics — left/right actuator current and hydraulic pressure on CHASSIS tab",

@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.can.DriveCommandResult
 import com.openrs.dash.can.FirmwareCommandSender
+import com.openrs.dash.can.driveModePending
 import com.openrs.dash.can.executeDriveModeChange
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.VehicleState
@@ -96,10 +97,11 @@ import kotlinx.coroutines.launch
                 }
                 val isPending = pendingDriveMode == mode && !isActive
 
+                val dimForBusy = pendingDriveMode != null && !isPending
                 Column(
                     Modifier.weight(1f)
                         .graphicsLayer {
-                            alpha = alphas[index].value
+                            alpha = alphas[index].value * (if (dimForBusy) 0.5f else 1f)
                             translationY = offsets[index].value * density
                         }
                         .then(
@@ -126,24 +128,36 @@ import kotlinx.coroutines.launch
                         .pressClick(enabled = canControl && firmwareApi != null && !isActive && pendingDriveMode == null) {
                             haptic.performHapticFeedback(HapticFeedbackType.Confirm)
                             pendingDriveMode = mode
+                            driveModePending.value = mode
                             scope.launch {
                                 when (val r = executeDriveModeChange(firmwareApi!!, mode, vs.driveMode)) {
                                     is DriveCommandResult.Success -> {
+                                        haptic.performHapticFeedback(HapticFeedbackType.Confirm)
                                         pendingDriveMode = null
+                                        driveModePending.value = null
                                         delay(400)
                                         onDismiss()
                                         return@launch
                                     }
-                                    is DriveCommandResult.Busy ->
+                                    is DriveCommandResult.Busy -> {
+                                        haptic.performHapticFeedback(HapticFeedbackType.Reject)
                                         snackbarHostState.showSnackbar("Mode change in progress \u2014 please wait")
-                                    is DriveCommandResult.Failed ->
+                                    }
+                                    is DriveCommandResult.Failed -> {
+                                        haptic.performHapticFeedback(HapticFeedbackType.Reject)
                                         snackbarHostState.showSnackbar(r.message)
-                                    is DriveCommandResult.CorrectionFailed ->
+                                    }
+                                    is DriveCommandResult.CorrectionFailed -> {
+                                        haptic.performHapticFeedback(HapticFeedbackType.Reject)
                                         snackbarHostState.showSnackbar("Mode correction failed \u2014 try again manually")
-                                    is DriveCommandResult.NoConfirmation ->
+                                    }
+                                    is DriveCommandResult.NoConfirmation -> {
+                                        haptic.performHapticFeedback(HapticFeedbackType.Reject)
                                         snackbarHostState.showSnackbar("Mode change didn\u2019t take effect \u2014 try again")
+                                    }
                                 }
                                 pendingDriveMode = null
+                                driveModePending.value = null
                             }
                         }
                         .padding(vertical = 12.dp),

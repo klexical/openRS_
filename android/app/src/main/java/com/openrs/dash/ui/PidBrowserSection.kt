@@ -1,6 +1,5 @@
 package com.openrs.dash.ui
 
-import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -30,8 +29,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -43,7 +42,7 @@ import com.openrs.dash.data.ForscanCatalogData
 import com.openrs.dash.data.ForscanModule
 
 @Composable
-fun PidBrowserSection() {
+fun PidBrowserSection(onCopyNotify: (String) -> Unit = {}) {
     val ctx = LocalContext.current
     val accent = LocalThemeAccent.current
 
@@ -95,7 +94,7 @@ fun PidBrowserSection() {
         } else {
             filteredModules.forEach { mod ->
                 val isExpanded = expandedModule == mod.id || lowerQuery.isNotEmpty()
-                ModuleRow(mod, isExpanded, accent) {
+                ModuleRow(mod, isExpanded, accent, onCopyNotify) {
                     expandedModule = if (expandedModule == mod.id) null else mod.id
                 }
             }
@@ -185,7 +184,8 @@ private fun ModuleRow(
     mod: ForscanModule,
     isExpanded: Boolean,
     accent: androidx.compose.ui.graphics.Color,
-    onToggle: () -> Unit
+    onCopyNotify: (String) -> Unit,
+    onToggle: () -> Unit,
 ) {
     val monitored = mod.monitoredCount
     val total = mod.pids.size
@@ -251,7 +251,7 @@ private fun ModuleRow(
                     .padding(start = 20.dp, end = 4.dp, bottom = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(1.dp)
             ) {
-                monitoredPids.forEach { pid -> PidRow(pid, accent) }
+                monitoredPids.forEach { pid -> PidRow(pid, accent, onCopyNotify) }
                 if (monitoredPids.isNotEmpty() && availablePids.isNotEmpty()) {
                     Box(
                         Modifier
@@ -261,7 +261,7 @@ private fun ModuleRow(
                             .background(Brd.copy(alpha = 0.5f))
                     )
                 }
-                availablePids.forEach { pid -> PidRow(pid, accent) }
+                availablePids.forEach { pid -> PidRow(pid, accent, onCopyNotify) }
             }
         }
     }
@@ -271,13 +271,13 @@ private fun ModuleRow(
 @Composable
 private fun PidRow(
     pid: com.openrs.dash.data.ForscanPid,
-    accent: androidx.compose.ui.graphics.Color
+    accent: androidx.compose.ui.graphics.Color,
+    onCopyNotify: (String) -> Unit,
 ) {
     val isMonitored = pid.status == "monitored"
     val hasUnit = pid.unit.isNotEmpty()
     val hasDid = pid.did.isNotEmpty()
     val clipboardManager = LocalClipboardManager.current
-    val context = LocalContext.current
     val rowModifier = if (hasDid) {
         Modifier
             .fillMaxWidth()
@@ -285,7 +285,7 @@ private fun PidRow(
                 onClick = {},
                 onLongClick = {
                     clipboardManager.setText(AnnotatedString(pid.did))
-                    Toast.makeText(context, "Copied ${pid.did}", Toast.LENGTH_SHORT).show()
+                    onCopyNotify("Copied ${pid.did}")
                 }
             )
             .padding(vertical = 3.dp)

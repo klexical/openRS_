@@ -6,6 +6,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,9 +40,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.text.font.FontWeight
 import com.openrs.dash.ui.Tokens.CardBorder
 import androidx.compose.ui.unit.dp
@@ -276,6 +282,12 @@ private fun DashBuilderSheet(
     val editCells = remember { mutableStateListOf<DashCell>().apply { addAll(layout.cells) } }
     var showAddPicker by remember { mutableStateOf(false) }
 
+    var draggedKey by remember { mutableStateOf<String?>(null) }
+    var dragOffsetY by remember { mutableStateOf(0f) }
+    val density = LocalDensity.current
+    val rowHeightPx = with(density) { 56.dp.toPx() }
+    val haptic = LocalHapticFeedback.current
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -328,10 +340,38 @@ private fun DashBuilderSheet(
                 ) {
                     items(editCells.toList(), key = { it.fieldKey }) { cell ->
                         val index = editCells.indexOf(cell)
+                        val isDragged = draggedKey == cell.fieldKey
                         EditorCellRow(
                             cell = cell,
                             canMoveUp = index > 0,
                             canMoveDown = index < editCells.lastIndex,
+                            isDragged = isDragged,
+                            dragOffsetY = if (isDragged) dragOffsetY else 0f,
+                            onDragStart = {
+                                draggedKey = cell.fieldKey
+                                dragOffsetY = 0f
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            },
+                            onDrag = { deltaY ->
+                                val i = editCells.indexOfFirst { it.fieldKey == draggedKey }
+                                if (i < 0) return@EditorCellRow
+                                dragOffsetY += deltaY
+                                if (dragOffsetY > rowHeightPx / 2f && i < editCells.lastIndex) {
+                                    val item = editCells.removeAt(i)
+                                    editCells.add(i + 1, item)
+                                    dragOffsetY -= rowHeightPx
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                } else if (dragOffsetY < -rowHeightPx / 2f && i > 0) {
+                                    val item = editCells.removeAt(i)
+                                    editCells.add(i - 1, item)
+                                    dragOffsetY += rowHeightPx
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                }
+                            },
+                            onDragEnd = {
+                                draggedKey = null
+                                dragOffsetY = 0f
+                            },
                             onMoveUp = {
                                 if (index > 0) {
                                     val item = editCells.removeAt(index)
@@ -462,6 +502,11 @@ private fun EditorCellRow(
     cell: DashCell,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
+    isDragged: Boolean = false,
+    dragOffsetY: Float = 0f,
+    onDragStart: () -> Unit = {},
+    onDrag: (Float) -> Unit = {},
+    onDragEnd: () -> Unit = {},
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
     onChangeType: (String) -> Unit,
@@ -472,14 +517,38 @@ private fun EditorCellRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .background(Surf2, RoundedCornerShape(8.dp))
-            .border(CardBorder, Brd, RoundedCornerShape(8.dp))
+            .zIndex(if (isDragged) 1f else 0f)
+            .graphicsLayer {
+                translationY = dragOffsetY
+                alpha = if (isDragged) 0.92f else 1f
+                scaleX = if (isDragged) 1.02f else 1f
+                scaleY = if (isDragged) 1.02f else 1f
+            }
+            .background(
+                if (isDragged) Surf3 else Surf2,
+                RoundedCornerShape(8.dp)
+            )
+            .border(
+                CardBorder,
+                if (isDragged) accent.copy(alpha = 0.5f) else Brd,
+                RoundedCornerShape(8.dp)
+            )
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        // Reorder arrows
-        Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+        // Drag handle + reorder arrows
+        Column(
+            verticalArrangement = Arrangement.spacedBy(0.dp),
+            modifier = Modifier.pointerInput(cell.fieldKey) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { onDragStart() },
+                    onDragEnd = { onDragEnd() },
+                    onDragCancel = { onDragEnd() },
+                    onDrag = { _, drag -> onDrag(drag.y) }
+                )
+            }
+        ) {
             MonoLabel(
                 "\u25B2", 10.sp,
                 if (canMoveUp) Mid else Brd,

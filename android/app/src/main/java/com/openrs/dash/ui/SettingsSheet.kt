@@ -5,7 +5,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -13,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -22,10 +25,14 @@ import androidx.compose.ui.text.style.TextAlign
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.ui.graphics.Brush
-import android.content.pm.PackageManager
 import com.openrs.dash.BuildConfig
 import com.openrs.dash.service.HudOverlayService
 import com.openrs.dash.update.UpdateManager
@@ -36,6 +43,64 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SETTINGS — v2.2.7 overhaul
+//
+// Categorized navigation (root grid → sub-page) with live search across all
+// settings. Replaces the flat 14-section scroll. The cog in AppHeader and
+// GARAGE's SETTINGS entry both open this same dialog.
+// ═══════════════════════════════════════════════════════════════════════════
+
+private enum class SettingsCategory(val label: String, val blurb: String) {
+    DISPLAY("DISPLAY", "Theme · shift light · overlay"),
+    UNITS("UNITS", "Speed · temp · pressure"),
+    CONNECTION("CONNECTION", "Adapter · WiFi · Bluetooth"),
+    DRIVES("DRIVES", "Auto-record · storage"),
+    DIAGNOSTICS("DIAGNOSTICS", "Exports · logging"),
+    ABOUT("ABOUT", "Version · credits"),
+}
+
+private class NavSection(
+    val category: SettingsCategory,
+    val title: String,
+    val keywords: List<String>,
+    val body: @Composable () -> Unit,
+)
+
+/** Case-insensitive substring; falls back to subsequence fuzzy match. */
+private fun fuzzyMatch(query: String, text: String): Boolean {
+    val q = query.lowercase().trim()
+    if (q.isEmpty()) return true
+    val t = text.lowercase()
+    if (t.contains(q)) return true
+    var idx = 0
+    for (c in t) {
+        if (idx < q.length && c == q[idx]) idx++
+        if (idx == q.length) return true
+    }
+    return false
+}
+
+/**
+ * Rank a single text field against a query:
+ *   0 = exact match, 1 = prefix, 2 = substring, 3 = subsequence, 4 = no match.
+ * Lower is better. Used to order search results so substring beats subsequence.
+ */
+private fun matchRank(query: String, text: String): Int {
+    val q = query.lowercase().trim()
+    if (q.isEmpty()) return 0
+    val t = text.lowercase()
+    if (t == q) return 0
+    if (t.startsWith(q)) return 1
+    if (t.contains(q)) return 2
+    var idx = 0
+    for (c in t) {
+        if (idx < q.length && c == q[idx]) idx++
+        if (idx == q.length) return 3
+    }
+    return 4
+}
 
 @Composable
 fun SettingsDialog(onDismiss: () -> Unit) {
@@ -70,23 +135,621 @@ fun SettingsDialog(onDismiss: () -> Unit) {
     var error           by remember { mutableStateOf<String?>(null) }
     var resetConfirm    by remember { mutableStateOf(false) }
 
+    // Navigation / search state — session-local
+    var searchQuery      by remember { mutableStateOf("") }
+    var selectedCategory by remember { mutableStateOf<SettingsCategory?>(null) }
+    var aboutExpanded    by remember { mutableStateOf(false) }
+    var showBlePicker    by remember { mutableStateOf(false) }
+
+    // ═══ Build NavSection list (bodies capture state vars by closure) ══════
+    val sections: List<NavSection> = listOf(
+        NavSection(
+            SettingsCategory.DISPLAY,
+            "APPEARANCE",
+            listOf("theme", "night", "day", "auto", "font", "orbitron", "classic",
+                "drive", "zoom", "screen", "keep", "wake", "display"),
+        ) {
+            SettingsSection("APPEARANCE") {
+                SettingsSwitchRow(
+                    label = "Keep screen on while connected",
+                    help = "Prevents the phone from sleeping while CAN is live. Drains battery.",
+                    checked = screenOn, onCheckedChange = { screenOn = it },
+                )
+                Spacer(Modifier.height(12.dp))
+                SettingsRow(
+                    label = "Theme mode",
+                    help = "AUTO follows the device clock (06:00–19:00 → DAY). ULTRA = pure-black AMOLED variant for night driving on OLED displays.",
+                ) {
+                    SegmentedPicker(
+                        options = listOf("NIGHT", "DAY", "AUTO", "ULTRA"),
+                        selected = current.themeMode,
+                        onSelect = { sel ->
+                            UserPrefsStore.update(ctx) { it.copy(themeMode = sel) }
+                            setThemeMode(runCatching { ThemeMode.valueOf(sel) }
+                                .getOrDefault(ThemeMode.NIGHT))
+                        },
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                SettingsRow(
+                    label = "Classic fonts",
+                    help = "CLASSIC revives Orbitron for hero numerics.",
+                ) {
+                    SegmentedPicker(
+                        options = listOf("MODERN", "CLASSIC"),
+                        selected = if (current.classicFonts) "CLASSIC" else "MODERN",
+                        onSelect = { sel ->
+                            val on = sel == "CLASSIC"
+                            UserPrefsStore.update(ctx) { it.copy(classicFonts = on) }
+                            setClassicFonts(on)
+                        },
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                SettingsRow(
+                    label = "DRIVE auto-zoom",
+                    help = "Collapses inputs and inflates the gear digit once rolling above ~10 mph.",
+                ) {
+                    Switch(
+                        checked = current.driveAutoZoom,
+                        onCheckedChange = { on ->
+                            UserPrefsStore.update(ctx) { it.copy(driveAutoZoom = on) }
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = OnAccent,
+                            checkedTrackColor = accent,
+                            uncheckedThumbColor = Dim,
+                            uncheckedTrackColor = Brd,
+                        ),
+                    )
+                }
+            }
+        },
+        NavSection(
+            SettingsCategory.DISPLAY,
+            "THEME — RS PAINT COLOUR",
+            listOf("paint", "color", "accent", "nitrous", "blue", "red", "grey", "black"),
+        ) {
+            SettingsSection("THEME — RS PAINT COLOUR") {
+                ThemePicker(current)
+            }
+        },
+        NavSection(
+            SettingsCategory.DISPLAY,
+            "SHIFT LIGHT",
+            listOf("shift", "rpm", "redline", "glow", "edge", "peripheral"),
+        ) {
+            SettingsSection("SHIFT LIGHT") {
+                SettingsSwitchRow(
+                    label = "Peripheral edge glow",
+                    help = "Screen edges glow as RPM approaches shift point.",
+                    checked = edgeShiftLight, onCheckedChange = { edgeShiftLight = it },
+                )
+                if (edgeShiftLight) {
+                    Spacer(Modifier.height(12.dp))
+                    SettingsRow(
+                        label = "Color",
+                        help = "PROGRESSIVE fades green→yellow→red as you approach the shift point.",
+                    ) {
+                        SegmentedPicker(
+                            options = listOf("Accent", "White", "Progressive"),
+                            selected = when (edgeShiftColor) {
+                                "white" -> "White"; "progressive" -> "Progressive"; else -> "Accent"
+                            },
+                            onSelect = {
+                                edgeShiftColor = when (it) {
+                                    "White" -> "white"; "Progressive" -> "progressive"; else -> "accent"
+                                }
+                            },
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    SettingsRow(
+                        label = "Intensity",
+                        help = "Glow opacity at peak. HIGH is most visible in daylight.",
+                    ) {
+                        SegmentedPicker(
+                            options = listOf("Low", "Med", "High"),
+                            selected = when (edgeShiftIntensity) {
+                                "low" -> "Low"; "med" -> "Med"; else -> "High"
+                            },
+                            onSelect = {
+                                edgeShiftIntensity = when (it) {
+                                    "Low" -> "low"; "Med" -> "med"; else -> "high"
+                                }
+                            },
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    SettingsRow(
+                        label = "Shift RPM",
+                        help = "RPM where the flash peaks. Breathing starts at 70% of this value.",
+                    ) {
+                        OutlinedTextField(
+                            value = edgeShiftRpm,
+                            onValueChange = { edgeShiftRpm = it; error = null },
+                            label = { Text("RPM", fontFamily = ShareTechMono, fontSize = 10.sp) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.width(90.dp),
+                            colors = outlinedFieldColors(),
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                fontFamily = ShareTechMono, fontSize = 13.sp, color = Frost,
+                            ),
+                        )
+                    }
+                }
+            }
+        },
+        NavSection(
+            SettingsCategory.DISPLAY,
+            "FLOATING HUD",
+            listOf("hud", "overlay", "floating", "window", "boost", "rpm", "picture"),
+        ) {
+            SettingsSection("FLOATING HUD") {
+                val hasOverlayPerm = Settings.canDrawOverlays(ctx)
+                if (!hasOverlayPerm) {
+                    Text(
+                        "Overlay permission required to display the floating HUD over other apps.",
+                        fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Box(
+                        Modifier.fillMaxWidth()
+                            .background(accent.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+                            .border(CardBorder, accent.copy(0.3f), RoundedCornerShape(8.dp))
+                            .clickable {
+                                ctx.startActivity(
+                                    Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                        Uri.parse("package:${ctx.packageName}"))
+                                )
+                            }
+                            .padding(12.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("GRANT OVERLAY PERMISSION", fontSize = 11.sp, color = accent,
+                            fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    Text(
+                        "Compact boost / RPM / oil overlay on top of other apps. " +
+                            "Useful on track days with a nav app.",
+                        fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(
+                            Modifier.weight(1f)
+                                .background(Ok.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+                                .border(CardBorder, Ok.copy(0.3f), RoundedCornerShape(8.dp))
+                                .clickable {
+                                    ctx.startService(Intent(ctx, HudOverlayService::class.java))
+                                }
+                                .padding(12.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text("START HUD", fontSize = 11.sp, color = Ok,
+                                fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
+                        }
+                        Box(
+                            Modifier.weight(1f)
+                                .background(Orange.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+                                .border(CardBorder, Orange.copy(0.3f), RoundedCornerShape(8.dp))
+                                .clickable {
+                                    ctx.stopService(Intent(ctx, HudOverlayService::class.java))
+                                }
+                                .padding(12.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text("STOP HUD", fontSize = 11.sp, color = Orange,
+                                fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        },
+        NavSection(
+            SettingsCategory.UNITS,
+            "UNITS",
+            listOf("mph", "kph", "celsius", "fahrenheit", "psi", "bar", "kpa",
+                "speed", "temp", "temperature", "boost", "tire", "pressure"),
+        ) {
+            SettingsSection("UNITS") {
+                SettingsRow("Speed") {
+                    SegmentedPicker(
+                        options = listOf("MPH", "KPH"),
+                        selected = speedUnit,
+                        onSelect = { speedUnit = it },
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                SettingsRow("Temperature") {
+                    SegmentedPicker(
+                        options = listOf("°F", "°C"),
+                        selected = if (tempUnit == "F") "°F" else "°C",
+                        onSelect = { tempUnit = if (it == "°F") "F" else "C" },
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                SettingsRow("Boost Pressure") {
+                    SegmentedPicker(
+                        options = listOf("PSI", "BAR", "kPa"),
+                        selected = when (boostUnit) { "BAR" -> "BAR"; "KPA" -> "kPa"; else -> "PSI" },
+                        onSelect = { boostUnit = when (it) { "BAR" -> "BAR"; "kPa" -> "KPA"; else -> "PSI" } },
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                SettingsRow("Tire Pressure") {
+                    SegmentedPicker(
+                        options = listOf("PSI", "BAR"),
+                        selected = tireUnit,
+                        onSelect = { tireUnit = it },
+                    )
+                }
+            }
+        },
+        NavSection(
+            SettingsCategory.UNITS,
+            "TPMS THRESHOLDS",
+            listOf("tpms", "tire", "pressure", "low", "warn", "high", "psi"),
+        ) {
+            SettingsSection("TPMS THRESHOLDS") {
+                SettingsRow("Low (critical)") {
+                    OutlinedTextField(
+                        value = tireLowPsi, onValueChange = { tireLowPsi = it; error = null },
+                        label = { Text("PSI", fontFamily = ShareTechMono, fontSize = 10.sp) },
+                        singleLine = true, modifier = Modifier.width(90.dp),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        colors = outlinedFieldColors(),
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost),
+                    )
+                }
+                SettingsRow("Warn (getting low)") {
+                    OutlinedTextField(
+                        value = tireWarnPsi, onValueChange = { tireWarnPsi = it; error = null },
+                        label = { Text("PSI", fontFamily = ShareTechMono, fontSize = 10.sp) },
+                        singleLine = true, modifier = Modifier.width(90.dp),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        colors = outlinedFieldColors(),
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost),
+                    )
+                }
+                SettingsRow("High (over-inflated)") {
+                    OutlinedTextField(
+                        value = tireHighPsi, onValueChange = { tireHighPsi = it; error = null },
+                        label = { Text("PSI", fontFamily = ShareTechMono, fontSize = 10.sp) },
+                        singleLine = true, modifier = Modifier.width(90.dp),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        colors = outlinedFieldColors(),
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost),
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Red < ${AppSettings.DEFAULT_TIRE_LOW_PSI} | Gold < ${AppSettings.DEFAULT_TIRE_WARN_PSI} | " +
+                        "Green | Red > ${AppSettings.DEFAULT_TIRE_HIGH_PSI} PSI",
+                    fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
+                )
+            }
+        },
+        NavSection(
+            SettingsCategory.CONNECTION,
+            "ADAPTER",
+            listOf("meatpi", "wican", "usb", "pro", "c3", "s3", "hardware", "sd", "log"),
+        ) {
+            SettingsSection("ADAPTER") {
+                SettingsRow(
+                    label = "Hardware",
+                    help = "MeatPi USB (C3) speaks WebSocket SLCAN; MeatPi Pro (S3) speaks raw TCP.",
+                ) {
+                    SegmentedPicker(
+                        options = listOf("MeatPi USB (C3)", "MeatPi Pro (S3)"),
+                        selected = if (adapterType == "MEATPI_PRO") "MeatPi Pro (S3)" else "MeatPi USB (C3)",
+                        onSelect = { selected ->
+                            val newType = if (selected == "MeatPi Pro (S3)") "MEATPI_PRO" else "MEATPI_USB"
+                            if (newType != adapterType) {
+                                if (newType == "MEATPI_PRO" &&
+                                    host == AppSettings.DEFAULT_HOST &&
+                                    port == AppSettings.DEFAULT_PORT.toString()) {
+                                    host = AppSettings.DEFAULT_HOST_MEATPI
+                                    port = AppSettings.DEFAULT_PORT_MEATPI.toString()
+                                } else if (newType == "MEATPI_USB" &&
+                                    host == AppSettings.DEFAULT_HOST_MEATPI &&
+                                    port == AppSettings.DEFAULT_PORT_MEATPI.toString()) {
+                                    host = AppSettings.DEFAULT_HOST
+                                    port = AppSettings.DEFAULT_PORT.toString()
+                                }
+                                adapterType = newType
+                            }
+                        },
+                    )
+                }
+                if (adapterType == "MEATPI_PRO") {
+                    Spacer(Modifier.height(12.dp))
+                    SettingsSwitchRow(
+                        label = "MicroSD logging reminder",
+                        help = "SD logging is configured in the WiCAN Pro web UI at http://192.168.0.10/. " +
+                            "This toggle is a local reminder only.",
+                        checked = meatPiMicroSd, onCheckedChange = { meatPiMicroSd = it },
+                    )
+                }
+            }
+        },
+        NavSection(
+            SettingsCategory.CONNECTION,
+            "METHOD",
+            listOf("wifi", "bluetooth", "ble", "method", "transport"),
+        ) {
+            SettingsSection("METHOD") {
+                SettingsRow(
+                    label = "Connection method",
+                    help = "Both adapters support both transports. WiFi keeps LTE off; Bluetooth lets the phone " +
+                        "stay on normal WiFi for internet.",
+                ) {
+                    SegmentedPicker(
+                        options = listOf("WiFi", "Bluetooth"),
+                        selected = if (connectionMethod == "BLUETOOTH") "Bluetooth" else "WiFi",
+                        onSelect = { selected ->
+                            connectionMethod = if (selected == "Bluetooth") "BLUETOOTH" else "WIFI"
+                        },
+                    )
+                }
+            }
+        },
+        NavSection(
+            SettingsCategory.CONNECTION,
+            if (connectionMethod == "BLUETOOTH") "BLUETOOTH DEVICE" else "WIFI",
+            listOf("ble", "bluetooth", "pair", "scan", "wifi", "host", "ip", "port", "address"),
+        ) {
+            if (connectionMethod == "BLUETOOTH") {
+                val bleAddr = remember { mutableStateOf(AppSettings.getBleDeviceAddress(ctx)) }
+                val bleName = remember { mutableStateOf(AppSettings.getBleDeviceName(ctx)) }
+                SettingsSection("BLUETOOTH DEVICE") {
+                    if (bleAddr.value != null) {
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .background(Surf2, RoundedCornerShape(10.dp))
+                                .border(CardBorder, Brd, RoundedCornerShape(10.dp))
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Device", fontSize = 9.sp, color = Dim,
+                                    fontFamily = ShareTechMono, letterSpacing = 0.1.sp)
+                                Spacer(Modifier.height(4.dp))
+                                Text(bleName.value ?: "WiCAN", fontSize = 13.sp, color = Frost,
+                                    fontFamily = ShareTechMono, fontWeight = FontWeight.SemiBold)
+                                Spacer(Modifier.height(2.dp))
+                                Text(bleAddr.value ?: "", fontSize = 10.sp, color = Dim,
+                                    fontFamily = ShareTechMono, letterSpacing = 0.05.sp)
+                            }
+                        }
+                        Spacer(Modifier.height(10.dp))
+                    } else {
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .background(Surf2, RoundedCornerShape(10.dp))
+                                .border(CardBorder, Brd, RoundedCornerShape(10.dp))
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("No device paired", fontSize = 11.sp, color = Dim,
+                                fontFamily = ShareTechMono)
+                        }
+                        Spacer(Modifier.height(10.dp))
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(
+                            Modifier.weight(1f)
+                                .background(accent.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                                .border(CardBorder, accent.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                .clickable { showBlePicker = true }
+                                .padding(12.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text("SCAN FOR DEVICES", fontSize = 10.sp, color = accent,
+                                fontFamily = ShareTechMono, fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.1.sp)
+                        }
+                        if (bleAddr.value != null) {
+                            Box(
+                                Modifier.weight(1f)
+                                    .background(Orange.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+                                    .border(CardBorder, Orange.copy(0.3f), RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        AppSettings.clearBleDevice(ctx)
+                                        bleAddr.value = null; bleName.value = null
+                                    }
+                                    .padding(12.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text("FORGET", fontSize = 10.sp, color = Orange,
+                                    fontFamily = ShareTechMono, fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.1.sp)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "For best results, forget the adapter's WiFi network in your phone's WiFi settings " +
+                            "to keep internet available while connected via Bluetooth.",
+                        fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
+                    )
+                }
+            } else {
+                val isPro = adapterType == "MEATPI_PRO"
+                val defaultHost = if (isPro) AppSettings.DEFAULT_HOST_MEATPI else AppSettings.DEFAULT_HOST
+                val defaultPort = if (isPro) AppSettings.DEFAULT_PORT_MEATPI else AppSettings.DEFAULT_PORT
+                val adapterLabel = if (isPro) "MEATPI PRO" else "MEATPI USB"
+                SettingsSection("$adapterLabel — WIFI") {
+                    OutlinedTextField(
+                        value = host, onValueChange = { host = it; error = null },
+                        label = { Text("Host / IP Address", fontFamily = ShareTechMono, fontSize = 11.sp) },
+                        placeholder = { Text(defaultHost, fontFamily = ShareTechMono, fontSize = 12.sp, color = Dim) },
+                        singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        colors = outlinedFieldColors(),
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost),
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = port, onValueChange = { port = it; error = null },
+                        label = { Text("Port", fontFamily = ShareTechMono, fontSize = 11.sp) },
+                        placeholder = { Text(defaultPort.toString(), fontFamily = ShareTechMono, fontSize = 12.sp, color = Dim) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = outlinedFieldColors(),
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost),
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        if (isPro)
+                            "Default: $defaultHost:$defaultPort  (TCP SLCAN — configure port in WiCAN Pro web UI)"
+                        else
+                            "Default: $defaultHost:$defaultPort  (WebSocket SLCAN)",
+                        fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
+                    )
+                }
+            }
+        },
+        NavSection(
+            SettingsCategory.CONNECTION,
+            "AUTO-RECONNECT",
+            listOf("auto", "reconnect", "retry", "interval"),
+        ) {
+            SettingsSection("AUTO-RECONNECT") {
+                SettingsSwitchRow(
+                    label = "Auto-reconnect on disconnect",
+                    help = "Automatically retry the CAN adapter after a drop. Required for seamless BLE reconnection when the car comes back in range.",
+                    checked = autoReconnect, onCheckedChange = { autoReconnect = it },
+                )
+                if (autoReconnect) {
+                    Spacer(Modifier.height(12.dp))
+                    SettingsRow(
+                        label = "Retry interval",
+                        help = "How long to wait between connection attempts. " +
+                            "Default: ${AppSettings.DEFAULT_RECONNECT_INTERVAL}s",
+                    ) {
+                        OutlinedTextField(
+                            value = reconnectSec, onValueChange = { reconnectSec = it; error = null },
+                            label = { Text("seconds", fontFamily = ShareTechMono, fontSize = 10.sp) },
+                            singleLine = true, modifier = Modifier.width(100.dp),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            colors = outlinedFieldColors(),
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost),
+                        )
+                    }
+                }
+            }
+        },
+        NavSection(
+            SettingsCategory.DRIVES,
+            "DRIVES",
+            listOf("drive", "record", "auto", "save", "history", "storage", "max"),
+        ) {
+            SettingsSection("DRIVES") {
+                SettingsRow(
+                    label = "Auto-record drives",
+                    help = "Automatically start recording when connected to your car.",
+                ) {
+                    Switch(
+                        checked = autoRecordDrives,
+                        onCheckedChange = { autoRecordDrives = it; error = null },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = accent,
+                            checkedTrackColor = accent.copy(alpha = 0.3f),
+                        ),
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                SettingsRow(
+                    label = "Max saved drives",
+                    help = "Oldest drives are removed when this limit is exceeded. " +
+                        "Default: ${AppSettings.DEFAULT_MAX_SAVED_DRIVES}",
+                ) {
+                    OutlinedTextField(
+                        value = maxSavedDrives, onValueChange = { maxSavedDrives = it; error = null },
+                        label = { Text("count", fontFamily = ShareTechMono, fontSize = 10.sp) },
+                        singleLine = true, modifier = Modifier.width(90.dp),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        colors = outlinedFieldColors(),
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost),
+                    )
+                }
+            }
+        },
+        NavSection(
+            SettingsCategory.DIAGNOSTICS,
+            "EXPORTS",
+            listOf("zip", "diagnostic", "export", "log", "max"),
+        ) {
+            SettingsSection("EXPORTS") {
+                SettingsRow(
+                    label = "Max saved ZIP exports",
+                    help = "Oldest ZIPs are removed when this limit is exceeded. " +
+                        "Default: ${AppSettings.DEFAULT_MAX_DIAG_ZIPS}",
+                ) {
+                    OutlinedTextField(
+                        value = maxDiagZips, onValueChange = { maxDiagZips = it; error = null },
+                        label = { Text("count", fontFamily = ShareTechMono, fontSize = 10.sp) },
+                        singleLine = true, modifier = Modifier.width(90.dp),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        colors = outlinedFieldColors(),
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost),
+                    )
+                }
+            }
+        },
+        NavSection(
+            SettingsCategory.ABOUT,
+            "WHAT'S NEW",
+            listOf("changelog", "whats", "new", "version", "release"),
+        ) {
+            var showWhatsNewLocal by remember { mutableStateOf(false) }
+            Box(
+                Modifier.fillMaxWidth()
+                    .background(Surf2, RoundedCornerShape(8.dp))
+                    .border(CardBorder, Brd, RoundedCornerShape(8.dp))
+                    .clickable { showWhatsNewLocal = true }
+                    .padding(14.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("WHAT'S NEW IN v${BuildConfig.VERSION_NAME}", fontSize = 11.sp,
+                    color = accent, fontFamily = ShareTechMono, fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.1.sp)
+            }
+            if (showWhatsNewLocal) {
+                WhatsNewDialog(onDismiss = { showWhatsNewLocal = false })
+            }
+
+        },
+    )
+
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Column(
             Modifier
                 .fillMaxWidth(0.95f)
                 .fillMaxHeight(0.92f)
                 .background(Bg, RoundedCornerShape(12.dp))
-                .border(CardBorder, Brd, RoundedCornerShape(12.dp))
+                .border(CardBorder, Brd, RoundedCornerShape(12.dp)),
         ) {
             // ── Title bar ────────────────────────────────────────────────────
             Row(
                 Modifier.fillMaxWidth().background(Surf3, RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
                     .padding(horizontal = 20.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("open", fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = ShareTechMono, color = Frost)
@@ -98,588 +761,92 @@ fun SettingsDialog(onDismiss: () -> Unit) {
 
             // ── Scrollable body ──────────────────────────────────────────────
             Column(
-                Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp)
+                Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-
-                // ── Units section ─────────────────────────────────────────────
-                SettingsSection("UNITS") {
-                    SettingsRow("Speed") {
-                        SegmentedPicker(
-                            options = listOf("MPH", "KPH"),
-                            selected = speedUnit,
-                            onSelect = { speedUnit = it }
-                        )
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    SettingsRow("Temperature") {
-                        SegmentedPicker(
-                            options = listOf("°F", "°C"),
-                            selected = if (tempUnit == "F") "°F" else "°C",
-                            onSelect = { tempUnit = if (it == "°F") "F" else "C" }
-                        )
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    SettingsRow("Boost Pressure") {
-                        SegmentedPicker(
-                            options = listOf("PSI", "BAR", "kPa"),
-                            selected = when (boostUnit) { "BAR" -> "BAR"; "KPA" -> "kPa"; else -> "PSI" },
-                            onSelect = { boostUnit = when (it) { "BAR" -> "BAR"; "kPa" -> "KPA"; else -> "PSI" } }
-                        )
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    SettingsRow("Tire Pressure") {
-                        SegmentedPicker(
-                            options = listOf("PSI", "BAR"),
-                            selected = tireUnit,
-                            onSelect = { tireUnit = it }
-                        )
-                    }
-                }
-
-                // ── TPMS section ──────────────────────────────────────────────
-                SettingsSection("TPMS") {
-                    SettingsRow("Low (critical)") {
-                        OutlinedTextField(
-                            value = tireLowPsi,
-                            onValueChange = { tireLowPsi = it; error = null },
-                            label = { Text("PSI", fontFamily = ShareTechMono, fontSize = 10.sp) },
-                            singleLine = true,
-                            modifier = Modifier.width(90.dp),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            colors = outlinedFieldColors(),
-                            textStyle = androidx.compose.ui.text.TextStyle(
-                                fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost
-                            )
-                        )
-                    }
-                    SettingsRow("Warn (getting low)") {
-                        OutlinedTextField(
-                            value = tireWarnPsi,
-                            onValueChange = { tireWarnPsi = it; error = null },
-                            label = { Text("PSI", fontFamily = ShareTechMono, fontSize = 10.sp) },
-                            singleLine = true,
-                            modifier = Modifier.width(90.dp),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            colors = outlinedFieldColors(),
-                            textStyle = androidx.compose.ui.text.TextStyle(
-                                fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost
-                            )
-                        )
-                    }
-                    SettingsRow("High (over-inflated)") {
-                        OutlinedTextField(
-                            value = tireHighPsi,
-                            onValueChange = { tireHighPsi = it; error = null },
-                            label = { Text("PSI", fontFamily = ShareTechMono, fontSize = 10.sp) },
-                            singleLine = true,
-                            modifier = Modifier.width(90.dp),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            colors = outlinedFieldColors(),
-                            textStyle = androidx.compose.ui.text.TextStyle(
-                                fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost
-                            )
-                        )
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    Text("Red < ${AppSettings.DEFAULT_TIRE_LOW_PSI} | Gold < ${AppSettings.DEFAULT_TIRE_WARN_PSI} | Green | Red > ${AppSettings.DEFAULT_TIRE_HIGH_PSI} PSI",
-                        fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono)
-                }
-
-                // ── Display section ───────────────────────────────────────────
-                SettingsSection("DISPLAY") {
-                    SettingsSwitchRow(
-                        label = "Keep screen on while connected",
-                        checked = screenOn,
-                        onCheckedChange = { screenOn = it }
-                    )
-                }
-
-                // ── Shift light section ──────────────────────────────────────
-                SettingsSection("SHIFT LIGHT") {
-                    SettingsSwitchRow(
-                        label = "Peripheral edge glow",
-                        checked = edgeShiftLight,
-                        onCheckedChange = { edgeShiftLight = it }
-                    )
-                    if (edgeShiftLight) {
-                        Spacer(Modifier.height(12.dp))
-                        SettingsRow("Color") {
-                            SegmentedPicker(
-                                options = listOf("Accent", "White", "Progressive"),
-                                selected = when (edgeShiftColor) {
-                                    "white" -> "White"
-                                    "progressive" -> "Progressive"
-                                    else -> "Accent"
-                                },
-                                onSelect = {
-                                    edgeShiftColor = when (it) {
-                                        "White" -> "white"
-                                        "Progressive" -> "progressive"
-                                        else -> "accent"
-                                    }
-                                }
-                            )
-                        }
-                        Spacer(Modifier.height(12.dp))
-                        SettingsRow("Intensity") {
-                            SegmentedPicker(
-                                options = listOf("Low", "Med", "High"),
-                                selected = when (edgeShiftIntensity) {
-                                    "low" -> "Low"
-                                    "med" -> "Med"
-                                    else -> "High"
-                                },
-                                onSelect = {
-                                    edgeShiftIntensity = when (it) {
-                                        "Low" -> "low"
-                                        "Med" -> "med"
-                                        else -> "high"
-                                    }
-                                }
-                            )
-                        }
-                        Spacer(Modifier.height(12.dp))
-                        SettingsRow("Shift RPM") {
-                            OutlinedTextField(
-                                value = edgeShiftRpm,
-                                onValueChange = { edgeShiftRpm = it; error = null },
-                                label = { Text("RPM", fontFamily = ShareTechMono, fontSize = 10.sp) },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                singleLine = true,
-                                modifier = Modifier.width(90.dp),
-                                colors = outlinedFieldColors(),
-                                textStyle = androidx.compose.ui.text.TextStyle(
-                                    fontFamily = ShareTechMono, fontSize = 13.sp, color = Frost
-                                )
-                            )
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            "Screen edges glow as RPM approaches shift point.",
-                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono
-                        )
-                    }
-                }
-
-                // ── Theme section ────────────────────────────────────────────
-                SettingsSection("THEME — RS PAINT COLOUR") {
-                    ThemePicker(current)
-                }
-
-                // ── Brightness / Visibility section ─────────────────────────
-                SettingsSection("VISIBILITY") {
-                    val presetName = when {
-                        current.brightness <= 0.01f -> "NIGHT"
-                        (current.brightness - 0.5f).let { it > -0.01f && it < 0.01f } -> "DAY"
-                        current.brightness >= 0.99f -> "SUN"
-                        else -> ""
-                    }
-                    SettingsRow("Preset") {
-                        SegmentedPicker(
-                            options = listOf("NIGHT", "DAY", "SUN"),
-                            selected = presetName,
-                            onSelect = { sel ->
-                                val v = when (sel) {
-                                    "DAY" -> 0.5f
-                                    "SUN" -> 1.0f
-                                    else  -> 0f
-                                }
-                                UserPrefsStore.update(ctx) { it.copy(brightness = v) }
-                                setBrightness(v)
-                            }
-                        )
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Fine-tune",
-                        fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Slider(
-                        value = current.brightness,
-                        onValueChange = { v ->
-                            UserPrefsStore.update(ctx) { it.copy(brightness = v) }
-                            setBrightness(v)
-                        },
-                        valueRange = 0f..1f,
-                        colors = SliderDefaults.colors(
-                            thumbColor = LocalThemeAccent.current,
-                            activeTrackColor = LocalThemeAccent.current,
-                            inactiveTrackColor = Brd
-                        )
-                    )
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Dark", fontSize = 9.sp, color = Dim, fontFamily = ShareTechMono)
-                        Text("Bright", fontSize = 9.sp, color = Dim, fontFamily = ShareTechMono)
-                    }
-                }
-
-                // ── Floating HUD section ─────────────────────────────────────
-                SettingsSection("FLOATING HUD") {
-                    val hasOverlayPerm = Settings.canDrawOverlays(ctx)
-                    if (!hasOverlayPerm) {
-                        Text(
-                            "Overlay permission required to display the floating HUD over other apps.",
-                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Box(
-                            Modifier.fillMaxWidth()
-                                .background(LocalThemeAccent.current.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
-                                .border(CardBorder, LocalThemeAccent.current.copy(0.3f), RoundedCornerShape(8.dp))
-                                .clickable {
-                                    ctx.startActivity(
-                                        Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                            Uri.parse("package:${ctx.packageName}"))
-                                    )
-                                }
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("GRANT OVERLAY PERMISSION", fontSize = 11.sp, color = LocalThemeAccent.current,
-                                fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
-                        }
-                    } else {
-                        Text(
-                            "Show a compact boost / RPM / oil overlay on top of other apps. Useful for track days with a nav app.",
-                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Box(
-                                Modifier.weight(1f)
-                                    .background(Ok.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
-                                    .border(CardBorder, Ok.copy(0.3f), RoundedCornerShape(8.dp))
-                                    .clickable {
-                                        ctx.startService(Intent(ctx, HudOverlayService::class.java))
-                                    }
-                                    .padding(12.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("START HUD", fontSize = 11.sp, color = Ok,
-                                    fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
-                            }
-                            Box(
-                                Modifier.weight(1f)
-                                    .background(Orange.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
-                                    .border(CardBorder, Orange.copy(0.3f), RoundedCornerShape(8.dp))
-                                    .clickable {
-                                        ctx.stopService(Intent(ctx, HudOverlayService::class.java))
-                                    }
-                                    .padding(12.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("STOP HUD", fontSize = 11.sp, color = Orange,
-                                    fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-
-                // ── Adapter section ───────────────────────────────────────────
-                var showBlePicker by remember { mutableStateOf(false) }
-                SettingsSection("ADAPTER") {
-                    SettingsRow("Hardware") {
-                        SegmentedPicker(
-                            options  = listOf("MeatPi USB (C3)", "MeatPi Pro (S3)"),
-                            selected = if (adapterType == "MEATPI_PRO") "MeatPi Pro (S3)" else "MeatPi USB (C3)",
-                            onSelect = { selected ->
-                                val newType = if (selected == "MeatPi Pro (S3)") "MEATPI_PRO" else "MEATPI_USB"
-                                if (newType != adapterType) {
-                                    // Auto-populate connection fields with the correct defaults when
-                                    // switching adapters (preserves any custom IP/port).
-                                    if (newType == "MEATPI_PRO" &&
-                                        host == AppSettings.DEFAULT_HOST &&
-                                        port == AppSettings.DEFAULT_PORT.toString()) {
-                                        host = AppSettings.DEFAULT_HOST_MEATPI
-                                        port = AppSettings.DEFAULT_PORT_MEATPI.toString()
-                                    } else if (newType == "MEATPI_USB" &&
-                                        host == AppSettings.DEFAULT_HOST_MEATPI &&
-                                        port == AppSettings.DEFAULT_PORT_MEATPI.toString()) {
-                                        host = AppSettings.DEFAULT_HOST
-                                        port = AppSettings.DEFAULT_PORT.toString()
-                                    }
-                                    adapterType = newType
-                                }
-                            }
-                        )
-                    }
-                    if (adapterType == "MEATPI_PRO") {
-                        Spacer(Modifier.height(12.dp))
-                        SettingsSwitchRow(
-                            label          = "MicroSD logging reminder",
-                            checked        = meatPiMicroSd,
-                            onCheckedChange = { meatPiMicroSd = it }
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "SD logging is configured in the WiCAN Pro web UI at http://192.168.0.10/ — " +
-                            "enable it there under the SD card section. This toggle is a local reminder only.",
-                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono
-                        )
-                    }
-                }
-
-                // ── Connection method section ────────────────────────────────────
-                SettingsSection("CONNECTION") {
-                    SettingsRow("Method") {
-                        SegmentedPicker(
-                            options  = listOf("WiFi", "Bluetooth"),
-                            selected = if (connectionMethod == "BLUETOOTH") "Bluetooth" else "WiFi",
-                            onSelect = { selected ->
-                                connectionMethod = if (selected == "Bluetooth") "BLUETOOTH" else "WIFI"
-                            }
-                        )
-                    }
-                }
-
-                if (connectionMethod == "BLUETOOTH") {
-                    // ── Bluetooth device section ─────────────────────────────────
-                    val bleAddr = remember { mutableStateOf(AppSettings.getBleDeviceAddress(ctx)) }
-                    val bleName = remember { mutableStateOf(AppSettings.getBleDeviceName(ctx)) }
-
-                    SettingsSection("BLUETOOTH DEVICE") {
-                        if (bleAddr.value != null) {
-                            // Device saved — show info
-                            Row(
-                                Modifier.fillMaxWidth()
-                                    .background(Surf2, RoundedCornerShape(10.dp))
-                                    .border(CardBorder, Brd, RoundedCornerShape(10.dp))
-                                    .padding(14.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text("Device", fontSize = 9.sp, color = Dim,
-                                        fontFamily = ShareTechMono, letterSpacing = 0.1.sp)
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(bleName.value ?: "WiCAN", fontSize = 13.sp, color = Frost,
-                                        fontFamily = ShareTechMono, fontWeight = FontWeight.SemiBold)
-                                    Spacer(Modifier.height(2.dp))
-                                    Text(bleAddr.value ?: "", fontSize = 10.sp, color = Dim,
-                                        fontFamily = ShareTechMono, letterSpacing = 0.05.sp)
-                                }
-                            }
-                            Spacer(Modifier.height(10.dp))
-                        } else {
-                            Row(
-                                Modifier.fillMaxWidth()
-                                    .background(Surf2, RoundedCornerShape(10.dp))
-                                    .border(CardBorder, Brd, RoundedCornerShape(10.dp))
-                                    .padding(14.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("No device paired", fontSize = 11.sp, color = Dim,
-                                    fontFamily = ShareTechMono)
-                            }
-                            Spacer(Modifier.height(10.dp))
-                        }
-
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Box(
-                                Modifier.weight(1f)
-                                    .background(accent.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                                    .border(CardBorder, accent.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                                    .clickable { showBlePicker = true }
-                                    .padding(12.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("SCAN FOR DEVICES", fontSize = 10.sp, color = accent,
-                                    fontFamily = ShareTechMono, fontWeight = FontWeight.Bold,
-                                    letterSpacing = 0.1.sp)
-                            }
-                            if (bleAddr.value != null) {
-                                Box(
-                                    Modifier.weight(1f)
-                                        .background(Orange.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
-                                        .border(CardBorder, Orange.copy(0.3f), RoundedCornerShape(8.dp))
-                                        .clickable {
-                                            AppSettings.clearBleDevice(ctx)
-                                            bleAddr.value = null
-                                            bleName.value = null
-                                        }
-                                        .padding(12.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("FORGET", fontSize = 10.sp, color = Orange,
-                                        fontFamily = ShareTechMono, fontWeight = FontWeight.Bold,
-                                        letterSpacing = 0.1.sp)
-                                }
-                            }
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "For best results, forget the adapter's WiFi network in your phone's WiFi " +
-                            "settings to keep internet available while connected via Bluetooth.",
-                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono
-                        )
-                    }
-
-                    if (showBlePicker) {
-                        BleDevicePickerDialog(
-                            onDeviceSelected = { address, name ->
-                                AppSettings.saveBleDevice(ctx, address, name)
-                                bleAddr.value = address
-                                bleName.value = name
-                                showBlePicker = false
-                            },
-                            onDismiss = { showBlePicker = false }
-                        )
-                    }
-                } else {
-                    // ── WiFi Connection section ──────────────────────────────────
-                    val isPro = adapterType == "MEATPI_PRO"
-                    val defaultHost = if (isPro) AppSettings.DEFAULT_HOST_MEATPI else AppSettings.DEFAULT_HOST
-                    val defaultPort = if (isPro) AppSettings.DEFAULT_PORT_MEATPI else AppSettings.DEFAULT_PORT
-                    val adapterLabel = if (isPro) "MEATPI PRO" else "MEATPI USB"
-                    SettingsSection("$adapterLabel — WIFI") {
-                        OutlinedTextField(
-                            value = host,
-                            onValueChange = { host = it; error = null },
-                            label = { Text("Host / IP Address", fontFamily = ShareTechMono, fontSize = 11.sp) },
-                            placeholder = { Text(defaultHost, fontFamily = ShareTechMono, fontSize = 12.sp, color = Dim) },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = outlinedFieldColors(),
-                            textStyle = androidx.compose.ui.text.TextStyle(fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost)
-                        )
-                        Spacer(Modifier.height(10.dp))
-                        OutlinedTextField(
-                            value = port,
-                            onValueChange = { port = it; error = null },
-                            label = { Text("Port", fontFamily = ShareTechMono, fontSize = 11.sp) },
-                            placeholder = { Text(defaultPort.toString(), fontFamily = ShareTechMono, fontSize = 12.sp, color = Dim) },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = outlinedFieldColors(),
-                            textStyle = androidx.compose.ui.text.TextStyle(fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost)
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            if (isPro)
-                                "Default: $defaultHost:$defaultPort  (TCP SLCAN — configure port in WiCAN Pro web UI)"
-                            else
-                                "Default: $defaultHost:$defaultPort  (WebSocket SLCAN)",
-                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono
-                        )
-                    }
-                }
-
-                // ── Auto-reconnect section ────────────────────────────────────
-                SettingsSection("AUTO-RECONNECT") {
-                    SettingsSwitchRow(
-                        label = "Auto-reconnect on disconnect",
-                        checked = autoReconnect,
-                        onCheckedChange = { autoReconnect = it }
-                    )
-                    if (autoReconnect) {
-                        Spacer(Modifier.height(12.dp))
-                        SettingsRow("Retry interval") {
-                            OutlinedTextField(
-                                value = reconnectSec,
-                                onValueChange = { reconnectSec = it; error = null },
-                                label = { Text("seconds", fontFamily = ShareTechMono, fontSize = 10.sp) },
-                                singleLine = true,
-                                modifier = Modifier.width(100.dp),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                colors = outlinedFieldColors(),
-                                textStyle = androidx.compose.ui.text.TextStyle(
-                                    fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost
-                                )
-                            )
-                        }
-                        Spacer(Modifier.height(4.dp))
-                        Text("How long to wait between connection attempts. Default: ${AppSettings.DEFAULT_RECONNECT_INTERVAL}s",
-                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono)
-                    }
-                }
-
-                // ── Drives section ────────────────────────────────────────────
-                SettingsSection("DRIVES") {
-                    SettingsRow("Auto-record drives") {
-                        Switch(
-                            checked = autoRecordDrives,
-                            onCheckedChange = { autoRecordDrives = it; error = null },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = accent,
-                                checkedTrackColor = accent.copy(alpha = 0.3f)
-                            )
-                        )
-                    }
-                    Spacer(Modifier.height(2.dp))
-                    Text("Automatically start recording when connected to your car",
-                        fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono)
-
-                    Spacer(Modifier.height(10.dp))
-                    SettingsRow("Max saved drives") {
-                        OutlinedTextField(
-                            value = maxSavedDrives,
-                            onValueChange = { maxSavedDrives = it; error = null },
-                            label = { Text("count", fontFamily = ShareTechMono, fontSize = 10.sp) },
-                            singleLine = true,
-                            modifier = Modifier.width(90.dp),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            colors = outlinedFieldColors(),
-                            textStyle = androidx.compose.ui.text.TextStyle(
-                                fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost
-                            )
-                        )
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    Text("Oldest drives are removed when this limit is exceeded. Default: ${AppSettings.DEFAULT_MAX_SAVED_DRIVES}",
-                        fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono)
-                }
-
-                // ── Diagnostics section ───────────────────────────────────────
-                SettingsSection("DIAGNOSTICS") {
-                    SettingsRow("Max saved ZIP exports") {
-                        OutlinedTextField(
-                            value = maxDiagZips,
-                            onValueChange = { maxDiagZips = it; error = null },
-                            label = { Text("count", fontFamily = ShareTechMono, fontSize = 10.sp) },
-                            singleLine = true,
-                            modifier = Modifier.width(90.dp),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            colors = outlinedFieldColors(),
-                            textStyle = androidx.compose.ui.text.TextStyle(
-                                fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost
-                            )
-                        )
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    Text("Oldest ZIPs are removed when this limit is exceeded. Default: ${AppSettings.DEFAULT_MAX_DIAG_ZIPS}",
-                        fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono)
-                }
-
-                // ── App Updates section ───────────────────────────────────────
-                AppUpdatesSection(
+                // Compact about strip (always visible at top)
+                AboutStrip(
+                    expanded = aboutExpanded,
+                    onToggle = { aboutExpanded = !aboutExpanded },
                     updateChannel = updateChannel,
-                    onChannelChange = { updateChannel = it }
+                    onChannelChange = { updateChannel = it },
                 )
 
-                // ── What's New ────────────────────────────────────────────────
-                var showWhatsNewLocal by remember { mutableStateOf(false) }
-                Box(
-                    Modifier.fillMaxWidth()
-                        .background(Surf2, RoundedCornerShape(8.dp))
-                        .border(CardBorder, Brd, RoundedCornerShape(8.dp))
-                        .clickable { showWhatsNewLocal = true }
-                        .padding(14.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("WHAT'S NEW IN v${BuildConfig.VERSION_NAME}", fontSize = 11.sp,
-                        color = accent, fontFamily = ShareTechMono, fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.1.sp)
-                }
-                if (showWhatsNewLocal) {
-                    WhatsNewDialog(onDismiss = { showWhatsNewLocal = false })
+                // Search bar
+                SearchField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                )
+
+                val isSearching = searchQuery.isNotBlank()
+                when {
+                    isSearching -> {
+                        // Rank each section: best rank across title / category / keywords.
+                        // Substring beats subsequence; title beats keywords at equal rank.
+                        val scored = sections.mapNotNull { section ->
+                            val tr = matchRank(searchQuery, section.title)
+                            val cr = matchRank(searchQuery, section.category.label)
+                            val kr = section.keywords.minOfOrNull { matchRank(searchQuery, it) } ?: 4
+                            val best = minOf(tr, cr, kr)
+                            if (best >= 4) null else Triple(section, best, tr)
+                        }.sortedWith(compareBy({ it.second }, { it.third }))
+                        val matched = scored.map { it.first }
+                        if (matched.isEmpty()) {
+                            Text(
+                                "No settings match \"$searchQuery\".",
+                                fontSize = 12.sp, color = Dim, fontFamily = ShareTechMono,
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                                textAlign = TextAlign.Center,
+                            )
+                        } else {
+                            Text(
+                                "${matched.size} match${if (matched.size == 1) "" else "es"}",
+                                fontSize = 9.sp, color = Dim,
+                                fontFamily = ShareTechMono, letterSpacing = 1.2.sp,
+                                modifier = Modifier.padding(bottom = 4.dp),
+                            )
+                            matched.forEach { section ->
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(
+                                        section.category.label,
+                                        fontSize = 9.sp, color = Dim,
+                                        fontFamily = ShareTechMono, letterSpacing = 1.2.sp,
+                                    )
+                                    section.body()
+                                }
+                            }
+                        }
+                    }
+                    selectedCategory == null -> {
+                        // Category grid
+                        CategoryGrid(onSelect = { selectedCategory = it })
+                    }
+                    else -> {
+                        Breadcrumb(
+                            category = selectedCategory!!,
+                            onBack = { selectedCategory = null },
+                        )
+                        val activeCategory = selectedCategory!!
+                        sections.filter { it.category == activeCategory }.forEach { section ->
+                            section.body()
+                        }
+                    }
                 }
 
-                // Error
+                // Error (inline above buttons)
                 if (error != null) {
                     Text(error!!, fontSize = 12.sp, color = Orange, fontFamily = ShareTechMono)
                 }
+            }
+
+            if (showBlePicker) {
+                BleDevicePickerDialog(
+                    onDeviceSelected = { address, name ->
+                        AppSettings.saveBleDevice(ctx, address, name)
+                        showBlePicker = false
+                    },
+                    onDismiss = { showBlePicker = false },
+                )
             }
 
             // ── Action buttons ───────────────────────────────────────────────
@@ -690,31 +857,27 @@ fun SettingsDialog(onDismiss: () -> Unit) {
             }
             Text(
                 versionLabel,
-                fontSize = 10.sp,
-                color = Dim,
-                fontFamily = ShareTechMono,
+                fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
             if (resetConfirm) {
                 Text(
                     "Defaults restored — tap SAVE to apply",
-                    fontSize = 10.sp,
-                    color = Ok,
-                    fontFamily = ShareTechMono,
+                    fontSize = 10.sp, color = Ok, fontFamily = ShareTechMono,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
                 )
             }
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 OutlinedButton(
                     onClick = onDismiss,
                     modifier = Modifier.weight(1f),
                     border = ButtonDefaults.outlinedButtonBorder(enabled = true),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Dim)
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Dim),
                 ) {
                     Text("CANCEL", fontFamily = ShareTechMono, fontSize = 12.sp)
                 }
@@ -745,7 +908,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                         resetConfirm  = true
                     },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColors(contentColor = Dim)
+                    colors = ButtonDefaults.textButtonColors(contentColor = Dim),
                 ) {
                     Text("RESET", fontFamily = ShareTechMono, fontSize = 12.sp)
                 }
@@ -755,9 +918,6 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                         val threshold = tireLowPsi.toFloatOrNull()
                         val warnThr   = tireWarnPsi.toFloatOrNull()
                         val highThr   = tireHighPsi.toFloatOrNull()
-                        // M-10 fix: only validate the retry interval field when auto-reconnect
-                        // is enabled. When disabled the field is hidden and may hold a stale
-                        // string; fall back to the default so SAVE never gets permanently stuck.
                         val retryInt = if (autoReconnect) reconnectSec.toIntOrNull()
                                        else reconnectSec.toIntOrNull() ?: AppSettings.DEFAULT_RECONNECT_INTERVAL
                         val maxZips = maxDiagZips.toIntOrNull()
@@ -796,19 +956,170 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                                     edgeShiftRpm         = shiftRpm ?: AppSettings.DEFAULT_EDGE_SHIFT_RPM,
                                     autoRecordDrives     = autoRecordDrives,
                                     maxSavedDrives       = maxDrives ?: AppSettings.DEFAULT_MAX_SAVED_DRIVES,
-                                    updateChannel        = updateChannel
+                                    updateChannel        = updateChannel,
                                 )}
                                 onDismiss()
                             }
                         }
                     },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = OnAccent)
+                    colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = OnAccent),
                 ) {
                     Text("SAVE", fontFamily = ShareTechMono, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 }
             }
         }
+    }
+}
+
+// ── Navigation affordances ───────────────────────────────────────────────────
+
+@Composable
+private fun AboutStrip(
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    updateChannel: String,
+    onChannelChange: (String) -> Unit,
+) {
+    val accent = LocalThemeAccent.current
+    val label = buildString {
+        append("openRS_ v").append(BuildConfig.VERSION_NAME)
+        if (BuildConfig.RC_SUFFIX.isNotEmpty()) append("-").append(BuildConfig.RC_SUFFIX)
+        append(" · ").append(updateChannel)
+    }
+    Column(
+        Modifier.fillMaxWidth()
+            .background(Surf2, RoundedCornerShape(10.dp))
+            .border(CardBorder, Brd, RoundedCornerShape(10.dp)),
+    ) {
+        Row(
+            Modifier.fillMaxWidth()
+                .clickable { onToggle() }
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(label, fontSize = 11.sp, color = Frost, fontFamily = ShareTechMono,
+                letterSpacing = 0.06.sp)
+            Text(
+                if (expanded) "HIDE" else "CHECK",
+                fontSize = 10.sp, color = accent,
+                fontFamily = ShareTechMono, fontWeight = FontWeight.Bold,
+                letterSpacing = 0.1.sp,
+            )
+        }
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut(),
+        ) {
+            Column(Modifier.padding(horizontal = 14.dp).padding(bottom = 14.dp)) {
+                AppUpdatesSection(
+                    updateChannel = updateChannel,
+                    onChannelChange = onChannelChange,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchField(value: String, onValueChange: (String) -> Unit) {
+    val accent = LocalThemeAccent.current
+    Row(
+        Modifier.fillMaxWidth()
+            .background(Surf2, RoundedCornerShape(10.dp))
+            .border(CardBorder, Brd, RoundedCornerShape(10.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("⌕", fontSize = 14.sp, color = Dim, fontFamily = ShareTechMono,
+            modifier = Modifier.padding(end = 10.dp))
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            cursorBrush = SolidColor(accent),
+            textStyle = androidx.compose.ui.text.TextStyle(
+                color = Frost, fontFamily = ShareTechMono, fontSize = 13.sp,
+            ),
+            modifier = Modifier.weight(1f),
+            decorationBox = { inner ->
+                if (value.isEmpty()) {
+                    Text("Search settings…", fontSize = 13.sp, color = Dim,
+                        fontFamily = ShareTechMono)
+                }
+                inner()
+            },
+        )
+        if (value.isNotEmpty()) {
+            Text("✕", fontSize = 14.sp, color = Dim, fontFamily = ShareTechMono,
+                modifier = Modifier.clickable { onValueChange("") }.padding(start = 8.dp))
+        }
+    }
+}
+
+@Composable
+private fun CategoryGrid(onSelect: (SettingsCategory) -> Unit) {
+    val entries = SettingsCategory.entries
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        entries.chunked(2).forEach { row ->
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                row.forEach { cat ->
+                    Box(Modifier.weight(1f)) {
+                        CategoryCard(cat, onClick = { onSelect(cat) })
+                    }
+                }
+                // pad row to full width if odd
+                if (row.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun CategoryCard(category: SettingsCategory, onClick: () -> Unit) {
+    val accent = LocalThemeAccent.current
+    Column(
+        Modifier.fillMaxWidth()
+            .background(
+                Brush.verticalGradient(listOf(Surf2, Surf.copy(alpha = 0.5f))),
+                RoundedCornerShape(10.dp),
+            )
+            .border(CardBorder, Brd, RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.width(3.dp).height(14.dp)
+                    .background(accent, RoundedCornerShape(1.5.dp)),
+            )
+            Spacer(Modifier.width(8.dp))
+            MonoLabel(category.label, 10.sp, accent, letterSpacing = 1.4.sp)
+        }
+        Text(category.blurb, fontSize = 11.sp, color = Dim, fontFamily = ShareTechMono)
+    }
+}
+
+@Composable
+private fun Breadcrumb(category: SettingsCategory, onBack: () -> Unit) {
+    val accent = LocalThemeAccent.current
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onBack).padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("‹", fontSize = 20.sp, color = accent, fontFamily = ShareTechMono,
+            modifier = Modifier.padding(end = 10.dp))
+        Text("Settings", fontSize = 11.sp, color = Dim, fontFamily = ShareTechMono,
+            letterSpacing = 0.08.sp)
+        Text(" › ", fontSize = 11.sp, color = Dim, fontFamily = ShareTechMono)
+        Text(category.label, fontSize = 11.sp, color = Frost, fontFamily = ShareTechMono,
+            fontWeight = FontWeight.Bold, letterSpacing = 0.08.sp)
     }
 }
 
@@ -821,15 +1132,15 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
         Modifier.fillMaxWidth()
             .background(
                 Brush.verticalGradient(listOf(Surf2, Surf.copy(alpha = 0.5f))),
-                RoundedCornerShape(10.dp)
+                RoundedCornerShape(10.dp),
             )
             .border(Tokens.CardBorder, Brd, RoundedCornerShape(10.dp))
-            .padding(16.dp)
+            .padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 Modifier.width(3.dp).height(14.dp)
-                    .background(accent, RoundedCornerShape(1.5.dp))
+                    .background(accent, RoundedCornerShape(1.5.dp)),
             )
             Spacer(Modifier.width(8.dp))
             MonoLabel(title, 9.sp, accent, letterSpacing = 1.5.sp)
@@ -840,35 +1151,102 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
 }
 
 @Composable
-private fun SettingsRow(label: String, content: @Composable () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(label, fontSize = 13.sp, color = Frost, fontFamily = ShareTechMono, modifier = Modifier.weight(1f))
-        content()
+private fun SettingsRow(
+    label: String,
+    help: String? = null,
+    content: @Composable () -> Unit,
+) {
+    var helpOpen by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                Text(label, fontSize = 13.sp, color = Frost, fontFamily = ShareTechMono)
+                if (help != null) {
+                    Spacer(Modifier.width(8.dp))
+                    Box(
+                        Modifier.size(16.dp)
+                            .border(CardBorder, Dim, CircleShape)
+                            .clickable { helpOpen = !helpOpen },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("?", fontSize = 9.sp, color = Dim, fontFamily = ShareTechMono,
+                            fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            content()
+        }
+        if (help != null) {
+            AnimatedVisibility(
+                visible = helpOpen,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut(),
+            ) {
+                Text(
+                    help, fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+        }
     }
 }
 
 @Composable
-private fun SettingsSwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(label, fontSize = 13.sp, color = Frost, fontFamily = ShareTechMono, modifier = Modifier.weight(1f))
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor  = OnAccent,
-                checkedTrackColor  = LocalThemeAccent.current,
-                uncheckedThumbColor = Dim,
-                uncheckedTrackColor = Brd
+private fun SettingsSwitchRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    help: String? = null,
+) {
+    var helpOpen by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                Text(label, fontSize = 13.sp, color = Frost, fontFamily = ShareTechMono)
+                if (help != null) {
+                    Spacer(Modifier.width(8.dp))
+                    Box(
+                        Modifier.size(16.dp)
+                            .border(CardBorder, Dim, CircleShape)
+                            .clickable { helpOpen = !helpOpen },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("?", fontSize = 9.sp, color = Dim, fontFamily = ShareTechMono,
+                            fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor  = OnAccent,
+                    checkedTrackColor  = LocalThemeAccent.current,
+                    uncheckedThumbColor = Dim,
+                    uncheckedTrackColor = Brd,
+                ),
             )
-        )
+        }
+        if (help != null) {
+            AnimatedVisibility(
+                visible = helpOpen,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut(),
+            ) {
+                Text(
+                    help, fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+        }
     }
 }
 
@@ -880,17 +1258,17 @@ fun SegmentedPicker(options: List<String>, selected: String, onSelect: (String) 
         Modifier
             .background(Brd, RoundedCornerShape(6.dp))
             .padding(2.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp)
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         options.forEach { option ->
             val isSelected = option == selected
             val bgColor by animateColorAsState(
                 targetValue = if (isSelected) pickerAccent else Color.Transparent,
-                animationSpec = tween(250), label = "segBg"
+                animationSpec = tween(250), label = "segBg",
             )
             val borderColor by animateColorAsState(
                 targetValue = if (isSelected) pickerAccent.copy(alpha = 0.6f) else Color.Transparent,
-                animationSpec = tween(250), label = "segBrd"
+                animationSpec = tween(250), label = "segBrd",
             )
             Box(
                 Modifier
@@ -898,14 +1276,14 @@ fun SegmentedPicker(options: List<String>, selected: String, onSelect: (String) 
                     .border(CardBorder, borderColor, RoundedCornerShape(4.dp))
                     .clickable { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onSelect(option) }
                     .padding(horizontal = 10.dp, vertical = 5.dp),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 Text(
                     option,
                     fontSize = 11.sp,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                     fontFamily = ShareTechMono,
-                    color = if (isSelected) OnAccent else Dim
+                    color = if (isSelected) OnAccent else Dim,
                 )
             }
         }
@@ -917,30 +1295,26 @@ fun SegmentedPicker(options: List<String>, selected: String, onSelect: (String) 
 @Composable
 private fun AppUpdatesSection(
     updateChannel: String,
-    onChannelChange: (String) -> Unit
+    onChannelChange: (String) -> Unit,
 ) {
     val ctx = LocalContext.current
     val accent = LocalThemeAccent.current
     val scope = rememberCoroutineScope()
     val updateState by UpdateManager.state.collectAsState()
 
-    SettingsSection("APP UPDATES") {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         // ── Channel picker ──────────────────────────────────────────────
-        SettingsRow("Update channel") {
+        SettingsRow(
+            label = "Update channel",
+            help = if (updateChannel == "beta") "Includes pre-release (RC) builds from GitHub"
+                   else "Only stable releases from GitHub",
+        ) {
             SegmentedPicker(
                 options = listOf("stable", "beta"),
                 selected = updateChannel,
-                onSelect = onChannelChange
+                onSelect = onChannelChange,
             )
         }
-        Spacer(Modifier.height(2.dp))
-        Text(
-            if (updateChannel == "beta") "Includes pre-release (RC) builds from GitHub"
-            else "Only stable releases from GitHub",
-            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono
-        )
-
-        Spacer(Modifier.height(14.dp))
 
         // ── Check for updates button ────────────────────────────────────
         Box(
@@ -948,52 +1322,43 @@ private fun AppUpdatesSection(
                 .background(Surf2, RoundedCornerShape(8.dp))
                 .border(CardBorder, Brd, RoundedCornerShape(8.dp))
                 .clickable {
-                    scope.launch {
-                        UpdateManager.checkForUpdate(ctx, updateChannel)
-                    }
+                    scope.launch { UpdateManager.checkForUpdate(ctx, updateChannel) }
                 }
                 .padding(14.dp),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             Text("CHECK FOR UPDATES", fontSize = 11.sp,
                 color = accent, fontFamily = ShareTechMono, fontWeight = FontWeight.Bold,
                 letterSpacing = 0.1.sp)
         }
 
-        Spacer(Modifier.height(10.dp))
-
         // ── Status display ──────────────────────────────────────────────
         when (val state = updateState) {
-            is UpdateState.Idle -> {
-                // Nothing to show
-            }
-
+            is UpdateState.Idle -> {}
             is UpdateState.Checking -> {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(16.dp),
-                        color = accent,
-                        strokeWidth = 2.dp
+                        color = accent, strokeWidth = 2.dp,
                     )
                     Text("Checking for updates...", fontSize = 11.sp, color = Dim, fontFamily = ShareTechMono)
                 }
             }
-
             is UpdateState.Available -> {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         "v${state.version.displayName} available" +
                             if (state.isPrerelease) "  (pre-release)" else "",
                         fontSize = 12.sp, color = Ok, fontFamily = ShareTechMono,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                     if (state.fileSizeBytes > 0) {
                         Text(
                             "%.1f MB".format(state.fileSizeBytes / 1_048_576.0),
-                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono
+                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
                         )
                     }
                     if (state.releaseNotes.isNotEmpty()) {
@@ -1001,30 +1366,30 @@ private fun AppUpdatesSection(
                             state.releaseNotes.take(300) +
                                 if (state.releaseNotes.length > 300) "..." else "",
                             fontSize = 10.sp, color = Mid, fontFamily = ShareTechMono,
-                            lineHeight = 14.sp
+                            lineHeight = 14.sp,
                         )
                     }
 
-                    // Check install permission before showing download button
                     val canInstall = ctx.packageManager.canRequestPackageInstalls()
                     if (!canInstall) {
                         Text(
                             "Allow app installs from openRS_ in system settings to continue",
-                            fontSize = 10.sp, color = Orange, fontFamily = ShareTechMono
+                            fontSize = 10.sp, color = Orange, fontFamily = ShareTechMono,
                         )
                         Box(
                             Modifier.fillMaxWidth()
                                 .background(Orange.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
                                 .border(CardBorder, Orange.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
                                 .clickable {
-                                    val intent = Intent(
-                                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                                        Uri.parse("package:${ctx.packageName}")
+                                    ctx.startActivity(
+                                        Intent(
+                                            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                            Uri.parse("package:${ctx.packageName}"),
+                                        ),
                                     )
-                                    ctx.startActivity(intent)
                                 }
                                 .padding(12.dp),
-                            contentAlignment = Alignment.Center
+                            contentAlignment = Alignment.Center,
                         ) {
                             Text("OPEN INSTALL SETTINGS", fontSize = 11.sp,
                                 color = Orange, fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
@@ -1040,7 +1405,7 @@ private fun AppUpdatesSection(
                                     }
                                 }
                                 .padding(12.dp),
-                            contentAlignment = Alignment.Center
+                            contentAlignment = Alignment.Center,
                         ) {
                             Text("DOWNLOAD", fontSize = 11.sp,
                                 color = accent, fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
@@ -1048,38 +1413,34 @@ private fun AppUpdatesSection(
                     }
                 }
             }
-
             is UpdateState.Downloading -> {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (state.progress >= 0) {
                         LinearProgressIndicator(
                             progress = { state.progress },
                             modifier = Modifier.fillMaxWidth().height(4.dp),
-                            color = accent,
-                            trackColor = Brd
+                            color = accent, trackColor = Brd,
                         )
                         Text(
                             "Downloading... ${(state.progress * 100).toInt()}%  " +
                                 "(%.1f / %.1f MB)".format(
                                     state.bytesDownloaded / 1_048_576.0,
-                                    state.totalBytes / 1_048_576.0
+                                    state.totalBytes / 1_048_576.0,
                                 ),
-                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono
+                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
                         )
                     } else {
                         LinearProgressIndicator(
                             modifier = Modifier.fillMaxWidth().height(4.dp),
-                            color = accent,
-                            trackColor = Brd
+                            color = accent, trackColor = Brd,
                         )
                         Text(
                             "Downloading... %.1f MB".format(state.bytesDownloaded / 1_048_576.0),
-                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono
+                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
                         )
                     }
                 }
             }
-
             is UpdateState.ReadyToInstall -> {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Download complete", fontSize = 11.sp, color = Ok, fontFamily = ShareTechMono)
@@ -1089,14 +1450,13 @@ private fun AppUpdatesSection(
                             .border(CardBorder, Ok.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
                             .clickable { UpdateManager.installApk(ctx, state.apkFile) }
                             .padding(12.dp),
-                        contentAlignment = Alignment.Center
+                        contentAlignment = Alignment.Center,
                     ) {
                         Text("INSTALL", fontSize = 11.sp,
                             color = Ok, fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
                     }
                 }
             }
-
             is UpdateState.Error -> {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(state.message, fontSize = 11.sp, color = Orange, fontFamily = ShareTechMono)

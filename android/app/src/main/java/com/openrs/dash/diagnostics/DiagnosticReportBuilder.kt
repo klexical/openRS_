@@ -67,7 +67,7 @@ internal object DiagnosticReportBuilder {
             appendLine("  Drive Mode : ${vs.driveMode.label}")
             appendLine("  ESC        : ${vs.escStatus.label}")
             appendLine("  Gear       : ${vs.gearDisplay}")
-            appendLine("  Battery    : ${"%.1f".format(vs.batteryVoltage)} V")
+            appendLine("  Battery    : ${"%.2f".format(vs.batteryVoltage)} V")
             appendLine("  Fuel       : ${"%.0f".format(vs.fuelLevelPct)} %")
             appendLine("  Throttle   : ${"%.1f".format(vs.throttlePct)} %")
             appendLine("  Torque     : ${"%.0f".format(vs.torqueAtTrans)} Nm")

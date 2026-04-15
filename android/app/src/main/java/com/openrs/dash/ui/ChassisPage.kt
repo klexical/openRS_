@@ -60,18 +60,9 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 // ═══════════════════════════════════════════════════════════════════════════
-// CHASSIS PAGE (G-Force + Unified Tires & AWD)
+// Chassis composables (v3.0: CHASSIS tab dropped — UnifiedChassisSection now
+// rendered by TempsPage (THERMAL tab); GForceSection rendered by PerfPage).
 // ═══════════════════════════════════════════════════════════════════════════
-@Composable fun ChassisPage(vs: VehicleState, p: UserPrefs, onReset: () -> Unit) {
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .padding(start = PagePad, end = PagePad, top = PagePad, bottom = PagePad + Tokens.NavBarHeight),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        UnifiedChassisSection(vs, p)
-        GForceSection(vs, onReset)
-    }
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // UNIFIED CHASSIS SECTION — Tires & AWD merged ("Neon Connect" layout)
@@ -141,14 +132,16 @@ import kotlin.math.roundToInt
                             flEdge = Offset(r.x - rowRoot.x + it.size.width, r.y - rowRoot.y + it.size.height / 2f)
                         }) {
                             NeonTireCard("FL", vs.tirePressLF, p, lowThreshold, flColor,
-                                vs.wheelSpeedFL, vs.tireTempLF, deltaLF)
+                                vs.wheelSpeedFL, vs.tireTempLF, deltaLF,
+                                avail = scalarAvailFor(vs.tirePressLF >= 0, vs.fieldLastUpdateMs["tirePressLF"]))
                         }
                         Box(Modifier.onGloballyPositioned {
                             val r = it.positionInRoot()
                             rlEdge = Offset(r.x - rowRoot.x + it.size.width, r.y - rowRoot.y + it.size.height / 2f)
                         }) {
                             NeonTireCard("RL", vs.tirePressLR, p, lowThreshold, rlColor,
-                                vs.wheelSpeedRL, vs.tireTempLR, deltaLR)
+                                vs.wheelSpeedRL, vs.tireTempLR, deltaLR,
+                                avail = scalarAvailFor(vs.tirePressLR >= 0, vs.fieldLastUpdateMs["tirePressLR"]))
                         }
                     }
 
@@ -173,14 +166,16 @@ import kotlin.math.roundToInt
                             frEdge = Offset(r.x - rowRoot.x, r.y - rowRoot.y + it.size.height / 2f)
                         }) {
                             NeonTireCard("FR", vs.tirePressRF, p, lowThreshold, frColor,
-                                vs.wheelSpeedFR, vs.tireTempRF, deltaRF)
+                                vs.wheelSpeedFR, vs.tireTempRF, deltaRF,
+                                avail = scalarAvailFor(vs.tirePressRF >= 0, vs.fieldLastUpdateMs["tirePressRF"]))
                         }
                         Box(Modifier.onGloballyPositioned {
                             val r = it.positionInRoot()
                             rrEdge = Offset(r.x - rowRoot.x, r.y - rowRoot.y + it.size.height / 2f)
                         }) {
                             NeonTireCard("RR", vs.tirePressRR, p, lowThreshold, rrColor,
-                                vs.wheelSpeedRR, vs.tireTempRR, deltaRR)
+                                vs.wheelSpeedRR, vs.tireTempRR, deltaRR,
+                                avail = scalarAvailFor(vs.tirePressRR >= 0, vs.fieldLastUpdateMs["tirePressRR"]))
                         }
                     }
                 }
@@ -305,11 +300,18 @@ private fun NeonTireCard(
     statusColor: Color,
     wheelSpeedKph: Double,
     tempC: Double,
-    deltaText: String
+    deltaText: String,
+    avail: TempAvail = TempAvail.AVAILABLE
 ) {
     val isMissing = psi < 0
     val isLow = psi in 0.0..(lowThreshold - 0.001)
     val hasTemp = tempC > -90
+    val availSub = when (avail) {
+        TempAvail.WARMING     -> "WARMING"
+        TempAvail.STALE       -> "STALE"
+        TempAvail.UNAVAILABLE -> "N/A"
+        TempAvail.AVAILABLE   -> ""
+    }
     val positionName = when (label) {
         "FL" -> "Front Left"; "FR" -> "Front Right"
         "RL" -> "Rear Left";  "RR" -> "Rear Right"
@@ -355,6 +357,11 @@ private fun NeonTireCard(
                 statusColor.copy(alpha = 0.6f),
                 modifier = Modifier.padding(bottom = 1.dp)
             )
+        }
+
+        if (availSub.isNotEmpty()) {
+            Spacer(Modifier.height(2.dp))
+            MonoLabel(availSub, 8.sp, Dim.copy(alpha = 0.7f), letterSpacing = 0.1.sp)
         }
 
         // Temperature
@@ -416,6 +423,23 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
     val cltLTemp = if (vs.awdClutchTempL > -90) "${p.displayTemp(vs.awdClutchTempL)}${p.tempLabel}" else ""
     val cltRTemp = if (vs.awdClutchTempR > -90) "${p.displayTemp(vs.awdClutchTempR)}${p.tempLabel}" else ""
 
+    // Clutch engagement: scale delivered torque against a realistic reference.
+    // GKN Twinster can deliver up to ~2500 Nm per side, but 1000 Nm saturates
+    // the visual range for aggressive driving (launch, hard cornering).
+    val clutchRefNm = 1000.0
+    val leftEngageTarget = (vs.awdLeftTorque / clutchRefNm).toFloat().coerceIn(0f, 1f)
+    val rightEngageTarget = (vs.awdRightTorque / clutchRefNm).toFloat().coerceIn(0f, 1f)
+    val leftEngage by animateFloatAsState(
+        targetValue = leftEngageTarget,
+        animationSpec = tween(durationMillis = 300),
+        label = "leftEngage"
+    )
+    val rightEngage by animateFloatAsState(
+        targetValue = rightEngageTarget,
+        animationSpec = tween(durationMillis = 300),
+        label = "rightEngage"
+    )
+
     val labelStyle = remember(density) {
         TextStyle(
             fontFamily = ShareTechMono, fontSize = with(density) { 9.sp },
@@ -438,12 +462,16 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
     SectionLabel("AWD — GKN TWINSTER")
 
     // ── Rear axle diagram ──
+    // Canvas height + midY bias give room for the PTU to sit off-center
+    // (representing its real location on the transaxle, not on the propshaft
+    // centerline). A longer, angled propshaft reads as a drivetrain schematic
+    // rather than two stacked boxes.
     Canvas(
-        Modifier.fillMaxWidth().height(140.dp)
+        Modifier.fillMaxWidth().height(156.dp)
     ) {
         val w = size.width
         val h = size.height
-        val midY = h * 0.48f
+        val midY = h * 0.54f
         val shaftStroke = 3.dp.toPx()
         val propStroke = 2.dp.toPx()
 
@@ -463,7 +491,10 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
         val rduRight = rduX + rduW / 2f
         val cltLX = rduLeft - 30.dp.toPx()
         val cltRX = rduRight + 30.dp.toPx()
-        val ptuY = midY - rduH / 2f - 28.dp.toPx()
+        // PTU sits off-center on the left, at the transaxle. The angled
+        // propshaft below makes the spatial relationship clear.
+        val ptuCenterX = rduX - 52.dp.toPx()
+        val ptuY = midY - rduH / 2f - 36.dp.toPx()
 
         // ── Torque arrows (behind components) ──
         val leftPct = if (total > 0) (vs.awdLeftTorque / total).toFloat() else 0.5f
@@ -517,38 +548,45 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
         drawLine(Dim, Offset(cltRX + cltW / 2f, midY),
             Offset(rightWheelX - wheelR, midY), strokeWidth = shaftStroke)
 
-        // ── Propshaft (vertical: PTU → RDU) ──
-        drawLine(Dim, Offset(rduX, ptuY + ptuH / 2f),
-            Offset(rduX, midY - rduH / 2f), strokeWidth = propStroke)
+        // ── Propshaft (angled: PTU right edge → RDU top-center) ──
+        // Angled rather than vertical so PTU and RDU read as distinct
+        // components rather than as one box stacked on the other.
+        drawLine(Dim,
+            Offset(ptuCenterX + ptuW / 2f, ptuY + ptuH / 2f - 2.dp.toPx()),
+            Offset(rduX, midY - rduH / 2f),
+            strokeWidth = propStroke)
 
         // ── PTU box ──
         drawRoundRect(
             color = Surf3,
-            topLeft = Offset(rduX - ptuW / 2f, ptuY - ptuH / 2f),
+            topLeft = Offset(ptuCenterX - ptuW / 2f, ptuY - ptuH / 2f),
             size = androidx.compose.ui.geometry.Size(ptuW, ptuH),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx())
         )
         drawRoundRect(
             color = Brd,
-            topLeft = Offset(rduX - ptuW / 2f, ptuY - ptuH / 2f),
+            topLeft = Offset(ptuCenterX - ptuW / 2f, ptuY - ptuH / 2f),
             size = androidx.compose.ui.geometry.Size(ptuW, ptuH),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx()),
             style = Stroke(width = 1.dp.toPx())
         )
         val ptuLabel = textMeasurer.measure("PTU", labelStyle)
-        drawText(ptuLabel, topLeft = Offset(rduX - ptuLabel.size.width / 2f,
+        drawText(ptuLabel, topLeft = Offset(ptuCenterX - ptuLabel.size.width / 2f,
             ptuY - ptuLabel.size.height / 2f))
 
-        // PTU temp below PTU box
+        // PTU temp — inline to the right of the PTU box, vertically centered.
+        // Previous placement (below the box) collided with the propshaft.
         if (ptuTemp != "—") {
             val ptuTempM = textMeasurer.measure(ptuTemp, tempStyle)
-            drawText(ptuTempM, topLeft = Offset(rduX - ptuTempM.size.width / 2f,
-                ptuY + ptuH / 2f + 1.dp.toPx()))
+            drawText(ptuTempM, topLeft = Offset(
+                ptuCenterX + ptuW / 2f + 5.dp.toPx(),
+                ptuY - ptuTempM.size.height / 2f))
         }
 
-        // F/R split label above PTU
+        // F/R split label above PTU (follows PTU's new off-center position)
         val splitM = textMeasurer.measure(splitLabel, tempStyle.copy(color = Frost.copy(alpha = 0.7f)))
-        drawText(splitM, topLeft = Offset(rduX - splitM.size.width / 2f,
+        drawText(splitM, topLeft = Offset(
+            ptuCenterX - splitM.size.width / 2f,
             ptuY - ptuH / 2f - splitM.size.height - 2.dp.toPx()))
 
         // ── RDU box ──
@@ -574,19 +612,32 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
             midY + rduLabel.size.height / 2f - 2.dp.toPx()))
 
         // ── Clutch packs ──
-        // Left clutch
+        // Engagement-driven: fill alpha + stroke intensity scale with delivered torque.
+        // At rest: dim Surf2 fill with faint stroke; under load: bright colored fill
+        // showing active torque vectoring on that side.
+        val cltCornerR = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())
+
+        // Left clutch — base (neutral) layer + engagement overlay
         drawRoundRect(
             color = Surf2,
             topLeft = Offset(cltLX - cltW / 2f, midY - cltH / 2f),
             size = androidx.compose.ui.geometry.Size(cltW, cltH),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())
+            cornerRadius = cltCornerR
         )
+        if (leftEngage > 0.01f) {
+            drawRoundRect(
+                color = accent.copy(alpha = 0.15f + 0.70f * leftEngage),
+                topLeft = Offset(cltLX - cltW / 2f, midY - cltH / 2f),
+                size = androidx.compose.ui.geometry.Size(cltW, cltH),
+                cornerRadius = cltCornerR
+            )
+        }
         drawRoundRect(
-            color = accent.copy(alpha = 0.4f),
+            color = accent.copy(alpha = 0.35f + 0.50f * leftEngage),
             topLeft = Offset(cltLX - cltW / 2f, midY - cltH / 2f),
             size = androidx.compose.ui.geometry.Size(cltW, cltH),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()),
-            style = Stroke(width = 1.dp.toPx())
+            cornerRadius = cltCornerR,
+            style = Stroke(width = (1f + leftEngage).dp.toPx())
         )
         if (cltLTemp.isNotEmpty()) {
             val cltLM = textMeasurer.measure(cltLTemp, tempStyle)
@@ -594,19 +645,27 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
                 midY + cltH / 2f + 2.dp.toPx()))
         }
 
-        // Right clutch
+        // Right clutch — base (neutral) layer + engagement overlay
         drawRoundRect(
             color = Surf2,
             topLeft = Offset(cltRX - cltW / 2f, midY - cltH / 2f),
             size = androidx.compose.ui.geometry.Size(cltW, cltH),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())
+            cornerRadius = cltCornerR
         )
+        if (rightEngage > 0.01f) {
+            drawRoundRect(
+                color = Ok.copy(alpha = 0.15f + 0.70f * rightEngage),
+                topLeft = Offset(cltRX - cltW / 2f, midY - cltH / 2f),
+                size = androidx.compose.ui.geometry.Size(cltW, cltH),
+                cornerRadius = cltCornerR
+            )
+        }
         drawRoundRect(
-            color = Ok.copy(alpha = 0.4f),
+            color = Ok.copy(alpha = 0.35f + 0.50f * rightEngage),
             topLeft = Offset(cltRX - cltW / 2f, midY - cltH / 2f),
             size = androidx.compose.ui.geometry.Size(cltW, cltH),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()),
-            style = Stroke(width = 1.dp.toPx())
+            cornerRadius = cltCornerR,
+            style = Stroke(width = (1f + rightEngage).dp.toPx())
         )
         if (cltRTemp.isNotEmpty()) {
             val cltRM = textMeasurer.measure(cltRTemp, tempStyle)

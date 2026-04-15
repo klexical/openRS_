@@ -1,7 +1,7 @@
 package com.openrs.dash.ui.anim
 
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.openrs.dash.ui.isDayModeNow
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GLOW MODIFIER LIBRARY
@@ -24,24 +25,25 @@ fun Modifier.bloomGlow(
     color: Color,
     radius: Dp = 40.dp,
     intensity: Float = 0.3f
-): Modifier = this.drawBehind {
+): Modifier = this.drawWithCache {
+    // Day mode: halos over light bg become muddy smears. Dim to ~25%.
+    val scale = if (isDayModeNow()) 0.25f else 1f
+    val effective = intensity * scale
     val r = radius.toPx().coerceAtLeast(size.minDimension * 0.6f)
-    // Outer diffuse layer
-    drawCircle(
-        brush = Brush.radialGradient(
-            listOf(color.copy(alpha = intensity * 0.5f), Color.Transparent),
-            center = center,
-            radius = r * 1.2f
-        )
+    val outer = Brush.radialGradient(
+        listOf(color.copy(alpha = effective * 0.5f), Color.Transparent),
+        center = Offset(size.width / 2f, size.height / 2f),
+        radius = r * 1.2f
     )
-    // Inner bright core
-    drawCircle(
-        brush = Brush.radialGradient(
-            listOf(color.copy(alpha = intensity), Color.Transparent),
-            center = center,
-            radius = r * 0.7f
-        )
+    val inner = Brush.radialGradient(
+        listOf(color.copy(alpha = effective), Color.Transparent),
+        center = Offset(size.width / 2f, size.height / 2f),
+        radius = r * 0.7f
     )
+    onDrawBehind {
+        drawCircle(brush = outer)
+        drawCircle(brush = inner)
+    }
 }
 
 /**
@@ -56,13 +58,41 @@ fun Modifier.cardGlow(
     color: Color = Color.White,
     intensity: Float = 0.06f,
     cornerRadius: Dp = 12.dp
-): Modifier = this.drawBehind {
+): Modifier = this.drawWithCache {
+    val day = isDayModeNow()
     val cr = CornerRadius(cornerRadius.toPx())
-    val spread = 6.dp.toPx()
+    val cornerPx = cornerRadius.toPx()
 
-    // Outer diffuse shadow — expanded rounded rect behind the card
-    drawRoundRect(
-        brush = Brush.radialGradient(
+    if (day) {
+        // DAY: halos on bright bg flatten the card. Draw a soft directional
+        // drop-shadow (2dp down, 4dp blur) using two offset layers for depth.
+        val offset1 = 2.dp.toPx()
+        val spread1 = 4.dp.toPx()
+        val offset2 = 4.dp.toPx()
+        val spread2 = 8.dp.toPx()
+
+        onDrawBehind {
+            // Outer, softer layer
+            drawRoundRect(
+                color = Color.Black.copy(alpha = intensity * 0.8f),
+                topLeft = Offset(-spread2, offset2),
+                size = Size(size.width + spread2 * 2, size.height + spread2),
+                cornerRadius = cr
+            )
+            // Inner, tighter layer
+            drawRoundRect(
+                color = Color.Black.copy(alpha = intensity * 1.4f),
+                topLeft = Offset(-spread1, offset1),
+                size = Size(size.width + spread1 * 2, size.height + spread1),
+                cornerRadius = cr
+            )
+        }
+    } else {
+        // NIGHT/ULTRA: ambient halo + top specular (original v3.0 behaviour)
+        val spread = 6.dp.toPx()
+        val specularOffset = 1.dp.toPx()
+        val specularAlpha = 0.06f
+        val glowBrush = Brush.radialGradient(
             listOf(
                 color.copy(alpha = intensity * 0.5f),
                 color.copy(alpha = intensity * 0.2f),
@@ -70,17 +100,23 @@ fun Modifier.cardGlow(
             ),
             center = Offset(size.width / 2f, size.height / 2f),
             radius = size.maxDimension * 0.7f
-        ),
-        topLeft = Offset(-spread, -spread + 1.dp.toPx()),
-        size = Size(size.width + spread * 2, size.height + spread * 2),
-        cornerRadius = cr
-    )
+        )
+        val glowTopLeft = Offset(-spread, -spread + specularOffset)
+        val glowSize = Size(size.width + spread * 2, size.height + spread * 2)
 
-    // Top specular highlight — 1px stamped bevel
-    drawLine(
-        color = Color.White.copy(alpha = 0.06f),
-        start = Offset(cornerRadius.toPx(), 0f),
-        end = Offset(size.width - cornerRadius.toPx(), 0f),
-        strokeWidth = 1f
-    )
+        onDrawBehind {
+            drawRoundRect(
+                brush = glowBrush,
+                topLeft = glowTopLeft,
+                size = glowSize,
+                cornerRadius = cr
+            )
+            drawLine(
+                color = Color.White.copy(alpha = specularAlpha),
+                start = Offset(cornerPx, 0f),
+                end = Offset(size.width - cornerPx, 0f),
+                strokeWidth = 1f
+            )
+        }
+    }
 }

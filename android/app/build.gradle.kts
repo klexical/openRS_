@@ -29,8 +29,8 @@ android {
         applicationId = "com.openrs.dash"
         minSdk = 28
         targetSdk = 35
-        versionCode = 34
-        versionName = "2.2.6"
+        versionCode = 35
+        versionName = "2.2.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

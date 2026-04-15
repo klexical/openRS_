@@ -253,6 +253,13 @@ class CanDataService : Service() {
 
     private companion object {
         const val NOTIF_ID = 1
+
+        /** RPM threshold that signals the engine is actually running (not just ignition). */
+        const val AUTO_START_MIN_RPM = 400.0
+
+        /** Window within which a paused drive will be resumed on reconnect. Beyond this,
+         *  the stale drive is finalized and a fresh one begins. */
+        const val AUTO_RESUME_WINDOW_MS = 15 * 60_000L  // 15 minutes
     }
 
     private fun goForeground(text: String = "Connecting to vehicle…") {
@@ -399,11 +406,6 @@ class CanDataService : Service() {
         CanDecoder.resetSessionState()
         startSessionRecording()
 
-        // Auto-record drive if enabled
-        if (AppSettings.getAutoRecordDrives(this)) {
-            OpenRSDashApp.instance.driveRecorder.startDrive(sessionId = currentSessionId)
-        }
-
         val conn = buildConnection()
         connection = conn
 
@@ -426,8 +428,43 @@ class CanDataService : Service() {
                 }
             }
 
+            // Auto-record drive: gated on adapter connected + engine actually
+            // running. Prevents premature recording when the phone is
+            // on the adapter's WiFi but the car is off (was the
+            // original bug — drive would start with no telemetry). On
+            // reconnect within AUTO_RESUME_WINDOW_MS a paused drive is
+            // resumed seamlessly; beyond that, the stale drive is
+            // finalized and a fresh one begins.
+            if (AppSettings.getAutoRecordDrives(this@CanDataService)) {
+                launch {
+                    val recorder = OpenRSDashApp.instance.driveRecorder
+                    var autoStarted = false
+                    OpenRSDashApp.instance.vehicleState.collect { vs ->
+                        if (autoStarted) return@collect
+                        if (!vs.isConnected) return@collect
+                        if (vs.rpm <= AUTO_START_MIN_RPM) return@collect
+                        autoStarted = true
+
+                        val ds = recorder.driveState.value
+                        val canResume = ds.isRecording && ds.isPaused &&
+                            recorder.pausedDurationMs() in 1L..AUTO_RESUME_WINDOW_MS
+                        if (canResume) {
+                            recorder.resumeDrive()
+                        } else {
+                            if (ds.isRecording) recorder.stopDrive()
+                            recorder.startDrive(sessionId = currentSessionId)
+                        }
+                    }
+                }
+            }
+
             conn.connectHybrid(
-                onObdUpdate = { obdState -> mergeObdState(obdState) },
+                onObdUpdate = { obdState ->
+                    // Hop OBD state merges to Main.immediate: inline when already on
+                    // Main, otherwise posts — keeps Compose collectors off the IO
+                    // frame thread so no collector can block frame reads.
+                    scope.launch(Dispatchers.Main.immediate) { mergeObdState(obdState) }
+                },
                 getCurrentState = { OpenRSDashApp.instance.vehicleState.value }
             ).collect { (canId, data) ->
                 processCanFrame(canId, data, conn.fps)
@@ -538,10 +575,16 @@ class CanDataService : Service() {
     }
 
     @Synchronized fun stopConnection() {
-        // Auto-stop drive if recording
+        // Auto-pause drive if recording — do NOT finalize here. A brief
+        // disconnect (WiFi drop, adapter reboot) should not end the
+        // drive. On reconnect within AUTO_RESUME_WINDOW_MS the drive
+        // resumes; beyond that, the next startConnection finalizes it
+        // and begins a fresh drive. Orphans across app restarts are
+        // cleaned up by DriveRecorder's init block.
         val recorder = OpenRSDashApp.instance.driveRecorder
-        if (recorder.driveState.value.isRecording && AppSettings.getAutoRecordDrives(this)) {
-            recorder.stopDrive()
+        val ds = recorder.driveState.value
+        if (ds.isRecording && !ds.isPaused && AppSettings.getAutoRecordDrives(this)) {
+            recorder.pauseDrive()
         }
         stopSessionRecording()
         DiagnosticLogger.sessionEnd()

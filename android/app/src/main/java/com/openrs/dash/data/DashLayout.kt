@@ -83,7 +83,9 @@ fun resolveValue(vs: VehicleState, prefs: UserPrefs, cell: DashCell): Pair<Strin
         "brakePressure" -> "%.0f".format(vs.brakePressure.coerceIn(0.0, 100.0)) to vs.brakePressure
         "fuelLevelPct" -> "%.0f%%".format(vs.fuelLevelPct) to vs.fuelLevelPct
         "batteryVoltage" -> {
-            if (vs.batteryVoltage > 0) "%.1fV".format(vs.batteryVoltage) to vs.batteryVoltage
+            // 2 decimals so variation is visible — a voltage that sits at
+            // 14.9X vs 15.00 tells you the alternator is still modulating.
+            if (vs.batteryVoltage > 0) "%.2fV".format(vs.batteryVoltage) to vs.batteryVoltage
             else "\u2014 \u2014" to 0.0
         }
         "lateralG" -> "%.2f".format(vs.lateralG) to vs.lateralG

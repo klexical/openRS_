@@ -8,7 +8,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -18,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.ui.Dim
 import com.openrs.dash.ui.Frost
+import com.openrs.dash.ui.textMutedAlpha
 import com.openrs.dash.ui.JetBrainsMonoFamily
 import com.openrs.dash.ui.LocalThemeAccent
 import kotlin.math.abs
@@ -27,6 +27,13 @@ import kotlin.math.max
 /** Rounds up to the nearest 0.25 increment, minimum 0.5. */
 private fun ceilToQuarter(v: Float): Float =
     max(0.5f, ceil(v * 4f) / 4f)
+
+/** Stable style for peak labels — color is applied per-draw via .copy(color = ...). */
+private val PeakLabelStyle = TextStyle(
+    fontFamily = JetBrainsMonoFamily,
+    fontSize = 9.sp,
+    fontWeight = FontWeight.Medium
+)
 
 /**
  * 2D G-force scatter plot with rectangular grid, corner brackets, auto-scaling axes,
@@ -45,46 +52,32 @@ fun GForcePlot(
     dotColor: Color = LocalThemeAccent.current
 ) {
     val accent = LocalThemeAccent.current
-    val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer()
 
-    val labelStyle = remember(density) {
+    // Styles keyed on Dim (brightness-scaled) so they refresh on theme/brightness change.
+    // peakStyle has no theme-dependent color and is reused across all instances.
+    val currentStyle = remember(Dim) {
         TextStyle(
             fontFamily = JetBrainsMonoFamily,
             fontSize = 9.sp,
-            color = Dim.copy(alpha = 0.6f),
+            color = Dim.copy(alpha = textMutedAlpha(0.5f)),
             fontWeight = FontWeight.Normal
         )
     }
-    val peakStyle = remember(density) {
+    val axisTitleStyle = remember(Dim) {
         TextStyle(
             fontFamily = JetBrainsMonoFamily,
             fontSize = 9.sp,
-            fontWeight = FontWeight.Medium
-        )
-    }
-    val currentStyle = remember(density) {
-        TextStyle(
-            fontFamily = JetBrainsMonoFamily,
-            fontSize = 9.sp,
-            color = Dim.copy(alpha = 0.5f),
-            fontWeight = FontWeight.Normal
-        )
-    }
-    val axisTitleStyle = remember(density) {
-        TextStyle(
-            fontFamily = JetBrainsMonoFamily,
-            fontSize = 9.sp,
-            color = Dim.copy(alpha = 0.45f),
+            color = Dim.copy(alpha = textMutedAlpha(0.45f)),
             fontWeight = FontWeight.Normal,
             textAlign = TextAlign.Center
         )
     }
-    val scaleStyle = remember(density) {
+    val scaleStyle = remember(Dim) {
         TextStyle(
             fontFamily = JetBrainsMonoFamily,
             fontSize = 8.sp,
-            color = Dim.copy(alpha = 0.4f),
+            color = Dim.copy(alpha = textMutedAlpha(0.4f)),
             fontWeight = FontWeight.Normal
         )
     }
@@ -230,7 +223,7 @@ fun GForcePlot(
         drawText(curTopM, topLeft = Offset(plotLeft, 0f))
         if (peakLatG > 0f) {
             val peakLatText = "%.2f Lat".format(peakLatG)
-            val peakLatM = textMeasurer.measure(peakLatText, peakStyle.copy(color = accent.copy(alpha = 0.85f)))
+            val peakLatM = textMeasurer.measure(peakLatText, PeakLabelStyle.copy(color = accent.copy(alpha = 0.85f)))
             drawText(peakLatM, topLeft = Offset(plotRight - peakLatM.size.width, 0f))
         }
 
@@ -240,7 +233,7 @@ fun GForcePlot(
         drawText(curBotM, topLeft = Offset(plotLeft, curBotY))
         if (peakLonG > 0f) {
             val peakLonText = "%.2f Accel".format(peakLonG)
-            val peakLonM = textMeasurer.measure(peakLonText, peakStyle.copy(color = accent.copy(alpha = 0.85f)))
+            val peakLonM = textMeasurer.measure(peakLonText, PeakLabelStyle.copy(color = accent.copy(alpha = 0.85f)))
             drawText(peakLonM, topLeft = Offset(plotRight - peakLonM.size.width, curBotY))
         }
 

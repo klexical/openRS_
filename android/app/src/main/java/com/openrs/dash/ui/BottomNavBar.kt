@@ -34,6 +34,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.R
@@ -50,13 +55,11 @@ import dev.chrisbanes.haze.hazeEffect
 private data class NavItem(val icon: Int, val label: String)
 
 private val navItems = listOf(
-    NavItem(R.drawable.ic_nav_dash,    "DASH"),
-    NavItem(R.drawable.ic_nav_power,   "POWER"),
-    NavItem(R.drawable.ic_nav_chassis, "CHASSIS"),
-    NavItem(R.drawable.ic_nav_temps,   "TEMPS"),
-    NavItem(R.drawable.ic_nav_map,     "MAP"),
-    NavItem(R.drawable.ic_nav_diag,    "DIAG"),
-    NavItem(R.drawable.ic_nav_more,    "MORE")
+    NavItem(R.drawable.ic_nav_dash,  "DRIVE"),
+    NavItem(R.drawable.ic_nav_power, "PERF"),
+    NavItem(R.drawable.ic_nav_temps, "THERMAL"),
+    NavItem(R.drawable.ic_nav_map,   "TRIP"),
+    NavItem(R.drawable.ic_nav_more,  "GARAGE")
 )
 
 @Composable
@@ -64,7 +67,9 @@ fun BottomNavBar(
     selected: Int,
     onSelect: (Int) -> Unit,
     hazeState: HazeState,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Per-tab badge flags — true draws a small Warn dot on the icon. */
+    badges: List<Boolean> = emptyList(),
 ) {
     val accent = LocalThemeAccent.current
     val haptic = LocalHapticFeedback.current
@@ -170,10 +175,16 @@ fun BottomNavBar(
                 val isActive = i == selected
                 val tint = if (isActive) accent else Dim
 
+                val showBadge = badges.getOrNull(i) == true
                 Box(
                     Modifier
                         .weight(1f)
                         .fillMaxHeight()
+                        .semantics {
+                            role = Role.Tab
+                            this.selected = isActive
+                            contentDescription = if (showBadge) "${item.label} tab, alert" else "${item.label} tab"
+                        }
                         .pressClick {
                             haptic.performHapticFeedback(HapticFeedbackType.Confirm)
                             onSelect(i)
@@ -184,12 +195,23 @@ fun BottomNavBar(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
-                        Icon(
-                            painter = painterResource(item.icon),
-                            contentDescription = item.label,
-                            tint = tint,
-                            modifier = Modifier.size(20.dp)
-                        )
+                        Box {
+                            Icon(
+                                painter = painterResource(item.icon),
+                                contentDescription = null,
+                                tint = tint,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            if (showBadge) {
+                                Box(
+                                    Modifier
+                                        .align(Alignment.TopEnd)
+                                        .size(6.dp)
+                                        .offset(x = 2.dp, y = (-1).dp)
+                                        .background(Warn, RoundedCornerShape(3.dp))
+                                )
+                            }
+                        }
                         Spacer(Modifier.height(2.dp))
                         MonoLabel(item.label, 7.sp, tint, letterSpacing = 0.08.sp)
                     }

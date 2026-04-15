@@ -22,6 +22,7 @@ import com.openrs.dash.ui.Frost
 import com.openrs.dash.ui.Ok
 import com.openrs.dash.ui.Orange
 import com.openrs.dash.ui.Warn
+import com.openrs.dash.ui.effectiveThemeIsDay
 import androidx.compose.ui.geometry.Offset
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -67,6 +68,7 @@ fun DriveMap(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val isDay = effectiveThemeIsDay()
     val mapStyleOptions = remember {
         MapStyleOptions.loadRawResourceStyle(context, R.raw.google_map_style_dark)
     }
@@ -105,8 +107,9 @@ fun DriveMap(
         }
     }
 
-    // Apply dark style only on Normal map type (satellite/terrain have their own look)
-    val effectiveStyle = if (mapType == MapType.NORMAL) mapStyleOptions else null
+    // Apply dark style only on Normal map type in NIGHT mode.
+    // DAY mode uses Google's default light basemap; satellite/terrain have their own look.
+    val effectiveStyle = if (mapType == MapType.NORMAL && !isDay) mapStyleOptions else null
 
     val mapProperties = remember(effectiveStyle, mapType, hasLocationPermission) {
         MapProperties(

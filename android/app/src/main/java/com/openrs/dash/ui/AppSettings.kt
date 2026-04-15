@@ -80,9 +80,23 @@ object AppSettings {
     const val KEY_THEME_ID     = "theme_id"
     const val DEFAULT_THEME_ID = "cyan"          // RS Nitrous Blue default
 
-    // ── Brightness ──────────────────────────────────────────────────────────
+    // ── Brightness (deprecated v3.0 — kept for migration) ──────────────────
     const val KEY_BRIGHTNESS     = "brightness"
-    const val DEFAULT_BRIGHTNESS = 0f            // 0.0=Night, 0.5=Day, 1.0=Sun
+    const val DEFAULT_BRIGHTNESS = 0f
+
+    // ── Theme mode (v3.0) ───────────────────────────────────────────────────
+    const val KEY_THEME_MODE     = "theme_mode"
+    const val DEFAULT_THEME_MODE = "NIGHT"       // "NIGHT" | "DAY" | "AUTO"
+
+    // ── Classic fonts toggle (optional Orbitron revival) ───────────────────
+    const val KEY_CLASSIC_FONTS     = "classic_fonts"
+    const val DEFAULT_CLASSIC_FONTS = false
+
+    // ── Drive-tab adaptive density (v3.0 B1) ───────────────────────────────
+    // When ON, DRIVE collapses Inputs/AWD/G-force and inflates hero row once
+    // speed exceeds the threshold for a few seconds. Hysteresis prevents flap.
+    const val KEY_DRIVE_AUTO_ZOOM     = "drive_auto_zoom"
+    const val DEFAULT_DRIVE_AUTO_ZOOM = true
 
     // ── Temperature preset ───────────────────────────────────────────────────
     const val KEY_TEMP_PRESET     = "temp_preset"
@@ -192,6 +206,15 @@ object AppSettings {
 
     fun getBrightness(ctx: Context): Float =
         prefs(ctx).getFloat(KEY_BRIGHTNESS, DEFAULT_BRIGHTNESS)
+
+    fun getThemeMode(ctx: Context): String =
+        prefs(ctx).getString(KEY_THEME_MODE, DEFAULT_THEME_MODE) ?: DEFAULT_THEME_MODE
+
+    fun getClassicFonts(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_CLASSIC_FONTS, DEFAULT_CLASSIC_FONTS)
+
+    fun getDriveAutoZoom(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_DRIVE_AUTO_ZOOM, DEFAULT_DRIVE_AUTO_ZOOM)
 
     fun getTempPreset(ctx: Context): String =
         prefs(ctx).getString(KEY_TEMP_PRESET, DEFAULT_TEMP_PRESET) ?: DEFAULT_TEMP_PRESET
@@ -321,6 +344,9 @@ object AppSettings {
             putInt    (KEY_MAX_SAVED_DRIVES, p.maxSavedDrives)
             putString (KEY_UPDATE_CHANNEL, p.updateChannel)
             putFloat  (KEY_BRIGHTNESS, p.brightness)
+            putString (KEY_THEME_MODE, p.themeMode)
+            putBoolean(KEY_CLASSIC_FONTS, p.classicFonts)
+            putBoolean(KEY_DRIVE_AUTO_ZOOM, p.driveAutoZoom)
         }
     }
 
@@ -349,7 +375,10 @@ object AppSettings {
         autoRecordDrives     = getAutoRecordDrives(ctx),
         maxSavedDrives       = getMaxSavedDrives(ctx),
         updateChannel        = getUpdateChannel(ctx),
-        brightness           = getBrightness(ctx)
+        brightness           = getBrightness(ctx),
+        themeMode            = getThemeMode(ctx),
+        classicFonts         = getClassicFonts(ctx),
+        driveAutoZoom        = getDriveAutoZoom(ctx),
     )
 
     // ── Custom dashboard persistence ────────────────────────────────────

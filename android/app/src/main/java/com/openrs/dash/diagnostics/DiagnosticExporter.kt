@@ -30,8 +30,15 @@ object DiagnosticExporter {
     /**
      * Export the current diagnostic session to a ZIP file in the app's
      * internal files directory, then return a shareable URI via FileProvider.
+     *
+     * If [driveSnapshot] is non-null, `drive_*.csv` / `drive_*.gpx` /
+     * `drive_summary_*.txt` are folded into the same ZIP so Sapphire can parse
+     * the trip out of a diagnostic-tab export.
      */
-    fun export(ctx: Context): android.net.Uri? {
+    fun export(
+        ctx: Context,
+        driveSnapshot: Pair<DriveEntity, List<DrivePointEntity>>? = null
+    ): android.net.Uri? {
         return try {
             val dir = File(ctx.filesDir, "diagnostics").also { it.mkdirs() }
             val ts  = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
@@ -63,6 +70,25 @@ object DiagnosticExporter {
                 if (slcanFile != null && slcanFile.exists() && slcanFile.length() > 0) {
                     zip.putNextEntry(ZipEntry("slcan_log_$ts.log"))
                     slcanFile.inputStream().buffered().use { it.copyTo(zip) }
+                    zip.closeEntry()
+                }
+
+                // Active drive (when a drive is being recorded at export time).
+                // Sapphire's import expects drive_*.csv / drive_*.gpx filenames.
+                if (driveSnapshot != null) {
+                    val (drive, points) = driveSnapshot
+                    if (points.isNotEmpty()) {
+                        if (drive.hasGps) {
+                            zip.putNextEntry(ZipEntry("drive_$ts.gpx"))
+                            zip.write(DriveExportBuilder.buildGpx(drive, points, ts).toByteArray(Charsets.UTF_8))
+                            zip.closeEntry()
+                        }
+                        zip.putNextEntry(ZipEntry("drive_$ts.csv"))
+                        zip.write(DriveExportBuilder.buildCsv(points).toByteArray(Charsets.UTF_8))
+                        zip.closeEntry()
+                    }
+                    zip.putNextEntry(ZipEntry("drive_summary_$ts.txt"))
+                    zip.write(DriveExportBuilder.buildSummary(drive, points).toByteArray(Charsets.UTF_8))
                     zip.closeEntry()
                 }
 
@@ -199,14 +225,26 @@ object DiagnosticExporter {
         crashFiles(ctx).forEach { it.delete() }
     }
 
-    /** Create and fire an Android share intent for the diagnostic ZIP. */
-    fun share(ctx: Context) {
-        val uri = export(ctx) ?: run {
+    /**
+     * Create and fire an Android share intent for the diagnostic ZIP.
+     *
+     * Suspending because it may fetch an active drive snapshot from Room so
+     * Sapphire-compatible trip files can be folded into the same ZIP when a
+     * drive is recording at export time.
+     */
+    suspend fun share(ctx: Context) {
+        val driveSnapshot = try {
+            com.openrs.dash.OpenRSDashApp.instance.driveRecorder.snapshotActiveDrive()
+        } catch (_: Exception) { null }
+
+        val uri = export(ctx, driveSnapshot) ?: run {
             DiagnosticLogger.event("SHARE", "Export failed — nothing to share")
             return
         }
         val slcanLines = DiagnosticLogger.slcanLineCount
         val slcanNote  = if (slcanLines > 0) "\n• slcan_log_*.log   — raw CAN frames ($slcanLines lines, SavvyCAN/Kayak compatible)" else ""
+        val driveNote  = if (driveSnapshot != null)
+            "\n• drive_*.csv / .gpx / _summary  — active drive recording (Sapphire-compatible)" else ""
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "application/zip"
             putExtra(Intent.EXTRA_STREAM, uri)
@@ -215,7 +253,7 @@ object DiagnosticExporter {
                 Intent.EXTRA_TEXT,
                 "openRS_ v${BuildConfig.VERSION_NAME} diagnostic bundle.\n" +
                 "• diagnostic_summary_*.txt  — human-readable report\n" +
-                "• diagnostic_detail_*.json  — full machine-readable data$slcanNote\n\n" +
+                "• diagnostic_detail_*.json  — full machine-readable data$slcanNote$driveNote\n\n" +
                 "App      : v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})\n" +
                 "Session  : ${DiagnosticLogger.formatDuration(DiagnosticLogger.sessionDurationMs)}\n" +
                 "Firmware : ${DiagnosticLogger.firmwareVersion}\n" +

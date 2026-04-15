@@ -4,7 +4,14 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.*
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -48,6 +55,7 @@ import com.openrs.dash.data.DriveState
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticExporter
 import com.openrs.dash.ui.*
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -55,11 +63,11 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 // ═══════════════════════════════════════════════════════════════════════════
-// DRIVE PAGE — MAP tab: live recording + drive history
+// TRIP PAGE — MAP tab: live recording + drive history
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
-fun DrivePage(
+fun TripPage(
     driveState: DriveState,
     vehicleState: VehicleState,
     prefs: UserPrefs,
@@ -84,8 +92,8 @@ fun DrivePage(
     var colorModeIndex by remember { mutableIntStateOf(0) }
     val colorMode = ColorMode.entries[colorModeIndex]
 
-    // Map type cycling: Normal → Satellite → Terrain
-    var mapType by remember { mutableStateOf(MapType.NORMAL) }
+    // Map type cycling: Satellite → Terrain → Normal
+    var mapType by remember { mutableStateOf(MapType.SATELLITE) }
 
     // Drive history
     var drives by remember { mutableStateOf<List<DriveEntity>>(emptyList()) }
@@ -656,6 +664,8 @@ private fun DriveHistoryList(
         )
 
         if (drives.isEmpty()) {
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            val autoRecOn = remember { com.openrs.dash.ui.AppSettings.getAutoRecordDrives(ctx) }
             Box(
                 Modifier.fillMaxWidth()
                     .background(Surf2, RoundedCornerShape(10.dp))
@@ -667,7 +677,10 @@ private fun DriveHistoryList(
                     MonoText("No drives recorded yet", 11.sp, Dim, FontWeight.Bold)
                     Spacer(Modifier.height(6.dp))
                     MonoLabel(
-                        "Connect to your car and tap START to record your first drive",
+                        if (autoRecOn)
+                            "Connect to your car and tap START — or just drive, auto-record is on"
+                        else
+                            "Connect and tap START, or enable Auto-record in Settings",
                         9.sp, Dim
                     )
                 }
@@ -767,8 +780,16 @@ private fun DriveCard(
     val durationStr = formatDuration(durationMs)
     val isActive = drive.endTime == 0L
 
-    val borderColor = if (isSelected) accent else Brd
-    val bgColor = if (isSelected) Surf2 else Surf
+    // Animate selection transitions so the card visually "lifts" into focus
+    // instead of snapping — matches the premium feel of the rest of the app.
+    val borderColor by animateColorAsState(
+        if (isSelected) accent else Brd,
+        tween(250), label = "driveCardBrd"
+    )
+    val bgColor by animateColorAsState(
+        if (isSelected) Surf2 else Surf,
+        tween(250), label = "driveCardBg"
+    )
 
     Column(
         Modifier
@@ -777,6 +798,7 @@ private fun DriveCard(
             .background(bgColor)
             .border(Tokens.CardBorder, borderColor, RoundedCornerShape(10.dp))
             .clickable { onClick() }
+            .animateContentSize(tween(250, easing = EaseOut))
             .padding(12.dp)
     ) {
         // Header: name/time + status badge + duration
@@ -851,28 +873,35 @@ private fun DriveCard(
             }
         }
 
-        // Export + Rename buttons when selected
-        if (isSelected) {
-            Spacer(Modifier.height(8.dp))
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(
-                    onClick = onExport,
-                    modifier = Modifier.weight(1f).height(36.dp),
-                    shape = RoundedCornerShape(6.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = accent.copy(alpha = 0.15f))
+        // Export + Rename buttons when selected — animate in/out with the card
+        // expand so the transition reads as a smooth reveal, not a hard pop.
+        AnimatedVisibility(
+            visible = isSelected,
+            enter = fadeIn(tween(200)) + expandVertically(tween(250, easing = EaseOut)),
+            exit = fadeOut(tween(120)) + shrinkVertically(tween(200, easing = EaseIn))
+        ) {
+            Column {
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    MonoText("SHARE", 11.sp, accent, FontWeight.Bold)
-                }
-                Button(
-                    onClick = onRename,
-                    modifier = Modifier.weight(1f).height(36.dp),
-                    shape = RoundedCornerShape(6.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Surf3)
-                ) {
-                    MonoText("RENAME", 11.sp, Mid, FontWeight.Bold)
+                    Button(
+                        onClick = onExport,
+                        modifier = Modifier.weight(1f).height(36.dp),
+                        shape = RoundedCornerShape(6.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = accent.copy(alpha = 0.15f))
+                    ) {
+                        MonoText("SHARE", 11.sp, accent, FontWeight.Bold)
+                    }
+                    Button(
+                        onClick = onRename,
+                        modifier = Modifier.weight(1f).height(36.dp),
+                        shape = RoundedCornerShape(6.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Surf3)
+                    ) {
+                        MonoText("RENAME", 11.sp, Mid, FontWeight.Bold)
+                    }
                 }
             }
         }

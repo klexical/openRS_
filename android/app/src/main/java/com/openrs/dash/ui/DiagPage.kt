@@ -25,6 +25,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,7 +60,8 @@ import kotlin.math.roundToInt
     onScanDtcs: (suspend () -> List<DtcResult>)?,
     onClearDtcs: (suspend () -> Map<String, Boolean>)? = null,
     onSendRawQuery: (suspend (responseId: Int, frame: String, timeoutMs: Long) -> ByteArray?)? = null,
-    onResetSession: () -> Unit = {}
+    onResetSession: () -> Unit = {},
+    snackbarHostState: androidx.compose.material3.SnackbarHostState? = null,
 ) {
     val ctx    = LocalContext.current
     val scope  = rememberCoroutineScope()
@@ -73,6 +75,21 @@ import kotlin.math.roundToInt
     var dtcError     by remember { mutableStateOf<String?>(null) }
     var dtcClearStatus by remember { mutableStateOf<String?>(null) }
     var showClearConfirm by remember { mutableStateOf(false) }
+    var dtcScanJob   by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var dtcScanStartMs by remember { mutableStateOf(0L) }
+    var dtcScanElapsed by remember { mutableStateOf(0) }
+    LaunchedEffect(dtcScanning) {
+        if (dtcScanning) {
+            dtcScanStartMs = System.currentTimeMillis()
+            dtcScanElapsed = 0
+            while (dtcScanning) {
+                dtcScanElapsed = ((System.currentTimeMillis() - dtcScanStartMs) / 1000L).toInt()
+                kotlinx.coroutines.delay(250)
+            }
+        } else {
+            dtcScanElapsed = 0
+        }
+    }
 
     // P-4: snapshot once so the size/values are consistent within one composition
     val inv = remember(vs.framesPerSecond) { DiagnosticLogger.frameInventorySnapshot }
@@ -80,6 +97,7 @@ import kotlin.math.roundToInt
     // Collapsible section states (persisted in SharedPreferences)
     var diagExpanded        by rememberSectionExpanded("DIAG_DIAGNOSTICS")
     var dtcExpanded         by rememberSectionExpanded("DIAG_DTC_SCANNER")
+    var developerExpanded   by rememberSectionExpanded("DIAG_DEVELOPER", default = false)
     var crashExpanded       by rememberSectionExpanded("DIAG_CRASH_HISTORY", default = false)
     var didProberExpanded   by rememberSectionExpanded("DIAG_DID_PROBER", default = false)
     var canOutputExpanded   by rememberSectionExpanded("DIAG_CAN_OUTPUT", default = false)
@@ -128,19 +146,42 @@ import kotlin.math.roundToInt
                         valueColor = if (vs.eBrake) Warn else Dim, modifier = Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(6.dp))
+                // Availability-aware placeholders so startup/stale states read cleanly
+                // rather than leaking the raw -1 sentinel as "-1.00V".
+                fun availSub(a: TempAvail) = when (a) {
+                    TempAvail.WARMING     -> "WARMING"
+                    TempAvail.STALE       -> "STALE"
+                    TempAvail.UNAVAILABLE -> "N/A"
+                    TempAvail.AVAILABLE   -> ""
+                }
+                val battVAvail    = scalarAvailFor(vs.batteryVoltage >= 0, vs.fieldLastUpdateMs["batteryVoltage"])
+                val battAAvail    = scalarAvailFor(vs.batteryCurrentA > -900, vs.fieldLastUpdateMs["batteryCurrentA"])
+                val battSocAvail  = scalarAvailFor(vs.batterySoc >= 0, vs.fieldLastUpdateMs["batterySoc"])
+                val battTempAvail = scalarAvailFor(vs.batteryTempC > -90, vs.fieldLastUpdateMs["batteryTempC"])
+                val chgTgtAvail   = scalarAvailFor(vs.batteryChargingVoltageDesired >= 0, vs.fieldLastUpdateMs["batteryChargingVoltageDesired"])
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    DataCell("BATT V", "${"%.1f".format(vs.batteryVoltage)}V", modifier = Modifier.weight(1f))
+                    DataCell("BATT V",
+                        if (battVAvail == TempAvail.AVAILABLE || battVAvail == TempAvail.STALE)
+                            "${"%.2f".format(vs.batteryVoltage)}V" else "—",
+                        sub = availSub(battVAvail),
+                        valueColor = if (battVAvail == TempAvail.AVAILABLE) Frost else Dim,
+                        modifier = Modifier.weight(1f))
                     DataCell("BATT A",
-                        if (vs.batteryCurrentA > -900) "${"%+.1f".format(vs.batteryCurrentA)} A" else "—",
+                        if (battAAvail == TempAvail.AVAILABLE || battAAvail == TempAvail.STALE)
+                            "${"%+.1f".format(vs.batteryCurrentA)} A" else "—",
+                        sub = availSub(battAAvail),
                         valueColor = when {
-                            vs.batteryCurrentA <= -900 -> Dim
+                            battAAvail != TempAvail.AVAILABLE -> Dim
                             vs.batteryCurrentA >  0.5  -> Ok       // charging
                             vs.batteryCurrentA < -0.5  -> Frost    // discharging
                             else                       -> Mid      // resting
                         }, modifier = Modifier.weight(1f))
-                    DataCell("BATT SoC", if (vs.batterySoc >= 0) "${vs.batterySoc.roundToInt()}%" else "—",
+                    DataCell("BATT SoC",
+                        if (battSocAvail == TempAvail.AVAILABLE || battSocAvail == TempAvail.STALE)
+                            "${vs.batterySoc.roundToInt()}%" else "—",
+                        sub = availSub(battSocAvail),
                         valueColor = when {
-                            vs.batterySoc < 0   -> Dim
+                            battSocAvail != TempAvail.AVAILABLE -> Dim
                             vs.batterySoc < 50  -> Orange
                             vs.batterySoc < 70  -> Warn
                             else                -> Ok
@@ -149,10 +190,16 @@ import kotlin.math.roundToInt
                 Spacer(Modifier.height(6.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     DataCell("BATT TEMP",
-                        if (vs.batteryTempC > -90) "${vs.batteryTempC.roundToInt()}°C" else "—",
+                        if (battTempAvail == TempAvail.AVAILABLE || battTempAvail == TempAvail.STALE)
+                            "${vs.batteryTempC.roundToInt()}°C" else "—",
+                        sub = availSub(battTempAvail),
+                        valueColor = if (battTempAvail == TempAvail.AVAILABLE) Frost else Dim,
                         modifier = Modifier.weight(1f))
                     DataCell("CHG TGT",
-                        if (vs.batteryChargingVoltageDesired >= 0) "${"%.1f".format(vs.batteryChargingVoltageDesired)}V" else "—",
+                        if (chgTgtAvail == TempAvail.AVAILABLE || chgTgtAvail == TempAvail.STALE)
+                            "${"%.1f".format(vs.batteryChargingVoltageDesired)}V" else "—",
+                        sub = availSub(chgTgtAvail),
+                        valueColor = if (chgTgtAvail == TempAvail.AVAILABLE) Frost else Dim,
                         modifier = Modifier.weight(1f))
                     Spacer(Modifier.weight(1f))
                 }
@@ -284,22 +331,38 @@ import kotlin.math.roundToInt
                                 if (!dtcBusy && vs.isConnected && onScanDtcs != null) accent.copy(0.35f) else Dim.copy(0.2f),
                                 RoundedCornerShape(10.dp)
                             )
-                            .pressClick(enabled = !dtcBusy && vs.isConnected && onScanDtcs != null) {
-                                dtcScanning = true
-                                dtcError = null
-                                dtcClearStatus = null
-                                scope.launch(Dispatchers.IO) {
-                                    val result = try {
-                                        onScanDtcs?.invoke()
-                                    } catch (e: kotlinx.coroutines.CancellationException) {
-                                        throw e
-                                    } catch (_: Exception) { null }
-                                    withContext(Dispatchers.Main) {
-                                        dtcScanning = false
-                                        if (result != null) {
-                                            dtcResults = result
-                                        } else {
-                                            dtcError = "Scan failed — check adapter connection"
+                            .pressClick(
+                                enabled = (dtcScanning)
+                                    || (!dtcBusy && vs.isConnected && onScanDtcs != null)
+                            ) {
+                                if (dtcScanning) {
+                                    dtcScanJob?.cancel()
+                                    dtcScanJob = null
+                                    dtcScanning = false
+                                    dtcError = "Scan aborted"
+                                } else {
+                                    dtcScanning = true
+                                    dtcError = null
+                                    dtcClearStatus = null
+                                    dtcScanJob = scope.launch(Dispatchers.IO) {
+                                        val result = try {
+                                            onScanDtcs?.invoke()
+                                        } catch (e: kotlinx.coroutines.CancellationException) {
+                                            throw e
+                                        } catch (_: Exception) { null }
+                                        withContext(Dispatchers.Main) {
+                                            if (dtcScanning) {
+                                                dtcScanning = false
+                                                if (result != null) {
+                                                    dtcResults = result
+                                                    // Feed the GARAGE-tab badge with the active-code count.
+                                                    com.openrs.dash.OpenRSDashApp.instance.activeDtcCount.value =
+                                                        result.count { it.status == com.openrs.dash.data.DtcStatus.ACTIVE }
+                                                } else {
+                                                    dtcError = "Scan failed — check adapter connection"
+                                                }
+                                            }
+                                            dtcScanJob = null
                                         }
                                     }
                                 }
@@ -309,12 +372,16 @@ import kotlin.math.roundToInt
                     ) {
                         MonoLabel(
                             when {
-                                dtcScanning -> "SCANNING..."
+                                dtcScanning     -> "\u25A0  ABORT  (${dtcScanElapsed}s)"
                                 !vs.isConnected -> "CONNECT TO SCAN"
-                                else -> "⟳  SCAN ALL MODULES"
+                                else            -> "\u27F3  SCAN ALL MODULES"
                             },
                             11.sp,
-                            if (!dtcBusy && vs.isConnected && onScanDtcs != null) accent else Dim,
+                            when {
+                                dtcScanning -> Warn
+                                !dtcBusy && vs.isConnected && onScanDtcs != null -> accent
+                                else -> Dim
+                            },
                             letterSpacing = 0.08.sp
                         )
                     }
@@ -485,6 +552,7 @@ import kotlin.math.roundToInt
                                         else
                                             "Partial: ${ack.entries.joinToString(", ") { "${it.key}:${if (it.value) "✓" else "✗"}" }}"
                                         dtcResults = null
+                                        com.openrs.dash.OpenRSDashApp.instance.activeDtcCount.value = 0
                                     }
                                 }
                             }
@@ -500,6 +568,18 @@ import kotlin.math.roundToInt
                 }
             )
         }
+
+        Spacer(Modifier.height(Tokens.SectionGap))
+
+        // ── Developer (collapsed by default; wraps expert-tier tools) ─────────
+        SectionLabel("DEVELOPER", collapsible = true, expanded = developerExpanded,
+            onToggle = { developerExpanded = !developerExpanded })
+        AnimatedVisibility(
+            visible = developerExpanded,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Column {
 
         Spacer(Modifier.height(Tokens.SectionGap))
 
@@ -625,8 +705,17 @@ import kotlin.math.roundToInt
             enter = expandVertically() + fadeIn(),
             exit = shrinkVertically() + fadeOut()
         ) {
-            Column { PidBrowserSection() }
+            Column { PidBrowserSection(
+                onCopyNotify = { msg ->
+                    if (snackbarHostState != null) {
+                        scope.launch { snackbarHostState.showSnackbar(msg) }
+                    }
+                }
+            ) }
         }
+
+            } // DEVELOPER column
+        } // DEVELOPER AnimatedVisibility
     }
 }
 

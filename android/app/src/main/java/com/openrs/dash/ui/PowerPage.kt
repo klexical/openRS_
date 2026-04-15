@@ -33,6 +33,19 @@ import kotlin.math.roundToInt
 // POWER PAGE
 // ═══════════════════════════════════════════════════════════════════════════
 @Composable fun PowerPage(vs: VehicleState, p: UserPrefs) {
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .padding(start = PagePad, end = PagePad, top = PagePad, bottom = PagePad + Tokens.NavBarHeight),
+        verticalArrangement = Arrangement.spacedBy(CardGap)
+    ) {
+        PowerPageContent(vs, p)
+    }
+}
+
+/**
+ * Inner content for POWER — usable inside any scrolling parent (e.g. [PerfPage]).
+ */
+@Composable fun PowerPageContent(vs: VehicleState, p: UserPrefs) {
     val accent = LocalThemeAccent.current
     val hasAfr = vs.afrActual > 0
     val ph = "— —"
@@ -41,11 +54,7 @@ import kotlin.math.roundToInt
     var engineExpanded   by rememberSectionExpanded("POWER_ENGINE")
     var fuelExpanded     by rememberSectionExpanded("POWER_FUEL")
 
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .padding(start = PagePad, end = PagePad, top = PagePad, bottom = PagePad + Tokens.NavBarHeight),
-        verticalArrangement = Arrangement.spacedBy(CardGap)
-    ) {
+    Column(verticalArrangement = Arrangement.spacedBy(CardGap)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AfrCard("AFR ACT",  if (hasAfr) "%.2f".format(vs.afrActual)    else ph, ":1",
                 if (hasAfr) accent else Dim, Modifier.weight(1f))
@@ -109,12 +118,29 @@ import kotlin.math.roundToInt
         AnimatedVisibility(visible = fuelExpanded, enter = expandVertically(), exit = shrinkVertically()) {
             Column(verticalArrangement = Arrangement.spacedBy(CardGap)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val stftColor = fuelTrimColor(vs.shortFuelTrim)
-                    val ltftColor = fuelTrimColor(vs.longFuelTrim)
-                    val hasFuelTrims = vs.isConnected && vs.rpm > 0
-                    DataCell("SHORT FT", if (hasFuelTrims) "${"%.1f".format(vs.shortFuelTrim)}%" else ph, valueColor = stftColor, modifier = Modifier.weight(1f))
-                    DataCell("LONG FT",  if (hasFuelTrims) "${"%.1f".format(vs.longFuelTrim)}%" else ph,  valueColor = ltftColor, modifier = Modifier.weight(1f))
-                    DataCell("BARO",     "${vs.barometricPressure.roundToInt()} kPa", modifier = Modifier.weight(1f))
+                    val stftState = com.openrs.dash.data.fieldState(
+                        value = vs.shortFuelTrim,
+                        lastUpdateMs = vs.fieldLastUpdateMs["shortFuelTrim"],
+                        pollIntervalMs = 2_000L
+                    )
+                    val ltftState = com.openrs.dash.data.fieldState(
+                        value = vs.longFuelTrim,
+                        lastUpdateMs = vs.fieldLastUpdateMs["longFuelTrim"],
+                        pollIntervalMs = 2_000L
+                    )
+                    AvailCell(
+                        label = "SHORT FT", state = stftState,
+                        format = { "%.1f%%".format(it) },
+                        valueColor = fuelTrimColor(vs.shortFuelTrim),
+                        modifier = Modifier.weight(1f)
+                    )
+                    AvailCell(
+                        label = "LONG FT", state = ltftState,
+                        format = { "%.1f%%".format(it) },
+                        valueColor = fuelTrimColor(vs.longFuelTrim),
+                        modifier = Modifier.weight(1f)
+                    )
+                    DataCell("BARO", "${vs.barometricPressure.roundToInt()} kPa", modifier = Modifier.weight(1f))
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     DataCell("CMD AFR", if (vs.commandedAfr > 0) "${"%.3f".format(vs.commandedAfr)}λ" else ph, modifier = Modifier.weight(1f))

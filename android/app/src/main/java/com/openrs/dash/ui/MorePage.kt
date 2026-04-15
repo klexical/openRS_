@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.sp
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.can.DriveCommandResult
 import com.openrs.dash.can.FirmwareCommandSender
+import com.openrs.dash.can.driveModePending
 import com.openrs.dash.can.executeDriveModeChange
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.EscStatus
@@ -51,7 +52,6 @@ import android.net.Uri
 import com.openrs.dash.ui.Tokens.CardBorder
 import com.openrs.dash.ui.Tokens.PagePad
 import com.openrs.dash.ui.anim.pressClick
-import com.openrs.dash.data.PerformanceTimer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -65,7 +65,6 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
     vs: VehicleState,
     p: UserPrefs,
     snackbarHostState: SnackbarHostState,
-    onSettings: () -> Unit,
     onCustomDash: () -> Unit = {},
     firmwareApi: FirmwareCommandSender? = null
 ) {
@@ -115,19 +114,31 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
                                 .pressClick(enabled = canControl && firmwareApi != null && !isActive && pendingDriveMode == null) {
                                     haptic.performHapticFeedback(HapticFeedbackType.Confirm)
                                     pendingDriveMode = mode
+                                    driveModePending.value = mode
                                     scope.launch {
                                         when (val r = executeDriveModeChange(firmwareApi!!, mode, vs.driveMode)) {
-                                            is DriveCommandResult.Success -> { /* CAN state already updated */ }
-                                            is DriveCommandResult.Busy ->
+                                            is DriveCommandResult.Success -> {
+                                                haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                                            }
+                                            is DriveCommandResult.Busy -> {
+                                                haptic.performHapticFeedback(HapticFeedbackType.Reject)
                                                 snackbarHostState.showSnackbar("Mode change in progress \u2014 please wait")
-                                            is DriveCommandResult.Failed ->
+                                            }
+                                            is DriveCommandResult.Failed -> {
+                                                haptic.performHapticFeedback(HapticFeedbackType.Reject)
                                                 snackbarHostState.showSnackbar(r.message)
-                                            is DriveCommandResult.CorrectionFailed ->
+                                            }
+                                            is DriveCommandResult.CorrectionFailed -> {
+                                                haptic.performHapticFeedback(HapticFeedbackType.Reject)
                                                 snackbarHostState.showSnackbar("Mode correction failed \u2014 try again manually")
-                                            is DriveCommandResult.NoConfirmation ->
+                                            }
+                                            is DriveCommandResult.NoConfirmation -> {
+                                                haptic.performHapticFeedback(HapticFeedbackType.Reject)
                                                 snackbarHostState.showSnackbar("Mode change didn\u2019t take effect \u2014 try again")
+                                            }
                                         }
                                         pendingDriveMode = null
+                                        driveModePending.value = null
                                     }
                                 }
                                 .padding(vertical = 12.dp),
@@ -389,18 +400,6 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
 
         HorizontalDivider(color = Brd)
 
-        // ── Performance Timer ────────────────────────────────────────────
-        val timerState by PerformanceTimer.state.collectAsState()
-        SideEffect {
-            if (timerState.state == PerformanceTimer.State.ARMED ||
-                timerState.state == PerformanceTimer.State.RUNNING) {
-                PerformanceTimer.onSpeedUpdate(vs.speedKph, vs.rpm, vs.boostPsi)
-            }
-        }
-        PerformanceTimerSection(timerState, accent)
-
-        HorizontalDivider(color = Brd)
-
         // ── Sapphire Web Dashboard ───────────────────────────────────────
         MoreSection("WEB DASHBOARD") {
             Box(
@@ -480,123 +479,6 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
         Spacer(Modifier.height(5.dp))
         MonoLabel(name, 8.sp, if (isActive) color else Dim, letterSpacing = 0.1.sp,
             modifier = Modifier.fillMaxWidth(), fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal)
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// PERFORMANCE TIMER SECTION
-// ═══════════════════════════════════════════════════════════════════════════
-
-@Composable private fun PerformanceTimerSection(
-    ts: PerformanceTimer.TimerState,
-    accent: androidx.compose.ui.graphics.Color
-) {
-    MoreSection("PERFORMANCE TIMER") {
-        Column(
-            Modifier.fillMaxWidth()
-                .background(Surf2, RoundedCornerShape(12.dp))
-                .border(CardBorder, when (ts.state) {
-                    PerformanceTimer.State.RUNNING  -> accent.copy(0.6f)
-                    PerformanceTimer.State.ARMED    -> Warn.copy(0.4f)
-                    PerformanceTimer.State.FINISHED -> Ok.copy(0.4f)
-                    else -> Brd
-                }, RoundedCornerShape(12.dp))
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            // Header row: target toggle
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    Modifier
-                        .background(Surf, RoundedCornerShape(6.dp))
-                        .border(CardBorder, Brd, RoundedCornerShape(6.dp))
-                        .clickable {
-                            val next = if (ts.target == PerformanceTimer.Target.ZERO_TO_60)
-                                PerformanceTimer.Target.ZERO_TO_100
-                            else PerformanceTimer.Target.ZERO_TO_60
-                            if (ts.state == PerformanceTimer.State.IDLE) PerformanceTimer.arm(next)
-                            else if (ts.state == PerformanceTimer.State.FINISHED) {
-                                PerformanceTimer.reset()
-                                PerformanceTimer.arm(next)
-                            }
-                        }
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    MonoLabel(ts.target.label, 9.sp, Frost, letterSpacing = 0.1.sp)
-                }
-            }
-
-            // Timer display
-            val timeStr = when (ts.state) {
-                PerformanceTimer.State.IDLE     -> "—.——"
-                PerformanceTimer.State.ARMED    -> "0.00"
-                PerformanceTimer.State.RUNNING  -> "%.2f".format(ts.elapsedMs / 1000.0)
-                PerformanceTimer.State.FINISHED -> "%.2f".format(ts.resultMs / 1000.0)
-            }
-            val timeColor = when (ts.state) {
-                PerformanceTimer.State.RUNNING  -> accent
-                PerformanceTimer.State.FINISHED -> Ok
-                PerformanceTimer.State.ARMED    -> Warn
-                else -> Frost
-            }
-            HeroNum(timeStr, 42.sp, timeColor)
-            MonoLabel("seconds", 8.sp, Dim)
-
-            // Status / details row
-            when (ts.state) {
-                PerformanceTimer.State.IDLE -> {
-                    Box(
-                        Modifier
-                            .background(accent.copy(0.12f), RoundedCornerShape(6.dp))
-                            .border(CardBorder, accent.copy(0.3f), RoundedCornerShape(6.dp))
-                            .pressClick { PerformanceTimer.arm(ts.target) }
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                    ) {
-                        MonoLabel("ARM TIMER", 10.sp, accent, FontWeight.Bold)
-                    }
-                }
-                PerformanceTimer.State.ARMED -> {
-                    MonoLabel("Waiting for launch…", 10.sp, Warn)
-                }
-                PerformanceTimer.State.RUNNING -> {
-                    MonoLabel("Launch RPM: ${ts.launchRpm.roundToInt()}", 9.sp, Dim)
-                }
-                PerformanceTimer.State.FINISHED -> {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        DataCell("LAUNCH", "${ts.launchRpm.roundToInt()} RPM", modifier = Modifier.weight(1f))
-                        DataCell("BOOST", "${"%.1f".format(ts.peakBoostPsi)} PSI", modifier = Modifier.weight(1f))
-                        if (ts.bestResultMs > 0) {
-                            DataCell("BEST", "${"%.2f".format(ts.bestResultMs / 1000.0)}s", modifier = Modifier.weight(1f))
-                        }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(
-                            Modifier
-                                .background(accent.copy(0.12f), RoundedCornerShape(6.dp))
-                                .border(CardBorder, accent.copy(0.3f), RoundedCornerShape(6.dp))
-                                .pressClick { PerformanceTimer.reset(); PerformanceTimer.arm(ts.target) }
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            MonoLabel("GO AGAIN", 10.sp, accent, FontWeight.Bold)
-                        }
-                        Box(
-                            Modifier
-                                .background(Surf, RoundedCornerShape(6.dp))
-                                .border(CardBorder, Brd, RoundedCornerShape(6.dp))
-                                .clickable { PerformanceTimer.reset() }
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            MonoLabel("RESET", 10.sp, Dim)
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
