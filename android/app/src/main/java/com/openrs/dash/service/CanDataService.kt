@@ -30,6 +30,8 @@ import com.openrs.dash.can.WebSocketSlcanTransport
 import com.openrs.dash.can.WiFiFirmwareApi
 import com.openrs.dash.data.DriveDatabase
 import com.openrs.dash.data.DtcResult
+import com.openrs.dash.data.FuelEconomy
+import com.openrs.dash.data.PerformanceTimer
 import com.openrs.dash.data.SessionEntity
 import com.openrs.dash.data.SnapshotEntity
 import com.openrs.dash.data.VehicleState
@@ -404,6 +406,9 @@ class CanDataService : Service() {
             logDir = java.io.File(filesDir, "diagnostics")
         )
         CanDecoder.resetSessionState()
+        FuelEconomy.reset()
+        PerformanceTimer.resetSession()
+        OpenRSDashApp.instance.knockEventCount.value = 0
         startSessionRecording()
 
         val conn = buildConnection()
@@ -559,17 +564,49 @@ class CanDataService : Service() {
 
     private fun processCanFrame(canId: Int, data: ByteArray, fps: Double) {
         sessionFrameCount++
-        // C-3 fix: use .update{} so concurrent OBD writes are never clobbered
+        // Side effects (FuelEconomy, PerformanceTimer, knock counter) must run
+        // OUTSIDE the update{} lambda — MutableStateFlow.update uses a CAS retry
+        // loop, so anything inside the lambda can execute more than once on
+        // contention with concurrent OBD merges.
+        var newState: VehicleState? = null
+        var prevState: VehicleState? = null
         OpenRSDashApp.instance.vehicleState.update { current ->
             val updated = CanDecoder.decode(canId, data, current)
             if (updated != null) {
                 val desc  = CanDecoder.describeDecoded(canId, updated)
                 val issue = CanDecoder.validateDecoded(canId, updated)
                 DiagnosticLogger.logFrame(canId, data, updated, desc, issue)
-                updated.withPeaksUpdated().copy(framesPerSecond = fps)
+                val withPeaks = updated.withPeaksUpdated().copy(framesPerSecond = fps)
+                prevState = current
+                newState = withPeaks
+                withPeaks
             } else {
                 DiagnosticLogger.logUnknownFrame(canId, data)
                 current
+            }
+        }
+
+        // Side effects — guaranteed to run exactly once after CAS succeeds
+        val wp = newState ?: return
+        val prev = prevState ?: return
+
+        // Feed fuel economy calculator
+        if (canId == 0x130 || canId == 0x380) {
+            FuelEconomy.onUpdate(wp.fuelLevelPct, wp.speedKph)
+        }
+
+        // Feed performance timer (speed from 0x130, ~100 Hz)
+        if (canId == 0x130) {
+            PerformanceTimer.onSpeedUpdate(wp.speedKph, wp.rpm, wp.boostPsi)
+        }
+
+        // Knock event tracking (from OBD merges, checked on CAN frame to
+        // avoid per-OBD-poll overhead — knock corrections are polled ~every 30s)
+        val kr = minOf(wp.ignCorrCyl1, wp.ignCorrCyl2, wp.ignCorrCyl3, wp.ignCorrCyl4)
+        if (kr < -1.0 && kr != 0.0) {
+            val prevKr = minOf(prev.ignCorrCyl1, prev.ignCorrCyl2, prev.ignCorrCyl3, prev.ignCorrCyl4)
+            if (kr != prevKr) {
+                OpenRSDashApp.instance.knockEventCount.update { it + 1 }
             }
         }
     }
@@ -622,6 +659,9 @@ class CanDataService : Service() {
     fun resetSession() {
         stopSessionRecording()
         CanDecoder.resetSessionState()
+        FuelEconomy.reset()
+        PerformanceTimer.resetSession()
+        OpenRSDashApp.instance.knockEventCount.value = 0
         val connected = OpenRSDashApp.instance.vehicleState.value.isConnected
         OpenRSDashApp.instance.vehicleState.update { VehicleState(isConnected = connected) }
         startSessionRecording()

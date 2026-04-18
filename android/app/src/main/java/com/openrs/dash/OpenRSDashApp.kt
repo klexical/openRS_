@@ -54,6 +54,10 @@ class OpenRSDashApp : Application() {
      *  GARAGE-tab badge in BottomNavBar. */
     val activeDtcCount = MutableStateFlow(0)
 
+    /** Session knock event counter — incremented when any cylinder KR < -1.0 deg.
+     *  Reset on each new adapter connection. Feeds ENGINE MANAGEMENT badge on PERF tab. */
+    val knockEventCount = MutableStateFlow(0)
+
     /** True once openRS_ firmware is confirmed via WebSocket probe on connect. */
     val isOpenRsFirmware = MutableStateFlow(false)
 

@@ -74,24 +74,34 @@ service/
   WeatherRepository.kt    — OpenWeatherMap /data/2.5/weather (BuildConfig.OPENWEATHER_API_KEY)
   HudOverlayService.kt    — Floating HUD overlay (boost/RPM/oil temp); piggybacks CanDataService notification
 ui/
-  MainActivity.kt         — 7-tab Compose host (DASH/POWER/CHASSIS/TEMPS/MAP/DIAG/MORE)
+  MainActivity.kt         — 5-tab Compose host (DRIVE/PERF/THERMAL/TRIP/GARAGE) — v2.2.7 "Daylight" overhaul
                             Binds CanDataService via LocalBinder; passes callbacks to child composables
                             Location + BLE permissions; REC indicator + BT indicator in AppHeader
                             Quick Mode Dock: tap MODE pill in status bar → dropdown drive mode selector
                             WiFi coexistence banner: warns when BLE active but phone connected to adapter WiFi
+                            Header pill is the single always-on disconnected indicator (ConnectionBanner removed)
                             Navigation: HorizontalPager (swipe) + BottomNavBar overlay outside Scaffold
-                            MAP tab: pager swipe disabled while touching map (onMapTouched callback + mapTouched state)
+                            TRIP tab (page 3): pager swipe disabled while touching map (onMapTouched callback)
                             Scaffold uses contentWindowInsets=statusBars (content extends behind nav bar)
                             hazeSource on content Box inside Scaffold (NOT outer Box — see Haze gotcha)
                             enableEdgeToEdge with transparent navigation bar style
-  DashPage.kt              — DASH tab: RPM, boost, speed heroes + supporting data cells
-  PowerPage.kt             — POWER tab: AFR, spark advance, fuel trims, torque
-  ChassisPage.kt           — CHASSIS tab: AWD torque split, tire pressures, wheel speeds, CarDiagram
-  TempsPage.kt             — TEMPS tab: coolant, oil, intake, charge air, PTU, RDU temperatures
-  DiagPage.kt              — DIAG tab: DTC scan/clear, PID browser, DID prober, diagnostic export
-  MorePage.kt              — MORE tab: drive mode selector, perf timer, fuel economy, settings
+  DrivePage.kt             — DRIVE tab: hero heroes (RPM/BOOST/MPH), gear, INPUTS strip, AWD split,
+                            lateral/longitudinal G, torque. Disconnected → heroes render "—" placeholder
+  PerfPage.kt              — PERF tab: G-force plot + dynamics numeric readout + PowerPageContent
+                            (AFR, throttle/boost, engine mgmt, fuel trims, knock sensors). When offline,
+                            sections force-collapse + a "CONNECT ADAPTER TO POPULATE" hint renders at top
+  PowerPage.kt             — PowerPageContent composable shared by PERF + CustomDash
+  ChassisPage.kt           — UnifiedChassisSection (Tires + AWD) embedded in TempsPage + GForcePlot wrapper
+  TempsPage.kt             — THERMAL tab: RtrBanner, TempPresetBadge (STREET/TRACK/RACE), tires & AWD,
+                            powertrain temps, detail temps. RtrBanner neutralises to "— AWAITING CAN —"
+                            when offline; WARMING tags suppressed while disconnected (rc.3)
+  TripPage.kt (trip/)      — TRIP tab: live Google Map + drive history list; see trip/DriveMap.kt
+  GaragePage.kt            — GARAGE tab: CONTROL/DIAG segmented picker → MorePage + DiagPage
+  DiagPage.kt              — DTC scan/clear, PID browser, DID prober, diagnostic export (inside GARAGE)
+  MorePage.kt              — Drive mode selector, ESC band, fw features, module status, custom dash entry
+                            (inside GARAGE); offline branches added for ESC descriptor + MODULE STATUS
   CustomDashPage.kt        — Custom dashboard: user-configurable gauge grid from DashLayout
-  BottomNavBar.kt         — Custom bottom nav: 7 vector icons, frosted glass via Haze (hazeEffect),
+  BottomNavBar.kt         — Custom bottom nav: 5 vector icons, frosted glass via Haze (hazeEffect),
                             spring-animated neon indicator, stamped bevel gradient, pressClick + haptics
                             Height: 38dp (icons) + sysNavPad (gesture area). Tokens.NavBarHeight = 38dp
   DriveModeDock.kt        — Quick-access drive mode dock (N/S/T/D) with staggered entrance animation
@@ -109,22 +119,25 @@ ui/
                             NeonDivider, FocusRsOutline, tireTempColor()
                             All cards use cardGlow() for ambient depth + CardBorder (0.5dp) borders.
                             HeroCard glow scales with valueFraction (0=dormant, no accent glow).
-                            DataCell/BarCard values use AggressiveNum (Orbitron Bold).
-                            HeroCard uses plain HeroNum (instant display, no animation)
+                            DataCell/BarCard/HeroCard numeric values use Rajdhani (tnum — tabular figures
+                            for stable width). MonoLabel uses JetBrains Mono for micro-labels only.
   DesignTokens.kt         — Tokens object: PagePad, CardGap, SectionGap, InnerH/V, NavBarHeight(38dp),
                             CardShape(12dp), HeroShape(14dp), CardRadius, HeroRadius, CardBorder(0.5dp)
-  Theme.kt                — Color tokens (brightness-scaled, see below), typography (Orbitron/JetBrains/ShareTech/Barlow)
-                            setBrightness(Float) / getBrightness() — 0.0=Night, 0.5=Day, 1.0=Sun
-                            7 base colors (Bg/Surf/Surf2/Surf3/Brd/Dim/Mid) are computed getters via lerp
-                            Typography: HeroNum (large Orbitron), AggressiveNum (mid-size Orbitron, 0.5sp spacing),
-                            MonoLabel (JetBrains Mono, 0.2sp spacing), MonoText (Share Tech Mono), UIText (Barlow)
+  Theme.kt                — v2.2.7 "Daylight": discrete NIGHT / DAY / ULTRA theme modes (no brightness slider).
+                            themeMode: ThemeMode enum; AUTO resolves from system dark/light via WindowInsets.
+                            Each mode defines its own Bg/Surf/Surf2/Surf3/Brd/Dim/Mid/Ink palette as fixed
+                            vals — NOT lerp-computed. setThemeMode(ThemeMode) snapshots the active palette.
+                            DAY: #EFF3F8 bg / #080D16 ink (18.5:1). NIGHT: near-black. ULTRA: saturated high-contrast.
+                            Typography: Rajdhani (primary, incl. HeroNum/AggressiveNum), JetBrains Mono (labels).
+                            Old Orbitron/ShareTech/Barlow TTFs removed.
   BleDevicePickerDialog.kt — BLE device picker: scan filtered to 0xFFE0, RSSI bars, dark neon aesthetic
                             Runtime BLE permission request (BLUETOOTH_SCAN + BLUETOOTH_CONNECT on API 31+)
                             Unknown device hint: orange "not a known adapter" for non-WiCAN/MeatPi names
                             Permission-denied UI state with retry button
-  SettingsSheet.kt        — Settings drawer: units, TPMS threshold, shift light, adapter, connection,
-                            reconnect, drives (auto-record, max saved), diag, theme picker (RS paint colours)
-                            Visibility section: NIGHT/DAY/SUN presets + continuous brightness slider
+  SettingsSheet.kt        — Settings drawer (sole entry via cog icon in status bar): units, TPMS threshold,
+                            shift light, adapter, connection, reconnect, drives (auto-record, max saved),
+                            diag, theme picker (RS paint colours)
+                            Visibility: discrete NIGHT / DAY / AUTO + ULTRA theme mode selector (no slider)
                             2-way adapter picker (MeatPi USB / Pro) + connection method toggle (WiFi / Bluetooth)
                             Accent left-bar titles, gradient section backgrounds, animated SegmentedPicker
   anim/
@@ -247,23 +260,29 @@ data[5] = B5,  data[6] = B6 …
 - **BLE MTU** — `requestMtu(247)` requested after service discovery. If `requestMtu()` returns false (unsupported), proceeds with 23-byte default. SLCAN frames mostly fit; longer frames arrive as multiple BLE notifications and are reassembled by `lineBuffer`
 - **BLE permissions must be requested at scan time** — `BleDevicePickerDialog` handles runtime permission requests (BLUETOOTH_SCAN + BLUETOOTH_CONNECT on API 31+). Do NOT rely solely on `MainActivity.onCreate()` permission requests — the user may switch to Bluetooth after app startup. `BleDeviceScanner.startScan()` also has a SecurityException safety net
 - **Foreground service start from background** — `CanDataService.startConnection()` wraps `goForeground()` in try/catch because WiFi/Bluetooth callbacks can fire when the app is backgrounded. `MainActivity.startSvc()` also catches `ForegroundServiceStartNotAllowedException`
-- **Brightness colors are computed getters** — `Bg`, `Surf`, `Surf2`, `Surf3`, `Brd`, `Dim`, `Mid` in Theme.kt are `val ... get() = lerp(base, bright, brightness)` backed by `mutableFloatStateOf`. They are NOT static vals. Compose snapshot system tracks reads automatically. Call `setBrightness()` to change; all composables recompose. Do not cache these colors in non-composable contexts
-- **MAP tab camera state is hoisted** — `cameraPositionState` lives in `DrivePage`, passed to `DriveMap` as a parameter. This allows DrivePage to control zoom and recenter. Google Maps native My Location button is disabled; custom `◎` button replaces it
-- **Navigation swipe + MAP tab isolation** — `HorizontalPager` with swipe between all tabs. MAP tab (page 4): pager swipe is dynamically disabled while the user touches the map area via `onMapTouched` callback from `DrivePage` → `mapTouched` state → `userScrollEnabled = !(selectedTab == 4 && mapTouched)`. `nestedScroll` does NOT work for this — Google Maps is an `AndroidView` that doesn't dispatch Compose nested scroll events. The `pointerInput` on the map Box monitors (does NOT consume) touches. Google logo cannot be removed (Maps Platform ToS requirement)
+- **Theme colours are mode-aware getters** — `Bg`, `Surf`, `Surf2`, `Surf3`, `Brd`, `Dim`, `Mid`, `Frost` in Theme.kt are `val ... get() = when { _isDay -> ...; isUltraNightNow() -> ...; else -> Night... }` backed by `mutableStateOf(ThemeMode)`. They are NOT static vals. Compose snapshot system tracks reads automatically. Call `setThemeMode(ThemeMode)` to change; all composables recompose. Do not cache these colors in non-composable contexts. `setBrightness()`/`getBrightness()` are deprecated no-ops retained for back-compat
+- **TRIP tab camera state is hoisted** — `cameraPositionState` lives in `DrivePage` (trip/), passed to `DriveMap` as a parameter. This allows DrivePage to control zoom and recenter. Google Maps native My Location button is disabled; custom `◎` button replaces it
+- **Navigation swipe + TRIP tab isolation** — `HorizontalPager` with swipe between all 5 tabs. TRIP tab (page 3): pager swipe is dynamically disabled while the user touches the map area via `onMapTouched` callback from `DrivePage` → `mapTouched` state → `userScrollEnabled = !(selectedTab == 3 && mapTouched)`. `nestedScroll` does NOT work for this — Google Maps is an `AndroidView` that doesn't dispatch Compose nested scroll events. The `pointerInput` on the map Box monitors (does NOT consume) touches. Google logo cannot be removed (Maps Platform ToS requirement)
 - **Haze frosted glass placement** — `hazeSource` MUST be on the content composable (inside Scaffold), NOT on a parent Box that also contains the `hazeEffect` composable (BottomNavBar). If hazeEffect is inside the hazeSource tree, blur fails silently with no error. Also: Haze tint with `Bg.copy(alpha > 0.5f)` on a dark theme makes blur invisible — start at 0.0 and increase
 - **Bottom nav bar insets** — `Scaffold(contentWindowInsets = WindowInsets.statusBars)` drops the bottom inset so content extends behind the nav bar overlay. `enableEdgeToEdge(navigationBarStyle = SystemBarStyle.dark(TRANSPARENT))` removes the system nav bar scrim. Pages add `Tokens.NavBarHeight` as bottom scroll padding
 
 ## Theme Colors
 
-Bg/Surf/Surf2/Surf3/Brd/Dim/Mid are brightness-scaled via `lerp(Night, Sun, brightness)`.
-Frost, accents, and semantic colors (Ok/Warn/Orange) are fixed.
+v2.2.7 "Daylight" ships three discrete palettes selected via `setThemeMode(ThemeMode)`.
+NIGHT is the default; DAY is legibility-tuned for bright ambient light; ULTRA is pure-black AMOLED.
+AUTO resolves to DAY between 06:00–18:00 local, NIGHT otherwise. `Frost` is `Ink` — adaptive primary text.
+Accents and semantic colors (Ok/Warn/Orange) shift per mode to preserve contrast.
 
 ```
-Night (0.0):  Bg #05070A  Surf #0A0D12  Surf2 #0F141C  Surf3 #141B26  Brd #162030  Dim #547A96  Mid #7A9AB8
-Sun   (1.0):  Bg #1A2535  Surf #1F2A3A  Surf2 #253445  Surf3 #2B3A4E  Brd #2E4560  Dim #8AAABB  Mid #B0D0E8
-Frost   #E8F4FF   Dim     #547A96   Mid    #7A9AB8   Brd    #162030
-Accent  #0091EA   AccentD #006DB3   Orange #FF4D00   Ok     #00FF88   Warn #FFCC00
+NIGHT:  Bg #05070A  Surf #0A0D12  Surf2 #0F141C  Surf3 #141B26  Brd #162030  Dim #7A9AB8  Mid #B0D0E8  Ink #E8F4FF
+DAY:    Bg #EFF3F8  Surf #FFFFFF  Surf2 #E4EAF2  Surf3 #D4DCE8  Brd #B8C4D4  Dim #556374  Mid #293748  Ink #080D16
+ULTRA:  Bg #000000  Surf #050505  Surf2 #080808  Surf3 #0C0C0C  Brd #1A2230  (Dim/Mid/Ink share NIGHT values)
+Accent  NIGHT #0091EA / DAY #0064B0    Orange  NIGHT #FF4D00 / DAY #D93900
+Ok      NIGHT #00FF88 / DAY #00A85A    Warn    NIGHT #FFCC00 / DAY #E09500
 ```
+
+Adaptive alpha helpers (`borderAlpha()`, `textMutedAlpha()`, `pillBgAlpha()`) scale dim-on-dark tunings
+up on DAY so borders, muted labels, and status-pill fills stay above WCAG contrast on the white surface.
 
 RS paint themes (`themeId`): `cyan`=Nitrous Blue, `red`=Race Red, `orange`=Deep Orange,
 `grey`=Stealth Grey, `black`=Shadow Black, `white`=Frozen White
@@ -279,7 +298,7 @@ ConnectionMethod: "WIFI"  (alt: "BLUETOOTH")
 EdgeShiftLight: false  |  EdgeShiftColor: "accent"  |  EdgeShiftIntensity: "high"  |  EdgeShiftRpm: 6800
 AutoRecordDrives: false  |  MaxSavedDrives: 50
 UpdateChannel: "stable"  (alt: "beta")
-Brightness: 0.0  (0.0=Night, 0.5=Day, 1.0=Sun)
+ThemeMode: NIGHT  (alt: DAY / AUTO / ULTRA)
 Prefs file: "openrs_settings"
 ```
 

@@ -2,6 +2,7 @@ package com.openrs.dash.can
 
 import android.content.Context
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.diagnostics.DiagnosticLogger
@@ -20,6 +21,22 @@ sealed class DriveCommandResult {
 
 /** Shared in-flight command state. Header reads this to gate MODE-pill pulse. */
 val driveModePending = mutableStateOf<DriveMode?>(null)
+
+/**
+ * Shared mode-change confirmation state. Set by the dock on a successful change,
+ * cleared ~1.2s later. Header border + bottom nav indicator read this to render
+ * a short ambient tint in the newly-selected mode's color.
+ */
+val modeChangeBreath = mutableStateOf<DriveMode?>(null)
+
+/** Mode-specific success haptic. Reinforces that the car actually switched. */
+fun successHapticFor(mode: DriveMode): HapticFeedbackType = when (mode) {
+    DriveMode.NORMAL -> HapticFeedbackType.VirtualKey
+    DriveMode.SPORT  -> HapticFeedbackType.Confirm
+    DriveMode.TRACK  -> HapticFeedbackType.Reject
+    DriveMode.DRIFT  -> HapticFeedbackType.GestureEnd
+    else             -> HapticFeedbackType.Confirm
+}
 
 /**
  * Executes the full drive mode change flow:

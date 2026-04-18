@@ -1,6 +1,8 @@
 package com.openrs.dash.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
@@ -270,8 +272,8 @@ fun DidProberSection(
 
             AnimatedVisibility(
                 visible = expanded,
-                enter = expandVertically(),
-                exit = shrinkVertically()
+                enter = expandVertically(spring(stiffness = Spring.StiffnessLow)),
+                exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow))
             ) {
                 Column(
                     Modifier

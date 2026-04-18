@@ -25,6 +25,7 @@ import com.openrs.dash.ui.AppSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.awaitClose
@@ -176,8 +177,10 @@ class DriveRecorder(
     fun pauseDrive() {
         pausedAtMs = System.currentTimeMillis()
         _driveState.update { it.copy(isPaused = true) }
-        // Flush any buffered points immediately
-        flushBuffer()
+        // Flush any buffered points immediately. flushBuffer() is suspend +
+        // NonCancellable so it completes even if the scope is cancelled while
+        // the pause is being handled.
+        scope.launch { flushBuffer() }
     }
 
     fun resumeDrive() {
@@ -196,13 +199,20 @@ class DriveRecorder(
 
     fun stopDrive() {
         pausedAtMs = 0L
+        val jobToJoin = recorderJob
         recorderJob?.cancel()
         recorderJob = null
-        flushBuffer()
 
         val state = _driveState.value
-        if (state.driveId > 0) {
-            scope.launch(Dispatchers.IO) {
+        scope.launch(Dispatchers.IO) {
+            // Wait for the recording loop's finally{} to flush buffered points
+            // before we write the drive summary. This avoids racing our own
+            // flush against the loop's flush (both would copy pointsBuffer
+            // before either cleared it, duplicating points) and guarantees
+            // the summary reflects every recorded point.
+            jobToJoin?.join()
+
+            if (state.driveId > 0) {
                 try {
                     val drive = dao.getDrive(state.driveId) ?: return@launch
                     val modeJson = JSONObject().apply {
@@ -355,16 +365,26 @@ class DriveRecorder(
         }
     }
 
-    private fun flushBuffer() {
+    /**
+     * Persists the in-memory point buffer to Room. Suspends until the write
+     * completes so callers can order subsequent work against it (e.g. writing
+     * the drive summary only after points land).
+     *
+     * Wrapped in [NonCancellable] so the write runs to completion even when
+     * the recording coroutine is being cancelled from its `finally` block —
+     * the common stop path. Without this, `pointsBuffer.clear()` has already
+     * discarded the points by the time the IO suspension throws.
+     */
+    private suspend fun flushBuffer() {
         val toFlush = ArrayList(pointsBuffer)
         pointsBuffer.clear()
         if (toFlush.isEmpty()) return
-        scope.launch(Dispatchers.IO) {
-            try {
+        try {
+            withContext(NonCancellable + Dispatchers.IO) {
                 dao.insertPoints(toFlush)
-            } catch (e: Exception) {
-                Log.w(TAG, "Point flush failed (${toFlush.size} points)", e)
             }
+        } catch (e: Exception) {
+            Log.w(TAG, "Point flush failed (${toFlush.size} points)", e)
         }
     }
 

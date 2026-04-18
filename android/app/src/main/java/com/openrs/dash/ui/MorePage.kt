@@ -1,12 +1,18 @@
 package com.openrs.dash.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,14 +20,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,7 +37,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -39,393 +44,326 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.OpenRSDashApp
-import com.openrs.dash.can.DriveCommandResult
 import com.openrs.dash.can.FirmwareCommandSender
-import com.openrs.dash.can.driveModePending
-import com.openrs.dash.can.executeDriveModeChange
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.EscStatus
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticLogger
-import android.content.Intent
-import android.net.Uri
 import com.openrs.dash.ui.Tokens.CardBorder
+import com.openrs.dash.ui.Tokens.CardGap
 import com.openrs.dash.ui.Tokens.PagePad
+import com.openrs.dash.ui.Tokens.SectionGap
+import com.openrs.dash.ui.anim.pageEntrance
 import com.openrs.dash.ui.anim.pressClick
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
-
-private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
 
 // ═══════════════════════════════════════════════════════════════════════════
-// MORE PAGE
+// CONTROL PAGE (formerly MorePage)
+// rc.2: regrouped into Vehicle Controls + Firmware Status zones.
+// VIN → DiagPage, Custom Dashboard + Sapphire → SettingsSheet.
 // ═══════════════════════════════════════════════════════════════════════════
 @Composable fun MorePage(
     vs: VehicleState,
     p: UserPrefs,
     snackbarHostState: SnackbarHostState,
-    onCustomDash: () -> Unit = {},
-    firmwareApi: FirmwareCommandSender? = null
+    firmwareApi: FirmwareCommandSender? = null,
+    onOpenDock: () -> Unit = {},
 ) {
     val isFw   by OpenRSDashApp.instance.isOpenRsFirmware.collectAsState()
     val fwLabel by OpenRSDashApp.instance.firmwareVersionLabel.collectAsState()
     val scope  = rememberCoroutineScope()
-    val ctx    = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val accent = LocalThemeAccent.current
     val canControl = isFw && vs.isConnected
-    var pendingDriveMode by remember { mutableStateOf<DriveMode?>(null) }
-    var pendingEsc       by remember { mutableStateOf<EscStatus?>(null) }
+    var pendingEsc by remember { mutableStateOf<EscStatus?>(null) }
+    var fwStatusExpanded by rememberSectionExpanded("CONTROL_FW_STATUS")
+    var pageEntered by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { pageEntered = true }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .padding(start = PagePad, end = PagePad, top = PagePad, bottom = PagePad + Tokens.NavBarHeight),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(SectionGap)
     ) {
 
-        // ── Drive Mode ───────────────────────────────────────────────────
-        MoreSection("DRIVE MODE") {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(DriveMode.NORMAL to "N", DriveMode.SPORT to "S",
-                       DriveMode.TRACK to "T", DriveMode.DRIFT to "D")
-                    .forEach { (mode, letter) ->
-                        val isActive = vs.driveMode == mode
-                        val modeAccent = when (mode) {
-                            DriveMode.SPORT -> Ok
-                            DriveMode.TRACK -> Warn
-                            DriveMode.DRIFT -> Orange
-                            else            -> accent
-                        }
-                        val isPending = pendingDriveMode == mode && !isActive
-                        Column(
-                            Modifier.weight(1f)
-                                .background(
-                                    if (isActive) modeAccent.copy(0.1f)
-                                    else if (isPending) modeAccent.copy(0.05f)
-                                    else Surf2,
-                                    RoundedCornerShape(10.dp)
-                                )
-                                .border(
-                                    if (isPending) 1.5.dp else 1.dp,
-                                    if (isActive || isPending) modeAccent else Brd,
-                                    RoundedCornerShape(10.dp)
-                                )
-                                .pressClick(enabled = canControl && firmwareApi != null && !isActive && pendingDriveMode == null) {
-                                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                                    pendingDriveMode = mode
-                                    driveModePending.value = mode
-                                    scope.launch {
-                                        when (val r = executeDriveModeChange(firmwareApi!!, mode, vs.driveMode)) {
-                                            is DriveCommandResult.Success -> {
-                                                haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                                            }
-                                            is DriveCommandResult.Busy -> {
-                                                haptic.performHapticFeedback(HapticFeedbackType.Reject)
-                                                snackbarHostState.showSnackbar("Mode change in progress \u2014 please wait")
-                                            }
-                                            is DriveCommandResult.Failed -> {
-                                                haptic.performHapticFeedback(HapticFeedbackType.Reject)
-                                                snackbarHostState.showSnackbar(r.message)
-                                            }
-                                            is DriveCommandResult.CorrectionFailed -> {
-                                                haptic.performHapticFeedback(HapticFeedbackType.Reject)
-                                                snackbarHostState.showSnackbar("Mode correction failed \u2014 try again manually")
-                                            }
-                                            is DriveCommandResult.NoConfirmation -> {
-                                                haptic.performHapticFeedback(HapticFeedbackType.Reject)
-                                                snackbarHostState.showSnackbar("Mode change didn\u2019t take effect \u2014 try again")
-                                            }
-                                        }
-                                        pendingDriveMode = null
-                                        driveModePending.value = null
-                                    }
-                                }
-                                .padding(vertical = 12.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            HeroNum(letter, 20.sp, if (isActive) modeAccent else if (isPending) modeAccent.copy(0.6f) else Frost)
-                            Spacer(Modifier.height(2.dp))
-                            MonoLabel(
-                                if (isPending) "..." else mode.label.uppercase(),
-                                8.sp, if (isActive) modeAccent else Dim, letterSpacing = 0.1.sp
-                            )
-                        }
-                    }
-            }
-            Spacer(Modifier.height(6.dp))
-            MonoLabel(
-                if (canControl) "Tap to change \u00B7 Quick Mode Dock"
-                else "Displays current Drive Mode \u2014 openRS_ firmware unlocks tap control",
-                9.sp, Dim
-            )
-        }
+        // ══════════════════════════════════════════════════════════════════
+        // Zone A — Vehicle Controls
+        // ══════════════════════════════════════════════════════════════════
+        SectionLabel("VEHICLE CONTROLS", modifier = pageEntrance(0, pageEntered))
 
-        HorizontalDivider(color = Brd)
-
-        // ── ESC ──────────────────────────────────────────────────────────
-        MoreSection("ELECTRONIC STABILITY CONTROL") {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(EscStatus.ON to "ESC ON", EscStatus.PARTIAL to "SPORT", EscStatus.OFF to "ESC OFF")
-                    .forEach { (status, label) ->
-                        val isActive = vs.escStatus == status
-                        val isPending = pendingEsc == status && !isActive
-                        val color = when (status) {
-                            EscStatus.ON -> Ok; EscStatus.PARTIAL -> Warn; else -> Orange
-                        }
-                        Box(
-                            Modifier.weight(1f)
-                                .background(
-                                    if (isActive) color.copy(0.1f)
-                                    else if (isPending) color.copy(0.05f)
-                                    else Surf2,
-                                    RoundedCornerShape(10.dp)
-                                )
-                                .border(
-                                    if (isPending) 1.5.dp else 1.dp,
-                                    if (isActive || isPending) color else Brd,
-                                    RoundedCornerShape(10.dp)
-                                )
-                                .pressClick(enabled = canControl && firmwareApi != null && !isActive) {
-                                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                                    pendingEsc = status
-                                    scope.launch {
-                                        DiagnosticLogger.event("ESC_CMD",
-                                            "Sending escMode=${status.toFirmwareInt()} (${status.label})")
-                                        val result = firmwareApi!!.setEscMode(status.toFirmwareInt())
-                                        if (result.isFailure) {
-                                            DiagnosticLogger.event("ESC_CMD",
-                                                "FAILED: ${result.exceptionOrNull()?.message}")
-                                            snackbarHostState.showSnackbar("ESC command failed")
-                                        } else {
-                                            DiagnosticLogger.event("ESC_CMD", "OK")
-                                        }
-                                        pendingEsc = null
-                                    }
-                                }
-                                .padding(vertical = 12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            MonoLabel(
-                                if (isPending) "..." else label,
-                                10.sp, if (isActive) color else Dim, letterSpacing = 0.08.sp
-                            )
-                        }
-                    }
-            }
-            if (vs.escStatus == EscStatus.LAUNCH) {
-                Spacer(Modifier.height(6.dp))
+        if (vs.isConnected) {
+            Column(modifier = pageEntrance(1, pageEntered), verticalArrangement = Arrangement.spacedBy(CardGap)) {
+                // ── Drive Mode readout ───────────────────────────────────
+                val modeAccent = when (vs.driveMode) {
+                    DriveMode.SPORT -> Ok
+                    DriveMode.TRACK -> Warn
+                    DriveMode.DRIFT -> Orange
+                    else            -> accent
+                }
                 Box(
                     Modifier.fillMaxWidth()
-                        .background(Warn.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                        .border(CardBorder, Warn.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
-                        .padding(10.dp),
-                    contentAlignment = Alignment.Center
+                        .background(modeAccent.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
+                        .border(CardBorder, modeAccent.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 14.dp, vertical = 12.dp)
                 ) {
-                    MonoLabel("⚡ ESC LAUNCH MODE", 10.sp, Warn, letterSpacing = 0.1.sp)
-                }
-            }
-            Spacer(Modifier.height(6.dp))
-            MonoLabel(
-                if (canControl) "Tap to change \u00B7 Live from CAN 0x1C0"
-                else "Current: ${vs.escStatus.label} (CAN 0x1C0). Use ESC button in car.",
-                9.sp, Dim
-            )
-        }
-
-        HorizontalDivider(color = Brd)
-
-        // ── OpenRS-FW Features ───────────────────────────────────────────
-        MoreSection(if (isFw) "OPENRS-FW ACTIVE" else "FEATURES — REQUIRES openrs-fw v1.0") {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Column(
-                    Modifier.weight(1f)
-                        .background(Surf2, RoundedCornerShape(10.dp))
-                        .border(CardBorder, Brd, RoundedCornerShape(10.dp))
-                        .padding(12.dp)
-                ) {
-                    UIText("Launch Control", 12.sp, Frost, FontWeight.SemiBold)
-                    Spacer(Modifier.height(4.dp))
-                    if (vs.launchControlActive) {
-                        MonoText("⚡ ACTIVE", 10.sp, Warn)
-                    } else {
-                        val lcText = when {
-                            vs.lcArmed == true  -> "● ARMED"
-                            vs.lcArmed == false -> "○ STANDBY"
-                            isFw && !vs.rsprotTimedOut -> "… PROBING"
-                            else                -> "○ N/A"
-                        }
-                        val lcColor = when {
-                            vs.lcArmed == true            -> Ok
-                            isFw && !vs.rsprotTimedOut    -> Warn
-                            else                          -> Dim
-                        }
-                        MonoText(lcText, 10.sp, lcColor)
-                    }
-                    if (vs.lcRpmTarget > 0) {
-                        Spacer(Modifier.height(2.dp))
-                        MonoLabel("${vs.lcRpmTarget} RPM", 9.sp, Dim)
-                    }
-                }
-                Column(
-                    Modifier.weight(1f)
-                        .background(Surf2, RoundedCornerShape(10.dp))
-                        .border(CardBorder, Brd, RoundedCornerShape(10.dp))
-                        .padding(12.dp)
-                ) {
-                    UIText("Auto Start-Stop", 12.sp, Frost, FontWeight.SemiBold)
-                    Spacer(Modifier.height(4.dp))
-                    val assText = when {
-                        vs.assEnabled == true  -> "● ACTIVE"
-                        vs.assEnabled == false -> "○ OFF"
-                        isFw && !vs.rsprotTimedOut -> "… PROBING"
-                        else                   -> "○ N/A"
-                    }
-                    val assColor = when {
-                        vs.assEnabled == true            -> Ok
-                        isFw && !vs.rsprotTimedOut       -> Warn
-                        else                             -> Dim
-                    }
-                    MonoText(assText, 10.sp, assColor)
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(
-                Modifier.fillMaxWidth()
-                    .background(if (isFw) Ok.copy(alpha = 0.06f) else Orange.copy(alpha = 0.06f), RoundedCornerShape(8.dp))
-                    .border(CardBorder, if (isFw) Ok.copy(0.2f) else Orange.copy(0.2f), RoundedCornerShape(8.dp))
-                    .padding(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Column {
-                    MonoLabel(
-                        if (isFw) "✓  $fwLabel detected"
-                        else "⚡  Flash openrs-fw to unlock CAN write, LC, Auto Start-Stop & more.",
-                        9.sp, if (isFw) Ok else Orange, letterSpacing = 0.05.sp
-                    )
-                }
-            }
-        }
-
-        HorizontalDivider(color = Brd)
-
-        // ── Module Status ────────────────────────────────────────────────
-        MoreSection("MODULE STATUS") {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                data class ModuleInfo(val label: String, val state: Boolean?, val timedOut: Boolean, val subtitle: String)
-                listOf(
-                    ModuleInfo("RDU",  vs.rduEnabled,  false, "Rear Drive Unit"),
-                    ModuleInfo("PDC",  vs.pdcEnabled,  false, "Pull Drift Comp"),
-                    ModuleInfo("FENG", vs.fengEnabled, vs.fengTimedOut, "Engine Sound")
-                ).forEach { (label, state, timedOut, subtitle) ->
-                    Column(
-                        Modifier.weight(1f)
-                            .background(Surf2, RoundedCornerShape(10.dp))
-                            .border(CardBorder, Brd, RoundedCornerShape(10.dp))
-                            .padding(10.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        UIText(label, 12.sp, Frost, FontWeight.SemiBold)
-                        Spacer(Modifier.height(4.dp))
-                        val (dot, col) = when {
-                            state == true  -> "● ON"  to Ok
-                            state == false -> "○ OFF" to Dim
-                            timedOut       -> "○ N/A" to Dim
-                            else           -> "…"     to Warn
+                        Column {
+                            MonoLabel("DRIVE MODE", 8.sp, Dim, letterSpacing = 0.15.sp)
+                            Spacer(Modifier.height(2.dp))
+                            HeroNum(vs.driveMode.label.uppercase(), 18.sp, modeAccent)
                         }
-                        MonoText(dot, 10.sp, col)
-                        Spacer(Modifier.height(2.dp))
-                        MonoLabel(subtitle, 8.sp, Dim, letterSpacing = 0.08.sp)
+                        Box(
+                            Modifier
+                                .background(
+                                    if (canControl) modeAccent.copy(alpha = 0.18f) else Surf2,
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .border(
+                                    CardBorder,
+                                    if (canControl) modeAccent.copy(alpha = 0.55f) else Brd,
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .pressClick(enabled = canControl) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                                    onOpenDock()
+                                }
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            MonoLabel(
+                                "CHANGE MODE \u25BE",
+                                10.sp,
+                                if (canControl) modeAccent else Dim,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.12.sp
+                            )
+                        }
                     }
                 }
-            }
-            Spacer(Modifier.height(6.dp))
-            MonoLabel("Polled via extended diagnostic session (60 s cycle).", 9.sp, Dim)
-        }
 
-        HorizontalDivider(color = Brd)
-
-        // ── VIN (passive CAN 0x40A) ──────────────────────────────────────
-        if (vs.vin.isNotEmpty()) {
-            MoreSection("VEHICLE IDENTIFICATION") {
-                Row(
-                    Modifier.fillMaxWidth()
-                        .background(Surf2, RoundedCornerShape(8.dp))
-                        .border(CardBorder, Brd, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    MonoLabel("VIN", 9.sp, Dim, letterSpacing = 0.1.sp)
-                    Spacer(Modifier.weight(1f))
-                    MonoText(vs.vin, 12.sp, Frost)
+                // ── ESC ──────────────────────────────────────────────────
+                MonoLabel("ESC", 8.sp, Dim, letterSpacing = 0.15.sp)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(EscStatus.ON to "ESC ON", EscStatus.PARTIAL to "SPORT", EscStatus.OFF to "ESC OFF")
+                        .forEach { (status, label) ->
+                            val isActive = vs.escStatus == status
+                            val isPending = pendingEsc == status && !isActive
+                            val color = when (status) {
+                                EscStatus.ON -> Ok; EscStatus.PARTIAL -> Warn; else -> Orange
+                            }
+                            Box(
+                                Modifier.weight(1f)
+                                    .background(
+                                        if (isActive) color.copy(0.1f)
+                                        else if (isPending) color.copy(0.05f)
+                                        else Surf2,
+                                        RoundedCornerShape(10.dp)
+                                    )
+                                    .border(
+                                        if (isPending) 1.5.dp else 1.dp,
+                                        if (isActive || isPending) color else Brd,
+                                        RoundedCornerShape(10.dp)
+                                    )
+                                    .pressClick(enabled = canControl && firmwareApi != null && !isActive) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                                        pendingEsc = status
+                                        scope.launch {
+                                            DiagnosticLogger.event("ESC_CMD",
+                                                "Sending escMode=${status.toFirmwareInt()} (${status.label})")
+                                            val result = firmwareApi!!.setEscMode(status.toFirmwareInt())
+                                            if (result.isFailure) {
+                                                DiagnosticLogger.event("ESC_CMD",
+                                                    "FAILED: ${result.exceptionOrNull()?.message}")
+                                                snackbarHostState.showSnackbar("ESC command failed")
+                                            } else {
+                                                DiagnosticLogger.event("ESC_CMD", "OK")
+                                            }
+                                            pendingEsc = null
+                                        }
+                                    }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                MonoLabel(
+                                    if (isPending) "..." else label,
+                                    9.sp, if (isActive) color else Dim, letterSpacing = 0.08.sp
+                                )
+                            }
+                        }
                 }
+                if (vs.escStatus == EscStatus.LAUNCH) {
+                    Box(
+                        Modifier.fillMaxWidth()
+                            .background(Warn.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                            .border(CardBorder, Warn.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                            .padding(10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        MonoLabel("⚡ ESC LAUNCH MODE", 10.sp, Warn, letterSpacing = 0.1.sp)
+                    }
+                }
+                MonoLabel(
+                    if (canControl) "Tap to change · Live from CAN 0x1C0"
+                    else "Current: ${vs.escStatus.label} (CAN 0x1C0). Use ESC button in car.",
+                    9.sp, Dim
+                )
             }
-
-            HorizontalDivider(color = Brd)
+        } else {
+            Box(
+                pageEntrance(1, pageEntered).fillMaxWidth()
+                    .background(Surf2, RoundedCornerShape(8.dp))
+                    .border(CardBorder, Brd, RoundedCornerShape(8.dp))
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                MonoLabel("\u2014 CONNECT ADAPTER TO CONFIGURE \u2014", 10.sp, Dim, letterSpacing = 0.2.sp)
+            }
         }
 
-        // ── Custom Dashboard ──────────────────────────────────────────────
-        MoreSection("CUSTOM DASHBOARD") {
-            val savedLayout = remember { AppSettings.loadCustomDash(ctx) }
-            val gaugeCount = savedLayout?.cells?.size ?: 0
-            Box(
-                Modifier.fillMaxWidth()
-                    .background(
-                        Brush.horizontalGradient(listOf(accent.copy(0.1f), accent.copy(0.05f))),
-                        RoundedCornerShape(10.dp)
-                    )
-                    .border(CardBorder, accent.copy(0.3f), RoundedCornerShape(10.dp))
-                    .clickable { onCustomDash() }
-                    .padding(horizontal = 14.dp, vertical = 13.dp)
-            ) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        UIText("Open Custom Dashboard", 12.sp, Frost, FontWeight.SemiBold)
-                        Spacer(Modifier.height(2.dp))
+        // ══════════════════════════════════════════════════════════════════
+        // Zone B — Firmware Status (collapsible)
+        // ══════════════════════════════════════════════════════════════════
+        SectionLabel("FIRMWARE STATUS", collapsible = true, expanded = fwStatusExpanded,
+            onToggle = { fwStatusExpanded = !fwStatusExpanded },
+            modifier = pageEntrance(2, pageEntered))
+
+        AnimatedVisibility(
+            visible = fwStatusExpanded,
+            modifier = pageEntrance(3, pageEntered),
+            enter = expandVertically(spring(stiffness = Spring.StiffnessLow)) + fadeIn(),
+            exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut()
+        ) {
+            data class ModuleInfo(val label: String, val state: Boolean?, val timedOut: Boolean, val subtitle: String)
+            val modules = listOf(
+                ModuleInfo("RDU",  vs.rduEnabled,  false, "Rear Drive Unit"),
+                ModuleInfo("PDC",  vs.pdcEnabled,  false, "Pull Drift Comp"),
+                ModuleInfo("FENG", vs.fengEnabled, vs.fengTimedOut, "Engine Sound")
+            )
+            val allModulesEmpty = modules.all { it.state == null && !it.timedOut }
+
+            Column(verticalArrangement = Arrangement.spacedBy(CardGap)) {
+                if (!vs.isConnected) {
+                    Box(
+                        Modifier.fillMaxWidth()
+                            .background(Surf2, RoundedCornerShape(8.dp))
+                            .border(CardBorder, Brd, RoundedCornerShape(8.dp))
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        MonoLabel("\u2014 CONNECT TO POPULATE \u2014", 10.sp, Dim, letterSpacing = 0.2.sp)
+                    }
+                } else {
+                    // LC + ASS feature cards
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Column(
+                            Modifier.weight(1f)
+                                .background(Surf2, RoundedCornerShape(10.dp))
+                                .border(CardBorder, Brd, RoundedCornerShape(10.dp))
+                                .padding(12.dp)
+                        ) {
+                            UIText("Launch Control", 12.sp, Frost, FontWeight.SemiBold)
+                            Spacer(Modifier.height(4.dp))
+                            if (vs.launchControlActive) {
+                                MonoText("⚡ ACTIVE", 10.sp, Warn)
+                            } else {
+                                val lcText = when {
+                                    vs.lcArmed == true  -> "● ARMED"
+                                    vs.lcArmed == false -> "○ STANDBY"
+                                    isFw && !vs.rsprotTimedOut -> "… PROBING"
+                                    else                -> "○ N/A"
+                                }
+                                val lcColor = when {
+                                    vs.lcArmed == true            -> Ok
+                                    isFw && !vs.rsprotTimedOut    -> Warn
+                                    else                          -> Dim
+                                }
+                                MonoText(lcText, 10.sp, lcColor)
+                            }
+                            if (vs.lcRpmTarget > 0) {
+                                Spacer(Modifier.height(2.dp))
+                                MonoLabel("${vs.lcRpmTarget} RPM", 9.sp, Dim)
+                            }
+                        }
+                        Column(
+                            Modifier.weight(1f)
+                                .background(Surf2, RoundedCornerShape(10.dp))
+                                .border(CardBorder, Brd, RoundedCornerShape(10.dp))
+                                .padding(12.dp)
+                        ) {
+                            UIText("Auto Start-Stop", 12.sp, Frost, FontWeight.SemiBold)
+                            Spacer(Modifier.height(4.dp))
+                            val assText = when {
+                                vs.assEnabled == true  -> "● ACTIVE"
+                                vs.assEnabled == false -> "○ OFF"
+                                isFw && !vs.rsprotTimedOut -> "… PROBING"
+                                else                   -> "○ N/A"
+                            }
+                            val assColor = when {
+                                vs.assEnabled == true            -> Ok
+                                isFw && !vs.rsprotTimedOut       -> Warn
+                                else                             -> Dim
+                            }
+                            MonoText(assText, 10.sp, assColor)
+                        }
+                    }
+
+                    // Module status cards
+                    if (allModulesEmpty) {
+                        Box(
+                            Modifier.fillMaxWidth()
+                                .background(Surf2, RoundedCornerShape(8.dp))
+                                .border(CardBorder, Brd, RoundedCornerShape(8.dp))
+                                .padding(vertical = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            MonoLabel("\u00B7\u00B7\u00B7  probing modules  \u00B7\u00B7\u00B7", 10.sp, Dim, letterSpacing = 0.2.sp)
+                        }
+                    } else {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            modules.forEachIndexed { modIdx, (label, state, timedOut, subtitle) ->
+                                Column(
+                                    Modifier.weight(1f)
+                                        .then(pageEntrance(modIdx, pageEntered))
+                                        .background(Surf2, RoundedCornerShape(10.dp))
+                                        .border(CardBorder, Brd, RoundedCornerShape(10.dp))
+                                        .padding(10.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    UIText(subtitle, 11.sp, Frost, FontWeight.SemiBold)
+                                    Spacer(Modifier.height(2.dp))
+                                    MonoLabel(label, 8.sp, Dim, letterSpacing = 0.15.sp)
+                                    Spacer(Modifier.height(4.dp))
+                                    val (dot, col) = when {
+                                        state == true  -> "● ON"  to Ok
+                                        state == false -> "○ OFF" to Dim
+                                        timedOut       -> "○ N/A" to Dim
+                                        else           -> "…"     to Warn
+                                    }
+                                    MonoText(dot, 10.sp, col)
+                                }
+                            }
+                        }
+                    }
+
+                    // Firmware banner
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .background(if (isFw) Ok.copy(alpha = 0.06f) else Orange.copy(alpha = 0.06f), RoundedCornerShape(8.dp))
+                            .border(CardBorder, if (isFw) Ok.copy(0.2f) else Orange.copy(0.2f), RoundedCornerShape(8.dp))
+                            .padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         MonoLabel(
-                            if (gaugeCount > 0) "$gaugeCount gauges configured"
-                            else "Build a custom gauge layout",
-                            9.sp, Dim
+                            if (isFw) "✓  $fwLabel detected"
+                            else "⚡  Flash openrs-fw to unlock CAN write, LC, Auto Start-Stop & more.",
+                            9.sp, if (isFw) Ok else Orange, letterSpacing = 0.05.sp
                         )
                     }
-                    MonoLabel("\u25B6 OPEN", 10.sp, accent, letterSpacing = 0.1.sp)
-                }
-            }
-        }
 
-        HorizontalDivider(color = Brd)
-
-        // ── Sapphire Web Dashboard ───────────────────────────────────────
-        MoreSection("WEB DASHBOARD") {
-            Box(
-                Modifier.fillMaxWidth()
-                    .background(
-                        Brush.horizontalGradient(listOf(accent.copy(0.08f), accent.copy(0.03f))),
-                        RoundedCornerShape(10.dp)
-                    )
-                    .border(CardBorder, accent.copy(0.2f), RoundedCornerShape(10.dp))
-                    .clickable {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(SAPPHIRE_URL))
-                        ctx.startActivity(intent)
-                    }
-                    .padding(horizontal = 14.dp, vertical = 13.dp)
-            ) {
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        MonoLabel("SAPPHIRE", 11.sp, accent, fontWeight = FontWeight.Bold, letterSpacing = 0.15.sp)
-                        Spacer(Modifier.weight(1f))
-                        MonoLabel("↗ OPEN", 10.sp, accent, letterSpacing = 0.1.sp)
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    MonoLabel(
-                        "Analyse trip & diagnostic data in your browser. Drop an export ZIP to explore charts, maps, and CAN data.",
-                        9.sp, Dim
-                    )
+                    MonoLabel("Polled via extended diagnostic session (60 s cycle).", 9.sp, Dim)
                 }
             }
         }
@@ -434,26 +372,23 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
     }
 }
 
-@Composable fun MoreSection(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column {
-        MonoLabel(title, 9.sp, Dim, letterSpacing = 0.2.sp, modifier = Modifier.padding(bottom = 10.dp))
-        content()
-    }
-}
-
-@Composable fun ThemePicker(p: UserPrefs) {
-    val ctx = LocalContext.current
+/**
+ * Paint-colour theme picker. Decoupled from UserPrefsStore so SettingsSheet
+ * can stage the selection in local state and only commit on SAVE — matches
+ * the "hit SAVE to apply" RESET contract.
+ */
+@Composable fun ThemePicker(activeId: String, onSelect: (String) -> Unit) {
     val themes = RsPaints.map { it.id to it.name }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             themes.take(3).forEach { (id, name) ->
-                ThemeChip(id, name, rsPaintAccent(id), p.themeId == id, ctx, p, Modifier.weight(1f))
+                ThemeChip(id, name, rsPaintAccent(id), activeId == id, onSelect, Modifier.weight(1f))
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             themes.drop(3).forEach { (id, name) ->
-                ThemeChip(id, name, rsPaintAccent(id), p.themeId == id, ctx, p, Modifier.weight(1f))
+                ThemeChip(id, name, rsPaintAccent(id), activeId == id, onSelect, Modifier.weight(1f))
             }
         }
     }
@@ -461,13 +396,13 @@ private const val SAPPHIRE_URL = "https://klexical.github.io/openRS_/"
 
 @Composable private fun ThemeChip(
     id: String, name: String, color: androidx.compose.ui.graphics.Color,
-    isActive: Boolean, ctx: android.content.Context, p: UserPrefs, modifier: Modifier
+    isActive: Boolean, onSelect: (String) -> Unit, modifier: Modifier
 ) {
     Column(
         modifier
             .background(if (isActive) color.copy(alpha = 0.12f) else Surf2, RoundedCornerShape(10.dp))
             .border(1.dp, if (isActive) color else Brd, RoundedCornerShape(10.dp))
-            .clickable { UserPrefsStore.update(ctx) { it.copy(themeId = id) } }
+            .clickable { onSelect(id) }
             .padding(vertical = 10.dp, horizontal = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {

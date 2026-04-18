@@ -19,6 +19,9 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -30,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -40,13 +44,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.OpenRSDashApp
+import com.openrs.dash.R
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.EscStatus
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.service.CanDataService
 import com.openrs.dash.ui.anim.EdgeShiftLight
+import com.openrs.dash.ui.anim.LaunchControlEdgeGlow
 import com.openrs.dash.ui.Tokens.CardBorder
 import com.openrs.dash.ui.anim.bloomGlow
+import com.openrs.dash.ui.anim.connectionPulse
 
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
@@ -184,8 +191,13 @@ class MainActivity : ComponentActivity() {
                                         onDisconnect = { service?.stopConnection() },
                                         onReconnect  = { service?.reconnect() },
                                         driveState   = driveState,
-                                        onModeClick  = { dockOpen = !dockOpen }
+                                        onModeClick  = { dockOpen = !dockOpen },
+                                        onPullDown   = { dockOpen = true }
                                     )
+
+                                    // rc.2: anomaly surface sits below the header so it can't steal the
+                                    // MODE/ESC pills. Priority: e-brake > LC engaged > update > reconnect.
+                                    AnomalyStrip(vs, onConnect = { service?.startConnection() })
 
                                     // ── Quick Mode Dock ──────────────────
                                     AnimatedVisibility(
@@ -207,9 +219,7 @@ class MainActivity : ComponentActivity() {
                                         )
                                     }
 
-                                    ConnectionBanner(vs)
                                     WifiCoexistenceBanner()
-                                    EBrakeWarningBanner(vs)
                                     // Auto-dismiss dock on tab change
                                     LaunchedEffect(selectedTab) { dockOpen = false }
 
@@ -229,7 +239,9 @@ class MainActivity : ComponentActivity() {
                                             (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
                                         ).coerceIn(0f, 1f) * 0.6f)
                                         Box(
-                                            Modifier.fillMaxSize().graphicsLayer { alpha = pageAlpha }
+                                            Modifier.fillMaxSize()
+                                                .graphicsLayer { alpha = pageAlpha }
+                                                .then(connectionPulse(vs.isConnected))
                                         ) {
                                             when (page) {
                                                 0 -> DrivePage(vs, prefs)
@@ -241,7 +253,6 @@ class MainActivity : ComponentActivity() {
                                                     vs = vs,
                                                     p = prefs,
                                                     snackbarHostState = snackbarHostState,
-                                                    onCustomDash = { showCustomDash = true },
                                                     firmwareApi = service?.firmwareApi,
                                                     onScanDtcs = service?.let { svc ->
                                                         val fn: suspend () -> List<com.openrs.dash.data.DtcResult> = { svc.scanDtcs() }
@@ -257,6 +268,7 @@ class MainActivity : ComponentActivity() {
                                                         q
                                                     },
                                                     onResetSession = { service?.resetSession() },
+                                                    onOpenDock = { dockOpen = true },
                                                 )
                                             }
                                             // Scrim overlay — tap to dismiss dock
@@ -275,7 +287,10 @@ class MainActivity : ComponentActivity() {
                                 }
 
                                 if (settingsOpen) {
-                                    SettingsDialog(onDismiss = { settingsOpen = false })
+                                    SettingsDialog(
+                                        onDismiss = { settingsOpen = false },
+                                        onCustomDash = { settingsOpen = false; showCustomDash = true }
+                                    )
                                 }
 
                                 if (showWhatsNew) {
@@ -309,6 +324,9 @@ class MainActivity : ComponentActivity() {
                             }
                         )
 
+                        // rc.2: peripheral glow while LC is actively engaged — unmissable in-cabin.
+                        LaunchControlEdgeGlow(engaged = vs.launchControlEngaged)
+
                         // ── Bottom Nav Bar (overlay — content extends behind) ──
                         val navScope = rememberCoroutineScope()
                         val onSelectNav = remember<(Int) -> Unit> {
@@ -320,7 +338,8 @@ class MainActivity : ComponentActivity() {
                             onSelect = onSelectNav,
                             hazeState = hazeState,
                             modifier = Modifier.align(Alignment.BottomCenter),
-                            badges = listOf(false, false, false, false, activeDtcs > 0)
+                            badges = listOf(false, false, false, false, activeDtcs > 0),
+                            navTabIdentity = prefs.navTabIdentity,
                         )
 
                     }
@@ -346,37 +365,18 @@ class MainActivity : ComponentActivity() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// HEADER — Contextual status bar (v3.0 B3)
+// HEADER — v2.2.7-rc.2
 //
-// Priority-driven single row. Anomalies (E-brake, launch control, firmware
-// download, disconnect) take over the center region and render as a
-// color-coded banner. Bookends (logo left, REC dot + connection pill + gear
-// right) are always visible so the user never loses the ability to change
-// connection or open Settings.
+// Geometry:
+//   [logo] · · · [MODE pill] [ESC pill] · · · [REC | connPill | cog]
+//
+// MODE/ESC are always visible when connected; disconnected renders dim
+// placeholder pills + "TAP TO CONNECT" gets surfaced in the AnomalyStrip
+// below the header. Anomalies (e-brake / LC engaged / update / reconnect)
+// slide down into AnomalyStrip — the header itself never changes shape.
+//
+// Pulling down ≥40dp on the header opens the DriveModeDock from any tab.
 // ═══════════════════════════════════════════════════════════════════════════
-
-private sealed class HeaderContext {
-    data object Normal : HeaderContext()                     // → MODE + ESC pills
-    data object EBrake : HeaderContext()                     // ⚠ E-BRAKE ACTIVE
-    data object LaunchControl : HeaderContext()              // ⚡ LAUNCH CONTROL
-    data class Updating(val progress: Float) : HeaderContext() // ↻ UPDATE xx%
-    data object Reconnecting : HeaderContext()               // ○ RECONNECTING…
-    data object Offline : HeaderContext()                    // TAP TO CONNECT
-}
-
-@Composable
-private fun resolveHeaderContext(vs: VehicleState): HeaderContext {
-    val updateState by UpdateManager.state.collectAsState()
-    val dl = updateState as? com.openrs.dash.update.UpdateState.Downloading
-    return when {
-        vs.eBrake                                -> HeaderContext.EBrake
-        vs.launchControlEngaged                  -> HeaderContext.LaunchControl
-        dl != null                               -> HeaderContext.Updating(dl.progress)
-        !vs.isConnected && vs.isIdle             -> HeaderContext.Reconnecting
-        !vs.isConnected                          -> HeaderContext.Offline
-        else                                     -> HeaderContext.Normal
-    }
-}
 
 @Composable fun AppHeader(
     vs: VehicleState,
@@ -386,7 +386,8 @@ private fun resolveHeaderContext(vs: VehicleState): HeaderContext {
     onDisconnect: () -> Unit,
     onReconnect: () -> Unit,
     driveState: com.openrs.dash.data.DriveState = com.openrs.dash.data.DriveState(),
-    onModeClick: () -> Unit = {}
+    onModeClick: () -> Unit = {},
+    onPullDown: () -> Unit = {}
 ) {
     val accent = LocalThemeAccent.current
 
@@ -398,68 +399,156 @@ private fun resolveHeaderContext(vs: VehicleState): HeaderContext {
         )
         anim
     } else 1f
+    val updateStateNow by UpdateManager.state.collectAsState()
+    val isUpdating = updateStateNow is com.openrs.dash.update.UpdateState.Downloading
+    val isReconnecting = !vs.isConnected && vs.isIdle
     val connColor = when {
         vs.isConnected -> Ok
         vs.isIdle      -> Warn
         else           -> Orange
     }
     val connLabel = when {
+        isUpdating     -> "UPD"
         vs.isConnected -> "LIVE"
+        isReconnecting -> "RCN"
         vs.isIdle      -> "IDLE"
         else           -> "OFF"
     }
 
-    val ctx = resolveHeaderContext(vs)
+    // Bloom intensity fades 0.3→0 over 400ms on disconnect (instead of popping off).
+    val bloomIntensity by animateFloatAsState(
+        if (vs.isConnected) 0.3f else 0f, tween(400), label = "bloomI")
+
+    // Connected-quiet: pill fades to 0.6α after 2s stable, restores on state change.
+    var connStable by remember { mutableStateOf(false) }
+    LaunchedEffect(vs.isConnected) {
+        connStable = false
+        if (vs.isConnected) { kotlinx.coroutines.delay(2000); connStable = true }
+    }
+    val quietAlpha by animateFloatAsState(
+        if (vs.isConnected && connStable && prefs.livePillQuiet) 0.6f else 1f,
+        tween(600), label = "pillQuiet")
+
+    val haptic = LocalHapticFeedback.current
+
+    // rc.2: header underline stays a constant hairline — dock drops right
+    // below it, so flashing it mode-color on mode-change reads as a stray
+    // line. Mode-color breath is carried by the bottom nav indicator only.
+    val underlineColor = Brd.copy(alpha = borderAlpha(0.3f))
+    val underlineStroke = 1.dp
+
+    // Pull-down gesture: accumulate drag distance; open dock on ≥40dp.
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    var dragAccum by remember { mutableStateOf(0f) }
+    val dragState = rememberDraggableState { delta -> dragAccum += delta }
 
     Row(
         Modifier.fillMaxWidth()
             .height(Tokens.StatusBarHeight)
             .background(Surf)
+            .draggable(
+                state = dragState,
+                orientation = Orientation.Vertical,
+                onDragStarted = { dragAccum = 0f },
+                onDragStopped = {
+                    val thresholdPx = with(density) { 40.dp.toPx() }
+                    if (dragAccum > thresholdPx) onPullDown()
+                    dragAccum = 0f
+                }
+            )
             .drawBehind {
                 drawLine(
-                    color = Brd.copy(alpha = borderAlpha(0.3f)),
+                    color = underlineColor,
                     start = androidx.compose.ui.geometry.Offset(0f, size.height),
                     end = androidx.compose.ui.geometry.Offset(size.width, size.height),
-                    strokeWidth = 1.dp.toPx()
+                    strokeWidth = underlineStroke.toPx()
                 )
             }
-            .padding(horizontal = 10.dp),
+            // rc.2: asymmetric horizontal padding — keep the logo's breathing
+            // room on the left but pull the REC/conn/cog cluster hard against
+            // the right edge so it reads as a tight trio (was 4dp; dropped
+            // to 0dp per user feedback that the cluster still looked floated).
+            .padding(start = 10.dp, end = 0.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // ── Left: Logo ──────────────────────────────────────────
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("open", fontSize = 13.sp, fontFamily = OrbitronFamily,
-                color = Frost, fontWeight = FontWeight.Bold, letterSpacing = 0.05.sp)
-            Text("RS", fontSize = 13.sp, fontFamily = OrbitronFamily,
-                color = accent, fontWeight = FontWeight.Bold, letterSpacing = 0.05.sp)
-            Text("_", fontSize = 13.sp, fontFamily = OrbitronFamily,
-                color = Frost, fontWeight = FontWeight.Bold, letterSpacing = 0.05.sp)
+        // Brand colors: "open" + "_" = Frost, "RS" = Nitrous Blue (accent)
+        val rsBlue = accent
+        val connected = vs.isConnected
+
+        // (3) Startup typewriter — letters reveal one by one on first composition
+        var typewriterDone by remember { mutableStateOf(false) }
+        val typewriterPhase by animateFloatAsState(
+            targetValue = if (typewriterDone) 1f else 0f,
+            animationSpec = tween(1800, easing = EaseOut),
+            label = "typewriter"
+        )
+        LaunchedEffect(Unit) { typewriterDone = true }
+        // 7 characters: o-p-e-n-R-S-_
+        val chars = listOf(
+            "o" to Frost, "p" to Frost, "e" to Frost, "n" to Frost,
+            "R" to rsBlue, "S" to rsBlue, "_" to Frost
+        )
+
+        // (1) Underscore cursor blink — slow terminal pulse
+        val cursorAlpha by rememberInfiniteTransition(label = "cursor").animateFloat(
+            initialValue = 1f, targetValue = 0.15f,
+            animationSpec = infiniteRepeatable(tween(900, easing = EaseInOut), RepeatMode.Reverse),
+            label = "cursorA"
+        )
+
+        // (2) Connection-aware glow on "RS" — breathes when live, dormant when offline
+        val glowAlpha by rememberInfiniteTransition(label = "rsGlow").animateFloat(
+            initialValue = 0.08f, targetValue = 0.25f,
+            animationSpec = infiniteRepeatable(tween(2200, easing = EaseInOut), RepeatMode.Reverse),
+            label = "rsGlowA"
+        )
+        val rsGlowActive by animateFloatAsState(
+            targetValue = if (connected) 1f else 0f,
+            animationSpec = tween(600),
+            label = "rsGlowOn"
+        )
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.drawBehind {
+                // (2) Radial glow behind "RS" when connected
+                if (rsGlowActive > 0.01f) {
+                    val glowBrush = Brush.radialGradient(
+                        listOf(
+                            rsBlue.copy(alpha = glowAlpha * rsGlowActive),
+                            Color.Transparent
+                        ),
+                        center = Offset(size.width * 0.62f, size.height / 2f),
+                        radius = size.height * 1.8f
+                    )
+                    drawRect(glowBrush)
+                }
+            }
+        ) {
+            chars.forEachIndexed { i, (ch, baseColor) ->
+                // (3) Typewriter: each char fades in with stagger
+                val charThreshold = i.toFloat() / chars.size
+                val charAlpha = ((typewriterPhase - charThreshold) * chars.size).coerceIn(0f, 1f)
+                // (1) Underscore blinks after typewriter completes
+                val finalAlpha = if (i == chars.lastIndex && typewriterDone)
+                    charAlpha * cursorAlpha else charAlpha
+                val isUnderscore = i == chars.lastIndex
+                Text(
+                    ch,
+                    fontSize = if (isUnderscore) 14.sp else 13.sp,
+                    fontFamily = OrbitronFamily,
+                    color = baseColor.copy(alpha = finalAlpha),
+                    fontWeight = if (isUnderscore) FontWeight.Black else FontWeight.Bold,
+                    letterSpacing = 0.05.sp
+                )
+            }
         }
 
         Spacer(Modifier.weight(1f))
 
-        // ── Center: priority-driven content ─────────────────────
-        AnimatedContent(
-            targetState = ctx::class,
-            transitionSpec = { (fadeIn() togetherWith fadeOut()) },
-            label = "headerCtx",
-            contentKey = { it }
-        ) { _ ->
-            when (ctx) {
-                HeaderContext.EBrake        -> HeaderBanner("⚠  E-BRAKE ACTIVE", Orange)
-                HeaderContext.LaunchControl -> HeaderBannerFlashing("⚡  LAUNCH CONTROL", Warn)
-                is HeaderContext.Updating   -> HeaderBanner(
-                    "↻  UPDATE  ${((ctx as HeaderContext.Updating).progress.coerceIn(0f, 1f) * 100).toInt()}%",
-                    accent
-                )
-                HeaderContext.Reconnecting  -> HeaderBannerPulsing("○  RECONNECTING…", Warn)
-                HeaderContext.Offline       -> Box(
-                    Modifier.clickable { onConnect() }.padding(horizontal = 2.dp),
-                    contentAlignment = Alignment.Center
-                ) { MonoLabel("TAP TO CONNECT", 9.sp, Orange, FontWeight.Bold, 0.12.sp) }
-                HeaderContext.Normal        -> NormalStatus(vs, accent, onModeClick)
-            }
-        }
+        // ── Center: always MODE + ESC pills (placeholder when offline). ───
+        HeaderModeEscPills(vs, accent, onModeClick)
 
         Spacer(Modifier.weight(1f))
 
@@ -484,7 +573,14 @@ private fun resolveHeaderContext(vs: VehicleState): HeaderContext {
                     label = "headerRecAlpha"
                 )
                 val dotColor = if (paused) Warn else Orange
-                val label    = if (paused) "PAUSED" else "REC"
+                // V4: show elapsed time + distance alongside REC indicator
+                val elapsed = driveState.elapsedMs
+                val mm = (elapsed / 60_000).toInt()
+                val ss = ((elapsed % 60_000) / 1_000).toInt()
+                val distKm = driveState.cumulativeDistanceKm
+                val distStr = if (prefs.speedUnit == "MPH") "%.1f mi".format(distKm * UnitConversions.KM_TO_MI)
+                              else "%.1f km".format(distKm)
+                val label = if (paused) "PAUSED" else "REC %02d:%02d · %s".format(mm, ss, distStr)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(3.dp)
@@ -510,11 +606,20 @@ private fun resolveHeaderContext(vs: VehicleState): HeaderContext {
                 }
             }
 
+            // rc.2: fixed-width connection pill. pressClick + haptic feedback.
+            // Label crossfades on state change. Bloom fades 0→0.3 on connect,
+            // 0.3→0 on disconnect. Quiet mode dims pill after 2s stable.
             Box(
                 Modifier
-                    .background(connColor.copy(alpha = 0.08f), RoundedCornerShape(4.dp))
-                    .border(CardBorder, connColor.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
-                    .clickable {
+                    .alpha(quietAlpha)
+                    .widthIn(min = 48.dp)
+                    .background(connColor.copy(alpha = pillBgAlpha(0.08f)), RoundedCornerShape(4.dp))
+                    .border(CardBorder, connColor.copy(alpha = borderAlpha(0.2f)), RoundedCornerShape(4.dp))
+                    .pressClick(pressedScale = 0.97f) {
+                        haptic.performHapticFeedback(
+                            if (vs.isConnected) HapticFeedbackType.Reject
+                            else HapticFeedbackType.Confirm
+                        )
                         when {
                             vs.isConnected -> onDisconnect()
                             vs.isIdle      -> onReconnect()
@@ -528,18 +633,29 @@ private fun resolveHeaderContext(vs: VehicleState): HeaderContext {
                     Box(contentAlignment = Alignment.Center) {
                         Box(Modifier.size(10.dp).clip(CircleShape)
                             .background(connColor.copy(alpha = 0.25f * dotAlpha))
-                            .then(if (vs.isConnected) Modifier.bloomGlow(connColor, 8.dp, 0.3f * dotAlpha) else Modifier))
-                        Box(Modifier.size(5.dp).clip(CircleShape)
-                            .background(connColor.copy(alpha = dotAlpha)))
+                            .then(if (bloomIntensity > 0.01f) Modifier.bloomGlow(connColor, 8.dp, bloomIntensity * dotAlpha) else Modifier))
+                        when {
+                            vs.isConnected -> Box(Modifier.size(5.dp).clip(CircleShape)
+                                .background(connColor.copy(alpha = dotAlpha)))
+                            vs.isIdle -> Box(Modifier.size(6.dp).clip(CircleShape)
+                                .border(1.2.dp, connColor.copy(alpha = dotAlpha), CircleShape))
+                            else -> MonoLabel("×", 10.sp, connColor.copy(alpha = dotAlpha), FontWeight.Bold)
+                        }
                     }
-                    MonoLabel(connLabel, 7.sp, connColor, FontWeight.Bold, 0.08.sp)
+                    AnimatedContent(
+                        targetState = connLabel,
+                        transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(180)) },
+                        label = "connLbl"
+                    ) { lbl ->
+                        MonoLabel(lbl, 7.sp, connColor, FontWeight.Bold, 0.08.sp)
+                    }
                 }
             }
 
             Box(
                 Modifier
-                    .background(Surf2, RoundedCornerShape(4.dp))
-                    .border(CardBorder, Brd, RoundedCornerShape(4.dp))
+                    .background(Mid.copy(alpha = pillBgAlpha(0.15f)), RoundedCornerShape(4.dp))
+                    .border(CardBorder, Mid.copy(alpha = borderAlpha(0.35f)), RoundedCornerShape(4.dp))
                     .clickable { onSettings() }
                     .padding(horizontal = 6.dp, vertical = 2.dp),
                 contentAlignment = Alignment.Center
@@ -560,15 +676,26 @@ private fun resolveHeaderContext(vs: VehicleState): HeaderContext {
 }
 
 @Composable
-private fun NormalStatus(vs: VehicleState, accent: Color, onModeClick: () -> Unit) {
-    val modeColor = when (vs.driveMode) {
-        DriveMode.SPORT -> Ok; DriveMode.TRACK -> Warn; DriveMode.DRIFT -> Orange; else -> accent
+private fun HeaderModeEscPills(vs: VehicleState, accent: Color, onModeClick: () -> Unit) {
+    val connected = vs.isConnected
+    val modeColor = when {
+        !connected            -> Dim
+        vs.driveMode == DriveMode.SPORT -> Ok
+        vs.driveMode == DriveMode.TRACK -> Warn
+        vs.driveMode == DriveMode.DRIFT -> Orange
+        else                  -> accent
     }
-    val escColor = when (vs.escStatus) {
-        EscStatus.OFF -> Orange; EscStatus.PARTIAL -> Warn; EscStatus.LAUNCH -> Warn; else -> accent
+    val escColor = when {
+        !connected                          -> Dim
+        vs.escStatus == EscStatus.OFF       -> Orange
+        vs.escStatus == EscStatus.PARTIAL   -> Warn
+        vs.escStatus == EscStatus.LAUNCH    -> Warn
+        else                                -> accent
     }
+    val modeValue = if (connected) vs.driveMode.label.uppercase() else "\u2014"
+    val escValue  = if (connected) vs.escStatus.label.uppercase() else "\u2014"
+
     Row(verticalAlignment = Alignment.CenterVertically) {
-        // C7: pulse bar only animates while a mode change is in flight.
         val pending = com.openrs.dash.can.driveModePending.value != null
         val pulseT = rememberInfiniteTransition(label = "modeBar")
         val animAlpha by pulseT.animateFloat(
@@ -576,73 +703,154 @@ private fun NormalStatus(vs: VehicleState, accent: Color, onModeClick: () -> Uni
             animationSpec = infiniteRepeatable(tween(2000, easing = EaseInOut), RepeatMode.Reverse),
             label = "modeBarA"
         )
+
         val barAlpha = if (pending) animAlpha else 0f
         StatusPill(
             label = "MODE",
-            value = vs.driveMode.label.uppercase(),
+            value = modeValue,
             valueColor = modeColor,
-            onClick = onModeClick,
+            onClick = if (connected) onModeClick else null,
             pulseBarColor = if (pending) modeColor else null,
             pulseBarAlpha = barAlpha
         )
         Spacer(Modifier.width(6.dp))
         StatusPill(
             label = "ESC",
-            value = vs.escStatus.label.uppercase(),
+            value = escValue,
             valueColor = escColor,
             onClick = null
         )
     }
 }
 
+// rc.2: unified anomaly surface — sits below the header so it never rewrites
+// header geometry. One strip at a time, priority order:
+//   eBrake > launchControlEngaged > updating > reconnecting > offline.
 @Composable
-private fun HeaderBanner(text: String, color: Color) {
-    Box(
-        Modifier
-            .background(color.copy(alpha = 0.14f), RoundedCornerShape(4.dp))
-            .border(CardBorder, color.copy(alpha = 0.55f), RoundedCornerShape(4.dp))
-            .padding(horizontal = 10.dp, vertical = 3.dp),
-        contentAlignment = Alignment.Center
+private fun AnomalyStrip(vs: VehicleState, onConnect: () -> Unit) {
+    val accent = LocalThemeAccent.current
+    val updateState by UpdateManager.state.collectAsState()
+    val dl = updateState as? com.openrs.dash.update.UpdateState.Downloading
+
+    val kind: AnomalyKind? = when {
+        vs.eBrake                    -> AnomalyKind.EBrake
+        vs.launchControlEngaged      -> AnomalyKind.LaunchControl
+        dl != null                   -> AnomalyKind.Updating(dl.progress)
+        !vs.isConnected && vs.isIdle -> AnomalyKind.Reconnecting
+        !vs.isConnected              -> AnomalyKind.Offline
+        else                         -> null
+    }
+
+    AnimatedVisibility(
+        visible = kind != null,
+        enter = expandVertically(tween(220)) + fadeIn(tween(220)),
+        exit  = shrinkVertically(tween(180)) + fadeOut(tween(180))
     ) {
-        MonoLabel(text, 9.sp, color, FontWeight.Bold, 0.12.sp)
+        val current = kind ?: return@AnimatedVisibility
+        val (text, color) = when (current) {
+            AnomalyKind.EBrake        -> "\u26A0  E-BRAKE ACTIVE" to Orange
+            AnomalyKind.LaunchControl -> "\u26A1  LAUNCH CONTROL"  to Warn
+            is AnomalyKind.Updating   -> "\u21BB  UPDATE  ${((current.progress.coerceIn(0f, 1f)) * 100).toInt()}%" to accent
+            AnomalyKind.Reconnecting  -> "RECONNECTING" to Warn
+            AnomalyKind.Offline       -> "TAP TO CONNECT" to Orange
+        }
+        val flashing = current is AnomalyKind.LaunchControl
+        val pulsing  = current is AnomalyKind.Reconnecting || current is AnomalyKind.Offline
+
+        val flashAlpha by rememberInfiniteTransition(label = "anoFlash").animateFloat(
+            initialValue = 1f, targetValue = 0.35f,
+            animationSpec = infiniteRepeatable(tween(220), RepeatMode.Reverse),
+            label = "anoFlashA"
+        )
+        val pulseAlpha by rememberInfiniteTransition(label = "anoPulse").animateFloat(
+            initialValue = 0.45f, targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(900, easing = EaseInOut), RepeatMode.Reverse),
+            label = "anoPulseA"
+        )
+        val effectiveAlpha = when {
+            flashing -> flashAlpha
+            pulsing  -> pulseAlpha
+            else     -> 1f
+        }
+        val orbiting = current is AnomalyKind.Reconnecting || current is AnomalyKind.Offline
+        // Orbiting phase for reconnecting top-border highlight
+        val orbitPhase by rememberInfiniteTransition(label = "anoOrbit").animateFloat(
+            initialValue = 0f, targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(2200, easing = LinearEasing), RepeatMode.Restart),
+            label = "anoOrbitP"
+        )
+        Box(
+            Modifier.fillMaxWidth()
+                .height(Tokens.AnomalyStripHeight)
+                .background(color.copy(alpha = pillBgAlpha(0.12f * effectiveAlpha)))
+                .drawBehind {
+                    // Bottom border (all states)
+                    drawLine(
+                        color = color.copy(alpha = borderAlpha(0.6f * effectiveAlpha)),
+                        start = androidx.compose.ui.geometry.Offset(0f, size.height),
+                        end = androidx.compose.ui.geometry.Offset(size.width, size.height),
+                        strokeWidth = 1.dp.toPx()
+                    )
+                    // Orbiting top-border highlight (reconnecting only)
+                    if (orbiting) {
+                        val spotCenter = orbitPhase * size.width
+                        val spotRadius = size.width * 0.15f
+                        val orbitBrush = Brush.horizontalGradient(
+                            colorStops = arrayOf(
+                                0f to Color.Transparent,
+                                ((spotCenter - spotRadius) / size.width).coerceIn(0f, 1f) to Color.Transparent,
+                                (spotCenter / size.width).coerceIn(0f, 1f) to color.copy(alpha = 0.8f),
+                                ((spotCenter + spotRadius) / size.width).coerceIn(0f, 1f) to Color.Transparent,
+                                1f to Color.Transparent
+                            )
+                        )
+                        drawRect(
+                            brush = orbitBrush,
+                            topLeft = androidx.compose.ui.geometry.Offset(0f, 0f),
+                            size = androidx.compose.ui.geometry.Size(size.width, 1.dp.toPx())
+                        )
+                    }
+                }
+                .then(if (current is AnomalyKind.Offline)
+                    Modifier.clickable { onConnect() } else Modifier),
+            contentAlignment = Alignment.Center
+        ) {
+            val stripTextStyle = remember {
+                androidx.compose.ui.text.TextStyle(
+                    fontSize = 9.sp, fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.14.sp, lineHeight = 9.sp,
+                    platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false)
+                )
+            }
+            if (current is AnomalyKind.Reconnecting) {
+                // Animated breadcrumb dots: each dot fades in sequentially.
+                // Fixed "..." width so the label doesn't shift as dots appear.
+                val dotPhase by rememberInfiniteTransition(label = "dots").animateFloat(
+                    initialValue = 0f, targetValue = 4f,
+                    animationSpec = infiniteRepeatable(tween(3600, easing = LinearEasing)),
+                    label = "dotsP"
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(text, style = stripTextStyle, color = color)
+                    val phase = dotPhase.coerceIn(0f, 4f)
+                    for (i in 0 until 3) {
+                        val dotAlpha = ((phase - i).coerceIn(0f, 1f))
+                        Text(".", style = stripTextStyle, color = color.copy(alpha = dotAlpha))
+                    }
+                }
+            } else {
+                Text(text, style = stripTextStyle, color = color)
+            }
+        }
     }
 }
 
-@Composable
-private fun HeaderBannerFlashing(text: String, color: Color) {
-    val flash by rememberInfiniteTransition(label = "hdrFlash").animateFloat(
-        initialValue = 1f, targetValue = 0.35f,
-        animationSpec = infiniteRepeatable(tween(220), RepeatMode.Reverse),
-        label = "hdrFlashA"
-    )
-    Box(
-        Modifier
-            .alpha(flash)
-            .background(color.copy(alpha = 0.20f), RoundedCornerShape(4.dp))
-            .border(CardBorder, color.copy(alpha = 0.7f), RoundedCornerShape(4.dp))
-            .padding(horizontal = 10.dp, vertical = 3.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        MonoLabel(text, 9.sp, color, FontWeight.Bold, 0.12.sp)
-    }
-}
-
-@Composable
-private fun HeaderBannerPulsing(text: String, color: Color) {
-    val pulse by rememberInfiniteTransition(label = "hdrPulse").animateFloat(
-        initialValue = 0.4f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(900, easing = EaseInOut), RepeatMode.Reverse),
-        label = "hdrPulseA"
-    )
-    Box(
-        Modifier
-            .background(color.copy(alpha = 0.10f * pulse), RoundedCornerShape(4.dp))
-            .border(CardBorder, color.copy(alpha = 0.45f * pulse), RoundedCornerShape(4.dp))
-            .padding(horizontal = 10.dp, vertical = 3.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        MonoLabel(text, 9.sp, color, FontWeight.Bold, 0.12.sp)
-    }
+private sealed class AnomalyKind {
+    data object EBrake : AnomalyKind()
+    data object LaunchControl : AnomalyKind()
+    data class Updating(val progress: Float) : AnomalyKind()
+    data object Reconnecting : AnomalyKind()
+    data object Offline : AnomalyKind()
 }
 
 @Composable private fun StatusPill(
@@ -656,8 +864,8 @@ private fun HeaderBannerPulsing(text: String, color: Color) {
     val shape = RoundedCornerShape(4.dp)
     Box(
         Modifier
-            .background(valueColor.copy(alpha = 0.10f), shape)
-            .border(CardBorder, valueColor.copy(alpha = 0.25f), shape)
+            .background(valueColor.copy(alpha = pillBgAlpha(0.10f)), shape)
+            .border(CardBorder, valueColor.copy(alpha = borderAlpha(0.25f)), shape)
             .then(if (onClick != null) Modifier.pressClick { onClick() } else Modifier)
             .padding(horizontal = 6.dp, vertical = 2.dp)
     ) {
@@ -704,8 +912,8 @@ private fun WifiCoexistenceBanner() {
 
     AnimatedVisibility(
         visible = wifiConnected && !dismissed,
-        enter = expandVertically() + fadeIn(),
-        exit  = shrinkVertically() + fadeOut()
+        enter = expandVertically(spring(stiffness = Spring.StiffnessLow)) + fadeIn(),
+        exit  = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut()
     ) {
         Box(
             Modifier
@@ -730,94 +938,3 @@ private fun WifiCoexistenceBanner() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// CONNECTION BANNER — contextual disconnected state
-// ═══════════════════════════════════════════════════════════════════════════
-@Composable
-private fun ConnectionBanner(vs: VehicleState) {
-    val ctx = LocalContext.current
-    var dismissed by remember { mutableStateOf(false) }
-
-    // Reset dismissed state when connection succeeds
-    LaunchedEffect(vs.isConnected) {
-        if (vs.isConnected) dismissed = false
-    }
-
-    val adapterType = AppSettings.getAdapterType(ctx)
-    val connMethod = AppSettings.getConnectionMethod(ctx)
-    val adapterLabel = if (adapterType == "MEATPI_PRO") "MeatPi Pro" else "MeatPi USB"
-    val addressLabel: String
-    if (connMethod == "BLUETOOTH") {
-        val raw = AppSettings.getBleDeviceName(ctx) ?: "BLE"
-        val name = if (raw.length > 12) raw.take(12) + "\u2026" else raw
-        addressLabel = "BT — $name"
-    } else {
-        addressLabel = "${AppSettings.getHost(ctx)}:${AppSettings.getPort(ctx)}"
-    }
-
-    AnimatedVisibility(
-        visible = !vs.isConnected && !dismissed,
-        enter = expandVertically() + fadeIn(),
-        exit  = shrinkVertically() + fadeOut()
-    ) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 6.dp)
-                .background(Orange.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
-                .border(CardBorder, Orange.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
-                .padding(horizontal = 10.dp, vertical = 8.dp)
-        ) {
-            MonoLabel(
-                "$adapterLabel  —  $addressLabel  —  DISCONNECTED",
-                9.sp, Orange, letterSpacing = 0.1.sp,
-                modifier = Modifier.align(Alignment.CenterStart).padding(end = 24.dp)
-            )
-            MonoLabel(
-                "\u2715", 12.sp, Dim,
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .clickable { dismissed = true }
-            )
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// E-BRAKE WARNING BANNER — shown when e-brake is engaged
-// ═══════════════════════════════════════════════════════════════════════════
-@Composable
-private fun EBrakeWarningBanner(vs: VehicleState) {
-    var dismissed by remember { mutableStateOf(false) }
-
-    LaunchedEffect(vs.eBrake) {
-        if (!vs.eBrake) dismissed = false
-    }
-
-    AnimatedVisibility(
-        visible = vs.eBrake && !dismissed,
-        enter = expandVertically() + fadeIn(),
-        exit  = shrinkVertically() + fadeOut()
-    ) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 4.dp)
-                .background(Warn.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
-                .border(CardBorder, Warn.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
-                .padding(horizontal = 10.dp, vertical = 6.dp)
-        ) {
-            MonoLabel(
-                "E-BRAKE ENGAGED",
-                9.sp, Warn, letterSpacing = 0.1.sp,
-                modifier = Modifier.align(Alignment.CenterStart).padding(end = 24.dp)
-            )
-            MonoLabel(
-                "\u2715", 12.sp, Dim,
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .clickable { dismissed = true }
-            )
-        }
-    }
-}

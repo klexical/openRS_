@@ -1,6 +1,8 @@
 package com.openrs.dash.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -45,6 +47,7 @@ import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticExporter
 import com.openrs.dash.diagnostics.DiagnosticLogger
 import com.openrs.dash.ui.Tokens.CardBorder
+import com.openrs.dash.ui.anim.pageEntrance
 import com.openrs.dash.ui.anim.pressClick
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -105,8 +108,30 @@ import kotlin.math.roundToInt
     var pidBrowserExpanded  by rememberSectionExpanded("DIAG_PID_BROWSER", default = false)
     var showAllFrames       by remember { mutableStateOf(false) }
 
+    var pageEntered by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { pageEntered = true }
+
+    var scanComplete by remember { mutableStateOf(false) }
+    LaunchedEffect(dtcResults) { if (!dtcResults.isNullOrEmpty()) scanComplete = true }
+
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
         .padding(start = Tokens.PagePad, end = Tokens.PagePad, top = Tokens.PagePad, bottom = Tokens.PagePad + Tokens.NavBarHeight)) {
+
+        // ── VIN (passive CAN 0x40A) ──────────────────────────────────
+        if (vs.vin.isNotEmpty()) {
+            Row(
+                pageEntrance(0, pageEntered).fillMaxWidth()
+                    .background(Surf2, RoundedCornerShape(8.dp))
+                    .border(Tokens.CardBorder, Brd, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                MonoLabel("VIN", 9.sp, Dim, letterSpacing = 0.1.sp)
+                Spacer(Modifier.weight(1f))
+                MonoText(vs.vin, 12.sp, Frost)
+            }
+            Spacer(Modifier.height(Tokens.SectionGap))
+        }
 
         val frameCount = inv.values.sumOf { it.totalReceived }
         val dtcCount = dtcResults?.size ?: 0
@@ -116,13 +141,21 @@ import kotlin.math.roundToInt
 
         // ── Diagnostics (collapsible, expanded by default) ────────────────
         SectionLabel("DIAGNOSTICS", collapsible = true, expanded = diagExpanded,
-            onToggle = { diagExpanded = !diagExpanded })
+            onToggle = { diagExpanded = !diagExpanded },
+            modifier = pageEntrance(1, pageEntered))
         AnimatedVisibility(
             visible = diagExpanded,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
+            enter = expandVertically(spring(stiffness = Spring.StiffnessLow)) + fadeIn(),
+            exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut()
         ) {
             Column {
+                // rc.2 hierarchy: split the former 4×4 equal-weight grid into
+                // three labeled sub-groups. The reader can now skim:
+                //   HEALTH       — is telemetry alive and how much?
+                //   VEHICLE      — what's the car doing right now?
+                //   BATTERY      — the long-tail owner concern
+                Spacer(Modifier.height(4.dp))
+                MonoLabel("HEALTH", 8.sp, Dim.copy(alpha = textMutedAlpha(0.7f)), letterSpacing = 0.3.sp)
                 Spacer(Modifier.height(4.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     DataCell("STATUS", if (vs.isConnected) "LIVE" else "— —",
@@ -138,14 +171,37 @@ import kotlin.math.roundToInt
                     DataCell("FRAMES",  "$frameCount",                              modifier = Modifier.weight(1f))
                     DataCell("IDs",     "${inv.size}",                              modifier = Modifier.weight(1f))
                 }
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(12.dp))
+                if (!vs.isConnected) {
+                    // rc.2: when disconnected, the VEHICLE + BATTERY + buttons
+                    // rows are all em-dashes (>50% of the section). Replace with
+                    // a single CTA so the screen reads as deliberate, not broken.
+                    Box(
+                        Modifier.fillMaxWidth()
+                            .background(Surf2, RoundedCornerShape(10.dp))
+                            .border(CardBorder, Brd, RoundedCornerShape(10.dp))
+                            .padding(vertical = 20.dp, horizontal = 16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            MonoLabel("VEHICLE \u00B7 BATTERY \u00B7 BUTTONS", 8.sp,
+                                Dim.copy(alpha = textMutedAlpha(0.6f)), letterSpacing = 0.3.sp)
+                            Spacer(Modifier.height(6.dp))
+                            MonoLabel("Connect to view live data", 11.sp, Dim, letterSpacing = 0.1.sp)
+                        }
+                    }
+                } else {
+                MonoLabel("VEHICLE", 8.sp, Dim.copy(alpha = textMutedAlpha(0.7f)), letterSpacing = 0.3.sp)
+                Spacer(Modifier.height(4.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     DataCell("ENGINE", engineStatusLabel(vs.engineStatus), modifier = Modifier.weight(1f))
                     DataCell("IGNITION", ignitionStatusLabel(vs.ignitionStatus), modifier = Modifier.weight(1f))
                     DataCell("E-BRAKE", if (vs.eBrake) "ON" else "OFF",
                         valueColor = if (vs.eBrake) Warn else Dim, modifier = Modifier.weight(1f))
                 }
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(12.dp))
+                MonoLabel("BATTERY", 8.sp, Dim.copy(alpha = textMutedAlpha(0.7f)), letterSpacing = 0.3.sp)
+                Spacer(Modifier.height(4.dp))
                 // Availability-aware placeholders so startup/stale states read cleanly
                 // rather than leaking the raw -1 sentinel as "-1.00V".
                 fun availSub(a: TempAvail) = when (a) {
@@ -220,6 +276,7 @@ import kotlin.math.roundToInt
                         valueColor = if (vs.escOffButtonPressed) Orange else Dim,
                         modifier = Modifier.weight(1f))
                 }
+                }  // end else (connected)
 
                 if (issueCount > 0) {
                     Spacer(Modifier.height(6.dp))
@@ -308,11 +365,12 @@ import kotlin.math.roundToInt
 
         // ── DTC Scanner (collapsible, expanded by default) ────────────────
         SectionLabel("DTC SCANNER", collapsible = true, expanded = dtcExpanded,
-            onToggle = { dtcExpanded = !dtcExpanded })
+            onToggle = { dtcExpanded = !dtcExpanded },
+            modifier = pageEntrance(2, pageEntered))
         AnimatedVisibility(
             visible = dtcExpanded,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
+            enter = expandVertically(spring(stiffness = Spring.StiffnessLow)) + fadeIn(),
+            exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut()
         ) {
             Column {
                 Spacer(Modifier.height(4.dp))
@@ -344,6 +402,7 @@ import kotlin.math.roundToInt
                                     dtcScanning = true
                                     dtcError = null
                                     dtcClearStatus = null
+                                    scanComplete = false
                                     dtcScanJob = scope.launch(Dispatchers.IO) {
                                         val result = try {
                                             onScanDtcs?.invoke()
@@ -390,7 +449,7 @@ import kotlin.math.roundToInt
                     if (dtcResults != null) {
                         Box(
                             Modifier.width(72.dp)
-                                .background(Color(0xFF1A0A0A), RoundedCornerShape(10.dp))
+                                .background(Surf3, RoundedCornerShape(10.dp))
                                 .border(CardBorder, Dim.copy(0.3f), RoundedCornerShape(10.dp))
                                 .clickable(enabled = !dtcBusy) { dtcResults = null; dtcError = null; dtcClearStatus = null }
                                 .padding(vertical = 13.dp),
@@ -409,8 +468,8 @@ import kotlin.math.roundToInt
                         Modifier.fillMaxWidth()
                             .background(
                                 if (!dtcBusy && vs.isConnected && onClearDtcs != null)
-                                    Color(0xFF1A0606)
-                                else Color(0xFF120404),
+                                    Orange.copy(alpha = 0.10f)
+                                else Orange.copy(alpha = 0.04f),
                                 RoundedCornerShape(10.dp)
                             )
                             .border(
@@ -449,7 +508,7 @@ import kotlin.math.roundToInt
                 if (dtcClearStatus != null) {
                     Box(
                         Modifier.fillMaxWidth()
-                            .background(Color(0xFF060E06), RoundedCornerShape(8.dp))
+                            .background(Ok.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
                             .border(CardBorder, Ok.copy(0.3f), RoundedCornerShape(8.dp))
                             .padding(10.dp)
                     ) {
@@ -473,7 +532,7 @@ import kotlin.math.roundToInt
                             if (r.isEmpty()) {
                                 Box(
                                     Modifier.fillMaxWidth()
-                                        .background(Color(0xFF060E0A), RoundedCornerShape(10.dp))
+                                        .background(Ok.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
                                         .border(CardBorder, Ok.copy(0.25f), RoundedCornerShape(10.dp))
                                         .padding(14.dp),
                                     contentAlignment = Alignment.Center
@@ -490,11 +549,15 @@ import kotlin.math.roundToInt
                                         .padding(10.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
+                                    var dtcIdx = 0
                                     for (moduleName in moduleOrder) {
                                         val moduleDtcs = grouped[moduleName] ?: continue
                                         MonoLabel(moduleName, 9.sp, accent, letterSpacing = 1.sp)
                                         moduleDtcs.forEach { dtc ->
-                                            DtcRow(dtc)
+                                            Box(pageEntrance(dtcIdx, scanComplete, staggerDelayMs = 60)) {
+                                                DtcRow(dtc)
+                                            }
+                                            dtcIdx++
                                         }
                                     }
                                 }
@@ -573,11 +636,12 @@ import kotlin.math.roundToInt
 
         // ── Developer (collapsed by default; wraps expert-tier tools) ─────────
         SectionLabel("DEVELOPER", collapsible = true, expanded = developerExpanded,
-            onToggle = { developerExpanded = !developerExpanded })
+            onToggle = { developerExpanded = !developerExpanded },
+            modifier = pageEntrance(3, pageEntered))
         AnimatedVisibility(
             visible = developerExpanded,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
+            enter = expandVertically(spring(stiffness = Spring.StiffnessLow)) + fadeIn(),
+            exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut()
         ) {
             Column {
 
@@ -588,8 +652,8 @@ import kotlin.math.roundToInt
             onToggle = { crashExpanded = !crashExpanded })
         AnimatedVisibility(
             visible = crashExpanded,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
+            enter = expandVertically(spring(stiffness = Spring.StiffnessLow)) + fadeIn(),
+            exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut()
         ) {
             Column { CrashHistorySection() }
         }
@@ -601,8 +665,8 @@ import kotlin.math.roundToInt
             onToggle = { didProberExpanded = !didProberExpanded })
         AnimatedVisibility(
             visible = didProberExpanded,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
+            enter = expandVertically(spring(stiffness = Spring.StiffnessLow)) + fadeIn(),
+            exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut()
         ) {
             Column { DidProberSection(vs, onSendRawQuery) }
         }
@@ -614,14 +678,14 @@ import kotlin.math.roundToInt
             onToggle = { canOutputExpanded = !canOutputExpanded })
         AnimatedVisibility(
             visible = canOutputExpanded,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
+            enter = expandVertically(spring(stiffness = Spring.StiffnessLow)) + fadeIn(),
+            exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut()
         ) {
             Column {
                 Spacer(Modifier.height(4.dp))
                 Column(
                     Modifier.fillMaxWidth()
-                        .background(Color(0xFF060810), Tokens.CardShape)
+                        .background(Surf3, Tokens.CardShape)
                         .border(Tokens.CardBorder, Brd, Tokens.CardShape)
                         .padding(Tokens.InnerV)
                 ) {
@@ -656,8 +720,8 @@ import kotlin.math.roundToInt
                 expanded = frameInvExpanded, onToggle = { frameInvExpanded = !frameInvExpanded })
             AnimatedVisibility(
                 visible = frameInvExpanded,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
+                enter = expandVertically(spring(stiffness = Spring.StiffnessLow)) + fadeIn(),
+                exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut()
             ) {
                 Column {
                     Spacer(Modifier.height(4.dp))
@@ -702,8 +766,8 @@ import kotlin.math.roundToInt
             onToggle = { pidBrowserExpanded = !pidBrowserExpanded })
         AnimatedVisibility(
             visible = pidBrowserExpanded,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
+            enter = expandVertically(spring(stiffness = Spring.StiffnessLow)) + fadeIn(),
+            exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut()
         ) {
             Column { PidBrowserSection(
                 onCopyNotify = { msg ->
@@ -747,7 +811,7 @@ private fun DtcRow(dtc: DtcResult) {
     val statusColor = when (dtc.status) {
         DtcStatus.ACTIVE    -> Orange
         DtcStatus.PENDING   -> Warn
-        DtcStatus.PERMANENT -> Color(0xFFFF8C00)
+        DtcStatus.PERMANENT -> Orange
         DtcStatus.UNKNOWN   -> Dim
     }
     Row(

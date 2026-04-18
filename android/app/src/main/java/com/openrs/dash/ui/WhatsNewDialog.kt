@@ -16,9 +16,17 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import com.openrs.dash.ui.Tokens.CardBorder
 import androidx.compose.ui.unit.dp
@@ -26,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.openrs.dash.BuildConfig
+import com.openrs.dash.ui.anim.pageEntrance
 
 /**
  * Version highlights for the "What's New" dialog.
@@ -90,10 +99,16 @@ private val versionHighlights: Map<String, List<String>> = mapOf(
 @Composable
 fun WhatsNewDialog(onDismiss: () -> Unit) {
     val accent = LocalThemeAccent.current
+    val accentM = accentMid()
     val version = BuildConfig.VERSION_NAME
     val highlights = versionHighlights[version]
         ?: versionHighlights.values.lastOrNull()
         ?: return onDismiss()
+
+    var dialogEntered by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { dialogEntered = true }
+    val dialogAlpha by animateFloatAsState(if (dialogEntered) 1f else 0f, tween(200), label = "dlgA")
+    val dialogScale by animateFloatAsState(if (dialogEntered) 1f else 0.95f, tween(200), label = "dlgS")
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -101,6 +116,7 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
     ) {
         Column(
             Modifier
+                .graphicsLayer { alpha = dialogAlpha; scaleX = dialogScale; scaleY = dialogScale }
                 .fillMaxWidth(0.92f)
                 .background(Bg, RoundedCornerShape(12.dp))
                 .border(CardBorder, Brd, RoundedCornerShape(12.dp))
@@ -128,16 +144,17 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                highlights.forEach { highlight ->
+                highlights.forEachIndexed { index, highlight ->
                     Row(
                         Modifier.fillMaxWidth()
+                            .then(pageEntrance(index, dialogEntered, staggerDelayMs = 60))
                             .background(Surf2, RoundedCornerShape(8.dp))
                             .border(CardBorder, Brd, RoundedCornerShape(8.dp))
                             .padding(12.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalAlignment = Alignment.Top
                     ) {
-                        Text("●", fontSize = 8.sp, color = accent,
+                        Text("●", fontSize = 8.sp, color = accentM,
                             modifier = Modifier.padding(top = 3.dp))
                         Text(highlight, fontSize = 11.sp, color = Frost,
                             fontFamily = ShareTechMono, lineHeight = 16.sp)

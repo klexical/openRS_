@@ -73,6 +73,20 @@ class BleSlcanTransport(
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 gatt.discoverServices()
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                // Release any in-flight writeLine() blocked on writeComplete.await().
+                // Without this, a disconnect mid-write deadlocks writeMutex indefinitely
+                // because onCharacteristicWrite will never fire.
+                if (!writeComplete.isCompleted) {
+                    writeComplete.completeExceptionally(
+                        java.io.IOException("BLE disconnected")
+                    )
+                }
+                // Also unblock open() if it's still awaiting GATT setup.
+                if (!connectDeferred.isCompleted) {
+                    connectDeferred.completeExceptionally(
+                        java.io.IOException("BLE disconnected before setup completed")
+                    )
+                }
                 // Signal EOF to the reader — SlcanConnection retry logic handles reconnect.
                 lineChannel.close()
             }
@@ -241,14 +255,34 @@ class BleSlcanTransport(
             @Suppress("DEPRECATION")
             char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
             @Suppress("DEPRECATION")
-            g.writeCharacteristic(char)
-            writeComplete.await()
+            val dispatched = g.writeCharacteristic(char)
+            if (!dispatched) {
+                // writeCharacteristic returns false when the stack is busy or the
+                // GATT is not connected. Without this, the await below would hang
+                // because no onCharacteristicWrite callback will fire.
+                throw java.io.IOException("BLE writeCharacteristic returned false")
+            }
+            try {
+                writeComplete.await()
+            } catch (e: Exception) {
+                // onConnectionStateChange(DISCONNECTED) or close() completed the
+                // deferred exceptionally — surface the failure to SlcanConnection
+                // retry logic instead of swallowing it.
+                throw java.io.IOException("BLE write failed: ${e.message}", e)
+            }
 
             offset = end
         }
     }
 
     override fun close() {
+        // Release any in-flight writeLine() awaiters before tearing down.
+        if (!writeComplete.isCompleted) {
+            writeComplete.completeExceptionally(java.io.IOException("BLE closed"))
+        }
+        if (!connectDeferred.isCompleted) {
+            connectDeferred.completeExceptionally(java.io.IOException("BLE closed"))
+        }
         try {
             gatt?.disconnect()
             gatt?.close()

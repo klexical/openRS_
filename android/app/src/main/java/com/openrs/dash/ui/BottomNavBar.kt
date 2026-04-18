@@ -1,8 +1,11 @@
 package com.openrs.dash.ui
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,6 +36,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -42,6 +46,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.R
+import com.openrs.dash.can.modeChangeBreath
+import com.openrs.dash.data.DriveMode
 import com.openrs.dash.ui.anim.pressClick
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
@@ -70,8 +76,31 @@ fun BottomNavBar(
     modifier: Modifier = Modifier,
     /** Per-tab badge flags — true draws a small Warn dot on the icon. */
     badges: List<Boolean> = emptyList(),
+    /** When true, each tab uses a unique identity color instead of uniform accent. */
+    navTabIdentity: Boolean = false,
 ) {
     val accent = LocalThemeAccent.current
+    // rc.2: persistent chrome (nav bar is always visible) uses the mid-tier accent
+    // to reduce OLED burn-in risk and reserve full-sat paint for ephemeral highlights
+    // (changing values, warnings, CTAs). The visible softening is ~8-12%, matching
+    // the "Desaturate for persistent chrome" directive from the Daylight critique.
+    val baseAccentChrome = accentMid()
+    val breathMode = modeChangeBreath.value
+    // Per-tab identity color (only when pref is on and no breath is active)
+    val identityColor = if (navTabIdentity) tabIdentityColor(selected) else baseAccentChrome
+    val breathTarget = when (breathMode) {
+        DriveMode.SPORT -> Ok
+        DriveMode.TRACK -> Warn
+        DriveMode.DRIFT -> Orange
+        DriveMode.NORMAL -> accent
+        null -> identityColor
+        else -> identityColor
+    }
+    val accentChrome by animateColorAsState(
+        targetValue = breathTarget,
+        animationSpec = tween(if (breathMode != null) 180 else 900),
+        label = "navBreath"
+    )
     val haptic = LocalHapticFeedback.current
     val tabCount = navItems.size
     val sysNavPad = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -151,7 +180,7 @@ fun BottomNavBar(
                     .fillMaxWidth(0.6f)
                     .height(2.dp)
                     .background(
-                        accent,
+                        accentChrome,
                         RoundedCornerShape(bottomStart = 2.dp, bottomEnd = 2.dp)
                     )
             )
@@ -162,7 +191,7 @@ fun BottomNavBar(
                     .height(6.dp)
                     .background(
                         Brush.verticalGradient(
-                            listOf(accent.copy(alpha = 0.12f), Color.Transparent)
+                            listOf(accentChrome.copy(alpha = 0.12f), Color.Transparent)
                         ),
                         RoundedCornerShape(bottomStart = 4.dp, bottomEnd = 4.dp)
                     )
@@ -173,8 +202,20 @@ fun BottomNavBar(
         Row(Modifier.fillMaxWidth().height(Tokens.NavBarHeight).padding(top = 6.dp)) {
             navItems.forEachIndexed { i, item ->
                 val isActive = i == selected
-                val tint = if (isActive) accent else Dim
+                // Per-tab identity: active tab uses its own color; breath overrides all
+                val tabColor = if (navTabIdentity && breathMode == null)
+                    tabIdentityColor(i) else accentChrome
+                val tint by animateColorAsState(
+                    targetValue = if (isActive) tabColor else Dim,
+                    animationSpec = tween(300),
+                    label = "navTint$i"
+                )
 
+                val iconScale by animateFloatAsState(
+                    targetValue = if (isActive) 1.06f else 1f,
+                    animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                    label = "iconScale$i"
+                )
                 val showBadge = badges.getOrNull(i) == true
                 Box(
                     Modifier
@@ -200,7 +241,9 @@ fun BottomNavBar(
                                 painter = painterResource(item.icon),
                                 contentDescription = null,
                                 tint = tint,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(20.dp).graphicsLayer {
+                                    scaleX = iconScale; scaleY = iconScale
+                                }
                             )
                             if (showBadge) {
                                 Box(

@@ -98,6 +98,16 @@ object AppSettings {
     const val KEY_DRIVE_AUTO_ZOOM     = "drive_auto_zoom"
     const val DEFAULT_DRIVE_AUTO_ZOOM = true
 
+    // ── OEM polish flags (v3.0 rc.2) ──────────────────────────────────────
+    const val KEY_NAV_TAB_IDENTITY      = "nav_tab_identity"
+    const val DEFAULT_NAV_TAB_IDENTITY  = false      // soak period — on after rc.3
+
+    const val KEY_LIVE_PILL_QUIET       = "live_pill_quiet"
+    const val DEFAULT_LIVE_PILL_QUIET   = true       // connected pill fades after 2s stable
+
+    const val KEY_GEAR_MODE_TINT        = "gear_mode_tint"
+    const val DEFAULT_GEAR_MODE_TINT    = true       // GEAR label tints to mode color
+
     // ── Temperature preset ───────────────────────────────────────────────────
     const val KEY_TEMP_PRESET     = "temp_preset"
     const val DEFAULT_TEMP_PRESET = "street"     // "street" | "track" | "race"
@@ -215,6 +225,15 @@ object AppSettings {
 
     fun getDriveAutoZoom(ctx: Context): Boolean =
         prefs(ctx).getBoolean(KEY_DRIVE_AUTO_ZOOM, DEFAULT_DRIVE_AUTO_ZOOM)
+
+    fun getNavTabIdentity(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_NAV_TAB_IDENTITY, DEFAULT_NAV_TAB_IDENTITY)
+
+    fun getLivePillQuiet(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_LIVE_PILL_QUIET, DEFAULT_LIVE_PILL_QUIET)
+
+    fun getGearModeTint(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_GEAR_MODE_TINT, DEFAULT_GEAR_MODE_TINT)
 
     fun getTempPreset(ctx: Context): String =
         prefs(ctx).getString(KEY_TEMP_PRESET, DEFAULT_TEMP_PRESET) ?: DEFAULT_TEMP_PRESET
@@ -347,6 +366,9 @@ object AppSettings {
             putString (KEY_THEME_MODE, p.themeMode)
             putBoolean(KEY_CLASSIC_FONTS, p.classicFonts)
             putBoolean(KEY_DRIVE_AUTO_ZOOM, p.driveAutoZoom)
+            putBoolean(KEY_NAV_TAB_IDENTITY, p.navTabIdentity)
+            putBoolean(KEY_LIVE_PILL_QUIET, p.livePillQuiet)
+            putBoolean(KEY_GEAR_MODE_TINT, p.gearModeTint)
         }
     }
 
@@ -379,6 +401,9 @@ object AppSettings {
         themeMode            = getThemeMode(ctx),
         classicFonts         = getClassicFonts(ctx),
         driveAutoZoom        = getDriveAutoZoom(ctx),
+        navTabIdentity       = getNavTabIdentity(ctx),
+        livePillQuiet        = getLivePillQuiet(ctx),
+        gearModeTint         = getGearModeTint(ctx),
     )
 
     // ── Custom dashboard persistence ────────────────────────────────────

@@ -53,45 +53,68 @@ fun Modifier.bloomGlow(
  * @param color  glow tint (White for neutral, accent for hero cards)
  * @param intensity  0.0–1.0, scales the outer shadow alpha (default 0.06)
  * @param cornerRadius  matches the card's corner radius
+ * @param tint  optional edge tint for OEM polish. When specified:
+ *              Night/Ultra: replaces white specular with tint-colored edge.
+ *              Day: overlays a top-gradient sheen ("machined aluminum").
+ *              Default [Color.Unspecified] = no tint (current behavior).
  */
 fun Modifier.cardGlow(
     color: Color = Color.White,
     intensity: Float = 0.06f,
-    cornerRadius: Dp = 12.dp
+    cornerRadius: Dp = 12.dp,
+    tint: Color = Color.Unspecified
 ): Modifier = this.drawWithCache {
     val day = isDayModeNow()
     val cr = CornerRadius(cornerRadius.toPx())
     val cornerPx = cornerRadius.toPx()
+    val hasTint = tint != Color.Unspecified
 
     if (day) {
-        // DAY: halos on bright bg flatten the card. Draw a soft directional
-        // drop-shadow (2dp down, 4dp blur) using two offset layers for depth.
+        // DAY: soft directional drop-shadow (2dp down, 4dp blur) using two
+        // offset layers for depth. When tint is provided, add a top-gradient
+        // sheen ("machined aluminum" specular) over the top 12dp.
         val offset1 = 2.dp.toPx()
         val spread1 = 4.dp.toPx()
         val offset2 = 4.dp.toPx()
         val spread2 = 8.dp.toPx()
+        val sheenHeight = 12.dp.toPx()
+        val sheenBrush = if (hasTint) Brush.verticalGradient(
+            listOf(tint.copy(alpha = 0.06f), Color.Transparent),
+            startY = 0f, endY = sheenHeight
+        ) else null
 
         onDrawBehind {
-            // Outer, softer layer
             drawRoundRect(
                 color = Color.Black.copy(alpha = intensity * 0.8f),
                 topLeft = Offset(-spread2, offset2),
                 size = Size(size.width + spread2 * 2, size.height + spread2),
                 cornerRadius = cr
             )
-            // Inner, tighter layer
             drawRoundRect(
                 color = Color.Black.copy(alpha = intensity * 1.4f),
                 topLeft = Offset(-spread1, offset1),
                 size = Size(size.width + spread1 * 2, size.height + spread1),
                 cornerRadius = cr
             )
+            if (sheenBrush != null) {
+                drawRoundRect(
+                    brush = sheenBrush,
+                    size = Size(size.width, sheenHeight),
+                    cornerRadius = cr
+                )
+            }
         }
     } else {
-        // NIGHT/ULTRA: ambient halo + top specular (original v3.0 behaviour)
+        // NIGHT/ULTRA: ambient halo + top specular + bottom shadow.
+        // v2: specular bumped 0.07→0.10, shadow bumped 0.10→0.14 for
+        // stronger OLED materiality. When tint is provided, the specular
+        // uses the tint color instead of white (prevents double-stroke).
         val spread = 6.dp.toPx()
         val specularOffset = 1.dp.toPx()
-        val specularAlpha = 0.06f
+        val specularAlpha = 0.10f
+        val shadowAlpha = 0.14f
+        val specularColor = if (hasTint) tint.copy(alpha = specularAlpha)
+                            else Color.White.copy(alpha = specularAlpha)
         val glowBrush = Brush.radialGradient(
             listOf(
                 color.copy(alpha = intensity * 0.5f),
@@ -112,9 +135,15 @@ fun Modifier.cardGlow(
                 cornerRadius = cr
             )
             drawLine(
-                color = Color.White.copy(alpha = specularAlpha),
+                color = specularColor,
                 start = Offset(cornerPx, 0f),
                 end = Offset(size.width - cornerPx, 0f),
+                strokeWidth = 1f
+            )
+            drawLine(
+                color = Color.Black.copy(alpha = shadowAlpha),
+                start = Offset(cornerPx, size.height),
+                end = Offset(size.width - cornerPx, size.height),
                 strokeWidth = 1f
             )
         }

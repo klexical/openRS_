@@ -49,12 +49,12 @@ fun GaragePage(
     vs: VehicleState,
     p: UserPrefs,
     snackbarHostState: SnackbarHostState,
-    onCustomDash: () -> Unit = {},
     firmwareApi: FirmwareCommandSender? = null,
     onScanDtcs: (suspend () -> List<DtcResult>)? = null,
     onClearDtcs: (suspend () -> Map<String, Boolean>)? = null,
     onSendRawQuery: (suspend (Int, String, Long) -> ByteArray?)? = null,
     onResetSession: () -> Unit = {},
+    onOpenDock: () -> Unit = {},
 ) {
     var panel by remember { mutableStateOf(GaragePanel.CONTROL) }
 
@@ -65,8 +65,8 @@ fun GaragePage(
                 vs = vs,
                 p = p,
                 snackbarHostState = snackbarHostState,
-                onCustomDash = onCustomDash,
                 firmwareApi = firmwareApi,
+                onOpenDock = onOpenDock,
             )
             GaragePanel.DIAGNOSTICS -> DiagPage(
                 lines = debugLines,
@@ -98,12 +98,12 @@ private fun GaragePanelPicker(
             Box(
                 Modifier.weight(1f)
                     .background(
-                        if (active) accent.copy(alpha = 0.15f) else Surf2,
+                        if (active) accent.copy(alpha = pillBgAlpha(0.15f)) else Surf2,
                         RoundedCornerShape(8.dp),
                     )
                     .border(
                         CardBorder,
-                        if (active) accent.copy(alpha = 0.5f) else Brd,
+                        if (active) accent.copy(alpha = borderAlpha(0.5f)) else Brd,
                         RoundedCornerShape(8.dp),
                     )
                     .clickable {

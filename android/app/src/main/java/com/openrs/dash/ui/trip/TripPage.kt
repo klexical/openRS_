@@ -17,7 +17,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -55,6 +55,7 @@ import com.openrs.dash.data.DriveState
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticExporter
 import com.openrs.dash.ui.*
+import com.openrs.dash.ui.anim.pageEntrance
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -180,13 +181,27 @@ fun TripPage(
             )
 
             // ── Floating controls (top-right stack) ─────────────────
+            // rc.2: absorb all pointer events so taps that start on a control
+            // and drag slightly don't reach the underlying Google Maps
+            // AndroidView and pan the map.
+            var controlsVisible by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) { controlsVisible = true }
             Column(
-                Modifier.align(Alignment.TopEnd).padding(12.dp),
+                Modifier.align(Alignment.TopEnd).padding(12.dp)
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                event.changes.forEach { it.consume() }
+                            }
+                        }
+                    },
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 // Color mode toggle
                 Box(
-                    Modifier.clip(RoundedCornerShape(6.dp))
+                    pageEntrance(0, controlsVisible, 50)
+                        .clip(RoundedCornerShape(6.dp))
                         .background(Surf.copy(alpha = 0.85f))
                         .border(Tokens.CardBorder, Brd, RoundedCornerShape(6.dp))
                         .clickable {
@@ -199,7 +214,8 @@ fun TripPage(
 
                 // Map type toggle
                 Box(
-                    Modifier.clip(RoundedCornerShape(6.dp))
+                    pageEntrance(1, controlsVisible, 50)
+                        .clip(RoundedCornerShape(6.dp))
                         .background(Surf.copy(alpha = 0.85f))
                         .border(Tokens.CardBorder, Brd, RoundedCornerShape(6.dp))
                         .clickable {
@@ -224,7 +240,8 @@ fun TripPage(
                 // Weather card
                 driveState.currentWeather?.let { weather ->
                     Box(
-                        Modifier.clip(RoundedCornerShape(6.dp))
+                        pageEntrance(2, controlsVisible, 50)
+                            .clip(RoundedCornerShape(6.dp))
                             .background(Surf.copy(alpha = 0.85f))
                             .border(Tokens.CardBorder, Brd, RoundedCornerShape(6.dp))
                             .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -241,7 +258,8 @@ fun TripPage(
 
                 // Zoom in
                 Box(
-                    Modifier.clip(RoundedCornerShape(6.dp))
+                    pageEntrance(3, controlsVisible, 50)
+                        .clip(RoundedCornerShape(6.dp))
                         .background(Surf.copy(alpha = 0.85f))
                         .border(Tokens.CardBorder, Brd, RoundedCornerShape(6.dp))
                         .clickable { scope.launch { cameraPositionState.animate(CameraUpdateFactory.zoomIn()) } }
@@ -252,7 +270,8 @@ fun TripPage(
 
                 // Zoom out
                 Box(
-                    Modifier.clip(RoundedCornerShape(6.dp))
+                    pageEntrance(4, controlsVisible, 50)
+                        .clip(RoundedCornerShape(6.dp))
                         .background(Surf.copy(alpha = 0.85f))
                         .border(Tokens.CardBorder, Brd, RoundedCornerShape(6.dp))
                         .clickable { scope.launch { cameraPositionState.animate(CameraUpdateFactory.zoomOut()) } }
@@ -264,7 +283,8 @@ fun TripPage(
                 // Locate / recenter
                 if (currentLat != null && currentLng != null) {
                     Box(
-                        Modifier.clip(RoundedCornerShape(6.dp))
+                        pageEntrance(5, controlsVisible, 50)
+                            .clip(RoundedCornerShape(6.dp))
                             .background(Surf.copy(alpha = 0.85f))
                             .border(Tokens.CardBorder, Brd, RoundedCornerShape(6.dp))
                             .clickable {
@@ -689,9 +709,13 @@ private fun DriveHistoryList(
             // Group by date
             val grouped = remember(drives) { groupDrivesByDate(drives) }
 
+            var historyVisible by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) { historyVisible = true }
+
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                var globalIndex = 0
                 grouped.forEach { (dateLabel, groupDrives) ->
                     // Date section header
                     item(key = "header_$dateLabel") {
@@ -702,16 +726,32 @@ private fun DriveHistoryList(
                         )
                     }
 
-                    items(groupDrives, key = { it.id }) { drive ->
-                        SwipeDriveCard(
-                            drive = drive,
-                            prefs = prefs,
-                            isSelected = selectedId == drive.id,
-                            onClick = { onSelect(drive) },
-                            onExport = { onExport(drive) },
-                            onDelete = { onDelete(drive) },
-                            onRename = { onRename(drive) }
-                        )
+                    groupDrives.forEach { drive ->
+                        val index = globalIndex++
+                        item(key = drive.id) {
+                            val delay = (index * 50).coerceAtMost(400)
+                            val itemAlpha by animateFloatAsState(
+                                targetValue = if (historyVisible) 1f else 0f,
+                                animationSpec = tween(300, delayMillis = delay, easing = EaseOut),
+                                label = "driveA$index"
+                            )
+                            val itemOffsetY by animateDpAsState(
+                                targetValue = if (historyVisible) 0.dp else 16.dp,
+                                animationSpec = tween(300, delayMillis = delay, easing = EaseOut),
+                                label = "driveY$index"
+                            )
+                            Box(Modifier.graphicsLayer { alpha = itemAlpha; translationY = itemOffsetY.toPx() }) {
+                                SwipeDriveCard(
+                                    drive = drive,
+                                    prefs = prefs,
+                                    isSelected = selectedId == drive.id,
+                                    onClick = { onSelect(drive) },
+                                    onExport = { onExport(drive) },
+                                    onDelete = { onDelete(drive) },
+                                    onRename = { onRename(drive) }
+                                )
+                            }
+                        }
                     }
                 }
             }

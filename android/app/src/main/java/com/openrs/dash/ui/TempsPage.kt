@@ -6,6 +6,8 @@ import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -31,7 +33,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,12 +51,30 @@ import com.openrs.dash.ui.Tokens.CardBorder
 import com.openrs.dash.ui.Tokens.PagePad
 import com.openrs.dash.ui.Tokens.CardGap
 import com.openrs.dash.data.VehicleState
+import com.openrs.dash.ui.anim.SparklineData
 import com.openrs.dash.ui.anim.StaggeredColumn
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TEMPS PAGE
 // ═══════════════════════════════════════════════════════════════════════════
 @Composable fun TempsPage(vs: VehicleState, p: UserPrefs) {
+    // V1: sparkline ring buffers for oil temp + coolant (sampled at ~1 Hz —
+    // temps change slowly, higher rate just duplicates values)
+    val oilSpark = remember { SparklineData(60) }
+    val coolSpark = remember { SparklineData(60) }
+    val lastTempSample = remember { mutableLongStateOf(0L) }
+    SideEffect {
+        val now = vs.lastUpdate
+        if (now - lastTempSample.longValue >= 1000L) {
+            lastTempSample.longValue = now
+            if (vs.oilTempC > -90) oilSpark.push(vs.oilTempC.toFloat())
+            if (vs.coolantTempC > -90) coolSpark.push(vs.coolantTempC.toFloat())
+        }
+    }
+    val sparkKey = lastTempSample.longValue
+    val oilSnap = remember(sparkKey) { oilSpark.snapshot() }
+    val coolSnap = remember(sparkKey) { coolSpark.snapshot() }
+
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .padding(start = PagePad, end = PagePad, top = PagePad, bottom = PagePad + Tokens.NavBarHeight),
@@ -66,8 +89,11 @@ import com.openrs.dash.ui.anim.StaggeredColumn
         fun peakStr(peakC: Double) = if (peakC > -90) "\u25B2 ${p.displayTemp(peakC)}${p.tempLabel}" else ""
         fun avail(valueC: Double, tag: String) =
             tempAvailFor(valueC, vs.fieldLastUpdateMs[tag])
+        // Suppress WARMING on offline — the whole bus is silent, shouting
+        // "WARMING" on ten cells at once is noise, not information. Stale/
+        // unavailable are retained since those describe real decode history.
         fun subFor(a: TempAvail, fallback: String) = when (a) {
-            TempAvail.WARMING     -> "WARMING"
+            TempAvail.WARMING     -> if (vs.isConnected) "WARMING" else ""
             TempAvail.STALE       -> "STALE"
             TempAvail.UNAVAILABLE -> "N/A"
             TempAvail.AVAILABLE   -> fallback
@@ -91,12 +117,14 @@ import com.openrs.dash.ui.anim.StaggeredColumn
                 if (vs.oilTempC > -90) p.displayTemp(vs.oilTempC) else "— —", p.tempLabel,
                 vs.oilTempC.takeIf { it > -90 } ?: 0.0,
                 p.oilWarnC, p.oilCritC, subFor(oilA, "INFERRED"),
-                peakStr(vs.peakOilTempC), oilA),
+                peakStr(vs.peakOilTempC), oilA,
+                sparklineData = oilSnap.takeIf { it.size >= 2 }),
             TempSpec("COOLANT",
                 if (vs.coolantTempC > -90) p.displayTemp(vs.coolantTempC) else "— —", p.tempLabel,
                 vs.coolantTempC.takeIf { it > -90 } ?: 0.0,
                 p.coolWarnC, p.coolCritC, subFor(coolA, ""),
-                peakStr(vs.peakCoolantTempC), coolA),
+                peakStr(vs.peakCoolantTempC), coolA,
+                sparklineData = coolSnap.takeIf { it.size >= 2 }),
             TempSpec("INTAKE AIR",
                 if (vs.intakeTempC > -90) p.displayTemp(vs.intakeTempC) else "— —", p.tempLabel,
                 vs.intakeTempC.takeIf { it > -90 } ?: 0.0,
@@ -165,7 +193,7 @@ import com.openrs.dash.ui.anim.StaggeredColumn
 
         var detailExpanded by rememberSectionExpanded("THERMAL_DETAIL")
         SectionLabel("DETAIL", collapsible = true, expanded = detailExpanded, onToggle = { detailExpanded = !detailExpanded })
-        AnimatedVisibility(visible = detailExpanded, enter = expandVertically(), exit = shrinkVertically()) {
+        AnimatedVisibility(visible = detailExpanded, enter = expandVertically(spring(stiffness = Spring.StiffnessLow)), exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow))) {
             Column(verticalArrangement = Arrangement.spacedBy(CardGap)) {
                 val dRows = detailItems.chunked(columns)
                 dRows.forEach { row ->
@@ -227,9 +255,34 @@ data class TempSpec(
     val tempC: Double, val warnC: Double, val critC: Double, val sub: String,
     val peakDisplay: String = "",
     val avail: TempAvail = TempAvail.AVAILABLE,
+    val sparklineData: List<Float>? = null,
 )
 
 @Composable fun RtrBanner(vs: VehicleState, p: UserPrefs) {
+    // When offline, bypass the readiness computation entirely — we have no
+    // warmup data to trust. Show a neutral "awaiting CAN" chip instead of
+    // a misleading green RACE READY.
+    if (!vs.isConnected) {
+        Row(
+            Modifier.fillMaxWidth()
+                .background(
+                    Brush.horizontalGradient(listOf(Dim.copy(alpha = 0.08f), Dim.copy(alpha = 0.04f))),
+                    RoundedCornerShape(12.dp)
+                )
+                .border(CardBorder, Dim.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Box(Modifier.size(18.dp).clip(CircleShape).background(Dim.copy(alpha = 0.15f)))
+                Box(Modifier.size(10.dp).clip(CircleShape).background(Dim.copy(alpha = 0.6f)))
+            }
+            Spacer(Modifier.width(12.dp))
+            UIText("— AWAITING CAN —", 13.sp, Dim, FontWeight.SemiBold, 0.5.sp)
+        }
+        return
+    }
+
     val warmupDetail = vs.rtrStatus
     val isReady = warmupDetail == null
     val dotColor = if (isReady) Ok else Warn
@@ -383,6 +436,17 @@ data class TempSpec(
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 MonoLabel(spec.unit, 10.sp, Dim)
+            }
+            // V1: optional sparkline trend between unit label and bar
+            if (spec.sparklineData != null && spec.sparklineData.size >= 2) {
+                Spacer(Modifier.height(4.dp))
+                com.openrs.dash.ui.anim.Sparkline(
+                    data = spec.sparklineData,
+                    lineColor = tempColor,
+                    modifier = Modifier.fillMaxWidth().height(18.dp),
+                    strokeWidth = 1.dp,
+                    fillAlpha = 0.12f
+                )
             }
             Spacer(Modifier.height(8.dp))
             Box(Modifier.fillMaxWidth().height(3.dp).background(Surf3, RoundedCornerShape(2.dp))) {

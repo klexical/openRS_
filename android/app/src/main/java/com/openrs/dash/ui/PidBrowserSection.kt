@@ -1,6 +1,8 @@
 package com.openrs.dash.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
@@ -202,7 +204,8 @@ private fun ModuleRow(
         ) {
             MonoLabel(if (isExpanded) "▾" else "▸", 10.sp, Dim)
             Spacer(Modifier.width(6.dp))
-            MonoLabel(mod.id, 10.sp, accent, fontWeight = FontWeight.Medium)
+            // rc.2: module ID is a structural label, not a live value — tier-Mid
+            MonoLabel(mod.id, 10.sp, accentMid(), fontWeight = FontWeight.Medium)
             if (mod.canRequestId.isNotEmpty()) {
                 Spacer(Modifier.width(6.dp))
                 MonoLabel(
@@ -238,8 +241,8 @@ private fun ModuleRow(
 
         AnimatedVisibility(
             visible = isExpanded,
-            enter = expandVertically(),
-            exit = shrinkVertically()
+            enter = expandVertically(spring(stiffness = Spring.StiffnessLow)),
+            exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow))
         ) {
             val sorted = mod.pids.sortedByDescending { it.status == "monitored" }
             val monitoredPids = sorted.takeWhile { it.status == "monitored" }

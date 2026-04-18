@@ -27,6 +27,8 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -39,6 +41,8 @@ import com.openrs.dash.update.UpdateManager
 import com.openrs.dash.update.UpdateState
 import kotlinx.coroutines.launch
 import com.openrs.dash.ui.Tokens.CardBorder
+import com.openrs.dash.ui.anim.pageEntrance
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -103,7 +107,7 @@ private fun matchRank(query: String, text: String): Int {
 }
 
 @Composable
-fun SettingsDialog(onDismiss: () -> Unit) {
+fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
     val ctx = LocalContext.current
     val accent = LocalThemeAccent.current
     val current by UserPrefsStore.prefs.collectAsState()
@@ -132,6 +136,19 @@ fun SettingsDialog(onDismiss: () -> Unit) {
     var edgeShiftIntensity by remember { mutableStateOf(current.edgeShiftIntensity) }
     var edgeShiftRpm    by remember { mutableStateOf(current.edgeShiftRpm.toString()) }
     var updateChannel   by remember { mutableStateOf(current.updateChannel) }
+    // rc.2: the four "live-preview" prefs (theme mode, classic fonts, drive
+    // auto-zoom, paint colour) still apply immediately when the user toggles
+    // them — but RESET must be stageable too. Local state is the picker's
+    // source of truth; RESET only updates this state; SAVE commits it to
+    // UserPrefsStore. Without this, RESET was persisting defaults directly,
+    // so Cancel couldn't undo a reset.
+    var navTabIdentity  by remember { mutableStateOf(current.navTabIdentity) }
+    var livePillQuiet   by remember { mutableStateOf(current.livePillQuiet) }
+    var gearModeTint    by remember { mutableStateOf(current.gearModeTint) }
+    var themeModeLocal     by remember { mutableStateOf(current.themeMode) }
+    var classicFontsLocal  by remember { mutableStateOf(current.classicFonts) }
+    var driveAutoZoomLocal by remember { mutableStateOf(current.driveAutoZoom) }
+    var themeIdLocal       by remember { mutableStateOf(current.themeId) }
     var error           by remember { mutableStateOf<String?>(null) }
     var resetConfirm    by remember { mutableStateOf(false) }
 
@@ -160,10 +177,14 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     label = "Theme mode",
                     help = "AUTO follows the device clock (06:00–19:00 → DAY). ULTRA = pure-black AMOLED variant for night driving on OLED displays.",
                 ) {
+                    // Live-preview: toggling applies immediately so the user
+                    // can see the palette swap. Local state is the source of
+                    // truth so RESET can stage a change without committing.
                     SegmentedPicker(
                         options = listOf("NIGHT", "DAY", "AUTO", "ULTRA"),
-                        selected = current.themeMode,
+                        selected = themeModeLocal,
                         onSelect = { sel ->
+                            themeModeLocal = sel
                             UserPrefsStore.update(ctx) { it.copy(themeMode = sel) }
                             setThemeMode(runCatching { ThemeMode.valueOf(sel) }
                                 .getOrDefault(ThemeMode.NIGHT))
@@ -177,9 +198,10 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                 ) {
                     SegmentedPicker(
                         options = listOf("MODERN", "CLASSIC"),
-                        selected = if (current.classicFonts) "CLASSIC" else "MODERN",
+                        selected = if (classicFontsLocal) "CLASSIC" else "MODERN",
                         onSelect = { sel ->
                             val on = sel == "CLASSIC"
+                            classicFontsLocal = on
                             UserPrefsStore.update(ctx) { it.copy(classicFonts = on) }
                             setClassicFonts(on)
                         },
@@ -191,8 +213,9 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     help = "Collapses inputs and inflates the gear digit once rolling above ~10 mph.",
                 ) {
                     Switch(
-                        checked = current.driveAutoZoom,
+                        checked = driveAutoZoomLocal,
                         onCheckedChange = { on ->
+                            driveAutoZoomLocal = on
                             UserPrefsStore.update(ctx) { it.copy(driveAutoZoom = on) }
                         },
                         colors = SwitchDefaults.colors(
@@ -211,7 +234,13 @@ fun SettingsDialog(onDismiss: () -> Unit) {
             listOf("paint", "color", "accent", "nitrous", "blue", "red", "grey", "black"),
         ) {
             SettingsSection("THEME — RS PAINT COLOUR") {
-                ThemePicker(current)
+                ThemePicker(
+                    activeId = themeIdLocal,
+                    onSelect = { id ->
+                        themeIdLocal = id
+                        UserPrefsStore.update(ctx) { it.copy(themeId = id) }
+                    },
+                )
             }
         },
         NavSection(
@@ -279,6 +308,31 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                         )
                     }
                 }
+            }
+        },
+        NavSection(
+            SettingsCategory.DISPLAY,
+            "VISUAL POLISH",
+            listOf("polish", "quiet", "pill", "tab", "identity", "gear", "tint", "nav"),
+        ) {
+            SettingsSection("VISUAL POLISH") {
+                SettingsSwitchRow(
+                    label = "Quiet connected pill",
+                    help = "Dims the LIVE pill after 2 s of stable connection so it doesn't compete with telemetry.",
+                    checked = livePillQuiet, onCheckedChange = { livePillQuiet = it },
+                )
+                Spacer(Modifier.height(12.dp))
+                SettingsSwitchRow(
+                    label = "Gear mode tint",
+                    help = "Tints the GEAR label to match drive mode colour in Sport / Track / Drift.",
+                    checked = gearModeTint, onCheckedChange = { gearModeTint = it },
+                )
+                Spacer(Modifier.height(12.dp))
+                SettingsSwitchRow(
+                    label = "Nav tab identity colours",
+                    help = "Each bottom-nav tab uses a unique accent colour instead of the global paint accent.",
+                    checked = navTabIdentity, onCheckedChange = { navTabIdentity = it },
+                )
             }
         },
         NavSection(
@@ -731,6 +785,70 @@ fun SettingsDialog(onDismiss: () -> Unit) {
             }
 
         },
+        NavSection(
+            SettingsCategory.ABOUT,
+            "CUSTOM DASHBOARD",
+            listOf("custom", "dashboard", "gauge", "layout"),
+        ) {
+            val savedLayout = remember { AppSettings.loadCustomDash(ctx) }
+            val gaugeCount = savedLayout?.cells?.size ?: 0
+            Box(
+                Modifier.fillMaxWidth()
+                    .background(accent.copy(0.08f), RoundedCornerShape(8.dp))
+                    .border(CardBorder, accent.copy(0.25f), RoundedCornerShape(8.dp))
+                    .clickable { onCustomDash(); onDismiss() }
+                    .padding(14.dp)
+            ) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("Custom Dashboard", fontSize = 12.sp, color = Frost,
+                            fontFamily = ShareTechMono, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (gaugeCount > 0) "$gaugeCount gauges configured"
+                            else "Build a custom gauge layout",
+                            fontSize = 9.sp, color = Dim, fontFamily = ShareTechMono
+                        )
+                    }
+                    Text("\u25B6 OPEN", fontSize = 10.sp, color = accent,
+                        fontFamily = ShareTechMono, letterSpacing = 0.1.sp)
+                }
+            }
+        },
+        NavSection(
+            SettingsCategory.ABOUT,
+            "SAPPHIRE WEB DASHBOARD",
+            listOf("sapphire", "web", "browser", "analyse", "analyze"),
+        ) {
+            Box(
+                Modifier.fillMaxWidth()
+                    .background(accent.copy(0.06f), RoundedCornerShape(8.dp))
+                    .border(CardBorder, accent.copy(0.2f), RoundedCornerShape(8.dp))
+                    .clickable {
+                        val intent = Intent(Intent.ACTION_VIEW,
+                            Uri.parse("https://klexical.github.io/openRS_/"))
+                        ctx.startActivity(intent)
+                    }
+                    .padding(14.dp)
+            ) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("SAPPHIRE", fontSize = 11.sp, color = accent,
+                            fontFamily = ShareTechMono, fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.15.sp)
+                        Spacer(Modifier.weight(1f))
+                        Text("\u2197 OPEN", fontSize = 10.sp, color = accent,
+                            fontFamily = ShareTechMono, letterSpacing = 0.1.sp)
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text("Analyze trip & diagnostic data in your browser.",
+                        fontSize = 9.sp, color = Dim, fontFamily = ShareTechMono)
+                }
+            }
+        },
     )
 
     Dialog(
@@ -826,9 +944,13 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                             category = selectedCategory!!,
                             onBack = { selectedCategory = null },
                         )
+                        var catEntered by remember(selectedCategory) { mutableStateOf(false) }
+                        LaunchedEffect(selectedCategory) { catEntered = true }
                         val activeCategory = selectedCategory!!
-                        sections.filter { it.category == activeCategory }.forEach { section ->
-                            section.body()
+                        sections.filter { it.category == activeCategory }.forEachIndexed { idx, section ->
+                            Box(pageEntrance(idx, catEntered, staggerDelayMs = 30)) {
+                                section.body()
+                            }
                         }
                     }
                 }
@@ -883,6 +1005,11 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                 }
                 TextButton(
                     onClick = {
+                        // RESET stages defaults in local state only. Nothing
+                        // is written to UserPrefsStore here — the "hit SAVE to
+                        // apply" hint below the button is literal. This means
+                        // Cancel after RESET is a true no-op: the user's
+                        // previous settings remain intact.
                         host          = AppSettings.DEFAULT_HOST
                         port          = AppSettings.DEFAULT_PORT.toString()
                         speedUnit     = AppSettings.DEFAULT_SPEED_UNIT
@@ -890,6 +1017,8 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                         boostUnit     = AppSettings.DEFAULT_BOOST_UNIT
                         tireUnit      = AppSettings.DEFAULT_TIRE_UNIT
                         tireLowPsi    = AppSettings.DEFAULT_TIRE_LOW_PSI.toString()
+                        tireWarnPsi   = AppSettings.DEFAULT_TIRE_WARN_PSI.toString()
+                        tireHighPsi   = AppSettings.DEFAULT_TIRE_HIGH_PSI.toString()
                         screenOn      = AppSettings.DEFAULT_SCREEN_ON
                         autoReconnect = AppSettings.DEFAULT_AUTO_RECONNECT
                         reconnectSec  = AppSettings.DEFAULT_RECONNECT_INTERVAL.toString()
@@ -904,6 +1033,20 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                         edgeShiftIntensity = AppSettings.DEFAULT_EDGE_SHIFT_INTENSITY
                         edgeShiftRpm      = AppSettings.DEFAULT_EDGE_SHIFT_RPM.toString()
                         updateChannel = AppSettings.DEFAULT_UPDATE_CHANNEL
+                        navTabIdentity = AppSettings.DEFAULT_NAV_TAB_IDENTITY
+                        livePillQuiet  = AppSettings.DEFAULT_LIVE_PILL_QUIET
+                        gearModeTint   = AppSettings.DEFAULT_GEAR_MODE_TINT
+                        // Live-preview prefs also stage-only on RESET. Their
+                        // pickers read themeModeLocal / classicFontsLocal /
+                        // driveAutoZoomLocal / themeIdLocal, so the UI will
+                        // reflect the staged defaults immediately while the
+                        // actual applied theme stays at its current value
+                        // until SAVE.
+                        themeModeLocal     = AppSettings.DEFAULT_THEME_MODE
+                        classicFontsLocal  = AppSettings.DEFAULT_CLASSIC_FONTS
+                        driveAutoZoomLocal = AppSettings.DEFAULT_DRIVE_AUTO_ZOOM
+                        themeIdLocal       = AppSettings.DEFAULT_THEME_ID
+
                         error         = null
                         resetConfirm  = true
                     },
@@ -957,7 +1100,25 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                                     autoRecordDrives     = autoRecordDrives,
                                     maxSavedDrives       = maxDrives ?: AppSettings.DEFAULT_MAX_SAVED_DRIVES,
                                     updateChannel        = updateChannel,
+                                    navTabIdentity       = navTabIdentity,
+                                    livePillQuiet        = livePillQuiet,
+                                    gearModeTint         = gearModeTint,
+                                    // Live-preview prefs. Toggles already
+                                    // updated the store, but RESET only updated
+                                    // the local vars — so committing here is
+                                    // what makes RESET+SAVE actually apply.
+                                    themeMode            = themeModeLocal,
+                                    classicFonts         = classicFontsLocal,
+                                    driveAutoZoom        = driveAutoZoomLocal,
+                                    themeId              = themeIdLocal,
                                 )}
+                                // Ensure the runtime theme reflects whatever
+                                // the local state ended up at (covers the
+                                // RESET→SAVE path where the toggle handler
+                                // never ran).
+                                setThemeMode(runCatching { ThemeMode.valueOf(themeModeLocal) }
+                                    .getOrDefault(ThemeMode.NIGHT))
+                                setClassicFonts(classicFontsLocal)
                                 onDismiss()
                             }
                         }
@@ -1010,8 +1171,8 @@ private fun AboutStrip(
         }
         AnimatedVisibility(
             visible = expanded,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut(),
+            enter = expandVertically(spring(stiffness = Spring.StiffnessLow)) + fadeIn(),
+            exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut(),
         ) {
             Column(Modifier.padding(horizontal = 14.dp).padding(bottom = 14.dp)) {
                 AppUpdatesSection(
@@ -1061,29 +1222,25 @@ private fun SearchField(value: String, onValueChange: (String) -> Unit) {
 
 @Composable
 private fun CategoryGrid(onSelect: (SettingsCategory) -> Unit) {
+    // rc.2: single-column list (owner's-manual feel) replaces the 6-tile grid that
+    // the Daylight critique flagged as "Material Design DNA, generic" hierarchy.
     val entries = SettingsCategory.entries
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        entries.chunked(2).forEach { row ->
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                row.forEach { cat ->
-                    Box(Modifier.weight(1f)) {
-                        CategoryCard(cat, onClick = { onSelect(cat) })
-                    }
-                }
-                // pad row to full width if odd
-                if (row.size == 1) Spacer(Modifier.weight(1f))
+    var entered by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { entered = true }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        entries.forEachIndexed { idx, cat ->
+            Box(pageEntrance(idx, entered, staggerDelayMs = 30)) {
+                CategoryRow(cat, onClick = { onSelect(cat) })
             }
         }
     }
 }
 
 @Composable
-private fun CategoryCard(category: SettingsCategory, onClick: () -> Unit) {
-    val accent = LocalThemeAccent.current
-    Column(
+private fun CategoryRow(category: SettingsCategory, onClick: () -> Unit) {
+    val accentM = accentMid()
+    val accentD = accentDim()
+    Row(
         Modifier.fillMaxWidth()
             .background(
                 Brush.verticalGradient(listOf(Surf2, Surf.copy(alpha = 0.5f))),
@@ -1091,29 +1248,32 @@ private fun CategoryCard(category: SettingsCategory, onClick: () -> Unit) {
             )
             .border(CardBorder, Brd, RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+            .heightIn(min = 56.dp)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.width(3.dp).height(14.dp)
-                    .background(accent, RoundedCornerShape(1.5.dp)),
-            )
-            Spacer(Modifier.width(8.dp))
-            MonoLabel(category.label, 10.sp, accent, letterSpacing = 1.4.sp)
+        Box(
+            Modifier.width(3.dp).height(22.dp)
+                .background(accentM, RoundedCornerShape(1.5.dp)),
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            MonoLabel(category.label, 11.sp, accentM, letterSpacing = 1.4.sp)
+            Text(category.blurb, fontSize = 11.sp, color = Dim, fontFamily = ShareTechMono)
         }
-        Text(category.blurb, fontSize = 11.sp, color = Dim, fontFamily = ShareTechMono)
+        Text("›", fontSize = 22.sp, color = accentD, fontFamily = ShareTechMono,
+            modifier = Modifier.padding(start = 8.dp))
     }
 }
 
 @Composable
 private fun Breadcrumb(category: SettingsCategory, onBack: () -> Unit) {
-    val accent = LocalThemeAccent.current
+    val accentD = accentDim()
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onBack).padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("‹", fontSize = 20.sp, color = accent, fontFamily = ShareTechMono,
+        Text("‹", fontSize = 20.sp, color = accentD, fontFamily = ShareTechMono,
             modifier = Modifier.padding(end = 10.dp))
         Text("Settings", fontSize = 11.sp, color = Dim, fontFamily = ShareTechMono,
             letterSpacing = 0.08.sp)
@@ -1127,7 +1287,7 @@ private fun Breadcrumb(category: SettingsCategory, onBack: () -> Unit) {
 
 @Composable
 private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
-    val accent = LocalThemeAccent.current
+    val accentM = accentMid()
     Column(
         Modifier.fillMaxWidth()
             .background(
@@ -1140,10 +1300,10 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 Modifier.width(3.dp).height(14.dp)
-                    .background(accent, RoundedCornerShape(1.5.dp)),
+                    .background(accentM, RoundedCornerShape(1.5.dp)),
             )
             Spacer(Modifier.width(8.dp))
-            MonoLabel(title, 9.sp, accent, letterSpacing = 1.5.sp)
+            MonoLabel(title, 9.sp, accentM, letterSpacing = 1.5.sp)
         }
         Spacer(Modifier.height(14.dp))
         content()

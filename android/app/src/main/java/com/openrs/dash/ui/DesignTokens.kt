@@ -12,6 +12,7 @@ object Tokens {
     val PagePad       = 12.dp
     val NavBarHeight    = 45.dp
     val StatusBarHeight = 34.dp
+    val AnomalyStripHeight = 18.dp
     val CardGap         = 10.dp
     val SectionGap    = 14.dp
 

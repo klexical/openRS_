@@ -52,6 +52,7 @@ import com.openrs.dash.data.VehicleState
 import com.openrs.dash.ui.anim.CarDiagram
 import com.openrs.dash.ui.anim.GForcePlot
 import com.openrs.dash.ui.anim.RingBuffer
+import com.openrs.dash.ui.anim.SteeringArc
 import com.openrs.dash.ui.anim.WHEEL_ANCHORS
 import com.openrs.dash.ui.anim.tireStatusColor
 import com.openrs.dash.ui.Tokens.CardBorder
@@ -97,6 +98,14 @@ import kotlin.math.roundToInt
     val deltaLR = tpmsDeltaText(vs.tirePressLR, vs.tireStartLR)
     val deltaRR = tpmsDeltaText(vs.tirePressRR, vs.tireStartRR)
 
+    // Tire TPMS is polled by an OBD session, so when CAN is offline there's
+    // nothing to warm up. Collapse the WARMING state to AVAILABLE (→ blank sub
+    // label) so we don't shout "WARMING" four times on every offline view.
+    fun tireAvail(hasReading: Boolean, lastMs: Long?): TempAvail {
+        val a = scalarAvailFor(hasReading, lastMs)
+        return if (!vs.isConnected && a == TempAvail.WARMING) TempAvail.AVAILABLE else a
+    }
+
     Column(
         Modifier.fillMaxWidth()
             .background(Surf, RoundedCornerShape(16.dp))
@@ -133,7 +142,7 @@ import kotlin.math.roundToInt
                         }) {
                             NeonTireCard("FL", vs.tirePressLF, p, lowThreshold, flColor,
                                 vs.wheelSpeedFL, vs.tireTempLF, deltaLF,
-                                avail = scalarAvailFor(vs.tirePressLF >= 0, vs.fieldLastUpdateMs["tirePressLF"]))
+                                avail = tireAvail(vs.tirePressLF >= 0, vs.fieldLastUpdateMs["tirePressLF"]))
                         }
                         Box(Modifier.onGloballyPositioned {
                             val r = it.positionInRoot()
@@ -141,7 +150,7 @@ import kotlin.math.roundToInt
                         }) {
                             NeonTireCard("RL", vs.tirePressLR, p, lowThreshold, rlColor,
                                 vs.wheelSpeedRL, vs.tireTempLR, deltaLR,
-                                avail = scalarAvailFor(vs.tirePressLR >= 0, vs.fieldLastUpdateMs["tirePressLR"]))
+                                avail = tireAvail(vs.tirePressLR >= 0, vs.fieldLastUpdateMs["tirePressLR"]))
                         }
                     }
 
@@ -167,7 +176,7 @@ import kotlin.math.roundToInt
                         }) {
                             NeonTireCard("FR", vs.tirePressRF, p, lowThreshold, frColor,
                                 vs.wheelSpeedFR, vs.tireTempRF, deltaRF,
-                                avail = scalarAvailFor(vs.tirePressRF >= 0, vs.fieldLastUpdateMs["tirePressRF"]))
+                                avail = tireAvail(vs.tirePressRF >= 0, vs.fieldLastUpdateMs["tirePressRF"]))
                         }
                         Box(Modifier.onGloballyPositioned {
                             val r = it.positionInRoot()
@@ -175,7 +184,7 @@ import kotlin.math.roundToInt
                         }) {
                             NeonTireCard("RR", vs.tirePressRR, p, lowThreshold, rrColor,
                                 vs.wheelSpeedRR, vs.tireTempRR, deltaRR,
-                                avail = scalarAvailFor(vs.tirePressRR >= 0, vs.fieldLastUpdateMs["tirePressRR"]))
+                                avail = tireAvail(vs.tirePressRR >= 0, vs.fieldLastUpdateMs["tirePressRR"]))
                         }
                     }
                 }
@@ -318,6 +327,7 @@ private fun NeonTireCard(
         else -> label
     }
     val speedStr = com.openrs.dash.ui.anim.formatWheelSpeed(wheelSpeedKph, p)
+    val animTireTemp by animateColorAsState(tireTempColor(tempC), tween(400), label = "tireTC")
 
     val bgColor = if (isLow) Orange.copy(alpha = 0.06f) else Surf2
     val borderColor = if (isLow) Orange.copy(alpha = 0.45f) else Brd
@@ -370,7 +380,7 @@ private fun NeonTireCard(
             MonoText(
                 p.displayTemp(tempC) + p.tempLabel,
                 14.sp,
-                tireTempColor(tempC)
+                animTireTemp
             )
         }
 
@@ -382,7 +392,7 @@ private fun NeonTireCard(
         if (hasTemp) {
             Spacer(Modifier.height(5.dp))
             val tempFraction = ((tempC - 0.0) / 60.0).toFloat().coerceIn(0.05f, 1f)
-            val tempColor = tireTempColor(tempC)
+            val tempColor = animTireTemp
             Box(
                 Modifier.fillMaxWidth()
                     .height(3.dp)
@@ -431,12 +441,18 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
     val rightEngageTarget = (vs.awdRightTorque / clutchRefNm).toFloat().coerceIn(0f, 1f)
     val leftEngage by animateFloatAsState(
         targetValue = leftEngageTarget,
-        animationSpec = tween(durationMillis = 300),
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
         label = "leftEngage"
     )
     val rightEngage by animateFloatAsState(
         targetValue = rightEngageTarget,
-        animationSpec = tween(durationMillis = 300),
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
         label = "rightEngage"
     )
 
@@ -462,10 +478,6 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
     SectionLabel("AWD — GKN TWINSTER")
 
     // ── Rear axle diagram ──
-    // Canvas height + midY bias give room for the PTU to sit off-center
-    // (representing its real location on the transaxle, not on the propshaft
-    // centerline). A longer, angled propshaft reads as a drivetrain schematic
-    // rather than two stacked boxes.
     Canvas(
         Modifier.fillMaxWidth().height(156.dp)
     ) {
@@ -491,9 +503,7 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
         val rduRight = rduX + rduW / 2f
         val cltLX = rduLeft - 30.dp.toPx()
         val cltRX = rduRight + 30.dp.toPx()
-        // PTU sits off-center on the left, at the transaxle. The angled
-        // propshaft below makes the spatial relationship clear.
-        val ptuCenterX = rduX - 52.dp.toPx()
+        val ptuCenterX = rduX
         val ptuY = midY - rduH / 2f - 36.dp.toPx()
 
         // ── Torque arrows (behind components) ──
@@ -548,11 +558,9 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
         drawLine(Dim, Offset(cltRX + cltW / 2f, midY),
             Offset(rightWheelX - wheelR, midY), strokeWidth = shaftStroke)
 
-        // ── Propshaft (angled: PTU right edge → RDU top-center) ──
-        // Angled rather than vertical so PTU and RDU read as distinct
-        // components rather than as one box stacked on the other.
+        // ── Propshaft (vertical: PTU bottom-center → RDU top-center) ──
         drawLine(Dim,
-            Offset(ptuCenterX + ptuW / 2f, ptuY + ptuH / 2f - 2.dp.toPx()),
+            Offset(ptuCenterX, ptuY + ptuH / 2f),
             Offset(rduX, midY - rduH / 2f),
             strokeWidth = propStroke)
 
@@ -583,7 +591,7 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
                 ptuY - ptuTempM.size.height / 2f))
         }
 
-        // F/R split label above PTU (follows PTU's new off-center position)
+        // F/R split label above PTU
         val splitM = textMeasurer.measure(splitLabel, tempStyle.copy(color = Frost.copy(alpha = 0.7f)))
         drawText(splitM, topLeft = Offset(
             ptuCenterX - splitM.size.width / 2f,
@@ -787,10 +795,19 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
             peakLatG = vs.peakLateralG.toFloat(),
             peakLonG = vs.peakLongitudinalG.toFloat(),
             modifier = gPlotModifier,
-            dotColor = accent
+            dotColor = accent,
+            isConnected = vs.isConnected
         )
 
-        Spacer(Modifier.height(8.dp))
+        // V2: Steering angle arc — semicircle below G-force plot
+        SteeringArc(
+            angle = vs.steeringAngle.toFloat(),
+            modifier = Modifier.fillMaxWidth(0.4f).height(28.dp)
+                .align(Alignment.CenterHorizontally),
+            isConnected = vs.isConnected
+        )
+
+        Spacer(Modifier.height(4.dp))
 
         // Condensed numeric readout
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

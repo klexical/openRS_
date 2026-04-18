@@ -64,7 +64,7 @@ class HudOverlayService : Service() {
             TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value, resources.displayMetrics).toInt()
         }
 
-        val mono: Typeface = ResourcesCompat.getFont(this, R.font.share_tech_mono)
+        val mono: Typeface = ResourcesCompat.getFont(this, R.font.jetbrains_mono_regular)
             ?: Typeface.MONOSPACE
 
         // ── Background shape ─────────────────────────────────────────────

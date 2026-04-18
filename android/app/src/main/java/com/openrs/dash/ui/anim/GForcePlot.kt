@@ -1,8 +1,15 @@
 package com.openrs.dash.ui.anim
 
+import androidx.compose.animation.core.EaseOut
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -49,8 +56,12 @@ fun GForcePlot(
     peakLatG: Float,
     peakLonG: Float,
     modifier: Modifier = Modifier,
-    dotColor: Color = LocalThemeAccent.current
+    dotColor: Color = LocalThemeAccent.current,
+    // When false, the plot fades to a dimmed skeleton + centred "awaiting data"
+    // hint, so a parked-at-zero plot doesn't read as a real live trace.
+    isConnected: Boolean = true
 ) {
+    val skeletonAlpha = if (isConnected) 1f else 0.45f
     val accent = LocalThemeAccent.current
     val textMeasurer = rememberTextMeasurer()
 
@@ -81,6 +92,14 @@ fun GForcePlot(
             fontWeight = FontWeight.Normal
         )
     }
+
+    var trailStarted by remember { mutableStateOf(false) }
+    LaunchedEffect(trail) { if (trail.isNotEmpty()) trailStarted = true }
+    val trailEntrance by animateFloatAsState(
+        targetValue = if (trailStarted) 1f else 0f,
+        animationSpec = tween(600, easing = EaseOut),
+        label = "trailFade"
+    )
 
     Canvas(modifier) {
         // ── Auto-scale ─────────────────────────────────────────────
@@ -123,7 +142,7 @@ fun GForcePlot(
         val scaleY = (plotH / 2f) / maxG
 
         // ── Grid lines (dense, ~8-10 divisions per axis) ──────────
-        val gridColor = Dim.copy(alpha = 0.30f)
+        val gridColor = Dim.copy(alpha = 0.30f * skeletonAlpha)
         val gridStroke = 0.5.dp.toPx()
         // Target ~8-10 lines per half-axis: pick step so totalLines ≈ 8
         val step = when {
@@ -148,7 +167,7 @@ fun GForcePlot(
         }
 
         // ── Plot border (outer edge lines) ────────────────────────
-        val borderColor = Dim.copy(alpha = 0.30f)
+        val borderColor = Dim.copy(alpha = 0.30f * skeletonAlpha)
         val borderStroke = 1.dp.toPx()
         drawLine(borderColor, Offset(plotLeft, plotTop), Offset(plotRight, plotTop), borderStroke)       // top
         drawLine(borderColor, Offset(plotLeft, plotBottom), Offset(plotRight, plotBottom), borderStroke)  // bottom
@@ -156,13 +175,15 @@ fun GForcePlot(
         drawLine(borderColor, Offset(plotRight, plotTop), Offset(plotRight, plotBottom), borderStroke)    // right
 
         // ── Center crosshair ──────────────────────────────────────
-        val crossColor = Dim.copy(alpha = 0.50f)
+        val crossColor = Dim.copy(alpha = 0.50f * skeletonAlpha)
         val crossStroke = 2.5.dp.toPx()
         drawLine(crossColor, Offset(cx, plotTop), Offset(cx, plotBottom), crossStroke)
         drawLine(crossColor, Offset(plotLeft, cy), Offset(plotRight, cy), crossStroke)
 
         // ── Corner brackets ───────────────────────────────────────
-        val bracketColor = accent.copy(alpha = 0.4f)
+        // rc.2: neutral (not accent) so brackets read as structural, not an "error state"
+        // on any of the 6 paints. Uses Dim rather than accent for cross-paint consistency.
+        val bracketColor = Dim.copy(alpha = 0.55f * skeletonAlpha)
         val bracketStroke = 1.5.dp.toPx()
         val arm = 12.dp.toPx()
         // Top-left
@@ -237,22 +258,56 @@ fun GForcePlot(
             drawText(peakLonM, topLeft = Offset(plotRight - peakLonM.size.width, curBotY))
         }
 
+        // ── Awaiting-data hint — center of plot when disconnected ──
+        if (!isConnected) {
+            val hintStyle = TextStyle(
+                fontFamily = JetBrainsMonoFamily,
+                fontSize = 10.sp,
+                color = Dim.copy(alpha = textMutedAlpha(0.7f)),
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center
+            )
+            val hintM = textMeasurer.measure("— AWAITING DATA —", hintStyle)
+            drawText(
+                hintM,
+                topLeft = Offset(cx - hintM.size.width / 2f, cy - hintM.size.height / 2f)
+            )
+            return@Canvas
+        }
+
         // ── Trail dots ────────────────────────────────────────────
+        // V5: directional tinting — warm for left turns, cool for right,
+        // green for acceleration, red for braking. Base color age-fades
+        // from tinted → Frost as before.
         val trailSize = trail.size
         if (trailSize > 0) {
             val minDotR = 2.dp.toPx()
             val maxDotR = 3.5.dp.toPx()
             val haloThreshold = trailSize * 0.7f
+            // Pre-compute direction tint colors
+            val warmTint = Color(0xFFFF6D00)   // orange — left turns
+            val coolTint = Color(0xFF448AFF)   // blue — right turns
+            val accelTint = Color(0xFF00E676)  // green — acceleration
+            val brakeTint = Color(0xFFFF1744)  // red — braking
 
             for (i in trail.indices) {
                 val (tLat, tLon) = trail[i]
                 val ageFrac = i.toFloat() / trailSize
 
-                val dotAlpha = 0.15f + ageFrac * 0.65f
+                val dotAlpha = (0.15f + ageFrac * 0.65f) * trailEntrance
                 val dotR = minDotR + ageFrac * (maxDotR - minDotR)
 
+                // V5: pick tint from dominant axis direction
+                val absLat = abs(tLat); val absLon = abs(tLon)
+                val dirTint = if (absLat > absLon) {
+                    if (tLat < 0) warmTint else coolTint   // lateral dominant
+                } else {
+                    if (tLon > 0) accelTint else brakeTint // longitudinal dominant
+                }
+                // Blend: 30% direction tint + 70% original age gradient
+                val baseTinted = androidx.compose.ui.graphics.lerp(dotColor, dirTint, 0.3f)
                 val blendedColor = androidx.compose.ui.graphics.lerp(
-                    dotColor.copy(alpha = dotAlpha),
+                    baseTinted.copy(alpha = dotAlpha),
                     Frost.copy(alpha = dotAlpha),
                     ageFrac
                 )

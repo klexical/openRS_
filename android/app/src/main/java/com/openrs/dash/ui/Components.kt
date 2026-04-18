@@ -13,12 +13,18 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.EaseOutCubic
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
@@ -44,6 +50,7 @@ import androidx.compose.ui.graphics.Color
 import com.openrs.dash.ui.anim.Sparkline
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -64,12 +71,14 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
 // SHARED UI COMPONENTS — used across two or more tab pages
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Neon accent divider — replaces solid Brd horizontal rules. */
+/** Neon accent divider — replaces solid Brd horizontal rules.
+ *  Dividers are structural chrome, so this uses the dim accent tier — the
+ *  paint color reads as texture, not as a stateful element. */
 @Composable fun NeonDivider(modifier: Modifier = Modifier) {
-    val accent = LocalThemeAccent.current
+    val dim = accentDim()
     Box(modifier.fillMaxWidth().height(1.dp).background(
         Brush.horizontalGradient(listOf(
-            Color.Transparent, accent.copy(alpha = 0.3f), accent.copy(alpha = 0.15f), Color.Transparent
+            Color.Transparent, dim, dim.copy(alpha = dim.alpha * 0.5f), Color.Transparent
         ))
     ))
 }
@@ -80,13 +89,18 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
     modifier: Modifier = Modifier,
     collapsible: Boolean = false,
     expanded: Boolean = true,
-    onToggle: (() -> Unit)? = null
+    onToggle: (() -> Unit)? = null,
+    badge: String? = null,
+    badgeColor: Color? = null
 ) {
     Row(
         modifier
-            .padding(bottom = 8.dp)
             .then(if (collapsible && onToggle != null)
-                Modifier.clickable { onToggle() } else Modifier),
+                Modifier.clickable { onToggle() } else Modifier)
+            // rc.2 tap-target: collapsible section rows get a 44dp height
+            // minimum so the chevron + label hit zone meets Material AA.
+            .then(if (collapsible) Modifier.heightIn(min = 44.dp) else Modifier)
+            .padding(bottom = 8.dp, top = if (collapsible) 4.dp else 0.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -97,7 +111,17 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
             )
             MonoLabel("\u25BE", 9.sp, Dim, modifier = Modifier.graphicsLayer { rotationZ = rotation })
         }
-        MonoLabel(text, 9.sp, Dim, letterSpacing = 0.3.sp)
+        MonoLabel(text, 8.sp, Dim.copy(alpha = textMutedAlpha(0.65f)), letterSpacing = 0.5.sp)
+        if (badge != null) {
+            val bc = badgeColor ?: Warn
+            Box(
+                Modifier
+                    .background(bc.copy(alpha = 0.10f), RoundedCornerShape(4.dp))
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            ) {
+                MonoLabel(badge, 7.sp, bc, letterSpacing = 0.3.sp)
+            }
+        }
         NeonDivider(Modifier.weight(1f))
     }
 }
@@ -112,6 +136,7 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
     modifier: Modifier = Modifier,
     indicator: BandPattern = BandPattern.NONE,
     sub: String = "",
+    sparklineData: List<Float>? = null,
 ) {
     val isPlaceholder = value == "— —"
     val displayColor = if (isPlaceholder) {
@@ -138,16 +163,32 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
             }
         }
         Spacer(Modifier.height(3.dp))
-        AggressiveNum(value, 14.sp, displayColor)
+        AnimatedContent(
+            targetState = value,
+            transitionSpec = { fadeIn(tween(120)) togetherWith fadeOut(tween(120)) },
+            label = "cellVal"
+        ) { v -> AggressiveNum(v, 14.sp, displayColor) }
+        if (sparklineData != null && sparklineData.size >= 2) {
+            Spacer(Modifier.height(2.dp))
+            Sparkline(
+                data = sparklineData,
+                lineColor = valueColor,
+                modifier = Modifier.fillMaxWidth().height(16.dp),
+                strokeWidth = 1.dp,
+                fillAlpha = 0.10f
+            )
+        }
         if (sub.isNotEmpty()) {
             Spacer(Modifier.height(1.dp))
-            MonoLabel(sub, 8.sp, Dim.copy(alpha = textMutedAlpha(0.6f)), letterSpacing = 0.2.sp)
+            MonoLabel(sub, 7.sp, Dim.copy(alpha = textMutedAlpha(0.6f) * 0.75f), letterSpacing = 0.2.sp)
         }
     }
 }
 
 /** Hero card — large Orbitron number for BOOST / SPEED / RPM.
- *  @param valueFraction 0.0–1.0 drives glow intensity (0=idle, 1=max). */
+ *  @param valueFraction 0.0–1.0 drives glow intensity (0=idle, 1=max).
+ *  @param valueFontSize override to promote one card above its peers (rc.2:
+ *  BOOST on DRIVE tab is the star — size carries the hierarchy). */
 @Composable fun HeroCard(
     unit: String,
     value: String,
@@ -159,6 +200,7 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
     sparklineData: List<Float>? = null,
     valueFraction: Float = 0f,
     peakHoldValue: String? = null,
+    valueFontSize: androidx.compose.ui.unit.TextUnit = 26.sp,
 ) {
     val accent = LocalThemeAccent.current
     val animFrac by animateFloatAsState(valueFraction.coerceIn(0f, 1f),
@@ -185,18 +227,22 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
         }
     } else Modifier
     val shownValue = if (peakHoldActive && peakHoldValue != null) peakHoldValue else value
+    // rc.2 rhythm: unit (Dim, small) \u00B7 value (hero, bold) \u00B7 label (accentMid,
+    // uppercase-tracked). +4dp vertical breathing room at the top and bottom
+    // so the three rows read as distinct rather than crammed.
+    val accentMidTier = accentMid()
     Column(
         modifier
             .then(peakModifier)
-            .cardGlow(color = borderAccent ?: accent, cornerRadius = Tokens.HeroRadius)
+            .cardGlow(color = borderAccent ?: accent, cornerRadius = Tokens.HeroRadius, tint = cardSpecularTint())
             .background(Surf2, HeroShape)
             .border(CardBorder, Brd.copy(alpha = borderAlpha(0.15f)), HeroShape)
-            .padding(horizontal = HeroInnerH, vertical = HeroInnerV),
+            .padding(horizontal = HeroInnerH, vertical = HeroInnerV + 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        MonoLabel(if (peakHoldActive) "PEAK · $unit" else unit, 8.sp,
-            if (peakHoldActive) accent else Dim, letterSpacing = 0.18.sp)
-        Spacer(Modifier.height(4.dp))
+        MonoLabel(if (peakHoldActive) "PEAK · $unit" else unit, 7.sp,
+            (if (peakHoldActive) accent else Dim).copy(alpha = 0.75f), letterSpacing = 0.18.sp)
+        Spacer(Modifier.height(6.dp))
         Box(
             Modifier.fillMaxWidth().then(if (hasData) Modifier.drawBehind {
                 // Outer diffuse glow
@@ -218,7 +264,7 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
             } else Modifier),
             contentAlignment = Alignment.Center
         ) {
-            HeroNum(shownValue, 26.sp, valueColor, Modifier.fillMaxWidth())
+            HeroNum(shownValue, valueFontSize, valueColor, Modifier.fillMaxWidth())
         }
         if (peak.isNotEmpty()) {
             MonoText(peak, 9.sp, accent, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
@@ -229,7 +275,8 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
             Spacer(Modifier.height(4.dp))
             Sparkline(sparklineData, valueColor, Modifier.fillMaxWidth().height(22.dp).padding(horizontal = 4.dp))
         }
-        MonoLabel(label, 8.sp, Dim, letterSpacing = 0.15.sp)
+        Spacer(Modifier.height(4.dp))
+        MonoLabel(label, 8.sp, accentMidTier, letterSpacing = 0.4.sp, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -244,7 +291,9 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
     sparklineData: List<Float>? = null,
     criticalPulse: Boolean = false
 ) {
-    val hasData = fraction > 0f
+    val animFrac by animateFloatAsState(fraction.coerceIn(0f, 1f),
+        tween(240, easing = EaseOutCubic), label = "barFrac")
+    val hasData = animFrac > 0f
     // Slow 1.4s Warn-tinted pulse on the card background when critical (e.g., fuel <10%).
     val pulseAlpha = if (criticalPulse) {
         val t = rememberInfiniteTransition(label = "critPulse")
@@ -276,13 +325,15 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
                 .background(Surf3, RoundedCornerShape(2.dp))
         ) {
             Box(
-                Modifier.fillMaxWidth(fraction.coerceIn(0f, 1f)).fillMaxHeight()
+                Modifier.fillMaxWidth(animFrac).fillMaxHeight()
                     .background(barBrush, RoundedCornerShape(2.dp))
             )
         }
         if (sparklineData != null && sparklineData.size >= 2) {
             Spacer(Modifier.height(6.dp))
-            Sparkline(sparklineData, barGlowColor ?: Accent, Modifier.fillMaxWidth().height(28.dp))
+            // Fall back to mid-tier accent so the default trend line reads as
+            // supporting context, not a stateful element.
+            Sparkline(sparklineData, barGlowColor ?: accentMid(), Modifier.fillMaxWidth().height(28.dp))
         }
     }
 }

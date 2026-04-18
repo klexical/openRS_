@@ -1,14 +1,23 @@
 package com.openrs.dash.ui
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.EaseOut
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -23,6 +32,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -33,6 +48,8 @@ import com.openrs.dash.can.DriveCommandResult
 import com.openrs.dash.can.FirmwareCommandSender
 import com.openrs.dash.can.driveModePending
 import com.openrs.dash.can.executeDriveModeChange
+import com.openrs.dash.can.modeChangeBreath
+import com.openrs.dash.can.successHapticFor
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.ui.Tokens.PagePad
@@ -43,6 +60,12 @@ import kotlinx.coroutines.launch
 /**
  * Quick-access drive mode dock that drops down from the header.
  * Shows 4 mode buttons (N/S/T/D) with the same confirmation flow as MorePage.
+ *
+ * rc.2 adds a thin bottom progress bar on the pending button, a subtle
+ * mode-color shimmer sweep while busy, and a mode-specific success haptic
+ * reinforcing that the car actually switched. The confirmed state flashes
+ * the button fill to the mode color; the ambient breath (header underline +
+ * nav indicator) carries the visual follow-through.
  */
 @Composable fun DriveModeDock(
     vs: VehicleState,
@@ -55,6 +78,7 @@ import kotlinx.coroutines.launch
     val accent = LocalThemeAccent.current
     val scope = rememberCoroutineScope()
     var pendingDriveMode by remember { mutableStateOf<DriveMode?>(null) }
+    var confirmedMode by remember { mutableStateOf<DriveMode?>(null) }
 
     // Staggered entrance — each button delays 40ms
     val modes = remember {
@@ -77,6 +101,17 @@ import kotlinx.coroutines.launch
         }
     }
 
+    // Row-wide shimmer while any mode is pending — mode-color linear sweep.
+    val shimmerTransition = rememberInfiniteTransition(label = "dockShimmer")
+    val shimmerOffset by shimmerTransition.animateFloat(
+        initialValue = -0.4f, targetValue = 1.4f,
+        animationSpec = infiniteRepeatable(
+            tween(1400, easing = LinearEasing),
+            RepeatMode.Restart
+        ),
+        label = "dockShimmerA"
+    )
+
     Column(
         Modifier.fillMaxWidth()
             .background(Surf2)
@@ -96,8 +131,41 @@ import kotlinx.coroutines.launch
                     else            -> accent
                 }
                 val isPending = pendingDriveMode == mode && !isActive
+                val isConfirmed = confirmedMode == mode
 
                 val dimForBusy = pendingDriveMode != null && !isPending
+                val buttonShape = RoundedCornerShape(10.dp)
+
+                val bgTarget = when {
+                    isConfirmed -> modeAccent.copy(0.20f)
+                    isActive    -> modeAccent.copy(0.1f)
+                    isPending   -> modeAccent.copy(0.05f)
+                    else        -> Surf3
+                }
+                val animBg by animateColorAsState(bgTarget, tween(250), label = "dockBg$index")
+
+                val borderTarget = when {
+                    isActive || isPending -> modeAccent
+                    canControl            -> Brd
+                    else                  -> Brd.copy(alpha = 0.5f)
+                }
+                val animBorder by animateColorAsState(borderTarget, tween(250), label = "dockBrd$index")
+
+                val textTarget = when {
+                    isActive   -> modeAccent
+                    isPending  -> modeAccent.copy(0.6f)
+                    canControl -> Frost
+                    else       -> Dim
+                }
+                val animText by animateColorAsState(textTarget, tween(250), label = "dockTxt$index")
+
+                val labelTarget = when {
+                    isActive || isConfirmed -> modeAccent
+                    isPending               -> modeAccent.copy(0.8f)
+                    else                    -> Dim
+                }
+                val animLabel by animateColorAsState(labelTarget, tween(250), label = "dockLbl$index")
+
                 Column(
                     Modifier.weight(1f)
                         .graphicsLayer {
@@ -105,77 +173,99 @@ import kotlinx.coroutines.launch
                             translationY = offsets[index].value * density
                         }
                         .then(
-                            if (isActive) Modifier.border(CardBorder, modeAccent.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                            if (isActive) Modifier.border(CardBorder, modeAccent.copy(alpha = 0.35f), buttonShape)
                             else Modifier
                         )
-                        .background(
-                            when {
-                                isActive  -> modeAccent.copy(0.1f)
-                                isPending -> modeAccent.copy(0.05f)
-                                else      -> Surf3
-                            },
-                            RoundedCornerShape(10.dp)
-                        )
+                        .background(animBg, buttonShape)
                         .border(
                             if (isPending) 1.5.dp else 1.dp,
-                            when {
-                                isActive || isPending -> modeAccent
-                                canControl            -> Brd
-                                else                  -> Brd.copy(alpha = 0.5f)
-                            },
-                            RoundedCornerShape(10.dp)
+                            animBorder,
+                            buttonShape
                         )
+                        // rc.2: mode-color shimmer sweeps the pending button while busy.
+                        .drawBehind {
+                            if (isPending) {
+                                val sweepX = shimmerOffset * size.width
+                                val band = size.width * 0.25f
+                                drawRect(
+                                    brush = Brush.horizontalGradient(
+                                        0f to Color.Transparent,
+                                        0.5f to modeAccent.copy(alpha = 0.18f),
+                                        1f to Color.Transparent,
+                                        startX = sweepX - band,
+                                        endX = sweepX + band
+                                    )
+                                )
+                            }
+                        }
                         .pressClick(enabled = canControl && firmwareApi != null && !isActive && pendingDriveMode == null) {
                             haptic.performHapticFeedback(HapticFeedbackType.Confirm)
                             pendingDriveMode = mode
                             driveModePending.value = mode
+                            confirmedMode = null
                             scope.launch {
-                                when (val r = executeDriveModeChange(firmwareApi!!, mode, vs.driveMode)) {
-                                    is DriveCommandResult.Success -> {
-                                        haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                                        pendingDriveMode = null
-                                        driveModePending.value = null
-                                        delay(400)
-                                        onDismiss()
-                                        return@launch
+                                try {
+                                    when (val r = executeDriveModeChange(firmwareApi!!, mode, vs.driveMode)) {
+                                        is DriveCommandResult.Success -> {
+                                            haptic.performHapticFeedback(successHapticFor(mode))
+                                            confirmedMode = mode
+                                            modeChangeBreath.value = mode
+                                            // Dwell on the confirmed state, then clear the breath
+                                            // and dismiss. Keeping both delays in the outer coroutine
+                                            // ensures they share the same cancellation scope as the
+                                            // finally{} cleanup below.
+                                            delay(1_200)
+                                            if (modeChangeBreath.value == mode) modeChangeBreath.value = null
+                                            delay(300)
+                                            onDismiss()
+                                        }
+                                        is DriveCommandResult.Busy -> {
+                                            haptic.performHapticFeedback(HapticFeedbackType.Reject)
+                                            snackbarHostState.showSnackbar("Mode change in progress \u2014 please wait")
+                                        }
+                                        is DriveCommandResult.Failed -> {
+                                            haptic.performHapticFeedback(HapticFeedbackType.Reject)
+                                            snackbarHostState.showSnackbar(r.message)
+                                        }
+                                        is DriveCommandResult.CorrectionFailed -> {
+                                            haptic.performHapticFeedback(HapticFeedbackType.Reject)
+                                            snackbarHostState.showSnackbar("Mode correction failed \u2014 try again manually")
+                                        }
+                                        is DriveCommandResult.NoConfirmation -> {
+                                            haptic.performHapticFeedback(HapticFeedbackType.Reject)
+                                            snackbarHostState.showSnackbar("Mode change didn\u2019t take effect \u2014 try again")
+                                        }
                                     }
-                                    is DriveCommandResult.Busy -> {
-                                        haptic.performHapticFeedback(HapticFeedbackType.Reject)
-                                        snackbarHostState.showSnackbar("Mode change in progress \u2014 please wait")
-                                    }
-                                    is DriveCommandResult.Failed -> {
-                                        haptic.performHapticFeedback(HapticFeedbackType.Reject)
-                                        snackbarHostState.showSnackbar(r.message)
-                                    }
-                                    is DriveCommandResult.CorrectionFailed -> {
-                                        haptic.performHapticFeedback(HapticFeedbackType.Reject)
-                                        snackbarHostState.showSnackbar("Mode correction failed \u2014 try again manually")
-                                    }
-                                    is DriveCommandResult.NoConfirmation -> {
-                                        haptic.performHapticFeedback(HapticFeedbackType.Reject)
-                                        snackbarHostState.showSnackbar("Mode change didn\u2019t take effect \u2014 try again")
-                                    }
+                                } finally {
+                                    // Always release the in-flight globals so the header MODE pill
+                                    // and nav indicator can't get stuck if the dock composition is
+                                    // disposed (and this scope cancelled) mid-command. Only clear
+                                    // modeChangeBreath if we own it — a rapid successor tap may
+                                    // have already set it to a different mode.
+                                    pendingDriveMode = null
+                                    driveModePending.value = null
+                                    if (modeChangeBreath.value == mode) modeChangeBreath.value = null
                                 }
-                                pendingDriveMode = null
-                                driveModePending.value = null
                             }
                         }
                         .padding(vertical = 12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    HeroNum(letter, 20.sp,
-                        when {
-                            isActive  -> modeAccent
-                            isPending -> modeAccent.copy(0.6f)
-                            canControl -> Frost
-                            else      -> Dim
-                        }
-                    )
+                    Box(
+                        Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        HeroNum(letter, 20.sp, animText)
+                    }
                     Spacer(Modifier.height(2.dp))
                     MonoLabel(
-                        if (isPending) "..." else mode.label.uppercase(),
+                        when {
+                            isConfirmed -> "LOCKED"
+                            isPending   -> "SWITCHING"
+                            else        -> mode.label.uppercase()
+                        },
                         8.sp,
-                        if (isActive) modeAccent else Dim,
+                        animLabel,
                         letterSpacing = 0.1.sp
                     )
                 }
@@ -183,7 +273,7 @@ import kotlinx.coroutines.launch
         }
         Spacer(Modifier.height(6.dp))
         MonoLabel(
-            if (canControl) "Tap to change \u00B7 Quick Mode Dock"
+            if (canControl) "Tap to change \u00B7 Pull down from header or tap the MODE pill"
             else "Displays current Drive Mode \u2014 openRS_ firmware unlocks tap control",
             9.sp, Dim
         )

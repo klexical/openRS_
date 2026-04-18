@@ -37,6 +37,10 @@ fun ShiftLightBar(
     segmentCount: Int = 18
 ) {
     val isRedline = rpm >= redlineRpm * 0.955f  // ~6500 RPM
+    // rc.2: dormant state when engine off / below idle. Prevents the "one
+    // green pip" optical bug where first segment lights because 0 >= 0. Bar
+    // reads as resting (dim filament glow) rather than broken.
+    val isDormant = rpm < 200f
     val flashTransition = rememberInfiniteTransition(label = "shift")
     val flashValue by flashTransition.animateFloat(
         initialValue = 1f,
@@ -55,16 +59,17 @@ fun ShiftLightBar(
     ) {
         for (i in 0 until segmentCount) {
             val segThreshold = (i.toFloat() / segmentCount) * redlineRpm
-            val isLit = rpm >= segThreshold
+            val isLit = rpm >= segThreshold && !isDormant
             val baseColor = when {
                 segThreshold >= redlineRpm * 0.81f -> Orange   // ~5500+
                 segThreshold >= redlineRpm * 0.59f -> Warn     // ~4000+
                 else -> Ok
             }
             val displayColor = when {
-                !isLit -> Surf3
+                isDormant -> Surf3.copy(alpha = 0.35f)
+                !isLit    -> Surf3
                 isRedline -> baseColor.copy(alpha = flashAlpha)
-                else -> baseColor
+                else      -> baseColor
             }
             Box(
                 Modifier

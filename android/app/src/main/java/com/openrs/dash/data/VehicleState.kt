@@ -326,6 +326,23 @@ data class VehicleState(
     val tipActualPsi: Double get() = (tipActualKpa - 101.325) * 0.14503773
     val tipDesiredPsi: Double get() = (tipDesiredKpa - 101.325) * 0.14503773
 
+    /**
+     * Density altitude in feet — computed from barometric pressure and ambient temp.
+     * Returns null if either input hasn't been received yet.
+     *
+     * Uses the Koch chart approximation (standard in automotive tuning):
+     *   PA = 145442.16 × (1 − (P / 1013.25)^0.190284)
+     *   ISA = 15 − 0.001981 × PA
+     *   DA = PA + 120 × (OAT − ISA)
+     */
+    val densityAltitudeFt: Int? get() {
+        if (barometricPressure <= 0 || ambientTempC <= -90) return null
+        val pressureHpa = barometricPressure * 10.0  // kPa → hPa
+        val pa = 145442.16 * (1 - Math.pow(pressureHpa / 1013.25, 0.190284))
+        val isa = 15.0 - 0.001981 * pa
+        return (pa + 120.0 * (ambientTempC - isa)).toInt()
+    }
+
     /** TPMS valid checks */
     val hasTpmsData: Boolean get() = tirePressLF >= 0
     val hasTireTempData: Boolean get() =

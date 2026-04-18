@@ -62,6 +62,15 @@ fun borderAlpha(base: Float): Float =
 fun textMutedAlpha(base: Float): Float =
     if (isDayModeNow()) base.coerceAtLeast(0.55f) else base
 
+/**
+ * Theme-aware status-pill background alpha. A translucent color fill at 0.08-0.14
+ * reads fine on NIGHT (dark) surfaces but disappears on DAY (white) surfaces,
+ * so the RECONNECTING / IDLE / CONN pills fail AA in sunlight. Bumps the bg
+ * alpha ~2.5x on DAY while leaving NIGHT untouched.
+ */
+fun pillBgAlpha(base: Float): Float =
+    if (isDayModeNow()) (base * 2.5f).coerceAtMost(0.45f) else base
+
 // ── Deprecated brightness API (kept as no-ops for back-compat) ─────────────
 // Old brightness slider is gone; mode is discrete. Retained so existing
 // callers don't need to change in one go.
@@ -80,15 +89,17 @@ private val NightDim   = Color(0xFF7A9AB8)
 private val NightMid   = Color(0xFFB0D0E8)
 private val NightInk   = Color(0xFFE8F4FF)
 
-// ── DAY palette (new — high contrast for sunlight) ─────────────────────────
-private val DayBg    = Color(0xFFF4F6F9)
+// ── DAY palette (cooler, blue-leaning for legibility across all 6 paints) ──
+// rc.2 pass: the previous warmer neutrals clashed with Race Red / Deep Orange
+// (muddy) and flattened the cooler paints. Shifted ~4-6° toward blue.
+private val DayBg    = Color(0xFFEFF3F8)
 private val DaySurf  = Color(0xFFFFFFFF)
-private val DaySurf2 = Color(0xFFEAEEF3)
-private val DaySurf3 = Color(0xFFDDE3EC)
-private val DayBrd   = Color(0xFFC5CFDB)
-private val DayDim   = Color(0xFF5C6B7E)
-private val DayMid   = Color(0xFF2E3A4B)
-private val DayInk   = Color(0xFF0A0F18)
+private val DaySurf2 = Color(0xFFE4EAF2)
+private val DaySurf3 = Color(0xFFD4DCE8)
+private val DayBrd   = Color(0xFFB8C4D4)
+private val DayDim   = Color(0xFF556374)
+private val DayMid   = Color(0xFF293748)
+private val DayInk   = Color(0xFF080D16)
 
 // ── Effective colour roles (mode-aware getters) ────────────────────────────
 // These are composable-context getters. Compose snapshot reads track them.
@@ -147,6 +158,91 @@ fun rsPaintName(id: String): String  = paintMap[id]?.name  ?: "Nitrous Blue"
 val LocalThemeAccent = staticCompositionLocalOf { Color(0xFF0091EA) }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// ACCENT TIERS — rc.2 hierarchy system
+// ═══════════════════════════════════════════════════════════════════════════
+// Every previous "Accent" usage was binary: either the full paint color or
+// nothing. That flattens the UI — a section label and a disconnection warning
+// shout with equal volume. We split the accent into three tiers so page
+// authors can pick intent:
+//
+//   accentFull()  = the paint, full saturation. Reserve for peaks, warnings,
+//                   incrementing hero values, and primary CTAs.
+//   accentMid()   = active state, selected chip, active-tab underline.
+//   accentDim()   = borders, section label dividers, inactive rails.
+//
+// Two paints need *structural* overrides (alpha-derivation fails): Shadow
+// Black on NIGHT disappears into the dark surface; Frozen White on DAY
+// disappears into the white surface. Other paints derive via alpha.
+
+data class AccentTriad(val full: Color, val mid: Color, val dim: Color)
+
+private val ShadowBlackNightTriad = AccentTriad(
+    full = Color(0xFF8A92A0),   // lifted gray-blue so it reads on dark surf
+    mid  = Color(0xFF5E6774),
+    dim  = Color(0xFF3A424E),
+)
+
+private val FrozenWhiteDayTriad = AccentTriad(
+    full = Color(0xFF4A5464),   // darkened cool gray so it reads on white surf
+    mid  = Color(0xFF6E7886),
+    dim  = Color(0xFF95A0B0),
+)
+
+private val paintByAccent: Map<Color, RsPaint> = RsPaints.associateBy { it.accent }
+
+/** Derive the accent triad for a given paint color + theme mode. */
+fun accentTriadFor(paint: Color, isDay: Boolean): AccentTriad {
+    val id = paintByAccent[paint]?.id
+    return when {
+        id == "black" && !isDay -> ShadowBlackNightTriad
+        id == "white" && isDay  -> FrozenWhiteDayTriad
+        isDay -> AccentTriad(
+            full = paint,
+            mid  = paint.copy(alpha = 0.72f),
+            dim  = paint.copy(alpha = 0.38f),
+        )
+        else -> AccentTriad(
+            full = paint,
+            mid  = paint.copy(alpha = 0.62f),
+            dim  = paint.copy(alpha = 0.28f),
+        )
+    }
+}
+
+/** Full-saturation accent. Same as `LocalThemeAccent.current` — kept for symmetry. */
+@Composable fun accentFull(): Color = LocalThemeAccent.current
+
+/** Mid-tier accent: active state, selected chip, active-tab underline. */
+@Composable fun accentMid(): Color = accentTriadFor(LocalThemeAccent.current, isDayModeNow()).mid
+
+/** Dim-tier accent: borders, section dividers, inactive rails. */
+@Composable fun accentDim(): Color = accentTriadFor(LocalThemeAccent.current, isDayModeNow()).dim
+
+// ── OEM polish helpers (rc.2) ─────────────────────────────────────────────
+
+/** Per-tab identity accent for bottom nav. Gated behind prefs.navTabIdentity. */
+@Composable fun tabIdentityColor(tabIndex: Int): Color = when (tabIndex) {
+    0    -> accentMid()       // DRIVE  (paint accent)
+    1    -> accentFull()      // PERF   (brighter paint — avoids Orange ESC-OFF conflict)
+    2    -> Warn              // THERMAL
+    3    -> Ok                // TRIP
+    4    -> Mid               // GARAGE
+    else -> accentMid()
+}
+
+/**
+ * Card-edge specular tint for cardGlow v2. Returns a mode-aware tint:
+ * Night = cool-blue accent edge, Day = white machined-aluminum sheen,
+ * Ultra = slightly stronger cool-blue on pure-black surfaces.
+ * Uses the global [Accent] getter (snapshot-tracked) — safe from non-composable draw phases.
+ */
+fun cardSpecularTint(): Color = when {
+    isDayModeNow()    -> Color.White.copy(alpha = 0.35f)
+    isUltraNightNow() -> Accent.copy(alpha = 0.08f)
+    else              -> Accent.copy(alpha = 0.06f)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // FONTS
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -167,13 +263,13 @@ val JetBrainsMonoFamily = FontFamily(
     Font(R.font.jetbrains_mono_regular, FontWeight.Normal),
     Font(R.font.jetbrains_mono_bold,    FontWeight.Bold),
 )
-val ShareTechMono = FontFamily(Font(R.font.share_tech_mono, FontWeight.Normal))
-val BarlowCond    = FontFamily(
-    Font(R.font.barlow_condensed_regular,  FontWeight.Normal),
-    Font(R.font.barlow_condensed_medium,   FontWeight.Medium),
-    Font(R.font.barlow_condensed_semibold, FontWeight.SemiBold),
-    Font(R.font.barlow_condensed_bold,     FontWeight.Bold),
-)
+
+// Typography retirement: Share Tech Mono + Barlow Condensed TTFs removed
+// in the "Daylight" pass. These aliases retain the original Kotlin symbols
+// so external call sites compile and render in the unified voice
+// (JetBrains Mono + Rajdhani).
+val ShareTechMono = JetBrainsMonoFamily
+val BarlowCond    = RajdhaniFamily
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPOGRAPHY — v3.0 helpers (preferred) + v2.x legacy names (aliased)
