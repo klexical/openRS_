@@ -175,4 +175,13 @@ object ObdConstants {
     /** Build a Mode 22 SLCAN query frame for any ECU request ID + DID. */
     fun buildSlcanQuery(requestId: Int, did: Int): String =
         "t%03X80322%04X00000000\r".format(requestId, did)
+
+    /**
+     * Extract the DID from an SLCAN Mode 22 query string.
+     * e.g. "t7E08032203ED00000000\r" → 0x03ED
+     */
+    fun extractDid(query: String): Int? {
+        if (query.length < 13) return null
+        return query.substring(9, 13).toIntOrNull(16)
+    }
 }

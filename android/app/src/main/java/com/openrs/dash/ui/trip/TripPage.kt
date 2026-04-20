@@ -12,9 +12,11 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
@@ -31,8 +33,12 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.*
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.draw.clip
@@ -48,12 +54,15 @@ import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.MapType
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.openrs.dash.OpenRSDashApp
+import com.openrs.dash.data.DriveBookmarkEntity
 import com.openrs.dash.data.DriveDatabase
 import com.openrs.dash.data.DriveEntity
 import com.openrs.dash.data.DrivePointEntity
 import com.openrs.dash.data.DriveState
+import com.openrs.dash.data.LapTimer
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticExporter
+import com.openrs.dash.diagnostics.ExportProgress
 import com.openrs.dash.ui.*
 import com.openrs.dash.ui.anim.pageEntrance
 import kotlin.math.roundToInt
@@ -102,9 +111,42 @@ fun TripPage(
     var selectedDriveId by remember { mutableStateOf<Long?>(null) }
     var selectedDrive by remember { mutableStateOf<DriveEntity?>(null) }
 
+    // Bookmarks for the displayed drive
+    var mapBookmarks by remember { mutableStateOf<List<DriveBookmarkEntity>>(emptyList()) }
+
     // Rename dialog state
     var renameDriveId by remember { mutableStateOf<Long?>(null) }
     var renameText by remember { mutableStateOf("") }
+
+    // Post-drive summary sheet
+    var summaryDrive by remember { mutableStateOf<DriveEntity?>(null) }
+    var summaryPoints by remember { mutableStateOf<List<DrivePointEntity>>(emptyList()) }
+
+    // Drive comparison
+    var compareA by remember { mutableStateOf<DriveEntity?>(null) }
+    var compareB by remember { mutableStateOf<DriveEntity?>(null) }
+
+    // Session replay
+    var replayDrive by remember { mutableStateOf<DriveEntity?>(null) }
+    var replayPoints by remember { mutableStateOf<List<DrivePointEntity>>(emptyList()) }
+
+    // Export options sheet
+    var exportDrive by remember { mutableStateOf<DriveEntity?>(null) }
+
+    // Lap timer — shared with DriveRecorder for persistence on drive stop
+    val lapTimer = remember { LapTimer() }
+    LaunchedEffect(recorder) { recorder.lapTimer = lapTimer }
+
+    // Collect drive completion events
+    LaunchedEffect(recorder) {
+        recorder.driveCompleted.collect { drive ->
+            summaryDrive = drive
+            // Load points for time-series chart in summary
+            withContext(Dispatchers.IO) {
+                summaryPoints = DriveDatabase.getInstance(context).driveDao().getPoints(drive.id)
+            }
+        }
+    }
 
     // Idle location (one-shot centering when not recording)
     var idleLocation by remember { mutableStateOf<android.location.Location?>(null) }
@@ -133,6 +175,9 @@ fun TripPage(
         animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
         label = "recAlpha"
     )
+
+    // Export progress
+    val exportProgress by DiagnosticExporter.exportProgress.collectAsState()
 
     val isLive = vehicleState.isConnected || driveState.isRecording
     val cameraPositionState = rememberCameraPositionState()
@@ -170,6 +215,7 @@ fun TripPage(
                 points = mapPoints,
                 colorMode = colorMode,
                 peakEvents = driveState.peakEvents,
+                bookmarks = mapBookmarks,
                 rtrPoint = driveState.rtrAchievedPoint,
                 currentLat = currentLat,
                 currentLng = currentLng,
@@ -301,6 +347,42 @@ fun TripPage(
                         MonoText("\u25CE", 12.sp, accent, FontWeight.Bold)
                     }
                 }
+
+                // SET S/F button (lap timer)
+                if (driveState.isRecording) {
+                    SetStartFinishButton(
+                        isSet = lapTimer.startFinish != null,
+                        onSet = {
+                            val loc = driveState.currentLocation
+                            if (loc != null) {
+                                lapTimer.setStartFinish(loc.latitude, loc.longitude, loc.bearing)
+                            }
+                        },
+                        onClear = { lapTimer.clearStartFinish() },
+                        modifier = pageEntrance(6, controlsVisible, 50)
+                    )
+
+                    // Bookmark button
+                    Box(
+                        pageEntrance(7, controlsVisible, 50)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Surf.copy(alpha = 0.85f))
+                            .border(Tokens.CardBorder, Brd, RoundedCornerShape(6.dp))
+                            .clickable { recorder.addBookmark() }
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        MonoText("\u2691 MARK", 10.sp, Warn, FontWeight.Bold)
+                    }
+                }
+            }
+
+            // ── Lap timer overlay (top-start, during recording) ────
+            if (driveState.isRecording && lapTimer.startFinish != null) {
+                LapTimerOverlay(
+                    lapTimer = lapTimer,
+                    prefs = prefs,
+                    modifier = Modifier.align(Alignment.TopStart).padding(12.dp)
+                )
             }
 
             // Recording indicator (top-center)
@@ -369,6 +451,52 @@ fun TripPage(
                             "%.0f mph".format(statAvgSpd * 0.621371)
                         else "%.0f km/h".format(statAvgSpd)
                         MonoText("AVG $avgSpd", 8.sp, Dim)
+
+                        // 1.1 — DTE + boost (live recording only)
+                        if (driveState.isRecording) {
+                            val boostPsi = vehicleState.boostPsi
+                            MonoText(
+                                "BOOST ${"%.1f".format(boostPsi)} PSI",
+                                8.sp, if (boostPsi > 16) Orange else if (boostPsi > 8) Warn else Dim
+                            )
+                            val dte = driveState.distanceToEmptyKm
+                            if (dte > 0) {
+                                val dteStr = if (prefs.speedUnit == "MPH")
+                                    "%.0f mi".format(dte * 0.621371)
+                                else "%.0f km".format(dte)
+                                MonoText("DTE $dteStr", 8.sp, if (dte < 30) Warn else Dim)
+                            }
+                        }
+
+                        // 1.4 — Altitude + heading (live only)
+                        if (driveState.isRecording) {
+                            val loc = driveState.currentLocation
+                            if (loc != null) {
+                                if (loc.hasAltitude()) {
+                                    val altM = loc.altitude.toInt()
+                                    val altStr = if (prefs.speedUnit == "MPH")
+                                        "${(altM * 3.28084).toInt()} ft"
+                                    else "$altM m"
+                                    MonoText("ALT $altStr", 8.sp, Dim)
+                                }
+                                if (loc.hasBearing() && vehicleState.speedKph > 5) {
+                                    MonoText("HDG ${loc.bearing.toInt()}°", 8.sp, Dim)
+                                }
+                                // GPS accuracy dot
+                                val accColor = when {
+                                    loc.accuracy < 5f  -> Ok
+                                    loc.accuracy < 15f -> Warn
+                                    else               -> Orange
+                                }
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(Modifier.size(5.dp).clip(CircleShape).background(accColor))
+                                    MonoLabel("±${"%.0f".format(loc.accuracy)}m", 7.sp, Dim)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -429,21 +557,24 @@ fun TripPage(
                         selectedDriveId = null
                         selectedDrive = null
                         selectedDrivePoints = emptyList()
+                        mapBookmarks = emptyList()
                     } else {
                         selectedDriveId = drive.id
                         selectedDrive = drive
                         scope.launch(Dispatchers.IO) {
-                            selectedDrivePoints = DriveDatabase.getInstance(context)
-                                .driveDao().getPoints(drive.id)
+                            val dao = DriveDatabase.getInstance(context).driveDao()
+                            selectedDrivePoints = dao.getPoints(drive.id)
+                            mapBookmarks = dao.getBookmarks(drive.id)
                         }
                     }
                 },
-                onExport = { drive ->
+                onSummary = { drive ->
+                    summaryDrive = drive
                     scope.launch(Dispatchers.IO) {
-                        val pts = DriveDatabase.getInstance(context).driveDao().getPoints(drive.id)
-                        DiagnosticExporter.shareDrive(context, drive, pts)
+                        summaryPoints = DriveDatabase.getInstance(context).driveDao().getPoints(drive.id)
                     }
                 },
+                onExport = { drive -> exportDrive = drive },
                 onDelete = { drive ->
                     scope.launch(Dispatchers.IO) {
                         DriveDatabase.getInstance(context).driveDao().deleteDrive(drive.id)
@@ -460,7 +591,108 @@ fun TripPage(
                     renameDriveId = drive.id
                     renameText = drive.name ?: ""
                 },
+                onTagsChanged = { drive, tags ->
+                    scope.launch(Dispatchers.IO) {
+                        DriveDatabase.getInstance(context).driveDao().updateDriveTags(drive.id, tags)
+                        drives = DriveDatabase.getInstance(context).driveDao()
+                            .getRecentDrives(AppSettings.getMaxSavedDrives(context))
+                    }
+                },
+                onReplay = { drive ->
+                    replayDrive = drive
+                    scope.launch(Dispatchers.IO) {
+                        replayPoints = DriveDatabase.getInstance(context).driveDao().getPoints(drive.id)
+                    }
+                },
+                onCompare = { drive ->
+                    if (compareA == null) {
+                        compareA = drive
+                    } else if (compareA!!.id != drive.id) {
+                        compareB = drive
+                    }
+                },
+                onBatchExport = { selectedDrives ->
+                    scope.launch(Dispatchers.IO) {
+                        val dao = DriveDatabase.getInstance(context).driveDao()
+                        val drivesWithPoints = selectedDrives.map { d ->
+                            d to dao.getPoints(d.id)
+                        }
+                        DiagnosticExporter.shareDrives(context, drivesWithPoints)
+                    }
+                },
                 modifier = Modifier.weight(0.55f).fillMaxWidth()
+            )
+        }
+    }
+
+    // ── Drive summary sheet ─────────────────────────────────────────
+    summaryDrive?.let { drive ->
+        DriveSummarySheet(
+            drive = drive,
+            points = summaryPoints,
+            prefs = prefs,
+            onShare = {
+                scope.launch(Dispatchers.IO) {
+                    val pts = summaryPoints.ifEmpty {
+                        DriveDatabase.getInstance(context).driveDao().getPoints(drive.id)
+                    }
+                    DiagnosticExporter.shareDrive(context, drive, pts)
+                }
+                summaryDrive = null
+                summaryPoints = emptyList()
+            },
+            onDismiss = {
+                summaryDrive = null
+                summaryPoints = emptyList()
+            }
+        )
+    }
+
+    // ── Drive comparison sheet ───────────────────────────────────────
+    // When compareA is set, the next tap on COMPARE picks compareB and shows the sheet
+    val compA = compareA
+    val compB = compareB
+    if (compA != null && compB != null) {
+        DriveComparisonSheet(
+            driveA = compA,
+            driveB = compB,
+            prefs = prefs,
+            onDismiss = {
+                compareA = null
+                compareB = null
+            }
+        )
+    }
+
+    // ── Export options sheet ───────────────────────────────────────────
+    exportDrive?.let { drive ->
+        ExportOptionsSheet(
+            drive = drive,
+            onExport = { components ->
+                exportDrive = null
+                scope.launch(Dispatchers.IO) {
+                    val dao = DriveDatabase.getInstance(context).driveDao()
+                    val pts = dao.getPoints(drive.id)
+                    DiagnosticExporter.shareDrive(
+                        context, drive, pts, components = components
+                    )
+                }
+            },
+            onDismiss = { exportDrive = null }
+        )
+    }
+
+    // ── Session replay view ──────────────────────────────────────────
+    replayDrive?.let { drive ->
+        if (replayPoints.isNotEmpty()) {
+            DriveReplayView(
+                drive = drive,
+                points = replayPoints,
+                prefs = prefs,
+                onDismiss = {
+                    replayDrive = null
+                    replayPoints = emptyList()
+                }
             )
         }
     }
@@ -520,6 +752,31 @@ fun TripPage(
             shape = RoundedCornerShape(12.dp)
         )
     }
+
+    // ── Export progress indicator ────────────────────────────────────
+    AnimatedVisibility(
+        visible = exportProgress !is ExportProgress.Idle,
+        enter = fadeIn() + expandVertically(),
+        exit = fadeOut() + shrinkVertically()
+    ) {
+        val label = when (exportProgress) {
+            is ExportProgress.Packaging -> "PACKAGING..."
+            is ExportProgress.Sharing -> "SHARING..."
+            is ExportProgress.Done -> "DONE"
+            is ExportProgress.Error -> "EXPORT FAILED"
+            else -> ""
+        }
+        Box(
+            Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 8.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Surf2)
+                .border(Tokens.CardBorder, Brd, RoundedCornerShape(8.dp))
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            MonoText(label, 11.sp, if (exportProgress is ExportProgress.Error) Orange else accent, FontWeight.Bold)
+        }
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -551,14 +808,23 @@ private fun LiveHud(
             Modifier.weight(1f).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            // Row 1 — Speed · RPM · Gear · Avg RPM
+            // Row 1 — Speed · RPM · Gear · Boost
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 DataCell("SPD",
                     "${prefs.displaySpeed(vehicleState.speedKph)} ${prefs.speedLabel}",
                     modifier = Modifier.weight(1f))
                 DataCell("RPM", "%.0f".format(vehicleState.rpm), modifier = Modifier.weight(1f))
                 DataCell("GEAR", vehicleState.gearDisplay, modifier = Modifier.weight(1f))
-                DataCell("AVG RPM", "%.0f".format(driveState.avgRpm), modifier = Modifier.weight(1f))
+                val boostPsi = vehicleState.boostPsi
+                DataCell("BOOST", "%.1f".format(boostPsi),
+                    valueColor = when {
+                        boostPsi > 16 -> Orange
+                        boostPsi > 8  -> Warn
+                        boostPsi > 0  -> Ok
+                        else          -> Frost
+                    },
+                    sub = "\u2588".repeat((boostPsi.coerceIn(0.0, 22.0) / 22.0 * 5).toInt()),
+                    modifier = Modifier.weight(1f))
             }
 
             // Row 2 — Coolant · Oil · Ambient · Fuel %
@@ -593,12 +859,35 @@ private fun LiveHud(
                 DataCell("ECON", "$econVal $econUnit", modifier = Modifier.weight(1f))
             }
 
-            // Row 4 — Wheel speeds
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                DataCell("FL", "${prefs.displaySpeed(vehicleState.wheelSpeedFL)} ${prefs.speedLabel}", modifier = Modifier.weight(1f))
-                DataCell("FR", "${prefs.displaySpeed(vehicleState.wheelSpeedFR)} ${prefs.speedLabel}", modifier = Modifier.weight(1f))
-                DataCell("RL", "${prefs.displaySpeed(vehicleState.wheelSpeedRL)} ${prefs.speedLabel}", modifier = Modifier.weight(1f))
-                DataCell("RR", "${prefs.displaySpeed(vehicleState.wheelSpeedRR)} ${prefs.speedLabel}", modifier = Modifier.weight(1f))
+            // Row 4 — Wheel speeds / slip delta (tap to toggle)
+            var showSlipDelta by remember { mutableStateOf(false) }
+            Row(
+                Modifier.fillMaxWidth().clickable { showSlipDelta = !showSlipDelta },
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                if (showSlipDelta) {
+                    val vs = vehicleState
+                    val frontAvg = (vs.wheelSpeedFL + vs.wheelSpeedFR) / 2.0
+                    val rearAvg = (vs.wheelSpeedRL + vs.wheelSpeedRR) / 2.0
+                    val leftAvg = (vs.wheelSpeedFL + vs.wheelSpeedRL) / 2.0
+                    val rightAvg = (vs.wheelSpeedFR + vs.wheelSpeedRR) / 2.0
+                    val frDelta = kotlin.math.abs(frontAvg - rearAvg)
+                    val lrDelta = kotlin.math.abs(leftAvg - rightAvg)
+                    val flrlDelta = kotlin.math.abs(vs.wheelSpeedFL - vs.wheelSpeedRL)
+                    val frrDelta = kotlin.math.abs(vs.wheelSpeedFR - vs.wheelSpeedRR)
+                    fun slipColor(d: Double) = when {
+                        d > 5 -> Orange; d > 2 -> Warn; else -> Ok
+                    }
+                    DataCell("F-R", "%.1f".format(frDelta), valueColor = slipColor(frDelta), modifier = Modifier.weight(1f))
+                    DataCell("L-R", "%.1f".format(lrDelta), valueColor = slipColor(lrDelta), modifier = Modifier.weight(1f))
+                    DataCell("FL-RL", "%.1f".format(flrlDelta), valueColor = slipColor(flrlDelta), modifier = Modifier.weight(1f))
+                    DataCell("FR-RR", "%.1f".format(frrDelta), valueColor = slipColor(frrDelta), modifier = Modifier.weight(1f))
+                } else {
+                    DataCell("FL", "${prefs.displaySpeed(vehicleState.wheelSpeedFL)} ${prefs.speedLabel}", modifier = Modifier.weight(1f))
+                    DataCell("FR", "${prefs.displaySpeed(vehicleState.wheelSpeedFR)} ${prefs.speedLabel}", modifier = Modifier.weight(1f))
+                    DataCell("RL", "${prefs.displaySpeed(vehicleState.wheelSpeedRL)} ${prefs.speedLabel}", modifier = Modifier.weight(1f))
+                    DataCell("RR", "${prefs.displaySpeed(vehicleState.wheelSpeedRR)} ${prefs.speedLabel}", modifier = Modifier.weight(1f))
+                }
             }
         }
 
@@ -670,18 +959,65 @@ private fun DriveHistoryList(
     prefs: UserPrefs,
     selectedId: Long?,
     onSelect: (DriveEntity) -> Unit,
+    onSummary: (DriveEntity) -> Unit,
     onExport: (DriveEntity) -> Unit,
     onDelete: (DriveEntity) -> Unit,
     onRename: (DriveEntity) -> Unit,
+    onTagsChanged: (DriveEntity, String) -> Unit = { _, _ -> },
+    onReplay: (DriveEntity) -> Unit = {},
+    onCompare: (DriveEntity) -> Unit = {},
+    onBatchExport: (List<DriveEntity>) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val accent = LocalThemeAccent.current
 
+    // Multi-select mode
+    var multiSelectMode by remember { mutableStateOf(false) }
+    val multiSelected = remember { mutableStateListOf<Long>() }
+
     Column(modifier.background(Surf).padding(horizontal = 8.dp, vertical = 6.dp)) {
-        SectionLabel(
-            "DRIVE HISTORY",
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
+        // Header with optional batch export controls
+        if (multiSelectMode) {
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                MonoText("${multiSelected.size} SELECTED", 11.sp, accent, FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(
+                        Modifier.clip(RoundedCornerShape(6.dp))
+                            .background(accent)
+                            .clickable {
+                                val selected = drives.filter { it.id in multiSelected }
+                                if (selected.isNotEmpty()) onBatchExport(selected)
+                                multiSelectMode = false
+                                multiSelected.clear()
+                            }
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        MonoText("EXPORT", 10.sp, Bg, FontWeight.Bold)
+                    }
+                    Box(
+                        Modifier.clip(RoundedCornerShape(6.dp))
+                            .background(Surf2)
+                            .border(Tokens.CardBorder, Brd, RoundedCornerShape(6.dp))
+                            .clickable {
+                                multiSelectMode = false
+                                multiSelected.clear()
+                            }
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        MonoText("CANCEL", 10.sp, Mid, FontWeight.Bold)
+                    }
+                }
+            }
+        } else {
+            SectionLabel(
+                "DRIVE HISTORY",
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+        }
 
         if (drives.isEmpty()) {
             val ctx = androidx.compose.ui.platform.LocalContext.current
@@ -741,15 +1077,61 @@ private fun DriveHistoryList(
                                 label = "driveY$index"
                             )
                             Box(Modifier.graphicsLayer { alpha = itemAlpha; translationY = itemOffsetY.toPx() }) {
-                                SwipeDriveCard(
-                                    drive = drive,
-                                    prefs = prefs,
-                                    isSelected = selectedId == drive.id,
-                                    onClick = { onSelect(drive) },
-                                    onExport = { onExport(drive) },
-                                    onDelete = { onDelete(drive) },
-                                    onRename = { onRename(drive) }
-                                )
+                                if (multiSelectMode) {
+                                    // Multi-select: checkbox overlay on card
+                                    val isChecked = drive.id in multiSelected
+                                    Row(
+                                        Modifier.fillMaxWidth()
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(if (isChecked) accent.copy(alpha = 0.08f) else Surf)
+                                            .border(Tokens.CardBorder, if (isChecked) accent else Brd, RoundedCornerShape(10.dp))
+                                            .clickable {
+                                                if (isChecked) multiSelected.remove(drive.id)
+                                                else multiSelected.add(drive.id)
+                                            }
+                                            .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Box(
+                                            Modifier.size(18.dp)
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(if (isChecked) accent else Surf2)
+                                                .border(Tokens.CardBorder, if (isChecked) accent else Brd, RoundedCornerShape(4.dp)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (isChecked) MonoText("\u2713", 11.sp, Bg, FontWeight.Bold)
+                                        }
+                                        Column(Modifier.weight(1f)) {
+                                            val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+                                            val displayName = drive.name ?: timeFormat.format(Date(drive.startTime))
+                                            MonoText(displayName, 11.sp, Frost, FontWeight.Bold)
+                                            val dist = if (prefs.speedUnit == "MPH")
+                                                "%.1f mi".format(drive.distanceKm * 0.621371)
+                                            else "%.1f km".format(drive.distanceKm)
+                                            MonoLabel(dist, 9.sp, Dim)
+                                        }
+                                    }
+                                } else {
+                                    SwipeDriveCard(
+                                        drive = drive,
+                                        prefs = prefs,
+                                        isSelected = selectedId == drive.id,
+                                        onClick = { onSelect(drive) },
+                                        onLongClick = {
+                                            multiSelectMode = true
+                                            multiSelected.clear()
+                                            multiSelected.add(drive.id)
+                                        },
+                                        onSummary = { onSummary(drive) },
+                                        onExport = { onExport(drive) },
+                                        onDelete = { onDelete(drive) },
+                                        onRename = { onRename(drive) },
+                                        onTagsChanged = { tags -> onTagsChanged(drive, tags) },
+                                        onReplay = { onReplay(drive) },
+                                        onCompare = { onCompare(drive) }
+                                    )
+                                }
                             }
                         }
                     }
@@ -766,9 +1148,14 @@ private fun SwipeDriveCard(
     prefs: UserPrefs,
     isSelected: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit = {},
+    onSummary: () -> Unit,
     onExport: () -> Unit,
     onDelete: () -> Unit,
-    onRename: () -> Unit
+    onRename: () -> Unit,
+    onTagsChanged: (String) -> Unit = {},
+    onReplay: () -> Unit = {},
+    onCompare: () -> Unit = {}
 ) {
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
@@ -799,8 +1186,13 @@ private fun SwipeDriveCard(
             prefs = prefs,
             isSelected = isSelected,
             onClick = onClick,
+            onLongClick = onLongClick,
+            onSummary = onSummary,
             onExport = onExport,
-            onRename = onRename
+            onRename = onRename,
+            onTagsChanged = onTagsChanged,
+            onReplay = onReplay,
+            onCompare = onCompare
         )
     }
 }
@@ -811,9 +1203,15 @@ private fun DriveCard(
     prefs: UserPrefs,
     isSelected: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit = {},
+    onSummary: () -> Unit,
     onExport: () -> Unit,
-    onRename: () -> Unit
+    onRename: () -> Unit,
+    onTagsChanged: (String) -> Unit = {},
+    onReplay: () -> Unit = {},
+    onCompare: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     val accent = LocalThemeAccent.current
     val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
     val durationMs = if (drive.endTime > 0) drive.endTime - drive.startTime else 0L
@@ -831,13 +1229,14 @@ private fun DriveCard(
         tween(250), label = "driveCardBg"
     )
 
+    @OptIn(ExperimentalFoundationApi::class)
     Column(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(bgColor)
             .border(Tokens.CardBorder, borderColor, RoundedCornerShape(10.dp))
-            .clickable { onClick() }
+            .combinedClickable(onClick = { onClick() }, onLongClick = { onLongClick() })
             .animateContentSize(tween(250, easing = EaseOut))
             .padding(12.dp)
     ) {
@@ -872,6 +1271,33 @@ private fun DriveCard(
                 ) {
                     MonoLabel(badgeText, 7.sp, badgeColor)
                 }
+
+                // Aggression score badge
+                if (drive.aggressionScore > 0) {
+                    val scoreColor = when {
+                        drive.aggressionScore > 60 -> Orange
+                        drive.aggressionScore > 30 -> Warn
+                        else -> Ok
+                    }
+                    Box(
+                        Modifier.clip(RoundedCornerShape(4.dp))
+                            .background(scoreColor.copy(alpha = 0.15f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        MonoLabel("${drive.aggressionScore}", 7.sp, scoreColor)
+                    }
+                }
+
+                // Thermal alert badge — flag drives where a sensor exceeded threshold
+                if (hasThermalAnomaly(drive)) {
+                    Box(
+                        Modifier.clip(RoundedCornerShape(4.dp))
+                            .background(Warn.copy(alpha = 0.15f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        MonoLabel("TEMP", 7.sp, Warn)
+                    }
+                }
             }
 
             MonoText(durationStr, 10.sp, Mid)
@@ -899,17 +1325,33 @@ private fun DriveCard(
             if (drive.peakLateralG > 0) StatChip("G-LAT", "%.2f".format(drive.peakLateralG))
         }
 
-        // GPS indicator (mini route preview placeholder)
+        // Route thumbnail (or GPS dot fallback)
         if (drive.hasGps && drive.distanceKm > 0) {
             Spacer(Modifier.height(4.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    Modifier.size(6.dp).clip(CircleShape).background(Ok.copy(alpha = 0.6f))
-                )
-                MonoLabel("GPS", 7.sp, Ok.copy(alpha = 0.6f))
+            val thumbFile = remember(drive.id) {
+                RouteThumbnail.getCached(context, drive.id)
+            }
+            if (thumbFile != null) {
+                val bitmap = remember(thumbFile) {
+                    android.graphics.BitmapFactory.decodeFile(thumbFile.absolutePath)
+                }
+                if (bitmap != null) {
+                    androidx.compose.foundation.Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "Route preview",
+                        modifier = Modifier.height(40.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .border(Tokens.CardBorder, Brd, RoundedCornerShape(4.dp))
+                    )
+                }
+            } else {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(Modifier.size(6.dp).clip(CircleShape).background(Ok.copy(alpha = 0.6f)))
+                    MonoLabel("GPS", 7.sp, Ok.copy(alpha = 0.6f))
+                }
             }
         }
 
@@ -921,11 +1363,58 @@ private fun DriveCard(
             exit = fadeOut(tween(120)) + shrinkVertically(tween(200, easing = EaseIn))
         ) {
             Column {
-                Spacer(Modifier.height(8.dp))
+                // Tag chips
+                Spacer(Modifier.height(6.dp))
+                val activeTags = remember(drive.tags) {
+                    drive.tags.split(",").filter { it.isNotBlank() }.toMutableStateList()
+                }
+                val allTags = listOf("TRACK", "COMMUTE", "CRUISE", "SPIRITED", "RAIN")
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    allTags.forEach { tag ->
+                        val active = tag in activeTags
+                        Box(
+                            Modifier.clip(RoundedCornerShape(4.dp))
+                                .background(
+                                    if (active) accent.copy(alpha = 0.2f)
+                                    else Surf3.copy(alpha = 0.5f)
+                                )
+                                .border(
+                                    Tokens.CardBorder,
+                                    if (active) accent.copy(alpha = 0.5f) else Brd,
+                                    RoundedCornerShape(4.dp)
+                                )
+                                .clickable {
+                                    if (active) activeTags.remove(tag) else activeTags.add(tag)
+                                    onTagsChanged(activeTags.joinToString(","))
+                                }
+                                .padding(horizontal = 6.dp, vertical = 3.dp)
+                        ) {
+                            MonoLabel(
+                                tag, 7.sp,
+                                if (active) accent else Dim
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(6.dp))
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    if (drive.endTime > 0) {
+                        Button(
+                            onClick = onSummary,
+                            modifier = Modifier.weight(1f).height(36.dp),
+                            shape = RoundedCornerShape(6.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = accent.copy(alpha = 0.15f))
+                        ) {
+                            MonoText("SUMMARY", 11.sp, accent, FontWeight.Bold)
+                        }
+                    }
                     Button(
                         onClick = onExport,
                         modifier = Modifier.weight(1f).height(36.dp),
@@ -941,6 +1430,32 @@ private fun DriveCard(
                         colors = ButtonDefaults.buttonColors(containerColor = Surf3)
                     ) {
                         MonoText("RENAME", 11.sp, Mid, FontWeight.Bold)
+                    }
+                }
+
+                // Row 2: REPLAY + COMPARE
+                if (drive.endTime > 0 && drive.hasGps) {
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = onReplay,
+                            modifier = Modifier.weight(1f).height(36.dp),
+                            shape = RoundedCornerShape(6.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Warn.copy(alpha = 0.15f))
+                        ) {
+                            MonoText("REPLAY", 11.sp, Warn, FontWeight.Bold)
+                        }
+                        Button(
+                            onClick = onCompare,
+                            modifier = Modifier.weight(1f).height(36.dp),
+                            shape = RoundedCornerShape(6.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Surf3)
+                        ) {
+                            MonoText("COMPARE", 11.sp, Mid, FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -959,6 +1474,23 @@ private fun StatChip(label: String, value: String) {
 // ═══════════════════════════════════════════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Check if a drive had any sensor exceed its critical threshold.
+ * Parses thermalPeaksJson: [{"sensor":"Oil","peakC":140,...}, ...]
+ */
+private fun hasThermalAnomaly(drive: DriveEntity): Boolean {
+    val json = drive.thermalPeaksJson ?: return false
+    return try {
+        val arr = org.json.JSONArray(json)
+        (0 until arr.length()).any { i ->
+            val obj = arr.getJSONObject(i)
+            val peakC = obj.getDouble("peakC")
+            val critC = obj.getDouble("critThresholdC")
+            peakC >= critC * 0.95 // flag at 95% of critical
+        }
+    } catch (_: Exception) { false }
+}
 
 private fun formatDuration(ms: Long): String {
     if (ms <= 0) return "Active"

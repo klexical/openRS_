@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.can.FirmwareCommandSender
+import com.openrs.dash.can.WicanApi
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.EscStatus
 import com.openrs.dash.data.VehicleState
@@ -71,6 +72,7 @@ import kotlinx.coroutines.launch
 ) {
     val isFw   by OpenRSDashApp.instance.isOpenRsFirmware.collectAsState()
     val fwLabel by OpenRSDashApp.instance.firmwareVersionLabel.collectAsState()
+    val devStatus by OpenRSDashApp.instance.deviceStatus.collectAsState()
     val scope  = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     val accent = LocalThemeAccent.current
@@ -361,6 +363,80 @@ import kotlinx.coroutines.launch
                             else "⚡  Flash openrs-fw to unlock CAN write, LC, Auto Start-Stop & more.",
                             9.sp, if (isFw) Ok else Orange, letterSpacing = 0.05.sp
                         )
+                    }
+
+                    // Device info from WiCAN /check_status (WiFi only)
+                    devStatus?.let { ds ->
+                        Column(
+                            Modifier.fillMaxWidth()
+                                .background(Surf2, RoundedCornerShape(8.dp))
+                                .border(CardBorder, Brd, RoundedCornerShape(8.dp))
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            UIText("Adapter", 11.sp, Frost, FontWeight.SemiBold)
+                            @Composable fun InfoRow(label: String, value: String) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    MonoLabel(label, 9.sp, Dim)
+                                    MonoLabel(value, 9.sp, Mid)
+                                }
+                            }
+                            if (ds.hardwareVersion.isNotBlank()) InfoRow("Hardware", ds.hardwareVersion)
+                            if (ds.firmwareVersion.isNotBlank()) InfoRow("Firmware", "v${ds.firmwareVersion}")
+                            if (ds.deviceId.isNotBlank()) InfoRow("Device ID", ds.deviceId)
+                            if (ds.canDatarate.isNotBlank()) InfoRow("CAN Bus", "${ds.canDatarate} ${ds.canMode}")
+                            if (ds.obdPortVoltage > 0) InfoRow("OBD Port", "%.1fV".format(ds.obdPortVoltage))
+                            if (ds.bleStatus.isNotBlank()) InfoRow("Bluetooth", ds.bleStatus)
+
+                            // Reboot adapter button
+                            Spacer(Modifier.height(4.dp))
+                            var showRebootConfirm by remember { mutableStateOf(false) }
+                            val ctx = LocalContext.current
+                            val adapterHost = AppSettings.getHost(ctx)
+
+                            Box(
+                                Modifier.fillMaxWidth()
+                                    .background(Orange.copy(alpha = 0.08f), RoundedCornerShape(6.dp))
+                                    .border(CardBorder, Orange.copy(0.2f), RoundedCornerShape(6.dp))
+                                    .clickable { showRebootConfirm = true }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                MonoLabel("REBOOT ADAPTER", 9.sp, Orange, fontWeight = FontWeight.Bold, letterSpacing = 0.1.sp)
+                            }
+
+                            if (showRebootConfirm) {
+                                androidx.compose.material3.AlertDialog(
+                                    onDismissRequest = { showRebootConfirm = false },
+                                    title = { UIText("Reboot Adapter?", 14.sp, Frost, FontWeight.Bold) },
+                                    text = {
+                                        MonoLabel(
+                                            "This will reboot the WiCAN adapter. " +
+                                                "The connection will drop and auto-reconnect after the device restarts (~5 s).",
+                                            10.sp, Mid
+                                        )
+                                    },
+                                    confirmButton = {
+                                        MonoLabel("REBOOT", 11.sp, Orange, FontWeight.Bold,
+                                            modifier = Modifier.clickable {
+                                                showRebootConfirm = false
+                                                scope.launch {
+                                                    WicanApi.reboot(ctx, adapterHost)
+                                                    snackbarHostState.showSnackbar("Adapter rebooting…")
+                                                }
+                                            }.padding(12.dp))
+                                    },
+                                    dismissButton = {
+                                        MonoLabel("CANCEL", 11.sp, Dim, FontWeight.Bold,
+                                            modifier = Modifier.clickable {
+                                                showRebootConfirm = false
+                                            }.padding(12.dp))
+                                    },
+                                    containerColor = Surf2,
+                                    shape = RoundedCornerShape(12.dp),
+                                )
+                            }
+                        }
                     }
 
                     MonoLabel("Polled via extended diagnostic session (60 s cycle).", 9.sp, Dim)

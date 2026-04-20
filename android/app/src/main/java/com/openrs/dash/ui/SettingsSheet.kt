@@ -36,6 +36,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.ui.graphics.Brush
 import com.openrs.dash.BuildConfig
+import com.openrs.dash.can.WicanDiscovery
 import com.openrs.dash.service.HudOverlayService
 import com.openrs.dash.update.UpdateManager
 import com.openrs.dash.update.UpdateState
@@ -127,6 +128,7 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
     var reconnectSec    by remember { mutableStateOf(current.reconnectIntervalSec.toString()) }
     var maxDiagZips     by remember { mutableStateOf(current.maxDiagZips.toString()) }
     var autoRecordDrives by remember { mutableStateOf(current.autoRecordDrives) }
+    var autoScanDtcs    by remember { mutableStateOf(current.autoScanDtcs) }
     var maxSavedDrives  by remember { mutableStateOf(current.maxSavedDrives.toString()) }
     var adapterType     by remember { mutableStateOf(current.adapterType) }
     var connectionMethod by remember { mutableStateOf(current.connectionMethod) }
@@ -136,12 +138,10 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
     var edgeShiftIntensity by remember { mutableStateOf(current.edgeShiftIntensity) }
     var edgeShiftRpm    by remember { mutableStateOf(current.edgeShiftRpm.toString()) }
     var updateChannel   by remember { mutableStateOf(current.updateChannel) }
-    // rc.2: the four "live-preview" prefs (theme mode, classic fonts, drive
-    // auto-zoom, paint colour) still apply immediately when the user toggles
-    // them — but RESET must be stageable too. Local state is the picker's
-    // source of truth; RESET only updates this state; SAVE commits it to
-    // UserPrefsStore. Without this, RESET was persisting defaults directly,
-    // so Cancel couldn't undo a reset.
+    // Live-preview prefs (theme mode, classic fonts, drive auto-zoom, paint
+    // colour) apply visual side effects on toggle for instant preview, but
+    // do NOT commit to UserPrefsStore until SAVE. Cancel reverts the side
+    // effects to the committed state. RESET stages defaults in local vars.
     var navTabIdentity  by remember { mutableStateOf(current.navTabIdentity) }
     var livePillQuiet   by remember { mutableStateOf(current.livePillQuiet) }
     var gearModeTint    by remember { mutableStateOf(current.gearModeTint) }
@@ -185,7 +185,6 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                         selected = themeModeLocal,
                         onSelect = { sel ->
                             themeModeLocal = sel
-                            UserPrefsStore.update(ctx) { it.copy(themeMode = sel) }
                             setThemeMode(runCatching { ThemeMode.valueOf(sel) }
                                 .getOrDefault(ThemeMode.NIGHT))
                         },
@@ -202,7 +201,6 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                         onSelect = { sel ->
                             val on = sel == "CLASSIC"
                             classicFontsLocal = on
-                            UserPrefsStore.update(ctx) { it.copy(classicFonts = on) }
                             setClassicFonts(on)
                         },
                     )
@@ -216,7 +214,6 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                         checked = driveAutoZoomLocal,
                         onCheckedChange = { on ->
                             driveAutoZoomLocal = on
-                            UserPrefsStore.update(ctx) { it.copy(driveAutoZoom = on) }
                         },
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = OnAccent,
@@ -238,7 +235,7 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                     activeId = themeIdLocal,
                     onSelect = { id ->
                         themeIdLocal = id
-                        UserPrefsStore.update(ctx) { it.copy(themeId = id) }
+                        setThemeAccentPreview(rsPaintAccent(id))
                     },
                 )
             }
@@ -668,6 +665,66 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                             "Default: $defaultHost:$defaultPort  (WebSocket SLCAN)",
                         fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
                     )
+
+                    // ── mDNS network scan ────────────────────────────────
+                    Spacer(Modifier.height(12.dp))
+                    var scanning by remember { mutableStateOf(false) }
+                    var discovered by remember { mutableStateOf<List<WicanDiscovery.DiscoveredDevice>>(emptyList()) }
+                    var scanDone by remember { mutableStateOf(false) }
+                    val scanScope = rememberCoroutineScope()
+
+                    Box(
+                        Modifier.fillMaxWidth()
+                            .background(accent.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                            .border(CardBorder, accent.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                            .then(if (scanning) Modifier else Modifier.clickable {
+                                scanning = true; scanDone = false; discovered = emptyList()
+                                scanScope.launch {
+                                    discovered = WicanDiscovery.scan(ctx)
+                                    scanning = false; scanDone = true
+                                }
+                            })
+                            .padding(12.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            if (scanning) "SCANNING…" else "SCAN NETWORK",
+                            fontSize = 10.sp, color = if (scanning) Dim else accent,
+                            fontFamily = ShareTechMono, fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.1.sp,
+                        )
+                    }
+
+                    if (scanDone && discovered.isEmpty()) {
+                        Spacer(Modifier.height(6.dp))
+                        Text("No WiCAN adapters found on the network.",
+                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono)
+                    }
+
+                    discovered.forEach { dev ->
+                        Spacer(Modifier.height(6.dp))
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .background(Surf2, RoundedCornerShape(8.dp))
+                                .border(CardBorder, Ok.copy(0.3f), RoundedCornerShape(8.dp))
+                                .clickable {
+                                    host = dev.host
+                                    port = defaultPort.toString()
+                                    error = null
+                                }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(dev.name, fontSize = 11.sp, color = Frost,
+                                    fontFamily = ShareTechMono, fontWeight = FontWeight.SemiBold)
+                                Text(dev.host, fontSize = 10.sp, color = Dim,
+                                    fontFamily = ShareTechMono)
+                            }
+                            Text("USE", fontSize = 9.sp, color = Ok,
+                                fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
         },
@@ -735,6 +792,28 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                         colors = outlinedFieldColors(),
                         textStyle = androidx.compose.ui.text.TextStyle(
                             fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost),
+                    )
+                }
+            }
+        },
+        NavSection(
+            SettingsCategory.DIAGNOSTICS,
+            "DTC SCANNER",
+            listOf("dtc", "scan", "auto", "fault", "code"),
+        ) {
+            SettingsSection("DTC SCANNER") {
+                SettingsRow(
+                    label = "Auto-scan on connect",
+                    help = "Automatically scan for fault codes when the adapter connects. " +
+                        "Results appear as a badge on the GARAGE tab.",
+                ) {
+                    Switch(
+                        checked = autoScanDtcs,
+                        onCheckedChange = { autoScanDtcs = it; error = null },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = accent,
+                            checkedTrackColor = accent.copy(alpha = 0.3f),
+                        ),
                     )
                 }
             }
@@ -996,7 +1075,14 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 OutlinedButton(
-                    onClick = onDismiss,
+                    onClick = {
+                        // Revert live-preview side effects to committed state
+                        setThemeMode(runCatching { ThemeMode.valueOf(current.themeMode) }
+                            .getOrDefault(ThemeMode.NIGHT))
+                        setClassicFonts(current.classicFonts)
+                        setThemeAccentPreview(null)
+                        onDismiss()
+                    },
                     modifier = Modifier.weight(1f),
                     border = ButtonDefaults.outlinedButtonBorder(enabled = true),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Dim),
@@ -1024,6 +1110,7 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                         reconnectSec  = AppSettings.DEFAULT_RECONNECT_INTERVAL.toString()
                         maxDiagZips   = AppSettings.DEFAULT_MAX_DIAG_ZIPS.toString()
                         autoRecordDrives = AppSettings.DEFAULT_AUTO_RECORD_DRIVES
+                        autoScanDtcs = AppSettings.DEFAULT_AUTO_SCAN_DTCS
                         maxSavedDrives = AppSettings.DEFAULT_MAX_SAVED_DRIVES.toString()
                         adapterType   = AppSettings.DEFAULT_ADAPTER_TYPE
                         connectionMethod = AppSettings.DEFAULT_CONNECTION_METHOD
@@ -1098,15 +1185,14 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                                     edgeShiftIntensity   = edgeShiftIntensity,
                                     edgeShiftRpm         = shiftRpm ?: AppSettings.DEFAULT_EDGE_SHIFT_RPM,
                                     autoRecordDrives     = autoRecordDrives,
+                                    autoScanDtcs         = autoScanDtcs,
                                     maxSavedDrives       = maxDrives ?: AppSettings.DEFAULT_MAX_SAVED_DRIVES,
                                     updateChannel        = updateChannel,
                                     navTabIdentity       = navTabIdentity,
                                     livePillQuiet        = livePillQuiet,
                                     gearModeTint         = gearModeTint,
-                                    // Live-preview prefs. Toggles already
-                                    // updated the store, but RESET only updated
-                                    // the local vars — so committing here is
-                                    // what makes RESET+SAVE actually apply.
+                                    // Live-preview prefs — toggling only updated local
+                                    // state + visual side effects; committing here persists.
                                     themeMode            = themeModeLocal,
                                     classicFonts         = classicFontsLocal,
                                     driveAutoZoom        = driveAutoZoomLocal,
@@ -1119,6 +1205,7 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                                 setThemeMode(runCatching { ThemeMode.valueOf(themeModeLocal) }
                                     .getOrDefault(ThemeMode.NIGHT))
                                 setClassicFonts(classicFontsLocal)
+                                setThemeAccentPreview(null)
                                 onDismiss()
                             }
                         }

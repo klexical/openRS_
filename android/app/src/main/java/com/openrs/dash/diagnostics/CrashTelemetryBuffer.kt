@@ -16,7 +16,7 @@ import java.util.Locale
  */
 object CrashTelemetryBuffer {
 
-    private const val CAPACITY = 100
+    private const val CAPACITY = 300
 
     private val ring = arrayOfNulls<Snapshot>(CAPACITY)
     private var head = 0

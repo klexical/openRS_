@@ -1,5 +1,7 @@
 package com.openrs.dash.diagnostics
 
+import com.openrs.dash.can.DeviceStatus
+import com.openrs.dash.can.NrcTracker
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.ui.UserPrefs
 import java.io.BufferedWriter
@@ -98,6 +100,7 @@ object DiagnosticLogger {
         var lastRawHex: String = "",
         var lastDecoded: String = "",
         var hasChanged: Boolean = false,
+        var lastSeenMs: Long = 0,
         val validationIssues: LinkedHashSet<String> = linkedSetOf(),
         val periodicSamples: ArrayDeque<PeriodicSample> = ArrayDeque()
     )
@@ -157,6 +160,17 @@ object DiagnosticLogger {
     @Volatile var sessionPort: Int = 0
     @Volatile var sessionTransport: String = ""
     @Volatile var sessionPrefs: UserPrefs? = null
+    @Volatile private var nrcSnapshot: Map<Int, NrcTracker.NrcRecord> = emptyMap()
+    @Volatile var deviceStatus: DeviceStatus? = null
+    @Volatile var lastDtcResults: List<com.openrs.dash.data.DtcResult>? = null
+
+    /** Capture NRC suppression state from the active NrcTracker for diagnostic export. */
+    fun snapshotNrc(tracker: NrcTracker) {
+        nrcSnapshot = tracker.getSuppressed()
+    }
+
+    /** Read-only snapshot of NRC suppressions for report builders. */
+    val nrcSuppressed: Map<Int, NrcTracker.NrcRecord> get() = nrcSnapshot
 
     // Read-only snapshots for DiagnosticExporter
     val decodeTrace: List<TraceEvent>
@@ -302,6 +316,7 @@ object DiagnosticLogger {
             // ── Option B: enriched frame inventory ───────────────────────────
             val info = frameInventory.getOrPut(canId) { FrameInfo() }
             info.totalReceived++
+            info.lastSeenMs = System.currentTimeMillis()
             if (info.firstRawHex.isEmpty()) info.firstRawHex = rawHex
             if (!info.hasChanged && rawHex != info.firstRawHex) info.hasChanged = true
             info.lastRawHex  = rawHex
@@ -341,6 +356,7 @@ object DiagnosticLogger {
         synchronized(lock) {
             val info = frameInventory.getOrPut(canId) { FrameInfo() }
             info.totalReceived++
+            info.lastSeenMs = System.currentTimeMillis()
             if (info.firstRawHex.isEmpty()) info.firstRawHex = rawHex
             if (!info.hasChanged && rawHex != info.firstRawHex) info.hasChanged = true
             info.lastRawHex = rawHex
@@ -398,8 +414,8 @@ object DiagnosticLogger {
         try {
             w.write(line)
             slcanLinesWritten++
-            // Flush to disk every 1 000 lines to limit data loss on crash
-            if (slcanLinesWritten % 1_000L == 0L) w.flush()
+            // Flush to disk every 200 lines to limit data loss on crash
+            if (slcanLinesWritten % 200L == 0L) w.flush()
         } catch (e: Exception) {
             // Log the first write failure so disk-full isn't completely silent
             if (!slcanCapReached) {

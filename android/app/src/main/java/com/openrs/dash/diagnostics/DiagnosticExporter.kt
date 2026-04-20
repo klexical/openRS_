@@ -6,9 +6,16 @@ import android.os.Handler
 import android.os.Looper
 import androidx.core.content.FileProvider
 import com.openrs.dash.BuildConfig
+import com.openrs.dash.data.DriveBookmarkEntity
+import com.openrs.dash.data.DriveDatabase
 import com.openrs.dash.data.DriveEntity
 import com.openrs.dash.data.DrivePointEntity
 import com.openrs.dash.data.DtcResult
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -23,9 +30,37 @@ import java.util.zip.ZipOutputStream
  * Format generation is delegated to [DiagnosticReportBuilder] (summary text +
  * JSON detail) and [DriveExportBuilder] (GPX, CSV, drive summary, DTC report).
  */
+/** Export progress state for UI feedback. */
+sealed class ExportProgress {
+    data object Idle : ExportProgress()
+    data class Packaging(val label: String = "Packaging...") : ExportProgress()
+    data object Sharing : ExportProgress()
+    data object Done : ExportProgress()
+    data class Error(val message: String) : ExportProgress()
+}
+
+/** Components that can be toggled in the selective export sheet. */
+enum class ExportComponent(val label: String) {
+    DRIVE_CSV("Drive CSV"),
+    DRIVE_GPX("Drive GPX"),
+    SUMMARY("Drive Summary"),
+    PROFILE_JSON("Profile JSON"),
+    DIAGNOSTICS("Diagnostics"),
+    SLCAN_LOG("SLCAN Log"),
+    DTC_REPORT("DTC Report"),
+    RACECHRONO_CSV("RaceChrono CSV"),
+    TRACKADDICT_CSV("TrackAddict CSV")
+}
+
 object DiagnosticExporter {
 
     private const val AUTHORITY = "com.openrs.dash.provider"
+
+    private val appVersion: String get() = BuildConfig.VERSION_NAME ?: ""
+    private val appBuild: Int get() = BuildConfig.VERSION_CODE
+
+    private val _exportProgress = MutableStateFlow<ExportProgress>(ExportProgress.Idle)
+    val exportProgress: StateFlow<ExportProgress> = _exportProgress.asStateFlow()
 
     /**
      * Export the current diagnostic session to a ZIP file in the app's
@@ -57,20 +92,28 @@ object DiagnosticExporter {
             DiagnosticLogger.flushSlcan()
 
             ZipOutputStream(zipFile.outputStream().buffered()).use { zip ->
-                zip.putNextEntry(ZipEntry("diagnostic_summary_$ts.txt"))
-                zip.write(DiagnosticReportBuilder.buildSummaryText(ts).toByteArray(Charsets.UTF_8))
-                zip.closeEntry()
+                val entries = mutableListOf<Pair<String, String>>()
 
-                zip.putNextEntry(ZipEntry("diagnostic_detail_$ts.json"))
-                zip.write(DiagnosticReportBuilder.buildDetailJson(ts).toByteArray(Charsets.UTF_8))
-                zip.closeEntry()
+                fun addEntry(name: String, content: ByteArray) {
+                    zip.putNextEntry(ZipEntry(name))
+                    zip.write(content)
+                    zip.closeEntry()
+                    entries += name to inferType(name)
+                }
+
+                addEntry("diagnostic_summary_$ts.txt",
+                    DiagnosticReportBuilder.buildSummaryText(ts).toByteArray(Charsets.UTF_8))
+                addEntry("diagnostic_detail_$ts.json",
+                    DiagnosticReportBuilder.buildDetailJson(ts).toByteArray(Charsets.UTF_8))
 
                 // SLCAN raw log if one was recorded this session
                 val slcanFile = DiagnosticLogger.slcanLogFile
                 if (slcanFile != null && slcanFile.exists() && slcanFile.length() > 0) {
-                    zip.putNextEntry(ZipEntry("slcan_log_$ts.log"))
+                    val name = "slcan_log_$ts.log"
+                    zip.putNextEntry(ZipEntry(name))
                     slcanFile.inputStream().buffered().use { it.copyTo(zip) }
                     zip.closeEntry()
+                    entries += name to inferType(name)
                 }
 
                 // Active drive (when a drive is being recorded at export time).
@@ -79,24 +122,33 @@ object DiagnosticExporter {
                     val (drive, points) = driveSnapshot
                     if (points.isNotEmpty()) {
                         if (drive.hasGps) {
-                            zip.putNextEntry(ZipEntry("drive_$ts.gpx"))
-                            zip.write(DriveExportBuilder.buildGpx(drive, points, ts).toByteArray(Charsets.UTF_8))
-                            zip.closeEntry()
+                            addEntry("drive_$ts.gpx",
+                                DriveExportBuilder.buildGpx(drive, points, ts).toByteArray(Charsets.UTF_8))
                         }
-                        zip.putNextEntry(ZipEntry("drive_$ts.csv"))
-                        zip.write(DriveExportBuilder.buildCsv(points).toByteArray(Charsets.UTF_8))
-                        zip.closeEntry()
+                        addEntry("drive_$ts.csv",
+                            DriveExportBuilder.buildCsv(points).toByteArray(Charsets.UTF_8))
                     }
-                    zip.putNextEntry(ZipEntry("drive_summary_$ts.txt"))
-                    zip.write(DriveExportBuilder.buildSummary(drive, points).toByteArray(Charsets.UTF_8))
-                    zip.closeEntry()
+                    addEntry("drive_summary_$ts.txt",
+                        DriveExportBuilder.buildSummary(drive, points).toByteArray(Charsets.UTF_8))
                 }
 
                 // Crash telemetry files
                 addCrashFiles(ctx, zip)
 
+                // DTC scan results (if available from this session)
+                val dtcResults = DiagnosticLogger.lastDtcResults
+                if (!dtcResults.isNullOrEmpty()) {
+                    addEntry("dtc_scan_$ts.txt",
+                        DriveExportBuilder.buildDtcText(dtcResults).toByteArray(Charsets.UTF_8))
+                    addEntry("dtc_scan_$ts.json",
+                        DriveExportBuilder.buildDtcJson(dtcResults).toByteArray(Charsets.UTF_8))
+                }
+
                 // DID probe sessions: one CSV per scanned module
                 addProbeFiles(zip)
+
+                // Manifest (last entry — lists all files above)
+                addEntry("manifest.json", buildManifest(entries).toByteArray(Charsets.UTF_8))
             }
 
             FileProvider.getUriForFile(ctx, AUTHORITY, zipFile)
@@ -119,8 +171,11 @@ object DiagnosticExporter {
         drive: DriveEntity,
         points: List<DrivePointEntity>,
         dtcResults: List<DtcResult>? = null,
-        includeDiagnostics: Boolean = true
+        includeDiagnostics: Boolean = true,
+        bookmarks: List<DriveBookmarkEntity>? = null,
+        components: Set<ExportComponent> = ExportComponent.entries.toSet()
     ) {
+        _exportProgress.value = ExportProgress.Packaging()
         try {
             val dir = File(ctx.filesDir, "diagnostics").also { it.mkdirs() }
             val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
@@ -137,59 +192,98 @@ object DiagnosticExporter {
             val zipFile = File(dir, "openrs_export_$ts.zip")
 
             ZipOutputStream(zipFile.outputStream().buffered()).use { zip ->
-                // Drive GPX (if GPS data available)
-                if (drive.hasGps && points.isNotEmpty()) {
-                    zip.putNextEntry(ZipEntry("drive_$ts.gpx"))
-                    zip.write(DriveExportBuilder.buildGpx(drive, points, ts).toByteArray(Charsets.UTF_8))
-                    zip.closeEntry()
+                val entries = mutableListOf<Pair<String, String>>()
 
-                    zip.putNextEntry(ZipEntry("drive_$ts.csv"))
-                    zip.write(DriveExportBuilder.buildCsv(points).toByteArray(Charsets.UTF_8))
+                fun addEntry(name: String, content: ByteArray) {
+                    zip.putNextEntry(ZipEntry(name))
+                    zip.write(content)
                     zip.closeEntry()
+                    entries += name to inferType(name)
                 }
 
-                // Drive summary (always included)
-                zip.putNextEntry(ZipEntry("drive_summary_$ts.txt"))
-                zip.write(DriveExportBuilder.buildSummary(drive, points).toByteArray(Charsets.UTF_8))
-                zip.closeEntry()
+                // Drive GPX (if GPS data available)
+                if (drive.hasGps && points.isNotEmpty()) {
+                    if (ExportComponent.DRIVE_GPX in components) {
+                        addEntry("drive_$ts.gpx",
+                            DriveExportBuilder.buildGpx(drive, points, ts).toByteArray(Charsets.UTF_8))
+                    }
+                    if (ExportComponent.DRIVE_CSV in components) {
+                        addEntry("drive_$ts.csv",
+                            DriveExportBuilder.buildCsv(points).toByteArray(Charsets.UTF_8))
+                    }
+                }
+
+                // Drive summary
+                if (ExportComponent.SUMMARY in components) {
+                    addEntry("drive_summary_$ts.txt",
+                        DriveExportBuilder.buildSummary(drive, points).toByteArray(Charsets.UTF_8))
+                }
+
+                // Sapphire profile JSON (structured import for web dashboard)
+                if (ExportComponent.PROFILE_JSON in components && points.isNotEmpty()) {
+                    val dao = DriveDatabase.getInstance(ctx).driveDao()
+                    val bm = bookmarks ?: try { dao.getBookmarks(drive.id) } catch (_: Exception) { emptyList() }
+                    val lapSessions = try { dao.getLapSessionsForDrive(drive.id) } catch (_: Exception) { emptyList() }
+                    val laps = lapSessions.flatMap { try { dao.getLaps(it.id) } catch (_: Exception) { emptyList() } }
+                    val runs = try { dao.getRecentPerfRuns(50).filter { it.driveId == drive.id } } catch (_: Exception) { emptyList() }
+                    addEntry("drive_profile_$ts.json",
+                        DriveExportBuilder.buildProfileJson(drive, points, bm, laps, runs).toByteArray(Charsets.UTF_8))
+                }
+
+                // RaceChrono CSV
+                if (ExportComponent.RACECHRONO_CSV in components && points.isNotEmpty()) {
+                    addEntry("drive_racechrono_$ts.csv",
+                        DriveExportBuilder.buildRaceChronoCsv(points).toByteArray(Charsets.UTF_8))
+                }
+
+                // TrackAddict CSV
+                if (ExportComponent.TRACKADDICT_CSV in components && points.isNotEmpty()) {
+                    addEntry("drive_trackaddict_$ts.csv",
+                        DriveExportBuilder.buildTrackAddictCsv(points).toByteArray(Charsets.UTF_8))
+                }
 
                 // Diagnostic data (if requested and available)
-                if (includeDiagnostics) {
+                if (includeDiagnostics && ExportComponent.DIAGNOSTICS in components) {
                     DiagnosticLogger.flushSlcan()
 
                     val summary = DiagnosticReportBuilder.buildSummaryText(ts)
                     if (summary.isNotEmpty()) {
-                        zip.putNextEntry(ZipEntry("diagnostic_summary_$ts.txt"))
-                        zip.write(summary.toByteArray(Charsets.UTF_8))
-                        zip.closeEntry()
+                        addEntry("diagnostic_summary_$ts.txt", summary.toByteArray(Charsets.UTF_8))
                     }
 
                     val detail = DiagnosticReportBuilder.buildDetailJson(ts)
                     if (detail.isNotEmpty()) {
-                        zip.putNextEntry(ZipEntry("diagnostic_detail_$ts.json"))
-                        zip.write(detail.toByteArray(Charsets.UTF_8))
-                        zip.closeEntry()
-                    }
-
-                    val slcanFile = DiagnosticLogger.slcanLogFile
-                    if (slcanFile?.exists() == true && slcanFile.length() > 0) {
-                        zip.putNextEntry(ZipEntry("slcan_log_$ts.log"))
-                        slcanFile.inputStream().buffered().use { it.copyTo(zip) }
-                        zip.closeEntry()
+                        addEntry("diagnostic_detail_$ts.json", detail.toByteArray(Charsets.UTF_8))
                     }
 
                     addCrashFiles(ctx, zip)
                     addProbeFiles(zip)
                 }
 
-                // DTC results (optional)
-                if (!dtcResults.isNullOrEmpty()) {
-                    zip.putNextEntry(ZipEntry("dtc_scan_$ts.txt"))
-                    zip.write(DriveExportBuilder.buildDtcText(dtcResults).toByteArray(Charsets.UTF_8))
-                    zip.closeEntry()
+                // SLCAN log (separate toggle from diagnostics — can be large)
+                if (includeDiagnostics && ExportComponent.SLCAN_LOG in components) {
+                    DiagnosticLogger.flushSlcan()
+                    val slcanFile = DiagnosticLogger.slcanLogFile
+                    if (slcanFile?.exists() == true && slcanFile.length() > 0) {
+                        val name = "slcan_log_$ts.log"
+                        zip.putNextEntry(ZipEntry(name))
+                        slcanFile.inputStream().buffered().use { it.copyTo(zip) }
+                        zip.closeEntry()
+                        entries += name to inferType(name)
+                    }
                 }
+
+                // DTC results (optional)
+                if (ExportComponent.DTC_REPORT in components && !dtcResults.isNullOrEmpty()) {
+                    addEntry("dtc_scan_$ts.txt",
+                        DriveExportBuilder.buildDtcText(dtcResults).toByteArray(Charsets.UTF_8))
+                }
+
+                // Manifest (last entry — lists all files above)
+                addEntry("manifest.json", buildManifest(entries).toByteArray(Charsets.UTF_8))
             }
 
+            _exportProgress.value = ExportProgress.Sharing
             val uri = FileProvider.getUriForFile(ctx, AUTHORITY, zipFile)
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "application/zip"
@@ -197,7 +291,7 @@ object DiagnosticExporter {
                 putExtra(Intent.EXTRA_SUBJECT, "openRS_ Drive Export")
                 putExtra(
                     Intent.EXTRA_TEXT,
-                    "openRS_ v${BuildConfig.VERSION_NAME} drive export.\n" +
+                    "openRS_ v${appVersion} drive export.\n" +
                     "${points.size} waypoints, ${"%.1f".format(drive.distanceKm)} km.\n\n" +
                     "View in Sapphire → https://klexical.github.io/openRS_/"
                 )
@@ -206,8 +300,98 @@ object DiagnosticExporter {
             Handler(Looper.getMainLooper()).post {
                 ctx.startActivity(Intent.createChooser(intent, "Share Drive Data"))
             }
+            _exportProgress.value = ExportProgress.Done
+            _exportProgress.value = ExportProgress.Idle
         } catch (e: Exception) {
+            _exportProgress.value = ExportProgress.Error(e.message ?: "unknown")
             DiagnosticLogger.event("DRIVE_EXPORT_ERROR", e.message ?: "unknown")
+            _exportProgress.value = ExportProgress.Idle
+        }
+    }
+
+    /**
+     * Batch export multiple drives into a single ZIP.
+     * Each drive gets per-drive-prefixed filenames: drive_{id}_{ts}.csv etc.
+     */
+    fun shareDrives(
+        ctx: Context,
+        drives: List<Pair<DriveEntity, List<DrivePointEntity>>>,
+        components: Set<ExportComponent> = ExportComponent.entries.toSet()
+    ) {
+        _exportProgress.value = ExportProgress.Packaging("Packaging ${drives.size} drives...")
+        try {
+            val dir = File(ctx.filesDir, "diagnostics").also { it.mkdirs() }
+            val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val zipFile = File(dir, "openrs_batch_$ts.zip")
+
+            ZipOutputStream(zipFile.outputStream().buffered()).use { zip ->
+                val entries = mutableListOf<Pair<String, String>>()
+
+                fun addEntry(name: String, content: ByteArray) {
+                    zip.putNextEntry(ZipEntry(name))
+                    zip.write(content)
+                    zip.closeEntry()
+                    entries += name to inferType(name)
+                }
+
+                drives.forEach { (drive, points) ->
+                    val driveTs = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
+                        .format(Date(drive.startTime))
+                    val prefix = "drive_${drive.id}_$driveTs"
+
+                    if (drive.hasGps && points.isNotEmpty()) {
+                        if (ExportComponent.DRIVE_GPX in components) {
+                            addEntry("$prefix.gpx",
+                                DriveExportBuilder.buildGpx(drive, points, driveTs).toByteArray(Charsets.UTF_8))
+                        }
+                        if (ExportComponent.DRIVE_CSV in components) {
+                            addEntry("$prefix.csv",
+                                DriveExportBuilder.buildCsv(points).toByteArray(Charsets.UTF_8))
+                        }
+                    }
+                    if (ExportComponent.SUMMARY in components) {
+                        addEntry("${prefix}_summary.txt",
+                            DriveExportBuilder.buildSummary(drive, points).toByteArray(Charsets.UTF_8))
+                    }
+                    if (ExportComponent.PROFILE_JSON in components && points.isNotEmpty()) {
+                        val dao = DriveDatabase.getInstance(ctx).driveDao()
+                        val bm = try { dao.getBookmarks(drive.id) } catch (_: Exception) { emptyList() }
+                        val lapSessions = try { dao.getLapSessionsForDrive(drive.id) } catch (_: Exception) { emptyList() }
+                        val laps = lapSessions.flatMap { try { dao.getLaps(it.id) } catch (_: Exception) { emptyList() } }
+                        val runs = try { dao.getRecentPerfRuns(50).filter { it.driveId == drive.id } } catch (_: Exception) { emptyList() }
+                        addEntry("${prefix}_profile.json",
+                            DriveExportBuilder.buildProfileJson(drive, points, bm, laps, runs).toByteArray(Charsets.UTF_8))
+                    }
+                }
+
+                addEntry("manifest.json", buildManifest(entries).toByteArray(Charsets.UTF_8))
+            }
+
+            _exportProgress.value = ExportProgress.Sharing
+            val uri = FileProvider.getUriForFile(ctx, AUTHORITY, zipFile)
+            val totalDist = drives.sumOf { it.first.distanceKm }
+            val totalPts = drives.sumOf { it.second.size }
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/zip"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, "openRS_ Batch Export (${drives.size} drives)")
+                putExtra(
+                    Intent.EXTRA_TEXT,
+                    "openRS_ v${appVersion} batch export.\n" +
+                    "${drives.size} drives, $totalPts waypoints, ${"%.1f".format(totalDist)} km total.\n\n" +
+                    "View in Sapphire → https://klexical.github.io/openRS_/"
+                )
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            Handler(Looper.getMainLooper()).post {
+                ctx.startActivity(Intent.createChooser(intent, "Share Batch Drive Data"))
+            }
+            _exportProgress.value = ExportProgress.Done
+            _exportProgress.value = ExportProgress.Idle
+        } catch (e: Exception) {
+            _exportProgress.value = ExportProgress.Error(e.message ?: "unknown")
+            DiagnosticLogger.event("BATCH_EXPORT_ERROR", e.message ?: "unknown")
+            _exportProgress.value = ExportProgress.Idle
         }
     }
 
@@ -251,10 +435,10 @@ object DiagnosticExporter {
             putExtra(Intent.EXTRA_SUBJECT, "openRS_ Diagnostic Report")
             putExtra(
                 Intent.EXTRA_TEXT,
-                "openRS_ v${BuildConfig.VERSION_NAME} diagnostic bundle.\n" +
+                "openRS_ v${appVersion} diagnostic bundle.\n" +
                 "• diagnostic_summary_*.txt  — human-readable report\n" +
                 "• diagnostic_detail_*.json  — full machine-readable data$slcanNote$driveNote\n\n" +
-                "App      : v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})\n" +
+                "App      : v${appVersion} (build ${appBuild})\n" +
                 "Session  : ${DiagnosticLogger.formatDuration(DiagnosticLogger.sessionDurationMs)}\n" +
                 "Firmware : ${DiagnosticLogger.firmwareVersion}\n" +
                 "Host     : ${DiagnosticLogger.sessionHost}:${DiagnosticLogger.sessionPort}" +
@@ -280,6 +464,42 @@ object DiagnosticExporter {
                 crashFile.inputStream().buffered().use { it.copyTo(zip) }
                 zip.closeEntry()
             }
+    }
+
+    /** Build manifest.json listing all files in the ZIP with typed metadata. */
+    private fun buildManifest(files: List<Pair<String, String>>): String {
+        val root = JSONObject()
+        root.put("version", 1)
+        root.put("app", "openRS_")
+        root.put("appVersion", appVersion)
+        root.put("appBuild", appBuild)
+        root.put("exportedAt", System.currentTimeMillis())
+        val arr = JSONArray()
+        for ((name, type) in files) {
+            arr.put(JSONObject().apply {
+                put("name", name)
+                put("type", type)
+            })
+        }
+        root.put("files", arr)
+        return root.toString(2)
+    }
+
+    /** Infer the manifest type string from a ZIP entry filename. */
+    private fun inferType(name: String): String = when {
+        name == "manifest.json" -> "manifest"
+        name.startsWith("diagnostic_summary_") -> "diagnostic_summary"
+        name.startsWith("diagnostic_detail_") -> "diagnostic_detail"
+        name.startsWith("slcan_log_") -> "slcan_log"
+        name.startsWith("drive_profile_") -> "drive_profile"
+        name.startsWith("drive_summary_") -> "drive_summary"
+        name.startsWith("drive_") && name.endsWith(".gpx") -> "drive_gpx"
+        name.startsWith("drive_") && name.endsWith(".csv") -> "drive_csv"
+        name.startsWith("dtc_scan_") && name.endsWith(".json") -> "dtc_json"
+        name.startsWith("dtc_scan_") && name.endsWith(".txt") -> "dtc_text"
+        name.startsWith("did_probe_") -> "did_probe"
+        name.startsWith("crash_telemetry_") -> "crash_telemetry"
+        else -> "unknown"
     }
 
     /** Add DID probe session CSVs to the ZIP. */

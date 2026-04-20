@@ -10,6 +10,7 @@ import com.openrs.dash.data.VehicleState
 import com.openrs.dash.service.DriveRecorder
 import com.openrs.dash.service.WeatherRepository
 import com.openrs.dash.BuildConfig
+import com.openrs.dash.can.DeviceStatus
 import com.openrs.dash.diagnostics.CrashReporter
 import com.openrs.dash.diagnostics.CrashTelemetryBuffer
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -63,6 +64,9 @@ class OpenRSDashApp : Application() {
 
     /** Human-readable firmware version label (e.g. "openRS_ v1.5-rc.5"). */
     val firmwareVersionLabel = MutableStateFlow("")
+
+    /** WiCAN device status from /check_status — populated on WiFi connect, cleared on disconnect. */
+    val deviceStatus = MutableStateFlow<DeviceStatus?>(null)
 
     /** Drive database — shared across DriveRecorder, CanDataService, and UI. */
     val driveDb: DriveDatabase by lazy { DriveDatabase.getInstance(this) }

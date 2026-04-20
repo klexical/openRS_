@@ -2,6 +2,7 @@ package com.openrs.dash.can
 
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.data.DtcModuleSpec
+import com.openrs.dash.data.ModuleScanStatus
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticLogger
 import kotlinx.coroutines.*
@@ -144,6 +145,8 @@ class SlcanConnection(
                 failedAttempts = 0
                 firmwareVersion = transport.stockFirmwareLabel
                 val bcmIsoTp = IsoTpBuffer()
+                val nrcTracker = NrcTracker()
+                var lastSentPcmDid = -1
 
                 // ── BCM OBD poller ────────────────────────────────────────
                 val obdJob = launch {
@@ -170,6 +173,9 @@ class SlcanConnection(
                     delay(ObdConstants.PCM_INITIAL_DELAY_MS)
                     while (isActive) {
                         ObdConstants.PCM_QUERIES.forEach { q ->
+                            val did = ObdConstants.extractDid(q)
+                            if (did != null && nrcTracker.isSuppressed(did)) return@forEach
+                            lastSentPcmDid = did ?: -1
                             try { transport.writeLine(q) } catch (_: Exception) { }
                             delay(ObdConstants.PCM_QUERY_GAP_MS)
                         }
@@ -300,6 +306,16 @@ class SlcanConnection(
                             continue
                         }
                         if (frame.first == ObdConstants.PCM_RESPONSE_ID) {
+                            if (frame.second.size >= 4 && (frame.second[1].toInt() and 0xFF) == 0x7F) {
+                                val nrcCode = frame.second[3].toInt() and 0xFF
+                                if (nrcTracker.recordNrc(lastSentPcmDid, nrcCode, System.currentTimeMillis())) {
+                                    DiagnosticLogger.event("NRC_SUPPRESS",
+                                        "DID 0x%04X suppressed: NRC 0x%02X (%s)".format(
+                                            lastSentPcmDid, nrcCode, nrcLabel(nrcCode)))
+                                    DiagnosticLogger.snapshotNrc(nrcTracker)
+                                }
+                                continue
+                            }
                             ObdResponseParser.parsePcmResponse(frame.second, getCurrentState(), onObdUpdate)
                             continue
                         }
@@ -387,7 +403,10 @@ class SlcanConnection(
 
     // ── DTC scan ──────────────────────────────────────────────────────────────
 
-    suspend fun performDtcScan(modules: List<DtcModuleSpec>): Map<String, ByteArray> =
+    suspend fun performDtcScan(
+        modules: List<DtcModuleSpec>,
+        onModuleProgress: ((String, ModuleScanStatus?) -> Unit)? = null
+    ): Map<String, ByteArray> =
         _dtcMutex.withLock {
             val transport = _transport ?: return emptyMap()
             val results = mutableMapOf<String, ByteArray>()
@@ -397,12 +416,67 @@ class SlcanConnection(
             while (_dtcChannel.tryReceive().isSuccess) { /* drain stale */ }
 
             try {
+                // Phase 1: establish extended diagnostic session for modules that need it
+                val extModules = modules.filter { it.needsExtSession && it.extSessionFrame != null }
+                for (m in extModules) {
+                    try { transport.writeLine(m.extSessionFrame!!) } catch (_: Exception) { }
+                    delay(ObdConstants.EXT_SESSION_GAP_MS)
+                }
+                if (extModules.isNotEmpty()) delay(200L)
+
+                // Phase 2: burst-send all DTC scan requests (parallel approach)
+                val buffers = mutableMapOf<Int, IsoTpBuffer>()
+                val fcSent = mutableSetOf<Int>()
+                val moduleByResp = modules.associateBy { it.responseId }
+
+                // Mark all as querying
+                modules.forEach { m ->
+                    onModuleProgress?.invoke(m.name, null)
+                    buffers[m.responseId] = IsoTpBuffer()
+                }
+
+                // Send all requests with 50ms between each
                 for (module in modules) {
                     val reqFrame = "t%03X8031902FF00000000\r".format(module.requestId)
-                    try { transport.writeLine(reqFrame) } catch (_: Exception) { continue }
-                    val payload = assembleIsotpResponse(transport, module.responseId, module.requestId, 2_500L)
-                    if (payload != null) results[module.name] = payload
-                    delay(350L)
+                    try { transport.writeLine(reqFrame) } catch (_: Exception) {
+                        onModuleProgress?.invoke(module.name, ModuleScanStatus.ERROR)
+                    }
+                    delay(50L)
+                }
+
+                // Phase 3: single receiver loop with shared deadline
+                val deadline = System.currentTimeMillis() + 3_500L
+
+                while (results.size < modules.size && System.currentTimeMillis() < deadline) {
+                    val remaining = deadline - System.currentTimeMillis()
+                    if (remaining <= 0) break
+                    val frame = withTimeoutOrNull(remaining) { _dtcChannel.receive() } ?: break
+
+                    val buf = buffers[frame.first] ?: continue
+                    val (payload, isFF, isSF) = buf.feed(frame.second)
+
+                    // Send flow control if we got a First Frame
+                    if (isFF && frame.first !in fcSent) {
+                        val mod = moduleByResp[frame.first] ?: continue
+                        val fcFrame = "t%03X83000000000000000\r".format(mod.requestId)
+                        try { transport.writeLine(fcFrame) } catch (_: Exception) { }
+                        fcSent += frame.first
+                    }
+
+                    // Check for completed payload
+                    if (payload != null || isSF) {
+                        val completedPayload = payload ?: continue
+                        val mod = moduleByResp[frame.first] ?: continue
+                        results[mod.name] = completedPayload
+                        onModuleProgress?.invoke(mod.name, ModuleScanStatus.OK)
+                    }
+                }
+
+                // Mark timed-out modules
+                for (module in modules) {
+                    if (module.name !in results) {
+                        onModuleProgress?.invoke(module.name, ModuleScanStatus.TIMEOUT)
+                    }
                 }
             } finally {
                 _dtcScanActive = false
@@ -475,6 +549,70 @@ class SlcanConnection(
             }
         }
         return if (buf.size() > 0) buf.toByteArray() else null
+    }
+
+    // ── Freeze frame reads ─────────────────────────────────────────────────
+
+    /**
+     * Read freeze frame snapshot identification (UDS 0x19/04) from a module.
+     * Returns raw payload or null on timeout.
+     */
+    suspend fun performFreezeFrameIdentification(
+        module: DtcModuleSpec
+    ): ByteArray? = _dtcMutex.withLock {
+        val transport = _transport ?: return null
+        _dtcWatchIds = setOf(module.responseId)
+        _dtcScanActive = true
+        while (_dtcChannel.tryReceive().isSuccess) { /* drain */ }
+        try {
+            // UDS 0x19/04: reportDTCSnapshotIdentification
+            val req = "t%03X8031904FF00000000\r".format(module.requestId)
+            try { transport.writeLine(req) } catch (_: Exception) { return null }
+            assembleIsotpResponse(transport, module.responseId, module.requestId, 3_000L)
+        } finally {
+            _dtcScanActive = false
+            _dtcWatchIds = emptySet()
+        }
+    }
+
+    /**
+     * Read a specific freeze frame record (UDS 0x19/05) for a given DTC.
+     * [dtcBytes] = 3-byte DTC (high, mid, status), [recordNumber] = snapshot record.
+     */
+    suspend fun performFreezeFrameRead(
+        module: DtcModuleSpec,
+        dtcBytes: ByteArray,
+        recordNumber: Int
+    ): ByteArray? = _dtcMutex.withLock {
+        val transport = _transport ?: return null
+        _dtcWatchIds = setOf(module.responseId)
+        _dtcScanActive = true
+        while (_dtcChannel.tryReceive().isSuccess) { /* drain */ }
+        try {
+            // UDS 0x19/05: reportDTCSnapshotRecordByDTCNumber
+            // Frame: [SID=19, SF=05, DTC_high, DTC_mid, DTC_low, RecordNum]
+            val req = "t%03X8061905%02X%02X%02X%02X00\r".format(
+                module.requestId,
+                dtcBytes[0].toInt() and 0xFF,
+                dtcBytes[1].toInt() and 0xFF,
+                dtcBytes[2].toInt() and 0xFF,
+                recordNumber
+            )
+            try { transport.writeLine(req) } catch (_: Exception) { return null }
+            assembleIsotpResponse(transport, module.responseId, module.requestId, 3_000L)
+        } finally {
+            _dtcScanActive = false
+            _dtcWatchIds = emptySet()
+        }
+    }
+
+    // ── NRC helpers ─────────────────────────────────────────────────────────
+
+    private fun nrcLabel(code: Int): String = when (code) {
+        0x31 -> "requestOutOfRange"
+        0x22 -> "conditionsNotCorrect"
+        0x33 -> "securityAccessDenied"
+        else -> "0x%02X".format(code)
     }
 
     // ── FPS tracking ──────────────────────────────────────────────────────────

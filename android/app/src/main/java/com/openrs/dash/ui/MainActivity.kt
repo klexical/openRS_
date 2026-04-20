@@ -162,12 +162,13 @@ class MainActivity : ComponentActivity() {
                 setClassicFonts(prefs.classicFonts)
             }
 
-            CompositionLocalProvider(LocalThemeAccent provides prefs.themeAccent) {
+            val activeAccent = themeAccentPreview() ?: prefs.themeAccent
+            CompositionLocalProvider(LocalThemeAccent provides activeAccent) {
                 MaterialTheme(
                     colorScheme = darkColorScheme(
                         background = Bg,
                         surface    = Surf,
-                        primary    = prefs.themeAccent
+                        primary    = activeAccent
                     )
                 ) {
                     Box(Modifier.fillMaxSize()) {
@@ -255,11 +256,22 @@ class MainActivity : ComponentActivity() {
                                                     snackbarHostState = snackbarHostState,
                                                     firmwareApi = service?.firmwareApi,
                                                     onScanDtcs = service?.let { svc ->
-                                                        val fn: suspend () -> List<com.openrs.dash.data.DtcResult> = { svc.scanDtcs() }
+                                                        val fn: suspend (com.openrs.dash.data.DtcProgressCallback?) -> com.openrs.dash.data.DtcScanResult =
+                                                            { progress -> svc.scanDtcs(progress) }
                                                         fn
                                                     },
                                                     onClearDtcs = service?.let { svc ->
                                                         val fn: suspend () -> Map<String, Boolean> = { svc.clearDtcs() }
+                                                        fn
+                                                    },
+                                                    onRetryScanModule = service?.let { svc ->
+                                                        val fn: suspend (String) -> Pair<List<com.openrs.dash.data.DtcResult>, com.openrs.dash.data.ModuleScanStatus> =
+                                                            { moduleName -> svc.retryScanModule(moduleName) }
+                                                        fn
+                                                    },
+                                                    onFetchFreezeFrames = service?.let { svc ->
+                                                        val fn: suspend (List<com.openrs.dash.data.DtcResult>) -> List<com.openrs.dash.data.DtcResult> =
+                                                            { codes -> svc.fetchFreezeFrames(codes) }
                                                         fn
                                                     },
                                                     onSendRawQuery = service?.let { svc ->

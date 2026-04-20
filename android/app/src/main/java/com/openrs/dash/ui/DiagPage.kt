@@ -41,10 +41,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import com.openrs.dash.data.DtcProgressCallback
 import com.openrs.dash.data.DtcResult
+import com.openrs.dash.data.DtcScanResult
 import com.openrs.dash.data.DtcStatus
+import com.openrs.dash.data.ModuleScanStatus
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticExporter
+import com.openrs.dash.can.CanDecoder
 import com.openrs.dash.diagnostics.DiagnosticLogger
 import com.openrs.dash.ui.Tokens.CardBorder
 import com.openrs.dash.ui.anim.pageEntrance
@@ -60,8 +64,10 @@ import kotlin.math.roundToInt
 @Composable fun DiagPage(
     lines: List<String>,
     vs: VehicleState,
-    onScanDtcs: (suspend () -> List<DtcResult>)?,
+    onScanDtcs: (suspend (DtcProgressCallback?) -> DtcScanResult)?,
     onClearDtcs: (suspend () -> Map<String, Boolean>)? = null,
+    onRetryScanModule: (suspend (String) -> Pair<List<DtcResult>, ModuleScanStatus>)? = null,
+    onFetchFreezeFrames: (suspend (List<DtcResult>) -> List<DtcResult>)? = null,
     onSendRawQuery: (suspend (responseId: Int, frame: String, timeoutMs: Long) -> ByteArray?)? = null,
     onResetSession: () -> Unit = {},
     snackbarHostState: androidx.compose.material3.SnackbarHostState? = null,
@@ -74,13 +80,23 @@ import kotlin.math.roundToInt
     // DTC scan state
     var dtcScanning  by remember { mutableStateOf(false) }
     var dtcClearing  by remember { mutableStateOf(false) }
-    var dtcResults   by remember { mutableStateOf<List<DtcResult>?>(null) }
+    var dtcScanResult by remember { mutableStateOf<DtcScanResult?>(null) }
+    val dtcResults: List<DtcResult>? = dtcScanResult?.codes
     var dtcError     by remember { mutableStateOf<String?>(null) }
     var dtcClearStatus by remember { mutableStateOf<String?>(null) }
     var showClearConfirm by remember { mutableStateOf(false) }
     var dtcScanJob   by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var dtcScanStartMs by remember { mutableStateOf(0L) }
     var dtcScanElapsed by remember { mutableStateOf(0) }
+    // Per-module progress: null value = querying, non-null = done
+    var moduleProgress by remember { mutableStateOf<Map<String, ModuleScanStatus?>>(emptyMap()) }
+    // Status filter
+    var statusFilter by remember { mutableStateOf<DtcStatus?>(null) }
+    // Detail sheet
+    var selectedDtc by remember { mutableStateOf<DtcResult?>(null) }
+    var selectedDtcHistory by remember { mutableStateOf<List<com.openrs.dash.data.DtcCodeEntity>?>(null) }
+    // Diff: set of codes from previous scan
+    var previousScanCodes by remember { mutableStateOf<Set<String>>(emptySet()) }
     LaunchedEffect(dtcScanning) {
         if (dtcScanning) {
             dtcScanStartMs = System.currentTimeMillis()
@@ -106,7 +122,6 @@ import kotlin.math.roundToInt
     var canOutputExpanded   by rememberSectionExpanded("DIAG_CAN_OUTPUT", default = false)
     var frameInvExpanded    by rememberSectionExpanded("DIAG_FRAME_INV", default = false)
     var pidBrowserExpanded  by rememberSectionExpanded("DIAG_PID_BROWSER", default = false)
-    var showAllFrames       by remember { mutableStateOf(false) }
 
     var pageEntered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { pageEntered = true }
@@ -403,20 +418,41 @@ import kotlin.math.roundToInt
                                     dtcError = null
                                     dtcClearStatus = null
                                     scanComplete = false
+                                    statusFilter = null
+                                    moduleProgress = com.openrs.dash.diagnostics.DtcScanner.MODULES
+                                        .associate { it.name to null as ModuleScanStatus? }
                                     dtcScanJob = scope.launch(Dispatchers.IO) {
-                                        val result = try {
-                                            onScanDtcs?.invoke()
+                                        // Load previous scan codes for diff
+                                        val prevCodes = try {
+                                            com.openrs.dash.diagnostics.DtcScanner(ctx).getPreviousScanCodes()
+                                        } catch (_: Exception) { emptySet<String>() }
+                                        withContext(Dispatchers.Main) { previousScanCodes = prevCodes }
+
+                                        var result = try {
+                                            onScanDtcs?.invoke { name, status ->
+                                                // Update progress on Main thread
+                                                launch(Dispatchers.Main) {
+                                                    moduleProgress = moduleProgress + (name to status)
+                                                }
+                                            }
                                         } catch (e: kotlinx.coroutines.CancellationException) {
                                             throw e
                                         } catch (_: Exception) { null }
+                                        // Fetch freeze frames if codes were found
+                                        if (result != null && result.codes.isNotEmpty() && onFetchFreezeFrames != null) {
+                                            try {
+                                                val updatedCodes = onFetchFreezeFrames.invoke(result.codes)
+                                                result = result.copy(codes = updatedCodes)
+                                            } catch (_: Exception) { /* freeze frame fetch is best-effort */ }
+                                        }
                                         withContext(Dispatchers.Main) {
                                             if (dtcScanning) {
                                                 dtcScanning = false
                                                 if (result != null) {
-                                                    dtcResults = result
-                                                    // Feed the GARAGE-tab badge with the active-code count.
+                                                    dtcScanResult = result
+                                                    DiagnosticLogger.lastDtcResults = result.codes
                                                     com.openrs.dash.OpenRSDashApp.instance.activeDtcCount.value =
-                                                        result.count { it.status == com.openrs.dash.data.DtcStatus.ACTIVE }
+                                                        result.codes.count { it.status == com.openrs.dash.data.DtcStatus.ACTIVE }
                                                 } else {
                                                     dtcError = "Scan failed — check adapter connection"
                                                 }
@@ -446,12 +482,12 @@ import kotlin.math.roundToInt
                     }
 
                     // Dismiss button — clears results from the display
-                    if (dtcResults != null) {
+                    if (dtcScanResult != null) {
                         Box(
                             Modifier.width(72.dp)
                                 .background(Surf3, RoundedCornerShape(10.dp))
                                 .border(CardBorder, Dim.copy(0.3f), RoundedCornerShape(10.dp))
-                                .clickable(enabled = !dtcBusy) { dtcResults = null; dtcError = null; dtcClearStatus = null }
+                                .clickable(enabled = !dtcBusy) { dtcScanResult = null; dtcError = null; dtcClearStatus = null; statusFilter = null }
                                 .padding(vertical = 13.dp),
                             contentAlignment = Alignment.Center
                         ) {
@@ -461,7 +497,7 @@ import kotlin.math.roundToInt
                 }
 
                 // Clear Fault Codes button — shown when there are stored faults and adapter is connected
-                val hasFaults = dtcResults?.isNotEmpty() == true
+                val hasFaults = dtcScanResult?.codes?.isNotEmpty() == true
                 if (hasFaults || dtcClearing) {
                     Spacer(Modifier.height(6.dp))
                     Box(
@@ -494,14 +530,50 @@ import kotlin.math.roundToInt
 
                 Spacer(Modifier.height(4.dp))
                 if (dtcClearStatus == null) {
-                    MonoLabel(
-                        when {
-                            dtcScanning -> "Querying PCM, BCM, ABS, AWD, PSCM..."
-                            dtcClearing -> "Sending UDS 0x14 to all modules — do not disconnect..."
-                            else        -> "Reads active, pending, and permanent fault codes from all modules."
-                        },
-                        9.sp, Dim, modifier = Modifier.padding(bottom = 6.dp)
-                    )
+                    if (dtcScanning && moduleProgress.isNotEmpty()) {
+                        // Per-module progress badges
+                        Row(
+                            Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            for ((name, status) in moduleProgress) {
+                                val (bg, fg) = when (status) {
+                                    null -> accent.copy(0.15f) to accent  // querying
+                                    ModuleScanStatus.OK -> Ok.copy(0.12f) to Ok
+                                    ModuleScanStatus.TIMEOUT -> Warn.copy(0.12f) to Warn
+                                    else -> Orange.copy(0.12f) to Orange
+                                }
+                                Box(
+                                    Modifier
+                                        .background(bg, RoundedCornerShape(4.dp))
+                                        .border(CardBorder, fg.copy(0.3f), RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 6.dp, vertical = 3.dp)
+                                ) {
+                                    MonoLabel(
+                                        when (status) {
+                                            null -> "$name..."
+                                            ModuleScanStatus.OK -> {
+                                                val count = dtcResults?.count { it.module == name } ?: 0
+                                                "✓ $name ($count)"
+                                            }
+                                            ModuleScanStatus.TIMEOUT -> "⚠ $name"
+                                            else -> "✗ $name"
+                                        },
+                                        8.sp, fg
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        MonoLabel(
+                            when {
+                                dtcScanning -> "Querying PCM, BCM, ABS, AWD, PSCM, GFM..."
+                                dtcClearing -> "Sending UDS 0x14 to all modules — do not disconnect..."
+                                else        -> "Reads active, pending, and permanent fault codes from all modules."
+                            },
+                            9.sp, Dim, modifier = Modifier.padding(bottom = 6.dp)
+                        )
+                    }
                 }
 
                 // Clear status confirmation
@@ -524,24 +596,74 @@ import kotlin.math.roundToInt
 
                 // Results
                 val results = dtcResults
+                val scanRes = dtcScanResult
                 var lastResults by remember { mutableStateOf<List<DtcResult>?>(null) }
                 if (results != null) lastResults = results
                 AnimatedVisibility(visible = results != null) {
                     lastResults?.let { r ->
                         Column(Modifier.fillMaxWidth()) {
-                            if (r.isEmpty()) {
-                                Box(
-                                    Modifier.fillMaxWidth()
-                                        .background(Ok.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
-                                        .border(CardBorder, Ok.copy(0.25f), RoundedCornerShape(10.dp))
-                                        .padding(14.dp),
-                                    contentAlignment = Alignment.Center
+                            // Status filter chips (only when there are results)
+                            if (r.isNotEmpty()) {
+                                Row(
+                                    Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
-                                    MonoLabel("✓  NO FAULT CODES — all modules clean", 11.sp, Ok)
+                                    val filters = listOf<DtcStatus?>(null) + DtcStatus.entries.filter { s ->
+                                        r.any { it.status == s }
+                                    }
+                                    for (filter in filters) {
+                                        val active = statusFilter == filter
+                                        val count = if (filter == null) r.size else r.count { it.status == filter }
+                                        val label = if (filter == null) "ALL" else filter.label.uppercase()
+                                        Box(
+                                            Modifier
+                                                .background(
+                                                    if (active) accent.copy(pillBgAlpha(0.15f)) else Surf3,
+                                                    RoundedCornerShape(6.dp)
+                                                )
+                                                .border(
+                                                    CardBorder,
+                                                    if (active) accent.copy(borderAlpha(0.5f)) else Brd,
+                                                    RoundedCornerShape(6.dp)
+                                                )
+                                                .clickable { statusFilter = if (filter == statusFilter) null else filter }
+                                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                        ) {
+                                            MonoLabel("$label ($count)", 8.sp,
+                                                if (active) accent else Dim)
+                                        }
+                                    }
                                 }
-                            } else {
-                                val grouped = r.groupBy { it.module }
-                                val moduleOrder = listOf("PCM", "BCM", "ABS", "AWD", "PSCM")
+                            }
+
+                            val filtered = if (statusFilter != null) r.filter { it.status == statusFilter } else r
+                            if (filtered.isEmpty() && r.isEmpty()) {
+                                // Scan completed with zero codes — but check for timeouts
+                                val timeouts = scanRes?.moduleStatuses?.filter { it.value == ModuleScanStatus.TIMEOUT }
+                                if (timeouts.isNullOrEmpty()) {
+                                    Box(
+                                        Modifier.fillMaxWidth()
+                                            .background(Ok.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
+                                            .border(CardBorder, Ok.copy(0.25f), RoundedCornerShape(10.dp))
+                                            .padding(14.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        MonoLabel("✓  NO FAULT CODES — all modules clean", 11.sp, Ok)
+                                    }
+                                } else {
+                                    Box(
+                                        Modifier.fillMaxWidth()
+                                            .background(Ok.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
+                                            .border(CardBorder, Ok.copy(0.25f), RoundedCornerShape(10.dp))
+                                            .padding(14.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        MonoLabel("✓  NO FAULT CODES from responding modules", 11.sp, Ok)
+                                    }
+                                }
+                            } else if (filtered.isNotEmpty()) {
+                                val grouped = filtered.groupBy { it.module }
+                                val moduleOrder = listOf("PCM", "BCM", "ABS", "AWD", "PSCM", "GFM")
                                 Column(
                                     Modifier.fillMaxWidth()
                                         .background(Surf2, RoundedCornerShape(10.dp))
@@ -555,22 +677,126 @@ import kotlin.math.roundToInt
                                         MonoLabel(moduleName, 9.sp, accent, letterSpacing = 1.sp)
                                         moduleDtcs.forEach { dtc ->
                                             Box(pageEntrance(dtcIdx, scanComplete, staggerDelayMs = 60)) {
-                                                DtcRow(dtc)
+                                                DtcRow(
+                                                    dtc = dtc,
+                                                    isNew = previousScanCodes.isNotEmpty() && dtc.code !in previousScanCodes,
+                                                    onClick = {
+                                                        selectedDtc = dtc
+                                                        // Load history in background
+                                                        scope.launch(Dispatchers.IO) {
+                                                            val hist = try {
+                                                                com.openrs.dash.diagnostics.DtcScanner(ctx).getCodeHistory(dtc.code)
+                                                            } catch (_: Exception) { null }
+                                                            withContext(Dispatchers.Main) { selectedDtcHistory = hist }
+                                                        }
+                                                    }
+                                                )
                                             }
                                             dtcIdx++
                                         }
                                     }
                                 }
                             }
+
+                            // Timed-out modules with retry buttons
+                            val timeouts = scanRes?.moduleStatuses?.filter { it.value == ModuleScanStatus.TIMEOUT }
+                            if (!timeouts.isNullOrEmpty()) {
+                                Spacer(Modifier.height(6.dp))
+                                Column(
+                                    Modifier.fillMaxWidth()
+                                        .background(Warn.copy(0.06f), RoundedCornerShape(10.dp))
+                                        .border(CardBorder, Warn.copy(0.25f), RoundedCornerShape(10.dp))
+                                        .padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    MonoLabel("⚠  TIMED OUT", 9.sp, Warn, letterSpacing = 1.sp)
+                                    for ((name, _) in timeouts) {
+                                        Row(
+                                            Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            MonoLabel("$name — no response within 2.5s", 9.sp, Dim)
+                                            if (onRetryScanModule != null && vs.isConnected) {
+                                                var retrying by remember(name) { mutableStateOf(false) }
+                                                Box(
+                                                    Modifier
+                                                        .background(accent.copy(0.10f), RoundedCornerShape(6.dp))
+                                                        .border(CardBorder, accent.copy(0.3f), RoundedCornerShape(6.dp))
+                                                        .clickable(enabled = !retrying) {
+                                                            retrying = true
+                                                            scope.launch(Dispatchers.IO) {
+                                                                val (codes, status) = try {
+                                                                    onRetryScanModule.invoke(name)
+                                                                } catch (_: Exception) {
+                                                                    emptyList<DtcResult>() to ModuleScanStatus.ERROR
+                                                                }
+                                                                withContext(Dispatchers.Main) {
+                                                                    retrying = false
+                                                                    val updatedStatuses = (scanRes.moduleStatuses + (name to status)).toMutableMap()
+                                                                    val updatedCodes = (scanRes.codes + codes).toMutableList()
+                                                                    dtcScanResult = scanRes.copy(
+                                                                        codes = updatedCodes,
+                                                                        moduleStatuses = updatedStatuses
+                                                                    )
+                                                                    com.openrs.dash.OpenRSDashApp.instance.activeDtcCount.value =
+                                                                        updatedCodes.count { it.status == DtcStatus.ACTIVE }
+                                                                }
+                                                            }
+                                                        }
+                                                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                                                ) {
+                                                    MonoLabel(
+                                                        if (retrying) "..." else "RETRY",
+                                                        8.sp, accent
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Resolved codes (from diff)
+                            if (previousScanCodes.isNotEmpty()) {
+                                val diff = com.openrs.dash.diagnostics.DtcScanner.computeDiff(r, previousScanCodes)
+                                if (diff.goneCodes.isNotEmpty()) {
+                                    Spacer(Modifier.height(6.dp))
+                                    Column(
+                                        Modifier.fillMaxWidth()
+                                            .background(Ok.copy(0.06f), RoundedCornerShape(10.dp))
+                                            .border(CardBorder, Ok.copy(0.2f), RoundedCornerShape(10.dp))
+                                            .padding(10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        MonoLabel("RESOLVED SINCE LAST SCAN", 9.sp, Ok, letterSpacing = 1.sp)
+                                        for (code in diff.goneCodes) {
+                                            MonoLabel(code, 9.sp, Ok.copy(0.7f))
+                                        }
+                                    }
+                                }
+                            }
+
                             Spacer(Modifier.height(8.dp))
+                            val duration = scanRes?.scanDurationMs?.let { " in ${it / 1000}s" } ?: ""
                             MonoLabel(
-                                "${r.size} fault code(s) found across ${r.map { it.module }.distinct().size} module(s).",
+                                "${r.size} fault code(s) found across ${r.map { it.module }.distinct().size} module(s)$duration.",
                                 9.sp, Dim, modifier = Modifier.padding(bottom = 10.dp)
                             )
                         }
                     }
                 }
             }
+        }
+
+        // ── DTC Detail Sheet ──
+        selectedDtc?.let { dtc ->
+            DtcDetailSheet(
+                dtc = dtc,
+                history = selectedDtcHistory,
+                knownIssueNote = com.openrs.dash.diagnostics.DtcDatabase.knownIssue(dtc.code),
+                onDismiss = { selectedDtc = null; selectedDtcHistory = null }
+            )
         }
 
         // ── Clear DTC confirmation dialog (outside collapsible so it always works) ──
@@ -614,7 +840,8 @@ import kotlin.math.roundToInt
                                             "Cleared: ${ack.keys.joinToString(", ")}  ($ok/$all)"
                                         else
                                             "Partial: ${ack.entries.joinToString(", ") { "${it.key}:${if (it.value) "✓" else "✗"}" }}"
-                                        dtcResults = null
+                                        dtcScanResult = null
+                                        statusFilter = null
                                         com.openrs.dash.OpenRSDashApp.instance.activeDtcCount.value = 0
                                     }
                                 }
@@ -725,36 +952,11 @@ import kotlin.math.roundToInt
             ) {
                 Column {
                     Spacer(Modifier.height(4.dp))
-                    val sortedEntries = inv.entries.sortedBy { it.key }
-                    val visibleEntries = if (showAllFrames) sortedEntries else sortedEntries.take(15)
-                    Column(
-                        Modifier.fillMaxWidth()
-                            .background(Surf2, Tokens.CardShape)
-                            .border(Tokens.CardBorder, Brd, Tokens.CardShape)
-                            .padding(Tokens.InnerV),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        visibleEntries.forEach { (id, info) ->
-                            val decoded  = if (info.lastDecoded.isEmpty()) "(no decoder)" else info.lastDecoded
-                            val issColor = if (info.validationIssues.isNotEmpty()) Warn else Mid
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                MonoText("0x%03X".format(id), 9.sp, accent)
-                                MonoText("×${info.totalReceived}", 9.sp, Dim)
-                                MonoText(decoded.take(32), 9.sp, issColor, modifier = Modifier.weight(1f).padding(start = 8.dp))
-                            }
-                            info.validationIssues.forEach { issue ->
-                                MonoLabel("  ⚠ $issue", 8.sp, Warn)
-                            }
-                        }
-                        if (!showAllFrames && sortedEntries.size > 15) {
-                            Spacer(Modifier.height(4.dp))
-                            MonoLabel(
-                                "Show all ${sortedEntries.size} IDs ▸",
-                                10.sp, accent,
-                                modifier = Modifier.clickable { showAllFrames = true }.padding(vertical = 4.dp)
-                            )
-                        }
-                    }
+                    FrameCoverageGrid(
+                        inventory = inv,
+                        knownIds = CanDecoder.KNOWN_IDS,
+                        sessionStartMs = DiagnosticLogger.sessionStartMs
+                    )
                 }
             }
         }
@@ -807,22 +1009,53 @@ internal fun ignitionStatusLabel(v: Int): String = when (v) {
 // ── DTC result row composable ─────────────────────────────────────────────
 
 @Composable
-private fun DtcRow(dtc: DtcResult) {
+private fun DtcRow(
+    dtc: DtcResult,
+    isNew: Boolean = false,
+    onClick: (() -> Unit)? = null
+) {
     val statusColor = when (dtc.status) {
         DtcStatus.ACTIVE    -> Orange
         DtcStatus.PENDING   -> Warn
         DtcStatus.PERMANENT -> Orange
         DtcStatus.UNKNOWN   -> Dim
     }
+    val severity = com.openrs.dash.data.DtcSeverity.fromCode(dtc.code)
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        Modifier.fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
+            .padding(vertical = 3.dp),
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        MonoLabel(dtc.code, 10.sp, statusColor, modifier = Modifier.width(54.dp))
+        Column(Modifier.width(54.dp)) {
+            MonoLabel(dtc.code, 10.sp, statusColor)
+            // Severity dot
+            val sevColor = when (severity) {
+                com.openrs.dash.data.DtcSeverity.HIGH -> Orange
+                com.openrs.dash.data.DtcSeverity.MEDIUM -> Warn
+                com.openrs.dash.data.DtcSeverity.LOW -> Dim
+            }
+            MonoLabel(severity.label, 7.sp, sevColor.copy(0.6f))
+        }
         Column(Modifier.weight(1f)) {
-            if (dtc.description.isNotEmpty()) {
-                MonoText(dtc.description, 9.sp, Mid)
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (dtc.description.isNotEmpty()) {
+                    MonoText(dtc.description, 9.sp, Mid, modifier = Modifier.weight(1f, fill = false))
+                }
+                if (isNew) {
+                    Box(Modifier.background(Ok.copy(0.15f), RoundedCornerShape(3.dp))
+                        .padding(horizontal = 4.dp, vertical = 1.dp)) {
+                        MonoLabel("NEW", 7.sp, Ok)
+                    }
+                }
+                if (dtc.freezeFrame != null) {
+                    Box(Modifier.background(LocalThemeAccent.current.copy(0.12f), RoundedCornerShape(3.dp))
+                        .padding(horizontal = 4.dp, vertical = 1.dp)) {
+                        MonoLabel("FF", 7.sp, LocalThemeAccent.current)
+                    }
+                }
             }
             MonoLabel(dtc.status.label, 8.sp, statusColor.copy(0.7f))
         }

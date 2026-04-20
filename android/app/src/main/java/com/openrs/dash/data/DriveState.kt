@@ -34,6 +34,8 @@ data class DriveState(
     val peakRpm: Double = 0.0,
     val peakBoostPsi: Double = 0.0,
     val peakLateralG: Double = 0.0,
+    val peakOilTempC: Double = -99.0,
+    val peakCoolantTempC: Double = -99.0,
     val peakEvents: List<PeakEvent> = emptyList(),
     val rtrAchievedPoint: DrivePointEntity? = null
 ) {
@@ -63,6 +65,14 @@ data class DriveState(
 
     val elapsedMs: Long
         get() = if (startTime > 0L) System.currentTimeMillis() - startTime else 0L
+
+    /** Estimated distance-to-empty based on session fuel economy and remaining fuel. */
+    val distanceToEmptyKm: Double
+        get() {
+            val remainingL = latestFuelPct / 100.0 * TANK_L
+            val l100 = if (avgFuelL100km > 0.5) avgFuelL100km else 15.0  // fallback 15 L/100km
+            return remainingL / l100 * 100.0
+        }
 
     val driveModeBreakdown: Map<DriveMode, Float>
         get() {

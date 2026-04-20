@@ -143,6 +143,43 @@ export function ComparePanel() {
           <SectionLabel>Throttle Overlay</SectionLabel>
           <ComparisonChart sessions={compareSessions} dataKey="throttlePct" label="Throttle (%)" />
 
+          {/* T4B: Thermal overlays */}
+          <SectionLabel>Coolant Temperature Overlay</SectionLabel>
+          <ComparisonChart
+            sessions={compareSessions}
+            dataKey="coolantC"
+            label="Coolant (°C)"
+            yFormatter={(v) => `${v.toFixed(0)}°`}
+          />
+
+          <SectionLabel>Oil Temperature Overlay</SectionLabel>
+          <ComparisonChart
+            sessions={compareSessions}
+            dataKey="oilTempC"
+            label="Oil (°C)"
+            yFormatter={(v) => `${v.toFixed(0)}°`}
+          />
+
+          {/* T4C: Extended comparison charts */}
+          <SectionLabel>Longitudinal G Overlay</SectionLabel>
+          <ComparisonChart
+            sessions={compareSessions}
+            dataKey="longG"
+            label="Longitudinal G"
+            yFormatter={(v) => `${v.toFixed(2)}G`}
+          />
+
+          <SectionLabel>Brake Pressure Overlay</SectionLabel>
+          <ComparisonChart sessions={compareSessions} dataKey="brakePressure" label="Brake Pressure" />
+
+          <SectionLabel>Steering Angle Overlay</SectionLabel>
+          <ComparisonChart
+            sessions={compareSessions}
+            dataKey="steeringAngle"
+            label="Steering Angle (°)"
+            yFormatter={(v) => `${v.toFixed(0)}°`}
+          />
+
           {/* Split GPS maps */}
           <SectionLabel>Route Comparison</SectionLabel>
           <div className={`grid gap-3 ${compareSessions.length <= 2 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-2'}`}>

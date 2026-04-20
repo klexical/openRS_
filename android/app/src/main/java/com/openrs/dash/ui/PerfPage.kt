@@ -31,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -39,12 +40,15 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.data.PerformanceTimer
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.ui.Tokens.CardGap
 import com.openrs.dash.ui.Tokens.CardShape
 import com.openrs.dash.ui.Tokens.PagePad
 import com.openrs.dash.ui.anim.pressClick
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * PERF tab — performance timer + tuning + dynamics surface.
@@ -57,8 +61,69 @@ fun PerfPage(vs: VehicleState, p: UserPrefs, onReset: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(CardGap)
     ) {
         PerformanceTimerCard(vs)
+        PersonalBestsCard()
         GForceSection(vs, onReset)
         PowerPageContent(vs, p)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PERSONAL BESTS — lifetime records from persisted perf runs + laps
+// ═══════════════════════════════════════════════════════════════════════════
+
+private data class PersonalBests(
+    val best60Ms: Long? = null,
+    val best100Ms: Long? = null,
+    val bestLapMs: Long? = null,
+    val totalRuns: Int = 0,
+    val totalLaps: Int = 0
+)
+
+@Composable
+private fun PersonalBestsCard() {
+    val dao = OpenRSDashApp.instance.driveDb.driveDao()
+    val bests by produceState(PersonalBests()) {
+        value = withContext(Dispatchers.IO) {
+            PersonalBests(
+                best60Ms = dao.getPersonalBest60Ms(),
+                best100Ms = dao.getPersonalBest100Ms(),
+                bestLapMs = dao.getPersonalBestLapMs(),
+                totalRuns = dao.getPerfRunCount(),
+                totalLaps = dao.getTotalLapCount()
+            )
+        }
+    }
+
+    // Only show when there's at least one record
+    if (bests.totalRuns == 0 && bests.totalLaps == 0) return
+
+    val accent = LocalThemeAccent.current
+
+    Column(
+        Modifier.fillMaxWidth()
+            .border(Tokens.CardBorder, Brd, CardShape)
+            .background(Surf, CardShape)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            MonoLabel("PERSONAL BESTS", 8.sp, Dim, letterSpacing = 0.5.sp)
+            Spacer(Modifier.weight(1f))
+            val count = bests.totalRuns + bests.totalLaps
+            MonoLabel("$count RECORDS", 7.sp, Dim.copy(alpha = 0.6f), letterSpacing = 0.3.sp)
+        }
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            bests.best60Ms?.let { ms ->
+                DataCell("0-60 MPH", formatTimerMs(ms), accent, modifier = Modifier.weight(1f))
+            }
+            bests.best100Ms?.let { ms ->
+                DataCell("0-100 MPH", formatTimerMs(ms), accent, modifier = Modifier.weight(1f))
+            }
+            bests.bestLapMs?.let { ms ->
+                DataCell("BEST LAP", formatTimerMs(ms), accent, modifier = Modifier.weight(1f))
+            }
+        }
     }
 }
 
@@ -115,6 +180,28 @@ private fun PerformanceTimerCard(vs: VehicleState) {
             }
             PerformanceTimer.State.RUNNING -> TimerRunningRow(elapsed, speedMph) {
                 PerformanceTimer.finishAt60()
+                // Persist the 60-only result to Room
+                val finishResult = PerformanceTimer.result.value
+                if (finishResult != null) {
+                    val app = com.openrs.dash.OpenRSDashApp.instance
+                    val driveId = app.driveRecorder.driveState.value.let { if (it.isRecording) it.driveId else null }
+                    Thread {
+                        try {
+                            app.driveDb.driveDao().insertPerfRun(
+                                com.openrs.dash.data.PerfRunEntity(
+                                    driveId = driveId,
+                                    timestamp = System.currentTimeMillis(),
+                                    zeroTo60Ms = finishResult.zeroTo60Ms,
+                                    zeroTo100Ms = finishResult.zeroTo100Ms,
+                                    peakRpm = finishResult.peakRpm,
+                                    peakBoostPsi = finishResult.peakBoostPsi,
+                                    launchRpm = finishResult.launchRpm,
+                                    ambientTempC = vs.ambientTempC
+                                )
+                            )
+                        } catch (_: Exception) {}
+                    }.start()
+                }
                 haptic.performHapticFeedback(HapticFeedbackType.Confirm)
             }
             PerformanceTimer.State.FINISHED -> TimerResultRow(result, best60, best100) {

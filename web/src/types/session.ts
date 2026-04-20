@@ -18,6 +18,8 @@ export interface SessionMeta {
   firmwareVersion: string
   sessionStart: string
   generatedAt: string
+  appBuild?: number
+  exportedAt?: number
 }
 
 // ── Trip ──
@@ -25,6 +27,20 @@ export interface SessionMeta {
 export interface TripData {
   points: TripPoint[]
   summary: TripSummary
+  /** Structured profile from drive_profile_*.json (rc.3+). */
+  profile?: DriveProfile
+  /** Thermal start→peak→end (from profile JSON). */
+  thermalProgression?: ThermalProgression
+  /** User-placed bookmarks during recording (from profile JSON). */
+  bookmarks?: Bookmark[]
+  /** Aggression score 0–100 (from profile JSON). */
+  aggressionScore?: number
+  /** Pre-computed mode timeline segments (from profile JSON). */
+  canonicalModeTimeline?: ModeTimelineEntry[]
+  /** Lap data (from profile JSON, when available). */
+  laps?: Lap[]
+  /** Performance runs (from profile JSON, when available). */
+  perfRuns?: PerfRun[]
 }
 
 export interface TripPoint {
@@ -59,6 +75,9 @@ export interface TripPoint {
   tireTempRF: number
   tireTempLR: number
   tireTempRR: number
+  brakePressure: number
+  steeringAngle: number
+  raceReady: boolean
 }
 
 export interface TripSummary {
@@ -77,6 +96,7 @@ export interface TripSummary {
   avgFuelEconomy: number
   modeBreakdown: Record<string, number>  // mode → seconds
   peakEvents: PeakEvent[]
+  aggressionScore?: number
 }
 
 export interface PeakEvent {
@@ -85,6 +105,93 @@ export interface PeakEvent {
   ts: number
   lat: number
   lng: number
+}
+
+// ── Profile JSON (drive_profile_*.json) ──
+
+export interface DriveProfile {
+  version: number
+  drive: DriveProfileSummary
+  peaks: ProfilePeak[]
+  thermalProgression: ThermalProgression
+  modeTimeline: ModeTimelineEntry[]
+  bookmarks: Bookmark[]
+}
+
+export interface DriveProfileSummary {
+  startTime: number
+  endTime: number
+  distanceKm: number
+  avgSpeedKph: number
+  maxSpeedKph: number
+  peakRpm: number
+  peakBoostPsi: number
+  peakLateralG: number
+  peakOilTempC: number
+  peakCoolantTempC: number
+  fuelUsedL: number
+  aggressionScore: number
+  tags: string
+  /** Fuel economy averages (when Android export includes them). */
+  avgFuelL100km?: number
+  avgFuelMpg?: number
+}
+
+export interface ProfilePeak {
+  type: 'RPM' | 'BOOST' | 'LATERAL_G' | 'SPEED'
+  value: number
+  lat: number
+  lng: number
+  timestampMs: number
+}
+
+export interface ThermalProgression {
+  oil: ThermalCurve
+  coolant: ThermalCurve
+  rdu?: ThermalCurve
+  ptu?: ThermalCurve
+}
+
+export interface ThermalCurve {
+  startC: number
+  peakC: number
+  endC: number
+}
+
+export interface ModeTimelineEntry {
+  mode: string
+  startMs: number
+  endMs: number
+}
+
+export interface Bookmark {
+  timestamp: number
+  lat: number
+  lng: number
+  label: string
+  speedKph: number
+  rpm: number
+  boostPsi: number
+}
+
+// ── Lap & Performance (stubs for T5 Android gap-fill) ──
+
+export interface Lap {
+  lapNumber: number
+  lapTimeMs: number
+  peakRpm?: number
+  peakBoostPsi?: number
+  peakLateralG?: number
+  peakSpeedKph?: number
+}
+
+export interface PerfRun {
+  type: string        // "0-60" | "0-100"
+  timeMs: number
+  launchRpm?: number
+  peakBoostPsi?: number
+  densityAltFt?: number
+  ambientTempC?: number
 }
 
 // ── Diagnostics ──
@@ -96,6 +203,7 @@ export interface DiagnosticData {
   decodeTrace: DecodeEntry[]
   probeResults: ProbeResult[]
   dtcResults: DtcEntry[]
+  nrcSuppression?: NrcSuppression[]
 }
 
 export interface DtcEntry {
@@ -103,6 +211,27 @@ export interface DtcEntry {
   code: string        // e.g. "P0101"
   status: string      // "STORED" | "PENDING" | "PERMANENT" | "ACTIVE"
   description: string
+  severity?: string   // "CRITICAL" | "WARNING" | "INFO" | "UNKNOWN"
+  freezeFrame?: FreezeFrame
+}
+
+export interface FreezeFrame {
+  recordNumber: number
+  entries: FreezeFrameEntry[]
+}
+
+export interface FreezeFrameEntry {
+  did: string
+  label: string
+  value: string
+}
+
+export interface NrcSuppression {
+  did: string
+  nrcCode: number
+  nrcName: string
+  firstSeenMs: number
+  suppressedAfterCount: number
 }
 
 export interface CanFrame {

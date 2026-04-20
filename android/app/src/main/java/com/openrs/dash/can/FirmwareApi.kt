@@ -7,6 +7,7 @@ import android.net.NetworkCapabilities
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.InetSocketAddress
@@ -102,7 +103,7 @@ object FirmwareApi {
     suspend fun setEscMode(ctx: Context, host: String, mode: Int): Result<Unit> =
         post(ctx, host, """{"token":"openrs","escMode":$mode}""")
 
-    private fun findWifiNetwork(ctx: Context): Network? {
+    internal fun findWifiNetwork(ctx: Context): Network? {
         val cm = ctx.getSystemService(ConnectivityManager::class.java)
         val active = cm.activeNetwork
         if (active != null) {
@@ -181,4 +182,154 @@ object FirmwareApi {
             Result.failure(e)
         }
     }
+}
+
+/**
+ * Parsed response from the WiCAN `/check_status` endpoint.
+ *
+ * Fields map directly to the JSON keys returned by the device.
+ * [obdPortVoltage] is the adapter's ADC reading of the OBD-II port supply —
+ * this is NOT the car battery voltage from the PCM (DID 0x0304).
+ */
+data class DeviceStatus(
+    val firmwareVersion: String,
+    val hardwareVersion: String,
+    val deviceId: String,
+    val canDatarate: String,
+    val canMode: String,
+    val protocol: String,
+    val bleStatus: String,
+    val obdPortVoltage: Double,
+    val sleepStatus: String,
+    val sleepVolt: String,
+    val wifiMode: String
+) {
+    companion object {
+        fun fromJson(json: JSONObject): DeviceStatus {
+            val voltStr = json.optString("batt_voltage", "0")
+                .replace("V", "").trim()
+            return DeviceStatus(
+                firmwareVersion = json.optString("fw_version", ""),
+                hardwareVersion = json.optString("hw_version", ""),
+                deviceId        = json.optString("device_id", ""),
+                canDatarate     = json.optString("can_datarate", ""),
+                canMode         = json.optString("can_mode", ""),
+                protocol        = json.optString("protocol", ""),
+                bleStatus       = json.optString("ble_status", ""),
+                obdPortVoltage  = voltStr.toDoubleOrNull() ?: 0.0,
+                sleepStatus     = json.optString("sleep_status", ""),
+                sleepVolt       = json.optString("sleep_volt", ""),
+                wifiMode        = json.optString("wifi_mode", "")
+            )
+        }
+    }
+}
+
+/**
+ * Client for the stock WiCAN HTTP API (both USB and Pro).
+ *
+ * Uses the same WiFi network binding as [FirmwareApi] to ensure traffic
+ * routes through the adapter's AP even when cellular is available.
+ */
+object WicanApi {
+
+    /**
+     * Query the device's `/check_status` endpoint.
+     * Returns null on any failure (timeout, parse error, not on WiFi).
+     */
+    suspend fun checkStatus(ctx: Context, host: String): DeviceStatus? =
+        withContext(Dispatchers.IO) {
+            try {
+                val port = if (':' in host) host.substringAfter(':').toInt() else 80
+                val hostname = host.substringBefore(':')
+
+                val wifi = FirmwareApi.findWifiNetwork(ctx)
+                val socket = wifi?.socketFactory?.createSocket() ?: Socket()
+
+                socket.use { s ->
+                    s.connect(InetSocketAddress(hostname, port), 3_000)
+                    s.soTimeout = 5_000
+
+                    val request = "GET /check_status HTTP/1.1\r\n" +
+                        "Host: $host\r\n" +
+                        "Connection: close\r\n" +
+                        "\r\n"
+
+                    s.getOutputStream().apply {
+                        write(request.toByteArray(Charsets.ISO_8859_1))
+                        flush()
+                    }
+
+                    val reader = BufferedReader(InputStreamReader(s.getInputStream()))
+                    val statusLine = reader.readLine() ?: return@withContext null
+                    if (!statusLine.contains("200")) return@withContext null
+
+                    // Skip headers until blank line
+                    var contentLength = -1
+                    while (true) {
+                        val hdr = reader.readLine() ?: break
+                        if (hdr.isBlank()) break
+                        if (hdr.startsWith("Content-Length:", ignoreCase = true))
+                            contentLength = hdr.substringAfter(":").trim().toIntOrNull() ?: -1
+                    }
+
+                    // Read body
+                    val body = if (contentLength > 0) {
+                        val buf = CharArray(contentLength)
+                        var read = 0
+                        while (read < contentLength) {
+                            val n = reader.read(buf, read, contentLength - read)
+                            if (n < 0) break
+                            read += n
+                        }
+                        String(buf, 0, read)
+                    } else {
+                        reader.readText()
+                    }
+
+                    DeviceStatus.fromJson(JSONObject(body))
+                }
+            } catch (e: Exception) {
+                android.util.Log.d("WicanApi", "check_status failed", e)
+                null
+            }
+        }
+
+    /**
+     * Reboot the WiCAN device via `POST /system_reboot`.
+     * Returns true if the device acknowledged the reboot.
+     */
+    suspend fun reboot(ctx: Context, host: String): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                val port = if (':' in host) host.substringAfter(':').toInt() else 80
+                val hostname = host.substringBefore(':')
+
+                val wifi = FirmwareApi.findWifiNetwork(ctx)
+                val socket = wifi?.socketFactory?.createSocket() ?: Socket()
+
+                socket.use { s ->
+                    s.connect(InetSocketAddress(hostname, port), 3_000)
+                    s.soTimeout = 5_000
+
+                    val request = "POST /system_reboot HTTP/1.1\r\n" +
+                        "Host: $host\r\n" +
+                        "Content-Length: 0\r\n" +
+                        "Connection: close\r\n" +
+                        "\r\n"
+
+                    s.getOutputStream().apply {
+                        write(request.toByteArray(Charsets.ISO_8859_1))
+                        flush()
+                    }
+
+                    val reader = BufferedReader(InputStreamReader(s.getInputStream()))
+                    val statusLine = reader.readLine() ?: return@withContext false
+                    statusLine.contains("200")
+                }
+            } catch (e: Exception) {
+                android.util.Log.d("WicanApi", "reboot failed", e)
+                false
+            }
+        }
 }

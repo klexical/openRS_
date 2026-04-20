@@ -155,6 +155,11 @@ private val paintMap = RsPaints.associateBy { it.id }
 fun rsPaintAccent(id: String): Color = paintMap[id]?.accent ?: paintMap["cyan"]!!.accent
 fun rsPaintName(id: String): String  = paintMap[id]?.name  ?: "Nitrous Blue"
 
+/** Live-preview accent override — set by SettingsSheet, cleared on save/cancel. */
+private val _themeAccentPreview = mutableStateOf<Color?>(null)
+fun setThemeAccentPreview(color: Color?) { _themeAccentPreview.value = color }
+fun themeAccentPreview(): Color? = _themeAccentPreview.value
+
 val LocalThemeAccent = staticCompositionLocalOf { Color(0xFF0091EA) }
 
 // ═══════════════════════════════════════════════════════════════════════════

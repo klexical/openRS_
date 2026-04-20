@@ -153,7 +153,8 @@ object CanDecoder {
     // real car at 67,500 km: bytes 01 07 AC = 67500 km (diagnostic session 2026-03-21).
     const val ID_ODOMETER     = 0x360
 
-    private val KNOWN_IDS = setOf(
+    /** IDs actively decoded by [decode]. Used by frame coverage heatmap. */
+    val KNOWN_IDS = setOf(
         ID_TORQUE, ID_LAUNCH_CTRL, ID_THROTTLE, ID_PEDALS, ID_ENGINE_RPM,
         ID_CLUTCH, ID_GAUGE_ILLUM, ID_ENGINE_TEMPS, ID_SPEED,
         ID_LONG_ACCEL, ID_LAT_ACCEL, ID_WHEEL_ROT,

@@ -9,6 +9,7 @@ import { ModeTimeline } from '../charts/ModeTimeline'
 import { GForceScatter } from '../charts/GForceScatter'
 import { TempStackChart } from '../charts/TempStackChart'
 import { Histogram } from '../charts/Histogram'
+import { ThermalProgressionChart } from '../charts/ThermalProgressionChart'
 import { useUnitFormatters } from '../../lib/format'
 import { colors, chartColors } from '../../styles/tokens'
 
@@ -40,6 +41,7 @@ export function TripPanel() {
     rduTempC: p.rduTempC > -90 ? p.rduTempC : 0,
     ptuTempC: p.ptuTempC > -90 ? p.ptuTempC : 0,
     latG: p.latG,
+    longG: p.longG,
     fuelPct: p.fuelPct >= 0 ? p.fuelPct : 0,
     wsFL: p.wheelSpeedFL,
     wsFR: p.wheelSpeedFR,
@@ -48,6 +50,8 @@ export function TripPanel() {
     awdL: p.awdTorqueL,
     awdR: p.awdTorqueR,
     throttlePct: p.throttlePct >= 0 ? p.throttlePct : 0,
+    brakePressure: p.brakePressure,
+    steeringAngle: p.steeringAngle,
     tirePressLF: p.tirePressLF >= 0 ? p.tirePressLF : 0,
     tirePressRF: p.tirePressRF >= 0 ? p.tirePressRF : 0,
     tirePressLR: p.tirePressLR >= 0 ? p.tirePressLR : 0,
@@ -68,6 +72,9 @@ export function TripPanel() {
   const hasThrottle = points.some((p) => p.throttlePct >= 0)
   const hasTpmsPress = points.some((p) => p.tirePressLF >= 0 || p.tirePressRF >= 0)
   const hasTpmsTemp = points.some((p) => p.tireTempLF > -90 || p.tireTempRF > -90)
+  const hasBrake = points.some((p) => p.brakePressure > 0)
+  const hasSteering = points.some((p) => p.steeringAngle !== 0)
+  const hasLongG = points.some((p) => p.longG !== 0)
 
   const syncId = 'trip-charts'
 
@@ -80,10 +87,18 @@ export function TripPanel() {
       </div>
 
       <SectionLabel>Route</SectionLabel>
-      <GpsMap points={points} peakEvents={peakEvents} />
+      <GpsMap points={points} peakEvents={peakEvents} bookmarks={trip.bookmarks} />
 
       <SectionLabel>Drive Modes</SectionLabel>
-      <ModeTimeline points={points} />
+      <ModeTimeline points={points} canonicalTimeline={trip.canonicalModeTimeline} />
+
+      {/* Thermal Progression (T2B) */}
+      {trip.thermalProgression && (
+        <>
+          <SectionLabel>Thermal Progression</SectionLabel>
+          <ThermalProgressionChart data={trip.thermalProgression} />
+        </>
+      )}
 
       <SectionLabel>RPM</SectionLabel>
       <TimeSeriesChart
@@ -127,6 +142,33 @@ export function TripPanel() {
         </>
       )}
 
+      {/* Brake Pressure (T2D) */}
+      {hasBrake && (
+        <>
+          <SectionLabel>Brake Pressure</SectionLabel>
+          <TimeSeriesChart
+            data={chartData}
+            series={[{ key: 'brakePressure', label: 'Brake', color: chartColors[5] }]}
+            xFormatter={fmtTime}
+            syncId={syncId}
+          />
+        </>
+      )}
+
+      {/* Steering Angle (T2E) */}
+      {hasSteering && (
+        <>
+          <SectionLabel>Steering Angle (°)</SectionLabel>
+          <TimeSeriesChart
+            data={chartData}
+            series={[{ key: 'steeringAngle', label: 'Steering', color: chartColors[4] }]}
+            xFormatter={fmtTime}
+            yFormatter={(v) => `${v.toFixed(0)}°`}
+            syncId={syncId}
+          />
+        </>
+      )}
+
       <SectionLabel>Temperatures ({fmt.tempUnit})</SectionLabel>
       <TimeSeriesChart
         data={chartData}
@@ -152,6 +194,20 @@ export function TripPanel() {
         peakEvents={peakEvents}
         peakFilter="latG"
       />
+
+      {/* Longitudinal G (T2F) */}
+      {hasLongG && (
+        <>
+          <SectionLabel>Longitudinal G</SectionLabel>
+          <TimeSeriesChart
+            data={chartData}
+            series={[{ key: 'longG', label: 'Long G', color: chartColors[6] }]}
+            xFormatter={fmtTime}
+            yFormatter={(v) => `${v.toFixed(2)}G`}
+            syncId={syncId}
+          />
+        </>
+      )}
 
       <SectionLabel>Fuel Level (%)</SectionLabel>
       <TimeSeriesChart

@@ -22,6 +22,7 @@ function makePoint(ts: number, overrides: Partial<TripPoint> = {}): TripPoint {
     gear: '3', throttlePct: 45,
     tirePressLF: 35, tirePressRF: 35, tirePressLR: 33, tirePressRR: 33,
     tireTempLF: 40, tireTempRF: 40, tireTempLR: 38, tireTempRR: 38,
+    brakePressure: 0, steeringAngle: 0, raceReady: false,
     ...overrides,
   }
 }
@@ -63,6 +64,39 @@ describe('computeDeltas', () => {
     const comp = makeSummary({ peakRpm: 6000 })
     const deltas = computeDeltas(base, comp)
     expect(deltas.find((d) => d.label === 'Peak RPM')).toBeUndefined()
+  })
+
+  // T6F: Aggression score delta
+  it('includes aggression score delta (higher is better)', () => {
+    const base = makeSummary({ aggressionScore: 40 })
+    const comp = makeSummary({ aggressionScore: 75 })
+    const deltas = computeDeltas(base, comp)
+
+    const aggDelta = deltas.find((d) => d.label === 'Aggression')
+    expect(aggDelta).toBeDefined()
+    expect(aggDelta!.higherIsBetter).toBe(true)
+    expect(aggDelta!.diff).toBe(35)
+    expect(aggDelta!.pctChange).toBeCloseTo(87.5, 0)
+  })
+
+  // T6F: Fuel used delta
+  it('includes fuel used delta (lower is better)', () => {
+    const base = makeSummary({ fuelUsedL: 3 })
+    const comp = makeSummary({ fuelUsedL: 2 })
+    const deltas = computeDeltas(base, comp)
+
+    const fuelDelta = deltas.find((d) => d.label === 'Fuel Used')
+    expect(fuelDelta).toBeDefined()
+    expect(fuelDelta!.higherIsBetter).toBe(false)
+    expect(fuelDelta!.diff).toBe(-1)
+  })
+
+  // T6F: Skips aggression when not present
+  it('skips aggression delta when not set on either session', () => {
+    const base = makeSummary() // no aggressionScore
+    const comp = makeSummary()
+    const deltas = computeDeltas(base, comp)
+    expect(deltas.find((d) => d.label === 'Aggression')).toBeUndefined()
   })
 })
 
@@ -120,6 +154,31 @@ describe('normalizePoints', () => {
   it('returns empty for zero-duration session', () => {
     expect(normalizePoints([makePoint(1000), makePoint(1000)])).toHaveLength(0)
   })
+
+  // T6F: Extended NormalizedPoint fields
+  it('normalizes oilTempC with sentinel clamping', () => {
+    const points = [
+      makePoint(1000, { oilTempC: -99 }),
+      makePoint(2000, { oilTempC: 110 }),
+    ]
+    const norm = normalizePoints(points)
+    expect(norm[0].oilTempC).toBe(0)
+    expect(norm[1].oilTempC).toBe(110)
+  })
+
+  it('normalizes longG, brakePressure, and steeringAngle', () => {
+    const points = [
+      makePoint(1000, { longG: 0.45, brakePressure: 30, steeringAngle: -12 }),
+      makePoint(2000, { longG: -0.2, brakePressure: 0, steeringAngle: 25 }),
+    ]
+    const norm = normalizePoints(points)
+
+    expect(norm[0].longG).toBeCloseTo(0.45, 2)
+    expect(norm[0].brakePressure).toBe(30)
+    expect(norm[0].steeringAngle).toBe(-12)
+    expect(norm[1].longG).toBeCloseTo(-0.2, 2)
+    expect(norm[1].steeringAngle).toBe(25)
+  })
 })
 
 describe('resampleNormalized', () => {
@@ -148,11 +207,8 @@ describe('resampleNormalized', () => {
     ])
     const resampled = resampleNormalized(norm, 3)
 
-    // At t=0, nearest is point 0 (rpm 1000)
     expect(resampled[0].rpm).toBe(1000)
-    // At t=0.5, nearest is point 1 (rpm 5000)
     expect(resampled[1].rpm).toBe(5000)
-    // At t=1.0, nearest is point 2 (rpm 3000)
     expect(resampled[2].rpm).toBe(3000)
   })
 })

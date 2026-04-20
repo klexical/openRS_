@@ -27,9 +27,11 @@ import com.openrs.dash.can.PidRegistry
 import com.openrs.dash.can.SlcanConnection
 import com.openrs.dash.can.TcpSlcanTransport
 import com.openrs.dash.can.WebSocketSlcanTransport
+import com.openrs.dash.can.WicanApi
 import com.openrs.dash.can.WiFiFirmwareApi
 import com.openrs.dash.data.DriveDatabase
 import com.openrs.dash.data.DtcResult
+import com.openrs.dash.data.DtcScanResult
 import com.openrs.dash.data.FuelEconomy
 import com.openrs.dash.data.PerformanceTimer
 import com.openrs.dash.data.SessionEntity
@@ -104,18 +106,44 @@ class CanDataService : Service() {
     /**
      * Performs a full DTC scan across all Focus RS ECUs.
      * Suspends for up to ~15 seconds while querying all modules.
-     * Returns an empty list if the adapter is not connected.
+     * Returns an empty [DtcScanResult] if the adapter is not connected.
+     *
+     * [onModuleProgress] is called on each module state change for live UI updates.
+     * A null status means "querying"; non-null means the module is done.
      */
-    suspend fun scanDtcs(): List<DtcResult> {
-        val conn = synchronized(this) { connection } ?: return emptyList()
+    suspend fun scanDtcs(
+        onModuleProgress: ((String, com.openrs.dash.data.ModuleScanStatus?) -> Unit)? = null
+    ): DtcScanResult {
+        val conn = synchronized(this) { connection }
+            ?: return DtcScanResult(emptyList(), emptyMap())
         return try {
-            DtcScanner(this).scan(conn)
+            DtcScanner(this).scan(conn, onModuleProgress)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
             android.util.Log.w("CAN", "DTC scan failed", e)
             throw e
         }
+    }
+
+    /**
+     * Retry DTC scan for a single module that previously timed out.
+     */
+    suspend fun retryScanModule(moduleName: String): Pair<List<DtcResult>, com.openrs.dash.data.ModuleScanStatus> {
+        val conn = synchronized(this) { connection }
+            ?: return emptyList<DtcResult>() to com.openrs.dash.data.ModuleScanStatus.ERROR
+        return DtcScanner(this).scanSingleModule(conn, moduleName)
+    }
+
+    /**
+     * Fetch freeze frame data for DTCs that have snapshot records.
+     */
+    suspend fun fetchFreezeFrames(codes: List<DtcResult>): List<DtcResult> {
+        val conn = synchronized(this) { connection } ?: return codes
+        return try {
+            DtcScanner(this).fetchFreezeFrames(conn, codes)
+        } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (_: Exception) { codes }
     }
 
     /**
@@ -433,6 +461,45 @@ class CanDataService : Service() {
                 }
             }
 
+            // Query WiCAN /check_status once after connection (WiFi only).
+            // Populates device info for GARAGE display and diagnostic export.
+            if (!isBle) {
+                launch {
+                    conn.state.first { it is AdapterState.Connected }
+                    val host = s.getHost(this@CanDataService)
+                    val status = WicanApi.checkStatus(this@CanDataService, host)
+                    if (status != null) {
+                        OpenRSDashApp.instance.deviceStatus.value = status
+                        DiagnosticLogger.deviceStatus = status
+                        DiagnosticLogger.event("DEVICE_STATUS",
+                            "${status.hardwareVersion} fw=${status.firmwareVersion} " +
+                            "can=${status.canDatarate} vbatt=${status.obdPortVoltage}V")
+                    }
+                }
+            }
+
+            // Auto-scan DTCs on connect (opt-in setting).
+            // Runs after a 5s stabilization delay so OBD polling is active.
+            if (AppSettings.getAutoScanDtcs(this@CanDataService)) {
+                launch {
+                    conn.state.first { it is AdapterState.Connected }
+                    delay(5_000L)
+                    // Only proceed if still connected
+                    if (conn.state.value is AdapterState.Connected) {
+                        try {
+                            val result = DtcScanner(this@CanDataService).scan(conn)
+                            if (result.codes.isNotEmpty()) {
+                                OpenRSDashApp.instance.activeDtcCount.value =
+                                    result.codes.count { it.status == com.openrs.dash.data.DtcStatus.ACTIVE }
+                                DiagnosticLogger.lastDtcResults = result.codes
+                                DiagnosticLogger.event("AUTO_DTC_SCAN",
+                                    "${result.codes.size} code(s) across ${result.moduleStatuses.count { it.value == com.openrs.dash.data.ModuleScanStatus.OK }} module(s)")
+                            }
+                        } catch (_: Exception) { /* auto-scan is best-effort */ }
+                    }
+                }
+            }
+
             // Auto-record drive: gated on adapter connected + engine actually
             // running. Prevents premature recording when the phone is
             // on the adapter's WiFi but the car is off (was the
@@ -597,7 +664,30 @@ class CanDataService : Service() {
 
         // Feed performance timer (speed from 0x130, ~100 Hz)
         if (canId == 0x130) {
-            PerformanceTimer.onSpeedUpdate(wp.speedKph, wp.rpm, wp.boostPsi)
+            val (sixty, hundred) = PerformanceTimer.onSpeedUpdate(wp.speedKph, wp.rpm, wp.boostPsi)
+            if (hundred || (sixty && PerformanceTimer.state.value == PerformanceTimer.State.FINISHED)) {
+                // Persist completed run to Room
+                val result = PerformanceTimer.result.value
+                if (result != null) {
+                    val driveId = OpenRSDashApp.instance.driveRecorder.driveState.value.let { if (it.isRecording) it.driveId else null }
+                    try {
+                        OpenRSDashApp.instance.driveDb.driveDao().insertPerfRun(
+                            com.openrs.dash.data.PerfRunEntity(
+                                driveId = driveId,
+                                timestamp = System.currentTimeMillis(),
+                                zeroTo60Ms = result.zeroTo60Ms,
+                                zeroTo100Ms = result.zeroTo100Ms,
+                                peakRpm = result.peakRpm,
+                                peakBoostPsi = result.peakBoostPsi,
+                                launchRpm = result.launchRpm,
+                                ambientTempC = wp.ambientTempC
+                            )
+                        )
+                    } catch (e: Exception) {
+                        android.util.Log.w("CanDataService", "PerfRun persist failed", e)
+                    }
+                }
+            }
         }
 
         // Knock event tracking (from OBD merges, checked on CAN frame to
@@ -628,6 +718,7 @@ class CanDataService : Service() {
         connectionJob?.cancel()
         connectionJob = null
         OpenRSDashApp.instance.vehicleState.update { it.copy(isConnected = false, isIdle = false) }
+        OpenRSDashApp.instance.deviceStatus.value = null
         leaveForeground()
     }
 

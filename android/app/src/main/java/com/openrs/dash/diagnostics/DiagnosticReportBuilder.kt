@@ -2,6 +2,7 @@ package com.openrs.dash.diagnostics
 
 import com.openrs.dash.BuildConfig
 import com.openrs.dash.can.CanDecoder
+import com.openrs.dash.can.NrcTracker
 import com.openrs.dash.data.VehicleState
 import org.json.JSONArray
 import org.json.JSONObject
@@ -38,6 +39,20 @@ internal object DiagnosticReportBuilder {
         val connEvent = log.sessionEvents.lastOrNull { it.type == "SESSION" }
         if (connEvent != null) appendLine("  Last evt : ${connEvent.message}")
         appendLine()
+
+        // ── Adapter device status (from /check_status)
+        log.deviceStatus?.let { ds ->
+            appendLine("─── ADAPTER ──────────────────────────────────────────────")
+            if (ds.hardwareVersion.isNotBlank()) appendLine("  Hardware : ${ds.hardwareVersion}")
+            if (ds.firmwareVersion.isNotBlank()) appendLine("  Device FW: v${ds.firmwareVersion}")
+            if (ds.deviceId.isNotBlank())        appendLine("  Device ID: ${ds.deviceId}")
+            if (ds.canDatarate.isNotBlank())     appendLine("  CAN Bus  : ${ds.canDatarate} ${ds.canMode}")
+            if (ds.obdPortVoltage > 0)           appendLine("  OBD Port : ${"%.1f".format(ds.obdPortVoltage)}V")
+            if (ds.bleStatus.isNotBlank())        appendLine("  BLE      : ${ds.bleStatus}")
+            if (ds.protocol.isNotBlank())         appendLine("  Protocol : ${ds.protocol}")
+            if (ds.sleepStatus.isNotBlank())      appendLine("  Sleep    : ${ds.sleepStatus} (${ds.sleepVolt}V)")
+            appendLine()
+        }
 
         // ── Settings
         if (p != null) {
@@ -176,6 +191,26 @@ internal object DiagnosticReportBuilder {
         }
         appendLine()
 
+        // ── NRC suppression
+        val nrc = log.nrcSuppressed
+        if (nrc.isNotEmpty()) {
+            appendLine("─── NRC SUPPRESSION (${nrc.size} DID${if (nrc.size > 1) "s" else ""} suppressed) ──────────────────")
+            nrc.entries.sortedBy { it.value.firstSeenMs }.forEach { (did, rec) ->
+                val nrcName = when (rec.nrcCode) {
+                    NrcTracker.NRC_REQUEST_OUT_OF_RANGE -> "requestOutOfRange"
+                    NrcTracker.NRC_CONDITIONS_NOT_CORRECT -> "conditionsNotCorrect"
+                    NrcTracker.NRC_SECURITY_ACCESS_DENIED -> "securityAccessDenied"
+                    else -> "0x%02X".format(rec.nrcCode)
+                }
+                appendLine("  DID 0x%04X: NRC 0x%02X (%s) — suppressed at +%s (after %d)".format(
+                    did, rec.nrcCode, nrcName,
+                    log.formatDuration(rec.firstSeenMs),
+                    rec.suppressedAfterCount
+                ))
+            }
+            appendLine()
+        }
+
         // ── FPS timeline
         val fps = log.fpsTimeline
         appendLine("─── FPS TIMELINE (${fps.size} samples) ────────────────────────────")
@@ -277,6 +312,23 @@ internal object DiagnosticReportBuilder {
             })
         }
 
+        // adapter device status
+        log.deviceStatus?.let { ds ->
+            root.put("adapterStatus", JSONObject().apply {
+                put("hardwareVersion", ds.hardwareVersion)
+                put("firmwareVersion", ds.firmwareVersion)
+                put("deviceId", ds.deviceId)
+                put("canDatarate", ds.canDatarate)
+                put("canMode", ds.canMode)
+                put("protocol", ds.protocol)
+                put("bleStatus", ds.bleStatus)
+                put("obdPortVoltage", ds.obdPortVoltage)
+                put("sleepStatus", ds.sleepStatus)
+                put("sleepVolt", ds.sleepVolt)
+                put("wifiMode", ds.wifiMode)
+            })
+        }
+
         // vehicleState
         root.put("vehicleState", if (vs != null) vs.toJsonObject() else JSONObject())
 
@@ -336,6 +388,27 @@ internal object DiagnosticReportBuilder {
                 })
             }
         })
+
+        // nrcSuppression
+        val nrcMap = log.nrcSuppressed
+        if (nrcMap.isNotEmpty()) {
+            root.put("nrcSuppression", JSONArray().apply {
+                nrcMap.entries.sortedBy { it.value.firstSeenMs }.forEach { (did, rec) ->
+                    put(JSONObject().apply {
+                        put("did", "0x%04X".format(did))
+                        put("nrcCode", rec.nrcCode)
+                        put("nrcName", when (rec.nrcCode) {
+                            NrcTracker.NRC_REQUEST_OUT_OF_RANGE -> "requestOutOfRange"
+                            NrcTracker.NRC_CONDITIONS_NOT_CORRECT -> "conditionsNotCorrect"
+                            NrcTracker.NRC_SECURITY_ACCESS_DENIED -> "securityAccessDenied"
+                            else -> "unknown"
+                        })
+                        put("firstSeenMs", rec.firstSeenMs)
+                        put("suppressedAfterCount", rec.suppressedAfterCount)
+                    })
+                }
+            })
+        }
 
         // probeResults
         root.put("probeResults", JSONArray().apply {

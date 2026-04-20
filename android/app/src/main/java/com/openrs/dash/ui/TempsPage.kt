@@ -50,6 +50,8 @@ import androidx.compose.ui.unit.sp
 import com.openrs.dash.ui.Tokens.CardBorder
 import com.openrs.dash.ui.Tokens.PagePad
 import com.openrs.dash.ui.Tokens.CardGap
+import com.openrs.dash.data.ThermalPredictor
+import com.openrs.dash.data.ThermalPredictor.ClimbTrend
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.ui.anim.SparklineData
 import com.openrs.dash.ui.anim.StaggeredColumn
@@ -62,6 +64,7 @@ import com.openrs.dash.ui.anim.StaggeredColumn
     // temps change slowly, higher rate just duplicates values)
     val oilSpark = remember { SparklineData(60) }
     val coolSpark = remember { SparklineData(60) }
+    val predictor = remember { ThermalPredictor() }
     val lastTempSample = remember { mutableLongStateOf(0L) }
     SideEffect {
         val now = vs.lastUpdate
@@ -69,6 +72,12 @@ import com.openrs.dash.ui.anim.StaggeredColumn
             lastTempSample.longValue = now
             if (vs.oilTempC > -90) oilSpark.push(vs.oilTempC.toFloat())
             if (vs.coolantTempC > -90) coolSpark.push(vs.coolantTempC.toFloat())
+            // Feed thermal predictor
+            val ms = System.currentTimeMillis()
+            predictor.recordSample("OIL", ms, vs.oilTempC)
+            predictor.recordSample("COOLANT", ms, vs.coolantTempC)
+            predictor.recordSample("RDU", ms, vs.rduTempC)
+            predictor.recordSample("PTU", ms, vs.ptuTempC)
         }
     }
     val sparkKey = lastTempSample.longValue
@@ -82,6 +91,24 @@ import com.openrs.dash.ui.anim.StaggeredColumn
     ) {
         RtrBanner(vs, p)
         TempPresetBadge(p)
+
+        // ── Predictive thermal alerts ───────────────────────────────────
+        if (vs.isConnected) {
+            val alertSensors = listOf(
+                Triple("OIL", p.oilCritC, 80.0),
+                Triple("COOLANT", p.coolCritC, 85.0),
+                Triple("RDU", p.rduCritC, 40.0),
+                Triple("PTU", p.ptuCritC, 50.0),
+            )
+            val activeAlerts = alertSensors.mapNotNull { (label, crit, floor) ->
+                if (predictor.shouldAlert(label, crit, floor))
+                    predictor.predict(label, crit, floor)
+                else null
+            }
+            activeAlerts.forEach { pred ->
+                ThermalAlertBanner(pred) { predictor.dismiss(pred.sensorLabel) }
+            }
+        }
 
         // ── Tires + AWD (migrated from CHASSIS) ─────────────────────────
         UnifiedChassisSection(vs, p)
@@ -112,19 +139,25 @@ import com.openrs.dash.ui.anim.StaggeredColumn
         val clutchLA = avail(vs.awdClutchTempL,      "awdClutchTempL")
         val clutchRA = avail(vs.awdClutchTempR,      "awdClutchTempR")
         val transA   = avail(vs.transOilTempC,       "transOilTempC")
+        val oilTrend     = predictor.trend("OIL").takeIf { oilA == TempAvail.AVAILABLE }
+        val coolTrend    = predictor.trend("COOLANT").takeIf { coolA == TempAvail.AVAILABLE }
+        val ptuTrend     = predictor.trend("PTU").takeIf { ptuA == TempAvail.AVAILABLE }
+        val rduTrend     = predictor.trend("RDU").takeIf { rduA == TempAvail.AVAILABLE }
         val powertrainItems = listOf(
             TempSpec("ENGINE OIL",
                 if (vs.oilTempC > -90) p.displayTemp(vs.oilTempC) else "— —", p.tempLabel,
                 vs.oilTempC.takeIf { it > -90 } ?: 0.0,
                 p.oilWarnC, p.oilCritC, subFor(oilA, "INFERRED"),
                 peakStr(vs.peakOilTempC), oilA,
-                sparklineData = oilSnap.takeIf { it.size >= 2 }),
+                sparklineData = oilSnap.takeIf { it.size >= 2 },
+                climbTrend = oilTrend),
             TempSpec("COOLANT",
                 if (vs.coolantTempC > -90) p.displayTemp(vs.coolantTempC) else "— —", p.tempLabel,
                 vs.coolantTempC.takeIf { it > -90 } ?: 0.0,
                 p.coolWarnC, p.coolCritC, subFor(coolA, ""),
                 peakStr(vs.peakCoolantTempC), coolA,
-                sparklineData = coolSnap.takeIf { it.size >= 2 }),
+                sparklineData = coolSnap.takeIf { it.size >= 2 },
+                climbTrend = coolTrend),
             TempSpec("INTAKE AIR",
                 if (vs.intakeTempC > -90) p.displayTemp(vs.intakeTempC) else "— —", p.tempLabel,
                 vs.intakeTempC.takeIf { it > -90 } ?: 0.0,
@@ -134,12 +167,14 @@ import com.openrs.dash.ui.anim.StaggeredColumn
                 if (vs.ptuTempC > -90) p.displayTemp(vs.ptuTempC) else "— —", p.tempLabel,
                 vs.ptuTempC.takeIf { it > -90 } ?: 0.0,
                 p.ptuWarnC, p.ptuCritC, subFor(ptuA, ""),
-                peakStr(vs.peakPtuTempC), ptuA),
+                peakStr(vs.peakPtuTempC), ptuA,
+                climbTrend = ptuTrend),
             TempSpec("RDU (REAR)",
                 if (vs.rduTempC > -90) p.displayTemp(vs.rduTempC) else "— —", p.tempLabel,
                 vs.rduTempC.takeIf { it > -90 } ?: 0.0,
                 p.rduWarnC, p.rduCritC, subFor(rduA, ""),
-                peakStr(vs.peakRduTempC), rduA),
+                peakStr(vs.peakRduTempC), rduA,
+                climbTrend = rduTrend),
             TempSpec("AMBIENT",
                 if (vs.ambientTempC > -90) p.displayTemp(vs.ambientTempC) else "— —", p.tempLabel,
                 vs.ambientTempC.takeIf { it > -90 } ?: 0.0,
@@ -256,6 +291,7 @@ data class TempSpec(
     val peakDisplay: String = "",
     val avail: TempAvail = TempAvail.AVAILABLE,
     val sparklineData: List<Float>? = null,
+    val climbTrend: ClimbTrend? = null,
 )
 
 @Composable fun RtrBanner(vs: VehicleState, p: UserPrefs) {
@@ -434,8 +470,17 @@ data class TempSpec(
                 val accent = LocalThemeAccent.current
                 MonoText(spec.peakDisplay, 9.sp, accent)
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 MonoLabel(spec.unit, 10.sp, Dim)
+                spec.climbTrend?.let { trend ->
+                    val (arrow, color) = when (trend) {
+                        ClimbTrend.RISING  -> "\u2191" to Warn
+                        ClimbTrend.COOLING -> "\u2193" to Ok
+                        ClimbTrend.STABLE  -> "\u2192" to Dim
+                    }
+                    MonoLabel(arrow, 10.sp, color)
+                }
             }
             // V1: optional sparkline trend between unit label and bar
             if (spec.sparklineData != null && spec.sparklineData.size >= 2) {
@@ -467,6 +512,56 @@ data class TempSpec(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ThermalAlertBanner(
+    pred: ThermalPredictor.SensorPrediction,
+    onDismiss: () -> Unit
+) {
+    val ttc = pred.timeToCriticalMin ?: return
+    val timeStr = if (ttc < 1.0) "<1 min" else "~${ttc.toInt()} min"
+    val tempStr = "${pred.critThresholdC.toInt()}\u00B0C"
+    val message = "${pred.sensorLabel} will reach $tempStr in $timeStr at current rate"
+
+    val dotAlpha by rememberInfiniteTransition(label = "alert").animateFloat(
+        initialValue = 1f, targetValue = 0.3f,
+        animationSpec = infiniteRepeatable(tween(600, easing = EaseInOut), RepeatMode.Reverse),
+        label = "alertDot"
+    )
+
+    Row(
+        Modifier.fillMaxWidth()
+            .background(
+                Brush.horizontalGradient(listOf(Orange.copy(alpha = 0.1f), Orange.copy(alpha = 0.05f))),
+                RoundedCornerShape(12.dp)
+            )
+            .border(Tokens.CardBorder, Orange.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Box(Modifier.size(16.dp).clip(CircleShape).background(Orange.copy(alpha = 0.2f * dotAlpha)))
+            Box(Modifier.size(8.dp).clip(CircleShape).background(Orange.copy(alpha = dotAlpha)))
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            MonoLabel(message, 9.sp, Frost)
+            MonoLabel(
+                "+${"%.1f".format(pred.climbRateCPerMin)}\u00B0C/min",
+                8.sp, Orange
+            )
+        }
+        Box(
+            Modifier
+                .background(Surf3, RoundedCornerShape(6.dp))
+                .border(Tokens.CardBorder, Brd, RoundedCornerShape(6.dp))
+                .clickable { onDismiss() }
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+        ) {
+            MonoLabel("DISMISS", 8.sp, Dim)
         }
     }
 }

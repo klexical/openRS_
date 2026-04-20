@@ -11,7 +11,7 @@ const SESSION_COLORS = [chartColors[0], chartColors[1], chartColors[2], chartCol
 
 interface ComparisonChartProps {
   sessions: Session[]
-  dataKey: 'rpm' | 'boostPsi' | 'speedKph' | 'coolantC' | 'latG' | 'throttlePct'
+  dataKey: 'rpm' | 'boostPsi' | 'speedKph' | 'coolantC' | 'oilTempC' | 'latG' | 'longG' | 'throttlePct' | 'brakePressure' | 'steeringAngle'
   label: string
   yFormatter?: (v: number) => string
   height?: number

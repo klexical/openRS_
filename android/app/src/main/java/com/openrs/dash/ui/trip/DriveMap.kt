@@ -14,6 +14,7 @@ import com.google.android.gms.maps.model.*
 import com.google.maps.android.compose.*
 import com.openrs.dash.R
 import com.openrs.dash.data.DriveMode
+import com.openrs.dash.data.DriveBookmarkEntity
 import com.openrs.dash.data.DrivePointEntity
 import com.openrs.dash.data.PeakEvent
 import com.openrs.dash.data.PeakType
@@ -35,7 +36,9 @@ enum class ColorMode(val label: String) {
     BOOST("BOOST"),
     THROTTLE("THRTL"),
     LATERAL_G("G-LAT"),
-    OIL_TEMP("TEMP")
+    OIL_TEMP("TEMP"),
+    AWD("AWD"),
+    DYNAMICS("BRAKE")
 }
 
 /**
@@ -57,6 +60,7 @@ fun DriveMap(
     points: List<DrivePointEntity>,
     colorMode: ColorMode = ColorMode.SPEED,
     peakEvents: List<PeakEvent> = emptyList(),
+    bookmarks: List<DriveBookmarkEntity> = emptyList(),
     rtrPoint: DrivePointEntity? = null,
     currentLat: Double? = null,
     currentLng: Double? = null,
@@ -227,6 +231,23 @@ fun DriveMap(
                 zIndex = 5f
             )
         }
+
+        // ── Bookmark markers ────────────────────────────────────────
+        bookmarks.forEach { bm ->
+            val snippet = buildString {
+                if (bm.label.isNotEmpty()) append(bm.label).append(" — ")
+                append("${"%.0f".format(bm.speedKph)} km/h")
+                if (bm.rpm > 0) append(" · ${bm.rpm} RPM")
+                if (bm.boostPsi > 0) append(" · ${"%.1f".format(bm.boostPsi)} PSI")
+            }
+            Marker(
+                state = MarkerState(position = LatLng(bm.lat, bm.lng)),
+                title = if (bm.label.isNotEmpty()) bm.label else "Bookmark",
+                snippet = snippet,
+                icon = BitmapDescriptorFactory.defaultMarker(colorToHue(Warn)),
+                zIndex = 7f
+            )
+        }
     }
 }
 
@@ -306,6 +327,30 @@ internal fun pointColor(point: DrivePointEntity, mode: ColorMode): Color = when 
         point.oilTempC < 110 -> Warn     // yellow — operating
         else                 -> Orange   // orange — hot
     }
+    ColorMode.AWD -> {
+        // Rear-vs-front wheel speed delta: proxy for GKN Twinster engagement
+        val frontAvg = (point.wheelSpeedFL + point.wheelSpeedFR) / 2.0
+        val rearAvg = (point.wheelSpeedRL + point.wheelSpeedRR) / 2.0
+        val delta = kotlin.math.abs(rearAvg - frontAvg)
+        when {
+            delta < 0.5 -> Accent   // cyan — minimal rear drive
+            delta < 2.0 -> Ok       // green — light vectoring
+            delta < 4.0 -> Warn     // yellow — active vectoring
+            else        -> Orange   // orange — heavy torque transfer
+        }
+    }
+    ColorMode.DYNAMICS -> {
+        // Composite: brake zones (red/orange) vs cornering (yellow) vs cruise (green)
+        val braking = point.brakePressure > 50 || point.longitudinalG < -0.2
+        val cornering = kotlin.math.abs(point.lateralG) > 0.3
+        when {
+            braking && cornering -> Orange   // trail braking
+            braking              -> Color(0xFFCC2200)  // hard braking — red-orange
+            cornering && kotlin.math.abs(point.lateralG) > 0.6 -> Warn  // hard corner
+            cornering            -> Ok       // moderate corner
+            else                 -> Accent   // cruise / acceleration
+        }
+    }
 }
 
 /** Legend entries for each color mode — label + color pairs. */
@@ -316,6 +361,8 @@ internal fun colorLegend(mode: ColorMode): List<Pair<String, Color>> = when (mod
     ColorMode.THROTTLE -> listOf("<25%" to Accent, "25-50" to Ok, "50-75" to Warn, "75+" to Orange)
     ColorMode.LATERAL_G -> listOf("<0.3g" to Accent, "0.3-0.6" to Ok, "0.6-0.9" to Warn, "0.9+" to Orange)
     ColorMode.OIL_TEMP -> listOf("<90°" to Ok, "90-110" to Warn, "110+" to Orange)
+    ColorMode.AWD -> listOf("<0.5" to Accent, "0.5-2" to Ok, "2-4" to Warn, "4+" to Orange)
+    ColorMode.DYNAMICS -> listOf("Cruise" to Accent, "Corner" to Ok, "Hard" to Warn, "Brake" to Orange)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

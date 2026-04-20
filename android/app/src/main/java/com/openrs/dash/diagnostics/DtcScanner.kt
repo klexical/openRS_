@@ -1,14 +1,14 @@
 package com.openrs.dash.diagnostics
 
 import android.content.Context
+import com.openrs.dash.can.ObdConstants
 import com.openrs.dash.can.SlcanConnection
-import com.openrs.dash.data.DtcModuleSpec
-import com.openrs.dash.data.DtcResult
-import com.openrs.dash.data.DtcStatus
+import com.openrs.dash.data.*
+import org.json.JSONObject
 
 /**
  * Orchestrates a full DTC scan across all Focus RS ECUs and returns
- * a parsed list of [DtcResult] records.
+ * a parsed list of [DtcResult] records wrapped in [DtcScanResult].
  *
  * Scanning uses UDS Service 0x19 (ReadDTCInformation), sub-function 0x02
  * (reportDTCByStatusMask), status mask 0xFF (all faults).
@@ -19,13 +19,16 @@ import com.openrs.dash.data.DtcStatus
 class DtcScanner(private val ctx: Context) {
 
     companion object {
-        private val MODULES = listOf(
+        val MODULES = listOf(
             DtcModuleSpec("PCM",  0x7E0, 0x7E8),
             DtcModuleSpec("BCM",  0x726, 0x72E),
             DtcModuleSpec("ABS",  0x760, 0x768),
-            DtcModuleSpec("AWD",  0x703, 0x70B),
-            DtcModuleSpec("PSCM", 0x730, 0x738),
-            DtcModuleSpec("GFM",  0x7D2, 0x7DA)
+            DtcModuleSpec("AWD",  0x703, 0x70B, needsExtSession = true,
+                extSessionFrame = ObdConstants.EXT_SESSION_AWD),
+            DtcModuleSpec("PSCM", 0x730, 0x738, needsExtSession = true,
+                extSessionFrame = ObdConstants.EXT_SESSION_PSCM),
+            DtcModuleSpec("GFM",  0x7D2, 0x7DA, needsExtSession = true,
+                extSessionFrame = "t7D280210030000000000\r")
         )
 
         // ── Pure parsing helpers (no Context dependency) ─────────────────────
@@ -101,17 +104,186 @@ class DtcScanner(private val ctx: Context) {
 
             return results
         }
+
+        /**
+         * Compute the diff between the current scan and a previous set of codes.
+         * [previousCodes] is a set of DTC code strings from the last scan.
+         */
+        fun computeDiff(current: List<DtcResult>, previousCodes: Set<String>): DtcDiff {
+            val currentCodeSet = current.map { it.code }.toSet()
+            return DtcDiff(
+                newCodes   = current.filter { it.code !in previousCodes },
+                goneCodes  = previousCodes.filter { it !in currentCodeSet }.toList(),
+                persistent = current.filter { it.code in previousCodes }
+            )
+        }
     }
 
     /**
-     * Runs the full scan and returns parsed [DtcResult] records.
-     * Returns an empty list if the connection is not live.
-     * Suspends for up to ~15 seconds while querying all modules.
+     * Runs the full scan and returns a [DtcScanResult] with parsed codes and
+     * per-module status information.
+     *
+     * [onModuleProgress] is called on each module state change for live UI updates.
      */
-    suspend fun scan(conn: SlcanConnection): List<DtcResult> {
+    suspend fun scan(
+        conn: SlcanConnection,
+        onModuleProgress: ((String, ModuleScanStatus?) -> Unit)? = null
+    ): DtcScanResult {
         DtcDatabase.load(ctx)
-        val raw = conn.performDtcScan(MODULES)
-        return raw.flatMap { (moduleName, payload) -> parsePayload(moduleName, payload) }
+        val startMs = System.currentTimeMillis()
+        val raw = conn.performDtcScan(MODULES, onModuleProgress)
+        val durationMs = System.currentTimeMillis() - startMs
+
+        val codes = mutableListOf<DtcResult>()
+        val statuses = mutableMapOf<String, ModuleScanStatus>()
+
+        for (module in MODULES) {
+            val result = raw[module.name]
+            when {
+                result == null -> {
+                    statuses[module.name] = ModuleScanStatus.TIMEOUT
+                }
+                result.isEmpty() -> {
+                    statuses[module.name] = ModuleScanStatus.OK
+                }
+                else -> {
+                    val parsed = parsePayload(module.name, result)
+                    codes.addAll(parsed)
+                    statuses[module.name] = ModuleScanStatus.OK
+                }
+            }
+        }
+
+        val result = DtcScanResult(
+            codes = codes,
+            moduleStatuses = statuses,
+            scanDurationMs = durationMs
+        )
+
+        // Persist scan results to Room database
+        try {
+            val db = DriveDatabase.getInstance(ctx)
+            val statusJson = JSONObject().apply {
+                statuses.forEach { (k, v) -> put(k, v.name) }
+            }.toString()
+            val scanId = db.driveDao().insertDtcScan(DtcScanEntity(
+                timestamp = System.currentTimeMillis(),
+                moduleCount = statuses.size,
+                totalCodes = codes.size,
+                scanDurationMs = durationMs,
+                moduleStatuses = statusJson
+            ))
+            if (codes.isNotEmpty()) {
+                db.driveDao().insertDtcCodes(codes.map { dtc ->
+                    DtcCodeEntity(
+                        scanId = scanId,
+                        module = dtc.module,
+                        code = dtc.code,
+                        description = dtc.description,
+                        status = dtc.status.name
+                    )
+                })
+            }
+            // Prune to 50 most recent scans
+            val count = db.driveDao().getDtcScanCount()
+            if (count > 50) db.driveDao().deleteOldestDtcScans(count - 50)
+        } catch (e: Exception) {
+            android.util.Log.w("DTC", "Failed to persist scan results", e)
+        }
+
+        return result
+    }
+
+    /**
+     * Fetch freeze frame data for DTCs that have snapshot records.
+     * Returns updated DTC results with freeze frames attached.
+     * This is an opt-in second pass after the main scan.
+     */
+    suspend fun fetchFreezeFrames(
+        conn: SlcanConnection,
+        codes: List<DtcResult>
+    ): List<DtcResult> {
+        if (codes.isEmpty()) return codes
+
+        val moduleMap = MODULES.associateBy { it.name }
+        val updatedCodes = codes.toMutableList()
+
+        // Group codes by module to minimize session switches
+        val byModule = codes.groupBy { it.module }
+        for ((moduleName, moduleCodes) in byModule) {
+            val module = moduleMap[moduleName] ?: continue
+
+            // Step 1: query 0x19/04 to find which DTCs have snapshots
+            val idPayload = conn.performFreezeFrameIdentification(module) ?: continue
+            val snapshots = FreezeFrameParser.parseSnapshotIdentification(idPayload)
+            if (snapshots.isEmpty()) continue
+
+            // Step 2: for each DTC with a snapshot, fetch the record
+            for ((dtcBytes, recordNum) in snapshots) {
+                val dtcCode = decodeDtcCode(
+                    dtcBytes[0].toInt() and 0xFF,
+                    dtcBytes[1].toInt() and 0xFF
+                )
+                // Find matching code in our results
+                val idx = updatedCodes.indexOfFirst { it.module == moduleName && it.code == dtcCode }
+                if (idx < 0) continue
+
+                val ffPayload = conn.performFreezeFrameRead(module, dtcBytes, recordNum) ?: continue
+                // Skip the UDS header (SID + SF + DTC bytes + record num)
+                val dataStart = minOf(7, ffPayload.size)
+                if (dataStart >= ffPayload.size) continue
+                val ffData = ffPayload.copyOfRange(dataStart, ffPayload.size)
+
+                val freezeFrame = FreezeFrameParser.parse(dtcCode, recordNum, ffData)
+                if (freezeFrame.entries.isNotEmpty()) {
+                    updatedCodes[idx] = updatedCodes[idx].copy(freezeFrame = freezeFrame)
+                }
+            }
+        }
+
+        return updatedCodes
+    }
+
+    /**
+     * Retry scan for a single module that previously timed out.
+     */
+    suspend fun scanSingleModule(
+        conn: SlcanConnection,
+        moduleName: String
+    ): Pair<List<DtcResult>, ModuleScanStatus> {
+        DtcDatabase.load(ctx)
+        val module = MODULES.find { it.name == moduleName }
+            ?: return emptyList<DtcResult>() to ModuleScanStatus.ERROR
+        val raw = conn.performDtcScan(listOf(module), null)
+        val result = raw[module.name]
+        return if (result != null && result.isNotEmpty()) {
+            parsePayload(module.name, result) to ModuleScanStatus.OK
+        } else if (result != null) {
+            emptyList<DtcResult>() to ModuleScanStatus.OK
+        } else {
+            emptyList<DtcResult>() to ModuleScanStatus.TIMEOUT
+        }
+    }
+
+    /**
+     * Get the set of DTC codes from the most recent persisted scan.
+     * Used for diff comparison (NEW/RESOLVED badges).
+     */
+    fun getPreviousScanCodes(): Set<String> {
+        return try {
+            val db = DriveDatabase.getInstance(ctx)
+            db.driveDao().getLastScanCodes().map { it.code }.toSet()
+        } catch (_: Exception) { emptySet() }
+    }
+
+    /**
+     * Get code occurrence history for the DTC detail sheet.
+     */
+    fun getCodeHistory(code: String): List<DtcCodeEntity> {
+        return try {
+            val db = DriveDatabase.getInstance(ctx)
+            db.driveDao().getCodeHistory(code)
+        } catch (_: Exception) { emptyList() }
     }
 
     /**

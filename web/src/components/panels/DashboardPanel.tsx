@@ -8,6 +8,7 @@ import { Sparkline } from '../charts/Sparkline'
 import { GaugeChart } from '../charts/GaugeChart'
 import { ModeTimeline } from '../charts/ModeTimeline'
 import { GpsMap } from '../charts/GpsMap'
+import { ThermalProgressionChart } from '../charts/ThermalProgressionChart'
 import { ExportDropdown } from '../ui/ExportDropdown'
 import { fmtNumber, fmtDuration, useUnitFormatters } from '../../lib/format'
 import { colors } from '../../styles/tokens'
@@ -65,6 +66,9 @@ export function DashboardPanel() {
   const speedData = useMemo(() => points?.map((p) => p.speedKph) ?? [], [points])
   const boostData = useMemo(() => points?.map((p) => p.boostPsi) ?? [], [points])
 
+  // Race Ready detection (T2I)
+  const hasRaceReady = useMemo(() => points?.some((p) => p.raceReady) ?? false, [points])
+
   // TPMS: get last valid reading from trip points
   const tpmsData = useMemo(() => {
     if (!points || points.length === 0) return null
@@ -97,6 +101,26 @@ export function DashboardPanel() {
             )}
             <span>{session.meta.sessionStart}</span>
           </div>
+          {/* Tags (T2H) */}
+          {session.tags.length > 0 && (
+            <div className="flex gap-1.5 mt-2 flex-wrap">
+              {session.tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="px-2 py-0.5 rounded text-[10px] font-mono uppercase tracking-wider
+                             bg-accent/10 text-accent border border-accent/20"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+          {/* Race Ready indicator (T2I) */}
+          {hasRaceReady && (
+            <span className="inline-block mt-2 px-2 py-0.5 rounded text-[10px] font-mono uppercase tracking-wider font-semibold bg-ok/10 text-ok border border-ok/20">
+              Race Ready Detected
+            </span>
+          )}
         </div>
         <ExportDropdown session={session} />
       </div>
@@ -105,7 +129,7 @@ export function DashboardPanel() {
         <>
           {/* Mini map */}
           <SectionLabel>Route</SectionLabel>
-          <GpsMap points={points} peakEvents={trip.peakEvents} height="30vh" />
+          <GpsMap points={points} peakEvents={trip.peakEvents} bookmarks={session.trip?.bookmarks} height="30vh" />
 
           {/* Trip KPIs with sparklines */}
           <SectionLabel>Trip Summary</SectionLabel>
@@ -131,6 +155,16 @@ export function DashboardPanel() {
               <GaugeChart value={trip.peakBoostPsi} max={25} label="Peak Boost" unit={fmt.boostUnit} color={colors.accent} />
               <GaugeChart value={trip.peakSpeedKph} max={270} label="Peak Speed" unit={fmt.speedUnit} color={colors.ok} />
               <GaugeChart value={trip.peakLatG} max={1.5} label="Peak Lat G" unit="G" color={colors.warn} />
+              {/* Aggression Score (T2A) */}
+              {trip.aggressionScore != null && trip.aggressionScore > 0 && (
+                <GaugeChart
+                  value={trip.aggressionScore}
+                  max={100}
+                  label="Aggression"
+                  unit="/100"
+                  color={trip.aggressionScore > 70 ? colors.orange : trip.aggressionScore > 40 ? colors.warn : colors.ok}
+                />
+              )}
             </div>
             {/* Detail row below gauges */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 pt-4 border-t border-brd">
@@ -141,11 +175,50 @@ export function DashboardPanel() {
             </div>
           </div>
 
+          {/* Thermal Progression (T2B) */}
+          {session.trip?.thermalProgression && (
+            <>
+              <SectionLabel>Thermal Progression</SectionLabel>
+              <ThermalProgressionChart data={session.trip.thermalProgression} />
+            </>
+          )}
+
           {/* Drive mode timeline */}
           {Object.keys(trip.modeBreakdown).length > 0 && (
             <>
               <SectionLabel>Drive Mode Timeline</SectionLabel>
-              <ModeTimeline points={points} />
+              <ModeTimeline points={points} canonicalTimeline={session.trip?.canonicalModeTimeline} />
+            </>
+          )}
+
+          {/* Bookmarks summary */}
+          {session.trip?.bookmarks && session.trip.bookmarks.length > 0 && (
+            <>
+              <SectionLabel>Bookmarks ({session.trip.bookmarks.length})</SectionLabel>
+              <div className="rounded-lg border border-brd bg-surf2 overflow-hidden">
+                <div className="max-h-[200px] overflow-y-auto">
+                  <table className="w-full text-xs font-mono">
+                    <thead className="sticky top-0 bg-surf3">
+                      <tr className="text-left text-dim uppercase tracking-wider">
+                        <th className="px-3 py-2">Label</th>
+                        <th className="px-3 py-2">Speed</th>
+                        <th className="px-3 py-2">RPM</th>
+                        <th className="px-3 py-2">Boost</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {session.trip.bookmarks.map((bm, i) => (
+                        <tr key={i} className="border-t border-brd hover:bg-surf3/50">
+                          <td className="px-3 py-1.5" style={{ color: '#E040FB' }}>{bm.label || `#${i + 1}`}</td>
+                          <td className="px-3 py-1.5 text-frost">{bm.speedKph.toFixed(0)} kph</td>
+                          <td className="px-3 py-1.5 text-frost">{bm.rpm}</td>
+                          <td className="px-3 py-1.5 text-frost">{bm.boostPsi.toFixed(1)} PSI</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </>
           )}
 

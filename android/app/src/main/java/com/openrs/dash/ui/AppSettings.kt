@@ -76,6 +76,10 @@ object AppSettings {
     const val KEY_MAX_SAVED_DRIVES       = "max_saved_drives"
     const val DEFAULT_MAX_SAVED_DRIVES   = 50       // oldest pruned when exceeded
 
+    // ── Diagnostics ─────────────────────────────────────────────────────────
+    const val KEY_AUTO_SCAN_DTCS       = "auto_scan_dtcs"
+    const val DEFAULT_AUTO_SCAN_DTCS   = false       // opt-in: auto-scan DTCs on connect
+
     // ── Theme ────────────────────────────────────────────────────────────────
     const val KEY_THEME_ID     = "theme_id"
     const val DEFAULT_THEME_ID = "cyan"          // RS Nitrous Blue default
@@ -207,6 +211,9 @@ object AppSettings {
 
     fun getAutoRecordDrives(ctx: Context): Boolean =
         prefs(ctx).getBoolean(KEY_AUTO_RECORD_DRIVES, DEFAULT_AUTO_RECORD_DRIVES)
+
+    fun getAutoScanDtcs(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_AUTO_SCAN_DTCS, DEFAULT_AUTO_SCAN_DTCS)
 
     fun getMaxSavedDrives(ctx: Context): Int =
         prefs(ctx).getInt(KEY_MAX_SAVED_DRIVES, DEFAULT_MAX_SAVED_DRIVES)
@@ -361,6 +368,7 @@ object AppSettings {
             putInt    (KEY_EDGE_SHIFT_RPM, p.edgeShiftRpm)
             putBoolean(KEY_AUTO_RECORD_DRIVES, p.autoRecordDrives)
             putInt    (KEY_MAX_SAVED_DRIVES, p.maxSavedDrives)
+            putBoolean(KEY_AUTO_SCAN_DTCS, p.autoScanDtcs)
             putString (KEY_UPDATE_CHANNEL, p.updateChannel)
             putFloat  (KEY_BRIGHTNESS, p.brightness)
             putString (KEY_THEME_MODE, p.themeMode)
@@ -396,6 +404,7 @@ object AppSettings {
         edgeShiftRpm         = getEdgeShiftRpm(ctx),
         autoRecordDrives     = getAutoRecordDrives(ctx),
         maxSavedDrives       = getMaxSavedDrives(ctx),
+        autoScanDtcs         = getAutoScanDtcs(ctx),
         updateChannel        = getUpdateChannel(ctx),
         brightness           = getBrightness(ctx),
         themeMode            = getThemeMode(ctx),
