@@ -142,13 +142,6 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **`AnomalyStripCalmHeight` token** — unused after calm treatment removed. (`ui/DesignTokens.kt`)
 - **MorePage interactive mode grid + VIN/Custom Dash/Sapphire sections** — replaced by dock readout card and Settings nav entries. (`ui/MorePage.kt`)
 
-### Added (rc.3 — field-test fixes)
-- **TPMS pressure + temperature in trip CSV exports** — `TripPoint` now captures all 8 TPMS fields (4 pressures + 4 temps) at each GPS fix. Exported as `tire_press_{lf,rf,lr,rr}_psi` and `tire_temp_{lf,rf,lr,rr}_c` columns. Enables post-session cold→hot tire pressure analysis. (`TripPoint.kt`, `TripRecorder.kt`, `DiagnosticExporter.kt`) ([#84](https://github.com/klexical/openRS_/issues/84))
-
-### Fixed (rc.3 — field-test fixes)
-- **Fuel economy never appeared** — OBD DID 0xF42F and CAN 0x380 both wrote to the same `fuelLevelPct` field. CAN fires at ~3 fps and OBD once per 30s, creating a sawtooth pattern that broke the 60-second rolling window calculation. OBD 0xF42F now stores its value in `genericValues["FuelLevel_OBD"]` for diagnostic visibility; CAN 0x380 is the sole source for fuel economy. (`ObdResponseParser.kt`) ([#118](https://github.com/klexical/openRS_/issues/118))
-- **DID prober EXPORT button removed** — clipboard copy of 500+ TSV lines was impractical. Probe results are already included in the diagnostic ZIP as CSV files. Removed button and unused imports. (`DidProberSection.kt`)
-
 ### Added (rc.3 — trip tab overhaul)
 - **Post-drive summary sheet** — ModalBottomSheet with duration, distance, fuel used, economy, peaks (speed/RPM/boost/G), thermal progression (start→peak→end for oil + coolant), mode breakdown bar. Triggered automatically on drive completion or via SUMMARY button on history cards. (`ui/trip/DriveSummarySheet.kt`) ([#177](https://github.com/klexical/openRS_/issues/177))
 - **Post-drive time-series charts** — 6-channel scrollable chart (speed, RPM, boost, oil temp, lateral G, throttle) with pill toggles and 360-point downsample. Embedded in drive summary sheet. (`ui/trip/DriveTimeSeries.kt`)
@@ -265,6 +258,13 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ### Fixed (rc.2)
 - **What's New dialog blank on v2.2.6** — `versionHighlights` map had no `"2.2.6"` entry, so the dialog immediately dismissed. Added v2.2.6 highlights and a fallback that shows the latest entry when no exact version match exists. (`WhatsNewDialog.kt`)
+
+### Added (rc.3 — field-test fixes)
+- **TPMS pressure + temperature in trip CSV exports** — `TripPoint` now captures all 8 TPMS fields (4 pressures + 4 temps) at each GPS fix. Exported as `tire_press_{lf,rf,lr,rr}_psi` and `tire_temp_{lf,rf,lr,rr}_c` columns. Enables post-session cold→hot tire pressure analysis. (`TripPoint.kt`, `TripRecorder.kt`, `DiagnosticExporter.kt`) ([#84](https://github.com/klexical/openRS_/issues/84))
+
+### Fixed (rc.3 — field-test fixes)
+- **Fuel economy never appeared** — OBD DID 0xF42F and CAN 0x380 both wrote to the same `fuelLevelPct` field. CAN fires at ~3 fps and OBD once per 30s, creating a sawtooth pattern that broke the 60-second rolling window calculation. OBD 0xF42F now stores its value in `genericValues["FuelLevel_OBD"]` for diagnostic visibility; CAN 0x380 is the sole source for fuel economy. (`ObdResponseParser.kt`) ([#118](https://github.com/klexical/openRS_/issues/118))
+- **DID prober EXPORT button removed** — clipboard copy of 500+ TSV lines was impractical. Probe results are already included in the diagnostic ZIP as CSV files. Removed button and unused imports. (`DidProberSection.kt`)
 
 ### Added (rc.4 — visual polish)
 - **Neon glow border system** — 4 new Compose modifiers (`neonBorder`, `neonPulse`, `bloomGlow`, `scanLine`) replace flat `border()` on all card components with gradient-based glow effects. Animated pulse on hero-tier cards, static glow on secondary cards. (`GlowModifiers.kt`) ([#82](https://github.com/klexical/openRS_/issues/82))
