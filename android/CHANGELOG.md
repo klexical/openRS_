@@ -142,40 +142,6 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **`AnomalyStripCalmHeight` token** — unused after calm treatment removed. (`ui/DesignTokens.kt`)
 - **MorePage interactive mode grid + VIN/Custom Dash/Sapphire sections** — replaced by dock readout card and Settings nav entries. (`ui/MorePage.kt`)
 
----
-
-## [v2.2.6] — 2026-04-06
-
-### Added (rc.1 — drive mode reliability)
-- **Pre-flight diagnostic logging for drive mode commands** — logs current mode, modeDetail420 hex value, and firmware version before every drive mode command for traceability. (`MorePage.kt`)
-- **Auto-correction on drive mode overshoot** — if CAN confirms a mode change but to the wrong mode (e.g. Track instead of Sport), the app automatically sends a corrective command and monitors for confirmation, with snackbar feedback throughout. (`MorePage.kt`)
-- **`has420Received` accessor on CanDecoder** — exposes whether at least one 0x420 frame has been received, for diagnostic logging. (`CanDecoder.kt`)
-
-### Added (rc.2 — CAN decoders, performance, economy)
-- **Clutch pedal position from CAN 0x138** — decodes 10-bit clutch pedal percentage from PCMmsg10. Displayed on DASH tab below the throttle/brake bars (only visible when pedal is pressed). (`CanDecoder.kt`, `DashPage.kt`) ([#109](https://github.com/klexical/openRS_/issues/109))
-- **Wheel rotation counts from CAN 0x1E0** — decodes 4 per-wheel rotation counters and average front wheel speed from ABSmsg06. Displayed in a WHEEL ROTATION row within the TPMS section on CHASSIS tab. (`CanDecoder.kt`, `ChassisPage.kt`) ([#110](https://github.com/klexical/openRS_/issues/110))
-- **Passive VIN decode from CAN 0x40A** — assembles 17-character VIN from 3 multiplexed pages (mux bytes C1 00/01/02). Displayed on MORE tab in a VEHICLE IDENTIFICATION section. (`CanDecoder.kt`, `MorePage.kt`) ([#126](https://github.com/klexical/openRS_/issues/126))
-- **0-60 / 0-100 performance timer** — singleton `PerformanceTimer` with IDLE/ARMED/RUNNING/FINISHED states, driven by CAN speed data at ~100 Hz. Tracks launch RPM, peak boost, elapsed time, and session best. Displayed on DASH tab with tap-to-toggle target and arm/reset controls. (`PerformanceTimer.kt`, `DashPage.kt`) ([#117](https://github.com/klexical/openRS_/issues/117))
-- **Real-time fuel economy** — singleton `FuelEconomy` using a 60-second rolling window of fuel level + speed-integrated distance. Computes instant/average L/100km or MPG, idle fuel rate, and distance to empty. Displayed on DASH tab (appears after 10s of driving). (`FuelEconomy.kt`, `DashPage.kt`) ([#118](https://github.com/klexical/openRS_/issues/118))
-- **Configurable TPMS thresholds** — low/warn/high pressure thresholds replace the single hardcoded 40 PSI cutoff. 4-zone color logic: orange (critically low), yellow (getting low), green (optimal), orange (over-inflated). Settings sheet has 3 input fields with validation. (`AppSettings.kt`, `UserPrefs.kt`, `Components.kt`, `CarDiagram.kt`, `SettingsSheet.kt`) ([#168](https://github.com/klexical/openRS_/issues/168))
-- **Reset session button on DIAG tab** — 2-step confirmation (RESET SESSION then CONFIRM/CANCEL) below the Capture Snapshot button. Resets CanDecoder state, VehicleState, FuelEconomy, and PerformanceTimer. Only visible when connected. (`DiagPage.kt`, `CanDataService.kt`) ([#169](https://github.com/klexical/openRS_/issues/169))
-- **12 new CAN decoder unit tests** — clutch pedal (3), wheel rotation (2), VIN assembly (4 including multi-page, non-C1 mux skip, short data, reset clears state), plus existing test updates. (`CanDecoderTest.kt`)
-
-### Fixed (rc.2)
-- **Trip buttons hidden on small devices** — HUD content on TripPage restructured from weight-based spacer push to scrollable content + fixed footer pattern. Button always visible regardless of screen size. PR #166 by @adamsouthern. (`TripPage.kt`) ([#165](https://github.com/klexical/openRS_/issues/165))
-- **Battery voltage truncated to 1 decimal place** — changed format from `"%.1f"` to `"%.2f"` on both landscape and portrait BarCard layouts. (`DashPage.kt`) ([#172](https://github.com/klexical/openRS_/issues/172))
-- **Custom Dashboard header behind system status bar** — added WindowInsets-based top padding calculation so the header row clears the status bar on all devices. (`CustomDashPage.kt`) ([#171](https://github.com/klexical/openRS_/issues/171))
-- **ForegroundServiceStartNotAllowedException crash** — NetworkCallback.onAvailable wrapped startConnection() in try-catch for the Android 12+ restriction on starting foreground services from background context. (`CanDataService.kt`) ([#173](https://github.com/klexical/openRS_/issues/173))
-- **Throttle label showed "PEDAL" before data arrived** — conditional label removed, now always displays "THROTTLE". (`DashPage.kt`)
-
-### Changed (rc.2)
-- **Session history collapsible** — session history section on MORE tab uses SectionLabel with collapsible toggle and AnimatedVisibility, collapsed by default. ([#170](https://github.com/klexical/openRS_/issues/170))
-- **Mission Control HTML removed** — `MissionControlHtmlBuilder.kt`, `mission_control.html`, and uPlot assets (`uplot.min.css`, `uplot.min.js`) deleted. Sapphire web dashboard is the replacement. HTML generation blocks removed from `DiagnosticExporter`. ([#167](https://github.com/klexical/openRS_/issues/167))
-- **Firmware updated** — openrs-fw-pro v1.2, openrs-fw-usb v1.61.
-
-### Fixed (rc.2)
-- **What's New dialog blank on v2.2.6** — `versionHighlights` map had no `"2.2.6"` entry, so the dialog immediately dismissed. Added v2.2.6 highlights and a fallback that shows the latest entry when no exact version match exists. (`WhatsNewDialog.kt`)
-
 ### Added (rc.3 — field-test fixes)
 - **TPMS pressure + temperature in trip CSV exports** — `TripPoint` now captures all 8 TPMS fields (4 pressures + 4 temps) at each GPS fix. Exported as `tire_press_{lf,rf,lr,rr}_psi` and `tire_temp_{lf,rf,lr,rr}_c` columns. Enables post-session cold→hot tire pressure analysis. (`TripPoint.kt`, `TripRecorder.kt`, `DiagnosticExporter.kt`) ([#84](https://github.com/klexical/openRS_/issues/84))
 
@@ -265,6 +231,40 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **Room database v5→v9** — 4 migrations: v5→v6 (DTC scan/code tables), v6→v7 (lap sessions/laps/perf runs), v7→v8 (fuel economy/thermal peaks on drives), v8→v9 (drive bookmarks). (`data/DriveDatabase.kt`)
 - **CrashTelemetryBuffer capacity 100→300** — larger window for pre-crash telemetry context. (`diagnostics/CrashTelemetryBuffer.kt`)
 - **SLCAN flush interval 1000→200 lines** — more frequent diagnostic log flushes. (`diagnostics/DiagnosticLogger.kt`)
+
+---
+
+## [v2.2.6] — 2026-04-06
+
+### Added (rc.1 — drive mode reliability)
+- **Pre-flight diagnostic logging for drive mode commands** — logs current mode, modeDetail420 hex value, and firmware version before every drive mode command for traceability. (`MorePage.kt`)
+- **Auto-correction on drive mode overshoot** — if CAN confirms a mode change but to the wrong mode (e.g. Track instead of Sport), the app automatically sends a corrective command and monitors for confirmation, with snackbar feedback throughout. (`MorePage.kt`)
+- **`has420Received` accessor on CanDecoder** — exposes whether at least one 0x420 frame has been received, for diagnostic logging. (`CanDecoder.kt`)
+
+### Added (rc.2 — CAN decoders, performance, economy)
+- **Clutch pedal position from CAN 0x138** — decodes 10-bit clutch pedal percentage from PCMmsg10. Displayed on DASH tab below the throttle/brake bars (only visible when pedal is pressed). (`CanDecoder.kt`, `DashPage.kt`) ([#109](https://github.com/klexical/openRS_/issues/109))
+- **Wheel rotation counts from CAN 0x1E0** — decodes 4 per-wheel rotation counters and average front wheel speed from ABSmsg06. Displayed in a WHEEL ROTATION row within the TPMS section on CHASSIS tab. (`CanDecoder.kt`, `ChassisPage.kt`) ([#110](https://github.com/klexical/openRS_/issues/110))
+- **Passive VIN decode from CAN 0x40A** — assembles 17-character VIN from 3 multiplexed pages (mux bytes C1 00/01/02). Displayed on MORE tab in a VEHICLE IDENTIFICATION section. (`CanDecoder.kt`, `MorePage.kt`) ([#126](https://github.com/klexical/openRS_/issues/126))
+- **0-60 / 0-100 performance timer** — singleton `PerformanceTimer` with IDLE/ARMED/RUNNING/FINISHED states, driven by CAN speed data at ~100 Hz. Tracks launch RPM, peak boost, elapsed time, and session best. Displayed on DASH tab with tap-to-toggle target and arm/reset controls. (`PerformanceTimer.kt`, `DashPage.kt`) ([#117](https://github.com/klexical/openRS_/issues/117))
+- **Real-time fuel economy** — singleton `FuelEconomy` using a 60-second rolling window of fuel level + speed-integrated distance. Computes instant/average L/100km or MPG, idle fuel rate, and distance to empty. Displayed on DASH tab (appears after 10s of driving). (`FuelEconomy.kt`, `DashPage.kt`) ([#118](https://github.com/klexical/openRS_/issues/118))
+- **Configurable TPMS thresholds** — low/warn/high pressure thresholds replace the single hardcoded 40 PSI cutoff. 4-zone color logic: orange (critically low), yellow (getting low), green (optimal), orange (over-inflated). Settings sheet has 3 input fields with validation. (`AppSettings.kt`, `UserPrefs.kt`, `Components.kt`, `CarDiagram.kt`, `SettingsSheet.kt`) ([#168](https://github.com/klexical/openRS_/issues/168))
+- **Reset session button on DIAG tab** — 2-step confirmation (RESET SESSION then CONFIRM/CANCEL) below the Capture Snapshot button. Resets CanDecoder state, VehicleState, FuelEconomy, and PerformanceTimer. Only visible when connected. (`DiagPage.kt`, `CanDataService.kt`) ([#169](https://github.com/klexical/openRS_/issues/169))
+- **12 new CAN decoder unit tests** — clutch pedal (3), wheel rotation (2), VIN assembly (4 including multi-page, non-C1 mux skip, short data, reset clears state), plus existing test updates. (`CanDecoderTest.kt`)
+
+### Fixed (rc.2)
+- **Trip buttons hidden on small devices** — HUD content on TripPage restructured from weight-based spacer push to scrollable content + fixed footer pattern. Button always visible regardless of screen size. PR #166 by @adamsouthern. (`TripPage.kt`) ([#165](https://github.com/klexical/openRS_/issues/165))
+- **Battery voltage truncated to 1 decimal place** — changed format from `"%.1f"` to `"%.2f"` on both landscape and portrait BarCard layouts. (`DashPage.kt`) ([#172](https://github.com/klexical/openRS_/issues/172))
+- **Custom Dashboard header behind system status bar** — added WindowInsets-based top padding calculation so the header row clears the status bar on all devices. (`CustomDashPage.kt`) ([#171](https://github.com/klexical/openRS_/issues/171))
+- **ForegroundServiceStartNotAllowedException crash** — NetworkCallback.onAvailable wrapped startConnection() in try-catch for the Android 12+ restriction on starting foreground services from background context. (`CanDataService.kt`) ([#173](https://github.com/klexical/openRS_/issues/173))
+- **Throttle label showed "PEDAL" before data arrived** — conditional label removed, now always displays "THROTTLE". (`DashPage.kt`)
+
+### Changed (rc.2)
+- **Session history collapsible** — session history section on MORE tab uses SectionLabel with collapsible toggle and AnimatedVisibility, collapsed by default. ([#170](https://github.com/klexical/openRS_/issues/170))
+- **Mission Control HTML removed** — `MissionControlHtmlBuilder.kt`, `mission_control.html`, and uPlot assets (`uplot.min.css`, `uplot.min.js`) deleted. Sapphire web dashboard is the replacement. HTML generation blocks removed from `DiagnosticExporter`. ([#167](https://github.com/klexical/openRS_/issues/167))
+- **Firmware updated** — openrs-fw-pro v1.2, openrs-fw-usb v1.61.
+
+### Fixed (rc.2)
+- **What's New dialog blank on v2.2.6** — `versionHighlights` map had no `"2.2.6"` entry, so the dialog immediately dismissed. Added v2.2.6 highlights and a fallback that shows the latest entry when no exact version match exists. (`WhatsNewDialog.kt`)
 
 ### Added (rc.4 — visual polish)
 - **Neon glow border system** — 4 new Compose modifiers (`neonBorder`, `neonPulse`, `bloomGlow`, `scanLine`) replace flat `border()` on all card components with gradient-based glow effects. Animated pulse on hero-tier cards, static glow on secondary cards. (`GlowModifiers.kt`) ([#82](https://github.com/klexical/openRS_/issues/82))
