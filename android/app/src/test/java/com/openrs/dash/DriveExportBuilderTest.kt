@@ -120,7 +120,8 @@ class DriveExportBuilderTest {
 
     @Test fun `csv starts with schema version comment`() {
         val csv = DriveExportBuilder.buildCsv(listOf(testPoint()))
-        assertTrue(csv.startsWith("# openrs_csv_v1"))
+        // rc.4 bumped schema v1 → v2 for the 3 new boost-sweep columns.
+        assertTrue(csv.startsWith("# openrs_csv_v2"))
     }
 
     @Test fun `csv header has expected column count`() {
@@ -128,7 +129,8 @@ class DriveExportBuilderTest {
         val lines = csv.lines().filter { it.isNotBlank() }
         val header = lines[1] // line 0 is schema comment
         val headerCols = header.split(",")
-        assertEquals(32, headerCols.size)
+        // rc.4: 32 (v1 base) + 3 boost-sweep columns = 35
+        assertEquals(35, headerCols.size)
     }
 
     @Test fun `csv data row column count matches header`() {

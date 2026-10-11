@@ -43,9 +43,11 @@ import androidx.compose.ui.unit.sp
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.data.PerformanceTimer
 import com.openrs.dash.data.VehicleState
+import androidx.compose.ui.graphics.Color
 import com.openrs.dash.ui.Tokens.CardGap
 import com.openrs.dash.ui.Tokens.CardShape
 import com.openrs.dash.ui.Tokens.PagePad
+import com.openrs.dash.ui.anim.cardGlow
 import com.openrs.dash.ui.anim.pressClick
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -63,7 +65,52 @@ fun PerfPage(vs: VehicleState, p: UserPrefs, onReset: () -> Unit) {
         PerformanceTimerCard(vs)
         PersonalBestsCard()
         GForceSection(vs, onReset)
+        KnockEventsCard()
         PowerPageContent(vs, p)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// KNOCK EVENTS — rc.4 — scatter plot of persisted knock retard captures
+// ═══════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun KnockEventsCard() {
+    val dao = OpenRSDashApp.instance.driveDb.driveDao()
+    val events by produceState<List<com.openrs.dash.data.KnockEventEntity>>(emptyList()) {
+        value = withContext(Dispatchers.IO) { dao.getRecentKnockEvents(500) }
+    }
+    val expanded = rememberSectionExpanded("perf_knock", default = false)
+    val count = events.size
+    val worst = events.maxOfOrNull { it.krDeg } ?: 0.0
+    val badge = when {
+        count == 0           -> null
+        worst >= 4.0         -> "WORST ${"%.1f".format(worst)}°"
+        worst >= 2.0         -> "WORST ${"%.1f".format(worst)}°"
+        else                 -> null
+    }
+    val badgeCol: Color? = if (worst >= 2.0) severityColor(worst) else null
+    Column(
+        Modifier.fillMaxWidth()
+            .cardGlow(cornerRadius = Tokens.CardRadius)
+            .background(Surf.copy(alpha = 0.65f), CardShape)
+            .border(Tokens.CardBorder, Brd.copy(alpha = borderAlpha(0.85f)), CardShape)
+            .padding(10.dp)
+    ) {
+        SectionLabel(
+            text = if (count > 0) "KNOCK EVENTS · $count" else "KNOCK EVENTS",
+            collapsible = true,
+            expanded = expanded.value,
+            onToggle = { expanded.value = !expanded.value },
+            badge = badge,
+            badgeColor = badgeCol
+        )
+        if (expanded.value) {
+            Spacer(Modifier.height(6.dp))
+            KnockScatter(events = events)
+            Spacer(Modifier.height(4.dp))
+            KnockAggregate(events = events)
+        }
     }
 }
 

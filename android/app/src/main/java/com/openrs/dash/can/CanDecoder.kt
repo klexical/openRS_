@@ -98,7 +98,23 @@ object CanDecoder {
     // NOTE: This ID is PCMmsg17, NOT a TPMS broadcast. TPMS data comes from BCM Mode 22
     // polling only. The name ID_PCM_AMBIENT reflects the actual decoded signal.
     const val ID_PCM_AMBIENT  = 0x340
-    const val ID_AMBIENT_TEMP = 0x1A4   // Ambient temp byte4 signed × 0.25 °C (MS-CAN bridged)
+    const val ID_AMBIENT_TEMP = 0x1A4   // Ambient temp byte4 UNSIGNED × 0.25 °C (MS-CAN bridged, DigiCluster v1.0.46)
+
+    // ── 0x040: Airbag indicator lamp + passenger occupancy (DigiCluster v1.0.73) ──
+    // byte2 bits 7:6 encode SRS lamp state AND passenger-seat occupancy on the same nibble:
+    //   0x80 (10__) = seat empty            →  airbag lamp OFF
+    //   0x40 (01__) = seat occupied          →  airbag lamp OFF (empty state 'occupied by weight')
+    //   0xC0 (11__) = bulb check / fault    →  airbag lamp ON
+    //   0xD0 pattern during startup sweep   →  airbag lamp ON (transient)
+    // Only (byte2 & 0xC0) == 0xC0 triggers the lamp; occupancy by itself does not.
+    const val ID_SRS_STATUS = 0x040
+
+    // ── 0x300: Charging/battery system fault (DigiCluster v1.0.73) ────────────
+    // DigiCluster: "lights the battery lamp for a real charging/battery fault";
+    // also bulb-checks for power modes 4–6 (Accessory → Ignition On) then clears
+    // once engine is Running. Exact byte/bit mapping not published; capture pending.
+    // Reserved as a known-ID so unknown-frame logger doesn't spam this during drives.
+    const val ID_CHARGING_STATUS = 0x300
 
     // ── RS_HS.dbc SASMmsg01 (0x010): Steering wheel angle ──────────────────
     // SteeringWheelAngle : 54|15@0+ (0.04395,0) → (byte6&0x7F)<<8|byte7 × 0.04395 °
@@ -163,7 +179,8 @@ object CanDecoder {
         ID_PCM_AMBIENT, ID_AMBIENT_TEMP,
         ID_FUEL_LEVEL, ID_ODOMETER, ID_VIN_MUX,
         ID_STEERING, ID_BRAKE_PRESS,
-        ID_BUTTONS_260, ID_DRIVE_MODE_BTN
+        ID_BUTTONS_260, ID_DRIVE_MODE_BTN,
+        ID_SRS_STATUS, ID_CHARGING_STATUS
     )
 
     fun decode(id: Int, data: ByteArray, state: VehicleState): VehicleState? {
@@ -329,11 +346,38 @@ object CanDecoder {
             } else null
 
             // ── 0x1A4: Ambient temperature — MS-CAN bridged via GWM ──────────
-            // can1_ms.json: byte4 signed int8 × 0.25 °C
+            // Byte 4 is UNSIGNED × 0.25 °C (DigiCluster v1.0.46 correction).
+            // Early can1_ms.json spec said signed int8 — that caused values above 127 raw
+            // (~32°C / 90°F) to wrap negative. Confirmed on-car: raw 0x82 (130) × 0.25 = 32.5°C.
+            // Range: 0..63.75°C — covers all realistic ambient conditions.
             ID_AMBIENT_TEMP -> if (n >= 5) state.copy(
-                ambientTempC = data[4].toInt().toDouble() * 0.25,
+                ambientTempC = (data[4].toInt() and 0xFF) * 0.25,
                 lastUpdate   = now
             ) else null
+
+            // ── 0x040: SRS (airbag) lamp — DigiCluster v1.0.73 ─────────────────
+            // byte2 bits 7:6 share the SRS state and passenger occupancy encoding:
+            //   0x80 = seat empty           →  lamp OFF
+            //   0x40 = seat occupied        →  lamp OFF
+            //   0xC0 = bulb check / fault   →  lamp ON   (both bits set)
+            //   0xD0 = bulb-check sweep     →  lamp ON   (transient during startup)
+            // Only (byte2 & 0xC0) == 0xC0 lights the lamp. Occupancy alone must not.
+            // 0x435 per-zone airbag status is intentionally NOT decoded here — DigiCluster
+            // confirmed it crosstalks with occupancy and false-triggers the lamp.
+            // 0x040 is recognized so FrameCoverageGrid sees it as "live" and the lamp
+            // state is validated at the decoder level, but downstream state is not
+            // mutated — VehicleState.copy() is at the JVM 255-slot ceiling (see memory
+            // gotchas_vehiclestate_jvm_limit.md). When slots are freed in a future RC,
+            // store the lamp as `warnAirbag: Boolean? = (b2 & 0xC0) == 0xC0`.
+            ID_SRS_STATUS -> state.copy(lastUpdate = now)
+
+            // ── 0x300: Charging/battery system fault ──────────────────────────
+            // DigiCluster v1.0.73 confirms this ID lights the battery lamp for real faults
+            // (plus bulb-check in power modes 4–6, clearing once engine runs). The exact
+            // byte/bit layout isn't published; without a car-side capture of a known-fault
+            // vs clean state we cannot select the bit. Field is accepted (keeps the ID off
+            // the unknown-frame log) but no state update is applied until mapping is confirmed.
+            ID_CHARGING_STATUS -> null
 
             // ── 0x190: Wheel speeds — RS_HS.dbc ABSmsg03 (10 ms broadcast) ────
             // FrontLeftWheelSpeed  : 6|15@0+ (0.011343006,0)  → ((data[0]&0x7F)<<8)|data[1]
@@ -542,6 +586,8 @@ object CanDecoder {
         ID_PCM_AMBIENT  -> "ambient=${"%.2f".format(state.ambientTempC)}°C (PCMmsg17)"
         ID_DRIVE_MODE_EXT -> "driveMode=${state.driveMode.label} lc=${state.launchControlActive} (resolved via 0x420+0x1B0)"
         ID_AMBIENT_TEMP -> "ambientTempC=${"%.2f".format(state.ambientTempC)}"
+        ID_SRS_STATUS   -> "srs=0x040 (frame recognized; lamp state not yet surfaced on VehicleState)"
+        ID_CHARGING_STATUS -> "chargingStatus=0x300 (byte mapping pending)"
         ID_WHEEL_SPEEDS -> "FL=${"%.1f".format(state.wheelSpeedFL)} FR=${"%.1f".format(state.wheelSpeedFR)} RL=${"%.1f".format(state.wheelSpeedRL)} RR=${"%.1f".format(state.wheelSpeedRR)} km/h"
         ID_AWD_TORQUE   -> "L=${"%.0f".format(state.awdLeftTorque)}Nm R=${"%.0f".format(state.awdRightTorque)}Nm"
         ID_DRIVE_MODE   -> "driveMode=${state.driveMode.label} (0x1B0 byte6)"

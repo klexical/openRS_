@@ -230,6 +230,16 @@ object DiagnosticExporter {
                         DriveExportBuilder.buildProfileJson(drive, points, bm, laps, runs).toByteArray(Charsets.UTF_8))
                 }
 
+                // Knock events CSV (rc.4)
+                if (ExportComponent.DRIVE_CSV in components) {
+                    val dao = DriveDatabase.getInstance(ctx).driveDao()
+                    val knockEvents = try { dao.getKnockEvents(drive.id) } catch (_: Exception) { emptyList() }
+                    if (knockEvents.isNotEmpty()) {
+                        addEntry("drive_knock_$ts.csv",
+                            DriveExportBuilder.buildKnockCsv(knockEvents).toByteArray(Charsets.UTF_8))
+                    }
+                }
+
                 // RaceChrono CSV
                 if (ExportComponent.RACECHRONO_CSV in components && points.isNotEmpty()) {
                     addEntry("drive_racechrono_$ts.csv",
@@ -361,6 +371,15 @@ object DiagnosticExporter {
                         val runs = try { dao.getRecentPerfRuns(50).filter { it.driveId == drive.id } } catch (_: Exception) { emptyList() }
                         addEntry("${prefix}_profile.json",
                             DriveExportBuilder.buildProfileJson(drive, points, bm, laps, runs).toByteArray(Charsets.UTF_8))
+                    }
+                    // Knock events (rc.4)
+                    if (ExportComponent.DRIVE_CSV in components) {
+                        val dao = DriveDatabase.getInstance(ctx).driveDao()
+                        val knockEvents = try { dao.getKnockEvents(drive.id) } catch (_: Exception) { emptyList() }
+                        if (knockEvents.isNotEmpty()) {
+                            addEntry("${prefix}_knock.csv",
+                                DriveExportBuilder.buildKnockCsv(knockEvents).toByteArray(Charsets.UTF_8))
+                        }
                     }
                 }
 

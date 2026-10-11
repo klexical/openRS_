@@ -59,12 +59,15 @@ private data class Channel(
 )
 
 private val CHANNELS = listOf(
-    Channel("SPD",   { Accent })  { it.speedKph },
-    Channel("RPM",   { Warn })    { it.rpm.toDouble() },
-    Channel("BOOST", { Ok })      { it.boostPsi },
-    Channel("OIL",   { Orange })  { it.oilTempC },
-    Channel("G-LAT", { Frost })   { it.lateralG },
-    Channel("THRTL", { Dim })     { it.throttlePct },
+    Channel("SPD",    { Accent })  { it.speedKph },
+    Channel("RPM",    { Warn })    { it.rpm.toDouble() },
+    Channel("BOOST",  { Ok })      { it.boostPsi },
+    Channel("OIL",    { Orange })  { it.oilTempC },
+    Channel("G-LAT",  { Frost })   { it.lateralG },
+    Channel("THRTL",  { Dim })     { it.throttlePct },
+    // rc.4 — boost sweep channels (TIP desired → PSI, WGDC %)
+    Channel("TARGET", { Frost })   { (it.boostTargetKpa - 101.325) * 0.14503773 },
+    Channel("WGDC",   { Orange })  { it.wgdcPct },
 )
 
 private val DEFAULT_ACTIVE = setOf(0, 2) // SPD + BOOST

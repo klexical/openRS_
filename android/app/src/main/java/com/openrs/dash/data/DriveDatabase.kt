@@ -94,6 +94,10 @@ data class DrivePointEntity(
     val longitudinalG: Double = 0.0,
     val brakePressure: Double = 0.0,
     val steeringAngle: Double = 0.0,
+    // ── Boost sweep (v10) — TIP actual, target, WGDC ─────────
+    val tipActualKpa: Double = 0.0,          // PCM DID 0x033E
+    val boostTargetKpa: Double = 0.0,        // PCM DID 0x0466 (TIP desired)
+    val wgdcPct: Double = 0.0,               // PCM DID 0x0462 (wastegate duty cycle)
     // ── Race readiness ───────────────────────────────────────
     val isRaceReady: Boolean = false
 )
@@ -211,6 +215,34 @@ data class DriveBookmarkEntity(
     val boostPsi: Double = 0.0
 )
 
+// ═══════════════════════════════════════════════════════════════════════════
+// KNOCK EVENTS — PCM DID 0x03EC retard captures during a drive (v10)
+// ═══════════════════════════════════════════════════════════════════════════
+
+@Entity(
+    tableName = "knock_events",
+    foreignKeys = [ForeignKey(
+        entity = DriveEntity::class,
+        parentColumns = ["id"],
+        childColumns = ["driveId"],
+        onDelete = ForeignKey.CASCADE
+    )],
+    indices = [Index("driveId")]
+)
+data class KnockEventEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val driveId: Long,
+    val timestamp: Long,                     // epoch millis
+    val krDeg: Double,                       // ignition retard (positive = pulled timing)
+    val rpm: Int,
+    val boostPsi: Double,
+    val iatC: Double = -99.0,                // intake air temp at the event
+    val throttlePct: Double = 0.0,
+    val gearEst: Int = 0,                    // derived gear estimate (0 = unknown)
+    val lat: Double? = null,                 // optional GPS fix at the event
+    val lng: Double? = null
+)
+
 @Dao
 interface DriveDao {
     // ── Drive lifecycle ──────────────────────────────────────
@@ -325,6 +357,22 @@ interface DriveDao {
     @Query("SELECT COUNT(*) FROM laps")
     fun getTotalLapCount(): Int
 
+    // ── Knock events (v10) ─────────────────────────────────────
+    @Insert
+    fun insertKnockEvent(event: KnockEventEntity): Long
+
+    @Query("SELECT * FROM knock_events WHERE driveId = :driveId ORDER BY timestamp")
+    fun getKnockEvents(driveId: Long): List<KnockEventEntity>
+
+    @Query("SELECT * FROM knock_events ORDER BY timestamp DESC LIMIT :limit")
+    fun getRecentKnockEvents(limit: Int = 500): List<KnockEventEntity>
+
+    @Query("SELECT COUNT(*) FROM knock_events WHERE driveId = :driveId")
+    fun getKnockEventCount(driveId: Long): Int
+
+    @Query("SELECT MAX(krDeg) FROM knock_events WHERE driveId = :driveId")
+    fun getWorstKnockForDrive(driveId: Long): Double?
+
     // ── Drive bookmarks ─────────────────────────────────────────
     @Insert
     fun insertBookmark(bookmark: DriveBookmarkEntity): Long
@@ -388,9 +436,10 @@ interface DriveDao {
         LapSessionEntity::class,
         LapEntity::class,
         PerfRunEntity::class,
-        DriveBookmarkEntity::class
+        DriveBookmarkEntity::class,
+        KnockEventEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class DriveDatabase : RoomDatabase() {
@@ -604,6 +653,32 @@ abstract class DriveDatabase : RoomDatabase() {
             }
         }
 
+        /** Migration v9 → v10: knock events table + boost sweep columns on drive_points. */
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                // Boost sweep columns on existing drive_points table
+                db.execSQL("ALTER TABLE drive_points ADD COLUMN tipActualKpa REAL NOT NULL DEFAULT 0.0")
+                db.execSQL("ALTER TABLE drive_points ADD COLUMN boostTargetKpa REAL NOT NULL DEFAULT 0.0")
+                db.execSQL("ALTER TABLE drive_points ADD COLUMN wgdcPct REAL NOT NULL DEFAULT 0.0")
+                // Knock events table
+                db.execSQL("""CREATE TABLE IF NOT EXISTS knock_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    driveId INTEGER NOT NULL,
+                    timestamp INTEGER NOT NULL,
+                    krDeg REAL NOT NULL,
+                    rpm INTEGER NOT NULL,
+                    boostPsi REAL NOT NULL,
+                    iatC REAL NOT NULL DEFAULT -99.0,
+                    throttlePct REAL NOT NULL DEFAULT 0.0,
+                    gearEst INTEGER NOT NULL DEFAULT 0,
+                    lat REAL,
+                    lng REAL,
+                    FOREIGN KEY (driveId) REFERENCES drives(id) ON DELETE CASCADE
+                )""")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_knock_events_driveId ON knock_events(driveId)")
+            }
+        }
+
         fun getInstance(context: Context): DriveDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -611,7 +686,7 @@ abstract class DriveDatabase : RoomDatabase() {
                     DriveDatabase::class.java,
                     "openrs_sessions.db"      // same DB file — migration adds new tables
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
                     .build()
                     .also { INSTANCE = it }
             }

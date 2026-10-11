@@ -20,6 +20,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.data.DriveEntity
+import com.openrs.dash.data.BoostSweepStats
 import com.openrs.dash.data.DrivePointEntity
 import com.openrs.dash.ui.*
 import com.openrs.dash.ui.anim.Sparkline
@@ -216,6 +218,30 @@ fun DriveSummarySheet(
 
             // ── Trends across recent drives ──
             DriveTrendsSection()
+
+            // ── Boost sweep summary (rc.4) ──
+            val boostStats = remember(points) { BoostSweepStats.from(points) }
+            if (boostStats != null) {
+                Spacer(Modifier.height(6.dp))
+                NeonDivider()
+                Spacer(Modifier.height(6.dp))
+
+                MonoLabel("BOOST SWEEP", 9.sp, Dim,
+                    modifier = Modifier.padding(bottom = 4.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    val avgSign = if (boostStats.avgDeltaPsi >= 0) "+" else ""
+                    DataCell("AVG Δ", "$avgSign%.1f PSI".format(boostStats.avgDeltaPsi), modifier = Modifier.weight(1f))
+                    DataCell("WORST Δ", "%.1f PSI".format(boostStats.worstDeltaPsi), modifier = Modifier.weight(1f))
+                    DataCell("@ RPM", "${boostStats.worstRpm}", modifier = Modifier.weight(1f))
+                    DataCell("WGDC MAX", if (boostStats.wgdcSaturated) "%.0f%% ⚠".format(boostStats.maxWgdc)
+                        else "%.0f%%".format(boostStats.maxWgdc), modifier = Modifier.weight(1f))
+                }
+                if (boostStats.wgdcSaturated) {
+                    Spacer(Modifier.height(2.dp))
+                    MonoText("WGDC ≥ 95% — wastegate saturation, target may be out of reach",
+                        9.sp, Warn)
+                }
+            }
 
             // ── Time-series chart ──
             if (points.size >= 2) {

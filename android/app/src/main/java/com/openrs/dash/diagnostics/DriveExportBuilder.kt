@@ -81,14 +81,15 @@ internal object DriveExportBuilder {
     }
 
     fun buildCsv(points: List<DrivePointEntity>): String = buildString {
-        appendLine("# openrs_csv_v1")
+        appendLine("# openrs_csv_v2")
         appendLine(
             "timestamp_ms,lat,lng,speed_kph,rpm,gear,boost_psi," +
             "coolant_c,oil_c,ambient_c,rdu_c,ptu_c,fuel_pct," +
             "tire_press_lf_psi,tire_press_rf_psi,tire_press_lr_psi,tire_press_rr_psi," +
             "tire_temp_lf_c,tire_temp_rf_c,tire_temp_lr_c,tire_temp_rr_c," +
             "wheel_fl_kph,wheel_fr_kph,wheel_rl_kph,wheel_rr_kph," +
-            "lateral_g,longitudinal_g,brake_pressure,steering_angle,throttle_pct,drive_mode,race_ready"
+            "lateral_g,longitudinal_g,brake_pressure,steering_angle,throttle_pct,drive_mode,race_ready," +
+            "tip_actual_kpa,boost_target_kpa,wgdc_pct"
         )
         points.forEach { pt ->
             appendLine(
@@ -123,7 +124,29 @@ internal object DriveExportBuilder {
                 "${"%.1f".format(pt.steeringAngle)}," +
                 "${"%.1f".format(pt.throttlePct)}," +
                 "${csvEscape(pt.driveMode)}," +
-                "${pt.isRaceReady}"
+                "${pt.isRaceReady}," +
+                "${"%.2f".format(pt.tipActualKpa)}," +
+                "${"%.2f".format(pt.boostTargetKpa)}," +
+                "${"%.1f".format(pt.wgdcPct)}"
+            )
+        }
+    }
+
+    /** rc.4 — Knock events table CSV. One row per captured KR retard event. */
+    fun buildKnockCsv(events: List<com.openrs.dash.data.KnockEventEntity>): String = buildString {
+        appendLine("# openrs_knock_csv_v1")
+        appendLine("timestamp_ms,kr_deg,rpm,boost_psi,iat_c,throttle_pct,gear_est,lat,lng")
+        events.forEach { ev ->
+            appendLine(
+                "${ev.timestamp}," +
+                "${"%.2f".format(ev.krDeg)}," +
+                "${ev.rpm}," +
+                "${"%.2f".format(ev.boostPsi)}," +
+                "${"%.1f".format(ev.iatC)}," +
+                "${"%.1f".format(ev.throttlePct)}," +
+                "${ev.gearEst}," +
+                "${ev.lat?.let { "%.6f".format(it) } ?: ""}," +
+                "${ev.lng?.let { "%.6f".format(it) } ?: ""}"
             )
         }
     }
@@ -290,6 +313,18 @@ internal object DriveExportBuilder {
             })
         }
         root.put("peaks", peaksArray)
+
+        // ── Boost sweep (rc.4) ──────────────────────────────────
+        com.openrs.dash.data.BoostSweepStats.from(points)?.let { bs ->
+            root.put("boostSweep", JSONObject().apply {
+                put("avgDeltaPsi", bs.avgDeltaPsi)
+                put("worstDeltaPsi", bs.worstDeltaPsi)
+                put("worstRpm", bs.worstRpm)
+                put("maxWgdcPct", bs.maxWgdc)
+                put("wgdcSaturated", bs.wgdcSaturated)
+                put("loadedSamples", bs.sampleCount)
+            })
+        }
 
         // ── Thermal progression ──────────────────────────────────
         val thermalObj = JSONObject()

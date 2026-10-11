@@ -319,11 +319,11 @@ class CanDecoderTest {
         assertNotNull(result)
     }
 
-    // ── 0x1A4: Ambient Temp (MS-CAN bridged) ───────────────────────────────
+    // ── 0x1A4: Ambient Temp (MS-CAN bridged, UNSIGNED per DigiCluster v1.0.46) ──
 
     @Test
-    fun `decode MS-CAN ambient temp`() {
-        // byte4 signed * 0.25 -> 40 * 0.25 = 10°C
+    fun `decode MS-CAN ambient temp low range`() {
+        // byte4 unsigned × 0.25 → 40 × 0.25 = 10°C
         val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 40)
         val result = CanDecoder.decode(0x1A4, data, blank)
         assertNotNull(result)
@@ -331,12 +331,57 @@ class CanDecoderTest {
     }
 
     @Test
-    fun `decode MS-CAN ambient temp negative`() {
-        // byte4 signed = -20 -> -20 * 0.25 = -5.0°C
-        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, (-20).toByte())
+    fun `decode MS-CAN ambient temp above 32C does not wrap negative (DigiCluster v1_0_46 fix)`() {
+        // Pre-fix bug: raw 0x82 (130) treated as signed -126 → -31.5°C (reads as "freezing" in summer).
+        // Post-fix: raw 0x82 unsigned → 130 × 0.25 = 32.5°C (90.5°F). This is the canonical case.
+        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x82.toByte())
         val result = CanDecoder.decode(0x1A4, data, blank)
         assertNotNull(result)
-        assertEquals(-5.0, result!!.ambientTempC, 0.1)
+        assertEquals(32.5, result!!.ambientTempC, 0.1)
+    }
+
+    @Test
+    fun `decode MS-CAN ambient temp max unsigned`() {
+        // raw 0xFF (255) × 0.25 = 63.75°C — upper range ceiling of the unsigned representation.
+        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0xFF.toByte())
+        val result = CanDecoder.decode(0x1A4, data, blank)
+        assertNotNull(result)
+        assertEquals(63.75, result!!.ambientTempC, 0.01)
+    }
+
+    // ── 0x040: SRS airbag frame recognition (DigiCluster v1.0.73) ──────────
+    // VehicleState.copy() is at the JVM 255-slot ceiling, so the lamp state is NOT
+    // persisted on VehicleState yet. The decoder still recognizes the frame so the
+    // FrameCoverageGrid shows it as live, and 0x435 crosstalk is explicitly skipped.
+
+    @Test
+    fun `decode SRS frame recognized returns non-null state`() {
+        // Any 0x040 payload with a valid byte2 pattern is accepted — downstream
+        // state isn't mutated beyond lastUpdate, but FrameCoverageGrid sees it live.
+        val emptyPat = CanDecoder.decode(0x040, byteArrayOf(0x00, 0x00, 0x80.toByte()), blank)
+        val occupPat = CanDecoder.decode(0x040, byteArrayOf(0x00, 0x00, 0x40), blank)
+        val faultPat = CanDecoder.decode(0x040, byteArrayOf(0x00, 0x00, 0xC0.toByte()), blank)
+        assertNotNull(emptyPat)
+        assertNotNull(occupPat)
+        assertNotNull(faultPat)
+    }
+
+    @Test
+    fun `0x435 is NOT in KNOWN_IDS to avoid airbag lamp crosstalk`() {
+        // DigiCluster v1.0.73 confirmed that 0x435 per-zone airbag status bits crosstalk
+        // with passenger occupancy and false-trigger the SRS lamp. We deliberately do
+        // not decode 0x435 — it must stay out of KNOWN_IDS so downstream never OR's it in.
+        assertEquals(false, CanDecoder.KNOWN_IDS.contains(0x435))
+    }
+
+    @Test
+    fun `0x040 is in KNOWN_IDS for frame coverage visibility`() {
+        assertEquals(true, CanDecoder.KNOWN_IDS.contains(0x040))
+    }
+
+    @Test
+    fun `0x300 charging status is in KNOWN_IDS reserved for future lamp mapping`() {
+        assertEquals(true, CanDecoder.KNOWN_IDS.contains(0x300))
     }
 
     // ── 0x190: Wheel Speeds ─────────────────────────────────────────────────

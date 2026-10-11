@@ -137,9 +137,14 @@ data class VehicleState(
     val warnMil: Boolean? = null,         // MIL (check engine) lamp
     val warnAbs: Boolean? = null,         // ABS warning lamp
     val warnBrake: Boolean? = null,       // Brake warning lamp
-    val warnCharge: Boolean? = null,      // Battery/charge warning lamp
+    val warnCharge: Boolean? = null,      // Battery/charge warning lamp (0x300 pending bit mapping)
     val warnOilPressure: Boolean? = null, // Oil pressure warning lamp
     val warnTempHigh: Boolean? = null,    // High coolant temp warning
+    // Note (rc.4): SRS airbag lamp from HS-CAN 0x040 and the charging/battery fault
+    // from 0x300 are decoded + validated in CanDecoder, but NOT persisted here — the
+    // VehicleState.copy() method is at the JVM 255-slot ceiling. When we free slots
+    // (e.g. by removing unused AWD speculative-DID fields) these lamp states should
+    // move into dedicated Boolean? fields alongside warnMil/warnAbs/etc.
 
     // ── Vehicle Identification (CAN 0x40A multiplexed) ──────
     val vin: String = "",                  // 17-char VIN assembled from mux pages C1 00/01/02

@@ -21,6 +21,7 @@ import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.DrivePointEntity
 import com.openrs.dash.data.DriveState
 import com.openrs.dash.data.FuelEconomy
+import com.openrs.dash.data.KnockEventEntity
 import com.openrs.dash.data.LapEntity
 import com.openrs.dash.data.LapSessionEntity
 import com.openrs.dash.data.LapTimer
@@ -100,6 +101,10 @@ class DriveRecorder(
     /** Previous point for distance calculation. */
     @Volatile private var prevPoint: DrivePointEntity? = null
 
+    /** Last captured knock retard value (deg) — used to dedup identical readings
+     *  across the ~30 s PCM poll cycle so the knock_events table doesn't flood. */
+    @Volatile private var lastKrDeg: Double = 0.0
+
     /** Per-drive thermal predictor for slope/peak snapshots at drive end. */
     private var driveThermalPredictor: ThermalPredictor? = null
 
@@ -150,6 +155,7 @@ class DriveRecorder(
         pointsBuffer = ArrayList(FLUSH_SIZE * 2)
         recentPointsList = ArrayList(MAX_RECENT_POINTS)
         prevPoint = null
+        lastKrDeg = 0.0
         driveThermalPredictor = ThermalPredictor()
 
         // Prune old drives if over limit
@@ -379,8 +385,36 @@ class DriveRecorder(
                         longitudinalG  = vs.longitudinalG,
                         brakePressure  = vs.brakePressure,
                         steeringAngle  = vs.steeringAngle,
+                        tipActualKpa   = vs.tipActualKpa,
+                        boostTargetKpa = vs.tipDesiredKpa,
+                        wgdcPct        = vs.wgdcDesired,
                         isRaceReady    = vs.isReadyToRace
                     )
+
+                    // Knock event capture (#174) — persist non-zero KR deltas during recording.
+                    // ignCorrCyl1 is polled from PCM DID 0x03EC (~30 s cycle today). We dedup
+                    // against the last captured value so a steady-state retard reading doesn't
+                    // flood the table on each sample.
+                    val krDeg = vs.ignCorrCyl1
+                    if (krDeg > 0.0 && krDeg != lastKrDeg) {
+                        val knock = KnockEventEntity(
+                            driveId     = driveId,
+                            timestamp   = now,
+                            krDeg       = krDeg,
+                            rpm         = vs.rpm.toInt(),
+                            boostPsi    = vs.boostPsi,
+                            iatC        = vs.intakeTempC,
+                            throttlePct = vs.throttlePct,
+                            gearEst     = vs.derivedGear,
+                            lat         = location.latitude,
+                            lng         = location.longitude
+                        )
+                        launch(Dispatchers.IO) {
+                            try { dao.insertKnockEvent(knock) }
+                            catch (e: Exception) { Log.w("DriveRecorder", "knock insert failed: ${e.message}") }
+                        }
+                    }
+                    lastKrDeg = krDeg
 
                     // Feed thermal predictor for drive-end snapshot
                     driveThermalPredictor?.let { tp ->

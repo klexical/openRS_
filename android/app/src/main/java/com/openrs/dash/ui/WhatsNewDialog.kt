@@ -42,6 +42,10 @@ import com.openrs.dash.ui.anim.pageEntrance
  */
 private val versionHighlights: Map<String, List<String>> = mapOf(
     "2.2.7" to listOf(
+        "Knock Event Logger — PERF tab shows RPM × boost scatter of every KR retard event, colored by severity. Persists per-drive and exports to CSV.",
+        "Boost Target vs Actual — DriveTimeSeries adds TARGET + WGDC channels; DriveSummarySheet shows avg/worst Δ and wastegate saturation flag.",
+        "Fixed: ambient temp wrapped negative above 90°F — 0x1A4 was signed; now unsigned (×0.25°C, 0-63.75°C range) matching DigiCluster's on-car verification.",
+        "SRS airbag frame (0x040) added to Frame Coverage; 0x435 crosstalk explicitly guarded; 0x300 battery-fault frame reserved.",
         "\"Daylight\" UI overhaul — 5 tabs (DRIVE/PERF/THERMAL/TRIP/GARAGE) and a true light/dark theme",
         "Theme picker — NIGHT / DAY / AUTO + ULTRA pure-black AMOLED option (replaces the brightness slider)",
         "Rajdhani typography with tabular numerals — calmer, no-shimmy hero values",

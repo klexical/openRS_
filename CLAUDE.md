@@ -1,7 +1,7 @@
 # openRS_
 
 Native Android telemetry dashboard for the Ford Focus RS MK3.
-Kotlin 2.0.21 + Jetpack Compose (Material3). Current: v2.2.6 (versionCode 32).
+Kotlin 2.0.21 + Jetpack Compose (Material3). Current: v2.2.7-rc.4 staging (versionCode 34).
 Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashboard) → `web/`  |  Docs → `docs/`  |  Feature pipeline → `docs/feature-roadmap.md`
 
 ## Source Layout
@@ -51,6 +51,7 @@ data/
   FuelEconomy.kt          — Real-time fuel economy: 60s rolling window, instant/avg, distance-to-empty
   PerformanceTimer.kt     — 0-60 / 0-100 timer using CAN speed: IDLE → ARMED → RUNNING → FINISHED
   SessionDatabase.kt      — Room DB for session snapshots: SessionEntity, SnapshotEntity, SessionDao
+  BoostSweepStats.kt      — rc.4 — Target-vs-actual boost delta analytics for a drive's DrivePointEntity series
   TripState.kt            — PeakType enum (RPM/BOOST/LATERAL_G/SPEED) + PeakEvent data class
   WeatherData.kt          — OpenWeatherMap snapshot: temp, wind, humidity, icon-to-emoji mapping
 diagnostics/
@@ -101,6 +102,7 @@ ui/
   MorePage.kt              — Drive mode selector, ESC band, fw features, module status, custom dash entry
                             (inside GARAGE); offline branches added for ESC descriptor + MODULE STATUS
   CustomDashPage.kt        — Custom dashboard: user-configurable gauge grid from DashLayout
+  KnockScatter.kt         — rc.4 — RPM × boost scatter + aggregate card for PerfPage knock events section
   BottomNavBar.kt         — Custom bottom nav: 5 vector icons, frosted glass via Haze (hazeEffect),
                             spring-animated neon indicator, stamped bevel gradient, pressClick + haptics
                             Height: 38dp (icons) + sysNavPad (gesture area). Tokens.NavBarHeight = 38dp
@@ -190,6 +192,7 @@ update/
 
 ```
 0x010  steering angle (Motorola 15-bit + sign)
+0x040  SRS/airbag frame — byte2 bits 7:6 == 0xC0 → lamp ON (DigiCluster v1.0.73 reference)
 0x070  torque at trans (Motorola 11-bit bits 37-47, offset −500 Nm) + RS suspension button (byte7 bit7)
 0x076  throttle % (byte0 × 0.392)
 0x080  accel pedal (bits 0-9 LE × 0.1%), reverse (bit 5)
@@ -200,7 +203,7 @@ update/
 0x160  longitudinal G (bits 48-57 LE)
 0x180  lateral G + yaw rate + vertical G
 0x190  wheel speeds FL/FR/RL/RR (4 × Motorola 15-bit × 0.011343 km/h)
-0x1A4  ambient temp from MS-CAN bridge (byte4 signed × 0.25°C)
+0x1A4  ambient temp from MS-CAN bridge — byte4 **UNSIGNED** × 0.25°C (DigiCluster v1.0.46 fix)
 0x1B0  drive mode nibble (byte6>>4); combine with 0x420 to distinguish Sport vs Track
 0x1C0  ESC mode (2-bit at bit position 10)
 0x225  launch control engaged (byte5 bit3)
@@ -208,10 +211,12 @@ update/
 0x252  brake pressure (12-bit Motorola)
 0x2C0  AWD left/right torque (12-bit each at bits 0, 12)
 0x2F0  coolant + intake air temp (10-bit each)
+0x300  battery/charging fault — reserved; bit mapping pending car-side capture
 0x340  PCM ambient (byte7 signed × 0.25°C) — NOT TPMS
 0x360  odometer (bytes [3:5] 24-bit BE) + engine status (byte0)
 0x380  fuel level (Motorola 10-bit × 0.4%, clamped 0-100)
 0x420  drive mode detail + launch control flag (byte6/7, ~600 ms broadcast; bit0=0→Sport, bit0=1→Track)
+0x435  per-zone airbag status — **INTENTIONALLY NOT DECODED**: crosstalks with passenger-occupancy and false-triggers SRS lamp (DigiCluster v1.0.73)
 ```
 
 ## VehicleState Rules
@@ -265,6 +270,9 @@ data[5] = B5,  data[6] = B6 …
 - **Navigation swipe + TRIP tab isolation** — `HorizontalPager` with swipe between all 5 tabs. TRIP tab (page 3): pager swipe is dynamically disabled while the user touches the map area via `onMapTouched` callback from `DrivePage` → `mapTouched` state → `userScrollEnabled = !(selectedTab == 3 && mapTouched)`. `nestedScroll` does NOT work for this — Google Maps is an `AndroidView` that doesn't dispatch Compose nested scroll events. The `pointerInput` on the map Box monitors (does NOT consume) touches. Google logo cannot be removed (Maps Platform ToS requirement)
 - **Haze frosted glass placement** — `hazeSource` MUST be on the content composable (inside Scaffold), NOT on a parent Box that also contains the `hazeEffect` composable (BottomNavBar). If hazeEffect is inside the hazeSource tree, blur fails silently with no error. Also: Haze tint with `Bg.copy(alpha > 0.5f)` on a dark theme makes blur invisible — start at 0.0 and increase
 - **Bottom nav bar insets** — `Scaffold(contentWindowInsets = WindowInsets.statusBars)` drops the bottom inset so content extends behind the nav bar overlay. `enableEdgeToEdge(navigationBarStyle = SystemBarStyle.dark(TRANSPARENT))` removes the system nav bar scrim. Pages add `Tokens.NavBarHeight` as bottom scroll padding
+- **0x1A4 ambient temp is UNSIGNED** — DigiCluster v1.0.46 confirmed on-car that raw 0x82 (130 unsigned) × 0.25 = 32.5°C (90.5°F). Prior spec said signed int8, which wrapped values above 32°C to negative on hot days. Our decoder at `CanDecoder.kt:ID_AMBIENT_TEMP` uses `(data[4].toInt() and 0xFF)` to force unsigned. 0x340 PCMmsg17 byte7 is still signed per RS_HS.dbc — if we see Phoenix-summer wrap on that signal in field testing, same fix applies.
+- **0x435 airbag crosstalk** — DigiCluster v1.0.73 found that the per-zone airbag status bits on 0x435 share bits with passenger-occupancy detection and false-triggered the SRS lamp in-vehicle. We decode 0x040 bits 7:6 of byte2 only (`0xC0 == true` = lamp on), and explicitly keep 0x435 OUT of `KNOWN_IDS`. Do not add 0x435 decoding without a verified fault vs occupancy capture.
+- **VehicleState slot ceiling** — `copy()` on the 162-param data class is at the JVM 255-slot limit. Adding any new field requires either collapsing an unused existing field (speculative AWD DIDs are candidates) or storing it off-state (DiagnosticLogger / genericValues Map). 0x040 lamp state is decoded + validated but not yet persisted on VehicleState for this reason
 
 ## Theme Colors
 
@@ -335,18 +343,24 @@ RC builds MUST use `-PrcSuffix` so the APK filename reflects the RC version.
 
 ```
 android/app/src/test/java/com/openrs/dash/
-  CanDecoderTest.kt           — 75 tests: all 23 CAN ID decoders (incl. 0x225 LC engaged, 0x070 suspension button)
-  ObdResponseParserTest.kt    — 48 tests: PCM/BCM/AWD/PSCM/FENG/RSProt DIDs (incl. spark advance, charging voltage)
+  CanDecoderTest.kt           — 76+ tests: all passive-CAN decoders, 0x040 recognition, 0x435 crosstalk guard, 0x1A4 unsigned regression
+  ObdResponseParserTest.kt    — 48 tests: PCM/BCM/AWD/PSCM/FENG/RSProt DIDs
   DriveStateTest.kt           — 39 tests: fuel economy, averages, haversine, peaks, sentinels
   VehicleStateTest.kt         — 31 tests: conversions, AWD split, peaks, TPMS, RTR
   AppVersionTest.kt           — 30 tests: version code/name, RC suffix, build config
-  DtcScannerTest.kt           — 28 tests: SAE J2012 DTC decoding, UDS status bit priority, payload parsing
-  SlcanParserTest.kt          — 20 tests: standard/extended frames, error cases
+  DtcScannerTest.kt           — 28 tests: SAE J2012 decoding, UDS status bit priority
+  SlcanParserTest.kt          — 20 tests: standard/extended frames
   PidRegistryTest.kt          — 18 tests: catalog loading, DID lookup, fallback decoding
-  UserPrefsTest.kt            — 16 tests: conversion math (temp, speed, boost, tire), sentinel edge cases
-  IsoTpBufferTest.kt          — 12 tests: SF/FF/CF reassembly, edge cases
+  UserPrefsTest.kt            — 16 tests: conversion math, sentinel edge cases
+  IsoTpBufferTest.kt          — 12 tests: SF/FF/CF reassembly
   RingBufferTest.kt           — 10 tests: capacity, overflow, iteration
+  KnockLoggerTest.kt          — 7 tests (rc.4): aggregation, severity banding, CSV format
+  BoostSweepStatsTest.kt      — 7 tests (rc.4): delta math, WGDC saturation, loaded-sample filter
+  DriveExportBuilderTest.kt   — 75 tests: CSV/GPX/JSON builders, schema v2 (rc.4)
+  (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor)
 ```
+
+Current count: **550 tests across 20 files**.
 
 ## Branch / Release Workflow
 
@@ -451,9 +465,9 @@ until Sapphire reaches feature parity.
 ## Near-Horizon Work
 
 ```
-2.1  Knock event logger       — KR cyl 1-4 (0x03EC-EF) scatter plot: RPM vs boost
+2.1  Knock event logger       — SHIPPED v2.2.7-rc.4 (0x03EC retard scatter + persistence)
 2.2  Fuel trim drift tracker  — STFT (PID 0x06) + LTFT (PID 0x07) per session, line chart
-2.3  Boost target vs actual   — TIP desired/actual, WGDC (0x0462), boost across RPM sweep
+2.3  Boost target vs actual   — SHIPPED v2.2.7-rc.4 (TIP desired/actual + WGDC, DriveTimeSeries)
 ```
 
 See `docs/feature-roadmap.md` for full pipeline.
