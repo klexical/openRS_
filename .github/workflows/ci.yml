@@ -141,8 +141,21 @@ jobs:
           printf 'storeFile=openrs-release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
             "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > keystore.properties
 
+      # RC tags (android-v2.2.7-rc.5) must produce openRS_v{ver}-rc.N.apk — never the plain
+      # stable name, which is reserved for final releases (#196)
       - name: Build release APK
-        run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          chmod +x gradlew
+          SUFFIX=""
+          if [[ "$TAG" =~ -(rc\.[0-9]+)$ ]]; then SUFFIX="${BASH_REMATCH[1]}"; fi
+          echo "Tag $TAG → rcSuffix='${SUFFIX}'"
+          if [ -n "$SUFFIX" ]; then
+            ./gradlew assembleRelease --no-daemon -PrcSuffix="$SUFFIX"
+          else
+            ./gradlew assembleRelease --no-daemon
+          fi
 
       - name: Find release APK
         id: apk
@@ -165,6 +178,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ steps.apk.outputs.path }}
+          prerelease: ${{ contains(github.ref_name, '-rc.') }}
 
   verify-firmware:
     name: Verify Firmware Binaries

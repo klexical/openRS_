@@ -9,6 +9,13 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ## [v2.2.7] — unreleased
 
+### Fixed (rc.6 — CI & lint)
+- **CI Lint job crashed on every push since rc.1** — AGP 8.7.3's bundled lint is older than the lint checks shipped in Compose BOM 2025.11 / Lifecycle (`IncompatibleClassChangeError` in `RememberInCompositionDetector` / `NonNullableMutableLiveDataDetector`), so `publish-release` never ran. `gradle.properties` now pins `android.experimental.lint.version=8.13.0`; all checks still run. ([#196](https://github.com/klexical/openRS_/issues/196))
+- **RC tag builds would have attached a plain-named APK** — `publish-release` built without `-PrcSuffix`; it now derives the suffix from the tag (`android-v2.2.7-rc.N` → `rc.N`) and keeps RC releases marked pre-release. ([#196](https://github.com/klexical/openRS_/issues/196))
+- **DID probe history could crash on Android 9–14** — `probeSessionsList.removeFirst()` compiled to `java.util.List.removeFirst` (API 35+) and would throw `NoSuchMethodError` once probe sessions exceeded the cap; now `removeAt(0)`. Surfaced by the repaired lint. (`diagnostics/DiagnosticLogger.kt`) (addresses [#196](https://github.com/klexical/openRS_/issues/196))
+- **Location permission requested without COARSE** — Android 12+ requires `ACCESS_COARSE_LOCATION` alongside FINE in the same request; added to the manifest, the startup request, and the TRIP tab prompt. (addresses [#196](https://github.com/klexical/openRS_/issues/196))
+- **Map markers recreated state every recomposition** — start/finish, pause and current-position `MarkerState`s in `DriveMap` are now `remember`ed by position. (addresses [#196](https://github.com/klexical/openRS_/issues/196))
+
 ### Added (rc.5 — fuel trim drift)
 - **Fuel trim drift tracker** — each drive now stores warm-engine averages of freshly polled STFT/LTFT (PCM 0xF406/0xF407; coolant ≥ 70 °C, ≥ 500 RPM, ≥ 3 samples). A new PERF card charts the last 20 drives against ±5 % / ±10 % bands and warns when LTFT exceeds ±8 % in the same direction on two consecutive drives (lean = possible vacuum/boost leak or MAF drift; rich = injectors/purge/fuel pressure). Averages are included in the drive summary and the Sapphire profile JSON (`fuelTrim`). (`data/FuelTrim.kt`, `ui/FuelTrimDriftCard.kt`)
 
