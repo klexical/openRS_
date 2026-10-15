@@ -13,9 +13,9 @@
 
 | # | Feature | Section | Horizon | Priority | Status |
 |---|---------|---------|---------|----------|--------|
-| 2.1 | Knock event logger | Data & Analysis | Near | High | `idea` |
-| 2.2 | Fuel trim drift tracker | Data & Analysis | Near | High | `idea` |
-| 2.3 | Boost target vs actual | Data & Analysis | Near | High | `idea` |
+| 2.1 | Knock event logger | Data & Analysis | Near | High | `shipped` v2.2.7-rc.4 [#174](https://github.com/klexical/openRS_/issues/174) |
+| 2.2 | Fuel trim drift tracker | Data & Analysis | Near | High | `shipped` v2.2.7-rc.5 |
+| 2.3 | Boost target vs actual | Data & Analysis | Near | High | `shipped` v2.2.7-rc.4 [#175](https://github.com/klexical/openRS_/issues/175) |
 | 2.4 | Thermal soak modeling | Data & Analysis | Near | Medium | `idea` |
 | 4.1 | Configurable DASH grid | UI / UX | Medium | High | `idea` |
 | 4.2 | Portrait / landscape adaptive | UI / UX | Medium | Medium | `idea` |
