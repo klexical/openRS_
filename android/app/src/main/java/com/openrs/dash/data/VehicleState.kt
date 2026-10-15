@@ -239,6 +239,25 @@ data class VehicleState(
         return copy(genericValues = newGenerics, fieldLastUpdateMs = newFreshness)
     }
 
+    companion object {
+        /**
+         * Merge two freshness maps keeping the newer stamp per tag. OBD updates are
+         * built from a snapshot of the live state, so a plain `+` could roll back a
+         * stamp written by a concurrent merge.
+         */
+        fun mergeStamps(current: Map<String, Long>, incoming: Map<String, Long>): Map<String, Long> {
+            if (incoming.isEmpty()) return current
+            if (current.isEmpty()) return incoming
+            val merged = HashMap<String, Long>(current.size + incoming.size)
+            merged.putAll(current)
+            for ((tag, ts) in incoming) {
+                val prev = merged[tag]
+                if (prev == null || ts > prev) merged[tag] = ts
+            }
+            return merged
+        }
+    }
+
     // ── Computed ─────────────────────────────────────────────
     val boostPsi: Double get() = (boostKpa - 101.325) * 0.14503773
     val speedMph: Double get() = speedKph * 0.621371

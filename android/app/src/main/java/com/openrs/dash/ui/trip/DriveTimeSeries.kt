@@ -24,6 +24,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
@@ -39,6 +40,7 @@ import com.openrs.dash.ui.Brd
 import com.openrs.dash.ui.Dim
 import com.openrs.dash.ui.Frost
 import com.openrs.dash.ui.JetBrainsMonoFamily
+import com.openrs.dash.ui.Mid
 import com.openrs.dash.ui.MonoLabel
 import com.openrs.dash.ui.Ok
 import com.openrs.dash.ui.Orange
@@ -51,26 +53,48 @@ import com.openrs.dash.ui.textMutedAlpha
 // DRIVE TIME SERIES — horizontally scrollable multi-channel chart
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Channel descriptor: label, color, and value extractor from a DrivePointEntity. */
+/**
+ * Channel descriptor.
+ * @param axis   channels with the same key share one min/max so their lines are comparable
+ *               (null = own scale)
+ * @param dashed draw as a dashed line (used for a target overlaid on its actual)
+ * @param valid  false for absent / sentinel samples — skipped, not plotted as values
+ * @param sparse polled channel: no area fill, chip hidden when the drive has no valid data
+ */
 private data class Channel(
     val label: String,
     val color: @Composable () -> Color,
+    val axis: String? = null,
+    val dashed: Boolean = false,
+    val sparse: Boolean = false,
+    val valid: (DrivePointEntity) -> Boolean = { true },
     val extract: (DrivePointEntity) -> Double
 )
 
 private val CHANNELS = listOf(
     Channel("SPD",    { Accent })  { it.speedKph },
     Channel("RPM",    { Warn })    { it.rpm.toDouble() },
-    Channel("BOOST",  { Ok })      { it.boostPsi },
-    Channel("OIL",    { Orange })  { it.oilTempC },
+    Channel("BOOST",  { Ok }, axis = "boost") { it.boostPsi },
+    Channel("OIL",    { Orange }, valid = { it.oilTempC > -90.0 }) { it.oilTempC },  // -99 = not yet received
     Channel("G-LAT",  { Frost })   { it.lateralG },
     Channel("THRTL",  { Dim })     { it.throttlePct },
-    // rc.4 — boost sweep channels (TIP desired → PSI, WGDC %)
-    Channel("TARGET", { Frost })   { (it.boostTargetKpa - 101.325) * 0.14503773 },
-    Channel("WGDC",   { Orange })  { it.wgdcPct },
+    // Boost sweep (#175/#188): TARGET shares BOOST's axis + colour, dashed. Recorder writes
+    // 0 kPa target / −1 % WGDC when the DID wasn't freshly polled (#184) — those are gaps.
+    Channel("TARGET", { Ok }, axis = "boost", dashed = true, sparse = true,
+        valid = { it.boostTargetKpa > 0.0 }) { (it.boostTargetKpa - 101.325) * 0.14503773 },
+    Channel("WGDC",   { Mid }, sparse = true,
+        valid = { it.wgdcPct >= 0.0 }) { it.wgdcPct },
 )
 
 private val DEFAULT_ACTIVE = setOf(0, 2) // SPD + BOOST
+
+/** Pre-computed per-channel draw inputs. [range] is shared across an axis group. */
+private data class ChannelData(
+    val idx: Int,
+    val values: List<Float>,
+    val runs: List<List<Int>>,
+    val range: Pair<Float, Float>
+)
 
 /** Downsample a list to at most [maxPoints] entries using stride-based sampling. */
 private fun <T> downsample(data: List<T>, maxPoints: Int): List<T> {
@@ -91,6 +115,14 @@ fun DriveTimeSeries(
     // Resolve channel colors in composable context
     val channelColors = CHANNELS.map { it.color() }
 
+    // Polled channels with nothing to show in this drive (pre-v10 drives, PCM silent, or a
+    // WGDC series that's all zero) get no chip at all.
+    val available = remember(points) {
+        CHANNELS.map { ch ->
+            !ch.sparse || points.any { ch.valid(it) && ch.extract(it) != 0.0 }
+        }
+    }
+
     Column(modifier.fillMaxWidth()) {
         // ── Channel selector pills ──────────────────────────────────────
         Row(
@@ -98,6 +130,7 @@ fun DriveTimeSeries(
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             CHANNELS.forEachIndexed { idx, channel ->
+                if (!available[idx]) return@forEachIndexed
                 val active = idx in activeIndices
                 val color = channelColors[idx]
                 val bg = if (active) color.copy(alpha = 0.18f) else Color.Transparent
@@ -137,14 +170,23 @@ fun DriveTimeSeries(
         val brdColor = Brd
         val surfColor = Surf2
 
-        // Pre-extract active channel data
-        val activeChannelData = remember(sampled, activeIndices.toList()) {
-            activeIndices.map { idx ->
+        // Pre-extract active channel data: values, validity, runs, and an axis range shared
+        // by channels in the same axis group (BOOST + TARGET).
+        val activeChannelData = remember(sampled, activeIndices.toList(), available) {
+            val timestamps = sampled.map { it.timestamp }
+            val visible = activeIndices.filter { available[it] }
+            val extracted = visible.associateWith { idx ->
                 val ch = CHANNELS[idx]
-                val values = sampled.map { ch.extract(it).toFloat() }
-                val min = values.min()
-                val max = values.max()
-                Triple(idx, values, min to max)
+                sampled.map { ch.extract(it).toFloat() } to sampled.map { ch.valid(it) }
+            }
+            visible.mapNotNull { idx ->
+                val ch = CHANNELS[idx]
+                val (values, valid) = extracted.getValue(idx)
+                val group = if (ch.axis == null) listOf(idx)
+                            else visible.filter { CHANNELS[it].axis == ch.axis }
+                val range = TimeSeriesMath.sharedRange(group.map { extracted.getValue(it) })
+                    ?: return@mapNotNull null
+                ChannelData(idx, values, TimeSeriesMath.segments(timestamps, valid), range)
             }
         }
 
@@ -177,40 +219,40 @@ fun DriveTimeSeries(
                         // Build paths for each active channel
                         data class ChannelDraw(
                             val linePath: Path,
-                            val fillPath: Path,
-                            val color: Color
+                            val fillPath: Path?,
+                            val dots: List<Offset>,
+                            val color: Color,
+                            val dashed: Boolean
                         )
 
-                        val draws = activeChannelData.map { (idx, values, range) ->
-                            val (minV, maxV) = range
+                        val draws = activeChannelData.map { cd ->
+                            val ch = CHANNELS[cd.idx]
+                            val (minV, maxV) = cd.range
                             val span = (maxV - minV).coerceAtLeast(0.01f)
-                            val color = channelColors[idx]
+                            val lastIdx = (cd.values.size - 1).coerceAtLeast(1)
+                            fun xAt(i: Int) = i.toFloat() / lastIdx * w
+                            fun yAt(i: Int) = padTop + drawH * (1f - (cd.values[i] - minV) / span)
 
                             val linePath = Path()
-                            val fillPath = Path()
-
-                            values.forEachIndexed { i, v ->
-                                val frac = i.toFloat() / (values.size - 1).coerceAtLeast(1)
-                                val x = frac * w
-                                val norm = (v - minV) / span
-                                val y = padTop + drawH * (1f - norm)
-
-                                if (i == 0) {
-                                    linePath.moveTo(x, y)
-                                    fillPath.moveTo(x, y)
-                                } else {
-                                    linePath.lineTo(x, y)
-                                    fillPath.lineTo(x, y)
+                            val dots = ArrayList<Offset>()
+                            // Area fill only for continuous CAN channels — a gapped polled
+                            // series would fill misleading wedges across its holes.
+                            val fillPath = if (ch.sparse) null else Path()
+                            for (run in cd.runs) {
+                                if (run.size == 1) { dots += Offset(xAt(run[0]), yAt(run[0])); continue }
+                                run.forEachIndexed { k, i ->
+                                    if (k == 0) linePath.moveTo(xAt(i), yAt(i)) else linePath.lineTo(xAt(i), yAt(i))
+                                }
+                                fillPath?.apply {
+                                    moveTo(xAt(run.first()), padTop + drawH)
+                                    run.forEach { i -> lineTo(xAt(i), yAt(i)) }
+                                    lineTo(xAt(run.last()), padTop + drawH)
+                                    close()
                                 }
                             }
-
-                            // Close fill path along bottom
-                            fillPath.lineTo(w, padTop + drawH)
-                            fillPath.lineTo(0f, padTop + drawH)
-                            fillPath.close()
-
-                            ChannelDraw(linePath, fillPath, color)
+                            ChannelDraw(linePath, fillPath, dots, channelColors[cd.idx], ch.dashed)
                         }
+                        val dash = PathEffect.dashPathEffect(floatArrayOf(8f, 6f))
 
                         // Pre-measure time labels
                         val labelInterval = 60_000L  // 60s
@@ -259,8 +301,9 @@ fun DriveTimeSeries(
 
                             // Draw channels (fill first, then lines on top)
                             draws.forEach { d ->
+                                val fill = d.fillPath ?: return@forEach
                                 drawPath(
-                                    d.fillPath,
+                                    fill,
                                     brush = Brush.verticalGradient(
                                         listOf(
                                             d.color.copy(alpha = 0.3f),
@@ -275,8 +318,12 @@ fun DriveTimeSeries(
                                 drawPath(
                                     d.linePath,
                                     d.color.copy(alpha = 0.85f),
-                                    style = Stroke(width = 2f, cap = StrokeCap.Round)
+                                    style = Stroke(
+                                        width = 2f, cap = StrokeCap.Round,
+                                        pathEffect = if (d.dashed) dash else null
+                                    )
                                 )
+                                d.dots.forEach { drawCircle(d.color.copy(alpha = 0.85f), radius = 2f, center = it) }
                             }
                         }
                     }

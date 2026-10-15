@@ -89,7 +89,8 @@ class CanDataService : Service() {
                 }
             },
             maxRetries       = maxRetries,
-            reconnectDelayMs = reconnectDelayMs
+            reconnectDelayMs = reconnectDelayMs,
+            rpmProvider      = { OpenRSDashApp.instance.vehicleState.value.rpm }
         )
 
         // Create the appropriate firmware command sender
@@ -625,8 +626,29 @@ class CanDataService : Service() {
                 warnCharge      = obdState.warnCharge      ?: current.warnCharge,
                 warnOilPressure = obdState.warnOilPressure ?: current.warnOilPressure,
                 warnTempHigh    = obdState.warnTempHigh    ?: current.warnTempHigh,
+                // Freshness stamps from markFresh()/putGeneric() — previously dropped here,
+                // which left every OBD field without a stamp (UI read them as STALE).
+                fieldLastUpdateMs = VehicleState.mergeStamps(current.fieldLastUpdateMs, obdState.fieldLastUpdateMs),
             )
         }
+        countKnockIfFresh(obdState)
+    }
+
+    /** Stamp of the last KR reading already counted — merges run on Main, so no locking. */
+    private var lastKrCountedMs = 0L
+
+    /**
+     * Knock counter (header badge). Counts each freshly polled KR reading showing > 1° retard
+     * on any cylinder. Sign convention: retard is POSITIVE (ObdResponseParser 0x03EC–EF use
+     * raw / −512). Runs outside the update{} lambda — CAS retries must not double-count.
+     */
+    private fun countKnockIfFresh(obdState: VehicleState) {
+        val stamps = obdState.fieldLastUpdateMs
+        val krStamp = com.openrs.dash.data.KnockCapture.KR_TAGS.maxOf { stamps[it] ?: 0L }
+        if (krStamp <= lastKrCountedMs) return
+        lastKrCountedMs = krStamp
+        val kr = maxOf(obdState.ignCorrCyl1, obdState.ignCorrCyl2, obdState.ignCorrCyl3, obdState.ignCorrCyl4)
+        if (kr > 1.0) OpenRSDashApp.instance.knockEventCount.update { it + 1 }
     }
 
     private fun processCanFrame(canId: Int, data: ByteArray, fps: Double) {
@@ -636,15 +658,23 @@ class CanDataService : Service() {
         // loop, so anything inside the lambda can execute more than once on
         // contention with concurrent OBD merges.
         var newState: VehicleState? = null
-        var prevState: VehicleState? = null
         OpenRSDashApp.instance.vehicleState.update { current ->
-            val updated = CanDecoder.decode(canId, data, current)
+            val decoded = CanDecoder.decode(canId, data, current)
+            if (decoded === current) {
+                // Recognized frame, nothing changed (0x040, 0x300, rejected 0x1A4): log it as
+                // known and skip peaks/fps copy + emit (#189/#192). Checked before stamping,
+                // which would otherwise make a new copy.
+                val (desc, issue) = CanDecoder.describeUnchanged(canId, data)
+                DiagnosticLogger.logFrame(canId, data, current, desc, issue)
+                return@update current
+            }
+            // #194 — stamp CAN-sourced fields (≤1/s per ID) so THERMAL availability works
+            val updated = decoded?.let { CanDecoder.stampFresh(canId, current, it, System.currentTimeMillis()) }
             if (updated != null) {
                 val desc  = CanDecoder.describeDecoded(canId, updated)
                 val issue = CanDecoder.validateDecoded(canId, updated)
                 DiagnosticLogger.logFrame(canId, data, updated, desc, issue)
                 val withPeaks = updated.withPeaksUpdated().copy(framesPerSecond = fps)
-                prevState = current
                 newState = withPeaks
                 withPeaks
             } else {
@@ -655,7 +685,6 @@ class CanDataService : Service() {
 
         // Side effects — guaranteed to run exactly once after CAS succeeds
         val wp = newState ?: return
-        val prev = prevState ?: return
 
         // Feed fuel economy calculator
         if (canId == 0x130 || canId == 0x380) {
@@ -687,16 +716,6 @@ class CanDataService : Service() {
                         android.util.Log.w("CanDataService", "PerfRun persist failed", e)
                     }
                 }
-            }
-        }
-
-        // Knock event tracking (from OBD merges, checked on CAN frame to
-        // avoid per-OBD-poll overhead — knock corrections are polled ~every 30s)
-        val kr = minOf(wp.ignCorrCyl1, wp.ignCorrCyl2, wp.ignCorrCyl3, wp.ignCorrCyl4)
-        if (kr < -1.0 && kr != 0.0) {
-            val prevKr = minOf(prev.ignCorrCyl1, prev.ignCorrCyl2, prev.ignCorrCyl3, prev.ignCorrCyl4)
-            if (kr != prevKr) {
-                OpenRSDashApp.instance.knockEventCount.update { it + 1 }
             }
         }
     }

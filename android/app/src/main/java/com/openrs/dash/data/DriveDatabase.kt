@@ -39,7 +39,11 @@ data class DriveEntity(
     val avgFuelL100km: Double = 0.0,
     val avgFuelMpg: Double = 0.0,
     // ── Thermal peaks (v8) ──────────────────────────────────
-    val thermalPeaksJson: String? = null           // JSON: per-sensor peak temps + climb rates
+    val thermalPeaksJson: String? = null,          // JSON: per-sensor peak temps + climb rates
+    // ── Fuel trim drift (v11) — warm-engine averages of fresh STFT/LTFT polls ──
+    val avgStftPct: Double? = null,                // null = no qualifying samples
+    val avgLtftPct: Double? = null,
+    val trimSamples: Int = 0
 )
 
 @Entity(
@@ -240,8 +244,14 @@ data class KnockEventEntity(
     val throttlePct: Double = 0.0,
     val gearEst: Int = 0,                    // derived gear estimate (0 = unknown)
     val lat: Double? = null,                 // optional GPS fix at the event
-    val lng: Double? = null
-)
+    val lng: Double? = null,
+    val cylinder: Int = 0                    // 1-4 (v11); 0 = legacy v10 row (cyl 1 only)
+) {
+    companion object {
+        /** Minimum retard (deg, positive = pulled timing) recorded as a knock event. */
+        const val KNOCK_MIN_DEG = 0.1
+    }
+}
 
 @Dao
 interface DriveDao {
@@ -361,6 +371,22 @@ interface DriveDao {
     @Insert
     fun insertKnockEvent(event: KnockEventEntity): Long
 
+    @Insert
+    fun insertKnockEvents(events: List<KnockEventEntity>)
+
+    @Query("SELECT * FROM knock_events WHERE driveId = :driveId ORDER BY timestamp")
+    fun observeKnockEvents(driveId: Long): kotlinx.coroutines.flow.Flow<List<KnockEventEntity>>
+
+    @Query("SELECT * FROM knock_events ORDER BY timestamp DESC LIMIT :limit")
+    fun observeRecentKnockEvents(limit: Int = 500): kotlinx.coroutines.flow.Flow<List<KnockEventEntity>>
+
+    @Query("SELECT id FROM drives ORDER BY startTime DESC LIMIT 1")
+    fun observeLatestDriveId(): kotlinx.coroutines.flow.Flow<Long?>
+
+    /** Finished drives with a stored LTFT average, newest first (fuel trim drift, rc.5). */
+    @Query("SELECT * FROM drives WHERE avgLtftPct IS NOT NULL AND endTime > 0 ORDER BY startTime DESC LIMIT :limit")
+    fun observeTrimDrives(limit: Int = 20): kotlinx.coroutines.flow.Flow<List<DriveEntity>>
+
     @Query("SELECT * FROM knock_events WHERE driveId = :driveId ORDER BY timestamp")
     fun getKnockEvents(driveId: Long): List<KnockEventEntity>
 
@@ -439,7 +465,7 @@ interface DriveDao {
         DriveBookmarkEntity::class,
         KnockEventEntity::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 abstract class DriveDatabase : RoomDatabase() {
@@ -679,6 +705,16 @@ abstract class DriveDatabase : RoomDatabase() {
             }
         }
 
+        /** Migration v10 → v11: per-cylinder knock events + per-drive fuel trim averages (rc.5). */
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE knock_events ADD COLUMN cylinder INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE drives ADD COLUMN avgStftPct REAL")
+                db.execSQL("ALTER TABLE drives ADD COLUMN avgLtftPct REAL")
+                db.execSQL("ALTER TABLE drives ADD COLUMN trimSamples INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun getInstance(context: Context): DriveDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -686,7 +722,7 @@ abstract class DriveDatabase : RoomDatabase() {
                     DriveDatabase::class.java,
                     "openrs_sessions.db"      // same DB file — migration adds new tables
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
                     .build()
                     .also { INSTANCE = it }
             }

@@ -54,6 +54,12 @@ class DiagnosticExporterTest {
     @Test fun `inferType drive csv`() =
         assertEquals("drive_csv", inferType("drive_20240101.csv"))
 
+    @Test fun `inferType knock csv is not a drive csv (#183)`() {
+        assertEquals("knock_csv", inferType("drive_knock_20240101_120000.csv"))
+        assertEquals("knock_csv", inferType("drive_42_20240101_120000_knock.csv"))
+        assertEquals("drive_csv", inferType("drive_42_20240101_120000.csv"))
+    }
+
     @Test fun `inferType dtc json`() =
         assertEquals("dtc_json", inferType("dtc_scan_20240101.json"))
 

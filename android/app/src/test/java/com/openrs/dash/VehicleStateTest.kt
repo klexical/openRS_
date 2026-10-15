@@ -226,4 +226,28 @@ class VehicleStateTest {
         assertEquals(EscStatus.PARTIAL, EscStatus.fromInt(2))
         assertEquals(EscStatus.UNKNOWN, EscStatus.fromInt(99))
     }
+
+    // ── rc.5: freshness-stamp merge (OBD → live state) ──────────────────────
+
+    @Test
+    fun `mergeStamps keeps the newer stamp per tag`() {
+        val current  = mapOf("tipActualKpa" to 2_000L, "oilLifePct" to 5_000L)
+        val incoming = mapOf("tipActualKpa" to 3_000L, "oilLifePct" to 1_000L)
+        val merged = VehicleState.mergeStamps(current, incoming)
+        assertEquals(3_000L, merged["tipActualKpa"])
+        assertEquals(5_000L, merged["oilLifePct"])   // older snapshot copy must not roll back
+    }
+
+    @Test
+    fun `mergeStamps keeps tags present on only one side`() {
+        val merged = VehicleState.mergeStamps(mapOf("a" to 1L), mapOf("b" to 2L))
+        assertEquals(mapOf("a" to 1L, "b" to 2L), merged)
+    }
+
+    @Test
+    fun `mergeStamps with empty sides returns the other map`() {
+        val m = mapOf("a" to 1L)
+        assertEquals(m, VehicleState.mergeStamps(m, emptyMap()))
+        assertEquals(m, VehicleState.mergeStamps(emptyMap(), m))
+    }
 }

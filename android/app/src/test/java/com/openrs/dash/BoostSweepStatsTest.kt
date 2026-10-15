@@ -115,4 +115,42 @@ class BoostSweepStatsTest {
         val s = BoostSweepStats.from(pts)
         assertEquals(88.5, s!!.maxWgdc, 0.01)
     }
+
+    // ── rc.5 (#184): freshness sentinels ─────────────────────────────────────
+
+    @Test
+    fun `loaded target without a fresh actual is excluded`() {
+        // tipActualKpa = 0.0 means "not freshly polled this sample" — must not read as a −20 PSI miss
+        val pts = listOf(
+            pt(4000, 0.0, 250.0),
+            pt(4500, 240.0, 250.0)
+        )
+        val stats = BoostSweepStats.from(pts)
+        assertNotNull(stats)
+        assertEquals(1, stats!!.sampleCount)
+        assertEquals(4500, stats.worstRpm)
+        assertEquals((240.0 - 250.0) * 0.14503773, stats.worstDeltaPsi, 1e-6)
+    }
+
+    @Test
+    fun `only-unpaired samples return null`() {
+        assertNull(BoostSweepStats.from(listOf(pt(4000, 0.0, 250.0), pt(4200, 0.0, 260.0))))
+    }
+
+    @Test
+    fun `wgdc sentinel is ignored for max and saturation`() {
+        val pts = listOf(
+            pt(4000, 245.0, 250.0, wgdc = -1.0),
+            pt(4500, 248.0, 250.0, wgdc = 62.5)
+        )
+        val stats = BoostSweepStats.from(pts)!!
+        assertEquals(62.5, stats.maxWgdc, 1e-9)
+        assertTrue(!stats.wgdcSaturated)
+    }
+
+    @Test
+    fun `all wgdc sentinels yield zero max, not negative`() {
+        val stats = BoostSweepStats.from(listOf(pt(4000, 245.0, 250.0, wgdc = -1.0)))!!
+        assertEquals(0.0, stats.maxWgdc, 1e-9)
+    }
 }

@@ -110,22 +110,32 @@ object ObdConstants {
     // Fuel trims via Ford fast-path 22F4xx (maps to OBD Mode 01 PIDs at Mode 22 rates)
     const val PCM_QUERY_STFT         = "t7E080322F40600000000\r"  // 0xF406: A*100/128 - 100 (%)
     const val PCM_QUERY_LTFT         = "t7E080322F40700000000\r"  // 0xF407: A*100/128 - 100 (%)
-    val PCM_QUERIES = listOf(
-        PCM_QUERY_ETC_ACTUAL, PCM_QUERY_ETC_DESIRED,
+    /** rc.5 — boost-sweep + knock DIDs, polled every cycle while the engine runs (~0.8 Hz). */
+    val PCM_FAST_QUERIES = listOf(
+        PCM_QUERY_TIP_ACTUAL, PCM_QUERY_TIP_DESIRED,
         PCM_QUERY_WGDC,
-        PCM_QUERY_KR_CYL1, PCM_QUERY_KR_CYL2, PCM_QUERY_KR_CYL3, PCM_QUERY_KR_CYL4,
+        PCM_QUERY_KR_CYL1, PCM_QUERY_KR_CYL2, PCM_QUERY_KR_CYL3, PCM_QUERY_KR_CYL4
+    )
+    /** Everything else — one per fast cycle while running, full sweep + idle when off. */
+    val PCM_SLOW_QUERIES = listOf(
+        PCM_QUERY_ETC_ACTUAL, PCM_QUERY_ETC_DESIRED,
         PCM_QUERY_OAR,
         PCM_QUERY_CHARGE_AIR, PCM_QUERY_CAT_TEMP,
         PCM_QUERY_AFR_ACTUAL, PCM_QUERY_AFR_DESIRED,
-        PCM_QUERY_TIP_ACTUAL, PCM_QUERY_TIP_DESIRED,
         PCM_QUERY_VCT_INTAKE, PCM_QUERY_VCT_EXHAUST,
         PCM_QUERY_OIL_LIFE, PCM_QUERY_HP_FUEL_RAIL, PCM_QUERY_FUEL_LEVEL,
         PCM_QUERY_BATTERY, PCM_QUERY_SPARK_ADV,
         PCM_QUERY_STFT, PCM_QUERY_LTFT
     )
-    const val PCM_POLL_INTERVAL_MS  = 30_000L
-    const val PCM_QUERY_GAP_MS      =    200L
+    val PCM_QUERIES = PCM_FAST_QUERIES + PCM_SLOW_QUERIES
+    const val PCM_POLL_INTERVAL_MS  = 30_000L   // engine-off idle between full sweeps
+    const val PCM_QUERY_GAP_MS      =    200L   // engine-off gap
+    const val PCM_FAST_GAP_MS       =    150L   // engine-running gap
     const val PCM_INITIAL_DELAY_MS  = 20_000L
+    /** Fast group only runs above this RPM (engine running). */
+    const val FAST_POLL_MIN_RPM     =    400.0
+    /** Worst-case refresh period for a slow PCM DID (engine-off sweep + idle). Use for staleness. */
+    const val PCM_SLOW_REFRESH_MS   = 35_000L
 
     // ── IPC module (candidate 0x720 → 0x728, DIDs TBD) ───────────────────────
     // Address unconfirmed — common Ford IPC addresses: 0x720, 0x760.

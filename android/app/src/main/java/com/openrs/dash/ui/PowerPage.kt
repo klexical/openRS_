@@ -192,12 +192,12 @@ import kotlin.math.roundToInt
                     val stftState = com.openrs.dash.data.fieldState(
                         value = vs.shortFuelTrim,
                         lastUpdateMs = vs.fieldLastUpdateMs["shortFuelTrim"],
-                        pollIntervalMs = 2_000L
+                        pollIntervalMs = com.openrs.dash.can.ObdConstants.PCM_SLOW_REFRESH_MS
                     )
                     val ltftState = com.openrs.dash.data.fieldState(
                         value = vs.longFuelTrim,
                         lastUpdateMs = vs.fieldLastUpdateMs["longFuelTrim"],
-                        pollIntervalMs = 2_000L
+                        pollIntervalMs = com.openrs.dash.can.ObdConstants.PCM_SLOW_REFRESH_MS
                     )
                     AvailCell(
                         label = "SHORT FT", state = stftState,

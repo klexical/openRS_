@@ -26,7 +26,9 @@ import java.io.ByteArrayOutputStream
 class SlcanConnection(
     private val transportFactory: () -> SlcanTransport,
     private val maxRetries: Int = 3,
-    private val reconnectDelayMs: Long = 5_000L
+    private val reconnectDelayMs: Long = 5_000L,
+    /** Live engine RPM — selects fast vs slow PCM polling (rc.5). */
+    private val rpmProvider: () -> Double = { 0.0 }
 ) {
     private fun addDebugLine(line: String) = OpenRSDashApp.instance.pushDebugLine(line)
 
@@ -169,17 +171,29 @@ class SlcanConnection(
                 }
 
                 // ── PCM OBD poller ────────────────────────────────────────
+                // Engine running: fast group (TIP/WGDC/KR) every cycle + one slow DID.
+                // Engine off: full sweep + 30 s idle. See PcmPollSchedule.
                 val pcmJob = launch {
                     delay(ObdConstants.PCM_INITIAL_DELAY_MS)
+                    var slowIndex = 0
                     while (isActive) {
-                        ObdConstants.PCM_QUERIES.forEach { q ->
+                        val running = rpmProvider() > ObdConstants.FAST_POLL_MIN_RPM
+                        val batch = PcmPollSchedule.nextBatch(slowIndex, running)
+                        slowIndex = batch.nextSlowIndex
+                        batch.queries.forEach { q ->
                             val did = ObdConstants.extractDid(q)
                             if (did != null && nrcTracker.isSuppressed(did)) return@forEach
                             lastSentPcmDid = did ?: -1
                             try { transport.writeLine(q) } catch (_: Exception) { }
-                            delay(ObdConstants.PCM_QUERY_GAP_MS)
+                            delay(batch.gapMs)
                         }
-                        delay(ObdConstants.PCM_POLL_INTERVAL_MS)
+                        // Idle in 1 s steps so an engine start switches to fast polling promptly
+                        var idled = 0L
+                        while (idled < batch.idleAfterMs && isActive &&
+                               rpmProvider() <= ObdConstants.FAST_POLL_MIN_RPM) {
+                            delay(1_000L)
+                            idled += 1_000L
+                        }
                     }
                 }
 

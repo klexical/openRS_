@@ -32,6 +32,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import kotlinx.coroutines.flow.flowOf
+import com.openrs.dash.data.KnockStats
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -66,30 +72,41 @@ fun PerfPage(vs: VehicleState, p: UserPrefs, onReset: () -> Unit) {
         PersonalBestsCard()
         GForceSection(vs, onReset)
         KnockEventsCard()
+        FuelTrimDriftCard()
         PowerPageContent(vs, p)
     }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // KNOCK EVENTS — rc.4 — scatter plot of persisted knock retard captures
+// rc.5 (#190): live Room Flow + THIS DRIVE / ALL scope
 // ═══════════════════════════════════════════════════════════════════════════
+
+private const val KNOCK_SCOPE_DRIVE = "THIS DRIVE"
+private const val KNOCK_SCOPE_ALL   = "ALL"
 
 @Composable
 private fun KnockEventsCard() {
     val dao = OpenRSDashApp.instance.driveDb.driveDao()
-    val events by produceState<List<com.openrs.dash.data.KnockEventEntity>>(emptyList()) {
-        value = withContext(Dispatchers.IO) { dao.getRecentKnockEvents(500) }
+    val driveState by OpenRSDashApp.instance.driveState.collectAsState()
+    val latestDriveId by remember { dao.observeLatestDriveId() }.collectAsState(initial = null)
+    var knockScope by rememberSaveable { mutableStateOf(KNOCK_SCOPE_DRIVE) }
+    // THIS DRIVE = the recording drive, else the most recent drive
+    val scopedDriveId = if (driveState.isRecording && driveState.driveId > 0) driveState.driveId else latestDriveId
+    val eventsFlow = remember(knockScope, scopedDriveId) {
+        when {
+            knockScope == KNOCK_SCOPE_ALL -> dao.observeRecentKnockEvents(500)
+            scopedDriveId != null         -> dao.observeKnockEvents(scopedDriveId)
+            else                          -> flowOf(emptyList())
+        }
     }
+    val events by eventsFlow.collectAsState(initial = emptyList())
     val expanded = rememberSectionExpanded("perf_knock", default = false)
     val count = events.size
     val worst = events.maxOfOrNull { it.krDeg } ?: 0.0
-    val badge = when {
-        count == 0           -> null
-        worst >= 4.0         -> "WORST ${"%.1f".format(worst)}°"
-        worst >= 2.0         -> "WORST ${"%.1f".format(worst)}°"
-        else                 -> null
-    }
-    val badgeCol: Color? = if (worst >= 2.0) severityColor(worst) else null
+    val badge = if (count > 0 && worst >= KnockStats.MED_DEG) "WORST ${"%.1f".format(worst)}°" else null
+    val badgeCol: Color? = if (worst >= KnockStats.MED_DEG) severityColor(worst) else null
+    val scopeLabel = if (knockScope == KNOCK_SCOPE_ALL) "ALL" else if (driveState.isRecording) "LIVE" else "LAST DRIVE"
     Column(
         Modifier.fillMaxWidth()
             .cardGlow(cornerRadius = Tokens.CardRadius)
@@ -98,7 +115,7 @@ private fun KnockEventsCard() {
             .padding(10.dp)
     ) {
         SectionLabel(
-            text = if (count > 0) "KNOCK EVENTS · $count" else "KNOCK EVENTS",
+            text = if (count > 0) "KNOCK EVENTS · $scopeLabel · $count" else "KNOCK EVENTS · $scopeLabel",
             collapsible = true,
             expanded = expanded.value,
             onToggle = { expanded.value = !expanded.value },
@@ -106,6 +123,12 @@ private fun KnockEventsCard() {
             badgeColor = badgeCol
         )
         if (expanded.value) {
+            Spacer(Modifier.height(6.dp))
+            SegmentedPicker(
+                options = listOf(KNOCK_SCOPE_DRIVE, KNOCK_SCOPE_ALL),
+                selected = knockScope,
+                onSelect = { knockScope = it }
+            )
             Spacer(Modifier.height(6.dp))
             KnockScatter(events = events)
             Spacer(Modifier.height(4.dp))

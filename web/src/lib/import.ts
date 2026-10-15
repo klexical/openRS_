@@ -3,7 +3,7 @@ import type {
   Session, SessionMeta, TripData, TripPoint, TripSummary, PeakEvent,
   DiagnosticData, DtcEntry, CanFrame, FpsSample, SessionEvent, DecodeEntry, ProbeResult,
   DriveProfile, Bookmark, ThermalProgression, ModeTimelineEntry, NrcSuppression,
-  FreezeFrame, FreezeFrameEntry,
+  FreezeFrameEntry,
 } from '../types/session'
 
 /** Manifest schema for typed file identification in exported ZIPs. */
@@ -19,6 +19,25 @@ interface ExportManifest {
   appBuild?: number
   exportedAt: number
   files: ManifestEntry[]
+}
+
+/**
+ * True for a drive telemetry CSV (`drive_*.csv` / legacy `trip_*.csv`). Excludes the
+ * companion CSVs the app writes beside it — RaceChrono / TrackAddict exports and the
+ * knock-event table (`drive_knock_*.csv`, `drive_<id>_<ts>_knock.csv`), which would
+ * otherwise import as phantom sessions (#183).
+ */
+export function isDriveCsvName(name: string): boolean {
+  return (name.startsWith('trip_') || name.startsWith('drive_')) && name.endsWith('.csv') &&
+    !name.includes('racechrono') && !name.includes('trackaddict') && !name.includes('knock')
+}
+
+/**
+ * Manifest entry for a drive CSV. Also checks the name: openRS_ v2.2.7-rc.4 manifests
+ * tag the knock CSV as `drive_csv`, so the type alone can't be trusted.
+ */
+export function isDriveCsvEntry(e: { name: string; type: string }): boolean {
+  return e.type === 'drive_csv' && isDriveCsvName(e.name)
 }
 
 /** Read manifest.json from ZIP if present. */
@@ -63,19 +82,19 @@ export function isBatchZip(manifest: ExportManifest | null, zip: JSZip): boolean
 
 function countDriveCsvs(zip: JSZip, manifest: ExportManifest | null): number {
   if (manifest) {
-    return manifest.files.filter((e) => e.type === 'drive_csv').length
+    return manifest.files.filter(isDriveCsvEntry).length
   }
   return Object.keys(zip.files).filter(
-    (f) => (f.startsWith('trip_') || f.startsWith('drive_')) && f.endsWith('.csv') && !f.includes('racechrono') && !f.includes('trackaddict')
+    isDriveCsvName
   ).length
 }
 
 async function importBatchZipInner(zip: JSZip, manifest: ExportManifest | null, filename: string): Promise<Session[]> {
   // Find all drive CSV files
   const csvFiles: string[] = manifest
-    ? manifest.files.filter((e) => e.type === 'drive_csv').map((e) => e.name)
+    ? manifest.files.filter(isDriveCsvEntry).map((e) => e.name)
     : Object.keys(zip.files).filter(
-        (f) => (f.startsWith('trip_') || f.startsWith('drive_')) && f.endsWith('.csv') && !f.includes('racechrono') && !f.includes('trackaddict')
+        isDriveCsvName
       )
 
   const sessions: Session[] = []
@@ -153,9 +172,9 @@ async function importSingleDrive(zip: JSZip, manifest: ExportManifest | null, fi
 
 async function parseTripData(zip: JSZip, manifest: ExportManifest | null): Promise<TripData | null> {
   const csvFile = manifest
-    ? manifest.files.find((e) => e.type === 'drive_csv')?.name
+    ? manifest.files.find(isDriveCsvEntry)?.name
     : Object.keys(zip.files).find(
-        (f) => (f.startsWith('trip_') || f.startsWith('drive_')) && f.endsWith('.csv') && !f.includes('racechrono') && !f.includes('trackaddict')
+        isDriveCsvName
       )
   if (!csvFile) return null
   return parseTripDataFromCsv(zip, csvFile)

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import JSZip from 'jszip'
-import { importZip, importBatchZip } from './import'
+import { importZip, importBatchZip, isDriveCsvName } from './import'
 
 // Helper: build a ZIP blob and wrap as File
 async function buildZipFile(files: Record<string, string>, name = 'test.zip'): Promise<File> {
@@ -884,5 +884,80 @@ describe('manifest metadata (T1G)', () => {
     expect(session.meta.appVersion).toBe('2.2.7-rc.3')
     expect(session.meta.appBuild).toBe(35)
     expect(session.meta.exportedAt).toBe(1713500000000)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// #183: knock-event CSV must never import as a drive session
+// ═══════════════════════════════════════════════════════════════════════════
+
+const KNOCK_CSV = [
+  '# openrs_knock_csv_v2',
+  'timestamp_ms,kr_deg,rpm,boost_psi,iat_c,throttle_pct,gear_est,lat,lng,cylinder',
+  '1000500,2.50,5200,18.20,35.0,98.0,3,51.507400,-0.127800,1',
+  '1000900,1.75,5600,19.10,36.0,99.0,3,51.507500,-0.127900,3',
+].join('\n')
+
+describe('knock CSV exclusion (#183)', () => {
+  it('isDriveCsvName rejects knock, RaceChrono and TrackAddict companions', () => {
+    expect(isDriveCsvName('drive_20260419_143000.csv')).toBe(true)
+    expect(isDriveCsvName('drive_1_20260419_100000.csv')).toBe(true)
+    expect(isDriveCsvName('trip_20260419_143000.csv')).toBe(true)
+    expect(isDriveCsvName('drive_knock_20260419_143000.csv')).toBe(false)
+    expect(isDriveCsvName('drive_1_20260419_100000_knock.csv')).toBe(false)
+    expect(isDriveCsvName('drive_racechrono_20260419_143000.csv')).toBe(false)
+  })
+
+  it('single-drive ZIP with an rc.4 manifest tagging knock as drive_csv imports one session', async () => {
+    const csv = [CSV_HEADER, makeCsvRow(1000000), makeCsvRow(1001000)].join('\n')
+    const manifest = makeManifest([
+      { name: 'drive_20260419_143000.csv', type: 'drive_csv' },
+      { name: 'drive_knock_20260419_143000.csv', type: 'drive_csv' },   // rc.4 mislabel
+    ])
+    const file = await buildZipFile({
+      'drive_20260419_143000.csv': csv,
+      'drive_knock_20260419_143000.csv': KNOCK_CSV,
+      'manifest.json': manifest,
+    })
+    const session = await importZip(file)
+    expect(session.trip!.points).toHaveLength(2)
+    expect(session.trip!.points[0].ts).toBe(1000000)
+    expect(await importBatchZip(file)).toHaveLength(1)
+  })
+
+  it('manifest-less ZIP with a knock CSV imports one session', async () => {
+    const csv = [CSV_HEADER, makeCsvRow(1000000), makeCsvRow(1001000)].join('\n')
+    const file = await buildZipFile({
+      'drive_20260419_143000.csv': csv,
+      'drive_knock_20260419_143000.csv': KNOCK_CSV,
+    })
+    expect(await importBatchZip(file)).toHaveLength(1)
+  })
+
+  it('knock CSV alone (no-GPS drive) does not become a session', async () => {
+    const file = await buildZipFile({ 'drive_knock_20260419_143000.csv': KNOCK_CSV })
+    const session = await importZip(file)
+    expect(session.trip).toBeNull()
+  })
+
+  it('batch ZIP with per-drive knock CSVs yields one session per drive', async () => {
+    const csv1 = [CSV_HEADER, makeCsvRow(1000000, { rpm: 3000 }), makeCsvRow(1001000)].join('\n')
+    const csv2 = [CSV_HEADER, makeCsvRow(2000000, { rpm: 5000 }), makeCsvRow(2001000)].join('\n')
+    const manifest = makeManifest([
+      { name: 'drive_1_20260419_100000.csv', type: 'drive_csv' },
+      { name: 'drive_1_20260419_100000_knock.csv', type: 'drive_csv' },   // rc.4 mislabel
+      { name: 'drive_2_20260419_120000.csv', type: 'drive_csv' },
+      { name: 'drive_2_20260419_120000_knock.csv', type: 'knock_csv' },  // rc.5 type
+    ])
+    const file = await buildZipFile({
+      'drive_1_20260419_100000.csv': csv1,
+      'drive_1_20260419_100000_knock.csv': KNOCK_CSV,
+      'drive_2_20260419_120000.csv': csv2,
+      'drive_2_20260419_120000_knock.csv': KNOCK_CSV,
+      'manifest.json': manifest,
+    })
+    const sessions = await importBatchZip(file)
+    expect(sessions).toHaveLength(2)
+    expect(sessions.map((x) => x.trip!.points[0].rpm)).toEqual([3000, 5000])
   })
 })

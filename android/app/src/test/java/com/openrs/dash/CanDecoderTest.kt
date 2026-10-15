@@ -341,12 +341,28 @@ class CanDecoderTest {
     }
 
     @Test
-    fun `decode MS-CAN ambient temp max unsigned`() {
-        // raw 0xFF (255) × 0.25 = 63.75°C — upper range ceiling of the unsigned representation.
-        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0xFF.toByte())
-        val result = CanDecoder.decode(0x1A4, data, blank)
-        assertNotNull(result)
-        assertEquals(63.75, result!!.ambientTempC, 0.01)
+    fun `0x1A4 above plausibility ceiling is rejected unchanged (#185)`() {
+        // raw 0xEC (236) × 0.25 = 59°C — the pre-rc.4 signed decode read this as −5°C.
+        // Until a sub-zero capture pins the encoding, > 55°C is ignored: same instance back,
+        // so 0x340 PCM ambient keeps the reading.
+        val prev = blank.copy(ambientTempC = -4.75)
+        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0xEC.toByte())
+        assertSame(prev, CanDecoder.decode(0x1A4, data, prev))
+        assertSame(prev, CanDecoder.decode(0x1A4, byteArrayOf(0, 0, 0, 0, 0xFF.toByte()), prev))
+    }
+
+    @Test
+    fun `0x1A4 at the ceiling is still accepted`() {
+        // raw 220 × 0.25 = 55.0°C — boundary is inclusive
+        val result = CanDecoder.decode(0x1A4, byteArrayOf(0, 0, 0, 0, 220.toByte()), blank)
+        assertEquals(55.0, result!!.ambientTempC, 0.001)
+    }
+
+    @Test
+    fun `rejected 0x1A4 logs raw byte with an issue flag`() {
+        val (desc, issue) = CanDecoder.describeUnchanged(0x1A4, byteArrayOf(0, 0, 0, 0, 0xEC.toByte()))
+        assertTrue(desc.contains("raw=0xEC"))
+        assertNotNull(issue)
     }
 
     // ── 0x040: SRS airbag frame recognition (DigiCluster v1.0.73) ──────────
@@ -355,15 +371,18 @@ class CanDecoderTest {
     // FrameCoverageGrid shows it as live, and 0x435 crosstalk is explicitly skipped.
 
     @Test
-    fun `decode SRS frame recognized returns non-null state`() {
-        // Any 0x040 payload with a valid byte2 pattern is accepted — downstream
-        // state isn't mutated beyond lastUpdate, but FrameCoverageGrid sees it live.
-        val emptyPat = CanDecoder.decode(0x040, byteArrayOf(0x00, 0x00, 0x80.toByte()), blank)
-        val occupPat = CanDecoder.decode(0x040, byteArrayOf(0x00, 0x00, 0x40), blank)
-        val faultPat = CanDecoder.decode(0x040, byteArrayOf(0x00, 0x00, 0xC0.toByte()), blank)
-        assertNotNull(emptyPat)
-        assertNotNull(occupPat)
-        assertNotNull(faultPat)
+    fun `decode SRS frame recognized returns the same state instance (#192)`() {
+        // Recognized (non-null → not an unknown frame) but nothing changes, so the
+        // same instance comes back and processCanFrame skips the copy + emit.
+        for (b2 in listOf(0x80, 0x40, 0xC0)) {
+            assertSame(blank, CanDecoder.decode(0x040, byteArrayOf(0x00, 0x00, b2.toByte()), blank))
+        }
+    }
+
+    @Test
+    fun `0x300 is recognized but leaves state unchanged (#189)`() {
+        // Previously returned null, which routed the frame to the unknown-frame log
+        assertSame(blank, CanDecoder.decode(0x300, ByteArray(8), blank))
     }
 
     @Test
@@ -1015,5 +1034,36 @@ class CanDecoderTest {
         val data = byteArrayOf(0x80.toByte(), 0x00, 0x00, 0x00, 0x00) // need 6 bytes
         val result = CanDecoder.decode(0x260, data, blank)
         assertNull(result)
+    }
+
+    // ── #194: CAN freshness stamps (throttled per ID) ───────────────────────
+
+    @Test
+    fun `0x0F8 decode stamps oil and PTU freshness`() {
+        val data = byteArrayOf(0, 140.toByte(), 0, 0, 0, 0, 0, 100)
+        val decoded = CanDecoder.decode(0x0F8, data, blank)!!
+        val stamped = CanDecoder.stampFresh(0x0F8, blank, decoded, now = 50_000L)
+        assertEquals(50_000L, stamped.fieldLastUpdateMs["oilTempC"])
+        assertEquals(50_000L, stamped.fieldLastUpdateMs["ptuTempC"])
+        assertEquals(90.0, stamped.oilTempC, 0.01)   // value untouched by stamping
+    }
+
+    @Test
+    fun `CAN stamp is throttled within one second per ID`() {
+        val prev = blank.markFresh("coolantTempC", "intakeTempC", now = 50_000L)
+        val data = byteArrayOf(0, 0, 0, 0, 0, 150.toByte(), 0, 200.toByte())
+        val decoded = CanDecoder.decode(0x2F0, data, prev)!!
+        val within = CanDecoder.stampFresh(0x2F0, prev, decoded, now = 50_500L)
+        assertSame("no map copy inside the throttle window", decoded, within)
+        val after = CanDecoder.stampFresh(0x2F0, prev, decoded, now = 51_000L)
+        assertEquals(51_000L, after.fieldLastUpdateMs["coolantTempC"])
+        assertEquals(51_000L, after.fieldLastUpdateMs["intakeTempC"])
+    }
+
+    @Test
+    fun `IDs without THERMAL tags are never stamped`() {
+        assertNull(CanDecoder.freshTagsFor(0x090))
+        val decoded = blank.copy(rpm = 3000.0)
+        assertSame(decoded, CanDecoder.stampFresh(0x090, blank, decoded, now = 99_000L))
     }
 }

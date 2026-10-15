@@ -132,10 +132,13 @@ internal object DriveExportBuilder {
         }
     }
 
-    /** rc.4 — Knock events table CSV. One row per captured KR retard event. */
+    /**
+     * Knock events table CSV. One row per captured KR retard event.
+     * v2 (rc.5): trailing `cylinder` column (1-4; 0 = legacy row, cylinder 1 only).
+     */
     fun buildKnockCsv(events: List<com.openrs.dash.data.KnockEventEntity>): String = buildString {
-        appendLine("# openrs_knock_csv_v1")
-        appendLine("timestamp_ms,kr_deg,rpm,boost_psi,iat_c,throttle_pct,gear_est,lat,lng")
+        appendLine("# openrs_knock_csv_v2")
+        appendLine("timestamp_ms,kr_deg,rpm,boost_psi,iat_c,throttle_pct,gear_est,lat,lng,cylinder")
         events.forEach { ev ->
             appendLine(
                 "${ev.timestamp}," +
@@ -146,7 +149,8 @@ internal object DriveExportBuilder {
                 "${"%.1f".format(ev.throttlePct)}," +
                 "${ev.gearEst}," +
                 "${ev.lat?.let { "%.6f".format(it) } ?: ""}," +
-                "${ev.lng?.let { "%.6f".format(it) } ?: ""}"
+                "${ev.lng?.let { "%.6f".format(it) } ?: ""}," +
+                "${ev.cylinder}"
             )
         }
     }
@@ -169,6 +173,10 @@ internal object DriveExportBuilder {
         appendLine("  Peak RPM    : ${drive.peakRpm}")
         appendLine("  Peak Boost  : ${"%.1f".format(drive.peakBoostPsi)} PSI")
         appendLine("  Peak Lat G  : ${"%.2f".format(drive.peakLateralG)} g")
+        if (drive.avgStftPct != null || drive.avgLtftPct != null) {
+            fun pct(v: Double?) = v?.let { "%+.1f%%".format(it) } ?: "—"
+            appendLine("  Fuel Trims  : STFT ${pct(drive.avgStftPct)}  LTFT ${pct(drive.avgLtftPct)}  (${drive.trimSamples} warm samples)")
+        }
         appendLine()
         if (drive.driveModeBreakdown != "{}") {
             appendLine("  Drive mode breakdown:")
@@ -282,6 +290,15 @@ internal object DriveExportBuilder {
             if (drive.avgFuelMpg > 0) put("avgFuelMpg", drive.avgFuelMpg)
         }
         root.put("drive", driveObj)
+
+        // ── Fuel trim drift (rc.5) — warm-engine averages of fresh STFT/LTFT polls ──
+        if (drive.avgStftPct != null || drive.avgLtftPct != null) {
+            root.put("fuelTrim", JSONObject().apply {
+                drive.avgStftPct?.let { put("avgStftPct", it) }
+                drive.avgLtftPct?.let { put("avgLtftPct", it) }
+                put("samples", drive.trimSamples)
+            })
+        }
 
         // ── Peak events (best per type from recorded points) ─────
         val peaksArray = JSONArray()

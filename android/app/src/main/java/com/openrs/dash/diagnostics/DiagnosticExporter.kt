@@ -513,6 +513,9 @@ object DiagnosticExporter {
         name.startsWith("drive_profile_") -> "drive_profile"
         name.startsWith("drive_summary_") -> "drive_summary"
         name.startsWith("drive_") && name.endsWith(".gpx") -> "drive_gpx"
+        // Knock table must be matched before the generic drive CSV rule — tagging it
+        // drive_csv made Sapphire import it as a phantom session (#183)
+        name.startsWith("drive_") && name.contains("knock") && name.endsWith(".csv") -> "knock_csv"
         name.startsWith("drive_") && name.endsWith(".csv") -> "drive_csv"
         name.startsWith("dtc_scan_") && name.endsWith(".json") -> "dtc_json"
         name.startsWith("dtc_scan_") && name.endsWith(".txt") -> "dtc_text"

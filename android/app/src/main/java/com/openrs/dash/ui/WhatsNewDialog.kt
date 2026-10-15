@@ -42,9 +42,15 @@ import com.openrs.dash.ui.anim.pageEntrance
  */
 private val versionHighlights: Map<String, List<String>> = mapOf(
     "2.2.7" to listOf(
+        "Fuel Trim Drift — PERF tab charts warm-engine STFT/LTFT averages across your last 20 drives and warns when LTFT runs lean or rich two drives in a row.",
+        "Faster boost + knock polling — TIP, wastegate and knock retard now refresh about once a second with the engine running (was ~35 s), and only fresh readings are recorded.",
+        "Knock logger is per-cylinder, updates live during a drive, and has a THIS DRIVE / ALL toggle.",
+        "Drive chart: TARGET boost now overlays BOOST on the same scale as a dashed line; missing readings show as gaps instead of dips.",
+        "Fixed: THERMAL and battery/TPMS cells no longer stuck on STALE — field freshness now reaches the UI for both CAN and polled data.",
+        "Fixed: Sapphire no longer imports the knock CSV as an extra drive.",
         "Knock Event Logger — PERF tab shows RPM × boost scatter of every KR retard event, colored by severity. Persists per-drive and exports to CSV.",
         "Boost Target vs Actual — DriveTimeSeries adds TARGET + WGDC channels; DriveSummarySheet shows avg/worst Δ and wastegate saturation flag.",
-        "Fixed: ambient temp wrapped negative above 90°F — 0x1A4 was signed; now unsigned (×0.25°C, 0-63.75°C range) matching DigiCluster's on-car verification.",
+        "Fixed: ambient temp wrapped negative above 90°F — 0x1A4 now decodes as unsigned (verified on-car); readings above 55°C are ignored until sub-zero decoding is confirmed.",
         "SRS airbag frame (0x040) added to Frame Coverage; 0x435 crosstalk explicitly guarded; 0x300 battery-fault frame reserved.",
         "\"Daylight\" UI overhaul — 5 tabs (DRIVE/PERF/THERMAL/TRIP/GARAGE) and a true light/dark theme",
         "Theme picker — NIGHT / DAY / AUTO + ULTRA pure-black AMOLED option (replaces the brightness slider)",

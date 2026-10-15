@@ -594,4 +594,25 @@ class DriveExportBuilderTest {
         val dataCols = lines[1].split(",").size
         assertEquals(headerCols, dataCols)
     }
+
+    // ── rc.5: fuel trim drift export ────────────────────────────────────────
+
+    @Test fun `profile json carries fuel trim averages when present`() {
+        val drive = testDrive().copy(avgStftPct = 1.5, avgLtftPct = 6.25, trimSamples = 14)
+        val ft = JSONObject(DriveExportBuilder.buildProfileJson(drive, listOf(testPoint()))).getJSONObject("fuelTrim")
+        assertEquals(1.5, ft.getDouble("avgStftPct"), 1e-9)
+        assertEquals(6.25, ft.getDouble("avgLtftPct"), 1e-9)
+        assertEquals(14, ft.getInt("samples"))
+    }
+
+    @Test fun `profile json omits fuel trim for drives without warm samples`() {
+        val json = JSONObject(DriveExportBuilder.buildProfileJson(testDrive(), listOf(testPoint())))
+        assertFalse(json.has("fuelTrim"))
+    }
+
+    @Test fun `summary prints signed fuel trims`() {
+        val drive = testDrive().copy(avgStftPct = -2.0, avgLtftPct = 6.25, trimSamples = 14)
+        val text = DriveExportBuilder.buildSummary(drive, listOf(testPoint()))
+        assertTrue(text.contains("STFT -2.0%  LTFT +6.3%  (14 warm samples)"))
+    }
 }

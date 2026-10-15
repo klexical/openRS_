@@ -26,6 +26,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.data.KnockEventEntity
+import com.openrs.dash.data.KnockStats
 
 /**
  * Knock event scatter plot (RPM × boost PSI), colour-coded by retard severity.
@@ -167,35 +168,42 @@ fun KnockAggregate(
         return
     }
 
-    val worst = events.maxByOrNull { it.krDeg }
-    val worstDeg = worst?.krDeg ?: 0.0
-    val sum = events.sumOf { it.krDeg }
-    val avgDeg = if (events.isNotEmpty()) sum / events.size else 0.0
-    val highCount = events.count { it.krDeg >= 4.0 }
-    val medCount = events.count { it.krDeg in 2.0..3.9999 }
-    val lowCount = events.count { it.krDeg in 0.1..1.9999 }
+    val stats = KnockStats.from(events)
+    val worstDeg = stats.worst?.krDeg ?: 0.0
 
     Row(
         modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        AggCell("COUNT", "${events.size}", Frost, modifier = Modifier.weight(1f))
+        AggCell("COUNT", "${stats.count}", Frost, modifier = Modifier.weight(1f))
         AggCell("WORST", "${"%.1f".format(worstDeg)}°", severityColor(worstDeg), modifier = Modifier.weight(1f))
-        AggCell("AVG", "${"%.1f".format(avgDeg)}°", Frost, modifier = Modifier.weight(1f))
+        AggCell("AVG", "${"%.1f".format(stats.avgDeg)}°", Frost, modifier = Modifier.weight(1f))
     }
     Spacer(Modifier.height(4.dp))
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        AggCell("≥4°", "$highCount", severityColor(4.0), modifier = Modifier.weight(1f))
-        AggCell("2-4°", "$medCount", severityColor(2.5), modifier = Modifier.weight(1f))
-        AggCell("<2°", "$lowCount", severityColor(1.0), modifier = Modifier.weight(1f))
+        AggCell("≥4°", "${stats.highCount}", severityColor(KnockStats.HIGH_DEG), modifier = Modifier.weight(1f))
+        AggCell("2-4°", "${stats.medCount}", severityColor(KnockStats.MED_DEG), modifier = Modifier.weight(1f))
+        AggCell("<2°", "${stats.lowCount}", severityColor(1.0), modifier = Modifier.weight(1f))
     }
-    worst?.let {
+    Spacer(Modifier.height(4.dp))
+    // Per-cylinder split (#186). Cyl 2–4 stay 0 if the PCM rejects DIDs 0x03ED–EF.
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        for (cyl in 1..4) {
+            val n = stats.perCylinder[cyl - 1]
+            AggCell("CYL $cyl", "$n", if (n > 0) Frost else Dim, modifier = Modifier.weight(1f))
+        }
+    }
+    stats.worst?.let {
         Spacer(Modifier.height(4.dp))
+        val cylLabel = if (it.cylinder in 1..4) " · cyl ${it.cylinder}" else ""
         Text(
-            "Worst cell: ${it.rpm} RPM @ ${"%.1f".format(it.boostPsi)} PSI",
+            "Worst cell: ${it.rpm} RPM @ ${"%.1f".format(it.boostPsi)} PSI$cylLabel",
             style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 9.sp, color = Dim),
             modifier = Modifier.padding(horizontal = 8.dp)
         )
@@ -217,8 +225,8 @@ private fun AggCell(label: String, value: String, color: Color, modifier: Modifi
 }
 
 internal fun severityColor(krDeg: Double): Color = when {
-    krDeg >= 4.0 -> Color(0xFFE53935)       // red — serious retard
-    krDeg >= 2.0 -> Color(0xFFFF9800)       // orange — moderate
-    krDeg >= 0.1 -> Color(0xFFFFEB3B)       // yellow — minor
+    krDeg >= KnockStats.HIGH_DEG -> Color(0xFFE53935)   // red — serious retard
+    krDeg >= KnockStats.MED_DEG  -> Color(0xFFFF9800)   // orange — moderate
+    krDeg > 0.0                  -> Color(0xFFFFEB3B)   // yellow — minor (counted in <2° bucket)
     else         -> Color(0xFF9E9E9E)       // grey — zero/noise
 }

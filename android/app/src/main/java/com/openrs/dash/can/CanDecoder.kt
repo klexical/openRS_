@@ -183,6 +183,56 @@ object CanDecoder {
         ID_SRS_STATUS, ID_CHARGING_STATUS
     )
 
+    /**
+     * Freshness tags written by each passive CAN decoder (#194). Only fields the UI
+     * classifies via `fieldLastUpdateMs` (THERMAL availability) need an entry.
+     * Stamped by CanDataService.processCanFrame, throttled per ID — see [CAN_STAMP_THROTTLE_MS].
+     */
+    private val FRESH_TAGS: Map<Int, Array<String>> = mapOf(
+        ID_ENGINE_TEMPS to arrayOf("oilTempC", "ptuTempC"),
+        ID_COOLANT      to arrayOf("coolantTempC", "intakeTempC"),
+        ID_AMBIENT_TEMP to arrayOf("ambientTempC"),
+        ID_PCM_AMBIENT  to arrayOf("ambientTempC"),
+    )
+
+    /**
+     * 0x1A4 plausibility ceiling (#185). The unsigned ×0.25 decode can't express sub-zero
+     * ambient, so a cold-day raw byte would read +55–64 °C; above this it's rejected.
+     */
+    const val AMBIENT_1A4_MAX_C = 55.0
+
+    /**
+     * Diagnostic description + issue for a recognized frame whose decode left state
+     * unchanged (reserved IDs, rejected readings). Raw bytes go to the frame log, so a
+     * future capture can recover the true encoding.
+     */
+    fun describeUnchanged(id: Int, data: ByteArray): Pair<String, String?> = when (id) {
+        ID_AMBIENT_TEMP -> {
+            val raw = if (data.size >= 5) data[4].toInt() and 0xFF else -1
+            "ambient 0x1A4 raw=0x%02X (%.2f°C unsigned) rejected".format(raw, raw * 0.25) to
+                "0x1A4 > ${AMBIENT_1A4_MAX_C}°C — likely sub-zero, encoding pending (#185)"
+        }
+        ID_SRS_STATUS      -> "srs=0x040 (frame recognized; lamp state not yet surfaced on VehicleState)" to null
+        ID_CHARGING_STATUS -> "chargingStatus=0x300 (byte mapping pending)" to null
+        else               -> "0x%03X recognized, no state change".format(id) to null
+    }
+
+    /** Re-stamp a CAN ID's tags at most this often — avoids a map copy on every frame. */
+    const val CAN_STAMP_THROTTLE_MS = 1_000L
+
+    fun freshTagsFor(id: Int): Array<String>? = FRESH_TAGS[id]
+
+    /**
+     * Returns [decoded] with [id]'s freshness tags stamped at [now] when the previous stamp
+     * in [previous] is older than [CAN_STAMP_THROTTLE_MS]; otherwise [decoded] unchanged.
+     * Pure (reads only its inputs), so it is safe inside a StateFlow.update{} CAS lambda.
+     */
+    fun stampFresh(id: Int, previous: VehicleState, decoded: VehicleState, now: Long): VehicleState {
+        val tags = FRESH_TAGS[id] ?: return decoded
+        val last = previous.fieldLastUpdateMs[tags[0]] ?: 0L
+        return if (now - last >= CAN_STAMP_THROTTLE_MS) decoded.markFresh(*tags, now = now) else decoded
+    }
+
     fun decode(id: Int, data: ByteArray, state: VehicleState): VehicleState? {
         if (id !in KNOWN_IDS) return null
         val n   = data.size
@@ -349,11 +399,15 @@ object CanDecoder {
             // Byte 4 is UNSIGNED × 0.25 °C (DigiCluster v1.0.46 correction).
             // Early can1_ms.json spec said signed int8 — that caused values above 127 raw
             // (~32°C / 90°F) to wrap negative. Confirmed on-car: raw 0x82 (130) × 0.25 = 32.5°C.
-            // Range: 0..63.75°C — covers all realistic ambient conditions.
-            ID_AMBIENT_TEMP -> if (n >= 5) state.copy(
-                ambientTempC = (data[4].toInt() and 0xFF) * 0.25,
-                lastUpdate   = now
-            ) else null
+            // Range: 0..63.75°C — this CANNOT represent sub-zero ambient, so the true encoding
+            // likely has an offset/scale we haven't captured (#185). Until a sub-zero capture
+            // pins it down, readings above AMBIENT_1A4_MAX_C are ignored (state returned
+            // unchanged → 0x340 PCM ambient keeps the value) and the raw byte is logged.
+            ID_AMBIENT_TEMP -> if (n >= 5) {
+                val c = (data[4].toInt() and 0xFF) * 0.25
+                if (c > AMBIENT_1A4_MAX_C) state
+                else state.copy(ambientTempC = c, lastUpdate = now)
+            } else null
 
             // ── 0x040: SRS (airbag) lamp — DigiCluster v1.0.73 ─────────────────
             // byte2 bits 7:6 share the SRS state and passenger occupancy encoding:
@@ -369,15 +423,16 @@ object CanDecoder {
             // mutated — VehicleState.copy() is at the JVM 255-slot ceiling (see memory
             // gotchas_vehiclestate_jvm_limit.md). When slots are freed in a future RC,
             // store the lamp as `warnAirbag: Boolean? = (b2 & 0xC0) == 0xC0`.
-            ID_SRS_STATUS -> state.copy(lastUpdate = now)
+            // Returned unchanged (same instance) — no field changes, so no StateFlow emit (#192).
+            ID_SRS_STATUS -> state
 
             // ── 0x300: Charging/battery system fault ──────────────────────────
             // DigiCluster v1.0.73 confirms this ID lights the battery lamp for real faults
             // (plus bulb-check in power modes 4–6, clearing once engine runs). The exact
             // byte/bit layout isn't published; without a car-side capture of a known-fault
-            // vs clean state we cannot select the bit. Field is accepted (keeps the ID off
-            // the unknown-frame log) but no state update is applied until mapping is confirmed.
-            ID_CHARGING_STATUS -> null
+            // vs clean state we cannot select the bit. Returned unchanged so the frame is logged
+            // as recognized (not unknown) with no state update until mapping is confirmed (#189).
+            ID_CHARGING_STATUS -> state
 
             // ── 0x190: Wheel speeds — RS_HS.dbc ABSmsg03 (10 ms broadcast) ────
             // FrontLeftWheelSpeed  : 6|15@0+ (0.011343006,0)  → ((data[0]&0x7F)<<8)|data[1]

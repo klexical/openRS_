@@ -15,6 +15,7 @@ function pt(overrides: Partial<TripPoint> = {}): TripPoint {
     gear: '3', throttlePct: 45,
     tirePressLF: 35, tirePressRF: 35, tirePressLR: 33, tirePressRR: 33,
     tireTempLF: 40, tireTempRF: 40, tireTempLR: 38, tireTempRR: 38,
+    brakePressure: 0, steeringAngle: 0, raceReady: false,
     ...overrides,
   }
 }

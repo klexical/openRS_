@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useStore } from '../../store'
-import { importZip, importBatchZip } from '../../lib/import'
+import { importZip, importBatchZip, isDriveCsvEntry, isDriveCsvName } from '../../lib/import'
 import { putSession } from '../../lib/db'
 import { colors } from '../../styles/tokens'
 import JSZip from 'jszip'
@@ -36,14 +36,14 @@ export function ImportPanel() {
       if (manifestFile) {
         try {
           const manifest = JSON.parse(await manifestFile.async('string'))
-          driveCsvCount = (manifest.files || []).filter((e: { type: string }) => e.type === 'drive_csv').length
+          driveCsvCount = (manifest.files || []).filter(isDriveCsvEntry).length
         } catch { /* fall through */ }
       }
 
       if (driveCsvCount === 0) {
         // Count by filename heuristic
         driveCsvCount = Object.keys(zip.files).filter(
-          (f) => (f.startsWith('trip_') || f.startsWith('drive_')) && f.endsWith('.csv') && !f.includes('racechrono') && !f.includes('trackaddict')
+          isDriveCsvName
         ).length
       }
 
