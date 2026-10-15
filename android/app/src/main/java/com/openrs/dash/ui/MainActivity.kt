@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.os.IBinder
 
 import android.Manifest
+import android.annotation.SuppressLint
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -75,6 +76,9 @@ class MainActivity : ComponentActivity() {
         }
         override fun onServiceDisconnected(n: ComponentName) { service = null }
     }
+    // Lint's fragment-version check targets FragmentActivity (request-code collisions with
+    // fragment < 1.3.0). MainActivity is a ComponentActivity, so it doesn't apply.
+    @SuppressLint("InvalidFragmentVersionForActivityResult")
     private val permLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { startSvc() }
@@ -102,7 +106,9 @@ class MainActivity : ComponentActivity() {
         val perms = mutableListOf<String>()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
             perms.add(Manifest.permission.POST_NOTIFICATIONS)
-        // Request location at startup for drive recording
+        // Request location at startup for drive recording. Android 12+ requires COARSE
+        // alongside FINE in the same request (lint CoarseFineLocation).
+        perms.add(Manifest.permission.ACCESS_COARSE_LOCATION)
         perms.add(Manifest.permission.ACCESS_FINE_LOCATION)
         // BLE permissions when Bluetooth connection method is selected
         if (AppSettings.getConnectionMethod(this) == "BLUETOOTH") {

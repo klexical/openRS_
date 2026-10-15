@@ -157,7 +157,7 @@ fun DriveMap(
         if (points.isNotEmpty()) {
             val first = points.first()
             Marker(
-                state = MarkerState(position = LatLng(first.lat, first.lng)),
+                state = remember(first.lat, first.lng) { MarkerState(position = LatLng(first.lat, first.lng)) },
                 title = "Start",
                 icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN),
                 zIndex = 6f
@@ -166,7 +166,7 @@ fun DriveMap(
             if (points.size >= 2) {
                 val last = points.last()
                 Marker(
-                    state = MarkerState(position = LatLng(last.lat, last.lng)),
+                    state = remember(last.lat, last.lng) { MarkerState(position = LatLng(last.lat, last.lng)) },
                     title = if (isRecording) "Current" else "Finish",
                     icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED),
                     zIndex = 6f
@@ -181,7 +181,9 @@ fun DriveMap(
                 if (gap > 5000) {
                     val pauseIcon = remember { createPauseMarker() }
                     Marker(
-                        state = MarkerState(position = LatLng(points[i - 1].lat, points[i - 1].lng)),
+                        state = remember(points[i - 1].lat, points[i - 1].lng) {
+                            MarkerState(position = LatLng(points[i - 1].lat, points[i - 1].lng))
+                        },
                         title = "Paused",
                         snippet = "%.0fs pause".format(gap / 1000.0),
                         icon = pauseIcon,
@@ -196,7 +198,7 @@ fun DriveMap(
         if (currentLat != null && currentLng != null && isRecording) {
             val posIcon = remember { createPositionDot() }
             Marker(
-                state = MarkerState(position = LatLng(currentLat, currentLng)),
+                state = remember(currentLat, currentLng) { MarkerState(position = LatLng(currentLat, currentLng)) },
                 icon = posIcon,
                 anchor = Offset(0.5f, 0.5f),
                 flat = true,

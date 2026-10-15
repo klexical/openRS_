@@ -94,9 +94,10 @@ fun TripPage(
                     == PackageManager.PERMISSION_GRANTED
         )
     }
+    // Android 12+ requires COARSE alongside FINE in one request; drive recording needs FINE.
     val permLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted -> hasLocationPerm = granted }
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result -> hasLocationPerm = result[Manifest.permission.ACCESS_FINE_LOCATION] == true }
 
     // Color mode cycling through all 6
     var colorModeIndex by remember { mutableIntStateOf(0) }
@@ -534,7 +535,12 @@ fun TripPage(
                 driveState = driveState,
                 prefs = prefs,
                 hasLocationPerm = hasLocationPerm,
-                onRequestPermission = { permLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) },
+                onRequestPermission = {
+                    permLauncher.launch(arrayOf(
+                        Manifest.permission.ACCESS_COARSE_LOCATION,
+                        Manifest.permission.ACCESS_FINE_LOCATION
+                    ))
+                },
                 onStart = { recorder.startDrive(sessionId = 0) },
                 onPause = { recorder.pauseDrive() },
                 onResume = { recorder.resumeDrive() },

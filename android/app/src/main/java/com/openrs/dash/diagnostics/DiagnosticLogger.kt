@@ -439,7 +439,9 @@ object DiagnosticLogger {
             probeSessionsList.add(
                 ProbeSession(relativeMs(), module, requestId, responseId, results)
             )
-            while (probeSessionsList.size > MAX_PROBE_SESSIONS) probeSessionsList.removeFirst()
+            // removeAt(0), not removeFirst(): on a MutableList that compiles to java.util.List.removeFirst
+            // (API 35+) and throws NoSuchMethodError on Android 9–14 (#196 lint NewApi)
+            while (probeSessionsList.size > MAX_PROBE_SESSIONS) probeSessionsList.removeAt(0)
         }
         val found = results.count { it.status == "FOUND" }
         event("PROBE", "$module scan complete: ${results.size} probed, $found found")
