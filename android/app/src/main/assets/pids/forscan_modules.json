@@ -4080,7 +4080,7 @@
           "description": "Fuel Rail Pressure",
           "unit": "kPa",
           "status": "monitored",
-          "did": "0xF422",
+          "did": "0xF423",
           "bytes": 2,
           "formula": "(A*256+B)*1.45038",
           "field": "hpFuelRailPsi",
@@ -5553,7 +5553,7 @@
           "status": "monitored",
           "did": "0x033E",
           "bytes": 2,
-          "formula": "(A*256+B)/903.81",
+          "formula": "(A*256+B)/128",
           "field": "tipActualKpa",
           "poll_group": "pcm_standard"
         },
@@ -5564,7 +5564,7 @@
           "status": "monitored",
           "did": "0x0466",
           "bytes": 2,
-          "formula": "(A*256+B)/903.81",
+          "formula": "(A*256+B)/128",
           "field": "tipDesiredKpa",
           "poll_group": "pcm_standard"
         },

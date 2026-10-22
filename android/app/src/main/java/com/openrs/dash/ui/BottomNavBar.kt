@@ -1,5 +1,6 @@
 package com.openrs.dash.ui
 
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -170,7 +171,7 @@ fun BottomNavBar(
         )
         Box(
             Modifier
-                .offset(x = indicatorOffset)
+                .offset { IntOffset(indicatorOffset.roundToPx(), 0) }   // layout-phase read, no recomposition per frame
                 .width(tabWidth)
                 .align(Alignment.TopStart)
         ) {

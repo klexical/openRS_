@@ -969,11 +969,11 @@ private fun DriveHistoryList(
     onExport: (DriveEntity) -> Unit,
     onDelete: (DriveEntity) -> Unit,
     onRename: (DriveEntity) -> Unit,
+    modifier: Modifier = Modifier,
     onTagsChanged: (DriveEntity, String) -> Unit = { _, _ -> },
     onReplay: (DriveEntity) -> Unit = {},
     onCompare: (DriveEntity) -> Unit = {},
-    onBatchExport: (List<DriveEntity>) -> Unit = {},
-    modifier: Modifier = Modifier
+    onBatchExport: (List<DriveEntity>) -> Unit = {}
 ) {
     val accent = LocalThemeAccent.current
 

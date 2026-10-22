@@ -1,5 +1,8 @@
 package com.openrs.dash.ui
 
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -427,5 +430,6 @@ private val TabularNumericStyle = TextStyle(fontFeatureSettings = "tnum")
 
 @Composable fun isWideLayout(): Boolean {
     val config = LocalConfiguration.current
-    return config.orientation == Configuration.ORIENTATION_LANDSCAPE || config.screenWidthDp > 600
+    val widthDp = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.width.toDp() }
+    return config.orientation == Configuration.ORIENTATION_LANDSCAPE || widthDp > 600.dp
 }

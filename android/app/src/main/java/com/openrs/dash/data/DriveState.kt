@@ -37,7 +37,10 @@ data class DriveState(
     val peakOilTempC: Double = -99.0,
     val peakCoolantTempC: Double = -99.0,
     val peakEvents: List<PeakEvent> = emptyList(),
-    val rtrAchievedPoint: DrivePointEntity? = null
+    val rtrAchievedPoint: DrivePointEntity? = null,
+    // ── Knock pulls (rc.6, #174) ─────────────────────────────
+    val pullCount: Int = 0,
+    val knockPullCount: Int = 0
 ) {
     // ── Computed properties ───────────────────────────────────────────────
 

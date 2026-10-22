@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">openRS_</string>
+    <!-- HUD overlay readouts (HudOverlayService) -->
+    <string name="hud_boost">BST: %1$s %2$s</string>
+    <string name="hud_rpm">RPM: %1$d</string>
+    <string name="hud_oil">OIL: %1$s%2$s</string>
 </resources>

@@ -247,12 +247,27 @@ object ObdResponseParser {
             ).markFresh("catalyticTempC"))
             0xF434 -> {
                 val afr = ((b4 shl 8) or b5) * 0.0004486
-                onObdUpdate(currentState.copy(afrActual = afr, lambdaActual = afr / 14.7)
-                    .markFresh("afrActual", "lambdaActual"))
+                onObdUpdate(currentState.copy(afrActual = afr, lambdaActual = afr / 14.7, afrSensor1 = afr)
+                    .markFresh("afrActual", "lambdaActual", "afrSensor1"))
             }
-            0xF444 -> onObdUpdate(currentState.copy(afrDesired = b4 * 0.1144).markFresh("afrDesired"))
-            0x033E -> onObdUpdate(currentState.copy(tipActualKpa  = ((b4 shl 8) or b5) / 903.81).markFresh("tipActualKpa"))
-            0x0466 -> onObdUpdate(currentState.copy(tipDesiredKpa = ((b4 shl 8) or b5) / 903.81).markFresh("tipDesiredKpa"))
+            // Commanded equivalence ratio (Mode 01 PID 0x44): 2 bytes, λ = raw / 32768
+            0xF444 -> onObdUpdate(currentState.copy(
+                afrDesired   = b4 * 0.1144,
+                commandedAfr = ((b4 shl 8) or b5) / 32768.0
+            ).markFresh("afrDesired", "commandedAfr"))
+            // Calculated load (PID 0x04): A × 100/255 %
+            0xF404 -> onObdUpdate(currentState.copy(calcLoad = b4 * 100.0 / 255.0).markFresh("calcLoad"))
+            // Timing advance (PID 0x0E): A/2 − 64 °BTDC
+            0xF40E -> onObdUpdate(currentState.copy(timingAdvance = b4 / 2.0 - 64.0).markFresh("timingAdvance"))
+            // O2 bank 1 sensor 2 voltage (PID 0x15): A/200 V
+            0xF415 -> onObdUpdate(currentState.copy(o2Voltage = b4 / 200.0).markFresh("o2Voltage"))
+            // TIP absolute: raw / 128 kPa (DigiCluster, on-car verified — #198; was /903.81 ≈ psi)
+            0x033E -> onObdUpdate(currentState.copy(tipActualKpa  = ((b4 shl 8) or b5) / 128.0).markFresh("tipActualKpa"))
+            0x0466 -> onObdUpdate(currentState.copy(tipDesiredKpa = ((b4 shl 8) or b5) / 128.0).markFresh("tipDesiredKpa"))
+            // Low-side fuel pressure: raw × 0.5 kPa (DigiCluster dc_frs_0548, verified)
+            0x0548 -> onObdUpdate(currentState.copy(
+                fuelRailPressure = ((b4 shl 8) or b5) * 0.5
+            ).markFresh("fuelRailPressure"))
             0x0318 -> onObdUpdate(currentState.copy(
                 vctIntakeAngle = ((b4s.toByte().toInt() shl 8) or b5) / 16.0
             ).markFresh("vctIntakeAngle"))
@@ -260,7 +275,9 @@ object ObdResponseParser {
                 vctExhaustAngle = ((b4s.toByte().toInt() shl 8) or b5) / 16.0
             ).markFresh("vctExhaustAngle"))
             0x054B -> onObdUpdate(currentState.copy(oilLifePct = b4.toDouble().coerceIn(0.0, 100.0)).markFresh("oilLifePct"))
-            0xF422 -> onObdUpdate(currentState.copy(
+            // HP fuel rail gauge pressure (PID 0x23, direct injection): raw × 10 kPa → psi.
+            // 0xF422 (PID 0x22) is the port-injection relative pressure — NRC 0x31 on DI PCMs (#198).
+            0xF423 -> onObdUpdate(currentState.copy(
                 hpFuelRailPsi = ((b4 shl 8) or b5) * 1.45038
             ).markFresh("hpFuelRailPsi"))
             0xF42F -> onObdUpdate(currentState.putGeneric(

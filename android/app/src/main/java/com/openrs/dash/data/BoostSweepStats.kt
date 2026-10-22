@@ -19,9 +19,20 @@ data class BoostSweepStats(
     val worstRpm: Int,               // RPM at the worst-delta sample
     val maxWgdc: Double,             // peak WGDC % observed on loaded samples
     val wgdcSaturated: Boolean,      // true if maxWgdc >= WGDC_SATURATION_PCT
-    val sampleCount: Int             // number of loaded samples the stats are drawn from
+    val sampleCount: Int,            // number of loaded samples the stats are drawn from
+    val avgWgdcAtPeak: Double? = null,       // mean fresh WGDC where actual ≥ 90 % of the drive's peak (#175)
+    val byGear: List<GearBoost> = emptyList() // loaded samples per gear 1–6, ascending (#175)
 ) {
+    /** Boost under demand in one gear. [peakBoostPsi] is gauge vs standard atmosphere (no baro per point). */
+    data class GearBoost(val gear: Int, val peakBoostPsi: Double, val avgDeltaPsi: Double, val samples: Int)
+
     companion object {
+        /** Samples within this fraction of the drive's peak actual TIP count as "at peak boost". */
+        const val PEAK_FRACTION = 0.9
+
+        private const val KPA_TO_PSI = 0.14503773
+        private const val STD_ATM_KPA = 101.325
+
         /** Below this target boost, the sample is effectively idle/cruise — exclude. */
         const val LOADED_TARGET_KPA_MIN = 110.0
 
@@ -33,7 +44,7 @@ data class BoostSweepStats(
             val loaded = points.filter { it.boostTargetKpa >= LOADED_TARGET_KPA_MIN && it.tipActualKpa > 0.0 }
             if (loaded.isEmpty()) return null
 
-            val kpaToPsi = 0.14503773
+            val kpaToPsi = KPA_TO_PSI
             var deltaSum = 0.0
             var worst = Double.POSITIVE_INFINITY
             var worstRpm = 0
@@ -49,13 +60,34 @@ data class BoostSweepStats(
                 if (pt.wgdcPct >= 0.0 && pt.wgdcPct > maxW) maxW = pt.wgdcPct
             }
             val avg = deltaSum / loaded.size
+
+            val peakActual = loaded.maxOf { it.tipActualKpa }
+            val atPeakWgdc = loaded
+                .filter { it.tipActualKpa >= peakActual * PEAK_FRACTION && it.wgdcPct >= 0.0 }
+                .map { it.wgdcPct }
+
+            val byGear = loaded
+                .mapNotNull { pt -> pt.gear.toIntOrNull()?.takeIf { it in 1..6 }?.let { it to pt } }
+                .groupBy({ it.first }, { it.second })
+                .toSortedMap()
+                .map { (gear, pts) ->
+                    GearBoost(
+                        gear = gear,
+                        peakBoostPsi = (pts.maxOf { it.tipActualKpa } - STD_ATM_KPA) * kpaToPsi,
+                        avgDeltaPsi = pts.sumOf { (it.tipActualKpa - it.boostTargetKpa) * kpaToPsi } / pts.size,
+                        samples = pts.size
+                    )
+                }
+
             return BoostSweepStats(
                 avgDeltaPsi = avg,
                 worstDeltaPsi = worst,
                 worstRpm = worstRpm,
                 maxWgdc = maxW,
                 wgdcSaturated = maxW >= WGDC_SATURATION_PCT,
-                sampleCount = loaded.size
+                sampleCount = loaded.size,
+                avgWgdcAtPeak = atPeakWgdc.takeIf { it.isNotEmpty() }?.average(),
+                byGear = byGear
             )
         }
     }

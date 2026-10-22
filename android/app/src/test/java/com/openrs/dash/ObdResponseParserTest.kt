@@ -31,6 +31,39 @@ class ObdResponseParserTest {
     // ── PCM Responses (0x7E8) ───────────────────────────────────────────────
 
     @Test
+    fun `every polled PCM DID has a hardcoded decoder that stamps freshness`() {
+        // Regression guard for #198: deleting ObdPids.kt left load/timing/AFR fields with no
+        // writer and nothing failed. Any DID in the poll list must decode AND stamp a tag.
+        val missing = com.openrs.dash.can.ObdConstants.PCM_QUERIES.mapNotNull { q ->
+            val did = com.openrs.dash.can.ObdConstants.extractDid(q) ?: return@mapNotNull q
+            var result: VehicleState? = null
+            ObdResponseParser.parsePcmResponse(
+                makeResponse(did shr 8, did and 0xFF, 0x40, 0x00), blank
+            ) { result = it }
+            if (result?.fieldLastUpdateMs.isNullOrEmpty()) "0x%04X".format(did) else null
+        }
+        assertTrue("PCM DIDs polled without a stamping decoder: $missing", missing.isEmpty())
+    }
+
+    @Test
+    fun `every polled BCM and AWD DID has a decoder that stamps freshness`() {
+        fun undecoded(queries: List<String>, parse: (ByteArray, VehicleState, (VehicleState) -> Unit) -> Unit) =
+            queries.mapNotNull { q ->
+                val did = com.openrs.dash.can.ObdConstants.extractDid(q) ?: return@mapNotNull q
+                var result: VehicleState? = null
+                // 0x0100 payload stays inside every plausibility guard (e.g. TPMS 5–70 psi)
+                parse(makeResponse(did shr 8, did and 0xFF, 0x01, 0x00, 0x00, 0x00), blank) { result = it }
+                if (result?.fieldLastUpdateMs.isNullOrEmpty()) "0x%04X".format(did) else null
+            }
+        // 0x280B is multi-frame ISO-TP — decoded by the reassembled-payload parser, not here
+        val bcm = undecoded(com.openrs.dash.can.ObdConstants.BCM_QUERIES
+            .filter { com.openrs.dash.can.ObdConstants.extractDid(it) != 0x280B }, ObdResponseParser::parseBcmResponse)
+        val awd = undecoded(com.openrs.dash.can.ObdConstants.AWD_QUERIES, ObdResponseParser::parseAwdResponse)
+        assertTrue("BCM DIDs without a stamping decoder: $bcm", bcm.isEmpty())
+        assertTrue("AWD DIDs without a stamping decoder: $awd", awd.isEmpty())
+    }
+
+    @Test
     fun `PCM - ETC actual angle`() {
         // DID 0x093C: (B4 << 8 | B5) * (100/8192)
         // raw 4096 -> 4096 * 100/8192 = 50%
@@ -149,28 +182,29 @@ class ObdResponseParserTest {
     }
 
     @Test
-    fun `PCM - TIP actual`() {
-        // DID 0x033E: ((B4 << 8) | B5) / 903.81
-        // raw = (0x03, 0x88) = 904 -> 904 / 903.81 ≈ 1.0 kPa
+    fun `PCM - TIP actual is absolute kPa raw over 128`() {
+        // DID 0x033E: ((B4 << 8) | B5) / 128 (DigiCluster, #198). Discussion #182 idle capture:
+        // raw 0x33E6 = 13286 -> 103.8 kPa (the old /903.81 decode showed "14.7 kPa" ≈ psi)
         var result: VehicleState? = null
         ObdResponseParser.parsePcmResponse(
-            makeResponse(0x03, 0x3E, 0x03, 0x88),
+            makeResponse(0x03, 0x3E, 0x33, 0xE6),
             blank
         ) { result = it }
         assertNotNull(result)
-        assertEquals(1.0, result!!.tipActualKpa, 0.05)
+        assertEquals(103.8, result!!.tipActualKpa, 0.05)
+        assertNotNull(result!!.fieldLastUpdateMs["tipActualKpa"])
     }
 
     @Test
-    fun `PCM - TIP desired`() {
-        // DID 0x0466: same formula as TIP actual
+    fun `PCM - TIP desired at 20 psi boost`() {
+        // DID 0x0466: same formula. 239.2 kPa abs (~20 psi gauge) = raw 30618 = 0x779A
         var result: VehicleState? = null
         ObdResponseParser.parsePcmResponse(
-            makeResponse(0x04, 0x66, 0x03, 0x88),
+            makeResponse(0x04, 0x66, 0x77, 0x9A),
             blank
         ) { result = it }
         assertNotNull(result)
-        assertEquals(1.0, result!!.tipDesiredKpa, 0.05)
+        assertEquals(239.2, result!!.tipDesiredKpa, 0.05)
     }
 
     @Test
@@ -222,16 +256,92 @@ class ObdResponseParserTest {
     }
 
     @Test
-    fun `PCM - HP fuel rail pressure`() {
-        // DID 0xF422: ((B4 << 8) | B5) * 1.45038
-        // raw = (0x00, 0x64) = 100 -> 100 * 1.45038 = 145.038 PSI
+    fun `PCM - HP fuel rail pressure from 0xF423`() {
+        // DID 0xF423 (PID 0x23, DI gauge): ((B4 << 8) | B5) × 10 kPa → × 1.45038 PSI
+        // raw = (0x00, 0x64) = 100 -> 1000 kPa = 145.038 PSI
+        var result: VehicleState? = null
+        ObdResponseParser.parsePcmResponse(
+            makeResponse(0xF4, 0x23, 0x00, 0x64),
+            blank
+        ) { result = it }
+        assertNotNull(result)
+        assertEquals(145.038, result!!.hpFuelRailPsi, 0.1)
+    }
+
+    @Test
+    fun `PCM - 0xF422 no longer decoded as HP fuel`() {
+        // PID 0x22 is port-injection relative pressure; NRC 0x31 on DI PCMs (#198)
         var result: VehicleState? = null
         ObdResponseParser.parsePcmResponse(
             makeResponse(0xF4, 0x22, 0x00, 0x64),
             blank
         ) { result = it }
+        assertEquals(-1.0, (result ?: blank).hpFuelRailPsi, 0.0)
+    }
+
+    @Test
+    fun `PCM - low-side fuel pressure 0x0548`() {
+        // raw × 0.5 kPa (DigiCluster dc_frs_0548): raw 1300 = 0x0514 -> 650 kPa (~94 psi)
+        var result: VehicleState? = null
+        ObdResponseParser.parsePcmResponse(
+            makeResponse(0x05, 0x48, 0x05, 0x14),
+            blank
+        ) { result = it }
         assertNotNull(result)
-        assertEquals(145.038, result!!.hpFuelRailPsi, 0.1)
+        assertEquals(650.0, result!!.fuelRailPressure, 0.01)
+        assertEquals(94.3, result!!.fuelRailPsi, 0.1)
+        assertNotNull(result!!.fieldLastUpdateMs["fuelRailPressure"])
+    }
+
+    @Test
+    fun `PCM - calculated load 0xF404`() {
+        // A × 100/255: 51 -> 20 %
+        var result: VehicleState? = null
+        ObdResponseParser.parsePcmResponse(makeResponse(0xF4, 0x04, 51), blank) { result = it }
+        assertNotNull(result)
+        assertEquals(20.0, result!!.calcLoad, 0.01)
+        assertNotNull(result!!.fieldLastUpdateMs["calcLoad"])
+    }
+
+    @Test
+    fun `PCM - timing advance 0xF40E positive and negative`() {
+        // A/2 − 64: 148 -> +10.0°, 120 -> −4.0° (retarded at idle is legal)
+        var adv: VehicleState? = null
+        ObdResponseParser.parsePcmResponse(makeResponse(0xF4, 0x0E, 148), blank) { adv = it }
+        assertEquals(10.0, adv!!.timingAdvance, 0.001)
+        var ret: VehicleState? = null
+        ObdResponseParser.parsePcmResponse(makeResponse(0xF4, 0x0E, 120), blank) { ret = it }
+        assertEquals(-4.0, ret!!.timingAdvance, 0.001)
+    }
+
+    @Test
+    fun `PCM - O2 sensor voltage 0xF415`() {
+        // A/200: 90 -> 0.450 V (second data byte is STFT and is ignored)
+        var result: VehicleState? = null
+        ObdResponseParser.parsePcmResponse(makeResponse(0xF4, 0x15, 90, 0x80), blank) { result = it }
+        assertNotNull(result)
+        assertEquals(0.45, result!!.o2Voltage, 0.0001)
+    }
+
+    @Test
+    fun `PCM - 0xF444 sets commanded lambda from both bytes`() {
+        // raw 0x8000 = 32768 -> λ 1.000; 0x7333 = 29491 -> λ 0.900
+        var stoich: VehicleState? = null
+        ObdResponseParser.parsePcmResponse(makeResponse(0xF4, 0x44, 0x80, 0x00), blank) { stoich = it }
+        assertEquals(1.0, stoich!!.commandedAfr, 0.0001)
+        var rich: VehicleState? = null
+        ObdResponseParser.parsePcmResponse(makeResponse(0xF4, 0x44, 0x73, 0x33), blank) { rich = it }
+        assertEquals(0.9, rich!!.commandedAfr, 0.0001)
+        assertNotNull(rich!!.fieldLastUpdateMs["commandedAfr"])
+    }
+
+    @Test
+    fun `PCM - 0xF434 sets afrSensor1 equal to afrActual`() {
+        var result: VehicleState? = null
+        ObdResponseParser.parsePcmResponse(makeResponse(0xF4, 0x34, 0x80, 0x00), blank) { result = it }
+        assertNotNull(result)
+        assertEquals(result!!.afrActual, result!!.afrSensor1, 0.0)
+        assertEquals(14.7, result!!.afrSensor1, 0.01)
     }
 
     @Test

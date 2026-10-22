@@ -1,5 +1,6 @@
 package com.openrs.dash.ui.trip
 
+import androidx.core.graphics.createBitmap
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -58,6 +59,7 @@ enum class ColorMode(val label: String) {
 @Composable
 fun DriveMap(
     points: List<DrivePointEntity>,
+    modifier: Modifier = Modifier,
     colorMode: ColorMode = ColorMode.SPEED,
     peakEvents: List<PeakEvent> = emptyList(),
     bookmarks: List<DriveBookmarkEntity> = emptyList(),
@@ -68,8 +70,7 @@ fun DriveMap(
     isPaused: Boolean = false,
     hasLocationPermission: Boolean = false,
     mapType: MapType = MapType.NORMAL,
-    cameraPositionState: CameraPositionState = rememberCameraPositionState(),
-    modifier: Modifier = Modifier
+    cameraPositionState: CameraPositionState = rememberCameraPositionState()
 ) {
     val context = LocalContext.current
     val isDay = effectiveThemeIsDay()
@@ -373,7 +374,7 @@ internal fun colorLegend(mode: ColorMode): List<Pair<String, Color>> = when (mod
 
 private fun createPositionDot(): BitmapDescriptor {
     val size = 36
-    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val bitmap = createBitmap(size, size)
     val canvas = Canvas(bitmap)
     val cx = size / 2f
     val cy = size / 2f
@@ -393,7 +394,7 @@ private fun createPositionDot(): BitmapDescriptor {
 /** Small orange pause marker. */
 private fun createPauseMarker(): BitmapDescriptor {
     val size = 24
-    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val bitmap = createBitmap(size, size)
     val canvas = Canvas(bitmap)
     val cx = size / 2f
     val cy = size / 2f

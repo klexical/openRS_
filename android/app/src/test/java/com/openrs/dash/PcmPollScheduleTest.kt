@@ -19,7 +19,7 @@ class PcmPollScheduleTest {
     fun `fast and slow groups cover every PCM DID exactly once`() {
         val all = fast + slow
         assertEquals(all.size, all.toSet().size)
-        assertEquals(23, all.size)
+        assertEquals(27, all.size)
         assertEquals(ObdConstants.PCM_QUERIES.toSet(), all.toSet())
     }
 
@@ -27,6 +27,19 @@ class PcmPollScheduleTest {
     fun `fast group holds the boost sweep and knock DIDs`() {
         val dids = fast.mapNotNull { ObdConstants.extractDid(it) }.toSet()
         assertEquals(setOf(0x033E, 0x0466, 0x0462, 0x03EC, 0x03ED, 0x03EE, 0x03EF), dids)
+    }
+
+    @Test
+    fun `slow group carries the restored engine DIDs and DI fuel rail, not 0xF422`() {
+        val dids = slow.mapNotNull { ObdConstants.extractDid(it) }.toSet()
+        assertTrue(dids.containsAll(setOf(0xF404, 0xF40E, 0xF415, 0xF423, 0x0548)))
+        assertTrue(0xF422 !in dids)
+    }
+
+    @Test
+    fun `engine-off sweep plus idle fits inside the slow refresh window`() {
+        val sweepMs = (fast.size + slow.size) * ObdConstants.PCM_QUERY_GAP_MS + ObdConstants.PCM_POLL_INTERVAL_MS
+        assertTrue(sweepMs <= ObdConstants.PCM_SLOW_REFRESH_MS)
     }
 
     @Test

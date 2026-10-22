@@ -177,6 +177,19 @@ internal object DriveExportBuilder {
             fun pct(v: Double?) = v?.let { "%+.1f%%".format(it) } ?: "—"
             appendLine("  Fuel Trims  : STFT ${pct(drive.avgStftPct)}  LTFT ${pct(drive.avgLtftPct)}  (${drive.trimSamples} warm samples)")
         }
+        drive.pullCount?.let { total ->
+            val knocked = drive.knockPullCount ?: 0
+            val pct = if (total > 0) " (${"%.0f".format(knocked * 100.0 / total)}%)" else ""
+            appendLine("  Knock Pulls : $knocked of $total WOT pulls with KR > 0$pct")
+        }
+        com.openrs.dash.data.BoostSweepStats.from(points)?.let { bs ->
+            appendLine("  Boost Sweep : avg Δ ${"%+.1f".format(bs.avgDeltaPsi)} PSI, worst ${"%.1f".format(bs.worstDeltaPsi)} PSI @ ${bs.worstRpm} rpm, " +
+                "WGDC max ${"%.0f".format(bs.maxWgdc)}%" +
+                (bs.avgWgdcAtPeak?.let { ", ${"%.0f".format(it)}% at peak" } ?: ""))
+            for (g in bs.byGear) {
+                appendLine("    Gear ${g.gear}    : peak ≈${"%.1f".format(g.peakBoostPsi)} PSI, avg Δ ${"%+.1f".format(g.avgDeltaPsi)} PSI (${g.samples} samples)")
+            }
+        }
         appendLine()
         if (drive.driveModeBreakdown != "{}") {
             appendLine("  Drive mode breakdown:")
@@ -340,6 +353,15 @@ internal object DriveExportBuilder {
                 put("maxWgdcPct", bs.maxWgdc)
                 put("wgdcSaturated", bs.wgdcSaturated)
                 put("loadedSamples", bs.sampleCount)
+                bs.avgWgdcAtPeak?.let { put("avgWgdcAtPeakPct", it) }
+                put("byGear", JSONArray().apply {
+                    for (g in bs.byGear) put(JSONObject().apply {
+                        put("gear", g.gear)
+                        put("peakBoostPsi", g.peakBoostPsi)
+                        put("avgDeltaPsi", g.avgDeltaPsi)
+                        put("samples", g.samples)
+                    })
+                })
             })
         }
 

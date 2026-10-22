@@ -17,7 +17,8 @@ can/
                             has420Arrived gate: Sport/Track resolution blocked until first 0x420 frame received
                             modeDetail420Hex: public accessor for diagnostics logging
   ObdConstants.kt         — All SLCAN query strings, ECU request/response IDs, poll intervals
-                            PCM_FAST_QUERIES (TIP act/des, WGDC, KR1–4) + PCM_SLOW_QUERIES (rc.5)
+                            PCM_FAST_QUERIES (TIP act/des, WGDC, KR1–4) + PCM_SLOW_QUERIES (rc.5; 20 DIDs rc.6 —
+                            incl. F404 load, F40E timing, F415 O2 V, F423 HP fuel, 0548 LP fuel)
   PcmPollSchedule.kt      — rc.5 — Pure PCM poll schedule: engine running (>400 RPM) = fast group + 1 slow DID
                             per cycle at 150 ms (~0.8 Hz fast); engine off = full sweep + 30 s idle
   ObdResponseParser.kt    — Mode 22 DID dispatch by module (PCM/BCM/AWD/PSCM/FENG/RSProt/HVAC/IPC)
@@ -47,8 +48,9 @@ can/
 data/
   VehicleState.kt         — Immutable data class ~95 fields. See sentinel rules below.
   DashLayout.kt           — Custom dashboard layout: DashCell grid, AVAILABLE_FIELDS catalog; JSON via AppSettings
-  DriveDatabase.kt        — Room DB v11: DriveEntity (+ avgStftPct/avgLtftPct/trimSamples v11), DrivePointEntity,
-                            KnockEventEntity (+ cylinder v11), DriveDao (Flow queries for knock/trim cards), migrations v1→…→v11
+  DriveDatabase.kt        — Room DB v12: DriveEntity (+ avgStftPct/avgLtftPct/trimSamples v11, pullCount/knockPullCount v12),
+                            DrivePointEntity, KnockEventEntity (+ cylinder v11), DriveDao (Flow queries for knock/trim cards),
+                            migrations v1→…→v12 (v12 also rescales stored TIP ×903.81/128)
   DriveState.kt           — Live drive state flow: isRecording, isPaused, peaks, recentPoints, fuel
   DtcResult.kt            — module, code, description, status (ACTIVE/PENDING/PERMANENT/UNKNOWN)
   DtcModuleSpec.kt        — name, requestId, responseId for DTC scan targets
@@ -56,10 +58,16 @@ data/
   FuelEconomy.kt          — Real-time fuel economy: 60s rolling window, instant/avg, distance-to-empty
   PerformanceTimer.kt     — 0-60 / 0-100 timer using CAN speed: IDLE → ARMED → RUNNING → FINISHED
   SessionDatabase.kt      — Room DB for session snapshots: SessionEntity, SnapshotEntity, SessionDao
-  BoostSweepStats.kt      — rc.4 — Target-vs-actual boost delta analytics; rc.5 uses fresh-only samples
+  BoostSweepStats.kt      — rc.4 — Target-vs-actual boost delta analytics; rc.5 uses fresh-only samples;
+                            rc.6 adds avgWgdcAtPeak (≥ 90 % of peak TIP) + byGear (gauge PSI vs std atm)
+  BoostSessionLog.kt      — rc.6 — Live 90 s window of fresh TIP decodes (+ target/WGDC if ≤ 2.5 s old) for the POWER
+                            BOOST SWEEP chart; fed from CanDataService.mergeObdState, reset with KnockSessionLog
   FreshnessGate.kt        — rc.5 — Per-drive gate: polled values recorded once per decode, never pre-drive
   KnockCapture.kt         — rc.5 — Per-cylinder knock events from fresh KR (retard POSITIVE, ≥ 0.1°)
   KnockStats.kt           — rc.5 — Shared knock aggregation: half-open buckets, per-cylinder split
+  KnockSessionLog.kt      — rc.6 — In-memory session knock capture (no recording needed), cap 2,000, own FreshnessGate +
+                            PullTracker; fed from CanDataService.mergeObdState, reset with knockEventCount
+  PullTracker.kt          — rc.6 — Streaming WOT pull detector (≥80 % throttle, ≥2,500 RPM, ≥2 s; ≤2 s gaps) + knock attribution
   FuelTrim.kt             — rc.5 — FuelTrimAccumulator (fresh + warm STFT/LTFT avg) + FuelTrimDrift alert (±8 %)
   TripState.kt            — PeakType enum (RPM/BOOST/LATERAL_G/SPEED) + PeakEvent data class
   WeatherData.kt          — OpenWeatherMap snapshot: temp, wind, humidity, icon-to-emoji mapping
@@ -69,7 +77,7 @@ diagnostics/
                             Pre-allocated hex lookup table; hex conversion outside lock for reduced contention
                             sessionTransport field: transport label for diagnostic reports and share intents
   DiagnosticExporter.kt   — ZIP orchestrator + share intents + crash history; delegates format generation
-                            to DiagnosticReportBuilder and DriveExportBuilder
+                            to DiagnosticReportBuilder and DriveExportBuilder; rc.6 adds drive_knock_session_*.csv (KnockSessionLog)
   DiagnosticReportBuilder.kt — Diagnostic summary text + JSON detail (JSONObject/JSONArray, no hand-rolled strings)
   DriveExportBuilder.kt   — Pure-function builders: GPX track, CSV telemetry, drive summary, DTC report
   DtcDatabase.kt          — 873-code bundled Ford DTC lookup (from res/raw/dtc_database.json)
@@ -112,6 +120,9 @@ ui/
                             (inside GARAGE); offline branches added for ESC descriptor + MODULE STATUS
   CustomDashPage.kt        — Custom dashboard: user-configurable gauge grid from DashLayout
   KnockScatter.kt         — rc.4 — RPM × boost scatter + aggregate card for PerfPage knock events section
+                            rc.6: tap-to-select dot → KnockEventDetail; PULLS cell; KnockScatterMath = shared projection/hit-test
+  BoostSweepChart.kt      — rc.6 — POWER THROTTLE & BOOST chart: RPM x-axis, target (dashed) / actual / WGDC; BoostSweepMath =
+                            pure 250-rpm binning (1,500–7,000), null bins = gaps, min 40 kPa Y span
   FuelTrimDriftCard.kt    — rc.5 — PERF card: per-drive STFT/LTFT trend (last 20 drives), ±5/±10 % bands, drift alert
   trip/TimeSeriesMath.kt  — rc.5 — Pure gap segmentation + shared-axis ranges for DriveTimeSeries
   BottomNavBar.kt         — Custom bottom nav: 5 vector icons, frosted glass via Haze (hazeEffect),
@@ -285,7 +296,11 @@ data[5] = B5,  data[6] = B6 …
 - **0x435 airbag crosstalk** — DigiCluster v1.0.73 found that the per-zone airbag status bits on 0x435 share bits with passenger-occupancy detection and false-triggered the SRS lamp in-vehicle. We decode 0x040 bits 7:6 of byte2 only (`0xC0 == true` = lamp on), and explicitly keep 0x435 OUT of `KNOWN_IDS`. Do not add 0x435 decoding without a verified fault vs occupancy capture.
 - **Freshness stamps (`fieldLastUpdateMs`)** — Mode 22 decoders stamp via `markFresh()`; `CanDataService.mergeObdState()` MUST merge them with `VehicleState.mergeStamps` (per-key max) or the UI reads every OBD field as STALE (pre-rc.5 bug). CAN-sourced THERMAL fields are stamped by `CanDecoder.stampFresh()` throttled to 1 s per ID — never `markFresh()` per CAN frame (map copy at hundreds of fps). A decoder returning the **same** `state` instance means "recognized, nothing changed": `processCanFrame` logs it and skips the copy/emit (0x040, 0x300, rejected 0x1A4)
 - **Recorder only stores fresh polled values** — `DriveRecorder` writes TIP/target/WGDC/KR/STFT/LTFT only when `FreshnessGate.takeIfFresh()` passes; otherwise sentinels (`tipActualKpa`/`boostTargetKpa` 0.0, `wgdcPct` −1.0). Never record held VehicleState values for slow DIDs — they repeat one reading many times
-- **KR sign convention** — `ignCorrCyl1..4 = raw / −512` → retard is **POSITIVE**. Knock capture uses `≥ 0.1°`, the header counter `> 1°`. Cyl 2–4 DIDs (0x03ED–EF) are unverified; NrcTracker suppresses them if the PCM rejects them
+- **KR sign convention** — `ignCorrCyl1..4 = raw / −512` → retard is **POSITIVE**. Knock capture uses `≥ 0.1°`, the header counter and POWER KR cells `> 1°`. Cyl 2–4 DIDs (0x03ED–EF) are unverified — 0x03ED/0x03EE NRC 0x31 on at least one EU tuned PCM (Discussion #182); NrcTracker suppresses them
+- **TIP is `raw / 128` kPa absolute** — 0x033E/0x0466 (DigiCluster, on-car verified). rc.4/rc.5 used `/903.81`, which is the Ford-DID **psi** formula, hiding TIP and starving BOOST SWEEP ([#198](https://github.com/klexical/openRS_/issues/198)). Do not reintroduce 903.81
+- **Mode 01 equivalents live in Mode 22 `22F4xx`** — load (F404), timing (F40E), O2 V (F415), STFT/LTFT (F406/07), λ (F434/F444). `ObdPids.kt` (the Mode 01 path) was deleted in a7b01d0 and silently took the load/timing/AFR decoders with it — if a VehicleState field has no writer in ObdResponseParser/CanDecoder, it is dead. HP fuel is **0xF423** (DI gauge, ×10 kPa); 0xF422 is the port-injection PID and is rejected. LP fuel = **0x0548** (`raw × 0.5` kPa)
+- **Adding a polled DID** — put the query in `ObdConstants` AND a `markFresh` decoder in `ObdResponseParser`; the coverage-guard tests in `ObdResponseParserTest` fail otherwise. Removing a decoder fails them too (that's the point — #198). Multi-frame ISO-TP DIDs (BCM 0x280B) are excluded explicitly
+- **POWER cells are gated per field** — engine cells show only when `rpm > FAST_POLL_MIN_RPM` AND `fieldLastUpdateMs[tag] != null`; never gate on another field's value (the old `calcLoad > 0` gate hid everything once load lost its decoder)
 - **Lint version is pinned above AGP** — `android/gradle.properties` sets `android.experimental.lint.version=8.13.0` because AGP 8.7.3's bundled lint crashes (`IncompatibleClassChangeError`) on the lint checks shipped in Compose BOM 2025.11 / Lifecycle. Don't remove it unless AGP is upgraded to ≥ 8.13. `abortOnError = false`, so lint findings never fail CI — only crashes do; check `app/build/reports/lint-results-debug.txt` for errors ([#196](https://github.com/klexical/openRS_/issues/196))
 - **`MutableList.removeFirst()/removeLast()` crash below API 35** — with compileSdk 35 they resolve to `java.util.List.removeFirst` (Android 15+) and throw `NoSuchMethodError` on Android 9–14 (minSdk 28). Use `removeAt(0)` / `removeAt(lastIndex)`. `ArrayDeque.removeFirst()` is fine
 - **Location permission** — always request `ACCESS_COARSE_LOCATION` together with `ACCESS_FINE_LOCATION` (Android 12+ requirement); recording still needs FINE granted
@@ -340,7 +355,7 @@ android/app/src/main/res/raw/google_map_style_dark.json  — Google Maps dark st
 android/app/src/main/res/raw/map_style_dark.json         — Legacy OSMDroid dark map style (unused)
 ```
 
-Regenerate catalogs: `python3 android/scripts/gen_forscan_catalog.py`
+Regenerate the FORScan catalog: `python3 android/scripts/gen_forscan_catalog.py` (writes forscan_modules.json only)
 
 ## Build
 
@@ -349,8 +364,8 @@ cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{ver}.apk  (main release)
 ./gradlew assembleRelease -PrcSuffix=rc.5  # → openRS_v{ver}-rc.5.apk
-./gradlew test                             # 597 unit tests across 26 files
-./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors as of #196)
+./gradlew test                             # 639 unit tests across 31 files
+./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 48 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch
 ```
 
@@ -363,7 +378,8 @@ RC builds MUST use `-PrcSuffix` so the APK filename reflects the RC version.
 ```
 android/app/src/test/java/com/openrs/dash/
   CanDecoderTest.kt           — 90+ tests: all passive-CAN decoders, 0x040/0x300 identity, 0x435 crosstalk guard, 0x1A4 unsigned + 55°C guard, CAN freshness stamps
-  ObdResponseParserTest.kt    — 48 tests: PCM/BCM/AWD/PSCM/FENG/RSProt DIDs
+  ObdResponseParserTest.kt    — 68 tests: PCM/BCM/AWD/PSCM/FENG/RSProt DIDs (rc.6: TIP /128, F404/F40E/F415/F423/0548,
+                                decoder-coverage guards: every polled PCM/BCM/AWD DID must decode + stamp)
   DriveStateTest.kt           — 39 tests: fuel economy, averages, haversine, peaks, sentinels
   VehicleStateTest.kt         — 31 tests: conversions, AWD split, peaks, TPMS, RTR
   AppVersionTest.kt           — 30 tests: version code/name, RC suffix, build config
@@ -375,16 +391,21 @@ android/app/src/test/java/com/openrs/dash/
   RingBufferTest.kt           — 10 tests: capacity, overflow, iteration
   KnockLoggerTest.kt          — 9 tests: KnockStats aggregation, buckets sum to count, per-cylinder, knock CSV v2
   KnockCaptureTest.kt         — 4 tests (rc.5): per-cylinder, pre-drive rejection, repeat values, threshold
-  BoostSweepStatsTest.kt      — 11 tests: delta math, WGDC saturation, loaded-sample filter, fresh-only sentinels
+  KnockSessionLogTest.kt      — 5 tests (rc.6): fresh-only session capture, pre-session rejection, pulls, cap, reset
+  PullTrackerTest.kt          — 7 tests (rc.6): threshold, min duration, gap split, knock attribution
+  KnockScatterMathTest.kt     — 2 tests (rc.6): tap hit-test, overlap → worst KR
+  BoostSessionLogTest.kt      — 6 tests (rc.6): fresh-only TIP, stale target/WGDC → null, pre-session, 90 s window
+  BoostSweepMathTest.kt       — 4 tests (rc.6): half-open bins, per-channel means, gaps, min Y span
+  BoostSweepStatsTest.kt      — 16 tests: delta math, WGDC saturation, loaded-sample filter, fresh-only sentinels, WGDC at peak, by gear
   PcmPollScheduleTest.kt      — 6 tests (rc.5): fast/slow coverage, rotation, engine-off sweep
   FreshnessGateTest.kt        — 5 tests (rc.5): pre-drive stamps, consume-once, per-tag tracking
   TimeSeriesMathTest.kt       — 5 tests (rc.5): gap bridging/breaking, shared-axis range
   FuelTrimTest.kt             — 8 tests (rc.5): warm/fresh gating, min samples, LEAN/RICH drift alert
-  DriveExportBuilderTest.kt   — 78 tests: CSV/GPX/JSON builders, schema v2, fuelTrim export
+  DriveExportBuilderTest.kt   — 59 tests: CSV/GPX/JSON builders, schema v2, fuelTrim export, knock pulls, boost sweep by gear
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **597 tests across 26 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **639 tests across 31 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 
@@ -491,7 +512,8 @@ until Sapphire reaches feature parity.
 ```
 2.1  Knock event logger       — SHIPPED v2.2.7-rc.4 (0x03EC retard scatter + persistence)
 2.2  Fuel trim drift tracker  — SHIPPED v2.2.7-rc.5 (warm-engine STFT/LTFT per drive, PERF trend card, ±8 % alert)
-2.3  Boost target vs actual   — SHIPPED v2.2.7-rc.4 (TIP desired/actual + WGDC, DriveTimeSeries)
+2.3  Boost target vs actual   — SHIPPED v2.2.7-rc.4 (TIP desired/actual + WGDC, DriveTimeSeries); TIP scale fixed +
+                                live POWER sweep chart, WGDC @ peak, boost by gear in rc.6 (#175 complete)
 ```
 
 See `docs/feature-roadmap.md` for full pipeline.

@@ -42,6 +42,11 @@ import com.openrs.dash.ui.anim.pageEntrance
  */
 private val versionHighlights: Map<String, List<String>> = mapOf(
     "2.2.7" to listOf(
+        "Fixed: PERF engine data — TIMING, LOAD, OAR, SPARK, VCT, knock retard, commanded AFR, O2 voltage and LP fuel now populate with the engine running (several were never decoded).",
+        "Fixed: TIP actual/desired now read correctly, so the Boost Target vs Actual analysis works — past drives are corrected on upgrade.",
+        "HP fuel rail uses the direct-injection query; LP fuel pressure added.",
+        "BOOST SWEEP on PERF → POWER — live target vs actual boost and wastegate duty across the rev range; drive summaries add WGDC at peak boost and a per-gear breakdown.",
+        "Knock logger works without recording — new SESSION view, tap any dot for its full snapshot, and see what % of WOT pulls had knock retard.",
         "Fuel Trim Drift — PERF tab charts warm-engine STFT/LTFT averages across your last 20 drives and warns when LTFT runs lean or rich two drives in a row.",
         "Faster boost + knock polling — TIP, wastegate and knock retard now refresh about once a second with the engine running (was ~35 s), and only fresh readings are recorded.",
         "Knock logger is per-cylinder, updates live during a drive, and has a THIS DRIVE / ALL toggle.",
