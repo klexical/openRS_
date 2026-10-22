@@ -17,6 +17,10 @@ import org.json.JSONObject
  */
 internal object DiagnosticReportBuilder {
 
+    /** Epoch [eventMs] as an offset into the session (NrcTracker stamps epoch ms); never negative. */
+    internal fun sessionOffsetMs(eventMs: Long, sessionStartMs: Long): Long =
+        if (sessionStartMs <= 0L) 0L else (eventMs - sessionStartMs).coerceAtLeast(0L)
+
     fun buildSummaryText(ts: String): String = buildString {
         val log = DiagnosticLogger
         val vs  = log.lastVehicleState
@@ -84,7 +88,7 @@ internal object DiagnosticReportBuilder {
             appendLine("  Gear       : ${vs.gearDisplay}")
             appendLine("  Battery    : ${"%.2f".format(vs.batteryVoltage)} V")
             appendLine("  Fuel       : ${"%.0f".format(vs.fuelLevelPct)} %")
-            appendLine("  Throttle   : ${"%.1f".format(vs.throttlePct)} %")
+            appendLine("  Throttle   : ${"%.1f".format(vs.throttlePct)} %  (0x076 ${if (vs.throttleHasSource) "seen" else "absent — pedal ${"%.1f".format(vs.accelPedalPct)} % used"})")
             appendLine("  Torque     : ${"%.0f".format(vs.torqueAtTrans)} Nm")
             appendLine("  TPMS LF/RF : ${"%.0f".format(vs.tirePressLF)} / ${"%.0f".format(vs.tirePressRF)} PSI")
             appendLine("  TPMS LR/RR : ${"%.0f".format(vs.tirePressLR)} / ${"%.0f".format(vs.tirePressRR)} PSI")
@@ -143,15 +147,7 @@ internal object DiagnosticReportBuilder {
         appendLine("  Format: TAG ID | count | Δ | last raw hex | decoded | issues")
         appendLine()
 
-        val knownIds = setOf(
-            CanDecoder.ID_TORQUE, CanDecoder.ID_THROTTLE, CanDecoder.ID_PEDALS,
-            CanDecoder.ID_ENGINE_RPM, CanDecoder.ID_GAUGE_ILLUM, CanDecoder.ID_ENGINE_TEMPS,
-            CanDecoder.ID_SPEED, CanDecoder.ID_LONG_ACCEL, CanDecoder.ID_LAT_ACCEL,
-            CanDecoder.ID_DRIVE_MODE, CanDecoder.ID_DRIVE_MODE_EXT, CanDecoder.ID_ESC_ABS,
-            CanDecoder.ID_WHEEL_SPEEDS, CanDecoder.ID_GEAR, CanDecoder.ID_AWD_TORQUE,
-            CanDecoder.ID_COOLANT, CanDecoder.ID_PCM_AMBIENT, CanDecoder.ID_AMBIENT_TEMP,
-            CanDecoder.ID_FUEL_LEVEL, CanDecoder.ID_ODOMETER, CanDecoder.ID_STEERING, CanDecoder.ID_BRAKE_PRESS
-        )
+        val knownIds = CanDecoder.KNOWN_IDS   // single source — the old hand-copied set went stale
 
         inventory.entries.sortedBy { it.key }.forEach { (id, info) ->
             val tag      = if (id in knownIds) "✓" else "?"
@@ -208,7 +204,7 @@ internal object DiagnosticReportBuilder {
                 }
                 appendLine("  DID 0x%04X: NRC 0x%02X (%s) — suppressed at +%s (after %d)".format(
                     did, rec.nrcCode, nrcName,
-                    log.formatDuration(rec.firstSeenMs),
+                    log.formatDuration(sessionOffsetMs(rec.firstSeenMs, log.sessionStartMs)),
                     rec.suppressedAfterCount
                 ))
             }

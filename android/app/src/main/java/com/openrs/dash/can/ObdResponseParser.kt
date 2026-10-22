@@ -239,7 +239,9 @@ object ObdResponseParser {
             0x03E8 -> onObdUpdate(currentState.copy(
                 octaneAdjustRatio = ((b4s.toByte().toInt() shl 8) or b5) / 16384.0
             ).markFresh("octaneAdjustRatio"))
-            0x0461 -> onObdUpdate(currentState.copy(
+            // Charge air temp: signed /64 °C. Raw 0x0000 = no data — two RS PCMs answered 0x0000 for a whole
+            // warming drive (ambient 3.5 °C, Discussion #182 + 2026-10-22 log); leave −99 rather than show 0.0 °C.
+            0x0461 -> if (b4 != 0 || b5 != 0) onObdUpdate(currentState.copy(
                 chargeAirTempC = ((b4s.toByte().toInt() shl 8) or b5) / 64.0
             ).markFresh("chargeAirTempC"))
             0xF43C -> onObdUpdate(currentState.copy(

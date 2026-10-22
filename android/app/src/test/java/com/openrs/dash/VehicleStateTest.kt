@@ -250,4 +250,14 @@ class VehicleStateTest {
         assertEquals(m, VehicleState.mergeStamps(m, emptyMap()))
         assertEquals(m, VehicleState.mergeStamps(emptyMap(), m))
     }
+
+    // ── rc.6: throttle fallback (0x076 absent on some RS PCMs) ───────────────
+
+    @Test
+    fun `throttleOrPedalPct uses pedal when 0x076 has never arrived`() {
+        val noThrottleFrame = VehicleState(throttlePct = 0.0, throttleHasSource = false, accelPedalPct = 92.0)
+        assertEquals(92.0, noThrottleFrame.throttleOrPedalPct, 0.0)
+        val withThrottleFrame = VehicleState(throttlePct = 40.0, throttleHasSource = true, accelPedalPct = 92.0)
+        assertEquals(40.0, withThrottleFrame.throttleOrPedalPct, 0.0)
+    }
 }

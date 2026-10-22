@@ -49,7 +49,7 @@ object KnockCapture {
                 rpm         = vs.rpm.toInt(),
                 boostPsi    = vs.boostPsi,
                 iatC        = vs.intakeTempC,
-                throttlePct = vs.throttlePct,
+                throttlePct = vs.throttleOrPedalPct,
                 gearEst     = vs.derivedGear,
                 lat         = lat,
                 lng         = lng,

@@ -1066,4 +1066,14 @@ class CanDecoderTest {
         val decoded = blank.copy(rpm = 3000.0)
         assertSame(decoded, CanDecoder.stampFresh(0x090, blank, decoded, now = 99_000L))
     }
+
+    // ── rc.6: frame inventory labels ─────────────────────────────────────────
+
+    @Test
+    fun `every known id has a describeDecoded branch`() {
+        // 0x260 / 0x305 printed "(unknown id …)" in the diag inventory although they decode
+        for (id in CanDecoder.KNOWN_IDS) {
+            assertFalse("0x%03X".format(id), CanDecoder.describeDecoded(id, VehicleState()).startsWith("(unknown id"))
+        }
+    }
 }

@@ -655,6 +655,8 @@ object CanDecoder {
         ID_FUEL_LEVEL   -> "fuelPct=${"%.1f".format(state.fuelLevelPct)} (0x380 Motorola)"
         ID_ODOMETER     -> "odometerKm=${state.odometerKm} engStatus=${state.engineStatus} (0x360 passive)"
         ID_VIN_MUX      -> "vin=${state.vin.ifEmpty { "(assembling)" }}"
+        ID_BUTTONS_260  -> "assBtn=${state.autoStartStopButtonPressed} escOffBtn=${state.escOffButtonPressed}"
+        ID_DRIVE_MODE_BTN -> "modeBtn=${state.driveModeButtonPressed}"
         else            -> "(unknown id 0x%03X)".format(id)
     }
 

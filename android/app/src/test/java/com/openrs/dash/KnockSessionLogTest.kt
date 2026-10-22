@@ -18,7 +18,7 @@ class KnockSessionLogTest {
     @Before fun setUp() = KnockSessionLog.reset(sessionStart)
 
     private fun vs(kr1: Double, stamp: Long, rpm: Double = 5000.0, throttle: Double = 100.0) = VehicleState(
-        rpm = rpm, throttlePct = throttle, ignCorrCyl1 = kr1,
+        rpm = rpm, throttlePct = throttle, throttleHasSource = true, ignCorrCyl1 = kr1,
         fieldLastUpdateMs = mapOf(KnockCapture.KR_TAGS[0] to stamp)
     )
 
@@ -63,5 +63,15 @@ class KnockSessionLogTest {
         KnockSessionLog.reset(60_000)
         assertTrue(KnockSessionLog.events.value.isEmpty())
         assertEquals(KnockSessionLog.Pulls(), KnockSessionLog.pulls.value)
+    }
+
+    @Test
+    fun `pulls are detected from the pedal when the car has no throttle frame`() {
+        var t = 51_000L
+        while (t <= 54_000) {
+            KnockSessionLog.onState(vs(0.0, t, throttle = 0.0).copy(throttleHasSource = false, accelPedalPct = 100.0), t)
+            t += 1_000
+        }
+        assertEquals(1, KnockSessionLog.pulls.value.total)
     }
 }

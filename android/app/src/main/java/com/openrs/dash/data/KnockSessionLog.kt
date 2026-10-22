@@ -40,7 +40,7 @@ object KnockSessionLog {
     /** Feed the merged live state after an OBD merge. */
     @Synchronized
     fun onState(vs: VehicleState, nowMs: Long, lat: Double? = null, lng: Double? = null) {
-        tracker.update(nowMs, vs.rpm, vs.throttlePct)
+        tracker.update(nowMs, vs.rpm, vs.throttleOrPedalPct)
         val captured = KnockCapture.eventsFrom(vs, gate, driveId = 0L, now = nowMs, lat = lat, lng = lng)
         if (captured.isNotEmpty()) {
             tracker.markKnock(nowMs)

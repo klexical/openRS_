@@ -83,7 +83,7 @@ import kotlin.math.roundToInt
     // digits are 1:1 with the CAN frame. Bar values follow suit for consistency.
     // Fuel + battery keep an 800 ms tween: they update slowly and the smooth
     // fill on BarCard reads better than a snap.
-    val thr = (if (vs.throttleHasSource) vs.throttlePct else vs.accelPedalPct)
+    val thr = vs.throttleOrPedalPct
         .coerceIn(0.0, 100.0)
     val brake = vs.brakePressure.coerceIn(0.0, 100.0)
     val animFuel by animateFloatAsState(vs.fuelLevelPct.toFloat(), tween(800), label = "fuel")

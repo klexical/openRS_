@@ -260,6 +260,10 @@ data class VehicleState(
 
     // ── Computed ─────────────────────────────────────────────
     val boostPsi: Double get() = (boostKpa - 101.325) * 0.14503773
+    /** Throttle % from CAN 0x076 when the car broadcasts it, else accel pedal (0x080). 0x076 is absent on
+     *  some RS PCMs (user's car, 2026-10-22 log) — anything keyed on throttle (pulls, knock snapshot,
+     *  recorded throttle) must use this, or it reads 0 forever there. */
+    val throttleOrPedalPct: Double get() = if (throttleHasSource) throttlePct else accelPedalPct
     val speedMph: Double get() = speedKph * 0.621371
     val combinedG: Double get() = sqrt(lateralG * lateralG + longitudinalG * longitudinalG)
     val totalRearTorque: Double get() = awdLeftTorque + awdRightTorque

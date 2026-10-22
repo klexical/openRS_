@@ -141,6 +141,18 @@ class ObdResponseParserTest {
     }
 
     @Test
+    fun `PCM - charge air raw 0x0000 is no data, not 0 C`() {
+        // Two RS PCMs answered 0x0461 with 0x0000 for a whole warming drive (2026-10-22 log, #182)
+        var result: VehicleState? = null
+        ObdResponseParser.parsePcmResponse(makeResponse(0x04, 0x61, 0x00, 0x00), blank) { result = it }
+        assertNull(result)
+        // A genuine small reading still decodes (0x0001 = 1/64 °C)
+        ObdResponseParser.parsePcmResponse(makeResponse(0x04, 0x61, 0x00, 0x01), blank) { result = it }
+        assertEquals(1 / 64.0, result!!.chargeAirTempC, 1e-9)
+        assertNotNull(result!!.fieldLastUpdateMs["chargeAirTempC"])
+    }
+
+    @Test
     fun `PCM - catalytic temp`() {
         // DID 0xF43C: ((B4 << 8) | B5) / 10.0 - 40.0
         // raw = (0x01, 0xF4) = 500 -> 500/10 - 40 = 10°C
