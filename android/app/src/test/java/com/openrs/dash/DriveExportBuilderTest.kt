@@ -303,6 +303,29 @@ class DriveExportBuilderTest {
         assertTrue(summary.contains("Sport"))
     }
 
+    @Test fun `summary reports knock pulls only for v12 drives (#174)`() {
+        val withPulls = DriveExportBuilder.buildSummary(testDrive().copy(pullCount = 5, knockPullCount = 2), emptyList())
+        assertTrue(withPulls.contains("2 of 5 WOT pulls with KR > 0 (40%)"))
+        val legacy = DriveExportBuilder.buildSummary(testDrive(), emptyList())
+        assertTrue(!legacy.contains("Knock Pulls"))
+    }
+
+    @Test fun `boost sweep exports wgdc at peak and per-gear breakdown (#175)`() {
+        val pts = listOf(
+            testPoint(gear = "3").copy(tipActualKpa = 240.0, boostTargetKpa = 250.0, wgdcPct = 80.0),
+            testPoint(gear = "4").copy(tipActualKpa = 250.0, boostTargetKpa = 250.0, wgdcPct = 90.0)
+        )
+        val sweep = JSONObject(DriveExportBuilder.buildProfileJson(testDrive(), pts)).getJSONObject("boostSweep")
+        assertEquals(85.0, sweep.getDouble("avgWgdcAtPeakPct"), 1e-9)
+        val byGear = sweep.getJSONArray("byGear")
+        assertEquals(2, byGear.length())
+        assertEquals(3, byGear.getJSONObject(0).getInt("gear"))
+        assertEquals(1, byGear.getJSONObject(1).getInt("samples"))
+        val summary = DriveExportBuilder.buildSummary(testDrive(), pts)
+        assertTrue(summary.contains("85% at peak"))
+        assertTrue(summary.contains("Gear 4"))
+    }
+
     @Test fun `summary has separator lines`() {
         val summary = DriveExportBuilder.buildSummary(testDrive(), emptyList())
         val separators = summary.lines().count { it.contains("═══") }

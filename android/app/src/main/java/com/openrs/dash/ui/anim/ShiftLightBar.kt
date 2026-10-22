@@ -32,8 +32,8 @@ import com.openrs.dash.ui.Warn
 @Composable
 fun ShiftLightBar(
     rpm: Float,
-    redlineRpm: Float = 6800f,
     modifier: Modifier = Modifier,
+    redlineRpm: Float = 6800f,
     segmentCount: Int = 18
 ) {
     val isRedline = rpm >= redlineRpm * 0.955f  // ~6500 RPM

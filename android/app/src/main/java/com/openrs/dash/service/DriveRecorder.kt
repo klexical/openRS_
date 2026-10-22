@@ -24,6 +24,7 @@ import com.openrs.dash.data.FreshnessGate
 import com.openrs.dash.data.FuelTrimAccumulator
 import com.openrs.dash.data.FuelEconomy
 import com.openrs.dash.data.KnockCapture
+import com.openrs.dash.data.PullTracker
 import com.openrs.dash.data.LapEntity
 import com.openrs.dash.data.LapSessionEntity
 import com.openrs.dash.data.LapTimer
@@ -110,6 +111,9 @@ class DriveRecorder(
     /** Per-drive STFT/LTFT averages from fresh, warm-engine polls (rc.5, roadmap 2.2). */
     @Volatile private var fuelTrims = FuelTrimAccumulator()
 
+    /** Per-drive pull detection for "% of pulls with KR > 0" (rc.6, #174). */
+    @Volatile private var pulls = PullTracker()
+
     /** Per-drive thermal predictor for slope/peak snapshots at drive end. */
     private var driveThermalPredictor: ThermalPredictor? = null
 
@@ -162,6 +166,7 @@ class DriveRecorder(
         prevPoint = null
         freshGate = FreshnessGate(notBeforeMs = System.currentTimeMillis())
         fuelTrims = FuelTrimAccumulator()
+        pulls = PullTracker()
         driveThermalPredictor = ThermalPredictor()
 
         // Prune old drives if over limit
@@ -207,7 +212,9 @@ class DriveRecorder(
                         peakBoostPsi = 0.0, peakLateralG = 0.0,
                         peakEvents = emptyList(),
                         rtrAchievedPoint = null,
-                        currentWeather = null
+                        currentWeather = null,
+                        pullCount = 0,
+                        knockPullCount = 0
                     )
                 }
                 startRecordingLoop(driveId)
@@ -250,6 +257,7 @@ class DriveRecorder(
         val state = _driveState.value
         val endVs = vehicleStateFlow.value
         val trimAccumulator = fuelTrims
+        val pullTracker = pulls
         scope.launch(Dispatchers.IO) {
             // Wait for the recording loop's finally{} to flush buffered points
             // before we write the drive summary. This avoids racing our own
@@ -306,7 +314,9 @@ class DriveRecorder(
                         thermalPeaksJson = thermalJson,
                         avgStftPct = trims.avgStftPct,
                         avgLtftPct = trims.avgLtftPct,
-                        trimSamples = trims.samples
+                        trimSamples = trims.samples,
+                        pullCount = pullTracker.pullCount,
+                        knockPullCount = pullTracker.knockPullCount
                     )
                     dao.updateDrive(finalDrive)
 
@@ -414,8 +424,10 @@ class DriveRecorder(
                     // Knock event capture (#174/#186) — one event per cylinder per fresh KR decode
                     // showing retard (positive). Written inline under NonCancellable so a stopDrive()
                     // cancel can't drop it (#193); events are rare, so the brief suspend is fine.
+                    pulls.update(now, vs.rpm, vs.throttlePct)
                     val knocks = KnockCapture.eventsFrom(vs, gate, driveId, now, location.latitude, location.longitude)
                     if (knocks.isNotEmpty()) {
+                        pulls.markKnock(now)
                         try {
                             withContext(NonCancellable + Dispatchers.IO) { dao.insertKnockEvents(knocks) }
                         } catch (e: Exception) {
@@ -481,7 +493,9 @@ class DriveRecorder(
                             peakOilTempC         = if (vs.oilTempC > -90) maxOf(s.peakOilTempC, vs.oilTempC) else s.peakOilTempC,
                             peakCoolantTempC     = if (vs.coolantTempC > -90) maxOf(s.peakCoolantTempC, vs.coolantTempC) else s.peakCoolantTempC,
                             peakEvents           = peaks,
-                            rtrAchievedPoint     = rtrPt
+                            rtrAchievedPoint     = rtrPt,
+                            pullCount            = pulls.pullCount,
+                            knockPullCount       = pulls.knockPullCount
                         )
                     }
                     prevPoint = point

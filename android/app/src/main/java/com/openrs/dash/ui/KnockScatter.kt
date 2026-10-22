@@ -27,6 +27,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.data.KnockEventEntity
 import com.openrs.dash.data.KnockStats
+import com.openrs.dash.data.KnockSessionLog
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlin.math.roundToInt
 
 /**
  * Knock event scatter plot (RPM × boost PSI), colour-coded by retard severity.
@@ -39,6 +43,8 @@ import com.openrs.dash.data.KnockStats
 fun KnockScatter(
     events: List<KnockEventEntity>,
     modifier: Modifier = Modifier,
+    selected: Int? = null,
+    onSelect: (Int?) -> Unit = {},
     rpmMin: Float = 0f,
     rpmMax: Float = 7000f,
     boostMin: Float = -15f,
@@ -54,18 +60,27 @@ fun KnockScatter(
         )
     }
 
+    val ringColor = Frost
     Canvas(
         modifier
             .fillMaxWidth()
             .aspectRatio(1.6f)
+            // Tap a dot for its snapshot (#174); tapping empty space clears the selection
+            .pointerInput(events) {
+                detectTapGestures { tap ->
+                    val plot = KnockScatterMath.plot(size.width.toFloat(), size.height.toFloat())
+                    onSelect(KnockScatterMath.nearest(events, tap.x, tap.y, plot, TAP_RADIUS_DP.dp.toPx(),
+                        rpmMin, rpmMax, boostMin, boostMax))
+                }
+            }
     ) {
-        val pad = 24f
-        val plotLeft = pad * 2.5f
-        val plotRight = size.width - pad
-        val plotTop = pad
-        val plotBottom = size.height - pad * 2f
-        val plotW = plotRight - plotLeft
-        val plotH = plotBottom - plotTop
+        val plot = KnockScatterMath.plot(size.width, size.height)
+        val plotLeft = plot.left
+        val plotRight = plot.right
+        val plotTop = plot.top
+        val plotBottom = plot.bottom
+        val plotW = plot.width
+        val plotH = plot.height
 
         // Frame
         drawRect(
@@ -125,10 +140,7 @@ fun KnockScatter(
 
         // Events
         for (ev in events) {
-            val rpm = ev.rpm.toFloat().coerceIn(rpmMin, rpmMax)
-            val psi = ev.boostPsi.toFloat().coerceIn(boostMin, boostMax)
-            val x = plotLeft + plotW * (rpm - rpmMin) / (rpmMax - rpmMin)
-            val y = plotTop + plotH * (1f - (psi - boostMin) / (boostMax - boostMin))
+            val (x, y) = KnockScatterMath.project(ev, plot, rpmMin, rpmMax, boostMin, boostMax)
             val color = severityColor(ev.krDeg)
             drawCircle(
                 color = color.copy(alpha = 0.35f),
@@ -141,6 +153,48 @@ fun KnockScatter(
                 center = Offset(x, y)
             )
         }
+        selected?.let { events.getOrNull(it) }?.let { ev ->
+            val (x, y) = KnockScatterMath.project(ev, plot, rpmMin, rpmMax, boostMin, boostMax)
+            drawCircle(color = ringColor, radius = 9f, center = Offset(x, y), style = Stroke(width = 1.5f))
+        }
+    }
+}
+
+private const val TAP_RADIUS_DP = 16
+
+/** Snapshot of one tapped knock event (#174). */
+@Composable
+fun KnockEventDetail(ev: KnockEventEntity, p: UserPrefs, modifier: Modifier = Modifier) {
+    val time = remember(ev.timestamp) {
+        java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(ev.timestamp))
+    }
+    Column(modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+        Text(
+            buildString {
+                append(time)
+                if (ev.cylinder in 1..4) append(" · CYL ${ev.cylinder}")
+                append(" · ${"%.2f".format(ev.krDeg)}° RETARD")
+            },
+            style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 10.sp,
+                color = severityColor(ev.krDeg), fontWeight = FontWeight.Medium)
+        )
+        Spacer(Modifier.height(4.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            AggCell("RPM", "${ev.rpm}", Frost, modifier = Modifier.weight(1f))
+            AggCell("BOOST", "${"%.1f".format(ev.boostPsi)} PSI", Frost, modifier = Modifier.weight(1f))
+            AggCell("IAT", if (ev.iatC > -90) "${p.displayTemp(ev.iatC)}${p.tempLabel}" else "—", Frost, modifier = Modifier.weight(1f))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            AggCell("THROTTLE", "${"%.0f".format(ev.throttlePct)}%", Frost, modifier = Modifier.weight(1f))
+            AggCell("GEAR", if (ev.gearEst > 0) "${ev.gearEst}" else "—", Frost, modifier = Modifier.weight(1f))
+            Spacer(Modifier.weight(1f))
+        }
+        if (ev.lat != null && ev.lng != null) {
+            Text(
+                "GPS ${"%.5f".format(ev.lat)}, ${"%.5f".format(ev.lng)}",
+                style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 9.sp, color = Dim)
+            )
+        }
     }
 }
 
@@ -149,6 +203,7 @@ fun KnockScatter(
 fun KnockAggregate(
     events: List<KnockEventEntity>,
     modifier: Modifier = Modifier,
+    pulls: KnockSessionLog.Pulls? = null,
 ) {
     if (events.isEmpty()) {
         Row(
@@ -161,7 +216,8 @@ fun KnockAggregate(
                 style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 10.sp, color = Ok, fontWeight = FontWeight.Medium)
             )
             Text(
-                "— pulls running clean",
+                if (pulls != null && pulls.total > 0) "— ${pulls.total} pull${if (pulls.total == 1) "" else "s"} running clean"
+                else "— pulls running clean",
                 style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 10.sp, color = Dim)
             )
         }
@@ -178,6 +234,7 @@ fun KnockAggregate(
         AggCell("COUNT", "${stats.count}", Frost, modifier = Modifier.weight(1f))
         AggCell("WORST", "${"%.1f".format(worstDeg)}°", severityColor(worstDeg), modifier = Modifier.weight(1f))
         AggCell("AVG", "${"%.1f".format(stats.avgDeg)}°", Frost, modifier = Modifier.weight(1f))
+        AggCell("PULLS", pullsLabel(pulls), if ((pulls?.knocked ?: 0) > 0) Warn else Frost, modifier = Modifier.weight(1f))
     }
     Spacer(Modifier.height(4.dp))
     Row(
@@ -222,6 +279,12 @@ private fun AggCell(label: String, value: String, color: Color, modifier: Modifi
             style = TextStyle(fontFamily = RajdhaniFamily, fontSize = 18.sp, color = color, fontWeight = FontWeight.SemiBold)
         )
     }
+}
+
+/** "2/5 · 40%" — pulls with KR > 0 over all WOT pulls; "—" when none recorded (#174). */
+internal fun pullsLabel(pulls: KnockSessionLog.Pulls?): String {
+    if (pulls == null || pulls.total <= 0) return "—"
+    return "${pulls.knocked}/${pulls.total} · ${(pulls.knocked * 100.0 / pulls.total).roundToInt()}%"
 }
 
 internal fun severityColor(krDeg: Double): Color = when {

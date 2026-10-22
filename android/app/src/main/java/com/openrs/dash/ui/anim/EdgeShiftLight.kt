@@ -42,11 +42,11 @@ import com.openrs.dash.ui.effectiveThemeIsDay
 @Composable
 fun EdgeShiftLight(
     rpm: Float,
+    modifier: Modifier = Modifier,
     shiftRpm: Float = 6800f,
     enabled: Boolean,
     colorMode: String,
     intensity: Float,
-    modifier: Modifier = Modifier
 ) {
     if (!enabled) return
     if (effectiveThemeIsDay()) return

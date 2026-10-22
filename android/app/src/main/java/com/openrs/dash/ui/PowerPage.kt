@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import com.openrs.dash.OpenRSDashApp
+import com.openrs.dash.can.ObdConstants
 import com.openrs.dash.ui.Tokens.PagePad
 import com.openrs.dash.ui.Tokens.CardGap
 import com.openrs.dash.data.VehicleState
@@ -62,6 +63,12 @@ import kotlin.math.roundToInt
     val accent = LocalThemeAccent.current
     val hasAfr = vs.afrActual > 0
     val ph = "— —"
+    // Per-field gating (#198): a cell shows once its DID has actually been decoded this
+    // session; engine-dependent cells also need the engine running. NRC-suppressed DIDs
+    // (e.g. KR cyl 2/3 on some PCMs) never stamp, so they stay "— —" instead of 0.00.
+    val running = vs.rpm > ObdConstants.FAST_POLL_MIN_RPM
+    fun polled(tag: String) = vs.fieldLastUpdateMs[tag] != null
+    fun eng(tag: String) = running && polled(tag)
 
     var throttleExpanded by rememberSectionExpanded("POWER_THROTTLE")
     var engineExpanded   by rememberSectionExpanded("POWER_ENGINE")
@@ -132,15 +139,22 @@ import kotlin.math.roundToInt
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val (tipActVal, tipLbl) = p.displayBoost(vs.tipActualKpa)
                     val (tipDesVal, _)      = p.displayBoost(vs.tipDesiredKpa)
-                    val hasTip = vs.tipActualKpa > 50
-                    DataCell("TIP ACT", if (hasTip) "$tipActVal $tipLbl" else ph, modifier = Modifier.weight(1f))
-                    DataCell("TIP DES", if (hasTip) "$tipDesVal $tipLbl" else ph, modifier = Modifier.weight(1f))
+                    // TIP is absolute kPa (~baro at rest); < 50 kPa can only be a bad decode
+                    val hasTipAct = polled("tipActualKpa") && vs.tipActualKpa > 50
+                    val hasTipDes = polled("tipDesiredKpa") && vs.tipDesiredKpa > 50
+                    DataCell("TIP ACT", if (hasTipAct) "$tipActVal $tipLbl" else ph, modifier = Modifier.weight(1f))
+                    DataCell("TIP DES", if (hasTipDes) "$tipDesVal $tipLbl" else ph, modifier = Modifier.weight(1f))
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     DataCell("HP FUEL", if (vs.hpFuelRailPsi >= 0) "${"%.0f".format(vs.hpFuelRailPsi)} PSI" else ph, modifier = Modifier.weight(1f))
                     val da = vs.densityAltitudeFt
                     DataCell("DENS ALT", if (da != null) "${da} ft" else ph, modifier = Modifier.weight(1f))
                     Spacer(Modifier.weight(1f))
+                }
+                // Live boost sweep (#175) — target vs actual + WGDC across RPM, last 90 s
+                if (running) {
+                    val sweep by com.openrs.dash.data.BoostSessionLog.samples.collectAsState()
+                    BoostSweepChart(sweep, p, accent)
                 }
             }
         }
@@ -158,29 +172,29 @@ import kotlin.math.roundToInt
         AnimatedVisibility(visible = engineEff, enter = expandVertically(spring(stiffness = Spring.StiffnessLow)), exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow))) {
             Column(verticalArrangement = Arrangement.spacedBy(CardGap)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DataCell("TIMING", if (vs.calcLoad > 0) "${"%.1f".format(vs.timingAdvance)}°" else ph, modifier = Modifier.weight(1f))
-                    DataCell("LOAD",   if (vs.calcLoad > 0) "${"%.0f".format(vs.calcLoad)}%" else ph,              modifier = Modifier.weight(1f))
-                    DataCell("OAR",    if (vs.calcLoad > 0) "${"%.0f".format(vs.octaneAdjustRatio * 100)}%" else ph, modifier = Modifier.weight(1f))
-                    DataCell("SPARK",  if (vs.calcLoad > 0) "${"%.1f".format(vs.sparkAdvance)}°" else ph, modifier = Modifier.weight(1f))
+                    DataCell("TIMING", if (eng("timingAdvance")) "${"%.1f".format(vs.timingAdvance)}°" else ph, modifier = Modifier.weight(1f))
+                    DataCell("LOAD",   if (eng("calcLoad")) "${"%.0f".format(vs.calcLoad)}%" else ph,              modifier = Modifier.weight(1f))
+                    DataCell("OAR",    if (eng("octaneAdjustRatio")) "${"%.0f".format(vs.octaneAdjustRatio * 100)}%" else ph, modifier = Modifier.weight(1f))
+                    DataCell("SPARK",  if (eng("sparkAdvance")) "${"%.1f".format(vs.sparkAdvance)}°" else ph, modifier = Modifier.weight(1f))
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DataCell("VCT-I",   if (vs.calcLoad > 0) "${"%.1f".format(vs.vctIntakeAngle)}°" else ph, modifier = Modifier.weight(1f))
-                    DataCell("VCT-E",   if (vs.calcLoad > 0) "${"%.1f".format(vs.vctExhaustAngle)}°" else ph, modifier = Modifier.weight(1f))
+                    DataCell("VCT-I",   if (eng("vctIntakeAngle")) "${"%.1f".format(vs.vctIntakeAngle)}°" else ph, modifier = Modifier.weight(1f))
+                    DataCell("VCT-E",   if (eng("vctExhaustAngle")) "${"%.1f".format(vs.vctExhaustAngle)}°" else ph, modifier = Modifier.weight(1f))
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    fun krColor(v: Double) = if (v < -1.0) Warn else Ok
-                    val hasData = vs.calcLoad > 0
+                    // Retard is POSITIVE (parser raw / −512) — > 1° = knock, matching the header counter
+                    fun krColor(v: Double) = if (v > 1.0) Warn else Ok
 
                     // Animated flash backgrounds for knock events
-                    val krBg1 by animateColorAsState(if (vs.ignCorrCyl1 < -1.0) Warn.copy(alpha = 0.08f) else Color.Transparent, tween(400), label = "kr1")
-                    val krBg2 by animateColorAsState(if (vs.ignCorrCyl2 < -1.0) Warn.copy(alpha = 0.08f) else Color.Transparent, tween(400), label = "kr2")
-                    val krBg3 by animateColorAsState(if (vs.ignCorrCyl3 < -1.0) Warn.copy(alpha = 0.08f) else Color.Transparent, tween(400), label = "kr3")
-                    val krBg4 by animateColorAsState(if (vs.ignCorrCyl4 < -1.0) Warn.copy(alpha = 0.08f) else Color.Transparent, tween(400), label = "kr4")
+                    val krBg1 by animateColorAsState(if (vs.ignCorrCyl1 > 1.0) Warn.copy(alpha = 0.08f) else Color.Transparent, tween(400), label = "kr1")
+                    val krBg2 by animateColorAsState(if (vs.ignCorrCyl2 > 1.0) Warn.copy(alpha = 0.08f) else Color.Transparent, tween(400), label = "kr2")
+                    val krBg3 by animateColorAsState(if (vs.ignCorrCyl3 > 1.0) Warn.copy(alpha = 0.08f) else Color.Transparent, tween(400), label = "kr3")
+                    val krBg4 by animateColorAsState(if (vs.ignCorrCyl4 > 1.0) Warn.copy(alpha = 0.08f) else Color.Transparent, tween(400), label = "kr4")
 
-                    DataCell("KR C1", if (hasData) "${"%.2f".format(vs.ignCorrCyl1)}°" else ph, valueColor = krColor(vs.ignCorrCyl1), modifier = Modifier.weight(1f).background(krBg1, RoundedCornerShape(10.dp)))
-                    DataCell("KR C2", if (hasData) "${"%.2f".format(vs.ignCorrCyl2)}°" else ph, valueColor = krColor(vs.ignCorrCyl2), modifier = Modifier.weight(1f).background(krBg2, RoundedCornerShape(10.dp)))
-                    DataCell("KR C3", if (hasData) "${"%.2f".format(vs.ignCorrCyl3)}°" else ph, valueColor = krColor(vs.ignCorrCyl3), modifier = Modifier.weight(1f).background(krBg3, RoundedCornerShape(10.dp)))
-                    DataCell("KR C4", if (hasData) "${"%.2f".format(vs.ignCorrCyl4)}°" else ph, valueColor = krColor(vs.ignCorrCyl4), modifier = Modifier.weight(1f).background(krBg4, RoundedCornerShape(10.dp)))
+                    DataCell("KR C1", if (eng("ignCorrCyl1")) formatKr(vs.ignCorrCyl1) else ph, valueColor = krColor(vs.ignCorrCyl1), modifier = Modifier.weight(1f).background(krBg1, RoundedCornerShape(10.dp)))
+                    DataCell("KR C2", if (eng("ignCorrCyl2")) formatKr(vs.ignCorrCyl2) else ph, valueColor = krColor(vs.ignCorrCyl2), modifier = Modifier.weight(1f).background(krBg2, RoundedCornerShape(10.dp)))
+                    DataCell("KR C3", if (eng("ignCorrCyl3")) formatKr(vs.ignCorrCyl3) else ph, valueColor = krColor(vs.ignCorrCyl3), modifier = Modifier.weight(1f).background(krBg3, RoundedCornerShape(10.dp)))
+                    DataCell("KR C4", if (eng("ignCorrCyl4")) formatKr(vs.ignCorrCyl4) else ph, valueColor = krColor(vs.ignCorrCyl4), modifier = Modifier.weight(1f).background(krBg4, RoundedCornerShape(10.dp)))
                 }
             }
         }
@@ -236,13 +250,13 @@ import kotlin.math.roundToInt
                     }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DataCell("CMD AFR", if (vs.commandedAfr > 0) "${"%.3f".format(vs.commandedAfr)}λ" else ph, modifier = Modifier.weight(1f))
-                    DataCell("AFR SEN1", if (vs.afrSensor1 > 0) "${"%.2f".format(vs.afrSensor1)}" else ph, modifier = Modifier.weight(1f),
+                    DataCell("CMD AFR", if (polled("commandedAfr") && vs.commandedAfr > 0) "${"%.3f".format(vs.commandedAfr)}λ" else ph, modifier = Modifier.weight(1f))
+                    DataCell("AFR SEN1", if (polled("afrSensor1") && vs.afrSensor1 > 0) "${"%.2f".format(vs.afrSensor1)}" else ph, modifier = Modifier.weight(1f),
                         sparklineData = afrSnap.takeIf { it.size >= 2 })
-                    DataCell("O2 VOLT",  if (vs.o2Voltage > 0) "${"%.3f".format(vs.o2Voltage)}V" else ph,  modifier = Modifier.weight(1f))
+                    DataCell("O2 VOLT",  if (eng("o2Voltage")) "${"%.3f".format(vs.o2Voltage)}V" else ph,  modifier = Modifier.weight(1f))
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DataCell("LP FUEL", if (vs.fuelRailPsi > 0) "${"%.0f".format(vs.fuelRailPsi)} PSI" else ph, modifier = Modifier.weight(1f))
+                    DataCell("LP FUEL", if (polled("fuelRailPressure") && vs.fuelRailPsi > 0) "${"%.0f".format(vs.fuelRailPsi)} PSI" else ph, modifier = Modifier.weight(1f))
                     DataCell("OIL LIFE", if (vs.oilLifePct >= 0) "${vs.oilLifePct.roundToInt()}%" else ph, modifier = Modifier.weight(1f))
                     Spacer(Modifier.weight(1f))
                 }
@@ -256,3 +270,7 @@ private fun fuelTrimColor(trim: Double) = when {
     trim < -10.0 -> Orange
     else         -> Ok
 }
+
+/** KR in degrees; values that round to zero print as "0.00°" (no "-0.00°" from the /−512 scale). */
+internal fun formatKr(deg: Double): String =
+    if (kotlin.math.abs(deg) < 0.005) "0.00°" else "${"%.2f".format(deg)}°"

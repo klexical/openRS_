@@ -132,8 +132,8 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
 @Composable fun DataCell(
     label: String,
     value: String,
-    valueColor: Color = Frost,
     modifier: Modifier = Modifier,
+    valueColor: Color = Frost,
     indicator: BandPattern = BandPattern.NONE,
     sub: String = "",
     sparklineData: List<Float>? = null,
@@ -513,10 +513,10 @@ fun bandColor(band: ThermalBand): Color = when (band) {
 fun HeroTier(
     label: String,
     value: String,
+    modifier: Modifier = Modifier,
     unit: String? = null,
     peak: String? = null,
     fontSize: androidx.compose.ui.unit.TextUnit = 56.sp,
-    modifier: Modifier = Modifier,
 ) {
     Column(
         modifier
@@ -553,9 +553,9 @@ fun HeroTier(
 fun PrimaryTier(
     label: String,
     value: String,
+    modifier: Modifier = Modifier,
     unit: String? = null,
     valueColor: Color = Frost,
-    modifier: Modifier = Modifier,
 ) {
     Column(
         modifier
@@ -581,9 +581,9 @@ fun PrimaryTier(
 fun SecondaryTier(
     label: String,
     value: String,
+    modifier: Modifier = Modifier,
     unit: String? = null,
     valueColor: Color = Frost,
-    modifier: Modifier = Modifier,
 ) {
     Column(
         modifier
@@ -621,8 +621,8 @@ fun AvailCell(
     label: String,
     state: com.openrs.dash.data.FieldState<Double>,
     format: (Double) -> String,
-    valueColor: Color = Frost,
     modifier: Modifier = Modifier,
+    valueColor: Color = Frost,
 ) {
     if (state is com.openrs.dash.data.FieldState.Unavailable) return
 

@@ -1,5 +1,6 @@
 package com.openrs.dash.ui
 
+import androidx.core.net.toUri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,7 +24,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import android.content.Intent
-import android.net.Uri
 import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -352,7 +352,7 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                             .clickable {
                                 ctx.startActivity(
                                     Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                        Uri.parse("package:${ctx.packageName}"))
+                                        "package:${ctx.packageName}".toUri())
                                 )
                             }
                             .padding(12.dp),
@@ -908,7 +908,7 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                     .border(CardBorder, accent.copy(0.2f), RoundedCornerShape(8.dp))
                     .clickable {
                         val intent = Intent(Intent.ACTION_VIEW,
-                            Uri.parse("https://klexical.github.io/openRS_/"))
+                            "https://klexical.github.io/openRS_/".toUri())
                         ctx.startActivity(intent)
                     }
                     .padding(14.dp)
@@ -1631,7 +1631,7 @@ private fun AppUpdatesSection(
                                     ctx.startActivity(
                                         Intent(
                                             Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                                            Uri.parse("package:${ctx.packageName}"),
+                                            "package:${ctx.packageName}".toUri(),
                                         ),
                                     )
                                 }

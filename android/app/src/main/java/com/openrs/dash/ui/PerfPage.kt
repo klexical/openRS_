@@ -33,7 +33,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import kotlinx.coroutines.flow.flowOf
+import com.openrs.dash.data.KnockEventEntity
 import com.openrs.dash.data.KnockStats
+import com.openrs.dash.data.KnockSessionLog
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
@@ -71,7 +73,7 @@ fun PerfPage(vs: VehicleState, p: UserPrefs, onReset: () -> Unit) {
         PerformanceTimerCard(vs)
         PersonalBestsCard()
         GForceSection(vs, onReset)
-        KnockEventsCard()
+        KnockEventsCard(p)
         FuelTrimDriftCard()
         PowerPageContent(vs, p)
     }
@@ -82,31 +84,57 @@ fun PerfPage(vs: VehicleState, p: UserPrefs, onReset: () -> Unit) {
 // rc.5 (#190): live Room Flow + THIS DRIVE / ALL scope
 // ═══════════════════════════════════════════════════════════════════════════
 
-private const val KNOCK_SCOPE_DRIVE = "THIS DRIVE"
-private const val KNOCK_SCOPE_ALL   = "ALL"
+private const val KNOCK_SCOPE_SESSION = "SESSION"
+private const val KNOCK_SCOPE_DRIVE   = "THIS DRIVE"
+private const val KNOCK_SCOPE_ALL     = "ALL"
 
 @Composable
-private fun KnockEventsCard() {
+private fun KnockEventsCard(p: UserPrefs) {
     val dao = OpenRSDashApp.instance.driveDb.driveDao()
     val driveState by OpenRSDashApp.instance.driveState.collectAsState()
     val latestDriveId by remember { dao.observeLatestDriveId() }.collectAsState(initial = null)
-    var knockScope by rememberSaveable { mutableStateOf(KNOCK_SCOPE_DRIVE) }
+    var knockScope by rememberSaveable { mutableStateOf(KNOCK_SCOPE_SESSION) }
+    // SESSION = in-memory log since connect (no recording needed, #174);
     // THIS DRIVE = the recording drive, else the most recent drive
-    val scopedDriveId = if (driveState.isRecording && driveState.driveId > 0) driveState.driveId else latestDriveId
+    val recording = driveState.isRecording && driveState.driveId > 0
+    val scopedDriveId = if (recording) driveState.driveId else latestDriveId
     val eventsFlow = remember(knockScope, scopedDriveId) {
         when {
-            knockScope == KNOCK_SCOPE_ALL -> dao.observeRecentKnockEvents(500)
-            scopedDriveId != null         -> dao.observeKnockEvents(scopedDriveId)
-            else                          -> flowOf(emptyList())
+            knockScope == KNOCK_SCOPE_SESSION -> KnockSessionLog.events
+            knockScope == KNOCK_SCOPE_ALL     -> dao.observeRecentKnockEvents(500)
+            scopedDriveId != null             -> dao.observeKnockEvents(scopedDriveId)
+            else                              -> flowOf(emptyList())
         }
     }
     val events by eventsFlow.collectAsState(initial = emptyList())
+    val sessionPulls by KnockSessionLog.pulls.collectAsState()
+    val drivePullsFlow = remember(knockScope, scopedDriveId, recording) {
+        when {
+            knockScope == KNOCK_SCOPE_ALL -> dao.observePullTotals()
+            knockScope == KNOCK_SCOPE_DRIVE && !recording && scopedDriveId != null -> dao.observeDrivePulls(scopedDriveId)
+            else -> flowOf(null)
+        }
+    }
+    val storedPulls by drivePullsFlow.collectAsState(initial = null)
+    val pulls: KnockSessionLog.Pulls? = when {
+        knockScope == KNOCK_SCOPE_SESSION -> sessionPulls
+        knockScope == KNOCK_SCOPE_DRIVE && recording -> KnockSessionLog.Pulls(driveState.pullCount, driveState.knockPullCount)
+        else -> storedPulls?.total?.let { KnockSessionLog.Pulls(it, storedPulls?.knocked ?: 0) }
+    }
+    // Keep the tapped event itself, not its index — ALL prepends new events, shifting indices
+    var selectedEvent by remember(knockScope, scopedDriveId) { mutableStateOf<KnockEventEntity?>(null) }
+    val selected = selectedEvent?.let { ev -> events.indexOf(ev).takeIf { it >= 0 } }
     val expanded = rememberSectionExpanded("perf_knock", default = false)
     val count = events.size
     val worst = events.maxOfOrNull { it.krDeg } ?: 0.0
     val badge = if (count > 0 && worst >= KnockStats.MED_DEG) "WORST ${"%.1f".format(worst)}°" else null
     val badgeCol: Color? = if (worst >= KnockStats.MED_DEG) severityColor(worst) else null
-    val scopeLabel = if (knockScope == KNOCK_SCOPE_ALL) "ALL" else if (driveState.isRecording) "LIVE" else "LAST DRIVE"
+    val scopeLabel = when {
+        knockScope == KNOCK_SCOPE_SESSION -> "SESSION"
+        knockScope == KNOCK_SCOPE_ALL     -> "ALL"
+        driveState.isRecording            -> "LIVE"
+        else                              -> "LAST DRIVE"
+    }
     Column(
         Modifier.fillMaxWidth()
             .cardGlow(cornerRadius = Tokens.CardRadius)
@@ -125,14 +153,18 @@ private fun KnockEventsCard() {
         if (expanded.value) {
             Spacer(Modifier.height(6.dp))
             SegmentedPicker(
-                options = listOf(KNOCK_SCOPE_DRIVE, KNOCK_SCOPE_ALL),
+                options = listOf(KNOCK_SCOPE_SESSION, KNOCK_SCOPE_DRIVE, KNOCK_SCOPE_ALL),
                 selected = knockScope,
                 onSelect = { knockScope = it }
             )
             Spacer(Modifier.height(6.dp))
-            KnockScatter(events = events)
+            KnockScatter(events = events, selected = selected, onSelect = { i -> selectedEvent = i?.let { events.getOrNull(it) } })
+            selected?.let { events.getOrNull(it) }?.let { ev ->
+                Spacer(Modifier.height(4.dp))
+                KnockEventDetail(ev, p)
+            }
             Spacer(Modifier.height(4.dp))
-            KnockAggregate(events = events)
+            KnockAggregate(events = events, pulls = pulls)
         }
     }
 }
@@ -185,13 +217,13 @@ private fun PersonalBestsCard() {
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             bests.best60Ms?.let { ms ->
-                DataCell("0-60 MPH", formatTimerMs(ms), accent, modifier = Modifier.weight(1f))
+                DataCell("0-60 MPH", formatTimerMs(ms), valueColor = accent, modifier = Modifier.weight(1f))
             }
             bests.best100Ms?.let { ms ->
-                DataCell("0-100 MPH", formatTimerMs(ms), accent, modifier = Modifier.weight(1f))
+                DataCell("0-100 MPH", formatTimerMs(ms), valueColor = accent, modifier = Modifier.weight(1f))
             }
             bests.bestLapMs?.let { ms ->
-                DataCell("BEST LAP", formatTimerMs(ms), accent, modifier = Modifier.weight(1f))
+                DataCell("BEST LAP", formatTimerMs(ms), valueColor = accent, modifier = Modifier.weight(1f))
             }
         }
     }

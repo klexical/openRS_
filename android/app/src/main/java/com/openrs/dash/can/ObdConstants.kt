@@ -103,10 +103,15 @@ object ObdConstants {
     const val PCM_QUERY_VCT_INTAKE   = "t7E080322031800000000\r"
     const val PCM_QUERY_VCT_EXHAUST  = "t7E080322031900000000\r"
     const val PCM_QUERY_OIL_LIFE     = "t7E080322054B00000000\r"
-    const val PCM_QUERY_HP_FUEL_RAIL = "t7E080322F42200000000\r"
+    const val PCM_QUERY_HP_FUEL_RAIL = "t7E080322F42300000000\r"  // PID 0x23 DI gauge rail (was F422, #198)
+    const val PCM_QUERY_LP_FUEL      = "t7E080322054800000000\r"  // 0x0548 low-side fuel pressure, raw×0.5 kPa
     const val PCM_QUERY_FUEL_LEVEL   = "t7E080322F42F00000000\r"
     const val PCM_QUERY_BATTERY      = "t7E080322030400000000\r"
     const val PCM_QUERY_SPARK_ADV   = "t7E080322116B00000000\r"
+    // Restored Mode 01 equivalents via 22F4xx (lost with ObdPids.kt in a7b01d0 — #198)
+    const val PCM_QUERY_LOAD         = "t7E080322F40400000000\r"  // 0xF404: A*100/255 (%)
+    const val PCM_QUERY_TIMING       = "t7E080322F40E00000000\r"  // 0xF40E: A/2 - 64 (deg)
+    const val PCM_QUERY_O2_VOLT      = "t7E080322F41500000000\r"  // 0xF415: A/200 (V)
     // Fuel trims via Ford fast-path 22F4xx (maps to OBD Mode 01 PIDs at Mode 22 rates)
     const val PCM_QUERY_STFT         = "t7E080322F40600000000\r"  // 0xF406: A*100/128 - 100 (%)
     const val PCM_QUERY_LTFT         = "t7E080322F40700000000\r"  // 0xF407: A*100/128 - 100 (%)
@@ -125,7 +130,8 @@ object ObdConstants {
         PCM_QUERY_VCT_INTAKE, PCM_QUERY_VCT_EXHAUST,
         PCM_QUERY_OIL_LIFE, PCM_QUERY_HP_FUEL_RAIL, PCM_QUERY_FUEL_LEVEL,
         PCM_QUERY_BATTERY, PCM_QUERY_SPARK_ADV,
-        PCM_QUERY_STFT, PCM_QUERY_LTFT
+        PCM_QUERY_STFT, PCM_QUERY_LTFT,
+        PCM_QUERY_LOAD, PCM_QUERY_TIMING, PCM_QUERY_O2_VOLT, PCM_QUERY_LP_FUEL
     )
     val PCM_QUERIES = PCM_FAST_QUERIES + PCM_SLOW_QUERIES
     const val PCM_POLL_INTERVAL_MS  = 30_000L   // engine-off idle between full sweeps
@@ -135,7 +141,7 @@ object ObdConstants {
     /** Fast group only runs above this RPM (engine running). */
     const val FAST_POLL_MIN_RPM     =    400.0
     /** Worst-case refresh period for a slow PCM DID (engine-off sweep + idle). Use for staleness. */
-    const val PCM_SLOW_REFRESH_MS   = 35_000L
+    const val PCM_SLOW_REFRESH_MS   = 40_000L
 
     // ── IPC module (candidate 0x720 → 0x728, DIDs TBD) ───────────────────────
     // Address unconfirmed — common Ford IPC addresses: 0x720, 0x760.

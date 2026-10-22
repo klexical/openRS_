@@ -23,15 +23,15 @@ data class VehicleState(
     val torqueAtTrans: Double = 0.0,
 
     // ── Engine (OBD Mode 1) ─────────────────────────────────
-    val calcLoad: Double = 0.0,            // PID 04: 0-100%
+    val calcLoad: Double = 0.0,            // 0xF404 (PID 04): 0-100%
     val shortFuelTrim: Double = 0.0,       // PCM 0xF406 (Ford fast-path 22F4xx): A*100/128 - 100 (%)
     val longFuelTrim: Double = 0.0,        // PCM 0xF407 (Ford fast-path 22F4xx): A*100/128 - 100 (%)
-    val timingAdvance: Double = 0.0,       // PID 0E: -64 to +63.5 degrees
-    val fuelRailPressure: Double = 0.0,    // PID 22: 0-5177.3 kPa
+    val timingAdvance: Double = 0.0,       // 0xF40E (PID 0E): -64 to +63.5 degrees
+    val fuelRailPressure: Double = 0.0,    // 0x0548: low-side fuel pressure (kPa)
     val barometricPressure: Double = 0.0,  // PID 33: 0-255 kPa
-    val commandedAfr: Double = 0.0,        // PID 44: 0-2 lambda
-    val o2Voltage: Double = 0.0,           // PID 15: 0-1.275 V
-    val afrSensor1: Double = 0.0,          // PID 24: air-fuel ratio
+    val commandedAfr: Double = 0.0,        // 0xF444 (PID 44): 0-2 lambda
+    val o2Voltage: Double = 0.0,           // 0xF415 (PID 15): 0-1.275 V
+    val afrSensor1: Double = 0.0,          // 0xF434: wideband AFR (same source as afrActual)
 
     // ── Engine (OBD Mode 22 — Ford Enhanced) ────────────────
     val chargeAirTempC: Double = -99.0,     // Charge air cooler outlet temp; -99 = not yet polled
@@ -47,8 +47,8 @@ data class VehicleState(
     // ── Throttle / Boost Control (Mode 22 via PCM 0x7E0) ──
     val etcAngleActual: Double = 0.0,      // 0x093C: Electronic throttle actual (deg)
     val etcAngleDesired: Double = 0.0,     // 0x091A: Electronic throttle desired (deg)
-    val tipActualKpa: Double = 0.0,        // 0x033E: Throttle inlet pressure actual
-    val tipDesiredKpa: Double = 0.0,       // 0x0466: Throttle inlet pressure desired
+    val tipActualKpa: Double = 0.0,        // 0x033E: Throttle inlet pressure actual (abs kPa, raw/128)
+    val tipDesiredKpa: Double = 0.0,       // 0x0466: Throttle inlet pressure desired (abs kPa, raw/128)
     val wgdcDesired: Double = 0.0,         // 0x0462: Wastegate duty cycle desired (%)
 
     // ── Variable Cam Timing (Mode 22 via PCM 0x7E0) ───────
@@ -57,7 +57,7 @@ data class VehicleState(
 
     // ── Oil (Mode 22 via PCM 0x7E0) ───────────────────────
     val oilLifePct: Double = -1.0,         // 0x054B: Oil life remaining (%)
-    val hpFuelRailPsi: Double = -1.0,      // 0xF422: HP fuel rail pressure (PSI, direct injection)
+    val hpFuelRailPsi: Double = -1.0,      // 0xF423: HP fuel rail pressure (PSI, direct injection)
 
     // ── Spark / Ignition (Mode 22 via PCM 0x7E0) ──────────
     val sparkAdvance: Double = -1.0,       // 0x116B: spark advance (deg × 0.25); -1 = not yet polled

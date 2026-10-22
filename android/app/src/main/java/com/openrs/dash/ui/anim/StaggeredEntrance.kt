@@ -62,6 +62,8 @@ fun StaggeredColumn(
  *
  * @param visible flip to true on first composition via `LaunchedEffect(Unit) { visible = true }`
  */
+// Returned as a standalone Modifier (passed as `modifier = pageEntrance(...)` / `.then(...)` at 30+ sites)
+@Suppress("ModifierFactoryExtensionFunction")
 @Composable
 fun pageEntrance(index: Int, visible: Boolean, staggerDelayMs: Int = 40): Modifier {
     val delay = index * staggerDelayMs
@@ -86,6 +88,8 @@ fun pageEntrance(index: Int, visible: Boolean, staggerDelayMs: Int = 40): Modifi
  * when [connected] transitions from false→true ("wake-up" pulse).
  * No-op while disconnected or after the pulse finishes.
  */
+// Returned as a standalone Modifier (passed as `modifier = pageEntrance(...)` / `.then(...)` at 30+ sites)
+@Suppress("ModifierFactoryExtensionFunction")
 @Composable
 fun connectionPulse(connected: Boolean): Modifier {
     var pulse by remember { mutableStateOf(false) }

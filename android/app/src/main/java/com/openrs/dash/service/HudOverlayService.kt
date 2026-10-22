@@ -167,15 +167,15 @@ class HudOverlayService : Service() {
                 .collect { (vs, prefs) ->
                     // Boost — respect user's preferred unit
                     val (bVal, bUnit) = prefs.displayBoost(vs.boostKpa)
-                    boostTv.text = "BST: %s %s".format(bVal, bUnit)
+                    boostTv.text = getString(R.string.hud_boost, bVal, bUnit)
 
                     // RPM
-                    rpmTv.text = "RPM: %d".format(vs.rpm.toInt())
+                    rpmTv.text = getString(R.string.hud_rpm, vs.rpm.toInt())
 
                     // Oil temp — respect user's preferred unit
                     val oilText = if (vs.oilTempC <= -99.0) "---"
                                   else prefs.displayTemp(vs.oilTempC)
-                    oilTv.text = "OIL: %s%s".format(oilText, prefs.tempLabel)
+                    oilTv.text = getString(R.string.hud_oil, oilText, prefs.tempLabel)
 
                     delay(250) // throttle to ~4 Hz
                 }

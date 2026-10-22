@@ -1,5 +1,6 @@
 package com.openrs.dash.ui.trip
 
+import androidx.core.graphics.createBitmap
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -61,7 +62,7 @@ object RouteThumbnail {
         val offsetX = PADDING + (drawW - scaledW) / 2f
         val offsetY = PADDING + (drawH - scaledH) / 2f
 
-        val bitmap = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
+        val bitmap = createBitmap(WIDTH, HEIGHT)
         val canvas = Canvas(bitmap)
         // Background is transparent (ARGB_8888 default)
 

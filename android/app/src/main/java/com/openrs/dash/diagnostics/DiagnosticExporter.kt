@@ -132,6 +132,14 @@ object DiagnosticExporter {
                         DriveExportBuilder.buildSummary(drive, points).toByteArray(Charsets.UTF_8))
                 }
 
+                // Session knock log (#174) — captured while connected, recording or not.
+                // "drive_knock_*" name → knock_csv; Sapphire skips it as a drive.
+                val sessionKnocks = com.openrs.dash.data.KnockSessionLog.events.value
+                if (sessionKnocks.isNotEmpty()) {
+                    addEntry("drive_knock_session_$ts.csv",
+                        DriveExportBuilder.buildKnockCsv(sessionKnocks).toByteArray(Charsets.UTF_8))
+                }
+
                 // Crash telemetry files
                 addCrashFiles(ctx, zip)
 

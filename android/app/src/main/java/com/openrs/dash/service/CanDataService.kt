@@ -438,6 +438,8 @@ class CanDataService : Service() {
         FuelEconomy.reset()
         PerformanceTimer.resetSession()
         OpenRSDashApp.instance.knockEventCount.value = 0
+        com.openrs.dash.data.KnockSessionLog.reset()
+        com.openrs.dash.data.BoostSessionLog.reset()
         startSessionRecording()
 
         val conn = buildConnection()
@@ -632,6 +634,16 @@ class CanDataService : Service() {
             )
         }
         countKnockIfFresh(obdState)
+        // Session knock log (#174) — merged live state so pull detection sees CAN rpm/throttle
+        val loc = OpenRSDashApp.instance.driveState.value.currentLocation
+        com.openrs.dash.data.KnockSessionLog.onState(
+            OpenRSDashApp.instance.vehicleState.value, System.currentTimeMillis(),
+            loc?.latitude, loc?.longitude
+        )
+        // Live boost sweep window for the POWER chart (#175)
+        com.openrs.dash.data.BoostSessionLog.onState(
+            OpenRSDashApp.instance.vehicleState.value, System.currentTimeMillis()
+        )
     }
 
     /** Stamp of the last KR reading already counted — merges run on Main, so no locking. */
@@ -772,6 +784,8 @@ class CanDataService : Service() {
         FuelEconomy.reset()
         PerformanceTimer.resetSession()
         OpenRSDashApp.instance.knockEventCount.value = 0
+        com.openrs.dash.data.KnockSessionLog.reset()
+        com.openrs.dash.data.BoostSessionLog.reset()
         val connected = OpenRSDashApp.instance.vehicleState.value.isConnected
         OpenRSDashApp.instance.vehicleState.update { VehicleState(isConnected = connected) }
         startSessionRecording()

@@ -241,6 +241,29 @@ fun DriveSummarySheet(
                     MonoText("WGDC ≥ 95% — wastegate saturation, target may be out of reach",
                         9.sp, Warn)
                 }
+                boostStats.avgWgdcAtPeak?.let { w ->
+                    Spacer(Modifier.height(4.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        DataCell("WGDC @ PEAK", "%.0f%%".format(w), modifier = Modifier.weight(1f))
+                        DataCell("LOADED", "${boostStats.sampleCount}", modifier = Modifier.weight(1f))
+                    }
+                }
+                // Boost by gear (#175) — peak is gauge vs standard atmosphere, Δ = actual − target
+                if (boostStats.byGear.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+                    MonoLabel("BY GEAR · PEAK PSI / AVG Δ", 8.sp, Dim,
+                        modifier = Modifier.padding(bottom = 2.dp))
+                    // Three per row so "12.3 / +0.4" fits at phone width
+                    for (row in boostStats.byGear.chunked(3)) {
+                        Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            for (g in row) {
+                                DataCell("G${g.gear}", "%.1f / %+.1f".format(g.peakBoostPsi, g.avgDeltaPsi),
+                                    modifier = Modifier.weight(1f))
+                            }
+                            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
+                }
             }
 
             // ── Time-series chart ──

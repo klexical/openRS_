@@ -3,7 +3,6 @@ package com.openrs.dash
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.os.Build
 import com.openrs.dash.data.DriveDatabase
 import com.openrs.dash.data.DriveState
 import com.openrs.dash.data.VehicleState
@@ -93,17 +92,16 @@ class OpenRSDashApp : Application() {
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_CAN,
-                "Vehicle Connection",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Shown while openRS_ is connected to the vehicle"
-                setShowBadge(false)
-            }
-            getSystemService(NotificationManager::class.java)
-                .createNotificationChannel(channel)
+        // minSdk 28 — notification channels (API 26) always exist
+        val channel = NotificationChannel(
+            CHANNEL_CAN,
+            "Vehicle Connection",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "Shown while openRS_ is connected to the vehicle"
+            setShowBadge(false)
         }
+        getSystemService(NotificationManager::class.java)
+            .createNotificationChannel(channel)
     }
 }

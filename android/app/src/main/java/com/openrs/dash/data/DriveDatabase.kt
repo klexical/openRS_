@@ -43,7 +43,10 @@ data class DriveEntity(
     // ── Fuel trim drift (v11) — warm-engine averages of fresh STFT/LTFT polls ──
     val avgStftPct: Double? = null,                // null = no qualifying samples
     val avgLtftPct: Double? = null,
-    val trimSamples: Int = 0
+    val trimSamples: Int = 0,
+    // ── Knock pulls (v12) — WOT pulls and pulls with KR > 0 (#174); null = pre-v12 drive ──
+    val pullCount: Int? = null,
+    val knockPullCount: Int? = null
 )
 
 @Entity(
@@ -253,6 +256,9 @@ data class KnockEventEntity(
     }
 }
 
+/** Row shape for pull-count queries (#174). */
+data class PullTotals(val total: Int?, val knocked: Int?)
+
 @Dao
 interface DriveDao {
     // ── Drive lifecycle ──────────────────────────────────────
@@ -387,6 +393,14 @@ interface DriveDao {
     @Query("SELECT * FROM drives WHERE avgLtftPct IS NOT NULL AND endTime > 0 ORDER BY startTime DESC LIMIT :limit")
     fun observeTrimDrives(limit: Int = 20): kotlinx.coroutines.flow.Flow<List<DriveEntity>>
 
+    /** Pull counts for one drive (rc.6, #174); null columns = pre-v12 drive. */
+    @Query("SELECT pullCount AS total, knockPullCount AS knocked FROM drives WHERE id = :driveId")
+    fun observeDrivePulls(driveId: Long): kotlinx.coroutines.flow.Flow<PullTotals?>
+
+    /** Pull counts summed over every drive that recorded them (v12+). */
+    @Query("SELECT COALESCE(SUM(pullCount), 0) AS total, COALESCE(SUM(knockPullCount), 0) AS knocked FROM drives WHERE pullCount IS NOT NULL")
+    fun observePullTotals(): kotlinx.coroutines.flow.Flow<PullTotals>
+
     @Query("SELECT * FROM knock_events WHERE driveId = :driveId ORDER BY timestamp")
     fun getKnockEvents(driveId: Long): List<KnockEventEntity>
 
@@ -465,7 +479,7 @@ interface DriveDao {
         DriveBookmarkEntity::class,
         KnockEventEntity::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = false
 )
 abstract class DriveDatabase : RoomDatabase() {
@@ -715,6 +729,23 @@ abstract class DriveDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Migration v11 → v12 (rc.6): per-drive pull counts (#174), and rescale stored TIP.
+         * rc.4/rc.5 decoded TIP 0x033E/0x0466 as raw / 903.81 (≈ psi) instead of raw / 128 kPa
+         * (#198), so recorded values are 903.81/128 ≈ 7.06× too low. 0.0 = "not fresh" sentinel.
+         */
+        internal val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE drives ADD COLUMN pullCount INTEGER")
+                db.execSQL("ALTER TABLE drives ADD COLUMN knockPullCount INTEGER")
+                db.execSQL("UPDATE drive_points SET tipActualKpa = tipActualKpa * $TIP_RESCALE WHERE tipActualKpa > 0")
+                db.execSQL("UPDATE drive_points SET boostTargetKpa = boostTargetKpa * $TIP_RESCALE WHERE boostTargetKpa > 0")
+            }
+        }
+
+        /** Old TIP scale (raw / 903.81) → correct (raw / 128). */
+        internal const val TIP_RESCALE = 903.81 / 128.0
+
         fun getInstance(context: Context): DriveDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -722,7 +753,7 @@ abstract class DriveDatabase : RoomDatabase() {
                     DriveDatabase::class.java,
                     "openrs_sessions.db"      // same DB file — migration adds new tables
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
                     .build()
                     .also { INSTANCE = it }
             }
