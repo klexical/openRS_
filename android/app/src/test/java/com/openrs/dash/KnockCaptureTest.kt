@@ -61,4 +61,13 @@ class KnockCaptureTest {
         val events = KnockCapture.eventsFrom(s, gate, 1, 11_100, null, null)
         assertEquals(listOf(4), events.map { it.cylinder })   // only 0.1° meets KNOCK_MIN_DEG
     }
+
+    @Test
+    fun `throttle snapshot falls back to pedal when 0x076 is absent`() {
+        val gate = FreshnessGate(driveStart)
+        val s = vs(doubleArrayOf(2.0, 0.0, 0.0, 0.0), longArrayOf(11_000, 0, 0, 0))
+            .copy(throttlePct = 0.0, throttleHasSource = false, accelPedalPct = 97.0)
+        val ev = KnockCapture.eventsFrom(s, gate, 1, 11_100, null, null).single()
+        assertEquals(97.0, ev.throttlePct, 0.0)
+    }
 }

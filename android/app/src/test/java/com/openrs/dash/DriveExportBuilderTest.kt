@@ -326,6 +326,16 @@ class DriveExportBuilderTest {
         assertTrue(summary.contains("Gear 4"))
     }
 
+    @Test fun `summary of a drive still recording measures duration to the last point`() {
+        // Diag export mid-drive printed "0h 0m 0s" — endTime is only written at stopDrive
+        val start = 1700000000000L
+        val pts = listOf(testPoint(timestamp = start + 1_000), testPoint(timestamp = start + 400_752))
+        val summary = DriveExportBuilder.buildSummary(testDrive(startTime = start, endTime = 0L), pts)
+        assertTrue(summary.contains("Duration    : 0h 6m 40s"))
+        assertTrue(summary.contains("IN PROGRESS"))
+        assertTrue(!DriveExportBuilder.buildSummary(testDrive(), pts).contains("IN PROGRESS"))
+    }
+
     @Test fun `summary has separator lines`() {
         val summary = DriveExportBuilder.buildSummary(testDrive(), emptyList())
         val separators = summary.lines().count { it.contains("═══") }

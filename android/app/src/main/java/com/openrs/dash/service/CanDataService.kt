@@ -365,7 +365,7 @@ class CanDataService : Service() {
                                 boostKpa   = vs.boostKpa,
                                 oilTempC   = vs.oilTempC,
                                 coolantTempC = vs.coolantTempC,
-                                throttlePct = vs.throttlePct
+                                throttlePct = vs.throttleOrPedalPct
                             )
                         )
                     } catch (e: Exception) {

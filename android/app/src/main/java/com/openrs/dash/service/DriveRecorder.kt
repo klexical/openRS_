@@ -398,7 +398,7 @@ class DriveRecorder(
                         ptuTempC       = vs.ptuTempC,
                         fuelLevelPct   = vs.fuelLevelPct,
                         lateralG       = vs.lateralG,
-                        throttlePct    = vs.throttlePct,
+                        throttlePct    = vs.throttleOrPedalPct,   // pedal when 0x076 is absent
                         driveMode      = vs.driveMode.label,
                         wheelSpeedFL   = vs.wheelSpeedFL,
                         wheelSpeedFR   = vs.wheelSpeedFR,
@@ -424,7 +424,7 @@ class DriveRecorder(
                     // Knock event capture (#174/#186) — one event per cylinder per fresh KR decode
                     // showing retard (positive). Written inline under NonCancellable so a stopDrive()
                     // cancel can't drop it (#193); events are rare, so the brief suspend is fine.
-                    pulls.update(now, vs.rpm, vs.throttlePct)
+                    pulls.update(now, vs.rpm, vs.throttleOrPedalPct)
                     val knocks = KnockCapture.eventsFrom(vs, gate, driveId, now, location.latitude, location.longitude)
                     if (knocks.isNotEmpty()) {
                         pulls.markKnock(now)

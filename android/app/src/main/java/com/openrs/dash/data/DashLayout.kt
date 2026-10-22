@@ -77,7 +77,7 @@ fun resolveValue(vs: VehicleState, prefs: UserPrefs, cell: DashCell): Pair<Strin
         "ptuTempC" -> tempOrPlaceholder(vs.ptuTempC, prefs)
         "chargeAirTempC" -> tempOrPlaceholder(vs.chargeAirTempC, prefs)
         "throttlePct" -> {
-            val t = if (vs.throttleHasSource) vs.throttlePct else vs.accelPedalPct
+            val t = vs.throttleOrPedalPct
             "%.0f%%".format(t) to t
         }
         "brakePressure" -> "%.0f".format(vs.brakePressure.coerceIn(0.0, 100.0)) to vs.brakePressure

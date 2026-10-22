@@ -1,6 +1,7 @@
 package com.openrs.dash
 
 import com.openrs.dash.diagnostics.DiagnosticExporter
+import com.openrs.dash.diagnostics.DiagnosticReportBuilder
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -140,5 +141,14 @@ class DiagnosticExporterTest {
         val json = JSONObject(buildManifest(emptyList()))
         assertTrue(json.has("appVersion"))
         assertTrue(json.has("appBuild"))
+    }
+
+    @Test
+    fun `NRC suppression time is an offset into the session, not epoch`() {
+        // Report printed "+497965:15:14" — epoch ms fed straight into formatDuration
+        val start = 1_792_674_894_016L
+        assertEquals(20_000L, DiagnosticReportBuilder.sessionOffsetMs(start + 20_000L, start))
+        assertEquals(0L, DiagnosticReportBuilder.sessionOffsetMs(start - 5L, start))   // never negative
+        assertEquals(0L, DiagnosticReportBuilder.sessionOffsetMs(start, 0L))          // no session yet
     }
 }
