@@ -135,7 +135,8 @@ object DiagnosticExporter {
                 // Session knock log (#174) — captured while connected, recording or not.
                 // "drive_knock_*" name → knock_csv; Sapphire skips it as a drive.
                 val sessionKnocks = com.openrs.dash.data.KnockSessionLog.events.value
-                if (sessionKnocks.isNotEmpty()) {
+                // Demo knock events are simulated — never exported as vehicle data.
+                if (sessionKnocks.isNotEmpty() && !com.openrs.dash.demo.DemoMode.isActive) {
                     addEntry("drive_knock_session_$ts.csv",
                         DriveExportBuilder.buildKnockCsv(sessionKnocks).toByteArray(Charsets.UTF_8))
                 }

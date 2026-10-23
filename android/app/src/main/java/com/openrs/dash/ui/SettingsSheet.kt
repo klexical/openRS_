@@ -64,6 +64,7 @@ private enum class SettingsCategory(val label: String, val blurb: String) {
     DRIVES("DRIVES", "Auto-record · storage"),
     DIAGNOSTICS("DIAGNOSTICS", "Exports · logging"),
     ABOUT("ABOUT", "Version · credits"),
+    DEVELOPER("DEVELOPER", "Demo mode · simulated data"),   // debug builds only
 }
 
 private class NavSection(
@@ -108,7 +109,12 @@ private fun matchRank(query: String, text: String): Int {
 }
 
 @Composable
-fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
+fun SettingsDialog(
+    onDismiss: () -> Unit,
+    onCustomDash: () -> Unit = {},
+    onStartDemo: (com.openrs.dash.demo.DemoScenario) -> Unit = {},
+    onExitDemo: () -> Unit = {},
+) {
     val ctx = LocalContext.current
     val accent = LocalThemeAccent.current
     val current by UserPrefsStore.prefs.collectAsState()
@@ -159,6 +165,7 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
     var showBlePicker    by remember { mutableStateOf(false) }
 
     // ═══ Build NavSection list (bodies capture state vars by closure) ══════
+    val demoStatus by com.openrs.dash.demo.DemoMode.status.collectAsState()
     val sections: List<NavSection> = listOf(
         NavSection(
             SettingsCategory.DISPLAY,
@@ -928,6 +935,57 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                 }
             }
         },
+    ) + if (!com.openrs.dash.demo.DemoMode.AVAILABLE) emptyList() else listOf(
+        NavSection(
+            SettingsCategory.DEVELOPER,
+            "DEMO MODE",
+            listOf("demo", "simulate", "fake", "test", "emulator", "developer"),
+        ) {
+            SettingsSection("DEMO MODE") {
+                Text(
+                    "Feeds simulated telemetry through the real dashboard. Adapter traffic stops " +
+                        "first; drive-mode, ESC and DTC commands only change simulated state; " +
+                        "nothing is recorded to trip history. Exiting leaves the app disconnected " +
+                        "until you tap connect. Applies immediately — not a saved setting.",
+                    fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono, lineHeight = 14.sp,
+                )
+                Spacer(Modifier.height(12.dp))
+                com.openrs.dash.demo.DemoScenario.entries.forEach { sc ->
+                    val current = demoStatus.active && demoStatus.scenario == sc
+                    Box(
+                        Modifier.fillMaxWidth().padding(bottom = 6.dp)
+                            .background(if (current) Warn.copy(alpha = pillBgAlpha(0.14f)) else Surf2, RoundedCornerShape(8.dp))
+                            .border(CardBorder, Warn.copy(alpha = borderAlpha(if (current) 0.6f else 0.25f)), RoundedCornerShape(8.dp))
+                            .clickable { onStartDemo(sc); onDismiss() }
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                    ) {
+                        Column(Modifier.padding(end = 56.dp)) {
+                            Text(sc.label.uppercase(), fontSize = 11.sp, color = if (current) demoInk() else Frost,
+                                fontFamily = ShareTechMono, fontWeight = FontWeight.Bold, letterSpacing = 0.1.sp)
+                            Text(sc.blurb, fontSize = 9.sp, color = Dim, fontFamily = ShareTechMono,
+                                lineHeight = 12.sp)
+                        }
+                        Text(if (current) "RUNNING" else "\u25B6 START", fontSize = 10.sp, color = demoInk(),
+                            fontFamily = ShareTechMono, letterSpacing = 0.1.sp,
+                            modifier = Modifier.align(Alignment.CenterEnd))
+                    }
+                }
+                if (demoStatus.active) {
+                    Spacer(Modifier.height(4.dp))
+                    Box(
+                        Modifier.fillMaxWidth()
+                            .background(Orange.copy(alpha = pillBgAlpha(0.10f)), RoundedCornerShape(8.dp))
+                            .border(CardBorder, Orange.copy(alpha = borderAlpha(0.4f)), RoundedCornerShape(8.dp))
+                            .clickable { onExitDemo(); onDismiss() }
+                            .padding(12.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("EXIT DEMO MODE", fontSize = 11.sp, color = Orange, fontFamily = ShareTechMono,
+                            fontWeight = FontWeight.Bold, letterSpacing = 0.1.sp)
+                    }
+                }
+            }
+        },
     )
 
     Dialog(
@@ -1311,7 +1369,9 @@ private fun SearchField(value: String, onValueChange: (String) -> Unit) {
 private fun CategoryGrid(onSelect: (SettingsCategory) -> Unit) {
     // rc.2: single-column list (owner's-manual feel) replaces the 6-tile grid that
     // the Daylight critique flagged as "Material Design DNA, generic" hierarchy.
-    val entries = SettingsCategory.entries
+    val entries = SettingsCategory.entries.filter {
+        it != SettingsCategory.DEVELOPER || com.openrs.dash.demo.DemoMode.AVAILABLE
+    }
     var entered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { entered = true }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

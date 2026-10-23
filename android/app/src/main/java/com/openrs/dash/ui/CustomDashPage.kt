@@ -30,6 +30,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -117,6 +118,12 @@ fun CustomDashPage(
                     }
                     Spacer(Modifier.width(12.dp))
                     MonoLabel("CUSTOM DASHBOARD", 11.sp, Frost, FontWeight.Bold, 0.15.sp)
+                    // This overlay covers the header + demo strip — keep the indicator visible.
+                    val demo by com.openrs.dash.demo.DemoMode.status.collectAsState()
+                    if (demo.active) {
+                        Spacer(Modifier.width(8.dp))
+                        DemoBadge()
+                    }
                 }
                 Box(
                     Modifier

@@ -42,7 +42,10 @@ object CrashTelemetryBuffer {
     fun startCollecting() {
         collectorJob?.cancel()
         collectorJob = CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
-            OpenRSDashApp.instance.vehicleState.collectLatest { push(it) }
+            // Simulated demo frames are not vehicle telemetry — keep them out of crash reports.
+            OpenRSDashApp.instance.vehicleState.collectLatest {
+                if (!com.openrs.dash.demo.DemoMode.isActive) push(it)
+            }
         }
     }
 

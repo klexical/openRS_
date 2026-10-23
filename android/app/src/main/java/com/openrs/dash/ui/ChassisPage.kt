@@ -767,7 +767,7 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
     val animLonG by animateFloatAsState(vs.longitudinalG.toFloat(), spring(stiffness = Spring.StiffnessHigh), label = "lonG")
 
     // G-force trail (sampled at ~10 Hz)
-    val gTrail = remember { RingBuffer<Pair<Float, Float>>(120) }
+    val gTrail = remember(telemetrySessionKey()) { RingBuffer<Pair<Float, Float>>(120) }   // demo start/reset/exit drops simulated trail
     val lastTrailTime = remember { mutableLongStateOf(0L) }
     val now = vs.lastUpdate
     if (now - lastTrailTime.longValue >= 100L) {

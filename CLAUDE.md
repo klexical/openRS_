@@ -45,6 +45,11 @@ can/
   DriveCommand.kt         — Shared drive mode command flow: executeDriveModeChange() suspend function
                             Accepts FirmwareCommandSender → 2s settle → 15s CAN poll → auto-correct
                             Returns DriveCommandResult sealed class; used by MorePage + DriveModeDock
+demo/                     — DEBUG BUILDS ONLY (DemoMode.AVAILABLE = BuildConfig.DEBUG)
+  DemoSimulator.kt        — Pure, deterministic VehicleState generator per DemoScenario (IDLE / DRIVING / WARNING /
+                            CONNECTION_LOSS) — same (scenario, t) → same frame; stamps CAN + OBD freshness tags
+  DemoMode.kt             — Controller: 25 Hz tick into OpenRSDashApp.vehicleState, pause/reset/scenario, sessionEpoch,
+                            DemoFirmwareApi (drive mode / ESC → simulated state), simulated DTC scan/clear
 data/
   VehicleState.kt         — Immutable data class ~95 fields. See sentinel rules below.
   DashLayout.kt           — Custom dashboard layout: DashCell grid, AVAILABLE_FIELDS catalog; JSON via AppSettings
@@ -128,6 +133,8 @@ ui/
   BottomNavBar.kt         — Custom bottom nav: 5 vector icons, frosted glass via Haze (hazeEffect),
                             spring-animated neon indicator, stamped bevel gradient, pressClick + haptics
                             Height: 38dp (icons) + sysNavPad (gesture area). Tokens.NavBarHeight = 38dp
+  DemoControls.kt         — Debug demo UI: DemoControlStrip (under header), DemoBadge, demoInk() (DAY-legible amber),
+                            telemetrySessionKey() — key for UI-held sparkline/G-trail buffers
   DriveModeDock.kt        — Quick-access drive mode dock (N/S/T/D) with staggered entrance animation
                             Drops down from header via AnimatedVisibility; auto-dismisses on success
   AppSettings.kt          — SharedPreferences wrapper; prefs file: "openrs_settings"
@@ -308,6 +315,23 @@ data[5] = B5,  data[6] = B6 …
 - **Location permission** — always request `ACCESS_COARSE_LOCATION` together with `ACCESS_FINE_LOCATION` (Android 12+ requirement); recording still needs FINE granted
 - **CI tag builds** — `publish-release` derives `-PrcSuffix` from `android-v*-rc.N` tags so CI never attaches a plain `openRS_v{ver}.apk` to an RC pre-release. Manual RC releases still build with `-PrcSuffix=rc.N`
 - **VehicleState slot ceiling** — `copy()` on the 162-param data class is at the JVM 255-slot limit. Adding any new field requires either collapsing an unused existing field (speculative AWD DIDs are candidates) or storing it off-state (DiagnosticLogger / genericValues Map). 0x040 lamp state is decoded + validated but not yet persisted on VehicleState for this reason
+- **Demo mode owns VehicleState while active** — `CanDataService.enterDemoMode()` finalizes any recording drive, calls
+  `stopConnection()`, then `DemoMode.start()`. While `DemoMode.isActive`: `processCanFrame` / `mergeObdState` / the adapter
+  state collector early-return, `startConnection()` / `reconnect()` are no-ops, `firmwareApi` returns `DemoFirmwareApi`,
+  DTC scan/clear/retry and `sendRawQuery` are answered by `DemoMode`, and `resetSession()` replays the scenario. Never
+  bypass these — demo frames would mix with real ones
+- **Simulated data never persists** — guarded writers: `DriveRecorder.startDrive()` (TRIP START shows "DEMO — NOT
+  RECORDED"), `PerfPage` perf-run insert, `CrashTelemetryBuffer` push, `DiagnosticExporter` session-knock CSV. Demo DTC
+  scans skip `DtcScanner` (which inserts `dtc_scans`). Any new Room / export writer of live telemetry needs the same
+  `DemoMode.isActive` guard
+- **Leaving demo requires an explicit connect** — `exitDemoMode()` resets VehicleState + session logs and sets
+  `manualConnectRequired`; WiFi/BT/onCreate callbacks go through `autoStartConnection()`, which honours it (and
+  `DemoMode.launchRequested`, so a `--es demo` launch never opens the adapter). Only the UI's connect/reconnect clears it
+- **UI-held histories must key on `telemetrySessionKey()`** — `remember { SparklineData(..) }` / `RingBuffer` in
+  composables outlive VehicleState resets, so simulated traces would survive demo exit. DrivePage / TempsPage / PowerPage /
+  ChassisPage buffers (+ their last-sample stamps, ThermalPredictor) use `remember(telemetrySessionKey())`
+- **Demo simulates only fields a real decoder writes** — `manifoldChargeTempC` and the IPC `warn*` lamps have no decoder,
+  so they stay at their sentinels (DemoSimulatorTest guards this). Add a field to the simulator only with its decoder
 
 ## Theme Colors
 
@@ -366,10 +390,49 @@ cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{ver}.apk  (main release)
 ./gradlew assembleRelease -PrcSuffix=rc.5  # → openRS_v{ver}-rc.5.apk
-./gradlew test                             # 646 unit tests across 31 files
+./gradlew test                             # 653 unit tests across 32 files
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 48 warnings rc.6)
-bash scripts/install-debug.sh              # quick build + ADB install + launch
+bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
+
+### Emulator / demo-mode workflow (verified 2026-10-22, Pixel 9 Pro XL AVD, Android 17)
+
+```bash
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+export PATH="$PATH:$HOME/Library/Android/sdk/platform-tools"     # adb is not on PATH by default
+adb devices -l                                                  # emulator-5554 (AVD id Pixel_9_Pro_XL)
+
+cd android
+bash scripts/install-debug.sh                     # build → install → cold-start (normal, auto-connects)
+bash scripts/install-debug.sh --es demo driving   # same, but straight into demo mode
+# APK: app/build/outputs/apk/debug/openRS_v2.2.7-staging-debug.apk   App ID: com.openrs.dash.debug
+
+# Control a running debug app (onNewIntent needs --activity-single-top):
+adb shell am start --activity-single-top -n com.openrs.dash.debug/com.openrs.dash.ui.MainActivity --es demo warning
+#   demo = idle | driving | warning | loss | pause | reset | off
+# Cold start with an extra: am start -S -n … --es demo idle   (without -S the intent is only brought to front)
+```
+
+**In-app:** ⚙ → DEVELOPER (debug builds only) → pick a scenario. While active, an amber strip under the header shows
+`DEMO`, scenario time, IDLE/DRIVE/WARN/LOSS chips, pause ❚❚ / ▶, reset ↺, exit ✕; the header pill reads DEMO.
+Exit leaves the app OFF ("TAP TO CONNECT") until you tap connect.
+
+| Scenario | What to check |
+|---|---|
+| IDLE | Cold start: fast idle ~1200→850 rpm, vacuum, E-BRAKE strip, THERMAL "WARMING UP — NOT RACE READY" |
+| DRIVING | 60 s loop: launch, pull to 125 km/h (shift bar, gear 1→6, boost ~23 psi), braking, ±0.9 g corner, cruise; DRIVE auto-zoom |
+| WARNING | Oil/coolant/PTU critical, RL tyre 29→24 psi banner, KR 3–4° (knock badge + scatter), underboost + WGDC 98 %, LOW FUEL, 11.9 V; DTC scan returns P0217/P0171/P0325/P0562 |
+| LOSS | 40 s loop: live 0–10 s → RCN/RECONNECTING, frozen values 10–22 s → TPMS/RDU sentinels ("— psi N/A") 22–26 s → live |
+
+Drive-mode dock / ESC buttons / DTC clear act on simulated state only (mode lands ~1.5 s after the command).
+
+**Testing gotchas:**
+- Android 17 relaunches an updated app's task from SystemUI ~1 s after `adb install` (no extras, CLEAR_TASK) — a
+  launch sent immediately loses its extras. `install-debug.sh` waits 3 s then uses `am start -S`
+- Mobile MCP's `uiautomator` dump often fails while demo runs (UI never idle at 25 Hz + infinite animations) — tap by
+  coordinates. Its screenshots can lag a frame; `adb exec-out screencap -p` is always current
+- `DataCell` values that change faster than its 120 ms `AnimatedContent` crossfade (LAT G, YAW, STEER, BATT V…)
+  render blank while live — pause the demo to read them. Pre-existing; affects the car too
 
 Requires `android/local.properties` (`OPENWEATHER_API_KEY=...`) and `android/keystore.properties` for release signing.
 Version display format: `openRS_ v2.2.6` or `openRS_ v2.2.6-rc.1` (set via `-PrcSuffix=rc.1`).
@@ -404,10 +467,12 @@ android/app/src/test/java/com/openrs/dash/
   TimeSeriesMathTest.kt       — 5 tests (rc.5): gap bridging/breaking, shared-axis range
   FuelTrimTest.kt             — 8 tests (rc.5): warm/fresh gating, min samples, LEAN/RICH drift alert
   DriveExportBuilderTest.kt   — 59 tests: CSV/GPX/JSON builders, schema v2, fuelTrim export, knock pulls, boost sweep by gear
+  DemoSimulatorTest.kt        — 7 tests: determinism, LOSS freeze / recovery sentinels, freshness stamps, no-decoder sentinels,
+                                WARNING thresholds, DRIVING plausibility + continuity
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **646 tests across 31 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **653 tests across 32 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 

@@ -157,6 +157,11 @@ class DriveRecorder(
      */
     fun startDrive(sessionId: Long = 0) {
         if (recorderJob?.isActive == true) return
+        // Simulated telemetry never enters trip history.
+        if (com.openrs.dash.demo.DemoMode.isActive) {
+            Log.i(TAG, "startDrive ignored — demo mode active")
+            return
+        }
 
         val vs = vehicleStateFlow.value
         startOilTempC = vs.oilTempC

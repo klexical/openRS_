@@ -89,12 +89,13 @@ import kotlin.math.roundToInt
     val animFuel by animateFloatAsState(vs.fuelLevelPct.toFloat(), tween(800), label = "fuel")
     val animBatt by animateFloatAsState(vs.batteryVoltage.toFloat(), tween(800), label = "batt")
 
-    val boostSpark  = remember { SparklineData(60) }
-    val rpmSpark    = remember { SparklineData(60) }
-    val speedSpark  = remember { SparklineData(60) }
-    val thrSpark    = remember { SparklineData(60) }
-    val brakeSpark  = remember { SparklineData(60) }
-    val lastSample  = remember { mutableLongStateOf(0L) }
+    val session     = telemetrySessionKey()   // demo start/reset/exit drops simulated history
+    val boostSpark  = remember(session) { SparklineData(60) }
+    val rpmSpark    = remember(session) { SparklineData(60) }
+    val speedSpark  = remember(session) { SparklineData(60) }
+    val thrSpark    = remember(session) { SparklineData(60) }
+    val brakeSpark  = remember(session) { SparklineData(60) }
+    val lastSample  = remember(session) { mutableLongStateOf(0L) }
     SideEffect {
         val now = vs.lastUpdate
         if (now - lastSample.longValue >= 250L) {

@@ -78,10 +78,11 @@ import kotlin.math.roundToInt
     LaunchedEffect(Unit) { pageEntered = true }
 
     // V1: sparkline ring buffers for fuel trims + AFR (sampled at ~4 Hz)
-    val stftSpark = remember { SparklineData(60) }
-    val ltftSpark = remember { SparklineData(60) }
-    val afrSpark  = remember { SparklineData(60) }
-    val lastSparkSample = remember { mutableLongStateOf(0L) }
+    val session   = telemetrySessionKey()   // demo start/reset/exit drops simulated history
+    val stftSpark = remember(session) { SparklineData(60) }
+    val ltftSpark = remember(session) { SparklineData(60) }
+    val afrSpark  = remember(session) { SparklineData(60) }
+    val lastSparkSample = remember(session) { mutableLongStateOf(0L) }
     SideEffect {
         val now = vs.lastUpdate
         if (now - lastSparkSample.longValue >= 250L) {

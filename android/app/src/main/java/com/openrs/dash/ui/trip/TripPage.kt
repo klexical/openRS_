@@ -904,7 +904,19 @@ private fun LiveHud(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (!driveState.isRecording) {
+            val demo by com.openrs.dash.demo.DemoMode.status.collectAsState()
+            if (!driveState.isRecording && demo.active) {
+                // Simulated telemetry is never written to trip history.
+                Button(
+                    onClick = {},
+                    enabled = false,
+                    modifier = Modifier.weight(1f).height(44.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(disabledContainerColor = Surf2)
+                ) {
+                    MonoText("DEMO — NOT RECORDED", 11.sp, Dim, FontWeight.Bold)
+                }
+            } else if (!driveState.isRecording) {
                 Button(
                     onClick = {
                         if (!hasLocationPerm) onRequestPermission()

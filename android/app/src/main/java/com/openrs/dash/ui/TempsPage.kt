@@ -62,10 +62,11 @@ import com.openrs.dash.ui.anim.StaggeredColumn
 @Composable fun TempsPage(vs: VehicleState, p: UserPrefs) {
     // V1: sparkline ring buffers for oil temp + coolant (sampled at ~1 Hz —
     // temps change slowly, higher rate just duplicates values)
-    val oilSpark = remember { SparklineData(60) }
-    val coolSpark = remember { SparklineData(60) }
-    val predictor = remember { ThermalPredictor() }
-    val lastTempSample = remember { mutableLongStateOf(0L) }
+    val session = telemetrySessionKey()   // demo start/reset/exit drops simulated history
+    val oilSpark = remember(session) { SparklineData(60) }
+    val coolSpark = remember(session) { SparklineData(60) }
+    val predictor = remember(session) { ThermalPredictor() }
+    val lastTempSample = remember(session) { mutableLongStateOf(0L) }
     SideEffect {
         val now = vs.lastUpdate
         if (now - lastTempSample.longValue >= 1000L) {

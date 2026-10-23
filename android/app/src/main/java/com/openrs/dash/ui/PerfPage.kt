@@ -284,7 +284,8 @@ private fun PerformanceTimerCard(vs: VehicleState) {
                 PerformanceTimer.finishAt60()
                 // Persist the 60-only result to Room
                 val finishResult = PerformanceTimer.result.value
-                if (finishResult != null) {
+                // Demo runs stay in memory — never persisted with real perf history.
+                if (finishResult != null && !com.openrs.dash.demo.DemoMode.isActive) {
                     val app = com.openrs.dash.OpenRSDashApp.instance
                     val driveId = app.driveRecorder.driveState.value.let { if (it.isRecording) it.driveId else null }
                     Thread {

@@ -49,6 +49,8 @@ import com.openrs.dash.R
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.EscStatus
 import com.openrs.dash.data.VehicleState
+import com.openrs.dash.demo.DemoMode
+import com.openrs.dash.demo.DemoScenario
 import com.openrs.dash.service.CanDataService
 import com.openrs.dash.ui.anim.EdgeShiftLight
 import com.openrs.dash.ui.anim.LaunchControlEdgeGlow
@@ -73,8 +75,51 @@ class MainActivity : ComponentActivity() {
     private val conn = object : ServiceConnection {
         override fun onServiceConnected(n: ComponentName, b: IBinder) {
             service = (b as CanDataService.LocalBinder).getService()
+            pendingDemo?.let { applyDemoExtra(it) }
+            pendingDemo = null
         }
         override fun onServiceDisconnected(n: ComponentName) { service = null }
+    }
+
+    /**
+     * Debug builds: `--es demo idle|driving|warning|loss|off` on the launch intent enters,
+     * switches or leaves demo mode (root CLAUDE.md → Build). Held until the service binds.
+     */
+    private var pendingDemo: String? = null
+
+    private fun handleDemoIntent(intent: Intent?) {
+        if (!DemoMode.AVAILABLE) return
+        val arg = intent?.getStringExtra("demo")?.lowercase() ?: return
+        intent.removeExtra("demo")
+        if (service == null) {
+            pendingDemo = arg
+            // Service not bound yet — keep its startup auto-connect off the adapter.
+            if (arg !in setOf("off", "exit", "pause", "reset")) DemoMode.launchRequested = true
+        } else applyDemoExtra(arg)
+    }
+
+    private fun applyDemoExtra(arg: String) {
+        val svc = service ?: return
+        val scenario = when (arg) {
+            "idle"                -> DemoScenario.IDLE
+            "driving", "drive"    -> DemoScenario.DRIVING
+            "warning", "warn"     -> DemoScenario.WARNING
+            "loss", "connection"  -> DemoScenario.CONNECTION_LOSS
+            "pause"               -> { DemoMode.togglePause(); return }
+            "reset"               -> { DemoMode.reset(); return }
+            "off", "exit"         -> { svc.exitDemoMode(); return }
+            else                  -> {
+                DemoMode.launchRequested = false
+                android.util.Log.w("DEMO", "Unknown demo extra '$arg'"); return
+            }
+        }
+        svc.enterDemoMode(scenario)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleDemoIntent(intent)
     }
     // Lint's fragment-version check targets FragmentActivity (request-code collisions with
     // fragment < 1.3.0). MainActivity is a ComponentActivity, so it doesn't apply.
@@ -118,6 +163,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         permLauncher.launch(perms.toTypedArray())
+        handleDemoIntent(intent)
 
         setContent {
             val vs          by OpenRSDashApp.instance.vehicleState.collectAsState()
@@ -132,6 +178,7 @@ class MainActivity : ComponentActivity() {
             var showCustomDash  by remember { mutableStateOf(false) }
             var dockOpen        by remember { mutableStateOf(false) }
             val isFw            by OpenRSDashApp.instance.isOpenRsFirmware.collectAsState()
+            val demo            by DemoMode.status.collectAsState()
             val snackbarHostState = remember { SnackbarHostState() }
 
 
@@ -199,8 +246,19 @@ class MainActivity : ComponentActivity() {
                                         onReconnect  = { service?.reconnect() },
                                         driveState   = driveState,
                                         onModeClick  = { dockOpen = !dockOpen },
-                                        onPullDown   = { dockOpen = true }
+                                        onPullDown   = { dockOpen = true },
+                                        demoActive   = demo.active
                                     )
+
+                                    if (demo.active) {
+                                        DemoControlStrip(
+                                            status        = demo,
+                                            onScenario    = { service?.enterDemoMode(it) },
+                                            onTogglePause = { DemoMode.togglePause() },
+                                            onReset       = { DemoMode.reset() },
+                                            onExit        = { service?.exitDemoMode() }
+                                        )
+                                    }
 
                                     // rc.2: anomaly surface sits below the header so it can't steal the
                                     // MODE/ESC pills. Priority: e-brake > LC engaged > update > reconnect.
@@ -307,7 +365,9 @@ class MainActivity : ComponentActivity() {
                                 if (settingsOpen) {
                                     SettingsDialog(
                                         onDismiss = { settingsOpen = false },
-                                        onCustomDash = { settingsOpen = false; showCustomDash = true }
+                                        onCustomDash = { settingsOpen = false; showCustomDash = true },
+                                        onStartDemo = { service?.enterDemoMode(it) },
+                                        onExitDemo = { service?.exitDemoMode() }
                                     )
                                 }
 
@@ -405,7 +465,8 @@ class MainActivity : ComponentActivity() {
     onReconnect: () -> Unit,
     driveState: com.openrs.dash.data.DriveState = com.openrs.dash.data.DriveState(),
     onModeClick: () -> Unit = {},
-    onPullDown: () -> Unit = {}
+    onPullDown: () -> Unit = {},
+    demoActive: Boolean = false
 ) {
     val accent = LocalThemeAccent.current
 
@@ -421,12 +482,14 @@ class MainActivity : ComponentActivity() {
     val isUpdating = updateStateNow is com.openrs.dash.update.UpdateState.Downloading
     val isReconnecting = !vs.isConnected && vs.isIdle
     val connColor = when {
+        demoActive && vs.isConnected -> demoInk()   // simulated link up; LOSS phase shows real RCN
         vs.isConnected -> Ok
         vs.isIdle      -> Warn
         else           -> Orange
     }
     val connLabel = when {
         isUpdating     -> "UPD"
+        demoActive && vs.isConnected -> "DEMO"
         vs.isConnected -> "LIVE"
         isReconnecting -> "RCN"
         vs.isIdle      -> "IDLE"
@@ -444,7 +507,7 @@ class MainActivity : ComponentActivity() {
         if (vs.isConnected) { kotlinx.coroutines.delay(2000); connStable = true }
     }
     val quietAlpha by animateFloatAsState(
-        if (vs.isConnected && connStable && prefs.livePillQuiet) 0.6f else 1f,
+        if (vs.isConnected && connStable && prefs.livePillQuiet && !demoActive) 0.6f else 1f,
         tween(600), label = "pillQuiet")
 
     val haptic = LocalHapticFeedback.current
@@ -633,7 +696,7 @@ class MainActivity : ComponentActivity() {
                     .widthIn(min = 48.dp)
                     .background(connColor.copy(alpha = pillBgAlpha(0.08f)), RoundedCornerShape(4.dp))
                     .border(CardBorder, connColor.copy(alpha = borderAlpha(0.2f)), RoundedCornerShape(4.dp))
-                    .pressClick(pressedScale = 0.97f) {
+                    .pressClick(pressedScale = 0.97f, enabled = !demoActive) {
                         haptic.performHapticFeedback(
                             if (vs.isConnected) HapticFeedbackType.Reject
                             else HapticFeedbackType.Confirm
