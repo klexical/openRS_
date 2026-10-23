@@ -37,6 +37,7 @@ class HudOverlayService : Service() {
     private lateinit var boostTv: TextView
     private lateinit var rpmTv: TextView
     private lateinit var oilTv: TextView
+    private lateinit var demoTv: TextView
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -81,11 +82,19 @@ class HudOverlayService : Service() {
             setPadding(dp(10f), dp(6f), dp(10f), dp(8f))
         }
 
-        // ── Close button row ─────────────────────────────────────────────
+        // ── Close button row (+ DEMO tag: simulated values must never pass for real) ─
         val closeRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.END
+            gravity = Gravity.CENTER_VERTICAL
         }
+        demoTv = TextView(this).apply {
+            text = getString(R.string.hud_demo)
+            setTextColor(0xFFFFCC00.toInt())               // Warn — matches the in-app DEMO badge
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+            typeface = Typeface.create(mono, Typeface.BOLD)
+            visibility = View.GONE
+        }
+        closeRow.addView(demoTv, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         val closeBtn = TextView(this).apply {
             text = "\u2715"  // ✕
             setTextColor(0xFF547A96.toInt())
@@ -165,15 +174,20 @@ class HudOverlayService : Service() {
                 UserPrefsStore.prefs
             ) { vs, prefs -> vs to prefs }
                 .collect { (vs, prefs) ->
-                    // Boost — respect user's preferred unit
+                    demoTv.visibility = if (com.openrs.dash.demo.DemoMode.isActive) View.VISIBLE else View.GONE
+
+                    // Boost — respect user's preferred unit. Disconnected: last values are
+                    // frozen, so show the same "---" placeholder as a missing oil temp.
                     val (bVal, bUnit) = prefs.displayBoost(vs.boostKpa)
-                    boostTv.text = getString(R.string.hud_boost, bVal, bUnit)
+                    boostTv.text = if (vs.isConnected) getString(R.string.hud_boost, bVal, bUnit)
+                                   else getString(R.string.hud_boost, "---", bUnit)
 
                     // RPM
-                    rpmTv.text = getString(R.string.hud_rpm, vs.rpm.toInt())
+                    rpmTv.text = if (vs.isConnected) getString(R.string.hud_rpm, vs.rpm.toInt())
+                                 else getString(R.string.hud_rpm_none)
 
                     // Oil temp — respect user's preferred unit
-                    val oilText = if (vs.oilTempC <= -99.0) "---"
+                    val oilText = if (vs.oilTempC <= -99.0 || !vs.isConnected) "---"
                                   else prefs.displayTemp(vs.oilTempC)
                     oilTv.text = getString(R.string.hud_oil, oilText, prefs.tempLabel)
 

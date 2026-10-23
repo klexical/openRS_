@@ -210,6 +210,9 @@ private fun CustomGaugeCell(
 ) {
     val accent = LocalThemeAccent.current
     val (displayValue, rawValue) = resolveValue(vs, prefs, cell)
+    // This overlay hides the header / RECONNECTING strip, so frozen last-frame values
+    // would read as live after an adapter drop — show placeholders instead.
+    val stale = !vs.isConnected
 
     when (cell.displayType) {
         "hero" -> {
@@ -232,7 +235,7 @@ private fun CustomGaugeCell(
             }
             HeroCard(
                 unit = unit,
-                value = animDisplay,
+                value = if (stale) "—" else animDisplay,
                 label = cell.label,
                 valueColor = accent,
                 modifier = Modifier.fillMaxWidth()
@@ -240,7 +243,7 @@ private fun CustomGaugeCell(
         }
 
         "bar" -> {
-            val fraction = barFraction(cell, rawValue)
+            val fraction = if (stale) 0f else barFraction(cell, rawValue)
             val animFrac by animateFloatAsState(
                 fraction,
                 spring(stiffness = Spring.StiffnessHigh),
@@ -253,7 +256,7 @@ private fun CustomGaugeCell(
             }
             BarCard(
                 name = cell.label,
-                value = displayValue,
+                value = if (stale) "— —" else displayValue,
                 fraction = animFrac,
                 barBrush = Brush.horizontalGradient(
                     listOf(barColor.copy(alpha = 0.6f), barColor)
@@ -266,7 +269,7 @@ private fun CustomGaugeCell(
         else -> { // "number"
             DataCell(
                 label = cell.label,
-                value = displayValue,
+                value = if (stale) "— —" else displayValue,
                 modifier = Modifier.fillMaxWidth()
             )
         }

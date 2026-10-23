@@ -198,12 +198,15 @@ private val FrozenWhiteDayTriad = AccentTriad(
 
 private val paintByAccent: Map<Color, RsPaint> = RsPaints.associateBy { it.accent }
 
-/** Derive the accent triad for a given paint color + theme mode. */
+/**
+ * Derive the accent triad for a given paint color + theme mode. Also accepts a triad's own
+ * `full` colour (what [legibleAccent] provides as LocalThemeAccent), so mid/dim stay structural.
+ */
 fun accentTriadFor(paint: Color, isDay: Boolean): AccentTriad {
     val id = paintByAccent[paint]?.id
     return when {
-        id == "black" && !isDay -> ShadowBlackNightTriad
-        id == "white" && isDay  -> FrozenWhiteDayTriad
+        !isDay && (id == "black" || paint == ShadowBlackNightTriad.full) -> ShadowBlackNightTriad
+        isDay  && (id == "white" || paint == FrozenWhiteDayTriad.full)   -> FrozenWhiteDayTriad
         isDay -> AccentTriad(
             full = paint,
             mid  = paint.copy(alpha = 0.72f),
@@ -216,6 +219,13 @@ fun accentTriadFor(paint: Color, isDay: Boolean): AccentTriad {
         )
     }
 }
+
+/**
+ * The accent colour to provide as [LocalThemeAccent]: the paint itself, except where the raw
+ * paint vanishes on the mode's surfaces (Frozen White on DAY, Shadow Black on NIGHT/ULTRA) —
+ * then the structural triad's `full`. Swatches that show the paint itself use [rsPaintAccent].
+ */
+fun legibleAccent(paint: Color, isDay: Boolean): Color = accentTriadFor(paint, isDay).full
 
 /** Full-saturation accent. Same as `LocalThemeAccent.current` — kept for symmetry. */
 @Composable fun accentFull(): Color = LocalThemeAccent.current

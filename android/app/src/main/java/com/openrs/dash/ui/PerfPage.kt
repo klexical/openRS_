@@ -376,20 +376,16 @@ private fun TimerRunningRow(elapsedMs: Long, speedMph: Double, onFinish60: () ->
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column {
-            AnimatedContent(
-                targetState = formatTimerMs(elapsedMs),
-                transitionSpec = { fadeIn(tween(60)) togetherWith fadeOut(tween(60)) },
-                label = "elapsed"
-            ) { time ->
-                Text(
-                    time,
-                    fontFamily = RajdhaniFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 28.sp,
-                    color = Ok,
-                    style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum")
-                )
-            }
+            // No per-update fade: the running timer changes every frame, which kept a
+            // crossfade permanently mid-transition (same issue as DataCell).
+            Text(
+                formatTimerMs(elapsedMs),
+                fontFamily = RajdhaniFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 28.sp,
+                color = Ok,
+                style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum")
+            )
             MonoLabel("${"%.0f".format(speedMph)} MPH", 9.sp, Dim)
         }
         Box(

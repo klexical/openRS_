@@ -133,6 +133,8 @@ ui/
   BottomNavBar.kt         — Custom bottom nav: 5 vector icons, frosted glass via Haze (hazeEffect),
                             spring-animated neon indicator, stamped bevel gradient, pressClick + haptics
                             Height: 38dp (icons) + sysNavPad (gesture area). Tokens.NavBarHeight = 38dp
+  RaceReadiness.kt        — raceReadiness(vs, RtrLimits.from(prefs)): READY / WARMING / OVERHEAT / NO_DATA for the THERMAL
+                            RtrBanner + DriveRecorder RTR marker (preset crit limits + tempAvailFor 60 s validity)
   DemoControls.kt         — Debug demo UI: DemoControlStrip (under header), DemoBadge, demoInk() (DAY-legible amber),
                             telemetrySessionKey() — key for UI-held sparkline/G-trail buffers
   DriveModeDock.kt        — Quick-access drive mode dock (N/S/T/D) with staggered entrance animation
@@ -155,7 +157,7 @@ ui/
   DesignTokens.kt         — Tokens object: PagePad, CardGap, SectionGap, InnerH/V, NavBarHeight(38dp),
                             CardShape(12dp), HeroShape(14dp), CardRadius, HeroRadius, CardBorder(0.5dp)
   Theme.kt                — v2.2.7 "Daylight": discrete NIGHT / DAY / ULTRA theme modes (no brightness slider).
-                            themeMode: ThemeMode enum; AUTO resolves from system dark/light via WindowInsets.
+                            themeMode: ThemeMode enum; AUTO resolves from the local clock (DAY when HOUR_OF_DAY in 6..18).
                             Each mode defines its own Bg/Surf/Surf2/Surf3/Brd/Dim/Mid/Ink palette as fixed
                             vals — NOT lerp-computed. setThemeMode(ThemeMode) snapshots the active palette.
                             DAY: #EFF3F8 bg / #080D16 ink (18.5:1). NIGHT: near-black. ULTRA: saturated high-contrast.
@@ -330,6 +332,19 @@ data[5] = B5,  data[6] = B6 …
 - **UI-held histories must key on `telemetrySessionKey()`** — `remember { SparklineData(..) }` / `RingBuffer` in
   composables outlive VehicleState resets, so simulated traces would survive demo exit. DrivePage / TempsPage / PowerPage /
   ChassisPage buffers (+ their last-sample stamps, ThermalPredictor) use `remember(telemetrySessionKey())`
+- **RACE READY uses `raceReadiness()`, not `VehicleState.isReadyToRace`** — precedence OVERHEAT (any fresh reading ≥ the
+  THERMAL preset's crit) > NO_DATA (oil/coolant missing, or any seen sensor stale > 60 s via `tempAvailFor`) > WARMING
+  (`rtrStatus`) > READY. RDU/PTU/clutch temps are optional until first reported. The banner and `DriveRecorder`'s RTR
+  marker must share it; `isReadyToRace` remains only as the cold-check primitive
+- **Live-only readouts go blank when `!vs.isConnected`** — the last frame stays in VehicleState after a drop, so gear,
+  shift LEDs (bar + edge glow), auto-zoom, LC glow/banner, e-brake/LC anomaly priority, DRIVE throttle/brake/AWD/G/torque,
+  the HUD overlay and Custom Dashboard cells all gate on connection. Fuel / battery / temps keep last value (THERMAL marks
+  them STALE). Any new live readout needs the same gate
+- **Don't animate fast values with `AnimatedContent`** — a crossfade keyed on the value restarts on every CAN frame and
+  never becomes visible; keyed on placeholder-ness it freezes the container width and clips digits. `DataCell` fades only
+  on a placeholder ↔ value switch (`Animatable` alpha)
+- **Provide `legibleAccent()` as `LocalThemeAccent`** — raw Frozen White vanishes on DAY and Shadow Black on NIGHT/ULTRA;
+  the structural `AccentTriad.full` replaces them. Only paint swatches (`rsPaintAccent`) show the raw paint
 - **Demo simulates only fields a real decoder writes** — `manifoldChargeTempC` and the IPC `warn*` lamps have no decoder,
   so they stay at their sentinels (DemoSimulatorTest guards this). Add a field to the simulator only with its decoder
 
@@ -337,7 +352,8 @@ data[5] = B5,  data[6] = B6 …
 
 v2.2.7 "Daylight" ships three discrete palettes selected via `setThemeMode(ThemeMode)`.
 NIGHT is the default; DAY is legibility-tuned for bright ambient light; ULTRA is pure-black AMOLED.
-AUTO resolves to DAY between 06:00–18:00 local, NIGHT otherwise. `Frost` is `Ink` — adaptive primary text.
+AUTO resolves to DAY from 06:00 to 18:59 local (`HOUR_OF_DAY in 6..18`), NIGHT otherwise — it does not follow the
+system dark/light setting. `Frost` is `Ink` — adaptive primary text.
 Accents and semantic colors (Ok/Warn/Orange) shift per mode to preserve contrast.
 
 ```
@@ -390,7 +406,7 @@ cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{ver}.apk  (main release)
 ./gradlew assembleRelease -PrcSuffix=rc.5  # → openRS_v{ver}-rc.5.apk
-./gradlew test                             # 653 unit tests across 32 files
+./gradlew test                             # 660 unit tests across 33 files
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 48 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -414,7 +430,8 @@ adb shell am start --activity-single-top -n com.openrs.dash.debug/com.openrs.das
 ```
 
 **In-app:** ⚙ → DEVELOPER (debug builds only) → pick a scenario. While active, an amber strip under the header shows
-`DEMO`, scenario time, IDLE/DRIVE/WARN/LOSS chips, pause ❚❚ / ▶, reset ↺, exit ✕; the header pill reads DEMO.
+`DEMO`, scenario time, a scenario menu (IDLE/DRIVE/WARN/LOSS), pause ❚❚ / ▶, reset ↺, exit ✕ — every control a
+≥ 48 dp touch target; the header pill reads DEMO and the floating HUD shows "DEMO · simulated".
 Exit leaves the app OFF ("TAP TO CONNECT") until you tap connect.
 
 | Scenario | What to check |
@@ -429,10 +446,13 @@ Drive-mode dock / ESC buttons / DTC clear act on simulated state only (mode land
 **Testing gotchas:**
 - Android 17 relaunches an updated app's task from SystemUI ~1 s after `adb install` (no extras, CLEAR_TASK) — a
   launch sent immediately loses its extras. `install-debug.sh` waits 3 s then uses `am start -S`
-- Mobile MCP's `uiautomator` dump often fails while demo runs (UI never idle at 25 Hz + infinite animations) — tap by
-  coordinates. Its screenshots can lag a frame; `adb exec-out screencap -p` is always current
-- `DataCell` values that change faster than its 120 ms `AnimatedContent` crossfade (LAT G, YAW, STEER, BATT V…)
-  render blank while live — pause the demo to read them. Pre-existing; affects the car too
+- Mobile MCP's `uiautomator` dump fails whenever the app is open (infinite header animations — even with the demo
+  paused) and each failed call blocks for minutes, delaying the next command. Tap by coordinates instead. Its
+  screenshots can lag; `adb exec-out screencap -p` is always current. Check crops at full resolution — a 700 px
+  downscale hid clipped digits once
+- Settings categories animate in for ~2.5 s after the sheet opens — tapping a row sooner can land on the wrong one
+- The HUD overlay needs `adb shell appops set com.openrs.dash.debug SYSTEM_ALERT_WINDOW allow` on a fresh emulator
+  (restore with `… default`); start it from ⚙ → DISPLAY → FLOATING HUD. A reinstall stops it
 
 Requires `android/local.properties` (`OPENWEATHER_API_KEY=...`) and `android/keystore.properties` for release signing.
 Version display format: `openRS_ v2.2.6` or `openRS_ v2.2.6-rc.1` (set via `-PrcSuffix=rc.1`).
@@ -469,10 +489,11 @@ android/app/src/test/java/com/openrs/dash/
   DriveExportBuilderTest.kt   — 59 tests: CSV/GPX/JSON builders, schema v2, fuelTrim export, knock pulls, boost sweep by gear
   DemoSimulatorTest.kt        — 7 tests: determinism, LOSS freeze / recovery sentinels, freshness stamps, no-decoder sentinels,
                                 WARNING thresholds, DRIVING plausibility + continuity
+  RaceReadinessTest.kt        — 7 tests: overheat / missing / stale block RACE READY, optional sensors, warm-up, legibleAccent
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **653 tests across 32 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **660 tests across 33 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 

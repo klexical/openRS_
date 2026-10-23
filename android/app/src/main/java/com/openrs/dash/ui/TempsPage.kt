@@ -320,9 +320,15 @@ data class TempSpec(
         return
     }
 
-    val warmupDetail = vs.rtrStatus
-    val isReady = warmupDetail == null
-    val dotColor = if (isReady) Ok else Warn
+    // Overheat / missing data / warm-up all block RACE READY (see raceReadiness()).
+    val rtr = raceReadiness(vs, RtrLimits.from(p))
+    val isReady = rtr.isReady
+    val warmupDetail = rtr.detail
+    val dotColor = when (rtr.state) {
+        RtrState.READY    -> Ok
+        RtrState.OVERHEAT -> Orange
+        else              -> Warn
+    }
     val dotAlpha = if (isReady) {
         1f
     } else {
@@ -333,11 +339,8 @@ data class TempSpec(
         )
         anim
     }
-    val bannerBrush = if (isReady)
-        Brush.horizontalGradient(listOf(Ok.copy(alpha = 0.08f), Ok.copy(alpha = 0.04f)))
-    else
-        Brush.horizontalGradient(listOf(Warn.copy(alpha = 0.08f), Warn.copy(alpha = 0.04f)))
-    val bannerBorder = if (isReady) Ok.copy(alpha = 0.2f) else Warn.copy(alpha = 0.2f)
+    val bannerBrush = Brush.horizontalGradient(listOf(dotColor.copy(alpha = 0.08f), dotColor.copy(alpha = 0.04f)))
+    val bannerBorder = dotColor.copy(alpha = if (rtr.state == RtrState.OVERHEAT) 0.45f else 0.2f)
 
     Row(
         Modifier.fillMaxWidth()
@@ -353,11 +356,16 @@ data class TempSpec(
         Spacer(Modifier.width(12.dp))
         Column {
             UIText(
-                if (isReady) "RACE READY" else "WARMING UP — NOT RACE READY",
+                when (rtr.state) {
+                    RtrState.READY    -> "RACE READY"
+                    RtrState.OVERHEAT -> "OVERHEATING — NOT RACE READY"
+                    RtrState.NO_DATA  -> "CHECKING — NOT RACE READY"
+                    RtrState.WARMING  -> "WARMING UP — NOT RACE READY"
+                },
                 13.sp, Frost, FontWeight.SemiBold, 0.5.sp
             )
-            if (!isReady) {
-                MonoLabel(warmupDetail, 9.sp, Warn, modifier = Modifier.padding(top = 2.dp))
+            if (warmupDetail != null) {
+                MonoLabel(warmupDetail, 9.sp, dotColor, modifier = Modifier.padding(top = 2.dp))
             }
         }
     }

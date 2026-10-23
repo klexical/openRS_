@@ -4,5 +4,7 @@
     <!-- HUD overlay readouts (HudOverlayService) -->
     <string name="hud_boost">BST: %1$s %2$s</string>
     <string name="hud_rpm">RPM: %1$d</string>
+    <string name="hud_rpm_none">RPM: ----</string>
+    <string name="hud_demo">DEMO · simulated</string>
     <string name="hud_oil">OIL: %1$s%2$s</string>
 </resources>

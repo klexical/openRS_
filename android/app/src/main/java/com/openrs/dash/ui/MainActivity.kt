@@ -215,7 +215,8 @@ class MainActivity : ComponentActivity() {
                 setClassicFonts(prefs.classicFonts)
             }
 
-            val activeAccent = themeAccentPreview() ?: prefs.themeAccent
+            // Frozen White on DAY / Shadow Black on NIGHT swap to their legible structural tone.
+            val activeAccent = legibleAccent(themeAccentPreview() ?: prefs.themeAccent, isDayModeNow())
             CompositionLocalProvider(LocalThemeAccent provides activeAccent) {
                 MaterialTheme(
                     colorScheme = darkColorScheme(
@@ -393,7 +394,8 @@ class MainActivity : ComponentActivity() {
                         }
 
                         EdgeShiftLight(
-                            rpm       = vs.rpm.toFloat(),
+                            // Last RPM freezes on an adapter drop — don't keep flashing on it.
+                            rpm       = if (vs.isConnected) vs.rpm.toFloat() else 0f,
                             shiftRpm  = prefs.edgeShiftRpm.toFloat(),
                             enabled   = prefs.edgeShiftLight,
                             colorMode = prefs.edgeShiftColor,
@@ -403,7 +405,7 @@ class MainActivity : ComponentActivity() {
                         )
 
                         // rc.2: peripheral glow while LC is actively engaged — unmissable in-cabin.
-                        LaunchControlEdgeGlow(engaged = vs.launchControlEngaged)
+                        LaunchControlEdgeGlow(engaged = vs.isConnected && vs.launchControlEngaged)
 
                         // ── Bottom Nav Bar (overlay — content extends behind) ──
                         val navScope = rememberCoroutineScope()
@@ -814,8 +816,9 @@ private fun AnomalyStrip(vs: VehicleState, onConnect: () -> Unit) {
     val dl = updateState as? com.openrs.dash.update.UpdateState.Downloading
 
     val kind: AnomalyKind? = when {
-        vs.eBrake                    -> AnomalyKind.EBrake
-        vs.launchControlEngaged      -> AnomalyKind.LaunchControl
+        // Held e-brake / LC flags are stale once the link drops — RECONNECTING wins then.
+        vs.isConnected && vs.eBrake               -> AnomalyKind.EBrake
+        vs.isConnected && vs.launchControlEngaged -> AnomalyKind.LaunchControl
         dl != null                   -> AnomalyKind.Updating(dl.progress)
         !vs.isConnected && vs.isIdle -> AnomalyKind.Reconnecting
         !vs.isConnected              -> AnomalyKind.Offline

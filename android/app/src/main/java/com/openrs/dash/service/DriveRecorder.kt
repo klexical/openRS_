@@ -33,6 +33,9 @@ import com.openrs.dash.data.PeakType
 import com.openrs.dash.data.ThermalPredictor
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.ui.AppSettings
+import com.openrs.dash.ui.RtrLimits
+import com.openrs.dash.ui.UserPrefsStore
+import com.openrs.dash.ui.raceReadiness
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -387,6 +390,8 @@ class DriveRecorder(
                     val tipFresh    = gate.takeIfFresh("tipActualKpa", stamps)
                     val targetFresh = gate.takeIfFresh("tipDesiredKpa", stamps)
                     val wgdcFresh   = gate.takeIfFresh("wgdcDesired", stamps)
+                    // Same rule as the THERMAL banner — warm, not overheating, data fresh.
+                    val raceReady = raceReadiness(vs, RtrLimits.from(UserPrefsStore.prefs.value), now).isReady
                     val point = DrivePointEntity(
                         driveId        = driveId,
                         timestamp      = now,
@@ -423,7 +428,7 @@ class DriveRecorder(
                         tipActualKpa   = if (tipFresh) vs.tipActualKpa else 0.0,
                         boostTargetKpa = if (targetFresh) vs.tipDesiredKpa else 0.0,
                         wgdcPct        = if (wgdcFresh) vs.wgdcDesired else -1.0,
-                        isRaceReady    = vs.isReadyToRace
+                        isRaceReady    = raceReady
                     )
 
                     // Knock event capture (#174/#186) — one event per cylinder per fresh KR decode
@@ -476,7 +481,7 @@ class DriveRecorder(
                     else 0.0
 
                     val peaks = buildPeakEvents(state, vs, point, now)
-                    val isRaceReady = vs.isReadyToRace
+                    val isRaceReady = raceReady
                     val rtrPt = state.rtrAchievedPoint ?: if (isRaceReady) point else null
 
                     _driveState.update { s ->

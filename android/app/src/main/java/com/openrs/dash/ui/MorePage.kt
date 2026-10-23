@@ -474,10 +474,13 @@ import kotlinx.coroutines.launch
     id: String, name: String, color: androidx.compose.ui.graphics.Color,
     isActive: Boolean, onSelect: (String) -> Unit, modifier: Modifier
 ) {
+    // Dot shows the real paint; selection border/label use the mode-legible tone so
+    // Frozen White (DAY) / Shadow Black (NIGHT) don't vanish when selected.
+    val ink = legibleAccent(color, isDayModeNow())
     Column(
         modifier
-            .background(if (isActive) color.copy(alpha = 0.12f) else Surf2, RoundedCornerShape(10.dp))
-            .border(1.dp, if (isActive) color else Brd, RoundedCornerShape(10.dp))
+            .background(if (isActive) ink.copy(alpha = 0.12f) else Surf2, RoundedCornerShape(10.dp))
+            .border(1.dp, if (isActive) ink else Brd, RoundedCornerShape(10.dp))
             .clickable { onSelect(id) }
             .padding(vertical = 10.dp, horizontal = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -488,7 +491,7 @@ import kotlinx.coroutines.launch
                 .border(if (isActive) 2.dp else 0.dp, Frost.copy(0.6f), CircleShape)
         )
         Spacer(Modifier.height(5.dp))
-        MonoLabel(name, 8.sp, if (isActive) color else Dim, letterSpacing = 0.1.sp,
+        MonoLabel(name, 8.sp, if (isActive) ink else Dim, letterSpacing = 0.1.sp,
             modifier = Modifier.fillMaxWidth(), fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal)
     }
 }

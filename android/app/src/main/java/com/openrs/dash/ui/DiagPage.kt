@@ -568,6 +568,8 @@ import kotlin.math.roundToInt
                         MonoLabel(
                             when {
                                 dtcScanning -> "Querying PCM, BCM, ABS, AWD, PSCM, GFM..."
+                                dtcClearing && com.openrs.dash.demo.DemoMode.isActive ->
+                                    "Demo: clearing simulated fault codes — nothing is sent to the car..."
                                 dtcClearing -> "Sending UDS 0x14 to all modules — do not disconnect..."
                                 else        -> "Reads active, pending, and permanent fault codes from all modules."
                             },
@@ -780,7 +782,8 @@ import kotlin.math.roundToInt
                             Spacer(Modifier.height(8.dp))
                             val duration = scanRes?.scanDurationMs?.let { " in ${it / 1000}s" } ?: ""
                             MonoLabel(
-                                "${r.size} fault code(s) found across ${r.map { it.module }.distinct().size} module(s)$duration.",
+                                "${r.size} fault code(s) in ${r.map { it.module }.distinct().size} module(s) · " +
+                                    "${scanRes?.moduleStatuses?.size ?: 0} module(s) scanned$duration.",
                                 9.sp, Dim, modifier = Modifier.padding(bottom = 10.dp)
                             )
                         }
@@ -808,10 +811,15 @@ import kotlin.math.roundToInt
                 textContentColor = Dim,
                 title = { Text("Clear All Fault Codes?", fontFamily = ShareTechMono, fontSize = 14.sp) },
                 text = {
+                    val modules = com.openrs.dash.diagnostics.DtcScanner.MODULES.joinToString(", ") { it.name }
                     Text(
-                        "This sends UDS Service 0x14 to all ECU modules (PCM, BCM, ABS, AWD, PSCM) " +
-                        "to clear stored, pending, and permanent DTCs.\n\n" +
-                        "Cleared codes may return if the underlying condition persists.",
+                        if (com.openrs.dash.demo.DemoMode.isActive)
+                            "Demo mode: clears the simulated fault list only. Nothing is sent to the car.\n\n" +
+                            "Each simulated module ($modules) acknowledges, as the real ECUs would."
+                        else
+                            "This sends UDS Service 0x14 to all ${com.openrs.dash.diagnostics.DtcScanner.MODULES.size} " +
+                            "ECU modules ($modules) to clear stored, pending, and permanent DTCs.\n\n" +
+                            "Cleared codes may return if the underlying condition persists.",
                         fontFamily = ShareTechMono, fontSize = 11.sp
                     )
                 },
@@ -836,10 +844,13 @@ import kotlin.math.roundToInt
                                     else -> {
                                         val ok  = ack.count { it.value }
                                         val all = ack.size
+                                        // Counts MODULES that acknowledged 0x14, not codes — a module with
+                                        // no codes still acks. Rescan to see what (if anything) remains.
                                         dtcClearStatus = if (ok == all)
-                                            "Cleared: ${ack.keys.joinToString(", ")}  ($ok/$all)"
+                                            "Clear acknowledged by $ok/$all modules (${ack.keys.joinToString(", ")}) — rescan to confirm"
                                         else
-                                            "Partial: ${ack.entries.joinToString(", ") { "${it.key}:${if (it.value) "✓" else "✗"}" }}"
+                                            "Clear acknowledged by $ok/$all modules — no ack: " +
+                                                ack.filterValues { !it }.keys.joinToString(", ") + " — rescan to confirm"
                                         dtcScanResult = null
                                         statusFilter = null
                                         com.openrs.dash.OpenRSDashApp.instance.activeDtcCount.value = 0

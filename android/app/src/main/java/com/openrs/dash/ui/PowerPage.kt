@@ -223,7 +223,7 @@ import kotlin.math.roundToInt
                     AvailCell(
                         label = "LONG FT", state = ltftState,
                         format = { "%.1f%%".format(it) },
-                        valueColor = fuelTrimColor(vs.longFuelTrim),
+                        valueColor = ltftColor(vs.longFuelTrim),
                         modifier = Modifier.weight(1f)
                     )
                     DataCell("BARO", "${vs.barometricPressure.roundToInt()} kPa", modifier = Modifier.weight(1f))
@@ -242,7 +242,7 @@ import kotlin.math.roundToInt
                         if (ltftSnap.size >= 2) {
                             com.openrs.dash.ui.anim.Sparkline(
                                 data = ltftSnap,
-                                lineColor = fuelTrimColor(vs.longFuelTrim),
+                                lineColor = ltftColor(vs.longFuelTrim),
                                 modifier = Modifier.weight(1f).height(20.dp),
                                 strokeWidth = 1.dp, fillAlpha = 0.12f
                             )
@@ -270,6 +270,13 @@ private fun fuelTrimColor(trim: Double) = when {
     trim > 10.0  -> Warn
     trim < -10.0 -> Orange
     else         -> Ok
+}
+
+/** LTFT uses the drift alert threshold (±[FuelTrimDrift.ALERT_LTFT_PCT]) — same direction colours. */
+private fun ltftColor(trim: Double) = when {
+    trim > com.openrs.dash.data.FuelTrimDrift.ALERT_LTFT_PCT  -> Warn
+    trim < -com.openrs.dash.data.FuelTrimDrift.ALERT_LTFT_PCT -> Orange
+    else                                                      -> Ok
 }
 
 /** KR in degrees; values that round to zero print as "0.00°" (no "-0.00°" from the /−512 scale). */

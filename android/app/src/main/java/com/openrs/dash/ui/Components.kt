@@ -20,10 +20,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.EaseOutCubic
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
@@ -34,7 +30,9 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -163,11 +161,22 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
             }
         }
         Spacer(Modifier.height(3.dp))
-        AnimatedContent(
-            targetState = value,
-            transitionSpec = { fadeIn(tween(120)) togetherWith fadeOut(tween(120)) },
-            label = "cellVal"
-        ) { v -> AggressiveNum(v, 14.sp, displayColor) }
+        // Live values render in place; only a placeholder ↔ value switch fades in (120 ms).
+        // An AnimatedContent keyed on the value restarted its crossfade on every CAN frame, so
+        // fast signals (lat G, yaw, steer, batt V) never finished fading in and read as blank;
+        // keying it on placeholder-ness instead froze the container width and clipped digits.
+        var lastPlaceholder by remember { mutableStateOf(isPlaceholder) }
+        val swapAlpha = remember { Animatable(1f) }
+        LaunchedEffect(isPlaceholder) {
+            if (isPlaceholder != lastPlaceholder) {
+                lastPlaceholder = isPlaceholder
+                swapAlpha.snapTo(0f)
+                swapAlpha.animateTo(1f, tween(120))
+            }
+        }
+        Box(Modifier.graphicsLayer { alpha = swapAlpha.value }) {
+            AggressiveNum(value, 14.sp, displayColor)
+        }
         if (sparklineData != null && sparklineData.size >= 2) {
             Spacer(Modifier.height(2.dp))
             Sparkline(

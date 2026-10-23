@@ -83,9 +83,10 @@ import kotlin.math.roundToInt
     // digits are 1:1 with the CAN frame. Bar values follow suit for consistency.
     // Fuel + battery keep an 800 ms tween: they update slowly and the smooth
     // fill on BarCard reads better than a snap.
-    val thr = vs.throttleOrPedalPct
-        .coerceIn(0.0, 100.0)
-    val brake = vs.brakePressure.coerceIn(0.0, 100.0)
+    // Disconnected: pedal inputs are the last frame before the drop — show rest (0 %), like
+    // before the first connect, rather than a frozen mid-pull reading.
+    val thr = if (!vs.isConnected) 0.0 else vs.throttleOrPedalPct.coerceIn(0.0, 100.0)
+    val brake = if (!vs.isConnected) 0.0 else vs.brakePressure.coerceIn(0.0, 100.0)
     val animFuel by animateFloatAsState(vs.fuelLevelPct.toFloat(), tween(800), label = "fuel")
     val animBatt by animateFloatAsState(vs.batteryVoltage.toFloat(), tween(800), label = "batt")
 
@@ -144,12 +145,14 @@ import kotlin.math.roundToInt
             return@SideEffect
         }
         val now = System.currentTimeMillis()
+        // Frozen speed after an adapter drop must not hold the zoomed gear view.
+        val spd = if (stale) 0.0 else vs.speedKph
         when {
-            vs.speedKph < 8.0 -> {
+            spd < 8.0 -> {
                 if (aboveSince != 0L) aboveSince = 0L
                 if (zoomed) zoomed = false
             }
-            vs.speedKph > 16.0 -> {
+            spd > 16.0 -> {
                 if (aboveSince == 0L) aboveSince = now
                 else if (!zoomed && now - aboveSince > 3000L) zoomed = true
             }
@@ -299,7 +302,8 @@ import kotlin.math.roundToInt
             // Disconnected state is communicated by the header pill + adapter row
             // on GARAGE. Duplicating the banner here was double-signalling.
 
-            ShiftLightBar(rpm = vs.rpm.toFloat(), modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp).then(pageEntrance(1, pageEntered)))
+            // Disconnected: last RPM is frozen — never leave shift LEDs lit on stale data.
+            ShiftLightBar(rpm = if (stale) 0f else vs.rpm.toFloat(), modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp).then(pageEntrance(1, pageEntered)))
 
             val gearActive = vs.isConnected && (vs.rpm > 0 || vs.speedKph > 0)
             // B.6: mode color for GEAR panel accents (label tint + hairline)
@@ -337,7 +341,8 @@ import kotlin.math.roundToInt
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     AnimatedContent(
-                        targetState = vs.gearDisplay,
+                        // Gear is derived from RPM ÷ speed — meaningless once those are frozen.
+                        targetState = if (stale) "—" else vs.gearDisplay,
                         transitionSpec = {
                             (slideInVertically { -it } + fadeIn()) togetherWith
                             (slideOutVertically { it } + fadeOut())
@@ -364,7 +369,7 @@ import kotlin.math.roundToInt
                 }
             }
 
-            if (vs.launchControlActive) {
+            if (!stale && vs.launchControlActive) {
                 Box(
                     Modifier.fillMaxWidth()
                         .background(Warn.copy(alpha = 0.12f), RoundedCornerShape(10.dp))
@@ -430,12 +435,13 @@ import kotlin.math.roundToInt
             }
 
             SectionLabel("AWD SPLIT")
-            AwdSplitBar(vs)
+            // Torque split / G / torque are per-frame dynamics — frozen values mislead once stale.
+            AwdSplitBar(if (stale) vs.copy(awdLeftTorque = 0.0, awdRightTorque = 0.0, torqueAtTrans = 0.0) else vs)
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DataCell("LAT G",  "${"%.2f".format(vs.lateralG)}g",      modifier = Modifier.weight(1f))
-                DataCell("LON G",  "${"%.2f".format(vs.longitudinalG)}g", modifier = Modifier.weight(1f))
-                DataCell("TORQUE", "${vs.torqueAtTrans.roundToInt()} Nm",  modifier = Modifier.weight(1f))
+                DataCell("LAT G",  if (stale) "— —" else "${"%.2f".format(vs.lateralG)}g",      modifier = Modifier.weight(1f))
+                DataCell("LON G",  if (stale) "— —" else "${"%.2f".format(vs.longitudinalG)}g", modifier = Modifier.weight(1f))
+                DataCell("TORQUE", if (stale) "— —" else "${vs.torqueAtTrans.roundToInt()} Nm",  modifier = Modifier.weight(1f))
             }
 
             // F2: fuel economy section — gated on valid readings
