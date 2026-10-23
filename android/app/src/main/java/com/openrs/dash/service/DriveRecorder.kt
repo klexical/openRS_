@@ -383,6 +383,15 @@ class DriveRecorder(
                     }
 
                     val vs = vehicleStateFlow.value
+                    // Adapter dropped (retry / IDLE, or a manually started drive): VehicleState
+                    // still holds the last frame. Writing it would store held values as fresh
+                    // samples (and feed pulls / knock / trims) — skip like a pause and break the
+                    // polyline. The live position dot above keeps updating; distance driven during
+                    // the gap is not counted.
+                    if (!vs.isConnected) {
+                        prevPoint = null
+                        return@collect
+                    }
                     val gate = freshGate ?: FreshnessGate(now).also { freshGate = it }
                     val stamps = vs.fieldLastUpdateMs
                     // Boost-sweep DIDs: value only on a fresh decode, otherwise the

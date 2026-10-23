@@ -107,7 +107,7 @@ import com.openrs.dash.ui.anim.StaggeredColumn
                 else null
             }
             activeAlerts.forEach { pred ->
-                ThermalAlertBanner(pred) { predictor.dismiss(pred.sensorLabel) }
+                ThermalAlertBanner(pred, p) { predictor.dismiss(pred.sensorLabel) }
             }
         }
 
@@ -116,7 +116,7 @@ import com.openrs.dash.ui.anim.StaggeredColumn
 
         fun peakStr(peakC: Double) = if (peakC > -90) "\u25B2 ${p.displayTemp(peakC)}${p.tempLabel}" else ""
         fun avail(valueC: Double, tag: String) =
-            tempAvailFor(valueC, vs.fieldLastUpdateMs[tag])
+            tempAvailFor(valueC, vs.fieldLastUpdateMs[tag]).whenDisconnected(vs.isConnected)
         // Suppress WARMING on offline — the whole bus is silent, shouting
         // "WARMING" on ten cells at once is noise, not information. Stale/
         // unavailable are retained since those describe real decode history.
@@ -263,6 +263,28 @@ fun tempAvailFor(
 ): TempAvail = scalarAvailFor(valueC > -90, lastUpdateMs, staleAfterMs, now)
 
 /**
+ * An adapter drop leaves the last frame in VehicleState, and its stamps stay "fresh" for up to
+ * 60 s — so while disconnected, a held reading is last-known ([TempAvail.STALE]), not current.
+ */
+fun TempAvail.whenDisconnected(connected: Boolean): TempAvail =
+    if (!connected && this == TempAvail.AVAILABLE) TempAvail.STALE else this
+
+/**
+ * Per-frame dynamics as they read before the first connect — for composables that would otherwise
+ * draw the held last frame as live after a drop. Temps / fuel / battery / TPMS are untouched (they
+ * render as last-known via [whenDisconnected]); polled AWD clutch current/pressure go to sentinels.
+ */
+fun VehicleState.liveOrRest(): VehicleState = if (isConnected) this else copy(
+    rpm = 0.0, speedKph = 0.0, throttlePct = 0.0, accelPedalPct = 0.0, brakePressure = 0.0,
+    torqueAtTrans = 0.0, lateralG = 0.0, longitudinalG = 0.0, verticalG = 0.0, yawRate = 0.0,
+    steeringAngle = 0.0,
+    wheelSpeedFL = 0.0, wheelSpeedFR = 0.0, wheelSpeedRL = 0.0, wheelSpeedRR = 0.0,
+    awdLeftTorque = 0.0, awdRightTorque = 0.0, awdReqTorqueL = 0.0, awdReqTorqueR = 0.0,
+    awdDmdPressure = 0.0, awdPumpCurrent = 0.0,
+    awdClutchCurL = -999.0, awdClutchCurR = -999.0, awdClutchPressureL = -1.0, awdClutchPressureR = -1.0,
+)
+
+/**
  * Generalized availability classifier for any sentinel-bearing scalar field.
  * Caller provides the "has a real reading" predicate so the sentinel convention
  * (temps ≤ -90, PSI/voltage/percent < 0, etc.) stays at the call site.
@@ -321,7 +343,7 @@ data class TempSpec(
     }
 
     // Overheat / missing data / warm-up all block RACE READY (see raceReadiness()).
-    val rtr = raceReadiness(vs, RtrLimits.from(p))
+    val rtr = raceReadiness(vs, RtrLimits.from(p), fmtTemp = { "${p.displayTemp(it)}${p.tempLabel}" })
     val isReady = rtr.isReady
     val warmupDetail = rtr.detail
     val dotColor = when (rtr.state) {
@@ -528,12 +550,20 @@ data class TempSpec(
 @Composable
 private fun ThermalAlertBanner(
     pred: ThermalPredictor.SensorPrediction,
+    p: UserPrefs,
     onDismiss: () -> Unit
 ) {
     val ttc = pred.timeToCriticalMin ?: return
-    val timeStr = if (ttc < 1.0) "<1 min" else "~${ttc.toInt()} min"
-    val tempStr = "${pred.critThresholdC.toInt()}\u00B0C"
-    val message = "${pred.sensorLabel} will reach $tempStr in $timeStr at current rate"
+    fun t(c: Double) = "${p.displayTemp(c)}${p.tempLabel}"
+    // At/over the limit it's a current warning, not a forecast — no "will reach … in <1 min".
+    val message = if (pred.reached)
+        "${pred.sensorLabel} ${t(pred.currentC)} — at/above critical ${t(pred.critThresholdC)}"
+    else {
+        val timeStr = if (ttc < 1.0) "<1 min" else "~${ttc.toInt()} min"
+        "${pred.sensorLabel} will reach ${t(pred.critThresholdC)} in $timeStr at current rate"
+    }
+    // Rate in the user's unit (°F/min = °C/min × 1.8)
+    val rate = pred.climbRateCPerMin * (if (p.tempUnit == "C") 1.0 else 1.8)
 
     val dotAlpha by rememberInfiniteTransition(label = "alert").animateFloat(
         initialValue = 1f, targetValue = 0.3f,
@@ -558,10 +588,9 @@ private fun ThermalAlertBanner(
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             MonoLabel(message, 9.sp, Frost)
-            MonoLabel(
-                "+${"%.1f".format(pred.climbRateCPerMin)}\u00B0C/min",
-                8.sp, Orange
-            )
+            if (!pred.reached) {
+                MonoLabel("+${"%.1f".format(rate)}${p.tempLabel}/min", 8.sp, Orange)
+            }
         }
         Box(
             Modifier

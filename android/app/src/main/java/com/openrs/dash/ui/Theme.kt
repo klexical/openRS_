@@ -136,7 +136,19 @@ val Accent:  Color get() = if (_isDay) Color(0xFF0064B0) else Color(0xFF0091EA)
 val AccentD: Color get() = if (_isDay) Color(0xFF004F8A) else Color(0xFF006DB3)
 val Orange:  Color get() = if (_isDay) Color(0xFFD93900) else Color(0xFFFF4D00)
 val Ok:      Color get() = if (_isDay) Color(0xFF00A85A) else Color(0xFF00FF88)
-val Warn:    Color get() = if (_isDay) Color(0xFFE09500) else Color(0xFFFFCC00)
+val Warn:    Color get() = if (_isDay) DayWarn else Color(0xFFFFCC00)
+private val DayWarn = Color(0xFFE09500)
+
+/**
+ * [Warn] as a *text* colour. DAY Warn (#E09500) is ~2:1 on DAY surfaces (fails WCAG AA); text
+ * uses a dark amber that stays ≥ 5.2:1 on white, Bg, Surf2/3 and Warn-tinted fills. Bars, fills
+ * and borders keep [Warn]. The text primitives below apply this automatically via [textColor].
+ */
+val WarnInk: Color get() = if (_isDay) Color(0xFF6B4700) else Color(0xFFFFCC00)
+
+/** Routes DAY [Warn] (at any alpha) to [WarnInk] for text; every other colour passes through. */
+fun textColor(c: Color): Color =
+    if (_isDay && c.copy(alpha = 1f) == DayWarn) WarnInk.copy(alpha = c.alpha) else c
 
 val Grn   get() = Ok
 val Amber get() = Warn
@@ -318,7 +330,7 @@ private val TabularNumericStyle = TextStyle(fontFeatureSettings = "tnum")
     color: Color = Frost,
     modifier: Modifier = Modifier,
 ) = Text(
-    text, fontSize = fontSize, fontFamily = numericFamily, color = color,
+    text, fontSize = fontSize, fontFamily = numericFamily, color = textColor(color),
     fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
     lineHeight = fontSize * 1.0f, style = TabularNumericStyle, modifier = modifier
 )
@@ -330,7 +342,7 @@ private val TabularNumericStyle = TextStyle(fontFeatureSettings = "tnum")
     color: Color = Frost,
     modifier: Modifier = Modifier,
 ) = Text(
-    text, fontSize = fontSize, fontFamily = numericFamily, color = color,
+    text, fontSize = fontSize, fontFamily = numericFamily, color = textColor(color),
     fontWeight = FontWeight.Medium, textAlign = TextAlign.Center,
     letterSpacing = 0.2.sp, lineHeight = fontSize * 1.1f,
     style = TabularNumericStyle, modifier = modifier
@@ -344,7 +356,7 @@ private val TabularNumericStyle = TextStyle(fontFeatureSettings = "tnum")
     fontWeight: FontWeight = FontWeight.Normal,
     modifier: Modifier = Modifier,
 ) = Text(
-    text, fontSize = fontSize, fontFamily = JetBrainsMonoFamily, color = color,
+    text, fontSize = fontSize, fontFamily = JetBrainsMonoFamily, color = textColor(color),
     fontWeight = fontWeight, letterSpacing = 0.2.sp,
     style = TabularNumericStyle, modifier = modifier
 )
@@ -358,7 +370,7 @@ private val TabularNumericStyle = TextStyle(fontFeatureSettings = "tnum")
     letterSpacing: TextUnit = 0.4.sp,
     modifier: Modifier = Modifier,
 ) = Text(
-    text, fontSize = fontSize, fontFamily = BarlowCond, color = color,
+    text, fontSize = fontSize, fontFamily = BarlowCond, color = textColor(color),
     fontWeight = fontWeight, letterSpacing = letterSpacing, modifier = modifier
 )
 
@@ -371,7 +383,7 @@ private val TabularNumericStyle = TextStyle(fontFeatureSettings = "tnum")
     textAlign: TextAlign = TextAlign.Start,
     modifier: Modifier = Modifier,
 ) = Text(
-    text, fontSize = fontSize, fontFamily = BarlowCond, color = color,
+    text, fontSize = fontSize, fontFamily = BarlowCond, color = textColor(color),
     fontWeight = fontWeight, textAlign = textAlign, modifier = modifier
 )
 
@@ -402,7 +414,7 @@ private val TabularNumericStyle = TextStyle(fontFeatureSettings = "tnum")
     letterSpacing: TextUnit = 0.2.sp,
     modifier: Modifier = Modifier,
 ) = Text(
-    text, fontSize = fontSize, fontFamily = JetBrainsMonoFamily, color = color,
+    text, fontSize = fontSize, fontFamily = JetBrainsMonoFamily, color = textColor(color),
     fontWeight = fontWeight, letterSpacing = letterSpacing, modifier = modifier
 )
 
@@ -415,7 +427,7 @@ private val TabularNumericStyle = TextStyle(fontFeatureSettings = "tnum")
     textAlign: TextAlign = TextAlign.Start,
     modifier: Modifier = Modifier,
 ) = Text(
-    text, fontSize = fontSize, fontFamily = ShareTechMono, color = color,
+    text, fontSize = fontSize, fontFamily = ShareTechMono, color = textColor(color),
     fontWeight = fontWeight, textAlign = textAlign, modifier = modifier
 )
 
@@ -429,7 +441,7 @@ private val TabularNumericStyle = TextStyle(fontFeatureSettings = "tnum")
     textAlign: TextAlign = TextAlign.Start,
     modifier: Modifier = Modifier,
 ) = Text(
-    text, fontSize = fontSize, fontFamily = BarlowCond, color = color,
+    text, fontSize = fontSize, fontFamily = BarlowCond, color = textColor(color),
     fontWeight = fontWeight, letterSpacing = letterSpacing, textAlign = textAlign,
     modifier = modifier
 )

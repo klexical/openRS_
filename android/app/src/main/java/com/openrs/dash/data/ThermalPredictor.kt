@@ -18,7 +18,10 @@ class ThermalPredictor(
         val climbRateCPerMin: Double,
         val timeToCriticalMin: Double?,
         val critThresholdC: Double
-    )
+    ) {
+        /** Already at/over the threshold — a current warning, not a prediction. */
+        val reached: Boolean get() = currentC >= critThresholdC
+    }
 
     enum class ClimbTrend { RISING, COOLING, STABLE }
 

@@ -417,14 +417,16 @@ import kotlin.math.roundToInt
                     barBrush = Brush.horizontalGradient(listOf(Ok.copy(0.4f), Ok)),
                     modifier = Modifier.weight(1f),
                     barGlowColor = Ok,
-                    criticalPulse = fuelCritical
+                    criticalPulse = fuelCritical && !stale,
+                    stale = stale && vs.fuelLevelPct > 0
                 )
                 BarCard(
                     name = "BATTERY", value = "${"%.2f".format(animBatt)}V",
                     fraction = ((animBatt - 10f) / 6f).coerceIn(0f, 1f),
                     barBrush = Brush.horizontalGradient(listOf(Warn.copy(0.4f), Warn)),
                     modifier = Modifier.weight(1f),
-                    barGlowColor = Warn
+                    barGlowColor = Warn,
+                    stale = stale && vs.batteryVoltage > 0
                 )
             }
 

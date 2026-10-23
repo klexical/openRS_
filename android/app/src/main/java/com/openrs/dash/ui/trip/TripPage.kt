@@ -814,49 +814,54 @@ private fun LiveHud(
             Modifier.weight(1f).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
+            // Recording can continue through an adapter drop; the last frame is held in
+            // VehicleState. Per-frame values go to placeholders; slow values stay, marked STALE.
+            val live = vehicleState.isConnected
+            val ph = "— —"
+            fun tempCell(valueC: Double, tag: String): Pair<String, String> {
+                if (valueC <= -90) return "--" to ""
+                val a = tempAvailFor(valueC, vehicleState.fieldLastUpdateMs[tag]).whenDisconnected(live)
+                return "${prefs.displayTemp(valueC)}${prefs.tempLabel}" to (if (a == TempAvail.STALE) "STALE" else "")
+            }
+
             // Row 1 — Speed · RPM · Gear · Boost
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 DataCell("SPD",
-                    "${prefs.displaySpeed(vehicleState.speedKph)} ${prefs.speedLabel}",
+                    if (live) "${prefs.displaySpeed(vehicleState.speedKph)} ${prefs.speedLabel}" else ph,
                     modifier = Modifier.weight(1f))
-                DataCell("RPM", "%.0f".format(vehicleState.rpm), modifier = Modifier.weight(1f))
-                DataCell("GEAR", vehicleState.gearDisplay, modifier = Modifier.weight(1f))
+                DataCell("RPM", if (live) "%.0f".format(vehicleState.rpm) else ph, modifier = Modifier.weight(1f))
+                DataCell("GEAR", if (live) vehicleState.gearDisplay else ph, modifier = Modifier.weight(1f))
                 val boostPsi = vehicleState.boostPsi
-                DataCell("BOOST", "%.1f".format(boostPsi),
+                DataCell("BOOST", if (live) "%.1f".format(boostPsi) else ph,
                     valueColor = when {
                         boostPsi > 16 -> Orange
                         boostPsi > 8  -> Warn
                         boostPsi > 0  -> Ok
                         else          -> Frost
                     },
-                    sub = "\u2588".repeat((boostPsi.coerceIn(0.0, 22.0) / 22.0 * 5).toInt()),
+                    sub = if (live) "\u2588".repeat((boostPsi.coerceIn(0.0, 22.0) / 22.0 * 5).toInt()) else "",
                     modifier = Modifier.weight(1f))
             }
 
             // Row 2 — Coolant · Oil · Ambient · Fuel %
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                DataCell("CLT",
-                    if (vehicleState.coolantTempC > -90)
-                        "${prefs.displayTemp(vehicleState.coolantTempC)}${prefs.tempLabel}" else "--",
+                val (clt, cltSub) = tempCell(vehicleState.coolantTempC, "coolantTempC")
+                val (oil, oilSub) = tempCell(vehicleState.oilTempC, "oilTempC")
+                val (amb, ambSub) = tempCell(vehicleState.ambientTempC, "ambientTempC")
+                DataCell("CLT", clt, sub = cltSub, modifier = Modifier.weight(1f))
+                DataCell("OIL", oil, sub = oilSub, modifier = Modifier.weight(1f))
+                DataCell("AMB", amb, sub = ambSub, modifier = Modifier.weight(1f))
+                DataCell("FUEL", "%.0f%%".format(vehicleState.fuelLevelPct),
+                    sub = if (!live && vehicleState.fuelLevelPct > 0) "STALE" else "",
                     modifier = Modifier.weight(1f))
-                DataCell("OIL",
-                    if (vehicleState.oilTempC > -90)
-                        "${prefs.displayTemp(vehicleState.oilTempC)}${prefs.tempLabel}" else "--",
-                    modifier = Modifier.weight(1f))
-                DataCell("AMB", "${prefs.displayTemp(vehicleState.ambientTempC)}${prefs.tempLabel}", modifier = Modifier.weight(1f))
-                DataCell("FUEL", "%.0f%%".format(vehicleState.fuelLevelPct), modifier = Modifier.weight(1f))
             }
 
             // Row 3 — RDU · PTU · Fuel used · Economy
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                DataCell("RDU",
-                    if (vehicleState.rduTempC > -90)
-                        "${prefs.displayTemp(vehicleState.rduTempC)}${prefs.tempLabel}" else "--",
-                    modifier = Modifier.weight(1f))
-                DataCell("PTU",
-                    if (vehicleState.ptuTempC > -90)
-                        "${prefs.displayTemp(vehicleState.ptuTempC)}${prefs.tempLabel}" else "--",
-                    modifier = Modifier.weight(1f))
+                val (rdu, rduSub) = tempCell(vehicleState.rduTempC, "rduTempC")
+                val (ptu, ptuSub) = tempCell(vehicleState.ptuTempC, "ptuTempC")
+                DataCell("RDU", rdu, sub = rduSub, modifier = Modifier.weight(1f))
+                DataCell("PTU", ptu, sub = ptuSub, modifier = Modifier.weight(1f))
                 DataCell("USED", "%.2fL".format(driveState.fuelUsedL), modifier = Modifier.weight(1f))
                 val (econVal, econUnit) = if (prefs.speedUnit == "MPH")
                     "%.1f".format(driveState.avgFuelMpg) to "MPG"
@@ -871,7 +876,9 @@ private fun LiveHud(
                 Modifier.fillMaxWidth().clickable { showSlipDelta = !showSlipDelta },
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                if (showSlipDelta) {
+                if (!live) {
+                    listOf("FL", "FR", "RL", "RR").forEach { DataCell(it, ph, modifier = Modifier.weight(1f)) }
+                } else if (showSlipDelta) {
                     val vs = vehicleState
                     val frontAvg = (vs.wheelSpeedFL + vs.wheelSpeedFR) / 2.0
                     val rearAvg = (vs.wheelSpeedRL + vs.wheelSpeedRR) / 2.0

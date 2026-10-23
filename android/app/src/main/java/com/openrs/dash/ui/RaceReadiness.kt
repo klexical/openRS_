@@ -9,7 +9,8 @@ import com.openrs.dash.data.VehicleState
  *  - critical limits = the active THERMAL preset ([UserPrefs] oil/cool/rdu/ptuCritC),
  *    the same values that turn those cards orange;
  *  - data validity = [tempAvailFor] (fresh decode within 60 s), the THERMAL cell rule;
- *  - warm-up minimums = [VehicleState.rtrStatus].
+ *  - warm-up minimums = [VehicleState.rtrColdItems].
+ * Comparisons stay in canonical °C; [fmtTemp] only renders the detail text (user's unit).
  */
 enum class RtrState { READY, WARMING, OVERHEAT, NO_DATA }
 
@@ -32,7 +33,12 @@ private class RtrSensor(val label: String, val valueC: Double, val tag: String, 
  * once the car has reported them (some modules never answer); after that, a stale reading
  * blocks readiness instead of silently passing.
  */
-fun raceReadiness(vs: VehicleState, limits: RtrLimits, nowMs: Long = System.currentTimeMillis()): RaceReadiness {
+fun raceReadiness(
+    vs: VehicleState,
+    limits: RtrLimits,
+    nowMs: Long = System.currentTimeMillis(),
+    fmtTemp: (Double) -> String = { "${it.toInt()}°C" },
+): RaceReadiness {
     val sensors = listOf(
         RtrSensor("Oil",     vs.oilTempC,       "oilTempC",       limits.oilCritC,  required = true),
         RtrSensor("Coolant", vs.coolantTempC,   "coolantTempC",   limits.coolCritC, required = true),
@@ -48,7 +54,7 @@ fun raceReadiness(vs: VehicleState, limits: RtrLimits, nowMs: Long = System.curr
     }
     if (hot.isNotEmpty()) {
         return RaceReadiness(RtrState.OVERHEAT,
-            hot.joinToString(" · ") { "${it.label} ${it.valueC.toInt()}°C ≥ ${it.critC!!.toInt()}°C" })
+            hot.joinToString(" · ") { "${it.label} ${fmtTemp(it.valueC)} ≥ ${fmtTemp(it.critC!!)}" })
     }
 
     val gaps = sensors.mapNotNull { s ->
@@ -60,6 +66,10 @@ fun raceReadiness(vs: VehicleState, limits: RtrLimits, nowMs: Long = System.curr
     }
     if (gaps.isNotEmpty()) return RaceReadiness(RtrState.NO_DATA, gaps.joinToString(" · "))
 
-    vs.rtrStatus?.let { return RaceReadiness(RtrState.WARMING, it) }
+    val cold = vs.rtrColdItems
+    if (cold.isNotEmpty()) {
+        return RaceReadiness(RtrState.WARMING,
+            cold.joinToString(" · ") { "${it.label} ${fmtTemp(it.valueC)} < ${fmtTemp(it.minC)}" })
+    }
     return RaceReadiness(RtrState.READY, null)
 }

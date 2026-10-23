@@ -103,7 +103,8 @@ import kotlin.math.roundToInt
     // label) so we don't shout "WARMING" four times on every offline view.
     fun tireAvail(hasReading: Boolean, lastMs: Long?): TempAvail {
         val a = scalarAvailFor(hasReading, lastMs)
-        return if (!vs.isConnected && a == TempAvail.WARMING) TempAvail.AVAILABLE else a
+        // Offline: no reading → quiet placeholder (not WARMING); held reading → STALE (last-known)
+        return if (!vs.isConnected && a == TempAvail.WARMING) TempAvail.AVAILABLE else a.whenDisconnected(vs.isConnected)
     }
 
     Column(
@@ -412,7 +413,10 @@ private fun NeonTireCard(
 // AWD METRICS — rear axle diagram + data cells
 // ═══════════════════════════════════════════════════════════════════════════
 @Composable
-private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
+private fun AwdMetrics(held: VehicleState, p: UserPrefs) {
+    // Disconnected: torque / pump / clutch / wheel-speed dynamics render at rest; temps stay, marked STALE.
+    val vs = held.liveOrRest()
+    fun staleSub(valueC: Double) = if (!vs.isConnected && valueC > -90) "STALE" else ""
     val accent = LocalThemeAccent.current
     val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer()
@@ -710,11 +714,11 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
     Spacer(Modifier.height(8.dp))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         DataCell("PTU TEMP", if (vs.ptuTempC > -90) "${p.displayTemp(vs.ptuTempC)}${p.tempLabel}" else "— —",
-            modifier = Modifier.weight(1f))
+            sub = staleSub(vs.ptuTempC), modifier = Modifier.weight(1f))
         DataCell("F / R SPLIT", splitLabel,
             modifier = Modifier.weight(1f))
         DataCell("RDU TEMP", if (vs.rduTempC > -90) "${p.displayTemp(vs.rduTempC)}${p.tempLabel}" else "— —",
-            modifier = Modifier.weight(1f))
+            sub = staleSub(vs.rduTempC), modifier = Modifier.weight(1f))
     }
     Spacer(Modifier.height(4.dp))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -736,7 +740,8 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
     if (vs.awdPumpCurrent > 0 || vs.transOilTempC > -90) {
         Spacer(Modifier.height(4.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DataCell("TRANS", if (vs.transOilTempC > -90) "${p.displayTemp(vs.transOilTempC)}${p.tempLabel}" else "—", modifier = Modifier.weight(1f))
+            DataCell("TRANS", if (vs.transOilTempC > -90) "${p.displayTemp(vs.transOilTempC)}${p.tempLabel}" else "—",
+                sub = staleSub(vs.transOilTempC), modifier = Modifier.weight(1f))
             DataCell("PUMP", "${"%.1f".format(vs.awdPumpCurrent)} A", modifier = Modifier.weight(1f))
             DataCell("PEAK", "${vs.awdMaxTorque.roundToInt()} Nm", modifier = Modifier.weight(1f))
         }
@@ -761,7 +766,8 @@ private fun AwdMetrics(vs: VehicleState, p: UserPrefs) {
 // ═══════════════════════════════════════════════════════════════════════════
 // G-FORCE SECTION (unchanged)
 // ═══════════════════════════════════════════════════════════════════════════
-@Composable fun GForceSection(vs: VehicleState, onReset: () -> Unit) {
+@Composable fun GForceSection(held: VehicleState, onReset: () -> Unit) {
+    val vs = held.liveOrRest()   // held last-frame G / yaw / steer must not read as live
     val accent = LocalThemeAccent.current
     val animLatG by animateFloatAsState(vs.lateralG.toFloat(), spring(stiffness = Spring.StiffnessHigh), label = "latG")
     val animLonG by animateFloatAsState(vs.longitudinalG.toFloat(), spring(stiffness = Spring.StiffnessHigh), label = "lonG")

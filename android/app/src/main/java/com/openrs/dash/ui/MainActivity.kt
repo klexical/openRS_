@@ -915,15 +915,15 @@ private fun AnomalyStrip(vs: VehicleState, onConnect: () -> Unit) {
                     label = "dotsP"
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text, style = stripTextStyle, color = color)
+                    Text(text, style = stripTextStyle, color = textColor(color))
                     val phase = dotPhase.coerceIn(0f, 4f)
                     for (i in 0 until 3) {
                         val dotAlpha = ((phase - i).coerceIn(0f, 1f))
-                        Text(".", style = stripTextStyle, color = color.copy(alpha = dotAlpha))
+                        Text(".", style = stripTextStyle, color = textColor(color).copy(alpha = dotAlpha))
                     }
                 }
             } else {
-                Text(text, style = stripTextStyle, color = color)
+                Text(text, style = stripTextStyle, color = textColor(color))
             }
         }
     }

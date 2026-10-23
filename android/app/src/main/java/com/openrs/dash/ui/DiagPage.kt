@@ -175,7 +175,7 @@ import kotlin.math.roundToInt
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     DataCell("STATUS", if (vs.isConnected) "LIVE" else "— —",
                         valueColor = if (vs.isConnected) Ok else Dim, modifier = Modifier.weight(1f))
-                    DataCell("FPS",    "${vs.framesPerSecond.roundToInt()}", modifier = Modifier.weight(1f))
+                    DataCell("FPS",    if (vs.isConnected) "${vs.framesPerSecond.roundToInt()}" else "— —", modifier = Modifier.weight(1f))  // held rate isn't a live one
                     DataCell("DTCs", if (dtcResults != null) "$dtcCount" else "—",
                         valueColor = if (dtcCount > 0) Orange else if (dtcResults != null) Ok else Dim,
                         modifier = Modifier.weight(1f))
@@ -225,11 +225,11 @@ import kotlin.math.roundToInt
                     TempAvail.UNAVAILABLE -> "N/A"
                     TempAvail.AVAILABLE   -> ""
                 }
-                val battVAvail    = scalarAvailFor(vs.batteryVoltage >= 0, vs.fieldLastUpdateMs["batteryVoltage"])
-                val battAAvail    = scalarAvailFor(vs.batteryCurrentA > -900, vs.fieldLastUpdateMs["batteryCurrentA"])
-                val battSocAvail  = scalarAvailFor(vs.batterySoc >= 0, vs.fieldLastUpdateMs["batterySoc"])
-                val battTempAvail = scalarAvailFor(vs.batteryTempC > -90, vs.fieldLastUpdateMs["batteryTempC"])
-                val chgTgtAvail   = scalarAvailFor(vs.batteryChargingVoltageDesired >= 0, vs.fieldLastUpdateMs["batteryChargingVoltageDesired"])
+                val battVAvail    = scalarAvailFor(vs.batteryVoltage >= 0, vs.fieldLastUpdateMs["batteryVoltage"]).whenDisconnected(vs.isConnected)
+                val battAAvail    = scalarAvailFor(vs.batteryCurrentA > -900, vs.fieldLastUpdateMs["batteryCurrentA"]).whenDisconnected(vs.isConnected)
+                val battSocAvail  = scalarAvailFor(vs.batterySoc >= 0, vs.fieldLastUpdateMs["batterySoc"]).whenDisconnected(vs.isConnected)
+                val battTempAvail = scalarAvailFor(vs.batteryTempC > -90, vs.fieldLastUpdateMs["batteryTempC"]).whenDisconnected(vs.isConnected)
+                val chgTgtAvail   = scalarAvailFor(vs.batteryChargingVoltageDesired >= 0, vs.fieldLastUpdateMs["batteryChargingVoltageDesired"]).whenDisconnected(vs.isConnected)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     DataCell("BATT V",
                         if (battVAvail == TempAvail.AVAILABLE || battVAvail == TempAvail.STALE)

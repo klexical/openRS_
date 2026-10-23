@@ -78,7 +78,7 @@ fun FuelTrimDriftCard() {
             Text(
                 "LTFT beyond ${if (alert == FuelTrimDrift.Direction.LEAN) "+" else "−"}" +
                     "${FuelTrimDrift.ALERT_LTFT_PCT.toInt()}% on the last 2 drives — running ${alert.label}. $hint",
-                style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 9.sp, color = Warn),
+                style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 9.sp, color = WarnInk),
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Warn.copy(alpha = pillBgAlpha(0.10f)), RoundedCornerShape(6.dp))

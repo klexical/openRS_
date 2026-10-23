@@ -345,6 +345,14 @@ data[5] = B5,  data[6] = B6 …
   on a placeholder ↔ value switch (`Animatable` alpha)
 - **Provide `legibleAccent()` as `LocalThemeAccent`** — raw Frozen White vanishes on DAY and Shadow Black on NIGHT/ULTRA;
   the structural `AccentTriad.full` replaces them. Only paint swatches (`rsPaintAccent`) show the raw paint
+- **Held readings after a drop are last-known** — `TempAvail.whenDisconnected()` turns a present reading STALE while
+  `!vs.isConnected` (stamps stay "fresh" for 60 s after a drop); `VehicleState.liveOrRest()` returns per-frame dynamics at
+  rest for composables that would draw the held frame. `DriveRecorder` skips samples while disconnected (like a pause) so
+  held values are never stored as fresh — distance during the gap isn't counted
+- **Amber text uses `WarnInk`** — the text primitives in `Theme.kt` route DAY `Warn` through `textColor()`; raw Material
+  `Text`/`TextStyle` must use `WarnInk` or `textColor(...)` explicitly. Fills/bars keep `Warn`
+- **Thermal alerts: `SensorPrediction.reached`** — at/over critical show the current state, never "will reach … in <1 min".
+  Readiness / alert temperatures render via `p.displayTemp` (user unit); comparisons stay in °C
 - **Demo simulates only fields a real decoder writes** — `manifoldChargeTempC` and the IPC `warn*` lamps have no decoder,
   so they stay at their sentinels (DemoSimulatorTest guards this). Add a field to the simulator only with its decoder
 
@@ -406,7 +414,7 @@ cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{ver}.apk  (main release)
 ./gradlew assembleRelease -PrcSuffix=rc.5  # → openRS_v{ver}-rc.5.apk
-./gradlew test                             # 660 unit tests across 33 files
+./gradlew test                             # 667 unit tests across 33 files
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 48 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -450,6 +458,8 @@ Drive-mode dock / ESC buttons / DTC clear act on simulated state only (mode land
   paused) and each failed call blocks for minutes, delaying the next command. Tap by coordinates instead. Its
   screenshots can lag; `adb exec-out screencap -p` is always current. Check crops at full resolution — a 700 px
   downscale hid clipped digits once
+- Debug builds always show "v2.2.7" (no RC label — only `-PrcSuffix` adds one) and Settings appends the update
+  channel, so the version string can't tell builds apart. Verify by hashing `adb exec-out cat <pm path>` against the APK
 - Settings categories animate in for ~2.5 s after the sheet opens — tapping a row sooner can land on the wrong one
 - The HUD overlay needs `adb shell appops set com.openrs.dash.debug SYSTEM_ALERT_WINDOW allow` on a fresh emulator
   (restore with `… default`); start it from ⚙ → DISPLAY → FLOATING HUD. A reinstall stops it
@@ -493,7 +503,7 @@ android/app/src/test/java/com/openrs/dash/
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **660 tests across 33 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **667 tests across 33 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 

@@ -298,7 +298,9 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
     modifier: Modifier = Modifier,
     barGlowColor: Color? = null,
     sparklineData: List<Float>? = null,
-    criticalPulse: Boolean = false
+    criticalPulse: Boolean = false,
+    /** Last-known value (adapter disconnected): dimmed + the shared "STALE" tag. */
+    stale: Boolean = false,
 ) {
     val animFrac by animateFloatAsState(fraction.coerceIn(0f, 1f),
         tween(240, easing = EaseOutCubic), label = "barFrac")
@@ -326,8 +328,13 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             MonoLabel(name, 9.sp, if (criticalPulse) Warn else Dim)
-            AggressiveNum(value, 13.sp, if (criticalPulse) Warn else Frost)
+            AggressiveNum(value, 13.sp, when {
+                stale         -> Dim
+                criticalPulse -> Warn
+                else          -> Frost
+            })
         }
+        if (stale) MonoLabel("STALE", 7.sp, Dim.copy(alpha = textMutedAlpha(0.7f)))
         Spacer(Modifier.height(7.dp))
         Box(
             Modifier.fillMaxWidth().height(4.dp)

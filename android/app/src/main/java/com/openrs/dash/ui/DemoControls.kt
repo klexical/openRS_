@@ -40,11 +40,8 @@ import com.openrs.dash.ui.anim.pressClick
 // the header connection pill also reads DEMO.
 // ═══════════════════════════════════════════════════════════════════════════
 
-/**
- * Text colour for amber demo labels. DAY's Warn (#E09500) is ~2:1 on its own tint and on
- * the light header, so DAY uses a dark amber ink (≥ 6:1 on the strip background).
- */
-fun demoInk(): Color = if (isDayModeNow()) Color(0xFF6B4700) else Warn
+/** Text colour for amber demo labels — the shared [WarnInk] (DAY-legible amber). */
+fun demoInk(): Color = WarnInk
 
 @Composable
 fun DemoControlStrip(
