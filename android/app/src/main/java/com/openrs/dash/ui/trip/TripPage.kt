@@ -183,7 +183,7 @@ fun TripPage(
     val isLive = vehicleState.isConnected || driveState.isRecording
     val cameraPositionState = rememberCameraPositionState()
 
-    Column(Modifier.fillMaxSize().background(Bg).padding(bottom = com.openrs.dash.ui.Tokens.NavBarHeight)) {
+    Column(Modifier.fillMaxSize().background(Bg).padding(bottom = com.openrs.dash.ui.navBarClearance())) {
         // ── Map section ──────────────────────────────────────────────
         // pointerInput tracks touch state so the parent HorizontalPager
         // can disable swiping while the user is interacting with the map.

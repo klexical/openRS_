@@ -130,7 +130,7 @@ import kotlin.math.roundToInt
     LaunchedEffect(dtcResults) { if (!dtcResults.isNullOrEmpty()) scanComplete = true }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-        .padding(start = Tokens.PagePad, end = Tokens.PagePad, top = Tokens.PagePad, bottom = Tokens.PagePad + Tokens.NavBarHeight)) {
+        .padding(start = Tokens.PagePad, end = Tokens.PagePad, top = Tokens.PagePad, bottom = pageBottomPadding())) {
 
         // ── VIN (passive CAN 0x40A) ──────────────────────────────────
         if (vs.vin.isNotEmpty()) {

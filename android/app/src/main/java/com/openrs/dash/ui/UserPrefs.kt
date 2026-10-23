@@ -48,7 +48,6 @@ data class UserPrefs(
     val brightness: Float           = 0f,                                      // deprecated v3.0 (kept for migration)
     val themeMode: String           = AppSettings.DEFAULT_THEME_MODE,          // "NIGHT" | "DAY" | "AUTO"
     val classicFonts: Boolean       = AppSettings.DEFAULT_CLASSIC_FONTS,       // Orbitron revival toggle
-    val driveAutoZoom: Boolean      = AppSettings.DEFAULT_DRIVE_AUTO_ZOOM,     // DRIVE tab hero auto-zoom above threshold
     val navTabIdentity: Boolean     = AppSettings.DEFAULT_NAV_TAB_IDENTITY,   // per-tab identity colors on bottom nav
     val livePillQuiet: Boolean      = AppSettings.DEFAULT_LIVE_PILL_QUIET,    // connected pill alpha fades after stable
     val gearModeTint: Boolean       = AppSettings.DEFAULT_GEAR_MODE_TINT,     // GEAR label tints to mode color

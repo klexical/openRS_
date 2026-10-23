@@ -8,6 +8,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.text.font.FontWeight
+import com.openrs.dash.R
+import androidx.annotation.DrawableRes
+import com.openrs.dash.ui.anim.isShiftPoint
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -50,8 +62,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -73,29 +85,23 @@ import kotlin.math.roundToInt
 // DRIVE PAGE — what's happening right now, curated for glance-readability
 // Polled fields (temps, fuel economy, odometer, warnings) live on other tabs.
 // ═══════════════════════════════════════════════════════════════════════════
-@Composable fun DrivePage(vs: VehicleState, p: UserPrefs) {
+@Composable fun DrivePage(vs: VehicleState, p: UserPrefs, onOpenThermal: () -> Unit = {}) {
     var pageEntered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { pageEntered = true }
     val accent = LocalThemeAccent.current
     val (_, boostLbl) = p.displayBoost(vs.boostKpa)
 
     // B1: raw live values for hero numerics — spring smoothing removed so the
-    // digits are 1:1 with the CAN frame. Bar values follow suit for consistency.
-    // Fuel + battery keep an 800 ms tween: they update slowly and the smooth
-    // fill on BarCard reads better than a snap.
+    // digits are 1:1 with the CAN frame.
     // Disconnected: pedal inputs are the last frame before the drop — show rest (0 %), like
     // before the first connect, rather than a frozen mid-pull reading.
     val thr = if (!vs.isConnected) 0.0 else vs.throttleOrPedalPct.coerceIn(0.0, 100.0)
     val brake = if (!vs.isConnected) 0.0 else vs.brakePressure.coerceIn(0.0, 100.0)
-    val animFuel by animateFloatAsState(vs.fuelLevelPct.toFloat(), tween(800), label = "fuel")
-    val animBatt by animateFloatAsState(vs.batteryVoltage.toFloat(), tween(800), label = "batt")
 
     val session     = telemetrySessionKey()   // demo start/reset/exit drops simulated history
     val boostSpark  = remember(session) { SparklineData(60) }
     val rpmSpark    = remember(session) { SparklineData(60) }
     val speedSpark  = remember(session) { SparklineData(60) }
-    val thrSpark    = remember(session) { SparklineData(60) }
-    val brakeSpark  = remember(session) { SparklineData(60) }
     val lastSample  = remember(session) { mutableLongStateOf(0L) }
     SideEffect {
         val now = vs.lastUpdate
@@ -104,8 +110,6 @@ import kotlin.math.roundToInt
             boostSpark.push(vs.boostKpa.toFloat())
             rpmSpark.push(vs.rpm.toFloat())
             speedSpark.push(vs.speedKph.toFloat())
-            thrSpark.push(thr.toFloat())
-            brakeSpark.push(brake.toFloat())
         }
     }
 
@@ -115,8 +119,6 @@ import kotlin.math.roundToInt
     val boostSnap = remember(sampleKey) { boostSpark.snapshot() }
     val rpmSnap   = remember(sampleKey) { rpmSpark.snapshot() }
     val speedSnap = remember(sampleKey) { speedSpark.snapshot() }
-    val thrSnap   = remember(sampleKey) { thrSpark.snapshot() }
-    val brakeSnap = remember(sampleKey) { brakeSpark.snapshot() }
 
     val stale = !vs.isConnected
 
@@ -133,66 +135,13 @@ import kotlin.math.roundToInt
         label = "heroAlpha"
     )
 
-    // ── Adaptive density: once speed exceeds ~10 mph for 3s, collapse
-    // secondary content and inflate the gear digit. Hysteresis returns to
-    // full density below ~5 mph. Toggle via UserPrefs.driveAutoZoom.
-    var zoomed by remember { mutableStateOf(false) }
-    var aboveSince by remember { mutableLongStateOf(0L) }
-    SideEffect {
-        if (!p.driveAutoZoom) {
-            if (zoomed) zoomed = false
-            if (aboveSince != 0L) aboveSince = 0L
-            return@SideEffect
-        }
-        val now = System.currentTimeMillis()
-        // Frozen speed after an adapter drop must not hold the zoomed gear view.
-        val spd = if (stale) 0.0 else vs.speedKph
-        when {
-            spd < 8.0 -> {
-                if (aboveSince != 0L) aboveSince = 0L
-                if (zoomed) zoomed = false
-            }
-            spd > 16.0 -> {
-                if (aboveSince == 0L) aboveSince = now
-                else if (!zoomed && now - aboveSince > 3000L) zoomed = true
-            }
-        }
-    }
-    // rc.2 hierarchy: drop resting gear size 72→52sp so at idle the gear
-    // stops dominating. BOOST/RPM/SPEED become the at-rest personality;
-    // gear only grows to 140sp once the car is actually moving.
-    val gearSizeSp by animateFloatAsState(
-        if (zoomed) 140f else 52f,
-        spring(stiffness = Spring.StiffnessMediumLow),
-        label = "gearSize"
-    )
-    val gearPadDp by animateFloatAsState(
-        if (zoomed) 42f else 12f,
-        spring(stiffness = Spring.StiffnessMediumLow),
-        label = "gearPad"
-    )
-
-    // V8 — Gear-change pop: 1.05× scale bounce + haptic tick on derivedGear delta.
-    // Skip initial composition (first value == previous).
+    // Gear-change haptic tick on a derivedGear delta (skips the first composition). Nothing on DRIVE
+    // resizes with speed, RPM or gear — the old auto-zoom / 1.05× gear pop pushed the panels below.
     val haptic = LocalHapticFeedback.current
-    val gearPopTarget = remember { mutableStateOf(1f) }
-    val gearPopScale by animateFloatAsState(
-        targetValue = gearPopTarget.value,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessHigh
-        ),
-        label = "gearPop"
-    )
     var lastGear by remember { mutableStateOf<Int?>(null) }
     LaunchedEffect(vs.derivedGear) {
         val g = vs.derivedGear
-        if (lastGear != null && lastGear != g && g > 0) {
-            gearPopTarget.value = 1.05f
-            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-            kotlinx.coroutines.delay(180)
-            gearPopTarget.value = 1f
-        }
+        if (lastGear != null && lastGear != g && g > 0) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         lastGear = g
     }
 
@@ -202,11 +151,14 @@ import kotlin.math.roundToInt
     val driveState by OpenRSDashApp.instance.driveState.collectAsState()
     // ── F2: fuel economy ─────────────────────────────────────────────────
     val econState by FuelEconomy.state.collectAsState()
+    val knockCount by OpenRSDashApp.instance.knockEventCount.collectAsState()
+    val status = vehicleStatus(vs, p, knockCount)
 
-    Box(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val viewportH = maxHeight
         Column(
             Modifier.fillMaxSize().verticalScroll(scrollState)
-                .padding(start = PagePad, end = PagePad, top = PagePad, bottom = PagePad + Tokens.NavBarHeight),
+                .padding(start = PagePad, end = PagePad, top = PagePad, bottom = pageBottomPadding()),
             verticalArrangement = Arrangement.spacedBy(CardGap)
         ) {
             // F7: live session stats strip — visible during active recording
@@ -238,12 +190,6 @@ import kotlin.math.roundToInt
                 }
             }
 
-            // C2: hero border alpha scales with valueFraction so the card
-            // gains visual weight under active input and stays quiet at rest.
-            val boostFrac = (vs.boostPsi.toFloat() / 30f).coerceIn(0f, 1f)
-            val rpmFrac = (vs.rpm.toFloat() / 6800f).coerceIn(0f, 1f)
-            val speedFrac = (vs.speedKph.toFloat() / 250f).coerceIn(0f, 1f)
-
             // V3: idle breathing — subtle ±0.03 alpha pulse when engine is idling.
             // One-way duration scales with RPM: ~2.5s at 800 RPM → ~3.0s at 600 RPM.
             // Full cycle (with RepeatMode.Reverse) is double that.
@@ -255,58 +201,55 @@ import kotlin.math.roundToInt
                 label = "breathA"
             )
 
-            // rc.2 hierarchy: BOOST is the personality of this car — promote
-            // it with extra weight (1.25 vs 1.0) and a larger value font (36sp
-            // vs 24sp). RPM and SPEED become supporting heroes.
+            // Permanent status line: warnings lead the page without ever moving the instruments.
+            val readiness = if (vs.isConnected)
+                raceReadiness(vs, RtrLimits.from(p), fmtTemp = { "${p.displayTemp(it)}${p.tempLabel}" }) else null
+            StatusLine(status.alerts, readiness, onOpenThermal)
+
+            // Design pass: readings in ink, BOOST (the car's personality) carries the paint accent,
+            // RPM turns Orange only at the shift-light flash point. Equal-height cards with a fixed
+            // value box keep the three baselines aligned.
+            val atShift = !stale && isShiftPoint(vs.rpm.toFloat())
             Row(
                 Modifier.fillMaxWidth().height(IntrinsicSize.Max)
                     .alpha((heroAlpha - breathAlpha).coerceIn(0f, 1f))
                     .then(pageEntrance(0, pageEntered)),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                HeroCard(
-                    unit = "RPM", value = rpmStr, label = "ENGINE",
-                    valueColor = Orange,
-                    borderAccent = Orange.copy(alpha = 0.15f + 0.2f * rpmFrac),
-                    peak = "▲ ${vs.peakRpm.toInt()}",
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    sparklineData = rpmSnap,
-                    valueFraction = rpmFrac,
+                InstrumentHero(
+                    label = "ENGINE", unit = "RPM", value = rpmStr,
+                    valueColor = if (atShift) Orange else Frost,
+                    valueSize = 34.sp,
+                    peak = "PEAK ${vs.peakRpm.toInt()}",
                     peakHoldValue = vs.peakRpm.toInt().toString(),
-                    valueFontSize = 24.sp
+                    spark = rpmSnap, sparkColor = accentMid(),
+                    modifier = Modifier.weight(1f).fillMaxHeight()
                 )
-                HeroCard(
-                    unit = boostLbl, value = boostVal, label = "BOOST",
-                    valueColor = Warn,
-                    borderAccent = Warn.copy(alpha = 0.15f + 0.2f * boostFrac),
-                    peak = "▲ ${"%.1f".format(vs.peakBoostPsi)}",
-                    modifier = Modifier.weight(1.25f).fillMaxHeight(),
-                    sparklineData = boostSnap,
-                    valueFraction = boostFrac,
+                InstrumentHero(
+                    label = "BOOST", unit = boostLbl, value = boostVal,
+                    valueColor = if (stale) Frost else accent,
+                    valueSize = 44.sp,
+                    peak = "PEAK ${"%.1f".format(vs.peakBoostPsi)}",
                     peakHoldValue = "%.1f".format(vs.peakBoostPsi),
-                    valueFontSize = 36.sp
+                    spark = boostSnap, sparkColor = accent,
+                    modifier = Modifier.weight(1.25f).fillMaxHeight()
                 )
-                HeroCard(
-                    unit = p.speedLabel, value = speedStr, label = "SPEED",
-                    valueColor = accent,
-                    borderAccent = accent.copy(alpha = 0.15f + 0.2f * speedFrac),
-                    peak = "▲ ${p.displaySpeed(vs.peakSpeedKph)}",
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    sparklineData = speedSnap,
-                    valueFraction = speedFrac,
+                InstrumentHero(
+                    label = "SPEED", unit = p.speedLabel, value = speedStr,
+                    valueSize = 34.sp,
+                    peak = "PEAK ${p.displaySpeed(vs.peakSpeedKph)}",
                     peakHoldValue = p.displaySpeed(vs.peakSpeedKph),
-                    valueFontSize = 24.sp
+                    spark = speedSnap, sparkColor = accentMid(),
+                    modifier = Modifier.weight(1f).fillMaxHeight()
                 )
             }
 
             // Disconnected state is communicated by the header pill + adapter row
             // on GARAGE. Duplicating the banner here was double-signalling.
 
-            // Disconnected: last RPM is frozen — never leave shift LEDs lit on stale data.
-            ShiftLightBar(rpm = if (stale) 0f else vs.rpm.toFloat(), modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp).then(pageEntrance(1, pageEntered)))
-
+            // ── Gear module: shift lights, brake | gear | throttle ───────────
             val gearActive = vs.isConnected && (vs.rpm > 0 || vs.speedKph > 0)
-            // B.6: mode color for GEAR panel accents (label tint + hairline)
+            // B.6: mode color for the GEAR caption in SPORT/TRACK/DRIFT (prefs.gearModeTint)
             val isSportish = vs.driveMode in listOf(DriveMode.SPORT, DriveMode.TRACK, DriveMode.DRIFT)
             val modeColor = when (vs.driveMode) {
                 DriveMode.SPORT -> Ok
@@ -314,58 +257,44 @@ import kotlin.math.roundToInt
                 DriveMode.DRIFT -> Orange
                 else -> accent
             }
-            // ULTRA: 0.04 gradient reads as banding on pure-black — drop to 0.02
-            val gearGradientAlpha = if (gearActive) {
-                if (isUltraNightNow()) 0.02f else 0.04f
-            } else 0f
-            Box(
+            // One fixed size per screen, from the page viewport only — never from speed / RPM / gear,
+            // so the module and everything below it hold still while driving.
+            val gearAreaH = (viewportH * 0.22f).coerceIn(124.dp, 176.dp)
+            val gearSize = if (viewportH < 680.dp) 72.sp else 84.sp
+            val gearDigitH = with(LocalDensity.current) { gearSize.toDp() }
+            Column(
                 Modifier.fillMaxWidth()
-                    .then(pageEntrance(2, pageEntered))
-                    .background(
-                        Brush.verticalGradient(listOf(accent.copy(alpha = gearGradientAlpha), Surf2)),
-                        RoundedCornerShape(16.dp)
-                    )
-                    .border(1.dp, if (gearActive) accent.copy(alpha = 0.25f) else Brd.copy(alpha = borderAlpha(0.15f)), RoundedCornerShape(16.dp))
-                    // B.6: inner vignette — radial gradient from transparent center to
-                    // Bg at bottom corners, pushes the gear letter forward without texture
-                    .drawBehind {
-                        val vignette = Brush.radialGradient(
-                            listOf(Color.Transparent, Bg.copy(alpha = 0.25f)),
-                            center = Offset(size.width / 2f, size.height * 0.3f),
-                            radius = size.maxDimension * 0.8f
-                        )
-                        drawRect(vignette)
-                    }
-                    .padding(vertical = gearPadDp.dp),
-                contentAlignment = Alignment.Center
+                    .then(pageEntrance(1, pageEntered))
+                    .instrumentSurface(radius = 16.dp)
+                    .padding(horizontal = 10.dp, vertical = 10.dp)
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    AnimatedContent(
-                        // Gear is derived from RPM ÷ speed — meaningless once those are frozen.
-                        targetState = if (stale) "—" else vs.gearDisplay,
-                        transitionSpec = {
-                            (slideInVertically { -it } + fadeIn()) togetherWith
-                            (slideOutVertically { it } + fadeOut())
-                        },
-                        label = "gear"
-                    ) { gear ->
-                        HeroNum(
-                            gear, gearSizeSp.sp, Frost,
-                            modifier = Modifier.graphicsLayer {
-                                scaleX = gearPopScale
-                                scaleY = gearPopScale
-                            }
-                        )
+                // Disconnected: last RPM is frozen — never leave shift LEDs lit on stale data.
+                ShiftLightBar(rpm = if (stale) 0f else vs.rpm.toFloat(), modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    Modifier.fillMaxWidth().height(gearAreaH),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    PedalBar("BRAKE", brake, Orange, Modifier.fillMaxHeight())
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        AnimatedContent(
+                            modifier = Modifier.height(gearDigitH),
+                            // Gear is derived from RPM ÷ speed — meaningless once those are frozen.
+                            targetState = if (stale) "—" else vs.gearDisplay,
+                            transitionSpec = {
+                                (slideInVertically { -it } + fadeIn()) togetherWith
+                                (slideOutVertically { it } + fadeOut())
+                            },
+                            label = "gear"
+                        ) { gear ->
+                            HeroNum(gear, gearSize, if (gearActive) Frost else Dim)
+                        }
+                        val tinted = isSportish && p.gearModeTint && vs.isConnected
+                        val gearLabelColor by animateColorAsState(
+                            if (tinted) modeColor else Dim, tween(600), label = "gearLbl")
+                        InstrumentLabel(if (tinted) "GEAR · ${vs.driveMode.label.uppercase()}" else "GEAR", color = gearLabelColor)
                     }
-                    // B.6: 1dp hairline between letter and label — takes mode color
-                    if (isSportish && p.gearModeTint) {
-                        Box(Modifier.fillMaxWidth(0.3f).height(1.dp)
-                            .background(modeColor.copy(alpha = 0.5f)))
-                    }
-                    // B.6: GEAR label tints to mode color in SPORT/TRACK/DRIFT
-                    val gearLabelTarget = if (isSportish && p.gearModeTint) modeColor.copy(alpha = 0.55f) else Dim
-                    val gearLabelColor by animateColorAsState(gearLabelTarget, tween(600), label = "gearLbl")
-                    MonoLabel("G E A R", 8.sp, gearLabelColor, letterSpacing = 4.sp)
+                    PedalBar("THROTTLE", thr, accent, Modifier.fillMaxHeight())
                 }
             }
 
@@ -381,54 +310,10 @@ import kotlin.math.roundToInt
                 }
             }
 
-            AnimatedVisibility(
-                visible = !zoomed,
-                enter = fadeIn() + expandVertically(spring(stiffness = Spring.StiffnessLow)),
-                exit = fadeOut() + shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow))
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(CardGap)) {
-            SectionLabel("INPUTS")
-            val thrInt = thr.roundToInt()
-            val brakeInt = brake.roundToInt()
-            val thrFrac = (thr / 100.0).toFloat().coerceIn(0f, 1f)
-            val brakeFrac = (brake / 100.0).toFloat().coerceIn(0f, 1f)
-            // rc.2: collapsed to a single one-row gauge strip on every layout —
-            // eliminates the 2×2 grid that the critique flagged as hierarchy noise.
-            val fuelCritical = animFuel in 0.01f..9.99f
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                BarCard(
-                    name = "THROTTLE", value = "$thrInt%",
-                    fraction = thrFrac,
-                    barBrush = Brush.horizontalGradient(listOf(accent.copy(0.4f), accent)),
-                    modifier = Modifier.weight(1f),
-                    barGlowColor = accent, sparklineData = thrSnap
-                )
-                BarCard(
-                    name = "BRAKE", value = "$brakeInt%",
-                    fraction = brakeFrac,
-                    barBrush = Brush.horizontalGradient(listOf(Orange.copy(0.4f), Orange)),
-                    modifier = Modifier.weight(1f),
-                    barGlowColor = Orange, sparklineData = brakeSnap
-                )
-                BarCard(
-                    name = if (fuelCritical) "LOW FUEL" else "FUEL",
-                    value = "${animFuel.roundToInt()}%",
-                    fraction = (animFuel / 100f),
-                    barBrush = Brush.horizontalGradient(listOf(Ok.copy(0.4f), Ok)),
-                    modifier = Modifier.weight(1f),
-                    barGlowColor = Ok,
-                    criticalPulse = fuelCritical && !stale,
-                    stale = stale && vs.fuelLevelPct > 0
-                )
-                BarCard(
-                    name = "BATTERY", value = "${"%.2f".format(animBatt)}V",
-                    fraction = ((animBatt - 10f) / 6f).coerceIn(0f, 1f),
-                    barBrush = Brush.horizontalGradient(listOf(Warn.copy(0.4f), Warn)),
-                    modifier = Modifier.weight(1f),
-                    barGlowColor = Warn,
-                    stale = stale && vs.batteryVoltage > 0
-                )
-            }
+            VehicleStatusPanel(status, onOpenThermal, Modifier.then(pageEntrance(2, pageEntered)))
+
+            // Torque split / G / torque are per-frame dynamics — frozen values mislead once stale.
+            ChassisPanel(if (stale) vs.copy(awdLeftTorque = 0.0, awdRightTorque = 0.0, torqueAtTrans = 0.0) else vs, stale)
 
             if (vs.clutchPedalPct > 0.1) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -436,70 +321,333 @@ import kotlin.math.roundToInt
                 }
             }
 
-            SectionLabel("AWD SPLIT")
-            // Torque split / G / torque are per-frame dynamics — frozen values mislead once stale.
-            AwdSplitBar(if (stale) vs.copy(awdLeftTorque = 0.0, awdRightTorque = 0.0, torqueAtTrans = 0.0) else vs)
-
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DataCell("LAT G",  if (stale) "— —" else "${"%.2f".format(vs.lateralG)}g",      modifier = Modifier.weight(1f))
-                DataCell("LON G",  if (stale) "— —" else "${"%.2f".format(vs.longitudinalG)}g", modifier = Modifier.weight(1f))
-                DataCell("TORQUE", if (stale) "— —" else "${vs.torqueAtTrans.roundToInt()} Nm",  modifier = Modifier.weight(1f))
-            }
-
-            // F2: fuel economy section — gated on valid readings
+            // F2: fuel economy — gated on valid readings. One grouped panel; the header collapses it.
             if (econState.isValid) {
                 var econExpanded by rememberSectionExpanded("DRIVE_ECONOMY")
-                SectionLabel("ECONOMY", collapsible = true, expanded = econExpanded, onToggle = { econExpanded = !econExpanded })
-                AnimatedVisibility(
-                    visible = econExpanded,
-                    enter = expandVertically(spring(stiffness = Spring.StiffnessLow)),
-                    exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow))
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(CardGap)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            val isIdle = vs.speedKph < 2.0 && econState.idleFuelLPerHr > 0
-                            val instantLabel = if (isIdle) "IDLE" else "INSTANT"
-                            val instantValue = if (isIdle) {
-                                "${"%.1f".format(econState.idleFuelLPerHr)} L/hr"
-                            } else if (p.speedUnit == "MPH") {
-                                "${"%.1f".format(econState.instantMpg)} MPG"
-                            } else {
-                                "${"%.1f".format(econState.instantL100km)} L/100"
-                            }
-                            val avgValue = if (p.speedUnit == "MPH") {
-                                "${"%.1f".format(econState.avgMpg)} MPG"
-                            } else {
-                                "${"%.1f".format(econState.avgL100km)} L/100"
-                            }
-                            val dteKm = econState.distanceToEmptyKm
-                            val dteStr = if (p.speedUnit == "MPH") "${"%.0f".format(dteKm * UnitConversions.KM_TO_MI)} mi"
-                                         else "${"%.0f".format(dteKm)} km"
-                            val fuelStr = "${"%.1f".format(econState.fuelUsedL)} L"
-
-                            DataCell(instantLabel, instantValue, modifier = Modifier.weight(1f))
-                            DataCell("AVG", avgValue, modifier = Modifier.weight(1f))
-                            DataCell("DTE", dteStr, modifier = Modifier.weight(1f))
-                            DataCell("USED", fuelStr, modifier = Modifier.weight(1f))
-                        }
-                    }
-                }
+                val mph = p.speedUnit == "MPH"
+                val isIdle = vs.speedKph < 2.0 && econState.idleFuelLPerHr > 0
+                EconomyPanel(
+                    expanded = econExpanded,
+                    onToggle = { econExpanded = !econExpanded },
+                    cells = listOf(
+                        when {
+                            isIdle -> Triple("IDLE", "%.1f".format(econState.idleFuelLPerHr), "L/hr")
+                            mph    -> Triple("INSTANT", "%.1f".format(econState.instantMpg), "MPG")
+                            else   -> Triple("INSTANT", "%.1f".format(econState.instantL100km), "L/100 km")
+                        },
+                        if (mph) Triple("AVERAGE", "%.1f".format(econState.avgMpg), "MPG")
+                        else Triple("AVERAGE", "%.1f".format(econState.avgL100km), "L/100 km"),
+                        if (mph) Triple("TO EMPTY", "%.0f".format(econState.distanceToEmptyKm * UnitConversions.KM_TO_MI), "mi")
+                        else Triple("TO EMPTY", "%.0f".format(econState.distanceToEmptyKm), "km"),
+                        Triple("FUEL USED", "%.1f".format(econState.fuelUsedL), "L"),
+                    ),
+                )
             }
+        }
+    }
+}
+
+/** ECONOMY: instant / average / distance to empty / fuel used in one panel; the header row collapses it. */
+@Composable private fun EconomyPanel(expanded: Boolean, onToggle: () -> Unit, cells: List<Triple<String, String, String>>) {
+    val chevron by animateFloatAsState(if (expanded) 0f else -90f, label = "econChevron")
+    Column(Modifier.fillMaxWidth().instrumentSurface()) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 44.dp)
+                .clickable(onClickLabel = if (expanded) "Collapse economy" else "Expand economy") { onToggle() }
+                .padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            InstrumentLabel("ECONOMY")
+            Spacer(Modifier.weight(1f))
+            MonoLabel("\u25BE", 12.sp, Dim, modifier = Modifier.graphicsLayer { rotationZ = chevron })
+        }
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(spring(stiffness = Spring.StiffnessLow)),
+            exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow))
+        ) {
+            Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                cells.forEachIndexed { i, (label, value, unit) ->
+                    if (i > 0) PanelDivider(Modifier.padding(horizontal = 8.dp))
+                    Column(Modifier.weight(1f)) {
+                        InstrumentLabel(label)
+                        Spacer(Modifier.height(2.dp))
+                        DataNum(value, 20.sp, Frost)
+                        InstrumentMeta(unit)
+                    }
                 }
             }
         }
     }
 }
 
-@Composable fun AwdSplitBar(vs: VehicleState) {
+/** Vertical pedal gauge flanking the gear (fill from the bottom, % on top, name below). */
+@Composable private fun PedalBar(label: String, pct: Double, color: Color, modifier: Modifier = Modifier) {
+    val frac by animateFloatAsState((pct / 100.0).toFloat().coerceIn(0f, 1f),
+        tween(120), label = "pedal$label")
+    Column(modifier.width(60.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        DataNum("${pct.roundToInt()}%", 15.sp, if (pct >= 1.0) Frost else Dim)
+        Spacer(Modifier.height(4.dp))
+        Box(
+            Modifier.weight(1f).width(10.dp)
+                .background(Surf3, RoundedCornerShape(5.dp)),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(Modifier.fillMaxWidth().fillMaxHeight(frac).background(color, RoundedCornerShape(5.dp)))
+        }
+        Spacer(Modifier.height(6.dp))
+        MonoLabel(label, 9.sp, Mid, letterSpacing = 0.2.sp)
+    }
+}
+
+/**
+ * One vehicle condition past an existing limit. Shared by the DRIVE priority banner (top item)
+ * and the VEHICLE panel (coloured cells + chips for conditions that have no cell).
+ */
+private data class VehicleAlert(
+    val title: String,           // "OIL CRITICAL"
+    val value: String,           // "268°F"
+    val level: Level,
+    @DrawableRes val icon: Int,
+    val chip: String? = null,    // chip text when the condition has no VEHICLE cell
+)
+
+private data class VehicleStatus(
+    val connected: Boolean,
+    val oil: String, val oilLvl: Level,
+    val cool: String, val coolLvl: Level,
+    val fuel: String, val fuelLvl: Level,
+    val batt: String, val battLvl: Level,
+    /** Highest severity first (CRIT before WARN), then oil → coolant → PTU → RDU → tyre → fuel → knock. */
+    val alerts: List<VehicleAlert>,
+)
+
+/** Every rule here is an existing limit (THERMAL preset, TPMS low / warn psi, fuel < 10 %, knock counter). */
+private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): VehicleStatus {
+    val connected = vs.isConnected
+    fun avail(c: Double, tag: String) = tempAvailFor(c, vs.fieldLastUpdateMs[tag]).whenDisconnected(connected)
+    fun temp(c: Double) = if (c > -90) "${p.displayTemp(c)}${p.tempLabel}" else "— —"
+    val oilLvl  = tempLevel(vs.oilTempC, p.oilWarnC, p.oilCritC, avail(vs.oilTempC, "oilTempC"))
+    val coolLvl = tempLevel(vs.coolantTempC, p.coolWarnC, p.coolCritC, avail(vs.coolantTempC, "coolantTempC"))
+    val hasFuel = vs.fuelLevelPct > 0
+    val fuelLvl = when {
+        !hasFuel -> Level.NONE
+        !connected -> Level.STALE
+        vs.fuelLevelPct < 10.0 -> Level.WARN          // DRIVE "LOW FUEL" rule (< 10 %)
+        else -> Level.NORMAL
+    }
+    val hasBatt = vs.batteryVoltage > 0
+    val battLvl = when { !hasBatt -> Level.NONE; !connected -> Level.STALE; else -> Level.NORMAL }
+    val fuelStr = if (hasFuel) "${vs.fuelLevelPct.roundToInt()}%" else "— —"
+
+    fun hotTitle(name: String, l: Level) = if (l == Level.CRIT) "$name CRITICAL" else "$name HOT"
+    val alerts = buildList {
+        if (oilLvl.isAlert) add(VehicleAlert(hotTitle("OIL", oilLvl), temp(vs.oilTempC), oilLvl, R.drawable.ic_tt_oil))
+        if (coolLvl.isAlert) add(VehicleAlert(hotTitle("COOLANT", coolLvl), temp(vs.coolantTempC), coolLvl, R.drawable.ic_tt_coolant))
+        if (connected) {
+            listOf(
+                Triple("PTU", vs.ptuTempC, Triple("ptuTempC", p.ptuWarnC, p.ptuCritC)),
+                Triple("RDU", vs.rduTempC, Triple("rduTempC", p.rduWarnC, p.rduCritC)),
+            ).forEach { (name, c, lim) ->
+                val lvl = tempLevel(c, lim.second, lim.third, avail(c, lim.first))
+                if (lvl.isAlert) add(VehicleAlert(hotTitle(name, lvl), temp(c), lvl, R.drawable.ic_tt_coolant, chip = "$name ${temp(c)}"))
+            }
+            if (vs.hasTpmsData) {
+                listOf("FL" to vs.tirePressLF, "FR" to vs.tirePressRF, "RL" to vs.tirePressLR, "RR" to vs.tirePressRR)
+                    .filter { it.second >= 0 }.minByOrNull { it.second }?.let { (pos, psi) ->
+                        val v = "${p.displayTire(psi)} ${p.tireLabel}"
+                        if (p.isTireLow(psi))
+                            add(VehicleAlert("$pos TYRE LOW", v, Level.CRIT, R.drawable.ic_tt_tyre, chip = "$pos $v LOW"))
+                        else if (psi < p.tireWarnPsi)
+                            add(VehicleAlert("$pos TYRE PRESSURE", v, Level.WARN, R.drawable.ic_tt_tyre, chip = "$pos $v"))
+                    }
+            }
+        }
+        if (fuelLvl == Level.WARN) add(VehicleAlert("FUEL LOW", fuelStr, Level.WARN, R.drawable.ic_tt_fuel))
+        if (knockCount > 0) add(VehicleAlert("KNOCK DETECTED", "×$knockCount", Level.WARN, R.drawable.ic_tt_alert, chip = "KNOCK ×$knockCount"))
+    }.sortedBy { if (it.level == Level.CRIT) 0 else 1 }   // stable: keeps the priority order within a level
+
+    return VehicleStatus(
+        connected,
+        temp(vs.oilTempC), oilLvl, temp(vs.coolantTempC), coolLvl,
+        fuelStr, fuelLvl, if (hasBatt) "${"%.1f".format(vs.batteryVoltage)}V" else "— —", battLvl,
+        alerts,
+    )
+}
+
+/**
+ * Permanent status line at the top of DRIVE — the same 48 dp in every state, so warnings appearing
+ * or clearing only change its content and never push the instruments. Leads with the most severe
+ * alert ("OIL CRITICAL 268°F  +6"); with none, THERMAL's readiness verdict (same rule as its
+ * banner); offline, NO VEHICLE DATA. Alerts hold 3 s after clearing so a reading hovering at a
+ * limit doesn't flicker. Tap opens THERMAL.
+ */
+@Composable private fun StatusLine(alerts: List<VehicleAlert>, rtr: RaceReadiness?, onOpen: () -> Unit) {
+    var held by remember { mutableStateOf(alerts) }
+    LaunchedEffect(alerts) {
+        if (alerts.isEmpty()) kotlinx.coroutines.delay(3_000)
+        held = alerts
+    }
+    val top = held.firstOrNull()
+    val shape = RoundedCornerShape(12.dp)
+    // Readiness colours match THERMAL's RtrBanner dot: READY Ok, OVERHEAT Orange, otherwise Warn.
+    val (accentColor, title, value) = when {
+        top != null -> Triple(levelColor(top.level), top.title, top.value)
+        rtr == null -> Triple(Dim, "NO VEHICLE DATA", "")
+        rtr.state == RtrState.READY -> Triple(Ok, "RACE READY", "")
+        rtr.state == RtrState.OVERHEAT -> Triple(Orange, "OVERHEATING", rtr.detail ?: "")
+        rtr.state == RtrState.WARMING -> Triple(Warn, "WARMING UP", rtr.detail ?: "")
+        else -> Triple(Warn, "CHECKING SENSORS", rtr.detail ?: "")
+    }
+    val alerting = top != null || rtr?.state == RtrState.OVERHEAT
+    Row(
+        Modifier.fillMaxWidth().height(48.dp)
+            .background(InstrumentFill, shape)
+            .then(if (alerting) Modifier.background(accentColor.copy(alpha = if (isDayModeNow()) 0.16f else 0.14f), shape) else Modifier)
+            .border(if (alerting) 1.dp else Tokens.CardBorder,
+                if (alerting) accentColor.copy(alpha = borderAlpha(0.8f))
+                else if (isDayModeNow()) Brd.copy(alpha = 0.75f) else Brd.copy(alpha = 0.15f), shape)
+            .clickable(onClickLabel = "Open THERMAL") { onOpen() }
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (top != null) Telltale(top.icon, accentColor, 22.dp, contentDescription = null)
+        else Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(9.dp).background(accentColor, androidx.compose.foundation.shape.CircleShape))
+        }
+        Spacer(Modifier.width(10.dp))
+        androidx.compose.material3.Text(
+            title, color = textColor(if (alerting) accentColor else Frost), fontFamily = RajdhaniFamily,
+            fontWeight = FontWeight.Bold, fontSize = 17.sp, letterSpacing = 0.5.sp, maxLines = 1,
+            // Unweighted: measured first, so the condition name keeps its width and the
+            // trailing detail / count give way on narrow phones.
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+        )
+        if (value.isNotEmpty()) {
+            Spacer(Modifier.width(10.dp))
+            if (top != null) DataNum(value, 17.sp, Frost)
+            else MonoLabel(value, 10.sp, Dim, letterSpacing = 0.2.sp, modifier = Modifier.weight(1f, fill = false))
+        }
+        Spacer(Modifier.weight(1f))
+        if (held.size > 1) {
+            Box(
+                Modifier.background(Surf3, RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 3.dp)
+            ) { MonoLabel("+${held.size - 1}", 11.sp, Frost, FontWeight.Bold) }
+            Spacer(Modifier.width(8.dp))
+        }
+        MonoLabel("›", 16.sp, Dim)
+    }
+}
+
+/**
+ * VEHICLE panel: the readings that decide whether to keep pushing — oil, coolant, fuel, battery —
+ * plus chips for active conditions that have no cell (PTU / RDU temps, tyre pressure, knock).
+ * Narrow screens (< 340 dp of panel) switch the cells to a 2 × 2 grid. Tap opens THERMAL.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable private fun VehicleStatusPanel(st: VehicleStatus, onOpenThermal: () -> Unit, modifier: Modifier = Modifier) {
+    fun tempSub(l: Level) = when (l) {
+        Level.COLD -> "COLD"; Level.WARN -> "HIGH"; Level.CRIT -> "CRITICAL"; Level.STALE -> "STALE"
+        Level.NONE -> if (st.connected) "WAITING" else ""; Level.NORMAL -> ""
+    }
+    val fuelSub = when (st.fuelLvl) { Level.WARN -> "LOW"; Level.STALE -> "STALE"; else -> "" }
+    val battSub = if (st.battLvl == Level.STALE) "STALE" else ""
+    // Only reserve the tag line when a cell has a tag — otherwise it's dead space.
+    val subs = listOf(tempSub(st.oilLvl), tempSub(st.coolLvl), fuelSub, battSub)
+    fun sub(i: Int) = if (subs.any { it.isNotEmpty() }) subs[i] else null
+    val chips = st.alerts.filter { it.chip != null }
+    val panelLvl = worstLevel(st.alerts.map { it.level })
+
+    Column(
+        modifier.fillMaxWidth()
+            .instrumentSurface(panelLvl)
+            .clickable(onClickLabel = "Open THERMAL") { onOpenThermal() }
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            InstrumentLabel("VEHICLE")
+            Spacer(Modifier.weight(1f))
+            val summary = when {
+                st.alerts.isNotEmpty() -> st.alerts.first().title + if (st.alerts.size > 1) "  +${st.alerts.size - 1}" else ""
+                st.oilLvl == Level.NONE && st.fuelLvl == Level.NONE -> ""
+                else -> "ALL NORMAL"
+            }
+            MonoLabel(summary, 10.sp, if (st.alerts.isNotEmpty()) levelColor(panelLvl) else Dim,
+                if (st.alerts.isNotEmpty()) FontWeight.Bold else FontWeight.Normal, letterSpacing = 0.4.sp)
+            Spacer(Modifier.width(6.dp))
+            MonoLabel("›", 13.sp, Dim)
+        }
+        Spacer(Modifier.height(10.dp))
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val cells: List<@Composable (Modifier) -> Unit> = listOf(
+                { m -> StatusCell(R.drawable.ic_tt_oil, "OIL", st.oil, st.oilLvl, m, sub(0)) },
+                { m -> StatusCell(R.drawable.ic_tt_coolant, "COOLANT", st.cool, st.coolLvl, m, sub(1)) },
+                { m -> StatusCell(R.drawable.ic_tt_fuel, "FUEL", st.fuel, st.fuelLvl, m, sub(2)) },
+                { m -> StatusCell(R.drawable.ic_tt_battery, "BATT", st.batt, st.battLvl, m, sub(3)) },
+            )
+            if (maxWidth < 340.dp) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    cells.chunked(2).forEach { pair ->
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            pair[0](Modifier.weight(1f))
+                            PanelDivider(Modifier.padding(horizontal = 8.dp))
+                            pair[1](Modifier.weight(1f))
+                        }
+                    }
+                }
+            } else {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    cells.forEachIndexed { i, cell ->
+                        if (i > 0) PanelDivider(Modifier.padding(horizontal = 8.dp))
+                        cell(Modifier.weight(if (i < 2) 1f else 0.8f))
+                    }
+                }
+            }
+        }
+        if (chips.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                chips.forEach { AlertChip(it.chip!!, it.level, it.icon) }
+            }
+        }
+    }
+}
+
+/** AWD split + per-frame dynamics in one panel (was a split card + three separate cells). */
+@Composable private fun ChassisPanel(vs: VehicleState, stale: Boolean) {
+    Column(
+        Modifier.fillMaxWidth()
+            .instrumentSurface()
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            InstrumentLabel("AWD SPLIT")
+            Spacer(Modifier.weight(1f))
+            InstrumentMeta(
+                if (stale) "L — · R — Nm" else "L ${vs.awdLeftTorque.roundToInt()} · R ${vs.awdRightTorque.roundToInt()} Nm"
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        AwdSplitBar(vs, stale)
+        Spacer(Modifier.height(12.dp))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Brd.copy(alpha = borderAlpha(0.4f))))
+        Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth()) {
+            MiniReadout("LAT G",  if (stale) "— —" else "${"%.2f".format(vs.lateralG)}g",      Modifier.weight(1f))
+            MiniReadout("LON G",  if (stale) "— —" else "${"%.2f".format(vs.longitudinalG)}g", Modifier.weight(1f))
+            MiniReadout("TORQUE", if (stale) "— —" else "${vs.torqueAtTrans.roundToInt()} Nm",  Modifier.weight(1f))
+        }
+    }
+}
+
+/** Front/rear split bar. [stale]: no live split — dashes and an empty track, not a fake 100 / 0. */
+@Composable fun AwdSplitBar(vs: VehicleState, stale: Boolean = false) {
     val accent = LocalThemeAccent.current
+    val rearColor = accentMid()
     val rearPct  = vs.rearTorquePct.coerceIn(0.0, 100.0).toFloat()
     val frontPct = (100f - rearPct).coerceIn(0.01f, 99.99f)
     val rearF    = rearPct.coerceIn(0.01f, 99.99f)
-    // B.7: biased segment alpha lift when delta > 20
-    val splitDelta = kotlin.math.abs(frontPct - rearF)
-    val biased = splitDelta > 20f
-    val frontAlpha = if (biased && rearF > frontPct) 0.5f else if (biased) 0.85f else 0.5f
-    val rearAlpha  = if (biased && rearF > frontPct) 0.85f else if (biased) 0.5f else 0.5f
 
     val torqueDelta = kotlin.math.abs(vs.awdLeftTorque - vs.awdRightTorque).toFloat()
     val flowSpeed = (2000 - (torqueDelta * 10).toInt().coerceIn(0, 1200)).coerceIn(800, 2000)
@@ -509,82 +657,45 @@ import kotlin.math.roundToInt
         label = "awdFlowP"
     )
 
-    Column(
-        Modifier.fillMaxWidth()
-            .background(Surf2, RoundedCornerShape(12.dp))
-            .border(CardBorder, Brd, RoundedCornerShape(12.dp))
-            .padding(14.dp)
-    ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Column {
-                MonoLabel("FRONT", 8.sp, Dim, letterSpacing = 0.12.sp)
-                HeroNum("${(100 - rearPct).roundToInt()}%", 18.sp, accent)
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column {
+            MonoLabel("FRONT", 9.sp, Dim, letterSpacing = 0.3.sp)
+            DataNum(if (stale) "—" else "${(100 - rearPct).roundToInt()}%", 18.sp, if (stale) Dim else Frost)
+        }
+        Box(Modifier.weight(1f).padding(horizontal = 12.dp).height(8.dp)) {
+            if (!stale) Row(Modifier.matchParentSize().background(Surf3, RoundedCornerShape(4.dp))) {
+                Box(Modifier.weight(frontPct).fillMaxHeight()
+                    .background(accent, RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp)))
+                Spacer(Modifier.width(2.dp))
+                Box(Modifier.weight(rearF).fillMaxHeight()
+                    .background(rearColor, RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)))
             }
-            Box(Modifier.weight(1f).padding(horizontal = 12.dp).height(10.dp)) {
-                Row(Modifier.matchParentSize().background(Surf3, RoundedCornerShape(5.dp))) {
-                    Box(Modifier.weight(frontPct).fillMaxHeight()
-                        .background(Brush.horizontalGradient(listOf(accent, accent.copy(frontAlpha))),
-                            RoundedCornerShape(topStart = 5.dp, bottomStart = 5.dp)))
-                    Box(Modifier.weight(rearF).fillMaxHeight()
-                        .background(Brush.horizontalGradient(listOf(Ok.copy(rearAlpha), Ok)),
-                            RoundedCornerShape(topEnd = 5.dp, bottomEnd = 5.dp)))
+            else Box(Modifier.matchParentSize().background(Surf3, RoundedCornerShape(4.dp)))
+            if (!stale && vs.totalRearTorque > 5) {
+                // V6: dot count scales with torque intensity
+                val totalTorque = vs.totalRearTorque.toFloat()
+                val dotCount = when {
+                    totalTorque > 800 -> 5
+                    totalTorque > 400 -> 4
+                    totalTorque > 100 -> 3
+                    else -> 2
                 }
-                if (vs.totalRearTorque > 5) {
-                    // V6: dot count + glow scales with torque intensity
-                    val totalTorque = vs.totalRearTorque.toFloat()
-                    val dotCount = when {
-                        totalTorque > 800 -> 5
-                        totalTorque > 400 -> 4
-                        totalTorque > 100 -> 3
-                        else -> 2
-                    }
-                    val highLoad = totalTorque > 500
-                    Canvas(Modifier.matchParentSize()) {
-                        val dotRadius = 2.dp.toPx()
-                        val capRadius = 1.5.dp.toPx()
-                        val rearDominant = rearPct > 55f
-                        for (i in 0 until dotCount) {
-                            val phase = (flowProgress + i.toFloat() / dotCount) % 1f
-                            val x = if (rearDominant) size.width * (1f - phase) else size.width * phase
-                            val dotAlpha = (0.4f * (1f - kotlin.math.abs(phase - 0.5f) * 2f)).coerceIn(0f, 0.4f)
-                            val dotColor = if (rearDominant) Ok else accent
-                            val center = Offset(x, size.height / 2f)
-                            // V6: glow ring on high-load dots
-                            if (highLoad) {
-                                drawCircle(dotColor.copy(alpha = dotAlpha * 0.15f), dotRadius * 2.5f, center)
-                            }
-                            drawCircle(dotColor.copy(alpha = dotAlpha), dotRadius, center)
-                            drawCircle(dotColor.copy(alpha = dotAlpha * 0.6f), capRadius, center.copy(y = center.y - 0.5.dp.toPx()))
-                        }
+                val dotColor = Frost
+                Canvas(Modifier.matchParentSize()) {
+                    val dotRadius = 1.6.dp.toPx()
+                    val rearDominant = rearPct > 55f
+                    for (i in 0 until dotCount) {
+                        val phase = (flowProgress + i.toFloat() / dotCount) % 1f
+                        val x = if (rearDominant) size.width * (1f - phase) else size.width * phase
+                        val dotAlpha = (0.5f * (1f - kotlin.math.abs(phase - 0.5f) * 2f)).coerceIn(0f, 0.5f)
+                        drawCircle(dotColor.copy(alpha = dotAlpha), dotRadius, Offset(x, size.height / 2f))
                     }
                 }
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                MonoLabel("REAR", 8.sp, Dim, letterSpacing = 0.12.sp)
-                HeroNum("${rearPct.roundToInt()}%", 18.sp, Ok)
             }
         }
-        // rc.2: dropped the center "front/rear split" line — it duplicated
-        // the percentages already shown at each end of the bar. L/R torque
-        // labels now get full row width and a touch more prominence.
-        // B.7: L/R delta pulse when imbalance > 200 Nm
-        val lrImbalance = torqueDelta > 200f
-        val lrPulseAlpha by rememberInfiniteTransition(label = "lrPulse").animateFloat(
-            initialValue = 1f, targetValue = 0.6f,
-            animationSpec = infiniteRepeatable(tween(1200), RepeatMode.Reverse),
-            label = "lrPulseA"
-        )
-        val lrAlpha = if (lrImbalance) lrPulseAlpha else 1f
-        Spacer(Modifier.height(10.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Column {
-                MonoLabel("LEFT", 10.sp, Dim, letterSpacing = 0.15.sp)
-                MonoText("${vs.awdLeftTorque.roundToInt()} Nm", 16.sp, accent.copy(alpha = lrAlpha))
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                MonoLabel("RIGHT", 10.sp, Dim, letterSpacing = 0.15.sp)
-                MonoText("${vs.awdRightTorque.roundToInt()} Nm", 16.sp, Ok.copy(alpha = lrAlpha))
-            }
+        Column(horizontalAlignment = Alignment.End) {
+            MonoLabel("REAR", 9.sp, Dim, letterSpacing = 0.3.sp)
+            DataNum(if (stale) "—" else "${rearPct.roundToInt()}%", 18.sp, if (stale) Dim else Frost)
         }
     }
 }

@@ -108,16 +108,27 @@ ui/
                             Scaffold uses contentWindowInsets=statusBars (content extends behind nav bar)
                             hazeSource on content Box inside Scaffold (NOT outer Box — see Haze gotcha)
                             enableEdgeToEdge with transparent navigation bar style
-  DrivePage.kt             — DRIVE tab: hero heroes (RPM/BOOST/MPH), gear, INPUTS strip, AWD split,
-                            lateral/longitudinal G, torque. Disconnected → heroes render "—" placeholder
+  DrivePage.kt             — DRIVE tab: StatusLine (permanent 48 dp row: top alert "OIL CRITICAL 268°F +6", else
+                            THERMAL readiness verdict, else NO VEHICLE DATA; 3 s alert hold),
+                            InstrumentHero row (RPM/BOOST/MPH), gear module (shift lights, brake | gear | throttle;
+                            fixed height per screen — never resizes with speed/gear), VEHICLE panel (oil/coolant/fuel/batt, 2×2 under 340 dp,
+                            alert chips, tap → THERMAL), chassis panel (AWD split + G + torque). vehicleStatus() is
+                            the single alert list for banner + panel. Disconnected → "—"
   PerfPage.kt              — PERF tab: G-force plot + dynamics numeric readout + PowerPageContent
                             (AFR, throttle/boost, engine mgmt, fuel trims, knock sensors). When offline,
                             sections force-collapse + a "CONNECT ADAPTER TO POPULATE" hint renders at top
   PowerPage.kt             — PowerPageContent composable shared by PERF + CustomDash
   ChassisPage.kt           — UnifiedChassisSection (Tires + AWD) embedded in TempsPage + GForcePlot wrapper
-  TempsPage.kt             — THERMAL tab: RtrBanner, TempPresetBadge (STREET/TRACK/RACE), tires & AWD,
-                            powertrain temps, detail temps. RtrBanner neutralises to "— AWAITING CAN —"
-                            when offline; WARMING tags suppressed while disconnected (rc.3)
+  TempsPage.kt             — THERMAL tab: ReadinessCard (RACE READY verdict + STREET/TRACK/RACE limits), predictive
+                            alerts, ENGINE (full-width oil + coolant EngineTempCard, scale + WARN/CRIT legend),
+                            DRIVETRAIN panel (PTU/RDU/clutch L-R/trans oil rows), AIR (compact intake/ambient), tires
+                            & AWD, collapsible DETAIL (compact). Offline → "AWAITING CAN"
+  Instrument.kt           — Design-pass building blocks: Level (NORMAL/COLD/WARN/CRIT/STALE/NONE), tempLevel(),
+                            instrumentSurface() (white + hairline on DAY, no shadow), InstrumentLabel/InstrumentMeta
+                            (10 sp), InstrumentHero, StatusCell, AlertChip, ThresholdBar (caution + redline zones) +
+                            ThresholdLegend, MiniReadout, Telltale (res/drawable/ic_tt_oil|coolant|fuel|battery|tyre|
+                            alert — original stroke glyphs). The Focus RS wireframe (drawable-nodpi/
+                            focus_rs_wireframe.png) is the owner's branding art — never redraw/replace it unasked
   TripPage.kt (trip/)      — TRIP tab: live Google Map + drive history list; see trip/DriveMap.kt
   GaragePage.kt            — GARAGE tab: CONTROL/DIAG segmented picker → MorePage + DiagPage
   DiagPage.kt              — DTC scan/clear, PID browser, DID prober, diagnostic export (inside GARAGE)
@@ -337,7 +348,7 @@ data[5] = B5,  data[6] = B6 …
   (`rtrStatus`) > READY. RDU/PTU/clutch temps are optional until first reported. The banner and `DriveRecorder`'s RTR
   marker must share it; `isReadyToRace` remains only as the cold-check primitive
 - **Live-only readouts go blank when `!vs.isConnected`** — the last frame stays in VehicleState after a drop, so gear,
-  shift LEDs (bar + edge glow), auto-zoom, LC glow/banner, e-brake/LC anomaly priority, DRIVE throttle/brake/AWD/G/torque,
+  shift LEDs (bar + edge glow), LC glow/banner, e-brake/LC anomaly priority, DRIVE throttle/brake/AWD/G/torque,
   the HUD overlay and Custom Dashboard cells all gate on connection. Fuel / battery / temps keep last value (THERMAL marks
   them STALE). Any new live readout needs the same gate
 - **Don't animate fast values with `AnimatedContent`** — a crossfade keyed on the value restarts on every CAN frame and
@@ -353,6 +364,22 @@ data[5] = B5,  data[6] = B6 …
   `Text`/`TextStyle` must use `WarnInk` or `textColor(...)` explicitly. Fills/bars keep `Warn`
 - **Thermal alerts: `SensorPrediction.reached`** — at/over critical show the current state, never "will reach … in <1 min".
   Readiness / alert temperatures render via `p.displayTemp` (user unit); comparisons stay in °C
+- **Colour = state on DRIVE / THERMAL (design pass)** — readings render in ink, the paint accent marks live/brand
+  elements (BOOST value, sparklines, throttle, selected chips), and Warn / Orange appear only when a reading crosses
+  an existing limit (`tempLevel()` with the preset warn/crit, `isTireLow` / `tireWarnPsi`, fuel < 10 %, knock counter,
+  `isShiftPoint`). There is no battery-voltage limit — don't colour it. ThresholdBar's caution / redline zones are
+  scale markings (like a tach redline), kept faint and always visible (owner wants them as reference points); the fill
+  and value carry the state. Warnings lead DRIVE via StatusLine, sorted CRIT → WARN then oil → coolant → PTU → RDU →
+  tyre → fuel → knock. THERMAL trims padding/gaps (not reading sizes) when the page viewport is < 760 dp tall
+  (`LocalThermalDensity`)
+- **Scrolling pages pad with `pageBottomPadding()`** — the bottom nav overlay is NavBarHeight + the system gesture
+  inset tall and content runs behind it; padding only `Tokens.NavBarHeight` hid the last ~24 dp (DRIVE ECONOMY). New
+  scrolling pages must use `pageBottomPadding()` (or `navBarClearance()` without the page margin)
+- **DRIVE layout never moves with motion** — the gear module height comes only from the page viewport
+  (`(viewportH × 0.22).coerceIn(124, 176) dp`, digit 84 sp / 72 sp under 680 dp); no auto-zoom, no gear pop/scale (the
+  old `driveAutoZoom` setting is removed). Only data availability (ECONOMY, recording strip, VEHICLE alert chips)
+  may add rows below the instruments; the StatusLine is permanent so alerts only change its content. Verify by
+  comparing card edges across `at:2.5 / 9.5 / 23` frames
 - **Demo simulates only fields a real decoder writes** — `manifoldChargeTempC` and the IPC `warn*` lamps have no decoder,
   so they stay at their sentinels (DemoSimulatorTest guards this). Add a field to the simulator only with its decoder
 
@@ -434,18 +461,23 @@ bash scripts/install-debug.sh --es demo driving   # same, but straight into demo
 # Control a running debug app (onNewIntent needs --activity-single-top):
 adb shell am start --activity-single-top -n com.openrs.dash.debug/com.openrs.dash.ui.MainActivity --es demo warning
 #   demo = idle | driving | warning | loss | pause | reset | off
+#   demo = at:<seconds> — replay the current scenario and pause at that time (repeatable screenshot frames;
+#          DRIVING at:9.5 = mid-pull 3rd gear, at:2.5 = idle on the brake; WARNING at:50 = all alerts)
+#   demo = collapse | expand — fold the control strip to a 2 dp amber line (header DEMO pill toggles it too)
+# Smaller phone check: adb shell wm size 1080x2160 && adb shell wm density 480  (360×720 dp; `reset` both after)
 # Cold start with an extra: am start -S -n … --es demo idle   (without -S the intent is only brought to front)
 ```
 
 **In-app:** ⚙ → DEVELOPER (debug builds only) → pick a scenario. While active, an amber strip under the header shows
 `DEMO`, scenario time, a scenario menu (IDLE/DRIVE/WARN/LOSS), pause ❚❚ / ▶, reset ↺, exit ✕ — every control a
-≥ 48 dp touch target; the header pill reads DEMO and the floating HUD shows "DEMO · simulated".
+≥ 48 dp touch target; the header pill reads DEMO and the floating HUD shows "DEMO · simulated". Tap `DEMO 0:42 ▴`
+to fold the strip (design reviews); tap the header DEMO pill to unfold it.
 Exit leaves the app OFF ("TAP TO CONNECT") until you tap connect.
 
 | Scenario | What to check |
 |---|---|
 | IDLE | Cold start: fast idle ~1200→850 rpm, vacuum, E-BRAKE strip, THERMAL "WARMING UP — NOT RACE READY" |
-| DRIVING | 60 s loop: launch, pull to 125 km/h (shift bar, gear 1→6, boost ~23 psi), braking, ±0.9 g corner, cruise; DRIVE auto-zoom |
+| DRIVING | 60 s loop: launch, pull to 125 km/h (shift bar, gear 1→6, boost ~23 psi), braking, ±0.9 g corner, cruise; gear module + panels must not move |
 | WARNING | Oil/coolant/PTU critical, RL tyre 29→24 psi banner, KR 3–4° (knock badge + scatter), underboost + WGDC 98 %, LOW FUEL, 11.9 V; DTC scan returns P0217/P0171/P0325/P0562 |
 | LOSS | 40 s loop: live 0–10 s → RCN/RECONNECTING, frozen values 10–22 s → TPMS/RDU sentinels ("— psi N/A") 22–26 s → live |
 

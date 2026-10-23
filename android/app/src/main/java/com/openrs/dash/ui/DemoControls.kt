@@ -33,7 +33,8 @@ import com.openrs.dash.ui.anim.pressClick
 // DEMO CONTROL STRIP — debug builds only
 //
 // Sits directly under AppHeader while demo mode runs, on every tab:
-//   [DEMO 0:42] · · · [DRIVE ▾] [❚❚] [↺] [✕]
+//   [DEMO 0:42 ▴] · · · [DRIVE ▾] [❚❚] [↺] [✕]
+// Tapping [DEMO 0:42 ▴] folds it to a 2 dp amber hairline; the header DEMO pill unfolds it.
 // Every control is a ≥ 48 × 48 dp touch target (strip is 48 dp tall); the four
 // scenarios live in one menu so the row still fits a 360 dp phone.
 // Amber = "not real data". The strip is the always-visible DEMO indicator;
@@ -50,6 +51,7 @@ fun DemoControlStrip(
     onTogglePause: () -> Unit,
     onReset: () -> Unit,
     onExit: () -> Unit,
+    onCollapse: () -> Unit = {},
 ) {
     val secs = status.elapsedMs / 1000
     val clock = "%d:%02d".format(secs / 60, secs % 60)
@@ -66,16 +68,26 @@ fun DemoControlStrip(
             .padding(start = 10.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        DemoBadge()
-        Spacer(Modifier.width(6.dp))
-        MonoLabel(
-            when {
-                status.paused                 -> "$clock \u275A\u275A"
-                status.link == DemoLink.LOST  -> "$clock LOST"
-                else                          -> clock
-            },
-            9.sp, if (status.paused) demoInk() else Mid, FontWeight.Bold, 0.05.sp
-        )
+        Row(
+            Modifier
+                .heightIn(min = 48.dp)
+                .semantics { contentDescription = "Collapse demo controls"; role = Role.Button }
+                .pressClick(pressedScale = 0.96f) { onCollapse() },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            DemoBadge()
+            Spacer(Modifier.width(6.dp))
+            MonoLabel(
+                when {
+                    status.paused                 -> "$clock \u275A\u275A"
+                    status.link == DemoLink.LOST  -> "$clock LOST"
+                    else                          -> clock
+                },
+                9.sp, if (status.paused) demoInk() else Mid, FontWeight.Bold, 0.05.sp
+            )
+            Spacer(Modifier.width(4.dp))
+            MonoLabel("\u25B4", 10.sp, Dim)
+        }
         Spacer(Modifier.weight(1f))
         Box {
             DemoButton("${status.scenario.chip} \u25BE", "Demo scenario: ${status.scenario.label}",

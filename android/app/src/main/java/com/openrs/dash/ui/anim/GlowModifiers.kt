@@ -7,6 +7,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.openrs.dash.ui.isDayModeNow
@@ -70,32 +73,27 @@ fun Modifier.cardGlow(
     val hasTint = tint != Color.Unspecified
 
     if (day) {
-        // DAY: soft directional drop-shadow (2dp down, 4dp blur) using two
-        // offset layers for depth. When tint is provided, add a top-gradient
-        // sheen ("machined aluminum" specular) over the top 12dp.
-        val offset1 = 2.dp.toPx()
-        val spread1 = 4.dp.toPx()
-        val offset2 = 4.dp.toPx()
-        val spread2 = 8.dp.toPx()
+        // DAY: faint contact shadow (1dp down, 3dp blur) — cards should sit on the page, not
+        // float. The previous two un-blurred offset rects read as grey slabs between neighbours.
+        // When tint is provided, add a top-gradient sheen ("machined aluminum"
+        // specular) over the top 12dp.
+        val dy = 1.dp.toPx()
+        val blur = 3.dp.toPx()
         val sheenHeight = 12.dp.toPx()
+        val shadowPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = android.graphics.Color.WHITE   // `color` alone is the modifier parameter
+            setShadowLayer(blur, 0f, dy, Color.Black.copy(alpha = (intensity * 0.9f).coerceAtMost(0.08f)).toArgb())
+        }
         val sheenBrush = if (hasTint) Brush.verticalGradient(
             listOf(tint.copy(alpha = 0.06f), Color.Transparent),
             startY = 0f, endY = sheenHeight
         ) else null
 
         onDrawBehind {
-            drawRoundRect(
-                color = Color.Black.copy(alpha = intensity * 0.8f),
-                topLeft = Offset(-spread2, offset2),
-                size = Size(size.width + spread2 * 2, size.height + spread2),
-                cornerRadius = cr
-            )
-            drawRoundRect(
-                color = Color.Black.copy(alpha = intensity * 1.4f),
-                topLeft = Offset(-spread1, offset1),
-                size = Size(size.width + spread1 * 2, size.height + spread1),
-                cornerRadius = cr
-            )
+            // Paint body is covered by the card's own background; only the blurred shadow shows.
+            drawIntoCanvas { canvas ->
+                canvas.nativeCanvas.drawRoundRect(0f, 0f, size.width, size.height, cornerPx, cornerPx, shadowPaint)
+            }
             if (sheenBrush != null) {
                 drawRoundRect(
                     brush = sheenBrush,

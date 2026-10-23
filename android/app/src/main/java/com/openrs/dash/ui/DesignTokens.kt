@@ -1,6 +1,11 @@
 package com.openrs.dash.ui
 
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
@@ -37,3 +42,15 @@ object Tokens {
     val HeroRadius    = 14.dp
     val GfRadius      = 10.dp
 }
+
+/**
+ * Bottom padding for a scrolling page: page margin + bottom nav + the system navigation / gesture inset.
+ * The nav overlay (BottomNavBar) is NavBarHeight **plus** that inset tall, and the Scaffold lets content
+ * run behind both — padding only NavBarHeight left the last ~24 dp (DRIVE ECONOMY) under the nav.
+ */
+@Composable fun pageBottomPadding(): Dp =
+    Tokens.PagePad + navBarClearance()
+
+/** Height the bottom nav overlay covers: its rows + the system navigation / gesture inset. */
+@Composable fun navBarClearance(): Dp =
+    Tokens.NavBarHeight + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()

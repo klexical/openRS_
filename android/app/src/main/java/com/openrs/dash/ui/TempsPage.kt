@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -46,6 +47,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.ui.Tokens.CardBorder
 import com.openrs.dash.ui.Tokens.PagePad
@@ -85,13 +90,17 @@ import com.openrs.dash.ui.anim.StaggeredColumn
     val oilSnap = remember(sparkKey) { oilSpark.snapshot() }
     val coolSnap = remember(sparkKey) { coolSpark.snapshot() }
 
+    // Short viewports (≈ 360 × 720 dp phones) trim padding and gaps — never the reading sizes — so
+    // the drivetrain group starts higher up.
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val density = if (maxHeight < 760.dp) TightThermal else RoomyThermal
+    CompositionLocalProvider(LocalThermalDensity provides density) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .padding(start = PagePad, end = PagePad, top = PagePad, bottom = PagePad + Tokens.NavBarHeight),
-        verticalArrangement = Arrangement.spacedBy(CardGap)
+            .padding(start = PagePad, end = PagePad, top = density.pageTop, bottom = pageBottomPadding()),
+        verticalArrangement = Arrangement.spacedBy(density.gap)
     ) {
-        RtrBanner(vs, p)
-        TempPresetBadge(p)
+        ReadinessCard(vs, p)
 
         // ── Predictive thermal alerts ───────────────────────────────────
         if (vs.isConnected) {
@@ -111,10 +120,7 @@ import com.openrs.dash.ui.anim.StaggeredColumn
             }
         }
 
-        // ── Tires + AWD (migrated from CHASSIS) ─────────────────────────
-        UnifiedChassisSection(vs, p)
-
-        fun peakStr(peakC: Double) = if (peakC > -90) "\u25B2 ${p.displayTemp(peakC)}${p.tempLabel}" else ""
+        fun peakStr(peakC: Double) = if (peakC > -90) "PEAK ${p.displayTemp(peakC)}${p.tempLabel}" else ""
         fun avail(valueC: Double, tag: String) =
             tempAvailFor(valueC, vs.fieldLastUpdateMs[tag]).whenDisconnected(vs.isConnected)
         // Suppress WARMING on offline — the whole bus is silent, shouting
@@ -144,38 +150,55 @@ import com.openrs.dash.ui.anim.StaggeredColumn
         val coolTrend    = predictor.trend("COOLANT").takeIf { coolA == TempAvail.AVAILABLE }
         val ptuTrend     = predictor.trend("PTU").takeIf { ptuA == TempAvail.AVAILABLE }
         val rduTrend     = predictor.trend("RDU").takeIf { rduA == TempAvail.AVAILABLE }
-        val powertrainItems = listOf(
+        val engineItems = listOf(
             TempSpec("ENGINE OIL",
                 if (vs.oilTempC > -90) p.displayTemp(vs.oilTempC) else "— —", p.tempLabel,
                 vs.oilTempC.takeIf { it > -90 } ?: 0.0,
                 p.oilWarnC, p.oilCritC, subFor(oilA, "INFERRED"),
-                peakStr(vs.peakOilTempC), oilA,
+                peakStr(vs.peakOilTempC), oilA, peakC = vs.peakOilTempC,
                 sparklineData = oilSnap.takeIf { it.size >= 2 },
                 climbTrend = oilTrend),
             TempSpec("COOLANT",
                 if (vs.coolantTempC > -90) p.displayTemp(vs.coolantTempC) else "— —", p.tempLabel,
                 vs.coolantTempC.takeIf { it > -90 } ?: 0.0,
                 p.coolWarnC, p.coolCritC, subFor(coolA, ""),
-                peakStr(vs.peakCoolantTempC), coolA,
+                peakStr(vs.peakCoolantTempC), coolA, peakC = vs.peakCoolantTempC,
                 sparklineData = coolSnap.takeIf { it.size >= 2 },
                 climbTrend = coolTrend),
-            TempSpec("INTAKE AIR",
+        )
+        // PTU / RDU use the preset limits; the AWD clutch + trans oil rows keep their fixed limits.
+        val drivetrainItems = listOf(
+            TempSpec("PTU",
+                if (vs.ptuTempC > -90) p.displayTemp(vs.ptuTempC) else "— —", p.tempLabel,
+                vs.ptuTempC.takeIf { it > -90 } ?: 0.0,
+                p.ptuWarnC, p.ptuCritC, subFor(ptuA, "TRANSFER"),
+                peakStr(vs.peakPtuTempC), ptuA, peakC = vs.peakPtuTempC,
+                climbTrend = ptuTrend),
+            TempSpec("RDU",
+                if (vs.rduTempC > -90) p.displayTemp(vs.rduTempC) else "— —", p.tempLabel,
+                vs.rduTempC.takeIf { it > -90 } ?: 0.0,
+                p.rduWarnC, p.rduCritC, subFor(rduA, "REAR DRIVE"),
+                peakStr(vs.peakRduTempC), rduA, peakC = vs.peakRduTempC,
+                climbTrend = rduTrend),
+            TempSpec("CLUTCH L",
+                if (vs.awdClutchTempL > -90) p.displayTemp(vs.awdClutchTempL) else "— —", p.tempLabel,
+                vs.awdClutchTempL.takeIf { it > -90 } ?: 0.0, 90.0, 120.0,
+                subFor(clutchLA, "AWD"), avail = clutchLA),
+            TempSpec("CLUTCH R",
+                if (vs.awdClutchTempR > -90) p.displayTemp(vs.awdClutchTempR) else "— —", p.tempLabel,
+                vs.awdClutchTempR.takeIf { it > -90 } ?: 0.0, 90.0, 120.0,
+                subFor(clutchRA, "AWD"), avail = clutchRA),
+            TempSpec("TRANS OIL",
+                if (vs.transOilTempC > -90) p.displayTemp(vs.transOilTempC) else "— —", p.tempLabel,
+                vs.transOilTempC.takeIf { it > -90 } ?: 0.0, 100.0, 130.0,
+                subFor(transA, "AWD"), avail = transA),
+        )
+        val airItems = listOf(
+            TempSpec("INTAKE",
                 if (vs.intakeTempC > -90) p.displayTemp(vs.intakeTempC) else "— —", p.tempLabel,
                 vs.intakeTempC.takeIf { it > -90 } ?: 0.0,
                 p.intakeWarnC, p.intakeCritC, subFor(intakeA, ""),
                 avail = intakeA),
-            TempSpec("PTU (TRANSFER)",
-                if (vs.ptuTempC > -90) p.displayTemp(vs.ptuTempC) else "— —", p.tempLabel,
-                vs.ptuTempC.takeIf { it > -90 } ?: 0.0,
-                p.ptuWarnC, p.ptuCritC, subFor(ptuA, ""),
-                peakStr(vs.peakPtuTempC), ptuA,
-                climbTrend = ptuTrend),
-            TempSpec("RDU (REAR)",
-                if (vs.rduTempC > -90) p.displayTemp(vs.rduTempC) else "— —", p.tempLabel,
-                vs.rduTempC.takeIf { it > -90 } ?: 0.0,
-                p.rduWarnC, p.rduCritC, subFor(rduA, ""),
-                peakStr(vs.peakRduTempC), rduA,
-                climbTrend = rduTrend),
             TempSpec("AMBIENT",
                 if (vs.ambientTempC > -90) p.displayTemp(vs.ambientTempC) else "— —", p.tempLabel,
                 vs.ambientTempC.takeIf { it > -90 } ?: 0.0,
@@ -186,7 +209,7 @@ import com.openrs.dash.ui.anim.StaggeredColumn
             TempSpec("CHARGE AIR",
                 if (vs.chargeAirTempC > -90) p.displayTemp(vs.chargeAirTempC) else "— —", p.tempLabel,
                 vs.chargeAirTempC, 60.0, 80.0, subFor(chargeA, ""),
-                peakStr(vs.peakChargeAirTempC), chargeA),
+                peakStr(vs.peakChargeAirTempC), chargeA, peakC = vs.peakChargeAirTempC),
             TempSpec("MANIFOLD",
                 if (vs.manifoldChargeTempC > -90) p.displayTemp(vs.manifoldChargeTempC) else "— —", p.tempLabel,
                 vs.manifoldChargeTempC, 60.0, 90.0, subFor(manifA, ""),
@@ -203,45 +226,40 @@ import com.openrs.dash.ui.anim.StaggeredColumn
                 if (vs.batteryTempC > -90) p.displayTemp(vs.batteryTempC) else "— —", p.tempLabel,
                 vs.batteryTempC.takeIf { it > -90 } ?: 0.0, 40.0, 60.0,
                 subFor(battA, "BCM"), avail = battA),
-            TempSpec("CLT LEFT",
-                if (vs.awdClutchTempL > -90) p.displayTemp(vs.awdClutchTempL) else "— —", p.tempLabel,
-                vs.awdClutchTempL.takeIf { it > -90 } ?: 0.0, 90.0, 120.0,
-                subFor(clutchLA, "AWD"), avail = clutchLA),
-            TempSpec("CLT RIGHT",
-                if (vs.awdClutchTempR > -90) p.displayTemp(vs.awdClutchTempR) else "— —", p.tempLabel,
-                vs.awdClutchTempR.takeIf { it > -90 } ?: 0.0, 90.0, 120.0,
-                subFor(clutchRA, "AWD"), avail = clutchRA),
-            TempSpec("TRANS OIL",
-                if (vs.transOilTempC > -90) p.displayTemp(vs.transOilTempC) else "— —", p.tempLabel,
-                vs.transOilTempC.takeIf { it > -90 } ?: 0.0, 100.0, 130.0,
-                subFor(transA, "AWD"), avail = transA),
         )
-        val columns = if (isWideLayout()) 3 else 2
 
-        SectionLabel("POWERTRAIN")
-        val ptRows = powertrainItems.chunked(columns)
-        StaggeredColumn(itemCount = ptRows.size, modifier = Modifier.fillMaxWidth()) { index, entranceModifier ->
-            Row(entranceModifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                ptRows[index].forEach { spec -> TempCard(spec, Modifier.weight(1f)) }
-                repeat(columns - ptRows[index].size) { Spacer(Modifier.weight(1f)) }
-            }
+        // Hierarchy: engine oil + coolant (full-width, scale + legend) → drivetrain group (one panel,
+        // one row each) → air temps (compact) → tyres & AWD → collapsible detail.
+        SectionLabel("ENGINE")
+        StaggeredColumn(itemCount = engineItems.size, modifier = Modifier.fillMaxWidth(),
+            spacing = Arrangement.spacedBy(density.gap)) { index, entranceModifier ->
+            EngineTempCard(engineItems[index], p, entranceModifier.fillMaxWidth())
         }
+
+        SectionLabel("DRIVETRAIN")
+        DrivetrainPanel(drivetrainItems)
+
+        SectionLabel("AIR")
+        CompactTempPanel(airItems, columns = 2)
+
+        // ── Tires + AWD (migrated from CHASSIS) — after the temps that decide readiness ──
+        UnifiedChassisSection(vs, p)
 
         var detailExpanded by rememberSectionExpanded("THERMAL_DETAIL")
         SectionLabel("DETAIL", collapsible = true, expanded = detailExpanded, onToggle = { detailExpanded = !detailExpanded })
         AnimatedVisibility(visible = detailExpanded, enter = expandVertically(spring(stiffness = Spring.StiffnessLow)), exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow))) {
-            Column(verticalArrangement = Arrangement.spacedBy(CardGap)) {
-                val dRows = detailItems.chunked(columns)
-                dRows.forEach { row ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        row.forEach { spec -> TempCard(spec, Modifier.weight(1f)) }
-                        repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
-                    }
-                }
-            }
+            CompactTempPanel(detailItems, columns = if (isWideLayout()) 5 else 3)
         }
     }
+    }
+    }
 }
+
+/** THERMAL spacing. Tight on short viewports: padding and gaps shrink, reading sizes don't. */
+data class ThermalDensity(val pageTop: Dp, val gap: Dp, val cardV: Dp, val inner: Dp, val rowMin: Dp)
+private val RoomyThermal = ThermalDensity(pageTop = PagePad, gap = CardGap, cardV = 12.dp, inner = 6.dp, rowMin = 48.dp)
+private val TightThermal = ThermalDensity(pageTop = 8.dp, gap = 6.dp, cardV = 8.dp, inner = 3.dp, rowMin = 40.dp)
+val LocalThermalDensity = staticCompositionLocalOf { RoomyThermal }
 
 /**
  * Availability state for a temperature cell's placeholder.
@@ -313,235 +331,231 @@ data class TempSpec(
     val tempC: Double, val warnC: Double, val critC: Double, val sub: String,
     val peakDisplay: String = "",
     val avail: TempAvail = TempAvail.AVAILABLE,
+    /** Session peak in °C (sentinel ≤ -90 = none) — drawn as a tick on the threshold bar. */
+    val peakC: Double? = null,
     val sparklineData: List<Float>? = null,
     val climbTrend: ClimbTrend? = null,
 )
 
-@Composable fun RtrBanner(vs: VehicleState, p: UserPrefs) {
+/**
+ * Readiness + threshold preset in one card (was a status banner and a separate preset card).
+ * The preset decides every warn / crit mark on this page, so it sits with the verdict it drives.
+ */
+@Composable fun ReadinessCard(vs: VehicleState, p: UserPrefs) {
     // When offline, bypass the readiness computation entirely — we have no
-    // warmup data to trust. Show a neutral "awaiting CAN" chip instead of
+    // warmup data to trust. Show a neutral "awaiting CAN" state instead of
     // a misleading green RACE READY.
-    if (!vs.isConnected) {
-        Row(
-            Modifier.fillMaxWidth()
-                .background(
-                    Brush.horizontalGradient(listOf(Dim.copy(alpha = 0.08f), Dim.copy(alpha = 0.04f))),
-                    RoundedCornerShape(12.dp)
-                )
-                .border(CardBorder, Dim.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Box(Modifier.size(18.dp).clip(CircleShape).background(Dim.copy(alpha = 0.15f)))
-                Box(Modifier.size(10.dp).clip(CircleShape).background(Dim.copy(alpha = 0.6f)))
-            }
-            Spacer(Modifier.width(12.dp))
-            UIText("— AWAITING CAN —", 13.sp, Dim, FontWeight.SemiBold, 0.5.sp)
-        }
-        return
-    }
-
-    // Overheat / missing data / warm-up all block RACE READY (see raceReadiness()).
-    val rtr = raceReadiness(vs, RtrLimits.from(p), fmtTemp = { "${p.displayTemp(it)}${p.tempLabel}" })
-    val isReady = rtr.isReady
-    val warmupDetail = rtr.detail
-    val dotColor = when (rtr.state) {
+    val rtr = if (vs.isConnected)
+        raceReadiness(vs, RtrLimits.from(p), fmtTemp = { "${p.displayTemp(it)}${p.tempLabel}" }) else null
+    val dotColor = when (rtr?.state) {
+        null              -> Dim
         RtrState.READY    -> Ok
         RtrState.OVERHEAT -> Orange
         else              -> Warn
     }
-    val dotAlpha = if (isReady) {
-        1f
-    } else {
-        val infiniteTransition = rememberInfiniteTransition(label = "rtr")
-        val anim by infiniteTransition.animateFloat(
+    val pulsing = rtr != null && !rtr.isReady
+    val dotAlpha = if (pulsing) {
+        val anim by rememberInfiniteTransition(label = "rtr").animateFloat(
             initialValue = 1f, targetValue = 0.3f, label = "rtrDot",
             animationSpec = infiniteRepeatable(tween(800, easing = EaseInOut), RepeatMode.Reverse)
         )
         anim
+    } else 1f
+    val title = when (rtr?.state) {
+        null              -> "AWAITING CAN"
+        RtrState.READY    -> "RACE READY"
+        RtrState.OVERHEAT -> "OVERHEATING — NOT RACE READY"
+        RtrState.NO_DATA  -> "CHECKING — NOT RACE READY"
+        RtrState.WARMING  -> "WARMING UP — NOT RACE READY"
     }
-    val bannerBrush = Brush.horizontalGradient(listOf(dotColor.copy(alpha = 0.08f), dotColor.copy(alpha = 0.04f)))
-    val bannerBorder = dotColor.copy(alpha = if (rtr.state == RtrState.OVERHEAT) 0.45f else 0.2f)
+    val level = if (rtr?.state == RtrState.OVERHEAT) Level.CRIT else Level.NORMAL
 
-    Row(
-        Modifier.fillMaxWidth()
-            .background(bannerBrush, RoundedCornerShape(12.dp))
-            .border(CardBorder, bannerBorder, RoundedCornerShape(12.dp))
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Box(Modifier.size(18.dp).clip(CircleShape).background(dotColor.copy(alpha = 0.2f * dotAlpha)))
-            Box(Modifier.size(10.dp).clip(CircleShape).background(dotColor.copy(alpha = dotAlpha)))
-        }
-        Spacer(Modifier.width(12.dp))
-        Column {
-            UIText(
-                when (rtr.state) {
-                    RtrState.READY    -> "RACE READY"
-                    RtrState.OVERHEAT -> "OVERHEATING — NOT RACE READY"
-                    RtrState.NO_DATA  -> "CHECKING — NOT RACE READY"
-                    RtrState.WARMING  -> "WARMING UP — NOT RACE READY"
-                },
-                13.sp, Frost, FontWeight.SemiBold, 0.5.sp
-            )
-            if (warmupDetail != null) {
-                MonoLabel(warmupDetail, 9.sp, dotColor, modifier = Modifier.padding(top = 2.dp))
+    val d = LocalThermalDensity.current
+    Column(Modifier.fillMaxWidth().instrumentSurface(level).padding(horizontal = 14.dp, vertical = d.cardV + 2.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(contentAlignment = Alignment.Center) {
+                Box(Modifier.size(18.dp).clip(CircleShape).background(dotColor.copy(alpha = 0.2f * dotAlpha)))
+                Box(Modifier.size(10.dp).clip(CircleShape).background(dotColor.copy(alpha = if (rtr == null) 0.6f else dotAlpha)))
             }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                UIText(title, 15.sp,
+                    when (rtr?.state) { RtrState.READY -> Ok; RtrState.OVERHEAT -> Orange; null -> Dim; else -> Frost },
+                    FontWeight.SemiBold, 0.5.sp)
+                val detail = rtr?.detail
+                if (detail != null) MonoLabel(detail, 10.sp, textColor(dotColor), letterSpacing = 0.2.sp, modifier = Modifier.padding(top = 3.dp))
+            }
+        }
+        Spacer(Modifier.height(d.inner * 2))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Brd.copy(alpha = borderAlpha(0.4f))))
+        Spacer(Modifier.height(d.inner + 4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            InstrumentLabel("LIMITS")
+            Spacer(Modifier.weight(1f))
+            PresetSegments(p)
         }
     }
 }
 
-@Composable fun TempPresetBadge(p: UserPrefs) {
+/** STREET / TRACK / RACE segmented control. Selection uses the paint accent, not warning colours. */
+@Composable private fun PresetSegments(p: UserPrefs) {
     val ctx = LocalContext.current
     val haptic = LocalHapticFeedback.current
+    val accent = LocalThemeAccent.current
     Row(
-        Modifier.fillMaxWidth()
-            .background(Surf2, RoundedCornerShape(10.dp))
-            .border(CardBorder, Brd, RoundedCornerShape(10.dp))
-            .padding(12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        Modifier.background(Surf3, RoundedCornerShape(8.dp)).padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp)
     ) {
-        Column {
-            MonoLabel("THRESHOLD PRESET", 8.sp, Dim, letterSpacing = 0.15.sp)
-            Spacer(Modifier.height(2.dp))
-            UIText(p.tempPresetName, 14.sp, Frost, FontWeight.SemiBold)
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf("street" to "STREET", "track" to "TRACK", "race" to "RACE").forEach { (id, label) ->
-                val isActive = p.tempPreset == id
-                val color    = when (id) { "race" -> Orange; "track" -> Warn; else -> Ok }
-                Box(
-                    Modifier
-                        .background(if (isActive) color.copy(alpha = 0.15f) else Surf3, RoundedCornerShape(6.dp))
-                        .border(CardBorder, if (isActive) color.copy(alpha = 0.5f) else Brd, RoundedCornerShape(6.dp))
-                        .clickable { haptic.performHapticFeedback(HapticFeedbackType.Confirm); UserPrefsStore.update(ctx) { it.copy(tempPreset = id) } }
-                        .padding(horizontal = 10.dp, vertical = 5.dp)
-                ) {
-                    MonoLabel(label, 9.sp, if (isActive) color else Dim, letterSpacing = 0.1.sp)
-                }
+        listOf("street" to "STREET", "track" to "TRACK", "race" to "RACE").forEach { (id, label) ->
+            val active = p.tempPreset == id
+            Box(
+                Modifier
+                    .heightIn(min = 40.dp)
+                    .background(if (active) accent.copy(alpha = pillBgAlpha(0.18f)) else Color.Transparent, RoundedCornerShape(6.dp))
+                    .border(Tokens.CardBorder, if (active) accent.copy(alpha = 0.7f) else Color.Transparent, RoundedCornerShape(6.dp))
+                    .clickable(onClickLabel = "Use $label limits") {
+                        haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                        UserPrefsStore.update(ctx) { it.copy(tempPreset = id) }
+                    }
+                    .padding(horizontal = 12.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                MonoLabel(label, 10.sp, if (active) Frost else Dim,
+                    if (active) FontWeight.Bold else FontWeight.Normal, letterSpacing = 0.6.sp)
             }
         }
     }
 }
 
-@Composable fun TempCard(spec: TempSpec, modifier: Modifier) {
-    val tempColor = tempColorShade(spec.tempC, spec.warnC, spec.critC)
-    val barPct = if (spec.critC > 0) (spec.tempC / spec.critC).toFloat().coerceIn(0f, 1f) else 0f
-    val barColor = when {
-        spec.tempC <= 0         -> Surf3
-        spec.tempC < spec.warnC -> Ok.copy(alpha = 0.6f)
-        spec.tempC < spec.critC -> Warn.copy(alpha = 0.7f)
-        else                    -> Orange
-    }
-    val isPlaceholder = spec.value == "— —"
-    val isWarn = !isPlaceholder && spec.tempC >= spec.warnC
-    val borderGlow = when {
-        isPlaceholder           -> Brd.copy(alpha = 0.3f)
-        spec.tempC >= spec.critC -> Orange.copy(alpha = 0.4f)
-        spec.tempC >= spec.warnC -> Warn.copy(alpha = 0.3f)
-        else                    -> Ok.copy(alpha = 0.1f)
-    }
+private fun TempSpec.level(): Level =
+    if (value == "— —") Level.NONE else tempLevel(tempC, warnC, critC, avail)
 
-    // Peak fraction for tick mark
-    val peakBarPct = if (spec.peakDisplay.isNotEmpty() && spec.critC > 0) {
-        // Extract peak temp from peakDisplay string (format "▲ 123°F")
-        val peakStr = spec.peakDisplay.removePrefix("▲ ").replace(Regex("[^0-9.-]"), "")
-        val peakVal = peakStr.toDoubleOrNull() ?: 0.0
-        (peakVal / spec.critC).toFloat().coerceIn(0f, 1f)
-    } else 0f
+/** Trend arrow — only coloured when the reading is already warm / critical. */
+@Composable private fun TrendArrow(trend: ClimbTrend?, level: Level) {
+    val arrow = when (trend) {
+        ClimbTrend.RISING  -> "↑"
+        ClimbTrend.COOLING -> "↓"
+        else               -> return
+    }
+    MonoLabel(arrow, 12.sp, if (trend == ClimbTrend.RISING && level.isAlert) levelColor(level) else Dim)
+}
 
-    Box(
-        modifier
-            .background(Surf2, RoundedCornerShape(14.dp))
-            .border(CardBorder, if (!isPlaceholder) borderGlow else Brd.copy(alpha = borderAlpha(0.15f)), RoundedCornerShape(14.dp))
-    ) {
-        Column(Modifier.padding(12.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                MonoLabel(spec.label, 8.sp, Dim, letterSpacing = 0.12.sp)
-                if (spec.sub.isNotEmpty()) MonoLabel(spec.sub, 7.sp, Dim.copy(alpha = 0.7f))
+/** Pulsing "— —" for a reading that hasn't arrived (C6 cadence: warming 800 ms, stale/N/A 1200 ms). */
+@Composable private fun TempPlaceholder(avail: TempAvail, size: androidx.compose.ui.unit.TextUnit) {
+    val pulseMs = if (avail == TempAvail.WARMING) 800 else 1200
+    val lo = if (avail == TempAvail.UNAVAILABLE) 0.15f else 0.3f
+    val hi = if (avail == TempAvail.UNAVAILABLE) 0.35f else 0.7f
+    val a by rememberInfiniteTransition(label = "ph").animateFloat(
+        initialValue = lo, targetValue = hi,
+        animationSpec = infiniteRepeatable(tween(pulseMs), RepeatMode.Reverse), label = "phA"
+    )
+    MonoText("— —", size, Dim.copy(alpha = a))
+}
+
+/** Engine oil / coolant: the two temps that decide whether to keep pushing — full width, scale + legend. */
+@Composable fun EngineTempCard(spec: TempSpec, p: UserPrefs, modifier: Modifier = Modifier) {
+    val level = spec.level()
+    val valueColor = levelColor(level)
+    val d = LocalThermalDensity.current
+    Column(modifier.instrumentSurface(level).padding(horizontal = 14.dp, vertical = d.cardV)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            InstrumentLabel(spec.label, Modifier.weight(1f))
+            TrendArrow(spec.climbTrend, level)
+            if (spec.sub.isNotEmpty()) {
+                Spacer(Modifier.width(6.dp))
+                InstrumentMeta(spec.sub, color = if (spec.avail == TempAvail.STALE) WarnInk else Dim)
             }
-            Spacer(Modifier.height(6.dp))
-            if (isPlaceholder) {
-                // C6: pulse cadence hints at meaning. Warming = hopeful (800ms),
-                // Stale/Unavailable = calmer/less alarming (1200ms).
-                val pulseMs = when (spec.avail) {
-                    TempAvail.WARMING     -> 800
-                    TempAvail.STALE       -> 1200
-                    TempAvail.UNAVAILABLE -> 1200
-                    TempAvail.AVAILABLE   -> 900
-                }
-                val alphaLo = if (spec.avail == TempAvail.UNAVAILABLE) 0.15f else 0.3f
-                val alphaHi = if (spec.avail == TempAvail.UNAVAILABLE) 0.35f else 0.7f
-                val phAlpha by rememberInfiniteTransition(label = "ph").animateFloat(
-                    initialValue = alphaLo, targetValue = alphaHi,
-                    animationSpec = infiniteRepeatable(tween(pulseMs), RepeatMode.Reverse), label = "phA"
-                )
-                MonoText("— —", 24.sp, Dim.copy(alpha = phAlpha))
-            } else {
-                // Value with bloom glow when above warn threshold
-                Box(
-                    Modifier.fillMaxWidth()
-                        .then(if (isWarn) Modifier.drawBehind {
-                            drawCircle(
-                                brush = Brush.radialGradient(
-                                    listOf(tempColor.copy(alpha = 0.15f), Color.Transparent),
-                                    center = center,
-                                    radius = size.minDimension * 0.9f
-                                )
-                            )
-                        } else Modifier)
-                ) {
-                    HeroNum(spec.value, 24.sp, tempColor)
-                }
+        }
+        Row(verticalAlignment = Alignment.Bottom) {
+            if (level == Level.NONE) TempPlaceholder(spec.avail, 34.sp)
+            else {
+                DriveNum(spec.value, 44.sp, valueColor)
+                Spacer(Modifier.width(4.dp))
+                InstrumentMeta(spec.unit, Modifier.padding(bottom = 6.dp))
             }
-            if (spec.peakDisplay.isNotEmpty()) {
-                val accent = LocalThemeAccent.current
-                MonoText(spec.peakDisplay, 9.sp, accent)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                MonoLabel(spec.unit, 10.sp, Dim)
-                spec.climbTrend?.let { trend ->
-                    val (arrow, color) = when (trend) {
-                        ClimbTrend.RISING  -> "\u2191" to Warn
-                        ClimbTrend.COOLING -> "\u2193" to Ok
-                        ClimbTrend.STABLE  -> "\u2192" to Dim
-                    }
-                    MonoLabel(arrow, 10.sp, color)
-                }
-            }
-            // V1: optional sparkline trend between unit label and bar
-            if (spec.sparklineData != null && spec.sparklineData.size >= 2) {
-                Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.weight(1f))
+            // ≥ 10 samples (~10 s): a two-point trace drew as a stray dash beside the value.
+            if (spec.sparklineData != null && spec.sparklineData.size >= 10) {
                 com.openrs.dash.ui.anim.Sparkline(
                     data = spec.sparklineData,
-                    lineColor = tempColor,
-                    modifier = Modifier.fillMaxWidth().height(18.dp),
-                    strokeWidth = 1.dp,
-                    fillAlpha = 0.12f
+                    lineColor = if (level.isAlert) valueColor else accentMid(),
+                    modifier = Modifier.width(132.dp).height(30.dp).padding(bottom = 6.dp),
+                    strokeWidth = 1.5.dp, fillAlpha = 0.12f
                 )
             }
-            Spacer(Modifier.height(8.dp))
-            Box(Modifier.fillMaxWidth().height(3.dp).background(Surf3, RoundedCornerShape(2.dp))) {
-                if (!isPlaceholder && barPct > 0) {
-                    Box(Modifier.fillMaxWidth(barPct).height(3.dp)
-                        .background(barColor, RoundedCornerShape(2.dp))
-                    )
+        }
+        Spacer(Modifier.height(d.inner))
+        ThresholdBar(spec.tempC, spec.warnC, spec.critC, level, peakC = spec.peakC)
+        Spacer(Modifier.height(d.inner))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            InstrumentMeta(spec.peakDisplay)
+            Spacer(Modifier.weight(1f))
+            ThresholdLegend(
+                "${p.displayTemp(spec.warnC)}${p.tempLabel}",
+                "${p.displayTemp(spec.critC)}${p.tempLabel}"
+            )
+        }
+    }
+}
+
+/** PTU, RDU, AWD clutches and trans oil as one group: name · scale · value per row, one legend. */
+@Composable fun DrivetrainPanel(items: List<TempSpec>) {
+    val d = LocalThermalDensity.current
+    Column(Modifier.fillMaxWidth().instrumentSurface(worstLevel(items.map { it.level() }))
+        .padding(horizontal = 14.dp, vertical = d.cardV - 2.dp)) {
+        items.forEachIndexed { i, spec ->
+            if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(Brd.copy(alpha = borderAlpha(0.35f))))
+            val level = spec.level()
+            Row(Modifier.fillMaxWidth().heightIn(min = d.rowMin), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.width(92.dp)) {
+                    InstrumentLabel(spec.label, color = Mid)
+                    if (spec.sub.isNotEmpty())
+                        MonoLabel(spec.sub, 9.sp, if (spec.avail == TempAvail.STALE) WarnInk else Dim, letterSpacing = 0.2.sp)
                 }
-                // Peak tick mark
-                if (peakBarPct > 0.05f) {
-                    val accent = LocalThemeAccent.current
-                    Box(
-                        Modifier.fillMaxWidth(peakBarPct)
-                            .height(3.dp),
-                        contentAlignment = Alignment.CenterEnd
-                    ) {
-                        Box(Modifier.width(1.5.dp).height(5.dp).background(accent.copy(alpha = 0.6f)))
+                ThresholdBar(spec.tempC, spec.warnC, spec.critC, level,
+                    Modifier.weight(1f).padding(horizontal = 8.dp), peakC = spec.peakC)
+                Row(Modifier.width(76.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.Bottom) {
+                    TrendArrow(spec.climbTrend, level)
+                    if (level == Level.NONE) TempPlaceholder(spec.avail, 18.sp)
+                    else {
+                        DataNum(spec.value, 22.sp, levelColor(level))
+                        Spacer(Modifier.width(2.dp))
+                        InstrumentMeta(spec.unit, Modifier.padding(bottom = 3.dp))
                     }
                 }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        ThresholdLegend(null, null, Modifier.align(Alignment.End))
+    }
+}
+
+/** Secondary temps (air, detail): caption + value only, no scale — they don't decide readiness. */
+@Composable fun CompactTempPanel(items: List<TempSpec>, columns: Int) {
+    val d = LocalThermalDensity.current
+    Column(Modifier.fillMaxWidth().instrumentSurface(worstLevel(items.map { it.level() }))
+        .padding(horizontal = 14.dp, vertical = d.cardV),
+        verticalArrangement = Arrangement.spacedBy(d.cardV)) {
+        items.chunked(columns).forEach { row ->
+            Row(Modifier.fillMaxWidth()) {
+                row.forEach { spec ->
+                    val level = spec.level()
+                    Column(Modifier.weight(1f)) {
+                        InstrumentLabel(spec.label)
+                        Spacer(Modifier.height(2.dp))
+                        Row(verticalAlignment = Alignment.Bottom) {
+                            if (level == Level.NONE) TempPlaceholder(spec.avail, 18.sp)
+                            else {
+                                DataNum(spec.value, 22.sp, levelColor(level))
+                                Spacer(Modifier.width(2.dp))
+                                InstrumentMeta(spec.unit, Modifier.padding(bottom = 3.dp))
+                            }
+                        }
+                        if (spec.sub.isNotEmpty())
+                            MonoLabel(spec.sub, 9.sp, if (spec.avail == TempAvail.STALE) WarnInk else Dim, letterSpacing = 0.2.sp)
+                    }
+                }
+                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }

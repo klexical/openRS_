@@ -71,6 +71,15 @@ object DemoMode {
      * Bumped on demo start, scenario reset/switch and exit. UI-held histories (sparklines,
      * G-force trail) key their `remember` on it so simulated traces never outlive the run.
      */
+    /**
+     * Demo control strip collapsed to the header DEMO pill (UI preference for the process, kept
+     * across demo runs) — design reviews capture screens without the 48 dp amber toolbar.
+     */
+    private val _controlsCollapsed = MutableStateFlow(false)
+    val controlsCollapsed: StateFlow<Boolean> = _controlsCollapsed.asStateFlow()
+    fun setControlsCollapsed(collapsed: Boolean) { _controlsCollapsed.value = collapsed }
+    fun toggleControls() { _controlsCollapsed.update { !it } }
+
     private val _sessionEpoch = MutableStateFlow(0)
     val sessionEpoch: StateFlow<Int> = _sessionEpoch.asStateFlow()
 
@@ -81,6 +90,7 @@ object DemoMode {
     private var loopJob: Job? = null
     private var modeJob: Job? = null
     private val simTimeMs = AtomicLong(0L)
+    @Volatile private var pauseAtMs = -1L
     private var lastStampMs = 0L
     private var lastKrCountedMs = 0L
 
@@ -129,6 +139,17 @@ object DemoMode {
         _status.update { it.copy(paused = !it.paused) }
     }
 
+    /**
+     * Replays the current scenario from t = 0 and pauses exactly at [tMs] — repeatable frames
+     * (with real history behind sparklines) for before/after screenshots.
+     */
+    fun playTo(tMs: Long) {
+        if (!isActive) return
+        _status.update { it.copy(paused = false) }
+        restartScenario(_status.value.scenario)
+        pauseAtMs = tMs
+    }
+
     /** Replays the current scenario from t = 0 with fresh peaks / session logs. */
     fun reset() {
         if (!isActive) return
@@ -137,6 +158,7 @@ object DemoMode {
 
     private fun restartScenario(scenario: DemoScenario) {
         simTimeMs.set(0L)
+        pauseAtMs = -1L
         lastStampMs = 0L
         modeJob?.cancel(); modeJob = null
         driveModePending.value = null
@@ -180,7 +202,12 @@ object DemoMode {
             last = mono
             val st = _status.value
             if (!st.active) return
-            val t = if (st.paused) simTimeMs.get() else simTimeMs.addAndGet(dt)
+            var t = if (st.paused) simTimeMs.get() else simTimeMs.addAndGet(dt)
+            val stopAt = pauseAtMs
+            if (!st.paused && stopAt >= 0 && t >= stopAt) {
+                t = stopAt; simTimeMs.set(stopAt); pauseAtMs = -1L
+                _status.update { it.copy(paused = true) }
+            }
             tick(st.scenario, t, st.paused)
         }
     }

@@ -45,6 +45,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.R
 import com.openrs.dash.can.modeChangeBreath
@@ -256,8 +257,9 @@ fun BottomNavBar(
                                 )
                             }
                         }
-                        Spacer(Modifier.height(2.dp))
-                        MonoLabel(item.label, 7.sp, tint, letterSpacing = 0.08.sp)
+                        Spacer(Modifier.height(1.dp))
+                        // 9 sp (was 7): the tab names must read at arm's length on a mounted phone.
+                        MonoLabel(item.label, 9.sp, tint, if (isActive) FontWeight.Bold else FontWeight.Normal, letterSpacing = 0.2.sp)
                     }
                 }
             }

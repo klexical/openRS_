@@ -84,6 +84,8 @@ class MainActivity : ComponentActivity() {
     /**
      * Debug builds: `--es demo idle|driving|warning|loss|off` on the launch intent enters,
      * switches or leaves demo mode (root CLAUDE.md → Build). Held until the service binds.
+     * `at:<seconds>` replays the current scenario and pauses at that time (screenshot frames);
+     * `collapse` / `expand` fold the control strip into the header DEMO pill.
      */
     private var pendingDemo: String? = null
 
@@ -94,12 +96,17 @@ class MainActivity : ComponentActivity() {
         if (service == null) {
             pendingDemo = arg
             // Service not bound yet — keep its startup auto-connect off the adapter.
-            if (arg !in setOf("off", "exit", "pause", "reset")) DemoMode.launchRequested = true
+            if (arg !in setOf("off", "exit", "pause", "reset", "collapse", "expand") && !arg.startsWith("at:"))
+                DemoMode.launchRequested = true
         } else applyDemoExtra(arg)
     }
 
     private fun applyDemoExtra(arg: String) {
         val svc = service ?: return
+        if (arg.startsWith("at:")) {
+            arg.removePrefix("at:").toDoubleOrNull()?.let { DemoMode.playTo((it * 1000).toLong()) }
+            return
+        }
         val scenario = when (arg) {
             "idle"                -> DemoScenario.IDLE
             "driving", "drive"    -> DemoScenario.DRIVING
@@ -108,6 +115,8 @@ class MainActivity : ComponentActivity() {
             "pause"               -> { DemoMode.togglePause(); return }
             "reset"               -> { DemoMode.reset(); return }
             "off", "exit"         -> { svc.exitDemoMode(); return }
+            "collapse"            -> { DemoMode.setControlsCollapsed(true); return }
+            "expand"              -> { DemoMode.setControlsCollapsed(false); return }
             else                  -> {
                 DemoMode.launchRequested = false
                 android.util.Log.w("DEMO", "Unknown demo extra '$arg'"); return
@@ -179,6 +188,8 @@ class MainActivity : ComponentActivity() {
             var dockOpen        by remember { mutableStateOf(false) }
             val isFw            by OpenRSDashApp.instance.isOpenRsFirmware.collectAsState()
             val demo            by DemoMode.status.collectAsState()
+            val demoCollapsed   by DemoMode.controlsCollapsed.collectAsState()
+            val pageScope       = rememberCoroutineScope()
             val snackbarHostState = remember { SnackbarHostState() }
 
 
@@ -251,8 +262,13 @@ class MainActivity : ComponentActivity() {
                                         demoActive   = demo.active
                                     )
 
-                                    if (demo.active) {
+                                    if (demo.active && demoCollapsed) {
+                                        // Collapsed: a hairline keeps "simulated" visible under the header;
+                                        // the header DEMO pill expands the strip again.
+                                        Box(Modifier.fillMaxWidth().height(2.dp).background(Warn.copy(alpha = 0.7f)))
+                                    } else if (demo.active) {
                                         DemoControlStrip(
+                                            onCollapse    = { DemoMode.setControlsCollapsed(true) },
                                             status        = demo,
                                             onScenario    = { service?.enterDemoMode(it) },
                                             onTogglePause = { DemoMode.togglePause() },
@@ -310,7 +326,9 @@ class MainActivity : ComponentActivity() {
                                                 .then(connectionPulse(vs.isConnected))
                                         ) {
                                             when (page) {
-                                                0 -> DrivePage(vs, prefs)
+                                                0 -> DrivePage(vs, prefs, onOpenThermal = {
+                                                    pageScope.launch { pagerState.animateScrollToPage(2) }
+                                                })
                                                 1 -> PerfPage(vs, prefs, onReset = { service?.resetPeaks() })
                                                 2 -> TempsPage(vs, prefs)
                                                 3 -> TripPage(driveState, vs, prefs, onMapTouched = { mapTouched = it })
@@ -595,17 +613,19 @@ class MainActivity : ComponentActivity() {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.drawBehind {
-                // (2) Radial glow behind "RS" when connected
-                if (rsGlowActive > 0.01f) {
-                    val glowBrush = Brush.radialGradient(
-                        listOf(
-                            rsBlue.copy(alpha = glowAlpha * rsGlowActive),
-                            Color.Transparent
+                // (2) Radial glow behind "RS" when connected. Drawn as a circle that fades out
+                // inside its radius — a drawRect with a radius wider than the logo showed as a box.
+                // DAY: a blue halo on the white header reads as a smudge — glow is a dark-theme cue.
+                if (rsGlowActive > 0.01f && !isDayModeNow()) {
+                    val c = Offset(size.width * 0.62f, size.height / 2f)
+                    val r = size.height * 0.9f   // stays inside the header bar
+                    drawCircle(
+                        Brush.radialGradient(
+                            listOf(rsBlue.copy(alpha = glowAlpha * rsGlowActive), Color.Transparent),
+                            center = c, radius = r
                         ),
-                        center = Offset(size.width * 0.62f, size.height / 2f),
-                        radius = size.height * 1.8f
+                        radius = r, center = c
                     )
-                    drawRect(glowBrush)
                 }
             }
         ) {
@@ -698,7 +718,9 @@ class MainActivity : ComponentActivity() {
                     .widthIn(min = 48.dp)
                     .background(connColor.copy(alpha = pillBgAlpha(0.08f)), RoundedCornerShape(4.dp))
                     .border(CardBorder, connColor.copy(alpha = borderAlpha(0.2f)), RoundedCornerShape(4.dp))
-                    .pressClick(pressedScale = 0.97f, enabled = !demoActive) {
+                    .pressClick(pressedScale = 0.97f) {
+                        // Demo: the pill never touches the adapter — it folds / unfolds the demo controls.
+                        if (demoActive) { com.openrs.dash.demo.DemoMode.toggleControls(); return@pressClick }
                         haptic.performHapticFeedback(
                             if (vs.isConnected) HapticFeedbackType.Reject
                             else HapticFeedbackType.Confirm
@@ -776,7 +798,8 @@ private fun HeaderModeEscPills(vs: VehicleState, accent: Color, onModeClick: () 
         else                                -> accent
     }
     val modeValue = if (connected) vs.driveMode.label.uppercase() else "\u2014"
-    val escValue  = if (connected) vs.escStatus.label.uppercase() else "\u2014"
+    // The pill already says ESC — "ESC On" read as "ESC ESC ON".
+    val escValue  = if (connected) vs.escStatus.label.removePrefix("ESC ").uppercase() else "\u2014"
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         val pending = com.openrs.dash.can.driveModePending.value != null

@@ -144,7 +144,7 @@ fun SettingsDialog(
     var edgeShiftIntensity by remember { mutableStateOf(current.edgeShiftIntensity) }
     var edgeShiftRpm    by remember { mutableStateOf(current.edgeShiftRpm.toString()) }
     var updateChannel   by remember { mutableStateOf(current.updateChannel) }
-    // Live-preview prefs (theme mode, classic fonts, drive auto-zoom, paint
+    // Live-preview prefs (theme mode, classic fonts, paint
     // colour) apply visual side effects on toggle for instant preview, but
     // do NOT commit to UserPrefsStore until SAVE. Cancel reverts the side
     // effects to the committed state. RESET stages defaults in local vars.
@@ -153,7 +153,6 @@ fun SettingsDialog(
     var gearModeTint    by remember { mutableStateOf(current.gearModeTint) }
     var themeModeLocal     by remember { mutableStateOf(current.themeMode) }
     var classicFontsLocal  by remember { mutableStateOf(current.classicFonts) }
-    var driveAutoZoomLocal by remember { mutableStateOf(current.driveAutoZoom) }
     var themeIdLocal       by remember { mutableStateOf(current.themeId) }
     var error           by remember { mutableStateOf<String?>(null) }
     var resetConfirm    by remember { mutableStateOf(false) }
@@ -210,24 +209,6 @@ fun SettingsDialog(
                             classicFontsLocal = on
                             setClassicFonts(on)
                         },
-                    )
-                }
-                Spacer(Modifier.height(12.dp))
-                SettingsRow(
-                    label = "DRIVE auto-zoom",
-                    help = "Collapses inputs and inflates the gear digit once rolling above ~10 mph.",
-                ) {
-                    Switch(
-                        checked = driveAutoZoomLocal,
-                        onCheckedChange = { on ->
-                            driveAutoZoomLocal = on
-                        },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = OnAccent,
-                            checkedTrackColor = accent,
-                            uncheckedThumbColor = Dim,
-                            uncheckedTrackColor = Brd,
-                        ),
                     )
                 }
             }
@@ -1183,13 +1164,12 @@ fun SettingsDialog(
                         gearModeTint   = AppSettings.DEFAULT_GEAR_MODE_TINT
                         // Live-preview prefs also stage-only on RESET. Their
                         // pickers read themeModeLocal / classicFontsLocal /
-                        // driveAutoZoomLocal / themeIdLocal, so the UI will
+                        // themeIdLocal, so the UI will
                         // reflect the staged defaults immediately while the
                         // actual applied theme stays at its current value
                         // until SAVE.
                         themeModeLocal     = AppSettings.DEFAULT_THEME_MODE
                         classicFontsLocal  = AppSettings.DEFAULT_CLASSIC_FONTS
-                        driveAutoZoomLocal = AppSettings.DEFAULT_DRIVE_AUTO_ZOOM
                         themeIdLocal       = AppSettings.DEFAULT_THEME_ID
 
                         error         = null
@@ -1253,7 +1233,6 @@ fun SettingsDialog(
                                     // state + visual side effects; committing here persists.
                                     themeMode            = themeModeLocal,
                                     classicFonts         = classicFontsLocal,
-                                    driveAutoZoom        = driveAutoZoomLocal,
                                     themeId              = themeIdLocal,
                                 )}
                                 // Ensure the runtime theme reflects whatever

@@ -96,12 +96,6 @@ object AppSettings {
     const val KEY_CLASSIC_FONTS     = "classic_fonts"
     const val DEFAULT_CLASSIC_FONTS = false
 
-    // ── Drive-tab adaptive density (v3.0 B1) ───────────────────────────────
-    // When ON, DRIVE collapses Inputs/AWD/G-force and inflates hero row once
-    // speed exceeds the threshold for a few seconds. Hysteresis prevents flap.
-    const val KEY_DRIVE_AUTO_ZOOM     = "drive_auto_zoom"
-    const val DEFAULT_DRIVE_AUTO_ZOOM = true
-
     // ── OEM polish flags (v3.0 rc.2) ──────────────────────────────────────
     const val KEY_NAV_TAB_IDENTITY      = "nav_tab_identity"
     const val DEFAULT_NAV_TAB_IDENTITY  = false      // soak period — on after rc.3
@@ -229,9 +223,6 @@ object AppSettings {
 
     fun getClassicFonts(ctx: Context): Boolean =
         prefs(ctx).getBoolean(KEY_CLASSIC_FONTS, DEFAULT_CLASSIC_FONTS)
-
-    fun getDriveAutoZoom(ctx: Context): Boolean =
-        prefs(ctx).getBoolean(KEY_DRIVE_AUTO_ZOOM, DEFAULT_DRIVE_AUTO_ZOOM)
 
     fun getNavTabIdentity(ctx: Context): Boolean =
         prefs(ctx).getBoolean(KEY_NAV_TAB_IDENTITY, DEFAULT_NAV_TAB_IDENTITY)
@@ -373,7 +364,6 @@ object AppSettings {
             putFloat  (KEY_BRIGHTNESS, p.brightness)
             putString (KEY_THEME_MODE, p.themeMode)
             putBoolean(KEY_CLASSIC_FONTS, p.classicFonts)
-            putBoolean(KEY_DRIVE_AUTO_ZOOM, p.driveAutoZoom)
             putBoolean(KEY_NAV_TAB_IDENTITY, p.navTabIdentity)
             putBoolean(KEY_LIVE_PILL_QUIET, p.livePillQuiet)
             putBoolean(KEY_GEAR_MODE_TINT, p.gearModeTint)
@@ -409,7 +399,6 @@ object AppSettings {
         brightness           = getBrightness(ctx),
         themeMode            = getThemeMode(ctx),
         classicFonts         = getClassicFonts(ctx),
-        driveAutoZoom        = getDriveAutoZoom(ctx),
         navTabIdentity       = getNavTabIdentity(ctx),
         livePillQuiet        = getLivePillQuiet(ctx),
         gearModeTint         = getGearModeTint(ctx),

@@ -67,7 +67,7 @@ import kotlinx.coroutines.withContext
 fun PerfPage(vs: VehicleState, p: UserPrefs, onReset: () -> Unit) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .padding(start = PagePad, end = PagePad, top = PagePad, bottom = PagePad + Tokens.NavBarHeight),
+            .padding(start = PagePad, end = PagePad, top = PagePad, bottom = pageBottomPadding()),
         verticalArrangement = Arrangement.spacedBy(CardGap)
     ) {
         PerformanceTimerCard(vs)

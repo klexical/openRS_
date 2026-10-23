@@ -67,7 +67,6 @@ private val versionHighlights: Map<String, List<String>> = mapOf(
         "DTC badge on the GARAGE tab — see active codes from any page",
         "Drag-to-reorder on Custom Dashboard — long-press the arrow column to drag",
         "TripPage SATELLITE default + select-card animates to reveal SHARE/RENAME",
-        "Adaptive zoom on DRIVE — gear inflates and the page auto-zooms above 16 kph",
         "Fixed: Auto-record no longer starts when only WiFi is connected — gates on RPM > 400 with seamless pause/resume",
         "Fixed: BLE scan timeout extended + filterless fallback to find stubborn adapters",
         "Fixed: Battery voltage now shows 2 decimals everywhere (14.74 vs 14.7)",

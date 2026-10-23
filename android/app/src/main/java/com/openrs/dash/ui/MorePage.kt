@@ -84,7 +84,7 @@ import kotlinx.coroutines.launch
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .padding(start = PagePad, end = PagePad, top = PagePad, bottom = PagePad + Tokens.NavBarHeight),
+            .padding(start = PagePad, end = PagePad, top = PagePad, bottom = pageBottomPadding()),
         verticalArrangement = Arrangement.spacedBy(SectionGap)
     ) {
 
