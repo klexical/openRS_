@@ -44,11 +44,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.update
@@ -87,9 +84,11 @@ class DriveRecorder(
     private val _driveState = MutableStateFlow(DriveState())
     val driveState: StateFlow<DriveState> = _driveState.asStateFlow()
 
-    /** Emitted once when a drive is stopped and finalized. */
-    private val _driveCompleted = MutableSharedFlow<DriveEntity>(replay = 0, extraBufferCapacity = 1)
-    val driveCompleted: SharedFlow<DriveEntity> = _driveCompleted.asSharedFlow()
+    /**
+     * Summary of the last finalized drive until TRIP shows it. Was a no-replay SharedFlow collected by
+     * TripPage — lost when the drive ended before TRIP had been composed.
+     */
+    val pendingSummary = com.openrs.dash.data.PendingSummary()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var recorderJob: Job? = null
@@ -339,7 +338,7 @@ class DriveRecorder(
                     // Persist lap timer results if any laps were completed
                     persistLaps(state.driveId)
 
-                    _driveCompleted.tryEmit(finalDrive)
+                    pendingSummary.post(finalDrive)
                     Log.d(TAG, "Drive ${state.driveId} ended (${state.totalPointCount} points)")
                 } catch (e: Exception) {
                     Log.w(TAG, "Drive finalize failed", e)

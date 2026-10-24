@@ -258,15 +258,18 @@ private fun TripPageContent(
     val lapTimer = remember { LapTimer() }
     LaunchedEffect(recorder) { recorder.lapTimer = lapTimer }
 
-    // Collect drive completion events
-    LaunchedEffect(recorder) {
-        recorder.driveCompleted.collect { drive ->
-            summaryDrive = drive
-            // Load points for time-series chart in summary
-            withContext(Dispatchers.IO) {
-                summaryPoints = DriveDatabase.getInstance(context).driveDao().getPoints(drive.id)
-            }
-        }
+    // Post-drive summary: queued app-wide by DriveRecorder until closed here. A summary opened from a
+    // history row (summaryDrive) takes precedence; the queued one follows when that closes.
+    val pendingSummary by recorder.pendingSummary.drive.collectAsState()
+    val shownSummary = summaryDrive ?: pendingSummary
+    LaunchedEffect(shownSummary?.id) {
+        val id = shownSummary?.id ?: return@LaunchedEffect
+        // Points for the time-series chart in the summary
+        summaryPoints = withContext(Dispatchers.IO) { DriveDatabase.getInstance(context).driveDao().getPoints(id) }
+    }
+    fun closeSummary(drive: DriveEntity) {
+        if (summaryDrive?.id == drive.id) summaryDrive = null else recorder.pendingSummary.consume(drive.id)
+        summaryPoints = emptyList()
     }
 
     // Idle location (one-shot centering when not recording)
@@ -757,8 +760,9 @@ private fun TripPageContent(
 
     // ── Drive summary sheet ─────────────────────────────────────────
     // Modal sheet = its own window: only present it on TRIP, or a drive ending while DRIVE is open would
-    // pop TRIP's summary over it. A summary that arrives off screen waits for the next TRIP visit.
-    summaryDrive?.takeIf { visible }?.let { drive ->
+    // pop TRIP's summary over it. A summary that arrives off screen waits for the next TRIP visit, and
+    // closing it consumes it — it is shown once, not on every return to TRIP.
+    shownSummary?.takeIf { visible }?.let { drive ->
         DriveSummarySheet(
             drive = drive,
             points = summaryPoints,
@@ -770,13 +774,9 @@ private fun TripPageContent(
                     }
                     DiagnosticExporter.shareDrive(context, drive, pts)
                 }
-                summaryDrive = null
-                summaryPoints = emptyList()
+                closeSummary(drive)
             },
-            onDismiss = {
-                summaryDrive = null
-                summaryPoints = emptyList()
-            }
+            onDismiss = { closeSummary(drive) }
         )
     }
 
