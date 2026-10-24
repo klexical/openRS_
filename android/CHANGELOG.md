@@ -86,6 +86,9 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **TAP TO CONNECT was hard to read on DAY** — the label is a darker shade of the paint accent on the blue action tint (`actionInk()`); offline is no longer orange — it's the user's own state, not an alarm. (`ui/Theme.kt`, `ui/DrivePage.kt`)
 - **Header text and touch targets were tiny** — chip text was 7–8 sp in ~20 dp targets; the header is 44 dp with 9–10 sp text, and the MODE chip, connection pill and settings each take the full header height. Nav tabs are 48 dp (was 45). (`ui/DesignTokens.kt`, `ui/MainActivity.kt`, `ui/BottomNavBar.kt`)
 
+### Fixed (rc.6 — performance)
+- **Tab changes stalled while the TRIP map was built off-screen** — the pager composes the page either side of the current one and prefetches the next in the scroll direction, so the Google map was created on the first PERF / THERMAL visit (a ~70-frame main-thread stall on the emulator, the nav highlight lagging the page) and again after every DRIVE visit. The map is now created only once TRIP is the settled page; until then the map area is a plain placeholder. Map type, colour mode, the selected drive and the camera are saveable, so they survive the pager dropping TRIP. (`ui/trip/TripPage.kt`, `ui/MainActivity.kt`)
+
 ### Changed (rc.6)
 - **PCM slow poll list** — adds 0xF404, 0xF40E, 0xF415 and 0x0548 (16 → 20 slow DIDs, ~24 s each with the engine running); `PCM_SLOW_REFRESH_MS` 35 → 40 s so the engine-off sweep + idle still fits the staleness window. ([#198](https://github.com/klexical/openRS_/issues/198))
 - **Room database v11→v12 migration** — adds nullable `drives.pullCount` / `knockPullCount` and multiplies stored `drive_points.tipActualKpa` / `boostTargetKpa` (> 0) by 903.81 / 128. (`data/DriveDatabase.kt`) ([#174](https://github.com/klexical/openRS_/issues/174), [#198](https://github.com/klexical/openRS_/issues/198))

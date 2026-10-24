@@ -331,7 +331,9 @@ class MainActivity : ComponentActivity() {
                                                 }, onConnect = { service?.startConnection() })
                                                 1 -> PerfPage(vs, prefs, onReset = { service?.resetPeaks() })
                                                 2 -> TempsPage(vs, prefs)
-                                                3 -> TripPage(driveState, vs, prefs, onMapTouched = { mapTouched = it })
+                                                // active: TRIP creates its Google map only once it is the settled page
+                                                3 -> TripPage(driveState, vs, prefs, onMapTouched = { mapTouched = it },
+                                                    active = pagerState.settledPage == 3)
                                                 4 -> GaragePage(
                                                     debugLines = debugLines,
                                                     vs = vs,

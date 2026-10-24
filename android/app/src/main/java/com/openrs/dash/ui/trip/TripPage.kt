@@ -34,6 +34,7 @@ import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.*
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
@@ -81,7 +82,9 @@ fun TripPage(
     driveState: DriveState,
     vehicleState: VehicleState,
     prefs: UserPrefs,
-    onMapTouched: (Boolean) -> Unit = {}
+    onMapTouched: (Boolean) -> Unit = {},
+    /** TRIP is the settled pager page. The Google map is only created once this is true (see below). */
+    active: Boolean = true
 ) {
     val context = LocalContext.current
     val accent = LocalThemeAccent.current
@@ -99,21 +102,44 @@ fun TripPage(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result -> hasLocationPerm = result[Manifest.permission.ACCESS_FINE_LOCATION] == true }
 
+    // Map view state is saveable: the pager drops TRIP from composition on DRIVE / PERF, and a later
+    // visit restores colour mode, map type, the selected drive and (rememberCameraPositionState) the camera.
     // Color mode cycling through all 6
-    var colorModeIndex by remember { mutableIntStateOf(0) }
+    var colorModeIndex by rememberSaveable { mutableIntStateOf(0) }
     val colorMode = ColorMode.entries[colorModeIndex]
 
     // Map type cycling: Satellite → Terrain → Normal
-    var mapType by remember { mutableStateOf(MapType.SATELLITE) }
+    var mapType by rememberSaveable { mutableStateOf(MapType.SATELLITE) }
 
     // Drive history
     var drives by remember { mutableStateOf<List<DriveEntity>>(emptyList()) }
     var selectedDrivePoints by remember { mutableStateOf<List<DrivePointEntity>>(emptyList()) }
-    var selectedDriveId by remember { mutableStateOf<Long?>(null) }
+    var selectedDriveId by rememberSaveable { mutableStateOf<Long?>(null) }
     var selectedDrive by remember { mutableStateOf<DriveEntity?>(null) }
 
     // Bookmarks for the displayed drive
     var mapBookmarks by remember { mutableStateOf<List<DriveBookmarkEntity>>(emptyList()) }
+
+    // Restored selection (page re-composed after the pager dropped it): reload the drive and its track.
+    LaunchedEffect(Unit) {
+        val id = selectedDriveId ?: return@LaunchedEffect
+        if (selectedDrive != null) return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            val dao = DriveDatabase.getInstance(context).driveDao()
+            val d = dao.getDrive(id)
+            if (d == null) { selectedDriveId = null; return@withContext }
+            selectedDrive = d
+            selectedDrivePoints = dao.getPoints(id)
+            mapBookmarks = dao.getBookmarks(id)
+        }
+    }
+
+    // Deferred map: the pager composes TRIP while it's a neighbour (THERMAL / GARAGE) and prefetches it
+    // while scrolling towards it (from PERF), and creating the GoogleMap blocked the main thread mid-swipe —
+    // the nav highlight lagged the page. The map is created once TRIP has settled as the current page and
+    // then lives as long as this page stays composed; until then the area shows a plain placeholder.
+    var mapCreated by remember { mutableStateOf(false) }
+    LaunchedEffect(active) { if (active) mapCreated = true }
 
     // Rename dialog state
     var renameDriveId by remember { mutableStateOf<Long?>(null) }
@@ -212,7 +238,7 @@ fun TripPage(
             val currentLat = driveState.currentLocation?.latitude ?: idleLocation?.latitude
             val currentLng = driveState.currentLocation?.longitude ?: idleLocation?.longitude
 
-            DriveMap(
+            if (mapCreated) DriveMap(
                 points = mapPoints,
                 colorMode = colorMode,
                 peakEvents = driveState.peakEvents,
@@ -225,7 +251,7 @@ fun TripPage(
                 hasLocationPermission = hasLocationPerm,
                 mapType = mapType,
                 cameraPositionState = cameraPositionState
-            )
+            ) else Box(Modifier.fillMaxSize().background(Surf2))
 
             // ── Floating controls (top-right stack) ─────────────────
             // rc.2: absorb all pointer events so taps that start on a control
