@@ -305,6 +305,10 @@ class MainActivity : ComponentActivity() {
                                     // Auto-dismiss dock on tab change
                                     LaunchedEffect(selectedTab) { dockOpen = false }
 
+                                    // TRIP on screen at all (settled or mid-swipe) — pinned off-screen pages don't count
+                                    val tripVisible by remember {
+                                        derivedStateOf { pagerState.layoutInfo.visiblePagesInfo.any { it.index == 3 } }
+                                    }
                                     val pagerScrollEnabled by remember {
                                         derivedStateOf { !(selectedTab == 3 && mapTouched) }
                                     }
@@ -331,9 +335,10 @@ class MainActivity : ComponentActivity() {
                                                 }, onConnect = { service?.startConnection() })
                                                 1 -> PerfPage(vs, prefs, onReset = { service?.resetPeaks() })
                                                 2 -> TempsPage(vs, prefs)
-                                                // active: TRIP creates its Google map only once it is the settled page
+                                                // settled: TRIP creates its map on the first visit; visible: off screen
+                                                // the retained map is stopped and TRIP's inputs are held (TripPage)
                                                 3 -> TripPage(driveState, vs, prefs, onMapTouched = { mapTouched = it },
-                                                    active = pagerState.settledPage == 3)
+                                                    settled = pagerState.settledPage == 3, visible = tripVisible)
                                                 4 -> GaragePage(
                                                     debugLines = debugLines,
                                                     vs = vs,

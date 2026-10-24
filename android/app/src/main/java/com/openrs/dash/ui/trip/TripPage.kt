@@ -37,6 +37,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.toMutableStateList
+import androidx.compose.ui.layout.LocalPinnableContainer
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -77,14 +83,108 @@ import java.util.*
 // TRIP PAGE — MAP tab: live recording + drive history
 // ═══════════════════════════════════════════════════════════════════════════
 
+/**
+ * TRIP tab host — owns the Google map's lifetime.
+ *
+ * - Lazy: the pager composes TRIP as a neighbour (THERMAL / GARAGE) and prefetches it while scrolling
+ *   towards it (from PERF). The map is created only once TRIP has been the settled page ([settled]);
+ *   before that the map area is a plain placeholder.
+ * - Retained: from then on the page pins itself in the pager, so leaving for DRIVE / PERF keeps this
+ *   composition — and its MapView, camera, tiles and view state — instead of destroying the map and
+ *   rebuilding it on return. The pin is released when the composition is disposed (activity destroy),
+ *   which is also when AndroidView destroys the MapView; there is only ever one map instance.
+ * - Idle while hidden: the subtree gets a lifecycle capped at CREATED while TRIP isn't on screen
+ *   ([visible]), so the MapView is stopped (no rendering, no map location layer), and the live inputs
+ *   are held at their last on-screen values so the page doesn't recompose. Recording and location
+ *   tracking live in DriveRecorder and are unaffected.
+ */
 @Composable
 fun TripPage(
     driveState: DriveState,
     vehicleState: VehicleState,
     prefs: UserPrefs,
     onMapTouched: (Boolean) -> Unit = {},
-    /** TRIP is the settled pager page. The Google map is only created once this is true (see below). */
-    active: Boolean = true
+    settled: Boolean = true,
+    visible: Boolean = true
+) {
+    var mapCreated by remember { mutableStateOf(false) }
+    LaunchedEffect(settled) { if (settled) mapCreated = true }
+
+    val pinnable = LocalPinnableContainer.current
+    DisposableEffect(mapCreated, pinnable) {
+        val handle = if (mapCreated) pinnable?.pin() else null
+        onDispose { handle?.release() }
+    }
+
+    val parentOwner = LocalLifecycleOwner.current
+    val owner = remember(parentOwner) { VisibilityCappedLifecycleOwner(parentOwner) }
+    DisposableEffect(owner) {
+        owner.attach()
+        onDispose { owner.detach() }
+    }
+    SideEffect { owner.setVisible(visible) }
+
+    CompositionLocalProvider(LocalLifecycleOwner provides owner) {
+        TripPageContent(
+            driveState = heldWhileHidden(driveState, visible),
+            vehicleState = heldWhileHidden(vehicleState, visible),
+            prefs = prefs,
+            onMapTouched = onMapTouched,
+            mapCreated = mapCreated,
+            visible = visible
+        )
+    }
+}
+
+/** [value] while [visible]; otherwise the last value seen while visible (plain holder — no recomposition). */
+@Composable
+private fun <T> heldWhileHidden(value: T, visible: Boolean): T {
+    val held = remember { arrayOfNulls<Any?>(1).also { it[0] = value } }
+    if (visible) held[0] = value
+    @Suppress("UNCHECKED_CAST")
+    return held[0] as T
+}
+
+/**
+ * Follows [parent]'s lifecycle but stays at CREATED while the TRIP page is off screen. Views under it
+ * (the MapView via AndroidView's ViewTree owner) see ON_PAUSE / ON_STOP when the user leaves TRIP and
+ * ON_START / ON_RESUME when TRIP is back — and still follow the activity into the background.
+ */
+internal class VisibilityCappedLifecycleOwner(private val parent: LifecycleOwner) : LifecycleOwner {
+    private val registry = LifecycleRegistry(this)
+    override val lifecycle: Lifecycle get() = registry
+    private var visible = true
+    private val observer = LifecycleEventObserver { _, _ -> sync() }
+
+    fun attach() = parent.lifecycle.addObserver(observer)
+
+    fun detach() {
+        parent.lifecycle.removeObserver(observer)
+        if (registry.currentState != Lifecycle.State.INITIALIZED) registry.currentState = Lifecycle.State.DESTROYED
+    }
+
+    fun setVisible(v: Boolean) {
+        if (v == visible) return
+        visible = v
+        sync()
+    }
+
+    private fun sync() {
+        if (registry.currentState == Lifecycle.State.DESTROYED) return
+        val p = parent.lifecycle.currentState
+        val cap = if (visible) Lifecycle.State.RESUMED else Lifecycle.State.CREATED
+        registry.currentState = if (p == Lifecycle.State.DESTROYED) Lifecycle.State.DESTROYED else minOf(p, cap)
+    }
+}
+
+@Composable
+private fun TripPageContent(
+    driveState: DriveState,
+    vehicleState: VehicleState,
+    prefs: UserPrefs,
+    onMapTouched: (Boolean) -> Unit,
+    mapCreated: Boolean,
+    visible: Boolean
 ) {
     val context = LocalContext.current
     val accent = LocalThemeAccent.current
@@ -102,8 +202,9 @@ fun TripPage(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result -> hasLocationPerm = result[Manifest.permission.ACCESS_FINE_LOCATION] == true }
 
-    // Map view state is saveable: the pager drops TRIP from composition on DRIVE / PERF, and a later
-    // visit restores colour mode, map type, the selected drive and (rememberCameraPositionState) the camera.
+    // Map view state is saveable as well: before the first visit and after process death the page is
+    // rebuilt, and colour mode, map type, the selected drive and (rememberCameraPositionState) the camera
+    // come back.
     // Color mode cycling through all 6
     var colorModeIndex by rememberSaveable { mutableIntStateOf(0) }
     val colorMode = ColorMode.entries[colorModeIndex]
@@ -120,7 +221,7 @@ fun TripPage(
     // Bookmarks for the displayed drive
     var mapBookmarks by remember { mutableStateOf<List<DriveBookmarkEntity>>(emptyList()) }
 
-    // Restored selection (page re-composed after the pager dropped it): reload the drive and its track.
+    // Restored selection (page rebuilt from saved state): reload the drive and its track.
     LaunchedEffect(Unit) {
         val id = selectedDriveId ?: return@LaunchedEffect
         if (selectedDrive != null) return@LaunchedEffect
@@ -133,13 +234,6 @@ fun TripPage(
             mapBookmarks = dao.getBookmarks(id)
         }
     }
-
-    // Deferred map: the pager composes TRIP while it's a neighbour (THERMAL / GARAGE) and prefetches it
-    // while scrolling towards it (from PERF), and creating the GoogleMap blocked the main thread mid-swipe —
-    // the nav highlight lagged the page. The map is created once TRIP has settled as the current page and
-    // then lives as long as this page stays composed; until then the area shows a plain placeholder.
-    var mapCreated by remember { mutableStateOf(false) }
-    LaunchedEffect(active) { if (active) mapCreated = true }
 
     // Rename dialog state
     var renameDriveId by remember { mutableStateOf<Long?>(null) }
@@ -196,12 +290,16 @@ fun TripPage(
         }
     }
 
-    // Recording indicator pulse
-    val recAlpha by rememberInfiniteTransition(label = "rec").animateFloat(
-        initialValue = 1f, targetValue = 0.2f,
-        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
-        label = "recAlpha"
-    )
+    // Recording indicator pulse — only runs while the REC badge is on screen (an infinite transition
+    // asks for a frame every vsync for as long as it is composed, and this page now stays composed).
+    val recAlpha = if (visible && driveState.isRecording) {
+        val a by rememberInfiniteTransition(label = "rec").animateFloat(
+            initialValue = 1f, targetValue = 0.2f,
+            animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+            label = "recAlpha"
+        )
+        a
+    } else 1f
 
     // Export progress
     val exportProgress by DiagnosticExporter.exportProgress.collectAsState()
@@ -404,7 +502,7 @@ fun TripPage(
             }
 
             // ── Lap timer overlay (top-start, during recording) ────
-            if (driveState.isRecording && lapTimer.startFinish != null) {
+            if (visible && driveState.isRecording && lapTimer.startFinish != null) {
                 LapTimerOverlay(
                     lapTimer = lapTimer,
                     prefs = prefs,
@@ -658,7 +756,9 @@ fun TripPage(
     }
 
     // ── Drive summary sheet ─────────────────────────────────────────
-    summaryDrive?.let { drive ->
+    // Modal sheet = its own window: only present it on TRIP, or a drive ending while DRIVE is open would
+    // pop TRIP's summary over it. A summary that arrives off screen waits for the next TRIP visit.
+    summaryDrive?.takeIf { visible }?.let { drive ->
         DriveSummarySheet(
             drive = drive,
             points = summaryPoints,
