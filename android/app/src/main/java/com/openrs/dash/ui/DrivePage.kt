@@ -580,6 +580,10 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
             val summary = when {
                 st.alerts.isNotEmpty() -> st.alerts.first().title + if (st.alerts.size > 1) "  +${st.alerts.size - 1}" else ""
                 st.oilLvl == Level.NONE && st.fuelLvl == Level.NONE -> ""
+                // Held / aged readings are not a current all-clear: ALL NORMAL only when no cell is STALE
+                // (whenDisconnected + tempAvailFor 60 s decide that, as for the cells themselves).
+                !st.connected -> "OFFLINE · LAST KNOWN"
+                listOf(st.oilLvl, st.coolLvl, st.fuelLvl, st.battLvl).any { it == Level.STALE } -> "STALE DATA"
                 else -> "ALL NORMAL"
             }
             MonoLabel(summary, 10.sp, if (st.alerts.isNotEmpty()) levelColor(panelLvl) else Dim,

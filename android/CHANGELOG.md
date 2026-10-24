@@ -64,6 +64,7 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **THERMAL peak tick pinned to the end of the bar in °F** — the tick divided the displayed (°F) peak by the °C limit; peaks are now passed in °C. (`ui/TempsPage.kt`)
 - **Header read "ESC ESC ON", and the logo glow drew a box** — the ESC pill drops the duplicate prefix; the "RS" glow is a circle that fades inside the header and is off on DAY. (`ui/MainActivity.kt`)
 - **AWD split showed a fake FRONT 100 % / REAR 0 % offline** — the bar and percentages now show placeholders while disconnected. (`ui/DrivePage.kt`)
+- **VEHICLE panel said ALL NORMAL over stale readings** — with the link down it presented the held oil / coolant / fuel / battery values as a current all-clear; it now reads OFFLINE · LAST KNOWN while disconnected and STALE DATA when a connected reading has aged out, returning to ALL NORMAL only when the existing freshness rules (`whenDisconnected`, 60 s `tempAvailFor`) mark every cell current. (`ui/DrivePage.kt`)
 
 ### Fixed (rc.6 — chassis)
 - **TPMS footer called the low-pressure alert "Recommended"** — it shows `tireLowPsi`, the low alert threshold; it now reads "LOW ALERT < 30.0 psi". (`ui/ChassisPage.kt`)
