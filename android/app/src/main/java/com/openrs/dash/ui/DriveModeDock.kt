@@ -273,7 +273,7 @@ import kotlinx.coroutines.launch
         }
         Spacer(Modifier.height(6.dp))
         MonoLabel(
-            if (canControl) "Tap to change \u00B7 Pull down from header or tap the MODE pill"
+            if (canControl) "Tap to change \u00B7 Pull down from the header or tap the mode pill"
             else "Displays current Drive Mode \u2014 openRS_ firmware unlocks tap control",
             9.sp, Dim
         )

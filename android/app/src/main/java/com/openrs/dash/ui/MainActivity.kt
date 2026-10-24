@@ -278,8 +278,8 @@ class MainActivity : ComponentActivity() {
                                     }
 
                                     // rc.2: anomaly surface sits below the header so it can't steal the
-                                    // MODE/ESC pills. Priority: e-brake > LC engaged > update > reconnect.
-                                    AnomalyStrip(vs, onConnect = { service?.startConnection() })
+                                    // MODE/ESC pills. Priority: e-brake > LC engaged > update.
+                                    AnomalyStrip(vs)
 
                                     // ── Quick Mode Dock ──────────────────
                                     AnimatedVisibility(
@@ -328,7 +328,7 @@ class MainActivity : ComponentActivity() {
                                             when (page) {
                                                 0 -> DrivePage(vs, prefs, onOpenThermal = {
                                                     pageScope.launch { pagerState.animateScrollToPage(2) }
-                                                })
+                                                }, onConnect = { service?.startConnection() })
                                                 1 -> PerfPage(vs, prefs, onReset = { service?.resetPeaks() })
                                                 2 -> TempsPage(vs, prefs)
                                                 3 -> TripPage(driveState, vs, prefs, onMapTouched = { mapTouched = it })
@@ -505,7 +505,13 @@ class MainActivity : ComponentActivity() {
         demoActive && vs.isConnected -> demoInk()   // simulated link up; LOSS phase shows real RCN
         vs.isConnected -> Ok
         vs.isIdle      -> Warn
-        else           -> Orange
+        else           -> Mid      // OFF: not an alarm — TAP TO CONNECT (accent) is the call to action
+    }
+    // Pill text: ink when live, the state colour only for degraded / simulated links
+    val connInk = when {
+        demoActive     -> demoInk()
+        vs.isConnected -> Frost
+        else           -> connColor
     }
     val linkLabel = when {
         isUpdating     -> "UPD"
@@ -538,6 +544,36 @@ class MainActivity : ComponentActivity() {
 
     val haptic = LocalHapticFeedback.current
 
+    // Disconnect confirmation: Cancel, Back and tapping outside all just close it.
+    var confirmDisconnect by remember { mutableStateOf(false) }
+    // A drop or demo start while the dialog is open makes it moot.
+    LaunchedEffect(vs.isConnected, demoActive) { if (!vs.isConnected || demoActive) confirmDisconnect = false }
+    if (confirmDisconnect && vs.isConnected && !demoActive) {
+        AlertDialog(
+            onDismissRequest = { confirmDisconnect = false },
+            containerColor = Surf,
+            title = { UIText("Disconnect from vehicle?", 16.sp, Frost, FontWeight.Bold) },
+            text = { MonoLabel("Live data stops until you connect again.", 11.sp, Mid) },
+            dismissButton = {
+                TextButton(onClick = { confirmDisconnect = false }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    MonoLabel("CANCEL", 12.sp, Mid, FontWeight.Bold, 0.5.sp)
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDisconnect = false
+                        haptic.performHapticFeedback(HapticFeedbackType.Reject)
+                        onDisconnect()
+                    },
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) {
+                    MonoLabel("DISCONNECT", 12.sp, Orange, FontWeight.Bold, 0.5.sp)
+                }
+            }
+        )
+    }
+
     // rc.2: header underline stays a constant hairline — dock drops right
     // below it, so flashing it mode-color on mode-change reads as a stray
     // line. Mode-color breath is carried by the bottom nav indicator only.
@@ -549,6 +585,9 @@ class MainActivity : ComponentActivity() {
     var dragAccum by remember { mutableStateOf(0f) }
     val dragState = rememberDraggableState { delta -> dragAccum += delta }
 
+    // Narrow phones (< 400 dp) drop the trip distance from the REC label so the row never wraps.
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+    val compact = maxWidth < 400.dp
     Row(
         Modifier.fillMaxWidth()
             .height(Tokens.StatusBarHeight)
@@ -689,13 +728,17 @@ class MainActivity : ComponentActivity() {
                 val distKm = driveState.cumulativeDistanceKm
                 val distStr = if (prefs.speedUnit == "MPH") "%.1f mi".format(distKm * UnitConversions.KM_TO_MI)
                               else "%.1f km".format(distKm)
-                val label = if (paused) "PAUSED" else "REC %02d:%02d · %s".format(mm, ss, distStr)
+                val label = when {
+                    paused  -> "PAUSED"
+                    compact -> "REC %02d:%02d".format(mm, ss)
+                    else    -> "REC %02d:%02d · %s".format(mm, ss, distStr)
+                }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Box(Modifier.size(6.dp).clip(CircleShape).background(dotColor.copy(alpha = recAlpha)))
-                    MonoLabel(label, 7.sp, dotColor, FontWeight.Bold, 0.08.sp)
+                    Box(Modifier.size(7.dp).clip(CircleShape).background(dotColor.copy(alpha = recAlpha)))
+                    MonoLabel(label, 9.sp, dotColor, FontWeight.Bold, 0.2.sp)
                 }
             } else if (autoRecArmed) {
                 val armedAlpha by rememberInfiniteTransition(label = "headerArmed").animateFloat(
@@ -708,39 +751,42 @@ class MainActivity : ComponentActivity() {
                     horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
                     Box(
-                        Modifier.size(6.dp).clip(CircleShape)
+                        Modifier.size(7.dp).clip(CircleShape)
                             .border(CardBorder, Mid.copy(alpha = armedAlpha), CircleShape)
                     )
-                    MonoLabel("ARMED", 7.sp, Mid.copy(alpha = armedAlpha), FontWeight.Bold, 0.08.sp)
+                    MonoLabel("ARMED", 9.sp, Mid.copy(alpha = armedAlpha), FontWeight.Bold, 0.2.sp)
                 }
             }
 
             // rc.2: fixed-width connection pill. pressClick + haptic feedback.
             // Label crossfades on state change. Bloom fades 0→0.3 on connect,
             // 0.3→0 on disconnect. Quiet mode dims pill after 2s stable.
+            // Neutral chip like MODE / ESC: the dot carries the link colour. Full-height tap area; a tap
+            // while live only asks — the dialog's Disconnect is the sole path to stopConnection().
             Box(
                 Modifier
+                    .fillMaxHeight()
                     .alpha(quietAlpha)
-                    .widthIn(min = 48.dp)
-                    .background(connColor.copy(alpha = pillBgAlpha(0.08f)), RoundedCornerShape(4.dp))
-                    .border(CardBorder, connColor.copy(alpha = borderAlpha(0.2f)), RoundedCornerShape(4.dp))
                     .pressClick(pressedScale = 0.97f) {
                         // Demo: the pill never touches the adapter — it folds / unfolds the demo controls.
                         if (demoActive) { com.openrs.dash.demo.DemoMode.toggleControls(); return@pressClick }
-                        haptic.performHapticFeedback(
-                            if (vs.isConnected) HapticFeedbackType.Reject
-                            else HapticFeedbackType.Confirm
-                        )
                         when {
-                            vs.isConnected -> onDisconnect()
-                            vs.isIdle      -> onReconnect()
-                            else           -> onConnect()
+                            vs.isConnected -> confirmDisconnect = true
+                            vs.isIdle      -> { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onReconnect() }
+                            else           -> { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onConnect() }
                         }
                     }
-                    .padding(horizontal = 5.dp, vertical = 2.dp),
+                    .padding(horizontal = 4.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    Modifier.widthIn(min = 52.dp)
+                        .background(Surf2, RoundedCornerShape(6.dp))
+                        .border(CardBorder, Brd.copy(alpha = borderAlpha(0.6f)), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 7.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally)
+                ) {
                     Box(contentAlignment = Alignment.Center) {
                         Box(Modifier.size(10.dp).clip(CircleShape)
                             .background(connColor.copy(alpha = 0.25f * dotAlpha))
@@ -758,52 +804,54 @@ class MainActivity : ComponentActivity() {
                         transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(180)) },
                         label = "connLbl"
                     ) { lbl ->
-                        MonoLabel(lbl, 7.sp, connColor, FontWeight.Bold, 0.08.sp)
+                        MonoLabel(lbl, 9.sp, connInk, FontWeight.Bold, 0.3.sp)
                     }
                 }
             }
 
+            // Settings: bare glyph (the filled box read as a button bezel), 44 dp target, glyph held
+            // 12 dp off the edge so the right-hand cluster still sits tight to the screen edge.
             Box(
                 Modifier
-                    .background(Mid.copy(alpha = pillBgAlpha(0.15f)), RoundedCornerShape(4.dp))
-                    .border(CardBorder, Mid.copy(alpha = borderAlpha(0.35f)), RoundedCornerShape(4.dp))
-                    .clickable { onSettings() }
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
-                contentAlignment = Alignment.Center
+                    .fillMaxHeight()
+                    .width(44.dp)
+                    .clickable(onClickLabel = "Settings") { onSettings() }
+                    .padding(end = 12.dp),
+                contentAlignment = Alignment.CenterEnd
             ) {
-                UIText("⚙", 11.sp, Mid)
-                if (UpdateManager.hasUpdate) {
-                    Box(
-                        Modifier.align(Alignment.TopEnd)
-                            .offset(x = 2.dp, y = (-2).dp)
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(Ok)
-                    )
+                Box {
+                    UIText("⚙", 17.sp, Mid)
+                    if (UpdateManager.hasUpdate) {
+                        Box(
+                            Modifier.align(Alignment.TopEnd)
+                                .offset(x = 3.dp, y = 1.dp)
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(Ok)
+                        )
+                    }
                 }
             }
         }
+    }
     }
 }
 
 @Composable
 private fun HeaderModeEscPills(vs: VehicleState, accent: Color, onModeClick: () -> Unit) {
     val connected = vs.isConnected
-    val modeColor = when {
-        !connected            -> Dim
-        vs.driveMode == DriveMode.SPORT -> Ok
-        vs.driveMode == DriveMode.TRACK -> Warn
-        vs.driveMode == DriveMode.DRIFT -> Orange
-        else                  -> accent
-    }
+    // Calm cockpit: the selected mode is a reading (ink), not an alert — TRACK in amber read as a
+    // warning. ESC keeps its existing colours for reduced stability control (Sport / Launch / Off).
+    val modeColor = if (connected) Frost else Dim
     val escColor = when {
         !connected                          -> Dim
         vs.escStatus == EscStatus.OFF       -> Orange
         vs.escStatus == EscStatus.PARTIAL   -> Warn
         vs.escStatus == EscStatus.LAUNCH    -> Warn
-        else                                -> accent
+        else                                -> Frost
     }
     val modeValue = if (connected) vs.driveMode.label.uppercase() else "\u2014"
+    // The mode names are self-describing; the MODE caption only labels the offline placeholder.
     // The pill already says ESC — "ESC On" read as "ESC ESC ON".
     val escValue  = if (connected) vs.escStatus.label.removePrefix("ESC ").uppercase() else "\u2014"
 
@@ -818,14 +866,15 @@ private fun HeaderModeEscPills(vs: VehicleState, accent: Color, onModeClick: () 
 
         val barAlpha = if (pending) animAlpha else 0f
         StatusPill(
-            label = "MODE",
+            label = if (connected) null else "MODE",
             value = modeValue,
             valueColor = modeColor,
             onClick = if (connected) onModeClick else null,
-            pulseBarColor = if (pending) modeColor else null,
-            pulseBarAlpha = barAlpha
+            pulseBarColor = if (pending) accent else null,
+            pulseBarAlpha = barAlpha,
+            chevron = connected
         )
-        Spacer(Modifier.width(6.dp))
+        Spacer(Modifier.width(2.dp))
         StatusPill(
             label = "ESC",
             value = escValue,
@@ -837,20 +886,20 @@ private fun HeaderModeEscPills(vs: VehicleState, accent: Color, onModeClick: () 
 
 // rc.2: unified anomaly surface — sits below the header so it never rewrites
 // header geometry. One strip at a time, priority order:
-//   eBrake > launchControlEngaged > updating > reconnecting > offline.
+//   eBrake > launchControlEngaged > updating.
+// Connection state is not a strip: inserting / removing one moved every page. RECONNECTING and
+// TAP TO CONNECT live in DRIVE's fixed-height StatusLine; the header pill (RCN / OFF) covers all tabs.
 @Composable
-private fun AnomalyStrip(vs: VehicleState, onConnect: () -> Unit) {
+private fun AnomalyStrip(vs: VehicleState) {
     val accent = LocalThemeAccent.current
     val updateState by UpdateManager.state.collectAsState()
     val dl = updateState as? com.openrs.dash.update.UpdateState.Downloading
 
     val kind: AnomalyKind? = when {
-        // Held e-brake / LC flags are stale once the link drops — RECONNECTING wins then.
+        // Held e-brake / LC flags are stale once the link drops.
         vs.isConnected && vs.eBrake               -> AnomalyKind.EBrake
         vs.isConnected && vs.launchControlEngaged -> AnomalyKind.LaunchControl
         dl != null                   -> AnomalyKind.Updating(dl.progress)
-        !vs.isConnected && vs.isIdle -> AnomalyKind.Reconnecting
-        !vs.isConnected              -> AnomalyKind.Offline
         else                         -> null
     }
 
@@ -864,34 +913,18 @@ private fun AnomalyStrip(vs: VehicleState, onConnect: () -> Unit) {
             AnomalyKind.EBrake        -> "\u26A0  E-BRAKE ACTIVE" to Orange
             AnomalyKind.LaunchControl -> "\u26A1  LAUNCH CONTROL"  to Warn
             is AnomalyKind.Updating   -> "\u21BB  UPDATE  ${((current.progress.coerceIn(0f, 1f)) * 100).toInt()}%" to accent
-            AnomalyKind.Reconnecting  -> "RECONNECTING" to Warn
-            AnomalyKind.Offline       -> "TAP TO CONNECT" to Orange
         }
         val flashing = current is AnomalyKind.LaunchControl
-        val pulsing  = current is AnomalyKind.Reconnecting || current is AnomalyKind.Offline
 
         val flashAlpha by rememberInfiniteTransition(label = "anoFlash").animateFloat(
             initialValue = 1f, targetValue = 0.35f,
             animationSpec = infiniteRepeatable(tween(220), RepeatMode.Reverse),
             label = "anoFlashA"
         )
-        val pulseAlpha by rememberInfiniteTransition(label = "anoPulse").animateFloat(
-            initialValue = 0.45f, targetValue = 1f,
-            animationSpec = infiniteRepeatable(tween(900, easing = EaseInOut), RepeatMode.Reverse),
-            label = "anoPulseA"
-        )
         val effectiveAlpha = when {
             flashing -> flashAlpha
-            pulsing  -> pulseAlpha
             else     -> 1f
         }
-        val orbiting = current is AnomalyKind.Reconnecting || current is AnomalyKind.Offline
-        // Orbiting phase for reconnecting top-border highlight
-        val orbitPhase by rememberInfiniteTransition(label = "anoOrbit").animateFloat(
-            initialValue = 0f, targetValue = 1f,
-            animationSpec = infiniteRepeatable(tween(2200, easing = LinearEasing), RepeatMode.Restart),
-            label = "anoOrbitP"
-        )
         Box(
             Modifier.fillMaxWidth()
                 .height(Tokens.AnomalyStripHeight)
@@ -904,56 +937,17 @@ private fun AnomalyStrip(vs: VehicleState, onConnect: () -> Unit) {
                         end = androidx.compose.ui.geometry.Offset(size.width, size.height),
                         strokeWidth = 1.dp.toPx()
                     )
-                    // Orbiting top-border highlight (reconnecting only)
-                    if (orbiting) {
-                        val spotCenter = orbitPhase * size.width
-                        val spotRadius = size.width * 0.15f
-                        val orbitBrush = Brush.horizontalGradient(
-                            colorStops = arrayOf(
-                                0f to Color.Transparent,
-                                ((spotCenter - spotRadius) / size.width).coerceIn(0f, 1f) to Color.Transparent,
-                                (spotCenter / size.width).coerceIn(0f, 1f) to color.copy(alpha = 0.8f),
-                                ((spotCenter + spotRadius) / size.width).coerceIn(0f, 1f) to Color.Transparent,
-                                1f to Color.Transparent
-                            )
-                        )
-                        drawRect(
-                            brush = orbitBrush,
-                            topLeft = androidx.compose.ui.geometry.Offset(0f, 0f),
-                            size = androidx.compose.ui.geometry.Size(size.width, 1.dp.toPx())
-                        )
-                    }
-                }
-                .then(if (current is AnomalyKind.Offline)
-                    Modifier.clickable { onConnect() } else Modifier),
+                },
             contentAlignment = Alignment.Center
         ) {
             val stripTextStyle = remember {
                 androidx.compose.ui.text.TextStyle(
-                    fontSize = 9.sp, fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.14.sp, lineHeight = 9.sp,
+                    fontSize = 10.sp, fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.3.sp, lineHeight = 10.sp,
                     platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false)
                 )
             }
-            if (current is AnomalyKind.Reconnecting) {
-                // Animated breadcrumb dots: each dot fades in sequentially.
-                // Fixed "..." width so the label doesn't shift as dots appear.
-                val dotPhase by rememberInfiniteTransition(label = "dots").animateFloat(
-                    initialValue = 0f, targetValue = 4f,
-                    animationSpec = infiniteRepeatable(tween(3600, easing = LinearEasing)),
-                    label = "dotsP"
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text, style = stripTextStyle, color = textColor(color))
-                    val phase = dotPhase.coerceIn(0f, 4f)
-                    for (i in 0 until 3) {
-                        val dotAlpha = ((phase - i).coerceIn(0f, 1f))
-                        Text(".", style = stripTextStyle, color = textColor(color).copy(alpha = dotAlpha))
-                    }
-                }
-            } else {
-                Text(text, style = stripTextStyle, color = textColor(color))
-            }
+            Text(text, style = stripTextStyle, color = textColor(color))
         }
     }
 }
@@ -962,32 +956,41 @@ private sealed class AnomalyKind {
     data object EBrake : AnomalyKind()
     data object LaunchControl : AnomalyKind()
     data class Updating(val progress: Float) : AnomalyKind()
-    data object Reconnecting : AnomalyKind()
-    data object Offline : AnomalyKind()
 }
 
+/**
+ * Header status chip: neutral surface + hairline (the value carries any state colour), 9 / 10 sp text
+ * (was 7 / 8). A tappable chip's target spans the full header height; [chevron] marks the MODE dock.
+ */
 @Composable private fun StatusPill(
-    label: String,
+    label: String?,
     value: String,
     valueColor: Color,
     onClick: (() -> Unit)?,
     pulseBarColor: Color? = null,
-    pulseBarAlpha: Float = 1f
+    pulseBarAlpha: Float = 1f,
+    chevron: Boolean = false
 ) {
-    val shape = RoundedCornerShape(4.dp)
+    val shape = RoundedCornerShape(6.dp)
     Box(
         Modifier
-            .background(valueColor.copy(alpha = pillBgAlpha(0.10f)), shape)
-            .border(CardBorder, valueColor.copy(alpha = borderAlpha(0.25f)), shape)
-            .then(if (onClick != null) Modifier.pressClick { onClick() } else Modifier)
-            .padding(horizontal = 6.dp, vertical = 2.dp)
+            .fillMaxHeight()
+            .then(if (onClick != null) Modifier.pressClick { onClick() }.padding(horizontal = 4.dp) else Modifier),
+        contentAlignment = Alignment.Center
+    ) {
+    Box(
+        Modifier
+            .background(Surf2, shape)
+            .border(CardBorder, Brd.copy(alpha = borderAlpha(0.6f)), shape)
+            .padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(3.dp)
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            MonoLabel(label, 7.sp, Dim, letterSpacing = 0.08.sp)
-            MonoLabel(value, 8.sp, valueColor, FontWeight.Bold, 0.05.sp)
+            label?.let { MonoLabel(it, 9.sp, Dim, letterSpacing = 0.3.sp) }
+            MonoLabel(value, 10.sp, valueColor, FontWeight.Bold, 0.3.sp)
+            if (chevron) MonoLabel("\u25BE", 9.sp, Dim)
         }
         // Pulsing accent bar at bottom (MODE pill)
         if (pulseBarColor != null) {
@@ -1003,6 +1006,7 @@ private sealed class AnomalyKind {
                 )
             }
         }
+    }
     }
 }
 

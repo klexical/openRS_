@@ -102,7 +102,9 @@ ui/
                             Location + BLE permissions; REC indicator + BT indicator in AppHeader
                             Quick Mode Dock: tap MODE pill in status bar → dropdown drive mode selector
                             WiFi coexistence banner: warns when BLE active but phone connected to adapter WiFi
-                            Header pill is the single always-on disconnected indicator (ConnectionBanner removed)
+                            Header pill is the single always-on disconnected indicator (ConnectionBanner removed);
+                            tapping it while live opens a "Disconnect from vehicle?" confirmation (only DISCONNECT
+                            calls stopConnection); in demo it folds / unfolds the demo controls instead
                             Navigation: HorizontalPager (swipe) + BottomNavBar overlay outside Scaffold
                             TRIP tab (page 3): pager swipe disabled while touching map (onMapTouched callback)
                             Scaffold uses contentWindowInsets=statusBars (content extends behind nav bar)
@@ -144,8 +146,8 @@ ui/
   FuelTrimDriftCard.kt    — rc.5 — PERF card: per-drive STFT/LTFT trend (last 20 drives), ±5/±10 % bands, drift alert
   trip/TimeSeriesMath.kt  — rc.5 — Pure gap segmentation + shared-axis ranges for DriveTimeSeries
   BottomNavBar.kt         — Custom bottom nav: 5 vector icons, frosted glass via Haze (hazeEffect),
-                            spring-animated neon indicator, stamped bevel gradient, pressClick + haptics
-                            Height: 38dp (icons) + sysNavPad (gesture area). Tokens.NavBarHeight = 38dp
+                            spring-animated indicator bar, one top hairline, pressClick + haptics
+                            Height: Tokens.NavBarHeight (48 dp tabs) + sysNavPad (gesture area)
   RaceReadiness.kt        — raceReadiness(vs, RtrLimits.from(prefs)): READY / WARMING / OVERHEAT / NO_DATA for the THERMAL
                             RtrBanner + DriveRecorder RTR marker (preset crit limits + tempAvailFor 60 s validity)
   DemoControls.kt         — Debug demo UI: DemoControlStrip (under header), DemoBadge, demoInk() (DAY-legible amber),
@@ -167,7 +169,7 @@ ui/
                             HeroCard glow scales with valueFraction (0=dormant, no accent glow).
                             DataCell/BarCard/HeroCard numeric values use Rajdhani (tnum — tabular figures
                             for stable width). MonoLabel uses JetBrains Mono for micro-labels only.
-  DesignTokens.kt         — Tokens object: PagePad, CardGap, SectionGap, InnerH/V, NavBarHeight(38dp),
+  DesignTokens.kt         — Tokens object: PagePad, CardGap, SectionGap, InnerH/V, NavBarHeight(48dp), StatusBarHeight(44dp header),
                             CardShape(12dp), HeroShape(14dp), CardRadius, HeroRadius, CardBorder(0.5dp)
   Theme.kt                — v2.2.7 "Daylight": discrete NIGHT / DAY / ULTRA theme modes (no brightness slider).
                             themeMode: ThemeMode enum; AUTO resolves from the local clock (DAY when HOUR_OF_DAY in 6..18).
@@ -374,6 +376,9 @@ data[5] = B5,  data[6] = B6 …
   and value carry the state. Warnings lead DRIVE via StatusLine, sorted CRIT → WARN then oil → coolant → PTU → RDU →
   tyre → fuel → knock. THERMAL trims padding/gaps (not reading sizes) when the page viewport is < 760 dp tall
   (`LocalThermalDensity`)
+- **Connection state never inserts space** — RECONNECTING / TAP TO CONNECT render inside DRIVE's fixed 48 dp
+  StatusLine (`LinkState`), and the header pill (RCN / OFF) covers the other tabs. `AnomalyStrip` is only for
+  e-brake, launch control and update progress — don't add connection states back to it (they moved every page)
 - **Scrolling pages pad with `pageBottomPadding()`** — the bottom nav overlay is NavBarHeight + the system gesture
   inset tall and content runs behind it; padding only `Tokens.NavBarHeight` hid the last ~24 dp (DRIVE ECONOMY). New
   scrolling pages must use `pageBottomPadding()` (or `navBarClearance()` without the page margin)

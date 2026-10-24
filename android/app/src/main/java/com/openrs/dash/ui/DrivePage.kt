@@ -86,7 +86,7 @@ import kotlin.math.roundToInt
 // DRIVE PAGE — what's happening right now, curated for glance-readability
 // Polled fields (temps, fuel economy, odometer, warnings) live on other tabs.
 // ═══════════════════════════════════════════════════════════════════════════
-@Composable fun DrivePage(vs: VehicleState, p: UserPrefs, onOpenThermal: () -> Unit = {}) {
+@Composable fun DrivePage(vs: VehicleState, p: UserPrefs, onOpenThermal: () -> Unit = {}, onConnect: () -> Unit = {}) {
     var pageEntered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { pageEntered = true }
     val accent = LocalThemeAccent.current
@@ -205,7 +205,12 @@ import kotlin.math.roundToInt
             // Permanent status line: warnings lead the page without ever moving the instruments.
             val readiness = if (vs.isConnected)
                 raceReadiness(vs, RtrLimits.from(p), fmtTemp = { "${p.displayTemp(it)}${p.tempLabel}" }) else null
-            StatusLine(status.alerts, readiness, onOpenThermal)
+            val link = when {
+                vs.isConnected -> LinkState.LIVE
+                vs.isIdle      -> LinkState.RECONNECTING
+                else           -> LinkState.OFFLINE
+            }
+            StatusLine(status.alerts, readiness, link, onOpenThermal, onConnect)
 
             // Design pass: readings in ink, BOOST (the car's personality) carries the paint accent,
             // RPM turns Orange only at the shift-light flash point. Equal-height cards with a fixed
@@ -422,6 +427,8 @@ private data class VehicleAlert(
     val chip: String? = null,    // chip text when the condition has no VEHICLE cell
 )
 
+private enum class LinkState { LIVE, RECONNECTING, OFFLINE }
+
 private data class VehicleStatus(
     val connected: Boolean,
     val oil: String, val oilLvl: Level,
@@ -489,19 +496,26 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
  * Permanent status line at the top of DRIVE — the same 48 dp in every state, so warnings appearing
  * or clearing only change its content and never push the instruments. Leads with the most severe
  * alert ("OIL CRITICAL 268°F  +6"); with none, THERMAL's readiness verdict (same rule as its
- * banner); offline, NO VEHICLE DATA. Alerts hold 3 s after clearing so a reading hovering at a
- * limit doesn't flicker. Tap opens THERMAL.
+ * banner). Link down: RECONNECTING, or offline the TAP TO CONNECT action — here rather than a strip
+ * above the page, so a drop / recovery / going offline only changes this row's content and the
+ * instruments never move. Alerts hold 3 s after clearing so a reading hovering at a limit doesn't
+ * flicker. Tap opens THERMAL while live.
  */
-@Composable private fun StatusLine(alerts: List<VehicleAlert>, rtr: RaceReadiness?, onOpen: () -> Unit) {
+@Composable private fun StatusLine(
+    alerts: List<VehicleAlert>, rtr: RaceReadiness?, link: LinkState, onOpen: () -> Unit, onConnect: () -> Unit
+) {
     var held by remember { mutableStateOf(alerts) }
     LaunchedEffect(alerts) {
         if (alerts.isEmpty()) kotlinx.coroutines.delay(3_000)
         held = alerts
     }
-    val top = held.firstOrNull()
+    // The 3 s alert hold is for flicker between live frames — a dropped link replaces it at once.
+    val top = if (link == LinkState.LIVE) held.firstOrNull() else null
+    if (link == LinkState.OFFLINE) { ConnectActionRow(onConnect); return }
     val shape = RoundedCornerShape(12.dp)
     // Readiness colours match THERMAL's RtrBanner dot: READY Ok, OVERHEAT Orange, otherwise Warn.
     val (accentColor, title, value) = when {
+        link == LinkState.RECONNECTING -> Triple(Warn, "RECONNECTING", "")
         top != null -> Triple(levelColor(top.level), top.title, top.value)
         rtr == null -> Triple(Dim, "NO VEHICLE DATA", "")
         rtr.state == RtrState.READY -> Triple(Ok, "RACE READY", "")
@@ -517,7 +531,7 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
             .border(if (alerting) 1.dp else Tokens.CardBorder,
                 if (alerting) accentColor.copy(alpha = borderAlpha(0.8f))
                 else if (isDayModeNow()) Brd.copy(alpha = 0.75f) else Brd.copy(alpha = 0.15f), shape)
-            .clickable(onClickLabel = "Open THERMAL") { onOpen() }
+            .then(if (link == LinkState.LIVE) Modifier.clickable(onClickLabel = "Open THERMAL") { onOpen() } else Modifier)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -539,13 +553,34 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
             else MonoLabel(value, 10.sp, Dim, letterSpacing = 0.2.sp, modifier = Modifier.weight(1f, fill = false))
         }
         Spacer(Modifier.weight(1f))
-        if (held.size > 1) {
+        if (top != null && held.size > 1) {
             Box(
                 Modifier.background(Surf3, RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 3.dp)
             ) { MonoLabel("+${held.size - 1}", 11.sp, Frost, FontWeight.Bold) }
             Spacer(Modifier.width(8.dp))
         }
-        MonoLabel("›", 16.sp, Dim)
+        if (link == LinkState.LIVE) MonoLabel("›", 16.sp, Dim)
+    }
+}
+
+/** Offline: the whole 48 dp row is the connect action — accent tint, label in [actionInk] (dark on DAY). */
+@Composable private fun ConnectActionRow(onConnect: () -> Unit) {
+    val accent = LocalThemeAccent.current
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        Modifier.fillMaxWidth().height(48.dp)
+            .background(InstrumentFill, shape)
+            .background(accent.copy(alpha = if (isDayModeNow()) 0.14f else 0.12f), shape)
+            .border(1.dp, accent.copy(alpha = borderAlpha(0.7f)), shape)
+            .clickable(onClickLabel = "Connect to the adapter") { onConnect() }
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        androidx.compose.material3.Text(
+            "TAP TO CONNECT", color = actionInk(accent), fontFamily = RajdhaniFamily,
+            fontWeight = FontWeight.Bold, fontSize = 17.sp, letterSpacing = 1.sp, maxLines = 1
+        )
     }
 }
 

@@ -15,9 +15,9 @@ import androidx.compose.ui.unit.dp
 object Tokens {
     // ── Page-level spacing ──────────────────────────────────────────────
     val PagePad       = 12.dp
-    val NavBarHeight    = 45.dp
-    val StatusBarHeight = 34.dp
-    val AnomalyStripHeight = 18.dp
+    val NavBarHeight    = 48.dp   // tab row = 48 dp touch targets (was 45)
+    val StatusBarHeight = 44.dp   // header: MODE pill / settings tap targets span the full height (was 34)
+    val AnomalyStripHeight = 20.dp
     val CardGap         = 10.dp
     val SectionGap    = 14.dp
 

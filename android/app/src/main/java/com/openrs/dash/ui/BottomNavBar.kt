@@ -33,8 +33,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.graphicsLayer
@@ -57,7 +55,7 @@ import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
 
 // ═══════════════════════════════════════════════════════════════════════════
-// BOTTOM NAV BAR — 7 tabs with vector icons, frosted glass background
+// BOTTOM NAV BAR — 5 tabs with vector icons, frosted glass background
 // ═══════════════════════════════════════════════════════════════════════════
 
 private data class NavItem(val icon: Int, val label: String)
@@ -123,48 +121,21 @@ fun BottomNavBar(
                     blurRadius = 24.dp
                 )
             )
-            // Stamped bevel gradient over the frost
-            .background(
-                Brush.verticalGradient(
-                    colorStops = arrayOf(
-                        0.0f  to Color.White.copy(alpha = 0.08f),
-                        0.08f to Color.White.copy(alpha = 0.03f),
-                        0.5f  to Color.Transparent,
-                        0.92f to Color.Black.copy(alpha = 0.06f),
-                        1.0f  to Color.Black.copy(alpha = 0.15f)
-                    )
-                )
-            )
+            // One hairline where the frost meets the content (was a stamped bevel gradient, a white
+            // specular line and an inner shadow — decoration that read as a bright seam on NIGHT and
+            // vanished on DAY).
             .drawBehind {
-                val w = size.width
-                val h = size.height
-                val px1 = 1.dp.toPx()
-                // Top specular highlight
                 drawLine(
-                    color = Color.White.copy(alpha = 0.22f),
+                    color = Brd.copy(alpha = borderAlpha(0.7f)),
                     start = Offset(0f, 0f),
-                    end = Offset(w, 0f),
-                    strokeWidth = px1
-                )
-                // Soft glow below highlight
-                drawLine(
-                    color = Color.White.copy(alpha = 0.06f),
-                    start = Offset(0f, px1 * 2),
-                    end = Offset(w, px1 * 2),
-                    strokeWidth = px1 * 2
-                )
-                // Bottom inner shadow
-                drawLine(
-                    color = Color.Black.copy(alpha = 0.35f),
-                    start = Offset(0f, h),
-                    end = Offset(w, h),
-                    strokeWidth = px1
+                    end = Offset(size.width, 0f),
+                    strokeWidth = 1.dp.toPx()
                 )
             }
     ) {
         val tabWidth = maxWidth / tabCount
 
-        // ── Sliding neon indicator (top edge — faces content) ────────
+        // ── Sliding indicator (top edge — faces content) ────────────
         val indicatorOffset by animateDpAsState(
             targetValue = tabWidth * selected,
             animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
@@ -180,28 +151,16 @@ fun BottomNavBar(
                 Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth(0.6f)
-                    .height(2.dp)
+                    .height(3.dp)
                     .background(
                         accentChrome,
                         RoundedCornerShape(bottomStart = 2.dp, bottomEnd = 2.dp)
                     )
             )
-            Box(
-                Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth(0.7f)
-                    .height(6.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(accentChrome.copy(alpha = 0.12f), Color.Transparent)
-                        ),
-                        RoundedCornerShape(bottomStart = 4.dp, bottomEnd = 4.dp)
-                    )
-            )
         }
 
         // ── Nav items (padded above system gesture bar) ─────────────
-        Row(Modifier.fillMaxWidth().height(Tokens.NavBarHeight).padding(top = 6.dp)) {
+        Row(Modifier.fillMaxWidth().height(Tokens.NavBarHeight).padding(top = 4.dp)) {
             navItems.forEachIndexed { i, item ->
                 val isActive = i == selected
                 // Per-tab identity: active tab uses its own color; breath overrides all

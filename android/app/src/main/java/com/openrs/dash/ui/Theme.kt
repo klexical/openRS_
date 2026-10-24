@@ -146,6 +146,13 @@ private val DayWarn = Color(0xFFE09500)
  */
 val WarnInk: Color get() = if (_isDay) Color(0xFF6B4700) else Color(0xFFFFCC00)
 
+/**
+ * Text on an accent-tinted action surface (TAP TO CONNECT). DAY darkens the paint 40 % towards
+ * Ink — the raw paint on its own light tint read at ~3:1; NIGHT keeps the paint.
+ */
+fun actionInk(accent: Color): Color =
+    if (_isDay) androidx.compose.ui.graphics.lerp(accent, Color(0xFF080D16), 0.4f) else accent
+
 /** Routes DAY [Warn] (at any alpha) to [WarnInk] for text; every other colour passes through. */
 fun textColor(c: Color): Color =
     if (_isDay && c.copy(alpha = 1f) == DayWarn) WarnInk.copy(alpha = c.alpha) else c
