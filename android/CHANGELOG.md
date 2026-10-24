@@ -59,6 +59,7 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ### Fixed (rc.6 — design pass)
 - **Last rows hid behind the bottom nav** — scrolling pages padded only the nav row (45 dp), but the nav overlay also covers the system gesture inset, so DRIVE ECONOMY and the final rows of other pages could not scroll clear. Pages now pad nav + inset (`pageBottomPadding()` / `navBarClearance()`). (`ui/DesignTokens.kt`)
+- **ECONOMY only appeared once the car had moved** — the panel was hidden until `FuelEconomy.isValid`, so it was missing at startup, while stationary and offline, and appeared mid-drive. It is now always present (collapse is the user's choice only); each metric shows "—" with its unit until it has a value, IDLE shows only with the engine running (> 400 rpm) and the car stopped, and session values dim while disconnected. Calculations unchanged. (`ui/DrivePage.kt`)
 - **DAY cards looked like grey slabs** — the DAY card shadow was two un-blurred offset rectangles that merged between neighbours; it is now a faint blurred contact shadow, and the redesigned DAY cards are flat white with a hairline border. (`ui/anim/GlowModifiers.kt`)
 - **THERMAL peak tick pinned to the end of the bar in °F** — the tick divided the displayed (°F) peak by the °C limit; peaks are now passed in °C. (`ui/TempsPage.kt`)
 - **Header read "ESC ESC ON", and the logo glow drew a box** — the ESC pill drops the duplicate prefix; the "RS" glow is a circle that fades inside the header and is off on DAY. (`ui/MainActivity.kt`)

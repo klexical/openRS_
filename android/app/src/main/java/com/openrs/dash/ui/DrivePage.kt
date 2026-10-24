@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.text.font.FontWeight
 import com.openrs.dash.R
+import com.openrs.dash.can.ObdConstants
 import androidx.annotation.DrawableRes
 import com.openrs.dash.ui.anim.isShiftPoint
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -321,34 +322,42 @@ import kotlin.math.roundToInt
                 }
             }
 
-            // F2: fuel economy — gated on valid readings. One grouped panel; the header collapses it.
-            if (econState.isValid) {
-                var econExpanded by rememberSectionExpanded("DRIVE_ECONOMY")
-                val mph = p.speedUnit == "MPH"
-                val isIdle = vs.speedKph < 2.0 && econState.idleFuelLPerHr > 0
-                EconomyPanel(
-                    expanded = econExpanded,
-                    onToggle = { econExpanded = !econExpanded },
-                    cells = listOf(
-                        when {
-                            isIdle -> Triple("IDLE", "%.1f".format(econState.idleFuelLPerHr), "L/hr")
-                            mph    -> Triple("INSTANT", "%.1f".format(econState.instantMpg), "MPG")
-                            else   -> Triple("INSTANT", "%.1f".format(econState.instantL100km), "L/100 km")
-                        },
-                        if (mph) Triple("AVERAGE", "%.1f".format(econState.avgMpg), "MPG")
-                        else Triple("AVERAGE", "%.1f".format(econState.avgL100km), "L/100 km"),
-                        if (mph) Triple("TO EMPTY", "%.0f".format(econState.distanceToEmptyKm * UnitConversions.KM_TO_MI), "mi")
-                        else Triple("TO EMPTY", "%.0f".format(econState.distanceToEmptyKm), "km"),
-                        Triple("FUEL USED", "%.1f".format(econState.fuelUsedL), "L"),
-                    ),
-                )
-            }
+            // F2: fuel economy — always present (data arriving / leaving never shows, hides or collapses it;
+            // only the user's header tap does). Unavailable metrics read "—" with their unit, not 0.
+            // Calculations and validity are FuelEconomy's; this only decides what to print.
+            var econExpanded by rememberSectionExpanded("DRIVE_ECONOMY")
+            val mph = p.speedUnit == "MPH"
+            val valid = econState.isValid
+            fun num(v: Double, fmt: String, ok: Boolean) = if (ok) fmt.format(v) else "—"
+            // IDLE only with the engine running (PCM fast-poll rule) and the car stopped, while connected.
+            val idle = vs.isConnected && vs.rpm > ObdConstants.FAST_POLL_MIN_RPM && vs.speedKph < 2.0
+            val instantOk = valid && vs.isConnected && (if (mph) econState.instantMpg else econState.instantL100km) > 0
+            EconomyPanel(
+                expanded = econExpanded,
+                onToggle = { econExpanded = !econExpanded },
+                // Session aggregates stay readable offline, dimmed like other last-known values.
+                dimmed = !vs.isConnected,
+                cells = listOf(
+                    when {
+                        idle -> Triple("IDLE", num(econState.idleFuelLPerHr, "%.1f", valid && econState.idleFuelLPerHr > 0), "L/hr")
+                        mph  -> Triple("INSTANT", num(econState.instantMpg, "%.1f", instantOk), "MPG")
+                        else -> Triple("INSTANT", num(econState.instantL100km, "%.1f", instantOk), "L/100 km")
+                    },
+                    if (mph) Triple("AVERAGE", num(econState.avgMpg, "%.1f", valid && econState.avgMpg > 0), "MPG")
+                    else Triple("AVERAGE", num(econState.avgL100km, "%.1f", valid && econState.avgL100km > 0), "L/100 km"),
+                    if (mph) Triple("TO EMPTY", num(econState.distanceToEmptyKm * UnitConversions.KM_TO_MI, "%.0f", valid && econState.distanceToEmptyKm > 0), "mi")
+                    else Triple("TO EMPTY", num(econState.distanceToEmptyKm, "%.0f", valid && econState.distanceToEmptyKm > 0), "km"),
+                    Triple("FUEL USED", num(econState.fuelUsedL, "%.1f", valid), "L"),
+                ),
+            )
         }
     }
 }
 
 /** ECONOMY: instant / average / distance to empty / fuel used in one panel; the header row collapses it. */
-@Composable private fun EconomyPanel(expanded: Boolean, onToggle: () -> Unit, cells: List<Triple<String, String, String>>) {
+@Composable private fun EconomyPanel(
+    expanded: Boolean, onToggle: () -> Unit, cells: List<Triple<String, String, String>>, dimmed: Boolean = false,
+) {
     val chevron by animateFloatAsState(if (expanded) 0f else -90f, label = "econChevron")
     Column(Modifier.fillMaxWidth().instrumentSurface()) {
         Row(
@@ -373,7 +382,7 @@ import kotlin.math.roundToInt
                     Column(Modifier.weight(1f)) {
                         InstrumentLabel(label)
                         Spacer(Modifier.height(2.dp))
-                        DataNum(value, 20.sp, Frost)
+                        DataNum(value, 20.sp, if (dimmed || value == "—") Dim else Frost)
                         InstrumentMeta(unit)
                     }
                 }
