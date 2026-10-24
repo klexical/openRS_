@@ -64,6 +64,12 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **Header read "ESC ESC ON", and the logo glow drew a box** — the ESC pill drops the duplicate prefix; the "RS" glow is a circle that fades inside the header and is off on DAY. (`ui/MainActivity.kt`)
 - **AWD split showed a fake FRONT 100 % / REAR 0 % offline** — the bar and percentages now show placeholders while disconnected. (`ui/DrivePage.kt`)
 
+### Fixed (rc.6 — chassis)
+- **TPMS footer called the low-pressure alert "Recommended"** — it shows `tireLowPsi`, the low alert threshold; it now reads "LOW ALERT < 30.0 psi". (`ui/ChassisPage.kt`)
+- **AWD diagram showed F 100 / R 0 and 0 Nm offline** — torque split, wheel torque, bias, wheel-speed deltas, requested torque, AWD MAX (decoded live from 0x2C0 each frame) and pump current show dashes while disconnected instead of rest or last values. (`ui/ChassisPage.kt`)
+- **Tyre cards kept the last wheel speed while reconnecting** — wheel speed is per-frame data and now shows "— mph" offline; pressures and temperatures stay, marked STALE. (`ui/ChassisPage.kt`)
+- **Header lost the DEMO label during simulated connection loss** — the pill switched from DEMO to RCN; in demo it now always reads DEMO, with the simulated link state beside it ("DEMO · RCN"). (`ui/MainActivity.kt`)
+
 ### Changed (rc.6)
 - **PCM slow poll list** — adds 0xF404, 0xF40E, 0xF415 and 0x0548 (16 → 20 slow DIDs, ~24 s each with the engine running); `PCM_SLOW_REFRESH_MS` 35 → 40 s so the engine-off sweep + idle still fits the staleness window. ([#198](https://github.com/klexical/openRS_/issues/198))
 - **Room database v11→v12 migration** — adds nullable `drives.pullCount` / `knockPullCount` and multiplies stored `drive_points.tipActualKpa` / `boostTargetKpa` (> 0) by 903.81 / 128. (`data/DriveDatabase.kt`) ([#174](https://github.com/klexical/openRS_/issues/174), [#198](https://github.com/klexical/openRS_/issues/198))
@@ -76,6 +82,9 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **DRIVE redesign** — readings in ink with the paint accent on BOOST and the trend lines; amber / orange only when a limit is crossed (RPM at the shift-light flash point). One gear module holds the shift lights with brake | gear | throttle bars at a fixed, screen-dependent size; AWD split, G and torque share one panel; ECONOMY is one grouped panel (instant, average, distance to empty, fuel used). (`ui/DrivePage.kt`, `ui/Instrument.kt`)
 - **THERMAL hierarchy** — readiness and the STREET / TRACK / RACE limits share one card; ENGINE (oil, coolant) cards are full width with a scale showing faint caution / redline zones and a WARN / CRIT legend; PTU, RDU, AWD clutches and trans oil are one DRIVETRAIN panel; intake / ambient and the detail temps are compact. Short screens trim padding, not reading sizes. (`ui/TempsPage.kt`)
 - **Readable secondary text** — captions, PEAK / LIMIT / units and AWD details on DRIVE and THERMAL are 10 sp at full-strength Dim (were 8–9 sp, alpha-muted); bottom nav labels 7 → 9 sp with the active tab bold. (`ui/Instrument.kt`, `ui/BottomNavBar.kt`)
+
+- **AWD clutch hydraulics labelled by measurement** — the readouts under a CLUTCH HYDRAULICS caption read CURRENT L / R, PUMP and PRESSURE L / R instead of two CLUTCH L / R rows told apart only by A vs bar. (`ui/ChassisPage.kt`)
+- **THERMAL tyres + AWD in the design-pass style** — tyre cards around the original Focus RS wireframe show pressure in ink unless past the existing limits, with temperature on the existing bands; the AWD diagram shows torque only and its readouts drop the readings now in DRIVETRAIN (PTU, RDU, clutch and trans-oil temps) plus the duplicate F/R split and PEAK (= AWD MAX) cells. (`ui/ChassisPage.kt`)
 
 ### Removed (rc.6)
 - **Unused resources** — `ic_nav_chassis` / `ic_nav_diag` drawables, the legacy OSMDroid `raw/map_style_dark.json`, and 12 unreferenced `colors.xml` entries.

@@ -118,7 +118,9 @@ ui/
                             (AFR, throttle/boost, engine mgmt, fuel trims, knock sensors). When offline,
                             sections force-collapse + a "CONNECT ADAPTER TO POPULATE" hint renders at top
   PowerPage.kt             — PowerPageContent composable shared by PERF + CustomDash
-  ChassisPage.kt           — UnifiedChassisSection (Tires + AWD) embedded in TempsPage + GForcePlot wrapper
+  ChassisPage.kt           — UnifiedChassisSection (THERMAL): TYRES panel (TyreCells around the original CarDiagram
+                            wireframe + overlay — unchanged) and AWD panel (torque-only diagram + readouts; PTU/RDU/
+                            clutch/trans temps live in DRIVETRAIN, not here). GForceSection for PERF
   TempsPage.kt             — THERMAL tab: ReadinessCard (RACE READY verdict + STREET/TRACK/RACE limits), predictive
                             alerts, ENGINE (full-width oil + coolant EngineTempCard, scale + WARN/CRIT legend),
                             DRIVETRAIN panel (PTU/RDU/clutch L-R/trans oil rows), AIR (compact intake/ambient), tires
@@ -471,7 +473,8 @@ adb shell am start --activity-single-top -n com.openrs.dash.debug/com.openrs.das
 **In-app:** ⚙ → DEVELOPER (debug builds only) → pick a scenario. While active, an amber strip under the header shows
 `DEMO`, scenario time, a scenario menu (IDLE/DRIVE/WARN/LOSS), pause ❚❚ / ▶, reset ↺, exit ✕ — every control a
 ≥ 48 dp touch target; the header pill reads DEMO and the floating HUD shows "DEMO · simulated". Tap `DEMO 0:42 ▴`
-to fold the strip (design reviews); tap the header DEMO pill to unfold it.
+to fold the strip (design reviews); tap the header DEMO pill to unfold it. The pill always says DEMO in demo mode
+(`DEMO · RCN` during LOSS) — never drop the simulation label.
 Exit leaves the app OFF ("TAP TO CONNECT") until you tap connect.
 
 | Scenario | What to check |

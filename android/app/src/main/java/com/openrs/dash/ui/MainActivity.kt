@@ -507,13 +507,19 @@ class MainActivity : ComponentActivity() {
         vs.isIdle      -> Warn
         else           -> Orange
     }
-    val connLabel = when {
+    val linkLabel = when {
         isUpdating     -> "UPD"
-        demoActive && vs.isConnected -> "DEMO"
         vs.isConnected -> "LIVE"
         isReconnecting -> "RCN"
         vs.isIdle      -> "IDLE"
         else           -> "OFF"
+    }
+    // Simulated data is always labelled: in demo the pill keeps DEMO and adds the (simulated) link
+    // state, e.g. "DEMO · RCN" during the connection-loss scenario — never RCN alone.
+    val connLabel = when {
+        demoActive && vs.isConnected -> "DEMO"
+        demoActive                   -> "DEMO · $linkLabel"
+        else                         -> linkLabel
     }
 
     // Bloom intensity fades 0.3→0 over 400ms on disconnect (instead of popping off).

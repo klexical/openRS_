@@ -10,6 +10,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -54,6 +55,9 @@ import com.openrs.dash.ui.anim.GForcePlot
 import com.openrs.dash.ui.anim.RingBuffer
 import com.openrs.dash.ui.anim.SteeringArc
 import com.openrs.dash.ui.anim.WHEEL_ANCHORS
+import com.openrs.dash.data.thermalBandForTire
+import com.openrs.dash.data.ThermalBand
+import com.openrs.dash.R
 import com.openrs.dash.ui.anim.tireStatusColor
 import com.openrs.dash.ui.Tokens.CardBorder
 import com.openrs.dash.ui.Tokens.PagePad
@@ -75,10 +79,9 @@ import kotlin.math.roundToInt
 //          [torque bar] [metrics] [temps] [clutch]
 // ═══════════════════════════════════════════════════════════════════════════
 @Composable fun UnifiedChassisSection(vs: VehicleState, p: UserPrefs) {
-    val accent = LocalThemeAccent.current
     val lowThreshold = p.tireLowPsi.toDouble()
 
-    // Animated tire status colors for accent edge bars
+    // Animated tire status colors for the lead lines (same rule as before)
     val flColor by animateColorAsState(
         tireStatusColor(vs.tirePressLF, lowThreshold), tween(400), label = "flC"
     )
@@ -106,16 +109,16 @@ import kotlin.math.roundToInt
         // Offline: no reading → quiet placeholder (not WARMING); held reading → STALE (last-known)
         return if (!vs.isConnected && a == TempAvail.WARMING) TempAvail.AVAILABLE else a.whenDisconnected(vs.isConnected)
     }
+    val panelLevel = worstLevel(listOf(vs.tirePressLF, vs.tirePressRF, vs.tirePressLR, vs.tirePressRR)
+        .map { tireLevel(it, lowThreshold) })
 
+    SectionLabel("TYRES")
     Column(
         Modifier.fillMaxWidth()
-            .background(Surf, RoundedCornerShape(16.dp))
-            .border(CardBorder, Brd, RoundedCornerShape(16.dp))
-            .padding(14.dp)
+            .instrumentSurface(panelLevel)
+            .padding(horizontal = 12.dp, vertical = 12.dp)
     ) {
-        SectionLabel("CHASSIS — TIRES & AWD")
-
-        // ── Neon Connect layout: cards flanking wireframe ──
+        // ── Cards flanking the RS wireframe (original artwork + overlay, unchanged) ──
         // Position tracking for connector lead lines
         var rowRoot by remember { mutableStateOf(Offset.Zero) }
         var diagRoot by remember { mutableStateOf(Offset.Zero) }
@@ -141,17 +144,19 @@ import kotlin.math.roundToInt
                             val r = it.positionInRoot()
                             flEdge = Offset(r.x - rowRoot.x + it.size.width, r.y - rowRoot.y + it.size.height / 2f)
                         }) {
-                            NeonTireCard("FL", vs.tirePressLF, p, lowThreshold, flColor,
+                            TyreCell("FL", vs.tirePressLF, p, lowThreshold,
                                 vs.wheelSpeedFL, vs.tireTempLF, deltaLF,
-                                avail = tireAvail(vs.tirePressLF >= 0, vs.fieldLastUpdateMs["tirePressLF"]))
+                                avail = tireAvail(vs.tirePressLF >= 0, vs.fieldLastUpdateMs["tirePressLF"]),
+                                live = vs.isConnected)
                         }
                         Box(Modifier.onGloballyPositioned {
                             val r = it.positionInRoot()
                             rlEdge = Offset(r.x - rowRoot.x + it.size.width, r.y - rowRoot.y + it.size.height / 2f)
                         }) {
-                            NeonTireCard("RL", vs.tirePressLR, p, lowThreshold, rlColor,
+                            TyreCell("RL", vs.tirePressLR, p, lowThreshold,
                                 vs.wheelSpeedRL, vs.tireTempLR, deltaLR,
-                                avail = tireAvail(vs.tirePressLR >= 0, vs.fieldLastUpdateMs["tirePressLR"]))
+                                avail = tireAvail(vs.tirePressLR >= 0, vs.fieldLastUpdateMs["tirePressLR"]),
+                                live = vs.isConnected)
                         }
                     }
 
@@ -175,17 +180,19 @@ import kotlin.math.roundToInt
                             val r = it.positionInRoot()
                             frEdge = Offset(r.x - rowRoot.x, r.y - rowRoot.y + it.size.height / 2f)
                         }) {
-                            NeonTireCard("FR", vs.tirePressRF, p, lowThreshold, frColor,
+                            TyreCell("FR", vs.tirePressRF, p, lowThreshold,
                                 vs.wheelSpeedFR, vs.tireTempRF, deltaRF,
-                                avail = tireAvail(vs.tirePressRF >= 0, vs.fieldLastUpdateMs["tirePressRF"]))
+                                avail = tireAvail(vs.tirePressRF >= 0, vs.fieldLastUpdateMs["tirePressRF"]),
+                                live = vs.isConnected)
                         }
                         Box(Modifier.onGloballyPositioned {
                             val r = it.positionInRoot()
                             rrEdge = Offset(r.x - rowRoot.x, r.y - rowRoot.y + it.size.height / 2f)
                         }) {
-                            NeonTireCard("RR", vs.tirePressRR, p, lowThreshold, rrColor,
+                            TyreCell("RR", vs.tirePressRR, p, lowThreshold,
                                 vs.wheelSpeedRR, vs.tireTempRR, deltaRR,
-                                avail = tireAvail(vs.tirePressRR >= 0, vs.fieldLastUpdateMs["tirePressRR"]))
+                                avail = tireAvail(vs.tirePressRR >= 0, vs.fieldLastUpdateMs["tirePressRR"]),
+                                live = vs.isConnected)
                         }
                     }
                 }
@@ -214,107 +221,95 @@ import kotlin.math.roundToInt
                 }
         }
 
-        // ── Low pressure / imbalance warnings ──
+        // ── Low pressure / imbalance warnings (same rules as before) ──
         val lowTires = buildList {
             if (vs.tirePressLF in 0.0..(lowThreshold - 0.001)) add("Front Left")
             if (vs.tirePressRF in 0.0..(lowThreshold - 0.001)) add("Front Right")
             if (vs.tirePressLR in 0.0..(lowThreshold - 0.001)) add("Rear Left")
             if (vs.tirePressRR in 0.0..(lowThreshold - 0.001)) add("Rear Right")
         }
-        if (lowTires.isNotEmpty()) {
-            Spacer(Modifier.height(10.dp))
-            Column(
-                Modifier.fillMaxWidth()
-                    .background(Orange.copy(alpha = 0.1f), RoundedCornerShape(10.dp))
-                    .border(CardBorder, Orange.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
-                    .padding(12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                val warningText = if (lowTires.size == 1)
-                    "⚠  Warning: ${lowTires[0]} tire low!"
-                else
-                    "⚠  Warning: ${lowTires.joinToString(", ")} tires low!"
-                MonoLabel(warningText, 10.sp, Orange, letterSpacing = 0.08.sp)
-                Spacer(Modifier.height(6.dp))
-                MonoLabel(
-                    "Recommended: ${p.displayTire(lowThreshold)} ${p.tireLabel}",
-                    9.sp, Dim
-                )
-            }
-        }
         val spread = vs.maxTirePressSpread
-        if (spread >= 4.0 && lowTires.isEmpty()) {
+        if (lowTires.isNotEmpty() || spread >= 4.0) {
             Spacer(Modifier.height(10.dp))
-            Box(
-                Modifier.fillMaxWidth()
-                    .background(Warn.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
-                    .border(CardBorder, Warn.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
-                    .padding(12.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                MonoLabel("⚠  Pressure imbalance — ${"%.1f".format(spread)} ${p.tireLabel} spread", 10.sp, Warn, letterSpacing = 0.08.sp)
-            }
+            if (lowTires.isNotEmpty())
+                AlertChip("${lowTires.joinToString(", ").uppercase()} LOW", Level.CRIT, R.drawable.ic_tt_tyre)
+            else
+                AlertChip("PRESSURE IMBALANCE ${"%.1f".format(spread)} ${p.tireLabel}", Level.WARN, R.drawable.ic_tt_tyre)
         }
 
-        // ── TPMS footer: recommended threshold + last updated ──
-        Spacer(Modifier.height(8.dp))
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            MonoLabel(
-                "Recommended: ${p.displayTire(lowThreshold)} ${p.tireLabel}",
-                8.sp, Dim.copy(alpha = 0.7f)
-            )
+        // ── TPMS footer: low-pressure alert threshold + last updated ──
+        Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            // This is the low-pressure alert (UserPrefs.tireLowPsi), not a recommended pressure.
+            InstrumentMeta("LOW ALERT < ${p.displayTire(lowThreshold)} ${p.tireLabel}")
+            Spacer(Modifier.weight(1f))
             val updatedText = if (vs.tpmsLastUpdate > 0L) {
                 val ago = (System.currentTimeMillis() - vs.tpmsLastUpdate) / 1000
                 when {
-                    ago < 5   -> "Updated just now"
-                    ago < 60  -> "Updated ${ago}s ago"
-                    ago < 3600 -> "Updated ${ago / 60}m ago"
-                    else       -> "Updated ${ago / 3600}h ago"
+                    ago < 5   -> "TPMS just now"
+                    ago < 60  -> "TPMS ${ago}s ago"
+                    ago < 3600 -> "TPMS ${ago / 60}m ago"
+                    else       -> "TPMS ${ago / 3600}h ago"
                 }
-            } else "Awaiting data"
-            MonoLabel(updatedText, 8.sp, Dim.copy(alpha = 0.7f))
+            } else "TPMS awaiting data"
+            InstrumentMeta(updatedText)
         }
 
         // ── Wheel Rotation Counts (CAN 0x1E0) ──
         val hasRotation = vs.wheelRotFL > 0 || vs.wheelRotFR > 0 || vs.wheelRotRL > 0 || vs.wheelRotRR > 0
         if (hasRotation) {
             Spacer(Modifier.height(10.dp))
-            MonoLabel("WHEEL ROTATION", 8.sp, Dim.copy(alpha = 0.7f), letterSpacing = 0.1.sp)
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Brd.copy(alpha = borderAlpha(0.4f))))
+            Spacer(Modifier.height(8.dp))
+            InstrumentLabel("WHEEL ROTATION")
             Spacer(Modifier.height(4.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                DataCell("FL", "${vs.wheelRotFL}", modifier = Modifier.weight(1f))
-                DataCell("FR", "${vs.wheelRotFR}", modifier = Modifier.weight(1f))
-                DataCell("RL", "${vs.wheelRotRL}", modifier = Modifier.weight(1f))
-                DataCell("RR", "${vs.wheelRotRR}", modifier = Modifier.weight(1f))
+            Row(Modifier.fillMaxWidth()) {
+                MiniReadout("FL", "${vs.wheelRotFL}", Modifier.weight(1f))
+                MiniReadout("FR", "${vs.wheelRotFR}", Modifier.weight(1f))
+                MiniReadout("RL", "${vs.wheelRotRL}", Modifier.weight(1f))
+                MiniReadout("RR", "${vs.wheelRotRR}", Modifier.weight(1f))
             }
         }
-
-        // ── AWD Drivetrain Section (always visible) ──
-        Spacer(Modifier.height(12.dp))
-        AwdMetrics(vs, p)
     }
+
+    // ── AWD Drivetrain Section (always visible) ──
+    AwdMetrics(vs, p)
+}
+
+/** Pressure level from the tyre card's existing rule ([tireStatusColor] defaults: warn 34, high 50 psi). */
+private fun tireLevel(psi: Double, lowThreshold: Double, warnThreshold: Double = 34.0, highThreshold: Double = 50.0) = when {
+    psi < 0              -> Level.NONE
+    psi < lowThreshold   -> Level.CRIT
+    psi < warnThreshold  -> Level.WARN
+    psi > highThreshold  -> Level.CRIT
+    else                 -> Level.NORMAL
+}
+
+/** Tyre temperature colour from the existing [thermalBandForTire] bands; in-range reads in ink. */
+private fun tyreTempColor(tempC: Double): Color = when (thermalBandForTire(tempC)) {
+    ThermalBand.COLD     -> Mid
+    ThermalBand.NOMINAL  -> Frost
+    ThermalBand.HOT      -> Warn
+    ThermalBand.CRITICAL -> Orange
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TIRE CARD — graphical design matching cockpit TPMS display
+// TYRE CELL — pressure (hero), temperature, wheel speed, pressure change
 // ═══════════════════════════════════════════════════════════════════════════
 @Composable
-private fun NeonTireCard(
+private fun TyreCell(
     label: String,
     psi: Double,
     p: UserPrefs,
     lowThreshold: Double,
-    statusColor: Color,
     wheelSpeedKph: Double,
     tempC: Double,
     deltaText: String,
-    avail: TempAvail = TempAvail.AVAILABLE
+    avail: TempAvail = TempAvail.AVAILABLE,
+    /** Adapter connected — wheel speed is a per-frame reading, so offline it shows "—" (pressure / temp go STALE). */
+    live: Boolean = true,
 ) {
-    val isMissing = psi < 0
-    val isLow = psi in 0.0..(lowThreshold - 0.001)
+    val level = tireLevel(psi, lowThreshold)
     val hasTemp = tempC > -90
     val availSub = when (avail) {
         TempAvail.WARMING     -> "WARMING"
@@ -322,90 +317,39 @@ private fun NeonTireCard(
         TempAvail.UNAVAILABLE -> "N/A"
         TempAvail.AVAILABLE   -> ""
     }
+    val speedStr = if (live) com.openrs.dash.ui.anim.formatWheelSpeed(wheelSpeedKph, p)
+                   else "— " + (if (p.speedUnit == "MPH") "mph" else "kph")
+    val animTireTemp by animateColorAsState(tyreTempColor(tempC), tween(400), label = "tireTC")
+    val stale = avail == TempAvail.STALE
+
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+    // Narrow columns (360 dp phones) use the short form so every card keeps a one-line caption.
+    val short = maxWidth < 116.dp
     val positionName = when (label) {
-        "FL" -> "Front Left"; "FR" -> "Front Right"
-        "RL" -> "Rear Left";  "RR" -> "Rear Right"
+        "FL" -> if (short) "FRONT L" else "FRONT LEFT"; "FR" -> if (short) "FRONT R" else "FRONT RIGHT"
+        "RL" -> if (short) "REAR L" else "REAR LEFT";   "RR" -> if (short) "REAR R" else "REAR RIGHT"
         else -> label
     }
-    val speedStr = com.openrs.dash.ui.anim.formatWheelSpeed(wheelSpeedKph, p)
-    val animTireTemp by animateColorAsState(tireTempColor(tempC), tween(400), label = "tireTC")
-
-    val bgColor = if (isLow) Orange.copy(alpha = 0.06f) else Surf2
-    val borderColor = if (isLow) Orange.copy(alpha = 0.45f) else Brd
-
     Column(
         Modifier.fillMaxWidth()
-            .background(bgColor, RoundedCornerShape(12.dp))
-            .border(CardBorder, borderColor, RoundedCornerShape(12.dp))
-            .padding(horizontal = 10.dp, vertical = 10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .background(if (level.isAlert) levelColor(level).copy(alpha = 0.08f) else Surf3.copy(alpha = if (isDayModeNow()) 0.45f else 0.6f),
+                RoundedCornerShape(10.dp))
+            .border(if (level.isAlert) 1.dp else CardBorder,
+                if (level.isAlert) levelColor(level).copy(alpha = borderAlpha(0.5f)) else Brd.copy(alpha = borderAlpha(0.2f)),
+                RoundedCornerShape(10.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp)
     ) {
-        // Position name
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            MonoLabel(positionName, 9.sp, if (isLow) Orange else Dim, letterSpacing = 0.08.sp)
-            if (deltaText.isNotEmpty()) {
-                val deltaColor = if (deltaText.startsWith("\u25B2")) Ok else Orange
-                MonoText(deltaText, 8.sp, deltaColor)
-            }
-        }
-
-        Spacer(Modifier.height(6.dp))
-
-        // Hero PSI + unit label (side by side like TPMS display)
+        InstrumentLabel(positionName, color = if (level.isAlert) levelColor(level) else Dim)
         Row(verticalAlignment = Alignment.Bottom) {
-            HeroNum(
-                if (isMissing) "—" else p.displayTire(psi),
-                22.sp,
-                statusColor
-            )
+            DriveNum(if (psi < 0) "—" else p.displayTire(psi), 26.sp, if (stale) Dim else levelColor(level))
             Spacer(Modifier.width(3.dp))
-            MonoLabel(
-                p.tireLabel.lowercase(),
-                10.sp,
-                statusColor.copy(alpha = 0.6f),
-                modifier = Modifier.padding(bottom = 1.dp)
-            )
+            InstrumentMeta(p.tireLabel.lowercase(), Modifier.padding(bottom = 4.dp))
         }
-
-        if (availSub.isNotEmpty()) {
-            Spacer(Modifier.height(2.dp))
-            MonoLabel(availSub, 8.sp, Dim.copy(alpha = 0.7f), letterSpacing = 0.1.sp)
-        }
-
-        // Temperature
-        if (hasTemp) {
-            Spacer(Modifier.height(3.dp))
-            MonoText(
-                p.displayTemp(tempC) + p.tempLabel,
-                14.sp,
-                animTireTemp
-            )
-        }
-
-        // Speed
-        Spacer(Modifier.height(4.dp))
-        MonoLabel(speedStr, 9.sp, Dim)
-
-        // Temperature bar
-        if (hasTemp) {
-            Spacer(Modifier.height(5.dp))
-            val tempFraction = ((tempC - 0.0) / 60.0).toFloat().coerceIn(0.05f, 1f)
-            val tempColor = animTireTemp
-            Box(
-                Modifier.fillMaxWidth()
-                    .height(3.dp)
-                    .background(Surf3, RoundedCornerShape(2.dp))
-            ) {
-                Box(
-                    Modifier.fillMaxWidth(tempFraction)
-                        .height(3.dp)
-                        .background(tempColor.copy(alpha = 0.5f), RoundedCornerShape(2.dp))
-                )
-            }
-        }
+        // Always one status line (STALE / WARMING / pressure change / blank) so all four cards match in height.
+        InstrumentMeta(availSub.ifEmpty { deltaText }, color = if (stale) WarnInk else Dim)
+        if (hasTemp) DataNum(p.displayTemp(tempC) + p.tempLabel, 16.sp, if (stale) Dim else animTireTemp)
+        InstrumentMeta(speedStr)
+    }
     }
 }
 
@@ -416,8 +360,9 @@ private fun NeonTireCard(
 private fun AwdMetrics(held: VehicleState, p: UserPrefs) {
     // Disconnected: torque / pump / clutch / wheel-speed dynamics render at rest; temps stay, marked STALE.
     val vs = held.liveOrRest()
-    fun staleSub(valueC: Double) = if (!vs.isConnected && valueC > -90) "STALE" else ""
     val accent = LocalThemeAccent.current
+    // Left = paint accent, right = its mid tier (green reads as "OK" everywhere else in the app).
+    val rightColor = accentMid()
     val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer()
     val total = vs.totalRearTorque
@@ -427,15 +372,14 @@ private fun AwdMetrics(held: VehicleState, p: UserPrefs) {
     val lrDelta = vs.wheelSpeedRR - vs.wheelSpeedRL
 
     // Precompute labels for the diagram
-    val leftNm = "${vs.awdLeftTorque.roundToInt()} Nm"
-    val rightNm = "${vs.awdRightTorque.roundToInt()} Nm"
+    // Offline: no live torque — dashes, not an at-rest "F 100 / R 0 · 0 Nm".
+    val live = vs.isConnected
+    val leftNm = if (live) "${vs.awdLeftTorque.roundToInt()} Nm" else "— Nm"
+    val rightNm = if (live) "${vs.awdRightTorque.roundToInt()} Nm" else "— Nm"
     val rearPct = vs.rearTorquePct.roundToInt()
     val frontPct = 100 - rearPct
-    val splitLabel = "F $frontPct / R $rearPct"
-    val ptuTemp = if (vs.ptuTempC > -90) "${p.displayTemp(vs.ptuTempC)}${p.tempLabel}" else "—"
-    val rduTemp = if (vs.rduTempC > -90) "${p.displayTemp(vs.rduTempC)}${p.tempLabel}" else "—"
-    val cltLTemp = if (vs.awdClutchTempL > -90) "${p.displayTemp(vs.awdClutchTempL)}${p.tempLabel}" else ""
-    val cltRTemp = if (vs.awdClutchTempR > -90) "${p.displayTemp(vs.awdClutchTempR)}${p.tempLabel}" else ""
+    val splitLabel = if (live) "F $frontPct / R $rearPct" else "F — / R —"
+    // PTU / RDU / clutch temperatures live in THERMAL's DRIVETRAIN panel — the diagram shows torque only.
 
     // Clutch engagement: scale delivered torque against a realistic reference.
     // GKN Twinster can deliver up to ~2500 Nm per side, but 1000 Nm saturates
@@ -462,28 +406,29 @@ private fun AwdMetrics(held: VehicleState, p: UserPrefs) {
 
     val labelStyle = remember(density) {
         TextStyle(
-            fontFamily = ShareTechMono, fontSize = with(density) { 9.sp },
+            fontFamily = ShareTechMono, fontSize = with(density) { 10.sp },
             color = Dim, fontWeight = FontWeight.Normal, textAlign = TextAlign.Center
         )
     }
     val valueStyle = remember(density) {
         TextStyle(
-            fontFamily = ShareTechMono, fontSize = with(density) { 11.sp },
+            fontFamily = ShareTechMono, fontSize = with(density) { 13.sp },
             color = Frost, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center
         )
     }
     val tempStyle = remember(density) {
         TextStyle(
-            fontFamily = ShareTechMono, fontSize = with(density) { 10.sp },
+            fontFamily = ShareTechMono, fontSize = with(density) { 11.sp },
             color = Frost.copy(alpha = 0.8f), fontWeight = FontWeight.Normal, textAlign = TextAlign.Center
         )
     }
 
     SectionLabel("AWD — GKN TWINSTER")
+    Column(Modifier.fillMaxWidth().instrumentSurface().padding(horizontal = 12.dp, vertical = 12.dp)) {
 
     // ── Rear axle diagram ──
     Canvas(
-        Modifier.fillMaxWidth().height(156.dp)
+        Modifier.fillMaxWidth().height(150.dp)
     ) {
         val w = size.width
         val h = size.height
@@ -534,14 +479,14 @@ private fun AwdMetrics(held: VehicleState, p: UserPrefs) {
 
         // Right torque arrow: RDU → right wheel
         drawRect(
-            color = Ok.copy(alpha = 0.25f),
+            color = rightColor.copy(alpha = 0.25f),
             topLeft = Offset(rduRight, midY - rightArrowW / 2f),
             size = androidx.compose.ui.geometry.Size(
                 cltRX - cltW / 2f - rduRight, rightArrowW
             )
         )
         drawRect(
-            color = Ok.copy(alpha = 0.25f),
+            color = rightColor.copy(alpha = 0.25f),
             topLeft = Offset(cltRX + cltW / 2f, midY - rightArrowW / 2f),
             size = androidx.compose.ui.geometry.Size(
                 rightWheelX - wheelR - 4.dp.toPx() - cltRX - cltW / 2f, rightArrowW
@@ -586,15 +531,6 @@ private fun AwdMetrics(held: VehicleState, p: UserPrefs) {
         drawText(ptuLabel, topLeft = Offset(ptuCenterX - ptuLabel.size.width / 2f,
             ptuY - ptuLabel.size.height / 2f))
 
-        // PTU temp — inline to the right of the PTU box, vertically centered.
-        // Previous placement (below the box) collided with the propshaft.
-        if (ptuTemp != "—") {
-            val ptuTempM = textMeasurer.measure(ptuTemp, tempStyle)
-            drawText(ptuTempM, topLeft = Offset(
-                ptuCenterX + ptuW / 2f + 5.dp.toPx(),
-                ptuY - ptuTempM.size.height / 2f))
-        }
-
         // F/R split label above PTU
         val splitM = textMeasurer.measure(splitLabel, tempStyle.copy(color = Frost.copy(alpha = 0.7f)))
         drawText(splitM, topLeft = Offset(
@@ -617,11 +553,7 @@ private fun AwdMetrics(held: VehicleState, p: UserPrefs) {
         )
         val rduLabel = textMeasurer.measure("RDU", labelStyle)
         drawText(rduLabel, topLeft = Offset(rduX - rduLabel.size.width / 2f,
-            midY - rduLabel.size.height / 2f - 2.dp.toPx()))
-        // RDU temp inside box
-        val rduTempM = textMeasurer.measure(rduTemp, tempStyle)
-        drawText(rduTempM, topLeft = Offset(rduX - rduTempM.size.width / 2f,
-            midY + rduLabel.size.height / 2f - 2.dp.toPx()))
+            midY - rduLabel.size.height / 2f))
 
         // ── Clutch packs ──
         // Engagement-driven: fill alpha + stroke intensity scale with delivered torque.
@@ -651,11 +583,6 @@ private fun AwdMetrics(held: VehicleState, p: UserPrefs) {
             cornerRadius = cltCornerR,
             style = Stroke(width = (1f + leftEngage).dp.toPx())
         )
-        if (cltLTemp.isNotEmpty()) {
-            val cltLM = textMeasurer.measure(cltLTemp, tempStyle)
-            drawText(cltLM, topLeft = Offset(cltLX - cltLM.size.width / 2f,
-                midY + cltH / 2f + 2.dp.toPx()))
-        }
 
         // Right clutch — base (neutral) layer + engagement overlay
         drawRoundRect(
@@ -666,24 +593,19 @@ private fun AwdMetrics(held: VehicleState, p: UserPrefs) {
         )
         if (rightEngage > 0.01f) {
             drawRoundRect(
-                color = Ok.copy(alpha = 0.15f + 0.70f * rightEngage),
+                color = rightColor.copy(alpha = 0.15f + 0.70f * rightEngage),
                 topLeft = Offset(cltRX - cltW / 2f, midY - cltH / 2f),
                 size = androidx.compose.ui.geometry.Size(cltW, cltH),
                 cornerRadius = cltCornerR
             )
         }
         drawRoundRect(
-            color = Ok.copy(alpha = 0.35f + 0.50f * rightEngage),
+            color = rightColor.copy(alpha = 0.35f + 0.50f * rightEngage),
             topLeft = Offset(cltRX - cltW / 2f, midY - cltH / 2f),
             size = androidx.compose.ui.geometry.Size(cltW, cltH),
             cornerRadius = cltCornerR,
             style = Stroke(width = (1f + rightEngage).dp.toPx())
         )
-        if (cltRTemp.isNotEmpty()) {
-            val cltRM = textMeasurer.measure(cltRTemp, tempStyle)
-            drawText(cltRM, topLeft = Offset(cltRX - cltRM.size.width / 2f,
-                midY + cltH / 2f + 2.dp.toPx()))
-        }
 
         // ── Wheels ──
         // Left wheel
@@ -695,9 +617,9 @@ private fun AwdMetrics(held: VehicleState, p: UserPrefs) {
 
         // Right wheel
         drawCircle(color = Surf3, radius = wheelR, center = Offset(rightWheelX, midY))
-        drawCircle(color = Ok.copy(alpha = 0.5f), radius = wheelR,
+        drawCircle(color = rightColor.copy(alpha = 0.5f), radius = wheelR,
             center = Offset(rightWheelX, midY), style = Stroke(width = 2.dp.toPx()))
-        drawCircle(color = Ok.copy(alpha = 0.3f), radius = wheelR * 0.4f,
+        drawCircle(color = rightColor.copy(alpha = 0.3f), radius = wheelR * 0.4f,
             center = Offset(rightWheelX, midY))
 
         // ── Torque value labels below wheels ──
@@ -705,61 +627,68 @@ private fun AwdMetrics(held: VehicleState, p: UserPrefs) {
         drawText(leftNmM, topLeft = Offset(leftWheelX - leftNmM.size.width / 2f,
             midY + wheelR + 6.dp.toPx()))
 
-        val rightNmM = textMeasurer.measure(rightNm, valueStyle.copy(color = Ok))
+        val rightNmM = textMeasurer.measure(rightNm, valueStyle.copy(color = rightColor))
         drawText(rightNmM, topLeft = Offset(rightWheelX - rightNmM.size.width / 2f,
             midY + wheelR + 6.dp.toPx()))
     }
 
-    // ── Data cells below the diagram ──
-    Spacer(Modifier.height(8.dp))
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        DataCell("PTU TEMP", if (vs.ptuTempC > -90) "${p.displayTemp(vs.ptuTempC)}${p.tempLabel}" else "— —",
-            sub = staleSub(vs.ptuTempC), modifier = Modifier.weight(1f))
-        DataCell("F / R SPLIT", splitLabel,
-            modifier = Modifier.weight(1f))
-        DataCell("RDU TEMP", if (vs.rduTempC > -90) "${p.displayTemp(vs.rduTempC)}${p.tempLabel}" else "— —",
-            sub = staleSub(vs.rduTempC), modifier = Modifier.weight(1f))
+    // ── Readouts below the diagram (temps + F/R split are shown above / in DRIVETRAIN) ──
+    val spdLabel = if (p.speedUnit == "MPH") "mph" else "km/h"
+    val lrDisp = if (p.speedUnit == "MPH") lrDelta * UnitConversions.KM_TO_MI else lrDelta
+    val frDisp = if (p.speedUnit == "MPH") frDelta * UnitConversions.KM_TO_MI else frDelta
+    fun dyn(v: String) = if (live) v else "—"   // per-frame dynamics: no rest values offline
+    val rows = buildList {
+        add(listOf(
+            Triple("REAR BIAS", dyn(vs.rearLeftRightBias), ""),
+            Triple("L/R Δ", dyn("%.1f".format(lrDisp)), spdLabel),
+            Triple("F/R Δ", dyn("%.1f".format(frDisp)), spdLabel),
+        ))
+        if (vs.awdMaxTorque > 0) add(listOf(
+            Triple("REQ L", dyn("${vs.awdReqTorqueL.roundToInt()}"), "Nm"),
+            Triple("REQ R", dyn("${vs.awdReqTorqueR.roundToInt()}"), "Nm"),
+            // 0x2C0 bits 43–55, decoded every frame (live), so it gets the offline dash too.
+            Triple("AWD MAX", dyn("${vs.awdMaxTorque.roundToInt()}"), "Nm"),
+        ))
+        // Per-clutch hydraulic actuators (0x1E9E/9F current, 0x1ED1/D2 pressure) + pump
+        val hasClutchCur  = vs.awdClutchCurL > -900 || vs.awdClutchCurR > -900
+        val hasClutchPres = vs.awdClutchPressureL >= 0 || vs.awdClutchPressureR >= 0
+        if (hasClutchCur || vs.awdPumpCurrent > 0) add(listOf(
+            Triple("CURRENT L", if (vs.awdClutchCurL > -900) "%.1f".format(vs.awdClutchCurL) else "—", "A"),
+            Triple("CURRENT R", if (vs.awdClutchCurR > -900) "%.1f".format(vs.awdClutchCurR) else "—", "A"),
+            Triple("PUMP", if (live && vs.awdPumpCurrent > 0) "%.1f".format(vs.awdPumpCurrent) else "—", "A"),
+        ))
+        if (hasClutchPres) add(listOf(
+            Triple("PRESSURE L", if (vs.awdClutchPressureL >= 0) "%.1f".format(vs.awdClutchPressureL / 1000.0) else "—", "bar"),
+            Triple("PRESSURE R", if (vs.awdClutchPressureR >= 0) "%.1f".format(vs.awdClutchPressureR / 1000.0) else "—", "bar"),
+            Triple("", "", ""),
+        ))
     }
+    // Index of the first hydraulics row (clutch current / pressure + pump) — gets its own caption.
+    val hydraulicsFrom = if (vs.awdMaxTorque > 0) 2 else 1
     Spacer(Modifier.height(4.dp))
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        DataCell("REAR BIAS", vs.rearLeftRightBias, modifier = Modifier.weight(1f))
-        val spdLabel = if (p.speedUnit == "MPH") "mph" else "km/h"
-        val lrDisp = if (p.speedUnit == "MPH") lrDelta * UnitConversions.KM_TO_MI else lrDelta
-        val frDisp = if (p.speedUnit == "MPH") frDelta * UnitConversions.KM_TO_MI else frDelta
-        DataCell("L/R DELTA", "${"%.1f".format(lrDisp)} $spdLabel", modifier = Modifier.weight(1f))
-        DataCell("F/R DELTA", "${"%.1f".format(frDisp)} $spdLabel", modifier = Modifier.weight(1f))
-    }
-    if (vs.awdMaxTorque > 0) {
-        Spacer(Modifier.height(4.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DataCell("AWD MAX", "${vs.awdMaxTorque.roundToInt()} Nm", modifier = Modifier.weight(1f))
-            DataCell("REQ L", "${vs.awdReqTorqueL.roundToInt()} Nm", modifier = Modifier.weight(1f))
-            DataCell("REQ R", "${vs.awdReqTorqueR.roundToInt()} Nm", modifier = Modifier.weight(1f))
+    Box(Modifier.fillMaxWidth().height(1.dp).background(Brd.copy(alpha = borderAlpha(0.4f))))
+    Spacer(Modifier.height(10.dp))
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        rows.forEachIndexed { i, row ->
+            if (i == hydraulicsFrom) InstrumentLabel("CLUTCH HYDRAULICS", color = Mid)
+            Row(Modifier.fillMaxWidth()) {
+                row.forEach { (label, value, unit) ->
+                    Column(Modifier.weight(1f)) {
+                        if (label.isNotEmpty()) {
+                            InstrumentLabel(label)
+                            Row(verticalAlignment = Alignment.Bottom) {
+                                DataNum(value, 18.sp, if (value.startsWith("—")) Dim else Frost)
+                                if (unit.isNotEmpty() && !value.startsWith("—")) {
+                                    Spacer(Modifier.width(3.dp))
+                                    InstrumentMeta(unit, Modifier.padding(bottom = 2.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
-    if (vs.awdPumpCurrent > 0 || vs.transOilTempC > -90) {
-        Spacer(Modifier.height(4.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DataCell("TRANS", if (vs.transOilTempC > -90) "${p.displayTemp(vs.transOilTempC)}${p.tempLabel}" else "—",
-                sub = staleSub(vs.transOilTempC), modifier = Modifier.weight(1f))
-            DataCell("PUMP", "${"%.1f".format(vs.awdPumpCurrent)} A", modifier = Modifier.weight(1f))
-            DataCell("PEAK", "${vs.awdMaxTorque.roundToInt()} Nm", modifier = Modifier.weight(1f))
-        }
-    }
-    // Per-clutch hydraulic actuators (0x1E9E/9F current, 0x1ED1/D2 pressure)
-    val hasClutchCur  = vs.awdClutchCurL > -900 || vs.awdClutchCurR > -900
-    val hasClutchPres = vs.awdClutchPressureL >= 0 || vs.awdClutchPressureR >= 0
-    if (hasClutchCur || hasClutchPres) {
-        Spacer(Modifier.height(4.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DataCell("CLT-L A", if (vs.awdClutchCurL > -900) "${"%.1f".format(vs.awdClutchCurL)} A" else "—", modifier = Modifier.weight(1f))
-            DataCell("CLT-R A", if (vs.awdClutchCurR > -900) "${"%.1f".format(vs.awdClutchCurR)} A" else "—", modifier = Modifier.weight(1f))
-        }
-        Spacer(Modifier.height(4.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DataCell("CLT-L P", if (vs.awdClutchPressureL >= 0) "${"%.1f".format(vs.awdClutchPressureL / 1000.0)} bar" else "—", modifier = Modifier.weight(1f))
-            DataCell("CLT-R P", if (vs.awdClutchPressureR >= 0) "${"%.1f".format(vs.awdClutchPressureR / 1000.0)} bar" else "—", modifier = Modifier.weight(1f))
-        }
     }
 }
 
