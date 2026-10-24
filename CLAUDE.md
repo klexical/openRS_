@@ -89,7 +89,8 @@ diagnostics/
   CrashReporter.kt        — Installs UncaughtExceptionHandler; persists CrashTelemetryBuffer to disk
   CrashTelemetryBuffer.kt — 100-snapshot ring buffer of VehicleState; flushed on crash to JSON
 service/
-  CanDataService.kt       — Foreground service; WiFi/BLE-gated auto-reconnect; owns connection lifecycle
+  CanDataService.kt       — Bound service, foreground only while a connection runs (ForegroundController);
+                            WiFi/BLE-gated auto-reconnect; owns connection lifecycle
                             Transport selected by connectionMethod (WiFi vs BLE) + adapterType (TCP vs WebSocket)
                             Auto-record integration: starts/stops DriveRecorder on connect/disconnect (if setting enabled)
   DriveRecorder.kt        — Room-backed drive recorder: start/stop/pause/resume, 1 Hz GPS + telemetry
@@ -310,7 +311,13 @@ data[5] = B5,  data[6] = B6 …
 - **BLE auto-reconnect** — `autoConnect=true` on `connectGatt()` after first successful connection. Android handles reconnection when device returns to range. 15s timeout covers slow auto-reconnect; on timeout, `SlcanConnection` retry logic takes over
 - **BLE MTU** — `requestMtu(247)` requested after service discovery. If `requestMtu()` returns false (unsupported), proceeds with 23-byte default. SLCAN frames mostly fit; longer frames arrive as multiple BLE notifications and are reassembled by `lineBuffer`
 - **BLE permissions must be requested at scan time** — `BleDevicePickerDialog` handles runtime permission requests (BLUETOOTH_SCAN + BLUETOOTH_CONNECT on API 31+). Do NOT rely solely on `MainActivity.onCreate()` permission requests — the user may switch to Bluetooth after app startup. `BleDeviceScanner.startScan()` also has a SecurityException safety net
-- **Foreground service start from background** — `CanDataService.startConnection()` wraps `goForeground()` in try/catch because WiFi/Bluetooth callbacks can fire when the app is backgrounded. `MainActivity.startSvc()` also catches `ForegroundServiceStartNotAllowedException`
+- **Foreground service only while connected** — `MainActivity.startSvc()` only **binds** `CanDataService`. `startConnection()`
+  promotes it via `ForegroundController.promote()` (startForegroundService(self) immediately followed by startForeground);
+  `stopConnection()` demotes (stopForeground + stopSelf), so an idle service lives only while the activity is bound. Never
+  call `startForegroundService()` without a guaranteed `startForeground()` — the old per-`onCreate` call ANR'd whenever the
+  activity was recreated offline / in demo. `promote()` is in a try/catch because WiFi/Bluetooth callbacks can fire when the
+  app is backgrounded (Android 12+ refuses the start). `manualConnectRequired` is process-wide (companion) because the idle
+  service instance is recreated with the activity
 - **Theme colours are mode-aware getters** — `Bg`, `Surf`, `Surf2`, `Surf3`, `Brd`, `Dim`, `Mid`, `Frost` in Theme.kt are `val ... get() = when { _isDay -> ...; isUltraNightNow() -> ...; else -> Night... }` backed by `mutableStateOf(ThemeMode)`. They are NOT static vals. Compose snapshot system tracks reads automatically. Call `setThemeMode(ThemeMode)` to change; all composables recompose. Do not cache these colors in non-composable contexts. `setBrightness()`/`getBrightness()` are deprecated no-ops retained for back-compat
 - **TRIP tab camera state is hoisted** — `cameraPositionState` lives in `DrivePage` (trip/), passed to `DriveMap` as a parameter. This allows DrivePage to control zoom and recenter. Google Maps native My Location button is disabled; custom `◎` button replaces it
 - **TRIP map: created on TRIP, then retained** — `HorizontalPager(beyondViewportPageCount = 1)` composes neighbours and
@@ -455,7 +462,7 @@ cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{ver}.apk  (main release)
 ./gradlew assembleRelease -PrcSuffix=rc.5  # → openRS_v{ver}-rc.5.apk
-./gradlew test                             # 667 unit tests across 33 files
+./gradlew test                             # 673 unit tests across 34 files
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 48 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -547,10 +554,12 @@ android/app/src/test/java/com/openrs/dash/
   DemoSimulatorTest.kt        — 7 tests: determinism, LOSS freeze / recovery sentinels, freshness stamps, no-decoder sentinels,
                                 WARNING thresholds, DRIVING plausibility + continuity
   RaceReadinessTest.kt        — 7 tests: overheat / missing / stale block RACE READY, optional sensors, warm-up, legibleAccent
+  ForegroundControllerTest.kt — 6 tests: idle bound service never foreground, self-start always followed by startForeground,
+                                demote leaves both, refused start / startForeground leave nothing started
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **667 tests across 33 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **673 tests across 34 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 

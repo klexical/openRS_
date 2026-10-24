@@ -72,11 +72,16 @@ class CanDataService : Service() {
     val firmwareApi: FirmwareCommandSender?
         get() = if (DemoMode.isActive) DemoFirmwareApi else adapterFirmwareApi
 
-    /**
-     * Set after leaving demo mode: WiFi / Bluetooth / service-start callbacks must not
-     * reconnect on their own. Cleared by an explicit [startConnection] / [reconnect].
-     */
-    @Volatile private var manualConnectRequired = false
+    /** Started / foreground state — promoted only while a connection runs (see [ForegroundController]). */
+    private val foreground = ForegroundController(object : ForegroundController.Host {
+        override fun startSelf() {
+            androidx.core.content.ContextCompat.startForegroundService(
+                this@CanDataService, Intent(this@CanDataService, CanDataService::class.java))
+        }
+        override fun enterForeground() = goForeground()
+        override fun exitForeground() = leaveForeground()
+        override fun stopSelf() = this@CanDataService.stopSelf()
+    })
 
     private fun buildConnection(): SlcanConnection {
         val s = AppSettings
@@ -198,7 +203,8 @@ class CanDataService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        goForeground()   // Must be first — Android kills the service if startForeground() not called within 5s
+        // Not foreground here: the activity only binds. startConnection() promotes the service (start + startForeground
+        // together) when there is a connection to keep alive.
         PidRegistry.ensureLoaded(this)
         registerWifiCallback()
         registerBluetoothCallback()
@@ -303,6 +309,14 @@ class CanDataService : Service() {
 
     private companion object {
         const val NOTIF_ID = 1
+
+        /**
+         * Set after leaving demo mode: WiFi / Bluetooth / service-start callbacks must not
+         * reconnect on their own. Cleared by an explicit [startConnection] / [reconnect].
+         * Process-wide: an idle service stops when the activity unbinds, and the next instance
+         * must still honour it.
+         */
+        @Volatile var manualConnectRequired = false
 
         /** RPM threshold that signals the engine is actually running (not just ignition). */
         const val AUTO_START_MIN_RPM = 400.0
@@ -439,7 +453,7 @@ class CanDataService : Service() {
         if (connectionJob?.isActive == true) return
 
         try {
-            goForeground()
+            foreground.promote()
         } catch (e: Exception) {
             android.util.Log.w("CAN", "Cannot go foreground — skipping connection start", e)
             return
@@ -784,7 +798,8 @@ class CanDataService : Service() {
             OpenRSDashApp.instance.vehicleState.update { it.copy(isConnected = false, isIdle = false) }
             OpenRSDashApp.instance.deviceStatus.value = null
         }
-        leaveForeground()
+        // Leave the foreground and the started state: with no activity bound the service now stops.
+        foreground.demote()
     }
 
     /** Called from UI when user taps the RETRY badge — fresh adapter + retry. */

@@ -453,14 +453,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Bind only. The service promotes itself to a started foreground service while a connection runs
+     * (CanDataService → ForegroundController) and drops back when it ends, so it survives this activity
+     * only when there is something to keep alive. Calling startForegroundService() here on every onCreate
+     * broke Android's contract whenever no connection started (offline / demo) → ANR.
+     */
     private fun startSvc() {
-        val i = Intent(this, CanDataService::class.java)
-        try {
-            androidx.core.content.ContextCompat.startForegroundService(this, i)
-        } catch (e: Exception) {
-            android.util.Log.w("CAN", "startForegroundService failed — falling back to bind", e)
-        }
-        bindService(i, conn, Context.BIND_AUTO_CREATE)
+        bindService(Intent(this, CanDataService::class.java), conn, Context.BIND_AUTO_CREATE)
     }
 
     override fun onDestroy() {
