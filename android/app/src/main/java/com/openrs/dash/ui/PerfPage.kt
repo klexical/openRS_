@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -70,7 +71,7 @@ fun PerfPage(vs: VehicleState, p: UserPrefs, onReset: () -> Unit) {
             .padding(start = PagePad, end = PagePad, top = PagePad, bottom = pageBottomPadding()),
         verticalArrangement = Arrangement.spacedBy(CardGap)
     ) {
-        PerformanceTimerCard(vs)
+        PerformanceTimerCard(vs, p)
         PersonalBestsCard()
         GForceSection(vs, onReset)
         KnockEventsCard(p)
@@ -137,10 +138,8 @@ private fun KnockEventsCard(p: UserPrefs) {
     }
     Column(
         Modifier.fillMaxWidth()
-            .cardGlow(cornerRadius = Tokens.CardRadius)
-            .background(Surf.copy(alpha = 0.65f), CardShape)
-            .border(Tokens.CardBorder, Brd.copy(alpha = borderAlpha(0.85f)), CardShape)
-            .padding(10.dp)
+            .instrumentSurface()
+            .padding(horizontal = 12.dp, vertical = 6.dp)
     ) {
         SectionLabel(
             text = if (count > 0) "KNOCK EVENTS · $scopeLabel · $count" else "KNOCK EVENTS · $scopeLabel",
@@ -203,28 +202,21 @@ private fun PersonalBestsCard() {
 
     Column(
         Modifier.fillMaxWidth()
-            .border(Tokens.CardBorder, Brd, CardShape)
-            .background(Surf, CardShape)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+            .instrumentSurface()
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            MonoLabel("PERSONAL BESTS", 8.sp, Dim, letterSpacing = 0.5.sp)
+            InstrumentLabel("PERSONAL BESTS")
             Spacer(Modifier.weight(1f))
             val count = bests.totalRuns + bests.totalLaps
-            MonoLabel("$count RECORDS", 7.sp, Dim.copy(alpha = 0.6f), letterSpacing = 0.3.sp)
+            InstrumentMeta("$count RECORDS")
         }
 
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            bests.best60Ms?.let { ms ->
-                DataCell("0-60 MPH", formatTimerMs(ms), valueColor = accent, modifier = Modifier.weight(1f))
-            }
-            bests.best100Ms?.let { ms ->
-                DataCell("0-100 MPH", formatTimerMs(ms), valueColor = accent, modifier = Modifier.weight(1f))
-            }
-            bests.bestLapMs?.let { ms ->
-                DataCell("BEST LAP", formatTimerMs(ms), valueColor = accent, modifier = Modifier.weight(1f))
-            }
+        Row(Modifier.fillMaxWidth()) {
+            bests.best60Ms?.let { ms -> MiniReadout("0-60 MPH", formatTimerMs(ms), Modifier.weight(1f), valueColor = accent) }
+            bests.best100Ms?.let { ms -> MiniReadout("0-100 MPH", formatTimerMs(ms), Modifier.weight(1f), valueColor = accent) }
+            bests.bestLapMs?.let { ms -> MiniReadout("BEST LAP", formatTimerMs(ms), Modifier.weight(1f), valueColor = accent) }
         }
     }
 }
@@ -233,7 +225,7 @@ private fun PersonalBestsCard() {
 // PERFORMANCE TIMER — 0-60 / 0-100 mph
 // ═══════════════════════════════════════════════════════════════════════════
 @Composable
-private fun PerformanceTimerCard(vs: VehicleState) {
+private fun PerformanceTimerCard(vs: VehicleState, p: UserPrefs) {
     val timerState by PerformanceTimer.state.collectAsState()
     val elapsed by PerformanceTimer.elapsedMs.collectAsState()
     val result by PerformanceTimer.result.collectAsState()
@@ -255,23 +247,21 @@ private fun PerformanceTimerCard(vs: VehicleState) {
 
     Column(
         Modifier.fillMaxWidth()
-            .border(Tokens.CardBorder, borderColor, CardShape)
-            .background(Surf, CardShape)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+            .instrumentSurface()
+            // Armed / running / finished keep their state edge over the shared surface.
+            .then(if (timerState != PerformanceTimer.State.IDLE) Modifier.border(1.dp, borderColor, CardShape) else Modifier)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         // Header row
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            MonoLabel("0-60 / 0-100", 8.sp, Dim, letterSpacing = 0.5.sp)
+            // Both targets are mph (PerformanceTimer: 96.56 / 160.93 km/h) whatever the speed unit
+            InstrumentLabel("0-60 MPH · 0-100 MPH TIMER")
             Spacer(Modifier.weight(1f))
             // Session best badge
-            best60?.let { ms ->
-                MonoLabel(
-                    "BEST ${formatTimerMs(ms)}",
-                    7.sp, accent.copy(alpha = 0.8f), letterSpacing = 0.3.sp
-                )
-            }
+            best60?.let { ms -> InstrumentMeta("SESSION BEST ${formatTimerMs(ms)}", color = accent) }
         }
+        if (p.speedUnit == "KPH") InstrumentMeta("TARGETS IN MPH · 0-97 / 0-161 KM/H")
 
         when (timerState) {
             PerformanceTimer.State.IDLE -> TimerIdleRow(vs.isConnected) {
@@ -280,7 +270,7 @@ private fun PerformanceTimerCard(vs: VehicleState) {
             PerformanceTimer.State.ARMED -> TimerArmedRow {
                 PerformanceTimer.cancel()
             }
-            PerformanceTimer.State.RUNNING -> TimerRunningRow(elapsed, speedMph) {
+            PerformanceTimer.State.RUNNING -> TimerRunningRow(elapsed, speedMph, p.speedUnit == "KPH") {
                 PerformanceTimer.finishAt60()
                 // Persist the 60-only result to Room
                 val finishResult = PerformanceTimer.result.value
@@ -316,18 +306,19 @@ private fun PerformanceTimerCard(vs: VehicleState) {
 
 @Composable
 private fun TimerIdleRow(connected: Boolean, onArm: () -> Unit) {
+    val accent = LocalThemeAccent.current
     Box(
-        Modifier.fillMaxWidth()
+        Modifier.fillMaxWidth().heightIn(min = 48.dp)
             .pressClick(enabled = connected) { onArm() }
-            .background(if (connected) Surf2 else Surf, RoundedCornerShape(8.dp))
-            .padding(vertical = 10.dp),
+            .background(if (connected) accent.copy(alpha = pillBgAlpha(0.12f)) else Surf3.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+            .border(Tokens.CardBorder, if (connected) accent.copy(alpha = borderAlpha(0.6f)) else Brd.copy(alpha = borderAlpha(0.3f)), RoundedCornerShape(8.dp)),
         contentAlignment = Alignment.Center
     ) {
         Text(
-            if (connected) "ARM" else "\u2014 CONNECT TO USE \u2014",
+            if (connected) "ARM TIMER" else "\u2014 CONNECT TO USE \u2014",
             fontFamily = RajdhaniFamily,
             fontWeight = FontWeight.SemiBold,
-            fontSize = 13.sp,
+            fontSize = 16.sp,
             letterSpacing = 1.sp,
             color = if (connected) Frost else Dim
         )
@@ -363,13 +354,13 @@ private fun TimerArmedRow(onCancel: () -> Unit) {
                 .background(Surf2, RoundedCornerShape(6.dp))
                 .padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
-            MonoLabel("CANCEL", 8.sp, Dim)
+            MonoLabel("CANCEL", 10.sp, Mid, letterSpacing = 0.4.sp)
         }
     }
 }
 
 @Composable
-private fun TimerRunningRow(elapsedMs: Long, speedMph: Double, onFinish60: () -> Unit) {
+private fun TimerRunningRow(elapsedMs: Long, speedMph: Double, showKph: Boolean, onFinish60: () -> Unit) {
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -383,17 +374,19 @@ private fun TimerRunningRow(elapsedMs: Long, speedMph: Double, onFinish60: () ->
                 fontFamily = RajdhaniFamily,
                 fontWeight = FontWeight.Bold,
                 fontSize = 28.sp,
-                color = Ok,
+                color = Frost,
                 style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum")
             )
-            MonoLabel("${"%.0f".format(speedMph)} MPH", 9.sp, Dim)
+            // MPH first — the targets are mph; km/h users also get their unit
+            InstrumentMeta("${"%.0f".format(speedMph)} MPH" +
+                if (showKph) " · ${"%.0f".format(speedMph / UnitConversions.KM_TO_MI)} KM/H" else "")
         }
         Box(
             Modifier.pressClick(pressedScale = 0.95f) { onFinish60() }
                 .background(Surf2, RoundedCornerShape(6.dp))
                 .padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
-            MonoLabel("STOP AT 60", 8.sp, Frost)
+            MonoLabel("STOP AT 60 MPH", 10.sp, Frost, letterSpacing = 0.4.sp)
         }
     }
 }
@@ -417,7 +410,7 @@ private fun TimerResultRow(
             verticalAlignment = Alignment.Bottom
         ) {
             Column {
-                MonoLabel("0-60 MPH", 7.sp, Dim, letterSpacing = 0.3.sp)
+                InstrumentLabel("0-60 MPH")
                 Text(
                     formatTimerMs(result.zeroTo60Ms),
                     fontFamily = RajdhaniFamily,
@@ -430,7 +423,7 @@ private fun TimerResultRow(
             result.zeroTo100Ms?.let { ms ->
                 val isBest100 = best100 != null && ms == best100
                 Column(horizontalAlignment = Alignment.End) {
-                    MonoLabel("0-100 MPH", 7.sp, Dim, letterSpacing = 0.3.sp)
+                    InstrumentLabel("0-100 MPH")
                     Text(
                         formatTimerMs(ms),
                         fontFamily = RajdhaniFamily,
@@ -444,21 +437,20 @@ private fun TimerResultRow(
         }
 
         // Stats row
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DataCell("LAUNCH", "${"%.0f".format(result.launchRpm)} RPM", modifier = Modifier.weight(1f))
-            DataCell("PEAK RPM", "${"%.0f".format(result.peakRpm)}", modifier = Modifier.weight(1f))
-            DataCell("PEAK BOOST", "${"%.1f".format(result.peakBoostPsi)} PSI", modifier = Modifier.weight(1f))
+        Row(Modifier.fillMaxWidth()) {
+            MiniReadout("LAUNCH", "${"%.0f".format(result.launchRpm)} RPM", Modifier.weight(1f))
+            MiniReadout("PEAK RPM", "%.0f".format(result.peakRpm), Modifier.weight(1f))
+            MiniReadout("PEAK BOOST", "${"%.1f".format(result.peakBoostPsi)} PSI", Modifier.weight(1f))
         }
 
         // Re-arm button
         Box(
-            Modifier.fillMaxWidth()
+            Modifier.fillMaxWidth().heightIn(min = 44.dp)
                 .pressClick { onRearm() }
-                .background(Surf2, RoundedCornerShape(8.dp))
-                .padding(vertical = 8.dp),
+                .background(Surf3.copy(alpha = 0.6f), RoundedCornerShape(8.dp)),
             contentAlignment = Alignment.Center
         ) {
-            MonoLabel("ARM AGAIN", 8.sp, Frost, letterSpacing = 0.5.sp)
+            MonoLabel("ARM AGAIN", 10.sp, Frost, letterSpacing = 0.5.sp)
         }
     }
 }

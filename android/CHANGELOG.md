@@ -72,6 +72,14 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **Tyre cards kept the last wheel speed while reconnecting** — wheel speed is per-frame data and now shows "— mph" offline; pressures and temperatures stay, marked STALE. (`ui/ChassisPage.kt`)
 - **Header lost the DEMO label during simulated connection loss** — the pill switched from DEMO to RCN; in demo it now always reads DEMO, with the simulated link state beside it ("DEMO · RCN"). (`ui/MainActivity.kt`)
 
+### Fixed (rc.6 — PERF)
+- **G-force plot axes were labelled the wrong way round** — "LAT G" sat beside the vertical (accel / brake) axis and "ACCEL / BRAKE G" under the horizontal one; the plot now reads ACCEL ↑ / BRAKE ↓ vertically and LATERAL G horizontally, with PEAK LAT / PEAK LON values, and its plot area is square so both axes share one g scale. (`ui/anim/GForcePlot.kt`)
+- **Current G readings fell below the fold on short phones** — on a 360 × 720 dp screen PERF opened with only the LAT / LON / VERT labels visible; under 800 dp of screen height the plot is sized to 34 % of the height (fixed per screen, never with the readings). (`ui/ChassisPage.kt`)
+- **Knock and boost chart labels were barely visible** — tick values and axis titles were 8 sp at muted alpha; they are 9 sp full-strength Dim with the grid kept faint. The knock chart's PSI title no longer overlaps the +20 tick, and boost-chart gutters fit their tick labels instead of clipping long values. (`ui/KnockScatter.kt`, `ui/KnockScatterMath.kt`, `ui/BoostSweepChart.kt`)
+- **PULLS wrapped on small screens** — "1/1 · 100%" squeezed into a quarter-width cell; it is now its own PULLS WITH KNOCK row with the count as the reading and the share as secondary text. Calculation unchanged. (`ui/KnockScatter.kt`)
+- **Knock severity colours ignored the theme** — the fixed yellow was unreadable on DAY; ≥ 4° uses Orange, 2–4° Warn and minor retard neutral (KnockStats bands unchanged), and a bucket with no events is no longer coloured. (`ui/KnockScatter.kt`)
+- **Timer heading didn't say both targets are mph** — it reads "0-60 MPH · 0-100 MPH TIMER"; with km/h selected a line notes the targets (0-97 / 0-161 km/h), the running speed shows both units and the button reads STOP AT 60 MPH. Timing logic unchanged. (`ui/PerfPage.kt`)
+
 ### Changed (rc.6)
 - **PCM slow poll list** — adds 0xF404, 0xF40E, 0xF415 and 0x0548 (16 → 20 slow DIDs, ~24 s each with the engine running); `PCM_SLOW_REFRESH_MS` 35 → 40 s so the engine-off sweep + idle still fits the staleness window. ([#198](https://github.com/klexical/openRS_/issues/198))
 - **Room database v11→v12 migration** — adds nullable `drives.pullCount` / `knockPullCount` and multiplies stored `drive_points.tipActualKpa` / `boostTargetKpa` (> 0) by 903.81 / 128. (`data/DriveDatabase.kt`) ([#174](https://github.com/klexical/openRS_/issues/174), [#198](https://github.com/klexical/openRS_/issues/198))
@@ -87,6 +95,8 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 - **AWD clutch hydraulics labelled by measurement** — the readouts under a CLUTCH HYDRAULICS caption read CURRENT L / R, PUMP and PRESSURE L / R instead of two CLUTCH L / R rows told apart only by A vs bar. (`ui/ChassisPage.kt`)
 - **THERMAL tyres + AWD in the design-pass style** — tyre cards around the original Focus RS wireframe show pressure in ink unless past the existing limits, with temperature on the existing bands; the AWD diagram shows torque only and its readouts drop the readings now in DRIVETRAIN (PTU, RDU, clutch and trans-oil temps) plus the duplicate F/R split and PEAK (= AWD MAX) cells. (`ui/ChassisPage.kt`)
+- **PERF in the design-pass style** — G-force readouts are one grid in the plot's panel (were six cards) with a 44 dp RESET PEAKS button and no decorative trail tints; the timer has a 48 dp ARM TIMER button and an ink running time; personal bests, knock, fuel-trim drift and POWER use instrument panels. POWER sections are grouped readout grids with readings in ink (AFR / λ, WGDC and in-range trims were accent / green); KR > 1° and trims past the existing bands still turn amber and set the panel edge. (`ui/PerfPage.kt`, `ui/PowerPage.kt`, `ui/ChassisPage.kt`, `ui/FuelTrimDriftCard.kt`)
+- **Section headings** — `SectionLabel` is 10 sp full-strength Dim app-wide (was 8 sp at 65 %). (`ui/Components.kt`)
 
 ### Removed (rc.6)
 - **Unused resources** — `ic_nav_chassis` / `ic_nav_diag` drawables, the legacy OSMDroid `raw/map_style_dark.json`, and 12 unreferenced `colors.xml` entries.

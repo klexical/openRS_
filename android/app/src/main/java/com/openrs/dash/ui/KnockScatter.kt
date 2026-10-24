@@ -51,11 +51,12 @@ fun KnockScatter(
     boostMax: Float = 22f,
 ) {
     val textMeasurer = rememberTextMeasurer()
+    // Ticks + titles in the readable secondary colour (full Dim); only the grid stays faint
     val axisStyle = remember(Dim) {
         TextStyle(
             fontFamily = JetBrainsMonoFamily,
-            fontSize = 8.sp,
-            color = Dim.copy(alpha = textMutedAlpha(0.5f)),
+            fontSize = 9.sp,
+            color = Dim,
             fontWeight = FontWeight.Normal
         )
     }
@@ -126,16 +127,16 @@ fun KnockScatter(
             )
         }
 
-        // Axis titles
+        // Axis titles — RPM sits in the tick row between 2k and 4k; PSI above the frame, clear of the +20 tick
         val xTitle = textMeasurer.measure("RPM", axisStyle.copy(fontWeight = FontWeight.Medium))
         drawText(
             textLayoutResult = xTitle,
-            topLeft = Offset(plotLeft + plotW / 2f - xTitle.size.width / 2f, plotBottom + 16f)
+            topLeft = Offset(plotLeft + plotW / 2f - xTitle.size.width / 2f, plotBottom + 4f)
         )
         val yTitle = textMeasurer.measure("PSI", axisStyle.copy(fontWeight = FontWeight.Medium))
         drawText(
             textLayoutResult = yTitle,
-            topLeft = Offset(2f, plotTop - 2f)
+            topLeft = Offset(plotLeft - yTitle.size.width - 4f, (plotTop - yTitle.size.height - 4f).coerceAtLeast(0f))
         )
 
         // Events
@@ -234,16 +235,18 @@ fun KnockAggregate(
         AggCell("COUNT", "${stats.count}", Frost, modifier = Modifier.weight(1f))
         AggCell("WORST", "${"%.1f".format(worstDeg)}°", severityColor(worstDeg), modifier = Modifier.weight(1f))
         AggCell("AVG", "${"%.1f".format(stats.avgDeg)}°", Frost, modifier = Modifier.weight(1f))
-        AggCell("PULLS", pullsLabel(pulls), if ((pulls?.knocked ?: 0) > 0) Warn else Frost, modifier = Modifier.weight(1f))
     }
+    PullsRow(pulls)
     Spacer(Modifier.height(4.dp))
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        AggCell("≥4°", "${stats.highCount}", severityColor(KnockStats.HIGH_DEG), modifier = Modifier.weight(1f))
-        AggCell("2-4°", "${stats.medCount}", severityColor(KnockStats.MED_DEG), modifier = Modifier.weight(1f))
-        AggCell("<2°", "${stats.lowCount}", severityColor(1.0), modifier = Modifier.weight(1f))
+        // A bucket only takes its severity colour when it has events — an amber "0" reads as a warning.
+        fun bucket(n: Int, deg: Double) = if (n > 0) severityColor(deg) else Dim
+        AggCell("≥4°", "${stats.highCount}", bucket(stats.highCount, KnockStats.HIGH_DEG), modifier = Modifier.weight(1f))
+        AggCell("2-4°", "${stats.medCount}", bucket(stats.medCount, KnockStats.MED_DEG), modifier = Modifier.weight(1f))
+        AggCell("<2°", "${stats.lowCount}", bucket(stats.lowCount, 1.0), modifier = Modifier.weight(1f))
     }
     Spacer(Modifier.height(4.dp))
     // Per-cylinder split (#186). Cyl 2–4 stay 0 if the PCM rejects DIDs 0x03ED–EF.
@@ -261,7 +264,7 @@ fun KnockAggregate(
         val cylLabel = if (it.cylinder in 1..4) " · cyl ${it.cylinder}" else ""
         Text(
             "Worst cell: ${it.rpm} RPM @ ${"%.1f".format(it.boostPsi)} PSI$cylLabel",
-            style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 9.sp, color = Dim),
+            style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 10.sp, color = Dim),
             modifier = Modifier.padding(horizontal = 8.dp)
         )
     }
@@ -272,24 +275,56 @@ private fun AggCell(label: String, value: String, color: Color, modifier: Modifi
     Column(modifier) {
         Text(
             label,
-            style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 8.sp, color = Dim.copy(alpha = textMutedAlpha(0.7f)))
+            style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 10.sp, color = Dim)
         )
         Text(
             value,
-            style = TextStyle(fontFamily = RajdhaniFamily, fontSize = 18.sp, color = color, fontWeight = FontWeight.SemiBold)
+            style = TextStyle(fontFamily = RajdhaniFamily, fontSize = 18.sp, color = textColor(color), fontWeight = FontWeight.SemiBold)
         )
     }
 }
 
-/** "2/5 · 40%" — pulls with KR > 0 over all WOT pulls; "—" when none recorded (#174). */
-internal fun pullsLabel(pulls: KnockSessionLog.Pulls?): String {
-    if (pulls == null || pulls.total <= 0) return "—"
-    return "${pulls.knocked}/${pulls.total} · ${(pulls.knocked * 100.0 / pulls.total).roundToInt()}%"
+/**
+ * Pulls with KR > 0 over all WOT pulls (#174), on its own row: the count is the reading, the share is
+ * secondary text. As one "1/1 · 100%" cell it wrapped on 360 dp and out-weighed COUNT / WORST / AVG.
+ */
+@Composable
+private fun PullsRow(pulls: KnockSessionLog.Pulls?) {
+    val (count, share) = pullsParts(pulls)
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            "PULLS WITH KNOCK",
+            style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 10.sp, color = Dim),
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            count,
+            style = TextStyle(fontFamily = RajdhaniFamily, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
+                color = textColor(if ((pulls?.knocked ?: 0) > 0) Warn else Frost))
+        )
+        share?.let {
+            Spacer(Modifier.width(8.dp))
+            Text(it, style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 10.sp, color = Dim))
+        }
+    }
 }
 
+/** ("2/5", "40%") — knocked / total pulls and the share; ("—", null) when none recorded (#174). */
+internal fun pullsParts(pulls: KnockSessionLog.Pulls?): Pair<String, String?> {
+    if (pulls == null || pulls.total <= 0) return "—" to null
+    return "${pulls.knocked}/${pulls.total}" to "${(pulls.knocked * 100.0 / pulls.total).roundToInt()}%"
+}
+
+/**
+ * KnockStats bands (unchanged) in theme colours: ≥ HIGH Orange (critical), ≥ MED Warn, minor (< MED) Mid,
+ * zero Dim. The fixed red / orange / yellow hexes ignored the theme — the yellow was unreadable on DAY.
+ */
 internal fun severityColor(krDeg: Double): Color = when {
-    krDeg >= KnockStats.HIGH_DEG -> Color(0xFFE53935)   // red — serious retard
-    krDeg >= KnockStats.MED_DEG  -> Color(0xFFFF9800)   // orange — moderate
-    krDeg > 0.0                  -> Color(0xFFFFEB3B)   // yellow — minor (counted in <2° bucket)
-    else         -> Color(0xFF9E9E9E)       // grey — zero/noise
+    krDeg >= KnockStats.HIGH_DEG -> Orange
+    krDeg >= KnockStats.MED_DEG  -> Warn
+    krDeg > 0.0                  -> Mid
+    else                         -> Dim
 }

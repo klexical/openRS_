@@ -109,7 +109,8 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
             )
             MonoLabel("\u25BE", 9.sp, Dim, modifier = Modifier.graphicsLayer { rotationZ = rotation })
         }
-        MonoLabel(text, 8.sp, Dim.copy(alpha = textMutedAlpha(0.65f)), letterSpacing = 0.5.sp)
+        // 10 sp full-strength Dim (was 8 sp at 65 %): section names must read at arm's length.
+        MonoLabel(text, 10.sp, Dim, letterSpacing = 0.5.sp)
         if (badge != null) {
             val bc = badgeColor ?: Warn
             Box(

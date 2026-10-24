@@ -54,10 +54,8 @@ fun FuelTrimDriftCard() {
 
     Column(
         Modifier.fillMaxWidth()
-            .cardGlow(cornerRadius = Tokens.CardRadius)
-            .background(Surf.copy(alpha = 0.65f), CardShape)
-            .border(Tokens.CardBorder, Brd.copy(alpha = borderAlpha(0.85f)), CardShape)
-            .padding(10.dp)
+            .instrumentSurface()
+            .padding(horizontal = 12.dp, vertical = 6.dp)
     ) {
         SectionLabel(
             text = if (drives.isEmpty()) "FUEL TRIM DRIFT" else "FUEL TRIM DRIFT · ${drives.size} DRIVES",

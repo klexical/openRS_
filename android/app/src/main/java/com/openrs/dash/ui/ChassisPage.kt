@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -39,11 +40,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -710,19 +713,19 @@ private fun AwdMetrics(held: VehicleState, p: UserPrefs) {
         gTrail.push(vs.lateralG.toFloat() to vs.longitudinalG.toFloat())
     }
 
-    Column(
-        Modifier.fillMaxWidth()
-            .background(Surf, RoundedCornerShape(16.dp))
-            .border(CardBorder, Brd, RoundedCornerShape(16.dp))
-            .padding(14.dp)
-    ) {
-        SectionLabel("G-FORCE & DYNAMICS")
-
-        // G-Force dot plot
-        val gPlotModifier = if (isWideLayout())
-            Modifier.fillMaxWidth().aspectRatio(1f).heightIn(max = 280.dp).padding(8.dp)
-        else
-            Modifier.fillMaxWidth().aspectRatio(1f).padding(8.dp)
+    SectionLabel("G-FORCE & DYNAMICS")
+    Column(Modifier.fillMaxWidth().instrumentSurface().padding(horizontal = 12.dp, vertical = 12.dp)) {
+        // G-Force dot plot — always square (equal g per dp on both axes). Its side comes from the screen
+        // alone: full width on tall phones, 34 % of the height under 800 dp so a 360 × 720 dp phone keeps the
+        // current LAT / LON / VERT readings above the nav bar, 280 dp on wide layouts. Never resizes with readings.
+        val screenH = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp().value }
+        val gPlotSide = when {
+            isWideLayout() -> 280.dp
+            screenH < 800  -> (screenH * 0.34f).dp
+            else           -> Dp.Infinity
+        }
+        val gPlotModifier = Modifier.widthIn(max = gPlotSide).fillMaxWidth().aspectRatio(1f)
+            .align(Alignment.CenterHorizontally).padding(4.dp)
         GForcePlot(
             lateralG = animLatG,
             longitudinalG = animLonG,
@@ -742,39 +745,34 @@ private fun AwdMetrics(held: VehicleState, p: UserPrefs) {
             isConnected = vs.isConnected
         )
 
-        Spacer(Modifier.height(4.dp))
-
-        // Condensed numeric readout
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DataCell("LAT G",  "${"%.2f".format(animLatG)}",  modifier = Modifier.weight(1f))
-            DataCell("LON G",  "${"%.2f".format(animLonG)}",  modifier = Modifier.weight(1f))
-            DataCell("VERT G", "${"%.2f".format(vs.verticalG)}", modifier = Modifier.weight(1f))
-        }
-        Spacer(Modifier.height(8.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DataCell("YAW",      "${"%.1f".format(vs.yawRate)}°/s",    modifier = Modifier.weight(1f))
-            DataCell("STEER",    "${"%.1f".format(vs.steeringAngle)}°", modifier = Modifier.weight(1f))
-            DataCell("COMBINED", "${"%.2f".format(vs.combinedG)}",     modifier = Modifier.weight(1f))
-        }
         Spacer(Modifier.height(6.dp))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Brd.copy(alpha = borderAlpha(0.4f))))
+        Spacer(Modifier.height(8.dp))
+        // Readouts — one grid inside the panel (was six separate cards). Offline → dashes.
+        fun d(v: String) = if (vs.isConnected) v else "— —"
+        Row(Modifier.fillMaxWidth()) {
+            MiniReadout("LAT G",  d("%.2f".format(animLatG)),  Modifier.weight(1f))
+            MiniReadout("LON G",  d("%.2f".format(animLonG)),  Modifier.weight(1f))
+            MiniReadout("VERT G", d("%.2f".format(vs.verticalG)), Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth()) {
+            MiniReadout("YAW",      d("%.1f°/s".format(vs.yawRate)),    Modifier.weight(1f))
+            MiniReadout("STEER",    d("%.1f°".format(vs.steeringAngle)), Modifier.weight(1f))
+            MiniReadout("COMBINED", d("%.2f".format(vs.combinedG)),     Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(10.dp))
         Box(
-            Modifier.fillMaxWidth()
-                .background(Surf2, RoundedCornerShape(8.dp))
-                .border(CardBorder, Brd, RoundedCornerShape(8.dp))
-                .clickable { onReset() }
-                .padding(vertical = 8.dp),
+            Modifier.fillMaxWidth().heightIn(min = 44.dp)
+                .background(Surf3.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                .clickable(onClickLabel = "Reset session peaks") { onReset() },
             contentAlignment = Alignment.Center
         ) {
-            MonoLabel("↺ RESET PEAKS", 9.sp, Dim, letterSpacing = 0.15.sp)
+            InstrumentLabel("↺  RESET PEAKS", color = Mid)
         }
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Helpers
-// ═══════════════════════════════════════════════════════════════════════════
-
-/** Formats a TPMS delta string with arrow prefix. Returns "" when delta is below threshold or data is missing. */
 private fun tpmsDeltaText(currentPsi: Double, startPsi: Double): String {
     if (startPsi < 0 || currentPsi <= 0) return ""
     val delta = currentPsi - startPsi
