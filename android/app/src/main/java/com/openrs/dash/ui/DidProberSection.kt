@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -83,8 +84,7 @@ fun DidProberSection(
     val requestId = selectedModule.canRequestId.removePrefix("0x").toIntOrNull(16) ?: return
     val responseId = selectedModule.canResponseId.removePrefix("0x").toIntOrNull(16) ?: return
 
-    SectionLabel("DID PROBER")
-    Spacer(Modifier.height(4.dp))
+    // (No inner title — the DIAG section header already names this.)
 
     Column(
         Modifier
@@ -94,10 +94,13 @@ fun DidProberSection(
             .padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        MonoLabel("SELECT ECU MODULE", 8.sp, Dim, letterSpacing = 0.15.sp)
-        Row(
+        InstrumentLabel("SELECT ECU MODULE")
+        // Wraps — on 360 dp the last chip (PSCM) was squeezed into a one-letter-wide vertical sliver.
+        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+        androidx.compose.foundation.layout.FlowRow(
             Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             probableModules.forEachIndexed { idx, mod ->
                 val isSelected = idx == selectedIdx
@@ -111,11 +114,13 @@ fun DidProberSection(
                             RoundedCornerShape(6.dp)
                         )
                         .clickable(enabled = !probing) { selectedIdx = idx }
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                        .heightIn(min = 44.dp)
+                        .padding(horizontal = 12.dp),
+                    contentAlignment = Alignment.Center
                 ) {
                     MonoLabel(
-                        mod.id, 10.sp,
-                        if (isSelected) accent else Mid,
+                        mod.id, 11.sp,
+                        if (isSelected) actionInk(accent) else Mid,
                         fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal
                     )
                 }
@@ -124,7 +129,7 @@ fun DidProberSection(
 
         MonoLabel(
             "${selectedModule.name} · ${selectedModule.canRequestId}→${selectedModule.canResponseId} · ${selectedModule.pids.size} PIDs",
-            9.sp, Dim
+            10.sp, Dim
         )
 
         Row(
@@ -203,7 +208,7 @@ fun DidProberSection(
                         else -> "▶  PROBE ${selectedModule.id}"
                     },
                     11.sp,
-                    if (canProbe) accent else Dim,
+                    if (canProbe) actionInk(accent) else Dim,
                     letterSpacing = 0.08.sp
                 )
             }
@@ -266,7 +271,7 @@ fun DidProberSection(
             ) {
                 MonoLabel(
                     if (expanded) "▾ HIDE RESULTS" else "▸ SHOW RESULTS (${results.size})",
-                    9.sp, accent
+                    9.sp, actionInk(accent)
                 )
             }
 
@@ -319,7 +324,7 @@ private fun ProbeResultRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        MonoLabel("0x%04X".format(entry.did), 9.sp, if (entry.status == "FOUND") accent else Mid)
+        MonoLabel("0x%04X".format(entry.did), 9.sp, if (entry.status == "FOUND") actionInk(accent) else Mid)
         MonoLabel(entry.status, 8.sp, color, fontWeight = FontWeight.Medium)
         if (entry.responseHex.isNotEmpty()) {
             MonoText(entry.responseHex, 8.sp, Dim, modifier = Modifier.weight(1f))

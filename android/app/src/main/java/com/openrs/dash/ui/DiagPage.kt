@@ -35,6 +35,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -169,133 +172,109 @@ import kotlin.math.roundToInt
                 //   HEALTH       — is telemetry alive and how much?
                 //   VEHICLE      — what's the car doing right now?
                 //   BATTERY      — the long-tail owner concern
+                // Design pass: each group is one readings panel (was 15 cards). Values read in ink; colour only
+                // marks an existing limit — DTCs found, SoC < 70 / < 50 %, e-brake on, ESC-off button held.
+                // (LIVE, +charge current and SoC ≥ 70 % were green.)
                 Spacer(Modifier.height(4.dp))
-                MonoLabel("HEALTH", 8.sp, Dim.copy(alpha = textMutedAlpha(0.7f)), letterSpacing = 0.3.sp)
-                Spacer(Modifier.height(4.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    DataCell("STATUS", if (vs.isConnected) "LIVE" else "— —",
-                        valueColor = if (vs.isConnected) Ok else Dim, modifier = Modifier.weight(1f))
-                    DataCell("FPS",    if (vs.isConnected) "${vs.framesPerSecond.roundToInt()}" else "— —", modifier = Modifier.weight(1f))  // held rate isn't a live one
-                    DataCell("DTCs", if (dtcResults != null) "$dtcCount" else "—",
-                        valueColor = if (dtcCount > 0) Orange else if (dtcResults != null) Ok else Dim,
-                        modifier = Modifier.weight(1f))
-                }
-                Spacer(Modifier.height(6.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    DataCell("SESSION", DiagnosticLogger.formatDuration(sessionMs), modifier = Modifier.weight(1f))
-                    DataCell("FRAMES",  "$frameCount",                              modifier = Modifier.weight(1f))
-                    DataCell("IDs",     "${inv.size}",                              modifier = Modifier.weight(1f))
-                }
-                Spacer(Modifier.height(12.dp))
+                ReadoutGrid(
+                    rows = listOf(
+                        listOf(
+                            Readout("STATUS", if (vs.isConnected) "LIVE" else "— —"),
+                            Readout("FPS", if (vs.isConnected) "${vs.framesPerSecond.roundToInt()}" else "— —"),  // held rate isn't a live one
+                            Readout("DTCs", if (dtcResults != null) "$dtcCount" else "— —",
+                                color = if (dtcCount > 0) Orange else Color.Unspecified),
+                        ),
+                        listOf(
+                            Readout("SESSION", DiagnosticLogger.formatDuration(sessionMs)),
+                            Readout("FRAMES", "$frameCount"),
+                            Readout("IDs", "${inv.size}"),
+                        ),
+                    ),
+                    level = if (dtcCount > 0) Level.CRIT else Level.NORMAL,
+                    captions = mapOf(0 to "HEALTH")
+                )
+                Spacer(Modifier.height(Tokens.CardGap))
                 if (!vs.isConnected) {
-                    // rc.2: when disconnected, the VEHICLE + BATTERY + buttons
-                    // rows are all em-dashes (>50% of the section). Replace with
-                    // a single CTA so the screen reads as deliberate, not broken.
+                    // When disconnected the VEHICLE / BATTERY / BUTTONS rows would be all dashes — one line instead.
                     Box(
                         Modifier.fillMaxWidth()
-                            .background(Surf2, RoundedCornerShape(10.dp))
-                            .border(CardBorder, Brd, RoundedCornerShape(10.dp))
+                            .instrumentSurface()
                             .padding(vertical = 20.dp, horizontal = 16.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            MonoLabel("VEHICLE \u00B7 BATTERY \u00B7 BUTTONS", 8.sp,
-                                Dim.copy(alpha = textMutedAlpha(0.6f)), letterSpacing = 0.3.sp)
+                            InstrumentLabel("VEHICLE \u00B7 BATTERY \u00B7 BUTTONS")
                             Spacer(Modifier.height(6.dp))
-                            MonoLabel("Connect to view live data", 11.sp, Dim, letterSpacing = 0.1.sp)
+                            MonoLabel("Connect to view live data", 12.sp, Mid, letterSpacing = 0.1.sp)
                         }
                     }
                 } else {
-                MonoLabel("VEHICLE", 8.sp, Dim.copy(alpha = textMutedAlpha(0.7f)), letterSpacing = 0.3.sp)
-                Spacer(Modifier.height(4.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    DataCell("ENGINE", engineStatusLabel(vs.engineStatus), modifier = Modifier.weight(1f))
-                    DataCell("IGNITION", ignitionStatusLabel(vs.ignitionStatus), modifier = Modifier.weight(1f))
-                    DataCell("E-BRAKE", if (vs.eBrake) "ON" else "OFF",
-                        valueColor = if (vs.eBrake) Warn else Dim, modifier = Modifier.weight(1f))
-                }
-                Spacer(Modifier.height(12.dp))
-                MonoLabel("BATTERY", 8.sp, Dim.copy(alpha = textMutedAlpha(0.7f)), letterSpacing = 0.3.sp)
-                Spacer(Modifier.height(4.dp))
                 // Availability-aware placeholders so startup/stale states read cleanly
                 // rather than leaking the raw -1 sentinel as "-1.00V".
                 fun availSub(a: TempAvail) = when (a) {
                     TempAvail.WARMING     -> "WARMING"
                     TempAvail.STALE       -> "STALE"
                     TempAvail.UNAVAILABLE -> "N/A"
-                    TempAvail.AVAILABLE   -> ""
+                    TempAvail.AVAILABLE   -> null
                 }
+                fun shown(a: TempAvail) = a == TempAvail.AVAILABLE || a == TempAvail.STALE
                 val battVAvail    = scalarAvailFor(vs.batteryVoltage >= 0, vs.fieldLastUpdateMs["batteryVoltage"]).whenDisconnected(vs.isConnected)
                 val battAAvail    = scalarAvailFor(vs.batteryCurrentA > -900, vs.fieldLastUpdateMs["batteryCurrentA"]).whenDisconnected(vs.isConnected)
                 val battSocAvail  = scalarAvailFor(vs.batterySoc >= 0, vs.fieldLastUpdateMs["batterySoc"]).whenDisconnected(vs.isConnected)
                 val battTempAvail = scalarAvailFor(vs.batteryTempC > -90, vs.fieldLastUpdateMs["batteryTempC"]).whenDisconnected(vs.isConnected)
                 val chgTgtAvail   = scalarAvailFor(vs.batteryChargingVoltageDesired >= 0, vs.fieldLastUpdateMs["batteryChargingVoltageDesired"]).whenDisconnected(vs.isConnected)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    DataCell("BATT V",
-                        if (battVAvail == TempAvail.AVAILABLE || battVAvail == TempAvail.STALE)
-                            "${"%.2f".format(vs.batteryVoltage)}V" else "—",
-                        sub = availSub(battVAvail),
-                        valueColor = if (battVAvail == TempAvail.AVAILABLE) Frost else Dim,
-                        modifier = Modifier.weight(1f))
-                    DataCell("BATT A",
-                        if (battAAvail == TempAvail.AVAILABLE || battAAvail == TempAvail.STALE)
-                            "${"%+.1f".format(vs.batteryCurrentA)} A" else "—",
-                        sub = availSub(battAAvail),
-                        valueColor = when {
-                            battAAvail != TempAvail.AVAILABLE -> Dim
-                            vs.batteryCurrentA >  0.5  -> Ok       // charging
-                            vs.batteryCurrentA < -0.5  -> Frost    // discharging
-                            else                       -> Mid      // resting
-                        }, modifier = Modifier.weight(1f))
-                    DataCell("BATT SoC",
-                        if (battSocAvail == TempAvail.AVAILABLE || battSocAvail == TempAvail.STALE)
-                            "${vs.batterySoc.roundToInt()}%" else "—",
-                        sub = availSub(battSocAvail),
-                        valueColor = when {
-                            battSocAvail != TempAvail.AVAILABLE -> Dim
-                            vs.batterySoc < 50  -> Orange
-                            vs.batterySoc < 70  -> Warn
-                            else                -> Ok
-                        }, modifier = Modifier.weight(1f))
+                val socColor = when {
+                    battSocAvail != TempAvail.AVAILABLE -> Color.Unspecified
+                    vs.batterySoc < 50 -> Orange
+                    vs.batterySoc < 70 -> Warn
+                    else -> Color.Unspecified
                 }
-                Spacer(Modifier.height(6.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    DataCell("BATT TEMP",
-                        if (battTempAvail == TempAvail.AVAILABLE || battTempAvail == TempAvail.STALE)
-                            "${vs.batteryTempC.roundToInt()}°C" else "—",
-                        sub = availSub(battTempAvail),
-                        valueColor = if (battTempAvail == TempAvail.AVAILABLE) Frost else Dim,
-                        modifier = Modifier.weight(1f))
-                    DataCell("CHG TGT",
-                        if (chgTgtAvail == TempAvail.AVAILABLE || chgTgtAvail == TempAvail.STALE)
-                            "${"%.1f".format(vs.batteryChargingVoltageDesired)}V" else "—",
-                        sub = availSub(chgTgtAvail),
-                        valueColor = if (chgTgtAvail == TempAvail.AVAILABLE) Frost else Dim,
-                        modifier = Modifier.weight(1f))
-                    Spacer(Modifier.weight(1f))
-                }
-
+                ReadoutGrid(
+                    rows = listOf(
+                        listOf(
+                            Readout("ENGINE", engineStatusLabel(vs.engineStatus)),
+                            Readout("IGNITION", ignitionStatusLabel(vs.ignitionStatus)),
+                            Readout("E-BRAKE", if (vs.eBrake) "ON" else "OFF", color = if (vs.eBrake) Warn else Color.Unspecified),
+                        ),
+                    ),
+                    level = if (vs.eBrake) Level.WARN else Level.NORMAL,
+                    captions = mapOf(0 to "VEHICLE")
+                )
+                Spacer(Modifier.height(Tokens.CardGap))
+                ReadoutGrid(
+                    rows = listOf(
+                        listOf(
+                            Readout("VOLTAGE", if (shown(battVAvail)) "${"%.2f".format(vs.batteryVoltage)} V" else "— —", sub = availSub(battVAvail)),
+                            // Sign = direction (+ charging, − discharging); no colour
+                            Readout("CURRENT", if (shown(battAAvail)) "${"%+.1f".format(vs.batteryCurrentA)} A" else "— —", sub = availSub(battAAvail)),
+                            Readout("SoC", if (shown(battSocAvail)) "${vs.batterySoc.roundToInt()}%" else "— —", color = socColor, sub = availSub(battSocAvail)),
+                        ),
+                        listOf(
+                            Readout("TEMP", if (shown(battTempAvail)) "${vs.batteryTempC.roundToInt()}°C" else "— —", sub = availSub(battTempAvail)),
+                            Readout("CHARGE TARGET", if (shown(chgTgtAvail)) "${"%.1f".format(vs.batteryChargingVoltageDesired)} V" else "— —", sub = availSub(chgTgtAvail)),
+                            null,
+                        ),
+                    ),
+                    level = if (socColor == Orange) Level.CRIT else if (socColor == Warn) Level.WARN else Level.NORMAL,
+                    captions = mapOf(0 to "BATTERY")
+                )
+                Spacer(Modifier.height(Tokens.CardGap))
                 // ── Live button inputs (0x070, 0x260, 0x305) ─────────────────
-                Spacer(Modifier.height(6.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    DataCell("MODE BTN", if (vs.driveModeButtonPressed) "HELD" else "—",
-                        valueColor = if (vs.driveModeButtonPressed) accent else Dim,
-                        modifier = Modifier.weight(1f))
-                    DataCell("SUSP BTN", if (vs.suspensionButtonPressed) "HELD" else "—",
-                        valueColor = if (vs.suspensionButtonPressed) accent else Dim,
-                        modifier = Modifier.weight(1f))
-                    DataCell("ASS BTN", if (vs.autoStartStopButtonPressed) "HELD" else "—",
-                        valueColor = if (vs.autoStartStopButtonPressed) accent else Dim,
-                        modifier = Modifier.weight(1f))
-                    DataCell("ESC BTN", if (vs.escOffButtonPressed) "HELD" else "—",
-                        valueColor = if (vs.escOffButtonPressed) Orange else Dim,
-                        modifier = Modifier.weight(1f))
-                }
+                fun held(b: Boolean) = if (b) "HELD" else "— —"
+                ReadoutGrid(
+                    rows = listOf(listOf(
+                        Readout("MODE", held(vs.driveModeButtonPressed), color = if (vs.driveModeButtonPressed) accent else Color.Unspecified),
+                        Readout("SUSP", held(vs.suspensionButtonPressed), color = if (vs.suspensionButtonPressed) accent else Color.Unspecified),
+                        Readout("ASS", held(vs.autoStartStopButtonPressed), color = if (vs.autoStartStopButtonPressed) accent else Color.Unspecified),
+                        Readout("ESC OFF", held(vs.escOffButtonPressed), color = if (vs.escOffButtonPressed) Orange else Color.Unspecified),
+                    )),
+                    captions = mapOf(0 to "BUTTONS")
+                )
                 }  // end else (connected)
 
                 if (issueCount > 0) {
                     Spacer(Modifier.height(6.dp))
-                    MonoLabel("⚠ $issueCount validation issue(s) — capture snapshot to review", 9.sp, Warn)
+                    MonoLabel("⚠ $issueCount validation issue(s) — capture snapshot to review", 11.sp, Warn)
                 }
 
                 Spacer(Modifier.height(12.dp))
@@ -314,16 +293,16 @@ import kotlin.math.roundToInt
                                 withContext(Dispatchers.Main) { exporting = false }
                             }
                         }
-                        .padding(vertical = 13.dp),
+                        .heightIn(min = 48.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     MonoLabel(
                         if (exporting) "BUILDING..." else "↑  CAPTURE & SHARE SNAPSHOT",
-                        12.sp, if (!exporting) accent else Dim, letterSpacing = 0.1.sp
+                        12.sp, if (!exporting) actionInk(accent) else Dim, FontWeight.Bold, letterSpacing = 0.3.sp
                     )
                 }
                 Spacer(Modifier.height(4.dp))
-                MonoLabel("Exports ZIP (summary + raw log + JSON) via share sheet.", 9.sp, Dim,
+                InstrumentMeta("Exports ZIP (summary + raw log + JSON) via share sheet.",
                     modifier = Modifier.padding(bottom = 12.dp))
 
                 // ── Reset Session ────────────────────────────────────────────────
@@ -334,7 +313,7 @@ import kotlin.math.roundToInt
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        MonoLabel("SESSION", 9.sp, Dim, letterSpacing = 0.2.sp)
+                        InstrumentLabel("SESSION")
                         Spacer(Modifier.weight(1f))
                         if (confirmReset) {
                             MonoLabel("Reset all data?", 10.sp, Orange)
@@ -347,18 +326,22 @@ import kotlin.math.roundToInt
                                         onResetSession()
                                         confirmReset = false
                                     }
-                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                                    .heightIn(min = 48.dp)
+                                    .padding(horizontal = 14.dp),
+                                contentAlignment = Alignment.Center
                             ) {
-                                MonoLabel("CONFIRM", 10.sp, Orange, FontWeight.Bold, 0.1.sp)
+                                MonoLabel("CONFIRM", 11.sp, Orange, FontWeight.Bold, 0.3.sp)
                             }
                             Box(
                                 Modifier
                                     .background(Surf2, RoundedCornerShape(6.dp))
                                     .border(CardBorder, Brd, RoundedCornerShape(6.dp))
                                     .clickable { confirmReset = false }
-                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                                    .heightIn(min = 48.dp)
+                                    .padding(horizontal = 14.dp),
+                                contentAlignment = Alignment.Center
                             ) {
-                                MonoLabel("CANCEL", 10.sp, Dim, FontWeight.Bold, 0.1.sp)
+                                MonoLabel("CANCEL", 11.sp, Mid, FontWeight.Bold, 0.3.sp)
                             }
                         } else {
                             Box(
@@ -366,9 +349,11 @@ import kotlin.math.roundToInt
                                     .background(Surf2, RoundedCornerShape(6.dp))
                                     .border(CardBorder, Brd, RoundedCornerShape(6.dp))
                                     .clickable { confirmReset = true }
-                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                                    .heightIn(min = 48.dp)
+                                    .padding(horizontal = 14.dp),
+                                contentAlignment = Alignment.Center
                             ) {
-                                MonoLabel("RESET SESSION", 10.sp, Frost, FontWeight.Bold, 0.1.sp)
+                                MonoLabel("RESET SESSION", 11.sp, Mid, FontWeight.Bold, 0.3.sp)
                             }
                         }
                     }
@@ -474,7 +459,7 @@ import kotlin.math.roundToInt
                             11.sp,
                             when {
                                 dtcScanning -> Warn
-                                !dtcBusy && vs.isConnected && onScanDtcs != null -> accent
+                                !dtcBusy && vs.isConnected && onScanDtcs != null -> actionInk(accent)
                                 else -> Dim
                             },
                             letterSpacing = 0.08.sp
@@ -632,7 +617,7 @@ import kotlin.math.roundToInt
                                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                                         ) {
                                             MonoLabel("$label ($count)", 8.sp,
-                                                if (active) accent else Dim)
+                                                if (active) actionInk(accent) else Dim)
                                         }
                                     }
                                 }
@@ -676,7 +661,7 @@ import kotlin.math.roundToInt
                                     var dtcIdx = 0
                                     for (moduleName in moduleOrder) {
                                         val moduleDtcs = grouped[moduleName] ?: continue
-                                        MonoLabel(moduleName, 9.sp, accent, letterSpacing = 1.sp)
+                                        MonoLabel(moduleName, 9.sp, actionInk(accent), letterSpacing = 1.sp)
                                         moduleDtcs.forEach { dtc ->
                                             Box(pageEntrance(dtcIdx, scanComplete, staggerDelayMs = 60)) {
                                                 DtcRow(
@@ -750,7 +735,7 @@ import kotlin.math.roundToInt
                                                 ) {
                                                     MonoLabel(
                                                         if (retrying) "..." else "RETRY",
-                                                        8.sp, accent
+                                                        8.sp, actionInk(accent)
                                                     )
                                                 }
                                             }
@@ -881,7 +866,12 @@ import kotlin.math.roundToInt
             enter = expandVertically(spring(stiffness = Spring.StiffnessLow)) + fadeIn(),
             exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut()
         ) {
-            Column {
+            // Nested tools sit on an indented rule — they read as DEVELOPER's children, not top-level sections.
+            Column(
+                Modifier.drawBehind {
+                    drawLine(Brd.copy(alpha = 0.6f), Offset(1.dp.toPx(), 0f), Offset(1.dp.toPx(), size.height), 2.dp.toPx())
+                }.padding(start = 12.dp)
+            ) {
 
         Spacer(Modifier.height(Tokens.SectionGap))
 
@@ -937,7 +927,7 @@ import kotlin.math.roundToInt
                             val parts = line.trim().split(" ", limit = 2)
                             Row(Modifier.padding(vertical = 1.dp)) {
                                 if (parts.size >= 2) {
-                                    MonoLabel(parts[0], 10.sp, Warn, letterSpacing = 0.05.sp)
+                                    MonoLabel(parts[0], 10.sp, accentMid(), letterSpacing = 0.05.sp)   // CAN id — not a warning
                                     Spacer(Modifier.width(12.dp))
                                     MonoText(parts[1], 10.sp, Mid)
                                 } else {
