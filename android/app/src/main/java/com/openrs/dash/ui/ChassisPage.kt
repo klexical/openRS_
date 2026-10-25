@@ -283,14 +283,6 @@ import kotlin.math.roundToInt
 }
 
 /** Pressure level from the tyre card's existing rule ([tireStatusColor] defaults: warn 34, high 50 psi). */
-/** Tyre pressure state (psi, whatever the display unit) from the user's Low / Warn / High thresholds. */
-internal fun tireLevel(psi: Double, lowThreshold: Double, warnThreshold: Double, highThreshold: Double) = when {
-    psi < 0              -> Level.NONE
-    psi < lowThreshold   -> Level.CRIT
-    psi < warnThreshold  -> Level.WARN
-    psi > highThreshold  -> Level.CRIT
-    else                 -> Level.NORMAL
-}
 
 /** Tyre temperature colour from the existing [thermalBandForTire] bands; in-range reads in ink. */
 private fun tyreTempColor(tempC: Double): Color = when (thermalBandForTire(tempC)) {

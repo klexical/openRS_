@@ -82,6 +82,43 @@ fun tempLevel(tempC: Double, warnC: Double, critC: Double, avail: TempAvail): Le
     else                         -> Level.NORMAL
 }
 
+/**
+ * Tyre pressure state (psi, whatever the display unit) from the user's Low / Warn / High thresholds — the one
+ * classification THERMAL's tyre cards and DRIVE's alerts share: < Low critical, < Warn caution, > High critical.
+ */
+internal fun tireLevel(psi: Double, lowThreshold: Double, warnThreshold: Double, highThreshold: Double) = when {
+    psi < 0              -> Level.NONE
+    psi < lowThreshold   -> Level.CRIT
+    psi < warnThreshold  -> Level.WARN
+    psi > highThreshold  -> Level.CRIT
+    else                 -> Level.NORMAL
+}
+
+/** A tyre DRIVE should mention. LOW / CAUTION = under-inflated, HIGH = over-inflated. */
+internal enum class TyreIssue { LOW, CAUTION, HIGH }
+
+/**
+ * DRIVE's tyre alerts from [tireLevel]: the lowest tyre if it is under Warn / Low (as before), plus the highest
+ * tyre if it is over High. Under-inflation is listed first; missing readings (< 0) are ignored.
+ */
+internal fun tyreIssues(
+    pressures: List<Pair<String, Double>>, low: Double, warn: Double, high: Double,
+): List<Triple<String, Double, TyreIssue>> {
+    val known = pressures.filter { it.second >= 0 }
+    return buildList {
+        known.minByOrNull { it.second }?.let { (pos, psi) ->
+            when (tireLevel(psi, low, warn, high)) {
+                Level.CRIT -> if (psi < low) add(Triple(pos, psi, TyreIssue.LOW))
+                Level.WARN -> add(Triple(pos, psi, TyreIssue.CAUTION))
+                else -> {}
+            }
+        }
+        known.maxByOrNull { it.second }?.let { (pos, psi) ->
+            if (tireLevel(psi, low, warn, high) == Level.CRIT && psi > high) add(Triple(pos, psi, TyreIssue.HIGH))
+        }
+    }
+}
+
 /** Instrument card fill: flat white on DAY (separated by a hairline, not a shadow), Surf2 at night. */
 val InstrumentFill: Color get() = if (isDayModeNow()) Surf else Surf2
 

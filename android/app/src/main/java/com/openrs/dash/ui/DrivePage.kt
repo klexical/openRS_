@@ -470,14 +470,19 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
                 if (lvl.isAlert) add(VehicleAlert(hotTitle(name, lvl), temp(c), lvl, R.drawable.ic_tt_coolant, chip = "$name ${temp(c)}"))
             }
             if (vs.hasTpmsData) {
-                listOf("FL" to vs.tirePressLF, "FR" to vs.tirePressRF, "RL" to vs.tirePressLR, "RR" to vs.tirePressRR)
-                    .filter { it.second >= 0 }.minByOrNull { it.second }?.let { (pos, psi) ->
-                        val v = "${p.displayTire(psi)} ${p.tireLabel}"
-                        if (p.isTireLow(psi))
-                            add(VehicleAlert("$pos TYRE LOW", v, Level.CRIT, R.drawable.ic_tt_tyre, chip = "$pos $v LOW"))
-                        else if (psi < p.tireWarnPsi)
-                            add(VehicleAlert("$pos TYRE PRESSURE", v, Level.WARN, R.drawable.ic_tt_tyre, chip = "$pos $v"))
+                // Same classification as THERMAL's tyre cards (tireLevel) — including over-inflation past High,
+                // which DRIVE used to ignore (ALL NORMAL while THERMAL showed a tyre critical).
+                tyreIssues(
+                    listOf("FL" to vs.tirePressLF, "FR" to vs.tirePressRF, "RL" to vs.tirePressLR, "RR" to vs.tirePressRR),
+                    p.tireLowPsi.toDouble(), p.tireWarnPsi.toDouble(), p.tireHighPsi.toDouble(),
+                ).forEach { (pos, psi, issue) ->
+                    val v = "${p.displayTire(psi)} ${p.tireLabel}"
+                    when (issue) {
+                        TyreIssue.LOW -> add(VehicleAlert("$pos TYRE LOW", v, Level.CRIT, R.drawable.ic_tt_tyre, chip = "$pos $v LOW"))
+                        TyreIssue.CAUTION -> add(VehicleAlert("$pos TYRE PRESSURE", v, Level.WARN, R.drawable.ic_tt_tyre, chip = "$pos $v"))
+                        TyreIssue.HIGH -> add(VehicleAlert("$pos TYRE HIGH", v, Level.CRIT, R.drawable.ic_tt_tyre, chip = "$pos $v HIGH"))
                     }
+                }
             }
         }
         if (fuelLvl == Level.WARN) add(VehicleAlert("FUEL LOW", fuelStr, Level.WARN, R.drawable.ic_tt_fuel))
