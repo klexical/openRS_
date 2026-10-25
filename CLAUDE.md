@@ -470,7 +470,7 @@ cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{ver}.apk  (main release)
 ./gradlew assembleRelease -PrcSuffix=rc.5  # → openRS_v{ver}-rc.5.apk
-./gradlew test                             # 677 unit tests across 36 files
+./gradlew test                             # 680 unit tests across 37 files
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 48 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -568,12 +568,13 @@ android/app/src/test/java/com/openrs/dash/
   RaceReadinessTest.kt        — 7 tests: overheat / missing / stale block RACE READY, optional sensors, warm-up, legibleAccent
   ReplaySeekTest.kt           — 2 tests: replay ±10s seeks by timestamp (1 Hz and sparse data), clamps, steps across gaps
   PendingSummaryTest.kt       — 2 tests: post-drive summary stays queued until consumed, newer drive survives an older close
+  TyrePressureLevelTest.kt    — 3 tests: THERMAL tyre state follows the saved Low / Warn / High (boundaries, custom, PSI = BAR)
   ForegroundControllerTest.kt — 6 tests: idle bound service never foreground, self-start always followed by startForeground,
                                 demote leaves both, refused start / startForeground leave nothing started
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **677 tests across 36 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **680 tests across 37 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 

@@ -164,8 +164,8 @@ val WHEEL_ANCHORS = listOf(
 internal fun tireStatusColor(
     psi: Double,
     lowThreshold: Double,
-    warnThreshold: Double = 34.0,
-    highThreshold: Double = 50.0
+    warnThreshold: Double,
+    highThreshold: Double
 ): Color = when {
     psi < 0              -> Dim       // no data yet
     psi < lowThreshold   -> Orange    // critically under-inflated

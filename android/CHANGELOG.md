@@ -119,6 +119,9 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **Taps on the dashboard reached the page underneath** — empty areas of the overlay passed touches through, so a tap could open THERMAL from DRIVE's status line out of sight; the overlay now takes every touch. (`ui/CustomDashPage.kt`)
 - **Dashboard went blank with no reason on a link drop** — cells blank while disconnected (so held values never read as live), but the overlay hides the header pill, so nothing said why; its title now carries the pill's wording — `DEMO · RCN` / `DEMO · OFF` in demo, `RCN` / `OFF` for a real link. (`ui/CustomDashPage.kt`, `ui/DemoControls.kt`)
 
+### Fixed (rc.6 — THERMAL tyres)
+- **THERMAL ignored the saved tyre Warn / High pressures** — its tyre cards, panel edge and wireframe lead lines used fixed 34 / 50 psi for caution and over-inflation, so custom values changed DRIVE's alerts but not THERMAL. They now use the saved Low / Warn / High (defaults 30 / 34 / 50 and the boundary rules unchanged; PSI and BAR show the same state). New TyrePressureLevelTest (3). (`ui/ChassisPage.kt`, `ui/anim/CarDiagram.kt`)
+
 ### Fixed (rc.6 — Settings)
 - **Adapter and connection pickers were crushed on 360 dp phones** — "Hardware" was squeezed into a one-letter-wide column beside the MeatPi picker, and Theme mode / Connection method wrapped against theirs; those pickers now sit on their own full-width line under the label. (`ui/SettingsSheet.kt`)
 - **Closing Settings without saving could keep a previewed theme** — only CANCEL reverted the live theme / font / paint preview; Back, tapping outside, ✕ and the Custom Dashboard / demo shortcuts left it applied (unsaved) until restart. Every exit except SAVE now reverts it. (`ui/SettingsSheet.kt`)

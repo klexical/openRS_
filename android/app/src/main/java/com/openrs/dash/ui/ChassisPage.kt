@@ -82,20 +82,23 @@ import kotlin.math.roundToInt
 //          [torque bar] [metrics] [temps] [clutch]
 // ═══════════════════════════════════════════════════════════════════════════
 @Composable fun UnifiedChassisSection(vs: VehicleState, p: UserPrefs) {
+    // The user's TPMS thresholds (Settings → UNITS) — Low / Warn / High, all of them (Warn and High were 34 / 50 psi here).
     val lowThreshold = p.tireLowPsi.toDouble()
+    val warnThreshold = p.tireWarnPsi.toDouble()
+    val highThreshold = p.tireHighPsi.toDouble()
 
     // Animated tire status colors for the lead lines (same rule as before)
     val flColor by animateColorAsState(
-        tireStatusColor(vs.tirePressLF, lowThreshold), tween(400), label = "flC"
+        tireStatusColor(vs.tirePressLF, lowThreshold, warnThreshold, highThreshold), tween(400), label = "flC"
     )
     val frColor by animateColorAsState(
-        tireStatusColor(vs.tirePressRF, lowThreshold), tween(400), label = "frC"
+        tireStatusColor(vs.tirePressRF, lowThreshold, warnThreshold, highThreshold), tween(400), label = "frC"
     )
     val rlColor by animateColorAsState(
-        tireStatusColor(vs.tirePressLR, lowThreshold), tween(400), label = "rlC"
+        tireStatusColor(vs.tirePressLR, lowThreshold, warnThreshold, highThreshold), tween(400), label = "rlC"
     )
     val rrColor by animateColorAsState(
-        tireStatusColor(vs.tirePressRR, lowThreshold), tween(400), label = "rrC"
+        tireStatusColor(vs.tirePressRR, lowThreshold, warnThreshold, highThreshold), tween(400), label = "rrC"
     )
 
     // Deltas
@@ -113,7 +116,7 @@ import kotlin.math.roundToInt
         return if (!vs.isConnected && a == TempAvail.WARMING) TempAvail.AVAILABLE else a.whenDisconnected(vs.isConnected)
     }
     val panelLevel = worstLevel(listOf(vs.tirePressLF, vs.tirePressRF, vs.tirePressLR, vs.tirePressRR)
-        .map { tireLevel(it, lowThreshold) })
+        .map { tireLevel(it, lowThreshold, warnThreshold, highThreshold) })
 
     SectionLabel("TYRES")
     Column(
@@ -280,7 +283,8 @@ import kotlin.math.roundToInt
 }
 
 /** Pressure level from the tyre card's existing rule ([tireStatusColor] defaults: warn 34, high 50 psi). */
-private fun tireLevel(psi: Double, lowThreshold: Double, warnThreshold: Double = 34.0, highThreshold: Double = 50.0) = when {
+/** Tyre pressure state (psi, whatever the display unit) from the user's Low / Warn / High thresholds. */
+internal fun tireLevel(psi: Double, lowThreshold: Double, warnThreshold: Double, highThreshold: Double) = when {
     psi < 0              -> Level.NONE
     psi < lowThreshold   -> Level.CRIT
     psi < warnThreshold  -> Level.WARN
@@ -312,7 +316,7 @@ private fun TyreCell(
     /** Adapter connected — wheel speed is a per-frame reading, so offline it shows "—" (pressure / temp go STALE). */
     live: Boolean = true,
 ) {
-    val level = tireLevel(psi, lowThreshold)
+    val level = tireLevel(psi, lowThreshold, p.tireWarnPsi.toDouble(), p.tireHighPsi.toDouble())
     val hasTemp = tempC > -90
     val availSub = when (avail) {
         TempAvail.WARMING     -> "WARMING"
