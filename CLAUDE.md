@@ -194,7 +194,9 @@ ui/
                             diag, theme picker (RS paint colours)
                             Visibility: discrete NIGHT / DAY / AUTO + ULTRA theme mode selector (no slider)
                             2-way adapter picker (MeatPi USB / Pro) + connection method toggle (WiFi / Bluetooth)
-                            Accent left-bar titles, gradient section backgrounds, animated SegmentedPicker
+                            Design pass: instrument-panel sections, SettingsPicker (accent tint + actionInk; stacked full
+                            width where options don't fit at 360 dp), 48 dp rows / actions; every exit except SAVE reverts
+                            the live theme / font / paint preview (`cancel()`). Public SegmentedPicker is PERF's (unchanged)
   anim/
     EdgeShiftLight.kt     — Peripheral shift light: multi-zone edge glow overlay (breathing → fill → flash)
                             Three phases keyed to shiftRpm: 70% breathing, 81% progressive, 95.5% flash

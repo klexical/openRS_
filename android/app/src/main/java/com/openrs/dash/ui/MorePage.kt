@@ -449,7 +449,9 @@ import kotlinx.coroutines.launch
         modifier
             .background(if (isActive) ink.copy(alpha = 0.12f) else Surf2, RoundedCornerShape(10.dp))
             .border(1.dp, if (isActive) ink else Brd, RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(10.dp))
             .clickable { onSelect(id) }
+            .heightIn(min = 56.dp)
             .padding(vertical = 10.dp, horizontal = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -459,7 +461,7 @@ import kotlinx.coroutines.launch
                 .border(if (isActive) 2.dp else 0.dp, Frost.copy(0.6f), CircleShape)
         )
         Spacer(Modifier.height(5.dp))
-        MonoLabel(name, 8.sp, if (isActive) ink else Dim, letterSpacing = 0.1.sp,
+        MonoLabel(name, 10.sp, if (isActive) actionInk(ink) else Mid, letterSpacing = 0.1.sp,
             modifier = Modifier.fillMaxWidth(), fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal)
     }
 }

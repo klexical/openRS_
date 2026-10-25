@@ -4,6 +4,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -138,18 +144,24 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
             // Title bar
             Row(
                 Modifier.fillMaxWidth()
-                    .background(Surf3, RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
-                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                    .background(Surf, RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
+                    .padding(start = 20.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("What's New", fontSize = 16.sp, fontWeight = FontWeight.Bold,
                         fontFamily = ShareTechMono, color = Frost)
-                    Text(" — v$version", fontSize = 14.sp, fontFamily = ShareTechMono, color = Dim)
+                    Text(" — v$version", fontSize = 14.sp, fontFamily = ShareTechMono, color = Mid)
                 }
-                Text("✕", fontSize = 18.sp, color = Dim, modifier = Modifier.clickable { onDismiss() })
+                Box(
+                    Modifier.size(48.dp).clip(CircleShape).clickable(onClickLabel = "Close") { onDismiss() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("✕", fontSize = 18.sp, color = Mid)
+                }
             }
+            HorizontalDivider(color = Brd)
 
             // Highlights list
             Column(
@@ -183,7 +195,7 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
             ) {
                 Button(
                     onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = OnAccent)
                 ) {
                     Text("GOT IT", fontFamily = ShareTechMono, fontWeight = FontWeight.Bold, fontSize = 12.sp)
