@@ -81,14 +81,7 @@ fun DriveSummarySheet(
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 32.dp)
         ) {
-            if (previewNotice) {
-                Box(
-                    Modifier.fillMaxWidth().padding(bottom = 10.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Warn.copy(alpha = pillBgAlpha(0.12f)))
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                ) { InstrumentLabel("PREVIEW · SAMPLE DATA — NOT SAVED", color = demoInk()) }
-            }
+            if (previewNotice) PreviewSheetNotice()
             // ── Title + Duration badge ──
             Row(
                 Modifier.fillMaxWidth(),
@@ -237,12 +230,19 @@ fun DriveSummarySheet(
                 Spacer(Modifier.height(6.dp))
 
                 InstrumentLabel("BOOST SWEEP", Modifier.padding(bottom = 6.dp), color = Mid)
+                // Pressures in the user's unit (stats are psi) — they were always printed as PSI
+                fun gaugeIn(psi: Double): String = when (prefs.boostUnit) {
+                    "BAR" -> "%.2f".format(psi * UnitConversions.PSI_TO_BAR)
+                    "KPA" -> "%.0f".format(psi / UnitConversions.KPA_TO_PSI)
+                    else  -> "%.1f".format(psi)
+                }
+                val pUnit = prefs.displayBoost(UnitConversions.STD_ATM_KPA).second
                 run {
                     val avgSign = if (boostStats.avgDeltaPsi >= 0) "+" else ""
                     ReadoutGrid(
                         rows = listOf(listOf(
-                            Readout("AVG Δ", "$avgSign%.1f PSI".format(boostStats.avgDeltaPsi)),
-                            Readout("WORST Δ", "%.1f PSI".format(boostStats.worstDeltaPsi)),
+                            Readout("AVG Δ", "$avgSign${gaugeIn(boostStats.avgDeltaPsi)} $pUnit"),
+                            Readout("WORST Δ", "${gaugeIn(boostStats.worstDeltaPsi)} $pUnit"),
                             Readout("@ RPM", "${boostStats.worstRpm}"),
                             // WGDC ≥ 95 % = saturation (existing rule) — the only amber here
                             Readout("WGDC MAX", "%.0f%%".format(boostStats.maxWgdc),
@@ -259,17 +259,21 @@ fun DriveSummarySheet(
                 }
                 boostStats.avgWgdcAtPeak?.let { w ->
                     Spacer(Modifier.height(4.dp))
+                    // Two columns — at 360 dp "WGDC @ PEAK" ran into "LOADED" in a four-column row
                     ReadoutGrid(rows = listOf(listOf(
-                        Readout("WGDC @ PEAK", "%.0f%%".format(w)), Readout("LOADED", "${boostStats.sampleCount}"), null, null,
+                        Readout("WGDC @ PEAK", "%.0f%%".format(w)), Readout("LOADED SAMPLES", "${boostStats.sampleCount}"),
                     )), dense = true)
                 }
                 // Boost by gear (#175) — peak is gauge vs standard atmosphere, Δ = actual − target
                 if (boostStats.byGear.isNotEmpty()) {
                     Spacer(Modifier.height(4.dp))
-                    InstrumentLabel("BY GEAR · PEAK PSI / AVG Δ", Modifier.padding(bottom = 4.dp), color = Mid)
+                    InstrumentLabel("BY GEAR · PEAK / AVG Δ (${pUnit})", Modifier.padding(bottom = 4.dp), color = Mid)
                     // Three per row so "12.3 / +0.4" fits at phone width
                     ReadoutGrid(rows = boostStats.byGear.chunked(3).map { row ->
-                        row.map { g -> Readout("G${g.gear}", "%.1f / %+.1f".format(g.peakBoostPsi, g.avgDeltaPsi)) } +
+                        row.map { g ->
+                            val d = gaugeIn(g.avgDeltaPsi).let { if (g.avgDeltaPsi >= 0) "+$it" else it }
+                            Readout("G${g.gear}", "${gaugeIn(g.peakBoostPsi)} / $d")
+                        } +
                             List(3 - row.size) { null }
                     }, dense = true)
                 }
@@ -318,6 +322,17 @@ fun DriveSummarySheet(
             }
         }
     }
+}
+
+/** Debug TRIP preview: a sheet covers the page's notice, so sample sheets carry their own. */
+@Composable
+internal fun PreviewSheetNotice() {
+    Box(
+        Modifier.fillMaxWidth().padding(bottom = 10.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(Warn.copy(alpha = pillBgAlpha(0.12f)))
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+    ) { InstrumentLabel("PREVIEW · SAMPLE DATA — NOT SAVED", color = demoInk()) }
 }
 
 /** Hairline between summary sections (was NeonDivider — no decorative glow). */

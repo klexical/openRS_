@@ -20,12 +20,12 @@ import kotlin.math.sin
  * never match a Room row. Nothing here touches DriveRecorder, so demo's no-recording rule still holds.
  *
  * `adb shell am start --activity-single-top -n com.openrs.dash.debug/com.openrs.dash.ui.MainActivity
- *   --es trippreview history|selected|recording|paused|summary|off`
+ *   --es trippreview history|selected|recording|paused|summary|compare|replay|export|off`
  */
 object TripPreview {
     val AVAILABLE: Boolean = BuildConfig.DEBUG
 
-    enum class Mode { HISTORY, SELECTED, RECORDING, PAUSED, SUMMARY }
+    enum class Mode { HISTORY, SELECTED, RECORDING, PAUSED, SUMMARY, COMPARE, REPLAY, EXPORT }
 
     private val _mode = MutableStateFlow<Mode?>(null)
     val mode: StateFlow<Mode?> = _mode.asStateFlow()
@@ -103,6 +103,11 @@ object TripPreview {
             val speed = 55 + 45 * sin(4 * a) + 15 * sin(11 * a)
             val rpm = (2400 + speed * 28 + 600 * sin(9 * a)).toInt()
             val boost = (speed - 60) / 3.0 + 4 * sin(13 * a)
+            // Boost-sweep inputs (TIP actual / desired kPa absolute, WGDC %) under load. The track-day sample (-3)
+            // runs the wastegate to saturation near peak so the summary's WGDC ≥ 95 % state can be reviewed.
+            val loaded = boost > 2.0
+            val targetPsi = boost + 0.8 + 0.6 * sin(5 * a)
+            val wgdc = (18 + boost * 3.6 + if (driveId == -3L) 14 else 0).coerceIn(0.0, 98.0)
             DrivePointEntity(
                 driveId = driveId, timestamp = startTime + i * 5_000L,
                 lat = HOME_LAT + 0.011 * scale * sin(a), lng = HOME_LNG + 0.016 * scale * cos(a) * (1 + 0.2 * sin(3 * a)),
@@ -111,6 +116,9 @@ object TripPreview {
                 fuelLevelPct = startFuelPct - fuelUsedPct * t, lateralG = 0.6 * sin(7 * a), throttlePct = (speed / 1.4).coerceIn(0.0, 100.0),
                 driveMode = if (t < 0.4) "Normal" else "Sport",
                 wheelSpeedFL = speed, wheelSpeedFR = speed + 0.4, wheelSpeedRL = speed - 0.2, wheelSpeedRR = speed + 0.1,
+                tipActualKpa = if (loaded) 101.325 + boost / 0.14503773 else 0.0,
+                boostTargetKpa = if (loaded) 101.325 + targetPsi / 0.14503773 else 0.0,
+                wgdcPct = if (loaded) wgdc else 0.0,
             )
         }
     }

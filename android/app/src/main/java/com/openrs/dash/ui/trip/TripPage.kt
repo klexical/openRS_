@@ -322,9 +322,15 @@ private fun TripPageContent(
                 selectedDriveId = d.id; selectedDrive = d; selectedDrivePoints = samplePoints(d.id); mapBookmarks = emptyList()
             }
             TripPreview.Mode.SUMMARY -> summaryDrive = TripPreview.drives().first()
+            TripPreview.Mode.COMPARE -> TripPreview.drives().let { compareA = it[0]; compareB = it[2] }
+            TripPreview.Mode.REPLAY -> TripPreview.drives().first().let { replayDrive = it; replayPoints = samplePoints(it.id) }
+            TripPreview.Mode.EXPORT -> exportDrive = TripPreview.drives().first()
             null -> {
                 if ((selectedDriveId ?: 0L) < 0) { selectedDriveId = null; selectedDrive = null; selectedDrivePoints = emptyList() }
                 if ((summaryDrive?.id ?: 0L) < 0) summaryDrive = null
+                if ((compareA?.id ?: 0L) < 0 || (compareB?.id ?: 0L) < 0) { compareA = null; compareB = null }
+                if ((replayDrive?.id ?: 0L) < 0) { replayDrive = null; replayPoints = emptyList() }
+                if ((exportDrive?.id ?: 0L) < 0) exportDrive = null
             }
             else -> {}
         }
@@ -344,8 +350,7 @@ private fun TripPageContent(
     // Export progress
     val exportProgress by DiagnosticExporter.exportProgress.collectAsState()
 
-    val historyPreview = preview == TripPreview.Mode.HISTORY || preview == TripPreview.Mode.SELECTED ||
-        preview == TripPreview.Mode.SUMMARY
+    val historyPreview = preview != null && preview != TripPreview.Mode.RECORDING && preview != TripPreview.Mode.PAUSED
     val isLive = !historyPreview && (vehicleState.isConnected || driveState.isRecording)
     val cameraPositionState = rememberCameraPositionState()
 
@@ -716,7 +721,7 @@ private fun TripPageContent(
                     }
                 },
                 onSummary = { drive -> summaryDrive = drive },   // points load with the sheet (shownSummary)
-                onExport = { drive -> if (drive.id > 0) exportDrive = drive },
+                onExport = { drive -> exportDrive = drive },   // the sheet's EXPORT no-ops for a sample drive
                 onDelete = { drive ->
                     if (drive.id < 0) return@DriveHistoryList
                     scope.launch(Dispatchers.IO) {
@@ -809,7 +814,8 @@ private fun TripPageContent(
             onDismiss = {
                 compareA = null
                 compareB = null
-            }
+            },
+            previewNotice = compA.id < 0 || compB.id < 0
         )
     }
 
@@ -819,6 +825,7 @@ private fun TripPageContent(
             drive = drive,
             onExport = { components ->
                 exportDrive = null
+                if (drive.id < 0) return@ExportOptionsSheet   // preview: nothing is exported
                 scope.launch(Dispatchers.IO) {
                     val dao = DriveDatabase.getInstance(context).driveDao()
                     val pts = dao.getPoints(drive.id)
@@ -827,7 +834,9 @@ private fun TripPageContent(
                     )
                 }
             },
-            onDismiss = { exportDrive = null }
+            onDismiss = { exportDrive = null },
+            prefs = prefs,
+            previewNotice = drive.id < 0
         )
     }
 
@@ -841,7 +850,8 @@ private fun TripPageContent(
                 onDismiss = {
                     replayDrive = null
                     replayPoints = emptyList()
-                }
+                },
+                previewNotice = drive.id < 0
             )
         }
     }

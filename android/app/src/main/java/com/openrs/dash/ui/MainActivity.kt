@@ -189,6 +189,15 @@ class MainActivity : ComponentActivity() {
             val prefs       by UserPrefsStore.prefs.collectAsState()
             val debugLines  by OpenRSDashApp.instance.debugLines.collectAsState()
             val driveState  by OpenRSDashApp.instance.driveState.collectAsState()
+            // Debug TRIP preview: the header's REC / PAUSED indicator shows the sample recording too (nothing records)
+            val tripPreview by com.openrs.dash.demo.TripPreview.mode.collectAsState()
+            val headerDriveState = remember(tripPreview) {
+                when (tripPreview) {
+                    com.openrs.dash.demo.TripPreview.Mode.RECORDING -> com.openrs.dash.demo.TripPreview.driveState(paused = false)
+                    com.openrs.dash.demo.TripPreview.Mode.PAUSED -> com.openrs.dash.demo.TripPreview.driveState(paused = true)
+                    else -> null
+                }
+            } ?: driveState
             val pagerState  = rememberPagerState(pageCount = { 5 })
             val selectedTab by remember { derivedStateOf { pagerState.currentPage } }
             var mapTouched  by remember { mutableStateOf(false) }
@@ -266,7 +275,7 @@ class MainActivity : ComponentActivity() {
                                         onConnect    = { service?.startConnection() },
                                         onDisconnect = { service?.stopConnection() },
                                         onReconnect  = { service?.reconnect() },
-                                        driveState   = driveState,
+                                        driveState   = headerDriveState,
                                         onModeClick  = { dockOpen = !dockOpen },
                                         onPullDown   = { dockOpen = true },
                                         demoActive   = demo.active
@@ -737,7 +746,8 @@ class MainActivity : ComponentActivity() {
                     ),
                     label = "headerRecAlpha"
                 )
-                val dotColor = if (paused) Warn else Orange
+                // Paused is a state, not a warning — neutral (was amber); recording keeps the red-orange dot.
+                val dotColor = if (paused) Mid else Orange
                 // V4: show elapsed time + distance alongside REC indicator
                 val elapsed = driveState.elapsedMs
                 val mm = (elapsed / 60_000).toInt()

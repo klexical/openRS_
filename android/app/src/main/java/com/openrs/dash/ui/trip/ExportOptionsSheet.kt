@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -40,7 +41,10 @@ import com.openrs.dash.ui.*
 fun ExportOptionsSheet(
     drive: DriveEntity,
     onExport: (Set<ExportComponent>) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    prefs: UserPrefs = UserPrefsStore.prefs.value,
+    /** Debug TRIP preview: a sample drive — label the sheet (its EXPORT no-ops). */
+    previewNotice: Boolean = false
 ) {
     val accent = LocalThemeAccent.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -77,18 +81,16 @@ fun ExportOptionsSheet(
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 32.dp)
         ) {
-            MonoText("EXPORT OPTIONS", 13.sp, Frost, FontWeight.Bold)
-            Spacer(Modifier.height(4.dp))
-            NeonDivider()
-            Spacer(Modifier.height(8.dp))
+            if (previewNotice) PreviewSheetNotice()
+            InstrumentLabel("EXPORT", color = Mid)
+            UIText(drive.name ?: "Drive", 16.sp, Frost, FontWeight.SemiBold)
 
-            // Drive info
+            // Drive info — distance in the user's unit (was always km)
             val durationMs = if (drive.endTime > 0) drive.endTime - drive.startTime else 0L
-            MonoLabel(
-                "${"%.1f".format(drive.distanceKm)} km · ${formatDurationForExport(durationMs)}",
-                9.sp, Dim
-            )
-            Spacer(Modifier.height(8.dp))
+            val dist = if (prefs.speedUnit == "MPH") "%.1f mi".format(drive.distanceKm * UnitConversions.KM_TO_MI)
+                else "%.1f km".format(drive.distanceKm)
+            InstrumentMeta("$dist · ${formatDurationForExport(durationMs)}")
+            Spacer(Modifier.height(12.dp))
 
             // Toggle rows
             ExportComponent.entries.forEach { comp ->
@@ -101,32 +103,31 @@ fun ExportOptionsSheet(
                         .background(if (enabled) Surf2 else Surf)
                         .border(Tokens.CardBorder, Brd, Tokens.CardShape)
                         .clickable { toggles[comp] = !enabled }
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                        .heightIn(min = 56.dp)
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Column {
-                        MonoText(comp.label, 11.sp, if (enabled) Frost else Dim, FontWeight.Bold)
-                        MonoLabel(componentHint(comp), 8.sp, Dim)
+                    Column(Modifier.weight(1f)) {
+                        MonoText(comp.label, 13.sp, if (enabled) Frost else Mid, FontWeight.Bold)
+                        InstrumentMeta(componentHint(comp))
                     }
                     Box(
                         Modifier
-                            .size(18.dp)
+                            .size(22.dp)
                             .clip(RoundedCornerShape(4.dp))
                             .background(if (enabled) accent else Surf2)
                             .border(Tokens.CardBorder, if (enabled) accent else Brd, RoundedCornerShape(4.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         if (enabled) {
-                            MonoText("\u2713", 11.sp, Bg, FontWeight.Bold)
+                            MonoText("\u2713", 14.sp, Bg, FontWeight.Bold)
                         }
                     }
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
-            NeonDivider()
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(14.dp))
 
             // Action buttons
             Row(
@@ -141,11 +142,11 @@ fun ExportOptionsSheet(
                             val selected = toggles.filter { it.value }.keys
                             if (selected.isNotEmpty()) onExport(selected)
                         }
-                        .padding(vertical = 12.dp),
+                        .heightIn(min = 48.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     val count = toggles.count { it.value }
-                    MonoText("EXPORT ($count)", 12.sp, Bg, FontWeight.Bold)
+                    MonoText("EXPORT ($count)", 13.sp, Bg, FontWeight.Bold)
                 }
                 Box(
                     Modifier.weight(0.5f)
@@ -153,10 +154,10 @@ fun ExportOptionsSheet(
                         .background(Surf2)
                         .border(Tokens.CardBorder, Brd, RoundedCornerShape(8.dp))
                         .clickable { onDismiss() }
-                        .padding(vertical = 12.dp),
+                        .heightIn(min = 48.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    MonoText("CANCEL", 12.sp, Mid, FontWeight.Bold)
+                    MonoText("CANCEL", 13.sp, Mid, FontWeight.Bold)
                 }
             }
         }
