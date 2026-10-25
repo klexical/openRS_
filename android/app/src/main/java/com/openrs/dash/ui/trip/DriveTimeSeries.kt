@@ -161,11 +161,12 @@ fun DriveTimeSeries(
         val chartWidth = maxOf(parentWidthDp, dataWidthDp)
 
         val textMeasurer = rememberTextMeasurer()
+        // Time labels in the readable secondary colour (full Dim); the grid stays faint.
         val axisStyle = TextStyle(
             fontFamily = JetBrainsMonoFamily,
-            fontSize = 8.sp,
+            fontSize = 9.sp,
             fontWeight = FontWeight.Normal,
-            color = Dim.copy(alpha = textMutedAlpha(0.45f))
+            color = Dim
         )
         val brdColor = Brd
         val surfColor = Surf2
@@ -212,7 +213,9 @@ fun DriveTimeSeries(
                     .drawWithCache {
                         val w = size.width
                         val h = size.height
-                        val padBottom = 18f  // room for time labels
+                        // Bottom strip sized to the measured label (was a fixed 18 px — labels were clipped)
+                        val sampleLabel = textMeasurer.measure("00:00", axisStyle)
+                        val padBottom = sampleLabel.size.height + 8.dp.toPx()
                         val padTop = 6f
                         val drawH = h - padBottom - padTop
 
@@ -254,8 +257,12 @@ fun DriveTimeSeries(
                         }
                         val dash = PathEffect.dashPathEffect(floatArrayOf(8f, 6f))
 
-                        // Pre-measure time labels
-                        val labelInterval = 60_000L  // 60s
+                        // Pre-measure time labels. The interval comes from the width available: the smallest
+                        // step that keeps labels a label-width + 12 dp apart (was every 60 s — they overlapped).
+                        val minGapPx = sampleLabel.size.width + 12.dp.toPx()
+                        val labelInterval = listOf(15_000L, 30_000L, 60_000L, 120_000L, 300_000L, 600_000L,
+                            900_000L, 1_800_000L, 3_600_000L)
+                            .firstOrNull { it.toFloat() / totalDurationMs * w >= minGapPx } ?: 3_600_000L
                         val timeLabels = buildList {
                             var t = 0L
                             while (t <= totalDurationMs) {
@@ -286,8 +293,8 @@ fun DriveTimeSeries(
                                 drawText(
                                     measured,
                                     topLeft = Offset(
-                                        x - measured.size.width / 2f,
-                                        h - padBottom + 4f
+                                        (x - measured.size.width / 2f).coerceIn(2f, w - measured.size.width - 2f),
+                                        h - padBottom + 4.dp.toPx()
                                     )
                                 )
                                 // Vertical tick

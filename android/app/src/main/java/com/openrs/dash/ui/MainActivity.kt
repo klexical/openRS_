@@ -129,6 +129,15 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleDemoIntent(intent)
+        handleTripPreviewIntent(intent)
+    }
+
+    /** Debug builds: `--es trippreview history|selected|recording|paused|summary|off` — TRIP sample states (TripPreview). */
+    private fun handleTripPreviewIntent(intent: Intent?) {
+        if (!com.openrs.dash.demo.TripPreview.AVAILABLE) return
+        val arg = intent?.getStringExtra("trippreview")?.lowercase() ?: return
+        intent.removeExtra("trippreview")
+        if (!com.openrs.dash.demo.TripPreview.apply(arg)) android.util.Log.w("DEMO", "Unknown trippreview extra '$arg'")
     }
     // Lint's fragment-version check targets FragmentActivity (request-code collisions with
     // fragment < 1.3.0). MainActivity is a ComponentActivity, so it doesn't apply.
@@ -173,6 +182,7 @@ class MainActivity : ComponentActivity() {
         }
         permLauncher.launch(perms.toTypedArray())
         handleDemoIntent(intent)
+        handleTripPreviewIntent(intent)
 
         setContent {
             val vs          by OpenRSDashApp.instance.vehicleState.collectAsState()

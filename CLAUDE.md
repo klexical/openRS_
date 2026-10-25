@@ -48,6 +48,8 @@ can/
 demo/                     — DEBUG BUILDS ONLY (DemoMode.AVAILABLE = BuildConfig.DEBUG)
   DemoSimulator.kt        — Pure, deterministic VehicleState generator per DemoScenario (IDLE / DRIVING / WARNING /
                             CONNECTION_LOSS) — same (scenario, t) → same frame; stamps CAN + OBD freshness tags
+  TripPreview.kt          — TRIP sample states (`--es trippreview …`): drives / route points / recording DriveState in memory;
+                            ids < 0 — TripPage reads them instead of Room and skips every write for them
   DemoMode.kt             — Controller: 25 Hz tick into OpenRSDashApp.vehicleState, pause/reset/scenario, sessionEpoch,
                             DemoFirmwareApi (drive mode / ESC → simulated state), simulated DTC scan/clear
 data/
@@ -487,6 +489,8 @@ adb shell am start --activity-single-top -n com.openrs.dash.debug/com.openrs.das
 #   demo = at:<seconds> — replay the current scenario and pause at that time (repeatable screenshot frames;
 #          DRIVING at:9.5 = mid-pull 3rd gear, at:2.5 = idle on the brake; WARNING at:50 = all alerts)
 #   demo = collapse | expand — fold the control strip to a 2 dp amber line (header DEMO pill toggles it too)
+#   trippreview = history | selected | recording | paused | summary | off — TRIP with in-memory sample drives
+#          (demo/TripPreview.kt; negative ids, every write path no-ops for them; nothing reaches Room)
 # Smaller phone check: adb shell wm size 1080x2160 && adb shell wm density 480  (360×720 dp; `reset` both after)
 # Cold start with an extra: am start -S -n … --es demo idle   (without -S the intent is only brought to front)
 ```
