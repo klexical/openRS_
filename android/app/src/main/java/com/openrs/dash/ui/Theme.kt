@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
@@ -336,11 +337,32 @@ private val TabularNumericStyle = TextStyle(fontFeatureSettings = "tnum")
     fontSize: TextUnit,
     color: Color = Frost,
     modifier: Modifier = Modifier,
-) = Text(
-    text, fontSize = fontSize, fontFamily = numericFamily, color = textColor(color),
-    fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
-    lineHeight = fontSize * 1.0f, style = TabularNumericStyle, modifier = modifier
-)
+) = androidx.compose.foundation.layout.BoxWithConstraints(modifier, contentAlignment = androidx.compose.ui.Alignment.Center) {
+    // Always one line. A value that doesn't fit at [fontSize] (Orbitron / CLASSIC is much wider than Rajdhani —
+    // a 4-digit RPM used to wrap its last digit under a fixed-height box) is scaled down just enough to fit.
+    // The fit is measured on a digits→8 template, so it only changes with the value's shape, not every frame.
+    val family = numericFamily
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val maxPx = constraints.maxWidth
+    val template = text.map { if (it.isDigit()) '8' else it }.joinToString("")
+    val size = androidx.compose.runtime.remember(template, fontSize, family, maxPx) {
+        if (maxPx == androidx.compose.ui.unit.Constraints.Infinity || maxPx <= 0) fontSize else {
+            val w = measurer.measure(
+                template,
+                TabularNumericStyle.copy(fontFamily = family, fontWeight = FontWeight.SemiBold, fontSize = fontSize),
+                softWrap = false, maxLines = 1,
+            ).size.width
+            if (w <= maxPx) fontSize else fontSize * (maxPx / w.toFloat() * 0.97f)
+        }
+    }
+    Text(
+        text, fontSize = size, fontFamily = family, color = textColor(color),
+        fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
+        lineHeight = size * 1.0f, style = TabularNumericStyle, maxLines = 1, softWrap = false,
+        // Fixed-width callers (the hero value box) keep the full-width, text-centred layout they had — pixel-identical.
+        modifier = if (constraints.hasFixedWidth) Modifier.fillMaxWidth() else Modifier,
+    )
+}
 
 /** Cell numerics (14-24 sp): temps, trims, AFR. Rajdhani Medium. */
 @Composable fun DataNum(

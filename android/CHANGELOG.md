@@ -81,6 +81,9 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **Knock severity colours ignored the theme** — the fixed yellow was unreadable on DAY; ≥ 4° uses Orange, 2–4° Warn and minor retard neutral (KnockStats bands unchanged), and a bucket with no events is no longer coloured. (`ui/KnockScatter.kt`)
 - **Timer heading didn't say both targets are mph** — it reads "0-60 MPH · 0-100 MPH TIMER"; with km/h selected a line notes the targets (0-97 / 0-161 km/h), the running speed shows both units and the button reads STOP AT 60 MPH. Timing logic unchanged. (`ui/PerfPage.kt`)
 
+### Fixed (rc.6 — Classic fonts)
+- **CLASSIC fonts wrapped hero values** — Orbitron is much wider than Rajdhani, so a 4-digit RPM wrapped its last digit under the fixed-height value box ("240" + a clipped fragment) and on 360 dp phones RPM showed two digits and BOOST lost its decimal. Hero numerics (`DriveNum`) stay on one line and only a value that wouldn't fit is scaled down to fit (sized from a digits→8 template, so it doesn't jitter frame to frame). Rajdhani layouts are pixel-identical; the gear digit isn't affected. (`ui/Theme.kt`)
+
 ### Fixed (rc.6 — header & nav)
 - **One tap on the connection pill disconnected the car** — tapping the live pill now asks "Disconnect from vehicle?"; only DISCONNECT stops the connection, and Cancel, Back or tapping outside leave it running. Connect / reconnect stay a single tap and the DEMO pill still folds the demo controls. (`ui/MainActivity.kt`)
 - **Connection changes moved every page** — RECONNECTING and TAP TO CONNECT were a strip inserted under the header, pushing DRIVE's instruments (and every other tab) down 18 dp on each drop and back on recovery. DRIVE now shows them in its permanent 48 dp status row (connected: alerts / readiness as before); other tabs read the header pill (RCN / OFF). The strip keeps only e-brake, launch control and update progress. (`ui/DrivePage.kt`, `ui/MainActivity.kt`)
