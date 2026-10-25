@@ -11,6 +11,7 @@ import android.os.IBinder
 import android.Manifest
 import android.annotation.SuppressLint
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -319,6 +320,10 @@ class MainActivity : ComponentActivity() {
                                             onDismiss = { dockOpen = false }
                                         )
                                     }
+
+                                    // Back closes an open dock (like the scrim) and stays on this screen; the
+                                    // mode is untouched. Disabled while closed, so Back works as usual again.
+                                    BackHandler(enabled = dockOpen) { dockOpen = false }
 
                                     WifiCoexistenceBanner()
                                     // Auto-dismiss dock on tab change
