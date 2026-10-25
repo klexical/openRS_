@@ -252,55 +252,6 @@ import kotlin.math.roundToInt
     }
 }
 
-/** One reading in a [ReadoutGrid]: caption, value (with its unit), optional tag and trend line. */
-private data class Readout(
-    val label: String,
-    val value: String,
-    val color: Color = Color.Unspecified,
-    val sub: String? = null,
-    val spark: List<Float>? = null,
-)
-
-/**
- * A section's readings as one instrument panel (was one card per value). Rows of equal-width
- * columns; null = empty slot. [captions] inserts a sub-heading before the given row index.
- */
-@Composable private fun ReadoutGrid(
-    rows: List<List<Readout?>>, level: Level = Level.NORMAL, captions: Map<Int, String> = emptyMap(),
-) {
-    Column(
-        Modifier.fillMaxWidth().instrumentSurface(level).padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        rows.forEachIndexed { i, row ->
-            captions[i]?.let { InstrumentLabel(it, color = Mid) }
-            Row(Modifier.fillMaxWidth()) {
-                row.forEach { r ->
-                    Column(Modifier.weight(1f)) {
-                        if (r != null) {
-                            val placeholder = r.value.startsWith("—")
-                            InstrumentLabel(r.label)
-                            Spacer(Modifier.height(2.dp))
-                            DataNum(r.value, 18.sp,
-                                if (placeholder) Dim else if (r.color == Color.Unspecified) Frost else r.color)
-                            r.sub?.let { MonoLabel(it, 9.sp, WarnInk, letterSpacing = 0.2.sp) }
-                            if (r.spark != null && !placeholder) {
-                                Spacer(Modifier.height(3.dp))
-                                com.openrs.dash.ui.anim.Sparkline(
-                                    data = r.spark,
-                                    lineColor = if (r.color == Color.Unspecified || r.color == Frost) accentMid() else r.color,
-                                    modifier = Modifier.fillMaxWidth().padding(end = 10.dp).height(16.dp),
-                                    strokeWidth = 1.dp, fillAlpha = 0.12f
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 /** Trim level for the panel edge: past ±[limit] warns (same bands as the value colour). */
 private fun trimLevel(trim: Double, limit: Double) = if (kotlin.math.abs(trim) > limit) Level.WARN else Level.NORMAL
 

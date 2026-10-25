@@ -289,3 +289,57 @@ fun Modifier.instrumentSurface(level: Level = Level.NORMAL, radius: Dp = Tokens.
 /** Thin vertical divider between cells of an instrument panel. */
 @Composable fun PanelDivider(modifier: Modifier = Modifier) =
     Box(modifier.width(1.dp).height(44.dp).background(Brd.copy(alpha = borderAlpha(0.5f))))
+
+/** One reading in a [ReadoutGrid]: caption, value (with its unit), optional tag and trend line. */
+internal data class Readout(
+    val label: String,
+    val value: String,
+    val color: Color = Color.Unspecified,
+    val sub: String? = null,
+    val spark: List<Float>? = null,
+)
+
+/**
+ * A section's readings as one instrument panel (was one card per value). Rows of equal-width
+ * columns; null = empty slot. [captions] inserts a sub-heading before the given row index.
+ * [dense] (TRIP's live panel under the map) tightens spacing and the value size, not the captions;
+ * [footer] adds content inside the same panel after the rows.
+ */
+@Composable internal fun ReadoutGrid(
+    rows: List<List<Readout?>>, level: Level = Level.NORMAL, captions: Map<Int, String> = emptyMap(),
+    dense: Boolean = false, footer: (@Composable () -> Unit)? = null,
+) {
+    Column(
+        Modifier.fillMaxWidth().instrumentSurface(level)
+            .padding(horizontal = 14.dp, vertical = if (dense) 10.dp else 12.dp),
+        verticalArrangement = Arrangement.spacedBy(if (dense) 8.dp else 12.dp)
+    ) {
+        rows.forEachIndexed { i, row ->
+            captions[i]?.let { InstrumentLabel(it, color = Mid) }
+            Row(Modifier.fillMaxWidth()) {
+                row.forEach { r ->
+                    Column(Modifier.weight(1f)) {
+                        if (r != null) {
+                            val placeholder = r.value.startsWith("—")
+                            InstrumentLabel(r.label)
+                            Spacer(Modifier.height(2.dp))
+                            DataNum(r.value, if (dense) 16.sp else 18.sp,
+                                if (placeholder) Dim else if (r.color == Color.Unspecified) Frost else r.color)
+                            r.sub?.let { MonoLabel(it, 9.sp, WarnInk, letterSpacing = 0.2.sp) }
+                            if (r.spark != null && !placeholder) {
+                                Spacer(Modifier.height(3.dp))
+                                com.openrs.dash.ui.anim.Sparkline(
+                                    data = r.spark,
+                                    lineColor = if (r.color == Color.Unspecified || r.color == Frost) accentMid() else r.color,
+                                    modifier = Modifier.fillMaxWidth().padding(end = 10.dp).height(16.dp),
+                                    strokeWidth = 1.dp, fillAlpha = 0.12f
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    footer?.invoke()
+    }
+}

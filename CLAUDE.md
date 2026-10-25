@@ -133,7 +133,8 @@ ui/
                             instrumentSurface() (white + hairline on DAY, no shadow), InstrumentLabel/InstrumentMeta
                             (10 sp), InstrumentHero, StatusCell, AlertChip, ThresholdBar (caution + redline zones) +
                             ThresholdLegend, MiniReadout, Telltale (res/drawable/ic_tt_oil|coolant|fuel|battery|tyre|
-                            alert — original stroke glyphs). The Focus RS wireframe (drawable-nodpi/
+                            alert — original stroke glyphs), ReadoutGrid/Readout (grouped readings panel, dense + footer;
+                            POWER + TRIP). The Focus RS wireframe (drawable-nodpi/
                             focus_rs_wireframe.png) is the owner's branding art — never redraw/replace it unasked
   TripPage.kt (trip/)      — TRIP tab: live Google Map + drive history list; see trip/DriveMap.kt
   GaragePage.kt            — GARAGE tab: CONTROL/DIAG segmented picker → MorePage + DiagPage
