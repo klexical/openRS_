@@ -123,13 +123,13 @@ fun DemoControlStrip(
 @Composable
 fun telemetrySessionKey(): Int = DemoMode.sessionEpoch.collectAsState().value
 
-/** Filled amber DEMO tag — also shown on full-screen overlays that cover the strip. */
+/** Filled amber DEMO tag — also shown on full-screen overlays that cover the strip ("DEMO · RCN" in LOSS). */
 @Composable
-fun DemoBadge() {
+fun DemoBadge(text: String = "DEMO") {
     Box(
         Modifier.background(Warn, RoundedCornerShape(3.dp)).padding(horizontal = 5.dp, vertical = 2.dp)
     ) {
-        MonoLabel("DEMO", 8.sp, Color.Black, FontWeight.Bold, 0.12.sp)
+        MonoLabel(text, 8.sp, Color.Black, FontWeight.Bold, 0.12.sp)
     }
 }
 

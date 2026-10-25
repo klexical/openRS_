@@ -462,7 +462,8 @@ class MainActivity : ComponentActivity() {
                             { page -> navScope.launch { pagerState.animateScrollToPage(page) } }
                         }
                         val activeDtcs by OpenRSDashApp.instance.activeDtcCount.collectAsState()
-                        BottomNavBar(
+                        // Hidden under the full-screen Custom Dashboard: its tabs would switch pages out of sight.
+                        if (!showCustomDash) BottomNavBar(
                             selected = selectedTab,
                             onSelect = onSelectNav,
                             hazeState = hazeState,

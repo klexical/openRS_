@@ -143,7 +143,9 @@ ui/
   DiagPage.kt              — DTC scan/clear, PID browser, DID prober, diagnostic export (inside GARAGE)
   MorePage.kt              — Drive mode selector, ESC band, fw features, module status, custom dash entry
                             (inside GARAGE); offline branches added for ESC descriptor + MODULE STATUS
-  CustomDashPage.kt        — Custom dashboard: user-configurable gauge grid from DashLayout
+  CustomDashPage.kt        — Custom dashboard overlay: user-configurable gauge rows from DashLayout (instrument cells,
+                            limit-only colours, temps on ThresholdBar); hides the bottom nav, takes every touch, Back
+                            closes it; title carries the header pill's link state (DEMO · RCN / RCN / OFF)
   KnockScatter.kt         — rc.4 — RPM × boost scatter + aggregate card for PerfPage knock events section
                             rc.6: tap-to-select dot → KnockEventDetail; PULLS cell; KnockScatterMath = shared projection/hit-test
   BoostSweepChart.kt      — rc.6 — POWER THROTTLE & BOOST chart: RPM x-axis, target (dashed) / actual / WGDC; BoostSweepMath =
@@ -521,6 +523,8 @@ Drive-mode dock / ESC buttons / DTC clear act on simulated state only (mode land
 - Debug builds always show "v2.2.7" (no RC label — only `-PrcSuffix` adds one) and Settings appends the update
   channel, so the version string can't tell builds apart. Verify by hashing `adb exec-out cat <pm path>` against the APK
 - Settings categories animate in for ~2.5 s after the sheet opens — tapping a row sooner can land on the wrong one
+- `--es demo at:N` replays the scenario **in real time** from 0 and pauses at N — wait N s before capturing
+  (WARNING at:55 = oil + PTU past the STREET crit, coolant + RDU at WARN)
 - The HUD overlay needs `adb shell appops set com.openrs.dash.debug SYSTEM_ALERT_WINDOW allow` on a fresh emulator
   (restore with `… default`); start it from ⚙ → DISPLAY → FLOATING HUD. A reinstall stops it
 
