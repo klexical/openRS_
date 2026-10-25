@@ -470,7 +470,7 @@ cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{ver}.apk  (main release)
 ./gradlew assembleRelease -PrcSuffix=rc.5  # → openRS_v{ver}-rc.5.apk
-./gradlew test                             # 685 unit tests across 38 files
+./gradlew test                             # 687 unit tests across 38 files
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 48 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -554,7 +554,7 @@ android/app/src/test/java/com/openrs/dash/
   KnockCaptureTest.kt         — 4 tests (rc.5): per-cylinder, pre-drive rejection, repeat values, threshold
   KnockSessionLogTest.kt      — 5 tests (rc.6): fresh-only session capture, pre-session rejection, pulls, cap, reset
   PullTrackerTest.kt          — 7 tests (rc.6): threshold, min duration, gap split, knock attribution
-  KnockScatterMathTest.kt     — 2 tests (rc.6): tap hit-test, overlap → worst KR
+  KnockScatterMathTest.kt     — 4 tests (rc.6): tap hit-test, overlap → worst KR, boost text / gridlines follow the unit
   BoostSessionLogTest.kt      — 6 tests (rc.6): fresh-only TIP, stale target/WGDC → null, pre-session, 90 s window
   BoostSweepMathTest.kt       — 4 tests (rc.6): half-open bins, per-channel means, gaps, min Y span
   BoostSweepStatsTest.kt      — 16 tests: delta math, WGDC saturation, loaded-sample filter, fresh-only sentinels, WGDC at peak, by gear
@@ -576,7 +576,7 @@ android/app/src/test/java/com/openrs/dash/
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **685 tests across 38 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **687 tests across 38 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 

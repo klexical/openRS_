@@ -43,7 +43,7 @@ fun BoostSweepChart(samples: List<BoostSessionLog.Sample>, p: UserPrefs, accent:
     if (samples.size < BOOST_SWEEP_MIN_SAMPLES) {
         Text(
             "BOOST SWEEP — builds as you drive (fresh TIP only, last 90 s)",
-            style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 9.sp, color = Dim),
+            style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 10.sp, color = Dim),
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
         )
         return
@@ -53,7 +53,7 @@ fun BoostSweepChart(samples: List<BoostSessionLog.Sample>, p: UserPrefs, accent:
     val latest = samples.last()
     val textMeasurer = rememberTextMeasurer()
     // Ticks in the readable secondary colour (full Dim); frame + grid stay faint
-    val axisStyle = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 9.sp, color = Dim)
+    val axisStyle = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 10.sp, color = Dim)
     val targetCol = Ok; val actualCol = accent; val wgdcCol = Mid; val brd = Brd; val dotCol = Frost
     val loLabel = p.displayBoost(kpaLo).first
     val hiLabel = p.displayBoost(kpaHi).first
@@ -115,10 +115,10 @@ fun BoostSweepChart(samples: List<BoostSessionLog.Sample>, p: UserPrefs, accent:
         }
         Spacer(Modifier.height(4.dp))
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            MonoLabel("━ ACTUAL", 9.sp, actualCol, FontWeight.Medium)
-            MonoLabel("┅ TARGET", 9.sp, targetCol, FontWeight.Medium)
-            MonoLabel("━ WGDC %", 9.sp, wgdcCol, FontWeight.Medium)
-            MonoLabel(unit, 9.sp, Dim)
+            MonoLabel("━ ACTUAL", 10.sp, actualCol, FontWeight.Medium)
+            MonoLabel("┅ TARGET", 10.sp, targetCol, FontWeight.Medium)
+            MonoLabel("━ WGDC %", 10.sp, wgdcCol, FontWeight.Medium)
+            MonoLabel(unit, 10.sp, Dim)
         }
     }
 }

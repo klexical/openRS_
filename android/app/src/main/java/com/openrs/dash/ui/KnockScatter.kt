@@ -33,10 +33,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import kotlin.math.roundToInt
 
 /**
- * Knock event scatter plot (RPM × boost PSI), colour-coded by retard severity.
+ * Knock event scatter plot (RPM × boost), colour-coded by retard severity.
  *
  * x = RPM (0 → 7000)
- * y = boost PSI (-15 bottom → +22 top)
+ * y = boost, plotted in the stored gauge psi (-15 bottom → +22 top); the gridlines, their labels and the axis
+ *     title follow the boost-pressure setting ([p]) — same gauge values as the live boost readings.
  * dot color = krDeg severity (yellow <2°, orange 2-4°, red ≥4°)
  */
 @Composable
@@ -49,13 +50,14 @@ fun KnockScatter(
     rpmMax: Float = 7000f,
     boostMin: Float = -15f,
     boostMax: Float = 22f,
+    p: UserPrefs? = null,
 ) {
     val textMeasurer = rememberTextMeasurer()
     // Ticks + titles in the readable secondary colour (full Dim); only the grid stays faint
     val axisStyle = remember(Dim) {
         TextStyle(
             fontFamily = JetBrainsMonoFamily,
-            fontSize = 9.sp,
+            fontSize = 10.sp,
             color = Dim,
             fontWeight = FontWeight.Normal
         )
@@ -91,9 +93,10 @@ fun KnockScatter(
             style = Stroke(width = 0.8f)
         )
 
-        // Horizontal gridlines @ 0, +10, +20 PSI
-        val boostGrid = listOf(0f, 10f, 20f)
-        for (b in boostGrid) {
+        // Horizontal gridlines at round values of the user's unit (0 / 10 / 20 psi, 0 / 0.5 / 1.0 bar, 0 / 50 / 100 kPa
+        // — all gauge), placed at their psi equivalent on the stored-psi scale. The top label stays below the axis title.
+        val boostGrid = knockBoostGrid(p?.boostUnit)
+        for ((b, text) in boostGrid) {
             if (b < boostMin || b > boostMax) continue
             val y = plotTop + plotH * (1f - (b - boostMin) / (boostMax - boostMin))
             drawLine(
@@ -102,7 +105,7 @@ fun KnockScatter(
                 end = Offset(plotRight, y),
                 strokeWidth = 0.5f
             )
-            val label = textMeasurer.measure(if (b == 0f) "0" else "+${b.toInt()}", axisStyle)
+            val label = textMeasurer.measure(text, axisStyle)
             drawText(
                 textLayoutResult = label,
                 topLeft = Offset(plotLeft - label.size.width - 4f, y - label.size.height / 2f)
@@ -127,13 +130,15 @@ fun KnockScatter(
             )
         }
 
-        // Axis titles — RPM sits in the tick row between 2k and 4k; PSI above the frame, clear of the +20 tick
+        // Axis titles — RPM sits in the tick row between 2k and 4k (at 3000 rpm; the plot centre is the 4k tick,
+        // which the title used to sit on); PSI above the frame, clear of the +20 tick
         val xTitle = textMeasurer.measure("RPM", axisStyle.copy(fontWeight = FontWeight.Medium))
+        val xTitleX = plotLeft + plotW * (3000f - rpmMin) / (rpmMax - rpmMin)
         drawText(
             textLayoutResult = xTitle,
-            topLeft = Offset(plotLeft + plotW / 2f - xTitle.size.width / 2f, plotBottom + 4f)
+            topLeft = Offset(xTitleX - xTitle.size.width / 2f, plotBottom + 4f)
         )
-        val yTitle = textMeasurer.measure("PSI", axisStyle.copy(fontWeight = FontWeight.Medium))
+        val yTitle = textMeasurer.measure(knockBoostUnit(p), axisStyle.copy(fontWeight = FontWeight.Medium))
         drawText(
             textLayoutResult = yTitle,
             topLeft = Offset(plotLeft - yTitle.size.width - 4f, (plotTop - yTitle.size.height - 4f).coerceAtLeast(0f))
@@ -182,7 +187,7 @@ fun KnockEventDetail(ev: KnockEventEntity, p: UserPrefs, modifier: Modifier = Mo
         Spacer(Modifier.height(4.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             AggCell("RPM", "${ev.rpm}", Frost, modifier = Modifier.weight(1f))
-            AggCell("BOOST", "${"%.1f".format(ev.boostPsi)} PSI", Frost, modifier = Modifier.weight(1f))
+            AggCell("BOOST", knockBoostText(ev.boostPsi, p), Frost, modifier = Modifier.weight(1f))
             AggCell("IAT", if (ev.iatC > -90) "${p.displayTemp(ev.iatC)}${p.tempLabel}" else "—", Frost, modifier = Modifier.weight(1f))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -193,7 +198,7 @@ fun KnockEventDetail(ev: KnockEventEntity, p: UserPrefs, modifier: Modifier = Mo
         if (ev.lat != null && ev.lng != null) {
             Text(
                 "GPS ${"%.5f".format(ev.lat)}, ${"%.5f".format(ev.lng)}",
-                style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 9.sp, color = Dim)
+                style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 10.sp, color = Dim)
             )
         }
     }
@@ -205,6 +210,7 @@ fun KnockAggregate(
     events: List<KnockEventEntity>,
     modifier: Modifier = Modifier,
     pulls: KnockSessionLog.Pulls? = null,
+    p: UserPrefs? = null,
 ) {
     if (events.isEmpty()) {
         Row(
@@ -212,13 +218,15 @@ fun KnockAggregate(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // Ink, not green — "nothing recorded" isn't a pass; and "running clean" only when pulls were seen
+            // (offline / before the first pull there's nothing to vouch for).
             Text(
                 "NO KNOCK EVENTS",
-                style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 10.sp, color = Ok, fontWeight = FontWeight.Medium)
+                style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 10.sp, color = Frost, fontWeight = FontWeight.Medium)
             )
             Text(
                 if (pulls != null && pulls.total > 0) "— ${pulls.total} pull${if (pulls.total == 1) "" else "s"} running clean"
-                else "— pulls running clean",
+                else "— no pulls recorded yet",
                 style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 10.sp, color = Dim)
             )
         }
@@ -263,7 +271,7 @@ fun KnockAggregate(
         Spacer(Modifier.height(4.dp))
         val cylLabel = if (it.cylinder in 1..4) " · cyl ${it.cylinder}" else ""
         Text(
-            "Worst cell: ${it.rpm} RPM @ ${"%.1f".format(it.boostPsi)} PSI$cylLabel",
+            "Worst cell: ${it.rpm} RPM @ ${knockBoostText(it.boostPsi, p)}$cylLabel",
             style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 10.sp, color = Dim),
             modifier = Modifier.padding(horizontal = 8.dp)
         )
@@ -327,4 +335,22 @@ internal fun severityColor(krDeg: Double): Color = when {
     krDeg >= KnockStats.MED_DEG  -> Warn
     krDeg > 0.0                  -> Mid
     else                         -> Dim
+}
+
+// ── Boost in the user's unit (knock events store gauge psi) ─────────────────
+
+/** Stored gauge psi → the boost-pressure setting's value + unit, exactly like the live boost readings. */
+internal fun knockBoostText(gaugePsi: Double, p: UserPrefs?): String {
+    if (p == null) return "${"%.1f".format(gaugePsi)} PSI"
+    val (v, unit) = p.displayBoost(gaugePsi / UnitConversions.KPA_TO_PSI + UnitConversions.STD_ATM_KPA)
+    return "$v $unit"
+}
+
+private fun knockBoostUnit(p: UserPrefs?): String = when (p?.boostUnit) { "BAR" -> "BAR"; "KPA" -> "kPa"; else -> "PSI" }
+
+/** Gridlines as (gauge psi, label in the user's unit). */
+internal fun knockBoostGrid(boostUnit: String?): List<Pair<Float, String>> = when (boostUnit) {
+    "BAR" -> listOf(0.0, 0.5, 1.0).map { bar -> (bar / UnitConversions.PSI_TO_BAR).toFloat() to if (bar == 0.0) "0" else "+%.1f".format(bar) }
+    "KPA" -> listOf(0, 50, 100).map { kpa -> (kpa * UnitConversions.KPA_TO_PSI).toFloat() to if (kpa == 0) "0" else "+$kpa" }
+    else  -> listOf(0, 10, 20).map { psi -> psi.toFloat() to if (psi == 0) "0" else "+$psi" }
 }

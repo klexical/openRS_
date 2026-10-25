@@ -157,13 +157,13 @@ private fun KnockEventsCard(p: UserPrefs) {
                 onSelect = { knockScope = it }
             )
             Spacer(Modifier.height(6.dp))
-            KnockScatter(events = events, selected = selected, onSelect = { i -> selectedEvent = i?.let { events.getOrNull(it) } })
+            KnockScatter(events = events, selected = selected, onSelect = { i -> selectedEvent = i?.let { events.getOrNull(it) } }, p = p)
             selected?.let { events.getOrNull(it) }?.let { ev ->
                 Spacer(Modifier.height(4.dp))
                 KnockEventDetail(ev, p)
             }
             Spacer(Modifier.height(4.dp))
-            KnockAggregate(events = events, pulls = pulls)
+            KnockAggregate(events = events, pulls = pulls, p = p)
         }
     }
 }

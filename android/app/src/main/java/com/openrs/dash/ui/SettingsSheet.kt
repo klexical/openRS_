@@ -1388,12 +1388,12 @@ private fun SettingsSwitchRow(
 }
 
 /**
- * Settings' option picker: the selected option is an accent tint with its label in [actionInk] (dark on
+ * Option picker (Settings, PERF knock scope): the selected option is an accent tint with its label in [actionInk] (dark on
  * DAY) — the chip style used across the app — instead of a solid fill. Every option is a 44 dp chip in
  * a 48 dp control. [fill] spreads the options across the row (stacked rows).
  */
 @Composable
-private fun SettingsPicker(
+fun SegmentedPicker(
     options: List<String>,
     selected: String,
     onSelect: (String) -> Unit,
@@ -1444,6 +1444,16 @@ private fun SettingsPicker(
         }
     }
 }
+
+/** Settings' picker — the shared [SegmentedPicker]. */
+@Composable
+private fun SettingsPicker(
+    options: List<String>,
+    selected: String,
+    onSelect: (String) -> Unit,
+    fill: Boolean = false,
+) = SegmentedPicker(options, selected, onSelect, fill)
+
 
 /** Explanatory text under a setting — one size and colour for every note (were 9–10 sp). */
 @Composable
@@ -1507,46 +1517,6 @@ private fun SettingsLinkRow(title: String, detail: String, action: String, onCli
         }
         Text(action, fontSize = 11.sp, color = actionInk(accent), fontFamily = ShareTechMono,
             fontWeight = FontWeight.Bold, letterSpacing = 0.1.sp, modifier = Modifier.padding(start = 8.dp))
-    }
-}
-
-@Composable
-fun SegmentedPicker(options: List<String>, selected: String, onSelect: (String) -> Unit) {
-    val pickerAccent = LocalThemeAccent.current
-    val haptic = LocalHapticFeedback.current
-    Row(
-        Modifier
-            .background(Brd, RoundedCornerShape(6.dp))
-            .padding(2.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        options.forEach { option ->
-            val isSelected = option == selected
-            val bgColor by animateColorAsState(
-                targetValue = if (isSelected) pickerAccent else Color.Transparent,
-                animationSpec = tween(250), label = "segBg",
-            )
-            val borderColor by animateColorAsState(
-                targetValue = if (isSelected) pickerAccent.copy(alpha = 0.6f) else Color.Transparent,
-                animationSpec = tween(250), label = "segBrd",
-            )
-            Box(
-                Modifier
-                    .background(bgColor, RoundedCornerShape(4.dp))
-                    .border(CardBorder, borderColor, RoundedCornerShape(4.dp))
-                    .clickable { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onSelect(option) }
-                    .padding(horizontal = 10.dp, vertical = 5.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    option,
-                    fontSize = 11.sp,
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                    fontFamily = ShareTechMono,
-                    color = if (isSelected) OnAccent else Dim,
-                )
-            }
-        }
     }
 }
 
