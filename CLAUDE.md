@@ -470,7 +470,7 @@ cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{ver}.apk  (main release)
 ./gradlew assembleRelease -PrcSuffix=rc.5  # → openRS_v{ver}-rc.5.apk
-./gradlew test                             # 683 unit tests across 37 files
+./gradlew test                             # 685 unit tests across 38 files
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 48 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -567,6 +567,7 @@ android/app/src/test/java/com/openrs/dash/
                                 WARNING thresholds, DRIVING plausibility + continuity
   RaceReadinessTest.kt        — 7 tests: overheat / missing / stale block RACE READY, optional sensors, warm-up, legibleAccent
   ReplaySeekTest.kt           — 2 tests: replay ±10s seeks by timestamp (1 Hz and sparse data), clamps, steps across gaps
+  FuelEconomyConcurrencyTest.kt — 2 tests: concurrent onUpdate / reset never throw (demo-switch crash), reset is clean
   PendingSummaryTest.kt       — 2 tests: post-drive summary stays queued until consumed, newer drive survives an older close
   TyrePressureLevelTest.kt    — 6 tests: THERMAL tyre state + DRIVE tyre alerts follow the saved Low / Warn / High
                                 (boundaries, custom, PSI = BAR, over-inflation alert, missing readings)
@@ -575,7 +576,7 @@ android/app/src/test/java/com/openrs/dash/
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **683 tests across 37 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **685 tests across 38 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 

@@ -39,13 +39,20 @@ object FuelEconomy {
     private data class Sample(val timeMs: Long, val fuelPct: Double, val distKm: Double)
     private val samples = mutableListOf<Sample>()
 
+    // Every field below (and the sample window above) is guarded by [lock]: onUpdate runs on the CAN-processing or
+    // demo-tick thread while reset() runs on the main thread (demo scenario switch / reset) or the service's
+    // connection path. Unguarded, a reset between onUpdate's size check and samples.first() threw
+    // NoSuchElementException (demo crash, 2026-10-24), and an in-flight update could republish the old session
+    // after a reset. Both functions hold the lock for their whole body; nothing else touches this state.
+    private val lock = Any()
+
     // Session tracking
     private var sessionStartFuelPct: Double = -1.0
     private var sessionDistanceKm: Double = 0.0
     private var lastSpeedKph: Double = 0.0
     private var lastUpdateMs: Long = 0L
 
-    fun reset() {
+    fun reset() = synchronized(lock) {
         samples.clear()
         sessionStartFuelPct = -1.0
         sessionDistanceKm = 0.0
@@ -57,7 +64,7 @@ object FuelEconomy {
     /**
      * Called on every VehicleState update with current fuel level and speed.
      */
-    fun onUpdate(fuelPct: Double, speedKph: Double) {
+    fun onUpdate(fuelPct: Double, speedKph: Double): Unit = synchronized(lock) {
         if (fuelPct < 0 || fuelPct > 110) return  // invalid fuel reading
 
         val now = System.currentTimeMillis()
