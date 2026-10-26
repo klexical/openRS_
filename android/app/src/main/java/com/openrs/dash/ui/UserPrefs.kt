@@ -61,6 +61,14 @@ data class UserPrefs(
 
     val tempLabel: String get() = if (tempUnit == "C") "°C" else "°F"
 
+    /** A temperature difference (headroom, margin): °F = Δ°C × 1.8 — no +32 offset. */
+    fun displayTempDelta(deltaC: Double): String =
+        "%.0f".format(if (tempUnit == "C") deltaC else deltaC * 9.0 / 5.0)
+
+    /** A rate of change, °C/min or °F/min (× 1.8, no offset), one decimal. */
+    fun displayTempRate(cPerMin: Double): String =
+        "%.1f".format(if (tempUnit == "C") cPerMin else cPerMin * 9.0 / 5.0)
+
     fun displaySpeed(kph: Double): String {
         return if (speedUnit == "KPH") "%.0f".format(kph)
         else "%.0f".format(kph * UnitConversions.KM_TO_MI)

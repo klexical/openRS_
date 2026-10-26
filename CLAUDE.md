@@ -114,8 +114,9 @@ ui/
                             Scaffold uses contentWindowInsets=statusBars (content extends behind nav bar)
                             hazeSource on content Box inside Scaffold (NOT outer Box — see Haze gotcha)
                             enableEdgeToEdge with transparent navigation bar style
-  DrivePage.kt             — DRIVE tab: StatusLine (permanent 48 dp row: top alert "OIL CRITICAL 268°F +6", else
-                            THERMAL readiness verdict, else NO VEHICLE DATA; 3 s alert hold),
+  DrivePage.kt             — DRIVE tab: StatusLine (permanent 48 dp row: OVERHEATING › critical tyre alert › TEMPERATURE
+                            HIGH / HEAT RISING › other alerts (3 s hold) › rest of the ThermalVerdict; temps come only from
+                            the verdict — "OVERHEATING  oil 268°F ↑  +4"),
                             InstrumentHero row (RPM/BOOST/MPH), gear module (shift lights, brake | gear | throttle;
                             fixed height per screen — never resizes with speed/gear), VEHICLE panel (oil/coolant/fuel/batt, 2×2 under 340 dp,
                             alert chips, tap → THERMAL), chassis panel (AWD split + G + torque). vehicleStatus() is
@@ -127,8 +128,8 @@ ui/
   ChassisPage.kt           — UnifiedChassisSection (THERMAL): TYRES panel (TyreCells around the original CarDiagram
                             wireframe + overlay — unchanged) and AWD panel (torque-only diagram + readouts; PTU/RDU/
                             clutch/trans temps live in DRIVETRAIN, not here). GForceSection for PERF
-  TempsPage.kt             — THERMAL tab: ReadinessCard (RACE READY verdict + STREET/TRACK/RACE limits), predictive
-                            alerts, ENGINE (full-width oil + coolant EngineTempCard, scale + WARN/CRIT legend),
+  TempsPage.kt             — THERMAL tab: ReadinessCard (verdict headline + reason, STREET/TRACK/RACE chips, collapsed
+                            CHECKLIST), one predictive-alert banner (soonest forecast, names the rest), ENGINE (full-width oil + coolant EngineTempCard, scale + WARN/CRIT legend),
                             DRIVETRAIN panel (PTU/RDU/clutch L-R/trans oil rows), AIR (compact intake/ambient), tires
                             & AWD, collapsible DETAIL (compact). Offline → "AWAITING CAN"
   Instrument.kt           — Design-pass building blocks: Level (NORMAL/COLD/WARN/CRIT/STALE/NONE), tempLevel(),
@@ -155,8 +156,12 @@ ui/
   BottomNavBar.kt         — Custom bottom nav: 5 vector icons, frosted glass via Haze (hazeEffect),
                             spring-animated indicator bar, one top hairline, pressClick + haptics
                             Height: Tokens.NavBarHeight (48 dp tabs) + sysNavPad (gesture area)
-  RaceReadiness.kt        — raceReadiness(vs, RtrLimits.from(prefs)): READY / WARMING / OVERHEAT / NO_DATA for the THERMAL
-                            RtrBanner + DriveRecorder RTR marker (preset crit limits + tempAvailFor 60 s validity)
+  ThermalReadiness.kt     — ThermalReadinessSession (app-level, 1 Hz, owns the ThermalPredictor) → ThermalVerdict for DRIVE's
+                            StatusLine, THERMAL ReadinessCard + checklist and the DriveRecorder RTR marker. States: NO LIVE DATA ›
+                            OVERHEATING › TEMPERATURE HIGH › HEAT RISING › CHECKING › ENGINE / DRIVETRAIN WARMING › TEMPS READY.
+                            ThermalReadinessEngine = pure, clock-injected (tests). Also the shared freshness rule
+                            VehicleState.tempAvail / tempStaleAfterMs (RDU, clutch + trans-oil temps 90 s, everything else 60 s).
+                            Clutch heat uses the fixed CLUTCH_WARN_C / CLUTCH_CRIT_C (90 / 120 °C, the card limits)
   DemoControls.kt         — Debug demo UI: DemoControlStrip (under header), DemoBadge, demoInk() (DAY-legible amber),
                             telemetrySessionKey() — key for UI-held sparkline/G-trail buffers
   DriveModeDock.kt        — Quick-access drive mode dock (N/S/T/D) with staggered entrance animation
@@ -369,10 +374,18 @@ data[5] = B5,  data[6] = B6 …
 - **UI-held histories must key on `telemetrySessionKey()`** — `remember { SparklineData(..) }` / `RingBuffer` in
   composables outlive VehicleState resets, so simulated traces would survive demo exit. DrivePage / TempsPage / PowerPage /
   ChassisPage buffers (+ their last-sample stamps, ThermalPredictor) use `remember(telemetrySessionKey())`
-- **RACE READY uses `raceReadiness()`, not `VehicleState.isReadyToRace`** — precedence OVERHEAT (any fresh reading ≥ the
-  THERMAL preset's crit) > NO_DATA (oil/coolant missing, or any seen sensor stale > 60 s via `tempAvailFor`) > WARMING
-  (`rtrStatus`) > READY. RDU/PTU/clutch temps are optional until first reported. The banner and `DriveRecorder`'s RTR
-  marker must share it; `isReadyToRace` remains only as the cold-check primitive
+- **Readiness = `ThermalReadinessSession.verdict`, never recomputed per surface** — DRIVE, THERMAL and `DriveRecorder`'s RTR
+  marker read the one session verdict (composables via `thermalVerdict(vs)`, which voids it offline / on a demo epoch change).
+  Worse is immediate; better is held 10 s on the monotonic clock (heat: 2 °C under warn / crit; warm-up: minimum + 1 °C, one
+  fresh poll for RDU / clutches); a gap > 2 s between evaluations restarts holds; below a warm-up minimum ends readiness at
+  once; a stale / invalid reading drops its own heat / forecast latch. Offline, `resetSession()` and demo epoch changes clear
+  the engine and predictor; a preset change re-derives heat. RDU/PTU/clutch temps count once reported (then stale or invalid
+  blocks). The evaluator only reads `fieldLastUpdateMs`. `isReadyToRace` remains only as the cold-check primitive. Reason text
+  must say what a hold waits for — never a comparison that is no longer true. DRIVE's VEHICLE summary falls back to
+  `vehicleAdvisory()` (never ALL NORMAL under a heat / forecast / recovery / CHECKING verdict); checklist limit and forecast
+  rows are incomplete, not ticked, while a reading they cover is unavailable
+- **Temperature freshness = `vs.tempAvail(value, tag)`** — RDU / AWD clutch / trans-oil temps (AWD poll, ~37 s cycle) are
+  stale after 90 s, CAN temps after 60 s. Use it (or `tempStaleAfterMs(tag)`) wherever a temp's availability is shown or decided
 - **Live-only readouts go blank when `!vs.isConnected`** — the last frame stays in VehicleState after a drop, so gear,
   shift LEDs (bar + edge glow), LC glow/banner, e-brake/LC anomaly priority, DRIVE throttle/brake/AWD/G/torque,
   the HUD overlay and Custom Dashboard cells all gate on connection. Fuel / battery / temps keep last value (THERMAL marks
@@ -395,8 +408,8 @@ data[5] = B5,  data[6] = B6 …
   an existing limit (`tempLevel()` with the preset warn/crit, `isTireLow` / `tireWarnPsi`, fuel < 10 %, knock counter,
   `isShiftPoint`). There is no battery-voltage limit — don't colour it. ThresholdBar's caution / redline zones are
   scale markings (like a tach redline), kept faint and always visible (owner wants them as reference points); the fill
-  and value carry the state. Warnings lead DRIVE via StatusLine, sorted CRIT → WARN then oil → coolant → PTU → RDU →
-  tyre → fuel → knock. THERMAL trims padding/gaps (not reading sizes) when the page viewport is < 760 dp tall
+  and value carry the state. Warnings lead DRIVE via StatusLine — temperatures through the readiness verdict, then tyre → fuel → knock
+  (CRIT before WARN; the VEHICLE panel keeps the instant oil → coolant → PTU → RDU order). THERMAL trims padding/gaps (not reading sizes) when the page viewport is < 760 dp tall
   (`LocalThermalDensity`)
 - **Connection state never inserts space** — RECONNECTING / TAP TO CONNECT render inside DRIVE's fixed 48 dp
   StatusLine (`LinkState`), and the header pill (RCN / OFF) covers the other tabs. `AnomalyStrip` is only for
@@ -470,7 +483,7 @@ cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{ver}.apk  (main release)
 ./gradlew assembleRelease -PrcSuffix=rc.5  # → openRS_v{ver}-rc.5.apk
-./gradlew test                             # 687 unit tests across 38 files
+./gradlew test                             # 705 unit tests across 38 files
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 48 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -489,7 +502,7 @@ bash scripts/install-debug.sh --es demo driving   # same, but straight into demo
 
 # Control a running debug app (onNewIntent needs --activity-single-top):
 adb shell am start --activity-single-top -n com.openrs.dash.debug/com.openrs.dash.ui.MainActivity --es demo warning
-#   demo = idle | driving | warning | loss | pause | reset | off
+#   demo = idle | driving | warning | loss | cooldown | pause | reset | off
 #   demo = at:<seconds> — replay the current scenario and pause at that time (repeatable screenshot frames;
 #          DRIVING at:9.5 = mid-pull 3rd gear, at:2.5 = idle on the brake; WARNING at:50 = all alerts)
 #   demo = collapse | expand — fold the control strip to a 2 dp amber line (header DEMO pill toggles it too)
@@ -512,6 +525,7 @@ Exit leaves the app OFF ("TAP TO CONNECT") until you tap connect.
 | DRIVING | 60 s loop: launch, pull to 125 km/h (shift bar, gear 1→6, boost ~23 psi), braking, ±0.9 g corner, cruise; gear module + panels must not move |
 | WARNING | Oil/coolant/PTU critical, RL tyre 29→24 psi banner, KR 3–4° (knock badge + scatter), underboost + WGDC 98 %, LOW FUEL, 11.9 V; DTC scan returns P0217/P0171/P0325/P0562 |
 | LOSS | 40 s loop: live 0–10 s → RCN/RECONNECTING, frozen values 10–22 s → TPMS/RDU sentinels ("— psi N/A") 22–26 s → live |
+| COOL | Readiness walk-through (~215 s, real time): oil cools past warn (0–34 s, recovery hold) → READY → RDU forecast (~45 s) → RDU warn (~64 s), coolant invalid 85–100 s → RDU replies stop at 70 s, stale + warning dropped at 160 s → fresh poll 170 s → oil below 80 °C ≈ 205 s (ENGINE WARMING) → clutches past fixed warn ≈ 236 s / crit ≈ 248 s, cooling from 255 s |
 
 Drive-mode dock / ESC buttons / DTC clear act on simulated state only (mode lands ~1.5 s after the command).
 
@@ -565,7 +579,10 @@ android/app/src/test/java/com/openrs/dash/
   DriveExportBuilderTest.kt   — 59 tests: CSV/GPX/JSON builders, schema v2, fuelTrim export, knock pulls, boost sweep by gear
   DemoSimulatorTest.kt        — 7 tests: determinism, LOSS freeze / recovery sentinels, freshness stamps, no-decoder sentinels,
                                 WARNING thresholds, DRIVING plausibility + continuity
-  RaceReadinessTest.kt        — 7 tests: overheat / missing / stale block RACE READY, optional sensors, warm-up, legibleAccent
+  ThermalReadinessTest.kt     — 32 tests: warm-up target + hold, delayed evaluation, drop below minimum, warn / crit recovery holds,
+                                forecast + clearing hold, warning with missing data, stale-warning removal, preset change, offline /
+                                reset, missed AWD polls (90 s, incl. trans oil), stamps never refreshed, shared freshness, units, clutch
+                                limits / recovery / stale, checklist incomplete rows, VEHICLE advisory, banner wording, COOLDOWN sequence
   ReplaySeekTest.kt           — 2 tests: replay ±10s seeks by timestamp (1 Hz and sparse data), clamps, steps across gaps
   FuelEconomyConcurrencyTest.kt — 2 tests: concurrent onUpdate / reset never throw (demo-switch crash), reset is clean
   PendingSummaryTest.kt       — 2 tests: post-drive summary stays queued until consumed, newer drive survives an older close
@@ -576,7 +593,7 @@ android/app/src/test/java/com/openrs/dash/
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **687 tests across 38 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **705 tests across 38 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 

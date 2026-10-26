@@ -274,7 +274,7 @@ private fun tempReading(vs: VehicleState, key: String, p: UserPrefs): TempReadin
 /** Limit state of one dashboard reading — only existing limits, nothing new. */
 private fun dashLevel(vs: VehicleState, p: UserPrefs, key: String): Level {
     tempReading(vs, key, p)?.let { t ->
-        return tempLevel(t.c, t.warnC, t.critC, tempAvailFor(t.c, vs.fieldLastUpdateMs[key]).whenDisconnected(vs.isConnected))
+        return tempLevel(t.c, t.warnC, t.critC, vs.tempAvail(t.c, key))
     }
     return when (key) {
         "fuelLevelPct" -> if (vs.fuelLevelPct > 0 && vs.fuelLevelPct < 10.0) Level.WARN else Level.NORMAL   // DRIVE LOW FUEL

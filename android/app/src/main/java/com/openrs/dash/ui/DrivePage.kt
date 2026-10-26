@@ -203,14 +203,15 @@ import kotlin.math.roundToInt
             )
 
             // Permanent status line: warnings lead the page without ever moving the instruments.
-            val readiness = if (vs.isConnected)
-                raceReadiness(vs, RtrLimits.from(p), fmtTemp = { "${p.displayTemp(it)}${p.tempLabel}" }) else null
+            // Temperatures speak through the shared readiness verdict (same holds as THERMAL);
+            // tyre / fuel / knock alerts keep their own 3 s hold.
+            val readiness = thermalVerdict(vs)
             val link = when {
                 vs.isConnected -> LinkState.LIVE
                 vs.isIdle      -> LinkState.RECONNECTING
                 else           -> LinkState.OFFLINE
             }
-            StatusLine(status.alerts, readiness, link, onOpenThermal, onConnect)
+            StatusLine(status.alerts.filterNot { it.temp }, readiness, p, link, onOpenThermal, onConnect)
 
             // Design pass: readings in ink, BOOST (the car's personality) carries the paint accent,
             // RPM turns Orange only at the shift-light flash point. Equal-height cards with a fixed
@@ -316,7 +317,7 @@ import kotlin.math.roundToInt
                 }
             }
 
-            VehicleStatusPanel(status, onOpenThermal, Modifier.then(pageEntrance(2, pageEntered)))
+            VehicleStatusPanel(status, readiness.vehicleAdvisory(), onOpenThermal, Modifier.then(pageEntrance(2, pageEntered)))
 
             // Torque split / G / torque are per-frame dynamics — frozen values mislead once stale.
             ChassisPanel(if (stale) vs.copy(awdLeftTorque = 0.0, awdRightTorque = 0.0, torqueAtTrans = 0.0) else vs, stale)
@@ -425,6 +426,8 @@ private data class VehicleAlert(
     val level: Level,
     @DrawableRes val icon: Int,
     val chip: String? = null,    // chip text when the condition has no VEHICLE cell
+    /** Temperature alert — on the status row the readiness verdict speaks for it. */
+    val temp: Boolean = false,
 )
 
 private enum class LinkState { LIVE, RECONNECTING, OFFLINE }
@@ -442,7 +445,7 @@ private data class VehicleStatus(
 /** Every rule here is an existing limit (THERMAL preset, TPMS low / warn psi, fuel < 10 %, knock counter). */
 private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): VehicleStatus {
     val connected = vs.isConnected
-    fun avail(c: Double, tag: String) = tempAvailFor(c, vs.fieldLastUpdateMs[tag]).whenDisconnected(connected)
+    fun avail(c: Double, tag: String) = vs.tempAvail(c, tag)
     fun temp(c: Double) = if (c > -90) "${p.displayTemp(c)}${p.tempLabel}" else "— —"
     val oilLvl  = tempLevel(vs.oilTempC, p.oilWarnC, p.oilCritC, avail(vs.oilTempC, "oilTempC"))
     val coolLvl = tempLevel(vs.coolantTempC, p.coolWarnC, p.coolCritC, avail(vs.coolantTempC, "coolantTempC"))
@@ -459,15 +462,15 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
 
     fun hotTitle(name: String, l: Level) = if (l == Level.CRIT) "$name CRITICAL" else "$name HOT"
     val alerts = buildList {
-        if (oilLvl.isAlert) add(VehicleAlert(hotTitle("OIL", oilLvl), temp(vs.oilTempC), oilLvl, R.drawable.ic_tt_oil))
-        if (coolLvl.isAlert) add(VehicleAlert(hotTitle("COOLANT", coolLvl), temp(vs.coolantTempC), coolLvl, R.drawable.ic_tt_coolant))
+        if (oilLvl.isAlert) add(VehicleAlert(hotTitle("OIL", oilLvl), temp(vs.oilTempC), oilLvl, R.drawable.ic_tt_oil, temp = true))
+        if (coolLvl.isAlert) add(VehicleAlert(hotTitle("COOLANT", coolLvl), temp(vs.coolantTempC), coolLvl, R.drawable.ic_tt_coolant, temp = true))
         if (connected) {
             listOf(
                 Triple("PTU", vs.ptuTempC, Triple("ptuTempC", p.ptuWarnC, p.ptuCritC)),
                 Triple("RDU", vs.rduTempC, Triple("rduTempC", p.rduWarnC, p.rduCritC)),
             ).forEach { (name, c, lim) ->
                 val lvl = tempLevel(c, lim.second, lim.third, avail(c, lim.first))
-                if (lvl.isAlert) add(VehicleAlert(hotTitle(name, lvl), temp(c), lvl, R.drawable.ic_tt_coolant, chip = "$name ${temp(c)}"))
+                if (lvl.isAlert) add(VehicleAlert(hotTitle(name, lvl), temp(c), lvl, R.drawable.ic_tt_coolant, chip = "$name ${temp(c)}", temp = true))
             }
             if (vs.hasTpmsData) {
                 // Same classification as THERMAL's tyre cards (tireLevel) — including over-inflation past High,
@@ -499,15 +502,17 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
 
 /**
  * Permanent status line at the top of DRIVE — the same 48 dp in every state, so warnings appearing
- * or clearing only change its content and never push the instruments. Leads with the most severe
- * alert ("OIL CRITICAL 268°F  +6"); with none, THERMAL's readiness verdict (same rule as its
- * banner). Link down: RECONNECTING, or offline the TAP TO CONNECT action — here rather than a strip
- * above the page, so a drop / recovery / going offline only changes this row's content and the
- * instruments never move. Alerts hold 3 s after clearing so a reading hovering at a limit doesn't
- * flicker. Tap opens THERMAL while live.
+ * or clearing only change its content and never push the instruments. Order: OVERHEATING › critical
+ * tyre alerts › TEMPERATURE HIGH / HEAT RISING › other alerts (tyre caution, fuel, knock) › the
+ * rest of the readiness verdict. Temperatures come only from [ThermalVerdict] (the THERMAL card's
+ * verdict, with the same holds); the other alerts hold 3 s after clearing so a reading hovering at
+ * a limit doesn't flicker. Link down: RECONNECTING, or offline the TAP TO CONNECT action — here
+ * rather than a strip above the page, so a drop / recovery only changes this row's content.
+ * The headline is measured first; the reason gives way (ellipsis) on narrow phones. Tap opens THERMAL.
  */
 @Composable private fun StatusLine(
-    alerts: List<VehicleAlert>, rtr: RaceReadiness?, link: LinkState, onOpen: () -> Unit, onConnect: () -> Unit
+    alerts: List<VehicleAlert>, rtr: ThermalVerdict, p: UserPrefs, link: LinkState,
+    onOpen: () -> Unit, onConnect: () -> Unit,
 ) {
     var held by remember { mutableStateOf(alerts) }
     LaunchedEffect(alerts) {
@@ -515,20 +520,37 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
         held = alerts
     }
     // The 3 s alert hold is for flicker between live frames — a dropped link replaces it at once.
-    val top = if (link == LinkState.LIVE) held.firstOrNull() else null
+    val others = if (link == LinkState.LIVE) held else emptyList()
     if (link == LinkState.OFFLINE) { ConnectActionRow(onConnect); return }
+    val heat = link == LinkState.LIVE && rtr.state.isHeat
+    val top: VehicleAlert? = when {
+        rtr.state == ThermalState.OVERHEATING && heat -> null
+        others.any { it.level == Level.CRIT } -> others.first { it.level == Level.CRIT }
+        heat -> null
+        else -> others.firstOrNull()
+    }
+    // "+N": other active conditions — alerts not shown, plus the verdict's other deciding / missing readings.
+    val moreCount = if (top == null) others.size + (if (heat || rtr.state == ThermalState.CHECKING) rtr.extraCount else 0)
+                    else others.size - 1 + (if (heat) 1 else 0)
     val shape = RoundedCornerShape(12.dp)
-    // Readiness colours match THERMAL's RtrBanner dot: READY Ok, OVERHEAT Orange, otherwise Warn.
+    val accent = LocalThemeAccent.current
+    // Colour = state: orange at crit, amber at warn / forecast; warming is a normal phase (accent).
     val (accentColor, title, value) = when {
         link == LinkState.RECONNECTING -> Triple(Warn, "RECONNECTING", "")
         top != null -> Triple(levelColor(top.level), top.title, top.value)
-        rtr == null -> Triple(Dim, "NO VEHICLE DATA", "")
-        rtr.state == RtrState.READY -> Triple(Ok, "RACE READY", "")
-        rtr.state == RtrState.OVERHEAT -> Triple(Orange, "OVERHEATING", rtr.detail ?: "")
-        rtr.state == RtrState.WARMING -> Triple(Warn, "WARMING UP", rtr.detail ?: "")
-        else -> Triple(Warn, "CHECKING SENSORS", rtr.detail ?: "")
+        else -> Triple(
+            when (rtr.state) {
+                ThermalState.OVERHEATING -> Orange
+                ThermalState.TEMPERATURE_HIGH, ThermalState.HEAT_RISING, ThermalState.CHECKING -> Warn
+                ThermalState.ENGINE_WARMING, ThermalState.DRIVETRAIN_WARMING -> accent
+                ThermalState.TEMPS_READY -> Ok
+                ThermalState.NO_LIVE_DATA -> Dim
+            },
+            rtr.state.headline, rtr.shortReason(p),
+        )
     }
-    val alerting = top != null || rtr?.state == RtrState.OVERHEAT
+    val alerting = top != null || (heat && link == LinkState.LIVE)
+    val heatIcon = if (rtr.deciding.firstOrNull()?.sensor == ThermalSensor.OIL) R.drawable.ic_tt_oil else R.drawable.ic_tt_coolant
     Row(
         Modifier.fillMaxWidth().height(48.dp)
             .background(InstrumentFill, shape)
@@ -540,28 +562,31 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (top != null) Telltale(top.icon, accentColor, 22.dp, contentDescription = null)
-        else Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) {
-            Box(Modifier.size(9.dp).background(accentColor, androidx.compose.foundation.shape.CircleShape))
+        when {
+            top != null -> Telltale(top.icon, accentColor, 22.dp, contentDescription = null)
+            alerting -> Telltale(heatIcon, accentColor, 22.dp, contentDescription = null)
+            else -> Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(9.dp).background(accentColor, androidx.compose.foundation.shape.CircleShape))
+            }
         }
         Spacer(Modifier.width(10.dp))
         androidx.compose.material3.Text(
             title, color = textColor(if (alerting) accentColor else Frost), fontFamily = RajdhaniFamily,
-            fontWeight = FontWeight.Bold, fontSize = 17.sp, letterSpacing = 0.5.sp, maxLines = 1,
-            // Unweighted: measured first, so the condition name keeps its width and the
-            // trailing detail / count give way on narrow phones.
-            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            fontWeight = FontWeight.Bold, fontSize = 17.sp, letterSpacing = 0.5.sp, maxLines = 1, softWrap = false,
         )
-        if (value.isNotEmpty()) {
-            Spacer(Modifier.width(10.dp))
-            if (top != null) DataNum(value, 17.sp, Frost)
-            else MonoLabel(value, 10.sp, Dim, letterSpacing = 0.2.sp, modifier = Modifier.weight(1f, fill = false))
-        }
-        Spacer(Modifier.weight(1f))
-        if (top != null && held.size > 1) {
+        Spacer(Modifier.width(10.dp))
+        // The reason takes all the width the headline leaves (it used to share it with the spacer).
+        if (top != null) { DataNum(value, 17.sp, Frost); Spacer(Modifier.weight(1f)) }
+        else androidx.compose.material3.Text(
+            value, color = textColor(if (alerting) Frost else Dim), fontFamily = JetBrainsMonoFamily,
+            fontSize = 10.sp, letterSpacing = 0.1.sp, maxLines = 1, softWrap = false,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        if (moreCount > 0 && link == LinkState.LIVE) {
             Box(
                 Modifier.background(Surf3, RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 3.dp)
-            ) { MonoLabel("+${held.size - 1}", 11.sp, Frost, FontWeight.Bold) }
+            ) { MonoLabel("+$moreCount", 11.sp, Frost, FontWeight.Bold) }
             Spacer(Modifier.width(8.dp))
         }
         if (link == LinkState.LIVE) MonoLabel("›", 16.sp, Dim)
@@ -595,7 +620,9 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
  * Narrow screens (< 340 dp of panel) switch the cells to a 2 × 2 grid. Tap opens THERMAL.
  */
 @OptIn(ExperimentalLayoutApi::class)
-@Composable private fun VehicleStatusPanel(st: VehicleStatus, onOpenThermal: () -> Unit, modifier: Modifier = Modifier) {
+@Composable private fun VehicleStatusPanel(
+    st: VehicleStatus, advisory: Pair<String, Level>?, onOpenThermal: () -> Unit, modifier: Modifier = Modifier,
+) {
     fun tempSub(l: Level) = when (l) {
         Level.COLD -> "COLD"; Level.WARN -> "HIGH"; Level.CRIT -> "CRITICAL"; Level.STALE -> "STALE"
         Level.NONE -> if (st.connected) "WAITING" else ""; Level.NORMAL -> ""
@@ -624,10 +651,18 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
                 // (whenDisconnected + tempAvailFor 60 s decide that, as for the cells themselves).
                 !st.connected -> "OFFLINE · LAST KNOWN"
                 listOf(st.oilLvl, st.coolLvl, st.fuelLvl, st.battLvl).any { it == Level.STALE } -> "STALE DATA"
+                // The shared readiness verdict (forecast, recovery hold, missing data) — never ALL NORMAL under it
+                advisory != null -> advisory.first
                 else -> "ALL NORMAL"
             }
-            MonoLabel(summary, 10.sp, if (st.alerts.isNotEmpty()) levelColor(panelLvl) else Dim,
-                if (st.alerts.isNotEmpty()) FontWeight.Bold else FontWeight.Normal, letterSpacing = 0.4.sp)
+            val advisoryShown = st.alerts.isEmpty() && st.connected && advisory != null && summary == advisory.first
+            val summaryColor = when {
+                st.alerts.isNotEmpty() -> levelColor(panelLvl)
+                advisoryShown && advisory!!.second.isAlert -> levelColor(advisory.second)
+                else -> Dim
+            }
+            MonoLabel(summary, 10.sp, summaryColor,
+                if (st.alerts.isNotEmpty() || advisoryShown) FontWeight.Bold else FontWeight.Normal, letterSpacing = 0.4.sp)
             Spacer(Modifier.width(6.dp))
             MonoLabel("›", 13.sp, Dim)
         }

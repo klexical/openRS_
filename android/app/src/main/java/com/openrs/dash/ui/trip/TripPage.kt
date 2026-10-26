@@ -975,7 +975,7 @@ private fun LiveHud(
             val ph = "— —"
             fun temp(label: String, valueC: Double, tag: String, warnC: Double? = null, critC: Double? = null): Pair<Readout, Level> {
                 if (valueC <= -90) return Readout(label, ph) to Level.NONE
-                val avail = tempAvailFor(valueC, vehicleState.fieldLastUpdateMs[tag]).whenDisconnected(live)
+                val avail = tempAvailFor(valueC, vehicleState.fieldLastUpdateMs[tag], tempStaleAfterMs(tag)).whenDisconnected(live)
                 val lvl = when {
                     avail == TempAvail.STALE -> Level.STALE
                     warnC != null && critC != null -> tempLevel(valueC, warnC, critC, avail)

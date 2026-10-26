@@ -33,9 +33,7 @@ import com.openrs.dash.data.PeakType
 import com.openrs.dash.data.ThermalPredictor
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.ui.AppSettings
-import com.openrs.dash.ui.RtrLimits
-import com.openrs.dash.ui.UserPrefsStore
-import com.openrs.dash.ui.raceReadiness
+import com.openrs.dash.ui.ThermalReadinessSession
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -398,8 +396,8 @@ class DriveRecorder(
                     val tipFresh    = gate.takeIfFresh("tipActualKpa", stamps)
                     val targetFresh = gate.takeIfFresh("tipDesiredKpa", stamps)
                     val wgdcFresh   = gate.takeIfFresh("wgdcDesired", stamps)
-                    // Same rule as the THERMAL banner — warm, not overheating, data fresh.
-                    val raceReady = raceReadiness(vs, RtrLimits.from(UserPrefsStore.prefs.value), now).isReady
+                    // The shared verdict (DRIVE row / THERMAL card) including its holds: TEMPS READY only.
+                    val raceReady = ThermalReadinessSession.verdict.value.isReady
                     val point = DrivePointEntity(
                         driveId        = driveId,
                         timestamp      = now,

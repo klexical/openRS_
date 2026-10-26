@@ -841,6 +841,7 @@ class CanDataService : Service() {
         com.openrs.dash.data.BoostSessionLog.reset()
         val connected = OpenRSDashApp.instance.vehicleState.value.isConnected
         OpenRSDashApp.instance.vehicleState.update { VehicleState(isConnected = connected) }
+        com.openrs.dash.ui.ThermalReadinessSession.reset()
         startSessionRecording()
     }
 

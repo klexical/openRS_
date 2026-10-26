@@ -88,6 +88,7 @@ class OpenRSDashApp : Application() {
         instance = this
         CrashReporter.install(this)
         CrashTelemetryBuffer.startCollecting()
+        com.openrs.dash.ui.ThermalReadinessSession.start()
         createNotificationChannel()
     }
 

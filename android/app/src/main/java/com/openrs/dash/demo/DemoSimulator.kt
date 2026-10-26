@@ -15,6 +15,7 @@ enum class DemoScenario(val label: String, val chip: String, val blurb: String) 
     DRIVING("Driving", "DRIVE", "60 s loop: launch, pull to 125 km/h, braking, corner, cruise"),
     WARNING("Warnings", "WARN", "Hot lap: overheating, knock, low tyre, underboost, low fuel, charge fault"),
     CONNECTION_LOSS("Connection loss", "LOSS", "40 s loop: live 10 s → lost 12 s → OBD re-warm 4 s → live"),
+    COOLDOWN("Cool-down", "COOL", "Readiness: oil cools past warn, RDU heats then its replies stop, coolant drops out, oil below warm-up, clutch heat"),
 }
 
 /** Adapter link as the real CanDataService would report it. */
@@ -35,6 +36,18 @@ object DemoSimulator {
     const val LOSS_START_S = 10.0
     const val LOSS_END_S = 22.0
     const val RECOVER_END_S = 26.0
+
+    /** COOLDOWN: RDU replies stop (stamp withheld, value held) — stale 90 s later, then a fresh poll. */
+    const val COOL_RDU_SILENT_S = 70.0
+    const val COOL_RDU_BACK_S = 170.0
+    /** COOLDOWN: coolant reads invalid (sentinel) while the RDU warning is fresh. */
+    const val COOL_COOLANT_OUT_S = 85.0
+    const val COOL_COOLANT_BACK_S = 100.0
+    /** COOLDOWN: oil starts its second cool-down (below the 80 °C warm-up minimum ≈ 23 s later). */
+    const val COOL_OIL_DROP_S = 180.0
+    /** COOLDOWN: AWD clutches heat past their fixed 90 / 120 °C limits, then cool (recovery hold). */
+    const val COOL_CLUTCH_HEAT_S = 230.0
+    const val COOL_CLUTCH_COOL_S = 255.0
 
     /** Freshness tags the simulator writes — CAN-sourced THERMAL tags + every polled Mode 22 tag. */
     val CAN_TAGS = arrayOf("oilTempC", "ptuTempC", "coolantTempC", "intakeTempC", "ambientTempC")
@@ -90,12 +103,17 @@ object DemoSimulator {
             DemoScenario.IDLE -> idle(t)
             DemoScenario.DRIVING, DemoScenario.CONNECTION_LOSS -> driving(t, driveMode, hot = false)
             DemoScenario.WARNING -> driving(t, driveMode, hot = true)
+            DemoScenario.COOLDOWN -> cooldown(t, driveMode)
         }
         val recovering = link == DemoLink.RECOVERING
         var next = build(cur, m, driveMode, escStatus, recovering, nowMs).withPeaksUpdated()
         if (stamp) {
-            next = if (recovering) next.markFresh(*CAN_TAGS, now = nowMs)
-                   else next.markFresh(*CAN_TAGS, *OBD_TAGS, now = nowMs)
+            next = when {
+                recovering -> next.markFresh(*CAN_TAGS, now = nowMs)
+                scenario == DemoScenario.COOLDOWN && t >= COOL_RDU_SILENT_S && t < COOL_RDU_BACK_S ->
+                    next.markFresh(*CAN_TAGS, *OBD_TAGS.filter { it != "rduTempC" }.toTypedArray(), now = nowMs)
+                else -> next.markFresh(*CAN_TAGS, *OBD_TAGS, now = nowMs)
+            }
         }
         return next
     }
@@ -250,6 +268,35 @@ object DemoSimulator {
             battSoc = if (hot) 38.0 else 82.0,
             kr = kr, ltft = if (hot) 9.4 else 2.3, octane = if (hot) 0.82 else 1.0,
             afrLeanBias = if (hot) 1.6 * pull else 0.0, eBrake = false,
+        )
+    }
+
+    /**
+     * Readiness walk-through on a gentle cruise (DRIVING motion, no heat): oil 126 → 108 °C (high,
+     * cooling, recovery hold, ready) · RDU climbs 60 → 95 °C from 40 s (forecast, then high) ·
+     * coolant invalid 85–100 s · RDU replies stop at 70 s (stale at 160 s, fresh again at 170 s at
+     * 70 °C) · oil cools again from 180 s and drops below its 80 °C warm-up minimum · from 230 s the
+     * AWD clutches climb past their fixed warn (≈ 236 s) and crit (≈ 248 s), then cool from 255 s.
+     */
+    internal fun cooldown(t: Double, mode: DriveMode): Model {
+        val base = driving(t, mode, hot = false)
+        val oil = if (t < COOL_OIL_DROP_S) approach(126.0, 108.0, t, 40.0)
+                  else approach(108.0, 76.0, t - COOL_OIL_DROP_S, 12.0)
+        val rdu = when {
+            t < 40.0 -> 60.0
+            t < COOL_RDU_BACK_S -> approach(60.0, 95.0, t - 40.0, 12.0)
+            else -> 70.0
+        }
+        val coolantOut = t >= COOL_COOLANT_OUT_S && t < COOL_COOLANT_BACK_S
+        val clutch = when {
+            t < COOL_CLUTCH_HEAT_S -> 50.0
+            t < COOL_CLUTCH_COOL_S -> approach(50.0, 128.0, t - COOL_CLUTCH_HEAT_S, 8.0)
+            else -> approach(approach(50.0, 128.0, COOL_CLUTCH_COOL_S - COOL_CLUTCH_HEAT_S, 8.0), 60.0, t - COOL_CLUTCH_COOL_S, 6.0)
+        }
+        return base.copy(
+            oilC = oil, coolantC = if (coolantOut) -99.0 else 92.0,
+            ptuC = 70.0, rduC = rdu, clutchC = clutch, transOilC = 58.0,
+            kr = doubleArrayOf(0.0, 0.0, 0.0, 0.0),
         )
     }
 

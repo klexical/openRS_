@@ -34,6 +34,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -70,7 +73,6 @@ import com.openrs.dash.ui.anim.StaggeredColumn
     val session = telemetrySessionKey()   // demo start/reset/exit drops simulated history
     val oilSpark = remember(session) { SparklineData(60) }
     val coolSpark = remember(session) { SparklineData(60) }
-    val predictor = remember(session) { ThermalPredictor() }
     val lastTempSample = remember(session) { mutableLongStateOf(0L) }
     SideEffect {
         val now = vs.lastUpdate
@@ -78,14 +80,11 @@ import com.openrs.dash.ui.anim.StaggeredColumn
             lastTempSample.longValue = now
             if (vs.oilTempC > -90) oilSpark.push(vs.oilTempC.toFloat())
             if (vs.coolantTempC > -90) coolSpark.push(vs.coolantTempC.toFloat())
-            // Feed thermal predictor
-            val ms = System.currentTimeMillis()
-            predictor.recordSample("OIL", ms, vs.oilTempC)
-            predictor.recordSample("COOLANT", ms, vs.coolantTempC)
-            predictor.recordSample("RDU", ms, vs.rduTempC)
-            predictor.recordSample("PTU", ms, vs.ptuTempC)
         }
     }
+    // Readiness, trends and forecasts come from the session-level evaluator (fed whichever tab is open).
+    val verdict = thermalVerdict(vs)
+    val snoozed by ThermalReadinessSession.snoozed.collectAsState()
     val sparkKey = lastTempSample.longValue
     val oilSnap = remember(sparkKey) { oilSpark.snapshot() }
     val coolSnap = remember(sparkKey) { coolSpark.snapshot() }
@@ -100,29 +99,21 @@ import com.openrs.dash.ui.anim.StaggeredColumn
             .padding(start = PagePad, end = PagePad, top = density.pageTop, bottom = pageBottomPadding()),
         verticalArrangement = Arrangement.spacedBy(density.gap)
     ) {
-        ReadinessCard(vs, p)
+        ReadinessCard(verdict, p)
 
-        // ── Predictive thermal alerts ───────────────────────────────────
-        if (vs.isConnected) {
-            val alertSensors = listOf(
-                Triple("OIL", p.oilCritC, 80.0),
-                Triple("COOLANT", p.coolCritC, 85.0),
-                Triple("RDU", p.rduCritC, 40.0),
-                Triple("PTU", p.ptuCritC, 50.0),
-            )
-            val activeAlerts = alertSensors.mapNotNull { (label, crit, floor) ->
-                if (predictor.shouldAlert(label, crit, floor))
-                    predictor.predict(label, crit, floor)
-                else null
-            }
-            activeAlerts.forEach { pred ->
-                ThermalAlertBanner(pred, p) { predictor.dismiss(pred.sensorLabel) }
+        // ── Predictive thermal alerts (DISMISS snoozes the banner 2 min — never the verdict) ──
+        // One banner: the soonest forecast, naming the others — four stacked banners pushed oil and
+        // coolant off a 360 dp screen.
+        val wallNow = System.currentTimeMillis()
+        val shownForecasts = verdict.banners.filter { (snoozed[it.sensorLabel] ?: 0L) <= wallNow }
+        forecastBanner(shownForecasts)?.let { b ->
+            ThermalAlertBanner(b.lead, p, alsoReached = b.alsoReached, alsoForecast = b.alsoForecast) {
+                shownForecasts.forEach { ThermalReadinessSession.snooze(it.sensorLabel) }
             }
         }
 
         fun peakStr(peakC: Double) = if (peakC > -90) "PEAK ${p.displayTemp(peakC)}${p.tempLabel}" else ""
-        fun avail(valueC: Double, tag: String) =
-            tempAvailFor(valueC, vs.fieldLastUpdateMs[tag]).whenDisconnected(vs.isConnected)
+        fun avail(valueC: Double, tag: String) = vs.tempAvail(valueC, tag)
         // Suppress WARMING on offline — the whole bus is silent, shouting
         // "WARMING" on ten cells at once is noise, not information. Stale/
         // unavailable are retained since those describe real decode history.
@@ -146,10 +137,11 @@ import com.openrs.dash.ui.anim.StaggeredColumn
         val clutchLA = avail(vs.awdClutchTempL,      "awdClutchTempL")
         val clutchRA = avail(vs.awdClutchTempR,      "awdClutchTempR")
         val transA   = avail(vs.transOilTempC,       "transOilTempC")
-        val oilTrend     = predictor.trend("OIL").takeIf { oilA == TempAvail.AVAILABLE }
-        val coolTrend    = predictor.trend("COOLANT").takeIf { coolA == TempAvail.AVAILABLE }
-        val ptuTrend     = predictor.trend("PTU").takeIf { ptuA == TempAvail.AVAILABLE }
-        val rduTrend     = predictor.trend("RDU").takeIf { rduA == TempAvail.AVAILABLE }
+        // Arrows only for fresh readings with a judged trend (the verdict's predictor, 10-sample minimum).
+        val oilTrend     = verdict.reading(ThermalSensor.OIL)?.trend
+        val coolTrend    = verdict.reading(ThermalSensor.COOLANT)?.trend
+        val ptuTrend     = verdict.reading(ThermalSensor.PTU)?.trend
+        val rduTrend     = verdict.reading(ThermalSensor.RDU)?.trend
         val engineItems = listOf(
             TempSpec("ENGINE OIL",
                 if (vs.oilTempC > -90) p.displayTemp(vs.oilTempC) else "— —", p.tempLabel,
@@ -182,11 +174,11 @@ import com.openrs.dash.ui.anim.StaggeredColumn
                 climbTrend = rduTrend),
             TempSpec("CLUTCH L",
                 if (vs.awdClutchTempL > -90) p.displayTemp(vs.awdClutchTempL) else "— —", p.tempLabel,
-                vs.awdClutchTempL.takeIf { it > -90 } ?: 0.0, 90.0, 120.0,
+                vs.awdClutchTempL.takeIf { it > -90 } ?: 0.0, CLUTCH_WARN_C, CLUTCH_CRIT_C,
                 subFor(clutchLA, "AWD"), avail = clutchLA),
             TempSpec("CLUTCH R",
                 if (vs.awdClutchTempR > -90) p.displayTemp(vs.awdClutchTempR) else "— —", p.tempLabel,
-                vs.awdClutchTempR.takeIf { it > -90 } ?: 0.0, 90.0, 120.0,
+                vs.awdClutchTempR.takeIf { it > -90 } ?: 0.0, CLUTCH_WARN_C, CLUTCH_CRIT_C,
                 subFor(clutchRA, "AWD"), avail = clutchRA),
             TempSpec("TRANS OIL",
                 if (vs.transOilTempC > -90) p.displayTemp(vs.transOilTempC) else "— —", p.tempLabel,
@@ -338,22 +330,34 @@ data class TempSpec(
 )
 
 /**
- * Readiness + threshold preset in one card (was a status banner and a separate preset card).
- * The preset decides every warn / crit mark on this page, so it sits with the verdict it drives.
+ * The session readiness verdict for this frame. Offline, or computed in an older demo session (the
+ * evaluator re-runs on the epoch change within milliseconds), it reads NO LIVE DATA at once.
  */
-@Composable fun ReadinessCard(vs: VehicleState, p: UserPrefs) {
-    // When offline, bypass the readiness computation entirely — we have no
-    // warmup data to trust. Show a neutral "awaiting CAN" state instead of
-    // a misleading green RACE READY.
-    val rtr = if (vs.isConnected)
-        raceReadiness(vs, RtrLimits.from(p), fmtTemp = { "${p.displayTemp(it)}${p.tempLabel}" }) else null
-    val dotColor = when (rtr?.state) {
-        null              -> Dim
-        RtrState.READY    -> Ok
-        RtrState.OVERHEAT -> Orange
-        else              -> Warn
-    }
-    val pulsing = rtr != null && !rtr.isReady
+@Composable fun thermalVerdict(vs: VehicleState): ThermalVerdict {
+    val v by ThermalReadinessSession.verdict.collectAsState()
+    val epoch = telemetrySessionKey()
+    return if (vs.isConnected && v.epoch == epoch) v else ThermalVerdict.noLiveData(epoch)
+}
+
+/** Dot / headline colour per state — orange at crit, amber at warn / forecast / missing data, accent while warming. */
+@Composable fun thermalStateColor(state: ThermalState): Color = when (state) {
+    ThermalState.OVERHEATING -> Orange
+    ThermalState.TEMPERATURE_HIGH, ThermalState.HEAT_RISING, ThermalState.CHECKING -> Warn
+    ThermalState.ENGINE_WARMING, ThermalState.DRIVETRAIN_WARMING -> LocalThemeAccent.current
+    ThermalState.TEMPS_READY -> Ok
+    ThermalState.NO_LIVE_DATA -> Dim
+}
+
+/**
+ * Readiness summary + threshold preset in one card: headline, one reason, the STREET / TRACK / RACE
+ * chips and a CHECKLIST toggle (collapsed by default, not persisted) — about the height of the old
+ * readiness card, so oil and coolant stay where they were on a 360 dp phone.
+ */
+@Composable fun ReadinessCard(verdict: ThermalVerdict, p: UserPrefs) {
+    val state = verdict.state
+    val live = state != ThermalState.NO_LIVE_DATA
+    val dotColor = thermalStateColor(state)
+    val pulsing = live && !verdict.isReady
     val dotAlpha = if (pulsing) {
         val anim by rememberInfiniteTransition(label = "rtr").animateFloat(
             initialValue = 1f, targetValue = 0.3f, label = "rtrDot",
@@ -361,39 +365,78 @@ data class TempSpec(
         )
         anim
     } else 1f
-    val title = when (rtr?.state) {
-        null              -> "AWAITING CAN"
-        RtrState.READY    -> "RACE READY"
-        RtrState.OVERHEAT -> "OVERHEATING — NOT RACE READY"
-        RtrState.NO_DATA  -> "CHECKING — NOT RACE READY"
-        RtrState.WARMING  -> "WARMING UP — NOT RACE READY"
+    val level = when (state) {
+        ThermalState.OVERHEATING -> Level.CRIT
+        ThermalState.TEMPERATURE_HIGH, ThermalState.HEAT_RISING -> Level.WARN
+        else -> Level.NORMAL
     }
-    val level = if (rtr?.state == RtrState.OVERHEAT) Level.CRIT else Level.NORMAL
+    var expanded by rememberSaveable { mutableStateOf(false) }
 
     val d = LocalThermalDensity.current
+    val toggleLabel = if (expanded) "Hide readiness checklist" else "Show readiness checklist"
     Column(Modifier.fillMaxWidth().instrumentSurface(level).padding(horizontal = 14.dp, vertical = d.cardV + 2.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // The summary itself also toggles the checklist — a bigger target than the CHECKLIST label.
+        Row(Modifier.fillMaxWidth().clickable(enabled = live, onClickLabel = toggleLabel) { expanded = !expanded },
+            verticalAlignment = Alignment.CenterVertically) {
             Box(contentAlignment = Alignment.Center) {
                 Box(Modifier.size(18.dp).clip(CircleShape).background(dotColor.copy(alpha = 0.2f * dotAlpha)))
-                Box(Modifier.size(10.dp).clip(CircleShape).background(dotColor.copy(alpha = if (rtr == null) 0.6f else dotAlpha)))
+                Box(Modifier.size(10.dp).clip(CircleShape).background(dotColor.copy(alpha = if (!live) 0.6f else dotAlpha)))
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                UIText(title, 15.sp,
-                    when (rtr?.state) { RtrState.READY -> Ok; RtrState.OVERHEAT -> Orange; null -> Dim; else -> Frost },
-                    FontWeight.SemiBold, 0.5.sp)
-                val detail = rtr?.detail
-                if (detail != null) MonoLabel(detail, 10.sp, textColor(dotColor), letterSpacing = 0.2.sp, modifier = Modifier.padding(top = 3.dp))
+                androidx.compose.material3.Text(
+                    state.headline, color = textColor(if (level.isAlert || state == ThermalState.TEMPS_READY) dotColor else if (live) Frost else Dim),
+                    fontFamily = RajdhaniFamily, fontWeight = FontWeight.Bold, fontSize = 17.sp, letterSpacing = 0.5.sp,
+                    maxLines = 1, softWrap = false,
+                )
+                androidx.compose.material3.Text(
+                    verdict.reason(p), color = textColor(if (level.isAlert) Frost else Mid), fontFamily = JetBrainsMonoFamily,
+                    fontSize = 10.sp, lineHeight = 14.sp, letterSpacing = 0.2.sp, maxLines = 3,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
             }
         }
         Spacer(Modifier.height(d.inner * 2))
         Box(Modifier.fillMaxWidth().height(1.dp).background(Brd.copy(alpha = borderAlpha(0.4f))))
         Spacer(Modifier.height(d.inner + 4.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            InstrumentLabel("LIMITS")
-            Spacer(Modifier.weight(1f))
             PresetSegments(p)
+            Spacer(Modifier.weight(1f))
+            Row(
+                Modifier.heightIn(min = 44.dp)
+                    .clickable(enabled = live, onClickLabel = toggleLabel) { expanded = !expanded }
+                    .padding(start = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                MonoLabel("CHECKLIST", 10.sp, if (live) Mid else Dim.copy(alpha = 0.5f), FontWeight.SemiBold, 0.6.sp)
+                Spacer(Modifier.width(4.dp))
+                MonoLabel(if (expanded && live) "▾" else "▸", 12.sp, if (live) Mid else Dim.copy(alpha = 0.5f))
+            }
         }
+        AnimatedVisibility(visible = expanded && live, enter = expandVertically(spring(stiffness = Spring.StiffnessMediumLow)),
+            exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow))) {
+            Column(Modifier.padding(top = d.inner), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                verdict.checklist(p).forEach { ChecklistRow(it) }
+            }
+        }
+    }
+}
+
+@Composable private fun ChecklistRow(item: CheckItem) {
+    val (mark, color) = when (item.mark) {
+        CheckMark.OK -> "✓" to Ok
+        CheckMark.WAIT -> "○" to Dim
+        CheckMark.ALERT -> "!" to levelColor(item.level)
+    }
+    Row(Modifier.fillMaxWidth().heightIn(min = 26.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.width(18.dp)) { MonoLabel(mark, 12.sp, color, FontWeight.Bold) }
+        // The rule name keeps its line; a long value wraps right-aligned under itself instead of squeezing it.
+        androidx.compose.material3.Text(item.label, color = textColor(Mid), fontFamily = JetBrainsMonoFamily, fontSize = 10.sp,
+            letterSpacing = 0.2.sp, maxLines = 1, softWrap = false)
+        Spacer(Modifier.width(10.dp))
+        androidx.compose.material3.Text(item.value, color = textColor(if (item.mark == CheckMark.ALERT) color else Frost),
+            fontFamily = JetBrainsMonoFamily, fontSize = 10.sp, lineHeight = 14.sp, letterSpacing = 0.2.sp, maxLines = 2,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            textAlign = androidx.compose.ui.text.style.TextAlign.End, modifier = Modifier.weight(1f))
     }
 }
 
@@ -565,6 +608,8 @@ private fun TempSpec.level(): Level =
 private fun ThermalAlertBanner(
     pred: ThermalPredictor.SensorPrediction,
     p: UserPrefs,
+    alsoReached: List<String> = emptyList(),
+    alsoForecast: List<String> = emptyList(),
     onDismiss: () -> Unit
 ) {
     val ttc = pred.timeToCriticalMin ?: return
@@ -576,8 +621,6 @@ private fun ThermalAlertBanner(
         val timeStr = if (ttc < 1.0) "<1 min" else "~${ttc.toInt()} min"
         "${pred.sensorLabel} will reach ${t(pred.critThresholdC)} in $timeStr at current rate"
     }
-    // Rate in the user's unit (°F/min = °C/min × 1.8)
-    val rate = pred.climbRateCPerMin * (if (p.tempUnit == "C") 1.0 else 1.8)
 
     val dotAlpha by rememberInfiniteTransition(label = "alert").animateFloat(
         initialValue = 1f, targetValue = 0.3f,
@@ -603,8 +646,10 @@ private fun ThermalAlertBanner(
         Column(Modifier.weight(1f)) {
             MonoLabel(message, 9.sp, Frost)
             if (!pred.reached) {
-                MonoLabel("+${"%.1f".format(rate)}${p.tempLabel}/min", 8.sp, Orange)
+                MonoLabel("+${p.displayTempRate(pred.climbRateCPerMin)}${p.tempLabel}/min", 8.sp, Orange)
             }
+            if (alsoReached.isNotEmpty()) MonoLabel("Also at/above critical: ${alsoReached.joinToString(" · ")}", 8.sp, Mid)
+            if (alsoForecast.isNotEmpty()) MonoLabel("Also forecast: ${alsoForecast.joinToString(" · ")}", 8.sp, Mid)
         }
         Box(
             Modifier

@@ -113,6 +113,7 @@ class MainActivity : ComponentActivity() {
             "driving", "drive"    -> DemoScenario.DRIVING
             "warning", "warn"     -> DemoScenario.WARNING
             "loss", "connection"  -> DemoScenario.CONNECTION_LOSS
+            "cooldown", "cool"    -> DemoScenario.COOLDOWN
             "pause"               -> { DemoMode.togglePause(); return }
             "reset"               -> { DemoMode.reset(); return }
             "off", "exit"         -> { svc.exitDemoMode(); return }
