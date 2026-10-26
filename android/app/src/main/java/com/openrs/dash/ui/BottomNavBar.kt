@@ -53,20 +53,26 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
+import androidx.annotation.DrawableRes
+import androidx.compose.ui.draw.alpha
 
 // ═══════════════════════════════════════════════════════════════════════════
 // BOTTOM NAV BAR — 5 tabs with vector icons, frosted glass background
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** TRIP / GARAGE use the concept-sheet symbols (whole glyph, the nav's own muted / selected tint). */
-private data class NavItem(val icon: Int, val label: String)
+/**
+ * One "Precision" icon family for all five tabs (openRS_icons_round03): three alpha layers cut from the
+ * supplied artwork — [whole] glyph, its white [base] strokes and its blue [accent] details — on one 104 px canvas
+ * at the source's common scale. Inactive = [whole] in the muted colour; selected = the design's two-tone.
+ */
+private data class NavItem(@DrawableRes val whole: Int, @DrawableRes val base: Int, @DrawableRes val accent: Int, val label: String)
 
 private val navItems = listOf(
-    NavItem(R.drawable.ic_nav_dash,  "DRIVE"),
-    NavItem(R.drawable.ic_nav_power, "PERF"),
-    NavItem(R.drawable.ic_nav_temps, "THERMAL"),
-    NavItem(R.drawable.ic_tt_trip,   "TRIP"),
-    NavItem(R.drawable.ic_tt_garage, "GARAGE")
+    NavItem(R.drawable.nav_drive_whole,   R.drawable.nav_drive_base,   R.drawable.nav_drive_accent,   "DRIVE"),
+    NavItem(R.drawable.nav_perf_whole,    R.drawable.nav_perf_base,    R.drawable.nav_perf_accent,    "PERF"),
+    NavItem(R.drawable.nav_thermal_whole, R.drawable.nav_thermal_base, R.drawable.nav_thermal_accent, "THERMAL"),
+    NavItem(R.drawable.nav_trip_whole,    R.drawable.nav_trip_base,    R.drawable.nav_trip_accent,    "TRIP"),
+    NavItem(R.drawable.nav_garage_whole,  R.drawable.nav_garage_base,  R.drawable.nav_garage_accent,  "GARAGE")
 )
 
 @Composable
@@ -203,8 +209,16 @@ fun BottomNavBar(
                         verticalArrangement = Arrangement.Center
                     ) {
                         Box {
-                            val iconMod = Modifier.size(20.dp).graphicsLayer { scaleX = iconScale; scaleY = iconScale }
-                            Icon(painter = painterResource(item.icon), contentDescription = null, tint = tint, modifier = iconMod)
+                            // 24 dp canvas → the glyphs read ~19 dp tall (the canvas keeps the family's common scale)
+                            val iconMod = Modifier.size(24.dp).graphicsLayer { scaleX = iconScale; scaleY = iconScale }
+                            val sel by animateFloatAsState(if (isActive) 1f else 0f, tween(300), label = "navSel$i")
+                            Box(iconMod) {
+                                if (sel < 1f) Icon(painterResource(item.whole), null, Modifier.matchParentSize().alpha(1f - sel), tint = Dim)
+                                if (sel > 0f) {
+                                    Icon(painterResource(item.base), null, Modifier.matchParentSize().alpha(sel), tint = Frost)
+                                    Icon(painterResource(item.accent), null, Modifier.matchParentSize().alpha(sel), tint = tint)
+                                }
+                            }
                             if (showBadge) {
                                 Box(
                                     Modifier

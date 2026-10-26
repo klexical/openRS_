@@ -152,7 +152,8 @@ ui/
                             pure 250-rpm binning (1,500–7,000), null bins = gaps, min 40 kPa Y span
   FuelTrimDriftCard.kt    — rc.5 — PERF card: per-drive STFT/LTFT trend (last 20 drives), ±5/±10 % bands, drift alert
   trip/TimeSeriesMath.kt  — rc.5 — Pure gap segmentation + shared-axis ranges for DriveTimeSeries
-  BottomNavBar.kt         — Custom bottom nav: 5 vector icons, frosted glass via Haze (hazeEffect),
+  BottomNavBar.kt         — Custom bottom nav: 5 Precision-family icons (nav_<tab>_whole|base|accent alpha layers — inactive
+                            whole glyph in Dim, selected two-tone; DAY selected ink = actionInk), frosted glass via Haze (hazeEffect),
                             spring-animated indicator bar, one top hairline, pressClick + haptics
                             Height: Tokens.NavBarHeight (48 dp tabs) + sysNavPad (gesture area)
   BrandArt.kt             — Concept-sheet artwork in code: Wordmark (traced glyphs, per-glyph alpha for the header
