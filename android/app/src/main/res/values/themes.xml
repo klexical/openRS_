@@ -9,6 +9,6 @@
         <item name="android:textColorSecondary">@color/text_dim</item>
         <item name="android:statusBarColor">@color/bg_deep</item>
         <item name="android:navigationBarColor">@color/bg_deep</item>
-        <item name="android:windowBackground">@color/bg_deep</item>
+        <item name="android:windowBackground">@drawable/splash_window</item>
     </style>
 </resources>

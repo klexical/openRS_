@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- API 31+: the system splash shows the RS_ launcher art on the dark tile with the openRS_ wordmark
+         below; the app's opening presentation (same background) takes over on the first frame. -->
+    <style name="Theme.OpenRS" parent="android:Theme.DeviceDefault.NoActionBar">
+        <item name="android:colorPrimary">@color/nitrous_blue</item>
+        <item name="android:colorPrimaryDark">@color/bg_deep</item>
+        <item name="android:colorAccent">@color/nitrous_blue</item>
+        <item name="android:textColorPrimary">@color/frost_white</item>
+        <item name="android:textColorSecondary">@color/text_dim</item>
+        <item name="android:statusBarColor">@color/bg_deep</item>
+        <item name="android:navigationBarColor">@color/bg_deep</item>
+        <item name="android:windowBackground">@color/bg_deep</item>
+        <item name="android:windowSplashScreenBackground">@color/splash_bg</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/ic_launcher_background</item>
+        <item name="android:windowSplashScreenBrandingImage">@drawable/splash_wordmark</item>
+    </style>
+</resources>

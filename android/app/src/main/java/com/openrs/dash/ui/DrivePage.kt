@@ -234,6 +234,7 @@ import kotlin.math.roundToInt
                 )
                 InstrumentHero(
                     label = "BOOST", unit = boostLbl, value = boostVal,
+                    icon = RsIcon.BOOST, iconTone = if (stale) IconTone.UNAVAILABLE else IconTone.NORMAL,
                     valueColor = if (stale) Frost else accent,
                     valueSize = 44.sp,
                     peak = "PEAK ${"%.1f".format(vs.peakBoostPsi)}",
@@ -299,7 +300,12 @@ import kotlin.math.roundToInt
                         val tinted = isSportish && p.gearModeTint && vs.isConnected
                         val gearLabelColor by animateColorAsState(
                             if (tinted) modeColor else Dim, tween(600), label = "gearLbl")
-                        InstrumentLabel(if (tinted) "GEAR · ${vs.driveMode.label.uppercase()}" else "GEAR", color = gearLabelColor)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            // 12 dp inside the caption's line height — the module's fixed height doesn't change
+                            TelemetryIcon(RsIcon.GEAR, if (gearActive) IconTone.NORMAL else IconTone.UNAVAILABLE, 12.dp)
+                            Spacer(Modifier.width(4.dp))
+                            InstrumentLabel(if (tinted) "GEAR · ${vs.driveMode.label.uppercase()}" else "GEAR", color = gearLabelColor)
+                        }
                     }
                     PedalBar("THROTTLE", thr, accent, Modifier.fillMaxHeight())
                 }
@@ -669,10 +675,10 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
         Spacer(Modifier.height(10.dp))
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val cells: List<@Composable (Modifier) -> Unit> = listOf(
-                { m -> StatusCell(R.drawable.ic_tt_oil, "OIL", st.oil, st.oilLvl, m, sub(0)) },
-                { m -> StatusCell(R.drawable.ic_tt_coolant, "COOLANT", st.cool, st.coolLvl, m, sub(1)) },
-                { m -> StatusCell(R.drawable.ic_tt_fuel, "FUEL", st.fuel, st.fuelLvl, m, sub(2)) },
-                { m -> StatusCell(R.drawable.ic_tt_battery, "BATT", st.batt, st.battLvl, m, sub(3)) },
+                { m -> StatusCell(RsIcon.OIL, "OIL", st.oil, st.oilLvl, m, sub(0)) },
+                { m -> StatusCell(RsIcon.COOLANT, "COOLANT", st.cool, st.coolLvl, m, sub(1)) },
+                { m -> StatusCell(RsIcon.FUEL, "FUEL", st.fuel, st.fuelLvl, m, sub(2)) },
+                { m -> StatusCell(RsIcon.BATTERY, "BATT", st.batt, st.battLvl, m, sub(3)) },
             )
             if (maxWidth < 340.dp) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {

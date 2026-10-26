@@ -58,14 +58,15 @@ import dev.chrisbanes.haze.hazeEffect
 // BOTTOM NAV BAR — 5 tabs with vector icons, frosted glass background
 // ═══════════════════════════════════════════════════════════════════════════
 
+/** TRIP / GARAGE use the concept-sheet symbols (whole glyph, the nav's own muted / selected tint). */
 private data class NavItem(val icon: Int, val label: String)
 
 private val navItems = listOf(
     NavItem(R.drawable.ic_nav_dash,  "DRIVE"),
     NavItem(R.drawable.ic_nav_power, "PERF"),
     NavItem(R.drawable.ic_nav_temps, "THERMAL"),
-    NavItem(R.drawable.ic_nav_map,   "TRIP"),
-    NavItem(R.drawable.ic_nav_more,  "GARAGE")
+    NavItem(R.drawable.ic_tt_trip,   "TRIP"),
+    NavItem(R.drawable.ic_tt_garage, "GARAGE")
 )
 
 @Composable
@@ -166,8 +167,12 @@ fun BottomNavBar(
                 // Per-tab identity: active tab uses its own color; breath overrides all
                 val tabColor = if (navTabIdentity && breathMode == null)
                     tabIdentityColor(i) else accentChrome
+                // DAY: the mid-tier chrome blue is pale cyan on white — the selected icon + label use the readable
+                // darker DAY blue (actionInk, as the symbol family's SELECTED tone). The indicator bar keeps the chrome.
+                val usesChromeBlue = breathMode == null && (!navTabIdentity || i == 0)   // i.e. tabColor is accentMid()
+                val selectedInk = if (isDayModeNow() && usesChromeBlue) actionInk(accent) else textColor(tabColor)
                 val tint by animateColorAsState(
-                    targetValue = if (isActive) tabColor else Dim,
+                    targetValue = if (isActive) selectedInk else Dim,
                     animationSpec = tween(300),
                     label = "navTint$i"
                 )
@@ -198,14 +203,8 @@ fun BottomNavBar(
                         verticalArrangement = Arrangement.Center
                     ) {
                         Box {
-                            Icon(
-                                painter = painterResource(item.icon),
-                                contentDescription = null,
-                                tint = tint,
-                                modifier = Modifier.size(20.dp).graphicsLayer {
-                                    scaleX = iconScale; scaleY = iconScale
-                                }
-                            )
+                            val iconMod = Modifier.size(20.dp).graphicsLayer { scaleX = iconScale; scaleY = iconScale }
+                            Icon(painter = painterResource(item.icon), contentDescription = null, tint = tint, modifier = iconMod)
                             if (showBadge) {
                                 Box(
                                     Modifier

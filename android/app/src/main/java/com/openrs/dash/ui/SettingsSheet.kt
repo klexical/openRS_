@@ -13,6 +13,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.res.imageResource
+import com.openrs.dash.R
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Alignment
@@ -830,6 +832,13 @@ fun SettingsDialog(
         },
         NavSection(
             SettingsCategory.ABOUT,
+            "ABOUT OPENRS_",
+            listOf("about", "openrs", "brand", "version"),
+        ) {
+            AboutArtCard()
+        },
+        NavSection(
+            SettingsCategory.ABOUT,
             "WHAT'S NEW",
             listOf("changelog", "whats", "new", "version", "release"),
         ) {
@@ -933,9 +942,9 @@ fun SettingsDialog(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("open", fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = ShareTechMono, color = Frost)
-                    Text("RS", fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = ShareTechMono, color = accent)
-                    Text("_ Settings", fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = ShareTechMono, color = Frost)
+                    Wordmark(18.dp, base = Frost, accent = accent)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Settings", fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = ShareTechMono, color = Frost)
                 }
                 Box(
                     Modifier.size(48.dp).clip(CircleShape).clickable(onClickLabel = "Close without saving") { cancel() },
@@ -1785,6 +1794,28 @@ private fun ThermalProfileTable(
                         modifier = Modifier.padding(top = 3.dp))
                 }
             }
+        }
+    }
+}
+
+
+/** ABOUT: the concept sheet's launch artwork (wide car + telemetry trace, its own wordmark) with the tagline. */
+@Composable
+private fun AboutArtCard() {
+    val shape = RoundedCornerShape(10.dp)
+    Column(Modifier.fillMaxWidth().instrumentSurface(radius = 10.dp).clip(shape)) {
+        androidx.compose.foundation.Image(
+            androidx.compose.ui.graphics.ImageBitmap.imageResource(R.drawable.rs_launch_art),
+            contentDescription = "openRS_ — Focus RS on a track with a telemetry trace",
+            modifier = Modifier.fillMaxWidth().aspectRatio(492f / 226f),
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            filterQuality = androidx.compose.ui.graphics.FilterQuality.High,
+        )
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+            Text("Built for the car Ford should have given us an app for.", fontSize = 12.sp, color = Frost,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.SansSerif, lineHeight = 16.sp)
+            Spacer(Modifier.height(4.dp))
+            Text("Open-source telemetry for the Focus RS MK3.", fontSize = 11.sp, color = Dim, fontFamily = ShareTechMono)
         }
     }
 }

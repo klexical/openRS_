@@ -30,7 +30,9 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.ui.res.painterResource
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -185,6 +187,8 @@ class MainActivity : ComponentActivity() {
         permLauncher.launch(perms.toTypedArray())
         handleDemoIntent(intent)
         handleTripPreviewIntent(intent)
+        // Opening presentation on a cold start only (not after rotation / process recreation)
+        val coldStart = savedInstanceState == null
 
         setContent {
             val vs          by OpenRSDashApp.instance.vehicleState.collectAsState()
@@ -475,6 +479,9 @@ class MainActivity : ComponentActivity() {
 
                     }
                 }
+                // Wordmark, tagline and front-view RS over the first frame, then a fade into the dashboard
+                var opening by rememberSaveable { mutableStateOf(coldStart) }
+                if (opening) OpeningPresentation { opening = false }
             }
         }
     }
@@ -663,11 +670,8 @@ class MainActivity : ComponentActivity() {
             label = "typewriter"
         )
         LaunchedEffect(Unit) { typewriterDone = true }
-        // 7 characters: o-p-e-n-R-S-_
-        val chars = listOf(
-            "o" to Frost, "p" to Frost, "e" to Frost, "n" to Frost,
-            "R" to rsBlue, "S" to rsBlue, "_" to Frost
-        )
+        // 7 glyphs of the approved wordmark: o-p-e-n-R-S-_
+        val glyphCount = WORDMARK_GLYPHS.size
 
         // (1) Underscore cursor blink — slow terminal pulse
         val cursorAlpha by rememberInfiniteTransition(label = "cursor").animateFloat(
@@ -695,7 +699,7 @@ class MainActivity : ComponentActivity() {
                 // inside its radius — a drawRect with a radius wider than the logo showed as a box.
                 // DAY: a blue halo on the white header reads as a smudge — glow is a dark-theme cue.
                 if (rsGlowActive > 0.01f && !isDayModeNow()) {
-                    val c = Offset(size.width * 0.62f, size.height / 2f)
+                    val c = Offset(size.width * 0.76f, size.height / 2f)   // centre of "RS" in the wordmark
                     val r = size.height * 0.9f   // stays inside the header bar
                     drawCircle(
                         Brush.radialGradient(
@@ -707,23 +711,13 @@ class MainActivity : ComponentActivity() {
                 }
             }
         ) {
-            chars.forEachIndexed { i, (ch, baseColor) ->
-                // (3) Typewriter: each char fades in with stagger
-                val charThreshold = i.toFloat() / chars.size
-                val charAlpha = ((typewriterPhase - charThreshold) * chars.size).coerceIn(0f, 1f)
-                // (1) Underscore blinks after typewriter completes
-                val finalAlpha = if (i == chars.lastIndex && typewriterDone)
-                    charAlpha * cursorAlpha else charAlpha
-                val isUnderscore = i == chars.lastIndex
-                Text(
-                    ch,
-                    fontSize = if (isUnderscore) 14.sp else 13.sp,
-                    fontFamily = OrbitronFamily,
-                    color = baseColor.copy(alpha = finalAlpha),
-                    fontWeight = if (isUnderscore) FontWeight.Black else FontWeight.Bold,
-                    letterSpacing = 0.05.sp
-                )
-            }
+            // The traced wordmark (sharp at any density) keeps the same three animations per glyph
+            Wordmark(height = 17.dp, base = Frost, accent = rsBlue, glyphAlpha = { i ->
+                // (3) Typewriter: each glyph fades in with stagger
+                val charAlpha = ((typewriterPhase - i.toFloat() / glyphCount) * glyphCount).coerceIn(0f, 1f)
+                // (1) Underscore blinks after the typewriter completes
+                if (i == glyphCount - 1 && typewriterDone) charAlpha * cursorAlpha else charAlpha
+            })
         }
 
         Spacer(Modifier.weight(1f))
@@ -825,13 +819,10 @@ class MainActivity : ComponentActivity() {
                         Box(Modifier.size(10.dp).clip(CircleShape)
                             .background(connColor.copy(alpha = 0.25f * dotAlpha))
                             .then(if (bloomIntensity > 0.01f) Modifier.bloomGlow(connColor, 8.dp, bloomIntensity * dotAlpha) else Modifier))
-                        when {
-                            vs.isConnected -> Box(Modifier.size(5.dp).clip(CircleShape)
-                                .background(connColor.copy(alpha = dotAlpha)))
-                            vs.isIdle -> Box(Modifier.size(6.dp).clip(CircleShape)
-                                .border(1.2.dp, connColor.copy(alpha = dotAlpha), CircleShape))
-                            else -> MonoLabel("×", 10.sp, connColor.copy(alpha = dotAlpha), FontWeight.Bold)
-                        }
+                        // The sheet's CONNECTED symbol in the link colour (live / reconnecting / off)
+                        Icon(painterResource(R.drawable.ic_tt_connected), contentDescription = null,
+                            tint = connColor.copy(alpha = dotAlpha * (if (vs.isConnected || vs.isIdle) 1f else 0.6f)),
+                            modifier = Modifier.size(12.dp))
                     }
                     AnimatedContent(
                         targetState = connLabel,
@@ -854,7 +845,7 @@ class MainActivity : ComponentActivity() {
                 contentAlignment = Alignment.CenterEnd
             ) {
                 Box {
-                    UIText("⚙", 17.sp, Mid)
+                    TelemetryIcon(RsIcon.SETTINGS, IconTone.NORMAL, 20.dp)
                     if (UpdateManager.hasUpdate) {
                         Box(
                             Modifier.align(Alignment.TopEnd)
@@ -909,11 +900,20 @@ private fun HeaderModeEscPills(vs: VehicleState, accent: Color, onModeClick: () 
             chevron = connected
         )
         Spacer(Modifier.width(2.dp))
+        // ESC = the sheet's TRACTION symbol (the dash telltale for stability control), in the ESC state colour
         StatusPill(
-            label = "ESC",
+            label = null,
             value = escValue,
             valueColor = escColor,
-            onClick = null
+            onClick = null,
+            icon = RsIcon.TRACTION,
+            iconTone = when {
+                !connected -> IconTone.UNAVAILABLE
+                vs.escStatus == EscStatus.OFF -> IconTone.CRITICAL
+                vs.escStatus == EscStatus.PARTIAL || vs.escStatus == EscStatus.LAUNCH -> IconTone.WARNING
+                else -> IconTone.NORMAL
+            },
+            description = "ESC $escValue",
         )
     }
 }
@@ -1003,7 +1003,10 @@ private sealed class AnomalyKind {
     onClick: (() -> Unit)?,
     pulseBarColor: Color? = null,
     pulseBarAlpha: Float = 1f,
-    chevron: Boolean = false
+    chevron: Boolean = false,
+    icon: RsIcon? = null,
+    iconTone: IconTone = IconTone.NORMAL,
+    description: String? = null,
 ) {
     val shape = RoundedCornerShape(6.dp)
     Box(
@@ -1022,6 +1025,7 @@ private sealed class AnomalyKind {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
+            icon?.let { TelemetryIcon(it, iconTone, 13.dp, contentDescription = description) }
             label?.let { MonoLabel(it, 9.sp, Dim, letterSpacing = 0.3.sp) }
             MonoLabel(value, 10.sp, valueColor, FontWeight.Bold, 0.3.sp)
             if (chevron) MonoLabel("\u25BE", 9.sp, Dim)

@@ -39,6 +39,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
@@ -499,19 +502,12 @@ fun bandColor(band: ThermalBand): Color = when (band) {
     ThermalBand.CRITICAL -> Orange
 }
 
-/** Focus RS MK3 top-down wireframe — tinted to the active theme accent color */
+/** The approved top-down Focus RS artwork — line art in ink, tyres in the paint accent (as in the sheet). */
 @Composable fun FocusRsOutline(compact: Boolean = false) {
     val accent = LocalThemeAccent.current
-    val w = if (compact) 52.dp else 72.dp
     val h = if (compact) 110.dp else 150.dp
-    Box(Modifier.width(w).height(h), contentAlignment = Alignment.Center) {
-        androidx.compose.foundation.Image(
-            painter = painterResource(R.drawable.focus_rs_wireframe),
-            contentDescription = "Focus RS",
-            colorFilter = ColorFilter.tint(accent, BlendMode.SrcIn),
-            modifier = Modifier.fillMaxSize()
-        )
-    }
+    com.openrs.dash.ui.anim.TopDownCar(bodyColor = Mid, tyreColors = List(4) { accent },
+        modifier = Modifier.height(h).aspectRatio(com.openrs.dash.ui.anim.TOPDOWN_ASPECT).semantics { contentDescription = "Focus RS" })
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

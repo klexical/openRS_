@@ -2,28 +2,22 @@ package com.openrs.dash.ui.anim
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.res.imageResource
+import androidx.compose.ui.unit.IntSize
 import com.openrs.dash.R
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.ui.Dim
 import com.openrs.dash.ui.LocalThemeAccent
+import com.openrs.dash.ui.Mid
 import com.openrs.dash.ui.Ok
 import com.openrs.dash.ui.Orange
 import com.openrs.dash.ui.Warn
@@ -32,7 +26,7 @@ import com.openrs.dash.ui.UserPrefs
 import kotlin.math.roundToInt
 
 /**
- * Focus RS MK3 wireframe with tire highlight markers at wheel positions.
+ * Focus RS MK3 top-down artwork with each tyre tinted by its pressure state.
  *
  * Designed to sit between flanking tire cards in the unified
  * Chassis section ("Neon Connect" layout). Connector lines are
@@ -63,98 +57,53 @@ fun CarDiagram(
         tireStatusColor(vs.tirePressRR, lowThreshold, warnThreshold, highThreshold), tween(400), label = "rrCol"
     )
 
-    Box(modifier, contentAlignment = Alignment.Center) {
-        // RS wireframe image — tinted to theme accent
-        Image(
-            painter = painterResource(R.drawable.focus_rs_wireframe),
-            contentDescription = "Focus RS",
-            colorFilter = ColorFilter.tint(accent, BlendMode.SrcIn),
-            modifier = Modifier.fillMaxSize()
-        )
-
-        // Data overlay drawn on top of the wireframe
-        Box(
-            Modifier.fillMaxSize().drawWithContent {
-                drawContent()
-                val w = size.width
-                val h = size.height
-
-                // Tire highlight rectangles at wheel positions
-                drawTireHighlight(w * 0.14f, h * 0.26f, flColor)
-                drawTireHighlight(w * 0.86f, h * 0.26f, frColor)
-                drawTireHighlight(w * 0.14f, h * 0.74f, rlColor)
-                drawTireHighlight(w * 0.86f, h * 0.74f, rrColor)
-            }
-        )
-    }
+    // Normal tyres keep the sheet's blue (the paint accent); warning / critical / no data take over.
+    fun state(c: Color) = if (c == Ok) accent else c
+    TopDownCar(bodyColor = Mid,
+        tyreColors = listOf(state(flColor), state(frColor), state(rlColor), state(rrColor)), modifier = modifier)
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// Drawing helpers
-// ═════════════════════════════════════════════════════════════════════════════
-
-/** Tire highlight rectangle with layered glow — matches wheel arch positions. */
-private fun DrawScope.drawTireHighlight(cx: Float, cy: Float, color: Color) {
-    val tireW = 10.dp.toPx()   // narrow cross-section (top-down view)
-    val tireH = 20.dp.toPx()   // elongated along car's length
-    val cr = CornerRadius(3.dp.toPx())
-
-    // Outer bloom
-    val bloom = 5.dp.toPx()
-    drawRoundRect(
-        color = color.copy(alpha = 0.12f),
-        topLeft = Offset(cx - tireW / 2 - bloom, cy - tireH / 2 - bloom),
-        size = Size(tireW + bloom * 2, tireH + bloom * 2),
-        cornerRadius = CornerRadius(cr.x + bloom)
-    )
-
-    // Mid glow
-    val mid = 2.dp.toPx()
-    drawRoundRect(
-        color = color.copy(alpha = 0.3f),
-        topLeft = Offset(cx - tireW / 2 - mid, cy - tireH / 2 - mid),
-        size = Size(tireW + mid * 2, tireH + mid * 2),
-        cornerRadius = CornerRadius(cr.x + mid)
-    )
-
-    // Tire body
-    drawRoundRect(
-        color = color.copy(alpha = 0.65f),
-        topLeft = Offset(cx - tireW / 2, cy - tireH / 2),
-        size = Size(tireW, tireH),
-        cornerRadius = cr
-    )
-
-    // Inner bright core
-    drawRoundRect(
-        color = color.copy(alpha = 0.95f),
-        topLeft = Offset(cx - tireW * 0.3f, cy - tireH * 0.3f),
-        size = Size(tireW * 0.6f, tireH * 0.6f),
-        cornerRadius = CornerRadius(2.dp.toPx())
-    )
-
-    // Edge definition stroke
-    drawRoundRect(
-        color = color.copy(alpha = 0.5f),
-        topLeft = Offset(cx - tireW / 2, cy - tireH / 2),
-        size = Size(tireW, tireH),
-        cornerRadius = cr,
-        style = Stroke(width = 1f)
-    )
+/**
+ * The approved top-down Focus RS artwork (concept sheet) in two layers: line art tinted [bodyColor]
+ * (theme ink — light on NIGHT, dark on DAY, no background box) and the four tyres, each tinted with its
+ * own colour in [tyreColors] (FL, FR, RL, RR). Draw it at [TOPDOWN_ASPECT] so it never stretches.
+ */
+@Composable
+fun TopDownCar(bodyColor: Color, tyreColors: List<Color>, modifier: Modifier = Modifier) {
+    val body = ImageBitmap.imageResource(R.drawable.rs_topdown_body)
+    val tyres = ImageBitmap.imageResource(R.drawable.rs_topdown_tyres)
+    Canvas(modifier) {
+        val dst = IntSize(size.width.roundToInt(), size.height.roundToInt())
+        drawImage(body, dstSize = dst, colorFilter = ColorFilter.tint(bodyColor), filterQuality = FilterQuality.High)
+        // Quadrants: the art's front is at the top, so the viewer's left is the car's left
+        tyreColors.forEachIndexed { i, c ->
+            val left = if (i % 2 == 0) 0f else size.width / 2f
+            val top = if (i < 2) 0f else size.height / 2f
+            clipRect(left, top, left + size.width / 2f, top + size.height / 2f) {
+                drawImage(tyres, dstSize = dst, colorFilter = ColorFilter.tint(c), filterQuality = FilterQuality.High)
+            }
+        }
+    }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Public helpers — wheel anchor positions for connector lines
 // ═════════════════════════════════════════════════════════════════════════════
 
-/** Fractional wheel positions within the wireframe (matches drawable geometry). */
+/** Width / height of the top-down artwork (330 × 574 px). */
+const val TOPDOWN_ASPECT = 0.5749f
+
+/**
+ * Where each lead line meets its tyre: the outer edge of the tyre at its centre height, as fractions of
+ * the artwork — measured from the tyre layer (rs_topdown_tyres.png centroids ± half the tyre width).
+ */
 data class WheelAnchor(val xFraction: Float, val yFraction: Float)
 
 val WHEEL_ANCHORS = listOf(
-    WheelAnchor(0.14f, 0.26f),  // FL
-    WheelAnchor(0.86f, 0.26f),  // FR
-    WheelAnchor(0.14f, 0.74f),  // RL
-    WheelAnchor(0.86f, 0.74f),  // RR
+    WheelAnchor(0.065f, 0.240f),  // FL — centre (0.132, 0.240)
+    WheelAnchor(0.931f, 0.241f),  // FR — centre (0.866, 0.241)
+    WheelAnchor(0.059f, 0.821f),  // RL — centre (0.130, 0.821)
+    WheelAnchor(0.936f, 0.822f),  // RR — centre (0.866, 0.822)
 )
 
 // ═════════════════════════════════════════════════════════════════════════════

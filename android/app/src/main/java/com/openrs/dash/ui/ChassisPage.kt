@@ -57,6 +57,7 @@ import com.openrs.dash.ui.anim.CarDiagram
 import com.openrs.dash.ui.anim.GForcePlot
 import com.openrs.dash.ui.anim.RingBuffer
 import com.openrs.dash.ui.anim.SteeringArc
+import com.openrs.dash.ui.anim.TOPDOWN_ASPECT
 import com.openrs.dash.ui.anim.WHEEL_ANCHORS
 import com.openrs.dash.data.thermalBandForTire
 import com.openrs.dash.data.ThermalBand
@@ -124,7 +125,7 @@ import kotlin.math.roundToInt
             .instrumentSurface(panelLevel)
             .padding(horizontal = 12.dp, vertical = 12.dp)
     ) {
-        // ── Cards flanking the RS wireframe (original artwork + overlay, unchanged) ──
+        // ── Cards flanking the top-down RS artwork; each tyre is tinted by its own state ──
         // Position tracking for connector lead lines
         var rowRoot by remember { mutableStateOf(Offset.Zero) }
         var diagRoot by remember { mutableStateOf(Offset.Zero) }
@@ -170,7 +171,7 @@ import kotlin.math.roundToInt
                     CarDiagram(
                         vs = vs,
                         prefs = p,
-                        modifier = Modifier.width(120.dp).aspectRatio(0.6f)
+                        modifier = Modifier.width(120.dp).aspectRatio(TOPDOWN_ASPECT)
                             .onGloballyPositioned {
                                 diagRoot = it.positionInRoot()
                                 diagSz = it.size

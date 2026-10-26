@@ -173,6 +173,9 @@ fun Modifier.instrumentSurface(level: Level = Level.NORMAL, radius: Dp = Tokens.
     spark: List<Float>? = null,
     sparkColor: Color = accentMid(),
     level: Level = Level.NORMAL,
+    /** Optional symbol before the caption (sheet family) and its treatment. */
+    icon: RsIcon? = null,
+    iconTone: IconTone = level.iconTone(),
 ) {
     val accent = LocalThemeAccent.current
     var hold by remember { mutableStateOf(false) }
@@ -190,7 +193,11 @@ fun Modifier.instrumentSurface(level: Level = Level.NORMAL, radius: Dp = Tokens.
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically) {
-            InstrumentLabel(if (hold) "PEAK" else label, color = if (hold) accent else Dim)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // 12 dp: inside the caption's line height, so the value box doesn't move
+                if (icon != null) { TelemetryIcon(icon, iconTone, 14.dp); Spacer(Modifier.width(4.dp)) }
+                InstrumentLabel(if (hold) "PEAK" else label, color = if (hold) accent else Dim)
+            }
             InstrumentMeta(unit)
         }
         Box(Modifier.fillMaxWidth().height(valueBox), contentAlignment = Alignment.BottomCenter) {
@@ -211,7 +218,7 @@ fun Modifier.instrumentSurface(level: Level = Level.NORMAL, radius: Dp = Tokens.
  * The telltale and value only take colour when the reading is in a WARN / CRIT state.
  */
 @Composable fun StatusCell(
-    @DrawableRes icon: Int,
+    icon: RsIcon,
     label: String,
     value: String,
     level: Level,
@@ -221,7 +228,8 @@ fun Modifier.instrumentSurface(level: Level = Level.NORMAL, radius: Dp = Tokens.
 ) {
     Column(modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Telltale(icon, if (level.isAlert) levelColor(level) else Dim, 14.dp, contentDescription = label)
+            // The sheet's two-tone symbol while normal; the whole glyph takes an alert / unavailable colour
+            TelemetryIcon(icon, level.iconTone(), 16.dp, contentDescription = label)
             Spacer(Modifier.width(5.dp))
             InstrumentLabel(label)
         }

@@ -126,7 +126,7 @@ ui/
                             sections force-collapse + a "CONNECT ADAPTER TO POPULATE" hint renders at top
   PowerPage.kt             — PowerPageContent composable shared by PERF + CustomDash
   ChassisPage.kt           — UnifiedChassisSection (THERMAL): TYRES panel (TyreCells around the original CarDiagram
-                            wireframe + overlay — unchanged) and AWD panel (torque-only diagram + readouts; PTU/RDU/
+                            top-down RS art, tyres tinted per state) and AWD panel (torque-only diagram + readouts; PTU/RDU/
                             clutch/trans temps live in DRIVETRAIN, not here). GForceSection for PERF
   TempsPage.kt             — THERMAL tab: ReadinessCard (verdict headline + reason, STREET/TRACK/RACE chips, collapsed
                             CHECKLIST), one predictive-alert banner (soonest forecast, names the rest), ENGINE (full-width oil + coolant EngineTempCard, scale + WARN/CRIT legend),
@@ -135,10 +135,9 @@ ui/
   Instrument.kt           — Design-pass building blocks: Level (NORMAL/COLD/WARN/CRIT/STALE/NONE), tempLevel(),
                             instrumentSurface() (white + hairline on DAY, no shadow), InstrumentLabel/InstrumentMeta
                             (10 sp), InstrumentHero, StatusCell, AlertChip, ThresholdBar (caution + redline zones) +
-                            ThresholdLegend, MiniReadout, Telltale (res/drawable/ic_tt_oil|coolant|fuel|battery|tyre|
-                            alert — original stroke glyphs), ReadoutGrid/Readout (grouped readings panel, dense + footer;
-                            POWER + TRIP). The Focus RS wireframe (drawable-nodpi/
-                            focus_rs_wireframe.png) is the owner's branding art — never redraw/replace it unasked
+                            ThresholdLegend, MiniReadout, Telltale, ReadoutGrid/Readout (grouped readings panel, dense +
+                            footer; POWER + TRIP). Symbols / car art / wordmark / launcher come from the owner-approved
+                            concept sheet (BrandArt.kt, res/drawable*/) — never redraw or substitute them unasked
   TripPage.kt (trip/)      — TRIP tab: live Google Map + drive history list; see trip/DriveMap.kt
   GaragePage.kt            — GARAGE tab: CONTROL/DIAG segmented picker → MorePage + DiagPage
   DiagPage.kt              — DTC scan/clear, PID browser, DID prober, diagnostic export (inside GARAGE)
@@ -156,6 +155,10 @@ ui/
   BottomNavBar.kt         — Custom bottom nav: 5 vector icons, frosted glass via Haze (hazeEffect),
                             spring-animated indicator bar, one top hairline, pressClick + haptics
                             Height: Tokens.NavBarHeight (48 dp tabs) + sysNavPad (gesture area)
+  BrandArt.kt             — Concept-sheet artwork in code: Wordmark (traced glyphs, per-glyph alpha for the header
+                            typewriter), RsIcon + TelemetryIcon (NORMAL two-tone / MUTED / SELECTED / WARNING / CRITICAL /
+                            UNAVAILABLE), OpeningPresentation (cold start; fades once the dashboard has drawn — no timer).
+                            Raster art: drawable-nodpi/rs_topdown_body|tyres, rs_splash_car, rs_launch_art (ABOUT)
   ThermalProfile.kt       — Thermal profiles (°C): built-in STREET / TRACK / RACE (existing openRS_ defaults, no manufacturer
                             source) + optional Custom (JSON in prefs `thermal_custom`). UserPrefs warn/crit getters read
                             `p.thermalProfile`; ThermalCell keeps exact °C until edited (no unit drift); validateThermalProfile
@@ -217,7 +220,8 @@ ui/
     InteractionModifiers.kt — pressClick() modifier: clickable + scale-down press feedback combined
     RingBuffer.kt           — Fixed-capacity generic ring buffer: push/toList/clear; used by GForcePlot
     ShiftLightBar.kt        — Horizontal LED-style shift indicator: green→yellow→red fill, redline flash
-    CarDiagram.kt           — Focus RS wireframe with tire highlights at wheel positions
+    CarDiagram.kt           — TopDownCar: approved top-down RS art (body in ink, tyres tinted per state, TOPDOWN_ASPECT,
+                            WHEEL_ANCHORS measured from the tyre layer)
   PidBrowserSection.kt    — DIAG tab: expandable FORScan catalog per module with coverage bar
   DidProberSection.kt     — DIAG tab: interactive Mode 22 scanner for any ECU+DID
   WhatsNewDialog.kt       — Version changelog dialog; shown on first launch after update
