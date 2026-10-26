@@ -174,11 +174,11 @@ import com.openrs.dash.ui.anim.StaggeredColumn
                 climbTrend = rduTrend),
             TempSpec("CLUTCH L",
                 if (vs.awdClutchTempL > -90) p.displayTemp(vs.awdClutchTempL) else "— —", p.tempLabel,
-                vs.awdClutchTempL.takeIf { it > -90 } ?: 0.0, CLUTCH_WARN_C, CLUTCH_CRIT_C,
+                vs.awdClutchTempL.takeIf { it > -90 } ?: 0.0, p.clutchWarnC, p.clutchCritC,
                 subFor(clutchLA, "AWD"), avail = clutchLA),
             TempSpec("CLUTCH R",
                 if (vs.awdClutchTempR > -90) p.displayTemp(vs.awdClutchTempR) else "— —", p.tempLabel,
-                vs.awdClutchTempR.takeIf { it > -90 } ?: 0.0, CLUTCH_WARN_C, CLUTCH_CRIT_C,
+                vs.awdClutchTempR.takeIf { it > -90 } ?: 0.0, p.clutchWarnC, p.clutchCritC,
                 subFor(clutchRA, "AWD"), avail = clutchRA),
             TempSpec("TRANS OIL",
                 if (vs.transOilTempC > -90) p.displayTemp(vs.transOilTempC) else "— —", p.tempLabel,
@@ -449,18 +449,22 @@ data class TempSpec(
         Modifier.background(Surf3, RoundedCornerShape(8.dp)).padding(3.dp),
         horizontalArrangement = Arrangement.spacedBy(3.dp)
     ) {
-        listOf("street" to "STREET", "track" to "TRACK", "race" to "RACE").forEach { (id, label) ->
+        // CUSTOM appears once a custom profile exists (Settings → THERMAL); four chips use tighter padding.
+        val profiles = listOf("street" to "STREET", "track" to "TRACK", "race" to "RACE") +
+            (if (p.customThermal != null) listOf("custom" to "CUSTOM") else emptyList())
+        val chipPad = if (profiles.size > 3) 8.dp else 12.dp
+        profiles.forEach { (id, label) ->
             val active = p.tempPreset == id
             Box(
                 Modifier
                     .heightIn(min = 40.dp)
                     .background(if (active) accent.copy(alpha = pillBgAlpha(0.18f)) else Color.Transparent, RoundedCornerShape(6.dp))
                     .border(Tokens.CardBorder, if (active) accent.copy(alpha = 0.7f) else Color.Transparent, RoundedCornerShape(6.dp))
-                    .clickable(onClickLabel = "Use $label limits") {
+                    .clickable(onClickLabel = "Use the $label thermal profile") {
                         haptic.performHapticFeedback(HapticFeedbackType.Confirm)
                         UserPrefsStore.update(ctx) { it.copy(tempPreset = id) }
                     }
-                    .padding(horizontal = 12.dp),
+                    .padding(horizontal = chipPad),
                 contentAlignment = Alignment.Center
             ) {
                 MonoLabel(label, 10.sp, if (active) Frost else Dim,
@@ -534,8 +538,8 @@ private fun TempSpec.level(): Level =
             InstrumentMeta(spec.peakDisplay)
             Spacer(Modifier.weight(1f))
             ThresholdLegend(
-                "${p.displayTemp(spec.warnC)}${p.tempLabel}",
-                "${p.displayTemp(spec.critC)}${p.tempLabel}"
+                "${p.displayLimit(spec.warnC)}${p.tempLabel}",
+                "${p.displayLimit(spec.critC)}${p.tempLabel}"
             )
         }
     }

@@ -51,6 +51,8 @@ class ThermalReadinessTest {
     private var sec = 0L                     // simulated seconds since t0
     private val now get() = t0 + sec * 1000L
 
+    private fun ThermalVerdict.row(label: String, p: UserPrefs = celsius) = checklist(p).first { it.label == label }
+
     @Before fun setUp() { engine = ThermalReadinessEngine(); sec = 0L }
 
     /** Readings stamped [ageMs] before `now` unless [ages] overrides per tag; -99 = never reported. */
@@ -85,8 +87,9 @@ class ThermalReadinessTest {
         val v = eval(car())
         assertEquals(ThermalState.TEMPS_READY, v.state)
         assertTrue(v.isReady)
-        assertTrue(v.reason(fahrenheit), v.reason(fahrenheit).startsWith("STREET limits"))
-        assertEquals("TRACK limits", eval(car(), track).shortReason(fahrenheit))
+        // Says what is true — monitored temps meet the selected profile — not "ready for track use"
+        assertEquals("Monitored temperatures meet the STREET profile", v.reason(fahrenheit))
+        assertEquals("within TRACK profile", eval(car(), track).shortReason(fahrenheit))
     }
 
     // ── Warm-up ─────────────────────────────────────────────────────────────
@@ -97,10 +100,10 @@ class ThermalReadinessTest {
         assertEquals(ThermalState.ENGINE_WARMING, eval(car(oil = 79.6)).state)
         val atMin = run(3) { car(oil = 80.4) }                     // at the minimum, under min + 1
         assertEquals(ThermalState.ENGINE_WARMING, atMin.state)
-        assertTrue(atMin.reason(celsius), "Oil 80°C · ready at 81°C" in atMin.reason(celsius))
+        assertTrue(atMin.reason(celsius), "Oil warming · ready at 81°C" in atMin.reason(celsius))
         val counting = run(9) { car(oil = 81.0) }                  // 0 … 8 s above the target
         assertEquals(ThermalState.ENGINE_WARMING, counting.state)
-        assertTrue(counting.reason(celsius), "stabilising above 81°C, 8\u00A0of\u00A010\u00A0s" in counting.reason(celsius))
+        assertTrue(counting.reason(celsius), "Oil steady above 81°C · 8\u00A0of\u00A010\u00A0s" in counting.reason(celsius))
         assertEquals(ThermalState.ENGINE_WARMING, run(1) { car(oil = 81.0) }.state)   // 9 s
         assertEquals(ThermalState.TEMPS_READY, run(1) { car(oil = 81.0) }.state)      // 10 s
     }
@@ -121,7 +124,7 @@ class ThermalReadinessTest {
         sec++
         val v = eval(car(oil = 79.0))
         assertEquals(ThermalState.ENGINE_WARMING, v.state)
-        assertTrue(v.reason(celsius), "Oil 79°C · ready at 81°C" in v.reason(celsius))
+        assertTrue(v.reason(celsius), "Oil warming · ready at 81°C" in v.reason(celsius))
         // Polled sensor too — no margin, no delay
         engine.reset(); sec++; eval(car()); sec++
         assertEquals(ThermalState.DRIVETRAIN_WARMING, eval(car(rdu = 29.0)).state)
@@ -158,10 +161,12 @@ class ThermalReadinessTest {
         val margin = run(2) { car(oil = 119.0) }                   // under warn, not under warn − 2
         assertEquals(ThermalState.TEMPERATURE_HIGH, margin.state)
         assertTrue(margin.reading(ThermalSensor.OIL)!!.heatRecovering)
-        assertTrue(margin.reason(celsius), "Oil 119°C · recovering, needs under 118°C for\u00A010\u00A0s" in margin.reason(celsius))
+        assertEquals("Oil cooling — confirming recovery · needs below 118°C", margin.reason(celsius))
         assertFalse(margin.reason(celsius), "≥" in margin.reason(celsius))           // no comparison that's no longer true
+        assertEquals("Oil 119°C, needs <118°C", margin.row("Below STREET warning").value)   // exact target in the checklist
         val holding = run(5) { car(oil = 117.0) }
-        assertTrue(holding.reason(celsius), "under 118°C for 4\u00A0of\u00A010\u00A0s" in holding.reason(celsius))
+        assertTrue(holding.reason(celsius), "Oil cooling — confirming recovery · 4\u00A0of\u00A010\u00A0s" == holding.reason(celsius))
+        assertEquals("Oil cooling 4/10", holding.shortReason(celsius))       // DRIVE: same progress, compact
         assertEquals(ThermalState.TEMPERATURE_HIGH, run(5) { car(oil = 117.0) }.state)   // 9 s
         assertEquals(ThermalState.TEMPS_READY, run(1) { car(oil = 117.0) }.state)        // 10 s
     }
@@ -184,7 +189,7 @@ class ThermalReadinessTest {
         assertEquals(ThermalState.HEAT_RISING, rising.state)
         val f = rising.reading(ThermalSensor.COOLANT)!!.forecast!!
         assertTrue(f.minutesToCrit <= 5.0)
-        assertTrue(rising.reason(celsius), "crit 115°C in" in rising.reason(celsius))
+        assertTrue(rising.reason(celsius), "Coolant rising — critical limit in" in rising.reason(celsius))
         // Flat for the predictor's 120 s window: the forecast clears, held 10 s
         val flat = run(150) { car(coolant = 98.0) }
         assertEquals(ThermalState.TEMPS_READY, flat.state)
@@ -194,7 +199,7 @@ class ThermalReadinessTest {
     fun `a fresh warning stays the headline while another reading is missing or stale`() {
         val noCoolant = eval(car(oil = 125.0, coolant = -99.0))
         assertEquals(ThermalState.TEMPERATURE_HIGH, noCoolant.state)
-        assertTrue(noCoolant.reason(celsius), "+ Coolant no data" in noCoolant.reason(celsius))
+        assertTrue(noCoolant.reason(celsius), "Oil above warning limit · 125°C + Coolant not reporting" == noCoolant.reason(celsius))
         sec++
         val staleRdu = eval(car(oil = 131.0, ages = mapOf("rduTempC" to 120_000L)))
         assertEquals(ThermalState.OVERHEATING, staleRdu.state)
@@ -206,7 +211,7 @@ class ThermalReadinessTest {
     fun `missing data still blocks ready once the warning clears`() {
         val v = eval(car(coolant = -99.0))
         assertEquals(ThermalState.CHECKING, v.state)
-        assertTrue(v.reason(celsius), "Coolant no data" in v.reason(celsius))
+        assertTrue(v.reason(celsius), "Coolant not reporting" == v.reason(celsius))
     }
 
     @Test
@@ -241,12 +246,22 @@ class ThermalReadinessTest {
         sec++
         val warn = eval(car(clutchL = 95.0, clutchR = 60.0))
         assertEquals(ThermalState.TEMPERATURE_HIGH, warn.state)
-        assertTrue(warn.reason(celsius), "Clutch L 95°C ≥ fixed warn 90°C" in warn.reason(celsius))
+        assertEquals("Left clutch above warning limit · 95°C", warn.reason(celsius))
+        assertEquals("L 95°C ≥ 90°C", warn.row("Clutches below 90°C").value)
+        assertEquals("Clutch L 95°C", warn.shortReason(celsius))
+        assertEquals("TEMP HIGH", warn.state.headline)
         sec++
         assertEquals(ThermalState.OVERHEATING, eval(car(clutchL = 121.0, clutchR = 60.0)).state)
         // Same limits on every preset
         sec++
         assertEquals(ThermalState.OVERHEATING, eval(car(clutchL = 121.0, clutchR = 60.0), track).state)
+        // Both clutches in the same state read as one subject, not "+1"
+        sec++
+        val both = eval(car(clutchL = 121.0, clutchR = 123.0))
+        assertEquals("Both clutches above critical limit · 123°C", both.reason(celsius))
+        assertEquals("Clutches 123°C", both.shortReason(celsius))
+        assertEquals(0, both.extraCount)
+        assertEquals("TEMP CRITICAL", both.state.headline)
     }
 
     @Test
@@ -287,7 +302,7 @@ class ThermalReadinessTest {
     fun `checklist never certifies an unavailable reading below its limit`() {
         val v = eval(car(clutchL = 50.0, clutchR = 52.0, ages = mapOf("rduTempC" to 100_000L)))
         val rows = v.checklist(celsius).associateBy { it.label }
-        val preset = rows.getValue("Below STREET warn")
+        val preset = rows.getValue("Below STREET warning")
         assertEquals(CheckMark.WAIT, preset.mark)
         assertTrue(preset.value, "others below · RDU stale" == preset.value)
         assertEquals(CheckMark.OK, rows.getValue("Clutches below 90°C").mark)
@@ -298,7 +313,7 @@ class ThermalReadinessTest {
     fun `VEHICLE summary gets the verdict's advisory - forecast, recovery hold, missing data`() {
         eval(car(oil = 125.0)); sec++
         val holding = eval(car(oil = 117.0))                      // cards normal, verdict still held
-        assertEquals("TEMPERATURE HIGH" to Level.WARN, holding.vehicleAdvisory())
+        assertEquals("TEMP HIGH" to Level.WARN, holding.vehicleAdvisory())
         engine.reset(); sec++
         assertEquals("STALE DATA", eval(car(ages = mapOf("rduTempC" to 100_000L))).vehicleAdvisory()!!.first)
         engine.reset(); sec++
@@ -317,11 +332,11 @@ class ThermalReadinessTest {
     @Test
     fun `DRIVE shows the same target text as THERMAL`() {
         val v = eval(car(oil = 60.0))
-        assertEquals("oil 140 → 177.8°F", v.shortReason(fahrenheit))
+        assertEquals("Oil 140 → 177.8°F", v.shortReason(fahrenheit))
         assertTrue(v.reason(fahrenheit), "ready at 177.8°F" in v.reason(fahrenheit))
         engine.reset(); sec++
-        assertEquals("rdu → 87.8°F", eval(car(rdu = 20.0)).shortReason(fahrenheit))
-        assertEquals("rdu → 31°C", eval(car(rdu = 20.0)).shortReason(celsius))
+        assertEquals("RDU → 87.8°F", eval(car(rdu = 20.0)).shortReason(fahrenheit))
+        assertEquals("RDU → 31°C", eval(car(rdu = 20.0)).shortReason(celsius))
     }
 
     // ── Presets / resets ────────────────────────────────────────────────────
@@ -334,7 +349,7 @@ class ThermalReadinessTest {
         assertEquals(ThermalState.TEMPS_READY, eval(oil115, street).state)             // not "recovering"
         sec++
         assertEquals(ThermalState.TEMPERATURE_HIGH, eval(oil115, track).state)
-        assertTrue(eval(oil115, track).reason(celsius).contains("TRACK warn 110°C"))
+        assertEquals("Oil 115°C ≥ 110°C", eval(oil115, track).row("Below TRACK warning").value)
     }
 
     @Test
@@ -408,16 +423,16 @@ class ThermalReadinessTest {
         assertEquals("9", celsius.displayTempDelta(8.9))
         assertEquals("7.2", fahrenheit.displayTempRate(4.0))
         val v = eval(car(oil = 121.1))
-        assertTrue(v.reason(fahrenheit), "Oil 250°F ≥ STREET warn 248°F" in v.reason(fahrenheit))
-        assertTrue(v.reason(fahrenheit), "16°F below crit" in v.reason(fahrenheit))
-        assertEquals("oil 250°F", v.shortReason(fahrenheit))
+        assertEquals("Oil above warning limit · 250°F", v.reason(fahrenheit))
+        assertEquals("Oil 250°F ≥ 248°F", v.row("Below STREET warning", fahrenheit).value)
+        assertEquals("Oil 250°F", v.shortReason(fahrenheit))
         // Bounds that aren't whole in °F keep a decimal; the reading keeps enough to stay on its side of it
         eval(car(oil = 125.0)); sec++
         val atBound = eval(car(oil = 118.0))                       // 244.4 °F = warn − 2 °C: not under it yet
-        assertTrue(atBound.reason(fahrenheit), "Oil 244.4°F · recovering, needs under 244.4°F" in atBound.reason(fahrenheit))
+        assertTrue(atBound.reason(fahrenheit), "Oil 244.4°F, needs <244.4°F" == atBound.row("Below STREET warning", fahrenheit).value)
         sec++
         val under = eval(car(oil = 117.9))
-        assertTrue(under.reason(fahrenheit), "Oil 244°F · under 244.4°F" in under.reason(fahrenheit))
+        assertTrue(under.reason(fahrenheit), under.row("Below STREET warning", fahrenheit).value.startsWith("Oil 244°F <244.4°F · 0"))
     }
 
     // ── Demo walk-through (the emulator evidence scenario) ──────────────────

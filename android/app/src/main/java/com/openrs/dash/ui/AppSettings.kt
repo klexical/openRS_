@@ -108,6 +108,8 @@ object AppSettings {
 
     // ── Temperature preset ───────────────────────────────────────────────────
     const val KEY_TEMP_PRESET     = "temp_preset"
+    /** Custom thermal profile JSON (°C + base preset) — written only once the user creates one. */
+    const val KEY_THERMAL_CUSTOM  = "thermal_custom"
     const val DEFAULT_TEMP_PRESET = "street"     // "street" | "track" | "race"
 
     // ── Adapter type ─────────────────────────────────────────────────────────
@@ -236,6 +238,9 @@ object AppSettings {
     fun getTempPreset(ctx: Context): String =
         prefs(ctx).getString(KEY_TEMP_PRESET, DEFAULT_TEMP_PRESET) ?: DEFAULT_TEMP_PRESET
 
+    fun getCustomThermal(ctx: Context): Pair<ThermalProfile, String>? =
+        ThermalProfile.fromJson(prefs(ctx).getString(KEY_THERMAL_CUSTOM, null))
+
     fun getAdapterType(ctx: Context): String {
         val raw = prefs(ctx).getString(KEY_ADAPTER_TYPE, null) ?: return DEFAULT_ADAPTER_TYPE
         // Migrate legacy values from v2.2.6-rc.6 and earlier
@@ -349,6 +354,7 @@ object AppSettings {
             putInt   (KEY_MAX_DIAG_ZIPS,      p.maxDiagZips)
             putString(KEY_THEME_ID,    p.themeId)
             putString(KEY_TEMP_PRESET, p.tempPreset)
+            p.customThermal?.let { putString(KEY_THERMAL_CUSTOM, it.toJson(p.customThermalBase)) }
             putString(KEY_ADAPTER_TYPE, p.adapterType)
             putString(KEY_CONNECTION_METHOD, p.connectionMethod)
             putBoolean(KEY_MEATPI_MICROSD, p.meatPiMicroSdLog)
@@ -383,7 +389,9 @@ object AppSettings {
         reconnectIntervalSec = getReconnectInterval(ctx),
         maxDiagZips          = getMaxDiagZips(ctx),
         themeId              = getThemeId(ctx),
-        tempPreset           = getTempPreset(ctx),
+        tempPreset           = getTempPreset(ctx).let { if (it == "custom" && getCustomThermal(ctx) == null) DEFAULT_TEMP_PRESET else it },
+        customThermal        = getCustomThermal(ctx)?.first,
+        customThermalBase    = getCustomThermal(ctx)?.second ?: DEFAULT_TEMP_PRESET,
         adapterType          = getAdapterType(ctx),
         connectionMethod     = getConnectionMethod(ctx),
         meatPiMicroSdLog     = getMeatPiMicroSd(ctx),

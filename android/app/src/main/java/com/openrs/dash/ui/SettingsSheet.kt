@@ -13,6 +13,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,6 +63,7 @@ import androidx.compose.ui.window.DialogProperties
 private enum class SettingsCategory(val label: String, val blurb: String) {
     DISPLAY("DISPLAY", "Theme · shift light · overlay"),
     UNITS("UNITS", "Speed · temp · pressure"),
+    THERMAL("THERMAL", "Profiles · warm-up · limits"),
     CONNECTION("CONNECTION", "Adapter · WiFi · Bluetooth"),
     DRIVES("DRIVES", "Auto-record · storage"),
     DIAGNOSTICS("DIAGNOSTICS", "Exports · logging"),
@@ -145,6 +148,12 @@ fun SettingsDialog(
     var edgeShiftIntensity by remember { mutableStateOf(current.edgeShiftIntensity) }
     var edgeShiftRpm    by remember { mutableStateOf(current.edgeShiftRpm.toString()) }
     var updateChannel   by remember { mutableStateOf(current.updateChannel) }
+    // Thermal profile — active profile + Custom values as editor cells (exact °C kept until a cell is edited)
+    var thermalPreset   by remember { mutableStateOf(if (current.tempPreset == "custom" && current.customThermal == null) "street" else current.tempPreset) }
+    var customBase      by remember { mutableStateOf(current.customThermalBase) }
+    var customCells     by remember { mutableStateOf(current.customThermal?.let { thermalCells(it, current.tempUnit) }) }
+    LaunchedEffect(tempUnit) { customCells = customCells?.mapValues { it.value.withUnit(tempUnit) } }
+    val thermalErrors = customCells?.let { cells -> validateThermalProfile(cells.mapValues { it.value.resolvedC }, tempUnit) }.orEmpty()
     // Live-preview prefs (theme mode, classic fonts, paint
     // colour) apply visual side effects on toggle for instant preview, but
     // do NOT commit to UserPrefsStore until SAVE. Cancel reverts the side
@@ -450,6 +459,62 @@ fun SettingsDialog(
                         "Defaults ${AppSettings.DEFAULT_TIRE_LOW_PSI} / ${AppSettings.DEFAULT_TIRE_WARN_PSI} / " +
                         "${AppSettings.DEFAULT_TIRE_HIGH_PSI} psi."
                 )
+            }
+        },
+        NavSection(
+            SettingsCategory.THERMAL,
+            "THERMAL PROFILE",
+            listOf("thermal", "profile", "street", "track", "race", "custom", "warm-up", "warning", "critical",
+                "oil", "coolant", "ptu", "rdu", "clutch", "intake", "limit", "threshold", "readiness"),
+        ) {
+            val unitLabel = if (tempUnit == "C") "°C" else "°F"
+            val options = listOf("STREET", "TRACK", "RACE") + (if (customCells != null) listOf("CUSTOM") else emptyList())
+            // Sections are laid out in a Box — keep this page's blocks in one Column
+            Column {
+            SettingsSection("THERMAL PROFILE") {
+                SettingsRow("Active profile", stacked = options.size > 3) {
+                    SettingsPicker(options = options, selected = thermalPreset.uppercase(),
+                        onSelect = { thermalPreset = it.lowercase() }, fill = options.size > 3)
+                }
+                Spacer(Modifier.height(6.dp))
+                SettingsNote(
+                    "These values control openRS_ advisories — warnings, readiness and gauge colours. " +
+                        "They don't change the car's own protections. STREET, TRACK and RACE are existing " +
+                        "openRS_ defaults, not manufacturer limits."
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            val editing = thermalPreset == "custom" && customCells != null
+            val title = if (editing) "CUSTOM · copied from ${customBase.uppercase()}" else "${thermalPreset.uppercase()} · built-in, read only"
+            SettingsSection("VALUES · $unitLabel") {
+                InstrumentMeta(title)
+                Spacer(Modifier.height(6.dp))
+                val cells = if (editing) customCells!! else thermalCells(ThermalProfile.builtIn(thermalPreset), tempUnit)
+                ThermalProfileTable(cells, editable = editing, errors = if (editing) thermalErrors else emptyMap(),
+                    onEdit = { key, text -> customCells = customCells?.let { it + (key to it.getValue(key).copy(text = text)) }; error = null })
+                Spacer(Modifier.height(10.dp))
+                if (editing) {
+                    SettingsAction("RESET CUSTOM TO ${customBase.uppercase()} DEFAULTS", Modifier.fillMaxWidth(), tone = ActionTone.NEUTRAL) {
+                        customCells = thermalCells(ThermalProfile.builtIn(customBase), tempUnit); error = null
+                    }
+                } else {
+                    SettingsAction(
+                        (if (customCells != null) "REPLACE CUSTOM WITH " else "COPY TO CUSTOM: ") + thermalPreset.uppercase(),
+                        Modifier.fillMaxWidth(),
+                    ) {
+                        customBase = thermalPreset
+                        customCells = thermalCells(ThermalProfile.builtIn(thermalPreset), tempUnit)
+                        thermalPreset = "custom"; error = null
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                SettingsNote(
+                    "Order: warm-up < warning < critical. Critical must be more than " +
+                        "${if (tempUnit == "C") "2 °C" else "3.6 °F"} above warning and warning more than " +
+                        "${if (tempUnit == "C") "3 °C" else "5.4 °F"} above warm-up, so the existing recovery " +
+                        "margins still work. Freshness, hold times and forecasts don't change. SAVE applies, CANCEL discards."
+                )
+            }
             }
         },
         NavSection(
@@ -953,10 +1018,6 @@ fun SettingsDialog(
                     }
                 }
 
-                // Error (inline above buttons)
-                if (error != null) {
-                    Text(error!!, fontSize = 12.sp, color = Orange, fontFamily = ShareTechMono)
-                }
             }
 
             if (showBlePicker) {
@@ -973,6 +1034,13 @@ fun SettingsDialog(
             // The version lives in the strip at the top of the body — the footer is only the actions,
             // which leaves the settings more room on short screens.
             HorizontalDivider(color = Brd)
+            // A blocked SAVE says why right above the buttons (it used to sit at the end of the scrolled page,
+            // out of sight when the problem was further up)
+            if (error != null) {
+                Text(error!!, fontSize = 12.sp, color = textColor(Orange), fontFamily = ShareTechMono,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 8.dp),
+                    textAlign = TextAlign.Center)
+            }
             if (resetConfirm) {
                 Text(
                     "Defaults staged — tap SAVE to apply, CANCEL to keep your settings",
@@ -1066,6 +1134,7 @@ fun SettingsDialog(
                             maxZips == null || maxZips < 1 -> error = "Max ZIPs must be ≥ 1"
                             maxDrives == null || maxDrives < 1 -> error = "Max drives must be ≥ 1"
                             edgeShiftLight && (shiftRpm == null || shiftRpm !in 1000..9000) -> error = "Shift RPM must be 1000–9000"
+                            thermalErrors.isNotEmpty() -> error = "THERMAL: fix the highlighted custom values"
                             else -> {
                                 AppSettings.save(ctx, host, p)
                                 UserPrefsStore.update(ctx) { it.copy(
@@ -1099,6 +1168,9 @@ fun SettingsDialog(
                                     themeMode            = themeModeLocal,
                                     classicFonts         = classicFontsLocal,
                                     themeId              = themeIdLocal,
+                                    tempPreset           = thermalPreset,
+                                    customThermal        = customCells?.let { thermalProfileFrom(it) } ?: it.customThermal,
+                                    customThermalBase    = if (customCells != null) customBase else it.customThermalBase,
                                 )}
                                 // Ensure the runtime theme reflects whatever
                                 // the local state ended up at (covers the
@@ -1662,4 +1734,57 @@ private fun outlinedFieldColors(): TextFieldColors {
         focusedTextColor      = Frost,
         unfocusedTextColor    = Frost,
     )
+}
+
+
+// ── Thermal profile editor ──────────────────────────────────────────────────
+
+private fun thermalCells(p: ThermalProfile, unit: String): Map<String, ThermalCell> =
+    ThermalProfile.FIELDS.associate { it.key to ThermalCell.of(it.get(p), unit) }
+
+/** Builds the profile from validated cells (callers check [validateThermalProfile] first). */
+private fun thermalProfileFrom(cells: Map<String, ThermalCell>): ThermalProfile =
+    ThermalProfile.FIELDS.fold(ThermalProfile.STREET) { p, f -> f.set(p, cells.getValue(f.key).resolvedC ?: f.get(p)) }
+
+/** One block per sensor: name, then warm-up / warning / critical side by side (read-only for built-ins). */
+@Composable
+private fun ThermalProfileTable(
+    cells: Map<String, ThermalCell>, editable: Boolean, errors: Map<String, String>, onEdit: (String, String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        ThermalRow.entries.forEach { row ->
+            val fields = ThermalProfile.FIELDS.filter { it.row == row }
+            Column {
+                Text(row.label, fontSize = 13.sp, color = Frost, fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ThermalKind.entries.forEach { kind ->
+                        val f = fields.firstOrNull { it.kind == kind }
+                        Column(Modifier.weight(1f)) {
+                            if (f == null) return@Column
+                            val cell = cells.getValue(f.key)
+                            InstrumentMeta(kind.label)
+                            if (editable) {
+                                OutlinedTextField(
+                                    value = cell.text, onValueChange = { onEdit(f.key, it) },
+                                    singleLine = true, isError = f.key in errors,
+                                    modifier = Modifier.fillMaxWidth().semantics { contentDescription = "${row.label} ${kind.label}" },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    colors = outlinedFieldColors(),
+                                    textStyle = androidx.compose.ui.text.TextStyle(fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost),
+                                )
+                            } else {
+                                Text(cell.text, fontSize = 15.sp, color = Frost, fontFamily = ShareTechMono,
+                                    modifier = Modifier.heightIn(min = 32.dp).padding(top = 6.dp))
+                            }
+                        }
+                    }
+                }
+                fields.mapNotNull { errors[it.key]?.let { e -> "${it.kind.label}: $e" } }.forEach {
+                    Text(it, fontSize = 11.sp, color = textColor(Orange), fontFamily = ShareTechMono, lineHeight = 15.sp,
+                        modifier = Modifier.padding(top = 3.dp))
+                }
+            }
+        }
+    }
 }

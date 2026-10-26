@@ -156,9 +156,12 @@ ui/
   BottomNavBar.kt         — Custom bottom nav: 5 vector icons, frosted glass via Haze (hazeEffect),
                             spring-animated indicator bar, one top hairline, pressClick + haptics
                             Height: Tokens.NavBarHeight (48 dp tabs) + sysNavPad (gesture area)
+  ThermalProfile.kt       — Thermal profiles (°C): built-in STREET / TRACK / RACE (existing openRS_ defaults, no manufacturer
+                            source) + optional Custom (JSON in prefs `thermal_custom`). UserPrefs warn/crit getters read
+                            `p.thermalProfile`; ThermalCell keeps exact °C until edited (no unit drift); validateThermalProfile
   ThermalReadiness.kt     — ThermalReadinessSession (app-level, 1 Hz, owns the ThermalPredictor) → ThermalVerdict for DRIVE's
                             StatusLine, THERMAL ReadinessCard + checklist and the DriveRecorder RTR marker. States: NO LIVE DATA ›
-                            OVERHEATING › TEMPERATURE HIGH › HEAT RISING › CHECKING › ENGINE / DRIVETRAIN WARMING › TEMPS READY.
+                            TEMP CRITICAL › TEMP HIGH › HEAT RISING › CHECKING › ENGINE / DRIVETRAIN WARMING › TEMPS READY.
                             ThermalReadinessEngine = pure, clock-injected (tests). Also the shared freshness rule
                             VehicleState.tempAvail / tempStaleAfterMs (RDU, clutch + trans-oil temps 90 s, everything else 60 s).
                             Clutch heat uses the fixed CLUTCH_WARN_C / CLUTCH_CRIT_C (90 / 120 °C, the card limits)
@@ -483,7 +486,7 @@ cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{ver}.apk  (main release)
 ./gradlew assembleRelease -PrcSuffix=rc.5  # → openRS_v{ver}-rc.5.apk
-./gradlew test                             # 705 unit tests across 38 files
+./gradlew test                             # 712 unit tests across 39 files
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 48 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -579,6 +582,8 @@ android/app/src/test/java/com/openrs/dash/
   DriveExportBuilderTest.kt   — 59 tests: CSV/GPX/JSON builders, schema v2, fuelTrim export, knock pulls, boost sweep by gear
   DemoSimulatorTest.kt        — 7 tests: determinism, LOSS freeze / recovery sentinels, freshness stamps, no-decoder sentinels,
                                 WARNING thresholds, DRIVING plausibility + continuity
+  ThermalProfileTest.kt       — 7 tests: built-ins unchanged, Custom selection, JSON round trip, no unit drift, validation,
+                                custom threshold moves verdict + gauge together, no warm-up hold across a changed minimum
   ThermalReadinessTest.kt     — 32 tests: warm-up target + hold, delayed evaluation, drop below minimum, warn / crit recovery holds,
                                 forecast + clearing hold, warning with missing data, stale-warning removal, preset change, offline /
                                 reset, missed AWD polls (90 s, incl. trans oil), stamps never refreshed, shared freshness, units, clutch
@@ -593,7 +598,7 @@ android/app/src/test/java/com/openrs/dash/
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **705 tests across 38 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **712 tests across 39 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 

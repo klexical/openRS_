@@ -20,7 +20,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlin.math.abs
 import kotlin.math.pow
 
 /**
@@ -51,8 +50,8 @@ import kotlin.math.pow
  */
 enum class ThermalState(val headline: String) {
     NO_LIVE_DATA("NO LIVE DATA"),
-    OVERHEATING("OVERHEATING"),
-    TEMPERATURE_HIGH("TEMPERATURE HIGH"),
+    OVERHEATING("TEMP CRITICAL"),
+    TEMPERATURE_HIGH("TEMP HIGH"),
     HEAT_RISING("HEAT RISING"),
     CHECKING("CHECKING"),
     ENGINE_WARMING("ENGINE WARMING"),
@@ -64,30 +63,27 @@ enum class ThermalState(val headline: String) {
 }
 
 /**
- * The readings that decide readiness. Minimums are the existing warm-up minimums
- * ([VehicleState.rtrColdItems]); forecast floors are the existing THERMAL alert floors.
- * Oil / coolant are required (CAN 0x0F8 / 0x2F0 on every car); the rest count once reported.
+ * The readings that decide readiness. Warm-up minimums and limits come from the active
+ * [ThermalProfile]; forecast floors are the existing THERMAL alert floors. Oil / coolant are
+ * required (CAN 0x0F8 / 0x2F0 on every car); the rest count once reported.
  */
 enum class ThermalSensor(
-    val label: String, val tag: String, val minC: Double,
+    /** Compact name (DRIVE row, cards, checklist): "Clutch L". */
+    val label: String,
+    /** Name at the start of a sentence: "Left clutch above warning limit". */
+    val spoken: String,
+    val tag: String,
     val required: Boolean, val polled: Boolean,
     val forecastLabel: String? = null, val forecastFloorC: Double = 0.0,
 ) {
-    OIL("Oil", "oilTempC", 80.0, required = true, polled = false, "OIL", 80.0),
-    COOLANT("Coolant", "coolantTempC", 85.0, required = true, polled = false, "COOLANT", 85.0),
-    PTU("PTU", "ptuTempC", 40.0, required = false, polled = false, "PTU", 50.0),
-    RDU("RDU", "rduTempC", 30.0, required = false, polled = true, "RDU", 40.0),
-    CLUTCH_L("Clutch L", "awdClutchTempL", 25.0, required = false, polled = true),
-    CLUTCH_R("Clutch R", "awdClutchTempR", 25.0, required = false, polled = true);
+    OIL("Oil", "Oil", "oilTempC", required = true, polled = false, "OIL", 80.0),
+    COOLANT("Coolant", "Coolant", "coolantTempC", required = true, polled = false, "COOLANT", 85.0),
+    PTU("PTU", "PTU", "ptuTempC", required = false, polled = false, "PTU", 50.0),
+    RDU("RDU", "RDU", "rduTempC", required = false, polled = true, "RDU", 40.0),
+    CLUTCH_L("Clutch L", "Left clutch", "awdClutchTempL", required = false, polled = true),
+    CLUTCH_R("Clutch R", "Right clutch", "awdClutchTempR", required = false, polled = true);
 
-    /** Clutches use fixed limits; the others follow the THERMAL preset. */
-    val hasFixedLimits: Boolean get() = this == CLUTCH_L || this == CLUTCH_R
-
-    /** Name in DRIVE's short reason ("clt L" — "clutch l 10…" didn't fit beside a +N count at 360 dp). */
-    val shortLabel: String get() = when (this) { CLUTCH_L -> "clt L"; CLUTCH_R -> "clt R"; else -> label.lowercase() }
-
-    /** Name inside a checklist row that already says "Clutches" ("L 115°C · R 116°C"). */
-    val rowLabel: String get() = when (this) { CLUTCH_L -> "L"; CLUTCH_R -> "R"; else -> label }
+    val isClutch: Boolean get() = this == CLUTCH_L || this == CLUTCH_R
 
     fun valueC(vs: VehicleState): Double = when (this) {
         OIL -> vs.oilTempC; COOLANT -> vs.coolantTempC; PTU -> vs.ptuTempC; RDU -> vs.rduTempC
@@ -95,39 +91,31 @@ enum class ThermalSensor(
     }
 }
 
-/** AWD clutch temps: the existing fixed limits that colour THERMAL's clutch cards (not preset-dependent). */
+/** AWD clutch limits in every built-in profile: the existing values that colour THERMAL's clutch cards. */
 const val CLUTCH_WARN_C = 90.0
 const val CLUTCH_CRIT_C = 120.0
 
-/**
- * Warn / crit per sensor — the values that colour the THERMAL cards: the active preset for oil,
- * coolant, PTU and RDU; the fixed [CLUTCH_WARN_C] / [CLUTCH_CRIT_C] for the AWD clutches.
- */
-data class ThermalLimits(
-    val preset: String,
-    val oilWarnC: Double, val oilCritC: Double, val coolWarnC: Double, val coolCritC: Double,
-    val ptuWarnC: Double, val ptuCritC: Double, val rduWarnC: Double, val rduCritC: Double,
-) {
-    fun warnC(s: ThermalSensor): Double? = when (s) {
-        ThermalSensor.OIL -> oilWarnC; ThermalSensor.COOLANT -> coolWarnC
-        ThermalSensor.PTU -> ptuWarnC; ThermalSensor.RDU -> rduWarnC
-        ThermalSensor.CLUTCH_L, ThermalSensor.CLUTCH_R -> CLUTCH_WARN_C
+/** Warm-up minimum and warn / crit per sensor from the active profile (built-in or Custom). */
+data class ThermalLimits(val preset: String, val profile: ThermalProfile) {
+    fun minC(s: ThermalSensor): Double = when (s) {
+        ThermalSensor.OIL -> profile.oilMinC; ThermalSensor.COOLANT -> profile.coolMinC
+        ThermalSensor.PTU -> profile.ptuMinC; ThermalSensor.RDU -> profile.rduMinC
+        ThermalSensor.CLUTCH_L, ThermalSensor.CLUTCH_R -> profile.clutchMinC
     }
-    fun critC(s: ThermalSensor): Double? = when (s) {
-        ThermalSensor.OIL -> oilCritC; ThermalSensor.COOLANT -> coolCritC
-        ThermalSensor.PTU -> ptuCritC; ThermalSensor.RDU -> rduCritC
-        ThermalSensor.CLUTCH_L, ThermalSensor.CLUTCH_R -> CLUTCH_CRIT_C
+    fun warnC(s: ThermalSensor): Double = when (s) {
+        ThermalSensor.OIL -> profile.oilWarnC; ThermalSensor.COOLANT -> profile.coolWarnC
+        ThermalSensor.PTU -> profile.ptuWarnC; ThermalSensor.RDU -> profile.rduWarnC
+        ThermalSensor.CLUTCH_L, ThermalSensor.CLUTCH_R -> profile.clutchWarnC
     }
-    val presetName: String get() = when (preset) { "race" -> "RACE"; "track" -> "TRACK"; else -> "STREET" }
-    /** "STREET warn" for preset limits, "fixed warn" for the clutches. */
-    fun limitName(s: ThermalSensor, crit: Boolean): String =
-        (if (s.hasFixedLimits) "fixed" else presetName) + if (crit) " crit" else " warn"
+    fun critC(s: ThermalSensor): Double = when (s) {
+        ThermalSensor.OIL -> profile.oilCritC; ThermalSensor.COOLANT -> profile.coolCritC
+        ThermalSensor.PTU -> profile.ptuCritC; ThermalSensor.RDU -> profile.rduCritC
+        ThermalSensor.CLUTCH_L, ThermalSensor.CLUTCH_R -> profile.clutchCritC
+    }
+    val presetName: String get() = when (preset) { "race" -> "RACE"; "track" -> "TRACK"; "custom" -> "CUSTOM"; else -> "STREET" }
 
     companion object {
-        fun from(p: UserPrefs) = ThermalLimits(
-            p.tempPreset, p.oilWarnC, p.oilCritC, p.coolWarnC, p.coolCritC,
-            p.ptuWarnC, p.ptuCritC, p.rduWarnC, p.rduCritC,
-        )
+        fun from(p: UserPrefs) = ThermalLimits(if (p.tempPreset == "custom" && p.customThermal == null) "street" else p.tempPreset, p.thermalProfile)
     }
 }
 
@@ -159,8 +147,9 @@ data class SensorReadiness(
     /** Predictor trend (null until its 10-sample minimum, or when not fresh / not predicted). */
     val trend: ClimbTrend?,
     val rateCPerMin: Double?,
-    /** Warm-up latch; [warmTargetC] = minimum + 1 °C. */
+    /** Warm-up latch; [minC] = the profile's minimum, [warmTargetC] = minimum + 1 °C. */
     val warm: Boolean,
+    val minC: Double,
     val warmTargetC: Double,
     /** CAN reading at / above [warmTargetC], counting to [HOLD_MS] (null = not counting). */
     val warmHeldMs: Long?,
@@ -196,7 +185,13 @@ data class ThermalVerdict(
     fun reading(s: ThermalSensor): SensorReadiness? = sensors.firstOrNull { it.sensor == s }
     val gaps: List<SensorReadiness> get() = sensors.filter { it.isGap }
     /** Conditions beyond the first deciding reading — other deciding readings, plus missing ones under a heat state. */
-    val extraCount: Int get() = (deciding.size - 1).coerceAtLeast(0) + (if (state.isHeat) gaps.size else 0)
+    val extraCount: Int get() {
+        // The clutch pair in the same state reads as one subject ("Clutches"), so it isn't a "+1"
+        val l = deciding.firstOrNull { it.sensor == ThermalSensor.CLUTCH_L }
+        val r = deciding.firstOrNull { it.sensor == ThermalSensor.CLUTCH_R }
+        val pair = if (l != null && r != null && l.heatRecovering == r.heatRecovering && l.forecastLive == r.forecastLive) 1 else 0
+        return (deciding.size - 1 - pair).coerceAtLeast(0) + (if (state.isHeat) gaps.size else 0)
+    }
 
     /** The readings that decide the headline, in sensor order. */
     val deciding: List<SensorReadiness> get() = when (state) {
@@ -277,8 +272,9 @@ class ThermalReadinessEngine(private val predictor: ThermalPredictor = ThermalPr
         val continuous = lastMono >= 0 && monoMs - lastMono in 0..MAX_STEP_MS
         lastMono = monoMs
         if (limits != lastLimits) {
-            // A preset change is not a temperature recovery: re-derive heat from this reading.
-            latches.values.forEach { it.clearHeat() }
+            // A profile / threshold change is not a recovery or a warm-up: no hold (heat, forecast or
+            // warm-up) carries across different thresholds — every reading is re-derived from scratch.
+            latches.values.forEach { it.clearHeat(); it.warm = false; it.seenBelowTarget = false; it.aboveTarget.reset() }
             lastLimits = limits
         }
 
@@ -307,7 +303,7 @@ class ThermalReadinessEngine(private val predictor: ThermalPredictor = ThermalPr
             // ── Heat (worse at once; better after HEAT_MARGIN_C held HOLD_MS) ──
             var clearBelow: Double? = null
             var clearHeld: Long? = null
-            if (!fresh || v == null || warn == null || crit == null) {
+            if (!fresh || v == null) {
                 l.clearHeat()   // stale / invalid: no current measured warning
             } else {
                 val rawHeat = when { v >= crit -> HeatLevel.CRIT; v >= warn -> HeatLevel.WARN; else -> HeatLevel.NONE }
@@ -326,12 +322,11 @@ class ThermalReadinessEngine(private val predictor: ThermalPredictor = ThermalPr
             val label = s.forecastLabel
             var forecastLive = false
             var forecastHeld: Long? = null
-            if (label != null && fresh && v != null && crit != null) {
+            if (label != null && fresh && v != null) {
                 val pred = predictor.predict(label, crit, s.forecastFloorC)
                 val ttc = pred?.timeToCriticalMin
                 if (pred != null && ttc != null && ttc <= FORECAST_HORIZON_MIN) banners += pred
-                val valid = pred != null && !pred.reached && ttc != null && ttc <= FORECAST_HORIZON_MIN &&
-                    warn != null && v < warn
+                val valid = pred != null && !pred.reached && ttc != null && ttc <= FORECAST_HORIZON_MIN && v < warn
                 if (valid) {
                     l.forecast = HeatForecast(ttc!!, pred!!.climbRateCPerMin, crit)
                     l.forecastClear.reset()
@@ -345,11 +340,12 @@ class ThermalReadinessEngine(private val predictor: ThermalPredictor = ThermalPr
             }
 
             // ── Warm-up (below the minimum ends it at once; gaining is held) ──
-            val target = s.minC + WARM_MARGIN_C
+            val minC = limits.minC(s)
+            val target = minC + WARM_MARGIN_C
             var warmHeld: Long? = null
             if (fresh && v != null) {
                 when {
-                    v < s.minC -> { l.warm = false; l.seenBelowTarget = true; l.aboveTarget.reset() }
+                    v < minC -> { l.warm = false; l.seenBelowTarget = true; l.aboveTarget.reset() }
                     l.warm -> Unit
                     v < target -> { l.seenBelowTarget = true; l.aboveTarget.reset() }
                     !l.seenBelowTarget || s.polled -> l.warm = true   // first sample already warm / one fresh poll
@@ -370,7 +366,7 @@ class ThermalReadinessEngine(private val predictor: ThermalPredictor = ThermalPr
                 heat = l.heat, heatClearBelowC = clearBelow, heatClearHeldMs = clearHeld,
                 forecast = l.forecast, forecastLive = forecastLive, forecastClearHeldMs = forecastHeld,
                 trend = trend, rateCPerMin = if (trend != null) predictor.slopeCPerMin(label!!) else null,
-                warm = l.warm, warmTargetC = target, warmHeldMs = warmHeld,
+                warm = l.warm, minC = minC, warmTargetC = target, warmHeldMs = warmHeld,
             )
         }
 
@@ -472,10 +468,7 @@ fun VehicleState.tempAvail(valueC: Double, tag: String, now: Long = System.curre
 private fun UserPrefs.t(c: Double) = "${displayTemp(c)}$tempLabel"
 private fun UserPrefs.inUnit(c: Double) = if (tempUnit == "C") c else c * 9.0 / 5.0 + 32
 /** A limit, bound or target: whole numbers stay whole, others keep one decimal (warn − 2 °C = 244.4°F, not "244"). */
-private fun UserPrefs.lim(c: Double): String {
-    val x = inUnit(c)
-    return (if (abs(x - Math.round(x)) < 0.05) "%.0f" else "%.1f").format(x) + tempLabel
-}
+private fun UserPrefs.lim(c: Double): String = displayLimit(c) + tempLabel
 /** Reading [v] beside [limit]: the fewest decimals that keep it on the correct side ("244.4°F · needs under 244.4°F"). */
 private fun UserPrefs.tVs(v: Double, limit: Double): String {
     val x = inUnit(v); val l = inUnit(limit)
@@ -493,9 +486,11 @@ private fun ageText(ms: Long?) = ms?.let { "${it / 1000L}\u00A0s ago" } ?: ""
 private fun holdText(ms: Long?) = "${secs(ms)}\u00A0of\u00A0${HOLD_MS / 1000}\u00A0s"
 private fun gapText(r: SensorReadiness) = when (r.avail) {
     TempAvail.STALE -> "${r.sensor.label} stale"
-    TempAvail.UNAVAILABLE -> if (r.sensor.required) "${r.sensor.label} no data" else "${r.sensor.label} unavailable"
-    else -> "${r.sensor.label} no data"
+    TempAvail.UNAVAILABLE -> if (r.sensor.required) "${r.sensor.label} not reporting" else "${r.sensor.label} unavailable"
+    else -> "${r.sensor.label} not reporting"
 }
+private fun gapWithAge(r: SensorReadiness) =
+    gapText(r) + (if (r.avail == TempAvail.STALE) r.ageMs?.let { ", last ${ageText(it)}" } ?: "" else "")
 
 private fun trendText(r: SensorReadiness, p: UserPrefs): String? = when (r.trend) {
     ClimbTrend.RISING -> "rising ${p.displayTempRate(r.rateCPerMin ?: 0.0)}${p.tempLabel}/min"
@@ -503,106 +498,112 @@ private fun trendText(r: SensorReadiness, p: UserPrefs): String? = when (r.trend
     ClimbTrend.STABLE -> "steady"
     null -> null
 }
+private fun arrow(r: SensorReadiness) = when (r.trend) { ClimbTrend.RISING -> " ↑"; ClimbTrend.COOLING -> " ↓"; else -> "" }
 
-/** One reading's line for the verdict — what it is and, during a hold, exactly what the code waits for. */
-private fun line(r: SensorReadiness, state: ThermalState, limits: ThermalLimits, p: UserPrefs): String {
-    val name = r.sensor.label
+/** "Oil", "Oil and coolant", "Oil, coolant and PTU" — first name as spoken, the rest lower-case. */
+private fun names(rs: List<Subject>): String {
+    val n = rs.mapIndexed { i, r -> if (i == 0) r.spoken else r.spoken.replaceFirstChar { it.lowercase() } }
+    return when (n.size) { 0 -> ""; 1 -> n[0]; else -> n.dropLast(1).joinToString(", ") + " and " + n.last() }
+}
+
+/** The bound a recovering reading must stay under (warn / crit − 2 °C). */
+private fun clearBound(r: SensorReadiness): Double? =
+    r.heatClearBelowC ?: (if (r.heat == HeatLevel.CRIT) r.critC else r.warnC)?.minus(HEAT_MARGIN_C)
+
+/** What a sentence is about: one reading, or both clutches when they're in the same state. */
+private class Subject(val spoken: String, val label: String, val r: SensorReadiness)
+
+/**
+ * [ThermalVerdict.deciding] with the clutch pair merged ("Both clutches" / "Clutches") when both are
+ * deciding in the same phase. The representative is the one the verdict waits on: the hotter while
+ * past a limit, the one with less recovery progress while cooling.
+ */
+private fun ThermalVerdict.subjects(): List<Subject> {
+    val d = deciding
+    val l = d.firstOrNull { it.sensor == ThermalSensor.CLUTCH_L }
+    val r = d.firstOrNull { it.sensor == ThermalSensor.CLUTCH_R }
+    fun single(x: SensorReadiness) = Subject(x.sensor.spoken, x.sensor.label, x)
+    if (l == null || r == null || l.heatRecovering != r.heatRecovering || l.forecastLive != r.forecastLive) return d.map { single(it) }
+    val rep = if (l.heatRecovering) listOf(l, r).minBy { it.heatClearHeldMs ?: -1L } else listOf(l, r).maxBy { it.valueC ?: -999.0 }
+    return d.filterNot { it.sensor.isClutch }.map { single(it) } + Subject("Both clutches", "Clutches", rep)
+}
+
+/** One reading's sentence for THERMAL's summary — plain words; exact comparisons live in the checklist. */
+private fun line(subject: Subject, state: ThermalState, p: UserPrefs): String {
+    val r = subject.r
+    val name = subject.spoken
     val v = r.valueC ?: return gapText(r)
     return when (state) {
         ThermalState.OVERHEATING, ThermalState.TEMPERATURE_HIGH -> {
-            val crit = state == ThermalState.OVERHEATING
-            val limit = (if (crit) r.critC else r.warnC) ?: return "$name ${p.t(v)}"
+            val which = if (state == ThermalState.OVERHEATING) "critical" else "warning"
             if (r.heatRecovering) {
-                val below = r.heatClearBelowC ?: (limit - HEAT_MARGIN_C)
-                if (r.heatClearHeldMs == null) "$name ${p.tVs(v, below)} · recovering, needs under ${p.lim(below)} for\u00A0${HOLD_MS / 1000}\u00A0s"
-                else "$name ${p.tVs(v, below)} · under ${p.lim(below)} for ${holdText(r.heatClearHeldMs)}"
-            } else buildString {
-                append("$name ${p.tVs(v, limit)} ≥ ${limits.limitName(r.sensor, crit)} ${p.lim(limit)}")
-                trendText(r, p)?.let { append(" · $it") }
-                if (!crit) r.critC?.let { append(" · ${p.d(it - v)} below crit") }
-            }
+                // Severity stays until the hold completes; the reason says what it is waiting for.
+                val bound = clearBound(r)
+                "$name cooling — confirming recovery · " +
+                    if (r.heatClearHeldMs == null) "needs below ${bound?.let { p.lim(it) } ?: "the limit"}" else holdText(r.heatClearHeldMs)
+            } else "$name above $which limit · ${p.t(v)}" + (trendText(r, p)?.let { ", $it" } ?: "")
         }
         ThermalState.HEAT_RISING -> {
             val f = r.forecast ?: return "$name ${p.t(v)}"
-            if (r.forecastLive) {
-                "$name ${p.t(v)} · crit ${p.lim(f.critC)} in ${minutes(f.minutesToCrit)} at ${p.displayTempRate(f.rateCPerMin)}${p.tempLabel}/min"
-            } else "$name ${p.t(v)} · forecast cleared, holding ${holdText(r.forecastClearHeldMs)}"
+            if (r.forecastLive) "$name rising — critical limit in ${minutes(f.minutesToCrit)}"
+            else "$name rise easing — confirming · ${holdText(r.forecastClearHeldMs)}"
         }
         ThermalState.ENGINE_WARMING, ThermalState.DRIVETRAIN_WARMING ->
-            if (r.warmHeldMs != null) "$name ${p.tVs(v, r.warmTargetC)} · stabilising above ${p.lim(r.warmTargetC)}, ${holdText(r.warmHeldMs)}"
-            else "$name ${p.tVs(v, r.warmTargetC)} · ready at ${p.lim(r.warmTargetC)}"
+            if (r.warmHeldMs != null) "$name steady above ${p.lim(r.warmTargetC)} · ${holdText(r.warmHeldMs)}"
+            else "$name warming · ready at ${p.lim(r.warmTargetC)}"
         else -> "$name ${p.t(v)}"
     }
 }
 
-/** THERMAL summary reason: every deciding reading, then other blockers ("+ RDU stale"). */
+/** THERMAL summary reason: what the headline is about, in plain words, then other blockers ("+ RDU stale"). */
 fun ThermalVerdict.reason(p: UserPrefs): String {
     val lim = limits ?: return "Waiting for live data"
-    if (state == ThermalState.TEMPS_READY) {
-        val closest = sensors.filter { it.fresh && it.valueC != null && it.warnC != null }
-            .minByOrNull { it.warnC!! - it.valueC!! }
-        return "${lim.presetName} limits" +
-            (closest?.let { " · closest: ${it.sensor.label.lowercase()} ${p.d(it.warnC!! - it.valueC!!)} below warn" } ?: "")
-    }
-    fun gapWithAge(r: SensorReadiness) = gapText(r) + (if (r.avail == TempAvail.STALE) r.ageMs?.let { ", last ${ageText(it)}" } ?: "" else "")
+    if (state == ThermalState.TEMPS_READY) return "Monitored temperatures meet the ${lim.presetName} profile"
     if (state == ThermalState.CHECKING) return deciding.joinToString(" · ") { gapWithAge(it) }
-    // Several readings past the same limit: one compact list (the cards carry each threshold).
-    val compactHeat = state.isHeat && state != ThermalState.HEAT_RISING && deciding.size > 1 && deciding.none { it.heatRecovering }
-    val main = if (compactHeat) {
-        val crit = state == ThermalState.OVERHEATING
-        val fixed = deciding.count { it.sensor.hasFixedLimits }
-        "Past " + when (fixed) {
-            0 -> lim.limitName(ThermalSensor.OIL, crit)
-            deciding.size -> lim.limitName(ThermalSensor.CLUTCH_L, crit)
-            else -> if (crit) "crit limits" else "warn limits"
-        } + ": " +
-            deciding.joinToString(" · ") { r ->
-                r.sensor.label + " " + (r.valueC?.let { p.t(it) } ?: "—") +
-                    when (r.trend) { ClimbTrend.RISING -> " ↑"; ClimbTrend.COOLING -> " ↓"; else -> "" }
-            }
-    } else deciding.joinToString(" · ") { line(it, state, lim, p) }
+    val subjects = subjects()
+    val live = subjects.filterNot { it.r.heatRecovering }
+    val main = if (state.isHeat && state != ThermalState.HEAT_RISING && live.size > 1) {
+        // Several readings past the same limit: one sentence (each value is on its card and in the checklist)
+        val which = if (state == ThermalState.OVERHEATING) "critical" else "warning"
+        (listOf("${names(live)} above $which limit") + subjects.filter { it.r.heatRecovering }.map { line(it, state, p) })
+            .joinToString(" · ")
+    } else subjects.joinToString(" · ") { line(it, state, p) }
     val extra = if (state.isHeat) gaps.joinToString(" · ") { gapWithAge(it) } else ""
     val engineOk = if (state == ThermalState.DRIVETRAIN_WARMING) "Engine warm · " else ""
     return engineOk + main + if (extra.isNotEmpty()) " + $extra" else ""
 }
 
 /**
- * DRIVE's 48 dp row: one short phrase (≈ 15–18 characters fit beside the longest headlines at
- * 360 dp) so the headline never has to give way. THERMAL carries the full reason.
+ * DRIVE's 48 dp row: one short phrase so the headline never has to give way; THERMAL carries the
+ * sentence and the checklist the exact numbers. Targets use the same text as THERMAL (177.8°F).
  */
 fun ThermalVerdict.shortReason(p: UserPrefs): String {
     val lim = limits ?: return ""
-    if (state == ThermalState.TEMPS_READY) return "${lim.presetName} limits"
-    val first = deciding.firstOrNull() ?: return ""
-    val name = first.sensor.shortLabel
+    if (state == ThermalState.TEMPS_READY) return "within ${lim.presetName} profile"
+    val subject = subjects().firstOrNull() ?: return ""
+    val first = subject.r
+    val name = subject.label
     val v = first.valueC
-    val core = when {
-        state == ThermalState.CHECKING || v == null -> gapText(first).replaceFirst(first.sensor.label, name)
+    return when {
+        state == ThermalState.CHECKING || v == null -> gapText(first)
         state == ThermalState.OVERHEATING || state == ThermalState.TEMPERATURE_HIGH ->
-            when {
-                first.heatRecovering -> "$name recovering"
-                // Same arrows as THERMAL's trend marks — keeps the phrase short beside the headline
-                first.trend == ClimbTrend.RISING -> "$name ${p.t(v)} ↑"
-                first.trend == ClimbTrend.COOLING -> "$name ${p.t(v)} ↓"
-                else -> "$name ${p.t(v)}"
-            }
+            // Progress as "n/10" — "Clutches cooling · 1/10 s" was cut off beside TEMP CRITICAL at 360 dp
+            if (first.heatRecovering) "$name cooling" + (first.heatClearHeldMs?.let { " ${secs(it)}/${HOLD_MS / 1000}" } ?: "")
+            else "$name ${p.t(v)}${arrow(first)}"
         state == ThermalState.HEAT_RISING -> first.forecast?.let { f ->
-            if (!first.forecastLive) "$name easing"
-            else "$name crit in ${minutes(f.minutesToCrit)}"
+            if (!first.forecastLive) "$name easing" else "$name crit in ${minutes(f.minutesToCrit)}"
         } ?: name
-        first.warmHeldMs != null -> "$name stabilising"
-        // Same target text as THERMAL (177.8°F, not 178°F); beside the longer DRIVETRAIN headline the
-        // current value gives way so the target fits at 360 dp.
+        first.warmHeldMs != null -> "$name steady ${secs(first.warmHeldMs)}/${HOLD_MS / 1000}"
+        // Beside the longer DRIVETRAIN headline the current value gives way so the target fits at 360 dp
         state == ThermalState.DRIVETRAIN_WARMING -> "$name → ${p.lim(first.warmTargetC)}"
         else -> "$name ${p.displayTemp(v)} → ${p.lim(first.warmTargetC)}"
     }
-    return core
 }
 
 enum class CheckMark { OK, WAIT, ALERT }
 data class CheckItem(val mark: CheckMark, val label: String, val value: String, val level: Level = Level.NORMAL)
 
-/** THERMAL's collapsible checklist — the same facts as the headline, one row per rule. */
+/** THERMAL's collapsible checklist — the exact targets and comparisons behind the headline, one row per rule. */
 fun ThermalVerdict.checklist(p: UserPrefs): List<CheckItem> {
     val lim = limits ?: return emptyList()
     fun warmRow(label: String, rs: List<SensorReadiness>): CheckItem? {
@@ -613,7 +614,7 @@ fun ThermalVerdict.checklist(p: UserPrefs): List<CheckItem> {
         val held = shown.mapNotNull { it.warmHeldMs }.minOrNull()
         // Warm: the minimum that would end readiness. Not yet: the target it waits for (min + 1 °C, then the hold).
         val value = when {
-            ok -> "$values / min ${p.lim(shown.first().sensor.minC)}"
+            ok -> "$values / min ${p.lim(shown.first().minC)}"
             shown.any { !it.fresh } -> shown.filter { !it.fresh }.joinToString(" · ") { gapText(it) }
             held != null -> "$values${p.tempLabel} · ${holdText(held)}"
             else -> "$values → ${p.lim(shown.first().warmTargetC)}"
@@ -621,6 +622,19 @@ fun ThermalVerdict.checklist(p: UserPrefs): List<CheckItem> {
         return CheckItem(if (ok) CheckMark.OK else CheckMark.WAIT, label, value)
     }
     fun one(s: ThermalSensor) = listOfNotNull(reading(s))
+    /** Exact comparison for a reading at / past a limit, or recovering from one. */
+    fun hotValue(r: SensorReadiness): String {
+        val v = r.valueC ?: return gapText(r)
+        val name = if (r.sensor.isClutch) r.sensor.label.removePrefix("Clutch ") else r.sensor.label
+        if (r.heatRecovering) {
+            val bound = clearBound(r) ?: return "$name ${p.t(v)}"
+            return if (r.heatClearHeldMs == null) "$name ${p.tVs(v, bound)}, needs <${p.lim(bound)}"
+                   else "$name ${p.tVs(v, bound)} <${p.lim(bound)} · ${holdText(r.heatClearHeldMs)}"
+        }
+        val crit = r.heat == HeatLevel.CRIT
+        val limit = (if (crit) r.critC else r.warnC) ?: return "$name ${p.t(v)}"
+        return "$name ${p.tVs(v, limit)} ≥ ${p.lim(limit)}" + if (crit) " crit" else ""
+    }
     /** "Below <limit>" for [group]: alert past it, incomplete (WAIT) while any reading in it is unavailable. */
     fun limitRow(label: String, group: List<SensorReadiness>): CheckItem? {
         val shown = group.filter { it.counts }
@@ -628,9 +642,7 @@ fun ThermalVerdict.checklist(p: UserPrefs): List<CheckItem> {
         val hot = shown.filter { it.heat != HeatLevel.NONE }
         val missing = shown.filter { !it.fresh }
         return when {
-            hot.isNotEmpty() -> CheckItem(CheckMark.ALERT, label,
-                hot.joinToString(" · ") { r -> "${r.sensor.rowLabel} ${r.valueC?.let { p.t(it) } ?: "—"}" } +
-                    if (hot.any { it.heatRecovering }) " recovering" else "",
+            hot.isNotEmpty() -> CheckItem(CheckMark.ALERT, label, hot.joinToString(" · ") { hotValue(it) },
                 if (hot.any { it.heat == HeatLevel.CRIT }) Level.CRIT else Level.WARN)
             missing.isNotEmpty() -> CheckItem(CheckMark.WAIT, label,
                 (if (missing.size < shown.size) "others below · " else "") + missing.joinToString(" · ") { gapText(it) })
@@ -641,22 +653,26 @@ fun ThermalVerdict.checklist(p: UserPrefs): List<CheckItem> {
     val forecasts = sensors.filter { it.forecast != null }
     val forecastGaps = forecastable.filter { !it.fresh }
     val polled = sensors.filter { it.sensor.polled && it.fresh }.maxByOrNull { it.ageMs ?: 0L }
+    val closest = sensors.filter { it.fresh && it.valueC != null && it.warnC != null && it.heat == HeatLevel.NONE }
+        .minByOrNull { it.warnC!! - it.valueC!! }
     return listOfNotNull(
         warmRow("Oil warm-up", one(ThermalSensor.OIL)),
         warmRow("Coolant warm-up", one(ThermalSensor.COOLANT)),
         warmRow("PTU warm-up", one(ThermalSensor.PTU)),
         warmRow("RDU warm-up", one(ThermalSensor.RDU)),
         warmRow("Clutches warm-up", one(ThermalSensor.CLUTCH_L) + one(ThermalSensor.CLUTCH_R)),
-        limitRow("Below ${lim.presetName} warn", sensors.filter { !it.sensor.hasFixedLimits }),
-        limitRow("Clutches below ${p.lim(CLUTCH_WARN_C)}", sensors.filter { it.sensor.hasFixedLimits }),
+        limitRow("Below ${lim.presetName} warning", sensors.filter { !it.sensor.isClutch }),
+        limitRow("Clutches below ${p.lim(lim.profile.clutchWarnC)}", sensors.filter { it.sensor.isClutch }),
         when {
             forecasts.isNotEmpty() -> CheckItem(CheckMark.ALERT, "No heat forecast",
-                forecasts.joinToString(" · ") { r -> r.sensor.label + if (r.forecastLive) " ${minutes(r.forecast!!.minutesToCrit)}" else " easing" },
-                Level.WARN)
+                forecasts.joinToString(" · ") { r ->
+                    r.sensor.label + if (r.forecastLive) " ${p.lim(r.forecast!!.critC)} in ${minutes(r.forecast.minutesToCrit)}" else " easing · ${holdText(r.forecastClearHeldMs)}"
+                }, Level.WARN)
             forecastGaps.isNotEmpty() -> CheckItem(CheckMark.WAIT, "No heat forecast",
                 (if (forecastGaps.size < forecastable.size) "others none · " else "") + forecastGaps.joinToString(" · ") { gapText(it) })
             else -> CheckItem(CheckMark.OK, "No heat forecast", "—")
         },
+        closest?.let { CheckItem(CheckMark.OK, "Closest to warning", "${it.sensor.label} ${p.d(it.warnC!! - it.valueC!!)} below") },
         if (gaps.isEmpty()) CheckItem(CheckMark.OK, "Readings current",
             polled?.let { "${it.sensor.label} ${ageText(it.ageMs)}" } ?: "all")
         else CheckItem(CheckMark.WAIT, "Readings current",

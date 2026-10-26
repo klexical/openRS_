@@ -32,7 +32,10 @@ data class UserPrefs(
     val reconnectIntervalSec: Int   = AppSettings.DEFAULT_RECONNECT_INTERVAL,
     val maxDiagZips: Int            = AppSettings.DEFAULT_MAX_DIAG_ZIPS, // max diagnostic ZIPs to keep
     val themeId: String             = AppSettings.DEFAULT_THEME_ID,      // RS paint color theme
-    val tempPreset: String          = AppSettings.DEFAULT_TEMP_PRESET,   // "street"|"track"|"race"
+    val tempPreset: String          = AppSettings.DEFAULT_TEMP_PRESET,   // "street"|"track"|"race"|"custom"
+    /** Saved Custom thermal profile (°C) and the built-in it was copied from; null until one is created. */
+    val customThermal: ThermalProfile? = null,
+    val customThermalBase: String   = "street",
     val adapterType: String         = AppSettings.DEFAULT_ADAPTER_TYPE,  // "MEATPI_USB" | "MEATPI_PRO"
     val connectionMethod: String    = AppSettings.DEFAULT_CONNECTION_METHOD, // "WIFI" | "BLUETOOTH"
     val meatPiMicroSdLog: Boolean   = false,                              // MeatPi Pro microSD logging
@@ -60,6 +63,15 @@ data class UserPrefs(
     }
 
     val tempLabel: String get() = if (tempUnit == "C") "°C" else "°F"
+
+    /**
+     * A limit or target: whole numbers stay whole, others keep one decimal (custom 104.44 °C → "104.4",
+     * warn − 2 °C in °F → "244.4") — the same text on gauge legends, THERMAL's reason, the checklist and DRIVE.
+     */
+    fun displayLimit(celsius: Double): String {
+        val x = if (tempUnit == "C") celsius else celsius * 9.0 / 5.0 + 32
+        return (if (kotlin.math.abs(x - Math.round(x)) < 0.05) "%.0f" else "%.1f").format(x)
+    }
 
     /** A temperature difference (headroom, margin): °F = Δ°C × 1.8 — no +32 offset. */
     fun displayTempDelta(deltaC: Double): String =
@@ -109,31 +121,40 @@ data class UserPrefs(
     /** Display name for the current theme. */
     val themeName: String get() = rsPaintName(themeId)
 
-    // ── Temperature thresholds (preset-based) ───────────────────────────────
+    // ── Temperature thresholds (active thermal profile) ─────────────────────
 
-    /** Oil warn / crit thresholds in °C based on selected preset. */
-    val oilWarnC: Double  get() = when (tempPreset) { "race" -> 100.0; "track" -> 110.0; else -> 120.0 }
-    val oilCritC: Double  get() = when (tempPreset) { "race" -> 110.0; "track" -> 120.0; else -> 130.0 }
+    /** The active profile: a built-in (STREET / TRACK / RACE) or the saved Custom one. */
+    val thermalProfile: ThermalProfile get() =
+        if (tempPreset == "custom") customThermal ?: ThermalProfile.STREET else ThermalProfile.builtIn(tempPreset)
+
+    /** Oil warn / crit thresholds in °C (active profile). */
+    val oilWarnC: Double  get() = thermalProfile.oilWarnC
+    val oilCritC: Double  get() = thermalProfile.oilCritC
 
     /** Coolant warn / crit thresholds in °C. */
-    val coolWarnC: Double get() = when (tempPreset) { "race" -> 95.0;  "track" -> 100.0; else -> 105.0 }
-    val coolCritC: Double get() = when (tempPreset) { "race" -> 105.0; "track" -> 110.0; else -> 115.0 }
+    val coolWarnC: Double get() = thermalProfile.coolWarnC
+    val coolCritC: Double get() = thermalProfile.coolCritC
 
     /** Intake air warn / crit thresholds in °C. */
-    val intakeWarnC: Double get() = when (tempPreset) { "race" -> 45.0; "track" -> 55.0; else -> 65.0 }
-    val intakeCritC: Double get() = when (tempPreset) { "race" -> 55.0; "track" -> 65.0; else -> 80.0 }
+    val intakeWarnC: Double get() = thermalProfile.intakeWarnC
+    val intakeCritC: Double get() = thermalProfile.intakeCritC
 
     /** RDU/PTU warn / crit thresholds in °C. */
-    val rduWarnC: Double  get() = when (tempPreset) { "race" -> 70.0;  "track" -> 80.0;  else -> 90.0 }
-    val rduCritC: Double  get() = when (tempPreset) { "race" -> 85.0;  "track" -> 95.0;  else -> 100.0 }
+    val rduWarnC: Double  get() = thermalProfile.rduWarnC
+    val rduCritC: Double  get() = thermalProfile.rduCritC
     // PTU (transfer case) runs hotter than RDU — separate thresholds
-    val ptuWarnC: Double  get() = when (tempPreset) { "race" -> 75.0;  "track" -> 85.0;  else -> 95.0 }
-    val ptuCritC: Double  get() = when (tempPreset) { "race" -> 90.0;  "track" -> 100.0; else -> 110.0 }
+    val ptuWarnC: Double  get() = thermalProfile.ptuWarnC
+    val ptuCritC: Double  get() = thermalProfile.ptuCritC
+
+    /** AWD clutch warn / crit in °C — fixed 90 / 120 in every built-in, editable in Custom. */
+    val clutchWarnC: Double get() = thermalProfile.clutchWarnC
+    val clutchCritC: Double get() = thermalProfile.clutchCritC
 
     /** Display name for the current temperature preset. */
     val tempPresetName: String get() = when (tempPreset) {
         "race"  -> "Race"
         "track" -> "Track"
+        "custom" -> if (customThermal != null) "Custom" else "Street"
         else    -> "Street"
     }
 
