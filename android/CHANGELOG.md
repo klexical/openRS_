@@ -192,6 +192,7 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ### Removed (rc.6)
 - **Unused resources** — `ic_nav_chassis` / `ic_nav_diag` drawables, the legacy OSMDroid `raw/map_style_dark.json`, and 12 unreferenced `colors.xml` entries.
+- **Unused oil / coolant band helpers** — `thermalBandForCoolant` / `thermalBandForOil` had no callers (THERMAL uses the profile limits) and carried unsourced reference values in their comments; removed. The tyre bands (`thermalBandForTire`) are unchanged. (`data/ThermalBand.kt`)
 - **DRIVE auto-zoom** — the gear module no longer grows (and the panels below no longer move) once the car is rolling; the gear-change scale pop and the DRIVE auto-zoom setting are gone. Gear changes keep their haptic tick. (`ui/DrivePage.kt`, `ui/SettingsSheet.kt`)
 
 ### Fixed (rc.6 — CI & lint)

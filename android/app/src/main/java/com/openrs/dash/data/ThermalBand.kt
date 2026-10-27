@@ -22,22 +22,6 @@ fun thermalBandForTire(tempC: Double): ThermalBand = when {
     else -> ThermalBand.CRITICAL
 }
 
-/** Engine coolant bands (°C). OE redline ~112 °C; RS thermostat opens ~88. */
-fun thermalBandForCoolant(tempC: Double): ThermalBand = when {
-    tempC < 70.0 -> ThermalBand.COLD
-    tempC <= 100.0 -> ThermalBand.NOMINAL
-    tempC <= 108.0 -> ThermalBand.HOT
-    else -> ThermalBand.CRITICAL
-}
-
-/** Engine oil bands (°C). Cold pressure high <60, optimal 90-115, >130 risky. */
-fun thermalBandForOil(tempC: Double): ThermalBand = when {
-    tempC < 70.0 -> ThermalBand.COLD
-    tempC <= 115.0 -> ThermalBand.NOMINAL
-    tempC <= 125.0 -> ThermalBand.HOT
-    else -> ThermalBand.CRITICAL
-}
-
 /** AFR band around stoich (~14.64 for 87 gasoline). */
 fun afrBandFor(afr: Double): AfrBand = when {
     afr < 13.5 -> AfrBand.RICH

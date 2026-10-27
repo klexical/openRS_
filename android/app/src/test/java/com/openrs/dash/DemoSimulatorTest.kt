@@ -96,8 +96,8 @@ class DemoSimulatorTest {
         val vs = run(DemoScenario.WARNING, 60_000) { _, s ->
             maxKr = maxOf(maxKr, s.ignCorrCyl1, s.ignCorrCyl2, s.ignCorrCyl3, s.ignCorrCyl4)
         }
-        assertTrue("coolant ${vs.coolantTempC}", vs.coolantTempC > 108)      // thermalBandForCoolant CRITICAL
-        assertTrue("oil ${vs.oilTempC}", vs.oilTempC > 125)                   // thermalBandForOil CRITICAL
+        assertTrue("coolant ${vs.coolantTempC}", vs.coolantTempC > 108)      // well past STREET's coolant warning (105 °C)
+        assertTrue("oil ${vs.oilTempC}", vs.oilTempC > 125)                   // well past STREET's oil warning (120 °C)
         assertTrue("LR ${vs.tirePressLR}", vs.anyTireLow(30.0))
         assertTrue("fuel ${vs.fuelLevelPct}", vs.fuelLevelPct < 10)
         assertTrue("battery ${vs.batteryVoltage}", vs.batteryVoltage < 12.5)
