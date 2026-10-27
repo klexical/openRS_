@@ -14,7 +14,7 @@ enum class AfrBand { RICH, STOICH, LEAN }
 /** Pattern hint for a band — rendered as a tiny glyph on critical states. */
 enum class BandPattern { NONE, CHEVRON_UP, CHEVRON_DOWN }
 
-/** Tire tread surface temperature bands (°C). */
+/** TPMS sensor temperature bands (°C) — the wheel sensor's own reading (BCM 0x280B), openRS_ display bands. */
 fun thermalBandForTire(tempC: Double): ThermalBand = when {
     tempC < 15.0 -> ThermalBand.COLD
     tempC <= 27.0 -> ThermalBand.NOMINAL

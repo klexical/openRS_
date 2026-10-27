@@ -232,8 +232,10 @@ fun DriveMap(
         rtrPoint?.let {
             Marker(
                 state = MarkerState(position = LatLng(it.lat, it.lng)),
-                title = "Race Ready",
-                snippet = "RTR achieved",
+                // Where the thermal verdict first read TEMPS READY: temps inside the openRS_ advisory limits, not a
+                // statement that the car is ready for the track
+                title = "Temps ready",
+                snippet = "Thermal verdict: TEMPS READY",
                 icon = BitmapDescriptorFactory.defaultMarker(colorToHue(Ok)),
                 zIndex = 5f
             )

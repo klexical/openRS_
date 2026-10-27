@@ -293,7 +293,7 @@ import kotlin.math.roundToInt
 
 /** Pressure level from the tyre card's existing rule ([tireStatusColor] defaults: warn 34, high 50 psi). */
 
-/** Tyre temperature colour from the existing [thermalBandForTire] bands; in-range reads in ink. */
+/** TPMS sensor temperature colour from the existing [thermalBandForTire] bands; in-range reads in ink. */
 private fun tyreTempColor(tempC: Double): Color = when (thermalBandForTire(tempC)) {
     ThermalBand.COLD     -> Mid
     ThermalBand.NOMINAL  -> Frost
