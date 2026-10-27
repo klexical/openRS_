@@ -63,7 +63,7 @@
         <!-- FileProvider for sharing diagnostic ZIP files -->
         <provider
             android:name="androidx.core.content.FileProvider"
-            android:authorities="com.openrs.dash.provider"
+            android:authorities="${applicationId}.provider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data

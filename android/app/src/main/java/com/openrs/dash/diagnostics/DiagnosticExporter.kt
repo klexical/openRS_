@@ -54,7 +54,8 @@ enum class ExportComponent(val label: String) {
 
 object DiagnosticExporter {
 
-    private const val AUTHORITY = "com.openrs.dash.provider"
+    /** Matches the manifest's `${applicationId}.provider` (release: com.openrs.dash.provider). */
+    private fun authority(ctx: Context) = "${ctx.packageName}.provider"
 
     private val appVersion: String get() = BuildConfig.VERSION_NAME ?: ""
     private val appBuild: Int get() = BuildConfig.VERSION_CODE
@@ -160,7 +161,7 @@ object DiagnosticExporter {
                 addEntry("manifest.json", buildManifest(entries).toByteArray(Charsets.UTF_8))
             }
 
-            FileProvider.getUriForFile(ctx, AUTHORITY, zipFile)
+            FileProvider.getUriForFile(ctx, authority(ctx), zipFile)
         } catch (e: Exception) {
             DiagnosticLogger.event("EXPORT_ERROR", e.message ?: "unknown")
             null
@@ -303,7 +304,7 @@ object DiagnosticExporter {
             }
 
             _exportProgress.value = ExportProgress.Sharing
-            val uri = FileProvider.getUriForFile(ctx, AUTHORITY, zipFile)
+            val uri = FileProvider.getUriForFile(ctx, authority(ctx), zipFile)
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "application/zip"
                 putExtra(Intent.EXTRA_STREAM, uri)
@@ -396,7 +397,7 @@ object DiagnosticExporter {
             }
 
             _exportProgress.value = ExportProgress.Sharing
-            val uri = FileProvider.getUriForFile(ctx, AUTHORITY, zipFile)
+            val uri = FileProvider.getUriForFile(ctx, authority(ctx), zipFile)
             val totalDist = drives.sumOf { it.first.distanceKm }
             val totalPts = drives.sumOf { it.second.size }
             val intent = Intent(Intent.ACTION_SEND).apply {
