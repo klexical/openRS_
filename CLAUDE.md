@@ -1,7 +1,7 @@
 # openRS_
 
 Native Android telemetry dashboard for the Ford Focus RS MK3.
-Kotlin 2.0.21 + Jetpack Compose (Material3). Current: v2.2.7-rc.5 staging (versionCode 35).
+Kotlin 2.0.21 + Jetpack Compose (Material3). Current: v2.2.7-rc.5 released; rc.6 work on staging + local feature/design-pass, not tagged (versionCode 35).
 Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashboard) → `web/`  |  Docs → `docs/`  |  Feature pipeline → `docs/feature-roadmap.md`
 
 ## Source Layout
@@ -407,6 +407,13 @@ data[5] = B5,  data[6] = B6 …
 - **`UserPrefsStore` outside the activity** — `CanDataService` is START_STICKY: Android can recreate it (and it auto-connects /
   auto-records) with no MainActivity, so its `onCreate` calls `UserPrefsStore.ensureLoaded()` first. Anything service-side
   that reads `UserPrefsStore.prefs` relies on that
+- **FileProvider authority = `${applicationId}.provider`** (release `com.openrs.dash.provider`, debug
+  `com.openrs.dash.debug.provider`); code derives it from `ctx.packageName`. Never hard-code it — a fixed authority made
+  any second build variant fail to install (`INSTALL_FAILED_CONFLICTING_PROVIDER`). Provider stays `exported=false`
+- **Share intents set ClipData** (`DiagnosticExporter.shareClip`) beside `EXTRA_STREAM` — `createChooser` only passes the
+  read grant to the share sheet through ClipData; without it the sheet's preview logs `Permission Denial … intentresolver`
+- **`lap_sessions` has no FK to `drives`** — after any drive deletion call `deleteOrphanLapSessions()` (laps cascade from
+  lap_sessions). Sessions older than 30 days are pruned at each connection start (by design)
 - **Temperature freshness = `vs.tempAvail(value, tag)`** — RDU / AWD clutch / trans-oil temps (AWD poll, ~37 s cycle) are
   stale after 90 s, CAN temps after 60 s. Use it (or `tempStaleAfterMs(tag)`) wherever a temp's availability is shown or decided
 - **Live-only readouts go blank when `!vs.isConnected`** — the last frame stays in VehicleState after a drop, so gear,
