@@ -26,7 +26,8 @@ import kotlin.math.sin
  *
  * `adb shell am start --activity-single-top -n com.openrs.dash.debug/com.openrs.dash.ui.MainActivity
  *   --es trippreview history|selected|recording|paused|summary|compare|replay|export|off`
- * `summary:N` opens sample drive N's summary (1 Custom · 2 STREET → RACE · 3 TRACK · 4 legacy record · 5 none).
+ * `summary:N` opens sample drive N's summary (1 Custom · 2 STREET → RACE · 3 TRACK · 4 legacy record · 5 none ·
+ * 6 early record: missing START, END read at stop above the saved peak).
  */
 object TripPreview {
     val AVAILABLE: Boolean = BuildConfig.DEBUG
@@ -45,7 +46,7 @@ object TripPreview {
     /** Parses the intent extra; returns false for an unknown value. */
     fun apply(arg: String): Boolean {
         if (arg.startsWith("summary:")) {
-            val n = arg.substringAfter(':').toLongOrNull()?.takeIf { it in 1..5 } ?: return false
+            val n = arg.substringAfter(':').toLongOrNull()?.takeIf { it in 1..6 } ?: return false
             summaryDriveId = -n; set(Mode.SUMMARY); return true
         }
         if (arg == "summary") summaryDriveId = -1L
@@ -62,16 +63,23 @@ object TripPreview {
     private const val HOME_LAT = 37.4220
     private const val HOME_LNG = -122.0841
 
-    /** Thermal record (DriveThermalRecord) for a sample drive: one segment per (profile, limits, peaks). */
-    private fun thermal(start: Long, vararg segs: Triple<String, ThermalProfile, Map<DriveThermalSensor, Double>>): String =
+    /**
+     * Thermal record (DriveThermalRecord) for a sample drive: one segment per (profile, limits, peaks), plus the first /
+     * last fresh readings the recorder saves (empty = an early record written before endpoints were saved).
+     */
+    private fun thermal(start: Long, segs: List<Triple<String, ThermalProfile, Map<DriveThermalSensor, Double>>>,
+                        first: Map<DriveThermalSensor, Double> = emptyMap(), last: Map<DriveThermalSensor, Double> = emptyMap()): String =
         DriveThermalRecord.encode(segs.mapIndexed { i, (id, p, peaks) ->
             ThermalSegment(id, start + i * 10 * 60_000L, p.driveLimits(), peaks)
-        })
+        }, firstC = first, lastC = last)
+    private val OIL = DriveThermalSensor.OIL; private val COOLANT = DriveThermalSensor.COOLANT
+    private val PTU = DriveThermalSensor.PTU; private val RDU = DriveThermalSensor.RDU
 
     /**
-     * Five past drives across today, yesterday, this week and last week. Thermal records cover each basis:
-     * Custom (oil flag under its own 124 °C limit), STREET → RACE mid-drive (peak under STREET, flag from RACE), TRACK
-     * (oil critical, RDU flag, coolant just under the 95 % line), a legacy fixed-limit array, and none (temps, no record).
+     * Six past drives across today, yesterday, this week and earlier. Thermal records cover each basis: Custom (oil
+     * flag under its own 124 °C limit), STREET → RACE mid-drive (peak under STREET, flag from RACE), TRACK (oil critical,
+     * RDU flag, coolant just under the 95 % line), a legacy fixed-limit array, none (temps, no record), and an early
+     * record without saved endpoints whose stop reading lies above its peak (START / END fall back, then "—").
      */
     fun drives(now: Long = System.currentTimeMillis()): List<DriveEntity> {
         val today = now - (now % DAY_MS) + 7 * 3_600_000L      // ~07:00 UTC-ish anchor; only relative dates matter
@@ -86,9 +94,9 @@ object TripPreview {
                     avgFuelMpg = 23.8, driveModeBreakdown = """{"Normal":0.4,"Sport":0.6}""",
                     weatherSummary = "18°C clear", pullCount = 6, knockPullCount = 1,
                     startOilTempC = 24.0, endOilTempC = 104.0, startCoolantTempC = 26.0, endCoolantTempC = 92.0,
-                    thermalPeaksJson = thermal(it.startTime, Triple("custom",
-                        ThermalProfile.STREET.copy(oilWarnC = 112.0, oilCritC = 124.0),
-                        mapOf(DriveThermalSensor.OIL to 118.0, DriveThermalSensor.COOLANT to 98.0))))
+                    thermalPeaksJson = thermal(it.startTime, listOf(Triple("custom",
+                        ThermalProfile.STREET.copy(oilWarnC = 112.0, oilCritC = 124.0), mapOf(OIL to 118.0, COOLANT to 98.0))),
+                        first = mapOf(OIL to 24.0, COOLANT to 26.0), last = mapOf(OIL to 104.0, COOLANT to 92.0)))
             },
             d(-2, now - 5 * 3_600_000L, 14, 9.8) {
                 it.copy(maxSpeedKph = 88.0, peakRpm = 3900, peakBoostPsi = 9.4, peakOilTempC = 122.0,
@@ -98,9 +106,10 @@ object TripPreview {
                     startOilTempC = 40.0, endOilTempC = 101.0, startCoolantTempC = 45.0, endCoolantTempC = 90.0,
                     // Peak 122 °C under STREET (warn, no flag); after the switch to RACE, 106 °C raises the flag
                     // (≥ 104.5 °C = 95 % of RACE's 110 °C) — the summary keeps the peak and names the RACE reading
-                    thermalPeaksJson = thermal(it.startTime,
-                        Triple("street", ThermalProfile.STREET, mapOf(DriveThermalSensor.OIL to 122.0, DriveThermalSensor.COOLANT to 99.0)),
-                        Triple("race", ThermalProfile.RACE, mapOf(DriveThermalSensor.OIL to 106.0, DriveThermalSensor.COOLANT to 95.0))))
+                    thermalPeaksJson = thermal(it.startTime, listOf(
+                        Triple("street", ThermalProfile.STREET, mapOf(OIL to 122.0, COOLANT to 99.0)),
+                        Triple("race", ThermalProfile.RACE, mapOf(OIL to 106.0, COOLANT to 95.0))),
+                        first = mapOf(OIL to 40.0, COOLANT to 45.0), last = mapOf(OIL to 101.0, COOLANT to 90.0)))
             },
             d(-3, now - DAY_MS - 2 * 3_600_000L, 42, 58.6) {
                 it.copy(name = "Track day — session 2", maxSpeedKph = 196.0, peakRpm = 6800, peakBoostPsi = 23.1,
@@ -108,9 +117,10 @@ object TripPreview {
                     startFuelPct = 90.0, tags = "TRACK", aggressionScore = 94, avgFuelL100km = 14.8,
                     avgFuelMpg = 15.9, driveModeBreakdown = """{"Track":0.85,"Sport":0.15}""",
                     weatherSummary = "24°C sunny", pullCount = 31, knockPullCount = 4,
-                    thermalPeaksJson = thermal(it.startTime, Triple("track", ThermalProfile.TRACK, mapOf(
-                        DriveThermalSensor.OIL to 131.0, DriveThermalSensor.COOLANT to 104.0,
-                        DriveThermalSensor.PTU to 88.0, DriveThermalSensor.RDU to 92.0))),
+                    thermalPeaksJson = thermal(it.startTime, listOf(Triple("track", ThermalProfile.TRACK,
+                        mapOf(OIL to 131.0, COOLANT to 104.0, PTU to 88.0, RDU to 92.0))),
+                        first = mapOf(OIL to 31.0, COOLANT to 33.0, PTU to 42.0, RDU to 36.0),
+                        last = mapOf(OIL to 112.0, COOLANT to 99.0, PTU to 80.0, RDU to 85.0)),
                     startOilTempC = 31.0, endOilTempC = 112.0, startCoolantTempC = 33.0, endCoolantTempC = 99.0)
             },
             d(-4, now - 3 * DAY_MS, 21, 17.2) {
@@ -129,6 +139,16 @@ object TripPreview {
                     // Temperatures but no thermal record: no badge, no limit colours
                     startOilTempC = 52.0, peakOilTempC = 112.0, endOilTempC = 104.0,
                     startCoolantTempC = 60.0, peakCoolantTempC = 96.0, endCoolantTempC = 92.0)
+            },
+            d(-6, now - 12 * DAY_MS, 38, 29.5) {
+                it.copy(name = "Paused, then stopped", maxSpeedKph = 121.0, peakRpm = 5600, peakBoostPsi = 17.4,
+                    aggressionScore = 36, driveModeBreakdown = """{"Normal":0.8,"Sport":0.2}""",
+                    // Early record (no saved endpoints): no oil reading when recording started; the oil read at stop,
+                    // after a long pause, is 110 °C — above every recorded sample (peak 100 °C). Coolant is coherent.
+                    startOilTempC = -99.0, peakOilTempC = 100.0, endOilTempC = 110.0,
+                    startCoolantTempC = 45.0, peakCoolantTempC = 90.0, endCoolantTempC = 88.0,
+                    thermalPeaksJson = thermal(it.startTime, listOf(Triple("street", ThermalProfile.STREET,
+                        mapOf(OIL to 100.0, COOLANT to 90.0)))))
             },
         )
     }

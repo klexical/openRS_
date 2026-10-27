@@ -191,23 +191,23 @@ data class DriveThermalReview(
     fun peakFor(s: DriveThermalSensor, storedPeakC: Double): Double =
         if (basis == Basis.PROFILE) sensor(s)?.peakC ?: storedPeakC else storedPeakC
 
-    data class Progression(val startC: Double, val peakC: Double, val endC: Double)
+    /** Start → peak → end; null = not available or not consistent with the peak. */
+    data class Progression(val startC: Double?, val peakC: Double?, val endC: Double?) {
+        val complete: Boolean get() = startC != null && peakC != null && endC != null
+    }
 
     /**
-     * Start → peak → end for [s], or null when there's no coherent one. Endpoints are the record's first / last fresh
-     * readings (the same readings as its peaks); without them, the [storedStartC] / [storedEndC] fallbacks
-     * (DriveEntity's readings at recording start / stop, or the first / last point). Those aren't freshness-filtered
-     * and are taken outside the sampled readings (before the first sample, at stop after a pause or link drop), so a
-     * progression is returned only when all three are valid readings and neither endpoint lies above the peak — the
-     * peak is never raised or clamped to fit.
+     * The one endpoint rule for the summary rows and the export's curves. START / END are the record's first / last
+     * fresh readings (the same readings as its peaks); without them, the [storedStartC] / [storedEndC] fallbacks
+     * (DriveEntity's readings at recording start / stop, or the first / last point). Those aren't freshness-filtered and
+     * are taken outside the sampled readings (before the first sample, at stop after a pause or link drop), so an
+     * endpoint is kept only when it's a valid reading not above a valid peak. The peak itself is never raised,
+     * clamped or dropped to fit; endpoints without a peak to check against are null.
      */
-    fun progression(s: DriveThermalSensor, storedStartC: Double, storedPeakC: Double, storedEndC: Double): Progression? {
-        val peak = peakFor(s, storedPeakC)
-        val start = firstC[s] ?: storedStartC
-        val end = lastC[s] ?: storedEndC
-        if (start <= -90.0 || peak <= -90.0 || end <= -90.0) return null
-        if (start > peak || end > peak) return null
-        return Progression(start, peak, end)
+    fun progression(s: DriveThermalSensor, storedStartC: Double, storedPeakC: Double, storedEndC: Double): Progression {
+        val peak = peakFor(s, storedPeakC).takeIf { it > -90.0 }
+        fun endpoint(c: Double) = c.takeIf { peak != null && it > -90.0 && it <= peak }
+        return Progression(endpoint(firstC[s] ?: storedStartC), peak, endpoint(lastC[s] ?: storedEndC))
     }
 
     companion object {

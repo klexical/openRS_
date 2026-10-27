@@ -398,8 +398,9 @@ data[5] = B5,  data[6] = B6 …
   per-sensor peaks with the warn / crit of the profile in effect, one segment per profile (a mid-drive switch or saved
   Custom edit starts a new one). TRIP's TEMP badge and the summary read it through `DriveThermalReview` — never
   `prefs.*WarnC/CritC` for a recorded drive (the profile export's `thermalRecord` block reads it the same way). Start →
-  peak → end curves go through `DriveThermalReview.progression()`: record first / last fresh readings, else stored
-  start / stop readings, and no curve when an endpoint is missing or above the peak — never adjust the peak to fit. Older JSON arrays are LEGACY (original fixed-limit rule, no colours, no
+  peak → end (summary rows + export curves) go through `DriveThermalReview.progression()`: record first / last fresh
+  readings, else stored start / stop readings; an endpoint missing or above the peak is null ("—" on the summary, no curve
+  in the export) — never adjust the peak to fit. Older JSON arrays are LEGACY (original fixed-limit rule, no colours, no
   profile claimed); never rewrite them. TEMP = reading ≥ `thermalFlagThresholdC(crit)` (95 %, °C); explanations show that
   threshold converted ("· flag threshold 220.1°F"), never "95 % of" a °F value. The recorder feeds only `tempAvail`-fresh
   readings (`DriveThermalTracker.sample(vs, prefs, now)`); a peak is coloured by its own segment's limits
@@ -515,7 +516,7 @@ cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{ver}.apk  (main release)
 ./gradlew assembleRelease -PrcSuffix=rc.5  # → openRS_v{ver}-rc.5.apk
-./gradlew test                             # 734 unit tests across 41 files
+./gradlew test                             # 737 unit tests across 41 files
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 45 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -539,7 +540,8 @@ adb shell am start --activity-single-top -n com.openrs.dash.debug/com.openrs.das
 #          DRIVING at:9.5 = mid-pull 3rd gear, at:2.5 = idle on the brake; WARNING at:50 = all alerts)
 #   demo = collapse | expand — fold the control strip to a 2 dp amber line (header DEMO pill toggles it too)
 #   trippreview = history | selected | recording | paused | summary | compare | replay | export | off — TRIP with in-memory sample drives
-#          summary:N — sample drive N's summary (thermal records: 1 Custom · 2 STREET → RACE · 3 TRACK · 4 legacy · 5 none)
+#          summary:N — sample drive N's summary (thermal records: 1 Custom · 2 STREET → RACE · 3 TRACK · 4 legacy · 5 none ·
+#          6 early record: START missing, END above the peak → "—")
 #          (demo/TripPreview.kt; negative ids, every write path no-ops for them; nothing reaches Room)
 # Smaller phone check: adb shell wm size 1080x2160 && adb shell wm density 480  (360×720 dp; `reset` both after)
 # Cold start with an extra: am start -S -n … --es demo idle   (without -S the intent is only brought to front)
@@ -616,7 +618,7 @@ android/app/src/test/java/com/openrs/dash/
   DriveExportBuilderTest.kt   — 60 tests: CSV/GPX/JSON builders, schema v2, fuelTrim export, knock pulls, boost sweep by gear
   DemoSimulatorTest.kt        — 8 tests (incl. LAUNCH states): determinism, LOSS freeze / recovery sentinels, freshness stamps, no-decoder sentinels,
                                 WARNING thresholds, DRIVING plausibility + continuity
-  DriveThermalRecordTest.kt   — 14 tests: saved profile limits (built-ins + Custom), 95 % boundary + levels, °C / °F + displayed
+  DriveThermalRecordTest.kt   — 17 tests (incl. START → PEAK → END endpoint rule): saved profile limits (built-ins + Custom), 95 % boundary + levels, °C / °F + displayed
                                 flag threshold, later edits, mid-drive segments, stale reading across a profile change, peak vs
                                 flag reading, service-only prefs load, legacy array records, round trip
   ThermalProfileTest.kt       — 7 tests: built-ins unchanged, Custom selection, JSON round trip, no unit drift, validation,
@@ -635,7 +637,7 @@ android/app/src/test/java/com/openrs/dash/
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **734 tests across 41 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **737 tests across 41 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 

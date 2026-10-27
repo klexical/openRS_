@@ -10,6 +10,7 @@ import com.openrs.dash.data.DriveThermalSensor.OIL
 import com.openrs.dash.data.DriveThermalSensor.PTU
 import com.openrs.dash.data.DriveThermalSensor.RDU
 import com.openrs.dash.data.DriveThermalTracker
+import com.openrs.dash.data.ThermalSegment
 import com.openrs.dash.ui.Level
 import com.openrs.dash.ui.TempAvail
 import com.openrs.dash.ui.ThermalCell
@@ -310,5 +311,53 @@ class DriveThermalRecordTest {
         // Already loaded (activity first, or a second service start): never replaced by a re-read
         assertFalse(UserPrefsStore.ensureLoaded { UserPrefs() })
         assertEquals(saved, UserPrefsStore.prefs.value)
+    }
+
+    // ── Round 28: START → PEAK → END (summary rows and export curves share this rule) ──
+
+    @Test
+    fun `progression - new records use the saved first and last fresh readings`() {
+        val json = DriveThermalTracker().apply {
+            sample(frame(oil = 60.0, oilAt = 0), street, t0)
+            sample(frame(oil = 118.0, oilAt = 1), street, t0 + 1_000)
+            sample(frame(oil = 104.0, oilAt = 2), street, t0 + 2_000)
+        }.toJson()
+        // The stored readings at start / stop (−99 / 125 after a pause) are not used when the record has endpoints
+        val p = DriveThermalReview.from(json).progression(OIL, -99.0, 118.0, 125.0)
+        assertEquals(DriveThermalReview.Progression(60.0, 118.0, 104.0), p)
+        assertTrue(p.complete)
+    }
+
+    @Test
+    fun `progression - older records fall back, and an END above the PEAK becomes a dash, never a higher peak`() {
+        // Early v2 record: segments only, no saved endpoints → stored start / stop readings
+        val early = DriveThermalRecord.encode(listOf(ThermalSegment("street", t0, ThermalProfile.STREET.driveLimits(),
+            mapOf(OIL to 100.0, COOLANT to 90.0))))
+        val r = DriveThermalReview.from(early)
+        val oil = r.progression(OIL, 40.0, 100.0, 110.0)        // read at stop after a pause: 110 > saved peak 100
+        assertEquals(40.0, oil.startC!!, 0.0)
+        assertEquals(100.0, oil.peakC!!, 0.0)                    // saved peak unchanged — not raised to 110, not hidden
+        assertNull(oil.endC)
+        assertFalse(oil.complete)                                // the export leaves this curve out; the summary shows "—"
+        val missing = r.progression(OIL, -99.0, 100.0, 95.0)     // no reading when recording started
+        assertNull(missing.startC); assertEquals(100.0, missing.peakC!!, 0.0); assertEquals(95.0, missing.endC!!, 0.0)
+        assertEquals(DriveThermalReview.Progression(45.0, 90.0, 88.0), r.progression(COOLANT, 45.0, -99.0, 88.0))
+        assertEquals(90.0, r.progression(COOLANT, 45.0, 140.0, 88.0).peakC!!, 0.0)   // record peak, not the stored one
+        // A start above the peak (stale pre-drive RDU in the points) is dropped the same way
+        val rdu = DriveThermalReview.from(DriveThermalRecord.encode(listOf(ThermalSegment("street", t0,
+            ThermalProfile.STREET.driveLimits(), mapOf(RDU to 70.0))))).progression(RDU, 74.0, -99.0, 68.0)
+        assertNull(rdu.startC); assertEquals(70.0, rdu.peakC!!, 0.0); assertEquals(68.0, rdu.endC!!, 0.0)
+    }
+
+    @Test
+    fun `progression - legacy and no-record drives use their stored peak, endpoints checked against it`() {
+        val legacy = DriveThermalReview.from("""[{"sensor":"Oil","peakC":134.0,"critThresholdC":140.0}]""")
+        assertEquals(DriveThermalReview.Progression(35.0, 136.0, 134.0), legacy.progression(OIL, 35.0, 136.0, 134.0))
+        assertNull(legacy.progression(RDU, 50.0, -99.0, 60.0).peakC)   // a legacy drive-end RDU value is no peak
+        val none = DriveThermalReview.from(null)
+        assertNull(none.progression(OIL, 40.0, 112.0, 115.0).endC)
+        // No peak at all: nothing to check endpoints against → no row (summary) / no curve (export)
+        val empty = none.progression(OIL, 40.0, -99.0, 60.0)
+        assertNull(empty.peakC); assertNull(empty.startC); assertNull(empty.endC)
     }
 }

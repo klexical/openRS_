@@ -393,11 +393,11 @@ internal object DriveExportBuilder {
             DriveThermalSensor.PTU to Triple(ptuEnds.first, -99.0, ptuEnds.second),
             DriveThermalSensor.RDU to Triple(rduEnds.first, -99.0, rduEnds.second),
         )) {
-            val p = review.progression(s, stored.first, stored.second, stored.third) ?: continue
+            val p = review.progression(s, stored.first, stored.second, stored.third).takeIf { it.complete } ?: continue
             thermalObj.put(s.exportKey, JSONObject().apply {
-                put("startC", p.startC)
-                put("peakC", p.peakC)
-                put("endC", p.endC)
+                put("startC", p.startC!!)
+                put("peakC", p.peakC!!)
+                put("endC", p.endC!!)
             })
         }
         root.put("thermalProgression", thermalObj)

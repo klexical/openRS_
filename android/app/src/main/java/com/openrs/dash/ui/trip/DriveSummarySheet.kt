@@ -148,31 +148,37 @@ fun DriveSummarySheet(
                 DriveThermalReview.PeakLevel.NORMAL -> Level.NORMAL
                 null -> null
             }
-            // The judged peak (fresh samples — the value the levels and flag use); legacy records stored a drive-end reading
-            fun peakOf(s: DriveThermalSensor, stored: Double) = review.peakFor(s, stored)
+            // START → PEAK → END through the same rule as the export's curves (DriveThermalReview.progression): the peak
+            // the levels and flag use, endpoints = first / last valid recorded readings, "—" when missing or above the peak
             val awdEnds = remember(points) {
                 fun ends(f: (DrivePointEntity) -> Double) =
                     (points.firstOrNull { f(it) > -90 }?.let(f) ?: -99.0) to (points.lastOrNull { f(it) > -90 }?.let(f) ?: -99.0)
                 mapOf(DriveThermalSensor.PTU to ends { it.ptuTempC }, DriveThermalSensor.RDU to ends { it.rduTempC })
             }
-            val showOil = drive.startOilTempC > -90 || drive.peakOilTempC > -90
-            val showCoolant = drive.startCoolantTempC > -90 || drive.peakCoolantTempC > -90
-            val awdRows = if (profileBasis) listOf(DriveThermalSensor.PTU, DriveThermalSensor.RDU).filter { review.sensor(it) != null } else emptyList()
-            if (showOil || showCoolant || awdRows.isNotEmpty() || review.flagged) {
+            val rows = buildList {
+                add(DriveThermalSensor.OIL to review.progression(DriveThermalSensor.OIL,
+                    drive.startOilTempC, drive.peakOilTempC, drive.endOilTempC))
+                add(DriveThermalSensor.COOLANT to review.progression(DriveThermalSensor.COOLANT,
+                    drive.startCoolantTempC, drive.peakCoolantTempC, drive.endCoolantTempC))
+                // PTU / RDU peaks exist only in current records (a legacy drive-end value is not a peak)
+                if (profileBasis) for (s in listOf(DriveThermalSensor.PTU, DriveThermalSensor.RDU)) {
+                    val (start, end) = awdEnds.getValue(s)
+                    add(s to review.progression(s, start, -99.0, end))
+                }
+            }.filter { it.second.peakC != null }      // a row per sensor with a valid peak, whatever its endpoints
+            if (rows.isNotEmpty() || review.flagged) {
                 Spacer(Modifier.height(6.dp))
                 SheetDivider()
                 Spacer(Modifier.height(6.dp))
 
                 InstrumentLabel("THERMAL PROGRESSION", Modifier.padding(bottom = 6.dp), color = Mid)
 
-                if (showOil) ThermalRow("OIL", drive.startOilTempC, peakOf(DriveThermalSensor.OIL, drive.peakOilTempC),
-                    drive.endOilTempC, prefs, levelOf(DriveThermalSensor.OIL))
-                if (showCoolant) ThermalRow("COOLANT", drive.startCoolantTempC, peakOf(DriveThermalSensor.COOLANT, drive.peakCoolantTempC),
-                    drive.endCoolantTempC, prefs, levelOf(DriveThermalSensor.COOLANT))
-                for (s in awdRows) {
-                    val (start, end) = awdEnds.getValue(s)
-                    ThermalRow(s.key.uppercase(), start, review.sensor(s)!!.peakC, end, prefs, levelOf(s))
+                for ((s, p) in rows) {
+                    ThermalRow(s.key.uppercase(), p.startC ?: -99.0, p.peakC!!, p.endC ?: -99.0, prefs, levelOf(s))
                 }
+                MonoText("START / END = first / last valid recorded readings — after a pause or link loss they can " +
+                    "differ from the moment recording started or stopped", 10.sp, Dim)
+                Spacer(Modifier.height(2.dp))
                 ThermalLimitsNote(review, prefs)
             }
 
