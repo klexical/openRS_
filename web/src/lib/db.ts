@@ -34,7 +34,17 @@ export async function putSession(session: Session): Promise<void> {
 export async function putSessions(sessions: Session[]): Promise<void> {
   const db = await getDb()
   const tx = db.transaction(STORE, 'readwrite')
-  await Promise.all([...sessions.map((s) => tx.store.put(s)), tx.done])
+  const writes: Promise<unknown>[] = []
+  try {
+    for (const s of sessions) writes.push(tx.store.put(s))
+  } catch (err) {
+    // A put that throws (e.g. DataCloneError) doesn't end the transaction — the earlier puts
+    // would still commit. Abort so the whole batch rolls back.
+    tx.abort()
+    await Promise.allSettled([...writes, tx.done])
+    throw err
+  }
+  await Promise.all([...writes, tx.done])
 }
 
 export async function deleteSession(id: string): Promise<void> {
