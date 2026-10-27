@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useId, useMemo } from 'react'
 import { colors } from '../../styles/tokens'
 
 interface SparklineProps {
@@ -13,6 +13,8 @@ interface SparklineProps {
  * Matches the Android app's Sparkline.kt aesthetic.
  */
 export function Sparkline({ data, color = colors.accent, width = 120, height = 36 }: SparklineProps) {
+  // Gradient / filter ids, unique per instance (useId — stable across renders, no hook after the early return)
+  const id = `spark${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
   const { path, areaPath } = useMemo(() => {
     if (data.length < 2) return { path: '', areaPath: '' }
 
@@ -37,8 +39,6 @@ export function Sparkline({ data, color = colors.accent, width = 120, height = 3
   }, [data, width, height])
 
   if (!path) return null
-
-  const id = useMemo(() => `spark-${Math.random().toString(36).slice(2, 8)}`, [])
 
   return (
     <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ display: 'block' }}>

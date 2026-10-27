@@ -14,21 +14,14 @@ import { useUnitFormatters } from '../../lib/format'
 import { colors, chartColors } from '../../styles/tokens'
 
 export function TripPanel() {
+  // ── Hooks (must run on every render path — keep above any early return) ──
   const session = useActiveSession()
   const fmt = useUnitFormatters()
 
-  if (!session) {
-    return <EmptyState icon="◎" title="No Session Selected" description="Select a session to view trip data." />
-  }
-
-  const trip = session.trip
-  if (!trip || trip.points.length === 0) {
-    return <EmptyState icon="◎" title="No Trip Data" description="This session does not contain trip data." />
-  }
-
-  const points = trip.points
-  const t0 = points[0].ts
-  const peakEvents = trip.summary.peakEvents
+  const trip = session?.trip ?? null
+  // Stable identity so the useMemo below doesn't rebuild every render
+  const points = useMemo(() => trip?.points ?? [], [trip])
+  const t0 = points[0]?.ts ?? 0
 
   // Build chart data with relative time in seconds
   const chartData = useMemo(() => points.map((p) => ({
@@ -61,6 +54,17 @@ export function TripPanel() {
     tireTempLR: p.tireTempLR > -90 ? p.tireTempLR : 0,
     tireTempRR: p.tireTempRR > -90 ? p.tireTempRR : 0,
   })), [points, t0])
+
+  // ── Early returns (after all hooks) ──
+  if (!session) {
+    return <EmptyState icon="◎" title="No Session Selected" description="Select a session to view trip data." />
+  }
+
+  if (!trip || points.length === 0) {
+    return <EmptyState icon="◎" title="No Trip Data" description="This session does not contain trip data." />
+  }
+
+  const peakEvents = trip.summary.peakEvents
 
   const fmtTime = (sec: number) => {
     const m = Math.floor(sec / 60)

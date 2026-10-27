@@ -14,11 +14,44 @@ import { fmtNumber, fmtDuration, useUnitFormatters } from '../../lib/format'
 import { colors } from '../../styles/tokens'
 
 export function DashboardPanel() {
+  // ── Hooks (must run on every render path — keep above any early return) ──
   const session = useActiveSession()
   const sessions = useStore((s) => s.sessions)
   const setActivePanel = useStore((s) => s.setActivePanel)
   const fmt = useUnitFormatters()
 
+  const trip = session?.trip?.summary
+  const points = session?.trip?.points
+  const diag = session?.diagnostics
+
+  // Sparkline data arrays
+  const rpmData = useMemo(() => points?.map((p) => p.rpm) ?? [], [points])
+  const speedData = useMemo(() => points?.map((p) => p.speedKph) ?? [], [points])
+  const boostData = useMemo(() => points?.map((p) => p.boostPsi) ?? [], [points])
+
+  // Race Ready detection (T2I)
+  const hasRaceReady = useMemo(() => points?.some((p) => p.raceReady) ?? false, [points])
+
+  // TPMS: get last valid reading from trip points
+  const tpmsData = useMemo(() => {
+    if (!points || points.length === 0) return null
+    const last = [...points].reverse().find((p) =>
+      p.tirePressLF >= 0 || p.tirePressRF >= 0 || p.tirePressLR >= 0 || p.tirePressRR >= 0
+    )
+    if (!last) return null
+    return {
+      pressLF: last.tirePressLF,
+      pressRF: last.tirePressRF,
+      pressLR: last.tirePressLR,
+      pressRR: last.tirePressRR,
+      tempLF: last.tireTempLF,
+      tempRF: last.tireTempRF,
+      tempLR: last.tireTempLR,
+      tempRR: last.tireTempRR,
+    }
+  }, [points])
+
+  // ── Early returns (after all hooks) ──
   if (sessions.length === 0) {
     return (
       <EmptyState
@@ -56,37 +89,6 @@ export function DashboardPanel() {
       />
     )
   }
-
-  const trip = session.trip?.summary
-  const points = session.trip?.points
-  const diag = session.diagnostics
-
-  // Sparkline data arrays
-  const rpmData = useMemo(() => points?.map((p) => p.rpm) ?? [], [points])
-  const speedData = useMemo(() => points?.map((p) => p.speedKph) ?? [], [points])
-  const boostData = useMemo(() => points?.map((p) => p.boostPsi) ?? [], [points])
-
-  // Race Ready detection (T2I)
-  const hasRaceReady = useMemo(() => points?.some((p) => p.raceReady) ?? false, [points])
-
-  // TPMS: get last valid reading from trip points
-  const tpmsData = useMemo(() => {
-    if (!points || points.length === 0) return null
-    const last = [...points].reverse().find((p) =>
-      p.tirePressLF >= 0 || p.tirePressRF >= 0 || p.tirePressLR >= 0 || p.tirePressRR >= 0
-    )
-    if (!last) return null
-    return {
-      pressLF: last.tirePressLF,
-      pressRF: last.tirePressRF,
-      pressLR: last.tirePressLR,
-      pressRR: last.tirePressRR,
-      tempLF: last.tireTempLF,
-      tempRF: last.tireTempRF,
-      tempLR: last.tireTempLR,
-      tempRR: last.tireTempRR,
-    }
-  }, [points])
 
   return (
     <div className="max-w-6xl mx-auto">

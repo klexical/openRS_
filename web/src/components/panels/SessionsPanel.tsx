@@ -27,26 +27,7 @@ export function SessionsPanel() {
   const [editName, setEditName] = useState('')
   const [tagEditId, setTagEditId] = useState<string | null>(null)
 
-  if (sessions.length === 0) {
-    return (
-      <EmptyState
-        icon="▤"
-        title="No Sessions"
-        description="Import a session to get started."
-        action={
-          <button
-            onClick={() => setActivePanel('import')}
-            className="px-4 py-2 rounded-md bg-accent/10 text-accent border border-accent/20
-                       text-sm font-mono uppercase tracking-wider hover:bg-accent/20 transition-colors"
-          >
-            Import
-          </button>
-        }
-      />
-    )
-  }
-
-  // Filter + sort
+  // Filter + sort (must run on every render path — keep above the early return)
   const filtered = useMemo(() => {
     let list = sessions
     if (search) {
@@ -65,6 +46,25 @@ export function SessionsPanel() {
       }
     })
   }, [sessions, search, sortKey])
+
+  if (sessions.length === 0) {
+    return (
+      <EmptyState
+        icon="▤"
+        title="No Sessions"
+        description="Import a session to get started."
+        action={
+          <button
+            onClick={() => setActivePanel('import')}
+            className="px-4 py-2 rounded-md bg-accent/10 text-accent border border-accent/20
+                       text-sm font-mono uppercase tracking-wider hover:bg-accent/20 transition-colors"
+          >
+            Import
+          </button>
+        }
+      />
+    )
+  }
 
   const handleDelete = async (id: string) => {
     await dbDelete(id)
