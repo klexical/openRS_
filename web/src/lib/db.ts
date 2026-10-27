@@ -30,6 +30,13 @@ export async function putSession(session: Session): Promise<void> {
   await db.put(STORE, session)
 }
 
+/** Save several sessions in one transaction — all of them are stored, or none (batch import). */
+export async function putSessions(sessions: Session[]): Promise<void> {
+  const db = await getDb()
+  const tx = db.transaction(STORE, 'readwrite')
+  await Promise.all([...sessions.map((s) => tx.store.put(s)), tx.done])
+}
+
 export async function deleteSession(id: string): Promise<void> {
   const db = await getDb()
   await db.delete(STORE, id)

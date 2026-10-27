@@ -134,11 +134,16 @@ describe('required drive CSV columns (timestamp + rpm)', () => {
     expect(s.trip).toBeNull()
   })
 
-  it('a malformed drive CSV in a batch export fails the batch with the same error', async () => {
-    const file = await zipOf({
-      'drive_1_20261026_120000.csv': `${MARKER}\n${HEADER}\n${ROWS.join('\n')}`,
-      'drive_2_20261026_130000.csv': `${MARKER}\nlat,lng\n51.5,-0.12\n51.6,-0.13`,
-    })
-    await expect(importBatchZip(file)).rejects.toThrow(/drive_2_20261026_130000\.csv is missing required columns/)
+  it('a malformed drive CSV in a batch export fails the whole batch, before or after a valid one', async () => {
+    const valid = `${MARKER}\n${HEADER}\n${ROWS.join('\n')}`
+    const bad = `${MARKER}\nlat,lng\n51.5,-0.12\n51.6,-0.13`
+    for (const files of [
+      { 'drive_1_20261026_120000.csv': valid, 'drive_2_20261026_130000.csv': bad },
+      { 'drive_2_20261026_130000.csv': bad, 'drive_1_20261026_120000.csv': valid },
+    ]) {
+      const file = await zipOf(files)
+      await expect(importBatchZip(file)).rejects.toThrow(/drive_2_20261026_130000\.csv is missing required columns/)
+      await expect(importZip(file)).rejects.toThrow(/drive_2_20261026_130000\.csv is missing required columns/)
+    }
   })
 })
