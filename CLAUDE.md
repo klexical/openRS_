@@ -590,6 +590,12 @@ Drive-mode dock / ESC buttons / DTC clear act on simulated state only (mode land
 - Isolated DB / release checks: build throwaway variants with a different `applicationIdSuffix` (the FileProvider
   authority follows the id) and run them on a second AVD started with `-read-only` (nothing persists). The v11 → v12
   upgrade was verified that way on 2026-10-26 (real v11-created DB → current build; data, FKs, TIP rescale, hash)
+- Real share-sheet exports (Sapphire fixtures in `web/src/lib/__fixtures__/android-exports/`): on the read-only AVD,
+  install the debug APK (hash-check it) + the receiver app, seed the drive DB with
+  `adb exec-in run-as com.openrs.dash.debug sh -c 'cat > databases/<f>' < <f>` (app stopped; a glob `cp` from
+  /data/local/tmp fails under run-as), share from TRIP (card → SHARE, or long-press → multi-select → EXPORT), pick
+  ShareTest; it logs `ShareTest: … RESULT=PASS` and keeps the ZIP in its `files/`. Seed DB (d1 GPS 5 pts, d2 no-GPS 0 pts,
+  d3 no-GPS 3 pts + knock) and receiver source / APK: `~/Documents/openRS_-evidence/export-tooling-2026-10-26/`
 - Sapphire import contract: `web/src/lib/import.androidExport.test.tsx` imports complete Android exports from
   `__fixtures__/android-export-rc6/`; regenerate with `OPENRS_EXPORT_SAMPLES=<dir> ./gradlew test --tests '*DriveExportThermalTest'`
 - The HUD overlay needs `adb shell appops set com.openrs.dash.debug SYSTEM_ALERT_WINDOW allow` on a fresh emulator
