@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import JSZip from 'jszip'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { importZip, isDriveCsvName } from './import'
+import { importZip, importBatchZip, isDriveCsvName, ImportError } from './import'
 
 // Unmodified ZIPs exported by openRS_ v2.2.7-rc.6 through the Android share sheet (2026-10-26). Drive CSVs
 // start with a `# openrs_csv_v2` format line; the no-GPS export carries the knock CSV as its only drive_* CSV.
@@ -73,5 +73,72 @@ describe('openRS_ app exports (rc.4+ CSV format)', () => {
       'drive_20261026_120000.csv': `# openrs_csv_v2\n${HEADER}\n${ROWS.join('\n')}`,
     }))
     expect(s.trip!.points).toHaveLength(2)
+  })
+})
+
+describe('required drive CSV columns (timestamp + rpm)', () => {
+  const MARKER = '# openrs_csv_v2'
+
+  it('rejects a drive CSV without timestamp / rpm columns with an ImportError naming them', async () => {
+    const file = await zipOf({ 'drive_20261026_120000.csv': `${MARKER}\nlat,lng,speed_kph\n51.5,-0.12,40\n51.6,-0.13,60` })
+    const err = await importZip(file).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(ImportError)
+    expect((err as Error).message).toMatch(/drive_20261026_120000\.csv is missing required columns/)
+    expect((err as Error).message).toMatch(/timestamp \(one of: timestamp_ms, timestamp, ts\); rpm/)
+  })
+
+  it('names only the missing group', async () => {
+    const file = await zipOf({ 'drive_20261026_120000.csv': 'timestamp_ms,lat,lng,speed_kph\n1000,51.5,-0.12,40\n2000,51.6,-0.13,60' })
+    await expect(importZip(file)).rejects.toThrow(/missing required columns: rpm \(one of: rpm\)$/)
+  })
+
+  it('accepts the BOM + format line + header of an app export', async () => {
+    const s = await importZip(await zipOf({ 'drive_20261026_120000.csv': `\uFEFF${MARKER}\n${HEADER}\n${ROWS.join('\n')}` }))
+    expect(s.trip!.points).toHaveLength(2)
+  })
+
+  it('never validates companion CSVs, wherever they sit in the ZIP', async () => {
+    // RaceChrono first (no manifest): its header has neither column
+    const s1 = await importZip(await zipOf({
+      'drive_racechrono_20261026_120000.csv': 'Time (s),Speed (m/s)\n0,10\n1,12',
+      'drive_trackaddict_20261026_120000.csv': 'Time,Lap\n0,1\n1,1',
+      'drive_20261026_120000.csv': `${MARKER}\n${HEADER}\n${ROWS.join('\n')}`,
+    }))
+    expect(s1.trip!.points).toHaveLength(2)
+    // rc.4 manifest that tags the knock and RaceChrono CSVs as drive_csv, listed before the drive CSV
+    const manifest = JSON.stringify({ version: 1, app: 'openRS_', appVersion: '2.2.7-rc.4', exportedAt: 0, files: [
+      { name: 'drive_racechrono_20261026_120000.csv', type: 'drive_csv' },
+      { name: 'drive_knock_20261026_120000.csv', type: 'drive_csv' },
+      { name: 'drive_20261026_120000.csv', type: 'drive_csv' },
+    ] })
+    const s2 = await importZip(await zipOf({
+      'manifest.json': manifest,
+      'drive_racechrono_20261026_120000.csv': 'Time (s),Speed (m/s)\n0,10\n1,12',
+      'drive_knock_20261026_120000.csv': '# openrs_knock_csv_v2\nkr_deg,cylinder\n1.5,1\n2.0,2',
+      'drive_20261026_120000.csv': `${MARKER}\n${HEADER}\n${ROWS.join('\n')}`,
+    }))
+    expect(s2.trip!.points).toHaveLength(2)
+  })
+
+  it('real exports still import: no-GPS (knock CSV only), diagnostic snapshots, full drive', async () => {
+    for (const name of ['drive-nogps-knock.zip', 'diag-snapshot-debug.zip', 'diag-snapshot-release.zip']) {
+      const s = await importZip(fixture(name))
+      expect(s.trip).toBeNull()
+      expect(s.diagnostics).toBeTruthy()
+    }
+    expect((await importZip(fixture('drive-gps-companions.zip'))).trip!.summary.peakRpm).toBe(6700)
+  })
+
+  it('a header-only drive CSV is still no trip, not an error', async () => {
+    const s = await importZip(await zipOf({ 'drive_20261026_120000.csv': `${MARKER}\nlat,lng` }))
+    expect(s.trip).toBeNull()
+  })
+
+  it('a malformed drive CSV in a batch export fails the batch with the same error', async () => {
+    const file = await zipOf({
+      'drive_1_20261026_120000.csv': `${MARKER}\n${HEADER}\n${ROWS.join('\n')}`,
+      'drive_2_20261026_130000.csv': `${MARKER}\nlat,lng\n51.5,-0.12\n51.6,-0.13`,
+    })
+    await expect(importBatchZip(file)).rejects.toThrow(/drive_2_20261026_130000\.csv is missing required columns/)
   })
 })
