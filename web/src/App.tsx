@@ -3,6 +3,7 @@ import { Shell } from './components/layout/Shell'
 import { useStore } from './store'
 import { useSettings } from './store/settings'
 import { getAllSessions } from './lib/db'
+import type { Session } from './types/session'
 import { rsThemes, shadeHex, printAccent } from './styles/tokens'
 
 export default function App() {
@@ -10,16 +11,20 @@ export default function App() {
   const setActiveSessionId = useStore((s) => s.setActiveSessionId)
   const themeId = useSettings((s) => s.themeId)
 
-  // Load persisted sessions from IndexedDB on mount
+  // Load persisted sessions from IndexedDB on mount. Keep the remembered session if it still exists;
+  // otherwise (deleted, or another browser's view) select the most recently imported one, or none.
   useEffect(() => {
-    getAllSessions().then((sessions) => {
-      setSessions(sessions)
-      // Auto-select the most recent session
-      if (sessions.length > 0) {
-        const latest = sessions.sort((a, b) => b.importedAt - a.importedAt)[0]
-        setActiveSessionId(latest.id)
-      }
-    })
+    getAllSessions()
+      .then((sessions) => {
+        setSessions(sessions)
+        const saved = useStore.getState().activeSessionId
+        if (saved && sessions.some((s) => s.id === saved)) return
+        const latest = sessions.reduce<Session | null>((a, b) => (!a || b.importedAt > a.importedAt ? b : a), null)
+        setActiveSessionId(latest?.id ?? null)
+      })
+      .catch((err) => {
+        console.error('[Sapphire] Failed to load sessions from IndexedDB:', err)
+      })
   }, [setSessions, setActiveSessionId])
 
   // RS paint accent → CSS custom properties on the document root. Tailwind utilities (`text-accent`,
