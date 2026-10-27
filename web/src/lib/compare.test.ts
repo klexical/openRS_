@@ -59,6 +59,33 @@ describe('computeDeltas', () => {
     expect(deltas.find((d) => d.label === 'Peak Long G')).toBeUndefined()
   })
 
+  // main e0c8b5e's regression tests. Main also changed the formula to diff / baseValue; that flips the sign
+  // whenever the baseline is negative, so this side keeps diff / |baseValue| (same result for positive ones).
+  it('uses signed pctChange for lower-is-better metrics', () => {
+    const base = makeSummary({ durationMs: 600000 })
+    const comp = makeSummary({ durationMs: 450000 })
+    const delta = computeDeltas(base, comp).find((d) => d.label === 'Duration')
+    expect(delta!.diff).toBe(-150000)
+    expect(delta!.pctChange).toBeCloseTo(-25, 5)
+    expect(delta!.higherIsBetter).toBe(false)
+  })
+
+  it('uses signed pctChange for higher-is-better metrics', () => {
+    const base = makeSummary({ peakSpeedKph: 160 })
+    const comp = makeSummary({ peakSpeedKph: 140 })
+    const delta = computeDeltas(base, comp).find((d) => d.label === 'Peak Speed')
+    expect(delta!.diff).toBe(-20)
+    expect(delta!.pctChange).toBeCloseTo(-12.5, 5)
+    expect(delta!.higherIsBetter).toBe(true)
+  })
+
+  it('pctChange carries the sign of the diff when the baseline is negative', () => {
+    const delta = computeDeltas(makeSummary({ peakCoolantC: -10 }), makeSummary({ peakCoolantC: -5 }))
+      .find((d) => d.label === 'Peak Coolant')
+    expect(delta!.diff).toBe(5)
+    expect(delta!.pctChange).toBeCloseTo(50, 5)          // ▲ +5 (+50 %), not (−50 %)
+  })
+
   it('handles non-finite values gracefully', () => {
     const base = makeSummary({ peakRpm: NaN })
     const comp = makeSummary({ peakRpm: 6000 })
