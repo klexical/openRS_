@@ -20,6 +20,8 @@ import com.openrs.dash.data.DriveEntity
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.DrivePointEntity
 import com.openrs.dash.data.DriveState
+import com.openrs.dash.data.DriveThermalSensor
+import com.openrs.dash.data.DriveThermalTracker
 import com.openrs.dash.data.FreshnessGate
 import com.openrs.dash.data.FuelTrimAccumulator
 import com.openrs.dash.data.FuelEconomy
@@ -34,6 +36,8 @@ import com.openrs.dash.data.ThermalPredictor
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.ui.AppSettings
 import com.openrs.dash.ui.ThermalReadinessSession
+import com.openrs.dash.ui.UserPrefsStore
+import com.openrs.dash.ui.sample
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -114,8 +118,11 @@ class DriveRecorder(
     /** Per-drive pull detection for "% of pulls with KR > 0" (rc.6, #174). */
     @Volatile private var pulls = PullTracker()
 
-    /** Per-drive thermal predictor for slope/peak snapshots at drive end. */
+    /** Per-drive thermal predictor — end-of-drive climb rates only. */
     private var driveThermalPredictor: ThermalPredictor? = null
+
+    /** Per-drive thermal peaks with the profile limits in effect at each sample (DriveThermalRecord). */
+    private var driveThermal: DriveThermalTracker? = null
 
     /**
      * Set by TripPage when a LapTimer is active during recording.
@@ -173,6 +180,7 @@ class DriveRecorder(
         fuelTrims = FuelTrimAccumulator()
         pulls = PullTracker()
         driveThermalPredictor = ThermalPredictor()
+        driveThermal = DriveThermalTracker()
 
         // Prune old drives if over limit
         scope.launch(Dispatchers.IO) {
@@ -458,7 +466,10 @@ class DriveRecorder(
                         coolantC = vs.coolantTempC, rpm = vs.rpm
                     )
 
-                    // Feed thermal predictor for drive-end snapshot
+                    // Thermal record: fresh readings judged against the profile in effect now (a mid-drive
+                    // change starts a new segment). Prefs are loaded before any connection (CanDataService).
+                    driveThermal?.sample(vs, UserPrefsStore.prefs.value, now)
+                    // Climb rates for the drive-end record
                     driveThermalPredictor?.let { tp ->
                         tp.recordSample("Oil", now, vs.oilTempC)
                         tp.recordSample("Coolant", now, vs.coolantTempC)
@@ -766,29 +777,17 @@ class DriveRecorder(
         }
     }
 
-    // ── Thermal peak snapshot ──────────────────────────────────────────────
+    // ── Thermal record ───────────────────────────────────────────────────
 
-    /** Build JSON blob of per-sensor peak temps + climb rates from the drive. */
+    /**
+     * Per-sensor peaks + the limits each part of the drive was judged against (DriveThermalRecord).
+     * Replaces the fixed 140 / 115 / 120 / 120 °C snapshot, which matched no profile and stored the
+     * drive-end reading as its "peak".
+     */
     private fun buildThermalPeaksJson(): String? {
-        val tp = driveThermalPredictor ?: return null
-        val sensors = listOf(
-            Triple("Oil", 140.0, 60.0),
-            Triple("Coolant", 115.0, 60.0),
-            Triple("RDU", 120.0, 30.0),
-            Triple("PTU", 120.0, 30.0)
-        )
-        val arr = JSONArray()
-        for ((label, crit, floor) in sensors) {
-            val pred = tp.predict(label, crit, floor) ?: continue
-            arr.put(JSONObject().apply {
-                put("sensor", pred.sensorLabel)
-                put("peakC", pred.currentC)
-                put("climbRateCPerMin", pred.climbRateCPerMin)
-                put("critThresholdC", pred.critThresholdC)
-                pred.timeToCriticalMin?.let { put("timeToCriticalMin", it) }
-            })
-        }
-        return if (arr.length() > 0) arr.toString() else null
+        val tp = driveThermalPredictor
+        val climb = DriveThermalSensor.entries.mapNotNull { s -> tp?.slopeCPerMin(s.key)?.let { s to it } }.toMap()
+        return driveThermal?.toJson(climb)
     }
 
     // ── Event bookmarks ──────────────────────────────────────────────────

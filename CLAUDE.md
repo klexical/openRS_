@@ -77,6 +77,8 @@ data/
                             PullTracker; fed from CanDataService.mergeObdState, reset with knockEventCount
   PullTracker.kt          — rc.6 — Streaming WOT pull detector (≥80 % throttle, ≥2,500 RPM, ≥2 s; ≤2 s gaps) + knock attribution
   FuelTrim.kt             — rc.5 — FuelTrimAccumulator (fresh + warm STFT/LTFT avg) + FuelTrimDrift alert (±8 %)
+  DriveThermalRecord.kt   — rc.6 — Drive thermal record (thermalPeaksJson v2): DriveThermalTracker (recorder, profile segments),
+                            DriveThermalReview (TRIP TEMP badge + summary; PROFILE / LEGACY array / NONE), 95 % of crit in °C
   TripState.kt            — PeakType enum (RPM/BOOST/LATERAL_G/SPEED) + PeakEvent data class
   WeatherData.kt          — OpenWeatherMap snapshot: temp, wind, humidity, icon-to-emoji mapping
 diagnostics/
@@ -392,6 +394,16 @@ data[5] = B5,  data[6] = B6 …
   must say what a hold waits for — never a comparison that is no longer true. DRIVE's VEHICLE summary falls back to
   `vehicleAdvisory()` (never ALL NORMAL under a heat / forecast / recovery / CHECKING verdict); checklist limit and forecast
   rows are incomplete, not ticked, while a reading they cover is unavailable
+- **Drive thermal judgements come from the drive's own record** — `thermalPeaksJson` v2 (`DriveThermalRecord`) saves
+  per-sensor peaks with the warn / crit of the profile in effect, one segment per profile (a mid-drive switch or saved
+  Custom edit starts a new one). TRIP's TEMP badge and the summary read it through `DriveThermalReview` — never
+  `prefs.*WarnC/CritC` for a recorded drive. Older JSON arrays are LEGACY (original fixed-limit rule, no colours, no
+  profile claimed); never rewrite them. TEMP = reading ≥ `thermalFlagThresholdC(crit)` (95 %, °C); explanations show that
+  threshold converted ("· flag threshold 220.1°F"), never "95 % of" a °F value. The recorder feeds only `tempAvail`-fresh
+  readings (`DriveThermalTracker.sample(vs, prefs, now)`); a peak is coloured by its own segment's limits
+- **`UserPrefsStore` outside the activity** — `CanDataService` is START_STICKY: Android can recreate it (and it auto-connects /
+  auto-records) with no MainActivity, so its `onCreate` calls `UserPrefsStore.ensureLoaded()` first. Anything service-side
+  that reads `UserPrefsStore.prefs` relies on that
 - **Temperature freshness = `vs.tempAvail(value, tag)`** — RDU / AWD clutch / trans-oil temps (AWD poll, ~37 s cycle) are
   stale after 90 s, CAN temps after 60 s. Use it (or `tempStaleAfterMs(tag)`) wherever a temp's availability is shown or decided
 - **Live-only readouts go blank when `!vs.isConnected`** — the last frame stays in VehicleState after a drop, so gear,
@@ -501,7 +513,7 @@ cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{ver}.apk  (main release)
 ./gradlew assembleRelease -PrcSuffix=rc.5  # → openRS_v{ver}-rc.5.apk
-./gradlew test                             # 713 unit tests across 39 files
+./gradlew test                             # 727 unit tests across 40 files
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 45 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -525,6 +537,7 @@ adb shell am start --activity-single-top -n com.openrs.dash.debug/com.openrs.das
 #          DRIVING at:9.5 = mid-pull 3rd gear, at:2.5 = idle on the brake; WARNING at:50 = all alerts)
 #   demo = collapse | expand — fold the control strip to a 2 dp amber line (header DEMO pill toggles it too)
 #   trippreview = history | selected | recording | paused | summary | compare | replay | export | off — TRIP with in-memory sample drives
+#          summary:N — sample drive N's summary (thermal records: 1 Custom · 2 STREET → RACE · 3 TRACK · 4 legacy · 5 none)
 #          (demo/TripPreview.kt; negative ids, every write path no-ops for them; nothing reaches Room)
 # Smaller phone check: adb shell wm size 1080x2160 && adb shell wm density 480  (360×720 dp; `reset` both after)
 # Cold start with an extra: am start -S -n … --es demo idle   (without -S the intent is only brought to front)
@@ -598,6 +611,9 @@ android/app/src/test/java/com/openrs/dash/
   DriveExportBuilderTest.kt   — 59 tests: CSV/GPX/JSON builders, schema v2, fuelTrim export, knock pulls, boost sweep by gear
   DemoSimulatorTest.kt        — 8 tests (incl. LAUNCH states): determinism, LOSS freeze / recovery sentinels, freshness stamps, no-decoder sentinels,
                                 WARNING thresholds, DRIVING plausibility + continuity
+  DriveThermalRecordTest.kt   — 14 tests: saved profile limits (built-ins + Custom), 95 % boundary + levels, °C / °F + displayed
+                                flag threshold, later edits, mid-drive segments, stale reading across a profile change, peak vs
+                                flag reading, service-only prefs load, legacy array records, round trip
   ThermalProfileTest.kt       — 7 tests: built-ins unchanged, Custom selection, JSON round trip, no unit drift, validation,
                                 custom threshold moves verdict + gauge together, no warm-up hold across a changed minimum
   ThermalReadinessTest.kt     — 32 tests: warm-up target + hold, delayed evaluation, drop below minimum, warn / crit recovery holds,
@@ -614,7 +630,7 @@ android/app/src/test/java/com/openrs/dash/
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **713 tests across 39 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **727 tests across 40 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 

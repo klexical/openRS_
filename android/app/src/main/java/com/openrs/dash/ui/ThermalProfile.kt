@@ -1,5 +1,9 @@
 package com.openrs.dash.ui
 
+import com.openrs.dash.data.DriveThermalSensor
+import com.openrs.dash.data.DriveThermalTracker
+import com.openrs.dash.data.VehicleState
+import com.openrs.dash.data.TempLimits
 import org.json.JSONObject
 import kotlin.math.abs
 import kotlin.math.roundToLong
@@ -79,6 +83,29 @@ data class ThermalProfile(
         )
     }
 }
+
+/**
+ * One recorder sample into the drive's thermal record: the effective profile (Custom when saved, as readiness uses it)
+ * and only readings that are current under the shared freshness rule ([tempAvail]) — a stale value is not carried into
+ * a new, stricter profile segment, while one still fresh counts at once (no extra poll needed).
+ */
+fun DriveThermalTracker.sample(vs: VehicleState, prefs: UserPrefs, now: Long) {
+    val limits = ThermalLimits.from(prefs)
+    fun fresh(v: Double, tag: String) = if (vs.tempAvail(v, tag, now) == TempAvail.AVAILABLE) v else -99.0
+    sample(now, limits.preset, limits.profile.driveLimits(), mapOf(
+        DriveThermalSensor.OIL to fresh(vs.oilTempC, "oilTempC"),
+        DriveThermalSensor.COOLANT to fresh(vs.coolantTempC, "coolantTempC"),
+        DriveThermalSensor.PTU to fresh(vs.ptuTempC, "ptuTempC"),
+        DriveThermalSensor.RDU to fresh(vs.rduTempC, "rduTempC")))
+}
+
+/** The limits a recorded drive is judged against (saved with it — see DriveThermalRecord). */
+fun ThermalProfile.driveLimits(): Map<DriveThermalSensor, TempLimits> = mapOf(
+    DriveThermalSensor.OIL to TempLimits(oilWarnC, oilCritC),
+    DriveThermalSensor.COOLANT to TempLimits(coolWarnC, coolCritC),
+    DriveThermalSensor.PTU to TempLimits(ptuWarnC, ptuCritC),
+    DriveThermalSensor.RDU to TempLimits(rduWarnC, rduCritC),
+)
 
 /**
  * Editor rows. [minC]..[maxC] is what the signal's decoder can report (byte − offset, so a limit

@@ -33,6 +33,8 @@ import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.data.DriveEntity
 import com.openrs.dash.data.BoostSweepStats
 import com.openrs.dash.data.DrivePointEntity
+import com.openrs.dash.data.DriveThermalReview
+import com.openrs.dash.data.DriveThermalSensor
 import com.openrs.dash.ui.*
 import com.openrs.dash.ui.anim.Sparkline
 import kotlinx.coroutines.Dispatchers
@@ -135,38 +137,43 @@ fun DriveSummarySheet(
                 )
             }
 
-            // ── Thermal progression ──
-            if (drive.startOilTempC > -90 || drive.peakOilTempC > -90 ||
-                drive.startCoolantTempC > -90 || drive.peakCoolantTempC > -90) {
+            // ── Thermal progression — levels and TEMP FLAG lines come from the limits saved with the drive
+            //    (DriveThermalReview, shared with the history card's TEMP badge), never the current profile ──
+            val review = remember(drive.thermalPeaksJson) { DriveThermalReview.from(drive.thermalPeaksJson) }
+            val profileBasis = review.basis == DriveThermalReview.Basis.PROFILE
+            // The peak's level under its own segment's limits; the flag lines explain any later, stricter event
+            fun levelOf(s: DriveThermalSensor): Level? = when (review.sensor(s)?.peakLevel) {
+                DriveThermalReview.PeakLevel.CRIT -> Level.CRIT
+                DriveThermalReview.PeakLevel.WARN -> Level.WARN
+                DriveThermalReview.PeakLevel.NORMAL -> Level.NORMAL
+                null -> null
+            }
+            // The judged peak (fresh samples — the value the levels and flag use); legacy records stored a drive-end reading
+            fun peakOf(s: DriveThermalSensor, stored: Double) = if (profileBasis) review.sensor(s)?.peakC ?: stored else stored
+            val awdEnds = remember(points) {
+                fun ends(f: (DrivePointEntity) -> Double) =
+                    (points.firstOrNull { f(it) > -90 }?.let(f) ?: -99.0) to (points.lastOrNull { f(it) > -90 }?.let(f) ?: -99.0)
+                mapOf(DriveThermalSensor.PTU to ends { it.ptuTempC }, DriveThermalSensor.RDU to ends { it.rduTempC })
+            }
+            val showOil = drive.startOilTempC > -90 || drive.peakOilTempC > -90
+            val showCoolant = drive.startCoolantTempC > -90 || drive.peakCoolantTempC > -90
+            val awdRows = if (profileBasis) listOf(DriveThermalSensor.PTU, DriveThermalSensor.RDU).filter { review.sensor(it) != null } else emptyList()
+            if (showOil || showCoolant || awdRows.isNotEmpty() || review.flagged) {
                 Spacer(Modifier.height(6.dp))
                 SheetDivider()
                 Spacer(Modifier.height(6.dp))
 
                 InstrumentLabel("THERMAL PROGRESSION", Modifier.padding(bottom = 6.dp), color = Mid)
 
-                // Oil temp row
-                if (drive.startOilTempC > -90 || drive.peakOilTempC > -90) {
-                    ThermalRow(
-                        label = "OIL",
-                        startC = drive.startOilTempC,
-                        peakC = drive.peakOilTempC,
-                        endC = drive.endOilTempC,
-                        prefs = prefs,
-                        warnC = prefs.oilWarnC, critC = prefs.oilCritC
-                    )
+                if (showOil) ThermalRow("OIL", drive.startOilTempC, peakOf(DriveThermalSensor.OIL, drive.peakOilTempC),
+                    drive.endOilTempC, prefs, levelOf(DriveThermalSensor.OIL))
+                if (showCoolant) ThermalRow("COOLANT", drive.startCoolantTempC, peakOf(DriveThermalSensor.COOLANT, drive.peakCoolantTempC),
+                    drive.endCoolantTempC, prefs, levelOf(DriveThermalSensor.COOLANT))
+                for (s in awdRows) {
+                    val (start, end) = awdEnds.getValue(s)
+                    ThermalRow(s.key.uppercase(), start, review.sensor(s)!!.peakC, end, prefs, levelOf(s))
                 }
-
-                // Coolant temp row
-                if (drive.startCoolantTempC > -90 || drive.peakCoolantTempC > -90) {
-                    ThermalRow(
-                        label = "COOLANT",
-                        startC = drive.startCoolantTempC,
-                        peakC = drive.peakCoolantTempC,
-                        endC = drive.endCoolantTempC,
-                        prefs = prefs,
-                        warnC = prefs.coolWarnC, critC = prefs.coolCritC
-                    )
-                }
+                ThermalLimitsNote(review, prefs)
             }
 
             // ── Drive mode breakdown ──
@@ -351,10 +358,10 @@ private fun ThermalRow(
     peakC: Double,
     endC: Double,
     prefs: UserPrefs,
-    warnC: Double,
-    critC: Double,
+    /** From the drive's saved limits; null = limits unknown (legacy / not recorded) → no colour. */
+    level: Level?,
 ) {
-    val peakLevel = if (peakC > -90) tempLevel(peakC, warnC, critC, TempAvail.AVAILABLE) else Level.NONE
+    val peakLevel = if (peakC > -90) level ?: Level.NONE else Level.NONE
     Row(
         Modifier.fillMaxWidth()
             .instrumentSurface(if (peakLevel.isAlert) peakLevel else Level.NORMAL)
@@ -381,6 +388,45 @@ private fun TempStage(label: String, tempC: Double, prefs: UserPrefs, color: and
         val text = if (tempC > -90) "${prefs.displayTemp(tempC)}${prefs.tempLabel}" else "—"
         DataNum(text, 15.sp, if (tempC > -90) color else Dim)
     }
+}
+
+/**
+ * Which limits the rows were judged against, and the reading behind each TEMP flag (the history card's badge):
+ * "OIL 221°F · flag threshold 220.1°F · RACE". The threshold is 95 % of the saved critical in °C, then converted —
+ * the same value the check uses ([DriveThermalReview.SensorReview.flagThresholdC]). The flagging reading can be
+ * lower than the drive's peak when a stricter profile applied later.
+ */
+@Composable
+private fun ThermalLimitsNote(review: DriveThermalReview, prefs: UserPrefs) {
+    val names = review.profiles.mapIndexed { i, id ->
+        val n = thermalProfileName(id)
+        if (i > 0 && review.profiles[i - 1] == id) "$n (edited)" else n
+    }
+    val context = when (review.basis) {
+        DriveThermalReview.Basis.PROFILE ->
+            if (review.profileChanged) "Limits: ${names.joinToString(" → ")} — each part judged by the profile in effect then"
+            else "Limits: ${names.first()} profile, saved with the drive"
+        DriveThermalReview.Basis.LEGACY -> "Recorded before limits were saved with drives — no limit colours"
+        DriveThermalReview.Basis.NONE -> "No thermal limits recorded with this drive — no limit colours"
+    }
+    MonoText(context, 10.sp, Dim)
+    for (r in review.sensors.filter { it.flagged }) {
+        val reading = r.flagReadingC ?: continue
+        val threshold = r.flagThresholdC ?: continue
+        val label = r.sensor.key.uppercase()
+        val line = when (review.basis) {
+            DriveThermalReview.Basis.LEGACY ->
+                "TEMP FLAG  $label ${prefs.tVs(reading, threshold)} at drive end · flag threshold ${prefs.lim(threshold)} · old fixed limit"
+            else ->
+                "TEMP FLAG  $label ${prefs.tVs(reading, threshold)} · flag threshold ${prefs.lim(threshold)} · ${thermalProfileName(r.flagProfile ?: "")}"
+        }
+        Spacer(Modifier.height(2.dp))
+        MonoText(line, 10.sp, WarnInk)
+    }
+}
+
+private fun thermalProfileName(id: String) = when (id) {
+    "track" -> "TRACK"; "race" -> "RACE"; "custom" -> "CUSTOM"; else -> "STREET"
 }
 
 private fun parseModeBreakdown(json: String): List<Pair<String, Float>> {

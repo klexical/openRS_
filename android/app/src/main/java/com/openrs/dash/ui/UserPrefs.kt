@@ -168,9 +168,30 @@ object UserPrefsStore {
     private val _prefs = MutableStateFlow(UserPrefs())
     val prefs: StateFlow<UserPrefs> = _prefs.asStateFlow()
 
-    fun load(ctx: Context) {
+    private var loaded = false
+
+    @Synchronized fun load(ctx: Context) {
         _prefs.value = AppSettings.load(ctx)
+        loaded = true
     }
+
+    /**
+     * Loads the saved prefs unless already loaded — for a start without the activity: CanDataService is START_STICKY,
+     * so Android can recreate it after the process dies and it auto-connects (and auto-records) with no MainActivity.
+     * The recorder and readiness must then see the saved thermal profile (incl. Custom), not the defaults.
+     * Returns true when it loaded.
+     */
+    fun ensureLoaded(ctx: Context): Boolean = ensureLoaded { AppSettings.load(ctx) }
+
+    @Synchronized internal fun ensureLoaded(read: () -> UserPrefs): Boolean {
+        if (loaded) return false
+        _prefs.value = read()
+        loaded = true
+        return true
+    }
+
+    /** Tests only: back to the process-start state (defaults, not loaded). */
+    @Synchronized internal fun resetForTest() { loaded = false; _prefs.value = UserPrefs() }
 
     fun update(ctx: Context, block: (UserPrefs) -> UserPrefs) {
         // M-7 fix: use .update{} for atomic read-modify-write — prevents one rapid

@@ -466,11 +466,11 @@ fun VehicleState.tempAvail(valueC: Double, tag: String, now: Long = System.curre
 // ── Text (user's unit; comparisons above stay in °C) ────────────────────────
 
 private fun UserPrefs.t(c: Double) = "${displayTemp(c)}$tempLabel"
-private fun UserPrefs.inUnit(c: Double) = if (tempUnit == "C") c else c * 9.0 / 5.0 + 32
+internal fun UserPrefs.inUnit(c: Double) = if (tempUnit == "C") c else c * 9.0 / 5.0 + 32
 /** A limit, bound or target: whole numbers stay whole, others keep one decimal (warn − 2 °C = 244.4°F, not "244"). */
-private fun UserPrefs.lim(c: Double): String = displayLimit(c) + tempLabel
+internal fun UserPrefs.lim(c: Double): String = displayLimit(c) + tempLabel
 /** Reading [v] beside [limit]: the fewest decimals that keep it on the correct side ("244.4°F · needs under 244.4°F"). */
-private fun UserPrefs.tVs(v: Double, limit: Double): String {
+internal fun UserPrefs.tVs(v: Double, limit: Double): String {
     val x = inUnit(v); val l = inUnit(limit)
     for (d in 0..2) {
         val k = 10.0.pow(d)

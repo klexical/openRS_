@@ -66,6 +66,7 @@ import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.data.DriveBookmarkEntity
 import com.openrs.dash.data.DriveDatabase
 import com.openrs.dash.data.DriveEntity
+import com.openrs.dash.data.DriveThermalReview
 import com.openrs.dash.data.DrivePointEntity
 import com.openrs.dash.data.DriveState
 import com.openrs.dash.data.LapTimer
@@ -321,7 +322,7 @@ private fun TripPageContent(
             TripPreview.Mode.SELECTED -> TripPreview.drives().first().let { d ->
                 selectedDriveId = d.id; selectedDrive = d; selectedDrivePoints = samplePoints(d.id); mapBookmarks = emptyList()
             }
-            TripPreview.Mode.SUMMARY -> summaryDrive = TripPreview.drives().first()
+            TripPreview.Mode.SUMMARY -> summaryDrive = TripPreview.drives().let { ds -> ds.firstOrNull { it.id == TripPreview.summaryDriveId } ?: ds.first() }
             TripPreview.Mode.COMPARE -> TripPreview.drives().let { compareA = it[0]; compareB = it[2] }
             TripPreview.Mode.REPLAY -> TripPreview.drives().first().let { replayDrive = it; replayPoints = samplePoints(it.id) }
             TripPreview.Mode.EXPORT -> exportDrive = TripPreview.drives().first()
@@ -1457,7 +1458,9 @@ private fun DriveCard(
                 // (green) and the intensity score was coloured on bands that aren't limits.
                 if (isActive) CardBadge("ACTIVE", Orange)
                 if (!drive.hasGps) CardBadge("NO GPS", Dim)
-                if (hasThermalAnomaly(drive)) CardBadge("TEMP", Warn)   // ≥ 95 % of a critical limit
+                // ≥ 95 % of the critical limit saved with the drive — the summary's TEMP FLAG lines (DriveThermalReview)
+                val thermalFlag = remember(drive.thermalPeaksJson) { DriveThermalReview.from(drive.thermalPeaksJson).flagged }
+                if (thermalFlag) CardBadge("TEMP", Warn)
                 if (drive.aggressionScore > 0) CardBadge("SCORE ${drive.aggressionScore}", Mid)
             }
 
@@ -1617,23 +1620,6 @@ private fun CardAction(label: String, primary: Boolean, modifier: Modifier = Mod
 // ═══════════════════════════════════════════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Check if a drive had any sensor exceed its critical threshold.
- * Parses thermalPeaksJson: [{"sensor":"Oil","peakC":140,...}, ...]
- */
-private fun hasThermalAnomaly(drive: DriveEntity): Boolean {
-    val json = drive.thermalPeaksJson ?: return false
-    return try {
-        val arr = org.json.JSONArray(json)
-        (0 until arr.length()).any { i ->
-            val obj = arr.getJSONObject(i)
-            val peakC = obj.getDouble("peakC")
-            val critC = obj.getDouble("critThresholdC")
-            peakC >= critC * 0.95 // flag at 95% of critical
-        }
-    } catch (_: Exception) { false }
-}
 
 private fun formatDuration(ms: Long): String {
     if (ms <= 0) return "Active"

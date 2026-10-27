@@ -213,6 +213,9 @@ class CanDataService : Service() {
             PidRegistry.ensureLoaded(this@CanDataService)
             com.openrs.dash.ui.StartupTrace.mark("PID catalog loaded (background)")
         }
+        // A sticky restart recreates this service with no activity: load the saved prefs before any connection, so
+        // auto-record and readiness use the saved thermal profile, not the defaults. No-op after MainActivity.onCreate.
+        if (UserPrefsStore.ensureLoaded(this)) com.openrs.dash.ui.StartupTrace.mark("settings loaded by CanDataService (no activity)")
         registerWifiCallback()
         registerBluetoothCallback()
         if (isTransportReady()) autoStartConnection()
