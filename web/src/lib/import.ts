@@ -184,7 +184,10 @@ async function parseTripDataFromCsv(zip: JSZip, csvFile: string): Promise<TripDa
   const file = zip.files[csvFile]
   if (!file) return null
 
-  const csv = await file.async('string')
+  // Strip a UTF-8 BOM first (as on main) — it must be gone before the `#` format-line check
+  // below. trim() also removes U+FEFF; the explicit strip keeps that if the parsing changes.
+  const csv = (await file.async('string')).replace(/^\uFEFF/, '')
+  // openRS_ v2.2.7-rc.4+ starts its CSVs with a `# openrs_csv_v2` format line — not a header row
   const lines = csv.trim().split('\n').filter((l) => !l.startsWith('#'))
   if (lines.length < 2) return null
 

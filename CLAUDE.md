@@ -645,7 +645,7 @@ android/app/src/test/java/com/openrs/dash/
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **737 tests across 41 files** (Android) + **174 vitest across 7 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **737 tests across 41 files** (Android) + **182 vitest across 8 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 
@@ -743,6 +743,20 @@ pnpm dev                      # local dev server (Vite)
 pnpm build                    # production build → dist/
 pnpm preview                  # preview production build
 ```
+
+**Release merge checklist — Sapphire importer (staging ↔ main diverged; verified 2026-10-26):**
+- Keep staging's structure: manifest-driven single / batch import (`importBatchZip`, `isBatchZip`), profile JSON merge.
+- Drive CSV choice by name — `isDriveCsvName` / `isDriveCsvEntry` skip RaceChrono / TrackAddict / knock CSVs (#183).
+- In `parseTripDataFromCsv`: BOM strip, then `trim()`, then skip `#` lines (`# openrs_csv_v2`). The BOM must be gone
+  before the `#` check — a per-line parser without the whole-string strip would break BOM + marker files.
+- Main has, staging lacks: the missing-required-columns `ImportError` (`REQUIRED_COLUMN_GROUPS`) — must survive.
+- Preserve main's Sapphire history: `e9cd565` (import robustness, persisted nav, chart perf, UX), `e0c8b5e`
+  (sentinel-aware charts + deltas), `e5080c8` (trip panel crash, theme accent, diag export) and the v2.2.6 release
+  merge `dc32b8b`. Main lints clean; this branch's Sparkline / ComparePanel / DashboardPanel / SessionsPanel /
+  TripPanel have 10 `react-hooks` errors that main's versions of those files don't — keep main's fixes.
+- Both test sets must pass after the merge: `import.appExports.test.ts` (`__fixtures__/android-exports/`, real ZIPs)
+  and `import.androidExport.test.tsx` (`__fixtures__/android-export-rc6/`). Main-based patch: `fix/sapphire-csv-import`
+  `1d1991e` (marker + name filter, same fixtures).
 
 Old `MissionControlHtmlBuilder.kt` + `mission_control.html` remain as a "lite" fallback
 until Sapphire reaches feature parity.

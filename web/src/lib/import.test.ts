@@ -307,6 +307,17 @@ U0100  [ACTIVE]  Lost communication with ECM
     expect(session.meta.sessionStart).toBe('2026-04-01 14:30:00')
   })
 
+  it('strips UTF-8 BOM from the start of the CSV', async () => {
+    // Prepend a BOM to the header line (ported from main). trim() and the explicit strip both remove it;
+    // this guards against a parsing refactor leaving "\uFEFFtimestamp_ms" as the first column name.
+    const csv = '\uFEFF' + [CSV_HEADER, makeCsvRow(1000000, { rpm: 4200 })].join('\n')
+    const file = await buildZipFile({ 'drive_bom.csv': csv })
+    const session = await importZip(file)
+    expect(session.trip).not.toBeNull()
+    expect(session.trip!.points[0].ts).toBe(1000000)
+    expect(session.trip!.points[0].rpm).toBe(4200)
+  })
+
   it('handles alternate CSV column names (snake_case)', async () => {
     const headers = 'timestamp_ms,lat,lng,rpm,boost_psi,speed_kph,coolant_c,oil_temp_c,rdu_temp_c,ptu_temp_c,ambient_c,lateral_g,long_g,fuel_pct,ws_fl,ws_fr,ws_rl,ws_rr,drive_mode,awd_torque_l,awd_torque_r,gear,throttle_pct,tire_press_lf_psi,tire_press_rf_psi,tire_press_lr_psi,tire_press_rr_psi,tire_temp_lf_c,tire_temp_rf_c,tire_temp_lr_c,tire_temp_rr_c'
     const row = '1000000,51.5,-0.13,5000,15,120,92,98,65,58,22,0.5,0.2,70,120,120,119,119,SPORT,100,100,4,60,34,34,32,32,42,42,40,40'
