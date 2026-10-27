@@ -596,6 +596,12 @@ Drive-mode dock / ESC buttons / DTC clear act on simulated state only (mode land
   /data/local/tmp fails under run-as), share from TRIP (card → SHARE, or long-press → multi-select → EXPORT), pick
   ShareTest; it logs `ShareTest: … RESULT=PASS` and keeps the ZIP in its `files/`. Seed DB (d1 GPS 5 pts, d2 no-GPS 0 pts,
   d3 no-GPS 3 pts + knock) and receiver source / APK: `~/Documents/openRS_-evidence/export-tooling-2026-10-26/`
+- Sapphire tests touching `localStorage` (store / App): Node 25's own `localStorage` global (non-functional without
+  `--localstorage-file`) shadows jsdom's — stub one per test (`vi.stubGlobal('localStorage', …)`, see `App.test.tsx`)
+- Sapphire browser smoke (prod build, chart gaps / paints / remembered view): `node smoke.mjs <dist> <profile> <shots>
+  <fixtures>` from `~/Documents/openRS_-evidence/sapphire-smoke-2026-10-27/` with Playwright (same setup as
+  `web/scripts/idb-check/check.mjs`); build with `--outDir` outside the repo; IndexedDB is per origin, so each run
+  (random port) starts empty
 - Sapphire import contract: `web/src/lib/import.androidExport.test.tsx` imports complete Android exports from
   `__fixtures__/android-export-rc6/`; regenerate with `OPENRS_EXPORT_SAMPLES=<dir> ./gradlew test --tests '*DriveExportThermalTest'`
 - The HUD overlay needs `adb shell appops set com.openrs.dash.debug SYSTEM_ALERT_WINDOW allow` on a fresh emulator
