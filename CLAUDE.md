@@ -753,7 +753,9 @@ pnpm preview                  # preview production build
 - Preserve main's Sapphire history: `e9cd565` (import robustness, persisted nav, chart perf, UX), `e0c8b5e`
   (sentinel-aware charts + deltas), `e5080c8` (trip panel crash, theme accent, diag export) and the v2.2.6 release
   merge `dc32b8b`. Main lints clean; this branch's Sparkline / ComparePanel / DashboardPanel / SessionsPanel /
-  TripPanel have 10 `react-hooks` errors that main's versions of those files don't — keep main's fixes.
+  TripPanel have 10 `react-hooks` errors (hooks after an early return → "Rendered more hooks" crash risk) that main's
+  commits fix (`e5080c8` TripPanel crash, `e9cd565` DashboardPanel, `e0c8b5e` Sparkline `useId`) — never deploy
+  staging's Sapphire without them.
 - Both test sets must pass after the merge: `import.appExports.test.ts` (`__fixtures__/android-exports/`, real ZIPs)
   and `import.androidExport.test.tsx` (`__fixtures__/android-export-rc6/`). Main-based patch: `fix/sapphire-csv-import`
   `1d1991e` (marker + name filter, same fixtures).
