@@ -84,7 +84,33 @@ internal object DriveExportBuilder {
         }
     }
 
-    fun buildCsv(points: List<DrivePointEntity>): String = buildString {
+    /**
+     * True when the drive has a measured route — GPS was available and points were recorded.
+     * GPX, RaceChrono and TrackAddict are routes, so only these drives get them.
+     */
+    fun hasRoute(drive: DriveEntity, points: List<DrivePointEntity>): Boolean =
+        drive.hasGps && points.isNotEmpty()
+
+    /**
+     * Track files for one drive, in ZIP order: GPX (route only) then the drive CSV. Recorded
+     * telemetry gets a CSV whether or not GPS was available (as on main, e5080c8); a no-GPS
+     * drive leaves lat / lng empty. A drive with no points gets neither — nothing is made up.
+     * A null name leaves that file out (export component off).
+     */
+    fun driveTrackFiles(
+        drive: DriveEntity,
+        points: List<DrivePointEntity>,
+        gpxTs: String,
+        gpxName: String?,
+        csvName: String?,
+    ): List<Pair<String, String>> = buildList {
+        if (points.isEmpty()) return@buildList
+        if (gpxName != null && hasRoute(drive, points)) add(gpxName to buildGpx(drive, points, gpxTs))
+        if (csvName != null) add(csvName to buildCsv(points, hasGps = drive.hasGps))
+    }
+
+    /** Drive telemetry CSV. [hasGps] false writes empty lat / lng (the knock CSV's convention). */
+    fun buildCsv(points: List<DrivePointEntity>, hasGps: Boolean = true): String = buildString {
         appendLine("# openrs_csv_v2")
         appendLine(
             "timestamp_ms,lat,lng,speed_kph,rpm,gear,boost_psi," +
@@ -98,8 +124,7 @@ internal object DriveExportBuilder {
         points.forEach { pt ->
             appendLine(
                 "${pt.timestamp}," +
-                "${"%.6f".format(pt.lat)}," +
-                "${"%.6f".format(pt.lng)}," +
+                (if (hasGps) "${"%.6f".format(pt.lat)},${"%.6f".format(pt.lng)}," else ",,") +
                 "${"%.2f".format(pt.speedKph)}," +
                 "${pt.rpm}," +
                 "${csvEscape(pt.gear)}," +

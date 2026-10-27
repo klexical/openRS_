@@ -118,6 +118,50 @@ class DriveExportBuilderTest {
     // CSV tests
     // ═══════════════════════════════════════════════════════════════════════
 
+    // ── Track files: drive CSV with or without GPS (main e5080c8), routes only with GPS ──
+
+    private val noGps get() = testDrive().copy(hasGps = false)
+
+    @Test fun `GPS drive with points gets GPX then CSV with coordinates`() {
+        val files = DriveExportBuilder.driveTrackFiles(testDrive(), listOf(testPoint()), "ts", "d.gpx", "d.csv")
+        assertEquals(listOf("d.gpx", "d.csv"), files.map { it.first })
+        assertTrue(files[1].second.lines()[2].startsWith("1700000000000,52.520000,13.405000,100.00,4500,"))
+        assertTrue(DriveExportBuilder.hasRoute(testDrive(), listOf(testPoint())))
+    }
+
+    @Test fun `no-GPS drive with telemetry gets a CSV without coordinates and no route`() {
+        val pts = listOf(testPoint(timestamp = 1000, rpm = 3000), testPoint(timestamp = 2000, rpm = 4200))
+        val files = DriveExportBuilder.driveTrackFiles(noGps, pts, "ts", "d.gpx", "d.csv")
+        assertEquals(listOf("d.csv"), files.map { it.first })
+        assertFalse(DriveExportBuilder.hasRoute(noGps, pts))
+        val lines = files[0].second.lines().filter { it.isNotBlank() }
+        assertEquals(4, lines.size)                                   // format line, header, 2 recorded samples
+        val header = lines[1].split(",")
+        for ((i, row) in lines.drop(2).withIndex()) {
+            val cols = row.split(",")
+            assertEquals(header.size, cols.size)
+            assertEquals("", cols[header.indexOf("lat")])
+            assertEquals("", cols[header.indexOf("lng")])
+            assertEquals(listOf("3000", "4200")[i], cols[header.indexOf("rpm")])
+            assertEquals("100.00", cols[header.indexOf("speed_kph")])
+            assertEquals("105.0", cols[header.indexOf("oil_c")])
+        }
+    }
+
+    @Test fun `empty drive gets no track files, GPS or not`() {
+        for (d in listOf(testDrive(), noGps)) {
+            assertTrue(DriveExportBuilder.driveTrackFiles(d, emptyList(), "ts", "d.gpx", "d.csv").isEmpty())
+            assertFalse(DriveExportBuilder.hasRoute(d, emptyList()))
+        }
+    }
+
+    @Test fun `track files follow the export components`() {
+        val pts = listOf(testPoint())
+        assertEquals(listOf("d.csv"), DriveExportBuilder.driveTrackFiles(testDrive(), pts, "ts", null, "d.csv").map { it.first })
+        assertEquals(listOf("d.gpx"), DriveExportBuilder.driveTrackFiles(testDrive(), pts, "ts", "d.gpx", null).map { it.first })
+        assertTrue(DriveExportBuilder.driveTrackFiles(noGps, pts, "ts", "d.gpx", null).isEmpty())
+    }
+
     @Test fun `csv starts with schema version comment`() {
         val csv = DriveExportBuilder.buildCsv(listOf(testPoint()))
         // rc.4 bumped schema v1 → v2 for the 3 new boost-sweep columns.

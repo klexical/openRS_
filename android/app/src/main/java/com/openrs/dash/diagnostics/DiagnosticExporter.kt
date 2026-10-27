@@ -121,14 +121,8 @@ object DiagnosticExporter {
                 // Sapphire's import expects drive_*.csv / drive_*.gpx filenames.
                 if (driveSnapshot != null) {
                     val (drive, points) = driveSnapshot
-                    if (points.isNotEmpty()) {
-                        if (drive.hasGps) {
-                            addEntry("drive_$ts.gpx",
-                                DriveExportBuilder.buildGpx(drive, points, ts).toByteArray(Charsets.UTF_8))
-                        }
-                        addEntry("drive_$ts.csv",
-                            DriveExportBuilder.buildCsv(points).toByteArray(Charsets.UTF_8))
-                    }
+                    DriveExportBuilder.driveTrackFiles(drive, points, ts, "drive_$ts.gpx", "drive_$ts.csv")
+                        .forEach { (name, text) -> addEntry(name, text.toByteArray(Charsets.UTF_8)) }
                     addEntry("drive_summary_$ts.txt",
                         DriveExportBuilder.buildSummary(drive, points).toByteArray(Charsets.UTF_8))
                 }
@@ -211,17 +205,11 @@ object DiagnosticExporter {
                     entries += name to inferType(name)
                 }
 
-                // Drive GPX (if GPS data available)
-                if (drive.hasGps && points.isNotEmpty()) {
-                    if (ExportComponent.DRIVE_GPX in components) {
-                        addEntry("drive_$ts.gpx",
-                            DriveExportBuilder.buildGpx(drive, points, ts).toByteArray(Charsets.UTF_8))
-                    }
-                    if (ExportComponent.DRIVE_CSV in components) {
-                        addEntry("drive_$ts.csv",
-                            DriveExportBuilder.buildCsv(points).toByteArray(Charsets.UTF_8))
-                    }
-                }
+                // Drive GPX (GPS drives) + drive CSV (any recorded telemetry)
+                DriveExportBuilder.driveTrackFiles(drive, points, ts,
+                    gpxName = "drive_$ts.gpx".takeIf { ExportComponent.DRIVE_GPX in components },
+                    csvName = "drive_$ts.csv".takeIf { ExportComponent.DRIVE_CSV in components },
+                ).forEach { (name, text) -> addEntry(name, text.toByteArray(Charsets.UTF_8)) }
 
                 // Drive summary
                 if (ExportComponent.SUMMARY in components) {
@@ -250,14 +238,14 @@ object DiagnosticExporter {
                     }
                 }
 
-                // RaceChrono CSV
-                if (ExportComponent.RACECHRONO_CSV in components && points.isNotEmpty()) {
+                // RaceChrono / TrackAddict are lap-timer routes — GPS drives only
+                if (ExportComponent.RACECHRONO_CSV in components && DriveExportBuilder.hasRoute(drive, points)) {
                     addEntry("drive_racechrono_$ts.csv",
                         DriveExportBuilder.buildRaceChronoCsv(points).toByteArray(Charsets.UTF_8))
                 }
 
                 // TrackAddict CSV
-                if (ExportComponent.TRACKADDICT_CSV in components && points.isNotEmpty()) {
+                if (ExportComponent.TRACKADDICT_CSV in components && DriveExportBuilder.hasRoute(drive, points)) {
                     addEntry("drive_trackaddict_$ts.csv",
                         DriveExportBuilder.buildTrackAddictCsv(points).toByteArray(Charsets.UTF_8))
                 }
@@ -360,16 +348,10 @@ object DiagnosticExporter {
                         .format(Date(drive.startTime))
                     val prefix = "drive_${drive.id}_$driveTs"
 
-                    if (drive.hasGps && points.isNotEmpty()) {
-                        if (ExportComponent.DRIVE_GPX in components) {
-                            addEntry("$prefix.gpx",
-                                DriveExportBuilder.buildGpx(drive, points, driveTs).toByteArray(Charsets.UTF_8))
-                        }
-                        if (ExportComponent.DRIVE_CSV in components) {
-                            addEntry("$prefix.csv",
-                                DriveExportBuilder.buildCsv(points).toByteArray(Charsets.UTF_8))
-                        }
-                    }
+                    DriveExportBuilder.driveTrackFiles(drive, points, driveTs,
+                        gpxName = "$prefix.gpx".takeIf { ExportComponent.DRIVE_GPX in components },
+                        csvName = "$prefix.csv".takeIf { ExportComponent.DRIVE_CSV in components },
+                    ).forEach { (name, text) -> addEntry(name, text.toByteArray(Charsets.UTF_8)) }
                     if (ExportComponent.SUMMARY in components) {
                         addEntry("${prefix}_summary.txt",
                             DriveExportBuilder.buildSummary(drive, points).toByteArray(Charsets.UTF_8))
