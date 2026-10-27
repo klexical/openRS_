@@ -149,7 +149,7 @@ fun DriveSummarySheet(
                 null -> null
             }
             // The judged peak (fresh samples — the value the levels and flag use); legacy records stored a drive-end reading
-            fun peakOf(s: DriveThermalSensor, stored: Double) = if (profileBasis) review.sensor(s)?.peakC ?: stored else stored
+            fun peakOf(s: DriveThermalSensor, stored: Double) = review.peakFor(s, stored)
             val awdEnds = remember(points) {
                 fun ends(f: (DrivePointEntity) -> Double) =
                     (points.firstOrNull { f(it) > -90 }?.let(f) ?: -99.0) to (points.lastOrNull { f(it) > -90 }?.let(f) ?: -99.0)

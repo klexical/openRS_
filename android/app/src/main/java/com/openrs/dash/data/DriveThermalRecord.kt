@@ -37,6 +37,9 @@ fun thermalFlagThresholdC(critC: Double): Double = critC * THERMAL_FLAG_FRACTION
 /** Recorder side: fed once per recorded sample, on the recorder's coroutine. */
 class DriveThermalTracker {
     private val segments = mutableListOf<ThermalSegment>()
+    /** First / last fresh reading per sensor — progression endpoints from the same readings as the peaks. */
+    private val firstSeen = mutableMapOf<DriveThermalSensor, Double>()
+    private val lastSeen = mutableMapOf<DriveThermalSensor, Double>()
 
     val segmentList: List<ThermalSegment> get() = segments.toList()
 
@@ -52,6 +55,7 @@ class DriveThermalTracker {
         }
         val valid = readings.filterValues { it > -90.0 }
         if (valid.isEmpty()) return
+        for ((s, t) in valid) { firstSeen.putIfAbsent(s, t); lastSeen[s] = t }
         val seg = segments.last()
         val peaks = seg.peaks.toMutableMap()
         for ((s, t) in valid) peaks[s] = maxOf(peaks[s] ?: t, t)
@@ -60,13 +64,14 @@ class DriveThermalTracker {
 
     /** Null when no sample was taken. [climbRateCPerMin] = end-of-drive trend, informational only. */
     fun toJson(climbRateCPerMin: Map<DriveThermalSensor, Double> = emptyMap()): String? =
-        if (segments.isEmpty()) null else DriveThermalRecord.encode(segments, climbRateCPerMin)
+        if (segments.isEmpty()) null else DriveThermalRecord.encode(segments, climbRateCPerMin, firstSeen, lastSeen)
 }
 
 object DriveThermalRecord {
     const val VERSION = 2
 
-    fun encode(segments: List<ThermalSegment>, climbRateCPerMin: Map<DriveThermalSensor, Double> = emptyMap()): String =
+    fun encode(segments: List<ThermalSegment>, climbRateCPerMin: Map<DriveThermalSensor, Double> = emptyMap(),
+               firstC: Map<DriveThermalSensor, Double> = emptyMap(), lastC: Map<DriveThermalSensor, Double> = emptyMap()): String =
         JSONObject().apply {
             put("v", VERSION)
             put("segments", JSONArray().apply {
@@ -82,7 +87,22 @@ object DriveThermalRecord {
             if (climbRateCPerMin.isNotEmpty()) {
                 put("climbRateCPerMin", JSONObject().apply { for ((s, r) in climbRateCPerMin) put(s.key, r) })
             }
+            if (firstC.isNotEmpty()) put("firstC", JSONObject().apply { for ((s, t) in firstC) put(s.key, t) })
+            if (lastC.isNotEmpty()) put("lastC", JSONObject().apply { for ((s, t) in lastC) put(s.key, t) })
         }.toString()
+
+    /**
+     * First / last fresh readings per sensor; empty maps when the record predates them (early v2 records) or is
+     * not a current-format record.
+     */
+    fun decodeEndpoints(json: String?): Pair<Map<DriveThermalSensor, Double>, Map<DriveThermalSensor, Double>> {
+        if (decode(json) == null) return emptyMap<DriveThermalSensor, Double>() to emptyMap()
+        val o = JSONObject(json!!)
+        fun read(key: String) = o.optJSONObject(key)?.let { m ->
+            DriveThermalSensor.entries.filter { m.has(it.key) }.associateWith { m.getDouble(it.key) }
+        } ?: emptyMap()
+        return read("firstC") to read("lastC")
+    }
 
     /** Segments of a current-format record; null for legacy, missing or unreadable records. */
     fun decode(json: String?): List<ThermalSegment>? {
@@ -117,6 +137,13 @@ data class DriveThermalReview(
     /** Profile id per segment, in order (PROFILE basis only). */
     val profiles: List<String>,
     val sensors: List<SensorReview>,
+    /** The saved segments (PROFILE basis only) — limits and peaks per profile, for the export. */
+    val segments: List<ThermalSegment> = emptyList(),
+    /** First / last fresh recorded reading per sensor (PROFILE basis; absent in early records). */
+    val firstC: Map<DriveThermalSensor, Double> = emptyMap(),
+    val lastC: Map<DriveThermalSensor, Double> = emptyMap(),
+    /** NONE basis: a record was saved but can't be read (damaged, or a format this version doesn't know). */
+    val unreadable: Boolean = false,
 ) {
     enum class Basis {
         /** Saved with its profile limits. */
@@ -143,6 +170,10 @@ data class DriveThermalReview(
         val flagReadingC: Double? = null,
         val flagCritC: Double? = null,
         val flagProfile: String? = null,
+        /** Profile of the segment [peakLevel] comes from (PROFILE basis). */
+        val peakProfile: String? = null,
+        /** Legacy only: the old fixed limit stored with the drive-end reading, flagged or not. */
+        val legacyLimitC: Double? = null,
     ) {
         /** The reading that raised the flag (°C): 95 % of [flagCritC]. */
         val flagThresholdC: Double? get() = flagCritC?.let(::thermalFlagThresholdC)
@@ -153,10 +184,39 @@ data class DriveThermalReview(
     val profileChanged: Boolean get() = profiles.size > 1
     fun sensor(s: DriveThermalSensor): SensorReview? = sensors.firstOrNull { it.sensor == s }
 
+    /**
+     * The peak to show / export for [s]: the record's judged peak for current-format drives, else [storedPeakC]
+     * (DriveEntity's peak). Legacy records hold a drive-end reading, never used as a peak.
+     */
+    fun peakFor(s: DriveThermalSensor, storedPeakC: Double): Double =
+        if (basis == Basis.PROFILE) sensor(s)?.peakC ?: storedPeakC else storedPeakC
+
+    data class Progression(val startC: Double, val peakC: Double, val endC: Double)
+
+    /**
+     * Start → peak → end for [s], or null when there's no coherent one. Endpoints are the record's first / last fresh
+     * readings (the same readings as its peaks); without them, the [storedStartC] / [storedEndC] fallbacks
+     * (DriveEntity's readings at recording start / stop, or the first / last point). Those aren't freshness-filtered
+     * and are taken outside the sampled readings (before the first sample, at stop after a pause or link drop), so a
+     * progression is returned only when all three are valid readings and neither endpoint lies above the peak — the
+     * peak is never raised or clamped to fit.
+     */
+    fun progression(s: DriveThermalSensor, storedStartC: Double, storedPeakC: Double, storedEndC: Double): Progression? {
+        val peak = peakFor(s, storedPeakC)
+        val start = firstC[s] ?: storedStartC
+        val end = lastC[s] ?: storedEndC
+        if (start <= -90.0 || peak <= -90.0 || end <= -90.0) return null
+        if (start > peak || end > peak) return null
+        return Progression(start, peak, end)
+    }
+
     companion object {
         fun from(json: String?): DriveThermalReview {
-            DriveThermalRecord.decode(json)?.let { return fromSegments(it) }
-            return legacy(json) ?: DriveThermalReview(Basis.NONE, emptyList(), emptyList())
+            DriveThermalRecord.decode(json)?.let { segs ->
+                val (first, last) = DriveThermalRecord.decodeEndpoints(json)
+                return fromSegments(segs).copy(firstC = first, lastC = last)
+            }
+            return legacy(json) ?: DriveThermalReview(Basis.NONE, emptyList(), emptyList(), unreadable = !json.isNullOrBlank())
         }
 
         fun fromSegments(segments: List<ThermalSegment>): DriveThermalReview {
@@ -169,15 +229,16 @@ data class DriveThermalReview(
                 if (judged.isEmpty()) return@mapNotNull null
                 val peak = judged.maxOf { it.second }
                 // The peak's own segment(s) — a later, stricter profile never re-colours an earlier reading
-                val level = judged.filter { it.second == peak }.maxOf { (_, t, l) ->
+                fun levelOf(t: Double, l: TempLimits) =
                     when { t >= l.critC -> PeakLevel.CRIT; t >= l.warnC -> PeakLevel.WARN; else -> PeakLevel.NORMAL }
-                }
+                val peakSeg = judged.filter { it.second == peak }.maxBy { (_, t, l) -> levelOf(t, l) }
+                val level = levelOf(peakSeg.second, peakSeg.third)
                 val worst = judged.filter { (_, t, l) -> t >= thermalFlagThresholdC(l.critC) }
                     .maxByOrNull { (_, t, l) -> t / l.critC }
                 SensorReview(s, peak, level, worst != null,
-                    worst?.second, worst?.third?.critC, worst?.first?.profile)
+                    worst?.second, worst?.third?.critC, worst?.first?.profile, peakProfile = peakSeg.first.profile)
             }
-            return DriveThermalReview(Basis.PROFILE, segments.map { it.profile }, sensors)
+            return DriveThermalReview(Basis.PROFILE, segments.map { it.profile }, sensors, segments)
         }
 
         /** The pre-profile array: [{"sensor":"Oil","peakC":…,"critThresholdC":…}, …] — evaluated exactly as before. */
@@ -190,7 +251,7 @@ data class DriveThermalReview(
                     val s = DriveThermalSensor.entries.firstOrNull { it.key == o.optString("sensor") } ?: return@mapNotNull null
                     val t = o.getDouble("peakC"); val crit = o.getDouble("critThresholdC")
                     val flagged = t >= thermalFlagThresholdC(crit)
-                    SensorReview(s, t, null, flagged, if (flagged) t else null, if (flagged) crit else null)
+                    SensorReview(s, t, null, flagged, if (flagged) t else null, if (flagged) crit else null, legacyLimitC = crit)
                 }
                 DriveThermalReview(Basis.LEGACY, emptyList(), sensors)
             } catch (_: Exception) { null }

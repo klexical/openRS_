@@ -397,7 +397,9 @@ data[5] = B5,  data[6] = B6 …
 - **Drive thermal judgements come from the drive's own record** — `thermalPeaksJson` v2 (`DriveThermalRecord`) saves
   per-sensor peaks with the warn / crit of the profile in effect, one segment per profile (a mid-drive switch or saved
   Custom edit starts a new one). TRIP's TEMP badge and the summary read it through `DriveThermalReview` — never
-  `prefs.*WarnC/CritC` for a recorded drive. Older JSON arrays are LEGACY (original fixed-limit rule, no colours, no
+  `prefs.*WarnC/CritC` for a recorded drive (the profile export's `thermalRecord` block reads it the same way). Start →
+  peak → end curves go through `DriveThermalReview.progression()`: record first / last fresh readings, else stored
+  start / stop readings, and no curve when an endpoint is missing or above the peak — never adjust the peak to fit. Older JSON arrays are LEGACY (original fixed-limit rule, no colours, no
   profile claimed); never rewrite them. TEMP = reading ≥ `thermalFlagThresholdC(crit)` (95 %, °C); explanations show that
   threshold converted ("· flag threshold 220.1°F"), never "95 % of" a °F value. The recorder feeds only `tempAvail`-fresh
   readings (`DriveThermalTracker.sample(vs, prefs, now)`); a peak is coloured by its own segment's limits
@@ -513,7 +515,7 @@ cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{ver}.apk  (main release)
 ./gradlew assembleRelease -PrcSuffix=rc.5  # → openRS_v{ver}-rc.5.apk
-./gradlew test                             # 727 unit tests across 40 files
+./gradlew test                             # 734 unit tests across 41 files
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 45 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -608,7 +610,10 @@ android/app/src/test/java/com/openrs/dash/
   FreshnessGateTest.kt        — 5 tests (rc.5): pre-drive stamps, consume-once, per-tag tracking
   TimeSeriesMathTest.kt       — 5 tests (rc.5): gap bridging/breaking, shared-axis range
   FuelTrimTest.kt             — 8 tests (rc.5): warm/fresh gating, min samples, LEAN/RICH drift alert
-  DriveExportBuilderTest.kt   — 59 tests: CSV/GPX/JSON builders, schema v2, fuelTrim export, knock pulls, boost sweep by gear
+  DriveExportThermalTest.kt   — 7 tests: profile export `thermalRecord` + coherent curves per basis (built-in, Custom, mixed
+                                peak vs flag, legacy driveEndC, absent vs unreadable, endpoints above peak → no curve);
+                                `OPENRS_EXPORT_EXCERPTS=<dir>` writes review excerpts
+  DriveExportBuilderTest.kt   — 60 tests: CSV/GPX/JSON builders, schema v2, fuelTrim export, knock pulls, boost sweep by gear
   DemoSimulatorTest.kt        — 8 tests (incl. LAUNCH states): determinism, LOSS freeze / recovery sentinels, freshness stamps, no-decoder sentinels,
                                 WARNING thresholds, DRIVING plausibility + continuity
   DriveThermalRecordTest.kt   — 14 tests: saved profile limits (built-ins + Custom), 95 % boundary + levels, °C / °F + displayed
@@ -630,7 +635,7 @@ android/app/src/test/java/com/openrs/dash/
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **727 tests across 40 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **734 tests across 41 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 
