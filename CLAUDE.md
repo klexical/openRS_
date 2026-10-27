@@ -659,7 +659,7 @@ android/app/src/test/java/com/openrs/dash/
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **742 tests across 41 files** (Android) + **210 vitest across 12 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **742 tests across 41 files** (Android) + **249 vitest across 19 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 
@@ -736,7 +736,7 @@ web/
       ui/              — MetricCard, SectionLabel, SearchBar, ExportDropdown, DeltaCard,
                          TpmsSummaryCard, EmptyState
     store/
-      index.ts         — Zustand store (sessions, panels, compare, nav)
+      index.ts         — Zustand store (sessions, panels, compare, nav); panel + session remembered (`sapphire_view`)
       settings.ts      — Settings store (units, theme) — localStorage persisted
     lib/
       import.ts        — ZIP import pipeline (drive_*.csv + drive_summary_*)
@@ -745,7 +745,9 @@ web/
       units.ts         — Metric/imperial conversion (speed, distance, temp, boost, tire, fuel)
       export.ts        — CSV/JSON session export + browser download
       compare.ts       — Multi-session KPI deltas + time normalization
-      mapColors.ts     — GPS map color mode thresholds
+      mapColors.ts     — GPS map color mode thresholds (fixed cyan, never the paint accent)
+      readings.ts      — Chart values: sentinel / NaN → null (gap), genuine zeros kept; per-corner latest TPMS
+      gforce.ts        — G-force scatter downsampling (keeps the lat-G peaks)
     styles/            — Design tokens (openRS_ palette)
     types/             — Session, trip, diagnostic, vehicle state types
 ```
@@ -758,9 +760,10 @@ pnpm build                    # production build → dist/
 pnpm preview                  # preview production build
 ```
 
-**Release merge checklist — Sapphire (staging ↔ main diverged; updated 2026-10-26):**
+**Release merge checklist — Sapphire (staging ↔ main diverged; updated 2026-10-27):**
 
-*Resolved on feature/design-pass (source now matches main's behaviour or supersedes it — keep this side in conflicts):*
+*Resolved on feature/design-pass — every main-only `web/` change (`e5080c8`, `e0c8b5e`, `e9cd565`, `dc32b8b`) is ported or
+superseded, so **take this side for every `web/` file** when merging:*
 - Importer structure: manifest-driven single / batch import (`importBatchZip`, `isBatchZip`), profile JSON merge
   (full drive export → 6,700 RPM from the profile, not the CSV's 4,600).
 - Drive CSV choice by name — `isDriveCsvName` / `isDriveCsvEntry` skip RaceChrono / TrackAddict / knock CSVs (#183).
@@ -789,20 +792,24 @@ pnpm preview                  # preview production build
   exceeded" (zustand 5) — fixed with `useShallow` (`65fe314`). Main has the same selector + zustand 5, so it is expected
   there too — UNVERIFIED (not run on main; no hotfix requested). Keep the fix when merging main's ComparePanel.
 - `dc32b8b` (v2.2.6 release merge) carries no Sapphire difference — its `web/` equals staging `94883ca`, already here.
-
-*Still main-only — must survive the merge, REQUIRED before release (not ported; behaviour, not crash fixes):*
-- Gaps for missing chart readings (sentinel / NaN → `null`, never a 0 dip) are required — `e5080c8` TripPanel +
-  `e0c8b5e` TimeSeriesChart `number | null` / TempStackChart NaN guard. So are the paint accents, remembered panel /
-  session and the rest of the UX below.
-- `e5080c8`: TripPanel sentinel / NaN → `null` chart gaps and the diagnostics-only "No Trip Data" hint; App.tsx RS
-  paint accent → `--color-accent` / `--color-accent-d` CSS vars (with `tokens.ts` `accent` as a var, fixed `cyan`,
-  `shadeHex`) and persisted-session restore + IndexedDB load `catch`.
-- `e0c8b5e`: `TimeSeriesChart` data `number | null`, `TempStackChart` NaN guard, `TpmsSummaryCard` "—" for corners that
-  never reported, signed `pctChange` in `compare.ts` (+ tests).
-- `e9cd565`: persisted nav (`sapphire_view`: panel + session), SessionsPanel `allSettled` bulk delete + 150 ms search
-  debounce, DashboardPanel per-corner TPMS, GpsMap per-mode segment precompute (this side adds bookmarks), ComparisonChart
-  resample cache, GForceScatter keeps lat-G extremes, ModeTimeline case normalisation (this side adds
-  `canonicalTimeline`), DeltaCard per-unit neutral threshold, `mapColors` accent → `cyan` (+ tests), SettingsPanel copy.
+- Chart gaps (`a913177`): `lib/readings.ts` maps temps ≤ −90, polled −1 and NaN to `null` (TripPanel, TempStackChart —
+  main floored the stack at 0, Recharts 3.8 breaks a stacked layer at null; TimeSeriesChart `number | null`); genuine
+  zeros stay. Per-corner Dashboard TPMS + "—" corners; TripPanel diagnostics-only hint (TRIP → SHARE wording).
+- Paint accents (`c08b731`): `colors.accent` = `var(--color-accent)` written by App.tsx (+ `--color-accent-d`,
+  `--color-accent-print` for paper); fixed `colors.cyan` for map buckets, multi-series legends, ModeTimeline, TPMS
+  band and DiagnosticsPanel INFO / session (main left those on the accent — its `accent + '15'` chips are invalid CSS).
+  Sapphire is dark-only (no DAY palette); `tokens.test.ts` checks every paint on the dark surfaces + print.
+- Remembered panel / session (`e5f87bd`): `sapphire_view` in the store; App keeps the saved session if it still
+  exists, else the newest import (or none); IndexedDB load `.catch`. `App.test.tsx`.
+- Compare (`74f6cf6`): DeltaCard per-unit neutral floor (+ `L`, `/100`). **Not taken:** main's `pctChange =
+  diff / baseValue` — it flips the sign for a negative baseline; this side's `diff / |baseValue|` is kept (main's
+  tests pass here, plus a negative-baseline test).
+- Perf / UX (`1c3e602`): GpsMap per-mode precompute (with bookmarks), ComparisonChart resample cache, GForceScatter
+  keeps lat-G peaks (`lib/gforce.ts`), ModeTimeline case normalisation (CSV + profile timeline), SessionsPanel
+  `allSettled` bulk delete, SettingsPanel copy. **Not taken:** main's 150 ms SessionsPanel debounce — SearchBar already
+  debounces 200 ms (on main too).
+- Browser smoke (2026-10-27, production build, Playwright Chromium; script + ZIP + screenshots in `~/Documents/openRS_-evidence/sapphire-smoke-2026-10-27/`): gaps vs zeros
+  in the SVG, all six paints on screen + print, reload restore, missing / deleted saved session — 30/30, no page errors.
 
 *Separate follow-ups (documented, not release blockers for this checklist):*
 - `DriveRecorder` stores points only from location updates, so a drive without GPS records no telemetry (the export
@@ -810,16 +817,23 @@ pnpm preview                  # preview production build
 - TRIP's map draws a marker at a no-GPS drive's stored coordinates — only reachable with seeded data (real no-GPS
   drives have no points).
 - thermalRecord visualisation in Sapphire (the block imports and is ignored today).
+- Thermal Soak is a stacked chart: while one layer is missing, the layers above it sit lower (stack total). Inherent to
+  stacking (main's 0-floor shifts them the same way); a non-stacked view would be a design change.
+- Compare overlays still clamp missing coolant / oil / throttle to 0 (`normalizePoints`, by test — same on main).
 
-*Merge / deployment steps (not done):*
-- Merge main's Sapphire into the release line, resolving to the "resolved" items above and keeping every "still
-  main-only" item; don't take main's release-version files from `dc32b8b`.
-- After the merge, run all of: `vitest run` (incl. `import.appExports.test.ts` — real ZIPs in
+*Integration / deployment steps (not done):*
+- Staging: feature/design-pass contains all of `origin/staging` (64 commits ahead, nothing behind) → PR to staging.
+- Main: merging staging into main keeps this side for all of `web/` (above) and the Android exporter; don't take main's
+  release-version files from `dc32b8b`. Main also has CI commits staging lacks — `8bba37f` (release-job APK verify path,
+  wrong on this side for pushes to main), `38fcf67` (lint advisory), `8905b1f` (detekt + firmware script tests; detekt
+  baseline predates rc.6 — not run against this code). RC tags build from staging (`publish-release`), unaffected.
+- After any merge, run all of: `vitest run` (incl. `import.appExports.test.ts` — real ZIPs in
   `__fixtures__/android-exports/`, `import.androidExport.test.tsx` — `__fixtures__/android-export-rc6/`,
-  `import.noGpsExport.test.tsx`, `import.batchProfile.test.ts`, `hookOrder.test.tsx`, `ImportPanel.test.tsx`),
-  `eslint .` (0 errors), `tsc -b`, `vite build`, and `scripts/idb-check` (10/10). Main-based patch for reference:
-  `fix/sapphire-csv-import` `1d1991e` (marker + name filter, same fixtures).
-- Deploy (`deploy-pages.yml`) only from the merged result. Deployed (main) Sapphire can't import rc.4+ exports today.
+  `import.noGpsExport.test.tsx`, `import.batchProfile.test.ts`, `hookOrder.test.tsx`, `ImportPanel.test.tsx`,
+  `App.test.tsx`, `readings.test.tsx`), `eslint .` (0 errors), `tsc -b`, `vite build`, and `scripts/idb-check` (9/9 checks).
+  Main-based patch for reference: `fix/sapphire-csv-import` `1d1991e` (marker + name filter, same fixtures).
+- Deploy (`deploy-pages.yml`: push to main touching `web/**`, or manual dispatch) only from the merged result.
+  Deployed (main) Sapphire can't import rc.4+ exports today.
 
 Old `MissionControlHtmlBuilder.kt` + `mission_control.html` remain as a "lite" fallback
 until Sapphire reaches feature parity.
