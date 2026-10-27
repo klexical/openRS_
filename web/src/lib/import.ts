@@ -88,22 +88,19 @@ export function isBatchZip(manifest: ExportManifest | null, zip: JSZip): boolean
   return countDriveCsvs(zip, manifest) > 1
 }
 
+/** Drive CSVs in the ZIP — from the manifest when present, else by filename. */
+function driveCsvFiles(zip: JSZip, manifest: ExportManifest | null): string[] {
+  return manifest
+    ? manifest.files.filter(isDriveCsvEntry).map((e) => e.name)
+    : Object.keys(zip.files).filter(isDriveCsvName)
+}
+
 function countDriveCsvs(zip: JSZip, manifest: ExportManifest | null): number {
-  if (manifest) {
-    return manifest.files.filter(isDriveCsvEntry).length
-  }
-  return Object.keys(zip.files).filter(
-    isDriveCsvName
-  ).length
+  return driveCsvFiles(zip, manifest).length
 }
 
 async function importBatchZipInner(zip: JSZip, manifest: ExportManifest | null, filename: string): Promise<Session[]> {
-  // Find all drive CSV files
-  const csvFiles: string[] = manifest
-    ? manifest.files.filter(isDriveCsvEntry).map((e) => e.name)
-    : Object.keys(zip.files).filter(
-        isDriveCsvName
-      )
+  const csvFiles = driveCsvFiles(zip, manifest)
 
   const sessions: Session[] = []
   for (const csvFile of csvFiles) {
@@ -111,9 +108,7 @@ async function importBatchZipInner(zip: JSZip, manifest: ExportManifest | null, 
     const trip = await parseTripDataFromCsv(zip, csvFile)
     if (!trip) continue
 
-    // Try to find matching profile JSON by prefix
-    const prefix = extractDrivePrefix(csvFile)
-    const profileFile = prefix ? findMatchingFile(zip, manifest, prefix, 'drive_profile', '.json') : null
+    const profileFile = findProfileFor(zip, manifest, csvFile, csvFiles.length)
     if (profileFile) {
       await mergeProfileJson(zip, profileFile, trip)
     }
@@ -134,29 +129,65 @@ async function importBatchZipInner(zip: JSZip, manifest: ExportManifest | null, 
   return sessions
 }
 
-function extractDrivePrefix(csvFilename: string): string | null {
-  // Match patterns like drive_42_20260419_143000 or drive_20260419_143000
-  const match = csvFilename.match(/^(drive_\d+_\d{8}_\d{6})/) || csvFilename.match(/^(drive_\d{8}_\d{6})/)
-  return match ? match[1] : null
+// Drive identity in export filenames: id (batch) + start time. Single export: drive_<ts>.csv +
+// drive_profile_<ts>.json; batch: drive_<id>_<ts>.csv + drive_<id>_<ts>_profile.json.
+const SINGLE_CSV = /^drive_(\d{8}_\d{6})\.csv$/
+const BATCH_CSV = /^drive_(\d+)_(\d{8}_\d{6})\.csv$/
+const SINGLE_PROFILE = /^drive_profile_(\d{8}_\d{6})\.json$/
+const BATCH_PROFILE = /^drive_(\d+)_(\d{8}_\d{6})_profile\.json$/
+
+const baseName = (path: string) => path.slice(path.lastIndexOf('/') + 1)
+const dirName = (path: string) => path.slice(0, path.lastIndexOf('/') + 1)
+
+/** Drive identity ("<id>_<ts>" or "_<ts>") from a drive CSV / profile filename, or null. */
+function driveIdentity(path: string): string | null {
+  const name = baseName(path)
+  let m = name.match(BATCH_CSV) ?? name.match(BATCH_PROFILE)
+  if (m) return `${m[1]}_${m[2]}`
+  m = name.match(SINGLE_CSV) ?? name.match(SINGLE_PROFILE)
+  return m ? `_${m[1]}` : null
 }
 
-function findMatchingFile(zip: JSZip, manifest: ExportManifest | null, prefix: string, type: string, ext: string): string | null {
-  if (manifest) {
-    const entry = manifest.files.find((e) => e.type === type && e.name.startsWith(prefix))
-    return entry?.name ?? null
-  }
-  return Object.keys(zip.files).find((f) => f.startsWith(prefix) && f.endsWith(ext)) ?? null
+function isProfileName(path: string, manifest: ExportManifest | null): boolean {
+  const name = baseName(path)
+  return SINGLE_PROFILE.test(name) || BATCH_PROFILE.test(name) ||
+    (name.endsWith('.json') && !!manifest?.files.some((e) => e.name === path && e.type === 'drive_profile'))
+}
+
+/**
+ * The profile JSON belonging to one drive CSV — the same rule for single and batch imports.
+ * 1. By name in the same folder: drive_<ts>.csv → drive_profile_<ts>.json, drive_<id>_<ts>.csv →
+ *    drive_<id>_<ts>_profile.json. The name carries the drive's id + start time, so the manifest
+ *    type isn't needed (batch manifests up to rc.6 label these files "unknown").
+ * 2. Only when the ZIP has one drive CSV and exactly one profile, and their names don't identify
+ *    different drives: that pair (older exports with other CSV names).
+ * Otherwise null — the drive keeps its CSV-only summary. Never chosen by ZIP order.
+ */
+function findProfileFor(zip: JSZip, manifest: ExportManifest | null, csvFile: string, driveCsvCount: number): string | null {
+  const name = baseName(csvFile)
+  const dir = dirName(csvFile)
+  const batch = name.match(BATCH_CSV)
+  const single = name.match(SINGLE_CSV)
+  const expected = batch ? `${dir}drive_${batch[1]}_${batch[2]}_profile.json`
+    : single ? `${dir}drive_profile_${single[1]}.json` : null
+  if (expected && zip.files[expected] && !zip.files[expected].dir) return expected
+
+  if (driveCsvCount !== 1) return null
+  const candidates = Object.keys(zip.files).filter((f) => !zip.files[f].dir && isProfileName(f, manifest))
+  if (candidates.length !== 1) return null
+  const csvId = driveIdentity(csvFile)
+  const profileId = driveIdentity(candidates[0])
+  return csvId && profileId && csvId !== profileId ? null : candidates[0]
 }
 
 async function importSingleDrive(zip: JSZip, manifest: ExportManifest | null, filename: string): Promise<Session> {
   const id = crypto.randomUUID()
   const trip = await parseTripData(zip, manifest)
 
-  // Parse profile JSON and merge into trip data
-  if (trip) {
-    const profileFile = manifest
-      ? manifest.files.find((e) => e.type === 'drive_profile')?.name
-      : Object.keys(zip.files).find((f) => f.startsWith('drive_profile_') && f.endsWith('.json'))
+  // Parse profile JSON and merge into trip data (same association rule as batch imports)
+  const csvFiles = driveCsvFiles(zip, manifest)
+  if (trip && csvFiles.length > 0) {
+    const profileFile = findProfileFor(zip, manifest, csvFiles[0], csvFiles.length)
     if (profileFile) {
       await mergeProfileJson(zip, profileFile, trip)
     }
@@ -187,11 +218,7 @@ const REQUIRED_COLUMN_GROUPS: { name: string; aliases: string[] }[] = [
 ]
 
 async function parseTripData(zip: JSZip, manifest: ExportManifest | null): Promise<TripData | null> {
-  const csvFile = manifest
-    ? manifest.files.find(isDriveCsvEntry)?.name
-    : Object.keys(zip.files).find(
-        isDriveCsvName
-      )
+  const csvFile = driveCsvFiles(zip, manifest)[0]
   if (!csvFile) return null
   return parseTripDataFromCsv(zip, csvFile)
 }

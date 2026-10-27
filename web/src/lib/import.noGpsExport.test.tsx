@@ -48,6 +48,8 @@ describe('no-GPS drive exports from the app', () => {
     expect(gps.trip!.points).toHaveLength(5)
     expect(gps.trip!.points.every((p) => p.lat !== 0 && p.lng !== 0)).toBe(true)
     expect(gps.trip!.summary.distanceKm).toBeGreaterThan(0)
+    expect(gps.trip!.summary.peakRpm).toBe(6700)                 // its own profile (CSV peak is 4600)
+    expect(noGps.trip!.summary.peakRpm).toBe(6800)               // its own profile (CSV peak is 5000)
 
     expect(noGps.trip!.points).toHaveLength(3)
     expect(noGps.trip!.points.every((p) => p.lat === 0 && p.lng === 0 && p.rpm === 5000)).toBe(true)
