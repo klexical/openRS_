@@ -71,6 +71,19 @@ describe('batch import: per-drive profile association', () => {
     expect(fixed[D3_TS].trip).toEqual(old[D3_TS].trip)
   })
 
+  it('the app\'s corrected batch manifest (fixed exporter) imports the same trips as the rc.6 one', async () => {
+    const zip = await JSZip.loadAsync(readFileSync(FIXTURES + 'batch-typed-manifest.zip'))
+    const types = JSON.parse(await zip.files['manifest.json'].async('string')).files
+      .filter((f: { name: string }) => /_(profile\.json|summary\.txt)$/.test(f.name)).map((f: { type: string }) => f.type)
+    expect(types.sort()).toEqual(['drive_profile', 'drive_profile', 'drive_summary', 'drive_summary', 'drive_summary'])
+
+    const typed = byFirstTs(await importBatchZip(new File([readFileSync(FIXTURES + 'batch-typed-manifest.zip')], 'b.zip')))
+    const old = byFirstTs(await importBatchZip(await zipOf(Object.entries(entries))))
+    expect(Object.keys(typed)).toHaveLength(2)
+    expect(typed[D1_TS].trip).toEqual(old[D1_TS].trip)
+    expect(typed[D3_TS].trip).toEqual(old[D3_TS].trip)
+  })
+
   it('deliberately different profiles never cross over, whatever the ZIP / manifest order', async () => {
     const p1 = JSON.parse(entries[`${D1}_profile.json`])
     const p3 = JSON.parse(entries[`${D3}_profile.json`])
