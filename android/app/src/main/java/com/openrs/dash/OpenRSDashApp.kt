@@ -85,11 +85,13 @@ class OpenRSDashApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        com.openrs.dash.ui.StartupTrace.mark("Application.onCreate start")
         instance = this
         CrashReporter.install(this)
         CrashTelemetryBuffer.startCollecting()
         com.openrs.dash.ui.ThermalReadinessSession.start()
         createNotificationChannel()
+        com.openrs.dash.ui.StartupTrace.mark("Application.onCreate end")
     }
 
     private fun createNotificationChannel() {

@@ -423,6 +423,12 @@ data[5] = B5,  data[6] = B6 …
   full words when both are on — never abbreviate LC ENGAGED; DAY engaged fill = `actionInk(accent)`) and inside DRIVE's
   fixed-height gear module (tag + caption + border); AnomalyStrip now carries only update progress. Live flags only
   (`vs.isConnected`). LC states supported: on (0x420 bit) and engaged (0x225); `lcArmed` (RSProt probe) is GARAGE-only
+- **Opening presentation** — system splash = background colour only (`splash_blank`). The composition draws alone at
+  full opacity (no fade-in); the splash exit listener completes `OpeningState.splashGone`, and only then does the
+  dashboard compose underneath (`composeDashboard`) and `CanDataService` bind — composing / binding earlier blocked the
+  splash hand-off by up to 1.5 s. Hold 2 s from the first visible frame, 300 ms fade; once per process (`OpeningState`).
+  Keep heavy work out of `onCreate` paths (PID catalog loads on IO). Debug timing: `adb logcat -s openRS_Startup`
+  (ms since process start, `ui/StartupTrace.kt`)
 - **Connection state never inserts space** — RECONNECTING / TAP TO CONNECT render inside DRIVE's fixed 48 dp
   StatusLine (`LinkState`), and the header pill (RCN / OFF) covers the other tabs. `AnomalyStrip` is only for
   update progress — don't add connection states back to it (they moved every page)
@@ -496,7 +502,7 @@ cd android
 ./gradlew assembleRelease                  # → openRS_v{ver}.apk  (main release)
 ./gradlew assembleRelease -PrcSuffix=rc.5  # → openRS_v{ver}-rc.5.apk
 ./gradlew test                             # 713 unit tests across 39 files
-./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 48 warnings rc.6)
+./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 45 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
 

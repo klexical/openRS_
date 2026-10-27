@@ -34,6 +34,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.*
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -166,6 +167,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        StartupTrace.mark("MainActivity.onCreate start")
         super.onCreate(savedInstanceState)
 
         UserPrefsStore.load(this)
@@ -191,9 +193,20 @@ class MainActivity : ComponentActivity() {
         permLauncher.launch(perms.toTypedArray())
         handleDemoIntent(intent)
         handleTripPreviewIntent(intent)
-        // Opening presentation on a cold start only (not after rotation / process recreation)
-        val coldStart = savedInstanceState == null
+        // Opening presentation: once per process cold start — not after rotation / recreation (savedInstanceState),
+        // and not when the activity is reopened while the process is still alive (Back, then the launcher icon).
+        val showOpening = savedInstanceState == null && !OpeningState.shown
+        OpeningState.shown = true
+        // API 31+: the system splash is just the composition's background colour — take it away with no exit
+        // animation once the first frame (the composition) is drawn. The splash covers the app until this runs, so
+        // the opening waits for it before composing the dashboard (that long frame would otherwise hold the splash
+        // — and hide the composition — for ~1.5 s on a cold start).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) splashScreen.setOnExitAnimationListener {
+            it.remove(); StartupTrace.mark("system splash removed"); OpeningState.splashGone.complete(Unit)
+        } else OpeningState.splashGone.complete(Unit)
+        if (!showOpening) OpeningState.splashGone.complete(Unit)   // nothing to wait for (resume / recreation)
 
+        StartupTrace.mark("setContent")
         setContent {
             val vs          by OpenRSDashApp.instance.vehicleState.collectAsState()
             val prefs       by UserPrefsStore.prefs.collectAsState()
@@ -258,6 +271,10 @@ class MainActivity : ComponentActivity() {
             // Frozen White on DAY / Shadow Black on NIGHT swap to their legible structural tone.
             val activeAccent = legibleAccent(themeAccentPreview() ?: prefs.themeAccent, isDayModeNow())
             CompositionLocalProvider(LocalThemeAccent provides activeAccent) {
+                // Opening: the composition draws alone first (a light first frame — no blank wait behind the
+                // system splash), then the dashboard composes underneath during its hold.
+                var composeDashboard by remember { mutableStateOf(!showOpening) }
+                if (composeDashboard) {
                 MaterialTheme(
                     colorScheme = darkColorScheme(
                         background = Bg,
@@ -483,9 +500,10 @@ class MainActivity : ComponentActivity() {
 
                     }
                 }
+                }
                 // Wordmark, tagline and front-view RS over the first frame, then a fade into the dashboard
-                var opening by rememberSaveable { mutableStateOf(coldStart) }
-                if (opening) OpeningPresentation { opening = false }
+                var opening by rememberSaveable { mutableStateOf(showOpening) }
+                if (opening) OpeningPresentation(onFirstFrame = { composeDashboard = true }) { opening = false }
             }
         }
     }
@@ -497,6 +515,14 @@ class MainActivity : ComponentActivity() {
      * broke Android's contract whenever no connection started (offline / demo) → ANR.
      */
     private fun startSvc() {
+        // Cold start with the opening: bind once the system splash is gone (≤ 1 s). The service's onCreate runs on the
+        // main thread (callbacks, auto-connect: 60–330 ms on the emulator) and would otherwise sit between the
+        // composition's first draw and the splash removal, holding the artwork behind a plain background.
+        if (OpeningState.splashGone.isCompleted) bindSvc()
+        else lifecycleScope.launch { kotlinx.coroutines.withTimeoutOrNull(1_000) { OpeningState.splashGone.await() }; bindSvc() }
+    }
+
+    private fun bindSvc() {
         bindService(Intent(this, CanDataService::class.java), conn, Context.BIND_AUTO_CREATE)
     }
 

@@ -24,7 +24,7 @@ object PidRegistry {
     )
 
     /** (responseId, did) → DecodablePid, built on first load. */
-    private var index: Map<Pair<Int, Int>, DecodablePid> = emptyMap()
+    @Volatile private var index: Map<Pair<Int, Int>, DecodablePid> = emptyMap()   // built off the main thread
     @Volatile private var loaded = false
 
     fun ensureLoaded(ctx: Context) {

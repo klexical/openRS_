@@ -205,10 +205,18 @@ class CanDataService : Service() {
         super.onCreate()
         // Not foreground here: the activity only binds. startConnection() promotes the service (start + startForeground
         // together) when there is a connection to keep alive.
-        PidRegistry.ensureLoaded(this)
+        com.openrs.dash.ui.StartupTrace.mark("CanDataService.onCreate start")
+        // The 185 KB FORScan catalog (fallback decoder for DIDs without a dedicated parser) loads off the main
+        // thread — on the main thread it held the opening composition's first frames for ~250 ms. Until it is
+        // ready, PidRegistry.decode() returns null, i.e. those catalog-only DIDs are skipped for a moment.
+        scope.launch(Dispatchers.IO) {
+            PidRegistry.ensureLoaded(this@CanDataService)
+            com.openrs.dash.ui.StartupTrace.mark("PID catalog loaded (background)")
+        }
         registerWifiCallback()
         registerBluetoothCallback()
         if (isTransportReady()) autoStartConnection()
+        com.openrs.dash.ui.StartupTrace.mark("CanDataService.onCreate end")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY

@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- API 28–30 launch window: the splash colour with the openRS_ wordmark centred (no system splash API). -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@color/splash_bg" />
-    <item android:drawable="@drawable/splash_wordmark" android:gravity="center" />
-</layer-list>

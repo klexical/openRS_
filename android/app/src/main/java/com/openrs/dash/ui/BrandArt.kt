@@ -2,6 +2,7 @@ package com.openrs.dash.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -9,6 +10,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.sp
@@ -146,56 +149,99 @@ fun Level.iconTone(): IconTone = when (this) {
 /** Background of the system splash and the opening presentation (the sheet's phone screen, #030609). */
 val SplashBg = androidx.compose.ui.graphics.Color(0xFF030609)
 
+private var firstDrawTraced = false
+private var firstVisibleTraced = false
+private var firstFadeTraced = false
+/** Startup marks: the composition's first draw, its first draw with visible artwork, its first faded-out draw. */
+private fun traceDraw(contentAlpha: Float, alpha: Float) {
+    if (!firstDrawTraced) { firstDrawTraced = true; StartupTrace.mark("opening: first draw (artwork alpha $contentAlpha)") }
+    if (!firstVisibleTraced && contentAlpha > 0f) { firstVisibleTraced = true; StartupTrace.mark("opening: first draw with artwork visible (alpha $contentAlpha)") }
+    if (!firstFadeTraced && alpha < 1f) { firstFadeTraced = true; StartupTrace.mark("opening: first faded-out draw (alpha $alpha)") }
+}
+
+/** Process-level: the opening presentation has been shown (or skipped) in this process. */
+object OpeningState {
+    @Volatile var shown = false
+    /** Completed when the system splash is gone (API 31+ exit listener; immediately below API 31). */
+    val splashGone = kotlinx.coroutines.CompletableDeferred<Unit>()
+}
+
+/** Opening timing: composition at full opacity for [OPENING_HOLD_MS] from its first drawn frame (concurrent with the
+ *  dashboard loading underneath), then a [OPENING_FADE_MS] fade. Never waits for the adapter or the network. */
+const val OPENING_HOLD_MS = 2_000L
+const val OPENING_FADE_MS = 300
+
 /**
- * The sheet's opening screen — wordmark, tagline and the front-view RS — drawn over the app on a cold
- * start. No timer: it stays only until the dashboard behind it has drawn its first frame, then fades
- * out (450 ms) to reveal it. Not shown again on rotation / recreation.
+ * The sheet's opening screen — wordmark, tagline and the front-view RS — over the dashboard on a cold start.
+ * The system splash before it is the same background colour only, so the hand-off has no held icon screen and
+ * no background change: the artwork is drawn at full opacity on the very first frame (a fade-in from 0 made that
+ * frame — and the slow ones after it on a cold start — show only background). The hold starts when the system
+ * splash is removed (the artwork is then on screen) and lasts [OPENING_HOLD_MS] while the dashboard composes behind
+ * it; then it fades out.
+ * Content sits inside the system-bar insets; the car keeps its 300 × 360 proportions.
  */
 @androidx.compose.runtime.Composable
-fun OpeningPresentation(onFinished: () -> Unit) {
+fun OpeningPresentation(onFirstFrame: () -> Unit = {}, onFinished: () -> Unit) {
     val alpha = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(1f) }
     androidx.compose.runtime.LaunchedEffect(Unit) {
-        // Two frames: the first composes the dashboard underneath, the second has it drawn
+        androidx.compose.runtime.withFrameNanos { }                 // the composition's first frame is drawn
+        // …but only visible once the system splash on top is removed; a launch without a splash never completes
+        // this, hence the timeout
+        kotlinx.coroutines.withTimeoutOrNull(1_000) { OpeningState.splashGone.await() }
+        val shownAt = android.os.SystemClock.uptimeMillis()          // the artwork is on screen: the hold starts
+        StartupTrace.mark("opening: visible (hold starts)")
+        onFirstFrame()                                              // now compose the dashboard underneath
+        // Dashboard composed + drawn (two frames after it was requested); the hold already counts that time
         androidx.compose.runtime.withFrameNanos { }
         androidx.compose.runtime.withFrameNanos { }
-        alpha.animateTo(0f, androidx.compose.animation.core.tween(450, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+        val ready = android.os.SystemClock.uptimeMillis() - shownAt
+        val left = OPENING_HOLD_MS - ready
+        if (left > 0) kotlinx.coroutines.delay(left)
+        StartupTrace.mark("opening: dashboard drawn underneath at +${ready} ms; fade-out requested at +${android.os.SystemClock.uptimeMillis() - shownAt} ms of the hold")
+        alpha.animateTo(0f, androidx.compose.animation.core.tween(OPENING_FADE_MS, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+        StartupTrace.mark("opening: fade-out done — dashboard fully revealed")
         onFinished()
     }
     val a = alpha.value
+    val ca = 1f
     androidx.compose.foundation.layout.BoxWithConstraints(
         androidx.compose.ui.Modifier.fillMaxSize()
             .graphicsLayer { this.alpha = a }
+            .drawWithContent { drawContent(); traceDraw(ca, a) }
             .background(SplashBg)
             // swallow touches while visible so a tap doesn't land on the dashboard mid-fade
-            .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } },
+            .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }
+            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.systemBars),
     ) {
         val w = maxWidth
         val h = maxHeight
         val wordH = (w * 0.74f) / (WORDMARK_W / WORDMARK_H)
         androidx.compose.foundation.layout.Column(
-            androidx.compose.ui.Modifier.fillMaxSize().padding(top = h * 0.17f),
+            androidx.compose.ui.Modifier.fillMaxSize().padding(top = h * 0.12f),
             horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
         ) {
             Wordmark(wordH, base = androidx.compose.ui.graphics.Color(0xFFF2F4F7), accent = androidx.compose.ui.graphics.Color(0xFF0A8CFF))
             androidx.compose.foundation.layout.Spacer(androidx.compose.ui.Modifier.height(wordH * 0.42f))
+            // Readable at arm's length: ≥ 17 sp, full-strength light text (was 14–19 sp at 0.042 × width)
             androidx.compose.material3.Text(
                 "Built for the car Ford should\nhave given us an app for.",
-                color = androidx.compose.ui.graphics.Color(0xFFE8ECF2),
-                fontSize = (w.value * 0.042f).coerceIn(14f, 19f).sp,
-                lineHeight = (w.value * 0.058f).coerceIn(19f, 26f).sp,
+                color = androidx.compose.ui.graphics.Color(0xFFF2F4F7),
+                fontSize = (w.value * 0.047f).coerceIn(17f, 21f).sp,
+                lineHeight = (w.value * 0.064f).coerceIn(23f, 28f).sp,
                 fontFamily = androidx.compose.ui.text.font.FontFamily.SansSerif,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
             androidx.compose.foundation.layout.Spacer(androidx.compose.ui.Modifier.weight(1f))
-            // Front-view car at its own proportions (300 × 360 px art), as wide as the sheet's composition
+            // Front-view car at its own proportions (300 × 360 px art), as wide as the sheet's composition; on short
+            // screens the height cap keeps it whole above the gesture bar instead of cropping it
             androidx.compose.foundation.Image(
                 androidx.compose.ui.graphics.ImageBitmap.imageResource(com.openrs.dash.R.drawable.rs_splash_car), contentDescription = null,
-                modifier = androidx.compose.ui.Modifier.fillMaxWidth(0.92f).heightIn(max = h * 0.55f)
+                modifier = androidx.compose.ui.Modifier.fillMaxWidth(0.92f).heightIn(max = h * 0.56f)
                     .aspectRatio(300f / 360f),
                 contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                 filterQuality = androidx.compose.ui.graphics.FilterQuality.High,
             )
-            androidx.compose.foundation.layout.Spacer(androidx.compose.ui.Modifier.height(h * 0.06f))
+            androidx.compose.foundation.layout.Spacer(androidx.compose.ui.Modifier.height(h * 0.03f))
         }
     }
 }
