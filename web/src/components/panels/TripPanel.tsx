@@ -11,6 +11,7 @@ import { TempStackChart } from '../charts/TempStackChart'
 import { Histogram } from '../charts/Histogram'
 import { ThermalProgressionChart } from '../charts/ThermalProgressionChart'
 import { useUnitFormatters } from '../../lib/format'
+import { tripChartData } from '../../lib/readings'
 import { colors, chartColors } from '../../styles/tokens'
 
 export function TripPanel() {
@@ -21,39 +22,9 @@ export function TripPanel() {
   const trip = session?.trip ?? null
   // Stable identity so the useMemo below doesn't rebuild every render
   const points = useMemo(() => trip?.points ?? [], [trip])
-  const t0 = points[0]?.ts ?? 0
 
-  // Build chart data with relative time in seconds
-  const chartData = useMemo(() => points.map((p) => ({
-    ts: (p.ts - t0) / 1000,
-    rpm: p.rpm,
-    boostPsi: p.boostPsi,
-    speedKph: p.speedKph,
-    coolantC: p.coolantC > -90 ? p.coolantC : 0,
-    oilTempC: p.oilTempC > -90 ? p.oilTempC : 0,
-    rduTempC: p.rduTempC > -90 ? p.rduTempC : 0,
-    ptuTempC: p.ptuTempC > -90 ? p.ptuTempC : 0,
-    latG: p.latG,
-    longG: p.longG,
-    fuelPct: p.fuelPct >= 0 ? p.fuelPct : 0,
-    wsFL: p.wheelSpeedFL,
-    wsFR: p.wheelSpeedFR,
-    wsRL: p.wheelSpeedRL,
-    wsRR: p.wheelSpeedRR,
-    awdL: p.awdTorqueL,
-    awdR: p.awdTorqueR,
-    throttlePct: p.throttlePct >= 0 ? p.throttlePct : 0,
-    brakePressure: p.brakePressure,
-    steeringAngle: p.steeringAngle,
-    tirePressLF: p.tirePressLF >= 0 ? p.tirePressLF : 0,
-    tirePressRF: p.tirePressRF >= 0 ? p.tirePressRF : 0,
-    tirePressLR: p.tirePressLR >= 0 ? p.tirePressLR : 0,
-    tirePressRR: p.tirePressRR >= 0 ? p.tirePressRR : 0,
-    tireTempLF: p.tireTempLF > -90 ? p.tireTempLF : 0,
-    tireTempRF: p.tireTempRF > -90 ? p.tireTempRF : 0,
-    tireTempLR: p.tireTempLR > -90 ? p.tireTempLR : 0,
-    tireTempRR: p.tireTempRR > -90 ? p.tireTempRR : 0,
-  })), [points, t0])
+  // Chart rows with relative time in seconds; a missing reading is null → a gap, never a 0 dip
+  const chartData = useMemo(() => tripChartData(points), [points])
 
   // ── Early returns (after all hooks) ──
   if (!session) {
@@ -61,7 +32,17 @@ export function TripPanel() {
   }
 
   if (!trip || points.length === 0) {
-    return <EmptyState icon="◎" title="No Trip Data" description="This session does not contain trip data." />
+    return (
+      <EmptyState
+        icon="◎"
+        title="No Trip Data"
+        description={
+          session.diagnostics
+            ? 'This session has diagnostic data but no drive recording. To bring a drive in, open openRS_ → TRIP, tap the drive and SHARE it, then import that ZIP.'
+            : 'This session does not contain trip data.'
+        }
+      />
+    )
   }
 
   const peakEvents = trip.summary.peakEvents

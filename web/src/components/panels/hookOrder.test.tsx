@@ -95,6 +95,7 @@ describe('hook order across data transitions (same mounted component)', () => {
     expect(container.textContent).toContain('3-street-to-race')
     set({ activeSessionId: diagOnly.id })
     expect(container.textContent).toContain('No Trip Data')
+    expect(container.textContent).toContain('diagnostic data but no drive recording')   // points at TRIP → SHARE
     set({ activeSessionId: driveA.id })
     expect(container.textContent).toContain('1-track')
     set({ sessions: [], activeSessionId: null })

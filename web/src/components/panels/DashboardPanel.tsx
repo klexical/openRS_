@@ -11,6 +11,7 @@ import { GpsMap } from '../charts/GpsMap'
 import { ThermalProgressionChart } from '../charts/ThermalProgressionChart'
 import { ExportDropdown } from '../ui/ExportDropdown'
 import { fmtNumber, fmtDuration, useUnitFormatters } from '../../lib/format'
+import { latestTpms } from '../../lib/readings'
 import { colors } from '../../styles/tokens'
 
 export function DashboardPanel() {
@@ -32,24 +33,9 @@ export function DashboardPanel() {
   // Race Ready detection (T2I)
   const hasRaceReady = useMemo(() => points?.some((p) => p.raceReady) ?? false, [points])
 
-  // TPMS: get last valid reading from trip points
-  const tpmsData = useMemo(() => {
-    if (!points || points.length === 0) return null
-    const last = [...points].reverse().find((p) =>
-      p.tirePressLF >= 0 || p.tirePressRF >= 0 || p.tirePressLR >= 0 || p.tirePressRR >= 0
-    )
-    if (!last) return null
-    return {
-      pressLF: last.tirePressLF,
-      pressRF: last.tirePressRF,
-      pressLR: last.tirePressLR,
-      pressRR: last.tirePressRR,
-      tempLF: last.tireTempLF,
-      tempRF: last.tireTempRF,
-      tempLR: last.tireTempLR,
-      tempRR: last.tireTempRR,
-    }
-  }, [points])
+  // TPMS: each corner's most recent valid reading, found independently — corners are polled out of phase, so
+  // any single sample usually has at least one corner still at its sentinel (main e9cd565)
+  const tpmsData = useMemo(() => latestTpms(points ?? []), [points])
 
   // ── Early returns (after all hooks) ──
   if (sessions.length === 0) {
