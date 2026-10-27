@@ -523,7 +523,7 @@ cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{ver}.apk  (main release)
 ./gradlew assembleRelease -PrcSuffix=rc.5  # → openRS_v{ver}-rc.5.apk
-./gradlew test                             # 741 unit tests across 41 files
+./gradlew test                             # 742 unit tests across 41 files
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 45 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -653,7 +653,7 @@ android/app/src/test/java/com/openrs/dash/
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **741 tests across 41 files** (Android) + **202 vitest across 11 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **742 tests across 41 files** (Android) + **210 vitest across 12 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 
@@ -762,9 +762,16 @@ pnpm preview                  # preview production build
   `< 2 lines` → no-trip return, then the required-columns `ImportError` (`REQUIRED_COLUMN_GROUPS`: timestamp + rpm,
   main's `e9cd565`; `abef459`). Only drive CSVs are checked. Main's BOM + ImportError tests are in `import.test.ts`
   (`5eace3d`, `abef459`).
-- Batch import is all-or-nothing (`3f7302f`): one malformed drive CSV rejects the batch in either order, and a valid
-  batch is stored with `putSessions` (one IndexedDB transaction) before any session reaches the store — keep
-  ImportPanel's `putSessions` call when merging. `ImportPanel.test.tsx` guards it.
+- Batch import is all-or-nothing (`3f7302f`, `5bf6435`): one malformed drive CSV rejects the batch in either order,
+  and a valid batch is stored with `putSessions` (one IndexedDB transaction, aborted if any `put` throws) before any
+  session reaches the store — keep ImportPanel's `putSessions` call when merging. `ImportPanel.test.tsx` guards the
+  panel; `web/scripts/idb-check/` checks the real database (Chromium via Playwright installed outside the repo — steps
+  in `check.mjs`): reload / restart persistence, quota and clone failures roll back.
+- Profile ↔ drive association (`e7f7416`): single and batch imports share `findProfileFor` — by filename identity
+  (`drive_<ts>.csv` → `drive_profile_<ts>.json`, `drive_<id>_<ts>.csv` → `drive_<id>_<ts>_profile.json`), manifest
+  type not needed; one-CSV + one-profile fallback only when names don't identify different drives; never by ZIP
+  order. Android batch manifest now types these `drive_profile` / `drive_summary` (`535253e`; rc.6 batches said
+  `unknown` and still import). `import.batchProfile.test.ts` (real TRIP batches, both manifest generations).
 - Android half of `e5080c8` (drive CSV without GPS) — `9a52612`: `DriveExportBuilder.driveTrackFiles` / `hasRoute` used
   by the diagnostic export, `shareDrive` and `shareDrives`; no-GPS CSV has empty lat / lng, GPX / RaceChrono /
   TrackAddict only with GPS, empty drives get no track files. Real TRIP exports in `__fixtures__/android-exports/`
@@ -791,20 +798,20 @@ pnpm preview                  # preview production build
   resample cache, GForceScatter keeps lat-G extremes, ModeTimeline case normalisation (this side adds
   `canonicalTimeline`), DeltaCard per-unit neutral threshold, `mapColors` accent → `cyan` (+ tests), SettingsPanel copy.
 
-*Open, not from main (found 2026-10-26, unfixed):*
-- Batch exports never merge their profile JSON in Sapphire: `inferType` types `drive_<id>_<ts>_profile.json` /
-  `_summary.txt` as `unknown`, and `findMatchingFile(type 'drive_profile')` needs the manifest type, so batch drives
-  import CSV-derived peaks (fixture `batch-gps-nogps-empty.zip`: 4,600 RPM, profile says 6,700).
+*Separate follow-ups (documented, not release blockers for this checklist):*
 - `DriveRecorder` stores points only from location updates, so a drive without GPS records no telemetry (the export
   fix above covers seeded / legacy data and any later recorder change).
+- TRIP's map draws a marker at a no-GPS drive's stored coordinates — only reachable with seeded data (real no-GPS
+  drives have no points).
+- thermalRecord visualisation in Sapphire (the block imports and is ignored today).
 
 *Merge / deployment steps (not done):*
 - Merge main's Sapphire into the release line, resolving to the "resolved" items above and keeping every "still
   main-only" item; don't take main's release-version files from `dc32b8b`.
 - After the merge, run all of: `vitest run` (incl. `import.appExports.test.ts` — real ZIPs in
   `__fixtures__/android-exports/`, `import.androidExport.test.tsx` — `__fixtures__/android-export-rc6/`,
-  `import.noGpsExport.test.tsx`, `hookOrder.test.tsx`, `ImportPanel.test.tsx`), `eslint .` (0 errors), `tsc -b`,
-  `vite build`. Main-based patch for reference:
+  `import.noGpsExport.test.tsx`, `import.batchProfile.test.ts`, `hookOrder.test.tsx`, `ImportPanel.test.tsx`),
+  `eslint .` (0 errors), `tsc -b`, `vite build`, and `scripts/idb-check` (10/10). Main-based patch for reference:
   `fix/sapphire-csv-import` `1d1991e` (marker + name filter, same fixtures).
 - Deploy (`deploy-pages.yml`) only from the merged result. Deployed (main) Sapphire can't import rc.4+ exports today.
 
