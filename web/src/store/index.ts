@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { useShallow } from 'zustand/react/shallow'
 import type { Session } from '../types/session'
 
 export type PanelId = 'dashboard' | 'trip' | 'diagnostics' | 'sessions' | 'compare' | 'import' | 'settings'
@@ -84,6 +85,10 @@ export const useStore = create<SapphireState>((set) => ({
 export const useActiveSession = () =>
   useStore((s) => s.sessions.find((sess) => sess.id === s.activeSessionId) ?? null)
 
-/** Convenience selector for compare sessions. */
+/**
+ * Convenience selector for compare sessions. `useShallow` keeps the array identity while its
+ * members are unchanged — a fresh array per store read makes React re-render forever
+ * ("Maximum update depth exceeded" as soon as ComparePanel mounts).
+ */
 export const useCompareSessions = () =>
-  useStore((s) => s.compareSessionIds.map((id) => s.sessions.find((sess) => sess.id === id)).filter(Boolean) as Session[])
+  useStore(useShallow((s) => s.compareSessionIds.map((id) => s.sessions.find((sess) => sess.id === id)).filter(Boolean) as Session[]))
