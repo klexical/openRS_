@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
@@ -134,17 +135,24 @@ import kotlin.math.roundToInt
         var frEdge by remember { mutableStateOf(Offset.Zero) }
         var rlEdge by remember { mutableStateOf(Offset.Zero) }
         var rrEdge by remember { mutableStateOf(Offset.Zero) }
+        var colH by remember { mutableStateOf(0) }
 
-        Box {
+        // The car takes the width the tyre cards don't need (each keeps ≥ 86 dp — "25.8 psi" on one line inside an
+        // alert border), up to the cards' column height, so it grows without stretching or making the panel taller.
+        BoxWithConstraints {
+                val density = LocalDensity.current
+                val byWidth = maxWidth - 86.dp * 2 - 4.dp * 2
+                val byHeight = with(density) { colH.toDp() } * TOPDOWN_ASPECT
+                val diagW = (if (colH > 0) minOf(byWidth, byHeight) else byWidth).coerceIn(120.dp, 200.dp)
                 Row(
                     Modifier.fillMaxWidth()
                         .onGloballyPositioned { rowRoot = it.positionInRoot() },
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Left column: FL + RL
                     Column(
-                        Modifier.weight(1f),
+                        Modifier.weight(1f).onSizeChanged { colH = it.height },
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Box(Modifier.onGloballyPositioned {
@@ -171,7 +179,7 @@ import kotlin.math.roundToInt
                     CarDiagram(
                         vs = vs,
                         prefs = p,
-                        modifier = Modifier.width(120.dp).aspectRatio(TOPDOWN_ASPECT)
+                        modifier = Modifier.width(diagW).aspectRatio(TOPDOWN_ASPECT)
                             .onGloballyPositioned {
                                 diagRoot = it.positionInRoot()
                                 diagSz = it.size
@@ -337,7 +345,7 @@ private fun TyreCell(
             .border(if (level.isAlert) 1.dp else CardBorder,
                 if (level.isAlert) levelColor(level).copy(alpha = borderAlpha(0.5f)) else Brd.copy(alpha = borderAlpha(0.2f)),
                 RoundedCornerShape(10.dp))
-            .padding(horizontal = 10.dp, vertical = 8.dp)
+            .padding(horizontal = 8.dp, vertical = 8.dp)
     ) {
         InstrumentLabel(positionName, color = if (level.isAlert) levelColor(level) else Dim)
         Row(verticalAlignment = Alignment.Bottom) {
