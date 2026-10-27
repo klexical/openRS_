@@ -652,7 +652,7 @@ android/app/src/test/java/com/openrs/dash/
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **737 tests across 41 files** (Android) + **182 vitest across 8 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **737 tests across 41 files** (Android) + **195 vitest across 9 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 
@@ -751,21 +751,46 @@ pnpm build                    # production build → dist/
 pnpm preview                  # preview production build
 ```
 
-**Release merge checklist — Sapphire importer (staging ↔ main diverged; verified 2026-10-26):**
-- Keep staging's structure: manifest-driven single / batch import (`importBatchZip`, `isBatchZip`), profile JSON merge.
+**Release merge checklist — Sapphire (staging ↔ main diverged; updated 2026-10-26):**
+
+*Resolved on feature/design-pass (source now matches main's behaviour or supersedes it — keep this side in conflicts):*
+- Importer structure: manifest-driven single / batch import (`importBatchZip`, `isBatchZip`), profile JSON merge
+  (full drive export → 6,700 RPM from the profile, not the CSV's 4,600).
 - Drive CSV choice by name — `isDriveCsvName` / `isDriveCsvEntry` skip RaceChrono / TrackAddict / knock CSVs (#183).
-- In `parseTripDataFromCsv`: BOM strip, then `trim()`, then skip `#` lines (`# openrs_csv_v2`). The BOM must be gone
-  before the `#` check — a per-line parser without the whole-string strip would break BOM + marker files.
-- Main has, staging lacks: the missing-required-columns `ImportError` (`REQUIRED_COLUMN_GROUPS`) — must survive.
-- Preserve main's Sapphire history: `e9cd565` (import robustness, persisted nav, chart perf, UX), `e0c8b5e`
-  (sentinel-aware charts + deltas), `e5080c8` (trip panel crash, theme accent, diag export) and the v2.2.6 release
-  merge `dc32b8b`. Main lints clean; this branch's Sparkline / ComparePanel / DashboardPanel / SessionsPanel /
-  TripPanel have 10 `react-hooks` errors (hooks after an early return → "Rendered more hooks" crash risk) that main's
-  commits fix (`e5080c8` TripPanel crash, `e9cd565` DashboardPanel, `e0c8b5e` Sparkline `useId`) — never deploy
-  staging's Sapphire without them.
-- Both test sets must pass after the merge: `import.appExports.test.ts` (`__fixtures__/android-exports/`, real ZIPs)
-  and `import.androidExport.test.tsx` (`__fixtures__/android-export-rc6/`). Main-based patch: `fix/sapphire-csv-import`
-  `1d1991e` (marker + name filter, same fixtures).
+- `parseTripDataFromCsv`: BOM strip, then `trim()`, then skip `#` lines (`# openrs_csv_v2`), then the
+  `< 2 lines` → no-trip return, then the required-columns `ImportError` (`REQUIRED_COLUMN_GROUPS`: timestamp + rpm,
+  main's `e9cd565`; `abef459`). Only drive CSVs are checked; one malformed drive CSV fails a batch import. Main's BOM
+  + ImportError tests are in `import.test.ts` (`5eace3d`, `abef459`).
+- Hook order (main's `e5080c8` TripPanel, `e9cd565` DashboardPanel / ComparePanel / SessionsPanel, `e0c8b5e`
+  Sparkline `useId`) — `aa79eb3`; whole-app ESLint 0 errors. `hookOrder.test.tsx` keeps each component mounted
+  through empty → data → other drive → diagnostics-only → empty.
+- Compare panel crash on mount: `useCompareSessions` built a new array per store read → "Maximum update depth
+  exceeded" (zustand 5) — fixed with `useShallow` (`65fe314`). Main has the same selector + zustand 5, so it is expected
+  there too (not run on main). Keep the fix when merging main's ComparePanel.
+- `dc32b8b` (v2.2.6 release merge) carries no Sapphire difference — its `web/` equals staging `94883ca`, already here.
+
+*Still main-only — must survive the merge (not ported; behaviour, not crash fixes):*
+- `e5080c8`: TripPanel sentinel / NaN → `null` chart gaps and the diagnostics-only "No Trip Data" hint; App.tsx RS
+  paint accent → `--color-accent` / `--color-accent-d` CSS vars (with `tokens.ts` `accent` as a var, fixed `cyan`,
+  `shadeHex`) and persisted-session restore + IndexedDB load `catch`.
+- `e0c8b5e`: `TimeSeriesChart` data `number | null`, `TempStackChart` NaN guard, `TpmsSummaryCard` "—" for corners that
+  never reported, signed `pctChange` in `compare.ts` (+ tests).
+- `e9cd565`: persisted nav (`sapphire_view`: panel + session), SessionsPanel `allSettled` bulk delete + 150 ms search
+  debounce, DashboardPanel per-corner TPMS, GpsMap per-mode segment precompute (this side adds bookmarks), ComparisonChart
+  resample cache, GForceScatter keeps lat-G extremes, ModeTimeline case normalisation (this side adds
+  `canonicalTimeline`), DeltaCard per-unit neutral threshold, `mapColors` accent → `cyan` (+ tests), SettingsPanel copy.
+- Android half of `e5080c8` (drive CSV written without GPS) is only partly here: the diagnostic export's active drive
+  has it, but `DiagnosticExporter.shareDrive` / `shareDrives` still gate the drive CSV on `hasGps` — a no-GPS drive
+  share has no drive CSV, so Sapphire shows no trip (real fixture `drive-nogps-knock.zip`).
+
+*Merge / deployment steps (not done):*
+- Merge main's Sapphire into the release line, resolving to the "resolved" items above and keeping every "still
+  main-only" item; don't take main's release-version files from `dc32b8b`.
+- After the merge, run all of: `vitest run` (incl. `import.appExports.test.ts` — real ZIPs in
+  `__fixtures__/android-exports/`, `import.androidExport.test.tsx` — `__fixtures__/android-export-rc6/`,
+  `hookOrder.test.tsx`), `eslint .` (0 errors), `tsc -b`, `vite build`. Main-based patch for reference:
+  `fix/sapphire-csv-import` `1d1991e` (marker + name filter, same fixtures).
+- Deploy (`deploy-pages.yml`) only from the merged result. Deployed (main) Sapphire can't import rc.4+ exports today.
 
 Old `MissionControlHtmlBuilder.kt` + `mission_control.html` remain as a "lite" fallback
 until Sapphire reaches feature parity.
