@@ -308,6 +308,7 @@ object DiagnosticExporter {
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "application/zip"
                 putExtra(Intent.EXTRA_STREAM, uri)
+                clipData = shareClip(uri)
                 putExtra(Intent.EXTRA_SUBJECT, "openRS_ Drive Export")
                 putExtra(
                     Intent.EXTRA_TEXT,
@@ -403,6 +404,7 @@ object DiagnosticExporter {
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "application/zip"
                 putExtra(Intent.EXTRA_STREAM, uri)
+                clipData = shareClip(uri)
                 putExtra(Intent.EXTRA_SUBJECT, "openRS_ Batch Export (${drives.size} drives)")
                 putExtra(
                     Intent.EXTRA_TEXT,
@@ -461,6 +463,7 @@ object DiagnosticExporter {
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "application/zip"
             putExtra(Intent.EXTRA_STREAM, uri)
+            clipData = shareClip(uri)
             putExtra(Intent.EXTRA_SUBJECT, "openRS_ Diagnostic Report")
             putExtra(
                 Intent.EXTRA_TEXT,
@@ -482,6 +485,13 @@ object DiagnosticExporter {
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    /**
+     * ClipData for a shared ZIP. Android migrates EXTRA_STREAM into ClipData only inside the chooser's target intent
+     * and never grants the share sheet itself, so its preview was denied (`Permission Denial … intentresolver`).
+     * With ClipData on the target, Intent.createChooser carries it and FLAG_GRANT_READ_URI_PERMISSION to the chooser.
+     */
+    private fun shareClip(uri: android.net.Uri) = android.content.ClipData.newRawUri("openRS_ export", uri)
 
     /** Add crash telemetry JSON files to the ZIP. */
     private fun addCrashFiles(ctx: Context, zip: ZipOutputStream) {
