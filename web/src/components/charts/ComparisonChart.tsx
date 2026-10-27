@@ -6,6 +6,9 @@ import { colors, chartColors } from '../../styles/tokens'
 import type { Session } from '../../types/session'
 import { normalizePoints, resampleNormalized, sessionShortName } from '../../lib/compare'
 
+/** Resample resolution for the overlay (0..100 % of each session). */
+const BINS = 200
+
 /** Colors assigned to each session in the overlay. */
 const SESSION_COLORS = [chartColors[0], chartColors[1], chartColors[2], chartColors[4]]
 
@@ -29,19 +32,19 @@ export function ComparisonChart({ sessions, dataKey, label, yFormatter, height =
     })
   }, [])
 
-  // Build merged data: each row has { t, s0_rpm, s1_rpm, ... }
-  const { chartData, seriesInfo } = useMemo(() => {
-    const bins = 200
-    const resampled = sessions.map((s) => {
-      const pts = s.trip?.points
-      if (!pts || pts.length < 2) return []
-      return resampleNormalized(normalizePoints(pts), bins)
-    })
+  // Resample once per session set (main e9cd565) — switching the metric (RPM → boost → speed) then only
+  // projects the cached bins instead of re-resampling every trip.
+  const resampled = useMemo(() => sessions.map((s) => {
+    const pts = s.trip?.points
+    if (!pts || pts.length < 2) return []
+    return resampleNormalized(normalizePoints(pts), BINS)
+  }), [sessions])
 
-    // Build merged rows
+  // Build merged data: each row has { t, s0, s1, ... } for dataKey
+  const { chartData, seriesInfo } = useMemo(() => {
     const rows: Record<string, number>[] = []
-    for (let i = 0; i < bins; i++) {
-      const row: Record<string, number> = { t: i / (bins - 1) * 100 } // 0..100%
+    for (let i = 0; i < BINS; i++) {
+      const row: Record<string, number> = { t: i / (BINS - 1) * 100 } // 0..100%
       resampled.forEach((pts, si) => {
         if (pts[i]) {
           row[`s${si}`] = pts[i][dataKey]
@@ -57,7 +60,7 @@ export function ComparisonChart({ sessions, dataKey, label, yFormatter, height =
     }))
 
     return { chartData: rows, seriesInfo: info }
-  }, [sessions, dataKey])
+  }, [resampled, sessions, dataKey])
 
   if (chartData.length === 0) return null
 

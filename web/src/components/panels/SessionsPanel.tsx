@@ -20,6 +20,8 @@ export function SessionsPanel() {
   const setSessionTags = useStore((s) => s.setSessionTags)
   const setActivePanel = useStore((s) => s.setActivePanel)
 
+  // Already debounced: SearchBar calls onChange 200 ms after typing pauses (main e9cd565's extra 150 ms
+  // debounce here would only stack on top)
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('date')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -74,9 +76,15 @@ export function SessionsPanel() {
 
   const handleBulkDelete = async () => {
     const ids = [...selectedIds]
-    await Promise.all(ids.map(dbDelete))
-    removeSessions(ids)
-    setSelectedIds(new Set())
+    // allSettled (main e9cd565): with Promise.all one failed delete skipped removing the ones that were
+    // deleted — they stayed listed though gone from IndexedDB. Remove what was deleted; failures stay
+    // selected so they can be retried.
+    const results = await Promise.allSettled(ids.map((id) => dbDelete(id)))
+    const deleted = ids.filter((_, i) => results[i].status === 'fulfilled')
+    const failed = ids.filter((_, i) => results[i].status === 'rejected')
+    if (deleted.length > 0) removeSessions(deleted)
+    setSelectedIds(new Set(failed))
+    if (failed.length > 0) console.warn('[Sapphire] Failed to delete sessions from IndexedDB:', failed)
   }
 
   const handleSelect = (id: string) => {
