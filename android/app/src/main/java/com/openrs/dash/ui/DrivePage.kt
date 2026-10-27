@@ -1,5 +1,7 @@
 package com.openrs.dash.ui
 
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -270,10 +272,23 @@ import kotlin.math.roundToInt
             val gearAreaH = (viewportH * 0.22f).coerceIn(124.dp, 176.dp)
             val gearSize = if (viewportH < 680.dp) 72.sp else 84.sp
             val gearDigitH = with(LocalDensity.current) { gearSize.toDp() }
+            // Launch control / e-brake live inside this fixed-size module (never inserted above / below it):
+            // LC on (0x420) = accent edge + caption, engaged (0x225) = stronger edge + tinted face; e-brake = a tag
+            // above the gear digit. Held flags from a dropped link aren't shown.
+            val lcOn = !stale && (vs.launchControlActive || vs.launchControlEngaged)
+            val lcEngaged = !stale && vs.launchControlEngaged
+            val ebrakeOn = !stale && vs.eBrake
+            val gearShape = RoundedCornerShape(16.dp)
             Column(
                 Modifier.fillMaxWidth()
                     .then(pageEntrance(1, pageEntered))
                     .instrumentSurface(radius = 16.dp)
+                    .then(if (lcEngaged) Modifier.background(accent.copy(alpha = pillBgAlpha(0.10f)), gearShape) else Modifier)
+                    .then(if (lcOn) Modifier.border(if (lcEngaged) 2.dp else 1.dp, accent.copy(alpha = borderAlpha(if (lcEngaged) 0.95f else 0.7f)), gearShape)
+                          else Modifier)
+                    .semantics { if (lcOn || ebrakeOn) stateDescription = listOfNotNull(
+                        if (ebrakeOn) "E-brake on" else null,
+                        if (lcEngaged) "Launch control engaged" else if (lcOn) "Launch control on" else null).joinToString(", ") }
                     .padding(horizontal = 10.dp, vertical = 10.dp)
             ) {
                 // Disconnected: last RPM is frozen — never leave shift LEDs lit on stale data.
@@ -284,7 +299,10 @@ import kotlin.math.roundToInt
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     PedalBar("BRAKE", brake, Orange, Modifier.fillMaxHeight())
-                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                    // E-brake tag: overlaid in the space above the digit, so it never moves the gear or caption
+                    if (ebrakeOn) EBrakeTag(Modifier.align(Alignment.TopCenter))
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         AnimatedContent(
                             modifier = Modifier.height(gearDigitH),
                             // Gear is derived from RPM ÷ speed — meaningless once those are frozen.
@@ -301,25 +319,23 @@ import kotlin.math.roundToInt
                         val gearLabelColor by animateColorAsState(
                             if (tinted) modeColor else Dim, tween(600), label = "gearLbl")
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            // 12 dp inside the caption's line height — the module's fixed height doesn't change
-                            TelemetryIcon(RsIcon.GEAR, if (gearActive) IconTone.NORMAL else IconTone.UNAVAILABLE, 12.dp)
-                            Spacer(Modifier.width(4.dp))
-                            InstrumentLabel(if (tinted) "GEAR · ${vs.driveMode.label.uppercase()}" else "GEAR", color = gearLabelColor)
+                            if (lcOn) {
+                                // Same caption line, same height: launch control replaces "GEAR" while it is on
+                                androidx.compose.material3.Text(
+                                    if (lcEngaged) "LAUNCH CONTROL · ENGAGED" else "LAUNCH CONTROL · ON",
+                                    color = actionInk(accent), fontFamily = JetBrainsMonoFamily, fontSize = 10.sp,
+                                    fontWeight = if (lcEngaged) FontWeight.Bold else FontWeight.SemiBold,
+                                    letterSpacing = 0.4.sp, maxLines = 1, softWrap = false)
+                            } else {
+                                // 12 dp inside the caption's line height — the module's fixed height doesn't change
+                                TelemetryIcon(RsIcon.GEAR, if (gearActive) IconTone.NORMAL else IconTone.UNAVAILABLE, 12.dp)
+                                Spacer(Modifier.width(4.dp))
+                                InstrumentLabel(if (tinted) "GEAR · ${vs.driveMode.label.uppercase()}" else "GEAR", color = gearLabelColor)
+                            }
                         }
                     }
+                    }
                     PedalBar("THROTTLE", thr, accent, Modifier.fillMaxHeight())
-                }
-            }
-
-            if (!stale && vs.launchControlActive) {
-                Box(
-                    Modifier.fillMaxWidth()
-                        .background(Warn.copy(alpha = 0.12f), RoundedCornerShape(10.dp))
-                        .border(1.dp, Warn.copy(alpha = 0.6f), RoundedCornerShape(10.dp))
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    MonoLabel("⚡ LAUNCH CONTROL ACTIVE", 12.sp, Warn, letterSpacing = 0.2.sp)
                 }
             }
 
@@ -800,4 +816,13 @@ internal fun tempColorShade(c: Double, warnC: Double, critC: Double) = when {
     c >= warnC  -> Warn
     c >= warnC * 0.6 -> Ok
     else        -> Frost
+}
+
+/** E-brake tag above the gear digit: orange (the e-brake colour), compact, never in the layout flow. */
+@Composable private fun EBrakeTag(modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(5.dp)
+    Box(modifier.padding(top = 2.dp).background(Orange.copy(alpha = pillBgAlpha(0.14f)), shape)
+        .border(1.dp, Orange.copy(alpha = borderAlpha(0.7f)), shape).padding(horizontal = 7.dp, vertical = 2.dp)) {
+        MonoLabel("E-BRAKE", 10.sp, textColor(Orange), FontWeight.Bold, 0.4.sp)
+    }
 }

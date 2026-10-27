@@ -119,4 +119,22 @@ class DemoSimulatorTest {
         }
         assertTrue("gears seen $gears", gears.containsAll(listOf("N", "1", "2", "3")))
     }
+
+    @Test
+    fun `LAUNCH walks the e-brake and launch-control states a real decoder reports`() {
+        fun at(sec: Double) = frame(DemoScenario.LAUNCH, (sec * 1000).toLong())
+        assertTrue(at(3.0).eBrake); assertTrue(!at(3.0).launchControlActive)                     // e-brake only
+        assertTrue(at(8.0).eBrake && at(8.0).launchControlActive && !at(8.0).launchControlEngaged) // both
+        assertEquals(DemoLink.LOST, DemoSimulator.link(DemoScenario.LAUNCH, 12.0))
+        assertEquals(DemoLink.RECOVERING, DemoSimulator.link(DemoScenario.LAUNCH, 16.0))
+        assertTrue(at(21.0).eBrake && at(21.0).launchControlActive)                            // e-brake + LC on
+        assertTrue(at(24.0).eBrake && at(24.0).launchControlEngaged)                           // e-brake + LC engaged
+        val engaged = at(26.0)
+        assertTrue(!engaged.eBrake)
+        assertTrue(engaged.launchControlEngaged && engaged.launchControlActive)
+        assertTrue(abs(engaged.rpm - 4500) < 200 && engaged.speedKph < 1.0)                     // holding launch rpm
+        assertTrue(!at(29.0).launchControlEngaged && at(29.0).speedKph > 5)                      // launched
+        assertTrue(!at(36.0).launchControlActive && !at(36.0).eBrake)                            // cleared
+        assertEquals(DemoLink.LIVE, DemoSimulator.link(DemoScenario.LAUNCH, 36.0))
+    }
 }

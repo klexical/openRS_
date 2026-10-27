@@ -20,12 +20,12 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.openrs.dash.ui.Warn
+import com.openrs.dash.ui.LocalThemeAccent
 
 /**
  * Peripheral glow triggered while launch control is engaged. Distinct rhythm
  * from [EdgeShiftLight] (slower breath, ~700ms) so the two cues never collide.
- * Draws a yellow frame around the viewport — unmissable in-cabin, yet keeps
+ * Draws a paint-accent frame around the viewport (launch control's colour; amber is for crossed limits) — unmissable in-cabin, yet keeps
  * hero numerics readable.
  */
 @Composable
@@ -47,6 +47,7 @@ fun LaunchControlEdgeGlow(
             ),
             label = "lcBreathA"
         )
+        val lc = LocalThemeAccent.current   // launch control's colour (paint accent) — e-brake is orange
         val frame = 10.dp
         Box(
             modifier
@@ -54,19 +55,19 @@ fun LaunchControlEdgeGlow(
                 .drawBehind {
                     val t = frame.toPx()
                     val topBrush = Brush.verticalGradient(
-                        listOf(Warn.copy(alpha = 0.55f * breath), Color.Transparent),
+                        listOf(lc.copy(alpha = 0.55f * breath), Color.Transparent),
                         startY = 0f, endY = t * 2.5f
                     )
                     val bottomBrush = Brush.verticalGradient(
-                        listOf(Color.Transparent, Warn.copy(alpha = 0.45f * breath)),
+                        listOf(Color.Transparent, lc.copy(alpha = 0.45f * breath)),
                         startY = size.height - t * 2.5f, endY = size.height
                     )
                     val leftBrush = Brush.horizontalGradient(
-                        listOf(Warn.copy(alpha = 0.30f * breath), Color.Transparent),
+                        listOf(lc.copy(alpha = 0.30f * breath), Color.Transparent),
                         startX = 0f, endX = t * 2f
                     )
                     val rightBrush = Brush.horizontalGradient(
-                        listOf(Color.Transparent, Warn.copy(alpha = 0.30f * breath)),
+                        listOf(Color.Transparent, lc.copy(alpha = 0.30f * breath)),
                         startX = size.width - t * 2f, endX = size.width
                     )
                     drawRect(topBrush, Offset.Zero, Size(size.width, t * 2.5f))

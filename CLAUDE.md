@@ -419,9 +419,13 @@ data[5] = B5,  data[6] = B6 …
   and value carry the state. Warnings lead DRIVE via StatusLine — temperatures through the readiness verdict, then tyre → fuel → knock
   (CRIT before WARN; the VEHICLE panel keeps the instant oil → coolant → PTU → RDU order). THERMAL trims padding/gaps (not reading sizes) when the page viewport is < 760 dp tall
   (`LocalThermalDensity`)
+- **E-brake / launch control never insert space** — shown as header chips in the wordmark's fixed slot (stacked
+  full words when both are on — never abbreviate LC ENGAGED; DAY engaged fill = `actionInk(accent)`) and inside DRIVE's
+  fixed-height gear module (tag + caption + border); AnomalyStrip now carries only update progress. Live flags only
+  (`vs.isConnected`). LC states supported: on (0x420 bit) and engaged (0x225); `lcArmed` (RSProt probe) is GARAGE-only
 - **Connection state never inserts space** — RECONNECTING / TAP TO CONNECT render inside DRIVE's fixed 48 dp
   StatusLine (`LinkState`), and the header pill (RCN / OFF) covers the other tabs. `AnomalyStrip` is only for
-  e-brake, launch control and update progress — don't add connection states back to it (they moved every page)
+  update progress — don't add connection states back to it (they moved every page)
 - **Scrolling pages pad with `pageBottomPadding()`** — the bottom nav overlay is NavBarHeight + the system gesture
   inset tall and content runs behind it; padding only `Tokens.NavBarHeight` hid the last ~24 dp (DRIVE ECONOMY). New
   scrolling pages must use `pageBottomPadding()` (or `navBarClearance()` without the page margin)
@@ -491,7 +495,7 @@ cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{ver}.apk  (main release)
 ./gradlew assembleRelease -PrcSuffix=rc.5  # → openRS_v{ver}-rc.5.apk
-./gradlew test                             # 712 unit tests across 39 files
+./gradlew test                             # 713 unit tests across 39 files
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 48 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -510,7 +514,7 @@ bash scripts/install-debug.sh --es demo driving   # same, but straight into demo
 
 # Control a running debug app (onNewIntent needs --activity-single-top):
 adb shell am start --activity-single-top -n com.openrs.dash.debug/com.openrs.dash.ui.MainActivity --es demo warning
-#   demo = idle | driving | warning | loss | cooldown | pause | reset | off
+#   demo = idle | driving | warning | loss | cooldown | launch | pause | reset | off
 #   demo = at:<seconds> — replay the current scenario and pause at that time (repeatable screenshot frames;
 #          DRIVING at:9.5 = mid-pull 3rd gear, at:2.5 = idle on the brake; WARNING at:50 = all alerts)
 #   demo = collapse | expand — fold the control strip to a 2 dp amber line (header DEMO pill toggles it too)
@@ -533,6 +537,7 @@ Exit leaves the app OFF ("TAP TO CONNECT") until you tap connect.
 | DRIVING | 60 s loop: launch, pull to 125 km/h (shift bar, gear 1→6, boost ~23 psi), braking, ±0.9 g corner, cruise; gear module + panels must not move |
 | WARNING | Oil/coolant/PTU critical, RL tyre 29→24 psi banner, KR 3–4° (knock badge + scatter), underboost + WGDC 98 %, LOW FUEL, 11.9 V; DTC scan returns P0217/P0171/P0325/P0562 |
 | LOSS | 40 s loop: live 0–10 s → RCN/RECONNECTING, frozen values 10–22 s → TPMS/RDU sentinels ("— psi N/A") 22–26 s → live |
+| LAUNCH | 40 s: e-brake 0–25 s, LC on (0x420) 5–33 s, link lost 10–15 s / recovering to 17 s, LC engaged (0x225, holding 4,500 rpm) 23–27 s, launch, cruise |
 | COOL | Readiness walk-through (~215 s, real time): oil cools past warn (0–34 s, recovery hold) → READY → RDU forecast (~45 s) → RDU warn (~64 s), coolant invalid 85–100 s → RDU replies stop at 70 s, stale + warning dropped at 160 s → fresh poll 170 s → oil below 80 °C ≈ 205 s (ENGINE WARMING) → clutches past fixed warn ≈ 236 s / crit ≈ 248 s, cooling from 255 s |
 
 Drive-mode dock / ESC buttons / DTC clear act on simulated state only (mode lands ~1.5 s after the command).
@@ -585,7 +590,7 @@ android/app/src/test/java/com/openrs/dash/
   TimeSeriesMathTest.kt       — 5 tests (rc.5): gap bridging/breaking, shared-axis range
   FuelTrimTest.kt             — 8 tests (rc.5): warm/fresh gating, min samples, LEAN/RICH drift alert
   DriveExportBuilderTest.kt   — 59 tests: CSV/GPX/JSON builders, schema v2, fuelTrim export, knock pulls, boost sweep by gear
-  DemoSimulatorTest.kt        — 7 tests: determinism, LOSS freeze / recovery sentinels, freshness stamps, no-decoder sentinels,
+  DemoSimulatorTest.kt        — 8 tests (incl. LAUNCH states): determinism, LOSS freeze / recovery sentinels, freshness stamps, no-decoder sentinels,
                                 WARNING thresholds, DRIVING plausibility + continuity
   ThermalProfileTest.kt       — 7 tests: built-ins unchanged, Custom selection, JSON round trip, no unit drift, validation,
                                 custom threshold moves verdict + gauge together, no warm-up hold across a changed minimum
@@ -603,7 +608,7 @@ android/app/src/test/java/com/openrs/dash/
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **712 tests across 39 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **713 tests across 39 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 

@@ -31,6 +31,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -46,6 +48,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.R
@@ -116,6 +119,7 @@ class MainActivity : ComponentActivity() {
             "warning", "warn"     -> DemoScenario.WARNING
             "loss", "connection"  -> DemoScenario.CONNECTION_LOSS
             "cooldown", "cool"    -> DemoScenario.COOLDOWN
+            "launch", "lc"        -> DemoScenario.LAUNCH
             "pause"               -> { DemoMode.togglePause(); return }
             "reset"               -> { DemoMode.reset(); return }
             "off", "exit"         -> { svc.exitDemoMode(); return }
@@ -692,7 +696,15 @@ class MainActivity : ComponentActivity() {
             label = "rsGlowOn"
         )
 
-        Row(
+        // E-brake / launch control take the wordmark's fixed slot while active (every tab, nothing below moves):
+        // only live flags — held values from a dropped link are not shown.
+        val ebrakeOn = connected && vs.eBrake
+        val lcEngaged = connected && vs.launchControlEngaged
+        val lcOn = connected && (vs.launchControlActive || vs.launchControlEngaged)
+        Box(Modifier.width(98.dp).height(40.dp), contentAlignment = Alignment.CenterStart) {
+        Crossfade(targetState = ebrakeOn || lcOn, animationSpec = tween(220), label = "brandStatus") { showStatus ->
+        if (showStatus) HeaderVehicleStatus(ebrakeOn, lcOn, lcEngaged)
+        else Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.drawBehind {
                 // (2) Radial glow behind "RS" when connected. Drawn as a circle that fades out
@@ -718,6 +730,8 @@ class MainActivity : ComponentActivity() {
                 // (1) Underscore blinks after the typewriter completes
                 if (i == glyphCount - 1 && typewriterDone) charAlpha * cursorAlpha else charAlpha
             })
+        }
+        }
         }
 
         Spacer(Modifier.weight(1f))
@@ -929,13 +943,9 @@ private fun AnomalyStrip(vs: VehicleState) {
     val updateState by UpdateManager.state.collectAsState()
     val dl = updateState as? com.openrs.dash.update.UpdateState.Downloading
 
-    val kind: AnomalyKind? = when {
-        // Held e-brake / LC flags are stale once the link drops.
-        vs.isConnected && vs.eBrake               -> AnomalyKind.EBrake
-        vs.isConnected && vs.launchControlEngaged -> AnomalyKind.LaunchControl
-        dl != null                   -> AnomalyKind.Updating(dl.progress)
-        else                         -> null
-    }
+    // E-brake and launch control moved to the header's fixed wordmark slot + DRIVE's gear module: this strip
+    // expands under the header and pushed every page down. It keeps only the (rare) update progress.
+    val kind: AnomalyKind? = if (dl != null) AnomalyKind.Updating(dl.progress) else null
 
     AnimatedVisibility(
         visible = kind != null,
@@ -944,21 +954,9 @@ private fun AnomalyStrip(vs: VehicleState) {
     ) {
         val current = kind ?: return@AnimatedVisibility
         val (text, color) = when (current) {
-            AnomalyKind.EBrake        -> "\u26A0  E-BRAKE ACTIVE" to Orange
-            AnomalyKind.LaunchControl -> "\u26A1  LAUNCH CONTROL"  to Warn
             is AnomalyKind.Updating   -> "\u21BB  UPDATE  ${((current.progress.coerceIn(0f, 1f)) * 100).toInt()}%" to accent
         }
-        val flashing = current is AnomalyKind.LaunchControl
-
-        val flashAlpha by rememberInfiniteTransition(label = "anoFlash").animateFloat(
-            initialValue = 1f, targetValue = 0.35f,
-            animationSpec = infiniteRepeatable(tween(220), RepeatMode.Reverse),
-            label = "anoFlashA"
-        )
-        val effectiveAlpha = when {
-            flashing -> flashAlpha
-            else     -> 1f
-        }
+        val effectiveAlpha = 1f
         Box(
             Modifier.fillMaxWidth()
                 .height(Tokens.AnomalyStripHeight)
@@ -987,9 +985,46 @@ private fun AnomalyStrip(vs: VehicleState) {
 }
 
 private sealed class AnomalyKind {
-    data object EBrake : AnomalyKind()
-    data object LaunchControl : AnomalyKind()
     data class Updating(val progress: Float) : AnomalyKind()
+}
+
+/**
+ * Header chips in the wordmark's slot (98 × 40 dp): E-BRAKE (orange — the existing e-brake colour) and launch
+ * control in the paint accent — outlined "LC ON" while switched on (0x420 LaunchControlStatus), filled "LC ENGAGED"
+ * while engaged (0x225). Together they stack (18 dp each) so both keep their full words: engaged never shortens to
+ * an ambiguous "LC". The filled chip uses [actionInk] on DAY — white on the bright paint accent was the weakest
+ * header label — and the accent on NIGHT, each with [OnAccent] text.
+ */
+@Composable private fun HeaderVehicleStatus(ebrake: Boolean, lcOn: Boolean, lcEngaged: Boolean) {
+    val accent = LocalThemeAccent.current
+    val both = ebrake && lcOn
+    val chipH = if (both) 18.dp else 22.dp
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = Modifier.semantics(mergeDescendants = true) {
+            contentDescription = listOfNotNull(if (ebrake) "E-brake on" else null,
+                if (lcEngaged) "Launch control engaged" else if (lcOn) "Launch control on" else null).joinToString(", ")
+        }) {
+        if (ebrake) HeaderChip("E-BRAKE", textColor(Orange), Orange.copy(alpha = pillBgAlpha(0.14f)), Orange.copy(alpha = borderAlpha(0.7f)), chipH)
+        if (lcOn) {
+            if (lcEngaged) {
+                val fill = if (isDayModeNow()) actionInk(accent) else accent
+                HeaderChip("LC ENGAGED", OnAccent, fill, fill, chipH)
+            } else HeaderChip("LC ON", actionInk(accent), accent.copy(alpha = pillBgAlpha(0.14f)), accent.copy(alpha = borderAlpha(0.8f)), chipH)
+        }
+    }
+}
+
+@Composable private fun HeaderChip(text: String, ink: Color, fill: Color, edge: Color, height: Dp = 22.dp) {
+    val shape = RoundedCornerShape(5.dp)
+    Box(Modifier.height(height).background(fill, shape).border(1.dp, edge, shape).padding(horizontal = 6.dp),
+        contentAlignment = Alignment.Center) {
+        // No font padding: the label is optically centred even in the 18 dp stacked chips
+        Text(text, color = ink, style = androidx.compose.ui.text.TextStyle(
+            fontSize = 9.sp, lineHeight = 9.sp, fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold, letterSpacing = 0.3.sp,
+            platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
+            lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+                androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center, androidx.compose.ui.text.style.LineHeightStyle.Trim.Both)))
+    }
 }
 
 /**

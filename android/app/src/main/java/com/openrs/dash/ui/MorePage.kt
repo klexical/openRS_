@@ -261,10 +261,11 @@ import kotlinx.coroutines.launch
                 } else {
                     // Design pass: one FEATURES panel (was five cards). States read neutral — STANDBY / OFF /
                     // PROBING were amber, which signals a problem; ON / ARMED take an accent dot; an engaged
-                    // launch control keeps its amber (as on DRIVE).
+                    // launch control (on / engaged) uses the paint accent, as on DRIVE.
                     data class Feature(val name: String, val code: String?, val glyph: String, val state: String, val color: Color)
                     val lcState = when {
-                        vs.launchControlActive -> Triple("\u26A1", "ACTIVE", Warn)
+                        vs.isConnected && vs.launchControlEngaged -> Triple("\u26A1", "ENGAGED", actionInk(LocalThemeAccent.current))
+                        vs.isConnected && vs.launchControlActive -> Triple("\u26A1", "ON", actionInk(LocalThemeAccent.current))
                         vs.lcArmed == true     -> Triple("\u25CF", "ARMED", Frost)
                         vs.lcArmed == false    -> Triple("\u25CB", "STANDBY", Mid)
                         isFw && !vs.rsprotTimedOut -> Triple("\u2026", "PROBING", Dim)

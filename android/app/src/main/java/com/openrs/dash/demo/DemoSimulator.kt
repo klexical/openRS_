@@ -16,6 +16,7 @@ enum class DemoScenario(val label: String, val chip: String, val blurb: String) 
     WARNING("Warnings", "WARN", "Hot lap: overheating, knock, low tyre, underboost, low fuel, charge fault"),
     CONNECTION_LOSS("Connection loss", "LOSS", "40 s loop: live 10 s → lost 12 s → OBD re-warm 4 s → live"),
     COOLDOWN("Cool-down", "COOL", "Readiness: oil cools past warn, RDU heats then its replies stop, coolant drops out, oil below warm-up, clutch heat"),
+    LAUNCH("Launch control", "LAUNCH", "40 s: e-brake → + LC on → link drop + recovery → LC on → LC engaged → launch → cruise"),
 }
 
 /** Adapter link as the real CanDataService would report it. */
@@ -45,6 +46,18 @@ object DemoSimulator {
     const val COOL_COOLANT_BACK_S = 100.0
     /** COOLDOWN: oil starts its second cool-down (below the 80 °C warm-up minimum ≈ 23 s later). */
     const val COOL_OIL_DROP_S = 180.0
+
+    /** LAUNCH: e-brake 0–25 s, LC on (0x420) 5–33 s, LC engaged (0x225) 23–27 s (with the e-brake still on to 25 s),
+     *  link lost 10–15 s, recovering to 17 s. */
+    const val LAUNCH_CYCLE_S = 40.0
+    const val LAUNCH_EBRAKE_OFF_S = 25.0
+    const val LAUNCH_LC_ON_S = 5.0
+    const val LAUNCH_LC_OFF_S = 33.0
+    const val LAUNCH_ENGAGED_S = 23.0
+    const val LAUNCH_GO_S = 27.0
+    const val LAUNCH_LOST_S = 10.0
+    const val LAUNCH_RECOVER_S = 15.0
+    const val LAUNCH_LIVE_S = 17.0
     /** COOLDOWN: AWD clutches heat past their fixed 90 / 120 °C limits, then cool (recovery hold). */
     const val COOL_CLUTCH_HEAT_S = 230.0
     const val COOL_CLUTCH_COOL_S = 255.0
@@ -69,6 +82,14 @@ object DemoSimulator {
     )
 
     fun link(scenario: DemoScenario, tSec: Double): DemoLink {
+        if (scenario == DemoScenario.LAUNCH) {
+            val c = tSec % LAUNCH_CYCLE_S
+            return when {
+                c >= LAUNCH_LOST_S && c < LAUNCH_RECOVER_S -> DemoLink.LOST
+                c >= LAUNCH_RECOVER_S && c < LAUNCH_LIVE_S -> DemoLink.RECOVERING
+                else -> DemoLink.LIVE
+            }
+        }
         if (scenario != DemoScenario.CONNECTION_LOSS) return DemoLink.LIVE
         val c = tSec % LOSS_CYCLE_S
         return when {
@@ -104,6 +125,7 @@ object DemoSimulator {
             DemoScenario.DRIVING, DemoScenario.CONNECTION_LOSS -> driving(t, driveMode, hot = false)
             DemoScenario.WARNING -> driving(t, driveMode, hot = true)
             DemoScenario.COOLDOWN -> cooldown(t, driveMode)
+            DemoScenario.LAUNCH -> launch(t, driveMode)
         }
         val recovering = link == DemoLink.RECOVERING
         var next = build(cur, m, driveMode, escStatus, recovering, nowMs).withPeaksUpdated()
@@ -131,6 +153,8 @@ object DemoSimulator {
         val battV: Double, val battA: Double, val battSoc: Double,
         val kr: DoubleArray, val ltft: Double, val octane: Double,
         val afrLeanBias: Double, val eBrake: Boolean,
+        /** 0x420 LaunchControlStatus / 0x225 LC engaged — only the LAUNCH scenario sets them. */
+        val lcOn: Boolean = false, val lcEngaged: Boolean = false,
     )
 
     /** Smooth deterministic noise in roughly [-1, 1]. */
@@ -300,6 +324,26 @@ object DemoSimulator {
         )
     }
 
+    /**
+     * Launch-control walk-through at standstill, then the launch (DRIVING's motion from its launch point):
+     * e-brake → e-brake + LC on → link lost / recovering with both on → LC engaged with the e-brake still on →
+     * LC engaged, holding 4,500 rpm → launch (engaged clears; LC on alone) → LC off → cruise. Only flags a real decoder writes (0x0C8, 0x420, 0x225).
+     */
+    internal fun launch(t: Double, mode: DriveMode): Model {
+        val c = t % LAUNCH_CYCLE_S
+        val engaged = c >= LAUNCH_ENGAGED_S && c < LAUNCH_GO_S
+        val base = when {
+            c < LAUNCH_ENGAGED_S -> driving(1.0, mode, hot = false)                        // standstill, foot on the brake
+            engaged -> driving(1.0, mode, hot = false).copy(                               // LC holding launch rpm
+                rpm = 4500.0 + 25 * noise(t, 13.0), throttle = 100.0, brakeBar = 0.0,
+                boostKpa = psiToKpa(4.0 + 0.3 * noise(t, 14.0)), torqueNm = 90.0)
+            c < LAUNCH_GO_S + 9.0 -> driving(3.6 + (c - LAUNCH_GO_S), mode, hot = false)    // the launch and pull
+            else -> driving(13.0 + (c - LAUNCH_GO_S - 9.0), mode, hot = false)             // cruise
+        }
+        return base.copy(eBrake = c < LAUNCH_EBRAKE_OFF_S,
+            lcOn = c >= LAUNCH_LC_ON_S && c < LAUNCH_LC_OFF_S, lcEngaged = engaged)
+    }
+
     internal fun idle(t: Double): Model {
         val rpm = 850 + 350 * exp(-t / 45) + 12 * noise(t, 6.0)
         return Model(
@@ -388,6 +432,7 @@ object DemoSimulator {
             vin = DEMO_VIN, driveMode = mode, escStatus = esc, gear = 0,
             batteryVoltage = m.battV, fuelLevelPct = m.fuelPct, ambientTempC = 21.0,
             gaugeIllumination = 12, eBrake = m.eBrake, reverseStatus = false,
+            launchControlActive = m.lcOn, launchControlEngaged = m.lcEngaged,
             engineStatus = 183, ignitionStatus = 7,
             odometerKm = if (obd) ODOMETER_KM else -1L,
             batterySoc = if (obd) m.battSoc else -1.0, batteryTempC = if (obd) 27.0 else -99.0,
