@@ -189,6 +189,7 @@ class DriveRecorder(
                 val count = dao.getDriveCount()
                 if (count >= maxDrives) {
                     dao.deleteOldestDrives(count - maxDrives + 1)
+                    dao.deleteOrphanLapSessions()
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Drive prune failed", e)

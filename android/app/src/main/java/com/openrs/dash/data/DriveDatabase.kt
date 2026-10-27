@@ -283,6 +283,13 @@ interface DriveDao {
     @Query("DELETE FROM drives WHERE id = :id")
     fun deleteDrive(id: Long)
 
+    /**
+     * Lap sessions whose drive is gone — lap_sessions has no foreign key to drives, so deleting a drive left its
+     * lap sessions behind (their laps cascade from here). Call after any drive deletion.
+     */
+    @Query("DELETE FROM lap_sessions WHERE driveId NOT IN (SELECT id FROM drives)")
+    fun deleteOrphanLapSessions()
+
     @Query("UPDATE drives SET name = :name WHERE id = :id")
     fun updateDriveName(id: Long, name: String?)
 

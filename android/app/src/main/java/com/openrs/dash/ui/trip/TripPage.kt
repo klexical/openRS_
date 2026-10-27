@@ -727,6 +727,7 @@ private fun TripPageContent(
                     if (drive.id < 0) return@DriveHistoryList
                     scope.launch(Dispatchers.IO) {
                         DriveDatabase.getInstance(context).driveDao().deleteDrive(drive.id)
+                        DriveDatabase.getInstance(context).driveDao().deleteOrphanLapSessions()
                         drives = DriveDatabase.getInstance(context).driveDao()
                             .getRecentDrives(AppSettings.getMaxSavedDrives(context))
                     }
