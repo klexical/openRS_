@@ -49,6 +49,13 @@ class DiagnosticExporterTest {
     @Test fun `inferType drive summary`() =
         assertEquals("drive_summary", inferType("drive_summary_20240101.txt"))
 
+    @Test fun `inferType batch per-drive profile and summary`() {
+        assertEquals("drive_profile", inferType("drive_42_20240101_120000_profile.json"))
+        assertEquals("drive_summary", inferType("drive_42_20240101_120000_summary.txt"))
+        assertEquals("drive_gpx", inferType("drive_42_20240101_120000.gpx"))
+        assertEquals("drive_csv", inferType("drive_42_20240101_120000.csv"))
+    }
+
     @Test fun `inferType drive gpx`() =
         assertEquals("drive_gpx", inferType("drive_20240101.gpx"))
 

@@ -514,6 +514,9 @@ object DiagnosticExporter {
         name.startsWith("slcan_log_") -> "slcan_log"
         name.startsWith("drive_profile_") -> "drive_profile"
         name.startsWith("drive_summary_") -> "drive_summary"
+        // Batch export names (drive_<id>_<ts>_profile.json / _summary.txt) — were "unknown" through rc.6
+        name.startsWith("drive_") && name.endsWith("_profile.json") -> "drive_profile"
+        name.startsWith("drive_") && name.endsWith("_summary.txt") -> "drive_summary"
         name.startsWith("drive_") && name.endsWith(".gpx") -> "drive_gpx"
         // Knock table must be matched before the generic drive CSV rule — tagging it
         // drive_csv made Sapphire import it as a phantom session (#183)
