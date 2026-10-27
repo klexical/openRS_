@@ -523,7 +523,7 @@ cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{ver}.apk  (main release)
 ./gradlew assembleRelease -PrcSuffix=rc.5  # → openRS_v{ver}-rc.5.apk
-./gradlew test                             # 737 unit tests across 41 files
+./gradlew test                             # 741 unit tests across 41 files
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 45 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -630,7 +630,8 @@ android/app/src/test/java/com/openrs/dash/
   DriveExportThermalTest.kt   — 7 tests: profile export `thermalRecord` + coherent curves per basis (built-in, Custom, mixed
                                 peak vs flag, legacy driveEndC, absent vs unreadable, endpoints above peak → no curve);
                                 `OPENRS_EXPORT_EXCERPTS=<dir>` writes review excerpts
-  DriveExportBuilderTest.kt   — 60 tests: CSV/GPX/JSON builders, schema v2, fuelTrim export, knock pulls, boost sweep by gear
+  DriveExportBuilderTest.kt   — 64 tests: CSV/GPX/JSON builders, schema v2, fuelTrim export, knock pulls, boost sweep by gear,
+                                track files (no-GPS CSV without coordinates, routes only with GPS, empty drive → none)
   DemoSimulatorTest.kt        — 8 tests (incl. LAUNCH states): determinism, LOSS freeze / recovery sentinels, freshness stamps, no-decoder sentinels,
                                 WARNING thresholds, DRIVING plausibility + continuity
   DriveThermalRecordTest.kt   — 17 tests (incl. START → PEAK → END endpoint rule): saved profile limits (built-ins + Custom), 95 % boundary + levels, °C / °F + displayed
@@ -652,7 +653,7 @@ android/app/src/test/java/com/openrs/dash/
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **737 tests across 41 files** (Android) + **195 vitest across 9 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **741 tests across 41 files** (Android) + **202 vitest across 11 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 
@@ -759,17 +760,27 @@ pnpm preview                  # preview production build
 - Drive CSV choice by name — `isDriveCsvName` / `isDriveCsvEntry` skip RaceChrono / TrackAddict / knock CSVs (#183).
 - `parseTripDataFromCsv`: BOM strip, then `trim()`, then skip `#` lines (`# openrs_csv_v2`), then the
   `< 2 lines` → no-trip return, then the required-columns `ImportError` (`REQUIRED_COLUMN_GROUPS`: timestamp + rpm,
-  main's `e9cd565`; `abef459`). Only drive CSVs are checked; one malformed drive CSV fails a batch import. Main's BOM
-  + ImportError tests are in `import.test.ts` (`5eace3d`, `abef459`).
+  main's `e9cd565`; `abef459`). Only drive CSVs are checked. Main's BOM + ImportError tests are in `import.test.ts`
+  (`5eace3d`, `abef459`).
+- Batch import is all-or-nothing (`3f7302f`): one malformed drive CSV rejects the batch in either order, and a valid
+  batch is stored with `putSessions` (one IndexedDB transaction) before any session reaches the store — keep
+  ImportPanel's `putSessions` call when merging. `ImportPanel.test.tsx` guards it.
+- Android half of `e5080c8` (drive CSV without GPS) — `9a52612`: `DriveExportBuilder.driveTrackFiles` / `hasRoute` used
+  by the diagnostic export, `shareDrive` and `shareDrives`; no-GPS CSV has empty lat / lng, GPX / RaceChrono /
+  TrackAddict only with GPS, empty drives get no track files. Real TRIP exports in `__fixtures__/android-exports/`
+  (`drive-nogps-telemetry.zip`, `batch-gps-nogps-empty.zip`, `import.noGpsExport.test.tsx`). Keep this side's exporter.
 - Hook order (main's `e5080c8` TripPanel, `e9cd565` DashboardPanel / ComparePanel / SessionsPanel, `e0c8b5e`
   Sparkline `useId`) — `aa79eb3`; whole-app ESLint 0 errors. `hookOrder.test.tsx` keeps each component mounted
   through empty → data → other drive → diagnostics-only → empty.
 - Compare panel crash on mount: `useCompareSessions` built a new array per store read → "Maximum update depth
   exceeded" (zustand 5) — fixed with `useShallow` (`65fe314`). Main has the same selector + zustand 5, so it is expected
-  there too (not run on main). Keep the fix when merging main's ComparePanel.
+  there too — UNVERIFIED (not run on main; no hotfix requested). Keep the fix when merging main's ComparePanel.
 - `dc32b8b` (v2.2.6 release merge) carries no Sapphire difference — its `web/` equals staging `94883ca`, already here.
 
-*Still main-only — must survive the merge (not ported; behaviour, not crash fixes):*
+*Still main-only — must survive the merge, REQUIRED before release (not ported; behaviour, not crash fixes):*
+- Gaps for missing chart readings (sentinel / NaN → `null`, never a 0 dip) are required — `e5080c8` TripPanel +
+  `e0c8b5e` TimeSeriesChart `number | null` / TempStackChart NaN guard. So are the paint accents, remembered panel /
+  session and the rest of the UX below.
 - `e5080c8`: TripPanel sentinel / NaN → `null` chart gaps and the diagnostics-only "No Trip Data" hint; App.tsx RS
   paint accent → `--color-accent` / `--color-accent-d` CSS vars (with `tokens.ts` `accent` as a var, fixed `cyan`,
   `shadeHex`) and persisted-session restore + IndexedDB load `catch`.
@@ -779,16 +790,21 @@ pnpm preview                  # preview production build
   debounce, DashboardPanel per-corner TPMS, GpsMap per-mode segment precompute (this side adds bookmarks), ComparisonChart
   resample cache, GForceScatter keeps lat-G extremes, ModeTimeline case normalisation (this side adds
   `canonicalTimeline`), DeltaCard per-unit neutral threshold, `mapColors` accent → `cyan` (+ tests), SettingsPanel copy.
-- Android half of `e5080c8` (drive CSV written without GPS) is only partly here: the diagnostic export's active drive
-  has it, but `DiagnosticExporter.shareDrive` / `shareDrives` still gate the drive CSV on `hasGps` — a no-GPS drive
-  share has no drive CSV, so Sapphire shows no trip (real fixture `drive-nogps-knock.zip`).
+
+*Open, not from main (found 2026-10-26, unfixed):*
+- Batch exports never merge their profile JSON in Sapphire: `inferType` types `drive_<id>_<ts>_profile.json` /
+  `_summary.txt` as `unknown`, and `findMatchingFile(type 'drive_profile')` needs the manifest type, so batch drives
+  import CSV-derived peaks (fixture `batch-gps-nogps-empty.zip`: 4,600 RPM, profile says 6,700).
+- `DriveRecorder` stores points only from location updates, so a drive without GPS records no telemetry (the export
+  fix above covers seeded / legacy data and any later recorder change).
 
 *Merge / deployment steps (not done):*
 - Merge main's Sapphire into the release line, resolving to the "resolved" items above and keeping every "still
   main-only" item; don't take main's release-version files from `dc32b8b`.
 - After the merge, run all of: `vitest run` (incl. `import.appExports.test.ts` — real ZIPs in
   `__fixtures__/android-exports/`, `import.androidExport.test.tsx` — `__fixtures__/android-export-rc6/`,
-  `hookOrder.test.tsx`), `eslint .` (0 errors), `tsc -b`, `vite build`. Main-based patch for reference:
+  `import.noGpsExport.test.tsx`, `hookOrder.test.tsx`, `ImportPanel.test.tsx`), `eslint .` (0 errors), `tsc -b`,
+  `vite build`. Main-based patch for reference:
   `fix/sapphire-csv-import` `1d1991e` (marker + name filter, same fixtures).
 - Deploy (`deploy-pages.yml`) only from the merged result. Deployed (main) Sapphire can't import rc.4+ exports today.
 
