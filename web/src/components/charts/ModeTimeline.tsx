@@ -4,8 +4,8 @@ import { colors } from '../../styles/tokens'
 import { fmtDuration } from '../../lib/format'
 
 const MODE_COLORS: Record<string, string> = {
-  NORMAL: colors.accent,
-  Normal: colors.accent,
+  NORMAL: colors.cyan,
+  Normal: colors.cyan,
   SPORT: '#FF6D00',
   Sport: '#FF6D00',
   TRACK: colors.red,

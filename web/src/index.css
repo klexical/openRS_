@@ -52,6 +52,11 @@
 
 /* ── Print styles ── */
 @media print {
+  /* Paint accent darkened for paper (App.tsx) — beats the inline screen value */
+  html {
+    --color-accent: var(--color-accent-print, #0064B0) !important;
+  }
+
   html, body {
     background: white !important;
     color: #111 !important;

@@ -91,7 +91,7 @@ function pressColor(psi: number): string {
 }
 
 function tempColor(c: number): string {
-  if (c < 0) return colors.accent
+  if (c < 0) return colors.cyan
   if (c < 40) return colors.ok
   if (c < 60) return colors.warn
   return colors.orange

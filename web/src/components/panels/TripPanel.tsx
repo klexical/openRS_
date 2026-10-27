@@ -177,7 +177,7 @@ export function TripPanel() {
       <TimeSeriesChart
         data={chartData}
         series={[
-          { key: 'coolantC', label: 'Coolant', color: colors.accent },
+          { key: 'coolantC', label: 'Coolant', color: colors.cyan },
           { key: 'oilTempC', label: 'Oil', color: colors.orange },
           { key: 'rduTempC', label: 'RDU', color: chartColors[4] },
           { key: 'ptuTempC', label: 'PTU', color: chartColors[3] },
@@ -225,7 +225,7 @@ export function TripPanel() {
       <TimeSeriesChart
         data={chartData}
         series={[
-          { key: 'wsFL', label: 'FL', color: colors.accent },
+          { key: 'wsFL', label: 'FL', color: colors.cyan },
           { key: 'wsFR', label: 'FR', color: chartColors[1] },
           { key: 'wsRL', label: 'RL', color: chartColors[2] },
           { key: 'wsRR', label: 'RR', color: chartColors[3] },
@@ -241,7 +241,7 @@ export function TripPanel() {
           <TimeSeriesChart
             data={chartData}
             series={[
-              { key: 'tirePressLF', label: 'LF', color: colors.accent },
+              { key: 'tirePressLF', label: 'LF', color: colors.cyan },
               { key: 'tirePressRF', label: 'RF', color: chartColors[1] },
               { key: 'tirePressLR', label: 'LR', color: chartColors[2] },
               { key: 'tirePressRR', label: 'RR', color: chartColors[3] },
@@ -260,7 +260,7 @@ export function TripPanel() {
           <TimeSeriesChart
             data={chartData}
             series={[
-              { key: 'tireTempLF', label: 'LF', color: colors.accent },
+              { key: 'tireTempLF', label: 'LF', color: colors.cyan },
               { key: 'tireTempRF', label: 'RF', color: chartColors[1] },
               { key: 'tireTempLR', label: 'LR', color: chartColors[2] },
               { key: 'tireTempRR', label: 'RR', color: chartColors[3] },
@@ -277,7 +277,7 @@ export function TripPanel() {
       <TimeSeriesChart
         data={chartData}
         series={[
-          { key: 'awdL', label: 'Left', color: colors.accent },
+          { key: 'awdL', label: 'Left', color: colors.cyan },
           { key: 'awdR', label: 'Right', color: chartColors[1] },
         ]}
         xFormatter={fmtTime}

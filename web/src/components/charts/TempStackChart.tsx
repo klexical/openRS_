@@ -12,7 +12,7 @@ interface Props {
 }
 
 const series = [
-  { key: 'coolantC', label: 'Coolant', color: colors.accent },
+  { key: 'coolantC', label: 'Coolant', color: colors.cyan },
   { key: 'oilTempC', label: 'Oil', color: colors.orange },
   { key: 'rduTempC', label: 'RDU', color: chartColors[4] },
   { key: 'ptuTempC', label: 'PTU', color: chartColors[3] },

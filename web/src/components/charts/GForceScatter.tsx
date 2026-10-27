@@ -9,7 +9,7 @@ import type { TripPoint } from '../../types/session'
 type ColorBy = 'speed' | 'mode'
 
 const speedBands: { min: number; max: number; color: string; label: string }[] = [
-  { min: 0, max: 60, color: colors.accent, label: '<60 kph' },
+  { min: 0, max: 60, color: colors.cyan, label: '<60 kph' },
   { min: 60, max: 100, color: colors.ok, label: '60–100' },
   { min: 100, max: 140, color: colors.warn, label: '100–140' },
   { min: 140, max: Infinity, color: colors.orange, label: '140+' },

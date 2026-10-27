@@ -87,7 +87,7 @@ function CanInventoryTable({ frames }: { frames: { id: string; count: number; ch
 function EventsTable({ events }: { events: { ts: number; type: string; message: string }[] }) {
   const typeColors: Record<string, string> = {
     error: colors.orange,
-    session: colors.accent,
+    session: colors.cyan,
     slcan: colors.dim,
     firmware: colors.ok,
     dm_cmd: colors.warn,
@@ -250,7 +250,7 @@ function DtcTable({ entries }: { entries: DtcEntry[] }) {
     if (!s) return colors.dim
     if (s === 'CRITICAL') return colors.red
     if (s === 'WARNING') return colors.orange
-    if (s === 'INFO') return colors.accent
+    if (s === 'INFO') return colors.cyan
     return colors.dim
   }
 
