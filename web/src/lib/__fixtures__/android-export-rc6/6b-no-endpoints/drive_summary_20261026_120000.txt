@@ -1,0 +1,18 @@
+═══════════════════════════════════════════════════════════
+  openRS_ Drive Summary
+  App         : v2.2.7 (build 35)
+  Points      : 2
+═══════════════════════════════════════════════════════════
+
+  Distance    : 0.00 km  (0.00 mi)
+  Duration    : 0h 30m 0s
+  Avg Speed   : 0.0 km/h
+  Max Speed   : 0.0 km/h
+
+  Fuel Used   : 0.00 L
+  Peak RPM    : 0
+  Peak Boost  : 0.0 PSI
+  Peak Lat G  : 0.00 g
+
+
+═══════════════════════════════════════════════════════════

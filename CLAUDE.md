@@ -577,6 +577,14 @@ Drive-mode dock / ESC buttons / DTC clear act on simulated state only (mode land
 - Settings categories animate in for ~2.5 s after the sheet opens — tapping a row sooner can land on the wrong one
 - `--es demo at:N` replays the scenario **in real time** from 0 and pauses at N — wait N s before capturing
   (WARNING at:55 = oil + PTU past the STREET crit, coolant + RDU at WARN)
+- Settings ignores taps in the margin around it — behaviour, not a bug: the dialog window spans the screen
+  (`usePlatformDefaultWidth = false`), so those taps land inside it; ✕ / Back / CANCEL close and revert previews
+- The BLE device picker is unverified on the emulator (no BLE, Bluetooth permissions not granted) — check on a phone
+- Isolated DB / release checks: build throwaway variants with a different `applicationIdSuffix` (the FileProvider
+  authority follows the id) and run them on a second AVD started with `-read-only` (nothing persists). The v11 → v12
+  upgrade was verified that way on 2026-10-26 (real v11-created DB → current build; data, FKs, TIP rescale, hash)
+- Sapphire import contract: `web/src/lib/import.androidExport.test.tsx` imports complete Android exports from
+  `__fixtures__/android-export-rc6/`; regenerate with `OPENRS_EXPORT_SAMPLES=<dir> ./gradlew test --tests '*DriveExportThermalTest'`
 - The HUD overlay needs `adb shell appops set com.openrs.dash.debug SYSTEM_ALERT_WINDOW allow` on a fresh emulator
   (restore with `… default`); start it from ⚙ → DISPLAY → FLOATING HUD. A reinstall stops it
 
@@ -637,7 +645,7 @@ android/app/src/test/java/com/openrs/dash/
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **737 tests across 41 files** (Android) + **168 vitest across 6 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **737 tests across 41 files** (Android) + **174 vitest across 7 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 

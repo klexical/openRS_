@@ -57,13 +57,36 @@ class DriveExportThermalTest {
 
     /** First / last points carry PTU 60 → 80 °C and RDU 50 → 85 °C. */
     private fun points(withAwd: Boolean = true) = listOf(
-        DrivePointEntity(driveId = 1, timestamp = t0 + 1_000, lat = 0.0, lng = 0.0,
+        DrivePointEntity(driveId = 1, timestamp = t0 + 1_000, lat = 51.5074, lng = -0.1278, speedKph = 30.0, rpm = 1800,
+            oilTempC = 90.0, coolantTempC = 85.0,
             ptuTempC = if (withAwd) 60.0 else -99.0, rduTempC = if (withAwd) 50.0 else -99.0),
-        DrivePointEntity(driveId = 1, timestamp = t0 + 1_799_000, lat = 0.0, lng = 0.0,
+        DrivePointEntity(driveId = 1, timestamp = t0 + 1_799_000, lat = 51.5124, lng = -0.1210, speedKph = 60.0, rpm = 3200,
+            oilTempC = 88.0, coolantTempC = 84.0,
             ptuTempC = if (withAwd) 80.0 else -99.0, rduTempC = if (withAwd) 85.0 else -99.0))
 
     private fun export(name: String, d: DriveEntity, pts: List<DrivePointEntity> = points()): JSONObject {
-        val json = JSONObject(DriveExportBuilder.buildProfileJson(d, pts))
+        val profile = DriveExportBuilder.buildProfileJson(d, pts)
+        val json = JSONObject(profile)
+        // Complete per-drive export file sets, named as DiagnosticExporter writes them (Sapphire compatibility checks):
+        // OPENRS_EXPORT_SAMPLES=<dir> ./gradlew test --tests '*DriveExportThermalTest'
+        System.getenv("OPENRS_EXPORT_SAMPLES")?.let { dir ->
+            val ts = "20261026_120000"
+            val out = File(dir, name).apply { mkdirs() }
+            val files = linkedMapOf(
+                "drive_$ts.gpx" to DriveExportBuilder.buildGpx(d, pts, ts),
+                "drive_$ts.csv" to DriveExportBuilder.buildCsv(pts),
+                "drive_summary_$ts.txt" to DriveExportBuilder.buildSummary(d, pts),
+                "drive_profile_$ts.json" to profile)
+            files.forEach { (f, text) -> File(out, f).writeText(text) }
+            // Same shape as DiagnosticExporter.buildManifest / inferType
+            val types = mapOf("gpx" to "drive_gpx", "csv" to "drive_csv", "txt" to "drive_summary", "json" to "drive_profile")
+            File(out, "manifest.json").writeText(JSONObject().apply {
+                put("version", 1); put("app", "openRS_"); put("exportedAt", t0)
+                put("files", org.json.JSONArray().apply {
+                    files.keys.forEach { f -> put(JSONObject().put("name", f).put("type", types.getValue(f.substringAfterLast('.')))) }
+                })
+            }.toString(2))
+        }
         // Every exported progression is coherent: valid readings, neither endpoint above the peak
         val prog = json.getJSONObject("thermalProgression")
         for (k in prog.keys()) {

@@ -1,0 +1,72 @@
+{
+  "thermalRecord": {
+    "note": "Recorded before thermal limits were saved with drives: drive-end readings against the old fixed limits. No profile applies and they are not peaks (see thermalProgression for peaks).",
+    "unit": "°C",
+    "sensors": {
+      "rdu": {
+        "flagThresholdC": 114,
+        "flagged": false,
+        "driveEndC": 110,
+        "fixedLimitC": 120
+      },
+      "oil": {
+        "flagThresholdC": 133,
+        "flagged": true,
+        "driveEndC": 134,
+        "fixedLimitC": 140
+      }
+    },
+    "flagged": true,
+    "flagRule": "driveEndC >= flagThresholdC = 0.95 x fixedLimitC",
+    "basis": "legacy"
+  },
+  "thermalProgression": {
+    "oil": {
+      "endC": 134,
+      "startC": 40,
+      "peakC": 136
+    },
+    "coolant": {
+      "endC": 95,
+      "startC": 45,
+      "peakC": 104
+    }
+  },
+  "modeTimeline": [{
+    "mode": "Normal",
+    "startMs": 1000,
+    "endMs": 1800000
+  }],
+  "drive": {
+    "peakLateralG": 0,
+    "distanceKm": 0,
+    "fuelUsedL": 0,
+    "peakRpm": 0,
+    "tags": "",
+    "avgSpeedKph": 0,
+    "aggressionScore": 0,
+    "peakBoostPsi": 0,
+    "startTime": 1700000000000,
+    "maxSpeedKph": 0,
+    "peakOilTempC": 136,
+    "endTime": 1700001800000,
+    "peakCoolantTempC": 104
+  },
+  "version": 2,
+  "peaks": [
+    {
+      "lng": -0.121,
+      "type": "RPM",
+      "value": 3200,
+      "lat": 51.5124,
+      "timestampMs": 1700001799000
+    },
+    {
+      "lng": -0.121,
+      "type": "SPEED",
+      "value": 60,
+      "lat": 51.5124,
+      "timestampMs": 1700001799000
+    }
+  ]
+}
