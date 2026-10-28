@@ -3,6 +3,9 @@
 Native Android telemetry dashboard for the Ford Focus RS MK3.
 Kotlin 2.0.21 + Jetpack Compose (Material3). Current: **stable v2.2.6 on main**; **v2.2.7-rc.6 published as a prerelease from staging** (tag `android-v2.2.7-rc.6` →
 `d2f7dc6`, versionCode 35 — not on main, not stable). Sapphire (web/ only) deployed from main `0d64248`. Record: Branch / Release Workflow → rc.6.
+**rc.7 in progress (local, unpushed):** branch `feature/rc7` (from staging `d2f7dc6`) — 2.2.7-rc.7 / versionCode 36, milestone
+v2.2.7-rc.7 (#211 locale exports, #212 connection lifecycle, #213 splash per task, #214 versioning, #215 DTC scan status);
+Sapphire row validation #204 also on `fix/sapphire-row-validation` (from main). Record: Branch / Release Workflow → rc.7.
 Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashboard) → `web/`  |  Docs → `docs/`  |  Feature pipeline → `docs/feature-roadmap.md`
 
 ## Source Layout
@@ -689,6 +692,23 @@ Android RCs ship from **staging**; **main** carries stable Android (v2.2.6) and 
 --notes-file <notes>` (creates the lightweight tag; the tag push runs `publish-release`, which attaches the signed APK
 to that release) → download the asset and check name, `apksigner verify --print-certs` (cert `c99b6f26…`), versionCode /
 RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an older RC release.
+
+**rc.7 work record (2026-10-28, local — nothing pushed / merged / tagged / deployed):**
+- Issues: milestone **v2.2.7-rc.7** = #211, #212, #213, #214, #215 (status comments posted, none closed — close via merged
+  PRs). Web #204 (no milestone). Investigations / proposals, no milestone and no formula changes until evidence supports
+  one: #205 spark 0x116B, #206 ETC scale, #207 0x0F8 boost reference, #208 AWD NRCs, #209 TX logging, #210 auto-connect
+  eligibility.
+- `feature/rc7`: `5e6639c` (= `6906e52`) · `710b8ed` #211 · `894c8e8` + `8f9ef32` #204 · `f46100e` #212 · `2e940ee` #213 ·
+  `e18df43` #215 · `bbc26b9` #214 · `39aab99` What's New · docs `2b91a2b` `fc65455` `7eacd9f`. `fix/sapphire-row-validation`
+  `c012086` (web/ identical to feature/rc7).
+- Checks: Android 779 / 47 tests, lint 0 / 45, debug + release builds; Sapphire 260 / 21, ESLint 0, tsc, idb-check 9/9.
+  Local release APK `openRS_v2.2.7-rc.7.apk` vc 36, source `39aab99` clean, SHA-256 `e1706bb4…`, cert `c99b6f26…`;
+  `android/scripts/verify-release.sh` passes it, rejects the rc.6 APK (embedded `2.2.7`) and a debug-signed copy.
+- Emulator lifecycle / splash results: `~/Documents/openRS_-evidence/rc7-lifecycle-2026-10-28/RESULTS.md` (Android 16: Back
+  removed the task → next launch new task → opening). Corrected diag report: `~/Documents/openRS_-evidence/diag-rc5-20261020/`.
+- Still open: Samsung Back / Recents + notification Cancel / tap; a real decimal-comma-phone export; parked checks for
+  #205–#208; DTC status against real modules; PRs (feature/rc7 → staging, fix/sapphire-row-validation → main); rc.7 tag.
+  Separate: Sapphire map tiles, `docs/thermal-thresholds` PR, cleanup, stable promotion.
 
 **rc.6 publication record (2026-10-28 UTC; evidence `~/Documents/openRS_-evidence/rc6-release-2026-10-27/PUBLISHED.txt`):**
 - Android: PR #202 (feature/design-pass `056556b`) → staging merge `d2f7dc6`; staging CI 40625379258 green; tag
