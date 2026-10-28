@@ -449,7 +449,7 @@ data[5] = B5,  data[6] = B6 …
 - **Opening presentation** — system splash = background colour only (`splash_blank`). The composition draws alone at
   full opacity (no fade-in); the splash exit listener completes `OpeningState.splashGone`, and only then does the
   dashboard compose underneath (`composeDashboard`) and `CanDataService` bind — composing / binding earlier blocked the
-  splash hand-off by up to 1.5 s. Hold 2 s from the first visible frame, 300 ms fade; once per process (`OpeningState`).
+  splash hand-off by up to 1.5 s. Hold 2 s from the first visible frame, 300 ms fade; once per **app task** (`OpeningState.shouldShow`, #213): cold launch, Force stop, or a new task after Recents dismissal (even if the process survived) — never Home / resume, Back on Android 12+ (task moved to the back, so reopening resumes it), rotation, tab changes or service rebinds. `splashGone` is a fresh deferred per opening.
   Keep heavy work out of `onCreate` paths (PID catalog loads on IO). Debug timing: `adb logcat -s openRS_Startup`
   (ms since process start, `ui/StartupTrace.kt`)
 - **Connection state never inserts space** — RECONNECTING / TAP TO CONNECT render inside DRIVE's fixed 48 dp

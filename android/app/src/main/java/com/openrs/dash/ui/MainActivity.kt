@@ -193,10 +193,11 @@ class MainActivity : ComponentActivity() {
         permLauncher.launch(perms.toTypedArray())
         handleDemoIntent(intent)
         handleTripPreviewIntent(intent)
-        // Opening presentation: once per process cold start — not after rotation / recreation (savedInstanceState),
-        // and not when the activity is reopened while the process is still alive (Back, then the launcher icon).
-        val showOpening = savedInstanceState == null && !OpeningState.shown
-        OpeningState.shown = true
+        // Opening presentation: once per app task (#213) — a cold launch or a new task after Recents dismissal, even with
+        // the process kept alive; never after rotation (saved state) or when an existing task is resumed / recreated.
+        val showOpening = OpeningState.shouldShow(savedInstanceState != null, taskId)
+        OpeningState.shownForTask = taskId
+        if (showOpening) OpeningState.splashGone = kotlinx.coroutines.CompletableDeferred()
         // API 31+: the system splash is just the composition's background colour — take it away with no exit
         // animation once the first frame (the composition) is drawn. The splash covers the app until this runs, so
         // the opening waits for it before composing the dashboard (that long frame would otherwise hold the splash

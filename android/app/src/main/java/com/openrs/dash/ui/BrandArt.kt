@@ -159,11 +159,22 @@ private fun traceDraw(contentAlpha: Float, alpha: Float) {
     if (!firstFadeTraced && alpha < 1f) { firstFadeTraced = true; StartupTrace.mark("opening: first faded-out draw (alpha $alpha)") }
 }
 
-/** Process-level: the opening presentation has been shown (or skipped) in this process. */
+/**
+ * When the opening presentation plays (#213): once per **app task**, on its first activity creation. A genuine cold
+ * launch (also after Force stop) and a launch that creates a new task after the app was dismissed from Recents show it,
+ * even if Android kept the process. Home / resume, Back (Android 12+ moves the task to the back, so reopening resumes
+ * the same task), rotation (saved state), tab changes and service rebinds don't.
+ */
 object OpeningState {
-    @Volatile var shown = false
-    /** Completed when the system splash is gone (API 31+ exit listener; immediately below API 31). */
-    val splashGone = kotlinx.coroutines.CompletableDeferred<Unit>()
+    /** Task id the opening was last shown (or skipped) for; [NO_TASK] before the first activity. */
+    @Volatile var shownForTask = NO_TASK
+    /** Completed when this opening's system splash is gone (API 31+ exit listener; immediately below API 31). New per opening. */
+    @Volatile var splashGone = kotlinx.coroutines.CompletableDeferred<Unit>()
+    const val NO_TASK = Int.MIN_VALUE
+
+    /** Pure decision: show for a fresh activity (no saved state) in a task that hasn't had the opening yet. */
+    fun shouldShow(hasSavedState: Boolean, taskId: Int, lastShownTask: Int = shownForTask): Boolean =
+        !hasSavedState && taskId != lastShownTask
 }
 
 /** Opening timing: composition at full opacity for [OPENING_HOLD_MS] from its first drawn frame (concurrent with the
