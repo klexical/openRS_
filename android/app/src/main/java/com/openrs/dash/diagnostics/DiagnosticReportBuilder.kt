@@ -30,6 +30,8 @@ internal object DiagnosticReportBuilder {
             com.openrs.dash.data.DtcScanStatus.PARTIAL   -> "PARTIAL — ${scan.codes.size} code(s) from the modules scanned; not a clean scan"
             com.openrs.dash.data.DtcScanStatus.FAILED    -> "FAILED${scan.message?.let { " ($it)" } ?: ""}"
             com.openrs.dash.data.DtcScanStatus.CANCELLED -> "CANCELLED before it finished"
+            com.openrs.dash.data.DtcScanStatus.INTERRUPTED -> "INTERRUPTED before it finished${scan.message?.let { " ($it)" } ?: ""}; not a clean scan"
+            com.openrs.dash.data.DtcScanStatus.RUNNING   -> "RUNNING — not finished when exported"
         }
         return "$outcome · $coverage · ${scan.source}"
     }

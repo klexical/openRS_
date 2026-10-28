@@ -32,6 +32,7 @@ import com.openrs.dash.can.WicanApi
 import com.openrs.dash.can.WiFiFirmwareApi
 import com.openrs.dash.data.DriveDatabase
 import com.openrs.dash.data.DtcResult
+import com.openrs.dash.data.DtcScanRecord
 import com.openrs.dash.data.DtcScanResult
 import com.openrs.dash.data.FuelEconomy
 import com.openrs.dash.data.PerformanceTimer
@@ -584,25 +585,29 @@ class CanDataService : Service() {
                     conn.state.first { it is AdapterState.Connected }
                     delay(5_000L)
                     // Only proceed if still connected
-                    if (conn.state.value is AdapterState.Connected) {
+                    if (conn.state.value is AdapterState.Connected && link.owns(gen)) {
+                        // Visible from the start (RUNNING + progress); published through the session's ledger (#215)
+                        val ledger = DiagnosticLogger.dtcScans
+                        val ticket = ledger.begin("auto", DtcScanner.MODULES.map { it.name }, System.currentTimeMillis())
                         try {
-                            val result = DtcScanner(this@CanDataService).scan(conn)
-                            val record = com.openrs.dash.data.DtcScanRecord.from(
-                                result, System.currentTimeMillis(), "auto", DtcScanner.MODULES.map { it.name })
-                            DiagnosticLogger.lastDtcScan = record      // recorded with zero codes too (#215)
-                            if (result.codes.isNotEmpty()) {
-                                OpenRSDashApp.instance.activeDtcCount.value =
-                                    result.codes.count { it.status == com.openrs.dash.data.DtcStatus.ACTIVE }
+                            val result = DtcScanner(this@CanDataService).scan(conn) { m, st -> ledger.progress(ticket, m, st) }
+                            ledger.complete(ticket, result, System.currentTimeMillis())   // zero codes recorded too
+                            link.deliver(gen) {
+                                if (result.codes.isNotEmpty()) {
+                                    OpenRSDashApp.instance.activeDtcCount.value =
+                                        result.codes.count { it.status == com.openrs.dash.data.DtcStatus.ACTIVE }
+                                }
                             }
+                            val record = DtcScanRecord.from(result, 0L, "auto", DtcScanner.MODULES.map { it.name })
                             DiagnosticLogger.event("AUTO_DTC_SCAN",
-                                "${record.status} · ${result.codes.size} code(s) · ${record.modulesAnswered}/${record.modules.size} modules answered")
+                                "${record.status} · ${result.codes.size} code(s) · ${record.modulesAnswered}/${record.modules.size} modules scanned")
                         } catch (e: kotlinx.coroutines.CancellationException) {
+                            // The connection ended mid-scan: say so (a plain ledger write — no suspending under cancellation)
+                            ledger.interrupt(ticket, System.currentTimeMillis(), "connection ended")
                             throw e
                         } catch (e: Exception) {
                             // Auto-scan is best-effort, but a failed one is still reported as failed, never as clean
-                            DiagnosticLogger.lastDtcScan = com.openrs.dash.data.DtcScanRecord(
-                                com.openrs.dash.data.DtcScanStatus.FAILED, System.currentTimeMillis(), "auto",
-                                DtcScanner.MODULES.associate { it.name to null }, message = e.message)
+                            ledger.fail(ticket, System.currentTimeMillis(), e.message)
                         }
                     }
                 }

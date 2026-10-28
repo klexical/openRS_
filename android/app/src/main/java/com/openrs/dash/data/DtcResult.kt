@@ -109,15 +109,20 @@ enum class DtcScanStatus {
     COMPLETE,
     /** Some modules gave a valid reply; others timed out, refused, stayed pending or replied malformed — zero codes is NOT a clean scan. */
     PARTIAL,
-    /** No module answered, or the scan threw. */
+    /** No module gave a valid reply, or the scan threw. */
     FAILED,
     /** The user aborted it. */
     CANCELLED,
+    /** Cut off before it finished — the DIAG screen closed or the connection ended. */
+    INTERRUPTED,
+    /** Still running when the export was made. */
+    RUNNING,
 }
 
 /**
  * The last DTC scan of the session (#215): status, per-module coverage (null = no answer recorded before it ended),
- * the codes and when / how it ran. Exported whenever a scan ran, including with zero codes.
+ * the codes and when / how it ran. Exported whenever a scan ran, including with zero codes. Published only through
+ * [com.openrs.dash.diagnostics.DtcScanLedger].
  */
 data class DtcScanRecord(
     val status: DtcScanStatus,
@@ -132,16 +137,20 @@ data class DtcScanRecord(
     val modulesAnswered: Int get() = modules.values.count { it == ModuleScanStatus.OK }
 
     companion object {
-        /** A finished scan: COMPLETE only when every expected module answered OK. */
+        /** A finished scan: COMPLETE only when every expected module gave a valid reply (OK). */
         fun from(result: DtcScanResult, finishedAtMs: Long, source: String, expectedModules: List<String>): DtcScanRecord {
             val modules: Map<String, ModuleScanStatus?> = expectedModules.associateWith { result.moduleStatuses[it] } + result.moduleStatuses
+            return DtcScanRecord(statusFor(modules), finishedAtMs, source, modules, result.codes)
+        }
+
+        /** Status of a finished scan from its module coverage — shared by a full scan and a module retry. */
+        fun statusFor(modules: Map<String, ModuleScanStatus?>): DtcScanStatus {
             val ok = modules.values.count { it == ModuleScanStatus.OK }
-            val status = when {
+            return when {
                 ok == modules.size && ok > 0 -> DtcScanStatus.COMPLETE
                 ok > 0 -> DtcScanStatus.PARTIAL
                 else -> DtcScanStatus.FAILED
             }
-            return DtcScanRecord(status, finishedAtMs, source, modules, result.codes)
         }
     }
 }

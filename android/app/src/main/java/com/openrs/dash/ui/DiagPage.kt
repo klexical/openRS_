@@ -89,6 +89,8 @@ import kotlin.math.roundToInt
     var dtcClearStatus by remember { mutableStateOf<String?>(null) }
     var showClearConfirm by remember { mutableStateOf(false) }
     var dtcScanJob   by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    // The export record of the scan on screen (#215): retries publish into it, an abort / dispose closes it
+    var dtcScanTicket by remember { mutableStateOf<com.openrs.dash.diagnostics.DtcScanLedger.Ticket?>(null) }
     var dtcScanStartMs by remember { mutableStateOf(0L) }
     var dtcScanElapsed by remember { mutableStateOf(0) }
     // Per-module progress: null value = querying, non-null = done
@@ -394,12 +396,11 @@ import kotlin.math.roundToInt
                                     || (!dtcBusy && vs.isConnected && onScanDtcs != null)
                             ) {
                                 if (dtcScanning) {
+                                    dtcScanTicket?.let { DiagnosticLogger.dtcScans.cancel(it, System.currentTimeMillis()) }
                                     dtcScanJob?.cancel()
                                     dtcScanJob = null
                                     dtcScanning = false
                                     dtcError = "Scan aborted"
-                                    DiagnosticLogger.lastDtcScan = com.openrs.dash.data.DtcScanRecord(
-                                        com.openrs.dash.data.DtcScanStatus.CANCELLED, System.currentTimeMillis(), "manual", moduleProgress)
                                 } else {
                                     dtcScanning = true
                                     dtcError = null
@@ -408,7 +409,11 @@ import kotlin.math.roundToInt
                                     statusFilter = null
                                     moduleProgress = com.openrs.dash.diagnostics.DtcScanner.MODULES
                                         .associate { it.name to null as ModuleScanStatus? }
+                                    val ticket = DiagnosticLogger.dtcScans.begin("manual",
+                                        com.openrs.dash.diagnostics.DtcScanner.MODULES.map { it.name }, System.currentTimeMillis())
+                                    dtcScanTicket = ticket
                                     dtcScanJob = scope.launch(Dispatchers.IO) {
+                                      try {
                                         // Load previous scan codes for diff
                                         val prevCodes = try {
                                             com.openrs.dash.diagnostics.DtcScanner(ctx).getPreviousScanCodes()
@@ -417,6 +422,7 @@ import kotlin.math.roundToInt
 
                                         var result = try {
                                             onScanDtcs?.invoke { name, status ->
+                                                DiagnosticLogger.dtcScans.progress(ticket, name, status)
                                                 // Update progress on Main thread
                                                 launch(Dispatchers.Main) {
                                                     moduleProgress = moduleProgress + (name to status)
@@ -437,19 +443,22 @@ import kotlin.math.roundToInt
                                                 dtcScanning = false
                                                 if (result != null) {
                                                     dtcScanResult = result
-                                                    DiagnosticLogger.lastDtcScan = com.openrs.dash.data.DtcScanRecord.from(
-                                                        result, System.currentTimeMillis(), "manual", com.openrs.dash.diagnostics.DtcScanner.MODULES.map { it.name })
+                                                    DiagnosticLogger.dtcScans.complete(ticket, result, System.currentTimeMillis())
                                                     com.openrs.dash.OpenRSDashApp.instance.activeDtcCount.value =
                                                         result.codes.count { it.status == com.openrs.dash.data.DtcStatus.ACTIVE }
                                                 } else {
                                                     dtcError = "Scan failed — check adapter connection"
-                                                    DiagnosticLogger.lastDtcScan = com.openrs.dash.data.DtcScanRecord(
-                                                        com.openrs.dash.data.DtcScanStatus.FAILED, System.currentTimeMillis(), "manual",
-                                                        moduleProgress, message = "Scan failed")
+                                                    DiagnosticLogger.dtcScans.fail(ticket, System.currentTimeMillis(), "Scan failed")
                                                 }
                                             }
                                             dtcScanJob = null
                                         }
+                                      } catch (e: kotlinx.coroutines.CancellationException) {
+                                        // Screen disposed (or aborted — then already CANCELLED and this is a no-op).
+                                        // A plain ledger write: no withContext under cancellation.
+                                        DiagnosticLogger.dtcScans.interrupt(ticket, System.currentTimeMillis(), "DIAG screen closed")
+                                        throw e
+                                      }
                                     }
                                 }
                             }
@@ -725,10 +734,12 @@ import kotlin.math.roundToInt
                                                                 } catch (_: Exception) {
                                                                     emptyList<DtcResult>() to ModuleScanStatus.ERROR
                                                                 }
+                                                                // Same publication path as the scan: the export record follows the screen
+                                                                dtcScanTicket?.let { DiagnosticLogger.dtcScans.retry(it, name, codes, status, System.currentTimeMillis()) }
                                                                 withContext(Dispatchers.Main) {
                                                                     retrying = false
                                                                     val updatedStatuses = (scanRes.moduleStatuses + (name to status)).toMutableMap()
-                                                                    val updatedCodes = (scanRes.codes + codes).toMutableList()
+                                                                    val updatedCodes = (scanRes.codes.filter { it.module != name } + codes).toMutableList()
                                                                     dtcScanResult = scanRes.copy(
                                                                         codes = updatedCodes,
                                                                         moduleStatuses = updatedStatuses

@@ -162,8 +162,10 @@ object DiagnosticLogger {
     @Volatile var sessionPrefs: UserPrefs? = null
     @Volatile private var nrcSnapshot: Map<Int, NrcTracker.NrcRecord> = emptyMap()
     @Volatile var deviceStatus: DeviceStatus? = null
-    /** Last DTC scan (any outcome) — null = no scan; exported with status and module coverage (#215). */
-    @Volatile var lastDtcScan: com.openrs.dash.data.DtcScanRecord? = null
+    /** This session's DTC scan record — the single publication path for scans and retries (#215). */
+    val dtcScans = DtcScanLedger()
+    /** Last DTC scan of this session (any outcome) — null = no scan; exported with status and module coverage (#215). */
+    val lastDtcScan: com.openrs.dash.data.DtcScanRecord? get() = dtcScans.current
 
     /** Capture NRC suppression state from the active NrcTracker for diagnostic export. */
     fun snapshotNrc(tracker: NrcTracker) {
@@ -233,6 +235,7 @@ object DiagnosticLogger {
             fpsTimelineDeque.clear()
             probeSessionsList.clear()
             lastSampleTimeMs.clear()
+            dtcScans.newSession()      // a new session starts with no scan; older scans can't publish into it
 
             // Option C: open SLCAN log file
             if (logDir != null) {

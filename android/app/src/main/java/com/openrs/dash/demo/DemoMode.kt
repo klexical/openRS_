@@ -165,7 +165,7 @@ object DemoMode {
         simDtcs = dtcsFor(scenario)
         OpenRSDashApp.instance.knockEventCount.value = 0
         OpenRSDashApp.instance.activeDtcCount.value = 0
-        DiagnosticLogger.lastDtcScan = null
+        DiagnosticLogger.dtcScans.newSession()
         KnockSessionLog.reset()
         BoostSessionLog.reset()
         FuelEconomy.reset()
@@ -184,7 +184,7 @@ object DemoMode {
         OpenRSDashApp.instance.knockEventCount.value = 0
         OpenRSDashApp.instance.activeDtcCount.value = 0
         OpenRSDashApp.instance.deviceStatus.value = null
-        DiagnosticLogger.lastDtcScan = null
+        DiagnosticLogger.dtcScans.newSession()
         KnockSessionLog.reset()
         BoostSessionLog.reset()
         FuelEconomy.reset()
