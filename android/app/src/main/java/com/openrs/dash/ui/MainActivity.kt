@@ -235,6 +235,8 @@ class MainActivity : ComponentActivity() {
             val demoCollapsed   by DemoMode.controlsCollapsed.collectAsState()
             val linkPhase       by OpenRSDashApp.instance.linkPhase.collectAsState()
             val link            = linkUi(vs, linkPhase, demo.active)
+            // Same policy the service enforces (#212): no Cancel once connected or while a drive is recording
+            val cancelable      = com.openrs.dash.service.LinkPresentation.offersCancel(linkPhase, driveState.isRecording)
             val pageScope       = rememberCoroutineScope()
             val snackbarHostState = remember { SnackbarHostState() }
 
@@ -308,6 +310,7 @@ class MainActivity : ComponentActivity() {
                                         onReconnect  = { service?.reconnect() },
                                         onCancel     = { service?.cancelConnection() },
                                         link         = link,
+                                        cancelable   = cancelable,
                                         driveState   = headerDriveState,
                                         onModeClick  = { dockOpen = !dockOpen },
                                         onPullDown   = { dockOpen = true },
@@ -389,7 +392,7 @@ class MainActivity : ComponentActivity() {
                                                 0 -> DrivePage(vs, prefs, onOpenThermal = {
                                                     pageScope.launch { pagerState.animateScrollToPage(2) }
                                                 }, onConnect = { service?.startConnection() },
-                                                   onCancel = { service?.cancelConnection() }, link = link)
+                                                   onCancel = { service?.cancelConnection() }, link = link, cancelable = cancelable)
                                                 1 -> PerfPage(vs, prefs, onReset = { service?.resetPeaks() })
                                                 2 -> TempsPage(vs, prefs)
                                                 // settled: TRIP creates its map on the first visit; visible: off screen
@@ -564,6 +567,8 @@ class MainActivity : ComponentActivity() {
     /** Cancel an initial connection attempt (#212). */
     onCancel: () -> Unit = {},
     link: LinkUi = LinkUi.OFFLINE,
+    /** CONN tap cancels only when the service would accept it (not while a drive is recording). */
+    cancelable: Boolean = true,
     driveState: com.openrs.dash.data.DriveState = com.openrs.dash.data.DriveState(),
     onModeClick: () -> Unit = {},
     onPullDown: () -> Unit = {},
@@ -845,7 +850,8 @@ class MainActivity : ComponentActivity() {
                         when (link) {
                             LinkUi.LIVE         -> confirmDisconnect = true
                             LinkUi.RECONNECTING -> { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onReconnect() }
-                            LinkUi.CONNECTING   -> { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onCancel() }
+                            LinkUi.CONNECTING   -> if (cancelable) { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onCancel() }
+                                                   else haptic.performHapticFeedback(HapticFeedbackType.Reject)
                             LinkUi.OFFLINE, LinkUi.FAILED -> { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onConnect() }
                         }
                     }

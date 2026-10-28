@@ -93,4 +93,65 @@ class LinkOwnershipTest {
         assertEquals(LinkPhase.CONNECTED, own.phase)
         assertTrue(own.owns(new)); assertFalse(own.owns(old))
     }
+
+    // ── Cancel policy: one rule for pill, DRIVE and notification, enforced where the request is handled ──
+
+    private class Session(val own: LinkOwnership = LinkOwnership()) {
+        var recording = false
+        var stops = 0
+        fun cancel() = own.cancel(recording = { recording }) { stops++; own.end(LinkPhase.OFF) }
+    }
+
+    @Test fun `cancel during an initial attempt with no recording stops it and blocks auto-connect`() {
+        val s = Session(); val gen = s.own.begin()
+        assertTrue(s.cancel())
+        assertEquals(1, s.stops)
+        assertFalse(s.own.owns(gen))
+        assertTrue(s.own.manualConnectRequired)
+    }
+
+    @Test fun `a stale Cancel delivered after the link connected does nothing`() {
+        val s = Session(); val gen = s.own.begin()
+        s.own.publish(gen, LinkPhase.CONNECTED) {}
+        assertFalse(s.cancel())
+        assertEquals(0, s.stops)
+        assertTrue(s.own.owns(gen))
+        assertFalse(s.own.manualConnectRequired)
+    }
+
+    @Test fun `recording, link lost, RCN retry, CONN, Cancel — refused, the session keeps running`() {
+        val s = Session(); s.recording = true
+        val first = s.own.begin()
+        s.own.publish(first, LinkPhase.CONNECTED) {}
+        s.own.publish(first, LinkPhase.RECONNECTING) {}
+        assertFalse("no Cancel while reconnecting", s.cancel())
+        val retry = s.own.transition { s.own.end(LinkPhase.OFF); s.own.begin() }   // RCN tap = reconnect()
+        assertEquals(LinkPhase.CONNECTING, s.own.phase)
+        assertFalse("CONN while recording can't be cancelled", s.cancel())
+        assertEquals(0, s.stops)
+        assertTrue(s.own.owns(retry))
+        assertFalse(s.own.manualConnectRequired)
+    }
+
+    @Test fun `a Cancel tapped before a recording began but handled after it is refused`() {
+        val s = Session(); val gen = s.own.begin()
+        s.recording = true                                              // manual START on TRIP while still connecting
+        assertFalse(s.cancel())
+        assertTrue(s.own.owns(gen))
+    }
+
+    @Test fun `a Cancel racing the CONNECTED publication is decided after it — refused`() {
+        val s = Session(); val gen = s.own.begin()
+        val inPublish = CountDownLatch(1); val proceed = CountDownLatch(1)
+        var result: Boolean? = null
+        val done = CountDownLatch(1)
+        val job = thread { s.own.publish(gen, LinkPhase.CONNECTED) { inPublish.countDown(); proceed.await() } }
+        assertTrue(inPublish.await(2, TimeUnit.SECONDS))
+        thread { result = s.cancel(); done.countDown() }
+        assertFalse(done.await(200, TimeUnit.MILLISECONDS))
+        proceed.countDown(); job.join(2_000)
+        assertTrue(done.await(2, TimeUnit.SECONDS))
+        assertEquals(false, result)
+        assertTrue(s.own.owns(gen))
+    }
 }

@@ -52,6 +52,16 @@ internal class LinkOwnership {
 
     fun owns(gen: Int): Boolean = gen == generation
 
+    /**
+     * User cancel (pill, DRIVE, notification action): allowed only while [LinkPresentation.offersCancel] holds for the
+     * phase and recording state at the moment it is handled — so a stale Cancel delivered after the link connected or a
+     * recording began does nothing. Allowed: blocks auto-connect and runs [end]. Returns whether it cancelled.
+     */
+    fun cancel(recording: () -> Boolean, end: () -> Unit): Boolean = synchronized(lock) {
+        if (!LinkPresentation.offersCancel(phase, recording())) false
+        else { manualConnectRequired = true; end(); true }
+    }
+
     /** A job publishes a phase: applied (with [apply]) only while [gen] is current — atomically with the check. */
     fun publish(gen: Int, newPhase: LinkPhase, apply: (LinkPhase) -> Unit): Boolean = synchronized(lock) {
         if (gen != generation) false else { phase = newPhase; apply(newPhase); true }

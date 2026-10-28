@@ -226,7 +226,7 @@ class CanDataService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_CANCEL_CONNECT) {
-            cancelConnection()
+            cancelConnection()   // refused (no-op) once connected or while recording — see cancelConnection
             // A cancel delivered to a service that wasn't already promoted must not leave it started
             if (!foreground.isForeground) stopSelf(startId)
             return START_NOT_STICKY
@@ -905,12 +905,22 @@ class CanDataService : Service() {
     /**
      * User cancel of an initial attempt (pill, DRIVE status row, notification action). Closes the transport, cancels
      * the attempt and its backoff, and blocks auto-connect (network callbacks, a rebind) until an explicit connect.
+     * One policy for every entry point ([LinkPresentation.offersCancel]), checked here when the request is handled: a
+     * Cancel while a drive is recording (incl. paused) or once the link is up is refused — it would stop the service the
+     * recording runs under — and leaves the connection and the drive exactly as they were. Returns whether it cancelled.
      */
-    fun cancelConnection(): Unit = link.transition {
-        if (DemoMode.isActive) return@transition
-        link.requireManualConnect()
-        DiagnosticLogger.event("STATE", "Cancelled by user")
-        stopConnection()
+    fun cancelConnection(): Boolean = link.transition {
+        if (DemoMode.isActive) return@transition false
+        val cancelled = link.cancel(recording = { isRecording() }) {
+            DiagnosticLogger.event("STATE", "Cancelled by user")
+            stopConnection()
+        }
+        if (!cancelled) {
+            val why = if (isRecording()) "a drive is recording" else "link ${link.phase.name.lowercase()}"
+            DiagnosticLogger.event("STATE", "Cancel ignored — $why")
+            android.util.Log.i("CAN", "Cancel ignored — $why")
+        }
+        cancelled
     }
 
     /** Called from UI when user taps the RETRY badge — fresh adapter + retry. */

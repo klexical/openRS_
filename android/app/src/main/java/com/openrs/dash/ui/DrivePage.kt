@@ -91,6 +91,7 @@ import kotlin.math.roundToInt
 @Composable fun DrivePage(
     vs: VehicleState, p: UserPrefs, onOpenThermal: () -> Unit = {}, onConnect: () -> Unit = {},
     onCancel: () -> Unit = {}, link: LinkUi = linkUi(vs, com.openrs.dash.can.LinkPhase.OFF, demoActive = false),
+    cancelable: Boolean = true,
 ) {
     var pageEntered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { pageEntered = true }
@@ -211,7 +212,7 @@ import kotlin.math.roundToInt
             // Temperatures speak through the shared readiness verdict (same holds as THERMAL);
             // tyre / fuel / knock alerts keep their own 3 s hold.
             val readiness = thermalVerdict(vs)
-            StatusLine(status.alerts.filterNot { it.temp }, readiness, p, link, onOpenThermal, onConnect, onCancel)
+            StatusLine(status.alerts.filterNot { it.temp }, readiness, p, link, onOpenThermal, onConnect, onCancel, cancelable)
 
             // Design pass: readings in ink, BOOST (the car's personality) carries the paint accent,
             // RPM turns Orange only at the shift-light flash point. Equal-height cards with a fixed
@@ -531,7 +532,7 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
  */
 @Composable private fun StatusLine(
     alerts: List<VehicleAlert>, rtr: ThermalVerdict, p: UserPrefs, link: LinkUi,
-    onOpen: () -> Unit, onConnect: () -> Unit, onCancel: () -> Unit,
+    onOpen: () -> Unit, onConnect: () -> Unit, onCancel: () -> Unit, cancelable: Boolean,
 ) {
     var held by remember { mutableStateOf(alerts) }
     LaunchedEffect(alerts) {
@@ -543,7 +544,12 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
     when (link) {
         LinkUi.OFFLINE    -> { LinkActionRow("TAP TO CONNECT", "Connect to the adapter", accentAction = true, onConnect); return }
         LinkUi.FAILED     -> { LinkActionRow("NO RESPONSE · TAP TO CONNECT", "Connect to the adapter", accentAction = true, onConnect); return }
-        LinkUi.CONNECTING -> { LinkActionRow("CONNECTING… · TAP TO CANCEL", "Cancel the connection attempt", accentAction = false, onCancel); return }
+        // While a drive is recording the attempt can't be cancelled (it would stop the service the drive runs under)
+        LinkUi.CONNECTING -> {
+            if (cancelable) LinkActionRow("CONNECTING… · TAP TO CANCEL", "Cancel the connection attempt", accentAction = false, onCancel)
+            else LinkActionRow("CONNECTING… · RECORDING", null, accentAction = false, null)
+            return
+        }
         LinkUi.LIVE, LinkUi.RECONNECTING -> Unit
     }
     val heat = link == LinkUi.LIVE && rtr.state.isHeat
@@ -622,7 +628,7 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
  * The status row's link action (#212): TAP TO CONNECT (accent — the call to action), NO RESPONSE after the attempts ran
  * out, or CONNECTING… · TAP TO CANCEL (neutral) while an initial attempt runs. Same fixed 48 dp row either way.
  */
-@Composable private fun LinkActionRow(text: String, clickLabel: String, accentAction: Boolean, onClick: () -> Unit) {
+@Composable private fun LinkActionRow(text: String, clickLabel: String?, accentAction: Boolean, onClick: (() -> Unit)?) {
     val accent = LocalThemeAccent.current
     val shape = RoundedCornerShape(12.dp)
     Row(
@@ -630,7 +636,7 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
             .background(InstrumentFill, shape)
             .then(if (accentAction) Modifier.background(accent.copy(alpha = if (isDayModeNow()) 0.14f else 0.12f), shape) else Modifier)
             .border(1.dp, if (accentAction) accent.copy(alpha = borderAlpha(0.7f)) else Brd.copy(alpha = borderAlpha(0.6f)), shape)
-            .clickable(onClickLabel = clickLabel) { onClick() }
+            .then(if (onClick != null) Modifier.clickable(onClickLabel = clickLabel) { onClick() } else Modifier)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
