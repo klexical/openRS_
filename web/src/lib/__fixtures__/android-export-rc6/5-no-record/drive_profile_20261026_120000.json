@@ -1,0 +1,58 @@
+{
+  "thermalRecord": {
+    "reason": "absent",
+    "note": "No thermal record saved with this drive: the limits it was judged against are unknown.",
+    "unit": "°C",
+    "flagged": false,
+    "basis": "none"
+  },
+  "thermalProgression": {
+    "oil": {
+      "endC": 110,
+      "startC": 40,
+      "peakC": 112
+    },
+    "coolant": {
+      "endC": 95,
+      "startC": 45,
+      "peakC": 104
+    }
+  },
+  "modeTimeline": [{
+    "mode": "Normal",
+    "startMs": 1000,
+    "endMs": 1800000
+  }],
+  "drive": {
+    "peakLateralG": 0,
+    "distanceKm": 0,
+    "fuelUsedL": 0,
+    "peakRpm": 0,
+    "tags": "",
+    "avgSpeedKph": 0,
+    "aggressionScore": 0,
+    "peakBoostPsi": 0,
+    "startTime": 1700000000000,
+    "maxSpeedKph": 0,
+    "peakOilTempC": 112,
+    "endTime": 1700001800000,
+    "peakCoolantTempC": 104
+  },
+  "version": 2,
+  "peaks": [
+    {
+      "lng": -0.121,
+      "type": "RPM",
+      "value": 3200,
+      "lat": 51.5124,
+      "timestampMs": 1700001799000
+    },
+    {
+      "lng": -0.121,
+      "type": "SPEED",
+      "value": 60,
+      "lat": 51.5124,
+      "timestampMs": 1700001799000
+    }
+  ]
+}

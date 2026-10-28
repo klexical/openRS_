@@ -2,21 +2,20 @@ import type { KpiDelta } from '../../lib/compare'
 import { fmtNumber, fmtDuration } from '../../lib/format'
 import { colors } from '../../styles/tokens'
 
-// Per-unit threshold below which a delta is considered "no meaningful change".
-// 0.01 makes sense for L/100km or G but is invisible at RPM/ms scale, so each
-// unit gets its own floor that roughly matches what the displayed precision
-// would round to.
+// Per-unit floor below which a delta is "no meaningful change" (main e9cd565) — 0.01 is right for G but made
+// an 8 RPM or 20 ms difference light up as better / worse. Roughly what the displayed precision rounds away.
 function neutralThreshold(unit: string): number {
   switch (unit) {
-    case 'ms':       return 50         // 50 ms ≈ frame-level noise
-    case 'RPM':      return 10
-    case 'kph':      return 0.5
-    case 'PSI':      return 0.1
-    case '°C':       return 0.5
-    case 'km':       return 0.05
-    case 'L/100km':  return 0.05
-    case 'G':        return 0.01
-    default:         return 0.01
+    case 'ms':      return 50
+    case 'RPM':     return 10
+    case 'kph':     return 0.5
+    case 'PSI':     return 0.1
+    case '°C':      return 0.5
+    case 'km':      return 0.05
+    case 'L/100km': return 0.05
+    case 'L':       return 0.05
+    case '/100':    return 0.5
+    default:        return 0.01
   }
 }
 

@@ -1,11 +1,11 @@
 /** Design tokens — matches the openRS_ Android app palette exactly. */
 
 /**
- * `accent` and `accentD` resolve to CSS custom properties so that inline-style
- * consumers automatically follow the active RS paint theme. The CSS variables
- * are written to `document.documentElement` from `App.tsx` whenever
- * `useSettings.themeId` changes. Use `cyan` for places that should remain
- * fixed regardless of theme (e.g. categorical legend colours, GPS map buckets).
+ * `accent` and `accentD` resolve to CSS custom properties so inline-style and SVG consumers follow the
+ * active RS paint theme; `App.tsx` writes them to `document.documentElement` whenever
+ * `useSettings.themeId` changes. Use `cyan` where the colour must stay fixed whatever the paint
+ * (categorical legends, GPS map buckets, threshold bands) — a Race Red accent would otherwise read as a
+ * warning next to `orange` / `red`.
  */
 export const colors = {
   bg: '#05070A',
@@ -36,9 +36,8 @@ export const rsThemes = {
 } as const
 
 /**
- * Lighten (positive) or darken (negative) a `#RRGGBB` colour by the given
- * fraction in `[-1, 1]`. Used to derive `--color-accent-d` from the active
- * RS paint theme without committing every shade to the static palette.
+ * Lighten (positive) or darken (negative) a `#RRGGBB` colour by the given fraction in `[-1, 1]`.
+ * Used to derive `--color-accent-d` from the active RS paint.
  */
 export function shadeHex(hex: string, amount: number): string {
   const h = hex.replace('#', '')
@@ -51,6 +50,32 @@ export function shadeHex(hex: string, amount: number): string {
   const mix = (channel: number) => Math.round((t - channel) * p) + channel
   const out = (mix(r) << 16) | (mix(g) << 8) | mix(b)
   return '#' + out.toString(16).padStart(6, '0').toUpperCase()
+}
+
+/** WCAG 2 contrast ratio between two `#RRGGBB` colours. */
+export function contrastRatio(a: string, b: string): number {
+  const lum = (hex: string) => {
+    const n = parseInt(hex.replace('#', ''), 16)
+    const [r, g, bl] = [16, 8, 0].map((s) => {
+      const c = ((n >> s) & 0xff) / 255
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+    })
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl
+  }
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x)
+  return (hi + 0.05) / (lo + 0.05)
+}
+
+/**
+ * The paint darkened just enough for text on white (≥ 4.5:1) — print is Sapphire's only light surface, and
+ * Frozen White / Shadow Black would vanish on paper. Written to `--color-accent-print` (see index.css).
+ */
+export function printAccent(hex: string): string {
+  for (let amount = 0; amount < 1; amount += 0.05) {
+    const shaded = shadeHex(hex, -amount)
+    if (contrastRatio(shaded, '#FFFFFF') >= 4.5) return shaded
+  }
+  return '#000000'
 }
 
 /** Chart series colours — distinct, accessible against dark bg. */

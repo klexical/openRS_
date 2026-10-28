@@ -1,4 +1,5 @@
 import type { Session, TripSummary, TripPoint } from '../types/session'
+import { tempReading, pctReading } from './readings'
 
 /** A single KPI delta between two sessions. */
 export interface KpiDelta {
@@ -16,16 +17,20 @@ export interface KpiDelta {
   higherIsBetter: boolean
 }
 
-/** Normalized point — time expressed as 0..1 fraction of session duration. */
+/** Normalized point — time expressed as 0..1 fraction of session duration. Missing readings are null (a gap). */
 export interface NormalizedPoint {
   /** 0..1 fraction through the session. */
   t: number
   rpm: number
   boostPsi: number
   speedKph: number
-  coolantC: number
+  coolantC: number | null
+  oilTempC: number | null
   latG: number
-  throttlePct: number
+  longG: number
+  throttlePct: number | null
+  brakePressure: number
+  steeringAngle: number
 }
 
 /** Compute KPI deltas between two trip summaries. */
@@ -43,26 +48,25 @@ export function computeDeltas(base: TripSummary, comp: TripSummary): KpiDelta[] 
     { key: 'avgFuelEconomy', label: 'Fuel Economy', unit: 'L/100km', higherIsBetter: false },
     { key: 'peakCoolantC', label: 'Peak Coolant', unit: '°C', higherIsBetter: false },
     { key: 'peakOilTempC', label: 'Peak Oil', unit: '°C', higherIsBetter: false },
+    { key: 'aggressionScore', label: 'Aggression', unit: '/100', higherIsBetter: true },   // T4A
+    { key: 'fuelUsedL', label: 'Fuel Used', unit: 'L', higherIsBetter: false },             // T4A
   ]
 
   return kpis
     .map(({ key, label, unit, higherIsBetter }) => {
-      const baseValue = base[key] as number
-      const compValue = comp[key] as number
+      const baseValue = base[key] as number | undefined
+      const compValue = comp[key] as number | undefined
+      if (baseValue == null || compValue == null) return null
       if (!isFinite(baseValue) || !isFinite(compValue)) return null
       if (baseValue === 0 && compValue === 0) return null
       const diff = compValue - baseValue
-      // Use the natural sign of baseValue so the percentage carries the same sign as
-      // the diff. The "is this delta good or bad?" judgement lives in `higherIsBetter`,
-      // not in the percentage sign — so a 25%-faster (lower-duration) session reads as
-      // a -25% delta on duration, not +25%.
-      const pctChange = baseValue !== 0 ? (diff / baseValue) * 100 : 0
+      const pctChange = baseValue !== 0 ? (diff / Math.abs(baseValue)) * 100 : 0
       return { label, unit, baseValue, compValue, diff, pctChange, higherIsBetter }
     })
     .filter(Boolean) as KpiDelta[]
 }
 
-/** Normalize trip points to 0..1 time fraction for overlay comparison. */
+/** Normalize trip points to 0..1 time fraction for overlay comparison. Sentinel temps / throttle → null, genuine zeros kept. */
 export function normalizePoints(points: TripPoint[]): NormalizedPoint[] {
   if (points.length < 2) return []
   const t0 = points[0].ts
@@ -74,9 +78,13 @@ export function normalizePoints(points: TripPoint[]): NormalizedPoint[] {
     rpm: p.rpm,
     boostPsi: p.boostPsi,
     speedKph: p.speedKph,
-    coolantC: p.coolantC > -90 ? p.coolantC : 0,
+    coolantC: tempReading(p.coolantC),
+    oilTempC: tempReading(p.oilTempC),
     latG: p.latG,
-    throttlePct: p.throttlePct >= 0 ? p.throttlePct : 0,
+    longG: p.longG,
+    throttlePct: pctReading(p.throttlePct),
+    brakePressure: p.brakePressure,
+    steeringAngle: p.steeringAngle,
   }))
 }
 
@@ -89,7 +97,6 @@ export function resampleNormalized(points: NormalizedPoint[], bins = 200): Norma
   const result: NormalizedPoint[] = []
   for (let i = 0; i < bins; i++) {
     const targetT = i / (bins - 1)
-    // Find closest point
     let best = points[0]
     let bestDist = Math.abs(best.t - targetT)
     for (let j = 1; j < points.length; j++) {
@@ -98,7 +105,7 @@ export function resampleNormalized(points: NormalizedPoint[], bins = 200): Norma
         best = points[j]
         bestDist = dist
       } else {
-        break // points are sorted by t, so once distance increases we're past the closest
+        break
       }
     }
     result.push({ ...best, t: targetT })
@@ -108,7 +115,6 @@ export function resampleNormalized(points: NormalizedPoint[], bins = 200): Norma
 
 /** Get a display-friendly short name for a session. */
 export function sessionShortName(session: Session): string {
-  // Truncate to first 25 chars
   const name = session.name
   return name.length > 25 ? name.slice(0, 22) + '...' : name
 }

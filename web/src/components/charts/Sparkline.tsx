@@ -13,7 +13,8 @@ interface SparklineProps {
  * Matches the Android app's Sparkline.kt aesthetic.
  */
 export function Sparkline({ data, color = colors.accent, width = 120, height = 36 }: SparklineProps) {
-  const id = useId()
+  // Gradient / filter ids, unique per instance (useId — stable across renders, no hook after the early return)
+  const id = `spark${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
   const { path, areaPath } = useMemo(() => {
     if (data.length < 2) return { path: '', areaPath: '' }
 

@@ -1,11 +1,11 @@
 import { create } from 'zustand'
+import { useShallow } from 'zustand/react/shallow'
 import type { Session } from '../types/session'
 
 export type PanelId = 'dashboard' | 'trip' | 'diagnostics' | 'sessions' | 'compare' | 'import' | 'settings'
 
-// Persistence: keep nav location across page refreshes. Settings already
-// persist via localStorage in store/settings.ts; this mirrors that pattern
-// for the main store's view-state fields without pulling in zustand/middleware.
+// Remembered view (main e9cd565): the panel and selected session survive a reload, like the settings in
+// store/settings.ts. App.tsx checks the saved session against IndexedDB once sessions load.
 const VIEW_KEY = 'sapphire_view'
 const VALID_PANELS: ReadonlySet<PanelId> = new Set([
   'dashboard', 'trip', 'diagnostics', 'sessions', 'compare', 'import', 'settings',
@@ -21,22 +21,21 @@ function loadView(): PersistedView {
     const raw = localStorage.getItem(VIEW_KEY)
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<PersistedView>
-      const panel = parsed.activePanel && VALID_PANELS.has(parsed.activePanel)
-        ? parsed.activePanel
-        : 'dashboard'
+      const panel = parsed.activePanel && VALID_PANELS.has(parsed.activePanel) ? parsed.activePanel : 'dashboard'
       const sid = typeof parsed.activeSessionId === 'string' ? parsed.activeSessionId : null
       return { activePanel: panel, activeSessionId: sid }
     }
-  } catch { /* ignore */ }
+  } catch { /* unreadable or blocked storage — start from the defaults */ }
   return { activePanel: 'dashboard', activeSessionId: null }
 }
 
 function persistView(partial: Partial<PersistedView>) {
   try {
-    const current = loadView()
-    localStorage.setItem(VIEW_KEY, JSON.stringify({ ...current, ...partial }))
-  } catch { /* ignore */ }
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ ...loadView(), ...partial }))
+  } catch { /* storage unavailable — the view just isn't remembered */ }
 }
+
+const initialView = loadView()
 
 interface SapphireState {
   /** Currently active nav panel. */
@@ -69,8 +68,6 @@ interface SapphireState {
   navExpanded: boolean
   toggleNav: () => void
 }
-
-const initialView = loadView()
 
 export const useStore = create<SapphireState>((set) => ({
   activePanel: initialView.activePanel,
@@ -127,6 +124,10 @@ export const useStore = create<SapphireState>((set) => ({
 export const useActiveSession = () =>
   useStore((s) => s.sessions.find((sess) => sess.id === s.activeSessionId) ?? null)
 
-/** Convenience selector for compare sessions. */
+/**
+ * Convenience selector for compare sessions. `useShallow` keeps the array identity while its
+ * members are unchanged — a fresh array per store read makes React re-render forever
+ * ("Maximum update depth exceeded" as soon as ComparePanel mounts).
+ */
 export const useCompareSessions = () =>
-  useStore((s) => s.compareSessionIds.map((id) => s.sessions.find((sess) => sess.id === id)).filter(Boolean) as Session[])
+  useStore(useShallow((s) => s.compareSessionIds.map((id) => s.sessions.find((sess) => sess.id === id)).filter(Boolean) as Session[]))

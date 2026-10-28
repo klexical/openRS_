@@ -13,9 +13,7 @@ interface Series {
 }
 
 interface TimeSeriesChartProps {
-  // Series values may be null to indicate "no reading at this sample" — Recharts
-  // renders a gap in the line instead of dropping to zero, which keeps invalid
-  // sentinels (e.g. tire temps before the first poll) from creating fake dips.
+  /** null = no reading at that sample — drawn as a gap in the line, never a dip to 0 */
   data: Record<string, number | null>[]
   series: Series[]
   height?: number

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useStore } from '../../store'
 import { EmptyState } from '../ui/EmptyState'
 import { SearchBar } from '../ui/SearchBar'
@@ -20,26 +20,20 @@ export function SessionsPanel() {
   const setSessionTags = useStore((s) => s.setSessionTags)
   const setActivePanel = useStore((s) => s.setActivePanel)
 
+  // Already debounced: SearchBar calls onChange 200 ms after typing pauses (main e9cd565's extra 150 ms
+  // debounce here would only stack on top)
   const [search, setSearch] = useState('')
-  // Debounced query — filter/sort only re-runs once typing pauses, so a 200+
-  // session library doesn't relayout the list on every keystroke.
-  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('date')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [tagEditId, setTagEditId] = useState<string | null>(null)
 
-  useEffect(() => {
-    const handle = setTimeout(() => setDebouncedSearch(search), 150)
-    return () => clearTimeout(handle)
-  }, [search])
-
   // Filter + sort (must run on every render path — keep above the early return)
   const filtered = useMemo(() => {
     let list = sessions
-    if (debouncedSearch) {
-      const q = debouncedSearch.toLowerCase()
+    if (search) {
+      const q = search.toLowerCase()
       list = list.filter((s) =>
         s.name.toLowerCase().includes(q) ||
         (s.tags ?? []).some((t) => t.toLowerCase().includes(q))
@@ -53,7 +47,7 @@ export function SessionsPanel() {
         default: return b.importedAt - a.importedAt
       }
     })
-  }, [sessions, debouncedSearch, sortKey])
+  }, [sessions, search, sortKey])
 
   if (sessions.length === 0) {
     return (
@@ -82,21 +76,15 @@ export function SessionsPanel() {
 
   const handleBulkDelete = async () => {
     const ids = [...selectedIds]
-    // Use allSettled so a single failed delete doesn't strand the rest of the
-    // batch in an inconsistent state — only remove from the store the IDs that
-    // actually deleted from IndexedDB, and warn about the rest.
+    // allSettled (main e9cd565): with Promise.all one failed delete skipped removing the ones that were
+    // deleted — they stayed listed though gone from IndexedDB. Remove what was deleted; failures stay
+    // selected so they can be retried.
     const results = await Promise.allSettled(ids.map((id) => dbDelete(id)))
-    const succeeded: string[] = []
-    const failed: string[] = []
-    results.forEach((r, i) => {
-      if (r.status === 'fulfilled') succeeded.push(ids[i])
-      else failed.push(ids[i])
-    })
-    if (succeeded.length > 0) removeSessions(succeeded)
-    setSelectedIds(failed.length > 0 ? new Set(failed) : new Set())
-    if (failed.length > 0) {
-      console.warn('[Sapphire] Failed to delete sessions from IndexedDB:', failed)
-    }
+    const deleted = ids.filter((_, i) => results[i].status === 'fulfilled')
+    const failed = ids.filter((_, i) => results[i].status === 'rejected')
+    if (deleted.length > 0) removeSessions(deleted)
+    setSelectedIds(new Set(failed))
+    if (failed.length > 0) console.warn('[Sapphire] Failed to delete sessions from IndexedDB:', failed)
   }
 
   const handleSelect = (id: string) => {

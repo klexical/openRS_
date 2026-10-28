@@ -1,0 +1,139 @@
+{
+  "thermalRecord": {
+    "unit": "°C",
+    "sensors": {
+      "oil": {
+        "peakProfile": "street",
+        "flag": {
+          "critC": 110,
+          "flagThresholdC": 104.5,
+          "readingC": 106,
+          "profile": "race"
+        },
+        "flagged": true,
+        "peakC": 122,
+        "peakLevel": "WARN"
+      },
+      "coolant": {
+        "peakProfile": "street",
+        "flagged": false,
+        "peakC": 99,
+        "peakLevel": "NORMAL"
+      }
+    },
+    "flagged": true,
+    "flagRule": "reading >= flagThresholdC = 0.95 x critC of the profile in effect when it was recorded",
+    "basis": "profile",
+    "segments": [
+      {
+        "peaksC": {
+          "oil": 122,
+          "coolant": 99
+        },
+        "profile": "street",
+        "limits": {
+          "ptu": {
+            "critC": 110,
+            "flagThresholdC": 104.5,
+            "warnC": 95
+          },
+          "rdu": {
+            "critC": 100,
+            "flagThresholdC": 95,
+            "warnC": 90
+          },
+          "oil": {
+            "critC": 130,
+            "flagThresholdC": 123.5,
+            "warnC": 120
+          },
+          "coolant": {
+            "critC": 115,
+            "flagThresholdC": 109.25,
+            "warnC": 105
+          }
+        },
+        "startOffsetMs": 0
+      },
+      {
+        "peaksC": {
+          "oil": 106,
+          "coolant": 95
+        },
+        "profile": "race",
+        "limits": {
+          "ptu": {
+            "critC": 90,
+            "flagThresholdC": 85.5,
+            "warnC": 75
+          },
+          "rdu": {
+            "critC": 85,
+            "flagThresholdC": 80.75,
+            "warnC": 70
+          },
+          "oil": {
+            "critC": 110,
+            "flagThresholdC": 104.5,
+            "warnC": 100
+          },
+          "coolant": {
+            "critC": 105,
+            "flagThresholdC": 99.75,
+            "warnC": 95
+          }
+        },
+        "startOffsetMs": 600000
+      }
+    ]
+  },
+  "thermalProgression": {
+    "oil": {
+      "endC": 104,
+      "startC": 70,
+      "peakC": 122
+    },
+    "coolant": {
+      "endC": 93,
+      "startC": 65,
+      "peakC": 99
+    }
+  },
+  "modeTimeline": [{
+    "mode": "Normal",
+    "startMs": 1000,
+    "endMs": 1800000
+  }],
+  "drive": {
+    "peakLateralG": 0,
+    "distanceKm": 0,
+    "fuelUsedL": 0,
+    "peakRpm": 0,
+    "tags": "",
+    "avgSpeedKph": 0,
+    "aggressionScore": 0,
+    "peakBoostPsi": 0,
+    "startTime": 1700000000000,
+    "maxSpeedKph": 0,
+    "peakOilTempC": 122,
+    "endTime": 1700001800000,
+    "peakCoolantTempC": 99
+  },
+  "version": 2,
+  "peaks": [
+    {
+      "lng": -0.121,
+      "type": "RPM",
+      "value": 3200,
+      "lat": 51.5124,
+      "timestampMs": 1700001799000
+    },
+    {
+      "lng": -0.121,
+      "type": "SPEED",
+      "value": 60,
+      "lat": 51.5124,
+      "timestampMs": 1700001799000
+    }
+  ]
+}

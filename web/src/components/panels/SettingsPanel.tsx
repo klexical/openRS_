@@ -104,7 +104,7 @@ export function SettingsPanel() {
           ))}
         </div>
         <p className="text-[10px] font-mono text-dim mt-3">
-          Theme accent applies across the app's UI chrome. Chart series colors remain fixed for legend readability.
+          The accent follows the RS paint across the app's UI and single-trace charts. Multi-series chart, map and status colours stay fixed so legends remain readable.
         </p>
       </div>
 

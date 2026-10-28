@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="openRS_ v2.2.7" 
+    xmlns="http://www.topografix.com/GPX/1/1" 
+    xmlns:openrs="https://github.com/klex/openRS_">
+  <metadata>
+    <name>openRS_ Drive 20261026_120000</name>
+    <time>2023-11-14T22:13:20Z</time>
+  </metadata>
+  <trk>
+    <name>Focus RS MK3 Drive</name>
+    <trkseg>
+      <trkpt lat="0.0" lon="0.0">
+        <ele>0</ele>
+        <time>2023-11-14T22:13:21Z</time>
+        <extensions>
+          <openrs:speed>0.0</openrs:speed>
+          <openrs:rpm>0</openrs:rpm>
+          <openrs:gear></openrs:gear>
+          <openrs:boostPsi>0.00</openrs:boostPsi>
+          <openrs:coolantC>-99.0</openrs:coolantC>
+          <openrs:oilC>-99.0</openrs:oilC>
+          <openrs:ambientC>-99.0</openrs:ambientC>
+          <openrs:rduC>74.0</openrs:rduC>
+          <openrs:ptuC>-99.0</openrs:ptuC>
+          <openrs:fuelPct>-1.0</openrs:fuelPct>
+          <openrs:lateralG>0.000</openrs:lateralG>
+          <openrs:longitudinalG>0.000</openrs:longitudinalG>
+          <openrs:brakePressure>0.0</openrs:brakePressure>
+          <openrs:steeringAngle>0.0</openrs:steeringAngle>
+          <openrs:driveMode>Normal</openrs:driveMode>
+        </extensions>
+      </trkpt>
+      <trkpt lat="0.0" lon="0.0">
+        <ele>0</ele>
+        <time>2023-11-14T22:13:22Z</time>
+        <extensions>
+          <openrs:speed>0.0</openrs:speed>
+          <openrs:rpm>0</openrs:rpm>
+          <openrs:gear></openrs:gear>
+          <openrs:boostPsi>0.00</openrs:boostPsi>
+          <openrs:coolantC>-99.0</openrs:coolantC>
+          <openrs:oilC>-99.0</openrs:oilC>
+          <openrs:ambientC>-99.0</openrs:ambientC>
+          <openrs:rduC>68.0</openrs:rduC>
+          <openrs:ptuC>-99.0</openrs:ptuC>
+          <openrs:fuelPct>-1.0</openrs:fuelPct>
+          <openrs:lateralG>0.000</openrs:lateralG>
+          <openrs:longitudinalG>0.000</openrs:longitudinalG>
+          <openrs:brakePressure>0.0</openrs:brakePressure>
+          <openrs:steeringAngle>0.0</openrs:steeringAngle>
+          <openrs:driveMode>Normal</openrs:driveMode>
+        </extensions>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>

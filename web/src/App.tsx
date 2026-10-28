@@ -3,40 +3,38 @@ import { Shell } from './components/layout/Shell'
 import { useStore } from './store'
 import { useSettings } from './store/settings'
 import { getAllSessions } from './lib/db'
-import { rsThemes, shadeHex } from './styles/tokens'
+import type { Session } from './types/session'
+import { rsThemes, shadeHex, printAccent } from './styles/tokens'
 
 export default function App() {
   const setSessions = useStore((s) => s.setSessions)
   const setActiveSessionId = useStore((s) => s.setActiveSessionId)
   const themeId = useSettings((s) => s.themeId)
 
-  // Load persisted sessions from IndexedDB on mount
+  // Load persisted sessions from IndexedDB on mount. Keep the remembered session if it still exists;
+  // otherwise (deleted, or another browser's view) select the most recently imported one, or none.
   useEffect(() => {
     getAllSessions()
       .then((sessions) => {
         setSessions(sessions)
-        // Honour a persisted activeSessionId if its session still exists,
-        // otherwise fall back to the most-recently imported session.
-        if (sessions.length === 0) return
-        const persistedId = useStore.getState().activeSessionId
-        const persistedExists = persistedId && sessions.some((s) => s.id === persistedId)
-        if (!persistedExists) {
-          const latest = [...sessions].sort((a, b) => b.importedAt - a.importedAt)[0]
-          setActiveSessionId(latest.id)
-        }
+        const saved = useStore.getState().activeSessionId
+        if (saved && sessions.some((s) => s.id === saved)) return
+        const latest = sessions.reduce<Session | null>((a, b) => (!a || b.importedAt > a.importedAt ? b : a), null)
+        setActiveSessionId(latest?.id ?? null)
       })
       .catch((err) => {
         console.error('[Sapphire] Failed to load sessions from IndexedDB:', err)
       })
   }, [setSessions, setActiveSessionId])
 
-  // Apply RS paint accent to CSS custom properties on the document root.
-  // Tailwind v4 utilities (`text-accent`, `bg-accent/10`, etc.) resolve
-  // `--color-accent` at runtime, so updating it here propagates everywhere.
+  // RS paint accent → CSS custom properties on the document root. Tailwind utilities (`text-accent`,
+  // `bg-accent/10`, …) and `colors.accent` (a var()) resolve them at runtime, so this repaints everything.
   useEffect(() => {
-    const accent = rsThemes[themeId]
-    document.documentElement.style.setProperty('--color-accent', accent)
-    document.documentElement.style.setProperty('--color-accent-d', shadeHex(accent, -0.25))
+    const accent = rsThemes[themeId] ?? rsThemes.cyan
+    const root = document.documentElement.style
+    root.setProperty('--color-accent', accent)
+    root.setProperty('--color-accent-d', shadeHex(accent, -0.25))
+    root.setProperty('--color-accent-print', printAccent(accent))
   }, [themeId])
 
   return <Shell />

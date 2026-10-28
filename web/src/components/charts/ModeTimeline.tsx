@@ -1,11 +1,10 @@
 import { useMemo } from 'react'
-import type { TripPoint } from '../../types/session'
+import type { TripPoint, ModeTimelineEntry } from '../../types/session'
 import { colors } from '../../styles/tokens'
 import { fmtDuration } from '../../lib/format'
 
-// Mode colours keyed by upper-case canonical name. We normalise the incoming
-// driveMode string before lookup so the source casing (NORMAL vs Normal vs
-// normal) doesn't affect rendering or break the legend grouping.
+// Keyed by upper-case mode: CSV rows say "Normal", profile timelines / older exports may say "NORMAL" —
+// normalised so one mode is one segment and one legend entry (main e9cd565)
 const MODE_COLORS: Record<string, string> = {
   NORMAL: colors.cyan,
   SPORT: '#FF6D00',
@@ -27,8 +26,18 @@ interface ModeSegment {
  * Horizontal segmented bar showing drive mode transitions over time.
  * Each segment is color-coded by mode with hover details.
  */
-export function ModeTimeline({ points }: { points: TripPoint[] }) {
+export function ModeTimeline({ points, canonicalTimeline }: { points: TripPoint[]; canonicalTimeline?: ModeTimelineEntry[] }) {
   const { segments, totalMs } = useMemo(() => {
+    // Use canonical timeline from profile JSON when available (T2G)
+    if (canonicalTimeline && canonicalTimeline.length > 0) {
+      const total = canonicalTimeline[canonicalTimeline.length - 1].endMs - canonicalTimeline[0].startMs
+      const segs: ModeSegment[] = canonicalTimeline.map((e) => {
+        const dur = e.endMs - e.startMs
+        return { mode: normMode(e.mode), startMs: e.startMs, endMs: e.endMs, durationMs: dur, pct: total > 0 ? (dur / total) * 100 : 0 }
+      })
+      return { segments: segs, totalMs: total }
+    }
+
     if (points.length < 2) return { segments: [] as ModeSegment[], totalMs: 0 }
 
     const segs: ModeSegment[] = []
@@ -44,7 +53,6 @@ export function ModeTimeline({ points }: { points: TripPoint[] }) {
         segStart = points[i].ts
       }
     }
-    // Final segment
     const last = points[points.length - 1].ts
     segs.push({ mode: currentMode, startMs: segStart, endMs: last, durationMs: last - segStart, pct: 0 })
 
@@ -54,7 +62,7 @@ export function ModeTimeline({ points }: { points: TripPoint[] }) {
     }
 
     return { segments: segs, totalMs: total }
-  }, [points])
+  }, [points, canonicalTimeline])
 
   if (segments.length === 0 || totalMs <= 0) return null
 
