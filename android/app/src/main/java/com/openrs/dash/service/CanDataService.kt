@@ -54,10 +54,8 @@ class CanDataService : Service() {
     private val binder = LocalBinder()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var connectionJob: Job? = null
-    /** Bumped by every start / stop — a job only publishes state while it is still the current generation (#212). */
-    @Volatile private var generation = 0
 
-    private var connection: SlcanConnection? = null
+    @Volatile private var connection: SlcanConnection? = null
 
     private val cm by lazy { getSystemService(ConnectivityManager::class.java) }
     private var wifiCallback: ConnectivityManager.NetworkCallback? = null
@@ -138,7 +136,7 @@ class CanDataService : Service() {
         onModuleProgress: ((String, com.openrs.dash.data.ModuleScanStatus?) -> Unit)? = null
     ): DtcScanResult {
         if (DemoMode.isActive) return DemoMode.scanDtcs(onModuleProgress)
-        val conn = synchronized(this) { connection }
+        val conn = connection
             ?: return DtcScanResult(emptyList(), emptyMap())
         return try {
             DtcScanner(this).scan(conn, onModuleProgress)
@@ -155,7 +153,7 @@ class CanDataService : Service() {
      */
     suspend fun retryScanModule(moduleName: String): Pair<List<DtcResult>, com.openrs.dash.data.ModuleScanStatus> {
         if (DemoMode.isActive) return DemoMode.retryScanModule(moduleName)
-        val conn = synchronized(this) { connection }
+        val conn = connection
             ?: return emptyList<DtcResult>() to com.openrs.dash.data.ModuleScanStatus.ERROR
         return DtcScanner(this).scanSingleModule(conn, moduleName)
     }
@@ -165,7 +163,7 @@ class CanDataService : Service() {
      */
     suspend fun fetchFreezeFrames(codes: List<DtcResult>): List<DtcResult> {
         if (DemoMode.isActive) return codes
-        val conn = synchronized(this) { connection } ?: return codes
+        val conn = connection ?: return codes
         return try {
             DtcScanner(this).fetchFreezeFrames(conn, codes)
         } catch (e: kotlinx.coroutines.CancellationException) { throw e }
@@ -181,7 +179,7 @@ class CanDataService : Service() {
      */
     suspend fun clearDtcs(): Map<String, Boolean> {
         if (DemoMode.isActive) return DemoMode.clearDtcs()
-        val conn = synchronized(this) { connection } ?: return emptyMap()
+        val conn = connection ?: return emptyMap()
         return try {
             DtcScanner(this).clearDtcs(conn)
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -199,7 +197,7 @@ class CanDataService : Service() {
     suspend fun sendRawQuery(responseId: Int, frame: String, timeoutMs: Long = 1_500L): ByteArray? {
         // Demo: no ECU on the other end — probes time out as they would with no response.
         if (DemoMode.isActive) { delay(timeoutMs.coerceAtMost(600L)); return null }
-        val conn = synchronized(this) { connection } ?: return null
+        val conn = connection ?: return null
         return conn.sendRawQuery(responseId, frame, timeoutMs)
     }
 
@@ -334,12 +332,11 @@ class CanDataService : Service() {
         const val NOTIF_ID = 1
 
         /**
-         * Set after leaving demo mode: WiFi / Bluetooth / service-start callbacks must not
-         * reconnect on their own. Cleared by an explicit [startConnection] / [reconnect].
-         * Process-wide: an idle service stops when the activity unbinds, and the next instance
-         * must still honour it.
+         * Connection ownership (#212): generation, published phase and the manual-connect block set by a cancel or by
+         * leaving demo mode (WiFi / Bluetooth / service-start callbacks must not reconnect until an explicit connect).
+         * Process-wide: an idle service stops when the activity unbinds, and the next instance must still honour it.
          */
-        @Volatile var manualConnectRequired = false
+        val link = LinkOwnership()
 
         /** Notification action: cancel an initial connection attempt (#212). */
         const val ACTION_CANCEL_CONNECT = "com.openrs.dash.action.CANCEL_CONNECT"
@@ -481,24 +478,33 @@ class CanDataService : Service() {
 
     // ── Connection control ───────────────────────────────────────────────────
 
-    /** Transport-callback entry point — honours [manualConnectRequired] after demo mode. */
+    /**
+     * Transport-callback entry point — honours [LinkOwnership.manualConnectRequired] (after a cancel or demo mode). The
+     * check and the start are one step under the ownership lock: a callback can't pass the check, lose the race to a
+     * cancel, then start anyway.
+     */
     private fun autoStartConnection() {
-        if (manualConnectRequired || DemoMode.isActive || DemoMode.launchRequested) return
-        startConnection()
+        link.autoStart(blocked = { DemoMode.isActive || DemoMode.launchRequested }) { beginConnection() }
     }
 
     /** Explicit (user) connect. No-op while demo mode owns the vehicle state. */
-    @Synchronized fun startConnection() {
-        if (DemoMode.isActive) return
-        manualConnectRequired = false
-        if (!isTransportReady()) return
-        if (connectionJob?.isActive == true) return
+    fun startConnection(): Unit = link.transition {
+        if (DemoMode.isActive) return@transition
+        link.clearManualConnect()
+        beginConnection()
+    }
+
+    /** Starts a connection job unless one is running; false when nothing could start (transport down / no foreground). */
+    private fun beginConnection(): Boolean = link.transition {
+        if (DemoMode.isActive) return@transition false
+        if (!isTransportReady()) return@transition false
+        if (connectionJob?.isActive == true) return@transition true
 
         try {
             foreground.promote()
         } catch (e: Exception) {
             android.util.Log.w("CAN", "Cannot go foreground — skipping connection start", e)
-            return
+            return@transition false
         }
 
         val s = AppSettings
@@ -528,18 +534,21 @@ class CanDataService : Service() {
 
         val conn = buildConnection()
         connection = conn
-        val gen = ++generation
+        val gen = link.begin()
         applyPhase(LinkPhase.CONNECTING)
 
         connectionJob = scope.launch {
             launch {
                 conn.state.collect { state ->
-                    if (DemoMode.isActive || gen != generation) return@collect
-                    DiagnosticLogger.event("STATE", state.label)
+                    if (DemoMode.isActive || !link.owns(gen)) return@collect
                     when (val phase = LinkPresentation.phaseFor(state)) {
-                        null -> Unit
-                        LinkPhase.FAILED -> onAttemptsExhausted(gen)
-                        else -> applyPhase(phase)
+                        null -> link.deliver(gen) { DiagnosticLogger.event("STATE", state.label) }
+                        LinkPhase.FAILED -> onAttemptsExhausted(gen, state.label)
+                        // Checked and published as one step: a stop can't land between them and be overwritten
+                        else -> link.publish(gen, phase) {
+                            DiagnosticLogger.event("STATE", state.label)
+                            applyPhase(it)
+                        }
                     }
                 }
             }
@@ -551,7 +560,7 @@ class CanDataService : Service() {
                     conn.state.first { it is AdapterState.Connected }
                     val host = s.getHost(this@CanDataService)
                     val status = WicanApi.checkStatus(this@CanDataService, host)
-                    if (status != null) {
+                    if (status != null) link.deliver(gen) {
                         OpenRSDashApp.instance.deviceStatus.value = status
                         DiagnosticLogger.deviceStatus = status
                         DiagnosticLogger.event("DEVICE_STATUS",
@@ -604,7 +613,7 @@ class CanDataService : Service() {
                     val recorder = OpenRSDashApp.instance.driveRecorder
                     var autoStarted = false
                     OpenRSDashApp.instance.vehicleState.collect { vs ->
-                        if (autoStarted) return@collect
+                        if (autoStarted || !link.owns(gen)) return@collect
                         if (!vs.isConnected) return@collect
                         if (vs.rpm <= AUTO_START_MIN_RPM) return@collect
                         autoStarted = true
@@ -626,14 +635,16 @@ class CanDataService : Service() {
                 onObdUpdate = { obdState ->
                     // Hop OBD state merges to Main.immediate: inline when already on
                     // Main, otherwise posts — keeps Compose collectors off the IO
-                    // frame thread so no collector can block frame reads.
-                    scope.launch(Dispatchers.Main.immediate) { mergeObdState(obdState) }
+                    // frame thread so no collector can block frame reads. Applied only if this
+                    // job still owns the link when the merge runs (a posted merge can outlive it).
+                    scope.launch(Dispatchers.Main.immediate) { link.deliver(gen) { mergeObdState(obdState) } }
                 },
                 getCurrentState = { OpenRSDashApp.instance.vehicleState.value }
             ).collect { (canId, data) ->
-                processCanFrame(canId, data, conn.fps)
+                if (link.owns(gen)) processCanFrame(canId, data, conn.fps)
             }
         }
+        true
     }
 
     private fun mergeObdState(obdState: VehicleState) {
@@ -823,7 +834,7 @@ class CanDataService : Service() {
         }
     }
 
-    @Synchronized fun stopConnection() {
+    fun stopConnection(): Unit = link.transition {
         // Auto-pause drive if recording — do NOT finalize here. A brief
         // disconnect (WiFi drop, adapter reboot) should not end the
         // drive. On reconnect within AUTO_RESUME_WINDOW_MS the drive
@@ -840,16 +851,11 @@ class CanDataService : Service() {
 
     /**
      * Ends the current job (if any) and releases the foreground service. [finalPhase] is OFF for a stop / cancel and
-     * FAILED when the attempts ran out. Bumping [generation] first means a cancelled job that is still unwinding can't
-     * publish state or a notification over a newer attempt.
+     * FAILED when the attempts ran out. Ending ownership first means a cancelled job that is still unwinding can't
+     * publish state, a merge or a notification over a newer attempt.
      */
-    @Synchronized private fun endConnection(finalPhase: LinkPhase) {
-        generation++
-        stopSessionRecording()
-        DiagnosticLogger.sessionEnd()
-        connection?.abort()          // a blocking connect / read returns now instead of after its timeout
-        connectionJob?.cancel()
-        connectionJob = null
+    private fun endConnection(finalPhase: LinkPhase): Unit = link.transition {
+        teardownJob(finalPhase)
         OpenRSDashApp.instance.linkPhase.value = finalPhase
         // Demo owns the connection flags (WiFi/BT-loss callbacks still land here).
         if (!DemoMode.isActive) {
@@ -860,7 +866,17 @@ class CanDataService : Service() {
         foreground.demote()
     }
 
-    /** Publish a live phase (the job is current): link phase, VehicleState flags, notification text + Cancel. */
+    /** Ends ownership and the job: session records closed, transport aborted, job cancelled. */
+    private fun teardownJob(phase: LinkPhase) {
+        link.end(phase)
+        stopSessionRecording()
+        DiagnosticLogger.sessionEnd()
+        connection?.abort()          // a blocking connect / read returns now instead of after its timeout
+        connectionJob?.cancel()
+        connectionJob = null
+    }
+
+    /** Publish a live phase (the job is current — called inside the ownership lock): link phase, VehicleState flags, notification. */
     private fun applyPhase(phase: LinkPhase) {
         OpenRSDashApp.instance.linkPhase.value = phase
         OpenRSDashApp.instance.vehicleState.update {
@@ -876,8 +892,9 @@ class CanDataService : Service() {
      * Attempts ran out (never while a drive is recording — see `keepRetrying`): end the job and the foreground service
      * instead of leaving a notification that can't do anything. A new network or an explicit connect starts again.
      */
-    @Synchronized private fun onAttemptsExhausted(gen: Int) {
-        if (gen != generation) return
+    private fun onAttemptsExhausted(gen: Int, label: String): Unit = link.transition {
+        if (!link.owns(gen)) return@transition
+        DiagnosticLogger.event("STATE", label)
         android.util.Log.i("CAN", "Connection attempts exhausted — released")
         val recorder = OpenRSDashApp.instance.driveRecorder
         val ds = recorder.driveState.value
@@ -889,21 +906,19 @@ class CanDataService : Service() {
      * User cancel of an initial attempt (pill, DRIVE status row, notification action). Closes the transport, cancels
      * the attempt and its backoff, and blocks auto-connect (network callbacks, a rebind) until an explicit connect.
      */
-    @Synchronized fun cancelConnection() {
-        if (DemoMode.isActive) return
-        manualConnectRequired = true
+    fun cancelConnection(): Unit = link.transition {
+        if (DemoMode.isActive) return@transition
+        link.requireManualConnect()
         DiagnosticLogger.event("STATE", "Cancelled by user")
         stopConnection()
     }
 
     /** Called from UI when user taps the RETRY badge — fresh adapter + retry. */
-    @Synchronized fun reconnect() {
-        if (DemoMode.isActive) return
-        manualConnectRequired = false
-        generation++
-        connection?.abort()
-        connectionJob?.cancel()
-        connectionJob = null
+    fun reconnect(): Unit = link.transition {
+        if (DemoMode.isActive) return@transition
+        link.clearManualConnect()
+        // Old job, its session record and diagnostic session end before the new ones begin
+        teardownJob(LinkPhase.OFF)
         // L-6 fix: reset OBD-polled fields to sentinels so stale values from the
         // previous session don't persist for up to 30 s while new polls complete.
         OpenRSDashApp.instance.vehicleState.update {
@@ -917,7 +932,8 @@ class CanDataService : Service() {
                 batteryTempC = -99.0, cabinTempC   = -99.0
             )
         }
-        startConnection()
+        // Transport down (or no foreground allowed): nothing started, so release instead of keeping a stale notification
+        if (!beginConnection()) endConnection(LinkPhase.OFF)
     }
 
     fun resetPeaks() {
@@ -948,25 +964,25 @@ class CanDataService : Service() {
      * simulator. A drive being recorded is finalized first so it keeps only real samples.
      * Called again while active, it just switches scenario.
      */
-    @Synchronized fun enterDemoMode(scenario: DemoScenario) {
-        if (!DemoMode.AVAILABLE) return
-        if (DemoMode.isActive) { DemoMode.select(scenario); return }
+    fun enterDemoMode(scenario: DemoScenario): Unit = link.transition {
+        if (!DemoMode.AVAILABLE) return@transition
+        if (DemoMode.isActive) { DemoMode.select(scenario); return@transition }
         val recorder = OpenRSDashApp.instance.driveRecorder
         if (recorder.driveState.value.isRecording) recorder.stopDrive()
         stopConnection()
         connection = null
         adapterFirmwareApi = null
-        manualConnectRequired = true
+        link.requireManualConnect()
         DtcDatabase.load(this)
         DemoMode.start(scenario)
         android.util.Log.i("CAN", "Demo mode on (${scenario.name}) — adapter traffic stopped")
     }
 
     /** Clears simulated state and leaves the app disconnected until the user reconnects. */
-    @Synchronized fun exitDemoMode() {
-        if (!DemoMode.isActive) return
+    fun exitDemoMode(): Unit = link.transition {
+        if (!DemoMode.isActive) return@transition
         DemoMode.stop()
-        manualConnectRequired = true
+        link.requireManualConnect()
         android.util.Log.i("CAN", "Demo mode off — waiting for explicit connect")
     }
 
