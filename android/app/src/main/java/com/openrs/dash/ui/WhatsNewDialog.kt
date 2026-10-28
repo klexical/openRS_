@@ -47,6 +47,9 @@ import com.openrs.dash.ui.anim.pageEntrance
  */
 private val versionHighlights: Map<String, List<String>> = mapOf(
     "2.2.7" to listOf(
+        "Fixed: drive, knock, RaceChrono and TrackAddict exports, GPX and logs are no longer corrupted on phones set to a language that uses a decimal comma.",
+        "Connection states are truthful — CONNECTING (tap to cancel), RECONNECTING only after a dropped link, and a failed attempt no longer leaves a notification behind; tapping the notification opens the app.",
+        "Settings shows the exact build (2.2.7-rc.7 · Build 36), and a diagnostic export says whether a DTC scan ran and which modules answered.",
         "Calmer DRIVE and THERMAL — readings in ink, colour only when a limit is crossed, and a fixed status line on DRIVE that leads with the most important condition.",
         "Thermal readiness — one verdict (TEMPS READY, ENGINE / DRIVETRAIN WARMING, TEMP HIGH, TEMP CRITICAL, HEAT RISING, CHECKING) shared by DRIVE, THERMAL and the drive recorder, with a checklist that shows every rule.",
         "Custom thermal profile — copy STREET, TRACK or RACE and edit its warm-up, warning and critical limits in °C or °F (Settings → THERMAL).",
