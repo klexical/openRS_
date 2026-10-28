@@ -1,7 +1,8 @@
 # openRS_
 
 Native Android telemetry dashboard for the Ford Focus RS MK3.
-Kotlin 2.0.21 + Jetpack Compose (Material3). Current: v2.2.7-rc.5 released; rc.6 work on staging + local feature/design-pass, not tagged (versionCode 35).
+Kotlin 2.0.21 + Jetpack Compose (Material3). Current: **stable v2.2.6 on main**; **v2.2.7-rc.6 published as a prerelease from staging** (tag `android-v2.2.7-rc.6` →
+`d2f7dc6`, versionCode 35 — not on main, not stable). Sapphire (web/ only) deployed from main `0d64248`. Record: Branch / Release Workflow → rc.6.
 Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashboard) → `web/`  |  Docs → `docs/`  |  Feature pipeline → `docs/feature-roadmap.md`
 
 ## Source Layout
@@ -367,7 +368,7 @@ data[5] = B5,  data[6] = B6 …
 - **Lint version is pinned above AGP** — `android/gradle.properties` sets `android.experimental.lint.version=8.13.0` because AGP 8.7.3's bundled lint crashes (`IncompatibleClassChangeError`) on the lint checks shipped in Compose BOM 2025.11 / Lifecycle. Don't remove it unless AGP is upgraded to ≥ 8.13. `abortOnError = false`, so lint findings never fail CI — only crashes do; check `app/build/reports/lint-results-debug.txt` for errors ([#196](https://github.com/klexical/openRS_/issues/196))
 - **`MutableList.removeFirst()/removeLast()` crash below API 35** — with compileSdk 35 they resolve to `java.util.List.removeFirst` (Android 15+) and throw `NoSuchMethodError` on Android 9–14 (minSdk 28). Use `removeAt(0)` / `removeAt(lastIndex)`. `ArrayDeque.removeFirst()` is fine
 - **Location permission** — always request `ACCESS_COARSE_LOCATION` together with `ACCESS_FINE_LOCATION` (Android 12+ requirement); recording still needs FINE granted
-- **CI tag builds** — `publish-release` derives `-PrcSuffix` from `android-v*-rc.N` tags so CI never attaches a plain `openRS_v{ver}.apk` to an RC pre-release. Manual RC releases still build with `-PrcSuffix=rc.N`
+- **CI tag builds** — `publish-release` derives `-PrcSuffix` from `android-v*-rc.N` tags so CI never attaches a plain `openRS_v{ver}.apk` to an RC pre-release. Manual RC releases still build with `-PrcSuffix=rc.N`. rc.6 was the first RC published by this job (the rc.3–rc.5 tag runs failed on the pre-#196 lint crash and were attached by hand). CI's keystore secrets sign with the same certificate as the published APKs (`c99b6f26…`)
 - **VehicleState slot ceiling** — `copy()` on the 162-param data class is at the JVM 255-slot limit. Adding any new field requires either collapsing an unused existing field (speculative AWD DIDs are candidates) or storing it off-state (DiagnosticLogger / genericValues Map). 0x040 lamp state is decoded + validated but not yet persisted on VehicleState for this reason
 - **Demo mode owns VehicleState while active** — `CanDataService.enterDemoMode()` finalizes any recording drive, calls
   `stopConnection()`, then `DemoMode.start()`. While `DemoMode.isActive`: `processCanFrame` / `mergeObdState` / the adapter
@@ -673,8 +674,40 @@ Current count: **742 tests across 41 files** (Android) + **255 vitest across 20 
 feature/* → staging → main          (code, tests, android/CHANGELOG.md)
 docs/*    → main    (direct)        (README.md, assets/, docs/, firmware/README.md)
 Release tags: android-v*  (triggers CI signing + GitHub Release)
-Rolling RC: one pre-release per version stream; tag/APK updated in place as RCs progress
+RCs: one pre-release per RC tag (android-v2.2.7-rc.4, -rc.5, -rc.6 …), tagged on staging; stable tags on main
 ```
+
+Android RCs ship from **staging**; **main** carries stable Android (v2.2.6) and Sapphire. Sapphire may reach main web/-only
+(as for rc.6, PR #203) without the Android RC.
+
+**RC publication (as done for rc.6):** merge the feature PR into staging → wait for CI on the staging merge commit →
+`gh release create android-v<ver>-rc.N --target <full staging SHA> --prerelease --title "openRS_ v<ver>-rc.N"
+--notes-file <notes>` (creates the lightweight tag; the tag push runs `publish-release`, which attaches the signed APK
+to that release) → download the asset and check name, `apksigner verify --print-certs` (cert `c99b6f26…`), versionCode /
+RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an older RC release.
+
+**rc.6 publication record (2026-10-28 UTC; evidence `~/Documents/openRS_-evidence/rc6-release-2026-10-27/PUBLISHED.txt`):**
+- Android: PR #202 (feature/design-pass `056556b`) → staging merge `d2f7dc6`; staging CI 40625379258 green; tag
+  `android-v2.2.7-rc.6` → `d2f7dc6`; tag CI 40625789185 green (Build & Test, Lint, Verify Firmware, Attach APK).
+  Prerelease https://github.com/klexical/openRS_/releases/tag/android-v2.2.7-rc.6 — `openRS_v2.2.7-rc.6.apk`,
+  6,458,616 bytes, SHA-256 `1e7d692f80f736bc3eeb02d9c391e388a5f3e5b948e4adf70b2fbc4d3210d096`, APK Signature Scheme v2,
+  cert SHA-256 `c99b6f263ee3b5bb610040431403d459e0e7b12aa941f114f0d9717d974ada74` (= rc.5), `com.openrs.dash` vc 35,
+  2.2.7 + RC "rc.6", build-provenance attestation for the tag @ `d2f7dc6`. Notes = changelog-based highlights + "Known
+  limitations / RC testing status".
+- Sapphire: PR #203 (`release/sapphire-main` `d5a3107`, web/ only) → main merge `0d64248`; main CI 40624756338 green
+  (its Lint job hides the pre-existing lint crash + detekt 92, both advisory); deploy-pages 40624756293 →
+  https://klexical.github.io/openRS_/; live import of real rc.6 TRIP exports in a disposable profile 11/11, no app errors.
+- **Hardware-testing limitations (rc.6, unverified — see the changelog section):** no real-phone or on-car run of rc.6;
+  battery SoC (BCM 0x4028) unverified; KR cyl 2–4 rejected / zero on tested PCMs; charge air 0x0461 = `0x0000` on some
+  PCMs; throttle 0x076 absent on some cars (pedal fallback); sub-zero ambient (#185); recording needs GPS; Bluetooth
+  picker not checked on a phone; What's New not re-shown between RCs.
+- **Sapphire known issue (separate, not from rc.6):** route map tiles (`GpsMap.tsx`, Carto `dark_all`, URL unchanged since
+  April) now come back as "API KEY REQUIRED" placeholder images on the live site; the route line and markers still draw.
+  Needs a tile-provider decision — tracked as its own fix, not part of rc.6.
+- Still open: user's on-car / phone checks; `docs/thermal-thresholds` PR to main (merges clean); retiring
+  `fix/sapphire-csv-import` (superseded, Sapphire now live); staging → main stable merge (plan under Sapphire →
+  Integration / deployment). Local rehearsal branches `release/rc6-staging` (`b023d1a`, APK rehearsal source) and
+  worktrees in `~/Documents/openRS_-worktrees/` can go once no longer needed.
 
 Docs branches skip staging entirely — branch from main, PR to main.
 Never route README.md, assets/, or docs/ through staging.
@@ -828,15 +861,15 @@ superseded, so **take this side for every `web/` file** when merging:*
 - Thermal Soak is a stacked chart: while one layer is missing, the layers above it sit lower (stack total). Inherent to
   stacking (main's 0-floor shifts them the same way); a non-stacked view would be a design change.
 
-*Integration / deployment steps (prepared locally 2026-10-27, nothing pushed — worktrees in `~/Documents/openRS_-worktrees/`):*
+*Integration / deployment steps (rc.6 done 2026-10-28 UTC — record under Branch / Release Workflow):*
 - Android → staging: `release/rc6-staging` = `origin/staging` + `--no-ff` merge of feature/design-pass (tree identical to
-  feature/design-pass; nothing behind staging). Real path: push feature/design-pass → PR to staging → tag
-  `android-v2.2.7-rc.6` on the merge commit → `publish-release` (tag-derived `-PrcSuffix`, `prerelease: true`).
+  feature/design-pass; nothing behind staging). DONE: PR #202 → staging `d2f7dc6`, tagged `android-v2.2.7-rc.6`,
+  published by `publish-release` as a prerelease.
 - Sapphire → main: `release/sapphire-main` = `origin/main` + one commit taking `web/` whole from feature/design-pass
   (main has no `web/` change after `e9cd565`; `package.json` / `package-lock.json` identical, so deploy's `npm ci`
   is unchanged). Nothing outside `web/` — main's Android, version files, CHANGELOG, docs, CLAUDE.md and
-  `android/browser-emulator` stay as they are. PR to main → `deploy-pages` on merge. Supersedes `fix/sapphire-csv-import`
-  (`1d1991e`, keep until the deploy is live). The later staging → main merge then sees identical `web/` trees.
+  `android/browser-emulator` stay as they are. DONE: PR #203 → main `0d64248`, deployed and live-checked. Supersedes
+  `fix/sapphire-csv-import` (`1d1991e`). The later staging → main merge sees identical `web/` trees (unless web/ changes again).
 - Staging → main (stable, later): keep this side for `web/` and the Android exporter; don't take main's release-version
   files from `dc32b8b`. `ci.yml` by hand, never wholesale: keep staging's `publish-release` (tag RC suffix + `prerelease`
   — main's copy has neither); the release-job verify path fix (main `8bba37f`) is already here (`1720595`); take main's
@@ -850,7 +883,8 @@ superseded, so **take this side for every `web/` file** when merging:*
   `scripts/idb-check` (9/9 checks). deploy-pages runs Node 22 `npm ci` + `npm run build` + copies the emulator to
   `dist/emulator` — checked with Node 22 on `release/sapphire-main`.
 - Deploy (`deploy-pages.yml`: push to main touching `web/**`, or manual dispatch) only from the merged result.
-  Deployed (main) Sapphire can't import rc.4+ exports today.
+  Deployed Sapphire (main `0d64248`) imports rc.4+ / rc.6 exports. Known issue: map tiles show "API KEY REQUIRED"
+  (provider, see the rc.6 record).
 
 Old `MissionControlHtmlBuilder.kt` + `mission_control.html` remain as a "lite" fallback
 until Sapphire reaches feature parity.
