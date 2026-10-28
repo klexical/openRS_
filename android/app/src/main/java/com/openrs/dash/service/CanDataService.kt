@@ -23,6 +23,7 @@ import com.openrs.dash.can.BleFirmwareApi
 import com.openrs.dash.can.BleSlcanTransport
 import com.openrs.dash.can.CanDecoder
 import com.openrs.dash.can.FirmwareCommandSender
+import com.openrs.dash.can.LinkPhase
 import com.openrs.dash.can.PidRegistry
 import com.openrs.dash.can.SlcanConnection
 import com.openrs.dash.can.TcpSlcanTransport
@@ -53,6 +54,8 @@ class CanDataService : Service() {
     private val binder = LocalBinder()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var connectionJob: Job? = null
+    /** Bumped by every start / stop — a job only publishes state while it is still the current generation (#212). */
+    @Volatile private var generation = 0
 
     private var connection: SlcanConnection? = null
 
@@ -108,7 +111,8 @@ class CanDataService : Service() {
             },
             maxRetries       = maxRetries,
             reconnectDelayMs = reconnectDelayMs,
-            rpmProvider      = { OpenRSDashApp.instance.vehicleState.value.rpm }
+            rpmProvider      = { OpenRSDashApp.instance.vehicleState.value.rpm },
+            keepRetrying     = { isRecording() }
         )
 
         // Create the appropriate firmware command sender
@@ -222,7 +226,15 @@ class CanDataService : Service() {
         com.openrs.dash.ui.StartupTrace.mark("CanDataService.onCreate end")
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_CANCEL_CONNECT) {
+            cancelConnection()
+            // A cancel delivered to a service that wasn't already promoted must not leave it started
+            if (!foreground.isForeground) stopSelf(startId)
+            return START_NOT_STICKY
+        }
+        return START_STICKY
+    }
 
     override fun onDestroy() {
         unregisterWifiCallback()
@@ -329,6 +341,9 @@ class CanDataService : Service() {
          */
         @Volatile var manualConnectRequired = false
 
+        /** Notification action: cancel an initial connection attempt (#212). */
+        const val ACTION_CANCEL_CONNECT = "com.openrs.dash.action.CANCEL_CONNECT"
+
         /** RPM threshold that signals the engine is actually running (not just ignition). */
         const val AUTO_START_MIN_RPM = 400.0
 
@@ -337,14 +352,35 @@ class CanDataService : Service() {
         const val AUTO_RESUME_WINDOW_MS = 15 * 60_000L  // 15 minutes
     }
 
-    private fun goForeground(text: String = "Connecting to vehicle…") {
-        val notification = NotificationCompat.Builder(this, OpenRSDashApp.CHANNEL_CAN)
+    private fun isRecording(): Boolean = OpenRSDashApp.instance.driveRecorder.driveState.value.isRecording
+
+    /**
+     * The foreground notification. Its body opens the app (the existing task — launcher intent); while an initial
+     * attempt runs it carries a Cancel action (#212). No generic Stop: that could end a recording.
+     */
+    private fun buildNotification(text: String, offerCancel: Boolean): android.app.Notification {
+        val open = packageManager.getLaunchIntentForPackage(packageName)?.let {
+            android.app.PendingIntent.getActivity(this, 0, it,
+                android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT)
+        }
+        return NotificationCompat.Builder(this, OpenRSDashApp.CHANNEL_CAN)
             .setContentTitle("openRS_")
             .setContentText(text)
             .setSmallIcon(R.drawable.ic_notification)
             .setOngoing(true)
             .setSilent(true)
+            .setContentIntent(open)
+            .apply {
+                if (offerCancel) addAction(0, "Cancel", android.app.PendingIntent.getService(
+                    this@CanDataService, 1,
+                    Intent(this@CanDataService, CanDataService::class.java).setAction(ACTION_CANCEL_CONNECT),
+                    android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT))
+            }
             .build()
+    }
+
+    private fun goForeground(text: String = "Connecting to vehicle…") {
+        val notification = buildNotification(text, offerCancel = !isRecording())
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ServiceCompat.startForeground(
@@ -356,14 +392,9 @@ class CanDataService : Service() {
         }
     }
 
-    private fun updateNotification(text: String) {
-        val notification = NotificationCompat.Builder(this, OpenRSDashApp.CHANNEL_CAN)
-            .setContentTitle("openRS_")
-            .setContentText(text)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setOngoing(true)
-            .setSilent(true)
-            .build()
+    private fun updateNotification(text: String, offerCancel: Boolean = false) {
+        if (!foreground.isForeground) return   // released (stopped / exhausted) — never resurrect the notification
+        val notification = buildNotification(text, offerCancel)
         getSystemService(android.app.NotificationManager::class.java)
             .notify(NOTIF_ID, notification)
     }
@@ -497,24 +528,19 @@ class CanDataService : Service() {
 
         val conn = buildConnection()
         connection = conn
+        val gen = ++generation
+        applyPhase(LinkPhase.CONNECTING)
 
         connectionJob = scope.launch {
             launch {
                 conn.state.collect { state ->
-                    if (DemoMode.isActive) return@collect
-                    OpenRSDashApp.instance.vehicleState.update {
-                        it.copy(
-                            isConnected = state is AdapterState.Connected,
-                            isIdle      = state is AdapterState.Idle
-                        )
+                    if (DemoMode.isActive || gen != generation) return@collect
+                    DiagnosticLogger.event("STATE", state.label)
+                    when (val phase = LinkPresentation.phaseFor(state)) {
+                        null -> Unit
+                        LinkPhase.FAILED -> onAttemptsExhausted(gen)
+                        else -> applyPhase(phase)
                     }
-                    val btLabel = if (isBluetooth()) "via Bluetooth" else "to vehicle"
-                    when (state) {
-                        is AdapterState.Connected -> updateNotification("Connected $btLabel")
-                        is AdapterState.Idle      -> updateNotification("Disconnected — tap to retry")
-                        else                      -> updateNotification("Connecting $btLabel…")
-                    }
-                    DiagnosticLogger.event("STATE", state::class.simpleName ?: "Unknown")
                 }
             }
 
@@ -800,30 +826,80 @@ class CanDataService : Service() {
         if (ds.isRecording && !ds.isPaused && AppSettings.getAutoRecordDrives(this)) {
             recorder.pauseDrive()
         }
+        endConnection(LinkPhase.OFF)
+    }
+
+    /**
+     * Ends the current job (if any) and releases the foreground service. [finalPhase] is OFF for a stop / cancel and
+     * FAILED when the attempts ran out. Bumping [generation] first means a cancelled job that is still unwinding can't
+     * publish state or a notification over a newer attempt.
+     */
+    @Synchronized private fun endConnection(finalPhase: LinkPhase) {
+        generation++
         stopSessionRecording()
         DiagnosticLogger.sessionEnd()
+        connection?.abort()          // a blocking connect / read returns now instead of after its timeout
         connectionJob?.cancel()
         connectionJob = null
+        OpenRSDashApp.instance.linkPhase.value = finalPhase
         // Demo owns the connection flags (WiFi/BT-loss callbacks still land here).
         if (!DemoMode.isActive) {
-            OpenRSDashApp.instance.vehicleState.update { it.copy(isConnected = false, isIdle = false) }
+            OpenRSDashApp.instance.vehicleState.update { it.copy(isConnected = false, isReconnecting = false) }
             OpenRSDashApp.instance.deviceStatus.value = null
         }
         // Leave the foreground and the started state: with no activity bound the service now stops.
         foreground.demote()
     }
 
+    /** Publish a live phase (the job is current): link phase, VehicleState flags, notification text + Cancel. */
+    private fun applyPhase(phase: LinkPhase) {
+        OpenRSDashApp.instance.linkPhase.value = phase
+        OpenRSDashApp.instance.vehicleState.update {
+            it.copy(isConnected = phase == LinkPhase.CONNECTED, isReconnecting = phase == LinkPhase.RECONNECTING)
+        }
+        val recording = isRecording()
+        LinkPresentation.notificationText(phase, isBluetooth(), recording)?.let {
+            updateNotification(it, LinkPresentation.offersCancel(phase, recording))
+        }
+    }
+
+    /**
+     * Attempts ran out (never while a drive is recording — see `keepRetrying`): end the job and the foreground service
+     * instead of leaving a notification that can't do anything. A new network or an explicit connect starts again.
+     */
+    @Synchronized private fun onAttemptsExhausted(gen: Int) {
+        if (gen != generation) return
+        android.util.Log.i("CAN", "Connection attempts exhausted — released")
+        val recorder = OpenRSDashApp.instance.driveRecorder
+        val ds = recorder.driveState.value
+        if (ds.isRecording && !ds.isPaused && AppSettings.getAutoRecordDrives(this)) recorder.pauseDrive()
+        endConnection(LinkPhase.FAILED)
+    }
+
+    /**
+     * User cancel of an initial attempt (pill, DRIVE status row, notification action). Closes the transport, cancels
+     * the attempt and its backoff, and blocks auto-connect (network callbacks, a rebind) until an explicit connect.
+     */
+    @Synchronized fun cancelConnection() {
+        if (DemoMode.isActive) return
+        manualConnectRequired = true
+        DiagnosticLogger.event("STATE", "Cancelled by user")
+        stopConnection()
+    }
+
     /** Called from UI when user taps the RETRY badge — fresh adapter + retry. */
     @Synchronized fun reconnect() {
         if (DemoMode.isActive) return
         manualConnectRequired = false
+        generation++
+        connection?.abort()
         connectionJob?.cancel()
         connectionJob = null
         // L-6 fix: reset OBD-polled fields to sentinels so stale values from the
         // previous session don't persist for up to 30 s while new polls complete.
         OpenRSDashApp.instance.vehicleState.update {
             it.copy(
-                isConnected  = false, isIdle = false,
+                isConnected  = false, isReconnecting = false,
                 tirePressLF  = -1.0,  tirePressRF  = -1.0,
                 tirePressLR  = -1.0,  tirePressRR  = -1.0,
                 rduTempC     = -99.0, ptuTempC     = -99.0,

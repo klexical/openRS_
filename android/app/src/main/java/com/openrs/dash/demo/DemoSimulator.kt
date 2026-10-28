@@ -118,7 +118,7 @@ object DemoSimulator {
         val t = tMs / 1000.0
         val link = link(scenario, t)
         if (link == DemoLink.LOST) {
-            return if (!cur.isConnected && cur.isIdle) cur else cur.copy(isConnected = false, isIdle = true)
+            return if (!cur.isConnected && cur.isReconnecting) cur else cur.copy(isConnected = false, isReconnecting = true)
         }
         val m = when (scenario) {
             DemoScenario.IDLE -> idle(t)
@@ -440,7 +440,7 @@ object DemoSimulator {
             batteryChargingVoltageDesired = 14.4, batteryCurrentA = m.battA,
             rduEnabled = true, pdcEnabled = true, fengEnabled = true,
             lcArmed = false, lcRpmTarget = 4500, assEnabled = false,
-            isConnected = true, isIdle = false,
+            isConnected = true, isReconnecting = false,
             framesPerSecond = 400 + 12 * noise(m.rpm / 500, 12.0),
             lastUpdate = nowMs,
         )

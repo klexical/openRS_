@@ -88,7 +88,10 @@ import kotlin.math.roundToInt
 // DRIVE PAGE — what's happening right now, curated for glance-readability
 // Polled fields (temps, fuel economy, odometer, warnings) live on other tabs.
 // ═══════════════════════════════════════════════════════════════════════════
-@Composable fun DrivePage(vs: VehicleState, p: UserPrefs, onOpenThermal: () -> Unit = {}, onConnect: () -> Unit = {}) {
+@Composable fun DrivePage(
+    vs: VehicleState, p: UserPrefs, onOpenThermal: () -> Unit = {}, onConnect: () -> Unit = {},
+    onCancel: () -> Unit = {}, link: LinkUi = linkUi(vs, com.openrs.dash.can.LinkPhase.OFF, demoActive = false),
+) {
     var pageEntered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { pageEntered = true }
     val accent = LocalThemeAccent.current
@@ -208,12 +211,7 @@ import kotlin.math.roundToInt
             // Temperatures speak through the shared readiness verdict (same holds as THERMAL);
             // tyre / fuel / knock alerts keep their own 3 s hold.
             val readiness = thermalVerdict(vs)
-            val link = when {
-                vs.isConnected -> LinkState.LIVE
-                vs.isIdle      -> LinkState.RECONNECTING
-                else           -> LinkState.OFFLINE
-            }
-            StatusLine(status.alerts.filterNot { it.temp }, readiness, p, link, onOpenThermal, onConnect)
+            StatusLine(status.alerts.filterNot { it.temp }, readiness, p, link, onOpenThermal, onConnect, onCancel)
 
             // Design pass: readings in ink, BOOST (the car's personality) carries the paint accent,
             // RPM turns Orange only at the shift-light flash point. Equal-height cards with a fixed
@@ -452,7 +450,6 @@ private data class VehicleAlert(
     val temp: Boolean = false,
 )
 
-private enum class LinkState { LIVE, RECONNECTING, OFFLINE }
 
 private data class VehicleStatus(
     val connected: Boolean,
@@ -533,8 +530,8 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
  * The headline is measured first; the reason gives way (ellipsis) on narrow phones. Tap opens THERMAL.
  */
 @Composable private fun StatusLine(
-    alerts: List<VehicleAlert>, rtr: ThermalVerdict, p: UserPrefs, link: LinkState,
-    onOpen: () -> Unit, onConnect: () -> Unit,
+    alerts: List<VehicleAlert>, rtr: ThermalVerdict, p: UserPrefs, link: LinkUi,
+    onOpen: () -> Unit, onConnect: () -> Unit, onCancel: () -> Unit,
 ) {
     var held by remember { mutableStateOf(alerts) }
     LaunchedEffect(alerts) {
@@ -542,9 +539,14 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
         held = alerts
     }
     // The 3 s alert hold is for flicker between live frames — a dropped link replaces it at once.
-    val others = if (link == LinkState.LIVE) held else emptyList()
-    if (link == LinkState.OFFLINE) { ConnectActionRow(onConnect); return }
-    val heat = link == LinkState.LIVE && rtr.state.isHeat
+    val others = if (link == LinkUi.LIVE) held else emptyList()
+    when (link) {
+        LinkUi.OFFLINE    -> { LinkActionRow("TAP TO CONNECT", "Connect to the adapter", accentAction = true, onConnect); return }
+        LinkUi.FAILED     -> { LinkActionRow("NO RESPONSE · TAP TO CONNECT", "Connect to the adapter", accentAction = true, onConnect); return }
+        LinkUi.CONNECTING -> { LinkActionRow("CONNECTING… · TAP TO CANCEL", "Cancel the connection attempt", accentAction = false, onCancel); return }
+        LinkUi.LIVE, LinkUi.RECONNECTING -> Unit
+    }
+    val heat = link == LinkUi.LIVE && rtr.state.isHeat
     val top: VehicleAlert? = when {
         rtr.state == ThermalState.OVERHEATING && heat -> null
         others.any { it.level == Level.CRIT } -> others.first { it.level == Level.CRIT }
@@ -558,7 +560,7 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
     val accent = LocalThemeAccent.current
     // Colour = state: orange at crit, amber at warn / forecast; warming is a normal phase (accent).
     val (accentColor, title, value) = when {
-        link == LinkState.RECONNECTING -> Triple(Warn, "RECONNECTING", "")
+        link == LinkUi.RECONNECTING -> Triple(Warn, "RECONNECTING", "")
         top != null -> Triple(levelColor(top.level), top.title, top.value)
         else -> Triple(
             when (rtr.state) {
@@ -571,7 +573,7 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
             rtr.state.headline, rtr.shortReason(p),
         )
     }
-    val alerting = top != null || (heat && link == LinkState.LIVE)
+    val alerting = top != null || (heat && link == LinkUi.LIVE)
     val heatIcon = if (rtr.deciding.firstOrNull()?.sensor == ThermalSensor.OIL) R.drawable.ic_tt_oil else R.drawable.ic_tt_coolant
     Row(
         Modifier.fillMaxWidth().height(48.dp)
@@ -580,7 +582,7 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
             .border(if (alerting) 1.dp else Tokens.CardBorder,
                 if (alerting) accentColor.copy(alpha = borderAlpha(0.8f))
                 else if (isDayModeNow()) Brd.copy(alpha = 0.75f) else Brd.copy(alpha = 0.15f), shape)
-            .then(if (link == LinkState.LIVE) Modifier.clickable(onClickLabel = "Open THERMAL") { onOpen() } else Modifier)
+            .then(if (link == LinkUi.LIVE) Modifier.clickable(onClickLabel = "Open THERMAL") { onOpen() } else Modifier)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -605,32 +607,36 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
-        if (moreCount > 0 && link == LinkState.LIVE) {
+        if (moreCount > 0 && link == LinkUi.LIVE) {
             Box(
                 Modifier.background(Surf3, RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 3.dp)
             ) { MonoLabel("+$moreCount", 11.sp, Frost, FontWeight.Bold) }
             Spacer(Modifier.width(8.dp))
         }
-        if (link == LinkState.LIVE) MonoLabel("›", 16.sp, Dim)
+        if (link == LinkUi.LIVE) MonoLabel("›", 16.sp, Dim)
     }
 }
 
 /** Offline: the whole 48 dp row is the connect action — accent tint, label in [actionInk] (dark on DAY). */
-@Composable private fun ConnectActionRow(onConnect: () -> Unit) {
+/**
+ * The status row's link action (#212): TAP TO CONNECT (accent — the call to action), NO RESPONSE after the attempts ran
+ * out, or CONNECTING… · TAP TO CANCEL (neutral) while an initial attempt runs. Same fixed 48 dp row either way.
+ */
+@Composable private fun LinkActionRow(text: String, clickLabel: String, accentAction: Boolean, onClick: () -> Unit) {
     val accent = LocalThemeAccent.current
     val shape = RoundedCornerShape(12.dp)
     Row(
         Modifier.fillMaxWidth().height(48.dp)
             .background(InstrumentFill, shape)
-            .background(accent.copy(alpha = if (isDayModeNow()) 0.14f else 0.12f), shape)
-            .border(1.dp, accent.copy(alpha = borderAlpha(0.7f)), shape)
-            .clickable(onClickLabel = "Connect to the adapter") { onConnect() }
+            .then(if (accentAction) Modifier.background(accent.copy(alpha = if (isDayModeNow()) 0.14f else 0.12f), shape) else Modifier)
+            .border(1.dp, if (accentAction) accent.copy(alpha = borderAlpha(0.7f)) else Brd.copy(alpha = borderAlpha(0.6f)), shape)
+            .clickable(onClickLabel = clickLabel) { onClick() }
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
     ) {
         androidx.compose.material3.Text(
-            "TAP TO CONNECT", color = actionInk(accent), fontFamily = RajdhaniFamily,
+            text, color = if (accentAction) actionInk(accent) else Mid, fontFamily = RajdhaniFamily,
             fontWeight = FontWeight.Bold, fontSize = 17.sp, letterSpacing = 1.sp, maxLines = 1
         )
     }

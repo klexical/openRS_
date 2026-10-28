@@ -73,7 +73,8 @@ import com.openrs.dash.ui.anim.isShiftPoint
 fun CustomDashPage(
     vehicleState: VehicleState,
     prefs: UserPrefs,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    link: LinkUi = LinkUi.OFFLINE
 ) {
     val ctx = LocalContext.current
     val view = LocalView.current
@@ -121,15 +122,11 @@ fun CustomDashPage(
                 // DEMO (· RCN / · OFF) while simulating, RCN / OFF for a real link — the cells blank while
                 // the link is down, and this says why.
                 val demo by com.openrs.dash.demo.DemoMode.status.collectAsState()
-                val link = when {
-                    vehicleState.isConnected -> null
-                    vehicleState.isIdle -> "RCN"
-                    else -> "OFF"
-                }
+                val linkLabel = if (link == LinkUi.LIVE) null else link.pill
                 if (demo.active) {
                     Spacer(Modifier.width(8.dp))
-                    DemoBadge(if (link != null) "DEMO \u00B7 $link" else "DEMO")
-                } else if (link != null) {
+                    DemoBadge(if (linkLabel != null) "DEMO \u00B7 $linkLabel" else "DEMO")
+                } else if (linkLabel != null) {
                     Spacer(Modifier.width(8.dp))
                     Box(
                         Modifier
@@ -138,7 +135,7 @@ fun CustomDashPage(
                             .padding(horizontal = 5.dp, vertical = 2.dp)
                     ) {
                         // RCN amber like the header pill; OFF neutral — it's the user's state, not an alarm.
-                        MonoLabel(link, 8.sp, if (link == "RCN") WarnInk else Mid, FontWeight.Bold, 0.12.sp)
+                        MonoLabel(linkLabel, 8.sp, if (link == LinkUi.RECONNECTING) WarnInk else Mid, FontWeight.Bold, 0.12.sp)
                     }
                 }
                 Spacer(Modifier.weight(1f))

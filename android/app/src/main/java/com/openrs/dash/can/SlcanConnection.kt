@@ -28,9 +28,28 @@ class SlcanConnection(
     private val maxRetries: Int = 3,
     private val reconnectDelayMs: Long = 5_000L,
     /** Live engine RPM — selects fast vs slow PCM polling (rc.5). */
-    private val rpmProvider: () -> Double = { 0.0 }
+    private val rpmProvider: () -> Double = { 0.0 },
+    /**
+     * True while the link must not be given up after [maxRetries] failures — an active drive recording. A recording
+     * that lost its link is not an idle session: it keeps retrying (backoff capped at 30 s) until the link returns or the
+     * connection is stopped.
+     */
+    private val keepRetrying: () -> Boolean = { false },
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val debugSink: (String) -> Unit = { OpenRSDashApp.instance.pushDebugLine(it) }
 ) {
-    private fun addDebugLine(line: String) = OpenRSDashApp.instance.pushDebugLine(line)
+    private fun addDebugLine(line: String) = debugSink(line)
+
+    /** The transport of the attempt in progress (opening, handshaking or connected) — closed by [abort]. */
+    @Volatile private var attemptTransport: SlcanTransport? = null
+
+    /**
+     * Close the current attempt's transport from another thread so a blocking connect / read returns at once instead of
+     * after its timeout. The caller cancels the collecting coroutine; this only makes that prompt.
+     */
+    fun abort() {
+        try { attemptTransport?.close() } catch (_: Exception) { }
+    }
 
     private val _state = MutableStateFlow<AdapterState>(AdapterState.Disconnected)
     val state: StateFlow<AdapterState> = _state.asStateFlow()
@@ -92,13 +111,16 @@ class SlcanConnection(
 
         var failedAttempts = 0
         var consecutiveDrops = 0
+        // Once this job has been connected, every later attempt (and its backoff) is a reconnect.
+        var everConnected = false
 
-        while (currentCoroutineContext().isActive && failedAttempts < maxRetries) {
+        while (currentCoroutineContext().isActive) {
             var connectionSucceeded = false
             var connectedAtMs = 0L
+            _state.value = if (everConnected) AdapterState.Reconnecting else AdapterState.Connecting
             val transport = transportFactory()
+            attemptTransport = transport
             try {
-                _state.value = AdapterState.Connecting
                 addDebugLine("--- ${transport.label} ---")
                 addDebugLine("Connecting to ${transport.label}")
 
@@ -143,6 +165,7 @@ class SlcanConnection(
                 _state.value = AdapterState.Connected
                 _transport = transport
                 connectionSucceeded = true
+                everConnected = true
                 connectedAtMs = System.currentTimeMillis()
                 failedAttempts = 0
                 firmwareVersion = transport.stockFirmwareLabel
@@ -387,19 +410,24 @@ class SlcanConnection(
                 addDebugLine("Error: ${e.message}")
             } finally {
                 _transport = null
+                attemptTransport = null
                 _dtcScanActive = false
                 transport.close()
             }
 
             if (!currentCoroutineContext().isActive) break
 
-            if (failedAttempts >= maxRetries) {
+            val retryingRecording = failedAttempts >= maxRetries && keepRetrying()
+            if (failedAttempts >= maxRetries && !retryingRecording) {
                 _state.value = AdapterState.Idle
                 break
             }
 
-            _state.value = AdapterState.Disconnected
-            val delayMs = if (connectionSucceeded) {
+            // Backoff: still "connecting" until this job has been connected once, then "reconnecting"
+            _state.value = if (everConnected) AdapterState.Reconnecting else AdapterState.Connecting
+            val delayMs = if (retryingRecording) {
+                30_000L
+            } else if (connectionSucceeded) {
                 val uptime = System.currentTimeMillis() - connectedAtMs
                 if (uptime < 30_000) {
                     consecutiveDrops++
@@ -413,7 +441,7 @@ class SlcanConnection(
             }
             delay(delayMs)
         }
-    }.flowOn(Dispatchers.IO)
+    }.flowOn(ioDispatcher)
 
     // ── DTC scan ──────────────────────────────────────────────────────────────
 

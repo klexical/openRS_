@@ -231,6 +231,8 @@ class MainActivity : ComponentActivity() {
             val isFw            by OpenRSDashApp.instance.isOpenRsFirmware.collectAsState()
             val demo            by DemoMode.status.collectAsState()
             val demoCollapsed   by DemoMode.controlsCollapsed.collectAsState()
+            val linkPhase       by OpenRSDashApp.instance.linkPhase.collectAsState()
+            val link            = linkUi(vs, linkPhase, demo.active)
             val pageScope       = rememberCoroutineScope()
             val snackbarHostState = remember { SnackbarHostState() }
 
@@ -302,6 +304,8 @@ class MainActivity : ComponentActivity() {
                                         onConnect    = { service?.startConnection() },
                                         onDisconnect = { service?.stopConnection() },
                                         onReconnect  = { service?.reconnect() },
+                                        onCancel     = { service?.cancelConnection() },
+                                        link         = link,
                                         driveState   = headerDriveState,
                                         onModeClick  = { dockOpen = !dockOpen },
                                         onPullDown   = { dockOpen = true },
@@ -382,7 +386,8 @@ class MainActivity : ComponentActivity() {
                                             when (page) {
                                                 0 -> DrivePage(vs, prefs, onOpenThermal = {
                                                     pageScope.launch { pagerState.animateScrollToPage(2) }
-                                                }, onConnect = { service?.startConnection() })
+                                                }, onConnect = { service?.startConnection() },
+                                                   onCancel = { service?.cancelConnection() }, link = link)
                                                 1 -> PerfPage(vs, prefs, onReset = { service?.resetPeaks() })
                                                 2 -> TempsPage(vs, prefs)
                                                 // settled: TRIP creates its map on the first visit; visible: off screen
@@ -464,7 +469,8 @@ class MainActivity : ComponentActivity() {
                             CustomDashPage(
                                 vehicleState = vs,
                                 prefs        = prefs,
-                                onDismiss    = { showCustomDash = false }
+                                onDismiss    = { showCustomDash = false },
+                                link         = link
                             )
                         }
 
@@ -553,6 +559,9 @@ class MainActivity : ComponentActivity() {
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onReconnect: () -> Unit,
+    /** Cancel an initial connection attempt (#212). */
+    onCancel: () -> Unit = {},
+    link: LinkUi = LinkUi.OFFLINE,
     driveState: com.openrs.dash.data.DriveState = com.openrs.dash.data.DriveState(),
     onModeClick: () -> Unit = {},
     onPullDown: () -> Unit = {},
@@ -570,12 +579,11 @@ class MainActivity : ComponentActivity() {
     } else 1f
     val updateStateNow by UpdateManager.state.collectAsState()
     val isUpdating = updateStateNow is com.openrs.dash.update.UpdateState.Downloading
-    val isReconnecting = !vs.isConnected && vs.isIdle
     val connColor = when {
         demoActive && vs.isConnected -> demoInk()   // simulated link up; LOSS phase shows real RCN
-        vs.isConnected -> Ok
-        vs.isIdle      -> Warn
-        else           -> Mid      // OFF: not an alarm — TAP TO CONNECT (accent) is the call to action
+        link == LinkUi.LIVE          -> Ok
+        link == LinkUi.RECONNECTING  -> Warn
+        else           -> Mid      // OFF / CONN: not an alarm — TAP TO CONNECT (accent) is the call to action
     }
     // Pill text: ink when live, the state colour only for degraded / simulated links
     val connInk = when {
@@ -583,13 +591,7 @@ class MainActivity : ComponentActivity() {
         vs.isConnected -> Frost
         else           -> connColor
     }
-    val linkLabel = when {
-        isUpdating     -> "UPD"
-        vs.isConnected -> "LIVE"
-        isReconnecting -> "RCN"
-        vs.isIdle      -> "IDLE"
-        else           -> "OFF"
-    }
+    val linkLabel = if (isUpdating) "UPD" else link.pill
     // Simulated data is always labelled: in demo the pill keeps DEMO and adds the (simulated) link
     // state, e.g. "DEMO · RCN" during the connection-loss scenario — never RCN alone.
     val connLabel = when {
@@ -838,10 +840,11 @@ class MainActivity : ComponentActivity() {
                     .pressClick(pressedScale = 0.97f) {
                         // Demo: the pill never touches the adapter — it folds / unfolds the demo controls.
                         if (demoActive) { com.openrs.dash.demo.DemoMode.toggleControls(); return@pressClick }
-                        when {
-                            vs.isConnected -> confirmDisconnect = true
-                            vs.isIdle      -> { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onReconnect() }
-                            else           -> { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onConnect() }
+                        when (link) {
+                            LinkUi.LIVE         -> confirmDisconnect = true
+                            LinkUi.RECONNECTING -> { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onReconnect() }
+                            LinkUi.CONNECTING   -> { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onCancel() }
+                            LinkUi.OFFLINE, LinkUi.FAILED -> { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onConnect() }
                         }
                     }
                     .padding(horizontal = 4.dp),
@@ -861,7 +864,7 @@ class MainActivity : ComponentActivity() {
                             .then(if (bloomIntensity > 0.01f) Modifier.bloomGlow(connColor, 8.dp, bloomIntensity * dotAlpha) else Modifier))
                         // The sheet's CONNECTED symbol in the link colour (live / reconnecting / off)
                         Icon(painterResource(R.drawable.ic_tt_connected), contentDescription = null,
-                            tint = connColor.copy(alpha = dotAlpha * (if (vs.isConnected || vs.isIdle) 1f else 0.6f)),
+                            tint = connColor.copy(alpha = dotAlpha * (if (vs.isConnected || vs.isReconnecting) 1f else 0.6f)),
                             modifier = Modifier.size(12.dp))
                     }
                     AnimatedContent(

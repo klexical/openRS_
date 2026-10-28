@@ -50,7 +50,7 @@ class DemoSimulatorTest {
         val live = frame(DemoScenario.CONNECTION_LOSS, 9_000)
         val lost = frame(DemoScenario.CONNECTION_LOSS, 15_000, live)
         assertEquals(DemoLink.LOST, DemoSimulator.link(DemoScenario.CONNECTION_LOSS, 15.0))
-        assertEquals(live.copy(isConnected = false, isIdle = true), lost)
+        assertEquals(live.copy(isConnected = false, isReconnecting = true), lost)
         // Already flagged lost → same instance, no re-emit
         assertSame(lost, frame(DemoScenario.CONNECTION_LOSS, 16_000, lost))
     }

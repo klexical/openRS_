@@ -204,8 +204,9 @@ data class VehicleState(
 
     // ── Connection ──────────────────────────────────────────
     val isConnected: Boolean = false,
-    /** True when all retry attempts exhausted — waiting for manual reconnect. */
-    val isIdle: Boolean = false,
+    /** True while an established link that dropped is being retried (real: [com.openrs.dash.can.LinkPhase.RECONNECTING];
+     *  demo: the simulated connection-loss phase). Initial attempts and exhausted attempts are never "reconnecting". */
+    val isReconnecting: Boolean = false,
     val framesPerSecond: Double = 0.0,
     val lastUpdate: Long = 0L,
 

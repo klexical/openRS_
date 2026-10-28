@@ -34,6 +34,9 @@ class OpenRSDashApp : Application() {
     /** Global vehicle state. Updated by CanDataService, observed by all UIs. */
     val vehicleState = MutableStateFlow(VehicleState())
 
+    /** Real adapter link phase, owned by CanDataService (connecting / connected / reconnecting / failed / off). */
+    val linkPhase = MutableStateFlow(com.openrs.dash.can.LinkPhase.OFF)
+
     /** DEBUG — raw WiCAN lines. Updated by CanDataService, observed by debug tab. */
     private val _debugLines = MutableStateFlow<List<String>>(emptyList())
     val debugLines: StateFlow<List<String>> = _debugLines.asStateFlow()
