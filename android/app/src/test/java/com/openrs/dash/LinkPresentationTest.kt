@@ -30,6 +30,10 @@ class LinkPresentationTest {
         assertEquals("Connected to vehicle · recording", LinkPresentation.notificationText(LinkPhase.CONNECTED, false, true))
         assertEquals("Link lost — reconnecting · recording paused",
             LinkPresentation.notificationText(LinkPhase.RECONNECTING, false, true))
+        assertEquals("Connected to vehicle · recording paused",
+            LinkPresentation.notificationText(LinkPhase.CONNECTED, false, true, paused = true))
+        assertEquals("Connecting to vehicle… · recording paused",
+            LinkPresentation.notificationText(LinkPhase.CONNECTING, false, true))
         assertNull(LinkPresentation.notificationText(LinkPhase.FAILED, false, false))
         assertNull(LinkPresentation.notificationText(LinkPhase.OFF, false, false))
     }

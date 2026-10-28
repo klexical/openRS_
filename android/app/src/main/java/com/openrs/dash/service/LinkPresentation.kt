@@ -19,12 +19,20 @@ internal object LinkPresentation {
         is AdapterState.Error     -> null
     }
 
-    /** Foreground notification text — only phases that keep the service in the foreground have one. */
-    fun notificationText(phase: LinkPhase, bluetooth: Boolean, recording: Boolean): String? {
+    /**
+     * Foreground notification text — only phases that keep the service in the foreground have one. Re-published on
+     * recording start / pause / resume / stop as well as on phase changes. While the link is down a recording takes no
+     * samples, so it reads "recording paused" whatever its own pause state.
+     */
+    fun notificationText(phase: LinkPhase, bluetooth: Boolean, recording: Boolean, paused: Boolean = false): String? {
         val target = if (bluetooth) "via Bluetooth" else "to vehicle"
         return when (phase) {
-            LinkPhase.CONNECTING   -> "Connecting $target…"
-            LinkPhase.CONNECTED    -> if (recording) "Connected $target · recording" else "Connected $target"
+            LinkPhase.CONNECTING   -> if (recording) "Connecting $target… · recording paused" else "Connecting $target…"
+            LinkPhase.CONNECTED    -> when {
+                !recording -> "Connected $target"
+                paused     -> "Connected $target · recording paused"
+                else       -> "Connected $target · recording"
+            }
             LinkPhase.RECONNECTING -> if (recording) "Link lost — reconnecting · recording paused" else "Link lost — reconnecting…"
             LinkPhase.OFF, LinkPhase.FAILED -> null
         }

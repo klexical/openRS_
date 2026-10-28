@@ -120,6 +120,53 @@ class SlcanConnectionLifecycleTest {
         assertTrue(h.transports.all { it.closed })
     }
 
+    @Test fun `recording ends during the 30 s recording backoff — released within a second, no further attempt`() = runTest {
+        val h = Harness(listOf(Attempt.ConnectsThenDrops, Attempt.Fails, Attempt.Fails, Attempt.Fails, Attempt.Fails))
+        var recording = true
+        val conn = connection(h, maxRetries = 2, keepRetrying = { recording })
+        val job = launch { conn.run().collect {} }
+        advanceTimeBy(60_000L)                                         // budget (2) spent, now in a 30 s recording backoff
+        val attempts = h.transports.size
+        assertTrue("extended retries ran: $attempts", attempts >= 3)
+        assertEquals(AdapterState.Reconnecting, conn.state.value)
+        recording = false
+        advanceTimeBy(1_001L)
+        assertEquals(AdapterState.Idle, conn.state.value)
+        assertTrue(job.isCompleted)
+        advanceTimeBy(5 * 60_000L)
+        assertEquals("no attempt after the recording ended", attempts, h.transports.size)
+        assertTrue(h.transports.all { it.closed })
+    }
+
+    @Test fun `recording ending while connected leaves a healthy link alone`() = runTest {
+        val h = Harness(listOf(Attempt.ConnectsAndHolds))
+        var recording = true
+        val conn = connection(h, maxRetries = 1, keepRetrying = { recording })
+        val job = launch { conn.run().collect {} }
+        advanceTimeBy(10_000L)
+        assertEquals(AdapterState.Connected, conn.state.value)
+        recording = false
+        advanceTimeBy(5 * 60_000L)
+        assertEquals(AdapterState.Connected, conn.state.value)
+        assertEquals(1, h.transports.size)
+        job.cancel(); advanceUntilIdle()
+    }
+
+    @Test fun `recording ending with retry budget left continues the ordinary bounded retries`() = runTest {
+        val h = Harness(listOf(Attempt.ConnectsThenDrops, Attempt.Fails, Attempt.Fails, Attempt.Fails))
+        var recording = true
+        val conn = connection(h, maxRetries = 3, keepRetrying = { recording })
+        val seen = record(conn)
+        val job = launch { conn.run().collect {} }
+        runCurrent()                                                   // connected, dropped, first reconnect backoff
+        recording = false
+        advanceUntilIdle()
+        assertTrue(job.isCompleted)
+        assertEquals(4, h.transports.size)                             // 1 connection + the ordinary 3 retries
+        assertEquals(AdapterState.Idle, conn.state.value)
+        assertTrue(seen.contains(AdapterState.Reconnecting))
+    }
+
     @Test fun `cancelling during backoff ends the job at once and starts no further attempt`() = runTest {
         val h = Harness(listOf(Attempt.Fails, Attempt.Fails, Attempt.Fails))
         val conn = connection(h)

@@ -32,7 +32,9 @@ class SlcanConnection(
     /**
      * True while the link must not be given up after [maxRetries] failures — an active drive recording. A recording
      * that lost its link is not an idle session: it keeps retrying (backoff capped at 30 s) until the link returns or the
-     * connection is stopped.
+     * connection is stopped. Polled every second during that backoff: once the recording ends, the ordinary bounded
+     * policy applies again — its budget is already spent, so the job ends then rather than after another wait and
+     * attempt. A connected link is never dropped because recording stopped.
      */
     private val keepRetrying: () -> Boolean = { false },
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -439,7 +441,16 @@ class SlcanConnection(
             } else {
                 ObdConstants.BACKOFF_MS.getOrElse(failedAttempts - 1) { 30_000L }
             }
-            delay(delayMs)
+            if (retryingRecording) {
+                var waited = 0L
+                while (waited < delayMs && keepRetrying()) { delay(1_000L); waited += 1_000L }
+                if (!keepRetrying()) {                              // recording ended mid-backoff: budget spent
+                    _state.value = AdapterState.Idle
+                    break
+                }
+            } else {
+                delay(delayMs)
+            }
         }
     }.flowOn(ioDispatcher)
 

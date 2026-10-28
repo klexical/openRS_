@@ -220,6 +220,13 @@ class CanDataService : Service() {
         if (UserPrefsStore.ensureLoaded(this)) com.openrs.dash.ui.StartupTrace.mark("settings loaded by CanDataService (no activity)")
         registerWifiCallback()
         registerBluetoothCallback()
+        // Recording start / pause / resume / stop changes the notification text and whether Cancel is offered (#212)
+        scope.launch {
+            OpenRSDashApp.instance.driveRecorder.driveState
+                .map { it.isRecording to it.isPaused }
+                .distinctUntilChanged()
+                .collect { link.transition { publishNotification(link.phase) } }
+        }
         if (isTransportReady()) autoStartConnection()
         com.openrs.dash.ui.StartupTrace.mark("CanDataService.onCreate end")
     }
@@ -882,9 +889,14 @@ class CanDataService : Service() {
         OpenRSDashApp.instance.vehicleState.update {
             it.copy(isConnected = phase == LinkPhase.CONNECTED, isReconnecting = phase == LinkPhase.RECONNECTING)
         }
-        val recording = isRecording()
-        LinkPresentation.notificationText(phase, isBluetooth(), recording)?.let {
-            updateNotification(it, LinkPresentation.offersCancel(phase, recording))
+        publishNotification(phase)
+    }
+
+    /** Notification text + Cancel for [phase] and the current recording state; no-op once released (not foreground). */
+    private fun publishNotification(phase: LinkPhase) {
+        val ds = OpenRSDashApp.instance.driveRecorder.driveState.value
+        LinkPresentation.notificationText(phase, isBluetooth(), ds.isRecording, ds.isPaused)?.let {
+            updateNotification(it, LinkPresentation.offersCancel(phase, ds.isRecording))
         }
     }
 
