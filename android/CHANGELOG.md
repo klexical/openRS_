@@ -232,6 +232,18 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **Sapphire panels crashed when data arrived** — Dashboard, Trip, Compare and Sessions panels and Sparkline called hooks after an empty-state return, so going from no data to data in a mounted panel threw "Rendered more hooks than during the previous render" (main's fixes e5080c8 / e9cd565 / e0c8b5e; whole-app ESLint 10 → 0 errors, no rule changes). (`web/src/components/panels/*`, `charts/Sparkline.tsx`)
 - **Sapphire Compare panel crashed on opening** — `useCompareSessions` returned a new array on every store read, which loops under zustand 5 ("Maximum update depth exceeded"); it now uses `useShallow`. Main has the same selector — not run there. (`web/src/store/index.ts`)
 
+### Known limitations / RC testing status (rc.6)
+Not changes — what rc.6 does not cover or has not been verified on. Implemented behaviour is in the sections above.
+- **Battery state of charge unverified** — BCM DID 0x4028 read 5 % at 14.7 V for a whole session on one car; compare it with FORScan (BAT_ST_CHRG) before trusting it. Battery voltage (PCM 0x0304) is unaffected.
+- **Knock retard for cylinders 2–4** — 0x03ED / 0x03EE are rejected (NRC 0x31) on two RS PCMs and 0x03EF read 0 for a whole drive, so per-cylinder knock beyond cylinder 1 is unverified; rejected cells show "— —". ([#198](https://github.com/klexical/openRS_/issues/198))
+- **Charge air** — PCM 0x0461 answers `0x0000` on two RS PCMs and is shown as no data. ([#198](https://github.com/klexical/openRS_/issues/198))
+- **Throttle frame** — CAN 0x076 is absent on some RS PCMs; there pull detection and recorded throttle use accelerator pedal %. (addresses [#174](https://github.com/klexical/openRS_/issues/174))
+- **Ambient below 0 °C** — the 0x1A4 sub-zero encoding is still unconfirmed; readings above 55 °C are ignored. ([#185](https://github.com/klexical/openRS_/issues/185))
+- **Recording needs GPS** — the recorder stores points only on location updates, so a drive without a GPS fix records no telemetry (exports handle no-GPS data, see Fixed (rc.6 — TRIP)).
+- **Bluetooth adapter picker** — not checked on a phone for rc.6 (the emulator has no Bluetooth).
+- **No real-phone or on-car verification yet** — rc.6 has been checked with unit tests, the emulator (demo mode, a signed release build, the Room v11 → v12 upgrade from a real v11 database) and Sapphire browser checks only. The design pass, thermal readiness, Custom profile, saved drive limits, e-brake / launch-control display and connection-loss handling have not been used on a car.
+- **What's New after an RC update** — the dialog opens by itself only when the version name changes; every 2.2.7 RC is "2.2.7", so updating from an earlier RC doesn't show it (Settings opens it). Unchanged behaviour.
+
 ### Added (rc.5 — fuel trim drift)
 - **Fuel trim drift tracker** — each drive now stores warm-engine averages of freshly polled STFT/LTFT (PCM 0xF406/0xF407; coolant ≥ 70 °C, ≥ 500 RPM, ≥ 3 samples). A new PERF card charts the last 20 drives against ±5 % / ±10 % bands and warns when LTFT exceeds ±8 % in the same direction on two consecutive drives (lean = possible vacuum/boost leak or MAF drift; rich = injectors/purge/fuel pressure). Averages are included in the drive summary and the Sapphire profile JSON (`fuelTrim`). (`data/FuelTrim.kt`, `ui/FuelTrimDriftCard.kt`)
 
