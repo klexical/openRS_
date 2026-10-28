@@ -571,14 +571,23 @@ class CanDataService : Service() {
                     if (conn.state.value is AdapterState.Connected) {
                         try {
                             val result = DtcScanner(this@CanDataService).scan(conn)
+                            val record = com.openrs.dash.data.DtcScanRecord.from(
+                                result, System.currentTimeMillis(), "auto", DtcScanner.MODULES.map { it.name })
+                            DiagnosticLogger.lastDtcScan = record      // recorded with zero codes too (#215)
                             if (result.codes.isNotEmpty()) {
                                 OpenRSDashApp.instance.activeDtcCount.value =
                                     result.codes.count { it.status == com.openrs.dash.data.DtcStatus.ACTIVE }
-                                DiagnosticLogger.lastDtcResults = result.codes
-                                DiagnosticLogger.event("AUTO_DTC_SCAN",
-                                    "${result.codes.size} code(s) across ${result.moduleStatuses.count { it.value == com.openrs.dash.data.ModuleScanStatus.OK }} module(s)")
                             }
-                        } catch (_: Exception) { /* auto-scan is best-effort */ }
+                            DiagnosticLogger.event("AUTO_DTC_SCAN",
+                                "${record.status} · ${result.codes.size} code(s) · ${record.modulesAnswered}/${record.modules.size} modules answered")
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            // Auto-scan is best-effort, but a failed one is still reported as failed, never as clean
+                            DiagnosticLogger.lastDtcScan = com.openrs.dash.data.DtcScanRecord(
+                                com.openrs.dash.data.DtcScanStatus.FAILED, System.currentTimeMillis(), "auto",
+                                DtcScanner.MODULES.associate { it.name to null }, message = e.message)
+                        }
                     }
                 }
             }

@@ -398,6 +398,8 @@ import kotlin.math.roundToInt
                                     dtcScanJob = null
                                     dtcScanning = false
                                     dtcError = "Scan aborted"
+                                    DiagnosticLogger.lastDtcScan = com.openrs.dash.data.DtcScanRecord(
+                                        com.openrs.dash.data.DtcScanStatus.CANCELLED, System.currentTimeMillis(), "manual", moduleProgress)
                                 } else {
                                     dtcScanning = true
                                     dtcError = null
@@ -435,11 +437,15 @@ import kotlin.math.roundToInt
                                                 dtcScanning = false
                                                 if (result != null) {
                                                     dtcScanResult = result
-                                                    DiagnosticLogger.lastDtcResults = result.codes
+                                                    DiagnosticLogger.lastDtcScan = com.openrs.dash.data.DtcScanRecord.from(
+                                                        result, System.currentTimeMillis(), "manual", com.openrs.dash.diagnostics.DtcScanner.MODULES.map { it.name })
                                                     com.openrs.dash.OpenRSDashApp.instance.activeDtcCount.value =
                                                         result.codes.count { it.status == com.openrs.dash.data.DtcStatus.ACTIVE }
                                                 } else {
                                                     dtcError = "Scan failed — check adapter connection"
+                                                    DiagnosticLogger.lastDtcScan = com.openrs.dash.data.DtcScanRecord(
+                                                        com.openrs.dash.data.DtcScanStatus.FAILED, System.currentTimeMillis(), "manual",
+                                                        moduleProgress, message = "Scan failed")
                                                 }
                                             }
                                             dtcScanJob = null

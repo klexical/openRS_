@@ -21,6 +21,32 @@ internal object DiagnosticReportBuilder {
     internal fun sessionOffsetMs(eventMs: Long, sessionStartMs: Long): Long =
         if (sessionStartMs <= 0L) 0L else (eventMs - sessionStartMs).coerceAtLeast(0L)
 
+    /** One summary line for the session's DTC scan (#215). */
+    internal fun dtcScanLine(scan: com.openrs.dash.data.DtcScanRecord?): String {
+        if (scan == null) return "No scan this session"
+        val coverage = "${scan.modulesAnswered}/${scan.modules.size} modules answered"
+        val outcome = when (scan.status) {
+            com.openrs.dash.data.DtcScanStatus.COMPLETE  -> if (scan.codes.isEmpty()) "COMPLETE — no codes" else "COMPLETE — ${scan.codes.size} code(s)"
+            com.openrs.dash.data.DtcScanStatus.PARTIAL   -> "PARTIAL — ${scan.codes.size} code(s) from the modules that answered; not a clean scan"
+            com.openrs.dash.data.DtcScanStatus.FAILED    -> "FAILED${scan.message?.let { " ($it)" } ?: ""}"
+            com.openrs.dash.data.DtcScanStatus.CANCELLED -> "CANCELLED before it finished"
+        }
+        return "$outcome · $coverage · ${scan.source}"
+    }
+
+    /** `dtcScan` block of the detail JSON — `{"status":"NONE"}` when no scan ran (#215). */
+    internal fun dtcScanJson(scan: com.openrs.dash.data.DtcScanRecord?): JSONObject = JSONObject().apply {
+        if (scan == null) { put("status", "NONE"); return@apply }
+        put("status", scan.status.name)
+        put("source", scan.source)
+        put("finishedAtMs", scan.finishedAtMs)
+        put("codeCount", scan.codes.size)
+        put("modulesAnswered", scan.modulesAnswered)
+        put("modulesTotal", scan.modules.size)
+        put("modules", JSONObject().apply { scan.modules.forEach { (m, st) -> put(m, st?.name ?: "NO_ANSWER") } })
+        scan.message?.let { put("message", it) }
+    }
+
     fun buildSummaryText(ts: String): String = buildString {
         val log = DiagnosticLogger
         val vs  = log.lastVehicleState
@@ -42,6 +68,11 @@ internal object DiagnosticReportBuilder {
         appendLine("  Firmware : ${log.firmwareVersion}")
         val connEvent = log.sessionEvents.lastOrNull { it.type == "SESSION" }
         if (connEvent != null) appendLine("  Last evt : ${connEvent.message}")
+        appendLine()
+
+        // ── DTC scan (#215): no scan, a clean scan and a partial / failed / cancelled one stay distinct
+        appendLine("─── DTC SCAN ──────────────────────────────────────────────")
+        appendLine("  ${dtcScanLine(log.lastDtcScan)}")
         appendLine()
 
         // ── Adapter device status (from /check_status)
@@ -297,6 +328,8 @@ internal object DiagnosticReportBuilder {
             put("slcanLinesLogged", log.slcanLineCount)
             put("slcanFileIncluded", log.slcanLogFile != null && log.slcanLineCount > 0)
         })
+
+        root.put("dtcScan", dtcScanJson(log.lastDtcScan))
 
         // settings
         if (p != null) {

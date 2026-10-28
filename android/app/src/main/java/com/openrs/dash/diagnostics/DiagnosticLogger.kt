@@ -162,7 +162,8 @@ object DiagnosticLogger {
     @Volatile var sessionPrefs: UserPrefs? = null
     @Volatile private var nrcSnapshot: Map<Int, NrcTracker.NrcRecord> = emptyMap()
     @Volatile var deviceStatus: DeviceStatus? = null
-    @Volatile var lastDtcResults: List<com.openrs.dash.data.DtcResult>? = null
+    /** Last DTC scan (any outcome) — null = no scan; exported with status and module coverage (#215). */
+    @Volatile var lastDtcScan: com.openrs.dash.data.DtcScanRecord? = null
 
     /** Capture NRC suppression state from the active NrcTracker for diagnostic export. */
     fun snapshotNrc(tracker: NrcTracker) {

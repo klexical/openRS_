@@ -239,10 +239,14 @@ internal object DriveExportBuilder {
         appendLine("═══════════════════════════════════════════════════════════")
     }
 
-    fun buildDtcText(dtcResults: List<DtcResult>): String = buildString {
+    fun buildDtcText(dtcResults: List<DtcResult>, scan: com.openrs.dash.data.DtcScanRecord? = null): String = buildString {
         appendLine("═══════════════════════════════════════════════════════════")
         appendLine("  openRS_ DTC Scan Report")
         appendLine("  App : v${appVersion} (build ${appBuild})")
+        if (scan != null) {
+            appendLine("  Scan: ${DiagnosticReportBuilder.dtcScanLine(scan)}")
+            appendLine("  Modules: " + scan.modules.entries.joinToString(", ") { (m, st) -> "$m ${st?.name ?: "NO_ANSWER"}" })
+        }
         appendLine("═══════════════════════════════════════════════════════════")
         appendLine()
         val grouped = dtcResults.groupBy { it.module }
@@ -263,9 +267,11 @@ internal object DriveExportBuilder {
     /**
      * Build a machine-readable JSON DTC scan report for Sapphire import.
      */
-    fun buildDtcJson(dtcResults: List<DtcResult>): String {
+    fun buildDtcJson(dtcResults: List<DtcResult>, scan: com.openrs.dash.data.DtcScanRecord? = null): String {
         val root = JSONObject()
         root.put("version", 1)
+        // Additive (#215): scan status + module coverage — Sapphire reads `codes` and ignores unknown keys
+        if (scan != null) root.put("scan", DiagnosticReportBuilder.dtcScanJson(scan))
         root.put("timestamp", System.currentTimeMillis())
         root.put("app", "openRS_ v${appVersion}")
         root.put("totalCodes", dtcResults.size)

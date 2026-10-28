@@ -43,6 +43,48 @@ data class DtcScanResult(
     val scanDurationMs: Long = 0
 )
 
+/** Outcome of a DTC scan as the diagnostic export reports it (#215). No record at all = no scan this session. */
+enum class DtcScanStatus {
+    /** Every scanned module answered — zero codes here means a clean scan. */
+    COMPLETE,
+    /** Some modules answered, others timed out / errored / didn't respond — zero codes is NOT a clean scan. */
+    PARTIAL,
+    /** No module answered, or the scan threw. */
+    FAILED,
+    /** The user aborted it. */
+    CANCELLED,
+}
+
+/**
+ * The last DTC scan of the session (#215): status, per-module coverage (null = no answer recorded before it ended),
+ * the codes and when / how it ran. Exported whenever a scan ran, including with zero codes.
+ */
+data class DtcScanRecord(
+    val status: DtcScanStatus,
+    val finishedAtMs: Long,
+    /** "manual" (GARAGE → DIAG) or "auto" (scan on connect). */
+    val source: String,
+    val modules: Map<String, ModuleScanStatus?>,
+    val codes: List<DtcResult> = emptyList(),
+    val message: String? = null,
+) {
+    val modulesAnswered: Int get() = modules.values.count { it == ModuleScanStatus.OK }
+
+    companion object {
+        /** A finished scan: COMPLETE only when every expected module answered OK. */
+        fun from(result: DtcScanResult, finishedAtMs: Long, source: String, expectedModules: List<String>): DtcScanRecord {
+            val modules: Map<String, ModuleScanStatus?> = expectedModules.associateWith { result.moduleStatuses[it] } + result.moduleStatuses
+            val ok = modules.values.count { it == ModuleScanStatus.OK }
+            val status = when {
+                ok == modules.size && ok > 0 -> DtcScanStatus.COMPLETE
+                ok > 0 -> DtcScanStatus.PARTIAL
+                else -> DtcScanStatus.FAILED
+            }
+            return DtcScanRecord(status, finishedAtMs, source, modules, result.codes)
+        }
+    }
+}
+
 // ── Freeze frame data ───────────────────────────────────────────────────────
 
 /**

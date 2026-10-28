@@ -139,13 +139,14 @@ object DiagnosticExporter {
                 // Crash telemetry files
                 addCrashFiles(ctx, zip)
 
-                // DTC scan results (if available from this session)
-                val dtcResults = DiagnosticLogger.lastDtcResults
-                if (!dtcResults.isNullOrEmpty()) {
+                // DTC scan (#215): written whenever a scan ran — also with zero codes, with its status and module
+                // coverage — so a clean scan, a partial one and "no scan" (no files; dtcScan NONE in the detail) differ
+                val dtcScan = DiagnosticLogger.lastDtcScan
+                if (dtcScan != null) {
                     addEntry("dtc_scan_$ts.txt",
-                        DriveExportBuilder.buildDtcText(dtcResults).toByteArray(Charsets.UTF_8))
+                        DriveExportBuilder.buildDtcText(dtcScan.codes, dtcScan).toByteArray(Charsets.UTF_8))
                     addEntry("dtc_scan_$ts.json",
-                        DriveExportBuilder.buildDtcJson(dtcResults).toByteArray(Charsets.UTF_8))
+                        DriveExportBuilder.buildDtcJson(dtcScan.codes, dtcScan).toByteArray(Charsets.UTF_8))
                 }
 
                 // DID probe sessions: one CSV per scanned module
