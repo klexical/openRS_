@@ -48,6 +48,18 @@ import com.openrs.dash.ui.anim.pageEntrance
  */
 private val versionHighlights: Map<String, List<String>> = mapOf(
     "2.2.7" to listOf(
+        "Calmer DRIVE and THERMAL — readings in ink, colour only when a limit is crossed, and a fixed status line on DRIVE that leads with the most important condition.",
+        "Thermal readiness — one verdict (TEMPS READY, ENGINE / DRIVETRAIN WARMING, TEMP HIGH, TEMP CRITICAL, HEAT RISING, CHECKING) shared by DRIVE, THERMAL and the drive recorder, with a checklist that shows every rule.",
+        "Custom thermal profile — copy STREET, TRACK or RACE and edit its warm-up, warning and critical limits in °C or °F (Settings → THERMAL).",
+        "Drives save the thermal limits in effect — TRIP's TEMP badge and summary judge each drive by its own profile and now include PTU / RDU peaks; exports add RDU / PTU curves.",
+        "New artwork — launcher icon, wordmark, opening screen, top-down Focus RS on THERMAL and Precision tab icons.",
+        "Readings held after an adapter drop are marked STALE or blanked instead of looking live, and tapping the connection pill asks before disconnecting.",
+        "Tyre alerts on DRIVE and THERMAL follow your saved Low / Warn / High pressures, including over-inflation.",
+        "Larger text and 48 dp touch targets in the header, nav, Settings, GARAGE, Custom Dashboard and drive-mode dock; Back closes the dock and the Custom Dashboard.",
+        "Fixed: ANR when reopening the app while disconnected; faster start-up, and the TRIP map is kept after its first visit.",
+        "Fixed: the post-drive summary is no longer lost when TRIP wasn't open, and drive replay controls, Back and ±10 s seeks work.",
+        "Drives without GPS now share their telemetry; Sapphire imports rc.6 exports and batches with each drive's profile, and shows missing readings as gaps.",
+        "Knock chart follows your boost unit and the G-force plot axes are labelled correctly.",
         "Fixed: PERF engine data — TIMING, LOAD, OAR, SPARK, VCT, knock retard, commanded AFR, O2 voltage and LP fuel now populate with the engine running (several were never decoded).",
         "Fixed: TIP actual/desired now read correctly, so the Boost Target vs Actual analysis works — past drives are corrected on upgrade.",
         "HP fuel rail uses the direct-injection query; LP fuel pressure added.",
