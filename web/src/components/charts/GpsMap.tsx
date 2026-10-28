@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { MapContainer, TileLayer, Polyline, CircleMarker, Popup, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
-import type { TripPoint, PeakEvent } from '../../types/session'
+import type { TripPoint, PeakEvent, Bookmark } from '../../types/session'
 import { colors } from '../../styles/tokens'
 import {
   type ColorMode,
@@ -14,6 +14,7 @@ import {
 interface GpsMapProps {
   points: TripPoint[]
   peakEvents: PeakEvent[]
+  bookmarks?: Bookmark[]
   height?: string
 }
 
@@ -76,21 +77,16 @@ function ZoomToFit({ points }: { points: TripPoint[] }) {
 
 // ── Main component ──────────────────────────────────────────────────
 
-export function GpsMap({ points, peakEvents, height = '55vh' }: GpsMapProps) {
+export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMapProps) {
   const [colorMode, setColorMode] = useState<ColorMode>('speed')
 
-  // Precompute all 6 color-mode segment sets up front. Toggling between modes
-  // then becomes a key lookup instead of a full O(N) re-walk of the trip.
-  // For long drives the difference is the difference between a frame stall
-  // and a frame.
+  // All colour modes are built once per trip (main e9cd565) — switching SPD / BOOST / … is a lookup, not
+  // another walk of a long route.
   const segmentsByMode = useMemo(() => {
-    const map = {} as Record<ColorMode, ColorSegment[]>
-    for (const m of colorModes) {
-      map[m.id] = buildColorSegments(points, m.id)
-    }
-    return map
+    const byMode = {} as Record<ColorMode, ColorSegment[]>
+    for (const m of colorModes) byMode[m.id] = buildColorSegments(points, m.id)
+    return byMode
   }, [points])
-
   const segments = segmentsByMode[colorMode]
   const legend = useMemo(() => colorLegend(colorMode), [colorMode])
 
@@ -180,6 +176,26 @@ export function GpsMap({ points, peakEvents, height = '55vh' }: GpsMapProps) {
             </Popup>
           </CircleMarker>
         ))}
+
+        {/* Bookmark markers (T2C) */}
+        {bookmarks?.map((bm, i) => {
+          if (bm.lat === 0 && bm.lng === 0) return null
+          return (
+            <CircleMarker
+              key={`bm-${i}`}
+              center={[bm.lat, bm.lng]}
+              radius={6}
+              pathOptions={{ color: '#E040FB', fillColor: '#E040FB', fillOpacity: 0.9, weight: 2 }}
+            >
+              <Popup>
+                <div style={{ fontFamily: 'JetBrains Mono', fontSize: 11 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 2 }}>{bm.label || 'Bookmark'}</div>
+                  <div>{bm.speedKph.toFixed(0)} kph · {bm.rpm} RPM · {bm.boostPsi.toFixed(1)} PSI</div>
+                </div>
+              </Popup>
+            </CircleMarker>
+          )
+        })}
 
         {/* Peak markers */}
         {peakEvents.map((peak, i) => {

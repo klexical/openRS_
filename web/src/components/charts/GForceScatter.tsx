@@ -5,6 +5,7 @@ import {
 } from 'recharts'
 import { colors, modeColors } from '../../styles/tokens'
 import type { TripPoint } from '../../types/session'
+import { gForceSamples } from '../../lib/gforce'
 
 type ColorBy = 'speed' | 'mode'
 
@@ -36,42 +37,7 @@ interface Props {
 export function GForceScatter({ points }: Props) {
   const [colorBy, setColorBy] = useState<ColorBy>('speed')
 
-  const data = useMemo(() => {
-    // Downsample for performance: stride-sample to cap at ~2000 dots, but
-    // always include the lat-G envelope extremes so the scatter shows the
-    // actual cornering peaks even if they happen to fall between strides.
-    const TARGET = 2000
-    const valid: { latG: number; speedKph: number; driveMode: string; idx: number }[] = []
-    for (let i = 0; i < points.length; i++) {
-      const p = points[i]
-      if (Math.abs(p.latG) > 0.01 || p.speedKph > 5) {
-        valid.push({ latG: p.latG, speedKph: p.speedKph, driveMode: p.driveMode, idx: i })
-      }
-    }
-    if (valid.length <= TARGET) {
-      return valid.map(({ latG, speedKph, driveMode }) => ({ latG, speedKph, driveMode }))
-    }
-
-    // Find the indices of the +lat and -lat extremes; they MUST survive the
-    // downsample so the visible envelope matches the trip's true peak G.
-    let maxIdx = 0
-    let minIdx = 0
-    for (let i = 1; i < valid.length; i++) {
-      if (valid[i].latG > valid[maxIdx].latG) maxIdx = i
-      if (valid[i].latG < valid[minIdx].latG) minIdx = i
-    }
-
-    const step = Math.ceil(valid.length / TARGET)
-    const keptIdxs = new Set<number>([maxIdx, minIdx])
-    for (let i = 0; i < valid.length; i += step) keptIdxs.add(i)
-
-    return Array.from(keptIdxs)
-      .sort((a, b) => a - b)
-      .map((i) => {
-        const v = valid[i]
-        return { latG: v.latG, speedKph: v.speedKph, driveMode: v.driveMode }
-      })
-  }, [points])
+  const data = useMemo(() => gForceSamples(points), [points])
 
   const legend = colorBy === 'speed'
     ? speedBands.map((b) => ({ label: b.label, color: b.color }))

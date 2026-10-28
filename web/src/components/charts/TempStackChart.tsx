@@ -5,6 +5,7 @@ import {
 } from 'recharts'
 import { colors, chartColors } from '../../styles/tokens'
 import type { TripPoint } from '../../types/session'
+import { tempStackData } from '../../lib/readings'
 
 interface Props {
   points: TripPoint[]
@@ -12,27 +13,15 @@ interface Props {
 }
 
 const series = [
-  { key: 'coolantC', label: 'Coolant', color: colors.accent },
+  { key: 'coolantC', label: 'Coolant', color: colors.cyan },
   { key: 'oilTempC', label: 'Oil', color: colors.orange },
   { key: 'rduTempC', label: 'RDU', color: chartColors[4] },
   { key: 'ptuTempC', label: 'PTU', color: chartColors[3] },
 ] as const
 
 export function TempStackChart({ points, syncId }: Props) {
-  const data = useMemo(() => {
-    // Stacked AreaChart can't render null cleanly (each layer needs a numeric
-    // baseline), so we floor invalid sentinels at 0 but explicitly reject NaN
-    // first — otherwise NaN > -90 is false and the stack drops with no warning.
-    const safeTemp = (v: number) => (Number.isFinite(v) && v > -90 ? v : 0)
-    const t0 = points[0]?.ts ?? 0
-    return points.map((p) => ({
-      ts: (p.ts - t0) / 1000,
-      coolantC: safeTemp(p.coolantC),
-      oilTempC: safeTemp(p.oilTempC),
-      rduTempC: safeTemp(p.rduTempC),
-      ptuTempC: safeTemp(p.ptuTempC),
-    }))
-  }, [points])
+  // Missing readings are null: Recharts (3.8) breaks a stacked layer at a null instead of dropping it to 0
+  const data = useMemo(() => tempStackData(points), [points])
 
   if (data.length === 0) {
     return (

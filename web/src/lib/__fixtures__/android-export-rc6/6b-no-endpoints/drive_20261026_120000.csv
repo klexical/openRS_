@@ -1,0 +1,4 @@
+# openrs_csv_v2
+timestamp_ms,lat,lng,speed_kph,rpm,gear,boost_psi,coolant_c,oil_c,ambient_c,rdu_c,ptu_c,fuel_pct,tire_press_lf_psi,tire_press_rf_psi,tire_press_lr_psi,tire_press_rr_psi,tire_temp_lf_c,tire_temp_rf_c,tire_temp_lr_c,tire_temp_rr_c,wheel_fl_kph,wheel_fr_kph,wheel_rl_kph,wheel_rr_kph,lateral_g,longitudinal_g,brake_pressure,steering_angle,throttle_pct,drive_mode,race_ready,tip_actual_kpa,boost_target_kpa,wgdc_pct
+1700000001000,51.507400,-0.127800,30.00,1800,,0.000,85.0,90.0,-99.0,-99.0,-99.0,-1.0,-1.0,-1.0,-1.0,-1.0,-99.0,-99.0,-99.0,-99.0,0.00,0.00,0.00,0.00,0.0000,0.0000,0.0,0.0,0.0,Normal,false,0.00,0.00,0.0
+1700001799000,51.512400,-0.121000,60.00,3200,,0.000,84.0,88.0,-99.0,-99.0,-99.0,-1.0,-1.0,-1.0,-1.0,-1.0,-99.0,-99.0,-99.0,-99.0,0.00,0.00,0.00,0.00,0.0000,0.0000,0.0,0.0,0.0,Normal,false,0.00,0.00,0.0

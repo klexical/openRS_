@@ -9,7 +9,9 @@ import { ModeTimeline } from '../charts/ModeTimeline'
 import { GForceScatter } from '../charts/GForceScatter'
 import { TempStackChart } from '../charts/TempStackChart'
 import { Histogram } from '../charts/Histogram'
+import { ThermalProgressionChart } from '../charts/ThermalProgressionChart'
 import { useUnitFormatters } from '../../lib/format'
+import { tripChartData } from '../../lib/readings'
 import { colors, chartColors } from '../../styles/tokens'
 
 export function TripPanel() {
@@ -18,51 +20,11 @@ export function TripPanel() {
   const fmt = useUnitFormatters()
 
   const trip = session?.trip ?? null
-  // Stabilize points identity so downstream useMemo deps don't churn every render
+  // Stable identity so the useMemo below doesn't rebuild every render
   const points = useMemo(() => trip?.points ?? [], [trip])
-  const t0 = points[0]?.ts ?? 0
-  const peakEvents = trip?.summary.peakEvents ?? []
 
-  // Build chart data with relative time in seconds.
-  // Sentinel-aware helpers return null instead of 0 so Recharts renders gaps for
-  // missing data instead of misleading dips, and explicitly reject NaN/Infinity
-  // so a malformed CSV row can't poison downstream rendering.
-  const chartData = useMemo(() => {
-    const safeTemp = (v: number) => (Number.isFinite(v) && v > -90 ? v : null)
-    const safePct = (v: number) => (Number.isFinite(v) && v >= 0 ? v : null)
-    const safeNum = (v: number) => (Number.isFinite(v) ? v : null)
-    return points.map((p) => ({
-      ts: (p.ts - t0) / 1000,
-      rpm: safeNum(p.rpm),
-      boostPsi: safeNum(p.boostPsi),
-      speedKph: safeNum(p.speedKph),
-      coolantC: safeTemp(p.coolantC),
-      oilTempC: safeTemp(p.oilTempC),
-      rduTempC: safeTemp(p.rduTempC),
-      ptuTempC: safeTemp(p.ptuTempC),
-      latG: safeNum(p.latG),
-      fuelPct: safePct(p.fuelPct),
-      wsFL: safeNum(p.wheelSpeedFL),
-      wsFR: safeNum(p.wheelSpeedFR),
-      wsRL: safeNum(p.wheelSpeedRL),
-      wsRR: safeNum(p.wheelSpeedRR),
-      awdL: safeNum(p.awdTorqueL),
-      awdR: safeNum(p.awdTorqueR),
-      throttlePct: safePct(p.throttlePct),
-      tirePressLF: safePct(p.tirePressLF),
-      tirePressRF: safePct(p.tirePressRF),
-      tirePressLR: safePct(p.tirePressLR),
-      tirePressRR: safePct(p.tirePressRR),
-      tireTempLF: safeTemp(p.tireTempLF),
-      tireTempRF: safeTemp(p.tireTempRF),
-      tireTempLR: safeTemp(p.tireTempLR),
-      tireTempRR: safeTemp(p.tireTempRR),
-    }))
-  }, [points, t0])
-
-  const hasThrottle = useMemo(() => points.some((p) => p.throttlePct >= 0), [points])
-  const hasTpmsPress = useMemo(() => points.some((p) => p.tirePressLF >= 0 || p.tirePressRF >= 0), [points])
-  const hasTpmsTemp = useMemo(() => points.some((p) => p.tireTempLF > -90 || p.tireTempRF > -90), [points])
+  // Chart rows with relative time in seconds; a missing reading is null → a gap, never a 0 dip
+  const chartData = useMemo(() => tripChartData(points), [points])
 
   // ── Early returns (after all hooks) ──
   if (!session) {
@@ -70,25 +32,34 @@ export function TripPanel() {
   }
 
   if (!trip || points.length === 0) {
-    const hasDiagnostics = !!session.diagnostics
     return (
       <EmptyState
         icon="◎"
         title="No Trip Data"
         description={
-          hasDiagnostics
-            ? "This session contains diagnostic data but no drive recording. To export trip data, open the openRS_ app → MAP tab → drive history → tap a drive → Share."
-            : "This session does not contain trip data."
+          session.diagnostics
+            ? 'This session has diagnostic data but no drive recording. To bring a drive in, open openRS_ → TRIP, tap the drive and SHARE it, then import that ZIP.'
+            : 'This session does not contain trip data.'
         }
       />
     )
   }
+
+  const peakEvents = trip.summary.peakEvents
 
   const fmtTime = (sec: number) => {
     const m = Math.floor(sec / 60)
     const s = Math.round(sec % 60)
     return `${m}:${s.toString().padStart(2, '0')}`
   }
+
+  // Check data availability
+  const hasThrottle = points.some((p) => p.throttlePct >= 0)
+  const hasTpmsPress = points.some((p) => p.tirePressLF >= 0 || p.tirePressRF >= 0)
+  const hasTpmsTemp = points.some((p) => p.tireTempLF > -90 || p.tireTempRF > -90)
+  const hasBrake = points.some((p) => p.brakePressure > 0)
+  const hasSteering = points.some((p) => p.steeringAngle !== 0)
+  const hasLongG = points.some((p) => p.longG !== 0)
 
   const syncId = 'trip-charts'
 
@@ -101,10 +72,18 @@ export function TripPanel() {
       </div>
 
       <SectionLabel>Route</SectionLabel>
-      <GpsMap points={points} peakEvents={peakEvents} />
+      <GpsMap points={points} peakEvents={peakEvents} bookmarks={trip.bookmarks} />
 
       <SectionLabel>Drive Modes</SectionLabel>
-      <ModeTimeline points={points} />
+      <ModeTimeline points={points} canonicalTimeline={trip.canonicalModeTimeline} />
+
+      {/* Thermal Progression (T2B) */}
+      {trip.thermalProgression && (
+        <>
+          <SectionLabel>Thermal Progression</SectionLabel>
+          <ThermalProgressionChart data={trip.thermalProgression} />
+        </>
+      )}
 
       <SectionLabel>RPM</SectionLabel>
       <TimeSeriesChart
@@ -148,11 +127,38 @@ export function TripPanel() {
         </>
       )}
 
+      {/* Brake Pressure (T2D) */}
+      {hasBrake && (
+        <>
+          <SectionLabel>Brake Pressure</SectionLabel>
+          <TimeSeriesChart
+            data={chartData}
+            series={[{ key: 'brakePressure', label: 'Brake', color: chartColors[5] }]}
+            xFormatter={fmtTime}
+            syncId={syncId}
+          />
+        </>
+      )}
+
+      {/* Steering Angle (T2E) */}
+      {hasSteering && (
+        <>
+          <SectionLabel>Steering Angle (°)</SectionLabel>
+          <TimeSeriesChart
+            data={chartData}
+            series={[{ key: 'steeringAngle', label: 'Steering', color: chartColors[4] }]}
+            xFormatter={fmtTime}
+            yFormatter={(v) => `${v.toFixed(0)}°`}
+            syncId={syncId}
+          />
+        </>
+      )}
+
       <SectionLabel>Temperatures ({fmt.tempUnit})</SectionLabel>
       <TimeSeriesChart
         data={chartData}
         series={[
-          { key: 'coolantC', label: 'Coolant', color: colors.accent },
+          { key: 'coolantC', label: 'Coolant', color: colors.cyan },
           { key: 'oilTempC', label: 'Oil', color: colors.orange },
           { key: 'rduTempC', label: 'RDU', color: chartColors[4] },
           { key: 'ptuTempC', label: 'PTU', color: chartColors[3] },
@@ -174,6 +180,20 @@ export function TripPanel() {
         peakFilter="latG"
       />
 
+      {/* Longitudinal G (T2F) */}
+      {hasLongG && (
+        <>
+          <SectionLabel>Longitudinal G</SectionLabel>
+          <TimeSeriesChart
+            data={chartData}
+            series={[{ key: 'longG', label: 'Long G', color: chartColors[6] }]}
+            xFormatter={fmtTime}
+            yFormatter={(v) => `${v.toFixed(2)}G`}
+            syncId={syncId}
+          />
+        </>
+      )}
+
       <SectionLabel>Fuel Level (%)</SectionLabel>
       <TimeSeriesChart
         data={chartData}
@@ -186,7 +206,7 @@ export function TripPanel() {
       <TimeSeriesChart
         data={chartData}
         series={[
-          { key: 'wsFL', label: 'FL', color: colors.accent },
+          { key: 'wsFL', label: 'FL', color: colors.cyan },
           { key: 'wsFR', label: 'FR', color: chartColors[1] },
           { key: 'wsRL', label: 'RL', color: chartColors[2] },
           { key: 'wsRR', label: 'RR', color: chartColors[3] },
@@ -202,7 +222,7 @@ export function TripPanel() {
           <TimeSeriesChart
             data={chartData}
             series={[
-              { key: 'tirePressLF', label: 'LF', color: colors.accent },
+              { key: 'tirePressLF', label: 'LF', color: colors.cyan },
               { key: 'tirePressRF', label: 'RF', color: chartColors[1] },
               { key: 'tirePressLR', label: 'LR', color: chartColors[2] },
               { key: 'tirePressRR', label: 'RR', color: chartColors[3] },
@@ -221,7 +241,7 @@ export function TripPanel() {
           <TimeSeriesChart
             data={chartData}
             series={[
-              { key: 'tireTempLF', label: 'LF', color: colors.accent },
+              { key: 'tireTempLF', label: 'LF', color: colors.cyan },
               { key: 'tireTempRF', label: 'RF', color: chartColors[1] },
               { key: 'tireTempLR', label: 'LR', color: chartColors[2] },
               { key: 'tireTempRR', label: 'RR', color: chartColors[3] },
@@ -238,7 +258,7 @@ export function TripPanel() {
       <TimeSeriesChart
         data={chartData}
         series={[
-          { key: 'awdL', label: 'Left', color: colors.accent },
+          { key: 'awdL', label: 'Left', color: colors.cyan },
           { key: 'awdR', label: 'Right', color: chartColors[1] },
         ]}
         xFormatter={fmtTime}

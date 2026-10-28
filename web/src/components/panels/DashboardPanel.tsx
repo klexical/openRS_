@@ -8,8 +8,10 @@ import { Sparkline } from '../charts/Sparkline'
 import { GaugeChart } from '../charts/GaugeChart'
 import { ModeTimeline } from '../charts/ModeTimeline'
 import { GpsMap } from '../charts/GpsMap'
+import { ThermalProgressionChart } from '../charts/ThermalProgressionChart'
 import { ExportDropdown } from '../ui/ExportDropdown'
 import { fmtNumber, fmtDuration, useUnitFormatters } from '../../lib/format'
+import { latestTpms } from '../../lib/readings'
 import { colors } from '../../styles/tokens'
 
 export function DashboardPanel() {
@@ -28,34 +30,12 @@ export function DashboardPanel() {
   const speedData = useMemo(() => points?.map((p) => p.speedKph) ?? [], [points])
   const boostData = useMemo(() => points?.map((p) => p.boostPsi) ?? [], [points])
 
-  // TPMS: walk the trip in reverse and pick each corner's most recent valid
-  // reading independently. Tires are polled out-of-phase via Mode 22 DIDs, so
-  // any single timestamp will usually have at least one corner still at the
-  // -1 / -99 sentinel. Sourcing per-corner avoids showing blanks when valid
-  // data exists earlier in the drive.
-  const tpmsData = useMemo(() => {
-    if (!points || points.length === 0) return null
-    const result = {
-      pressLF: -1, pressRF: -1, pressLR: -1, pressRR: -1,
-      tempLF: -99, tempRF: -99, tempLR: -99, tempRR: -99,
-    }
-    let need = 8
-    for (let i = points.length - 1; i >= 0 && need > 0; i--) {
-      const p = points[i]
-      if (result.pressLF < 0 && p.tirePressLF >= 0) { result.pressLF = p.tirePressLF; need-- }
-      if (result.pressRF < 0 && p.tirePressRF >= 0) { result.pressRF = p.tirePressRF; need-- }
-      if (result.pressLR < 0 && p.tirePressLR >= 0) { result.pressLR = p.tirePressLR; need-- }
-      if (result.pressRR < 0 && p.tirePressRR >= 0) { result.pressRR = p.tirePressRR; need-- }
-      if (result.tempLF <= -90 && p.tireTempLF > -90) { result.tempLF = p.tireTempLF; need-- }
-      if (result.tempRF <= -90 && p.tireTempRF > -90) { result.tempRF = p.tireTempRF; need-- }
-      if (result.tempLR <= -90 && p.tireTempLR > -90) { result.tempLR = p.tireTempLR; need-- }
-      if (result.tempRR <= -90 && p.tireTempRR > -90) { result.tempRR = p.tireTempRR; need-- }
-    }
-    const anyValid =
-      result.pressLF >= 0 || result.pressRF >= 0 || result.pressLR >= 0 || result.pressRR >= 0 ||
-      result.tempLF > -90 || result.tempRF > -90 || result.tempLR > -90 || result.tempRR > -90
-    return anyValid ? result : null
-  }, [points])
+  // Race Ready detection (T2I)
+  const hasRaceReady = useMemo(() => points?.some((p) => p.raceReady) ?? false, [points])
+
+  // TPMS: each corner's most recent valid reading, found independently — corners are polled out of phase, so
+  // any single sample usually has at least one corner still at its sentinel (main e9cd565)
+  const tpmsData = useMemo(() => latestTpms(points ?? []), [points])
 
   // ── Early returns (after all hooks) ──
   if (sessions.length === 0) {
@@ -109,6 +89,26 @@ export function DashboardPanel() {
             )}
             <span>{session.meta.sessionStart}</span>
           </div>
+          {/* Tags (T2H) */}
+          {session.tags.length > 0 && (
+            <div className="flex gap-1.5 mt-2 flex-wrap">
+              {session.tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="px-2 py-0.5 rounded text-[10px] font-mono uppercase tracking-wider
+                             bg-accent/10 text-accent border border-accent/20"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+          {/* Race Ready indicator (T2I) */}
+          {hasRaceReady && (
+            <span className="inline-block mt-2 px-2 py-0.5 rounded text-[10px] font-mono uppercase tracking-wider font-semibold bg-ok/10 text-ok border border-ok/20">
+              Race Ready Detected
+            </span>
+          )}
         </div>
         <ExportDropdown session={session} />
       </div>
@@ -117,7 +117,7 @@ export function DashboardPanel() {
         <>
           {/* Mini map */}
           <SectionLabel>Route</SectionLabel>
-          <GpsMap points={points} peakEvents={trip.peakEvents} height="30vh" />
+          <GpsMap points={points} peakEvents={trip.peakEvents} bookmarks={session.trip?.bookmarks} height="30vh" />
 
           {/* Trip KPIs with sparklines */}
           <SectionLabel>Trip Summary</SectionLabel>
@@ -143,6 +143,16 @@ export function DashboardPanel() {
               <GaugeChart value={trip.peakBoostPsi} max={25} label="Peak Boost" unit={fmt.boostUnit} color={colors.accent} />
               <GaugeChart value={trip.peakSpeedKph} max={270} label="Peak Speed" unit={fmt.speedUnit} color={colors.ok} />
               <GaugeChart value={trip.peakLatG} max={1.5} label="Peak Lat G" unit="G" color={colors.warn} />
+              {/* Aggression Score (T2A) */}
+              {trip.aggressionScore != null && trip.aggressionScore > 0 && (
+                <GaugeChart
+                  value={trip.aggressionScore}
+                  max={100}
+                  label="Aggression"
+                  unit="/100"
+                  color={trip.aggressionScore > 70 ? colors.orange : trip.aggressionScore > 40 ? colors.warn : colors.ok}
+                />
+              )}
             </div>
             {/* Detail row below gauges */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 pt-4 border-t border-brd">
@@ -153,11 +163,50 @@ export function DashboardPanel() {
             </div>
           </div>
 
+          {/* Thermal Progression (T2B) */}
+          {session.trip?.thermalProgression && (
+            <>
+              <SectionLabel>Thermal Progression</SectionLabel>
+              <ThermalProgressionChart data={session.trip.thermalProgression} />
+            </>
+          )}
+
           {/* Drive mode timeline */}
           {Object.keys(trip.modeBreakdown).length > 0 && (
             <>
               <SectionLabel>Drive Mode Timeline</SectionLabel>
-              <ModeTimeline points={points} />
+              <ModeTimeline points={points} canonicalTimeline={session.trip?.canonicalModeTimeline} />
+            </>
+          )}
+
+          {/* Bookmarks summary */}
+          {session.trip?.bookmarks && session.trip.bookmarks.length > 0 && (
+            <>
+              <SectionLabel>Bookmarks ({session.trip.bookmarks.length})</SectionLabel>
+              <div className="rounded-lg border border-brd bg-surf2 overflow-hidden">
+                <div className="max-h-[200px] overflow-y-auto">
+                  <table className="w-full text-xs font-mono">
+                    <thead className="sticky top-0 bg-surf3">
+                      <tr className="text-left text-dim uppercase tracking-wider">
+                        <th className="px-3 py-2">Label</th>
+                        <th className="px-3 py-2">Speed</th>
+                        <th className="px-3 py-2">RPM</th>
+                        <th className="px-3 py-2">Boost</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {session.trip.bookmarks.map((bm, i) => (
+                        <tr key={i} className="border-t border-brd hover:bg-surf3/50">
+                          <td className="px-3 py-1.5" style={{ color: '#E040FB' }}>{bm.label || `#${i + 1}`}</td>
+                          <td className="px-3 py-1.5 text-frost">{bm.speedKph.toFixed(0)} kph</td>
+                          <td className="px-3 py-1.5 text-frost">{bm.rpm}</td>
+                          <td className="px-3 py-1.5 text-frost">{bm.boostPsi.toFixed(1)} PSI</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </>
           )}
 

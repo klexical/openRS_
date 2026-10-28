@@ -2,6 +2,8 @@ import JSZip from 'jszip'
 import type {
   Session, SessionMeta, TripData, TripPoint, TripSummary, PeakEvent,
   DiagnosticData, DtcEntry, CanFrame, FpsSample, SessionEvent, DecodeEntry, ProbeResult,
+  DriveProfile, Bookmark, ThermalProgression, ModeTimelineEntry, NrcSuppression,
+  FreezeFrameEntry,
 } from '../types/session'
 
 /** Thrown when an imported ZIP cannot be parsed — surfaced to the user via ImportPanel. */
@@ -12,54 +14,230 @@ export class ImportError extends Error {
   }
 }
 
+/** Manifest schema for typed file identification in exported ZIPs. */
+interface ManifestEntry {
+  name: string
+  type: string
+}
+
+interface ExportManifest {
+  version: number
+  app: string
+  appVersion: string
+  appBuild?: number
+  exportedAt: number
+  files: ManifestEntry[]
+}
+
+/**
+ * True for a drive telemetry CSV (`drive_*.csv` / legacy `trip_*.csv`). Excludes the
+ * companion CSVs the app writes beside it — RaceChrono / TrackAddict exports and the
+ * knock-event table (`drive_knock_*.csv`, `drive_<id>_<ts>_knock.csv`), which would
+ * otherwise import as phantom sessions (#183).
+ */
+export function isDriveCsvName(name: string): boolean {
+  return (name.startsWith('trip_') || name.startsWith('drive_')) && name.endsWith('.csv') &&
+    !name.includes('racechrono') && !name.includes('trackaddict') && !name.includes('knock')
+}
+
+/**
+ * Manifest entry for a drive CSV. Also checks the name: openRS_ v2.2.7-rc.4 manifests
+ * tag the knock CSV as `drive_csv`, so the type alone can't be trusted.
+ */
+export function isDriveCsvEntry(e: { name: string; type: string }): boolean {
+  return e.type === 'drive_csv' && isDriveCsvName(e.name)
+}
+
+/** Read manifest.json from ZIP if present. */
+async function readManifest(zip: JSZip): Promise<ExportManifest | null> {
+  const f = zip.files['manifest.json']
+  if (!f) return null
+  try {
+    return JSON.parse(await f.async('string'))
+  } catch {
+    return null
+  }
+}
+
 /** Import a ZIP file exported by the openRS_ Android app. */
 export async function importZip(file: File): Promise<Session> {
   const zip = await JSZip.loadAsync(file)
-  const id = crypto.randomUUID()
+  const manifest = await readManifest(zip)
 
-  const trip = await parseTripData(zip)
-  const dtcResults = await parseDtcData(zip)
-  const diagnostics = await parseDiagnosticData(zip, dtcResults)
-  const meta = await parseMeta(zip, file.name)
-
-  const name = buildSessionName(meta, trip, file.name)
-
-  return {
-    id,
-    name,
-    importedAt: Date.now(),
-    tags: [],
-    trip,
-    diagnostics,
-    meta,
+  // Detect batch ZIP (multiple drive CSVs)
+  const driveCsvCount = countDriveCsvs(zip, manifest)
+  if (driveCsvCount > 1) {
+    // For single importZip, import the first drive only.
+    // Use importBatchZip for full batch import.
+    const sessions = await importBatchZipInner(zip, manifest, file.name)
+    if (sessions.length > 0) return sessions[0]
   }
+
+  return importSingleDrive(zip, manifest, file.name)
+}
+
+/** Import a batch ZIP containing multiple drives. Returns one Session per drive. */
+export async function importBatchZip(file: File): Promise<Session[]> {
+  const zip = await JSZip.loadAsync(file)
+  const manifest = await readManifest(zip)
+  return importBatchZipInner(zip, manifest, file.name)
+}
+
+/** Detect whether a ZIP is a batch export (multiple drive CSVs). */
+export function isBatchZip(manifest: ExportManifest | null, zip: JSZip): boolean {
+  return countDriveCsvs(zip, manifest) > 1
+}
+
+/** Drive CSVs in the ZIP — from the manifest when present, else by filename. */
+function driveCsvFiles(zip: JSZip, manifest: ExportManifest | null): string[] {
+  return manifest
+    ? manifest.files.filter(isDriveCsvEntry).map((e) => e.name)
+    : Object.keys(zip.files).filter(isDriveCsvName)
+}
+
+function countDriveCsvs(zip: JSZip, manifest: ExportManifest | null): number {
+  return driveCsvFiles(zip, manifest).length
+}
+
+async function importBatchZipInner(zip: JSZip, manifest: ExportManifest | null, filename: string): Promise<Session[]> {
+  const csvFiles = driveCsvFiles(zip, manifest)
+
+  const sessions: Session[] = []
+  for (const csvFile of csvFiles) {
+    const id = crypto.randomUUID()
+    const trip = await parseTripDataFromCsv(zip, csvFile)
+    if (!trip) continue
+
+    const profileFile = findProfileFor(zip, manifest, csvFile, csvFiles.length)
+    if (profileFile) {
+      await mergeProfileJson(zip, profileFile, trip)
+    }
+
+    // DTC data (shared across batch — use first found)
+    const dtcResults = await parseDtcData(zip, manifest)
+    const diagnostics = await parseDiagnosticData(zip, dtcResults, manifest)
+    const meta = await parseMeta(zip, filename, manifest)
+    const name = buildSessionName(meta, trip, csvFile)
+
+    const tags: string[] = []
+    if (trip.profile?.drive.tags) {
+      tags.push(...trip.profile.drive.tags.split(',').map((t) => t.trim()).filter(Boolean))
+    }
+
+    sessions.push({ id, name, importedAt: Date.now(), tags, trip, diagnostics, meta })
+  }
+  return sessions
+}
+
+// Drive identity in export filenames: id (batch) + start time. Single export: drive_<ts>.csv +
+// drive_profile_<ts>.json; batch: drive_<id>_<ts>.csv + drive_<id>_<ts>_profile.json.
+const SINGLE_CSV = /^drive_(\d{8}_\d{6})\.csv$/
+const BATCH_CSV = /^drive_(\d+)_(\d{8}_\d{6})\.csv$/
+const SINGLE_PROFILE = /^drive_profile_(\d{8}_\d{6})\.json$/
+const BATCH_PROFILE = /^drive_(\d+)_(\d{8}_\d{6})_profile\.json$/
+
+const baseName = (path: string) => path.slice(path.lastIndexOf('/') + 1)
+const dirName = (path: string) => path.slice(0, path.lastIndexOf('/') + 1)
+
+/** Drive identity ("<id>_<ts>" or "_<ts>") from a drive CSV / profile filename, or null. */
+function driveIdentity(path: string): string | null {
+  const name = baseName(path)
+  let m = name.match(BATCH_CSV) ?? name.match(BATCH_PROFILE)
+  if (m) return `${m[1]}_${m[2]}`
+  m = name.match(SINGLE_CSV) ?? name.match(SINGLE_PROFILE)
+  return m ? `_${m[1]}` : null
+}
+
+function isProfileName(path: string, manifest: ExportManifest | null): boolean {
+  const name = baseName(path)
+  return SINGLE_PROFILE.test(name) || BATCH_PROFILE.test(name) ||
+    (name.endsWith('.json') && !!manifest?.files.some((e) => e.name === path && e.type === 'drive_profile'))
+}
+
+/**
+ * The profile JSON belonging to one drive CSV — the same rule for single and batch imports.
+ * 1. By name in the same folder: drive_<ts>.csv → drive_profile_<ts>.json, drive_<id>_<ts>.csv →
+ *    drive_<id>_<ts>_profile.json. The name carries the drive's id + start time, so the manifest
+ *    type isn't needed (batch manifests up to rc.6 label these files "unknown").
+ * 2. Only when the ZIP has one drive CSV and exactly one profile, and their names don't identify
+ *    different drives: that pair (older exports with other CSV names).
+ * Otherwise null — the drive keeps its CSV-only summary. Never chosen by ZIP order.
+ */
+function findProfileFor(zip: JSZip, manifest: ExportManifest | null, csvFile: string, driveCsvCount: number): string | null {
+  const name = baseName(csvFile)
+  const dir = dirName(csvFile)
+  const batch = name.match(BATCH_CSV)
+  const single = name.match(SINGLE_CSV)
+  const expected = batch ? `${dir}drive_${batch[1]}_${batch[2]}_profile.json`
+    : single ? `${dir}drive_profile_${single[1]}.json` : null
+  if (expected && zip.files[expected] && !zip.files[expected].dir) return expected
+
+  if (driveCsvCount !== 1) return null
+  const candidates = Object.keys(zip.files).filter((f) => !zip.files[f].dir && isProfileName(f, manifest))
+  if (candidates.length !== 1) return null
+  const csvId = driveIdentity(csvFile)
+  const profileId = driveIdentity(candidates[0])
+  return csvId && profileId && csvId !== profileId ? null : candidates[0]
+}
+
+async function importSingleDrive(zip: JSZip, manifest: ExportManifest | null, filename: string): Promise<Session> {
+  const id = crypto.randomUUID()
+  const trip = await parseTripData(zip, manifest)
+
+  // Parse profile JSON and merge into trip data (same association rule as batch imports)
+  const csvFiles = driveCsvFiles(zip, manifest)
+  if (trip && csvFiles.length > 0) {
+    const profileFile = findProfileFor(zip, manifest, csvFiles[0], csvFiles.length)
+    if (profileFile) {
+      await mergeProfileJson(zip, profileFile, trip)
+    }
+  }
+
+  // Prefer DTC JSON over TXT when available
+  const dtcResults = await parseDtcJsonData(zip, manifest) ?? await parseDtcData(zip, manifest)
+  const diagnostics = await parseDiagnosticData(zip, dtcResults, manifest)
+  const meta = await parseMeta(zip, filename, manifest)
+  const name = buildSessionName(meta, trip, filename)
+
+  const tags: string[] = []
+  if (trip?.profile?.drive.tags) {
+    tags.push(...trip.profile.drive.tags.split(',').map((t) => t.trim()).filter(Boolean))
+  }
+
+  return { id, name, importedAt: Date.now(), tags, trip, diagnostics, meta }
 }
 
 // ── Trip CSV parsing ──
 
-// Required column synonyms — at least one variant from each group must be
-// present in the CSV header for it to be considered a valid trip export.
+// Required column synonyms — at least one variant from each group must be present in the
+// drive CSV header (names as parseTripRow reads them). Only drive CSVs reach this check:
+// companion CSVs (RaceChrono / TrackAddict / knock) are filtered out by isDriveCsvName.
 const REQUIRED_COLUMN_GROUPS: { name: string; aliases: string[] }[] = [
   { name: 'timestamp', aliases: ['timestamp_ms', 'timestamp', 'ts'] },
   { name: 'rpm', aliases: ['rpm'] },
 ]
 
-async function parseTripData(zip: JSZip): Promise<TripData | null> {
-  const csvFile = Object.keys(zip.files).find(
-    (f) => (f.startsWith('trip_') || f.startsWith('drive_')) && f.endsWith('.csv')
-  )
+async function parseTripData(zip: JSZip, manifest: ExportManifest | null): Promise<TripData | null> {
+  const csvFile = driveCsvFiles(zip, manifest)[0]
   if (!csvFile) return null
+  return parseTripDataFromCsv(zip, csvFile)
+}
 
-  // Strip UTF-8 BOM if present — `.split('\n')` would otherwise leave \uFEFF
-  // glued to the first header, breaking field-name lookup in parseTripRow.
-  const csv = (await zip.files[csvFile].async('string')).replace(/^\uFEFF/, '')
-  const lines = csv.trim().split('\n')
+async function parseTripDataFromCsv(zip: JSZip, csvFile: string): Promise<TripData | null> {
+  const file = zip.files[csvFile]
+  if (!file) return null
+
+  // Strip a UTF-8 BOM first (as on main) — it must be gone before the `#` format-line check
+  // below. trim() also removes U+FEFF; the explicit strip keeps that if the parsing changes.
+  const csv = (await file.async('string')).replace(/^\uFEFF/, '')
+  // openRS_ v2.2.7-rc.4+ starts its CSVs with a `# openrs_csv_v2` format line — not a header row
+  const lines = csv.trim().split('\n').filter((l) => !l.startsWith('#'))
   if (lines.length < 2) return null
 
   const headers = lines[0].split(',').map((h) => h.trim())
 
   // Validate headers — surface a clear error instead of silently producing
-  // structurally-valid TripPoints filled with garbage values.
+  // structurally-valid TripPoints filled with default values.
   const headerSet = new Set(headers)
   const missing = REQUIRED_COLUMN_GROUPS
     .filter((g) => !g.aliases.some((a) => headerSet.has(a)))
@@ -94,7 +272,7 @@ function parseTripRow(row: Record<string, string>): TripPoint {
     ptuTempC: parseFloat(row['ptuTempC'] || row['ptu_c'] || row['ptu_temp_c'] || '-99'),
     ambientC: parseFloat(row['ambientC'] || row['ambient_c'] || '-99'),
     latG: parseFloat(row['latG'] || row['lateral_g'] || row['lat_g'] || '0'),
-    longG: parseFloat(row['longG'] || row['long_g'] || '0'),
+    longG: parseFloat(row['longG'] || row['longitudinal_g'] || row['long_g'] || '0'),  // T0F: fixed
     fuelPct: parseFloat(row['fuelPct'] || row['fuel_pct'] || '-1'),
     wheelSpeedFL: parseFloat(row['wheelSpeedFL'] || row['wheel_fl_kph'] || row['ws_fl'] || '0'),
     wheelSpeedFR: parseFloat(row['wheelSpeedFR'] || row['wheel_fr_kph'] || row['ws_fr'] || '0'),
@@ -113,13 +291,145 @@ function parseTripRow(row: Record<string, string>): TripPoint {
     tireTempRF: parseFloat(row['tireTempRF'] || row['tire_temp_rf_c'] || '-99'),
     tireTempLR: parseFloat(row['tireTempLR'] || row['tire_temp_lr_c'] || '-99'),
     tireTempRR: parseFloat(row['tireTempRR'] || row['tire_temp_rr_c'] || '-99'),
+    brakePressure: parseFloat(row['brakePressure'] || row['brake_pressure'] || '0'),      // T1A
+    steeringAngle: parseFloat(row['steeringAngle'] || row['steering_angle'] || '0'),      // T1A
+    raceReady: (row['raceReady'] || row['race_ready'] || 'false') === 'true',             // T1A
   }
 }
 
-function computeSummary(points: TripPoint[]): TripSummary {
-  if (points.length === 0) {
-    return emptySummary()
+// ── Profile JSON parsing (T1D) ──
+
+async function mergeProfileJson(zip: JSZip, profileFile: string, trip: TripData): Promise<void> {
+  const file = zip.files[profileFile]
+  if (!file) return
+
+  try {
+    const raw = await file.async('string')
+    const data = JSON.parse(raw)
+    const profile = parseProfile(data)
+    trip.profile = profile
+
+    // Promote profile data to TripData for ergonomic access
+    if (profile.thermalProgression) trip.thermalProgression = profile.thermalProgression
+    if (profile.bookmarks?.length) trip.bookmarks = profile.bookmarks
+    if (profile.drive.aggressionScore > 0) trip.aggressionScore = profile.drive.aggressionScore
+    if (profile.modeTimeline?.length) trip.canonicalModeTimeline = profile.modeTimeline
+
+    // Override CSV-computed summary with canonical profile values
+    const d = profile.drive
+    const s = trip.summary
+    if (d.peakRpm > 0) s.peakRpm = d.peakRpm
+    if (d.peakBoostPsi > 0) s.peakBoostPsi = d.peakBoostPsi
+    if (d.peakLateralG > 0) s.peakLatG = d.peakLateralG
+    if (d.maxSpeedKph > 0) s.peakSpeedKph = d.maxSpeedKph
+    if (d.peakOilTempC > -90) s.peakOilTempC = d.peakOilTempC
+    if (d.peakCoolantTempC > -90) s.peakCoolantC = d.peakCoolantTempC
+    if (d.fuelUsedL > 0) s.fuelUsedL = d.fuelUsedL
+    if (d.aggressionScore > 0) s.aggressionScore = d.aggressionScore
+
+    // Override peak events with profile peaks (GPS-tagged, canonical)
+    if (profile.peaks.length > 0) {
+      s.peakEvents = profile.peaks.map((p) => ({
+        type: p.type === 'RPM' ? 'rpm' : p.type === 'BOOST' ? 'boost' : p.type === 'LATERAL_G' ? 'latG' : 'speed',
+        value: p.value,
+        ts: p.timestampMs,
+        lat: p.lat,
+        lng: p.lng,
+      }))
+    }
+
+    // Parse laps/perfRuns if present (T5B/T5C stubs)
+    if (data.laps && Array.isArray(data.laps)) {
+      trip.laps = data.laps.map((l: Record<string, unknown>) => ({
+        lapNumber: Number(l.lapNumber || 0),
+        lapTimeMs: Number(l.lapTimeMs || 0),
+        peakRpm: l.peakRpm != null ? Number(l.peakRpm) : undefined,
+        peakBoostPsi: l.peakBoostPsi != null ? Number(l.peakBoostPsi) : undefined,
+        peakLateralG: l.peakLateralG != null ? Number(l.peakLateralG) : undefined,
+        peakSpeedKph: l.peakSpeedKph != null ? Number(l.peakSpeedKph) : undefined,
+      }))
+    }
+    if (data.perfRuns && Array.isArray(data.perfRuns)) {
+      trip.perfRuns = data.perfRuns.map((r: Record<string, unknown>) => ({
+        type: String(r.type || ''),
+        timeMs: Number(r.timeMs || 0),
+        launchRpm: r.launchRpm != null ? Number(r.launchRpm) : undefined,
+        peakBoostPsi: r.peakBoostPsi != null ? Number(r.peakBoostPsi) : undefined,
+        densityAltFt: r.densityAltFt != null ? Number(r.densityAltFt) : undefined,
+        ambientTempC: r.ambientTempC != null ? Number(r.ambientTempC) : undefined,
+      }))
+    }
+  } catch {
+    // Profile JSON parse failure is non-fatal
   }
+}
+
+function parseProfile(data: Record<string, unknown>): DriveProfile {
+  const d = (data.drive || {}) as Record<string, unknown>
+  const drive = {
+    startTime: Number(d.startTime || 0),
+    endTime: Number(d.endTime || 0),
+    distanceKm: Number(d.distanceKm || 0),
+    avgSpeedKph: Number(d.avgSpeedKph || 0),
+    maxSpeedKph: Number(d.maxSpeedKph || 0),
+    peakRpm: Number(d.peakRpm || 0),
+    peakBoostPsi: Number(d.peakBoostPsi || 0),
+    peakLateralG: Number(d.peakLateralG || 0),
+    peakOilTempC: Number(d.peakOilTempC ?? -99),
+    peakCoolantTempC: Number(d.peakCoolantTempC ?? -99),
+    fuelUsedL: Number(d.fuelUsedL || 0),
+    aggressionScore: Number(d.aggressionScore || 0),
+    tags: String(d.tags || ''),
+    avgFuelL100km: d.avgFuelL100km != null ? Number(d.avgFuelL100km) : undefined,
+    avgFuelMpg: d.avgFuelMpg != null ? Number(d.avgFuelMpg) : undefined,
+  }
+
+  const peaksRaw = Array.isArray(data.peaks) ? data.peaks : []
+  const peaks = peaksRaw.map((p: Record<string, unknown>) => ({
+    type: String(p.type || 'RPM') as 'RPM' | 'BOOST' | 'LATERAL_G' | 'SPEED',
+    value: Number(p.value || 0),
+    lat: Number(p.lat || 0),
+    lng: Number(p.lng || 0),
+    timestampMs: Number(p.timestampMs || 0),
+  }))
+
+  const thermalRaw = (data.thermalProgression || {}) as Record<string, unknown>
+  const parseCurve = (c: unknown) => {
+    const obj = (c || {}) as Record<string, unknown>
+    return { startC: Number(obj.startC ?? -99), peakC: Number(obj.peakC ?? -99), endC: Number(obj.endC ?? -99) }
+  }
+  const thermalProgression: ThermalProgression = {
+    oil: parseCurve(thermalRaw.oil),
+    coolant: parseCurve(thermalRaw.coolant),
+    ...(thermalRaw.rdu ? { rdu: parseCurve(thermalRaw.rdu) } : {}),
+    ...(thermalRaw.ptu ? { ptu: parseCurve(thermalRaw.ptu) } : {}),
+  }
+
+  const timelineRaw = Array.isArray(data.modeTimeline) ? data.modeTimeline : []
+  const modeTimeline: ModeTimelineEntry[] = timelineRaw.map((e: Record<string, unknown>) => ({
+    mode: String(e.mode || 'NORMAL'),
+    startMs: Number(e.startMs || 0),
+    endMs: Number(e.endMs || 0),
+  }))
+
+  const bookmarksRaw = Array.isArray(data.bookmarks) ? data.bookmarks : []
+  const bookmarks: Bookmark[] = bookmarksRaw.map((b: Record<string, unknown>) => ({
+    timestamp: Number(b.timestamp || 0),
+    lat: Number(b.lat || 0),
+    lng: Number(b.lng || 0),
+    label: String(b.label || ''),
+    speedKph: Number(b.speedKph || 0),
+    rpm: Number(b.rpm || 0),
+    boostPsi: Number(b.boostPsi || 0),
+  }))
+
+  return { version: Number(data.version || 1), drive, peaks, thermalProgression, modeTimeline, bookmarks }
+}
+
+// ── Summary computation ──
+
+function computeSummary(points: TripPoint[]): TripSummary {
+  if (points.length === 0) return emptySummary()
 
   const durationMs = points[points.length - 1].ts - points[0].ts
   let distanceKm = 0
@@ -213,10 +523,12 @@ function computeAvgFuelEconomy(fuelUsedL: number, distanceKm: number): number {
 
 // ── DTC text parsing ──
 
-async function parseDtcData(zip: JSZip): Promise<DtcEntry[]> {
-  const dtcFile = Object.keys(zip.files).find(
-    (f) => f.startsWith('dtc_scan_') && f.endsWith('.txt')
-  )
+async function parseDtcData(zip: JSZip, manifest: ExportManifest | null): Promise<DtcEntry[]> {
+  const dtcFile = manifest
+    ? manifest.files.find((e) => e.type === 'dtc_text')?.name
+    : Object.keys(zip.files).find(
+        (f) => f.startsWith('dtc_scan_') && f.endsWith('.txt')
+      )
   if (!dtcFile) return []
 
   const text = await zip.files[dtcFile].async('string')
@@ -225,13 +537,11 @@ async function parseDtcData(zip: JSZip): Promise<DtcEntry[]> {
 
   for (const line of text.split('\n')) {
     const trimmed = line.trim()
-    // Module header: ─── PCM ───...
     const modMatch = trimmed.match(/^─+\s+(\w+)\s+─/)
     if (modMatch) {
       currentModule = modMatch[1]
       continue
     }
-    // DTC line:   P0101  [STORED]  description
     const dtcMatch = trimmed.match(/^([A-Z]\d{4})\s+\[(\w+)]\s+(.*)/)
     if (dtcMatch && currentModule) {
       results.push({
@@ -245,14 +555,58 @@ async function parseDtcData(zip: JSZip): Promise<DtcEntry[]> {
   return results
 }
 
+// ── DTC JSON parsing (T1E — preferred over TXT) ──
+
+async function parseDtcJsonData(zip: JSZip, manifest: ExportManifest | null): Promise<DtcEntry[] | null> {
+  const jsonFile = manifest
+    ? manifest.files.find((e) => e.type === 'dtc_json')?.name
+    : Object.keys(zip.files).find(
+        (f) => f.startsWith('dtc_scan_') && f.endsWith('.json')
+      )
+  if (!jsonFile || !zip.files[jsonFile]) return null
+
+  try {
+    const raw = await zip.files[jsonFile].async('string')
+    const data = JSON.parse(raw)
+    const codes = Array.isArray(data.codes) ? data.codes : []
+
+    return codes.map((c: Record<string, unknown>): DtcEntry => {
+      const entry: DtcEntry = {
+        module: String(c.module || ''),
+        code: String(c.code || ''),
+        status: String(c.status || 'UNKNOWN'),
+        description: String(c.description || ''),
+        severity: c.severity ? String(c.severity) : undefined,
+      }
+      // Parse freeze frame if present
+      const ff = c.freezeFrame as Record<string, unknown> | undefined
+      if (ff && ff.entries) {
+        const entries = Array.isArray(ff.entries) ? ff.entries : []
+        entry.freezeFrame = {
+          recordNumber: Number(ff.recordNumber || 0),
+          entries: entries.map((e: Record<string, unknown>): FreezeFrameEntry => ({
+            did: String(e.did || ''),
+            label: String(e.label || ''),
+            value: String(e.value || ''),
+          })),
+        }
+      }
+      return entry
+    })
+  } catch {
+    return null
+  }
+}
+
 // ── Diagnostic JSON parsing ──
 
-async function parseDiagnosticData(zip: JSZip, dtcResults: DtcEntry[]): Promise<DiagnosticData | null> {
-  const jsonFile = Object.keys(zip.files).find(
-    (f) => f.startsWith('diagnostic_detail_') && f.endsWith('.json')
-  )
+async function parseDiagnosticData(zip: JSZip, dtcResults: DtcEntry[], manifest: ExportManifest | null): Promise<DiagnosticData | null> {
+  const jsonFile = manifest
+    ? manifest.files.find((e) => e.type === 'diagnostic_detail')?.name
+    : Object.keys(zip.files).find(
+        (f) => f.startsWith('diagnostic_detail_') && f.endsWith('.json')
+      )
   if (!jsonFile) {
-    // No diagnostic JSON, but we may still have DTC results
     if (dtcResults.length > 0) {
       return { canInventory: [], fpsTimeline: [], sessionEvents: [], decodeTrace: [], probeResults: [], dtcResults }
     }
@@ -269,69 +623,141 @@ async function parseDiagnosticData(zip: JSZip, dtcResults: DtcEntry[]): Promise<
     decodeTrace: parseDecodeTrace(data),
     probeResults: parseProbeResults(data),
     dtcResults,
+    nrcSuppression: parseNrcSuppression(data),
   }
 }
 
+// T0A: Fixed — Android uses "canFrameInventory" object keyed by CAN ID, not an array
 function parseCanInventory(data: Record<string, unknown>): CanFrame[] {
-  const inv = data.canInventory || data.can_inventory || []
-  if (!Array.isArray(inv)) return []
-  return inv.map((f: Record<string, unknown>) => ({
-    id: String(f.id || f.canId || ''),
-    count: Number(f.count || 0),
-    changed: Boolean(f.changed),
-    firstHex: String(f.firstHex || f.first_hex || ''),
-    lastHex: String(f.lastHex || f.last_hex || ''),
-    samples: Array.isArray(f.samples) ? f.samples.map(String) : [],
-  }))
+  // Try object format first (Android actual output)
+  const inv = data.canFrameInventory || data.canInventory || data.can_inventory
+  if (!inv) return []
+
+  // Object keyed by CAN ID hex (actual Android format)
+  if (typeof inv === 'object' && !Array.isArray(inv)) {
+    return Object.entries(inv as Record<string, Record<string, unknown>>)
+      .map(([id, info]) => ({
+        id,
+        count: Number(info.totalReceived || info.count || 0),
+        changed: Boolean(info.hasChanged ?? info.changed),
+        firstHex: String(info.firstRawHex || info.firstHex || ''),
+        lastHex: String(info.lastRawHex || info.lastHex || ''),
+        samples: Array.isArray(info.periodicSamples)
+          ? (info.periodicSamples as Record<string, unknown>[]).map((s) => String(s.rawHex || ''))
+          : Array.isArray(info.samples) ? (info.samples as string[]).map(String) : [],
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id))
+  }
+
+  // Array format (legacy/fallback)
+  if (Array.isArray(inv)) {
+    return (inv as Record<string, unknown>[]).map((f) => ({
+      id: String(f.id || f.canId || ''),
+      count: Number(f.count || 0),
+      changed: Boolean(f.changed),
+      firstHex: String(f.firstHex || f.first_hex || ''),
+      lastHex: String(f.lastHex || f.last_hex || ''),
+      samples: Array.isArray(f.samples) ? (f.samples as string[]).map(String) : [],
+    }))
+  }
+
+  return []
 }
 
+// T0B: Fixed — Android uses "relMs", not "ts"/"timestamp"
 function parseFpsTimeline(data: Record<string, unknown>): FpsSample[] {
   const fps = data.fpsTimeline || data.fps_timeline || []
   if (!Array.isArray(fps)) return []
-  return fps.map((s: Record<string, unknown>) => ({
-    ts: Number(s.ts || s.timestamp || 0),
+  return (fps as Record<string, unknown>[]).map((s) => ({
+    ts: Number(s.relMs || s.ts || s.timestamp || 0),
     fps: Number(s.fps || 0),
   }))
 }
 
+// T0D: Fixed — Android uses "relMs", not "ts"/"timestamp"
 function parseSessionEvents(data: Record<string, unknown>): SessionEvent[] {
   const events = data.sessionEvents || data.session_events || []
   if (!Array.isArray(events)) return []
-  return events.map((e: Record<string, unknown>) => ({
-    ts: Number(e.ts || e.timestamp || 0),
+  return (events as Record<string, unknown>[]).map((e) => ({
+    ts: Number(e.relMs || e.ts || e.timestamp || 0),
     type: String(e.type || 'info'),
     message: String(e.message || e.msg || ''),
   }))
 }
 
+// T0C: Fixed — Android uses "id", not "canId"/"can_id"
 function parseDecodeTrace(data: Record<string, unknown>): DecodeEntry[] {
   const trace = data.decodeTrace || data.decode_trace || []
   if (!Array.isArray(trace)) return []
-  return trace.map((d: Record<string, unknown>) => ({
-    ts: Number(d.ts || d.timestamp || 0),
-    canId: String(d.canId || d.can_id || ''),
-    rawHex: String(d.rawHex || d.raw_hex || ''),
+  return (trace as Record<string, unknown>[]).map((d) => ({
+    ts: Number(d.relMs || d.ts || d.timestamp || 0),
+    canId: String(d.id || d.canId || d.can_id || ''),
+    rawHex: String(d.raw || d.rawHex || d.raw_hex || ''),
     decoded: String(d.decoded || ''),
     issue: String(d.issue || ''),
   }))
 }
 
+// T0E: Fixed — Android nests results under probe sessions
 function parseProbeResults(data: Record<string, unknown>): ProbeResult[] {
   const probes = data.probeResults || data.probe_results || []
   if (!Array.isArray(probes)) return []
-  return probes.map((p: Record<string, unknown>) => ({
-    module: String(p.module || ''),
-    did: String(p.did || ''),
-    status: String(p.status || ''),
-    responseHex: String(p.responseHex || p.response_hex || ''),
-    description: String(p.description || ''),
+
+  const results: ProbeResult[] = []
+  for (const p of probes as Record<string, unknown>[]) {
+    // Check if this is a nested probe session (Android format)
+    if (p.results && Array.isArray(p.results)) {
+      const module = String(p.module || '')
+      for (const r of p.results as Record<string, unknown>[]) {
+        results.push({
+          module,
+          did: String(r.did || ''),
+          status: String(r.status || '').toLowerCase(),
+          responseHex: String(r.response || r.responseHex || ''),
+          description: '',
+        })
+      }
+    } else {
+      // Flat format (legacy/fallback)
+      results.push({
+        module: String(p.module || ''),
+        did: String(p.did || ''),
+        status: String(p.status || ''),
+        responseHex: String(p.responseHex || p.response_hex || ''),
+        description: String(p.description || ''),
+      })
+    }
+  }
+  return results
+}
+
+// T1F: Parse NRC suppression
+function parseNrcSuppression(data: Record<string, unknown>): NrcSuppression[] | undefined {
+  const nrc = data.nrcSuppression || data.nrc_suppression
+  if (!Array.isArray(nrc) || nrc.length === 0) return undefined
+  return (nrc as Record<string, unknown>[]).map((n) => ({
+    did: String(n.did || ''),
+    nrcCode: Number(n.nrcCode || 0),
+    nrcName: String(n.nrcName || 'unknown'),
+    firstSeenMs: Number(n.firstSeenMs || 0),
+    suppressedAfterCount: Number(n.suppressedAfterCount || 0),
   }))
 }
 
-// ── Meta ──
+// ── Meta (T1G: manifest metadata) ──
 
-async function parseMeta(zip: JSZip, filename: string): Promise<SessionMeta> {
-  // Try to find summary text for metadata
+async function parseMeta(zip: JSZip, filename: string, manifest: ExportManifest | null): Promise<SessionMeta> {
+  if (manifest) {
+    return {
+      appVersion: manifest.appVersion || 'unknown',
+      firmwareVersion: 'unknown',
+      sessionStart: '',
+      generatedAt: new Date(manifest.exportedAt).toISOString(),
+      appBuild: manifest.appBuild,
+      exportedAt: manifest.exportedAt,
+    }
+  }
+
   const summaryFile = Object.keys(zip.files).find(
     (f) => f.startsWith('diagnostic_summary_') || f.startsWith('trip_summary_') || f.startsWith('drive_summary_')
   )
@@ -350,7 +776,6 @@ async function parseMeta(zip: JSZip, filename: string): Promise<SessionMeta> {
     if (startMatch) sessionStart = startMatch[1].trim()
   }
 
-  // Extract timestamp from filename: openrs_diag_20260326_072526.zip
   if (!sessionStart) {
     const tsMatch = filename.match(/(\d{8}_\d{6})/)
     if (tsMatch) {
@@ -359,12 +784,7 @@ async function parseMeta(zip: JSZip, filename: string): Promise<SessionMeta> {
     }
   }
 
-  return {
-    appVersion,
-    firmwareVersion,
-    sessionStart,
-    generatedAt: new Date().toISOString(),
-  }
+  return { appVersion, firmwareVersion, sessionStart, generatedAt: new Date().toISOString() }
 }
 
 function buildSessionName(meta: SessionMeta, trip: TripData | null, filename: string): string {

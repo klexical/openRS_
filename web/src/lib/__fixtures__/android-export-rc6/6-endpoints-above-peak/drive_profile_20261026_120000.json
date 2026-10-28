@@ -1,0 +1,86 @@
+{
+  "thermalRecord": {
+    "unit": "°C",
+    "sensors": {
+      "rdu": {
+        "peakProfile": "street",
+        "flagged": false,
+        "peakC": 70,
+        "peakLevel": "NORMAL"
+      },
+      "oil": {
+        "peakProfile": "street",
+        "flagged": false,
+        "peakC": 100,
+        "peakLevel": "NORMAL"
+      },
+      "coolant": {
+        "peakProfile": "street",
+        "flagged": false,
+        "peakC": 90,
+        "peakLevel": "NORMAL"
+      }
+    },
+    "flagged": false,
+    "flagRule": "reading >= flagThresholdC = 0.95 x critC of the profile in effect when it was recorded",
+    "basis": "profile",
+    "segments": [{
+      "peaksC": {
+        "rdu": 70,
+        "oil": 100,
+        "coolant": 90
+      },
+      "profile": "street",
+      "limits": {
+        "ptu": {
+          "critC": 110,
+          "flagThresholdC": 104.5,
+          "warnC": 95
+        },
+        "rdu": {
+          "critC": 100,
+          "flagThresholdC": 95,
+          "warnC": 90
+        },
+        "oil": {
+          "critC": 130,
+          "flagThresholdC": 123.5,
+          "warnC": 120
+        },
+        "coolant": {
+          "critC": 115,
+          "flagThresholdC": 109.25,
+          "warnC": 105
+        }
+      },
+      "startOffsetMs": 0
+    }]
+  },
+  "thermalProgression": {"coolant": {
+    "endC": 88,
+    "startC": 45,
+    "peakC": 90
+  }},
+  "modeTimeline": [{
+    "mode": "Normal",
+    "startMs": 1000,
+    "endMs": 1800000
+  }],
+  "drive": {
+    "peakLateralG": 0,
+    "distanceKm": 0,
+    "fuelUsedL": 0,
+    "peakRpm": 0,
+    "tags": "",
+    "avgSpeedKph": 0,
+    "aggressionScore": 0,
+    "peakBoostPsi": 0,
+    "startTime": 1700000000000,
+    "maxSpeedKph": 0,
+    "peakOilTempC": 100,
+    "endTime": 1700001800000,
+    "peakCoolantTempC": 90
+  },
+  "version": 2,
+  "peaks": []
+}

@@ -22,6 +22,7 @@ function makePoint(ts: number, overrides: Partial<TripPoint> = {}): TripPoint {
     gear: '3', throttlePct: 45,
     tirePressLF: 35, tirePressRF: 35, tirePressLR: 33, tirePressRR: 33,
     tireTempLF: 40, tireTempRF: 40, tireTempLR: 38, tireTempRR: 38,
+    brakePressure: 0, steeringAngle: 0, raceReady: false,
     ...overrides,
   }
 }
@@ -58,6 +59,33 @@ describe('computeDeltas', () => {
     expect(deltas.find((d) => d.label === 'Peak Long G')).toBeUndefined()
   })
 
+  // main e0c8b5e's regression tests. Main also changed the formula to diff / baseValue; that flips the sign
+  // whenever the baseline is negative, so this side keeps diff / |baseValue| (same result for positive ones).
+  it('uses signed pctChange for lower-is-better metrics', () => {
+    const base = makeSummary({ durationMs: 600000 })
+    const comp = makeSummary({ durationMs: 450000 })
+    const delta = computeDeltas(base, comp).find((d) => d.label === 'Duration')
+    expect(delta!.diff).toBe(-150000)
+    expect(delta!.pctChange).toBeCloseTo(-25, 5)
+    expect(delta!.higherIsBetter).toBe(false)
+  })
+
+  it('uses signed pctChange for higher-is-better metrics', () => {
+    const base = makeSummary({ peakSpeedKph: 160 })
+    const comp = makeSummary({ peakSpeedKph: 140 })
+    const delta = computeDeltas(base, comp).find((d) => d.label === 'Peak Speed')
+    expect(delta!.diff).toBe(-20)
+    expect(delta!.pctChange).toBeCloseTo(-12.5, 5)
+    expect(delta!.higherIsBetter).toBe(true)
+  })
+
+  it('pctChange carries the sign of the diff when the baseline is negative', () => {
+    const delta = computeDeltas(makeSummary({ peakCoolantC: -10 }), makeSummary({ peakCoolantC: -5 }))
+      .find((d) => d.label === 'Peak Coolant')
+    expect(delta!.diff).toBe(5)
+    expect(delta!.pctChange).toBeCloseTo(50, 5)          // ▲ +5 (+50 %), not (−50 %)
+  })
+
   it('handles non-finite values gracefully', () => {
     const base = makeSummary({ peakRpm: NaN })
     const comp = makeSummary({ peakRpm: 6000 })
@@ -65,32 +93,37 @@ describe('computeDeltas', () => {
     expect(deltas.find((d) => d.label === 'Peak RPM')).toBeUndefined()
   })
 
-  // Regression: previously the pctChange divided by Math.abs(baseValue), which
-  // inverted the sign for any metric where the diff was negative. The signed
-  // percentage now matches the diff so 'good or bad' decisions stay in
-  // higherIsBetter, not in the percentage sign.
-  it('uses signed pctChange for lower-is-better metrics', () => {
-    // 25% faster lap: duration drops from 600s to 450s
-    const base = makeSummary({ durationMs: 600000 })
-    const comp = makeSummary({ durationMs: 450000 })
-    const delta = computeDeltas(base, comp).find((d) => d.label === 'Duration')
+  // T6F: Aggression score delta
+  it('includes aggression score delta (higher is better)', () => {
+    const base = makeSummary({ aggressionScore: 40 })
+    const comp = makeSummary({ aggressionScore: 75 })
+    const deltas = computeDeltas(base, comp)
 
-    expect(delta).toBeDefined()
-    expect(delta!.diff).toBe(-150000)
-    expect(delta!.pctChange).toBeCloseTo(-25, 5)
-    expect(delta!.higherIsBetter).toBe(false)
+    const aggDelta = deltas.find((d) => d.label === 'Aggression')
+    expect(aggDelta).toBeDefined()
+    expect(aggDelta!.higherIsBetter).toBe(true)
+    expect(aggDelta!.diff).toBe(35)
+    expect(aggDelta!.pctChange).toBeCloseTo(87.5, 0)
   })
 
-  it('uses signed pctChange for higher-is-better metrics', () => {
-    // Slower lap: peak speed drops from 160 to 140 → -12.5%
-    const base = makeSummary({ peakSpeedKph: 160 })
-    const comp = makeSummary({ peakSpeedKph: 140 })
-    const delta = computeDeltas(base, comp).find((d) => d.label === 'Peak Speed')
+  // T6F: Fuel used delta
+  it('includes fuel used delta (lower is better)', () => {
+    const base = makeSummary({ fuelUsedL: 3 })
+    const comp = makeSummary({ fuelUsedL: 2 })
+    const deltas = computeDeltas(base, comp)
 
-    expect(delta).toBeDefined()
-    expect(delta!.diff).toBe(-20)
-    expect(delta!.pctChange).toBeCloseTo(-12.5, 5)
-    expect(delta!.higherIsBetter).toBe(true)
+    const fuelDelta = deltas.find((d) => d.label === 'Fuel Used')
+    expect(fuelDelta).toBeDefined()
+    expect(fuelDelta!.higherIsBetter).toBe(false)
+    expect(fuelDelta!.diff).toBe(-1)
+  })
+
+  // T6F: Skips aggression when not present
+  it('skips aggression delta when not set on either session', () => {
+    const base = makeSummary() // no aggressionScore
+    const comp = makeSummary()
+    const deltas = computeDeltas(base, comp)
+    expect(deltas.find((d) => d.label === 'Aggression')).toBeUndefined()
   })
 })
 
@@ -121,24 +154,39 @@ describe('normalizePoints', () => {
     expect(norm[1].speedKph).toBe(130)
   })
 
-  it('clamps sentinel coolant to 0', () => {
+  it('sentinel coolant (-99) is missing (null → a gap), not a 0 °C reading', () => {
     const points = [
       makePoint(1000, { coolantC: -99 }),
       makePoint(2000, { coolantC: 90 }),
     ]
     const norm = normalizePoints(points)
-    expect(norm[0].coolantC).toBe(0)
+    expect(norm[0].coolantC).toBeNull()
     expect(norm[1].coolantC).toBe(90)
   })
 
-  it('clamps sentinel throttle to 0', () => {
+  it('sentinel throttle (-1) is missing (null), not 0 %', () => {
     const points = [
       makePoint(1000, { throttlePct: -1 }),
       makePoint(2000, { throttlePct: 50 }),
     ]
     const norm = normalizePoints(points)
-    expect(norm[0].throttlePct).toBe(0)
+    expect(norm[0].throttlePct).toBeNull()
     expect(norm[1].throttlePct).toBe(50)
+  })
+
+  it('genuine zeros stay readings: 0 °C coolant / oil, 0 % throttle, sub-zero temps', () => {
+    const norm = normalizePoints([
+      makePoint(1000, { coolantC: 0, oilTempC: 0, throttlePct: 0 }),
+      makePoint(2000, { coolantC: -12, oilTempC: -5, throttlePct: 0 }),
+    ])
+    expect(norm[0]).toMatchObject({ coolantC: 0, oilTempC: 0, throttlePct: 0 })
+    expect(norm[1]).toMatchObject({ coolantC: -12, oilTempC: -5, throttlePct: 0 })
+  })
+
+  it('NaN from a malformed row is missing too', () => {
+    const norm = normalizePoints([makePoint(1000, { coolantC: NaN, throttlePct: NaN }), makePoint(2000)])
+    expect(norm[0].coolantC).toBeNull()
+    expect(norm[0].throttlePct).toBeNull()
   })
 
   it('returns empty for single point', () => {
@@ -147,6 +195,31 @@ describe('normalizePoints', () => {
 
   it('returns empty for zero-duration session', () => {
     expect(normalizePoints([makePoint(1000), makePoint(1000)])).toHaveLength(0)
+  })
+
+  // T6F: Extended NormalizedPoint fields
+  it('normalizes oilTempC; the -99 sentinel is missing (null)', () => {
+    const points = [
+      makePoint(1000, { oilTempC: -99 }),
+      makePoint(2000, { oilTempC: 110 }),
+    ]
+    const norm = normalizePoints(points)
+    expect(norm[0].oilTempC).toBeNull()
+    expect(norm[1].oilTempC).toBe(110)
+  })
+
+  it('normalizes longG, brakePressure, and steeringAngle', () => {
+    const points = [
+      makePoint(1000, { longG: 0.45, brakePressure: 30, steeringAngle: -12 }),
+      makePoint(2000, { longG: -0.2, brakePressure: 0, steeringAngle: 25 }),
+    ]
+    const norm = normalizePoints(points)
+
+    expect(norm[0].longG).toBeCloseTo(0.45, 2)
+    expect(norm[0].brakePressure).toBe(30)
+    expect(norm[0].steeringAngle).toBe(-12)
+    expect(norm[1].longG).toBeCloseTo(-0.2, 2)
+    expect(norm[1].steeringAngle).toBe(25)
   })
 })
 
@@ -176,12 +249,20 @@ describe('resampleNormalized', () => {
     ])
     const resampled = resampleNormalized(norm, 3)
 
-    // At t=0, nearest is point 0 (rpm 1000)
     expect(resampled[0].rpm).toBe(1000)
-    // At t=0.5, nearest is point 1 (rpm 5000)
     expect(resampled[1].rpm).toBe(5000)
-    // At t=1.0, nearest is point 2 (rpm 3000)
     expect(resampled[2].rpm).toBe(3000)
+  })
+
+  it('a bin whose nearest point has no reading stays null (gap), next to genuine zeros', () => {
+    const norm = normalizePoints([
+      makePoint(1000, { coolantC: -99, throttlePct: 0 }),
+      makePoint(2000, { coolantC: 0, throttlePct: -1 }),
+      makePoint(3000, { coolantC: 85, throttlePct: 60 }),
+    ])
+    const resampled = resampleNormalized(norm, 3)
+    expect(resampled.map((p) => p.coolantC)).toEqual([null, 0, 85])
+    expect(resampled.map((p) => p.throttlePct)).toEqual([0, null, 60])
   })
 })
 

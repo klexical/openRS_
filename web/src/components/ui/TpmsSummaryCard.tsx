@@ -54,6 +54,7 @@ export function TpmsSummaryCard({ data }: { data: TireData }) {
             }}>
               {t.label}
             </span>
+            {/* A corner that never reported shows "—", not a 0 PSI reading */}
             <span style={{
               fontSize: 16,
               fontFamily: 'Orbitron, sans-serif',
@@ -85,7 +86,7 @@ function pressColor(psi: number): string {
 }
 
 function tempColor(c: number): string {
-  if (c < 0) return colors.accent
+  if (c < 0) return colors.cyan
   if (c < 40) return colors.ok
   if (c < 60) return colors.warn
   return colors.orange
