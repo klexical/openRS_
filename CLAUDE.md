@@ -449,7 +449,7 @@ data[5] = B5,  data[6] = B6 …
 - **Opening presentation** — system splash = background colour only (`splash_blank`). The composition draws alone at
   full opacity (no fade-in); the splash exit listener completes `OpeningState.splashGone`, and only then does the
   dashboard compose underneath (`composeDashboard`) and `CanDataService` bind — composing / binding earlier blocked the
-  splash hand-off by up to 1.5 s. Hold 2 s from the first visible frame, 300 ms fade; once per **app task** (`OpeningState.shouldShow`, #213): cold launch, Force stop, or a new task after Recents dismissal (even if the process survived) — never Home / resume, Back on Android 12+ (task moved to the back, so reopening resumes it), rotation, tab changes or service rebinds. `splashGone` is a fresh deferred per opening.
+  splash hand-off by up to 1.5 s. Hold 2 s from the first visible frame, 300 ms fade; once per **app task** (`OpeningState.shouldShow`, #213): cold launch, Force stop, or a new task after Recents dismissal (even if the process survived) — never Home / resume, rotation, tab changes or service rebinds. Back is the system's: task moved to the back → no replay; task removed (seen on the Android 16 emulator) → next launch is a new task → replay. `splashGone` is a fresh deferred per opening.
   Keep heavy work out of `onCreate` paths (PID catalog loads on IO). Debug timing: `adb logcat -s openRS_Startup`
   (ms since process start, `ui/StartupTrace.kt`)
 - **Connection state never inserts space** — RECONNECTING / TAP TO CONNECT render inside DRIVE's fixed 48 dp
@@ -604,6 +604,11 @@ Drive-mode dock / ESC buttons / DTC clear act on simulated state only (mode land
   (random port) starts empty
 - Sapphire import contract: `web/src/lib/import.androidExport.test.tsx` imports complete Android exports from
   `__fixtures__/android-export-rc6/`; regenerate with `OPENRS_EXPORT_SAMPLES=<dir> ./gradlew test --tests '*DriveExportThermalTest'`
+- Lifecycle tests without a car (rc.7): `~/Documents/openRS_-evidence/rc7-lifecycle-2026-10-28/fake_slcan.py` is a fake
+  SLCAN TCP adapter on the host; on the disposable AVD set adapter MEATPI_PRO, host `10.0.2.2`, port 35000 (edit
+  `shared_prefs/openrs_settings.xml` via `exec-out run-as … cat` / `exec-in run-as … sh -c 'cat > …'`). Kill / restart
+  the script to drop / restore the link. Recents dismissal on the Android 16 launcher needs `input motionevent
+  DOWN/MOVE…/UP` — `input swipe` is ignored. `probe.sh` there snapshots pid / service / notification / task
 - The HUD overlay needs `adb shell appops set com.openrs.dash.debug SYSTEM_ALERT_WINDOW allow` on a fresh emulator
   (restore with `… default`); start it from ⚙ → DISPLAY → FLOATING HUD. A reinstall stops it
 
@@ -665,7 +670,7 @@ android/app/src/test/java/com/openrs/dash/
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **742 tests across 41 files** (Android) + **255 vitest across 20 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **779 tests across 47 files** (Android) + **260 vitest across 21 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 

@@ -162,8 +162,9 @@ private fun traceDraw(contentAlpha: Float, alpha: Float) {
 /**
  * When the opening presentation plays (#213): once per **app task**, on its first activity creation. A genuine cold
  * launch (also after Force stop) and a launch that creates a new task after the app was dismissed from Recents show it,
- * even if Android kept the process. Home / resume, Back (Android 12+ moves the task to the back, so reopening resumes
- * the same task), rotation (saved state), tab changes and service rebinds don't.
+ * even if Android kept the process. Home / resume, rotation (saved state), tab changes and service rebinds don't. Back
+ * follows the system: where it only moves the task to the back, reopening resumes that task (no replay); where it
+ * finishes the root activity and removes the task (seen on an Android 16 emulator), the next launch is a new task.
  */
 object OpeningState {
     /** Task id the opening was last shown (or skipped) for; [NO_TASK] before the first activity. */

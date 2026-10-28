@@ -195,6 +195,7 @@ class MainActivity : ComponentActivity() {
         handleTripPreviewIntent(intent)
         // Opening presentation: once per app task (#213) — a cold launch or a new task after Recents dismissal, even with
         // the process kept alive; never after rotation (saved state) or when an existing task is resumed / recreated.
+        // Back is the system's: moved to the back → same task, no replay; task removed → the next launch is a new task.
         val showOpening = OpeningState.shouldShow(savedInstanceState != null, taskId)
         OpeningState.shownForTask = taskId
         if (showOpening) OpeningState.splashGone = kotlinx.coroutines.CompletableDeferred()
