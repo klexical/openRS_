@@ -360,14 +360,16 @@ class CanDataService : Service() {
     private fun isRecording(): Boolean = OpenRSDashApp.instance.driveRecorder.driveState.value.isRecording
 
     /**
-     * The foreground notification. Its body opens the app (the existing task — launcher intent); while an initial
-     * attempt runs it carries a Cancel action (#212). No generic Stop: that could end a recording.
+     * The foreground notification. Its body brings the existing MainActivity forward (SINGLE_TOP + CLEAR_TOP: never a
+     * second dashboard on top of a task started by another intent) or starts one; while an initial attempt runs it
+     * carries a Cancel action (#212). No generic Stop: that could end a recording.
      */
     private fun buildNotification(text: String, offerCancel: Boolean): android.app.Notification {
-        val open = packageManager.getLaunchIntentForPackage(packageName)?.let {
-            android.app.PendingIntent.getActivity(this, 0, it,
-                android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT)
-        }
+        val open = android.app.PendingIntent.getActivity(this, 0,
+            Intent(this, com.openrs.dash.ui.MainActivity::class.java)
+                .setAction(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT)
         return NotificationCompat.Builder(this, OpenRSDashApp.CHANNEL_CAN)
             .setContentTitle("openRS_")
             .setContentText(text)
