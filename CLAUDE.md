@@ -665,7 +665,7 @@ android/app/src/test/java/com/openrs/dash/
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **742 tests across 41 files** (Android) + **249 vitest across 19 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **742 tests across 41 files** (Android) + **255 vitest across 20 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 
@@ -809,7 +809,9 @@ superseded, so **take this side for every `web/` file** when merging:*
   exists, else the newest import (or none); IndexedDB load `.catch`. `App.test.tsx`.
 - Compare (`74f6cf6`): DeltaCard per-unit neutral floor (+ `L`, `/100`). **Not taken:** main's `pctChange =
   diff / baseValue` — it flips the sign for a negative baseline; this side's `diff / |baseValue|` is kept (main's
-  tests pass here, plus a negative-baseline test).
+  tests pass here, plus a negative-baseline test). Overlays: `normalizePoints` maps missing coolant / oil / throttle
+  through `lib/readings.ts` → null (a gap), genuine zeros kept — main clamped them to 0 (`compare.test.ts`,
+  `ComparisonChart.test.tsx`).
 - Perf / UX (`1c3e602`): GpsMap per-mode precompute (with bookmarks), ComparisonChart resample cache, GForceScatter
   keeps lat-G peaks (`lib/gforce.ts`), ModeTimeline case normalisation (CSV + profile timeline), SessionsPanel
   `allSettled` bulk delete, SettingsPanel copy. **Not taken:** main's 150 ms SessionsPanel debounce — SearchBar already
@@ -825,7 +827,6 @@ superseded, so **take this side for every `web/` file** when merging:*
 - thermalRecord visualisation in Sapphire (the block imports and is ignored today).
 - Thermal Soak is a stacked chart: while one layer is missing, the layers above it sit lower (stack total). Inherent to
   stacking (main's 0-floor shifts them the same way); a non-stacked view would be a design change.
-- Compare overlays still clamp missing coolant / oil / throttle to 0 (`normalizePoints`, by test — same on main).
 
 *Integration / deployment steps (not done):*
 - Staging: feature/design-pass contains all of `origin/staging` (64 commits ahead, nothing behind) → PR to staging.

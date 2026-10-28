@@ -40,11 +40,11 @@ export function ComparisonChart({ sessions, dataKey, label, yFormatter, height =
     return resampleNormalized(normalizePoints(pts), BINS)
   }), [sessions])
 
-  // Build merged data: each row has { t, s0, s1, ... } for dataKey
+  // Build merged data: each row has { t, s0, s1, ... } for dataKey; a missing reading stays null → a gap
   const { chartData, seriesInfo } = useMemo(() => {
-    const rows: Record<string, number>[] = []
+    const rows: Record<string, number | null>[] = []
     for (let i = 0; i < BINS; i++) {
-      const row: Record<string, number> = { t: i / (BINS - 1) * 100 } // 0..100%
+      const row: Record<string, number | null> = { t: i / (BINS - 1) * 100 } // 0..100%
       resampled.forEach((pts, si) => {
         if (pts[i]) {
           row[`s${si}`] = pts[i][dataKey]

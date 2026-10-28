@@ -154,24 +154,39 @@ describe('normalizePoints', () => {
     expect(norm[1].speedKph).toBe(130)
   })
 
-  it('clamps sentinel coolant to 0', () => {
+  it('sentinel coolant (-99) is missing (null → a gap), not a 0 °C reading', () => {
     const points = [
       makePoint(1000, { coolantC: -99 }),
       makePoint(2000, { coolantC: 90 }),
     ]
     const norm = normalizePoints(points)
-    expect(norm[0].coolantC).toBe(0)
+    expect(norm[0].coolantC).toBeNull()
     expect(norm[1].coolantC).toBe(90)
   })
 
-  it('clamps sentinel throttle to 0', () => {
+  it('sentinel throttle (-1) is missing (null), not 0 %', () => {
     const points = [
       makePoint(1000, { throttlePct: -1 }),
       makePoint(2000, { throttlePct: 50 }),
     ]
     const norm = normalizePoints(points)
-    expect(norm[0].throttlePct).toBe(0)
+    expect(norm[0].throttlePct).toBeNull()
     expect(norm[1].throttlePct).toBe(50)
+  })
+
+  it('genuine zeros stay readings: 0 °C coolant / oil, 0 % throttle, sub-zero temps', () => {
+    const norm = normalizePoints([
+      makePoint(1000, { coolantC: 0, oilTempC: 0, throttlePct: 0 }),
+      makePoint(2000, { coolantC: -12, oilTempC: -5, throttlePct: 0 }),
+    ])
+    expect(norm[0]).toMatchObject({ coolantC: 0, oilTempC: 0, throttlePct: 0 })
+    expect(norm[1]).toMatchObject({ coolantC: -12, oilTempC: -5, throttlePct: 0 })
+  })
+
+  it('NaN from a malformed row is missing too', () => {
+    const norm = normalizePoints([makePoint(1000, { coolantC: NaN, throttlePct: NaN }), makePoint(2000)])
+    expect(norm[0].coolantC).toBeNull()
+    expect(norm[0].throttlePct).toBeNull()
   })
 
   it('returns empty for single point', () => {
@@ -183,13 +198,13 @@ describe('normalizePoints', () => {
   })
 
   // T6F: Extended NormalizedPoint fields
-  it('normalizes oilTempC with sentinel clamping', () => {
+  it('normalizes oilTempC; the -99 sentinel is missing (null)', () => {
     const points = [
       makePoint(1000, { oilTempC: -99 }),
       makePoint(2000, { oilTempC: 110 }),
     ]
     const norm = normalizePoints(points)
-    expect(norm[0].oilTempC).toBe(0)
+    expect(norm[0].oilTempC).toBeNull()
     expect(norm[1].oilTempC).toBe(110)
   })
 
@@ -237,6 +252,17 @@ describe('resampleNormalized', () => {
     expect(resampled[0].rpm).toBe(1000)
     expect(resampled[1].rpm).toBe(5000)
     expect(resampled[2].rpm).toBe(3000)
+  })
+
+  it('a bin whose nearest point has no reading stays null (gap), next to genuine zeros', () => {
+    const norm = normalizePoints([
+      makePoint(1000, { coolantC: -99, throttlePct: 0 }),
+      makePoint(2000, { coolantC: 0, throttlePct: -1 }),
+      makePoint(3000, { coolantC: 85, throttlePct: 60 }),
+    ])
+    const resampled = resampleNormalized(norm, 3)
+    expect(resampled.map((p) => p.coolantC)).toEqual([null, 0, 85])
+    expect(resampled.map((p) => p.throttlePct)).toEqual([0, null, 60])
   })
 })
 
