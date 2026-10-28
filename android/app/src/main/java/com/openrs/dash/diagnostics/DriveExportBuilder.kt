@@ -59,20 +59,20 @@ internal object DriveExportBuilder {
                 appendLine("        <ele>0</ele>")
                 appendLine("        <time>${isoFmt.format(Date(pt.timestamp))}</time>")
                 appendLine("        <extensions>")
-                appendLine("          <openrs:speed>${"%.1f".format(pt.speedKph)}</openrs:speed>")
+                appendLine("          <openrs:speed>${"%.1f".format(Locale.ROOT, pt.speedKph)}</openrs:speed>")
                 appendLine("          <openrs:rpm>${pt.rpm}</openrs:rpm>")
                 appendLine("          <openrs:gear>${pt.gear}</openrs:gear>")
-                appendLine("          <openrs:boostPsi>${"%.2f".format(pt.boostPsi)}</openrs:boostPsi>")
-                appendLine("          <openrs:coolantC>${"%.1f".format(pt.coolantTempC)}</openrs:coolantC>")
-                appendLine("          <openrs:oilC>${"%.1f".format(pt.oilTempC)}</openrs:oilC>")
-                appendLine("          <openrs:ambientC>${"%.1f".format(pt.ambientTempC)}</openrs:ambientC>")
-                appendLine("          <openrs:rduC>${"%.1f".format(pt.rduTempC)}</openrs:rduC>")
-                appendLine("          <openrs:ptuC>${"%.1f".format(pt.ptuTempC)}</openrs:ptuC>")
-                appendLine("          <openrs:fuelPct>${"%.1f".format(pt.fuelLevelPct)}</openrs:fuelPct>")
-                appendLine("          <openrs:lateralG>${"%.3f".format(pt.lateralG)}</openrs:lateralG>")
-                appendLine("          <openrs:longitudinalG>${"%.3f".format(pt.longitudinalG)}</openrs:longitudinalG>")
-                appendLine("          <openrs:brakePressure>${"%.1f".format(pt.brakePressure)}</openrs:brakePressure>")
-                appendLine("          <openrs:steeringAngle>${"%.1f".format(pt.steeringAngle)}</openrs:steeringAngle>")
+                appendLine("          <openrs:boostPsi>${"%.2f".format(Locale.ROOT, pt.boostPsi)}</openrs:boostPsi>")
+                appendLine("          <openrs:coolantC>${"%.1f".format(Locale.ROOT, pt.coolantTempC)}</openrs:coolantC>")
+                appendLine("          <openrs:oilC>${"%.1f".format(Locale.ROOT, pt.oilTempC)}</openrs:oilC>")
+                appendLine("          <openrs:ambientC>${"%.1f".format(Locale.ROOT, pt.ambientTempC)}</openrs:ambientC>")
+                appendLine("          <openrs:rduC>${"%.1f".format(Locale.ROOT, pt.rduTempC)}</openrs:rduC>")
+                appendLine("          <openrs:ptuC>${"%.1f".format(Locale.ROOT, pt.ptuTempC)}</openrs:ptuC>")
+                appendLine("          <openrs:fuelPct>${"%.1f".format(Locale.ROOT, pt.fuelLevelPct)}</openrs:fuelPct>")
+                appendLine("          <openrs:lateralG>${"%.3f".format(Locale.ROOT, pt.lateralG)}</openrs:lateralG>")
+                appendLine("          <openrs:longitudinalG>${"%.3f".format(Locale.ROOT, pt.longitudinalG)}</openrs:longitudinalG>")
+                appendLine("          <openrs:brakePressure>${"%.1f".format(Locale.ROOT, pt.brakePressure)}</openrs:brakePressure>")
+                appendLine("          <openrs:steeringAngle>${"%.1f".format(Locale.ROOT, pt.steeringAngle)}</openrs:steeringAngle>")
                 appendLine("          <openrs:driveMode>${pt.driveMode}</openrs:driveMode>")
                 appendLine("        </extensions>")
                 appendLine("      </trkpt>")
@@ -124,39 +124,39 @@ internal object DriveExportBuilder {
         points.forEach { pt ->
             appendLine(
                 "${pt.timestamp}," +
-                (if (hasGps) "${"%.6f".format(pt.lat)},${"%.6f".format(pt.lng)}," else ",,") +
-                "${"%.2f".format(pt.speedKph)}," +
+                (if (hasGps) "${"%.6f".format(Locale.ROOT, pt.lat)},${"%.6f".format(Locale.ROOT, pt.lng)}," else ",,") +
+                "${"%.2f".format(Locale.ROOT, pt.speedKph)}," +
                 "${pt.rpm}," +
                 "${csvEscape(pt.gear)}," +
-                "${"%.3f".format(pt.boostPsi)}," +
-                "${"%.1f".format(pt.coolantTempC)}," +
-                "${"%.1f".format(pt.oilTempC)}," +
-                "${"%.1f".format(pt.ambientTempC)}," +
-                "${"%.1f".format(pt.rduTempC)}," +
-                "${"%.1f".format(pt.ptuTempC)}," +
-                "${"%.1f".format(pt.fuelLevelPct)}," +
-                "${"%.1f".format(pt.tirePressLF)}," +
-                "${"%.1f".format(pt.tirePressRF)}," +
-                "${"%.1f".format(pt.tirePressLR)}," +
-                "${"%.1f".format(pt.tirePressRR)}," +
-                "${"%.1f".format(pt.tireTempLF)}," +
-                "${"%.1f".format(pt.tireTempRF)}," +
-                "${"%.1f".format(pt.tireTempLR)}," +
-                "${"%.1f".format(pt.tireTempRR)}," +
-                "${"%.2f".format(pt.wheelSpeedFL)}," +
-                "${"%.2f".format(pt.wheelSpeedFR)}," +
-                "${"%.2f".format(pt.wheelSpeedRL)}," +
-                "${"%.2f".format(pt.wheelSpeedRR)}," +
-                "${"%.4f".format(pt.lateralG)}," +
-                "${"%.4f".format(pt.longitudinalG)}," +
-                "${"%.1f".format(pt.brakePressure)}," +
-                "${"%.1f".format(pt.steeringAngle)}," +
-                "${"%.1f".format(pt.throttlePct)}," +
+                "${"%.3f".format(Locale.ROOT, pt.boostPsi)}," +
+                "${"%.1f".format(Locale.ROOT, pt.coolantTempC)}," +
+                "${"%.1f".format(Locale.ROOT, pt.oilTempC)}," +
+                "${"%.1f".format(Locale.ROOT, pt.ambientTempC)}," +
+                "${"%.1f".format(Locale.ROOT, pt.rduTempC)}," +
+                "${"%.1f".format(Locale.ROOT, pt.ptuTempC)}," +
+                "${"%.1f".format(Locale.ROOT, pt.fuelLevelPct)}," +
+                "${"%.1f".format(Locale.ROOT, pt.tirePressLF)}," +
+                "${"%.1f".format(Locale.ROOT, pt.tirePressRF)}," +
+                "${"%.1f".format(Locale.ROOT, pt.tirePressLR)}," +
+                "${"%.1f".format(Locale.ROOT, pt.tirePressRR)}," +
+                "${"%.1f".format(Locale.ROOT, pt.tireTempLF)}," +
+                "${"%.1f".format(Locale.ROOT, pt.tireTempRF)}," +
+                "${"%.1f".format(Locale.ROOT, pt.tireTempLR)}," +
+                "${"%.1f".format(Locale.ROOT, pt.tireTempRR)}," +
+                "${"%.2f".format(Locale.ROOT, pt.wheelSpeedFL)}," +
+                "${"%.2f".format(Locale.ROOT, pt.wheelSpeedFR)}," +
+                "${"%.2f".format(Locale.ROOT, pt.wheelSpeedRL)}," +
+                "${"%.2f".format(Locale.ROOT, pt.wheelSpeedRR)}," +
+                "${"%.4f".format(Locale.ROOT, pt.lateralG)}," +
+                "${"%.4f".format(Locale.ROOT, pt.longitudinalG)}," +
+                "${"%.1f".format(Locale.ROOT, pt.brakePressure)}," +
+                "${"%.1f".format(Locale.ROOT, pt.steeringAngle)}," +
+                "${"%.1f".format(Locale.ROOT, pt.throttlePct)}," +
                 "${csvEscape(pt.driveMode)}," +
                 "${pt.isRaceReady}," +
-                "${"%.2f".format(pt.tipActualKpa)}," +
-                "${"%.2f".format(pt.boostTargetKpa)}," +
-                "${"%.1f".format(pt.wgdcPct)}"
+                "${"%.2f".format(Locale.ROOT, pt.tipActualKpa)}," +
+                "${"%.2f".format(Locale.ROOT, pt.boostTargetKpa)}," +
+                "${"%.1f".format(Locale.ROOT, pt.wgdcPct)}"
             )
         }
     }
@@ -171,14 +171,14 @@ internal object DriveExportBuilder {
         events.forEach { ev ->
             appendLine(
                 "${ev.timestamp}," +
-                "${"%.2f".format(ev.krDeg)}," +
+                "${"%.2f".format(Locale.ROOT, ev.krDeg)}," +
                 "${ev.rpm}," +
-                "${"%.2f".format(ev.boostPsi)}," +
-                "${"%.1f".format(ev.iatC)}," +
-                "${"%.1f".format(ev.throttlePct)}," +
+                "${"%.2f".format(Locale.ROOT, ev.boostPsi)}," +
+                "${"%.1f".format(Locale.ROOT, ev.iatC)}," +
+                "${"%.1f".format(Locale.ROOT, ev.throttlePct)}," +
                 "${ev.gearEst}," +
-                "${ev.lat?.let { "%.6f".format(it) } ?: ""}," +
-                "${ev.lng?.let { "%.6f".format(it) } ?: ""}," +
+                "${ev.lat?.let { "%.6f".format(Locale.ROOT, it) } ?: ""}," +
+                "${ev.lng?.let { "%.6f".format(Locale.ROOT, it) } ?: ""}," +
                 "${ev.cylinder}"
             )
         }
@@ -600,20 +600,20 @@ internal object DriveExportBuilder {
             val timeSec = (pt.timestamp - t0) / 1000.0
             val speedMs = pt.speedKph / 3.6
             appendLine(
-                "${"%.3f".format(timeSec)}," +
-                "${"%.6f".format(pt.lat)}," +
-                "${"%.6f".format(pt.lng)}," +
-                "${"%.2f".format(speedMs)}," +
-                "${"%.2f".format(pt.speedKph)}," +
-                "${"%.4f".format(pt.lateralG)}," +
-                "${"%.4f".format(pt.longitudinalG)}," +
+                "${"%.3f".format(Locale.ROOT, timeSec)}," +
+                "${"%.6f".format(Locale.ROOT, pt.lat)}," +
+                "${"%.6f".format(Locale.ROOT, pt.lng)}," +
+                "${"%.2f".format(Locale.ROOT, speedMs)}," +
+                "${"%.2f".format(Locale.ROOT, pt.speedKph)}," +
+                "${"%.4f".format(Locale.ROOT, pt.lateralG)}," +
+                "${"%.4f".format(Locale.ROOT, pt.longitudinalG)}," +
                 "${pt.rpm}," +
-                "${"%.1f".format(pt.throttlePct)}," +
+                "${"%.1f".format(Locale.ROOT, pt.throttlePct)}," +
                 "${csvEscape(pt.gear)}," +
-                "${"%.2f".format(pt.boostPsi)}," +
-                "${"%.1f".format(pt.coolantTempC)}," +
-                "${"%.1f".format(pt.oilTempC)}," +
-                "${"%.1f".format(pt.brakePressure)}"
+                "${"%.2f".format(Locale.ROOT, pt.boostPsi)}," +
+                "${"%.1f".format(Locale.ROOT, pt.coolantTempC)}," +
+                "${"%.1f".format(Locale.ROOT, pt.oilTempC)}," +
+                "${"%.1f".format(Locale.ROOT, pt.brakePressure)}"
             )
         }
     }
@@ -637,19 +637,19 @@ internal object DriveExportBuilder {
             val coolantF = if (pt.coolantTempC > -90) pt.coolantTempC * 9.0 / 5.0 + 32.0 else -99.0
             val oilF = if (pt.oilTempC > -90) pt.oilTempC * 9.0 / 5.0 + 32.0 else -99.0
             appendLine(
-                "${"%.3f".format(timeSec)}," +
-                "${"%.6f".format(pt.lat)}," +
-                "${"%.6f".format(pt.lng)}," +
-                "${"%.1f".format(speedMph)}," +
-                "${"%.4f".format(pt.lateralG)}," +
-                "${"%.4f".format(pt.longitudinalG)}," +
+                "${"%.3f".format(Locale.ROOT, timeSec)}," +
+                "${"%.6f".format(Locale.ROOT, pt.lat)}," +
+                "${"%.6f".format(Locale.ROOT, pt.lng)}," +
+                "${"%.1f".format(Locale.ROOT, speedMph)}," +
+                "${"%.4f".format(Locale.ROOT, pt.lateralG)}," +
+                "${"%.4f".format(Locale.ROOT, pt.longitudinalG)}," +
                 "${pt.rpm}," +
-                "${"%.1f".format(pt.throttlePct)}," +
+                "${"%.1f".format(Locale.ROOT, pt.throttlePct)}," +
                 "${csvEscape(pt.gear)}," +
-                "${"%.2f".format(pt.boostPsi)}," +
-                "${"%.1f".format(coolantF)}," +
-                "${"%.1f".format(oilF)}," +
-                "${"%.1f".format(pt.brakePressure)}"
+                "${"%.2f".format(Locale.ROOT, pt.boostPsi)}," +
+                "${"%.1f".format(Locale.ROOT, coolantF)}," +
+                "${"%.1f".format(Locale.ROOT, oilF)}," +
+                "${"%.1f".format(Locale.ROOT, pt.brakePressure)}"
             )
         }
     }

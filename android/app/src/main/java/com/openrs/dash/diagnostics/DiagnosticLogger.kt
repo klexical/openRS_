@@ -387,10 +387,10 @@ object DiagnosticLogger {
         }
     }
 
-    /** Build a candump-format line outside the lock to keep hot-path holds short. */
-    private fun buildSlcanLine(relMs: Long, canId: Int, compactHex: String): String {
+    /** Build a candump-format line outside the lock to keep hot-path holds short. Always `.` decimals (candump / SavvyCAN). */
+    internal fun buildSlcanLine(relMs: Long, canId: Int, compactHex: String): String {
         val seconds = relMs / 1000.0
-        return "(%10.3f) can0 %03X#%s\n".format(seconds, canId, compactHex)
+        return "(%10.3f) can0 %03X#%s\n".format(java.util.Locale.ROOT, seconds, canId, compactHex)
     }
 
     /**

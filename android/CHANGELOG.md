@@ -9,6 +9,9 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ## [v2.2.7] — unreleased
 
+### Fixed (rc.7 — exports)
+- **Exports broke on phones set to a decimal-comma language** — numbers in machine-readable files followed the phone's locale, so on Polish, German, French and similar settings `100.25` was written as `100,25`. A drive CSV row then had 65 fields under a 35-field header, RaceChrono / TrackAddict rows split, GPX speeds didn't parse, the raw SLCAN log read `(0,090)` and crash telemetry was invalid JSON. Drive, knock, RaceChrono and TrackAddict CSVs, GPX numeric fields, SLCAN log timestamps and crash telemetry now always use `.`; on-screen text and the human-readable summaries keep the phone's locale. New ExportLocaleTest (en_US / pl_PL / de_DE: header vs row field counts, values parsed back, GPX parsed as XML, crash JSON parsed). (`diagnostics/DriveExportBuilder.kt`, `DiagnosticLogger.kt`, `CrashTelemetryBuffer.kt`) ([#211](https://github.com/klexical/openRS_/issues/211))
+
 ### Added (rc.6 — knock logger)
 - **Session knock log** — knock events are now captured whenever the adapter is connected, not only while a drive is recording. Held in memory per session (cap 2,000), shown under a new SESSION scope on the PERF knock card (now SESSION / THIS DRIVE / ALL), and exported in the diagnostic ZIP as `drive_knock_session_*.csv`. Uses the same fresh-only capture as the recorder. (`data/KnockSessionLog.kt`) ([#174](https://github.com/klexical/openRS_/issues/174))
 - **% of pulls with knock** — new `PullTracker` counts WOT pulls (throttle ≥ 80 % at ≥ 2,500 RPM for ≥ 2 s; gear-change lifts under 2 s don't split a pull) and the pulls that saw KR > 0. Shown as a PULLS cell on the knock card for every scope, stored per drive, and added to the drive summary. (`data/PullTracker.kt`) ([#174](https://github.com/klexical/openRS_/issues/174))
