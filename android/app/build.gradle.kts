@@ -36,7 +36,10 @@ fun git(vararg args: String): String = try {
     providers.exec { commandLine("git", *args); isIgnoreExitValue = true }.standardOutput.asText.get().trim()
 } catch (_: Exception) { "" }
 val sourceCommit = git("rev-parse", "--short=12", "HEAD").ifEmpty { "unknown" }
-val sourceDirty = git("status", "--porcelain", "--untracked-files=no").isNotEmpty()
+// Dirty = anything in the android/ tree (all the APK is built from) differs from HEAD: modified tracked files AND
+// untracked files git doesn't ignore — a new Kotlin source or resource enters the build without being committed.
+// Ignored files (build/, local.properties, keystore) don't count.
+val sourceDirty = git("status", "--porcelain", "--untracked-files=all", "--", rootProject.projectDir.absolutePath).isNotEmpty()
 
 val localPropsFile = rootProject.file("local.properties")
 val localProps = Properties().also { props ->

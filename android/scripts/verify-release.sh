@@ -23,12 +23,24 @@ VN=$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" <<<"$BADGING")
 VC=$(sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" <<<"$BADGING")
 [ "$VN" = "$NAME" ] || fail "embedded versionName '$VN' does not match tag $TAG"
 
+# Earlier tags whose versionCode can't be read from their build file. An entry needs a reason next to it; there are
+# none — all 37 android-v* tags up to android-v2.2.7-rc.6 read (checked 2026-10-28). Any other unreadable tag fails.
+LEGACY_TAGS=""
+
+TAGS=$(git tag -l 'android-v*')
+[ -n "$TAGS" ] || fail "no android-v* tags in this checkout — the versionCode check needs the tag history (actions/checkout fetch-depth: 0)"
 MAX=0; MAX_TAG=""
-for t in $(git tag -l 'android-v*'); do
+for t in $TAGS; do
   [ "$t" = "$TAG" ] && continue
   c=$(git show "${t}:android/app/build.gradle.kts" 2>/dev/null \
       | grep -oE '(releaseVersionCode|versionCode) *= *[0-9]+' | grep -oE '[0-9]+$' | head -1 || true)
-  if [ -n "$c" ] && [ "$c" -gt "$MAX" ]; then MAX=$c; MAX_TAG=$t; fi
+  if [ -z "$c" ]; then
+    case " $LEGACY_TAGS " in
+      *" $t "*) echo "note: $t has no readable versionCode — listed in LEGACY_TAGS"; continue ;;
+    esac
+    fail "cannot read the versionCode of earlier tag $t (${t}:android/app/build.gradle.kts) — without it this release can't be shown to be higher; fix the lookup, or add $t to LEGACY_TAGS with the reason"
+  fi
+  if [ "$c" -gt "$MAX" ]; then MAX=$c; MAX_TAG=$t; fi
 done
 [ "$VC" -gt "$MAX" ] || fail "versionCode $VC is not higher than $MAX already released as $MAX_TAG"
 
