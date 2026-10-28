@@ -684,7 +684,7 @@ Never route README.md, assets/, or docs/ through staging.
 2. Close standalone issues that shipped — comment with commit SHA
 3. Update umbrella issue checklists — check off shipped sub-items with version annotation
 4. Close umbrella issues only when ALL sub-items are checked off
-5. Add/update `versionHighlights` entry in `WhatsNewDialog.kt` for the new version — dialog falls back to the latest entry if missing, but every release should have its own highlights
+5. Add/update `versionHighlights` entry in `WhatsNewDialog.kt` for the new version — dialog falls back to the latest entry if missing, but every release should have its own highlights. It auto-opens only when `VERSION_NAME` changes, so RCs of one version (all "2.2.7") don't re-show it — extend the entry per RC anyway (Settings opens it)
 
 ## Changelog Format (`android/CHANGELOG.md`)
 
@@ -817,7 +817,7 @@ superseded, so **take this side for every `web/` file** when merging:*
   `allSettled` bulk delete, SettingsPanel copy. **Not taken:** main's 150 ms SessionsPanel debounce — SearchBar already
   debounces 200 ms (on main too).
 - Browser smoke (2026-10-27, production build, Playwright Chromium; script + ZIP + screenshots in `~/Documents/openRS_-evidence/sapphire-smoke-2026-10-27/`): gaps vs zeros
-  in the SVG, all six paints on screen + print, reload restore, missing / deleted saved session — 30/30, no page errors.
+  in the SVG, all six paints on screen + print, reload restore, missing / deleted saved session — 29/29 checks, no page errors.
 
 *Separate follow-ups (documented, not release blockers for this checklist):*
 - `DriveRecorder` stores points only from location updates, so a drive without GPS records no telemetry (the export
@@ -828,17 +828,27 @@ superseded, so **take this side for every `web/` file** when merging:*
 - Thermal Soak is a stacked chart: while one layer is missing, the layers above it sit lower (stack total). Inherent to
   stacking (main's 0-floor shifts them the same way); a non-stacked view would be a design change.
 
-*Integration / deployment steps (not done):*
-- Staging: feature/design-pass contains all of `origin/staging` (64 commits ahead, nothing behind) → PR to staging.
-- Main: merging staging into main keeps this side for all of `web/` (above) and the Android exporter; don't take main's
-  release-version files from `dc32b8b`. Main also has CI commits staging lacks — `8bba37f` (release-job APK verify path,
-  wrong on this side for pushes to main), `38fcf67` (lint advisory), `8905b1f` (detekt + firmware script tests; detekt
-  baseline predates rc.6 — not run against this code). RC tags build from staging (`publish-release`), unaffected.
+*Integration / deployment steps (prepared locally 2026-10-27, nothing pushed — worktrees in `~/Documents/openRS_-worktrees/`):*
+- Android → staging: `release/rc6-staging` = `origin/staging` + `--no-ff` merge of feature/design-pass (tree identical to
+  feature/design-pass; nothing behind staging). Real path: push feature/design-pass → PR to staging → tag
+  `android-v2.2.7-rc.6` on the merge commit → `publish-release` (tag-derived `-PrcSuffix`, `prerelease: true`).
+- Sapphire → main: `release/sapphire-main` = `origin/main` + one commit taking `web/` whole from feature/design-pass
+  (main has no `web/` change after `e9cd565`; `package.json` / `package-lock.json` identical, so deploy's `npm ci`
+  is unchanged). Nothing outside `web/` — main's Android, version files, CHANGELOG, docs, CLAUDE.md and
+  `android/browser-emulator` stay as they are. PR to main → `deploy-pages` on merge. Supersedes `fix/sapphire-csv-import`
+  (`1d1991e`, keep until the deploy is live). The later staging → main merge then sees identical `web/` trees.
+- Staging → main (stable, later): keep this side for `web/` and the Android exporter; don't take main's release-version
+  files from `dc32b8b`. `ci.yml` by hand, never wholesale: keep staging's `publish-release` (tag RC suffix + `prerelease`
+  — main's copy has neither); the release-job verify path fix (main `8bba37f`) is already here (`1720595`); take main's
+  release-job keystore decode; decide `38fcf67` (lint advisory — staging's lint no longer crashes, #196) and `8905b1f`
+  (detekt — baseline predates rc.6, not run against this code; firmware script tests pass on both). `firmware/release/`
+  binaries differ between main and staging; each side passes `verify-release.sh` against its own manifests.
 - After any merge, run all of: `vitest run` (incl. `import.appExports.test.ts` — real ZIPs in
   `__fixtures__/android-exports/`, `import.androidExport.test.tsx` — `__fixtures__/android-export-rc6/`,
   `import.noGpsExport.test.tsx`, `import.batchProfile.test.ts`, `hookOrder.test.tsx`, `ImportPanel.test.tsx`,
-  `App.test.tsx`, `readings.test.tsx`), `eslint .` (0 errors), `tsc -b`, `vite build`, and `scripts/idb-check` (9/9 checks).
-  Main-based patch for reference: `fix/sapphire-csv-import` `1d1991e` (marker + name filter, same fixtures).
+  `App.test.tsx`, `readings.test.tsx`, `ComparisonChart.test.tsx`), `eslint .` (0 errors), `tsc -b`, `vite build`, and
+  `scripts/idb-check` (9/9 checks). deploy-pages runs Node 22 `npm ci` + `npm run build` + copies the emulator to
+  `dist/emulator` — checked with Node 22 on `release/sapphire-main`.
 - Deploy (`deploy-pages.yml`: push to main touching `web/**`, or manual dispatch) only from the merged result.
   Deployed (main) Sapphire can't import rc.4+ exports today.
 
