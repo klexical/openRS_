@@ -24,10 +24,10 @@ internal object DiagnosticReportBuilder {
     /** One summary line for the session's DTC scan (#215). */
     internal fun dtcScanLine(scan: com.openrs.dash.data.DtcScanRecord?): String {
         if (scan == null) return "No scan this session"
-        val coverage = "${scan.modulesAnswered}/${scan.modules.size} modules answered"
+        val coverage = "${scan.modulesAnswered}/${scan.modules.size} modules scanned"
         val outcome = when (scan.status) {
             com.openrs.dash.data.DtcScanStatus.COMPLETE  -> if (scan.codes.isEmpty()) "COMPLETE — no codes" else "COMPLETE — ${scan.codes.size} code(s)"
-            com.openrs.dash.data.DtcScanStatus.PARTIAL   -> "PARTIAL — ${scan.codes.size} code(s) from the modules that answered; not a clean scan"
+            com.openrs.dash.data.DtcScanStatus.PARTIAL   -> "PARTIAL — ${scan.codes.size} code(s) from the modules scanned; not a clean scan"
             com.openrs.dash.data.DtcScanStatus.FAILED    -> "FAILED${scan.message?.let { " ($it)" } ?: ""}"
             com.openrs.dash.data.DtcScanStatus.CANCELLED -> "CANCELLED before it finished"
         }

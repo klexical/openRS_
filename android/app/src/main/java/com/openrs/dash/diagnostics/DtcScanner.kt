@@ -106,6 +106,47 @@ class DtcScanner(private val ctx: Context) {
         }
 
         /**
+         * Turn one scan pass's raw replies into codes + per-module status (#215). A module counts as scanned (OK) only
+         * for a valid positive 0x19 02 reply; its records are parsed then. Negative → REJECTED, malformed → MALFORMED,
+         * only "pending" → PENDING, unsent → ERROR, nothing → TIMEOUT — none of these can produce a clean result.
+         */
+        internal fun interpret(modules: List<DtcModuleSpec>, raw: DtcRawScan): Pair<List<DtcResult>, Map<String, ModuleScanStatus>> {
+            val codes = mutableListOf<DtcResult>()
+            val statuses = LinkedHashMap<String, ModuleScanStatus>()
+            for (module in modules) {
+                val payload = raw.payloads[module.name]
+                statuses[module.name] = when {
+                    payload != null -> DtcReply.classify(payload).also {
+                        if (it == DtcReply.Positive) codes += parsePayload(module.name, payload)
+                    }.status
+                    module.name in raw.pending -> ModuleScanStatus.PENDING
+                    module.name in raw.sendFailed -> ModuleScanStatus.ERROR
+                    else -> ModuleScanStatus.TIMEOUT
+                }
+            }
+            return codes to statuses
+        }
+
+        /** One scan pass over [modules] through the live connection, interpreted. No Room, no Context. */
+        internal suspend fun runScan(
+            conn: SlcanConnection,
+            modules: List<DtcModuleSpec>,
+            onModuleProgress: ((String, ModuleScanStatus?) -> Unit)? = null,
+        ): DtcScanResult {
+            val startMs = System.currentTimeMillis()
+            val raw = conn.performDtcScan(modules, onModuleProgress)
+            val (codes, statuses) = interpret(modules, raw)
+            raw.payloads.forEach { (name, payload) ->
+                val reply = DtcReply.classify(payload)
+                if (reply is DtcReply.Negative) DiagnosticLogger.event("DTC", "$name refused 0x19 02 — NRC 0x%02X".format(reply.nrc))
+                else if (reply == DtcReply.Malformed) DiagnosticLogger.event("DTC", "$name malformed reply: " +
+                    payload.joinToString(" ") { "%02X".format(it.toInt() and 0xFF) })
+            }
+            raw.pending.forEach { DiagnosticLogger.event("DTC", "$it: response pending, no final reply") }
+            return DtcScanResult(codes, statuses, System.currentTimeMillis() - startMs)
+        }
+
+        /**
          * Compute the diff between the current scan and a previous set of codes.
          * [previousCodes] is a set of DTC code strings from the last scan.
          */
@@ -130,35 +171,10 @@ class DtcScanner(private val ctx: Context) {
         onModuleProgress: ((String, ModuleScanStatus?) -> Unit)? = null
     ): DtcScanResult {
         DtcDatabase.load(ctx)
-        val startMs = System.currentTimeMillis()
-        val raw = conn.performDtcScan(MODULES, onModuleProgress)
-        val durationMs = System.currentTimeMillis() - startMs
-
-        val codes = mutableListOf<DtcResult>()
-        val statuses = mutableMapOf<String, ModuleScanStatus>()
-
-        for (module in MODULES) {
-            val result = raw[module.name]
-            when {
-                result == null -> {
-                    statuses[module.name] = ModuleScanStatus.TIMEOUT
-                }
-                result.isEmpty() -> {
-                    statuses[module.name] = ModuleScanStatus.OK
-                }
-                else -> {
-                    val parsed = parsePayload(module.name, result)
-                    codes.addAll(parsed)
-                    statuses[module.name] = ModuleScanStatus.OK
-                }
-            }
-        }
-
-        val result = DtcScanResult(
-            codes = codes,
-            moduleStatuses = statuses,
-            scanDurationMs = durationMs
-        )
+        val result = runScan(conn, MODULES, onModuleProgress)
+        val codes = result.codes
+        val statuses = result.moduleStatuses
+        val durationMs = result.scanDurationMs
 
         // Persist scan results to Room database
         try {
@@ -245,7 +261,7 @@ class DtcScanner(private val ctx: Context) {
     }
 
     /**
-     * Retry scan for a single module that previously timed out.
+     * Retry scan for a single module that didn't give a valid reply — same validation as [scan].
      */
     suspend fun scanSingleModule(
         conn: SlcanConnection,
@@ -254,15 +270,8 @@ class DtcScanner(private val ctx: Context) {
         DtcDatabase.load(ctx)
         val module = MODULES.find { it.name == moduleName }
             ?: return emptyList<DtcResult>() to ModuleScanStatus.ERROR
-        val raw = conn.performDtcScan(listOf(module), null)
-        val result = raw[module.name]
-        return if (result != null && result.isNotEmpty()) {
-            parsePayload(module.name, result) to ModuleScanStatus.OK
-        } else if (result != null) {
-            emptyList<DtcResult>() to ModuleScanStatus.OK
-        } else {
-            emptyList<DtcResult>() to ModuleScanStatus.TIMEOUT
-        }
+        val result = runScan(conn, listOf(module))
+        return result.codes to (result.moduleStatuses[module.name] ?: ModuleScanStatus.TIMEOUT)
     }
 
     /**

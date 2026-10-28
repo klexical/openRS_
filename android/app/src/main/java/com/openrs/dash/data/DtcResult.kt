@@ -27,8 +27,68 @@ enum class DtcStatus(val label: String) {
 
 // ── Scan result wrapper ─────────────────────────────────────────────────────
 
-/** Per-module outcome from a DTC scan. */
-enum class ModuleScanStatus { OK, TIMEOUT, ERROR, NO_RESPONSE }
+/**
+ * Per-module outcome from a DTC scan. Only [OK] — a valid positive reply to the request — counts as scanned (#215);
+ * every other value means that module's codes are unknown.
+ */
+enum class ModuleScanStatus {
+    /** Valid positive reply (59 02 …) — zero records here means no codes stored in that module. */
+    OK,
+    /** No reply before the deadline. */
+    TIMEOUT,
+    /** The request could not be sent. */
+    ERROR,
+    NO_RESPONSE,
+    /** Negative response (7F 19 <NRC>) — the module refused the request. */
+    REJECTED,
+    /** Only "response pending" (7F 19 78) arrived — the final answer never came. */
+    PENDING,
+    /** A reply that isn't a valid 0x19 02 answer (wrong service / sub-function, too short). */
+    MALFORMED,
+}
+
+/** What one module's reply to UDS 0x19 02 (reportDTCByStatusMask) says (#215). */
+sealed interface DtcReply {
+    /** 59 02 <availability mask> [records…] */
+    data object Positive : DtcReply
+    /** 7F 19 <nrc> — refused (any NRC except 0x78). */
+    data class Negative(val nrc: Int) : DtcReply
+    /** 7F 19 78 — the module is still working; its final reply follows. */
+    data object Pending : DtcReply
+    data object Malformed : DtcReply
+
+    /** Module status for a final reply ([Pending] isn't final: the scan keeps waiting). */
+    val status: ModuleScanStatus get() = when (this) {
+        Positive -> ModuleScanStatus.OK
+        is Negative -> ModuleScanStatus.REJECTED
+        Pending -> ModuleScanStatus.PENDING
+        Malformed -> ModuleScanStatus.MALFORMED
+    }
+
+    companion object {
+        const val SID = 0x19
+        const val SUB_FUNCTION = 0x02
+        const val NRC_RESPONSE_PENDING = 0x78
+
+        /** Classify a reassembled ISO-TP payload (PCI removed). */
+        fun classify(payload: ByteArray): DtcReply {
+            val b = { i: Int -> payload[i].toInt() and 0xFF }
+            return when {
+                payload.size >= 3 && b(0) == 0x7F && b(1) == SID ->
+                    if (b(2) == NRC_RESPONSE_PENDING) Pending else Negative(b(2))
+                payload.size >= 3 && b(0) == SID + 0x40 && b(1) == SUB_FUNCTION -> Positive
+                else -> Malformed
+            }
+        }
+    }
+}
+
+/** Raw replies collected by one scan pass: final payload per module, modules left on "pending", failed sends. */
+data class DtcRawScan(
+    val payloads: Map<String, ByteArray> = emptyMap(),
+    val pending: Set<String> = emptySet(),
+    val sendFailed: Set<String> = emptySet(),
+)
 
 /** Progress callback for per-module scan updates. */
 typealias DtcProgressCallback = (String, ModuleScanStatus?) -> Unit
@@ -45,9 +105,9 @@ data class DtcScanResult(
 
 /** Outcome of a DTC scan as the diagnostic export reports it (#215). No record at all = no scan this session. */
 enum class DtcScanStatus {
-    /** Every scanned module answered — zero codes here means a clean scan. */
+    /** Every scanned module gave a valid positive reply — zero codes here means a clean scan. */
     COMPLETE,
-    /** Some modules answered, others timed out / errored / didn't respond — zero codes is NOT a clean scan. */
+    /** Some modules gave a valid reply; others timed out, refused, stayed pending or replied malformed — zero codes is NOT a clean scan. */
     PARTIAL,
     /** No module answered, or the scan threw. */
     FAILED,
@@ -68,6 +128,7 @@ data class DtcScanRecord(
     val codes: List<DtcResult> = emptyList(),
     val message: String? = null,
 ) {
+    /** Modules whose codes are known — a valid positive reply (REJECTED / MALFORMED / PENDING replies don't count). */
     val modulesAnswered: Int get() = modules.values.count { it == ModuleScanStatus.OK }
 
     companion object {

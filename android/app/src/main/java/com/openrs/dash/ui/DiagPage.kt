@@ -631,9 +631,9 @@ import kotlin.math.roundToInt
 
                             val filtered = if (statusFilter != null) r.filter { it.status == statusFilter } else r
                             if (filtered.isEmpty() && r.isEmpty()) {
-                                // Scan completed with zero codes — but check for timeouts
-                                val timeouts = scanRes?.moduleStatuses?.filter { it.value == ModuleScanStatus.TIMEOUT }
-                                if (timeouts.isNullOrEmpty()) {
+                                // Zero codes is only clean when every module gave a valid reply (#215)
+                                val notScanned = scanRes?.moduleStatuses?.filter { it.value != ModuleScanStatus.OK }
+                                if (notScanned.isNullOrEmpty()) {
                                     Box(
                                         Modifier.fillMaxWidth()
                                             .background(Ok.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
@@ -644,14 +644,15 @@ import kotlin.math.roundToInt
                                         MonoLabel("✓  NO FAULT CODES — all modules clean", 11.sp, Ok)
                                     }
                                 } else {
+                                    val total = scanRes.moduleStatuses.size
                                     Box(
                                         Modifier.fillMaxWidth()
-                                            .background(Ok.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
-                                            .border(CardBorder, Ok.copy(0.25f), RoundedCornerShape(10.dp))
+                                            .background(Warn.copy(alpha = 0.06f), RoundedCornerShape(10.dp))
+                                            .border(CardBorder, Warn.copy(0.25f), RoundedCornerShape(10.dp))
                                             .padding(14.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        MonoLabel("✓  NO FAULT CODES from responding modules", 11.sp, Ok)
+                                        MonoLabel("NO CODES IN ${total - notScanned.size} OF $total MODULES — NOT A CLEAN SCAN", 11.sp, Warn)
                                     }
                                 }
                             } else if (filtered.isNotEmpty()) {
@@ -691,9 +692,9 @@ import kotlin.math.roundToInt
                                 }
                             }
 
-                            // Timed-out modules with retry buttons
-                            val timeouts = scanRes?.moduleStatuses?.filter { it.value == ModuleScanStatus.TIMEOUT }
-                            if (!timeouts.isNullOrEmpty()) {
+                            // Modules without a valid reply, with retry buttons (#215). A refusal (NRC) won't change on retry.
+                            val notScanned = scanRes?.moduleStatuses?.filter { it.value != ModuleScanStatus.OK }
+                            if (!notScanned.isNullOrEmpty()) {
                                 Spacer(Modifier.height(6.dp))
                                 Column(
                                     Modifier.fillMaxWidth()
@@ -702,15 +703,15 @@ import kotlin.math.roundToInt
                                         .padding(10.dp),
                                     verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
-                                    MonoLabel("⚠  TIMED OUT", 9.sp, Warn, letterSpacing = 1.sp)
-                                    for ((name, _) in timeouts) {
+                                    MonoLabel("⚠  NOT SCANNED", 9.sp, Warn, letterSpacing = 1.sp)
+                                    for ((name, moduleStatus) in notScanned) {
                                         Row(
                                             Modifier.fillMaxWidth(),
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
-                                            MonoLabel("$name — no response within 2.5s", 9.sp, Dim)
-                                            if (onRetryScanModule != null && vs.isConnected) {
+                                            MonoLabel("$name — ${notScannedReason(moduleStatus)}", 9.sp, Dim)
+                                            if (onRetryScanModule != null && vs.isConnected && moduleStatus != ModuleScanStatus.REJECTED) {
                                                 var retrying by remember(name) { mutableStateOf(false) }
                                                 Box(
                                                     Modifier
@@ -1011,6 +1012,17 @@ internal fun ignitionStatusLabel(v: Int): String = when (v) {
     7   -> "Run"
     9   -> "Crank"
     else -> "$v"
+}
+
+/** Why a module's codes are unknown after a scan (#215). */
+private fun notScannedReason(s: ModuleScanStatus): String = when (s) {
+    ModuleScanStatus.TIMEOUT     -> "no reply"
+    ModuleScanStatus.PENDING     -> "busy (response pending), no final reply"
+    ModuleScanStatus.REJECTED    -> "refused the request"
+    ModuleScanStatus.MALFORMED   -> "unreadable reply"
+    ModuleScanStatus.ERROR       -> "request not sent"
+    ModuleScanStatus.NO_RESPONSE -> "no reply"
+    ModuleScanStatus.OK          -> "scanned"
 }
 
 // ── DTC result row composable ─────────────────────────────────────────────

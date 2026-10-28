@@ -2,6 +2,8 @@ package com.openrs.dash.can
 
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.data.DtcModuleSpec
+import com.openrs.dash.data.DtcRawScan
+import com.openrs.dash.data.DtcReply
 import com.openrs.dash.data.ModuleScanStatus
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticLogger
@@ -456,13 +458,21 @@ class SlcanConnection(
 
     // ── DTC scan ──────────────────────────────────────────────────────────────
 
+    /**
+     * Sends UDS 0x19 02 (all status bits) to [modules] and collects each module's final reply. Progress reports a module
+     * as OK only for a valid positive reply ([DtcReply.classify]); a negative / malformed reply reports its own status.
+     * "Response pending" (7F 19 78) is not final: that module's buffer restarts and the deadline extends (P2*, capped)
+     * while its real answer is awaited — if it never comes the module ends PENDING, never OK (#215).
+     */
     suspend fun performDtcScan(
         modules: List<DtcModuleSpec>,
         onModuleProgress: ((String, ModuleScanStatus?) -> Unit)? = null
-    ): Map<String, ByteArray> =
+    ): DtcRawScan =
         _dtcMutex.withLock {
-            val transport = _transport ?: return emptyMap()
+            val transport = _transport ?: return DtcRawScan()
             val results = mutableMapOf<String, ByteArray>()
+            val pending = mutableSetOf<String>()
+            val sendFailed = mutableSetOf<String>()
 
             _dtcWatchIds = modules.map { it.responseId }.toSet()
             _dtcScanActive = true
@@ -492,13 +502,15 @@ class SlcanConnection(
                 for (module in modules) {
                     val reqFrame = "t%03X8031902FF00000000\r".format(module.requestId)
                     try { transport.writeLine(reqFrame) } catch (_: Exception) {
+                        sendFailed += module.name
                         onModuleProgress?.invoke(module.name, ModuleScanStatus.ERROR)
                     }
                     delay(50L)
                 }
 
-                // Phase 3: single receiver loop with shared deadline
-                val deadline = System.currentTimeMillis() + 3_500L
+                // Phase 3: single receiver loop with shared deadline (extended while a module reports "pending")
+                val scanStart = System.currentTimeMillis()
+                var deadline = scanStart + 3_500L
 
                 while (results.size < modules.size && System.currentTimeMillis() < deadline) {
                     val remaining = deadline - System.currentTimeMillis()
@@ -520,22 +532,34 @@ class SlcanConnection(
                     if (payload != null || isSF) {
                         val completedPayload = payload ?: continue
                         val mod = moduleByResp[frame.first] ?: continue
+                        if (mod.name in results) continue                  // already final
+                        val reply = DtcReply.classify(completedPayload)
+                        if (reply == DtcReply.Pending) {
+                            // Real answer follows: fresh buffer, wait P2* more (never past the cap)
+                            pending += mod.name
+                            buffers[frame.first] = IsoTpBuffer()
+                            fcSent -= frame.first
+                            deadline = minOf(maxOf(deadline, System.currentTimeMillis() + DTC_P2_STAR_MS), scanStart + DTC_SCAN_CAP_MS)
+                            continue
+                        }
+                        pending -= mod.name
                         results[mod.name] = completedPayload
-                        onModuleProgress?.invoke(mod.name, ModuleScanStatus.OK)
+                        onModuleProgress?.invoke(mod.name, reply.status)
                     }
                 }
 
-                // Mark timed-out modules
+                // Modules without a final reply: still pending, or timed out
                 for (module in modules) {
                     if (module.name !in results) {
-                        onModuleProgress?.invoke(module.name, ModuleScanStatus.TIMEOUT)
+                        onModuleProgress?.invoke(module.name,
+                            if (module.name in pending) ModuleScanStatus.PENDING else ModuleScanStatus.TIMEOUT)
                     }
                 }
             } finally {
                 _dtcScanActive = false
                 _dtcWatchIds   = emptySet()
             }
-            results
+            DtcRawScan(results, pending - results.keys, sendFailed - results.keys)
         }
 
     suspend fun performDtcClear(modules: List<DtcModuleSpec>): Map<String, Boolean> =
@@ -657,6 +681,13 @@ class SlcanConnection(
             _dtcScanActive = false
             _dtcWatchIds = emptySet()
         }
+    }
+
+    private companion object {
+        /** UDS P2*: how long a module may take after "response pending" (7F xx 78). */
+        const val DTC_P2_STAR_MS = 5_000L
+        /** A scan never waits longer than this in total, however often modules report pending. */
+        const val DTC_SCAN_CAP_MS = 12_000L
     }
 
     // ── NRC helpers ─────────────────────────────────────────────────────────

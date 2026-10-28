@@ -23,14 +23,14 @@ class DtcScanRecordTest {
     @Test fun `every module answering with zero codes is a COMPLETE clean scan`() {
         val r = scan(allOk)
         assertEquals(DtcScanStatus.COMPLETE, r.status)
-        assertEquals("COMPLETE — no codes · 6/6 modules answered · manual", DiagnosticReportBuilder.dtcScanLine(r))
+        assertEquals("COMPLETE — no codes · 6/6 modules scanned · manual", DiagnosticReportBuilder.dtcScanLine(r))
     }
 
     @Test fun `zero codes with a module that timed out is PARTIAL, never clean`() {
         val r = scan(allOk + ("ABS" to ModuleScanStatus.TIMEOUT))
         assertEquals(DtcScanStatus.PARTIAL, r.status)
         assertTrue(DiagnosticReportBuilder.dtcScanLine(r).contains("not a clean scan"))
-        assertTrue(DiagnosticReportBuilder.dtcScanLine(r).contains("5/6 modules answered"))
+        assertTrue(DiagnosticReportBuilder.dtcScanLine(r).contains("5/6 modules scanned"))
     }
 
     @Test fun `a module missing from the result counts as not answered`() {
@@ -61,7 +61,7 @@ class DtcScanRecordTest {
 
     @Test fun `a zero-code text report states the scan outcome`() {
         val text = DriveExportBuilder.buildDtcText(emptyList(), scan(allOk))
-        assertTrue(text.contains("Scan: COMPLETE — no codes · 6/6 modules answered"))
+        assertTrue(text.contains("Scan: COMPLETE — no codes · 6/6 modules scanned"))
         assertTrue(text.contains("Total: 0 fault code(s)"))
     }
 }
