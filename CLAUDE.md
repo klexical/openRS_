@@ -368,7 +368,7 @@ data[5] = B5,  data[6] = B6 …
 - **Lint version is pinned above AGP** — `android/gradle.properties` sets `android.experimental.lint.version=8.13.0` because AGP 8.7.3's bundled lint crashes (`IncompatibleClassChangeError`) on the lint checks shipped in Compose BOM 2025.11 / Lifecycle. Don't remove it unless AGP is upgraded to ≥ 8.13. `abortOnError = false`, so lint findings never fail CI — only crashes do; check `app/build/reports/lint-results-debug.txt` for errors ([#196](https://github.com/klexical/openRS_/issues/196))
 - **`MutableList.removeFirst()/removeLast()` crash below API 35** — with compileSdk 35 they resolve to `java.util.List.removeFirst` (Android 15+) and throw `NoSuchMethodError` on Android 9–14 (minSdk 28). Use `removeAt(0)` / `removeAt(lastIndex)`. `ArrayDeque.removeFirst()` is fine
 - **Location permission** — always request `ACCESS_COARSE_LOCATION` together with `ACCESS_FINE_LOCATION` (Android 12+ requirement); recording still needs FINE granted
-- **CI tag builds** — `publish-release` derives `-PrcSuffix` from `android-v*-rc.N` tags so CI never attaches a plain `openRS_v{ver}.apk` to an RC pre-release. Manual RC releases still build with `-PrcSuffix=rc.N`. rc.6 was the first RC published by this job (the rc.3–rc.5 tag runs failed on the pre-#196 lint crash and were attached by hand). CI's keystore secrets sign with the same certificate as the published APKs (`c99b6f26…`)
+- **Release identity (#214)** — one definition at the top of `android/app/build.gradle.kts` (base / stage / candidate / versionCode) drives versionName (`2.2.7-rc.7`), the Settings label (`2.2.7-rc.7 · Build 36`), the APK name, the expected tag, `BuildConfig.RELEASE_NAME` / `SOURCE_COMMIT`, export and crash metadata, the updater (`AppVersion.current()`) and the What's New gate (once per release name; content by base version, never another version's notes). `-PrcSuffix` is gone (the build refuses it). CI `publish-release` runs `android/scripts/verify-release.sh` (tag = versionName = filename, versionCode above every earlier tag, release signer). Bump the versionCode for every distributed production build, stable included; debug builds carry `-dev+<commit>[.dirty]`. rc.2–rc.6 all shipped as code 35 with versionName `2.2.7`. rc.6 was the first RC published by this job (the rc.3–rc.5 tag runs failed on the pre-#196 lint crash and were attached by hand). CI's keystore secrets sign with the same certificate as the published APKs (`c99b6f26…`)
 - **VehicleState slot ceiling** — `copy()` on the 162-param data class is at the JVM 255-slot limit. Adding any new field requires either collapsing an unused existing field (speculative AWD DIDs are candidates) or storing it off-state (DiagnosticLogger / genericValues Map). 0x040 lamp state is decoded + validated but not yet persisted on VehicleState for this reason
 - **Demo mode owns VehicleState while active** — `CanDataService.enterDemoMode()` finalizes any recording drive, calls
   `stopConnection()`, then `DemoMode.start()`. While `DemoMode.isActive`: `processCanFrame` / `mergeObdState` / the adapter
@@ -522,8 +522,7 @@ Regenerate the FORScan catalog: `python3 android/scripts/gen_forscan_catalog.py`
 ```bash
 cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
-./gradlew assembleRelease                  # → openRS_v{ver}.apk  (main release)
-./gradlew assembleRelease -PrcSuffix=rc.5  # → openRS_v{ver}-rc.5.apk
+./gradlew assembleRelease                  # → openRS_v{releaseName}.apk (e.g. openRS_v2.2.7-rc.7.apk; set in app/build.gradle.kts)
 ./gradlew test                             # 742 unit tests across 41 files
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 45 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
@@ -539,7 +538,7 @@ adb devices -l                                                  # emulator-5554 
 cd android
 bash scripts/install-debug.sh                     # build → install → cold-start (normal, auto-connects)
 bash scripts/install-debug.sh --es demo driving   # same, but straight into demo mode
-# APK: app/build/outputs/apk/debug/openRS_v2.2.7-staging-debug.apk   App ID: com.openrs.dash.debug
+# APK: app/build/outputs/apk/debug/openRS_v2.2.7-rc.7-staging-debug.apk   App ID: com.openrs.dash.debug
 
 # Control a running debug app (onNewIntent needs --activity-single-top):
 adb shell am start --activity-single-top -n com.openrs.dash.debug/com.openrs.dash.ui.MainActivity --es demo warning
@@ -580,8 +579,8 @@ Drive-mode dock / ESC buttons / DTC clear act on simulated state only (mode land
   paused) and each failed call blocks for minutes, delaying the next command. Tap by coordinates instead. Its
   screenshots can lag; `adb exec-out screencap -p` is always current. Check crops at full resolution — a 700 px
   downscale hid clipped digits once
-- Debug builds always show "v2.2.7" (no RC label — only `-PrcSuffix` adds one) and Settings appends the update
-  channel, so the version string can't tell builds apart. Verify by hashing `adb exec-out cat <pm path>` against the APK
+- Debug builds report `2.2.7-rc.7-dev+<commit>[.dirty]` (Settings: `… · debug <commit>*`), so the source revision is
+  visible; still hash `adb exec-out cat <pm path>` against the APK to prove which build is installed
 - Settings categories animate in for ~2.5 s after the sheet opens — tapping a row sooner can land on the wrong one
 - `--es demo at:N` replays the scenario **in real time** from 0 and pauses at N — wait N s before capturing
   (WARNING at:55 = oil + PTU past the STREET crit, coolant + RDU at WARN)
@@ -609,8 +608,8 @@ Drive-mode dock / ESC buttons / DTC clear act on simulated state only (mode land
   (restore with `… default`); start it from ⚙ → DISPLAY → FLOATING HUD. A reinstall stops it
 
 Requires `android/local.properties` (`OPENWEATHER_API_KEY=...`) and `android/keystore.properties` for release signing.
-Version display format: `openRS_ v2.2.6` or `openRS_ v2.2.6-rc.1` (set via `-PrcSuffix=rc.1`).
-RC builds MUST use `-PrcSuffix` so the APK filename reflects the RC version.
+Version display format: `openRS_ v2.2.7-rc.7 · Build 36` (Settings) — the release name comes from `app/build.gradle.kts`
+(see the Release identity gotcha); there is no `-PrcSuffix` any more.
 
 ## Tests
 

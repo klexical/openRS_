@@ -57,7 +57,10 @@ object CrashTelemetryBuffer {
         file: File,
         exception: Throwable,
         threadName: String,
-        appVersion: String
+        appVersion: String,
+        versionCode: Int = 0,
+        sourceCommit: String = "",
+        buildType: String = ""
     ) {
         try {
             val snapshots: List<Snapshot>
@@ -77,6 +80,9 @@ object CrashTelemetryBuffer {
             sb.append("  \"stackTrace\": \"${exception.stackTraceToString().jsonEsc()}\",\n")
             sb.append("  \"thread\": \"${threadName.jsonEsc()}\",\n")
             sb.append("  \"appVersion\": \"${appVersion.jsonEsc()}\",\n")
+            sb.append("  \"versionCode\": $versionCode,\n")
+            sb.append("  \"sourceCommit\": \"${sourceCommit.jsonEsc()}\",\n")
+            sb.append("  \"buildType\": \"${buildType.jsonEsc()}\",\n")
             sb.append("  \"snapshotCount\": ${snapshots.size},\n")
             sb.append("  \"snapshots\": [\n")
 

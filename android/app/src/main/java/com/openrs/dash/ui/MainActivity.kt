@@ -242,8 +242,8 @@ class MainActivity : ComponentActivity() {
             val whatsNewCtx = LocalContext.current
             var showWhatsNew by remember {
                 val lastSeen = AppSettings.getLastSeenVersion(whatsNewCtx)
-                val current = com.openrs.dash.BuildConfig.VERSION_NAME
-                mutableStateOf(lastSeen != current)
+                val info = com.openrs.dash.update.BuildInfo
+                mutableStateOf(shouldShowWhatsNew(lastSeen, info.releaseName, info.base))
             }
 
             // Background update check — silent, non-intrusive
@@ -456,7 +456,7 @@ class MainActivity : ComponentActivity() {
                                 if (showWhatsNew) {
                                     WhatsNewDialog(onDismiss = {
                                         showWhatsNew = false
-                                        AppSettings.setLastSeenVersion(whatsNewCtx, com.openrs.dash.BuildConfig.VERSION_NAME)
+                                        AppSettings.setLastSeenVersion(whatsNewCtx, com.openrs.dash.update.BuildInfo.releaseName)
                                     })
                                 }
                             }

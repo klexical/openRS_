@@ -488,6 +488,18 @@ object DiagnosticExporter {
             }
     }
 
+    /**
+     * Full release identity for export metadata (#214), next to the older `appVersion` / `appBuild` keys (kept so earlier
+     * readers still work): published release name, versionCode, source commit (+ dirty flag) and build type.
+     */
+    internal fun putBuildIdentity(o: JSONObject) {
+        o.put("releaseVersion", BuildConfig.RELEASE_NAME)
+        o.put("versionCode", BuildConfig.VERSION_CODE)
+        o.put("sourceCommit", BuildConfig.SOURCE_COMMIT)
+        o.put("sourceDirty", BuildConfig.SOURCE_DIRTY)
+        o.put("buildType", BuildConfig.BUILD_TYPE)
+    }
+
     /** Build manifest.json listing all files in the ZIP with typed metadata. */
     private fun buildManifest(files: List<Pair<String, String>>): String {
         val root = JSONObject()
@@ -495,6 +507,7 @@ object DiagnosticExporter {
         root.put("app", "openRS_")
         root.put("appVersion", appVersion)
         root.put("appBuild", appBuild)
+        putBuildIdentity(root)
         root.put("exportedAt", System.currentTimeMillis())
         val arr = JSONArray()
         for ((name, type) in files) {

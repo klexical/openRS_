@@ -39,7 +39,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.openrs.dash.BuildConfig
 import com.openrs.dash.ui.anim.pageEntrance
 
 /**
@@ -128,14 +127,22 @@ private val versionHighlights: Map<String, List<String>> = mapOf(
     )
 )
 
+/** Highlights for a base version ("2.2.7"); null when there's no entry — never another version's notes (#214). */
+internal fun whatsNewHighlights(base: String): List<String>? = versionHighlights[base]
+
+/**
+ * Show What's New once per published release identity (#214): "2.2.7-rc.6" → "2.2.7-rc.7" shows it again, a rebuild of
+ * the same release doesn't, and a version without highlights never shows an unrelated version's notes.
+ */
+internal fun shouldShowWhatsNew(lastSeen: String, releaseName: String, base: String): Boolean =
+    lastSeen != releaseName && whatsNewHighlights(base) != null
+
 @Composable
 fun WhatsNewDialog(onDismiss: () -> Unit) {
     val accent = LocalThemeAccent.current
     val accentM = accentMid()
-    val version = BuildConfig.VERSION_NAME
-    val highlights = versionHighlights[version]
-        ?: versionHighlights.values.lastOrNull()
-        ?: return onDismiss()
+    val version = com.openrs.dash.update.BuildInfo.releaseName
+    val highlights = whatsNewHighlights(com.openrs.dash.update.BuildInfo.base) ?: return onDismiss()
 
     var dialogEntered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { dialogEntered = true }

@@ -40,7 +40,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.ui.graphics.Brush
-import com.openrs.dash.BuildConfig
 import com.openrs.dash.can.WicanDiscovery
 import com.openrs.dash.service.HudOverlayService
 import com.openrs.dash.update.UpdateManager
@@ -843,7 +842,7 @@ fun SettingsDialog(
             listOf("changelog", "whats", "new", "version", "release"),
         ) {
             var showWhatsNewLocal by remember { mutableStateOf(false) }
-            SettingsAction("WHAT'S NEW IN v${BuildConfig.VERSION_NAME}", Modifier.fillMaxWidth()) {
+            SettingsAction("WHAT'S NEW IN v${com.openrs.dash.update.BuildInfo.releaseName}", Modifier.fillMaxWidth()) {
                 showWhatsNewLocal = true
             }
             if (showWhatsNewLocal) {
@@ -1214,8 +1213,7 @@ private fun AboutStrip(
 ) {
     val accent = LocalThemeAccent.current
     val label = buildString {
-        append("openRS_ v").append(BuildConfig.VERSION_NAME)
-        if (BuildConfig.RC_SUFFIX.isNotEmpty()) append("-").append(BuildConfig.RC_SUFFIX)
+        append("openRS_ v").append(com.openrs.dash.update.BuildInfo.settingsLabel)
         append(" · ").append(updateChannel)
     }
     Column(Modifier.fillMaxWidth().instrumentSurface(radius = 10.dp)) {

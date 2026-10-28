@@ -54,7 +54,8 @@ internal object DiagnosticReportBuilder {
 
         appendLine("═══════════════════════════════════════════════════════════")
         appendLine("  openRS_ Diagnostic Report")
-        appendLine("  App       : v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})")
+        appendLine("  App       : v${BuildConfig.RELEASE_NAME} (build ${BuildConfig.VERSION_CODE}, ${BuildConfig.BUILD_TYPE})")
+        appendLine("  Source    : ${BuildConfig.SOURCE_COMMIT}${if (BuildConfig.SOURCE_DIRTY) " (uncommitted changes)" else ""}")
         appendLine("  Generated : $ts")
         appendLine("  Session   : ${log.formatDuration(log.sessionDurationMs)}")
         appendLine("═══════════════════════════════════════════════════════════")
@@ -317,6 +318,7 @@ internal object DiagnosticReportBuilder {
             put("app", "openRS_")
             put("appVersion", BuildConfig.VERSION_NAME)
             put("appBuild", BuildConfig.VERSION_CODE)
+            DiagnosticExporter.putBuildIdentity(this)
             put("generatedAt", ts)
             put("sessionDurationMs", log.sessionDurationMs)
             put("sessionDurationHuman", log.formatDuration(log.sessionDurationMs))
