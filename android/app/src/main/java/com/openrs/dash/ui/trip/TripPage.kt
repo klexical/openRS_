@@ -16,6 +16,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.indication
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -34,8 +35,16 @@ import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.*
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.toMutableStateList
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.LocalPinnableContainer
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -57,6 +66,7 @@ import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.data.DriveBookmarkEntity
 import com.openrs.dash.data.DriveDatabase
 import com.openrs.dash.data.DriveEntity
+import com.openrs.dash.data.DriveThermalReview
 import com.openrs.dash.data.DrivePointEntity
 import com.openrs.dash.data.DriveState
 import com.openrs.dash.data.LapTimer
@@ -64,6 +74,7 @@ import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticExporter
 import com.openrs.dash.diagnostics.ExportProgress
 import com.openrs.dash.ui.*
+import com.openrs.dash.demo.TripPreview
 import com.openrs.dash.ui.anim.pageEntrance
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
@@ -76,13 +87,124 @@ import java.util.*
 // TRIP PAGE — MAP tab: live recording + drive history
 // ═══════════════════════════════════════════════════════════════════════════
 
+/**
+ * TRIP tab host — owns the Google map's lifetime.
+ *
+ * - Lazy: the pager composes TRIP as a neighbour (THERMAL / GARAGE) and prefetches it while scrolling
+ *   towards it (from PERF). The map is created only once TRIP has been the settled page ([settled]);
+ *   before that the map area is a plain placeholder.
+ * - Retained: from then on the page pins itself in the pager, so leaving for DRIVE / PERF keeps this
+ *   composition — and its MapView, camera, tiles and view state — instead of destroying the map and
+ *   rebuilding it on return. The pin is released when the composition is disposed (activity destroy),
+ *   which is also when AndroidView destroys the MapView; there is only ever one map instance.
+ * - Idle while hidden: the subtree gets a lifecycle capped at CREATED while TRIP isn't on screen
+ *   ([visible]), so the MapView is stopped (no rendering, no map location layer), and the live inputs
+ *   are held at their last on-screen values so the page doesn't recompose. Recording and location
+ *   tracking live in DriveRecorder and are unaffected.
+ */
 @Composable
 fun TripPage(
     driveState: DriveState,
     vehicleState: VehicleState,
     prefs: UserPrefs,
-    onMapTouched: (Boolean) -> Unit = {}
+    onMapTouched: (Boolean) -> Unit = {},
+    settled: Boolean = true,
+    visible: Boolean = true
 ) {
+    var mapCreated by remember { mutableStateOf(false) }
+    LaunchedEffect(settled) { if (settled) mapCreated = true }
+
+    val pinnable = LocalPinnableContainer.current
+    DisposableEffect(mapCreated, pinnable) {
+        val handle = if (mapCreated) pinnable?.pin() else null
+        onDispose { handle?.release() }
+    }
+
+    val parentOwner = LocalLifecycleOwner.current
+    val owner = remember(parentOwner) { VisibilityCappedLifecycleOwner(parentOwner) }
+    DisposableEffect(owner) {
+        owner.attach()
+        onDispose { owner.detach() }
+    }
+    SideEffect { owner.setVisible(visible) }
+
+    // Debug-only sample states (TripPreview): a recording / paused DriveState that exists only in memory.
+    val preview by TripPreview.mode.collectAsState()
+    val previewState = remember(preview) {
+        when (preview) {
+            TripPreview.Mode.RECORDING -> TripPreview.driveState(paused = false)
+            TripPreview.Mode.PAUSED -> TripPreview.driveState(paused = true)
+            else -> null
+        }
+    }
+
+    CompositionLocalProvider(LocalLifecycleOwner provides owner) {
+        TripPageContent(
+            driveState = previewState ?: heldWhileHidden(driveState, visible),
+            vehicleState = heldWhileHidden(vehicleState, visible),
+            prefs = prefs,
+            onMapTouched = onMapTouched,
+            mapCreated = mapCreated,
+            visible = visible,
+            preview = preview
+        )
+    }
+}
+
+/** [value] while [visible]; otherwise the last value seen while visible (plain holder — no recomposition). */
+@Composable
+private fun <T> heldWhileHidden(value: T, visible: Boolean): T {
+    val held = remember { arrayOfNulls<Any?>(1).also { it[0] = value } }
+    if (visible) held[0] = value
+    @Suppress("UNCHECKED_CAST")
+    return held[0] as T
+}
+
+/**
+ * Follows [parent]'s lifecycle but stays at CREATED while the TRIP page is off screen. Views under it
+ * (the MapView via AndroidView's ViewTree owner) see ON_PAUSE / ON_STOP when the user leaves TRIP and
+ * ON_START / ON_RESUME when TRIP is back — and still follow the activity into the background.
+ */
+internal class VisibilityCappedLifecycleOwner(private val parent: LifecycleOwner) : LifecycleOwner {
+    private val registry = LifecycleRegistry(this)
+    override val lifecycle: Lifecycle get() = registry
+    private var visible = true
+    private val observer = LifecycleEventObserver { _, _ -> sync() }
+
+    fun attach() = parent.lifecycle.addObserver(observer)
+
+    fun detach() {
+        parent.lifecycle.removeObserver(observer)
+        if (registry.currentState != Lifecycle.State.INITIALIZED) registry.currentState = Lifecycle.State.DESTROYED
+    }
+
+    fun setVisible(v: Boolean) {
+        if (v == visible) return
+        visible = v
+        sync()
+    }
+
+    private fun sync() {
+        if (registry.currentState == Lifecycle.State.DESTROYED) return
+        val p = parent.lifecycle.currentState
+        val cap = if (visible) Lifecycle.State.RESUMED else Lifecycle.State.CREATED
+        registry.currentState = if (p == Lifecycle.State.DESTROYED) Lifecycle.State.DESTROYED else minOf(p, cap)
+    }
+}
+
+@Composable
+private fun TripPageContent(
+    driveState: DriveState,
+    vehicleState: VehicleState,
+    prefs: UserPrefs,
+    onMapTouched: (Boolean) -> Unit,
+    mapCreated: Boolean,
+    visible: Boolean,
+    preview: TripPreview.Mode? = null
+) {
+    // Room ids are positive; TripPreview's sample drives are negative. Reads for a negative id come from
+    // TripPreview and every write path returns early for one, so preview data never reaches the database.
+    fun samplePoints(id: Long) = TripPreview.points(id)
     val context = LocalContext.current
     val accent = LocalThemeAccent.current
     val scope = rememberCoroutineScope()
@@ -99,21 +221,39 @@ fun TripPage(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result -> hasLocationPerm = result[Manifest.permission.ACCESS_FINE_LOCATION] == true }
 
+    // Map view state is saveable as well: before the first visit and after process death the page is
+    // rebuilt, and colour mode, map type, the selected drive and (rememberCameraPositionState) the camera
+    // come back.
     // Color mode cycling through all 6
-    var colorModeIndex by remember { mutableIntStateOf(0) }
+    var colorModeIndex by rememberSaveable { mutableIntStateOf(0) }
     val colorMode = ColorMode.entries[colorModeIndex]
 
     // Map type cycling: Satellite → Terrain → Normal
-    var mapType by remember { mutableStateOf(MapType.SATELLITE) }
+    var mapType by rememberSaveable { mutableStateOf(MapType.SATELLITE) }
 
     // Drive history
     var drives by remember { mutableStateOf<List<DriveEntity>>(emptyList()) }
     var selectedDrivePoints by remember { mutableStateOf<List<DrivePointEntity>>(emptyList()) }
-    var selectedDriveId by remember { mutableStateOf<Long?>(null) }
+    var selectedDriveId by rememberSaveable { mutableStateOf<Long?>(null) }
     var selectedDrive by remember { mutableStateOf<DriveEntity?>(null) }
 
     // Bookmarks for the displayed drive
     var mapBookmarks by remember { mutableStateOf<List<DriveBookmarkEntity>>(emptyList()) }
+
+    // Restored selection (page rebuilt from saved state): reload the drive and its track.
+    LaunchedEffect(Unit) {
+        val id = selectedDriveId ?: return@LaunchedEffect
+        if (selectedDrive != null) return@LaunchedEffect
+        if (id < 0) { selectedDriveId = null; return@LaunchedEffect }   // a preview selection isn't restored
+        withContext(Dispatchers.IO) {
+            val dao = DriveDatabase.getInstance(context).driveDao()
+            val d = dao.getDrive(id)
+            if (d == null) { selectedDriveId = null; return@withContext }
+            selectedDrive = d
+            selectedDrivePoints = dao.getPoints(id)
+            mapBookmarks = dao.getBookmarks(id)
+        }
+    }
 
     // Rename dialog state
     var renameDriveId by remember { mutableStateOf<Long?>(null) }
@@ -138,15 +278,20 @@ fun TripPage(
     val lapTimer = remember { LapTimer() }
     LaunchedEffect(recorder) { recorder.lapTimer = lapTimer }
 
-    // Collect drive completion events
-    LaunchedEffect(recorder) {
-        recorder.driveCompleted.collect { drive ->
-            summaryDrive = drive
-            // Load points for time-series chart in summary
-            withContext(Dispatchers.IO) {
-                summaryPoints = DriveDatabase.getInstance(context).driveDao().getPoints(drive.id)
-            }
-        }
+    // Post-drive summary: queued app-wide by DriveRecorder until closed here. A summary opened from a
+    // history row (summaryDrive) takes precedence; the queued one follows when that closes.
+    val pendingSummary by recorder.pendingSummary.drive.collectAsState()
+    val shownSummary = summaryDrive ?: pendingSummary
+    LaunchedEffect(shownSummary?.id) {
+        val id = shownSummary?.id ?: return@LaunchedEffect
+        // Points for the time-series chart in the summary
+        summaryPoints = if (id < 0) samplePoints(id)
+            else withContext(Dispatchers.IO) { DriveDatabase.getInstance(context).driveDao().getPoints(id) }
+    }
+    fun closeSummary(drive: DriveEntity) {
+        if (summaryDrive?.id == drive.id) summaryDrive = null else recorder.pendingSummary.consume(drive.id)
+        summaryPoints = emptyList()
+        if (drive.id < 0 && preview == TripPreview.Mode.SUMMARY) TripPreview.set(TripPreview.Mode.HISTORY)
     }
 
     // Idle location (one-shot centering when not recording)
@@ -162,28 +307,55 @@ fun TripPage(
         }
     }
 
-    // Load drive history
-    LaunchedEffect(driveState.isRecording) {
+    // Load drive history (preview: the sample list)
+    LaunchedEffect(driveState.isRecording, preview) {
+        if (preview != null) { drives = TripPreview.drives(); return@LaunchedEffect }
         withContext(Dispatchers.IO) {
             drives = DriveDatabase.getInstance(context).driveDao()
                 .getRecentDrives(AppSettings.getMaxSavedDrives(context))
         }
     }
 
-    // Recording indicator pulse
-    val recAlpha by rememberInfiniteTransition(label = "rec").animateFloat(
-        initialValue = 1f, targetValue = 0.2f,
-        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
-        label = "recAlpha"
-    )
+    // Preview states that need a selection or the summary open; leaving preview drops sample state.
+    LaunchedEffect(preview) {
+        when (preview) {
+            TripPreview.Mode.SELECTED -> TripPreview.drives().first().let { d ->
+                selectedDriveId = d.id; selectedDrive = d; selectedDrivePoints = samplePoints(d.id); mapBookmarks = emptyList()
+            }
+            TripPreview.Mode.SUMMARY -> summaryDrive = TripPreview.drives().let { ds -> ds.firstOrNull { it.id == TripPreview.summaryDriveId } ?: ds.first() }
+            TripPreview.Mode.COMPARE -> TripPreview.drives().let { compareA = it[0]; compareB = it[2] }
+            TripPreview.Mode.REPLAY -> TripPreview.drives().first().let { replayDrive = it; replayPoints = samplePoints(it.id) }
+            TripPreview.Mode.EXPORT -> exportDrive = TripPreview.drives().first()
+            null -> {
+                if ((selectedDriveId ?: 0L) < 0) { selectedDriveId = null; selectedDrive = null; selectedDrivePoints = emptyList() }
+                if ((summaryDrive?.id ?: 0L) < 0) summaryDrive = null
+                if ((compareA?.id ?: 0L) < 0 || (compareB?.id ?: 0L) < 0) { compareA = null; compareB = null }
+                if ((replayDrive?.id ?: 0L) < 0) { replayDrive = null; replayPoints = emptyList() }
+                if ((exportDrive?.id ?: 0L) < 0) exportDrive = null
+            }
+            else -> {}
+        }
+    }
+
+    // Recording indicator pulse — only runs while the REC badge is on screen (an infinite transition
+    // asks for a frame every vsync for as long as it is composed, and this page now stays composed).
+    val recAlpha = if (visible && driveState.isRecording) {
+        val a by rememberInfiniteTransition(label = "rec").animateFloat(
+            initialValue = 1f, targetValue = 0.2f,
+            animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+            label = "recAlpha"
+        )
+        a
+    } else 1f
 
     // Export progress
     val exportProgress by DiagnosticExporter.exportProgress.collectAsState()
 
-    val isLive = vehicleState.isConnected || driveState.isRecording
+    val historyPreview = preview != null && preview != TripPreview.Mode.RECORDING && preview != TripPreview.Mode.PAUSED
+    val isLive = !historyPreview && (vehicleState.isConnected || driveState.isRecording)
     val cameraPositionState = rememberCameraPositionState()
 
-    Column(Modifier.fillMaxSize().background(Bg).padding(bottom = com.openrs.dash.ui.Tokens.NavBarHeight)) {
+    Column(Modifier.fillMaxSize().background(Bg).padding(bottom = com.openrs.dash.ui.navBarClearance())) {
         // ── Map section ──────────────────────────────────────────────
         // pointerInput tracks touch state so the parent HorizontalPager
         // can disable swiping while the user is interacting with the map.
@@ -212,7 +384,7 @@ fun TripPage(
             val currentLat = driveState.currentLocation?.latitude ?: idleLocation?.latitude
             val currentLng = driveState.currentLocation?.longitude ?: idleLocation?.longitude
 
-            DriveMap(
+            if (mapCreated) DriveMap(
                 points = mapPoints,
                 colorMode = colorMode,
                 peakEvents = driveState.peakEvents,
@@ -224,8 +396,9 @@ fun TripPage(
                 isPaused = driveState.isPaused,
                 hasLocationPermission = hasLocationPerm,
                 mapType = mapType,
-                cameraPositionState = cameraPositionState
-            )
+                cameraPositionState = cameraPositionState,
+                prefs = prefs
+            ) else Box(Modifier.fillMaxSize().background(Surf2))
 
             // ── Floating controls (top-right stack) ─────────────────
             // rc.2: absorb all pointer events so taps that start on a control
@@ -233,8 +406,16 @@ fun TripPage(
             // AndroidView and pan the map.
             var controlsVisible by remember { mutableStateOf(false) }
             LaunchedEffect(Unit) { controlsVisible = true }
+            // Design pass: each map control is a 48 × 48 dp touch area around a compact visible chip
+            // (MapControl); touch areas sit edge to edge, so they never overlap and the chips show an 8 dp gap.
+            // Short map areas (offline on a 360 × 720 dp phone, ~245 dp) pair zoom +/− in one row so the stack
+            // — up to the locate button — still fits.
+            BoxWithConstraints(Modifier.matchParentSize()) {
+            val compactMap = maxHeight < 300.dp
+            val chipSize = if (compactMap) 36.dp else 40.dp
+            val ink = actionInk(accent)   // DAY: darker paint for text on the light chips; NIGHT: the paint
             Column(
-                Modifier.align(Alignment.TopEnd).padding(12.dp)
+                Modifier.align(Alignment.TopEnd).padding(if (compactMap) 4.dp else 8.dp)
                     .pointerInput(Unit) {
                         awaitPointerEventScope {
                             while (true) {
@@ -243,51 +424,32 @@ fun TripPage(
                             }
                         }
                     },
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalAlignment = Alignment.End
             ) {
                 // Color mode toggle
-                Box(
-                    pageEntrance(0, controlsVisible, 50)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Surf.copy(alpha = 0.85f))
-                        .border(Tokens.CardBorder, Brd, RoundedCornerShape(6.dp))
-                        .clickable {
-                            colorModeIndex = (colorModeIndex + 1) % ColorMode.entries.size
-                        }
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                ) {
-                    MonoText(colorMode.label, 10.sp, accent, FontWeight.Bold)
-                }
+                MapControl(chipSize, pageEntrance(0, controlsVisible, 50), "Route colour: ${colorMode.label}", onClick = {
+                    colorModeIndex = (colorModeIndex + 1) % ColorMode.entries.size
+                }) { MonoText(colorMode.label, 11.sp, ink, FontWeight.Bold) }
 
                 // Map type toggle
-                Box(
-                    pageEntrance(1, controlsVisible, 50)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Surf.copy(alpha = 0.85f))
-                        .border(Tokens.CardBorder, Brd, RoundedCornerShape(6.dp))
-                        .clickable {
-                            mapType = when (mapType) {
-                                MapType.NORMAL -> MapType.SATELLITE
-                                MapType.SATELLITE -> MapType.TERRAIN
-                                else -> MapType.NORMAL
-                            }
-                        }
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                ) {
-                    MonoText(
-                        when (mapType) {
-                            MapType.SATELLITE -> "SAT"
-                            MapType.TERRAIN -> "TER"
-                            else -> "MAP"
-                        },
-                        10.sp, Mid, FontWeight.Bold
-                    )
+                val typeLabel = when (mapType) {
+                    MapType.SATELLITE -> "SAT"
+                    MapType.TERRAIN -> "TER"
+                    else -> "MAP"
                 }
+                MapControl(chipSize, pageEntrance(1, controlsVisible, 50), "Map type: $typeLabel", onClick = {
+                    mapType = when (mapType) {
+                        MapType.NORMAL -> MapType.SATELLITE
+                        MapType.SATELLITE -> MapType.TERRAIN
+                        else -> MapType.NORMAL
+                    }
+                }) { MonoText(typeLabel, 11.sp, Frost, FontWeight.Bold) }
 
-                // Weather card
+                // Weather card (not interactive)
                 driveState.currentWeather?.let { weather ->
                     Box(
                         pageEntrance(2, controlsVisible, 50)
+                            .padding(vertical = 4.dp)
                             .clip(RoundedCornerShape(6.dp))
                             .background(Surf.copy(alpha = 0.85f))
                             .border(Tokens.CardBorder, Brd, RoundedCornerShape(6.dp))
@@ -298,87 +460,58 @@ fun TripPage(
                                 "${prefs.displayTemp(weather.tempC)}${prefs.tempLabel}",
                                 10.sp, Frost, FontWeight.Bold
                             )
-                            MonoText(weather.description, 8.sp, Dim)
+                            MonoText(weather.description, 10.sp, Dim)
                         }
                     }
                 }
 
-                // Zoom in
-                Box(
-                    pageEntrance(3, controlsVisible, 50)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Surf.copy(alpha = 0.85f))
-                        .border(Tokens.CardBorder, Brd, RoundedCornerShape(6.dp))
-                        .clickable { scope.launch { cameraPositionState.animate(CameraUpdateFactory.zoomIn()) } }
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                ) {
-                    MonoText("+", 12.sp, Frost, FontWeight.Bold)
+                // Zoom in / out — stacked, or side by side on a short map
+                val zoomIn: @Composable () -> Unit = {
+                    MapControl(chipSize, pageEntrance(3, controlsVisible, 50), "Zoom in", onClick = {
+                        scope.launch { cameraPositionState.animate(CameraUpdateFactory.zoomIn()) }
+                    }) { MonoText("+", 16.sp, Frost, FontWeight.Bold) }
                 }
-
-                // Zoom out
-                Box(
-                    pageEntrance(4, controlsVisible, 50)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Surf.copy(alpha = 0.85f))
-                        .border(Tokens.CardBorder, Brd, RoundedCornerShape(6.dp))
-                        .clickable { scope.launch { cameraPositionState.animate(CameraUpdateFactory.zoomOut()) } }
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                ) {
-                    MonoText("\u2212", 12.sp, Frost, FontWeight.Bold)
+                val zoomOut: @Composable () -> Unit = {
+                    MapControl(chipSize, pageEntrance(4, controlsVisible, 50), "Zoom out", onClick = {
+                        scope.launch { cameraPositionState.animate(CameraUpdateFactory.zoomOut()) }
+                    }) { MonoText("\u2212", 16.sp, Frost, FontWeight.Bold) }
                 }
+                if (compactMap) Row { zoomOut(); zoomIn() } else { zoomIn(); zoomOut() }
 
                 // Locate / recenter
                 if (currentLat != null && currentLng != null) {
-                    Box(
-                        pageEntrance(5, controlsVisible, 50)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(Surf.copy(alpha = 0.85f))
-                            .border(Tokens.CardBorder, Brd, RoundedCornerShape(6.dp))
-                            .clickable {
-                                scope.launch {
-                                    cameraPositionState.animate(
-                                        CameraUpdateFactory.newLatLngZoom(
-                                            LatLng(currentLat, currentLng), 15f
-                                        ), 500
-                                    )
-                                }
-                            }
-                            .padding(horizontal = 8.dp, vertical = 6.dp)
-                    ) {
-                        MonoText("\u25CE", 12.sp, accent, FontWeight.Bold)
-                    }
+                    MapControl(chipSize, pageEntrance(5, controlsVisible, 50), "Recentre on my location", onClick = {
+                        scope.launch {
+                            cameraPositionState.animate(
+                                CameraUpdateFactory.newLatLngZoom(LatLng(currentLat, currentLng), 15f), 500
+                            )
+                        }
+                    }) { MonoText("\u25CE", 16.sp, ink, FontWeight.Bold) }
                 }
 
                 // SET S/F button (lap timer)
                 if (driveState.isRecording) {
-                    SetStartFinishButton(
-                        isSet = lapTimer.startFinish != null,
-                        onSet = {
-                            val loc = driveState.currentLocation
-                            if (loc != null) {
-                                lapTimer.setStartFinish(loc.latitude, loc.longitude, loc.bearing)
-                            }
-                        },
-                        onClear = { lapTimer.clearStartFinish() },
-                        modifier = pageEntrance(6, controlsVisible, 50)
-                    )
+                    val sfSet = lapTimer.startFinish != null
+                    MapControl(chipSize, pageEntrance(6, controlsVisible, 50),
+                        if (sfSet) "Clear start/finish line" else "Set start/finish line", onClick = {
+                        if (preview != null) return@MapControl
+                        if (sfSet) lapTimer.clearStartFinish()
+                        else driveState.currentLocation?.let { loc ->
+                            lapTimer.setStartFinish(loc.latitude, loc.longitude, loc.bearing)
+                        }
+                    }) { MonoText(if (sfSet) "CLEAR S/F" else "SET S/F", 11.sp, if (sfSet) Orange else ink, FontWeight.Bold) }
 
-                    // Bookmark button
-                    Box(
-                        pageEntrance(7, controlsVisible, 50)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(Surf.copy(alpha = 0.85f))
-                            .border(Tokens.CardBorder, Brd, RoundedCornerShape(6.dp))
-                            .clickable { recorder.addBookmark() }
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        MonoText("\u2691 MARK", 10.sp, Warn, FontWeight.Bold)
-                    }
+                    // Bookmark button — an action, not a warning: ink, not amber.
+                    MapControl(chipSize, pageEntrance(7, controlsVisible, 50), "Bookmark this spot", onClick = {
+                        if (preview == null) recorder.addBookmark()
+                    }) { MonoText("\u2691 MARK", 11.sp, Frost, FontWeight.Bold) }
                 }
             }
 
+            }
+
             // ── Lap timer overlay (top-start, during recording) ────
-            if (driveState.isRecording && lapTimer.startFinish != null) {
+            if (visible && driveState.isRecording && lapTimer.startFinish != null) {
                 LapTimerOverlay(
                     lapTimer = lapTimer,
                     prefs = prefs,
@@ -401,7 +534,7 @@ fun TripPage(
                             .clip(CircleShape)
                             .background(Orange.copy(alpha = recAlpha))
                     )
-                    MonoText("REC", 9.sp, Orange, FontWeight.Bold)
+                    MonoText("REC", 10.sp, Orange, FontWeight.Bold)
                 }
             }
 
@@ -414,7 +547,8 @@ fun TripPage(
                         .padding(horizontal = 10.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    MonoText("PAUSED", 9.sp, Warn, FontWeight.Bold)
+                    // Paused is a state, not a warning — ink (was amber).
+                    MonoText("\u2759\u2759 PAUSED", 10.sp, Frost, FontWeight.Bold)
                 }
             }
 
@@ -436,7 +570,10 @@ fun TripPage(
                 }
 
                 Box(
-                    Modifier.align(Alignment.BottomStart).padding(12.dp)
+                    // Above the colour legend when it shows — on a 360 dp phone the bottom-centre legend ran
+                    // over this box ("AVG 43 mph" was cut off).
+                    Modifier.align(Alignment.BottomStart)
+                        .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = if (mapPoints.isNotEmpty()) 44.dp else 12.dp)
                         .clip(RoundedCornerShape(6.dp))
                         .background(Surf.copy(alpha = 0.85f))
                         .border(Tokens.CardBorder, Brd, RoundedCornerShape(6.dp))
@@ -446,26 +583,24 @@ fun TripPage(
                         val dist = if (prefs.speedUnit == "MPH")
                             "%.1f mi".format(statDist * 0.621371)
                         else "%.1f km".format(statDist)
-                        MonoText(dist, 10.sp, Frost, FontWeight.Bold)
-                        MonoText(formatDuration(statDuration), 9.sp, Mid)
+                        MonoText(dist, 12.sp, Frost, FontWeight.Bold)
+                        MonoText(formatDuration(statDuration), 10.sp, Mid)
                         val avgSpd = if (prefs.speedUnit == "MPH")
                             "%.0f mph".format(statAvgSpd * 0.621371)
                         else "%.0f km/h".format(statAvgSpd)
-                        MonoText("AVG $avgSpd", 8.sp, Dim)
+                        MonoText("AVG $avgSpd", 10.sp, Dim)
 
                         // 1.1 — DTE + boost (live recording only)
                         if (driveState.isRecording) {
                             val boostPsi = vehicleState.boostPsi
-                            MonoText(
-                                "BOOST ${"%.1f".format(boostPsi)} PSI",
-                                8.sp, if (boostPsi > 16) Orange else if (boostPsi > 8) Warn else Dim
-                            )
+                            // Boost bands (8 / 16 psi) weren't limits — read it in ink like the live panel.
+                            MonoText("BOOST ${prefs.displayBoost(vehicleState.boostKpa).let { (v, u) -> "$v $u" }}", 10.sp, Dim)
                             val dte = driveState.distanceToEmptyKm
                             if (dte > 0) {
                                 val dteStr = if (prefs.speedUnit == "MPH")
                                     "%.0f mi".format(dte * 0.621371)
                                 else "%.0f km".format(dte)
-                                MonoText("DTE $dteStr", 8.sp, if (dte < 30) Warn else Dim)
+                                MonoText("DTE $dteStr", 10.sp, if (dte < 30) Warn else Dim)
                             }
                         }
 
@@ -478,10 +613,10 @@ fun TripPage(
                                     val altStr = if (prefs.speedUnit == "MPH")
                                         "${(altM * 3.28084).toInt()} ft"
                                     else "$altM m"
-                                    MonoText("ALT $altStr", 8.sp, Dim)
+                                    MonoText("ALT $altStr", 10.sp, Dim)
                                 }
                                 if (loc.hasBearing() && vehicleState.speedKph > 5) {
-                                    MonoText("HDG ${loc.bearing.toInt()}°", 8.sp, Dim)
+                                    MonoText("HDG ${loc.bearing.toInt()}°", 10.sp, Dim)
                                 }
                                 // GPS accuracy dot
                                 val accColor = when {
@@ -494,7 +629,7 @@ fun TripPage(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Box(Modifier.size(5.dp).clip(CircleShape).background(accColor))
-                                    MonoLabel("±${"%.0f".format(loc.accuracy)}m", 7.sp, Dim)
+                                    MonoLabel("±${"%.0f".format(loc.accuracy)}m", 9.sp, Dim)
                                 }
                             }
                         }
@@ -512,8 +647,9 @@ fun TripPage(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    MonoText(colorMode.label, 8.sp, accent, FontWeight.Bold)
-                    colorLegend(colorMode).forEach { (label, color) ->
+                    val unit = legendUnit(colorMode, prefs)
+                    MonoText(if (unit.isEmpty()) colorMode.label else "${colorMode.label} $unit", 10.sp, actionInk(accent), FontWeight.Bold)
+                    colorLegend(colorMode, prefs).forEach { (label, color) ->
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(3.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -521,11 +657,19 @@ fun TripPage(
                             Box(
                                 Modifier.size(6.dp).clip(CircleShape).background(color)
                             )
-                            MonoLabel(label, 7.sp, Dim)
+                            MonoLabel(label, 9.sp, Dim)
                         }
                     }
                 }
             }
+        }
+
+        // Debug preview: say plainly that this is sample data and nothing is saved.
+        if (preview != null) {
+            Box(
+                Modifier.fillMaxWidth().background(Warn.copy(alpha = pillBgAlpha(0.12f)))
+                    .padding(horizontal = Tokens.PagePad, vertical = 4.dp)
+            ) { InstrumentLabel("PREVIEW · SAMPLE DATA — NOT SAVED · ${preview.name}", color = demoInk()) }
         }
 
         // ── Bottom section: HUD (live) or History (idle) ─────────────
@@ -541,10 +685,12 @@ fun TripPage(
                         Manifest.permission.ACCESS_FINE_LOCATION
                     ))
                 },
-                onStart = { recorder.startDrive(sessionId = 0) },
-                onPause = { recorder.pauseDrive() },
-                onResume = { recorder.resumeDrive() },
+                // Preview: the buttons only step through the sample states — the recorder is never called.
+                onStart = { if (preview != null) TripPreview.set(TripPreview.Mode.RECORDING) else recorder.startDrive(sessionId = 0) },
+                onPause = { if (preview != null) TripPreview.set(TripPreview.Mode.PAUSED) else recorder.pauseDrive() },
+                onResume = { if (preview != null) TripPreview.set(TripPreview.Mode.RECORDING) else recorder.resumeDrive() },
                 onStop = {
+                    if (preview != null) { TripPreview.set(TripPreview.Mode.SUMMARY); return@LiveHud }
                     recorder.stopDrive()
                     scope.launch(Dispatchers.IO) {
                         drives = DriveDatabase.getInstance(context).driveDao()
@@ -567,23 +713,21 @@ fun TripPage(
                     } else {
                         selectedDriveId = drive.id
                         selectedDrive = drive
-                        scope.launch(Dispatchers.IO) {
+                        if (drive.id < 0) { selectedDrivePoints = samplePoints(drive.id); mapBookmarks = emptyList() }
+                        else scope.launch(Dispatchers.IO) {
                             val dao = DriveDatabase.getInstance(context).driveDao()
                             selectedDrivePoints = dao.getPoints(drive.id)
                             mapBookmarks = dao.getBookmarks(drive.id)
                         }
                     }
                 },
-                onSummary = { drive ->
-                    summaryDrive = drive
-                    scope.launch(Dispatchers.IO) {
-                        summaryPoints = DriveDatabase.getInstance(context).driveDao().getPoints(drive.id)
-                    }
-                },
-                onExport = { drive -> exportDrive = drive },
+                onSummary = { drive -> summaryDrive = drive },   // points load with the sheet (shownSummary)
+                onExport = { drive -> exportDrive = drive },   // the sheet's EXPORT no-ops for a sample drive
                 onDelete = { drive ->
+                    if (drive.id < 0) return@DriveHistoryList
                     scope.launch(Dispatchers.IO) {
                         DriveDatabase.getInstance(context).driveDao().deleteDrive(drive.id)
+                        DriveDatabase.getInstance(context).driveDao().deleteOrphanLapSessions()
                         drives = DriveDatabase.getInstance(context).driveDao()
                             .getRecentDrives(AppSettings.getMaxSavedDrives(context))
                     }
@@ -594,10 +738,12 @@ fun TripPage(
                     }
                 },
                 onRename = { drive ->
+                    if (drive.id < 0) return@DriveHistoryList
                     renameDriveId = drive.id
                     renameText = drive.name ?: ""
                 },
                 onTagsChanged = { drive, tags ->
+                    if (drive.id < 0) return@DriveHistoryList
                     scope.launch(Dispatchers.IO) {
                         DriveDatabase.getInstance(context).driveDao().updateDriveTags(drive.id, tags)
                         drives = DriveDatabase.getInstance(context).driveDao()
@@ -606,6 +752,7 @@ fun TripPage(
                 },
                 onReplay = { drive ->
                     replayDrive = drive
+                    if (drive.id < 0) { replayPoints = samplePoints(drive.id); return@DriveHistoryList }
                     scope.launch(Dispatchers.IO) {
                         replayPoints = DriveDatabase.getInstance(context).driveDao().getPoints(drive.id)
                     }
@@ -618,6 +765,7 @@ fun TripPage(
                     }
                 },
                 onBatchExport = { selectedDrives ->
+                    if (selectedDrives.any { it.id < 0 }) return@DriveHistoryList
                     scope.launch(Dispatchers.IO) {
                         val dao = DriveDatabase.getInstance(context).driveDao()
                         val drivesWithPoints = selectedDrives.map { d ->
@@ -632,25 +780,27 @@ fun TripPage(
     }
 
     // ── Drive summary sheet ─────────────────────────────────────────
-    summaryDrive?.let { drive ->
+    // Modal sheet = its own window: only present it on TRIP, or a drive ending while DRIVE is open would
+    // pop TRIP's summary over it. A summary that arrives off screen waits for the next TRIP visit, and
+    // closing it consumes it — it is shown once, not on every return to TRIP.
+    shownSummary?.takeIf { visible }?.let { drive ->
         DriveSummarySheet(
             drive = drive,
             points = summaryPoints,
             prefs = prefs,
             onShare = {
+                if (drive.id < 0) { closeSummary(drive); return@DriveSummarySheet }   // preview: nothing exported
                 scope.launch(Dispatchers.IO) {
                     val pts = summaryPoints.ifEmpty {
                         DriveDatabase.getInstance(context).driveDao().getPoints(drive.id)
                     }
                     DiagnosticExporter.shareDrive(context, drive, pts)
                 }
-                summaryDrive = null
-                summaryPoints = emptyList()
+                closeSummary(drive)
             },
-            onDismiss = {
-                summaryDrive = null
-                summaryPoints = emptyList()
-            }
+            onDismiss = { closeSummary(drive) },
+            trendDrives = if (drive.id < 0) TripPreview.drives() else null,
+            previewNotice = drive.id < 0
         )
     }
 
@@ -666,7 +816,8 @@ fun TripPage(
             onDismiss = {
                 compareA = null
                 compareB = null
-            }
+            },
+            previewNotice = compA.id < 0 || compB.id < 0
         )
     }
 
@@ -676,6 +827,7 @@ fun TripPage(
             drive = drive,
             onExport = { components ->
                 exportDrive = null
+                if (drive.id < 0) return@ExportOptionsSheet   // preview: nothing is exported
                 scope.launch(Dispatchers.IO) {
                     val dao = DriveDatabase.getInstance(context).driveDao()
                     val pts = dao.getPoints(drive.id)
@@ -684,7 +836,9 @@ fun TripPage(
                     )
                 }
             },
-            onDismiss = { exportDrive = null }
+            onDismiss = { exportDrive = null },
+            prefs = prefs,
+            previewNotice = drive.id < 0
         )
     }
 
@@ -698,7 +852,8 @@ fun TripPage(
                 onDismiss = {
                     replayDrive = null
                     replayPoints = emptyList()
-                }
+                },
+                previewNotice = drive.id < 0
             )
         }
     }
@@ -806,152 +961,193 @@ private fun LiveHud(
 
     Column(
         modifier
-            .background(Surf)
-            .padding(horizontal = 8.dp)
-            .padding(top = 6.dp, bottom = 6.dp)
+            .background(Bg)
+            .padding(horizontal = Tokens.PagePad)
+            .padding(top = 8.dp, bottom = 8.dp)
     ) {
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Row 1 — Speed · RPM · Gear · Boost
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                DataCell("SPD",
-                    "${prefs.displaySpeed(vehicleState.speedKph)} ${prefs.speedLabel}",
-                    modifier = Modifier.weight(1f))
-                DataCell("RPM", "%.0f".format(vehicleState.rpm), modifier = Modifier.weight(1f))
-                DataCell("GEAR", vehicleState.gearDisplay, modifier = Modifier.weight(1f))
-                val boostPsi = vehicleState.boostPsi
-                DataCell("BOOST", "%.1f".format(boostPsi),
-                    valueColor = when {
-                        boostPsi > 16 -> Orange
-                        boostPsi > 8  -> Warn
-                        boostPsi > 0  -> Ok
-                        else          -> Frost
-                    },
-                    sub = "\u2588".repeat((boostPsi.coerceIn(0.0, 22.0) / 22.0 * 5).toInt()),
-                    modifier = Modifier.weight(1f))
-            }
-
-            // Row 2 — Coolant · Oil · Ambient · Fuel %
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                DataCell("CLT",
-                    if (vehicleState.coolantTempC > -90)
-                        "${prefs.displayTemp(vehicleState.coolantTempC)}${prefs.tempLabel}" else "--",
-                    modifier = Modifier.weight(1f))
-                DataCell("OIL",
-                    if (vehicleState.oilTempC > -90)
-                        "${prefs.displayTemp(vehicleState.oilTempC)}${prefs.tempLabel}" else "--",
-                    modifier = Modifier.weight(1f))
-                DataCell("AMB", "${prefs.displayTemp(vehicleState.ambientTempC)}${prefs.tempLabel}", modifier = Modifier.weight(1f))
-                DataCell("FUEL", "%.0f%%".format(vehicleState.fuelLevelPct), modifier = Modifier.weight(1f))
-            }
-
-            // Row 3 — RDU · PTU · Fuel used · Economy
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                DataCell("RDU",
-                    if (vehicleState.rduTempC > -90)
-                        "${prefs.displayTemp(vehicleState.rduTempC)}${prefs.tempLabel}" else "--",
-                    modifier = Modifier.weight(1f))
-                DataCell("PTU",
-                    if (vehicleState.ptuTempC > -90)
-                        "${prefs.displayTemp(vehicleState.ptuTempC)}${prefs.tempLabel}" else "--",
-                    modifier = Modifier.weight(1f))
-                DataCell("USED", "%.2fL".format(driveState.fuelUsedL), modifier = Modifier.weight(1f))
-                val (econVal, econUnit) = if (prefs.speedUnit == "MPH")
-                    "%.1f".format(driveState.avgFuelMpg) to "MPG"
-                else
-                    "%.1f".format(driveState.avgFuelL100km) to "L/100"
-                DataCell("ECON", "$econVal $econUnit", modifier = Modifier.weight(1f))
-            }
-
-            // Row 4 — Wheel speeds / slip delta (tap to toggle)
-            var showSlipDelta by remember { mutableStateOf(false) }
-            Row(
-                Modifier.fillMaxWidth().clickable { showSlipDelta = !showSlipDelta },
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                if (showSlipDelta) {
-                    val vs = vehicleState
-                    val frontAvg = (vs.wheelSpeedFL + vs.wheelSpeedFR) / 2.0
-                    val rearAvg = (vs.wheelSpeedRL + vs.wheelSpeedRR) / 2.0
-                    val leftAvg = (vs.wheelSpeedFL + vs.wheelSpeedRL) / 2.0
-                    val rightAvg = (vs.wheelSpeedFR + vs.wheelSpeedRR) / 2.0
-                    val frDelta = kotlin.math.abs(frontAvg - rearAvg)
-                    val lrDelta = kotlin.math.abs(leftAvg - rightAvg)
-                    val flrlDelta = kotlin.math.abs(vs.wheelSpeedFL - vs.wheelSpeedRL)
-                    val frrDelta = kotlin.math.abs(vs.wheelSpeedFR - vs.wheelSpeedRR)
-                    fun slipColor(d: Double) = when {
-                        d > 5 -> Orange; d > 2 -> Warn; else -> Ok
-                    }
-                    DataCell("F-R", "%.1f".format(frDelta), valueColor = slipColor(frDelta), modifier = Modifier.weight(1f))
-                    DataCell("L-R", "%.1f".format(lrDelta), valueColor = slipColor(lrDelta), modifier = Modifier.weight(1f))
-                    DataCell("FL-RL", "%.1f".format(flrlDelta), valueColor = slipColor(flrlDelta), modifier = Modifier.weight(1f))
-                    DataCell("FR-RR", "%.1f".format(frrDelta), valueColor = slipColor(frrDelta), modifier = Modifier.weight(1f))
-                } else {
-                    DataCell("FL", "${prefs.displaySpeed(vehicleState.wheelSpeedFL)} ${prefs.speedLabel}", modifier = Modifier.weight(1f))
-                    DataCell("FR", "${prefs.displaySpeed(vehicleState.wheelSpeedFR)} ${prefs.speedLabel}", modifier = Modifier.weight(1f))
-                    DataCell("RL", "${prefs.displaySpeed(vehicleState.wheelSpeedRL)} ${prefs.speedLabel}", modifier = Modifier.weight(1f))
-                    DataCell("RR", "${prefs.displaySpeed(vehicleState.wheelSpeedRR)} ${prefs.speedLabel}", modifier = Modifier.weight(1f))
+            // Design pass: readings in ink, BOOST in the paint accent (as on DRIVE), amber / orange only past
+            // an existing limit — THERMAL preset temps, fuel < 10 %. The old boost colours (green > 0, amber
+            // > 8, orange > 16 psi) weren't limits. Recording can continue through an adapter drop; the last
+            // frame is held in VehicleState: per-frame values go to placeholders, slow values stay, STALE.
+            val live = vehicleState.isConnected
+            val ph = "— —"
+            fun temp(label: String, valueC: Double, tag: String, warnC: Double? = null, critC: Double? = null): Pair<Readout, Level> {
+                if (valueC <= -90) return Readout(label, ph) to Level.NONE
+                val avail = tempAvailFor(valueC, vehicleState.fieldLastUpdateMs[tag], tempStaleAfterMs(tag)).whenDisconnected(live)
+                val lvl = when {
+                    avail == TempAvail.STALE -> Level.STALE
+                    warnC != null && critC != null -> tempLevel(valueC, warnC, critC, avail)
+                    else -> Level.NORMAL
                 }
+                return Readout(label, "${prefs.displayTemp(valueC)}${prefs.tempLabel}",
+                    color = if (lvl.isAlert) levelColor(lvl) else Color.Unspecified,
+                    sub = if (lvl == Level.STALE) "STALE" else null) to lvl
             }
+            val (clt, cltL) = temp("COOLANT", vehicleState.coolantTempC, "coolantTempC", prefs.coolWarnC, prefs.coolCritC)
+            val (oil, oilL) = temp("OIL", vehicleState.oilTempC, "oilTempC", prefs.oilWarnC, prefs.oilCritC)
+            val (amb, _) = temp("AMBIENT", vehicleState.ambientTempC, "ambientTempC")
+            val (rdu, rduL) = temp("RDU", vehicleState.rduTempC, "rduTempC", prefs.rduWarnC, prefs.rduCritC)
+            val (ptu, ptuL) = temp("PTU", vehicleState.ptuTempC, "ptuTempC", prefs.ptuWarnC, prefs.ptuCritC)
+            val hasFuel = vehicleState.fuelLevelPct > 0
+            val fuelLow = hasFuel && vehicleState.fuelLevelPct < 10.0          // DRIVE "LOW FUEL" rule
+            val fuel = Readout("FUEL", if (hasFuel) "%.0f%%".format(vehicleState.fuelLevelPct) else ph,
+                color = if (fuelLow && live) Warn else Color.Unspecified,
+                sub = if (hasFuel && !live) "STALE" else null)
+            // Unavailable → "—" with its unit (same rule as DRIVE ECONOMY), not a computed 0.
+            val used = Readout("FUEL USED", if (driveState.fuelUsedL > 0) "%.2f L".format(driveState.fuelUsedL) else "— L")
+            val econ = if (prefs.speedUnit == "MPH")
+                Readout("ECONOMY", if (driveState.avgFuelMpg > 0) "%.1f MPG".format(driveState.avgFuelMpg) else "— MPG")
+            else
+                Readout("ECONOMY", if (driveState.avgFuelL100km > 0) "%.1f L/100".format(driveState.avgFuelL100km) else "— L/100")
+            val panelLevel = worstLevel(listOf(cltL, oilL, rduL, ptuL) + if (fuelLow && live) listOf(Level.WARN) else emptyList())
+
+            // Wheel speeds / slip Δ — same tap-to-toggle as before, now with a visible switch; one panel with
+            // the readings above so everything fits under the map without scrolling.
+            var showSlipDelta by remember { mutableStateOf(false) }
+            ReadoutGrid(
+                rows = listOf(
+                    listOf(
+                        Readout("SPEED", if (live) "${prefs.displaySpeed(vehicleState.speedKph)} ${prefs.speedLabel}" else ph),
+                        Readout("RPM", if (live) "%.0f".format(vehicleState.rpm) else ph),
+                        Readout("GEAR", if (live) vehicleState.gearDisplay else ph),
+                        // Value + the user's pressure unit; DAY reads the darker paint (actionInk) like the map labels.
+                        Readout("BOOST", if (live) prefs.displayBoost(vehicleState.boostKpa).let { (v, u) -> "$v $u" } else ph,
+                            color = actionInk(accent)),
+                    ),
+                    listOf(clt, oil, amb, fuel),
+                    listOf(rdu, ptu, used, econ),
+                ),
+                level = panelLevel,
+                dense = true,
+                footer = {
+                    Column(
+                        Modifier.fillMaxWidth()
+                            .clickable(onClickLabel = if (showSlipDelta) "Show wheel speeds" else "Show slip deltas") {
+                                showSlipDelta = !showSlipDelta
+                            },
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(Brd.copy(alpha = borderAlpha(0.4f))))
+                        Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            InstrumentLabel(if (showSlipDelta) "SLIP Δ (${prefs.speedLabel})" else "WHEEL SPEEDS (${prefs.speedLabel})", color = Mid)
+                            Spacer(Modifier.weight(1f))
+                            InstrumentMeta(if (showSlipDelta) "SHOW SPEEDS ›" else "SHOW SLIP Δ ›")
+                        }
+                        Row(Modifier.fillMaxWidth()) {
+                            val vs = vehicleState
+                            val cells: List<Pair<String, String>> = when {
+                                !live -> listOf("FL", "FR", "RL", "RR").map { it to ph }
+                                showSlipDelta -> {
+                                    val frontAvg = (vs.wheelSpeedFL + vs.wheelSpeedFR) / 2.0
+                                    val rearAvg = (vs.wheelSpeedRL + vs.wheelSpeedRR) / 2.0
+                                    val leftAvg = (vs.wheelSpeedFL + vs.wheelSpeedRL) / 2.0
+                                    val rightAvg = (vs.wheelSpeedFR + vs.wheelSpeedRR) / 2.0
+                                    listOf(
+                                        "F-R" to "%.1f".format(kotlin.math.abs(frontAvg - rearAvg)),
+                                        "L-R" to "%.1f".format(kotlin.math.abs(leftAvg - rightAvg)),
+                                        "FL-RL" to "%.1f".format(kotlin.math.abs(vs.wheelSpeedFL - vs.wheelSpeedRL)),
+                                        "FR-RR" to "%.1f".format(kotlin.math.abs(vs.wheelSpeedFR - vs.wheelSpeedRR)),
+                                    )
+                                }
+                                else -> listOf(
+                                    "FL" to prefs.displaySpeed(vs.wheelSpeedFL), "FR" to prefs.displaySpeed(vs.wheelSpeedFR),
+                                    "RL" to prefs.displaySpeed(vs.wheelSpeedRL), "RR" to prefs.displaySpeed(vs.wheelSpeedRR),
+                                )
+                            }
+                            cells.forEach { (label, value) ->
+                                // Slip keeps its existing bands (> 2 amber, > 5 orange); in range reads in ink, not green.
+                                val d = if (showSlipDelta && live) value.toDoubleOrNull() ?: 0.0 else 0.0
+                                val c = when { d > 5 -> Orange; d > 2 -> Warn; else -> Frost }
+                                Column(Modifier.weight(1f)) {
+                                    InstrumentLabel(label)
+                                    Spacer(Modifier.height(2.dp))
+                                    DataNum(value, 16.sp, if (value.startsWith("—")) Dim else c)
+                                }
+                            }
+                        }
+                    }
+                }
+            )
         }
 
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(8.dp))
 
-        // ── Recording controls ───────────────────────────────────────
+        // ── Recording controls — same actions; START / RESUME are the accent action, PAUSE neutral,
+        // STOP an orange outline (ends the drive) rather than a second solid colour block.
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (!driveState.isRecording) {
-                Button(
-                    onClick = {
-                        if (!hasLocationPerm) onRequestPermission()
-                        else onStart()
-                    },
-                    modifier = Modifier.weight(1f).height(44.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = accent)
-                ) {
-                    MonoText("START", 13.sp, Bg, FontWeight.Bold)
+            val demo by com.openrs.dash.demo.DemoMode.status.collectAsState()
+            if (!driveState.isRecording && demo.active) {
+                // Simulated telemetry is never written to trip history.
+                Box(
+                    Modifier.weight(1f).height(48.dp).instrumentSurface(),
+                    contentAlignment = Alignment.Center
+                ) { InstrumentLabel("DEMO — NOT RECORDED", color = Dim) }
+            } else if (!driveState.isRecording) {
+                RecButton("START", accent, filled = true, Modifier.weight(1f)) {
+                    if (!hasLocationPerm) onRequestPermission() else onStart()
                 }
             } else if (driveState.isPaused) {
-                Button(
-                    onClick = onResume,
-                    modifier = Modifier.weight(1f).height(44.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = accent)
-                ) {
-                    MonoText("RESUME", 13.sp, Bg, FontWeight.Bold)
-                }
-                Button(
-                    onClick = onStop,
-                    modifier = Modifier.weight(0.5f).height(44.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Orange)
-                ) {
-                    MonoText("STOP", 13.sp, Bg, FontWeight.Bold)
-                }
+                RecButton("RESUME", accent, filled = true, Modifier.weight(1f), onResume)
+                RecButton("STOP", Orange, filled = false, Modifier.weight(0.5f), onStop)
             } else {
-                Button(
-                    onClick = onPause,
-                    modifier = Modifier.weight(1f).height(44.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Warn)
-                ) {
-                    MonoText("PAUSE", 13.sp, Bg, FontWeight.Bold)
-                }
-                Button(
-                    onClick = onStop,
-                    modifier = Modifier.weight(0.5f).height(44.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Orange)
-                ) {
-                    MonoText("STOP", 13.sp, Bg, FontWeight.Bold)
-                }
+                RecButton("PAUSE", Mid, filled = false, Modifier.weight(1f), onPause)
+                RecButton("STOP", Orange, filled = false, Modifier.weight(0.5f), onStop)
             }
         }
+    }
+}
+
+/**
+ * Map overlay control: a compact visible chip ([chipSize]) centred in a 48 × 48 dp touch area. The press
+ * ripple is drawn on the chip only; wide labels (SET S/F, MARK) widen both.
+ */
+@Composable
+private fun MapControl(
+    chipSize: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier,
+    description: String,
+    onClick: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val shape = RoundedCornerShape(6.dp)
+    Box(
+        modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .clickable(interactionSource = interaction, indication = null, onClickLabel = description) { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            Modifier.sizeIn(minWidth = chipSize, minHeight = chipSize)
+                .clip(shape)
+                .background(Surf.copy(alpha = 0.85f))
+                .border(Tokens.CardBorder, Brd, shape)
+                .indication(interaction, androidx.compose.material3.ripple())
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            contentAlignment = Alignment.Center
+        ) { content() }
+    }
+}
+
+/** 48 dp recording action: filled (primary) or outlined in [color]. */
+@Composable
+private fun RecButton(label: String, color: Color, filled: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(10.dp)
+    Box(
+        modifier.height(48.dp)
+            .clip(shape)
+            .then(if (filled) Modifier.background(color, shape)
+                  else Modifier.background(InstrumentFill, shape).border(1.dp, color.copy(alpha = borderAlpha(0.7f)), shape))
+            .clickable(onClickLabel = label.lowercase()) { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        MonoText(label, 13.sp, if (filled) Bg else textColor(color), FontWeight.Bold)
     }
 }
 
@@ -981,7 +1177,7 @@ private fun DriveHistoryList(
     var multiSelectMode by remember { mutableStateOf(false) }
     val multiSelected = remember { mutableStateListOf<Long>() }
 
-    Column(modifier.background(Surf).padding(horizontal = 8.dp, vertical = 6.dp)) {
+    Column(modifier.background(Bg).padding(horizontal = Tokens.PagePad, vertical = 8.dp)) {
         // Header with optional batch export controls
         if (multiSelectMode) {
             Row(
@@ -1030,20 +1226,18 @@ private fun DriveHistoryList(
             val autoRecOn = remember { com.openrs.dash.ui.AppSettings.getAutoRecordDrives(ctx) }
             Box(
                 Modifier.fillMaxWidth()
-                    .background(Surf2, RoundedCornerShape(10.dp))
-                    .border(Tokens.CardBorder, Brd, RoundedCornerShape(10.dp))
-                    .padding(24.dp),
+                    .instrumentSurface()
+                    .padding(horizontal = 20.dp, vertical = 24.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    MonoText("No drives recorded yet", 11.sp, Dim, FontWeight.Bold)
-                    Spacer(Modifier.height(6.dp))
-                    MonoLabel(
+                    UIText("No drives recorded yet", 15.sp, Frost, FontWeight.SemiBold)
+                    Spacer(Modifier.height(8.dp))
+                    InstrumentMeta(
                         if (autoRecOn)
                             "Connect to your car and tap START — or just drive, auto-record is on"
                         else
-                            "Connect and tap START, or enable Auto-record in Settings",
-                        9.sp, Dim
+                            "Connect and tap START, or enable Auto-record in Settings"
                     )
                 }
             }
@@ -1226,25 +1420,22 @@ private fun DriveCard(
 
     // Animate selection transitions so the card visually "lifts" into focus
     // instead of snapping — matches the premium feel of the rest of the app.
+    // Design pass: the instrument surface like every other panel; selection = an accent edge.
     val borderColor by animateColorAsState(
-        if (isSelected) accent else Brd,
+        if (isSelected) accent else Color.Transparent,
         tween(250), label = "driveCardBrd"
-    )
-    val bgColor by animateColorAsState(
-        if (isSelected) Surf2 else Surf,
-        tween(250), label = "driveCardBg"
     )
 
     @OptIn(ExperimentalFoundationApi::class)
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(bgColor)
-            .border(Tokens.CardBorder, borderColor, RoundedCornerShape(10.dp))
+            .instrumentSurface()
+            .border(1.5.dp, borderColor, RoundedCornerShape(Tokens.CardRadius))
+            .clip(RoundedCornerShape(Tokens.CardRadius))
             .combinedClickable(onClick = { onClick() }, onLongClick = { onLongClick() })
             .animateContentSize(tween(250, easing = EaseOut))
-            .padding(12.dp)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
         // Header: name/time + status badge + duration
         Row(
@@ -1259,76 +1450,45 @@ private fun DriveCard(
             ) {
                 // Drive name or time
                 val displayName = drive.name ?: timeFormat.format(Date(drive.startTime))
-                MonoText(
-                    displayName, 11.sp, Frost, FontWeight.Bold,
-                    modifier = Modifier.clickable { onRename() }
+                UIText(
+                    displayName, 14.sp, Frost, FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f, fill = false).clickable { onRename() }
                 )
 
-                // Status badge
-                val (badgeText, badgeColor) = when {
-                    isActive -> "ACTIVE" to Orange
-                    !drive.hasGps -> "NO GPS" to Dim
-                    else -> "COMPLETE" to Ok
-                }
-                Box(
-                    Modifier.clip(RoundedCornerShape(4.dp))
-                        .background(badgeColor.copy(alpha = 0.15f))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                ) {
-                    MonoLabel(badgeText, 7.sp, badgeColor)
-                }
-
-                // Aggression score badge
-                if (drive.aggressionScore > 0) {
-                    val scoreColor = when {
-                        drive.aggressionScore > 60 -> Orange
-                        drive.aggressionScore > 30 -> Warn
-                        else -> Ok
-                    }
-                    Box(
-                        Modifier.clip(RoundedCornerShape(4.dp))
-                            .background(scoreColor.copy(alpha = 0.15f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        MonoLabel("${drive.aggressionScore}", 7.sp, scoreColor)
-                    }
-                }
-
-                // Thermal alert badge — flag drives where a sensor exceeded threshold
-                if (hasThermalAnomaly(drive)) {
-                    Box(
-                        Modifier.clip(RoundedCornerShape(4.dp))
-                            .background(Warn.copy(alpha = 0.15f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        MonoLabel("TEMP", 7.sp, Warn)
-                    }
-                }
+                // Badges only for states worth noticing — every finished drive used to say COMPLETE
+                // (green) and the intensity score was coloured on bands that aren't limits.
+                if (isActive) CardBadge("ACTIVE", Orange)
+                if (!drive.hasGps) CardBadge("NO GPS", Dim)
+                // ≥ 95 % of the critical limit saved with the drive — the summary's TEMP FLAG lines (DriveThermalReview)
+                val thermalFlag = remember(drive.thermalPeaksJson) { DriveThermalReview.from(drive.thermalPeaksJson).flagged }
+                if (thermalFlag) CardBadge("TEMP", Warn)
+                if (drive.aggressionScore > 0) CardBadge("SCORE ${drive.aggressionScore}", Mid)
             }
 
-            MonoText(durationStr, 10.sp, Mid)
+            MonoText(durationStr, 12.sp, Mid, FontWeight.Medium)
         }
 
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(10.dp))
 
-        // Stats row — distance, peak speed, peak RPM, peak boost
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            if (drive.hasGps && drive.distanceKm > 0) {
-                val dist = if (prefs.speedUnit == "MPH")
-                    "%.1f mi".format(drive.distanceKm * 0.621371)
-                else "%.1f km".format(drive.distanceKm)
-                StatChip("DIST", dist)
+        // Peaks — one readout row with units (was 7 sp captions over unlabelled 9 sp numbers)
+        val cells = buildList {
+            if (drive.hasGps && drive.distanceKm > 0) add("DIST" to if (prefs.speedUnit == "MPH")
+                "%.1f mi".format(drive.distanceKm * 0.621371) else "%.1f km".format(drive.distanceKm))
+            if (drive.maxSpeedKph > 0) add("TOP" to "${prefs.displaySpeed(drive.maxSpeedKph)} ${prefs.speedLabel.lowercase()}")
+            if (drive.peakRpm > 0) add("RPM" to "${drive.peakRpm}")
+            if (drive.peakBoostPsi > 0) add("BOOST" to prefs.displayBoost(drive.peakBoostPsi / UnitConversions.KPA_TO_PSI +
+                UnitConversions.STD_ATM_KPA).let { (v, u) -> "$v ${u.lowercase()}" })
+            if (drive.peakLateralG > 0) add("LAT G" to "%.2f g".format(drive.peakLateralG))
+        }
+        Row(Modifier.fillMaxWidth()) {
+            cells.forEach { (label, value) ->
+                Column(Modifier.weight(1f)) {
+                    InstrumentLabel(label)
+                    Spacer(Modifier.height(2.dp))
+                    DataNum(value, 14.sp, Frost)
+                }
             }
-            if (drive.maxSpeedKph > 0) {
-                val spd = prefs.displaySpeed(drive.maxSpeedKph)
-                StatChip("MAX", "$spd ${prefs.speedLabel}")
-            }
-            if (drive.peakRpm > 0) StatChip("RPM", "${drive.peakRpm}")
-            if (drive.peakBoostPsi > 0) StatChip("BOOST", "%.1f".format(drive.peakBoostPsi))
-            if (drive.peakLateralG > 0) StatChip("G-LAT", "%.2f".format(drive.peakLateralG))
+            repeat(5 - cells.size) { Spacer(Modifier.weight(1f)) }
         }
 
         // Route thumbnail (or GPS dot fallback)
@@ -1350,14 +1510,6 @@ private fun DriveCard(
                             .border(Tokens.CardBorder, Brd, RoundedCornerShape(4.dp))
                     )
                 }
-            } else {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(Modifier.size(6.dp).clip(CircleShape).background(Ok.copy(alpha = 0.6f)))
-                    MonoLabel("GPS", 7.sp, Ok.copy(alpha = 0.6f))
-                }
             }
         }
 
@@ -1370,14 +1522,16 @@ private fun DriveCard(
         ) {
             Column {
                 // Tag chips
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(10.dp))
                 val activeTags = remember(drive.tags) {
                     drive.tags.split(",").filter { it.isNotBlank() }.toMutableStateList()
                 }
                 val allTags = listOf("TRACK", "COMMUTE", "CRUISE", "SPIRITED", "RAIN")
-                Row(
+                @OptIn(ExperimentalLayoutApi::class)
+                FlowRow(
                     Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     allTags.forEach { tag ->
                         val active = tag in activeTags
@@ -1396,72 +1550,31 @@ private fun DriveCard(
                                     if (active) activeTags.remove(tag) else activeTags.add(tag)
                                     onTagsChanged(activeTags.joinToString(","))
                                 }
-                                .padding(horizontal = 6.dp, vertical = 3.dp)
+                                .heightIn(min = 32.dp)
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            contentAlignment = Alignment.Center
                         ) {
                             MonoLabel(
-                                tag, 7.sp,
-                                if (active) accent else Dim
+                                tag, 10.sp,
+                                if (active) actionInk(accent) else Dim
                             )
                         }
                     }
                 }
 
-                Spacer(Modifier.height(6.dp))
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    if (drive.endTime > 0) {
-                        Button(
-                            onClick = onSummary,
-                            modifier = Modifier.weight(1f).height(36.dp),
-                            shape = RoundedCornerShape(6.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = accent.copy(alpha = 0.15f))
-                        ) {
-                            MonoText("SUMMARY", 11.sp, accent, FontWeight.Bold)
-                        }
-                    }
-                    Button(
-                        onClick = onExport,
-                        modifier = Modifier.weight(1f).height(36.dp),
-                        shape = RoundedCornerShape(6.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = accent.copy(alpha = 0.15f))
-                    ) {
-                        MonoText("SHARE", 11.sp, accent, FontWeight.Bold)
-                    }
-                    Button(
-                        onClick = onRename,
-                        modifier = Modifier.weight(1f).height(36.dp),
-                        shape = RoundedCornerShape(6.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Surf3)
-                    ) {
-                        MonoText("RENAME", 11.sp, Mid, FontWeight.Bold)
-                    }
+                Spacer(Modifier.height(10.dp))
+                // Actions: SUMMARY / REPLAY (look at the drive) take the accent; SHARE / RENAME / COMPARE are
+                // neutral. REPLAY used to be amber, which reads as a warning. 44 dp tall (were 36).
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (drive.endTime > 0) CardAction("SUMMARY", primary = true, Modifier.weight(1f), onSummary)
+                    CardAction("SHARE", primary = false, Modifier.weight(1f), onExport)
+                    CardAction("RENAME", primary = false, Modifier.weight(1f), onRename)
                 }
-
-                // Row 2: REPLAY + COMPARE
                 if (drive.endTime > 0 && drive.hasGps) {
-                    Spacer(Modifier.height(4.dp))
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = onReplay,
-                            modifier = Modifier.weight(1f).height(36.dp),
-                            shape = RoundedCornerShape(6.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Warn.copy(alpha = 0.15f))
-                        ) {
-                            MonoText("REPLAY", 11.sp, Warn, FontWeight.Bold)
-                        }
-                        Button(
-                            onClick = onCompare,
-                            modifier = Modifier.weight(1f).height(36.dp),
-                            shape = RoundedCornerShape(6.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Surf3)
-                        ) {
-                            MonoText("COMPARE", 11.sp, Mid, FontWeight.Bold)
-                        }
+                    Spacer(Modifier.height(4.dp))   // 48 dp touch rows 4 dp apart = 8 dp between the 44 dp buttons
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CardAction("REPLAY", primary = true, Modifier.weight(1f), onReplay)
+                        CardAction("COMPARE", primary = false, Modifier.weight(1f), onCompare)
                     }
                 }
             }
@@ -1469,34 +1582,45 @@ private fun DriveCard(
     }
 }
 
+/** Small status chip on a drive card (tinted surface, 10 sp). */
 @Composable
-private fun StatChip(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        MonoLabel(label, 7.sp, Dim)
-        MonoText(value, 9.sp, Frost, FontWeight.Bold)
+private fun CardBadge(text: String, color: Color) {
+    Box(
+        Modifier.clip(RoundedCornerShape(5.dp))
+            .background(color.copy(alpha = pillBgAlpha(0.12f)))
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+    ) { MonoLabel(text, 10.sp, color, FontWeight.Bold) }
+}
+
+/**
+ * Drive card action: a 44 dp visible button (accent-tinted primary or neutral) centred in a 48 dp-tall touch
+ * area that spans the button's full width. Rows sit 4 dp apart, so touch areas never overlap and the visible
+ * buttons keep an 8 dp gap.
+ */
+@Composable
+private fun CardAction(label: String, primary: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val accent = LocalThemeAccent.current
+    val shape = RoundedCornerShape(8.dp)
+    val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    Box(
+        modifier.heightIn(min = 48.dp)
+            .clickable(interactionSource = interaction, indication = null, onClickLabel = label.lowercase()) { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            Modifier.fillMaxWidth().height(44.dp)
+                .clip(shape)
+                .background(if (primary) accent.copy(alpha = pillBgAlpha(0.14f)) else Surf3.copy(alpha = 0.6f), shape)
+                .border(Tokens.CardBorder, if (primary) accent.copy(alpha = borderAlpha(0.5f)) else Brd.copy(alpha = borderAlpha(0.6f)), shape)
+                .indication(interaction, androidx.compose.material3.ripple()),
+            contentAlignment = Alignment.Center
+        ) { MonoText(label, 12.sp, if (primary) actionInk(accent) else Mid, FontWeight.Bold) }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Check if a drive had any sensor exceed its critical threshold.
- * Parses thermalPeaksJson: [{"sensor":"Oil","peakC":140,...}, ...]
- */
-private fun hasThermalAnomaly(drive: DriveEntity): Boolean {
-    val json = drive.thermalPeaksJson ?: return false
-    return try {
-        val arr = org.json.JSONArray(json)
-        (0 until arr.length()).any { i ->
-            val obj = arr.getJSONObject(i)
-            val peakC = obj.getDouble("peakC")
-            val critC = obj.getDouble("critThresholdC")
-            peakC >= critC * 0.95 // flag at 95% of critical
-        }
-    } catch (_: Exception) { false }
-}
 
 private fun formatDuration(ms: Long): String {
     if (ms <= 0) return "Active"

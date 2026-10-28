@@ -54,28 +54,23 @@ export function TpmsSummaryCard({ data }: { data: TireData }) {
             }}>
               {t.label}
             </span>
-            {t.press >= 0 && (
-              <span style={{
-                fontSize: 16,
-                fontFamily: 'Orbitron, sans-serif',
-                fontWeight: 700,
-                color: pressColor(t.press),
-              }}>
-                {t.press.toFixed(1)}
-              </span>
-            )}
-            {t.press >= 0 && (
-              <span style={{ fontSize: 8, fontFamily: 'JetBrains Mono', color: colors.dim }}>PSI</span>
-            )}
-            {t.temp > -90 && (
-              <span style={{
-                fontSize: 11,
-                fontFamily: 'JetBrains Mono, monospace',
-                color: tempColor(t.temp),
-              }}>
-                {Math.round(t.temp)}°C
-              </span>
-            )}
+            {/* A corner that never reported shows "—", not a 0 PSI reading */}
+            <span style={{
+              fontSize: 16,
+              fontFamily: 'Orbitron, sans-serif',
+              fontWeight: 700,
+              color: t.press >= 0 ? pressColor(t.press) : colors.dim,
+            }}>
+              {t.press >= 0 ? t.press.toFixed(1) : '—'}
+            </span>
+            <span style={{ fontSize: 8, fontFamily: 'JetBrains Mono', color: colors.dim }}>PSI</span>
+            <span style={{
+              fontSize: 11,
+              fontFamily: 'JetBrains Mono, monospace',
+              color: t.temp > -90 ? tempColor(t.temp) : colors.dim,
+            }}>
+              {t.temp > -90 ? `${Math.round(t.temp)}°C` : '—'}
+            </span>
           </div>
         ))}
       </div>
@@ -91,7 +86,7 @@ function pressColor(psi: number): string {
 }
 
 function tempColor(c: number): string {
-  if (c < 0) return colors.accent
+  if (c < 0) return colors.cyan
   if (c < 40) return colors.ok
   if (c < 60) return colors.warn
   return colors.orange

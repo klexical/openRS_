@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
@@ -136,7 +137,26 @@ val Accent:  Color get() = if (_isDay) Color(0xFF0064B0) else Color(0xFF0091EA)
 val AccentD: Color get() = if (_isDay) Color(0xFF004F8A) else Color(0xFF006DB3)
 val Orange:  Color get() = if (_isDay) Color(0xFFD93900) else Color(0xFFFF4D00)
 val Ok:      Color get() = if (_isDay) Color(0xFF00A85A) else Color(0xFF00FF88)
-val Warn:    Color get() = if (_isDay) Color(0xFFE09500) else Color(0xFFFFCC00)
+val Warn:    Color get() = if (_isDay) DayWarn else Color(0xFFFFCC00)
+private val DayWarn = Color(0xFFE09500)
+
+/**
+ * [Warn] as a *text* colour. DAY Warn (#E09500) is ~2:1 on DAY surfaces (fails WCAG AA); text
+ * uses a dark amber that stays ≥ 5.2:1 on white, Bg, Surf2/3 and Warn-tinted fills. Bars, fills
+ * and borders keep [Warn]. The text primitives below apply this automatically via [textColor].
+ */
+val WarnInk: Color get() = if (_isDay) Color(0xFF6B4700) else Color(0xFFFFCC00)
+
+/**
+ * Text on an accent-tinted action surface (TAP TO CONNECT). DAY darkens the paint 40 % towards
+ * Ink — the raw paint on its own light tint read at ~3:1; NIGHT keeps the paint.
+ */
+fun actionInk(accent: Color): Color =
+    if (_isDay) androidx.compose.ui.graphics.lerp(accent, Color(0xFF080D16), 0.4f) else accent
+
+/** Routes DAY [Warn] (at any alpha) to [WarnInk] for text; every other colour passes through. */
+fun textColor(c: Color): Color =
+    if (_isDay && c.copy(alpha = 1f) == DayWarn) WarnInk.copy(alpha = c.alpha) else c
 
 val Grn   get() = Ok
 val Amber get() = Warn
@@ -198,12 +218,15 @@ private val FrozenWhiteDayTriad = AccentTriad(
 
 private val paintByAccent: Map<Color, RsPaint> = RsPaints.associateBy { it.accent }
 
-/** Derive the accent triad for a given paint color + theme mode. */
+/**
+ * Derive the accent triad for a given paint color + theme mode. Also accepts a triad's own
+ * `full` colour (what [legibleAccent] provides as LocalThemeAccent), so mid/dim stay structural.
+ */
 fun accentTriadFor(paint: Color, isDay: Boolean): AccentTriad {
     val id = paintByAccent[paint]?.id
     return when {
-        id == "black" && !isDay -> ShadowBlackNightTriad
-        id == "white" && isDay  -> FrozenWhiteDayTriad
+        !isDay && (id == "black" || paint == ShadowBlackNightTriad.full) -> ShadowBlackNightTriad
+        isDay  && (id == "white" || paint == FrozenWhiteDayTriad.full)   -> FrozenWhiteDayTriad
         isDay -> AccentTriad(
             full = paint,
             mid  = paint.copy(alpha = 0.72f),
@@ -216,6 +239,13 @@ fun accentTriadFor(paint: Color, isDay: Boolean): AccentTriad {
         )
     }
 }
+
+/**
+ * The accent colour to provide as [LocalThemeAccent]: the paint itself, except where the raw
+ * paint vanishes on the mode's surfaces (Frozen White on DAY, Shadow Black on NIGHT/ULTRA) —
+ * then the structural triad's `full`. Swatches that show the paint itself use [rsPaintAccent].
+ */
+fun legibleAccent(paint: Color, isDay: Boolean): Color = accentTriadFor(paint, isDay).full
 
 /** Full-saturation accent. Same as `LocalThemeAccent.current` — kept for symmetry. */
 @Composable fun accentFull(): Color = LocalThemeAccent.current
@@ -307,11 +337,32 @@ private val TabularNumericStyle = TextStyle(fontFeatureSettings = "tnum")
     fontSize: TextUnit,
     color: Color = Frost,
     modifier: Modifier = Modifier,
-) = Text(
-    text, fontSize = fontSize, fontFamily = numericFamily, color = color,
-    fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
-    lineHeight = fontSize * 1.0f, style = TabularNumericStyle, modifier = modifier
-)
+) = androidx.compose.foundation.layout.BoxWithConstraints(modifier, contentAlignment = androidx.compose.ui.Alignment.Center) {
+    // Always one line. A value that doesn't fit at [fontSize] (Orbitron / CLASSIC is much wider than Rajdhani —
+    // a 4-digit RPM used to wrap its last digit under a fixed-height box) is scaled down just enough to fit.
+    // The fit is measured on a digits→8 template, so it only changes with the value's shape, not every frame.
+    val family = numericFamily
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val maxPx = constraints.maxWidth
+    val template = text.map { if (it.isDigit()) '8' else it }.joinToString("")
+    val size = androidx.compose.runtime.remember(template, fontSize, family, maxPx) {
+        if (maxPx == androidx.compose.ui.unit.Constraints.Infinity || maxPx <= 0) fontSize else {
+            val w = measurer.measure(
+                template,
+                TabularNumericStyle.copy(fontFamily = family, fontWeight = FontWeight.SemiBold, fontSize = fontSize),
+                softWrap = false, maxLines = 1,
+            ).size.width
+            if (w <= maxPx) fontSize else fontSize * (maxPx / w.toFloat() * 0.97f)
+        }
+    }
+    Text(
+        text, fontSize = size, fontFamily = family, color = textColor(color),
+        fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
+        lineHeight = size * 1.0f, style = TabularNumericStyle, maxLines = 1, softWrap = false,
+        // Fixed-width callers (the hero value box) keep the full-width, text-centred layout they had — pixel-identical.
+        modifier = if (constraints.hasFixedWidth) Modifier.fillMaxWidth() else Modifier,
+    )
+}
 
 /** Cell numerics (14-24 sp): temps, trims, AFR. Rajdhani Medium. */
 @Composable fun DataNum(
@@ -320,7 +371,7 @@ private val TabularNumericStyle = TextStyle(fontFeatureSettings = "tnum")
     color: Color = Frost,
     modifier: Modifier = Modifier,
 ) = Text(
-    text, fontSize = fontSize, fontFamily = numericFamily, color = color,
+    text, fontSize = fontSize, fontFamily = numericFamily, color = textColor(color),
     fontWeight = FontWeight.Medium, textAlign = TextAlign.Center,
     letterSpacing = 0.2.sp, lineHeight = fontSize * 1.1f,
     style = TabularNumericStyle, modifier = modifier
@@ -334,7 +385,7 @@ private val TabularNumericStyle = TextStyle(fontFeatureSettings = "tnum")
     fontWeight: FontWeight = FontWeight.Normal,
     modifier: Modifier = Modifier,
 ) = Text(
-    text, fontSize = fontSize, fontFamily = JetBrainsMonoFamily, color = color,
+    text, fontSize = fontSize, fontFamily = JetBrainsMonoFamily, color = textColor(color),
     fontWeight = fontWeight, letterSpacing = 0.2.sp,
     style = TabularNumericStyle, modifier = modifier
 )
@@ -348,7 +399,7 @@ private val TabularNumericStyle = TextStyle(fontFeatureSettings = "tnum")
     letterSpacing: TextUnit = 0.4.sp,
     modifier: Modifier = Modifier,
 ) = Text(
-    text, fontSize = fontSize, fontFamily = BarlowCond, color = color,
+    text, fontSize = fontSize, fontFamily = BarlowCond, color = textColor(color),
     fontWeight = fontWeight, letterSpacing = letterSpacing, modifier = modifier
 )
 
@@ -361,7 +412,7 @@ private val TabularNumericStyle = TextStyle(fontFeatureSettings = "tnum")
     textAlign: TextAlign = TextAlign.Start,
     modifier: Modifier = Modifier,
 ) = Text(
-    text, fontSize = fontSize, fontFamily = BarlowCond, color = color,
+    text, fontSize = fontSize, fontFamily = BarlowCond, color = textColor(color),
     fontWeight = fontWeight, textAlign = textAlign, modifier = modifier
 )
 
@@ -392,7 +443,7 @@ private val TabularNumericStyle = TextStyle(fontFeatureSettings = "tnum")
     letterSpacing: TextUnit = 0.2.sp,
     modifier: Modifier = Modifier,
 ) = Text(
-    text, fontSize = fontSize, fontFamily = JetBrainsMonoFamily, color = color,
+    text, fontSize = fontSize, fontFamily = JetBrainsMonoFamily, color = textColor(color),
     fontWeight = fontWeight, letterSpacing = letterSpacing, modifier = modifier
 )
 
@@ -405,7 +456,7 @@ private val TabularNumericStyle = TextStyle(fontFeatureSettings = "tnum")
     textAlign: TextAlign = TextAlign.Start,
     modifier: Modifier = Modifier,
 ) = Text(
-    text, fontSize = fontSize, fontFamily = ShareTechMono, color = color,
+    text, fontSize = fontSize, fontFamily = ShareTechMono, color = textColor(color),
     fontWeight = fontWeight, textAlign = textAlign, modifier = modifier
 )
 
@@ -419,7 +470,7 @@ private val TabularNumericStyle = TextStyle(fontFeatureSettings = "tnum")
     textAlign: TextAlign = TextAlign.Start,
     modifier: Modifier = Modifier,
 ) = Text(
-    text, fontSize = fontSize, fontFamily = BarlowCond, color = color,
+    text, fontSize = fontSize, fontFamily = BarlowCond, color = textColor(color),
     fontWeight = fontWeight, letterSpacing = letterSpacing, textAlign = textAlign,
     modifier = modifier
 )

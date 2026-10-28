@@ -3,16 +3,16 @@ import type { TripPoint, ModeTimelineEntry } from '../../types/session'
 import { colors } from '../../styles/tokens'
 import { fmtDuration } from '../../lib/format'
 
+// Keyed by upper-case mode: CSV rows say "Normal", profile timelines / older exports may say "NORMAL" —
+// normalised so one mode is one segment and one legend entry (main e9cd565)
 const MODE_COLORS: Record<string, string> = {
-  NORMAL: colors.accent,
-  Normal: colors.accent,
+  NORMAL: colors.cyan,
   SPORT: '#FF6D00',
-  Sport: '#FF6D00',
   TRACK: colors.red,
-  Track: colors.red,
   DRIFT: '#E040FB',
-  Drift: '#E040FB',
 }
+
+const normMode = (m: string): string => (m ?? '').toUpperCase()
 
 interface ModeSegment {
   mode: string
@@ -33,7 +33,7 @@ export function ModeTimeline({ points, canonicalTimeline }: { points: TripPoint[
       const total = canonicalTimeline[canonicalTimeline.length - 1].endMs - canonicalTimeline[0].startMs
       const segs: ModeSegment[] = canonicalTimeline.map((e) => {
         const dur = e.endMs - e.startMs
-        return { mode: e.mode, startMs: e.startMs, endMs: e.endMs, durationMs: dur, pct: total > 0 ? (dur / total) * 100 : 0 }
+        return { mode: normMode(e.mode), startMs: e.startMs, endMs: e.endMs, durationMs: dur, pct: total > 0 ? (dur / total) * 100 : 0 }
       })
       return { segments: segs, totalMs: total }
     }
@@ -41,14 +41,15 @@ export function ModeTimeline({ points, canonicalTimeline }: { points: TripPoint[
     if (points.length < 2) return { segments: [] as ModeSegment[], totalMs: 0 }
 
     const segs: ModeSegment[] = []
-    let currentMode = points[0].driveMode
+    let currentMode = normMode(points[0].driveMode)
     let segStart = points[0].ts
 
     for (let i = 1; i < points.length; i++) {
-      if (points[i].driveMode !== currentMode) {
+      const mode = normMode(points[i].driveMode)
+      if (mode !== currentMode) {
         const dur = points[i].ts - segStart
         segs.push({ mode: currentMode, startMs: segStart, endMs: points[i].ts, durationMs: dur, pct: 0 })
-        currentMode = points[i].driveMode
+        currentMode = mode
         segStart = points[i].ts
       }
     }

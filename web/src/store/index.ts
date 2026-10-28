@@ -1,7 +1,41 @@
 import { create } from 'zustand'
+import { useShallow } from 'zustand/react/shallow'
 import type { Session } from '../types/session'
 
 export type PanelId = 'dashboard' | 'trip' | 'diagnostics' | 'sessions' | 'compare' | 'import' | 'settings'
+
+// Remembered view (main e9cd565): the panel and selected session survive a reload, like the settings in
+// store/settings.ts. App.tsx checks the saved session against IndexedDB once sessions load.
+const VIEW_KEY = 'sapphire_view'
+const VALID_PANELS: ReadonlySet<PanelId> = new Set([
+  'dashboard', 'trip', 'diagnostics', 'sessions', 'compare', 'import', 'settings',
+])
+
+interface PersistedView {
+  activePanel: PanelId
+  activeSessionId: string | null
+}
+
+function loadView(): PersistedView {
+  try {
+    const raw = localStorage.getItem(VIEW_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<PersistedView>
+      const panel = parsed.activePanel && VALID_PANELS.has(parsed.activePanel) ? parsed.activePanel : 'dashboard'
+      const sid = typeof parsed.activeSessionId === 'string' ? parsed.activeSessionId : null
+      return { activePanel: panel, activeSessionId: sid }
+    }
+  } catch { /* unreadable or blocked storage — start from the defaults */ }
+  return { activePanel: 'dashboard', activeSessionId: null }
+}
+
+function persistView(partial: Partial<PersistedView>) {
+  try {
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ ...loadView(), ...partial }))
+  } catch { /* storage unavailable — the view just isn't remembered */ }
+}
+
+const initialView = loadView()
 
 interface SapphireState {
   /** Currently active nav panel. */
@@ -36,22 +70,28 @@ interface SapphireState {
 }
 
 export const useStore = create<SapphireState>((set) => ({
-  activePanel: 'dashboard',
-  setActivePanel: (panel) => set({ activePanel: panel }),
+  activePanel: initialView.activePanel,
+  setActivePanel: (panel) => { persistView({ activePanel: panel }); set({ activePanel: panel }) },
 
   sessions: [],
   setSessions: (sessions) => set({ sessions }),
   addSession: (session) => set((s) => ({ sessions: [...s.sessions, session] })),
-  removeSession: (id) => set((s) => ({
-    sessions: s.sessions.filter((sess) => sess.id !== id),
-    activeSessionId: s.activeSessionId === id ? null : s.activeSessionId,
-    compareSessionIds: s.compareSessionIds.filter((cid) => cid !== id),
-  })),
+  removeSession: (id) => set((s) => {
+    const nextActive = s.activeSessionId === id ? null : s.activeSessionId
+    if (nextActive !== s.activeSessionId) persistView({ activeSessionId: nextActive })
+    return {
+      sessions: s.sessions.filter((sess) => sess.id !== id),
+      activeSessionId: nextActive,
+      compareSessionIds: s.compareSessionIds.filter((cid) => cid !== id),
+    }
+  }),
   removeSessions: (ids) => set((s) => {
     const idSet = new Set(ids)
+    const nextActive = s.activeSessionId && idSet.has(s.activeSessionId) ? null : s.activeSessionId
+    if (nextActive !== s.activeSessionId) persistView({ activeSessionId: nextActive })
     return {
       sessions: s.sessions.filter((sess) => !idSet.has(sess.id)),
-      activeSessionId: s.activeSessionId && idSet.has(s.activeSessionId) ? null : s.activeSessionId,
+      activeSessionId: nextActive,
       compareSessionIds: s.compareSessionIds.filter((cid) => !idSet.has(cid)),
     }
   }),
@@ -64,8 +104,8 @@ export const useStore = create<SapphireState>((set) => ({
     sessions: s.sessions.map((sess) => sess.id === id ? { ...sess, tags } : sess),
   })),
 
-  activeSessionId: null,
-  setActiveSessionId: (id) => set({ activeSessionId: id }),
+  activeSessionId: initialView.activeSessionId,
+  setActiveSessionId: (id) => { persistView({ activeSessionId: id }); set({ activeSessionId: id }) },
 
   compareSessionIds: [],
   toggleCompareSession: (id) => set((s) => {
@@ -84,6 +124,10 @@ export const useStore = create<SapphireState>((set) => ({
 export const useActiveSession = () =>
   useStore((s) => s.sessions.find((sess) => sess.id === s.activeSessionId) ?? null)
 
-/** Convenience selector for compare sessions. */
+/**
+ * Convenience selector for compare sessions. `useShallow` keeps the array identity while its
+ * members are unchanged — a fresh array per store read makes React re-render forever
+ * ("Maximum update depth exceeded" as soon as ComparePanel mounts).
+ */
 export const useCompareSessions = () =>
-  useStore((s) => s.compareSessionIds.map((id) => s.sessions.find((sess) => sess.id === id)).filter(Boolean) as Session[])
+  useStore(useShallow((s) => s.compareSessionIds.map((id) => s.sessions.find((sess) => sess.id === id)).filter(Boolean) as Session[]))

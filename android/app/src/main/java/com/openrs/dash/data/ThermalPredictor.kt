@@ -18,7 +18,10 @@ class ThermalPredictor(
         val climbRateCPerMin: Double,
         val timeToCriticalMin: Double?,
         val critThresholdC: Double
-    )
+    ) {
+        /** Already at/over the threshold — a current warning, not a prediction. */
+        val reached: Boolean get() = currentC >= critThresholdC
+    }
 
     enum class ClimbTrend { RISING, COOLING, STABLE }
 
@@ -75,6 +78,20 @@ class ThermalPredictor(
             slope < -0.5 -> ClimbTrend.COOLING
             else         -> ClimbTrend.STABLE
         }
+    }
+
+    /**
+     * [trend] when the window holds enough samples to judge one, else null — so a reason line can
+     * omit the trend instead of reporting STABLE for "not enough data yet".
+     */
+    fun trendOrNull(label: String): ClimbTrend? =
+        if ((windows[label]?.size ?: 0) >= minSamples) trend(label) else null
+
+    /** Regression slope in °C/min once the window holds [minSamples], else null. */
+    fun slopeCPerMin(label: String): Double? {
+        val window = windows[label] ?: return null
+        if (window.size < minSamples) return null
+        return linearSlopeCPerMin(window)
     }
 
     /** Snooze alerts for [label] for 2 minutes. */

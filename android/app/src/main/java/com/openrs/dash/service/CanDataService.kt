@@ -37,6 +37,10 @@ import com.openrs.dash.data.PerformanceTimer
 import com.openrs.dash.data.SessionEntity
 import com.openrs.dash.data.SnapshotEntity
 import com.openrs.dash.data.VehicleState
+import com.openrs.dash.demo.DemoFirmwareApi
+import com.openrs.dash.demo.DemoMode
+import com.openrs.dash.demo.DemoScenario
+import com.openrs.dash.diagnostics.DtcDatabase
 import com.openrs.dash.diagnostics.DiagnosticLogger
 import com.openrs.dash.diagnostics.DtcScanner
 import com.openrs.dash.ui.AppSettings
@@ -61,9 +65,23 @@ class CanDataService : Service() {
     private var snapshotJob: Job? = null
     private var sessionFrameCount: Long = 0L
 
-    /** The active firmware command sender — WiFi REST or BLE AT+FRS. */
-    var firmwareApi: FirmwareCommandSender? = null
-        private set
+    /** Adapter firmware command sender — WiFi REST or BLE AT+FRS. */
+    private var adapterFirmwareApi: FirmwareCommandSender? = null
+
+    /** The active firmware command sender. Demo mode routes every command to simulated state. */
+    val firmwareApi: FirmwareCommandSender?
+        get() = if (DemoMode.isActive) DemoFirmwareApi else adapterFirmwareApi
+
+    /** Started / foreground state — promoted only while a connection runs (see [ForegroundController]). */
+    private val foreground = ForegroundController(object : ForegroundController.Host {
+        override fun startSelf() {
+            androidx.core.content.ContextCompat.startForegroundService(
+                this@CanDataService, Intent(this@CanDataService, CanDataService::class.java))
+        }
+        override fun enterForeground() = goForeground()
+        override fun exitForeground() = leaveForeground()
+        override fun stopSelf() = this@CanDataService.stopSelf()
+    })
 
     private fun buildConnection(): SlcanConnection {
         val s = AppSettings
@@ -94,8 +112,8 @@ class CanDataService : Service() {
         )
 
         // Create the appropriate firmware command sender
-        firmwareApi = if (connMethod == "BLUETOOTH") BleFirmwareApi(conn)
-                      else WiFiFirmwareApi(this, host)
+        adapterFirmwareApi = if (connMethod == "BLUETOOTH") BleFirmwareApi(conn)
+                             else WiFiFirmwareApi(this, host)
 
         return conn
     }
@@ -115,6 +133,7 @@ class CanDataService : Service() {
     suspend fun scanDtcs(
         onModuleProgress: ((String, com.openrs.dash.data.ModuleScanStatus?) -> Unit)? = null
     ): DtcScanResult {
+        if (DemoMode.isActive) return DemoMode.scanDtcs(onModuleProgress)
         val conn = synchronized(this) { connection }
             ?: return DtcScanResult(emptyList(), emptyMap())
         return try {
@@ -131,6 +150,7 @@ class CanDataService : Service() {
      * Retry DTC scan for a single module that previously timed out.
      */
     suspend fun retryScanModule(moduleName: String): Pair<List<DtcResult>, com.openrs.dash.data.ModuleScanStatus> {
+        if (DemoMode.isActive) return DemoMode.retryScanModule(moduleName)
         val conn = synchronized(this) { connection }
             ?: return emptyList<DtcResult>() to com.openrs.dash.data.ModuleScanStatus.ERROR
         return DtcScanner(this).scanSingleModule(conn, moduleName)
@@ -140,6 +160,7 @@ class CanDataService : Service() {
      * Fetch freeze frame data for DTCs that have snapshot records.
      */
     suspend fun fetchFreezeFrames(codes: List<DtcResult>): List<DtcResult> {
+        if (DemoMode.isActive) return codes
         val conn = synchronized(this) { connection } ?: return codes
         return try {
             DtcScanner(this).fetchFreezeFrames(conn, codes)
@@ -155,6 +176,7 @@ class CanDataService : Service() {
      * An empty map means the adapter is not connected or the clear failed.
      */
     suspend fun clearDtcs(): Map<String, Boolean> {
+        if (DemoMode.isActive) return DemoMode.clearDtcs()
         val conn = synchronized(this) { connection } ?: return emptyMap()
         return try {
             DtcScanner(this).clearDtcs(conn)
@@ -171,6 +193,8 @@ class CanDataService : Service() {
      * Used by the DID prober to test individual DIDs against an ECU.
      */
     suspend fun sendRawQuery(responseId: Int, frame: String, timeoutMs: Long = 1_500L): ByteArray? {
+        // Demo: no ECU on the other end — probes time out as they would with no response.
+        if (DemoMode.isActive) { delay(timeoutMs.coerceAtMost(600L)); return null }
         val conn = synchronized(this) { connection } ?: return null
         return conn.sendRawQuery(responseId, frame, timeoutMs)
     }
@@ -179,11 +203,23 @@ class CanDataService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        goForeground()   // Must be first — Android kills the service if startForeground() not called within 5s
-        PidRegistry.ensureLoaded(this)
+        // Not foreground here: the activity only binds. startConnection() promotes the service (start + startForeground
+        // together) when there is a connection to keep alive.
+        com.openrs.dash.ui.StartupTrace.mark("CanDataService.onCreate start")
+        // The 185 KB FORScan catalog (fallback decoder for DIDs without a dedicated parser) loads off the main
+        // thread — on the main thread it held the opening composition's first frames for ~250 ms. Until it is
+        // ready, PidRegistry.decode() returns null, i.e. those catalog-only DIDs are skipped for a moment.
+        scope.launch(Dispatchers.IO) {
+            PidRegistry.ensureLoaded(this@CanDataService)
+            com.openrs.dash.ui.StartupTrace.mark("PID catalog loaded (background)")
+        }
+        // A sticky restart recreates this service with no activity: load the saved prefs before any connection, so
+        // auto-record and readiness use the saved thermal profile, not the defaults. No-op after MainActivity.onCreate.
+        if (UserPrefsStore.ensureLoaded(this)) com.openrs.dash.ui.StartupTrace.mark("settings loaded by CanDataService (no activity)")
         registerWifiCallback()
         registerBluetoothCallback()
-        if (isTransportReady()) startConnection()
+        if (isTransportReady()) autoStartConnection()
+        com.openrs.dash.ui.StartupTrace.mark("CanDataService.onCreate end")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
@@ -227,7 +263,7 @@ class CanDataService : Service() {
                 if (isBluetooth()) return  // WiFi events irrelevant in BLE mode
                 if (connectionJob?.isActive != true) {
                     try {
-                        startConnection()
+                        autoStartConnection()
                     } catch (e: Exception) {
                         android.util.Log.w("CAN", "Cannot start foreground service from background", e)
                     }
@@ -261,7 +297,7 @@ class CanDataService : Service() {
                 when (state) {
                     BluetoothAdapter.STATE_ON -> {
                         if (connectionJob?.isActive != true) {
-                            try { startConnection() } catch (e: Exception) {
+                            try { autoStartConnection() } catch (e: Exception) {
                                 android.util.Log.w("CAN", "Cannot start service from BT callback", e)
                             }
                         }
@@ -284,6 +320,14 @@ class CanDataService : Service() {
 
     private companion object {
         const val NOTIF_ID = 1
+
+        /**
+         * Set after leaving demo mode: WiFi / Bluetooth / service-start callbacks must not
+         * reconnect on their own. Cleared by an explicit [startConnection] / [reconnect].
+         * Process-wide: an idle service stops when the activity unbinds, and the next instance
+         * must still honour it.
+         */
+        @Volatile var manualConnectRequired = false
 
         /** RPM threshold that signals the engine is actually running (not just ignition). */
         const val AUTO_START_MIN_RPM = 400.0
@@ -406,12 +450,21 @@ class CanDataService : Service() {
 
     // ── Connection control ───────────────────────────────────────────────────
 
+    /** Transport-callback entry point — honours [manualConnectRequired] after demo mode. */
+    private fun autoStartConnection() {
+        if (manualConnectRequired || DemoMode.isActive || DemoMode.launchRequested) return
+        startConnection()
+    }
+
+    /** Explicit (user) connect. No-op while demo mode owns the vehicle state. */
     @Synchronized fun startConnection() {
+        if (DemoMode.isActive) return
+        manualConnectRequired = false
         if (!isTransportReady()) return
         if (connectionJob?.isActive == true) return
 
         try {
-            goForeground()
+            foreground.promote()
         } catch (e: Exception) {
             android.util.Log.w("CAN", "Cannot go foreground — skipping connection start", e)
             return
@@ -448,6 +501,7 @@ class CanDataService : Service() {
         connectionJob = scope.launch {
             launch {
                 conn.state.collect { state ->
+                    if (DemoMode.isActive) return@collect
                     OpenRSDashApp.instance.vehicleState.update {
                         it.copy(
                             isConnected = state is AdapterState.Connected,
@@ -548,6 +602,7 @@ class CanDataService : Service() {
     }
 
     private fun mergeObdState(obdState: VehicleState) {
+        if (DemoMode.isActive) return   // late poll response after demo took over
         OpenRSDashApp.instance.vehicleState.update { current ->
             current.copy(
                 calcLoad = obdState.calcLoad,
@@ -664,6 +719,7 @@ class CanDataService : Service() {
     }
 
     private fun processCanFrame(canId: Int, data: ByteArray, fps: Double) {
+        if (DemoMode.isActive) return   // late frame after demo took over
         sessionFrameCount++
         // Side effects (FuelEconomy, PerformanceTimer, knock counter) must run
         // OUTSIDE the update{} lambda — MutableStateFlow.update uses a CAS retry
@@ -748,13 +804,19 @@ class CanDataService : Service() {
         DiagnosticLogger.sessionEnd()
         connectionJob?.cancel()
         connectionJob = null
-        OpenRSDashApp.instance.vehicleState.update { it.copy(isConnected = false, isIdle = false) }
-        OpenRSDashApp.instance.deviceStatus.value = null
-        leaveForeground()
+        // Demo owns the connection flags (WiFi/BT-loss callbacks still land here).
+        if (!DemoMode.isActive) {
+            OpenRSDashApp.instance.vehicleState.update { it.copy(isConnected = false, isIdle = false) }
+            OpenRSDashApp.instance.deviceStatus.value = null
+        }
+        // Leave the foreground and the started state: with no activity bound the service now stops.
+        foreground.demote()
     }
 
     /** Called from UI when user taps the RETRY badge — fresh adapter + retry. */
     @Synchronized fun reconnect() {
+        if (DemoMode.isActive) return
+        manualConnectRequired = false
         connectionJob?.cancel()
         connectionJob = null
         // L-6 fix: reset OBD-polled fields to sentinels so stale values from the
@@ -779,6 +841,8 @@ class CanDataService : Service() {
 
     /** Reset the current session without disconnecting from the adapter. */
     fun resetSession() {
+        // Demo: replay the scenario instead — never create a Room session for simulated data.
+        if (DemoMode.isActive) { DemoMode.reset(); return }
         stopSessionRecording()
         CanDecoder.resetSessionState()
         FuelEconomy.reset()
@@ -788,7 +852,37 @@ class CanDataService : Service() {
         com.openrs.dash.data.BoostSessionLog.reset()
         val connected = OpenRSDashApp.instance.vehicleState.value.isConnected
         OpenRSDashApp.instance.vehicleState.update { VehicleState(isConnected = connected) }
+        com.openrs.dash.ui.ThermalReadinessSession.reset()
         startSessionRecording()
+    }
+
+    // ── Demo mode (debug builds) ─────────────────────────────────────────────
+
+    /**
+     * Stops all real vehicle communication, then hands [OpenRSDashApp.vehicleState] to the
+     * simulator. A drive being recorded is finalized first so it keeps only real samples.
+     * Called again while active, it just switches scenario.
+     */
+    @Synchronized fun enterDemoMode(scenario: DemoScenario) {
+        if (!DemoMode.AVAILABLE) return
+        if (DemoMode.isActive) { DemoMode.select(scenario); return }
+        val recorder = OpenRSDashApp.instance.driveRecorder
+        if (recorder.driveState.value.isRecording) recorder.stopDrive()
+        stopConnection()
+        connection = null
+        adapterFirmwareApi = null
+        manualConnectRequired = true
+        DtcDatabase.load(this)
+        DemoMode.start(scenario)
+        android.util.Log.i("CAN", "Demo mode on (${scenario.name}) — adapter traffic stopped")
+    }
+
+    /** Clears simulated state and leaves the app disconnected until the user reconnects. */
+    @Synchronized fun exitDemoMode() {
+        if (!DemoMode.isActive) return
+        DemoMode.stop()
+        manualConnectRequired = true
+        android.util.Log.i("CAN", "Demo mode off — waiting for explicit connect")
     }
 
 }

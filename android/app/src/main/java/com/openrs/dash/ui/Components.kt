@@ -20,10 +20,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.EaseOutCubic
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
@@ -34,13 +30,18 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
@@ -111,7 +112,8 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
             )
             MonoLabel("\u25BE", 9.sp, Dim, modifier = Modifier.graphicsLayer { rotationZ = rotation })
         }
-        MonoLabel(text, 8.sp, Dim.copy(alpha = textMutedAlpha(0.65f)), letterSpacing = 0.5.sp)
+        // 10 sp full-strength Dim (was 8 sp at 65 %): section names must read at arm's length.
+        MonoLabel(text, 10.sp, Dim, letterSpacing = 0.5.sp)
         if (badge != null) {
             val bc = badgeColor ?: Warn
             Box(
@@ -163,11 +165,22 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
             }
         }
         Spacer(Modifier.height(3.dp))
-        AnimatedContent(
-            targetState = value,
-            transitionSpec = { fadeIn(tween(120)) togetherWith fadeOut(tween(120)) },
-            label = "cellVal"
-        ) { v -> AggressiveNum(v, 14.sp, displayColor) }
+        // Live values render in place; only a placeholder ↔ value switch fades in (120 ms).
+        // An AnimatedContent keyed on the value restarted its crossfade on every CAN frame, so
+        // fast signals (lat G, yaw, steer, batt V) never finished fading in and read as blank;
+        // keying it on placeholder-ness instead froze the container width and clipped digits.
+        var lastPlaceholder by remember { mutableStateOf(isPlaceholder) }
+        val swapAlpha = remember { Animatable(1f) }
+        LaunchedEffect(isPlaceholder) {
+            if (isPlaceholder != lastPlaceholder) {
+                lastPlaceholder = isPlaceholder
+                swapAlpha.snapTo(0f)
+                swapAlpha.animateTo(1f, tween(120))
+            }
+        }
+        Box(Modifier.graphicsLayer { alpha = swapAlpha.value }) {
+            AggressiveNum(value, 14.sp, displayColor)
+        }
         if (sparklineData != null && sparklineData.size >= 2) {
             Spacer(Modifier.height(2.dp))
             Sparkline(
@@ -289,7 +302,9 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
     modifier: Modifier = Modifier,
     barGlowColor: Color? = null,
     sparklineData: List<Float>? = null,
-    criticalPulse: Boolean = false
+    criticalPulse: Boolean = false,
+    /** Last-known value (adapter disconnected): dimmed + the shared "STALE" tag. */
+    stale: Boolean = false,
 ) {
     val animFrac by animateFloatAsState(fraction.coerceIn(0f, 1f),
         tween(240, easing = EaseOutCubic), label = "barFrac")
@@ -317,8 +332,13 @@ import com.openrs.dash.ui.Tokens.HeroInnerV
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             MonoLabel(name, 9.sp, if (criticalPulse) Warn else Dim)
-            AggressiveNum(value, 13.sp, if (criticalPulse) Warn else Frost)
+            AggressiveNum(value, 13.sp, when {
+                stale         -> Dim
+                criticalPulse -> Warn
+                else          -> Frost
+            })
         }
+        if (stale) MonoLabel("STALE", 7.sp, Dim.copy(alpha = textMutedAlpha(0.7f)))
         Spacer(Modifier.height(7.dp))
         Box(
             Modifier.fillMaxWidth().height(4.dp)
@@ -482,19 +502,12 @@ fun bandColor(band: ThermalBand): Color = when (band) {
     ThermalBand.CRITICAL -> Orange
 }
 
-/** Focus RS MK3 top-down wireframe — tinted to the active theme accent color */
+/** The approved top-down Focus RS artwork — line art in ink, tyres in the paint accent (as in the sheet). */
 @Composable fun FocusRsOutline(compact: Boolean = false) {
     val accent = LocalThemeAccent.current
-    val w = if (compact) 52.dp else 72.dp
     val h = if (compact) 110.dp else 150.dp
-    Box(Modifier.width(w).height(h), contentAlignment = Alignment.Center) {
-        androidx.compose.foundation.Image(
-            painter = painterResource(R.drawable.focus_rs_wireframe),
-            contentDescription = "Focus RS",
-            colorFilter = ColorFilter.tint(accent, BlendMode.SrcIn),
-            modifier = Modifier.fillMaxSize()
-        )
-    }
+    com.openrs.dash.ui.anim.TopDownCar(bodyColor = Mid, tyreColors = List(4) { accent },
+        modifier = Modifier.height(h).aspectRatio(com.openrs.dash.ui.anim.TOPDOWN_ASPECT).semantics { contentDescription = "Focus RS" })
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

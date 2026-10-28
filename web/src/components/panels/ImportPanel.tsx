@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useStore } from '../../store'
 import { importZip, importBatchZip, isDriveCsvEntry, isDriveCsvName } from '../../lib/import'
-import { putSession } from '../../lib/db'
+import { putSession, putSessions } from '../../lib/db'
 import { colors } from '../../styles/tokens'
 import JSZip from 'jszip'
 
@@ -50,11 +50,13 @@ export function ImportPanel() {
       if (driveCsvCount > 1) {
         // Batch import
         setBatchProgress({ current: 0, total: driveCsvCount })
+        // All-or-nothing: importBatchZip rejects the whole batch if any drive CSV is malformed,
+        // and the sessions are stored in one transaction before any of them reaches the store.
         const sessions = await importBatchZip(file)
+        if (sessions.length > 0) await putSessions(sessions)
 
         for (let i = 0; i < sessions.length; i++) {
           setBatchProgress({ current: i + 1, total: sessions.length })
-          await putSession(sessions[i])
           addSession(sessions[i])
         }
 

@@ -33,8 +33,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.graphicsLayer
@@ -45,6 +43,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.R
 import com.openrs.dash.can.modeChangeBreath
@@ -54,19 +53,26 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
+import androidx.annotation.DrawableRes
+import androidx.compose.ui.draw.alpha
 
 // ═══════════════════════════════════════════════════════════════════════════
-// BOTTOM NAV BAR — 7 tabs with vector icons, frosted glass background
+// BOTTOM NAV BAR — 5 tabs with vector icons, frosted glass background
 // ═══════════════════════════════════════════════════════════════════════════
 
-private data class NavItem(val icon: Int, val label: String)
+/**
+ * One "Precision" icon family for all five tabs (openRS_icons_round03): three alpha layers cut from the
+ * supplied artwork — [whole] glyph, its white [base] strokes and its blue [accent] details — on one 104 px canvas
+ * at the source's common scale. Inactive = [whole] in the muted colour; selected = the design's two-tone.
+ */
+private data class NavItem(@DrawableRes val whole: Int, @DrawableRes val base: Int, @DrawableRes val accent: Int, val label: String)
 
 private val navItems = listOf(
-    NavItem(R.drawable.ic_nav_dash,  "DRIVE"),
-    NavItem(R.drawable.ic_nav_power, "PERF"),
-    NavItem(R.drawable.ic_nav_temps, "THERMAL"),
-    NavItem(R.drawable.ic_nav_map,   "TRIP"),
-    NavItem(R.drawable.ic_nav_more,  "GARAGE")
+    NavItem(R.drawable.nav_drive_whole,   R.drawable.nav_drive_base,   R.drawable.nav_drive_accent,   "DRIVE"),
+    NavItem(R.drawable.nav_perf_whole,    R.drawable.nav_perf_base,    R.drawable.nav_perf_accent,    "PERF"),
+    NavItem(R.drawable.nav_thermal_whole, R.drawable.nav_thermal_base, R.drawable.nav_thermal_accent, "THERMAL"),
+    NavItem(R.drawable.nav_trip_whole,    R.drawable.nav_trip_base,    R.drawable.nav_trip_accent,    "TRIP"),
+    NavItem(R.drawable.nav_garage_whole,  R.drawable.nav_garage_base,  R.drawable.nav_garage_accent,  "GARAGE")
 )
 
 @Composable
@@ -122,48 +128,21 @@ fun BottomNavBar(
                     blurRadius = 24.dp
                 )
             )
-            // Stamped bevel gradient over the frost
-            .background(
-                Brush.verticalGradient(
-                    colorStops = arrayOf(
-                        0.0f  to Color.White.copy(alpha = 0.08f),
-                        0.08f to Color.White.copy(alpha = 0.03f),
-                        0.5f  to Color.Transparent,
-                        0.92f to Color.Black.copy(alpha = 0.06f),
-                        1.0f  to Color.Black.copy(alpha = 0.15f)
-                    )
-                )
-            )
+            // One hairline where the frost meets the content (was a stamped bevel gradient, a white
+            // specular line and an inner shadow — decoration that read as a bright seam on NIGHT and
+            // vanished on DAY).
             .drawBehind {
-                val w = size.width
-                val h = size.height
-                val px1 = 1.dp.toPx()
-                // Top specular highlight
                 drawLine(
-                    color = Color.White.copy(alpha = 0.22f),
+                    color = Brd.copy(alpha = borderAlpha(0.7f)),
                     start = Offset(0f, 0f),
-                    end = Offset(w, 0f),
-                    strokeWidth = px1
-                )
-                // Soft glow below highlight
-                drawLine(
-                    color = Color.White.copy(alpha = 0.06f),
-                    start = Offset(0f, px1 * 2),
-                    end = Offset(w, px1 * 2),
-                    strokeWidth = px1 * 2
-                )
-                // Bottom inner shadow
-                drawLine(
-                    color = Color.Black.copy(alpha = 0.35f),
-                    start = Offset(0f, h),
-                    end = Offset(w, h),
-                    strokeWidth = px1
+                    end = Offset(size.width, 0f),
+                    strokeWidth = 1.dp.toPx()
                 )
             }
     ) {
         val tabWidth = maxWidth / tabCount
 
-        // ── Sliding neon indicator (top edge — faces content) ────────
+        // ── Sliding indicator (top edge — faces content) ────────────
         val indicatorOffset by animateDpAsState(
             targetValue = tabWidth * selected,
             animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
@@ -179,35 +158,27 @@ fun BottomNavBar(
                 Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth(0.6f)
-                    .height(2.dp)
+                    .height(3.dp)
                     .background(
                         accentChrome,
                         RoundedCornerShape(bottomStart = 2.dp, bottomEnd = 2.dp)
                     )
             )
-            Box(
-                Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth(0.7f)
-                    .height(6.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(accentChrome.copy(alpha = 0.12f), Color.Transparent)
-                        ),
-                        RoundedCornerShape(bottomStart = 4.dp, bottomEnd = 4.dp)
-                    )
-            )
         }
 
         // ── Nav items (padded above system gesture bar) ─────────────
-        Row(Modifier.fillMaxWidth().height(Tokens.NavBarHeight).padding(top = 6.dp)) {
+        Row(Modifier.fillMaxWidth().height(Tokens.NavBarHeight).padding(top = 4.dp)) {
             navItems.forEachIndexed { i, item ->
                 val isActive = i == selected
                 // Per-tab identity: active tab uses its own color; breath overrides all
                 val tabColor = if (navTabIdentity && breathMode == null)
                     tabIdentityColor(i) else accentChrome
+                // DAY: the mid-tier chrome blue is pale cyan on white — the selected icon + label use the readable
+                // darker DAY blue (actionInk, as the symbol family's SELECTED tone). The indicator bar keeps the chrome.
+                val usesChromeBlue = breathMode == null && (!navTabIdentity || i == 0)   // i.e. tabColor is accentMid()
+                val selectedInk = if (isDayModeNow() && usesChromeBlue) actionInk(accent) else textColor(tabColor)
                 val tint by animateColorAsState(
-                    targetValue = if (isActive) tabColor else Dim,
+                    targetValue = if (isActive) selectedInk else Dim,
                     animationSpec = tween(300),
                     label = "navTint$i"
                 )
@@ -238,14 +209,16 @@ fun BottomNavBar(
                         verticalArrangement = Arrangement.Center
                     ) {
                         Box {
-                            Icon(
-                                painter = painterResource(item.icon),
-                                contentDescription = null,
-                                tint = tint,
-                                modifier = Modifier.size(20.dp).graphicsLayer {
-                                    scaleX = iconScale; scaleY = iconScale
+                            // 24 dp canvas → the glyphs read ~19 dp tall (the canvas keeps the family's common scale)
+                            val iconMod = Modifier.size(24.dp).graphicsLayer { scaleX = iconScale; scaleY = iconScale }
+                            val sel by animateFloatAsState(if (isActive) 1f else 0f, tween(300), label = "navSel$i")
+                            Box(iconMod) {
+                                if (sel < 1f) Icon(painterResource(item.whole), null, Modifier.matchParentSize().alpha(1f - sel), tint = Dim)
+                                if (sel > 0f) {
+                                    Icon(painterResource(item.base), null, Modifier.matchParentSize().alpha(sel), tint = Frost)
+                                    Icon(painterResource(item.accent), null, Modifier.matchParentSize().alpha(sel), tint = tint)
                                 }
-                            )
+                            }
                             if (showBadge) {
                                 Box(
                                     Modifier
@@ -256,8 +229,9 @@ fun BottomNavBar(
                                 )
                             }
                         }
-                        Spacer(Modifier.height(2.dp))
-                        MonoLabel(item.label, 7.sp, tint, letterSpacing = 0.08.sp)
+                        Spacer(Modifier.height(1.dp))
+                        // 9 sp (was 7): the tab names must read at arm's length on a mounted phone.
+                        MonoLabel(item.label, 9.sp, tint, if (isActive) FontWeight.Bold else FontWeight.Normal, letterSpacing = 0.2.sp)
                     }
                 }
             }

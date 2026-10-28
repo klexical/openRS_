@@ -14,27 +14,11 @@ enum class AfrBand { RICH, STOICH, LEAN }
 /** Pattern hint for a band — rendered as a tiny glyph on critical states. */
 enum class BandPattern { NONE, CHEVRON_UP, CHEVRON_DOWN }
 
-/** Tire tread surface temperature bands (°C). */
+/** TPMS sensor temperature bands (°C) — the wheel sensor's own reading (BCM 0x280B), openRS_ display bands. */
 fun thermalBandForTire(tempC: Double): ThermalBand = when {
     tempC < 15.0 -> ThermalBand.COLD
     tempC <= 27.0 -> ThermalBand.NOMINAL
     tempC <= 40.0 -> ThermalBand.HOT
-    else -> ThermalBand.CRITICAL
-}
-
-/** Engine coolant bands (°C). OE redline ~112 °C; RS thermostat opens ~88. */
-fun thermalBandForCoolant(tempC: Double): ThermalBand = when {
-    tempC < 70.0 -> ThermalBand.COLD
-    tempC <= 100.0 -> ThermalBand.NOMINAL
-    tempC <= 108.0 -> ThermalBand.HOT
-    else -> ThermalBand.CRITICAL
-}
-
-/** Engine oil bands (°C). Cold pressure high <60, optimal 90-115, >130 risky. */
-fun thermalBandForOil(tempC: Double): ThermalBand = when {
-    tempC < 70.0 -> ThermalBand.COLD
-    tempC <= 115.0 -> ThermalBand.NOMINAL
-    tempC <= 125.0 -> ThermalBand.HOT
     else -> ThermalBand.CRITICAL
 }
 

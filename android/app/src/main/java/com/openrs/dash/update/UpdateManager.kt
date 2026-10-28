@@ -123,7 +123,7 @@ object UpdateManager {
      * Requires [android.Manifest.permission.REQUEST_INSTALL_PACKAGES].
      */
     fun installApk(ctx: Context, apkFile: File) {
-        val uri: Uri = FileProvider.getUriForFile(ctx, "com.openrs.dash.provider", apkFile)
+        val uri: Uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.provider", apkFile)
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

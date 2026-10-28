@@ -58,8 +58,7 @@ fun PidBrowserSection(onCopyNotify: (String) -> Unit = {}) {
     var query by remember { mutableStateOf("") }
     var expandedModule by remember { mutableStateOf<String?>(null) }
 
-    SectionLabel("PID CATALOG")
-    Spacer(Modifier.height(4.dp))
+    // (No inner title — the DIAG section header already names this.)
 
     CoverageBanner(data, accent)
     Spacer(Modifier.height(8.dp))
@@ -132,7 +131,7 @@ private fun CoverageBanner(catalog: ForscanCatalogData, accent: androidx.compose
             MonoLabel("MONITORED", 9.sp, Dim)
             MonoLabel(
                 "${catalog.monitoredPids} / ${catalog.totalPids}  (${"%.1f".format(pct * 100)}%)",
-                11.sp, accent, fontWeight = FontWeight.Medium
+                11.sp, actionInk(accent), fontWeight = FontWeight.Medium
             )
         }
         Spacer(Modifier.height(6.dp))
@@ -205,7 +204,7 @@ private fun ModuleRow(
             MonoLabel(if (isExpanded) "▾" else "▸", 10.sp, Dim)
             Spacer(Modifier.width(6.dp))
             // rc.2: module ID is a structural label, not a live value — tier-Mid
-            MonoLabel(mod.id, 10.sp, accentMid(), fontWeight = FontWeight.Medium)
+            MonoLabel(mod.id, 11.sp, actionInk(accentMid()), fontWeight = FontWeight.Bold)
             if (mod.canRequestId.isNotEmpty()) {
                 Spacer(Modifier.width(6.dp))
                 MonoLabel(
@@ -214,11 +213,11 @@ private fun ModuleRow(
                 )
             }
             Spacer(Modifier.width(8.dp))
-            MonoText(mod.name, 9.sp, Mid, modifier = Modifier.weight(1f))
+            MonoText(mod.name, 11.sp, Frost, modifier = Modifier.weight(1f))
             if (monitored > 0) {
-                MonoLabel("$monitored/$total", 9.sp, Ok.copy(0.8f))
+                MonoLabel("$monitored/$total", 11.sp, actionInk(LocalThemeAccent.current), FontWeight.Medium)   // coverage, not "OK"
             } else {
-                MonoLabel("$total", 9.sp, Dim)
+                MonoLabel("$total", 11.sp, Mid)
             }
         }
 
@@ -322,7 +321,7 @@ private fun PidRow(
                 }
                 if (pid.did.isNotEmpty()) {
                     Spacer(Modifier.width(6.dp))
-                    MonoLabel(pid.did, 8.sp, accent.copy(0.6f))
+                    MonoLabel(pid.did, 8.sp, if (isDayModeNow()) actionInk(accent) else accent.copy(0.6f))   // DAY: readable on the tinted list
                 }
             }
             MonoText(pid.description, 9.sp, Dim)

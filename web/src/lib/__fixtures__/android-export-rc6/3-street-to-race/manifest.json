@@ -1,0 +1,23 @@
+{
+  "app": "openRS_",
+  "exportedAt": 1700000000000,
+  "files": [
+    {
+      "name": "drive_20261026_120000.gpx",
+      "type": "drive_gpx"
+    },
+    {
+      "name": "drive_20261026_120000.csv",
+      "type": "drive_csv"
+    },
+    {
+      "name": "drive_summary_20261026_120000.txt",
+      "type": "drive_summary"
+    },
+    {
+      "name": "drive_profile_20261026_120000.json",
+      "type": "drive_profile"
+    }
+  ],
+  "version": 1
+}

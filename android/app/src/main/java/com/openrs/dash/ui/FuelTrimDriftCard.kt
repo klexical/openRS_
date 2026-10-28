@@ -54,10 +54,8 @@ fun FuelTrimDriftCard() {
 
     Column(
         Modifier.fillMaxWidth()
-            .cardGlow(cornerRadius = Tokens.CardRadius)
-            .background(Surf.copy(alpha = 0.65f), CardShape)
-            .border(Tokens.CardBorder, Brd.copy(alpha = borderAlpha(0.85f)), CardShape)
-            .padding(10.dp)
+            .instrumentSurface()
+            .padding(horizontal = 12.dp, vertical = 6.dp)
     ) {
         SectionLabel(
             text = if (drives.isEmpty()) "FUEL TRIM DRIFT" else "FUEL TRIM DRIFT · ${drives.size} DRIVES",
@@ -78,7 +76,7 @@ fun FuelTrimDriftCard() {
             Text(
                 "LTFT beyond ${if (alert == FuelTrimDrift.Direction.LEAN) "+" else "−"}" +
                     "${FuelTrimDrift.ALERT_LTFT_PCT.toInt()}% on the last 2 drives — running ${alert.label}. $hint",
-                style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 9.sp, color = Warn),
+                style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 9.sp, color = WarnInk),
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Warn.copy(alpha = pillBgAlpha(0.10f)), RoundedCornerShape(6.dp))

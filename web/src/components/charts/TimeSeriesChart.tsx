@@ -13,7 +13,8 @@ interface Series {
 }
 
 interface TimeSeriesChartProps {
-  data: Record<string, number>[]
+  /** null = no reading at that sample — drawn as a gap in the line, never a dip to 0 */
+  data: Record<string, number | null>[]
   series: Series[]
   height?: number
   xKey?: string

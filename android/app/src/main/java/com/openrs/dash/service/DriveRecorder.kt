@@ -20,6 +20,8 @@ import com.openrs.dash.data.DriveEntity
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.DrivePointEntity
 import com.openrs.dash.data.DriveState
+import com.openrs.dash.data.DriveThermalSensor
+import com.openrs.dash.data.DriveThermalTracker
 import com.openrs.dash.data.FreshnessGate
 import com.openrs.dash.data.FuelTrimAccumulator
 import com.openrs.dash.data.FuelEconomy
@@ -33,6 +35,9 @@ import com.openrs.dash.data.PeakType
 import com.openrs.dash.data.ThermalPredictor
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.ui.AppSettings
+import com.openrs.dash.ui.ThermalReadinessSession
+import com.openrs.dash.ui.UserPrefsStore
+import com.openrs.dash.ui.sample
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -41,11 +46,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.update
@@ -84,9 +86,11 @@ class DriveRecorder(
     private val _driveState = MutableStateFlow(DriveState())
     val driveState: StateFlow<DriveState> = _driveState.asStateFlow()
 
-    /** Emitted once when a drive is stopped and finalized. */
-    private val _driveCompleted = MutableSharedFlow<DriveEntity>(replay = 0, extraBufferCapacity = 1)
-    val driveCompleted: SharedFlow<DriveEntity> = _driveCompleted.asSharedFlow()
+    /**
+     * Summary of the last finalized drive until TRIP shows it. Was a no-replay SharedFlow collected by
+     * TripPage — lost when the drive ended before TRIP had been composed.
+     */
+    val pendingSummary = com.openrs.dash.data.PendingSummary()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var recorderJob: Job? = null
@@ -114,8 +118,11 @@ class DriveRecorder(
     /** Per-drive pull detection for "% of pulls with KR > 0" (rc.6, #174). */
     @Volatile private var pulls = PullTracker()
 
-    /** Per-drive thermal predictor for slope/peak snapshots at drive end. */
+    /** Per-drive thermal predictor — end-of-drive climb rates only. */
     private var driveThermalPredictor: ThermalPredictor? = null
+
+    /** Per-drive thermal peaks with the profile limits in effect at each sample (DriveThermalRecord). */
+    private var driveThermal: DriveThermalTracker? = null
 
     /**
      * Set by TripPage when a LapTimer is active during recording.
@@ -157,6 +164,11 @@ class DriveRecorder(
      */
     fun startDrive(sessionId: Long = 0) {
         if (recorderJob?.isActive == true) return
+        // Simulated telemetry never enters trip history.
+        if (com.openrs.dash.demo.DemoMode.isActive) {
+            Log.i(TAG, "startDrive ignored — demo mode active")
+            return
+        }
 
         val vs = vehicleStateFlow.value
         startOilTempC = vs.oilTempC
@@ -168,6 +180,7 @@ class DriveRecorder(
         fuelTrims = FuelTrimAccumulator()
         pulls = PullTracker()
         driveThermalPredictor = ThermalPredictor()
+        driveThermal = DriveThermalTracker()
 
         // Prune old drives if over limit
         scope.launch(Dispatchers.IO) {
@@ -176,6 +189,7 @@ class DriveRecorder(
                 val count = dao.getDriveCount()
                 if (count >= maxDrives) {
                     dao.deleteOldestDrives(count - maxDrives + 1)
+                    dao.deleteOrphanLapSessions()
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Drive prune failed", e)
@@ -331,7 +345,7 @@ class DriveRecorder(
                     // Persist lap timer results if any laps were completed
                     persistLaps(state.driveId)
 
-                    _driveCompleted.tryEmit(finalDrive)
+                    pendingSummary.post(finalDrive)
                     Log.d(TAG, "Drive ${state.driveId} ended (${state.totalPointCount} points)")
                 } catch (e: Exception) {
                     Log.w(TAG, "Drive finalize failed", e)
@@ -375,6 +389,15 @@ class DriveRecorder(
                     }
 
                     val vs = vehicleStateFlow.value
+                    // Adapter dropped (retry / IDLE, or a manually started drive): VehicleState
+                    // still holds the last frame. Writing it would store held values as fresh
+                    // samples (and feed pulls / knock / trims) — skip like a pause and break the
+                    // polyline. The live position dot above keeps updating; distance driven during
+                    // the gap is not counted.
+                    if (!vs.isConnected) {
+                        prevPoint = null
+                        return@collect
+                    }
                     val gate = freshGate ?: FreshnessGate(now).also { freshGate = it }
                     val stamps = vs.fieldLastUpdateMs
                     // Boost-sweep DIDs: value only on a fresh decode, otherwise the
@@ -382,6 +405,8 @@ class DriveRecorder(
                     val tipFresh    = gate.takeIfFresh("tipActualKpa", stamps)
                     val targetFresh = gate.takeIfFresh("tipDesiredKpa", stamps)
                     val wgdcFresh   = gate.takeIfFresh("wgdcDesired", stamps)
+                    // The shared verdict (DRIVE row / THERMAL card) including its holds: TEMPS READY only.
+                    val raceReady = ThermalReadinessSession.verdict.value.isReady
                     val point = DrivePointEntity(
                         driveId        = driveId,
                         timestamp      = now,
@@ -418,7 +443,7 @@ class DriveRecorder(
                         tipActualKpa   = if (tipFresh) vs.tipActualKpa else 0.0,
                         boostTargetKpa = if (targetFresh) vs.tipDesiredKpa else 0.0,
                         wgdcPct        = if (wgdcFresh) vs.wgdcDesired else -1.0,
-                        isRaceReady    = vs.isReadyToRace
+                        isRaceReady    = raceReady
                     )
 
                     // Knock event capture (#174/#186) — one event per cylinder per fresh KR decode
@@ -442,7 +467,10 @@ class DriveRecorder(
                         coolantC = vs.coolantTempC, rpm = vs.rpm
                     )
 
-                    // Feed thermal predictor for drive-end snapshot
+                    // Thermal record: fresh readings judged against the profile in effect now (a mid-drive
+                    // change starts a new segment). Prefs are loaded before any connection (CanDataService).
+                    driveThermal?.sample(vs, UserPrefsStore.prefs.value, now)
+                    // Climb rates for the drive-end record
                     driveThermalPredictor?.let { tp ->
                         tp.recordSample("Oil", now, vs.oilTempC)
                         tp.recordSample("Coolant", now, vs.coolantTempC)
@@ -471,7 +499,7 @@ class DriveRecorder(
                     else 0.0
 
                     val peaks = buildPeakEvents(state, vs, point, now)
-                    val isRaceReady = vs.isReadyToRace
+                    val isRaceReady = raceReady
                     val rtrPt = state.rtrAchievedPoint ?: if (isRaceReady) point else null
 
                     _driveState.update { s ->
@@ -750,29 +778,17 @@ class DriveRecorder(
         }
     }
 
-    // ── Thermal peak snapshot ──────────────────────────────────────────────
+    // ── Thermal record ───────────────────────────────────────────────────
 
-    /** Build JSON blob of per-sensor peak temps + climb rates from the drive. */
+    /**
+     * Per-sensor peaks + the limits each part of the drive was judged against (DriveThermalRecord).
+     * Replaces the fixed 140 / 115 / 120 / 120 °C snapshot, which matched no profile and stored the
+     * drive-end reading as its "peak".
+     */
     private fun buildThermalPeaksJson(): String? {
-        val tp = driveThermalPredictor ?: return null
-        val sensors = listOf(
-            Triple("Oil", 140.0, 60.0),
-            Triple("Coolant", 115.0, 60.0),
-            Triple("RDU", 120.0, 30.0),
-            Triple("PTU", 120.0, 30.0)
-        )
-        val arr = JSONArray()
-        for ((label, crit, floor) in sensors) {
-            val pred = tp.predict(label, crit, floor) ?: continue
-            arr.put(JSONObject().apply {
-                put("sensor", pred.sensorLabel)
-                put("peakC", pred.currentC)
-                put("climbRateCPerMin", pred.climbRateCPerMin)
-                put("critThresholdC", pred.critThresholdC)
-                pred.timeToCriticalMin?.let { put("timeToCriticalMin", it) }
-            })
-        }
-        return if (arr.length() > 0) arr.toString() else null
+        val tp = driveThermalPredictor
+        val climb = DriveThermalSensor.entries.mapNotNull { s -> tp?.slopeCPerMin(s.key)?.let { s to it } }.toMap()
+        return driveThermal?.toJson(climb)
     }
 
     // ── Event bookmarks ──────────────────────────────────────────────────

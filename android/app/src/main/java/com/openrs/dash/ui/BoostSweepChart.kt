@@ -43,7 +43,7 @@ fun BoostSweepChart(samples: List<BoostSessionLog.Sample>, p: UserPrefs, accent:
     if (samples.size < BOOST_SWEEP_MIN_SAMPLES) {
         Text(
             "BOOST SWEEP — builds as you drive (fresh TIP only, last 90 s)",
-            style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 9.sp, color = Dim),
+            style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 10.sp, color = Dim),
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
         )
         return
@@ -52,7 +52,8 @@ fun BoostSweepChart(samples: List<BoostSessionLog.Sample>, p: UserPrefs, accent:
     val (kpaLo, kpaHi) = remember(bins) { BoostSweepMath.kpaRange(bins) }
     val latest = samples.last()
     val textMeasurer = rememberTextMeasurer()
-    val axisStyle = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 8.sp, color = Dim.copy(alpha = textMutedAlpha(0.5f)))
+    // Ticks in the readable secondary colour (full Dim); frame + grid stay faint
+    val axisStyle = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 10.sp, color = Dim)
     val targetCol = Ok; val actualCol = accent; val wgdcCol = Mid; val brd = Brd; val dotCol = Frost
     val loLabel = p.displayBoost(kpaLo).first
     val hiLabel = p.displayBoost(kpaHi).first
@@ -60,8 +61,13 @@ fun BoostSweepChart(samples: List<BoostSessionLog.Sample>, p: UserPrefs, accent:
 
     Column(Modifier.fillMaxWidth()) {
         Canvas(Modifier.fillMaxWidth().height(150.dp)) {
-            val left = 34f; val right = size.width - 30f
-            val top = 6f; val bottom = size.height - 16f
+            // Gutters sized to the measured tick labels so none clip at the canvas edge
+            val hiText = textMeasurer.measure(hiLabel, axisStyle)
+            val loText = textMeasurer.measure(loLabel, axisStyle)
+            val pctText = textMeasurer.measure("100%", axisStyle)
+            val left = maxOf(hiText.size.width, loText.size.width) + 8f
+            val right = size.width - pctText.size.width - 6f
+            val top = hiText.size.height / 2f; val bottom = size.height - hiText.size.height - 4f
             val plotW = right - left; val plotH = bottom - top
             fun x(rpm: Double) = left + plotW * ((rpm.coerceIn(BoostSweepMath.RPM_MIN, BoostSweepMath.RPM_MAX) -
                 BoostSweepMath.RPM_MIN) / (BoostSweepMath.RPM_MAX - BoostSweepMath.RPM_MIN)).toFloat()
@@ -78,9 +84,9 @@ fun BoostSweepChart(samples: List<BoostSessionLog.Sample>, p: UserPrefs, accent:
                 g += 1_000.0
             }
             // Axis labels: boost (left), WGDC (right)
-            textMeasurer.measure(hiLabel, axisStyle).let { drawText(it, topLeft = Offset(left - it.size.width - 4f, top)) }
-            textMeasurer.measure(loLabel, axisStyle).let { drawText(it, topLeft = Offset(left - it.size.width - 4f, bottom - it.size.height)) }
-            textMeasurer.measure("100%", axisStyle).let { drawText(it, topLeft = Offset(right + 3f, top)) }
+            drawText(hiText, topLeft = Offset(left - hiText.size.width - 4f, top - hiText.size.height / 2f))
+            drawText(loText, topLeft = Offset(left - loText.size.width - 4f, bottom - loText.size.height))
+            drawText(pctText, topLeft = Offset(right + 3f, top - pctText.size.height / 2f))
             textMeasurer.measure("0%", axisStyle).let { drawText(it, topLeft = Offset(right + 3f, bottom - it.size.height)) }
 
             // One path per channel; an empty bin breaks the line
@@ -109,10 +115,10 @@ fun BoostSweepChart(samples: List<BoostSessionLog.Sample>, p: UserPrefs, accent:
         }
         Spacer(Modifier.height(4.dp))
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            MonoLabel("━ ACTUAL", 9.sp, actualCol, FontWeight.Medium)
-            MonoLabel("┅ TARGET", 9.sp, targetCol, FontWeight.Medium)
-            MonoLabel("━ WGDC %", 9.sp, wgdcCol, FontWeight.Medium)
-            MonoLabel(unit, 9.sp, Dim.copy(alpha = textMutedAlpha(0.6f)))
+            MonoLabel("━ ACTUAL", 10.sp, actualCol, FontWeight.Medium)
+            MonoLabel("┅ TARGET", 10.sp, targetCol, FontWeight.Medium)
+            MonoLabel("━ WGDC %", 10.sp, wgdcCol, FontWeight.Medium)
+            MonoLabel(unit, 10.sp, Dim)
         }
     }
 }

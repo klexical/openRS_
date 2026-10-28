@@ -32,6 +32,7 @@
         android:name=".OpenRSDashApp"
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/Theme.OpenRS"
         android:supportsRtl="true">
 
@@ -62,7 +63,7 @@
         <!-- FileProvider for sharing diagnostic ZIP files -->
         <provider
             android:name="androidx.core.content.FileProvider"
-            android:authorities="com.openrs.dash.provider"
+            android:authorities="${applicationId}.provider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data

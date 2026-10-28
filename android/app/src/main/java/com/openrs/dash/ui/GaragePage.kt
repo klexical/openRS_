@@ -123,7 +123,7 @@ private fun GaragePanelPicker(
                 MonoLabel(
                     entry.label,
                     11.sp,
-                    if (active) accent else Dim,
+                    if (active) actionInk(accent) else Dim,
                     fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
                     letterSpacing = 0.15.sp,
                 )

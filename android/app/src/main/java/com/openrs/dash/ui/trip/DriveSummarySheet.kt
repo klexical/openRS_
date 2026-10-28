@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,6 +33,8 @@ import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.data.DriveEntity
 import com.openrs.dash.data.BoostSweepStats
 import com.openrs.dash.data.DrivePointEntity
+import com.openrs.dash.data.DriveThermalReview
+import com.openrs.dash.data.DriveThermalSensor
 import com.openrs.dash.ui.*
 import com.openrs.dash.ui.anim.Sparkline
 import kotlinx.coroutines.Dispatchers
@@ -48,7 +52,11 @@ fun DriveSummarySheet(
     points: List<DrivePointEntity> = emptyList(),
     prefs: UserPrefs,
     onShare: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    /** Debug preview: sample history for the TRENDS section instead of Room. */
+    trendDrives: List<DriveEntity>? = null,
+    /** Debug preview: label the sheet as sample data (the page's notice is hidden behind it). */
+    previewNotice: Boolean = false
 ) {
     val accent = LocalThemeAccent.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -75,105 +83,113 @@ fun DriveSummarySheet(
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 32.dp)
         ) {
+            if (previewNotice) PreviewSheetNotice()
             // ── Title + Duration badge ──
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                MonoText("DRIVE SUMMARY", 13.sp, Frost, FontWeight.Bold)
+                Column(Modifier.weight(1f)) {
+                    InstrumentLabel("DRIVE SUMMARY", color = Mid)
+                    val whenStr = remember(drive.startTime) {
+                        java.text.SimpleDateFormat("EEE d MMM · h:mm a", java.util.Locale.getDefault())
+                            .format(java.util.Date(drive.startTime))
+                    }
+                    UIText(drive.name ?: whenStr, 16.sp, Frost, FontWeight.SemiBold)
+                    if (drive.name != null) InstrumentMeta(whenStr)
+                }
                 val durationMs = if (drive.endTime > 0) drive.endTime - drive.startTime else 0L
                 Box(
-                    Modifier.clip(RoundedCornerShape(4.dp))
-                        .background(accent.copy(alpha = 0.15f))
-                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                    Modifier.clip(RoundedCornerShape(6.dp))
+                        .background(accent.copy(alpha = pillBgAlpha(0.14f)))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
-                    MonoLabel(formatDurationCompact(durationMs), 9.sp, accent)
+                    MonoLabel(formatDurationCompact(durationMs), 12.sp, actionInk(accent), FontWeight.Bold)
                 }
             }
 
             Spacer(Modifier.height(4.dp))
-            NeonDivider()
+            SheetDivider()
             Spacer(Modifier.height(8.dp))
 
-            // ── Row 1: Duration · Distance · Fuel Used · Economy ──
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            // ── Totals + peaks: one readings panel (was eight DataCell cards) ──
+            run {
                 val durationMs = if (drive.endTime > 0) drive.endTime - drive.startTime else 0L
-                DataCell("DURATION", formatDurationCompact(durationMs), modifier = Modifier.weight(1f))
-
-                val dist = if (prefs.speedUnit == "MPH")
-                    "%.1f mi".format(drive.distanceKm * 0.621371)
-                else "%.1f km".format(drive.distanceKm)
-                DataCell("DISTANCE", dist, modifier = Modifier.weight(1f))
-
-                DataCell("FUEL", "%.2f L".format(drive.fuelUsedL), modifier = Modifier.weight(1f))
-
+                val dist = if (prefs.speedUnit == "MPH") "%.1f mi".format(drive.distanceKm * 0.621371)
+                    else "%.1f km".format(drive.distanceKm)
                 val econ = if (drive.distanceKm > 0.1 && drive.fuelUsedL > 0) {
-                    if (prefs.speedUnit == "MPH") {
-                        val mpg = 282.48 / (drive.fuelUsedL / drive.distanceKm * 100.0)
-                        "%.1f MPG".format(mpg)
-                    } else {
-                        "%.1f L/100".format(drive.fuelUsedL / drive.distanceKm * 100.0)
-                    }
-                } else "—"
-                DataCell("ECONOMY", econ, modifier = Modifier.weight(1f))
+                    if (prefs.speedUnit == "MPH") "%.1f MPG".format(282.48 / (drive.fuelUsedL / drive.distanceKm * 100.0))
+                    else "%.1f L/100".format(drive.fuelUsedL / drive.distanceKm * 100.0)
+                } else "— ${if (prefs.speedUnit == "MPH") "MPG" else "L/100"}"
+                val boost = prefs.displayBoost(drive.peakBoostPsi / UnitConversions.KPA_TO_PSI + UnitConversions.STD_ATM_KPA)
+                ReadoutGrid(
+                    rows = listOf(
+                        listOf(Readout("DURATION", formatDurationCompact(durationMs)), Readout("DISTANCE", dist),
+                            Readout("FUEL", if (drive.fuelUsedL > 0) "%.2f L".format(drive.fuelUsedL) else "— L"),
+                            Readout("ECONOMY", econ)),
+                        listOf(Readout("TOP SPEED", "${prefs.displaySpeed(drive.maxSpeedKph)} ${prefs.speedLabel}"),
+                            Readout("PEAK RPM", "${drive.peakRpm}"),
+                            Readout("PEAK BOOST", "${boost.first} ${boost.second}"),
+                            Readout("PEAK G", "%.2f g".format(drive.peakLateralG))),
+                    ),
+                    dense = true
+                )
             }
 
-            Spacer(Modifier.height(6.dp))
-            NeonDivider()
-            Spacer(Modifier.height(6.dp))
-
-            // ── Row 2: Peak Speed · Peak RPM · Peak Boost · Peak G ──
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                val spd = "${prefs.displaySpeed(drive.maxSpeedKph)} ${prefs.speedLabel}"
-                DataCell("PEAK SPEED", spd, modifier = Modifier.weight(1f))
-                DataCell("PEAK RPM", "${drive.peakRpm}", modifier = Modifier.weight(1f))
-                DataCell("PEAK BOOST", "%.1f PSI".format(drive.peakBoostPsi), modifier = Modifier.weight(1f))
-                DataCell("PEAK G", "%.2f".format(drive.peakLateralG), modifier = Modifier.weight(1f))
+            // ── Thermal progression — levels and TEMP FLAG lines come from the limits saved with the drive
+            //    (DriveThermalReview, shared with the history card's TEMP badge), never the current profile ──
+            val review = remember(drive.thermalPeaksJson) { DriveThermalReview.from(drive.thermalPeaksJson) }
+            val profileBasis = review.basis == DriveThermalReview.Basis.PROFILE
+            // The peak's level under its own segment's limits; the flag lines explain any later, stricter event
+            fun levelOf(s: DriveThermalSensor): Level? = when (review.sensor(s)?.peakLevel) {
+                DriveThermalReview.PeakLevel.CRIT -> Level.CRIT
+                DriveThermalReview.PeakLevel.WARN -> Level.WARN
+                DriveThermalReview.PeakLevel.NORMAL -> Level.NORMAL
+                null -> null
             }
-
-            // ── Thermal progression ──
-            if (drive.startOilTempC > -90 || drive.peakOilTempC > -90 ||
-                drive.startCoolantTempC > -90 || drive.peakCoolantTempC > -90) {
-                Spacer(Modifier.height(6.dp))
-                NeonDivider()
-                Spacer(Modifier.height(6.dp))
-
-                MonoLabel("THERMAL PROGRESSION", 9.sp, Dim,
-                    modifier = Modifier.padding(bottom = 4.dp))
-
-                // Oil temp row
-                if (drive.startOilTempC > -90 || drive.peakOilTempC > -90) {
-                    ThermalRow(
-                        label = "OIL",
-                        startC = drive.startOilTempC,
-                        peakC = drive.peakOilTempC,
-                        endC = drive.endOilTempC,
-                        prefs = prefs
-                    )
+            // START → PEAK → END through the same rule as the export's curves (DriveThermalReview.progression): the peak
+            // the levels and flag use, endpoints = first / last valid recorded readings, "—" when missing or above the peak
+            val awdEnds = remember(points) {
+                fun ends(f: (DrivePointEntity) -> Double) =
+                    (points.firstOrNull { f(it) > -90 }?.let(f) ?: -99.0) to (points.lastOrNull { f(it) > -90 }?.let(f) ?: -99.0)
+                mapOf(DriveThermalSensor.PTU to ends { it.ptuTempC }, DriveThermalSensor.RDU to ends { it.rduTempC })
+            }
+            val rows = buildList {
+                add(DriveThermalSensor.OIL to review.progression(DriveThermalSensor.OIL,
+                    drive.startOilTempC, drive.peakOilTempC, drive.endOilTempC))
+                add(DriveThermalSensor.COOLANT to review.progression(DriveThermalSensor.COOLANT,
+                    drive.startCoolantTempC, drive.peakCoolantTempC, drive.endCoolantTempC))
+                // PTU / RDU peaks exist only in current records (a legacy drive-end value is not a peak)
+                if (profileBasis) for (s in listOf(DriveThermalSensor.PTU, DriveThermalSensor.RDU)) {
+                    val (start, end) = awdEnds.getValue(s)
+                    add(s to review.progression(s, start, -99.0, end))
                 }
+            }.filter { it.second.peakC != null }      // a row per sensor with a valid peak, whatever its endpoints
+            if (rows.isNotEmpty() || review.flagged) {
+                Spacer(Modifier.height(6.dp))
+                SheetDivider()
+                Spacer(Modifier.height(6.dp))
 
-                // Coolant temp row
-                if (drive.startCoolantTempC > -90 || drive.peakCoolantTempC > -90) {
-                    ThermalRow(
-                        label = "CLT",
-                        startC = drive.startCoolantTempC,
-                        peakC = drive.peakCoolantTempC,
-                        endC = drive.endCoolantTempC,
-                        prefs = prefs
-                    )
+                InstrumentLabel("THERMAL PROGRESSION", Modifier.padding(bottom = 6.dp), color = Mid)
+
+                for ((s, p) in rows) {
+                    ThermalRow(s.key.uppercase(), p.startC ?: -99.0, p.peakC!!, p.endC ?: -99.0, prefs, levelOf(s))
                 }
+                MonoText("START / END = first / last valid recorded readings — after a pause or link loss they can " +
+                    "differ from the moment recording started or stopped", 10.sp, Dim)
+                Spacer(Modifier.height(2.dp))
+                ThermalLimitsNote(review, prefs)
             }
 
             // ── Drive mode breakdown ──
             val modeBreakdown = parseModeBreakdown(drive.driveModeBreakdown)
             if (modeBreakdown.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))
-                NeonDivider()
+                SheetDivider()
                 Spacer(Modifier.height(6.dp))
 
-                MonoLabel("DRIVE MODE BREAKDOWN", 9.sp, Dim,
-                    modifier = Modifier.padding(bottom = 4.dp))
+                InstrumentLabel("DRIVE MODE BREAKDOWN", Modifier.padding(bottom = 6.dp), color = Mid)
 
                 // Segmented bar
                 Row(
@@ -201,15 +217,15 @@ fun DriveSummarySheet(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            // The swatch was fillMaxWidth(0f) — zero wide, so the legend had no colours.
                             Box(
-                                Modifier.height(8.dp).fillMaxWidth(0f)
+                                Modifier.size(10.dp)
                                     .clip(RoundedCornerShape(2.dp))
                                     .background(modeColor(mode))
-                                    .padding(horizontal = 4.dp)
                             )
                             MonoLabel(
-                                "$mode ${(fraction * 100).toInt()}%",
-                                8.sp, Mid
+                                "${mode.uppercase()} ${(fraction * 100).toInt()}%",
+                                10.sp, Mid
                             )
                         }
                     }
@@ -217,68 +233,77 @@ fun DriveSummarySheet(
             }
 
             // ── Trends across recent drives ──
-            DriveTrendsSection()
+            DriveTrendsSection(trendDrives, prefs)
 
             // ── Boost sweep summary (rc.4) ──
             val boostStats = remember(points) { BoostSweepStats.from(points) }
             if (boostStats != null) {
                 Spacer(Modifier.height(6.dp))
-                NeonDivider()
+                SheetDivider()
                 Spacer(Modifier.height(6.dp))
 
-                MonoLabel("BOOST SWEEP", 9.sp, Dim,
-                    modifier = Modifier.padding(bottom = 4.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                InstrumentLabel("BOOST SWEEP", Modifier.padding(bottom = 6.dp), color = Mid)
+                // Pressures in the user's unit (stats are psi) — they were always printed as PSI
+                fun gaugeIn(psi: Double): String = when (prefs.boostUnit) {
+                    "BAR" -> "%.2f".format(psi * UnitConversions.PSI_TO_BAR)
+                    "KPA" -> "%.0f".format(psi / UnitConversions.KPA_TO_PSI)
+                    else  -> "%.1f".format(psi)
+                }
+                val pUnit = prefs.displayBoost(UnitConversions.STD_ATM_KPA).second
+                run {
                     val avgSign = if (boostStats.avgDeltaPsi >= 0) "+" else ""
-                    DataCell("AVG Δ", "$avgSign%.1f PSI".format(boostStats.avgDeltaPsi), modifier = Modifier.weight(1f))
-                    DataCell("WORST Δ", "%.1f PSI".format(boostStats.worstDeltaPsi), modifier = Modifier.weight(1f))
-                    DataCell("@ RPM", "${boostStats.worstRpm}", modifier = Modifier.weight(1f))
-                    DataCell("WGDC MAX", if (boostStats.wgdcSaturated) "%.0f%% ⚠".format(boostStats.maxWgdc)
-                        else "%.0f%%".format(boostStats.maxWgdc), modifier = Modifier.weight(1f))
+                    ReadoutGrid(
+                        rows = listOf(listOf(
+                            Readout("AVG Δ", "$avgSign${gaugeIn(boostStats.avgDeltaPsi)} $pUnit"),
+                            Readout("WORST Δ", "${gaugeIn(boostStats.worstDeltaPsi)} $pUnit"),
+                            Readout("@ RPM", "${boostStats.worstRpm}"),
+                            // WGDC ≥ 95 % = saturation (existing rule) — the only amber here
+                            Readout("WGDC MAX", "%.0f%%".format(boostStats.maxWgdc),
+                                color = if (boostStats.wgdcSaturated) Warn else androidx.compose.ui.graphics.Color.Unspecified),
+                        )),
+                        level = if (boostStats.wgdcSaturated) Level.WARN else Level.NORMAL,
+                        dense = true
+                    )
                 }
                 if (boostStats.wgdcSaturated) {
                     Spacer(Modifier.height(2.dp))
                     MonoText("WGDC ≥ 95% — wastegate saturation, target may be out of reach",
-                        9.sp, Warn)
+                        10.sp, Warn)
                 }
                 boostStats.avgWgdcAtPeak?.let { w ->
                     Spacer(Modifier.height(4.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        DataCell("WGDC @ PEAK", "%.0f%%".format(w), modifier = Modifier.weight(1f))
-                        DataCell("LOADED", "${boostStats.sampleCount}", modifier = Modifier.weight(1f))
-                    }
+                    // Two columns — at 360 dp "WGDC @ PEAK" ran into "LOADED" in a four-column row
+                    ReadoutGrid(rows = listOf(listOf(
+                        Readout("WGDC @ PEAK", "%.0f%%".format(w)), Readout("LOADED SAMPLES", "${boostStats.sampleCount}"),
+                    )), dense = true)
                 }
                 // Boost by gear (#175) — peak is gauge vs standard atmosphere, Δ = actual − target
                 if (boostStats.byGear.isNotEmpty()) {
                     Spacer(Modifier.height(4.dp))
-                    MonoLabel("BY GEAR · PEAK PSI / AVG Δ", 8.sp, Dim,
-                        modifier = Modifier.padding(bottom = 2.dp))
+                    InstrumentLabel("BY GEAR · PEAK / AVG Δ (${pUnit})", Modifier.padding(bottom = 4.dp), color = Mid)
                     // Three per row so "12.3 / +0.4" fits at phone width
-                    for (row in boostStats.byGear.chunked(3)) {
-                        Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            for (g in row) {
-                                DataCell("G${g.gear}", "%.1f / %+.1f".format(g.peakBoostPsi, g.avgDeltaPsi),
-                                    modifier = Modifier.weight(1f))
-                            }
-                            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
-                        }
-                    }
+                    ReadoutGrid(rows = boostStats.byGear.chunked(3).map { row ->
+                        row.map { g ->
+                            val d = gaugeIn(g.avgDeltaPsi).let { if (g.avgDeltaPsi >= 0) "+$it" else it }
+                            Readout("G${g.gear}", "${gaugeIn(g.peakBoostPsi)} / $d")
+                        } +
+                            List(3 - row.size) { null }
+                    }, dense = true)
                 }
             }
 
             // ── Time-series chart ──
             if (points.size >= 2) {
                 Spacer(Modifier.height(6.dp))
-                NeonDivider()
+                SheetDivider()
                 Spacer(Modifier.height(6.dp))
 
-                MonoLabel("TELEMETRY", 9.sp, Dim,
-                    modifier = Modifier.padding(bottom = 4.dp))
+                InstrumentLabel("TELEMETRY", Modifier.padding(bottom = 6.dp), color = Mid)
                 DriveTimeSeries(points = points)
             }
 
             Spacer(Modifier.height(12.dp))
-            NeonDivider()
+            SheetDivider()
             Spacer(Modifier.height(12.dp))
 
             // ── Action buttons ──
@@ -291,10 +316,10 @@ fun DriveSummarySheet(
                         .clip(RoundedCornerShape(8.dp))
                         .background(accent)
                         .clickable { onShare() }
-                        .padding(vertical = 12.dp),
+                        .heightIn(min = 48.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    MonoText("SHARE", 12.sp, Bg, FontWeight.Bold)
+                    MonoText("SHARE", 13.sp, Bg, FontWeight.Bold)
                 }
                 Box(
                     Modifier.weight(1f)
@@ -302,57 +327,112 @@ fun DriveSummarySheet(
                         .background(Surf2)
                         .border(Tokens.CardBorder, Brd, RoundedCornerShape(8.dp))
                         .clickable { onDismiss() }
-                        .padding(vertical = 12.dp),
+                        .heightIn(min = 48.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    MonoText("DISMISS", 12.sp, Mid, FontWeight.Bold)
+                    MonoText("DISMISS", 13.sp, Mid, FontWeight.Bold)
                 }
             }
         }
     }
 }
 
+/** Debug TRIP preview: a sheet covers the page's notice, so sample sheets carry their own. */
+@Composable
+internal fun PreviewSheetNotice() {
+    Box(
+        Modifier.fillMaxWidth().padding(bottom = 10.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(Warn.copy(alpha = pillBgAlpha(0.12f)))
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+    ) { InstrumentLabel("PREVIEW · SAMPLE DATA — NOT SAVED", color = demoInk()) }
+}
+
+/** Hairline between summary sections (was NeonDivider — no decorative glow). */
+@Composable
+private fun SheetDivider() =
+    Box(Modifier.fillMaxWidth().height(1.dp).background(Brd.copy(alpha = borderAlpha(0.4f))))
+
+/**
+ * Start → peak → end for one sensor. The peak takes the THERMAL preset's warn / crit colour only when it
+ * crossed one (it used to be amber whatever the value).
+ */
 @Composable
 private fun ThermalRow(
     label: String,
     startC: Double,
     peakC: Double,
     endC: Double,
-    prefs: UserPrefs
+    prefs: UserPrefs,
+    /** From the drive's saved limits; null = limits unknown (legacy / not recorded) → no colour. */
+    level: Level?,
 ) {
+    val peakLevel = if (peakC > -90) level ?: Level.NONE else Level.NONE
     Row(
         Modifier.fillMaxWidth()
-            .background(Surf2, Tokens.CardShape)
-            .border(Tokens.CardBorder, Brd, Tokens.CardShape)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .instrumentSurface(if (peakLevel.isAlert) peakLevel else Level.NORMAL)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        MonoText(label, 10.sp, Frost, FontWeight.Bold)
-
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            TempStage("START", startC, prefs)
-            MonoLabel("\u2192", 10.sp, Dim)
-            TempStage("PEAK", peakC, prefs, isPeak = true)
-            MonoLabel("\u2192", 10.sp, Dim)
-            TempStage("END", endC, prefs)
+        InstrumentLabel(label, color = Mid)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            TempStage("START", startC, prefs, Frost)
+            MonoLabel("\u2192", 12.sp, Dim)
+            TempStage("PEAK", peakC, prefs, if (peakLevel.isAlert) levelColor(peakLevel) else Frost)
+            MonoLabel("\u2192", 12.sp, Dim)
+            TempStage("END", endC, prefs, Frost)
         }
     }
-    Spacer(Modifier.height(4.dp))
+    Spacer(Modifier.height(6.dp))
 }
 
 @Composable
-private fun TempStage(
-    label: String,
-    tempC: Double,
-    prefs: UserPrefs,
-    isPeak: Boolean = false
-) {
+private fun TempStage(label: String, tempC: Double, prefs: UserPrefs, color: androidx.compose.ui.graphics.Color) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        MonoLabel(label, 7.sp, Dim)
+        InstrumentLabel(label)
         val text = if (tempC > -90) "${prefs.displayTemp(tempC)}${prefs.tempLabel}" else "—"
-        MonoText(text, 10.sp, if (isPeak) Warn else Mid, FontWeight.Bold)
+        DataNum(text, 15.sp, if (tempC > -90) color else Dim)
     }
+}
+
+/**
+ * Which limits the rows were judged against, and the reading behind each TEMP flag (the history card's badge):
+ * "OIL 221°F · flag threshold 220.1°F · RACE". The threshold is 95 % of the saved critical in °C, then converted —
+ * the same value the check uses ([DriveThermalReview.SensorReview.flagThresholdC]). The flagging reading can be
+ * lower than the drive's peak when a stricter profile applied later.
+ */
+@Composable
+private fun ThermalLimitsNote(review: DriveThermalReview, prefs: UserPrefs) {
+    val names = review.profiles.mapIndexed { i, id ->
+        val n = thermalProfileName(id)
+        if (i > 0 && review.profiles[i - 1] == id) "$n (edited)" else n
+    }
+    val context = when (review.basis) {
+        DriveThermalReview.Basis.PROFILE ->
+            if (review.profileChanged) "Limits: ${names.joinToString(" → ")} — each part judged by the profile in effect then"
+            else "Limits: ${names.first()} profile, saved with the drive"
+        DriveThermalReview.Basis.LEGACY -> "Recorded before limits were saved with drives — no limit colours"
+        DriveThermalReview.Basis.NONE -> "No thermal limits recorded with this drive — no limit colours"
+    }
+    MonoText(context, 10.sp, Dim)
+    for (r in review.sensors.filter { it.flagged }) {
+        val reading = r.flagReadingC ?: continue
+        val threshold = r.flagThresholdC ?: continue
+        val label = r.sensor.key.uppercase()
+        val line = when (review.basis) {
+            DriveThermalReview.Basis.LEGACY ->
+                "TEMP FLAG  $label ${prefs.tVs(reading, threshold)} at drive end · flag threshold ${prefs.lim(threshold)} · old fixed limit"
+            else ->
+                "TEMP FLAG  $label ${prefs.tVs(reading, threshold)} · flag threshold ${prefs.lim(threshold)} · ${thermalProfileName(r.flagProfile ?: "")}"
+        }
+        Spacer(Modifier.height(2.dp))
+        MonoText(line, 10.sp, WarnInk)
+    }
+}
+
+private fun thermalProfileName(id: String) = when (id) {
+    "track" -> "TRACK"; "race" -> "RACE"; "custom" -> "CUSTOM"; else -> "STREET"
 }
 
 private fun parseModeBreakdown(json: String): List<Pair<String, Float>> {
@@ -365,11 +445,16 @@ private fun parseModeBreakdown(json: String): List<Pair<String, Float>> {
     } catch (_: Exception) { emptyList() }
 }
 
+/**
+ * Drive-mode shares on a neutral → paint scale. Green / amber / orange read as OK / caution / limit
+ * everywhere else in the app, and the header shows the mode in ink.
+ */
+@Composable
 private fun modeColor(mode: String) = when (mode.uppercase()) {
-    "NORMAL"  -> Ok
-    "SPORT"   -> Warn
-    "TRACK"   -> Orange
-    "DRIFT"   -> Orange
+    "NORMAL"  -> Dim
+    "SPORT"   -> accentMid()
+    "TRACK"   -> LocalThemeAccent.current
+    "DRIFT"   -> Frost
     else      -> Mid
 }
 
@@ -378,9 +463,9 @@ private fun modeColor(mode: String) = when (mode.uppercase()) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
-private fun DriveTrendsSection() {
-    val recentDrives by produceState<List<DriveEntity>>(emptyList()) {
-        value = withContext(Dispatchers.IO) {
+private fun DriveTrendsSection(sample: List<DriveEntity>? = null, prefs: UserPrefs) {
+    val recentDrives by produceState<List<DriveEntity>>(emptyList(), sample) {
+        value = sample?.filter { it.endTime > 0 }?.reversed() ?: withContext(Dispatchers.IO) {
             OpenRSDashApp.instance.driveDb.driveDao().getRecentDrives(20)
                 .filter { it.endTime > 0 }
                 .reversed() // oldest first for sparkline
@@ -389,32 +474,48 @@ private fun DriveTrendsSection() {
     if (recentDrives.size < 3) return
 
     Spacer(Modifier.height(6.dp))
-    NeonDivider()
+    SheetDivider()
     Spacer(Modifier.height(6.dp))
 
-    MonoLabel("TRENDS (LAST ${recentDrives.size} DRIVES)", 9.sp, Dim,
-        modifier = Modifier.padding(bottom = 4.dp))
+    InstrumentLabel("TRENDS (LAST ${recentDrives.size} DRIVES)", Modifier.padding(bottom = 6.dp), color = Mid)
 
     val accent = LocalThemeAccent.current
 
-    // Build trend data
-    val oilPeaks = recentDrives.map { if (it.peakOilTempC > -90) it.peakOilTempC.toFloat() else 0f }
-    val boostPeaks = recentDrives.map { it.peakBoostPsi.toFloat() }
+    // Trend data in the user's units (stored: °C, gauge psi, L/100 km) — the values were shown raw and
+    // unlabelled next to a °F / MPG summary. Sparklines plot the converted values.
+    val fahrenheit = prefs.tempUnit != "C"
+    val oilPeaks = recentDrives.map { d ->
+        if (d.peakOilTempC > -90) (if (fahrenheit) d.peakOilTempC * 9 / 5 + 32 else d.peakOilTempC).toFloat() else 0f
+    }
+    val boostUnit = prefs.displayBoost(UnitConversions.STD_ATM_KPA).second
+    fun boostIn(psi: Double): Double = when (prefs.boostUnit) {
+        "BAR" -> psi * UnitConversions.PSI_TO_BAR
+        "KPA" -> psi / UnitConversions.KPA_TO_PSI
+        else  -> psi
+    }
+    val boostPeaks = recentDrives.map { boostIn(it.peakBoostPsi).toFloat() }
     val aggrScores = recentDrives.map { it.aggressionScore.toFloat() }
-    val fuelEcon = recentDrives.map { it.avgFuelL100km.toFloat() }
+    val mpg = prefs.speedUnit == "MPH"
+    val fuelEcon = recentDrives.map { d ->
+        val l100 = d.avgFuelL100km
+        (if (l100 <= 0.0) 0.0 else if (mpg) 282.48 / l100 else l100).toFloat()
+    }
 
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (oilPeaks.any { it > 0f }) {
-            TrendRow("PEAK OIL", oilPeaks, Orange)
+            TrendRow("PEAK OIL", oilPeaks, accentMid(), "%.0f${prefs.tempLabel}".format(oilPeaks.last()))
         }
         if (boostPeaks.any { it > 0f }) {
-            TrendRow("PEAK BOOST", boostPeaks, accent)
+            val fmt = when (prefs.boostUnit) { "BAR" -> "%.2f"; "KPA" -> "%.0f"; else -> "%.1f" }
+            TrendRow("PEAK BOOST", boostPeaks, accentMid(), "${fmt.format(boostPeaks.last())} $boostUnit")
         }
         if (aggrScores.any { it > 0f }) {
-            TrendRow("AGGRESSION", aggrScores, Warn)
+            TrendRow("SCORE", aggrScores, accentMid(), "%.0f".format(aggrScores.last()))
         }
         if (fuelEcon.any { it > 0f }) {
-            TrendRow("FUEL L/100", fuelEcon, Ok)
+            TrendRow("ECONOMY", fuelEcon, accentMid(),
+                if (fuelEcon.last() > 0f) "%.1f ${if (mpg) "MPG" else "L/100"}".format(fuelEcon.last())
+                else "— ${if (mpg) "MPG" else "L/100"}")
         }
     }
 }
@@ -423,30 +524,26 @@ private fun DriveTrendsSection() {
 private fun TrendRow(
     label: String,
     data: List<Float>,
-    color: androidx.compose.ui.graphics.Color
+    color: androidx.compose.ui.graphics.Color,
+    latest: String,
 ) {
     Row(
         Modifier.fillMaxWidth()
-            .background(Surf2, Tokens.CardShape)
-            .border(Tokens.CardBorder, Brd, Tokens.CardShape)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .instrumentSurface()
+            .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        MonoLabel(label, 8.sp, Dim, modifier = Modifier.weight(0.35f))
+        InstrumentLabel(label, Modifier.weight(0.35f))
         Sparkline(
             data = data,
             lineColor = color,
-            modifier = Modifier.weight(0.5f).height(24.dp),
+            modifier = Modifier.weight(0.4f).height(24.dp),
             strokeWidth = 1.dp,
             fillAlpha = 0.15f
         )
-        // Latest value
-        MonoText(
-            "%.1f".format(data.lastOrNull() ?: 0f),
-            9.sp, Mid, FontWeight.Bold,
-            modifier = Modifier.weight(0.15f)
-        )
+        // Latest value, with its unit
+        DataNum(latest, 14.sp, Frost, modifier = Modifier.weight(0.25f))
     }
 }
 

@@ -16,7 +16,8 @@ internal object KnockScatterMath {
     }
 
     fun plot(width: Float, height: Float) = Plot(
-        left = PAD * 2.5f, top = PAD, right = width - PAD, bottom = height - PAD * 2f
+        left = PAD * 2.5f, top = PAD * 2f,   // top row holds the PSI title
+        right = width - PAD, bottom = height - PAD * 2f
     )
 
     /** Canvas position of an event (values clamped to the axis ranges). */

@@ -5,11 +5,12 @@ import {
 } from 'recharts'
 import { colors, modeColors } from '../../styles/tokens'
 import type { TripPoint } from '../../types/session'
+import { gForceSamples } from '../../lib/gforce'
 
 type ColorBy = 'speed' | 'mode'
 
 const speedBands: { min: number; max: number; color: string; label: string }[] = [
-  { min: 0, max: 60, color: colors.accent, label: '<60 kph' },
+  { min: 0, max: 60, color: colors.cyan, label: '<60 kph' },
   { min: 60, max: 100, color: colors.ok, label: '60–100' },
   { min: 100, max: 140, color: colors.warn, label: '100–140' },
   { min: 140, max: Infinity, color: colors.orange, label: '140+' },
@@ -36,18 +37,7 @@ interface Props {
 export function GForceScatter({ points }: Props) {
   const [colorBy, setColorBy] = useState<ColorBy>('speed')
 
-  const data = useMemo(() => {
-    // Downsample for performance: take every Nth point to cap at ~2000 dots
-    const step = Math.max(1, Math.floor(points.length / 2000))
-    const out: { latG: number; speedKph: number; driveMode: string }[] = []
-    for (let i = 0; i < points.length; i += step) {
-      const p = points[i]
-      if (Math.abs(p.latG) > 0.01 || p.speedKph > 5) {
-        out.push({ latG: p.latG, speedKph: p.speedKph, driveMode: p.driveMode })
-      }
-    }
-    return out
-  }, [points])
+  const data = useMemo(() => gForceSamples(points), [points])
 
   const legend = colorBy === 'speed'
     ? speedBands.map((b) => ({ label: b.label, color: b.color }))

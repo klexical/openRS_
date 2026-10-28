@@ -335,14 +335,22 @@ data class VehicleState(
      *   PTU         ≥ 40 °C  (transfer case warm)
      */
     val rtrStatus: String? get() {
-        val cold = mutableListOf<String>()
-        if (oilTempC > -90 && oilTempC < 80)           cold += "Oil ${oilTempC.toInt()}°C < 80°C"
-        if (coolantTempC > -90 && coolantTempC < 85)   cold += "Coolant ${coolantTempC.toInt()}°C < 85°C"
-        if (rduTempC > -90 && rduTempC < 30)        cold += "RDU ${rduTempC.toInt()}°C < 30°C"
-        if (ptuTempC > -90 && ptuTempC < 40)        cold += "PTU ${ptuTempC.toInt()}°C < 40°C"
-        if (awdClutchTempL > -90 && awdClutchTempL < 25) cold += "CLT-L ${awdClutchTempL.toInt()}°C < 25°C"
-        if (awdClutchTempR > -90 && awdClutchTempR < 25) cold += "CLT-R ${awdClutchTempR.toInt()}°C < 25°C"
-        return if (cold.isEmpty()) null else cold.joinToString(" · ")
+        val cold = rtrColdItems
+        return if (cold.isEmpty()) null
+               else cold.joinToString(" · ") { "${it.label} ${it.valueC.toInt()}°C < ${it.minC.toInt()}°C" }
+    }
+
+    /** One sensor still below its warm-up minimum (canonical °C — format at the UI edge). */
+    data class RtrCold(val label: String, val valueC: Double, val minC: Double)
+
+    /** Structured form of [rtrStatus]: the same sensors and minimums, unformatted. */
+    val rtrColdItems: List<RtrCold> get() = buildList {
+        if (oilTempC > -90 && oilTempC < 80)             add(RtrCold("Oil", oilTempC, 80.0))
+        if (coolantTempC > -90 && coolantTempC < 85)     add(RtrCold("Coolant", coolantTempC, 85.0))
+        if (rduTempC > -90 && rduTempC < 30)             add(RtrCold("RDU", rduTempC, 30.0))
+        if (ptuTempC > -90 && ptuTempC < 40)             add(RtrCold("PTU", ptuTempC, 40.0))
+        if (awdClutchTempL > -90 && awdClutchTempL < 25) add(RtrCold("CLT-L", awdClutchTempL, 25.0))
+        if (awdClutchTempR > -90 && awdClutchTempR < 25) add(RtrCold("CLT-R", awdClutchTempR, 25.0))
     }
 
     val isReadyToRace: Boolean get() = rtrStatus == null

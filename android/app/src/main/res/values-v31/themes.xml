@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- API 31+: the system splash is only the opening composition's background colour (blank icon, no branding),
+         so there is no separate held icon screen; MainActivity removes it without an exit animation as soon as the
+         app's first frame — the composition on the same background — is drawn. -->
+    <style name="Theme.OpenRS" parent="android:Theme.DeviceDefault.NoActionBar">
+        <item name="android:colorPrimary">@color/nitrous_blue</item>
+        <item name="android:colorPrimaryDark">@color/bg_deep</item>
+        <item name="android:colorAccent">@color/nitrous_blue</item>
+        <item name="android:textColorPrimary">@color/frost_white</item>
+        <item name="android:textColorSecondary">@color/text_dim</item>
+        <item name="android:statusBarColor">@color/bg_deep</item>
+        <item name="android:navigationBarColor">@color/bg_deep</item>
+        <item name="android:windowBackground">@color/splash_bg</item>
+        <item name="android:windowSplashScreenBackground">@color/splash_bg</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_blank</item>
+    </style>
+</resources>

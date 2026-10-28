@@ -30,18 +30,13 @@ import com.openrs.dash.ui.LocalThemeAccent
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
+import kotlin.math.min
 
 /** Rounds up to the nearest 0.25 increment, minimum 0.5. */
 private fun ceilToQuarter(v: Float): Float =
     max(0.5f, ceil(v * 4f) / 4f)
 
 /** Stable style for peak labels — color is applied per-draw via .copy(color = ...). */
-private val PeakLabelStyle = TextStyle(
-    fontFamily = JetBrainsMonoFamily,
-    fontSize = 9.sp,
-    fontWeight = FontWeight.Medium
-)
-
 /**
  * 2D G-force scatter plot with rectangular grid, corner brackets, auto-scaling axes,
  * peak labels, and age-graded dot trail.
@@ -67,19 +62,11 @@ fun GForcePlot(
 
     // Styles keyed on Dim (brightness-scaled) so they refresh on theme/brightness change.
     // peakStyle has no theme-dependent color and is reused across all instances.
-    val currentStyle = remember(Dim) {
-        TextStyle(
-            fontFamily = JetBrainsMonoFamily,
-            fontSize = 9.sp,
-            color = Dim.copy(alpha = textMutedAlpha(0.5f)),
-            fontWeight = FontWeight.Normal
-        )
-    }
     val axisTitleStyle = remember(Dim) {
         TextStyle(
             fontFamily = JetBrainsMonoFamily,
-            fontSize = 9.sp,
-            color = Dim.copy(alpha = textMutedAlpha(0.45f)),
+            fontSize = 10.sp,
+            color = Dim,
             fontWeight = FontWeight.Normal,
             textAlign = TextAlign.Center
         )
@@ -87,10 +74,13 @@ fun GForcePlot(
     val scaleStyle = remember(Dim) {
         TextStyle(
             fontFamily = JetBrainsMonoFamily,
-            fontSize = 8.sp,
-            color = Dim.copy(alpha = textMutedAlpha(0.4f)),
+            fontSize = 9.sp,
+            color = Dim.copy(alpha = textMutedAlpha(0.8f)),
             fontWeight = FontWeight.Normal
         )
+    }
+    val peakStyle = remember(Frost) {
+        TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 10.sp, color = Frost, fontWeight = FontWeight.Medium)
     }
 
     var trailStarted by remember { mutableStateOf(false) }
@@ -114,28 +104,31 @@ fun GForcePlot(
         val maxG = ceilToQuarter(max(maxFromData, trailMax))
 
         // ── Layout ─────────────────────────────────────────────────
-        // Row 1 (top):    "Current"  ...  "X.XX Lat"
-        // Row 2:          scale + plot area + scale
-        // Row 3 (bottom): scale numbers
-        // Row 4:          "Current"  ...  "X.XX Accel"
-        // Row 5:          "ACCEL / BRAKE G"
+        // Row 1 (top):    "ACCEL ↑" (top of the Y axis)  ...  "PEAK LAT X.XX"
+        // Row 2:          scale + plot area
+        // Row 3 (bottom): X scale numbers with "LATERAL G" centred between them
+        // Row 4:          "BRAKE ↓"  ...  "PEAK LON X.XX"
         //
         // Left column:    Y scale numbers
         // Right column:   (nothing, scale at bottom-right)
 
-        val topLabelH = 18.dp.toPx()    // "Current" / peak row
+        val topLabelH = 18.dp.toPx()    // ACCEL / peak row
         val topGap = 4.dp.toPx()
         val botScaleH = 14.dp.toPx()    // scale numbers below plot
-        val botLabelH = 16.dp.toPx()    // "Current" / peak row
-        val botAxisH = 16.dp.toPx()     // "ACCEL / BRAKE G"
+        val botLabelH = 18.dp.toPx()    // BRAKE / LATERAL G / peak row
+        val botAxisH = 0f
         val leftScaleW = 36.dp.toPx()   // Y scale numbers
 
-        val plotLeft = leftScaleW
+        // Square plot area, centred in the space left by the label rows — equal g per px on both axes
+        val availW = size.width - 4.dp.toPx() - leftScaleW
+        val availH = size.height - botScaleH - botLabelH - botAxisH - topLabelH - topGap
+        val side = min(availW, availH)
+        val plotLeft = leftScaleW + (availW - side) / 2f
         val plotTop = topLabelH + topGap
-        val plotRight = size.width - 4.dp.toPx()
-        val plotBottom = size.height - botScaleH - botLabelH - botAxisH
-        val plotW = plotRight - plotLeft
-        val plotH = plotBottom - plotTop
+        val plotRight = plotLeft + side
+        val plotBottom = plotTop + side
+        val plotW = side
+        val plotH = side
         val cx = plotLeft + plotW / 2f
         val cy = plotTop + plotH / 2f
         val scaleX = (plotW / 2f) / maxG
@@ -225,37 +218,22 @@ fun GForcePlot(
             plotBottom + 3.dp.toPx()
         ))
 
-        // ── "LAT G" label (left, vertically centered) ─────────────
-        val latGM = textMeasurer.measure("LAT G", axisTitleStyle)
-        drawText(latGM, topLeft = Offset(
-            0f,
-            cy - latGM.size.height / 2f
-        ))
-
-        // ── "ACCEL / BRAKE G" label (bottom center) ───────────────
-        val accelM = textMeasurer.measure("ACCEL / BRAKE G", axisTitleStyle)
-        drawText(accelM, topLeft = Offset(
-            cx - accelM.size.width / 2f,
-            size.height - botAxisH + 2.dp.toPx()
-        ))
-
-        // ── Top row: "Current" + peak Lat ─────────────────────────
-        val curTopM = textMeasurer.measure("Current", currentStyle)
-        drawText(curTopM, topLeft = Offset(plotLeft, 0f))
+        // ── Axis titles + peaks. X = lateral, Y = longitudinal (the old layout labelled them the
+        // other way round: "LAT G" beside the vertical axis, "ACCEL / BRAKE G" under the horizontal).
+        val accelM = textMeasurer.measure("ACCEL \u2191", axisTitleStyle)
+        drawText(accelM, topLeft = Offset(plotLeft, 0f))
+        val rowY = plotBottom + botScaleH + 2.dp.toPx()
+        val brakeM = textMeasurer.measure("BRAKE \u2193", axisTitleStyle)
+        drawText(brakeM, topLeft = Offset(plotLeft, rowY))
+        val latTitleM = textMeasurer.measure("LATERAL G", axisTitleStyle)
+        drawText(latTitleM, topLeft = Offset(cx - latTitleM.size.width / 2f, plotBottom + 3.dp.toPx()))
         if (peakLatG > 0f) {
-            val peakLatText = "%.2f Lat".format(peakLatG)
-            val peakLatM = textMeasurer.measure(peakLatText, PeakLabelStyle.copy(color = accent.copy(alpha = 0.85f)))
-            drawText(peakLatM, topLeft = Offset(plotRight - peakLatM.size.width, 0f))
+            val m = textMeasurer.measure("PEAK LAT %.2f".format(peakLatG), peakStyle)
+            drawText(m, topLeft = Offset(plotRight - m.size.width, 0f))
         }
-
-        // ── Bottom row: "Current" + peak Accel ────────────────────
-        val curBotY = plotBottom + botScaleH + 2.dp.toPx()
-        val curBotM = textMeasurer.measure("Current", currentStyle)
-        drawText(curBotM, topLeft = Offset(plotLeft, curBotY))
         if (peakLonG > 0f) {
-            val peakLonText = "%.2f Accel".format(peakLonG)
-            val peakLonM = textMeasurer.measure(peakLonText, PeakLabelStyle.copy(color = accent.copy(alpha = 0.85f)))
-            drawText(peakLonM, topLeft = Offset(plotRight - peakLonM.size.width, curBotY))
+            val m = textMeasurer.measure("PEAK LON %.2f".format(peakLonG), peakStyle)
+            drawText(m, topLeft = Offset(plotRight - m.size.width, rowY))
         }
 
         // ── Awaiting-data hint — center of plot when disconnected ──
@@ -276,20 +254,11 @@ fun GForcePlot(
         }
 
         // ── Trail dots ────────────────────────────────────────────
-        // V5: directional tinting — warm for left turns, cool for right,
-        // green for acceleration, red for braking. Base color age-fades
-        // from tinted → Frost as before.
         val trailSize = trail.size
         if (trailSize > 0) {
             val minDotR = 2.dp.toPx()
             val maxDotR = 3.5.dp.toPx()
             val haloThreshold = trailSize * 0.7f
-            // Pre-compute direction tint colors
-            val warmTint = Color(0xFFFF6D00)   // orange — left turns
-            val coolTint = Color(0xFF448AFF)   // blue — right turns
-            val accelTint = Color(0xFF00E676)  // green — acceleration
-            val brakeTint = Color(0xFFFF1744)  // red — braking
-
             for (i in trail.indices) {
                 val (tLat, tLon) = trail[i]
                 val ageFrac = i.toFloat() / trailSize
@@ -297,17 +266,10 @@ fun GForcePlot(
                 val dotAlpha = (0.15f + ageFrac * 0.65f) * trailEntrance
                 val dotR = minDotR + ageFrac * (maxDotR - minDotR)
 
-                // V5: pick tint from dominant axis direction
-                val absLat = abs(tLat); val absLon = abs(tLon)
-                val dirTint = if (absLat > absLon) {
-                    if (tLat < 0) warmTint else coolTint   // lateral dominant
-                } else {
-                    if (tLon > 0) accelTint else brakeTint // longitudinal dominant
-                }
-                // Blend: 30% direction tint + 70% original age gradient
-                val baseTinted = androidx.compose.ui.graphics.lerp(dotColor, dirTint, 0.3f)
+                // Age gradient only (accent → ink). The V5 direction tints (orange / blue / green /
+                // red) were decoration in alarm colours, against the design-pass colour rule.
                 val blendedColor = androidx.compose.ui.graphics.lerp(
-                    baseTinted.copy(alpha = dotAlpha),
+                    dotColor.copy(alpha = dotAlpha),
                     Frost.copy(alpha = dotAlpha),
                     ageFrac
                 )

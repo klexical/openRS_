@@ -25,6 +25,9 @@ import com.openrs.dash.ui.Orange
 import com.openrs.dash.ui.Surf3
 import com.openrs.dash.ui.Warn
 
+/** Flash zone of [ShiftLightBar] (~6500 rpm at the default redline) — the "shift now" point. */
+fun isShiftPoint(rpm: Float, redlineRpm: Float = 6800f): Boolean = rpm >= redlineRpm * 0.955f
+
 /**
  * Horizontal LED-style shift indicator bar.
  * Fills green -> yellow -> red as RPM climbs. Flashes at redline.
@@ -36,7 +39,7 @@ fun ShiftLightBar(
     redlineRpm: Float = 6800f,
     segmentCount: Int = 18
 ) {
-    val isRedline = rpm >= redlineRpm * 0.955f  // ~6500 RPM
+    val isRedline = isShiftPoint(rpm, redlineRpm)  // ~6500 RPM
     // rc.2: dormant state when engine off / below idle. Prevents the "one
     // green pip" optical bug where first segment lights because 0 >= 0. Bar
     // reads as resting (dim filament glow) rather than broken.

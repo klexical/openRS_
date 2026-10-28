@@ -87,10 +87,12 @@ jobs:
         run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon
 
       # Gradle renames release APKs to openRS_v{versionName}.apk (see app/build.gradle.kts)
+      # NOTE: working-directory is already `android/` (job defaults), so paths must be relative to it.
+      # (upload-artifact below resolves paths from the repo root, so it keeps `android/`.)
       - name: Verify release APK exists
         run: |
-          ls -la android/app/build/outputs/apk/release/openRS_v*.apk
-          test -n "$(ls android/app/build/outputs/apk/release/openRS_v*.apk 2>/dev/null)" || {
+          ls -la app/build/outputs/apk/release/openRS_v*.apk
+          test -n "$(ls app/build/outputs/apk/release/openRS_v*.apk 2>/dev/null)" || {
             echo "::error::Expected openRS_v*.apk in release/ — check build.gradle.kts outputFileName"
             exit 1
           }

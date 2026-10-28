@@ -9,5 +9,7 @@
     <!-- ── Surface / background palette ────────────── -->
     <color name="bg_deep">#FF0A0A0A</color>
     <color name="text_dim">#FF6A6E72</color>
+    <!-- Splash / opening presentation background (the concept sheet's phone screen) -->
+    <color name="splash_bg">#FF030609</color>
 
 </resources>

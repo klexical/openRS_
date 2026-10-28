@@ -2,7 +2,6 @@ package com.openrs.dash.ui
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -17,9 +16,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.SnackbarHostState
@@ -32,16 +31,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
-import com.openrs.dash.ui.Tokens.CardBorder
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openrs.dash.can.DriveCommandResult
@@ -112,77 +111,94 @@ import kotlinx.coroutines.launch
         label = "dockShimmerA"
     )
 
+    // Offline the last frame's mode is not the car's current mode — nothing is selected (the header reads MODE —).
+    val connected = vs.isConnected
+    val current = if (connected) vs.driveMode else null
+    val canTap = canControl && firmwareApi != null
+
     Column(
         Modifier.fillMaxWidth()
-            .background(Surf2)
-            .border(width = 1.dp, color = Brd.copy(alpha = 0.5f))
+            .background(InstrumentFill)
+            .drawBehind {
+                drawRect(Brd.copy(alpha = borderAlpha(0.6f)), Offset(0f, size.height - 1.dp.toPx()), Size(size.width, 1.dp.toPx()))
+            }
             .padding(horizontal = PagePad, vertical = 10.dp)
     ) {
+        // Caption: what the dock is and what it's doing right now.
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            InstrumentLabel("DRIVE MODE")
+            Spacer(Modifier.weight(1f))
+            val pending = pendingDriveMode
+            val confirmed = confirmedMode
+            // The command stays in flight through the confirmation dwell, so CONFIRMED takes precedence.
+            when {
+                confirmed != null -> MonoLabel("${confirmed.label.uppercase()} CONFIRMED", 10.sp, Frost, FontWeight.Bold, 0.3.sp)
+                pending != null   -> MonoLabel("SWITCHING TO ${pending.label.uppercase()}\u2026", 10.sp, actionInk(accent), FontWeight.Bold, 0.3.sp)
+                !connected        -> InstrumentMeta("OFFLINE")
+                !canTap           -> InstrumentMeta("VIEW ONLY")
+                current != null   -> InstrumentMeta("CURRENT \u00B7 ${current.label.uppercase()}")
+            }
+        }
+        Spacer(Modifier.height(8.dp))
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             modes.forEachIndexed { index, (mode, letter) ->
-                val isActive = vs.driveMode == mode
-                val modeAccent = when (mode) {
-                    DriveMode.SPORT -> Ok
-                    DriveMode.TRACK -> Warn
-                    DriveMode.DRIFT -> Orange
-                    else            -> accent
-                }
+                // One accent for every mode — SPORT / TRACK / DRIFT used green / amber / orange, which read as
+                // status colours. The selected mode is the accent tint with dark-on-DAY text, like every chip.
+                val isActive = current == mode
                 val isPending = pendingDriveMode == mode && !isActive
                 val isConfirmed = confirmedMode == mode
 
-                val dimForBusy = pendingDriveMode != null && !isPending
+                val dimForBusy = pendingDriveMode != null && !isPending && !isConfirmed
                 val buttonShape = RoundedCornerShape(10.dp)
 
                 val bgTarget = when {
-                    isConfirmed -> modeAccent.copy(0.20f)
-                    isActive    -> modeAccent.copy(0.1f)
-                    isPending   -> modeAccent.copy(0.05f)
-                    else        -> Surf3
+                    isConfirmed -> accent.copy(alpha = pillBgAlpha(0.20f))
+                    isActive    -> accent.copy(alpha = pillBgAlpha(0.14f))
+                    isPending   -> accent.copy(alpha = pillBgAlpha(0.06f))
+                    else        -> Surf2
                 }
                 val animBg by animateColorAsState(bgTarget, tween(250), label = "dockBg$index")
 
                 val borderTarget = when {
-                    isActive || isPending -> modeAccent
-                    canControl            -> Brd
-                    else                  -> Brd.copy(alpha = 0.5f)
+                    isActive || isPending || isConfirmed -> accent.copy(alpha = borderAlpha(0.7f))
+                    else                                 -> Brd.copy(alpha = if (canTap) 1f else 0.6f)
                 }
                 val animBorder by animateColorAsState(borderTarget, tween(250), label = "dockBrd$index")
 
                 val textTarget = when {
-                    isActive   -> modeAccent
-                    isPending  -> modeAccent.copy(0.6f)
-                    canControl -> Frost
-                    else       -> Dim
+                    isActive || isConfirmed -> actionInk(accent)
+                    isPending               -> actionInk(accent).copy(alpha = 0.7f)
+                    canTap                  -> Frost
+                    else                    -> Mid
                 }
                 val animText by animateColorAsState(textTarget, tween(250), label = "dockTxt$index")
 
                 val labelTarget = when {
-                    isActive || isConfirmed -> modeAccent
-                    isPending               -> modeAccent.copy(0.8f)
-                    else                    -> Dim
+                    isActive || isConfirmed || isPending -> actionInk(accent)
+                    canTap                               -> Mid
+                    else                                 -> Dim
                 }
                 val animLabel by animateColorAsState(labelTarget, tween(250), label = "dockLbl$index")
 
                 Column(
                     Modifier.weight(1f)
+                        .heightIn(min = 64.dp)
                         .graphicsLayer {
                             alpha = alphas[index].value * (if (dimForBusy) 0.5f else 1f)
                             translationY = offsets[index].value * density
                         }
-                        .then(
-                            if (isActive) Modifier.border(CardBorder, modeAccent.copy(alpha = 0.35f), buttonShape)
-                            else Modifier
-                        )
+                        // Everything below stays inside the rounded button (the shimmer is a full-bounds rect).
+                        .clip(buttonShape)
                         .background(animBg, buttonShape)
                         .border(
                             if (isPending) 1.5.dp else 1.dp,
                             animBorder,
                             buttonShape
                         )
-                        // rc.2: mode-color shimmer sweeps the pending button while busy.
+                        // Shimmer sweeps the pending button while the car confirms (accent, not a mode colour).
                         .drawBehind {
                             if (isPending) {
                                 val sweepX = shimmerOffset * size.width
@@ -190,7 +206,7 @@ import kotlinx.coroutines.launch
                                 drawRect(
                                     brush = Brush.horizontalGradient(
                                         0f to Color.Transparent,
-                                        0.5f to modeAccent.copy(alpha = 0.18f),
+                                        0.5f to accent.copy(alpha = 0.18f),
                                         1f to Color.Transparent,
                                         startX = sweepX - band,
                                         endX = sweepX + band
@@ -248,34 +264,39 @@ import kotlinx.coroutines.launch
                                 }
                             }
                         }
-                        .padding(vertical = 12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .padding(vertical = 10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
                 ) {
                     Box(
                         Modifier.fillMaxWidth(),
                         contentAlignment = Alignment.Center
                     ) {
-                        HeroNum(letter, 20.sp, animText)
+                        HeroNum(letter, 22.sp, animText)
                     }
-                    Spacer(Modifier.height(2.dp))
+                    Spacer(Modifier.height(3.dp))
                     MonoLabel(
                         when {
-                            isConfirmed -> "LOCKED"
+                            isConfirmed -> "CONFIRMED"
                             isPending   -> "SWITCHING"
                             else        -> mode.label.uppercase()
                         },
-                        8.sp,
+                        10.sp,
                         animLabel,
-                        letterSpacing = 0.1.sp
+                        if (isActive || isConfirmed || isPending) FontWeight.Bold else FontWeight.Normal,
+                        letterSpacing = 0.2.sp
                     )
                 }
             }
         }
-        Spacer(Modifier.height(6.dp))
-        MonoLabel(
-            if (canControl) "Tap to change \u00B7 Pull down from header or tap the MODE pill"
-            else "Displays current Drive Mode \u2014 openRS_ firmware unlocks tap control",
-            9.sp, Dim
+        Spacer(Modifier.height(8.dp))
+        InstrumentMeta(
+            when {
+                canTap     -> "Tap a mode to change it \u2014 the car confirms in a few seconds."
+                !connected -> "Connect to the car to change modes."
+                else       -> "Shows the current mode \u2014 openRS_ firmware unlocks tap control."
+            },
+            color = Mid
         )
     }
 }

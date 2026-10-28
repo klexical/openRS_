@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,7 +29,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -125,8 +127,11 @@ fun DriveTimeSeries(
 
     Column(modifier.fillMaxWidth()) {
         // ── Channel selector pills ──────────────────────────────────────
-        Row(
-            Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        // Wrap onto further rows — on 360 dp the last chip (WGDC) was squeezed into a vertical sliver.
+        // Each chip is a 48 dp-tall touch area around a compact visible pill.
+        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+        androidx.compose.foundation.layout.FlowRow(
+            Modifier.fillMaxWidth().padding(bottom = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             CHANNELS.forEachIndexed { idx, channel ->
@@ -135,37 +140,41 @@ fun DriveTimeSeries(
                 val color = channelColors[idx]
                 val bg = if (active) color.copy(alpha = 0.18f) else Color.Transparent
                 val border = if (active) color.copy(alpha = 0.5f) else Brd.copy(alpha = 0.4f)
-                val textColor = if (active) color else Dim.copy(alpha = textMutedAlpha(0.5f))
+                val textColor = if (active) color else Dim
 
                 Box(
                     Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(bg)
-                        .border(Tokens.CardBorder, border, RoundedCornerShape(6.dp))
-                        .clickable {
+                        .heightIn(min = 48.dp)
+                        .clickable(onClickLabel = "${channel.label} ${if (active) "off" else "on"}") {
                             if (active) activeIndices.remove(idx)
                             else activeIndices.add(idx)
-                        }
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        },
+                    contentAlignment = Alignment.Center
                 ) {
-                    MonoLabel(channel.label, 9.sp, textColor, FontWeight.Medium)
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(bg)
+                            .border(Tokens.CardBorder, border, RoundedCornerShape(6.dp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        MonoLabel(channel.label, 10.sp, textColor, FontWeight.Medium)
+                    }
                 }
             }
         }
 
         // ── Chart area ──────────────────────────────────────────────────
         val sampled = remember(points) { downsample(points, 360) }
-        val density = LocalDensity.current
-        val parentWidthDp = 360.dp  // reasonable default
         val dataWidthDp = (sampled.size * 2).dp
-        val chartWidth = maxOf(parentWidthDp, dataWidthDp)
 
         val textMeasurer = rememberTextMeasurer()
+        // Time labels in the readable secondary colour (full Dim); the grid stays faint.
         val axisStyle = TextStyle(
             fontFamily = JetBrainsMonoFamily,
-            fontSize = 8.sp,
+            fontSize = 9.sp,
             fontWeight = FontWeight.Normal,
-            color = Dim.copy(alpha = textMutedAlpha(0.45f))
+            color = Dim
         )
         val brdColor = Brd
         val surfColor = Surf2
@@ -196,14 +205,20 @@ fun DriveTimeSeries(
             (last - first).coerceAtLeast(1L)
         }
 
+        // The chart is at least the viewport wide (was a fixed 360 dp — wider than a 360 dp phone's viewport, so
+        // it scrolled and the last label sat cut at the edge). Time labels draw in a non-scrolling overlay and
+        // only where a whole label fits inside the viewport, so none is ever shown partly clipped.
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val chartWidth = maxOf(maxWidth, dataWidthDp)
+        val scroll = rememberScrollState()
         Box(
             Modifier
                 .fillMaxWidth()
                 .height(200.dp)
                 .clip(RoundedCornerShape(Tokens.CardRadius))
                 .border(Tokens.CardBorder, brdColor, RoundedCornerShape(Tokens.CardRadius))
-                .horizontalScroll(rememberScrollState())
         ) {
+            Box(Modifier.matchParentSize().horizontalScroll(scroll)) {
             Box(
                 Modifier
                     .width(chartWidth)
@@ -212,7 +227,9 @@ fun DriveTimeSeries(
                     .drawWithCache {
                         val w = size.width
                         val h = size.height
-                        val padBottom = 18f  // room for time labels
+                        // Bottom strip sized to the measured label (was a fixed 18 px — labels were clipped)
+                        val sampleLabel = textMeasurer.measure("00:00", axisStyle)
+                        val padBottom = sampleLabel.size.height + 8.dp.toPx()
                         val padTop = 6f
                         val drawH = h - padBottom - padTop
 
@@ -254,19 +271,9 @@ fun DriveTimeSeries(
                         }
                         val dash = PathEffect.dashPathEffect(floatArrayOf(8f, 6f))
 
-                        // Pre-measure time labels
-                        val labelInterval = 60_000L  // 60s
-                        val timeLabels = buildList {
-                            var t = 0L
-                            while (t <= totalDurationMs) {
-                                val min = (t / 60_000).toInt()
-                                val sec = ((t % 60_000) / 1000).toInt()
-                                val label = "%d:%02d".format(min, sec)
-                                val frac = t.toFloat() / totalDurationMs.toFloat()
-                                add(Triple(label, frac, textMeasurer.measure(label, axisStyle)))
-                                t += labelInterval
-                            }
-                        }
+                        // Pre-measure time labels. The interval comes from the width available: the smallest
+                        // step that keeps labels a label-width + 12 dp apart (was every 60 s — they overlapped).
+                        val tickFracs = timeTickFracs(totalDurationMs, w, sampleLabel.size.width + 12.dp.toPx())
 
                         onDrawBehind {
                             // Grid lines (25%, 50%, 75%)
@@ -280,16 +287,9 @@ fun DriveTimeSeries(
                                 )
                             }
 
-                            // Time axis labels
-                            timeLabels.forEach { (_, frac, measured) ->
+                            // Time ticks (labels: overlay below)
+                            tickFracs.forEach { (_, frac) ->
                                 val x = frac * w
-                                drawText(
-                                    measured,
-                                    topLeft = Offset(
-                                        x - measured.size.width / 2f,
-                                        h - padBottom + 4f
-                                    )
-                                )
                                 // Vertical tick
                                 drawLine(
                                     color = brdColor.copy(alpha = 0.2f),
@@ -328,6 +328,50 @@ fun DriveTimeSeries(
                         }
                     }
             )
+            }
+            // Time labels — fixed to the viewport, positioned from the scroll offset.
+            androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
+                val chartW = chartWidth.toPx()
+                val sample = textMeasurer.measure("00:00", axisStyle)
+                val y = size.height - sample.size.height - 4.dp.toPx()
+                // Centred under its tick; a tick on screen whose label would cross the edge (0:00 at the start,
+                // the last one at the end) is edge-aligned instead — if that keeps 4 dp clear of its neighbours.
+                // Otherwise it is left out; a partly clipped label is never drawn.
+                val edge = 2f; val clear = 4.dp.toPx()
+                val placed = timeTickFracs(totalDurationMs, chartW, sample.size.width + 12.dp.toPx()).map { (label, frac) ->
+                    val m = textMeasurer.measure(label, axisStyle)
+                    val x = frac * chartW - scroll.value
+                    Triple(m, x, x - m.size.width / 2f)
+                }
+                placed.forEachIndexed { i, (m, x, centred) ->
+                    val lw = m.size.width.toFloat()
+                    val left = when {
+                        centred >= edge && centred + lw <= size.width - edge -> centred
+                        x in 0f..size.width -> centred.coerceIn(edge, size.width - lw - edge)
+                        else -> return@forEachIndexed
+                    }
+                    val prevRight = placed.getOrNull(i - 1)?.let { (pm, _, pc) -> pc + pm.size.width } ?: Float.NEGATIVE_INFINITY
+                    val nextLeft = placed.getOrNull(i + 1)?.third ?: Float.POSITIVE_INFINITY
+                    if (left - prevRight >= clear && nextLeft - (left + lw) >= clear) drawText(m, topLeft = Offset(left, y))
+                }
+            }
+        }
+        }
+    }
+}
+
+/**
+ * Time ticks as (label, fraction of the drive): the smallest step (15 s … 1 h) that keeps ticks
+ * [minGapPx] apart across [widthPx] — every 60 s overlapped on short charts.
+ */
+private fun timeTickFracs(totalMs: Long, widthPx: Float, minGapPx: Float): List<Pair<String, Float>> {
+    val step = listOf(15_000L, 30_000L, 60_000L, 120_000L, 300_000L, 600_000L, 900_000L, 1_800_000L, 3_600_000L)
+        .firstOrNull { it.toFloat() / totalMs * widthPx >= minGapPx } ?: 3_600_000L
+    return buildList {
+        var t = 0L
+        while (t <= totalMs) {
+            add("%d:%02d".format((t / 60_000).toInt(), ((t % 60_000) / 1000).toInt()) to t.toFloat() / totalMs)
+            t += step
         }
     }
 }

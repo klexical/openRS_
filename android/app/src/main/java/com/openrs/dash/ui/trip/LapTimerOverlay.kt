@@ -2,9 +2,7 @@ package com.openrs.dash.ui.trip
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -32,9 +30,7 @@ import com.openrs.dash.ui.DataNum
 import com.openrs.dash.ui.Dim
 import com.openrs.dash.ui.Frost
 import com.openrs.dash.ui.Label
-import com.openrs.dash.ui.LocalThemeAccent
 import com.openrs.dash.ui.MonoLabel
-import com.openrs.dash.ui.MonoText
 import com.openrs.dash.ui.Ok
 import com.openrs.dash.ui.Orange
 import com.openrs.dash.ui.Surf
@@ -121,29 +117,6 @@ fun LapTimerOverlay(
 // ═══════════════════════════════════════════════════════════════════════════
 // SET S/F BUTTON — pill control matching the map floating controls
 // ═══════════════════════════════════════════════════════════════════════════
-
-@Composable
-fun SetStartFinishButton(
-    isSet: Boolean,
-    onSet: () -> Unit,
-    onClear: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val accent = LocalThemeAccent.current
-    val label = if (isSet) "CLEAR S/F" else "SET S/F"
-    val color = if (isSet) Orange else accent
-
-    Box(
-        modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(Surf.copy(alpha = 0.85f))
-            .border(Tokens.CardBorder, Brd, RoundedCornerShape(6.dp))
-            .clickable { if (isSet) onClear() else onSet() }
-            .padding(horizontal = 10.dp, vertical = 6.dp)
-    ) {
-        MonoText(label, 10.sp, color, FontWeight.Bold)
-    }
-}
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 

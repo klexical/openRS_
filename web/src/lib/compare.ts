@@ -1,4 +1,5 @@
 import type { Session, TripSummary, TripPoint } from '../types/session'
+import { tempReading, pctReading } from './readings'
 
 /** A single KPI delta between two sessions. */
 export interface KpiDelta {
@@ -16,18 +17,18 @@ export interface KpiDelta {
   higherIsBetter: boolean
 }
 
-/** Normalized point — time expressed as 0..1 fraction of session duration. */
+/** Normalized point — time expressed as 0..1 fraction of session duration. Missing readings are null (a gap). */
 export interface NormalizedPoint {
   /** 0..1 fraction through the session. */
   t: number
   rpm: number
   boostPsi: number
   speedKph: number
-  coolantC: number
-  oilTempC: number
+  coolantC: number | null
+  oilTempC: number | null
   latG: number
   longG: number
-  throttlePct: number
+  throttlePct: number | null
   brakePressure: number
   steeringAngle: number
 }
@@ -65,7 +66,7 @@ export function computeDeltas(base: TripSummary, comp: TripSummary): KpiDelta[] 
     .filter(Boolean) as KpiDelta[]
 }
 
-/** Normalize trip points to 0..1 time fraction for overlay comparison. */
+/** Normalize trip points to 0..1 time fraction for overlay comparison. Sentinel temps / throttle → null, genuine zeros kept. */
 export function normalizePoints(points: TripPoint[]): NormalizedPoint[] {
   if (points.length < 2) return []
   const t0 = points[0].ts
@@ -77,11 +78,11 @@ export function normalizePoints(points: TripPoint[]): NormalizedPoint[] {
     rpm: p.rpm,
     boostPsi: p.boostPsi,
     speedKph: p.speedKph,
-    coolantC: p.coolantC > -90 ? p.coolantC : 0,
-    oilTempC: p.oilTempC > -90 ? p.oilTempC : 0,
+    coolantC: tempReading(p.coolantC),
+    oilTempC: tempReading(p.oilTempC),
     latG: p.latG,
     longG: p.longG,
-    throttlePct: p.throttlePct >= 0 ? p.throttlePct : 0,
+    throttlePct: pctReading(p.throttlePct),
     brakePressure: p.brakePressure,
     steeringAngle: p.steeringAngle,
   }))

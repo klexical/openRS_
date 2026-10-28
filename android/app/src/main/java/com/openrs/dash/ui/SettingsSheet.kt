@@ -13,8 +13,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.res.imageResource
+import com.openrs.dash.R
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -60,10 +65,12 @@ import androidx.compose.ui.window.DialogProperties
 private enum class SettingsCategory(val label: String, val blurb: String) {
     DISPLAY("DISPLAY", "Theme · shift light · overlay"),
     UNITS("UNITS", "Speed · temp · pressure"),
+    THERMAL("THERMAL", "Profiles · warm-up · limits"),
     CONNECTION("CONNECTION", "Adapter · WiFi · Bluetooth"),
     DRIVES("DRIVES", "Auto-record · storage"),
     DIAGNOSTICS("DIAGNOSTICS", "Exports · logging"),
     ABOUT("ABOUT", "Version · credits"),
+    DEVELOPER("DEVELOPER", "Demo mode · simulated data"),   // debug builds only
 }
 
 private class NavSection(
@@ -108,7 +115,12 @@ private fun matchRank(query: String, text: String): Int {
 }
 
 @Composable
-fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
+fun SettingsDialog(
+    onDismiss: () -> Unit,
+    onCustomDash: () -> Unit = {},
+    onStartDemo: (com.openrs.dash.demo.DemoScenario) -> Unit = {},
+    onExitDemo: () -> Unit = {},
+) {
     val ctx = LocalContext.current
     val accent = LocalThemeAccent.current
     val current by UserPrefsStore.prefs.collectAsState()
@@ -138,7 +150,13 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
     var edgeShiftIntensity by remember { mutableStateOf(current.edgeShiftIntensity) }
     var edgeShiftRpm    by remember { mutableStateOf(current.edgeShiftRpm.toString()) }
     var updateChannel   by remember { mutableStateOf(current.updateChannel) }
-    // Live-preview prefs (theme mode, classic fonts, drive auto-zoom, paint
+    // Thermal profile — active profile + Custom values as editor cells (exact °C kept until a cell is edited)
+    var thermalPreset   by remember { mutableStateOf(if (current.tempPreset == "custom" && current.customThermal == null) "street" else current.tempPreset) }
+    var customBase      by remember { mutableStateOf(current.customThermalBase) }
+    var customCells     by remember { mutableStateOf(current.customThermal?.let { thermalCells(it, current.tempUnit) }) }
+    LaunchedEffect(tempUnit) { customCells = customCells?.mapValues { it.value.withUnit(tempUnit) } }
+    val thermalErrors = customCells?.let { cells -> validateThermalProfile(cells.mapValues { it.value.resolvedC }, tempUnit) }.orEmpty()
+    // Live-preview prefs (theme mode, classic fonts, paint
     // colour) apply visual side effects on toggle for instant preview, but
     // do NOT commit to UserPrefsStore until SAVE. Cancel reverts the side
     // effects to the committed state. RESET stages defaults in local vars.
@@ -147,7 +165,6 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
     var gearModeTint    by remember { mutableStateOf(current.gearModeTint) }
     var themeModeLocal     by remember { mutableStateOf(current.themeMode) }
     var classicFontsLocal  by remember { mutableStateOf(current.classicFonts) }
-    var driveAutoZoomLocal by remember { mutableStateOf(current.driveAutoZoom) }
     var themeIdLocal       by remember { mutableStateOf(current.themeId) }
     var error           by remember { mutableStateOf<String?>(null) }
     var resetConfirm    by remember { mutableStateOf(false) }
@@ -158,7 +175,17 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
     var aboutExpanded    by remember { mutableStateOf(false) }
     var showBlePicker    by remember { mutableStateOf(false) }
 
+    // Every exit except SAVE discards: revert the live-preview side effects (theme mode, fonts, paint) to the
+    // committed prefs. Back, tapping outside and ✕ used to dismiss without this, leaving an unsaved preview on.
+    val cancel: () -> Unit = {
+        setThemeMode(runCatching { ThemeMode.valueOf(current.themeMode) }.getOrDefault(ThemeMode.NIGHT))
+        setClassicFonts(current.classicFonts)
+        setThemeAccentPreview(null)
+        onDismiss()
+    }
+
     // ═══ Build NavSection list (bodies capture state vars by closure) ══════
+    val demoStatus by com.openrs.dash.demo.DemoMode.status.collectAsState()
     val sections: List<NavSection> = listOf(
         NavSection(
             SettingsCategory.DISPLAY,
@@ -172,16 +199,18 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                     help = "Prevents the phone from sleeping while CAN is live. Drains battery.",
                     checked = screenOn, onCheckedChange = { screenOn = it },
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(4.dp))
                 SettingsRow(
                     label = "Theme mode",
+                    stacked = true,
                     help = "AUTO follows the device clock (06:00–19:00 → DAY). ULTRA = pure-black AMOLED variant for night driving on OLED displays.",
                 ) {
                     // Live-preview: toggling applies immediately so the user
                     // can see the palette swap. Local state is the source of
                     // truth so RESET can stage a change without committing.
-                    SegmentedPicker(
+                    SettingsPicker(
                         options = listOf("NIGHT", "DAY", "AUTO", "ULTRA"),
+                        fill = true,
                         selected = themeModeLocal,
                         onSelect = { sel ->
                             themeModeLocal = sel
@@ -190,12 +219,12 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                         },
                     )
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(4.dp))
                 SettingsRow(
                     label = "Classic fonts",
                     help = "CLASSIC revives Orbitron for hero numerics.",
                 ) {
-                    SegmentedPicker(
+                    SettingsPicker(
                         options = listOf("MODERN", "CLASSIC"),
                         selected = if (classicFontsLocal) "CLASSIC" else "MODERN",
                         onSelect = { sel ->
@@ -203,24 +232,6 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                             classicFontsLocal = on
                             setClassicFonts(on)
                         },
-                    )
-                }
-                Spacer(Modifier.height(12.dp))
-                SettingsRow(
-                    label = "DRIVE auto-zoom",
-                    help = "Collapses inputs and inflates the gear digit once rolling above ~10 mph.",
-                ) {
-                    Switch(
-                        checked = driveAutoZoomLocal,
-                        onCheckedChange = { on ->
-                            driveAutoZoomLocal = on
-                        },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = OnAccent,
-                            checkedTrackColor = accent,
-                            uncheckedThumbColor = Dim,
-                            uncheckedTrackColor = Brd,
-                        ),
                     )
                 }
             }
@@ -252,13 +263,15 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                     checked = edgeShiftLight, onCheckedChange = { edgeShiftLight = it },
                 )
                 if (edgeShiftLight) {
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(4.dp))
                     SettingsRow(
                         label = "Color",
+                    stacked = true,
                         help = "PROGRESSIVE fades green→yellow→red as you approach the shift point.",
                     ) {
-                        SegmentedPicker(
+                        SettingsPicker(
                             options = listOf("Accent", "White", "Progressive"),
+                        fill = true,
                             selected = when (edgeShiftColor) {
                                 "white" -> "White"; "progressive" -> "Progressive"; else -> "Accent"
                             },
@@ -269,12 +282,12 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                             },
                         )
                     }
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(4.dp))
                     SettingsRow(
                         label = "Intensity",
                         help = "Glow opacity at peak. HIGH is most visible in daylight.",
                     ) {
-                        SegmentedPicker(
+                        SettingsPicker(
                             options = listOf("Low", "Med", "High"),
                             selected = when (edgeShiftIntensity) {
                                 "low" -> "Low"; "med" -> "Med"; else -> "High"
@@ -286,7 +299,7 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                             },
                         )
                     }
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(4.dp))
                     SettingsRow(
                         label = "Shift RPM",
                         help = "RPM where the flash peaks. Breathing starts at 70% of this value.",
@@ -318,13 +331,13 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                     help = "Dims the LIVE pill after 2 s of stable connection so it doesn't compete with telemetry.",
                     checked = livePillQuiet, onCheckedChange = { livePillQuiet = it },
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(4.dp))
                 SettingsSwitchRow(
                     label = "Gear mode tint",
                     help = "Tints the GEAR label to match drive mode colour in Sport / Track / Drift.",
                     checked = gearModeTint, onCheckedChange = { gearModeTint = it },
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(4.dp))
                 SettingsSwitchRow(
                     label = "Nav tab identity colours",
                     help = "Each bottom-nav tab uses a unique accent colour instead of the global paint accent.",
@@ -340,60 +353,24 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
             SettingsSection("FLOATING HUD") {
                 val hasOverlayPerm = Settings.canDrawOverlays(ctx)
                 if (!hasOverlayPerm) {
-                    Text(
-                        "Overlay permission required to display the floating HUD over other apps.",
-                        fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
-                    )
+                    SettingsNote("Overlay permission required to display the floating HUD over other apps.")
                     Spacer(Modifier.height(8.dp))
-                    Box(
-                        Modifier.fillMaxWidth()
-                            .background(accent.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
-                            .border(CardBorder, accent.copy(0.3f), RoundedCornerShape(8.dp))
-                            .clickable {
-                                ctx.startActivity(
-                                    Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                        "package:${ctx.packageName}".toUri())
-                                )
-                            }
-                            .padding(12.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("GRANT OVERLAY PERMISSION", fontSize = 11.sp, color = accent,
-                            fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
+                    SettingsAction("GRANT OVERLAY PERMISSION", Modifier.fillMaxWidth()) {
+                        ctx.startActivity(
+                            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                "package:${ctx.packageName}".toUri())
+                        )
                     }
                 } else {
-                    Text(
-                        "Compact boost / RPM / oil overlay on top of other apps. " +
-                            "Useful on track days with a nav app.",
-                        fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
-                    )
+                    SettingsNote("Compact boost / RPM / oil overlay on top of other apps. " +
+                        "Useful on track days with a nav app.")
                     Spacer(Modifier.height(8.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(
-                            Modifier.weight(1f)
-                                .background(Ok.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
-                                .border(CardBorder, Ok.copy(0.3f), RoundedCornerShape(8.dp))
-                                .clickable {
-                                    ctx.startService(Intent(ctx, HudOverlayService::class.java))
-                                }
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text("START HUD", fontSize = 11.sp, color = Ok,
-                                fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
+                        SettingsAction("START HUD", Modifier.weight(1f)) {
+                            ctx.startService(Intent(ctx, HudOverlayService::class.java))
                         }
-                        Box(
-                            Modifier.weight(1f)
-                                .background(Orange.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
-                                .border(CardBorder, Orange.copy(0.3f), RoundedCornerShape(8.dp))
-                                .clickable {
-                                    ctx.stopService(Intent(ctx, HudOverlayService::class.java))
-                                }
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text("STOP HUD", fontSize = 11.sp, color = Orange,
-                                fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
+                        SettingsAction("STOP HUD", Modifier.weight(1f), tone = ActionTone.DESTRUCTIVE) {
+                            ctx.stopService(Intent(ctx, HudOverlayService::class.java))
                         }
                     }
                 }
@@ -407,31 +384,31 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
         ) {
             SettingsSection("UNITS") {
                 SettingsRow("Speed") {
-                    SegmentedPicker(
+                    SettingsPicker(
                         options = listOf("MPH", "KPH"),
                         selected = speedUnit,
                         onSelect = { speedUnit = it },
                     )
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(4.dp))
                 SettingsRow("Temperature") {
-                    SegmentedPicker(
+                    SettingsPicker(
                         options = listOf("°F", "°C"),
                         selected = if (tempUnit == "F") "°F" else "°C",
                         onSelect = { tempUnit = if (it == "°F") "F" else "C" },
                     )
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(4.dp))
                 SettingsRow("Boost Pressure") {
-                    SegmentedPicker(
+                    SettingsPicker(
                         options = listOf("PSI", "BAR", "kPa"),
                         selected = when (boostUnit) { "BAR" -> "BAR"; "KPA" -> "kPa"; else -> "PSI" },
                         onSelect = { boostUnit = when (it) { "BAR" -> "BAR"; "kPa" -> "KPA"; else -> "PSI" } },
                     )
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(4.dp))
                 SettingsRow("Tire Pressure") {
-                    SegmentedPicker(
+                    SettingsPicker(
                         options = listOf("PSI", "BAR"),
                         selected = tireUnit,
                         onSelect = { tireUnit = it },
@@ -478,12 +455,68 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                             fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost),
                     )
                 }
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Red < ${AppSettings.DEFAULT_TIRE_LOW_PSI} | Gold < ${AppSettings.DEFAULT_TIRE_WARN_PSI} | " +
-                        "Green | Red > ${AppSettings.DEFAULT_TIRE_HIGH_PSI} PSI",
-                    fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
+                Spacer(Modifier.height(6.dp))
+                SettingsNote(
+                    "Below Low = critical · below Warn = caution · above High = over-inflated. " +
+                        "Defaults ${AppSettings.DEFAULT_TIRE_LOW_PSI} / ${AppSettings.DEFAULT_TIRE_WARN_PSI} / " +
+                        "${AppSettings.DEFAULT_TIRE_HIGH_PSI} psi."
                 )
+            }
+        },
+        NavSection(
+            SettingsCategory.THERMAL,
+            "THERMAL PROFILE",
+            listOf("thermal", "profile", "street", "track", "race", "custom", "warm-up", "warning", "critical",
+                "oil", "coolant", "ptu", "rdu", "clutch", "intake", "limit", "threshold", "readiness"),
+        ) {
+            val unitLabel = if (tempUnit == "C") "°C" else "°F"
+            val options = listOf("STREET", "TRACK", "RACE") + (if (customCells != null) listOf("CUSTOM") else emptyList())
+            // Sections are laid out in a Box — keep this page's blocks in one Column
+            Column {
+            SettingsSection("THERMAL PROFILE") {
+                SettingsRow("Active profile", stacked = options.size > 3) {
+                    SettingsPicker(options = options, selected = thermalPreset.uppercase(),
+                        onSelect = { thermalPreset = it.lowercase() }, fill = options.size > 3)
+                }
+                Spacer(Modifier.height(6.dp))
+                SettingsNote(
+                    "These values control openRS_ advisories — warnings, readiness and gauge colours. " +
+                        "They don't change the car's own protections. STREET, TRACK and RACE are existing " +
+                        "openRS_ defaults, not manufacturer limits."
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            val editing = thermalPreset == "custom" && customCells != null
+            val title = if (editing) "CUSTOM · copied from ${customBase.uppercase()}" else "${thermalPreset.uppercase()} · built-in, read only"
+            SettingsSection("VALUES · $unitLabel") {
+                InstrumentMeta(title)
+                Spacer(Modifier.height(6.dp))
+                val cells = if (editing) customCells!! else thermalCells(ThermalProfile.builtIn(thermalPreset), tempUnit)
+                ThermalProfileTable(cells, editable = editing, errors = if (editing) thermalErrors else emptyMap(),
+                    onEdit = { key, text -> customCells = customCells?.let { it + (key to it.getValue(key).copy(text = text)) }; error = null })
+                Spacer(Modifier.height(10.dp))
+                if (editing) {
+                    SettingsAction("RESET CUSTOM TO ${customBase.uppercase()} DEFAULTS", Modifier.fillMaxWidth(), tone = ActionTone.NEUTRAL) {
+                        customCells = thermalCells(ThermalProfile.builtIn(customBase), tempUnit); error = null
+                    }
+                } else {
+                    SettingsAction(
+                        (if (customCells != null) "REPLACE CUSTOM WITH " else "COPY TO CUSTOM: ") + thermalPreset.uppercase(),
+                        Modifier.fillMaxWidth(),
+                    ) {
+                        customBase = thermalPreset
+                        customCells = thermalCells(ThermalProfile.builtIn(thermalPreset), tempUnit)
+                        thermalPreset = "custom"; error = null
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                SettingsNote(
+                    "Order: warm-up < warning < critical. Critical must be more than " +
+                        "${if (tempUnit == "C") "2 °C" else "3.6 °F"} above warning and warning more than " +
+                        "${if (tempUnit == "C") "3 °C" else "5.4 °F"} above warm-up, so the existing recovery " +
+                        "margins still work. Freshness, hold times and forecasts don't change. SAVE applies, CANCEL discards."
+                )
+            }
             }
         },
         NavSection(
@@ -494,10 +527,12 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
             SettingsSection("ADAPTER") {
                 SettingsRow(
                     label = "Hardware",
+                    stacked = true,
                     help = "MeatPi USB (C3) speaks WebSocket SLCAN; MeatPi Pro (S3) speaks raw TCP.",
                 ) {
-                    SegmentedPicker(
+                    SettingsPicker(
                         options = listOf("MeatPi USB (C3)", "MeatPi Pro (S3)"),
+                        fill = true,
                         selected = if (adapterType == "MEATPI_PRO") "MeatPi Pro (S3)" else "MeatPi USB (C3)",
                         onSelect = { selected ->
                             val newType = if (selected == "MeatPi Pro (S3)") "MEATPI_PRO" else "MEATPI_USB"
@@ -519,7 +554,7 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                     )
                 }
                 if (adapterType == "MEATPI_PRO") {
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(4.dp))
                     SettingsSwitchRow(
                         label = "MicroSD logging reminder",
                         help = "SD logging is configured in the WiCAN Pro web UI at http://192.168.0.10/. " +
@@ -537,11 +572,13 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
             SettingsSection("METHOD") {
                 SettingsRow(
                     label = "Connection method",
+                    stacked = true,
                     help = "Both adapters support both transports. WiFi keeps LTE off; Bluetooth lets the phone " +
                         "stay on normal WiFi for internet.",
                 ) {
-                    SegmentedPicker(
+                    SettingsPicker(
                         options = listOf("WiFi", "Bluetooth"),
+                        fill = true,
                         selected = if (connectionMethod == "BLUETOOTH") "Bluetooth" else "WiFi",
                         onSelect = { selected ->
                             connectionMethod = if (selected == "Bluetooth") "BLUETOOTH" else "WIFI"
@@ -568,8 +605,7 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f)) {
-                                Text("Device", fontSize = 9.sp, color = Dim,
-                                    fontFamily = ShareTechMono, letterSpacing = 0.1.sp)
+                                InstrumentLabel("PAIRED DEVICE")
                                 Spacer(Modifier.height(4.dp))
                                 Text(bleName.value ?: "WiCAN", fontSize = 13.sp, color = Frost,
                                     fontFamily = ShareTechMono, fontWeight = FontWeight.SemiBold)
@@ -587,47 +623,24 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                                 .padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text("No device paired", fontSize = 11.sp, color = Dim,
+                            Text("No device paired", fontSize = 12.sp, color = Mid,
                                 fontFamily = ShareTechMono)
                         }
                         Spacer(Modifier.height(10.dp))
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(
-                            Modifier.weight(1f)
-                                .background(accent.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                                .border(CardBorder, accent.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                                .clickable { showBlePicker = true }
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text("SCAN FOR DEVICES", fontSize = 10.sp, color = accent,
-                                fontFamily = ShareTechMono, fontWeight = FontWeight.Bold,
-                                letterSpacing = 0.1.sp)
-                        }
+                        SettingsAction("SCAN FOR DEVICES", Modifier.weight(1f)) { showBlePicker = true }
                         if (bleAddr.value != null) {
-                            Box(
-                                Modifier.weight(1f)
-                                    .background(Orange.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
-                                    .border(CardBorder, Orange.copy(0.3f), RoundedCornerShape(8.dp))
-                                    .clickable {
-                                        AppSettings.clearBleDevice(ctx)
-                                        bleAddr.value = null; bleName.value = null
-                                    }
-                                    .padding(12.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text("FORGET", fontSize = 10.sp, color = Orange,
-                                    fontFamily = ShareTechMono, fontWeight = FontWeight.Bold,
-                                    letterSpacing = 0.1.sp)
+                            SettingsAction("FORGET", Modifier.weight(1f), tone = ActionTone.DESTRUCTIVE) {
+                                AppSettings.clearBleDevice(ctx)
+                                bleAddr.value = null; bleName.value = null
                             }
                         }
                     }
                     Spacer(Modifier.height(8.dp))
-                    Text(
+                    SettingsNote(
                         "For best results, forget the adapter's WiFi network in your phone's WiFi settings " +
-                            "to keep internet available while connected via Bluetooth.",
-                        fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
+                            "to keep internet available while connected via Bluetooth."
                     )
                 }
             } else {
@@ -658,12 +671,11 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                             fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost),
                     )
                     Spacer(Modifier.height(4.dp))
-                    Text(
+                    SettingsNote(
                         if (isPro)
                             "Default: $defaultHost:$defaultPort  (TCP SLCAN — configure port in WiCAN Pro web UI)"
                         else
-                            "Default: $defaultHost:$defaultPort  (WebSocket SLCAN)",
-                        fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
+                            "Default: $defaultHost:$defaultPort  (WebSocket SLCAN)"
                     )
 
                     // ── mDNS network scan ────────────────────────────────
@@ -673,46 +685,37 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                     var scanDone by remember { mutableStateOf(false) }
                     val scanScope = rememberCoroutineScope()
 
-                    Box(
-                        Modifier.fillMaxWidth()
-                            .background(accent.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                            .border(CardBorder, accent.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                            .then(if (scanning) Modifier else Modifier.clickable {
-                                scanning = true; scanDone = false; discovered = emptyList()
-                                scanScope.launch {
-                                    discovered = WicanDiscovery.scan(ctx)
-                                    scanning = false; scanDone = true
-                                }
-                            })
-                            .padding(12.dp),
-                        contentAlignment = Alignment.Center,
+                    SettingsAction(
+                        if (scanning) "SCANNING…" else "SCAN NETWORK",
+                        Modifier.fillMaxWidth(),
+                        enabled = !scanning,
                     ) {
-                        Text(
-                            if (scanning) "SCANNING…" else "SCAN NETWORK",
-                            fontSize = 10.sp, color = if (scanning) Dim else accent,
-                            fontFamily = ShareTechMono, fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.1.sp,
-                        )
+                        scanning = true; scanDone = false; discovered = emptyList()
+                        scanScope.launch {
+                            discovered = WicanDiscovery.scan(ctx)
+                            scanning = false; scanDone = true
+                        }
                     }
 
                     if (scanDone && discovered.isEmpty()) {
                         Spacer(Modifier.height(6.dp))
-                        Text("No WiCAN adapters found on the network.",
-                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono)
+                        SettingsNote("No WiCAN adapters found on the network.")
                     }
 
                     discovered.forEach { dev ->
                         Spacer(Modifier.height(6.dp))
                         Row(
                             Modifier.fillMaxWidth()
+                                .heightIn(min = 48.dp)
                                 .background(Surf2, RoundedCornerShape(8.dp))
-                                .border(CardBorder, Ok.copy(0.3f), RoundedCornerShape(8.dp))
+                                .border(CardBorder, Brd, RoundedCornerShape(8.dp))
+                                .clip(RoundedCornerShape(8.dp))
                                 .clickable {
                                     host = dev.host
                                     port = defaultPort.toString()
                                     error = null
                                 }
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f)) {
@@ -721,7 +724,7 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                                 Text(dev.host, fontSize = 10.sp, color = Dim,
                                     fontFamily = ShareTechMono)
                             }
-                            Text("USE", fontSize = 9.sp, color = Ok,
+                            Text("USE", fontSize = 11.sp, color = actionInk(accent),
                                 fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
                         }
                     }
@@ -740,7 +743,7 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                     checked = autoReconnect, onCheckedChange = { autoReconnect = it },
                 )
                 if (autoReconnect) {
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(4.dp))
                     SettingsRow(
                         label = "Retry interval",
                         help = "How long to wait between connection attempts. " +
@@ -765,20 +768,13 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
             listOf("drive", "record", "auto", "save", "history", "storage", "max"),
         ) {
             SettingsSection("DRIVES") {
-                SettingsRow(
+                SettingsSwitchRow(
                     label = "Auto-record drives",
                     help = "Automatically start recording when connected to your car.",
-                ) {
-                    Switch(
-                        checked = autoRecordDrives,
-                        onCheckedChange = { autoRecordDrives = it; error = null },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = accent,
-                            checkedTrackColor = accent.copy(alpha = 0.3f),
-                        ),
-                    )
-                }
-                Spacer(Modifier.height(10.dp))
+                    checked = autoRecordDrives,
+                    onCheckedChange = { autoRecordDrives = it; error = null },
+                )
+                Spacer(Modifier.height(4.dp))
                 SettingsRow(
                     label = "Max saved drives",
                     help = "Oldest drives are removed when this limit is exceeded. " +
@@ -802,20 +798,13 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
             listOf("dtc", "scan", "auto", "fault", "code"),
         ) {
             SettingsSection("DTC SCANNER") {
-                SettingsRow(
+                SettingsSwitchRow(
                     label = "Auto-scan on connect",
                     help = "Automatically scan for fault codes when the adapter connects. " +
                         "Results appear as a badge on the GARAGE tab.",
-                ) {
-                    Switch(
-                        checked = autoScanDtcs,
-                        onCheckedChange = { autoScanDtcs = it; error = null },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = accent,
-                            checkedTrackColor = accent.copy(alpha = 0.3f),
-                        ),
-                    )
-                }
+                    checked = autoScanDtcs,
+                    onCheckedChange = { autoScanDtcs = it; error = null },
+                )
             }
         },
         NavSection(
@@ -843,21 +832,19 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
         },
         NavSection(
             SettingsCategory.ABOUT,
+            "ABOUT OPENRS_",
+            listOf("about", "openrs", "brand", "version"),
+        ) {
+            AboutArtCard()
+        },
+        NavSection(
+            SettingsCategory.ABOUT,
             "WHAT'S NEW",
             listOf("changelog", "whats", "new", "version", "release"),
         ) {
             var showWhatsNewLocal by remember { mutableStateOf(false) }
-            Box(
-                Modifier.fillMaxWidth()
-                    .background(Surf2, RoundedCornerShape(8.dp))
-                    .border(CardBorder, Brd, RoundedCornerShape(8.dp))
-                    .clickable { showWhatsNewLocal = true }
-                    .padding(14.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("WHAT'S NEW IN v${BuildConfig.VERSION_NAME}", fontSize = 11.sp,
-                    color = accent, fontFamily = ShareTechMono, fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.1.sp)
+            SettingsAction("WHAT'S NEW IN v${BuildConfig.VERSION_NAME}", Modifier.fillMaxWidth()) {
+                showWhatsNewLocal = true
             }
             if (showWhatsNewLocal) {
                 WhatsNewDialog(onDismiss = { showWhatsNewLocal = false })
@@ -871,67 +858,73 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
         ) {
             val savedLayout = remember { AppSettings.loadCustomDash(ctx) }
             val gaugeCount = savedLayout?.cells?.size ?: 0
-            Box(
-                Modifier.fillMaxWidth()
-                    .background(accent.copy(0.08f), RoundedCornerShape(8.dp))
-                    .border(CardBorder, accent.copy(0.25f), RoundedCornerShape(8.dp))
-                    .clickable { onCustomDash(); onDismiss() }
-                    .padding(14.dp)
-            ) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text("Custom Dashboard", fontSize = 12.sp, color = Frost,
-                            fontFamily = ShareTechMono, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            if (gaugeCount > 0) "$gaugeCount gauges configured"
-                            else "Build a custom gauge layout",
-                            fontSize = 9.sp, color = Dim, fontFamily = ShareTechMono
-                        )
-                    }
-                    Text("\u25B6 OPEN", fontSize = 10.sp, color = accent,
-                        fontFamily = ShareTechMono, letterSpacing = 0.1.sp)
-                }
-            }
+            SettingsLinkRow(
+                title = "Custom Dashboard",
+                detail = if (gaugeCount > 0) "$gaugeCount gauges configured" else "Build a custom gauge layout",
+                action = "OPEN ›",
+            ) { onCustomDash(); cancel() }
         },
         NavSection(
             SettingsCategory.ABOUT,
             "SAPPHIRE WEB DASHBOARD",
             listOf("sapphire", "web", "browser", "analyse", "analyze"),
         ) {
-            Box(
-                Modifier.fillMaxWidth()
-                    .background(accent.copy(0.06f), RoundedCornerShape(8.dp))
-                    .border(CardBorder, accent.copy(0.2f), RoundedCornerShape(8.dp))
-                    .clickable {
-                        val intent = Intent(Intent.ACTION_VIEW,
-                            "https://klexical.github.io/openRS_/".toUri())
-                        ctx.startActivity(intent)
-                    }
-                    .padding(14.dp)
+            SettingsLinkRow(
+                title = "Sapphire",
+                detail = "Analyze trip & diagnostic data in your browser.",
+                action = "\u2197 OPEN",
             ) {
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("SAPPHIRE", fontSize = 11.sp, color = accent,
-                            fontFamily = ShareTechMono, fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.15.sp)
-                        Spacer(Modifier.weight(1f))
-                        Text("\u2197 OPEN", fontSize = 10.sp, color = accent,
-                            fontFamily = ShareTechMono, letterSpacing = 0.1.sp)
+                ctx.startActivity(Intent(Intent.ACTION_VIEW, "https://klexical.github.io/openRS_/".toUri()))
+            }
+        },
+    ) + if (!com.openrs.dash.demo.DemoMode.AVAILABLE) emptyList() else listOf(
+        NavSection(
+            SettingsCategory.DEVELOPER,
+            "DEMO MODE",
+            listOf("demo", "simulate", "fake", "test", "emulator", "developer"),
+        ) {
+            SettingsSection("DEMO MODE") {
+                Text(
+                    "Feeds simulated telemetry through the real dashboard. Adapter traffic stops " +
+                        "first; drive-mode, ESC and DTC commands only change simulated state; " +
+                        "nothing is recorded to trip history. Exiting leaves the app disconnected " +
+                        "until you tap connect. Applies immediately — not a saved setting.",
+                    fontSize = 11.sp, color = Mid, fontFamily = ShareTechMono, lineHeight = 15.sp,
+                )
+                Spacer(Modifier.height(12.dp))
+                com.openrs.dash.demo.DemoScenario.entries.forEach { sc ->
+                    val current = demoStatus.active && demoStatus.scenario == sc
+                    Box(
+                        Modifier.fillMaxWidth().padding(bottom = 6.dp).heightIn(min = 56.dp)
+                            .background(if (current) Warn.copy(alpha = pillBgAlpha(0.14f)) else Surf2, RoundedCornerShape(8.dp))
+                            .border(CardBorder, Warn.copy(alpha = borderAlpha(if (current) 0.6f else 0.25f)), RoundedCornerShape(8.dp))
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onStartDemo(sc); cancel() }
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                    ) {
+                        Column(Modifier.padding(end = 56.dp)) {
+                            Text(sc.label.uppercase(), fontSize = 11.sp, color = if (current) demoInk() else Frost,
+                                fontFamily = ShareTechMono, fontWeight = FontWeight.Bold, letterSpacing = 0.1.sp)
+                            Text(sc.blurb, fontSize = 10.sp, color = Mid, fontFamily = ShareTechMono,
+                                lineHeight = 13.sp)
+                        }
+                        Text(if (current) "RUNNING" else "\u25B6 START", fontSize = 10.sp, color = demoInk(),
+                            fontFamily = ShareTechMono, letterSpacing = 0.1.sp,
+                            modifier = Modifier.align(Alignment.CenterEnd))
                     }
+                }
+                if (demoStatus.active) {
                     Spacer(Modifier.height(4.dp))
-                    Text("Analyze trip & diagnostic data in your browser.",
-                        fontSize = 9.sp, color = Dim, fontFamily = ShareTechMono)
+                    SettingsAction("EXIT DEMO MODE", Modifier.fillMaxWidth(), tone = ActionTone.DESTRUCTIVE) {
+                        onExitDemo(); cancel()
+                    }
                 }
             }
         },
     )
 
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = cancel,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Column(
@@ -943,23 +936,29 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
         ) {
             // ── Title bar ────────────────────────────────────────────────────
             Row(
-                Modifier.fillMaxWidth().background(Surf3, RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
-                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                Modifier.fillMaxWidth().background(Surf, RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
+                    .padding(start = 18.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("open", fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = ShareTechMono, color = Frost)
-                    Text("RS", fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = ShareTechMono, color = accent)
-                    Text("_ Settings", fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = ShareTechMono, color = Frost)
+                    Wordmark(18.dp, base = Frost, accent = accent)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Settings", fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = ShareTechMono, color = Frost)
                 }
-                Text("✕", fontSize = 18.sp, color = Dim, modifier = Modifier.clickable { onDismiss() })
+                Box(
+                    Modifier.size(48.dp).clip(CircleShape).clickable(onClickLabel = "Close without saving") { cancel() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("✕", fontSize = 18.sp, color = Mid)
+                }
             }
+            HorizontalDivider(color = Brd)
 
             // ── Scrollable body ──────────────────────────────────────────────
             Column(
-                Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 // Compact about strip (always visible at top)
                 AboutStrip(
@@ -996,19 +995,13 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                                 textAlign = TextAlign.Center,
                             )
                         } else {
-                            Text(
+                            InstrumentMeta(
                                 "${matched.size} match${if (matched.size == 1) "" else "es"}",
-                                fontSize = 9.sp, color = Dim,
-                                fontFamily = ShareTechMono, letterSpacing = 1.2.sp,
-                                modifier = Modifier.padding(bottom = 4.dp),
+                                Modifier.padding(bottom = 2.dp),
                             )
                             matched.forEach { section ->
                                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Text(
-                                        section.category.label,
-                                        fontSize = 9.sp, color = Dim,
-                                        fontFamily = ShareTechMono, letterSpacing = 1.2.sp,
-                                    )
+                                    InstrumentLabel(section.category.label)
                                     section.body()
                                 }
                             }
@@ -1034,10 +1027,6 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                     }
                 }
 
-                // Error (inline above buttons)
-                if (error != null) {
-                    Text(error!!, fontSize = 12.sp, color = Orange, fontFamily = ShareTechMono)
-                }
             }
 
             if (showBlePicker) {
@@ -1051,43 +1040,35 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
             }
 
             // ── Action buttons ───────────────────────────────────────────────
+            // The version lives in the strip at the top of the body — the footer is only the actions,
+            // which leaves the settings more room on short screens.
             HorizontalDivider(color = Brd)
-            val versionLabel = buildString {
-                append("openRS_ v${BuildConfig.VERSION_NAME}")
-                if (BuildConfig.RC_SUFFIX.isNotEmpty()) append("-${BuildConfig.RC_SUFFIX}")
+            // A blocked SAVE says why right above the buttons (it used to sit at the end of the scrolled page,
+            // out of sight when the problem was further up)
+            if (error != null) {
+                Text(error!!, fontSize = 12.sp, color = textColor(Orange), fontFamily = ShareTechMono,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 8.dp),
+                    textAlign = TextAlign.Center)
             }
-            Text(
-                versionLabel,
-                fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                textAlign = TextAlign.Center,
-            )
             if (resetConfirm) {
                 Text(
-                    "Defaults restored — tap SAVE to apply",
-                    fontSize = 10.sp, color = Ok, fontFamily = ShareTechMono,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                    "Defaults staged — tap SAVE to apply, CANCEL to keep your settings",
+                    fontSize = 10.sp, color = Mid, fontFamily = ShareTechMono,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 8.dp),
                     textAlign = TextAlign.Center,
                 )
             }
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 OutlinedButton(
-                    onClick = {
-                        // Revert live-preview side effects to committed state
-                        setThemeMode(runCatching { ThemeMode.valueOf(current.themeMode) }
-                            .getOrDefault(ThemeMode.NIGHT))
-                        setClassicFonts(current.classicFonts)
-                        setThemeAccentPreview(null)
-                        onDismiss()
-                    },
-                    modifier = Modifier.weight(1f),
-                    border = ButtonDefaults.outlinedButtonBorder(enabled = true),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Dim),
+                    onClick = cancel,
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Brd),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Mid),
                 ) {
-                    Text("CANCEL", fontFamily = ShareTechMono, fontSize = 12.sp)
+                    Text("CANCEL", fontFamily = ShareTechMono, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
                 TextButton(
                     onClick = {
@@ -1125,22 +1106,21 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                         gearModeTint   = AppSettings.DEFAULT_GEAR_MODE_TINT
                         // Live-preview prefs also stage-only on RESET. Their
                         // pickers read themeModeLocal / classicFontsLocal /
-                        // driveAutoZoomLocal / themeIdLocal, so the UI will
+                        // themeIdLocal, so the UI will
                         // reflect the staged defaults immediately while the
                         // actual applied theme stays at its current value
                         // until SAVE.
                         themeModeLocal     = AppSettings.DEFAULT_THEME_MODE
                         classicFontsLocal  = AppSettings.DEFAULT_CLASSIC_FONTS
-                        driveAutoZoomLocal = AppSettings.DEFAULT_DRIVE_AUTO_ZOOM
                         themeIdLocal       = AppSettings.DEFAULT_THEME_ID
 
                         error         = null
                         resetConfirm  = true
                     },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColors(contentColor = Dim),
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                    colors = ButtonDefaults.textButtonColors(contentColor = Mid),
                 ) {
-                    Text("RESET", fontFamily = ShareTechMono, fontSize = 12.sp)
+                    Text("RESET", fontFamily = ShareTechMono, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
                 Button(
                     onClick = {
@@ -1163,6 +1143,7 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                             maxZips == null || maxZips < 1 -> error = "Max ZIPs must be ≥ 1"
                             maxDrives == null || maxDrives < 1 -> error = "Max drives must be ≥ 1"
                             edgeShiftLight && (shiftRpm == null || shiftRpm !in 1000..9000) -> error = "Shift RPM must be 1000–9000"
+                            thermalErrors.isNotEmpty() -> error = "THERMAL: fix the highlighted custom values"
                             else -> {
                                 AppSettings.save(ctx, host, p)
                                 UserPrefsStore.update(ctx) { it.copy(
@@ -1195,8 +1176,10 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                                     // state + visual side effects; committing here persists.
                                     themeMode            = themeModeLocal,
                                     classicFonts         = classicFontsLocal,
-                                    driveAutoZoom        = driveAutoZoomLocal,
                                     themeId              = themeIdLocal,
+                                    tempPreset           = thermalPreset,
+                                    customThermal        = customCells?.let { thermalProfileFrom(it) } ?: it.customThermal,
+                                    customThermalBase    = if (customCells != null) customBase else it.customThermalBase,
                                 )}
                                 // Ensure the runtime theme reflects whatever
                                 // the local state ended up at (covers the
@@ -1210,7 +1193,7 @@ fun SettingsDialog(onDismiss: () -> Unit, onCustomDash: () -> Unit = {}) {
                             }
                         }
                     },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = OnAccent),
                 ) {
                     Text("SAVE", fontFamily = ShareTechMono, fontWeight = FontWeight.Bold, fontSize = 12.sp)
@@ -1235,23 +1218,20 @@ private fun AboutStrip(
         if (BuildConfig.RC_SUFFIX.isNotEmpty()) append("-").append(BuildConfig.RC_SUFFIX)
         append(" · ").append(updateChannel)
     }
-    Column(
-        Modifier.fillMaxWidth()
-            .background(Surf2, RoundedCornerShape(10.dp))
-            .border(CardBorder, Brd, RoundedCornerShape(10.dp)),
-    ) {
+    Column(Modifier.fillMaxWidth().instrumentSurface(radius = 10.dp)) {
         Row(
             Modifier.fillMaxWidth()
-                .clickable { onToggle() }
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .heightIn(min = 48.dp)
+                .clickable(onClickLabel = if (expanded) "Hide updates" else "Show updates") { onToggle() }
+                .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(label, fontSize = 11.sp, color = Frost, fontFamily = ShareTechMono,
                 letterSpacing = 0.06.sp)
             Text(
-                if (expanded) "HIDE" else "CHECK",
-                fontSize = 10.sp, color = accent,
+                if (expanded) "HIDE" else "UPDATES",
+                fontSize = 11.sp, color = actionInk(accent),
                 fontFamily = ShareTechMono, fontWeight = FontWeight.Bold,
                 letterSpacing = 0.1.sp,
             )
@@ -1276,12 +1256,13 @@ private fun SearchField(value: String, onValueChange: (String) -> Unit) {
     val accent = LocalThemeAccent.current
     Row(
         Modifier.fillMaxWidth()
+            .heightIn(min = 48.dp)
             .background(Surf2, RoundedCornerShape(10.dp))
             .border(CardBorder, Brd, RoundedCornerShape(10.dp))
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(start = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("⌕", fontSize = 14.sp, color = Dim, fontFamily = ShareTechMono,
+        Text("⌕", fontSize = 14.sp, color = Mid, fontFamily = ShareTechMono,
             modifier = Modifier.padding(end = 10.dp))
         BasicTextField(
             value = value,
@@ -1291,7 +1272,7 @@ private fun SearchField(value: String, onValueChange: (String) -> Unit) {
             textStyle = androidx.compose.ui.text.TextStyle(
                 color = Frost, fontFamily = ShareTechMono, fontSize = 13.sp,
             ),
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).padding(vertical = 12.dp),
             decorationBox = { inner ->
                 if (value.isEmpty()) {
                     Text("Search settings…", fontSize = 13.sp, color = Dim,
@@ -1301,9 +1282,13 @@ private fun SearchField(value: String, onValueChange: (String) -> Unit) {
             },
         )
         if (value.isNotEmpty()) {
-            Text("✕", fontSize = 14.sp, color = Dim, fontFamily = ShareTechMono,
-                modifier = Modifier.clickable { onValueChange("") }.padding(start = 8.dp))
-        }
+            Box(
+                Modifier.size(48.dp).clip(CircleShape).clickable(onClickLabel = "Clear search") { onValueChange("") },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("✕", fontSize = 14.sp, color = Mid, fontFamily = ShareTechMono)
+            }
+        } else Spacer(Modifier.width(14.dp))
     }
 }
 
@@ -1311,7 +1296,9 @@ private fun SearchField(value: String, onValueChange: (String) -> Unit) {
 private fun CategoryGrid(onSelect: (SettingsCategory) -> Unit) {
     // rc.2: single-column list (owner's-manual feel) replaces the 6-tile grid that
     // the Daylight critique flagged as "Material Design DNA, generic" hierarchy.
-    val entries = SettingsCategory.entries
+    val entries = SettingsCategory.entries.filter {
+        it != SettingsCategory.DEVELOPER || com.openrs.dash.demo.DemoMode.AVAILABLE
+    }
     var entered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { entered = true }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1323,122 +1310,125 @@ private fun CategoryGrid(onSelect: (SettingsCategory) -> Unit) {
     }
 }
 
+/** One category: a flat instrument panel — name in ink, contents in Dim, a chevron. */
 @Composable
 private fun CategoryRow(category: SettingsCategory, onClick: () -> Unit) {
-    val accentM = accentMid()
-    val accentD = accentDim()
     Row(
         Modifier.fillMaxWidth()
-            .background(
-                Brush.verticalGradient(listOf(Surf2, Surf.copy(alpha = 0.5f))),
-                RoundedCornerShape(10.dp),
-            )
-            .border(CardBorder, Brd, RoundedCornerShape(10.dp))
+            .instrumentSurface(radius = 10.dp)
+            .clip(RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
-            .heightIn(min = 56.dp)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .heightIn(min = 60.dp)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier.width(3.dp).height(22.dp)
-                .background(accentM, RoundedCornerShape(1.5.dp)),
-        )
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            MonoLabel(category.label, 11.sp, accentM, letterSpacing = 1.4.sp)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            MonoLabel(category.label, 12.sp, Frost, FontWeight.Bold, letterSpacing = 0.8.sp)
             Text(category.blurb, fontSize = 11.sp, color = Dim, fontFamily = ShareTechMono)
         }
-        Text("›", fontSize = 22.sp, color = accentD, fontFamily = ShareTechMono,
+        Text("›", fontSize = 22.sp, color = Mid, fontFamily = ShareTechMono,
             modifier = Modifier.padding(start = 8.dp))
     }
 }
 
 @Composable
 private fun Breadcrumb(category: SettingsCategory, onBack: () -> Unit) {
-    val accentD = accentDim()
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onBack).padding(vertical = 4.dp),
+        Modifier.fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClickLabel = "All settings", onClick = onBack)
+            .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("‹", fontSize = 20.sp, color = accentD, fontFamily = ShareTechMono,
+        Text("‹", fontSize = 22.sp, color = Mid, fontFamily = ShareTechMono,
             modifier = Modifier.padding(end = 10.dp))
-        Text("Settings", fontSize = 11.sp, color = Dim, fontFamily = ShareTechMono,
+        Text("Settings", fontSize = 12.sp, color = Mid, fontFamily = ShareTechMono,
             letterSpacing = 0.08.sp)
-        Text(" › ", fontSize = 11.sp, color = Dim, fontFamily = ShareTechMono)
-        Text(category.label, fontSize = 11.sp, color = Frost, fontFamily = ShareTechMono,
+        Text("  ›  ", fontSize = 12.sp, color = Dim, fontFamily = ShareTechMono)
+        Text(category.label, fontSize = 12.sp, color = Frost, fontFamily = ShareTechMono,
             fontWeight = FontWeight.Bold, letterSpacing = 0.08.sp)
     }
 }
 
 // ── Reusable settings components ─────────────────────────────────────────────
 
+/** A group of settings: the shared instrument panel with a caption (was a gradient card with an accent bar). */
 @Composable
 private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
-    val accentM = accentMid()
     Column(
         Modifier.fillMaxWidth()
-            .background(
-                Brush.verticalGradient(listOf(Surf2, Surf.copy(alpha = 0.5f))),
-                RoundedCornerShape(10.dp),
-            )
-            .border(Tokens.CardBorder, Brd, RoundedCornerShape(10.dp))
-            .padding(16.dp),
+            .instrumentSurface(radius = 10.dp)
+            .padding(horizontal = 14.dp, vertical = 14.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.width(3.dp).height(14.dp)
-                    .background(accentM, RoundedCornerShape(1.5.dp)),
-            )
-            Spacer(Modifier.width(8.dp))
-            MonoLabel(title, 9.sp, accentM, letterSpacing = 1.5.sp)
-        }
-        Spacer(Modifier.height(14.dp))
+        InstrumentLabel(title, color = Mid)
+        Spacer(Modifier.height(10.dp))
         content()
     }
 }
 
+/** "?" toggle for a row's help text — 48 dp touch area around a 20 dp mark. */
+@Composable
+private fun HelpToggle(open: Boolean, onToggle: () -> Unit) {
+    val accent = LocalThemeAccent.current
+    Box(
+        Modifier.size(48.dp).clip(CircleShape)
+            .clickable(onClickLabel = if (open) "Hide help" else "Show help", onClick = onToggle),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier.size(20.dp)
+                .background(if (open) accent.copy(alpha = pillBgAlpha(0.14f)) else Color.Transparent, CircleShape)
+                .border(CardBorder, if (open) accent.copy(alpha = borderAlpha(0.6f)) else Mid, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("?", fontSize = 11.sp, color = if (open) actionInk(accent) else Mid,
+                fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun HelpText(help: String, open: Boolean) {
+    AnimatedVisibility(
+        visible = open,
+        enter = expandVertically() + fadeIn(),
+        exit = shrinkVertically() + fadeOut(),
+    ) {
+        Text(
+            help, fontSize = 11.sp, color = Mid, fontFamily = ShareTechMono, lineHeight = 15.sp,
+            modifier = Modifier.padding(bottom = 6.dp),
+        )
+    }
+}
+
+/**
+ * Label (+ help) with its control. [stacked] puts the control on its own full-width line — used for
+ * pickers whose options don't fit beside the label on a 360 dp phone.
+ */
 @Composable
 private fun SettingsRow(
     label: String,
     help: String? = null,
+    stacked: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     var helpOpen by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth()) {
         Row(
-            Modifier.fillMaxWidth(),
+            Modifier.fillMaxWidth().heightIn(min = 48.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                Text(label, fontSize = 13.sp, color = Frost, fontFamily = ShareTechMono)
-                if (help != null) {
-                    Spacer(Modifier.width(8.dp))
-                    Box(
-                        Modifier.size(16.dp)
-                            .border(CardBorder, Dim, CircleShape)
-                            .clickable { helpOpen = !helpOpen },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("?", fontSize = 9.sp, color = Dim, fontFamily = ShareTechMono,
-                            fontWeight = FontWeight.Bold)
-                    }
-                }
+                Text(label, fontSize = 13.sp, color = Frost, fontFamily = ShareTechMono,
+                    modifier = Modifier.weight(1f, fill = false))
+                if (help != null) HelpToggle(helpOpen) { helpOpen = !helpOpen }
             }
-            content()
+            if (!stacked) content()
         }
-        if (help != null) {
-            AnimatedVisibility(
-                visible = helpOpen,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut(),
-            ) {
-                Text(
-                    help, fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-            }
-        }
+        if (help != null) HelpText(help, helpOpen)
+        if (stacked) content()
     }
 }
 
@@ -1452,88 +1442,162 @@ private fun SettingsSwitchRow(
     var helpOpen by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth()) {
         Row(
-            Modifier.fillMaxWidth(),
+            Modifier.fillMaxWidth().heightIn(min = 48.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                Text(label, fontSize = 13.sp, color = Frost, fontFamily = ShareTechMono)
-                if (help != null) {
-                    Spacer(Modifier.width(8.dp))
-                    Box(
-                        Modifier.size(16.dp)
-                            .border(CardBorder, Dim, CircleShape)
-                            .clickable { helpOpen = !helpOpen },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("?", fontSize = 9.sp, color = Dim, fontFamily = ShareTechMono,
-                            fontWeight = FontWeight.Bold)
-                    }
-                }
+                Text(label, fontSize = 13.sp, color = Frost, fontFamily = ShareTechMono,
+                    modifier = Modifier.weight(1f, fill = false))
+                if (help != null) HelpToggle(helpOpen) { helpOpen = !helpOpen }
             }
             Switch(
                 checked = checked,
                 onCheckedChange = onCheckedChange,
                 colors = SwitchDefaults.colors(
-                    checkedThumbColor  = OnAccent,
-                    checkedTrackColor  = LocalThemeAccent.current,
-                    uncheckedThumbColor = Dim,
-                    uncheckedTrackColor = Brd,
+                    checkedThumbColor    = OnAccent,
+                    checkedTrackColor    = LocalThemeAccent.current,
+                    checkedBorderColor   = LocalThemeAccent.current,
+                    uncheckedThumbColor  = Mid,
+                    uncheckedTrackColor  = Surf3,
+                    uncheckedBorderColor = Mid.copy(alpha = 0.6f),
                 ),
             )
         }
-        if (help != null) {
-            AnimatedVisibility(
-                visible = helpOpen,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut(),
-            ) {
-                Text(
-                    help, fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-            }
-        }
+        if (help != null) HelpText(help, helpOpen)
     }
 }
 
+/**
+ * Option picker (Settings, PERF knock scope): the selected option is an accent tint with its label in [actionInk] (dark on
+ * DAY) — the chip style used across the app — instead of a solid fill. Every option is a 44 dp chip in
+ * a 48 dp control. [fill] spreads the options across the row (stacked rows).
+ */
 @Composable
-fun SegmentedPicker(options: List<String>, selected: String, onSelect: (String) -> Unit) {
-    val pickerAccent = LocalThemeAccent.current
+fun SegmentedPicker(
+    options: List<String>,
+    selected: String,
+    onSelect: (String) -> Unit,
+    fill: Boolean = false,
+) {
+    val accent = LocalThemeAccent.current
     val haptic = LocalHapticFeedback.current
     Row(
         Modifier
-            .background(Brd, RoundedCornerShape(6.dp))
+            .then(if (fill) Modifier.fillMaxWidth() else Modifier)
+            .background(Surf2, RoundedCornerShape(8.dp))
+            .border(CardBorder, Brd, RoundedCornerShape(8.dp))
             .padding(2.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         options.forEach { option ->
             val isSelected = option == selected
             val bgColor by animateColorAsState(
-                targetValue = if (isSelected) pickerAccent else Color.Transparent,
+                targetValue = if (isSelected) accent.copy(alpha = pillBgAlpha(0.16f)) else Color.Transparent,
                 animationSpec = tween(250), label = "segBg",
             )
             val borderColor by animateColorAsState(
-                targetValue = if (isSelected) pickerAccent.copy(alpha = 0.6f) else Color.Transparent,
+                targetValue = if (isSelected) accent.copy(alpha = borderAlpha(0.6f)) else Color.Transparent,
                 animationSpec = tween(250), label = "segBrd",
             )
             Box(
                 Modifier
-                    .background(bgColor, RoundedCornerShape(4.dp))
-                    .border(CardBorder, borderColor, RoundedCornerShape(4.dp))
+                    .then(if (fill) Modifier.weight(1f) else Modifier)
+                    .heightIn(min = 44.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(bgColor, RoundedCornerShape(6.dp))
+                    .border(CardBorder, borderColor, RoundedCornerShape(6.dp))
                     .clickable { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onSelect(option) }
-                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
                 contentAlignment = Alignment.Center,
             ) {
+                // Wraps (centred) rather than clipping — "MeatPi USB (C3)" must keep its model code.
                 Text(
                     option,
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                     fontFamily = ShareTechMono,
-                    color = if (isSelected) OnAccent else Dim,
+                    color = if (isSelected) actionInk(accent) else Mid,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 15.sp,
                 )
             }
         }
+    }
+}
+
+/** Settings' picker — the shared [SegmentedPicker]. */
+@Composable
+private fun SettingsPicker(
+    options: List<String>,
+    selected: String,
+    onSelect: (String) -> Unit,
+    fill: Boolean = false,
+) = SegmentedPicker(options, selected, onSelect, fill)
+
+
+/** Explanatory text under a setting — one size and colour for every note (were 9–10 sp). */
+@Composable
+private fun SettingsNote(text: String) =
+    Text(text, fontSize = 11.sp, color = Dim, fontFamily = ShareTechMono, lineHeight = 15.sp)
+
+private enum class ActionTone { ACCENT, NEUTRAL, DESTRUCTIVE }
+
+/**
+ * Full-width settings action: 48 dp, label in [actionInk] on the accent tint. DESTRUCTIVE (forget, stop,
+ * exit demo) keeps the orange outline TRIP uses for STOP; NEUTRAL is for unavailable / in-progress states.
+ * Status colours (green / orange) no longer stand in for "go" — start / install / grant read as actions.
+ */
+@Composable
+private fun SettingsAction(
+    text: String,
+    modifier: Modifier = Modifier,
+    tone: ActionTone = ActionTone.ACCENT,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val accent = LocalThemeAccent.current
+    val shape = RoundedCornerShape(10.dp)
+    val (bg, edge, ink) = when {
+        !enabled -> Triple(Surf2, Brd, Dim)
+        tone == ActionTone.DESTRUCTIVE -> Triple(Orange.copy(alpha = pillBgAlpha(0.08f)), Orange.copy(alpha = borderAlpha(0.45f)), Orange)
+        tone == ActionTone.NEUTRAL -> Triple(Surf2, Brd, Mid)
+        else -> Triple(accent.copy(alpha = pillBgAlpha(0.12f)), accent.copy(alpha = borderAlpha(0.45f)), actionInk(accent))
+    }
+    Box(
+        modifier
+            .heightIn(min = 48.dp)
+            .background(bg, shape)
+            .border(CardBorder, edge, shape)
+            .clip(shape)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, fontSize = 11.sp, color = ink, fontFamily = ShareTechMono,
+            fontWeight = FontWeight.Bold, letterSpacing = 0.1.sp, textAlign = TextAlign.Center)
+    }
+}
+
+/** A row that opens something (custom dashboard, Sapphire): title, one line of detail, the action on the right. */
+@Composable
+private fun SettingsLinkRow(title: String, detail: String, action: String, onClick: () -> Unit) {
+    val accent = LocalThemeAccent.current
+    Row(
+        Modifier.fillMaxWidth()
+            .instrumentSurface(radius = 10.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .heightIn(min = 60.dp)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(title, fontSize = 13.sp, color = Frost, fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
+            Text(detail, fontSize = 11.sp, color = Dim, fontFamily = ShareTechMono)
+        }
+        Text(action, fontSize = 11.sp, color = actionInk(accent), fontFamily = ShareTechMono,
+            fontWeight = FontWeight.Bold, letterSpacing = 0.1.sp, modifier = Modifier.padding(start = 8.dp))
     }
 }
 
@@ -1556,7 +1620,7 @@ private fun AppUpdatesSection(
             help = if (updateChannel == "beta") "Includes pre-release (RC) builds from GitHub"
                    else "Only stable releases from GitHub",
         ) {
-            SegmentedPicker(
+            SettingsPicker(
                 options = listOf("stable", "beta"),
                 selected = updateChannel,
                 onSelect = onChannelChange,
@@ -1564,19 +1628,8 @@ private fun AppUpdatesSection(
         }
 
         // ── Check for updates button ────────────────────────────────────
-        Box(
-            Modifier.fillMaxWidth()
-                .background(Surf2, RoundedCornerShape(8.dp))
-                .border(CardBorder, Brd, RoundedCornerShape(8.dp))
-                .clickable {
-                    scope.launch { UpdateManager.checkForUpdate(ctx, updateChannel) }
-                }
-                .padding(14.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("CHECK FOR UPDATES", fontSize = 11.sp,
-                color = accent, fontFamily = ShareTechMono, fontWeight = FontWeight.Bold,
-                letterSpacing = 0.1.sp)
+        SettingsAction("CHECK FOR UPDATES", Modifier.fillMaxWidth(), enabled = updateState !is UpdateState.Checking) {
+            scope.launch { UpdateManager.checkForUpdate(ctx, updateChannel) }
         }
 
         // ── Status display ──────────────────────────────────────────────
@@ -1591,7 +1644,7 @@ private fun AppUpdatesSection(
                         modifier = Modifier.size(16.dp),
                         color = accent, strokeWidth = 2.dp,
                     )
-                    Text("Checking for updates...", fontSize = 11.sp, color = Dim, fontFamily = ShareTechMono)
+                    Text("Checking for updates…", fontSize = 11.sp, color = Mid, fontFamily = ShareTechMono)
                 }
             }
             is UpdateState.Available -> {
@@ -1599,63 +1652,36 @@ private fun AppUpdatesSection(
                     Text(
                         "v${state.version.displayName} available" +
                             if (state.isPrerelease) "  (pre-release)" else "",
-                        fontSize = 12.sp, color = Ok, fontFamily = ShareTechMono,
+                        fontSize = 13.sp, color = Frost, fontFamily = ShareTechMono,
                         fontWeight = FontWeight.Bold,
                     )
                     if (state.fileSizeBytes > 0) {
-                        Text(
-                            "%.1f MB".format(state.fileSizeBytes / 1_048_576.0),
-                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
-                        )
+                        SettingsNote("%.1f MB".format(state.fileSizeBytes / 1_048_576.0))
                     }
                     if (state.releaseNotes.isNotEmpty()) {
                         Text(
                             state.releaseNotes.take(300) +
                                 if (state.releaseNotes.length > 300) "..." else "",
-                            fontSize = 10.sp, color = Mid, fontFamily = ShareTechMono,
-                            lineHeight = 14.sp,
+                            fontSize = 11.sp, color = Mid, fontFamily = ShareTechMono,
+                            lineHeight = 15.sp,
                         )
                     }
 
                     val canInstall = ctx.packageManager.canRequestPackageInstalls()
                     if (!canInstall) {
-                        Text(
-                            "Allow app installs from openRS_ in system settings to continue",
-                            fontSize = 10.sp, color = Orange, fontFamily = ShareTechMono,
-                        )
-                        Box(
-                            Modifier.fillMaxWidth()
-                                .background(Orange.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
-                                .border(CardBorder, Orange.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                                .clickable {
-                                    ctx.startActivity(
-                                        Intent(
-                                            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                                            "package:${ctx.packageName}".toUri(),
-                                        ),
-                                    )
-                                }
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text("OPEN INSTALL SETTINGS", fontSize = 11.sp,
-                                color = Orange, fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
+                        // A step to take, not a fault — the note is neutral and the button is the action.
+                        SettingsNote("Allow app installs from openRS_ in system settings to continue")
+                        SettingsAction("OPEN INSTALL SETTINGS", Modifier.fillMaxWidth()) {
+                            ctx.startActivity(
+                                Intent(
+                                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                    "package:${ctx.packageName}".toUri(),
+                                ),
+                            )
                         }
                     } else {
-                        Box(
-                            Modifier.fillMaxWidth()
-                                .background(accent.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
-                                .border(CardBorder, accent.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                                .clickable {
-                                    scope.launch {
-                                        UpdateManager.downloadUpdate(ctx, state.downloadUrl)
-                                    }
-                                }
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text("DOWNLOAD", fontSize = 11.sp,
-                                color = accent, fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
+                        SettingsAction("DOWNLOAD", Modifier.fillMaxWidth()) {
+                            scope.launch { UpdateManager.downloadUpdate(ctx, state.downloadUrl) }
                         }
                     }
                 }
@@ -1674,7 +1700,7 @@ private fun AppUpdatesSection(
                                     state.bytesDownloaded / 1_048_576.0,
                                     state.totalBytes / 1_048_576.0,
                                 ),
-                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
+                            fontSize = 11.sp, color = Mid, fontFamily = ShareTechMono,
                         )
                     } else {
                         LinearProgressIndicator(
@@ -1683,32 +1709,22 @@ private fun AppUpdatesSection(
                         )
                         Text(
                             "Downloading... %.1f MB".format(state.bytesDownloaded / 1_048_576.0),
-                            fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono,
+                            fontSize = 11.sp, color = Mid, fontFamily = ShareTechMono,
                         )
                     }
                 }
             }
             is UpdateState.ReadyToInstall -> {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Download complete", fontSize = 11.sp, color = Ok, fontFamily = ShareTechMono)
-                    Box(
-                        Modifier.fillMaxWidth()
-                            .background(Ok.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
-                            .border(CardBorder, Ok.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                            .clickable { UpdateManager.installApk(ctx, state.apkFile) }
-                            .padding(12.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("INSTALL", fontSize = 11.sp,
-                            color = Ok, fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
-                    }
+                    Text("Download complete", fontSize = 12.sp, color = Frost, fontFamily = ShareTechMono,
+                        fontWeight = FontWeight.Bold)
+                    SettingsAction("INSTALL", Modifier.fillMaxWidth()) { UpdateManager.installApk(ctx, state.apkFile) }
                 }
             }
             is UpdateState.Error -> {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(state.message, fontSize = 11.sp, color = Orange, fontFamily = ShareTechMono)
-                    Text("Tap 'Check for updates' to retry",
-                        fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono)
+                    SettingsNote("Tap CHECK FOR UPDATES to retry")
                 }
             }
         }
@@ -1727,4 +1743,79 @@ private fun outlinedFieldColors(): TextFieldColors {
         focusedTextColor      = Frost,
         unfocusedTextColor    = Frost,
     )
+}
+
+
+// ── Thermal profile editor ──────────────────────────────────────────────────
+
+private fun thermalCells(p: ThermalProfile, unit: String): Map<String, ThermalCell> =
+    ThermalProfile.FIELDS.associate { it.key to ThermalCell.of(it.get(p), unit) }
+
+/** Builds the profile from validated cells (callers check [validateThermalProfile] first). */
+private fun thermalProfileFrom(cells: Map<String, ThermalCell>): ThermalProfile =
+    ThermalProfile.FIELDS.fold(ThermalProfile.STREET) { p, f -> f.set(p, cells.getValue(f.key).resolvedC ?: f.get(p)) }
+
+/** One block per sensor: name, then warm-up / warning / critical side by side (read-only for built-ins). */
+@Composable
+private fun ThermalProfileTable(
+    cells: Map<String, ThermalCell>, editable: Boolean, errors: Map<String, String>, onEdit: (String, String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        ThermalRow.entries.forEach { row ->
+            val fields = ThermalProfile.FIELDS.filter { it.row == row }
+            Column {
+                Text(row.label, fontSize = 13.sp, color = Frost, fontFamily = ShareTechMono, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ThermalKind.entries.forEach { kind ->
+                        val f = fields.firstOrNull { it.kind == kind }
+                        Column(Modifier.weight(1f)) {
+                            if (f == null) return@Column
+                            val cell = cells.getValue(f.key)
+                            InstrumentMeta(kind.label)
+                            if (editable) {
+                                OutlinedTextField(
+                                    value = cell.text, onValueChange = { onEdit(f.key, it) },
+                                    singleLine = true, isError = f.key in errors,
+                                    modifier = Modifier.fillMaxWidth().semantics { contentDescription = "${row.label} ${kind.label}" },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    colors = outlinedFieldColors(),
+                                    textStyle = androidx.compose.ui.text.TextStyle(fontFamily = ShareTechMono, fontSize = 14.sp, color = Frost),
+                                )
+                            } else {
+                                Text(cell.text, fontSize = 15.sp, color = Frost, fontFamily = ShareTechMono,
+                                    modifier = Modifier.heightIn(min = 32.dp).padding(top = 6.dp))
+                            }
+                        }
+                    }
+                }
+                fields.mapNotNull { errors[it.key]?.let { e -> "${it.kind.label}: $e" } }.forEach {
+                    Text(it, fontSize = 11.sp, color = textColor(Orange), fontFamily = ShareTechMono, lineHeight = 15.sp,
+                        modifier = Modifier.padding(top = 3.dp))
+                }
+            }
+        }
+    }
+}
+
+
+/** ABOUT: the concept sheet's launch artwork (wide car + telemetry trace, its own wordmark) with the tagline. */
+@Composable
+private fun AboutArtCard() {
+    val shape = RoundedCornerShape(10.dp)
+    Column(Modifier.fillMaxWidth().instrumentSurface(radius = 10.dp).clip(shape)) {
+        androidx.compose.foundation.Image(
+            androidx.compose.ui.graphics.ImageBitmap.imageResource(R.drawable.rs_launch_art),
+            contentDescription = "openRS_ — Focus RS on a track with a telemetry trace",
+            modifier = Modifier.fillMaxWidth().aspectRatio(492f / 226f),
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            filterQuality = androidx.compose.ui.graphics.FilterQuality.High,
+        )
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+            Text("Built for the car Ford should have given us an app for.", fontSize = 12.sp, color = Frost,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.SansSerif, lineHeight = 16.sp)
+            Spacer(Modifier.height(4.dp))
+            Text("Open-source telemetry for the Focus RS MK3.", fontSize = 11.sp, color = Dim, fontFamily = ShareTechMono)
+        }
+    }
 }

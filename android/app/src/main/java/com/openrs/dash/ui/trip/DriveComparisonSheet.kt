@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -39,7 +40,9 @@ fun DriveComparisonSheet(
     driveA: DriveEntity,
     driveB: DriveEntity,
     prefs: UserPrefs,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    /** Debug TRIP preview: sample drives — label the sheet. */
+    previewNotice: Boolean = false
 ) {
     val accent = LocalThemeAccent.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -66,42 +69,29 @@ fun DriveComparisonSheet(
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 32.dp)
         ) {
+            if (previewNotice) PreviewSheetNotice()
             // ── Title ──
-            MonoText(
-                "DRIVE COMPARISON", 13.sp, Frost, FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Spacer(Modifier.height(4.dp))
-            NeonDivider()
-            Spacer(Modifier.height(6.dp))
+            InstrumentLabel("DRIVE COMPARISON", color = Mid)
+            Spacer(Modifier.height(10.dp))
 
             // ── Column headers: Drive A | vs | Drive B ──
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    MonoLabel(
-                        driveA.name ?: "DRIVE A", 9.sp, accent,
-                        fontWeight = FontWeight.Bold
-                    )
+                // Drive names in ink, readable (were 9 sp paint-blue labels)
+                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                    UIText(driveA.name ?: "Drive A", 14.sp, Frost, FontWeight.SemiBold)
                 }
-                Box(Modifier.width(56.dp), contentAlignment = Alignment.Center) {
-                    MonoLabel("vs", 8.sp, Dim)
+                Box(Modifier.width(96.dp), contentAlignment = Alignment.Center) {
+                    InstrumentLabel("vs")
                 }
-                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    MonoLabel(
-                        driveB.name ?: "DRIVE B", 9.sp, accent,
-                        fontWeight = FontWeight.Bold
-                    )
+                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                    UIText(driveB.name ?: "Drive B", 14.sp, Frost, FontWeight.SemiBold)
                 }
             }
 
-            Spacer(Modifier.height(6.dp))
-            NeonDivider()
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
 
             // ── Metric rows ──
 
@@ -144,8 +134,7 @@ fun DriveComparisonSheet(
                 delta = formatSpeedDelta(driveB.maxSpeedKph - driveA.maxSpeedKph, prefs)
             )
 
-            NeonDivider()
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
 
             ComparisonRow(
                 label = "PEAK RPM",
@@ -167,21 +156,20 @@ fun DriveComparisonSheet(
 
             ComparisonRow(
                 label = "PEAK LAT G",
-                valueA = "%.2f G".format(driveA.peakLateralG),
-                valueB = "%.2f G".format(driveB.peakLateralG),
+                valueA = "%.2f g".format(driveA.peakLateralG),
+                valueB = "%.2f g".format(driveB.peakLateralG),
                 direction = DeltaDirection.HIGHER_BETTER,
                 rawDelta = driveB.peakLateralG - driveA.peakLateralG,
                 delta = formatGDelta(driveB.peakLateralG - driveA.peakLateralG)
             )
 
-            NeonDivider()
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
 
             // Oil: show start -> peak progression
             val oilA = formatTempProgression(driveA.startOilTempC, driveA.peakOilTempC, prefs)
             val oilB = formatTempProgression(driveB.startOilTempC, driveB.peakOilTempC, prefs)
             ComparisonRow(
-                label = "OIL TEMP",
+                label = "OIL",
                 valueA = oilA,
                 valueB = oilB,
                 direction = DeltaDirection.NEUTRAL,
@@ -191,15 +179,14 @@ fun DriveComparisonSheet(
             val cltA = formatTempProgression(driveA.startCoolantTempC, driveA.peakCoolantTempC, prefs)
             val cltB = formatTempProgression(driveB.startCoolantTempC, driveB.peakCoolantTempC, prefs)
             ComparisonRow(
-                label = "CLT TEMP",
+                label = "COOLANT",
                 valueA = cltA,
                 valueB = cltB,
                 direction = DeltaDirection.NEUTRAL,
                 delta = formatTempDelta(driveB.peakCoolantTempC, driveA.peakCoolantTempC, prefs)
             )
 
-            NeonDivider()
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
 
             ComparisonRow(
                 label = "FUEL USED",
@@ -211,7 +198,7 @@ fun DriveComparisonSheet(
             )
 
             ComparisonRow(
-                label = "AGGRESSION",
+                label = "SCORE",
                 valueA = "${driveA.aggressionScore}",
                 valueB = "${driveB.aggressionScore}",
                 direction = DeltaDirection.HIGHER_BETTER,
@@ -219,8 +206,6 @@ fun DriveComparisonSheet(
                 delta = formatIntDelta(driveB.aggressionScore - driveA.aggressionScore)
             )
 
-            Spacer(Modifier.height(12.dp))
-            NeonDivider()
             Spacer(Modifier.height(12.dp))
 
             // ── Dismiss button ──
@@ -230,10 +215,10 @@ fun DriveComparisonSheet(
                     .background(Surf2)
                     .border(Tokens.CardBorder, Brd, RoundedCornerShape(8.dp))
                     .clickable { onDismiss() }
-                    .padding(vertical = 12.dp),
+                    .heightIn(min = 48.dp),
                 contentAlignment = Alignment.Center
             ) {
-                MonoText("DISMISS", 12.sp, Mid, FontWeight.Bold)
+                MonoText("DISMISS", 13.sp, Mid, FontWeight.Bold)
             }
         }
     }
@@ -257,37 +242,28 @@ private fun ComparisonRow(
     Row(
         Modifier.fillMaxWidth()
             .padding(vertical = 3.dp)
-            .background(Surf2, Tokens.CardShape)
-            .border(Tokens.CardBorder, Brd, Tokens.CardShape)
-            .padding(horizontal = 8.dp, vertical = 8.dp),
+            .instrumentSurface()
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Drive A value
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
-            MonoText(valueA, 11.sp, Frost, FontWeight.Bold, textAlign = TextAlign.End)
+            DataNum(valueA, 15.sp, Frost)
         }
 
-        // Center: label + delta
+        // Center: label + delta (B − A). Neutral — the old green / orange called higher RPM, boost, score
+        // and lower fuel "better"; a comparison reports the difference, it doesn't judge it.
         Column(
-            Modifier.width(80.dp).padding(horizontal = 4.dp),
+            Modifier.width(96.dp).padding(horizontal = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            MonoLabel(label, 8.sp, Dim, fontWeight = FontWeight.Bold)
-            if (delta.isNotBlank()) {
-                val deltaColor = when (direction) {
-                    DeltaDirection.NEUTRAL -> Mid
-                    DeltaDirection.HIGHER_BETTER ->
-                        if (rawDelta > 0) Ok else if (rawDelta < 0) Orange else Mid
-                    DeltaDirection.LOWER_BETTER ->
-                        if (rawDelta < 0) Ok else if (rawDelta > 0) Orange else Mid
-                }
-                MonoLabel(delta, 8.sp, deltaColor)
-            }
+            InstrumentLabel(label)
+            if (delta.isNotBlank()) MonoLabel(delta, 10.sp, Mid, FontWeight.Medium)
         }
 
         // Drive B value
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-            MonoText(valueB, 11.sp, Frost, FontWeight.Bold, textAlign = TextAlign.Start)
+            DataNum(valueB, 15.sp, Frost)
         }
     }
 }
@@ -354,7 +330,7 @@ private fun formatBoostDelta(deltaPsi: Double, prefs: UserPrefs): String {
 private fun formatGDelta(delta: Double): String {
     if (abs(delta) < 0.005) return ""
     val prefix = if (delta > 0) "+" else ""
-    return "$prefix%.2f G".format(delta)
+    return "$prefix%.2f g".format(delta)
 }
 
 private fun formatTempProgression(startC: Double, peakC: Double, prefs: UserPrefs): String {

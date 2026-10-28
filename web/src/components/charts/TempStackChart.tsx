@@ -5,6 +5,7 @@ import {
 } from 'recharts'
 import { colors, chartColors } from '../../styles/tokens'
 import type { TripPoint } from '../../types/session'
+import { tempStackData } from '../../lib/readings'
 
 interface Props {
   points: TripPoint[]
@@ -12,23 +13,15 @@ interface Props {
 }
 
 const series = [
-  { key: 'coolantC', label: 'Coolant', color: colors.accent },
+  { key: 'coolantC', label: 'Coolant', color: colors.cyan },
   { key: 'oilTempC', label: 'Oil', color: colors.orange },
   { key: 'rduTempC', label: 'RDU', color: chartColors[4] },
   { key: 'ptuTempC', label: 'PTU', color: chartColors[3] },
 ] as const
 
 export function TempStackChart({ points, syncId }: Props) {
-  const data = useMemo(() => {
-    const t0 = points[0]?.ts ?? 0
-    return points.map((p) => ({
-      ts: (p.ts - t0) / 1000,
-      coolantC: p.coolantC > -90 ? p.coolantC : 0,
-      oilTempC: p.oilTempC > -90 ? p.oilTempC : 0,
-      rduTempC: p.rduTempC > -90 ? p.rduTempC : 0,
-      ptuTempC: p.ptuTempC > -90 ? p.ptuTempC : 0,
-    }))
-  }, [points])
+  // Missing readings are null: Recharts (3.8) breaks a stacked layer at a null instead of dropping it to 0
+  const data = useMemo(() => tempStackData(points), [points])
 
   if (data.length === 0) {
     return (

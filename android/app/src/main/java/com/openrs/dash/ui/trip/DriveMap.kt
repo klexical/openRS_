@@ -25,6 +25,9 @@ import com.openrs.dash.ui.Ok
 import com.openrs.dash.ui.Orange
 import com.openrs.dash.ui.Warn
 import com.openrs.dash.ui.effectiveThemeIsDay
+import com.openrs.dash.ui.UnitConversions
+import com.openrs.dash.ui.UserPrefs
+import com.openrs.dash.ui.UserPrefsStore
 import androidx.compose.ui.geometry.Offset
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -70,7 +73,8 @@ fun DriveMap(
     isPaused: Boolean = false,
     hasLocationPermission: Boolean = false,
     mapType: MapType = MapType.NORMAL,
-    cameraPositionState: CameraPositionState = rememberCameraPositionState()
+    cameraPositionState: CameraPositionState = rememberCameraPositionState(),
+    prefs: UserPrefs = UserPrefsStore.prefs.value
 ) {
     val context = LocalContext.current
     val isDay = effectiveThemeIsDay()
@@ -211,9 +215,9 @@ fun DriveMap(
         peakEvents.forEach { peak ->
             val (color, label) = when (peak.type) {
                 PeakType.RPM -> Warn to "RPM: ${peak.value.toInt()}"
-                PeakType.BOOST -> Accent to "Boost: ${"%.1f".format(peak.value)} PSI"
+                PeakType.BOOST -> Accent to "Boost: ${boostText(peak.value, prefs)}"
                 PeakType.LATERAL_G -> Orange to "Lat-G: ${"%.2f".format(peak.value)}"
-                PeakType.SPEED -> Frost to "Speed: ${"%.0f".format(peak.value)} km/h"
+                PeakType.SPEED -> Frost to "Speed: ${prefs.displaySpeed(peak.value)} ${speedUnitText(prefs)}"
             }
             Marker(
                 state = MarkerState(position = LatLng(peak.lat, peak.lng)),
@@ -228,8 +232,10 @@ fun DriveMap(
         rtrPoint?.let {
             Marker(
                 state = MarkerState(position = LatLng(it.lat, it.lng)),
-                title = "Race Ready",
-                snippet = "RTR achieved",
+                // Where the thermal verdict first read TEMPS READY: temps inside the openRS_ advisory limits, not a
+                // statement that the car is ready for the track
+                title = "Temps ready",
+                snippet = "Thermal verdict: TEMPS READY",
                 icon = BitmapDescriptorFactory.defaultMarker(colorToHue(Ok)),
                 zIndex = 5f
             )
@@ -239,9 +245,9 @@ fun DriveMap(
         bookmarks.forEach { bm ->
             val snippet = buildString {
                 if (bm.label.isNotEmpty()) append(bm.label).append(" — ")
-                append("${"%.0f".format(bm.speedKph)} km/h")
+                append("${prefs.displaySpeed(bm.speedKph)} ${speedUnitText(prefs)}")
                 if (bm.rpm > 0) append(" · ${bm.rpm} RPM")
-                if (bm.boostPsi > 0) append(" · ${"%.1f".format(bm.boostPsi)} PSI")
+                if (bm.boostPsi > 0) append(" · ${boostText(bm.boostPsi, prefs)}")
             }
             Marker(
                 state = MarkerState(position = LatLng(bm.lat, bm.lng)),
@@ -357,16 +363,47 @@ internal fun pointColor(point: DrivePointEntity, mode: ColorMode): Color = when 
 }
 
 /** Legend entries for each color mode — label + color pairs. */
-internal fun colorLegend(mode: ColorMode): List<Pair<String, Color>> = when (mode) {
-    ColorMode.SPEED -> listOf("<60" to Ok, "60-100" to Accent, "100-140" to Warn, "140+" to Orange)
+/**
+ * Legend bands in the user's units. [pointColor]'s thresholds are stored units — speed km/h (60 / 100 / 140),
+ * boost psi (0 / 8 / 16), oil °C (90 / 110) — and stay as they are; only the printed boundaries convert, so
+ * MPH reads <37 / 37–62 / 62–87 / 87+. [legendUnit] is shown once after the mode label.
+ */
+internal fun colorLegend(mode: ColorMode, prefs: UserPrefs): List<Pair<String, Color>> = when (mode) {
+    ColorMode.SPEED -> {
+        val (a, b, c) = listOf(60.0, 100.0, 140.0).map { prefs.displaySpeed(it) }
+        listOf("<$a" to Ok, "$a–$b" to Accent, "$b–$c" to Warn, "$c+" to Orange)
+    }
     ColorMode.DRIVE_MODE -> listOf("Normal" to Accent, "Sport" to Warn, "Track" to Ok, "Drift" to Orange)
-    ColorMode.BOOST -> listOf("Vac" to Accent, "<8" to Ok, "8-16" to Warn, "16+" to Orange)
+    ColorMode.BOOST -> {
+        val (a, b) = listOf(8.0, 16.0).map { boostValue(it, prefs) }
+        listOf("Vac" to Accent, "<$a" to Ok, "$a–$b" to Warn, "$b+" to Orange)
+    }
     ColorMode.THROTTLE -> listOf("<25%" to Accent, "25-50" to Ok, "50-75" to Warn, "75+" to Orange)
     ColorMode.LATERAL_G -> listOf("<0.3g" to Accent, "0.3-0.6" to Ok, "0.6-0.9" to Warn, "0.9+" to Orange)
-    ColorMode.OIL_TEMP -> listOf("<90°" to Ok, "90-110" to Warn, "110+" to Orange)
+    ColorMode.OIL_TEMP -> {
+        val (a, b) = listOf(90.0, 110.0).map { prefs.displayTemp(it) }
+        listOf("<$a" to Ok, "$a–$b" to Warn, "$b+" to Orange)
+    }
     ColorMode.AWD -> listOf("<0.5" to Accent, "0.5-2" to Ok, "2-4" to Warn, "4+" to Orange)
     ColorMode.DYNAMICS -> listOf("Cruise" to Accent, "Corner" to Ok, "Hard" to Warn, "Brake" to Orange)
 }
+
+/** Unit shown once after the legend's mode label ("SPD mph"); empty for unitless bands. */
+internal fun legendUnit(mode: ColorMode, prefs: UserPrefs): String = when (mode) {
+    ColorMode.SPEED -> speedUnitText(prefs)
+    ColorMode.BOOST -> prefs.displayBoost(UnitConversions.STD_ATM_KPA).second
+    ColorMode.OIL_TEMP -> prefs.tempLabel
+    else -> ""
+}
+
+private fun speedUnitText(prefs: UserPrefs) = if (prefs.speedUnit == "MPH") "mph" else "km/h"
+
+/** Gauge psi (as stored) → the user's boost unit, value only ("8.0", "0.55", "55"). */
+private fun boostValue(psi: Double, prefs: UserPrefs): String =
+    prefs.displayBoost(psi / UnitConversions.KPA_TO_PSI + UnitConversions.STD_ATM_KPA).first
+
+private fun boostText(psi: Double, prefs: UserPrefs): String =
+    prefs.displayBoost(psi / UnitConversions.KPA_TO_PSI + UnitConversions.STD_ATM_KPA).let { (v, u) -> "$v $u" }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Marker helpers

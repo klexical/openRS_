@@ -4,6 +4,10 @@ import com.openrs.dash.BuildConfig
 import com.openrs.dash.data.DriveBookmarkEntity
 import com.openrs.dash.data.DriveEntity
 import com.openrs.dash.data.DrivePointEntity
+import com.openrs.dash.data.DriveThermalReview
+import com.openrs.dash.data.DriveThermalSensor
+import com.openrs.dash.data.THERMAL_FLAG_FRACTION
+import com.openrs.dash.data.thermalFlagThresholdC
 import com.openrs.dash.data.DtcResult
 import com.openrs.dash.data.PeakType
 import org.json.JSONArray
@@ -80,7 +84,33 @@ internal object DriveExportBuilder {
         }
     }
 
-    fun buildCsv(points: List<DrivePointEntity>): String = buildString {
+    /**
+     * True when the drive has a measured route — GPS was available and points were recorded.
+     * GPX, RaceChrono and TrackAddict are routes, so only these drives get them.
+     */
+    fun hasRoute(drive: DriveEntity, points: List<DrivePointEntity>): Boolean =
+        drive.hasGps && points.isNotEmpty()
+
+    /**
+     * Track files for one drive, in ZIP order: GPX (route only) then the drive CSV. Recorded
+     * telemetry gets a CSV whether or not GPS was available (as on main, e5080c8); a no-GPS
+     * drive leaves lat / lng empty. A drive with no points gets neither — nothing is made up.
+     * A null name leaves that file out (export component off).
+     */
+    fun driveTrackFiles(
+        drive: DriveEntity,
+        points: List<DrivePointEntity>,
+        gpxTs: String,
+        gpxName: String?,
+        csvName: String?,
+    ): List<Pair<String, String>> = buildList {
+        if (points.isEmpty()) return@buildList
+        if (gpxName != null && hasRoute(drive, points)) add(gpxName to buildGpx(drive, points, gpxTs))
+        if (csvName != null) add(csvName to buildCsv(points, hasGps = drive.hasGps))
+    }
+
+    /** Drive telemetry CSV. [hasGps] false writes empty lat / lng (the knock CSV's convention). */
+    fun buildCsv(points: List<DrivePointEntity>, hasGps: Boolean = true): String = buildString {
         appendLine("# openrs_csv_v2")
         appendLine(
             "timestamp_ms,lat,lng,speed_kph,rpm,gear,boost_psi," +
@@ -94,8 +124,7 @@ internal object DriveExportBuilder {
         points.forEach { pt ->
             appendLine(
                 "${pt.timestamp}," +
-                "${"%.6f".format(pt.lat)}," +
-                "${"%.6f".format(pt.lng)}," +
+                (if (hasGps) "${"%.6f".format(pt.lat)},${"%.6f".format(pt.lng)}," else ",,") +
                 "${"%.2f".format(pt.speedKph)}," +
                 "${pt.rpm}," +
                 "${csvEscape(pt.gear)}," +
@@ -371,45 +400,33 @@ internal object DriveExportBuilder {
         }
 
         // ── Thermal progression ──────────────────────────────────
+        // Read through the same parser as TRIP's TEMP badge and the drive summary (DriveThermalReview): the limits
+        // saved with the drive, never the current profile. °C throughout, like the rest of this file.
+        val review = DriveThermalReview.from(drive.thermalPeaksJson)
         val thermalObj = JSONObject()
-        thermalObj.put("oil", JSONObject().apply {
-            put("startC", drive.startOilTempC)
-            put("peakC", drive.peakOilTempC)
-            put("endC", drive.endOilTempC)
-        })
-        thermalObj.put("coolant", JSONObject().apply {
-            put("startC", drive.startCoolantTempC)
-            put("peakC", drive.peakCoolantTempC)
-            put("endC", drive.endCoolantTempC)
-        })
-        // T5D: per-sensor thermal peaks (RDU/PTU) from thermalPeaksJson
-        val thermalPeaks = drive.thermalPeaksJson
-        if (!thermalPeaks.isNullOrEmpty()) {
-            try {
-                val peaksObj = JSONObject(thermalPeaks)
-                // Extract RDU curve if present
-                if (peaksObj.has("rduPeakC")) {
-                    val rduStart = points.firstOrNull { it.rduTempC > -90 }?.rduTempC ?: -99.0
-                    val rduEnd = points.lastOrNull { it.rduTempC > -90 }?.rduTempC ?: -99.0
-                    thermalObj.put("rdu", JSONObject().apply {
-                        put("startC", rduStart)
-                        put("peakC", peaksObj.getDouble("rduPeakC"))
-                        put("endC", rduEnd)
-                    })
-                }
-                // Extract PTU curve if present
-                if (peaksObj.has("ptuPeakC")) {
-                    val ptuStart = points.firstOrNull { it.ptuTempC > -90 }?.ptuTempC ?: -99.0
-                    val ptuEnd = points.lastOrNull { it.ptuTempC > -90 }?.ptuTempC ?: -99.0
-                    thermalObj.put("ptu", JSONObject().apply {
-                        put("startC", ptuStart)
-                        put("peakC", peaksObj.getDouble("ptuPeakC"))
-                        put("endC", ptuEnd)
-                    })
-                }
-            } catch (_: Exception) { /* thermalPeaksJson parse failure is non-fatal */ }
+        // Each curve only when its start / peak / end are coherent valid readings (DriveThermalReview.progression):
+        // endpoints from the record's first / last fresh readings, else the stored start / stop readings (oil, coolant)
+        // or first / last point (PTU, RDU, current records only — a legacy drive-end value is not a peak). Otherwise the
+        // curve is left out — consumers treat a missing curve as no data — and the peak stays in `drive` / `thermalRecord`.
+        fun firstLast(f: (DrivePointEntity) -> Double) =
+            (points.firstOrNull { f(it) > -90 }?.let(f) ?: -99.0) to (points.lastOrNull { f(it) > -90 }?.let(f) ?: -99.0)
+        val ptuEnds = firstLast { it.ptuTempC }
+        val rduEnds = firstLast { it.rduTempC }
+        for ((s, stored) in listOf(
+            DriveThermalSensor.OIL to Triple(drive.startOilTempC, drive.peakOilTempC, drive.endOilTempC),
+            DriveThermalSensor.COOLANT to Triple(drive.startCoolantTempC, drive.peakCoolantTempC, drive.endCoolantTempC),
+            DriveThermalSensor.PTU to Triple(ptuEnds.first, -99.0, ptuEnds.second),
+            DriveThermalSensor.RDU to Triple(rduEnds.first, -99.0, rduEnds.second),
+        )) {
+            val p = review.progression(s, stored.first, stored.second, stored.third).takeIf { it.complete } ?: continue
+            thermalObj.put(s.exportKey, JSONObject().apply {
+                put("startC", p.startC!!)
+                put("peakC", p.peakC!!)
+                put("endC", p.endC!!)
+            })
         }
         root.put("thermalProgression", thermalObj)
+        root.put("thermalRecord", buildThermalRecordJson(review, drive.startTime))
 
         // ── Mode timeline (detect transitions in point sequence) ─
         val modeTimeline = JSONArray()
@@ -494,6 +511,76 @@ internal object DriveExportBuilder {
 
         return root.toString(2)
     }
+
+    /**
+     * The drive's thermal record for the profile export: which basis it has, the saved limits per profile segment,
+     * the true peaks and — separately — the reading behind each TEMP flag (a higher STREET peak and a lower RACE flag
+     * stay distinct). All temperatures °C ("…C" keys). Legacy drives export their drive-end readings as `driveEndC`
+     * against the old fixed limit, never as peaks or under a profile; drives without a record say so.
+     */
+    internal fun buildThermalRecordJson(review: DriveThermalReview, driveStartMs: Long): JSONObject = JSONObject().apply {
+        put("basis", review.basis.name.lowercase())
+        put("unit", "°C")
+        put("flagged", review.flagged)
+        when (review.basis) {
+            DriveThermalReview.Basis.PROFILE -> {
+                put("flagRule", "reading >= flagThresholdC = $THERMAL_FLAG_FRACTION x critC of the profile in effect when it was recorded")
+                put("segments", JSONArray().apply {
+                    for (seg in review.segments) put(JSONObject().apply {
+                        put("profile", seg.profile)
+                        put("startOffsetMs", (seg.startMs - driveStartMs).coerceAtLeast(0L))
+                        put("limits", JSONObject().apply {
+                            for ((s, l) in seg.limits.toSortedMap()) put(s.exportKey, JSONObject().apply {
+                                put("warnC", l.warnC)
+                                put("critC", l.critC)
+                                put("flagThresholdC", thermalFlagThresholdC(l.critC))
+                            })
+                        })
+                        put("peaksC", JSONObject().apply { for ((s, t) in seg.peaks.toSortedMap()) put(s.exportKey, t) })
+                    })
+                })
+                put("sensors", JSONObject().apply {
+                    for (r in review.sensors) put(r.sensor.exportKey, JSONObject().apply {
+                        put("peakC", r.peakC)
+                        put("peakProfile", r.peakProfile)
+                        put("peakLevel", r.peakLevel?.name)
+                        put("flagged", r.flagged)
+                        if (r.flagged) put("flag", JSONObject().apply {
+                            put("readingC", r.flagReadingC)
+                            put("profile", r.flagProfile)
+                            put("critC", r.flagCritC)
+                            put("flagThresholdC", r.flagThresholdC)
+                        })
+                    })
+                })
+            }
+            DriveThermalReview.Basis.LEGACY -> {
+                put("note", "Recorded before thermal limits were saved with drives: drive-end readings against the old " +
+                    "fixed limits. No profile applies and they are not peaks (see thermalProgression for peaks).")
+                put("flagRule", "driveEndC >= flagThresholdC = $THERMAL_FLAG_FRACTION x fixedLimitC")
+                put("sensors", JSONObject().apply {
+                    for (r in review.sensors) put(r.sensor.exportKey, JSONObject().apply {
+                        put("driveEndC", r.peakC)
+                        r.legacyLimitC?.let {
+                            put("fixedLimitC", it)
+                            put("flagThresholdC", thermalFlagThresholdC(it))
+                        }
+                        put("flagged", r.flagged)
+                    })
+                })
+            }
+            DriveThermalReview.Basis.NONE -> if (review.unreadable) {
+                put("reason", "unreadable")
+                put("note", "A thermal record is saved with this drive but could not be read (damaged, or a format " +
+                    "this version doesn't know): the limits it was judged against are unknown.")
+            } else {
+                put("reason", "absent")
+                put("note", "No thermal record saved with this drive: the limits it was judged against are unknown.")
+            }
+        }
+    }
+
+    private val DriveThermalSensor.exportKey: String get() = key.lowercase()
 
     /**
      * Build a RaceChrono-compatible CSV.

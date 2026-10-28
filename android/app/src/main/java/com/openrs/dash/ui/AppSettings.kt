@@ -96,12 +96,6 @@ object AppSettings {
     const val KEY_CLASSIC_FONTS     = "classic_fonts"
     const val DEFAULT_CLASSIC_FONTS = false
 
-    // ── Drive-tab adaptive density (v3.0 B1) ───────────────────────────────
-    // When ON, DRIVE collapses Inputs/AWD/G-force and inflates hero row once
-    // speed exceeds the threshold for a few seconds. Hysteresis prevents flap.
-    const val KEY_DRIVE_AUTO_ZOOM     = "drive_auto_zoom"
-    const val DEFAULT_DRIVE_AUTO_ZOOM = true
-
     // ── OEM polish flags (v3.0 rc.2) ──────────────────────────────────────
     const val KEY_NAV_TAB_IDENTITY      = "nav_tab_identity"
     const val DEFAULT_NAV_TAB_IDENTITY  = false      // soak period — on after rc.3
@@ -114,6 +108,8 @@ object AppSettings {
 
     // ── Temperature preset ───────────────────────────────────────────────────
     const val KEY_TEMP_PRESET     = "temp_preset"
+    /** Custom thermal profile JSON (°C + base preset) — written only once the user creates one. */
+    const val KEY_THERMAL_CUSTOM  = "thermal_custom"
     const val DEFAULT_TEMP_PRESET = "street"     // "street" | "track" | "race"
 
     // ── Adapter type ─────────────────────────────────────────────────────────
@@ -230,9 +226,6 @@ object AppSettings {
     fun getClassicFonts(ctx: Context): Boolean =
         prefs(ctx).getBoolean(KEY_CLASSIC_FONTS, DEFAULT_CLASSIC_FONTS)
 
-    fun getDriveAutoZoom(ctx: Context): Boolean =
-        prefs(ctx).getBoolean(KEY_DRIVE_AUTO_ZOOM, DEFAULT_DRIVE_AUTO_ZOOM)
-
     fun getNavTabIdentity(ctx: Context): Boolean =
         prefs(ctx).getBoolean(KEY_NAV_TAB_IDENTITY, DEFAULT_NAV_TAB_IDENTITY)
 
@@ -244,6 +237,9 @@ object AppSettings {
 
     fun getTempPreset(ctx: Context): String =
         prefs(ctx).getString(KEY_TEMP_PRESET, DEFAULT_TEMP_PRESET) ?: DEFAULT_TEMP_PRESET
+
+    fun getCustomThermal(ctx: Context): Pair<ThermalProfile, String>? =
+        ThermalProfile.fromJson(prefs(ctx).getString(KEY_THERMAL_CUSTOM, null))
 
     fun getAdapterType(ctx: Context): String {
         val raw = prefs(ctx).getString(KEY_ADAPTER_TYPE, null) ?: return DEFAULT_ADAPTER_TYPE
@@ -358,6 +354,7 @@ object AppSettings {
             putInt   (KEY_MAX_DIAG_ZIPS,      p.maxDiagZips)
             putString(KEY_THEME_ID,    p.themeId)
             putString(KEY_TEMP_PRESET, p.tempPreset)
+            p.customThermal?.let { putString(KEY_THERMAL_CUSTOM, it.toJson(p.customThermalBase)) }
             putString(KEY_ADAPTER_TYPE, p.adapterType)
             putString(KEY_CONNECTION_METHOD, p.connectionMethod)
             putBoolean(KEY_MEATPI_MICROSD, p.meatPiMicroSdLog)
@@ -373,7 +370,6 @@ object AppSettings {
             putFloat  (KEY_BRIGHTNESS, p.brightness)
             putString (KEY_THEME_MODE, p.themeMode)
             putBoolean(KEY_CLASSIC_FONTS, p.classicFonts)
-            putBoolean(KEY_DRIVE_AUTO_ZOOM, p.driveAutoZoom)
             putBoolean(KEY_NAV_TAB_IDENTITY, p.navTabIdentity)
             putBoolean(KEY_LIVE_PILL_QUIET, p.livePillQuiet)
             putBoolean(KEY_GEAR_MODE_TINT, p.gearModeTint)
@@ -393,7 +389,9 @@ object AppSettings {
         reconnectIntervalSec = getReconnectInterval(ctx),
         maxDiagZips          = getMaxDiagZips(ctx),
         themeId              = getThemeId(ctx),
-        tempPreset           = getTempPreset(ctx),
+        tempPreset           = getTempPreset(ctx).let { if (it == "custom" && getCustomThermal(ctx) == null) DEFAULT_TEMP_PRESET else it },
+        customThermal        = getCustomThermal(ctx)?.first,
+        customThermalBase    = getCustomThermal(ctx)?.second ?: DEFAULT_TEMP_PRESET,
         adapterType          = getAdapterType(ctx),
         connectionMethod     = getConnectionMethod(ctx),
         meatPiMicroSdLog     = getMeatPiMicroSd(ctx),
@@ -409,7 +407,6 @@ object AppSettings {
         brightness           = getBrightness(ctx),
         themeMode            = getThemeMode(ctx),
         classicFonts         = getClassicFonts(ctx),
-        driveAutoZoom        = getDriveAutoZoom(ctx),
         navTabIdentity       = getNavTabIdentity(ctx),
         livePillQuiet        = getLivePillQuiet(ctx),
         gearModeTint         = getGearModeTint(ctx),

@@ -5,7 +5,7 @@ import type { ThermalProgression } from '../../types/session'
 export function ThermalProgressionChart({ data }: { data: ThermalProgression }) {
   const sensors = [
     { key: 'oil', label: 'Oil', curve: data.oil, color: colors.orange },
-    { key: 'coolant', label: 'Coolant', curve: data.coolant, color: colors.accent },
+    { key: 'coolant', label: 'Coolant', curve: data.coolant, color: colors.cyan },
     ...(data.rdu ? [{ key: 'rdu', label: 'RDU', curve: data.rdu, color: '#E040FB' }] : []),
     ...(data.ptu ? [{ key: 'ptu', label: 'PTU', curve: data.ptu, color: '#FFCC00' }] : []),
   ].filter((s) => s.curve.peakC > -90)

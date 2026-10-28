@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -42,7 +44,9 @@ fun DriveReplayView(
     drive: DriveEntity,
     points: List<DrivePointEntity>,
     prefs: UserPrefs,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    /** Debug TRIP preview: a sample drive — label the replay. */
+    previewNotice: Boolean = false
 ) {
     if (points.isEmpty()) {
         onDismiss()
@@ -50,7 +54,13 @@ fun DriveReplayView(
     }
 
     val accent = LocalThemeAccent.current
-    val cameraPositionState = rememberCameraPositionState()
+    // Open on the route's start (DriveMap's auto-centre ran before the map was ready, leaving a world view)
+    val cameraPositionState = rememberCameraPositionState {
+        position = com.google.android.gms.maps.model.CameraPosition.fromLatLngZoom(
+            LatLng(points.first().lat, points.first().lng), 15f)
+    }
+    // Back closes the replay (it fell through to the activity)
+    androidx.activity.compose.BackHandler(onBack = onDismiss)
 
     var replayState by remember { mutableStateOf(ReplayState.IDLE) }
     var cursorIndex by remember { mutableIntStateOf(0) }
@@ -87,6 +97,8 @@ fun DriveReplayView(
         Modifier
             .fillMaxSize()
             .background(Bg)
+            // The page sits under the bottom nav overlay — the transport row was hidden behind it.
+            .padding(bottom = navBarClearance())
     ) {
         // ── Header (drive name + close button) ───────────────────────────
         Row(
@@ -96,25 +108,26 @@ fun DriveReplayView(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
-                MonoLabel("REPLAY", 9.sp, Dim)
-                MonoText(
-                    drive.name ?: formatTimestamp(drive.startTime),
-                    13.sp, Frost, FontWeight.Bold
-                )
+            Column(Modifier.weight(1f)) {
+                InstrumentLabel("REPLAY", color = Mid)
+                UIText(drive.name ?: formatTimestamp(drive.startTime), 16.sp, Frost, FontWeight.SemiBold)
             }
+            // 48 dp close target around a compact chip
             Box(
-                Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Surf2)
-                    .border(Tokens.CardBorder, Brd, RoundedCornerShape(6.dp))
-                    .clickable { onDismiss() }
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                Modifier.size(48.dp).clickable(onClickLabel = "Close replay") { onDismiss() },
                 contentAlignment = Alignment.Center
             ) {
-                MonoText("X", 12.sp, Mid, FontWeight.Bold)
+                Box(
+                    Modifier.size(36.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Surf2)
+                        .border(Tokens.CardBorder, Brd, RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) { MonoText("\u2715", 14.sp, Mid, FontWeight.Bold) }
             }
         }
+
+        if (previewNotice) Box(Modifier.padding(horizontal = Tokens.PagePad)) { PreviewSheetNotice() }
 
         // ── Map area ─────────────────────────────────────────────────────
         Box(
@@ -132,74 +145,32 @@ fun DriveReplayView(
             )
         }
 
-        // ── HUD strip ────────────────────────────────────────────────────
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .background(Surf)
-                .padding(horizontal = Tokens.PagePad, vertical = 8.dp)
-        ) {
-            // Row 1: SPD, RPM, GEAR, BOOST
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                DataCell(
-                    "SPD",
-                    "${prefs.displaySpeed(currentPoint.speedKph)} ${prefs.speedLabel}",
-                    modifier = Modifier.weight(1f)
-                )
-                DataCell(
-                    "RPM",
-                    "${currentPoint.rpm}",
-                    modifier = Modifier.weight(1f)
-                )
-                DataCell(
-                    "GEAR",
-                    currentPoint.gear.ifEmpty { "-" },
-                    modifier = Modifier.weight(1f)
-                )
-                DataCell(
-                    "BOOST",
-                    "%.1f PSI".format(currentPoint.boostPsi),
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            Spacer(Modifier.height(4.dp))
-
-            // Row 2: OIL, CLT, G-LAT, MODE
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                val oilText = if (currentPoint.oilTempC > -90)
-                    "${prefs.displayTemp(currentPoint.oilTempC)}${prefs.tempLabel}" else "-"
-                DataCell("OIL", oilText, modifier = Modifier.weight(1f))
-
-                val cltText = if (currentPoint.coolantTempC > -90)
-                    "${prefs.displayTemp(currentPoint.coolantTempC)}${prefs.tempLabel}" else "-"
-                DataCell("CLT", cltText, modifier = Modifier.weight(1f))
-
-                DataCell(
-                    "G-LAT",
-                    "%.2f".format(currentPoint.lateralG),
-                    modifier = Modifier.weight(1f)
-                )
-                DataCell(
-                    "MODE",
-                    currentPoint.driveMode,
-                    modifier = Modifier.weight(1f)
-                )
-            }
+        // ── HUD: one readings panel (was eight DataCell cards); boost in the user's unit ──
+        Box(Modifier.fillMaxWidth().padding(horizontal = Tokens.PagePad, vertical = 8.dp)) {
+            val oilText = if (currentPoint.oilTempC > -90)
+                "${prefs.displayTemp(currentPoint.oilTempC)}${prefs.tempLabel}" else "— —"
+            val cltText = if (currentPoint.coolantTempC > -90)
+                "${prefs.displayTemp(currentPoint.coolantTempC)}${prefs.tempLabel}" else "— —"
+            val boost = prefs.displayBoost(currentPoint.boostPsi / UnitConversions.KPA_TO_PSI + UnitConversions.STD_ATM_KPA)
+            ReadoutGrid(
+                rows = listOf(
+                    listOf(Readout("SPEED", "${prefs.displaySpeed(currentPoint.speedKph)} ${prefs.speedLabel}"),
+                        Readout("RPM", "${currentPoint.rpm}"),
+                        Readout("GEAR", currentPoint.gear.ifEmpty { "— —" }),
+                        Readout("BOOST", "${boost.first} ${boost.second}")),
+                    listOf(Readout("OIL", oilText), Readout("COOLANT", cltText),
+                        Readout("LAT G", "%.2f g".format(currentPoint.lateralG)),
+                        Readout("MODE", currentPoint.driveMode.uppercase())),
+                ),
+                dense = true
+            )
         }
 
         // ── Controls ─────────────────────────────────────────────────────
         Column(
             Modifier
                 .fillMaxWidth()
-                .background(Surf2)
-                .padding(horizontal = Tokens.PagePad, vertical = 8.dp)
+                .padding(horizontal = Tokens.PagePad, vertical = 4.dp)
         ) {
             // Slider
             Slider(
@@ -222,14 +193,8 @@ fun DriveReplayView(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                MonoLabel(
-                    formatDuration(currentPoint.timestamp - startTime),
-                    9.sp, Mid
-                )
-                MonoLabel(
-                    formatDuration(endTime - startTime),
-                    9.sp, Dim
-                )
+                MonoLabel(formatDuration(currentPoint.timestamp - startTime), 11.sp, Frost, FontWeight.Medium)
+                MonoLabel(formatDuration(endTime - startTime), 11.sp, Dim)
             }
 
             Spacer(Modifier.height(8.dp))
@@ -240,9 +205,9 @@ fun DriveReplayView(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Rewind 10s
-                TransportButton("\u25C0") {
-                    cursorIndex = (cursorIndex - 10).coerceAtLeast(0)
+                // Rewind 10 samples (~10 s) — labelled; "◀" read as "back"
+                TransportButton("\u221210s") {
+                    cursorIndex = seekIndex(points, cursorIndex, -10_000L)
                 }
 
                 Spacer(Modifier.width(16.dp))
@@ -264,9 +229,9 @@ fun DriveReplayView(
 
                 Spacer(Modifier.width(16.dp))
 
-                // Forward 10s
-                TransportButton("\u25B6") {
-                    cursorIndex = (cursorIndex + 10).coerceAtMost(points.size - 1)
+                // Forward 10 samples (~10 s) — "▶" duplicated the play glyph
+                TransportButton("+10s") {
+                    cursorIndex = seekIndex(points, cursorIndex, 10_000L)
                 }
 
                 Spacer(Modifier.width(24.dp))
@@ -299,6 +264,7 @@ private fun TransportButton(
     val accent = LocalThemeAccent.current
     Box(
         Modifier
+            .sizeIn(minWidth = 64.dp, minHeight = 48.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(if (isPrimary) accent else Surf3)
             .border(Tokens.CardBorder, if (isPrimary) accent else Brd, RoundedCornerShape(8.dp))
@@ -311,6 +277,24 @@ private fun TransportButton(
             if (isPrimary) Bg else Frost,
             FontWeight.Bold
         )
+    }
+}
+
+/**
+ * Index of the point nearest [deltaMs] from [from] by timestamp. The ±10s buttons stepped 10 samples, which is
+ * 10 s only at the recorder's 1 Hz — on sparser data (resumed drives, gaps) the label was wrong.
+ */
+internal fun seekIndex(points: List<DrivePointEntity>, from: Int, deltaMs: Long): Int {
+    if (points.isEmpty()) return 0
+    val target = points[from].timestamp + deltaMs
+    var i = from
+    if (deltaMs > 0) { while (i < points.lastIndex && points[i + 1].timestamp <= target) i++ }
+    else { while (i > 0 && points[i - 1].timestamp >= target) i-- }
+    // Always move at least one sample so the button never does nothing
+    return when {
+        i == from && deltaMs > 0 -> (from + 1).coerceAtMost(points.lastIndex)
+        i == from && deltaMs < 0 -> (from - 1).coerceAtLeast(0)
+        else -> i
     }
 }
 

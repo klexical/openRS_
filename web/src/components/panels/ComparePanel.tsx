@@ -12,6 +12,7 @@ import { colors, chartColors } from '../../styles/tokens'
 const SESSION_COLORS = [chartColors[0], chartColors[1], chartColors[2], chartColors[4]]
 
 export function ComparePanel() {
+  // ── Hooks (must run on every render path — keep above any early return) ──
   const sessions = useStore((s) => s.sessions)
   const compareIds = useStore((s) => s.compareSessionIds)
   const toggleCompare = useStore((s) => s.toggleCompareSession)
@@ -24,16 +25,6 @@ export function ComparePanel() {
     [sessions]
   )
 
-  if (eligibleSessions.length < 2) {
-    return (
-      <EmptyState
-        icon="⟺"
-        title="Need More Sessions"
-        description="Import at least 2 sessions with trip data to compare them."
-      />
-    )
-  }
-
   const hasEnough = compareSessions.length >= 2
   const baseSession = compareSessions[0]
 
@@ -45,6 +36,17 @@ export function ComparePanel() {
       return computeDeltas(baseSession.trip!.summary, s.trip.summary)
     })
   }, [compareSessions, hasEnough, baseSession])
+
+  // ── Early returns (after all hooks) ──
+  if (eligibleSessions.length < 2) {
+    return (
+      <EmptyState
+        icon="⟺"
+        title="Need More Sessions"
+        description="Import at least 2 sessions with trip data to compare them."
+      />
+    )
+  }
 
   return (
     <div className="max-w-6xl mx-auto space-y-2">

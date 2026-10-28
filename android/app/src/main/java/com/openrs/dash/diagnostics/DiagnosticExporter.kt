@@ -54,7 +54,8 @@ enum class ExportComponent(val label: String) {
 
 object DiagnosticExporter {
 
-    private const val AUTHORITY = "com.openrs.dash.provider"
+    /** Matches the manifest's `${applicationId}.provider` (release: com.openrs.dash.provider). */
+    private fun authority(ctx: Context) = "${ctx.packageName}.provider"
 
     private val appVersion: String get() = BuildConfig.VERSION_NAME ?: ""
     private val appBuild: Int get() = BuildConfig.VERSION_CODE
@@ -120,14 +121,8 @@ object DiagnosticExporter {
                 // Sapphire's import expects drive_*.csv / drive_*.gpx filenames.
                 if (driveSnapshot != null) {
                     val (drive, points) = driveSnapshot
-                    if (points.isNotEmpty()) {
-                        if (drive.hasGps) {
-                            addEntry("drive_$ts.gpx",
-                                DriveExportBuilder.buildGpx(drive, points, ts).toByteArray(Charsets.UTF_8))
-                        }
-                        addEntry("drive_$ts.csv",
-                            DriveExportBuilder.buildCsv(points).toByteArray(Charsets.UTF_8))
-                    }
+                    DriveExportBuilder.driveTrackFiles(drive, points, ts, "drive_$ts.gpx", "drive_$ts.csv")
+                        .forEach { (name, text) -> addEntry(name, text.toByteArray(Charsets.UTF_8)) }
                     addEntry("drive_summary_$ts.txt",
                         DriveExportBuilder.buildSummary(drive, points).toByteArray(Charsets.UTF_8))
                 }
@@ -135,7 +130,8 @@ object DiagnosticExporter {
                 // Session knock log (#174) — captured while connected, recording or not.
                 // "drive_knock_*" name → knock_csv; Sapphire skips it as a drive.
                 val sessionKnocks = com.openrs.dash.data.KnockSessionLog.events.value
-                if (sessionKnocks.isNotEmpty()) {
+                // Demo knock events are simulated — never exported as vehicle data.
+                if (sessionKnocks.isNotEmpty() && !com.openrs.dash.demo.DemoMode.isActive) {
                     addEntry("drive_knock_session_$ts.csv",
                         DriveExportBuilder.buildKnockCsv(sessionKnocks).toByteArray(Charsets.UTF_8))
                 }
@@ -159,7 +155,7 @@ object DiagnosticExporter {
                 addEntry("manifest.json", buildManifest(entries).toByteArray(Charsets.UTF_8))
             }
 
-            FileProvider.getUriForFile(ctx, AUTHORITY, zipFile)
+            FileProvider.getUriForFile(ctx, authority(ctx), zipFile)
         } catch (e: Exception) {
             DiagnosticLogger.event("EXPORT_ERROR", e.message ?: "unknown")
             null
@@ -209,17 +205,11 @@ object DiagnosticExporter {
                     entries += name to inferType(name)
                 }
 
-                // Drive GPX (if GPS data available)
-                if (drive.hasGps && points.isNotEmpty()) {
-                    if (ExportComponent.DRIVE_GPX in components) {
-                        addEntry("drive_$ts.gpx",
-                            DriveExportBuilder.buildGpx(drive, points, ts).toByteArray(Charsets.UTF_8))
-                    }
-                    if (ExportComponent.DRIVE_CSV in components) {
-                        addEntry("drive_$ts.csv",
-                            DriveExportBuilder.buildCsv(points).toByteArray(Charsets.UTF_8))
-                    }
-                }
+                // Drive GPX (GPS drives) + drive CSV (any recorded telemetry)
+                DriveExportBuilder.driveTrackFiles(drive, points, ts,
+                    gpxName = "drive_$ts.gpx".takeIf { ExportComponent.DRIVE_GPX in components },
+                    csvName = "drive_$ts.csv".takeIf { ExportComponent.DRIVE_CSV in components },
+                ).forEach { (name, text) -> addEntry(name, text.toByteArray(Charsets.UTF_8)) }
 
                 // Drive summary
                 if (ExportComponent.SUMMARY in components) {
@@ -248,14 +238,14 @@ object DiagnosticExporter {
                     }
                 }
 
-                // RaceChrono CSV
-                if (ExportComponent.RACECHRONO_CSV in components && points.isNotEmpty()) {
+                // RaceChrono / TrackAddict are lap-timer routes — GPS drives only
+                if (ExportComponent.RACECHRONO_CSV in components && DriveExportBuilder.hasRoute(drive, points)) {
                     addEntry("drive_racechrono_$ts.csv",
                         DriveExportBuilder.buildRaceChronoCsv(points).toByteArray(Charsets.UTF_8))
                 }
 
                 // TrackAddict CSV
-                if (ExportComponent.TRACKADDICT_CSV in components && points.isNotEmpty()) {
+                if (ExportComponent.TRACKADDICT_CSV in components && DriveExportBuilder.hasRoute(drive, points)) {
                     addEntry("drive_trackaddict_$ts.csv",
                         DriveExportBuilder.buildTrackAddictCsv(points).toByteArray(Charsets.UTF_8))
                 }
@@ -302,10 +292,11 @@ object DiagnosticExporter {
             }
 
             _exportProgress.value = ExportProgress.Sharing
-            val uri = FileProvider.getUriForFile(ctx, AUTHORITY, zipFile)
+            val uri = FileProvider.getUriForFile(ctx, authority(ctx), zipFile)
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "application/zip"
                 putExtra(Intent.EXTRA_STREAM, uri)
+                clipData = shareClip(uri)
                 putExtra(Intent.EXTRA_SUBJECT, "openRS_ Drive Export")
                 putExtra(
                     Intent.EXTRA_TEXT,
@@ -357,16 +348,10 @@ object DiagnosticExporter {
                         .format(Date(drive.startTime))
                     val prefix = "drive_${drive.id}_$driveTs"
 
-                    if (drive.hasGps && points.isNotEmpty()) {
-                        if (ExportComponent.DRIVE_GPX in components) {
-                            addEntry("$prefix.gpx",
-                                DriveExportBuilder.buildGpx(drive, points, driveTs).toByteArray(Charsets.UTF_8))
-                        }
-                        if (ExportComponent.DRIVE_CSV in components) {
-                            addEntry("$prefix.csv",
-                                DriveExportBuilder.buildCsv(points).toByteArray(Charsets.UTF_8))
-                        }
-                    }
+                    DriveExportBuilder.driveTrackFiles(drive, points, driveTs,
+                        gpxName = "$prefix.gpx".takeIf { ExportComponent.DRIVE_GPX in components },
+                        csvName = "$prefix.csv".takeIf { ExportComponent.DRIVE_CSV in components },
+                    ).forEach { (name, text) -> addEntry(name, text.toByteArray(Charsets.UTF_8)) }
                     if (ExportComponent.SUMMARY in components) {
                         addEntry("${prefix}_summary.txt",
                             DriveExportBuilder.buildSummary(drive, points).toByteArray(Charsets.UTF_8))
@@ -395,12 +380,13 @@ object DiagnosticExporter {
             }
 
             _exportProgress.value = ExportProgress.Sharing
-            val uri = FileProvider.getUriForFile(ctx, AUTHORITY, zipFile)
+            val uri = FileProvider.getUriForFile(ctx, authority(ctx), zipFile)
             val totalDist = drives.sumOf { it.first.distanceKm }
             val totalPts = drives.sumOf { it.second.size }
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "application/zip"
                 putExtra(Intent.EXTRA_STREAM, uri)
+                clipData = shareClip(uri)
                 putExtra(Intent.EXTRA_SUBJECT, "openRS_ Batch Export (${drives.size} drives)")
                 putExtra(
                     Intent.EXTRA_TEXT,
@@ -459,6 +445,7 @@ object DiagnosticExporter {
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "application/zip"
             putExtra(Intent.EXTRA_STREAM, uri)
+            clipData = shareClip(uri)
             putExtra(Intent.EXTRA_SUBJECT, "openRS_ Diagnostic Report")
             putExtra(
                 Intent.EXTRA_TEXT,
@@ -480,6 +467,13 @@ object DiagnosticExporter {
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    /**
+     * ClipData for a shared ZIP. Android migrates EXTRA_STREAM into ClipData only inside the chooser's target intent
+     * and never grants the share sheet itself, so its preview was denied (`Permission Denial … intentresolver`).
+     * With ClipData on the target, Intent.createChooser carries it and FLAG_GRANT_READ_URI_PERMISSION to the chooser.
+     */
+    private fun shareClip(uri: android.net.Uri) = android.content.ClipData.newRawUri("openRS_ export", uri)
 
     /** Add crash telemetry JSON files to the ZIP. */
     private fun addCrashFiles(ctx: Context, zip: ZipOutputStream) {
@@ -520,6 +514,9 @@ object DiagnosticExporter {
         name.startsWith("slcan_log_") -> "slcan_log"
         name.startsWith("drive_profile_") -> "drive_profile"
         name.startsWith("drive_summary_") -> "drive_summary"
+        // Batch export names (drive_<id>_<ts>_profile.json / _summary.txt) — were "unknown" through rc.6
+        name.startsWith("drive_") && name.endsWith("_profile.json") -> "drive_profile"
+        name.startsWith("drive_") && name.endsWith("_summary.txt") -> "drive_summary"
         name.startsWith("drive_") && name.endsWith(".gpx") -> "drive_gpx"
         // Knock table must be matched before the generic drive CSV rule — tagging it
         // drive_csv made Sapphire import it as a phantom session (#183)
