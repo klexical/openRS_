@@ -619,7 +619,8 @@ class CanDataService : Service() {
             // original bug — drive would start with no telemetry). On
             // reconnect within AUTO_RESUME_WINDOW_MS a paused drive is
             // resumed seamlessly; beyond that, the stale drive is
-            // finalized and a fresh one begins.
+            // finalized and a fresh one begins. A drive still recording
+            // is kept (AutoRecordPolicy).
             if (AppSettings.getAutoRecordDrives(this@CanDataService)) {
                 launch {
                     val recorder = OpenRSDashApp.instance.driveRecorder
@@ -631,13 +632,16 @@ class CanDataService : Service() {
                         autoStarted = true
 
                         val ds = recorder.driveState.value
-                        val canResume = ds.isRecording && ds.isPaused &&
-                            recorder.pausedDurationMs() in 1L..AUTO_RESUME_WINDOW_MS
-                        if (canResume) {
-                            recorder.resumeDrive()
-                        } else {
-                            if (ds.isRecording) recorder.stopDrive()
-                            recorder.startDrive(sessionId = currentSessionId)
+                        // A drive still recording (manual, or across an RCN retry) is kept — never split (#212)
+                        when (AutoRecordPolicy.onEngineRunning(ds.isRecording, ds.isPaused,
+                            recorder.pausedDurationMs(), AUTO_RESUME_WINDOW_MS)) {
+                            AutoRecordPolicy.Action.KEEP -> Unit
+                            AutoRecordPolicy.Action.RESUME -> recorder.resumeDrive()
+                            AutoRecordPolicy.Action.FINALIZE_AND_START -> {
+                                recorder.stopDrive()
+                                recorder.startDrive(sessionId = currentSessionId)
+                            }
+                            AutoRecordPolicy.Action.START -> recorder.startDrive(sessionId = currentSessionId)
                         }
                     }
                 }
