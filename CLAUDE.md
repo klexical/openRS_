@@ -523,7 +523,7 @@ Regenerate the FORScan catalog: `python3 android/scripts/gen_forscan_catalog.py`
 cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{releaseName}.apk (e.g. openRS_v2.2.7-rc.7.apk; set in app/build.gradle.kts)
-./gradlew test                             # 742 unit tests across 41 files
+./gradlew test                             # 779 unit tests across 47 files
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 45 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
