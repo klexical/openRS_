@@ -133,7 +133,7 @@ internal object DiagnosticReportBuilder {
             appendLine("  WGDC       : ${"%.1f".format(vs.wgdcDesired)} %")
             appendLine("  KR Cyl1-4  : ${com.openrs.dash.ui.formatKr(vs.ignCorrCyl1)} / ${com.openrs.dash.ui.formatKr(vs.ignCorrCyl2)} / ${com.openrs.dash.ui.formatKr(vs.ignCorrCyl3)} / ${com.openrs.dash.ui.formatKr(vs.ignCorrCyl4)}")
             appendLine("  Load/Timing: ${"%.1f".format(vs.calcLoad)} % / ${"%.1f".format(vs.timingAdvance)}°")
-            appendLine("  Spark Adv  : ${"%.1f".format(vs.sparkAdvance)}°")
+            appendLine("  Spark Adv  : ${if (vs.sparkAdvance > -90) "%.1f°".format(vs.sparkAdvance) else "— (not received)"}")
             appendLine("  Cmd λ / O2 : ${"%.3f".format(vs.commandedAfr)} / ${"%.3f".format(vs.o2Voltage)} V")
             appendLine("  OAR        : ${"%.4f".format(vs.octaneAdjustRatio)}")
             appendLine("  TIP Act/Des: ${"%.1f".format(vs.tipActualKpa)} / ${"%.1f".format(vs.tipDesiredKpa)} kPa")

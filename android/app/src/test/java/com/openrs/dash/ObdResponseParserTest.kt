@@ -745,17 +745,23 @@ class ObdResponseParserTest {
 
     // ── PCM: Spark Advance (DID 0x116B) ─────────────────────────────────────
 
+    /**
+     * #205 — spark advance 0x116B: signed 16-bit / 4 = degrees. Raw payloads from the 2026-10-28 drives; the old
+     * high-byte-only decode gave 0.00 for every positive reply and 63.75 for −5.5. Nearby (non-simultaneous) F40E
+     * timing samples read 14.5 / 33.5° next to the 14.75 / 33.25 here — corroboration, not calibration.
+     */
     @Test
-    fun `PCM - spark advance`() {
-        // DID 0x116B: B4 * 0.25 deg
-        // B4 = 56 -> 56 * 0.25 = 14.0 degrees
-        var result: VehicleState? = null
-        ObdResponseParser.parsePcmResponse(
-            makeResponse(0x11, 0x6B, 56),
-            blank
-        ) { result = it }
-        assertNotNull(result)
-        assertEquals(14.0, result!!.sparkAdvance, 0.01)
+    fun `PCM - spark advance from real payloads, negative kept`() {
+        fun spark(hi: Int, lo: Int): Double {
+            var r: VehicleState? = null
+            ObdResponseParser.parsePcmResponse(makeResponse(0x11, 0x6B, hi, lo), blank) { r = it }
+            assertTrue(r!!.fieldLastUpdateMs.containsKey("sparkAdvance"))
+            return r!!.sparkAdvance
+        }
+        assertEquals(14.75, spark(0x00, 0x3B), 0.001)
+        assertEquals(33.25, spark(0x00, 0x85), 0.001)
+        assertEquals(-5.5, spark(0xFF, 0xEA), 0.001)
+        assertEquals(-1.0, spark(0xFF, 0xFC), 0.001)    // a valid −1°, not "unavailable"
     }
 
     // ── BCM: Battery Charging Voltage Desired (DID 0x411D) ──────────────────

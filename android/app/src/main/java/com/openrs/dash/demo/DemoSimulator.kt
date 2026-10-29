@@ -404,7 +404,7 @@ object DemoSimulator {
             wgdcDesired = m.wgdc,
             vctIntakeAngle = 18 + 14 * load / 100, vctExhaustAngle = 6 + 8 * load / 100,
             oilLifePct = if (obd) 68.0 else -1.0, hpFuelRailPsi = if (obd) 700 + 15 * load else -1.0,
-            sparkAdvance = if (obd) timing.coerceAtLeast(0.0) else -1.0,
+            sparkAdvance = if (obd) timing else -99.0,
             ignCorrCyl1 = m.kr[0], ignCorrCyl2 = m.kr[1], ignCorrCyl3 = m.kr[2], ignCorrCyl4 = m.kr[3],
             tirePressLF = pressure[0], tirePressRF = pressure[1],
             tirePressLR = pressure[2], tirePressRR = pressure[3],

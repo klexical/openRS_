@@ -290,7 +290,11 @@ object ObdResponseParser {
             ).markFresh("batteryVoltage"))
             // Spark advance: B4 × 0.25 deg
             // TODO: verify single-byte vs two-byte on real car
-            0x116B -> onObdUpdate(currentState.copy(sparkAdvance = b4 * 0.25).markFresh("sparkAdvance"))
+            // Spark advance, signed 16-bit / 4 = degrees (#205): the high byte alone read 0.00 for every positive
+            // reply and 63.75 for −5.5°. Negative advance is valid.
+            0x116B -> onObdUpdate(currentState.copy(
+                sparkAdvance = ((b4 shl 8) or b5).toShort() / 4.0
+            ).markFresh("sparkAdvance"))
             // Fuel trims via Ford fast-path 22F4xx: A * 100/128 - 100 (%)
             0xF406 -> onObdUpdate(currentState.copy(shortFuelTrim = b4 * 100.0 / 128.0 - 100.0).markFresh("shortFuelTrim"))
             0xF407 -> onObdUpdate(currentState.copy(longFuelTrim  = b4 * 100.0 / 128.0 - 100.0).markFresh("longFuelTrim"))

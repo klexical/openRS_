@@ -60,7 +60,7 @@ data class VehicleState(
     val hpFuelRailPsi: Double = -1.0,      // 0xF423: HP fuel rail pressure (PSI, direct injection)
 
     // ── Spark / Ignition (Mode 22 via PCM 0x7E0) ──────────
-    val sparkAdvance: Double = -1.0,       // 0x116B: spark advance (deg × 0.25); -1 = not yet polled
+    val sparkAdvance: Double = -99.0,      // 0x116B: spark advance, signed16 / 4 deg (negative valid); -99 = not yet received
 
     // ── Ignition Correction (Mode 22 via PCM 0x7E0) ───────
     val ignCorrCyl1: Double = 0.0,         // 0x03EC: Knock correction cyl 1 (deg)
