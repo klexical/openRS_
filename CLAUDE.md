@@ -776,7 +776,7 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   outcomes, cancel latency per transport, recording protection, notification body). That run showed the earlier
   "Wi-Fi off / on after cancel" row proves nothing (Wi-Fi cycling doesn't reconnect on that emulator either way).
 - Drive-review pass (same day, from the user's two 2026-10-28 drive exports + review): issues #216–#224 created, #125 and
-  #205–#208 updated, milestone re-prioritised (decoders now P1). Commits `e6c1d09`…`e347150` (+ docs) — #212 ownership
+  #205–#208 updated, milestone re-prioritised (decoders now P1). Commits `e6c1d09`…`24c1d41` (+ docs) — #212 ownership
   window + persistent Cancel, #216 NRC, #217 stale, #205 spark, #206 throttle, #207 boost, #215 layout / interleaving /
   retries / resolution, #220 probe, #218 BLE, #219 TPMS units, #125 ESC confirmation, #221 gap diagnostics. The issue
   tracker is authoritative; acceptance matrix, failing-before / passing-after log, emulator evidence, final build identity
