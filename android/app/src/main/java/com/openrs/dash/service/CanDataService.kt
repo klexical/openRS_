@@ -349,9 +349,6 @@ class CanDataService : Service() {
         /** Notification action: cancel an initial connection attempt (#212). */
         const val ACTION_CANCEL_CONNECT = "com.openrs.dash.action.CANCEL_CONNECT"
 
-        /** RPM threshold that signals the engine is actually running (not just ignition). */
-        const val AUTO_START_MIN_RPM = 400.0
-
         /** Window within which a paused drive will be resumed on reconnect. Beyond this,
          *  the stale drive is finalized and a fresh one begins. */
         const val AUTO_RESUME_WINDOW_MS = 15 * 60_000L  // 15 minutes
@@ -545,6 +542,7 @@ class CanDataService : Service() {
         val conn = buildConnection()
         connection = conn
         val gen = link.begin()
+        val session = newLinkSession(gen)
         applyPhase(LinkPhase.CONNECTING)
 
         connectionJob = scope.launch {
@@ -625,26 +623,9 @@ class CanDataService : Service() {
             // is kept (AutoRecordPolicy).
             if (AppSettings.getAutoRecordDrives(this@CanDataService)) {
                 launch {
-                    val recorder = OpenRSDashApp.instance.driveRecorder
-                    var autoStarted = false
+                    // A drive still recording (manual, or across an RCN retry) is kept — never split (#212)
                     OpenRSDashApp.instance.vehicleState.collect { vs ->
-                        if (autoStarted || !link.owns(gen)) return@collect
-                        if (!vs.isConnected) return@collect
-                        if (vs.rpm <= AUTO_START_MIN_RPM) return@collect
-                        autoStarted = true
-
-                        val ds = recorder.driveState.value
-                        // A drive still recording (manual, or across an RCN retry) is kept — never split (#212)
-                        when (AutoRecordPolicy.onEngineRunning(ds.isRecording, ds.isPaused,
-                            recorder.pausedDurationMs(), AUTO_RESUME_WINDOW_MS)) {
-                            AutoRecordPolicy.Action.KEEP -> Unit
-                            AutoRecordPolicy.Action.RESUME -> recorder.resumeDrive()
-                            AutoRecordPolicy.Action.FINALIZE_AND_START -> {
-                                recorder.stopDrive()
-                                recorder.startDrive(sessionId = currentSessionId)
-                            }
-                            AutoRecordPolicy.Action.START -> recorder.startDrive(sessionId = currentSessionId)
-                        }
+                        session.onVehicleState(vs, { currentSessionId }, AUTO_RESUME_WINDOW_MS)
                     }
                 }
             }
@@ -659,7 +640,7 @@ class CanDataService : Service() {
                 },
                 getCurrentState = { OpenRSDashApp.instance.vehicleState.value }
             ).collect { (canId, data) ->
-                if (link.owns(gen)) processCanFrame(canId, data, conn.fps)
+                session.onCanFrame(canId, data, conn.fps)
             }
         }
         true
@@ -782,75 +763,30 @@ class CanDataService : Service() {
         if (kr > 1.0) OpenRSDashApp.instance.knockEventCount.update { it + 1 }
     }
 
-    private fun processCanFrame(canId: Int, data: ByteArray, fps: Double) {
-        if (DemoMode.isActive) return   // late frame after demo took over
-        sessionFrameCount++
-        // Side effects (FuelEconomy, PerformanceTimer, knock counter) must run
-        // OUTSIDE the update{} lambda — MutableStateFlow.update uses a CAS retry
-        // loop, so anything inside the lambda can execute more than once on
-        // contention with concurrent OBD merges.
-        var newState: VehicleState? = null
-        OpenRSDashApp.instance.vehicleState.update { current ->
-            val decoded = CanDecoder.decode(canId, data, current)
-            if (decoded === current) {
-                // Recognized frame, nothing changed (0x040, 0x300, rejected 0x1A4): log it as
-                // known and skip peaks/fps copy + emit (#189/#192). Checked before stamping,
-                // which would otherwise make a new copy.
-                val (desc, issue) = CanDecoder.describeUnchanged(canId, data)
-                DiagnosticLogger.logFrame(canId, data, current, desc, issue)
-                return@update current
+    /** The live-data work of connection job [gen] — frames, derived values, auto-record (see [LinkSession]). */
+    private fun newLinkSession(gen: Int) = LinkSession(
+        link = link,
+        gen = gen,
+        state = OpenRSDashApp.instance.vehicleState,
+        recorder = object : LinkSession.Recorder {
+            private val r get() = OpenRSDashApp.instance.driveRecorder
+            override val isRecording get() = r.driveState.value.isRecording
+            override val isPaused get() = r.driveState.value.isPaused
+            override val activeDriveId get() = r.driveState.value.let { if (it.isRecording) it.driveId else null }
+            override fun pausedDurationMs() = r.pausedDurationMs()
+            override fun resumeDrive() = r.resumeDrive()
+            override fun stopDrive() = r.stopDrive()
+            override fun startDrive(sessionId: Long) = r.startDrive(sessionId = sessionId)
+        },
+        onFrameCounted = { sessionFrameCount++ },
+        perfRunSink = { run ->
+            try {
+                OpenRSDashApp.instance.driveDb.driveDao().insertPerfRun(run)
+            } catch (e: Exception) {
+                android.util.Log.w("CanDataService", "PerfRun persist failed", e)
             }
-            // #194 — stamp CAN-sourced fields (≤1/s per ID) so THERMAL availability works
-            val updated = decoded?.let { CanDecoder.stampFresh(canId, current, it, System.currentTimeMillis()) }
-            if (updated != null) {
-                val desc  = CanDecoder.describeDecoded(canId, updated)
-                val issue = CanDecoder.validateDecoded(canId, updated)
-                DiagnosticLogger.logFrame(canId, data, updated, desc, issue)
-                val withPeaks = updated.withPeaksUpdated().copy(framesPerSecond = fps)
-                newState = withPeaks
-                withPeaks
-            } else {
-                DiagnosticLogger.logUnknownFrame(canId, data)
-                current
-            }
-        }
-
-        // Side effects — guaranteed to run exactly once after CAS succeeds
-        val wp = newState ?: return
-
-        // Feed fuel economy calculator
-        if (canId == 0x130 || canId == 0x380) {
-            FuelEconomy.onUpdate(wp.fuelLevelPct, wp.speedKph)
-        }
-
-        // Feed performance timer (speed from 0x130, ~100 Hz)
-        if (canId == 0x130) {
-            val (sixty, hundred) = PerformanceTimer.onSpeedUpdate(wp.speedKph, wp.rpm, wp.boostPsi)
-            if (hundred || (sixty && PerformanceTimer.state.value == PerformanceTimer.State.FINISHED)) {
-                // Persist completed run to Room
-                val result = PerformanceTimer.result.value
-                if (result != null) {
-                    val driveId = OpenRSDashApp.instance.driveRecorder.driveState.value.let { if (it.isRecording) it.driveId else null }
-                    try {
-                        OpenRSDashApp.instance.driveDb.driveDao().insertPerfRun(
-                            com.openrs.dash.data.PerfRunEntity(
-                                driveId = driveId,
-                                timestamp = System.currentTimeMillis(),
-                                zeroTo60Ms = result.zeroTo60Ms,
-                                zeroTo100Ms = result.zeroTo100Ms,
-                                peakRpm = result.peakRpm,
-                                peakBoostPsi = result.peakBoostPsi,
-                                launchRpm = result.launchRpm,
-                                ambientTempC = wp.ambientTempC
-                            )
-                        )
-                    } catch (e: Exception) {
-                        android.util.Log.w("CanDataService", "PerfRun persist failed", e)
-                    }
-                }
-            }
-        }
-    }
+        },
+    )
 
     fun stopConnection(): Unit = link.transition {
         // Auto-pause drive if recording — do NOT finalize here. A brief
