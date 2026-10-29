@@ -210,4 +210,48 @@ class NrcTrackerTest {
         l.sent(0x0318, 4_000)
         assertNull(l.negative(6_100))                                 // older than maxAge: no reply ever came
     }
+
+    // ── Expiry never creates ownership (2026-10-29 corrections): the ledger boundary counterexample ──
+
+    @Test
+    fun `ledger — A at 0, B at 1900, A's late NRC at 2101 is not charged to B`() {
+        val l = PcmRequestLedger(maxAgeMs = 2_000L)
+        l.sent(0x0A0A, 0); l.sent(0x0B0B, 1_900)
+        // Before: A was pruned at 2 s, leaving B as the only request waiting — A's rejection was charged to B
+        assertNull(l.negative(2_101))
+        assertEquals(listOf(0x0A0A, 0x0B0B), l.waiting(2_101))        // A is still a possible owner, B still waiting
+    }
+
+    @Test
+    fun `ledger — response pending then a late final NRC after B was sent is ambiguous`() {
+        val l = PcmRequestLedger(maxAgeMs = 2_000L)
+        l.sent(0x0A0A, 0)
+        l.pending(50)                                                 // 7F 22 78 — the server is still working on A
+        l.sent(0x0B0B, 1_900)
+        assertNull(l.negative(2_101))                                 // A's final reply or B's? nobody is charged
+    }
+
+    @Test
+    fun `ledger — response pending keeps a lone request attributable past the normal age`() {
+        val l = PcmRequestLedger(maxAgeMs = 2_000L)
+        l.sent(0x03EE, 0)
+        l.pending(50)
+        assertEquals(0x03EE, l.negative(4_000))                       // only A could own it (P2* extends its wait)
+    }
+
+    @Test
+    fun `ledger — an expired request blocks attribution until a late answer resolves it or the hold ends`() {
+        val l = PcmRequestLedger(maxAgeMs = 2_000L)
+        l.sent(0x0A0A, 0)
+        l.sent(0x0B0B, 2_500)
+        assertNull(l.negative(2_600))                                 // A lapsed but may still answer
+        l.sent(0x0B0B, 3_000)
+        assertTrue(l.positive(0x0A0A))                                // A's late positive: A is resolved
+        assertEquals(0x0B0B, l.negative(3_100))                       // only B (repeats) can own it now
+        l.sent(0x0C0C, 4_000)                                         // C never answers
+        assertNull(l.negative(6_200))                                 // C lapsed at 6 s: ambiguous
+        val holdOver = 6_000 + PcmRequestLedger.LAPSED_HOLD_MS + 1
+        l.sent(0x0D0D, holdOver - 500)
+        assertEquals(0x0D0D, l.negative(holdOver))                    // C's hold is over, D is alone
+    }
 }

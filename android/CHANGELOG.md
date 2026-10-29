@@ -68,6 +68,9 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 - **Diagnostic export's peak boost would have read 0 after the boost-rule change** — the vehicle-state JSON still exported `peakBoostPsi`, which BOOST no longer updates (peaks are per measurement). It now exports `boostPeakCanGaugeKpa` / `boostPeakTipGaugeKpa` (session peaks, gauge kPa), present only for a source that gave a reading. Found before release; no build shipped with it. (`diagnostics/DiagnosticReportBuilder.kt`) ([#207](https://github.com/klexical/openRS_/issues/207))
 
+### Fixed (rc.7 — corrections 2026-10-29)
+- **An NRC could still be charged to the wrong DID after its request aged out** — a request unanswered for 2 s was dropped, so A sent at 0 ms, B at 1,900 ms and A's late `7F 22` at 2,101 ms left B the only request waiting and B took A's rejection (also after a `7F 22 78` response-pending, whose final reply may follow up to 5 s later). An unanswered request now lapses instead of disappearing: for one P2* (5 s, ISO 14229-2 timing, not measured on the car) it keeps every NRC ambiguous unless a late positive reply resolves it, and is never charged itself; a response-pending extends every request that may own it. (`can/PcmRequestLedger.kt`, `can/SlcanConnection.kt`) ([#216](https://github.com/klexical/openRS_/issues/216))
+
 ### Changed (rc.7)
 - **What's New describes the corrected boost, NRC, ESC, probe, Bluetooth, DTC and header behaviour** — the BOOST line no longer says TIP is "marked under the reading" (the gauge's label says TIP now) and says the signal identities are unconfirmed. (`ui/WhatsNewDialog.kt`)
 - **What's New lists rc.7** — the 2.2.7 highlights start with the export, connection-state and version / DTC changes, from this changelog. (`ui/WhatsNewDialog.kt`)

@@ -156,4 +156,22 @@ class NrcAttributionTest {
         }, seconds = 40)
         assertEquals(setOf(0x03EE), DiagnosticLogger.nrcSuppressed.keys)
     }
+    @Test fun `a final NRC arriving after its request aged out is not charged to the request waiting then`() = runTest {
+        // Source-level counterexample (2026-10-29) through the poller: the slow DIDs 093C and 03E8 (one request each per
+        // rotation) get 7F 22 78 at once and their final 7F 22 31 2,200 ms after the request; 0462 (fast group, every
+        // cycle) never answers; everything else answers normally. Each final NRC lands after its request's 2 s age-out,
+        // between two fast-group replies, while only 0462 is waiting. Before: the slow request had been pruned, so its
+        // rejection was charged to 0462 — twice — and 0462 was suppressed. (The ledger-level A 0 / B 1,900 / NRC 2,101
+        // case is in NrcTrackerTest.)
+        val ecu = run({ did, n ->
+            when {
+                (did == 0x093C || did == 0x03E8) && n == 1 -> Seq(listOf(Nrc(0x78, afterMs = 20L), Nrc(0x31, afterMs = 2_200L)))
+                did == 0x0462 -> Silent
+                else -> Pos("0000")
+            }
+        }, seconds = 40)
+        val suppressed = DiagnosticLogger.nrcSuppressed.keys
+        assertFalse("0462 never sent an NRC (suppressed: ${suppressed.map { "%04X".format(it) }})", 0x0462 in suppressed)
+        assertTrue("0462 kept being polled: ${ecu.sent[0x0462]}", (ecu.sent[0x0462] ?: 0) >= 10)
+    }
 }
