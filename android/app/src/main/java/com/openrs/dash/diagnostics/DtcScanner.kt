@@ -155,24 +155,44 @@ class DtcScanner(private val ctx: Context) {
         }
 
         /**
-         * Compute the diff between the current scan and a previous set of codes.
-         * [previousCodes] is a set of DTC code strings from the last scan.
+         * NEW / RESOLVED against [previous] (#215), coverage-aware: only modules read OK in both scans are compared —
+         * a module the previous scan failed to read can't make a current fault NEW, and one this scan failed to read
+         * can't make a previous fault RESOLVED. Faults match on module + base code + failure type ([DtcResult.sameFault]).
+         * No previous scan → nothing is compared.
          */
         fun computeDiff(
             current: List<DtcResult>,
-            previous: Set<Pair<String, String>>,
+            previous: PreviousDtcScan?,
             moduleStatuses: Map<String, ModuleScanStatus>,
         ): DtcDiff {
-            // A previous code is "resolved" only if its module gave a valid reply this time (#215) — a module that
-            // timed out, refused or replied malformed says nothing about its codes.
-            val currentKeys = current.map { it.module to it.code }.toSet()
+            if (previous == null) return DtcDiff(emptyList(), emptyList(), emptyList())
+            val compared = moduleStatuses.filterValues { it == ModuleScanStatus.OK }.keys
+                .filter { previous.moduleStatuses[it] == ModuleScanStatus.OK }.toSet()
+            val cur = current.filter { it.module in compared }
+            val prev = previous.codes.filter { it.module in compared }
+            val baseOnly = cur.any { c -> prev.any { p -> p.module == c.module && p.code == c.code &&
+                (p.failureType == null || c.failureType == null) } }
             return DtcDiff(
-                newCodes   = current.filter { (it.module to it.code) !in previous },
-                goneCodes  = previous.filter { (module, code) ->
-                    moduleStatuses[module] == ModuleScanStatus.OK && (module to code) !in currentKeys
-                }.map { it.second },
-                persistent = current.filter { (it.module to it.code) in previous }
+                newCodes   = cur.filter { c -> prev.none { it.sameFault(c) } },
+                goneCodes  = prev.filter { p -> cur.none { it.sameFault(p) } },
+                persistent = cur.filter { c -> prev.any { it.sameFault(c) } },
+                comparedModules = compared,
+                baseCodeOnly = baseOnly,
             )
+        }
+
+        /** A saved scan back as the NEW / RESOLVED baseline; an unreadable status JSON reads as "nothing read OK". */
+        internal fun previousFrom(scan: DtcScanEntity, codes: List<DtcCodeEntity>): PreviousDtcScan {
+            val statuses = try {
+                val o = JSONObject(scan.moduleStatuses)
+                o.keys().asSequence().mapNotNull { k ->
+                    runCatching { k to ModuleScanStatus.valueOf(o.getString(k)) }.getOrNull()
+                }.toMap()
+            } catch (_: Exception) { emptyMap() }
+            return PreviousDtcScan(scan.timestamp, codes.map {
+                DtcResult(it.module, it.code, it.description,
+                    runCatching { DtcStatus.valueOf(it.status) }.getOrDefault(DtcStatus.UNKNOWN), failureType = it.failureType)
+            }, statuses)
         }
     }
 
@@ -212,7 +232,8 @@ class DtcScanner(private val ctx: Context) {
                         module = dtc.module,
                         code = dtc.code,
                         description = dtc.description,
-                        status = dtc.status.name
+                        status = dtc.status.name,
+                        failureType = dtc.failureType
                     )
                 })
             }
@@ -290,16 +311,11 @@ class DtcScanner(private val ctx: Context) {
         return result.codes to (result.moduleStatuses[module.name] ?: ModuleScanStatus.TIMEOUT)
     }
 
-    /**
-     * Get the set of DTC codes from the most recent persisted scan.
-     * Used for diff comparison (NEW/RESOLVED badges).
-     */
-    fun getPreviousScanCodes(): Set<Pair<String, String>> {
-        return try {
-            val db = DriveDatabase.getInstance(ctx)
-            db.driveDao().getLatestScanCodes().map { it.module to it.code }.toSet()
-        } catch (_: Exception) { emptySet() }
-    }
+    /** The most recent saved scan — codes and module coverage — as the NEW / RESOLVED baseline (null = none). */
+    fun getPreviousScan(): PreviousDtcScan? = try {
+        val dao = DriveDatabase.getInstance(ctx).driveDao()
+        dao.getRecentDtcScans(1).firstOrNull()?.let { previousFrom(it, dao.getDtcCodes(it.id)) }
+    } catch (_: Exception) { null }
 
     /**
      * Get code occurrence history for the DTC detail sheet.

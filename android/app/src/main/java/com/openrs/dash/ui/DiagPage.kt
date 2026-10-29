@@ -92,7 +92,12 @@ import kotlin.math.roundToInt
     // The export record of the scan on screen (#215): retries publish into it, an abort / dispose closes it
     var dtcScanTicket by remember { mutableStateOf<com.openrs.dash.diagnostics.DtcScanLedger.Ticket?>(null) }
     // Scan completion and module retries go through the view + ledger together, so screen and export agree (#215)
-    val dtcView = remember { com.openrs.dash.diagnostics.DtcScanView(DiagnosticLogger.dtcScans) }
+    // The header count is published only with an accepted result (#215)
+    val dtcView = remember {
+        com.openrs.dash.diagnostics.DtcScanView(DiagnosticLogger.dtcScans) {
+            com.openrs.dash.OpenRSDashApp.instance.activeDtcCount.value = it
+        }
+    }
     var dtcScanStartMs by remember { mutableStateOf(0L) }
     var dtcScanElapsed by remember { mutableStateOf(0) }
     // Per-module progress: null value = querying, non-null = done
@@ -102,8 +107,8 @@ import kotlin.math.roundToInt
     // Detail sheet
     var selectedDtc by remember { mutableStateOf<DtcResult?>(null) }
     var selectedDtcHistory by remember { mutableStateOf<List<com.openrs.dash.data.DtcCodeEntity>?>(null) }
-    // Diff: set of codes from previous scan
-    var previousScanCodes by remember { mutableStateOf<Set<Pair<String, String>>>(emptySet()) }   // (module, code)
+    // Diff baseline: the latest saved scan's faults and module coverage (#215)
+    var previousScan by remember { mutableStateOf<com.openrs.dash.data.PreviousDtcScan?>(null) }
     LaunchedEffect(dtcScanning) {
         if (dtcScanning) {
             dtcScanStartMs = System.currentTimeMillis()
@@ -417,11 +422,9 @@ import kotlin.math.roundToInt
                                     dtcView.begin(ticket)
                                     dtcScanJob = scope.launch(Dispatchers.IO) {
                                       try {
-                                        // Load previous scan codes for diff
-                                        val prevCodes = try {
-                                            com.openrs.dash.diagnostics.DtcScanner(ctx).getPreviousScanCodes()
-                                        } catch (_: Exception) { emptySet<Pair<String, String>>() }
-                                        withContext(Dispatchers.Main) { previousScanCodes = prevCodes }
+                                        // Baseline for NEW / RESOLVED: the latest saved scan, before this one is saved
+                                        val prev = com.openrs.dash.diagnostics.DtcScanner(ctx).getPreviousScan()
+                                        withContext(Dispatchers.Main) { previousScan = prev }
 
                                         var result = try {
                                             onScanDtcs?.invoke { name, status ->
@@ -445,9 +448,9 @@ import kotlin.math.roundToInt
                                             if (dtcScanning) {
                                                 dtcScanning = false
                                                 if (result != null) {
+                                                    // Screen, export and count only if this scan still owns the record
                                                     if (dtcView.finish(ticket, result, System.currentTimeMillis())) dtcScanResult = dtcView.result
-                                                    com.openrs.dash.OpenRSDashApp.instance.activeDtcCount.value =
-                                                        result.codes.count { it.status == com.openrs.dash.data.DtcStatus.ACTIVE }
+                                                    else dtcError = "Scan result not shown — a newer scan or connection session replaced it"
                                                 } else {
                                                     dtcError = "Scan failed — check adapter connection"
                                                     DiagnosticLogger.dtcScans.fail(ticket, System.currentTimeMillis(), "Scan failed")
@@ -605,6 +608,9 @@ import kotlin.math.roundToInt
                 if (results != null) lastResults = results
                 AnimatedVisibility(visible = results != null) {
                     lastResults?.let { r ->
+                        // NEW / RESOLVED only over modules read OK in both scans (#215)
+                        val diff = com.openrs.dash.diagnostics.DtcScanner.computeDiff(r, previousScan,
+                            scanRes?.moduleStatuses ?: emptyMap())
                         Column(Modifier.fillMaxWidth()) {
                             // Status filter chips (only when there are results)
                             if (r.isNotEmpty()) {
@@ -684,7 +690,7 @@ import kotlin.math.roundToInt
                                             Box(pageEntrance(dtcIdx, scanComplete, staggerDelayMs = 60)) {
                                                 DtcRow(
                                                     dtc = dtc,
-                                                    isNew = previousScanCodes.isNotEmpty() && (dtc.module to dtc.code) !in previousScanCodes,
+                                                    isNew = diff.isNew(dtc),
                                                     onClick = {
                                                         selectedDtc = dtc
                                                         // Load history in background
@@ -745,8 +751,6 @@ import kotlin.math.roundToInt
                                                                     if (retryTicket != null &&
                                                                         dtcView.retryFinished(retryTicket, name, codes, status, System.currentTimeMillis())) {
                                                                         dtcScanResult = dtcView.result
-                                                                        com.openrs.dash.OpenRSDashApp.instance.activeDtcCount.value =
-                                                                            dtcView.result?.codes?.count { it.status == DtcStatus.ACTIVE } ?: 0
                                                                     }
                                                                 }
                                                             }
@@ -765,24 +769,35 @@ import kotlin.math.roundToInt
                             }
 
                             // Resolved codes (from diff)
-                            if (previousScanCodes.isNotEmpty()) {
-                                val diff = com.openrs.dash.diagnostics.DtcScanner.computeDiff(r, previousScanCodes,
-                                    scanRes?.moduleStatuses ?: emptyMap())
-                                if (diff.goneCodes.isNotEmpty()) {
-                                    Spacer(Modifier.height(6.dp))
-                                    Column(
-                                        Modifier.fillMaxWidth()
-                                            .background(Ok.copy(0.06f), RoundedCornerShape(10.dp))
-                                            .border(CardBorder, Ok.copy(0.2f), RoundedCornerShape(10.dp))
-                                            .padding(10.dp),
-                                        verticalArrangement = Arrangement.spacedBy(2.dp)
-                                    ) {
-                                        MonoLabel("RESOLVED SINCE LAST SCAN", 9.sp, Ok, letterSpacing = 1.sp)
-                                        for (code in diff.goneCodes) {
-                                            MonoLabel(code, 9.sp, Ok.copy(0.7f))
-                                        }
+                            if (diff.goneCodes.isNotEmpty()) {
+                                Spacer(Modifier.height(6.dp))
+                                Column(
+                                    Modifier.fillMaxWidth()
+                                        .background(Ok.copy(0.06f), RoundedCornerShape(10.dp))
+                                        .border(CardBorder, Ok.copy(0.2f), RoundedCornerShape(10.dp))
+                                        .padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    MonoLabel("NOT FOUND THIS SCAN — WAS IN THE LAST SCAN", 9.sp, Ok, letterSpacing = 1.sp)
+                                    for (gone in diff.goneCodes) {
+                                        MonoLabel("${gone.module} ${gone.displayCode}", 9.sp, Ok.copy(0.7f))
                                     }
                                 }
+                            }
+                            // What NEW / NOT FOUND compared — modules read OK in both scans only
+                            previousScan?.let { prev ->
+                                val all = scanRes?.moduleStatuses?.keys ?: emptySet()
+                                val skipped = all - diff.comparedModules
+                                Spacer(Modifier.height(6.dp))
+                                MonoLabel(
+                                    "Compared with the last saved scan (" +
+                                        java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT)
+                                            .format(java.util.Date(prev.timestampMs)) + ") over " +
+                                        (if (diff.comparedModules.isEmpty()) "no module" else diff.comparedModules.sorted().joinToString(", ")) +
+                                        (if (skipped.isNotEmpty()) " · not compared (not read in both): ${skipped.sorted().joinToString(", ")}" else "") +
+                                        (if (diff.baseCodeOnly) " · older saved codes have no failure type — matched by base code" else "") + ".",
+                                    8.sp, Dim
+                                )
                             }
 
                             Spacer(Modifier.height(8.dp))
@@ -1062,8 +1077,9 @@ private fun DtcRow(
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Column(Modifier.width(54.dp)) {
-            MonoLabel(dtc.code, 10.sp, statusColor)
+        Column(Modifier.width(72.dp)) {
+            // Full fault identity: base code + failure type ("P0123-1C") when known
+            MonoLabel(dtc.displayCode, 10.sp, statusColor)
             // Severity dot
             val sevColor = when (severity) {
                 com.openrs.dash.data.DtcSeverity.HIGH -> Orange

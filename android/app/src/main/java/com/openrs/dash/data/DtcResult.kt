@@ -16,9 +16,21 @@ data class DtcResult(
     val description: String,
     val status: DtcStatus,
     val freezeFrame: FreezeFrame? = null,
-    /** ISO 14229 DTC low byte (failure type, FORScan's "-1C" suffix); not persisted. Null for older records. */
+    /** ISO 14229 DTC low byte (failure type, FORScan's "-1C" suffix). Null = unknown (saved before Room v13). */
     val failureType: Int? = null,
-)
+) {
+    /** Full fault as shown and exported: base code + failure type when known ("P0123-1C"). Descriptions stay base-code. */
+    val displayCode: String get() = failureType?.let { String.format(java.util.Locale.ROOT, "%s-%02X", code, it) } ?: code
+
+    /**
+     * Same fault as [other]: same module and base code, and the same failure type when both are known. Two different
+     * failure types are different faults; when either side's type is unknown (an older saved record) only the base
+     * code can be compared — [DtcDiff.baseCodeOnly] says so.
+     */
+    fun sameFault(other: DtcResult): Boolean =
+        module == other.module && code == other.code &&
+            (failureType == null || other.failureType == null || failureType == other.failureType)
+}
 
 enum class DtcStatus(val label: String) {
     ACTIVE("Active"),
@@ -193,11 +205,31 @@ data class FreezeFrame(
 // ── DTC diff ────────────────────────────────────────────────────────────────
 
 /** Diff between current and previous DTC scan. */
+/**
+ * The latest saved scan, as the baseline for NEW / RESOLVED (#215): its faults *and* which modules it actually read —
+ * a module it failed to read says nothing about that module's faults.
+ */
+data class PreviousDtcScan(
+    val timestampMs: Long,
+    val codes: List<DtcResult>,
+    val moduleStatuses: Map<String, ModuleScanStatus>,
+)
+
+/**
+ * Comparison with the previous scan, only over [comparedModules] — modules read OK (valid positive reply) in *both*
+ * scans. A fault outside them is neither NEW nor RESOLVED: its status in one of the scans is unknown.
+ */
 data class DtcDiff(
     val newCodes: List<DtcResult>,
-    val goneCodes: List<String>,   // code strings that were in previous scan but not current
-    val persistent: List<DtcResult>
-)
+    /** Previous faults absent now, in modules read OK both times. */
+    val goneCodes: List<DtcResult>,
+    val persistent: List<DtcResult>,
+    val comparedModules: Set<String> = emptySet(),
+    /** True when a matched pair lacked a failure type on one side — compared by base code only. */
+    val baseCodeOnly: Boolean = false,
+) {
+    fun isNew(dtc: DtcResult): Boolean = newCodes.any { it === dtc }
+}
 
 // ── DTC severity ────────────────────────────────────────────────────────────
 

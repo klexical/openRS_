@@ -257,7 +257,7 @@ internal object DriveExportBuilder {
             appendLine("─── $mod ────────────────────────────────────────────────────")
             codes.forEach { dtc ->
                 val desc = if (dtc.description.isNotEmpty()) dtc.description else "(no description)"
-                appendLine("  ${dtc.code}  [${dtc.status.label}]  $desc")
+                appendLine("  ${dtc.displayCode}  [${dtc.status.label}]  $desc")
             }
             appendLine()
         }
@@ -282,6 +282,8 @@ internal object DriveExportBuilder {
             val obj = JSONObject().apply {
                 put("module", dtc.module)
                 put("code", dtc.code)
+                // Full fault identity (#215): failure type byte when known; `code` stays the base code for lookups
+                dtc.failureType?.let { put("failureType", String.format(java.util.Locale.ROOT, "%02X", it)); put("fullCode", dtc.displayCode) }
                 put("description", dtc.description)
                 put("status", dtc.status.name)
                 put("severity", com.openrs.dash.data.DtcSeverity.fromCode(dtc.code).name)

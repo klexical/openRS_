@@ -594,28 +594,20 @@ class CanDataService : Service() {
                     delay(5_000L)
                     // Only proceed if still connected
                     if (conn.state.value is AdapterState.Connected && link.owns(gen)) {
-                        // Visible from the start (RUNNING + progress); published through the session's ledger (#215)
-                        val ledger = DiagnosticLogger.dtcScans
-                        val ticket = ledger.begin("auto", DtcScanner.MODULES.map { it.name }, System.currentTimeMillis())
-                        try {
-                            val result = DtcScanner(this@CanDataService).scan(conn) { m, st -> ledger.progress(ticket, m, st) }
-                            ledger.complete(ticket, result, System.currentTimeMillis())   // zero codes recorded too
-                            link.deliver(gen) {
-                                if (result.codes.isNotEmpty()) {
-                                    OpenRSDashApp.instance.activeDtcCount.value =
-                                        result.codes.count { it.status == com.openrs.dash.data.DtcStatus.ACTIVE }
-                                }
-                            }
-                            val record = DtcScanRecord.from(result, 0L, "auto", DtcScanner.MODULES.map { it.name })
+                        // Visible from the start (RUNNING + progress); export + count only if the ledger accepts (#215)
+                        val names = DtcScanner.MODULES.map { it.name }
+                        val out = com.openrs.dash.diagnostics.DtcScanView.autoScan(
+                            DiagnosticLogger.dtcScans, names, System::currentTimeMillis,
+                            scan = { progress -> DtcScanner(this@CanDataService).scan(conn, progress) },
+                            deliver = { block -> link.deliver(gen) { block() } },
+                            publishCount = { OpenRSDashApp.instance.activeDtcCount.value = it },
+                        )
+                        if (out != null) {
+                            val (result, accepted) = out
+                            val record = DtcScanRecord.from(result, 0L, "auto", names)
                             DiagnosticLogger.event("AUTO_DTC_SCAN",
-                                "${record.status} · ${result.codes.size} code(s) · ${record.modulesAnswered}/${record.modules.size} modules scanned")
-                        } catch (e: kotlinx.coroutines.CancellationException) {
-                            // The connection ended mid-scan: say so (a plain ledger write — no suspending under cancellation)
-                            ledger.interrupt(ticket, System.currentTimeMillis(), "connection ended")
-                            throw e
-                        } catch (e: Exception) {
-                            // Auto-scan is best-effort, but a failed one is still reported as failed, never as clean
-                            ledger.fail(ticket, System.currentTimeMillis(), e.message)
+                                "${record.status} · ${result.codes.size} code(s) · ${record.modulesAnswered}/${record.modules.size} modules scanned" +
+                                    if (accepted) "" else " — superseded, not published")
                         }
                     }
                 }
