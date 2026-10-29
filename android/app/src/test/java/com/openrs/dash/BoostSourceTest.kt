@@ -219,5 +219,14 @@ class BoostSourceTest {
         assertEquals((160.0 - 101.325) * 0.14503773, old.peakBoostPsi, 1e-6)
     }
 
+    @Test fun `Custom Dashboard TIP cells use the TIP gauge's reference, absolute only when labelled`() {
+        rpmFrame(); tip(0x4F1A)
+        val prefs = com.openrs.dash.ui.UserPrefs()
+        val cell = com.openrs.dash.data.DashCell("tipActualKpa", "number", "TIP ACTUAL")
+        assertEquals("8.9 PSI", com.openrs.dash.data.resolveValue(state.value, prefs, cell).first)   // was "158"
+        state.update { it.copy(barometricPressure = 0.0) }
+        assertEquals("158 kPa abs", com.openrs.dash.data.resolveValue(state.value, prefs, cell).first)
+    }
+
     @Suppress("unused") private val keep = AtomicInteger()
 }

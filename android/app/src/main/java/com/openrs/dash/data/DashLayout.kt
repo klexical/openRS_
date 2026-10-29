@@ -111,8 +111,10 @@ fun resolveValue(vs: VehicleState, prefs: UserPrefs, cell: DashCell, nowMs: Long
         "steeringAngle" -> "%.1f\u00B0".format(vs.steeringAngle) to vs.steeringAngle
         "yawRate" -> "%.1f".format(vs.yawRate) to vs.yawRate
         "wgdcDesired" -> polled("wgdcDesired", vs.wgdcDesired) { "%.0f%%".format(it) }
-        "tipActualKpa" -> polled("tipActualKpa", vs.tipActualKpa) { "%.0f".format(it) }
-        "tipDesiredKpa" -> polled("tipDesiredKpa", vs.tipDesiredKpa) { "%.0f".format(it) }
+        // Same reference as POWER and the TIP gauge (#207): against measured baro in the boost unit; absolute kPa
+        // (labelled) only when baro isn't known — never a bare absolute number next to gauge readings
+        "tipActualKpa" -> polled("tipActualKpa", vs.tipActualKpa) { tipText(vs, prefs, it) }
+        "tipDesiredKpa" -> polled("tipDesiredKpa", vs.tipDesiredKpa) { tipText(vs, prefs, it) }
         else -> "\u2014" to 0.0
     }
 }
@@ -143,3 +145,6 @@ fun barFraction(cell: DashCell, rawValue: Double): Float {
     }
     return (rawValue / max).coerceIn(0.0, 1.0).toFloat()
 }
+
+private fun tipText(vs: VehicleState, prefs: UserPrefs, absKpa: Double): String =
+    BoostRule.gaugeVsBaro(vs, absKpa)?.let { g -> prefs.displayGauge(g).let { (v, u) -> "$v $u" } } ?: "${"%.0f".format(absKpa)} kPa abs"
