@@ -66,6 +66,8 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 - **A DTC rescan with the same result showed empty module boxes** — the rows' entrance animation was triggered by the code list changing, so a rescan returning identical codes left them invisible. It now also triggers when the scan finishes. Found in the release smoke check; present before this RC's DTC work. (`ui/DiagPage.kt`)
 
+- **Diagnostic export's peak boost would have read 0 after the boost-rule change** — the vehicle-state JSON still exported `peakBoostPsi`, which BOOST no longer updates (peaks are per measurement). It now exports `boostPeakCanGaugeKpa` / `boostPeakTipGaugeKpa` (session peaks, gauge kPa), present only for a source that gave a reading. Found before release; no build shipped with it. (`diagnostics/DiagnosticReportBuilder.kt`) ([#207](https://github.com/klexical/openRS_/issues/207))
+
 ### Changed (rc.7)
 - **What's New describes the corrected boost, NRC, ESC, probe, Bluetooth, DTC and header behaviour** — the BOOST line no longer says TIP is "marked under the reading" (the gauge's label says TIP now) and says the signal identities are unconfirmed. (`ui/WhatsNewDialog.kt`)
 - **What's New lists rc.7** — the 2.2.7 highlights start with the export, connection-state and version / DTC changes, from this changelog. (`ui/WhatsNewDialog.kt`)

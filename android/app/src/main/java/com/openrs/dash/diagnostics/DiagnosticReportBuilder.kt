@@ -559,7 +559,9 @@ private fun VehicleState.toJsonObject(): JSONObject = JSONObject().apply {
     put("lcArmed", lcArmed ?: JSONObject.NULL)
     put("lcRpmTarget", lcRpmTarget)
     put("assEnabled", assEnabled ?: JSONObject.NULL)
-    put("peakBoostPsi", peakBoostPsi)
+    // #207: session boost peaks per measurement (gauge kPa) — VehicleState.peakBoostPsi is no longer updated
+    com.openrs.dash.data.BoostSession.peakKpa(com.openrs.dash.data.BoostSource.CAN_0F8)?.let { put("boostPeakCanGaugeKpa", it) }
+    com.openrs.dash.data.BoostSession.peakKpa(com.openrs.dash.data.BoostSource.TIP_033E)?.let { put("boostPeakTipGaugeKpa", it) }
     put("peakRpm", peakRpm)
     put("peakLateralG", peakLateralG)
     put("peakLongitudinalG", peakLongitudinalG)

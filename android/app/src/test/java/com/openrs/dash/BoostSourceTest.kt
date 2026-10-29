@@ -231,5 +231,13 @@ class BoostSourceTest {
         assertEquals("158 kPa abs", com.openrs.dash.data.resolveValue(state.value, prefs, cell).first)
     }
 
+    @Test fun `diagnostic detail JSON carries each measurement's session peak, not the retired field`() {
+        rpmFrame(); boostFrame(12)                                       // CAN peak 12 kPa, logged via LinkSession
+        val vs = JSONObject(com.openrs.dash.diagnostics.DiagnosticReportBuilder.buildDetailJson("t")).getJSONObject("vehicleState")
+        assertEquals(12.0, vs.getDouble("boostPeakCanGaugeKpa"), 1e-9)
+        assertFalse("VehicleState.peakBoostPsi isn't updated any more — exporting it would read 0", vs.has("peakBoostPsi"))
+        assertFalse(vs.has("boostPeakTipGaugeKpa"))
+    }
+
     @Suppress("unused") private val keep = AtomicInteger()
 }
