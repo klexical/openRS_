@@ -154,4 +154,55 @@ class LinkOwnershipTest {
         assertEquals(false, result)
         assertTrue(s.own.owns(gen))
     }
+
+    // ── Persistent Cancel (#212): survives service recreation / process death until an explicit connect ──
+
+    /** The SharedPreferences store reduced to its contract: what was saved is what the next process loads. */
+    private class MemoryStore(var saved: Boolean = false) : LinkOwnership.CancelStore {
+        var writes = 0
+        override fun load() = saved
+        override fun save(cancelled: Boolean) { saved = cancelled; writes++ }
+    }
+
+    @Test fun `an explicit Cancel survives process death and blocks auto-connect in the next process`() {
+        val disk = MemoryStore()
+        val first = Session(LinkOwnership().apply { attachStore(disk) })
+        first.own.begin()
+        assertTrue(first.cancel())
+        assertTrue(disk.saved)
+        // Process death: a new process gets a fresh LinkOwnership; the service attaches the store before anything else
+        val next = LinkOwnership().apply { attachStore(disk) }
+        assertTrue(next.manualConnectRequired)
+        var starts = 0
+        assertFalse(next.autoStart(blocked = { false }) { starts++ })
+        assertEquals(0, starts)
+    }
+
+    @Test fun `an explicit Connect clears the saved Cancel for later processes too`() {
+        val disk = MemoryStore(saved = true)
+        val own = LinkOwnership().apply { attachStore(disk) }
+        own.transition { own.clearManualConnect(); own.begin() }
+        assertFalse(disk.saved)
+        assertTrue(LinkOwnership().apply { attachStore(disk) }.autoStart(blocked = { false }) {})
+    }
+
+    @Test fun `users who never cancelled keep normal auto-connect and nothing is written`() {
+        val disk = MemoryStore()
+        val own = LinkOwnership().apply { attachStore(disk) }
+        assertTrue(own.autoStart(blocked = { false }) { own.begin() })
+        own.transition { own.end(LinkPhase.OFF) }                     // a plain stop is not a Cancel
+        assertTrue(LinkOwnership().apply { attachStore(disk) }.autoStart(blocked = { false }) {})
+        assertEquals(0, disk.writes)
+    }
+
+    @Test fun `the demo hold is not persisted and a refused Cancel while recording saves nothing`() {
+        val disk = MemoryStore()
+        val own = LinkOwnership().apply { attachStore(disk) }
+        own.requireManualConnect()                                     // demo exit
+        assertTrue(own.manualConnectRequired)
+        assertFalse(LinkOwnership().apply { attachStore(disk) }.manualConnectRequired)
+        val s = Session(LinkOwnership().apply { attachStore(disk) }); s.own.begin(); s.recording = true
+        assertFalse(s.cancel())
+        assertFalse(disk.saved)
+    }
 }

@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import androidx.core.content.edit
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.R
 import android.bluetooth.BluetoothAdapter
@@ -216,6 +217,13 @@ class CanDataService : Service() {
             PidRegistry.ensureLoaded(this@CanDataService)
             com.openrs.dash.ui.StartupTrace.mark("PID catalog loaded (background)")
         }
+        // An explicit Cancel from an earlier service instance or process holds until the user connects (#212) — load
+        // it before any callback is registered or an automatic start can run.
+        link.attachStore(object : LinkOwnership.CancelStore {
+            private val p = getSharedPreferences("openrs_link", MODE_PRIVATE)
+            override fun load() = p.getBoolean("user_cancelled", false)
+            override fun save(cancelled: Boolean) { p.edit(commit = true) { putBoolean("user_cancelled", cancelled) } }
+        })
         // A sticky restart recreates this service with no activity: load the saved prefs before any connection, so
         // auto-record and readiness use the saved thermal profile, not the defaults. No-op after MainActivity.onCreate.
         if (UserPrefsStore.ensureLoaded(this)) com.openrs.dash.ui.StartupTrace.mark("settings loaded by CanDataService (no activity)")

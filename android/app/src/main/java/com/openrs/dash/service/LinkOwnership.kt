@@ -9,8 +9,9 @@ import com.openrs.dash.can.LinkPhase
  * passed its check can't start a connection after a cancel, and an old job's late state, OBD merge or scan result can't
  * land on a newer session.
  *
- * Pure (no Android types) so the interleavings are unit-tested; [CanDataService] keeps one process-wide instance, like
- * [manualConnectRequired] it must survive the idle service being recreated with the activity.
+ * Pure (no Android types) so the interleavings are unit-tested; [CanDataService] keeps one process-wide instance (it
+ * must survive the idle service being recreated with the activity) and attaches a persistent [CancelStore], so an
+ * explicit Cancel also survives process death.
  */
 internal class LinkOwnership {
     private val lock = Any()
@@ -23,12 +24,36 @@ internal class LinkOwnership {
     @Volatile var phase: LinkPhase = LinkPhase.OFF
         private set
 
-    /**
-     * Set after a user cancel or leaving demo mode: Wi-Fi / Bluetooth / service-start callbacks must not reconnect on
-     * their own until an explicit connect clears it. Process-wide only — it resets with the process.
-     */
-    @Volatile var manualConnectRequired = false
+    /** Persists the user's explicit Cancel (#212) — survives service recreation and process death. */
+    interface CancelStore {
+        fun load(): Boolean
+        fun save(cancelled: Boolean)
+    }
+
+    private var store: CancelStore? = null
+
+    /** An explicit user Cancel. Persisted through [CancelStore] until an explicit Connect / Retry clears it. */
+    @Volatile var userCancelled = false
         private set
+
+    /** Leaving / entering demo mode: memory only (debug builds), cleared by an explicit connect. */
+    @Volatile private var demoHold = false
+
+    /**
+     * Wi-Fi / Bluetooth / service-start callbacks must not connect on their own while this is set — after a user
+     * Cancel (persisted) or demo mode (this process only). An explicit connect clears both. It is separate from the
+     * saved auto-connect preference, which it never changes.
+     */
+    val manualConnectRequired: Boolean get() = userCancelled || demoHold
+
+    /**
+     * Attach the persistent store and load the saved Cancel. [CanDataService] calls this in `onCreate` before it
+     * registers any network callback or tries an automatic start, so a Cancel from an earlier process is honoured.
+     */
+    fun attachStore(s: CancelStore) = synchronized(lock) {
+        store = s
+        userCancelled = s.load()
+    }
 
     /** Run a transition (start, stop, reconnect, demo) under the ownership lock. Reentrant. */
     fun <T> transition(block: () -> T): T = synchronized(lock, block)
@@ -41,8 +66,14 @@ internal class LinkOwnership {
         if (manualConnectRequired || blocked()) false else { start(); true }
     }
 
-    fun requireManualConnect() = synchronized(lock) { manualConnectRequired = true }
-    fun clearManualConnect() = synchronized(lock) { manualConnectRequired = false }
+    /** Demo mode entered / left: hold automatic connects for the rest of this process. */
+    fun requireManualConnect() = synchronized(lock) { demoHold = true }
+
+    /** An explicit Connect / Retry: clears the persisted Cancel and the demo hold. */
+    fun clearManualConnect() = synchronized(lock) {
+        demoHold = false
+        if (userCancelled) { userCancelled = false; store?.save(false) }
+    }
 
     /** A new connection job takes ownership; returns its generation. */
     fun begin(): Int = synchronized(lock) { phase = LinkPhase.CONNECTING; ++generation }
@@ -59,7 +90,7 @@ internal class LinkOwnership {
      */
     fun cancel(recording: () -> Boolean, end: () -> Unit): Boolean = synchronized(lock) {
         if (!LinkPresentation.offersCancel(phase, recording())) false
-        else { manualConnectRequired = true; end(); true }
+        else { userCancelled = true; store?.save(true); end(); true }
     }
 
     /** A job publishes a phase: applied (with [apply]) only while [gen] is current — atomically with the check. */
