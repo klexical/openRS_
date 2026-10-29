@@ -43,7 +43,21 @@ class SlcanConnection(
     private val debugSink: (String) -> Unit = { OpenRSDashApp.instance.pushDebugLine(it) },
     /** Wall clock for NRC attribution / re-probe timing — tests pass the virtual clock. */
     private val clock: () -> Long = System::currentTimeMillis,
+    /** Where firmware capability is published (#220) — the app's flags by default; tests capture it. */
+    private val firmwareSink: (FirmwareStatus) -> Unit = { st ->
+        OpenRSDashApp.instanceOrNull?.let { app ->
+            app.isOpenRsFirmware.value = st.openRs
+            app.firmwareProbing.value = st.probing
+            app.firmwareVersionLabel.value = st.label
+        }
+    },
 ) {
+    /**
+     * What the `OPENRS?` probe has established (#220): [probing] while probes are outstanding, [openRs] once an
+     * `OPENRS:<version>` reply arrived (at any time — a late reply still counts). Not detected after every probe is a
+     * capability statement about this connection, not proof the firmware is stock.
+     */
+    data class FirmwareStatus(val openRs: Boolean, val probing: Boolean, val label: String)
     private fun addDebugLine(line: String) = debugSink(line)
 
     /** The transport of the attempt in progress (opening, handshaking or connected) — closed by [abort]. */
@@ -313,22 +327,33 @@ class SlcanConnection(
                 val seenIds   = mutableSetOf<Int>()
                 var debugCount = 0
                 var debugTimer = System.currentTimeMillis()
-                var firmwareKnown = false
-                val probeStartMs  = System.currentTimeMillis()
-                val PROBE_GRACE_MS = 3_000L
 
-                // Process the first line captured during handshake
-                if (firstLine != null && firstLine.startsWith("OPENRS:")) {
-                    firmwareKnown = true
-                    val version = firstLine.removePrefix("OPENRS:").trim()
-                    firmwareVersion = "openRS_ $version"
-                    OpenRSDashApp.instance.isOpenRsFirmware.value = true
-                    OpenRSDashApp.instance.firmwareVersionLabel.value = firmwareVersion
-                    DiagnosticLogger.isOpenRsFirmware = true
-                    DiagnosticLogger.firmwareVersion = firmwareVersion
-                    addDebugLine("Firmware: openRS_ $version \u2713")
-                    DiagnosticLogger.event("FIRMWARE", "openRS_ $version detected (${transport.label})")
+                // ── Firmware capability probe (#220) ──────────────────────
+                // OPENRS? went out with the SLCAN init. Up to PROBE_TIMES_MS.size + 1 probes; the stock label shows
+                // after the first window as before, but a reply at any time still upgrades the capability (a late
+                // reply was ignored and nothing retried, so a slow adapter stayed VIEW ONLY for the session).
+                val probeStartMs = clock()
+                var probesSent = 1
+                var firmwareDetected = false
+                var probeGivenUp = false
+                var stockShown = false
+                fun publish(st: FirmwareStatus) {
+                    firmwareVersion = st.label
+                    DiagnosticLogger.isOpenRsFirmware = st.openRs
+                    DiagnosticLogger.firmwareVersion = st.label
+                    firmwareSink(st)
                 }
+                fun detected(line: String) {
+                    firmwareDetected = true
+                    val version = line.removePrefix("OPENRS:").trim()
+                    publish(FirmwareStatus(openRs = true, probing = false, label = "openRS_ $version"))
+                    val ms = clock() - probeStartMs
+                    addDebugLine("Firmware: openRS_ $version \u2713 (${ms} ms, probe $probesSent)")
+                    DiagnosticLogger.event("FIRMWARE", "openRS_ $version detected after $ms ms (probe $probesSent of " +
+                        "${PROBE_TIMES_MS.size + 1}${if (stockShown) ", late reply" else ""}) (${transport.label})")
+                }
+                publish(FirmwareStatus(openRs = false, probing = true, label = transport.stockFirmwareLabel))
+                if (firstLine != null && firstLine.startsWith("OPENRS:")) detected(firstLine)
 
                 // ── Main frame loop ───────────────────────────────────────
                 try {
@@ -337,27 +362,26 @@ class SlcanConnection(
                             android.util.Log.d("SLCAN", "readLine failed", e); null
                         } ?: break
 
-                        if (!firmwareKnown) {
-                            if (line.startsWith("OPENRS:")) {
-                                firmwareKnown = true
-                                val version = line.removePrefix("OPENRS:").trim()
-                                firmwareVersion = "openRS_ $version"
-                                OpenRSDashApp.instance.isOpenRsFirmware.value = true
-                                OpenRSDashApp.instance.firmwareVersionLabel.value = firmwareVersion
-                                DiagnosticLogger.isOpenRsFirmware = true
-                                DiagnosticLogger.firmwareVersion = firmwareVersion
-                                addDebugLine("Firmware: openRS_ $version \u2713")
-                                DiagnosticLogger.event("FIRMWARE", "openRS_ $version detected (${transport.label})")
-                                continue
-                            } else if (System.currentTimeMillis() - probeStartMs >= PROBE_GRACE_MS) {
-                                firmwareKnown = true
-                                firmwareVersion = transport.stockFirmwareLabel
-                                OpenRSDashApp.instance.isOpenRsFirmware.value = false
-                                OpenRSDashApp.instance.firmwareVersionLabel.value = firmwareVersion
-                                DiagnosticLogger.isOpenRsFirmware = false
-                                DiagnosticLogger.firmwareVersion = firmwareVersion
-                                addDebugLine("Firmware: ${transport.stockFirmwareLabel} (3 s timeout)")
-                                DiagnosticLogger.event("FIRMWARE", "${transport.stockFirmwareLabel} (no openRS_ response in 3 s)")
+                        if (line.startsWith("OPENRS:")) {
+                            if (!firmwareDetected) detected(line)
+                            continue
+                        }
+                        if (!firmwareDetected && !probeGivenUp) {
+                            val elapsed = clock() - probeStartMs
+                            if (!stockShown && elapsed >= PROBE_TIMES_MS.first()) {
+                                stockShown = true
+                                addDebugLine("Firmware: no openRS_ reply in ${PROBE_TIMES_MS.first() / 1000} s — probing again")
+                                DiagnosticLogger.event("FIRMWARE", "${transport.stockFirmwareLabel} so far (no openRS_ reply in " +
+                                    "${PROBE_TIMES_MS.first() / 1000} s) — probing again")
+                            }
+                            if (probesSent <= PROBE_TIMES_MS.size && elapsed >= PROBE_TIMES_MS[probesSent - 1]) {
+                                try { transport.writeLine("OPENRS?\r") } catch (_: Exception) { }
+                                probesSent++
+                            } else if (probesSent > PROBE_TIMES_MS.size && elapsed >= PROBE_GIVE_UP_MS) {
+                                probeGivenUp = true
+                                publish(FirmwareStatus(openRs = false, probing = false, label = transport.stockFirmwareLabel))
+                                DiagnosticLogger.event("FIRMWARE", "openRS_ firmware not detected: no reply to $probesSent probes " +
+                                    "in ${PROBE_GIVE_UP_MS / 1000} s (stock or unsupported firmware, or no reply) — drive mode / ESC stay view-only")
                             }
                         }
 
@@ -746,6 +770,10 @@ class SlcanConnection(
     }
 
     // ── NRC helpers ─────────────────────────────────────────────────────────
+
+    // Firmware probe timing (#220): re-send OPENRS? at these offsets after the first, give up after PROBE_GIVE_UP_MS
+    private val PROBE_TIMES_MS = listOf(3_000L, 8_000L)
+    private val PROBE_GIVE_UP_MS = 13_000L
 
     private fun nrcLabel(code: Int): String = when (code) {
         0x31 -> "requestOutOfRange"

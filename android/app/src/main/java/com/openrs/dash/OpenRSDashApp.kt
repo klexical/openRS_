@@ -29,6 +29,9 @@ class OpenRSDashApp : Application() {
         const val CHANNEL_CAN = "openrs_can"
         lateinit var instance: OpenRSDashApp
             private set
+
+        /** The app, or null where it doesn't exist (JVM unit tests). */
+        val instanceOrNull: OpenRSDashApp? get() = if (::instance.isInitialized) instance else null
     }
 
     /** Global vehicle state. Updated by CanDataService, observed by all UIs. */
@@ -63,6 +66,8 @@ class OpenRSDashApp : Application() {
 
     /** True once openRS_ firmware is confirmed via WebSocket probe on connect. */
     val isOpenRsFirmware = MutableStateFlow(false)
+    /** True while the OPENRS? capability probe is still outstanding on this connection (#220). */
+    val firmwareProbing = MutableStateFlow(false)
 
     /** Human-readable firmware version label (e.g. "openRS_ v1.5-rc.5"). */
     val firmwareVersionLabel = MutableStateFlow("")

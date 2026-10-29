@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -135,7 +136,16 @@ import kotlinx.coroutines.launch
                 confirmed != null -> MonoLabel("${confirmed.label.uppercase()} CONFIRMED", 10.sp, Frost, FontWeight.Bold, 0.3.sp)
                 pending != null   -> MonoLabel("SWITCHING TO ${pending.label.uppercase()}\u2026", 10.sp, actionInk(accent), FontWeight.Bold, 0.3.sp)
                 !connected        -> InstrumentMeta("OFFLINE")
-                !canTap           -> InstrumentMeta("VIEW ONLY")
+                // Say why controls are off (#220): still probing, or no openRS_ firmware reply — never a bare guess
+                !canTap           -> {
+                    val probing by com.openrs.dash.OpenRSDashApp.instance.firmwareProbing.collectAsState()
+                    val openRsFw by com.openrs.dash.OpenRSDashApp.instance.isOpenRsFirmware.collectAsState()
+                    InstrumentMeta(when {
+                        probing   -> "CHECKING FIRMWARE\u2026"
+                        !openRsFw -> "VIEW ONLY \u00B7 NO openRS_ FW"
+                        else      -> "VIEW ONLY"
+                    })
+                }
                 current != null   -> InstrumentMeta("CURRENT \u00B7 ${current.label.uppercase()}")
             }
         }
