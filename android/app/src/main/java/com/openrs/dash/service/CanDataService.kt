@@ -344,7 +344,7 @@ class CanDataService : Service() {
 
     // ── Foreground notification ──────────────────────────────────────────────
 
-    private companion object {
+    internal companion object {
         const val NOTIF_ID = 1
 
         /**

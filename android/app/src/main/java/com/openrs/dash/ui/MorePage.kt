@@ -178,13 +178,14 @@ import kotlinx.coroutines.launch
                                                 "Sending escMode=${status.toFirmwareInt()} (${status.label})")
                                             // Acceptance by the adapter isn't success — wait for CAN 0x1C0 (#125)
                                             val outcome = com.openrs.dash.can.EscCommand.execute(firmwareApi, status,
-                                                { com.openrs.dash.OpenRSDashApp.instance.vehicleState.value })
+                                                { com.openrs.dash.OpenRSDashApp.instance.vehicleState.value },
+                                                connectionId = { com.openrs.dash.service.CanDataService.link.generation })
                                             DiagnosticLogger.event("ESC_CMD", com.openrs.dash.can.EscCommand.describe(status, outcome))
                                             when (outcome) {
                                                 is com.openrs.dash.can.EscCommand.Outcome.Confirmed -> Unit
                                                 is com.openrs.dash.can.EscCommand.Outcome.NotConfirmed -> snackbarHostState.showSnackbar(
                                                     "Adapter accepted ${status.label}, but the car still reports ${outcome.observed.label}")
-                                                com.openrs.dash.can.EscCommand.Outcome.Busy -> snackbarHostState.showSnackbar("Adapter busy — try again")
+                                                com.openrs.dash.can.EscCommand.Outcome.Busy -> snackbarHostState.showSnackbar("An ESC change is already in progress — try again")
                                                 com.openrs.dash.can.EscCommand.Outcome.ConnectionLost -> snackbarHostState.showSnackbar("Connection lost — ESC not confirmed")
                                                 else -> snackbarHostState.showSnackbar("ESC command failed")
                                             }

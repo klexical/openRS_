@@ -63,7 +63,7 @@ object DemoSimulator {
     const val COOL_CLUTCH_COOL_S = 255.0
 
     /** Freshness tags the simulator writes — CAN-sourced THERMAL tags + every polled Mode 22 tag. */
-    val CAN_TAGS = arrayOf("oilTempC", "ptuTempC", "boostKpa", "coolantTempC", "intakeTempC", "ambientTempC")
+    val CAN_TAGS = arrayOf("oilTempC", "ptuTempC", "boostKpa", "escStatus", "coolantTempC", "intakeTempC", "ambientTempC")
     val OBD_TAGS = arrayOf(
         "calcLoad", "shortFuelTrim", "longFuelTrim", "timingAdvance", "fuelRailPressure",
         "o2Voltage", "afrActual", "lambdaActual", "afrSensor1", "afrDesired", "commandedAfr",
