@@ -178,7 +178,7 @@ class HudOverlayService : Service() {
 
                     // Boost — respect user's preferred unit. Disconnected: last values are
                     // frozen, so show the same "---" placeholder as a missing oil temp.
-                    val (bVal, bUnit) = prefs.displayBoost(vs.boostKpa)
+                    val (bVal, bUnit) = prefs.displayBoost(vs.boostDisplayKpa)
                     boostTv.text = if (vs.isConnected) getString(R.string.hud_boost, bVal, bUnit)
                                    else getString(R.string.hud_boost, "---", bUnit)
 

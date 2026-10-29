@@ -68,8 +68,8 @@ fun resolveValue(vs: VehicleState, prefs: UserPrefs, cell: DashCell, nowMs: Long
     return when (cell.fieldKey) {
         "rpm" -> "%.0f".format(vs.rpm) to vs.rpm
         "boostKpa" -> {
-            val (v, _) = prefs.displayBoost(vs.boostKpa)
-            v to vs.boostKpa
+            val (v, _) = prefs.displayBoost(vs.boostDisplayKpa)
+            v to vs.boostDisplayKpa
         }
         "speedKph" -> prefs.displaySpeed(vs.speedKph) to vs.speedKph
         "oilTempC" -> tempOrPlaceholder(vs.oilTempC, prefs)

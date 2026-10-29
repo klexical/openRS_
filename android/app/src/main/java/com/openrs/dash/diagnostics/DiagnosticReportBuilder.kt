@@ -109,7 +109,9 @@ internal object DiagnosticReportBuilder {
             appendLine("─── VEHICLE STATE SNAPSHOT ─────────────────────────────────")
             appendLine("  RPM        : ${vs.rpm.toInt()}")
             appendLine("  Speed      : ${"%.1f".format(vs.speedKph)} kph / ${"%.1f".format(vs.speedKph * 0.621371)} mph")
-            appendLine("  Boost      : ${"%.1f".format((vs.boostKpa - 101.325) * 0.14503773)} PSI  (${vs.boostKpa.toInt()} kPa abs)")
+            appendLine("  Boost      : ${"%.1f".format(vs.boostPsi)} PSI gauge, source ${if (vs.boostFromTip) "TIP (fresh)" else "CAN 0x0F8"}" +
+                "  [CAN ${"%.0f".format(vs.canBoostGaugeKpa)} kPa · TIP ${"%.1f".format(vs.tipActualKpa)} kPa abs · baro ${"%.1f".format(vs.baroRefKpa)} kPa]")
+            appendLine("  Boost (raw): ${vs.boostKpa.toInt()} kPa abs (CAN 0x0F8 byte 5 + baro)")
             appendLine("  Coolant    : ${"%.0f".format(vs.coolantTempC)} °C")
             appendLine("  Oil Temp   : ${"%.0f".format(vs.oilTempC)} °C")
             appendLine("  Intake     : ${"%.0f".format(vs.intakeTempC)} °C")

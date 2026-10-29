@@ -206,6 +206,7 @@ internal object DriveExportBuilder {
         appendLine("  Fuel Used   : ${"%.2f".format(drive.fuelUsedL)} L")
         appendLine("  Peak RPM    : ${drive.peakRpm}")
         appendLine("  Peak Boost  : ${"%.1f".format(drive.peakBoostPsi)} PSI")
+        appendLine("  Boost source: gauge vs ambient — TIP while fresh, else CAN 0x0F8 (from 2.2.7-rc.7, #207)")
         appendLine("  Peak Lat G  : ${"%.2f".format(drive.peakLateralG)} g")
         if (drive.avgStftPct != null || drive.avgLtftPct != null) {
             fun pct(v: Double?) = v?.let { "%+.1f%%".format(it) } ?: "—"

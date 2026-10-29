@@ -594,7 +594,7 @@ private fun TripPageContent(
                         if (driveState.isRecording) {
                             val boostPsi = vehicleState.boostPsi
                             // Boost bands (8 / 16 psi) weren't limits — read it in ink like the live panel.
-                            MonoText("BOOST ${prefs.displayBoost(vehicleState.boostKpa).let { (v, u) -> "$v $u" }}", 10.sp, Dim)
+                            MonoText("BOOST ${prefs.displayBoost(vehicleState.boostDisplayKpa).let { (v, u) -> "$v $u" }}", 10.sp, Dim)
                             val dte = driveState.distanceToEmptyKm
                             if (dte > 0) {
                                 val dteStr = if (prefs.speedUnit == "MPH")
@@ -1015,7 +1015,7 @@ private fun LiveHud(
                         Readout("RPM", if (live) "%.0f".format(vehicleState.rpm) else ph),
                         Readout("GEAR", if (live) vehicleState.gearDisplay else ph),
                         // Value + the user's pressure unit; DAY reads the darker paint (actionInk) like the map labels.
-                        Readout("BOOST", if (live) prefs.displayBoost(vehicleState.boostKpa).let { (v, u) -> "$v $u" } else ph,
+                        Readout("BOOST", if (live) prefs.displayBoost(vehicleState.boostDisplayKpa).let { (v, u) -> "$v $u" } else ph,
                             color = actionInk(accent)),
                     ),
                     listOf(clt, oil, amb, fuel),

@@ -96,7 +96,7 @@ import kotlin.math.roundToInt
     var pageEntered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { pageEntered = true }
     val accent = LocalThemeAccent.current
-    val (_, boostLbl) = p.displayBoost(vs.boostKpa)
+    val (_, boostLbl) = p.displayBoost(vs.boostDisplayKpa)
 
     // B1: raw live values for hero numerics — spring smoothing removed so the
     // digits are 1:1 with the CAN frame.
@@ -114,7 +114,7 @@ import kotlin.math.roundToInt
         val now = vs.lastUpdate
         if (now - lastSample.longValue >= 250L) {
             lastSample.longValue = now
-            boostSpark.push(vs.boostKpa.toFloat())
+            boostSpark.push(vs.boostDisplayKpa.toFloat())
             rpmSpark.push(vs.rpm.toFloat())
             speedSpark.push(vs.speedKph.toFloat())
         }
@@ -132,7 +132,7 @@ import kotlin.math.roundToInt
     // Disconnected → route heroes through the same "—" placeholder DataCell
     // uses, so dormant hero cards don't read as real "0.0" samples. The row
     // is still lightly dimmed so peak holds + sparklines are visibly inactive.
-    val (boostValLive, _) = p.displayBoost(vs.boostKpa)
+    val (boostValLive, _) = p.displayBoost(vs.boostDisplayKpa)
     val boostVal = if (stale) "—" else boostValLive
     val speedStr = if (stale) "—" else p.displaySpeed(vs.speedKph)
     val rpmStr = if (stale) "—" else "${vs.rpm.toInt()}"
@@ -234,7 +234,8 @@ import kotlin.math.roundToInt
                     modifier = Modifier.weight(1f).fillMaxHeight()
                 )
                 InstrumentHero(
-                    label = "BOOST", unit = boostLbl, value = boostVal,
+                    // The source is named when BOOST comes from TIP (#207); the CAN signal is the unnamed default
+                    label = if (vs.boostFromTip && !stale) "BOOST · TIP" else "BOOST", unit = boostLbl, value = boostVal,
                     icon = RsIcon.BOOST, iconTone = if (stale) IconTone.UNAVAILABLE else IconTone.NORMAL,
                     valueColor = if (stale) Frost else accent,
                     valueSize = 44.sp,
