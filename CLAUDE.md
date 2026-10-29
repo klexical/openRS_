@@ -602,7 +602,7 @@ Regenerate the FORScan catalog: `python3 android/scripts/gen_forscan_catalog.py`
 cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{releaseName}.apk (e.g. openRS_v2.2.7-rc.7.apk; set in app/build.gradle.kts)
-./gradlew test                             # 923 unit tests across 64 files
+./gradlew test                             # 924 unit tests across 64 files
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 45 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -762,12 +762,12 @@ android/app/src/test/java/com/openrs/dash/
   Drive-review pass (rc.7): LinkSessionRaceTest 2 · NrcAttributionTest 4 (+ NrcTrackerTest 16) · StalePolledValueTest 5 ·
   ObdDecodeMergeTest 2 · BoostSourceTest 3 · DtcScanPathTest 12 · DtcScanViewTest 5 · FirmwareProbeTest 4 · BleAdapterProfileTest 9 ·
   TyreThresholdTest 6 · EscCommandTest 4 · RecordingGapMonitorTest 3 · LinkOwnershipTest 14
-  Acceptance corrections (rc.7): NrcAttributionTest 9 · NrcTrackerTest (ledger ownership) · DtcScanViewTest 18 · BoostSourceTest 14 ·
+  Acceptance corrections (rc.7): NrcAttributionTest 9 · NrcTrackerTest (ledger ownership) · DtcScanViewTest 18 · BoostSourceTest 15 ·
   EscCommandTest 8 · FirmwareProbeTest 6 · BleTransportTest 10 (fake GATT) · firmware/tests/run.sh (host C, 11 checks)
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **923 tests across 64 files** (Android) + **260 vitest across 21 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **924 tests across 64 files** (Android) + **260 vitest across 21 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 
@@ -824,8 +824,9 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   ownership · `405c9a1` #215 publication gate / failure type / coverage + Room v13 · `88bc6c4` `6cfef1e` `4087b5e` #207
   boost rule (rc7-boost-v2) · `20104b7` #125 ESC (Android) · `2f86462` #125 firmware source (not built / flashed) ·
   `aaedd7a` #220 quiet-adapter probe · `1ace464` #218 BLE core · `8b971d2` `85fe34d` #224 header · `3790846` DTC export
-  test · `e0616b5` DTC rescan rows (found in release smoke). Final local release APK: source `e0616b5` clean, 6,524,204 B,
-  SHA-256 `a69f0504…2081`, vc 36, signer `c99b6f26…`, verify-release OK; 923 / 64 tests (debug + release), lint 0 / 45.
+  test · `e0616b5` DTC rescan rows (found in release smoke) · `b5bd5d2` diagnostic JSON boost peaks. Final local release APK:
+  source `b5bd5d2` clean, 6,524,204 B, SHA-256 `47e75313…c445`, vc 36, signer `c99b6f26…`, verify-release OK; 924 / 64
+  tests (debug + release), lint 0 / 45 (minified smoke on the `e0616b5` release, not repeated for the JSON-only change).
   Matrix, regression log, emulator evidence, revised hardware checklist (app / adapter / vehicle-protocol):
   `~/Documents/openRS_-evidence/rc7-acceptance-corrections-2026-10-28/` (`ACCEPTANCE.md`, `REGRESSION-LOG.md`,
   `HARDWARE-CHECKLIST.md`, `fake_ecu_v2.py` with `--stale DID:A:S` / `--wot`). Issues updated; #215 retitled → P1.
