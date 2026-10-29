@@ -155,9 +155,10 @@ import kotlin.math.roundToInt
         SectionLabel("THROTTLE & BOOST", modifier = pageEntrance(2, pageEntered), collapsible = true, expanded = throttleEff, onToggle = { if (!offline) throttleExpanded = !throttleExpanded })
         AnimatedVisibility(visible = throttleEff, enter = expandVertically(spring(stiffness = Spring.StiffnessLow)), exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow))) {
             Column(verticalArrangement = Arrangement.spacedBy(CardGap)) {
-                val (tipActVal, tipLbl) = p.displayBoost(vs.tipActualKpa)
-                val (tipDesVal, _)      = p.displayBoost(vs.tipDesiredKpa)
-                // TIP is absolute kPa (~baro at rest); < 50 kPa can only be a bad decode
+                // TIP is absolute kPa (~baro at rest); < 50 kPa can only be a bad decode. Shown against measured baro —
+                // the same reference as the TIP gauge on DRIVE (#207); absolute kPa when baro isn't known.
+                fun tipText(abs: Double) = com.openrs.dash.data.BoostRule.gaugeVsBaro(vs, abs)
+                    ?.let { g -> p.displayGauge(g).let { (v, u) -> "$v $u" } } ?: "${"%.0f".format(abs)} kPa abs"
                 val da = vs.densityAltitudeFt
                 ReadoutGrid(listOf(
                     listOf(
@@ -166,8 +167,8 @@ import kotlin.math.roundToInt
                         cell("WGDC", "wgdcDesired", vs.wgdcDesired, engineOnly = false, valid = { it >= 0 }) { "${"%.0f".format(it)}%" },
                     ),
                     listOf(
-                        cell("TIP ACT", "tipActualKpa", vs.tipActualKpa, engineOnly = false, valid = { it > 50 }) { "$tipActVal $tipLbl" },
-                        cell("TIP DES", "tipDesiredKpa", vs.tipDesiredKpa, engineOnly = false, valid = { it > 50 }) { "$tipDesVal $tipLbl" },
+                        cell("TIP ACT", "tipActualKpa", vs.tipActualKpa, engineOnly = false, valid = { it > 50 }) { tipText(it) },
+                        cell("TIP DES", "tipDesiredKpa", vs.tipDesiredKpa, engineOnly = false, valid = { it > 50 }) { tipText(it) },
                         null,
                     ),
                     listOf(

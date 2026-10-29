@@ -592,9 +592,9 @@ private fun TripPageContent(
 
                         // 1.1 — DTE + boost (live recording only)
                         if (driveState.isRecording) {
-                            val boostPsi = vehicleState.boostPsi
-                            // Boost bands (8 / 16 psi) weren't limits — read it in ink like the live panel.
-                            MonoText("BOOST ${prefs.displayBoost(vehicleState.boostDisplayKpa).let { (v, u) -> "$v $u" }}", 10.sp, Dim)
+                            // Boost bands (8 / 16 psi) weren't limits — read it in ink like the live panel. Source rule #207.
+                            val boost = com.openrs.dash.data.BoostSession.read(vehicleState, System.currentTimeMillis())
+                            MonoText("${boost.source.label} ${boost.gaugeKpa?.let { g -> prefs.displayGauge(g).let { (v, u) -> "$v $u" } } ?: "—"}", 10.sp, Dim)
                             val dte = driveState.distanceToEmptyKm
                             if (dte > 0) {
                                 val dteStr = if (prefs.speedUnit == "MPH")
@@ -1015,8 +1015,10 @@ private fun LiveHud(
                         Readout("RPM", if (live) "%.0f".format(vehicleState.rpm) else ph),
                         Readout("GEAR", if (live) vehicleState.gearDisplay else ph),
                         // Value + the user's pressure unit; DAY reads the darker paint (actionInk) like the map labels.
-                        Readout("BOOST", if (live) prefs.displayBoost(vehicleState.boostDisplayKpa).let { (v, u) -> "$v $u" } else ph,
-                            color = actionInk(accent)),
+                        boostLive(vehicleState).let { b ->
+                            Readout(b.source.label, if (live) b.gaugeKpa?.let { g -> prefs.displayGauge(g).let { (v, u) -> "$v $u" } } ?: ph else ph,
+                                color = actionInk(accent))
+                        },
                     ),
                     listOf(clt, oil, amb, fuel),
                     listOf(rdu, ptu, used, econ),
@@ -1476,7 +1478,8 @@ private fun DriveCard(
                 "%.1f mi".format(drive.distanceKm * 0.621371) else "%.1f km".format(drive.distanceKm))
             if (drive.maxSpeedKph > 0) add("TOP" to "${prefs.displaySpeed(drive.maxSpeedKph)} ${prefs.speedLabel.lowercase()}")
             if (drive.peakRpm > 0) add("RPM" to "${drive.peakRpm}")
-            if (drive.peakBoostPsi > 0) add("BOOST" to prefs.displayBoost(drive.peakBoostPsi / UnitConversions.KPA_TO_PSI +
+            // Named by the peak's own source when the drive recorded it (#207); older drives: as recorded, "BOOST"
+            if (drive.peakBoostPsi > 0) add((if (drive.peakBoostSource == "TIP_033E") "TIP" else "BOOST") to prefs.displayBoost(drive.peakBoostPsi / UnitConversions.KPA_TO_PSI +
                 UnitConversions.STD_ATM_KPA).let { (v, u) -> "$v ${u.lowercase()}" })
             if (drive.peakLateralG > 0) add("LAT G" to "%.2f g".format(drive.peakLateralG))
         }
@@ -1649,3 +1652,7 @@ private fun groupDrivesByDate(drives: List<DriveEntity>): List<Pair<String, List
 private fun isSameDay(a: Calendar, b: Calendar): Boolean =
     a.get(Calendar.YEAR) == b.get(Calendar.YEAR) &&
     a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
+
+/** Live boost by the source rule (#207). */
+private fun boostLive(vs: com.openrs.dash.data.VehicleState) =
+    com.openrs.dash.data.BoostSession.read(vs, System.currentTimeMillis())

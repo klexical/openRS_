@@ -88,6 +88,9 @@ data class UserPrefs(
 
     val speedLabel: String get() = speedUnit  // "KPH" or "MPH"
 
+    /** Gauge pressure (kPa relative to ambient, e.g. a [com.openrs.dash.data.BoostReading]) in the boost unit. */
+    fun displayGauge(gaugeKpa: Double): Pair<String, String> = displayBoost(gaugeKpa + UnitConversions.STD_ATM_KPA)
+
     /** Boost pressure from absolute kPa. Returns (value, label) pair. */
     fun displayBoost(boostKpa: Double): Pair<String, String> {
         val psi = (boostKpa - UnitConversions.STD_ATM_KPA) * UnitConversions.KPA_TO_PSI

@@ -168,6 +168,7 @@ object DemoMode {
         DiagnosticLogger.dtcScans.newSession()
         KnockSessionLog.reset()
         BoostSessionLog.reset()
+        com.openrs.dash.data.BoostSession.reset()
         FuelEconomy.reset()
         PerformanceTimer.resetSession()
         _status.update { it.copy(elapsedMs = 0L) }
@@ -187,6 +188,7 @@ object DemoMode {
         DiagnosticLogger.dtcScans.newSession()
         KnockSessionLog.reset()
         BoostSessionLog.reset()
+        com.openrs.dash.data.BoostSession.reset()
         FuelEconomy.reset()
         PerformanceTimer.resetSession()
     }
@@ -228,7 +230,8 @@ object DemoMode {
         // Same side effects CanDataService runs for real frames — in-memory only, cleared on exit.
         val vs = app.vehicleState.value
         FuelEconomy.onUpdate(vs.fuelLevelPct, vs.speedKph)
-        PerformanceTimer.onSpeedUpdate(vs.speedKph, vs.rpm, vs.boostPsi)
+        val boost = com.openrs.dash.data.BoostSession.onState(vs, now)
+        PerformanceTimer.onSpeedUpdate(vs.speedKph, vs.rpm, boost.psi ?: 0.0)
         if (stamp && link == DemoLink.LIVE) {
             KnockSessionLog.onState(vs, now)
             BoostSessionLog.onState(vs, now)

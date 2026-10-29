@@ -96,7 +96,10 @@ import kotlin.math.roundToInt
     var pageEntered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { pageEntered = true }
     val accent = LocalThemeAccent.current
-    val (_, boostLbl) = p.displayBoost(vs.boostDisplayKpa)
+    // BOOST by the source rule (#207), on a clock that keeps running when CAN stalls
+    val now = wallClockMs()
+    val boost = com.openrs.dash.data.BoostSession.read(vs, now)
+    val boostLbl = p.displayGauge(0.0).second
 
     // B1: raw live values for hero numerics — spring smoothing removed so the
     // digits are 1:1 with the CAN frame.
@@ -106,7 +109,7 @@ import kotlin.math.roundToInt
     val brake = if (!vs.isConnected) 0.0 else vs.brakePressure.coerceIn(0.0, 100.0)
 
     val session     = telemetrySessionKey()   // demo start/reset/exit drops simulated history
-    val boostSpark  = remember(session) { SparklineData(60) }
+    val boostSpark  = remember(session, boost.source) { SparklineData(60) }   // one quantity per trace
     val rpmSpark    = remember(session) { SparklineData(60) }
     val speedSpark  = remember(session) { SparklineData(60) }
     val lastSample  = remember(session) { mutableLongStateOf(0L) }
@@ -114,7 +117,7 @@ import kotlin.math.roundToInt
         val now = vs.lastUpdate
         if (now - lastSample.longValue >= 250L) {
             lastSample.longValue = now
-            boostSpark.push(vs.boostDisplayKpa.toFloat())
+            boost.displayKpa?.let { boostSpark.push(it.toFloat()) }
             rpmSpark.push(vs.rpm.toFloat())
             speedSpark.push(vs.speedKph.toFloat())
         }
@@ -132,8 +135,7 @@ import kotlin.math.roundToInt
     // Disconnected → route heroes through the same "—" placeholder DataCell
     // uses, so dormant hero cards don't read as real "0.0" samples. The row
     // is still lightly dimmed so peak holds + sparklines are visibly inactive.
-    val (boostValLive, _) = p.displayBoost(vs.boostDisplayKpa)
-    val boostVal = if (stale) "—" else boostValLive
+    val boostVal = if (stale) "—" else boost.gaugeKpa?.let { p.displayGauge(it).first } ?: "—"
     val speedStr = if (stale) "—" else p.displaySpeed(vs.speedKph)
     val rpmStr = if (stale) "—" else "${vs.rpm.toInt()}"
     val heroAlpha by animateFloatAsState(
@@ -234,14 +236,14 @@ import kotlin.math.roundToInt
                     modifier = Modifier.weight(1f).fillMaxHeight()
                 )
                 InstrumentHero(
-                    label = "BOOST", unit = boostLbl, value = boostVal,
+                    // The label names the measurement: BOOST (CAN 0x0F8) or TIP (throttle inlet) — never interchanged
+                    label = boost.source.label, unit = boostLbl, value = boostVal,
                     icon = RsIcon.BOOST, iconTone = if (stale) IconTone.UNAVAILABLE else IconTone.NORMAL,
                     valueColor = if (stale) Frost else accent,
                     valueSize = 44.sp,
-                    // The source is named when BOOST comes from TIP (#207) — in the caption, so the label never
-                    // squeezes the unit at 360 dp; the CAN signal is the unnamed default
-                    peak = (if (vs.boostFromTip && !stale) "TIP \u00B7 " else "") + "PEAK ${"%.1f".format(vs.peakBoostPsi)}",
-                    peakHoldValue = "%.1f".format(vs.peakBoostPsi),
+                    // That source's own session peak, in the selected unit (#207)
+                    peak = boostPeakCaption(boost, p) ?: "PEAK —",
+                    peakHoldValue = boostPeakValue(boost, p),
                     spark = boostSnap, sparkColor = accent,
                     modifier = Modifier.weight(1.25f).fillMaxHeight()
                 )

@@ -157,7 +157,9 @@ fun DriveReplayView(
                     listOf(Readout("SPEED", "${prefs.displaySpeed(currentPoint.speedKph)} ${prefs.speedLabel}"),
                         Readout("RPM", "${currentPoint.rpm}"),
                         Readout("GEAR", currentPoint.gear.ifEmpty { "— —" }),
-                        Readout("BOOST", "${boost.first} ${boost.second}")),
+                        // #207: the point's own source when recorded (TIP / BOOST); no source → "— —"
+                        Readout(if (currentPoint.boostSource == "TIP_033E") "TIP" else "BOOST",
+                            if (currentPoint.boostSource == "NONE") "— —" else "${boost.first} ${boost.second}")),
                     listOf(Readout("OIL", oilText), Readout("COOLANT", cltText),
                         Readout("LAT G", "%.2f g".format(currentPoint.lateralG)),
                         Readout("MODE", currentPoint.driveMode.uppercase())),

@@ -109,9 +109,15 @@ internal object DiagnosticReportBuilder {
             appendLine("─── VEHICLE STATE SNAPSHOT ─────────────────────────────────")
             appendLine("  RPM        : ${vs.rpm.toInt()}")
             appendLine("  Speed      : ${"%.1f".format(vs.speedKph)} kph / ${"%.1f".format(vs.speedKph * 0.621371)} mph")
-            appendLine("  Boost      : ${"%.1f".format(vs.boostPsi)} PSI gauge, source ${if (vs.boostFromTip) "TIP (fresh)" else "CAN 0x0F8"}" +
-                "  [CAN ${"%.0f".format(vs.canBoostGaugeKpa)} kPa · TIP ${"%.1f".format(vs.tipActualKpa)} kPa abs · baro ${"%.1f".format(vs.baroRefKpa)} kPa]")
-            appendLine("  Boost (raw): ${vs.boostKpa.toInt()} kPa abs (CAN 0x0F8 byte 5 + baro)")
+            // Boost source rule (#207), judged at export time: what the gauge shows now and why
+            val nowMs = System.currentTimeMillis()
+            val boost = com.openrs.dash.data.BoostSession.read(vs, nowMs)
+            fun age(tag: String) = vs.fieldLastUpdateMs[tag]?.let { "${(nowMs - it) / 1000} s ago" } ?: "never"
+            appendLine("  Boost      : " + (boost.gaugeKpa?.let { "%.1f kPa gauge (%.1f PSI), source %s".format(it, it * 0.14503773, boost.source.name) }
+                ?: "no fresh source") + " · policy ${com.openrs.dash.data.BoostRule.POLICY}" +
+                (if (com.openrs.dash.data.BoostSession.canTracking) "" else " · CAN 0x0F8 marked not tracking this session"))
+            appendLine("  Boost src  : CAN 0x0F8 ${"%.0f".format(vs.boostKpa - 101.325)} kPa gauge (received ${age("boostKpa")}) · " +
+                "TIP ${"%.1f".format(vs.tipActualKpa)} kPa abs (decoded ${age("tipActualKpa")}) · baro ${"%.1f".format(vs.barometricPressure)} kPa")
             appendLine("  Coolant    : ${"%.0f".format(vs.coolantTempC)} °C")
             appendLine("  Oil Temp   : ${"%.0f".format(vs.oilTempC)} °C")
             appendLine("  Intake     : ${"%.0f".format(vs.intakeTempC)} °C")
@@ -481,8 +487,8 @@ private fun VehicleState.toJsonObject(): JSONObject = JSONObject().apply {
     put("rpm", rpm)
     put("speedKph", speedKph)
     put("speedMph", speedKph * 0.621371)
-    put("boostKpa", boostKpa)
-    put("boostPsi", (boostKpa - 101.325) * 0.14503773)
+    put("boostKpa", boostKpa)   // CAN 0x0F8 byte 5 + 101.325 (gauge, std-atm form) — a reading only if stamped "boostKpa"
+    put("boostCanGaugeKpa", boostKpa - 101.325)
     put("coolantTempC", coolantTempC)
     put("oilTempC", oilTempC)
     put("intakeTempC", intakeTempC)

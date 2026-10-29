@@ -178,9 +178,12 @@ class HudOverlayService : Service() {
 
                     // Boost — respect user's preferred unit. Disconnected: last values are
                     // frozen, so show the same "---" placeholder as a missing oil temp.
-                    val (bVal, bUnit) = prefs.displayBoost(vs.boostDisplayKpa)
-                    boostTv.text = if (vs.isConnected) getString(R.string.hud_boost, bVal, bUnit)
-                                   else getString(R.string.hud_boost, "---", bUnit)
+                    // By the source rule (#207); no fresh source → "---". (Re-evaluated on each new state; the HUD
+                    // goes "---" through isConnected when the link drops.)
+                    val boost = com.openrs.dash.data.BoostSession.read(vs, System.currentTimeMillis())
+                    val bUnit = prefs.displayGauge(0.0).second
+                    val bVal = boost.gaugeKpa?.takeIf { vs.isConnected }?.let { prefs.displayGauge(it).first } ?: "---"
+                    boostTv.text = getString(R.string.hud_boost, bVal, bUnit)
 
                     // RPM
                     rpmTv.text = if (vs.isConnected) getString(R.string.hud_rpm, vs.rpm.toInt())

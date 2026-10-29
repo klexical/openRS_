@@ -477,7 +477,9 @@ class CanDataService : Service() {
                     existing.copy(
                         endTime        = System.currentTimeMillis(),
                         peakRpm        = vs.peakRpm,
-                        peakBoostPsi   = vs.peakBoostPsi,
+                        // Session table predates #207's sources: the CAN 0x0F8 peak, its historical meaning
+                        peakBoostPsi   = (com.openrs.dash.data.BoostSession.peakKpa(com.openrs.dash.data.BoostSource.CAN_0F8) ?: 0.0) *
+                            com.openrs.dash.data.BoostReading.KPA_TO_PSI,
                         peakOilTempC   = vs.peakOilTempC,
                         peakCoolantTempC = vs.peakCoolantTempC,
                         peakSpeedKph   = vs.peakSpeedKph,
@@ -545,6 +547,7 @@ class CanDataService : Service() {
         OpenRSDashApp.instance.knockEventCount.value = 0
         com.openrs.dash.data.KnockSessionLog.reset()
         com.openrs.dash.data.BoostSessionLog.reset()
+        com.openrs.dash.data.BoostSession.reset()
         startSessionRecording()
 
         val conn = buildConnection()
@@ -656,6 +659,8 @@ class CanDataService : Service() {
             OpenRSDashApp.instance.vehicleState.value, System.currentTimeMillis(),
             loc?.latitude, loc?.longitude
         )
+        // Boost rule (#207): a fresh TIP decode can be source evidence / a TIP peak
+        com.openrs.dash.data.BoostSession.onState(OpenRSDashApp.instance.vehicleState.value, System.currentTimeMillis())
         // Live boost sweep window for the POWER chart (#175)
         com.openrs.dash.data.BoostSessionLog.onState(
             OpenRSDashApp.instance.vehicleState.value, System.currentTimeMillis()
@@ -825,6 +830,7 @@ class CanDataService : Service() {
 
     fun resetPeaks() {
         OpenRSDashApp.instance.vehicleState.update { it.withPeaksReset() }
+        com.openrs.dash.data.BoostSession.resetPeaks()
     }
 
     /** Reset the current session without disconnecting from the adapter. */
@@ -838,6 +844,7 @@ class CanDataService : Service() {
         OpenRSDashApp.instance.knockEventCount.value = 0
         com.openrs.dash.data.KnockSessionLog.reset()
         com.openrs.dash.data.BoostSessionLog.reset()
+        com.openrs.dash.data.BoostSession.reset()
         val connected = OpenRSDashApp.instance.vehicleState.value.isConnected
         OpenRSDashApp.instance.vehicleState.update { VehicleState(isConnected = connected) }
         com.openrs.dash.ui.ThermalReadinessSession.reset()

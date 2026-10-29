@@ -9,15 +9,16 @@ import org.junit.Test
 class VehicleStateTest {
 
     @Test
-    fun `boost PSI calculated correctly from kPa`() {
-        val state = VehicleState(boostKpa = 200.0)
-        assertEquals(14.3, state.boostPsi, 0.1)
+    fun `stamped CAN boost reads as gauge kPa and converts to PSI`() {
+        val state = VehicleState(boostKpa = 200.0).markFresh("boostKpa", now = 1_000L)
+        val r = com.openrs.dash.data.BoostRule.read(state, 1_000L)
+        assertEquals(98.675, r.gaugeKpa!!, 1e-6)
+        assertEquals(14.3, r.psi!!, 0.1)
     }
 
     @Test
-    fun `boost PSI is negative at atmospheric pressure`() {
-        val state = VehicleState(boostKpa = 80.0)
-        assertTrue(state.boostPsi < 0)
+    fun `unstamped default boost is not a reading`() {
+        assertEquals(com.openrs.dash.data.BoostReading.NONE, com.openrs.dash.data.BoostRule.read(VehicleState(boostKpa = 80.0), 0L))
     }
 
     @Test
@@ -118,7 +119,8 @@ class VehicleStateTest {
     fun `peak tracking updates higher values`() {
         val state = VehicleState(boostKpa = 250.0, rpm = 6000.0, speedKph = 180.0, peakBoostPsi = 10.0, peakRpm = 5000.0, peakSpeedKph = 150.0)
         val updated = state.withPeaksUpdated()
-        assertTrue(updated.peakBoostPsi > 10.0)
+        // Boost peaks are per source in BoostSession (#207); VehicleState's field is left as it was
+        assertEquals(10.0, updated.peakBoostPsi, 0.0)
         assertEquals(6000.0, updated.peakRpm, 0.1)
         assertEquals(180.0, updated.peakSpeedKph, 0.1)
     }

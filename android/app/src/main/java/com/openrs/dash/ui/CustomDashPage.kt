@@ -292,7 +292,9 @@ private fun CustomGaugeCell(
     modifier: Modifier = Modifier
 ) {
     val accent = LocalThemeAccent.current
-    val (displayValue, rawValue) = resolveValue(vs, prefs, cell)
+    val now = wallClockMs()   // a stalled link must still age readings out (#207 / #217)
+    val (displayValue, rawValue) = resolveValue(vs, prefs, cell, now)
+    val boost = if (cell.fieldKey == "boostKpa") com.openrs.dash.data.BoostSession.read(vs, now) else null
     // This overlay hides the header / RECONNECTING strip, so frozen last-frame values
     // would read as live after an adapter drop — show placeholders instead.
     val stale = !vs.isConnected
@@ -304,19 +306,21 @@ private fun CustomGaugeCell(
     when (cell.displayType) {
         "hero" -> {
             val unit = when (cell.fieldKey) {
-                "boostKpa" -> prefs.displayBoost(vs.boostKpa).second
+                "boostKpa" -> prefs.displayGauge(0.0).second
                 "speedKph" -> prefs.speedLabel
                 else -> ""     // RPM: the caption already says it
             }
             val peak = when (cell.fieldKey) {
                 "rpm" -> "PEAK ${vs.peakRpm.toInt()}"
-                "boostKpa" -> "PEAK ${"%.1f".format(vs.peakBoostPsi)}"
+                // The peak of the source shown, named with it, in the selected unit (#207)
+                "boostKpa" -> boostPeakCaption(boost, prefs)
                 "speedKph" -> "PEAK ${prefs.displaySpeed(vs.peakSpeedKph)}"
                 else -> null
             }
             // Raw value, 1:1 with the frame (no spring) — the same rule as DRIVE's heroes.
             InstrumentHero(
-                label = cell.label,
+                // A TIP reading is never presented under the BOOST name (#207)
+                label = if (boost?.source == com.openrs.dash.data.BoostSource.TIP_033E) "TIP" else cell.label,
                 unit = unit,
                 value = if (stale) "—" else displayValue,
                 valueColor = when {

@@ -210,7 +210,8 @@ class DriveRecorder(
                         startTime = now,
                         sessionId = sessionId,
                         startFuelPct = vs.fuelLevelPct,
-                        hasGps = hasLocationPermission()
+                        hasGps = hasLocationPermission(),
+                        boostPolicy = com.openrs.dash.data.BoostRule.POLICY
                     )
                 )
                 _driveState.update { state ->
@@ -227,7 +228,7 @@ class DriveRecorder(
                         speedSum = 0.0, speedSamples = 0L,
                         modeCounts = emptyMap(),
                         maxSpeedKph = 0.0, peakRpm = 0.0,
-                        peakBoostPsi = 0.0, peakLateralG = 0.0,
+                        peakBoostPsi = 0.0, peakBoostSource = null, peakLateralG = 0.0,
                         peakEvents = emptyList(),
                         rtrAchievedPoint = null,
                         currentWeather = null,
@@ -316,6 +317,7 @@ class DriveRecorder(
                         maxSpeedKph = state.maxSpeedKph,
                         peakRpm = state.peakRpm.toInt(),
                         peakBoostPsi = state.peakBoostPsi,
+                        peakBoostSource = state.peakBoostSource?.name,
                         peakLateralG = state.peakLateralG,
                         fuelUsedL = state.fuelUsedL,
                         driveModeBreakdown = modeJson,
@@ -427,6 +429,8 @@ class DriveRecorder(
                     val tipFresh    = gate.takeIfFresh("tipActualKpa", stamps)
                     val targetFresh = gate.takeIfFresh("tipDesiredKpa", stamps)
                     val wgdcFresh   = gate.takeIfFresh("wgdcDesired", stamps)
+                    // Boost by the source rule (#207): the reading + its source; NONE = no fresh source (0.0 is not a reading)
+                    val boost = com.openrs.dash.data.BoostSession.read(vs, now)
                     // The shared verdict (DRIVE row / THERMAL card) including its holds: TEMPS READY only.
                     val raceReady = ThermalReadinessSession.verdict.value.isReady
                     val point = DrivePointEntity(
@@ -437,7 +441,9 @@ class DriveRecorder(
                         speedKph       = vs.speedKph,
                         rpm            = vs.rpm.toInt(),
                         gear           = vs.gearDisplay,
-                        boostPsi       = vs.boostPsi,
+                        boostPsi       = boost.psi ?: 0.0,
+                        boostSource    = boost.source.name,
+                        baroKpa        = com.openrs.dash.data.BoostRule.baroKpa(vs),
                         coolantTempC   = vs.coolantTempC,
                         oilTempC       = vs.oilTempC,
                         ambientTempC   = vs.ambientTempC,
@@ -520,7 +526,8 @@ class DriveRecorder(
                         DriveState.haversineKm(prev.lat, prev.lng, point.lat, point.lng)
                     else 0.0
 
-                    val peaks = buildPeakEvents(state, vs, point, now)
+                    val peaks = buildPeakEvents(state, vs, boost, point, now)
+                    val newBoostPeak = com.openrs.dash.data.BoostRule.nextDrivePeak(state.peakBoostPsi, state.peakBoostSource, boost)
                     val isRaceReady = raceReady
                     val rtrPt = state.rtrAchievedPoint ?: if (isRaceReady) point else null
 
@@ -538,7 +545,8 @@ class DriveRecorder(
                             },
                             maxSpeedKph          = maxOf(s.maxSpeedKph, vs.speedKph),
                             peakRpm              = maxOf(s.peakRpm, vs.rpm),
-                            peakBoostPsi         = maxOf(s.peakBoostPsi, vs.boostPsi),
+                            peakBoostPsi         = newBoostPeak?.first ?: s.peakBoostPsi,
+                            peakBoostSource      = newBoostPeak?.second ?: s.peakBoostSource,
                             peakLateralG         = maxOf(s.peakLateralG, abs(vs.lateralG)),
                             peakOilTempC         = if (vs.oilTempC > -90) maxOf(s.peakOilTempC, vs.oilTempC) else s.peakOilTempC,
                             peakCoolantTempC     = if (vs.coolantTempC > -90) maxOf(s.peakCoolantTempC, vs.coolantTempC) else s.peakCoolantTempC,
@@ -586,6 +594,7 @@ class DriveRecorder(
     private fun buildPeakEvents(
         state: DriveState,
         vs: VehicleState,
+        boost: com.openrs.dash.data.BoostReading,
         point: DrivePointEntity,
         now: Long
     ): List<PeakEvent> {
@@ -594,9 +603,9 @@ class DriveRecorder(
             peaks.removeAll { it.type == PeakType.RPM }
             peaks += PeakEvent(PeakType.RPM, vs.rpm, point.lat, point.lng, now)
         }
-        if (vs.boostPsi > state.peakBoostPsi) {
+        com.openrs.dash.data.BoostRule.nextDrivePeak(state.peakBoostPsi, state.peakBoostSource, boost)?.let { (psi, _) ->
             peaks.removeAll { it.type == PeakType.BOOST }
-            peaks += PeakEvent(PeakType.BOOST, vs.boostPsi, point.lat, point.lng, now)
+            peaks += PeakEvent(PeakType.BOOST, psi, point.lat, point.lng, now)
         }
         if (abs(vs.lateralG) > state.peakLateralG) {
             peaks.removeAll { it.type == PeakType.LATERAL_G }
@@ -707,6 +716,7 @@ class DriveRecorder(
                     maxSpeedKph  = state.maxSpeedKph,
                     peakRpm      = state.peakRpm.toInt(),
                     peakBoostPsi = state.peakBoostPsi,
+                    peakBoostSource = state.peakBoostSource?.name,
                     peakLateralG = state.peakLateralG,
                     fuelUsedL    = state.fuelUsedL,
                     weatherSummary = state.currentWeather?.description
@@ -835,7 +845,7 @@ class DriveRecorder(
                         label = label,
                         speedKph = vs.speedKph,
                         rpm = vs.rpm.toInt(),
-                        boostPsi = vs.boostPsi
+                        boostPsi = com.openrs.dash.data.BoostSession.read(vs, System.currentTimeMillis()).psi ?: 0.0
                     )
                 )
                 Log.d(TAG, "Bookmark added at (${loc.latitude}, ${loc.longitude})")

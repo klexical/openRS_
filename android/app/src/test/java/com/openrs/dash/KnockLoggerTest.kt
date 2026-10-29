@@ -109,7 +109,7 @@ class KnockLoggerTest {
         assertEquals(4, lines.size)
         assertEquals("# openrs_knock_csv_v2", lines[0])
         assertTrue("header has kr_deg column", lines[1].contains("kr_deg"))
-        assertTrue("header ends with cylinder column", lines[1].endsWith(",cylinder"))
+        assertTrue("header ends with cylinder + boost source columns", lines[1].endsWith(",cylinder,boost_source"))
         assertEquals("row has one field per header column",
             lines[1].split(",").size, lines[2].split(",").size)
         assertTrue("first event row contains rpm", lines[2].contains("4000"))
@@ -121,8 +121,8 @@ class KnockLoggerTest {
         val events = listOf(ev(1, 1.0))
         val csv = DriveExportBuilder.buildKnockCsv(events)
         val dataRow = csv.lines().first { it.startsWith("1,") }
-        // lat,lng null → blank fields before the trailing cylinder column
-        assertTrue("blank lat/lng then cylinder", dataRow.endsWith(",,,1"))
+        // lat,lng null → blank fields before the cylinder column; legacy row → blank boost source (#207)
+        assertTrue("blank lat/lng then cylinder", dataRow.endsWith(",,,1,"))
     }
 
     @Test

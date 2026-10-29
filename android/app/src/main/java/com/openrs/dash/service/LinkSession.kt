@@ -116,6 +116,9 @@ internal class LinkSession(
         // Side effects — guaranteed to run exactly once after CAS succeeds
         val wp = newState ?: return null
 
+        // Boost rule session state (#207): source evidence + per-source peaks — outside the CAS lambda
+        val boost = com.openrs.dash.data.BoostSession.onState(wp, System.currentTimeMillis())
+
         // Feed fuel economy calculator
         if (canId == 0x130 || canId == 0x380) {
             FuelEconomy.onUpdate(wp.fuelLevelPct, wp.speedKph)
@@ -123,7 +126,7 @@ internal class LinkSession(
 
         // Feed performance timer (speed from 0x130, ~100 Hz)
         if (canId == 0x130) {
-            val (sixty, hundred) = PerformanceTimer.onSpeedUpdate(wp.speedKph, wp.rpm, wp.boostPsi)
+            val (sixty, hundred) = PerformanceTimer.onSpeedUpdate(wp.speedKph, wp.rpm, boost.psi ?: 0.0)
             if (hundred || (sixty && PerformanceTimer.state.value == PerformanceTimer.State.FINISHED)) {
                 // Persist completed run to Room
                 val result = PerformanceTimer.result.value

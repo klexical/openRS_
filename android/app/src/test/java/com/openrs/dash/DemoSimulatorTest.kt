@@ -111,7 +111,8 @@ class DemoSimulatorTest {
         run(DemoScenario.DRIVING, 120_000) { t, s ->
             assertTrue("rpm ${s.rpm} @ $t", s.rpm in 600.0..6950.0)
             assertTrue("speed ${s.speedKph} @ $t", s.speedKph in 0.0..130.0)
-            assertTrue("boost ${s.boostPsi} @ $t", s.boostPsi in -15.0..26.0)
+            val psi = (s.boostKpa - 101.325) * 0.14503773
+            assertTrue("boost $psi @ $t", psi in -15.0..26.0)
             assertTrue("lat ${s.lateralG} @ $t", abs(s.lateralG) < 1.2)
             prev?.let { p -> assertTrue("speed step @ $t", abs(s.speedKph - p.speedKph) < 2.0) }
             gears += s.gearDisplay

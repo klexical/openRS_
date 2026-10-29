@@ -313,6 +313,7 @@ internal fun pointColor(point: DrivePointEntity, mode: ColorMode): Color = when 
         else                   -> Accent   // cyan — Normal
     }
     ColorMode.BOOST -> when {
+        point.boostSource == "NONE" -> com.openrs.dash.ui.Dim   // no fresh boost source at this point (#207)
         point.boostPsi < 0   -> Accent   // cyan — vacuum
         point.boostPsi < 8   -> Ok       // green — low boost
         point.boostPsi < 16  -> Warn     // yellow — mid boost

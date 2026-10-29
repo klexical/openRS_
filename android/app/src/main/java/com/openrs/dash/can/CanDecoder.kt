@@ -189,7 +189,7 @@ object CanDecoder {
      * Stamped by CanDataService.processCanFrame, throttled per ID — see [CAN_STAMP_THROTTLE_MS].
      */
     private val FRESH_TAGS: Map<Int, Array<String>> = mapOf(
-        ID_ENGINE_TEMPS to arrayOf("oilTempC", "ptuTempC"),
+        ID_ENGINE_TEMPS to arrayOf("oilTempC", "ptuTempC", "boostKpa"),   // boostKpa = 0x0F8 receipt (#207)
         ID_COOLANT      to arrayOf("coolantTempC", "intakeTempC"),
         ID_AMBIENT_TEMP to arrayOf("ambientTempC"),
         ID_PCM_AMBIENT  to arrayOf("ambientTempC"),
@@ -252,15 +252,14 @@ object CanDecoder {
             // ── 0x0F8: Engine oil temp + boost + PTU temp ─────────────────────
             // RS_HS.dbc PCMmsg07 (20 ms broadcast):
             //   EngineOilTemp : 15|8@0+ (1,−50)   → byte1, raw−50 °C
-            //   Boost         : 47|8@0+ (0.01,0)   → byte5, raw×0.01 bar gauge;
-            //                    stored as absolute kPa = raw + barometric pressure
+            //   Boost         : 47|8@0+ (0.01,0)   → byte5, raw×0.01 bar (1 kPa) gauge, unsigned
+            //                    stored as gauge + 101.325 (the displayBoost form) — independent of baro, so a baro
+            //                    arriving or changing later can't shift it (#207). Receipt is stamped ("boostKpa").
             //   PTUTemp       : 63|8@0+ (1,−60)    → byte7, raw−60 °C
-            // Baro fallback: use 101.325 kPa (std atmosphere) until 0x090 frame populates state.
             ID_ENGINE_TEMPS -> if (n >= 8) {
-                val baro = if (state.barometricPressure > 50.0) state.barometricPressure else 101.325
                 state.copy(
                     oilTempC   = (ubyte(data, 1) - 50).toDouble(),
-                    boostKpa   = ubyte(data, 5).toDouble() + baro,
+                    boostKpa   = ubyte(data, 5).toDouble() + 101.325,
                     ptuTempC   = (ubyte(data, 7) - 60).toDouble(),
                     lastUpdate = now
                 )
@@ -628,7 +627,7 @@ object CanDecoder {
      */
     fun describeDecoded(id: Int, state: VehicleState): String = when (id) {
         ID_ENGINE_RPM   -> "rpm=${state.rpm.toInt()}, baro=${"%.1f".format(state.barometricPressure)}kPa"
-        ID_ENGINE_TEMPS -> "oilTempC=${"%.0f".format(state.oilTempC)}, boost=${state.boostKpa.toInt()}kPa, ptuTempC=${"%.0f".format(state.ptuTempC)}"
+        ID_ENGINE_TEMPS -> "oilTempC=${"%.0f".format(state.oilTempC)}, boost=${"%.0f".format(state.boostKpa - 101.325)}kPa gauge, ptuTempC=${"%.0f".format(state.ptuTempC)}"
         ID_SPEED        -> "speedKph=${"%.2f".format(state.speedKph)}"
         ID_COOLANT      -> "coolantTempC=${"%.1f".format(state.coolantTempC)}, iatTempC=${"%.1f".format(state.intakeTempC)}"
         ID_THROTTLE     -> "throttlePct=${"%.1f".format(state.throttlePct)}"
@@ -680,7 +679,6 @@ object CanDecoder {
             state.oilTempC > 160   -> "oilTempC>160 — suspiciously hot"
             state.ptuTempC > -90 && state.ptuTempC < -60 -> "ptuTempC<-60 — check byte7 formula (raw-60)"
             state.ptuTempC > 200   -> "ptuTempC>200 — suspiciously hot"
-            state.boostKpa < 60.0  -> "boostKpa<60 — too low (baro not populated?)"
             state.boostKpa > 400.0 -> "boostKpa>400 — >43 PSI, check formula"
             else -> null
         }

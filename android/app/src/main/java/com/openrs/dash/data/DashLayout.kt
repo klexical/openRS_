@@ -67,10 +67,9 @@ fun resolveValue(vs: VehicleState, prefs: UserPrefs, cell: DashCell, nowMs: Long
         if (PolledFreshness.isFresh(vs, tag, nowMs)) fmt(value) to value else "\u2014 \u2014" to 0.0
     return when (cell.fieldKey) {
         "rpm" -> "%.0f".format(vs.rpm) to vs.rpm
-        "boostKpa" -> {
-            val (v, _) = prefs.displayBoost(vs.boostDisplayKpa)
-            v to vs.boostDisplayKpa
-        }
+        // By the boost source rule (#207): no fresh source → "— —", never a held or default value
+        "boostKpa" -> BoostSession.read(vs, nowMs).gaugeKpa
+            ?.let { g -> prefs.displayGauge(g).first to g + BoostReading.STD_ATM_KPA } ?: ("\u2014 \u2014" to 0.0)
         "speedKph" -> prefs.displaySpeed(vs.speedKph) to vs.speedKph
         "oilTempC" -> tempOrPlaceholder(vs.oilTempC, prefs)
         "coolantTempC" -> tempOrPlaceholder(vs.coolantTempC, prefs)

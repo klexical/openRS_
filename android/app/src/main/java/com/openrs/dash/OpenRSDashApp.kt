@@ -98,6 +98,7 @@ class OpenRSDashApp : Application() {
         CrashReporter.install(this)
         CrashTelemetryBuffer.startCollecting()
         com.openrs.dash.ui.ThermalReadinessSession.start()
+        com.openrs.dash.data.BoostSession.log = { com.openrs.dash.diagnostics.DiagnosticLogger.event("BOOST_SOURCE", it) }
         createNotificationChannel()
         com.openrs.dash.ui.StartupTrace.mark("Application.onCreate end")
     }

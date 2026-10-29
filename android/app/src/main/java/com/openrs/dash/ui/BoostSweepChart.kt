@@ -55,9 +55,11 @@ fun BoostSweepChart(samples: List<BoostSessionLog.Sample>, p: UserPrefs, accent:
     // Ticks in the readable secondary colour (full Dim); frame + grid stay faint
     val axisStyle = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 10.sp, color = Dim)
     val targetCol = Ok; val actualCol = accent; val wgdcCol = Mid; val brd = Brd; val dotCol = Frost
-    val loLabel = p.displayBoost(kpaLo).first
-    val hiLabel = p.displayBoost(kpaHi).first
-    val unit = p.displayBoost(kpaHi).second
+    // Axis in gauge pressure against the measured baro — the TIP gauge's reference (#207); std atm only without baro
+    val ref = latest.baroKpa ?: com.openrs.dash.data.BoostReading.STD_ATM_KPA
+    val loLabel = p.displayGauge(kpaLo - ref).first
+    val hiLabel = p.displayGauge(kpaHi - ref).first
+    val unit = p.displayGauge(0.0).second + if (latest.baroKpa == null) " vs std atm" else ""
 
     Column(Modifier.fillMaxWidth()) {
         Canvas(Modifier.fillMaxWidth().height(150.dp)) {

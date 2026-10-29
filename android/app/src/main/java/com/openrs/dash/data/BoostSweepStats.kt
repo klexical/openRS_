@@ -23,8 +23,13 @@ data class BoostSweepStats(
     val avgWgdcAtPeak: Double? = null,       // mean fresh WGDC where actual ≥ 90 % of the drive's peak (#175)
     val byGear: List<GearBoost> = emptyList() // loaded samples per gear 1–6, ascending (#175)
 ) {
-    /** Boost under demand in one gear. [peakBoostPsi] is gauge vs standard atmosphere (no baro per point). */
-    data class GearBoost(val gear: Int, val peakBoostPsi: Double, val avgDeltaPsi: Double, val samples: Int)
+    /**
+     * Boost under demand in one gear. [peakBoostPsi] is peak TIP as gauge pressure: against the measured baro stored
+     * with each point (Room v13, #207) — [baroMeasured] true when every sample had one — else against standard
+     * atmosphere (older drives store no baro; it is never invented).
+     */
+    data class GearBoost(val gear: Int, val peakBoostPsi: Double, val avgDeltaPsi: Double, val samples: Int,
+                         val baroMeasured: Boolean = false)
 
     companion object {
         /** Samples within this fraction of the drive's peak actual TIP count as "at peak boost". */
@@ -73,9 +78,10 @@ data class BoostSweepStats(
                 .map { (gear, pts) ->
                     GearBoost(
                         gear = gear,
-                        peakBoostPsi = (pts.maxOf { it.tipActualKpa } - STD_ATM_KPA) * kpaToPsi,
+                        peakBoostPsi = pts.maxOf { it.tipActualKpa - (it.baroKpa ?: STD_ATM_KPA) } * kpaToPsi,
                         avgDeltaPsi = pts.sumOf { (it.tipActualKpa - it.boostTargetKpa) * kpaToPsi } / pts.size,
-                        samples = pts.size
+                        samples = pts.size,
+                        baroMeasured = pts.all { it.baroKpa != null }
                     )
                 }
 

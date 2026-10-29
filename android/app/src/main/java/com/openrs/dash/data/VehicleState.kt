@@ -16,7 +16,7 @@ data class VehicleState(
     val coolantTempC: Double = -99.0,  // -99 = not yet received (CAN 0x2F0 / 0x0F8)
     val oilTempC: Double = -99.0,      // -99 = not yet received (CAN 0x0F8)
     val intakeTempC: Double = -99.0,  // -99 = not yet received (CAN 0x2F0)
-    val boostKpa: Double = 101.325,
+    val boostKpa: Double = 101.325,   // CAN 0x0F8 byte 5 + 101.325 (gauge, std-atm form); a reading only once stamped
     val throttlePct: Double = 0.0,
     val throttleHasSource: Boolean = false,
     val accelPedalPct: Double = 0.0,
@@ -241,9 +241,6 @@ data class VehicleState(
     }
 
     companion object {
-        /** BOOST uses TIP while its reading is at most this much older than the latest CAN frame (#207). */
-        const val BOOST_TIP_FRESH_MS = 2_500L
-
         /**
          * Merge two freshness maps keeping the newer stamp per tag. OBD updates are
          * built from a snapshot of the live state, so a plain `+` could roll back a
@@ -263,28 +260,9 @@ data class VehicleState(
     }
 
     // ── Computed ─────────────────────────────────────────────
-    // ── BOOST: one source rule for every consumer (#207) ──────────────────────
-    // CAN 0x0F8 byte 5 is gauge pressure ×0.01 bar (RS_HS.dbc), stored at decode as byte5 + measured baro. On the
-    // 2026-10-28 drives it stayed 0 in all 41,289 AM frames (40 of 23,495 PM) while TIP showed up to ~71 kPa above
-    // baro, so it can't be the only source. TIP (0x033E) is throttle-inlet pressure — pre-throttle, i.e. what the
-    // turbo makes; at part throttle the manifold can be lower. Both floor near 0 under vacuum (byte 5 is unsigned).
-    // Rule: a TIP reading ≤ 2.5 s older than the latest CAN frame with the engine running → TIP − baro; otherwise the
-    // CAN value. A CAN zero is a value, not "missing"; the two are never forced to agree.
-
-    /** Gauge reference: measured baro (0x090) once populated, else standard atmosphere. */
-    val baroRefKpa: Double get() = if (barometricPressure > 50.0) barometricPressure else 101.325
-    /** CAN 0x0F8 boost relative to ambient (the decoder added baro to byte 5). */
-    val canBoostGaugeKpa: Double get() = boostKpa - baroRefKpa
-    /** True while BOOST comes from a fresh TIP reading. */
-    val boostFromTip: Boolean get() {
-        val stamp = fieldLastUpdateMs["tipActualKpa"] ?: return false
-        return lastUpdate - stamp in 0L..BOOST_TIP_FRESH_MS && rpm > 400.0 && tipActualKpa > 50.0
-    }
-    /** BOOST relative to ambient, by the rule above — gauges, recording, peaks, perf runs and knock snapshots. */
-    val boostGaugeKpa: Double get() = if (boostFromTip) tipActualKpa - baroRefKpa else canBoostGaugeKpa
-    val boostPsi: Double get() = boostGaugeKpa * 0.14503773
-    /** [boostGaugeKpa] in the absolute form [com.openrs.dash.ui.UserPrefs.displayBoost] expects. */
-    val boostDisplayKpa: Double get() = boostGaugeKpa + 101.325
+    // BOOST: no computed boost here — it needs a wall clock and the session's source decision. Every consumer reads
+    // BoostSession.read(vs, nowMs) / BoostRule (#207). boostKpa = CAN 0x0F8 byte 5 + 101.325 (gauge, std-atm form);
+    // it is a reading only once stamped ("boostKpa").
     /** Throttle % from CAN 0x076 when the car broadcasts it, else accel pedal (0x080). 0x076 is absent on
      *  some RS PCMs (user's car, 2026-10-22 log) — anything keyed on throttle (pulls, knock snapshot,
      *  recorded throttle) must use this, or it reads 0 forever there. */
@@ -423,10 +401,9 @@ data class VehicleState(
         return valid.max() - valid.min()
     }
 
+    /** Session peaks. Boost peaks are kept per source by [BoostSession] (#207) — [peakBoostPsi] isn't updated here. */
     fun withPeaksUpdated(): VehicleState {
-        val psi = boostPsi
         return copy(
-            peakBoostPsi = max(peakBoostPsi, psi),
             peakRpm = max(peakRpm, rpm),
             peakSpeedKph = max(peakSpeedKph, speedKph),
             peakLateralG = max(peakLateralG, abs(lateralG)),

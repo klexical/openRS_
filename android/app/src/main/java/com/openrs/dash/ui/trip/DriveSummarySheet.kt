@@ -130,7 +130,7 @@ fun DriveSummarySheet(
                             Readout("ECONOMY", econ)),
                         listOf(Readout("TOP SPEED", "${prefs.displaySpeed(drive.maxSpeedKph)} ${prefs.speedLabel}"),
                             Readout("PEAK RPM", "${drive.peakRpm}"),
-                            Readout("PEAK BOOST", "${boost.first} ${boost.second}"),
+                            Readout(if (drive.peakBoostSource == "TIP_033E") "PEAK TIP" else "PEAK BOOST", "${boost.first} ${boost.second}"),   // #207 source when recorded
                             Readout("PEAK G", "%.2f g".format(drive.peakLateralG))),
                     ),
                     dense = true
@@ -277,10 +277,12 @@ fun DriveSummarySheet(
                         Readout("WGDC @ PEAK", "%.0f%%".format(w)), Readout("LOADED SAMPLES", "${boostStats.sampleCount}"),
                     )), dense = true)
                 }
-                // Boost by gear (#175) — peak is gauge vs standard atmosphere, Δ = actual − target
+                // Boost by gear (#175) — peak TIP as gauge pressure against the recorded baro (#207), or standard
+                // atmosphere for drives that stored none (said in the label); Δ = actual − target
                 if (boostStats.byGear.isNotEmpty()) {
                     Spacer(Modifier.height(4.dp))
-                    InstrumentLabel("BY GEAR · PEAK / AVG Δ (${pUnit})", Modifier.padding(bottom = 4.dp), color = Mid)
+                    val ref = if (boostStats.byGear.all { it.baroMeasured }) "" else " · VS STD ATM"
+                    InstrumentLabel("BY GEAR · TIP PEAK / AVG Δ (${pUnit})$ref", Modifier.padding(bottom = 4.dp), color = Mid)
                     // Three per row so "12.3 / +0.4" fits at phone width
                     ReadoutGrid(rows = boostStats.byGear.chunked(3).map { row ->
                         row.map { g ->

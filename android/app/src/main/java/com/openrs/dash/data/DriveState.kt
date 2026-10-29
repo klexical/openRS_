@@ -33,6 +33,8 @@ data class DriveState(
     val maxSpeedKph: Double = 0.0,
     val peakRpm: Double = 0.0,
     val peakBoostPsi: Double = 0.0,
+    /** Source of the reading that set [peakBoostPsi] (#207); null = no boost reading yet. */
+    val peakBoostSource: BoostSource? = null,
     val peakLateralG: Double = 0.0,
     val peakOilTempC: Double = -99.0,
     val peakCoolantTempC: Double = -99.0,

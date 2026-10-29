@@ -76,14 +76,16 @@ private data class Channel(
 private val CHANNELS = listOf(
     Channel("SPD",    { Accent })  { it.speedKph },
     Channel("RPM",    { Warn })    { it.rpm.toDouble() },
-    Channel("BOOST",  { Ok }, axis = "boost") { it.boostPsi },
+    // #207: a point recorded with no fresh boost source is a gap, not 0
+    Channel("BOOST",  { Ok }, axis = "boost", valid = { it.boostSource != "NONE" }) { it.boostPsi },
     Channel("OIL",    { Orange }, valid = { it.oilTempC > -90.0 }) { it.oilTempC },  // -99 = not yet received
     Channel("G-LAT",  { Frost })   { it.lateralG },
     Channel("THRTL",  { Dim })     { it.throttlePct },
     // Boost sweep (#175/#188): TARGET shares BOOST's axis + colour, dashed. Recorder writes
     // 0 kPa target / −1 % WGDC when the DID wasn't freshly polled (#184) — those are gaps.
     Channel("TARGET", { Ok }, axis = "boost", dashed = true, sparse = true,
-        valid = { it.boostTargetKpa > 0.0 }) { (it.boostTargetKpa - 101.325) * 0.14503773 },
+        // Against the point's measured baro when recorded (#207), like the TIP gauge; std atm for older points
+        valid = { it.boostTargetKpa > 0.0 }) { (it.boostTargetKpa - (it.baroKpa ?: 101.325)) * 0.14503773 },
     Channel("WGDC",   { Mid }, sparse = true,
         valid = { it.wgdcPct >= 0.0 }) { it.wgdcPct },
 )

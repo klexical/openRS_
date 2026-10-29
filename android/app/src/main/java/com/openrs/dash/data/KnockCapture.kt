@@ -37,6 +37,7 @@ object KnockCapture {
     ): List<KnockEventEntity> {
         val stamps = vs.fieldLastUpdateMs
         var out: MutableList<KnockEventEntity>? = null
+        val boost = BoostSession.read(vs, now)   // #207: the reading and its source, or none
         for (cyl in 1..4) {
             if (!gate.takeIfFresh(KR_TAGS[cyl - 1], stamps)) continue
             val kr = krFor(vs, cyl)
@@ -47,7 +48,8 @@ object KnockCapture {
                 timestamp   = now,
                 krDeg       = kr,
                 rpm         = vs.rpm.toInt(),
-                boostPsi    = vs.boostPsi,
+                boostPsi    = boost.psi ?: 0.0,
+                boostSource = boost.source.name,
                 iatC        = vs.intakeTempC,
                 throttlePct = vs.throttleOrPedalPct,
                 gearEst     = vs.derivedGear,
