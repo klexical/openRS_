@@ -198,4 +198,15 @@ class DtcScanViewTest {
         assertEquals(mapOf("PCM" to ok, "BCM" to ModuleScanStatus.TIMEOUT), p.moduleStatuses)
         assertEquals("P0123-1C", p.codes.single().displayCode)
     }
+
+    @Test fun `export carries the full fault identity, base code kept for lookups`() {
+        val j = org.json.JSONObject(com.openrs.dash.diagnostics.DriveExportBuilder.buildDtcJson(
+            listOf(ft("BCM", "P0123", 0x1C), ft("PCM", "P0420", null))))
+        val codes = j.getJSONArray("codes")
+        assertEquals("P0123", codes.getJSONObject(0).getString("code"))
+        assertEquals("1C", codes.getJSONObject(0).getString("failureType"))
+        assertEquals("P0123-1C", codes.getJSONObject(0).getString("fullCode"))
+        assertFalse("unknown failure type isn't invented", codes.getJSONObject(1).has("failureType"))
+        assertTrue(com.openrs.dash.diagnostics.DriveExportBuilder.buildDtcText(listOf(ft("BCM", "P0123", 0x1C))).contains("P0123-1C"))
+    }
 }
