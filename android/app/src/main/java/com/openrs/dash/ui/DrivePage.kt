@@ -234,12 +234,13 @@ import kotlin.math.roundToInt
                     modifier = Modifier.weight(1f).fillMaxHeight()
                 )
                 InstrumentHero(
-                    // The source is named when BOOST comes from TIP (#207); the CAN signal is the unnamed default
-                    label = if (vs.boostFromTip && !stale) "BOOST · TIP" else "BOOST", unit = boostLbl, value = boostVal,
+                    label = "BOOST", unit = boostLbl, value = boostVal,
                     icon = RsIcon.BOOST, iconTone = if (stale) IconTone.UNAVAILABLE else IconTone.NORMAL,
                     valueColor = if (stale) Frost else accent,
                     valueSize = 44.sp,
-                    peak = "PEAK ${"%.1f".format(vs.peakBoostPsi)}",
+                    // The source is named when BOOST comes from TIP (#207) — in the caption, so the label never
+                    // squeezes the unit at 360 dp; the CAN signal is the unnamed default
+                    peak = (if (vs.boostFromTip && !stale) "TIP \u00B7 " else "") + "PEAK ${"%.1f".format(vs.peakBoostPsi)}",
                     peakHoldValue = "%.1f".format(vs.peakBoostPsi),
                     spark = boostSnap, sparkColor = accent,
                     modifier = Modifier.weight(1.25f).fillMaxHeight()
