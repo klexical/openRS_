@@ -100,8 +100,9 @@ object FirmwareApi {
     suspend fun setDriveMode(ctx: Context, host: String, mode: Int): Result<Unit> =
         post(ctx, host, """{"token":"openrs","driveMode":$mode}""", checkBusy = true)
 
+    // Busy is reported like a drive-mode request (#125); OK is request acceptance only — callers confirm on CAN
     suspend fun setEscMode(ctx: Context, host: String, mode: Int): Result<Unit> =
-        post(ctx, host, """{"token":"openrs","escMode":$mode}""")
+        post(ctx, host, """{"token":"openrs","escMode":$mode}""", checkBusy = true)
 
     internal fun findWifiNetwork(ctx: Context): Network? {
         val cm = ctx.getSystemService(ConnectivityManager::class.java)

@@ -176,13 +176,17 @@ import kotlinx.coroutines.launch
                                         scope.launch {
                                             DiagnosticLogger.event("ESC_CMD",
                                                 "Sending escMode=${status.toFirmwareInt()} (${status.label})")
-                                            val result = firmwareApi!!.setEscMode(status.toFirmwareInt())
-                                            if (result.isFailure) {
-                                                DiagnosticLogger.event("ESC_CMD",
-                                                    "FAILED: ${result.exceptionOrNull()?.message}")
-                                                snackbarHostState.showSnackbar("ESC command failed")
-                                            } else {
-                                                DiagnosticLogger.event("ESC_CMD", "OK")
+                                            // Acceptance by the adapter isn't success — wait for CAN 0x1C0 (#125)
+                                            val outcome = com.openrs.dash.can.EscCommand.execute(firmwareApi, status,
+                                                { com.openrs.dash.OpenRSDashApp.instance.vehicleState.value })
+                                            DiagnosticLogger.event("ESC_CMD", com.openrs.dash.can.EscCommand.describe(status, outcome))
+                                            when (outcome) {
+                                                is com.openrs.dash.can.EscCommand.Outcome.Confirmed -> Unit
+                                                is com.openrs.dash.can.EscCommand.Outcome.NotConfirmed -> snackbarHostState.showSnackbar(
+                                                    "Adapter accepted ${status.label}, but the car still reports ${outcome.observed.label}")
+                                                com.openrs.dash.can.EscCommand.Outcome.Busy -> snackbarHostState.showSnackbar("Adapter busy — try again")
+                                                com.openrs.dash.can.EscCommand.Outcome.ConnectionLost -> snackbarHostState.showSnackbar("Connection lost — ESC not confirmed")
+                                                else -> snackbarHostState.showSnackbar("ESC command failed")
                                             }
                                             pendingEsc = null
                                         }
