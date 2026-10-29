@@ -48,7 +48,7 @@ import androidx.core.content.ContextCompat
 import com.openrs.dash.can.BleDeviceScanner
 
 /**
- * BLE device picker dialog — scans for WiCAN adapters (filtered to 0xFFE0 service)
+ * BLE device picker dialog — scans for WiCAN adapters (filtered to the FFF0 / FEE0 / FFE0 adapter services, #218)
  * and lets the user tap one to save it.
  */
 @Composable

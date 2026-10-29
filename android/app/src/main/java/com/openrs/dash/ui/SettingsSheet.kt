@@ -173,6 +173,10 @@ fun SettingsDialog(
     var selectedCategory by remember { mutableStateOf<SettingsCategory?>(null) }
     var aboutExpanded    by remember { mutableStateOf(false) }
     var showBlePicker    by remember { mutableStateOf(false) }
+    // Bluetooth adapter: staged like every other setting — shown at once, saved on SAVE (#218)
+    var bleDraft by remember {
+        mutableStateOf(BleDeviceDraft.of(AppSettings.getBleDeviceAddress(ctx), AppSettings.getBleDeviceName(ctx)))
+    }
 
     // Every exit except SAVE discards: revert the live-preview side effects (theme mode, fonts, paint) to the
     // committed prefs. Back, tapping outside and ✕ used to dismiss without this, leaving an unsaved preview on.
@@ -592,10 +596,16 @@ fun SettingsDialog(
             listOf("ble", "bluetooth", "pair", "scan", "wifi", "host", "ip", "port", "address"),
         ) {
             if (connectionMethod == "BLUETOOTH") {
-                val bleAddr = remember { mutableStateOf(AppSettings.getBleDeviceAddress(ctx)) }
-                val bleName = remember { mutableStateOf(AppSettings.getBleDeviceName(ctx)) }
+                val staged = bleDraft.staged
                 SettingsSection("BLUETOOTH DEVICE") {
-                    if (bleAddr.value != null) {
+                    if (staged != null) {
+                        // Selected is not the same as paired: read the phone's real bond state for this address
+                        val bonded = remember(staged.first) {
+                            try {
+                                val bm = ctx.getSystemService(android.bluetooth.BluetoothManager::class.java)
+                                bm?.adapter?.getRemoteDevice(staged.first)?.bondState == android.bluetooth.BluetoothDevice.BOND_BONDED
+                            } catch (_: Exception) { null }       // no BLUETOOTH_CONNECT permission / bad address
+                        }
                         Row(
                             Modifier.fillMaxWidth()
                                 .background(Surf2, RoundedCornerShape(10.dp))
@@ -604,13 +614,19 @@ fun SettingsDialog(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f)) {
-                                InstrumentLabel("PAIRED DEVICE")
+                                InstrumentLabel(if (bleDraft.changed) "SELECTED DEVICE \u00B7 NOT SAVED" else "SELECTED DEVICE")
                                 Spacer(Modifier.height(4.dp))
-                                Text(bleName.value ?: "WiCAN", fontSize = 13.sp, color = Frost,
+                                Text(staged.second, fontSize = 13.sp, color = Frost,
                                     fontFamily = ShareTechMono, fontWeight = FontWeight.SemiBold)
                                 Spacer(Modifier.height(2.dp))
-                                Text(bleAddr.value ?: "", fontSize = 10.sp, color = Dim,
+                                Text(staged.first, fontSize = 10.sp, color = Dim,
                                     fontFamily = ShareTechMono, letterSpacing = 0.05.sp)
+                                Spacer(Modifier.height(2.dp))
+                                Text(when (bonded) {
+                                        true  -> "Paired with this phone"
+                                        false -> "Not paired yet — the adapter asks to pair on first connect"
+                                        null  -> "Pairing status unavailable"
+                                    }, fontSize = 10.sp, color = Mid, fontFamily = ShareTechMono)
                             }
                         }
                         Spacer(Modifier.height(10.dp))
@@ -622,17 +638,16 @@ fun SettingsDialog(
                                 .padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text("No device paired", fontSize = 12.sp, color = Mid,
-                                fontFamily = ShareTechMono)
+                            Text(if (bleDraft.changed) "No device selected \u00B7 not saved" else "No device selected",
+                                fontSize = 12.sp, color = Mid, fontFamily = ShareTechMono)
                         }
                         Spacer(Modifier.height(10.dp))
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         SettingsAction("SCAN FOR DEVICES", Modifier.weight(1f)) { showBlePicker = true }
-                        if (bleAddr.value != null) {
+                        if (staged != null) {
                             SettingsAction("FORGET", Modifier.weight(1f), tone = ActionTone.DESTRUCTIVE) {
-                                AppSettings.clearBleDevice(ctx)
-                                bleAddr.value = null; bleName.value = null
+                                bleDraft = bleDraft.forget()
                             }
                         }
                     }
@@ -1031,7 +1046,7 @@ fun SettingsDialog(
             if (showBlePicker) {
                 BleDevicePickerDialog(
                     onDeviceSelected = { address, name ->
-                        AppSettings.saveBleDevice(ctx, address, name)
+                        bleDraft = bleDraft.select(address, name)       // shown at once; saved on SAVE
                         showBlePicker = false
                     },
                     onDismiss = { showBlePicker = false },
@@ -1145,6 +1160,8 @@ fun SettingsDialog(
                             thermalErrors.isNotEmpty() -> error = "THERMAL: fix the highlighted custom values"
                             else -> {
                                 AppSettings.save(ctx, host, p)
+                                bleDraft.commit(save = { a, n -> AppSettings.saveBleDevice(ctx, a, n) },
+                                    clear = { AppSettings.clearBleDevice(ctx) })
                                 UserPrefsStore.update(ctx) { it.copy(
                                     speedUnit            = speedUnit,
                                     tempUnit             = tempUnit,

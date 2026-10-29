@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Scans for BLE devices advertising the WiCAN SLCAN service (UUID 0xFFE0).
+ * Scans for BLE devices advertising a supported WiCAN service (FFF0 Pro / FEE0 USB / legacy FFE0 — see BleAdapterProfile).
  *
  * Results are exposed via [devices] StateFlow. Scan auto-stops after
  * [SCAN_TIMEOUT_MS]. By default the scan is filtered to the SLCAN service
@@ -68,7 +68,7 @@ class BleDeviceScanner(private val context: Context) {
      * Start a BLE scan. When [filterless] is true, no service-UUID filter is
      * applied — every advertising BLE device in range will be returned. Use
      * this as a fallback when a filtered scan misses an adapter whose
-     * advertisement packet doesn't include the expected 0xFFE0 service UUID.
+     * advertisement packet doesn't include one of the expected service UUIDs.
      */
     fun startScan(filterless: Boolean = false) {
         val s = scanner ?: return
@@ -86,10 +86,10 @@ class BleDeviceScanner(private val context: Context) {
                 // No filter — every advertising peripheral is reported.
                 s.startScan(null, settings, scanCallback)
             } else {
-                val filter = ScanFilter.Builder()
-                    .setServiceUuid(ParcelUuid(BleSlcanTransport.SERVICE_UUID))
-                    .build()
-                s.startScan(listOf(filter), settings, scanCallback)
+                // Every supported adapter layout (#218): WiCAN Pro FFF0, WiCAN USB FEE0, legacy FFE0. A match only
+                // means the device advertises the service — it isn't proof that it will connect.
+                val filters = BleAdapterProfile.SCAN_SERVICES.map { ScanFilter.Builder().setServiceUuid(ParcelUuid(it)).build() }
+                s.startScan(filters, settings, scanCallback)
             }
         } catch (e: SecurityException) {
             android.util.Log.w("BLE", "BLUETOOTH_SCAN permission not granted", e)

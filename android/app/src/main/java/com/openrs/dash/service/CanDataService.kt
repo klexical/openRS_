@@ -102,7 +102,7 @@ class CanDataService : Service() {
                     val mac = s.getBleDeviceAddress(this)
                         ?: throw RuntimeException("No BLE device saved")
                     val name = s.getBleDeviceName(this) ?: "WiCAN"
-                    BleSlcanTransport(this, mac, name)
+                    BleSlcanTransport(this, mac, name, adapterType = adapterType)
                 } else {
                     // WiFi: adapter type determines protocol
                     if (adapterType == "MEATPI_PRO") TcpSlcanTransport(host, port)
