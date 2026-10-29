@@ -91,10 +91,15 @@ void frs_parse_can_frame(uint32_t can_id, const uint8_t *data, uint8_t dlc) {
     case FRS_CAN_ID_ESC_ABS:
         if (dlc >= 2) {
             uint8_t raw_esc = (data[1] >> 4) & 0x03;
+            // Only a frame that reports an ESC mode counts as an observation: raw 3 (Launch in RS_HS.dbc, not one of
+            // the modes this firmware sets) keeps the last mode and must not count as a fresh frame — otherwise a mode
+            // reported before the presses would pass the post-press confirmation (#125).
+            bool known = true;
             if (raw_esc == 0) s_state.esc_mode = FRS_ESC_ON;
             else if (raw_esc == 1) s_state.esc_mode = FRS_ESC_OFF;
             else if (raw_esc == 2) s_state.esc_mode = FRS_ESC_SPORT;
-            s_state.esc_frames++;   // lets the ESC task require a frame received after its presses (#125)
+            else known = false;
+            if (known) s_state.esc_frames++;   // the ESC task requires such a frame received after its presses
         }
         break;
 

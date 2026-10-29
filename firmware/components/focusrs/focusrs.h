@@ -104,7 +104,7 @@ typedef struct {
     uint8_t  mode_420_detail;     // 0x420 byte7 — bit0 disambiguates Sport(0)/Track(1)
     uint8_t  esc_mode;            // Current ESC mode from CAN (FRS_ESC_*)
     uint8_t  boot_esc;            // ESC mode to apply on next ignition (NVS) — only a CAN-confirmed change
-    uint32_t esc_frames;          // 0x1C0 frames received (ESC confirmation needs one after the presses)
+    uint32_t esc_frames;          // 0x1C0 frames reporting a mode (0/1/2) — confirmation needs one after the presses
     bool     lc_enabled;          // Launch control
     bool     ass_kill;            // Auto Start/Stop kill
     uint32_t battery_mv;          // 12V battery in millivolts
