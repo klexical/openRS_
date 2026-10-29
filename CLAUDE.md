@@ -3,7 +3,7 @@
 Native Android telemetry dashboard for the Ford Focus RS MK3.
 Kotlin 2.0.21 + Jetpack Compose (Material3). Current: **stable v2.2.6 on main**; **v2.2.7-rc.6 published as a prerelease from staging** (tag `android-v2.2.7-rc.6` →
 `d2f7dc6`, versionCode 35 — not on main, not stable). Sapphire (web/ only) deployed from main `0d64248`. Record: Branch / Release Workflow → rc.6.
-**rc.7 in progress (local, unpushed):** branch `feature/rc7` (from staging `d2f7dc6`) — 2.2.7-rc.7 / versionCode 36, milestone
+**rc.7 in progress (local, unpushed; drive-review pass done — issues #216–#224):** branch `feature/rc7` (from staging `d2f7dc6`) — 2.2.7-rc.7 / versionCode 36, milestone
 v2.2.7-rc.7 (#211 locale exports, #212 connection lifecycle, #213 splash per task, #214 versioning, #215 DTC scan status);
 Sapphire row validation #204 also on `fix/sapphire-row-validation` (from main). Record: Branch / Release Workflow → rc.7.
 Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashboard) → `web/`  |  Docs → `docs/`  |  Feature pipeline → `docs/feature-roadmap.md`
@@ -31,15 +31,17 @@ can/
   SlcanTransport.kt       — Transport interface: open/readLine/writeLine/close
   TcpSlcanTransport.kt    — MeatPi Pro: raw TCP 192.168.0.10:35000
   WebSocketSlcanTransport.kt — MeatPi USB: WebSocket ws://192.168.80.1:80/ws
-  BleSlcanTransport.kt    — BLE GATT transport: service 0xFFE0, RX char FFE1, TX char FFE2
+  BleSlcanTransport.kt    — BLE GATT transport; layout from BleAdapterProfile (Pro FFF0/FFF2/FFF1, USB FEE0/FEE1, legacy
+                            FFE0 fallback) chosen from discovered services; setup steps fail specifically; bonds once (#218)
                             Auto-reconnect (autoConnect=true after first success), MTU 247 w/ fallback
-  BleDeviceScanner.kt     — BLE device discovery filtered to service UUID 0xFFE0
+  BleDeviceScanner.kt     — BLE device discovery filtered to FFF0 / FEE0 / FFE0 (BleAdapterProfile.SCAN_SERVICES)
                             WARNING: 0xFFE0 is shared by many cheap BLE devices (LED controllers, HM-10 clones)
   SlcanConnection.kt      — Shared connection: retry, SLCAN init, firmware probe, OBD pollers,
                             frame dispatch, DTC scan/clear, ISO-TP reassembly, FPS tracking.
                             SLCAN handshake: waits 3s for valid frame after init before declaring Connected
                             Constructor takes transportFactory: () -> SlcanTransport (+ rpmProvider for fast poll)
-                            Single PCM sender — NrcTracker attribution relies on lastSentPcmDid
+                            Single PCM sender — NRCs attributed in request order (PcmRequestLedger, #216); OPENRS? probe
+                            retried ×3 and late replies accepted (#220); DTC frames diverted by service ID (#215)
                             Command response channel routes +FRS: lines separately from SLCAN frames
   AdapterState.kt         — Disconnected / Connecting / Connected / Reconnecting / Idle / Error (sealed, `label` = fixed
                             names for logs — R8 renames the classes) + LinkPhase (OFF/CONNECTING/CONNECTED/RECONNECTING/FAILED)
@@ -306,6 +308,7 @@ update/
 **Sentinel values:**
 - `-99.0` = not yet received — temps (coolant, oil, tires, charge air, PTU, RDU, cabin, etc.)
 - `-1.0` / `-1L` = not yet polled — OBD scalars (oilLife, tirePressures, odometer, batterySoc, etc.)
+- `sparkAdvance` = `-99.0` until received — negative advance is valid (#205)
 - `0L` = not yet received — timestamps (tpmsLastUpdate)
 - `null` = unknown — Boolean? fields (rduEnabled, pdcEnabled, fengEnabled, lcArmed, assEnabled, IPC/HVAC warning lamps)
 
@@ -334,7 +337,10 @@ data[5] = B5,  data[6] = B6 …
 - Skip `0x1B0` frames where byte4 ≠ 0 (button-event transition frames; steady-state has byte4 == 0)
 - `0x230` (gear) and `0x3C0` (battery voltage) do **NOT** broadcast on this car — battery from PCM DID 0x0304. Gear is estimated from RPM/speed in `VehicleState.derivedGear`
 - **Gear detection dual final drive** — MMT6 has final drive 4.063 (gears 1-4) and 2.955 (gears 5-6). Official ratios from 2016 Ford Focus RS Owner's Manual p242. The `GEAR_FACTOR` constant uses 3.82 in the denominator but thresholds are calibrated against the true overall ratios — do not recalibrate with a single final drive
-- `boostKpa` is **absolute** pressure (not gauge) — gauge pressure = `boostKpa − 101.325`
+- `boostKpa` is the **CAN 0x0F8** value stored absolute (byte 5 + measured baro). Never use it for display: every consumer
+  reads `boostPsi` / `boostGaugeKpa` / `boostDisplayKpa` (VehicleState, #207) — fresh TIP (≤ 2.5 s, engine running) minus
+  measured baro, else the CAN value vs measured baro. Byte 5 stayed 0 on the 2026-10-28 drives while TIP showed boost.
+  TIP / target cells and the sweep chart still read vs standard atmosphere (≈0.7 psi apart at 96.5 kPa baro)
 - TPMS PID `0x280B` is multi-frame ISO-TP — send `BCM_FLOW_CONTROL` after receiving First Frame
 - Extended session (`0x10 0x03`) required before: RDU_STATUS (AWD 0x703), PDC (PSCM 0x730), FENG (0x727), RSProt (0x731)
 - Firmware drive mode is **hybrid scroll-then-wait** (v1.61+) — pre-calculates scroll count, sends all presses open-loop, waits up to 6s for auto-confirm. Do NOT revert to closed-loop press-and-poll (v1.6 bug) or pure open-loop press counting (v1.5 bug). The Focus RS mode selector GUI requires ~4s of inactivity to auto-confirm — CAN does not update during scrolling
@@ -342,7 +348,10 @@ data[5] = B5,  data[6] = B6 …
 - `fengTimedOut` / `rsprotTimedOut` = true after 3 failed probe cycles — do not suggest retrying indefinitely
 - **Drive mode cold-start gate** — `has420Arrived` flag in CanDecoder prevents Sport/Track resolution until the first `0x420` frame is received. Without this gate, `0x1B0` nibble=1 resolves against stale `modeDetail420` default during the 0-600ms blind window after connection, causing wrong mode flashes. The drive mode confirmation loop in MorePage adds a 2s post-command settling delay, a 15s timeout, and auto-correction if the car lands on the wrong mode (sends a corrective command automatically).
 - Android 10+ silently routes new sockets through cellular when WiFi has no internet — `WiFiFirmwareApi` uses `Network.socketFactory` via `ConnectivityManager` to force all traffic on WiFi. BLE transport avoids this entirely (not a "network" in Android's routing model)
-- **BLE 0xFFE0 UUID is NOT unique to WiCAN** — many cheap BLE peripherals (SP105E LED controllers, HM-10 clone modules) advertise the same 0xFFE0 service with FFE1/FFE2 characteristics. The BLE scan filter passes them through. `BleDevicePickerDialog` shows an orange "not a known adapter" hint for unrecognized device names. `SlcanConnection` has a 3s SLCAN handshake that rejects non-SLCAN devices before declaring Connected
+- **BLE GATT layouts (#218)** — upstream WiCAN Pro v4.45p–v4.48p: FFF0, write FFF2, notify FFF1; USB v4.13u–v4.21u: FEE0, FEE1
+  write + notify; both need an encrypted, MITM-authenticated (bonded) link. The old FFE0/FFE1/FFE2 layout is from the openRS_
+  firmware README and no shipped firmware implements it (kept as an unverified fallback). Source-verified only — no GATT trace
+  from a physical adapter yet. FFF0 / FFE0 are also used by unrelated cheap BLE peripherals; the scan filter passes them through. `BleDevicePickerDialog` shows an orange "not a known adapter" hint for unrecognized device names. `SlcanConnection` has a 3s SLCAN handshake that rejects non-SLCAN devices before declaring Connected
 - **BLE auto-reconnect** — `autoConnect=true` on `connectGatt()` after first successful connection. Android handles reconnection when device returns to range. 15s timeout covers slow auto-reconnect; on timeout, `SlcanConnection` retry logic takes over
 - **BLE MTU** — `requestMtu(247)` requested after service discovery. If `requestMtu()` returns false (unsupported), proceeds with 23-byte default. SLCAN frames mostly fit; longer frames arrive as multiple BLE notifications and are reassembled by `lineBuffer`
 - **BLE permissions must be requested at scan time** — `BleDevicePickerDialog` handles runtime permission requests (BLUETOOTH_SCAN + BLUETOOTH_CONNECT on API 31+). Do NOT rely solely on `MainActivity.onCreate()` permission requests — the user may switch to Bluetooth after app startup. `BleDeviceScanner.startScan()` also has a SecurityException safety net
@@ -359,9 +368,11 @@ data[5] = B5,  data[6] = B6 …
   with `deliver(gen) { }` / `owns(gen)`. Never add a delayed write from a connection job without that check. Cancel has ONE
   rule — `LinkPresentation.offersCancel(phase, recording)`: initial attempt and no recording (paused counts) — enforced in
   `LinkOwnership.cancel` when the request is handled (stale notification actions are ignored) and mirrored by the pill /
-  DRIVE (`cancelable`). The manual-connect block lives only as long as the process: Home keeps it; a Recents dismissal
-  after a cancel lets Android kill the idle process, so the next launch is a cold start and auto-connects (open decision).
-  `reconnect()` (RCN tap) builds a fresh SlcanConnection, so it reads CONN; while recording it can't be cancelled
+  DRIVE (`cancelable`). An explicit Cancel is **persisted** (`LinkOwnership.CancelStore`, prefs file `openrs_link`, loaded
+  first in `CanDataService.onCreate`) until Connect / Retry — Home, Back, Recents, process death and Force stop keep it;
+  the demo hold is memory-only. Raw CAN frames and auto-record go through `LinkSession` (`deliver(gen)`); blocking work
+  (perf-run insert) runs after the lock. `reconnect()` (RCN tap) builds a fresh SlcanConnection, so it reads CONN; while
+  recording it can't be cancelled
 - **Retry while recording** — `keepRetrying` (= recording) extends retries past `maxRetries` with a 30 s backoff polled every
   second; when recording ends the bounded policy applies at once (budget spent → Idle → service released). Notification
   text is re-published on recording start / pause / resume / stop. Auto-record never splits a drive still recording
@@ -372,7 +383,10 @@ data[5] = B5,  data[6] = B6 …
 - **DTC scan truth (#215)** — a module is OK only for a valid positive `59 02 …` reply (`DtcReply.classify`); 7F 19 NRC →
   REJECTED, malformed → MALFORMED, 7F 19 78 waits (P2* 5 s, cap 12 s) → else PENDING, none → TIMEOUT. The export record
   is published only through `DiagnosticLogger.dtcScans` (`DtcScanLedger`, session-scoped); never write a DtcScanRecord
-  directly. Records are parsed as 3-byte (high, mid, status) — unverified against real modules
+  directly. Records are ISO 14229 4-byte (DTC high, mid, failure type, status — python-udsoncan), a reply must be whole
+  records; only replies to the operation's service are diverted from the frame loop (poll / `50 03` replies take the normal
+  path). DIAG goes through `DtcScanView` + ledger together; "resolved" only over modules scanned OK. No real-module capture
+  yet. Freeze-frame sub-function numbering (app 04 / 05 vs ISO 03 / 04) is unverified, best-effort
 - **Theme colours are mode-aware getters** — `Bg`, `Surf`, `Surf2`, `Surf3`, `Brd`, `Dim`, `Mid`, `Frost` in Theme.kt are `val ... get() = when { _isDay -> ...; isUltraNightNow() -> ...; else -> Night... }` backed by `mutableStateOf(ThemeMode)`. They are NOT static vals. Compose snapshot system tracks reads automatically. Call `setThemeMode(ThemeMode)` to change; all composables recompose. Do not cache these colors in non-composable contexts. `setBrightness()`/`getBrightness()` are deprecated no-ops retained for back-compat
 - **TRIP tab camera state is hoisted** — `cameraPositionState` lives in `DrivePage` (trip/), passed to `DriveMap` as a parameter. This allows DrivePage to control zoom and recenter. Google Maps native My Location button is disabled; custom `◎` button replaces it
 - **TRIP map: created on TRIP, then retained** — `HorizontalPager(beyondViewportPageCount = 1)` composes neighbours and
@@ -395,6 +409,9 @@ data[5] = B5,  data[6] = B6 …
 - **Throttle may not broadcast** — CAN 0x076 is absent on some cars (`throttleHasSource` stays false). Anything keyed on throttle (PullTracker, knock snapshot, recorded throttle) must read `throttleOrPedalPct`, never `throttlePct` directly
 - **PCM "no data" replies** — 0x0461 charge air answers `0x0000` on two RS PCMs; the decoder treats that as no data (stays −99). BCM 0x4028 battery SOC read raw 5 (= 5 %) at 14.7 V all session on the user's car — unverified, compare with FORScan BAT_ST_CHRG before trusting it
 - **Adding a polled DID** — put the query in `ObdConstants` AND a `markFresh` decoder in `ObdResponseParser`; the coverage-guard tests in `ObdResponseParserTest` fail otherwise. Removing a decoder fails them too (that's the point — #198). Multi-frame ISO-TP DIDs (BCM 0x280B) are excluded explicitly
+- **Polled values go stale (#217)** — POWER and Custom Dashboard use `PolledFreshness` (fast group 2 s, others 40 s, stale past
+  2×): POWER dims with STALE Ns, the dashboard shows "— —". NRC suppression (#216) needs 2 attributed NRCs, recovers on a
+  positive reply and re-probes after 60 s; the PCM poller always suspends.
 - **POWER cells are gated per field** — engine cells show only when `rpm > FAST_POLL_MIN_RPM` AND `fieldLastUpdateMs[tag] != null`; never gate on another field's value (the old `calcLoad > 0` gate hid everything once load lost its decoder)
 - **Lint version is pinned above AGP** — `android/gradle.properties` sets `android.experimental.lint.version=8.13.0` because AGP 8.7.3's bundled lint crashes (`IncompatibleClassChangeError`) on the lint checks shipped in Compose BOM 2025.11 / Lifecycle. Don't remove it unless AGP is upgraded to ≥ 8.13. `abortOnError = false`, so lint findings never fail CI — only crashes do; check `app/build/reports/lint-results-debug.txt` for errors ([#196](https://github.com/klexical/openRS_/issues/196))
 - **`MutableList.removeFirst()/removeLast()` crash below API 35** — with compileSdk 35 they resolve to `java.util.List.removeFirst` (Android 15+) and throw `NoSuchMethodError` on Android 9–14 (minSdk 28). Use `removeAt(0)` / `removeAt(lastIndex)`. `ArrayDeque.removeFirst()` is fine
@@ -554,7 +571,7 @@ Regenerate the FORScan catalog: `python3 android/scripts/gen_forscan_catalog.py`
 cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{releaseName}.apk (e.g. openRS_v2.2.7-rc.7.apk; set in app/build.gradle.kts)
-./gradlew test                             # 817 unit tests across 52 files
+./gradlew test                             # 876 unit tests across 63 files
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 45 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -711,10 +728,13 @@ android/app/src/test/java/com/openrs/dash/
                                 stale retry, interrupted keeps coverage, abort vs late interrupt, RUNNING export
   ForegroundControllerTest.kt — 6 tests: idle bound service never foreground, self-start always followed by startForeground,
                                 demote leaves both, refused start / startForeground leave nothing started
+  Drive-review pass (rc.7): LinkSessionRaceTest 2 · NrcAttributionTest 4 (+ NrcTrackerTest 16) · StalePolledValueTest 5 ·
+  ObdDecodeMergeTest 2 · BoostSourceTest 3 · DtcScanPathTest 12 · DtcScanViewTest 5 · FirmwareProbeTest 4 · BleAdapterProfileTest 9 ·
+  TyreThresholdTest 6 · EscCommandTest 4 · RecordingGapMonitorTest 3 · LinkOwnershipTest 14
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **817 tests across 52 files** (Android) + **260 vitest across 21 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **876 tests across 63 files** (Android) + **260 vitest across 21 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 
@@ -755,12 +775,19 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   `~/Documents/openRS_-evidence/rc7-corrections-2026-10-28/RESULTS.md` (release exports with readable states and DTC
   outcomes, cancel latency per transport, recording protection, notification body). That run showed the earlier
   "Wi-Fi off / on after cancel" row proves nothing (Wi-Fi cycling doesn't reconnect on that emulator either way).
-- Still open: Samsung Back / Recents + notification Cancel / tap; real adapters (TCP / WS / BLE — BLE abort unverified); a
-  real decimal-comma-phone export; parked checks for #205–#208; DTC replies from real modules (3-byte record layout
-  unverified); decision: should a cancel survive process death (Recents dismissal after cancel → cold start
-  auto-connects)? Follow-ups seen, not changed: false "Point flush failed" warning on drive stop (points are written),
-  20 s silent-adapter hold. PRs (feature/rc7 → staging, fix/sapphire-row-validation → main); rc.7 tag.
-  Separate: Sapphire map tiles, `docs/thermal-thresholds` PR, cleanup, stable promotion.
+- Drive-review pass (same day, from the user's two 2026-10-28 drive exports + review): issues #216–#224 created, #125 and
+  #205–#208 updated, milestone re-prioritised (decoders now P1). Commits `e6c1d09`…`e347150` (+ docs) — #212 ownership
+  window + persistent Cancel, #216 NRC, #217 stale, #205 spark, #206 throttle, #207 boost, #215 layout / interleaving /
+  retries / resolution, #220 probe, #218 BLE, #219 TPMS units, #125 ESC confirmation, #221 gap diagnostics. The issue
+  tracker is authoritative; acceptance matrix, failing-before / passing-after log, emulator evidence, final build identity
+  and the parked hardware checklist: `~/Documents/openRS_-evidence/rc7-drive-review-2026-10-28/` (`ACCEPTANCE-MATRIX.md`,
+  `HARDWARE-CHECKLIST.md`; private drive exports under `private/`, never published).
+- Still open: everything in the hardware checklist (Samsung, BLE, firmware capability, parked spark / throttle / boost,
+  real DTC replies, TPMS BAR on the phone, 0304 / 03EF identity); #224 header cog hidden while recording; a real
+  decimal-comma-phone export. Follow-ups seen, not changed: false "Point flush failed" warning; 20 s silent-adapter hold;
+  boost peak caption is psi in any unit; debug Settings label squeezes UPDATES. PRs (feature/rc7 → staging,
+  fix/sapphire-row-validation → main); rc.7 tag. Separate: Sapphire map tiles, `docs/thermal-thresholds` PR, cleanup,
+  stable promotion.
 
 **rc.6 publication record (2026-10-28 UTC; evidence `~/Documents/openRS_-evidence/rc6-release-2026-10-27/PUBLISHED.txt`):**
 - Android: PR #202 (feature/design-pass `056556b`) → staging merge `d2f7dc6`; staging CI 40625379258 green; tag
