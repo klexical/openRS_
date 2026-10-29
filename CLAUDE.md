@@ -351,7 +351,7 @@ data[5] = B5,  data[6] = B6 …
   `stopConnection()` demotes (stopForeground + stopSelf), so an idle service lives only while the activity is bound. Never
   call `startForegroundService()` without a guaranteed `startForeground()` — the old per-`onCreate` call ANR'd whenever the
   activity was recreated offline / in demo. `promote()` is in a try/catch because WiFi/Bluetooth callbacks can fire when the
-  app is backgrounded (Android 12+ refuses the start). `manualConnectRequired` is process-wide (companion) because the idle
+  app is backgrounded (Android 12+ refuses the start). `manualConnectRequired` is process-wide (`LinkOwnership` in the companion) because the idle
   service instance is recreated with the activity
 - **Connection ownership + Cancel (#212)** — every connection transition goes through `CanDataService.link`
   (`LinkOwnership`, process-wide): callback starts use `autoStart` (check + start in one step), a job publishes its phase
