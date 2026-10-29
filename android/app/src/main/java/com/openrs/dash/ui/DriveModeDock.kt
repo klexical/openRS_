@@ -142,7 +142,7 @@ import kotlinx.coroutines.launch
                     val openRsFw by com.openrs.dash.OpenRSDashApp.instance.isOpenRsFirmware.collectAsState()
                     InstrumentMeta(when {
                         probing   -> "CHECKING FIRMWARE\u2026"
-                        !openRsFw -> "VIEW ONLY \u00B7 NO openRS_ FW"
+                        !openRsFw -> "VIEW ONLY \u00B7 FW NOT DETECTED"   // no reply ≠ unsupported (#220)
                         else      -> "VIEW ONLY"
                     })
                 }

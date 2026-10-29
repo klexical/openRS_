@@ -338,27 +338,50 @@ class SlcanConnection(
                 // after the first window as before, but a reply at any time still upgrades the capability (a late
                 // reply was ignored and nothing retried, so a slow adapter stayed VIEW ONLY for the session).
                 val probeStartMs = clock()
-                var probesSent = 1
-                var firmwareDetected = false
-                var probeGivenUp = false
-                var stockShown = false
+                // Shared by the read loop and the probe schedule (own coroutine)
+                val probesSent = java.util.concurrent.atomic.AtomicInteger(1)
+                val firmwareDetected = java.util.concurrent.atomic.AtomicBoolean(false)
+                val stockShown = java.util.concurrent.atomic.AtomicBoolean(false)
                 fun publish(st: FirmwareStatus) {
                     firmwareVersion = st.label
                     DiagnosticLogger.isOpenRsFirmware = st.openRs
                     DiagnosticLogger.firmwareVersion = st.label
                     firmwareSink(st)
                 }
-                fun detected(line: String) {
-                    firmwareDetected = true
+                fun detected(line: String) = synchronized(firmwareDetected) {
+                    if (!firmwareDetected.compareAndSet(false, true)) return@synchronized
                     val version = line.removePrefix("OPENRS:").trim()
                     publish(FirmwareStatus(openRs = true, probing = false, label = "openRS_ $version"))
                     val ms = clock() - probeStartMs
-                    addDebugLine("Firmware: openRS_ $version \u2713 (${ms} ms, probe $probesSent)")
-                    DiagnosticLogger.event("FIRMWARE", "openRS_ $version detected after $ms ms (probe $probesSent of " +
-                        "${PROBE_TIMES_MS.size + 1}${if (stockShown) ", late reply" else ""}) (${transport.label})")
+                    addDebugLine("Firmware: openRS_ $version \u2713 (${ms} ms, probe ${probesSent.get()})")
+                    DiagnosticLogger.event("FIRMWARE", "openRS_ $version detected after $ms ms (probe ${probesSent.get()} of " +
+                        "${PROBE_TIMES_MS.size + 1}${if (stockShown.get()) ", late reply" else ""}) (${transport.label})")
                 }
                 publish(FirmwareStatus(openRs = false, probing = true, label = transport.stockFirmwareLabel))
                 if (firstLine != null && firstLine.startsWith("OPENRS:")) detected(firstLine)
+                // The retry / give-up schedule runs on its own clock (#220): inside the read loop it only advanced when
+                // a line arrived, so an adapter that went quiet after the handshake never got a retry or a verdict
+                val probeJob = launch {
+                    for (at in PROBE_TIMES_MS) {
+                        delay((at - (clock() - probeStartMs)).coerceAtLeast(0L))
+                        if (firmwareDetected.get()) return@launch
+                        if (stockShown.compareAndSet(false, true)) {
+                            addDebugLine("Firmware: no openRS_ reply in ${PROBE_TIMES_MS.first() / 1000} s — probing again")
+                            DiagnosticLogger.event("FIRMWARE", "${transport.stockFirmwareLabel} so far (no openRS_ reply in " +
+                                "${PROBE_TIMES_MS.first() / 1000} s) — probing again")
+                        }
+                        try { transport.writeLine("OPENRS?\r") } catch (_: Exception) { }
+                        probesSent.incrementAndGet()
+                    }
+                    delay((PROBE_GIVE_UP_MS - (clock() - probeStartMs)).coerceAtLeast(0L))
+                    synchronized(firmwareDetected) {    // never after a detection that landed meanwhile
+                        if (firmwareDetected.get()) return@launch
+                        publish(FirmwareStatus(openRs = false, probing = false, label = transport.stockFirmwareLabel))
+                    }
+                    DiagnosticLogger.event("FIRMWARE", "openRS_ firmware not detected — no reply to ${probesSent.get()} probes " +
+                        "in ${PROBE_GIVE_UP_MS / 1000} s (adapter capability unknown: stock firmware, or no reply) — " +
+                        "drive mode / ESC stay view-only; a later reply still enables them")
+                }
 
                 // ── Main frame loop ───────────────────────────────────────
                 try {
@@ -368,28 +391,9 @@ class SlcanConnection(
                         } ?: break
 
                         if (line.startsWith("OPENRS:")) {
-                            if (!firmwareDetected) detected(line)
+                            detected(line)
                             continue
                         }
-                        if (!firmwareDetected && !probeGivenUp) {
-                            val elapsed = clock() - probeStartMs
-                            if (!stockShown && elapsed >= PROBE_TIMES_MS.first()) {
-                                stockShown = true
-                                addDebugLine("Firmware: no openRS_ reply in ${PROBE_TIMES_MS.first() / 1000} s — probing again")
-                                DiagnosticLogger.event("FIRMWARE", "${transport.stockFirmwareLabel} so far (no openRS_ reply in " +
-                                    "${PROBE_TIMES_MS.first() / 1000} s) — probing again")
-                            }
-                            if (probesSent <= PROBE_TIMES_MS.size && elapsed >= PROBE_TIMES_MS[probesSent - 1]) {
-                                try { transport.writeLine("OPENRS?\r") } catch (_: Exception) { }
-                                probesSent++
-                            } else if (probesSent > PROBE_TIMES_MS.size && elapsed >= PROBE_GIVE_UP_MS) {
-                                probeGivenUp = true
-                                publish(FirmwareStatus(openRs = false, probing = false, label = transport.stockFirmwareLabel))
-                                DiagnosticLogger.event("FIRMWARE", "openRS_ firmware not detected: no reply to $probesSent probes " +
-                                    "in ${PROBE_GIVE_UP_MS / 1000} s (stock or unsupported firmware, or no reply) — drive mode / ESC stay view-only")
-                            }
-                        }
-
                         // Route firmware command responses to dedicated channel
                         if (line.startsWith("+FRS:")) {
                             commandResponseChannel.trySend(line)
@@ -497,6 +501,7 @@ class SlcanConnection(
                     }
                 } finally {
                     obdJob.cancel()
+                    probeJob.cancel()
                     pcmJob.cancel()
                     extJob.cancel()
                 }

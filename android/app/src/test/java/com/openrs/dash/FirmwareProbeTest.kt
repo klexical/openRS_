@@ -26,12 +26,17 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class FirmwareProbeTest {
 
-    /** Streams a 0x090 frame every 100 ms; answers the [answerProbe]-th OPENRS? after [replyAfterMs] (0 = never). */
-    private class Adapter(private val scope: CoroutineScope, private val answerProbe: Int, private val replyAfterMs: Long) : SlcanTransport {
+    /**
+     * Streams a 0x090 frame every 100 ms ([quiet]: only one, then silence — readLine blocks); answers the
+     * [answerProbe]-th OPENRS? after [replyAfterMs] (0 = never).
+     */
+    private class Adapter(private val scope: CoroutineScope, private val answerProbe: Int, private val replyAfterMs: Long,
+                          private val quiet: Boolean = false) : SlcanTransport {
         private val lines = Channel<String>(Channel.UNLIMITED)
         var probes = 0
         override suspend fun open() {
-            scope.launch { while (isActive) { lines.send("t09080000C1FF617D0000"); delay(100L) } }
+            if (quiet) lines.send("t09080000C1FF617D0000")
+            else scope.launch { while (isActive) { lines.send("t09080000C1FF617D0000"); delay(100L) } }
         }
         override suspend fun readLine(): String? = lines.receive()
         override suspend fun writeLine(frame: String) {
@@ -45,8 +50,8 @@ class FirmwareProbeTest {
         override val stockFirmwareLabel = "MeatPi Pro"
     }
 
-    private fun TestScope.connect(answerProbe: Int, replyAfterMs: Long, seconds: Long): Pair<Adapter, List<SlcanConnection.FirmwareStatus>> {
-        val adapter = Adapter(backgroundScope, answerProbe, replyAfterMs)
+    private fun TestScope.connect(answerProbe: Int, replyAfterMs: Long, seconds: Long, quiet: Boolean = false): Pair<Adapter, List<SlcanConnection.FirmwareStatus>> {
+        val adapter = Adapter(backgroundScope, answerProbe, replyAfterMs, quiet)
         val seen = mutableListOf<SlcanConnection.FirmwareStatus>()
         val conn = SlcanConnection(
             transportFactory = { adapter }, maxRetries = 1, ioDispatcher = StandardTestDispatcher(testScheduler),
@@ -83,5 +88,19 @@ class FirmwareProbeTest {
         val (adapter, seen) = connect(answerProbe = 1, replyAfterMs = 50L, seconds = 20)
         assertTrue(seen.last().openRs)
         assertEquals(1, adapter.probes)
+    }
+
+    @Test fun `a quiet adapter (nothing after the handshake) still gets its probes and a verdict by 13 s`() = runTest {
+        // readLine blocks: the old schedule only ran when a line arrived, so it never retried nor gave up
+        val (adapter, seen) = connect(answerProbe = 0, replyAfterMs = 0L, seconds = 14, quiet = true)
+        assertEquals(3, adapter.probes)
+        assertFalse("verdict reached while silent: $seen", seen.last().probing)
+        assertFalse(seen.last().openRs)
+    }
+
+    @Test fun `a quiet adapter that answers the third probe is detected`() = runTest {
+        val (adapter, seen) = connect(answerProbe = 3, replyAfterMs = 300L, seconds = 14, quiet = true)
+        assertEquals(3, adapter.probes)
+        assertTrue(seen.last().openRs)
     }
 }
