@@ -72,6 +72,12 @@ class DtcScanner(private val ctx: Context) {
         /**
          * Parse a UDS 0x19/02 response payload into [DtcResult] records.
          * Description lookup uses [DtcDatabase] — returns "" if DB not loaded.
+         *
+         * Layout (ISO 14229-1 reportDTCByStatusMask; python-udsoncan parses it the same way):
+         * `59 02 <availability mask>` then 4-byte records `DTC high, DTC middle, DTC low (failure type), status`.
+         * Earlier builds read 3-byte records (high, mid, status), which takes the failure-type byte as the status and
+         * misaligns every later record (#215). An incomplete trailing record is ignored here; [DtcReply.classify]
+         * already rejects such a reply as MALFORMED. All-zero DTCs are padding.
          */
         internal fun parsePayload(module: String, payload: ByteArray): List<DtcResult> {
             if (payload.size < 3) return emptyList()
@@ -82,13 +88,14 @@ class DtcScanner(private val ctx: Context) {
             var offset = 3
             val results = mutableListOf<DtcResult>()
 
-            while (offset + 2 < payload.size) {
-                val high   = payload[offset].toInt()     and 0xFF
-                val mid    = payload[offset + 1].toInt() and 0xFF
-                val status = payload[offset + 2].toInt() and 0xFF
-                offset += 3
+            while (offset + DtcReply.RECORD_SIZE <= payload.size) {
+                val high    = payload[offset].toInt()     and 0xFF
+                val mid     = payload[offset + 1].toInt() and 0xFF
+                val failure = payload[offset + 2].toInt() and 0xFF
+                val status  = payload[offset + 3].toInt() and 0xFF
+                offset += DtcReply.RECORD_SIZE
 
-                if (high == 0 && mid == 0) continue
+                if (high == 0 && mid == 0 && failure == 0) continue
 
                 val code      = decodeDtcCode(high, mid)
                 val description = DtcDatabase.describe(code)
@@ -98,7 +105,8 @@ class DtcScanner(private val ctx: Context) {
                     module      = module,
                     code        = code,
                     description = description,
-                    status      = dtcStatus
+                    status      = dtcStatus,
+                    failureType = failure
                 )
             }
 

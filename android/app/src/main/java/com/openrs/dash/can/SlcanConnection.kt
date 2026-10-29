@@ -82,6 +82,48 @@ class SlcanConnection(
     private val _dtcMutex      = Mutex()
     @Volatile private var _dtcWatchIds: Set<Int> = emptySet()
     @Volatile private var _dtcScanActive: Boolean = false
+    /**
+     * Service the active DTC operation expects replies to (0x19 read DTC, 0x14 clear), or −1 for a raw query (DID
+     * prober: everything from the watched ID). Ordinary polling continues during a scan, so only replies to this
+     * service — and the consecutive frames of a multi-frame reply that started as one — are diverted; a `62` poll
+     * reply or the scan's own `50 03` session reply goes to the normal path instead of finishing the module (#215).
+     */
+    @Volatile private var _dtcExpectSid: Int = -1
+    private val _dtcMultiFrameIds = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
+
+    /** Frame loop: should this frame from a watched ID go to the DTC channel? */
+    private fun divertToDtc(id: Int, d: ByteArray): Boolean {
+        val sid = _dtcExpectSid
+        if (sid < 0) return true
+        if (d.isEmpty()) return false
+        return when ((d[0].toInt() and 0xF0) shr 4) {
+            0 -> { _dtcMultiFrameIds.remove(id); d.size >= 2 && isReplyTo(sid, d, 1) }
+            1 -> (d.size >= 3 && isReplyTo(sid, d, 2)).also { if (it) _dtcMultiFrameIds.add(id) else _dtcMultiFrameIds.remove(id) }
+            2 -> id in _dtcMultiFrameIds
+            else -> false
+        }
+    }
+
+    /** Positive reply (SID + 0x40) or a negative reply to [sid] starting at payload index [i]. */
+    private fun isReplyTo(sid: Int, d: ByteArray, i: Int): Boolean {
+        val b = d[i].toInt() and 0xFF
+        return b == sid + 0x40 || (b == 0x7F && d.size > i + 1 && (d[i + 1].toInt() and 0xFF) == sid)
+    }
+
+    /** Start a DTC-channel operation expecting replies to [sid] (−1 = any) from [ids]. */
+    private fun beginDtcOperation(ids: Set<Int>, sid: Int) {
+        _dtcExpectSid = sid
+        _dtcMultiFrameIds.clear()
+        _dtcWatchIds = ids
+        _dtcScanActive = true
+    }
+
+    private fun endDtcOperation() {
+        _dtcScanActive = false
+        _dtcWatchIds = emptySet()
+        _dtcExpectSid = -1
+        _dtcMultiFrameIds.clear()
+    }
 
     suspend fun sendRawQuery(
         responseId: Int,
@@ -89,8 +131,7 @@ class SlcanConnection(
         timeoutMs: Long = 1_500L
     ): ByteArray? = _dtcMutex.withLock {
         val transport = _transport ?: return null
-        _dtcWatchIds = setOf(responseId)
-        _dtcScanActive = true
+        beginDtcOperation(setOf(responseId), sid = -1)
         while (_dtcChannel.tryReceive().isSuccess) { /* drain stale */ }
         try {
             transport.writeLine(frame)
@@ -103,8 +144,7 @@ class SlcanConnection(
             }
             null
         } finally {
-            _dtcScanActive = false
-            _dtcWatchIds = emptySet()
+            endDtcOperation()
         }
     }
 
@@ -329,7 +369,7 @@ class SlcanConnection(
 
                         val frame = SlcanParser.parse(line) ?: continue
 
-                        if (_dtcScanActive && frame.first in _dtcWatchIds) {
+                        if (_dtcScanActive && frame.first in _dtcWatchIds && divertToDtc(frame.first, frame.second)) {
                             _dtcChannel.trySend(frame)
                             continue
                         }
@@ -497,8 +537,7 @@ class SlcanConnection(
             val pending = mutableSetOf<String>()
             val sendFailed = mutableSetOf<String>()
 
-            _dtcWatchIds = modules.map { it.responseId }.toSet()
-            _dtcScanActive = true
+            beginDtcOperation(modules.map { it.responseId }.toSet(), sid = DtcReply.SID)
             while (_dtcChannel.tryReceive().isSuccess) { /* drain stale */ }
 
             try {
@@ -579,8 +618,7 @@ class SlcanConnection(
                     }
                 }
             } finally {
-                _dtcScanActive = false
-                _dtcWatchIds   = emptySet()
+                endDtcOperation()
             }
             DtcRawScan(results, pending - results.keys, sendFailed - results.keys)
         }
@@ -590,8 +628,7 @@ class SlcanConnection(
             val transport = _transport ?: return emptyMap()
             val results = mutableMapOf<String, Boolean>()
 
-            _dtcWatchIds = modules.map { it.responseId }.toSet()
-            _dtcScanActive = true
+            beginDtcOperation(modules.map { it.responseId }.toSet(), sid = 0x14)
             while (_dtcChannel.tryReceive().isSuccess) { /* drain stale */ }
 
             try {
@@ -605,8 +642,7 @@ class SlcanConnection(
                     delay(300L)
                 }
             } finally {
-                _dtcScanActive = false
-                _dtcWatchIds   = emptySet()
+                endDtcOperation()
             }
             results
         }
@@ -661,8 +697,7 @@ class SlcanConnection(
         module: DtcModuleSpec
     ): ByteArray? = _dtcMutex.withLock {
         val transport = _transport ?: return null
-        _dtcWatchIds = setOf(module.responseId)
-        _dtcScanActive = true
+        beginDtcOperation(setOf(module.responseId), sid = DtcReply.SID)
         while (_dtcChannel.tryReceive().isSuccess) { /* drain */ }
         try {
             // UDS 0x19/04: reportDTCSnapshotIdentification
@@ -670,8 +705,7 @@ class SlcanConnection(
             try { transport.writeLine(req) } catch (_: Exception) { return null }
             assembleIsotpResponse(transport, module.responseId, module.requestId, 3_000L)
         } finally {
-            _dtcScanActive = false
-            _dtcWatchIds = emptySet()
+            endDtcOperation()
         }
     }
 
@@ -685,8 +719,7 @@ class SlcanConnection(
         recordNumber: Int
     ): ByteArray? = _dtcMutex.withLock {
         val transport = _transport ?: return null
-        _dtcWatchIds = setOf(module.responseId)
-        _dtcScanActive = true
+        beginDtcOperation(setOf(module.responseId), sid = DtcReply.SID)
         while (_dtcChannel.tryReceive().isSuccess) { /* drain */ }
         try {
             // UDS 0x19/05: reportDTCSnapshotRecordByDTCNumber
@@ -701,8 +734,7 @@ class SlcanConnection(
             try { transport.writeLine(req) } catch (_: Exception) { return null }
             assembleIsotpResponse(transport, module.responseId, module.requestId, 3_000L)
         } finally {
-            _dtcScanActive = false
-            _dtcWatchIds = emptySet()
+            endDtcOperation()
         }
     }
 

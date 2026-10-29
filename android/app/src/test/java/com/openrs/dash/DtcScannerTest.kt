@@ -154,13 +154,17 @@ class DtcScannerTest {
         assertTrue(DtcScanner.parsePayload("PCM", payload).isEmpty())
     }
 
+    // ISO 14229-1 reportDTCByStatusMask records are 4 bytes: DTC high, middle, low (failure type), status.
+    // (These fixtures used 3-byte records before #215 — the layout python-udsoncan and ISO 14229 don't use.)
+
     @Test fun `parsePayload single DTC parsed correctly`() {
-        // 59 02 FF [01 23 01] → P0123 ACTIVE
-        val payload = byteArrayOf(0x59, 0x02, 0xFF.toByte(), 0x01, 0x23, 0x01)
+        // 59 02 FF [01 23 1C 09] → P0123, failure type 1C, status 09 (testFailed) → ACTIVE
+        val payload = byteArrayOf(0x59, 0x02, 0xFF.toByte(), 0x01, 0x23, 0x1C, 0x09)
         val results = DtcScanner.parsePayload("PCM", payload)
         assertEquals(1, results.size)
         assertEquals("PCM", results[0].module)
         assertEquals("P0123", results[0].code)
+        assertEquals(0x1C, results[0].failureType)
         assertEquals(DtcStatus.ACTIVE, results[0].status)
     }
 
@@ -168,8 +172,8 @@ class DtcScannerTest {
         // Two DTCs: P0123 ACTIVE + U0100 PERMANENT
         val payload = byteArrayOf(
             0x59, 0x02, 0xFF.toByte(),
-            0x01, 0x23, 0x01,          // P0123, status=ACTIVE
-            0xC1.toByte(), 0x00, 0x08  // U0100, status=PERMANENT
+            0x01, 0x23, 0x00, 0x01,          // P0123-00, status=ACTIVE
+            0xC1.toByte(), 0x00, 0x00, 0x08  // U0100-00, status=PERMANENT
         )
         val results = DtcScanner.parsePayload("BCM", payload)
         assertEquals(2, results.size)
@@ -181,25 +185,24 @@ class DtcScannerTest {
     }
 
     @Test fun `parsePayload zero-padded DTCs skipped`() {
-        // DTC with high=0, mid=0 should be skipped (padding)
+        // An all-zero DTC is padding
         val payload = byteArrayOf(
             0x59, 0x02, 0xFF.toByte(),
-            0x00, 0x00, 0x01,          // zero padding — skip
-            0x01, 0x23, 0x04           // P0123, PENDING
+            0x00, 0x00, 0x00, 0x01,          // zero padding — skip
+            0x01, 0x23, 0x00, 0x04           // P0123, PENDING
         )
         val results = DtcScanner.parsePayload("ABS", payload)
         assertEquals(1, results.size)
         assertEquals("P0123", results[0].code)
     }
 
-    @Test fun `parsePayload trailing incomplete record ignored`() {
-        // Valid DTC followed by only 2 trailing bytes (incomplete record)
+    @Test fun `parsePayload trailing incomplete record ignored and the reply classified malformed`() {
         val payload = byteArrayOf(
             0x59, 0x02, 0xFF.toByte(),
-            0x01, 0x23, 0x01,          // P0123, ACTIVE
-            0xAB.toByte(), 0xCD.toByte() // incomplete — only 2 bytes
+            0x01, 0x23, 0x00, 0x01,          // P0123, ACTIVE
+            0xAB.toByte(), 0xCD.toByte()     // incomplete — only 2 bytes
         )
-        val results = DtcScanner.parsePayload("PCM", payload)
-        assertEquals(1, results.size)
+        assertEquals(1, DtcScanner.parsePayload("PCM", payload).size)
+        assertEquals(com.openrs.dash.data.DtcReply.Malformed, com.openrs.dash.data.DtcReply.classify(payload))
     }
 }

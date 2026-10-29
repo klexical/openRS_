@@ -46,12 +46,19 @@ class DtcScanPathTest {
     private class ScriptedAdapter(
         private val scope: CoroutineScope,
         private val scripts: Map<Int, List<Reply>>,          // request id → replies
+        /** Answer extended-session requests (`02 10 03`) with `50 03` from the module, as real ECUs do. */
+        private val answerSessions: Boolean = false,
     ) : SlcanTransport {
         private val lines = Channel<String>(Channel.UNLIMITED).apply { trySend("t09080000C1FF617D0000") }
         val requests = mutableListOf<Int>()
         override suspend fun open() = Unit
         override suspend fun readLine(): String? = lines.receive()
         override suspend fun writeLine(frame: String) {
+            if (answerSessions && frame.length >= 11 && frame.substring(5, 11) == "021003") {
+                val req = frame.substring(1, 4).toInt(16)
+                val resp = "t%03X8" .format(req + 8) + "0250030000000000"
+                scope.launch { delay(15L); lines.send(resp) }
+            }
             if (frame.length >= 13 && frame.substring(5, 13) == "031902FF") {
                 val req = frame.substring(1, 4).toInt(16)
                 requests += req
@@ -66,9 +73,9 @@ class DtcScanPathTest {
     }
 
     private suspend fun TestScope.scan(
-        modules: List<DtcModuleSpec>, scripts: Map<Int, List<Reply>>,
+        modules: List<DtcModuleSpec>, scripts: Map<Int, List<Reply>>, answerSessions: Boolean = false,
     ): Pair<DtcScanResult, Map<String, ModuleScanStatus?>> {
-        val adapter = ScriptedAdapter(backgroundScope, scripts)
+        val adapter = ScriptedAdapter(backgroundScope, scripts, answerSessions)
         val conn = SlcanConnection(
             transportFactory = { adapter }, maxRetries = 1, ioDispatcher = StandardTestDispatcher(testScheduler),
             debugSink = {},
@@ -86,7 +93,7 @@ class DtcScanPathTest {
     @Test fun `every module in one scan — only valid positive replies count as scanned`() = runTest {
         val (r, progress) = scan(all, mapOf(
             0x7E0 to listOf(Reply(sf(0x7E8, 0x59, 0x02, 0xFF))),                     // PCM: valid, zero codes
-            0x726 to listOf(Reply(sf(0x72E, 0x59, 0x02, 0xFF, 0x01, 0x23, 0x01))),   // BCM: valid, P0123 active
+            0x726 to listOf(Reply(sf(0x72E, 0x59, 0x02, 0xFF, 0x01, 0x23, 0x00, 0x01))),   // BCM: valid, P0123-00 active
             0x760 to listOf(Reply(sf(0x768, 0x7F, 0x19, 0x12))),                     // ABS: refused (NRC 0x12)
             0x703 to listOf(Reply(sf(0x70B, 0x59, 0x02))),                           // AWD: truncated
             0x730 to listOf(Reply(sf(0x738, 0x7F, 0x19, 0x78)),                      // PSCM: pending, then valid
@@ -126,12 +133,12 @@ class DtcScanPathTest {
     }
 
     @Test fun `codes found across a multi-frame reply are parsed`() = runTest {
-        // 59 02 FF + 3 records = 12 bytes → First Frame + Consecutive Frame (scanner sends flow control)
-        val ff = "t7E88" + "100C5902FF012301"          // FF, length 12: 59 02 FF | 01 23 01
-        val cf = "t7E88" + "21C10008012308" + "00"      // CF 1: C1 00 08 | 01 23 08
+        // 59 02 FF + 2 four-byte records = 11 bytes → First Frame + Consecutive Frame (scanner sends flow control)
+        val ff = "t7E88" + "100B5902FF012300"          // FF, length 11: 59 02 FF | 01 23 00 …
+        val cf = "t7E88" + "2101C1000008" + "0000"      // CF 1: … 01 | C1 00 00 08
         val (r, _) = scan(listOf(spec("PCM")), mapOf(0x7E0 to listOf(Reply(ff), Reply(cf, afterMs = 30L))))
         assertEquals(ModuleScanStatus.OK, r.moduleStatuses["PCM"])
-        assertEquals(listOf("P0123", "U0100", "P0123"), r.codes.map { it.code })
+        assertEquals(listOf("P0123", "U0100"), r.codes.map { it.code })
     }
 
     @Test fun `pending with no final reply ends PENDING, never OK`() = runTest {
@@ -148,15 +155,15 @@ class DtcScanPathTest {
         assertEquals(DtcScanStatus.FAILED, DtcScanRecord.from(r, 1L, "manual", listOf("BCM")).status)
     }
 
-    @Test fun `malformed replies — wrong service, wrong sub-function, empty frame`() = runTest {
+    @Test fun `wrong sub-function is malformed, replies that aren't to service 0x19 are not the module's answer`() = runTest {
         val (r, _) = scan(listOf(spec("PCM"), spec("BCM"), spec("ABS")), mapOf(
-            0x7E0 to listOf(Reply(sf(0x7E8, 0x62, 0x19, 0x02))),        // a Mode 22 reply
+            0x7E0 to listOf(Reply(sf(0x7E8, 0x62, 0x19, 0x02))),        // a Mode 22 reply — ordinary traffic
             0x726 to listOf(Reply(sf(0x72E, 0x59, 0x04, 0xFF))),        // positive, but for sub-function 04
-            0x760 to listOf(Reply("t76880000000000000000")),            // SF length 0
+            0x760 to listOf(Reply("t76880000000000000000")),            // SF length 0 — not a reply to 0x19
         ))
-        assertEquals(ModuleScanStatus.MALFORMED, r.moduleStatuses["PCM"])
+        assertEquals(ModuleScanStatus.TIMEOUT, r.moduleStatuses["PCM"])
         assertEquals(ModuleScanStatus.MALFORMED, r.moduleStatuses["BCM"])
-        assertEquals(ModuleScanStatus.MALFORMED, r.moduleStatuses["ABS"])
+        assertEquals(ModuleScanStatus.TIMEOUT, r.moduleStatuses["ABS"])
         assertTrue(r.codes.isEmpty())
     }
 
@@ -167,5 +174,34 @@ class DtcScanPathTest {
         assertEquals(DtcReply.Pending, DtcReply.classify(b(0x7F, 0x19, 0x78)))
         assertEquals(DtcReply.Malformed, DtcReply.classify(b(0x7F, 0x22, 0x31)))   // refusal of another service
         assertEquals(DtcReply.Malformed, DtcReply.classify(b()))
+    }
+
+    // ── #215 second pass: interleaved traffic, truncated records, ISO 4-byte records ──
+
+    @Test fun `the scan's own extended-session reply (50 03) doesn't finish the module`() = runTest {
+        // AWD needs 10 03 first; the real ECU answers 50 03 on 0x70B before its DTC reply
+        val (r, _) = scan(listOf(spec("AWD")), mapOf(0x703 to listOf(Reply(sf(0x70B, 0x59, 0x02, 0xFF)))), answerSessions = true)
+        assertEquals(ModuleScanStatus.OK, r.moduleStatuses["AWD"])
+    }
+
+    @Test fun `an ordinary poll reply arriving first doesn't finish the module`() = runTest {
+        val (r, _) = scan(listOf(spec("PCM")), mapOf(0x7E0 to listOf(
+            Reply(sf(0x7E8, 0x62, 0x03, 0x3E, 0x36, 0x10), afterMs = 10L),   // a Mode 22 TIP reply in flight
+            Reply(sf(0x7E8, 0x59, 0x02, 0xFF), afterMs = 40L))))
+        assertEquals(ModuleScanStatus.OK, r.moduleStatuses["PCM"])
+    }
+
+    @Test fun `a truncated record (59 02 FF 01) is malformed, never a clean scan`() = runTest {
+        val (r, _) = scan(listOf(spec("PCM")), mapOf(0x7E0 to listOf(Reply(sf(0x7E8, 0x59, 0x02, 0xFF, 0x01)))))
+        assertEquals(ModuleScanStatus.MALFORMED, r.moduleStatuses["PCM"])
+        assertEquals(DtcScanStatus.FAILED, DtcScanRecord.from(r, 1L, "manual", listOf("PCM")).status)
+    }
+
+    @Test fun `ISO 14229 4-byte records — DTC, failure type, status`() = runTest {
+        // 59 02 FF | 01 23 1C 09 → P0123, failure type 0x1C, status 0x09 (testFailed + confirmed → ACTIVE)
+        val (r, _) = scan(listOf(spec("BCM")), mapOf(0x726 to listOf(Reply(sf(0x72E, 0x59, 0x02, 0xFF, 0x01, 0x23, 0x1C, 0x09)))))
+        assertEquals(ModuleScanStatus.OK, r.moduleStatuses["BCM"])
+        assertEquals(listOf("P0123"), r.codes.map { it.code })
+        assertEquals(com.openrs.dash.data.DtcStatus.ACTIVE, r.codes.single().status)
     }
 }

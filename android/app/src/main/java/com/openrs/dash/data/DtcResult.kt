@@ -15,7 +15,9 @@ data class DtcResult(
     val code: String,
     val description: String,
     val status: DtcStatus,
-    val freezeFrame: FreezeFrame? = null
+    val freezeFrame: FreezeFrame? = null,
+    /** ISO 14229 DTC low byte (failure type, FORScan's "-1C" suffix); not persisted. Null for older records. */
+    val failureType: Int? = null,
 )
 
 enum class DtcStatus(val label: String) {
@@ -49,7 +51,7 @@ enum class ModuleScanStatus {
 
 /** What one module's reply to UDS 0x19 02 (reportDTCByStatusMask) says (#215). */
 sealed interface DtcReply {
-    /** 59 02 <availability mask> [records…] */
+    /** 59 02 <availability mask> [records…] — each record 4 bytes (3-byte DTC + status), ISO 14229-1. */
     data object Positive : DtcReply
     /** 7F 19 <nrc> — refused (any NRC except 0x78). */
     data class Negative(val nrc: Int) : DtcReply
@@ -70,13 +72,20 @@ sealed interface DtcReply {
         const val SUB_FUNCTION = 0x02
         const val NRC_RESPONSE_PENDING = 0x78
 
-        /** Classify a reassembled ISO-TP payload (PCI removed). */
+        /** Bytes per DTCAndStatusRecord: DTC high, middle, low (failure type) + status (ISO 14229-1; python-udsoncan). */
+        const val RECORD_SIZE = 4
+
+        /**
+         * Classify a reassembled ISO-TP payload (PCI removed). A positive reply must be whole records — a truncated
+         * tail such as `59 02 FF 01` is MALFORMED, never a clean scan (#215).
+         */
         fun classify(payload: ByteArray): DtcReply {
             val b = { i: Int -> payload[i].toInt() and 0xFF }
             return when {
                 payload.size >= 3 && b(0) == 0x7F && b(1) == SID ->
                     if (b(2) == NRC_RESPONSE_PENDING) Pending else Negative(b(2))
-                payload.size >= 3 && b(0) == SID + 0x40 && b(1) == SUB_FUNCTION -> Positive
+                payload.size >= 3 && b(0) == SID + 0x40 && b(1) == SUB_FUNCTION &&
+                    (payload.size - 3) % RECORD_SIZE == 0 -> Positive
                 else -> Malformed
             }
         }
