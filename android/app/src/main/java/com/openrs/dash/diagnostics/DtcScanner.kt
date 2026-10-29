@@ -158,12 +158,20 @@ class DtcScanner(private val ctx: Context) {
          * Compute the diff between the current scan and a previous set of codes.
          * [previousCodes] is a set of DTC code strings from the last scan.
          */
-        fun computeDiff(current: List<DtcResult>, previousCodes: Set<String>): DtcDiff {
-            val currentCodeSet = current.map { it.code }.toSet()
+        fun computeDiff(
+            current: List<DtcResult>,
+            previous: Set<Pair<String, String>>,
+            moduleStatuses: Map<String, ModuleScanStatus>,
+        ): DtcDiff {
+            // A previous code is "resolved" only if its module gave a valid reply this time (#215) — a module that
+            // timed out, refused or replied malformed says nothing about its codes.
+            val currentKeys = current.map { it.module to it.code }.toSet()
             return DtcDiff(
-                newCodes   = current.filter { it.code !in previousCodes },
-                goneCodes  = previousCodes.filter { it !in currentCodeSet }.toList(),
-                persistent = current.filter { it.code in previousCodes }
+                newCodes   = current.filter { (it.module to it.code) !in previous },
+                goneCodes  = previous.filter { (module, code) ->
+                    moduleStatuses[module] == ModuleScanStatus.OK && (module to code) !in currentKeys
+                }.map { it.second },
+                persistent = current.filter { (it.module to it.code) in previous }
             )
         }
     }
@@ -286,10 +294,10 @@ class DtcScanner(private val ctx: Context) {
      * Get the set of DTC codes from the most recent persisted scan.
      * Used for diff comparison (NEW/RESOLVED badges).
      */
-    fun getPreviousScanCodes(): Set<String> {
+    fun getPreviousScanCodes(): Set<Pair<String, String>> {
         return try {
             val db = DriveDatabase.getInstance(ctx)
-            db.driveDao().getLastScanCodes().map { it.code }.toSet()
+            db.driveDao().getLatestScanCodes().map { it.module to it.code }.toSet()
         } catch (_: Exception) { emptySet() }
     }
 

@@ -358,6 +358,10 @@ interface DriveDao {
     @Query("SELECT dc.* FROM dtc_codes dc INNER JOIN dtc_scans ds ON dc.scanId = ds.id ORDER BY ds.timestamp DESC LIMIT 500")
     fun getLastScanCodes(): List<DtcCodeEntity>
 
+    /** Codes of the latest saved scan only — the "previous scan" for NEW / RESOLVED (#215). */
+    @Query("SELECT * FROM dtc_codes WHERE scanId = (SELECT id FROM dtc_scans ORDER BY timestamp DESC LIMIT 1)")
+    fun getLatestScanCodes(): List<DtcCodeEntity>
+
     // ── Lap timer history ─────────────────────────────────────
     @Insert
     fun insertLapSession(session: LapSessionEntity): Long

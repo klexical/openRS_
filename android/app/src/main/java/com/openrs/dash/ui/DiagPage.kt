@@ -91,6 +91,8 @@ import kotlin.math.roundToInt
     var dtcScanJob   by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     // The export record of the scan on screen (#215): retries publish into it, an abort / dispose closes it
     var dtcScanTicket by remember { mutableStateOf<com.openrs.dash.diagnostics.DtcScanLedger.Ticket?>(null) }
+    // Scan completion and module retries go through the view + ledger together, so screen and export agree (#215)
+    val dtcView = remember { com.openrs.dash.diagnostics.DtcScanView(DiagnosticLogger.dtcScans) }
     var dtcScanStartMs by remember { mutableStateOf(0L) }
     var dtcScanElapsed by remember { mutableStateOf(0) }
     // Per-module progress: null value = querying, non-null = done
@@ -101,7 +103,7 @@ import kotlin.math.roundToInt
     var selectedDtc by remember { mutableStateOf<DtcResult?>(null) }
     var selectedDtcHistory by remember { mutableStateOf<List<com.openrs.dash.data.DtcCodeEntity>?>(null) }
     // Diff: set of codes from previous scan
-    var previousScanCodes by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var previousScanCodes by remember { mutableStateOf<Set<Pair<String, String>>>(emptySet()) }   // (module, code)
     LaunchedEffect(dtcScanning) {
         if (dtcScanning) {
             dtcScanStartMs = System.currentTimeMillis()
@@ -412,12 +414,13 @@ import kotlin.math.roundToInt
                                     val ticket = DiagnosticLogger.dtcScans.begin("manual",
                                         com.openrs.dash.diagnostics.DtcScanner.MODULES.map { it.name }, System.currentTimeMillis())
                                     dtcScanTicket = ticket
+                                    dtcView.begin(ticket)
                                     dtcScanJob = scope.launch(Dispatchers.IO) {
                                       try {
                                         // Load previous scan codes for diff
                                         val prevCodes = try {
                                             com.openrs.dash.diagnostics.DtcScanner(ctx).getPreviousScanCodes()
-                                        } catch (_: Exception) { emptySet<String>() }
+                                        } catch (_: Exception) { emptySet<Pair<String, String>>() }
                                         withContext(Dispatchers.Main) { previousScanCodes = prevCodes }
 
                                         var result = try {
@@ -442,8 +445,7 @@ import kotlin.math.roundToInt
                                             if (dtcScanning) {
                                                 dtcScanning = false
                                                 if (result != null) {
-                                                    dtcScanResult = result
-                                                    DiagnosticLogger.dtcScans.complete(ticket, result, System.currentTimeMillis())
+                                                    if (dtcView.finish(ticket, result, System.currentTimeMillis())) dtcScanResult = dtcView.result
                                                     com.openrs.dash.OpenRSDashApp.instance.activeDtcCount.value =
                                                         result.codes.count { it.status == com.openrs.dash.data.DtcStatus.ACTIVE }
                                                 } else {
@@ -487,7 +489,7 @@ import kotlin.math.roundToInt
                             Modifier.width(72.dp)
                                 .background(Surf3, RoundedCornerShape(10.dp))
                                 .border(CardBorder, Dim.copy(0.3f), RoundedCornerShape(10.dp))
-                                .clickable(enabled = !dtcBusy) { dtcScanResult = null; dtcError = null; dtcClearStatus = null; statusFilter = null }
+                                .clickable(enabled = !dtcBusy) { dtcView.clear(); dtcScanResult = null; dtcError = null; dtcClearStatus = null; statusFilter = null }
                                 .padding(vertical = 13.dp),
                             contentAlignment = Alignment.Center
                         ) {
@@ -682,7 +684,7 @@ import kotlin.math.roundToInt
                                             Box(pageEntrance(dtcIdx, scanComplete, staggerDelayMs = 60)) {
                                                 DtcRow(
                                                     dtc = dtc,
-                                                    isNew = previousScanCodes.isNotEmpty() && dtc.code !in previousScanCodes,
+                                                    isNew = previousScanCodes.isNotEmpty() && (dtc.module to dtc.code) !in previousScanCodes,
                                                     onClick = {
                                                         selectedDtc = dtc
                                                         // Load history in background
@@ -728,24 +730,24 @@ import kotlin.math.roundToInt
                                                         .border(CardBorder, accent.copy(0.3f), RoundedCornerShape(6.dp))
                                                         .clickable(enabled = !retrying) {
                                                             retrying = true
+                                                            // The scan this retry belongs to — captured now, not after the await (#215)
+                                                            val retryTicket = dtcView.ticket
                                                             scope.launch(Dispatchers.IO) {
                                                                 val (codes, status) = try {
                                                                     onRetryScanModule.invoke(name)
                                                                 } catch (_: Exception) {
                                                                     emptyList<DtcResult>() to ModuleScanStatus.ERROR
                                                                 }
-                                                                // Same publication path as the scan: the export record follows the screen
-                                                                dtcScanTicket?.let { DiagnosticLogger.dtcScans.retry(it, name, codes, status, System.currentTimeMillis()) }
                                                                 withContext(Dispatchers.Main) {
                                                                     retrying = false
-                                                                    val updatedStatuses = (scanRes.moduleStatuses + (name to status)).toMutableMap()
-                                                                    val updatedCodes = (scanRes.codes.filter { it.module != name } + codes).toMutableList()
-                                                                    dtcScanResult = scanRes.copy(
-                                                                        codes = updatedCodes,
-                                                                        moduleStatuses = updatedStatuses
-                                                                    )
-                                                                    com.openrs.dash.OpenRSDashApp.instance.activeDtcCount.value =
-                                                                        updatedCodes.count { it.status == DtcStatus.ACTIVE }
+                                                                    // Merged into the latest result and the export together; dropped if a newer
+                                                                    // scan or session took over meanwhile
+                                                                    if (retryTicket != null &&
+                                                                        dtcView.retryFinished(retryTicket, name, codes, status, System.currentTimeMillis())) {
+                                                                        dtcScanResult = dtcView.result
+                                                                        com.openrs.dash.OpenRSDashApp.instance.activeDtcCount.value =
+                                                                            dtcView.result?.codes?.count { it.status == DtcStatus.ACTIVE } ?: 0
+                                                                    }
                                                                 }
                                                             }
                                                         }
@@ -764,7 +766,8 @@ import kotlin.math.roundToInt
 
                             // Resolved codes (from diff)
                             if (previousScanCodes.isNotEmpty()) {
-                                val diff = com.openrs.dash.diagnostics.DtcScanner.computeDiff(r, previousScanCodes)
+                                val diff = com.openrs.dash.diagnostics.DtcScanner.computeDiff(r, previousScanCodes,
+                                    scanRes?.moduleStatuses ?: emptyMap())
                                 if (diff.goneCodes.isNotEmpty()) {
                                     Spacer(Modifier.height(6.dp))
                                     Column(
