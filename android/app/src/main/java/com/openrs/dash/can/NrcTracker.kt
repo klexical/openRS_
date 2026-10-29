@@ -8,8 +8,9 @@ package com.openrs.dash.can
  * — a new connection resets all state.
  *
  * NRCs must reach [recordNrc] already attributed to the request they answer ([PcmRequestLedger]) — a service-0x22 NRC
- * doesn't echo the DID (#216). Because attribution can still be wrong (a request that got no reply at all), no single
- * NRC suppresses, a positive reply always recovers, and suppression expires into a re-probe:
+ * doesn't echo the DID (#216); the ledger attributes one only when it is unambiguous. The thresholds below are
+ * provisional recovery settings, not evidence of correct attribution: no single NRC suppresses, a positive reply always
+ * recovers, and suppression expires into a re-probe:
  *  - NRC 0x31 (requestOutOfRange) / 0x33 (securityAccessDenied): suppress after 2 consecutive attributed occurrences
  *  - NRC 0x22 (conditionsNotCorrect): suppress after 3 consecutive occurrences
  *  - NRC 0x78 (responsePending) never counts (the real answer follows); other codes are logged, not counted

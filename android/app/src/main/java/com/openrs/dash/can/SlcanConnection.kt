@@ -268,10 +268,15 @@ class SlcanConnection(
                         batch.queries.forEach { q ->
                             val did = ObdConstants.extractDid(q)
                             if (did != null && !nrcTracker.shouldPoll(did, clock())) return@forEach
-                            if (did != null) pcmRequests.sent(did, clock())
-                            try { transport.writeLine(q) } catch (_: Exception) { }
+                            // Registered before the write so an instant reply finds it; withdrawn if the write
+                            // failed — a request that never reached the bus can't own a reply (#216)
+                            val start = clock()
+                            var req = did?.let { pcmRequests.sent(it, start) }
+                            try { transport.writeLine(q) } catch (_: Exception) { req?.let { pcmRequests.withdraw(it) }; req = null }
                             sentAny = true
-                            delay(batch.gapMs)
+                            // Wait (bounded) for the reply, so normally one request is in flight and its NRC attributable
+                            if (req != null) withTimeoutOrNull(PcmRequestLedger.REPLY_WINDOW_MS) { req.reply.await() }
+                            delay((batch.gapMs - (clock() - start)).coerceAtLeast(0L))
                         }
                         // Every DID of the batch suppressed: still suspend, never spin
                         if (!sentAny) delay(batch.gapMs)
@@ -423,13 +428,16 @@ class SlcanConnection(
                                 val nrcCode = d[3].toInt() and 0xFF
                                 // 0x78 = response pending: the real reply follows, the request is still outstanding
                                 if ((d[2].toInt() and 0xFF) == 0x22 && nrcCode != NrcTracker.NRC_RESPONSE_PENDING) {
+                                    val waiting = pcmRequests.waiting(clock())
                                     val did = pcmRequests.negative(clock())
                                     if (did == null) {
                                         DiagnosticLogger.event("NRC_UNATTRIBUTED",
-                                            "NRC 0x%02X (%s) with no PCM request outstanding — ignored".format(nrcCode, nrcLabel(nrcCode)))
+                                            "NRC 0x%02X (%s) — %s; not counted".format(nrcCode, nrcLabel(nrcCode),
+                                                if (waiting.isEmpty()) "no PCM request outstanding"
+                                                else "ambiguous, waiting: " + waiting.joinToString { "%04X".format(it) }))
                                     } else if (nrcTracker.recordNrc(did, nrcCode, clock())) {
                                         DiagnosticLogger.event("NRC_SUPPRESS",
-                                            "DID 0x%04X suppressed: NRC 0x%02X (%s), attributed in request order; re-probed after %d s".format(
+                                            "DID 0x%04X suppressed: NRC 0x%02X (%s), the only request waiting; re-probed after %d s".format(
                                                 did, nrcCode, nrcLabel(nrcCode), NrcTracker.REPROBE_MS / 1000))
                                         DiagnosticLogger.snapshotNrc(nrcTracker)
                                     }

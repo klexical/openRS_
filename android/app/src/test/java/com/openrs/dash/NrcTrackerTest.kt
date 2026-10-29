@@ -173,15 +173,41 @@ class NrcTrackerTest {
     }
 
     @Test
-    fun `ledger attributes in request order and leaves nothing to an unattributable NRC`() {
+    fun `ledger — the A, B, C counterexample — a late NRC for A is never attributed to C`() {
         val l = PcmRequestLedger()
-        l.sent(0x03ED, 0); l.sent(0x03EE, 150); l.sent(0x03EF, 300)
-        assertEquals(0x03ED, l.negative(160))                         // the delayed NRC belongs to the oldest request
-        assertEquals(0x03EE, l.negative(310))
-        assertTrue(l.positive(0x03EF))
-        assertNull(l.negative(400))                                   // nothing outstanding — unattributed
-        l.sent(0x0466, 1_000); l.sent(0x0462, 1_100)
-        assertTrue(l.positive(0x0462))                                // 0466 got no reply — dropped, not blamed later
-        assertNull(l.negative(1_200))
+        l.sent(0x0A0A, 0); l.sent(0x0B0B, 100)
+        assertTrue(l.positive(0x0B0B))                                // B answered: only B is resolved
+        l.sent(0x0C0C, 200)
+        assertNull(l.negative(300))                                   // A or C? ambiguous — nobody is charged
+    }
+
+    @Test
+    fun `ledger — a single outstanding request owns the NRC`() {
+        val l = PcmRequestLedger()
+        l.sent(0x03ED, 0)
+        assertEquals(0x03ED, l.negative(160))
+        assertNull(l.negative(170))                                   // nothing outstanding any more
+    }
+
+    @Test
+    fun `ledger — repeated queries of one DID are unambiguous`() {
+        val l = PcmRequestLedger()
+        l.sent(0x03ED, 0); l.sent(0x03ED, 1_000)
+        assertEquals(0x03ED, l.negative(1_100))
+        assertEquals(0x03ED, l.negative(1_200))
+        assertNull(l.negative(1_300))
+    }
+
+    @Test
+    fun `ledger — a positive reply resolves only its own DID, unanswered requests age out`() {
+        val l = PcmRequestLedger(maxAgeMs = 2_000L)
+        l.sent(0x0466, 0); l.sent(0x0462, 100)
+        assertTrue(l.positive(0x0462))
+        assertEquals(0x0466, l.negative(500))                         // 0466 is still the only one waiting
+        l.sent(0x0461, 1_000)
+        assertFalse(l.positive(0x9999))                               // unsolicited — changes nothing
+        assertEquals(0x0461, l.negative(3_500 - 600))
+        l.sent(0x0318, 4_000)
+        assertNull(l.negative(6_100))                                 // older than maxAge: no reply ever came
     }
 }
