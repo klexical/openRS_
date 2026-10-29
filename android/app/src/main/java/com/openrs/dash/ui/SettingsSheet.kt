@@ -131,9 +131,10 @@ fun SettingsDialog(
     var tempUnit        by remember { mutableStateOf(current.tempUnit) }
     var boostUnit       by remember { mutableStateOf(current.boostUnit) }
     var tireUnit        by remember { mutableStateOf(current.tireUnit) }
-    var tireLowPsi      by remember { mutableStateOf(current.tireLowPsi.toString()) }
-    var tireWarnPsi     by remember { mutableStateOf(current.tireWarnPsi.toString()) }
-    var tireHighPsi     by remember { mutableStateOf(current.tireHighPsi.toString()) }
+    // TPMS thresholds: edited in the staged tyre unit, stored as exact PSI (#219)
+    var tireLow         by remember { mutableStateOf(TyreThreshold.of(current.tireLowPsi, current.tireUnit)) }
+    var tireWarn        by remember { mutableStateOf(TyreThreshold.of(current.tireWarnPsi, current.tireUnit)) }
+    var tireHigh        by remember { mutableStateOf(TyreThreshold.of(current.tireHighPsi, current.tireUnit)) }
     var screenOn        by remember { mutableStateOf(current.screenOn) }
     var autoReconnect   by remember { mutableStateOf(current.autoReconnect) }
     var reconnectSec    by remember { mutableStateOf(current.reconnectIntervalSec.toString()) }
@@ -414,7 +415,13 @@ fun SettingsDialog(
                     SettingsPicker(
                         options = listOf("PSI", "BAR"),
                         selected = tireUnit,
-                        onSelect = { tireUnit = it },
+                        onSelect = { unit ->
+                            // Same physical thresholds, shown in the new unit — nothing re-rounded into the saved PSI
+                            tireLow = tireLow.convert(tireUnit, unit)
+                            tireWarn = tireWarn.convert(tireUnit, unit)
+                            tireHigh = tireHigh.convert(tireUnit, unit)
+                            tireUnit = unit
+                        },
                     )
                 }
             }
@@ -427,8 +434,8 @@ fun SettingsDialog(
             SettingsSection("TPMS THRESHOLDS") {
                 SettingsRow("Low (critical)") {
                     OutlinedTextField(
-                        value = tireLowPsi, onValueChange = { tireLowPsi = it; error = null },
-                        label = { Text("PSI", fontFamily = ShareTechMono, fontSize = 10.sp) },
+                        value = tireLow.text, onValueChange = { tireLow = tireLow.edit(it); error = null },
+                        label = { Text(tireUnit, fontFamily = ShareTechMono, fontSize = 10.sp) },
                         singleLine = true, modifier = Modifier.width(90.dp),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         colors = outlinedFieldColors(),
@@ -438,8 +445,8 @@ fun SettingsDialog(
                 }
                 SettingsRow("Warn (getting low)") {
                     OutlinedTextField(
-                        value = tireWarnPsi, onValueChange = { tireWarnPsi = it; error = null },
-                        label = { Text("PSI", fontFamily = ShareTechMono, fontSize = 10.sp) },
+                        value = tireWarn.text, onValueChange = { tireWarn = tireWarn.edit(it); error = null },
+                        label = { Text(tireUnit, fontFamily = ShareTechMono, fontSize = 10.sp) },
                         singleLine = true, modifier = Modifier.width(90.dp),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         colors = outlinedFieldColors(),
@@ -449,8 +456,8 @@ fun SettingsDialog(
                 }
                 SettingsRow("High (over-inflated)") {
                     OutlinedTextField(
-                        value = tireHighPsi, onValueChange = { tireHighPsi = it; error = null },
-                        label = { Text("PSI", fontFamily = ShareTechMono, fontSize = 10.sp) },
+                        value = tireHigh.text, onValueChange = { tireHigh = tireHigh.edit(it); error = null },
+                        label = { Text(tireUnit, fontFamily = ShareTechMono, fontSize = 10.sp) },
                         singleLine = true, modifier = Modifier.width(90.dp),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         colors = outlinedFieldColors(),
@@ -460,9 +467,10 @@ fun SettingsDialog(
                 }
                 Spacer(Modifier.height(6.dp))
                 SettingsNote(
-                    "Below Low = critical · below Warn = caution · above High = over-inflated. " +
-                        "Defaults ${AppSettings.DEFAULT_TIRE_LOW_PSI} / ${AppSettings.DEFAULT_TIRE_WARN_PSI} / " +
-                        "${AppSettings.DEFAULT_TIRE_HIGH_PSI} psi."
+                    "Below Low = critical · below Warn = caution · above High = over-inflated. In ${tireUnit} " +
+                        "(Tire Pressure unit). Defaults ${TyreThreshold.display(AppSettings.DEFAULT_TIRE_LOW_PSI, tireUnit)} / " +
+                        "${TyreThreshold.display(AppSettings.DEFAULT_TIRE_WARN_PSI, tireUnit)} / " +
+                        "${TyreThreshold.display(AppSettings.DEFAULT_TIRE_HIGH_PSI, tireUnit)} ${tireUnit.lowercase()}."
                 )
             }
         },
@@ -1097,9 +1105,9 @@ fun SettingsDialog(
                         tempUnit      = AppSettings.DEFAULT_TEMP_UNIT
                         boostUnit     = AppSettings.DEFAULT_BOOST_UNIT
                         tireUnit      = AppSettings.DEFAULT_TIRE_UNIT
-                        tireLowPsi    = AppSettings.DEFAULT_TIRE_LOW_PSI.toString()
-                        tireWarnPsi   = AppSettings.DEFAULT_TIRE_WARN_PSI.toString()
-                        tireHighPsi   = AppSettings.DEFAULT_TIRE_HIGH_PSI.toString()
+                        tireLow       = TyreThreshold.of(AppSettings.DEFAULT_TIRE_LOW_PSI, AppSettings.DEFAULT_TIRE_UNIT)
+                        tireWarn      = TyreThreshold.of(AppSettings.DEFAULT_TIRE_WARN_PSI, AppSettings.DEFAULT_TIRE_UNIT)
+                        tireHigh      = TyreThreshold.of(AppSettings.DEFAULT_TIRE_HIGH_PSI, AppSettings.DEFAULT_TIRE_UNIT)
                         screenOn      = AppSettings.DEFAULT_SCREEN_ON
                         autoReconnect = AppSettings.DEFAULT_AUTO_RECONNECT
                         reconnectSec  = AppSettings.DEFAULT_RECONNECT_INTERVAL.toString()
@@ -1139,9 +1147,9 @@ fun SettingsDialog(
                 Button(
                     onClick = {
                         val p = port.toIntOrNull()
-                        val threshold = tireLowPsi.toFloatOrNull()
-                        val warnThr   = tireWarnPsi.toFloatOrNull()
-                        val highThr   = tireHighPsi.toFloatOrNull()
+                        val threshold = tireLow.resolvePsi(tireUnit)
+                        val warnThr   = tireWarn.resolvePsi(tireUnit)
+                        val highThr   = tireHigh.resolvePsi(tireUnit)
                         val retryInt = if (autoReconnect) reconnectSec.toIntOrNull()
                                        else reconnectSec.toIntOrNull() ?: AppSettings.DEFAULT_RECONNECT_INTERVAL
                         val maxZips = maxDiagZips.toIntOrNull()
