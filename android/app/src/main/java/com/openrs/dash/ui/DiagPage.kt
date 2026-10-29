@@ -786,6 +786,7 @@ import kotlin.math.roundToInt
                             val duration = scanRes?.scanDurationMs?.let { " in ${it / 1000}s" } ?: ""
                             MonoLabel(
                                 "${r.size} fault code(s) in ${r.map { it.module }.distinct().size} module(s) · " +
+                                    "${scanRes?.moduleStatuses?.count { it.value == ModuleScanStatus.OK } ?: 0} of " +
                                     "${scanRes?.moduleStatuses?.size ?: 0} module(s) scanned$duration.",
                                 9.sp, Dim, modifier = Modifier.padding(bottom = 10.dp)
                             )
