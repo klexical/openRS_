@@ -37,7 +37,8 @@ interface GattLink {
  *     encryption failure pairs once ([BleSetupPolicy]) and repeats it;
  *  3. MTU 247 when the stack supports it.
  * Writes use the characteristic's own write type (with response when supported, else without) and wait at most
- * [writeTimeoutMs] for the write callback — a missing callback fails the write instead of holding the write lock.
+ * [writeTimeoutMs] for the write callback — a missing callback fails the write instead of holding the write lock, and
+ * closes the link: the callback names no write, so a late one would otherwise acknowledge the next write.
  */
 class BleGattCore(
     private val adapterType: String?,
@@ -72,6 +73,8 @@ class BleGattCore(
     private val lineBuffer = StringBuilder()
     private val writeMutex = Mutex()
     @Volatile private var writeDone = CompletableDeferred<Unit>()
+    /** A write went unacknowledged: callbacks can no longer be matched to writes, the link is closed for good. */
+    @Volatile private var invalidated = false
     private val servicesReady = CompletableDeferred<Unit>()
     @Volatile private var subscribeStatus = CompletableDeferred<Int>()
     private val mtuReady = CompletableDeferred<Unit>()
@@ -125,6 +128,7 @@ class BleGattCore(
     }
 
     fun onWrite(status: Int) {
+        if (invalidated) return                                // a late callback for a write that already timed out
         when (val failure = BleSetupPolicy.afterWrite(status)) {
             null -> writeDone.complete(Unit)
             else -> writeDone.completeExceptionally(IOException(failure))
@@ -191,6 +195,7 @@ class BleGattCore(
     suspend fun readLine(): String? = try { lines.receive() } catch (_: Exception) { null }
 
     suspend fun writeLine(frame: String) = writeMutex.withLock {
+        if (invalidated) throw IOException("BLE link closed after an unacknowledged write")
         val l = link ?: throw IOException("BLE not connected")
         val p = profile ?: throw IOException("BLE not set up")
         val payload = frame.toByteArray(Charsets.ISO_8859_1)
@@ -203,8 +208,14 @@ class BleGattCore(
                 throw IOException("BLE write couldn't be sent (stack busy or not connected)")
             }
             try {
-                withTimeoutOrNull(writeTimeoutMs) { writeDone.await() }
-                    ?: throw IOException("BLE write not acknowledged in $writeTimeoutMs ms")
+                withTimeoutOrNull(writeTimeoutMs) { writeDone.await() } ?: run {
+                    // Android's write callback carries no request id, so this write's late callback could not be told
+                    // from the next write's — close the link instead of reusing it (#218). The reader sees EOF and
+                    // SlcanConnection reconnects with a new transport; later writes here fail at once.
+                    invalidated = true
+                    close()
+                    throw IOException("BLE write not acknowledged in $writeTimeoutMs ms — link closed")
+                }
             } catch (e: IOException) { throw e } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 throw IOException("BLE write failed: ${e.message}", e)
