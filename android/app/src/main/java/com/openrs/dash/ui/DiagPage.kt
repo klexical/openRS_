@@ -139,7 +139,9 @@ import kotlin.math.roundToInt
     LaunchedEffect(Unit) { pageEntered = true }
 
     var scanComplete by remember { mutableStateOf(false) }
-    LaunchedEffect(dtcResults) { if (!dtcResults.isNullOrEmpty()) scanComplete = true }
+    // Keyed on the scan finishing as well: a rescan returning the same codes leaves dtcResults equal, so a key on the
+    // list alone never re-ran and the rows stayed at alpha 0 (found in the rc.7 release smoke check)
+    LaunchedEffect(dtcResults, dtcScanning) { if (!dtcScanning && !dtcResults.isNullOrEmpty()) scanComplete = true }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
         .padding(start = Tokens.PagePad, end = Tokens.PagePad, top = Tokens.PagePad, bottom = pageBottomPadding())) {

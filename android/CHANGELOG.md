@@ -64,6 +64,8 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 - **Custom Dashboard TIP cells showed bare absolute kPa** — TIP ACTUAL / DESIRED read e.g. "158" beside gauge readings; they now use the TIP gauge's reference (against measured baro, in the boost unit), or "kPa abs" when baro isn't known. (`data/DashLayout.kt`) ([#207](https://github.com/klexical/openRS_/issues/207))
 
+- **A DTC rescan with the same result showed empty module boxes** — the rows' entrance animation was triggered by the code list changing, so a rescan returning identical codes left them invisible. It now also triggers when the scan finishes. Found in the release smoke check; present before this RC's DTC work. (`ui/DiagPage.kt`)
+
 ### Changed (rc.7)
 - **What's New describes the corrected boost, NRC, ESC, probe, Bluetooth, DTC and header behaviour** — the BOOST line no longer says TIP is "marked under the reading" (the gauge's label says TIP now) and says the signal identities are unconfirmed. (`ui/WhatsNewDialog.kt`)
 - **What's New lists rc.7** — the 2.2.7 highlights start with the export, connection-state and version / DTC changes, from this changelog. (`ui/WhatsNewDialog.kt`)
