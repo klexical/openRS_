@@ -2,6 +2,7 @@ package com.openrs.dash
 
 import com.openrs.dash.can.NrcTracker
 import com.openrs.dash.can.ObdConstants
+import com.openrs.dash.can.PcmRequestLedger
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -18,7 +19,8 @@ class NrcTrackerTest {
     // ── NRC 0x31 (requestOutOfRange) ────────────────────────────────────────
 
     @Test
-    fun `NRC 0x31 suppresses after 1 occurrence`() {
+    fun `NRC 0x31 suppresses after 2 consecutive attributed occurrences`() {
+        assertFalse(tracker.recordNrc(0x03ED, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 500L))   // one alone never suppresses (#216)
         val suppressed = tracker.recordNrc(0x03ED, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 1000L)
         assertTrue(suppressed)
         assertTrue(tracker.isSuppressed(0x03ED))
@@ -27,7 +29,8 @@ class NrcTrackerTest {
     // ── NRC 0x33 (securityAccessDenied) ─────────────────────────────────────
 
     @Test
-    fun `NRC 0x33 suppresses after 1 occurrence`() {
+    fun `NRC 0x33 suppresses after 2 consecutive attributed occurrences`() {
+        assertFalse(tracker.recordNrc(0x1E8A, NrcTracker.NRC_SECURITY_ACCESS_DENIED, 1500L))
         val suppressed = tracker.recordNrc(0x1E8A, NrcTracker.NRC_SECURITY_ACCESS_DENIED, 2000L)
         assertTrue(suppressed)
         assertTrue(tracker.isSuppressed(0x1E8A))
@@ -69,8 +72,8 @@ class NrcTrackerTest {
 
     @Test
     fun `reset clears all suppressed state`() {
-        tracker.recordNrc(0x03ED, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 1000L)
-        tracker.recordNrc(0x03EE, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 2000L)
+        repeat(2) { tracker.recordNrc(0x03ED, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 1000L) }
+        repeat(2) { tracker.recordNrc(0x03EE, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 2000L) }
         assertTrue(tracker.isSuppressed(0x03ED))
         assertTrue(tracker.isSuppressed(0x03EE))
 
@@ -98,8 +101,8 @@ class NrcTrackerTest {
 
     @Test
     fun `getSuppressed returns correct records`() {
-        tracker.recordNrc(0x03ED, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 1000L)
-        tracker.recordNrc(0xF422, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 2000L)
+        repeat(2) { tracker.recordNrc(0x03ED, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 1000L) }
+        repeat(2) { tracker.recordNrc(0xF422, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 2000L) }
 
         val map = tracker.getSuppressed()
         assertEquals(2, map.size)
@@ -108,13 +111,14 @@ class NrcTrackerTest {
         assertEquals(0x03ED, rec.did)
         assertEquals(NrcTracker.NRC_REQUEST_OUT_OF_RANGE, rec.nrcCode)
         assertEquals(1000L, rec.firstSeenMs)
-        assertEquals(1, rec.suppressedAfterCount)
+        assertEquals(2, rec.suppressedAfterCount)
     }
 
     // ── Duplicate and idempotency ───────────────────────────────────────────
 
     @Test
     fun `recordNrc returns false for already-suppressed DID`() {
+        assertFalse(tracker.recordNrc(0x03ED, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 500L))
         assertTrue(tracker.recordNrc(0x03ED, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 1000L))
         assertFalse(tracker.recordNrc(0x03ED, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 2000L))
 
@@ -142,5 +146,42 @@ class NrcTrackerTest {
     fun `extractDid returns null for short strings`() {
         assertNull(ObdConstants.extractDid("t7E0803"))
         assertNull(ObdConstants.extractDid(""))
+    }
+
+    @Test
+    fun `a positive reply clears the count and recovers a suppressed DID`() {
+        tracker.recordNrc(0x03EF, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 1000L)
+        tracker.recordPositive(0x03EF)
+        assertFalse("count reset by the positive reply", tracker.recordNrc(0x03EF, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 2000L))
+        assertTrue(tracker.recordNrc(0x03EF, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 3000L))
+        assertTrue(tracker.recordPositive(0x03EF))
+        assertFalse(tracker.isSuppressed(0x03EF))
+    }
+
+    @Test
+    fun `a suppressed DID is re-probed after REPROBE_MS and one more rejection suppresses it again`() {
+        repeat(2) { tracker.recordNrc(0x03ED, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 1000L) }
+        assertFalse(tracker.shouldPoll(0x03ED, 1000L + NrcTracker.REPROBE_MS - 1))
+        assertTrue(tracker.shouldPoll(0x03ED, 1000L + NrcTracker.REPROBE_MS))
+        assertTrue(tracker.recordNrc(0x03ED, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 70_000L))
+    }
+
+    @Test
+    fun `response pending 0x78 never counts`() {
+        repeat(5) { assertFalse(tracker.recordNrc(0x0466, NrcTracker.NRC_RESPONSE_PENDING, 1000L)) }
+        assertFalse(tracker.isSuppressed(0x0466))
+    }
+
+    @Test
+    fun `ledger attributes in request order and leaves nothing to an unattributable NRC`() {
+        val l = PcmRequestLedger()
+        l.sent(0x03ED, 0); l.sent(0x03EE, 150); l.sent(0x03EF, 300)
+        assertEquals(0x03ED, l.negative(160))                         // the delayed NRC belongs to the oldest request
+        assertEquals(0x03EE, l.negative(310))
+        assertTrue(l.positive(0x03EF))
+        assertNull(l.negative(400))                                   // nothing outstanding — unattributed
+        l.sent(0x0466, 1_000); l.sent(0x0462, 1_100)
+        assertTrue(l.positive(0x0462))                                // 0466 got no reply — dropped, not blamed later
+        assertNull(l.negative(1_200))
     }
 }

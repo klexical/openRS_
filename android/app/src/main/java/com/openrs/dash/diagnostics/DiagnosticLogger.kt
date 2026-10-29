@@ -236,6 +236,7 @@ object DiagnosticLogger {
             probeSessionsList.clear()
             lastSampleTimeMs.clear()
             dtcScans.newSession()      // a new session starts with no scan; older scans can't publish into it
+            nrcSnapshot = emptyMap()   // NRC suppression is per connection (#216)
 
             // Option C: open SLCAN log file
             if (logDir != null) {

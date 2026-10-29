@@ -40,7 +40,9 @@ class SlcanConnection(
      */
     private val keepRetrying: () -> Boolean = { false },
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val debugSink: (String) -> Unit = { OpenRSDashApp.instance.pushDebugLine(it) }
+    private val debugSink: (String) -> Unit = { OpenRSDashApp.instance.pushDebugLine(it) },
+    /** Wall clock for NRC attribution / re-probe timing — tests pass the virtual clock. */
+    private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private fun addDebugLine(line: String) = debugSink(line)
 
@@ -175,7 +177,8 @@ class SlcanConnection(
                 firmwareVersion = transport.stockFirmwareLabel
                 val bcmIsoTp = IsoTpBuffer()
                 val nrcTracker = NrcTracker()
-                var lastSentPcmDid = -1
+                // Requests waiting for a reply, oldest first: a 7F 22 NRC belongs to the oldest one (#216)
+                val pcmRequests = PcmRequestLedger()
 
                 // ── BCM OBD poller ────────────────────────────────────────
                 val obdJob = launch {
@@ -207,13 +210,17 @@ class SlcanConnection(
                         val running = rpmProvider() > ObdConstants.FAST_POLL_MIN_RPM
                         val batch = PcmPollSchedule.nextBatch(slowIndex, running)
                         slowIndex = batch.nextSlowIndex
+                        var sentAny = false
                         batch.queries.forEach { q ->
                             val did = ObdConstants.extractDid(q)
-                            if (did != null && nrcTracker.isSuppressed(did)) return@forEach
-                            lastSentPcmDid = did ?: -1
+                            if (did != null && !nrcTracker.shouldPoll(did, clock())) return@forEach
+                            if (did != null) pcmRequests.sent(did, clock())
                             try { transport.writeLine(q) } catch (_: Exception) { }
+                            sentAny = true
                             delay(batch.gapMs)
                         }
+                        // Every DID of the batch suppressed: still suspend, never spin
+                        if (!sentAny) delay(batch.gapMs)
                         // Idle in 1 s steps so an engine start switches to fast polling promptly
                         var idled = 0L
                         while (idled < batch.idleAfterMs && isActive &&
@@ -347,15 +354,31 @@ class SlcanConnection(
                             continue
                         }
                         if (frame.first == ObdConstants.PCM_RESPONSE_ID) {
-                            if (frame.second.size >= 4 && (frame.second[1].toInt() and 0xFF) == 0x7F) {
-                                val nrcCode = frame.second[3].toInt() and 0xFF
-                                if (nrcTracker.recordNrc(lastSentPcmDid, nrcCode, System.currentTimeMillis())) {
-                                    DiagnosticLogger.event("NRC_SUPPRESS",
-                                        "DID 0x%04X suppressed: NRC 0x%02X (%s)".format(
-                                            lastSentPcmDid, nrcCode, nrcLabel(nrcCode)))
-                                    DiagnosticLogger.snapshotNrc(nrcTracker)
+                            val d = frame.second
+                            if (d.size >= 4 && (d[1].toInt() and 0xFF) == 0x7F) {
+                                val nrcCode = d[3].toInt() and 0xFF
+                                // 0x78 = response pending: the real reply follows, the request is still outstanding
+                                if ((d[2].toInt() and 0xFF) == 0x22 && nrcCode != NrcTracker.NRC_RESPONSE_PENDING) {
+                                    val did = pcmRequests.negative(clock())
+                                    if (did == null) {
+                                        DiagnosticLogger.event("NRC_UNATTRIBUTED",
+                                            "NRC 0x%02X (%s) with no PCM request outstanding — ignored".format(nrcCode, nrcLabel(nrcCode)))
+                                    } else if (nrcTracker.recordNrc(did, nrcCode, clock())) {
+                                        DiagnosticLogger.event("NRC_SUPPRESS",
+                                            "DID 0x%04X suppressed: NRC 0x%02X (%s), attributed in request order; re-probed after %d s".format(
+                                                did, nrcCode, nrcLabel(nrcCode), NrcTracker.REPROBE_MS / 1000))
+                                        DiagnosticLogger.snapshotNrc(nrcTracker)
+                                    }
                                 }
                                 continue
+                            }
+                            if (d.size >= 4 && (d[1].toInt() and 0xFF) == 0x62) {
+                                val did = ((d[2].toInt() and 0xFF) shl 8) or (d[3].toInt() and 0xFF)
+                                pcmRequests.positive(did)
+                                if (nrcTracker.recordPositive(did)) {
+                                    DiagnosticLogger.event("NRC_RECOVER", "DID 0x%04X answered — no longer suppressed".format(did))
+                                    DiagnosticLogger.snapshotNrc(nrcTracker)
+                                }
                             }
                             ObdResponseParser.parsePcmResponse(frame.second, getCurrentState(), onObdUpdate)
                             continue
