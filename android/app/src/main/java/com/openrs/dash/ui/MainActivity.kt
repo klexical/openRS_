@@ -667,7 +667,9 @@ class MainActivity : ComponentActivity() {
     // Narrow phones (< 400 dp) drop the trip distance from the REC label so the row never wraps.
     BoxWithConstraints(Modifier.fillMaxWidth()) {
     val compact = maxWidth < 400.dp
-    Row(
+    // #224: a priority layout, not a Row — the Settings cog and the link pill always get their space; the REC
+    // label takes what is left (clipped), so a long elapsed time / distance can never push Settings off screen
+    HeaderRow(
         Modifier.fillMaxWidth()
             .height(Tokens.StatusBarHeight)
             .background(Surf)
@@ -694,7 +696,6 @@ class MainActivity : ComponentActivity() {
             // the right edge so it reads as a tight trio (was 4dp; dropped
             // to 0dp per user feedback that the cluster still looked floated).
             .padding(start = 10.dp, end = 0.dp),
-        verticalAlignment = Alignment.CenterVertically
     ) {
         // ── Left: Logo ──────────────────────────────────────────
         // Brand colors: "open" + "_" = Frost, "RS" = Nitrous Blue (accent)
@@ -769,18 +770,11 @@ class MainActivity : ComponentActivity() {
         }
         }
 
-        Spacer(Modifier.weight(1f))
-
         // ── Center: always MODE + ESC pills (placeholder when offline). ───
         HeaderModeEscPills(vs, accent, onModeClick)
 
-        Spacer(Modifier.weight(1f))
-
-        // ── Right: REC dot + connection pill + settings gear ────
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
+        // ── Right: REC dot + connection pill + settings gear (HeaderRow slots 3–5) ────
+        Box(contentAlignment = Alignment.CenterEnd) {
             val ctx = LocalContext.current
             val autoRecOn = remember(ctx) { AppSettings.getAutoRecordDrives(ctx) }
             val autoRecArmed = autoRecOn && vs.isConnected &&
@@ -805,17 +799,23 @@ class MainActivity : ComponentActivity() {
                 val distKm = driveState.cumulativeDistanceKm
                 val distStr = if (prefs.speedUnit == "MPH") "%.1f mi".format(distKm * UnitConversions.KM_TO_MI)
                               else "%.1f km".format(distKm)
+                // Hours as h:mm:ss (minutes no longer grow to three digits on a long drive)
+                val hh = (elapsed / 3_600_000).toInt()
+                val time = if (hh > 0) "%d:%02d:%02d".format(hh, mm % 60, ss) else "%02d:%02d".format(mm, ss)
                 val label = when {
                     paused  -> "PAUSED"
-                    compact -> "REC %02d:%02d".format(mm, ss)
-                    else    -> "REC %02d:%02d · %s".format(mm, ss, distStr)
+                    compact -> "REC $time"
+                    else    -> "REC $time · $distStr"
                 }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Box(Modifier.size(7.dp).clip(CircleShape).background(dotColor.copy(alpha = recAlpha)))
-                    MonoLabel(label, 9.sp, dotColor, FontWeight.Bold, 0.2.sp)
+                    // One line, clipped to the space HeaderRow leaves it — never wraps, never pushes the cog
+                    Text(label, fontSize = 9.sp, fontFamily = JetBrainsMonoFamily, color = textColor(dotColor),
+                        fontWeight = FontWeight.Bold, letterSpacing = 0.2.sp, maxLines = 1, softWrap = false,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Clip)
                 }
             } else if (autoRecArmed) {
                 val armedAlpha by rememberInfiniteTransition(label = "headerArmed").animateFloat(
@@ -834,6 +834,8 @@ class MainActivity : ComponentActivity() {
                     MonoLabel("ARMED", 9.sp, Mid.copy(alpha = armedAlpha), FontWeight.Bold, 0.2.sp)
                 }
             }
+
+        }
 
             // rc.2: fixed-width connection pill. pressClick + haptic feedback.
             // Label crossfades on state change. Bloom fades 0→0.3 on connect,
@@ -908,8 +910,35 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-        }
     }
+    }
+}
+
+/**
+ * The header row (#224) — slots: wordmark, MODE/ESC pills, REC, link pill, Settings cog. Measured by priority, not
+ * left to right: the wordmark, cog, link pill and pills take their own widths; REC gets what is left (it clips, so
+ * a long time or distance can't push anything out). The cog sits at the right edge, the link pill and REC to its
+ * left, and the pills centred on the screen when there is room, else between the wordmark and REC.
+ */
+@Composable
+private fun HeaderRow(modifier: Modifier, content: @Composable () -> Unit) {
+    androidx.compose.ui.layout.Layout(content, modifier) { ms, c ->
+        val gap = 6.dp.roundToPx()
+        val loose = c.copy(minWidth = 0, minHeight = 0)
+        val logo = ms[0].measure(loose); val pills = ms[1].measure(loose)
+        val conn = ms[3].measure(loose); val cog = ms[4].measure(loose)
+        val recMax = (c.maxWidth - logo.width - pills.width - conn.width - cog.width - 4 * gap).coerceAtLeast(0)
+        val rec = ms[2].measure(loose.copy(maxWidth = recMax))
+        val h = c.maxHeight
+        layout(c.maxWidth, h) {
+            fun y(p: androidx.compose.ui.layout.Placeable) = (h - p.height) / 2
+            logo.placeRelative(0, y(logo))
+            val cogX = c.maxWidth - cog.width; cog.placeRelative(cogX, y(cog))
+            val connX = cogX - conn.width; conn.placeRelative(connX, y(conn))
+            val recX = connX - (if (rec.width > 0) gap + rec.width else 0); rec.placeRelative(recX, y(rec))
+            val lo = logo.width + gap; val hi = recX - gap - pills.width
+            pills.placeRelative(((c.maxWidth - pills.width) / 2).coerceIn(lo, maxOf(lo, hi)), y(pills))
+        }
     }
 }
 
