@@ -47,6 +47,13 @@ import com.openrs.dash.ui.anim.pageEntrance
  */
 private val versionHighlights: Map<String, List<String>> = mapOf(
     "2.2.7" to listOf(
+        "Fixed: BOOST shows boost — on cars where the CAN boost signal stays at zero it now uses the polled TIP reading (labelled BOOST · TIP), and reads 0 at rest instead of −0.7 psi.",
+        "Fixed: SPARK and throttle angle decode correctly (negative spark advance kept; throttle angle no longer 6.25× too high), and polled values that stop refreshing are marked STALE instead of looking live.",
+        "Fixed: a single ambiguous ECU rejection no longer stops a working reading for the whole drive.",
+        "Cancel now holds until you tap connect again, even after the app is closed.",
+        "Drive-mode / ESC controls: the firmware check retries and accepts a late reply; ESC changes are confirmed from the car's own signal.",
+        "Bluetooth uses the WiCAN Pro / USB service layouts and asks to pair when needed (not yet confirmed on an adapter); Settings shows the selected device at once and saves it on SAVE.",
+        "TPMS thresholds follow your tyre-pressure unit (PSI or BAR); DTC scans read standard records and never call a partial scan clean.",
         "Fixed: drive, knock, RaceChrono and TrackAddict exports, GPX and logs are no longer corrupted on phones set to a language that uses a decimal comma.",
         "Connection states are truthful — CONNECTING (tap to cancel, except while a drive is recording), RECONNECTING only after a dropped link, and a failed attempt no longer leaves a notification behind; tapping the notification opens the app.",
         "Settings shows the exact build (2.2.7-rc.7 · Build 36), and a diagnostic export says whether a DTC scan ran this session and which modules gave a valid reply — a refused or missing reply is never reported as clean.",
