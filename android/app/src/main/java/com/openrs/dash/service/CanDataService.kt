@@ -780,10 +780,12 @@ class CanDataService : Service() {
         },
         onFrameCounted = { sessionFrameCount++ },
         perfRunSink = { run ->
-            try {
-                OpenRSDashApp.instance.driveDb.driveDao().insertPerfRun(run)
-            } catch (e: Exception) {
-                android.util.Log.w("CanDataService", "PerfRun persist failed", e)
+            scope.launch(Dispatchers.IO) {                    // Room write off the frame thread and off the lock
+                try {
+                    OpenRSDashApp.instance.driveDb.driveDao().insertPerfRun(run)
+                } catch (e: Exception) {
+                    android.util.Log.w("CanDataService", "PerfRun persist failed", e)
+                }
             }
         },
     )
