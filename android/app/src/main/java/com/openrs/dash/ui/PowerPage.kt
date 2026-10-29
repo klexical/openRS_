@@ -69,8 +69,19 @@ import kotlin.math.roundToInt
     // session; engine-dependent cells also need the engine running. NRC-suppressed DIDs
     // (e.g. KR cyl 2/3 on some PCMs) never stamp, so they stay "— —" instead of 0.00.
     val running = vs.rpm > ObdConstants.FAST_POLL_MIN_RPM
-    fun polled(tag: String) = vs.fieldLastUpdateMs[tag] != null
-    fun eng(tag: String) = running && polled(tag)
+    // #217: a polled cell is current, STALE (dimmed, with its age) or "— —" under the shared PolledFreshness rule —
+    // never a held value presented as live. Engine-dependent cells also need the engine running.
+    val now = System.currentTimeMillis()
+    fun cell(label: String, tag: String, value: Double, engineOnly: Boolean = true,
+             valid: (Double) -> Boolean = { true }, color: (Double) -> Color = { Color.Unspecified },
+             fmt: (Double) -> String): Readout {
+        if ((engineOnly && !running) || !valid(value)) return Readout(label, ph)
+        return when (val st = com.openrs.dash.data.PolledFreshness.state(vs, tag, value, now)) {
+            is com.openrs.dash.data.FieldState.Available -> Readout(label, fmt(st.value), color(st.value))
+            is com.openrs.dash.data.FieldState.Stale -> Readout(label, fmt(st.value), Dim, sub = "STALE ${st.ageSeconds}s")
+            else -> Readout(label, ph)
+        }
+    }
 
     var throttleExpanded by rememberSectionExpanded("POWER_THROTTLE")
     var engineExpanded   by rememberSectionExpanded("POWER_ENGINE")
@@ -147,22 +158,20 @@ import kotlin.math.roundToInt
                 val (tipActVal, tipLbl) = p.displayBoost(vs.tipActualKpa)
                 val (tipDesVal, _)      = p.displayBoost(vs.tipDesiredKpa)
                 // TIP is absolute kPa (~baro at rest); < 50 kPa can only be a bad decode
-                val hasTipAct = polled("tipActualKpa") && vs.tipActualKpa > 50
-                val hasTipDes = polled("tipDesiredKpa") && vs.tipDesiredKpa > 50
                 val da = vs.densityAltitudeFt
                 ReadoutGrid(listOf(
                     listOf(
-                        Readout("ETC ACT", if (vs.etcAngleActual > 0) "${"%.1f".format(vs.etcAngleActual)}°" else ph),
-                        Readout("ETC DES", if (vs.etcAngleDesired > 0) "${"%.1f".format(vs.etcAngleDesired)}°" else ph),
-                        Readout("WGDC",    if (vs.wgdcDesired > 0) "${"%.0f".format(vs.wgdcDesired)}%" else ph),
+                        cell("ETC ACT", "etcAngleActual", vs.etcAngleActual, engineOnly = false) { "${"%.1f".format(it)}°" },
+                        cell("ETC DES", "etcAngleDesired", vs.etcAngleDesired, engineOnly = false) { "${"%.1f".format(it)}°" },
+                        cell("WGDC", "wgdcDesired", vs.wgdcDesired, engineOnly = false, valid = { it >= 0 }) { "${"%.0f".format(it)}%" },
                     ),
                     listOf(
-                        Readout("TIP ACT", if (hasTipAct) "$tipActVal $tipLbl" else ph),
-                        Readout("TIP DES", if (hasTipDes) "$tipDesVal $tipLbl" else ph),
+                        cell("TIP ACT", "tipActualKpa", vs.tipActualKpa, engineOnly = false, valid = { it > 50 }) { "$tipActVal $tipLbl" },
+                        cell("TIP DES", "tipDesiredKpa", vs.tipDesiredKpa, engineOnly = false, valid = { it > 50 }) { "$tipDesVal $tipLbl" },
                         null,
                     ),
                     listOf(
-                        Readout("HP FUEL", if (vs.hpFuelRailPsi >= 0) "${"%.0f".format(vs.hpFuelRailPsi)} PSI" else ph),
+                        cell("HP FUEL", "hpFuelRailPsi", vs.hpFuelRailPsi, engineOnly = false, valid = { it >= 0 }) { "${"%.0f".format(it)} PSI" },
                         Readout("DENS ALT", if (da != null) "${da} ft" else ph),
                         null,
                     ),
@@ -189,18 +198,18 @@ import kotlin.math.roundToInt
             // Retard is POSITIVE (parser raw / −512) — > 1° = knock, matching the header counter.
             // In range reads in ink; only a knocking cylinder turns amber.
             fun kr(cyl: Int, tag: String, v: Double) =
-                Readout("CYL $cyl", if (eng(tag)) formatKr(v) else ph, if (eng(tag) && v > 1.0) Warn else Frost)
+                cell("CYL $cyl", tag, v, color = { if (it > 1.0) Warn else Frost }) { formatKr(it) }
             val krLevel = if (listOf(vs.ignCorrCyl1, vs.ignCorrCyl2, vs.ignCorrCyl3, vs.ignCorrCyl4).any { it > 1.0 } && running) Level.WARN else Level.NORMAL
             ReadoutGrid(listOf(
                 listOf(
-                    Readout("TIMING", if (eng("timingAdvance")) "${"%.1f".format(vs.timingAdvance)}°" else ph),
-                    Readout("LOAD",   if (eng("calcLoad")) "${"%.0f".format(vs.calcLoad)}%" else ph),
-                    Readout("OAR",    if (eng("octaneAdjustRatio")) "${"%.0f".format(vs.octaneAdjustRatio * 100)}%" else ph),
-                    Readout("SPARK",  if (eng("sparkAdvance")) "${"%.1f".format(vs.sparkAdvance)}°" else ph),
+                    cell("TIMING", "timingAdvance", vs.timingAdvance) { "${"%.1f".format(it)}°" },
+                    cell("LOAD", "calcLoad", vs.calcLoad) { "${"%.0f".format(it)}%" },
+                    cell("OAR", "octaneAdjustRatio", vs.octaneAdjustRatio) { "${"%.0f".format(it * 100)}%" },
+                    cell("SPARK", "sparkAdvance", vs.sparkAdvance) { "${"%.1f".format(it)}°" },
                 ),
                 listOf(
-                    Readout("VCT INTAKE",  if (eng("vctIntakeAngle")) "${"%.1f".format(vs.vctIntakeAngle)}°" else ph),
-                    Readout("VCT EXHAUST", if (eng("vctExhaustAngle")) "${"%.1f".format(vs.vctExhaustAngle)}°" else ph),
+                    cell("VCT INTAKE", "vctIntakeAngle", vs.vctIntakeAngle) { "${"%.1f".format(it)}°" },
+                    cell("VCT EXHAUST", "vctExhaustAngle", vs.vctExhaustAngle) { "${"%.1f".format(it)}°" },
                     null, null,
                 ),
                 listOf(kr(1, "ignCorrCyl1", vs.ignCorrCyl1), kr(2, "ignCorrCyl2", vs.ignCorrCyl2),
@@ -237,14 +246,14 @@ import kotlin.math.roundToInt
                     Readout("BARO", "${vs.barometricPressure.roundToInt()} kPa"),
                 ),
                 listOf(
-                    Readout("CMD AFR", if (polled("commandedAfr") && vs.commandedAfr > 0) "${"%.3f".format(vs.commandedAfr)}λ" else ph),
-                    Readout("AFR SEN1", if (polled("afrSensor1") && vs.afrSensor1 > 0) "%.2f".format(vs.afrSensor1) else ph,
-                        spark = afrSnap.takeIf { it.size >= 2 }),
-                    Readout("O2 VOLT", if (eng("o2Voltage")) "${"%.3f".format(vs.o2Voltage)}V" else ph),
+                    cell("CMD AFR", "commandedAfr", vs.commandedAfr, engineOnly = false, valid = { it > 0 }) { "${"%.3f".format(it)}λ" },
+                    cell("AFR SEN1", "afrSensor1", vs.afrSensor1, engineOnly = false, valid = { it > 0 }) { "%.2f".format(it) }
+                        .copy(spark = afrSnap.takeIf { it.size >= 2 }),
+                    cell("O2 VOLT", "o2Voltage", vs.o2Voltage) { "${"%.3f".format(it)}V" },
                 ),
                 listOf(
-                    Readout("LP FUEL", if (polled("fuelRailPressure") && vs.fuelRailPsi > 0) "${"%.0f".format(vs.fuelRailPsi)} PSI" else ph),
-                    Readout("OIL LIFE", if (vs.oilLifePct >= 0) "${vs.oilLifePct.roundToInt()}%" else ph),
+                    cell("LP FUEL", "fuelRailPressure", vs.fuelRailPsi, engineOnly = false, valid = { it > 0 }) { "${"%.0f".format(it)} PSI" },
+                    cell("OIL LIFE", "oilLifePct", vs.oilLifePct, engineOnly = false, valid = { it >= 0 }) { "${it.roundToInt()}%" },
                     null,
                 ),
             ), level = trimLevel)

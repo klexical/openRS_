@@ -61,7 +61,10 @@ fun defaultCellFor(key: String): DashCell? = fieldIndex[key]
  * Extract a display-formatted value and raw numeric value from VehicleState for a given cell.
  * Temperature fields respect the user's unit preference; boost/speed respect their units too.
  */
-fun resolveValue(vs: VehicleState, prefs: UserPrefs, cell: DashCell): Pair<String, Double> {
+fun resolveValue(vs: VehicleState, prefs: UserPrefs, cell: DashCell, nowMs: Long = System.currentTimeMillis()): Pair<String, Double> {
+    // PCM-polled fields show only while current (#217): a held reading is "— —", never a value that looks live
+    fun polled(tag: String, value: Double, fmt: (Double) -> String): Pair<String, Double> =
+        if (PolledFreshness.isFresh(vs, tag, nowMs)) fmt(value) to value else "\u2014 \u2014" to 0.0
     return when (cell.fieldKey) {
         "rpm" -> "%.0f".format(vs.rpm) to vs.rpm
         "boostKpa" -> {
@@ -90,16 +93,16 @@ fun resolveValue(vs: VehicleState, prefs: UserPrefs, cell: DashCell): Pair<Strin
         }
         "lateralG" -> "%.2f".format(vs.lateralG) to vs.lateralG
         "longitudinalG" -> "%.2f".format(vs.longitudinalG) to vs.longitudinalG
-        "ignCorrCyl1" -> "%.1f\u00B0".format(vs.ignCorrCyl1) to vs.ignCorrCyl1
-        "ignCorrCyl2" -> "%.1f\u00B0".format(vs.ignCorrCyl2) to vs.ignCorrCyl2
-        "ignCorrCyl3" -> "%.1f\u00B0".format(vs.ignCorrCyl3) to vs.ignCorrCyl3
-        "ignCorrCyl4" -> "%.1f\u00B0".format(vs.ignCorrCyl4) to vs.ignCorrCyl4
+        "ignCorrCyl1" -> polled("ignCorrCyl1", vs.ignCorrCyl1) { "%.1f\u00B0".format(it) }
+        "ignCorrCyl2" -> polled("ignCorrCyl2", vs.ignCorrCyl2) { "%.1f\u00B0".format(it) }
+        "ignCorrCyl3" -> polled("ignCorrCyl3", vs.ignCorrCyl3) { "%.1f\u00B0".format(it) }
+        "ignCorrCyl4" -> polled("ignCorrCyl4", vs.ignCorrCyl4) { "%.1f\u00B0".format(it) }
         "afrActual" -> {
             if (vs.afrActual > 0) "%.2f".format(vs.afrActual) to vs.afrActual
             else "\u2014 \u2014" to 0.0
         }
-        "shortFuelTrim" -> "%.1f%%".format(vs.shortFuelTrim) to vs.shortFuelTrim
-        "longFuelTrim" -> "%.1f%%".format(vs.longFuelTrim) to vs.longFuelTrim
+        "shortFuelTrim" -> polled("shortFuelTrim", vs.shortFuelTrim) { "%.1f%%".format(it) }
+        "longFuelTrim" -> polled("longFuelTrim", vs.longFuelTrim) { "%.1f%%".format(it) }
         "oilLifePct" -> {
             if (vs.oilLifePct >= 0) "%.0f%%".format(vs.oilLifePct) to vs.oilLifePct
             else "\u2014 \u2014" to 0.0
@@ -108,9 +111,9 @@ fun resolveValue(vs: VehicleState, prefs: UserPrefs, cell: DashCell): Pair<Strin
         "torqueAtTrans" -> "%.0f Nm".format(vs.torqueAtTrans) to vs.torqueAtTrans
         "steeringAngle" -> "%.1f\u00B0".format(vs.steeringAngle) to vs.steeringAngle
         "yawRate" -> "%.1f".format(vs.yawRate) to vs.yawRate
-        "wgdcDesired" -> "%.0f%%".format(vs.wgdcDesired) to vs.wgdcDesired
-        "tipActualKpa" -> "%.0f".format(vs.tipActualKpa) to vs.tipActualKpa
-        "tipDesiredKpa" -> "%.0f".format(vs.tipDesiredKpa) to vs.tipDesiredKpa
+        "wgdcDesired" -> polled("wgdcDesired", vs.wgdcDesired) { "%.0f%%".format(it) }
+        "tipActualKpa" -> polled("tipActualKpa", vs.tipActualKpa) { "%.0f".format(it) }
+        "tipDesiredKpa" -> polled("tipDesiredKpa", vs.tipDesiredKpa) { "%.0f".format(it) }
         else -> "\u2014" to 0.0
     }
 }
