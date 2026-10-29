@@ -63,29 +63,33 @@ class ObdResponseParserTest {
         assertTrue("AWD DIDs without a stamping decoder: $awd", awd.isEmpty())
     }
 
+    /**
+     * #206 — ETC throttle angle 0x093C (actual) / 0x091A (desired): unsigned 16-bit / 512 = degrees. Raw payloads from
+     * the 2026-10-28 drives (rc.6, WiCAN Pro); the old ×100/8192 gave 86.2° at ~25 % pedal and an impossible 111.5°
+     * desired. /512 matches DigiCluster's on-car-verified definition ("1.71° matched AP").
+     */
     @Test
-    fun `PCM - ETC actual angle`() {
-        // DID 0x093C: (B4 << 8 | B5) * (100/8192)
-        // raw 4096 -> 4096 * 100/8192 = 50%
-        var result: VehicleState? = null
-        ObdResponseParser.parsePcmResponse(
-            makeResponse(0x09, 0x3C, 0x10, 0x00),
-            blank
-        ) { result = it }
-        assertNotNull(result)
-        assertEquals(50.0, result!!.etcAngleActual, 0.1)
+    fun `PCM - ETC actual angle from real payloads`() {
+        fun etc(hi: Int, lo: Int): Double {
+            var r: VehicleState? = null
+            ObdResponseParser.parsePcmResponse(makeResponse(0x09, 0x3C, hi, lo), blank) { r = it }
+            return r!!.etcAngleActual
+        }
+        assertEquals(13.80, etc(0x1B, 0x99), 0.01)   // ~25 % pedal, 3,104 rpm (AM drive)
+        assertEquals(1.59, etc(0x03, 0x2E), 0.01)    // idle
+        assertEquals(15.11, etc(0x1E, 0x39), 0.01)   // PM drive maximum
     }
 
     @Test
-    fun `PCM - ETC desired angle`() {
-        // DID 0x091A: same formula as actual
-        var result: VehicleState? = null
-        ObdResponseParser.parsePcmResponse(
-            makeResponse(0x09, 0x1A, 0x10, 0x00),
-            blank
-        ) { result = it }
-        assertNotNull(result)
-        assertEquals(50.0, result!!.etcAngleDesired, 0.1)
+    fun `PCM - ETC desired angle from real payloads`() {
+        fun etc(hi: Int, lo: Int): Double {
+            var r: VehicleState? = null
+            ObdResponseParser.parsePcmResponse(makeResponse(0x09, 0x1A, hi, lo), blank) { r = it }
+            assertTrue(r!!.fieldLastUpdateMs.containsKey("etcAngleDesired"))
+            return r!!.etcAngleDesired
+        }
+        assertEquals(17.83, etc(0x23, 0xAA), 0.01)   // was 111.45 — beyond any throttle plate
+        assertEquals(9.04, etc(0x12, 0x14), 0.01)    // the value frozen ~451 s on the PM drive (#216)
     }
 
     @Test

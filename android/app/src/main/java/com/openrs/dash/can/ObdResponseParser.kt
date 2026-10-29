@@ -215,11 +215,13 @@ object ObdResponseParser {
         val b4s = data[4].toInt()
         val b5  = if (data.size > 5) data[5].toInt() and 0xFF else 0
         when (did) {
+            // ETC throttle plate angle, unsigned 16-bit / 512 = degrees (#206 — DigiCluster on-car verified "1.71°
+            // matched AP"; the FORScan-catalog ×100/8192 read 6.25× high: 111° desired). Not pedal / throttle %.
             0x093C -> onObdUpdate(currentState.copy(
-                etcAngleActual = ((b4 shl 8) or b5) * (100.0 / 8192.0)
+                etcAngleActual = ((b4 shl 8) or b5) / 512.0
             ).markFresh("etcAngleActual"))
             0x091A -> onObdUpdate(currentState.copy(
-                etcAngleDesired = ((b4 shl 8) or b5) * (100.0 / 8192.0)
+                etcAngleDesired = ((b4 shl 8) or b5) / 512.0
             ).markFresh("etcAngleDesired"))
             0x0462 -> onObdUpdate(currentState.copy(
                 wgdcDesired = b4 * 100.0 / 128.0

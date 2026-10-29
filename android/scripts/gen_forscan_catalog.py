@@ -79,8 +79,8 @@ MONITORED = {
 # Complex multi-field decoders (TPMS, odometer) are omitted — handled in Kotlin.
 DECODE_INFO = {
     # PCM standard poll group
-    ("PCM", "0x093C"):  {"bytes": 2, "formula": "(A*256+B)*(100.0/8192.0)",       "field": "etcAngleActual",   "poll_group": "pcm_standard"},
-    ("PCM", "0x091A"):  {"bytes": 2, "formula": "(A*256+B)*(100.0/8192.0)",       "field": "etcAngleDesired",  "poll_group": "pcm_standard"},
+    ("PCM", "0x093C"):  {"bytes": 2, "formula": "(A*256+B)/512.0",                 "field": "etcAngleActual",   "poll_group": "pcm_standard"},
+    ("PCM", "0x091A"):  {"bytes": 2, "formula": "(A*256+B)/512.0",                 "field": "etcAngleDesired",  "poll_group": "pcm_standard"},
     ("PCM", "0x0462"):  {"bytes": 1, "formula": "A*100.0/128.0",                  "field": "wgdcDesired",      "poll_group": "pcm_standard"},
     ("PCM", "0x03EC"):  {"bytes": 2, "formula": "signed(A*256+B)/-512.0",         "field": "ignCorrCyl1",      "poll_group": "pcm_standard"},
     ("PCM", "0x03ED"):  {"bytes": 2, "formula": "signed(A*256+B)/-512.0",         "field": "ignCorrCyl2",      "poll_group": "pcm_standard"},
