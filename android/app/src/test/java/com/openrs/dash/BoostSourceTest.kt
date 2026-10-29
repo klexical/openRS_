@@ -58,6 +58,9 @@ class BoostSourceTest {
         link = LinkSession(own, own.begin(), state, NoRecorder(), onFrameCounted = {}, perfRunSink = { _: PerfRunEntity -> })
     }
 
+    /** BoostSession is process-wide: leave it clean for the next test class (LinkSession tests feed it too). */
+    @org.junit.After fun clean() { BoostSession.reset(); BoostSession.log = {} }
+
     /** 0x090: baro byte (C1 = 96.5 kPa), rpm bytes 4-5 (617D ≈ 3,100 rpm; 0000 = engine off). */
     private fun rpmFrame(baro: String = "C1", rpm: String = "617D") = link.onCanFrame(0x090, hex("0000${baro}FF${rpm}0000"), 50.0)
     private fun boostFrame(byte5: Int) = link.onCanFrame(0x0F8, hex("0042000000%02X1052".format(byte5)), 50.0)
