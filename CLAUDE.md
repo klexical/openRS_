@@ -833,7 +833,9 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   **Decisions awaiting the user:** boost — CAN trusted until contradicted at ≥ 80 % throttle, session-scoped (alternatives:
   trust nothing until proven / persist per adapter); evidence thresholds, ESC REACTION_MS 3 s and NRC 300 ms window
   unmeasured; #224 trade-off (411 dp full chips → "REC" only). Superseded: the drive-review "TIP-first vs CAN-first" and
-  failure-type decisions (both resolved in this pass).
+  failure-type decisions (both resolved in this pass). Final report delivered 2026-10-29; the APK was **not** offered for
+  hardware acceptance (user reviews first). Next steps each need the user's go-ahead: answers to the decisions above,
+  hardware checklist, firmware build / flash, PRs, rc.7 tag.
 - Still open: everything in the hardware checklist (Samsung, BLE, firmware capability, boost signal identity, spark /
   throttle, real DTC replies, TPMS BAR on the phone, 0304 / 03EF identity, button bit captures); GPS-independent
   recording (#221); Sapphire empty boost_psi → 0; perf / lap / bookmark boost without source; a real
