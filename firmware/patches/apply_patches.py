@@ -168,8 +168,10 @@ static esp_err_t frs_post_handler(httpd_req_t *req)
         if (!frs_set_drive_mode((uint8_t)item->valueint))
             busy = true;
     }
-    if ((item = cJSON_GetObjectItem(root, "escMode")) && cJSON_IsNumber(item))
-        frs_set_esc((uint8_t)item->valueint);
+    if ((item = cJSON_GetObjectItem(root, "escMode")) && cJSON_IsNumber(item)) {
+        if (!frs_set_esc((uint8_t)item->valueint))   /* another ESC change running (#125) */
+            busy = true;
+    }
     if ((item = cJSON_GetObjectItem(root, "enableLC")) && cJSON_IsBool(item))
         frs_set_lc(cJSON_IsTrue(item));
     if ((item = cJSON_GetObjectItem(root, "killASS")) && cJSON_IsBool(item))
