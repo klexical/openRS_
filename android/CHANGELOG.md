@@ -80,6 +80,9 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 - **An explicit Cancel holds until you connect again** — it now survives the service being recreated, the app process ending (incl. Recents dismissal and Force stop) and reopening; only Connect / Retry clears it. It is separate from the auto-connect setting, never applies while a drive is recording, and users who never cancel keep normal auto-connect. (`service/LinkOwnership.kt`, `service/CanDataService.kt`) ([#212](https://github.com/klexical/openRS_/issues/212))
 
+### Removed (rc.7)
+- **DRIVE's CLUTCH card** — a clutch-pedal percentage row appeared whenever the pedal left the floor and vanished again, pushing ECONOMY down and out of view during every shift (also in rc.6). DRIVE no longer shows clutch-pedal position; CAN 0x138 is still decoded for diagnostics. AWD clutch temperatures, currents and pressures are unchanged. (`ui/DrivePage.kt`) ([#225](https://github.com/klexical/openRS_/issues/225))
+
 ### Added (rc.6 — knock logger)
 - **Session knock log** — knock events are now captured whenever the adapter is connected, not only while a drive is recording. Held in memory per session (cap 2,000), shown under a new SESSION scope on the PERF knock card (now SESSION / THIS DRIVE / ALL), and exported in the diagnostic ZIP as `drive_knock_session_*.csv`. Uses the same fresh-only capture as the recorder. (`data/KnockSessionLog.kt`) ([#174](https://github.com/klexical/openRS_/issues/174))
 - **% of pulls with knock** — new `PullTracker` counts WOT pulls (throttle ≥ 80 % at ≥ 2,500 RPM for ≥ 2 s; gear-change lifts under 2 s don't split a pull) and the pulls that saw KR > 0. Shown as a PULLS cell on the knock card for every scope, stored per drive, and added to the drive summary. (`data/PullTracker.kt`) ([#174](https://github.com/klexical/openRS_/issues/174))

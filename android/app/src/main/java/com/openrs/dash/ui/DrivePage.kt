@@ -347,11 +347,8 @@ import kotlin.math.roundToInt
             // Torque split / G / torque are per-frame dynamics — frozen values mislead once stale.
             ChassisPanel(if (stale) vs.copy(awdLeftTorque = 0.0, awdRightTorque = 0.0, torqueAtTrans = 0.0) else vs, stale)
 
-            if (vs.clutchPedalPct > 0.1) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DataCell("CLUTCH", "${vs.clutchPedalPct.roundToInt()}%", modifier = Modifier.weight(1f))
-                }
-            }
+            // No clutch-pedal readout on DRIVE (#225): it appeared and disappeared with the pedal and pushed ECONOMY
+            // out of view. 0x138 is still decoded (diagnostics, SLCAN log).
 
             // F2: fuel economy — always present (data arriving / leaving never shows, hides or collapses it;
             // only the user's header tap does). Unavailable metrics read "—" with their unit, not 0.
