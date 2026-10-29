@@ -802,20 +802,28 @@ class MainActivity : ComponentActivity() {
                 // Hours as h:mm:ss (minutes no longer grow to three digits on a long drive)
                 val hh = (elapsed / 3_600_000).toInt()
                 val time = if (hh > 0) "%d:%02d:%02d".format(hh, mm % 60, ss) else "%02d:%02d".format(mm, ss)
-                val label = when {
-                    paused  -> "PAUSED"
-                    compact -> "REC $time"
-                    else    -> "REC $time · $distStr"
+                // The longest label that fits the width HeaderRow leaves (#224): whole parts are dropped (distance,
+                // then time) — a value is never cut mid-way ("REC 2:1…" read as another time)
+                val candidates = when {
+                    paused  -> listOf("PAUSED")
+                    compact -> listOf("REC $time", "REC")
+                    else    -> listOf("REC $time · $distStr", "REC $time", "REC")
                 }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Box(Modifier.size(7.dp).clip(CircleShape).background(dotColor.copy(alpha = recAlpha)))
-                    // One line, clipped to the space HeaderRow leaves it — never wraps, never pushes the cog
-                    Text(label, fontSize = 9.sp, fontFamily = JetBrainsMonoFamily, color = textColor(dotColor),
-                        fontWeight = FontWeight.Bold, letterSpacing = 0.2.sp, maxLines = 1, softWrap = false,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Clip)
+                val recStyle = androidx.compose.ui.text.TextStyle(fontSize = 9.sp, fontFamily = JetBrainsMonoFamily,
+                    fontWeight = FontWeight.Bold, letterSpacing = 0.2.sp)
+                val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+                BoxWithConstraints {
+                    val room = constraints.maxWidth - with(density) { 11.dp.roundToPx() }   // dot + gap
+                    val label = candidates.firstOrNull { measurer.measure(it, recStyle).size.width <= room }
+                    if (label != null) Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Box(Modifier.size(7.dp).clip(CircleShape).background(dotColor.copy(alpha = recAlpha)))
+                        Text(label, style = recStyle, color = textColor(dotColor), maxLines = 1, softWrap = false)
+                    } else if (constraints.maxWidth >= with(density) { 7.dp.roundToPx() }) {
+                        Box(Modifier.size(7.dp).clip(CircleShape).background(dotColor.copy(alpha = recAlpha)))
+                    }
                 }
             } else if (autoRecArmed) {
                 val armedAlpha by rememberInfiniteTransition(label = "headerArmed").animateFloat(
@@ -923,11 +931,13 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun HeaderRow(modifier: Modifier, content: @Composable () -> Unit) {
     androidx.compose.ui.layout.Layout(content, modifier) { ms, c ->
-        val gap = 6.dp.roundToPx()
         val loose = c.copy(minWidth = 0, minHeight = 0)
         val logo = ms[0].measure(loose); val pills = ms[1].measure(loose)
         val conn = ms[3].measure(loose); val cog = ms[4].measure(loose)
-        val recMax = (c.maxWidth - logo.width - pills.width - conn.width - cog.width - 4 * gap).coerceAtLeast(0)
+        val fixed = c.maxWidth - logo.width - pills.width - conn.width - cog.width
+        // Tight (360 dp, every chip populated): narrower gaps before the REC dot is squeezed out
+        val gap = if (fixed - 4 * 6.dp.roundToPx() >= 9.dp.roundToPx()) 6.dp.roundToPx() else 2.dp.roundToPx()
+        val recMax = (fixed - 4 * gap).coerceAtLeast(0)
         val rec = ms[2].measure(loose.copy(maxWidth = recMax))
         val h = c.maxHeight
         layout(c.maxWidth, h) {
