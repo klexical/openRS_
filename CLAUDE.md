@@ -816,7 +816,7 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   and the parked hardware checklist: `~/Documents/openRS_-evidence/rc7-drive-review-2026-10-28/` (`ACCEPTANCE-MATRIX.md`,
   `HARDWARE-CHECKLIST.md`; private drive exports under `private/`, never published).
 - Final local release APK (drive-review pass): source `24c1d41` clean, SHA-256 `1e297ccb…cf7b`, vc 36, signer `c99b6f26…`,
-  verify-release OK (later commits docs-only). **Decisions awaiting the user:** boost source — TIP-first (current) vs CAN-first
+  verify-release OK (later commits docs-only). **Decisions then (superseded by the acceptance-corrections pass below):** boost source — TIP-first (current) vs CAN-first
   with TIP fallback (one getter, `VehicleState.boostGaugeKpa`); NRC re-probe every 60 s logs a suppress pair per minute
   for genuinely rejected DIDs (backoff / transition-only logging?); "previous scan" = latest saved scan; DTC failure-type
   byte parsed but not shown on DIAG / export.
