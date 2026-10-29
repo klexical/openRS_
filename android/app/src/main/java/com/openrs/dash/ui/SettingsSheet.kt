@@ -609,10 +609,14 @@ fun SettingsDialog(
                     if (staged != null) {
                         // Selected is not the same as paired: read the phone's real bond state for this address
                         val bonded = remember(staged.first) {
-                            try {
+                            // Bond state needs BLUETOOTH_CONNECT on Android 12+; without it the state is unknown, not "unpaired"
+                            val canRead = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S ||
+                                androidx.core.content.ContextCompat.checkSelfPermission(ctx,
+                                    android.Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                            if (!canRead) null else try {
                                 val bm = ctx.getSystemService(android.bluetooth.BluetoothManager::class.java)
                                 bm?.adapter?.getRemoteDevice(staged.first)?.bondState == android.bluetooth.BluetoothDevice.BOND_BONDED
-                            } catch (_: Exception) { null }       // no BLUETOOTH_CONNECT permission / bad address
+                            } catch (_: Exception) { null }       // permission revoked meanwhile / bad address
                         }
                         Row(
                             Modifier.fillMaxWidth()
