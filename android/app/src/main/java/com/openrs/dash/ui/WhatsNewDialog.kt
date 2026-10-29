@@ -47,7 +47,7 @@ import com.openrs.dash.ui.anim.pageEntrance
  */
 private val versionHighlights: Map<String, List<String>> = mapOf(
     "2.2.7" to listOf(
-        "Fixed: BOOST shows boost — on cars where the CAN boost signal stays at zero it now uses the polled TIP reading (labelled BOOST · TIP), and reads 0 at rest instead of −0.7 psi.",
+        "Fixed: BOOST shows boost — on cars where the CAN boost signal stays at zero it now uses the polled TIP reading (marked TIP under the reading), and reads 0 at rest instead of −0.7 psi.",
         "Fixed: SPARK and throttle angle decode correctly (negative spark advance kept; throttle angle no longer 6.25× too high), and polled values that stop refreshing are marked STALE instead of looking live.",
         "Fixed: a single ambiguous ECU rejection no longer stops a working reading for the whole drive.",
         "Cancel now holds until you tap connect again, even after the app is closed.",
