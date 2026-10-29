@@ -27,6 +27,8 @@ import com.openrs.dash.data.FuelTrimAccumulator
 import com.openrs.dash.data.FuelEconomy
 import com.openrs.dash.data.KnockCapture
 import com.openrs.dash.data.PullTracker
+import com.openrs.dash.data.RecordingGapMonitor
+import com.openrs.dash.diagnostics.DiagnosticLogger
 import com.openrs.dash.data.LapEntity
 import com.openrs.dash.data.LapSessionEntity
 import com.openrs.dash.data.LapTimer
@@ -40,6 +42,8 @@ import com.openrs.dash.ui.UserPrefsStore
 import com.openrs.dash.ui.sample
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
@@ -369,6 +373,17 @@ class DriveRecorder(
             try {
                 fetchInitialWeather()
                 var lastWeatherMs = System.currentTimeMillis()
+                // Gap diagnostics (#221): why points stopped — never fills them in
+                val gaps = RecordingGapMonitor().also { it.start(System.currentTimeMillis()) }
+                launch {
+                    while (isActive) {
+                        delay(RecordingGapMonitor.GAP_AFTER_MS)
+                        val st = _driveState.value
+                        if (!st.isRecording) continue
+                        gaps.tick(System.currentTimeMillis(), vehicleStateFlow.value.isConnected, st.isPaused)
+                            ?.let { DiagnosticLogger.event("REC_GAP", "drive $driveId: $it") }
+                    }
+                }
 
                 locationFlow().collect { location ->
                     val state = _driveState.value
@@ -378,7 +393,11 @@ class DriveRecorder(
                     _driveState.update { it.copy(currentLocation = location) }
 
                     // Skip recording when paused
-                    if (state.isPaused) return@collect
+                    if (state.isPaused) {
+                        gaps.onLocation(System.currentTimeMillis(), written = false, skipped = RecordingGapMonitor.Reason.PAUSED)
+                            ?.let { DiagnosticLogger.event("REC_GAP", "drive $driveId: ${it.describe()}") }
+                        return@collect
+                    }
 
                     val now = System.currentTimeMillis()
 
@@ -396,8 +415,11 @@ class DriveRecorder(
                     // the gap is not counted.
                     if (!vs.isConnected) {
                         prevPoint = null
+                        gaps.onLocation(now, written = false, skipped = RecordingGapMonitor.Reason.DISCONNECTED)
+                            ?.let { DiagnosticLogger.event("REC_GAP", "drive $driveId: ${it.describe()}") }
                         return@collect
                     }
+                    gaps.onLocation(now, written = true)?.let { DiagnosticLogger.event("REC_GAP", "drive $driveId: ${it.describe()}") }
                     val gate = freshGate ?: FreshnessGate(now).also { freshGate = it }
                     val stamps = vs.fieldLastUpdateMs
                     // Boost-sweep DIDs: value only on a fresh decode, otherwise the
