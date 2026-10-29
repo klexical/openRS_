@@ -41,7 +41,8 @@ can/
                             Constructor takes transportFactory: () -> SlcanTransport (+ rpmProvider for fast poll)
                             Single PCM sender — NrcTracker attribution relies on lastSentPcmDid
                             Command response channel routes +FRS: lines separately from SLCAN frames
-  AdapterState.kt         — Disconnected / Connecting / Connected / Idle / Error (sealed class)
+  AdapterState.kt         — Disconnected / Connecting / Connected / Reconnecting / Idle / Error (sealed, `label` = fixed
+                            names for logs — R8 renames the classes) + LinkPhase (OFF/CONNECTING/CONNECTED/RECONNECTING/FAILED)
   SlcanParser.kt          — SLCAN frame tokenizer ('t'=standard, 'T'=extended)
   IsoTpBuffer.kt          — ISO-TP SF/FF/CF reassembly; caller sends BCM_FLOW_CONTROL after FF
   FirmwareApi.kt          — FirmwareCommandSender interface + WiFiFirmwareApi (REST /api/frs) +
@@ -86,7 +87,10 @@ data/
   TripState.kt            — PeakType enum (RPM/BOOST/LATERAL_G/SPEED) + PeakEvent data class
   WeatherData.kt          — OpenWeatherMap snapshot: temp, wind, humidity, icon-to-emoji mapping
 diagnostics/
-  DtcScanner.kt           — UDS 0x19/02 scan across PCM(7E0)/BCM(726)/ABS(760)/AWD(703)/PSCM(730)
+  DtcScanner.kt           — UDS 0x19/02 scan across PCM(7E0)/BCM(726)/ABS(760)/AWD(703)/PSCM(730)/GFM(7D2); runScan/interpret =
+                            the one path (full scan, auto-scan, retry); only DtcReply.Positive → OK (#215)
+  DtcScanLedger.kt        — rc.7 — the session's DTC export record (DiagnosticLogger.dtcScans): begin (RUNNING) / progress /
+                            complete / fail / cancel / interrupt / retry; cleared by sessionStart, stale tickets can't publish
   DiagnosticLogger.kt     — Thread-safe singleton: frame inventory (opt B), decode trace, SLCAN log (opt C)
                             Pre-allocated hex lookup table; hex conversion outside lock for reduced contention
                             sessionTransport field: transport label for diagnostic reports and share intents
@@ -102,6 +106,10 @@ service/
                             WiFi/BLE-gated auto-reconnect; owns connection lifecycle
                             Transport selected by connectionMethod (WiFi vs BLE) + adapterType (TCP vs WebSocket)
                             Auto-record integration: starts/stops DriveRecorder on connect/disconnect (if setting enabled)
+  LinkOwnership.kt        — rc.7 — process-wide connection ownership (#212): generation, phase, manual-connect block, cancel
+                            policy; autoStart / publish / deliver run under one lock (LinkOwnershipTest)
+  LinkPresentation.kt     — rc.7 — AdapterState → LinkPhase, notification text (+ recording / paused), offersCancel (the one rule)
+  AutoRecordPolicy.kt     — rc.7 — auto-record on a new connection: still recording → keep (never split), paused ≤ 15 min → resume
   DriveRecorder.kt        — Room-backed drive recorder: start/stop/pause/resume, 1 Hz GPS + telemetry
                             FusedLocationProviderClient @ 1 Hz; batch writes (30 points/flush); peak tracking
   WeatherRepository.kt    — OpenWeatherMap /data/2.5/weather (BuildConfig.OPENWEATHER_API_KEY)
@@ -345,6 +353,26 @@ data[5] = B5,  data[6] = B6 …
   activity was recreated offline / in demo. `promote()` is in a try/catch because WiFi/Bluetooth callbacks can fire when the
   app is backgrounded (Android 12+ refuses the start). `manualConnectRequired` is process-wide (companion) because the idle
   service instance is recreated with the activity
+- **Connection ownership + Cancel (#212)** — every connection transition goes through `CanDataService.link`
+  (`LinkOwnership`, process-wide): callback starts use `autoStart` (check + start in one step), a job publishes its phase
+  with `publish(gen, …)` and applies late results (OBD merges posted to Main, CAN frames, WiCAN status, auto-scan counts)
+  with `deliver(gen) { }` / `owns(gen)`. Never add a delayed write from a connection job without that check. Cancel has ONE
+  rule — `LinkPresentation.offersCancel(phase, recording)`: initial attempt and no recording (paused counts) — enforced in
+  `LinkOwnership.cancel` when the request is handled (stale notification actions are ignored) and mirrored by the pill /
+  DRIVE (`cancelable`). The manual-connect block lives only as long as the process: Home keeps it; a Recents dismissal
+  after a cancel lets Android kill the idle process, so the next launch is a cold start and auto-connects (open decision).
+  `reconnect()` (RCN tap) builds a fresh SlcanConnection, so it reads CONN; while recording it can't be cancelled
+- **Retry while recording** — `keepRetrying` (= recording) extends retries past `maxRetries` with a 30 s backoff polled every
+  second; when recording ends the bounded policy applies at once (budget spent → Idle → service released). Notification
+  text is re-published on recording start / pause / resume / stop. Auto-record never splits a drive still recording
+  (`AutoRecordPolicy`)
+- **Transport abort** — TCP / WebSocket assign their socket before `connect()` so `abort()` ends a blocked connect at once
+  (emulator: ≤ 0.5 s). Without a cancel, an adapter that accepts but never answers (WS upgrade / SLCAN handshake) holds
+  the attempt for the 20 s socket read timeout — the 3 s handshake `withTimeoutOrNull` can't interrupt a blocking read
+- **DTC scan truth (#215)** — a module is OK only for a valid positive `59 02 …` reply (`DtcReply.classify`); 7F 19 NRC →
+  REJECTED, malformed → MALFORMED, 7F 19 78 waits (P2* 5 s, cap 12 s) → else PENDING, none → TIMEOUT. The export record
+  is published only through `DiagnosticLogger.dtcScans` (`DtcScanLedger`, session-scoped); never write a DtcScanRecord
+  directly. Records are parsed as 3-byte (high, mid, status) — unverified against real modules
 - **Theme colours are mode-aware getters** — `Bg`, `Surf`, `Surf2`, `Surf3`, `Brd`, `Dim`, `Mid`, `Frost` in Theme.kt are `val ... get() = when { _isDay -> ...; isUltraNightNow() -> ...; else -> Night... }` backed by `mutableStateOf(ThemeMode)`. They are NOT static vals. Compose snapshot system tracks reads automatically. Call `setThemeMode(ThemeMode)` to change; all composables recompose. Do not cache these colors in non-composable contexts. `setBrightness()`/`getBrightness()` are deprecated no-ops retained for back-compat
 - **TRIP tab camera state is hoisted** — `cameraPositionState` lives in `DrivePage` (trip/), passed to `DriveMap` as a parameter. This allows DrivePage to control zoom and recenter. Google Maps native My Location button is disabled; custom `◎` button replaces it
 - **TRIP map: created on TRIP, then retained** — `HorizontalPager(beyondViewportPageCount = 1)` composes neighbours and
@@ -371,7 +399,7 @@ data[5] = B5,  data[6] = B6 …
 - **Lint version is pinned above AGP** — `android/gradle.properties` sets `android.experimental.lint.version=8.13.0` because AGP 8.7.3's bundled lint crashes (`IncompatibleClassChangeError`) on the lint checks shipped in Compose BOM 2025.11 / Lifecycle. Don't remove it unless AGP is upgraded to ≥ 8.13. `abortOnError = false`, so lint findings never fail CI — only crashes do; check `app/build/reports/lint-results-debug.txt` for errors ([#196](https://github.com/klexical/openRS_/issues/196))
 - **`MutableList.removeFirst()/removeLast()` crash below API 35** — with compileSdk 35 they resolve to `java.util.List.removeFirst` (Android 15+) and throw `NoSuchMethodError` on Android 9–14 (minSdk 28). Use `removeAt(0)` / `removeAt(lastIndex)`. `ArrayDeque.removeFirst()` is fine
 - **Location permission** — always request `ACCESS_COARSE_LOCATION` together with `ACCESS_FINE_LOCATION` (Android 12+ requirement); recording still needs FINE granted
-- **Release identity (#214)** — one definition at the top of `android/app/build.gradle.kts` (base / stage / candidate / versionCode) drives versionName (`2.2.7-rc.7`), the Settings label (`2.2.7-rc.7 · Build 36`), the APK name, the expected tag, `BuildConfig.RELEASE_NAME` / `SOURCE_COMMIT`, export and crash metadata, the updater (`AppVersion.current()`) and the What's New gate (once per release name; content by base version, never another version's notes). `-PrcSuffix` is gone (the build refuses it). CI `publish-release` runs `android/scripts/verify-release.sh` (tag = versionName = filename, versionCode above every earlier tag, release signer). Bump the versionCode for every distributed production build, stable included; debug builds carry `-dev+<commit>[.dirty]`. rc.2–rc.6 all shipped as code 35 with versionName `2.2.7`. rc.6 was the first RC published by this job (the rc.3–rc.5 tag runs failed on the pre-#196 lint crash and were attached by hand). CI's keystore secrets sign with the same certificate as the published APKs (`c99b6f26…`)
+- **Release identity (#214)** — one definition at the top of `android/app/build.gradle.kts` (base / stage / candidate / versionCode) drives versionName (`2.2.7-rc.7`), the Settings label (`2.2.7-rc.7 · Build 36`), the APK name, the expected tag, `BuildConfig.RELEASE_NAME` / `SOURCE_COMMIT`, export and crash metadata, the updater (`AppVersion.current()`) and the What's New gate (once per release name; content by base version, never another version's notes). `-PrcSuffix` is gone (the build refuses it). CI `publish-release` runs `android/scripts/verify-release.sh` (tag = versionName = filename, versionCode above every earlier tag, release signer). Bump the versionCode for every distributed production build, stable included; debug builds carry `-dev+<commit>[.dirty]` — dirty = tracked changes or non-ignored untracked files under `android/`. `verify-release.sh` fails on an earlier tag whose versionCode it can't read (exception list `LEGACY_TAGS`, empty) or a checkout without tags. It rejects the rc.6 APK (embeds `2.2.7`, the convention then) — expected, not an rc.6 defect. rc.2–rc.6 all shipped as code 35 with versionName `2.2.7`. rc.6 was the first RC published by this job (the rc.3–rc.5 tag runs failed on the pre-#196 lint crash and were attached by hand). CI's keystore secrets sign with the same certificate as the published APKs (`c99b6f26…`)
 - **VehicleState slot ceiling** — `copy()` on the 162-param data class is at the JVM 255-slot limit. Adding any new field requires either collapsing an unused existing field (speculative AWD DIDs are candidates) or storing it off-state (DiagnosticLogger / genericValues Map). 0x040 lamp state is decoded + validated but not yet persisted on VehicleState for this reason
 - **Demo mode owns VehicleState while active** — `CanDataService.enterDemoMode()` finalizes any recording drive, calls
   `stopConnection()`, then `DemoMode.start()`. While `DemoMode.isActive`: `processCanFrame` / `mergeObdState` / the adapter
@@ -526,7 +554,7 @@ Regenerate the FORScan catalog: `python3 android/scripts/gen_forscan_catalog.py`
 cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{releaseName}.apk (e.g. openRS_v2.2.7-rc.7.apk; set in app/build.gradle.kts)
-./gradlew test                             # 779 unit tests across 47 files
+./gradlew test                             # 817 unit tests across 52 files
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 45 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -668,12 +696,25 @@ android/app/src/test/java/com/openrs/dash/
   PendingSummaryTest.kt       — 2 tests: post-drive summary stays queued until consumed, newer drive survives an older close
   TyrePressureLevelTest.kt    — 6 tests: THERMAL tyre state + DRIVE tyre alerts follow the saved Low / Warn / High
                                 (boundaries, custom, PSI = BAR, over-inflation alert, missing readings)
+  LinkOwnershipTest.kt        — 10 tests (rc.7): callback vs cancel, stop vs publication, late merge / phase after reconnect,
+                                cancel policy (stale after CONNECTED, recording → RCN → CONN, recording began, racing CONNECTED)
+  SlcanConnectionLifecycleTest.kt — 8 tests (rc.7): Connecting vs Reconnecting, exhaustion, recording keeps retrying, recording
+                                end mid-backoff → released ≤ 1 s, healthy link kept, budget left → bounded retries, abort
+  LinkPresentationTest.kt     — 5 tests (rc.7): phases, notification text incl. recording / paused, Cancel rule, UI labels, demo
+  OpeningStateTest.kt / DtcScanRecordTest.kt / VersionIdentityTest.kt / ExportLocaleTest.kt — 4 / 6 / 9 / 7 tests (rc.7: splash
+                                per task, DTC record + report lines, release identity, en / pl / de exports)
+  TransportAbortTest.kt       — 3 tests (rc.7): real TcpSlcanTransport closed before open / during connect / during read
+  AutoRecordPolicyTest.kt     — 4 tests (rc.7): keep / resume / finalize + start / start
+  DtcScanPathTest.kt          — 8 tests (rc.7): live SlcanConnection + scripted adapter — zero codes, codes (SF + multi-frame),
+                                NRC, malformed, pending → final, pending only, timeout
+  DtcScanLedgerTest.kt        — 10 tests (rc.7): session A → B without scan, retry finds codes / completes coverage / refused,
+                                stale retry, interrupted keeps coverage, abort vs late interrupt, RUNNING export
   ForegroundControllerTest.kt — 6 tests: idle bound service never foreground, self-start always followed by startForeground,
                                 demote leaves both, refused start / startForeground leave nothing started
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **779 tests across 47 files** (Android) + **260 vitest across 21 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **817 tests across 52 files** (Android) + **260 vitest across 21 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 
@@ -706,8 +747,19 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   `android/scripts/verify-release.sh` passes it, rejects the rc.6 APK (embedded `2.2.7`) and a debug-signed copy.
 - Emulator lifecycle / splash results: `~/Documents/openRS_-evidence/rc7-lifecycle-2026-10-28/RESULTS.md` (Android 16: Back
   removed the task → next launch new task → opening). Corrected diag report: `~/Documents/openRS_-evidence/diag-rc5-20261020/`.
-- Still open: Samsung Back / Recents + notification Cancel / tap; a real decimal-comma-phone export; parked checks for
-  #205–#208; DTC status against real modules; PRs (feature/rc7 → staging, fix/sapphire-row-validation → main); rc.7 tag.
+- Correction pass (same day, #212 / #214 / #215): `6e35fec` transport abort · `a23547a` ownership · `8163a6c` Cancel policy ·
+  `e82e6d7` recording retry + notification · `aa5b36b` DTC reply validation · `20664c7` DTC ledger · `ba79a00` provenance ·
+  `b058673` What's New (SPARK) · `b09050a` auto-record split · `7a98c8d` notification body · `5fca692` DIAG footer; docs on
+  top. Android 817 / 52 tests, lint 0 / 45. Release APK at `5fca692` (clean): SHA-256 `f7e3514f…1029c`, vc 36, cert
+  `c99b6f26…`, verify-release passes. Evidence + revised behaviour table:
+  `~/Documents/openRS_-evidence/rc7-corrections-2026-10-28/RESULTS.md` (release exports with readable states and DTC
+  outcomes, cancel latency per transport, recording protection, notification body). That run showed the earlier
+  "Wi-Fi off / on after cancel" row proves nothing (Wi-Fi cycling doesn't reconnect on that emulator either way).
+- Still open: Samsung Back / Recents + notification Cancel / tap; real adapters (TCP / WS / BLE — BLE abort unverified); a
+  real decimal-comma-phone export; parked checks for #205–#208; DTC replies from real modules (3-byte record layout
+  unverified); decision: should a cancel survive process death (Recents dismissal after cancel → cold start
+  auto-connects)? Follow-ups seen, not changed: false "Point flush failed" warning on drive stop (points are written),
+  20 s silent-adapter hold. PRs (feature/rc7 → staging, fix/sapphire-row-validation → main); rc.7 tag.
   Separate: Sapphire map tiles, `docs/thermal-thresholds` PR, cleanup, stable promotion.
 
 **rc.6 publication record (2026-10-28 UTC; evidence `~/Documents/openRS_-evidence/rc6-release-2026-10-27/PUBLISHED.txt`):**
