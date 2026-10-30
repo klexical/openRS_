@@ -47,7 +47,8 @@ import com.openrs.dash.ui.anim.pageEntrance
  */
 private val versionHighlights: Map<String, List<String>> = mapOf(
     "2.2.7" to listOf(
-        "Changed: the boost gauge shows throttle-inlet pressure above measured air pressure, labelled TIP, while the engine runs; otherwise the car's CAN boost signal, labelled BOOST. The two are kept apart in peaks, recordings and exports. No current reading shows — (never a held or default value). Which pressure each signal measures on the car is not yet confirmed.",
+        "Changed: the pressure gauge shows throttle-inlet pressure above measured air pressure, labelled TIP, and — when TIP isn't current — never switches to another signal. Drives record TIP or, when TIP isn't current, the car's CAN boost signal, each named by its source; the two are kept apart in peaks, charts and exports. Which pressure each signal measures on the car is not yet confirmed.",
+        "Changed: AWD shows rear left / right torque; the front/rear percentage is withdrawn (it compared torque from different points of the drivetrain). DRIVE no longer shows a clutch-pedal card.",
         "Fixed: SPARK and throttle angle decode correctly (negative spark advance kept; throttle angle no longer 6.25× too high), and polled values that stop refreshing are marked STALE instead of looking live.",
         "Fixed: an ECU rejection is counted only when it clearly belongs to one reading — an ambiguous one never stops a working reading.",
         "Cancel now holds until you tap connect again, even after the app is closed.",
