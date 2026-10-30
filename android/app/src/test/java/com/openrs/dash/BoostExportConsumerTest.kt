@@ -78,17 +78,20 @@ class BoostExportConsumerTest {
         assertTrue(legacy, legacy.contains("7.5 PSI (source not recorded)"))
     }
 
-    @Test fun `RaceChrono and TrackAddict — the one boost column carries one source, others and none stay empty`() {
-        fun boostCol(csv: String, header: String): List<String> {
-            val lines = csv.trim().lines(); val i = lines[0].split(",").indexOf(header)
-            return lines.drop(1).map { it.split(",")[i] }
+    @Test fun `RaceChrono and TrackAddict carry no pressure column — it could only say Boost — the summary says why`() {
+        // Follow-up 2026-10-29: the 2026-10-29 version wrote TIP into "Boost Pressure (psi)" / "Boost (PSI)"
+        for (csv in listOf(DriveExportBuilder.buildRaceChronoCsv(mixed), DriveExportBuilder.buildTrackAddictCsv(mixed))) {
+            val header = csv.lines()[0]
+            assertFalse(header, header.contains("Boost", ignoreCase = true))
+            assertEquals(header.split(",").size, csv.lines()[1].split(",").size)
         }
-        // Drive peak is TIP → TIP values only; CAN genuine zeros are another measurement → empty, NONE → empty
-        assertEquals(listOf("", "8.90", "", "3.10", ""), boostCol(DriveExportBuilder.buildRaceChronoCsv(mixed), "Boost Pressure (psi)"))
-        assertEquals(listOf("", "8.90", "", "3.10", ""), boostCol(DriveExportBuilder.buildTrackAddictCsv(mixed), "Boost (PSI)"))
-        // CAN-only drive: its genuine zeros are kept
-        val can = listOf(pt(0, 0.0, "CAN_0F8"), pt(1_000, 0.0, "CAN_0F8"))
-        assertEquals(listOf("0.00", "0.00"), boostCol(DriveExportBuilder.buildRaceChronoCsv(can), "Boost Pressure (psi)"))
+        val summary = DriveExportBuilder.buildSummary(drive(8.9, "TIP_033E", v3), mixed)
+        assertTrue(summary, summary.contains("RaceChrono / TrackAddict CSVs carry no pressure column"))
+        // the native drive CSV keeps every reading and its source
+        val native = DriveExportBuilder.buildCsv(mixed).lines().filter { it.isNotBlank() && !it.startsWith("#") }
+        val h = native[0].split(","); val iB = h.indexOf("boost_psi"); val iS = h.indexOf("boost_source")
+        assertEquals(listOf("0.000" to "CAN_0F8", "8.900" to "TIP_033E", "" to "NONE", "3.100" to "TIP_033E", "0.000" to "CAN_0F8"),
+            native.drop(1).map { it.split(",").let { r -> r[iB] to r[iS] } })
     }
 
     @Test fun `GPX — each boost value names its source`() {

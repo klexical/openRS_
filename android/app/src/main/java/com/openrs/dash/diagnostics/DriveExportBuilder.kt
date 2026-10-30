@@ -219,6 +219,8 @@ internal object DriveExportBuilder {
             else -> if (drive.boostPolicy == null) "${"%.1f".format(drive.peakBoostPsi)} PSI (source not recorded)"
                     else "— (no boost reading recorded)"
         })
+        appendLine("  Track files : RaceChrono / TrackAddict CSVs carry no pressure column — their only one is named \"Boost\", " +
+            "which can't say TIP or a missing source; the drive CSV has every reading with its source")
         appendLine("  Boost source: " + when (drive.boostPolicy) {
             null -> "not recorded — this drive predates per-reading boost provenance (values as recorded)"
             "rc7-boost-v2" -> "per reading (rc7-boost-v2, development builds only): CAN 0x0F8 while fresh unless judged " +
@@ -644,11 +646,12 @@ internal object DriveExportBuilder {
      * G-forces in g, temps in °C. Custom OBD channels use the rc_ prefix.
      */
     fun buildRaceChronoCsv(points: List<DrivePointEntity>): String = buildString {
-        val boostOf = singleSourceBoost(points)
+        // No pressure column (#207): the format's only one is "Boost Pressure", which can't name TIP or a missing
+        // source — the drive CSV carries every reading with its source (see the drive summary note)
         appendLine(
             "Timestamp (s),Latitude (deg),Longitude (deg),Speed (m/s),Speed (kph)," +
             "Lateral Acceleration (G),Longitudinal Acceleration (G)," +
-            "RPM (rpm),Throttle Position (%),Gear,Boost Pressure (psi)," +
+            "RPM (rpm),Throttle Position (%),Gear," +
             "Coolant Temp (C),Oil Temp (C),Brake Pressure"
         )
         if (points.isEmpty()) return@buildString
@@ -667,7 +670,6 @@ internal object DriveExportBuilder {
                 "${pt.rpm}," +
                 "${"%.1f".format(Locale.ROOT, pt.throttlePct)}," +
                 "${csvEscape(pt.gear)}," +
-                "${boostOf(pt)?.let { "%.2f".format(Locale.ROOT, it) } ?: ""}," +
                 "${"%.1f".format(Locale.ROOT, pt.coolantTempC)}," +
                 "${"%.1f".format(Locale.ROOT, pt.oilTempC)}," +
                 "${"%.1f".format(Locale.ROOT, pt.brakePressure)}"
@@ -681,10 +683,10 @@ internal object DriveExportBuilder {
      * Speed in MPH, G-forces in g, temps in °F (TrackAddict convention).
      */
     fun buildTrackAddictCsv(points: List<DrivePointEntity>): String = buildString {
-        val boostOf = singleSourceBoost(points)
+        // No pressure column (#207) — as RaceChrono
         appendLine(
             "Time,Latitude,Longitude,Speed (MPH),Lateral Gs,Lineal Gs," +
-            "RPM,Throttle (%),Gear,Boost (PSI)," +
+            "RPM,Throttle (%),Gear," +
             "Coolant Temp (F),Oil Temp (F),Brake"
         )
         if (points.isEmpty()) return@buildString
@@ -704,27 +706,10 @@ internal object DriveExportBuilder {
                 "${pt.rpm}," +
                 "${"%.1f".format(Locale.ROOT, pt.throttlePct)}," +
                 "${csvEscape(pt.gear)}," +
-                "${boostOf(pt)?.let { "%.2f".format(Locale.ROOT, it) } ?: ""}," +
                 "${"%.1f".format(Locale.ROOT, coolantF)}," +
                 "${"%.1f".format(Locale.ROOT, oilF)}," +
                 "${"%.1f".format(Locale.ROOT, pt.brakePressure)}"
             )
-        }
-    }
-
-    /**
-     * Third-party track files have one boost column and no source (#207): it carries only the drive peak's measurement
-     * ([com.openrs.dash.data.StoredBoost.primarySource]) — other sources' points and points without a reading stay
-     * empty, never merged into one series. Points from before sources were stored: as recorded.
-     */
-    private fun singleSourceBoost(points: List<DrivePointEntity>): (DrivePointEntity) -> Double? {
-        val source = com.openrs.dash.data.StoredBoost.primarySource(points)
-        return { pt ->
-            when (val b = com.openrs.dash.data.StoredBoost.point(pt)) {
-                is com.openrs.dash.data.StoredBoost.Reading -> b.psi.takeIf { b.source == source }
-                is com.openrs.dash.data.StoredBoost.Legacy -> b.psi
-                com.openrs.dash.data.StoredBoost.Unavailable -> null
-            }
         }
     }
 

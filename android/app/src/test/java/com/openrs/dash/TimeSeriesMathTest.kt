@@ -43,4 +43,29 @@ class TimeSeriesMathTest {
     fun `range is null when nothing is valid`() {
         assertNull(TimeSeriesMath.sharedRange(listOf(listOf(-1f, -1f) to listOf(false, false))))
     }
+    // ── Pressure channels (#207 follow-up): a sample without a reading of the channel's own source breaks the line ──
+
+    @Test
+    fun `pressure channel breaks at every unavailable or other-source sample, even a short one`() {
+        // TIP, TIP, CAN, TIP, NONE, TIP at 1 Hz — the TIP line must not bridge the CAN or NONE second
+        val ts = listOf(0L, 1_000L, 2_000L, 3_000L, 4_000L, 5_000L)
+        val tipValid = listOf(true, true, false, true, false, true)
+        assertEquals(listOf(listOf(0, 1), listOf(3), listOf(5)),
+            TimeSeriesMath.segments(ts, tipValid, breakOnInvalid = true))
+        assertEquals("other channels keep bridging short gaps", listOf(listOf(0, 1, 3, 5)), TimeSeriesMath.segments(ts, tipValid))
+    }
+
+    @Test
+    fun `downsampling keeps the boundary — a bucket with any unavailable sample is unavailable for pressure`() {
+        // 12 samples into 6 buckets (stride 2): the stride sampler kept indices 0,2,4,6,8,10 and dropped the CAN sample at 3
+        val tipValid = listOf(true, true, true, false, true, true, true, true, true, true, true, true)
+        val buckets = TimeSeriesMath.buckets(tipValid.size, 6)
+        assertEquals(listOf(0, 2, 4, 6, 8, 10), buckets.map { it.first })
+        val bucketValid = TimeSeriesMath.bucketValidity(buckets, tipValid, breakOnInvalid = true)
+        assertEquals(listOf(true, false, true, true, true, true), bucketValid)
+        assertEquals("other channels: the representative sample decides, as before",
+            listOf(true, true, true, true, true, true), TimeSeriesMath.bucketValidity(buckets, tipValid, breakOnInvalid = false))
+        val ts = buckets.map { it.first * 1_000L }
+        assertEquals(listOf(listOf(0), listOf(2, 3, 4, 5)), TimeSeriesMath.segments(ts, bucketValid, breakOnInvalid = true))
+    }
 }

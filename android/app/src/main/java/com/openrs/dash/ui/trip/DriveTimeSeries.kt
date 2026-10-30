@@ -62,6 +62,7 @@ import com.openrs.dash.ui.textMutedAlpha
  * @param dashed draw as a dashed line (used for a target overlaid on its actual)
  * @param valid  false for absent / sentinel samples — skipped, not plotted as values
  * @param sparse polled channel: no area fill, chip hidden when the drive has no valid data
+ * @param breakOnInvalid pressure channels (#207): never bridge an unavailable / other-source sample, through downsampling
  */
 private data class Channel(
     val label: String,
@@ -69,6 +70,7 @@ private data class Channel(
     val axis: String? = null,
     val dashed: Boolean = false,
     val sparse: Boolean = false,
+    val breakOnInvalid: Boolean = false,
     val valid: (DrivePointEntity) -> Boolean = { true },
     val extract: (DrivePointEntity) -> Double
 )
@@ -78,8 +80,9 @@ private val CHANNELS = listOf(
     Channel("RPM",    { Warn })    { it.rpm.toDouble() },
     // #207: one line per measurement — CAN 0x0F8 (BOOST; also points recorded before sources were stored, as
     // recorded) and TIP − baro (TIP). A point with no reading, or another source's, is a gap — never 0, never joined.
-    Channel("BOOST",  { Ok }, axis = "boost", valid = { it.boostSource == null || it.boostSource == "CAN_0F8" }) { it.boostPsi },
-    Channel("TIP",    { Accent }, axis = "boost", valid = { it.boostSource == "TIP_033E" }) { it.boostPsi },
+    Channel("BOOST",  { Ok }, axis = "boost", breakOnInvalid = true,
+        valid = { it.boostSource == null || it.boostSource == "CAN_0F8" }) { it.boostPsi },
+    Channel("TIP",    { Accent }, axis = "boost", breakOnInvalid = true, valid = { it.boostSource == "TIP_033E" }) { it.boostPsi },
     Channel("OIL",    { Orange }, valid = { it.oilTempC > -90.0 }) { it.oilTempC },  // -99 = not yet received
     Channel("G-LAT",  { Frost })   { it.lateralG },
     Channel("THRTL",  { Dim })     { it.throttlePct },
@@ -102,12 +105,6 @@ private data class ChannelData(
     val range: Pair<Float, Float>
 )
 
-/** Downsample a list to at most [maxPoints] entries using stride-based sampling. */
-private fun <T> downsample(data: List<T>, maxPoints: Int): List<T> {
-    if (data.size <= maxPoints) return data
-    val stride = data.size.toFloat() / maxPoints
-    return List(maxPoints) { i -> data[(i * stride).toInt().coerceAtMost(data.lastIndex)] }
-}
 
 @Composable
 fun DriveTimeSeries(
@@ -169,7 +166,9 @@ fun DriveTimeSeries(
         }
 
         // ── Chart area ──────────────────────────────────────────────────
-        val sampled = remember(points) { downsample(points, 360) }
+        // Buckets of at most 360 drawn samples; pressure channels judge validity over the whole bucket (#207)
+        val buckets = remember(points) { TimeSeriesMath.buckets(points.size, 360) }
+        val sampled = remember(points) { buckets.map { points[it.first] } }
         val dataWidthDp = (sampled.size * 2).dp
 
         val textMeasurer = rememberTextMeasurer()
@@ -190,7 +189,8 @@ fun DriveTimeSeries(
             val visible = activeIndices.filter { available[it] }
             val extracted = visible.associateWith { idx ->
                 val ch = CHANNELS[idx]
-                sampled.map { ch.extract(it).toFloat() } to sampled.map { ch.valid(it) }
+                sampled.map { ch.extract(it).toFloat() } to
+                    TimeSeriesMath.bucketValidity(buckets, points.map { ch.valid(it) }, ch.breakOnInvalid)
             }
             visible.mapNotNull { idx ->
                 val ch = CHANNELS[idx]
@@ -199,7 +199,7 @@ fun DriveTimeSeries(
                             else visible.filter { CHANNELS[it].axis == ch.axis }
                 val range = TimeSeriesMath.sharedRange(group.map { extracted.getValue(it) })
                     ?: return@mapNotNull null
-                ChannelData(idx, values, TimeSeriesMath.segments(timestamps, valid), range)
+                ChannelData(idx, values, TimeSeriesMath.segments(timestamps, valid, breakOnInvalid = ch.breakOnInvalid), range)
             }
         }
 

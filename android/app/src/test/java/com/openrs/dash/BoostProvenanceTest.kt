@@ -66,7 +66,20 @@ class BoostProvenanceTest {
         val events = listOf(knock(8.0, "TIP_033E"), knock(0.0, "NONE"), knock(0.0, "CAN_0F8"), knock(3.0, null))
         val axis = KnockScatterMath.axisSource(events)
         assertEquals(BoostSource.TIP_033E, axis)
-        assertEquals(listOf(true, false, false, true), events.map { KnockScatterMath.plotted(it, axis) })
+        // Follow-up 2026-10-29: the legacy event (source not recorded) is no longer drawn on the TIP axis
+        assertEquals(listOf(true, false, false, false), events.map { KnockScatterMath.plotted(it, axis) })
         assertEquals(StoredBoost.Unavailable, KnockScatterMath.boost(events[1]))
+        assertEquals("3 not plotted: 1 no pressure reading · 1 other pressure source · 1 source not recorded",
+            KnockScatterMath.notPlottedNote(events, axis))
+        assertEquals("TIP psi", KnockScatterMath.axisTitle(axis, "psi"))
+        // Tap selection follows the same rule: a tap on the legacy event's position finds nothing on a TIP axis
+        val plot = KnockScatterMath.plot(1000f, 600f)
+        val (lx, ly) = KnockScatterMath.project(events[3], plot, 0f, 7000f, -15f, 22f)
+        assertNull(KnockScatterMath.nearest(listOf(events[3], events[0]), lx, ly, plot, 4f, 0f, 7000f, -15f, 22f))
+        // Only legacy events (an older drive): they share a "source not recorded" axis
+        val legacyOnly = listOf(knock(3.0, null), knock(5.0, null))
+        assertEquals(null, KnockScatterMath.axisSource(legacyOnly))
+        assertEquals(listOf(true, true), legacyOnly.map { KnockScatterMath.plotted(it, null) })
+        assertEquals("psi · SRC N/R", KnockScatterMath.axisTitle(null, "psi"))
     }
 }

@@ -140,8 +140,8 @@ fun KnockScatter(
         )
         // #207: the axis plots one measurement, named in the title; events without a reading are not drawn
         val axisSource = KnockScatterMath.axisSource(events)
-        val yTitle = textMeasurer.measure((if (axisSource == com.openrs.dash.data.BoostSource.TIP_033E) "TIP " else "") +
-            knockBoostUnit(p), axisStyle.copy(fontWeight = FontWeight.Medium))
+        val yTitle = textMeasurer.measure(KnockScatterMath.axisTitle(axisSource, knockBoostUnit(p)),
+            axisStyle.copy(fontWeight = FontWeight.Medium))
         drawText(
             textLayoutResult = yTitle,
             topLeft = Offset(plotLeft - yTitle.size.width - 4f, (plotTop - yTitle.size.height - 4f).coerceAtLeast(0f))
@@ -163,11 +163,13 @@ fun KnockScatter(
                 center = Offset(x, y)
             )
         }
-        selected?.let { events.getOrNull(it) }?.let { ev ->
+        selected?.let { events.getOrNull(it) }?.takeIf { KnockScatterMath.plotted(it, axisSource) }?.let { ev ->
             val (x, y) = KnockScatterMath.project(ev, plot, rpmMin, rpmMax, boostMin, boostMax)
             drawCircle(color = ringColor, radius = 9f, center = Offset(x, y), style = Stroke(width = 1.5f))
         }
     }
+    // Events left off the plane, and why (#207): no reading, another pressure source, or source not recorded
+    KnockScatterMath.notPlottedNote(events, KnockScatterMath.axisSource(events))?.let { InstrumentMeta(it) }
 }
 
 private const val TAP_RADIUS_DP = 16

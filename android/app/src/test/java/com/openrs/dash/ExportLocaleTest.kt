@@ -87,7 +87,7 @@ class ExportLocaleTest {
         assertEquals("$loc", 100.25, rc.getValue("Speed (kph)").toDouble(), 0.01)
         val ta = row(DriveExportBuilder.buildTrackAddictCsv(listOf(point)))
         assertEquals("$loc", 13.404954, ta.getValue("Longitude").toDouble(), 1e-6)
-        assertEquals("$loc", 15.75, ta.getValue("Boost (PSI)").toDouble(), 0.01)
+        assertTrue("$loc", "Boost (PSI)" !in ta.keys)                               // pressure column removed (#207)
     }
 
     @Test fun `GPX parses as XML with numeric fields in every locale`() = eachLocale { loc ->

@@ -45,11 +45,36 @@ internal object KnockScatterMath {
     fun axisSource(events: List<KnockEventEntity>): BoostSource? =
         events.mapNotNull { boost(it) as? StoredBoost.Reading }.maxByOrNull { it.psi }?.source
 
-    /** Drawn on the RPM × boost plane: a reading of [axisSource], or a legacy value; never "no reading" as 0. */
+    /**
+     * Drawn on the RPM × pressure plane: a reading of [axisSource] only. Events whose source wasn't recorded are drawn
+     * only on a "source not recorded" axis ([axisSource] null) — never mixed onto a TIP or CAN axis; "no reading" is
+     * never drawn (as 0 or otherwise).
+     */
     fun plotted(ev: KnockEventEntity, axisSource: BoostSource?): Boolean = when (val b = boost(ev)) {
         is StoredBoost.Reading -> b.source == axisSource
-        is StoredBoost.Legacy -> true
+        is StoredBoost.Legacy -> axisSource == null
         StoredBoost.Unavailable -> false
+    }
+
+    /** The y-axis title: which pressure it plots. */
+    fun axisTitle(axisSource: BoostSource?, unit: String): String = when (axisSource) {
+        BoostSource.TIP_033E -> "TIP $unit"
+        BoostSource.CAN_0F8 -> "BOOST $unit"
+        else -> "$unit · SRC N/R"
+    }
+
+    /** Why some events aren't on the plot, or null when all are. */
+    fun notPlottedNote(events: List<KnockEventEntity>, axisSource: BoostSource?): String? {
+        val left = events.filterNot { plotted(it, axisSource) }
+        if (left.isEmpty()) return null
+        val none = left.count { boost(it) == StoredBoost.Unavailable }
+        val legacy = left.count { boost(it) is StoredBoost.Legacy }
+        val other = left.size - none - legacy
+        return "${left.size} not plotted: " + listOfNotNull(
+            none.takeIf { it > 0 }?.let { "$it no pressure reading" },
+            other.takeIf { it > 0 }?.let { "$it other pressure source" },
+            legacy.takeIf { it > 0 }?.let { "$it source not recorded" },
+        ).joinToString(" · ")
     }
 
     /** Index of the event nearest the tap within [radiusPx], or null. Ties → worst KR. Only [plotted] events. */
