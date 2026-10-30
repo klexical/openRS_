@@ -87,6 +87,7 @@ class DemoSimulatorTest {
             assertNull(sc.name, vs.warnTempHigh)
             assertNull(sc.name, vs.warnCharge)
             assertEquals(sc.name, 0, vs.gear)                     // 0x230 never broadcasts — derivedGear only
+            assertEquals(sc.name, 0.0, vs.awdMaxTorque, 0.0)      // 0x2C0 has no "max" field (#226)
         }
     }
 

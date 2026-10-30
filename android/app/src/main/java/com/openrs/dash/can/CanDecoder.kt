@@ -90,7 +90,7 @@ object CanDecoder {
     // RS_HS.dbc ABSmsg03 (0x190): FL/FR/RL/RR wheel speeds — 15-bit Motorola × 0.011343006 km/h
     const val ID_WHEEL_SPEEDS = 0x190
     const val ID_GEAR         = 0x230   // Gear bits 0-3
-    const val ID_AWD_TORQUE   = 0x2C0   // AWD left/right Nm (bits 0|12, 12|12)
+    const val ID_AWD_TORQUE   = 0x2C0   // AWD actual left/right Nm (RS_HS.dbc AWDmsg02, MSB-first 20|12, 52|12)
     // RS_HS.dbc PCMmsg16 (0x2F0): CoolantTemp 10-bit Motorola −60°C, IntakeAirTemp 10-bit ×0.25−127°C
     const val ID_COOLANT      = 0x2F0
 
@@ -449,19 +449,23 @@ object CanDecoder {
                 lastUpdate   = now
             ) else null
 
-            // ── 0x2C0: AWD / GKN Twinster torque ─────────────────────────────────
-            // Torque vectoring left/right Nm. RDU temp is NOT in this passive frame —
-            // it is polled via AWD module Mode 22 PID 0x1E8A (see SlcanConnection).
-            ID_AWD_TORQUE -> if (n >= 7) {
-                var left  = bits(data, 0,  12).toDouble()
-                var right = bits(data, 12, 12).toDouble()
+            // ── 0x2C0: AWD / GKN Twinster torque (#226) ──────────────────────────
+            // RS_HS.dbc AWDmsg02: four 12-bit Motorola signals, one per big-endian 16-bit word —
+            //   TorqueVectoringRequestedLeftTorq 3|12, ActualLeftTorque 19|12,
+            //   RequestedRightTor 35|12, ActualRightTorque 51|12 ("Nm", factor 1)
+            // = MSB-first bits 4–15 / 20–31 / 36–47 / 52–63. On the 2026-10-28 drives (4,374 non-zero frames) no bit
+            // was ever set outside those fields and requested ≈ actual (r 0.97). Until rc.7 this read bits 0|12 and
+            // 12|12, which straddle the requested-left and actual-left words ("right" was always a multiple of 256),
+            // plus an undocumented 43|13 "max" spanning both right-hand fields — retired. Which point of the
+            // drivetrain the Nm refers to is not documented. RDU temp is NOT in this frame (AWD DID 0x1E8A).
+            ID_AWD_TORQUE -> if (n >= 8) {
+                var left  = bits(data, 20, 12).toDouble()
+                var right = bits(data, 52, 12).toDouble()
                 if (left  >= 0xFFE) left  = 0.0
                 if (right >= 0xFFE) right = 0.0
-                val maxRaw = bits(data, 43, 13)
                 state.copy(
                     awdLeftTorque  = left,
                     awdRightTorque = right,
-                    awdMaxTorque   = if (maxRaw > 0) maxRaw.toDouble() else 0.0,
                     lastUpdate     = now
                 )
             } else null
@@ -741,7 +745,7 @@ object CanDecoder {
 
     /**
      * MSB-first network bit extraction (bit 0 = MSB of byte 0).
-     * Correct for RS_HS.dbc signals written with this convention (torque, ESC, AWD torque).
+     * RS_HS.dbc Motorola start bit S (LSB numbering) = MSB-first index (S / 8) * 8 + 7 − S % 8 (torque, ESC, AWD torque).
      * NOT correct for signals using standard DBC LSB-first Motorola numbering (yaw, steer,
      * brake, coolant, latG) — those use manual byte extraction with the &-mask/shift pattern.
      */

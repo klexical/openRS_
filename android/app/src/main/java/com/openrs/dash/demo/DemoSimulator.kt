@@ -420,7 +420,7 @@ object DemoSimulator {
             wheelSpeedRL = wheel(-0.03 * m.latG), wheelSpeedRR = wheel(0.03 * m.latG),
             avgFrontWheelSpeedKph = m.speedKph,
             awdLeftTorque = rearTotal * (1 - bias), awdRightTorque = rearTotal * bias,
-            rduTempC = if (obd) m.rduC else -99.0, awdMaxTorque = 1_200.0,
+            rduTempC = if (obd) m.rduC else -99.0,
             ptuTempC = m.ptuC,
             awdClutchTempL = m.clutchC, awdClutchTempR = m.clutchC + 1.5,
             awdReqTorqueL = rearTotal * (1 - bias), awdReqTorqueR = rearTotal * bias,

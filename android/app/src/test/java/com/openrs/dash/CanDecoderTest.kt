@@ -435,33 +435,37 @@ class CanDecoderTest {
 
     // ── 0x2C0: AWD Torque ───────────────────────────────────────────────────
 
+    // Real 0x2C0 payloads from the 2026-10-28 PM drive (#226). Expected values are RS_HS.dbc's ActualLeftTorque 19|12@0
+    // and ActualRightTorque 51|12@0, computed with a separate Motorola decoder over the raw log (evidence script), not
+    // with this decoder's bit helper. Layout evidence: no bit set outside the four DBC fields in 4,374 non-zero frames.
+    private val awdFrames = listOf(
+        "001F001D001E001D" to (29.0 to 29.0),
+        "002C002B002C002B" to (43.0 to 43.0),
+        "0044004400440045" to (68.0 to 69.0),
+        "00570057004E004D" to (87.0 to 77.0),
+        "0088008E009B009C" to (142.0 to 156.0),
+        "03B603F903CC0427" to (1017.0 to 1063.0),
+    )
+
     @Test
-    fun `decode AWD torque`() {
-        // left = bits(0,12), right = bits(12,12)
-        // left 200 Nm, right 150 Nm
-        // bits 0..11 = 200 = 0x0C8 -> byte0 = 0x0C, byte1 high nibble = 0x8
-        // bits 12..23 = 150 = 0x096 -> byte1 low nibble = 0x0, byte2 = 0x96... no wait.
-        // MSB-first bit extraction. bit 0 = MSB of byte 0.
-        // 200 in 12 bits = 0x0C8 = 0b000011001000
-        // 150 in 12 bits = 0x096 = 0b000010010110
-        // bits 0-11: 000011001000 -> byte0 = 00001100 = 0x0C, byte1 high 4 = 1000 = 0x8
-        // bits 12-23: 000010010110 -> byte1 low 4 = 0000 = 0x0, byte2 = 10010110 = 0x96
-        // So: byte0 = 0x0C, byte1 = 0x80, byte2 = 0x96
-        val data = byteArrayOf(0x0C, 0x80.toByte(), 0x96.toByte(), 0x00, 0x00, 0x00, 0x00, 0x00)
-        val result = CanDecoder.decode(0x2C0, data, blank)
-        assertNotNull(result)
-        assertEquals(200.0, result!!.awdLeftTorque, 1.0)
-        assertEquals(150.0, result.awdRightTorque, 1.0)
+    fun `decode AWD torque — actual left and right from recorded frames`() {
+        for ((hex, lr) in awdFrames) {
+            val data = ByteArray(8) { hex.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
+            val result = CanDecoder.decode(0x2C0, data, blank)!!
+            assertEquals(hex, lr.first, result.awdLeftTorque, 0.01)
+            assertEquals(hex, lr.second, result.awdRightTorque, 0.01)
+            // the old 12|12 read gave 3840 / 3072 / 1024 … — a byte-boundary artefact, never a multiple of 256 here
+            assertTrue(hex, result.awdRightTorque < 256.0 || result.awdRightTorque % 256.0 != 0.0)
+            assertEquals("no undocumented max field", 0.0, result.awdMaxTorque, 0.0)
+        }
     }
 
     @Test
-    fun `decode AWD torque sentinel zeros out`() {
-        // 0xFFE or higher -> 0.0
-        // bits 0-11 = 0xFFF = all 1s -> byte0 = 0xFF, byte1 high 4 = 0xF
-        val data = byteArrayOf(0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte(), 0x00, 0x00, 0x00, 0x00, 0x00)
-        val result = CanDecoder.decode(0x2C0, data, blank)
-        assertNotNull(result)
-        assertEquals(0.0, result!!.awdLeftTorque, 0.01)
+    fun `decode AWD torque — short frame is not decoded, 0xFFE+ in an actual field reads 0`() {
+        assertNull(CanDecoder.decode(0x2C0, ByteArray(7), blank))
+        val data = byteArrayOf(0x00, 0x10, 0x0F, 0xFF.toByte(), 0x00, 0x10, 0x0F, 0xFE.toByte())
+        val result = CanDecoder.decode(0x2C0, data, blank)!!
+        assertEquals(0.0, result.awdLeftTorque, 0.01)
         assertEquals(0.0, result.awdRightTorque, 0.01)
     }
 
