@@ -744,7 +744,7 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
     }
 }
 
-/** AWD split + per-frame dynamics in one panel (was a split card + three separate cells). */
+/** AWD rear torque + per-frame dynamics in one panel (was a split card + three separate cells). */
 @Composable private fun ChassisPanel(vs: VehicleState, stale: Boolean) {
     Column(
         Modifier.fillMaxWidth()
@@ -752,14 +752,13 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
             .padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            InstrumentLabel("AWD SPLIT")
+            // Rear-unit torque left vs right (0x2C0). No front/rear %: rear Nm ÷ engine torque isn't a physical split (#226)
+            InstrumentLabel("AWD REAR TORQUE")
             Spacer(Modifier.weight(1f))
-            InstrumentMeta(
-                if (stale) "L — · R — Nm" else "L ${vs.awdLeftTorque.roundToInt()} · R ${vs.awdRightTorque.roundToInt()} Nm"
-            )
+            InstrumentMeta("L / R · Nm")
         }
         Spacer(Modifier.height(8.dp))
-        AwdSplitBar(vs, stale)
+        AwdRearTorqueBar(vs, stale)
         Spacer(Modifier.height(12.dp))
         Box(Modifier.fillMaxWidth().height(1.dp).background(Brd.copy(alpha = borderAlpha(0.4f))))
         Spacer(Modifier.height(10.dp))
@@ -771,13 +770,17 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
     }
 }
 
-/** Front/rear split bar. [stale]: no live split — dashes and an empty track, not a fake 100 / 0. */
-@Composable fun AwdSplitBar(vs: VehicleState, stale: Boolean = false) {
+/**
+ * Rear-unit torque, left vs right (both 0x2C0 actual fields — the same signal, same reference point): Nm at each end
+ * and their share of the rear total as a bar. No front/rear figure (#226). [stale]: dashes and an empty track.
+ */
+@Composable fun AwdRearTorqueBar(vs: VehicleState, stale: Boolean = false) {
     val accent = LocalThemeAccent.current
-    val rearColor = accentMid()
-    val rearPct  = vs.rearTorquePct.coerceIn(0.0, 100.0).toFloat()
-    val frontPct = (100f - rearPct).coerceIn(0.01f, 99.99f)
-    val rearF    = rearPct.coerceIn(0.01f, 99.99f)
+    val rightColor = accentMid()
+    val total = vs.totalRearTorque
+    val leftShare = if (total > 0.5) (vs.awdLeftTorque / total).toFloat() else 0.5f
+    val leftW = leftShare.coerceIn(0.01f, 0.99f)
+    val rightW = (1f - leftShare).coerceIn(0.01f, 0.99f)
 
     val torqueDelta = kotlin.math.abs(vs.awdLeftTorque - vs.awdRightTorque).toFloat()
     val flowSpeed = (2000 - (torqueDelta * 10).toInt().coerceIn(0, 1200)).coerceIn(800, 2000)
@@ -789,34 +792,33 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
 
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column {
-            MonoLabel("FRONT", 9.sp, Dim, letterSpacing = 0.3.sp)
-            DataNum(if (stale) "—" else "${(100 - rearPct).roundToInt()}%", 18.sp, if (stale) Dim else Frost)
+            MonoLabel("LEFT", 9.sp, Dim, letterSpacing = 0.3.sp)
+            DataNum(if (stale) "—" else "${vs.awdLeftTorque.roundToInt()}", 18.sp, if (stale) Dim else Frost)
         }
         Box(Modifier.weight(1f).padding(horizontal = 12.dp).height(8.dp)) {
-            if (!stale) Row(Modifier.matchParentSize().background(Surf3, RoundedCornerShape(4.dp))) {
-                Box(Modifier.weight(frontPct).fillMaxHeight()
+            if (!stale && total > 0.5) Row(Modifier.matchParentSize().background(Surf3, RoundedCornerShape(4.dp))) {
+                Box(Modifier.weight(leftW).fillMaxHeight()
                     .background(accent, RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp)))
                 Spacer(Modifier.width(2.dp))
-                Box(Modifier.weight(rearF).fillMaxHeight()
-                    .background(rearColor, RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)))
+                Box(Modifier.weight(rightW).fillMaxHeight()
+                    .background(rightColor, RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)))
             }
             else Box(Modifier.matchParentSize().background(Surf3, RoundedCornerShape(4.dp)))
-            if (!stale && vs.totalRearTorque > 5) {
-                // V6: dot count scales with torque intensity
-                val totalTorque = vs.totalRearTorque.toFloat()
+            if (!stale && total > 5) {
+                // V6: dot count scales with torque intensity, flowing towards the side with more torque
                 val dotCount = when {
-                    totalTorque > 800 -> 5
-                    totalTorque > 400 -> 4
-                    totalTorque > 100 -> 3
+                    total > 800 -> 5
+                    total > 400 -> 4
+                    total > 100 -> 3
                     else -> 2
                 }
                 val dotColor = Frost
                 Canvas(Modifier.matchParentSize()) {
                     val dotRadius = 1.6.dp.toPx()
-                    val rearDominant = rearPct > 55f
+                    val rightDominant = leftShare < 0.45f
                     for (i in 0 until dotCount) {
                         val phase = (flowProgress + i.toFloat() / dotCount) % 1f
-                        val x = if (rearDominant) size.width * (1f - phase) else size.width * phase
+                        val x = if (rightDominant) size.width * phase else size.width * (1f - phase)
                         val dotAlpha = (0.5f * (1f - kotlin.math.abs(phase - 0.5f) * 2f)).coerceIn(0f, 0.5f)
                         drawCircle(dotColor.copy(alpha = dotAlpha), dotRadius, Offset(x, size.height / 2f))
                     }
@@ -824,8 +826,8 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
             }
         }
         Column(horizontalAlignment = Alignment.End) {
-            MonoLabel("REAR", 9.sp, Dim, letterSpacing = 0.3.sp)
-            DataNum(if (stale) "—" else "${rearPct.roundToInt()}%", 18.sp, if (stale) Dim else Frost)
+            MonoLabel("RIGHT", 9.sp, Dim, letterSpacing = 0.3.sp)
+            DataNum(if (stale) "—" else "${vs.awdRightTorque.roundToInt()}", 18.sp, if (stale) Dim else Frost)
         }
     }
 }

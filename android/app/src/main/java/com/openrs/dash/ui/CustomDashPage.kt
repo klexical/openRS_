@@ -292,6 +292,16 @@ private fun CustomGaugeCell(
     modifier: Modifier = Modifier
 ) {
     val accent = LocalThemeAccent.current
+    // A withdrawn reading kept in a saved layout: the cell stays, unavailable, with the reason (#226)
+    com.openrs.dash.data.WITHDRAWN_FIELDS[cell.fieldKey]?.let { reason ->
+        Column(modifier.instrumentSurface().padding(horizontal = 14.dp, vertical = 12.dp)) {
+            InstrumentLabel(cell.label)
+            Spacer(Modifier.height(2.dp))
+            DataNum("— —", 22.sp, Dim)
+            InstrumentMeta(reason)
+        }
+        return
+    }
     val now = wallClockMs()   // a stalled link must still age readings out (#207 / #217)
     val (displayValue, rawValue) = resolveValue(vs, prefs, cell, now)
     val boost = if (cell.fieldKey == "boostKpa") com.openrs.dash.data.BoostSession.read(vs, now) else null

@@ -431,8 +431,11 @@ object AppSettings {
     }
 
     /** Load the persisted custom dashboard layout, or null if none saved. */
-    fun loadCustomDash(ctx: Context): DashLayout? {
-        val json = prefs(ctx).getString(KEY_CUSTOM_DASH, null) ?: return null
+    fun loadCustomDash(ctx: Context): DashLayout? =
+        prefs(ctx).getString(KEY_CUSTOM_DASH, null)?.let { parseCustomDash(it) }
+
+    /** A saved layout back — every cell kept as saved, including withdrawn readings (`WITHDRAWN_FIELDS`). */
+    internal fun parseCustomDash(json: String): DashLayout? {
         return try {
             val root = JSONObject(json)
             val arr = root.getJSONArray("cells")

@@ -482,7 +482,7 @@ internal object DiagnosticReportBuilder {
 }
 
 /** Serialize VehicleState to a JSONObject with full-precision numeric values. */
-private fun VehicleState.toJsonObject(): JSONObject = JSONObject().apply {
+internal fun VehicleState.toJsonObject(): JSONObject = JSONObject().apply {
     put("rpm", rpm)
     put("speedKph", speedKph)
     put("speedMph", speedKph * 0.621371)
@@ -518,7 +518,7 @@ private fun VehicleState.toJsonObject(): JSONObject = JSONObject().apply {
     put("tirePressRR", tirePressRR)
     put("awdLeftTorque", awdLeftTorque)
     put("awdRightTorque", awdRightTorque)
-    put("awdMaxTorque", awdMaxTorque)
+    // awdMaxTorque: retired (no DBC signal in 0x2C0, #226) — omitted, never exported as a measured 0
     put("rduTempC", rduTempC)
     put("ptuTempC", ptuTempC)
     put("calcLoad", calcLoad)

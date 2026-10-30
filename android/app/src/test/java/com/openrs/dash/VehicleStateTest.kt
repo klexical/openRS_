@@ -34,24 +34,6 @@ class VehicleStateTest {
     }
 
     @Test
-    fun `AWD split shows 100-0 with no rear torque`() {
-        val state = VehicleState(torqueAtTrans = 200.0, awdLeftTorque = 0.0, awdRightTorque = 0.0)
-        assertEquals("100/0", state.frontRearSplit)
-    }
-
-    @Test
-    fun `AWD split shows 50-50 with equal torque`() {
-        val state = VehicleState(torqueAtTrans = 200.0, awdLeftTorque = 50.0, awdRightTorque = 50.0)
-        assertEquals("50/50", state.frontRearSplit)
-    }
-
-    @Test
-    fun `AWD split shows 100-0 with zero trans torque`() {
-        val state = VehicleState(torqueAtTrans = 0.0, awdLeftTorque = 0.0, awdRightTorque = 0.0)
-        assertEquals("100/0", state.frontRearSplit)
-    }
-
-    @Test
     fun `rear left-right bias 50-50 with equal rear torque`() {
         val state = VehicleState(awdLeftTorque = 100.0, awdRightTorque = 100.0)
         assertEquals("50/50", state.rearLeftRightBias)

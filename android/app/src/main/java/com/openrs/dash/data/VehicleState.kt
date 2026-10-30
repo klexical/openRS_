@@ -271,15 +271,8 @@ data class VehicleState(
     val combinedG: Double get() = sqrt(lateralG * lateralG + longitudinalG * longitudinalG)
     val totalRearTorque: Double get() = awdLeftTorque + awdRightTorque
 
-    val rearTorquePct: Double get() {
-        if (torqueAtTrans <= 0) return 0.0
-        return min(100.0, totalRearTorque / torqueAtTrans * 100.0)
-    }
-
-    val frontRearSplit: String get() {
-        val r = rearTorquePct.toInt()
-        return "${100 - r}/$r"
-    }
+    // No front/rear split (#226): the rear-unit torque fields (0x2C0) and 0x070 engine torque sit at different, partly
+    // unknown points of the drivetrain — their ratio is not a physical split. Withdrawn until a reference is established.
 
     val rearLeftRightBias: String get() {
         val total = totalRearTorque

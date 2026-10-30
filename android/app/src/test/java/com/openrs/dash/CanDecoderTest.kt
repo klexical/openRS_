@@ -436,8 +436,10 @@ class CanDecoderTest {
     // ── 0x2C0: AWD Torque ───────────────────────────────────────────────────
 
     // Real 0x2C0 payloads from the 2026-10-28 PM drive (#226). Expected values are RS_HS.dbc's ActualLeftTorque 19|12@0
-    // and ActualRightTorque 51|12@0, computed with a separate Motorola decoder over the raw log (evidence script), not
-    // with this decoder's bit helper. Layout evidence: no bit set outside the four DBC fields in 4,374 non-zero frames.
+    // and ActualRightTorque 51|12@0 (excerpt + provenance: test resource dbc/RS_HS-AWDmsg02-excerpt.txt), computed with a
+    // separate Motorola decoder over the raw log (evidence script), not with this decoder's bit helper. That confirms the
+    // extraction arithmetic against the DBC — not what the Nm physically measure. Layout evidence: no bit set outside the
+    // four DBC fields in 4,374 non-zero frames.
     private val awdFrames = listOf(
         "001F001D001E001D" to (29.0 to 29.0),
         "002C002B002C002B" to (43.0 to 43.0),
@@ -457,6 +459,33 @@ class CanDecoderTest {
             // the old 12|12 read gave 3840 / 3072 / 1024 … — a byte-boundary artefact, never a multiple of 256 here
             assertTrue(hex, result.awdRightTorque < 256.0 || result.awdRightTorque % 256.0 != 0.0)
             assertEquals("no undocumented max field", 0.0, result.awdMaxTorque, 0.0)
+        }
+    }
+
+    /** DBC `start|length@0` (Motorola, start = MSB in LSB-first numbering) — the DBC's own definition, not CanDecoder.bits. */
+    private fun dbcMotorola(d: ByteArray, start: Int, len: Int): Int {
+        var v = 0; var b = start
+        repeat(len) {
+            val byte = b / 8; val bit = b % 8
+            v = (v shl 1) or ((d[byte].toInt() shr bit) and 1)
+            b = if (bit == 0) (byte + 1) * 8 + 7 else b - 1
+        }
+        return v
+    }
+
+    @Test
+    fun `decode AWD torque — matches the signal definitions in the committed RS_HS dbc excerpt`() {
+        // test resource dbc/RS_HS-AWDmsg02-excerpt.txt: source URL, download date, size + SHA-256 of the original file
+        val dbc = javaClass.classLoader!!.getResource("dbc/RS_HS-AWDmsg02-excerpt.txt")!!.readText()
+        fun sig(name: String): Pair<Int, Int> = Regex("""SG_ $name : (\d+)\|(\d+)@0\+ \(1,0\)""").find(dbc)!!
+            .destructured.let { (start, len) -> start.toInt() to len.toInt() }
+        val (ls, ll) = sig("TorqueVectoringActualLeftTorque")
+        val (rs, rl) = sig("TorqueVectoringActualRightTorque")
+        for ((hex, _) in awdFrames) {
+            val data = ByteArray(8) { hex.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
+            val result = CanDecoder.decode(0x2C0, data, blank)!!
+            assertEquals(hex, dbcMotorola(data, ls, ll).toDouble(), result.awdLeftTorque, 0.0)
+            assertEquals(hex, dbcMotorola(data, rs, rl).toDouble(), result.awdRightTorque, 0.0)
         }
     }
 

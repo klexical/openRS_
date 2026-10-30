@@ -42,7 +42,6 @@ val AVAILABLE_FIELDS = listOf(
     DashCell("shortFuelTrim", "number", "SHORT FT"),
     DashCell("longFuelTrim", "number", "LONG FT"),
     DashCell("oilLifePct", "number", "OIL LIFE"),
-    DashCell("rearTorquePct", "number", "REAR BIAS"),
     DashCell("torqueAtTrans", "number", "TORQUE"),
     DashCell("chargeAirTempC", "number", "CHARGE AIR"),
     DashCell("steeringAngle", "number", "STEER"),
@@ -53,6 +52,14 @@ val AVAILABLE_FIELDS = listOf(
 )
 
 private val fieldIndex = AVAILABLE_FIELDS.associateBy { it.fieldKey }
+
+/**
+ * Readings withdrawn from the picker but still in saved layouts: the cell stays (a user's configuration is never
+ * deleted) and reads "— —" with this explanation.
+ */
+val WITHDRAWN_FIELDS: Map<String, String> = mapOf(
+    "rearTorquePct" to "WITHDRAWN · rear ÷ engine torque isn't a physical split (#226)",
+)
 
 /** Look up the default DashCell definition for a field key. */
 fun defaultCellFor(key: String): DashCell? = fieldIndex[key]
@@ -106,7 +113,7 @@ fun resolveValue(vs: VehicleState, prefs: UserPrefs, cell: DashCell, nowMs: Long
             if (vs.oilLifePct >= 0) "%.0f%%".format(vs.oilLifePct) to vs.oilLifePct
             else "\u2014 \u2014" to 0.0
         }
-        "rearTorquePct" -> "%.0f%%".format(vs.rearTorquePct) to vs.rearTorquePct
+        "rearTorquePct" -> "\u2014 \u2014" to 0.0          // withdrawn (#226) — see WITHDRAWN_FIELDS
         "torqueAtTrans" -> "%.0f Nm".format(vs.torqueAtTrans) to vs.torqueAtTrans
         "steeringAngle" -> "%.1f\u00B0".format(vs.steeringAngle) to vs.steeringAngle
         "yawRate" -> "%.1f".format(vs.yawRate) to vs.yawRate
