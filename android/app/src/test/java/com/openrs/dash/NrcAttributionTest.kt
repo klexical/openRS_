@@ -174,4 +174,20 @@ class NrcAttributionTest {
         assertFalse("0462 never sent an NRC (suppressed: ${suppressed.map { "%04X".format(it) }})", 0x0462 in suppressed)
         assertTrue("0462 kept being polled: ${ecu.sent[0x0462]}", (ecu.sent[0x0462] ?: 0) >= 10)
     }
+    @Test fun `after one lost reply NRCs stay uncounted for the connection — positives keep updating readings`() = runTest {
+        // Follow-up 2026-10-29: no timeout releases an unanswered request. 0462's first request gets no reply at all
+        // (lost); afterwards 03ED really rejects every request, but which request a 7F 22 answers can no longer be
+        // proven, so nothing is suppressed — the conservative cost is that 03ED keeps being polled. 0462 answers later
+        // requests and keeps being polled and decoded.
+        val ecu = run({ did, n ->
+            when {
+                did == 0x0462 && n == 1 -> Silent
+                did == 0x03ED -> Nrc(0x31, afterMs = 40L)
+                else -> Pos("0000")
+            }
+        }, seconds = 60)
+        assertEquals(emptySet<Int>(), DiagnosticLogger.nrcSuppressed.keys)
+        assertTrue("03ED still polled: ${ecu.sent[0x03ED]}", (ecu.sent[0x03ED] ?: 0) >= 10)
+        assertTrue("0462 still polled: ${ecu.sent[0x0462]}", (ecu.sent[0x0462] ?: 0) >= 10)
+    }
 }

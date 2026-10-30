@@ -232,15 +232,7 @@ class NrcTrackerTest {
     }
 
     @Test
-    fun `ledger — response pending keeps a lone request attributable past the normal age`() {
-        val l = PcmRequestLedger(maxAgeMs = 2_000L)
-        l.sent(0x03EE, 0)
-        l.pending(50)
-        assertEquals(0x03EE, l.negative(4_000))                       // only A could own it (P2* extends its wait)
-    }
-
-    @Test
-    fun `ledger — an expired request blocks attribution until a late answer resolves it or the hold ends`() {
+    fun `ledger — an unanswered request blocks attribution until its own positive reply, never until a time passes`() {
         val l = PcmRequestLedger(maxAgeMs = 2_000L)
         l.sent(0x0A0A, 0)
         l.sent(0x0B0B, 2_500)
@@ -250,8 +242,52 @@ class NrcTrackerTest {
         assertEquals(0x0B0B, l.negative(3_100))                       // only B (repeats) can own it now
         l.sent(0x0C0C, 4_000)                                         // C never answers
         assertNull(l.negative(6_200))                                 // C lapsed at 6 s: ambiguous
-        val holdOver = 6_000 + PcmRequestLedger.LAPSED_HOLD_MS + 1
-        l.sent(0x0D0D, holdOver - 500)
-        assertEquals(0x0D0D, l.negative(holdOver))                    // C's hold is over, D is alone
+        // The 2026-10-29 version released C after a 5 s hold and charged the next lone request; no hold any more
+        l.sent(0x0D0D, 60_000)
+        assertNull(l.negative(60_100))
+        assertNull(l.negative(600_000))
+        assertTrue(l.unresolved(600_000))
+    }
+
+    // ── Follow-up (2026-10-29 review): no time-based release of uncertainty at all ──
+
+    @Test
+    fun `ledger — A at 0, B at 6900, A's late NRC at 7101 is not charged to B (beyond the old 5 s hold)`() {
+        val l = PcmRequestLedger(maxAgeMs = 2_000L)
+        l.sent(0x0A0A, 0); l.sent(0x0B0B, 6_900)
+        assertEquals(listOf(0x0A0A, 0x0B0B), l.waiting(7_101))
+        assertNull(l.negative(7_101))
+    }
+
+    @Test
+    fun `ledger — repeated response-pending never lets a later request take the final NRC`() {
+        val l = PcmRequestLedger(maxAgeMs = 2_000L)
+        l.sent(0x0A0A, 0)
+        for (t in listOf(50L, 4_000L, 9_000L, 14_000L)) l.pending(t)  // 7F 22 78 again and again
+        l.sent(0x0B0B, 20_000)
+        assertNull(l.negative(20_100))
+        l.sent(0x0C0C, 39_000)                                        // long after every former hold: still A's?
+        assertNull(l.negative(39_100))
+    }
+
+    @Test
+    fun `ledger — a lone request that got response-pending owns the final NRC however late`() {
+        val l = PcmRequestLedger(maxAgeMs = 2_000L)
+        l.sent(0x03EE, 0)
+        l.pending(50)
+        assertEquals(0x03EE, l.negative(30_000))                      // it never lapses while pending, nothing else waits
+    }
+
+    @Test
+    fun `ledger — queue eviction leaves the session unresolved, later positives can't clear it`() {
+        val l = PcmRequestLedger(maxAgeMs = 2_000L)
+        for (i in 0 until 40) l.sent(0x1000 + i, i.toLong())          // 40 unanswered requests: 8 evicted
+        for (i in 0 until 40) l.positive(0x1000 + i)                   // every DID answers late
+        l.sent(0x0B0B, 100)
+        assertNull(l.negative(150))                                   // an evicted request could still own it
+        assertTrue(l.unresolved(150))
+        l.clear()                                                     // a new connection starts a new ledger
+        l.sent(0x0B0B, 200)
+        assertEquals(0x0B0B, l.negative(250))
     }
 }

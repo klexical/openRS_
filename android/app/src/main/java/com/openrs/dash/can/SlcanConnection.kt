@@ -430,17 +430,22 @@ class SlcanConnection(
                             val d = frame.second
                             if (d.size >= 4 && (d[1].toInt() and 0xFF) == 0x7F) {
                                 val nrcCode = d[3].toInt() and 0xFF
-                                // 0x78 = response pending: the real reply follows (up to P2*), the request is still outstanding
+                                // 0x78 = response pending: the real reply follows (no time bound assumed), still outstanding
                                 if ((d[2].toInt() and 0xFF) == 0x22 && nrcCode == NrcTracker.NRC_RESPONSE_PENDING) {
                                     pcmRequests.pending(clock())
                                 } else if ((d[2].toInt() and 0xFF) == 0x22) {
                                     val waiting = pcmRequests.waiting(clock())
+                                    val unresolved = pcmRequests.unresolved(clock())
                                     val did = pcmRequests.negative(clock())
                                     if (did == null) {
                                         DiagnosticLogger.event("NRC_UNATTRIBUTED",
                                             "NRC 0x%02X (%s) — %s; not counted".format(nrcCode, nrcLabel(nrcCode),
-                                                if (waiting.isEmpty()) "no PCM request outstanding"
-                                                else "ambiguous, may own it: " + waiting.joinToString { "%04X".format(it) }))
+                                                when {
+                                                    unresolved -> "an earlier request is still unanswered (owner unknown), may own it: " +
+                                                        waiting.joinToString { "%04X".format(it) }.ifEmpty { "evicted request" }
+                                                    waiting.isEmpty() -> "no PCM request outstanding"
+                                                    else -> "ambiguous, waiting: " + waiting.joinToString { "%04X".format(it) }
+                                                }))
                                     } else if (nrcTracker.recordNrc(did, nrcCode, clock())) {
                                         DiagnosticLogger.event("NRC_SUPPRESS",
                                             "DID 0x%04X suppressed: NRC 0x%02X (%s), the only request waiting; re-probed after %d s".format(
