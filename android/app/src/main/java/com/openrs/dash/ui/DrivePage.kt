@@ -350,36 +350,43 @@ import kotlin.math.roundToInt
             // No clutch-pedal readout on DRIVE (#225): it appeared and disappeared with the pedal and pushed ECONOMY
             // out of view. 0x138 is still decoded (diagnostics, SLCAN log).
 
-            // F2: fuel economy — always present (data arriving / leaving never shows, hides or collapses it;
-            // only the user's header tap does). Unavailable metrics read "—" with their unit, not 0.
-            // Calculations and validity are FuelEconomy's; this only decides what to print.
-            var econExpanded by rememberSectionExpanded("DRIVE_ECONOMY")
-            val mph = p.speedUnit == "MPH"
-            val valid = econState.isValid
-            fun num(v: Double, fmt: String, ok: Boolean) = if (ok) fmt.format(v) else "—"
-            // IDLE only with the engine running (PCM fast-poll rule) and the car stopped, while connected.
-            val idle = vs.isConnected && vs.rpm > ObdConstants.FAST_POLL_MIN_RPM && vs.speedKph < 2.0
-            val instantOk = valid && vs.isConnected && (if (mph) econState.instantMpg else econState.instantL100km) > 0
-            EconomyPanel(
-                expanded = econExpanded,
-                onToggle = { econExpanded = !econExpanded },
-                // Session aggregates stay readable offline, dimmed like other last-known values.
-                dimmed = !vs.isConnected,
-                cells = listOf(
-                    when {
-                        idle -> Triple("IDLE", num(econState.idleFuelLPerHr, "%.1f", valid && econState.idleFuelLPerHr > 0), "L/hr")
-                        mph  -> Triple("INSTANT", num(econState.instantMpg, "%.1f", instantOk), "MPG")
-                        else -> Triple("INSTANT", num(econState.instantL100km, "%.1f", instantOk), "L/100 km")
-                    },
-                    if (mph) Triple("AVERAGE", num(econState.avgMpg, "%.1f", valid && econState.avgMpg > 0), "MPG")
-                    else Triple("AVERAGE", num(econState.avgL100km, "%.1f", valid && econState.avgL100km > 0), "L/100 km"),
-                    if (mph) Triple("TO EMPTY", num(econState.distanceToEmptyKm * UnitConversions.KM_TO_MI, "%.0f", valid && econState.distanceToEmptyKm > 0), "mi")
-                    else Triple("TO EMPTY", num(econState.distanceToEmptyKm, "%.0f", valid && econState.distanceToEmptyKm > 0), "km"),
-                    Triple("FUEL USED", num(econState.fuelUsedL, "%.1f", valid), "L"),
-                ),
-            )
+            // F2: fuel economy — its own composable: inline here, R8 (AGP 8.7) mis-allocated a register in this
+            // lambda and ART rejected the class at runtime (VerifyError, rc.7 release build, 2026-10-29)
+            DriveEconomy(vs, econState, p)
         }
     }
+}
+
+/** ECONOMY on DRIVE (F2). */
+@Composable private fun DriveEconomy(vs: VehicleState, econState: FuelEconomy.EconomyState, p: UserPrefs) {
+    // F2: fuel economy — always present (data arriving / leaving never shows, hides or collapses it;
+    // only the user's header tap does). Unavailable metrics read "—" with their unit, not 0.
+    // Calculations and validity are FuelEconomy's; this only decides what to print.
+    var econExpanded by rememberSectionExpanded("DRIVE_ECONOMY")
+    val mph = p.speedUnit == "MPH"
+    val valid = econState.isValid
+    fun num(v: Double, fmt: String, ok: Boolean) = if (ok) fmt.format(v) else "—"
+    // IDLE only with the engine running (PCM fast-poll rule) and the car stopped, while connected.
+    val idle = vs.isConnected && vs.rpm > ObdConstants.FAST_POLL_MIN_RPM && vs.speedKph < 2.0
+    val instantOk = valid && vs.isConnected && (if (mph) econState.instantMpg else econState.instantL100km) > 0
+    EconomyPanel(
+        expanded = econExpanded,
+        onToggle = { econExpanded = !econExpanded },
+        // Session aggregates stay readable offline, dimmed like other last-known values.
+        dimmed = !vs.isConnected,
+        cells = listOf(
+            when {
+                idle -> Triple("IDLE", num(econState.idleFuelLPerHr, "%.1f", valid && econState.idleFuelLPerHr > 0), "L/hr")
+                mph  -> Triple("INSTANT", num(econState.instantMpg, "%.1f", instantOk), "MPG")
+                else -> Triple("INSTANT", num(econState.instantL100km, "%.1f", instantOk), "L/100 km")
+            },
+            if (mph) Triple("AVERAGE", num(econState.avgMpg, "%.1f", valid && econState.avgMpg > 0), "MPG")
+            else Triple("AVERAGE", num(econState.avgL100km, "%.1f", valid && econState.avgL100km > 0), "L/100 km"),
+            if (mph) Triple("TO EMPTY", num(econState.distanceToEmptyKm * UnitConversions.KM_TO_MI, "%.0f", valid && econState.distanceToEmptyKm > 0), "mi")
+            else Triple("TO EMPTY", num(econState.distanceToEmptyKm, "%.0f", valid && econState.distanceToEmptyKm > 0), "km"),
+            Triple("FUEL USED", num(econState.fuelUsedL, "%.1f", valid), "L"),
+        ),
+    )
 }
 
 /** ECONOMY: instant / average / distance to empty / fuel used in one panel; the header row collapses it. */
