@@ -2,10 +2,23 @@ package com.openrs.dash.data
 
 /**
  * Merge of a polled (Mode 22) decode into the live VehicleState — the update [com.openrs.dash.service.CanDataService]
- * applies for every OBD reply (moved here unchanged so the production merge is unit-tested, #205). Fields a reply
- * didn't carry keep the current value through their "not received" sentinel; freshness stamps merge per key.
+ * applies for every OBD reply (moved here so the production merge is unit-tested, #205). Fields a reply didn't carry
+ * keep the current value through their "not received" sentinel; freshness stamps merge per key. Fields whose valid range
+ * includes their default (REQ L / R: 0 Nm is a reading) are taken only when the reply stamped them — see [carried].
  */
 object ObdMerge {
+    /**
+     * The reply is a copy of the live-state snapshot with the decoded field stamped, so it carried [tag] when its stamp is
+     * at least as new as the current one. An unrelated reply holds the snapshot's older stamp (or none) and leaves the
+     * field alone — also when another reply for [tag] was merged after the snapshot. (Equal stamps would need two replies
+     * for one DID in the same millisecond; the AWD poller asks one DID at a time.)
+     */
+    private fun carried(tag: String, current: VehicleState, obd: VehicleState): Boolean {
+        val incoming = obd.fieldLastUpdateMs[tag] ?: return false
+        val held = current.fieldLastUpdateMs[tag] ?: return true
+        return incoming >= held
+    }
+
     fun merge(current: VehicleState, obd: VehicleState): VehicleState =
         current.copy(
             calcLoad = obd.calcLoad,
@@ -59,8 +72,9 @@ object ObdMerge {
             rduTempC     = if (obd.rduTempC > -90)     obd.rduTempC     else current.rduTempC,
             awdClutchTempL = if (obd.awdClutchTempL > -90) obd.awdClutchTempL else current.awdClutchTempL,
             awdClutchTempR = if (obd.awdClutchTempR > -90) obd.awdClutchTempR else current.awdClutchTempR,
-            awdReqTorqueL  = if (obd.awdReqTorqueL > 0) obd.awdReqTorqueL else current.awdReqTorqueL,
-            awdReqTorqueR  = if (obd.awdReqTorqueR > 0) obd.awdReqTorqueR else current.awdReqTorqueR,
+            // A genuine 0 Nm is a reading (#226) — taken by stamp, never by value
+            awdReqTorqueL  = if (carried("awdReqTorqueL", current, obd)) obd.awdReqTorqueL else current.awdReqTorqueL,
+            awdReqTorqueR  = if (carried("awdReqTorqueR", current, obd)) obd.awdReqTorqueR else current.awdReqTorqueR,
             awdDmdPressure = if (obd.awdDmdPressure > 0) obd.awdDmdPressure else current.awdDmdPressure,
             awdPumpCurrent = if (obd.awdPumpCurrent > 0) obd.awdPumpCurrent else current.awdPumpCurrent,
             awdClutchCurL  = if (obd.awdClutchCurL > -900) obd.awdClutchCurL else current.awdClutchCurL,
