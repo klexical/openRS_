@@ -875,7 +875,9 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   or define), the TIP-first order for the DRIVE gauge (label alternates when TIP freshness drops), unmeasured P2* hold /
   3 s ESC window. APK not offered for hardware acceptance. Follow-ups seen, not changed: TRIP history lists a just-stopped
   drive as ACTIVE until reload (list read before `stopDrive()` finishes); `fix/sapphire-row-validation` is behind the web/
-  changes here — port before any Sapphire PR.
+  changes here — port before any Sapphire PR. Final report delivered 2026-10-29 (APK still not offered for hardware
+  acceptance); next steps each need the user's go-ahead: the three decisions above, hardware checklist, firmware flash,
+  PRs, rc.7 tag.
 - Still open: everything in the hardware checklist (Samsung, BLE, firmware capability, boost signal identity, spark /
   throttle, real DTC replies, TPMS BAR on the phone, 0304 / 03EF identity, button bit captures); GPS-independent
   recording (#221); Sapphire empty boost_psi → 0; perf / lap / bookmark boost without source; a real
