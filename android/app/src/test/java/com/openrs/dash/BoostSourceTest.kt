@@ -122,40 +122,47 @@ class BoostSourceTest {
         assertEquals(BoostSource.TIP_033E, read().source)
     }
 
-    @Test fun `engine off with CAN tracking — CAN stays the source, TIP never takes over`() {
+    @Test fun `fixed order — fresh TIP with the engine running is shown as TIP, CAN when TIP isn't fresh`() {
         rpmFrame(); boostFrame(0); tip(0x4F1A)
-        assertEquals(BoostSource.CAN_0F8, read().source)                 // CAN fresh and not shown wrong: CAN
-        rpmFrame(rpm = "0000")
-        assertEquals(BoostSource.CAN_0F8, read().source)
-        assertEquals(0.0, read().gaugeKpa!!, 1e-9)
-    }
-
-    @Test fun `conflict at wide-open throttle — CAN 0 while TIP shows boost — switches to TIP, labelled, logged`() {
-        rpmFrame(); boostFrame(0); throttle(95)
-        tip(0x4F1A); rpmFrame()                                          // vote 1 (CAN 0, TIP +61.7 kPa)
-        assertEquals(BoostSource.CAN_0F8, read().source)
-        assertTrue(BoostSession.canTracking)
-        tip(0x4F00); rpmFrame()                                          // vote 2
-        assertFalse(BoostSession.canTracking)
-        assertEquals(BoostSource.TIP_033E, read().source)
+        assertEquals(BoostSource.TIP_033E, read().source)                // both fresh: TIP, labelled TIP
         assertEquals("TIP", read().source.label)
-        assertEquals(1, events.size)
-        assertTrue(events.single(), events.single().contains("not tracking"))
+        rpmFrame(rpm = "0000")                                           // engine off: TIP is no reading
+        assertEquals(BoostSource.CAN_0F8, read().source)
+        assertEquals(0.0, read().gaugeKpa!!, 1e-9)                       // a genuine 0 from CAN stays a reading
+        assertEquals("BOOST", read().source.label)
     }
 
-    @Test fun `CAN that follows TIP under load keeps CAN, and part throttle is no evidence`() {
-        rpmFrame(); throttle(30); boostFrame(0)
-        repeat(3) { tip(0x4F1A + it); rpmFrame() }                       // TIP high at part throttle: upstream of the plate
-        assertTrue(BoostSession.canTracking)
-        waitForStamp(); boostFrame(55); throttle(95)
-        repeat(3) { tip(0x4F2A + it); rpmFrame() }                       // WOT, CAN tracks
-        assertTrue(BoostSession.canTracking)
-        assertEquals(BoostSource.CAN_0F8, read().source)
+    @Test fun `no inference — full pedal, CAN 0 and TIP far above baro change nothing about either channel`() {
+        // The rc7-boost-v2 rule marked CAN "not tracking" here (≥ 80 % throttle-or-pedal, TIP ≥ 30 kPa above baro,
+        // 0x0F8 ≤ 5 kPa, twice) and kept that for the session. The order alone decides now.
+        rpmFrame(); boostFrame(0); throttle(95)
+        repeat(4) { tip(0x4F1A + it); rpmFrame(); boostFrame(0) }
+        assertEquals(BoostSource.TIP_033E, read().source)
+        val later = now() + BoostRule.TIP_FRESH_MS + 100                 // TIP stops (e.g. a poll gap), CAN still fresh
+        rpmFrame(); boostFrame(0)
+        assertEquals(BoostSource.CAN_0F8, read(later).source)            // CAN again — never "marked" against
+        assertEquals(0.0, read(later).gaugeKpa!!, 1e-9)
+        assertTrue(events.none { it.contains("not tracking") })
+    }
+
+    @Test fun `source changes of the shown reading are logged, at most one line per interval`() {
+        val s0 = now()
+        BoostSession.onState(state.value, s0)                             // nothing fresh yet: NONE, first reading
+        rpmFrame(); boostFrame(0)
+        BoostSession.onState(state.value, now())                          // NONE → CAN: logged
+        assertEquals(1, events.size)
+        assertTrue(events.single(), events.single().contains("NONE → CAN_0F8"))
+        tip(0x4F1A); rpmFrame()                                           // CAN → TIP within the interval: counted only
+        BoostSession.onState(state.value, now())
+        assertEquals(1, events.size)
+        val t = now() + BoostSession.LOG_INTERVAL_MS + BoostRule.TIP_FRESH_MS   // TIP stale by then, CAN received at t
+        BoostSession.onState(state.value.copy(fieldLastUpdateMs = state.value.fieldLastUpdateMs + (BoostRule.CAN_TAG to t)), t)
+        assertEquals(2, events.size)
+        assertTrue(events.last(), events.last().contains("TIP_033E → CAN_0F8") && events.last().contains("1 earlier change"))
     }
 
     @Test fun `peaks are per source — a caption never shows another source's peak`() {
         rpmFrame(); boostFrame(12)                                       // CAN peak 12 kPa
-        throttle(95)
         waitForStamp(); boostFrame(0)
         tip(0x4F1A); rpmFrame(); tip(0x4F00); rpmFrame()                 // → TIP source
         val peaks = BoostSession.peaks.value

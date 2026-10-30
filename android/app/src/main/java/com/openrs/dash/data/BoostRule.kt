@@ -39,18 +39,21 @@ data class BoostReading(val source: BoostSource, val gaugeKpa: Double?) {
 
 /**
  * The boost source rule ([POLICY]) — one function for every consumer (DRIVE, HUD, Custom Dashboard, TRIP, recorder,
- * peaks, knock events, perf runs, diagnostics). Freshness is judged against a wall clock [nowMs] that keeps running
- * when CAN stalls, never against `lastUpdate`:
- *  1. CAN 0x0F8 while its last receipt (freshness stamp `boostKpa`) is ≤ [CAN_FRESH_MS] old — unless this session
- *     showed it isn't tracking boost ([canTracking] false, see [BoostSession]);
- *  2. else TIP − measured baro while TIP was decoded ≤ [TIP_FRESH_MS] ago, the engine runs (rpm > 400 on a CAN frame
- *     ≤ [LINK_FRESH_MS] old) and baro was measured (0x090, 60–115 kPa) — labelled TIP, never BOOST;
+ * peaks, knock events, perf runs, diagnostics). A fixed order with no inference about the car — the two channels are
+ * never judged against each other and nothing is decided from throttle or pedal position:
+ *  1. TIP − measured baro while TIP was decoded ≤ [TIP_FRESH_MS] ago, the engine runs (rpm > 400 on a CAN frame
+ *     ≤ [LINK_FRESH_MS] old) and baro was measured (0x090, 60–115 kPa) — labelled TIP (pre-throttle pressure, not
+ *     proven manifold boost);
+ *  2. else CAN 0x0F8 while its last receipt (freshness stamp `boostKpa`) is ≤ [CAN_FRESH_MS] old — labelled BOOST
+ *     (the DBC's name; what byte 5 measures on this car is unverified);
  *  3. else nothing ("—"; not recorded as a reading).
- * Never received = not available: the 0x0F8 default (101.325) never reaches a gauge or a peak.
+ * Every reading carries its source; peaks, recorded points and exports keep them apart. Freshness is judged against a
+ * wall clock [nowMs] that keeps running when CAN stalls, never against `lastUpdate`. Never received = not available:
+ * the 0x0F8 default (101.325) never reaches a gauge or a peak.
  */
 object BoostRule {
     /** Stored on each drive recorded under this rule; older drives have no policy (null) and no per-point source. */
-    const val POLICY = "rc7-boost-v2"
+    const val POLICY = "rc7-boost-v3"
     const val CAN_FRESH_MS = 3_000L
     const val TIP_FRESH_MS = 2_500L
     const val LINK_FRESH_MS = 2_000L
@@ -76,9 +79,9 @@ object BoostRule {
         return vs.tipActualKpa - baro
     }
 
-    fun read(vs: VehicleState, nowMs: Long, canTracking: Boolean = true): BoostReading {
-        if (canTracking) canGaugeKpa(vs, nowMs)?.let { return BoostReading(BoostSource.CAN_0F8, it) }
+    fun read(vs: VehicleState, nowMs: Long): BoostReading {
         tipGaugeKpa(vs, nowMs)?.let { return BoostReading(BoostSource.TIP_033E, it) }
+        canGaugeKpa(vs, nowMs)?.let { return BoostReading(BoostSource.CAN_0F8, it) }
         return BoostReading.NONE
     }
 
@@ -100,25 +103,16 @@ object BoostRule {
 
 /**
  * Session state of the boost rule (#207), app-level like [KnockSessionLog]; reset on every new connection, session
- * reset and demo change:
- *  - whether CAN 0x0F8 tracks boost on this car this session. It starts trusted; it is marked not tracking after
- *    [EVIDENCE_NEEDED] distinct TIP decodes, each at ≥ 80 % throttle with TIP ≥ [WOT_TIP_MIN_KPA] above baro while
- *    a fresh 0x0F8 read ≤ [WOT_CAN_MAX_KPA] (at wide-open throttle TIP and manifold pressure should be close). On the
- *    2026-10-28 drives byte 5 read 0 in all AM frames and 40 of 23,495 PM frames while TIP reached ~71 kPa above baro.
- *  - the peak of each measurement (gauge kPa, whenever it is fresh), so a caption shows the peak of the source it
- *    names — never one another source produced.
- * Decisions are logged (BOOST_SOURCE) with the readings that caused them. Never persisted.
+ * reset and demo change: the peak of each measurement (gauge kPa, whenever it is fresh), so a caption shows the peak
+ * of the source it names — never one another source produced. Source changes of the shown reading are logged
+ * (BOOST_SOURCE, at most one line per [LOG_INTERVAL_MS], with the count of changes in between). Never persisted.
  */
 object BoostSession {
-    const val EVIDENCE_NEEDED = 2
-    const val WOT_THROTTLE_PCT = 80.0
-    const val WOT_TIP_MIN_KPA = 30.0
-    const val WOT_CAN_MAX_KPA = 5.0
+    const val LOG_INTERVAL_MS = 10_000L
 
-    @Volatile var canTracking: Boolean = true
-        private set
-    private var evidence = 0
-    private var lastTipStamp = 0L
+    private var shown: BoostSource? = null
+    private var lastLogMs: Long? = null
+    private var unlogged = 0
 
     private val _peaks = MutableStateFlow<Map<BoostSource, Double>>(emptyMap())
     /** Session peak gauge kPa per source (no entry = that source gave no reading). */
@@ -127,18 +121,33 @@ object BoostSession {
     /** Event sink (DiagnosticLogger.event in the app; tests capture). */
     @Volatile var log: (String) -> Unit = {}
 
-    fun read(vs: VehicleState, nowMs: Long): BoostReading = BoostRule.read(vs, nowMs, canTracking)
+    fun read(vs: VehicleState, nowMs: Long): BoostReading = BoostRule.read(vs, nowMs)
 
     /** Peak gauge kPa for [source] this session, or null. */
     fun peakKpa(source: BoostSource): Double? = _peaks.value[source]
 
     /** Feed every live state (CAN frame side effects, OBD merges, demo ticks). Returns the reading shown now. */
     @Synchronized fun onState(vs: VehicleState, nowMs: Long): BoostReading {
-        if (canTracking) checkEvidence(vs, nowMs)
         // Each measurement's own peak, whenever it is fresh — whichever one the gauge shows
-        peak(BoostSource.CAN_0F8, BoostRule.canGaugeKpa(vs, nowMs))
-        peak(BoostSource.TIP_033E, BoostRule.tipGaugeKpa(vs, nowMs))
-        return read(vs, nowMs)
+        val can = BoostRule.canGaugeKpa(vs, nowMs)
+        val tip = BoostRule.tipGaugeKpa(vs, nowMs)
+        peak(BoostSource.CAN_0F8, can)
+        peak(BoostSource.TIP_033E, tip)
+        val r = read(vs, nowMs)
+        noteSource(r.source, can, tip, nowMs)
+        return r
+    }
+
+    private fun noteSource(source: BoostSource, can: Double?, tip: Double?, nowMs: Long) {
+        val previous = shown
+        if (source == previous) return
+        shown = source
+        if (previous == null) return                                    // first reading of the session
+        if (lastLogMs?.let { nowMs - it < LOG_INTERVAL_MS } == true) { unlogged++; return }
+        fun kpa(v: Double?) = v?.let { "%.1f kPa".format(java.util.Locale.ROOT, it) } ?: "not fresh"
+        log("shown ${previous.name} → ${source.name} (TIP ${kpa(tip)}, CAN 0x0F8 ${kpa(can)})" +
+            (if (unlogged > 0) " · $unlogged earlier change(s) not logged" else ""))
+        lastLogMs = nowMs; unlogged = 0
     }
 
     private fun peak(source: BoostSource, g: Double?) {
@@ -147,28 +156,11 @@ object BoostSession {
         if (cur == null || g > cur) _peaks.value = _peaks.value + (source to g)
     }
 
-    private fun checkEvidence(vs: VehicleState, nowMs: Long) {
-        val tipStamp = vs.fieldLastUpdateMs[BoostRule.TIP_TAG] ?: return
-        if (tipStamp == lastTipStamp) return                      // one vote per TIP decode
-        val tip = BoostRule.tipGaugeKpa(vs, nowMs) ?: return
-        val can = BoostRule.canGaugeKpa(vs, nowMs) ?: return
-        lastTipStamp = tipStamp
-        if (vs.throttleOrPedalPct < WOT_THROTTLE_PCT || tip < WOT_TIP_MIN_KPA) return
-        if (can > WOT_CAN_MAX_KPA) { evidence = 0; return }          // CAN follows under load — keep trusting it
-        evidence++
-        if (evidence >= EVIDENCE_NEEDED) {
-            canTracking = false
-            log("CAN 0x0F8 not tracking boost this session: at ≥ ${WOT_THROTTLE_PCT.toInt()} % throttle TIP read " +
-                "%.1f kPa above baro while 0x0F8 read %.1f kPa (%d TIP readings) — BOOST now shows TIP, labelled TIP"
-                    .format(java.util.Locale.ROOT, tip, can, evidence))
-        }
-    }
-
-    /** PEAK reset (header long-press etc.) — the source decision stays. */
+    /** PEAK reset (header long-press etc.). */
     @Synchronized fun resetPeaks() { _peaks.value = emptyMap() }
 
     @Synchronized fun reset() {
-        canTracking = true; evidence = 0; lastTipStamp = 0L
+        shown = null; lastLogMs = null; unlogged = 0
         _peaks.value = emptyMap()
     }
 }

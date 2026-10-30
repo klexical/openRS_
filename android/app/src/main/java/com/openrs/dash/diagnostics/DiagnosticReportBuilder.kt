@@ -114,8 +114,7 @@ internal object DiagnosticReportBuilder {
             val boost = com.openrs.dash.data.BoostSession.read(vs, nowMs)
             fun age(tag: String) = vs.fieldLastUpdateMs[tag]?.let { "${(nowMs - it) / 1000} s ago" } ?: "never"
             appendLine("  Boost      : " + (boost.gaugeKpa?.let { "%.1f kPa gauge (%.1f PSI), source %s".format(it, it * 0.14503773, boost.source.name) }
-                ?: "no fresh source") + " · policy ${com.openrs.dash.data.BoostRule.POLICY}" +
-                (if (com.openrs.dash.data.BoostSession.canTracking) "" else " · CAN 0x0F8 marked not tracking this session"))
+                ?: "no fresh source") + " · policy ${com.openrs.dash.data.BoostRule.POLICY}")
             appendLine("  Boost src  : CAN 0x0F8 ${"%.0f".format(vs.boostKpa - 101.325)} kPa gauge (received ${age("boostKpa")}) · " +
                 "TIP ${"%.1f".format(vs.tipActualKpa)} kPa abs (decoded ${age("tipActualKpa")}) · baro ${"%.1f".format(vs.barometricPressure)} kPa")
             appendLine("  Coolant    : ${"%.0f".format(vs.coolantTempC)} °C")
@@ -488,7 +487,8 @@ private fun VehicleState.toJsonObject(): JSONObject = JSONObject().apply {
     put("speedKph", speedKph)
     put("speedMph", speedKph * 0.621371)
     put("boostKpa", boostKpa)   // CAN 0x0F8 byte 5 + 101.325 (gauge, std-atm form) — a reading only if stamped "boostKpa"
-    put("boostCanGaugeKpa", boostKpa - 101.325)
+    // Only once 0x0F8 was received: the 101.325 default would read as a measured 0
+    if (fieldLastUpdateMs[com.openrs.dash.data.BoostRule.CAN_TAG] != null) put("boostCanGaugeKpa", boostKpa - 101.325)
     put("coolantTempC", coolantTempC)
     put("oilTempC", oilTempC)
     put("intakeTempC", intakeTempC)
