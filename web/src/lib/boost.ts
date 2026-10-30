@@ -1,4 +1,5 @@
-import type { TripPoint } from '../types/session'
+import type { TripPoint, PeakEvent } from '../types/session'
+import { convertBoost, type BoostUnit } from './units'
 
 // Boost provenance (#207), as the Android export records it. Two different measurements:
 //   CAN_0F8  — HS-CAN 0x0F8 byte 5, the car's "Boost" signal (shown as BOOST)
@@ -46,3 +47,45 @@ export function boostFor(p: TripPoint, source: BoostSource | null): number | nul
   if (source == null) return p.boostSource ? null : p.boostPsi
   return p.boostSource === source ? p.boostPsi : null
 }
+
+// ── Display in the selected pressure unit (#207 follow-up) ──
+// Recorded values are gauge psi. Every plotted number — chart rows, histogram values, peak lines, gauges, sparklines,
+// map legend and popups — goes through these so it matches its unit label.
+
+export function pressureIn(psi: number | null | undefined, unit: BoostUnit): number | null {
+  return psi == null || !Number.isFinite(psi) ? null : convertBoost(psi, unit)
+}
+
+/** TRIP chart rows with the three pressure series converted (other keys untouched). */
+export function pressureChartRows<T extends Record<string, number | null>>(rows: T[], unit: BoostUnit): T[] {
+  return rows.map((r) => ({
+    ...r,
+    boostTip: pressureIn(r.boostTip, unit),
+    boostCan: pressureIn(r.boostCan, unit),
+    boostLegacy: pressureIn(r.boostLegacy, unit),
+  }))
+}
+
+/** Boost peak events in [unit] (other peak types untouched). */
+export function pressurePeaks(peaks: PeakEvent[], unit: BoostUnit): PeakEvent[] {
+  return peaks.map((p) => (p.type === 'boost' ? { ...p, value: convertBoost(p.value, unit) } : p))
+}
+
+/** One position per point (no reading / another source → null), so gaps and timing survive — never joined. */
+export function pressureSeries(points: TripPoint[], source: BoostSource | null, unit: BoostUnit): (number | null)[] {
+  return points.map((p) => pressureIn(boostFor(p, source), unit))
+}
+
+/** Title naming the measurement(s) a pressure chart shows. */
+export function pressureTitle(keys: BoostKey[]): string {
+  if (keys.length !== 1) return 'Pressure'
+  return keys[0] === 'boostTip' ? 'TIP' : keys[0] === 'boostCan' ? 'Boost 0x0F8' : 'Boost — source not recorded'
+}
+
+/** Name of a single-source view (map legend, distribution): TIP / BOOST 0x0F8 / BOOST — SOURCE NOT RECORDED. */
+export function sourceName(source: BoostSource | null): string {
+  return source === 'TIP_033E' ? 'TIP' : source === 'CAN_0F8' ? 'BOOST 0x0F8' : 'BOOST — SOURCE NOT RECORDED'
+}
+
+/** Decimal places per unit for pressure labels. */
+export const pressureDecimals = (unit: BoostUnit): number => (unit === 'bar' ? 2 : unit === 'kPa' ? 0 : 1)

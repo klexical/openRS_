@@ -24,6 +24,8 @@ interface TimeSeriesChartProps {
   peakEvents?: PeakEvent[]
   /** Map peak event type → data key to show reference line only on relevant chart */
   peakFilter?: string
+  /** Peak line label (default: the value); pressure charts name the source and use the unit's decimals */
+  peakLabel?: (peak: PeakEvent) => string
 }
 
 export function TimeSeriesChart({
@@ -36,6 +38,7 @@ export function TimeSeriesChart({
   syncId,
   peakEvents,
   peakFilter,
+  peakLabel,
 }: TimeSeriesChartProps) {
   // Track hidden series for legend toggle
   const [hidden, setHidden] = useState<Set<string>>(new Set())
@@ -105,7 +108,7 @@ export function TimeSeriesChart({
               strokeDasharray="4 4"
               strokeWidth={1}
               label={{
-                value: `▲ ${peak.value.toFixed(peak.type === 'rpm' || peak.type === 'speed' ? 0 : 1)}`,
+                value: peakLabel ? peakLabel(peak) : `▲ ${peak.value.toFixed(peak.type === 'rpm' || peak.type === 'speed' ? 0 : 1)}`,
                 position: 'right',
                 fill: colors.warn,
                 fontSize: 9,

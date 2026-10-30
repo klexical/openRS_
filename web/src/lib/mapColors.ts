@@ -1,6 +1,7 @@
 import type { TripPoint } from '../types/session'
 import { colors } from '../styles/tokens'
 import { boostFor, type BoostSource } from './boost'
+import { convertBoost, type BoostUnit } from './units'
 
 /**
  * Color modes for the GPS map polyline — mirrors Android DriveMap.kt ColorMode.
@@ -66,7 +67,7 @@ export function pointColor(point: TripPoint, mode: ColorMode, boostSource: Boost
 }
 
 /** Legend entries for the given color mode (label + color pairs). */
-export function colorLegend(mode: ColorMode): { label: string; color: string }[] {
+export function colorLegend(mode: ColorMode, boostUnit: BoostUnit = 'PSI'): { label: string; color: string }[] {
   switch (mode) {
     case 'speed':
       return [
@@ -82,13 +83,16 @@ export function colorLegend(mode: ColorMode): { label: string; color: string }[]
         { label: 'Track', color: colors.ok },
         { label: 'Drift', color: colors.orange },
       ]
-    case 'boost':
+    case 'boost': {
+      // Band edges are 8 / 16 psi — labelled in the selected unit (#207)
+      const [a, b] = [8, 16].map((psi) => convertBoost(psi, boostUnit).toFixed(boostUnit === 'bar' ? 2 : 0))
       return [
         { label: 'Vac', color: colors.cyan },
-        { label: '<8', color: colors.ok },
-        { label: '8-16', color: colors.warn },
-        { label: '16+', color: colors.orange },
+        { label: `<${a}`, color: colors.ok },
+        { label: `${a}-${b}`, color: colors.warn },
+        { label: `${b}+`, color: colors.orange },
       ]
+    }
     case 'throttle':
       return [
         { label: '<25%', color: colors.cyan },
