@@ -1,3 +1,4 @@
+import type { BoostSource } from '../lib/boost'
 /** A stored driving session with trip + diagnostic data. */
 export interface Session {
   id: string
@@ -48,7 +49,10 @@ export interface TripPoint {
   lat: number
   lng: number
   rpm: number
-  boostPsi: number
+  /** Gauge psi, or null when the point has no reading (#207 — never 0 for "none"). */
+  boostPsi: number | null
+  /** Which measurement boostPsi is (lib/boost.ts); null / absent = source not recorded (older exports). */
+  boostSource?: BoostSource | null
   speedKph: number
   coolantC: number
   oilTempC: number
@@ -86,7 +90,12 @@ export interface TripSummary {
   fuelUsedL: number
   avgSpeedKph: number
   peakRpm: number
-  peakBoostPsi: number
+  /** Null when the drive has no boost reading. */
+  peakBoostPsi: number | null
+  /** Source of the peak; null / absent = not recorded (older exports). */
+  peakBoostSource?: BoostSource | null
+  /** Android boost rule the drive was recorded under (absent = older drive, no provenance). */
+  boostPolicy?: string
   peakLatG: number
   peakLongG: number
   peakSpeedKph: number
@@ -105,6 +114,8 @@ export interface PeakEvent {
   ts: number
   lat: number
   lng: number
+  /** Boost peaks: the measurement (one peak per source). */
+  source?: BoostSource | null
 }
 
 // ── Profile JSON (drive_profile_*.json) ──
@@ -125,7 +136,10 @@ export interface DriveProfileSummary {
   avgSpeedKph: number
   maxSpeedKph: number
   peakRpm: number
-  peakBoostPsi: number
+  /** Null when absent: a drive recorded under a boost rule with no reading has no peak. */
+  peakBoostPsi: number | null
+  peakBoostSource?: BoostSource | null
+  boostPolicy?: string
   peakLateralG: number
   peakOilTempC: number
   peakCoolantTempC: number
@@ -143,6 +157,7 @@ export interface ProfilePeak {
   lat: number
   lng: number
   timestampMs: number
+  source?: BoostSource | null
 }
 
 export interface ThermalProgression {
@@ -171,7 +186,8 @@ export interface Bookmark {
   label: string
   speedKph: number
   rpm: number
-  boostPsi: number
+  /** Older exports only — current ones omit it (a bookmark stores no boost source). */
+  boostPsi?: number
 }
 
 // ── Lap & Performance (stubs for T5 Android gap-fill) ──

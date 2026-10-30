@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { boostFor, boostLabel } from '../../lib/boost'
 import { useStore, useActiveSession } from '../../store'
 import { MetricCard } from '../ui/MetricCard'
 import { SectionLabel } from '../ui/SectionLabel'
@@ -28,7 +29,12 @@ export function DashboardPanel() {
   // Sparkline data arrays
   const rpmData = useMemo(() => points?.map((p) => p.rpm) ?? [], [points])
   const speedData = useMemo(() => points?.map((p) => p.speedKph) ?? [], [points])
-  const boostData = useMemo(() => points?.map((p) => p.boostPsi) ?? [], [points])
+  // #207: the peak's own measurement only; points without a reading or from another source are left out
+  const boostData = useMemo(() => {
+    const src = trip?.peakBoostSource ?? null
+    return points?.map((p) => boostFor(p, src)).filter((v): v is number => v != null) ?? []
+  }, [points, trip?.peakBoostSource])
+  const boostName = boostLabel(trip?.peakBoostSource) === 'TIP' ? 'TIP' : 'Boost'
 
   // Race Ready detection (T2I)
   const hasRaceReady = useMemo(() => points?.some((p) => p.raceReady) ?? false, [points])
@@ -140,7 +146,9 @@ export function DashboardPanel() {
           <div className="rounded-lg border border-brd bg-surf2 p-4">
             <div className="flex flex-wrap justify-center gap-6">
               <GaugeChart value={trip.peakRpm} max={7000} label="Peak RPM" unit="RPM" color={colors.orange} />
-              <GaugeChart value={trip.peakBoostPsi} max={25} label="Peak Boost" unit={fmt.boostUnit} color={colors.accent} />
+              {trip.peakBoostPsi != null
+                ? <GaugeChart value={trip.peakBoostPsi} max={25} label={`Peak ${boostName}`} unit="PSI" color={colors.accent} />
+                : <MetricCard label="Peak Boost" value="— (no reading)" color={colors.dim} />}
               <GaugeChart value={trip.peakSpeedKph} max={270} label="Peak Speed" unit={fmt.speedUnit} color={colors.ok} />
               <GaugeChart value={trip.peakLatG} max={1.5} label="Peak Lat G" unit="G" color={colors.warn} />
               {/* Aggression Score (T2A) */}
@@ -159,7 +167,8 @@ export function DashboardPanel() {
               <MetricCard label="Peak Long G" value={`${fmtNumber(trip.peakLongG, 2)} G`} color={colors.warn} />
               <MetricCard label="Peak Coolant" value={fmt.temp(trip.peakCoolantC)} color={trip.peakCoolantC > 105 ? colors.orange : colors.ok} />
               <MetricCard label="Peak Oil" value={fmt.temp(trip.peakOilTempC)} color={trip.peakOilTempC > 130 ? colors.orange : colors.ok} />
-              <SparkMetricCard label="Boost Trace" value={fmt.boost(trip.peakBoostPsi)} sparkData={boostData} color={colors.accent} />
+              <SparkMetricCard label={`${boostName} Trace`} value={trip.peakBoostPsi != null ? fmt.boost(trip.peakBoostPsi) : '—'}
+                sparkData={boostData} color={colors.accent} />
             </div>
           </div>
 
@@ -200,7 +209,7 @@ export function DashboardPanel() {
                           <td className="px-3 py-1.5" style={{ color: '#E040FB' }}>{bm.label || `#${i + 1}`}</td>
                           <td className="px-3 py-1.5 text-frost">{bm.speedKph.toFixed(0)} kph</td>
                           <td className="px-3 py-1.5 text-frost">{bm.rpm}</td>
-                          <td className="px-3 py-1.5 text-frost">{bm.boostPsi.toFixed(1)} PSI</td>
+                          <td className="px-3 py-1.5 text-frost">{bm.boostPsi != null ? `${bm.boostPsi.toFixed(1)} PSI` : '—'}</td>
                         </tr>
                       ))}
                     </tbody>

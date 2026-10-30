@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Polyline, CircleMarker, Popup, useMap } from '
 import 'leaflet/dist/leaflet.css'
 import type { TripPoint, PeakEvent, Bookmark } from '../../types/session'
 import { colors } from '../../styles/tokens'
+import { boostLabel, primaryBoostSource } from '../../lib/boost'
 import {
   type ColorMode,
   colorModes,
@@ -28,7 +29,8 @@ interface ColorSegment {
 function buildColorSegments(points: TripPoint[], mode: ColorMode): ColorSegment[] {
   if (points.length === 0) return []
   const segments: ColorSegment[] = []
-  let currentColor = pointColor(points[0], mode)
+  const boostSource = mode === 'boost' ? primaryBoostSource(points) : null
+  let currentColor = pointColor(points[0], mode, boostSource)
   let currentPositions: [number, number][] = [[points[0].lat, points[0].lng]]
 
   for (let i = 1; i < points.length; i++) {
@@ -36,7 +38,7 @@ function buildColorSegments(points: TripPoint[], mode: ColorMode): ColorSegment[
     const prev = points[i - 1]
     const gap = p.ts - prev.ts > 5000
 
-    const color = pointColor(p, mode)
+    const color = pointColor(p, mode, boostSource)
     if (color !== currentColor || gap) {
       segments.push({ positions: currentPositions, color: currentColor })
       currentColor = color
@@ -190,7 +192,7 @@ export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMa
               <Popup>
                 <div style={{ fontFamily: 'JetBrains Mono', fontSize: 11 }}>
                   <div style={{ fontWeight: 700, marginBottom: 2 }}>{bm.label || 'Bookmark'}</div>
-                  <div>{bm.speedKph.toFixed(0)} kph · {bm.rpm} RPM · {bm.boostPsi.toFixed(1)} PSI</div>
+                  <div>{bm.speedKph.toFixed(0)} kph · {bm.rpm} RPM{bm.boostPsi != null ? ` · ${bm.boostPsi.toFixed(1)} PSI` : ''}</div>
                 </div>
               </Popup>
             </CircleMarker>
@@ -201,7 +203,8 @@ export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMa
         {peakEvents.map((peak, i) => {
           if (peak.lat === 0 && peak.lng === 0) return null
           const style = peakMarkerStyle(peak.type)
-          const label = `${style.prefix}: ${peak.value.toFixed(style.decimals)}${style.unit}`
+          const prefix = peak.type === 'boost' ? boostLabel(peak.source) : style.prefix
+          const label = `${prefix}: ${peak.value.toFixed(style.decimals)}${style.unit}`
           return (
             <CircleMarker
               key={`peak-${i}`}

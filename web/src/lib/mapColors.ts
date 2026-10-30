@@ -1,5 +1,6 @@
 import type { TripPoint } from '../types/session'
 import { colors } from '../styles/tokens'
+import { boostFor, type BoostSource } from './boost'
 
 /**
  * Color modes for the GPS map polyline — mirrors Android DriveMap.kt ColorMode.
@@ -15,8 +16,11 @@ export const colorModes: { id: ColorMode; label: string }[] = [
   { id: 'oilTemp', label: 'TEMP' },
 ]
 
-/** Returns a CSS color string for a trip point based on the active color mode. */
-export function pointColor(point: TripPoint, mode: ColorMode): string {
+/**
+ * Returns a CSS color string for a trip point based on the active color mode. BOOST colours one measurement only
+ * ([boostSource], the drive peak's — lib/boost.ts); another source's point or one without a reading is dimmed (#207).
+ */
+export function pointColor(point: TripPoint, mode: ColorMode, boostSource: BoostSource | null = null): string {
   switch (mode) {
     case 'speed':
       if (point.speedKph < 60) return colors.ok
@@ -32,11 +36,14 @@ export function pointColor(point: TripPoint, mode: ColorMode): string {
       return colors.cyan // Normal
     }
 
-    case 'boost':
-      if (point.boostPsi < 0) return colors.cyan
-      if (point.boostPsi < 8) return colors.ok
-      if (point.boostPsi < 16) return colors.warn
+    case 'boost': {
+      const psi = boostFor(point, boostSource)
+      if (psi == null) return colors.dim
+      if (psi < 0) return colors.cyan
+      if (psi < 8) return colors.ok
+      if (psi < 16) return colors.warn
       return colors.orange
+    }
 
     case 'throttle':
       if (point.throttlePct < 25) return colors.cyan
