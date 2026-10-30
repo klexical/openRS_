@@ -18,7 +18,9 @@ vi.mock('../components/charts/GpsMap', () => ({ GpsMap: () => null }))
 // synthetic GPS track. One 1:21 drive, the connection, other CAN traffic and GPS alive throughout:
 //   TIP 0x033E live (19 points) → TIP silent, CAN 0x0F8 byte 5 = 0 (12, genuine zeros) → TIP silent AND 0x0F8 stopped
 //   (12 points, no pressure reading) → both back (29 TIP points).
-// Synthetic data — no car. Export ZIP SHA-256 48ece455…5f8c.
+// Synthetic data — no car. Export ZIP SHA-256 48ece455…5f8c. The ZIP also carries crash_telemetry_20261029_223940.json:
+// the VerifyError crash of the 5854f08 release installed earlier on that emulator (#227), bundled from stored crash
+// history — not a crash of 0c7431a; the importer doesn't read it.
 const NAME = 'release-pressure-gaps-drive.zip'
 const ZIP = join(process.cwd(), 'src/lib/__fixtures__/android-export-rc7/', NAME)
 const load = async (): Promise<Session> => ({

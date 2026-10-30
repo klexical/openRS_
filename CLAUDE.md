@@ -900,7 +900,7 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   export (TIP → CAN 0 → none → TIP). New issues #227 (R8 VerifyError), #228 (ACTIVE after stop), #229 (0x0F8 oil / PTU
   identity — priority before thermal acceptance), #230 (0x138 PCM gear); #207 #216 #226 #125 #225 #227 commented. Final
   local release: source `0c7431a` clean, 6,540,588 B, SHA-256 `d88456d4…f6c3`, vc 36, signer `c99b6f26…`, verify-release OK,
-  installed + smoked (0 verifier rejections). 955 / 67 tests (debug + release); Sapphire 282 / 25, ESLint 0, tsc, build,
+  installed + smoked (DRIVE renders, crash buffer empty). 955 / 67 tests (debug + release), lint 0 / 45; Sapphire 282 / 25, ESLint 0, tsc, build,
   idb-check. Evidence, matrix, regression log, checklist: `~/Documents/openRS_-evidence/rc7-followup-2026-10-29/`. Throwaway
   AVD `Rc7_Followup` (deleted after). Resolved decisions from the corrections pass: AWD % withdrawn; gauge TIP-only; NRC
   without a time hold. Still unmeasured: ESC 3 s window. APK not offered for hardware acceptance.
