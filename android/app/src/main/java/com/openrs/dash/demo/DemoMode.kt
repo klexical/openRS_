@@ -231,7 +231,7 @@ object DemoMode {
         val vs = app.vehicleState.value
         FuelEconomy.onUpdate(vs.fuelLevelPct, vs.speedKph)
         val boost = com.openrs.dash.data.BoostSession.onState(vs, now)
-        PerformanceTimer.onSpeedUpdate(vs.speedKph, vs.rpm, boost.psi ?: 0.0)
+        PerformanceTimer.onSpeedUpdate(vs.speedKph, vs.rpm, boost)
         if (stamp && link == DemoLink.LIVE) {
             KnockSessionLog.onState(vs, now)
             BoostSessionLog.onState(vs, now)

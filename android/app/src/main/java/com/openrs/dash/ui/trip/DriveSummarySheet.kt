@@ -122,7 +122,11 @@ fun DriveSummarySheet(
                     if (prefs.speedUnit == "MPH") "%.1f MPG".format(282.48 / (drive.fuelUsedL / drive.distanceKm * 100.0))
                     else "%.1f L/100".format(drive.fuelUsedL / drive.distanceKm * 100.0)
                 } else "— ${if (prefs.speedUnit == "MPH") "MPG" else "L/100"}"
-                val boost = prefs.displayBoost(drive.peakBoostPsi / UnitConversions.KPA_TO_PSI + UnitConversions.STD_ATM_KPA)
+                // #207: the peak's own source; no reading → "—"; drives from before sources were stored → as recorded
+                val peak = com.openrs.dash.data.StoredBoost.drivePeak(drive)
+                val boostText = peak.psiOrNull?.let { psi ->
+                    prefs.displayBoost(psi / UnitConversions.KPA_TO_PSI + UnitConversions.STD_ATM_KPA).let { (v, u) -> "$v $u" }
+                } ?: "— ${prefs.displayBoost(UnitConversions.STD_ATM_KPA).second}"
                 ReadoutGrid(
                     rows = listOf(
                         listOf(Readout("DURATION", formatDurationCompact(durationMs)), Readout("DISTANCE", dist),
@@ -130,7 +134,8 @@ fun DriveSummarySheet(
                             Readout("ECONOMY", econ)),
                         listOf(Readout("TOP SPEED", "${prefs.displaySpeed(drive.maxSpeedKph)} ${prefs.speedLabel}"),
                             Readout("PEAK RPM", "${drive.peakRpm}"),
-                            Readout(if (drive.peakBoostSource == "TIP_033E") "PEAK TIP" else "PEAK BOOST", "${boost.first} ${boost.second}"),   // #207 source when recorded
+                            Readout("PEAK ${peak.label}", boostText,
+                                sub = if (peak is com.openrs.dash.data.StoredBoost.Legacy) "source not recorded" else null),
                             Readout("PEAK G", "%.2f g".format(drive.peakLateralG))),
                     ),
                     dense = true
@@ -495,7 +500,11 @@ private fun DriveTrendsSection(sample: List<DriveEntity>? = null, prefs: UserPre
         "KPA" -> psi / UnitConversions.KPA_TO_PSI
         else  -> psi
     }
-    val boostPeaks = recentDrives.map { boostIn(it.peakBoostPsi).toFloat() }
+    // #207: one series per kind of reading (StoredBoost.peakTrend) — never TIP and CAN peaks on one line, never 0 for
+    // a drive without a reading
+    val trend = com.openrs.dash.data.StoredBoost.peakTrend(recentDrives)
+    val thisPeak = trend?.first
+    val boostPeaks = trend?.second.orEmpty().map { boostIn(it).toFloat() }
     val aggrScores = recentDrives.map { it.aggressionScore.toFloat() }
     val mpg = prefs.speedUnit == "MPH"
     val fuelEcon = recentDrives.map { d ->
@@ -507,9 +516,10 @@ private fun DriveTrendsSection(sample: List<DriveEntity>? = null, prefs: UserPre
         if (oilPeaks.any { it > 0f }) {
             TrendRow("PEAK OIL", oilPeaks, accentMid(), "%.0f${prefs.tempLabel}".format(oilPeaks.last()))
         }
-        if (boostPeaks.any { it > 0f }) {
+        if (boostPeaks.size >= 2 && thisPeak != null) {
             val fmt = when (prefs.boostUnit) { "BAR" -> "%.2f"; "KPA" -> "%.0f"; else -> "%.1f" }
-            TrendRow("PEAK BOOST", boostPeaks, accentMid(), "${fmt.format(boostPeaks.last())} $boostUnit")
+            val label = if (thisPeak is com.openrs.dash.data.StoredBoost.Legacy) "PEAK BOOST (SRC N/R)" else "PEAK ${thisPeak.label}"
+            TrendRow(label, boostPeaks, accentMid(), "${fmt.format(boostPeaks.last())} $boostUnit")
         }
         if (aggrScores.any { it > 0f }) {
             TrendRow("SCORE", aggrScores, accentMid(), "%.0f".format(aggrScores.last()))

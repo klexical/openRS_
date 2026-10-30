@@ -14,5 +14,7 @@ data class PeakEvent(
     val value: Double,
     val lat: Double,
     val lng: Double,
-    val timestamp: Long
+    val timestamp: Long,
+    /** BOOST peaks: the measurement that set it (#207). */
+    val boostSource: BoostSource? = null,
 )

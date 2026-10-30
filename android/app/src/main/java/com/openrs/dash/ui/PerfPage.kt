@@ -287,7 +287,7 @@ private fun PerformanceTimerCard(vs: VehicleState, p: UserPrefs) {
                                     zeroTo60Ms = finishResult.zeroTo60Ms,
                                     zeroTo100Ms = finishResult.zeroTo100Ms,
                                     peakRpm = finishResult.peakRpm,
-                                    peakBoostPsi = finishResult.peakBoostPsi,
+                                    peakBoostPsi = 0.0,   // not stored: no source column (#207); exports omit it
                                     launchRpm = finishResult.launchRpm,
                                     ambientTempC = vs.ambientTempC
                                 )
@@ -440,7 +440,10 @@ private fun TimerResultRow(
         Row(Modifier.fillMaxWidth()) {
             MiniReadout("LAUNCH", "${"%.0f".format(result.launchRpm)} RPM", Modifier.weight(1f))
             MiniReadout("PEAK RPM", "%.0f".format(result.peakRpm), Modifier.weight(1f))
-            MiniReadout("PEAK BOOST", "${"%.1f".format(result.peakBoostPsi)} PSI", Modifier.weight(1f))
+            // #207: named by its source (TIP first, as on the gauge); no reading during the run → "—"
+            val peak = result.shownBoostPeak
+            MiniReadout(if (peak?.first == com.openrs.dash.data.BoostSource.TIP_033E) "PEAK TIP" else "PEAK BOOST",
+                peak?.let { "${"%.1f".format(it.second)} PSI" } ?: "— PSI", Modifier.weight(1f))
         }
 
         // Re-arm button

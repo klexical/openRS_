@@ -157,9 +157,12 @@ fun DriveReplayView(
                     listOf(Readout("SPEED", "${prefs.displaySpeed(currentPoint.speedKph)} ${prefs.speedLabel}"),
                         Readout("RPM", "${currentPoint.rpm}"),
                         Readout("GEAR", currentPoint.gear.ifEmpty { "— —" }),
-                        // #207: the point's own source when recorded (TIP / BOOST); no source → "— —"
-                        Readout(if (currentPoint.boostSource == "TIP_033E") "TIP" else "BOOST",
-                            if (currentPoint.boostSource == "NONE") "— —" else "${boost.first} ${boost.second}")),
+                        // #207: the point's own source when recorded (TIP / BOOST); no reading → "— —"; points from
+                        // before sources were stored: as recorded, "source not recorded"
+                        com.openrs.dash.data.StoredBoost.point(currentPoint).let { b ->
+                            Readout(b.label, if (b == com.openrs.dash.data.StoredBoost.Unavailable) "— —" else "${boost.first} ${boost.second}",
+                                sub = if (b is com.openrs.dash.data.StoredBoost.Legacy) "src n/r" else null)
+                        }),
                     listOf(Readout("OIL", oilText), Readout("COOLANT", cltText),
                         Readout("LAT G", "%.2f g".format(currentPoint.lateralG)),
                         Readout("MODE", currentPoint.driveMode.uppercase())),

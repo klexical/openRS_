@@ -6,6 +6,8 @@ import org.junit.Before
 import org.junit.Test
 
 class PerformanceTimerTest {
+    private fun can(psi: Double) = com.openrs.dash.data.BoostReading(com.openrs.dash.data.BoostSource.CAN_0F8, psi / com.openrs.dash.data.BoostReading.KPA_TO_PSI)
+
 
     @Before
     fun setUp() {
@@ -33,9 +35,9 @@ class PerformanceTimerTest {
     fun `arm from FINISHED succeeds`() {
         PerformanceTimer.arm()
         // Run to 60
-        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, 10.0) // starts
-        PerformanceTimer.onSpeedUpdate(97.0, 6500.0, 20.0) // crosses 60 mph
-        PerformanceTimer.onSpeedUpdate(161.0, 7000.0, 22.0) // crosses 100 mph → FINISHED
+        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, can(10.0)) // starts
+        PerformanceTimer.onSpeedUpdate(97.0, 6500.0, can(20.0)) // crosses 60 mph
+        PerformanceTimer.onSpeedUpdate(161.0, 7000.0, can(22.0)) // crosses 100 mph → FINISHED
         assertEquals(PerformanceTimer.State.FINISHED, PerformanceTimer.state.value)
 
         val rearmed = PerformanceTimer.arm()
@@ -46,7 +48,7 @@ class PerformanceTimerTest {
     @Test
     fun `arm from RUNNING fails`() {
         PerformanceTimer.arm()
-        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, 10.0) // starts
+        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, can(10.0)) // starts
         assertEquals(PerformanceTimer.State.RUNNING, PerformanceTimer.state.value)
 
         val rearmed = PerformanceTimer.arm()
@@ -64,7 +66,7 @@ class PerformanceTimerTest {
     @Test
     fun `cancel from RUNNING returns to IDLE`() {
         PerformanceTimer.arm()
-        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, 10.0) // starts
+        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, can(10.0)) // starts
         assertEquals(PerformanceTimer.State.RUNNING, PerformanceTimer.state.value)
         PerformanceTimer.cancel()
         assertEquals(PerformanceTimer.State.IDLE, PerformanceTimer.state.value)
@@ -75,28 +77,28 @@ class PerformanceTimerTest {
     @Test
     fun `movement above 3 kph starts timer`() {
         PerformanceTimer.arm()
-        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, 10.0)
+        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, can(10.0))
         assertEquals(PerformanceTimer.State.RUNNING, PerformanceTimer.state.value)
     }
 
     @Test
     fun `movement below 3 kph stays armed`() {
         PerformanceTimer.arm()
-        PerformanceTimer.onSpeedUpdate(2.9, 4000.0, 10.0)
+        PerformanceTimer.onSpeedUpdate(2.9, 4000.0, can(10.0))
         assertEquals(PerformanceTimer.State.ARMED, PerformanceTimer.state.value)
     }
 
     @Test
     fun `rolling start above 5 kph cancels`() {
         PerformanceTimer.arm()
-        PerformanceTimer.onSpeedUpdate(5.1, 4000.0, 10.0)
+        PerformanceTimer.onSpeedUpdate(5.1, 4000.0, can(10.0))
         assertEquals(PerformanceTimer.State.IDLE, PerformanceTimer.state.value)
     }
 
     @Test
     fun `exactly 5 kph stays armed`() {
         PerformanceTimer.arm()
-        PerformanceTimer.onSpeedUpdate(5.0, 4000.0, 10.0)
+        PerformanceTimer.onSpeedUpdate(5.0, 4000.0, can(10.0))
         // 5.0 is not > 5.0 (ARM_MAX), so should stay armed
         // But 5.0 >= 3.0 (START_THRESHOLD), so it should start
         assertEquals(PerformanceTimer.State.RUNNING, PerformanceTimer.state.value)
@@ -107,26 +109,26 @@ class PerformanceTimerTest {
     @Test
     fun `crossing 60 mph captures split`() {
         PerformanceTimer.arm()
-        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, 10.0) // start
-        val (sixty, _) = PerformanceTimer.onSpeedUpdate(96.6, 6500.0, 20.0) // 60 mph = 96.56 kph
+        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, can(10.0)) // start
+        val (sixty, _) = PerformanceTimer.onSpeedUpdate(96.6, 6500.0, can(20.0)) // 60 mph = 96.56 kph
         assertTrue("60 mph split should be captured", sixty)
     }
 
     @Test
     fun `below 60 mph does not capture split`() {
         PerformanceTimer.arm()
-        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, 10.0) // start
-        val (sixty, _) = PerformanceTimer.onSpeedUpdate(90.0, 6000.0, 18.0) // ~56 mph
+        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, can(10.0)) // start
+        val (sixty, _) = PerformanceTimer.onSpeedUpdate(90.0, 6000.0, can(18.0)) // ~56 mph
         assertFalse(sixty)
     }
 
     @Test
     fun `60 split captured only once`() {
         PerformanceTimer.arm()
-        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, 10.0) // start
-        val (sixty1, _) = PerformanceTimer.onSpeedUpdate(97.0, 6500.0, 20.0) // first 60 crossing
+        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, can(10.0)) // start
+        val (sixty1, _) = PerformanceTimer.onSpeedUpdate(97.0, 6500.0, can(20.0)) // first 60 crossing
         assertTrue(sixty1)
-        val (sixty2, _) = PerformanceTimer.onSpeedUpdate(98.0, 6600.0, 20.5) // still above 60
+        val (sixty2, _) = PerformanceTimer.onSpeedUpdate(98.0, 6600.0, can(20.5)) // still above 60
         assertFalse("60 split should not be re-captured", sixty2)
     }
 
@@ -135,9 +137,9 @@ class PerformanceTimerTest {
     @Test
     fun `crossing 100 mph finishes run`() {
         PerformanceTimer.arm()
-        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, 10.0) // start
-        PerformanceTimer.onSpeedUpdate(97.0, 6500.0, 20.0) // 60 mph
-        val (_, hundred) = PerformanceTimer.onSpeedUpdate(161.0, 7000.0, 22.0) // 100 mph = 160.93 kph
+        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, can(10.0)) // start
+        PerformanceTimer.onSpeedUpdate(97.0, 6500.0, can(20.0)) // 60 mph
+        val (_, hundred) = PerformanceTimer.onSpeedUpdate(161.0, 7000.0, can(22.0)) // 100 mph = 160.93 kph
         assertTrue("100 mph should finish", hundred)
         assertEquals(PerformanceTimer.State.FINISHED, PerformanceTimer.state.value)
         assertNotNull(PerformanceTimer.result.value)
@@ -146,9 +148,9 @@ class PerformanceTimerTest {
     @Test
     fun `result contains 60 and 100 splits`() {
         PerformanceTimer.arm()
-        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, 10.0)
-        PerformanceTimer.onSpeedUpdate(97.0, 6500.0, 20.0)
-        PerformanceTimer.onSpeedUpdate(161.0, 7000.0, 22.0)
+        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, can(10.0))
+        PerformanceTimer.onSpeedUpdate(97.0, 6500.0, can(20.0))
+        PerformanceTimer.onSpeedUpdate(161.0, 7000.0, can(22.0))
         val result = PerformanceTimer.result.value
         assertNotNull(result)
         assertTrue("zeroTo60Ms should be non-negative", result!!.zeroTo60Ms >= 0)
@@ -161,8 +163,8 @@ class PerformanceTimerTest {
     @Test
     fun `finishAt60 after 60 captured produces result`() {
         PerformanceTimer.arm()
-        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, 10.0)
-        PerformanceTimer.onSpeedUpdate(97.0, 6500.0, 20.0) // captures 60
+        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, can(10.0))
+        PerformanceTimer.onSpeedUpdate(97.0, 6500.0, can(20.0)) // captures 60
         PerformanceTimer.finishAt60()
         assertEquals(PerformanceTimer.State.FINISHED, PerformanceTimer.state.value)
         val result = PerformanceTimer.result.value
@@ -174,7 +176,7 @@ class PerformanceTimerTest {
     @Test
     fun `finishAt60 before 60 captured is no-op`() {
         PerformanceTimer.arm()
-        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, 10.0) // start, no 60 yet
+        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, can(10.0)) // start, no 60 yet
         PerformanceTimer.finishAt60()
         assertEquals(PerformanceTimer.State.RUNNING, PerformanceTimer.state.value)
         assertNull(PerformanceTimer.result.value)
@@ -192,11 +194,11 @@ class PerformanceTimerTest {
     @Test
     fun `result captures peak RPM across run`() {
         PerformanceTimer.arm()
-        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, 10.0)
-        PerformanceTimer.onSpeedUpdate(50.0, 7200.0, 18.0) // peak RPM
-        PerformanceTimer.onSpeedUpdate(80.0, 6000.0, 20.0) // lower RPM
-        PerformanceTimer.onSpeedUpdate(97.0, 6500.0, 22.0) // 60 split
-        PerformanceTimer.onSpeedUpdate(161.0, 7000.0, 21.0) // finish
+        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, can(10.0))
+        PerformanceTimer.onSpeedUpdate(50.0, 7200.0, can(18.0)) // peak RPM
+        PerformanceTimer.onSpeedUpdate(80.0, 6000.0, can(20.0)) // lower RPM
+        PerformanceTimer.onSpeedUpdate(97.0, 6500.0, can(22.0)) // 60 split
+        PerformanceTimer.onSpeedUpdate(161.0, 7000.0, can(21.0)) // finish
         val result = PerformanceTimer.result.value
         assertNotNull(result)
         assertEquals(7200.0, result!!.peakRpm, 0.01)
@@ -205,20 +207,43 @@ class PerformanceTimerTest {
     @Test
     fun `result captures peak boost across run`() {
         PerformanceTimer.arm()
-        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, 5.0) // start
-        PerformanceTimer.onSpeedUpdate(50.0, 6000.0, 22.5) // peak boost
-        PerformanceTimer.onSpeedUpdate(97.0, 6500.0, 20.0) // 60
-        PerformanceTimer.onSpeedUpdate(161.0, 7000.0, 18.0) // finish
+        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, can(5.0)) // start
+        PerformanceTimer.onSpeedUpdate(50.0, 6000.0, can(22.5)) // peak boost
+        PerformanceTimer.onSpeedUpdate(97.0, 6500.0, can(20.0)) // 60
+        PerformanceTimer.onSpeedUpdate(161.0, 7000.0, can(18.0)) // finish
         val result = PerformanceTimer.result.value
-        assertEquals(22.5, result!!.peakBoostPsi, 0.01)
+        assertEquals(22.5, result!!.boostPeaks[com.openrs.dash.data.BoostSource.CAN_0F8]!!, 0.01)
+    }
+
+    @Test
+    fun `no boost reading during the run is no peak — never 0 — and TIP and CAN peaks stay apart`() {
+        // #207: before, a run whose launch sample had no reading started its peak at 0 and CAN / TIP shared one max
+        val none = com.openrs.dash.data.BoostReading.NONE
+        PerformanceTimer.arm()
+        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, none)
+        PerformanceTimer.onSpeedUpdate(97.0, 6500.0, none)
+        PerformanceTimer.onSpeedUpdate(161.0, 7000.0, none)
+        assertEquals(null, PerformanceTimer.result.value!!.shownBoostPeak)
+        assertTrue(PerformanceTimer.result.value!!.boostPeaks.isEmpty())
+
+        val tip = { psi: Double -> com.openrs.dash.data.BoostReading(com.openrs.dash.data.BoostSource.TIP_033E, psi / com.openrs.dash.data.BoostReading.KPA_TO_PSI) }
+        PerformanceTimer.arm()
+        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, can(0.0))           // genuine 0 from CAN
+        PerformanceTimer.onSpeedUpdate(50.0, 6000.0, tip(9.0))
+        PerformanceTimer.onSpeedUpdate(97.0, 6500.0, can(0.0))
+        PerformanceTimer.onSpeedUpdate(161.0, 7000.0, tip(8.0))
+        val r = PerformanceTimer.result.value!!
+        assertEquals(0.0, r.boostPeaks[com.openrs.dash.data.BoostSource.CAN_0F8]!!, 1e-9)
+        assertEquals(9.0, r.boostPeaks[com.openrs.dash.data.BoostSource.TIP_033E]!!, 1e-6)
+        assertEquals(com.openrs.dash.data.BoostSource.TIP_033E, r.shownBoostPeak!!.first)
     }
 
     @Test
     fun `result captures launch RPM`() {
         PerformanceTimer.arm()
-        PerformanceTimer.onSpeedUpdate(3.1, 4500.0, 10.0) // launch at 4500 RPM
-        PerformanceTimer.onSpeedUpdate(97.0, 6500.0, 20.0) // 60
-        PerformanceTimer.onSpeedUpdate(161.0, 7000.0, 22.0) // finish
+        PerformanceTimer.onSpeedUpdate(3.1, 4500.0, can(10.0)) // launch at 4500 RPM
+        PerformanceTimer.onSpeedUpdate(97.0, 6500.0, can(20.0)) // 60
+        PerformanceTimer.onSpeedUpdate(161.0, 7000.0, can(22.0)) // finish
         val result = PerformanceTimer.result.value
         assertEquals(4500.0, result!!.launchRpm, 0.01)
     }
@@ -228,26 +253,26 @@ class PerformanceTimerTest {
     @Test
     fun `best60 updated on first run`() {
         PerformanceTimer.arm()
-        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, 10.0)
-        PerformanceTimer.onSpeedUpdate(97.0, 6500.0, 20.0) // 60
+        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, can(10.0))
+        PerformanceTimer.onSpeedUpdate(97.0, 6500.0, can(20.0)) // 60
         assertNotNull(PerformanceTimer.best60Ms.value)
     }
 
     @Test
     fun `best100 updated on first run`() {
         PerformanceTimer.arm()
-        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, 10.0)
-        PerformanceTimer.onSpeedUpdate(97.0, 6500.0, 20.0) // 60
-        PerformanceTimer.onSpeedUpdate(161.0, 7000.0, 22.0) // 100
+        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, can(10.0))
+        PerformanceTimer.onSpeedUpdate(97.0, 6500.0, can(20.0)) // 60
+        PerformanceTimer.onSpeedUpdate(161.0, 7000.0, can(22.0)) // 100
         assertNotNull(PerformanceTimer.best100Ms.value)
     }
 
     @Test
     fun `resetSession clears everything`() {
         PerformanceTimer.arm()
-        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, 10.0)
-        PerformanceTimer.onSpeedUpdate(97.0, 6500.0, 20.0)
-        PerformanceTimer.onSpeedUpdate(161.0, 7000.0, 22.0)
+        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, can(10.0))
+        PerformanceTimer.onSpeedUpdate(97.0, 6500.0, can(20.0))
+        PerformanceTimer.onSpeedUpdate(161.0, 7000.0, can(22.0))
         assertNotNull(PerformanceTimer.best60Ms.value)
         assertNotNull(PerformanceTimer.best100Ms.value)
 
@@ -263,7 +288,7 @@ class PerformanceTimerTest {
     @Test
     fun `currentSpeedMph tracks mph conversion`() {
         PerformanceTimer.arm()
-        PerformanceTimer.onSpeedUpdate(100.0, 5000.0, 15.0)
+        PerformanceTimer.onSpeedUpdate(100.0, 5000.0, can(15.0))
         assertEquals(62.137, PerformanceTimer.currentSpeedMph.value, 0.01)
     }
 
@@ -271,7 +296,7 @@ class PerformanceTimerTest {
 
     @Test
     fun `onSpeedUpdate in IDLE state returns false-false`() {
-        val (sixty, hundred) = PerformanceTimer.onSpeedUpdate(100.0, 5000.0, 15.0)
+        val (sixty, hundred) = PerformanceTimer.onSpeedUpdate(100.0, 5000.0, can(15.0))
         assertFalse(sixty)
         assertFalse(hundred)
     }
@@ -279,12 +304,12 @@ class PerformanceTimerTest {
     @Test
     fun `onSpeedUpdate in FINISHED state returns false-false`() {
         PerformanceTimer.arm()
-        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, 10.0)
-        PerformanceTimer.onSpeedUpdate(97.0, 6500.0, 20.0)
-        PerformanceTimer.onSpeedUpdate(161.0, 7000.0, 22.0)
+        PerformanceTimer.onSpeedUpdate(3.1, 4000.0, can(10.0))
+        PerformanceTimer.onSpeedUpdate(97.0, 6500.0, can(20.0))
+        PerformanceTimer.onSpeedUpdate(161.0, 7000.0, can(22.0))
         assertEquals(PerformanceTimer.State.FINISHED, PerformanceTimer.state.value)
 
-        val (sixty, hundred) = PerformanceTimer.onSpeedUpdate(200.0, 7500.0, 25.0)
+        val (sixty, hundred) = PerformanceTimer.onSpeedUpdate(200.0, 7500.0, can(25.0))
         assertFalse(sixty)
         assertFalse(hundred)
     }

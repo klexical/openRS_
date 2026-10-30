@@ -76,8 +76,10 @@ private data class Channel(
 private val CHANNELS = listOf(
     Channel("SPD",    { Accent })  { it.speedKph },
     Channel("RPM",    { Warn })    { it.rpm.toDouble() },
-    // #207: a point recorded with no fresh boost source is a gap, not 0
-    Channel("BOOST",  { Ok }, axis = "boost", valid = { it.boostSource != "NONE" }) { it.boostPsi },
+    // #207: one line per measurement — CAN 0x0F8 (BOOST; also points recorded before sources were stored, as
+    // recorded) and TIP − baro (TIP). A point with no reading, or another source's, is a gap — never 0, never joined.
+    Channel("BOOST",  { Ok }, axis = "boost", valid = { it.boostSource == null || it.boostSource == "CAN_0F8" }) { it.boostPsi },
+    Channel("TIP",    { Accent }, axis = "boost", valid = { it.boostSource == "TIP_033E" }) { it.boostPsi },
     Channel("OIL",    { Orange }, valid = { it.oilTempC > -90.0 }) { it.oilTempC },  // -99 = not yet received
     Channel("G-LAT",  { Frost })   { it.lateralG },
     Channel("THRTL",  { Dim })     { it.throttlePct },
@@ -90,7 +92,7 @@ private val CHANNELS = listOf(
         valid = { it.wgdcPct >= 0.0 }) { it.wgdcPct },
 )
 
-private val DEFAULT_ACTIVE = setOf(0, 2) // SPD + BOOST
+private val DEFAULT_ACTIVE = setOf(0, 2, 3) // SPD + BOOST + TIP
 
 /** Pre-computed per-channel draw inputs. [range] is shared across an axis group. */
 private data class ChannelData(
@@ -119,11 +121,11 @@ fun DriveTimeSeries(
     // Resolve channel colors in composable context
     val channelColors = CHANNELS.map { it.color() }
 
-    // Polled channels with nothing to show in this drive (pre-v10 drives, PCM silent, or a
-    // WGDC series that's all zero) get no chip at all.
+    // Channels with nothing to show in this drive (pre-v10 drives, PCM silent, a WGDC series that's all zero, a boost
+    // source the drive never recorded) get no chip at all. A genuine 0 reading counts for BOOST / TIP.
     val available = remember(points) {
         CHANNELS.map { ch ->
-            !ch.sparse || points.any { ch.valid(it) && ch.extract(it) != 0.0 }
+            points.any { ch.valid(it) && (!ch.sparse || ch.extract(it) != 0.0) }
         }
     }
 

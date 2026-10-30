@@ -126,7 +126,7 @@ internal class LinkSession(
 
         // Feed performance timer (speed from 0x130, ~100 Hz)
         if (canId == 0x130) {
-            val (sixty, hundred) = PerformanceTimer.onSpeedUpdate(wp.speedKph, wp.rpm, boost.psi ?: 0.0)
+            val (sixty, hundred) = PerformanceTimer.onSpeedUpdate(wp.speedKph, wp.rpm, boost)
             if (hundred || (sixty && PerformanceTimer.state.value == PerformanceTimer.State.FINISHED)) {
                 // Persist completed run to Room
                 val result = PerformanceTimer.result.value
@@ -137,7 +137,7 @@ internal class LinkSession(
                         zeroTo60Ms = result.zeroTo60Ms,
                         zeroTo100Ms = result.zeroTo100Ms,
                         peakRpm = result.peakRpm,
-                        peakBoostPsi = result.peakBoostPsi,
+                        peakBoostPsi = 0.0,   // not stored: perf_runs has no source column (#207); exports omit it
                         launchRpm = result.launchRpm,
                         ambientTempC = wp.ambientTempC
                     )

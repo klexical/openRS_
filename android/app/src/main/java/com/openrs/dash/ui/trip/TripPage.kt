@@ -648,7 +648,8 @@ private fun TripPageContent(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     val unit = legendUnit(colorMode, prefs)
-                    MonoText(if (unit.isEmpty()) colorMode.label else "${colorMode.label} $unit", 10.sp, actionInk(accent), FontWeight.Bold)
+                    val modeLabel = legendLabel(colorMode, mapPoints)
+                    MonoText(if (unit.isEmpty()) modeLabel else "$modeLabel $unit", 10.sp, actionInk(accent), FontWeight.Bold)
                     colorLegend(colorMode, prefs).forEach { (label, color) ->
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(3.dp),
@@ -1478,9 +1479,10 @@ private fun DriveCard(
                 "%.1f mi".format(drive.distanceKm * 0.621371) else "%.1f km".format(drive.distanceKm))
             if (drive.maxSpeedKph > 0) add("TOP" to "${prefs.displaySpeed(drive.maxSpeedKph)} ${prefs.speedLabel.lowercase()}")
             if (drive.peakRpm > 0) add("RPM" to "${drive.peakRpm}")
-            // Named by the peak's own source when the drive recorded it (#207); older drives: as recorded, "BOOST"
-            if (drive.peakBoostPsi > 0) add((if (drive.peakBoostSource == "TIP_033E") "TIP" else "BOOST") to prefs.displayBoost(drive.peakBoostPsi / UnitConversions.KPA_TO_PSI +
-                UnitConversions.STD_ATM_KPA).let { (v, u) -> "$v ${u.lowercase()}" })
+            // Named by the peak's own source (#207) — a genuine 0 shows; no reading doesn't; older drives: as recorded
+            val peak = com.openrs.dash.data.StoredBoost.drivePeak(drive)
+            peak.psiOrNull?.let { psi -> add(peak.label to prefs.displayBoost(psi / UnitConversions.KPA_TO_PSI +
+                UnitConversions.STD_ATM_KPA).let { (v, u) -> "$v ${u.lowercase()}" }) }
             if (drive.peakLateralG > 0) add("LAT G" to "%.2f g".format(drive.peakLateralG))
         }
         Row(Modifier.fillMaxWidth()) {

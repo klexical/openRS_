@@ -63,6 +63,7 @@ internal object DriveExportBuilder {
                 appendLine("          <openrs:rpm>${pt.rpm}</openrs:rpm>")
                 appendLine("          <openrs:gear>${pt.gear}</openrs:gear>")
                 pt.boostReadingPsi()?.let { appendLine("          <openrs:boostPsi>${"%.2f".format(Locale.ROOT, it)}</openrs:boostPsi>") }
+                pt.boostSource?.takeIf { it != "NONE" }?.let { appendLine("          <openrs:boostSource>$it</openrs:boostSource>") }
                 appendLine("          <openrs:coolantC>${"%.1f".format(Locale.ROOT, pt.coolantTempC)}</openrs:coolantC>")
                 appendLine("          <openrs:oilC>${"%.1f".format(Locale.ROOT, pt.oilTempC)}</openrs:oilC>")
                 appendLine("          <openrs:ambientC>${"%.1f".format(Locale.ROOT, pt.ambientTempC)}</openrs:ambientC>")
@@ -210,13 +211,21 @@ internal object DriveExportBuilder {
         appendLine()
         appendLine("  Fuel Used   : ${"%.2f".format(drive.fuelUsedL)} L")
         appendLine("  Peak RPM    : ${drive.peakRpm}")
-        // #207: only a drive recorded under the rule says which source — an older drive's peak is as recorded, source unknown
-        val peakSrc = com.openrs.dash.data.BoostSource.parse(drive.peakBoostSource)
-        appendLine("  Peak Boost  : ${"%.1f".format(drive.peakBoostPsi)} PSI" +
-            (peakSrc?.let { " (${if (it == com.openrs.dash.data.BoostSource.TIP_033E) "TIP 0x033E − baro" else "CAN 0x0F8"})" } ?: ""))
-        appendLine("  Boost source: " + if (drive.boostPolicy != null)
-            "per reading (${drive.boostPolicy}): CAN 0x0F8 while fresh unless it wasn't tracking boost, else TIP − measured baro; none → no reading"
-            else "not recorded — this drive predates per-reading boost provenance (values as recorded)")
+        // #207: only a drive recorded under a rule says which source — an older drive's peak is as recorded, source
+        // unknown; a drive with no reading says so (never "0.0")
+        appendLine("  Peak Boost  : " + when (val peak = com.openrs.dash.data.StoredBoost.drivePeak(drive)) {
+            is com.openrs.dash.data.StoredBoost.Reading -> "${"%.1f".format(peak.psi)} PSI (" +
+                (if (peak.source == com.openrs.dash.data.BoostSource.TIP_033E) "TIP 0x033E − baro" else "CAN 0x0F8") + ")"
+            else -> if (drive.boostPolicy == null) "${"%.1f".format(drive.peakBoostPsi)} PSI (source not recorded)"
+                    else "— (no boost reading recorded)"
+        })
+        appendLine("  Boost source: " + when (drive.boostPolicy) {
+            null -> "not recorded — this drive predates per-reading boost provenance (values as recorded)"
+            "rc7-boost-v2" -> "per reading (rc7-boost-v2, development builds only): CAN 0x0F8 while fresh unless judged " +
+                "not tracking at full throttle, else TIP − measured baro; none → no reading"
+            else -> "per reading (${drive.boostPolicy}): TIP 0x033E − measured baro while fresh, else CAN 0x0F8 while " +
+                "fresh; none → no reading"
+        })
         appendLine("  Peak Lat G  : ${"%.2f".format(drive.peakLateralG)} g")
         if (drive.avgStftPct != null || drive.avgLtftPct != null) {
             fun pct(v: Double?) = v?.let { "%+.1f%%".format(it) } ?: "—"
@@ -344,8 +353,10 @@ internal object DriveExportBuilder {
             put("avgSpeedKph", drive.avgSpeedKph)
             put("maxSpeedKph", drive.maxSpeedKph)
             put("peakRpm", drive.peakRpm)
-            put("peakBoostPsi", drive.peakBoostPsi)
-            // #207 provenance — present only for drives recorded under the rule; absent = unknown, never assumed
+            // #207 provenance — present only for drives recorded under a rule; absent = unknown, never assumed. A drive
+            // recorded under a rule with no boost reading has no peak (never 0); older drives: as recorded
+            if (drive.boostPolicy == null || com.openrs.dash.data.StoredBoost.drivePeak(drive) != com.openrs.dash.data.StoredBoost.Unavailable)
+                put("peakBoostPsi", drive.peakBoostPsi)
             drive.peakBoostSource?.let { put("peakBoostSource", it) }
             drive.boostPolicy?.let { put("boostPolicy", it) }
             put("peakLateralG", drive.peakLateralG)
@@ -378,7 +389,6 @@ internal object DriveExportBuilder {
         for (pt in points) {
             val candidates = listOf(
                 PeakCandidate(PeakType.RPM, pt.rpm.toDouble(), pt.lat, pt.lng, pt.timestamp),
-                PeakCandidate(PeakType.BOOST, pt.boostReadingPsi() ?: 0.0, pt.lat, pt.lng, pt.timestamp, pt.boostSource),
                 PeakCandidate(PeakType.LATERAL_G, Math.abs(pt.lateralG), pt.lat, pt.lng, pt.timestamp),
                 PeakCandidate(PeakType.SPEED, pt.speedKph, pt.lat, pt.lng, pt.timestamp)
             )
@@ -400,6 +410,23 @@ internal object DriveExportBuilder {
                 peak.source?.let { put("source", it) }
             })
         }
+        // #207: one BOOST peak per measurement (TIP, CAN 0x0F8, or legacy without a source) — never one max across
+        // them; a genuine 0 is a peak, a point without a reading is none
+        points.mapNotNull { pt -> (com.openrs.dash.data.StoredBoost.point(pt) as? com.openrs.dash.data.StoredBoost.Reading)?.let { pt to it.source.name }
+                ?: (pt.boostSource == null).takeIf { it }?.let { pt to null } }
+            .groupBy({ it.second }, { it.first })
+            .forEach { (source, pts) ->
+                val best = pts.maxBy { it.boostPsi }
+                if (source == null && best.boostPsi <= 0.0) return@forEach        // legacy: as before, a positive peak only
+                peaksArray.put(JSONObject().apply {
+                    put("type", PeakType.BOOST.name)
+                    put("value", best.boostPsi)
+                    put("lat", best.lat)
+                    put("lng", best.lng)
+                    put("timestampMs", best.timestamp)
+                    source?.let { put("source", it) }
+                })
+            }
         root.put("peaks", peaksArray)
         // #207: how many recorded points came from each boost source (only points that carry one)
         points.mapNotNull { it.boostSource }.groupingBy { it }.eachCount().takeIf { it.isNotEmpty() }?.let { counts ->
@@ -499,7 +526,7 @@ internal object DriveExportBuilder {
                     put("label", bm.label)
                     put("speedKph", bm.speedKph)
                     put("rpm", bm.rpm)
-                    put("boostPsi", bm.boostPsi)
+                    // no boost: bookmarks store no source (#207), so a value couldn't be named
                 })
             }
             root.put("bookmarks", bmArray)
@@ -513,7 +540,7 @@ internal object DriveExportBuilder {
                     put("lapNumber", lap.lapNumber)
                     put("lapTimeMs", lap.lapTimeMs)
                     if (lap.peakRpm > 0) put("peakRpm", lap.peakRpm)
-                    if (lap.peakBoostPsi > 0) put("peakBoostPsi", lap.peakBoostPsi)
+                    // no boost: lap peaks are never fed a reading and store no source (#207)
                     if (lap.peakLateralG > 0) put("peakLateralG", lap.peakLateralG)
                     if (lap.peakSpeedKph > 0) put("peakSpeedKph", lap.peakSpeedKph)
                 })
@@ -530,7 +557,7 @@ internal object DriveExportBuilder {
                     put("timeMs", run.zeroTo60Ms)
                     if (run.zeroTo100Ms != null) put("timeTo100Ms", run.zeroTo100Ms)
                     if (run.launchRpm > 0) put("launchRpm", run.launchRpm)
-                    if (run.peakBoostPsi > 0) put("peakBoostPsi", run.peakBoostPsi)
+                    // no boost: perf_runs store no source (#207) — shown on PERF with its source, not exported
                     if (run.densityAltFt != null) put("densityAltFt", run.densityAltFt)
                     if (run.ambientTempC > -90) put("ambientTempC", run.ambientTempC)
                 })
@@ -617,6 +644,7 @@ internal object DriveExportBuilder {
      * G-forces in g, temps in °C. Custom OBD channels use the rc_ prefix.
      */
     fun buildRaceChronoCsv(points: List<DrivePointEntity>): String = buildString {
+        val boostOf = singleSourceBoost(points)
         appendLine(
             "Timestamp (s),Latitude (deg),Longitude (deg),Speed (m/s),Speed (kph)," +
             "Lateral Acceleration (G),Longitudinal Acceleration (G)," +
@@ -639,7 +667,7 @@ internal object DriveExportBuilder {
                 "${pt.rpm}," +
                 "${"%.1f".format(Locale.ROOT, pt.throttlePct)}," +
                 "${csvEscape(pt.gear)}," +
-                "${pt.boostReadingPsi()?.let { "%.2f".format(Locale.ROOT, it) } ?: ""}," +
+                "${boostOf(pt)?.let { "%.2f".format(Locale.ROOT, it) } ?: ""}," +
                 "${"%.1f".format(Locale.ROOT, pt.coolantTempC)}," +
                 "${"%.1f".format(Locale.ROOT, pt.oilTempC)}," +
                 "${"%.1f".format(Locale.ROOT, pt.brakePressure)}"
@@ -653,6 +681,7 @@ internal object DriveExportBuilder {
      * Speed in MPH, G-forces in g, temps in °F (TrackAddict convention).
      */
     fun buildTrackAddictCsv(points: List<DrivePointEntity>): String = buildString {
+        val boostOf = singleSourceBoost(points)
         appendLine(
             "Time,Latitude,Longitude,Speed (MPH),Lateral Gs,Lineal Gs," +
             "RPM,Throttle (%),Gear,Boost (PSI)," +
@@ -675,11 +704,27 @@ internal object DriveExportBuilder {
                 "${pt.rpm}," +
                 "${"%.1f".format(Locale.ROOT, pt.throttlePct)}," +
                 "${csvEscape(pt.gear)}," +
-                "${pt.boostReadingPsi()?.let { "%.2f".format(Locale.ROOT, it) } ?: ""}," +
+                "${boostOf(pt)?.let { "%.2f".format(Locale.ROOT, it) } ?: ""}," +
                 "${"%.1f".format(Locale.ROOT, coolantF)}," +
                 "${"%.1f".format(Locale.ROOT, oilF)}," +
                 "${"%.1f".format(Locale.ROOT, pt.brakePressure)}"
             )
+        }
+    }
+
+    /**
+     * Third-party track files have one boost column and no source (#207): it carries only the drive peak's measurement
+     * ([com.openrs.dash.data.StoredBoost.primarySource]) — other sources' points and points without a reading stay
+     * empty, never merged into one series. Points from before sources were stored: as recorded.
+     */
+    private fun singleSourceBoost(points: List<DrivePointEntity>): (DrivePointEntity) -> Double? {
+        val source = com.openrs.dash.data.StoredBoost.primarySource(points)
+        return { pt ->
+            when (val b = com.openrs.dash.data.StoredBoost.point(pt)) {
+                is com.openrs.dash.data.StoredBoost.Reading -> b.psi.takeIf { b.source == source }
+                is com.openrs.dash.data.StoredBoost.Legacy -> b.psi
+                com.openrs.dash.data.StoredBoost.Unavailable -> null
+            }
         }
     }
 

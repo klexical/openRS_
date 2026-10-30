@@ -164,3 +164,58 @@ object BoostSession {
         _peaks.value = emptyMap()
     }
 }
+
+/**
+ * What a stored boost value is (#207) — for every reader of recorded drives (TRIP, exports): a reading with its source,
+ * a value recorded before sources were stored (legacy: shown as recorded, "source not recorded", never given today's
+ * source), or no reading. A genuine 0 from a source is a reading; "no reading" is never shown as 0.
+ */
+sealed interface StoredBoost {
+    data class Reading(val psi: Double, val source: BoostSource) : StoredBoost
+    data class Legacy(val psi: Double) : StoredBoost
+    data object Unavailable : StoredBoost
+
+    val psiOrNull: Double? get() = when (this) { is Reading -> psi; is Legacy -> psi; Unavailable -> null }
+    /** TIP / BOOST (CAN 0x0F8) / BOOST for legacy values. */
+    val label: String get() = when (this) { is Reading -> source.label; is Legacy -> "BOOST"; Unavailable -> "BOOST" }
+    /** Readings of one kind: same source, or both legacy. */
+    fun sameKind(other: StoredBoost): Boolean = when (this) {
+        is Reading -> other is Reading && other.source == source
+        is Legacy -> other is Legacy
+        Unavailable -> false
+    }
+
+    companion object {
+        /** A drive's peak. Drives recorded under a boost policy store the peak's source (none = no reading); older
+         *  drives keep their value as recorded — 0 there meant no reading too, so only a positive value is shown. */
+        fun drivePeak(d: DriveEntity): StoredBoost = when {
+            d.boostPolicy == null -> if (d.peakBoostPsi > 0) Legacy(d.peakBoostPsi) else Unavailable
+            else -> BoostSource.parse(d.peakBoostSource)?.takeIf { it != BoostSource.NONE }
+                ?.let { Reading(d.peakBoostPsi, it) } ?: Unavailable
+        }
+
+        /** A recorded point: CAN / TIP = reading, "NONE" = no reading, no source column value = legacy, as recorded. */
+        fun point(p: DrivePointEntity): StoredBoost = when (val s = p.boostSource) {
+            null -> Legacy(p.boostPsi)
+            else -> BoostSource.parse(s)?.takeIf { it != BoostSource.NONE }?.let { Reading(p.boostPsi, it) } ?: Unavailable
+        }
+
+        /**
+         * The PEAK trend over [drives] (oldest first): the latest drive's kind of peak and the peaks of every drive of
+         * that kind (same source, or all from before sources were stored) — drives without a reading are left out,
+         * never plotted as 0. Null when the latest drive has no peak.
+         */
+        fun peakTrend(drives: List<DriveEntity>): Pair<StoredBoost, List<Double>>? {
+            val latest = drives.lastOrNull()?.let { drivePeak(it) }?.takeIf { it != Unavailable } ?: return null
+            return latest to drives.map { drivePeak(it) }.filter { it.sameKind(latest) }.map { it.psiOrNull!! }
+        }
+
+        /**
+         * The one source a single-scale view of a drive's points uses (map colouring, third-party track files that
+         * have one boost column): the source of the drive's highest reading — the drive peak's source. Null when
+         * the points are legacy or have no reading. Points of any other source are left out, never merged in.
+         */
+        fun primarySource(points: List<DrivePointEntity>): BoostSource? =
+            points.mapNotNull { point(it) as? Reading }.maxByOrNull { it.psi }?.source
+    }
+}

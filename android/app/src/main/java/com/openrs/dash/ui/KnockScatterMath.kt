@@ -1,6 +1,8 @@
 package com.openrs.dash.ui
 
+import com.openrs.dash.data.BoostSource
 import com.openrs.dash.data.KnockEventEntity
+import com.openrs.dash.data.StoredBoost
 
 /**
  * Pure geometry for [KnockScatter] (rc.6, #174) — the draw pass and tap hit-testing share
@@ -32,14 +34,34 @@ internal object KnockScatterMath {
         return x to y
     }
 
-    /** Index of the event nearest the tap within [radiusPx], or null. Ties → worst KR. */
+    /** An event's boost (#207): its source when recorded, "NONE" = no reading, no column value = legacy. */
+    fun boost(ev: KnockEventEntity): StoredBoost = when (val s = ev.boostSource) {
+        null -> StoredBoost.Legacy(ev.boostPsi)
+        else -> BoostSource.parse(s)?.takeIf { it != BoostSource.NONE }?.let { StoredBoost.Reading(ev.boostPsi, it) }
+            ?: StoredBoost.Unavailable
+    }
+
+    /** The one measurement the boost axis plots: the source of the highest reading (null = legacy events only). */
+    fun axisSource(events: List<KnockEventEntity>): BoostSource? =
+        events.mapNotNull { boost(it) as? StoredBoost.Reading }.maxByOrNull { it.psi }?.source
+
+    /** Drawn on the RPM × boost plane: a reading of [axisSource], or a legacy value; never "no reading" as 0. */
+    fun plotted(ev: KnockEventEntity, axisSource: BoostSource?): Boolean = when (val b = boost(ev)) {
+        is StoredBoost.Reading -> b.source == axisSource
+        is StoredBoost.Legacy -> true
+        StoredBoost.Unavailable -> false
+    }
+
+    /** Index of the event nearest the tap within [radiusPx], or null. Ties → worst KR. Only [plotted] events. */
     fun nearest(
         events: List<KnockEventEntity>, tapX: Float, tapY: Float, plot: Plot, radiusPx: Float,
         rpmMin: Float, rpmMax: Float, boostMin: Float, boostMax: Float
     ): Int? {
         var best: Int? = null
         var bestD2 = radiusPx * radiusPx
+        val axis = axisSource(events)
         for (i in events.indices) {
+            if (!plotted(events[i], axis)) continue
             val (x, y) = project(events[i], plot, rpmMin, rpmMax, boostMin, boostMax)
             val d2 = (x - tapX) * (x - tapX) + (y - tapY) * (y - tapY)
             val b = best

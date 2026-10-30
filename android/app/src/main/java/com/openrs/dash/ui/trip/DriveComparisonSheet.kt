@@ -145,13 +145,21 @@ fun DriveComparisonSheet(
                 delta = formatIntDelta(driveB.peakRpm - driveA.peakRpm)
             )
 
+            // #207: a delta only between peaks of the same source (or two drives from before sources were stored);
+            // otherwise each value is named by its source and nothing is compared. No reading = "—", never 0.
+            val peakA = com.openrs.dash.data.StoredBoost.drivePeak(driveA)
+            val peakB = com.openrs.dash.data.StoredBoost.drivePeak(driveB)
+            val comparable = peakA.sameKind(peakB)
+            fun peakText(p: com.openrs.dash.data.StoredBoost, named: Boolean) = p.psiOrNull?.let { psi ->
+                formatBoost(psi, prefs) + if (named) " ${if (p is com.openrs.dash.data.StoredBoost.Legacy) "src n/r" else p.label}" else ""
+            } ?: "—"
             ComparisonRow(
-                label = "PEAK BOOST",
-                valueA = formatBoost(driveA.peakBoostPsi, prefs),
-                valueB = formatBoost(driveB.peakBoostPsi, prefs),
-                direction = DeltaDirection.HIGHER_BETTER,
-                rawDelta = driveB.peakBoostPsi - driveA.peakBoostPsi,
-                delta = formatBoostDelta(driveB.peakBoostPsi - driveA.peakBoostPsi, prefs)
+                label = if (comparable) "PEAK ${peakA.label}" else "PEAK BOOST / TIP",
+                valueA = peakText(peakA, !comparable),
+                valueB = peakText(peakB, !comparable),
+                direction = if (comparable) DeltaDirection.HIGHER_BETTER else DeltaDirection.NEUTRAL,
+                rawDelta = if (comparable) peakB.psiOrNull!! - peakA.psiOrNull!! else 0.0,
+                delta = if (comparable) formatBoostDelta(peakB.psiOrNull!! - peakA.psiOrNull!!, prefs) else ""
             )
 
             ComparisonRow(

@@ -603,9 +603,9 @@ class DriveRecorder(
             peaks.removeAll { it.type == PeakType.RPM }
             peaks += PeakEvent(PeakType.RPM, vs.rpm, point.lat, point.lng, now)
         }
-        com.openrs.dash.data.BoostRule.nextDrivePeak(state.peakBoostPsi, state.peakBoostSource, boost)?.let { (psi, _) ->
+        com.openrs.dash.data.BoostRule.nextDrivePeak(state.peakBoostPsi, state.peakBoostSource, boost)?.let { (psi, src) ->
             peaks.removeAll { it.type == PeakType.BOOST }
-            peaks += PeakEvent(PeakType.BOOST, psi, point.lat, point.lng, now)
+            peaks += PeakEvent(PeakType.BOOST, psi, point.lat, point.lng, now, boostSource = src)
         }
         if (abs(vs.lateralG) > state.peakLateralG) {
             peaks.removeAll { it.type == PeakType.LATERAL_G }
@@ -743,9 +743,14 @@ class DriveRecorder(
         val avgThrottle = points.sumOf { it.throttlePct } / points.size / 100.0
         val avgLatG = points.sumOf { abs(it.lateralG) } / points.size / 1.0
         val avgRpmFrac = points.sumOf { it.rpm.toDouble() } / points.size / 6800.0
-        val avgBoostFrac = points.sumOf { it.boostPsi.coerceAtLeast(0.0) } / points.size / 22.0
-
-        val raw = (avgThrottle * 0.30 + avgLatG * 0.25 + avgRpmFrac * 0.25 + avgBoostFrac * 0.20) * 100.0
+        // Boost term from readings of one source only (the drive peak's, #207); points without a reading are left out,
+        // never averaged in as 0. No reading at all: the other three terms carry the score.
+        val src = com.openrs.dash.data.StoredBoost.primarySource(points)
+        val boostPsis = points.mapNotNull { (com.openrs.dash.data.StoredBoost.point(it) as? com.openrs.dash.data.StoredBoost.Reading)
+            ?.takeIf { r -> r.source == src }?.psi }
+        val base = avgThrottle * 0.30 + avgLatG * 0.25 + avgRpmFrac * 0.25
+        val raw = if (boostPsis.isEmpty()) base / 0.80 * 100.0
+                  else (base + boostPsis.sumOf { it.coerceAtLeast(0.0) } / boostPsis.size / 22.0 * 0.20) * 100.0
         return min(100, raw.toInt().coerceAtLeast(0))
     }
 
@@ -845,6 +850,7 @@ class DriveRecorder(
                         label = label,
                         speedKph = vs.speedKph,
                         rpm = vs.rpm.toInt(),
+                        // Not shown or exported (#207): bookmarks have no source column, so a value couldn't be named
                         boostPsi = com.openrs.dash.data.BoostSession.read(vs, System.currentTimeMillis()).psi ?: 0.0
                     )
                 )
