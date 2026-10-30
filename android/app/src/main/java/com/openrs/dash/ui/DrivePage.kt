@@ -96,9 +96,9 @@ import kotlin.math.roundToInt
     var pageEntered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { pageEntered = true }
     val accent = LocalThemeAccent.current
-    // BOOST by the source rule (#207), on a clock that keeps running when CAN stalls
+    // The pressure gauge is TIP only (#207): "—" in a TIP gap, never CAN 0x0F8 in its place; wall clock, not lastUpdate
     val now = wallClockMs()
-    val boost = com.openrs.dash.data.BoostSession.read(vs, now)
+    val boost = com.openrs.dash.data.BoostSession.gauge(vs, now)
     val boostLbl = p.displayGauge(0.0).second
 
     // B1: raw live values for hero numerics — spring smoothing removed so the
@@ -236,7 +236,7 @@ import kotlin.math.roundToInt
                     modifier = Modifier.weight(1f).fillMaxHeight()
                 )
                 InstrumentHero(
-                    // The label names the measurement: BOOST (CAN 0x0F8) or TIP (throttle inlet) — never interchanged
+                    // TIP (throttle inlet − measured baro), always the same measurement on this gauge
                     label = boost.source.label, unit = boostLbl, value = boostVal,
                     icon = RsIcon.BOOST, iconTone = if (stale) IconTone.UNAVAILABLE else IconTone.NORMAL,
                     valueColor = if (stale) Frost else accent,

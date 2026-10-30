@@ -79,6 +79,15 @@ object BoostRule {
         return vs.tipActualKpa - baro
     }
 
+    /**
+     * The live pressure gauge (DRIVE, HUD, TRIP live readout, Custom Dashboard): TIP − measured baro only, labelled TIP,
+     * "—" when TIP isn't fresh. It never falls back to CAN 0x0F8 — a brief TIP polling gap must not flip the gauge to a
+     * different measurement — and freshness isn't stretched to hide gaps. CAN 0x0F8 stays in recordings ([read]) and
+     * in the diagnostic report.
+     */
+    fun gauge(vs: VehicleState, nowMs: Long): BoostReading = BoostReading(BoostSource.TIP_033E, tipGaugeKpa(vs, nowMs))
+
+    /** The recorded reading (DriveRecorder points, knock events, perf runs): TIP, else CAN 0x0F8, with its source. */
     fun read(vs: VehicleState, nowMs: Long): BoostReading {
         tipGaugeKpa(vs, nowMs)?.let { return BoostReading(BoostSource.TIP_033E, it) }
         canGaugeKpa(vs, nowMs)?.let { return BoostReading(BoostSource.CAN_0F8, it) }
@@ -122,6 +131,9 @@ object BoostSession {
     @Volatile var log: (String) -> Unit = {}
 
     fun read(vs: VehicleState, nowMs: Long): BoostReading = BoostRule.read(vs, nowMs)
+
+    /** The live gauge: TIP only ([BoostRule.gauge]). */
+    fun gauge(vs: VehicleState, nowMs: Long): BoostReading = BoostRule.gauge(vs, nowMs)
 
     /** Peak gauge kPa for [source] this session, or null. */
     fun peakKpa(source: BoostSource): Double? = _peaks.value[source]

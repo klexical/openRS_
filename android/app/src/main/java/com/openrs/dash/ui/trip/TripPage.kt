@@ -592,8 +592,8 @@ private fun TripPageContent(
 
                         // 1.1 — DTE + boost (live recording only)
                         if (driveState.isRecording) {
-                            // Boost bands (8 / 16 psi) weren't limits — read it in ink like the live panel. Source rule #207.
-                            val boost = com.openrs.dash.data.BoostSession.read(vehicleState, com.openrs.dash.ui.wallClockMs())
+                            // Boost bands (8 / 16 psi) weren't limits — read it in ink like the live panel. TIP gauge (#207).
+                            val boost = com.openrs.dash.data.BoostSession.gauge(vehicleState, com.openrs.dash.ui.wallClockMs())
                             MonoText("${boost.source.label} ${boost.gaugeKpa?.let { g -> prefs.displayGauge(g).let { (v, u) -> "$v $u" } } ?: "—"}", 10.sp, Dim)
                             val dte = driveState.distanceToEmptyKm
                             if (dte > 0) {
@@ -1016,7 +1016,7 @@ private fun LiveHud(
                         Readout("RPM", if (live) "%.0f".format(vehicleState.rpm) else ph),
                         Readout("GEAR", if (live) vehicleState.gearDisplay else ph),
                         // Value + the user's pressure unit; DAY reads the darker paint (actionInk) like the map labels.
-                        com.openrs.dash.data.BoostSession.read(vehicleState, com.openrs.dash.ui.wallClockMs()).let { b ->
+                        com.openrs.dash.data.BoostSession.gauge(vehicleState, com.openrs.dash.ui.wallClockMs()).let { b ->
                             Readout(b.source.label, if (live) b.gaugeKpa?.let { g -> prefs.displayGauge(g).let { (v, u) -> "$v $u" } } ?: ph else ph,
                                 color = actionInk(accent))
                         },

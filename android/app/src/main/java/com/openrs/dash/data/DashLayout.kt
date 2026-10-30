@@ -20,7 +20,7 @@ data class DashLayout(
 /** All VehicleState fields available for the custom dashboard builder. */
 val AVAILABLE_FIELDS = listOf(
     DashCell("rpm", "hero", "RPM"),
-    DashCell("boostKpa", "hero", "BOOST"),
+    DashCell("boostKpa", "hero", "TIP"),
     DashCell("speedKph", "hero", "SPEED"),
     DashCell("oilTempC", "number", "OIL TEMP"),
     DashCell("coolantTempC", "number", "COOLANT"),
@@ -74,8 +74,8 @@ fun resolveValue(vs: VehicleState, prefs: UserPrefs, cell: DashCell, nowMs: Long
         if (PolledFreshness.isFresh(vs, tag, nowMs)) fmt(value) to value else "\u2014 \u2014" to 0.0
     return when (cell.fieldKey) {
         "rpm" -> "%.0f".format(vs.rpm) to vs.rpm
-        // By the boost source rule (#207): no fresh source → "— —", never a held or default value
-        "boostKpa" -> BoostSession.read(vs, nowMs).gaugeKpa
+        // The TIP gauge (#207): no fresh TIP → "— —", never a held value or CAN 0x0F8 in its place
+        "boostKpa" -> BoostSession.gauge(vs, nowMs).gaugeKpa
             ?.let { g -> prefs.displayGauge(g).first to g + BoostReading.STD_ATM_KPA } ?: ("\u2014 \u2014" to 0.0)
         "speedKph" -> prefs.displaySpeed(vs.speedKph) to vs.speedKph
         "oilTempC" -> tempOrPlaceholder(vs.oilTempC, prefs)

@@ -304,7 +304,9 @@ private fun CustomGaugeCell(
     }
     val now = wallClockMs()   // a stalled link must still age readings out (#207 / #217)
     val (displayValue, rawValue) = resolveValue(vs, prefs, cell, now)
-    val boost = if (cell.fieldKey == "boostKpa") com.openrs.dash.data.BoostSession.read(vs, now) else null
+    val boost = if (cell.fieldKey == "boostKpa") com.openrs.dash.data.BoostSession.gauge(vs, now) else null
+    // The pressure cell is the TIP gauge (#207): named TIP whatever label an older saved layout carries
+    val label = if (cell.fieldKey == "boostKpa") "TIP" else cell.label
     // This overlay hides the header / RECONNECTING strip, so frozen last-frame values
     // would read as live after an adapter drop — show placeholders instead.
     val stale = !vs.isConnected
@@ -330,7 +332,7 @@ private fun CustomGaugeCell(
             // Raw value, 1:1 with the frame (no spring) — the same rule as DRIVE's heroes.
             InstrumentHero(
                 // A TIP reading is never presented under the BOOST name (#207)
-                label = if (boost?.source == com.openrs.dash.data.BoostSource.TIP_033E) "TIP" else cell.label,
+                label = label,
                 unit = unit,
                 value = if (stale) "—" else displayValue,
                 valueColor = when {
@@ -355,7 +357,7 @@ private fun CustomGaugeCell(
                     .instrumentSurface(panelLevel)
                     .padding(horizontal = 14.dp, vertical = 12.dp)
             ) {
-                InstrumentLabel(cell.label)
+                InstrumentLabel(label)
                 Spacer(Modifier.height(2.dp))
                 val v = if (stale) "— —" else displayValue
                 DataNum(v, 22.sp, if (v.startsWith("—")) Dim else if (alert) levelColor(level) else Frost)
@@ -386,7 +388,7 @@ private fun CustomGaugeCell(
                     .instrumentSurface(panelLevel)
                     .padding(horizontal = 14.dp, vertical = 12.dp)
             ) {
-                InstrumentLabel(cell.label)
+                InstrumentLabel(label)
                 Spacer(Modifier.height(2.dp))
                 DataNum(v, 22.sp, if (v.startsWith("—")) Dim else if (alert) levelColor(level) else Frost)
             }

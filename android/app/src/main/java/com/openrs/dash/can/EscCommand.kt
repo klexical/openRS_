@@ -40,7 +40,10 @@ object EscCommand {
     const val SHORT_PRESS_MS = 300L
     const val LONG_PRESS_MS = 5_000L
     const val PRESS_GAP_MS = 1_000L
-    /** After the injection ends: ABS reacting + the next 0x1C0 frame + the ≤ 1 s freshness stamp. Not measured on a car. */
+    /**
+     * After the injection ends: ABS reacting + the next 0x1C0 frame + the ≤ 1 s freshness stamp. **Provisional** — not
+     * measured on a car. Reaching the window's end is NOT CONFIRMED, never inferred success.
+     */
     const val REACTION_MS = 3_000L
     const val STAMP_TAG = "escStatus"
     private const val POLL_MS = 100L

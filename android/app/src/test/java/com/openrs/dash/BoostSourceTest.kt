@@ -145,6 +145,19 @@ class BoostSourceTest {
         assertTrue(events.none { it.contains("not tracking") })
     }
 
+    @Test fun `the live gauge stays TIP through a TIP gap — "—", never CAN 0x0F8 — while the recording keeps CAN`() {
+        rpmFrame(); boostFrame(0); tip(0x4F1A)
+        val g = BoostSession.gauge(state.value, now())
+        assertEquals(BoostSource.TIP_033E, g.source); assertEquals(158.203 - 96.5, g.gaugeKpa!!, 0.01)
+        val gap = now() + BoostRule.TIP_FRESH_MS + 100                   // TIP poll gap; CAN still arriving
+        rpmFrame(); boostFrame(0)
+        val gGap = BoostSession.gauge(state.value, gap)
+        assertEquals("the gauge keeps naming TIP", "TIP", gGap.source.label)
+        assertNull("no TIP reading → unavailable, not a held value", gGap.gaugeKpa)
+        val recorded = BoostSession.read(state.value, gap)                // what DriveRecorder stores for this point
+        assertEquals(BoostSource.CAN_0F8, recorded.source); assertEquals(0.0, recorded.gaugeKpa!!, 1e-9)
+    }
+
     @Test fun `source changes of the shown reading are logged, at most one line per interval`() {
         val s0 = now()
         BoostSession.onState(state.value, s0)                             // nothing fresh yet: NONE, first reading
