@@ -297,6 +297,7 @@ update/
 0x090  RPM (bytes 4-5) + baro (byte2 × 0.5 kPa)
 0x0C8  gauge brightness (bits 0-4), e-brake (byte3 bit 6), ignition (byte2 bits 3-6)
 0x0F8  oil temp (byte1−50°C), boost (byte5, gauge — see the boost gotcha), PTU temp (byte7−60°C)
+       — oil / PTU byte identity disputed by a contributor's DBC (#229): unconfirmed until a capture; never swap silently
 0x130  speed (bytes 6-7 BE × 0.01 kph)
 0x138  clutch pedal % (17|10 × 0.1) — decoded for diagnostics only; NOT shown on DRIVE (#225)
 0x160  longitudinal G (bits 48-57 LE)
@@ -567,7 +568,8 @@ data[5] = B5,  data[6] = B6 …
   `DrivePageKt$DrivePage$7` after a harmless edit (removing the CLUTCH row): ART threw `VerifyError … register has type
   Conflict` at the first DRIVE frame; debug and every JVM test were fine. Worked around by moving ECONOMY into
   `DriveEconomy` (625c43b). Keep very large composable lambdas split; smoke the minified APK (launch + every tab) and grep
-  logcat for `Verifier rejected` before calling a release build good
+  logcat for `Verifier rejected` before calling a release build good — clear the buffer *before* the cold start, or the
+  grep doesn't cover it (the rendered DRIVE page is the real evidence). Tracked in #227
 - **Header is a priority layout (#224)** — `HeaderRow` measures wordmark, MODE/ESC pills, link pill and cog first; REC gets
   the rest and shows the longest of "REC time · distance" / "REC time" / "REC" / dot that fits (never cut mid-value).
   Don't put header chips back in a plain Row
@@ -903,7 +905,10 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   installed + smoked (DRIVE renders, crash buffer empty). 955 / 67 tests (debug + release), lint 0 / 45; Sapphire 282 / 25, ESLint 0, tsc, build,
   idb-check. Evidence, matrix, regression log, checklist: `~/Documents/openRS_-evidence/rc7-followup-2026-10-29/`. Throwaway
   AVD `Rc7_Followup` (deleted after). Resolved decisions from the corrections pass: AWD % withdrawn; gauge TIP-only; NRC
-  without a time hold. Still unmeasured: ESC 3 s window. APK not offered for hardware acceptance.
+  without a time hold. Still unmeasured: ESC 3 s window. APK not offered for hardware acceptance. Close-out `d0af91e`
+  (lint 0 / 45 rerun; fixture ZIP also carries the 5854f08 crash record — bundled crash history, Sapphire ignores it).
+  Final report delivered 2026-10-30; next steps (hardware checklist, PRs, rc.7 tag, firmware flash) each need the
+  user's go-ahead.
 - Still open: everything in the hardware checklist (Samsung, BLE, firmware capability, boost signal identity, spark /
   throttle, real DTC replies, TPMS BAR on the phone, 0304 / 03EF identity, button bit captures); GPS-independent
   recording (#221); oil / PTU identity (#229) before thermal acceptance; 0x138 gear (#230); ACTIVE after stop (#228); a real
