@@ -3,7 +3,7 @@
 Native Android telemetry dashboard for the Ford Focus RS MK3.
 Kotlin 2.0.21 + Jetpack Compose (Material3). Current: **stable v2.2.6 on main**; **v2.2.7-rc.6 published as a prerelease from staging** (tag `android-v2.2.7-rc.6` →
 `d2f7dc6`, versionCode 35 — not on main, not stable). Sapphire (web/ only) deployed from main `0d64248`. Record: Branch / Release Workflow → rc.6.
-**rc.7 in progress (local, unpushed; drive-review + acceptance-corrections + 2026-10-29 corrections + follow-up passes done — issues #204–#230):** branch `feature/rc7` (from staging `d2f7dc6`) — 2.2.7-rc.7 / versionCode 36, milestone
+**rc.7 in progress (local, unpushed; drive-review + acceptance-corrections + 2026-10-29 corrections + follow-up passes done + REQ-zero correction; testing candidate `a605b1c` prepared — issues #204–#230):** branch `feature/rc7` (from staging `d2f7dc6`) — 2.2.7-rc.7 / versionCode 36, milestone
 v2.2.7-rc.7 (#211 locale exports, #212 connection lifecycle, #213 splash per task, #214 versioning, #215 DTC scan status);
 Sapphire row validation #204 also on `fix/sapphire-row-validation` (from main). Record: Branch / Release Workflow → rc.7.
 Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashboard) → `web/`  |  Docs → `docs/`  |  Feature pipeline → `docs/feature-roadmap.md`
@@ -445,7 +445,9 @@ data[5] = B5,  data[6] = B6 …
 - **Bottom nav bar insets** — `Scaffold(contentWindowInsets = WindowInsets.statusBars)` drops the bottom inset so content extends behind the nav bar overlay. `enableEdgeToEdge(navigationBarStyle = SystemBarStyle.dark(TRANSPARENT))` removes the system nav bar scrim. Pages add `Tokens.NavBarHeight` as bottom scroll padding
 - **0x1A4 ambient temp is UNSIGNED** — DigiCluster v1.0.46 confirmed on-car that raw 0x82 (130 unsigned) × 0.25 = 32.5°C (90.5°F). Prior spec said signed int8, which wrapped values above 32°C to negative on hot days. Our decoder at `CanDecoder.kt:ID_AMBIENT_TEMP` uses `(data[4].toInt() and 0xFF)` to force unsigned. **But unsigned ×0.25 with no offset cannot represent sub-zero ambient** — readings above `AMBIENT_1A4_MAX_C` (55°C) are rejected (state returned unchanged, raw byte logged) until a sub-zero capture pins the true encoding ([#185](https://github.com/klexical/openRS_/issues/185)). 0x340 PCMmsg17 byte7 is still signed per RS_HS.dbc — if we see Phoenix-summer wrap on that signal in field testing, same fix applies.
 - **0x435 airbag crosstalk** — DigiCluster v1.0.73 found that the per-zone airbag status bits on 0x435 share bits with passenger-occupancy detection and false-triggered the SRS lamp in-vehicle. We decode 0x040 bits 7:6 of byte2 only (`0xC0 == true` = lamp on), and explicitly keep 0x435 OUT of `KNOWN_IDS`. Do not add 0x435 decoding without a verified fault vs occupancy capture.
-- **Freshness stamps (`fieldLastUpdateMs`)** — Mode 22 decoders stamp via `markFresh()`; `CanDataService.mergeObdState()` MUST merge them with `VehicleState.mergeStamps` (per-key max) or the UI reads every OBD field as STALE (pre-rc.5 bug). CAN-sourced THERMAL fields are stamped by `CanDecoder.stampFresh()` throttled to 1 s per ID — never `markFresh()` per CAN frame (map copy at hundreds of fps). A decoder returning the **same** `state` instance means "recognized, nothing changed": `processCanFrame` logs it and skips the copy/emit (0x040, 0x300, rejected 0x1A4)
+- **Freshness stamps (`fieldLastUpdateMs`)** — Mode 22 decoders stamp via `markFresh()`; `CanDataService.mergeObdState()` MUST merge them with `VehicleState.mergeStamps` (per-key max) or the UI reads every OBD field as STALE (pre-rc.5 bug). CAN-sourced THERMAL fields are stamped by `CanDecoder.stampFresh()` throttled to 1 s per ID — never `markFresh()` per CAN frame (map copy at hundreds of fps). A decoder returning the **same** `state` instance means "recognized, nothing changed": `processCanFrame` logs it and skips the copy/emit (0x040, 0x300, rejected 0x1A4). `ObdMerge` keeps a field through its "not received" sentinel; a field whose
+  valid range includes its default (REQ L / R: 0 Nm) is merged by the reply's own stamp (`ObdMerge.carried`), never by
+  value — a `> 0` guard keeps the old value under a fresh stamp (#226)
 - **Recorder only stores fresh polled values** — `DriveRecorder` writes TIP/target/WGDC/KR/STFT/LTFT only when `FreshnessGate.takeIfFresh()` passes; otherwise sentinels (`tipActualKpa`/`boostTargetKpa` 0.0, `wgdcPct` −1.0). Never record held VehicleState values for slow DIDs — they repeat one reading many times
 - **KR sign convention** — `ignCorrCyl1..4 = raw / −512` → retard is **POSITIVE**. Knock capture uses `≥ 0.1°`, the header counter and POWER KR cells `> 1°`. Cyl 2–4 DIDs (0x03ED–EF) are unverified — 0x03ED/0x03EE NRC 0x31 on two RS PCMs (EU tuned #182 + user's car), so not tune-specific; 0x03EF answers but read 0 for a whole drive. NrcTracker suppresses 2/3; polling left as is (user decision 2026-10-22)
 - **TIP is `raw / 128` kPa absolute** — 0x033E/0x0466 (DigiCluster, on-car verified). rc.4/rc.5 used `/903.81`, which is the Ford-DID **psi** formula, hiding TIP and starving BOOST SWEEP ([#198](https://github.com/klexical/openRS_/issues/198)). Do not reintroduce 903.81
@@ -633,7 +635,7 @@ Regenerate the FORScan catalog: `python3 android/scripts/gen_forscan_catalog.py`
 cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{releaseName}.apk (e.g. openRS_v2.2.7-rc.7.apk; set in app/build.gradle.kts)
-./gradlew test                             # 955 unit tests across 67 files
+./gradlew test                             # 961 unit tests across 68 files
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 45 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -805,10 +807,12 @@ android/app/src/test/java/com/openrs/dash/
   release, repeated 0x78, eviction) · BoostSourceTest gauge · TimeSeriesMathTest +2 (gaps survive downsampling) ·
   BoostProvenanceTest knock axis · BoostExportConsumerTest track files without pressure · Sapphire pressureDisplay 5 +
   import.androidExportRc7Gaps 6 (release export with TIP → CAN 0 → none → TIP, `release-pressure-gaps-drive.zip`)
+  REQ-zero 2026-10-30: AwdReqTorqueMergeTest 6 (real 0x70B frames → parser → ObdMerge → awdDetailRows: positive → 0 per
+  side, unrelated / older-snapshot reply, never received, stale → recovery with 0)
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **955 tests across 67 files** (Android) + **282 vitest across 25 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **961 tests across 68 files** (Android) + **282 vitest across 25 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 
@@ -909,6 +913,16 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   (lint 0 / 45 rerun; fixture ZIP also carries the 5854f08 crash record — bundled crash history, Sapphire ignores it).
   Final report delivered 2026-10-30; next steps (hardware checklist, PRs, rc.7 tag, firmware flash) each need the
   user's go-ahead.
+- REQ-zero correction + testing candidate (2026-10-30, nothing pushed / released / flashed): `a605b1c` #226 — `ObdMerge` took
+  REQ L / R only when > 0, so a decoded, stamped 0 kept the old value under a fresh stamp (and a reply parsed from an older
+  snapshot could put an old value back); now taken by the reply's own stamp (`ObdMerge.carried`). `awdDmdPressure` /
+  `awdPumpCurrent` keep the `> 0` merge (deferred, on #226). Candidate: release from `a605b1c` clean, 6,540,588 B,
+  SHA-256 `0fee0c82…f0e0`, vc 36, signer `c99b6f26…`, verify-release OK; 961 / 68 (debug + release), lint 0 / 45; Sapphire
+  282 / 25 (web/ unchanged). Throwaway AVD `Rc7_ReqZero` (deleted): logcat cleared before the cold start → 0 verifier lines,
+  DRIVE rendered, THERMAL REQ 412 / 388 → 0 / 388 → 0 / 0 → "—" offline → 0 / 0 on recovery, layout pixel-stable.
+  Evidence, status table (software-fixed vs hardware-unverified), private handoff (APK copy, routine checks, signal
+  investigations, drive-mode read-only conditions): `~/Documents/openRS_-evidence/rc7-reqzero-2026-10-30/` (`HANDOFF.md`).
+  #226 + 11 candidate issues commented. The owner performs the hardware checks.
 - Still open: everything in the hardware checklist (Samsung, BLE, firmware capability, boost signal identity, spark /
   throttle, real DTC replies, TPMS BAR on the phone, 0304 / 03EF identity, button bit captures); GPS-independent
   recording (#221); oil / PTU identity (#229) before thermal acceptance; 0x138 gear (#230); ACTIVE after stop (#228); a real
