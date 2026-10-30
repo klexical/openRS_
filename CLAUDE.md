@@ -3,7 +3,7 @@
 Native Android telemetry dashboard for the Ford Focus RS MK3.
 Kotlin 2.0.21 + Jetpack Compose (Material3). Current: **stable v2.2.6 on main**; **v2.2.7-rc.6 published as a prerelease from staging** (tag `android-v2.2.7-rc.6` →
 `d2f7dc6`, versionCode 35 — not on main, not stable). Sapphire (web/ only) deployed from main `0d64248`. Record: Branch / Release Workflow → rc.6.
-**rc.7 in progress (local, unpushed; drive-review + acceptance-corrections + 2026-10-29 corrections passes done — issues #204–#226):** branch `feature/rc7` (from staging `d2f7dc6`) — 2.2.7-rc.7 / versionCode 36, milestone
+**rc.7 in progress (local, unpushed; drive-review + acceptance-corrections + 2026-10-29 corrections + follow-up passes done — issues #204–#230):** branch `feature/rc7` (from staging `d2f7dc6`) — 2.2.7-rc.7 / versionCode 36, milestone
 v2.2.7-rc.7 (#211 locale exports, #212 connection lifecycle, #213 splash per task, #214 versioning, #215 DTC scan status);
 Sapphire row validation #204 also on `fix/sapphire-row-validation` (from main). Record: Branch / Release Workflow → rc.7.
 Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashboard) → `web/`  |  Docs → `docs/`  |  Feature pipeline → `docs/feature-roadmap.md`
@@ -44,9 +44,10 @@ can/
                             frame dispatch, DTC scan/clear, ISO-TP reassembly, FPS tracking.
                             SLCAN handshake: waits 3s for valid frame after init before declaring Connected
                             Constructor takes transportFactory: () -> SlcanTransport (+ rpmProvider for fast poll)
-                            Single PCM sender — an NRC is attributed only when every waiting request is one DID and no request
-                            lapsed (unanswered) within the last P2* 5 s; 300 ms reply window per request; failed writes
-                            withdrawn; 7F 22 78 extends every candidate (PcmRequestLedger, #216). OPENRS? probe schedule
+                            Single PCM sender — an NRC is attributed only when every outstanding request is one DID and no
+                            earlier request is still unanswered (no time releases one — only its own positive reply); queue
+                            eviction marks the connection unresolved; 300 ms = poll pacing only; failed writes withdrawn;
+                            7F 22 78 keeps the request outstanding (PcmRequestLedger, #216). OPENRS? probe schedule
                             on its own coroutine (×3, give-up 13 s, late replies accepted, #220); DTC frames diverted by
                             service ID (#215)
                             Command response channel routes +FRS: lines separately from SLCAN frames
@@ -148,15 +149,15 @@ ui/
                             the verdict — "OVERHEATING  oil 268°F ↑  +4"),
                             InstrumentHero row (RPM/BOOST/MPH), gear module (shift lights, brake | gear | throttle;
                             fixed height per screen — never resizes with speed/gear), VEHICLE panel (oil/coolant/fuel/batt, 2×2 under 340 dp,
-                            alert chips, tap → THERMAL), chassis panel (AWD split + G + torque). vehicleStatus() is
+                            alert chips, tap → THERMAL), chassis panel (AWD REAR TORQUE L / R Nm + G + torque). vehicleStatus() is
                             the single alert list for banner + panel. Disconnected → "—"
   PerfPage.kt              — PERF tab: G-force plot + dynamics numeric readout + PowerPageContent
                             (AFR, throttle/boost, engine mgmt, fuel trims, knock sensors). When offline,
                             sections force-collapse + a "CONNECT ADAPTER TO POPULATE" hint renders at top
   PowerPage.kt             — PowerPageContent composable shared by PERF + CustomDash
   ChassisPage.kt           — UnifiedChassisSection (THERMAL): TYRES panel (TyreCells around the original CarDiagram
-                            top-down RS art, tyres tinted per state) and AWD panel (torque-only diagram + readouts; PTU/RDU/
-                            clutch/trans temps live in DRIVETRAIN, not here). GForceSection for PERF
+                            top-down RS art, tyres tinted per state) and AWD panel (L/R torque diagram + `awdDetailRows`; REQ L/R
+                            by their own stamps, 90 s; PTU/RDU/clutch/trans temps live in DRIVETRAIN, not here). GForceSection for PERF
   TempsPage.kt             — THERMAL tab: ReadinessCard (verdict headline + reason, STREET/TRACK/RACE chips, collapsed
                             CHECKLIST), one predictive-alert banner (soonest forecast, names the rest), ENGINE (full-width oil + coolant EngineTempCard, scale + WARN/CRIT legend),
                             DRIVETRAIN panel (PTU/RDU/clutch L-R/trans oil rows), AIR (compact intake/ambient), tires
@@ -308,7 +309,10 @@ update/
 0x230  gear (4-bit) — does NOT broadcast on this car
 0x252  brake pressure (12-bit Motorola)
 0x2C0  AWD actual left/right torque Nm — RS_HS.dbc AWDmsg02 19|12 / 51|12 Motorola (MSB-first 20 / 52); requested L/R
-       at 3|12 / 35|12 not decoded; drivetrain reference point undocumented (#226). Until 2026-10-29 read bits 0|12 / 12|12
+       at 3|12 / 35|12 not decoded; drivetrain reference point undocumented (#226). Until 2026-10-29 read bits 0|12 / 12|12.
+       DBC excerpt + source: android/app/src/test/resources/dbc/ — a second decoder checks the extraction arithmetic only,
+       not the physical meaning. Front/rear % (rear ÷ 0x070 engine torque) is WITHDRAWN everywhere — not a physical split;
+       saved dashboard cells read "WITHDRAWN …" (`DashLayout.WITHDRAWN_FIELDS`), never deleted
 0x2F0  coolant + intake air temp (10-bit each)
 0x300  battery/charging fault — reserved; bit mapping pending car-side capture
 0x340  PCM ambient (byte7 signed × 0.25°C) — NOT TPMS
@@ -352,7 +356,13 @@ data[5] = B5,  data[6] = B6 …
 - Skip `0x1B0` frames where byte4 ≠ 0 (button-event transition frames; steady-state has byte4 == 0)
 - `0x230` (gear) and `0x3C0` (battery voltage) do **NOT** broadcast on this car — battery from PCM DID 0x0304. Gear is estimated from RPM/speed in `VehicleState.derivedGear`
 - **Gear detection dual final drive** — MMT6 has final drive 4.063 (gears 1-4) and 2.955 (gears 5-6). Official ratios from 2016 Ford Focus RS Owner's Manual p242. The `GEAR_FACTOR` constant uses 3.82 in the denominator but thresholds are calibrated against the true overall ratios — do not recalibrate with a single final drive
-- **Boost = `BoostSession.read(vs, nowMs)` (#207, policy `rc7-boost-v3`)** — `boostKpa` is CAN 0x0F8 byte 5 + 101.325 (gauge,
+- **Live pressure = `BoostSession.gauge(vs, nowMs)` = TIP only; recorded = `read()` (#207, policy `rc7-boost-v3`)** — DRIVE,
+  HUD, TRIP live readouts and Custom Dashboard show TIP − measured baro or "—"; they never switch to CAN 0x0F8 in a TIP gap
+  (no stretched freshness, no held value). Recording, knock events and perf runs keep `read()` with the source per point, so
+  a drive can hold CAN stretches the gauge showed as "—" (by design, stated in What's New / #207). TRIP chart pressure
+  channels break at every unavailable / other-source sample, also after downsampling (`TimeSeriesMath.bucketValidity`);
+  knock scatter draws only events of the axis's source; RaceChrono / TrackAddict carry NO pressure column (their only one
+  is "Boost"); Sapphire converts plotted values / axes / tooltips / peaks to the unit (`lib/boost.ts`). `read()`: `boostKpa` is CAN 0x0F8 byte 5 + 101.325 (gauge,
   std-atm form, independent of baro) and is a reading only once stamped (`boostKpa`, ≤ 3 s old); the 101.325 default is
   never a reading. Rule = a fixed order, **no inference between the channels** (the v2 "CAN not tracking at ≥ 80 % throttle"
   vote was removed 2026-10-29 — owner did not approve it; throttle there is pedal on cars without 0x076): TIP − measured
@@ -444,7 +454,8 @@ data[5] = B5,  data[6] = B6 …
 - **Adding a polled DID** — put the query in `ObdConstants` AND a `markFresh` decoder in `ObdResponseParser`; the coverage-guard tests in `ObdResponseParserTest` fail otherwise. Removing a decoder fails them too (that's the point — #198). Multi-frame ISO-TP DIDs (BCM 0x280B) are excluded explicitly
 - **Polled values go stale (#217)** — POWER and Custom Dashboard use `PolledFreshness` (fast group 2 s, others 40 s, stale past
   2×): POWER dims with STALE Ns, the dashboard shows "— —". NRC suppression (#216) needs 2 attributed NRCs (attributed only
-  when unambiguous — see SlcanConnection), recovers on a positive reply and re-probes after 60 s (provisional settings);
+  when unambiguous — see SlcanConnection; a timeout or the 32-entry queue limit is a resource limit, never proof of ownership,
+  so after one lost reply NRCs stay unattributed for that connection), recovers on a positive reply and re-probes after 60 s (provisional settings);
   the PCM poller always suspends. Emulator capture current → STALE → recovered: fake_ecu_v2.py `--stale DID:A:S`.
 - **POWER cells are gated per field** — engine cells show only when `rpm > FAST_POLL_MIN_RPM` AND `fieldLastUpdateMs[tag] != null`; never gate on another field's value (the old `calcLoad > 0` gate hid everything once load lost its decoder)
 - **Lint version is pinned above AGP** — `android/gradle.properties` sets `android.experimental.lint.version=8.13.0` because AGP 8.7.3's bundled lint crashes (`IncompatibleClassChangeError`) on the lint checks shipped in Compose BOM 2025.11 / Lifecycle. Don't remove it unless AGP is upgraded to ≥ 8.13. `abortOnError = false`, so lint findings never fail CI — only crashes do; check `app/build/reports/lint-results-debug.txt` for errors ([#196](https://github.com/klexical/openRS_/issues/196))
@@ -620,7 +631,7 @@ Regenerate the FORScan catalog: `python3 android/scripts/gen_forscan_catalog.py`
 cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{releaseName}.apk (e.g. openRS_v2.2.7-rc.7.apk; set in app/build.gradle.kts)
-./gradlew test                             # 945 unit tests across 66 files
+./gradlew test                             # 955 unit tests across 67 files
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 45 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -721,7 +732,7 @@ android/app/src/test/java/com/openrs/dash/
   ObdResponseParserTest.kt    — 68 tests: PCM/BCM/AWD/PSCM/FENG/RSProt DIDs (rc.6: TIP /128, F404/F40E/F415/F423/0548,
                                 decoder-coverage guards: every polled PCM/BCM/AWD DID must decode + stamp)
   DriveStateTest.kt           — 39 tests: fuel economy, averages, haversine, peaks, sentinels
-  VehicleStateTest.kt         — 31 tests: conversions, AWD split, peaks, TPMS, RTR
+  VehicleStateTest.kt         — 32 tests: conversions, peaks, TPMS, RTR (3 AWD split tests removed with the % — #226)
   AppVersionTest.kt           — 30 tests: version code/name, RC suffix, build config
   DtcScannerTest.kt           — 28 tests: SAE J2012 decoding, UDS status bit priority
   SlcanParserTest.kt          — 20 tests: standard/extended frames
@@ -788,10 +799,14 @@ android/app/src/test/java/com/openrs/dash/
   frames · PerformanceTimerTest per-source peaks · firmware/tests/test_esc_confirm.c (real focusrs.c on host stubs, 8)
   Sapphire: import.boostProvenance.test.ts 8 · import.androidExportRc7.test.ts 3 (the final release APK's own export,
   `__fixtures__/android-export-rc7/`)
+  Follow-up 2026-10-29: AwdReadoutTest 5 (REQ L/R own freshness, withdrawn cell, JSON) · NrcTrackerTest ledger (no time
+  release, repeated 0x78, eviction) · BoostSourceTest gauge · TimeSeriesMathTest +2 (gaps survive downsampling) ·
+  BoostProvenanceTest knock axis · BoostExportConsumerTest track files without pressure · Sapphire pressureDisplay 5 +
+  import.androidExportRc7Gaps 6 (release export with TIP → CAN 0 → none → TIP, `release-pressure-gaps-drive.zip`)
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **945 tests across 66 files** (Android) + **271 vitest across 23 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **955 tests across 67 files** (Android) + **282 vitest across 25 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 
@@ -878,9 +893,20 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   changes here — port before any Sapphire PR. Final report delivered 2026-10-29 (APK still not offered for hardware
   acceptance); next steps each need the user's go-ahead: the three decisions above, hardware checklist, firmware flash,
   PRs, rc.7 tag.
+- Follow-up pass (2026-10-29, from the user's "focused follow-up"; nothing pushed / merged / released / flashed): `86cd683`
+  #216 no time release (unresolved → unattributed) · `95e740e` #226 front/rear % withdrawn, REQ L/R freshness, MAX not
+  exported · `3aac7ab` #207 TIP-only live gauge · `bb3d24f` #207 chart gaps / knock axis / track files · `618d7a5` #207
+  Sapphire units / sparkline / source names · `0c7431a` What's New · `fd1ade3` Sapphire fixture from the final release's
+  export (TIP → CAN 0 → none → TIP). New issues #227 (R8 VerifyError), #228 (ACTIVE after stop), #229 (0x0F8 oil / PTU
+  identity — priority before thermal acceptance), #230 (0x138 PCM gear); #207 #216 #226 #125 #225 #227 commented. Final
+  local release: source `0c7431a` clean, 6,540,588 B, SHA-256 `d88456d4…f6c3`, vc 36, signer `c99b6f26…`, verify-release OK,
+  installed + smoked (0 verifier rejections). 955 / 67 tests (debug + release); Sapphire 282 / 25, ESLint 0, tsc, build,
+  idb-check. Evidence, matrix, regression log, checklist: `~/Documents/openRS_-evidence/rc7-followup-2026-10-29/`. Throwaway
+  AVD `Rc7_Followup` (deleted after). Resolved decisions from the corrections pass: AWD % withdrawn; gauge TIP-only; NRC
+  without a time hold. Still unmeasured: ESC 3 s window. APK not offered for hardware acceptance.
 - Still open: everything in the hardware checklist (Samsung, BLE, firmware capability, boost signal identity, spark /
   throttle, real DTC replies, TPMS BAR on the phone, 0304 / 03EF identity, button bit captures); GPS-independent
-  recording (#221); Sapphire empty boost_psi → 0; perf / lap / bookmark boost without source; a real
+  recording (#221); oil / PTU identity (#229) before thermal acceptance; 0x138 gear (#230); ACTIVE after stop (#228); a real
   decimal-comma-phone export. Follow-ups seen, not changed: false "Point flush failed" warning; 20 s silent-adapter hold;
   boost peak caption is psi in any unit; debug Settings label squeezes UPDATES. PRs (feature/rc7 → staging,
   fix/sapphire-row-validation → main); rc.7 tag. Separate: Sapphire map tiles, `docs/thermal-thresholds` PR, cleanup,
