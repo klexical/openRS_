@@ -93,6 +93,11 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
   live record separately, so a reply landing mid-export gave "no answer" beside populated fields; an export now reads one
   snapshot, and adapter-status writes carry the session's token so an older connection can't write into a newer
   (e.g. Bluetooth) session. ([#233](https://github.com/klexical/openRS_/issues/233))
+- **Firmware probe log couldn't tell "attempted" from "written" or name a failed write** — each OPENRS? probe is now
+  logged with the transport kind, probe N of 3, time since the attempt began and written / write failed (sanitized
+  reason); the verdict counts written vs attempted probes and ignored non-frame lines (count only), and a recognized reply
+  names the probe it answered. Adapter labels (Bluetooth name + MAC) no longer appear in these events; "not detected"
+  says capability unknown, never stock. The control gate is unchanged. ([#220](https://github.com/klexical/openRS_/issues/220))
 
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)

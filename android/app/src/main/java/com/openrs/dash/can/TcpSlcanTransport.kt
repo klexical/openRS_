@@ -28,6 +28,7 @@ class TcpSlcanTransport(
     private val lineBuf = StringBuilder(32)
 
     override val label: String get() = "TCP $host:$port"
+    override val kind: String get() = "Wi-Fi TCP"
     override val stockFirmwareLabel: String get() = "MeatPi Pro"
 
     override suspend fun open() = withContext(Dispatchers.IO) {

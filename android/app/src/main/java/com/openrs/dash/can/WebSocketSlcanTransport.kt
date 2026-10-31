@@ -33,6 +33,7 @@ class WebSocketSlcanTransport(
     private var out: OutputStream? = null
 
     override val label: String get() = "WebSocket ws://$host:$port$WS_PATH"
+    override val kind: String get() = "Wi-Fi WebSocket"
     override val stockFirmwareLabel: String get() = "WiCAN stock"
 
     override suspend fun open() = withContext(Dispatchers.IO) {

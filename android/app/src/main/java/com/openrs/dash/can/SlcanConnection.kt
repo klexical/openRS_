@@ -7,6 +7,7 @@ import com.openrs.dash.data.DtcReply
 import com.openrs.dash.data.ModuleScanStatus
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticLogger
+import com.openrs.dash.diagnostics.LogText
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
@@ -184,13 +185,17 @@ class SlcanConnection(
                 addDebugLine("--- ${transport.label} ---")
                 addDebugLine("Connecting to ${transport.label}")
 
+                val attemptStartMs = clock()
                 transport.open()
 
                 transport.writeLine(ObdConstants.SLCAN_INIT)
                 addDebugLine("SLCAN init sent (C / S6 / O)")
 
+                // A failed write here fails the attempt (as before); the event is logged once the handshake passes (#220)
                 transport.writeLine("OPENRS?\r")
+                val probe1Ms = clock() - attemptStartMs
                 addDebugLine("Probing firmware...")
+                var probeNoise = 0          // non-frame, non-empty lines seen before a verdict: counted, never logged (#220)
 
                 // ── SLCAN handshake: wait for first valid response ────────
                 // Non-SLCAN BLE devices (e.g. LED controllers sharing the
@@ -213,6 +218,7 @@ class SlcanConnection(
                         break
                     }
                     // Some adapters echo back init commands — keep waiting
+                    if (line.isNotEmpty()) probeNoise++
                 }
                 if (!handshakeOk) {
                     addDebugLine("No SLCAN response — device may not be a WiCAN adapter")
@@ -338,24 +344,36 @@ class SlcanConnection(
                 // after the first window as before, but a reply at any time still upgrades the capability (a late
                 // reply was ignored and nothing retried, so a slow adapter stayed VIEW ONLY for the session).
                 val probeStartMs = clock()
-                // Shared by the read loop and the probe schedule (own coroutine)
+                // Shared by the read loop and the probe schedule (own coroutine). Attempted ≠ written (#220): a probe whose
+                // write threw is logged as failed and doesn't count as written.
                 val probesSent = java.util.concurrent.atomic.AtomicInteger(1)
+                val probesWritten = java.util.concurrent.atomic.AtomicInteger(1)
                 val firmwareDetected = java.util.concurrent.atomic.AtomicBoolean(false)
                 val stockShown = java.util.concurrent.atomic.AtomicBoolean(false)
+                val verdictDone = java.util.concurrent.atomic.AtomicBoolean(false)
+                val noise = java.util.concurrent.atomic.AtomicInteger(probeNoise)
+                val probeTotal = PROBE_TIMES_MS.size + 1
+                val kind = transport.kind
+                fun fromAttempt() = clock() - attemptStartMs
                 fun publish(st: FirmwareStatus) {
                     firmwareVersion = st.label
                     DiagnosticLogger.isOpenRsFirmware = st.openRs
                     DiagnosticLogger.firmwareVersion = st.label
                     firmwareSink(st)
                 }
+                // Probe events (#220): transport kind (never its label — a Bluetooth label carries name + MAC), probe N
+                // of 3, time since the attempt began, written / failed, recognized or not. No adapter text beyond the
+                // sanitized version; non-frame lines are only counted.
+                DiagnosticLogger.event("FIRMWARE", "Probe 1 of $probeTotal written ($kind, +$probe1Ms ms)")
                 fun detected(line: String) = synchronized(firmwareDetected) {
                     if (!firmwareDetected.compareAndSet(false, true)) return@synchronized
                     val version = line.removePrefix("OPENRS:").trim()
                     publish(FirmwareStatus(openRs = true, probing = false, label = "openRS_ $version"))
                     val ms = clock() - probeStartMs
                     addDebugLine("Firmware: openRS_ $version \u2713 (${ms} ms, probe ${probesSent.get()})")
-                    DiagnosticLogger.event("FIRMWARE", "openRS_ $version detected after $ms ms (probe ${probesSent.get()} of " +
-                        "${PROBE_TIMES_MS.size + 1}${if (stockShown.get()) ", late reply" else ""}) (${transport.label})")
+                    DiagnosticLogger.event("FIRMWARE", "Reply recognized: openRS_ ${LogText.sanitize(version, 40)} after probe " +
+                        "${probesSent.get()} of $probeTotal ($kind, +${fromAttempt()} ms" +
+                        "${if (verdictDone.get()) ", late reply after the verdict" else ""})")
                 }
                 publish(FirmwareStatus(openRs = false, probing = true, label = transport.stockFirmwareLabel))
                 if (firstLine != null && firstLine.startsWith("OPENRS:")) detected(firstLine)
@@ -367,20 +385,29 @@ class SlcanConnection(
                         if (firmwareDetected.get()) return@launch
                         if (stockShown.compareAndSet(false, true)) {
                             addDebugLine("Firmware: no openRS_ reply in ${PROBE_TIMES_MS.first() / 1000} s — probing again")
-                            DiagnosticLogger.event("FIRMWARE", "${transport.stockFirmwareLabel} so far (no openRS_ reply in " +
-                                "${PROBE_TIMES_MS.first() / 1000} s) — probing again")
                         }
-                        try { transport.writeLine("OPENRS?\r") } catch (_: Exception) { }
-                        probesSent.incrementAndGet()
+                        val n = probesSent.incrementAndGet()
+                        try {
+                            transport.writeLine("OPENRS?\r")
+                            probesWritten.incrementAndGet()
+                            DiagnosticLogger.event("FIRMWARE", "Probe $n of $probeTotal written ($kind, +${fromAttempt()} ms)")
+                        } catch (e: Exception) {
+                            if (e is kotlinx.coroutines.CancellationException) throw e
+                            DiagnosticLogger.event("FIRMWARE", "Probe $n of $probeTotal write FAILED ($kind, +${fromAttempt()} ms): " +
+                                LogText.sanitizeReason(e))
+                        }
                     }
                     delay((PROBE_GIVE_UP_MS - (clock() - probeStartMs)).coerceAtLeast(0L))
                     synchronized(firmwareDetected) {    // never after a detection that landed meanwhile
                         if (firmwareDetected.get()) return@launch
+                        verdictDone.set(true)
                         publish(FirmwareStatus(openRs = false, probing = false, label = transport.stockFirmwareLabel))
                     }
-                    DiagnosticLogger.event("FIRMWARE", "openRS_ firmware not detected — no reply to ${probesSent.get()} probes " +
-                        "in ${PROBE_GIVE_UP_MS / 1000} s (adapter capability unknown: stock firmware, or no reply) — " +
-                        "drive mode / ESC stay view-only; a later reply still enables them")
+                    val ignored = noise.get().let { if (it > 0) "; $it non-frame lines ignored" else "" }
+                    DiagnosticLogger.event("FIRMWARE", "Not detected — no reply recognized to ${probesWritten.get()} written probes " +
+                        "(${probesSent.get()} attempted) in ${PROBE_GIVE_UP_MS / 1000} s ($kind)$ignored — capability unknown " +
+                        "(no reply is not proof of stock firmware); drive mode / ESC stay view-only; " +
+                        "a later reply still enables them")
                 }
 
                 // ── Main frame loop ───────────────────────────────────────
@@ -400,7 +427,12 @@ class SlcanConnection(
                             continue
                         }
 
-                        val frame = SlcanParser.parse(line) ?: continue
+                        val frame = SlcanParser.parse(line)
+                        if (frame == null) {
+                            // Counted for the probe verdict only — adapter text is never logged (#220)
+                            if (line.isNotEmpty() && !firmwareDetected.get() && !verdictDone.get()) noise.incrementAndGet()
+                            continue
+                        }
 
                         if (_dtcScanActive && frame.first in _dtcWatchIds && divertToDtc(frame.first, frame.second)) {
                             _dtcChannel.trySend(frame)
