@@ -627,8 +627,8 @@ class SlcanConnection(
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 val f = DtcSendFailure(stage, LogText.sanitizeReason(e))
-                // The request's own failure wins over an earlier session-write failure; otherwise the first one is kept
-                if (stage == DtcStage.REQUEST) failures[module] = f else failures.putIfAbsent(module, f)
+                // Request > flow control > extended session (DtcRawScan.keeps) — the failure that explains the module
+                if (DtcRawScan.keeps(failures[module], f)) failures[module] = f
                 false
             }
 

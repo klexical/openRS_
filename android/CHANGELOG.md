@@ -137,6 +137,11 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
   B's list (also after Bluetooth was switched off); each scan now has an id that stop / restart invalidates, and the
   enable-prompt result and the Bluetooth-on broadcast start one scan in either order. Found in source review, not seen on
   a phone. ([#218](https://github.com/klexical/openRS_/issues/218))
+- **A failed flow control after "response pending" finished as PENDING** — progress showed ERROR at the failed write but
+  the result (and export) said PENDING, because pending outranked any failure; a failed 0x19 02 request or flow control
+  now decides ERROR with its reason in progress, result, text and JSON alike, a flow-control failure is kept over an
+  earlier extended-session one, and pending-only / completed replies are unchanged (`DtcRawScan.statusWithoutReply`).
+  Source-review finding, reproduced on the scripted scan path. ([#215](https://github.com/klexical/openRS_/issues/215))
 
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)

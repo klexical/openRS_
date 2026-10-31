@@ -118,8 +118,8 @@ data class DtcSendFailure(val stage: DtcStage, val reason: String) {
 }
 
 /**
- * Raw replies collected by one scan pass: final payload per module, modules left on "pending", and every write that
- * failed (first failure per module — #215). [sendFailed] = modules whose 0x19 02 request itself wasn't sent.
+ * Raw replies collected by one scan pass: final payload per module, modules left on "pending", and the failed write
+ * that explains each module (one per module, [keeps] — #215). [sendFailed] = modules whose 0x19 02 request itself wasn't sent.
  */
 data class DtcRawScan(
     val payloads: Map<String, ByteArray> = emptyMap(),
@@ -130,12 +130,28 @@ data class DtcRawScan(
 
     /**
      * Status of a module WITHOUT a final reply — the one rule shared by live progress and the final result (#215):
-     * still pending → PENDING; any write it needed failed → ERROR; otherwise TIMEOUT.
+     * its request or flow control failed → ERROR (the final reply can't come — also after a "pending", which only
+     * means the module was still working); still pending → PENDING (a failed extended-session write the module
+     * answered anyway doesn't override it); any other failed write → ERROR; otherwise TIMEOUT.
      */
     fun statusWithoutReply(module: String): ModuleScanStatus = when {
+        failures[module]?.stage.let { it == DtcStage.REQUEST || it == DtcStage.FLOW_CONTROL } -> ModuleScanStatus.ERROR
         module in pending -> ModuleScanStatus.PENDING
         module in failures -> ModuleScanStatus.ERROR
         else -> ModuleScanStatus.TIMEOUT
+    }
+
+    companion object {
+        /**
+         * Which failure a module keeps: the 0x19 02 request's own, else a flow control's over an extended-session one
+         * (the more decisive for the final reply), else the first.
+         */
+        fun keeps(existing: DtcSendFailure?, new: DtcSendFailure): Boolean = when {
+            existing == null -> true
+            existing.stage == DtcStage.REQUEST -> false
+            new.stage == DtcStage.REQUEST -> true
+            else -> existing.stage == DtcStage.EXTENDED_SESSION && new.stage == DtcStage.FLOW_CONTROL
+        }
     }
 }
 

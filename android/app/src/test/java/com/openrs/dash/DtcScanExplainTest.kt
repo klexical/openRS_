@@ -130,4 +130,55 @@ class DtcScanExplainTest {
         assertEquals(1, fcTries)
         assertTrue("a failed write is not a TX line", !Regex("# TX .*7E0#3000").containsMatchIn(log()))
     }
+
+    // ── Source review 2026-10-31: a known flow-control failure after "response pending" ──
+
+    private val pendingPcm = "t7E88037F197800000000"
+    private val ffPcm = "t7E88" + "100B5902FF012300"
+
+    @Test fun `pending, then a first frame whose flow control fails — ERROR with the reason in progress, result and exports`() = runTest {
+        val mods = listOf(spec("PCM"))
+        val (r, progress) = scan(mods, mapOf(0x7E0 to listOf(pendingPcm to 20L, ffPcm to 100L)), fail = { it.startsWith("t7E08300") })
+        assertEquals(ModuleScanStatus.ERROR, r.moduleStatuses["PCM"])
+        assertEquals("progress vs final", r.moduleStatuses["PCM"], progress["PCM"])
+        val note = r.moduleNotes["PCM"]
+        assertTrue("$note", note != null && note.startsWith("flow control not sent — IOException"))
+        val rec = record(r, mods)
+        val json = com.openrs.dash.diagnostics.DiagnosticReportBuilder.dtcScanJson(rec)
+        assertEquals("ERROR", json.getJSONObject("modules").getString("PCM"))
+        assertEquals(note, json.getJSONObject("moduleNotes").getString("PCM"))
+        val text = com.openrs.dash.diagnostics.DriveExportBuilder.buildDtcText(rec.codes, rec)
+        assertTrue(text, text.contains("PCM: $note"))
+    }
+
+    @Test fun `pending only stays PENDING with no note`() = runTest {
+        val (r, progress) = scan(listOf(spec("PCM")), mapOf(0x7E0 to listOf(pendingPcm to 20L)))
+        assertEquals(ModuleScanStatus.PENDING, r.moduleStatuses["PCM"])
+        assertEquals(ModuleScanStatus.PENDING, progress["PCM"])
+        assertTrue(r.moduleNotes.isEmpty())
+    }
+
+    @Test fun `pending, then a complete multi-frame reply is OK with its code and no note`() = runTest {
+        val cf = "t7E88" + "2101C1000008" + "0000"
+        val (r, progress) = scan(listOf(spec("PCM")), mapOf(0x7E0 to listOf(pendingPcm to 20L, ffPcm to 100L, cf to 30L)))
+        assertEquals(ModuleScanStatus.OK, r.moduleStatuses["PCM"])
+        assertEquals(ModuleScanStatus.OK, progress["PCM"])
+        assertEquals("two 4-byte records (01 23 00 01, C1 00 00 08)", 2, r.codes.size)
+        assertTrue(r.moduleNotes.isEmpty())
+    }
+
+    @Test fun `an extended-session failure followed by pending stays PENDING, and the later flow-control failure wins`() = runTest {
+        // AWD needs the extended session: that write fails, the module still answers "pending" (the request reached it)
+        val awdPending = "t70B8037F197800000000"
+        val (onlyPending, _) = scan(listOf(spec("AWD")), mapOf(0x703 to listOf(awdPending to 20L)),
+            fail = { it.startsWith("t70380210") })
+        assertEquals(ModuleScanStatus.PENDING, onlyPending.moduleStatuses["AWD"])
+        session()
+        val awdFf = "t70B8" + "100B5902FF012300"
+        val (r, progress) = scan(listOf(spec("AWD")), mapOf(0x703 to listOf(awdPending to 20L, awdFf to 100L)),
+            fail = { it.startsWith("t70380210") || it.startsWith("t7038300") })
+        assertEquals(ModuleScanStatus.ERROR, r.moduleStatuses["AWD"])
+        assertEquals(r.moduleStatuses["AWD"], progress["AWD"])
+        assertTrue(r.moduleNotes["AWD"]!!, r.moduleNotes["AWD"]!!.startsWith("flow control not sent"))
+    }
 }
