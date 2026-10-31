@@ -574,17 +574,24 @@ class CanDataService : Service() {
 
             // Query WiCAN /check_status once after connection (WiFi only).
             // Populates device info for GARAGE display and diagnostic export.
-            if (!isBle) {
+            // The export records the outcome for this session only — never an earlier session's status (#233).
+            if (isBle) {
+                DiagnosticLogger.adapterStatusNotRequested(com.openrs.dash.diagnostics.AdapterStatusRecord.BLUETOOTH)
+            } else {
                 launch {
                     conn.state.first { it is AdapterState.Connected }
+                    link.deliver(gen) { DiagnosticLogger.adapterStatusRequested() }
                     val host = s.getHost(this@CanDataService)
                     val status = WicanApi.checkStatus(this@CanDataService, host)
                     if (status != null) link.deliver(gen) {
                         OpenRSDashApp.instance.deviceStatus.value = status
-                        DiagnosticLogger.deviceStatus = status
+                        DiagnosticLogger.adapterStatusFetched(status)
                         DiagnosticLogger.event("DEVICE_STATUS",
                             "${status.hardwareVersion} fw=${status.firmwareVersion} " +
                             "can=${status.canDatarate} vbatt=${status.obdPortVoltage}V")
+                    } else link.deliver(gen) {
+                        DiagnosticLogger.adapterStatusFailed()
+                        DiagnosticLogger.event("DEVICE_STATUS", "/check_status request failed — adapter details unknown this session")
                     }
                 }
             }

@@ -49,6 +49,30 @@ internal object DiagnosticReportBuilder {
         scan.message?.let { put("message", it) }
     }
 
+    /** How this session's adapter status was obtained — or why there is none (#233). */
+    internal fun adapterStatusLine(record: AdapterStatusRecord, sessionStartMs: Long): String = when (record) {
+        is AdapterStatusRecord.Fetched -> {
+            val s = sessionOffsetMs(record.atMs, sessionStartMs) / 1000
+            "from /check_status over Wi-Fi at +%02d:%02d this session".format(s / 60, s % 60)
+        }
+        is AdapterStatusRecord.NotRequested -> "not available — ${record.reason}"
+        AdapterStatusRecord.Requested -> "not available — /check_status requested, no answer when exported"
+        AdapterStatusRecord.Failed -> "not available — /check_status request failed this session"
+    }
+
+    /** `adapterStatusSource` block of the detail JSON: state + detail, always present (#233). */
+    internal fun adapterStatusSourceJson(record: AdapterStatusRecord, sessionStartMs: Long): JSONObject = JSONObject().apply {
+        when (record) {
+            is AdapterStatusRecord.Fetched -> {
+                put("state", "FETCHED"); put("via", "check_status_wifi")
+                put("sessionOffsetMs", sessionOffsetMs(record.atMs, sessionStartMs))
+            }
+            is AdapterStatusRecord.NotRequested -> { put("state", "NOT_REQUESTED"); put("detail", record.reason) }
+            AdapterStatusRecord.Requested -> put("state", "NO_ANSWER")
+            AdapterStatusRecord.Failed -> put("state", "FAILED")
+        }
+    }
+
     fun buildSummaryText(ts: String): String = buildString {
         val log = DiagnosticLogger
         val vs  = log.lastVehicleState
@@ -78,9 +102,10 @@ internal object DiagnosticReportBuilder {
         appendLine("  ${dtcScanLine(log.lastDtcScan)}")
         appendLine()
 
-        // ── Adapter device status (from /check_status)
+        // ── Adapter device status (/check_status) — this session's only; "Firmware :" above is the live handshake (#233)
+        appendLine("─── ADAPTER ──────────────────────────────────────────────")
+        appendLine("  Status   : ${adapterStatusLine(log.adapterStatus, log.sessionStartMs)}")
         log.deviceStatus?.let { ds ->
-            appendLine("─── ADAPTER ──────────────────────────────────────────────")
             if (ds.hardwareVersion.isNotBlank()) appendLine("  Hardware : ${ds.hardwareVersion}")
             if (ds.firmwareVersion.isNotBlank()) appendLine("  Device FW: v${ds.firmwareVersion}")
             if (ds.deviceId.isNotBlank())        appendLine("  Device ID: ${ds.deviceId}")
@@ -89,8 +114,8 @@ internal object DiagnosticReportBuilder {
             if (ds.bleStatus.isNotBlank())        appendLine("  BLE      : ${ds.bleStatus}")
             if (ds.protocol.isNotBlank())         appendLine("  Protocol : ${ds.protocol}")
             if (ds.sleepStatus.isNotBlank())      appendLine("  Sleep    : ${ds.sleepStatus} (${ds.sleepVolt}V)")
-            appendLine()
         }
+        appendLine()
 
         // ── Settings
         if (p != null) {
@@ -356,7 +381,8 @@ internal object DiagnosticReportBuilder {
             })
         }
 
-        // adapter device status
+        // adapter device status — this session's /check_status only; how it was obtained (or why not) always (#233)
+        root.put("adapterStatusSource", adapterStatusSourceJson(log.adapterStatus, log.sessionStartMs))
         log.deviceStatus?.let { ds ->
             root.put("adapterStatus", JSONObject().apply {
                 put("hardwareVersion", ds.hardwareVersion)

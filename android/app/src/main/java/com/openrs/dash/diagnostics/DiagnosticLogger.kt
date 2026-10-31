@@ -161,7 +161,22 @@ object DiagnosticLogger {
     @Volatile var sessionTransport: String = ""
     @Volatile var sessionPrefs: UserPrefs? = null
     @Volatile private var nrcSnapshot: Map<Int, NrcTracker.NrcRecord> = emptyMap()
-    @Volatile var deviceStatus: DeviceStatus? = null
+    /**
+     * The adapter's own status page (`/check_status`) for THIS session only — reset by [sessionStart], so a Bluetooth
+     * session or another adapter never exports an earlier Wi-Fi session's fields (#233). Separate from [firmwareVersion]
+     * (the live OPENRS? handshake): neither is derived from the other.
+     */
+    @Volatile var adapterStatus: AdapterStatusRecord = AdapterStatusRecord.NotRequested(AdapterStatusRecord.NO_REQUEST)
+        private set
+    /** Fetched device status of this session, or null (not requested, waiting, or failed). */
+    val deviceStatus: DeviceStatus? get() = (adapterStatus as? AdapterStatusRecord.Fetched)?.status
+
+    fun adapterStatusNotRequested(reason: String) { adapterStatus = AdapterStatusRecord.NotRequested(reason) }
+    fun adapterStatusRequested() { adapterStatus = AdapterStatusRecord.Requested }
+    fun adapterStatusFetched(status: DeviceStatus, atMs: Long = System.currentTimeMillis()) {
+        adapterStatus = AdapterStatusRecord.Fetched(status, atMs)
+    }
+    fun adapterStatusFailed() { adapterStatus = AdapterStatusRecord.Failed }
     /** This session's DTC scan record — the single publication path for scans and retries (#215). */
     val dtcScans = DtcScanLedger()
     /** Last DTC scan of this session (any outcome) — null = no scan; exported with status and module coverage (#215). */
@@ -228,6 +243,7 @@ object DiagnosticLogger {
             sessionPrefs = prefs
             isOpenRsFirmware = false
             firmwareVersion = "WiCAN stock"
+            adapterStatus = AdapterStatusRecord.NotRequested(AdapterStatusRecord.NO_REQUEST)
             lastVehicleState = null
             frameInventory.clear()
             decodeTraceDeque.clear()
@@ -459,5 +475,25 @@ object DiagnosticLogger {
     fun formatDuration(ms: Long): String {
         val s = ms / 1000
         return "%02d:%02d:%02d".format(s / 3600, (s % 3600) / 60, s % 60)
+    }
+}
+
+/**
+ * Where this session's adapter status came from (#233). Only [Fetched] carries fields; the others say why there are none,
+ * so an export never shows a status from another session, transport or adapter — and never a substitute version.
+ */
+sealed interface AdapterStatusRecord {
+    /** Not requested in this session — [reason] says why (Bluetooth: the status page is read over Wi-Fi only). */
+    data class NotRequested(val reason: String) : AdapterStatusRecord
+    /** Requested over Wi-Fi, no answer yet. */
+    data object Requested : AdapterStatusRecord
+    /** Read from `/check_status` over Wi-Fi in this session at [atMs]. */
+    data class Fetched(val status: DeviceStatus, val atMs: Long) : AdapterStatusRecord
+    /** The Wi-Fi request failed or the reply couldn't be read. */
+    data object Failed : AdapterStatusRecord
+
+    companion object {
+        const val NO_REQUEST = "no status request in this session"
+        const val BLUETOOTH = "Bluetooth session — the adapter status page (/check_status) is read over Wi-Fi only"
     }
 }

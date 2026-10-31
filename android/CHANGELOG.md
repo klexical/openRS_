@@ -84,6 +84,12 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **Knock scatter put "source not recorded" events on the TIP axis** — older events (no source column) were drawn beside TIP events in ALL scope. Now an axis plots one measurement only (title TIP / BOOST / "SRC N/R"); events of another kind, or without a reading, aren't drawn or tappable, and a line under the plot says how many were left out and why. (`ui/KnockScatter.kt`, `ui/KnockScatterMath.kt`) ([#207](https://github.com/klexical/openRS_/issues/207))
 - **RaceChrono / TrackAddict files labelled TIP as boost** — their only pressure column is "Boost Pressure" / "Boost", which can't name TIP or a missing reading. The column is removed from both; the drive summary says why, and the drive CSV keeps every reading with its source. (`diagnostics/DriveExportBuilder.kt`) ([#207](https://github.com/klexical/openRS_/issues/207))
 
+### Fixed (rc.7 — hardware-test corrections 2026-10-31)
+- **Diagnostic export showed an earlier session's adapter status** — a Bluetooth export carried the last Wi-Fi
+  `/check_status` (incl. "BLE: disable"), and a failed refresh left the previous adapter's fields; the status now belongs
+  to the session (`DiagnosticLogger.adapterStatus`, reset by `sessionStart`), the ADAPTER section says where it came from
+  or why there is none, and the firmware handshake stays separate. ([#233](https://github.com/klexical/openRS_/issues/233))
+
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)
 - **What's New describes the corrected boost, NRC, ESC, probe, Bluetooth, DTC and header behaviour** — the BOOST line no longer says TIP is "marked under the reading" (the gauge's label says TIP now) and says the signal identities are unconfirmed. (`ui/WhatsNewDialog.kt`)
