@@ -150,8 +150,10 @@ class DtcScanner(private val ctx: Context) {
             }
             raw.pending.forEach { DiagnosticLogger.event("DTC", "$it: response pending, no final reply") }
             raw.failures.forEach { (name, f) -> DiagnosticLogger.event("DTC", "$name: ${f.note}") }
-            // A note only where the module has no valid reply — a failed session write before a good answer isn't a gap
-            val notes = raw.failures.filterKeys { statuses[it] != ModuleScanStatus.OK }.mapValues { it.value.note }
+            // A note only where it explains the status: not beside a valid reply, and not beside PENDING — a failed
+            // session write the module answered anyway isn't why it is still pending (the failure stays an event)
+            val notes = raw.failures.filterKeys { statuses[it] != ModuleScanStatus.OK && statuses[it] != ModuleScanStatus.PENDING }
+                .mapValues { it.value.note }
             return DtcScanResult(codes, statuses, System.currentTimeMillis() - startMs, notes)
         }
 

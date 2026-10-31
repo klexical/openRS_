@@ -173,6 +173,7 @@ class DtcScanExplainTest {
         val (onlyPending, _) = scan(listOf(spec("AWD")), mapOf(0x703 to listOf(awdPending to 20L)),
             fail = { it.startsWith("t70380210") })
         assertEquals(ModuleScanStatus.PENDING, onlyPending.moduleStatuses["AWD"])
+        assertTrue("no session-write note beside PENDING", onlyPending.moduleNotes.isEmpty())
         session()
         val awdFf = "t70B8" + "100B5902FF012300"
         val (r, progress) = scan(listOf(spec("AWD")), mapOf(0x703 to listOf(awdPending to 20L, awdFf to 100L)),
