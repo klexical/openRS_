@@ -113,7 +113,7 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
   one can't move it back), and the footer text is one tested function. ([#232](https://github.com/klexical/openRS_/issues/232))
 - **Tyre imbalance chip printed a psi difference with the BAR label** — 35 / 39 psi read "PRESSURE IMBALANCE 4.0 BAR";
   the spread is now shown in the selected unit ("4.0 PSI" / "0.28 BAR", `tyreImbalanceText`); the 4 psi trigger and the
-  thresholds are unchanged, so both units warn at the same point.
+  thresholds are unchanged, so both units warn at the same point. (addresses [#219](https://github.com/klexical/openRS_/issues/219))
 - **Unattributed NRCs flooded the event log** — after one lost reply each 0x31 logged a line with an ever-longer waiting
   list (522 lines in an 8.5 min drive; the 1,000-event log would drop early events on longer drives); now the first of
   each kind is logged in full with a compact list ("03ED ×18, 03EE ×17"), repeats fold into one summary per minute, and the
