@@ -131,6 +131,13 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
   lacked the new `driveMode` stamp; the list now includes it and a test ties the demo list to every tag a real CAN frame
   stamps. ([#220](https://github.com/klexical/openRS_/issues/220))
 
+### Fixed (rc.7 — source-review corrections 2026-10-31)
+- **An earlier Bluetooth scan could end or overwrite the next one** — scan callbacks weren't tied to the scan that
+  started them, so a late failure, result or timeout from scan A could stop scan B, show A's error or add A's device to
+  B's list (also after Bluetooth was switched off); each scan now has an id that stop / restart invalidates, and the
+  enable-prompt result and the Bluetooth-on broadcast start one scan in either order. Found in source review, not seen on
+  a phone. ([#218](https://github.com/klexical/openRS_/issues/218))
+
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)
 - **What's New describes the corrected boost, NRC, ESC, probe, Bluetooth, DTC and header behaviour** — the BOOST line no longer says TIP is "marked under the reading" (the gauge's label says TIP now) and says the signal identities are unconfirmed. (`ui/WhatsNewDialog.kt`)

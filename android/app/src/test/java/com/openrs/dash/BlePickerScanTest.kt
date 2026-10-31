@@ -21,6 +21,8 @@ class BlePickerScanTest {
         var onResult: ((BleDeviceScanner.BleDevice) -> Unit)? = null
         var onFailed: ((Int) -> Unit)? = null
         var timeout: (() -> Unit)? = null
+        /** Every scan's callbacks and timeout, kept as Android may still deliver them after stop / restart. */
+        val retained = mutableListOf<Triple<(BleDeviceScanner.BleDevice) -> Unit, (Int) -> Unit, () -> Unit>>()
         override fun bluetoothOn() = radio
         override fun start(filterless: Boolean, onResult: (BleDeviceScanner.BleDevice) -> Unit, onFailed: (Int) -> Unit): BleScanBackend.Start {
             if (radio != true) return BleScanBackend.Start.BLUETOOTH_OFF          // Android: no scanner while off
@@ -28,7 +30,9 @@ class BlePickerScanTest {
             return BleScanBackend.Start.STARTED
         }
         override fun stop() { onResult = null }
-        override fun schedule(delayMs: Long, action: () -> Unit): () -> Unit { timeout = action; return { timeout = null } }
+        override fun schedule(delayMs: Long, action: () -> Unit): () -> Unit {
+            timeout = action; retained += Triple(onResult!!, onFailed!!, action); return { timeout = null }
+        }
     }
 
     @Test fun `phone Bluetooth off is reported, then turning it on retries in the same picker and finds the adapter`() {
@@ -96,5 +100,71 @@ class BlePickerScanTest {
         b.onFailed!!(2)
         assertTrue(s.state.value is BleScanState.Failed)
         assertFalse(s.scanning.value)
+    }
+
+    // ── Scan identity (source review, 2026-10-31): a callback belongs to the scan that started it ──
+
+    private val adapterB = BleDeviceScanner.BleDevice("WiC_B", "11:22:33:44:55:66", -50)
+    private val stale = BleDeviceScanner.BleDevice("WiC_A", "AA:BB:CC:DD:EE:FF", -70)
+
+    @Test fun `scan A's late failure, result and timeout leave scan B running untouched`() {
+        val b = FakeBackend().apply { radio = true }; val s = BleDeviceScanner(b)
+        s.startScan()                                                             // scan A
+        val (aResult, aFailed, aTimeout) = b.retained[0]
+        s.startScan()                                                             // Scan Again → scan B
+        b.onResult!!(adapterB)
+        aFailed(2)                                                                // A's asynchronous failure arrives now
+        aResult(stale)                                                            // and a result A had queued
+        aTimeout()                                                                // and A's timeout (posted before its cancel)
+        assertEquals(BleScanState.Scanning, s.state.value)
+        assertTrue("B still scanning", s.scanning.value)
+        assertEquals(listOf("WiC_B"), s.devices.value.map { it.name })
+        assertEquals(2, b.starts)
+        b.retained[1].third()                                                     // B's own timeout ends B
+        assertEquals(BleScanState.Finished, s.state.value)
+    }
+
+    @Test fun `a result or failure from a scan stopped by Bluetooth off changes nothing`() {
+        val b = FakeBackend().apply { radio = true }; val s = BleDeviceScanner(b)
+        s.startScan()
+        val (aResult, aFailed, aTimeout) = b.retained[0]
+        b.radio = false
+        s.onPhoneBluetoothChanged(on = false)
+        aResult(stale); aFailed(2); aTimeout()
+        assertEquals(BleScanState.PhoneBluetoothOff, s.state.value)
+        assertTrue(s.devices.value.isEmpty())
+        assertFalse(s.scanning.value)
+    }
+
+    @Test fun `a stopped scan's callbacks are ignored after the picker stops it`() {
+        val b = FakeBackend().apply { radio = true }; val s = BleDeviceScanner(b)
+        s.startScan()
+        val (aResult, aFailed, _) = b.retained[0]
+        s.stopScan()                                                              // device chosen / picker closed
+        aResult(stale); aFailed(2)
+        assertTrue(s.devices.value.isEmpty())
+        assertFalse(s.state.value is BleScanState.Failed)
+    }
+
+    @Test fun `enable accepted, then the STATE_ON broadcast — one scan`() {
+        val b = FakeBackend(); val s = BleDeviceScanner(b)
+        s.startScan()
+        b.radio = true
+        s.onEnablePromptResult(accepted = true)
+        s.onPhoneBluetoothChanged(on = true)
+        assertEquals(BleScanState.Scanning, s.state.value)
+        assertEquals(1, b.starts)
+    }
+
+    @Test fun `STATE_ON broadcast first, then the enable result — one scan, not restarted`() {
+        val b = FakeBackend(); val s = BleDeviceScanner(b)
+        s.startScan()
+        b.radio = true
+        s.onPhoneBluetoothChanged(on = true)                                      // Android often delivers this first
+        b.onResult!!(adapterB)
+        s.onEnablePromptResult(accepted = true)
+        assertEquals(BleScanState.Scanning, s.state.value)
+        assertEquals("the running scan isn't restarted", 1, b.starts)
+        assertEquals("its results survive", listOf("WiC_B"), s.devices.value.map { it.name })
     }
 }

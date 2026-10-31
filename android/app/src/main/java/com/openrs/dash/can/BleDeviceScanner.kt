@@ -83,6 +83,13 @@ class BleDeviceScanner(private val backend: BleScanBackend) {
 
     private val seen = mutableMapOf<String, BleDevice>()
     private var cancelTimeout: (() -> Unit)? = null
+    /**
+     * Identity of the scan whose callbacks may still change the picker; 0 = none (#218). Android can deliver a result,
+     * a failure or a posted timeout after that scan was stopped or replaced — they carry their own id and are dropped
+     * unless it is still [activeScan], so scan A can never stop scan B, put its error on B, or add a device to B's list.
+     */
+    private var scanSeq = 0
+    private var activeScan = 0
 
     /**
      * Start a BLE scan. When [filterless] is true, no service-UUID filter is
@@ -101,27 +108,35 @@ class BleDeviceScanner(private val backend: BleScanBackend) {
             false -> { _state.value = BleScanState.PhoneBluetoothOff; return }
             true -> Unit
         }
+        val id = ++scanSeq
+        activeScan = id                      // before start(): a callback delivered at once already belongs to it
         val started = backend.start(filterless,
-            onResult = { d -> seen[d.address] = d; _devices.value = seen.values.sortedByDescending { it.rssi } },
+            onResult = { d ->
+                if (id == activeScan) { seen[d.address] = d; _devices.value = seen.values.sortedByDescending { it.rssi } }
+            },
             onFailed = { code ->
-                stopScan(finished = false)
-                _state.value = BleScanState.Failed("the phone's scanner reported error $code")
+                if (id == activeScan) {
+                    stopScan(finished = false)
+                    _state.value = BleScanState.Failed("the phone's scanner reported error $code")
+                }
             })
         when (started) {
             BleScanBackend.Start.STARTED -> {
                 _enableDeclined.value = false
                 _scanning.value = true
                 _state.value = BleScanState.Scanning
-                cancelTimeout = backend.schedule(SCAN_TIMEOUT_MS) { stopScan(finished = true) }
+                cancelTimeout = backend.schedule(SCAN_TIMEOUT_MS) { if (id == activeScan) stopScan(finished = true) }
             }
-            BleScanBackend.Start.BLUETOOTH_OFF -> _state.value = BleScanState.PhoneBluetoothOff
-            BleScanBackend.Start.PERMISSION_MISSING -> _state.value = BleScanState.PermissionMissing
+            BleScanBackend.Start.BLUETOOTH_OFF -> { activeScan = 0; _state.value = BleScanState.PhoneBluetoothOff }
+            BleScanBackend.Start.PERMISSION_MISSING -> { activeScan = 0; _state.value = BleScanState.PermissionMissing }
         }
     }
 
     fun stopScan() = stopScan(finished = _scanning.value)
 
+    /** Ends the current scan and invalidates its id — anything it still delivers is ignored. */
     private fun stopScan(finished: Boolean) {
+        activeScan = 0
         cancelTimeout?.invoke()
         cancelTimeout = null
         val was = _scanning.value
@@ -140,9 +155,14 @@ class BleDeviceScanner(private val backend: BleScanBackend) {
         }
     }
 
-    /** Result of Android's enable prompt: accepted → scan (when the radio reports on); declined → keep the message. */
+    /**
+     * Result of Android's enable prompt: accepted → scan (when the radio reports on); declined → keep the message.
+     * The STATE_ON broadcast and this result arrive in either order; whichever comes second finds the scan already
+     * running (no longer [BleScanState.PhoneBluetoothOff]) and leaves it alone — one scan, never a restart.
+     */
     fun onEnablePromptResult(accepted: Boolean) {
         if (!accepted) { _enableDeclined.value = true; return }
+        if (_state.value != BleScanState.PhoneBluetoothOff) return
         if (backend.bluetoothOn() == true) startScan(_filterless.value)    // else ACTION_STATE_CHANGED will retry
     }
 
