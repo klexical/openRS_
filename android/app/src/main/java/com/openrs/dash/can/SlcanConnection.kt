@@ -193,9 +193,18 @@ class SlcanConnection(
                 transport.writeLine(ObdConstants.SLCAN_INIT)
                 addDebugLine("SLCAN init sent (C / S6 / O)")
 
-                // A failed write here fails the attempt (as before); the event is logged once the handshake passes (#220)
-                transport.writeLine("OPENRS?\r")
-                val probe1Ms = clock() - attemptStartMs
+                // Probe 1's outcome is logged at once (#220) — also when the write or the handshake then fails the
+                // attempt. A failed write still fails the attempt, as before.
+                val probeTotal = PROBE_TIMES_MS.size + 1
+                val kind = transport.kind
+                try {
+                    transport.writeLine("OPENRS?\r")
+                } catch (e: Exception) {
+                    if (e !is CancellationException) DiagnosticLogger.event("FIRMWARE",
+                        "Probe 1 of $probeTotal write FAILED ($kind, +${clock() - attemptStartMs} ms): ${LogText.sanitizeReason(e)}")
+                    throw e
+                }
+                DiagnosticLogger.event("FIRMWARE", "Probe 1 of $probeTotal written ($kind, +${clock() - attemptStartMs} ms)")
                 addDebugLine("Probing firmware...")
                 var probeNoise = 0          // non-frame, non-empty lines seen before a verdict: counted, never logged (#220)
 
@@ -224,6 +233,8 @@ class SlcanConnection(
                 }
                 if (!handshakeOk) {
                     addDebugLine("No SLCAN response — device may not be a WiCAN adapter")
+                    DiagnosticLogger.event("FIRMWARE", "No probe verdict — SLCAN handshake got no frame or reply in " +
+                        "${HANDSHAKE_TIMEOUT_MS / 1000} s ($kind, +${clock() - attemptStartMs} ms); this attempt ends")
                     throw RuntimeException(
                         "Device did not respond to SLCAN init — may not be a CAN adapter"
                     )
@@ -355,8 +366,6 @@ class SlcanConnection(
                 val stockShown = java.util.concurrent.atomic.AtomicBoolean(false)
                 val verdictDone = java.util.concurrent.atomic.AtomicBoolean(false)
                 val noise = java.util.concurrent.atomic.AtomicInteger(probeNoise)
-                val probeTotal = PROBE_TIMES_MS.size + 1
-                val kind = transport.kind
                 fun fromAttempt() = clock() - attemptStartMs
                 fun publish(st: FirmwareStatus) {
                     firmwareVersion = st.label
@@ -366,8 +375,7 @@ class SlcanConnection(
                 }
                 // Probe events (#220): transport kind (never its label — a Bluetooth label carries name + MAC), probe N
                 // of 3, time since the attempt began, written / failed, recognized or not. No adapter text beyond the
-                // sanitized version; non-frame lines are only counted.
-                DiagnosticLogger.event("FIRMWARE", "Probe 1 of $probeTotal written ($kind, +$probe1Ms ms)")
+                // sanitized version; non-frame lines are only counted. Probe 1 was logged when it was written.
                 fun detected(line: String) = synchronized(firmwareDetected) {
                     if (!firmwareDetected.compareAndSet(false, true)) return@synchronized
                     val version = line.removePrefix("OPENRS:").trim()

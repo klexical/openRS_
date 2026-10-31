@@ -148,6 +148,12 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
   failure, cleared by a valid reply or a genuine timeout. The NOT SCANNED row reads the scan on screen, never the global
   record, so a newer auto-scan or connection can't attach its note to an older row; an obsolete retry still changes
   nothing. Source-review finding. ([#215](https://github.com/klexical/openRS_/issues/215))
+- **Probe 1 left no trace when the connection attempt failed** — the first OPENRS? write sat outside the probe logging and
+  its "written" event came only after the SLCAN handshake, so a failed first write, or a written probe followed by
+  handshake silence, logged nothing about the probe; probe 1's outcome is now logged at once (transport kind, probe 1 of
+  3, time, sanitized reason) and a handshake that times out says there is no verdict for that attempt. Connection
+  failure / retry behaviour is unchanged; a reply is still reported "after probe N" (identical probes can't be told
+  apart). Source-review finding. ([#220](https://github.com/klexical/openRS_/issues/220))
 
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)

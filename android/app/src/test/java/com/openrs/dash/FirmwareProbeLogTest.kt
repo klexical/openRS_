@@ -34,10 +34,13 @@ class FirmwareProbeLogTest {
         private val scope: CoroutineScope, private val answerProbe: Int = 0, private val failProbe: Int = 0,
         private val noise: List<String> = emptyList(),
         override val label: String = "BLE WiC_secretid0001 (AA:BB:CC:DD:EE:FF)",
+        /** Never sends a frame or a reply — the SLCAN handshake times out. */
+        private val silent: Boolean = false,
     ) : SlcanTransport {
         private val lines = Channel<String>(Channel.UNLIMITED)
         var probes = 0
         override suspend fun open() {
+            if (silent) return
             scope.launch {
                 noise.forEach { lines.trySend(it) }
                 while (isActive && lines.trySend("t09080000C1FF617D0000").isSuccess) delay(100L)
@@ -130,5 +133,38 @@ class FirmwareProbeLogTest {
         assertTrue(r, r.contains("id <id>"))
         assertFalse(r, r.contains("\u0007"))
         assertTrue(r.length <= 100)
+    }
+
+    // ── Source review 2026-10-31: probe 1 is logged even when the attempt fails ──
+
+    @Test fun `a failed first probe write is logged with kind, number, time and sanitized reason — and the attempt still retries`() = runTest {
+        val first = Adapter(backgroundScope, failProbe = 1)
+        var attempts = 0
+        val debug = mutableListOf<String>()                                       // AdapterState.Error is conflated away
+        val conn = SlcanConnection(
+            transportFactory = { attempts++; if (attempts == 1) first else Adapter(backgroundScope) }, maxRetries = 2,
+            ioDispatcher = StandardTestDispatcher(testScheduler), debugSink = { debug += it }, clock = { testScheduler.currentTime },
+        )
+        val job = backgroundScope.launch { conn.connectHybrid({}, { VehicleState() }).collect {} }
+        advanceTimeBy(20_000L)
+        job.cancel()
+        val ev = probeEvents()
+        val failed = ev.firstOrNull { it.startsWith("Probe 1 of 3 write FAILED (Bluetooth, +") }
+        assertTrue(ev.toString(), failed != null && failed.contains("IOException: BLE write couldn't be sent"))
+        assertFalse(failed!!, failed.contains("AA:BB:CC:DD:EE:FF") || failed.contains("\u0007"))
+        assertTrue("unchanged: the failed write fails the attempt", debug.any { it.startsWith("Error: BLE write couldn't be sent") })
+        assertEquals("unchanged: the next attempt runs", 2, attempts)
+        assertTrue(ev.toString(), ev.indexOfFirst { it.startsWith("Probe 1 of 3 written") } > ev.indexOf(failed))
+    }
+
+    @Test fun `probe 1 written, then handshake silence — the write and the missing verdict are both logged`() = runTest {
+        val adapter = Adapter(backgroundScope, silent = true)
+        val seen = run(adapter, 10)
+        val ev = probeEvents()
+        assertEquals(1, adapter.probes)
+        assertTrue(ev.toString(), ev.any { it.startsWith("Probe 1 of 3 written (Bluetooth, +") })
+        assertTrue(ev.toString(), ev.any { it.startsWith("No probe verdict — SLCAN handshake got no frame or reply") })
+        assertTrue(ev.toString(), ev.none { it.startsWith("Reply recognized") || it.startsWith("Not detected") })
+        assertTrue("never claimed openRS_", seen.none { it.openRs })
     }
 }
