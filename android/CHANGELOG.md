@@ -118,6 +118,11 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
   list (522 lines in an 8.5 min drive; the 1,000-event log would drop early events on longer drives); now the first of
   each kind is logged in full with a compact list ("03ED ×18, 03EE ×17"), repeats fold into one summary per minute, and the
   exact session total is exported. Polling, attribution, suppression and re-probing are unchanged. ([#216](https://github.com/klexical/openRS_/issues/216))
+- **Bluetooth picker with the phone's Bluetooth off said "No adapter found" and Scan Again stayed dead** — the scanner
+  was fetched once (null while the radio is off) and cached; it is now looked up on every scan, the picker says "Phone
+  Bluetooth is off" (the phone's radio, not the adapter's BLE setting) with Android's enable prompt, and scans again in
+  the same picker when Bluetooth comes on; declining keeps the message; "No adapter found" only follows a scan that
+  ran. ([#218](https://github.com/klexical/openRS_/issues/218))
 
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)
