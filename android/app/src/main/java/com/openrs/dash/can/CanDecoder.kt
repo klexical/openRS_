@@ -188,6 +188,9 @@ object CanDecoder {
      * classifies via `fieldLastUpdateMs` (THERMAL availability) need an entry.
      * Stamped by CanDataService.processCanFrame, throttled per ID — see [CAN_STAMP_THROTTLE_MS].
      */
+    /** Every freshness tag a CAN frame stamps (demo mode must stamp the same set — DemoSimulatorTest). */
+    val canStampTags: Set<String> get() = FRESH_TAGS.values.flatMap { it.toList() }.toSet()
+
     private val FRESH_TAGS: Map<Int, Array<String>> = mapOf(
         ID_ENGINE_TEMPS to arrayOf("oilTempC", "ptuTempC", "boostKpa"),   // boostKpa = 0x0F8 receipt (#207)
         ID_ESC_ABS      to arrayOf("escStatus"),                         // ESC confirmation needs a post-request frame (#125)

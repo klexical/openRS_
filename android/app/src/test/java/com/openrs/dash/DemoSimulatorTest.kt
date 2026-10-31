@@ -139,4 +139,9 @@ class DemoSimulatorTest {
         assertTrue(!at(36.0).launchControlActive && !at(36.0).eBrake)                            // cleared
         assertEquals(DemoLink.LIVE, DemoSimulator.link(DemoScenario.LAUNCH, 36.0))
     }
+
+    @Test fun `demo stamps every tag a real CAN frame stamps — drive-mode confirmation works in demo`() {
+        val missing = com.openrs.dash.can.CanDecoder.canStampTags - DemoSimulator.CAN_TAGS.toSet()
+        assertTrue("demo never stamps $missing — confirmations keyed on them would time out", missing.isEmpty())
+    }
 }

@@ -127,6 +127,9 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
   on a head unit whose side dock is a system bar) the wordmark, left-hand readings and tab bar sat under the bar; the
   root now pads the left / right safe-drawing insets Android reports (no fixed margin — an ordinary portrait phone gets
   none). ([#231](https://github.com/klexical/openRS_/issues/231))
+- **Demo drive-mode dock would never confirm after the confirmation fix** — demo mode stamps a fixed list of CAN tags and
+  lacked the new `driveMode` stamp; the list now includes it and a test ties the demo list to every tag a real CAN frame
+  stamps. ([#220](https://github.com/klexical/openRS_/issues/220))
 
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)
