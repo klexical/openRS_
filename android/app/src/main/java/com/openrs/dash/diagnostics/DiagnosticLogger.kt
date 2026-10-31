@@ -171,6 +171,10 @@ object DiagnosticLogger {
     /** Fetched device status of this session, or null (not requested, waiting, or failed). */
     val deviceStatus: DeviceStatus? get() = (adapterStatus as? AdapterStatusRecord.Fetched)?.status
 
+    /** Every PCM NRC of this session that couldn't be attributed — exact, though repeated log lines are folded (#216). */
+    @Volatile var nrcUnattributedTotal: Int = 0; private set
+    fun countUnattributedNrc() = synchronized(lock) { nrcUnattributedTotal++ }
+
     /** Identity of the current session — [sessionStart] returns it; adapter-status writes carry it (#233). */
     @Volatile private var sessionToken: Long = 0L
 
@@ -271,6 +275,7 @@ object DiagnosticLogger {
             lastSampleTimeMs.clear()
             dtcScans.newSession()      // a new session starts with no scan; older scans can't publish into it
             nrcSnapshot = emptyMap()   // NRC suppression is per connection (#216)
+            nrcUnattributedTotal = 0
 
             // Option C: open SLCAN log file
             if (logDir != null) {

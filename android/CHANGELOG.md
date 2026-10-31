@@ -114,6 +114,10 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **Tyre imbalance chip printed a psi difference with the BAR label** — 35 / 39 psi read "PRESSURE IMBALANCE 4.0 BAR";
   the spread is now shown in the selected unit ("4.0 PSI" / "0.28 BAR", `tyreImbalanceText`); the 4 psi trigger and the
   thresholds are unchanged, so both units warn at the same point.
+- **Unattributed NRCs flooded the event log** — after one lost reply each 0x31 logged a line with an ever-longer waiting
+  list (522 lines in an 8.5 min drive; the 1,000-event log would drop early events on longer drives); now the first of
+  each kind is logged in full with a compact list ("03ED ×18, 03EE ×17"), repeats fold into one summary per minute, and the
+  exact session total is exported. Polling, attribution, suppression and re-probing are unchanged. ([#216](https://github.com/klexical/openRS_/issues/216))
 
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)

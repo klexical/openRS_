@@ -286,6 +286,13 @@ internal object DiagnosticReportBuilder {
             }
             appendLine()
         }
+        // Unattributed NRCs: exact count; their event lines are folded to ≤ 1 per minute per kind (#216)
+        if (log.nrcUnattributedTotal > 0) {
+            appendLine("─── NRC UNATTRIBUTED ──────────────────────────────────────")
+            appendLine("  ${log.nrcUnattributedTotal} this session (not counted toward suppression; event lines show the " +
+                "first of each kind, then one summary per minute)")
+            appendLine()
+        }
 
         // ── FPS timeline
         val fps = log.fpsTimeline
@@ -468,6 +475,8 @@ internal object DiagnosticReportBuilder {
                 })
             }
         })
+
+        root.put("nrcUnattributedTotal", log.nrcUnattributedTotal)   // exact, even though lines are folded (#216)
 
         // nrcSuppression
         val nrcMap = log.nrcSuppressed
