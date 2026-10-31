@@ -233,8 +233,9 @@ class SlcanConnection(
                 }
                 if (!handshakeOk) {
                     addDebugLine("No SLCAN response — device may not be a WiCAN adapter")
-                    DiagnosticLogger.event("FIRMWARE", "No probe verdict — SLCAN handshake got no frame or reply in " +
-                        "${HANDSHAKE_TIMEOUT_MS / 1000} s ($kind, +${clock() - attemptStartMs} ms); this attempt ends")
+                    // Also reached when the read ended early (transport closed) — the limit is stated, not the time waited
+                    DiagnosticLogger.event("FIRMWARE", "No probe verdict — the SLCAN handshake ended without a frame or reply " +
+                        "(${HANDSHAKE_TIMEOUT_MS / 1000} s limit; $kind, +${clock() - attemptStartMs} ms); this attempt ends")
                     throw RuntimeException(
                         "Device did not respond to SLCAN init — may not be a CAN adapter"
                     )

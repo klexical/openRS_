@@ -163,7 +163,7 @@ class FirmwareProbeLogTest {
         val ev = probeEvents()
         assertEquals(1, adapter.probes)
         assertTrue(ev.toString(), ev.any { it.startsWith("Probe 1 of 3 written (Bluetooth, +") })
-        assertTrue(ev.toString(), ev.any { it.startsWith("No probe verdict — SLCAN handshake got no frame or reply") })
+        assertTrue(ev.toString(), ev.any { it.startsWith("No probe verdict — the SLCAN handshake ended without a frame or reply") })
         assertTrue(ev.toString(), ev.none { it.startsWith("Reply recognized") || it.startsWith("Not detected") })
         assertTrue("never claimed openRS_", seen.none { it.openRs })
     }
