@@ -30,7 +30,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -141,12 +143,15 @@ fun BleDevicePickerDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
+        // Scrolls when taller than the window (#231): in landscape the "No adapter found" state or a device list pushed
+        // the hint and CANCEL below the screen with no way to reach them
         Column(
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
                 .background(Bg, RoundedCornerShape(14.dp))
                 .border(CardBorder, Brd, RoundedCornerShape(14.dp))
+                .verticalScroll(rememberScrollState())
                 .padding(20.dp)
         ) {
             MonoLabel("SCAN FOR DEVICES", 11.sp, accent,

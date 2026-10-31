@@ -154,6 +154,10 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
   3, time, sanitized reason) and a handshake that times out says there is no verdict for that attempt. Connection
   failure / retry behaviour is unchanged; a reply is still reported "after probe N" (identical probes can't be told
   apart). Source-review finding. ([#220](https://github.com/klexical/openRS_/issues/220))
+- **Bluetooth picker cut off its CANCEL button in landscape** — the picker didn't scroll, so on a 1080 px-tall landscape
+  screen the "No adapter found" state (and a long device list) pushed the hint and CANCEL below the window; it now
+  scrolls. Found by the landscape dialog check on the emulator; Settings and the picker otherwise stay clear of left /
+  right navigation bars (the dialog windows are inset by Android). ([#231](https://github.com/klexical/openRS_/issues/231))
 
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)
