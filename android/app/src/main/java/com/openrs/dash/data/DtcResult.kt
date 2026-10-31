@@ -170,6 +170,18 @@ data class DtcScanResult(
     val moduleNotes: Map<String, String> = emptyMap(),
 )
 
+/**
+ * One module retry's outcome (#215): its codes, status and — when the app knows why it has no valid reply — the
+ * explanation ([note], e.g. "flow control not sent — …"). A retry's note replaces the module's earlier one; null clears
+ * it (a valid reply, or a genuine timeout with no failed write).
+ */
+data class DtcModuleRetry(
+    val module: String,
+    val codes: List<DtcResult>,
+    val status: ModuleScanStatus,
+    val note: String? = null,
+)
+
 /** Outcome of a DTC scan as the diagnostic export reports it (#215). No record at all = no scan this session. */
 enum class DtcScanStatus {
     /** Every scanned module gave a valid positive reply — zero codes here means a clean scan. */

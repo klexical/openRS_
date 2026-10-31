@@ -1,6 +1,6 @@
 package com.openrs.dash.diagnostics
 
-import com.openrs.dash.data.DtcResult
+import com.openrs.dash.data.DtcModuleRetry
 import com.openrs.dash.data.DtcScanRecord
 import com.openrs.dash.data.DtcScanResult
 import com.openrs.dash.data.DtcScanStatus
@@ -72,16 +72,22 @@ class DtcScanLedger {
      * replaced, the scan status re-derived (a retry can complete coverage or add codes). Ignored when the record is no
      * longer that scan's (newer scan, new session) or the scan never finished.
      */
-    @Synchronized fun retry(t: Ticket, module: String, codes: List<DtcResult>, status: ModuleScanStatus, nowMs: Long): Boolean {
+    @Synchronized fun retry(t: Ticket, r: DtcModuleRetry, nowMs: Long): Boolean {
         val rec = current
         if (t.session != session || t.scan != currentScan || open || rec == null) return false
         if (rec.status == DtcScanStatus.CANCELLED || rec.status == DtcScanStatus.INTERRUPTED) return false
-        val modules = rec.modules + (module to status)
-        // The retry is a new attempt for that module: its earlier note no longer applies (its own failure is an event)
-        val merged = rec.codes.filter { it.module != module } + codes.filter { it.module == module }
+        val modules = rec.modules + (r.module to r.status)
+        val merged = rec.codes.filter { it.module != r.module } + r.codes.filter { it.module == r.module }
+        // The retry is the module's latest attempt: its explanation replaces the earlier one, none clears it
         current = rec.copy(status = DtcScanRecord.statusFor(modules), finishedAtMs = nowMs, modules = modules, codes = merged,
-            notes = rec.notes - module)
+            notes = withNote(rec.notes, r))
         return true
+    }
+
+    companion object {
+        /** A module's notes after a retry — shared by this record and DIAG's result ([DtcScanView.mergeRetry]). */
+        fun withNote(notes: Map<String, String>, r: DtcModuleRetry): Map<String, String> =
+            r.note?.let { notes + (r.module to it) } ?: (notes - r.module)
     }
 
     private fun isOpen(t: Ticket) = t.session == session && t.scan == currentScan && open

@@ -296,10 +296,10 @@ object DemoMode {
         return DtcScanResult(codes, statuses, SystemClock.elapsedRealtime() - startMs)
     }
 
-    suspend fun retryScanModule(moduleName: String): Pair<List<DtcResult>, ModuleScanStatus> {
+    suspend fun retryScanModule(moduleName: String): com.openrs.dash.data.DtcModuleRetry {
         delay(300L)
-        return if (linkUp()) simDtcs.filter { it.module == moduleName } to ModuleScanStatus.OK
-               else emptyList<DtcResult>() to ModuleScanStatus.TIMEOUT
+        return if (linkUp()) com.openrs.dash.data.DtcModuleRetry(moduleName, simDtcs.filter { it.module == moduleName }, ModuleScanStatus.OK)
+               else com.openrs.dash.data.DtcModuleRetry(moduleName, emptyList(), ModuleScanStatus.TIMEOUT)
     }
 
     suspend fun clearDtcs(): Map<String, Boolean> {

@@ -1,5 +1,6 @@
 package com.openrs.dash
 
+import com.openrs.dash.data.DtcModuleRetry
 import com.openrs.dash.data.DtcResult
 import com.openrs.dash.data.DtcScanResult
 import com.openrs.dash.data.DtcScanStatus
@@ -56,7 +57,7 @@ class DtcScanLedgerTest {
         val t = l.begin("manual", modules, 1L)
         l.complete(t, result("PCM" to ok, "BCM" to ModuleScanStatus.TIMEOUT, "ABS" to ok), 2L)
         assertEquals(DtcScanStatus.PARTIAL, l.current?.status)
-        assertTrue(l.retry(t, "BCM", listOf(code("BCM", "B1234")), ok, 3L))
+        assertTrue(l.retry(t, DtcModuleRetry("BCM", listOf(code("BCM", "B1234")), ok), 3L))
         val r = l.current!!
         assertEquals(DtcScanStatus.COMPLETE, r.status)
         assertEquals(listOf("B1234"), r.codes.map { it.code })
@@ -68,7 +69,7 @@ class DtcScanLedgerTest {
         val l = DtcScanLedger(); l.newSession()
         val t = l.begin("manual", modules, 1L)
         l.complete(t, result("PCM" to ok, "BCM" to ok, "ABS" to ModuleScanStatus.PENDING), 2L)
-        assertTrue(l.retry(t, "ABS", emptyList(), ok, 3L))
+        assertTrue(l.retry(t, DtcModuleRetry("ABS", emptyList(), ok), 3L))
         assertEquals(DtcScanStatus.COMPLETE, l.current?.status)
         assertTrue(l.current!!.codes.isEmpty())
     }
@@ -77,7 +78,7 @@ class DtcScanLedgerTest {
         val l = DtcScanLedger(); l.newSession()
         val t = l.begin("manual", modules, 1L)
         l.complete(t, result("PCM" to ok, "BCM" to ok, "ABS" to ModuleScanStatus.TIMEOUT), 2L)
-        l.retry(t, "ABS", emptyList(), ModuleScanStatus.REJECTED, 3L)
+        l.retry(t, DtcModuleRetry("ABS", emptyList(), ModuleScanStatus.REJECTED), 3L)
         assertEquals(DtcScanStatus.PARTIAL, l.current?.status)
         assertEquals(ModuleScanStatus.REJECTED, l.current?.modules?.get("ABS"))
     }
@@ -88,10 +89,10 @@ class DtcScanLedgerTest {
         l.complete(first, result("PCM" to ok, "BCM" to ModuleScanStatus.TIMEOUT, "ABS" to ok), 2L)
         val second = l.begin("manual", modules, 3L)
         l.complete(second, result("PCM" to ok, "BCM" to ok, "ABS" to ok), 4L)
-        assertFalse(l.retry(first, "BCM", listOf(code("BCM", "B1234")), ok, 5L))
+        assertFalse(l.retry(first, DtcModuleRetry("BCM", listOf(code("BCM", "B1234")), ok), 5L))
         assertTrue(l.current!!.codes.isEmpty())
         l.newSession()
-        assertFalse(l.retry(second, "BCM", listOf(code("BCM", "B1234")), ok, 6L))
+        assertFalse(l.retry(second, DtcModuleRetry("BCM", listOf(code("BCM", "B1234")), ok), 6L))
         assertNull(l.current)
     }
 
@@ -109,7 +110,7 @@ class DtcScanLedgerTest {
         assertEquals(mapOf("PCM" to ok, "BCM" to null, "ABS" to null), r.modules)
         assertTrue(DiagnosticReportBuilder.dtcScanLine(r).startsWith("INTERRUPTED before it finished (DIAG screen closed)"))
         // An interrupted scan takes no retry, and a late completion can't overwrite the outcome
-        assertFalse(l.retry(t, "BCM", emptyList(), ok, 5L))
+        assertFalse(l.retry(t, DtcModuleRetry("BCM", emptyList(), ok), 5L))
         assertFalse(l.complete(t, result("PCM" to ok, "BCM" to ok, "ABS" to ok), 6L))
         assertEquals(DtcScanStatus.INTERRUPTED, l.current?.status)
     }

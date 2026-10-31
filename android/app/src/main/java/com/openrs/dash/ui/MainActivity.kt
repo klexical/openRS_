@@ -420,7 +420,7 @@ class MainActivity : ComponentActivity() {
                                                         fn
                                                     },
                                                     onRetryScanModule = service?.let { svc ->
-                                                        val fn: suspend (String) -> Pair<List<com.openrs.dash.data.DtcResult>, com.openrs.dash.data.ModuleScanStatus> =
+                                                        val fn: suspend (String) -> com.openrs.dash.data.DtcModuleRetry =
                                                             { moduleName -> svc.retryScanModule(moduleName) }
                                                         fn
                                                     },

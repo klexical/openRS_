@@ -1,6 +1,6 @@
 package com.openrs.dash.diagnostics
 
-import com.openrs.dash.data.DtcResult
+import com.openrs.dash.data.DtcModuleRetry
 import com.openrs.dash.data.DtcScanResult
 import com.openrs.dash.data.ModuleScanStatus
 
@@ -42,12 +42,11 @@ class DtcScanView(private val ledger: DtcScanLedger, private val countSink: (Int
      * A module retry started under [t] finished. Applied only while [t] is still this screen's scan and the ledger
      * accepts it (same scan, same session) — then merged into the *current* result.
      */
-    fun retryFinished(t: DtcScanLedger.Ticket, module: String, codes: List<DtcResult>, status: ModuleScanStatus,
-                      nowMs: Long): Boolean {
+    fun retryFinished(t: DtcScanLedger.Ticket, r: DtcModuleRetry, nowMs: Long): Boolean {
         val current = result
         if (t !== ticket || current == null) return false
-        if (!ledger.retry(t, module, codes, status, nowMs)) return false
-        result = mergeRetry(current, module, codes, status).also { countSink(activeCount(it)) }
+        if (!ledger.retry(t, r, nowMs)) return false
+        result = mergeRetry(current, r).also { countSink(activeCount(it)) }
         return true
     }
 
@@ -84,10 +83,21 @@ class DtcScanView(private val ledger: DtcScanLedger, private val countSink: (Int
             }
         }
 
-        /** A retried module's outcome: its status and codes replace the old ones; other modules are untouched. */
-        fun mergeRetry(r: DtcScanResult, module: String, codes: List<DtcResult>, status: ModuleScanStatus) = r.copy(
-            codes = r.codes.filter { it.module != module } + codes.filter { it.module == module },
-            moduleStatuses = r.moduleStatuses + (module to status),
+        /**
+         * A retried module's outcome: its status, codes and explanation replace the old ones (same rule as the ledger's
+         * record); other modules are untouched.
+         */
+        fun mergeRetry(r: DtcScanResult, retry: DtcModuleRetry) = r.copy(
+            codes = r.codes.filter { it.module != retry.module } + retry.codes.filter { it.module == retry.module },
+            moduleStatuses = r.moduleStatuses + (retry.module to retry.status),
+            moduleNotes = DtcScanLedger.withNote(r.moduleNotes, retry),
         )
+
+        /**
+         * DIAG's NOT SCANNED row for [module] of the DISPLAYED result [r]: its own explanation, else the status reason.
+         * Never the global record — a newer scan or connection there must not label an older row.
+         */
+        fun notScannedText(r: DtcScanResult, module: String, statusReason: (ModuleScanStatus) -> String): String =
+            "$module — ${r.moduleNotes[module] ?: statusReason(r.moduleStatuses[module] ?: ModuleScanStatus.TIMEOUT)}"
     }
 }

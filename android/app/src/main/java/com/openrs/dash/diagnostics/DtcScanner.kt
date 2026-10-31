@@ -155,6 +155,11 @@ class DtcScanner(private val ctx: Context) {
             return DtcScanResult(codes, statuses, System.currentTimeMillis() - startMs, notes)
         }
 
+        /** A one-module scan pass as a retry outcome: codes, status and that pass's own explanation (or none). */
+        internal fun retryOf(module: String, r: DtcScanResult) = DtcModuleRetry(
+            module, r.codes.filter { it.module == module }, r.moduleStatuses[module] ?: ModuleScanStatus.TIMEOUT,
+            r.moduleNotes[module])
+
         /**
          * NEW / RESOLVED against [previous] (#215), coverage-aware: only modules read OK in both scans are compared —
          * a module the previous scan failed to read can't make a current fault NEW, and one this scan failed to read
@@ -299,17 +304,14 @@ class DtcScanner(private val ctx: Context) {
     }
 
     /**
-     * Retry scan for a single module that didn't give a valid reply — same validation as [scan].
+     * Retry scan for a single module that didn't give a valid reply — same validation as [scan], and its explanation
+     * is kept ([retryOf]).
      */
-    suspend fun scanSingleModule(
-        conn: SlcanConnection,
-        moduleName: String
-    ): Pair<List<DtcResult>, ModuleScanStatus> {
+    suspend fun scanSingleModule(conn: SlcanConnection, moduleName: String): DtcModuleRetry {
         DtcDatabase.load(ctx)
         val module = MODULES.find { it.name == moduleName }
-            ?: return emptyList<DtcResult>() to ModuleScanStatus.ERROR
-        val result = runScan(conn, listOf(module))
-        return result.codes to (result.moduleStatuses[module.name] ?: ModuleScanStatus.TIMEOUT)
+            ?: return DtcModuleRetry(moduleName, emptyList(), ModuleScanStatus.ERROR, "unknown module")
+        return retryOf(module.name, runScan(conn, listOf(module)))
     }
 
     /** The most recent saved scan — codes and module coverage — as the NEW / RESOLVED baseline (null = none). */

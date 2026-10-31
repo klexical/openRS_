@@ -142,6 +142,12 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
   now decides ERROR with its reason in progress, result, text and JSON alike, a flow-control failure is kept over an
   earlier extended-session one, and pending-only / completed replies are unchanged (`DtcRawScan.statusWithoutReply`).
   Source-review finding, reproduced on the scripted scan path. ([#215](https://github.com/klexical/openRS_/issues/215))
+- **A module retry lost its explanation, and DIAG could label a row with another scan's** — `scanSingleModule` returned
+  only codes + status, so the export dropped the old note while DIAG kept it; a retry now returns its own outcome
+  (`DtcModuleRetry`: codes, status, note) and the ledger record and DIAG's result take it together — replaced by a new
+  failure, cleared by a valid reply or a genuine timeout. The NOT SCANNED row reads the scan on screen, never the global
+  record, so a newer auto-scan or connection can't attach its note to an older row; an obsolete retry still changes
+  nothing. Source-review finding. ([#215](https://github.com/klexical/openRS_/issues/215))
 
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)

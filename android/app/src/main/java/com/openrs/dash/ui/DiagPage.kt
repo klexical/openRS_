@@ -69,7 +69,7 @@ import kotlin.math.roundToInt
     vs: VehicleState,
     onScanDtcs: (suspend (DtcProgressCallback?) -> DtcScanResult)?,
     onClearDtcs: (suspend () -> Map<String, Boolean>)? = null,
-    onRetryScanModule: (suspend (String) -> Pair<List<DtcResult>, ModuleScanStatus>)? = null,
+    onRetryScanModule: (suspend (String) -> com.openrs.dash.data.DtcModuleRetry)? = null,
     onFetchFreezeFrames: (suspend (List<DtcResult>) -> List<DtcResult>)? = null,
     onSendRawQuery: (suspend (responseId: Int, frame: String, timeoutMs: Long) -> ByteArray?)? = null,
     onResetSession: () -> Unit = {},
@@ -729,9 +729,9 @@ import kotlin.math.roundToInt
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
-                                            // The write that failed, when the app knows it (#215)
-                                            val why = DiagnosticLogger.lastDtcScan?.notes?.get(name)
-                                            MonoLabel("$name — ${why ?: notScannedReason(moduleStatus)}", 9.sp, Dim)
+                                            // The write that failed, when the app knows it — from the scan on screen (#215)
+                                            MonoLabel(com.openrs.dash.diagnostics.DtcScanView.notScannedText(scanRes, name,
+                                                ::notScannedReason), 9.sp, Dim)
                                             if (onRetryScanModule != null && vs.isConnected && moduleStatus != ModuleScanStatus.REJECTED) {
                                                 var retrying by remember(name) { mutableStateOf(false) }
                                                 Box(
@@ -743,17 +743,19 @@ import kotlin.math.roundToInt
                                                             // The scan this retry belongs to — captured now, not after the await (#215)
                                                             val retryTicket = dtcView.ticket
                                                             scope.launch(Dispatchers.IO) {
-                                                                val (codes, status) = try {
+                                                                val retry = try {
                                                                     onRetryScanModule.invoke(name)
-                                                                } catch (_: Exception) {
-                                                                    emptyList<DtcResult>() to ModuleScanStatus.ERROR
+                                                                } catch (e: Exception) {
+                                                                    if (e is kotlinx.coroutines.CancellationException) throw e
+                                                                    com.openrs.dash.data.DtcModuleRetry(name, emptyList(), ModuleScanStatus.ERROR,
+                                                                        "retry failed — ${com.openrs.dash.diagnostics.LogText.sanitizeReason(e)}")
                                                                 }
                                                                 withContext(Dispatchers.Main) {
                                                                     retrying = false
                                                                     // Merged into the latest result and the export together; dropped if a newer
                                                                     // scan or session took over meanwhile
                                                                     if (retryTicket != null &&
-                                                                        dtcView.retryFinished(retryTicket, name, codes, status, System.currentTimeMillis())) {
+                                                                        dtcView.retryFinished(retryTicket, retry, System.currentTimeMillis())) {
                                                                         dtcScanResult = dtcView.result
                                                                     }
                                                                 }

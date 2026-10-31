@@ -181,4 +181,18 @@ class DtcScanExplainTest {
         assertEquals(r.moduleStatuses["AWD"], progress["AWD"])
         assertTrue(r.moduleNotes["AWD"]!!, r.moduleNotes["AWD"]!!.startsWith("flow control not sent"))
     }
+
+    @Test fun `a retry through the live scan path carries its own explanation into screen and export`() = runTest {
+        val view = com.openrs.dash.diagnostics.DtcScanView(DiagnosticLogger.dtcScans)
+        val t = DiagnosticLogger.dtcScans.begin("manual", listOf("PCM"), 1L); view.begin(t)
+        val (first, _) = scan(listOf(spec("PCM")), emptyMap(), fail = { it.startsWith("t7E08031902FF") })
+        assertTrue(view.finish(t, first, 2L))
+        // Retry: the request goes out, the reply's flow control fails — a different reason
+        val (again, _) = scan(listOf(spec("PCM")), mapOf(0x7E0 to listOf(ffPcm to 20L)), fail = { it.startsWith("t7E08300") })
+        val retry = DtcScanner.retryOf("PCM", again)
+        assertTrue(retry.note!!, retry.note!!.startsWith("flow control not sent"))
+        assertTrue(view.retryFinished(t, retry, 3L))
+        assertEquals(retry.note, view.result!!.moduleNotes["PCM"])
+        assertEquals(retry.note, DiagnosticLogger.lastDtcScan!!.notes["PCM"])
+    }
 }

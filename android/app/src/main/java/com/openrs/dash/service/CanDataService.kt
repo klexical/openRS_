@@ -153,10 +153,10 @@ class CanDataService : Service() {
     /**
      * Retry DTC scan for a single module that previously timed out.
      */
-    suspend fun retryScanModule(moduleName: String): Pair<List<DtcResult>, com.openrs.dash.data.ModuleScanStatus> {
+    suspend fun retryScanModule(moduleName: String): com.openrs.dash.data.DtcModuleRetry {
         if (DemoMode.isActive) return DemoMode.retryScanModule(moduleName)
-        val conn = connection
-            ?: return emptyList<DtcResult>() to com.openrs.dash.data.ModuleScanStatus.ERROR
+        val conn = connection ?: return com.openrs.dash.data.DtcModuleRetry(moduleName, emptyList(),
+            com.openrs.dash.data.ModuleScanStatus.ERROR, "no adapter connection")
         return DtcScanner(this).scanSingleModule(conn, moduleName)
     }
 

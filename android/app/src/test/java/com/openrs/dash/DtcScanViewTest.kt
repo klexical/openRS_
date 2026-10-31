@@ -1,5 +1,6 @@
 package com.openrs.dash
 
+import com.openrs.dash.data.DtcModuleRetry
 import com.openrs.dash.data.DtcResult
 import com.openrs.dash.data.DtcScanResult
 import com.openrs.dash.data.DtcScanStatus
@@ -31,8 +32,8 @@ class DtcScanViewTest {
     @Test fun `two retries finishing in reverse order both land, on screen and in the export`() {
         val (ledger, view, t) = scanned()
         // Both retries started from the same result; ABS (started second) finishes first
-        assertTrue(view.retryFinished(t, "ABS", listOf(code("ABS", "C1234")), ok, 3L))
-        assertTrue(view.retryFinished(t, "BCM", listOf(code("BCM", "B1234")), ok, 4L))
+        assertTrue(view.retryFinished(t, DtcModuleRetry("ABS", listOf(code("ABS", "C1234")), ok), 3L))
+        assertTrue(view.retryFinished(t, DtcModuleRetry("BCM", listOf(code("BCM", "B1234")), ok), 4L))
         val r = view.result!!
         assertEquals(setOf("C1234", "B1234"), r.codes.map { it.code }.toSet())
         assertTrue(r.moduleStatuses.values.all { it == ok })
@@ -46,7 +47,7 @@ class DtcScanViewTest {
         val (ledger, view, old) = scanned()
         val fresh = ledger.begin("manual", modules, 10L)
         view.begin(fresh)
-        assertFalse(view.retryFinished(old, "BCM", listOf(code("BCM", "B1234")), ok, 11L))
+        assertFalse(view.retryFinished(old, DtcModuleRetry("BCM", listOf(code("BCM", "B1234")), ok), 11L))
         assertEquals(null, view.result)
         assertEquals(DtcScanStatus.RUNNING, ledger.current?.status)
         assertTrue(ledger.current!!.codes.isEmpty())
@@ -56,7 +57,7 @@ class DtcScanViewTest {
         val (ledger, view, t) = scanned()
         val before = view.result
         ledger.newSession()
-        assertFalse(view.retryFinished(t, "BCM", listOf(code("BCM", "B1234")), ok, 5L))
+        assertFalse(view.retryFinished(t, DtcModuleRetry("BCM", listOf(code("BCM", "B1234")), ok), 5L))
         assertEquals(before, view.result)
         assertEquals(null, ledger.current)
     }
