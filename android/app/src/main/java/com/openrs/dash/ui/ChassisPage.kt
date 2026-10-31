@@ -243,13 +243,13 @@ import kotlin.math.roundToInt
             if (vs.tirePressLR in 0.0..(lowThreshold - 0.001)) add("Rear Left")
             if (vs.tirePressRR in 0.0..(lowThreshold - 0.001)) add("Rear Right")
         }
-        val spread = vs.maxTirePressSpread
-        if (lowTires.isNotEmpty() || spread >= 4.0) {
+        val imbalance = tyreImbalanceText(vs.maxTirePressSpread, p)
+        if (lowTires.isNotEmpty() || imbalance != null) {
             Spacer(Modifier.height(10.dp))
             if (lowTires.isNotEmpty())
                 AlertChip("${lowTires.joinToString(", ").uppercase()} LOW", Level.CRIT, R.drawable.ic_tt_tyre)
-            else
-                AlertChip("PRESSURE IMBALANCE ${"%.1f".format(spread)} ${p.tireLabel}", Level.WARN, R.drawable.ic_tt_tyre)
+            else if (imbalance != null)
+                AlertChip(imbalance, Level.WARN, R.drawable.ic_tt_tyre)
         }
 
         // ── TPMS footer: low-pressure alert threshold + last updated ──

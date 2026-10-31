@@ -111,6 +111,9 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **THERMAL said "TPMS awaiting data" beside live tyre pressures** — `ObdMerge` kept the pressures but dropped the reply's
   sample time; it now carries the newest time (a new reply refreshes it even for an equal pressure, an unrelated or older
   one can't move it back), and the footer text is one tested function. ([#232](https://github.com/klexical/openRS_/issues/232))
+- **Tyre imbalance chip printed a psi difference with the BAR label** — 35 / 39 psi read "PRESSURE IMBALANCE 4.0 BAR";
+  the spread is now shown in the selected unit ("4.0 PSI" / "0.28 BAR", `tyreImbalanceText`); the 4 psi trigger and the
+  thresholds are unchanged, so both units warn at the same point.
 
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)
