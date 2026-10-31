@@ -127,9 +127,7 @@ class DtcScanner(private val ctx: Context) {
                     payload != null -> DtcReply.classify(payload).also {
                         if (it == DtcReply.Positive) codes += parsePayload(module.name, payload)
                     }.status
-                    module.name in raw.pending -> ModuleScanStatus.PENDING
-                    module.name in raw.sendFailed -> ModuleScanStatus.ERROR
-                    else -> ModuleScanStatus.TIMEOUT
+                    else -> raw.statusWithoutReply(module.name)
                 }
             }
             return codes to statuses
@@ -151,7 +149,10 @@ class DtcScanner(private val ctx: Context) {
                     payload.joinToString(" ") { "%02X".format(it.toInt() and 0xFF) })
             }
             raw.pending.forEach { DiagnosticLogger.event("DTC", "$it: response pending, no final reply") }
-            return DtcScanResult(codes, statuses, System.currentTimeMillis() - startMs)
+            raw.failures.forEach { (name, f) -> DiagnosticLogger.event("DTC", "$name: ${f.note}") }
+            // A note only where the module has no valid reply — a failed session write before a good answer isn't a gap
+            val notes = raw.failures.filterKeys { statuses[it] != ModuleScanStatus.OK }.mapValues { it.value.note }
+            return DtcScanResult(codes, statuses, System.currentTimeMillis() - startMs, notes)
         }
 
         /**

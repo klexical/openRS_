@@ -103,6 +103,11 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
   request on the same connection (a reconnect while waiting is "connection changed", no correction), and the export says
   ACCEPTED by the adapter vs CONFIRMED by CAN (with the time) vs NOT CONFIRMED. Timing and the single correction are
   unchanged; no new commands. ([#220](https://github.com/klexical/openRS_/issues/220))
+- **A partial DTC scan couldn't say why a module had no answer** — a failed scan write (extended session, 0x19 02 request
+  or flow control) is now recorded with module, stage and sanitized reason and shown in the export (text + JSON
+  `moduleNotes`), the DTC files and DIAG; live progress no longer turns a write ERROR into TIMEOUT (one rule for
+  progress and result); a failed flow control is no longer marked sent; scan replies are written once to the SLCAN log
+  before being handed to the scanner, and the app's own scan requests appear as `# TX` lines. ([#215](https://github.com/klexical/openRS_/issues/215))
 
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)

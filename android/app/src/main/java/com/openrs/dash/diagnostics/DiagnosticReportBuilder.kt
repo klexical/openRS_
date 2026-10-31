@@ -46,6 +46,8 @@ internal object DiagnosticReportBuilder {
         put("modulesAnswered", scan.modulesAnswered)
         put("modulesTotal", scan.modules.size)
         put("modules", JSONObject().apply { scan.modules.forEach { (m, st) -> put(m, st?.name ?: "NO_ANSWER") } })
+        // Why a module has no valid reply, where the app knows it (a write that failed — #215)
+        if (scan.notes.isNotEmpty()) put("moduleNotes", JSONObject().apply { scan.notes.forEach { (m, n) -> put(m, n) } })
         scan.message?.let { put("message", it) }
     }
 
@@ -107,6 +109,7 @@ internal object DiagnosticReportBuilder {
         // ── DTC scan (#215): no scan, a clean scan and a partial / failed / cancelled one stay distinct
         appendLine("─── DTC SCAN ──────────────────────────────────────────────")
         appendLine("  ${dtcScanLine(log.lastDtcScan)}")
+        log.lastDtcScan?.notes?.forEach { (m, n) -> appendLine("  $m: $n") }
         appendLine()
 
         // ── Adapter device status (/check_status) — this session's only; "Firmware :" above is the live handshake (#233)

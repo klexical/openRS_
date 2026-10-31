@@ -77,8 +77,10 @@ class DtcScanLedger {
         if (t.session != session || t.scan != currentScan || open || rec == null) return false
         if (rec.status == DtcScanStatus.CANCELLED || rec.status == DtcScanStatus.INTERRUPTED) return false
         val modules = rec.modules + (module to status)
+        // The retry is a new attempt for that module: its earlier note no longer applies (its own failure is an event)
         val merged = rec.codes.filter { it.module != module } + codes.filter { it.module == module }
-        current = rec.copy(status = DtcScanRecord.statusFor(modules), finishedAtMs = nowMs, modules = modules, codes = merged)
+        current = rec.copy(status = DtcScanRecord.statusFor(modules), finishedAtMs = nowMs, modules = modules, codes = merged,
+            notes = rec.notes - module)
         return true
     }
 

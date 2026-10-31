@@ -3,6 +3,8 @@ package com.openrs.dash.can
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.data.DtcModuleSpec
 import com.openrs.dash.data.DtcRawScan
+import com.openrs.dash.data.DtcStage
+import com.openrs.dash.data.DtcSendFailure
 import com.openrs.dash.data.DtcReply
 import com.openrs.dash.data.ModuleScanStatus
 import com.openrs.dash.data.VehicleState
@@ -435,6 +437,7 @@ class SlcanConnection(
                         }
 
                         if (_dtcScanActive && frame.first in _dtcWatchIds && divertToDtc(frame.first, frame.second)) {
+                            DiagnosticLogger.logObdFrame(frame.first, frame.second)   // the reply itself, once (#215)
                             _dtcChannel.trySend(frame)
                             continue
                         }
@@ -611,7 +614,19 @@ class SlcanConnection(
             val transport = _transport ?: return DtcRawScan()
             val results = mutableMapOf<String, ByteArray>()
             val pending = mutableSetOf<String>()
-            val sendFailed = mutableSetOf<String>()
+            val failures = LinkedHashMap<String, DtcSendFailure>()   // first failed write per module (#215)
+            // A scan write, logged as TX in the private SLCAN log; a failure is kept with its stage, never swallowed
+            suspend fun send(module: String, stage: DtcStage, frame: String): Boolean = try {
+                transport.writeLine(frame)
+                DiagnosticLogger.logTxLine(frame)
+                true
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                val f = DtcSendFailure(stage, LogText.sanitizeReason(e))
+                // The request's own failure wins over an earlier session-write failure; otherwise the first one is kept
+                if (stage == DtcStage.REQUEST) failures[module] = f else failures.putIfAbsent(module, f)
+                false
+            }
 
             beginDtcOperation(modules.map { it.responseId }.toSet(), sid = DtcReply.SID)
             while (_dtcChannel.tryReceive().isSuccess) { /* drain stale */ }
@@ -620,7 +635,7 @@ class SlcanConnection(
                 // Phase 1: establish extended diagnostic session for modules that need it
                 val extModules = modules.filter { it.needsExtSession && it.extSessionFrame != null }
                 for (m in extModules) {
-                    try { transport.writeLine(m.extSessionFrame!!) } catch (_: Exception) { }
+                    send(m.name, DtcStage.EXTENDED_SESSION, m.extSessionFrame!!)
                     delay(ObdConstants.EXT_SESSION_GAP_MS)
                 }
                 if (extModules.isNotEmpty()) delay(200L)
@@ -639,10 +654,7 @@ class SlcanConnection(
                 // Send all requests with 50ms between each
                 for (module in modules) {
                     val reqFrame = "t%03X8031902FF00000000\r".format(module.requestId)
-                    try { transport.writeLine(reqFrame) } catch (_: Exception) {
-                        sendFailed += module.name
-                        onModuleProgress?.invoke(module.name, ModuleScanStatus.ERROR)
-                    }
+                    if (!send(module.name, DtcStage.REQUEST, reqFrame)) onModuleProgress?.invoke(module.name, ModuleScanStatus.ERROR)
                     delay(50L)
                 }
 
@@ -662,8 +674,9 @@ class SlcanConnection(
                     if (isFF && frame.first !in fcSent) {
                         val mod = moduleByResp[frame.first] ?: continue
                         val fcFrame = "t%03X83000000000000000\r".format(mod.requestId)
-                        try { transport.writeLine(fcFrame) } catch (_: Exception) { }
-                        fcSent += frame.first
+                        // Marked sent only when it was: a failed flow control means the rest never comes (#215)
+                        if (send(mod.name, DtcStage.FLOW_CONTROL, fcFrame)) fcSent += frame.first
+                        else if (mod.name !in results) onModuleProgress?.invoke(mod.name, ModuleScanStatus.ERROR)
                     }
 
                     // Check for completed payload
@@ -686,17 +699,15 @@ class SlcanConnection(
                     }
                 }
 
-                // Modules without a final reply: still pending, or timed out
+                // Modules without a final reply: the same rule as the final result (#215) — progress, screen and export agree
+                val raw = DtcRawScan(results, pending - results.keys, failures.filterKeys { it !in results })
                 for (module in modules) {
-                    if (module.name !in results) {
-                        onModuleProgress?.invoke(module.name,
-                            if (module.name in pending) ModuleScanStatus.PENDING else ModuleScanStatus.TIMEOUT)
-                    }
+                    if (module.name !in results) onModuleProgress?.invoke(module.name, raw.statusWithoutReply(module.name))
                 }
             } finally {
                 endDtcOperation()
             }
-            DtcRawScan(results, pending - results.keys, sendFailed - results.keys)
+            DtcRawScan(results, pending - results.keys, failures)
         }
 
     suspend fun performDtcClear(modules: List<DtcModuleSpec>): Map<String, Boolean> =

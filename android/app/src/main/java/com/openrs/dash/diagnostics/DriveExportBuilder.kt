@@ -268,6 +268,7 @@ internal object DriveExportBuilder {
         if (scan != null) {
             appendLine("  Scan: ${DiagnosticReportBuilder.dtcScanLine(scan)}")
             appendLine("  Modules: " + scan.modules.entries.joinToString(", ") { (m, st) -> "$m ${st?.name ?: "NO_ANSWER"}" })
+            scan.notes.forEach { (m, n) -> appendLine("  $m: $n") }    // a write that failed (#215)
         }
         appendLine("═══════════════════════════════════════════════════════════")
         appendLine()

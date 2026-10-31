@@ -729,7 +729,9 @@ import kotlin.math.roundToInt
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
-                                            MonoLabel("$name — ${notScannedReason(moduleStatus)}", 9.sp, Dim)
+                                            // The write that failed, when the app knows it (#215)
+                                            val why = DiagnosticLogger.lastDtcScan?.notes?.get(name)
+                                            MonoLabel("$name — ${why ?: notScannedReason(moduleStatus)}", 9.sp, Dim)
                                             if (onRetryScanModule != null && vs.isConnected && moduleStatus != ModuleScanStatus.REJECTED) {
                                                 var retrying by remember(name) { mutableStateOf(false) }
                                                 Box(

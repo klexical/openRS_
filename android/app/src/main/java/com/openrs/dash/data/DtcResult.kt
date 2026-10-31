@@ -104,12 +104,40 @@ sealed interface DtcReply {
     }
 }
 
-/** Raw replies collected by one scan pass: final payload per module, modules left on "pending", failed sends. */
+/** Which write of a module's scan failed (#215). */
+enum class DtcStage(val label: String) {
+    EXTENDED_SESSION("extended-session request"),
+    REQUEST("0x19 02 request"),
+    FLOW_CONTROL("flow control"),
+}
+
+/** A scan write that could not be sent: [stage] and a sanitized [reason] (exception class + bounded message). */
+data class DtcSendFailure(val stage: DtcStage, val reason: String) {
+    /** "request not sent — IOException: …" / "flow control not sent — …" (export, events, DIAG). */
+    val note: String get() = "${stage.label} not sent — $reason"
+}
+
+/**
+ * Raw replies collected by one scan pass: final payload per module, modules left on "pending", and every write that
+ * failed (first failure per module — #215). [sendFailed] = modules whose 0x19 02 request itself wasn't sent.
+ */
 data class DtcRawScan(
     val payloads: Map<String, ByteArray> = emptyMap(),
     val pending: Set<String> = emptySet(),
-    val sendFailed: Set<String> = emptySet(),
-)
+    val failures: Map<String, DtcSendFailure> = emptyMap(),
+) {
+    val sendFailed: Set<String> get() = failures.filterValues { it.stage == DtcStage.REQUEST }.keys
+
+    /**
+     * Status of a module WITHOUT a final reply — the one rule shared by live progress and the final result (#215):
+     * still pending → PENDING; any write it needed failed → ERROR; otherwise TIMEOUT.
+     */
+    fun statusWithoutReply(module: String): ModuleScanStatus = when {
+        module in pending -> ModuleScanStatus.PENDING
+        module in failures -> ModuleScanStatus.ERROR
+        else -> ModuleScanStatus.TIMEOUT
+    }
+}
 
 /** Progress callback for per-module scan updates. */
 typealias DtcProgressCallback = (String, ModuleScanStatus?) -> Unit
@@ -121,7 +149,9 @@ typealias DtcProgressCallback = (String, ModuleScanStatus?) -> Unit
 data class DtcScanResult(
     val codes: List<DtcResult>,
     val moduleStatuses: Map<String, ModuleScanStatus>,
-    val scanDurationMs: Long = 0
+    val scanDurationMs: Long = 0,
+    /** Why a module has no valid reply when the app knows (#215): "0x19 02 request not sent — IOException: …". */
+    val moduleNotes: Map<String, String> = emptyMap(),
 )
 
 /** Outcome of a DTC scan as the diagnostic export reports it (#215). No record at all = no scan this session. */
@@ -153,6 +183,8 @@ data class DtcScanRecord(
     val modules: Map<String, ModuleScanStatus?>,
     val codes: List<DtcResult> = emptyList(),
     val message: String? = null,
+    /** Per-module explanation where the app knows it (a write that failed) — exported beside the status (#215). */
+    val notes: Map<String, String> = emptyMap(),
 ) {
     /** Modules whose codes are known — a valid positive reply (REJECTED / MALFORMED / PENDING replies don't count). */
     val modulesAnswered: Int get() = modules.values.count { it == ModuleScanStatus.OK }
@@ -161,7 +193,7 @@ data class DtcScanRecord(
         /** A finished scan: COMPLETE only when every expected module gave a valid reply (OK). */
         fun from(result: DtcScanResult, finishedAtMs: Long, source: String, expectedModules: List<String>): DtcScanRecord {
             val modules: Map<String, ModuleScanStatus?> = expectedModules.associateWith { result.moduleStatuses[it] } + result.moduleStatuses
-            return DtcScanRecord(statusFor(modules), finishedAtMs, source, modules, result.codes)
+            return DtcScanRecord(statusFor(modules), finishedAtMs, source, modules, result.codes, notes = result.moduleNotes)
         }
 
         /** Status of a finished scan from its module coverage — shared by a full scan and a module retry. */

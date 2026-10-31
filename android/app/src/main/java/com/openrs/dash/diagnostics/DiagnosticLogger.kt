@@ -427,6 +427,19 @@ object DiagnosticLogger {
         }
     }
 
+    /**
+     * An outgoing frame the app wrote (DTC scan requests / flow control, #215) — a `# TX` comment line in the SLCAN
+     * log, so candump / SavvyCAN readers skip it and a reader can tell requests from the replies around them.
+     * [slcanFrame] is the SLCAN text written to the adapter (`t<id><dlc><data>\r`).
+     */
+    fun logTxLine(slcanFrame: String) {
+        val f = slcanFrame.trimEnd('\r')
+        if (f.length < 5 || f[0] != 't') return
+        val relMs = relativeMs()
+        val line = "# TX " + buildSlcanLine(relMs, f.substring(1, 4).toIntOrNull(16) ?: return, f.substring(5))
+        synchronized(lock) { writePreformattedSlcanLine(relMs, line) }
+    }
+
     /** Build a candump-format line outside the lock to keep hot-path holds short. Always `.` decimals (candump / SavvyCAN). */
     internal fun buildSlcanLine(relMs: Long, canId: Int, compactHex: String): String {
         val seconds = relMs / 1000.0
