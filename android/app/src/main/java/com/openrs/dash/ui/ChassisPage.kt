@@ -258,16 +258,7 @@ import kotlin.math.roundToInt
             // This is the low-pressure alert (UserPrefs.tireLowPsi), not a recommended pressure.
             InstrumentMeta("LOW ALERT < ${p.displayTire(lowThreshold)} ${p.tireLabel}")
             Spacer(Modifier.weight(1f))
-            val updatedText = if (vs.tpmsLastUpdate > 0L) {
-                val ago = (System.currentTimeMillis() - vs.tpmsLastUpdate) / 1000
-                when {
-                    ago < 5   -> "TPMS just now"
-                    ago < 60  -> "TPMS ${ago}s ago"
-                    ago < 3600 -> "TPMS ${ago / 60}m ago"
-                    else       -> "TPMS ${ago / 3600}h ago"
-                }
-            } else "TPMS awaiting data"
-            InstrumentMeta(updatedText)
+            InstrumentMeta(tpmsFooterText(vs.tpmsLastUpdate, System.currentTimeMillis()))
         }
 
         // ── Wheel Rotation Counts (CAN 0x1E0) ──
@@ -294,6 +285,18 @@ import kotlin.math.roundToInt
 /** Pressure level from the tyre card's existing rule ([tireStatusColor] defaults: warn 34, high 50 psi). */
 
 /** TPMS sensor temperature colour from the existing [thermalBandForTire] bands; in-range reads in ink. */
+/** THERMAL's TPMS footer from the last tyre sample time (0 = none yet) — #232. */
+internal fun tpmsFooterText(lastUpdateMs: Long, nowMs: Long): String {
+    if (lastUpdateMs <= 0L) return "TPMS awaiting data"
+    val ago = ((nowMs - lastUpdateMs) / 1000).coerceAtLeast(0L)
+    return when {
+        ago < 5    -> "TPMS just now"
+        ago < 60   -> "TPMS ${ago}s ago"
+        ago < 3600 -> "TPMS ${ago / 60}m ago"
+        else       -> "TPMS ${ago / 3600}h ago"
+    }
+}
+
 private fun tyreTempColor(tempC: Double): Color = when (thermalBandForTire(tempC)) {
     ThermalBand.COLD     -> Mid
     ThermalBand.NOMINAL  -> Frost

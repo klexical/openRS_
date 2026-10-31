@@ -108,6 +108,9 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
   `moduleNotes`), the DTC files and DIAG; live progress no longer turns a write ERROR into TIMEOUT (one rule for
   progress and result); a failed flow control is no longer marked sent; scan replies are written once to the SLCAN log
   before being handed to the scanner, and the app's own scan requests appear as `# TX` lines. ([#215](https://github.com/klexical/openRS_/issues/215))
+- **THERMAL said "TPMS awaiting data" beside live tyre pressures** — `ObdMerge` kept the pressures but dropped the reply's
+  sample time; it now carries the newest time (a new reply refreshes it even for an equal pressure, an unrelated or older
+  one can't move it back), and the footer text is one tested function. ([#232](https://github.com/klexical/openRS_/issues/232))
 
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)

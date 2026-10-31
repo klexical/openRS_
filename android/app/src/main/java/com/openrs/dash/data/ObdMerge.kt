@@ -53,6 +53,9 @@ object ObdMerge {
             tirePressRF = if (obd.tirePressRF >= 0) obd.tirePressRF else current.tirePressRF,
             tirePressLR = if (obd.tirePressLR >= 0) obd.tirePressLR else current.tirePressLR,
             tirePressRR = if (obd.tirePressRR >= 0) obd.tirePressRR else current.tirePressRR,
+            // The TPMS sample time (#232): a newly decoded reply refreshes it even for an equal pressure; an unrelated or
+            // older reply carries a time ≤ the live one and can't move it back
+            tpmsLastUpdate = maxOf(current.tpmsLastUpdate, obd.tpmsLastUpdate),
             tireTempLF = if (obd.tireTempLF > -90) obd.tireTempLF else current.tireTempLF,
             tireTempRF = if (obd.tireTempRF > -90) obd.tireTempRF else current.tireTempRF,
             tireTempLR = if (obd.tireTempLR > -90) obd.tireTempLR else current.tireTempLR,
