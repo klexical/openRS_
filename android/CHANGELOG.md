@@ -123,6 +123,10 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
   Bluetooth is off" (the phone's radio, not the adapter's BLE setting) with Android's enable prompt, and scans again in
   the same picker when Bluetooth comes on; declining keeps the message; "No adapter found" only follows a scan that
   ran. ([#218](https://github.com/klexical/openRS_/issues/218))
+- **Content drew under a side navigation bar** — the app applied only top / bottom system-bar insets, so in landscape (or
+  on a head unit whose side dock is a system bar) the wordmark, left-hand readings and tab bar sat under the bar; the
+  root now pads the left / right safe-drawing insets Android reports (no fixed margin — an ordinary portrait phone gets
+  none). ([#231](https://github.com/klexical/openRS_/issues/231))
 
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)

@@ -288,7 +288,12 @@ class MainActivity : ComponentActivity() {
                         primary    = activeAccent
                     )
                 ) {
-                    Box(Modifier.fillMaxSize()) {
+                    // Left / right system bars and cutouts that Android reports (#231) — a side navigation bar in
+                    // landscape, a head unit's side dock if it is a system bar. Content, header, Custom Dashboard and
+                    // the tab bar stay clear of them; the strip shows the page background. 0 on an ordinary portrait
+                    // phone — never a fixed margin.
+                    val sideInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
+                    Box(Modifier.fillMaxSize().background(Bg).windowInsetsPadding(sideInsets)) {
                         Scaffold(
                             snackbarHost   = { SnackbarHost(snackbarHostState) },
                             containerColor = Bg,
