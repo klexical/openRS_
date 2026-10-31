@@ -3,7 +3,7 @@
 Native Android telemetry dashboard for the Ford Focus RS MK3.
 Kotlin 2.0.21 + Jetpack Compose (Material3). Current: **stable v2.2.6 on main**; **v2.2.7-rc.6 published as a prerelease from staging** (tag `android-v2.2.7-rc.6` →
 `d2f7dc6`, versionCode 35 — not on main, not stable). Sapphire (web/ only) deployed from main `0d64248`. Record: Branch / Release Workflow → rc.6.
-**rc.7 in progress (local, unpushed; drive-review + acceptance-corrections + 2026-10-29 corrections + follow-up passes done + REQ-zero correction; testing candidate `a605b1c` frozen + hardware-tested 2026-10-31; approved fixes on `fix/rc7-adapter-status-export` (`0960144`, awaiting owner review) — issues #204–#233):** branch `feature/rc7` (from staging `d2f7dc6`) — 2.2.7-rc.7 / versionCode 36, milestone
+**rc.7 in progress (local, unpushed; drive-review + acceptance-corrections + 2026-10-29 corrections + follow-up passes done + REQ-zero correction; testing candidate `a605b1c` frozen + hardware-tested 2026-10-31; approved fixes + source-review corrections on `fix/rc7-adapter-status-export` (review build `23ed9f8`, awaiting owner review) — issues #204–#234):** branch `feature/rc7` (from staging `d2f7dc6`) — 2.2.7-rc.7 / versionCode 36, milestone
 v2.2.7-rc.7 (#211 locale exports, #212 connection lifecycle, #213 splash per task, #214 versioning, #215 DTC scan status);
 Sapphire row validation #204 also on `fix/sapphire-row-validation` (from main). Record: Branch / Release Workflow → rc.7.
 Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashboard) → `web/`  |  Docs → `docs/`  |  Feature pipeline → `docs/feature-roadmap.md`
@@ -578,11 +578,19 @@ data[5] = B5,  data[6] = B6 …
   owner's openRS_ PRO v1.2-rc.1 unit reported 4.45 over Wi-Fi)
 - **Text from outside the app → `LogText.sanitize[Reason]`** (probe write failures #220, DTC write failures #215): printable,
   bounded, MAC / `WiC_…` / long hex masked. Probe events use `SlcanTransport.kind`, never `transport.label` (BLE label has
-  name + MAC); non-frame adapter lines are counted, never logged
+  name + MAC); non-frame adapter lines are counted, never logged. Probe 1 is logged when written / failed, before the
+  handshake (a failed attempt still leaves it); a handshake timeout logs "No probe verdict". Replies stay "after probe N"
+  (identical probes — no request id)
 - **DTC scan writes (#215, fix branch)** — every scan write goes through `send(module, DtcStage, frame)`: failure kept as
-  `DtcSendFailure` (stage + reason) → `moduleNotes` in export / DTC files / DIAG; `DtcRawScan.statusWithoutReply` is the
-  one rule for progress AND result; FC marked sent only on success; diverted replies are logged once before the scanner
-  gets them; requests / FC are `# TX` comment lines (`DiagnosticLogger.logTxLine`)
+  `DtcSendFailure` (stage + reason; one per module — request > flow control > extended session, `DtcRawScan.keeps`) →
+  `moduleNotes` in export / DTC files / DIAG; `DtcRawScan.statusWithoutReply` is the one rule for progress AND result
+  (request / FC failure → ERROR **before** PENDING; no session-write note beside PENDING); FC marked sent only on success;
+  diverted replies are logged once before the scanner gets them; requests / FC are `# TX` comment lines
+  (`DiagnosticLogger.logTxLine`)
+- **DTC retries carry their own note (#215, fix branch)** — `scanSingleModule` / `retryScanModule` return `DtcModuleRetry`
+  (codes, status, note); the ledger record and DIAG's result apply it with ONE rule (`DtcScanLedger.withNote`: replaced on
+  failure, cleared on OK / genuine timeout). DIAG's NOT SCANNED row reads the DISPLAYED result
+  (`DtcScanView.notScannedText`) — never `DiagnosticLogger.lastDtcScan` (a newer auto-scan / session would label an older row)
 - **Every release build needs an on-device launch (R8)** — on 2026-10-29 R8 (AGP 8.7.3) emitted an unverifiable
   `DrivePageKt$DrivePage$7` after a harmless edit (removing the CLUTCH row): ART threw `VerifyError … register has type
   Conflict` at the first DRIVE frame; debug and every JVM test were fine. Worked around by moving ECONOMY into
@@ -595,11 +603,19 @@ data[5] = B5,  data[6] = B6 …
 - **Demo simulates only fields a real decoder writes** — `manifoldChargeTempC` and the IPC `warn*` lamps have no decoder,
   so they stay at their sentinels (DemoSimulatorTest guards this). Add a field to the simulator only with its decoder
 - **Side system bars (#231, fix branch)** — the root Box pads `WindowInsets.safeDrawing.only(Horizontal)`; never a fixed
-  margin (portrait gesture phones get 0, verified pixel-identical). Settings / BLE picker are separate dialog windows — not
-  covered; unverified in landscape. Whether a head unit's sidebar is a reported system bar is unknown
+  margin (portrait gesture phones get 0, verified pixel-identical). Settings / BLE picker are separate dialog windows with
+  the default `decorFitsSystemWindows` — Android insets them (emulator: both rotations + split screen, portrait identical
+  to the frozen APK). Rotating portrait ↔ landscape closes Settings (state not saved, unchanged). Whether a head unit's
+  sidebar is a reported system bar is unknown
 - **BLE picker (#218, fix branch)** — never cache `bluetoothLeScanner` (null while the PHONE radio is off); `BleScanBackend`
   seam, `BleScanState.PhoneBluetoothOff` → enable prompt (`ACTION_REQUEST_ENABLE`), retry on accept / `STATE_ON`; the
-  emulator AVD has a virtual Bluetooth adapter (`adb shell cmd bluetooth_manager enable|disable`) for picker checks
+  emulator AVD has a virtual Bluetooth adapter (`adb shell cmd bluetooth_manager enable|disable`) for picker checks.
+  Every scan has an id (`activeScan`): stop / restart / Bluetooth-off invalidate it and callbacks of an old scan are dropped;
+  the enable result only starts a scan while still `PhoneBluetoothOff` (broadcast + result in either order = one scan). The
+  picker Column scrolls — in landscape its content is taller than the window (CANCEL was unreachable)
+- **Bluetooth with no saved device crashes at launch (#234, OPEN, pre-existing, also in `a605b1c`)** — `connectHybrid` calls
+  `transportFactory()` before the attempt's `try`; the BLE factory throws "No BLE device saved" → uncaught. On a test AVD
+  never SAVE Bluetooth without choosing a device (recover with `pm clear` on a throwaway AVD only)
 - **Fresh Play-services AVDs kill the app mid-test** — the Maps SDK's Dynamite loader SIGKILLs its own process when GMS is
   replaced during first-boot updates; `pm disable-user com.android.vending` on the throwaway AVD before smoke tests
 
@@ -660,7 +676,7 @@ Regenerate the FORScan catalog: `python3 android/scripts/gen_forscan_catalog.py`
 cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{releaseName}.apk (e.g. openRS_v2.2.7-rc.7.apk; set in app/build.gradle.kts)
-./gradlew test                             # 1001 unit tests across 77 files (fix branch; feature/rc7: 961 / 68)
+./gradlew test                             # 1018 unit tests across 78 files (fix branch; feature/rc7: 961 / 68)
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 45 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -837,10 +853,13 @@ android/app/src/test/java/com/openrs/dash/
   Fix branch 2026-10-31: AdapterStatusExportTest 5 · AdapterStatusSnapshotTest 2 · FirmwareProbeLogTest 6 · DriveModeConfirmTest 5 ·
   DtcScanExplainTest 7 · TpmsFooterTest 4 · TyreImbalanceTest 1 · NrcLogFloodTest 3 · BlePickerScanTest 6 (fake backend) ·
   DemoSimulatorTest +1 (demo stamps every CAN tag)
+  Source review 2026-10-31: BlePickerScanTest +5 (old-scan callbacks, prompt / broadcast order) · DtcScanExplainTest +5 (FC
+  failure after pending, live retry) · DtcRetryExplainTest 5 (retry notes screen = export = JSON = text, displayed-scan rows)
+  · FirmwareProbeLogTest +2 (probe 1 write failure, handshake silence)
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **1001 tests across 77 files** (Android, `fix/rc7-adapter-status-export`; `feature/rc7` = 961 / 68) + **282 vitest across 25 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **1018 tests across 78 files** (Android, `fix/rc7-adapter-status-export`; `feature/rc7` = 961 / 68) + **282 vitest across 25 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 
@@ -967,6 +986,16 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   Evidence + failing-before / passing-after: `~/Documents/openRS_-evidence/rc7-fixes-2026-10-31/RESULTS.md` (regression XML
   in `rc7-hw-oct31/regression/`, `fake_ecu_v6.py` with TPMS). All 31 issues open. Next (owner's go-ahead): review → merge
   into feature/rc7, new versionCode for any distributed build, PRs, rc.7 tag.
+- Source-review corrections (2026-10-31, same branch, from the owner's source review; JVM-reproduced source findings, not
+  seen on hardware): `d226274` #218 picker scan id + one scan on enable · `a7a20ea` + `2868ab9` #215 FC failure after
+  pending stays ERROR · `4821e99` #215 retry notes (`DtcModuleRetry`) + rows from the displayed scan · `21fd915` + `5c7bca7`
+  #220 probe 1 logged before the handshake · `23ed9f8` #231 picker scrolls (landscape CANCEL was unreachable — found by the
+  emulator dialog check) · `33cbd87` imbalance fix linked to #219. 1018 / 78 debug + release, lint 0 / 45. Final review APK
+  `23ed9f8` SHA-256 `3063ef08…aef5`, vc 36 (same name / vc as frozen), cold launch + every tab + DIAG + dialogs in both
+  landscape rotations / split / portrait, 0 verifier lines. New issue #234 (Bluetooth saved without a device → crash at
+  every launch, pre-existing, reproduced on the frozen APK; fix proposed, not implemented). Evidence:
+  `~/Documents/openRS_-evidence/rc7-source-review-2026-10-31/RESULTS.md`. Next (owner's go-ahead): #234 fix, review →
+  merge, versionCode, PRs, tag.
 - Still open: everything in the hardware checklist (Samsung, BLE, firmware capability, boost signal identity, spark /
   throttle, real DTC replies, TPMS BAR on the phone, 0304 / 03EF identity, button bit captures); GPS-independent
   recording (#221); oil / PTU identity (#229) before thermal acceptance; 0x138 gear (#230); ACTIVE after stop (#228); a real
