@@ -3,7 +3,7 @@
 Native Android telemetry dashboard for the Ford Focus RS MK3.
 Kotlin 2.0.21 + Jetpack Compose (Material3). Current: **stable v2.2.6 on main**; **v2.2.7-rc.6 published as a prerelease from staging** (tag `android-v2.2.7-rc.6` →
 `d2f7dc6`, versionCode 35 — not on main, not stable). Sapphire (web/ only) deployed from main `0d64248`. Record: Branch / Release Workflow → rc.6.
-**rc.7 in progress (local, unpushed; drive-review + acceptance-corrections + 2026-10-29 corrections + follow-up passes done + REQ-zero correction; testing candidate `a605b1c` prepared — issues #204–#230):** branch `feature/rc7` (from staging `d2f7dc6`) — 2.2.7-rc.7 / versionCode 36, milestone
+**rc.7 in progress (local, unpushed; drive-review + acceptance-corrections + 2026-10-29 corrections + follow-up passes done + REQ-zero correction; testing candidate `a605b1c` frozen + hardware-tested 2026-10-31; approved fixes on `fix/rc7-adapter-status-export` (`0960144`, awaiting owner review) — issues #204–#233):** branch `feature/rc7` (from staging `d2f7dc6`) — 2.2.7-rc.7 / versionCode 36, milestone
 v2.2.7-rc.7 (#211 locale exports, #212 connection lifecycle, #213 splash per task, #214 versioning, #215 DTC scan status);
 Sapphire row validation #204 also on `fix/sapphire-row-validation` (from main). Record: Branch / Release Workflow → rc.7.
 Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashboard) → `web/`  |  Docs → `docs/`  |  Feature pipeline → `docs/feature-roadmap.md`
@@ -566,6 +566,23 @@ data[5] = B5,  data[6] = B6 …
   Off / Sport counts (raw 3 no longer advances `esc_frames`). `firmware/tests/run.sh` runs the real `focusrs.c` against
   host stubs (`tests/stubs/`). PRO built once in isolation 2026-10-29 (evidence dir), **never flashed** — adapters keep
   their old firmware. Firmware detection ≠ control capability
+- **Drive-mode confirmation (fix branch, `4937cfb`)** — the adapter's OK is "ACCEPTED"; `executeDriveModeChange` confirms only
+  from a resolved 0x1B0 report stamped `driveMode` AFTER the request on the same link generation (cached values never count;
+  reconnect → `DriveCommandResult.ConnectionLost`, no correction). Timing (2 s + 15 s) and the one correction unchanged.
+  Demo must stamp every CAN tag (`CanDecoder.canStampTags` ⊆ `DemoSimulator.CAN_TAGS`, DemoSimulatorTest) or confirmations
+  time out in demo. Requesting the mode the car is already in confirms from the next re-broadcast
+- **Diagnostic-export adapter status (#233, fix branch)** — `/check_status` belongs to the session: `sessionStart` returns a
+  token + takes the initial reason (Bluetooth = not requested); `adapterStatusRequested/Fetched/Failed(token, …)` drop stale
+  tokens; exports build text + JSON from ONE `AdapterStatusSnapshot` (`buildSummaryAndDetail`). The `Firmware :` line is
+  the OPENRS? handshake — never derived from `/check_status` (`fw_version` there doesn't identify an openRS_ build: the
+  owner's openRS_ PRO v1.2-rc.1 unit reported 4.45 over Wi-Fi)
+- **Text from outside the app → `LogText.sanitize[Reason]`** (probe write failures #220, DTC write failures #215): printable,
+  bounded, MAC / `WiC_…` / long hex masked. Probe events use `SlcanTransport.kind`, never `transport.label` (BLE label has
+  name + MAC); non-frame adapter lines are counted, never logged
+- **DTC scan writes (#215, fix branch)** — every scan write goes through `send(module, DtcStage, frame)`: failure kept as
+  `DtcSendFailure` (stage + reason) → `moduleNotes` in export / DTC files / DIAG; `DtcRawScan.statusWithoutReply` is the
+  one rule for progress AND result; FC marked sent only on success; diverted replies are logged once before the scanner
+  gets them; requests / FC are `# TX` comment lines (`DiagnosticLogger.logTxLine`)
 - **Every release build needs an on-device launch (R8)** — on 2026-10-29 R8 (AGP 8.7.3) emitted an unverifiable
   `DrivePageKt$DrivePage$7` after a harmless edit (removing the CLUTCH row): ART threw `VerifyError … register has type
   Conflict` at the first DRIVE frame; debug and every JVM test were fine. Worked around by moving ECONOMY into
@@ -577,6 +594,14 @@ data[5] = B5,  data[6] = B6 …
   Don't put header chips back in a plain Row
 - **Demo simulates only fields a real decoder writes** — `manifoldChargeTempC` and the IPC `warn*` lamps have no decoder,
   so they stay at their sentinels (DemoSimulatorTest guards this). Add a field to the simulator only with its decoder
+- **Side system bars (#231, fix branch)** — the root Box pads `WindowInsets.safeDrawing.only(Horizontal)`; never a fixed
+  margin (portrait gesture phones get 0, verified pixel-identical). Settings / BLE picker are separate dialog windows — not
+  covered; unverified in landscape. Whether a head unit's sidebar is a reported system bar is unknown
+- **BLE picker (#218, fix branch)** — never cache `bluetoothLeScanner` (null while the PHONE radio is off); `BleScanBackend`
+  seam, `BleScanState.PhoneBluetoothOff` → enable prompt (`ACTION_REQUEST_ENABLE`), retry on accept / `STATE_ON`; the
+  emulator AVD has a virtual Bluetooth adapter (`adb shell cmd bluetooth_manager enable|disable`) for picker checks
+- **Fresh Play-services AVDs kill the app mid-test** — the Maps SDK's Dynamite loader SIGKILLs its own process when GMS is
+  replaced during first-boot updates; `pm disable-user com.android.vending` on the throwaway AVD before smoke tests
 
 ## Theme Colors
 
@@ -635,7 +660,7 @@ Regenerate the FORScan catalog: `python3 android/scripts/gen_forscan_catalog.py`
 cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{releaseName}.apk (e.g. openRS_v2.2.7-rc.7.apk; set in app/build.gradle.kts)
-./gradlew test                             # 961 unit tests across 68 files
+./gradlew test                             # 1001 unit tests across 77 files (fix branch; feature/rc7: 961 / 68)
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 45 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -809,10 +834,13 @@ android/app/src/test/java/com/openrs/dash/
   import.androidExportRc7Gaps 6 (release export with TIP → CAN 0 → none → TIP, `release-pressure-gaps-drive.zip`)
   REQ-zero 2026-10-30: AwdReqTorqueMergeTest 6 (real 0x70B frames → parser → ObdMerge → awdDetailRows: positive → 0 per
   side, unrelated / older-snapshot reply, never received, stale → recovery with 0)
+  Fix branch 2026-10-31: AdapterStatusExportTest 5 · AdapterStatusSnapshotTest 2 · FirmwareProbeLogTest 6 · DriveModeConfirmTest 5 ·
+  DtcScanExplainTest 7 · TpmsFooterTest 4 · TyreImbalanceTest 1 · NrcLogFloodTest 3 · BlePickerScanTest 6 (fake backend) ·
+  DemoSimulatorTest +1 (demo stamps every CAN tag)
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **961 tests across 68 files** (Android) + **282 vitest across 25 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **1001 tests across 77 files** (Android, `fix/rc7-adapter-status-export`; `feature/rc7` = 961 / 68) + **282 vitest across 25 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 
@@ -923,6 +951,22 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   Evidence, status table (software-fixed vs hardware-unverified), private handoff (APK copy, routine checks, signal
   investigations, drive-mode read-only conditions): `~/Documents/openRS_-evidence/rc7-reqzero-2026-10-30/` (`HANDOFF.md`).
   #226 + 11 candidate issues commented. The owner performs the hardware checks.
+- Owner hardware tests on frozen `a605b1c` (2026-10-31; private triage `~/Documents/openRS_-evidence/rc7-hw-oct31/TRIAGE.md`):
+  owner's WiCAN Pro over **Wi-Fi** — telemetry OK, OPENRS? never answered (also rc.6); over **BLE** (adapter BLE enabled) —
+  connected ~9 s, `openRS_ PRO v1.2-rc.1` on probe 1, telemetry PASS, parked drive mode PASS (5 OK, raw CAN
+  N→S→D→N→T→N), ESC NOT passed (#125), DTC PARTIAL (4 modules "ERROR" = write failed, reason unrecorded; GFM U1000-00 /
+  U3000-49). My first conclusion "4.45 ⇒ not openRS_ firmware" was WRONG (corrected on #220); owner's assessment: Pro likely
+  wasn't on openRS_ fw during the Wi-Fi test — Wi-Fi detection on current fw untested, not a regression. Second tester
+  (DIY C3, build unconfirmed): splash / Cancel / TPMS BAR OK, phone BLE live, box BLE drops, SYNC sidebar (#231). New
+  issues #231 (side insets), #232 (TPMS footer), #233 (stale adapter status in export).
+- Approved fixes (2026-10-31, branch `fix/rc7-adapter-status-export` from `1bb0373`; not merged / pushed): `9cd8b50` +
+  `b0c1c57` #233 · `4b2b253` #220 probe log · `4937cfb` drive mode accepted vs CAN-confirmed · `80d6dba` #215 · `a0a1eed`
+  #232 · `d68f877` tyre imbalance unit (4 psi = 0.28 bar) · `8f93ad8` #216 NRC line folding · `24b70d8` #218 picker ·
+  `613d2a0` #231 · `0960144` demo driveMode stamp. 1001 / 77 debug + release, lint 0 / 45. Final review APK `0960144`
+  SHA-256 `0314960b…74fbd`, vc 36 (same name / vc as frozen — distinguish by SHA), cold-launched every tab, 0 verifier lines.
+  Evidence + failing-before / passing-after: `~/Documents/openRS_-evidence/rc7-fixes-2026-10-31/RESULTS.md` (regression XML
+  in `rc7-hw-oct31/regression/`, `fake_ecu_v6.py` with TPMS). All 31 issues open. Next (owner's go-ahead): review → merge
+  into feature/rc7, new versionCode for any distributed build, PRs, rc.7 tag.
 - Still open: everything in the hardware checklist (Samsung, BLE, firmware capability, boost signal identity, spark /
   throttle, real DTC replies, TPMS BAR on the phone, 0304 / 03EF identity, button bit captures); GPS-independent
   recording (#221); oil / PTU identity (#229) before thermal acceptance; 0x138 gear (#230); ACTIVE after stop (#228); a real
