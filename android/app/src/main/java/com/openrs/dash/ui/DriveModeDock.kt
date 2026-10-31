@@ -261,6 +261,10 @@ import kotlinx.coroutines.launch
                                             haptic.performHapticFeedback(HapticFeedbackType.Reject)
                                             snackbarHostState.showSnackbar("Mode change didn\u2019t take effect \u2014 try again")
                                         }
+                                        is DriveCommandResult.ConnectionLost -> {
+                                            haptic.performHapticFeedback(HapticFeedbackType.Reject)
+                                            snackbarHostState.showSnackbar("Connection changed \u2014 mode change not confirmed")
+                                        }
                                     }
                                 } finally {
                                     // Always release the in-flight globals so the header MODE pill

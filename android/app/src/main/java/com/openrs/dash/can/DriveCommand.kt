@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.data.DriveMode
+import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticLogger
 import kotlinx.coroutines.delay
 
@@ -17,6 +18,8 @@ sealed class DriveCommandResult {
     object Busy : DriveCommandResult()
     object CorrectionFailed : DriveCommandResult()
     object NoConfirmation : DriveCommandResult()
+    /** The link dropped or was replaced while waiting for the car — nothing is confirmed, no correction is sent. */
+    object ConnectionLost : DriveCommandResult()
 }
 
 /** Shared in-flight command state. Header reads this to gate MODE-pill pulse. */
@@ -45,19 +48,29 @@ fun successHapticFor(mode: DriveMode): HapticFeedbackType = when (mode) {
  *   3. 15-second CAN polling for confirmation
  *   4. Auto-correction on overshoot
  *
+ * The adapter's OK is only acceptance. Confirmation is the car reporting [targetMode] in a resolved 0x1B0 frame
+ * stamped AFTER the request ([STAMP_TAG]) on the SAME connection ([connectionId]) — a cached / held matching value never
+ * confirms, a transient mode on the way (Track via Sport) isn't judged until the window ends, and a reconnect while
+ * waiting is [DriveCommandResult.ConnectionLost] with no correction. Timing and the single correction are unchanged.
+ *
  * Returns a [DriveCommandResult] — callers map it to UI feedback.
  */
 suspend fun executeDriveModeChange(
     sender: FirmwareCommandSender,
     targetMode: DriveMode,
-    currentMode: DriveMode
+    currentMode: DriveMode,
+    state: () -> VehicleState = { OpenRSDashApp.instance.vehicleState.value },
+    connectionId: () -> Int = { com.openrs.dash.service.CanDataService.link.generation },
+    clock: () -> Long = System::currentTimeMillis,
+    firmwareLabel: () -> String = { OpenRSDashApp.instance.firmwareVersionLabel.value },
 ): DriveCommandResult {
+    val link = connectionId()
     DiagnosticLogger.event("DM_CMD",
-        "Pre-flight: current=$currentMode, modeDetail=0x${CanDecoder.modeDetail420Hex}, " +
-        "fw=${OpenRSDashApp.instance.firmwareVersionLabel.value}")
+        "Pre-flight: current=$currentMode, modeDetail=0x${CanDecoder.modeDetail420Hex}, fw=${firmwareLabel()}")
     DiagnosticLogger.event("DM_CMD",
         "Sending driveMode=${targetMode.toFirmwareInt()} (${targetMode.label})")
 
+    val requestedAt = clock()
     val result = sender.setDriveMode(targetMode.toFirmwareInt())
     if (result.isFailure) {
         val ex = result.exceptionOrNull()
@@ -66,7 +79,7 @@ suspend fun executeDriveModeChange(
                else DriveCommandResult.Failed(ex?.message ?: "Drive mode command failed")
     }
 
-    DiagnosticLogger.event("DM_CMD", "OK")
+    DiagnosticLogger.event("DM_CMD", "ACCEPTED by the adapter (${targetMode.label}) — not yet confirmed by the car")
 
     // Settling delay: firmware needs time to press the mode button and
     // ECU needs time to broadcast the new mode on 0x420 (~600 ms interval).
@@ -74,51 +87,79 @@ suspend fun executeDriveModeChange(
     delay(2_000)
 
     // Watch CAN for confirmation (up to 15s after settling).
-    var confirmed = false
-    for (i in 0 until 150) {
-        delay(100)
-        val live = OpenRSDashApp.instance.vehicleState.value
-        if (live.driveMode == targetMode) {
-            confirmed = true
-            break
+    when (awaitMode(targetMode, requestedAt, link, state, connectionId)) {
+        Wait.CONFIRMED -> {
+            DiagnosticLogger.event("DM_CMD", "CONFIRMED by CAN: ${targetMode.label} reported " +
+                "${clock() - requestedAt} ms after the request")
+            return DriveCommandResult.Success
         }
+        Wait.LINK_CHANGED -> return connectionLost(targetMode)
+        Wait.TIMED_OUT -> Unit
     }
 
-    if (confirmed) return DriveCommandResult.Success
-
-    val live = OpenRSDashApp.instance.vehicleState.value
+    val live = state()
     val landed = live.driveMode
+    // Only a mode the car reported after the request can be an overshoot — never a held value
+    val landedFresh = observedAfter(live, requestedAt)
 
     // Mode changed, but to the wrong one — auto-correct.
-    if (landed != targetMode && landed != DriveMode.UNKNOWN && landed != currentMode) {
+    if (landedFresh && landed != targetMode && landed != DriveMode.UNKNOWN && landed != currentMode) {
         DiagnosticLogger.event("DM_CMD",
             "Overshoot: landed=${landed.label}, expected=${targetMode.label} — auto-correcting")
 
+        val correctedAt = clock()
         val retry = sender.setDriveMode(targetMode.toFirmwareInt())
         if (retry.isSuccess) {
+            DiagnosticLogger.event("DM_CMD", "Correction ACCEPTED by the adapter — not yet confirmed by the car")
             delay(2_000)
-            var corrected = false
-            for (j in 0 until 150) {
-                delay(100)
-                val rl = OpenRSDashApp.instance.vehicleState.value
-                if (rl.driveMode == targetMode) { corrected = true; break }
-            }
-            if (corrected) {
-                DiagnosticLogger.event("DM_CMD", "Auto-correction succeeded")
-                return DriveCommandResult.Success
-            } else {
-                val rl = OpenRSDashApp.instance.vehicleState.value
-                DiagnosticLogger.event("DM_CMD",
-                    "Auto-correction failed (current=${rl.driveMode}, target=$targetMode)")
-                return DriveCommandResult.CorrectionFailed
+            when (awaitMode(targetMode, correctedAt, link, state, connectionId)) {
+                Wait.CONFIRMED -> {
+                    DiagnosticLogger.event("DM_CMD", "Auto-correction succeeded — CONFIRMED by CAN " +
+                        "${clock() - correctedAt} ms after the correction")
+                    return DriveCommandResult.Success
+                }
+                Wait.LINK_CHANGED -> return connectionLost(targetMode)
+                Wait.TIMED_OUT -> {
+                    val rl = state()
+                    DiagnosticLogger.event("DM_CMD",
+                        "Auto-correction failed (current=${rl.driveMode}, target=$targetMode)")
+                    return DriveCommandResult.CorrectionFailed
+                }
             }
         }
     }
 
     DiagnosticLogger.event("DM_CMD",
-        "No CAN confirmation after 17s (current=$landed, target=$targetMode, " +
+        "NOT CONFIRMED — adapter accepted, no CAN report of ${targetMode.label} after the request within 17s " +
+        "(current=$landed${if (landedFresh) "" else ", not reported since the request"}, target=$targetMode, " +
         "modeDetail420=0x${CanDecoder.modeDetail420Hex})")
     return DriveCommandResult.NoConfirmation
+}
+
+/** Freshness tag for drive mode — stamped by resolved 0x1B0 frames (CanDecoder, ≤ 1 s throttle). */
+const val STAMP_TAG = "driveMode"
+
+private enum class Wait { CONFIRMED, LINK_CHANGED, TIMED_OUT }
+
+private fun observedAfter(vs: VehicleState, requestedAt: Long): Boolean =
+    (vs.fieldLastUpdateMs[STAMP_TAG] ?: Long.MIN_VALUE) > requestedAt
+
+/** 150 × 100 ms: the requested mode in a frame after [requestedAt] on connection [link]. */
+private suspend fun awaitMode(
+    target: DriveMode, requestedAt: Long, link: Int, state: () -> VehicleState, connectionId: () -> Int,
+): Wait {
+    for (i in 0 until 150) {
+        delay(100)
+        val live = state()
+        if (!live.isConnected || connectionId() != link) return Wait.LINK_CHANGED
+        if (live.driveMode == target && observedAfter(live, requestedAt)) return Wait.CONFIRMED
+    }
+    return Wait.TIMED_OUT
+}
+
+private fun connectionLost(target: DriveMode): DriveCommandResult {
+    DiagnosticLogger.event("DM_CMD", "CONNECTION CHANGED while waiting for ${target.label} — not confirmed, no correction sent")
+    return DriveCommandResult.ConnectionLost
 }
 
 // ── Legacy convenience overload ──────────────────────────────────────────────

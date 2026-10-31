@@ -98,6 +98,11 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
   reason); the verdict counts written vs attempted probes and ignored non-frame lines (count only), and a recognized reply
   names the probe it answered. Adapter labels (Bluetooth name + MAC) no longer appear in these events; "not detected"
   says capability unknown, never stock. The control gate is unchanged. ([#220](https://github.com/klexical/openRS_/issues/220))
+- **Drive-mode change could be "confirmed" by a held value** — confirmation compared the target with the cached drive
+  mode, so a matching value from before the request counted; it now needs a resolved 0x1B0 report stamped after the
+  request on the same connection (a reconnect while waiting is "connection changed", no correction), and the export says
+  ACCEPTED by the adapter vs CONFIRMED by CAN (with the time) vs NOT CONFIRMED. Timing and the single correction are
+  unchanged; no new commands. ([#220](https://github.com/klexical/openRS_/issues/220))
 
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)

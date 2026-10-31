@@ -191,6 +191,7 @@ object CanDecoder {
     private val FRESH_TAGS: Map<Int, Array<String>> = mapOf(
         ID_ENGINE_TEMPS to arrayOf("oilTempC", "ptuTempC", "boostKpa"),   // boostKpa = 0x0F8 receipt (#207)
         ID_ESC_ABS      to arrayOf("escStatus"),                         // ESC confirmation needs a post-request frame (#125)
+        ID_DRIVE_MODE   to arrayOf("driveMode"),                         // drive-mode confirmation: a resolved 0x1B0 after the request
         ID_COOLANT      to arrayOf("coolantTempC", "intakeTempC"),
         ID_AMBIENT_TEMP to arrayOf("ambientTempC"),
         ID_PCM_AMBIENT  to arrayOf("ambientTempC"),
