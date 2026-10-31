@@ -22,7 +22,7 @@ class AdapterStatusExportTest {
         protocol = "slcan", bleStatus = ble, obdPortVoltage = 14.9, sleepStatus = "enable", sleepVolt = "13.1", wifiMode = "AP"
     )
 
-    private fun wifiSession(host: String) =
+    private fun wifiSession(host: String): Long =
         DiagnosticLogger.sessionStart(host, 35000, prefs = null, transport = "TCP SLCAN ($host:35000)")
 
     private fun text() = DiagnosticReportBuilder.buildSummaryText("t")
@@ -37,11 +37,11 @@ class AdapterStatusExportTest {
     }
 
     @Test fun `Wi-Fi status then a Bluetooth session on the same adapter exports no stale status`() {
-        wifiSession("192.168.0.10")
-        DiagnosticLogger.adapterStatusFetched(status("4.45", "aaaaaaaaaaaa", "disable"))
+        val a = wifiSession("192.168.0.10")
+        DiagnosticLogger.adapterStatusFetched(a, status("4.45", "aaaaaaaaaaaa", "disable"))
         DiagnosticLogger.sessionEnd()
-        DiagnosticLogger.sessionStart("AA:BB", 0, prefs = null, transport = "Bluetooth (WiC_test / AA:BB)")
-        DiagnosticLogger.adapterStatusNotRequested(com.openrs.dash.diagnostics.AdapterStatusRecord.BLUETOOTH)
+        DiagnosticLogger.sessionStart("AA:BB", 0, prefs = null, transport = "Bluetooth (WiC_test / AA:BB)",
+            adapterStatusReason = com.openrs.dash.diagnostics.AdapterStatusRecord.BLUETOOTH)
         DiagnosticLogger.firmwareVersion = "openRS_ PRO v1.2-rc.1"      // live handshake on the Bluetooth session
 
         val text = text(); val json = json()
@@ -56,12 +56,12 @@ class AdapterStatusExportTest {
     }
 
     @Test fun `adapter A's status never shows on adapter B whose status request failed`() {
-        wifiSession("192.168.0.10")
-        DiagnosticLogger.adapterStatusFetched(status("4.45", "aaaaaaaaaaaa", "disable"))
+        val a = wifiSession("192.168.0.10")
+        DiagnosticLogger.adapterStatusFetched(a, status("4.45", "aaaaaaaaaaaa", "disable"))
         DiagnosticLogger.sessionEnd()
-        wifiSession("192.168.80.1")
-        DiagnosticLogger.adapterStatusRequested()
-        DiagnosticLogger.adapterStatusFailed()
+        val b = wifiSession("192.168.80.1")
+        DiagnosticLogger.adapterStatusRequested(b)
+        DiagnosticLogger.adapterStatusFailed(b)
 
         val text = text(); val json = json()
         assertNoStatusFields(text, json, "aaaaaaaaaaaa")
@@ -70,11 +70,11 @@ class AdapterStatusExportTest {
     }
 
     @Test fun `a failed refresh in the session says so and invents no firmware version`() {
-        wifiSession("192.168.0.10")
-        DiagnosticLogger.adapterStatusRequested()
+        val a = wifiSession("192.168.0.10")
+        DiagnosticLogger.adapterStatusRequested(a)
         val pending = text()
         assertTrue(pending.contains("/check_status requested, no answer when exported"))
-        DiagnosticLogger.adapterStatusFailed()
+        DiagnosticLogger.adapterStatusFailed(a)
 
         val text = text(); val json = json()
         assertFalse(text.contains("Device FW"))
@@ -84,8 +84,8 @@ class AdapterStatusExportTest {
     }
 
     @Test fun `a status fetched this session is exported with where and when it came from`() {
-        wifiSession("192.168.0.10")
-        DiagnosticLogger.adapterStatusFetched(status("4.45", "bbbbbbbbbbbb", "disable"), DiagnosticLogger.sessionStartMs + 2_000L)
+        val a = wifiSession("192.168.0.10")
+        DiagnosticLogger.adapterStatusFetched(a, status("4.45", "bbbbbbbbbbbb", "disable"), DiagnosticLogger.sessionStartMs + 2_000L)
 
         val text = text(); val json = json()
         assertTrue(text.contains("Status   : from /check_status over Wi-Fi at +00:02 this session"))
@@ -99,8 +99,8 @@ class AdapterStatusExportTest {
     }
 
     @Test fun `a new session starts with no status at all`() {
-        wifiSession("192.168.0.10")
-        DiagnosticLogger.adapterStatusFetched(status("4.45", "cccccccccccc", "enable"))
+        val a = wifiSession("192.168.0.10")
+        DiagnosticLogger.adapterStatusFetched(a, status("4.45", "cccccccccccc", "enable"))
         wifiSession("192.168.0.10")                                       // reconnect = new session, nothing fetched yet
 
         val text = text(); val json = json()

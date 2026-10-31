@@ -534,12 +534,15 @@ class CanDataService : Service() {
             val protocol = if (adapterType == "MEATPI_PRO") "TCP SLCAN" else "WebSocket SLCAN"
             "$protocol (${s.getHost(this)}:${s.getPort(this)})"
         }
-        DiagnosticLogger.sessionStart(
+        // Bluetooth starts "not requested" together with the session; Wi-Fi status writes carry this session's token (#233)
+        val diagSession = DiagnosticLogger.sessionStart(
             host      = if (isBle) s.getBleDeviceAddress(this) ?: "BLE" else s.getHost(this),
             port      = if (isBle) 0 else s.getPort(this),
             transport = transportLabel,
             prefs  = UserPrefsStore.prefs.value,
-            logDir = java.io.File(filesDir, "diagnostics")
+            logDir = java.io.File(filesDir, "diagnostics"),
+            adapterStatusReason = if (isBle) com.openrs.dash.diagnostics.AdapterStatusRecord.BLUETOOTH
+                                  else com.openrs.dash.diagnostics.AdapterStatusRecord.NO_REQUEST,
         )
         CanDecoder.resetSessionState()
         FuelEconomy.reset()
@@ -575,22 +578,20 @@ class CanDataService : Service() {
             // Query WiCAN /check_status once after connection (WiFi only).
             // Populates device info for GARAGE display and diagnostic export.
             // The export records the outcome for this session only — never an earlier session's status (#233).
-            if (isBle) {
-                DiagnosticLogger.adapterStatusNotRequested(com.openrs.dash.diagnostics.AdapterStatusRecord.BLUETOOTH)
-            } else {
+            if (!isBle) {
                 launch {
                     conn.state.first { it is AdapterState.Connected }
-                    link.deliver(gen) { DiagnosticLogger.adapterStatusRequested() }
+                    link.deliver(gen) { DiagnosticLogger.adapterStatusRequested(diagSession) }
                     val host = s.getHost(this@CanDataService)
                     val status = WicanApi.checkStatus(this@CanDataService, host)
                     if (status != null) link.deliver(gen) {
                         OpenRSDashApp.instance.deviceStatus.value = status
-                        DiagnosticLogger.adapterStatusFetched(status)
+                        DiagnosticLogger.adapterStatusFetched(diagSession, status)
                         DiagnosticLogger.event("DEVICE_STATUS",
                             "${status.hardwareVersion} fw=${status.firmwareVersion} " +
                             "can=${status.canDatarate} vbatt=${status.obdPortVoltage}V")
                     } else link.deliver(gen) {
-                        DiagnosticLogger.adapterStatusFailed()
+                        DiagnosticLogger.adapterStatusFailed(diagSession)
                         DiagnosticLogger.event("DEVICE_STATUS", "/check_status request failed — adapter details unknown this session")
                     }
                 }

@@ -171,12 +171,20 @@ object DiagnosticLogger {
     /** Fetched device status of this session, or null (not requested, waiting, or failed). */
     val deviceStatus: DeviceStatus? get() = (adapterStatus as? AdapterStatusRecord.Fetched)?.status
 
-    fun adapterStatusNotRequested(reason: String) { adapterStatus = AdapterStatusRecord.NotRequested(reason) }
-    fun adapterStatusRequested() { adapterStatus = AdapterStatusRecord.Requested }
-    fun adapterStatusFetched(status: DeviceStatus, atMs: Long = System.currentTimeMillis()) {
-        adapterStatus = AdapterStatusRecord.Fetched(status, atMs)
+    /** Identity of the current session — [sessionStart] returns it; adapter-status writes carry it (#233). */
+    @Volatile private var sessionToken: Long = 0L
+
+    /** Applies [record] only while [token] is still the current session — a late write from an older connection is dropped. */
+    private fun setAdapterStatus(token: Long, record: AdapterStatusRecord) = synchronized(lock) {
+        if (token == sessionToken) adapterStatus = record
     }
-    fun adapterStatusFailed() { adapterStatus = AdapterStatusRecord.Failed }
+    fun adapterStatusRequested(token: Long) = setAdapterStatus(token, AdapterStatusRecord.Requested)
+    fun adapterStatusFetched(token: Long, status: DeviceStatus, atMs: Long = System.currentTimeMillis()) =
+        setAdapterStatus(token, AdapterStatusRecord.Fetched(status, atMs))
+    fun adapterStatusFailed(token: Long) = setAdapterStatus(token, AdapterStatusRecord.Failed)
+
+    /** One read of the adapter status + session start — an export builds its text and JSON from the same snapshot (#233). */
+    fun snapshotAdapterStatus(): AdapterStatusSnapshot = synchronized(lock) { AdapterStatusSnapshot(adapterStatus, sessionStartMs) }
     /** This session's DTC scan record — the single publication path for scans and retries (#215). */
     val dtcScans = DtcScanLedger()
     /** Last DTC scan of this session (any outcome) — null = no scan; exported with status and module coverage (#215). */
@@ -227,7 +235,16 @@ object DiagnosticLogger {
      *                "session_slcan.log". Pass [android.content.Context.filesDir]
      *                resolved to a "diagnostics" sub-folder from the calling service.
      */
-    fun sessionStart(host: String, port: Int, prefs: UserPrefs?, logDir: File? = null, transport: String = "") {
+    /**
+     * Starts a diagnostic session and returns its token. [adapterStatusReason] is the session's initial adapter-status
+     * state (Bluetooth: [AdapterStatusRecord.BLUETOOTH]) — set together with the session, so no window exists in which an
+     * older connection's status could show (#233).
+     */
+    fun sessionStart(
+        host: String, port: Int, prefs: UserPrefs?, logDir: File? = null, transport: String = "",
+        adapterStatusReason: String = AdapterStatusRecord.NO_REQUEST,
+    ): Long {
+        val token: Long
         synchronized(lock) {
             // Close any previous SLCAN writer
             try { slcanWriter?.flush(); slcanWriter?.close() } catch (_: Exception) {}
@@ -243,7 +260,8 @@ object DiagnosticLogger {
             sessionPrefs = prefs
             isOpenRsFirmware = false
             firmwareVersion = "WiCAN stock"
-            adapterStatus = AdapterStatusRecord.NotRequested(AdapterStatusRecord.NO_REQUEST)
+            token = ++sessionToken
+            adapterStatus = AdapterStatusRecord.NotRequested(adapterStatusReason)
             lastVehicleState = null
             frameInventory.clear()
             decodeTraceDeque.clear()
@@ -275,6 +293,7 @@ object DiagnosticLogger {
             }
         }
         event("SESSION", "Started — $host:$port")
+        return token
     }
 
     fun sessionEnd() {
@@ -482,6 +501,11 @@ object DiagnosticLogger {
  * Where this session's adapter status came from (#233). Only [Fetched] carries fields; the others say why there are none,
  * so an export never shows a status from another session, transport or adapter — and never a substitute version.
  */
+/** This session's adapter-status record and session start, read once per export (#233). */
+data class AdapterStatusSnapshot(val record: AdapterStatusRecord, val sessionStartMs: Long) {
+    val deviceStatus: DeviceStatus? get() = (record as? AdapterStatusRecord.Fetched)?.status
+}
+
 sealed interface AdapterStatusRecord {
     /** Not requested in this session — [reason] says why (Bluetooth: the status page is read over Wi-Fi only). */
     data class NotRequested(val reason: String) : AdapterStatusRecord

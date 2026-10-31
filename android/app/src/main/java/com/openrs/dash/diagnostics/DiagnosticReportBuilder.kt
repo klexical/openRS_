@@ -73,7 +73,14 @@ internal object DiagnosticReportBuilder {
         }
     }
 
-    fun buildSummaryText(ts: String): String = buildString {
+    /**
+     * Text + JSON of one export from ONE adapter-status snapshot (#233): a reply landing while the export is written
+     * can't make the two files (or two lines of one file) disagree. The exporter uses this at every call site.
+     */
+    fun buildSummaryAndDetail(ts: String, snap: AdapterStatusSnapshot = DiagnosticLogger.snapshotAdapterStatus()): Pair<String, String> =
+        buildSummaryText(ts, snap) to buildDetailJson(ts, snap)
+
+    fun buildSummaryText(ts: String, snap: AdapterStatusSnapshot = DiagnosticLogger.snapshotAdapterStatus()): String = buildString {
         val log = DiagnosticLogger
         val vs  = log.lastVehicleState
         val p   = log.sessionPrefs
@@ -104,8 +111,8 @@ internal object DiagnosticReportBuilder {
 
         // ── Adapter device status (/check_status) — this session's only; "Firmware :" above is the live handshake (#233)
         appendLine("─── ADAPTER ──────────────────────────────────────────────")
-        appendLine("  Status   : ${adapterStatusLine(log.adapterStatus, log.sessionStartMs)}")
-        log.deviceStatus?.let { ds ->
+        appendLine("  Status   : ${adapterStatusLine(snap.record, snap.sessionStartMs)}")
+        snap.deviceStatus?.let { ds ->
             if (ds.hardwareVersion.isNotBlank()) appendLine("  Hardware : ${ds.hardwareVersion}")
             if (ds.firmwareVersion.isNotBlank()) appendLine("  Device FW: v${ds.firmwareVersion}")
             if (ds.deviceId.isNotBlank())        appendLine("  Device ID: ${ds.deviceId}")
@@ -340,7 +347,7 @@ internal object DiagnosticReportBuilder {
 
     // ── JSON detail (built with JSONObject for safe escaping + structure) ─────
 
-    fun buildDetailJson(ts: String): String {
+    fun buildDetailJson(ts: String, snap: AdapterStatusSnapshot = DiagnosticLogger.snapshotAdapterStatus()): String {
         val log = DiagnosticLogger
         val vs  = log.lastVehicleState
         val p   = log.sessionPrefs
@@ -382,8 +389,8 @@ internal object DiagnosticReportBuilder {
         }
 
         // adapter device status — this session's /check_status only; how it was obtained (or why not) always (#233)
-        root.put("adapterStatusSource", adapterStatusSourceJson(log.adapterStatus, log.sessionStartMs))
-        log.deviceStatus?.let { ds ->
+        root.put("adapterStatusSource", adapterStatusSourceJson(snap.record, snap.sessionStartMs))
+        snap.deviceStatus?.let { ds ->
             root.put("adapterStatus", JSONObject().apply {
                 put("hardwareVersion", ds.hardwareVersion)
                 put("firmwareVersion", ds.firmwareVersion)

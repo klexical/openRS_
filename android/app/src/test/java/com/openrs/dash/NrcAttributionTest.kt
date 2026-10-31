@@ -64,7 +64,7 @@ class NrcAttributionTest {
         override val stockFirmwareLabel = "scripted"
     }
 
-    @Before fun freshSession() = DiagnosticLogger.sessionStart("test", 0, prefs = null)
+    @Before fun freshSession() { DiagnosticLogger.sessionStart("test", 0, prefs = null) }
 
     private fun TestScope.run(script: (Int, Int) -> R, seconds: Long): Ecu {
         val ecu = Ecu(backgroundScope, script)

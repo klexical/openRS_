@@ -102,10 +102,10 @@ object DiagnosticExporter {
                     entries += name to inferType(name)
                 }
 
-                addEntry("diagnostic_summary_$ts.txt",
-                    DiagnosticReportBuilder.buildSummaryText(ts).toByteArray(Charsets.UTF_8))
-                addEntry("diagnostic_detail_$ts.json",
-                    DiagnosticReportBuilder.buildDetailJson(ts).toByteArray(Charsets.UTF_8))
+                // One adapter-status snapshot for both files (#233)
+                val (summaryText, detailJson) = DiagnosticReportBuilder.buildSummaryAndDetail(ts)
+                addEntry("diagnostic_summary_$ts.txt", summaryText.toByteArray(Charsets.UTF_8))
+                addEntry("diagnostic_detail_$ts.json", detailJson.toByteArray(Charsets.UTF_8))
 
                 // SLCAN raw log if one was recorded this session
                 val slcanFile = DiagnosticLogger.slcanLogFile
@@ -255,12 +255,12 @@ object DiagnosticExporter {
                 if (includeDiagnostics && ExportComponent.DIAGNOSTICS in components) {
                     DiagnosticLogger.flushSlcan()
 
-                    val summary = DiagnosticReportBuilder.buildSummaryText(ts)
+                    // One adapter-status snapshot for both files (#233)
+                    val (summary, detail) = DiagnosticReportBuilder.buildSummaryAndDetail(ts)
                     if (summary.isNotEmpty()) {
                         addEntry("diagnostic_summary_$ts.txt", summary.toByteArray(Charsets.UTF_8))
                     }
 
-                    val detail = DiagnosticReportBuilder.buildDetailJson(ts)
                     if (detail.isNotEmpty()) {
                         addEntry("diagnostic_detail_$ts.json", detail.toByteArray(Charsets.UTF_8))
                     }

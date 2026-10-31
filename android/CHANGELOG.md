@@ -89,6 +89,10 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
   `/check_status` (incl. "BLE: disable"), and a failed refresh left the previous adapter's fields; the status now belongs
   to the session (`DiagnosticLogger.adapterStatus`, reset by `sessionStart`), the ADAPTER section says where it came from
   or why there is none, and the firmware handshake stays separate. ([#233](https://github.com/klexical/openRS_/issues/233))
+- **One export could show two adapter states** — the text and JSON (and the ADAPTER status line vs its fields) read the
+  live record separately, so a reply landing mid-export gave "no answer" beside populated fields; an export now reads one
+  snapshot, and adapter-status writes carry the session's token so an older connection can't write into a newer
+  (e.g. Bluetooth) session. ([#233](https://github.com/klexical/openRS_/issues/233))
 
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)
