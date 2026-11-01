@@ -1057,8 +1057,11 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
     Privacy / secrets audit running in another session — no report yet; the repo is not described as sanitized.
   - **Deferred enhancements / follow-ups seen, not changed:** GPS-independent recording (#221, schema change); false
     "Point flush failed" warning; 20 s silent-adapter hold; boost peak caption is psi in any unit; debug Settings label
-    squeezes UPDATES. Separate: Sapphire map tiles, `docs/thermal-thresholds` PR, `firmware/README.md` on main (USB v1.5 / PRO v1.0 file names,
-    unverified FFE0 GATT table — needs a docs branch from main),
+    squeezes UPDATES. Separate: Sapphire map tiles, `docs/thermal-thresholds` PR, docs on main — local `docs/setup-guides-ble-fw` (from origin/main
+    `0d64248`, `d3757a7`: android/docs Bluetooth note #234, v1.61 flash file name, ESC #125; android/docs guides go via
+    main, as `1ec8dc7` did) — still open there: `firmware/README.md` (USB v1.5 / PRO v1.0 file names) and the FFE0 GATT
+    claims in firmware/README + hardware-setup (no shipped firmware implements FFE0, #218). At staging → main take main's
+    `README.md` (feature/rc7 is only behind) and `docs/feature-roadmap.md` (both sides edited — `5606ac7` vs `b2fbe87`),
     cleanup, stable promotion.
 
 **rc.6 publication record (2026-10-28 UTC; evidence `~/Documents/openRS_-evidence/rc6-release-2026-10-27/PUBLISHED.txt`):**
