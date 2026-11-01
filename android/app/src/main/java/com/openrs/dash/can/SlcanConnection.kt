@@ -181,7 +181,15 @@ class SlcanConnection(
             var connectionSucceeded = false
             var connectedAtMs = 0L
             _state.value = if (everConnected) AdapterState.Reconnecting else AdapterState.Connecting
-            val transport = transportFactory()
+            val transport = try {
+                transportFactory()
+            } catch (e: Exception) {
+                if (e is CancellationException) { _state.value = AdapterState.Disconnected; throw e }
+                // A transport that can't be built (#234 — Bluetooth selected with no device saved) is a failed attempt
+                // like a refused connect: counted, reported, retried on the usual backoff. It used to escape the flow
+                // and crash the app at every launch.
+                UnbuiltTransport(LogText.sanitizeReason(e))
+            }
             attemptTransport = transport
             try {
                 addDebugLine("--- ${transport.label} ---")
@@ -869,4 +877,14 @@ class SlcanConnection(
             lastFpsTime = now
         }
     }
+}
+
+/** Stands in for a transport the factory couldn't build (#234): its open() fails the attempt with the sanitized reason. */
+private class UnbuiltTransport(private val reason: String) : SlcanTransport {
+    override suspend fun open(): Unit = throw java.io.IOException("transport not created — $reason")
+    override suspend fun readLine(): String? = null
+    override suspend fun writeLine(frame: String) = Unit
+    override fun close() = Unit
+    override val label = "transport not created"
+    override val stockFirmwareLabel = ""
 }

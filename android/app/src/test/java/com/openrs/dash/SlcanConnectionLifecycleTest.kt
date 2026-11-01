@@ -179,6 +179,51 @@ class SlcanConnectionLifecycleTest {
         assertTrue(h.transports.single().closed)
     }
 
+    // ── #234: a transport factory that throws (Bluetooth selected, no device saved) ─────────────────────────────
+
+    @Test fun `a factory that throws is a failed attempt — no exception escapes, the usual backoff, then Idle`() = runTest {
+        var built = 0
+        val conn = SlcanConnection(
+            transportFactory = { built++; throw RuntimeException("No BLE device saved") }, maxRetries = 3,
+            reconnectDelayMs = 2_000L, ioDispatcher = StandardTestDispatcher(testScheduler), debugSink = {},
+        )
+        val seen = record(conn)
+        conn.run().collect {}                                           // used to throw out of the flow (app crash)
+        assertEquals(3, built)
+        assertEquals(5_000L + 15_000L, testScheduler.currentTime)       // same BACKOFF_MS as a failing open()
+        assertTrue(seen.any { it is AdapterState.Error })
+        assertEquals(AdapterState.Idle, conn.state.value)
+    }
+
+    @Test fun `a factory that fails once, then builds, connects on the ordinary retry`() = runTest {
+        val h = Harness(listOf(Attempt.ConnectsAndHolds))
+        var calls = 0
+        val conn = SlcanConnection(
+            transportFactory = { if (calls++ == 0) throw IllegalStateException("not ready") else h.next() },
+            maxRetries = 3, reconnectDelayMs = 2_000L, ioDispatcher = StandardTestDispatcher(testScheduler), debugSink = {},
+        )
+        val job = launch { conn.run().collect {} }
+        advanceTimeBy(6_000L)                                           // first backoff is 5 s
+        assertEquals(AdapterState.Connected, conn.state.value)
+        assertEquals(2, calls)
+        job.cancel(); advanceUntilIdle()
+        assertTrue(h.transports.single().closed)
+    }
+
+    @Test fun `a factory cancelled while building propagates the cancellation — not counted, not retried`() = runTest {
+        var built = 0
+        val conn = SlcanConnection(
+            transportFactory = { built++; throw kotlinx.coroutines.CancellationException("stopped") }, maxRetries = 3,
+            reconnectDelayMs = 2_000L, ioDispatcher = StandardTestDispatcher(testScheduler), debugSink = {},
+        )
+        val seen = record(conn)
+        val job = launch { conn.run().collect {} }
+        advanceUntilIdle()
+        assertTrue(job.isCancelled)
+        assertEquals(1, built)
+        assertFalse(seen.any { it is AdapterState.Error })
+    }
+
     @Test fun `abort closes an attempt blocked opening, so cancel doesn't wait for the connect timeout`() = runTest {
         val h = Harness(listOf(Attempt.BlocksUntilClosed))
         val conn = connection(h, maxRetries = 1)

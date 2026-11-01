@@ -168,6 +168,10 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
   restart — the check runs before the service goes foreground and a session begins, so there is no notification, no
   session record and no retry — and DRIVE's status row reads SELECT A BLUETOOTH DEVICE, opening Settings on CONNECTION
   (the header pill's Connect does the same). The saved choice is kept, never switched to Wi-Fi. ([#234](https://github.com/klexical/openRS_/issues/234))
+- **A transport that couldn't be built escaped the connection job** — `connectHybrid` called the transport factory
+  outside the attempt's error handling, so its exception (BLE: "No BLE device saved") was uncaught; a factory failure is
+  now an ordinary failed attempt (counted, reported, retried on the usual backoff, then idle) and a cancellation still
+  propagates. Normal connects and reconnects are unchanged. ([#234](https://github.com/klexical/openRS_/issues/234))
 
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)
