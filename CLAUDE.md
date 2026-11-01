@@ -136,6 +136,8 @@ service/
   AutoRecordPolicy.kt     — rc.7 — auto-record on a new connection: still recording → keep (never split), paused ≤ 15 min → resume
   DriveRecorder.kt        — Room-backed drive recorder: start/stop/pause/resume, 1 Hz GPS + telemetry
                             FusedLocationProviderClient @ 1 Hz; batch writes (30 points/flush); peak tracking
+                            Per-drive state = `DriveRun` (#236); STOP = one-transaction re-read + recorder columns; feeds
+                            `LapTimer` every recorded fix (#237). Seams (geocode, LocationSource, onSummary) for tests only
   WeatherRepository.kt    — OpenWeatherMap /data/2.5/weather (BuildConfig.OPENWEATHER_API_KEY)
   HudOverlayService.kt    — Floating HUD overlay (boost/RPM/oil temp); piggybacks CanDataService notification
 ui/
@@ -467,6 +469,15 @@ data[5] = B5,  data[6] = B6 …
   valid range includes its default (REQ L / R: 0 Nm) is merged by the reply's own stamp (`ObdMerge.carried`), never by
   value — a `> 0` guard keeps the old value under a fresh stamp (#226)
 - **Recorder only stores fresh polled values** — `DriveRecorder` writes TIP/target/WGDC/KR/STFT/LTFT only when `FreshnessGate.takeIfFresh()` passes; otherwise sentinels (`tipActualKpa`/`boostTargetKpa` 0.0, `wgdcPct` −1.0). Never record held VehicleState values for slow DIDs — they repeat one reading many times
+- **A drive's state belongs to its `DriveRun` (#236)** — `startDrive` creates a new `DriveRun` (points buffer, recent
+  points, start temps, freshness gate, trims, pulls, thermal tracker); that drive's loop and STOP hold it, and the loop's
+  live-state writes are gated on its own drive id. Never move per-drive state back into recorder fields: auto-record's
+  finalize + start and START right after STOP overlap the old drive's finalization. STOP re-reads the row inside one Room
+  transaction and writes only recorder-owned columns (the user's name / tags win; a deleted row gets no laps, thumbnail or
+  summary). The loop feeds `LapTimer` every recorded fix (#237); STOP's `takeLaps()` re-arms the same S/F line. Known: a
+  one-fix window where the old loop's last fix reaches the next drive's timer; a fix without bearing reads 0°; lap
+  `peakBoostPsi` is a mixed-source `read()` value — never display or export it. Tests use the real Room database through
+  test-only Robolectric 4.14.1 on SDK 35 (`src/test/resources/robolectric.properties`; the first run downloads android-all)
 - **KR sign convention** — `ignCorrCyl1..4 = raw / −512` → retard is **POSITIVE**. Knock capture uses `≥ 0.1°`, the header counter and POWER KR cells `> 1°`. Cyl 2–4 DIDs (0x03ED–EF) are unverified — 0x03ED/0x03EE NRC 0x31 on two RS PCMs (EU tuned #182 + user's car), so not tune-specific; 0x03EF answers but read 0 for a whole drive. NrcTracker suppresses 2/3; polling left as is (user decision 2026-10-22)
 - **TIP is `raw / 128` kPa absolute** — 0x033E/0x0466 (DigiCluster, on-car verified). rc.4/rc.5 used `/903.81`, which is the Ford-DID **psi** formula, hiding TIP and starving BOOST SWEEP ([#198](https://github.com/klexical/openRS_/issues/198)). Do not reintroduce 903.81
 - **Mode 01 equivalents live in Mode 22 `22F4xx`** — load (F404), timing (F40E), O2 V (F415), STFT/LTFT (F406/07), λ (F434/F444). `ObdPids.kt` (the Mode 01 path) was deleted in a7b01d0 and silently took the load/timing/AFR decoders with it — if a VehicleState field has no writer in ObdResponseParser/CanDecoder, it is dead. HP fuel is **0xF423** (DI gauge, ×10 kPa); 0xF422 is the port-injection PID and is rejected. LP fuel = **0x0548** (`raw × 0.5` kPa)
@@ -891,6 +902,8 @@ android/app/src/test/java/com/openrs/dash/
   throws / throws once / cancelled)
   Integration 2026-11-01: AwdDemandPumpMergeTest 5 (#226 decoded 0) · DriveHistoryTest 4 (#228 edits only write, fake DAO) ·
   scripts/test-release-config.sh 8 (#235, shell — not in the Gradle count)
+  #236 / #237 2026-11-01 (real Room via Robolectric): DriveFinalizeTest 6 (48 named checks) · DriveDbForeignKeyTest 4 ·
+  LapFeedTest 1
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
