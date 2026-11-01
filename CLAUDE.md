@@ -269,6 +269,8 @@ ui/
                             Hoists cameraPositionState; floating controls: color mode, map type, weather,
                             zoom in (+), zoom out (−), locate/recenter (◎)
                             onMapTouched callback: signals parent pager to disable swipe while map is touched
+    DriveHistory.kt       — rc.7 (#228) — TRIP history: observe (Room Flow, the list's only source) + delete / tags / rename
+                            (writes only — never re-read the list by hand)
     DriveMap.kt           — Google Maps Compose wrapper: 6 color modes (SPD/MODE/BOOST/THRTL/G-LAT/TEMP),
                             start/finish flags, pause markers, peak markers (RPM/boost/lat-G/speed),
                             zoom-to-fit, map type cycling, blue dot location, color legend
@@ -481,6 +483,12 @@ data[5] = B5,  data[6] = B6 …
 - **`MutableList.removeFirst()/removeLast()` crash below API 35** — with compileSdk 35 they resolve to `java.util.List.removeFirst` (Android 15+) and throw `NoSuchMethodError` on Android 9–14 (minSdk 28). Use `removeAt(0)` / `removeAt(lastIndex)`. `ArrayDeque.removeFirst()` is fine
 - **Location permission** — always request `ACCESS_COARSE_LOCATION` together with `ACCESS_FINE_LOCATION` (Android 12+ requirement); recording still needs FINE granted
 - **Release identity (#214)** — one definition at the top of `android/app/build.gradle.kts` (base / stage / candidate / versionCode) drives versionName (`2.2.7-rc.7`), the Settings label (`2.2.7-rc.7 · Build 36`), the APK name, the expected tag, `BuildConfig.RELEASE_NAME` / `SOURCE_COMMIT`, export and crash metadata, the updater (`AppVersion.current()`) and the What's New gate (once per release name; content by base version, never another version's notes). `-PrcSuffix` is gone (the build refuses it). CI `publish-release` runs `android/scripts/verify-release.sh` (tag = versionName = filename, versionCode above every earlier tag, release signer). Bump the versionCode for every distributed production build, stable included; debug builds carry `-dev+<commit>[.dirty]` — dirty = tracked changes or non-ignored untracked files under `android/`. `verify-release.sh` fails on an earlier tag whose versionCode it can't read (exception list `LEGACY_TAGS`, empty) or a checkout without tags. It rejects the rc.6 APK (embeds `2.2.7`, the convention then) — expected, not an rc.6 defect. rc.2–rc.6 all shipped as code 35 with versionName `2.2.7`. rc.6 was the first RC published by this job (the rc.3–rc.5 tag runs failed on the pre-#196 lint crash and were attached by hand). CI's keystore secrets sign with the same certificate as the published APKs (`c99b6f26…`)
+- **Release API keys (#235, integration candidate)** — `apiKey(name)` in `app/build.gradle.kts`: `local.properties`, else the
+  environment; optional for every build. `publish-release` maps the repository secrets `MAPS_API_KEY` /
+  `OPENWEATHER_API_KEY` (not configured yet — owner step) and runs `scripts/check-release-config.sh` (Maps required, weather
+  a notice); `verify-release.sh` step 5 (`check-apk-maps-key.sh`) fails an APK with an absent / empty / placeholder Maps
+  key, so it now rejects keyless local builds and the published rc.6 asset. Scripts print lengths only — never a key value.
+  The rc.6 asset has no Maps key (blank TRIP map) and no weather key
 - **VehicleState slot ceiling** — `copy()` on the 162-param data class is at the JVM 255-slot limit. Adding any new field requires either collapsing an unused existing field (speculative AWD DIDs are candidates) or storing it off-state (DiagnosticLogger / genericValues Map). 0x040 lamp state is decoded + validated but not yet persisted on VehicleState for this reason
 - **Demo mode owns VehicleState while active** — `CanDataService.enterDemoMode()` finalizes any recording drive, calls
   `stopConnection()`, then `DemoMode.start()`. While `DemoMode.isActive`: `processCanFrame` / `mergeObdState` / the adapter
@@ -787,7 +795,8 @@ Drive-mode dock / ESC buttons / DTC clear act on simulated state only (mode land
 - The HUD overlay needs `adb shell appops set com.openrs.dash.debug SYSTEM_ALERT_WINDOW allow` on a fresh emulator
   (restore with `… default`); start it from ⚙ → DISPLAY → FLOATING HUD. A reinstall stops it
 
-Requires `android/local.properties` (`OPENWEATHER_API_KEY=...`) and `android/keystore.properties` for release signing.
+Keys: `android/local.properties` (`MAPS_API_KEY`, `OPENWEATHER_API_KEY`) or the same names in the environment — optional for
+local builds (#235); `android/keystore.properties` for release signing.
 Version display format: `openRS_ v2.2.7-rc.7 · Build 36` (Settings) — the release name comes from `app/build.gradle.kts`
 (see the Release identity gotcha); there is no `-PrcSuffix` any more.
 
@@ -880,6 +889,8 @@ android/app/src/test/java/com/openrs/dash/
   · FirmwareProbeLogTest +2 (probe 1 write failure, handshake silence)
   #234 2026-10-31: ConnectionSetupTest 4 (SAVE draft rule, already-invalid prefs) · SlcanConnectionLifecycleTest +3 (factory
   throws / throws once / cancelled)
+  Integration 2026-11-01: AwdDemandPumpMergeTest 5 (#226 decoded 0) · DriveHistoryTest 4 (#228 edits only write, fake DAO) ·
+  scripts/test-release-config.sh 8 (#235, shell — not in the Gradle count)
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 

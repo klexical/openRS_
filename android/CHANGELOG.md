@@ -184,6 +184,17 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
   parsed from an older snapshot could put an old value back. They are now taken by the reply's own stamp, as REQ L / R
   are. Display is unchanged: PUMP still shows "—" at 0 A, and demanded pressure has no screen. Neither DID (0x1E92 /
   0x1E93) has answered on a tested car; their meaning and scale are unverified. ([#226](https://github.com/klexical/openRS_/issues/226))
+- **TRIP edits could put an older drive list back** — delete, tag and rename each re-read the list on a background thread
+  and assigned it beside the observed Room query, so a read taken before a newer write (a drive's end after STOP, another
+  edit) could replace the newer list and show the stopped drive ACTIVE again until the next write. The edits now only
+  write (`ui/trip/DriveHistory.kt`) and the list, including the selected drive's row, comes from the observed query alone.
+  New DriveHistoryTest (4, fake DAO); the race itself was not reproduced on a device. ([#228](https://github.com/klexical/openRS_/issues/228))
+- **Published release APKs had no Maps or weather key** — the build read both keys only from `local.properties`, which
+  CI never writes, so rc.6 (the first CI-published APK) showed a blank TRIP map ("Authorization failure") and, by the code,
+  sent no weather requests. The keys now come from `local.properties`, else the environment; `publish-release` passes the
+  repository secrets `MAPS_API_KEY` / `OPENWEATHER_API_KEY` and stops before the build without a valid Maps key (weather
+  stays optional), and `verify-release.sh` fails an APK with an absent or empty Maps key. Contributor and debug builds
+  still build without keys. No key value is printed. ([#235](https://github.com/klexical/openRS_/issues/235))
 
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)
