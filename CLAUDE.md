@@ -7,11 +7,11 @@ Kotlin 2.0.21 + Jetpack Compose (Material3). Current: **stable v2.2.6 on main**;
 `a605b1c` frozen + owner-tested 2026-10-31; approved fixes + source-review corrections + #234 fix accepted and fast-forwarded
 locally into `feature/rc7` (`931447a`), then docs-only `12b6e4f` (no rebuild). Owner-test APK = source `81baa76`, vc 36,
 SHA-256 `efe622c4…7a98` — owner Bluetooth hardware testing on it **pending** (kept separate from the new candidate).
-**Integration candidate `86e4af8` — DO NOT PUSH** (branch `integration/rc7-candidate-DO-NOT-PUSH`, worktree `rc7-integration`;
-its ancestry holds real adapter identifiers until the approved history cleanup): `12b6e4f` + #228 / #226 + sanitized test +
-docs. `86e4af8` developer-verified (1030 / 80 per variant, lint 0 / 45, APK `557c5d2b…`, emulator); #235 CI keys + #228
-manual-reload race (R1) in progress → review → merge → one final verification. Record: Branch / Release Workflow → rc.7
-(integration). Issues #204–#235. Branch `feature/rc7` (from staging `d2f7dc6`) — 2.2.7-rc.7 / versionCode 36, milestone
+**Integration candidate — DO NOT PUSH** (branch `integration/rc7-candidate-DO-NOT-PUSH`, worktree `rc7-integration`; its
+ancestry holds real adapter identifiers until the approved history cleanup): `12b6e4f` + #228 / #226 + sanitized test +
+#235 CI keys + #228 edits-only-write + docs. **Tested source `7bb8a9a`** (1034 / 81 per variant, lint 0 / 45, APK
+`7ee08484…`, vc 36, disposable-AVD cold launch); later commits docs-only. Not distributed. Record: Branch / Release
+Workflow → rc.7 (integration). Issues #204–#235. Branch `feature/rc7` (from staging `d2f7dc6`) — 2.2.7-rc.7 / versionCode 36, milestone
 v2.2.7-rc.7 (#211 locale exports, #212 connection lifecycle, #213 splash per task, #214 versioning, #215 DTC scan status);
 Sapphire row validation #204 also on `fix/sapphire-row-validation` (from main). Record: Branch / Release Workflow → rc.7.
 Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashboard) → `web/`  |  Docs → `docs/`  |  Feature pipeline → `docs/feature-roadmap.md`
@@ -706,7 +706,7 @@ Regenerate the FORScan catalog: `python3 android/scripts/gen_forscan_catalog.py`
 cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{releaseName}.apk (e.g. openRS_v2.2.7-rc.7.apk; set in app/build.gradle.kts)
-./gradlew test                             # 1025 unit tests across 79 files, each variant (source 81baa76 = feature/rc7 code through 12b6e4f; integration 86e4af8: 1030 / 80)
+./gradlew test                             # 1025 unit tests across 79 files, each variant (source 81baa76 = feature/rc7 code through 12b6e4f; integration 86e4af8: 1030 / 80; tested integration tip 7bb8a9a: 1034 / 81)
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 45 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -896,7 +896,7 @@ android/app/src/test/java/com/openrs/dash/
 
 Current count: **1025 tests across 79 files** (Android, `./gradlew test` at source `81baa76` — debug and release variants each;
 `feature/rc7` code is unchanged through `12b6e4f`, later commits docs-only; unmerged work branches carry their own totals; integration candidate `86e4af8`: **1030 / 80** per
-variant) + **282 vitest across 25 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+variant; tested integration tip `7bb8a9a`: **1034 / 81** per variant) + **282 vitest across 25 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 
@@ -1068,7 +1068,38 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
     `557c5d2b…2b87`, vc 36 (same name / vc as `81baa76` — tell them apart by hash), signer `c99b6f26…`, dex names
     `86e4af867a4a`, verify-release OK (local keys — doesn't verify the CI path, #235). Disposable AVD `Rc7_Integ` (deleted):
     logcat cleared, cold start → DRIVE, fake Wi-Fi adapter, #228 manual STOP → card complete without restart, every tab
-    incl. THERMAL AWD, 0 verifier / FATAL / ANR lines. 1025 / 79 stays `81baa76`'s count. Later commits get their own run.
+    incl. THERMAL AWD, 0 verifier / FATAL / ANR lines. 1025 / 79 stays `81baa76`'s count; 86e4af8's APK is superseded (not distributed).
+  - Merged after review (openrs-9d accepted each, `rc7-integration-review-2026-11-01/REVIEW.md`): `d17411a` #235 release
+    API keys (CI passes repository secrets as env, publication stops without a valid Maps key, `verify-release.sh` step 5)
+    and `4a9f92b` #228 edits only write (`DriveHistory`; TripPage reads the list only from the observed query), via
+    `--no-ff` `984a215`; docs-only `7bb8a9a` (CHANGELOG #228 / #235, this file). Reviewer notes, not blocking: TripPage's
+    saved-state restore still does a one-off `getDrive` (pre-existing); DriveHistoryTest guards DriveHistory, not
+    TripPage's wiring, and doesn't reproduce the race; `check-apk-maps-key.sh` has no automated test of its own.
+  - **Final verification — tested source `7bb8a9a7db48e6d44955d15a58f943323c1f0c41`** (developer,
+    `~/Documents/openRS_-evidence/rc7-integration-final-2026-11-01/RESULTS.md`; reviewer openrs-9d: consistent with its claims, qualifications correct — no rebuild of its own; 0 leaks of the Maps
+    key or identifiers in 517 evidence files; the on-device install hash is stated but has no artifact this time): clean
+    `testDebugUnitTest testReleaseUnitTest lint assembleRelease` once — **1034 tests / 81 files per variant**, 0 failures;
+    lint 0 / 45; `test-release-config.sh` 8 / 8; verify-release OK incl. step 5 (Maps key from the worktree's
+    local.properties — does NOT verify the CI secret path; that was tested in a keyless clone with placeholders,
+    `rc7-dev-2026-11-01/RESULTS.md`). APK `openRS_v2.2.7-rc.7_integration-7bb8a9a_DO-NOT-PUSH.apk` 6,573,356 B, SHA-256
+    `7ee0848493c299da9f3750fc1e3503d71d17e8a10116ff2ef500f944f13fa98f`, vc 36 (unchanged), signer `c99b6f26…`,
+    SOURCE_COMMIT `7bb8a9a7db48`, SOURCE_DIRTY false — not distributed. New disposable AVD `Rc7_Final` (deleted): logcat
+    cleared, COLD start → DRIVE, every tab, TRIP tiles, #228 START → STOP (also with the link down) → tag / rename / Back
+    / delete — no card ACTIVE after STOP; 0 verifier / FATAL / ANR / Fatal signal / Maps "Authorization failure" lines.
+    Later commits on the branch are documentation only (they don't change the tested Android source).
+  - Seen in that run, pre-existing, not changed: TRIP keeps the last recording's map pins with nothing selected; header
+    OFF instead of RCN while recording with Wi-Fi off; relaunch after a Back exit auto-connects (DISCONNECT is not a
+    persisted Cancel); false "Point flush failed" at STOP. Code-path finding (not reproduced — the end was written
+    ~0.55 s after STOP): `DriveRecorder.stopDrive` reads the row before the reverse geocode and writes the whole row
+    after, so a rename / tag in that window can be overwritten and a drive deleted in it can still get lap sessions /
+    a summary — open finding (reviewer confirmed the code path: `getDrive` → `reverseGeocode` → full-row `updateDrive`),
+    not fixed; owner decision.
+  - #235 owner setup (no values anywhere): repository secret `MAPS_API_KEY` (required for publication) — restrict the key
+    to Android apps, package `com.openrs.dash` + release-cert **SHA-1** `5F:74:08:7D:B0:FE:B2:12:17:9B:EB:AA:AE:BC:95:A4:E8:B8:EB:CE`,
+    API Maps SDK for Android (debug `com.openrs.dash.debug` needs its own key); `OPENWEATHER_API_KEY` optional (notice +
+    no weather requests without it; OpenWeather restriction options unverified). Either key is extractable from a
+    published APK. Unchanged: the main-push `release` job builds without keys (artifact only); the keystore step exits 0
+    without its secrets (caught later by the signer check).
   - Reviewer (`~/Documents/openRS_-evidence/rc7-integration-review-2026-11-01/REVIEW.md`): provenance verified; **R1** minor,
     not fixed — TripPage delete / tags / rename handlers still reload `getRecentDrives` by hand on IO and can overwrite a
     newer Room emission (card ACTIVE until the next write). #226: `carried` keys match the `markFresh` tags; PUMP still "—"
@@ -1107,7 +1138,7 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
 - Still open (2026-11-01):
   - **Gates before any rc.7 tag (owner's go-ahead for each):** owner hardware test on `81baa76` (pending — no result
     recorded); a new versionCode for any distributed build (every review APK so far is vc 36); minified-release smoke of
-    the final build (R8 gotcha / #227); PRs (feature/rc7 → staging, fix/sapphire-row-validation → main); the tag.
+    the final build (R8 gotcha / #227); repository secrets for #235 (Maps required) before any tag; PRs (feature/rc7 → staging, fix/sapphire-row-validation → main); the tag.
   - **Hardware investigations:** hardware checklist (Samsung, BLE selection, firmware capability, boost signal identity
     #207, spark #205 / throttle #206, real DTC replies #215, TPMS BAR on the phone #219, 0304 / 03EF identity, button bit
     captures); ESC confirmation (#125); oil / PTU identity (#229) — blocks thermal acceptance; 0x138 gear (#230); AWD
@@ -1117,8 +1148,8 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
     (#218).
   - **In the integration candidate only (emulator / JVM evidence at `86e4af8`), not in the owner-test APK `81baa76`:**
     `918add4` #228 ACTIVE after stop (manual STOP only), `690be8d` #226 demanded pressure / pump current take a decoded 0
-    (JVM only), `24023ce` synthetic identifiers in `FirmwareProbeLogTest`. #235 (published rc.6 APK has no Maps key / no
-    OpenWeather key — CI never writes local.properties) is being fixed for the candidate. Publication hold: see the integration record below.
+    (JVM only), `24023ce` synthetic identifiers in `FirmwareProbeLogTest`, `d17411a` #235 release keys (CI path tested
+    in a keyless clone; secrets not configured), `4a9f92b` #228 edits only write (emulator) — tested together at `7bb8a9a`. Publication hold: see the integration record below.
   - **Deferred enhancements / follow-ups seen, not changed:** GPS-independent recording (#221, schema change); false
     "Point flush failed" warning; 20 s silent-adapter hold; boost peak caption is psi in any unit; debug Settings label
     squeezes UPDATES. Separate: Sapphire map tiles, `docs/thermal-thresholds` PR, docs on main — local `docs/setup-guides-ble-fw` (from origin/main
