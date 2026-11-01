@@ -11,6 +11,7 @@ import com.openrs.dash.data.LapSessionEntity
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -56,6 +57,16 @@ class DriveDbForeignKeyTest {
         assertEquals(1, dao.getPointCount(id))
         dao.deleteDrive(id)
         assertEquals(0, dao.getPointCount(id))
+    }
+
+    @Test
+    fun `drive ids are never reused after a delete - the lap timer's drive ownership relies on it`() {
+        val dao = db.driveDao()
+        val first = dao.insertDrive(DriveEntity(startTime = 1_000))
+        val second = dao.insertDrive(DriveEntity(startTime = 2_000))
+        dao.deleteDrive(second)
+        val third = dao.insertDrive(DriveEntity(startTime = 3_000))
+        assertTrue("ids $first, $second, $third", third > second && second > first)
     }
 
     @Test

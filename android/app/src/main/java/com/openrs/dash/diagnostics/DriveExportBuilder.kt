@@ -543,7 +543,7 @@ internal object DriveExportBuilder {
                     put("lapNumber", lap.lapNumber)
                     put("lapTimeMs", lap.lapTimeMs)
                     if (lap.peakRpm > 0) put("peakRpm", lap.peakRpm)
-                    // no boost: lap peaks are never fed a reading and store no source (#207)
+                    // no boost: a lap's peak mixes sources and has no source column (#207)
                     if (lap.peakLateralG > 0) put("peakLateralG", lap.peakLateralG)
                     if (lap.peakSpeedKph > 0) put("peakSpeedKph", lap.peakSpeedKph)
                 })

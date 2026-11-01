@@ -10,6 +10,7 @@ import com.openrs.dash.data.DriveDatabase
 import com.openrs.dash.data.DriveEntity
 import com.openrs.dash.data.DrivePointEntity
 import com.openrs.dash.data.KnockEventEntity
+import com.openrs.dash.data.LapFix
 import com.openrs.dash.data.LapTimer
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DriveExportBuilder
@@ -49,8 +50,9 @@ import java.util.concurrent.atomic.AtomicInteger
  *    keep recording with its own;
  *  - an ordinary STOP posts exactly one summary (guard).
  * Every expectation is a named check; all are evaluated and listed in the test output ("CHECK pass|FAIL …") before the
- * test fails, so a run on the old recorder shows exactly which ones it breaks. Laps are fed to the timer directly here
- * — the production feed is missing (#237).
+ * test fails, so a run on the old recorder shows exactly which ones it breaks. Laps are fed to the timer directly here,
+ * timed after the loop's own fixes (which are far from the line and then refused as out of order); LapFeedTest covers
+ * the recorder's feed (#237).
  */
 @RunWith(RobolectricTestRunner::class)
 class DriveFinalizeTest {
@@ -170,9 +172,15 @@ class DriveFinalizeTest {
         }
     }
 
-    /** Laps straight into the shared timer: first crossing starts timing, each later one completes a lap. */
-    private fun crossings(vararg atMs: Long) = atMs.forEach {
-        lapTimer.onLocationUpdate(SF_LAT, SF_LNG, 90f, 100.0, it, 6000, 0.0, 0.5)
+    /**
+     * Laps straight into the shared timer for [driveId]: each crossing leaves the line (60 m before it) and crosses it at
+     * exactly that time; the first starts timing, each later one completes a lap.
+     */
+    private fun crossings(driveId: Long, vararg atMs: Long) = atMs.forEach { t ->
+        listOf(-60.0 to -1_500L, -10.0 to -500L, 10.0 to 500L).forEach { (x, dt) ->
+            val lng = SF_LNG + x / (111_320.0 * kotlin.math.cos(Math.toRadians(SF_LAT)))
+            lapTimer.onFix(driveId, LapFix(SF_LAT, lng, 90f, CROSS_BASE + t + dt, 0, System.currentTimeMillis(), 100.0, 6000, 0.0, 0.5))
+        }
     }
 
     private fun join(job: Job) = runBlocking { withTimeout(15_000) { job.join() } }
@@ -246,7 +254,7 @@ class DriveFinalizeTest {
         vs.value = telemetry(95.0, 88.0, 900.0, 0.0, 0.0)
         val id = start(rec)
         lapTimer.setStartFinish(SF_LAT, SF_LNG, 90f)
-        crossings(1_000_000, 1_030_000, 1_061_000)                                // 2 laps in this drive
+        crossings(id, 1_000_000, 1_030_000, 1_061_000)                            // 2 laps in this drive
         record(rec, 12, mk = hot)
         val job = rec.stopDrive()
         c.check("finalize reached the address lookup", geo.entered.await(5, TimeUnit.SECONDS))
@@ -311,7 +319,7 @@ class DriveFinalizeTest {
         vs.value = telemetry(95.0, 88.0, 900.0, 0.0, 0.0)
         val a = start(rec)
         lapTimer.setStartFinish(SF_LAT, SF_LNG, 90f)
-        crossings(1_000_000, 1_030_000, 1_061_000)                                // laps 30.0 s, 31.0 s
+        crossings(a, 1_000_000, 1_030_000, 1_061_000)                             // laps 30.0 s, 31.0 s
         record(rec, 11, mk = hot)
         // A's 12th fix carries fresh knock (KR 2°): A's loop is held inside that point's knock write
         holding.holdDriveId = a
@@ -327,7 +335,7 @@ class DriveFinalizeTest {
         vs.value = telemetry(60.0, 50.0, 900.0, 0.0, 0.0)                         // B: cold start, gentle
         val b = start(rec, previousId = a)
         c.check("B started", b > 0 && b != a, b)
-        crossings(1_200_000, 1_245_000)                                           // B: one 45.0 s lap
+        crossings(b, 1_200_000, 1_245_000)                                        // B: one 45.0 s lap
         if (b > 0) record(rec, 5, from = 100) { i -> telemetry(60.0 + (i - 100), 50.0 + (i - 100), 900.0, 0.0, 0.0) }
         c.check("A's points not yet flushed while B records", holding.pointInserts.none { it.first == a }, holding.pointInserts)
 
@@ -419,5 +427,7 @@ class DriveFinalizeTest {
     private companion object {
         const val SF_LAT = 51.6
         const val SF_LNG = -0.2
+        /** Direct crossings are timed after every loop fix (whose fix time is the wall clock). */
+        const val CROSS_BASE = 4_000_000_000_000L
     }
 }
