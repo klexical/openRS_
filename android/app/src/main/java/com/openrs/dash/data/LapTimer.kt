@@ -37,14 +37,14 @@ class LapTimer {
     private var currentPeakSpeed = 0.0
 
     /** Set/update the start/finish line at the given GPS position and heading. */
-    fun setStartFinish(lat: Double, lng: Double, bearing: Float) {
+    @Synchronized fun setStartFinish(lat: Double, lng: Double, bearing: Float) {
         startFinish = StartFinishLine(lat, lng, bearing)
         state = LapTimerState.ARMED
         reset()
     }
 
     /** Clear the S/F line and stop timing. */
-    fun clearStartFinish() {
+    @Synchronized fun clearStartFinish() {
         startFinish = null
         state = LapTimerState.IDLE
         reset()
@@ -54,7 +54,7 @@ class LapTimer {
      * Hands the laps completed so far to the drive that recorded them (DriveRecorder, at its STOP — #236) and re-arms at
      * the same S/F line, so the next drive's laps are its own and start at its first crossing. Null when there are none.
      */
-    fun takeLaps(): Pair<StartFinishLine, List<LapResult>>? {
+    @Synchronized fun takeLaps(): Pair<StartFinishLine, List<LapResult>>? {
         val sf = startFinish ?: return null
         val done = laps
         state = LapTimerState.ARMED
@@ -63,7 +63,7 @@ class LapTimer {
     }
 
     /** Reset all laps but keep the S/F line. */
-    fun reset() {
+    @Synchronized fun reset() {
         laps = emptyList()
         currentLapStartMs = 0L
         bestLapMs = Long.MAX_VALUE
@@ -74,10 +74,11 @@ class LapTimer {
     }
 
     /**
-     * Feed a GPS + telemetry update. Call this on every DriveRecorder location update.
+     * Feed a GPS + telemetry update. DriveRecorder calls this for every recorded fix (#237; it had no caller before).
+     * Synchronized: the recorder's loop feeds it while TRIP sets / clears the line and STOP takes the laps.
      * Returns a LapResult if a lap was just completed, null otherwise.
      */
-    fun onLocationUpdate(
+    @Synchronized fun onLocationUpdate(
         lat: Double, lng: Double,
         bearing: Float,
         speedKph: Double,
