@@ -711,7 +711,7 @@ class CanDataService : Service() {
             override val activeDriveId get() = r.driveState.value.let { if (it.isRecording) it.driveId else null }
             override fun pausedDurationMs() = r.pausedDurationMs()
             override fun resumeDrive() = r.resumeDrive()
-            override fun stopDrive() = r.stopDrive()
+            override fun stopDrive() { r.stopDrive() }
             override fun startDrive(sessionId: Long) = r.startDrive(sessionId = sessionId)
         },
         onFrameCounted = { sessionFrameCount++ },

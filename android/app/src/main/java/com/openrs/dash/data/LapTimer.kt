@@ -50,6 +50,18 @@ class LapTimer {
         reset()
     }
 
+    /**
+     * Hands the laps completed so far to the drive that recorded them (DriveRecorder, at its STOP — #236) and re-arms at
+     * the same S/F line, so the next drive's laps are its own and start at its first crossing. Null when there are none.
+     */
+    fun takeLaps(): Pair<StartFinishLine, List<LapResult>>? {
+        val sf = startFinish ?: return null
+        val done = laps
+        state = LapTimerState.ARMED
+        reset()
+        return if (done.isEmpty()) null else sf to done
+    }
+
     /** Reset all laps but keep the S/F line. */
     fun reset() {
         laps = emptyList()
