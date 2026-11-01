@@ -119,6 +119,8 @@ fun SettingsDialog(
     onCustomDash: () -> Unit = {},
     onStartDemo: (com.openrs.dash.demo.DemoScenario) -> Unit = {},
     onExitDemo: () -> Unit = {},
+    /** Open on CONNECTION — from the dashboard's "select a Bluetooth device" prompt (#234). */
+    openConnection: Boolean = false,
 ) {
     val ctx = LocalContext.current
     val accent = LocalThemeAccent.current
@@ -171,7 +173,7 @@ fun SettingsDialog(
 
     // Navigation / search state — session-local
     var searchQuery      by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf<SettingsCategory?>(null) }
+    var selectedCategory by remember { mutableStateOf(if (openConnection) SettingsCategory.CONNECTION else null) }
     var aboutExpanded    by remember { mutableStateOf(false) }
     var showBlePicker    by remember { mutableStateOf(false) }
     // Bluetooth adapter: staged like every other setting — shown at once, saved on SAVE (#218)
@@ -593,6 +595,7 @@ fun SettingsDialog(
                         selected = if (connectionMethod == "BLUETOOTH") "Bluetooth" else "WiFi",
                         onSelect = { selected ->
                             connectionMethod = if (selected == "Bluetooth") "BLUETOOTH" else "WIFI"
+                            error = null
                         },
                     )
                 }
@@ -650,8 +653,14 @@ fun SettingsDialog(
                                 .padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(if (bleDraft.changed) "No device selected \u00B7 not saved" else "No device selected",
-                                fontSize = 12.sp, color = Mid, fontFamily = ShareTechMono)
+                            Column {
+                                Text(if (bleDraft.changed) "No device selected \u00B7 not saved" else "No device selected",
+                                    fontSize = 12.sp, color = Mid, fontFamily = ShareTechMono)
+                                // Bluetooth can't connect without one (#234) — say how to get out of it
+                                Spacer(Modifier.height(4.dp))
+                                Text("Tap SCAN FOR DEVICES to choose your adapter, or switch the connection method to WiFi.",
+                                    fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono)
+                            }
                         }
                         Spacer(Modifier.height(10.dp))
                     }
@@ -1059,6 +1068,7 @@ fun SettingsDialog(
                 BleDevicePickerDialog(
                     onDeviceSelected = { address, name ->
                         bleDraft = bleDraft.select(address, name)       // shown at once; saved on SAVE
+                        error = null
                         showBlePicker = false
                     },
                     onDismiss = { showBlePicker = false },
@@ -1159,7 +1169,10 @@ fun SettingsDialog(
                         val maxZips = maxDiagZips.toIntOrNull()
                         val maxDrives = maxSavedDrives.toIntOrNull()
                         val shiftRpm = edgeShiftRpm.toIntOrNull()
+                        // Bluetooth needs a device in the DRAFT — FORGET then SAVE is refused too (#234)
+                        val setupProblem = bleDraft.saveProblem(connectionMethod)
                         when {
+                            setupProblem != null -> error = setupProblem
                             host.isBlank() -> error = "Host cannot be empty"
                             p == null || p !in 1..65535 -> error = "Port must be 1–65535"
                             threshold == null || threshold <= 0 -> error = "Low threshold must be > 0"

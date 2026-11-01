@@ -15,6 +15,10 @@ data class BleDeviceDraft(val saved: Pair<String, String>?, val staged: Pair<Str
         staged?.let { (a, n) -> save(a, n) } ?: clear()
     }
 
+    /** SAVE is refused while [connectionMethod] needs a device this draft doesn't have (#234) — FORGET counts. */
+    fun saveProblem(connectionMethod: String): String? =
+        com.openrs.dash.service.ConnectionSetup.problem(connectionMethod, staged?.first)
+
     companion object {
         fun of(address: String?, name: String?): BleDeviceDraft {
             val d = address?.let { it to (name ?: "WiCAN") }

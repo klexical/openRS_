@@ -159,6 +159,11 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
   scrolls. Found by the landscape dialog check on the emulator; Settings and the picker otherwise stay clear of left /
   right navigation bars (the dialog windows are inset by Android). ([#231](https://github.com/klexical/openRS_/issues/231))
 
+### Fixed (rc.7 — Bluetooth without a device 2026-10-31)
+- **Settings saved Bluetooth with no device** — SAVE now stays in Settings with "Select a Bluetooth device, or switch to
+  Wi-Fi." while the staged choice is Bluetooth without a device (FORGET then SAVE included); Wi-Fi saves without one and
+  CANCEL keeps the saved device (`BleDeviceDraft.saveProblem`, `ConnectionSetup`). ([#234](https://github.com/klexical/openRS_/issues/234))
+
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)
 - **What's New describes the corrected boost, NRC, ESC, probe, Bluetooth, DTC and header behaviour** — the BOOST line no longer says TIP is "marked under the reading" (the gauge's label says TIP now) and says the signal identities are unconfirmed. (`ui/WhatsNewDialog.kt`)
