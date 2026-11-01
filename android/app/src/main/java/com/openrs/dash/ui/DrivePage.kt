@@ -92,6 +92,8 @@ import kotlin.math.roundToInt
     vs: VehicleState, p: UserPrefs, onOpenThermal: () -> Unit = {}, onConnect: () -> Unit = {},
     onCancel: () -> Unit = {}, link: LinkUi = linkUi(vs, com.openrs.dash.can.LinkPhase.OFF, demoActive = false),
     cancelable: Boolean = true,
+    /** Saved settings that can't connect (#234, [com.openrs.dash.service.ConnectionSetup]) — the row asks for a device. */
+    setupProblem: String? = null,
 ) {
     var pageEntered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { pageEntered = true }
@@ -214,7 +216,7 @@ import kotlin.math.roundToInt
             // Temperatures speak through the shared readiness verdict (same holds as THERMAL);
             // tyre / fuel / knock alerts keep their own 3 s hold.
             val readiness = thermalVerdict(vs)
-            StatusLine(status.alerts.filterNot { it.temp }, readiness, p, link, onOpenThermal, onConnect, onCancel, cancelable)
+            StatusLine(status.alerts.filterNot { it.temp }, readiness, p, link, onOpenThermal, onConnect, onCancel, cancelable, setupProblem)
 
             // Design pass: readings in ink, BOOST (the car's personality) carries the paint accent,
             // RPM turns Orange only at the shift-light flash point. Equal-height cards with a fixed
@@ -540,7 +542,7 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
  */
 @Composable private fun StatusLine(
     alerts: List<VehicleAlert>, rtr: ThermalVerdict, p: UserPrefs, link: LinkUi,
-    onOpen: () -> Unit, onConnect: () -> Unit, onCancel: () -> Unit, cancelable: Boolean,
+    onOpen: () -> Unit, onConnect: () -> Unit, onCancel: () -> Unit, cancelable: Boolean, setupProblem: String? = null,
 ) {
     var held by remember { mutableStateOf(alerts) }
     LaunchedEffect(alerts) {
@@ -549,6 +551,10 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
     }
     // The 3 s alert hold is for flicker between live frames — a dropped link replaces it at once.
     val others = if (link == LinkUi.LIVE) held else emptyList()
+    // Bluetooth with no device saved (#234): nothing to connect to — the action opens Settings to choose one
+    if (setupProblem != null && (link == LinkUi.OFFLINE || link == LinkUi.FAILED)) {
+        LinkActionRow("SELECT A BLUETOOTH DEVICE", "Open Settings to choose a Bluetooth device", accentAction = true, onConnect); return
+    }
     when (link) {
         LinkUi.OFFLINE    -> { LinkActionRow("TAP TO CONNECT", "Connect to the adapter", accentAction = true, onConnect); return }
         LinkUi.FAILED     -> { LinkActionRow("NO RESPONSE · TAP TO CONNECT", "Connect to the adapter", accentAction = true, onConnect); return }

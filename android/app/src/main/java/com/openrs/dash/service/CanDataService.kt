@@ -516,6 +516,13 @@ class CanDataService : Service() {
         if (DemoMode.isActive) return@transition false
         if (!isTransportReady()) return@transition false
         if (connectionJob?.isActive == true) return@transition true
+        // Bluetooth with no saved device (#234): nothing to connect to — checked before the service is promoted and a
+        // session begins, so no notification, no session record, no retries. Every start path lands here (launch,
+        // Connect, Bluetooth on, a sticky restart with no activity); the dashboard explains it, the choice is kept.
+        ConnectionSetup.problem(AppSettings.getConnectionMethod(this), AppSettings.getBleDeviceAddress(this))?.let {
+            android.util.Log.i("CAN", "Not connecting — $it")
+            return@transition false
+        }
 
         try {
             foreground.promote()

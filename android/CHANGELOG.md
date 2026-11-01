@@ -163,6 +163,11 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 - **Settings saved Bluetooth with no device** — SAVE now stays in Settings with "Select a Bluetooth device, or switch to
   Wi-Fi." while the staged choice is Bluetooth without a device (FORGET then SAVE included); Wi-Fi saves without one and
   CANCEL keeps the saved device (`BleDeviceDraft.saveProblem`, `ConnectionSetup`). ([#234](https://github.com/klexical/openRS_/issues/234))
+- **Bluetooth saved without a device crashed the app at every launch** — installs that already have it (saved by an
+  earlier build) now open normally: no connection starts from launch, Connect, Bluetooth being switched on or a service
+  restart — the check runs before the service goes foreground and a session begins, so there is no notification, no
+  session record and no retry — and DRIVE's status row reads SELECT A BLUETOOTH DEVICE, opening Settings on CONNECTION
+  (the header pill's Connect does the same). The saved choice is kept, never switched to Wi-Fi. ([#234](https://github.com/klexical/openRS_/issues/234))
 
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)

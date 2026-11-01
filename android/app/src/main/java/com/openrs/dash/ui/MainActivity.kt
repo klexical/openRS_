@@ -228,6 +228,7 @@ class MainActivity : ComponentActivity() {
             var mapTouched  by remember { mutableStateOf(false) }
             val hazeState   = remember { HazeState() }
             var settingsOpen    by remember { mutableStateOf(false) }
+            var settingsAtConnection by remember { mutableStateOf(false) }
             var showCustomDash  by remember { mutableStateOf(false) }
             var dockOpen        by remember { mutableStateOf(false) }
             val isFw            by OpenRSDashApp.instance.isOpenRsFirmware.collectAsState()
@@ -239,6 +240,16 @@ class MainActivity : ComponentActivity() {
             val cancelable      = com.openrs.dash.service.LinkPresentation.offersCancel(linkPhase, driveState.isRecording)
             val pageScope       = rememberCoroutineScope()
             val snackbarHostState = remember { SnackbarHostState() }
+            // Saved settings that can't connect (#234): Bluetooth with no device. Re-read when Settings closes (the device
+            // isn't in UserPrefs); Connect then opens Settings on CONNECTION instead of starting nothing silently.
+            val setupCtx = LocalContext.current
+            val setupProblem = remember(prefs.connectionMethod, settingsOpen) {
+                com.openrs.dash.service.ConnectionSetup.problem(prefs.connectionMethod, AppSettings.getBleDeviceAddress(setupCtx))
+            }
+            val connect: () -> Unit = {
+                if (setupProblem != null) { settingsAtConnection = true; settingsOpen = true }
+                else service?.startConnection()
+            }
 
 
             // What's New — show once after version update
@@ -310,7 +321,7 @@ class MainActivity : ComponentActivity() {
                                         vs           = vs,
                                         prefs        = prefs,
                                         onSettings   = { settingsOpen = true },
-                                        onConnect    = { service?.startConnection() },
+                                        onConnect    = connect,
                                         onDisconnect = { service?.stopConnection() },
                                         onReconnect  = { service?.reconnect() },
                                         onCancel     = { service?.cancelConnection() },
@@ -396,8 +407,9 @@ class MainActivity : ComponentActivity() {
                                             when (page) {
                                                 0 -> DrivePage(vs, prefs, onOpenThermal = {
                                                     pageScope.launch { pagerState.animateScrollToPage(2) }
-                                                }, onConnect = { service?.startConnection() },
-                                                   onCancel = { service?.cancelConnection() }, link = link, cancelable = cancelable)
+                                                }, onConnect = connect,
+                                                   onCancel = { service?.cancelConnection() }, link = link, cancelable = cancelable,
+                                                   setupProblem = setupProblem)
                                                 1 -> PerfPage(vs, prefs, onReset = { service?.resetPeaks() })
                                                 2 -> TempsPage(vs, prefs)
                                                 // settled: TRIP creates its map on the first visit; visible: off screen
@@ -455,10 +467,11 @@ class MainActivity : ComponentActivity() {
 
                                 if (settingsOpen) {
                                     SettingsDialog(
-                                        onDismiss = { settingsOpen = false },
-                                        onCustomDash = { settingsOpen = false; showCustomDash = true },
+                                        onDismiss = { settingsOpen = false; settingsAtConnection = false },
+                                        onCustomDash = { settingsOpen = false; settingsAtConnection = false; showCustomDash = true },
                                         onStartDemo = { service?.enterDemoMode(it) },
-                                        onExitDemo = { service?.exitDemoMode() }
+                                        onExitDemo = { service?.exitDemoMode() },
+                                        openConnection = settingsAtConnection,
                                     )
                                 }
 
