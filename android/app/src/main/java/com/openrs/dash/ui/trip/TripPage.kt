@@ -310,13 +310,18 @@ private fun TripPageContent(
     // Drive history (preview: the sample list), observed from Room so it follows every write to `drives`. STOP only
     // flips isRecording at once; the drive's end is written later on IO (after the recording loop's last flush and the
     // reverse geocode), so a list read at STOP still held endTime = 0 and the row stayed ACTIVE until a reload (#228).
-    // Also covers an auto-record stop on a link drop and orphan drives finalized at startup.
+    // Also covers an auto-record stop on a link drop and orphan drives finalized at startup. The observation is the
+    // list's only source for real drives — delete / tag / rename only write (DriveHistory). The selected drive's row
+    // follows it too (the stats overlay read a copy taken at selection: duration 0 for a drive selected while ACTIVE).
     val previewRecording = preview != null && driveState.isRecording
     LaunchedEffect(preview, previewRecording, prefs.maxSavedDrives) {
         if (preview != null) { drives = TripPreview.drives(); return@LaunchedEffect }
-        DriveDatabase.getInstance(context).driveDao()
-            .observeRecentDrives(prefs.maxSavedDrives)
-            .collect { drives = it }
+        DriveHistory.observe(DriveDatabase.getInstance(context).driveDao(), prefs.maxSavedDrives)
+            .collect { list ->
+                drives = list
+                val id = selectedDriveId
+                if (id != null && id > 0) list.firstOrNull { it.id == id }?.let { selectedDrive = it }
+            }
     }
 
     // Preview states that need a selection or the summary open; leaving preview drops sample state.
@@ -725,12 +730,7 @@ private fun TripPageContent(
                 onExport = { drive -> exportDrive = drive },   // the sheet's EXPORT no-ops for a sample drive
                 onDelete = { drive ->
                     if (drive.id < 0) return@DriveHistoryList
-                    scope.launch(Dispatchers.IO) {
-                        DriveDatabase.getInstance(context).driveDao().deleteDrive(drive.id)
-                        DriveDatabase.getInstance(context).driveDao().deleteOrphanLapSessions()
-                        drives = DriveDatabase.getInstance(context).driveDao()
-                            .getRecentDrives(AppSettings.getMaxSavedDrives(context))
-                    }
+                    scope.launch(Dispatchers.IO) { DriveHistory.delete(DriveDatabase.getInstance(context).driveDao(), drive.id) }
                     if (selectedDriveId == drive.id) {
                         selectedDriveId = null
                         selectedDrive = null
@@ -744,11 +744,7 @@ private fun TripPageContent(
                 },
                 onTagsChanged = { drive, tags ->
                     if (drive.id < 0) return@DriveHistoryList
-                    scope.launch(Dispatchers.IO) {
-                        DriveDatabase.getInstance(context).driveDao().updateDriveTags(drive.id, tags)
-                        drives = DriveDatabase.getInstance(context).driveDao()
-                            .getRecentDrives(AppSettings.getMaxSavedDrives(context))
-                    }
+                    scope.launch(Dispatchers.IO) { DriveHistory.setTags(DriveDatabase.getInstance(context).driveDao(), drive.id, tags) }
                 },
                 onReplay = { drive ->
                     replayDrive = drive
@@ -887,12 +883,7 @@ private fun TripPageContent(
                         .clickable {
                             val id = renameDriveId ?: return@clickable
                             val name = renameText.ifBlank { null }
-                            scope.launch(Dispatchers.IO) {
-                                DriveDatabase.getInstance(context).driveDao()
-                                    .updateDriveName(id, name)
-                                drives = DriveDatabase.getInstance(context).driveDao()
-                                    .getRecentDrives(AppSettings.getMaxSavedDrives(context))
-                            }
+                            scope.launch(Dispatchers.IO) { DriveHistory.rename(DriveDatabase.getInstance(context).driveDao(), id, name) }
                             renameDriveId = null
                         }
                         .padding(horizontal = 16.dp, vertical = 8.dp)
