@@ -231,7 +231,7 @@ ui/
                             DAY: #EFF3F8 bg / #080D16 ink (18.5:1). NIGHT: near-black. ULTRA: saturated high-contrast.
                             Typography: Rajdhani (primary, incl. HeroNum/AggressiveNum), JetBrains Mono (labels).
                             Old Orbitron/ShareTech/Barlow TTFs removed.
-  BleDevicePickerDialog.kt — BLE device picker: scan filtered to 0xFFE0, RSSI bars, dark neon aesthetic
+  BleDevicePickerDialog.kt — BLE device picker: scan filtered to FFF0 / FEE0 / FFE0 (BleAdapterProfile.SCAN_SERVICES), RSSI bars
                             Runtime BLE permission request (BLUETOOTH_SCAN + BLUETOOTH_CONNECT on API 31+)
                             Unknown device hint: orange "not a known adapter" for non-WiCAN/MeatPi names
                             Permission-denied UI state with retry button
@@ -395,9 +395,13 @@ data[5] = B5,  data[6] = B6 …
   callback would complete the next write. `BleGattCore` invalidates + closes the link (reader EOF → SlcanConnection
   reconnects); later writes fail at once. `SlcanConnection` swallows write errors, so teardown must come from the reader.
 - **BLE GATT layouts (#218)** — upstream WiCAN Pro v4.45p–v4.48p: FFF0, write FFF2, notify FFF1; USB v4.13u–v4.21u: FEE0, FEE1
-  write + notify; both need an encrypted, MITM-authenticated (bonded) link. The old FFE0/FFE1/FFE2 layout is from the openRS_
-  firmware README and no shipped firmware implements it (kept as an unverified fallback). Source-verified only — no GATT trace
-  from a physical adapter yet. FFF0 / FFE0 are also used by unrelated cheap BLE peripherals; the scan filter passes them through. `BleDevicePickerDialog` shows an orange "not a known adapter" hint for unrecognized device names. `SlcanConnection` has a 3s SLCAN handshake that rejects non-SLCAN devices before declaring Connected
+  write + notify; both need an encrypted, MITM-authenticated (bonded) link (upstream source reading, not a capture). The
+  FFE0/FFE1/FFE2 layout is a **planned, unimplemented** interface: `firmware/components/ble_transport/ble_transport.h` is a
+  forward declaration for a future fw v2.x; openrs-fw v1.x keeps upstream wican-fw's `ble.c` at the pinned tag (USB
+  v4.20u_beta-01, PRO v4.48p — `firmware/patches/` doesn't touch it). The app keeps FFE0 as an unverified fallback (v2.2.6
+  scanned / connected FFE0 only). Which layout an openrs-fw adapter advertises is **unresolved** — no GATT trace yet; a
+  successful BLE session (owner, `a605b1c`) doesn't name the layout. Never infer a shipped layout from that header. Main's
+  firmware/README + hardware-setup are corrected on `docs/setup-guides-ble-fw` (`a388e90`). FFF0 / FFE0 are also used by unrelated cheap BLE peripherals; the scan filter passes them through. `BleDevicePickerDialog` shows an orange "not a known adapter" hint for unrecognized device names. `SlcanConnection` has a 3s SLCAN handshake that rejects non-SLCAN devices before declaring Connected
 - **BLE auto-reconnect** — `autoConnect=true` on `connectGatt()` once setup has succeeded with that MAC in this process
   (`BleSlcanTransport.connectedBefore`; an instance flag was dead — every attempt builds a new transport). 15 s setup
   timeout; on timeout `SlcanConnection` retry logic takes over. Not yet seen on a phone with an adapter
@@ -452,7 +456,8 @@ data[5] = B5,  data[6] = B6 …
 - **Bottom nav bar insets** — `Scaffold(contentWindowInsets = WindowInsets.statusBars)` drops the bottom inset so content extends behind the nav bar overlay. `enableEdgeToEdge(navigationBarStyle = SystemBarStyle.dark(TRANSPARENT))` removes the system nav bar scrim. Pages add `Tokens.NavBarHeight` as bottom scroll padding
 - **0x1A4 ambient temp is UNSIGNED** — DigiCluster v1.0.46 confirmed on-car that raw 0x82 (130 unsigned) × 0.25 = 32.5°C (90.5°F). Prior spec said signed int8, which wrapped values above 32°C to negative on hot days. Our decoder at `CanDecoder.kt:ID_AMBIENT_TEMP` uses `(data[4].toInt() and 0xFF)` to force unsigned. **But unsigned ×0.25 with no offset cannot represent sub-zero ambient** — readings above `AMBIENT_1A4_MAX_C` (55°C) are rejected (state returned unchanged, raw byte logged) until a sub-zero capture pins the true encoding ([#185](https://github.com/klexical/openRS_/issues/185)). 0x340 PCMmsg17 byte7 is still signed per RS_HS.dbc — if we see Phoenix-summer wrap on that signal in field testing, same fix applies.
 - **0x435 airbag crosstalk** — DigiCluster v1.0.73 found that the per-zone airbag status bits on 0x435 share bits with passenger-occupancy detection and false-triggered the SRS lamp in-vehicle. We decode 0x040 bits 7:6 of byte2 only (`0xC0 == true` = lamp on), and explicitly keep 0x435 OUT of `KNOWN_IDS`. Do not add 0x435 decoding without a verified fault vs occupancy capture.
-- **Freshness stamps (`fieldLastUpdateMs`)** — Mode 22 decoders stamp via `markFresh()`; `CanDataService.mergeObdState()` MUST merge them with `VehicleState.mergeStamps` (per-key max) or the UI reads every OBD field as STALE (pre-rc.5 bug). CAN-sourced THERMAL fields are stamped by `CanDecoder.stampFresh()` throttled to 1 s per ID — never `markFresh()` per CAN frame (map copy at hundreds of fps). A decoder returning the **same** `state` instance means "recognized, nothing changed": `processCanFrame` logs it and skips the copy/emit (0x040, 0x300, rejected 0x1A4). `ObdMerge` keeps a field through its "not received" sentinel; a field whose
+- **Freshness stamps (`fieldLastUpdateMs`)** — Mode 22 decoders stamp via `markFresh()`; `ObdMerge.merge()` (data/ObdMerge.kt, called by `CanDataService.mergeObdState()`) MUST merge them with
+  `VehicleState.mergeStamps` (per-key max) or the UI reads every OBD field as STALE (pre-rc.5 bug). CAN-sourced THERMAL fields are stamped by `CanDecoder.stampFresh()` throttled to 1 s per ID — never `markFresh()` per CAN frame (map copy at hundreds of fps). A decoder returning the **same** `state` instance means "recognized, nothing changed": `processCanFrame` logs it and skips the copy/emit (0x040, 0x300, rejected 0x1A4). `ObdMerge` keeps a field through its "not received" sentinel; a field whose
   valid range includes its default (REQ L / R: 0 Nm) is merged by the reply's own stamp (`ObdMerge.carried`), never by
   value — a `> 0` guard keeps the old value under a fresh stamp (#226)
 - **Recorder only stores fresh polled values** — `DriveRecorder` writes TIP/target/WGDC/KR/STFT/LTFT only when `FreshnessGate.takeIfFresh()` passes; otherwise sentinels (`tipActualKpa`/`boostTargetKpa` 0.0, `wgdcPct` −1.0). Never record held VehicleState values for slow DIDs — they repeat one reading many times

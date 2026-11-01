@@ -31,7 +31,7 @@ Thanks for your interest in contributing to openRS_! This project aims to give F
 1. Add the field to `VehicleState.kt` with a sensible default — `VehicleState.copy()` is at the JVM 255-slot limit, so a new field needs an unused one removed first, or store the value off-state (`genericValues`) ([#199](https://github.com/klexical/openRS_/issues/199))
 2. Add the query string to `ObdConstants.kt` in the appropriate ECU query array (e.g. `PCM_FAST_QUERIES` / `PCM_SLOW_QUERIES`, `BCM_QUERIES`)
 3. Add the response parser in `ObdResponseParser.kt` (e.g. inside `parsePcmResponse()` or `parseBcmResponse()`) and stamp it with `markFresh()` — the coverage-guard tests in `ObdResponseParserTest` fail for a polled DID without a stamping decoder
-4. Wire the merge in `CanDataService.kt` → `mergeObdState()`
+4. Merge it in `data/ObdMerge.kt` → `ObdMerge.merge()` — the production merge, called by `CanDataService.mergeObdState()` for every reply. A field keeps its value through its "not received" sentinel; a field whose valid range includes its default (a decoded 0 is a reading) must be taken by the reply's own stamp (`carried`), never by value ([#226](https://github.com/klexical/openRS_/issues/226))
 5. Add UI display in the appropriate tab composable
 6. Document the PID in `docs/pid-reference.md`
 
