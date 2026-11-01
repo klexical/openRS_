@@ -3,7 +3,7 @@
 Native Android telemetry dashboard for the Ford Focus RS MK3.
 Kotlin 2.0.21 + Jetpack Compose (Material3). Current: **stable v2.2.6 on main**; **v2.2.7-rc.6 published as a prerelease from staging** (tag `android-v2.2.7-rc.6` →
 `d2f7dc6`, versionCode 35 — not on main, not stable). Sapphire (web/ only) deployed from main `0d64248`. Record: Branch / Release Workflow → rc.6.
-**rc.7 in progress (local, unpushed; drive-review + acceptance-corrections + 2026-10-29 corrections + follow-up passes done + REQ-zero correction; testing candidate `a605b1c` frozen + hardware-tested 2026-10-31; approved fixes + source-review corrections + #234 fix on `fix/rc7-adapter-status-export` (review build `81baa76`, awaiting owner review) — issues #204–#234):** branch `feature/rc7` (from staging `d2f7dc6`) — 2.2.7-rc.7 / versionCode 36, milestone
+**rc.7 in progress (local, unpushed; drive-review + acceptance-corrections + 2026-10-29 corrections + follow-up passes done + REQ-zero correction; testing candidate `a605b1c` frozen + hardware-tested 2026-10-31; approved fixes + source-review corrections + #234 fix accepted and fast-forwarded locally into `feature/rc7` (`931447a`); next: owner hardware testing on review APK `81baa76` — issues #204–#234):** branch `feature/rc7` (from staging `d2f7dc6`) — 2.2.7-rc.7 / versionCode 36, milestone
 v2.2.7-rc.7 (#211 locale exports, #212 connection lifecycle, #213 splash per task, #214 versioning, #215 DTC scan status);
 Sapphire row validation #204 also on `fix/sapphire-row-validation` (from main). Record: Branch / Release Workflow → rc.7.
 Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashboard) → `web/`  |  Docs → `docs/`  |  Feature pipeline → `docs/feature-roadmap.md`
@@ -613,7 +613,7 @@ data[5] = B5,  data[6] = B6 …
   Every scan has an id (`activeScan`): stop / restart / Bluetooth-off invalidate it and callbacks of an old scan are dropped;
   the enable result only starts a scan while still `PhoneBluetoothOff` (broadcast + result in either order = one scan). The
   picker Column scrolls — in landscape its content is taller than the window (CANCEL was unreachable)
-- **Bluetooth with no saved device (#234, fixed on the fix branch; `a605b1c` still crashes at every launch)** — one rule,
+- **Bluetooth with no saved device (#234, fixed on feature/rc7 — verified on the emulator; `a605b1c` still crashes at every launch)** — one rule,
   `ConnectionSetup.problem(method, address)`: Settings SAVE checks the draft (`BleDeviceDraft.saveProblem`, FORGET counts);
   `beginConnection` checks the saved prefs BEFORE `foreground.promote()` / `sessionStart` / `startSessionRecording` (no
   notification, session or retry — catching the exception would not have been enough); DRIVE reads SELECT A BLUETOOTH
@@ -680,7 +680,7 @@ Regenerate the FORScan catalog: `python3 android/scripts/gen_forscan_catalog.py`
 cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{releaseName}.apk (e.g. openRS_v2.2.7-rc.7.apk; set in app/build.gradle.kts)
-./gradlew test                             # 1025 unit tests across 79 files (fix branch; feature/rc7: 961 / 68)
+./gradlew test                             # 1025 unit tests across 79 files, each variant (feature/rc7 @ 931447a)
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 45 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -865,7 +865,7 @@ android/app/src/test/java/com/openrs/dash/
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **1025 tests across 79 files** (Android, `fix/rc7-adapter-status-export`; `feature/rc7` = 961 / 68) + **282 vitest across 25 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **1025 tests across 79 files** (Android, `feature/rc7` = `fix/rc7-adapter-status-export` after the local fast-forward; passed in debug and release) + **282 vitest across 25 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 
@@ -1007,8 +1007,10 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   Bluetooth / no device → crash (+ an empty session per crash) → `install -r` fix → 2 cold launches open, drive + KPH kept,
   no session (next id after recovery = last + 1), BT on → nothing, Wi-Fi recovery, every tab 0 verifier lines. Device
   selection only up to the picker (no BLE peripherals); sticky restart argued. Evidence:
-  `~/Documents/openRS_-evidence/rc7-ble-no-device-2026-10-31/RESULTS.md`; #234 commented (left open). Next (owner's
-  go-ahead): review → merge, versionCode, PRs, tag.
+  `~/Documents/openRS_-evidence/rc7-ble-no-device-2026-10-31/RESULTS.md`; #234 commented (left open). Owner accepted the fix
+  + the six corrections; `feature/rc7` fast-forwarded locally `1bb0373` → `931447a` (`--ff-only`; both branches and both
+  evidence APKs kept). Next: owner hardware testing on APK `81baa76` (`efe622c4…`, no rebuild, vc 36). Unverified on this
+  APK: real BLE device selection, a service restart without the app open. Then (owner's go-ahead): versionCode, PRs, tag.
 - Still open: everything in the hardware checklist (Samsung, BLE, firmware capability, boost signal identity, spark /
   throttle, real DTC replies, TPMS BAR on the phone, 0304 / 03EF identity, button bit captures); GPS-independent
   recording (#221); oil / PTU identity (#229) before thermal acceptance; 0x138 gear (#230); ACTIVE after stop (#228); a real
