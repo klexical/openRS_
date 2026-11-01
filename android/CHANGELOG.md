@@ -203,7 +203,8 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
   real Room database on the JVM (test-only Robolectric) and on an emulator, not on a car. ([#236](https://github.com/klexical/openRS_/issues/236))
 - **Lap timing never completed a lap** — TRIP's SET S/F armed `LapTimer`, but nothing fed it GPS fixes, so no lap was
   timed or saved. The recorder now feeds it every recorded fix; a drive's STOP takes that drive's laps and re-arms the
-  line for the next drive. Checked on an emulator only; a repeated fix near the line may still count an extra lap. ([#237](https://github.com/klexical/openRS_/issues/237))
+  line for the next drive. Emulator only (synthetic GPS): laps completed and were saved, but some scripted crossings were
+  missed and a repeated fix near the line can add an extra lap; crossing reliability on a car is unverified. ([#237](https://github.com/klexical/openRS_/issues/237))
 
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)

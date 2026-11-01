@@ -7,11 +7,14 @@ Kotlin 2.0.21 + Jetpack Compose (Material3). Current: **stable v2.2.6 on main**;
 `a605b1c` frozen + owner-tested 2026-10-31; approved fixes + source-review corrections + #234 fix accepted and fast-forwarded
 locally into `feature/rc7` (`931447a`), then docs-only `12b6e4f` (no rebuild). Owner-test APK = source `81baa76`, vc 36,
 SHA-256 `efe622c4…7a98` — owner Bluetooth hardware testing on it **pending** (kept separate from the new candidate).
-**Integration candidate — DO NOT PUSH** (branch `integration/rc7-candidate-DO-NOT-PUSH`, worktree `rc7-integration`; its
-ancestry holds real adapter identifiers until the approved history cleanup): `12b6e4f` + #228 / #226 + sanitized test +
+**Clean candidate `feature/rc7-candidate`** (clone `~/Documents/openRS_-publish`, push disabled until the owner approves; history
+cleanup run 2026-11-01, old → new map private): + #236 STOP finalization + #237 lap feed. **Tested source `0e4c120`** (1045 / 84
+per variant, lint 0 / 47, APK `ce82d4b2…`, vc 36, disposable-AVD cold launch); later commits docs-only. Not distributed.
+Superseded by it — **Integration candidate — DO NOT PUSH** (branch `integration/rc7-candidate-DO-NOT-PUSH`, worktree `rc7-integration`; its
+ancestry holds real adapter identifiers; kept unchanged): `12b6e4f` + #228 / #226 + sanitized test +
 #235 CI keys + #228 edits-only-write + docs. **Tested source `7bb8a9a`** (1034 / 81 per variant, lint 0 / 45, APK
 `7ee08484…`, vc 36, disposable-AVD cold launch); later commits docs-only. Not distributed. Record: Branch / Release
-Workflow → rc.7 (integration). Issues #204–#235. Branch `feature/rc7` (from staging `d2f7dc6`) — 2.2.7-rc.7 / versionCode 36, milestone
+Workflow → rc.7 (integration). Issues #204–#237. Branch `feature/rc7` (from staging `d2f7dc6`) — 2.2.7-rc.7 / versionCode 36, milestone
 v2.2.7-rc.7 (#211 locale exports, #212 connection lifecycle, #213 splash per task, #214 versioning, #215 DTC scan status);
 Sapphire row validation #204 also on `fix/sapphire-row-validation` (from main). Record: Branch / Release Workflow → rc.7.
 Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashboard) → `web/`  |  Docs → `docs/`  |  Feature pipeline → `docs/feature-roadmap.md`
@@ -717,7 +720,7 @@ Regenerate the FORScan catalog: `python3 android/scripts/gen_forscan_catalog.py`
 cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{releaseName}.apk (e.g. openRS_v2.2.7-rc.7.apk; set in app/build.gradle.kts)
-./gradlew test                             # 1025 unit tests across 79 files, each variant (source 81baa76 = feature/rc7 code through 12b6e4f; integration 86e4af8: 1030 / 80; tested integration tip 7bb8a9a: 1034 / 81)
+./gradlew test                             # 1025 unit tests across 79 files, each variant (source 81baa76 = feature/rc7 code through 12b6e4f; integration 86e4af8: 1030 / 80; tested integration tip 7bb8a9a: 1034 / 81; clean candidate 0e4c120: 1045 / 84)
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 45 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -909,7 +912,7 @@ android/app/src/test/java/com/openrs/dash/
 
 Current count: **1025 tests across 79 files** (Android, `./gradlew test` at source `81baa76` — debug and release variants each;
 `feature/rc7` code is unchanged through `12b6e4f`, later commits docs-only; unmerged work branches carry their own totals; integration candidate `86e4af8`: **1030 / 80** per
-variant; tested integration tip `7bb8a9a`: **1034 / 81** per variant) + **282 vitest across 25 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+variant; tested integration tip `7bb8a9a`: **1034 / 81** per variant; clean candidate `0e4c120`: **1045 / 84** per variant) + **282 vitest across 25 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 
@@ -1106,7 +1109,7 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
     ~0.55 s after STOP): `DriveRecorder.stopDrive` reads the row before the reverse geocode and writes the whole row
     after, so a rename / tag in that window can be overwritten and a drive deleted in it can still get lap sessions /
     a summary — open finding (reviewer confirmed the code path: `getDrive` → `reverseGeocode` → full-row `updateDrive`),
-    not fixed; owner decision.
+    not fixed here — filed as #236, fixed on the clean candidate (record below).
   - #235 owner setup (no values anywhere): repository secret `MAPS_API_KEY` (required for publication) — restrict the key
     to Android apps, package `com.openrs.dash` + release-cert **SHA-1** `5F:74:08:7D:B0:FE:B2:12:17:9B:EB:AA:AE:BC:95:A4:E8:B8:EB:CE`,
     API Maps SDK for Android (debug `com.openrs.dash.debug` needs its own key); `OPENWEATHER_API_KEY` optional (notice +
@@ -1141,6 +1144,33 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
     (#125, #205–#208, #225–#230, #234) by the maintenance role, no milestone changes, comments on #226 / #228 / #234. Left
     for the owner: no milestone on #226–#234; no priority on #222 / #223 / #230; #206 lacks `investigation`; #174 / #175 /
     #198 shipped in prereleases but open (close via merged PRs per the release checklist).
+- Clean candidate (2026-11-01, local only — push disabled; nothing pushed / tagged / distributed): history cleanup steps
+  02–07 (owner-approved; record `~/Documents/openRS_-evidence/rc7-history-cleanup-run/RESULT-02-07.md`, private
+  `commit-map.tsv` / `cited.tsv`) rewrote `b0c1c57..2aabca9` (43 commits, re-signed) → `feature/rc7-candidate` @ `86337bc`,
+  tree = the frozen tip's; identifier scan 0 on the clone / push set / full history; step 08 not run. Old IDs in this file
+  stay as written (translate with `cited.tsv`): `7bb8a9a` → `08e05f5`, `2aabca9` → `86337bc`, `81baa76` → `e0c419d`;
+  `a605b1c` unchanged. The old private repo and the integration branch are unchanged.
+  - Merged after review (openrs-9d accepted, `rc7-integration-review-2026-11-01/REVIEW.md` last section): `f164a2e` merge
+    of `2c51982` (#236 — `d775bed` test-only Robolectric 4.14.1 + recorder seams, `db79c54` fix: STOP re-reads the row in
+    one Room transaction and writes recorder columns only, per-drive `DriveRun`; `2c51982` SDK 35) and `4a28744` merge of
+    `3280241` (#237 — `b78d672` the loop feeds `LapTimer`, STOP `takeLaps()` re-arms); docs `0e4c120`. Developer
+    regressions (`rc7-drive-finalize-2026-11-01/`): DriveFinalizeTest 17 of 48 checks fail on the old finalization → 48 / 48;
+    LapFeedTest ARMED → TIMING. Reviewer notes, not blocking: N1 one-fix window (the old loop's last fix can reach the next
+    drive's timer); N2 phantom laps / bearing 0°; N3 lap `peakBoostPsi` mixed-source (not shown / exported — keep it so);
+    N4 no JDK 17 / CI run; N6 FINALIZE_AND_START not driven through LinkSession; N7 LapTimer overlay fields not @Volatile.
+  - **Final verification — tested source `0e4c1202326252bf84c7f8a07e58b9532f6123c5`** (developer,
+    `~/Documents/openRS_-evidence/rc7-candidate-final-2026-11-01/RESULTS.md`): clean `testDebugUnitTest testReleaseUnitTest
+    lint assembleRelease` once — **1045 tests / 84 classes per variant**, 0 failures; lint 0 / 47 (+2 NewerVersionAvailable,
+    the pinned test dependencies); `test-release-config.sh` 8 / 8; verify-release OK (local keys — not the CI path). APK
+    `openRS_v2.2.7-rc.7_candidate-0e4c120_DO-NOT-DISTRIBUTE.apk` 6,573,356 B, SHA-256
+    `ce82d4b203edd898f21932f1ea1a72081ec494813349e68e400bbc4e2811ed42`, vc 36, signer `c99b6f26…`, SOURCE_COMMIT
+    `0e4c12023262`, SOURCE_DIRTY false — not distributed (carries the local keys). New AVD `Rc7_CandFinal` (deleted):
+    installed hash = expected; logcat saved from before the COLD start (20,313 lines) — 0 verifier / VerifyError / FATAL /
+    ANR / Fatal signal / Authorization failure; DRIVE + every tab, TRIP tiles; #236 STOP → START 0.3 s apart → two distinct
+    drives, one summary each; #228 no card ACTIVE after 3 STOPs; #237 a lap completed and persisted, next drive re-armed —
+    **but only 1 of 2 scripted loops counted, and a repeat in drive 3 none** (earlier AVD 3 / 3 + phantom laps); cause not
+    established (fused provider dropping scripted fixes, or bearing at the crossing). Lap reliability = owner / hardware
+    question. JDK 17: not on this Mac, not run. `81baa76` APK re-hashed unchanged. Later commits docs-only.
 - Evidence classes for rc.7 (keep them apart in reports): **owner-verified hardware** — frozen `a605b1c` only (2026-10-31:
   Pro over BLE telemetry, firmware probe, parked drive-mode confirmation over BLE; ESC not passed; DTC partial; Pro over
   Wi-Fi telemetry); **tester report, build unconfirmed** — second tester (DIY C3); **emulator / fake adapter** — every
