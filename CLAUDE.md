@@ -6,8 +6,11 @@ Kotlin 2.0.21 + Jetpack Compose (Material3). Current: **stable v2.2.6 on main**;
 **rc.7 = local development + hardware testing — NOT a published release (no `android-v2.2.7-rc.7` tag; unpushed).** Testing candidate
 `a605b1c` frozen + owner-tested 2026-10-31; approved fixes + source-review corrections + #234 fix accepted and fast-forwarded
 locally into `feature/rc7` (`931447a`), then docs-only `12b6e4f` (no rebuild). Owner-test APK = source `81baa76`, vc 36,
-SHA-256 `efe622c4…7a98` — owner hardware testing on it **pending**. In progress, not accepted: `fix/rc7-trip-active-awd-zero`
-(#228 / #226, worktree `rc7-maint`). Issues #204–#234. Branch `feature/rc7` (from staging `d2f7dc6`) — 2.2.7-rc.7 / versionCode 36, milestone
+SHA-256 `efe622c4…7a98` — owner Bluetooth hardware testing on it **pending** (kept separate from the new candidate).
+**Integration candidate `86e4af8` — DO NOT PUSH** (branch `integration/rc7-candidate-DO-NOT-PUSH`, worktree `rc7-integration`;
+its ancestry holds real adapter identifiers until the approved history cleanup): `12b6e4f` + #228 / #226 + sanitized test +
+docs. Developer verification (tests / lint / signed APK / emulator) **pending**. Record: Branch / Release Workflow → rc.7
+(integration). Issues #204–#234. Branch `feature/rc7` (from staging `d2f7dc6`) — 2.2.7-rc.7 / versionCode 36, milestone
 v2.2.7-rc.7 (#211 locale exports, #212 connection lifecycle, #213 splash per task, #214 versioning, #215 DTC scan status);
 Sapphire row validation #204 also on `fix/sapphire-row-validation` (from main). Record: Branch / Release Workflow → rc.7.
 Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashboard) → `web/`  |  Docs → `docs/`  |  Feature pipeline → `docs/feature-roadmap.md`
@@ -1039,6 +1042,44 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   reinterpretation of recorded drives needs known decoder provenance per drive (which mapping wrote it) — thermal-record
   format v2 alone does not identify the mapping. Shown alerts / readiness / RTR timing, drive-level oil start / peak / end
   columns, session snapshots, legacy arrays and shared exports cannot be re-derived. Never rewrite history.
+- Integration candidate (2026-11-01, local only — DO NOT PUSH; nothing pushed / merged into feature/rc7 / tagged / rebuilt
+  for the owner): branch `integration/rc7-candidate-DO-NOT-PUSH` (worktree `~/Documents/openRS_-worktrees/rc7-integration`,
+  `pushRemote` = a non-remote + branch description) from `12b6e4f`: `6605808` merge of `918add4` + `690be8d` (maintenance),
+  `121d7c4` merge of `24023ce` (sanitization), `86e4af8` merge of `bccf54c` + `f6600c4` + `cfb0f94` (docs). No conflicts;
+  8 files, each identical to its one source; reviewer's independent merge-tree = tree `634d5db4c1` = `86e4af8^{tree}`.
+  Feature/rc7 and the main checkout's uncommitted CLAUDE.md edit untouched (that note's facts are in `bccf54c`, minus the
+  convergence claim, private readings, a name and the "derived view" overstatement).
+  - Verification of `86e4af8` (developer: full suites + lint once, signed minified APK cold-launched on a disposable
+    emulator, DRIVE + affected screens): **pending** — no test totals exist for this source yet; 1025 / 79 belongs to
+    `81baa76` only.
+  - Reviewer (`~/Documents/openRS_-evidence/rc7-integration-review-2026-11-01/REVIEW.md`): provenance verified; **R1** minor,
+    not fixed — TripPage delete / tags / rename handlers still reload `getRecentDrives` by hand on IO and can overwrite a
+    newer Room emission (card ACTIVE until the next write). #226: `carried` keys match the `markFresh` tags; PUMP still "—"
+    at 0 A (`> 0` gate, ChassisPage), demanded pressure has no screen consumer; hardware meaning / scale unverified. #228:
+    only manual STOP exercised (emulator) — auto-record stop / orphan finalization expected, not tested. Docs D1–D4
+    (CONTRIBUTING → `ObdMerge.merge` with CanDataService as caller; CHANGELOG #228 / #226 wording; this record) to land as
+    docs-only commits after verification.
+  - Privacy audit (`~/Documents/openRS_-evidence/repo-privacy-audit-2026-11-01/REPORT.md`, revised 10:30): the adapter
+    identifiers were found only in `FirmwareProbeLogTest.kt` history (introduced `4b2b253`; local, unpublished when
+    inspected — "not found" = inspected scope only, not proof of absence); fixed at the tip by `24023ce`; history not
+    cleaned — 44 tainted commits, refs feature/rc7, fix/rc7-adapter-status-export, docs/rc7-reconcile,
+    fix/rc7-trip-active-awd-zero, fix/rc7-sanitize-adapter-ids, the integration branch (+ reflogs / worktree HEADs).
+    Every one stays unpublished. F2: client API keys inside APKs published before rc.6 (to verify: Maps restriction by
+    package + release-cert **SHA-1**; OpenWeather options / replacement consequences); rc.6 asset carries no keys (CI path
+    — developer investigating, `rc7-ci-keys-2026-11-01/`). F3: personal email in published commit metadata — never rewrite
+    published history. Never quote identifier values anywhere.
+  - History cleanup (`~/Documents/openRS_-evidence/rc7-history-cleanup-plan-2026-11-01/PLAN.md`) — **proposal, not
+    executed, awaiting the owner**: rewrite only `b0c1c57..86e4af8` (33 commits) of the candidate in an isolated clone
+    (blob SHA → SHA swap, re-signed), published main / staging / tags byte-identical; private pre-cleanup bundle; old → new
+    `commit-map.tsv`; publishable clone with only the new line; whole-object-DB + push-set checks; pre-push deny-list.
+  - Main-route docs: `docs/setup-guides-ble-fw` (from origin/main `0d64248`): `d3757a7` Bluetooth manual + device (#234),
+    v1.61 flash name, ESC #125; `a388e90` firmware/README + hardware-setup — GATT layout **unresolved** (FFE0 = planned
+    fw v2.x interface in an unimplemented header; v1.x keeps upstream `ble.c`, unpatched; FFF0 / FEE0 from upstream source
+    reading only; no GATT trace), v1.61 / v1.2 file names, BLE device name unsourced.
+  - Open-issue triage (2026-11-01, 50 open issues read: labels, milestone, today's events): 28 label events on 14 issues
+    (#125, #205–#208, #225–#230, #234) by the maintenance role, no milestone changes, comments on #226 / #228 / #234. Left
+    for the owner: no milestone on #226–#234; no priority on #222 / #223 / #230; #206 lacks `investigation`; #174 / #175 /
+    #198 shipped in prereleases but open (close via merged PRs per the release checklist).
 - Evidence classes for rc.7 (keep them apart in reports): **owner-verified hardware** — frozen `a605b1c` only (2026-10-31:
   Pro over BLE telemetry, firmware probe, parked drive-mode confirmation over BLE; ESC not passed; DTC partial; Pro over
   Wi-Fi telemetry); **tester report, build unconfirmed** — second tester (DIY C3); **emulator / fake adapter** — every
@@ -1057,9 +1098,9 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   - **Disclosed limitations (behaviour as built):** recording needs GPS — gaps are explained, not filled (#221); boost
     signal identities unconfirmed (#207); ESC 3 s confirmation window unmeasured (#125); BLE layouts source-verified only
     (#218).
-  - **In progress elsewhere, not accepted:** `fix/rc7-trip-active-awd-zero` (`918add4` #228 ACTIVE after stop, `690be8d`
-    #226 demanded pressure / pump current take a decoded 0) — unmerged, not in the owner-test APK, own test totals.
-    Privacy / secrets audit running in another session — no report yet; the repo is not described as sanitized.
+  - **In the integration candidate `86e4af8`, not yet verified there:** `918add4` #228 ACTIVE after stop, `690be8d` #226
+    demanded pressure / pump current take a decoded 0, `24023ce` synthetic identifiers in `FirmwareProbeLogTest` — not in
+    the owner-test APK `81baa76`. Publication hold: see the integration record below.
   - **Deferred enhancements / follow-ups seen, not changed:** GPS-independent recording (#221, schema change); false
     "Point flush failed" warning; 20 s silent-adapter hold; boost peak caption is psi in any unit; debug Settings label
     squeezes UPDATES. Separate: Sapphire map tiles, `docs/thermal-thresholds` PR, docs on main — local `docs/setup-guides-ble-fw` (from origin/main
