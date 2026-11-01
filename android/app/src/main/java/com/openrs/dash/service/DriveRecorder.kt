@@ -536,6 +536,13 @@ class DriveRecorder(
                         tp.recordSample("PTU", now, vs.ptuTempC)
                     }
 
+                    // Lap timer (#237): every recorded fix of this drive — paused / disconnected fixes returned above, and
+                    // a point still finishing after STOP is not fed (the timer belongs to the next drive by then)
+                    if (isActive) lapTimer?.onLocationUpdate(
+                        location.latitude, location.longitude, location.bearing, vs.speedKph, now,
+                        vs.rpm.toInt(), boost.psi ?: 0.0, vs.lateralG
+                    )
+
                     // Buffer point
                     run.pointsBuffer.add(point)
 
