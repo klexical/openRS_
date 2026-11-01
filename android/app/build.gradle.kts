@@ -46,6 +46,13 @@ val localProps = Properties().also { props ->
     if (localPropsFile.exists()) props.load(localPropsFile.inputStream())
 }
 
+// API keys (#235): local.properties (contributors), else the environment (CI's publish-release passes its secrets).
+// Optional for every build — no Maps key gives a blank map, no weather key no weather request. A published release needs
+// Maps: scripts/check-release-config.sh fails the job before the build, scripts/verify-release.sh checks the APK.
+// Never log a resolved value.
+fun apiKey(name: String): String =
+    (localProps[name] as? String)?.takeIf { it.isNotBlank() } ?: providers.environmentVariable(name).orNull.orEmpty()
+
 android {
     namespace = "com.openrs.dash"
     compileSdk = 35
@@ -59,8 +66,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("String", "OPENWEATHER_API_KEY",
-            "\"${localProps["OPENWEATHER_API_KEY"] ?: ""}\"")
+        buildConfigField("String", "OPENWEATHER_API_KEY", "\"${apiKey("OPENWEATHER_API_KEY")}\"")
 
         buildConfigField("String", "RELEASE_BASE", "\"$releaseBase\"")
         buildConfigField("String", "RELEASE_NAME", "\"$releaseName\"")
@@ -68,7 +74,7 @@ android {
         buildConfigField("boolean", "SOURCE_DIRTY", "$sourceDirty")
 
         // Google Maps API key — injected into AndroidManifest via manifestPlaceholders
-        manifestPlaceholders["MAPS_API_KEY"] = localProps["MAPS_API_KEY"] ?: ""
+        manifestPlaceholders["MAPS_API_KEY"] = apiKey("MAPS_API_KEY")
     }
 
     signingConfigs {

@@ -4,6 +4,7 @@
 #   2. the APK's embedded versionName equals <name>
 #   3. its versionCode is higher than every earlier android-v* tag's (no reused or lower code is ever distributed)
 #   4. it is signed with the openRS_ release certificate
+#   5. it carries a Maps key (check-apk-maps-key.sh, #235 — length only, never the value); the weather key is optional
 # Needs the Android SDK build-tools (aapt2, apksigner) and the git tags (checkout with fetch-depth 0).
 set -euo pipefail
 TAG="$1"; APK="$2"
@@ -46,5 +47,7 @@ done
 
 CERT=$("$BT/apksigner" verify --print-certs "$APK" 2>/dev/null | sed -n 's/.*certificate SHA-256 digest: //p' | awk 'NR==1')
 [ "$CERT" = "$EXPECTED_CERT_SHA256" ] || fail "APK signer ${CERT:-none} is not the openRS_ release certificate"
+
+bash "$(dirname "$0")/check-apk-maps-key.sh" "$APK"
 
 echo "Release identity OK: $TAG → $(basename "$APK"), versionName $VN, versionCode $VC (> $MAX, $MAX_TAG), signer ${CERT:0:16}…"
