@@ -12,6 +12,7 @@ import com.openrs.dash.data.DrivePointEntity
 import com.openrs.dash.data.KnockEventEntity
 import com.openrs.dash.data.LapTimer
 import com.openrs.dash.data.VehicleState
+import com.openrs.dash.diagnostics.DriveExportBuilder
 import com.openrs.dash.service.DriveRecorder
 import com.openrs.dash.service.WeatherRepository
 import com.openrs.dash.ui.trip.DriveHistory
@@ -360,10 +361,58 @@ class DriveFinalizeTest {
         c.check("B: start temps (oil 60 / coolant 50)", rowB?.startOilTempC == 60.0 && rowB.startCoolantTempC == 50.0,
             rowB?.let { it.startOilTempC to it.startCoolantTempC })
         c.check("B: thermal record peak oil 64", oilPeak(rowB?.thermalPeaksJson) == 64.0, oilPeak(rowB?.thermalPeaksJson))
+        // The standalone drive columns + the profile export's drive block (TRIP compare, Sapphire) — not only the record
+        // A's live aggregates are its STOP snapshot (#236): the point held across STOP (oil 118) is stored and in the
+        // thermal record, but like every other aggregate it isn't in the snapshot — so 116 here
+        c.check("A: stored peaks (oil 116 / coolant 89)", rowA?.peakOilTempC == 116.0 && rowA.peakCoolantTempC == 89.0,
+            rowA?.let { it.peakOilTempC to it.peakCoolantTempC })
+        c.check("B: stored peaks (oil 64 / coolant 54)", rowB?.peakOilTempC == 64.0 && rowB.peakCoolantTempC == 54.0,
+            rowB?.let { it.peakOilTempC to it.peakCoolantTempC })
+        val exportB = rowB?.let { JSONObject(DriveExportBuilder.buildProfileJson(it, dao.getPoints(b))) }
+        c.check("B: profile export drive peaks (oil 64 / coolant 54)",
+            exportB?.getJSONObject("drive")?.let { it.getDouble("peakOilTempC") == 64.0 && it.getDouble("peakCoolantTempC") == 54.0 } == true,
+            exportB?.getJSONObject("drive")?.let { it.getDouble("peakOilTempC") to it.getDouble("peakCoolantTempC") })
+        c.check("B: profile export oil progression peak 64",
+            exportB?.getJSONObject("thermalProgression")?.optJSONObject("oil")?.getDouble("peakC") == 64.0,
+            exportB?.getJSONObject("thermalProgression")?.optJSONObject("oil"))
         c.check("B: its 5 points", dao.getPointCount(b) == 5, dao.getPointCount(b))
         c.check("B: its 1 lap only (45.0 s)", lapTimes(b) == listOf(45_000L), lapTimes(b))
         c.check("B: no knock event", scalar("SELECT COUNT(*) FROM knock_events WHERE driveId = $b") == 0L)
         c.check("no point stored under the wrong drive", dao.getPoints(a).all { it.driveId == a } && dao.getPoints(b).all { it.driveId == b })
+        c.done()
+    }
+
+    @Test
+    fun `next drive after an ordinary STOP - its peaks are its own, and a missing oil reading stays missing`() {
+        val c = Checks("sequential peaks")
+        val rec = recorder(Geocoder(null, held = false))
+        vs.value = telemetry(95.0, 88.0, 900.0, 0.0, 0.0)
+        val a = start(rec)
+        record(rec, 12, mk = hot)                                                 // A: oil 96 → 118, coolant 89
+        join(rec.stopDrive())
+        // B: oil never received (−99, not stamped), coolant 70 → 74
+        vs.value = telemetry(-99.0, 70.0, 900.0, 0.0, 0.0)
+        val b = start(rec, previousId = a)
+        c.check("B started", b > 0 && b != a, b)
+        if (b > 0) record(rec, 5, from = 200) { i -> telemetry(-99.0, 70.0 + (i - 200), 900.0, 0.0, 0.0).let {
+            it.copy(fieldLastUpdateMs = it.fieldLastUpdateMs - "oilTempC") } }
+        c.check("B: live peaks are B's while recording", rec.driveState.value.let { it.peakOilTempC == -99.0 && it.peakCoolantTempC == 74.0 },
+            rec.driveState.value.let { it.peakOilTempC to it.peakCoolantTempC })
+        join(rec.stopDrive())
+
+        val rowA = dao.getDrive(a)
+        val rowB = dao.getDrive(b)
+        c.check("A: stored peaks (oil 118 / coolant 89)", rowA?.peakOilTempC == 118.0 && rowA.peakCoolantTempC == 89.0,
+            rowA?.let { it.peakOilTempC to it.peakCoolantTempC })
+        c.check("B: no oil peak (missing, −99)", rowB?.peakOilTempC == -99.0, rowB?.peakOilTempC)
+        c.check("B: coolant peak 74", rowB?.peakCoolantTempC == 74.0, rowB?.peakCoolantTempC)
+        c.check("B: no oil in the thermal record", oilPeak(rowB?.thermalPeaksJson) == null, oilPeak(rowB?.thermalPeaksJson))
+        val exportB = rowB?.let { JSONObject(DriveExportBuilder.buildProfileJson(it, dao.getPoints(b))) }
+        c.check("B: profile export drive peaks (oil −99 / coolant 74)",
+            exportB?.getJSONObject("drive")?.let { it.getDouble("peakOilTempC") == -99.0 && it.getDouble("peakCoolantTempC") == 74.0 } == true,
+            exportB?.getJSONObject("drive")?.let { it.getDouble("peakOilTempC") to it.getDouble("peakCoolantTempC") })
+        c.check("B: no oil progression in the export", exportB?.getJSONObject("thermalProgression")?.has("oil") == false,
+            exportB?.getJSONObject("thermalProgression")?.optJSONObject("oil"))
         c.done()
     }
 

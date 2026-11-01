@@ -226,26 +226,15 @@ class DriveRecorder(
                         boostPolicy = com.openrs.dash.data.BoostRule.POLICY
                     )
                 )
+                // Every accumulator starts empty — a new DriveState, not a copy, so none is carried over from the last
+                // drive (peak oil / coolant were, #236). Only the live position dot survives.
                 _driveState.update { state ->
-                    state.copy(
+                    DriveState(
                         isRecording = true,
-                        isPaused = false,
                         driveId = driveId,
                         startFuelPct = vs.fuelLevelPct,
                         startTime = now,
-                        recentPoints = emptyList(),
-                        totalPointCount = 0,
-                        cumulativeDistanceKm = 0.0,
-                        rpmSum = 0.0, rpmSamples = 0L,
-                        speedSum = 0.0, speedSamples = 0L,
-                        modeCounts = emptyMap(),
-                        maxSpeedKph = 0.0, peakRpm = 0.0,
-                        peakBoostPsi = 0.0, peakBoostSource = null, peakLateralG = 0.0,
-                        peakEvents = emptyList(),
-                        rtrAchievedPoint = null,
-                        currentWeather = null,
-                        pullCount = 0,
-                        knockPullCount = 0
+                        currentLocation = state.currentLocation
                     )
                 }
                 startRecordingLoop(driveId, newRun)
