@@ -3,7 +3,11 @@
 Native Android telemetry dashboard for the Ford Focus RS MK3.
 Kotlin 2.0.21 + Jetpack Compose (Material3). Current: **stable v2.2.6 on main**; **v2.2.7-rc.6 published as a prerelease from staging** (tag `android-v2.2.7-rc.6` →
 `d2f7dc6`, versionCode 35 — not on main, not stable). Sapphire (web/ only) deployed from main `0d64248`. Record: Branch / Release Workflow → rc.6.
-**rc.7 in progress (local, unpushed; drive-review + acceptance-corrections + 2026-10-29 corrections + follow-up passes done + REQ-zero correction; testing candidate `a605b1c` frozen + hardware-tested 2026-10-31; approved fixes + source-review corrections + #234 fix accepted and fast-forwarded locally into `feature/rc7` (`931447a`); next: owner hardware testing on review APK `81baa76` — issues #204–#234):** branch `feature/rc7` (from staging `d2f7dc6`) — 2.2.7-rc.7 / versionCode 36, milestone
+**rc.7 = local development + hardware testing — NOT a published release (no `android-v2.2.7-rc.7` tag; unpushed).** Testing candidate
+`a605b1c` frozen + owner-tested 2026-10-31; approved fixes + source-review corrections + #234 fix accepted and fast-forwarded
+locally into `feature/rc7` (`931447a`), then docs-only `12b6e4f` (no rebuild). Owner-test APK = source `81baa76`, vc 36,
+SHA-256 `efe622c4…7a98` — owner hardware testing on it **pending**. In progress, not accepted: `fix/rc7-trip-active-awd-zero`
+(#228 / #226, worktree `rc7-maint`). Issues #204–#234. Branch `feature/rc7` (from staging `d2f7dc6`) — 2.2.7-rc.7 / versionCode 36, milestone
 v2.2.7-rc.7 (#211 locale exports, #212 connection lifecycle, #213 splash per task, #214 versioning, #215 DTC scan status);
 Sapphire row validation #204 also on `fix/sapphire-row-validation` (from main). Record: Branch / Release Workflow → rc.7.
 Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashboard) → `web/`  |  Docs → `docs/`  |  Feature pipeline → `docs/feature-roadmap.md`
@@ -298,6 +302,9 @@ update/
 0x0C8  gauge brightness (bits 0-4), e-brake (byte3 bit 6), ignition (byte2 bits 3-6)
 0x0F8  oil temp (byte1−50°C), boost (byte5, gauge — see the boost gotcha), PTU temp (byte7−60°C)
        — oil / PTU byte identity disputed by a contributor's DBC (#229): unconfirmed until a capture; never swap silently
+       — 2026-11-01 offline review: no export holds a positive 0x6017 (ICM 0x78C) / 0x070D (PCM 0x7E8) reply, so no paired
+         independent reference exists; the app polls neither (AWD trans oil = 0x1E80, not 0x1E3F). Oil and PTU identity
+         each inconclusive; thermal acceptance unresolved; no swap / threshold change / history rewrite authorised
 0x130  speed (bytes 6-7 BE × 0.01 kph)
 0x138  clutch pedal % (17|10 × 0.1) — decoded for diagnostics only; NOT shown on DRIVE (#225)
 0x160  longitudinal G (bits 48-57 LE)
@@ -613,7 +620,9 @@ data[5] = B5,  data[6] = B6 …
   Every scan has an id (`activeScan`): stop / restart / Bluetooth-off invalidate it and callbacks of an old scan are dropped;
   the enable result only starts a scan while still `PhoneBluetoothOff` (broadcast + result in either order = one scan). The
   picker Column scrolls — in landscape its content is taller than the window (CANCEL was unreachable)
-- **Bluetooth with no saved device (#234, fixed on feature/rc7 — verified on the emulator; `a605b1c` still crashes at every launch)** — one rule,
+- **Bluetooth with no saved device (#234, fixed on feature/rc7 — verified on the emulator only; trigger: connection method
+  Bluetooth saved with no device selected — on such installs `a605b1c` and earlier crash at every launch; Wi-Fi, or
+  Bluetooth with a device, is unaffected)** — one rule,
   `ConnectionSetup.problem(method, address)`: Settings SAVE checks the draft (`BleDeviceDraft.saveProblem`, FORGET counts);
   `beginConnection` checks the saved prefs BEFORE `foreground.promote()` / `sessionStart` / `startSessionRecording` (no
   notification, session or retry — catching the exception would not have been enough); DRIVE reads SELECT A BLUETOOTH
@@ -680,7 +689,7 @@ Regenerate the FORScan catalog: `python3 android/scripts/gen_forscan_catalog.py`
 cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{releaseName}.apk (e.g. openRS_v2.2.7-rc.7.apk; set in app/build.gradle.kts)
-./gradlew test                             # 1025 unit tests across 79 files, each variant (feature/rc7 @ 931447a)
+./gradlew test                             # 1025 unit tests across 79 files, each variant (source 81baa76 = feature/rc7 code through 12b6e4f)
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 45 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -865,7 +874,8 @@ android/app/src/test/java/com/openrs/dash/
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **1025 tests across 79 files** (Android, `feature/rc7` = `fix/rc7-adapter-status-export` after the local fast-forward; passed in debug and release) + **282 vitest across 25 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **1025 tests across 79 files** (Android, `./gradlew test` at source `81baa76` — debug and release variants each;
+`feature/rc7` code is unchanged through `12b6e4f`, later commits docs-only; unmerged work branches carry their own totals) + **282 vitest across 25 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 
@@ -1011,13 +1021,48 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   + the six corrections; `feature/rc7` fast-forwarded locally `1bb0373` → `931447a` (`--ff-only`; both branches and both
   evidence APKs kept). Next: owner hardware testing on APK `81baa76` (`efe622c4…`, no rebuild, vc 36). Unverified on this
   APK: real BLE device selection, a service restart without the app open. Then (owner's go-ahead): versionCode, PRs, tag.
-- Still open: everything in the hardware checklist (Samsung, BLE, firmware capability, boost signal identity, spark /
-  throttle, real DTC replies, TPMS BAR on the phone, 0304 / 03EF identity, button bit captures); GPS-independent
-  recording (#221); oil / PTU identity (#229) before thermal acceptance; 0x138 gear (#230); ACTIVE after stop (#228); a real
-  decimal-comma-phone export. Follow-ups seen, not changed: false "Point flush failed" warning; 20 s silent-adapter hold;
-  boost peak caption is psi in any unit; debug Settings label squeezes UPDATES. PRs (feature/rc7 → staging,
-  fix/sapphire-row-validation → main); rc.7 tag. Separate: Sapphire map tiles, `docs/thermal-thresholds` PR, cleanup,
-  stable promotion.
+- #229 offline evidence review (2026-11-01, no repo / code change; the CLAUDE.md note was reconciled on
+  `docs/rc7-reconcile`): every private export searched (26 ZIPs, 22 SLCAN logs) — no positive `62 60 17` (ICM 0x78C) or
+  `62 07 0D` (PCM 0x7E8) reply anywhere, so **no paired independent oil / PTU reference reading exists**. The one
+  `62 1E 3F` reply (AWD 0x1E3F, 76 °C, untimed — RDU sump per the PID sheet) is **not a PTU reference**. RS_HS.dbc agrees
+  with openRS_ but is not independent. Oil identity and PTU identity are each **inconclusive**; thermal acceptance stays
+  unresolved. No decoder swap, threshold change or history rewrite is authorised. Next evidence: one raw log on one clock
+  from the #229 contributor — hot-soak (20–40 min) restart, ~3 min idle + ~10 min drive, passive 0x0F8 plus 0x6017 /
+  0x070D replies polled every 1–2 s, each reply within 1 s of a 0x0F8 frame. If a swap were ever proven: values keep
+  their offsets (they go with the bytes), names change — live DRIVE / THERMAL / HUD / Custom cells, readiness (oil
+  required, min 80 °C; PTU optional, min 40 °C), alerts, forecasts, TRIP TEMP map; profiles are per component. Any
+  reinterpretation of recorded drives needs known decoder provenance per drive (which mapping wrote it) — thermal-record
+  format v2 alone does not identify the mapping. Shown alerts / readiness / RTR timing, drive-level oil start / peak / end
+  columns, session snapshots, legacy arrays and shared exports cannot be re-derived. Never rewrite history.
+- Evidence classes for rc.7 (keep them apart in reports): **owner-verified hardware** — frozen `a605b1c` only (2026-10-31:
+  Pro over BLE telemetry, firmware probe, parked drive-mode confirmation over BLE; ESC not passed; DTC partial; Pro over
+  Wi-Fi telemetry); **tester report, build unconfirmed** — second tester (DIY C3); **emulator / fake adapter** — every
+  fix since `a605b1c`, incl. #234 (`81baa76`); **unit tests** — 1025 / 79 per variant at `81baa76`; **source reasoning
+  only** — sticky service restart without the app (#234), BLE GATT layouts (#218); **untested** — real BLE device
+  selection on `81baa76`, ESC change confirmation on a car (#125), openRS_ firmware Wi-Fi detection on current firmware
+  (#220), unreleased firmware source (never flashed).
+- Still open (2026-11-01):
+  - **Gates before any rc.7 tag (owner's go-ahead for each):** owner hardware test on `81baa76` (pending — no result
+    recorded); a new versionCode for any distributed build (every review APK so far is vc 36); minified-release smoke of
+    the final build (R8 gotcha / #227); PRs (feature/rc7 → staging, fix/sapphire-row-validation → main); the tag.
+  - **Hardware investigations:** hardware checklist (Samsung, BLE selection, firmware capability, boost signal identity
+    #207, spark #205 / throttle #206, real DTC replies #215, TPMS BAR on the phone #219, 0304 / 03EF identity, button bit
+    captures); ESC confirmation (#125); oil / PTU identity (#229) — blocks thermal acceptance; 0x138 gear (#230); AWD
+    NRCs (#208); a real decimal-comma-phone export.
+  - **Disclosed limitations (behaviour as built):** recording needs GPS — gaps are explained, not filled (#221); boost
+    signal identities unconfirmed (#207); ESC 3 s confirmation window unmeasured (#125); BLE layouts source-verified only
+    (#218).
+  - **In progress elsewhere, not accepted:** `fix/rc7-trip-active-awd-zero` (`918add4` #228 ACTIVE after stop, `690be8d`
+    #226 demanded pressure / pump current take a decoded 0) — unmerged, not in the owner-test APK, own test totals.
+    Privacy / secrets audit running in another session — no report yet; the repo is not described as sanitized.
+  - **Deferred enhancements / follow-ups seen, not changed:** GPS-independent recording (#221, schema change); false
+    "Point flush failed" warning; 20 s silent-adapter hold; boost peak caption is psi in any unit; debug Settings label
+    squeezes UPDATES. Separate: Sapphire map tiles, `docs/thermal-thresholds` PR, docs on main — local `docs/setup-guides-ble-fw` (from origin/main
+    `0d64248`, `d3757a7`: android/docs Bluetooth note #234, v1.61 flash file name, ESC #125; android/docs guides go via
+    main, as `1ec8dc7` did) — still open there: `firmware/README.md` (USB v1.5 / PRO v1.0 file names) and the FFE0 GATT
+    claims in firmware/README + hardware-setup (no shipped firmware implements FFE0, #218). At staging → main take main's
+    `README.md` (feature/rc7 is only behind) and `docs/feature-roadmap.md` (both sides edited — `5606ac7` vs `b2fbe87`),
+    cleanup, stable promotion.
 
 **rc.6 publication record (2026-10-28 UTC; evidence `~/Documents/openRS_-evidence/rc6-release-2026-10-27/PUBLISHED.txt`):**
 - Android: PR #202 (feature/design-pass `056556b`) → staging merge `d2f7dc6`; staging CI 40625379258 green; tag
@@ -1050,7 +1095,10 @@ Never route README.md, assets/, or docs/ through staging.
 2. Close standalone issues that shipped — comment with commit SHA
 3. Update umbrella issue checklists — check off shipped sub-items with version annotation
 4. Close umbrella issues only when ALL sub-items are checked off
-5. Add/update `versionHighlights` entry in `WhatsNewDialog.kt` for the new version — dialog falls back to the latest entry if missing, but every release should have its own highlights. It auto-opens only when `VERSION_NAME` changes, so RCs of one version (all "2.2.7") don't re-show it — extend the entry per RC anyway (Settings opens it)
+5. Add/update the highlights entry in `WhatsNewDialog.kt` for the new base version — since #214 there is no fallback: a base
+   version without highlights shows nothing (`shouldShowWhatsNew`). It auto-opens once per release name
+   (`BuildInfo.releaseName`, e.g. rc.6 → rc.7 shows it), with content per base version — extend the entry per RC
+   (Settings also opens it). Builds up to rc.6 all named "2.2.7" never re-showed it between RCs
 
 ## Changelog Format (`android/CHANGELOG.md`)
 

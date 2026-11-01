@@ -28,9 +28,9 @@ Thanks for your interest in contributing to openRS_! This project aims to give F
 
 ### Adding a New OBD PID
 
-1. Add the field to `VehicleState.kt` with a sensible default
-2. Add the query string to `ObdConstants.kt` in the appropriate ECU query array (e.g. `PCM_QUERIES`, `BCM_QUERIES`)
-3. Add the response parser in `ObdResponseParser.kt` (e.g. inside `parsePcmResponse()` or `parseBcmResponse()`)
+1. Add the field to `VehicleState.kt` with a sensible default — `VehicleState.copy()` is at the JVM 255-slot limit, so a new field needs an unused one removed first, or store the value off-state (`genericValues`) ([#199](https://github.com/klexical/openRS_/issues/199))
+2. Add the query string to `ObdConstants.kt` in the appropriate ECU query array (e.g. `PCM_FAST_QUERIES` / `PCM_SLOW_QUERIES`, `BCM_QUERIES`)
+3. Add the response parser in `ObdResponseParser.kt` (e.g. inside `parsePcmResponse()` or `parseBcmResponse()`) and stamp it with `markFresh()` — the coverage-guard tests in `ObdResponseParserTest` fail for a polled DID without a stamping decoder
 4. Wire the merge in `CanDataService.kt` → `mergeObdState()`
 5. Add UI display in the appropriate tab composable
 6. Document the PID in `docs/pid-reference.md`
@@ -40,7 +40,7 @@ Thanks for your interest in contributing to openRS_! This project aims to give F
 1. Add the constant `ID_xxx` to `CanDecoder.kt`
 2. Add it to the `KNOWN_IDS` set
 3. Add the decode case in the `when` block
-4. Add the field(s) to `VehicleState.kt`
+4. Add the field(s) to `VehicleState.kt` (same slot limit as above — [#199](https://github.com/klexical/openRS_/issues/199))
 
 ### OBD Polling Intervals
 
