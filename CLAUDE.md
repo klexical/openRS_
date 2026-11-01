@@ -9,8 +9,9 @@ locally into `feature/rc7` (`931447a`), then docs-only `12b6e4f` (no rebuild). O
 SHA-256 `efe622c4…7a98` — owner Bluetooth hardware testing on it **pending** (kept separate from the new candidate).
 **Integration candidate `86e4af8` — DO NOT PUSH** (branch `integration/rc7-candidate-DO-NOT-PUSH`, worktree `rc7-integration`;
 its ancestry holds real adapter identifiers until the approved history cleanup): `12b6e4f` + #228 / #226 + sanitized test +
-docs. Developer verification (tests / lint / signed APK / emulator) **pending**. Record: Branch / Release Workflow → rc.7
-(integration). Issues #204–#234. Branch `feature/rc7` (from staging `d2f7dc6`) — 2.2.7-rc.7 / versionCode 36, milestone
+docs. `86e4af8` developer-verified (1030 / 80 per variant, lint 0 / 45, APK `557c5d2b…`, emulator); #235 CI keys + #228
+manual-reload race (R1) in progress → review → merge → one final verification. Record: Branch / Release Workflow → rc.7
+(integration). Issues #204–#235. Branch `feature/rc7` (from staging `d2f7dc6`) — 2.2.7-rc.7 / versionCode 36, milestone
 v2.2.7-rc.7 (#211 locale exports, #212 connection lifecycle, #213 splash per task, #214 versioning, #215 DTC scan status);
 Sapphire row validation #204 also on `fix/sapphire-row-validation` (from main). Record: Branch / Release Workflow → rc.7.
 Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashboard) → `web/`  |  Docs → `docs/`  |  Feature pipeline → `docs/feature-roadmap.md`
@@ -883,7 +884,8 @@ android/app/src/test/java/com/openrs/dash/
 ```
 
 Current count: **1025 tests across 79 files** (Android, `./gradlew test` at source `81baa76` — debug and release variants each;
-`feature/rc7` code is unchanged through `12b6e4f`, later commits docs-only; unmerged work branches carry their own totals) + **282 vitest across 25 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+`feature/rc7` code is unchanged through `12b6e4f`, later commits docs-only; unmerged work branches carry their own totals; integration candidate `86e4af8`: **1030 / 80** per
+variant) + **282 vitest across 25 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 
@@ -1049,16 +1051,20 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   8 files, each identical to its one source; reviewer's independent merge-tree = tree `634d5db4c1` = `86e4af8^{tree}`.
   Feature/rc7 and the main checkout's uncommitted CLAUDE.md edit untouched (that note's facts are in `bccf54c`, minus the
   convergence claim, private readings, a name and the "derived view" overstatement).
-  - Verification of `86e4af8` (developer: full suites + lint once, signed minified APK cold-launched on a disposable
-    emulator, DRIVE + affected screens): **pending** — no test totals exist for this source yet; 1025 / 79 belongs to
-    `81baa76` only.
+  - Verification of `86e4af8` (developer, `~/Documents/openRS_-evidence/rc7-integration-2026-11-01/RESULTS.md`): clean
+    `testDebugUnitTest testReleaseUnitTest lint assembleRelease` once — **1030 tests / 80 files per variant**, 0 failures;
+    lint 0 errors / 45 warnings. APK `openRS_v2.2.7-rc.7_integration-86e4af8_DO-NOT-PUSH.apk` 6,573,356 B, SHA-256
+    `557c5d2b…2b87`, vc 36 (same name / vc as `81baa76` — tell them apart by hash), signer `c99b6f26…`, dex names
+    `86e4af867a4a`, verify-release OK (local keys — doesn't verify the CI path, #235). Disposable AVD `Rc7_Integ` (deleted):
+    logcat cleared, cold start → DRIVE, fake Wi-Fi adapter, #228 manual STOP → card complete without restart, every tab
+    incl. THERMAL AWD, 0 verifier / FATAL / ANR lines. 1025 / 79 stays `81baa76`'s count. Later commits get their own run.
   - Reviewer (`~/Documents/openRS_-evidence/rc7-integration-review-2026-11-01/REVIEW.md`): provenance verified; **R1** minor,
     not fixed — TripPage delete / tags / rename handlers still reload `getRecentDrives` by hand on IO and can overwrite a
     newer Room emission (card ACTIVE until the next write). #226: `carried` keys match the `markFresh` tags; PUMP still "—"
     at 0 A (`> 0` gate, ChassisPage), demanded pressure has no screen consumer; hardware meaning / scale unverified. #228:
     only manual STOP exercised (emulator) — auto-record stop / orphan finalization expected, not tested. Docs D1–D4
-    (CONTRIBUTING → `ObdMerge.merge` with CanDataService as caller; CHANGELOG #228 / #226 wording; this record) to land as
-    docs-only commits after verification.
+    (CONTRIBUTING → `ObdMerge.merge` with CanDataService as caller; CHANGELOG #228 / #226 wording; this record): landed as
+    docs-only `64256ba` + this record (merge of `0d52b7c`, then updates).
   - Privacy audit (`~/Documents/openRS_-evidence/repo-privacy-audit-2026-11-01/REPORT.md`, revised 10:30): the adapter
     identifiers were found only in `FirmwareProbeLogTest.kt` history (introduced `4b2b253`; local, unpublished when
     inspected — "not found" = inspected scope only, not proof of absence); fixed at the tip by `24023ce`; history not
@@ -1098,15 +1104,16 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   - **Disclosed limitations (behaviour as built):** recording needs GPS — gaps are explained, not filled (#221); boost
     signal identities unconfirmed (#207); ESC 3 s confirmation window unmeasured (#125); BLE layouts source-verified only
     (#218).
-  - **In the integration candidate `86e4af8`, not yet verified there:** `918add4` #228 ACTIVE after stop, `690be8d` #226
-    demanded pressure / pump current take a decoded 0, `24023ce` synthetic identifiers in `FirmwareProbeLogTest` — not in
-    the owner-test APK `81baa76`. Publication hold: see the integration record below.
+  - **In the integration candidate only (emulator / JVM evidence at `86e4af8`), not in the owner-test APK `81baa76`:**
+    `918add4` #228 ACTIVE after stop (manual STOP only), `690be8d` #226 demanded pressure / pump current take a decoded 0
+    (JVM only), `24023ce` synthetic identifiers in `FirmwareProbeLogTest`. #235 (published rc.6 APK has no Maps key / no
+    OpenWeather key — CI never writes local.properties) is being fixed for the candidate. Publication hold: see the integration record below.
   - **Deferred enhancements / follow-ups seen, not changed:** GPS-independent recording (#221, schema change); false
     "Point flush failed" warning; 20 s silent-adapter hold; boost peak caption is psi in any unit; debug Settings label
     squeezes UPDATES. Separate: Sapphire map tiles, `docs/thermal-thresholds` PR, docs on main — local `docs/setup-guides-ble-fw` (from origin/main
     `0d64248`, `d3757a7`: android/docs Bluetooth note #234, v1.61 flash file name, ESC #125; android/docs guides go via
-    main, as `1ec8dc7` did) — still open there: `firmware/README.md` (USB v1.5 / PRO v1.0 file names) and the FFE0 GATT
-    claims in firmware/README + hardware-setup (no shipped firmware implements FFE0, #218). At staging → main take main's
+    main, as `1ec8dc7` did) and `a388e90` (firmware/README v1.61 / v1.2 file names; GATT layout unresolved, FFE0 = planned
+    v2.x interface, #218) — both local, not pushed. At staging → main take main's
     `README.md` (feature/rc7 is only behind) and `docs/feature-roadmap.md` (both sides edited — `5606ac7` vs `b2fbe87`),
     cleanup, stable promotion.
 
