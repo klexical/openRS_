@@ -282,6 +282,10 @@ interface DriveDao {
     @Query("SELECT * FROM drives ORDER BY startTime DESC LIMIT :limit")
     fun getRecentDrives(limit: Int = 50): List<DriveEntity>
 
+    /** TRIP's history (#228): re-emits on every write to `drives` — a drive started, its end written, renamed, deleted. */
+    @Query("SELECT * FROM drives ORDER BY startTime DESC LIMIT :limit")
+    fun observeRecentDrives(limit: Int = 50): kotlinx.coroutines.flow.Flow<List<DriveEntity>>
+
     @Query("SELECT COUNT(*) FROM drives")
     fun getDriveCount(): Int
 

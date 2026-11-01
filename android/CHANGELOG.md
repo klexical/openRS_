@@ -173,6 +173,12 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
   now an ordinary failed attempt (counted, reported, retried on the usual backoff, then idle) and a cancellation still
   propagates. Normal connects and reconnects are unchanged. ([#234](https://github.com/klexical/openRS_/issues/234))
 
+### Fixed (rc.7 — maintenance 2026-11-01)
+- **TRIP history showed a just-stopped drive as ACTIVE** — the list was read when STOP was pressed, before the drive's
+  end is written (after the recording loop's last flush and the reverse geocode), and wasn't read again until the app
+  restarted. TRIP now observes the drive list from Room (`DriveDao.observeRecentDrives`), so the card completes when the
+  end is written — also after an auto-record stop or an orphan finalized at startup. The stored drive is unchanged. ([#228](https://github.com/klexical/openRS_/issues/228))
+
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)
 - **What's New describes the corrected boost, NRC, ESC, probe, Bluetooth, DTC and header behaviour** — the BOOST line no longer says TIP is "marked under the reading" (the gauge's label says TIP now) and says the signal identities are unconfirmed. (`ui/WhatsNewDialog.kt`)
