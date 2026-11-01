@@ -178,6 +178,10 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
   end is written (after the recording loop's last flush and the reverse geocode), and wasn't read again until the app
   restarted. TRIP now observes the drive list from Room (`DriveDao.observeRecentDrives`), so the card completes when the
   end is written — also after an auto-record stop or an orphan finalized at startup. The stored drive is unchanged. ([#228](https://github.com/klexical/openRS_/issues/228))
+- **AWD demanded pressure and pump current kept their last positive value after a 0** — `ObdMerge` took them only when
+  above zero, so a decoded 0 kept the old value under a fresh stamp (THERMAL's PUMP kept showing e.g. 2.5 A) and a reply
+  parsed from an older snapshot could put an old value back. They are now taken by the reply's own stamp, as REQ L / R
+  are. Neither DID (0x1E92 / 0x1E93) has answered on a tested car; their meaning is unverified. ([#226](https://github.com/klexical/openRS_/issues/226))
 
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)

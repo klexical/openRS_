@@ -4,7 +4,8 @@ package com.openrs.dash.data
  * Merge of a polled (Mode 22) decode into the live VehicleState — the update [com.openrs.dash.service.CanDataService]
  * applies for every OBD reply (moved here so the production merge is unit-tested, #205). Fields a reply didn't carry
  * keep the current value through their "not received" sentinel; freshness stamps merge per key. Fields whose valid range
- * includes their default (REQ L / R: 0 Nm is a reading) are taken only when the reply stamped them — see [carried].
+ * includes their default (AWD REQ L / R, demanded pressure, pump current: a decoded 0 is a reading) are taken only when
+ * the reply stamped them — see [carried].
  */
 object ObdMerge {
     /**
@@ -75,11 +76,11 @@ object ObdMerge {
             rduTempC     = if (obd.rduTempC > -90)     obd.rduTempC     else current.rduTempC,
             awdClutchTempL = if (obd.awdClutchTempL > -90) obd.awdClutchTempL else current.awdClutchTempL,
             awdClutchTempR = if (obd.awdClutchTempR > -90) obd.awdClutchTempR else current.awdClutchTempR,
-            // A genuine 0 Nm is a reading (#226) — taken by stamp, never by value
+            // A decoded 0 is a reading (#226: 0 Nm, a zero demand, a pump at 0 A) — taken by stamp, never by value
             awdReqTorqueL  = if (carried("awdReqTorqueL", current, obd)) obd.awdReqTorqueL else current.awdReqTorqueL,
             awdReqTorqueR  = if (carried("awdReqTorqueR", current, obd)) obd.awdReqTorqueR else current.awdReqTorqueR,
-            awdDmdPressure = if (obd.awdDmdPressure > 0) obd.awdDmdPressure else current.awdDmdPressure,
-            awdPumpCurrent = if (obd.awdPumpCurrent > 0) obd.awdPumpCurrent else current.awdPumpCurrent,
+            awdDmdPressure = if (carried("awdDmdPressure", current, obd)) obd.awdDmdPressure else current.awdDmdPressure,
+            awdPumpCurrent = if (carried("awdPumpCurrent", current, obd)) obd.awdPumpCurrent else current.awdPumpCurrent,
             awdClutchCurL  = if (obd.awdClutchCurL > -900) obd.awdClutchCurL else current.awdClutchCurL,
             awdClutchCurR  = if (obd.awdClutchCurR > -900) obd.awdClutchCurR else current.awdClutchCurR,
             awdClutchPressureL = if (obd.awdClutchPressureL >= 0) obd.awdClutchPressureL else current.awdClutchPressureL,
