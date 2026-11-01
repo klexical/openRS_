@@ -698,7 +698,7 @@ Regenerate the FORScan catalog: `python3 android/scripts/gen_forscan_catalog.py`
 cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{releaseName}.apk (e.g. openRS_v2.2.7-rc.7.apk; set in app/build.gradle.kts)
-./gradlew test                             # 1025 unit tests across 79 files, each variant (source 81baa76 = feature/rc7 code through 12b6e4f)
+./gradlew test                             # 1025 unit tests across 79 files, each variant (source 81baa76 = feature/rc7 code through 12b6e4f; integration 86e4af8: 1030 / 80)
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 45 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -1068,7 +1068,7 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   - Privacy audit (`~/Documents/openRS_-evidence/repo-privacy-audit-2026-11-01/REPORT.md`, revised 10:30): the adapter
     identifiers were found only in `FirmwareProbeLogTest.kt` history (introduced `4b2b253`; local, unpublished when
     inspected — "not found" = inspected scope only, not proof of absence); fixed at the tip by `24023ce`; history not
-    cleaned — 44 tainted commits, refs feature/rc7, fix/rc7-adapter-status-export, docs/rc7-reconcile,
+    cleaned — tainted commits are counted by the cleanup plan's freeze step (the figure changes as refs move); refs feature/rc7, fix/rc7-adapter-status-export, docs/rc7-reconcile,
     fix/rc7-trip-active-awd-zero, fix/rc7-sanitize-adapter-ids, the integration branch (+ reflogs / worktree HEADs).
     Every one stays unpublished. F2: client API keys inside APKs published before rc.6 (to verify: Maps restriction by
     package + release-cert **SHA-1**; OpenWeather options / replacement consequences); rc.6 asset carries no keys (CI path
