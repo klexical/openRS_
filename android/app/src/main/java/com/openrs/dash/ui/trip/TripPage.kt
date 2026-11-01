@@ -307,13 +307,16 @@ private fun TripPageContent(
         }
     }
 
-    // Load drive history (preview: the sample list)
-    LaunchedEffect(driveState.isRecording, preview) {
+    // Drive history (preview: the sample list), observed from Room so it follows every write to `drives`. STOP only
+    // flips isRecording at once; the drive's end is written later on IO (after the recording loop's last flush and the
+    // reverse geocode), so a list read at STOP still held endTime = 0 and the row stayed ACTIVE until a reload (#228).
+    // Also covers an auto-record stop on a link drop and orphan drives finalized at startup.
+    val previewRecording = preview != null && driveState.isRecording
+    LaunchedEffect(preview, previewRecording, prefs.maxSavedDrives) {
         if (preview != null) { drives = TripPreview.drives(); return@LaunchedEffect }
-        withContext(Dispatchers.IO) {
-            drives = DriveDatabase.getInstance(context).driveDao()
-                .getRecentDrives(AppSettings.getMaxSavedDrives(context))
-        }
+        DriveDatabase.getInstance(context).driveDao()
+            .observeRecentDrives(prefs.maxSavedDrives)
+            .collect { drives = it }
     }
 
     // Preview states that need a selection or the summary open; leaving preview drops sample state.
@@ -692,11 +695,7 @@ private fun TripPageContent(
                 onResume = { if (preview != null) TripPreview.set(TripPreview.Mode.RECORDING) else recorder.resumeDrive() },
                 onStop = {
                     if (preview != null) { TripPreview.set(TripPreview.Mode.SUMMARY); return@LiveHud }
-                    recorder.stopDrive()
-                    scope.launch(Dispatchers.IO) {
-                        drives = DriveDatabase.getInstance(context).driveDao()
-                            .getRecentDrives(AppSettings.getMaxSavedDrives(context))
-                    }
+                    recorder.stopDrive()   // the history updates when the drive's end is written (observed list)
                 },
                 modifier = Modifier.weight(0.45f).fillMaxWidth()
             )
