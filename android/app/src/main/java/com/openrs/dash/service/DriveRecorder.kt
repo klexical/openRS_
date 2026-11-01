@@ -15,6 +15,7 @@ import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.openrs.dash.data.DriveBookmarkEntity
+import com.openrs.dash.data.DriveDao
 import com.openrs.dash.data.DriveDatabase
 import com.openrs.dash.data.DriveEntity
 import com.openrs.dash.data.DriveMode
@@ -82,10 +83,24 @@ class DriveRecorder(
     private val context: Context,
     private val vehicleStateFlow: StateFlow<VehicleState>,
     private val weatherRepo: WeatherRepository,
-    private val db: DriveDatabase
+    private val db: DriveDatabase,
+    // Seams for DriveFinalizeTest (#236); production uses the defaults.
+    private val dao: DriveDao = db.driveDao(),
+    private val geocode: (lat: Double, lng: Double) -> String? = platformGeocoder(context),
+    locationSource: LocationSource? = null,
+    onSummary: ((DriveEntity) -> Unit)? = null,
 ) {
-    private val fusedClient = LocationServices.getFusedLocationProviderClient(context)
-    private val dao = db.driveDao()
+    /** GPS for the recording loop + the weather lookup (fused provider in production). */
+    interface LocationSource {
+        fun updates(): Flow<Location>
+        suspend fun last(): Location?
+    }
+
+    private val fusedClient by lazy { LocationServices.getFusedLocationProviderClient(context) }
+    private val locations: LocationSource = locationSource ?: object : LocationSource {
+        override fun updates() = locationFlow()
+        override suspend fun last() = fusedLastLocation()
+    }
 
     private val _driveState = MutableStateFlow(DriveState())
     val driveState: StateFlow<DriveState> = _driveState.asStateFlow()
@@ -95,6 +110,7 @@ class DriveRecorder(
      * TripPage — lost when the drive ended before TRIP had been composed.
      */
     val pendingSummary = com.openrs.dash.data.PendingSummary()
+    private val postSummary: (DriveEntity) -> Unit = onSummary ?: pendingSummary::post
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var recorderJob: Job? = null
@@ -267,7 +283,8 @@ class DriveRecorder(
     fun pausedDurationMs(): Long =
         if (pausedAtMs > 0L) System.currentTimeMillis() - pausedAtMs else 0L
 
-    fun stopDrive() {
+    /** Ends the drive and finalizes it on IO; the returned job completes when the row, laps and summary are written. */
+    fun stopDrive(): Job {
         pausedAtMs = 0L
         val jobToJoin = recorderJob
         recorderJob?.cancel()
@@ -277,7 +294,7 @@ class DriveRecorder(
         val endVs = vehicleStateFlow.value
         val trimAccumulator = fuelTrims
         val pullTracker = pulls
-        scope.launch(Dispatchers.IO) {
+        val finalize = scope.launch(Dispatchers.IO) {
             // Wait for the recording loop's finally{} to flush buffered points
             // before we write the drive summary. This avoids racing our own
             // flush against the loop's flush (both would copy pointsBuffer
@@ -351,7 +368,7 @@ class DriveRecorder(
                     // Persist lap timer results if any laps were completed
                     persistLaps(state.driveId)
 
-                    pendingSummary.post(finalDrive)
+                    postSummary(finalDrive)
                     Log.d(TAG, "Drive ${state.driveId} ended (${state.totalPointCount} points)")
                 } catch (e: Exception) {
                     Log.w(TAG, "Drive finalize failed", e)
@@ -361,6 +378,7 @@ class DriveRecorder(
         _driveState.update {
             it.copy(isRecording = false, isPaused = false)
         }
+        return finalize
     }
 
     fun cancel() {
@@ -387,7 +405,7 @@ class DriveRecorder(
                     }
                 }
 
-                locationFlow().collect { location ->
+                locations.updates().collect { location ->
                     val state = _driveState.value
                     if (!state.isRecording) return@collect
 
@@ -667,8 +685,10 @@ class DriveRecorder(
         awaitClose { fusedClient.removeLocationUpdates(callback) }
     }
 
+    suspend fun getLastKnownLocation(): Location? = locations.last()
+
     @SuppressLint("MissingPermission")
-    suspend fun getLastKnownLocation(): Location? =
+    private suspend fun fusedLastLocation(): Location? =
         withContext(Dispatchers.Main) {
             suspendCancellableCoroutine { cont ->
                 if (!hasLocationPermission()) {
@@ -760,20 +780,10 @@ class DriveRecorder(
      * Reverse-geocodes the drive's first recorded point to produce an auto-name.
      * Returns null on failure (no network, no geocoder, etc.).
      */
-    @Suppress("DEPRECATION")
     private fun reverseGeocode(state: DriveState): String? {
-        val points = state.recentPoints
-        val first = points.firstOrNull() ?: return null
+        val first = state.recentPoints.firstOrNull() ?: return null
         return try {
-            val geocoder = Geocoder(context)
-            val results = geocoder.getFromLocation(first.lat, first.lng, 1)
-            if (results.isNullOrEmpty()) return null
-            val addr = results[0]
-            // Prefer street name, then locality, then admin area
-            addr.thoroughfare
-                ?: addr.locality
-                ?: addr.subAdminArea
-                ?: addr.adminArea
+            geocode(first.lat, first.lng)
         } catch (e: Exception) {
             Log.d(TAG, "Geocode failed for (${first.lat}, ${first.lng})", e)
             null
@@ -863,6 +873,14 @@ class DriveRecorder(
 
     companion object {
         private const val TAG = "DriveRecorder"
+
+        /** Street name, else locality, else admin area of the first result; null when there is none. */
+        @Suppress("DEPRECATION")
+        private fun platformGeocoder(context: Context): (Double, Double) -> String? = { lat, lng ->
+            Geocoder(context).getFromLocation(lat, lng, 1)?.firstOrNull()?.let { addr ->
+                addr.thoroughfare ?: addr.locality ?: addr.subAdminArea ?: addr.adminArea
+            }
+        }
         private const val WEATHER_REFRESH_MS = 15 * 60_000L
         private const val FLUSH_SIZE = 30           // flush every ~30 seconds at 1 Hz
         private const val MAX_RECENT_POINTS = 3600  // ~1 hour of points for live polyline
