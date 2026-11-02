@@ -542,9 +542,10 @@ class DriveRecorder(
                     // is not fed, and one that slips past this check is refused by the timer (drive closed at STOP).
                     if (isActive) lapTimer?.let { timer ->
                         val ageMs = fixAgeMs(location, now)
+                        val bearing = if (location.hasBearing()) location.bearing else null
                         val report = timer.onFix(driveId, LapFix(
                             lat = location.latitude, lng = location.longitude,
-                            bearing = if (location.hasBearing()) location.bearing else null,
+                            bearing = bearing,
                             timeMs = location.time, ageMs = ageMs, receivedAtMs = now,
                             speedKph = vs.speedKph, rpm = vs.rpm.toInt(), boostPsi = boost.psi ?: 0.0, lateralG = vs.lateralG
                         ))
@@ -552,6 +553,7 @@ class DriveRecorder(
                             run.lapVerdicts.merge(report.verdict, 1) { a, b -> a + b }
                             // One line per fix while a line is set: provider delivery vs timer verdict (no coordinates)
                             Log.d(LAP_TAG, "drive $driveId fix t=${location.time} age=${ageMs}ms " +
+                                "b=${bearing?.let { "%.0f".format(java.util.Locale.ROOT, it) } ?: "none"} " +
                                 "x=${"%.1f".format(java.util.Locale.ROOT, report.xM ?: 0.0)} y=${"%.1f".format(java.util.Locale.ROOT, report.yM ?: 0.0)} " +
                                 "-> ${report.verdict}${report.lap?.let { " lap ${it.lapNumber} ${it.lapTimeMs} ms" } ?: ""}")
                         }
