@@ -61,6 +61,8 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -147,6 +149,12 @@ class DriveRecorder(
         val thermal = DriveThermalTracker()
         /** What the lap timer did with this drive's fixes (logged at STOP; loop thread only, read after join). */
         val lapVerdicts = java.util.EnumMap<FixVerdict, Int>(FixVerdict::class.java)
+        /** Held by point writes from outside this drive's loop (pause flush, active export) while they take from
+         *  [pointsBuffer] and insert. STOP's finalize takes it after the loop has ended, so the thumbnail reads every
+         *  point those writes took (#241). Never another drive's — each run has its own. */
+        val outsideLoopWrites = Mutex()
+        /** Point inserts that failed for this drive (their points are not in Room); reported at STOP. */
+        val failedPointWrites = java.util.concurrent.atomic.AtomicInteger()
     }
 
     /** The drive being recorded (or the last one); see [DriveRun]. */
@@ -257,7 +265,7 @@ class DriveRecorder(
         // NonCancellable so it completes even if the scope is cancelled while
         // the pause is being handled.
         val r = run
-        scope.launch { flushBuffer(r.pointsBuffer) }
+        scope.launch { r.outsideLoopWrites.withLock { flushBuffer(r) } }
     }
 
     fun resumeDrive() {
@@ -300,6 +308,9 @@ class DriveRecorder(
             // before either cleared it, duplicating points) and guarantees
             // the summary reflects every recorded point.
             jobToJoin?.join()
+            // …and for a pause flush or an active export still writing points it took from this drive's buffer (#241).
+            // Only this drive's writers; each holds the lock for one insert, completed, failed or cancelled.
+            stopped.outsideLoopWrites.withLock { }
 
             if (state.driveId > 0) {
                 try {
@@ -380,6 +391,11 @@ class DriveRecorder(
                     }
 
                     postSummary(finalDrive)
+                    val failed = stopped.failedPointWrites.get()
+                    if (failed > 0) {
+                        Log.w(TAG, "Drive $id ended with $failed failed point write(s) — those points are not saved")
+                        DiagnosticLogger.event("REC", "drive $id: $failed point write(s) failed — points not saved")
+                    }
                     Log.d(TAG, "Drive $id ended (${state.totalPointCount} points)")
                 } catch (e: Exception) {
                     Log.w(TAG, "Drive finalize failed", e)
@@ -570,7 +586,7 @@ class DriveRecorder(
 
                     // Flush to Room when buffer is full
                     if (run.pointsBuffer.size >= FLUSH_SIZE) {
-                        flushBuffer(run.pointsBuffer)
+                        flushBuffer(run)
                     }
 
                     // Update live state
@@ -615,7 +631,7 @@ class DriveRecorder(
                 }
             } finally {
                 // Ensure we flush any remaining buffered points
-                flushBuffer(run.pointsBuffer)
+                flushBuffer(run)
                 // Only this drive's state: a drive started since (finalize + start) is recording (#236)
                 _driveState.update { if (it.driveId == driveId) it.copy(isRecording = false) else it }
             }
@@ -631,17 +647,23 @@ class DriveRecorder(
      * the recording coroutine is being cancelled from its `finally` block —
      * the common stop path. Without this, `pointsBuffer.clear()` has already
      * discarded the points by the time the IO suspension throws.
+     *
+     * Returns false when the insert failed (counted on the run). Callers outside the drive's loop hold
+     * [DriveRun.outsideLoopWrites] around it (#241).
      */
-    private suspend fun flushBuffer(pointsBuffer: ArrayList<DrivePointEntity>) {
-        val toFlush = ArrayList(pointsBuffer)
-        pointsBuffer.clear()
-        if (toFlush.isEmpty()) return
-        try {
+    private suspend fun flushBuffer(run: DriveRun): Boolean {
+        val toFlush = ArrayList(run.pointsBuffer)
+        run.pointsBuffer.clear()
+        if (toFlush.isEmpty()) return true
+        return try {
             withContext(NonCancellable + Dispatchers.IO) {
                 dao.insertPoints(toFlush)
             }
+            true
         } catch (e: Exception) {
+            run.failedPointWrites.incrementAndGet()
             Log.w(TAG, "Point flush failed (${toFlush.size} points)", e)
+            false
         }
     }
 
@@ -761,13 +783,11 @@ class DriveRecorder(
 
         return withContext(Dispatchers.IO) {
             try {
-                // Synchronous flush — avoid a race with the point query below.
-                val pointsBuffer = run.pointsBuffer
-                val pending = ArrayList(pointsBuffer)
-                pointsBuffer.clear()
-                if (pending.isNotEmpty()) {
-                    dao.insertPoints(pending)
-                }
+                // Synchronous flush — avoid a race with the point query below. Under the run's lock, so a STOP
+                // finalizing this drive meanwhile waits for these points before its thumbnail (#241); a failed
+                // insert fails the export.
+                val r = run
+                if (!r.outsideLoopWrites.withLock { flushBuffer(r) }) return@withContext null
 
                 val drive = dao.getDrive(state.driveId) ?: return@withContext null
                 val allPoints = dao.getPoints(state.driveId)
