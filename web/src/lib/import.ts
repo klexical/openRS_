@@ -231,9 +231,11 @@ async function parseTripDataFromCsv(zip: JSZip, csvFile: string): Promise<TripDa
   // below. trim() also removes U+FEFF; the explicit strip keeps that if the parsing changes.
   const csv = (await file.async('string')).replace(/^\uFEFF/, '')
   // openRS_ v2.2.7-rc.4+ starts its CSVs with a `# openrs_csv_v2` format line — not a header row
-  // Keep each line's physical number (1-based, in the file as exported) for row errors
+  // Keep each line's physical number (1-based, in the file as exported) for row errors — trim() drops leading blank
+  // lines, so count them back in
+  const leadingLines = csv.slice(0, csv.length - csv.trimStart().length).split('\n').length - 1
   const lines = csv.trim().split('\n')
-    .map((text, i) => ({ text: text.replace(/\r$/, ''), lineNo: i + 1 }))
+    .map((text, i) => ({ text: text.replace(/\r$/, ''), lineNo: leadingLines + i + 1 }))
     .filter((l) => !l.text.startsWith('#') && l.text.trim() !== '')
   if (lines.length < 2) return null
 
@@ -268,6 +270,11 @@ async function parseTripDataFromCsv(zip: JSZip, csvFile: string): Promise<TripDa
     for (const key of [tsKey, 'rpm']) {
       if (!/^-?\d+(\.\d+)?$/.test(row[key])) {
         throw new ImportError(`CSV ${csvFile} row ${lineNo}: ${key} "${row[key]}" is not a number.`)
+      }
+      // The token check passes any digit run; one too long for a double parses to Infinity
+      if (!Number.isFinite(parseFloat(row[key]))) {
+        const shown = row[key].length > 24 ? `${row[key].slice(0, 24)}…` : row[key]
+        throw new ImportError(`CSV ${csvFile} row ${lineNo}: ${key} "${shown}" is not a finite number.`)
       }
     }
     points.push(parseTripRow(row))

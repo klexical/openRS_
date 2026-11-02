@@ -52,4 +52,40 @@ describe('drive CSV rows (#204)', () => {
       expect(err.message).toContain(`${b} row 4: expected 8 fields, found 9`)
     }
   })
+
+  // 309 nines: a plain decimal token that parses to Infinity
+  const HUGE = '9'.repeat(309)
+
+  it('an rpm too large to be finite is rejected with the file and row', async () => {
+    expect(parseFloat(HUGE)).toBe(Infinity)
+    const rpm = [MARKER, HEADER, ROWS[0], ROWS[1].replace(',3500,', `,${HUGE},`)].join('\n')
+    await expect(importZip(await one(rpm))).rejects.toThrow(/drive_20261102_120000\.csv row 4: rpm "9{24}…" is not a finite number/)
+  })
+
+  it('a timestamp too large to be finite is rejected with the file and row, under each alias', async () => {
+    const ts = [MARKER, HEADER, ROWS[0], ROWS[1].replace('1700000001000', HUGE)].join('\n')
+    await expect(importZip(await one(ts))).rejects.toThrow(/drive_20261102_120000\.csv row 4: timestamp_ms "9{24}…" is not a finite number/)
+    const legacyTs = ['ts,rpm', '1000,3000', `${HUGE}.5,3100`].join('\n')                 // timestamp alias
+    await expect(importZip(await one(legacyTs))).rejects.toThrow(/row 3: ts "9{24}…" is not a finite number/)
+  })
+
+  it('a genuine zero rpm and a long but finite value still import', async () => {
+    const csv = [MARKER, HEADER, ROWS[0].replace(',3000,', ',0,'), ROWS[1].replace(',3500,', `,${'9'.repeat(300)},`)].join('\n')
+    const pts = (await importZip(await one(csv))).trip!.points
+    expect(pts[0].rpm).toBe(0)
+    expect(Number.isFinite(pts[1].rpm)).toBe(true)
+  })
+
+  it('leading blank lines count: marker on line 3, header on 4, a bad row on 6 is row 6', async () => {
+    const bad = ['', '', MARKER, HEADER, ROWS[0], ROWS[1].replace(',3500,', ',x,')].join('\n')
+    await expect(importZip(await one(bad))).rejects.toThrow(/drive_20261102_120000\.csv row 6: rpm "x" is not a number/)
+    const crlf = ['', '', MARKER, HEADER, ROWS[0], ROWS[1].replace('0.500100', '0,500100')].join('\r\n')
+    await expect(importZip(await one(crlf))).rejects.toThrow(/row 6: expected 8 fields, found 9/)
+  })
+
+  it('a BOM followed by blank lines before the marker, and a header-only file, behave as before', async () => {
+    const pts = (await importZip(await one(['\uFEFF', '', MARKER, HEADER, ...ROWS].join('\n')))).trip!.points
+    expect(pts.map((p) => p.rpm)).toEqual([3000, 3500])
+    expect((await importZip(await one(`\uFEFF\n\n${MARKER}\n${HEADER}\n`))).trip).toBeNull()
+  })
 })
