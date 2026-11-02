@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="openRS_ v2.2.7" 
+    xmlns="http://www.topografix.com/GPX/1/1" 
+    xmlns:openrs="https://github.com/klex/openRS_">
+  <metadata>
+    <name>openRS_ Drive 20231114_221320</name>
+    <time>2023-11-14T22:13:20Z</time>
+  </metadata>
+  <trk>
+    <name>Focus RS MK3 Drive</name>
+    <trkseg>
+      <trkpt lat="52.520008" lon="13.404954">
+        <ele>0</ele>
+        <time>2023-11-14T22:13:20Z</time>
+        <extensions>
+          <openrs:speed>50.3</openrs:speed>
+          <openrs:rpm>3000</openrs:rpm>
+          <openrs:gear>3</openrs:gear>
+          <openrs:boostPsi>15.75</openrs:boostPsi>
+          <openrs:coolantC>90.5</openrs:coolantC>
+          <openrs:oilC>105.5</openrs:oilC>
+          <openrs:ambientC>21.5</openrs:ambientC>
+          <openrs:rduC>-99.0</openrs:rduC>
+          <openrs:ptuC>-99.0</openrs:ptuC>
+          <openrs:fuelPct>40.4</openrs:fuelPct>
+          <openrs:lateralG>0.251</openrs:lateralG>
+          <openrs:longitudinalG>-0.432</openrs:longitudinalG>
+          <openrs:brakePressure>12.5</openrs:brakePressure>
+          <openrs:steeringAngle>-7.5</openrs:steeringAngle>
+          <openrs:driveMode>Normal</openrs:driveMode>
+        </extensions>
+      </trkpt>
+      <trkpt lat="52.520108" lon="13.405054">
+        <ele>0</ele>
+        <time>2023-11-14T22:13:21Z</time>
+        <extensions>
+          <openrs:speed>60.3</openrs:speed>
+          <openrs:rpm>3500</openrs:rpm>
+          <openrs:gear>3</openrs:gear>
+          <openrs:boostPsi>15.75</openrs:boostPsi>
+          <openrs:coolantC>90.5</openrs:coolantC>
+          <openrs:oilC>105.5</openrs:oilC>
+          <openrs:ambientC>21.5</openrs:ambientC>
+          <openrs:rduC>-99.0</openrs:rduC>
+          <openrs:ptuC>-99.0</openrs:ptuC>
+          <openrs:fuelPct>40.4</openrs:fuelPct>
+          <openrs:lateralG>0.251</openrs:lateralG>
+          <openrs:longitudinalG>-0.432</openrs:longitudinalG>
+          <openrs:brakePressure>12.5</openrs:brakePressure>
+          <openrs:steeringAngle>-7.5</openrs:steeringAngle>
+          <openrs:driveMode>Normal</openrs:driveMode>
+        </extensions>
+      </trkpt>
+      <trkpt lat="52.520208" lon="13.405154">
+        <ele>0</ele>
+        <time>2023-11-14T22:13:22Z</time>
+        <extensions>
+          <openrs:speed>70.3</openrs:speed>
+          <openrs:rpm>4000</openrs:rpm>
+          <openrs:gear>3</openrs:gear>
+          <openrs:boostPsi>15.75</openrs:boostPsi>
+          <openrs:coolantC>90.5</openrs:coolantC>
+          <openrs:oilC>105.5</openrs:oilC>
+          <openrs:ambientC>21.5</openrs:ambientC>
+          <openrs:rduC>-99.0</openrs:rduC>
+          <openrs:ptuC>-99.0</openrs:ptuC>
+          <openrs:fuelPct>40.4</openrs:fuelPct>
+          <openrs:lateralG>0.251</openrs:lateralG>
+          <openrs:longitudinalG>-0.432</openrs:longitudinalG>
+          <openrs:brakePressure>12.5</openrs:brakePressure>
+          <openrs:steeringAngle>-7.5</openrs:steeringAngle>
+          <openrs:driveMode>Normal</openrs:driveMode>
+        </extensions>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>
