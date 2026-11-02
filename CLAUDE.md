@@ -8,8 +8,9 @@ Kotlin 2.0.21 + Jetpack Compose (Material3). Current: **stable v2.2.6 on main**;
 locally into `feature/rc7` (`931447a`), then docs-only `12b6e4f` (no rebuild). Owner-test APK = source `81baa76`, vc 36,
 SHA-256 `efe622c4…7a98` — owner Bluetooth hardware testing on it **pending** (kept separate from the new candidate).
 **Clean candidate `feature/rc7-candidate`** (clone `~/Documents/openRS_-publish`, push disabled until the owner approves; history
-cleanup run 2026-11-01, old → new map private): + #236 STOP finalization + peak carryover + #237 lap feed + crossings (merge `e1bbc14`). Tested source: see the 2026-11-01
-clean-candidate record (final run under Temurin 17 pending at this commit; the earlier tested source `0e4c120` is superseded). Not distributed.
+cleanup run 2026-11-01, old → new map private): + #236 STOP finalization + peak carryover + #237 lap feed + crossings (merge `e1bbc14`). **Tested source `8d1903e`** (Temurin 17:
+1066 / 86 per variant, lint 0 / 47, APK `af3c1ad6…`, vc 36, disposable-AVD cold launch, laps 3 / 3 / 3 over 3 synthetic runs);
+later commits docs-only; supersedes `0e4c120`. Not distributed; no hardware results on any candidate build.
 Superseded by it — **Integration candidate — DO NOT PUSH** (branch `integration/rc7-candidate-DO-NOT-PUSH`, worktree `rc7-integration`; its
 ancestry holds real adapter identifiers; kept unchanged): `12b6e4f` + #228 / #226 + sanitized test +
 #235 CI keys + #228 edits-only-write + docs. **Tested source `7bb8a9a`** (1034 / 81 per variant, lint 0 / 45, APK
@@ -724,7 +725,7 @@ Regenerate the FORScan catalog: `python3 android/scripts/gen_forscan_catalog.py`
 cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{releaseName}.apk (e.g. openRS_v2.2.7-rc.7.apk; set in app/build.gradle.kts)
-./gradlew test                             # 1025 unit tests across 79 files, each variant (source 81baa76 = feature/rc7 code through 12b6e4f; integration 86e4af8: 1030 / 80; tested integration tip 7bb8a9a: 1034 / 81; clean candidate 0e4c120: 1045 / 84)
+./gradlew test                             # 1025 unit tests across 79 files, each variant (source 81baa76 = feature/rc7 code through 12b6e4f; integration 86e4af8: 1030 / 80; tested integration tip 7bb8a9a: 1034 / 81; clean candidate 0e4c120: 1045 / 84; 8d1903e: 1066 / 86)
 ./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 45 warnings rc.6)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
@@ -916,7 +917,7 @@ android/app/src/test/java/com/openrs/dash/
 
 Current count: **1025 tests across 79 files** (Android, `./gradlew test` at source `81baa76` — debug and release variants each;
 `feature/rc7` code is unchanged through `12b6e4f`, later commits docs-only; unmerged work branches carry their own totals; integration candidate `86e4af8`: **1030 / 80** per
-variant; tested integration tip `7bb8a9a`: **1034 / 81** per variant; clean candidate `0e4c120`: **1045 / 84** per variant) + **282 vitest across 25 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+variant; tested integration tip `7bb8a9a`: **1034 / 81** per variant; clean candidate `0e4c120`: **1045 / 84** per variant; tested clean candidate `8d1903e`: **1066 / 86** per variant, Temurin 17) + **282 vitest across 25 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Branch / Release Workflow
 
@@ -1178,12 +1179,26 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   - Merged after review (openrs-9d: `1ec1a59` accepted, `f74c841` accepted with notes, `a47c259` accepted as a delta —
     `rc7-thermal-laps-review-2026-11-01/RESULTS.md`): `e1bbc14` merge of `a47c259` — #236 empty peaks per drive, #237 laps
     from gate crossings (old timer: 5 laps on the 3-loop replay route, new: 3), b= in the per-fix log. Reviewer's own gate
-    at `f74c841` / `a47c259` under Temurin 17.0.21+9 (JVM recorded): 1066 / 86 per variant, 0 failures, lint 0 / 47; device
-    (debug APK, DB read): own peaks after a hot drive, laps 3 / 3 / 1 for 3 / 3 / 1 loops incl. STOP → START. Notes: N-a
+    under Temurin 17.0.21+9 (JVM recorded): `f74c841` tests 1066 / 86 per variant + lint 0 / 47; `a47c259` tests only;
+    device (the `f74c841` debug APK, DB read): own peaks after a hot drive, laps 3 / 3 / 1 for 3 / 3 / 1 loops incl. STOP → START. Notes: N-a
     per-fix log debug-only before stable; N-b 2 s fix age unmeasured on phones; N-c a backwards fix time is refused until
     time passes it; N7 open. Pre-push: `procedure/prepush-check.sh <full SHA>` on the final tip (PLAN.md §8; read-only,
     pinned accept / deny-list digests; passes in `rc7-history-cleanup-run/prepush/PASSED.tsv`; a pass is not push
-    authorization). Final run record: added after the run.
+    authorization).
+  - **Final verification — tested source `8d1903e2383d388ea33d58038b9b39fa6afa2ed9`** (integrator,
+    `~/Documents/openRS_-evidence/rc7-candidate-final2-2026-11-01/RESULTS.md`): isolated Temurin 17.0.21+9 (CI's
+    distribution / major; Adoptium SHA-256 verified; test-worker JVMs recorded; Mac default untouched) — clean
+    `testDebugUnitTest testReleaseUnitTest lint assembleRelease` once, no build cache: **1066 tests / 86 classes per
+    variant**, 0 failures; lint 0 / 47; `test-release-config.sh` all passed; verify-release OK (local keys — not the CI
+    path). APK `openRS_v2.2.7-rc.7_candidate-8d1903e_DO-NOT-DISTRIBUTE.apk` 6,589,740 B, SHA-256
+    `af3c1ad69b69a15455df59871c51b21ffcdbd3b8d680eb5c4d3a0c3cfd18aa8a`, vc 36, signer `c99b6f26…`, dex `8d1903e2383d`, no
+    -dev / .dirty — not distributed (local keys). New AVD `Rc7_Final2` (deleted): installed hash = expected; logcat
+    continuous from before the COLD start (64,851 lines, one process) — 0 verifier / VerifyError / FATAL / ANR / Fatal signal
+    / Authorization failure / API Key; every tab, TRIP satellite tiles. **Laps (`lap_route.py`, route = `LapReplay`): expected
+    3 per run × 3 runs → 3 / 3 / 3 displayed and persisted** (run 1 SET S/F; run 2 after STOP → START 0.3 s, line kept; run 3
+    separate START + CLEAR / SET), no phantom laps; history: 3 complete drives, none ACTIVE, one summary each. AVD fixes:
+    mostly b=none; max age at the timer 1,795 ms (205 ms under the 2 s limit — N-b). `81baa76` APK re-hashed unchanged.
+    Not covered: CI itself, real GPS / phones, #236 peaks on this device (reviewer's device run + JVM). Later commits docs-only.
 - Evidence classes for rc.7 (keep them apart in reports): **owner-verified hardware** — frozen `a605b1c` only (2026-10-31:
   Pro over BLE telemetry, firmware probe, parked drive-mode confirmation over BLE; ESC not passed; DTC partial; Pro over
   Wi-Fi telemetry); **tester report, build unconfirmed** — second tester (DIY C3); **emulator / fake adapter** — every
