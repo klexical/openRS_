@@ -231,10 +231,13 @@ async function parseTripDataFromCsv(zip: JSZip, csvFile: string): Promise<TripDa
   // below. trim() also removes U+FEFF; the explicit strip keeps that if the parsing changes.
   const csv = (await file.async('string')).replace(/^\uFEFF/, '')
   // openRS_ v2.2.7-rc.4+ starts its CSVs with a `# openrs_csv_v2` format line — not a header row
-  const lines = csv.trim().split('\n').filter((l) => !l.startsWith('#'))
+  // Keep each line's physical number (1-based, in the file as exported) for row errors
+  const lines = csv.trim().split('\n')
+    .map((text, i) => ({ text: text.replace(/\r$/, ''), lineNo: i + 1 }))
+    .filter((l) => !l.text.startsWith('#') && l.text.trim() !== '')
   if (lines.length < 2) return null
 
-  const headers = lines[0].split(',').map((h) => h.trim())
+  const headers = lines[0].text.split(',').map((h) => h.trim())
 
   // Validate headers — surface a clear error instead of silently producing
   // structurally-valid TripPoints filled with default values.
@@ -246,11 +249,27 @@ async function parseTripDataFromCsv(zip: JSZip, csvFile: string): Promise<TripDa
     throw new ImportError(`CSV ${csvFile} is missing required columns: ${missing.join('; ')}`)
   }
 
+  // Every data row must line up with the header. A row with extra fields is what openRS_ before v2.2.7-rc.7 wrote on
+  // decimal-comma phones ("100,25" splits into two fields) — importing it would shift every later column into
+  // plausible-looking but wrong telemetry, and the decimals can't be reconstructed reliably, so the file is rejected.
+  const tsKey = ['timestamp_ms', 'timestamp', 'ts'].find((k) => headerSet.has(k))!
   const points: TripPoint[] = []
   for (let i = 1; i < lines.length; i++) {
-    const vals = lines[i].split(',')
-    if (vals.length < headers.length) continue
+    const { text, lineNo } = lines[i]
+    const vals = text.split(',')
+    if (vals.length !== headers.length) {
+      throw new ImportError(
+        `CSV ${csvFile} row ${lineNo}: expected ${headers.length} fields, found ${vals.length}. ` +
+        'The file is damaged — exports from openRS_ before v2.2.7-rc.7 on phones that use a decimal comma are ' +
+        'affected. Export the drive again with v2.2.7-rc.7 or later.',
+      )
+    }
     const row = Object.fromEntries(headers.map((h, j) => [h, vals[j]?.trim() ?? '']))
+    for (const key of [tsKey, 'rpm']) {
+      if (!/^-?\d+(\.\d+)?$/.test(row[key])) {
+        throw new ImportError(`CSV ${csvFile} row ${lineNo}: ${key} "${row[key]}" is not a number.`)
+      }
+    }
     points.push(parseTripRow(row))
   }
 
