@@ -1,0 +1,57 @@
+name: Sapphire Web CI
+
+# Checks for pull requests that change the Sapphire web dashboard (web/) or this workflow.
+# Separate from ci.yml (Android / firmware) and from deploy-pages.yml (builds and deploys main to GitHub Pages):
+# this workflow never deploys and uses no secrets.
+
+on:
+  pull_request:
+    branches: [ main, staging ]
+    paths:
+      - 'web/**'
+      - '.github/workflows/web-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Sapphire (Node 22)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies (lockfile)
+        run: npm ci
+
+      - name: Unit tests (vitest)
+        run: npm test
+
+      - name: Lint (ESLint)
+        run: npm run lint
+
+      - name: Type check (tsc -b)
+        run: npx tsc -b
+
+      - name: Production build
+        run: npm run build
