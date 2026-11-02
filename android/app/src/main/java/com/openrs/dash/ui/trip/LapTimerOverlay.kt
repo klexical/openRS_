@@ -104,7 +104,7 @@ fun LapTimerOverlay(
                     val isBest = lap.lapTimeMs == lapTimer.bestLapMs
                     val lapColor = if (isBest) Ok else Dim
                     MonoLabel(
-                        // No boost: lap peaks are never fed a reading and store no source (#207) — not shown as 0
+                        // No boost: a lap's peak mixes sources and has no source column (#207) — never shown
                         "L${lap.lapNumber}  ${formatLapTime(lap.lapTimeMs)}  RPM:${lap.peakRpm}",
                         8.sp, lapColor
                     )

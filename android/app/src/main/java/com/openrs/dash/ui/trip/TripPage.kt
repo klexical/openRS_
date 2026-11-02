@@ -505,7 +505,8 @@ private fun TripPageContent(
                         if (preview != null) return@MapControl
                         if (sfSet) lapTimer.clearStartFinish()
                         else driveState.currentLocation?.let { loc ->
-                            lapTimer.setStartFinish(loc.latitude, loc.longitude, loc.bearing)
+                            // No bearing ≠ 0° north: the line then takes the direction the car leaves it in (LapTimer)
+                            lapTimer.setStartFinish(loc.latitude, loc.longitude, loc.bearing.takeIf { loc.hasBearing() })
                         }
                     }) { MonoText(if (sfSet) "CLEAR S/F" else "SET S/F", 11.sp, if (sfSet) Orange else ink, FontWeight.Bold) }
 

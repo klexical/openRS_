@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.location.Geocoder
 import android.location.Location
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationCallback
@@ -30,7 +31,9 @@ import com.openrs.dash.data.KnockCapture
 import com.openrs.dash.data.PullTracker
 import com.openrs.dash.data.RecordingGapMonitor
 import com.openrs.dash.diagnostics.DiagnosticLogger
+import com.openrs.dash.data.FixVerdict
 import com.openrs.dash.data.LapEntity
+import com.openrs.dash.data.LapFix
 import com.openrs.dash.data.LapSessionEntity
 import com.openrs.dash.data.LapTimer
 import com.openrs.dash.data.PeakEvent
@@ -142,6 +145,8 @@ class DriveRecorder(
         val thermalPredictor = ThermalPredictor()
         /** Thermal peaks with the profile limits in effect at each sample (DriveThermalRecord). */
         val thermal = DriveThermalTracker()
+        /** What the lap timer did with this drive's fixes (logged at STOP; loop thread only, read after join). */
+        val lapVerdicts = java.util.EnumMap<FixVerdict, Int>(FixVerdict::class.java)
     }
 
     /** The drive being recorded (or the last one); see [DriveRun]. */
@@ -226,26 +231,15 @@ class DriveRecorder(
                         boostPolicy = com.openrs.dash.data.BoostRule.POLICY
                     )
                 )
+                // Every accumulator starts empty — a new DriveState, not a copy, so none is carried over from the last
+                // drive (peak oil / coolant were, #236). Only the live position dot survives.
                 _driveState.update { state ->
-                    state.copy(
+                    DriveState(
                         isRecording = true,
-                        isPaused = false,
                         driveId = driveId,
                         startFuelPct = vs.fuelLevelPct,
                         startTime = now,
-                        recentPoints = emptyList(),
-                        totalPointCount = 0,
-                        cumulativeDistanceKm = 0.0,
-                        rpmSum = 0.0, rpmSamples = 0L,
-                        speedSum = 0.0, speedSamples = 0L,
-                        modeCounts = emptyMap(),
-                        maxSpeedKph = 0.0, peakRpm = 0.0,
-                        peakBoostPsi = 0.0, peakBoostSource = null, peakLateralG = 0.0,
-                        peakEvents = emptyList(),
-                        rtrAchievedPoint = null,
-                        currentWeather = null,
-                        pullCount = 0,
-                        knockPullCount = 0
+                        currentLocation = state.currentLocation
                     )
                 }
                 startRecordingLoop(driveId, newRun)
@@ -298,7 +292,7 @@ class DriveRecorder(
         val endVs = vehicleStateFlow.value
         val stopped = run
         val fuelState = FuelEconomy.state.value
-        val laps = lapTimer?.takeLaps()
+        val laps = lapTimer?.takeLaps(state.driveId)
         val finalize = scope.launch(Dispatchers.IO) {
             // Wait for the recording loop's finally{} to flush buffered points
             // before we write the drive summary. This avoids racing our own
@@ -328,6 +322,11 @@ class DriveRecorder(
 
                     // Fuel trim averages — read after join() so the loop's last sample is in
                     val trims = stopped.fuelTrims.result()
+                    if (stopped.lapVerdicts.isNotEmpty()) {
+                        val counts = stopped.lapVerdicts.entries.joinToString(" ") { (v, n) -> "${v.name}=$n" }
+                        Log.d(LAP_TAG, "drive $id fixes: $counts; laps saved: ${laps?.second?.size ?: 0}")
+                        DiagnosticLogger.event("LAP", "drive $id fixes: $counts; laps: ${laps?.second?.size ?: 0}")
+                    }
                     val pullTracker = stopped.pulls
 
                     val finalDrive = db.runInTransaction(java.util.concurrent.Callable {
@@ -426,6 +425,7 @@ class DriveRecorder(
 
                     // Skip recording when paused
                     if (state.isPaused) {
+                        lapTimer?.breakTrack(driveId)
                         gaps.onLocation(System.currentTimeMillis(), written = false, skipped = RecordingGapMonitor.Reason.PAUSED)
                             ?.let { DiagnosticLogger.event("REC_GAP", "drive $driveId: ${it.describe()}") }
                         return@collect
@@ -447,6 +447,7 @@ class DriveRecorder(
                     // the gap is not counted.
                     if (!vs.isConnected) {
                         run.prevPoint = null
+                        lapTimer?.breakTrack(driveId)
                         gaps.onLocation(now, written = false, skipped = RecordingGapMonitor.Reason.DISCONNECTED)
                             ?.let { DiagnosticLogger.event("REC_GAP", "drive $driveId: ${it.describe()}") }
                         return@collect
@@ -536,12 +537,27 @@ class DriveRecorder(
                         tp.recordSample("PTU", now, vs.ptuTempC)
                     }
 
-                    // Lap timer (#237): every recorded fix of this drive — paused / disconnected fixes returned above, and
-                    // a point still finishing after STOP is not fed (the timer belongs to the next drive by then)
-                    if (isActive) lapTimer?.onLocationUpdate(
-                        location.latitude, location.longitude, location.bearing, vs.speedKph, now,
-                        vs.rpm.toInt(), boost.psi ?: 0.0, vs.lateralG
-                    )
+                    // Lap timer (#237): every recorded fix of this drive, with its own time, age and bearing (none ≠ 0°).
+                    // Paused / disconnected fixes returned above (and broke the track); a point still finishing after STOP
+                    // is not fed, and one that slips past this check is refused by the timer (drive closed at STOP).
+                    if (isActive) lapTimer?.let { timer ->
+                        val ageMs = fixAgeMs(location, now)
+                        val bearing = if (location.hasBearing()) location.bearing else null
+                        val report = timer.onFix(driveId, LapFix(
+                            lat = location.latitude, lng = location.longitude,
+                            bearing = bearing,
+                            timeMs = location.time, ageMs = ageMs, receivedAtMs = now,
+                            speedKph = vs.speedKph, rpm = vs.rpm.toInt(), boostPsi = boost.psi ?: 0.0, lateralG = vs.lateralG
+                        ))
+                        if (report.verdict != FixVerdict.NO_LINE) {
+                            run.lapVerdicts.merge(report.verdict, 1) { a, b -> a + b }
+                            // One line per fix while a line is set: provider delivery vs timer verdict (no coordinates)
+                            Log.d(LAP_TAG, "drive $driveId fix t=${location.time} age=${ageMs}ms " +
+                                "b=${bearing?.let { "%.0f".format(java.util.Locale.ROOT, it) } ?: "none"} " +
+                                "x=${"%.1f".format(java.util.Locale.ROOT, report.xM ?: 0.0)} y=${"%.1f".format(java.util.Locale.ROOT, report.yM ?: 0.0)} " +
+                                "-> ${report.verdict}${report.lap?.let { " lap ${it.lapNumber} ${it.lapTimeMs} ms" } ?: ""}")
+                        }
+                    }
 
                     // Buffer point
                     run.pointsBuffer.add(point)
@@ -709,6 +725,11 @@ class DriveRecorder(
 
     suspend fun getLastKnownLocation(): Location? = locations.last()
 
+    /** How old a fix was when it arrived — on the monotonic clock when the fix carries it, else the wall clock. */
+    private fun fixAgeMs(location: Location, nowMs: Long): Long =
+        if (location.elapsedRealtimeNanos > 0L) (SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos) / 1_000_000L
+        else nowMs - location.time
+
     @SuppressLint("MissingPermission")
     private suspend fun fusedLastLocation(): Location? =
         withContext(Dispatchers.Main) {
@@ -822,7 +843,7 @@ class DriveRecorder(
                     driveId = driveId,
                     startFinishLat = sf.lat,
                     startFinishLng = sf.lng,
-                    startFinishBearing = sf.bearing,
+                    startFinishBearing = sf.bearing ?: return,   // laps exist only once the line's direction is known
                     createdAt = System.currentTimeMillis()
                 )
             )
@@ -891,6 +912,7 @@ class DriveRecorder(
 
     companion object {
         private const val TAG = "DriveRecorder"
+        private const val LAP_TAG = "LapTimer"
 
         /** Street name, else locality, else admin area of the first result; null when there is none. */
         @Suppress("DEPRECATION")
