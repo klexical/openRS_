@@ -8,8 +8,8 @@ Kotlin 2.0.21 + Jetpack Compose (Material3). Current: **stable v2.2.6 on main**;
 locally into `feature/rc7` (`931447a`), then docs-only `12b6e4f` (no rebuild). Owner-test APK = source `81baa76`, vc 36,
 SHA-256 `efe622c4…7a98` — owner Bluetooth hardware testing on it **pending** (kept separate from the new candidate).
 **Clean candidate `feature/rc7-candidate`** (clone `~/Documents/openRS_-publish`, push disabled until the owner approves; history
-cleanup run 2026-11-01, old → new map private): + #236 STOP finalization + #237 lap feed. **Tested source `0e4c120`** (1045 / 84
-per variant, lint 0 / 47, APK `ce82d4b2…`, vc 36, disposable-AVD cold launch); later commits docs-only. Not distributed.
+cleanup run 2026-11-01, old → new map private): + #236 STOP finalization + peak carryover + #237 lap feed + crossings (merge `e1bbc14`). Tested source: see the 2026-11-01
+clean-candidate record (final run under Temurin 17 pending at this commit; the earlier tested source `0e4c120` is superseded). Not distributed.
 Superseded by it — **Integration candidate — DO NOT PUSH** (branch `integration/rc7-candidate-DO-NOT-PUSH`, worktree `rc7-integration`; its
 ancestry holds real adapter identifiers; kept unchanged): `12b6e4f` + #228 / #226 + sanitized test +
 #235 CI keys + #228 edits-only-write + docs. **Tested source `7bb8a9a`** (1034 / 81 per variant, lint 0 / 45, APK
@@ -477,9 +477,13 @@ data[5] = B5,  data[6] = B6 …
   live-state writes are gated on its own drive id. Never move per-drive state back into recorder fields: auto-record's
   finalize + start and START right after STOP overlap the old drive's finalization. STOP re-reads the row inside one Room
   transaction and writes only recorder-owned columns (the user's name / tags win; a deleted row gets no laps, thumbnail or
-  summary). The loop feeds `LapTimer` every recorded fix (#237); STOP's `takeLaps()` re-arms the same S/F line. Known: a
-  one-fix window where the old loop's last fix reaches the next drive's timer; a fix without bearing reads 0°; lap
-  `peakBoostPsi` is a mixed-source `read()` value — never display or export it. Tests use the real Room database through
+  summary); a new drive starts with empty oil / coolant peaks. The loop feeds `LapTimer` every recorded fix (#237): a lap
+  = a gate crossing between two fresh (≤ 2 s, monotonic), ordered fixes ≤ 5 s apart, time interpolated; 30 m departure
+  before re-arming; a missing bearing uses the segment course (never 0°); the timer belongs to one drive —
+  `takeLaps(driveId)` closes it and refuses that drive's late fixes. One `LapTimer` logcat line per fix while a line is set
+  (fix time, age, x / y metres from S/F, `b=`, verdict — no coordinates) + counts at STOP: ships in release for rc.7, make
+  it debug-only before stable (reviewer N-a). Unmeasured on phones: the 2 s fix age (late / batched fixes → no laps; read
+  `STALE=` at STOP). Lap `peakBoostPsi` is a mixed-source `read()` value — never display or export it. Tests use the real Room database through
   test-only Robolectric 4.14.1 on SDK 35 (`src/test/resources/robolectric.properties`; the first run downloads android-all)
 - **KR sign convention** — `ignCorrCyl1..4 = raw / −512` → retard is **POSITIVE**. Knock capture uses `≥ 0.1°`, the header counter and POWER KR cells `> 1°`. Cyl 2–4 DIDs (0x03ED–EF) are unverified — 0x03ED/0x03EE NRC 0x31 on two RS PCMs (EU tuned #182 + user's car), so not tune-specific; 0x03EF answers but read 0 for a whole drive. NrcTracker suppresses 2/3; polling left as is (user decision 2026-10-22)
 - **TIP is `raw / 128` kPa absolute** — 0x033E/0x0466 (DigiCluster, on-car verified). rc.4/rc.5 used `/903.81`, which is the Ford-DID **psi** formula, hiding TIP and starving BOOST SWEEP ([#198](https://github.com/klexical/openRS_/issues/198)). Do not reintroduce 903.81
@@ -905,8 +909,8 @@ android/app/src/test/java/com/openrs/dash/
   throws / throws once / cancelled)
   Integration 2026-11-01: AwdDemandPumpMergeTest 5 (#226 decoded 0) · DriveHistoryTest 4 (#228 edits only write, fake DAO) ·
   scripts/test-release-config.sh 8 (#235, shell — not in the Gradle count)
-  #236 / #237 2026-11-01 (real Room via Robolectric): DriveFinalizeTest 6 (48 named checks) · DriveDbForeignKeyTest 4 ·
-  LapFeedTest 1
+  #236 / #237 2026-11-01 (real Room via Robolectric): DriveFinalizeTest 7 · DriveDbForeignKeyTest 5 · LapFeedTest 3 ·
+  LapHandoffTest 1 · LapReplayTest 3 (shared route `LapReplay.kt` = the emulator script's) · LapTimerTest 42
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
@@ -1170,7 +1174,16 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
     drives, one summary each; #228 no card ACTIVE after 3 STOPs; #237 a lap completed and persisted, next drive re-armed —
     **but only 1 of 2 scripted loops counted, and a repeat in drive 3 none** (earlier AVD 3 / 3 + phantom laps); cause not
     established (fused provider dropping scripted fixes, or bearing at the crossing). Lap reliability = owner / hardware
-    question. JDK 17: not on this Mac, not run. `81baa76` APK re-hashed unchanged. Later commits docs-only.
+    question. JDK 17: not on this Mac, not run. `81baa76` APK re-hashed unchanged. Superseded by the round below.
+  - Merged after review (openrs-9d: `1ec1a59` accepted, `f74c841` accepted with notes, `a47c259` accepted as a delta —
+    `rc7-thermal-laps-review-2026-11-01/RESULTS.md`): `e1bbc14` merge of `a47c259` — #236 empty peaks per drive, #237 laps
+    from gate crossings (old timer: 5 laps on the 3-loop replay route, new: 3), b= in the per-fix log. Reviewer's own gate
+    at `f74c841` / `a47c259` under Temurin 17.0.21+9 (JVM recorded): 1066 / 86 per variant, 0 failures, lint 0 / 47; device
+    (debug APK, DB read): own peaks after a hot drive, laps 3 / 3 / 1 for 3 / 3 / 1 loops incl. STOP → START. Notes: N-a
+    per-fix log debug-only before stable; N-b 2 s fix age unmeasured on phones; N-c a backwards fix time is refused until
+    time passes it; N7 open. Pre-push: `procedure/prepush-check.sh <full SHA>` on the final tip (PLAN.md §8; read-only,
+    pinned accept / deny-list digests; passes in `rc7-history-cleanup-run/prepush/PASSED.tsv`; a pass is not push
+    authorization). Final run record: added after the run.
 - Evidence classes for rc.7 (keep them apart in reports): **owner-verified hardware** — frozen `a605b1c` only (2026-10-31:
   Pro over BLE telemetry, firmware probe, parked drive-mode confirmation over BLE; ESC not passed; DTC partial; Pro over
   Wi-Fi telemetry); **tester report, build unconfirmed** — second tester (DIY C3); **emulator / fake adapter** — every
