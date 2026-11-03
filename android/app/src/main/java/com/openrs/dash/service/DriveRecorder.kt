@@ -174,6 +174,14 @@ class DriveRecorder(
     @Volatile var lapTimer: LapTimer? = null
 
     /**
+     * The lap timer TRIP shows and STOP takes laps from: one per recorder (app-scoped), created on first use. TRIP takes
+     * this one on every composition instead of installing its own — a recreated activity (rotation, "Don't keep
+     * activities") used to compose a new, unarmed timer and put it here mid-drive, so the line vanished and STOP saved
+     * none of the drive's laps (#238 review). The line stays across drives as before (`takeLaps` re-arms it).
+     */
+    @Synchronized fun lapTimerForUi(): LapTimer = lapTimer ?: LapTimer().also { lapTimer = it }
+
+    /**
      * Timestamp of the most recent [pauseDrive] call, or 0 when not paused.
      * Used by the auto-record pipeline to decide whether a resume is valid
      * (recent pause) or whether to finalize and start fresh.

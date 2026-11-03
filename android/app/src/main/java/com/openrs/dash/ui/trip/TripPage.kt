@@ -69,7 +69,6 @@ import com.openrs.dash.data.DriveEntity
 import com.openrs.dash.data.DriveThermalReview
 import com.openrs.dash.data.DrivePointEntity
 import com.openrs.dash.data.DriveState
-import com.openrs.dash.data.LapTimer
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticExporter
 import com.openrs.dash.diagnostics.ExportProgress
@@ -274,9 +273,8 @@ private fun TripPageContent(
     // Export options sheet
     var exportDrive by remember { mutableStateOf<DriveEntity?>(null) }
 
-    // Lap timer — shared with DriveRecorder for persistence on drive stop
-    val lapTimer = remember { LapTimer() }
-    LaunchedEffect(recorder) { recorder.lapTimer = lapTimer }
+    // Lap timer — the recorder's own (STOP saves its laps); a recreated TRIP gets the same one back (#238 review)
+    val lapTimer = remember(recorder) { recorder.lapTimerForUi() }
 
     // Post-drive summary: queued app-wide by DriveRecorder until closed here. A summary opened from a
     // history row (summaryDrive) takes precedence; the queued one follows when that closes.
