@@ -215,18 +215,11 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
   empty peaks. ([#236](https://github.com/klexical/openRS_/issues/236))
 
 ### Fixed (rc.7 — oil / PTU 2026-11-02)
-- **OIL showed the PTU temperature and PTU showed engine oil** — `CanDecoder` read CAN 0x0F8 byte 1 − 50 as oil and byte 7 − 60
-  as PTU (the DBC's names). A capture from one car with the oil (ICM 0x78C DID 0x6017) and PTU (PCM 0x7E8 DID 0x070D)
-  replies on the same clock follows the other way round, ~20 °C apart throughout: byte 7 − 60 is engine oil and
-  byte 1 − 50 is PTU, offsets moving with their bytes. So DRIVE, THERMAL, readiness (oil is required with an 80 °C
-  warm-up, PTU optional with 40 °C), forecasts, the HUD, the Custom Dashboard, new recordings and exports now use the
-  corrected values; boost (byte 5), units and freshness are unchanged. Checked on that one car only, not on others or
-  on hardware. New drives save which mapping they used (`DriveEntity.oilPtuMapping`, Room v14). Drives recorded before
-  have none: their values, peaks, TEMP flags and thermal records stay as recorded, and TRIP (summary, comparison, replay,
-  map legend, chart, peak-oil trend) and exports (CSV format line, GPX, profile JSON, summary) say the mapping isn't
-  recorded rather than relabelling them. The Custom editor's reporting ranges follow the bytes (oil −60–195 °C, PTU
-  −50–205 °C); saved limits are never changed — a value outside the new range is pointed out when you next save.
-  New OilPtuMappingTest (6) and OilPtuRecorderTest (2, recorder + a real v13 → v14 upgrade). ([#229](https://github.com/klexical/openRS_/issues/229))
+- **OIL showed the PTU temperature and PTU showed engine oil** — `CanDecoder` read CAN 0x0F8 byte 1 − 50 as oil and byte 7 − 60 as PTU; a capture from one car with the ICM oil (DID 0x6017) and PCM PTU (DID 0x070D) replies on the same clock shows byte 7 − 60 is engine oil and byte 1 − 50 is PTU, so live views, readiness, alerts, new recordings and exports now use the corrected names (that car only; byte 5 unchanged). New drives save the mapping (`DriveEntity.oilPtuMapping`, Room v14); drives recorded before keep their values, peaks, flags and thermal records exactly as recorded and are shown and exported as "mapping not recorded", never relabelled. The Custom editor's ranges follow the bytes; saved limits are never changed. ([#229](https://github.com/klexical/openRS_/issues/229))
+
+### Fixed (rc.7 — STOP 2026-11-02)
+- **A drive's route thumbnail could be built from a partial track** — STOP read the drive's points while a diagnostic export or pause flush was still inserting earlier ones, and the partial thumbnail was cached for good; those writers now finish under the drive's own lock before STOP builds the thumbnail (`DriveRecorder`). ([#241](https://github.com/klexical/openRS_/issues/241))
+- **STOP reported stored points as "not saved"** — the final point flush completed its insert, then the drive's cancellation arriving on return was counted as a failed write, so nearly every STOP logged "1 failed point write(s) — those points are not saved" (also in the diagnostic export) although every point was stored; the insert's own outcome is now recorded and only a real failure is counted, while cancellation still ends the drive (`DriveRecorder.flushBuffer`). ([#241](https://github.com/klexical/openRS_/issues/241))
 
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)
