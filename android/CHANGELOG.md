@@ -214,6 +214,20 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
   coolant peaks, so drive B stored A's higher peak in the drive row and the profile export. A new drive now starts with
   empty peaks. ([#236](https://github.com/klexical/openRS_/issues/236))
 
+### Fixed (rc.7 — oil / PTU 2026-11-02)
+- **OIL showed the PTU temperature and PTU showed engine oil** — `CanDecoder` read CAN 0x0F8 byte 1 − 50 as oil and byte 7 − 60
+  as PTU (the DBC's names). A capture from one car with the oil (ICM 0x78C DID 0x6017) and PTU (PCM 0x7E8 DID 0x070D)
+  replies on the same clock follows the other way round, ~20 °C apart throughout: byte 7 − 60 is engine oil and
+  byte 1 − 50 is PTU, offsets moving with their bytes. So DRIVE, THERMAL, readiness (oil is required with an 80 °C
+  warm-up, PTU optional with 40 °C), forecasts, the HUD, the Custom Dashboard, new recordings and exports now use the
+  corrected values; boost (byte 5), units and freshness are unchanged. Checked on that one car only, not on others or
+  on hardware. New drives save which mapping they used (`DriveEntity.oilPtuMapping`, Room v14). Drives recorded before
+  have none: their values, peaks, TEMP flags and thermal records stay as recorded, and TRIP (summary, comparison, replay,
+  map legend, chart, peak-oil trend) and exports (CSV format line, GPX, profile JSON, summary) say the mapping isn't
+  recorded rather than relabelling them. The Custom editor's reporting ranges follow the bytes (oil −60–195 °C, PTU
+  −50–205 °C); saved limits are never changed — a value outside the new range is pointed out when you next save.
+  New OilPtuMappingTest (6) and OilPtuRecorderTest (2, recorder + a real v13 → v14 upgrade). ([#229](https://github.com/klexical/openRS_/issues/229))
+
 ### Changed (rc.7)
 - **What's New matches the corrected pressure and AWD behaviour** — the BOOST line described the gauge falling back to CAN boost; it now describes the TIP gauge and what drives record, and adds the AWD rear-torque / withdrawn front-rear % and the removed clutch card. (`ui/WhatsNewDialog.kt`)
 - **What's New describes the corrected boost, NRC, ESC, probe, Bluetooth, DTC and header behaviour** — the BOOST line no longer says TIP is "marked under the reading" (the gauge's label says TIP now) and says the signal identities are unconfirmed. (`ui/WhatsNewDialog.kt`)

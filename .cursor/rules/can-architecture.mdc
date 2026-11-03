@@ -16,7 +16,7 @@ globs: android/app/**/can/*.kt, android/docs/pid-reference.md, README.md
 |--------|-----------|---------------|--------|
 | Fuel level | 0x380 | ~~0x34A~~ | RS_HS.dbc PCMmsg30, Motorola 10-bit |
 | Wheel speeds | 0x190 | ~~0x215~~ | RS_HS.dbc ABSmsg03 |
-| PTU temp | 0x0F8 byte7 | ~~0x2C2~~ | RS_HS.dbc PCMmsg07 |
+| PTU temp | 0x0F8 byte1 − 50 | ~~0x2C2~~, ~~0x0F8 byte7~~ (that is engine oil, #229) | PCMmsg07; byte identity from one car's capture |
 | Ambient temp | 0x340 / 0x1A4 | — | 0x340 = PCMmsg17, 0x1A4 = MS-CAN bridged |
 
 ## Polling intervals
