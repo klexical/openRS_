@@ -109,8 +109,11 @@ private data class ChannelData(
 @Composable
 fun DriveTimeSeries(
     points: List<DrivePointEntity>,
+    /** The drive's DriveEntity.oilPtuMapping — the OIL chip reads "OIL·N/R" unless it is this build's (#229). */
+    oilPtuMapping: String?,
     modifier: Modifier = Modifier
 ) {
+    val oilMapped = com.openrs.dash.data.OilPtuMapping.isCurrent(oilPtuMapping)
     if (points.size < 2) return
 
     val activeIndices = remember { mutableStateListOf<Int>().apply { addAll(DEFAULT_ACTIVE) } }
@@ -159,7 +162,7 @@ fun DriveTimeSeries(
                             .border(Tokens.CardBorder, border, RoundedCornerShape(6.dp))
                             .padding(horizontal = 10.dp, vertical = 6.dp)
                     ) {
-                        MonoLabel(channel.label, 10.sp, textColor, FontWeight.Medium)
+                        MonoLabel(if (channel.label == "OIL" && !oilMapped) "OIL·N/R" else channel.label, 10.sp, textColor, FontWeight.Medium)
                     }
                 }
             }

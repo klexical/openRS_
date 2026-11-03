@@ -657,7 +657,9 @@ private fun TripPageContent(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     val unit = legendUnit(colorMode, prefs)
-                    val modeLabel = legendLabel(colorMode, mapPoints)
+                    // #229: the live drive is recorded with this build's mapping; a history drive with its own
+                    val modeLabel = legendLabel(colorMode, mapPoints,
+                        if (driveState.isRecording) com.openrs.dash.data.OilPtuMapping.CURRENT else selectedDrive?.oilPtuMapping)
                     MonoText(if (unit.isEmpty()) modeLabel else "$modeLabel $unit", 10.sp, actionInk(accent), FontWeight.Bold)
                     colorLegend(colorMode, prefs).forEach { (label, color) ->
                         Row(

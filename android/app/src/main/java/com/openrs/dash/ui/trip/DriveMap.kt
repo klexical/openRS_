@@ -397,8 +397,13 @@ private fun boostBand(psi: Double): Color = when {
     else     -> Orange   // orange — full boost
 }
 
-/** The legend's mode label: BOOST names the measurement coloured (#207) — TIP, BOOST (CAN 0x0F8) or legacy. */
-internal fun legendLabel(mode: ColorMode, points: List<DrivePointEntity>): String {
+/**
+ * The legend's mode label: BOOST names the measurement coloured (#207) — TIP, BOOST (CAN 0x0F8) or legacy. TEMP (oil)
+ * says "MAP N/R" unless the points' drive was saved with this build's 0x0F8 mapping ([oilPtuMapping], #229).
+ */
+internal fun legendLabel(mode: ColorMode, points: List<DrivePointEntity>, oilPtuMapping: String? = null): String {
+    if (mode == ColorMode.OIL_TEMP && !com.openrs.dash.data.OilPtuMapping.isCurrent(oilPtuMapping))
+        return "${mode.label} · MAP N/R"
     if (mode != ColorMode.BOOST) return mode.label
     com.openrs.dash.data.StoredBoost.primarySource(points)?.let { return it.label }
     return if (points.any { it.boostSource == null }) "BOOST · SRC N/R" else mode.label

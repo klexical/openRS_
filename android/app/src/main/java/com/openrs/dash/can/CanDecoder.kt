@@ -76,7 +76,8 @@ object CanDecoder {
     const val ID_PEDALS       = 0x080   // Accel pedal (bits 0-9 LE ×0.1 %), brake (bit 2), reverse (bit 5)
     const val ID_ENGINE_RPM   = 0x090   // RPM (byte4 low-nib|byte5 × 2), baro (byte2 × 0.5 kPa)
     const val ID_GAUGE_ILLUM  = 0x0C8   // Gauge brightness (bits 0-4), e-brake (byte3 bit 6)
-    // RS_HS.dbc PCMmsg07 (0x0F8): EngineOilTemp byte1 −50°C, Boost byte5 ×0.01bar gauge, PTUTemp byte7 −60°C
+    // 0x0F8 (RS_HS.dbc PCMmsg07): engine oil byte7 −60 °C, Boost byte5 ×0.01 bar gauge, PTU byte1 −50 °C — oil / PTU
+    // bytes are the reverse of the DBC names, from a capture with oil and PTU replies on one clock (#229)
     const val ID_ENGINE_TEMPS = 0x0F8
     const val ID_SPEED        = 0x130   // Speed bytes 6-7 BE × 0.01 kph
     const val ID_LONG_ACCEL   = 0x160   // Longitudinal G bits 48-57 LE × 0.00390625 − 2.0
@@ -255,17 +256,20 @@ object CanDecoder {
             ) else null
 
             // ── 0x0F8: Engine oil temp + boost + PTU temp ─────────────────────
-            // RS_HS.dbc PCMmsg07 (20 ms broadcast):
-            //   EngineOilTemp : 15|8@0+ (1,−50)   → byte1, raw−50 °C
+            // PCMmsg07 (20 ms broadcast). Offsets travel with their bytes:
+            //   byte7, raw−60 °C → ENGINE OIL. The DBC names it PTUTemp (63|8@0+ (1,−60)); in one car's capture the
+            //                    oil reply (ICM 0x78C DID 0x6017, same clock) tracked it (#229).
             //   Boost         : 47|8@0+ (0.01,0)   → byte5, raw×0.01 bar (1 kPa) gauge, unsigned
             //                    stored as gauge + 101.325 (the displayBoost form) — independent of baro, so a baro
             //                    arriving or changing later can't shift it (#207). Receipt is stamped ("boostKpa").
-            //   PTUTemp       : 63|8@0+ (1,−60)    → byte7, raw−60 °C
+            //   byte1, raw−50 °C → PTU. The DBC names it EngineOilTemp (15|8@0+ (1,−50)); in the same capture the
+            //                    PTU reply (PCM 0x7E8 DID 0x070D) tracked it, ~20 °C away from byte 7 throughout (#229).
+            //   Drives recorded before this carry no DriveEntity.oilPtuMapping (OilPtuMapping) — never relabelled.
             ID_ENGINE_TEMPS -> if (n >= 8) {
                 state.copy(
-                    oilTempC   = (ubyte(data, 1) - 50).toDouble(),
+                    oilTempC   = (ubyte(data, 7) - 60).toDouble(),
                     boostKpa   = ubyte(data, 5).toDouble() + 101.325,
-                    ptuTempC   = (ubyte(data, 7) - 60).toDouble(),
+                    ptuTempC   = (ubyte(data, 1) - 50).toDouble(),
                     lastUpdate = now
                 )
             } else null
@@ -684,10 +688,9 @@ object CanDecoder {
             else -> null
         }
         ID_ENGINE_TEMPS -> when {
-            state.oilTempC < -50   -> "oilTempC<-50 — check byte1 formula (raw-50)"
+            state.oilTempC > -90 && state.oilTempC < -50 -> "oilTempC<-50 — check byte7 formula (raw-60)"
             state.oilTempC > 160   -> "oilTempC>160 — suspiciously hot"
-            state.ptuTempC > -90 && state.ptuTempC < -60 -> "ptuTempC<-60 — check byte7 formula (raw-60)"
-            state.ptuTempC > 200   -> "ptuTempC>200 — suspiciously hot"
+            state.ptuTempC > 200   -> "ptuTempC>200 — suspiciously hot (byte1 formula raw-50)"
             state.boostKpa > 400.0 -> "boostKpa>400 — >43 PSI, check formula"
             else -> null
         }

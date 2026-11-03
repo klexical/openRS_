@@ -14,7 +14,7 @@ data class VehicleState(
     // ── Engine (CAN Sniffed) ────────────────────────────────
     val rpm: Double = 0.0,
     val coolantTempC: Double = -99.0,  // -99 = not yet received (CAN 0x2F0 / 0x0F8)
-    val oilTempC: Double = -99.0,      // -99 = not yet received (CAN 0x0F8)
+    val oilTempC: Double = -99.0,      // 0x0F8 byte7 − 60 °C (#229); -99 = not yet received
     val intakeTempC: Double = -99.0,  // -99 = not yet received (CAN 0x2F0)
     val boostKpa: Double = 101.325,   // CAN 0x0F8 byte 5 + 101.325 (gauge, std-atm form); a reading only once stamped
     val throttlePct: Double = 0.0,
@@ -120,7 +120,7 @@ data class VehicleState(
     val awdRightTorque: Double = 0.0,
     val rduTempC: Double = -99.0,   // AWD module Mode 22 PID 0x1E8A; −99 = not yet polled
     val awdMaxTorque: Double = 0.0,
-    val ptuTempC: Double = -99.0,   // 0x0F8 byte7 − 60 °C; −99 = not yet received (M-8)
+    val ptuTempC: Double = -99.0,   // 0x0F8 byte1 − 50 °C (#229); −99 = not yet received (M-8)
     val awdClutchTempL: Double = -99.0,  // AWD 0x703: left clutch temp inferred (°C)
     val awdClutchTempR: Double = -99.0,  // AWD 0x703: right clutch temp inferred (°C)
     val awdReqTorqueL: Double = 0.0,     // AWD 0x703: left side requested torque (Nm)

@@ -97,7 +97,7 @@ class ThermalProfileTest {
         val tightWarn = cells(ThermalProfile.STREET.copy(clutchMinC = 87.0))      // warn − warm-up = 3 °C
         assertTrue(validateThermalProfile(tightWarn, "F").containsKey("clutchWarnC"))
 
-        val unreachable = cells(ThermalProfile.STREET.copy(oilCritC = 250.0))     // oil decodes up to 205 °C
+        val unreachable = cells(ThermalProfile.STREET.copy(oilCritC = 250.0))     // oil decodes up to 195 °C (#229)
         assertTrue(validateThermalProfile(unreachable, "C").containsKey("oilCritC"))
     }
 

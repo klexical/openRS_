@@ -118,16 +118,16 @@ class CanDecoderTest {
 
     @Test
     fun `decode engine temps`() {
-        // oil = byte1 - 50 -> 130 raw = 80°C
+        // oil = byte7 - 60 -> 100 raw = 40°C (#229)
         // boost = byte5 + baro -> 50 raw + 101.325 kPa
-        // PTU = byte7 - 60 -> 100 raw = 40°C
+        // PTU = byte1 - 50 -> 130 raw = 80°C (#229)
         val state = blank.copy(barometricPressure = 101.325)
         val data = byteArrayOf(0x00, 130.toByte(), 0x00, 0x00, 0x00, 50, 0x00, 100)
         val result = CanDecoder.decode(0x0F8, data, state)
         assertNotNull(result)
-        assertEquals(80.0, result!!.oilTempC, 0.1)
+        assertEquals(40.0, result!!.oilTempC, 0.1)
         assertEquals(151.325, result.boostKpa, 0.5)
-        assertEquals(40.0, result.ptuTempC, 0.1)
+        assertEquals(80.0, result.ptuTempC, 0.1)
     }
 
     @Test
@@ -1078,7 +1078,8 @@ class CanDecoderTest {
         val stamped = CanDecoder.stampFresh(0x0F8, blank, decoded, now = 50_000L)
         assertEquals(50_000L, stamped.fieldLastUpdateMs["oilTempC"])
         assertEquals(50_000L, stamped.fieldLastUpdateMs["ptuTempC"])
-        assertEquals(90.0, stamped.oilTempC, 0.01)   // value untouched by stamping
+        assertEquals(40.0, stamped.oilTempC, 0.01)   // value untouched by stamping (byte7 100 − 60, #229)
+        assertEquals(90.0, stamped.ptuTempC, 0.01)   // byte1 140 − 50
     }
 
     @Test

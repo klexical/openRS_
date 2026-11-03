@@ -236,7 +236,8 @@ class DriveRecorder(
                         sessionId = sessionId,
                         startFuelPct = vs.fuelLevelPct,
                         hasGps = hasLocationPermission(),
-                        boostPolicy = com.openrs.dash.data.BoostRule.POLICY
+                        boostPolicy = com.openrs.dash.data.BoostRule.POLICY,
+                        oilPtuMapping = com.openrs.dash.data.OilPtuMapping.CURRENT
                     )
                 )
                 // Every accumulator starts empty — a new DriveState, not a copy, so none is carried over from the last

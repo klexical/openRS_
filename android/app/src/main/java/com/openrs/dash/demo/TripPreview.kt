@@ -86,12 +86,14 @@ object TripPreview {
      * flag under its own 124 °C limit), STREET → RACE mid-drive (peak under STREET, flag from RACE), TRACK (oil critical,
      * RDU flag, coolant just under the 95 % line), a legacy fixed-limit array, none (temps, no record), and an early
      * record without saved endpoints whose stop reading lies above its peak (START / END fall back, then "—").
+     * Drives 1–3 carry this build's oil / PTU mapping; 4–6 none — the "recorded before the correction" disclosure (#229).
      */
     fun drives(now: Long = System.currentTimeMillis()): List<DriveEntity> {
         val today = now - (now % DAY_MS) + 7 * 3_600_000L      // ~07:00 UTC-ish anchor; only relative dates matter
         fun d(id: Long, start: Long, mins: Int, km: Double, block: (DriveEntity) -> DriveEntity) =
             block(DriveEntity(id = id, startTime = start, endTime = start + mins * 60_000L, distanceKm = km,
-                avgSpeedKph = km / (mins / 60.0)))
+                avgSpeedKph = km / (mins / 60.0),
+                oilPtuMapping = if (id >= -3) com.openrs.dash.data.OilPtuMapping.CURRENT else null))
         return listOf(
             d(-1, minOf(today + 2 * 3_600_000L, now - 3_600_000L), 27, 31.4) {
                 it.copy(name = "Morning loop", maxSpeedKph = 148.0, peakRpm = 6400, peakBoostPsi = 21.8,

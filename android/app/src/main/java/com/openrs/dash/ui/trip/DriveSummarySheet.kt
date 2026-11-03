@@ -185,6 +185,11 @@ fun DriveSummarySheet(
                     "differ from the moment recording started or stopped", 10.sp, Dim)
                 Spacer(Modifier.height(2.dp))
                 ThermalLimitsNote(review, prefs)
+                // #229: a drive saved without this build's 0x0F8 mapping — values and flags as recorded, said so
+                if (!com.openrs.dash.data.OilPtuMapping.isCurrent(drive.oilPtuMapping)) {
+                    Spacer(Modifier.height(2.dp))
+                    MonoText(com.openrs.dash.data.OilPtuMapping.UNKNOWN_NOTE, 10.sp, Dim)
+                }
             }
 
             // ── Drive mode breakdown ──
@@ -306,7 +311,7 @@ fun DriveSummarySheet(
                 Spacer(Modifier.height(6.dp))
 
                 InstrumentLabel("TELEMETRY", Modifier.padding(bottom = 6.dp), color = Mid)
-                DriveTimeSeries(points = points)
+                DriveTimeSeries(points = points, oilPtuMapping = drive.oilPtuMapping)
             }
 
             Spacer(Modifier.height(12.dp))
@@ -491,7 +496,10 @@ private fun DriveTrendsSection(sample: List<DriveEntity>? = null, prefs: UserPre
     // Trend data in the user's units (stored: °C, gauge psi, L/100 km) — the values were shown raw and
     // unlabelled next to a °F / MPG summary. Sparklines plot the converted values.
     val fahrenheit = prefs.tempUnit != "C"
-    val oilPeaks = recentDrives.map { d ->
+    // #229: one mapping per line — the newest drive's (corrected, or recorded before the correction)
+    val oilDrives = com.openrs.dash.data.OilPtuMapping.sameKindAsNewest(recentDrives)
+    val oilMapped = com.openrs.dash.data.OilPtuMapping.isCurrent(oilDrives.lastOrNull()?.oilPtuMapping)
+    val oilPeaks = oilDrives.map { d ->
         if (d.peakOilTempC > -90) (if (fahrenheit) d.peakOilTempC * 9 / 5 + 32 else d.peakOilTempC).toFloat() else 0f
     }
     val boostUnit = prefs.displayBoost(UnitConversions.STD_ATM_KPA).second
@@ -513,8 +521,9 @@ private fun DriveTrendsSection(sample: List<DriveEntity>? = null, prefs: UserPre
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (oilPeaks.any { it > 0f }) {
-            TrendRow("PEAK OIL", oilPeaks, accentMid(), "%.0f${prefs.tempLabel}".format(oilPeaks.last()))
+        if (oilPeaks.size >= 2 && oilPeaks.any { it > 0f }) {
+            TrendRow(if (oilMapped) "PEAK OIL" else "PEAK OIL (MAP N/R)", oilPeaks, accentMid(),
+                "%.0f${prefs.tempLabel}".format(oilPeaks.last()))
         }
         if (boostPeaks.size >= 2 && thisPeak != null) {
             val fmt = when (prefs.boostUnit) { "BAR" -> "%.2f"; "KPA" -> "%.0f"; else -> "%.1f" }

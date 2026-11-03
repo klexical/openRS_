@@ -173,15 +173,19 @@ fun DriveComparisonSheet(
 
             Spacer(Modifier.height(6.dp))
 
-            // Oil: show start -> peak progression
-            val oilA = formatTempProgression(driveA.startOilTempC, driveA.peakOilTempC, prefs)
-            val oilB = formatTempProgression(driveB.startOilTempC, driveB.peakOilTempC, prefs)
+            // Oil: show start -> peak progression. #229: a drive saved without this build's 0x0F8 mapping is tagged
+            // "map n/r" (values as recorded); no delta across different mappings
+            val oilMapA = com.openrs.dash.data.OilPtuMapping.isCurrent(driveA.oilPtuMapping)
+            val oilMapB = com.openrs.dash.data.OilPtuMapping.isCurrent(driveB.oilPtuMapping)
+            fun oilTag(mapped: Boolean) = if (mapped) "" else " ${com.openrs.dash.data.OilPtuMapping.UNKNOWN_TAG}"
+            val oilA = formatTempProgression(driveA.startOilTempC, driveA.peakOilTempC, prefs) + oilTag(oilMapA)
+            val oilB = formatTempProgression(driveB.startOilTempC, driveB.peakOilTempC, prefs) + oilTag(oilMapB)
             ComparisonRow(
                 label = "OIL",
                 valueA = oilA,
                 valueB = oilB,
                 direction = DeltaDirection.NEUTRAL,
-                delta = formatTempDelta(driveB.peakOilTempC, driveA.peakOilTempC, prefs)
+                delta = if (oilMapA == oilMapB) formatTempDelta(driveB.peakOilTempC, driveA.peakOilTempC, prefs) else "—"
             )
 
             val cltA = formatTempProgression(driveA.startCoolantTempC, driveA.peakCoolantTempC, prefs)

@@ -163,7 +163,11 @@ fun DriveReplayView(
                             Readout(b.label, if (b == com.openrs.dash.data.StoredBoost.Unavailable) "— —" else "${boost.first} ${boost.second}",
                                 sub = if (b is com.openrs.dash.data.StoredBoost.Legacy) "src n/r" else null)
                         }),
-                    listOf(Readout("OIL", oilText), Readout("COOLANT", cltText),
+                    // #229: a drive saved without this build's 0x0F8 mapping — oil as recorded, said so
+                    listOf(Readout("OIL", oilText,
+                            sub = if (com.openrs.dash.data.OilPtuMapping.isCurrent(drive.oilPtuMapping)) null
+                                  else com.openrs.dash.data.OilPtuMapping.UNKNOWN_TAG),
+                        Readout("COOLANT", cltText),
                         Readout("LAT G", "%.2f g".format(currentPoint.lateralG)),
                         Readout("MODE", currentPoint.driveMode.uppercase())),
                 ),

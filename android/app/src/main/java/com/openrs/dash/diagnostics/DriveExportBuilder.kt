@@ -30,6 +30,10 @@ internal object DriveExportBuilder {
     private val appVersion: String get() = BuildConfig.VERSION_NAME ?: ""
     private val appBuild: Int get() = BuildConfig.VERSION_CODE
 
+    /** The export's value for a drive's oil / PTU mapping (#229): as saved, or `not_recorded` — never inferred. */
+    private fun oilPtuMappingValue(mapping: String?): String = mapping ?: "not_recorded"
+    private fun oilPtuMappingValue(drive: DriveEntity): String = oilPtuMappingValue(drive.oilPtuMapping)
+
     fun buildGpx(drive: DriveEntity, points: List<DrivePointEntity>, ts: String): String {
         val isoFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
@@ -42,6 +46,8 @@ internal object DriveExportBuilder {
             appendLine("  <metadata>")
             appendLine("    <name>openRS_ Drive $ts</name>")
             appendLine("    <time>${isoFmt.format(Date(drive.startTime))}</time>")
+            // #229: which 0x0F8 bytes oilC / ptuC came from — the drive's own record, "not_recorded" for older drives
+            appendLine("    <extensions><openrs:oilPtuMapping>${oilPtuMappingValue(drive)}</openrs:oilPtuMapping></extensions>")
             appendLine("  </metadata>")
             appendLine("  <trk>")
             appendLine("    <name>Focus RS MK3 Drive</name>")
@@ -107,12 +113,15 @@ internal object DriveExportBuilder {
     ): List<Pair<String, String>> = buildList {
         if (points.isEmpty()) return@buildList
         if (gpxName != null && hasRoute(drive, points)) add(gpxName to buildGpx(drive, points, gpxTs))
-        if (csvName != null) add(csvName to buildCsv(points, hasGps = drive.hasGps))
+        if (csvName != null) add(csvName to buildCsv(points, hasGps = drive.hasGps, oilPtuMapping = drive.oilPtuMapping))
     }
 
-    /** Drive telemetry CSV. [hasGps] false writes empty lat / lng (the knock CSV's convention). */
-    fun buildCsv(points: List<DrivePointEntity>, hasGps: Boolean = true): String = buildString {
-        appendLine("# openrs_csv_v2")
+    /**
+     * Drive telemetry CSV. [hasGps] false writes empty lat / lng (the knock CSV's convention). The format line names the
+     * drive's [oilPtuMapping] (#229) — `not_recorded` unless the drive was saved with one; the row count is unchanged.
+     */
+    fun buildCsv(points: List<DrivePointEntity>, hasGps: Boolean = true, oilPtuMapping: String? = null): String = buildString {
+        appendLine("# openrs_csv_v2 oil_ptu_mapping=${oilPtuMappingValue(oilPtuMapping)}")
         appendLine(
             "timestamp_ms,lat,lng,speed_kph,rpm,gear,boost_psi," +
             "coolant_c,oil_c,ambient_c,rdu_c,ptu_c,fuel_pct," +
@@ -228,6 +237,7 @@ internal object DriveExportBuilder {
             else -> "per reading (${drive.boostPolicy}): TIP 0x033E − measured baro while fresh, else CAN 0x0F8 while " +
                 "fresh; none → no reading"
         })
+        appendLine("  Oil / PTU   : " + com.openrs.dash.data.OilPtuMapping.describe(drive.oilPtuMapping))
         appendLine("  Peak Lat G  : ${"%.2f".format(drive.peakLateralG)} g")
         if (drive.avgStftPct != null || drive.avgLtftPct != null) {
             fun pct(v: Double?) = v?.let { "%+.1f%%".format(it) } ?: "—"
@@ -365,6 +375,8 @@ internal object DriveExportBuilder {
             put("peakLateralG", drive.peakLateralG)
             put("peakOilTempC", drive.peakOilTempC)
             put("peakCoolantTempC", drive.peakCoolantTempC)
+            // #229: which 0x0F8 bytes oil / PTU came from — present only when saved with the drive; absent = unknown
+            drive.oilPtuMapping?.let { put("oilPtuMapping", it) }
             put("fuelUsedL", drive.fuelUsedL)
             put("aggressionScore", drive.aggressionScore)
             put("tags", drive.tags)
@@ -485,7 +497,7 @@ internal object DriveExportBuilder {
             })
         }
         root.put("thermalProgression", thermalObj)
-        root.put("thermalRecord", buildThermalRecordJson(review, drive.startTime))
+        root.put("thermalRecord", buildThermalRecordJson(review, drive.startTime, drive.oilPtuMapping))
 
         // ── Mode timeline (detect transitions in point sequence) ─
         val modeTimeline = JSONArray()
@@ -577,8 +589,11 @@ internal object DriveExportBuilder {
      * stay distinct). All temperatures °C ("…C" keys). Legacy drives export their drive-end readings as `driveEndC`
      * against the old fixed limit, never as peaks or under a profile; drives without a record say so.
      */
-    internal fun buildThermalRecordJson(review: DriveThermalReview, driveStartMs: Long): JSONObject = JSONObject().apply {
+    internal fun buildThermalRecordJson(review: DriveThermalReview, driveStartMs: Long, oilPtuMapping: String? = null): JSONObject = JSONObject().apply {
         put("basis", review.basis.name.lowercase())
+        // #229: the drive's own mapping (DriveEntity.oilPtuMapping), never inferred from the basis / record format
+        put("oilPtuMapping", oilPtuMappingValue(oilPtuMapping))
+        put("oilPtuMappingNote", com.openrs.dash.data.OilPtuMapping.describe(oilPtuMapping))
         put("unit", "°C")
         put("flagged", review.flagged)
         when (review.basis) {
