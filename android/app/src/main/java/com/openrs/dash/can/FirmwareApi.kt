@@ -53,7 +53,14 @@ class BleFirmwareApi(private val connection: SlcanConnection) : FirmwareCommandS
         // Drain any stale responses
         while (connection.commandResponseChannel.tryReceive().isSuccess) { }
 
-        transport.writeLine("AT+FRS=$key,$value\r")
+        // A failed send is a failed command, never an exception out of the Result contract: the UI launches have no
+        // catch. BleGattCore throws IOException when a write is refused, fails or isn't acknowledged (#218 closes the
+        // link then). Cancellation isn't an IOException — it still ends the caller.
+        try {
+            transport.writeLine("AT+FRS=$key,$value\r")
+        } catch (e: java.io.IOException) {
+            return Result.failure(e)
+        }
 
         // Wait up to 5 seconds for response
         val response = withTimeoutOrNull(5_000L) {
