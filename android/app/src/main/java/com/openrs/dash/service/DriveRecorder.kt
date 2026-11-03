@@ -585,11 +585,6 @@ class DriveRecorder(
                         run.recentPoints.removeAt(0)
                     }
 
-                    // Flush to Room when buffer is full
-                    if (run.pointsBuffer.size >= FLUSH_SIZE) {
-                        flushBuffer(run)
-                    }
-
                     // Update live state
                     val prev = run.prevPoint
                     val segDist = if (prev != null)
@@ -629,12 +624,21 @@ class DriveRecorder(
                         )
                     }
                     run.prevPoint = point
+
+                    // Flush to Room when the buffer is full — last, so a STOP cancellation delivered when the insert
+                    // returns (flushBuffer rethrows it) can't cut this point's state update short
+                    if (run.pointsBuffer.size >= FLUSH_SIZE) {
+                        flushBuffer(run)
+                    }
                 }
             } finally {
-                // Ensure we flush any remaining buffered points
-                flushBuffer(run)
-                // Only this drive's state: a drive started since (finalize + start) is recording (#236)
-                _driveState.update { if (it.driveId == driveId) it.copy(isRecording = false) else it }
+                try {
+                    // Ensure we flush any remaining buffered points (STOP's cancellation is rethrown after it)
+                    flushBuffer(run)
+                } finally {
+                    // Only this drive's state: a drive started since (finalize + start) is recording (#236)
+                    _driveState.update { if (it.driveId == driveId) it.copy(isRecording = false) else it }
+                }
             }
         }
     }
@@ -651,21 +655,27 @@ class DriveRecorder(
      *
      * Returns false when the insert failed (counted on the run). Callers outside the drive's loop hold
      * [DriveRun.outsideLoopWrites] around it (#241).
+     *
+     * The outcome is the insert's own, decided inside the NonCancellable block. A cancellation of the caller (STOP
+     * cancelling the loop, an export's caller going away) is delivered only when that block returns — after the insert
+     * has landed or failed — so it never counts as a failed write; it is rethrown once the outcome is recorded.
      */
     private suspend fun flushBuffer(run: DriveRun): Boolean {
         val toFlush = ArrayList(run.pointsBuffer)
         run.pointsBuffer.clear()
         if (toFlush.isEmpty()) return true
-        return try {
+        var failure: Exception? = null
+        try {
             withContext(NonCancellable + Dispatchers.IO) {
-                dao.insertPoints(toFlush)
+                try { dao.insertPoints(toFlush) } catch (e: Exception) { failure = e }
             }
-            true
-        } catch (e: Exception) {
-            run.failedPointWrites.incrementAndGet()
-            Log.w(TAG, "Point flush failed (${toFlush.size} points)", e)
-            false
+        } finally {
+            failure?.let {
+                run.failedPointWrites.incrementAndGet()
+                Log.w(TAG, "Point flush failed (${toFlush.size} points)", it)
+            }
         }
+        return failure == null
     }
 
     // ── Peak event tracking ──────────────────────────────────────────────────
@@ -807,6 +817,8 @@ class DriveRecorder(
                     weatherSummary = state.currentWeather?.description
                 )
                 Pair(liveDrive, allPoints)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e                                       // the caller went away — not a failed export
             } catch (e: Exception) {
                 Log.w(TAG, "snapshotActiveDrive failed", e)
                 null
