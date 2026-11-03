@@ -3,6 +3,8 @@ import { MapContainer, TileLayer, Polyline, CircleMarker, Popup, useMap } from '
 import 'leaflet/dist/leaflet.css'
 import type { TripPoint, PeakEvent, Bookmark } from '../../types/session'
 import { colors } from '../../styles/tokens'
+import { boostLabel, primaryBoostSource, sourceName } from '../../lib/boost'
+import { useUnitFormatters } from '../../lib/format'
 import {
   type ColorMode,
   colorModes,
@@ -28,7 +30,8 @@ interface ColorSegment {
 function buildColorSegments(points: TripPoint[], mode: ColorMode): ColorSegment[] {
   if (points.length === 0) return []
   const segments: ColorSegment[] = []
-  let currentColor = pointColor(points[0], mode)
+  const boostSource = mode === 'boost' ? primaryBoostSource(points) : null
+  let currentColor = pointColor(points[0], mode, boostSource)
   let currentPositions: [number, number][] = [[points[0].lat, points[0].lng]]
 
   for (let i = 1; i < points.length; i++) {
@@ -36,7 +39,7 @@ function buildColorSegments(points: TripPoint[], mode: ColorMode): ColorSegment[
     const prev = points[i - 1]
     const gap = p.ts - prev.ts > 5000
 
-    const color = pointColor(p, mode)
+    const color = pointColor(p, mode, boostSource)
     if (color !== currentColor || gap) {
       segments.push({ positions: currentPositions, color: currentColor })
       currentColor = color
@@ -88,7 +91,10 @@ export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMa
     return byMode
   }, [points])
   const segments = segmentsByMode[colorMode]
-  const legend = useMemo(() => colorLegend(colorMode), [colorMode])
+  const fmt = useUnitFormatters()
+  const legend = useMemo(() => colorLegend(colorMode, fmt.boostUnit), [colorMode, fmt.boostUnit])
+  // #207: the BOOST colour mode colours one measurement — named in the legend (TIP / BOOST 0x0F8 / source not recorded)
+  const boostSourceName = useMemo(() => sourceName(primaryBoostSource(points)), [points])
 
   // Detect pause points (>5s gap)
   const pausePoints = useMemo(() => {
@@ -190,7 +196,7 @@ export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMa
               <Popup>
                 <div style={{ fontFamily: 'JetBrains Mono', fontSize: 11 }}>
                   <div style={{ fontWeight: 700, marginBottom: 2 }}>{bm.label || 'Bookmark'}</div>
-                  <div>{bm.speedKph.toFixed(0)} kph · {bm.rpm} RPM · {bm.boostPsi.toFixed(1)} PSI</div>
+                  <div>{bm.speedKph.toFixed(0)} kph · {bm.rpm} RPM{bm.boostPsi != null ? ` · ${fmt.boost(bm.boostPsi)}` : ''}</div>
                 </div>
               </Popup>
             </CircleMarker>
@@ -201,7 +207,11 @@ export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMa
         {peakEvents.map((peak, i) => {
           if (peak.lat === 0 && peak.lng === 0) return null
           const style = peakMarkerStyle(peak.type)
-          const label = `${style.prefix}: ${peak.value.toFixed(style.decimals)}${style.unit}`
+          const prefix = peak.type === 'boost' ? boostLabel(peak.source) : style.prefix
+          // Pressure peaks in the selected unit (#207); other peak types as before
+          const label = peak.type === 'boost'
+            ? `${prefix}: ${fmt.boost(peak.value)}`
+            : `${prefix}: ${peak.value.toFixed(style.decimals)}${style.unit}`
           return (
             <CircleMarker
               key={`peak-${i}`}
@@ -272,6 +282,11 @@ export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMa
           backdropFilter: 'blur(8px)',
         }}
       >
+        {colorMode === 'boost' && (
+          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: colors.accent, letterSpacing: '0.03em' }}>
+            {boostSourceName} {fmt.boostUnit}
+          </span>
+        )}
         {legend.map((entry) => (
           <div key={entry.label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <div style={{ width: 10, height: 10, borderRadius: '50%', background: entry.color }} />

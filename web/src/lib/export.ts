@@ -15,7 +15,7 @@ function downloadBlob(blob: Blob, filename: string) {
 // ── CSV columns for trip points ──
 
 const CSV_HEADERS: (keyof TripPoint)[] = [
-  'ts', 'lat', 'lng', 'rpm', 'boostPsi', 'speedKph',
+  'ts', 'lat', 'lng', 'rpm', 'boostPsi', 'boostSource', 'speedKph',
   'coolantC', 'oilTempC', 'rduTempC', 'ptuTempC', 'ambientC',
   'latG', 'longG', 'fuelPct',
   'wheelSpeedFL', 'wheelSpeedFR', 'wheelSpeedRL', 'wheelSpeedRR',
@@ -26,6 +26,7 @@ const CSV_HEADERS: (keyof TripPoint)[] = [
 ]
 
 function escapeCsv(v: unknown): string {
+  if (v == null) return ''                       // no reading / not recorded — empty, never "null" or 0 (#207)
   const s = String(v)
   if (s.includes(',') || s.includes('"') || s.includes('\n')) {
     return `"${s.replace(/"/g, '""')}"`

@@ -1,0 +1,14 @@
+# Excerpt of RS_HS.dbc (Ford Focus RS MK3 HS-CAN) — the 0x2C0 message the AWD torque decoder follows (#226).
+# Source: community DBC posted as an attachment on focusrs.org — https://www.focusrs.org/attachments/rs_hs-txt.381242/
+#   (thread "Cracking the code — RDU tuning development", page 24); downloaded 2026-02-22 as RS_HS.txt.
+# File identity: 13,785 bytes, SHA-256 e78d5f97671c099a08cb89e3c939f8c6ae4905ad78ec135f2e2a12663599f331,
+#   header `VERSION ""` (the file carries no version string). Authorship / Ford provenance unknown.
+# What this supports: field boundaries / byte order of the four torque signals. It does NOT establish which point of the
+# drivetrain the Nm refers to. The recorded-frame fixtures in CanDecoderTest come from the user's 2026-10-28 drives; their
+# expected values were computed with a separate Motorola decoder (evidence script) — that confirms extraction arithmetic
+# only, not the signals' physical meaning.
+BO_ 704 AWDmsg02: 8 Vector__XXX
+ SG_ TorqueVectoringActualRightTorque : 51|12@0+ (1,0) [0|4095] "Nm" Vector__XXX
+ SG_ TorqueVectoringActualLeftTorque : 19|12@0+ (1,0) [0|4095] "Nm" Vector__XXX
+ SG_ TorqueVectoringRequestedRightTor : 35|12@0+ (1,0) [0|4095] "Nm" Vector__XXX
+ SG_ TorqueVectoringRequestedLeftTorq : 3|12@0+ (1,0) [0|4095] "Nm" Vector__XXX

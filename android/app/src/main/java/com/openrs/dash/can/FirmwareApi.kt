@@ -53,7 +53,14 @@ class BleFirmwareApi(private val connection: SlcanConnection) : FirmwareCommandS
         // Drain any stale responses
         while (connection.commandResponseChannel.tryReceive().isSuccess) { }
 
-        transport.writeLine("AT+FRS=$key,$value\r")
+        // A failed send is a failed command, never an exception out of the Result contract: the UI launches have no
+        // catch. BleGattCore throws IOException when a write is refused, fails or isn't acknowledged (#218 closes the
+        // link then). Cancellation isn't an IOException — it still ends the caller.
+        try {
+            transport.writeLine("AT+FRS=$key,$value\r")
+        } catch (e: java.io.IOException) {
+            return Result.failure(e)
+        }
 
         // Wait up to 5 seconds for response
         val response = withTimeoutOrNull(5_000L) {
@@ -100,8 +107,9 @@ object FirmwareApi {
     suspend fun setDriveMode(ctx: Context, host: String, mode: Int): Result<Unit> =
         post(ctx, host, """{"token":"openrs","driveMode":$mode}""", checkBusy = true)
 
+    // Busy is reported like a drive-mode request (#125); OK is request acceptance only — callers confirm on CAN
     suspend fun setEscMode(ctx: Context, host: String, mode: Int): Result<Unit> =
-        post(ctx, host, """{"token":"openrs","escMode":$mode}""")
+        post(ctx, host, """{"token":"openrs","escMode":$mode}""", checkBusy = true)
 
     internal fun findWifiNetwork(ctx: Context): Network? {
         val cm = ctx.getSystemService(ConnectivityManager::class.java)

@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import androidx.core.content.edit
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.R
 import android.bluetooth.BluetoothAdapter
@@ -23,6 +24,7 @@ import com.openrs.dash.can.BleFirmwareApi
 import com.openrs.dash.can.BleSlcanTransport
 import com.openrs.dash.can.CanDecoder
 import com.openrs.dash.can.FirmwareCommandSender
+import com.openrs.dash.can.LinkPhase
 import com.openrs.dash.can.PidRegistry
 import com.openrs.dash.can.SlcanConnection
 import com.openrs.dash.can.TcpSlcanTransport
@@ -31,6 +33,7 @@ import com.openrs.dash.can.WicanApi
 import com.openrs.dash.can.WiFiFirmwareApi
 import com.openrs.dash.data.DriveDatabase
 import com.openrs.dash.data.DtcResult
+import com.openrs.dash.data.DtcScanRecord
 import com.openrs.dash.data.DtcScanResult
 import com.openrs.dash.data.FuelEconomy
 import com.openrs.dash.data.PerformanceTimer
@@ -54,7 +57,7 @@ class CanDataService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var connectionJob: Job? = null
 
-    private var connection: SlcanConnection? = null
+    @Volatile private var connection: SlcanConnection? = null
 
     private val cm by lazy { getSystemService(ConnectivityManager::class.java) }
     private var wifiCallback: ConnectivityManager.NetworkCallback? = null
@@ -99,7 +102,7 @@ class CanDataService : Service() {
                     val mac = s.getBleDeviceAddress(this)
                         ?: throw RuntimeException("No BLE device saved")
                     val name = s.getBleDeviceName(this) ?: "WiCAN"
-                    BleSlcanTransport(this, mac, name)
+                    BleSlcanTransport(this, mac, name, adapterType = adapterType)
                 } else {
                     // WiFi: adapter type determines protocol
                     if (adapterType == "MEATPI_PRO") TcpSlcanTransport(host, port)
@@ -108,7 +111,8 @@ class CanDataService : Service() {
             },
             maxRetries       = maxRetries,
             reconnectDelayMs = reconnectDelayMs,
-            rpmProvider      = { OpenRSDashApp.instance.vehicleState.value.rpm }
+            rpmProvider      = { OpenRSDashApp.instance.vehicleState.value.rpm },
+            keepRetrying     = { isRecording() }
         )
 
         // Create the appropriate firmware command sender
@@ -134,7 +138,7 @@ class CanDataService : Service() {
         onModuleProgress: ((String, com.openrs.dash.data.ModuleScanStatus?) -> Unit)? = null
     ): DtcScanResult {
         if (DemoMode.isActive) return DemoMode.scanDtcs(onModuleProgress)
-        val conn = synchronized(this) { connection }
+        val conn = connection
             ?: return DtcScanResult(emptyList(), emptyMap())
         return try {
             DtcScanner(this).scan(conn, onModuleProgress)
@@ -149,10 +153,10 @@ class CanDataService : Service() {
     /**
      * Retry DTC scan for a single module that previously timed out.
      */
-    suspend fun retryScanModule(moduleName: String): Pair<List<DtcResult>, com.openrs.dash.data.ModuleScanStatus> {
+    suspend fun retryScanModule(moduleName: String): com.openrs.dash.data.DtcModuleRetry {
         if (DemoMode.isActive) return DemoMode.retryScanModule(moduleName)
-        val conn = synchronized(this) { connection }
-            ?: return emptyList<DtcResult>() to com.openrs.dash.data.ModuleScanStatus.ERROR
+        val conn = connection ?: return com.openrs.dash.data.DtcModuleRetry(moduleName, emptyList(),
+            com.openrs.dash.data.ModuleScanStatus.ERROR, "no adapter connection")
         return DtcScanner(this).scanSingleModule(conn, moduleName)
     }
 
@@ -161,7 +165,7 @@ class CanDataService : Service() {
      */
     suspend fun fetchFreezeFrames(codes: List<DtcResult>): List<DtcResult> {
         if (DemoMode.isActive) return codes
-        val conn = synchronized(this) { connection } ?: return codes
+        val conn = connection ?: return codes
         return try {
             DtcScanner(this).fetchFreezeFrames(conn, codes)
         } catch (e: kotlinx.coroutines.CancellationException) { throw e }
@@ -177,7 +181,7 @@ class CanDataService : Service() {
      */
     suspend fun clearDtcs(): Map<String, Boolean> {
         if (DemoMode.isActive) return DemoMode.clearDtcs()
-        val conn = synchronized(this) { connection } ?: return emptyMap()
+        val conn = connection ?: return emptyMap()
         return try {
             DtcScanner(this).clearDtcs(conn)
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -195,7 +199,7 @@ class CanDataService : Service() {
     suspend fun sendRawQuery(responseId: Int, frame: String, timeoutMs: Long = 1_500L): ByteArray? {
         // Demo: no ECU on the other end — probes time out as they would with no response.
         if (DemoMode.isActive) { delay(timeoutMs.coerceAtMost(600L)); return null }
-        val conn = synchronized(this) { connection } ?: return null
+        val conn = connection ?: return null
         return conn.sendRawQuery(responseId, frame, timeoutMs)
     }
 
@@ -213,16 +217,38 @@ class CanDataService : Service() {
             PidRegistry.ensureLoaded(this@CanDataService)
             com.openrs.dash.ui.StartupTrace.mark("PID catalog loaded (background)")
         }
+        // An explicit Cancel from an earlier service instance or process holds until the user connects (#212) — load
+        // it before any callback is registered or an automatic start can run.
+        link.attachStore(object : LinkOwnership.CancelStore {
+            private val p = getSharedPreferences("openrs_link", MODE_PRIVATE)
+            override fun load() = p.getBoolean("user_cancelled", false)
+            override fun save(cancelled: Boolean) { p.edit(commit = true) { putBoolean("user_cancelled", cancelled) } }
+        })
         // A sticky restart recreates this service with no activity: load the saved prefs before any connection, so
         // auto-record and readiness use the saved thermal profile, not the defaults. No-op after MainActivity.onCreate.
         if (UserPrefsStore.ensureLoaded(this)) com.openrs.dash.ui.StartupTrace.mark("settings loaded by CanDataService (no activity)")
         registerWifiCallback()
         registerBluetoothCallback()
+        // Recording start / pause / resume / stop changes the notification text and whether Cancel is offered (#212)
+        scope.launch {
+            OpenRSDashApp.instance.driveRecorder.driveState
+                .map { it.isRecording to it.isPaused }
+                .distinctUntilChanged()
+                .collect { link.transition { publishNotification(link.phase) } }
+        }
         if (isTransportReady()) autoStartConnection()
         com.openrs.dash.ui.StartupTrace.mark("CanDataService.onCreate end")
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_CANCEL_CONNECT) {
+            cancelConnection()   // refused (no-op) once connected or while recording — see cancelConnection
+            // A cancel delivered to a service that wasn't already promoted must not leave it started
+            if (!foreground.isForeground) stopSelf(startId)
+            return START_NOT_STICKY
+        }
+        return START_STICKY
+    }
 
     override fun onDestroy() {
         unregisterWifiCallback()
@@ -318,33 +344,55 @@ class CanDataService : Service() {
 
     // ── Foreground notification ──────────────────────────────────────────────
 
-    private companion object {
+    internal companion object {
         const val NOTIF_ID = 1
 
         /**
-         * Set after leaving demo mode: WiFi / Bluetooth / service-start callbacks must not
-         * reconnect on their own. Cleared by an explicit [startConnection] / [reconnect].
-         * Process-wide: an idle service stops when the activity unbinds, and the next instance
-         * must still honour it.
+         * Connection ownership (#212): generation, published phase and the manual-connect block set by a cancel or by
+         * leaving demo mode (WiFi / Bluetooth / service-start callbacks must not reconnect until an explicit connect).
+         * Process-wide: an idle service stops when the activity unbinds, and the next instance must still honour it.
          */
-        @Volatile var manualConnectRequired = false
+        val link = LinkOwnership()
 
-        /** RPM threshold that signals the engine is actually running (not just ignition). */
-        const val AUTO_START_MIN_RPM = 400.0
+        /** Notification action: cancel an initial connection attempt (#212). */
+        const val ACTION_CANCEL_CONNECT = "com.openrs.dash.action.CANCEL_CONNECT"
 
         /** Window within which a paused drive will be resumed on reconnect. Beyond this,
          *  the stale drive is finalized and a fresh one begins. */
         const val AUTO_RESUME_WINDOW_MS = 15 * 60_000L  // 15 minutes
     }
 
-    private fun goForeground(text: String = "Connecting to vehicle…") {
-        val notification = NotificationCompat.Builder(this, OpenRSDashApp.CHANNEL_CAN)
+    private fun isRecording(): Boolean = OpenRSDashApp.instance.driveRecorder.driveState.value.isRecording
+
+    /**
+     * The foreground notification. Its body brings the existing MainActivity forward (SINGLE_TOP + CLEAR_TOP: never a
+     * second dashboard on top of a task started by another intent) or starts one; while an initial attempt runs it
+     * carries a Cancel action (#212). No generic Stop: that could end a recording.
+     */
+    private fun buildNotification(text: String, offerCancel: Boolean): android.app.Notification {
+        val open = android.app.PendingIntent.getActivity(this, 0,
+            Intent(this, com.openrs.dash.ui.MainActivity::class.java)
+                .setAction(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT)
+        return NotificationCompat.Builder(this, OpenRSDashApp.CHANNEL_CAN)
             .setContentTitle("openRS_")
             .setContentText(text)
             .setSmallIcon(R.drawable.ic_notification)
             .setOngoing(true)
             .setSilent(true)
+            .setContentIntent(open)
+            .apply {
+                if (offerCancel) addAction(0, "Cancel", android.app.PendingIntent.getService(
+                    this@CanDataService, 1,
+                    Intent(this@CanDataService, CanDataService::class.java).setAction(ACTION_CANCEL_CONNECT),
+                    android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT))
+            }
             .build()
+    }
+
+    private fun goForeground(text: String = "Connecting to vehicle…") {
+        val notification = buildNotification(text, offerCancel = !isRecording())
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ServiceCompat.startForeground(
@@ -356,14 +404,9 @@ class CanDataService : Service() {
         }
     }
 
-    private fun updateNotification(text: String) {
-        val notification = NotificationCompat.Builder(this, OpenRSDashApp.CHANNEL_CAN)
-            .setContentTitle("openRS_")
-            .setContentText(text)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setOngoing(true)
-            .setSilent(true)
-            .build()
+    private fun updateNotification(text: String, offerCancel: Boolean = false) {
+        if (!foreground.isForeground) return   // released (stopped / exhausted) — never resurrect the notification
+        val notification = buildNotification(text, offerCancel)
         getSystemService(android.app.NotificationManager::class.java)
             .notify(NOTIF_ID, notification)
     }
@@ -434,7 +477,9 @@ class CanDataService : Service() {
                     existing.copy(
                         endTime        = System.currentTimeMillis(),
                         peakRpm        = vs.peakRpm,
-                        peakBoostPsi   = vs.peakBoostPsi,
+                        // Session table predates #207's sources: the CAN 0x0F8 peak, its historical meaning
+                        peakBoostPsi   = (com.openrs.dash.data.BoostSession.peakKpa(com.openrs.dash.data.BoostSource.CAN_0F8) ?: 0.0) *
+                            com.openrs.dash.data.BoostReading.KPA_TO_PSI,
                         peakOilTempC   = vs.peakOilTempC,
                         peakCoolantTempC = vs.peakCoolantTempC,
                         peakSpeedKph   = vs.peakSpeedKph,
@@ -450,24 +495,40 @@ class CanDataService : Service() {
 
     // ── Connection control ───────────────────────────────────────────────────
 
-    /** Transport-callback entry point — honours [manualConnectRequired] after demo mode. */
+    /**
+     * Transport-callback entry point — honours [LinkOwnership.manualConnectRequired] (after a cancel or demo mode). The
+     * check and the start are one step under the ownership lock: a callback can't pass the check, lose the race to a
+     * cancel, then start anyway.
+     */
     private fun autoStartConnection() {
-        if (manualConnectRequired || DemoMode.isActive || DemoMode.launchRequested) return
-        startConnection()
+        link.autoStart(blocked = { DemoMode.isActive || DemoMode.launchRequested }) { beginConnection() }
     }
 
     /** Explicit (user) connect. No-op while demo mode owns the vehicle state. */
-    @Synchronized fun startConnection() {
-        if (DemoMode.isActive) return
-        manualConnectRequired = false
-        if (!isTransportReady()) return
-        if (connectionJob?.isActive == true) return
+    fun startConnection(): Unit = link.transition {
+        if (DemoMode.isActive) return@transition
+        link.clearManualConnect()
+        beginConnection()
+    }
+
+    /** Starts a connection job unless one is running; false when nothing could start (transport down / no foreground). */
+    private fun beginConnection(): Boolean = link.transition {
+        if (DemoMode.isActive) return@transition false
+        if (!isTransportReady()) return@transition false
+        if (connectionJob?.isActive == true) return@transition true
+        // Bluetooth with no saved device (#234): nothing to connect to — checked before the service is promoted and a
+        // session begins, so no notification, no session record, no retries. Every start path lands here (launch,
+        // Connect, Bluetooth on, a sticky restart with no activity); the dashboard explains it, the choice is kept.
+        ConnectionSetup.problem(AppSettings.getConnectionMethod(this), AppSettings.getBleDeviceAddress(this))?.let {
+            android.util.Log.i("CAN", "Not connecting — $it")
+            return@transition false
+        }
 
         try {
             foreground.promote()
         } catch (e: Exception) {
             android.util.Log.w("CAN", "Cannot go foreground — skipping connection start", e)
-            return
+            return@transition false
         }
 
         val s = AppSettings
@@ -480,12 +541,15 @@ class CanDataService : Service() {
             val protocol = if (adapterType == "MEATPI_PRO") "TCP SLCAN" else "WebSocket SLCAN"
             "$protocol (${s.getHost(this)}:${s.getPort(this)})"
         }
-        DiagnosticLogger.sessionStart(
+        // Bluetooth starts "not requested" together with the session; Wi-Fi status writes carry this session's token (#233)
+        val diagSession = DiagnosticLogger.sessionStart(
             host      = if (isBle) s.getBleDeviceAddress(this) ?: "BLE" else s.getHost(this),
             port      = if (isBle) 0 else s.getPort(this),
             transport = transportLabel,
             prefs  = UserPrefsStore.prefs.value,
-            logDir = java.io.File(filesDir, "diagnostics")
+            logDir = java.io.File(filesDir, "diagnostics"),
+            adapterStatusReason = if (isBle) com.openrs.dash.diagnostics.AdapterStatusRecord.BLUETOOTH
+                                  else com.openrs.dash.diagnostics.AdapterStatusRecord.NO_REQUEST,
         )
         CanDecoder.resetSessionState()
         FuelEconomy.reset()
@@ -493,44 +557,49 @@ class CanDataService : Service() {
         OpenRSDashApp.instance.knockEventCount.value = 0
         com.openrs.dash.data.KnockSessionLog.reset()
         com.openrs.dash.data.BoostSessionLog.reset()
+        com.openrs.dash.data.BoostSession.reset()
         startSessionRecording()
 
         val conn = buildConnection()
         connection = conn
+        val gen = link.begin()
+        val session = newLinkSession(gen)
+        applyPhase(LinkPhase.CONNECTING)
 
         connectionJob = scope.launch {
             launch {
                 conn.state.collect { state ->
-                    if (DemoMode.isActive) return@collect
-                    OpenRSDashApp.instance.vehicleState.update {
-                        it.copy(
-                            isConnected = state is AdapterState.Connected,
-                            isIdle      = state is AdapterState.Idle
-                        )
+                    if (DemoMode.isActive || !link.owns(gen)) return@collect
+                    when (val phase = LinkPresentation.phaseFor(state)) {
+                        null -> link.deliver(gen) { DiagnosticLogger.event("STATE", state.label) }
+                        LinkPhase.FAILED -> onAttemptsExhausted(gen, state.label)
+                        // Checked and published as one step: a stop can't land between them and be overwritten
+                        else -> link.publish(gen, phase) {
+                            DiagnosticLogger.event("STATE", state.label)
+                            applyPhase(it)
+                        }
                     }
-                    val btLabel = if (isBluetooth()) "via Bluetooth" else "to vehicle"
-                    when (state) {
-                        is AdapterState.Connected -> updateNotification("Connected $btLabel")
-                        is AdapterState.Idle      -> updateNotification("Disconnected — tap to retry")
-                        else                      -> updateNotification("Connecting $btLabel…")
-                    }
-                    DiagnosticLogger.event("STATE", state::class.simpleName ?: "Unknown")
                 }
             }
 
             // Query WiCAN /check_status once after connection (WiFi only).
             // Populates device info for GARAGE display and diagnostic export.
+            // The export records the outcome for this session only — never an earlier session's status (#233).
             if (!isBle) {
                 launch {
                     conn.state.first { it is AdapterState.Connected }
+                    link.deliver(gen) { DiagnosticLogger.adapterStatusRequested(diagSession) }
                     val host = s.getHost(this@CanDataService)
                     val status = WicanApi.checkStatus(this@CanDataService, host)
-                    if (status != null) {
+                    if (status != null) link.deliver(gen) {
                         OpenRSDashApp.instance.deviceStatus.value = status
-                        DiagnosticLogger.deviceStatus = status
+                        DiagnosticLogger.adapterStatusFetched(diagSession, status)
                         DiagnosticLogger.event("DEVICE_STATUS",
                             "${status.hardwareVersion} fw=${status.firmwareVersion} " +
                             "can=${status.canDatarate} vbatt=${status.obdPortVoltage}V")
+                    } else link.deliver(gen) {
+                        DiagnosticLogger.adapterStatusFailed(diagSession)
+                        DiagnosticLogger.event("DEVICE_STATUS", "/check_status request failed — adapter details unknown this session")
                     }
                 }
             }
@@ -542,17 +611,22 @@ class CanDataService : Service() {
                     conn.state.first { it is AdapterState.Connected }
                     delay(5_000L)
                     // Only proceed if still connected
-                    if (conn.state.value is AdapterState.Connected) {
-                        try {
-                            val result = DtcScanner(this@CanDataService).scan(conn)
-                            if (result.codes.isNotEmpty()) {
-                                OpenRSDashApp.instance.activeDtcCount.value =
-                                    result.codes.count { it.status == com.openrs.dash.data.DtcStatus.ACTIVE }
-                                DiagnosticLogger.lastDtcResults = result.codes
-                                DiagnosticLogger.event("AUTO_DTC_SCAN",
-                                    "${result.codes.size} code(s) across ${result.moduleStatuses.count { it.value == com.openrs.dash.data.ModuleScanStatus.OK }} module(s)")
-                            }
-                        } catch (_: Exception) { /* auto-scan is best-effort */ }
+                    if (conn.state.value is AdapterState.Connected && link.owns(gen)) {
+                        // Visible from the start (RUNNING + progress); export + count only if the ledger accepts (#215)
+                        val names = DtcScanner.MODULES.map { it.name }
+                        val out = com.openrs.dash.diagnostics.DtcScanView.autoScan(
+                            DiagnosticLogger.dtcScans, names, System::currentTimeMillis,
+                            scan = { progress -> DtcScanner(this@CanDataService).scan(conn, progress) },
+                            deliver = { block -> link.deliver(gen) { block() } },
+                            publishCount = { OpenRSDashApp.instance.activeDtcCount.value = it },
+                        )
+                        if (out != null) {
+                            val (result, accepted) = out
+                            val record = DtcScanRecord.from(result, 0L, "auto", names)
+                            DiagnosticLogger.event("AUTO_DTC_SCAN",
+                                "${record.status} · ${result.codes.size} code(s) · ${record.modulesAnswered}/${record.modules.size} modules scanned" +
+                                    if (accepted) "" else " — superseded, not published")
+                        }
                     }
                 }
             }
@@ -563,26 +637,13 @@ class CanDataService : Service() {
             // original bug — drive would start with no telemetry). On
             // reconnect within AUTO_RESUME_WINDOW_MS a paused drive is
             // resumed seamlessly; beyond that, the stale drive is
-            // finalized and a fresh one begins.
+            // finalized and a fresh one begins. A drive still recording
+            // is kept (AutoRecordPolicy).
             if (AppSettings.getAutoRecordDrives(this@CanDataService)) {
                 launch {
-                    val recorder = OpenRSDashApp.instance.driveRecorder
-                    var autoStarted = false
+                    // A drive still recording (manual, or across an RCN retry) is kept — never split (#212)
                     OpenRSDashApp.instance.vehicleState.collect { vs ->
-                        if (autoStarted) return@collect
-                        if (!vs.isConnected) return@collect
-                        if (vs.rpm <= AUTO_START_MIN_RPM) return@collect
-                        autoStarted = true
-
-                        val ds = recorder.driveState.value
-                        val canResume = ds.isRecording && ds.isPaused &&
-                            recorder.pausedDurationMs() in 1L..AUTO_RESUME_WINDOW_MS
-                        if (canResume) {
-                            recorder.resumeDrive()
-                        } else {
-                            if (ds.isRecording) recorder.stopDrive()
-                            recorder.startDrive(sessionId = currentSessionId)
-                        }
+                        session.onVehicleState(vs, { currentSessionId }, AUTO_RESUME_WINDOW_MS)
                     }
                 }
             }
@@ -591,103 +652,21 @@ class CanDataService : Service() {
                 onObdUpdate = { obdState ->
                     // Hop OBD state merges to Main.immediate: inline when already on
                     // Main, otherwise posts — keeps Compose collectors off the IO
-                    // frame thread so no collector can block frame reads.
-                    scope.launch(Dispatchers.Main.immediate) { mergeObdState(obdState) }
+                    // frame thread so no collector can block frame reads. Applied only if this
+                    // job still owns the link when the merge runs (a posted merge can outlive it).
+                    scope.launch(Dispatchers.Main.immediate) { link.deliver(gen) { mergeObdState(obdState) } }
                 },
                 getCurrentState = { OpenRSDashApp.instance.vehicleState.value }
             ).collect { (canId, data) ->
-                processCanFrame(canId, data, conn.fps)
+                session.onCanFrame(canId, data, conn.fps)
             }
         }
+        true
     }
 
     private fun mergeObdState(obdState: VehicleState) {
         if (DemoMode.isActive) return   // late poll response after demo took over
-        OpenRSDashApp.instance.vehicleState.update { current ->
-            current.copy(
-                calcLoad = obdState.calcLoad,
-                shortFuelTrim = obdState.shortFuelTrim,
-                longFuelTrim = obdState.longFuelTrim,
-                timingAdvance = obdState.timingAdvance,
-                fuelRailPressure = obdState.fuelRailPressure,
-                barometricPressure = obdState.barometricPressure,
-                commandedAfr = obdState.commandedAfr,
-                o2Voltage = obdState.o2Voltage,
-                afrSensor1 = obdState.afrSensor1,
-                chargeAirTempC = obdState.chargeAirTempC,
-                manifoldChargeTempC = obdState.manifoldChargeTempC,
-                octaneAdjustRatio = obdState.octaneAdjustRatio,
-                catalyticTempC = obdState.catalyticTempC,
-                afrActual = obdState.afrActual,
-                afrDesired = obdState.afrDesired,
-                lambdaActual = obdState.lambdaActual,
-                etcAngleActual = obdState.etcAngleActual,
-                etcAngleDesired = obdState.etcAngleDesired,
-                tipActualKpa = obdState.tipActualKpa,
-                tipDesiredKpa = obdState.tipDesiredKpa,
-                wgdcDesired = obdState.wgdcDesired,
-                vctIntakeAngle = obdState.vctIntakeAngle,
-                vctExhaustAngle = obdState.vctExhaustAngle,
-                oilLifePct = obdState.oilLifePct,
-                ignCorrCyl1 = obdState.ignCorrCyl1,
-                ignCorrCyl2 = obdState.ignCorrCyl2,
-                ignCorrCyl3 = obdState.ignCorrCyl3,
-                ignCorrCyl4 = obdState.ignCorrCyl4,
-                tirePressLF = if (obdState.tirePressLF >= 0) obdState.tirePressLF else current.tirePressLF,
-                tirePressRF = if (obdState.tirePressRF >= 0) obdState.tirePressRF else current.tirePressRF,
-                tirePressLR = if (obdState.tirePressLR >= 0) obdState.tirePressLR else current.tirePressLR,
-                tirePressRR = if (obdState.tirePressRR >= 0) obdState.tirePressRR else current.tirePressRR,
-                tireTempLF = if (obdState.tireTempLF > -90) obdState.tireTempLF else current.tireTempLF,
-                tireTempRF = if (obdState.tireTempRF > -90) obdState.tireTempRF else current.tireTempRF,
-                tireTempLR = if (obdState.tireTempLR > -90) obdState.tireTempLR else current.tireTempLR,
-                tireTempRR = if (obdState.tireTempRR > -90) obdState.tireTempRR else current.tireTempRR,
-                tpmsSensorIdLF = if (obdState.tpmsSensorIdLF >= 0) obdState.tpmsSensorIdLF else current.tpmsSensorIdLF,
-                tpmsSensorIdRF = if (obdState.tpmsSensorIdRF >= 0) obdState.tpmsSensorIdRF else current.tpmsSensorIdRF,
-                tpmsSensorIdRR = if (obdState.tpmsSensorIdRR >= 0) obdState.tpmsSensorIdRR else current.tpmsSensorIdRR,
-                tpmsSensorIdLR = if (obdState.tpmsSensorIdLR >= 0) obdState.tpmsSensorIdLR else current.tpmsSensorIdLR,
-                odometerKm   = if (obdState.odometerKm  >= 0)   obdState.odometerKm   else current.odometerKm,
-                batterySoc   = if (obdState.batterySoc  >= 0)   obdState.batterySoc   else current.batterySoc,
-                batteryTempC = if (obdState.batteryTempC > -90) obdState.batteryTempC else current.batteryTempC,
-                cabinTempC   = if (obdState.cabinTempC  > -90)  obdState.cabinTempC   else current.cabinTempC,
-                batteryChargingVoltageDesired = if (obdState.batteryChargingVoltageDesired >= 0) obdState.batteryChargingVoltageDesired else current.batteryChargingVoltageDesired,
-                batteryCurrentA = if (obdState.batteryCurrentA > -900) obdState.batteryCurrentA else current.batteryCurrentA,
-                sparkAdvance = if (obdState.sparkAdvance >= 0) obdState.sparkAdvance else current.sparkAdvance,
-                rduTempC     = if (obdState.rduTempC > -90)     obdState.rduTempC     else current.rduTempC,
-                awdClutchTempL = if (obdState.awdClutchTempL > -90) obdState.awdClutchTempL else current.awdClutchTempL,
-                awdClutchTempR = if (obdState.awdClutchTempR > -90) obdState.awdClutchTempR else current.awdClutchTempR,
-                awdReqTorqueL  = if (obdState.awdReqTorqueL > 0) obdState.awdReqTorqueL else current.awdReqTorqueL,
-                awdReqTorqueR  = if (obdState.awdReqTorqueR > 0) obdState.awdReqTorqueR else current.awdReqTorqueR,
-                awdDmdPressure = if (obdState.awdDmdPressure > 0) obdState.awdDmdPressure else current.awdDmdPressure,
-                awdPumpCurrent = if (obdState.awdPumpCurrent > 0) obdState.awdPumpCurrent else current.awdPumpCurrent,
-                awdClutchCurL  = if (obdState.awdClutchCurL > -900) obdState.awdClutchCurL else current.awdClutchCurL,
-                awdClutchCurR  = if (obdState.awdClutchCurR > -900) obdState.awdClutchCurR else current.awdClutchCurR,
-                awdClutchPressureL = if (obdState.awdClutchPressureL >= 0) obdState.awdClutchPressureL else current.awdClutchPressureL,
-                awdClutchPressureR = if (obdState.awdClutchPressureR >= 0) obdState.awdClutchPressureR else current.awdClutchPressureR,
-                transOilTempC  = if (obdState.transOilTempC > -90) obdState.transOilTempC else current.transOilTempC,
-                hpFuelRailPsi = if (obdState.hpFuelRailPsi >= 0) obdState.hpFuelRailPsi else current.hpFuelRailPsi,
-                batteryVoltage = if (obdState.batteryVoltage > 0) obdState.batteryVoltage else current.batteryVoltage,
-                rduEnabled   = obdState.rduEnabled   ?: current.rduEnabled,
-                pdcEnabled   = obdState.pdcEnabled   ?: current.pdcEnabled,
-                fengEnabled  = obdState.fengEnabled  ?: current.fengEnabled,
-                fengTimedOut = obdState.fengTimedOut || current.fengTimedOut,
-                lcArmed      = obdState.lcArmed      ?: current.lcArmed,
-                lcRpmTarget  = if (obdState.lcRpmTarget >= 0) obdState.lcRpmTarget else current.lcRpmTarget,
-                assEnabled   = obdState.assEnabled   ?: current.assEnabled,
-                rsprotTimedOut = obdState.rsprotTimedOut || current.rsprotTimedOut,
-                genericValues = if (obdState.genericValues.isNotEmpty())
-                    current.genericValues + obdState.genericValues
-                else current.genericValues,
-                warnMil         = obdState.warnMil         ?: current.warnMil,
-                warnAbs         = obdState.warnAbs         ?: current.warnAbs,
-                warnBrake       = obdState.warnBrake       ?: current.warnBrake,
-                warnCharge      = obdState.warnCharge      ?: current.warnCharge,
-                warnOilPressure = obdState.warnOilPressure ?: current.warnOilPressure,
-                warnTempHigh    = obdState.warnTempHigh    ?: current.warnTempHigh,
-                // Freshness stamps from markFresh()/putGeneric() — previously dropped here,
-                // which left every OBD field without a stamp (UI read them as STALE).
-                fieldLastUpdateMs = VehicleState.mergeStamps(current.fieldLastUpdateMs, obdState.fieldLastUpdateMs),
-            )
-        }
+        OpenRSDashApp.instance.vehicleState.update { current -> com.openrs.dash.data.ObdMerge.merge(current, obdState) }
         countKnockIfFresh(obdState)
         // Session knock log (#174) — merged live state so pull detection sees CAN rpm/throttle
         val loc = OpenRSDashApp.instance.driveState.value.currentLocation
@@ -695,6 +674,8 @@ class CanDataService : Service() {
             OpenRSDashApp.instance.vehicleState.value, System.currentTimeMillis(),
             loc?.latitude, loc?.longitude
         )
+        // Boost rule (#207): a fresh TIP decode can be source evidence / a TIP peak
+        com.openrs.dash.data.BoostSession.onState(OpenRSDashApp.instance.vehicleState.value, System.currentTimeMillis())
         // Live boost sweep window for the POWER chart (#175)
         com.openrs.dash.data.BoostSessionLog.onState(
             OpenRSDashApp.instance.vehicleState.value, System.currentTimeMillis()
@@ -718,77 +699,34 @@ class CanDataService : Service() {
         if (kr > 1.0) OpenRSDashApp.instance.knockEventCount.update { it + 1 }
     }
 
-    private fun processCanFrame(canId: Int, data: ByteArray, fps: Double) {
-        if (DemoMode.isActive) return   // late frame after demo took over
-        sessionFrameCount++
-        // Side effects (FuelEconomy, PerformanceTimer, knock counter) must run
-        // OUTSIDE the update{} lambda — MutableStateFlow.update uses a CAS retry
-        // loop, so anything inside the lambda can execute more than once on
-        // contention with concurrent OBD merges.
-        var newState: VehicleState? = null
-        OpenRSDashApp.instance.vehicleState.update { current ->
-            val decoded = CanDecoder.decode(canId, data, current)
-            if (decoded === current) {
-                // Recognized frame, nothing changed (0x040, 0x300, rejected 0x1A4): log it as
-                // known and skip peaks/fps copy + emit (#189/#192). Checked before stamping,
-                // which would otherwise make a new copy.
-                val (desc, issue) = CanDecoder.describeUnchanged(canId, data)
-                DiagnosticLogger.logFrame(canId, data, current, desc, issue)
-                return@update current
-            }
-            // #194 — stamp CAN-sourced fields (≤1/s per ID) so THERMAL availability works
-            val updated = decoded?.let { CanDecoder.stampFresh(canId, current, it, System.currentTimeMillis()) }
-            if (updated != null) {
-                val desc  = CanDecoder.describeDecoded(canId, updated)
-                val issue = CanDecoder.validateDecoded(canId, updated)
-                DiagnosticLogger.logFrame(canId, data, updated, desc, issue)
-                val withPeaks = updated.withPeaksUpdated().copy(framesPerSecond = fps)
-                newState = withPeaks
-                withPeaks
-            } else {
-                DiagnosticLogger.logUnknownFrame(canId, data)
-                current
-            }
-        }
-
-        // Side effects — guaranteed to run exactly once after CAS succeeds
-        val wp = newState ?: return
-
-        // Feed fuel economy calculator
-        if (canId == 0x130 || canId == 0x380) {
-            FuelEconomy.onUpdate(wp.fuelLevelPct, wp.speedKph)
-        }
-
-        // Feed performance timer (speed from 0x130, ~100 Hz)
-        if (canId == 0x130) {
-            val (sixty, hundred) = PerformanceTimer.onSpeedUpdate(wp.speedKph, wp.rpm, wp.boostPsi)
-            if (hundred || (sixty && PerformanceTimer.state.value == PerformanceTimer.State.FINISHED)) {
-                // Persist completed run to Room
-                val result = PerformanceTimer.result.value
-                if (result != null) {
-                    val driveId = OpenRSDashApp.instance.driveRecorder.driveState.value.let { if (it.isRecording) it.driveId else null }
-                    try {
-                        OpenRSDashApp.instance.driveDb.driveDao().insertPerfRun(
-                            com.openrs.dash.data.PerfRunEntity(
-                                driveId = driveId,
-                                timestamp = System.currentTimeMillis(),
-                                zeroTo60Ms = result.zeroTo60Ms,
-                                zeroTo100Ms = result.zeroTo100Ms,
-                                peakRpm = result.peakRpm,
-                                peakBoostPsi = result.peakBoostPsi,
-                                launchRpm = result.launchRpm,
-                                ambientTempC = wp.ambientTempC
-                            )
-                        )
-                    } catch (e: Exception) {
-                        android.util.Log.w("CanDataService", "PerfRun persist failed", e)
-                    }
+    /** The live-data work of connection job [gen] — frames, derived values, auto-record (see [LinkSession]). */
+    private fun newLinkSession(gen: Int) = LinkSession(
+        link = link,
+        gen = gen,
+        state = OpenRSDashApp.instance.vehicleState,
+        recorder = object : LinkSession.Recorder {
+            private val r get() = OpenRSDashApp.instance.driveRecorder
+            override val isRecording get() = r.driveState.value.isRecording
+            override val isPaused get() = r.driveState.value.isPaused
+            override val activeDriveId get() = r.driveState.value.let { if (it.isRecording) it.driveId else null }
+            override fun pausedDurationMs() = r.pausedDurationMs()
+            override fun resumeDrive() = r.resumeDrive()
+            override fun stopDrive() { r.stopDrive() }
+            override fun startDrive(sessionId: Long) = r.startDrive(sessionId = sessionId)
+        },
+        onFrameCounted = { sessionFrameCount++ },
+        perfRunSink = { run ->
+            scope.launch(Dispatchers.IO) {                    // Room write off the frame thread and off the lock
+                try {
+                    OpenRSDashApp.instance.driveDb.driveDao().insertPerfRun(run)
+                } catch (e: Exception) {
+                    android.util.Log.w("CanDataService", "PerfRun persist failed", e)
                 }
             }
-        }
-    }
+        },
+    )
 
-    @Synchronized fun stopConnection() {
+    fun stopConnection(): Unit = link.transition {
         // Auto-pause drive if recording — do NOT finalize here. A brief
         // disconnect (WiFi drop, adapter reboot) should not end the
         // drive. On reconnect within AUTO_RESUME_WINDOW_MS the drive
@@ -800,30 +738,99 @@ class CanDataService : Service() {
         if (ds.isRecording && !ds.isPaused && AppSettings.getAutoRecordDrives(this)) {
             recorder.pauseDrive()
         }
-        stopSessionRecording()
-        DiagnosticLogger.sessionEnd()
-        connectionJob?.cancel()
-        connectionJob = null
+        endConnection(LinkPhase.OFF)
+    }
+
+    /**
+     * Ends the current job (if any) and releases the foreground service. [finalPhase] is OFF for a stop / cancel and
+     * FAILED when the attempts ran out. Ending ownership first means a cancelled job that is still unwinding can't
+     * publish state, a merge or a notification over a newer attempt.
+     */
+    private fun endConnection(finalPhase: LinkPhase): Unit = link.transition {
+        teardownJob(finalPhase)
+        OpenRSDashApp.instance.linkPhase.value = finalPhase
         // Demo owns the connection flags (WiFi/BT-loss callbacks still land here).
         if (!DemoMode.isActive) {
-            OpenRSDashApp.instance.vehicleState.update { it.copy(isConnected = false, isIdle = false) }
+            OpenRSDashApp.instance.vehicleState.update { it.copy(isConnected = false, isReconnecting = false) }
             OpenRSDashApp.instance.deviceStatus.value = null
         }
         // Leave the foreground and the started state: with no activity bound the service now stops.
         foreground.demote()
     }
 
-    /** Called from UI when user taps the RETRY badge — fresh adapter + retry. */
-    @Synchronized fun reconnect() {
-        if (DemoMode.isActive) return
-        manualConnectRequired = false
+    /** Ends ownership and the job: session records closed, transport aborted, job cancelled. */
+    private fun teardownJob(phase: LinkPhase) {
+        link.end(phase)
+        stopSessionRecording()
+        DiagnosticLogger.sessionEnd()
+        connection?.abort()          // a blocking connect / read returns now instead of after its timeout
         connectionJob?.cancel()
         connectionJob = null
+    }
+
+    /** Publish a live phase (the job is current — called inside the ownership lock): link phase, VehicleState flags, notification. */
+    private fun applyPhase(phase: LinkPhase) {
+        OpenRSDashApp.instance.linkPhase.value = phase
+        OpenRSDashApp.instance.vehicleState.update {
+            it.copy(isConnected = phase == LinkPhase.CONNECTED, isReconnecting = phase == LinkPhase.RECONNECTING)
+        }
+        publishNotification(phase)
+    }
+
+    /** Notification text + Cancel for [phase] and the current recording state; no-op once released (not foreground). */
+    private fun publishNotification(phase: LinkPhase) {
+        val ds = OpenRSDashApp.instance.driveRecorder.driveState.value
+        LinkPresentation.notificationText(phase, isBluetooth(), ds.isRecording, ds.isPaused)?.let {
+            updateNotification(it, LinkPresentation.offersCancel(phase, ds.isRecording))
+        }
+    }
+
+    /**
+     * Attempts ran out (never while a drive is recording — see `keepRetrying`): end the job and the foreground service
+     * instead of leaving a notification that can't do anything. A new network or an explicit connect starts again.
+     */
+    private fun onAttemptsExhausted(gen: Int, label: String): Unit = link.transition {
+        if (!link.owns(gen)) return@transition
+        DiagnosticLogger.event("STATE", label)
+        android.util.Log.i("CAN", "Connection attempts exhausted — released")
+        val recorder = OpenRSDashApp.instance.driveRecorder
+        val ds = recorder.driveState.value
+        if (ds.isRecording && !ds.isPaused && AppSettings.getAutoRecordDrives(this)) recorder.pauseDrive()
+        endConnection(LinkPhase.FAILED)
+    }
+
+    /**
+     * User cancel of an initial attempt (pill, DRIVE status row, notification action). Closes the transport, cancels
+     * the attempt and its backoff, and blocks auto-connect (network callbacks, a rebind) until an explicit connect.
+     * One policy for every entry point ([LinkPresentation.offersCancel]), checked here when the request is handled: a
+     * Cancel while a drive is recording (incl. paused) or once the link is up is refused — it would stop the service the
+     * recording runs under — and leaves the connection and the drive exactly as they were. Returns whether it cancelled.
+     */
+    fun cancelConnection(): Boolean = link.transition {
+        if (DemoMode.isActive) return@transition false
+        val cancelled = link.cancel(recording = { isRecording() }) {
+            DiagnosticLogger.event("STATE", "Cancelled by user")
+            stopConnection()
+        }
+        if (!cancelled) {
+            val why = if (isRecording()) "a drive is recording" else "link ${link.phase.name.lowercase()}"
+            DiagnosticLogger.event("STATE", "Cancel ignored — $why")
+            android.util.Log.i("CAN", "Cancel ignored — $why")
+        }
+        cancelled
+    }
+
+    /** Called from UI when user taps the RETRY badge — fresh adapter + retry. */
+    fun reconnect(): Unit = link.transition {
+        if (DemoMode.isActive) return@transition
+        link.clearManualConnect()
+        // Old job, its session record and diagnostic session end before the new ones begin
+        teardownJob(LinkPhase.OFF)
         // L-6 fix: reset OBD-polled fields to sentinels so stale values from the
         // previous session don't persist for up to 30 s while new polls complete.
         OpenRSDashApp.instance.vehicleState.update {
             it.copy(
-                isConnected  = false, isIdle = false,
+                isConnected  = false, isReconnecting = false,
                 tirePressLF  = -1.0,  tirePressRF  = -1.0,
                 tirePressLR  = -1.0,  tirePressRR  = -1.0,
                 rduTempC     = -99.0, ptuTempC     = -99.0,
@@ -832,11 +839,13 @@ class CanDataService : Service() {
                 batteryTempC = -99.0, cabinTempC   = -99.0
             )
         }
-        startConnection()
+        // Transport down (or no foreground allowed): nothing started, so release instead of keeping a stale notification
+        if (!beginConnection()) endConnection(LinkPhase.OFF)
     }
 
     fun resetPeaks() {
         OpenRSDashApp.instance.vehicleState.update { it.withPeaksReset() }
+        com.openrs.dash.data.BoostSession.resetPeaks()
     }
 
     /** Reset the current session without disconnecting from the adapter. */
@@ -850,6 +859,7 @@ class CanDataService : Service() {
         OpenRSDashApp.instance.knockEventCount.value = 0
         com.openrs.dash.data.KnockSessionLog.reset()
         com.openrs.dash.data.BoostSessionLog.reset()
+        com.openrs.dash.data.BoostSession.reset()
         val connected = OpenRSDashApp.instance.vehicleState.value.isConnected
         OpenRSDashApp.instance.vehicleState.update { VehicleState(isConnected = connected) }
         com.openrs.dash.ui.ThermalReadinessSession.reset()
@@ -863,25 +873,25 @@ class CanDataService : Service() {
      * simulator. A drive being recorded is finalized first so it keeps only real samples.
      * Called again while active, it just switches scenario.
      */
-    @Synchronized fun enterDemoMode(scenario: DemoScenario) {
-        if (!DemoMode.AVAILABLE) return
-        if (DemoMode.isActive) { DemoMode.select(scenario); return }
+    fun enterDemoMode(scenario: DemoScenario): Unit = link.transition {
+        if (!DemoMode.AVAILABLE) return@transition
+        if (DemoMode.isActive) { DemoMode.select(scenario); return@transition }
         val recorder = OpenRSDashApp.instance.driveRecorder
         if (recorder.driveState.value.isRecording) recorder.stopDrive()
         stopConnection()
         connection = null
         adapterFirmwareApi = null
-        manualConnectRequired = true
+        link.requireManualConnect()
         DtcDatabase.load(this)
         DemoMode.start(scenario)
         android.util.Log.i("CAN", "Demo mode on (${scenario.name}) — adapter traffic stopped")
     }
 
     /** Clears simulated state and leaves the app disconnected until the user reconnects. */
-    @Synchronized fun exitDemoMode() {
-        if (!DemoMode.isActive) return
+    fun exitDemoMode(): Unit = link.transition {
+        if (!DemoMode.isActive) return@transition
         DemoMode.stop()
-        manualConnectRequired = true
+        link.requireManualConnect()
         android.util.Log.i("CAN", "Demo mode off — waiting for explicit connect")
     }
 

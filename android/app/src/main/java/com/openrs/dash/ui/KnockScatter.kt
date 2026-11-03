@@ -138,7 +138,10 @@ fun KnockScatter(
             textLayoutResult = xTitle,
             topLeft = Offset(xTitleX - xTitle.size.width / 2f, plotBottom + 4f)
         )
-        val yTitle = textMeasurer.measure(knockBoostUnit(p), axisStyle.copy(fontWeight = FontWeight.Medium))
+        // #207: the axis plots one measurement, named in the title; events without a reading are not drawn
+        val axisSource = KnockScatterMath.axisSource(events)
+        val yTitle = textMeasurer.measure(KnockScatterMath.axisTitle(axisSource, knockBoostUnit(p)),
+            axisStyle.copy(fontWeight = FontWeight.Medium))
         drawText(
             textLayoutResult = yTitle,
             topLeft = Offset(plotLeft - yTitle.size.width - 4f, (plotTop - yTitle.size.height - 4f).coerceAtLeast(0f))
@@ -146,6 +149,7 @@ fun KnockScatter(
 
         // Events
         for (ev in events) {
+            if (!KnockScatterMath.plotted(ev, axisSource)) continue
             val (x, y) = KnockScatterMath.project(ev, plot, rpmMin, rpmMax, boostMin, boostMax)
             val color = severityColor(ev.krDeg)
             drawCircle(
@@ -159,11 +163,13 @@ fun KnockScatter(
                 center = Offset(x, y)
             )
         }
-        selected?.let { events.getOrNull(it) }?.let { ev ->
+        selected?.let { events.getOrNull(it) }?.takeIf { KnockScatterMath.plotted(it, axisSource) }?.let { ev ->
             val (x, y) = KnockScatterMath.project(ev, plot, rpmMin, rpmMax, boostMin, boostMax)
             drawCircle(color = ringColor, radius = 9f, center = Offset(x, y), style = Stroke(width = 1.5f))
         }
     }
+    // Events left off the plane, and why (#207): no reading, another pressure source, or source not recorded
+    KnockScatterMath.notPlottedNote(events, KnockScatterMath.axisSource(events))?.let { InstrumentMeta(it) }
 }
 
 private const val TAP_RADIUS_DP = 16
@@ -187,7 +193,9 @@ fun KnockEventDetail(ev: KnockEventEntity, p: UserPrefs, modifier: Modifier = Mo
         Spacer(Modifier.height(4.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             AggCell("RPM", "${ev.rpm}", Frost, modifier = Modifier.weight(1f))
-            AggCell("BOOST", knockBoostText(ev.boostPsi, p), Frost, modifier = Modifier.weight(1f))
+            KnockScatterMath.boost(ev).let { b ->
+                AggCell(b.label, b.psiOrNull?.let { knockBoostText(it, p) } ?: "—", Frost, modifier = Modifier.weight(1f))
+            }
             AggCell("IAT", if (ev.iatC > -90) "${p.displayTemp(ev.iatC)}${p.tempLabel}" else "—", Frost, modifier = Modifier.weight(1f))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -271,7 +279,8 @@ fun KnockAggregate(
         Spacer(Modifier.height(4.dp))
         val cylLabel = if (it.cylinder in 1..4) " · cyl ${it.cylinder}" else ""
         Text(
-            "Worst cell: ${it.rpm} RPM @ ${knockBoostText(it.boostPsi, p)}$cylLabel",
+            "Worst cell: ${it.rpm} RPM" + KnockScatterMath.boost(it).let { b ->
+                b.psiOrNull?.let { psi -> " @ ${knockBoostText(psi, p)}${if (b.label == "TIP") " TIP" else ""}" } ?: "" } + cylLabel,
             style = TextStyle(fontFamily = JetBrainsMonoFamily, fontSize = 10.sp, color = Dim),
             modifier = Modifier.padding(horizontal = 8.dp)
         )

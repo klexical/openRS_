@@ -50,7 +50,7 @@ class DemoSimulatorTest {
         val live = frame(DemoScenario.CONNECTION_LOSS, 9_000)
         val lost = frame(DemoScenario.CONNECTION_LOSS, 15_000, live)
         assertEquals(DemoLink.LOST, DemoSimulator.link(DemoScenario.CONNECTION_LOSS, 15.0))
-        assertEquals(live.copy(isConnected = false, isIdle = true), lost)
+        assertEquals(live.copy(isConnected = false, isReconnecting = true), lost)
         // Already flagged lost → same instance, no re-emit
         assertSame(lost, frame(DemoScenario.CONNECTION_LOSS, 16_000, lost))
     }
@@ -87,6 +87,7 @@ class DemoSimulatorTest {
             assertNull(sc.name, vs.warnTempHigh)
             assertNull(sc.name, vs.warnCharge)
             assertEquals(sc.name, 0, vs.gear)                     // 0x230 never broadcasts — derivedGear only
+            assertEquals(sc.name, 0.0, vs.awdMaxTorque, 0.0)      // 0x2C0 has no "max" field (#226)
         }
     }
 
@@ -111,7 +112,8 @@ class DemoSimulatorTest {
         run(DemoScenario.DRIVING, 120_000) { t, s ->
             assertTrue("rpm ${s.rpm} @ $t", s.rpm in 600.0..6950.0)
             assertTrue("speed ${s.speedKph} @ $t", s.speedKph in 0.0..130.0)
-            assertTrue("boost ${s.boostPsi} @ $t", s.boostPsi in -15.0..26.0)
+            val psi = (s.boostKpa - 101.325) * 0.14503773
+            assertTrue("boost $psi @ $t", psi in -15.0..26.0)
             assertTrue("lat ${s.lateralG} @ $t", abs(s.lateralG) < 1.2)
             prev?.let { p -> assertTrue("speed step @ $t", abs(s.speedKph - p.speedKph) < 2.0) }
             gears += s.gearDisplay
@@ -136,5 +138,10 @@ class DemoSimulatorTest {
         assertTrue(!at(29.0).launchControlEngaged && at(29.0).speedKph > 5)                      // launched
         assertTrue(!at(36.0).launchControlActive && !at(36.0).eBrake)                            // cleared
         assertEquals(DemoLink.LIVE, DemoSimulator.link(DemoScenario.LAUNCH, 36.0))
+    }
+
+    @Test fun `demo stamps every tag a real CAN frame stamps — drive-mode confirmation works in demo`() {
+        val missing = com.openrs.dash.can.CanDecoder.canStampTags - DemoSimulator.CAN_TAGS.toSet()
+        assertTrue("demo never stamps $missing — confirmations keyed on them would time out", missing.isEmpty())
     }
 }

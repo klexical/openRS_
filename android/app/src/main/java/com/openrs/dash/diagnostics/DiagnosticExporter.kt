@@ -102,10 +102,12 @@ object DiagnosticExporter {
                     entries += name to inferType(name)
                 }
 
-                addEntry("diagnostic_summary_$ts.txt",
-                    DiagnosticReportBuilder.buildSummaryText(ts).toByteArray(Charsets.UTF_8))
-                addEntry("diagnostic_detail_$ts.json",
-                    DiagnosticReportBuilder.buildDetailJson(ts).toByteArray(Charsets.UTF_8))
+                // One adapter-status snapshot for both files (#233), one DTC scan record for every file of this ZIP —
+                // a scan completing / retried / a new session meanwhile can't make them disagree (#238 review)
+                val dtcScan = DiagnosticLogger.lastDtcScan
+                val (summaryText, detailJson) = DiagnosticReportBuilder.buildSummaryAndDetail(ts, dtcScan = dtcScan)
+                addEntry("diagnostic_summary_$ts.txt", summaryText.toByteArray(Charsets.UTF_8))
+                addEntry("diagnostic_detail_$ts.json", detailJson.toByteArray(Charsets.UTF_8))
 
                 // SLCAN raw log if one was recorded this session
                 val slcanFile = DiagnosticLogger.slcanLogFile
@@ -139,13 +141,13 @@ object DiagnosticExporter {
                 // Crash telemetry files
                 addCrashFiles(ctx, zip)
 
-                // DTC scan results (if available from this session)
-                val dtcResults = DiagnosticLogger.lastDtcResults
-                if (!dtcResults.isNullOrEmpty()) {
+                // DTC scan (#215): written whenever a scan ran — also with zero codes, with its status and module
+                // coverage — so a clean scan, a partial one and "no scan" (no files; dtcScan NONE in the detail) differ
+                if (dtcScan != null) {
                     addEntry("dtc_scan_$ts.txt",
-                        DriveExportBuilder.buildDtcText(dtcResults).toByteArray(Charsets.UTF_8))
+                        DriveExportBuilder.buildDtcText(dtcScan.codes, dtcScan).toByteArray(Charsets.UTF_8))
                     addEntry("dtc_scan_$ts.json",
-                        DriveExportBuilder.buildDtcJson(dtcResults).toByteArray(Charsets.UTF_8))
+                        DriveExportBuilder.buildDtcJson(dtcScan.codes, dtcScan).toByteArray(Charsets.UTF_8))
                 }
 
                 // DID probe sessions: one CSV per scanned module
@@ -254,12 +256,12 @@ object DiagnosticExporter {
                 if (includeDiagnostics && ExportComponent.DIAGNOSTICS in components) {
                     DiagnosticLogger.flushSlcan()
 
-                    val summary = DiagnosticReportBuilder.buildSummaryText(ts)
+                    // One adapter-status snapshot for both files (#233)
+                    val (summary, detail) = DiagnosticReportBuilder.buildSummaryAndDetail(ts)
                     if (summary.isNotEmpty()) {
                         addEntry("diagnostic_summary_$ts.txt", summary.toByteArray(Charsets.UTF_8))
                     }
 
-                    val detail = DiagnosticReportBuilder.buildDetailJson(ts)
                     if (detail.isNotEmpty()) {
                         addEntry("diagnostic_detail_$ts.json", detail.toByteArray(Charsets.UTF_8))
                     }
@@ -487,6 +489,18 @@ object DiagnosticExporter {
             }
     }
 
+    /**
+     * Full release identity for export metadata (#214), next to the older `appVersion` / `appBuild` keys (kept so earlier
+     * readers still work): published release name, versionCode, source commit (+ dirty flag) and build type.
+     */
+    internal fun putBuildIdentity(o: JSONObject) {
+        o.put("releaseVersion", BuildConfig.RELEASE_NAME)
+        o.put("versionCode", BuildConfig.VERSION_CODE)
+        o.put("sourceCommit", BuildConfig.SOURCE_COMMIT)
+        o.put("sourceDirty", BuildConfig.SOURCE_DIRTY)
+        o.put("buildType", BuildConfig.BUILD_TYPE)
+    }
+
     /** Build manifest.json listing all files in the ZIP with typed metadata. */
     private fun buildManifest(files: List<Pair<String, String>>): String {
         val root = JSONObject()
@@ -494,6 +508,7 @@ object DiagnosticExporter {
         root.put("app", "openRS_")
         root.put("appVersion", appVersion)
         root.put("appBuild", appBuild)
+        putBuildIdentity(root)
         root.put("exportedAt", System.currentTimeMillis())
         val arr = JSONArray()
         for ((name, type) in files) {

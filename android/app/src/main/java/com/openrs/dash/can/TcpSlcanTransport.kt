@@ -2,6 +2,7 @@ package com.openrs.dash.can
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetSocketAddress
@@ -18,20 +19,24 @@ class TcpSlcanTransport(
     private val port: Int = 35000
 ) : SlcanTransport {
 
-    private var socket: Socket? = null
+    /** Assigned before connect(), so [close] from another thread (an abort) ends a blocking connect at once (#212). */
+    @Volatile private var socket: Socket? = null
+    @Volatile private var closed = false
     private var inp: InputStream? = null
     private var out: OutputStream? = null
     /** Reused per-frame line buffer — SLCAN frames cap at ~26 chars. */
     private val lineBuf = StringBuilder(32)
 
     override val label: String get() = "TCP $host:$port"
+    override val kind: String get() = "Wi-Fi TCP"
     override val stockFirmwareLabel: String get() = "MeatPi Pro"
 
     override suspend fun open() = withContext(Dispatchers.IO) {
         val s = Socket()
+        socket = s
+        if (closed) { s.close(); throw IOException("Transport closed") }   // closed before the socket existed
         s.connect(InetSocketAddress(host, port), 5_000)
         s.soTimeout = 20_000
-        socket = s
         inp = s.getInputStream().buffered()
         out = s.getOutputStream()
     }
@@ -58,6 +63,7 @@ class TcpSlcanTransport(
     }
 
     override fun close() {
+        closed = true
         try { socket?.close() } catch (_: Exception) { }
         socket = null
         inp = null

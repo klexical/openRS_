@@ -79,9 +79,9 @@ object UpdateChecker {
         }
     }
 
-    private fun parseReleases(json: String, channel: String): UpdateResult? {
+    /** Pick the best newer release for [channel] from the GitHub releases JSON. Pure — unit-tested (#214). */
+    internal fun parseReleases(json: String, channel: String, current: AppVersion = AppVersion.current()): UpdateResult? {
         val releases = JSONArray(json)
-        val current = AppVersion.current()
         var best: UpdateResult? = null
 
         for (i in 0 until releases.length()) {

@@ -73,7 +73,8 @@ import com.openrs.dash.ui.anim.isShiftPoint
 fun CustomDashPage(
     vehicleState: VehicleState,
     prefs: UserPrefs,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    link: LinkUi = LinkUi.OFFLINE
 ) {
     val ctx = LocalContext.current
     val view = LocalView.current
@@ -121,15 +122,11 @@ fun CustomDashPage(
                 // DEMO (· RCN / · OFF) while simulating, RCN / OFF for a real link — the cells blank while
                 // the link is down, and this says why.
                 val demo by com.openrs.dash.demo.DemoMode.status.collectAsState()
-                val link = when {
-                    vehicleState.isConnected -> null
-                    vehicleState.isIdle -> "RCN"
-                    else -> "OFF"
-                }
+                val linkLabel = if (link == LinkUi.LIVE) null else link.pill
                 if (demo.active) {
                     Spacer(Modifier.width(8.dp))
-                    DemoBadge(if (link != null) "DEMO \u00B7 $link" else "DEMO")
-                } else if (link != null) {
+                    DemoBadge(if (linkLabel != null) "DEMO \u00B7 $linkLabel" else "DEMO")
+                } else if (linkLabel != null) {
                     Spacer(Modifier.width(8.dp))
                     Box(
                         Modifier
@@ -138,7 +135,7 @@ fun CustomDashPage(
                             .padding(horizontal = 5.dp, vertical = 2.dp)
                     ) {
                         // RCN amber like the header pill; OFF neutral — it's the user's state, not an alarm.
-                        MonoLabel(link, 8.sp, if (link == "RCN") WarnInk else Mid, FontWeight.Bold, 0.12.sp)
+                        MonoLabel(linkLabel, 8.sp, if (link == LinkUi.RECONNECTING) WarnInk else Mid, FontWeight.Bold, 0.12.sp)
                     }
                 }
                 Spacer(Modifier.weight(1f))
@@ -295,7 +292,21 @@ private fun CustomGaugeCell(
     modifier: Modifier = Modifier
 ) {
     val accent = LocalThemeAccent.current
-    val (displayValue, rawValue) = resolveValue(vs, prefs, cell)
+    // A withdrawn reading kept in a saved layout: the cell stays, unavailable, with the reason (#226)
+    com.openrs.dash.data.WITHDRAWN_FIELDS[cell.fieldKey]?.let { reason ->
+        Column(modifier.instrumentSurface().padding(horizontal = 14.dp, vertical = 12.dp)) {
+            InstrumentLabel(cell.label)
+            Spacer(Modifier.height(2.dp))
+            DataNum("— —", 22.sp, Dim)
+            InstrumentMeta(reason)
+        }
+        return
+    }
+    val now = wallClockMs()   // a stalled link must still age readings out (#207 / #217)
+    val (displayValue, rawValue) = resolveValue(vs, prefs, cell, now)
+    val boost = if (cell.fieldKey == "boostKpa") com.openrs.dash.data.BoostSession.gauge(vs, now) else null
+    // The pressure cell is the TIP gauge (#207): named TIP whatever label an older saved layout carries
+    val label = if (cell.fieldKey == "boostKpa") "TIP" else cell.label
     // This overlay hides the header / RECONNECTING strip, so frozen last-frame values
     // would read as live after an adapter drop — show placeholders instead.
     val stale = !vs.isConnected
@@ -307,19 +318,21 @@ private fun CustomGaugeCell(
     when (cell.displayType) {
         "hero" -> {
             val unit = when (cell.fieldKey) {
-                "boostKpa" -> prefs.displayBoost(vs.boostKpa).second
+                "boostKpa" -> prefs.displayGauge(0.0).second
                 "speedKph" -> prefs.speedLabel
                 else -> ""     // RPM: the caption already says it
             }
             val peak = when (cell.fieldKey) {
                 "rpm" -> "PEAK ${vs.peakRpm.toInt()}"
-                "boostKpa" -> "PEAK ${"%.1f".format(vs.peakBoostPsi)}"
+                // The peak of the source shown, named with it, in the selected unit (#207)
+                "boostKpa" -> boostPeakCaption(boost, prefs)
                 "speedKph" -> "PEAK ${prefs.displaySpeed(vs.peakSpeedKph)}"
                 else -> null
             }
             // Raw value, 1:1 with the frame (no spring) — the same rule as DRIVE's heroes.
             InstrumentHero(
-                label = cell.label,
+                // A TIP reading is never presented under the BOOST name (#207)
+                label = label,
                 unit = unit,
                 value = if (stale) "—" else displayValue,
                 valueColor = when {
@@ -344,7 +357,7 @@ private fun CustomGaugeCell(
                     .instrumentSurface(panelLevel)
                     .padding(horizontal = 14.dp, vertical = 12.dp)
             ) {
-                InstrumentLabel(cell.label)
+                InstrumentLabel(label)
                 Spacer(Modifier.height(2.dp))
                 val v = if (stale) "— —" else displayValue
                 DataNum(v, 22.sp, if (v.startsWith("—")) Dim else if (alert) levelColor(level) else Frost)
@@ -375,7 +388,7 @@ private fun CustomGaugeCell(
                     .instrumentSurface(panelLevel)
                     .padding(horizontal = 14.dp, vertical = 12.dp)
             ) {
-                InstrumentLabel(cell.label)
+                InstrumentLabel(label)
                 Spacer(Modifier.height(2.dp))
                 DataNum(v, 22.sp, if (v.startsWith("—")) Dim else if (alert) levelColor(level) else Frost)
             }

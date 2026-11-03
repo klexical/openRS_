@@ -14,9 +14,9 @@ data class VehicleState(
     // ── Engine (CAN Sniffed) ────────────────────────────────
     val rpm: Double = 0.0,
     val coolantTempC: Double = -99.0,  // -99 = not yet received (CAN 0x2F0 / 0x0F8)
-    val oilTempC: Double = -99.0,      // -99 = not yet received (CAN 0x0F8)
+    val oilTempC: Double = -99.0,      // 0x0F8 byte7 − 60 °C (#229); -99 = not yet received
     val intakeTempC: Double = -99.0,  // -99 = not yet received (CAN 0x2F0)
-    val boostKpa: Double = 101.325,
+    val boostKpa: Double = 101.325,   // CAN 0x0F8 byte 5 + 101.325 (gauge, std-atm form); a reading only once stamped
     val throttlePct: Double = 0.0,
     val throttleHasSource: Boolean = false,
     val accelPedalPct: Double = 0.0,
@@ -60,7 +60,7 @@ data class VehicleState(
     val hpFuelRailPsi: Double = -1.0,      // 0xF423: HP fuel rail pressure (PSI, direct injection)
 
     // ── Spark / Ignition (Mode 22 via PCM 0x7E0) ──────────
-    val sparkAdvance: Double = -1.0,       // 0x116B: spark advance (deg × 0.25); -1 = not yet polled
+    val sparkAdvance: Double = -99.0,      // 0x116B: spark advance, signed16 / 4 deg (negative valid); -99 = not yet received
 
     // ── Ignition Correction (Mode 22 via PCM 0x7E0) ───────
     val ignCorrCyl1: Double = 0.0,         // 0x03EC: Knock correction cyl 1 (deg)
@@ -120,7 +120,7 @@ data class VehicleState(
     val awdRightTorque: Double = 0.0,
     val rduTempC: Double = -99.0,   // AWD module Mode 22 PID 0x1E8A; −99 = not yet polled
     val awdMaxTorque: Double = 0.0,
-    val ptuTempC: Double = -99.0,   // 0x0F8 byte7 − 60 °C; −99 = not yet received (M-8)
+    val ptuTempC: Double = -99.0,   // 0x0F8 byte1 − 50 °C (#229); −99 = not yet received (M-8)
     val awdClutchTempL: Double = -99.0,  // AWD 0x703: left clutch temp inferred (°C)
     val awdClutchTempR: Double = -99.0,  // AWD 0x703: right clutch temp inferred (°C)
     val awdReqTorqueL: Double = 0.0,     // AWD 0x703: left side requested torque (Nm)
@@ -204,8 +204,9 @@ data class VehicleState(
 
     // ── Connection ──────────────────────────────────────────
     val isConnected: Boolean = false,
-    /** True when all retry attempts exhausted — waiting for manual reconnect. */
-    val isIdle: Boolean = false,
+    /** True while an established link that dropped is being retried (real: [com.openrs.dash.can.LinkPhase.RECONNECTING];
+     *  demo: the simulated connection-loss phase). Initial attempts and exhausted attempts are never "reconnecting". */
+    val isReconnecting: Boolean = false,
     val framesPerSecond: Double = 0.0,
     val lastUpdate: Long = 0L,
 
@@ -259,7 +260,9 @@ data class VehicleState(
     }
 
     // ── Computed ─────────────────────────────────────────────
-    val boostPsi: Double get() = (boostKpa - 101.325) * 0.14503773
+    // BOOST: no computed boost here — it needs a wall clock and the session's source decision. Every consumer reads
+    // BoostSession.read(vs, nowMs) / BoostRule (#207). boostKpa = CAN 0x0F8 byte 5 + 101.325 (gauge, std-atm form);
+    // it is a reading only once stamped ("boostKpa").
     /** Throttle % from CAN 0x076 when the car broadcasts it, else accel pedal (0x080). 0x076 is absent on
      *  some RS PCMs (user's car, 2026-10-22 log) — anything keyed on throttle (pulls, knock snapshot,
      *  recorded throttle) must use this, or it reads 0 forever there. */
@@ -268,15 +271,8 @@ data class VehicleState(
     val combinedG: Double get() = sqrt(lateralG * lateralG + longitudinalG * longitudinalG)
     val totalRearTorque: Double get() = awdLeftTorque + awdRightTorque
 
-    val rearTorquePct: Double get() {
-        if (torqueAtTrans <= 0) return 0.0
-        return min(100.0, totalRearTorque / torqueAtTrans * 100.0)
-    }
-
-    val frontRearSplit: String get() {
-        val r = rearTorquePct.toInt()
-        return "${100 - r}/$r"
-    }
+    // No front/rear split (#226): the rear-unit torque fields (0x2C0) and 0x070 engine torque sit at different, partly
+    // unknown points of the drivetrain — their ratio is not a physical split. Withdrawn until a reference is established.
 
     val rearLeftRightBias: String get() {
         val total = totalRearTorque
@@ -398,10 +394,9 @@ data class VehicleState(
         return valid.max() - valid.min()
     }
 
+    /** Session peaks. Boost peaks are kept per source by [BoostSession] (#207) — [peakBoostPsi] isn't updated here. */
     fun withPeaksUpdated(): VehicleState {
-        val psi = boostPsi
         return copy(
-            peakBoostPsi = max(peakBoostPsi, psi),
             peakRpm = max(peakRpm, rpm),
             peakSpeedKph = max(peakSpeedKph, speedKph),
             peakLateralG = max(peakLateralG, abs(lateralG)),

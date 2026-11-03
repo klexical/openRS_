@@ -1,5 +1,6 @@
 import type { Session, TripSummary, TripPoint } from '../types/session'
 import { tempReading, pctReading } from './readings'
+import { boostFor, boostLabel, primaryBoostSource, type BoostSource } from './boost'
 
 /** A single KPI delta between two sessions. */
 export interface KpiDelta {
@@ -22,7 +23,8 @@ export interface NormalizedPoint {
   /** 0..1 fraction through the session. */
   t: number
   rpm: number
-  boostPsi: number
+  /** Only the session's primary boost measurement (lib/boost.ts); other sources / no reading → null (a gap). */
+  boostPsi: number | null
   speedKph: number
   coolantC: number | null
   oilTempC: number | null
@@ -40,7 +42,6 @@ export function computeDeltas(base: TripSummary, comp: TripSummary): KpiDelta[] 
     { key: 'avgSpeedKph', label: 'Avg Speed', unit: 'kph', higherIsBetter: true },
     { key: 'peakRpm', label: 'Peak RPM', unit: 'RPM', higherIsBetter: true },
     { key: 'avgRpm', label: 'Avg RPM', unit: 'RPM', higherIsBetter: true },
-    { key: 'peakBoostPsi', label: 'Peak Boost', unit: 'PSI', higherIsBetter: true },
     { key: 'peakLatG', label: 'Peak Lat G', unit: 'G', higherIsBetter: true },
     { key: 'peakLongG', label: 'Peak Long G', unit: 'G', higherIsBetter: false },
     { key: 'distanceKm', label: 'Distance', unit: 'km', higherIsBetter: true },
@@ -63,7 +64,27 @@ export function computeDeltas(base: TripSummary, comp: TripSummary): KpiDelta[] 
       const pctChange = baseValue !== 0 ? (diff / Math.abs(baseValue)) * 100 : 0
       return { label, unit, baseValue, compValue, diff, pctChange, higherIsBetter }
     })
-    .filter(Boolean) as KpiDelta[]
+    .filter(Boolean)
+    .concat(boostDelta(base, comp)) as KpiDelta[]
+}
+
+/**
+ * Peak boost delta (#207) — only between peaks of the same measurement (both TIP, both CAN 0x0F8, or both from
+ * exports without sources), never when either session has no reading. A genuine 0 peak compares.
+ */
+function boostDelta(base: TripSummary, comp: TripSummary): KpiDelta[] {
+  const a = base.peakBoostPsi, b = comp.peakBoostPsi
+  if (a == null || b == null || !Number.isFinite(a) || !Number.isFinite(b)) return []
+  if ((base.peakBoostSource ?? null) !== (comp.peakBoostSource ?? null)) return []
+  const diff = b - a
+  const label = `Peak ${boostLabel(base.peakBoostSource) === 'TIP' ? 'TIP' : 'Boost'}`
+  return [{ label, unit: 'PSI', baseValue: a, compValue: b, diff, pctChange: a !== 0 ? (diff / Math.abs(a)) * 100 : 0, higherIsBetter: true }]
+}
+
+/** The boost measurement an overlay of these sessions can show, or undefined when they differ (#207). */
+export function overlayBoostSource(sessions: Session[]): BoostSource | null | undefined {
+  const sources = sessions.map((s) => primaryBoostSource(s.trip?.points ?? []))
+  return sources.every((x) => x === sources[0]) ? sources[0] : undefined
 }
 
 /** Normalize trip points to 0..1 time fraction for overlay comparison. Sentinel temps / throttle → null, genuine zeros kept. */
@@ -73,10 +94,11 @@ export function normalizePoints(points: TripPoint[]): NormalizedPoint[] {
   const duration = points[points.length - 1].ts - t0
   if (duration <= 0) return []
 
+  const boostSource = primaryBoostSource(points)
   return points.map((p) => ({
     t: (p.ts - t0) / duration,
     rpm: p.rpm,
-    boostPsi: p.boostPsi,
+    boostPsi: boostFor(p, boostSource),
     speedKph: p.speedKph,
     coolantC: tempReading(p.coolantC),
     oilTempC: tempReading(p.oilTempC),

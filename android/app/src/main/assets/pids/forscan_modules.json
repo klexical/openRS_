@@ -3850,7 +3850,7 @@
           "status": "monitored",
           "did": "0x093C",
           "bytes": 2,
-          "formula": "(A*256+B)*(100.0/8192.0)",
+          "formula": "(A*256+B)/512.0",
           "field": "etcAngleActual",
           "poll_group": "pcm_standard"
         },
@@ -3887,7 +3887,7 @@
           "status": "monitored",
           "did": "0x091A",
           "bytes": 2,
-          "formula": "(A*256+B)*(100.0/8192.0)",
+          "formula": "(A*256+B)/512.0",
           "field": "etcAngleDesired",
           "poll_group": "pcm_standard"
         },

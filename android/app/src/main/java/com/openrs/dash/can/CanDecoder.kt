@@ -76,7 +76,8 @@ object CanDecoder {
     const val ID_PEDALS       = 0x080   // Accel pedal (bits 0-9 LE ×0.1 %), brake (bit 2), reverse (bit 5)
     const val ID_ENGINE_RPM   = 0x090   // RPM (byte4 low-nib|byte5 × 2), baro (byte2 × 0.5 kPa)
     const val ID_GAUGE_ILLUM  = 0x0C8   // Gauge brightness (bits 0-4), e-brake (byte3 bit 6)
-    // RS_HS.dbc PCMmsg07 (0x0F8): EngineOilTemp byte1 −50°C, Boost byte5 ×0.01bar gauge, PTUTemp byte7 −60°C
+    // 0x0F8 (RS_HS.dbc PCMmsg07): engine oil byte7 −60 °C, Boost byte5 ×0.01 bar gauge, PTU byte1 −50 °C — oil / PTU
+    // bytes are the reverse of the DBC names, from a capture with oil and PTU replies on one clock (#229)
     const val ID_ENGINE_TEMPS = 0x0F8
     const val ID_SPEED        = 0x130   // Speed bytes 6-7 BE × 0.01 kph
     const val ID_LONG_ACCEL   = 0x160   // Longitudinal G bits 48-57 LE × 0.00390625 − 2.0
@@ -90,7 +91,7 @@ object CanDecoder {
     // RS_HS.dbc ABSmsg03 (0x190): FL/FR/RL/RR wheel speeds — 15-bit Motorola × 0.011343006 km/h
     const val ID_WHEEL_SPEEDS = 0x190
     const val ID_GEAR         = 0x230   // Gear bits 0-3
-    const val ID_AWD_TORQUE   = 0x2C0   // AWD left/right Nm (bits 0|12, 12|12)
+    const val ID_AWD_TORQUE   = 0x2C0   // AWD actual left/right Nm (RS_HS.dbc AWDmsg02, MSB-first 20|12, 52|12)
     // RS_HS.dbc PCMmsg16 (0x2F0): CoolantTemp 10-bit Motorola −60°C, IntakeAirTemp 10-bit ×0.25−127°C
     const val ID_COOLANT      = 0x2F0
 
@@ -188,8 +189,13 @@ object CanDecoder {
      * classifies via `fieldLastUpdateMs` (THERMAL availability) need an entry.
      * Stamped by CanDataService.processCanFrame, throttled per ID — see [CAN_STAMP_THROTTLE_MS].
      */
+    /** Every freshness tag a CAN frame stamps (demo mode must stamp the same set — DemoSimulatorTest). */
+    val canStampTags: Set<String> get() = FRESH_TAGS.values.flatMap { it.toList() }.toSet()
+
     private val FRESH_TAGS: Map<Int, Array<String>> = mapOf(
-        ID_ENGINE_TEMPS to arrayOf("oilTempC", "ptuTempC"),
+        ID_ENGINE_TEMPS to arrayOf("oilTempC", "ptuTempC", "boostKpa"),   // boostKpa = 0x0F8 receipt (#207)
+        ID_ESC_ABS      to arrayOf("escStatus"),                         // ESC confirmation needs a post-request frame (#125)
+        ID_DRIVE_MODE   to arrayOf("driveMode"),                         // drive-mode confirmation: a resolved 0x1B0 after the request
         ID_COOLANT      to arrayOf("coolantTempC", "intakeTempC"),
         ID_AMBIENT_TEMP to arrayOf("ambientTempC"),
         ID_PCM_AMBIENT  to arrayOf("ambientTempC"),
@@ -250,18 +256,20 @@ object CanDecoder {
             ) else null
 
             // ── 0x0F8: Engine oil temp + boost + PTU temp ─────────────────────
-            // RS_HS.dbc PCMmsg07 (20 ms broadcast):
-            //   EngineOilTemp : 15|8@0+ (1,−50)   → byte1, raw−50 °C
-            //   Boost         : 47|8@0+ (0.01,0)   → byte5, raw×0.01 bar gauge;
-            //                    stored as absolute kPa = raw + barometric pressure
-            //   PTUTemp       : 63|8@0+ (1,−60)    → byte7, raw−60 °C
-            // Baro fallback: use 101.325 kPa (std atmosphere) until 0x090 frame populates state.
+            // PCMmsg07 (20 ms broadcast). Offsets travel with their bytes:
+            //   byte7, raw−60 °C → ENGINE OIL. The DBC names it PTUTemp (63|8@0+ (1,−60)); in one car's capture the
+            //                    oil reply (ICM 0x78C DID 0x6017, same clock) tracked it (#229).
+            //   Boost         : 47|8@0+ (0.01,0)   → byte5, raw×0.01 bar (1 kPa) gauge, unsigned
+            //                    stored as gauge + 101.325 (the displayBoost form) — independent of baro, so a baro
+            //                    arriving or changing later can't shift it (#207). Receipt is stamped ("boostKpa").
+            //   byte1, raw−50 °C → PTU. The DBC names it EngineOilTemp (15|8@0+ (1,−50)); in the same capture the
+            //                    PTU reply (PCM 0x7E8 DID 0x070D) tracked it, ~20 °C away from byte 7 throughout (#229).
+            //   Drives recorded before this carry no DriveEntity.oilPtuMapping (OilPtuMapping) — never relabelled.
             ID_ENGINE_TEMPS -> if (n >= 8) {
-                val baro = if (state.barometricPressure > 50.0) state.barometricPressure else 101.325
                 state.copy(
-                    oilTempC   = (ubyte(data, 1) - 50).toDouble(),
-                    boostKpa   = ubyte(data, 5).toDouble() + baro,
-                    ptuTempC   = (ubyte(data, 7) - 60).toDouble(),
+                    oilTempC   = (ubyte(data, 7) - 60).toDouble(),
+                    boostKpa   = ubyte(data, 5).toDouble() + 101.325,
+                    ptuTempC   = (ubyte(data, 1) - 50).toDouble(),
                     lastUpdate = now
                 )
             } else null
@@ -449,19 +457,23 @@ object CanDecoder {
                 lastUpdate   = now
             ) else null
 
-            // ── 0x2C0: AWD / GKN Twinster torque ─────────────────────────────────
-            // Torque vectoring left/right Nm. RDU temp is NOT in this passive frame —
-            // it is polled via AWD module Mode 22 PID 0x1E8A (see SlcanConnection).
-            ID_AWD_TORQUE -> if (n >= 7) {
-                var left  = bits(data, 0,  12).toDouble()
-                var right = bits(data, 12, 12).toDouble()
+            // ── 0x2C0: AWD / GKN Twinster torque (#226) ──────────────────────────
+            // RS_HS.dbc AWDmsg02: four 12-bit Motorola signals, one per big-endian 16-bit word —
+            //   TorqueVectoringRequestedLeftTorq 3|12, ActualLeftTorque 19|12,
+            //   RequestedRightTor 35|12, ActualRightTorque 51|12 ("Nm", factor 1)
+            // = MSB-first bits 4–15 / 20–31 / 36–47 / 52–63. On the 2026-10-28 drives (4,374 non-zero frames) no bit
+            // was ever set outside those fields and requested ≈ actual (r 0.97). Until rc.7 this read bits 0|12 and
+            // 12|12, which straddle the requested-left and actual-left words ("right" was always a multiple of 256),
+            // plus an undocumented 43|13 "max" spanning both right-hand fields — retired. Which point of the
+            // drivetrain the Nm refers to is not documented. RDU temp is NOT in this frame (AWD DID 0x1E8A).
+            ID_AWD_TORQUE -> if (n >= 8) {
+                var left  = bits(data, 20, 12).toDouble()
+                var right = bits(data, 52, 12).toDouble()
                 if (left  >= 0xFFE) left  = 0.0
                 if (right >= 0xFFE) right = 0.0
-                val maxRaw = bits(data, 43, 13)
                 state.copy(
                     awdLeftTorque  = left,
                     awdRightTorque = right,
-                    awdMaxTorque   = if (maxRaw > 0) maxRaw.toDouble() else 0.0,
                     lastUpdate     = now
                 )
             } else null
@@ -628,7 +640,7 @@ object CanDecoder {
      */
     fun describeDecoded(id: Int, state: VehicleState): String = when (id) {
         ID_ENGINE_RPM   -> "rpm=${state.rpm.toInt()}, baro=${"%.1f".format(state.barometricPressure)}kPa"
-        ID_ENGINE_TEMPS -> "oilTempC=${"%.0f".format(state.oilTempC)}, boost=${state.boostKpa.toInt()}kPa, ptuTempC=${"%.0f".format(state.ptuTempC)}"
+        ID_ENGINE_TEMPS -> "oilTempC=${"%.0f".format(state.oilTempC)}, boost=${"%.0f".format(state.boostKpa - 101.325)}kPa gauge, ptuTempC=${"%.0f".format(state.ptuTempC)}"
         ID_SPEED        -> "speedKph=${"%.2f".format(state.speedKph)}"
         ID_COOLANT      -> "coolantTempC=${"%.1f".format(state.coolantTempC)}, iatTempC=${"%.1f".format(state.intakeTempC)}"
         ID_THROTTLE     -> "throttlePct=${"%.1f".format(state.throttlePct)}"
@@ -676,11 +688,9 @@ object CanDecoder {
             else -> null
         }
         ID_ENGINE_TEMPS -> when {
-            state.oilTempC < -50   -> "oilTempC<-50 — check byte1 formula (raw-50)"
+            state.oilTempC > -90 && state.oilTempC < -50 -> "oilTempC<-50 — check byte7 formula (raw-60)"
             state.oilTempC > 160   -> "oilTempC>160 — suspiciously hot"
-            state.ptuTempC > -90 && state.ptuTempC < -60 -> "ptuTempC<-60 — check byte7 formula (raw-60)"
-            state.ptuTempC > 200   -> "ptuTempC>200 — suspiciously hot"
-            state.boostKpa < 60.0  -> "boostKpa<60 — too low (baro not populated?)"
+            state.ptuTempC > 200   -> "ptuTempC>200 — suspiciously hot (byte1 formula raw-50)"
             state.boostKpa > 400.0 -> "boostKpa>400 — >43 PSI, check formula"
             else -> null
         }
@@ -742,7 +752,7 @@ object CanDecoder {
 
     /**
      * MSB-first network bit extraction (bit 0 = MSB of byte 0).
-     * Correct for RS_HS.dbc signals written with this convention (torque, ESC, AWD torque).
+     * RS_HS.dbc Motorola start bit S (LSB numbering) = MSB-first index (S / 8) * 8 + 7 − S % 8 (torque, ESC, AWD torque).
      * NOT correct for signals using standard DBC LSB-first Motorola numbering (yaw, steer,
      * brake, coolant, latG) — those use manual byte extraction with the &-mask/shift pattern.
      */

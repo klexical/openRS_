@@ -35,6 +35,9 @@ jobs:
       - name: Run unit tests
         run: ./gradlew test --no-daemon
 
+      - name: Test the release configuration check
+        run: bash scripts/test-release-config.sh
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -120,6 +123,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # verify-release.sh compares versionCode with every earlier android-v* tag
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -143,21 +148,25 @@ jobs:
           printf 'storeFile=openrs-release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
             "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > keystore.properties
 
-      # RC tags (android-v2.2.7-rc.5) must produce openRS_v{ver}-rc.N.apk — never the plain
-      # stable name, which is reserved for final releases (#196)
+      # API keys come from repository secrets as environment variables (#235) — no file, never echoed. Maps is required
+      # for a published release (the job stops here without it); weather is optional.
+      - name: Check release configuration (API keys)
+        env:
+          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+          OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
+        run: bash scripts/check-release-config.sh
+
+      # The release identity (name, versionCode) comes only from app/build.gradle.kts (#214); the tag must match it.
       - name: Build release APK
         env:
+          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+          OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
+        run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon
+
+      - name: Verify release identity (tag, versionName, filename, versionCode, signer, Maps key)
+        env:
           TAG: ${{ github.ref_name }}
-        run: |
-          chmod +x gradlew
-          SUFFIX=""
-          if [[ "$TAG" =~ -(rc\.[0-9]+)$ ]]; then SUFFIX="${BASH_REMATCH[1]}"; fi
-          echo "Tag $TAG → rcSuffix='${SUFFIX}'"
-          if [ -n "$SUFFIX" ]; then
-            ./gradlew assembleRelease --no-daemon -PrcSuffix="$SUFFIX"
-          else
-            ./gradlew assembleRelease --no-daemon
-          fi
+        run: bash scripts/verify-release.sh "$TAG" "app/build/outputs/apk/release/openRS_v${TAG#android-v}.apk"
 
       - name: Find release APK
         id: apk

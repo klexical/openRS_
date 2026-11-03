@@ -169,18 +169,24 @@ class HudOverlayService : Service() {
 
     private fun startUpdating() {
         scope.launch {
+            // A 1 s tick re-renders with the latest state, so a stalled link ages boost out (#207) even when no
+            // new VehicleState arrives
+            val tick = kotlinx.coroutines.flow.flow { while (true) { emit(Unit); delay(1_000L) } }
             combine(
                 OpenRSDashApp.instance.vehicleState,
-                UserPrefsStore.prefs
-            ) { vs, prefs -> vs to prefs }
+                UserPrefsStore.prefs,
+                tick
+            ) { vs, prefs, _ -> vs to prefs }
                 .collect { (vs, prefs) ->
                     demoTv.visibility = if (com.openrs.dash.demo.DemoMode.isActive) View.VISIBLE else View.GONE
 
                     // Boost — respect user's preferred unit. Disconnected: last values are
                     // frozen, so show the same "---" placeholder as a missing oil temp.
-                    val (bVal, bUnit) = prefs.displayBoost(vs.boostKpa)
-                    boostTv.text = if (vs.isConnected) getString(R.string.hud_boost, bVal, bUnit)
-                                   else getString(R.string.hud_boost, "---", bUnit)
+                    // TIP gauge (#207): TIP only, no fresh TIP → "---" (re-evaluated every second as well)
+                    val boost = com.openrs.dash.data.BoostSession.gauge(vs, System.currentTimeMillis())
+                    val bUnit = prefs.displayGauge(0.0).second
+                    val bVal = boost.gaugeKpa?.takeIf { vs.isConnected }?.let { prefs.displayGauge(it).first } ?: "---"
+                    boostTv.text = getString(R.string.hud_boost, bVal, bUnit)
 
                     // RPM
                     rpmTv.text = if (vs.isConnected) getString(R.string.hud_rpm, vs.rpm.toInt())

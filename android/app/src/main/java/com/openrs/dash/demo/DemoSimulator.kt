@@ -63,7 +63,8 @@ object DemoSimulator {
     const val COOL_CLUTCH_COOL_S = 255.0
 
     /** Freshness tags the simulator writes — CAN-sourced THERMAL tags + every polled Mode 22 tag. */
-    val CAN_TAGS = arrayOf("oilTempC", "ptuTempC", "coolantTempC", "intakeTempC", "ambientTempC")
+    // Every tag CanDecoder stamps from CAN — incl. "driveMode", which drive-mode confirmation needs (demo dock)
+    val CAN_TAGS = arrayOf("oilTempC", "ptuTempC", "boostKpa", "escStatus", "driveMode", "coolantTempC", "intakeTempC", "ambientTempC")
     val OBD_TAGS = arrayOf(
         "calcLoad", "shortFuelTrim", "longFuelTrim", "timingAdvance", "fuelRailPressure",
         "o2Voltage", "afrActual", "lambdaActual", "afrSensor1", "afrDesired", "commandedAfr",
@@ -118,7 +119,7 @@ object DemoSimulator {
         val t = tMs / 1000.0
         val link = link(scenario, t)
         if (link == DemoLink.LOST) {
-            return if (!cur.isConnected && cur.isIdle) cur else cur.copy(isConnected = false, isIdle = true)
+            return if (!cur.isConnected && cur.isReconnecting) cur else cur.copy(isConnected = false, isReconnecting = true)
         }
         val m = when (scenario) {
             DemoScenario.IDLE -> idle(t)
@@ -404,7 +405,7 @@ object DemoSimulator {
             wgdcDesired = m.wgdc,
             vctIntakeAngle = 18 + 14 * load / 100, vctExhaustAngle = 6 + 8 * load / 100,
             oilLifePct = if (obd) 68.0 else -1.0, hpFuelRailPsi = if (obd) 700 + 15 * load else -1.0,
-            sparkAdvance = if (obd) timing.coerceAtLeast(0.0) else -1.0,
+            sparkAdvance = if (obd) timing else -99.0,
             ignCorrCyl1 = m.kr[0], ignCorrCyl2 = m.kr[1], ignCorrCyl3 = m.kr[2], ignCorrCyl4 = m.kr[3],
             tirePressLF = pressure[0], tirePressRF = pressure[1],
             tirePressLR = pressure[2], tirePressRR = pressure[3],
@@ -420,7 +421,7 @@ object DemoSimulator {
             wheelSpeedRL = wheel(-0.03 * m.latG), wheelSpeedRR = wheel(0.03 * m.latG),
             avgFrontWheelSpeedKph = m.speedKph,
             awdLeftTorque = rearTotal * (1 - bias), awdRightTorque = rearTotal * bias,
-            rduTempC = if (obd) m.rduC else -99.0, awdMaxTorque = 1_200.0,
+            rduTempC = if (obd) m.rduC else -99.0,
             ptuTempC = m.ptuC,
             awdClutchTempL = m.clutchC, awdClutchTempR = m.clutchC + 1.5,
             awdReqTorqueL = rearTotal * (1 - bias), awdReqTorqueR = rearTotal * bias,
@@ -440,7 +441,7 @@ object DemoSimulator {
             batteryChargingVoltageDesired = 14.4, batteryCurrentA = m.battA,
             rduEnabled = true, pdcEnabled = true, fengEnabled = true,
             lcArmed = false, lcRpmTarget = 4500, assEnabled = false,
-            isConnected = true, isIdle = false,
+            isConnected = true, isReconnecting = false,
             framesPerSecond = 400 + 12 * noise(m.rpm / 500, 12.0),
             lastUpdate = nowMs,
         )

@@ -63,18 +63,23 @@ data class AppVersion(
             )
         }
 
-        /** The currently installed app version, derived from BuildConfig. */
-        fun current(): AppVersion {
-            val parts = BuildConfig.VERSION_NAME.split(".")
-            val rcSuffix = BuildConfig.RC_SUFFIX
+        private val NAME_REGEX = Regex("""^(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?""")
+
+        /**
+         * Parse an installed / release version name: "2.2.7-rc.7", "2.2.7", or a debug name such as
+         * "2.2.7-rc.7-dev+1c3e602a9b1d.dirty" (the dev suffix is ignored). Null when it doesn't start with a version.
+         */
+        fun fromVersionName(name: String): AppVersion? {
+            val m = NAME_REGEX.find(name) ?: return null
             return AppVersion(
-                major = parts.getOrNull(0)?.toIntOrNull() ?: 0,
-                minor = parts.getOrNull(1)?.toIntOrNull() ?: 0,
-                patch = parts.getOrNull(2)?.toIntOrNull() ?: 0,
-                rc = if (rcSuffix.isNotEmpty()) {
-                    rcSuffix.removePrefix("rc.").toIntOrNull()
-                } else null
+                major = m.groupValues[1].toInt(),
+                minor = m.groupValues[2].toInt(),
+                patch = m.groupValues[3].toInt(),
+                rc = m.groupValues[4].takeIf { it.isNotEmpty() }?.toInt()
             )
         }
+
+        /** The installed release identity (#214) — one source, so the RC is never appended twice or dropped. */
+        fun current(): AppVersion = fromVersionName(BuildConfig.RELEASE_NAME) ?: AppVersion(0, 0, 0)
     }
 }

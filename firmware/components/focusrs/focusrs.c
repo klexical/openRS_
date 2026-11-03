@@ -1,4 +1,5 @@
 #include "focusrs.h"
+#include "focusrs_esc_plan.h"
 #include "focusrs_nvs.h"
 #include "focusrs_uds.h"
 
@@ -90,9 +91,15 @@ void frs_parse_can_frame(uint32_t can_id, const uint8_t *data, uint8_t dlc) {
     case FRS_CAN_ID_ESC_ABS:
         if (dlc >= 2) {
             uint8_t raw_esc = (data[1] >> 4) & 0x03;
+            // Only a frame that reports an ESC mode counts as an observation: raw 3 (Launch in RS_HS.dbc, not one of
+            // the modes this firmware sets) keeps the last mode and must not count as a fresh frame — otherwise a mode
+            // reported before the presses would pass the post-press confirmation (#125).
+            bool known = true;
             if (raw_esc == 0) s_state.esc_mode = FRS_ESC_ON;
             else if (raw_esc == 1) s_state.esc_mode = FRS_ESC_OFF;
             else if (raw_esc == 2) s_state.esc_mode = FRS_ESC_SPORT;
+            else known = false;
+            if (known) s_state.esc_frames++;   // the ESC task requires such a frame received after its presses
         }
         break;
 
@@ -200,7 +207,8 @@ static bool frs_tx_frame(uint32_t can_id, const uint8_t *frame, uint8_t dlc) {
 
 // ── Generic button press helpers ─────────────────────────────
 
-static void frs_send_button(uint32_t can_id,
+// Both return false when the sequence couldn't be sent in full (no TX callback, aborted on TX errors).
+static bool frs_send_button(uint32_t can_id,
                             const uint8_t *tmpl,
                             uint8_t byte_idx,
                             uint8_t bit_mask,
@@ -208,7 +216,7 @@ static void frs_send_button(uint32_t can_id,
                             int count) {
     if (!s_can_tx) {
         ESP_LOGE(TAG, "CAN TX callback not set");
-        return;
+        return false;
     }
 
     uint8_t frame[8];
@@ -222,7 +230,7 @@ static void frs_send_button(uint32_t can_id,
             xSemaphoreGive(s_state_mutex);
             if (fatal) {
                 ESP_LOGE(TAG, "Aborting button sequence — too many TX errors");
-                return;
+                return false;
             }
         }
         if (i < count - 1) {
@@ -230,9 +238,10 @@ static void frs_send_button(uint32_t can_id,
         }
     }
     vTaskDelay(pdMS_TO_TICKS(interval_ms));
+    return true;
 }
 
-static void frs_send_button_long(uint32_t can_id,
+static bool frs_send_button_long(uint32_t can_id,
                                  const uint8_t *tmpl,
                                  uint8_t byte_idx,
                                  uint8_t bit_mask,
@@ -240,7 +249,7 @@ static void frs_send_button_long(uint32_t can_id,
                                  uint32_t duration_ms) {
     if (!s_can_tx) {
         ESP_LOGE(TAG, "CAN TX callback not set");
-        return;
+        return false;
     }
 
     uint8_t frame[8];
@@ -255,13 +264,14 @@ static void frs_send_button_long(uint32_t can_id,
             xSemaphoreGive(s_state_mutex);
             if (fatal) {
                 ESP_LOGE(TAG, "Aborting long press — too many TX errors");
-                return;
+                return false;
             }
         }
         vTaskDelay(pdMS_TO_TICKS(interval_ms));
         elapsed += interval_ms;
     }
     vTaskDelay(pdMS_TO_TICKS(interval_ms));
+    return true;
 }
 
 // ── Drive mode write ─────────────────────────────────────────
@@ -449,42 +459,45 @@ bool frs_set_drive_mode(uint8_t target_mode) {
 //   Long press (~5s): activates ESC Off from On or Sport
 //   Short press from Off: returns to On
 // Injection at 100 Hz (10 ms) to outpace BCM's 40 Hz on 0x260.
-static void frs_send_esc_short(void) {
+static bool frs_send_esc_short(void) {
     uint8_t tmpl[8];
     xSemaphoreTake(s_state_mutex, portMAX_DELAY);
     if (!s_state.frame_260_valid) {
         xSemaphoreGive(s_state_mutex);
         ESP_LOGW(TAG, "No 0x260 template yet — cannot simulate ESC button");
-        return;
+        return false;
     }
     memcpy(tmpl, s_state.frame_260_template, 8);
     xSemaphoreGive(s_state_mutex);
 
     int count = FRS_ESC_SHORT_PRESS_MS / FRS_ESC_BTN_TX_INTERVAL_MS;
-    frs_send_button(FRS_CAN_ID_BODY_CTRL, tmpl,
-                    FRS_ESC_BTN_BYTE, FRS_ESC_BTN_BIT,
-                    FRS_ESC_BTN_TX_INTERVAL_MS, count);
+    return frs_send_button(FRS_CAN_ID_BODY_CTRL, tmpl,
+                           FRS_ESC_BTN_BYTE, FRS_ESC_BTN_BIT,
+                           FRS_ESC_BTN_TX_INTERVAL_MS, count);
 }
 
-static void frs_send_esc_long(void) {
+static bool frs_send_esc_long(void) {
     uint8_t tmpl[8];
     xSemaphoreTake(s_state_mutex, portMAX_DELAY);
     if (!s_state.frame_260_valid) {
         xSemaphoreGive(s_state_mutex);
         ESP_LOGW(TAG, "No 0x260 template yet — cannot simulate ESC long press");
-        return;
+        return false;
     }
     memcpy(tmpl, s_state.frame_260_template, 8);
     xSemaphoreGive(s_state_mutex);
 
-    frs_send_button_long(FRS_CAN_ID_BODY_CTRL, tmpl,
-                         FRS_ESC_BTN_BYTE, FRS_ESC_BTN_BIT,
-                         FRS_ESC_BTN_TX_INTERVAL_MS,
-                         FRS_ESC_LONG_PRESS_MS);
+    return frs_send_button_long(FRS_CAN_ID_BODY_CTRL, tmpl,
+                                FRS_ESC_BTN_BYTE, FRS_ESC_BTN_BIT,
+                                FRS_ESC_BTN_TX_INTERVAL_MS,
+                                FRS_ESC_LONG_PRESS_MS);
 }
 
 static uint8_t s_pending_esc = 0xFF;
 
+// #125: boot_esc / NVS are written only for a confirmed change — every planned press sent (valid 0x260 template,
+// no TX abort) and a 0x1C0 frame received *after* the presses reporting the target (frs_esc_should_persist). A
+// failed or unconfirmed sequence leaves the saved boot mode as it was.
 static void frs_esc_mode_task(void *arg) {
     uint8_t target_esc = (uint8_t)(uintptr_t)arg;
 
@@ -492,57 +505,61 @@ static void frs_esc_mode_task(void *arg) {
     uint8_t current = s_state.esc_mode;
     xSemaphoreGive(s_state_mutex);
 
-    if (current == target_esc) {
-        ESP_LOGI(TAG, "ESC: already in %d — no change", current);
-        xSemaphoreTake(s_state_mutex, portMAX_DELAY);
-        s_pending_esc = 0xFF;
-        xSemaphoreGive(s_state_mutex);
-        vTaskDelete(NULL);
-        return;
+    frs_esc_press_t presses[2];
+    int n = frs_esc_plan(current, target_esc, presses);
+    ESP_LOGI(TAG, "ESC mode: %d → %d via 0x260 (%d press(es))", current, target_esc, n);
+
+    bool sent = n >= 0;
+    for (int i = 0; sent && i < n; i++) {
+        if (i > 0) vTaskDelay(pdMS_TO_TICKS(FRS_ESC_PRESS_GAP_MS));
+        sent = presses[i] == FRS_ESC_PRESS_LONG ? frs_send_esc_long() : frs_send_esc_short();
     }
 
-    ESP_LOGI(TAG, "ESC mode: %d → %d via 0x260", current, target_esc);
-
-    if (target_esc == FRS_ESC_OFF) {
-        ESP_LOGI(TAG, "ESC: long press for Off");
-        frs_send_esc_long();
-    } else if (target_esc == FRS_ESC_SPORT) {
-        if (current == FRS_ESC_OFF) {
-            ESP_LOGI(TAG, "ESC: Off → On → Sport (2 short presses)");
-            frs_send_esc_short();
-            vTaskDelay(pdMS_TO_TICKS(1000));
-            frs_send_esc_short();
-        } else {
-            frs_send_esc_short();
-        }
-    } else {
-        if (current == FRS_ESC_OFF || current == FRS_ESC_SPORT) {
-            frs_send_esc_short();
-        }
-    }
-
+    // Observe the car: a 0x1C0 frame after the presses must report the target
     xSemaphoreTake(s_state_mutex, portMAX_DELAY);
-    s_state.boot_esc = target_esc;
+    uint32_t frames_before = s_state.esc_frames;
+    xSemaphoreGive(s_state_mutex);
+    bool frame_after = false;
+    uint8_t observed = current;
+    for (int waited = 0; sent && waited < FRS_ESC_CONFIRM_WAIT_MS; waited += FRS_DM_CONFIRM_POLL_MS) {
+        vTaskDelay(pdMS_TO_TICKS(FRS_DM_CONFIRM_POLL_MS));
+        xSemaphoreTake(s_state_mutex, portMAX_DELAY);
+        frame_after = s_state.esc_frames != frames_before;
+        observed = s_state.esc_mode;
+        xSemaphoreGive(s_state_mutex);
+        if (frame_after && observed == target_esc) break;
+    }
+
+    bool persist = frs_esc_should_persist(sent, frame_after, observed, target_esc);
+    xSemaphoreTake(s_state_mutex, portMAX_DELAY);
+    if (persist) s_state.boot_esc = target_esc;
     s_pending_esc = 0xFF;
     xSemaphoreGive(s_state_mutex);
 
-    frs_nvs_save_esc(target_esc);
+    if (persist) {
+        ESP_LOGI(TAG, "ESC: CAN confirmed %d — saved as boot ESC", target_esc);
+        frs_nvs_save_esc(target_esc);
+    } else {
+        ESP_LOGW(TAG, "ESC: %d not confirmed (sent=%d, frame=%d, observed=%d) — boot ESC unchanged",
+                 target_esc, sent, frame_after, observed);
+    }
     vTaskDelete(NULL);
 }
 
-void frs_set_esc(uint8_t esc_mode) {
+// Returns false when the request is invalid or another ESC change is still running (reported as BUSY).
+bool frs_set_esc(uint8_t esc_mode) {
     ESP_LOGI(TAG, "frs_set_esc(%d) called — pending=%d, f260=%d, current_esc=%d",
              esc_mode, s_pending_esc, s_state.frame_260_valid, s_state.esc_mode);
     if (esc_mode > FRS_ESC_OFF) {
         ESP_LOGW(TAG, "ESC: invalid mode %d (max=%d)", esc_mode, FRS_ESC_OFF);
-        return;
+        return false;
     }
 
     xSemaphoreTake(s_state_mutex, portMAX_DELAY);
     if (s_pending_esc != 0xFF) {
         ESP_LOGW(TAG, "ESC mode change already in progress (pending=%d)", s_pending_esc);
         xSemaphoreGive(s_state_mutex);
-        return;
+        return false;
     }
     s_pending_esc = esc_mode;
     xSemaphoreGive(s_state_mutex);
@@ -550,6 +567,7 @@ void frs_set_esc(uint8_t esc_mode) {
     ESP_LOGI(TAG, "ESC: creating task for mode %d", esc_mode);
     xTaskCreate(frs_esc_mode_task, "frs_esc", 2048,
                 (void *)(uintptr_t)esc_mode, 5, NULL);
+    return true;
 }
 
 // ── Auto Start/Stop kill ─────────────────────────────────────
@@ -733,8 +751,10 @@ int frs_handle_at_command(const char *cmd, char *resp_buf, int resp_buf_size) {
         if (mode < 0 || mode > FRS_ESC_OFF) {
             return snprintf(resp_buf, resp_buf_size, "+FRS:ERROR,invalid escMode\r");
         }
-        frs_set_esc((uint8_t)mode);
-        return snprintf(resp_buf, resp_buf_size, "+FRS:OK\r");
+        if (!frs_set_esc((uint8_t)mode)) {
+            return snprintf(resp_buf, resp_buf_size, "+FRS:BUSY\r");   // another ESC change still running
+        }
+        return snprintf(resp_buf, resp_buf_size, "+FRS:OK\r");         // accepted — confirmation is CAN 0x1C0
     }
 
     if (key_len == 8 && strncmp(kv, "enableLC", 8) == 0) {

@@ -215,7 +215,7 @@ fun DriveMap(
         peakEvents.forEach { peak ->
             val (color, label) = when (peak.type) {
                 PeakType.RPM -> Warn to "RPM: ${peak.value.toInt()}"
-                PeakType.BOOST -> Accent to "Boost: ${boostText(peak.value, prefs)}"
+                PeakType.BOOST -> Accent to "${if (peak.boostSource == com.openrs.dash.data.BoostSource.TIP_033E) "TIP" else "Boost"}: ${boostText(peak.value, prefs)}"
                 PeakType.LATERAL_G -> Orange to "Lat-G: ${"%.2f".format(peak.value)}"
                 PeakType.SPEED -> Frost to "Speed: ${prefs.displaySpeed(peak.value)} ${speedUnitText(prefs)}"
             }
@@ -247,7 +247,7 @@ fun DriveMap(
                 if (bm.label.isNotEmpty()) append(bm.label).append(" — ")
                 append("${prefs.displaySpeed(bm.speedKph)} ${speedUnitText(prefs)}")
                 if (bm.rpm > 0) append(" · ${bm.rpm} RPM")
-                if (bm.boostPsi > 0) append(" · ${boostText(bm.boostPsi, prefs)}")
+                // no boost: a bookmark stores no source (#207), so its value couldn't be named
             }
             Marker(
                 state = MarkerState(position = LatLng(bm.lat, bm.lng)),
@@ -272,7 +272,9 @@ private fun buildColorSegments(
 ): List<ColorSegment> {
     if (points.isEmpty()) return emptyList()
     val segments = mutableListOf<ColorSegment>()
-    var currentColor = pointColor(points[0], mode)
+    // BOOST colours one measurement only — the drive peak's source (#207); other sources' points are drawn Dim
+    val boostSource = if (mode == ColorMode.BOOST) com.openrs.dash.data.StoredBoost.primarySource(points) else null
+    var currentColor = pointColor(points[0], mode, boostSource)
     var currentLatLngs = mutableListOf(LatLng(points[0].lat, points[0].lng))
 
     for (i in 1 until points.size) {
@@ -282,7 +284,7 @@ private fun buildColorSegments(
         // Detect pause gaps (> 5s between consecutive points)
         val gap = p.timestamp - prev.timestamp > 5000
 
-        val color = pointColor(p, mode)
+        val color = pointColor(p, mode, boostSource)
         if (color != currentColor || gap) {
             segments += ColorSegment(currentLatLngs.toList(), currentColor)
             currentColor = color
@@ -299,7 +301,7 @@ private fun buildColorSegments(
     return segments
 }
 
-internal fun pointColor(point: DrivePointEntity, mode: ColorMode): Color = when (mode) {
+internal fun pointColor(point: DrivePointEntity, mode: ColorMode, boostSource: com.openrs.dash.data.BoostSource? = null): Color = when (mode) {
     ColorMode.SPEED -> when {
         point.speedKph < 60  -> Ok       // green — slow
         point.speedKph < 100 -> Accent   // cyan — moderate
@@ -312,11 +314,11 @@ internal fun pointColor(point: DrivePointEntity, mode: ColorMode): Color = when 
         DriveMode.DRIFT.label  -> Orange   // orange
         else                   -> Accent   // cyan — Normal
     }
-    ColorMode.BOOST -> when {
-        point.boostPsi < 0   -> Accent   // cyan — vacuum
-        point.boostPsi < 8   -> Ok       // green — low boost
-        point.boostPsi < 16  -> Warn     // yellow — mid boost
-        else                 -> Orange   // orange — full boost
+    // #207: no reading, or a reading from another source than the one coloured → Dim; legacy points as recorded
+    ColorMode.BOOST -> when (val b = com.openrs.dash.data.StoredBoost.point(point)) {
+        com.openrs.dash.data.StoredBoost.Unavailable -> com.openrs.dash.ui.Dim
+        is com.openrs.dash.data.StoredBoost.Reading -> if (b.source != boostSource) com.openrs.dash.ui.Dim else boostBand(b.psi)
+        is com.openrs.dash.data.StoredBoost.Legacy -> boostBand(b.psi)
     }
     ColorMode.THROTTLE -> when {
         point.throttlePct < 25  -> Accent   // cyan — coasting
@@ -386,6 +388,25 @@ internal fun colorLegend(mode: ColorMode, prefs: UserPrefs): List<Pair<String, C
     }
     ColorMode.AWD -> listOf("<0.5" to Accent, "0.5-2" to Ok, "2-4" to Warn, "4+" to Orange)
     ColorMode.DYNAMICS -> listOf("Cruise" to Accent, "Corner" to Ok, "Hard" to Warn, "Brake" to Orange)
+}
+
+private fun boostBand(psi: Double): Color = when {
+    psi < 0  -> Accent   // cyan — vacuum
+    psi < 8  -> Ok       // green — low boost
+    psi < 16 -> Warn     // yellow — mid boost
+    else     -> Orange   // orange — full boost
+}
+
+/**
+ * The legend's mode label: BOOST names the measurement coloured (#207) — TIP, BOOST (CAN 0x0F8) or legacy. TEMP (oil)
+ * says "MAP N/R" unless the points' drive was saved with this build's 0x0F8 mapping ([oilPtuMapping], #229).
+ */
+internal fun legendLabel(mode: ColorMode, points: List<DrivePointEntity>, oilPtuMapping: String? = null): String {
+    if (mode == ColorMode.OIL_TEMP && !com.openrs.dash.data.OilPtuMapping.isCurrent(oilPtuMapping))
+        return "${mode.label} · MAP N/R"
+    if (mode != ColorMode.BOOST) return mode.label
+    com.openrs.dash.data.StoredBoost.primarySource(points)?.let { return it.label }
+    return if (points.any { it.boostSource == null }) "BOOST · SRC N/R" else mode.label
 }
 
 /** Unit shown once after the legend's mode label ("SPD mph"); empty for unitless bands. */

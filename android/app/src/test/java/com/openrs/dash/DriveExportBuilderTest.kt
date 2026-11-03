@@ -173,8 +173,8 @@ class DriveExportBuilderTest {
         val lines = csv.lines().filter { it.isNotBlank() }
         val header = lines[1] // line 0 is schema comment
         val headerCols = header.split(",")
-        // rc.4: 32 (v1 base) + 3 boost-sweep columns = 35
-        assertEquals(35, headerCols.size)
+        // rc.4: 32 (v1 base) + 3 boost-sweep columns = 35; rc.7 (#207): + boost_source, baro_kpa = 37
+        assertEquals(37, headerCols.size)
     }
 
     @Test fun `csv data row column count matches header`() {

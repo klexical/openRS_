@@ -86,7 +86,7 @@ fun DtcDetailSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                MonoText(dtc.code, 22.sp, statusColor, FontWeight.Bold)
+                MonoText(dtc.displayCode, 22.sp, statusColor, FontWeight.Bold)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     // Status badge
                     Box(

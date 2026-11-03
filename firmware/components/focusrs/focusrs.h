@@ -87,6 +87,8 @@ extern "C" {
 #define FRS_ESC_BTN_TX_INTERVAL_MS  10
 #define FRS_ESC_SHORT_PRESS_MS      300
 #define FRS_ESC_LONG_PRESS_MS       5000
+#define FRS_ESC_PRESS_GAP_MS        1000   // between the two presses of Off → Sport
+#define FRS_ESC_CONFIRM_WAIT_MS     3000   // after the presses: a 0x1C0 frame must report the target (#125)
 
 // CAN TX — abort a button sequence after this many consecutive failures.
 #define FRS_TX_MAX_CONSECUTIVE_ERR  5
@@ -101,7 +103,8 @@ typedef struct {
     uint8_t  boot_mode;           // Drive mode to apply on next ignition (NVS)
     uint8_t  mode_420_detail;     // 0x420 byte7 — bit0 disambiguates Sport(0)/Track(1)
     uint8_t  esc_mode;            // Current ESC mode from CAN (FRS_ESC_*)
-    uint8_t  boot_esc;            // ESC mode to apply on next ignition (NVS)
+    uint8_t  boot_esc;            // ESC mode to apply on next ignition (NVS) — only a CAN-confirmed change
+    uint32_t esc_frames;          // 0x1C0 frames reporting a mode (0/1/2) — confirmation needs one after the presses
     bool     lc_enabled;          // Launch control
     bool     ass_kill;            // Auto Start/Stop kill
     uint32_t battery_mv;          // 12V battery in millivolts
@@ -127,7 +130,7 @@ frs_can_tx_fn_t   frs_get_can_tx(void);
 void     frs_init(void);
 void     frs_parse_can_frame(uint32_t can_id, const uint8_t *data, uint8_t dlc);
 bool     frs_set_drive_mode(uint8_t mode);   // closed-loop CAN + NVS; false = busy
-void     frs_set_esc(uint8_t esc_mode);      // sends CAN + updates NVS
+bool     frs_set_esc(uint8_t esc_mode);      // queues the presses; NVS only once CAN confirms; false = busy / invalid
 void     frs_set_lc(bool enabled);
 void     frs_set_ass_kill(bool enabled);     // sends CAN + updates NVS
 void     frs_set_sleep_threshold(float volts);

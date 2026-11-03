@@ -5,7 +5,8 @@ import { SectionLabel } from '../ui/SectionLabel'
 import { DeltaCard } from '../ui/DeltaCard'
 import { ComparisonChart } from '../charts/ComparisonChart'
 import { GpsMap } from '../charts/GpsMap'
-import { computeDeltas } from '../../lib/compare'
+import { computeDeltas, overlayBoostSource } from '../../lib/compare'
+import { boostLabel } from '../../lib/boost'
 import { fmtDateShort } from '../../lib/format'
 import { colors, chartColors } from '../../styles/tokens'
 
@@ -131,8 +132,23 @@ export function ComparePanel() {
           <SectionLabel>RPM Overlay</SectionLabel>
           <ComparisonChart sessions={compareSessions} dataKey="rpm" label="RPM" />
 
-          <SectionLabel>Boost Overlay</SectionLabel>
-          <ComparisonChart sessions={compareSessions} dataKey="boostPsi" label="Boost (PSI)" />
+          {/* #207: one measurement per overlay — sessions whose boost comes from different sources aren't overlaid */}
+          {(() => {
+            const src = overlayBoostSource(compareSessions)
+            return src === undefined ? (
+              <>
+                <SectionLabel>Boost Overlay</SectionLabel>
+                <p className="text-xs font-mono text-dim px-1">
+                  Not overlaid — these sessions recorded boost from different sources (TIP vs CAN 0x0F8 vs not recorded).
+                </p>
+              </>
+            ) : (
+              <>
+                <SectionLabel>{src === 'TIP_033E' ? 'TIP Overlay' : 'Boost Overlay'}</SectionLabel>
+                <ComparisonChart sessions={compareSessions} dataKey="boostPsi" label={`${boostLabel(src)} (PSI)`} />
+              </>
+            )
+          })()}
 
           <SectionLabel>Lateral G Overlay</SectionLabel>
           <ComparisonChart

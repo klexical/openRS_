@@ -28,7 +28,6 @@ import com.openrs.dash.can.FirmwareCommandSender
 import com.openrs.dash.data.DtcProgressCallback
 import com.openrs.dash.data.DtcResult
 import com.openrs.dash.data.DtcScanResult
-import com.openrs.dash.data.ModuleScanStatus
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.ui.Tokens.CardBorder
 import com.openrs.dash.ui.Tokens.PagePad
@@ -55,7 +54,7 @@ fun GaragePage(
     firmwareApi: FirmwareCommandSender? = null,
     onScanDtcs: (suspend (DtcProgressCallback?) -> DtcScanResult)? = null,
     onClearDtcs: (suspend () -> Map<String, Boolean>)? = null,
-    onRetryScanModule: (suspend (String) -> Pair<List<DtcResult>, ModuleScanStatus>)? = null,
+    onRetryScanModule: (suspend (String) -> com.openrs.dash.data.DtcModuleRetry)? = null,
     onFetchFreezeFrames: (suspend (List<DtcResult>) -> List<DtcResult>)? = null,
     onSendRawQuery: (suspend (Int, String, Long) -> ByteArray?)? = null,
     onResetSession: () -> Unit = {},

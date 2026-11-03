@@ -193,10 +193,12 @@ class MainActivity : ComponentActivity() {
         permLauncher.launch(perms.toTypedArray())
         handleDemoIntent(intent)
         handleTripPreviewIntent(intent)
-        // Opening presentation: once per process cold start — not after rotation / recreation (savedInstanceState),
-        // and not when the activity is reopened while the process is still alive (Back, then the launcher icon).
-        val showOpening = savedInstanceState == null && !OpeningState.shown
-        OpeningState.shown = true
+        // Opening presentation: once per app task (#213) — a cold launch or a new task after Recents dismissal, even with
+        // the process kept alive; never after rotation (saved state) or when an existing task is resumed / recreated.
+        // Back is the system's: moved to the back → same task, no replay; task removed → the next launch is a new task.
+        val showOpening = OpeningState.shouldShow(savedInstanceState != null, taskId)
+        OpeningState.shownForTask = taskId
+        if (showOpening) OpeningState.splashGone = kotlinx.coroutines.CompletableDeferred()
         // API 31+: the system splash is just the composition's background colour — take it away with no exit
         // animation once the first frame (the composition) is drawn. The splash covers the app until this runs, so
         // the opening waits for it before composing the dashboard (that long frame would otherwise hold the splash
@@ -226,21 +228,36 @@ class MainActivity : ComponentActivity() {
             var mapTouched  by remember { mutableStateOf(false) }
             val hazeState   = remember { HazeState() }
             var settingsOpen    by remember { mutableStateOf(false) }
+            var settingsAtConnection by remember { mutableStateOf(false) }
             var showCustomDash  by remember { mutableStateOf(false) }
             var dockOpen        by remember { mutableStateOf(false) }
             val isFw            by OpenRSDashApp.instance.isOpenRsFirmware.collectAsState()
             val demo            by DemoMode.status.collectAsState()
             val demoCollapsed   by DemoMode.controlsCollapsed.collectAsState()
+            val linkPhase       by OpenRSDashApp.instance.linkPhase.collectAsState()
+            val link            = linkUi(vs, linkPhase, demo.active)
+            // Same policy the service enforces (#212): no Cancel once connected or while a drive is recording
+            val cancelable      = com.openrs.dash.service.LinkPresentation.offersCancel(linkPhase, driveState.isRecording)
             val pageScope       = rememberCoroutineScope()
             val snackbarHostState = remember { SnackbarHostState() }
+            // Saved settings that can't connect (#234): Bluetooth with no device. Re-read when Settings closes (the device
+            // isn't in UserPrefs); Connect then opens Settings on CONNECTION instead of starting nothing silently.
+            val setupCtx = LocalContext.current
+            val setupProblem = remember(prefs.connectionMethod, settingsOpen) {
+                com.openrs.dash.service.ConnectionSetup.problem(prefs.connectionMethod, AppSettings.getBleDeviceAddress(setupCtx))
+            }
+            val connect: () -> Unit = {
+                if (setupProblem != null) { settingsAtConnection = true; settingsOpen = true }
+                else service?.startConnection()
+            }
 
 
             // What's New — show once after version update
             val whatsNewCtx = LocalContext.current
             var showWhatsNew by remember {
                 val lastSeen = AppSettings.getLastSeenVersion(whatsNewCtx)
-                val current = com.openrs.dash.BuildConfig.VERSION_NAME
-                mutableStateOf(lastSeen != current)
+                val info = com.openrs.dash.update.BuildInfo
+                mutableStateOf(shouldShowWhatsNew(lastSeen, info.releaseName, info.base))
             }
 
             // Background update check — silent, non-intrusive
@@ -282,7 +299,12 @@ class MainActivity : ComponentActivity() {
                         primary    = activeAccent
                     )
                 ) {
-                    Box(Modifier.fillMaxSize()) {
+                    // Left / right system bars and cutouts that Android reports (#231) — a side navigation bar in
+                    // landscape, a head unit's side dock if it is a system bar. Content, header, Custom Dashboard and
+                    // the tab bar stay clear of them; the strip shows the page background. 0 on an ordinary portrait
+                    // phone — never a fixed margin.
+                    val sideInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
+                    Box(Modifier.fillMaxSize().background(Bg).windowInsetsPadding(sideInsets)) {
                         Scaffold(
                             snackbarHost   = { SnackbarHost(snackbarHostState) },
                             containerColor = Bg,
@@ -299,9 +321,12 @@ class MainActivity : ComponentActivity() {
                                         vs           = vs,
                                         prefs        = prefs,
                                         onSettings   = { settingsOpen = true },
-                                        onConnect    = { service?.startConnection() },
+                                        onConnect    = connect,
                                         onDisconnect = { service?.stopConnection() },
                                         onReconnect  = { service?.reconnect() },
+                                        onCancel     = { service?.cancelConnection() },
+                                        link         = link,
+                                        cancelable   = cancelable,
                                         driveState   = headerDriveState,
                                         onModeClick  = { dockOpen = !dockOpen },
                                         onPullDown   = { dockOpen = true },
@@ -382,7 +407,9 @@ class MainActivity : ComponentActivity() {
                                             when (page) {
                                                 0 -> DrivePage(vs, prefs, onOpenThermal = {
                                                     pageScope.launch { pagerState.animateScrollToPage(2) }
-                                                }, onConnect = { service?.startConnection() })
+                                                }, onConnect = connect,
+                                                   onCancel = { service?.cancelConnection() }, link = link, cancelable = cancelable,
+                                                   setupProblem = setupProblem)
                                                 1 -> PerfPage(vs, prefs, onReset = { service?.resetPeaks() })
                                                 2 -> TempsPage(vs, prefs)
                                                 // settled: TRIP creates its map on the first visit; visible: off screen
@@ -405,7 +432,7 @@ class MainActivity : ComponentActivity() {
                                                         fn
                                                     },
                                                     onRetryScanModule = service?.let { svc ->
-                                                        val fn: suspend (String) -> Pair<List<com.openrs.dash.data.DtcResult>, com.openrs.dash.data.ModuleScanStatus> =
+                                                        val fn: suspend (String) -> com.openrs.dash.data.DtcModuleRetry =
                                                             { moduleName -> svc.retryScanModule(moduleName) }
                                                         fn
                                                     },
@@ -440,17 +467,18 @@ class MainActivity : ComponentActivity() {
 
                                 if (settingsOpen) {
                                     SettingsDialog(
-                                        onDismiss = { settingsOpen = false },
-                                        onCustomDash = { settingsOpen = false; showCustomDash = true },
+                                        onDismiss = { settingsOpen = false; settingsAtConnection = false },
+                                        onCustomDash = { settingsOpen = false; settingsAtConnection = false; showCustomDash = true },
                                         onStartDemo = { service?.enterDemoMode(it) },
-                                        onExitDemo = { service?.exitDemoMode() }
+                                        onExitDemo = { service?.exitDemoMode() },
+                                        openConnection = settingsAtConnection,
                                     )
                                 }
 
                                 if (showWhatsNew) {
                                     WhatsNewDialog(onDismiss = {
                                         showWhatsNew = false
-                                        AppSettings.setLastSeenVersion(whatsNewCtx, com.openrs.dash.BuildConfig.VERSION_NAME)
+                                        AppSettings.setLastSeenVersion(whatsNewCtx, com.openrs.dash.update.BuildInfo.releaseName)
                                     })
                                 }
                             }
@@ -464,7 +492,8 @@ class MainActivity : ComponentActivity() {
                             CustomDashPage(
                                 vehicleState = vs,
                                 prefs        = prefs,
-                                onDismiss    = { showCustomDash = false }
+                                onDismiss    = { showCustomDash = false },
+                                link         = link
                             )
                         }
 
@@ -553,6 +582,11 @@ class MainActivity : ComponentActivity() {
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onReconnect: () -> Unit,
+    /** Cancel an initial connection attempt (#212). */
+    onCancel: () -> Unit = {},
+    link: LinkUi = LinkUi.OFFLINE,
+    /** CONN tap cancels only when the service would accept it (not while a drive is recording). */
+    cancelable: Boolean = true,
     driveState: com.openrs.dash.data.DriveState = com.openrs.dash.data.DriveState(),
     onModeClick: () -> Unit = {},
     onPullDown: () -> Unit = {},
@@ -570,12 +604,11 @@ class MainActivity : ComponentActivity() {
     } else 1f
     val updateStateNow by UpdateManager.state.collectAsState()
     val isUpdating = updateStateNow is com.openrs.dash.update.UpdateState.Downloading
-    val isReconnecting = !vs.isConnected && vs.isIdle
     val connColor = when {
         demoActive && vs.isConnected -> demoInk()   // simulated link up; LOSS phase shows real RCN
-        vs.isConnected -> Ok
-        vs.isIdle      -> Warn
-        else           -> Mid      // OFF: not an alarm — TAP TO CONNECT (accent) is the call to action
+        link == LinkUi.LIVE          -> Ok
+        link == LinkUi.RECONNECTING  -> Warn
+        else           -> Mid      // OFF / CONN: not an alarm — TAP TO CONNECT (accent) is the call to action
     }
     // Pill text: ink when live, the state colour only for degraded / simulated links
     val connInk = when {
@@ -583,13 +616,7 @@ class MainActivity : ComponentActivity() {
         vs.isConnected -> Frost
         else           -> connColor
     }
-    val linkLabel = when {
-        isUpdating     -> "UPD"
-        vs.isConnected -> "LIVE"
-        isReconnecting -> "RCN"
-        vs.isIdle      -> "IDLE"
-        else           -> "OFF"
-    }
+    val linkLabel = if (isUpdating) "UPD" else link.pill
     // Simulated data is always labelled: in demo the pill keeps DEMO and adds the (simulated) link
     // state, e.g. "DEMO · RCN" during the connection-loss scenario — never RCN alone.
     val connLabel = when {
@@ -658,7 +685,9 @@ class MainActivity : ComponentActivity() {
     // Narrow phones (< 400 dp) drop the trip distance from the REC label so the row never wraps.
     BoxWithConstraints(Modifier.fillMaxWidth()) {
     val compact = maxWidth < 400.dp
-    Row(
+    // #224: a priority layout, not a Row — the Settings cog and the link pill always get their space; the REC
+    // label takes what is left (clipped), so a long elapsed time / distance can never push Settings off screen
+    HeaderRow(
         Modifier.fillMaxWidth()
             .height(Tokens.StatusBarHeight)
             .background(Surf)
@@ -685,7 +714,6 @@ class MainActivity : ComponentActivity() {
             // the right edge so it reads as a tight trio (was 4dp; dropped
             // to 0dp per user feedback that the cluster still looked floated).
             .padding(start = 10.dp, end = 0.dp),
-        verticalAlignment = Alignment.CenterVertically
     ) {
         // ── Left: Logo ──────────────────────────────────────────
         // Brand colors: "open" + "_" = Frost, "RS" = Nitrous Blue (accent)
@@ -760,18 +788,11 @@ class MainActivity : ComponentActivity() {
         }
         }
 
-        Spacer(Modifier.weight(1f))
-
         // ── Center: always MODE + ESC pills (placeholder when offline). ───
         HeaderModeEscPills(vs, accent, onModeClick)
 
-        Spacer(Modifier.weight(1f))
-
-        // ── Right: REC dot + connection pill + settings gear ────
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
+        // ── Right: REC dot + connection pill + settings gear (HeaderRow slots 3–5) ────
+        Box(contentAlignment = Alignment.CenterEnd) {
             val ctx = LocalContext.current
             val autoRecOn = remember(ctx) { AppSettings.getAutoRecordDrives(ctx) }
             val autoRecArmed = autoRecOn && vs.isConnected &&
@@ -796,17 +817,31 @@ class MainActivity : ComponentActivity() {
                 val distKm = driveState.cumulativeDistanceKm
                 val distStr = if (prefs.speedUnit == "MPH") "%.1f mi".format(distKm * UnitConversions.KM_TO_MI)
                               else "%.1f km".format(distKm)
-                val label = when {
-                    paused  -> "PAUSED"
-                    compact -> "REC %02d:%02d".format(mm, ss)
-                    else    -> "REC %02d:%02d · %s".format(mm, ss, distStr)
+                // Hours as h:mm:ss (minutes no longer grow to three digits on a long drive)
+                val hh = (elapsed / 3_600_000).toInt()
+                val time = if (hh > 0) "%d:%02d:%02d".format(hh, mm % 60, ss) else "%02d:%02d".format(mm, ss)
+                // The longest label that fits the width HeaderRow leaves (#224): whole parts are dropped (distance,
+                // then time) — a value is never cut mid-way ("REC 2:1…" read as another time)
+                val candidates = when {
+                    paused  -> listOf("PAUSED")
+                    compact -> listOf("REC $time", "REC")
+                    else    -> listOf("REC $time · $distStr", "REC $time", "REC")
                 }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Box(Modifier.size(7.dp).clip(CircleShape).background(dotColor.copy(alpha = recAlpha)))
-                    MonoLabel(label, 9.sp, dotColor, FontWeight.Bold, 0.2.sp)
+                val recStyle = androidx.compose.ui.text.TextStyle(fontSize = 9.sp, fontFamily = JetBrainsMonoFamily,
+                    fontWeight = FontWeight.Bold, letterSpacing = 0.2.sp)
+                val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+                BoxWithConstraints {
+                    val room = constraints.maxWidth - with(density) { 11.dp.roundToPx() }   // dot + gap
+                    val label = candidates.firstOrNull { measurer.measure(it, recStyle).size.width <= room }
+                    if (label != null) Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Box(Modifier.size(7.dp).clip(CircleShape).background(dotColor.copy(alpha = recAlpha)))
+                        Text(label, style = recStyle, color = textColor(dotColor), maxLines = 1, softWrap = false)
+                    } else if (constraints.maxWidth >= with(density) { 7.dp.roundToPx() }) {
+                        Box(Modifier.size(7.dp).clip(CircleShape).background(dotColor.copy(alpha = recAlpha)))
+                    }
                 }
             } else if (autoRecArmed) {
                 val armedAlpha by rememberInfiniteTransition(label = "headerArmed").animateFloat(
@@ -826,6 +861,8 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+        }
+
             // rc.2: fixed-width connection pill. pressClick + haptic feedback.
             // Label crossfades on state change. Bloom fades 0→0.3 on connect,
             // 0.3→0 on disconnect. Quiet mode dims pill after 2s stable.
@@ -838,10 +875,12 @@ class MainActivity : ComponentActivity() {
                     .pressClick(pressedScale = 0.97f) {
                         // Demo: the pill never touches the adapter — it folds / unfolds the demo controls.
                         if (demoActive) { com.openrs.dash.demo.DemoMode.toggleControls(); return@pressClick }
-                        when {
-                            vs.isConnected -> confirmDisconnect = true
-                            vs.isIdle      -> { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onReconnect() }
-                            else           -> { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onConnect() }
+                        when (link) {
+                            LinkUi.LIVE         -> confirmDisconnect = true
+                            LinkUi.RECONNECTING -> { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onReconnect() }
+                            LinkUi.CONNECTING   -> if (cancelable) { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onCancel() }
+                                                   else haptic.performHapticFeedback(HapticFeedbackType.Reject)
+                            LinkUi.OFFLINE, LinkUi.FAILED -> { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onConnect() }
                         }
                     }
                     .padding(horizontal = 4.dp),
@@ -861,7 +900,7 @@ class MainActivity : ComponentActivity() {
                             .then(if (bloomIntensity > 0.01f) Modifier.bloomGlow(connColor, 8.dp, bloomIntensity * dotAlpha) else Modifier))
                         // The sheet's CONNECTED symbol in the link colour (live / reconnecting / off)
                         Icon(painterResource(R.drawable.ic_tt_connected), contentDescription = null,
-                            tint = connColor.copy(alpha = dotAlpha * (if (vs.isConnected || vs.isIdle) 1f else 0.6f)),
+                            tint = connColor.copy(alpha = dotAlpha * (if (vs.isConnected || vs.isReconnecting) 1f else 0.6f)),
                             modifier = Modifier.size(12.dp))
                     }
                     AnimatedContent(
@@ -897,8 +936,37 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-        }
     }
+    }
+}
+
+/**
+ * The header row (#224) — slots: wordmark, MODE/ESC pills, REC, link pill, Settings cog. Measured by priority, not
+ * left to right: the wordmark, cog, link pill and pills take their own widths; REC gets what is left (it clips, so
+ * a long time or distance can't push anything out). The cog sits at the right edge, the link pill and REC to its
+ * left, and the pills centred on the screen when there is room, else between the wordmark and REC.
+ */
+@Composable
+private fun HeaderRow(modifier: Modifier, content: @Composable () -> Unit) {
+    androidx.compose.ui.layout.Layout(content, modifier) { ms, c ->
+        val loose = c.copy(minWidth = 0, minHeight = 0)
+        val logo = ms[0].measure(loose); val pills = ms[1].measure(loose)
+        val conn = ms[3].measure(loose); val cog = ms[4].measure(loose)
+        val fixed = c.maxWidth - logo.width - pills.width - conn.width - cog.width
+        // Tight (360 dp, every chip populated): narrower gaps before the REC dot is squeezed out
+        val gap = if (fixed - 4 * 6.dp.roundToPx() >= 9.dp.roundToPx()) 6.dp.roundToPx() else 2.dp.roundToPx()
+        val recMax = (fixed - 4 * gap).coerceAtLeast(0)
+        val rec = ms[2].measure(loose.copy(maxWidth = recMax))
+        val h = c.maxHeight
+        layout(c.maxWidth, h) {
+            fun y(p: androidx.compose.ui.layout.Placeable) = (h - p.height) / 2
+            logo.placeRelative(0, y(logo))
+            val cogX = c.maxWidth - cog.width; cog.placeRelative(cogX, y(cog))
+            val connX = cogX - conn.width; conn.placeRelative(connX, y(conn))
+            val recX = connX - (if (rec.width > 0) gap + rec.width else 0); rec.placeRelative(recX, y(rec))
+            val lo = logo.width + gap; val hi = recX - gap - pills.width
+            pills.placeRelative(((c.maxWidth - pills.width) / 2).coerceIn(lo, maxOf(lo, hi)), y(pills))
+        }
     }
 }
 

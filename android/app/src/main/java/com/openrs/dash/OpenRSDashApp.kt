@@ -29,10 +29,16 @@ class OpenRSDashApp : Application() {
         const val CHANNEL_CAN = "openrs_can"
         lateinit var instance: OpenRSDashApp
             private set
+
+        /** The app, or null where it doesn't exist (JVM unit tests). */
+        val instanceOrNull: OpenRSDashApp? get() = if (::instance.isInitialized) instance else null
     }
 
     /** Global vehicle state. Updated by CanDataService, observed by all UIs. */
     val vehicleState = MutableStateFlow(VehicleState())
+
+    /** Real adapter link phase, owned by CanDataService (connecting / connected / reconnecting / failed / off). */
+    val linkPhase = MutableStateFlow(com.openrs.dash.can.LinkPhase.OFF)
 
     /** DEBUG — raw WiCAN lines. Updated by CanDataService, observed by debug tab. */
     private val _debugLines = MutableStateFlow<List<String>>(emptyList())
@@ -60,6 +66,8 @@ class OpenRSDashApp : Application() {
 
     /** True once openRS_ firmware is confirmed via WebSocket probe on connect. */
     val isOpenRsFirmware = MutableStateFlow(false)
+    /** True while the OPENRS? capability probe is still outstanding on this connection (#220). */
+    val firmwareProbing = MutableStateFlow(false)
 
     /** Human-readable firmware version label (e.g. "openRS_ v1.5-rc.5"). */
     val firmwareVersionLabel = MutableStateFlow("")
@@ -90,6 +98,7 @@ class OpenRSDashApp : Application() {
         CrashReporter.install(this)
         CrashTelemetryBuffer.startCollecting()
         com.openrs.dash.ui.ThermalReadinessSession.start()
+        com.openrs.dash.data.BoostSession.log = { com.openrs.dash.diagnostics.DiagnosticLogger.event("BOOST_SOURCE", it) }
         createNotificationChannel()
         com.openrs.dash.ui.StartupTrace.mark("Application.onCreate end")
     }

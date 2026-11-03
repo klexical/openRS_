@@ -21,14 +21,85 @@ internal object DiagnosticReportBuilder {
     internal fun sessionOffsetMs(eventMs: Long, sessionStartMs: Long): Long =
         if (sessionStartMs <= 0L) 0L else (eventMs - sessionStartMs).coerceAtLeast(0L)
 
-    fun buildSummaryText(ts: String): String = buildString {
+    /** One summary line for the session's DTC scan (#215). */
+    internal fun dtcScanLine(scan: com.openrs.dash.data.DtcScanRecord?): String {
+        if (scan == null) return "No scan this session"
+        val coverage = "${scan.modulesAnswered}/${scan.modules.size} modules scanned"
+        val outcome = when (scan.status) {
+            com.openrs.dash.data.DtcScanStatus.COMPLETE  -> if (scan.codes.isEmpty()) "COMPLETE — no codes" else "COMPLETE — ${scan.codes.size} code(s)"
+            com.openrs.dash.data.DtcScanStatus.PARTIAL   -> "PARTIAL — ${scan.codes.size} code(s) from the modules scanned; not a clean scan"
+            com.openrs.dash.data.DtcScanStatus.FAILED    -> "FAILED${scan.message?.let { " ($it)" } ?: ""}"
+            com.openrs.dash.data.DtcScanStatus.CANCELLED -> "CANCELLED before it finished"
+            com.openrs.dash.data.DtcScanStatus.INTERRUPTED -> "INTERRUPTED before it finished${scan.message?.let { " ($it)" } ?: ""}; not a clean scan"
+            com.openrs.dash.data.DtcScanStatus.RUNNING   -> "RUNNING — not finished when exported"
+        }
+        return "$outcome · $coverage · ${scan.source}"
+    }
+
+    /** `dtcScan` block of the detail JSON — `{"status":"NONE"}` when no scan ran (#215). */
+    internal fun dtcScanJson(scan: com.openrs.dash.data.DtcScanRecord?): JSONObject = JSONObject().apply {
+        if (scan == null) { put("status", "NONE"); return@apply }
+        put("status", scan.status.name)
+        put("source", scan.source)
+        put("finishedAtMs", scan.finishedAtMs)
+        put("codeCount", scan.codes.size)
+        put("modulesAnswered", scan.modulesAnswered)
+        put("modulesTotal", scan.modules.size)
+        put("modules", JSONObject().apply { scan.modules.forEach { (m, st) -> put(m, st?.name ?: "NO_ANSWER") } })
+        // Why a module has no valid reply, where the app knows it (a write that failed — #215)
+        if (scan.notes.isNotEmpty()) put("moduleNotes", JSONObject().apply { scan.notes.forEach { (m, n) -> put(m, n) } })
+        scan.message?.let { put("message", it) }
+    }
+
+    /** How this session's adapter status was obtained — or why there is none (#233). */
+    internal fun adapterStatusLine(record: AdapterStatusRecord, sessionStartMs: Long): String = when (record) {
+        is AdapterStatusRecord.Fetched -> {
+            val s = sessionOffsetMs(record.atMs, sessionStartMs) / 1000
+            "from /check_status over Wi-Fi at +%02d:%02d this session".format(s / 60, s % 60)
+        }
+        is AdapterStatusRecord.NotRequested -> "not available — ${record.reason}"
+        AdapterStatusRecord.Requested -> "not available — /check_status requested, no answer when exported"
+        AdapterStatusRecord.Failed -> "not available — /check_status request failed this session"
+    }
+
+    /** `adapterStatusSource` block of the detail JSON: state + detail, always present (#233). */
+    internal fun adapterStatusSourceJson(record: AdapterStatusRecord, sessionStartMs: Long): JSONObject = JSONObject().apply {
+        when (record) {
+            is AdapterStatusRecord.Fetched -> {
+                put("state", "FETCHED"); put("via", "check_status_wifi")
+                put("sessionOffsetMs", sessionOffsetMs(record.atMs, sessionStartMs))
+            }
+            is AdapterStatusRecord.NotRequested -> { put("state", "NOT_REQUESTED"); put("detail", record.reason) }
+            AdapterStatusRecord.Requested -> put("state", "NO_ANSWER")
+            AdapterStatusRecord.Failed -> put("state", "FAILED")
+        }
+    }
+
+    /**
+     * Text + JSON of one export from ONE adapter-status snapshot (#233): a reply landing while the export is written
+     * can't make the two files (or two lines of one file) disagree. The exporter uses this at every call site.
+     */
+    fun buildSummaryAndDetail(
+        ts: String,
+        snap: AdapterStatusSnapshot = DiagnosticLogger.snapshotAdapterStatus(),
+        // Likewise one DTC scan record (immutable) for both files and the export's dtc_scan_* files (#238 review)
+        dtcScan: com.openrs.dash.data.DtcScanRecord? = DiagnosticLogger.lastDtcScan,
+    ): Pair<String, String> =
+        buildSummaryText(ts, snap, dtcScan) to buildDetailJson(ts, snap, dtcScan)
+
+    fun buildSummaryText(
+        ts: String,
+        snap: AdapterStatusSnapshot = DiagnosticLogger.snapshotAdapterStatus(),
+        dtcScan: com.openrs.dash.data.DtcScanRecord? = DiagnosticLogger.lastDtcScan,
+    ): String = buildString {
         val log = DiagnosticLogger
         val vs  = log.lastVehicleState
         val p   = log.sessionPrefs
 
         appendLine("═══════════════════════════════════════════════════════════")
         appendLine("  openRS_ Diagnostic Report")
-        appendLine("  App       : v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})")
+        appendLine("  App       : v${BuildConfig.RELEASE_NAME} (build ${BuildConfig.VERSION_CODE}, ${BuildConfig.BUILD_TYPE})")
+        appendLine("  Source    : ${BuildConfig.SOURCE_COMMIT}${if (BuildConfig.SOURCE_DIRTY) " (uncommitted changes)" else ""}")
         appendLine("  Generated : $ts")
         appendLine("  Session   : ${log.formatDuration(log.sessionDurationMs)}")
         appendLine("═══════════════════════════════════════════════════════════")
@@ -44,9 +115,16 @@ internal object DiagnosticReportBuilder {
         if (connEvent != null) appendLine("  Last evt : ${connEvent.message}")
         appendLine()
 
-        // ── Adapter device status (from /check_status)
-        log.deviceStatus?.let { ds ->
-            appendLine("─── ADAPTER ──────────────────────────────────────────────")
+        // ── DTC scan (#215): no scan, a clean scan and a partial / failed / cancelled one stay distinct
+        appendLine("─── DTC SCAN ──────────────────────────────────────────────")
+        appendLine("  ${dtcScanLine(dtcScan)}")
+        dtcScan?.notes?.forEach { (m, n) -> appendLine("  $m: $n") }
+        appendLine()
+
+        // ── Adapter device status (/check_status) — this session's only; "Firmware :" above is the live handshake (#233)
+        appendLine("─── ADAPTER ──────────────────────────────────────────────")
+        appendLine("  Status   : ${adapterStatusLine(snap.record, snap.sessionStartMs)}")
+        snap.deviceStatus?.let { ds ->
             if (ds.hardwareVersion.isNotBlank()) appendLine("  Hardware : ${ds.hardwareVersion}")
             if (ds.firmwareVersion.isNotBlank()) appendLine("  Device FW: v${ds.firmwareVersion}")
             if (ds.deviceId.isNotBlank())        appendLine("  Device ID: ${ds.deviceId}")
@@ -55,8 +133,8 @@ internal object DiagnosticReportBuilder {
             if (ds.bleStatus.isNotBlank())        appendLine("  BLE      : ${ds.bleStatus}")
             if (ds.protocol.isNotBlank())         appendLine("  Protocol : ${ds.protocol}")
             if (ds.sleepStatus.isNotBlank())      appendLine("  Sleep    : ${ds.sleepStatus} (${ds.sleepVolt}V)")
-            appendLine()
         }
+        appendLine()
 
         // ── Settings
         if (p != null) {
@@ -75,9 +153,16 @@ internal object DiagnosticReportBuilder {
             appendLine("─── VEHICLE STATE SNAPSHOT ─────────────────────────────────")
             appendLine("  RPM        : ${vs.rpm.toInt()}")
             appendLine("  Speed      : ${"%.1f".format(vs.speedKph)} kph / ${"%.1f".format(vs.speedKph * 0.621371)} mph")
-            appendLine("  Boost      : ${"%.1f".format((vs.boostKpa - 101.325) * 0.14503773)} PSI  (${vs.boostKpa.toInt()} kPa abs)")
+            // Boost source rule (#207), judged at export time: what the gauge shows now and why
+            val nowMs = System.currentTimeMillis()
+            val boost = com.openrs.dash.data.BoostSession.read(vs, nowMs)
+            fun age(tag: String) = vs.fieldLastUpdateMs[tag]?.let { "${(nowMs - it) / 1000} s ago" } ?: "never"
+            appendLine("  Boost      : " + (boost.gaugeKpa?.let { "%.1f kPa gauge (%.1f PSI), source %s".format(it, it * 0.14503773, boost.source.name) }
+                ?: "no fresh source") + " · policy ${com.openrs.dash.data.BoostRule.POLICY}")
+            appendLine("  Boost src  : CAN 0x0F8 ${"%.0f".format(vs.boostKpa - 101.325)} kPa gauge (received ${age("boostKpa")}) · " +
+                "TIP ${"%.1f".format(vs.tipActualKpa)} kPa abs (decoded ${age("tipActualKpa")}) · baro ${"%.1f".format(vs.barometricPressure)} kPa")
             appendLine("  Coolant    : ${"%.0f".format(vs.coolantTempC)} °C")
-            appendLine("  Oil Temp   : ${"%.0f".format(vs.oilTempC)} °C")
+            appendLine("  Oil Temp   : ${"%.0f".format(vs.oilTempC)} °C  (0x0F8 byte 7 − 60, #229)")
             appendLine("  Intake     : ${"%.0f".format(vs.intakeTempC)} °C")
             appendLine("  Ambient    : ${"%.1f".format(vs.ambientTempC)} °C")
             appendLine("  Baro       : ${"%.1f".format(vs.barometricPressure)} kPa")
@@ -94,12 +179,12 @@ internal object DiagnosticReportBuilder {
             appendLine("  TPMS LR/RR : ${"%.0f".format(vs.tirePressLR)} / ${"%.0f".format(vs.tirePressRR)} PSI")
             appendLine("  AWD L/R    : ${"%.0f".format(vs.awdLeftTorque)} / ${"%.0f".format(vs.awdRightTorque)} Nm")
             appendLine("  RDU Temp   : ${"%.0f".format(vs.rduTempC)} °C")
-            appendLine("  PTU Temp   : ${"%.0f".format(vs.ptuTempC)} °C")
+            appendLine("  PTU Temp   : ${"%.0f".format(vs.ptuTempC)} °C  (0x0F8 byte 1 − 50, #229)")
             appendLine("  ETC Act/Des: ${"%.1f".format(vs.etcAngleActual)}° / ${"%.1f".format(vs.etcAngleDesired)}°")
             appendLine("  WGDC       : ${"%.1f".format(vs.wgdcDesired)} %")
             appendLine("  KR Cyl1-4  : ${com.openrs.dash.ui.formatKr(vs.ignCorrCyl1)} / ${com.openrs.dash.ui.formatKr(vs.ignCorrCyl2)} / ${com.openrs.dash.ui.formatKr(vs.ignCorrCyl3)} / ${com.openrs.dash.ui.formatKr(vs.ignCorrCyl4)}")
             appendLine("  Load/Timing: ${"%.1f".format(vs.calcLoad)} % / ${"%.1f".format(vs.timingAdvance)}°")
-            appendLine("  Spark Adv  : ${"%.1f".format(vs.sparkAdvance)}°")
+            appendLine("  Spark Adv  : ${if (vs.sparkAdvance > -90) "%.1f°".format(vs.sparkAdvance) else "— (not received)"}")
             appendLine("  Cmd λ / O2 : ${"%.3f".format(vs.commandedAfr)} / ${"%.3f".format(vs.o2Voltage)} V")
             appendLine("  OAR        : ${"%.4f".format(vs.octaneAdjustRatio)}")
             appendLine("  TIP Act/Des: ${"%.1f".format(vs.tipActualKpa)} / ${"%.1f".format(vs.tipDesiredKpa)} kPa")
@@ -210,6 +295,13 @@ internal object DiagnosticReportBuilder {
             }
             appendLine()
         }
+        // Unattributed NRCs: exact count; their event lines are folded to ≤ 1 per minute per kind (#216)
+        if (log.nrcUnattributedTotal > 0) {
+            appendLine("─── NRC UNATTRIBUTED ──────────────────────────────────────")
+            appendLine("  ${log.nrcUnattributedTotal} this session (not counted toward suppression; event lines show the " +
+                "first of each kind, then one summary per minute)")
+            appendLine()
+        }
 
         // ── FPS timeline
         val fps = log.fpsTimeline
@@ -274,7 +366,11 @@ internal object DiagnosticReportBuilder {
 
     // ── JSON detail (built with JSONObject for safe escaping + structure) ─────
 
-    fun buildDetailJson(ts: String): String {
+    fun buildDetailJson(
+        ts: String,
+        snap: AdapterStatusSnapshot = DiagnosticLogger.snapshotAdapterStatus(),
+        dtcScan: com.openrs.dash.data.DtcScanRecord? = DiagnosticLogger.lastDtcScan,
+    ): String {
         val log = DiagnosticLogger
         val vs  = log.lastVehicleState
         val p   = log.sessionPrefs
@@ -286,6 +382,7 @@ internal object DiagnosticReportBuilder {
             put("app", "openRS_")
             put("appVersion", BuildConfig.VERSION_NAME)
             put("appBuild", BuildConfig.VERSION_CODE)
+            DiagnosticExporter.putBuildIdentity(this)
             put("generatedAt", ts)
             put("sessionDurationMs", log.sessionDurationMs)
             put("sessionDurationHuman", log.formatDuration(log.sessionDurationMs))
@@ -297,6 +394,8 @@ internal object DiagnosticReportBuilder {
             put("slcanLinesLogged", log.slcanLineCount)
             put("slcanFileIncluded", log.slcanLogFile != null && log.slcanLineCount > 0)
         })
+
+        root.put("dtcScan", dtcScanJson(dtcScan))
 
         // settings
         if (p != null) {
@@ -312,8 +411,9 @@ internal object DiagnosticReportBuilder {
             })
         }
 
-        // adapter device status
-        log.deviceStatus?.let { ds ->
+        // adapter device status — this session's /check_status only; how it was obtained (or why not) always (#233)
+        root.put("adapterStatusSource", adapterStatusSourceJson(snap.record, snap.sessionStartMs))
+        snap.deviceStatus?.let { ds ->
             root.put("adapterStatus", JSONObject().apply {
                 put("hardwareVersion", ds.hardwareVersion)
                 put("firmwareVersion", ds.firmwareVersion)
@@ -389,6 +489,8 @@ internal object DiagnosticReportBuilder {
             }
         })
 
+        root.put("nrcUnattributedTotal", log.nrcUnattributedTotal)   // exact, even though lines are folded (#216)
+
         // nrcSuppression
         val nrcMap = log.nrcSuppressed
         if (nrcMap.isNotEmpty()) {
@@ -438,14 +540,16 @@ internal object DiagnosticReportBuilder {
 }
 
 /** Serialize VehicleState to a JSONObject with full-precision numeric values. */
-private fun VehicleState.toJsonObject(): JSONObject = JSONObject().apply {
+internal fun VehicleState.toJsonObject(): JSONObject = JSONObject().apply {
     put("rpm", rpm)
     put("speedKph", speedKph)
     put("speedMph", speedKph * 0.621371)
-    put("boostKpa", boostKpa)
-    put("boostPsi", (boostKpa - 101.325) * 0.14503773)
+    put("boostKpa", boostKpa)   // CAN 0x0F8 byte 5 + 101.325 (gauge, std-atm form) — a reading only if stamped "boostKpa"
+    // Only once 0x0F8 was received: the 101.325 default would read as a measured 0
+    if (fieldLastUpdateMs[com.openrs.dash.data.BoostRule.CAN_TAG] != null) put("boostCanGaugeKpa", boostKpa - 101.325)
     put("coolantTempC", coolantTempC)
     put("oilTempC", oilTempC)
+    put("oilPtuMapping", com.openrs.dash.data.OilPtuMapping.CURRENT)   // this build's 0x0F8 decoder (#229)
     put("intakeTempC", intakeTempC)
     put("ambientTempC", ambientTempC)
     put("barometricPressure", barometricPressure)
@@ -473,7 +577,7 @@ private fun VehicleState.toJsonObject(): JSONObject = JSONObject().apply {
     put("tirePressRR", tirePressRR)
     put("awdLeftTorque", awdLeftTorque)
     put("awdRightTorque", awdRightTorque)
-    put("awdMaxTorque", awdMaxTorque)
+    // awdMaxTorque: retired (no DBC signal in 0x2C0, #226) — omitted, never exported as a measured 0
     put("rduTempC", rduTempC)
     put("ptuTempC", ptuTempC)
     put("calcLoad", calcLoad)
@@ -514,7 +618,9 @@ private fun VehicleState.toJsonObject(): JSONObject = JSONObject().apply {
     put("lcArmed", lcArmed ?: JSONObject.NULL)
     put("lcRpmTarget", lcRpmTarget)
     put("assEnabled", assEnabled ?: JSONObject.NULL)
-    put("peakBoostPsi", peakBoostPsi)
+    // #207: session boost peaks per measurement (gauge kPa) — VehicleState.peakBoostPsi is no longer updated
+    com.openrs.dash.data.BoostSession.peakKpa(com.openrs.dash.data.BoostSource.CAN_0F8)?.let { put("boostPeakCanGaugeKpa", it) }
+    com.openrs.dash.data.BoostSession.peakKpa(com.openrs.dash.data.BoostSource.TIP_033E)?.let { put("boostPeakTipGaugeKpa", it) }
     put("peakRpm", peakRpm)
     put("peakLateralG", peakLateralG)
     put("peakLongitudinalG", peakLongitudinalG)

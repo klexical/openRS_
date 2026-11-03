@@ -30,6 +30,10 @@ internal object DriveExportBuilder {
     private val appVersion: String get() = BuildConfig.VERSION_NAME ?: ""
     private val appBuild: Int get() = BuildConfig.VERSION_CODE
 
+    /** The export's value for a drive's oil / PTU mapping (#229): as saved, or `not_recorded` — never inferred. */
+    private fun oilPtuMappingValue(mapping: String?): String = mapping ?: "not_recorded"
+    private fun oilPtuMappingValue(drive: DriveEntity): String = oilPtuMappingValue(drive.oilPtuMapping)
+
     fun buildGpx(drive: DriveEntity, points: List<DrivePointEntity>, ts: String): String {
         val isoFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
@@ -42,6 +46,8 @@ internal object DriveExportBuilder {
             appendLine("  <metadata>")
             appendLine("    <name>openRS_ Drive $ts</name>")
             appendLine("    <time>${isoFmt.format(Date(drive.startTime))}</time>")
+            // #229: which 0x0F8 bytes oilC / ptuC came from — the drive's own record, "not_recorded" for older drives
+            appendLine("    <extensions><openrs:oilPtuMapping>${oilPtuMappingValue(drive)}</openrs:oilPtuMapping></extensions>")
             appendLine("  </metadata>")
             appendLine("  <trk>")
             appendLine("    <name>Focus RS MK3 Drive</name>")
@@ -59,20 +65,21 @@ internal object DriveExportBuilder {
                 appendLine("        <ele>0</ele>")
                 appendLine("        <time>${isoFmt.format(Date(pt.timestamp))}</time>")
                 appendLine("        <extensions>")
-                appendLine("          <openrs:speed>${"%.1f".format(pt.speedKph)}</openrs:speed>")
+                appendLine("          <openrs:speed>${"%.1f".format(Locale.ROOT, pt.speedKph)}</openrs:speed>")
                 appendLine("          <openrs:rpm>${pt.rpm}</openrs:rpm>")
                 appendLine("          <openrs:gear>${pt.gear}</openrs:gear>")
-                appendLine("          <openrs:boostPsi>${"%.2f".format(pt.boostPsi)}</openrs:boostPsi>")
-                appendLine("          <openrs:coolantC>${"%.1f".format(pt.coolantTempC)}</openrs:coolantC>")
-                appendLine("          <openrs:oilC>${"%.1f".format(pt.oilTempC)}</openrs:oilC>")
-                appendLine("          <openrs:ambientC>${"%.1f".format(pt.ambientTempC)}</openrs:ambientC>")
-                appendLine("          <openrs:rduC>${"%.1f".format(pt.rduTempC)}</openrs:rduC>")
-                appendLine("          <openrs:ptuC>${"%.1f".format(pt.ptuTempC)}</openrs:ptuC>")
-                appendLine("          <openrs:fuelPct>${"%.1f".format(pt.fuelLevelPct)}</openrs:fuelPct>")
-                appendLine("          <openrs:lateralG>${"%.3f".format(pt.lateralG)}</openrs:lateralG>")
-                appendLine("          <openrs:longitudinalG>${"%.3f".format(pt.longitudinalG)}</openrs:longitudinalG>")
-                appendLine("          <openrs:brakePressure>${"%.1f".format(pt.brakePressure)}</openrs:brakePressure>")
-                appendLine("          <openrs:steeringAngle>${"%.1f".format(pt.steeringAngle)}</openrs:steeringAngle>")
+                pt.boostReadingPsi()?.let { appendLine("          <openrs:boostPsi>${"%.2f".format(Locale.ROOT, it)}</openrs:boostPsi>") }
+                pt.boostSource?.takeIf { it != "NONE" }?.let { appendLine("          <openrs:boostSource>$it</openrs:boostSource>") }
+                appendLine("          <openrs:coolantC>${"%.1f".format(Locale.ROOT, pt.coolantTempC)}</openrs:coolantC>")
+                appendLine("          <openrs:oilC>${"%.1f".format(Locale.ROOT, pt.oilTempC)}</openrs:oilC>")
+                appendLine("          <openrs:ambientC>${"%.1f".format(Locale.ROOT, pt.ambientTempC)}</openrs:ambientC>")
+                appendLine("          <openrs:rduC>${"%.1f".format(Locale.ROOT, pt.rduTempC)}</openrs:rduC>")
+                appendLine("          <openrs:ptuC>${"%.1f".format(Locale.ROOT, pt.ptuTempC)}</openrs:ptuC>")
+                appendLine("          <openrs:fuelPct>${"%.1f".format(Locale.ROOT, pt.fuelLevelPct)}</openrs:fuelPct>")
+                appendLine("          <openrs:lateralG>${"%.3f".format(Locale.ROOT, pt.lateralG)}</openrs:lateralG>")
+                appendLine("          <openrs:longitudinalG>${"%.3f".format(Locale.ROOT, pt.longitudinalG)}</openrs:longitudinalG>")
+                appendLine("          <openrs:brakePressure>${"%.1f".format(Locale.ROOT, pt.brakePressure)}</openrs:brakePressure>")
+                appendLine("          <openrs:steeringAngle>${"%.1f".format(Locale.ROOT, pt.steeringAngle)}</openrs:steeringAngle>")
                 appendLine("          <openrs:driveMode>${pt.driveMode}</openrs:driveMode>")
                 appendLine("        </extensions>")
                 appendLine("      </trkpt>")
@@ -106,12 +113,15 @@ internal object DriveExportBuilder {
     ): List<Pair<String, String>> = buildList {
         if (points.isEmpty()) return@buildList
         if (gpxName != null && hasRoute(drive, points)) add(gpxName to buildGpx(drive, points, gpxTs))
-        if (csvName != null) add(csvName to buildCsv(points, hasGps = drive.hasGps))
+        if (csvName != null) add(csvName to buildCsv(points, hasGps = drive.hasGps, oilPtuMapping = drive.oilPtuMapping))
     }
 
-    /** Drive telemetry CSV. [hasGps] false writes empty lat / lng (the knock CSV's convention). */
-    fun buildCsv(points: List<DrivePointEntity>, hasGps: Boolean = true): String = buildString {
-        appendLine("# openrs_csv_v2")
+    /**
+     * Drive telemetry CSV. [hasGps] false writes empty lat / lng (the knock CSV's convention). The format line names the
+     * drive's [oilPtuMapping] (#229) — `not_recorded` unless the drive was saved with one; the row count is unchanged.
+     */
+    fun buildCsv(points: List<DrivePointEntity>, hasGps: Boolean = true, oilPtuMapping: String? = null): String = buildString {
+        appendLine("# openrs_csv_v2 oil_ptu_mapping=${oilPtuMappingValue(oilPtuMapping)}")
         appendLine(
             "timestamp_ms,lat,lng,speed_kph,rpm,gear,boost_psi," +
             "coolant_c,oil_c,ambient_c,rdu_c,ptu_c,fuel_pct," +
@@ -119,44 +129,48 @@ internal object DriveExportBuilder {
             "tire_temp_lf_c,tire_temp_rf_c,tire_temp_lr_c,tire_temp_rr_c," +
             "wheel_fl_kph,wheel_fr_kph,wheel_rl_kph,wheel_rr_kph," +
             "lateral_g,longitudinal_g,brake_pressure,steering_angle,throttle_pct,drive_mode,race_ready," +
-            "tip_actual_kpa,boost_target_kpa,wgdc_pct"
+            "tip_actual_kpa,boost_target_kpa,wgdc_pct," +
+            // #207 provenance: empty for points recorded before the rule (never inferred); boost_psi empty when no source
+            "boost_source,baro_kpa"
         )
         points.forEach { pt ->
             appendLine(
                 "${pt.timestamp}," +
-                (if (hasGps) "${"%.6f".format(pt.lat)},${"%.6f".format(pt.lng)}," else ",,") +
-                "${"%.2f".format(pt.speedKph)}," +
+                (if (hasGps) "${"%.6f".format(Locale.ROOT, pt.lat)},${"%.6f".format(Locale.ROOT, pt.lng)}," else ",,") +
+                "${"%.2f".format(Locale.ROOT, pt.speedKph)}," +
                 "${pt.rpm}," +
                 "${csvEscape(pt.gear)}," +
-                "${"%.3f".format(pt.boostPsi)}," +
-                "${"%.1f".format(pt.coolantTempC)}," +
-                "${"%.1f".format(pt.oilTempC)}," +
-                "${"%.1f".format(pt.ambientTempC)}," +
-                "${"%.1f".format(pt.rduTempC)}," +
-                "${"%.1f".format(pt.ptuTempC)}," +
-                "${"%.1f".format(pt.fuelLevelPct)}," +
-                "${"%.1f".format(pt.tirePressLF)}," +
-                "${"%.1f".format(pt.tirePressRF)}," +
-                "${"%.1f".format(pt.tirePressLR)}," +
-                "${"%.1f".format(pt.tirePressRR)}," +
-                "${"%.1f".format(pt.tireTempLF)}," +
-                "${"%.1f".format(pt.tireTempRF)}," +
-                "${"%.1f".format(pt.tireTempLR)}," +
-                "${"%.1f".format(pt.tireTempRR)}," +
-                "${"%.2f".format(pt.wheelSpeedFL)}," +
-                "${"%.2f".format(pt.wheelSpeedFR)}," +
-                "${"%.2f".format(pt.wheelSpeedRL)}," +
-                "${"%.2f".format(pt.wheelSpeedRR)}," +
-                "${"%.4f".format(pt.lateralG)}," +
-                "${"%.4f".format(pt.longitudinalG)}," +
-                "${"%.1f".format(pt.brakePressure)}," +
-                "${"%.1f".format(pt.steeringAngle)}," +
-                "${"%.1f".format(pt.throttlePct)}," +
+                "${pt.boostReadingPsi()?.let { "%.3f".format(Locale.ROOT, it) } ?: ""}," +
+                "${"%.1f".format(Locale.ROOT, pt.coolantTempC)}," +
+                "${"%.1f".format(Locale.ROOT, pt.oilTempC)}," +
+                "${"%.1f".format(Locale.ROOT, pt.ambientTempC)}," +
+                "${"%.1f".format(Locale.ROOT, pt.rduTempC)}," +
+                "${"%.1f".format(Locale.ROOT, pt.ptuTempC)}," +
+                "${"%.1f".format(Locale.ROOT, pt.fuelLevelPct)}," +
+                "${"%.1f".format(Locale.ROOT, pt.tirePressLF)}," +
+                "${"%.1f".format(Locale.ROOT, pt.tirePressRF)}," +
+                "${"%.1f".format(Locale.ROOT, pt.tirePressLR)}," +
+                "${"%.1f".format(Locale.ROOT, pt.tirePressRR)}," +
+                "${"%.1f".format(Locale.ROOT, pt.tireTempLF)}," +
+                "${"%.1f".format(Locale.ROOT, pt.tireTempRF)}," +
+                "${"%.1f".format(Locale.ROOT, pt.tireTempLR)}," +
+                "${"%.1f".format(Locale.ROOT, pt.tireTempRR)}," +
+                "${"%.2f".format(Locale.ROOT, pt.wheelSpeedFL)}," +
+                "${"%.2f".format(Locale.ROOT, pt.wheelSpeedFR)}," +
+                "${"%.2f".format(Locale.ROOT, pt.wheelSpeedRL)}," +
+                "${"%.2f".format(Locale.ROOT, pt.wheelSpeedRR)}," +
+                "${"%.4f".format(Locale.ROOT, pt.lateralG)}," +
+                "${"%.4f".format(Locale.ROOT, pt.longitudinalG)}," +
+                "${"%.1f".format(Locale.ROOT, pt.brakePressure)}," +
+                "${"%.1f".format(Locale.ROOT, pt.steeringAngle)}," +
+                "${"%.1f".format(Locale.ROOT, pt.throttlePct)}," +
                 "${csvEscape(pt.driveMode)}," +
                 "${pt.isRaceReady}," +
-                "${"%.2f".format(pt.tipActualKpa)}," +
-                "${"%.2f".format(pt.boostTargetKpa)}," +
-                "${"%.1f".format(pt.wgdcPct)}"
+                "${"%.2f".format(Locale.ROOT, pt.tipActualKpa)}," +
+                "${"%.2f".format(Locale.ROOT, pt.boostTargetKpa)}," +
+                "${"%.1f".format(Locale.ROOT, pt.wgdcPct)}," +
+                "${pt.boostSource ?: ""}," +
+                "${pt.baroKpa?.let { "%.1f".format(Locale.ROOT, it) } ?: ""}"
             )
         }
     }
@@ -167,19 +181,20 @@ internal object DriveExportBuilder {
      */
     fun buildKnockCsv(events: List<com.openrs.dash.data.KnockEventEntity>): String = buildString {
         appendLine("# openrs_knock_csv_v2")
-        appendLine("timestamp_ms,kr_deg,rpm,boost_psi,iat_c,throttle_pct,gear_est,lat,lng,cylinder")
+        appendLine("timestamp_ms,kr_deg,rpm,boost_psi,iat_c,throttle_pct,gear_est,lat,lng,cylinder,boost_source")
         events.forEach { ev ->
             appendLine(
                 "${ev.timestamp}," +
-                "${"%.2f".format(ev.krDeg)}," +
+                "${"%.2f".format(Locale.ROOT, ev.krDeg)}," +
                 "${ev.rpm}," +
-                "${"%.2f".format(ev.boostPsi)}," +
-                "${"%.1f".format(ev.iatC)}," +
-                "${"%.1f".format(ev.throttlePct)}," +
+                "${if (ev.boostSource == "NONE") "" else "%.2f".format(Locale.ROOT, ev.boostPsi)}," +
+                "${"%.1f".format(Locale.ROOT, ev.iatC)}," +
+                "${"%.1f".format(Locale.ROOT, ev.throttlePct)}," +
                 "${ev.gearEst}," +
-                "${ev.lat?.let { "%.6f".format(it) } ?: ""}," +
-                "${ev.lng?.let { "%.6f".format(it) } ?: ""}," +
-                "${ev.cylinder}"
+                "${ev.lat?.let { "%.6f".format(Locale.ROOT, it) } ?: ""}," +
+                "${ev.lng?.let { "%.6f".format(Locale.ROOT, it) } ?: ""}," +
+                "${ev.cylinder}," +
+                (ev.boostSource ?: "")
             )
         }
     }
@@ -205,7 +220,24 @@ internal object DriveExportBuilder {
         appendLine()
         appendLine("  Fuel Used   : ${"%.2f".format(drive.fuelUsedL)} L")
         appendLine("  Peak RPM    : ${drive.peakRpm}")
-        appendLine("  Peak Boost  : ${"%.1f".format(drive.peakBoostPsi)} PSI")
+        // #207: only a drive recorded under a rule says which source — an older drive's peak is as recorded, source
+        // unknown; a drive with no reading says so (never "0.0")
+        appendLine("  Peak Boost  : " + when (val peak = com.openrs.dash.data.StoredBoost.drivePeak(drive)) {
+            is com.openrs.dash.data.StoredBoost.Reading -> "${"%.1f".format(peak.psi)} PSI (" +
+                (if (peak.source == com.openrs.dash.data.BoostSource.TIP_033E) "TIP 0x033E − baro" else "CAN 0x0F8") + ")"
+            else -> if (drive.boostPolicy == null) "${"%.1f".format(drive.peakBoostPsi)} PSI (source not recorded)"
+                    else "— (no boost reading recorded)"
+        })
+        appendLine("  Track files : RaceChrono / TrackAddict CSVs carry no pressure column — their only one is named \"Boost\", " +
+            "which can't say TIP or a missing source; the drive CSV has every reading with its source")
+        appendLine("  Boost source: " + when (drive.boostPolicy) {
+            null -> "not recorded — this drive predates per-reading boost provenance (values as recorded)"
+            "rc7-boost-v2" -> "per reading (rc7-boost-v2, development builds only): CAN 0x0F8 while fresh unless judged " +
+                "not tracking at full throttle, else TIP − measured baro; none → no reading"
+            else -> "per reading (${drive.boostPolicy}): TIP 0x033E − measured baro while fresh, else CAN 0x0F8 while " +
+                "fresh; none → no reading"
+        })
+        appendLine("  Oil / PTU   : " + com.openrs.dash.data.OilPtuMapping.describe(drive.oilPtuMapping))
         appendLine("  Peak Lat G  : ${"%.2f".format(drive.peakLateralG)} g")
         if (drive.avgStftPct != null || drive.avgLtftPct != null) {
             fun pct(v: Double?) = v?.let { "%+.1f%%".format(it) } ?: "—"
@@ -221,7 +253,7 @@ internal object DriveExportBuilder {
                 "WGDC max ${"%.0f".format(bs.maxWgdc)}%" +
                 (bs.avgWgdcAtPeak?.let { ", ${"%.0f".format(it)}% at peak" } ?: ""))
             for (g in bs.byGear) {
-                appendLine("    Gear ${g.gear}    : peak ≈${"%.1f".format(g.peakBoostPsi)} PSI, avg Δ ${"%+.1f".format(g.avgDeltaPsi)} PSI (${g.samples} samples)")
+                appendLine("    Gear ${g.gear}    : peak TIP ≈${"%.1f".format(g.peakBoostPsi)} PSI ${if (g.baroMeasured) "vs measured baro" else "vs std atmosphere"}, avg Δ ${"%+.1f".format(g.avgDeltaPsi)} PSI (${g.samples} samples)")
             }
         }
         appendLine()
@@ -239,10 +271,15 @@ internal object DriveExportBuilder {
         appendLine("═══════════════════════════════════════════════════════════")
     }
 
-    fun buildDtcText(dtcResults: List<DtcResult>): String = buildString {
+    fun buildDtcText(dtcResults: List<DtcResult>, scan: com.openrs.dash.data.DtcScanRecord? = null): String = buildString {
         appendLine("═══════════════════════════════════════════════════════════")
         appendLine("  openRS_ DTC Scan Report")
         appendLine("  App : v${appVersion} (build ${appBuild})")
+        if (scan != null) {
+            appendLine("  Scan: ${DiagnosticReportBuilder.dtcScanLine(scan)}")
+            appendLine("  Modules: " + scan.modules.entries.joinToString(", ") { (m, st) -> "$m ${st?.name ?: "NO_ANSWER"}" })
+            scan.notes.forEach { (m, n) -> appendLine("  $m: $n") }    // a write that failed (#215)
+        }
         appendLine("═══════════════════════════════════════════════════════════")
         appendLine()
         val grouped = dtcResults.groupBy { it.module }
@@ -252,7 +289,7 @@ internal object DriveExportBuilder {
             appendLine("─── $mod ────────────────────────────────────────────────────")
             codes.forEach { dtc ->
                 val desc = if (dtc.description.isNotEmpty()) dtc.description else "(no description)"
-                appendLine("  ${dtc.code}  [${dtc.status.label}]  $desc")
+                appendLine("  ${dtc.displayCode}  [${dtc.status.label}]  $desc")
             }
             appendLine()
         }
@@ -263,9 +300,11 @@ internal object DriveExportBuilder {
     /**
      * Build a machine-readable JSON DTC scan report for Sapphire import.
      */
-    fun buildDtcJson(dtcResults: List<DtcResult>): String {
+    fun buildDtcJson(dtcResults: List<DtcResult>, scan: com.openrs.dash.data.DtcScanRecord? = null): String {
         val root = JSONObject()
         root.put("version", 1)
+        // Additive (#215): scan status + module coverage — Sapphire reads `codes` and ignores unknown keys
+        if (scan != null) root.put("scan", DiagnosticReportBuilder.dtcScanJson(scan))
         root.put("timestamp", System.currentTimeMillis())
         root.put("app", "openRS_ v${appVersion}")
         root.put("totalCodes", dtcResults.size)
@@ -275,6 +314,8 @@ internal object DriveExportBuilder {
             val obj = JSONObject().apply {
                 put("module", dtc.module)
                 put("code", dtc.code)
+                // Full fault identity (#215): failure type byte when known; `code` stays the base code for lookups
+                dtc.failureType?.let { put("failureType", String.format(java.util.Locale.ROOT, "%02X", it)); put("fullCode", dtc.displayCode) }
                 put("description", dtc.description)
                 put("status", dtc.status.name)
                 put("severity", com.openrs.dash.data.DtcSeverity.fromCode(dtc.code).name)
@@ -325,10 +366,17 @@ internal object DriveExportBuilder {
             put("avgSpeedKph", drive.avgSpeedKph)
             put("maxSpeedKph", drive.maxSpeedKph)
             put("peakRpm", drive.peakRpm)
-            put("peakBoostPsi", drive.peakBoostPsi)
+            // #207 provenance — present only for drives recorded under a rule; absent = unknown, never assumed. A drive
+            // recorded under a rule with no boost reading has no peak (never 0); older drives: as recorded
+            if (drive.boostPolicy == null || com.openrs.dash.data.StoredBoost.drivePeak(drive) != com.openrs.dash.data.StoredBoost.Unavailable)
+                put("peakBoostPsi", drive.peakBoostPsi)
+            drive.peakBoostSource?.let { put("peakBoostSource", it) }
+            drive.boostPolicy?.let { put("boostPolicy", it) }
             put("peakLateralG", drive.peakLateralG)
             put("peakOilTempC", drive.peakOilTempC)
             put("peakCoolantTempC", drive.peakCoolantTempC)
+            // #229: which 0x0F8 bytes oil / PTU came from — present only when saved with the drive; absent = unknown
+            drive.oilPtuMapping?.let { put("oilPtuMapping", it) }
             put("fuelUsedL", drive.fuelUsedL)
             put("aggressionScore", drive.aggressionScore)
             put("tags", drive.tags)
@@ -349,13 +397,13 @@ internal object DriveExportBuilder {
 
         // ── Peak events (best per type from recorded points) ─────
         val peaksArray = JSONArray()
-        data class PeakCandidate(val type: PeakType, val value: Double, val lat: Double, val lng: Double, val ts: Long)
+        data class PeakCandidate(val type: PeakType, val value: Double, val lat: Double, val lng: Double, val ts: Long,
+                                 val source: String? = null)
         val bestPeaks = mutableMapOf<PeakType, PeakCandidate>()
 
         for (pt in points) {
             val candidates = listOf(
                 PeakCandidate(PeakType.RPM, pt.rpm.toDouble(), pt.lat, pt.lng, pt.timestamp),
-                PeakCandidate(PeakType.BOOST, pt.boostPsi, pt.lat, pt.lng, pt.timestamp),
                 PeakCandidate(PeakType.LATERAL_G, Math.abs(pt.lateralG), pt.lat, pt.lng, pt.timestamp),
                 PeakCandidate(PeakType.SPEED, pt.speedKph, pt.lat, pt.lng, pt.timestamp)
             )
@@ -374,9 +422,31 @@ internal object DriveExportBuilder {
                 put("lat", peak.lat)
                 put("lng", peak.lng)
                 put("timestampMs", peak.ts)
+                peak.source?.let { put("source", it) }
             })
         }
+        // #207: one BOOST peak per measurement (TIP, CAN 0x0F8, or legacy without a source) — never one max across
+        // them; a genuine 0 is a peak, a point without a reading is none
+        points.mapNotNull { pt -> (com.openrs.dash.data.StoredBoost.point(pt) as? com.openrs.dash.data.StoredBoost.Reading)?.let { pt to it.source.name }
+                ?: (pt.boostSource == null).takeIf { it }?.let { pt to null } }
+            .groupBy({ it.second }, { it.first })
+            .forEach { (source, pts) ->
+                val best = pts.maxBy { it.boostPsi }
+                if (source == null && best.boostPsi <= 0.0) return@forEach        // legacy: as before, a positive peak only
+                peaksArray.put(JSONObject().apply {
+                    put("type", PeakType.BOOST.name)
+                    put("value", best.boostPsi)
+                    put("lat", best.lat)
+                    put("lng", best.lng)
+                    put("timestampMs", best.timestamp)
+                    source?.let { put("source", it) }
+                })
+            }
         root.put("peaks", peaksArray)
+        // #207: how many recorded points came from each boost source (only points that carry one)
+        points.mapNotNull { it.boostSource }.groupingBy { it }.eachCount().takeIf { it.isNotEmpty() }?.let { counts ->
+            root.put("boostSources", JSONObject().apply { counts.forEach { (k, v) -> put(k, v) } })
+        }
 
         // ── Boost sweep (rc.4) ──────────────────────────────────
         com.openrs.dash.data.BoostSweepStats.from(points)?.let { bs ->
@@ -394,6 +464,7 @@ internal object DriveExportBuilder {
                         put("peakBoostPsi", g.peakBoostPsi)
                         put("avgDeltaPsi", g.avgDeltaPsi)
                         put("samples", g.samples)
+                        put("reference", if (g.baroMeasured) "measuredBaro" else "standardAtmosphere")
                     })
                 })
             })
@@ -426,7 +497,7 @@ internal object DriveExportBuilder {
             })
         }
         root.put("thermalProgression", thermalObj)
-        root.put("thermalRecord", buildThermalRecordJson(review, drive.startTime))
+        root.put("thermalRecord", buildThermalRecordJson(review, drive.startTime, drive.oilPtuMapping))
 
         // ── Mode timeline (detect transitions in point sequence) ─
         val modeTimeline = JSONArray()
@@ -470,7 +541,7 @@ internal object DriveExportBuilder {
                     put("label", bm.label)
                     put("speedKph", bm.speedKph)
                     put("rpm", bm.rpm)
-                    put("boostPsi", bm.boostPsi)
+                    // no boost: bookmarks store no source (#207), so a value couldn't be named
                 })
             }
             root.put("bookmarks", bmArray)
@@ -484,7 +555,7 @@ internal object DriveExportBuilder {
                     put("lapNumber", lap.lapNumber)
                     put("lapTimeMs", lap.lapTimeMs)
                     if (lap.peakRpm > 0) put("peakRpm", lap.peakRpm)
-                    if (lap.peakBoostPsi > 0) put("peakBoostPsi", lap.peakBoostPsi)
+                    // no boost: a lap's peak mixes sources and has no source column (#207)
                     if (lap.peakLateralG > 0) put("peakLateralG", lap.peakLateralG)
                     if (lap.peakSpeedKph > 0) put("peakSpeedKph", lap.peakSpeedKph)
                 })
@@ -501,7 +572,7 @@ internal object DriveExportBuilder {
                     put("timeMs", run.zeroTo60Ms)
                     if (run.zeroTo100Ms != null) put("timeTo100Ms", run.zeroTo100Ms)
                     if (run.launchRpm > 0) put("launchRpm", run.launchRpm)
-                    if (run.peakBoostPsi > 0) put("peakBoostPsi", run.peakBoostPsi)
+                    // no boost: perf_runs store no source (#207) — shown on PERF with its source, not exported
                     if (run.densityAltFt != null) put("densityAltFt", run.densityAltFt)
                     if (run.ambientTempC > -90) put("ambientTempC", run.ambientTempC)
                 })
@@ -518,8 +589,11 @@ internal object DriveExportBuilder {
      * stay distinct). All temperatures °C ("…C" keys). Legacy drives export their drive-end readings as `driveEndC`
      * against the old fixed limit, never as peaks or under a profile; drives without a record say so.
      */
-    internal fun buildThermalRecordJson(review: DriveThermalReview, driveStartMs: Long): JSONObject = JSONObject().apply {
+    internal fun buildThermalRecordJson(review: DriveThermalReview, driveStartMs: Long, oilPtuMapping: String? = null): JSONObject = JSONObject().apply {
         put("basis", review.basis.name.lowercase())
+        // #229: the drive's own mapping (DriveEntity.oilPtuMapping), never inferred from the basis / record format
+        put("oilPtuMapping", oilPtuMappingValue(oilPtuMapping))
+        put("oilPtuMappingNote", com.openrs.dash.data.OilPtuMapping.describe(oilPtuMapping))
         put("unit", "°C")
         put("flagged", review.flagged)
         when (review.basis) {
@@ -588,10 +662,12 @@ internal object DriveExportBuilder {
      * G-forces in g, temps in °C. Custom OBD channels use the rc_ prefix.
      */
     fun buildRaceChronoCsv(points: List<DrivePointEntity>): String = buildString {
+        // No pressure column (#207): the format's only one is "Boost Pressure", which can't name TIP or a missing
+        // source — the drive CSV carries every reading with its source (see the drive summary note)
         appendLine(
             "Timestamp (s),Latitude (deg),Longitude (deg),Speed (m/s),Speed (kph)," +
             "Lateral Acceleration (G),Longitudinal Acceleration (G)," +
-            "RPM (rpm),Throttle Position (%),Gear,Boost Pressure (psi)," +
+            "RPM (rpm),Throttle Position (%),Gear," +
             "Coolant Temp (C),Oil Temp (C),Brake Pressure"
         )
         if (points.isEmpty()) return@buildString
@@ -600,20 +676,19 @@ internal object DriveExportBuilder {
             val timeSec = (pt.timestamp - t0) / 1000.0
             val speedMs = pt.speedKph / 3.6
             appendLine(
-                "${"%.3f".format(timeSec)}," +
-                "${"%.6f".format(pt.lat)}," +
-                "${"%.6f".format(pt.lng)}," +
-                "${"%.2f".format(speedMs)}," +
-                "${"%.2f".format(pt.speedKph)}," +
-                "${"%.4f".format(pt.lateralG)}," +
-                "${"%.4f".format(pt.longitudinalG)}," +
+                "${"%.3f".format(Locale.ROOT, timeSec)}," +
+                "${"%.6f".format(Locale.ROOT, pt.lat)}," +
+                "${"%.6f".format(Locale.ROOT, pt.lng)}," +
+                "${"%.2f".format(Locale.ROOT, speedMs)}," +
+                "${"%.2f".format(Locale.ROOT, pt.speedKph)}," +
+                "${"%.4f".format(Locale.ROOT, pt.lateralG)}," +
+                "${"%.4f".format(Locale.ROOT, pt.longitudinalG)}," +
                 "${pt.rpm}," +
-                "${"%.1f".format(pt.throttlePct)}," +
+                "${"%.1f".format(Locale.ROOT, pt.throttlePct)}," +
                 "${csvEscape(pt.gear)}," +
-                "${"%.2f".format(pt.boostPsi)}," +
-                "${"%.1f".format(pt.coolantTempC)}," +
-                "${"%.1f".format(pt.oilTempC)}," +
-                "${"%.1f".format(pt.brakePressure)}"
+                "${"%.1f".format(Locale.ROOT, pt.coolantTempC)}," +
+                "${"%.1f".format(Locale.ROOT, pt.oilTempC)}," +
+                "${"%.1f".format(Locale.ROOT, pt.brakePressure)}"
             )
         }
     }
@@ -624,9 +699,10 @@ internal object DriveExportBuilder {
      * Speed in MPH, G-forces in g, temps in °F (TrackAddict convention).
      */
     fun buildTrackAddictCsv(points: List<DrivePointEntity>): String = buildString {
+        // No pressure column (#207) — as RaceChrono
         appendLine(
             "Time,Latitude,Longitude,Speed (MPH),Lateral Gs,Lineal Gs," +
-            "RPM,Throttle (%),Gear,Boost (PSI)," +
+            "RPM,Throttle (%),Gear," +
             "Coolant Temp (F),Oil Temp (F),Brake"
         )
         if (points.isEmpty()) return@buildString
@@ -637,19 +713,18 @@ internal object DriveExportBuilder {
             val coolantF = if (pt.coolantTempC > -90) pt.coolantTempC * 9.0 / 5.0 + 32.0 else -99.0
             val oilF = if (pt.oilTempC > -90) pt.oilTempC * 9.0 / 5.0 + 32.0 else -99.0
             appendLine(
-                "${"%.3f".format(timeSec)}," +
-                "${"%.6f".format(pt.lat)}," +
-                "${"%.6f".format(pt.lng)}," +
-                "${"%.1f".format(speedMph)}," +
-                "${"%.4f".format(pt.lateralG)}," +
-                "${"%.4f".format(pt.longitudinalG)}," +
+                "${"%.3f".format(Locale.ROOT, timeSec)}," +
+                "${"%.6f".format(Locale.ROOT, pt.lat)}," +
+                "${"%.6f".format(Locale.ROOT, pt.lng)}," +
+                "${"%.1f".format(Locale.ROOT, speedMph)}," +
+                "${"%.4f".format(Locale.ROOT, pt.lateralG)}," +
+                "${"%.4f".format(Locale.ROOT, pt.longitudinalG)}," +
                 "${pt.rpm}," +
-                "${"%.1f".format(pt.throttlePct)}," +
+                "${"%.1f".format(Locale.ROOT, pt.throttlePct)}," +
                 "${csvEscape(pt.gear)}," +
-                "${"%.2f".format(pt.boostPsi)}," +
-                "${"%.1f".format(coolantF)}," +
-                "${"%.1f".format(oilF)}," +
-                "${"%.1f".format(pt.brakePressure)}"
+                "${"%.1f".format(Locale.ROOT, coolantF)}," +
+                "${"%.1f".format(Locale.ROOT, oilF)}," +
+                "${"%.1f".format(Locale.ROOT, pt.brakePressure)}"
             )
         }
     }
@@ -658,3 +733,6 @@ internal object DriveExportBuilder {
         if (value.contains(',') || value.contains('"') || value.contains('\n'))
             "\"${value.replace("\"", "\"\"")}\"" else value
 }
+
+/** A point's boost as a reading (#207): null when it was recorded with no fresh source; older points are as recorded. */
+internal fun DrivePointEntity.boostReadingPsi(): Double? = if (boostSource == "NONE") null else boostPsi

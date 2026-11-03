@@ -62,6 +62,7 @@ import com.openrs.dash.ui.textMutedAlpha
  * @param dashed draw as a dashed line (used for a target overlaid on its actual)
  * @param valid  false for absent / sentinel samples — skipped, not plotted as values
  * @param sparse polled channel: no area fill, chip hidden when the drive has no valid data
+ * @param breakOnInvalid pressure channels (#207): never bridge an unavailable / other-source sample, through downsampling
  */
 private data class Channel(
     val label: String,
@@ -69,6 +70,7 @@ private data class Channel(
     val axis: String? = null,
     val dashed: Boolean = false,
     val sparse: Boolean = false,
+    val breakOnInvalid: Boolean = false,
     val valid: (DrivePointEntity) -> Boolean = { true },
     val extract: (DrivePointEntity) -> Double
 )
@@ -76,19 +78,24 @@ private data class Channel(
 private val CHANNELS = listOf(
     Channel("SPD",    { Accent })  { it.speedKph },
     Channel("RPM",    { Warn })    { it.rpm.toDouble() },
-    Channel("BOOST",  { Ok }, axis = "boost") { it.boostPsi },
+    // #207: one line per measurement — CAN 0x0F8 (BOOST; also points recorded before sources were stored, as
+    // recorded) and TIP − baro (TIP). A point with no reading, or another source's, is a gap — never 0, never joined.
+    Channel("BOOST",  { Ok }, axis = "boost", breakOnInvalid = true,
+        valid = { it.boostSource == null || it.boostSource == "CAN_0F8" }) { it.boostPsi },
+    Channel("TIP",    { Accent }, axis = "boost", breakOnInvalid = true, valid = { it.boostSource == "TIP_033E" }) { it.boostPsi },
     Channel("OIL",    { Orange }, valid = { it.oilTempC > -90.0 }) { it.oilTempC },  // -99 = not yet received
     Channel("G-LAT",  { Frost })   { it.lateralG },
     Channel("THRTL",  { Dim })     { it.throttlePct },
     // Boost sweep (#175/#188): TARGET shares BOOST's axis + colour, dashed. Recorder writes
     // 0 kPa target / −1 % WGDC when the DID wasn't freshly polled (#184) — those are gaps.
     Channel("TARGET", { Ok }, axis = "boost", dashed = true, sparse = true,
-        valid = { it.boostTargetKpa > 0.0 }) { (it.boostTargetKpa - 101.325) * 0.14503773 },
+        // Against the point's measured baro when recorded (#207), like the TIP gauge; std atm for older points
+        valid = { it.boostTargetKpa > 0.0 }) { (it.boostTargetKpa - (it.baroKpa ?: 101.325)) * 0.14503773 },
     Channel("WGDC",   { Mid }, sparse = true,
         valid = { it.wgdcPct >= 0.0 }) { it.wgdcPct },
 )
 
-private val DEFAULT_ACTIVE = setOf(0, 2) // SPD + BOOST
+private val DEFAULT_ACTIVE = setOf(0, 2, 3) // SPD + BOOST + TIP
 
 /** Pre-computed per-channel draw inputs. [range] is shared across an axis group. */
 private data class ChannelData(
@@ -98,18 +105,15 @@ private data class ChannelData(
     val range: Pair<Float, Float>
 )
 
-/** Downsample a list to at most [maxPoints] entries using stride-based sampling. */
-private fun <T> downsample(data: List<T>, maxPoints: Int): List<T> {
-    if (data.size <= maxPoints) return data
-    val stride = data.size.toFloat() / maxPoints
-    return List(maxPoints) { i -> data[(i * stride).toInt().coerceAtMost(data.lastIndex)] }
-}
 
 @Composable
 fun DriveTimeSeries(
     points: List<DrivePointEntity>,
+    /** The drive's DriveEntity.oilPtuMapping — the OIL chip reads "OIL·N/R" unless it is this build's (#229). */
+    oilPtuMapping: String?,
     modifier: Modifier = Modifier
 ) {
+    val oilMapped = com.openrs.dash.data.OilPtuMapping.isCurrent(oilPtuMapping)
     if (points.size < 2) return
 
     val activeIndices = remember { mutableStateListOf<Int>().apply { addAll(DEFAULT_ACTIVE) } }
@@ -117,11 +121,11 @@ fun DriveTimeSeries(
     // Resolve channel colors in composable context
     val channelColors = CHANNELS.map { it.color() }
 
-    // Polled channels with nothing to show in this drive (pre-v10 drives, PCM silent, or a
-    // WGDC series that's all zero) get no chip at all.
+    // Channels with nothing to show in this drive (pre-v10 drives, PCM silent, a WGDC series that's all zero, a boost
+    // source the drive never recorded) get no chip at all. A genuine 0 reading counts for BOOST / TIP.
     val available = remember(points) {
         CHANNELS.map { ch ->
-            !ch.sparse || points.any { ch.valid(it) && ch.extract(it) != 0.0 }
+            points.any { ch.valid(it) && (!ch.sparse || ch.extract(it) != 0.0) }
         }
     }
 
@@ -158,14 +162,16 @@ fun DriveTimeSeries(
                             .border(Tokens.CardBorder, border, RoundedCornerShape(6.dp))
                             .padding(horizontal = 10.dp, vertical = 6.dp)
                     ) {
-                        MonoLabel(channel.label, 10.sp, textColor, FontWeight.Medium)
+                        MonoLabel(if (channel.label == "OIL" && !oilMapped) "OIL·N/R" else channel.label, 10.sp, textColor, FontWeight.Medium)
                     }
                 }
             }
         }
 
         // ── Chart area ──────────────────────────────────────────────────
-        val sampled = remember(points) { downsample(points, 360) }
+        // Buckets of at most 360 drawn samples; pressure channels judge validity over the whole bucket (#207)
+        val buckets = remember(points) { TimeSeriesMath.buckets(points.size, 360) }
+        val sampled = remember(points) { buckets.map { points[it.first] } }
         val dataWidthDp = (sampled.size * 2).dp
 
         val textMeasurer = rememberTextMeasurer()
@@ -186,7 +192,8 @@ fun DriveTimeSeries(
             val visible = activeIndices.filter { available[it] }
             val extracted = visible.associateWith { idx ->
                 val ch = CHANNELS[idx]
-                sampled.map { ch.extract(it).toFloat() } to sampled.map { ch.valid(it) }
+                sampled.map { ch.extract(it).toFloat() } to
+                    TimeSeriesMath.bucketValidity(buckets, points.map { ch.valid(it) }, ch.breakOnInvalid)
             }
             visible.mapNotNull { idx ->
                 val ch = CHANNELS[idx]
@@ -195,7 +202,7 @@ fun DriveTimeSeries(
                             else visible.filter { CHANNELS[it].axis == ch.axis }
                 val range = TimeSeriesMath.sharedRange(group.map { extracted.getValue(it) })
                     ?: return@mapNotNull null
-                ChannelData(idx, values, TimeSeriesMath.segments(timestamps, valid), range)
+                ChannelData(idx, values, TimeSeriesMath.segments(timestamps, valid, breakOnInvalid = ch.breakOnInvalid), range)
             }
         }
 

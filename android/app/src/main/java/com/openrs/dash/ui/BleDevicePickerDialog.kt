@@ -1,5 +1,16 @@
 package com.openrs.dash.ui
 
+import android.Manifest
+import android.app.Activity
+import android.bluetooth.BluetoothAdapter
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -19,7 +30,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -32,23 +45,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import com.openrs.dash.ui.Tokens.CardBorder
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import com.openrs.dash.can.BleDeviceScanner
+import com.openrs.dash.can.BleScanState
+import com.openrs.dash.ui.Tokens.CardBorder
 
 /**
- * BLE device picker dialog — scans for WiCAN adapters (filtered to 0xFFE0 service)
+ * BLE device picker dialog — scans for WiCAN adapters (filtered to the FFF0 / FEE0 / FFE0 adapter services, #218)
  * and lets the user tap one to save it.
  */
 @Composable
@@ -62,7 +72,38 @@ fun BleDevicePickerDialog(
     val devices by scanner.devices.collectAsState()
     val scanning by scanner.scanning.collectAsState()
     val filterless by scanner.filterless.collectAsState()
+    val scanState by scanner.state.collectAsState()
+    val enableDeclined by scanner.enableDeclined.collectAsState()
     var permDenied by remember { mutableStateOf(false) }
+    var enablePromptUnavailable by remember { mutableStateOf(false) }
+
+    // Android's "turn on Bluetooth" prompt (#218) — the phone's radio, not the adapter's own BLE setting
+    val enableLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        scanner.onEnablePromptResult(r.resultCode == Activity.RESULT_OK)
+    }
+    fun requestPhoneBluetooth() {
+        try {
+            enableLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
+        } catch (_: Exception) {
+            // SecurityException (no BLUETOOTH_CONNECT yet) or a device / box without the system prompt
+            enablePromptUnavailable = true
+        }
+    }
+
+    // The phone's radio turning on / off while the picker is open: retry in place, or stop and say so
+    DisposableEffect(Unit) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(c: Context, i: Intent) {
+                when (i.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1)) {
+                    BluetoothAdapter.STATE_ON -> scanner.onPhoneBluetoothChanged(true)
+                    BluetoothAdapter.STATE_TURNING_OFF, BluetoothAdapter.STATE_OFF -> scanner.onPhoneBluetoothChanged(false)
+                }
+            }
+        }
+        ContextCompat.registerReceiver(ctx, receiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED)
+        onDispose { try { ctx.unregisterReceiver(receiver) } catch (_: Exception) { } }
+    }
 
     // BLE permissions needed at scan time (not just at app startup)
     val blePerms = remember {
@@ -102,12 +143,15 @@ fun BleDevicePickerDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
+        // Scrolls when taller than the window (#231): in landscape the "No adapter found" state or a device list pushed
+        // the hint and CANCEL below the screen with no way to reach them
         Column(
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
                 .background(Bg, RoundedCornerShape(14.dp))
                 .border(CardBorder, Brd, RoundedCornerShape(14.dp))
+                .verticalScroll(rememberScrollState())
                 .padding(20.dp)
         ) {
             MonoLabel("SCAN FOR DEVICES", 11.sp, accent,
@@ -142,8 +186,45 @@ fun BleDevicePickerDialog(
                     MonoLabel("REQUEST PERMISSION", 10.sp, accent,
                         fontWeight = FontWeight.Bold, letterSpacing = 0.1.sp)
                 }
-            } else if (devices.isEmpty() && !scanning) {
-                // No devices found after scan completed
+            } else if (scanState == BleScanState.PhoneBluetoothOff) {
+                PhoneBluetoothOffPanel(enableDeclined, enablePromptUnavailable, accent) { requestPhoneBluetooth() }
+            } else if (scanState == BleScanState.NoBluetooth || scanState is BleScanState.Failed ||
+                       scanState == BleScanState.PermissionMissing) {
+                Box(
+                    Modifier.fillMaxWidth()
+                        .background(Surf2, RoundedCornerShape(10.dp))
+                        .border(CardBorder, Brd, RoundedCornerShape(10.dp))
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    MonoLabel(
+                        when (val st = scanState) {
+                            BleScanState.NoBluetooth -> "This phone has no Bluetooth"
+                            BleScanState.PermissionMissing -> "Bluetooth permission required — grant it in Settings > Apps > openRS_"
+                            is BleScanState.Failed -> "Scan couldn't run — ${st.reason}"
+                            else -> ""
+                        },
+                        10.sp, Orange
+                    )
+                }
+                if (scanState != BleScanState.NoBluetooth) {
+                    Spacer(Modifier.height(12.dp))
+                    Box(
+                        Modifier.fillMaxWidth()
+                            .background(accent.copy(alpha = 0.1f), RoundedCornerShape(10.dp))
+                            .border(CardBorder, accent.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                            .clickable {
+                                if (hasPerms()) scanner.startScan(filterless = filterless)
+                                else permLauncher.launch(blePerms)
+                            }
+                            .padding(12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        MonoLabel("SCAN AGAIN", 10.sp, accent, fontWeight = FontWeight.Bold, letterSpacing = 0.1.sp)
+                    }
+                }
+            } else if (devices.isEmpty() && scanState == BleScanState.Finished) {
+                // No devices found after a scan that actually ran
                 Box(
                     Modifier.fillMaxWidth()
                         .background(Surf2, RoundedCornerShape(10.dp))
@@ -372,5 +453,46 @@ private fun ScanningIndicator() {
         )
         Spacer(Modifier.width(6.dp))
         MonoLabel("Scanning...", 9.sp, accent.copy(alpha = alpha))
+    }
+}
+
+/**
+ * The PHONE's Bluetooth is off (#218): say so — not "no adapter found" — and offer Android's enable prompt. When the
+ * radio comes on (prompt or elsewhere) the picker scans again by itself.
+ */
+@Composable
+private fun PhoneBluetoothOffPanel(declined: Boolean, promptUnavailable: Boolean, accent: Color, onEnable: () -> Unit) {
+    Box(
+        Modifier.fillMaxWidth()
+            .background(Surf2, RoundedCornerShape(10.dp))
+            .border(CardBorder, Orange.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+            .padding(16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            MonoLabel("Phone Bluetooth is off", 11.sp, Orange)
+            Spacer(Modifier.height(8.dp))
+            MonoLabel("This phone's Bluetooth must be on to find the adapter.", 9.sp, Dim)
+            MonoLabel("(This is the phone's setting, not the adapter's BLE switch.)", 9.sp, Dim)
+            if (declined) {
+                Spacer(Modifier.height(6.dp))
+                MonoLabel("Bluetooth was left off — nothing to scan with.", 9.sp, Dim)
+            }
+            if (promptUnavailable) {
+                Spacer(Modifier.height(6.dp))
+                MonoLabel("Turn Bluetooth on in the phone's settings — the picker scans when it's on.", 9.sp, Dim)
+            }
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+    Box(
+        Modifier.fillMaxWidth()
+            .background(accent.copy(alpha = 0.1f), RoundedCornerShape(10.dp))
+            .border(CardBorder, accent.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+            .clickable(onClick = onEnable)
+            .padding(12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        MonoLabel("TURN ON BLUETOOTH", 10.sp, accent, fontWeight = FontWeight.Bold, letterSpacing = 0.1.sp)
     }
 }

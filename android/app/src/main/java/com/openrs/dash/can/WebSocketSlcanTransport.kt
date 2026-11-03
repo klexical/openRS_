@@ -26,18 +26,22 @@ class WebSocketSlcanTransport(
     }
 
     private val rng = SecureRandom()
-    private var socket: Socket? = null
+    /** Assigned before connect(), so [close] from another thread (an abort) ends a blocking connect at once (#212). */
+    @Volatile private var socket: Socket? = null
+    @Volatile private var closed = false
     private var inp: InputStream? = null
     private var out: OutputStream? = null
 
     override val label: String get() = "WebSocket ws://$host:$port$WS_PATH"
+    override val kind: String get() = "Wi-Fi WebSocket"
     override val stockFirmwareLabel: String get() = "WiCAN stock"
 
     override suspend fun open() = withContext(Dispatchers.IO) {
         val s = Socket()
+        socket = s
+        if (closed) { s.close(); throw IOException("Transport closed") }   // closed before the socket existed
         s.connect(InetSocketAddress(host, port), 5_000)
         s.soTimeout = 20_000
-        socket = s
         inp = s.getInputStream()
         out = s.getOutputStream()
 
@@ -63,6 +67,7 @@ class WebSocketSlcanTransport(
     }
 
     override fun close() {
+        closed = true
         try { socket?.close() } catch (_: Exception) { }
         socket = null
         inp = null

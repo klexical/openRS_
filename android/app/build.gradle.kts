@@ -16,10 +16,42 @@ val keystoreProps = Properties().also { props ->
     if (keystorePropsFile.exists()) props.load(keystorePropsFile.inputStream())
 }
 
+// ── Release identity — the ONE place a release's version is set (#214) ─────────────────────────────────
+// versionName, the Settings label, the APK filename, the expected tag (android-v<name>), BuildConfig, export and crash
+// metadata all derive from these. versionCode must be strictly higher for every distributed production build (RC and
+// stable); CI rejects a reused code. Room / export schema versions are separate and unaffected.
+val releaseBase = "2.2.7"
+val releaseStage = "rc"          // "rc" for a release candidate, "" for stable
+val releaseCandidate = 7         // ignored when releaseStage is ""
+val releaseVersionCode = 37
+val releaseName = if (releaseStage.isEmpty()) releaseBase else "$releaseBase-$releaseStage.$releaseCandidate"
+
+// The old -PrcSuffix flag appended an RC label separately from versionName; refuse it so nothing builds a mismatch.
+project.findProperty("rcSuffix")?.toString()?.takeIf { it.isNotBlank() }?.let {
+    throw GradleException("-PrcSuffix is no longer used: the release ($releaseName) is set in app/build.gradle.kts (#214)")
+}
+
+// Source revision for BuildConfig / exports. Local builds append it to the debug versionName; "unknown" without git.
+fun git(vararg args: String): String = try {
+    providers.exec { commandLine("git", *args); isIgnoreExitValue = true }.standardOutput.asText.get().trim()
+} catch (_: Exception) { "" }
+val sourceCommit = git("rev-parse", "--short=12", "HEAD").ifEmpty { "unknown" }
+// Dirty = anything in the android/ tree (all the APK is built from) differs from HEAD: modified tracked files AND
+// untracked files git doesn't ignore — a new Kotlin source or resource enters the build without being committed.
+// Ignored files (build/, local.properties, keystore) don't count.
+val sourceDirty = git("status", "--porcelain", "--untracked-files=all", "--", rootProject.projectDir.absolutePath).isNotEmpty()
+
 val localPropsFile = rootProject.file("local.properties")
 val localProps = Properties().also { props ->
     if (localPropsFile.exists()) props.load(localPropsFile.inputStream())
 }
+
+// API keys (#235): local.properties (contributors), else the environment (CI's publish-release passes its secrets).
+// Optional for every build — no Maps key gives a blank map, no weather key no weather request. A published release needs
+// Maps: scripts/check-release-config.sh fails the job before the build, scripts/verify-release.sh checks the APK.
+// Never log a resolved value.
+fun apiKey(name: String): String =
+    (localProps[name] as? String)?.takeIf { it.isNotBlank() } ?: providers.environmentVariable(name).orNull.orEmpty()
 
 android {
     namespace = "com.openrs.dash"
@@ -29,19 +61,20 @@ android {
         applicationId = "com.openrs.dash"
         minSdk = 28
         targetSdk = 35
-        versionCode = 35
-        versionName = "2.2.7"
+        versionCode = releaseVersionCode
+        versionName = releaseName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("String", "OPENWEATHER_API_KEY",
-            "\"${localProps["OPENWEATHER_API_KEY"] ?: ""}\"")
+        buildConfigField("String", "OPENWEATHER_API_KEY", "\"${apiKey("OPENWEATHER_API_KEY")}\"")
 
-        val rc = project.findProperty("rcSuffix")?.toString()?.trim().orEmpty()
-        buildConfigField("String", "RC_SUFFIX", "\"$rc\"")
+        buildConfigField("String", "RELEASE_BASE", "\"$releaseBase\"")
+        buildConfigField("String", "RELEASE_NAME", "\"$releaseName\"")
+        buildConfigField("String", "SOURCE_COMMIT", "\"$sourceCommit\"")
+        buildConfigField("boolean", "SOURCE_DIRTY", "$sourceDirty")
 
         // Google Maps API key — injected into AndroidManifest via manifestPlaceholders
-        manifestPlaceholders["MAPS_API_KEY"] = localProps["MAPS_API_KEY"] ?: ""
+        manifestPlaceholders["MAPS_API_KEY"] = apiKey("MAPS_API_KEY")
     }
 
     signingConfigs {
@@ -56,20 +89,16 @@ android {
         }
     }
 
-    // Rename output APKs:
-    //   debug:   openRS_v{version}-staging-debug.apk
-    //   release: openRS_v{version}-{rcSuffix}.apk  (or openRS_v{version}.apk when no RC)
-    val rc = project.findProperty("rcSuffix")?.toString()?.trim().orEmpty()
+    // Rename output APKs from the release identity:
+    //   debug:   openRS_v{releaseName}-staging-debug.apk
+    //   release: openRS_v{releaseName}.apk   (e.g. openRS_v2.2.7-rc.7.apk — matches tag android-v2.2.7-rc.7)
     applicationVariants.all {
         val variant = this
         variant.outputs.all {
             val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
             output.outputFileName = when (variant.buildType.name) {
-                "debug"   -> "openRS_v${variant.versionName}-staging-debug.apk"
-                "release" -> if (rc.isNotEmpty())
-                                 "openRS_v${variant.versionName}-${rc}.apk"
-                             else
-                                 "openRS_v${variant.versionName}.apk"
+                "debug"   -> "openRS_v$releaseName-staging-debug.apk"
+                "release" -> "openRS_v$releaseName.apk"
                 else      -> output.outputFileName
             }
         }
@@ -79,6 +108,9 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             isDebuggable = true
+            // Local iterations: the target release + source revision (+ ".dirty" with uncommitted changes) — never a
+            // new public RC number per build. e.g. 2.2.7-rc.7-dev+1c3e602a9b1d.dirty
+            versionNameSuffix = "-dev+$sourceCommit" + if (sourceDirty) ".dirty" else ""
         }
         release {
             signingConfig = signingConfigs.getByName("release")
@@ -151,6 +183,10 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     testImplementation("org.json:json:20231013")
+    // Real Room (production DriveDatabase + DriveDao) on the JVM for the recorder tests (#236); test-only, pinned.
+    // Runs on SDK 35, the app's target (app/src/test/resources/robolectric.properties); Java 17 (CI) suffices for it.
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
     androidTestImplementation(composeBom)

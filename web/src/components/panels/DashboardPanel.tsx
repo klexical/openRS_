@@ -1,4 +1,6 @@
 import { useMemo } from 'react'
+import { boostLabel, pressureDecimals, pressureSeries } from '../../lib/boost'
+import { convertBoost } from '../../lib/units'
 import { useStore, useActiveSession } from '../../store'
 import { MetricCard } from '../ui/MetricCard'
 import { SectionLabel } from '../ui/SectionLabel'
@@ -28,7 +30,12 @@ export function DashboardPanel() {
   // Sparkline data arrays
   const rpmData = useMemo(() => points?.map((p) => p.rpm) ?? [], [points])
   const speedData = useMemo(() => points?.map((p) => p.speedKph) ?? [], [points])
-  const boostData = useMemo(() => points?.map((p) => p.boostPsi) ?? [], [points])
+  // #207: the peak's own measurement, one position per sample — no reading / another source is a gap (never joined,
+  // time never compressed), values in the selected unit
+  const boostData = useMemo(
+    () => (points ? pressureSeries(points, trip?.peakBoostSource ?? null, fmt.boostUnit) : []),
+    [points, trip?.peakBoostSource, fmt.boostUnit])
+  const boostName = boostLabel(trip?.peakBoostSource) === 'TIP' ? 'TIP' : 'Boost'
 
   // Race Ready detection (T2I)
   const hasRaceReady = useMemo(() => points?.some((p) => p.raceReady) ?? false, [points])
@@ -140,7 +147,10 @@ export function DashboardPanel() {
           <div className="rounded-lg border border-brd bg-surf2 p-4">
             <div className="flex flex-wrap justify-center gap-6">
               <GaugeChart value={trip.peakRpm} max={7000} label="Peak RPM" unit="RPM" color={colors.orange} />
-              <GaugeChart value={trip.peakBoostPsi} max={25} label="Peak Boost" unit={fmt.boostUnit} color={colors.accent} />
+              {trip.peakBoostPsi != null
+                ? <GaugeChart value={Number(convertBoost(trip.peakBoostPsi, fmt.boostUnit).toFixed(pressureDecimals(fmt.boostUnit)))}
+                    max={convertBoost(25, fmt.boostUnit)} label={`Peak ${boostName}`} unit={fmt.boostUnit} color={colors.accent} />
+                : <MetricCard label="Peak Boost" value="— (no reading)" color={colors.dim} />}
               <GaugeChart value={trip.peakSpeedKph} max={270} label="Peak Speed" unit={fmt.speedUnit} color={colors.ok} />
               <GaugeChart value={trip.peakLatG} max={1.5} label="Peak Lat G" unit="G" color={colors.warn} />
               {/* Aggression Score (T2A) */}
@@ -159,7 +169,8 @@ export function DashboardPanel() {
               <MetricCard label="Peak Long G" value={`${fmtNumber(trip.peakLongG, 2)} G`} color={colors.warn} />
               <MetricCard label="Peak Coolant" value={fmt.temp(trip.peakCoolantC)} color={trip.peakCoolantC > 105 ? colors.orange : colors.ok} />
               <MetricCard label="Peak Oil" value={fmt.temp(trip.peakOilTempC)} color={trip.peakOilTempC > 130 ? colors.orange : colors.ok} />
-              <SparkMetricCard label="Boost Trace" value={fmt.boost(trip.peakBoostPsi)} sparkData={boostData} color={colors.accent} />
+              <SparkMetricCard label={`${boostName} Trace`} value={trip.peakBoostPsi != null ? fmt.boost(trip.peakBoostPsi) : '—'}
+                sparkData={boostData} color={colors.accent} />
             </div>
           </div>
 
@@ -200,7 +211,7 @@ export function DashboardPanel() {
                           <td className="px-3 py-1.5" style={{ color: '#E040FB' }}>{bm.label || `#${i + 1}`}</td>
                           <td className="px-3 py-1.5 text-frost">{bm.speedKph.toFixed(0)} kph</td>
                           <td className="px-3 py-1.5 text-frost">{bm.rpm}</td>
-                          <td className="px-3 py-1.5 text-frost">{bm.boostPsi.toFixed(1)} PSI</td>
+                          <td className="px-3 py-1.5 text-frost">{bm.boostPsi != null ? fmt.boost(bm.boostPsi) : '—'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -241,7 +252,7 @@ export function DashboardPanel() {
 
 /** MetricCard with an inline sparkline below the value. */
 function SparkMetricCard({ label, value, sparkData, color = colors.accent }: {
-  label: string; value: string; sparkData: number[]; color?: string
+  label: string; value: string; sparkData: (number | null)[]; color?: string
 }) {
   return (
     <div className="rounded-lg border border-brd bg-surf2 p-4 flex flex-col gap-1 min-w-[140px]">

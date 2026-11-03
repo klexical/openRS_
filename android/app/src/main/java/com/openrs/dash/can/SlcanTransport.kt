@@ -37,4 +37,7 @@ interface SlcanTransport {
 
     /** Default firmware label when the openRS_ probe times out. */
     val stockFirmwareLabel: String
+
+    /** Transport kind for diagnostic events — never an address or device name (#220). */
+    val kind: String get() = "adapter"
 }

@@ -1,6 +1,8 @@
 package com.openrs.dash.ui
 
+import com.openrs.dash.data.BoostSource
 import com.openrs.dash.data.KnockEventEntity
+import com.openrs.dash.data.StoredBoost
 
 /**
  * Pure geometry for [KnockScatter] (rc.6, #174) — the draw pass and tap hit-testing share
@@ -32,14 +34,59 @@ internal object KnockScatterMath {
         return x to y
     }
 
-    /** Index of the event nearest the tap within [radiusPx], or null. Ties → worst KR. */
+    /** An event's boost (#207): its source when recorded, "NONE" = no reading, no column value = legacy. */
+    fun boost(ev: KnockEventEntity): StoredBoost = when (val s = ev.boostSource) {
+        null -> StoredBoost.Legacy(ev.boostPsi)
+        else -> BoostSource.parse(s)?.takeIf { it != BoostSource.NONE }?.let { StoredBoost.Reading(ev.boostPsi, it) }
+            ?: StoredBoost.Unavailable
+    }
+
+    /** The one measurement the boost axis plots: the source of the highest reading (null = legacy events only). */
+    fun axisSource(events: List<KnockEventEntity>): BoostSource? =
+        events.mapNotNull { boost(it) as? StoredBoost.Reading }.maxByOrNull { it.psi }?.source
+
+    /**
+     * Drawn on the RPM × pressure plane: a reading of [axisSource] only. Events whose source wasn't recorded are drawn
+     * only on a "source not recorded" axis ([axisSource] null) — never mixed onto a TIP or CAN axis; "no reading" is
+     * never drawn (as 0 or otherwise).
+     */
+    fun plotted(ev: KnockEventEntity, axisSource: BoostSource?): Boolean = when (val b = boost(ev)) {
+        is StoredBoost.Reading -> b.source == axisSource
+        is StoredBoost.Legacy -> axisSource == null
+        StoredBoost.Unavailable -> false
+    }
+
+    /** The y-axis title: which pressure it plots. */
+    fun axisTitle(axisSource: BoostSource?, unit: String): String = when (axisSource) {
+        BoostSource.TIP_033E -> "TIP $unit"
+        BoostSource.CAN_0F8 -> "BOOST $unit"
+        else -> "$unit · SRC N/R"
+    }
+
+    /** Why some events aren't on the plot, or null when all are. */
+    fun notPlottedNote(events: List<KnockEventEntity>, axisSource: BoostSource?): String? {
+        val left = events.filterNot { plotted(it, axisSource) }
+        if (left.isEmpty()) return null
+        val none = left.count { boost(it) == StoredBoost.Unavailable }
+        val legacy = left.count { boost(it) is StoredBoost.Legacy }
+        val other = left.size - none - legacy
+        return "${left.size} not plotted: " + listOfNotNull(
+            none.takeIf { it > 0 }?.let { "$it no pressure reading" },
+            other.takeIf { it > 0 }?.let { "$it other pressure source" },
+            legacy.takeIf { it > 0 }?.let { "$it source not recorded" },
+        ).joinToString(" · ")
+    }
+
+    /** Index of the event nearest the tap within [radiusPx], or null. Ties → worst KR. Only [plotted] events. */
     fun nearest(
         events: List<KnockEventEntity>, tapX: Float, tapY: Float, plot: Plot, radiusPx: Float,
         rpmMin: Float, rpmMax: Float, boostMin: Float, boostMax: Float
     ): Int? {
         var best: Int? = null
         var bestD2 = radiusPx * radiusPx
+        val axis = axisSource(events)
         for (i in events.indices) {
+            if (!plotted(events[i], axis)) continue
             val (x, y) = project(events[i], plot, rpmMin, rpmMax, boostMin, boostMax)
             val d2 = (x - tapX) * (x - tapX) + (y - tapY) * (y - tapY)
             val b = best

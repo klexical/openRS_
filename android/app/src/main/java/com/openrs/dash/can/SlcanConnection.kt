@@ -2,9 +2,14 @@ package com.openrs.dash.can
 
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.data.DtcModuleSpec
+import com.openrs.dash.data.DtcRawScan
+import com.openrs.dash.data.DtcStage
+import com.openrs.dash.data.DtcSendFailure
+import com.openrs.dash.data.DtcReply
 import com.openrs.dash.data.ModuleScanStatus
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticLogger
+import com.openrs.dash.diagnostics.LogText
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
@@ -28,9 +33,46 @@ class SlcanConnection(
     private val maxRetries: Int = 3,
     private val reconnectDelayMs: Long = 5_000L,
     /** Live engine RPM — selects fast vs slow PCM polling (rc.5). */
-    private val rpmProvider: () -> Double = { 0.0 }
+    private val rpmProvider: () -> Double = { 0.0 },
+    /**
+     * True while the link must not be given up after [maxRetries] failures — an active drive recording. A recording
+     * that lost its link is not an idle session: it keeps retrying (backoff capped at 30 s) until the link returns or the
+     * connection is stopped. Polled every second during that backoff: once the recording ends, the ordinary bounded
+     * policy applies again — its budget is already spent, so the job ends then rather than after another wait and
+     * attempt. A connected link is never dropped because recording stopped.
+     */
+    private val keepRetrying: () -> Boolean = { false },
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val debugSink: (String) -> Unit = { OpenRSDashApp.instance.pushDebugLine(it) },
+    /** Wall clock for NRC attribution / re-probe timing — tests pass the virtual clock. */
+    private val clock: () -> Long = System::currentTimeMillis,
+    /** Where firmware capability is published (#220) — the app's flags by default; tests capture it. */
+    private val firmwareSink: (FirmwareStatus) -> Unit = { st ->
+        OpenRSDashApp.instanceOrNull?.let { app ->
+            app.isOpenRsFirmware.value = st.openRs
+            app.firmwareProbing.value = st.probing
+            app.firmwareVersionLabel.value = st.label
+        }
+    },
 ) {
-    private fun addDebugLine(line: String) = OpenRSDashApp.instance.pushDebugLine(line)
+    /**
+     * What the `OPENRS?` probe has established (#220): [probing] while probes are outstanding, [openRs] once an
+     * `OPENRS:<version>` reply arrived (at any time — a late reply still counts). Not detected after every probe is a
+     * capability statement about this connection, not proof the firmware is stock.
+     */
+    data class FirmwareStatus(val openRs: Boolean, val probing: Boolean, val label: String)
+    private fun addDebugLine(line: String) = debugSink(line)
+
+    /** The transport of the attempt in progress (opening, handshaking or connected) — closed by [abort]. */
+    @Volatile private var attemptTransport: SlcanTransport? = null
+
+    /**
+     * Close the current attempt's transport from another thread so a blocking connect / read returns at once instead of
+     * after its timeout. The caller cancels the collecting coroutine; this only makes that prompt.
+     */
+    fun abort() {
+        try { attemptTransport?.close() } catch (_: Exception) { }
+    }
 
     private val _state = MutableStateFlow<AdapterState>(AdapterState.Disconnected)
     val state: StateFlow<AdapterState> = _state.asStateFlow()
@@ -57,6 +99,48 @@ class SlcanConnection(
     private val _dtcMutex      = Mutex()
     @Volatile private var _dtcWatchIds: Set<Int> = emptySet()
     @Volatile private var _dtcScanActive: Boolean = false
+    /**
+     * Service the active DTC operation expects replies to (0x19 read DTC, 0x14 clear), or −1 for a raw query (DID
+     * prober: everything from the watched ID). Ordinary polling continues during a scan, so only replies to this
+     * service — and the consecutive frames of a multi-frame reply that started as one — are diverted; a `62` poll
+     * reply or the scan's own `50 03` session reply goes to the normal path instead of finishing the module (#215).
+     */
+    @Volatile private var _dtcExpectSid: Int = -1
+    private val _dtcMultiFrameIds = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
+
+    /** Frame loop: should this frame from a watched ID go to the DTC channel? */
+    private fun divertToDtc(id: Int, d: ByteArray): Boolean {
+        val sid = _dtcExpectSid
+        if (sid < 0) return true
+        if (d.isEmpty()) return false
+        return when ((d[0].toInt() and 0xF0) shr 4) {
+            0 -> { _dtcMultiFrameIds.remove(id); d.size >= 2 && isReplyTo(sid, d, 1) }
+            1 -> (d.size >= 3 && isReplyTo(sid, d, 2)).also { if (it) _dtcMultiFrameIds.add(id) else _dtcMultiFrameIds.remove(id) }
+            2 -> id in _dtcMultiFrameIds
+            else -> false
+        }
+    }
+
+    /** Positive reply (SID + 0x40) or a negative reply to [sid] starting at payload index [i]. */
+    private fun isReplyTo(sid: Int, d: ByteArray, i: Int): Boolean {
+        val b = d[i].toInt() and 0xFF
+        return b == sid + 0x40 || (b == 0x7F && d.size > i + 1 && (d[i + 1].toInt() and 0xFF) == sid)
+    }
+
+    /** Start a DTC-channel operation expecting replies to [sid] (−1 = any) from [ids]. */
+    private fun beginDtcOperation(ids: Set<Int>, sid: Int) {
+        _dtcExpectSid = sid
+        _dtcMultiFrameIds.clear()
+        _dtcWatchIds = ids
+        _dtcScanActive = true
+    }
+
+    private fun endDtcOperation() {
+        _dtcScanActive = false
+        _dtcWatchIds = emptySet()
+        _dtcExpectSid = -1
+        _dtcMultiFrameIds.clear()
+    }
 
     suspend fun sendRawQuery(
         responseId: Int,
@@ -64,8 +148,7 @@ class SlcanConnection(
         timeoutMs: Long = 1_500L
     ): ByteArray? = _dtcMutex.withLock {
         val transport = _transport ?: return null
-        _dtcWatchIds = setOf(responseId)
-        _dtcScanActive = true
+        beginDtcOperation(setOf(responseId), sid = -1)
         while (_dtcChannel.tryReceive().isSuccess) { /* drain stale */ }
         try {
             transport.writeLine(frame)
@@ -78,8 +161,7 @@ class SlcanConnection(
             }
             null
         } finally {
-            _dtcScanActive = false
-            _dtcWatchIds = emptySet()
+            endDtcOperation()
         }
     }
 
@@ -92,23 +174,47 @@ class SlcanConnection(
 
         var failedAttempts = 0
         var consecutiveDrops = 0
+        // Once this job has been connected, every later attempt (and its backoff) is a reconnect.
+        var everConnected = false
 
-        while (currentCoroutineContext().isActive && failedAttempts < maxRetries) {
+        while (currentCoroutineContext().isActive) {
             var connectionSucceeded = false
             var connectedAtMs = 0L
-            val transport = transportFactory()
+            _state.value = if (everConnected) AdapterState.Reconnecting else AdapterState.Connecting
+            val transport = try {
+                transportFactory()
+            } catch (e: Exception) {
+                if (e is CancellationException) { _state.value = AdapterState.Disconnected; throw e }
+                // A transport that can't be built (#234 — Bluetooth selected with no device saved) is a failed attempt
+                // like a refused connect: counted, reported, retried on the usual backoff. It used to escape the flow
+                // and crash the app at every launch.
+                UnbuiltTransport(LogText.sanitizeReason(e))
+            }
+            attemptTransport = transport
             try {
-                _state.value = AdapterState.Connecting
                 addDebugLine("--- ${transport.label} ---")
                 addDebugLine("Connecting to ${transport.label}")
 
+                val attemptStartMs = clock()
                 transport.open()
 
                 transport.writeLine(ObdConstants.SLCAN_INIT)
                 addDebugLine("SLCAN init sent (C / S6 / O)")
 
-                transport.writeLine("OPENRS?\r")
+                // Probe 1's outcome is logged at once (#220) — also when the write or the handshake then fails the
+                // attempt. A failed write still fails the attempt, as before.
+                val probeTotal = PROBE_TIMES_MS.size + 1
+                val kind = transport.kind
+                try {
+                    transport.writeLine("OPENRS?\r")
+                } catch (e: Exception) {
+                    if (e !is CancellationException) DiagnosticLogger.event("FIRMWARE",
+                        "Probe 1 of $probeTotal write FAILED ($kind, +${clock() - attemptStartMs} ms): ${LogText.sanitizeReason(e)}")
+                    throw e
+                }
+                DiagnosticLogger.event("FIRMWARE", "Probe 1 of $probeTotal written ($kind, +${clock() - attemptStartMs} ms)")
                 addDebugLine("Probing firmware...")
+                var probeNoise = 0          // non-frame, non-empty lines seen before a verdict: counted, never logged (#220)
 
                 // ── SLCAN handshake: wait for first valid response ────────
                 // Non-SLCAN BLE devices (e.g. LED controllers sharing the
@@ -131,9 +237,13 @@ class SlcanConnection(
                         break
                     }
                     // Some adapters echo back init commands — keep waiting
+                    if (line.isNotEmpty()) probeNoise++
                 }
                 if (!handshakeOk) {
                     addDebugLine("No SLCAN response — device may not be a WiCAN adapter")
+                    // Also reached when the read ended early (transport closed) — the limit is stated, not the time waited
+                    DiagnosticLogger.event("FIRMWARE", "No probe verdict — the SLCAN handshake ended without a frame or reply " +
+                        "(${HANDSHAKE_TIMEOUT_MS / 1000} s limit; $kind, +${clock() - attemptStartMs} ms); this attempt ends")
                     throw RuntimeException(
                         "Device did not respond to SLCAN init — may not be a CAN adapter"
                     )
@@ -143,12 +253,15 @@ class SlcanConnection(
                 _state.value = AdapterState.Connected
                 _transport = transport
                 connectionSucceeded = true
+                everConnected = true
                 connectedAtMs = System.currentTimeMillis()
                 failedAttempts = 0
                 firmwareVersion = transport.stockFirmwareLabel
                 val bcmIsoTp = IsoTpBuffer()
                 val nrcTracker = NrcTracker()
-                var lastSentPcmDid = -1
+                val nrcLog = UnattributedNrcLog()
+                // Requests waiting for a reply, oldest first: a 7F 22 NRC belongs to the oldest one (#216)
+                val pcmRequests = PcmRequestLedger()
 
                 // ── BCM OBD poller ────────────────────────────────────────
                 val obdJob = launch {
@@ -180,13 +293,22 @@ class SlcanConnection(
                         val running = rpmProvider() > ObdConstants.FAST_POLL_MIN_RPM
                         val batch = PcmPollSchedule.nextBatch(slowIndex, running)
                         slowIndex = batch.nextSlowIndex
+                        var sentAny = false
                         batch.queries.forEach { q ->
                             val did = ObdConstants.extractDid(q)
-                            if (did != null && nrcTracker.isSuppressed(did)) return@forEach
-                            lastSentPcmDid = did ?: -1
-                            try { transport.writeLine(q) } catch (_: Exception) { }
-                            delay(batch.gapMs)
+                            if (did != null && !nrcTracker.shouldPoll(did, clock())) return@forEach
+                            // Registered before the write so an instant reply finds it; withdrawn if the write
+                            // failed — a request that never reached the bus can't own a reply (#216)
+                            val start = clock()
+                            var req = did?.let { pcmRequests.sent(it, start) }
+                            try { transport.writeLine(q) } catch (_: Exception) { req?.let { pcmRequests.withdraw(it) }; req = null }
+                            sentAny = true
+                            // Wait (bounded) for the reply, so normally one request is in flight and its NRC attributable
+                            if (req != null) withTimeoutOrNull(PcmRequestLedger.REPLY_WINDOW_MS) { req.reply.await() }
+                            delay((batch.gapMs - (clock() - start)).coerceAtLeast(0L))
                         }
+                        // Every DID of the batch suppressed: still suspend, never spin
+                        if (!sentAny) delay(batch.gapMs)
                         // Idle in 1 s steps so an engine start switches to fast polling promptly
                         var idled = 0L
                         while (idled < batch.idleAfterMs && isActive &&
@@ -239,21 +361,73 @@ class SlcanConnection(
                 val seenIds   = mutableSetOf<Int>()
                 var debugCount = 0
                 var debugTimer = System.currentTimeMillis()
-                var firmwareKnown = false
-                val probeStartMs  = System.currentTimeMillis()
-                val PROBE_GRACE_MS = 3_000L
 
-                // Process the first line captured during handshake
-                if (firstLine != null && firstLine.startsWith("OPENRS:")) {
-                    firmwareKnown = true
-                    val version = firstLine.removePrefix("OPENRS:").trim()
-                    firmwareVersion = "openRS_ $version"
-                    OpenRSDashApp.instance.isOpenRsFirmware.value = true
-                    OpenRSDashApp.instance.firmwareVersionLabel.value = firmwareVersion
-                    DiagnosticLogger.isOpenRsFirmware = true
-                    DiagnosticLogger.firmwareVersion = firmwareVersion
-                    addDebugLine("Firmware: openRS_ $version \u2713")
-                    DiagnosticLogger.event("FIRMWARE", "openRS_ $version detected (${transport.label})")
+                // ── Firmware capability probe (#220) ──────────────────────
+                // OPENRS? went out with the SLCAN init. Up to PROBE_TIMES_MS.size + 1 probes; the stock label shows
+                // after the first window as before, but a reply at any time still upgrades the capability (a late
+                // reply was ignored and nothing retried, so a slow adapter stayed VIEW ONLY for the session).
+                val probeStartMs = clock()
+                // Shared by the read loop and the probe schedule (own coroutine). Attempted ≠ written (#220): a probe whose
+                // write threw is logged as failed and doesn't count as written.
+                val probesSent = java.util.concurrent.atomic.AtomicInteger(1)
+                val probesWritten = java.util.concurrent.atomic.AtomicInteger(1)
+                val firmwareDetected = java.util.concurrent.atomic.AtomicBoolean(false)
+                val stockShown = java.util.concurrent.atomic.AtomicBoolean(false)
+                val verdictDone = java.util.concurrent.atomic.AtomicBoolean(false)
+                val noise = java.util.concurrent.atomic.AtomicInteger(probeNoise)
+                fun fromAttempt() = clock() - attemptStartMs
+                fun publish(st: FirmwareStatus) {
+                    firmwareVersion = st.label
+                    DiagnosticLogger.isOpenRsFirmware = st.openRs
+                    DiagnosticLogger.firmwareVersion = st.label
+                    firmwareSink(st)
+                }
+                // Probe events (#220): transport kind (never its label — a Bluetooth label carries name + MAC), probe N
+                // of 3, time since the attempt began, written / failed, recognized or not. No adapter text beyond the
+                // sanitized version; non-frame lines are only counted. Probe 1 was logged when it was written.
+                fun detected(line: String) = synchronized(firmwareDetected) {
+                    if (!firmwareDetected.compareAndSet(false, true)) return@synchronized
+                    val version = line.removePrefix("OPENRS:").trim()
+                    publish(FirmwareStatus(openRs = true, probing = false, label = "openRS_ $version"))
+                    val ms = clock() - probeStartMs
+                    addDebugLine("Firmware: openRS_ $version \u2713 (${ms} ms, probe ${probesSent.get()})")
+                    DiagnosticLogger.event("FIRMWARE", "Reply recognized: openRS_ ${LogText.sanitize(version, 40)} after probe " +
+                        "${probesSent.get()} of $probeTotal ($kind, +${fromAttempt()} ms" +
+                        "${if (verdictDone.get()) ", late reply after the verdict" else ""})")
+                }
+                publish(FirmwareStatus(openRs = false, probing = true, label = transport.stockFirmwareLabel))
+                if (firstLine != null && firstLine.startsWith("OPENRS:")) detected(firstLine)
+                // The retry / give-up schedule runs on its own clock (#220): inside the read loop it only advanced when
+                // a line arrived, so an adapter that went quiet after the handshake never got a retry or a verdict
+                val probeJob = launch {
+                    for (at in PROBE_TIMES_MS) {
+                        delay((at - (clock() - probeStartMs)).coerceAtLeast(0L))
+                        if (firmwareDetected.get()) return@launch
+                        if (stockShown.compareAndSet(false, true)) {
+                            addDebugLine("Firmware: no openRS_ reply in ${PROBE_TIMES_MS.first() / 1000} s — probing again")
+                        }
+                        val n = probesSent.incrementAndGet()
+                        try {
+                            transport.writeLine("OPENRS?\r")
+                            probesWritten.incrementAndGet()
+                            DiagnosticLogger.event("FIRMWARE", "Probe $n of $probeTotal written ($kind, +${fromAttempt()} ms)")
+                        } catch (e: Exception) {
+                            if (e is kotlinx.coroutines.CancellationException) throw e
+                            DiagnosticLogger.event("FIRMWARE", "Probe $n of $probeTotal write FAILED ($kind, +${fromAttempt()} ms): " +
+                                LogText.sanitizeReason(e))
+                        }
+                    }
+                    delay((PROBE_GIVE_UP_MS - (clock() - probeStartMs)).coerceAtLeast(0L))
+                    synchronized(firmwareDetected) {    // never after a detection that landed meanwhile
+                        if (firmwareDetected.get()) return@launch
+                        verdictDone.set(true)
+                        publish(FirmwareStatus(openRs = false, probing = false, label = transport.stockFirmwareLabel))
+                    }
+                    val ignored = noise.get().let { if (it > 0) "; $it non-frame lines ignored" else "" }
+                    DiagnosticLogger.event("FIRMWARE", "Not detected — no reply recognized to ${probesWritten.get()} written probes " +
+                        "(${probesSent.get()} attempted) in ${PROBE_GIVE_UP_MS / 1000} s ($kind)$ignored — capability unknown " +
+                        "(no reply is not proof of stock firmware); drive mode / ESC stay view-only; " +
+                        "a later reply still enables them")
                 }
 
                 // ── Main frame loop ───────────────────────────────────────
@@ -263,39 +437,25 @@ class SlcanConnection(
                             android.util.Log.d("SLCAN", "readLine failed", e); null
                         } ?: break
 
-                        if (!firmwareKnown) {
-                            if (line.startsWith("OPENRS:")) {
-                                firmwareKnown = true
-                                val version = line.removePrefix("OPENRS:").trim()
-                                firmwareVersion = "openRS_ $version"
-                                OpenRSDashApp.instance.isOpenRsFirmware.value = true
-                                OpenRSDashApp.instance.firmwareVersionLabel.value = firmwareVersion
-                                DiagnosticLogger.isOpenRsFirmware = true
-                                DiagnosticLogger.firmwareVersion = firmwareVersion
-                                addDebugLine("Firmware: openRS_ $version \u2713")
-                                DiagnosticLogger.event("FIRMWARE", "openRS_ $version detected (${transport.label})")
-                                continue
-                            } else if (System.currentTimeMillis() - probeStartMs >= PROBE_GRACE_MS) {
-                                firmwareKnown = true
-                                firmwareVersion = transport.stockFirmwareLabel
-                                OpenRSDashApp.instance.isOpenRsFirmware.value = false
-                                OpenRSDashApp.instance.firmwareVersionLabel.value = firmwareVersion
-                                DiagnosticLogger.isOpenRsFirmware = false
-                                DiagnosticLogger.firmwareVersion = firmwareVersion
-                                addDebugLine("Firmware: ${transport.stockFirmwareLabel} (3 s timeout)")
-                                DiagnosticLogger.event("FIRMWARE", "${transport.stockFirmwareLabel} (no openRS_ response in 3 s)")
-                            }
+                        if (line.startsWith("OPENRS:")) {
+                            detected(line)
+                            continue
                         }
-
                         // Route firmware command responses to dedicated channel
                         if (line.startsWith("+FRS:")) {
                             commandResponseChannel.trySend(line)
                             continue
                         }
 
-                        val frame = SlcanParser.parse(line) ?: continue
+                        val frame = SlcanParser.parse(line)
+                        if (frame == null) {
+                            // Counted for the probe verdict only — adapter text is never logged (#220)
+                            if (line.isNotEmpty() && !firmwareDetected.get() && !verdictDone.get()) noise.incrementAndGet()
+                            continue
+                        }
 
-                        if (_dtcScanActive && frame.first in _dtcWatchIds) {
+                        if (_dtcScanActive && frame.first in _dtcWatchIds && divertToDtc(frame.first, frame.second)) {
+                            DiagnosticLogger.logObdFrame(frame.first, frame.second)   // the reply itself, once (#215)
                             _dtcChannel.trySend(frame)
                             continue
                         }
@@ -320,15 +480,44 @@ class SlcanConnection(
                             continue
                         }
                         if (frame.first == ObdConstants.PCM_RESPONSE_ID) {
-                            if (frame.second.size >= 4 && (frame.second[1].toInt() and 0xFF) == 0x7F) {
-                                val nrcCode = frame.second[3].toInt() and 0xFF
-                                if (nrcTracker.recordNrc(lastSentPcmDid, nrcCode, System.currentTimeMillis())) {
-                                    DiagnosticLogger.event("NRC_SUPPRESS",
-                                        "DID 0x%04X suppressed: NRC 0x%02X (%s)".format(
-                                            lastSentPcmDid, nrcCode, nrcLabel(nrcCode)))
-                                    DiagnosticLogger.snapshotNrc(nrcTracker)
+                            val d = frame.second
+                            if (d.size >= 4 && (d[1].toInt() and 0xFF) == 0x7F) {
+                                val nrcCode = d[3].toInt() and 0xFF
+                                // 0x78 = response pending: the real reply follows (no time bound assumed), still outstanding
+                                if ((d[2].toInt() and 0xFF) == 0x22 && nrcCode == NrcTracker.NRC_RESPONSE_PENDING) {
+                                    pcmRequests.pending(clock())
+                                } else if ((d[2].toInt() and 0xFF) == 0x22) {
+                                    val waiting = pcmRequests.waiting(clock())
+                                    val unresolved = pcmRequests.unresolved(clock())
+                                    val did = pcmRequests.negative(clock())
+                                    if (did == null) {
+                                        // Same policy; the LINE is rate-limited per (NRC, reason) and totals kept (#216)
+                                        DiagnosticLogger.countUnattributedNrc()
+                                        val (reason, why) = when {
+                                            unresolved -> "unresolved" to ("an earlier request is still unanswered (owner unknown), may own it: " +
+                                                UnattributedNrcLog.compact(waiting).ifEmpty { "evicted request" })
+                                            waiting.isEmpty() -> "none outstanding" to "no PCM request outstanding"
+                                            else -> "ambiguous" to ("ambiguous, waiting: " + UnattributedNrcLog.compact(waiting))
+                                        }
+                                        nrcLog.record(nrcCode, reason,
+                                            "NRC 0x%02X (%s) — %s; not counted".format(nrcCode, nrcLabel(nrcCode), why), clock())
+                                            ?.let { DiagnosticLogger.event("NRC_UNATTRIBUTED", it) }
+                                    } else if (nrcTracker.recordNrc(did, nrcCode, clock())) {
+                                        DiagnosticLogger.event("NRC_SUPPRESS",
+                                            "DID 0x%04X suppressed: NRC 0x%02X (%s), the only request waiting; re-probed after %d s".format(
+                                                did, nrcCode, nrcLabel(nrcCode), NrcTracker.REPROBE_MS / 1000))
+                                        DiagnosticLogger.snapshotNrc(nrcTracker)
+                                    }
                                 }
                                 continue
+                            }
+                            if (d.size >= 4 && (d[1].toInt() and 0xFF) == 0x62) {
+                                val did = ((d[2].toInt() and 0xFF) shl 8) or (d[3].toInt() and 0xFF)
+                                pcmRequests.positive(did)
+                                if (nrcTracker.recordPositive(did)) {
+                                    DiagnosticLogger.event("NRC_RECOVER", "DID 0x%04X answered — no longer suppressed".format(did))
+                                    DiagnosticLogger.snapshotNrc(nrcTracker)
+                                }
                             }
                             ObdResponseParser.parsePcmResponse(frame.second, getCurrentState(), onObdUpdate)
                             continue
@@ -375,6 +564,7 @@ class SlcanConnection(
                     }
                 } finally {
                     obdJob.cancel()
+                    probeJob.cancel()
                     pcmJob.cancel()
                     extJob.cancel()
                 }
@@ -387,19 +577,24 @@ class SlcanConnection(
                 addDebugLine("Error: ${e.message}")
             } finally {
                 _transport = null
+                attemptTransport = null
                 _dtcScanActive = false
                 transport.close()
             }
 
             if (!currentCoroutineContext().isActive) break
 
-            if (failedAttempts >= maxRetries) {
+            val retryingRecording = failedAttempts >= maxRetries && keepRetrying()
+            if (failedAttempts >= maxRetries && !retryingRecording) {
                 _state.value = AdapterState.Idle
                 break
             }
 
-            _state.value = AdapterState.Disconnected
-            val delayMs = if (connectionSucceeded) {
+            // Backoff: still "connecting" until this job has been connected once, then "reconnecting"
+            _state.value = if (everConnected) AdapterState.Reconnecting else AdapterState.Connecting
+            val delayMs = if (retryingRecording) {
+                30_000L
+            } else if (connectionSucceeded) {
                 val uptime = System.currentTimeMillis() - connectedAtMs
                 if (uptime < 30_000) {
                     consecutiveDrops++
@@ -411,29 +606,57 @@ class SlcanConnection(
             } else {
                 ObdConstants.BACKOFF_MS.getOrElse(failedAttempts - 1) { 30_000L }
             }
-            delay(delayMs)
+            if (retryingRecording) {
+                var waited = 0L
+                while (waited < delayMs && keepRetrying()) { delay(1_000L); waited += 1_000L }
+                if (!keepRetrying()) {                              // recording ended mid-backoff: budget spent
+                    _state.value = AdapterState.Idle
+                    break
+                }
+            } else {
+                delay(delayMs)
+            }
         }
-    }.flowOn(Dispatchers.IO)
+    }.flowOn(ioDispatcher)
 
     // ── DTC scan ──────────────────────────────────────────────────────────────
 
+    /**
+     * Sends UDS 0x19 02 (all status bits) to [modules] and collects each module's final reply. Progress reports a module
+     * as OK only for a valid positive reply ([DtcReply.classify]); a negative / malformed reply reports its own status.
+     * "Response pending" (7F 19 78) is not final: that module's buffer restarts and the deadline extends (P2*, capped)
+     * while its real answer is awaited — if it never comes the module ends PENDING, never OK (#215).
+     */
     suspend fun performDtcScan(
         modules: List<DtcModuleSpec>,
         onModuleProgress: ((String, ModuleScanStatus?) -> Unit)? = null
-    ): Map<String, ByteArray> =
+    ): DtcRawScan =
         _dtcMutex.withLock {
-            val transport = _transport ?: return emptyMap()
+            val transport = _transport ?: return DtcRawScan()
             val results = mutableMapOf<String, ByteArray>()
+            val pending = mutableSetOf<String>()
+            val failures = LinkedHashMap<String, DtcSendFailure>()   // first failed write per module (#215)
+            // A scan write, logged as TX in the private SLCAN log; a failure is kept with its stage, never swallowed
+            suspend fun send(module: String, stage: DtcStage, frame: String): Boolean = try {
+                transport.writeLine(frame)
+                DiagnosticLogger.logTxLine(frame)
+                true
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                val f = DtcSendFailure(stage, LogText.sanitizeReason(e))
+                // Request > flow control > extended session (DtcRawScan.keeps) — the failure that explains the module
+                if (DtcRawScan.keeps(failures[module], f)) failures[module] = f
+                false
+            }
 
-            _dtcWatchIds = modules.map { it.responseId }.toSet()
-            _dtcScanActive = true
+            beginDtcOperation(modules.map { it.responseId }.toSet(), sid = DtcReply.SID)
             while (_dtcChannel.tryReceive().isSuccess) { /* drain stale */ }
 
             try {
                 // Phase 1: establish extended diagnostic session for modules that need it
                 val extModules = modules.filter { it.needsExtSession && it.extSessionFrame != null }
                 for (m in extModules) {
-                    try { transport.writeLine(m.extSessionFrame!!) } catch (_: Exception) { }
+                    send(m.name, DtcStage.EXTENDED_SESSION, m.extSessionFrame!!)
                     delay(ObdConstants.EXT_SESSION_GAP_MS)
                 }
                 if (extModules.isNotEmpty()) delay(200L)
@@ -452,14 +675,13 @@ class SlcanConnection(
                 // Send all requests with 50ms between each
                 for (module in modules) {
                     val reqFrame = "t%03X8031902FF00000000\r".format(module.requestId)
-                    try { transport.writeLine(reqFrame) } catch (_: Exception) {
-                        onModuleProgress?.invoke(module.name, ModuleScanStatus.ERROR)
-                    }
+                    if (!send(module.name, DtcStage.REQUEST, reqFrame)) onModuleProgress?.invoke(module.name, ModuleScanStatus.ERROR)
                     delay(50L)
                 }
 
-                // Phase 3: single receiver loop with shared deadline
-                val deadline = System.currentTimeMillis() + 3_500L
+                // Phase 3: single receiver loop with shared deadline (extended while a module reports "pending")
+                val scanStart = System.currentTimeMillis()
+                var deadline = scanStart + 3_500L
 
                 while (results.size < modules.size && System.currentTimeMillis() < deadline) {
                     val remaining = deadline - System.currentTimeMillis()
@@ -473,30 +695,40 @@ class SlcanConnection(
                     if (isFF && frame.first !in fcSent) {
                         val mod = moduleByResp[frame.first] ?: continue
                         val fcFrame = "t%03X83000000000000000\r".format(mod.requestId)
-                        try { transport.writeLine(fcFrame) } catch (_: Exception) { }
-                        fcSent += frame.first
+                        // Marked sent only when it was: a failed flow control means the rest never comes (#215)
+                        if (send(mod.name, DtcStage.FLOW_CONTROL, fcFrame)) fcSent += frame.first
+                        else if (mod.name !in results) onModuleProgress?.invoke(mod.name, ModuleScanStatus.ERROR)
                     }
 
                     // Check for completed payload
                     if (payload != null || isSF) {
                         val completedPayload = payload ?: continue
                         val mod = moduleByResp[frame.first] ?: continue
+                        if (mod.name in results) continue                  // already final
+                        val reply = DtcReply.classify(completedPayload)
+                        if (reply == DtcReply.Pending) {
+                            // Real answer follows: fresh buffer, wait P2* more (never past the cap)
+                            pending += mod.name
+                            buffers[frame.first] = IsoTpBuffer()
+                            fcSent -= frame.first
+                            deadline = minOf(maxOf(deadline, System.currentTimeMillis() + DTC_P2_STAR_MS), scanStart + DTC_SCAN_CAP_MS)
+                            continue
+                        }
+                        pending -= mod.name
                         results[mod.name] = completedPayload
-                        onModuleProgress?.invoke(mod.name, ModuleScanStatus.OK)
+                        onModuleProgress?.invoke(mod.name, reply.status)
                     }
                 }
 
-                // Mark timed-out modules
+                // Modules without a final reply: the same rule as the final result (#215) — progress, screen and export agree
+                val raw = DtcRawScan(results, pending - results.keys, failures.filterKeys { it !in results })
                 for (module in modules) {
-                    if (module.name !in results) {
-                        onModuleProgress?.invoke(module.name, ModuleScanStatus.TIMEOUT)
-                    }
+                    if (module.name !in results) onModuleProgress?.invoke(module.name, raw.statusWithoutReply(module.name))
                 }
             } finally {
-                _dtcScanActive = false
-                _dtcWatchIds   = emptySet()
+                endDtcOperation()
             }
-            results
+            DtcRawScan(results, pending - results.keys, failures)
         }
 
     suspend fun performDtcClear(modules: List<DtcModuleSpec>): Map<String, Boolean> =
@@ -504,8 +736,7 @@ class SlcanConnection(
             val transport = _transport ?: return emptyMap()
             val results = mutableMapOf<String, Boolean>()
 
-            _dtcWatchIds = modules.map { it.responseId }.toSet()
-            _dtcScanActive = true
+            beginDtcOperation(modules.map { it.responseId }.toSet(), sid = 0x14)
             while (_dtcChannel.tryReceive().isSuccess) { /* drain stale */ }
 
             try {
@@ -519,8 +750,7 @@ class SlcanConnection(
                     delay(300L)
                 }
             } finally {
-                _dtcScanActive = false
-                _dtcWatchIds   = emptySet()
+                endDtcOperation()
             }
             results
         }
@@ -575,8 +805,7 @@ class SlcanConnection(
         module: DtcModuleSpec
     ): ByteArray? = _dtcMutex.withLock {
         val transport = _transport ?: return null
-        _dtcWatchIds = setOf(module.responseId)
-        _dtcScanActive = true
+        beginDtcOperation(setOf(module.responseId), sid = DtcReply.SID)
         while (_dtcChannel.tryReceive().isSuccess) { /* drain */ }
         try {
             // UDS 0x19/04: reportDTCSnapshotIdentification
@@ -584,8 +813,7 @@ class SlcanConnection(
             try { transport.writeLine(req) } catch (_: Exception) { return null }
             assembleIsotpResponse(transport, module.responseId, module.requestId, 3_000L)
         } finally {
-            _dtcScanActive = false
-            _dtcWatchIds = emptySet()
+            endDtcOperation()
         }
     }
 
@@ -599,8 +827,7 @@ class SlcanConnection(
         recordNumber: Int
     ): ByteArray? = _dtcMutex.withLock {
         val transport = _transport ?: return null
-        _dtcWatchIds = setOf(module.responseId)
-        _dtcScanActive = true
+        beginDtcOperation(setOf(module.responseId), sid = DtcReply.SID)
         while (_dtcChannel.tryReceive().isSuccess) { /* drain */ }
         try {
             // UDS 0x19/05: reportDTCSnapshotRecordByDTCNumber
@@ -615,12 +842,22 @@ class SlcanConnection(
             try { transport.writeLine(req) } catch (_: Exception) { return null }
             assembleIsotpResponse(transport, module.responseId, module.requestId, 3_000L)
         } finally {
-            _dtcScanActive = false
-            _dtcWatchIds = emptySet()
+            endDtcOperation()
         }
     }
 
+    private companion object {
+        /** UDS P2*: how long a module may take after "response pending" (7F xx 78). */
+        const val DTC_P2_STAR_MS = 5_000L
+        /** A scan never waits longer than this in total, however often modules report pending. */
+        const val DTC_SCAN_CAP_MS = 12_000L
+    }
+
     // ── NRC helpers ─────────────────────────────────────────────────────────
+
+    // Firmware probe timing (#220): re-send OPENRS? at these offsets after the first, give up after PROBE_GIVE_UP_MS
+    private val PROBE_TIMES_MS = listOf(3_000L, 8_000L)
+    private val PROBE_GIVE_UP_MS = 13_000L
 
     private fun nrcLabel(code: Int): String = when (code) {
         0x31 -> "requestOutOfRange"
@@ -640,4 +877,14 @@ class SlcanConnection(
             lastFpsTime = now
         }
     }
+}
+
+/** Stands in for a transport the factory couldn't build (#234): its open() fails the attempt with the sanitized reason. */
+private class UnbuiltTransport(private val reason: String) : SlcanTransport {
+    override suspend fun open(): Unit = throw java.io.IOException("transport not created — $reason")
+    override suspend fun readLine(): String? = null
+    override suspend fun writeLine(frame: String) = Unit
+    override fun close() = Unit
+    override val label = "transport not created"
+    override val stockFirmwareLabel = ""
 }

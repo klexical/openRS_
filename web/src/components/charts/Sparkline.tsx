@@ -2,7 +2,8 @@ import { useId, useMemo } from 'react'
 import { colors } from '../../styles/tokens'
 
 interface SparklineProps {
-  data: number[]
+  /** One value per sample; null / NaN = no reading — the line breaks there, positions are kept (never joined). */
+  data: (number | null)[]
   color?: string
   width?: number
   height?: number
@@ -18,22 +19,27 @@ export function Sparkline({ data, color = colors.accent, width = 120, height = 3
   const { path, areaPath } = useMemo(() => {
     if (data.length < 2) return { path: '', areaPath: '' }
 
-    const filtered = data.filter((v) => isFinite(v))
-    if (filtered.length < 2) return { path: '', areaPath: '' }
+    const finite = data.filter((v): v is number => v != null && isFinite(v))
+    if (finite.length < 2) return { path: '', areaPath: '' }
 
-    const min = Math.min(...filtered)
-    const max = Math.max(...filtered)
+    const min = Math.min(...finite)
+    const max = Math.max(...finite)
     const range = max - min || 1
     const padY = 2
 
-    const points = filtered.map((v, i) => {
-      const x = (i / (filtered.length - 1)) * width
+    // x from the sample's own position in the full series; a missing sample starts a new sub-path (a gap)
+    let linePath = ''
+    let penDown = false
+    let gaps = false
+    data.forEach((v, i) => {
+      if (v == null || !isFinite(v)) { if (penDown) gaps = true; penDown = false; return }
+      const x = (i / (data.length - 1)) * width
       const y = padY + (1 - (v - min) / range) * (height - padY * 2)
-      return { x, y }
+      linePath += `${penDown ? ' L' : (linePath ? ' M' : 'M')}${x.toFixed(1)},${y.toFixed(1)}`
+      penDown = true
     })
-
-    const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')
-    const area = `${linePath} L${width},${height} L0,${height} Z`
+    // The fill would bridge gaps — only drawn for an unbroken series
+    const area = gaps ? '' : `${linePath} L${width},${height} L0,${height} Z`
 
     return { path: linePath, areaPath: area }
   }, [data, width, height])

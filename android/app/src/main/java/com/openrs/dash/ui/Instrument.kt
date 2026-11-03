@@ -119,6 +119,16 @@ internal fun tyreIssues(
     }
 }
 
+/** THERMAL's tyre imbalance trigger: ≥ 4 psi between the highest and lowest known tyre (unchanged, unit-independent). */
+internal const val TYRE_IMBALANCE_PSI = 4.0
+
+/**
+ * The imbalance chip text, or null below the trigger (#232). The spread is a pressure DIFFERENCE in psi, shown in the
+ * selected unit — 4 psi reads "4.0 PSI" or "0.28 BAR" (it used to print the psi number with the BAR label: "4.0 BAR").
+ */
+internal fun tyreImbalanceText(spreadPsi: Double, p: UserPrefs): String? =
+    if (spreadPsi < TYRE_IMBALANCE_PSI) null else "PRESSURE IMBALANCE ${p.displayTire(spreadPsi)} ${p.tireLabel}"
+
 /** Instrument card fill: flat white on DAY (separated by a hairline, not a shadow), Surf2 at night. */
 val InstrumentFill: Color get() = if (isDayModeNow()) Surf else Surf2
 

@@ -46,7 +46,13 @@ data class DriveEntity(
     val trimSamples: Int = 0,
     // ── Knock pulls (v12) — WOT pulls and pulls with KR > 0 (#174); null = pre-v12 drive ──
     val pullCount: Int? = null,
-    val knockPullCount: Int? = null
+    val knockPullCount: Int? = null,
+    // ── Boost provenance (v13) — null = recorded before the rc.7 boost source rule; never backfilled ──
+    val peakBoostSource: String? = null,           // BoostSource name of the reading that set peakBoostPsi
+    val boostPolicy: String? = null,               // BoostRule.POLICY the drive was recorded under
+    // ── Oil / PTU mapping (v14) — OilPtuMapping.CURRENT for new drives; null = recorded before the #229 correction
+    //    (unknown), never backfilled ──
+    val oilPtuMapping: String? = null
 )
 
 @Entity(
@@ -106,7 +112,10 @@ data class DrivePointEntity(
     val boostTargetKpa: Double = 0.0,        // PCM DID 0x0466 (TIP desired)
     val wgdcPct: Double = 0.0,               // PCM DID 0x0462 (wastegate duty cycle)
     // ── Race readiness ───────────────────────────────────────
-    val isRaceReady: Boolean = false
+    val isRaceReady: Boolean = false,
+    // ── Boost provenance (v13) — null = recorded before the rc.7 rule (source unknown, no baro) ──
+    val boostSource: String? = null,         // BoostSource name; NONE = no fresh source (boostPsi not a reading)
+    val baroKpa: Double? = null              // measured baro (0x090) at the sample, when available
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -140,7 +149,8 @@ data class DtcCodeEntity(
     val code: String,
     val description: String,
     val status: String,            // "ACTIVE", "PENDING", "PERMANENT", "UNKNOWN"
-    val freezeFrameJson: String? = null  // reserved for freeze frame data
+    val freezeFrameJson: String? = null,  // reserved for freeze frame data
+    val failureType: Int? = null   // v13: ISO 14229 DTC low byte (FORScan "-1C"); null = pre-v13 row (unknown)
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -248,7 +258,8 @@ data class KnockEventEntity(
     val gearEst: Int = 0,                    // derived gear estimate (0 = unknown)
     val lat: Double? = null,                 // optional GPS fix at the event
     val lng: Double? = null,
-    val cylinder: Int = 0                    // 1-4 (v11); 0 = legacy v10 row (cyl 1 only)
+    val cylinder: Int = 0,                   // 1-4 (v11); 0 = legacy v10 row (cyl 1 only)
+    val boostSource: String? = null          // v13: BoostSource of boostPsi; null = pre-v13 row
 ) {
     companion object {
         /** Minimum retard (deg, positive = pulled timing) recorded as a knock event. */
@@ -273,6 +284,10 @@ interface DriveDao {
 
     @Query("SELECT * FROM drives ORDER BY startTime DESC LIMIT :limit")
     fun getRecentDrives(limit: Int = 50): List<DriveEntity>
+
+    /** TRIP's history (#228): re-emits on every write to `drives` — a drive started, its end written, renamed, deleted. */
+    @Query("SELECT * FROM drives ORDER BY startTime DESC LIMIT :limit")
+    fun observeRecentDrives(limit: Int = 50): kotlinx.coroutines.flow.Flow<List<DriveEntity>>
 
     @Query("SELECT COUNT(*) FROM drives")
     fun getDriveCount(): Int
@@ -486,7 +501,7 @@ interface DriveDao {
         DriveBookmarkEntity::class,
         KnockEventEntity::class
     ],
-    version = 12,
+    version = 14,
     exportSchema = false
 )
 abstract class DriveDatabase : RoomDatabase() {
@@ -750,6 +765,32 @@ abstract class DriveDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Migration v12 → v13 (rc.7): boost provenance (#207) and DTC failure type (#215). Nullable, no defaults —
+         * existing rows stay null = "unknown / recorded before this rule"; nothing is backfilled or inferred.
+         */
+        internal val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE drives ADD COLUMN peakBoostSource TEXT")
+                db.execSQL("ALTER TABLE drives ADD COLUMN boostPolicy TEXT")
+                db.execSQL("ALTER TABLE drive_points ADD COLUMN boostSource TEXT")
+                db.execSQL("ALTER TABLE drive_points ADD COLUMN baroKpa REAL")
+                db.execSQL("ALTER TABLE knock_events ADD COLUMN boostSource TEXT")
+                db.execSQL("ALTER TABLE dtc_codes ADD COLUMN failureType INTEGER")
+            }
+        }
+
+        /**
+         * Migration v13 → v14 (rc.7): which 0x0F8 bytes a drive's oil / PTU came from (#229). Nullable, no default —
+         * existing drives stay null = "recorded before the correction, mapping unknown"; nothing is backfilled,
+         * relabelled or recomputed.
+         */
+        internal val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE drives ADD COLUMN oilPtuMapping TEXT")
+            }
+        }
+
         /** Old TIP scale (raw / 903.81) → correct (raw / 128). */
         internal const val TIP_RESCALE = 903.81 / 128.0
 
@@ -760,7 +801,7 @@ abstract class DriveDatabase : RoomDatabase() {
                     DriveDatabase::class.java,
                     "openrs_sessions.db"      // same DB file — migration adds new tables
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
                     .build()
                     .also { INSTANCE = it }
             }

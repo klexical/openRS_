@@ -44,7 +44,13 @@ object TripPreview {
         private set
 
     /** Parses the intent extra; returns false for an unknown value. */
+    /** `recording:long` — a 2 h 14 min, 187.3 km recording, for the header's longest REC label (#224). */
+    @Volatile var longRecording = false
+        private set
+
     fun apply(arg: String): Boolean {
+        longRecording = arg == "recording:long"
+        if (longRecording) { set(Mode.RECORDING); return true }
         if (arg.startsWith("summary:")) {
             val n = arg.substringAfter(':').toLongOrNull()?.takeIf { it in 1..6 } ?: return false
             summaryDriveId = -n; set(Mode.SUMMARY); return true
@@ -80,12 +86,14 @@ object TripPreview {
      * flag under its own 124 °C limit), STREET → RACE mid-drive (peak under STREET, flag from RACE), TRACK (oil critical,
      * RDU flag, coolant just under the 95 % line), a legacy fixed-limit array, none (temps, no record), and an early
      * record without saved endpoints whose stop reading lies above its peak (START / END fall back, then "—").
+     * Drives 1–3 carry this build's oil / PTU mapping; 4–6 none — the "recorded before the correction" disclosure (#229).
      */
     fun drives(now: Long = System.currentTimeMillis()): List<DriveEntity> {
         val today = now - (now % DAY_MS) + 7 * 3_600_000L      // ~07:00 UTC-ish anchor; only relative dates matter
         fun d(id: Long, start: Long, mins: Int, km: Double, block: (DriveEntity) -> DriveEntity) =
             block(DriveEntity(id = id, startTime = start, endTime = start + mins * 60_000L, distanceKm = km,
-                avgSpeedKph = km / (mins / 60.0)))
+                avgSpeedKph = km / (mins / 60.0),
+                oilPtuMapping = if (id >= -3) com.openrs.dash.data.OilPtuMapping.CURRENT else null))
         return listOf(
             d(-1, minOf(today + 2 * 3_600_000L, now - 3_600_000L), 27, 31.4) {
                 it.copy(name = "Morning loop", maxSpeedKph = 148.0, peakRpm = 6400, peakBoostPsi = 21.8,
@@ -186,7 +194,7 @@ object TripPreview {
 
     /** Recording in progress (or paused) — 18 minutes in, partway round the loop. */
     fun driveState(paused: Boolean, now: Long = System.currentTimeMillis()): DriveState {
-        val start = now - 18 * 60_000L
+        val start = now - (if (longRecording) 134 else 18) * 60_000L
         val pts = points(-100, count = 160, startTime = start, startFuelPct = 66.0, fuelUsedPct = 4.0)
         val last = pts.last()
         return DriveState(
@@ -195,7 +203,7 @@ object TripPreview {
             currentLocation = Location("trip-preview").apply {
                 latitude = last.lat; longitude = last.lng; bearing = 72f; accuracy = 4f; altitude = 21.0
             },
-            cumulativeDistanceKm = 21.6,
+            cumulativeDistanceKm = if (longRecording) 187.3 else 21.6,
             rpmSum = pts.sumOf { it.rpm.toDouble() }, rpmSamples = pts.size.toLong(),
             speedSum = pts.sumOf { it.speedKph }, speedSamples = pts.size.toLong(),
             maxSpeedKph = pts.maxOf { it.speedKph }, peakRpm = pts.maxOf { it.rpm }.toDouble(),

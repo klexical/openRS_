@@ -39,7 +39,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.openrs.dash.BuildConfig
 import com.openrs.dash.ui.anim.pageEntrance
 
 /**
@@ -48,6 +47,18 @@ import com.openrs.dash.ui.anim.pageEntrance
  */
 private val versionHighlights: Map<String, List<String>> = mapOf(
     "2.2.7" to listOf(
+        "Changed: the pressure gauge shows throttle-inlet pressure above measured air pressure, labelled TIP, and — when TIP isn't current — never switches to another signal. Drives record TIP or, when TIP isn't current, the car's CAN boost signal, each named by its source; the two are kept apart in peaks, charts and exports. Which pressure each signal measures on the car is not yet confirmed.",
+        "Fixed: OIL and PTU temperatures were each other's reading (found on one car's capture) — readiness, alerts, recordings and exports now use the corrected values. Drives recorded before keep their values and are marked as recorded before the fix.",
+        "Changed: AWD shows rear left / right torque; the front/rear percentage is withdrawn (it compared torque from different points of the drivetrain). DRIVE no longer shows a clutch-pedal card.",
+        "Fixed: throttle angle is no longer 6.25× too high. SPARK now reads the full signed value (negative advance kept), but what it measures is not yet confirmed. Polled values that stop refreshing are marked STALE instead of looking live.",
+        "Fixed: an ECU rejection is counted only when it clearly belongs to one reading — an ambiguous one never stops a working reading.",
+        "Cancel now holds until you tap connect again, even after the app is closed.",
+        "Drive-mode / ESC controls: the firmware check retries (also on a quiet adapter) and says \"not detected\" rather than guessing; ESC changes count only when the car reports them after the request.",
+        "Bluetooth uses the WiCAN Pro / USB service layouts, asks to pair when needed and no longer hangs on a lost write (not yet confirmed on an adapter); Settings shows the selected device at once and saves it on SAVE.",
+        "TPMS thresholds follow your tyre-pressure unit (PSI or BAR); DTC scans show the full fault code (e.g. P0123-1C), never call a partial scan clean, and compare with the last scan only where both read the module. Settings stays reachable while recording.",
+        "Fixed: drive, knock, RaceChrono and TrackAddict exports, GPX and logs are no longer corrupted on phones set to a language that uses a decimal comma.",
+        "Connection states are truthful — CONNECTING (tap to cancel, except while a drive is recording), RECONNECTING only after a dropped link, and a failed attempt no longer leaves a notification behind; tapping the notification opens the app.",
+        "Settings shows the exact build (2.2.7-rc.7 · Build 37), and a diagnostic export says whether a DTC scan ran this session and which modules gave a valid reply — a refused or missing reply is never reported as clean.",
         "Calmer DRIVE and THERMAL — readings in ink, colour only when a limit is crossed, and a fixed status line on DRIVE that leads with the most important condition.",
         "Thermal readiness — one verdict (TEMPS READY, ENGINE / DRIVETRAIN WARMING, TEMP HIGH, TEMP CRITICAL, HEAT RISING, CHECKING) shared by DRIVE, THERMAL and the drive recorder, with a checklist that shows every rule.",
         "Custom thermal profile — copy STREET, TRACK or RACE and edit its warm-up, warning and critical limits in °C or °F (Settings → THERMAL).",
@@ -60,7 +71,7 @@ private val versionHighlights: Map<String, List<String>> = mapOf(
         "Fixed: the post-drive summary is no longer lost when TRIP wasn't open, and drive replay controls, Back and ±10 s seeks work.",
         "Drives without GPS now share their telemetry; Sapphire imports rc.6 exports and batches with each drive's profile, and shows missing readings as gaps.",
         "Knock chart follows your boost unit and the G-force plot axes are labelled correctly.",
-        "Fixed: PERF engine data — TIMING, LOAD, OAR, SPARK, VCT, knock retard, commanded AFR, O2 voltage and LP fuel now populate with the engine running (several were never decoded).",
+        "Fixed: PERF engine data — TIMING, LOAD, OAR, VCT, knock retard, commanded AFR, O2 voltage and LP fuel now populate with the engine running (several were never decoded). SPARK is still under investigation.",
         "Fixed: TIP actual/desired now read correctly, so the Boost Target vs Actual analysis works — past drives are corrected on upgrade.",
         "HP fuel rail uses the direct-injection query; LP fuel pressure added.",
         "BOOST SWEEP on PERF → POWER — live target vs actual boost and wastegate duty across the rev range; drive summaries add WGDC at peak boost and a per-gear breakdown.",
@@ -128,14 +139,22 @@ private val versionHighlights: Map<String, List<String>> = mapOf(
     )
 )
 
+/** Highlights for a base version ("2.2.7"); null when there's no entry — never another version's notes (#214). */
+internal fun whatsNewHighlights(base: String): List<String>? = versionHighlights[base]
+
+/**
+ * Show What's New once per published release identity (#214): "2.2.7-rc.6" → "2.2.7-rc.7" shows it again, a rebuild of
+ * the same release doesn't, and a version without highlights never shows an unrelated version's notes.
+ */
+internal fun shouldShowWhatsNew(lastSeen: String, releaseName: String, base: String): Boolean =
+    lastSeen != releaseName && whatsNewHighlights(base) != null
+
 @Composable
 fun WhatsNewDialog(onDismiss: () -> Unit) {
     val accent = LocalThemeAccent.current
     val accentM = accentMid()
-    val version = BuildConfig.VERSION_NAME
-    val highlights = versionHighlights[version]
-        ?: versionHighlights.values.lastOrNull()
-        ?: return onDismiss()
+    val version = com.openrs.dash.update.BuildInfo.releaseName
+    val highlights = whatsNewHighlights(com.openrs.dash.update.BuildInfo.base) ?: return onDismiss()
 
     var dialogEntered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { dialogEntered = true }

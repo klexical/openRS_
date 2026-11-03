@@ -88,11 +88,20 @@ import kotlin.math.roundToInt
 // DRIVE PAGE — what's happening right now, curated for glance-readability
 // Polled fields (temps, fuel economy, odometer, warnings) live on other tabs.
 // ═══════════════════════════════════════════════════════════════════════════
-@Composable fun DrivePage(vs: VehicleState, p: UserPrefs, onOpenThermal: () -> Unit = {}, onConnect: () -> Unit = {}) {
+@Composable fun DrivePage(
+    vs: VehicleState, p: UserPrefs, onOpenThermal: () -> Unit = {}, onConnect: () -> Unit = {},
+    onCancel: () -> Unit = {}, link: LinkUi = linkUi(vs, com.openrs.dash.can.LinkPhase.OFF, demoActive = false),
+    cancelable: Boolean = true,
+    /** Saved settings that can't connect (#234, [com.openrs.dash.service.ConnectionSetup]) — the row asks for a device. */
+    setupProblem: String? = null,
+) {
     var pageEntered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { pageEntered = true }
     val accent = LocalThemeAccent.current
-    val (_, boostLbl) = p.displayBoost(vs.boostKpa)
+    // The pressure gauge is TIP only (#207): "—" in a TIP gap, never CAN 0x0F8 in its place; wall clock, not lastUpdate
+    val now = wallClockMs()
+    val boost = com.openrs.dash.data.BoostSession.gauge(vs, now)
+    val boostLbl = p.displayGauge(0.0).second
 
     // B1: raw live values for hero numerics — spring smoothing removed so the
     // digits are 1:1 with the CAN frame.
@@ -102,7 +111,7 @@ import kotlin.math.roundToInt
     val brake = if (!vs.isConnected) 0.0 else vs.brakePressure.coerceIn(0.0, 100.0)
 
     val session     = telemetrySessionKey()   // demo start/reset/exit drops simulated history
-    val boostSpark  = remember(session) { SparklineData(60) }
+    val boostSpark  = remember(session, boost.source) { SparklineData(60) }   // one quantity per trace
     val rpmSpark    = remember(session) { SparklineData(60) }
     val speedSpark  = remember(session) { SparklineData(60) }
     val lastSample  = remember(session) { mutableLongStateOf(0L) }
@@ -110,7 +119,7 @@ import kotlin.math.roundToInt
         val now = vs.lastUpdate
         if (now - lastSample.longValue >= 250L) {
             lastSample.longValue = now
-            boostSpark.push(vs.boostKpa.toFloat())
+            boost.displayKpa?.let { boostSpark.push(it.toFloat()) }
             rpmSpark.push(vs.rpm.toFloat())
             speedSpark.push(vs.speedKph.toFloat())
         }
@@ -128,8 +137,7 @@ import kotlin.math.roundToInt
     // Disconnected → route heroes through the same "—" placeholder DataCell
     // uses, so dormant hero cards don't read as real "0.0" samples. The row
     // is still lightly dimmed so peak holds + sparklines are visibly inactive.
-    val (boostValLive, _) = p.displayBoost(vs.boostKpa)
-    val boostVal = if (stale) "—" else boostValLive
+    val boostVal = if (stale) "—" else boost.gaugeKpa?.let { p.displayGauge(it).first } ?: "—"
     val speedStr = if (stale) "—" else p.displaySpeed(vs.speedKph)
     val rpmStr = if (stale) "—" else "${vs.rpm.toInt()}"
     val heroAlpha by animateFloatAsState(
@@ -208,12 +216,7 @@ import kotlin.math.roundToInt
             // Temperatures speak through the shared readiness verdict (same holds as THERMAL);
             // tyre / fuel / knock alerts keep their own 3 s hold.
             val readiness = thermalVerdict(vs)
-            val link = when {
-                vs.isConnected -> LinkState.LIVE
-                vs.isIdle      -> LinkState.RECONNECTING
-                else           -> LinkState.OFFLINE
-            }
-            StatusLine(status.alerts.filterNot { it.temp }, readiness, p, link, onOpenThermal, onConnect)
+            StatusLine(status.alerts.filterNot { it.temp }, readiness, p, link, onOpenThermal, onConnect, onCancel, cancelable, setupProblem)
 
             // Design pass: readings in ink, BOOST (the car's personality) carries the paint accent,
             // RPM turns Orange only at the shift-light flash point. Equal-height cards with a fixed
@@ -235,12 +238,14 @@ import kotlin.math.roundToInt
                     modifier = Modifier.weight(1f).fillMaxHeight()
                 )
                 InstrumentHero(
-                    label = "BOOST", unit = boostLbl, value = boostVal,
+                    // TIP (throttle inlet − measured baro), always the same measurement on this gauge
+                    label = boost.source.label, unit = boostLbl, value = boostVal,
                     icon = RsIcon.BOOST, iconTone = if (stale) IconTone.UNAVAILABLE else IconTone.NORMAL,
                     valueColor = if (stale) Frost else accent,
                     valueSize = 44.sp,
-                    peak = "PEAK ${"%.1f".format(vs.peakBoostPsi)}",
-                    peakHoldValue = "%.1f".format(vs.peakBoostPsi),
+                    // That source's own session peak, in the selected unit (#207)
+                    peak = boostPeakCaption(boost, p) ?: "PEAK —",
+                    peakHoldValue = boostPeakValue(boost, p),
                     spark = boostSnap, sparkColor = accent,
                     modifier = Modifier.weight(1.25f).fillMaxHeight()
                 )
@@ -344,42 +349,46 @@ import kotlin.math.roundToInt
             // Torque split / G / torque are per-frame dynamics — frozen values mislead once stale.
             ChassisPanel(if (stale) vs.copy(awdLeftTorque = 0.0, awdRightTorque = 0.0, torqueAtTrans = 0.0) else vs, stale)
 
-            if (vs.clutchPedalPct > 0.1) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DataCell("CLUTCH", "${vs.clutchPedalPct.roundToInt()}%", modifier = Modifier.weight(1f))
-                }
-            }
+            // No clutch-pedal readout on DRIVE (#225): it appeared and disappeared with the pedal and pushed ECONOMY
+            // out of view. 0x138 is still decoded (diagnostics, SLCAN log).
 
-            // F2: fuel economy — always present (data arriving / leaving never shows, hides or collapses it;
-            // only the user's header tap does). Unavailable metrics read "—" with their unit, not 0.
-            // Calculations and validity are FuelEconomy's; this only decides what to print.
-            var econExpanded by rememberSectionExpanded("DRIVE_ECONOMY")
-            val mph = p.speedUnit == "MPH"
-            val valid = econState.isValid
-            fun num(v: Double, fmt: String, ok: Boolean) = if (ok) fmt.format(v) else "—"
-            // IDLE only with the engine running (PCM fast-poll rule) and the car stopped, while connected.
-            val idle = vs.isConnected && vs.rpm > ObdConstants.FAST_POLL_MIN_RPM && vs.speedKph < 2.0
-            val instantOk = valid && vs.isConnected && (if (mph) econState.instantMpg else econState.instantL100km) > 0
-            EconomyPanel(
-                expanded = econExpanded,
-                onToggle = { econExpanded = !econExpanded },
-                // Session aggregates stay readable offline, dimmed like other last-known values.
-                dimmed = !vs.isConnected,
-                cells = listOf(
-                    when {
-                        idle -> Triple("IDLE", num(econState.idleFuelLPerHr, "%.1f", valid && econState.idleFuelLPerHr > 0), "L/hr")
-                        mph  -> Triple("INSTANT", num(econState.instantMpg, "%.1f", instantOk), "MPG")
-                        else -> Triple("INSTANT", num(econState.instantL100km, "%.1f", instantOk), "L/100 km")
-                    },
-                    if (mph) Triple("AVERAGE", num(econState.avgMpg, "%.1f", valid && econState.avgMpg > 0), "MPG")
-                    else Triple("AVERAGE", num(econState.avgL100km, "%.1f", valid && econState.avgL100km > 0), "L/100 km"),
-                    if (mph) Triple("TO EMPTY", num(econState.distanceToEmptyKm * UnitConversions.KM_TO_MI, "%.0f", valid && econState.distanceToEmptyKm > 0), "mi")
-                    else Triple("TO EMPTY", num(econState.distanceToEmptyKm, "%.0f", valid && econState.distanceToEmptyKm > 0), "km"),
-                    Triple("FUEL USED", num(econState.fuelUsedL, "%.1f", valid), "L"),
-                ),
-            )
+            // F2: fuel economy — its own composable: inline here, R8 (AGP 8.7) mis-allocated a register in this
+            // lambda and ART rejected the class at runtime (VerifyError, rc.7 release build, 2026-10-29)
+            DriveEconomy(vs, econState, p)
         }
     }
+}
+
+/** ECONOMY on DRIVE (F2). */
+@Composable private fun DriveEconomy(vs: VehicleState, econState: FuelEconomy.EconomyState, p: UserPrefs) {
+    // F2: fuel economy — always present (data arriving / leaving never shows, hides or collapses it;
+    // only the user's header tap does). Unavailable metrics read "—" with their unit, not 0.
+    // Calculations and validity are FuelEconomy's; this only decides what to print.
+    var econExpanded by rememberSectionExpanded("DRIVE_ECONOMY")
+    val mph = p.speedUnit == "MPH"
+    val valid = econState.isValid
+    fun num(v: Double, fmt: String, ok: Boolean) = if (ok) fmt.format(v) else "—"
+    // IDLE only with the engine running (PCM fast-poll rule) and the car stopped, while connected.
+    val idle = vs.isConnected && vs.rpm > ObdConstants.FAST_POLL_MIN_RPM && vs.speedKph < 2.0
+    val instantOk = valid && vs.isConnected && (if (mph) econState.instantMpg else econState.instantL100km) > 0
+    EconomyPanel(
+        expanded = econExpanded,
+        onToggle = { econExpanded = !econExpanded },
+        // Session aggregates stay readable offline, dimmed like other last-known values.
+        dimmed = !vs.isConnected,
+        cells = listOf(
+            when {
+                idle -> Triple("IDLE", num(econState.idleFuelLPerHr, "%.1f", valid && econState.idleFuelLPerHr > 0), "L/hr")
+                mph  -> Triple("INSTANT", num(econState.instantMpg, "%.1f", instantOk), "MPG")
+                else -> Triple("INSTANT", num(econState.instantL100km, "%.1f", instantOk), "L/100 km")
+            },
+            if (mph) Triple("AVERAGE", num(econState.avgMpg, "%.1f", valid && econState.avgMpg > 0), "MPG")
+            else Triple("AVERAGE", num(econState.avgL100km, "%.1f", valid && econState.avgL100km > 0), "L/100 km"),
+            if (mph) Triple("TO EMPTY", num(econState.distanceToEmptyKm * UnitConversions.KM_TO_MI, "%.0f", valid && econState.distanceToEmptyKm > 0), "mi")
+            else Triple("TO EMPTY", num(econState.distanceToEmptyKm, "%.0f", valid && econState.distanceToEmptyKm > 0), "km"),
+            Triple("FUEL USED", num(econState.fuelUsedL, "%.1f", valid), "L"),
+        ),
+    )
 }
 
 /** ECONOMY: instant / average / distance to empty / fuel used in one panel; the header row collapses it. */
@@ -452,7 +461,6 @@ private data class VehicleAlert(
     val temp: Boolean = false,
 )
 
-private enum class LinkState { LIVE, RECONNECTING, OFFLINE }
 
 private data class VehicleStatus(
     val connected: Boolean,
@@ -533,8 +541,8 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
  * The headline is measured first; the reason gives way (ellipsis) on narrow phones. Tap opens THERMAL.
  */
 @Composable private fun StatusLine(
-    alerts: List<VehicleAlert>, rtr: ThermalVerdict, p: UserPrefs, link: LinkState,
-    onOpen: () -> Unit, onConnect: () -> Unit,
+    alerts: List<VehicleAlert>, rtr: ThermalVerdict, p: UserPrefs, link: LinkUi,
+    onOpen: () -> Unit, onConnect: () -> Unit, onCancel: () -> Unit, cancelable: Boolean, setupProblem: String? = null,
 ) {
     var held by remember { mutableStateOf(alerts) }
     LaunchedEffect(alerts) {
@@ -542,9 +550,23 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
         held = alerts
     }
     // The 3 s alert hold is for flicker between live frames — a dropped link replaces it at once.
-    val others = if (link == LinkState.LIVE) held else emptyList()
-    if (link == LinkState.OFFLINE) { ConnectActionRow(onConnect); return }
-    val heat = link == LinkState.LIVE && rtr.state.isHeat
+    val others = if (link == LinkUi.LIVE) held else emptyList()
+    // Bluetooth with no device saved (#234): nothing to connect to — the action opens Settings to choose one
+    if (setupProblem != null && (link == LinkUi.OFFLINE || link == LinkUi.FAILED)) {
+        LinkActionRow("SELECT A BLUETOOTH DEVICE", "Open Settings to choose a Bluetooth device", accentAction = true, onConnect); return
+    }
+    when (link) {
+        LinkUi.OFFLINE    -> { LinkActionRow("TAP TO CONNECT", "Connect to the adapter", accentAction = true, onConnect); return }
+        LinkUi.FAILED     -> { LinkActionRow("NO RESPONSE · TAP TO CONNECT", "Connect to the adapter", accentAction = true, onConnect); return }
+        // While a drive is recording the attempt can't be cancelled (it would stop the service the drive runs under)
+        LinkUi.CONNECTING -> {
+            if (cancelable) LinkActionRow("CONNECTING… · TAP TO CANCEL", "Cancel the connection attempt", accentAction = false, onCancel)
+            else LinkActionRow("CONNECTING… · RECORDING", null, accentAction = false, null)
+            return
+        }
+        LinkUi.LIVE, LinkUi.RECONNECTING -> Unit
+    }
+    val heat = link == LinkUi.LIVE && rtr.state.isHeat
     val top: VehicleAlert? = when {
         rtr.state == ThermalState.OVERHEATING && heat -> null
         others.any { it.level == Level.CRIT } -> others.first { it.level == Level.CRIT }
@@ -558,7 +580,7 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
     val accent = LocalThemeAccent.current
     // Colour = state: orange at crit, amber at warn / forecast; warming is a normal phase (accent).
     val (accentColor, title, value) = when {
-        link == LinkState.RECONNECTING -> Triple(Warn, "RECONNECTING", "")
+        link == LinkUi.RECONNECTING -> Triple(Warn, "RECONNECTING", "")
         top != null -> Triple(levelColor(top.level), top.title, top.value)
         else -> Triple(
             when (rtr.state) {
@@ -571,7 +593,7 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
             rtr.state.headline, rtr.shortReason(p),
         )
     }
-    val alerting = top != null || (heat && link == LinkState.LIVE)
+    val alerting = top != null || (heat && link == LinkUi.LIVE)
     val heatIcon = if (rtr.deciding.firstOrNull()?.sensor == ThermalSensor.OIL) R.drawable.ic_tt_oil else R.drawable.ic_tt_coolant
     Row(
         Modifier.fillMaxWidth().height(48.dp)
@@ -580,7 +602,7 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
             .border(if (alerting) 1.dp else Tokens.CardBorder,
                 if (alerting) accentColor.copy(alpha = borderAlpha(0.8f))
                 else if (isDayModeNow()) Brd.copy(alpha = 0.75f) else Brd.copy(alpha = 0.15f), shape)
-            .then(if (link == LinkState.LIVE) Modifier.clickable(onClickLabel = "Open THERMAL") { onOpen() } else Modifier)
+            .then(if (link == LinkUi.LIVE) Modifier.clickable(onClickLabel = "Open THERMAL") { onOpen() } else Modifier)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -605,32 +627,36 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
-        if (moreCount > 0 && link == LinkState.LIVE) {
+        if (moreCount > 0 && link == LinkUi.LIVE) {
             Box(
                 Modifier.background(Surf3, RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 3.dp)
             ) { MonoLabel("+$moreCount", 11.sp, Frost, FontWeight.Bold) }
             Spacer(Modifier.width(8.dp))
         }
-        if (link == LinkState.LIVE) MonoLabel("›", 16.sp, Dim)
+        if (link == LinkUi.LIVE) MonoLabel("›", 16.sp, Dim)
     }
 }
 
 /** Offline: the whole 48 dp row is the connect action — accent tint, label in [actionInk] (dark on DAY). */
-@Composable private fun ConnectActionRow(onConnect: () -> Unit) {
+/**
+ * The status row's link action (#212): TAP TO CONNECT (accent — the call to action), NO RESPONSE after the attempts ran
+ * out, or CONNECTING… · TAP TO CANCEL (neutral) while an initial attempt runs. Same fixed 48 dp row either way.
+ */
+@Composable private fun LinkActionRow(text: String, clickLabel: String?, accentAction: Boolean, onClick: (() -> Unit)?) {
     val accent = LocalThemeAccent.current
     val shape = RoundedCornerShape(12.dp)
     Row(
         Modifier.fillMaxWidth().height(48.dp)
             .background(InstrumentFill, shape)
-            .background(accent.copy(alpha = if (isDayModeNow()) 0.14f else 0.12f), shape)
-            .border(1.dp, accent.copy(alpha = borderAlpha(0.7f)), shape)
-            .clickable(onClickLabel = "Connect to the adapter") { onConnect() }
+            .then(if (accentAction) Modifier.background(accent.copy(alpha = if (isDayModeNow()) 0.14f else 0.12f), shape) else Modifier)
+            .border(1.dp, if (accentAction) accent.copy(alpha = borderAlpha(0.7f)) else Brd.copy(alpha = borderAlpha(0.6f)), shape)
+            .then(if (onClick != null) Modifier.clickable(onClickLabel = clickLabel) { onClick() } else Modifier)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
     ) {
         androidx.compose.material3.Text(
-            "TAP TO CONNECT", color = actionInk(accent), fontFamily = RajdhaniFamily,
+            text, color = if (accentAction) actionInk(accent) else Mid, fontFamily = RajdhaniFamily,
             fontWeight = FontWeight.Bold, fontSize = 17.sp, letterSpacing = 1.sp, maxLines = 1
         )
     }
@@ -724,7 +750,7 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
     }
 }
 
-/** AWD split + per-frame dynamics in one panel (was a split card + three separate cells). */
+/** AWD rear torque + per-frame dynamics in one panel (was a split card + three separate cells). */
 @Composable private fun ChassisPanel(vs: VehicleState, stale: Boolean) {
     Column(
         Modifier.fillMaxWidth()
@@ -732,14 +758,13 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
             .padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            InstrumentLabel("AWD SPLIT")
+            // Rear-unit torque left vs right (0x2C0). No front/rear %: rear Nm ÷ engine torque isn't a physical split (#226)
+            InstrumentLabel("AWD REAR TORQUE")
             Spacer(Modifier.weight(1f))
-            InstrumentMeta(
-                if (stale) "L — · R — Nm" else "L ${vs.awdLeftTorque.roundToInt()} · R ${vs.awdRightTorque.roundToInt()} Nm"
-            )
+            InstrumentMeta("L / R · Nm")
         }
         Spacer(Modifier.height(8.dp))
-        AwdSplitBar(vs, stale)
+        AwdRearTorqueBar(vs, stale)
         Spacer(Modifier.height(12.dp))
         Box(Modifier.fillMaxWidth().height(1.dp).background(Brd.copy(alpha = borderAlpha(0.4f))))
         Spacer(Modifier.height(10.dp))
@@ -751,13 +776,17 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
     }
 }
 
-/** Front/rear split bar. [stale]: no live split — dashes and an empty track, not a fake 100 / 0. */
-@Composable fun AwdSplitBar(vs: VehicleState, stale: Boolean = false) {
+/**
+ * Rear-unit torque, left vs right (both 0x2C0 actual fields — the same signal, same reference point): Nm at each end
+ * and their share of the rear total as a bar. No front/rear figure (#226). [stale]: dashes and an empty track.
+ */
+@Composable fun AwdRearTorqueBar(vs: VehicleState, stale: Boolean = false) {
     val accent = LocalThemeAccent.current
-    val rearColor = accentMid()
-    val rearPct  = vs.rearTorquePct.coerceIn(0.0, 100.0).toFloat()
-    val frontPct = (100f - rearPct).coerceIn(0.01f, 99.99f)
-    val rearF    = rearPct.coerceIn(0.01f, 99.99f)
+    val rightColor = accentMid()
+    val total = vs.totalRearTorque
+    val leftShare = if (total > 0.5) (vs.awdLeftTorque / total).toFloat() else 0.5f
+    val leftW = leftShare.coerceIn(0.01f, 0.99f)
+    val rightW = (1f - leftShare).coerceIn(0.01f, 0.99f)
 
     val torqueDelta = kotlin.math.abs(vs.awdLeftTorque - vs.awdRightTorque).toFloat()
     val flowSpeed = (2000 - (torqueDelta * 10).toInt().coerceIn(0, 1200)).coerceIn(800, 2000)
@@ -769,34 +798,33 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
 
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column {
-            MonoLabel("FRONT", 9.sp, Dim, letterSpacing = 0.3.sp)
-            DataNum(if (stale) "—" else "${(100 - rearPct).roundToInt()}%", 18.sp, if (stale) Dim else Frost)
+            MonoLabel("LEFT", 9.sp, Dim, letterSpacing = 0.3.sp)
+            DataNum(if (stale) "—" else "${vs.awdLeftTorque.roundToInt()}", 18.sp, if (stale) Dim else Frost)
         }
         Box(Modifier.weight(1f).padding(horizontal = 12.dp).height(8.dp)) {
-            if (!stale) Row(Modifier.matchParentSize().background(Surf3, RoundedCornerShape(4.dp))) {
-                Box(Modifier.weight(frontPct).fillMaxHeight()
+            if (!stale && total > 0.5) Row(Modifier.matchParentSize().background(Surf3, RoundedCornerShape(4.dp))) {
+                Box(Modifier.weight(leftW).fillMaxHeight()
                     .background(accent, RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp)))
                 Spacer(Modifier.width(2.dp))
-                Box(Modifier.weight(rearF).fillMaxHeight()
-                    .background(rearColor, RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)))
+                Box(Modifier.weight(rightW).fillMaxHeight()
+                    .background(rightColor, RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)))
             }
             else Box(Modifier.matchParentSize().background(Surf3, RoundedCornerShape(4.dp)))
-            if (!stale && vs.totalRearTorque > 5) {
-                // V6: dot count scales with torque intensity
-                val totalTorque = vs.totalRearTorque.toFloat()
+            if (!stale && total > 5) {
+                // V6: dot count scales with torque intensity, flowing towards the side with more torque
                 val dotCount = when {
-                    totalTorque > 800 -> 5
-                    totalTorque > 400 -> 4
-                    totalTorque > 100 -> 3
+                    total > 800 -> 5
+                    total > 400 -> 4
+                    total > 100 -> 3
                     else -> 2
                 }
                 val dotColor = Frost
                 Canvas(Modifier.matchParentSize()) {
                     val dotRadius = 1.6.dp.toPx()
-                    val rearDominant = rearPct > 55f
+                    val rightDominant = leftShare < 0.45f
                     for (i in 0 until dotCount) {
                         val phase = (flowProgress + i.toFloat() / dotCount) % 1f
-                        val x = if (rearDominant) size.width * (1f - phase) else size.width * phase
+                        val x = if (rightDominant) size.width * phase else size.width * (1f - phase)
                         val dotAlpha = (0.5f * (1f - kotlin.math.abs(phase - 0.5f) * 2f)).coerceIn(0f, 0.5f)
                         drawCircle(dotColor.copy(alpha = dotAlpha), dotRadius, Offset(x, size.height / 2f))
                     }
@@ -804,8 +832,8 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
             }
         }
         Column(horizontalAlignment = Alignment.End) {
-            MonoLabel("REAR", 9.sp, Dim, letterSpacing = 0.3.sp)
-            DataNum(if (stale) "—" else "${rearPct.roundToInt()}%", 18.sp, if (stale) Dim else Frost)
+            MonoLabel("RIGHT", 9.sp, Dim, letterSpacing = 0.3.sp)
+            DataNum(if (stale) "—" else "${vs.awdRightTorque.roundToInt()}", 18.sp, if (stale) Dim else Frost)
         }
     }
 }

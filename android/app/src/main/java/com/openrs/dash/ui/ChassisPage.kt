@@ -243,13 +243,13 @@ import kotlin.math.roundToInt
             if (vs.tirePressLR in 0.0..(lowThreshold - 0.001)) add("Rear Left")
             if (vs.tirePressRR in 0.0..(lowThreshold - 0.001)) add("Rear Right")
         }
-        val spread = vs.maxTirePressSpread
-        if (lowTires.isNotEmpty() || spread >= 4.0) {
+        val imbalance = tyreImbalanceText(vs.maxTirePressSpread, p)
+        if (lowTires.isNotEmpty() || imbalance != null) {
             Spacer(Modifier.height(10.dp))
             if (lowTires.isNotEmpty())
                 AlertChip("${lowTires.joinToString(", ").uppercase()} LOW", Level.CRIT, R.drawable.ic_tt_tyre)
-            else
-                AlertChip("PRESSURE IMBALANCE ${"%.1f".format(spread)} ${p.tireLabel}", Level.WARN, R.drawable.ic_tt_tyre)
+            else if (imbalance != null)
+                AlertChip(imbalance, Level.WARN, R.drawable.ic_tt_tyre)
         }
 
         // ── TPMS footer: low-pressure alert threshold + last updated ──
@@ -258,16 +258,7 @@ import kotlin.math.roundToInt
             // This is the low-pressure alert (UserPrefs.tireLowPsi), not a recommended pressure.
             InstrumentMeta("LOW ALERT < ${p.displayTire(lowThreshold)} ${p.tireLabel}")
             Spacer(Modifier.weight(1f))
-            val updatedText = if (vs.tpmsLastUpdate > 0L) {
-                val ago = (System.currentTimeMillis() - vs.tpmsLastUpdate) / 1000
-                when {
-                    ago < 5   -> "TPMS just now"
-                    ago < 60  -> "TPMS ${ago}s ago"
-                    ago < 3600 -> "TPMS ${ago / 60}m ago"
-                    else       -> "TPMS ${ago / 3600}h ago"
-                }
-            } else "TPMS awaiting data"
-            InstrumentMeta(updatedText)
+            InstrumentMeta(tpmsFooterText(vs.tpmsLastUpdate, System.currentTimeMillis()))
         }
 
         // ── Wheel Rotation Counts (CAN 0x1E0) ──
@@ -294,6 +285,18 @@ import kotlin.math.roundToInt
 /** Pressure level from the tyre card's existing rule ([tireStatusColor] defaults: warn 34, high 50 psi). */
 
 /** TPMS sensor temperature colour from the existing [thermalBandForTire] bands; in-range reads in ink. */
+/** THERMAL's TPMS footer from the last tyre sample time (0 = none yet) — #232. */
+internal fun tpmsFooterText(lastUpdateMs: Long, nowMs: Long): String {
+    if (lastUpdateMs <= 0L) return "TPMS awaiting data"
+    val ago = ((nowMs - lastUpdateMs) / 1000).coerceAtLeast(0L)
+    return when {
+        ago < 5    -> "TPMS just now"
+        ago < 60   -> "TPMS ${ago}s ago"
+        ago < 3600 -> "TPMS ${ago / 60}m ago"
+        else       -> "TPMS ${ago / 3600}h ago"
+    }
+}
+
 private fun tyreTempColor(tempC: Double): Color = when (thermalBandForTire(tempC)) {
     ThermalBand.COLD     -> Mid
     ThermalBand.NOMINAL  -> Frost
@@ -384,9 +387,6 @@ private fun AwdMetrics(held: VehicleState, p: UserPrefs) {
     val live = vs.isConnected
     val leftNm = if (live) "${vs.awdLeftTorque.roundToInt()} Nm" else "— Nm"
     val rightNm = if (live) "${vs.awdRightTorque.roundToInt()} Nm" else "— Nm"
-    val rearPct = vs.rearTorquePct.roundToInt()
-    val frontPct = 100 - rearPct
-    val splitLabel = if (live) "F $frontPct / R $rearPct" else "F — / R —"
     // PTU / RDU / clutch temperatures live in THERMAL's DRIVETRAIN panel — the diagram shows torque only.
 
     // Clutch engagement: scale delivered torque against a realistic reference.
@@ -539,11 +539,7 @@ private fun AwdMetrics(held: VehicleState, p: UserPrefs) {
         drawText(ptuLabel, topLeft = Offset(ptuCenterX - ptuLabel.size.width / 2f,
             ptuY - ptuLabel.size.height / 2f))
 
-        // F/R split label above PTU
-        val splitM = textMeasurer.measure(splitLabel, tempStyle.copy(color = Frost.copy(alpha = 0.7f)))
-        drawText(splitM, topLeft = Offset(
-            ptuCenterX - splitM.size.width / 2f,
-            ptuY - ptuH / 2f - splitM.size.height - 2.dp.toPx()))
+        // No front/rear % above the PTU: rear-unit Nm ÷ engine torque is not a physical split (#226, withdrawn)
 
         // ── RDU box ──
         drawRoundRect(
@@ -640,39 +636,8 @@ private fun AwdMetrics(held: VehicleState, p: UserPrefs) {
             midY + wheelR + 6.dp.toPx()))
     }
 
-    // ── Readouts below the diagram (temps + F/R split are shown above / in DRIVETRAIN) ──
-    val spdLabel = if (p.speedUnit == "MPH") "mph" else "km/h"
-    val lrDisp = if (p.speedUnit == "MPH") lrDelta * UnitConversions.KM_TO_MI else lrDelta
-    val frDisp = if (p.speedUnit == "MPH") frDelta * UnitConversions.KM_TO_MI else frDelta
-    fun dyn(v: String) = if (live) v else "—"   // per-frame dynamics: no rest values offline
-    val rows = buildList {
-        add(listOf(
-            Triple("REAR BIAS", dyn(vs.rearLeftRightBias), ""),
-            Triple("L/R Δ", dyn("%.1f".format(lrDisp)), spdLabel),
-            Triple("F/R Δ", dyn("%.1f".format(frDisp)), spdLabel),
-        ))
-        if (vs.awdMaxTorque > 0) add(listOf(
-            Triple("REQ L", dyn("${vs.awdReqTorqueL.roundToInt()}"), "Nm"),
-            Triple("REQ R", dyn("${vs.awdReqTorqueR.roundToInt()}"), "Nm"),
-            // 0x2C0 bits 43–55, decoded every frame (live), so it gets the offline dash too.
-            Triple("AWD MAX", dyn("${vs.awdMaxTorque.roundToInt()}"), "Nm"),
-        ))
-        // Per-clutch hydraulic actuators (0x1E9E/9F current, 0x1ED1/D2 pressure) + pump
-        val hasClutchCur  = vs.awdClutchCurL > -900 || vs.awdClutchCurR > -900
-        val hasClutchPres = vs.awdClutchPressureL >= 0 || vs.awdClutchPressureR >= 0
-        if (hasClutchCur || vs.awdPumpCurrent > 0) add(listOf(
-            Triple("CURRENT L", if (vs.awdClutchCurL > -900) "%.1f".format(vs.awdClutchCurL) else "—", "A"),
-            Triple("CURRENT R", if (vs.awdClutchCurR > -900) "%.1f".format(vs.awdClutchCurR) else "—", "A"),
-            Triple("PUMP", if (live && vs.awdPumpCurrent > 0) "%.1f".format(vs.awdPumpCurrent) else "—", "A"),
-        ))
-        if (hasClutchPres) add(listOf(
-            Triple("PRESSURE L", if (vs.awdClutchPressureL >= 0) "%.1f".format(vs.awdClutchPressureL / 1000.0) else "—", "bar"),
-            Triple("PRESSURE R", if (vs.awdClutchPressureR >= 0) "%.1f".format(vs.awdClutchPressureR / 1000.0) else "—", "bar"),
-            Triple("", "", ""),
-        ))
-    }
-    // Index of the first hydraulics row (clutch current / pressure + pump) — gets its own caption.
-    val hydraulicsFrom = if (vs.awdMaxTorque > 0) 2 else 1
+    // ── Readouts below the diagram (temps are in DRIVETRAIN) ──
+    val (rows, hydraulicsFrom) = awdDetailRows(vs, p, live, wallClockMs())
     Spacer(Modifier.height(4.dp))
     Box(Modifier.fillMaxWidth().height(1.dp).background(Brd.copy(alpha = borderAlpha(0.4f))))
     Spacer(Modifier.height(10.dp))
@@ -785,3 +750,54 @@ private fun tpmsDeltaText(currentPsi: Double, startPsi: Double): String {
     return if (delta > 0) "\u25B2 +${"%.1f".format(delta)}"
     else "\u25BC ${"%.1f".format(delta)}"
 }
+
+/**
+ * THERMAL AWD readouts below the diagram (pure, so availability rules are JVM-testable): rows of (label, value, unit)
+ * and the index of the first CLUTCH HYDRAULICS row. REQ L / REQ R (AWD DIDs 0x1E90 / 0x1E91, candidates) each show
+ * from their own freshness stamp — reported once, then "—" when stale (90 s, the AWD poll rule) or offline; never
+ * gated on another field. The retired 0x2C0 "AWD MAX" (no DBC signal, #226) is not shown.
+ */
+internal fun awdDetailRows(vs: VehicleState, p: UserPrefs, live: Boolean, nowMs: Long):
+        Pair<List<List<Triple<String, String, String>>>, Int> {
+    val avgF = (vs.wheelSpeedFL + vs.wheelSpeedFR) / 2
+    val avgR = (vs.wheelSpeedRL + vs.wheelSpeedRR) / 2
+    val spdLabel = if (p.speedUnit == "MPH") "mph" else "km/h"
+    val lrDisp = (vs.wheelSpeedRR - vs.wheelSpeedRL).let { if (p.speedUnit == "MPH") it * UnitConversions.KM_TO_MI else it }
+    val frDisp = (avgR - avgF).let { if (p.speedUnit == "MPH") it * UnitConversions.KM_TO_MI else it }
+    fun dyn(v: String) = if (live) v else "—"   // per-frame dynamics: no rest values offline
+    fun req(value: Double, tag: String): String {
+        val at = vs.fieldLastUpdateMs[tag] ?: return "—"
+        return if (live && nowMs - at in 0L..AWD_POLL_STALE_MS) "${value.roundToInt()}" else "—"
+    }
+    val reqReported = vs.fieldLastUpdateMs.containsKey("awdReqTorqueL") || vs.fieldLastUpdateMs.containsKey("awdReqTorqueR")
+    val rows = buildList {
+        add(listOf(
+            // L vs R of the rear torque fields (same signal, same reference) — not a front/rear figure
+            Triple("REAR L/R", dyn(vs.rearLeftRightBias), ""),
+            Triple("L/R Δ", dyn("%.1f".format(lrDisp)), spdLabel),
+            Triple("F/R Δ", dyn("%.1f".format(frDisp)), spdLabel),
+        ))
+        if (reqReported) add(listOf(
+            Triple("REQ L", req(vs.awdReqTorqueL, "awdReqTorqueL"), "Nm"),
+            Triple("REQ R", req(vs.awdReqTorqueR, "awdReqTorqueR"), "Nm"),
+            Triple("", "", ""),
+        ))
+        // Per-clutch hydraulic actuators (0x1E9E/9F current, 0x1ED1/D2 pressure) + pump
+        val hasClutchCur  = vs.awdClutchCurL > -900 || vs.awdClutchCurR > -900
+        val hasClutchPres = vs.awdClutchPressureL >= 0 || vs.awdClutchPressureR >= 0
+        if (hasClutchCur || vs.awdPumpCurrent > 0) add(listOf(
+            Triple("CURRENT L", if (vs.awdClutchCurL > -900) "%.1f".format(vs.awdClutchCurL) else "—", "A"),
+            Triple("CURRENT R", if (vs.awdClutchCurR > -900) "%.1f".format(vs.awdClutchCurR) else "—", "A"),
+            Triple("PUMP", if (live && vs.awdPumpCurrent > 0) "%.1f".format(vs.awdPumpCurrent) else "—", "A"),
+        ))
+        if (hasClutchPres) add(listOf(
+            Triple("PRESSURE L", if (vs.awdClutchPressureL >= 0) "%.1f".format(vs.awdClutchPressureL / 1000.0) else "—", "bar"),
+            Triple("PRESSURE R", if (vs.awdClutchPressureR >= 0) "%.1f".format(vs.awdClutchPressureR / 1000.0) else "—", "bar"),
+            Triple("", "", ""),
+        ))
+    }
+    return rows to (if (reqReported) 2 else 1)
+}
+
+/** AWD module DIDs are polled about every 37 s — the same 90 s staleness as the AWD temperatures. */
+internal const val AWD_POLL_STALE_MS = 90_000L

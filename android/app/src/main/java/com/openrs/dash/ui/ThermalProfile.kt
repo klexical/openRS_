@@ -112,9 +112,9 @@ fun ThermalProfile.driveLimits(): Map<DriveThermalSensor, TempLimits> = mapOf(
  * outside it could never be reached) — a reporting range, not a judgement of a safe value.
  */
 enum class ThermalRow(val label: String, val minC: Double, val maxC: Double) {
-    OIL("Oil", -50.0, 205.0),          // 0x0F8 byte1 − 50
+    OIL("Oil", -60.0, 195.0),          // 0x0F8 byte7 − 60 (#229; was byte1's −50..205 — saved limits are never changed)
     COOLANT("Coolant", -60.0, 963.0),  // 0x2F0 10-bit − 60
-    PTU("PTU", -60.0, 195.0),          // 0x0F8 byte7 − 60
+    PTU("PTU", -50.0, 205.0),          // 0x0F8 byte1 − 50 (#229)
     RDU("RDU", -40.0, 215.0),          // 0x1E8A byte − 40
     CLUTCH("AWD clutches", -40.0, 215.0), // 0x1E8B / 0x1E8C byte − 40
     INTAKE("Intake air", -127.0, 128.75), // 0x2F0 10-bit × 0.25 − 127

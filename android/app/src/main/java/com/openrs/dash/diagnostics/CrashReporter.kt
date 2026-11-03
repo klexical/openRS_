@@ -28,7 +28,10 @@ object CrashReporter {
                     file      = file,
                     exception = throwable,
                     threadName = thread.name,
-                    appVersion = BuildConfig.VERSION_NAME
+                    appVersion = BuildConfig.VERSION_NAME,
+                    versionCode = BuildConfig.VERSION_CODE,
+                    sourceCommit = BuildConfig.SOURCE_COMMIT + if (BuildConfig.SOURCE_DIRTY) "-dirty" else "",
+                    buildType = BuildConfig.BUILD_TYPE
                 )
             } catch (_: Throwable) {
                 // Must not throw — fall through to default handler.

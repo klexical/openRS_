@@ -4,6 +4,14 @@ All notable changes to the openrs-fw firmware are documented here.
 
 ---
 
+## Unreleased — source only (not flashed; built once for PRO in isolation, 2026-10-29)
+
+### Fixed
+- **A reserved ESC state could confirm a mode reported before the presses** — 0x1C0 raw state 3 (Launch in RS_HS.dbc) kept the previous mode but still counted as a received frame, so a target mode seen *during* the presses followed by raw-3 frames passed the post-press confirmation and saved boot ESC. Only a frame that reports ESC On / Off / Sport now counts. `tests/run.sh` now runs the real `focusrs.c` (CAN parser → ESC task → `frs_nvs_save_esc`) against host stubs for FreeRTOS / TWAI. Not flashed — no vehicle test. ([#125](https://github.com/klexical/openRS_/issues/125))
+- **ESC boot mode was saved even when the change failed** — `frs_esc_mode_task` wrote `boot_esc` and NVS after any sequence, including one with no 0x260 template, an aborted TX, or a car that never reported the mode; the next ignition then re-applied it. The saved boot ESC now changes only when every planned press was sent and a 0x1C0 frame received after the presses reports the target (`frs_esc_should_persist`, host-tested in `tests/run.sh`). `frs_set_esc` returns false while another ESC change runs; AT+FRS and REST report it as BUSY. Not built or flashed — no vehicle test. ([#125](https://github.com/klexical/openRS_/issues/125))
+
+---
+
 ## v1.61 (USB) / v1.2 (PRO) — 2026-03-27
 
 ### Fixed

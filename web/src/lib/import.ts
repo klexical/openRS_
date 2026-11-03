@@ -5,6 +5,7 @@ import type {
   DriveProfile, Bookmark, ThermalProgression, ModeTimelineEntry, NrcSuppression,
   FreezeFrameEntry,
 } from '../types/session'
+import { parseBoostSource, type BoostSource } from './boost'
 
 /** Thrown when an imported ZIP cannot be parsed — surfaced to the user via ImportPanel. */
 export class ImportError extends Error {
@@ -231,10 +232,15 @@ async function parseTripDataFromCsv(zip: JSZip, csvFile: string): Promise<TripDa
   // below. trim() also removes U+FEFF; the explicit strip keeps that if the parsing changes.
   const csv = (await file.async('string')).replace(/^\uFEFF/, '')
   // openRS_ v2.2.7-rc.4+ starts its CSVs with a `# openrs_csv_v2` format line — not a header row
-  const lines = csv.trim().split('\n').filter((l) => !l.startsWith('#'))
+  // Keep each line's physical number (1-based, in the file as exported) for row errors — trim() drops leading blank
+  // lines, so count them back in
+  const leadingLines = csv.slice(0, csv.length - csv.trimStart().length).split('\n').length - 1
+  const lines = csv.trim().split('\n')
+    .map((text, i) => ({ text: text.replace(/\r$/, ''), lineNo: leadingLines + i + 1 }))
+    .filter((l) => !l.text.startsWith('#') && l.text.trim() !== '')
   if (lines.length < 2) return null
 
-  const headers = lines[0].split(',').map((h) => h.trim())
+  const headers = lines[0].text.split(',').map((h) => h.trim())
 
   // Validate headers — surface a clear error instead of silently producing
   // structurally-valid TripPoints filled with default values.
@@ -246,16 +252,51 @@ async function parseTripDataFromCsv(zip: JSZip, csvFile: string): Promise<TripDa
     throw new ImportError(`CSV ${csvFile} is missing required columns: ${missing.join('; ')}`)
   }
 
+  // Every data row must line up with the header. A row with extra fields is what openRS_ before v2.2.7-rc.7 wrote on
+  // decimal-comma phones ("100,25" splits into two fields) — importing it would shift every later column into
+  // plausible-looking but wrong telemetry, and the decimals can't be reconstructed reliably, so the file is rejected.
+  const tsKey = ['timestamp_ms', 'timestamp', 'ts'].find((k) => headerSet.has(k))!
   const points: TripPoint[] = []
   for (let i = 1; i < lines.length; i++) {
-    const vals = lines[i].split(',')
-    if (vals.length < headers.length) continue
+    const { text, lineNo } = lines[i]
+    const vals = text.split(',')
+    if (vals.length !== headers.length) {
+      throw new ImportError(
+        `CSV ${csvFile} row ${lineNo}: expected ${headers.length} fields, found ${vals.length}. ` +
+        'The file is damaged — exports from openRS_ before v2.2.7-rc.7 on phones that use a decimal comma are ' +
+        'affected. Export the drive again with v2.2.7-rc.7 or later.',
+      )
+    }
     const row = Object.fromEntries(headers.map((h, j) => [h, vals[j]?.trim() ?? '']))
+    for (const key of [tsKey, 'rpm']) {
+      if (!/^-?\d+(\.\d+)?$/.test(row[key])) {
+        throw new ImportError(`CSV ${csvFile} row ${lineNo}: ${key} "${row[key]}" is not a number.`)
+      }
+      // The token check passes any digit run; one too long for a double parses to Infinity
+      if (!Number.isFinite(parseFloat(row[key]))) {
+        const shown = row[key].length > 24 ? `${row[key].slice(0, 24)}…` : row[key]
+        throw new ImportError(`CSV ${csvFile} row ${lineNo}: ${key} "${shown}" is not a finite number.`)
+      }
+    }
     points.push(parseTripRow(row))
   }
 
   const summary = computeSummary(points)
   return { points, summary }
+}
+
+/**
+ * Boost cell + provenance (#207). Android writes an empty boost_psi for a point without a reading (boost_source NONE)
+ * — that is no reading, never 0; a genuine 0.000 stays 0. boost_source CAN_0F8 / TIP_033E names the measurement; an
+ * empty boost_source (or no such column — older exports) means the source wasn't recorded: the value is kept as
+ * recorded and never given a source.
+ */
+function parseBoost(row: Record<string, string>): { boostPsi: number | null; boostSource: BoostSource | null } {
+  const rawSource = (row['boost_source'] ?? row['boostSource'] ?? '').trim()
+  const rawPsi = (row['boost_psi'] ?? row['boostPsi'] ?? '').trim()
+  const psi = rawPsi === '' ? NaN : parseFloat(rawPsi)
+  if (rawSource === 'NONE' || !Number.isFinite(psi)) return { boostPsi: null, boostSource: null }
+  return { boostPsi: psi, boostSource: parseBoostSource(rawSource) }
 }
 
 function parseTripRow(row: Record<string, string>): TripPoint {
@@ -264,7 +305,7 @@ function parseTripRow(row: Record<string, string>): TripPoint {
     lat: parseFloat(row['lat'] || '0'),
     lng: parseFloat(row['lng'] || row['lon'] || '0'),
     rpm: parseFloat(row['rpm'] || '0'),
-    boostPsi: parseFloat(row['boostPsi'] || row['boost_psi'] || '0'),
+    ...parseBoost(row),
     speedKph: parseFloat(row['speedKph'] || row['speed_kph'] || '0'),
     coolantC: parseFloat(row['coolantC'] || row['coolant_c'] || '-99'),
     oilTempC: parseFloat(row['oilTempC'] || row['oil_c'] || row['oil_temp_c'] || '-99'),
@@ -319,7 +360,16 @@ async function mergeProfileJson(zip: JSZip, profileFile: string, trip: TripData)
     const d = profile.drive
     const s = trip.summary
     if (d.peakRpm > 0) s.peakRpm = d.peakRpm
-    if (d.peakBoostPsi > 0) s.peakBoostPsi = d.peakBoostPsi
+    // #207: a drive recorded under a boost rule states its peak and source (none = no reading); an older profile's
+    // positive peak is kept as recorded with no source
+    if (d.boostPolicy) {
+      s.boostPolicy = d.boostPolicy
+      s.peakBoostPsi = d.peakBoostPsi
+      s.peakBoostSource = d.peakBoostPsi == null ? null : (d.peakBoostSource ?? null)
+    } else if (d.peakBoostPsi != null && d.peakBoostPsi > 0) {
+      s.peakBoostPsi = d.peakBoostPsi
+      s.peakBoostSource = null
+    }
     if (d.peakLateralG > 0) s.peakLatG = d.peakLateralG
     if (d.maxSpeedKph > 0) s.peakSpeedKph = d.maxSpeedKph
     if (d.peakOilTempC > -90) s.peakOilTempC = d.peakOilTempC
@@ -335,6 +385,7 @@ async function mergeProfileJson(zip: JSZip, profileFile: string, trip: TripData)
         ts: p.timestampMs,
         lat: p.lat,
         lng: p.lng,
+        ...(p.type === 'BOOST' ? { source: p.source ?? null } : {}),
       }))
     }
 
@@ -373,7 +424,9 @@ function parseProfile(data: Record<string, unknown>): DriveProfile {
     avgSpeedKph: Number(d.avgSpeedKph || 0),
     maxSpeedKph: Number(d.maxSpeedKph || 0),
     peakRpm: Number(d.peakRpm || 0),
-    peakBoostPsi: Number(d.peakBoostPsi || 0),
+    peakBoostPsi: d.peakBoostPsi != null && Number.isFinite(Number(d.peakBoostPsi)) ? Number(d.peakBoostPsi) : null,
+    peakBoostSource: parseBoostSource(d.peakBoostSource),
+    boostPolicy: typeof d.boostPolicy === 'string' ? d.boostPolicy : undefined,
     peakLateralG: Number(d.peakLateralG || 0),
     peakOilTempC: Number(d.peakOilTempC ?? -99),
     peakCoolantTempC: Number(d.peakCoolantTempC ?? -99),
@@ -391,6 +444,7 @@ function parseProfile(data: Record<string, unknown>): DriveProfile {
     lat: Number(p.lat || 0),
     lng: Number(p.lng || 0),
     timestampMs: Number(p.timestampMs || 0),
+    source: parseBoostSource(p.source),
   }))
 
   const thermalRaw = (data.thermalProgression || {}) as Record<string, unknown>
@@ -420,7 +474,8 @@ function parseProfile(data: Record<string, unknown>): DriveProfile {
     label: String(b.label || ''),
     speedKph: Number(b.speedKph || 0),
     rpm: Number(b.rpm || 0),
-    boostPsi: Number(b.boostPsi || 0),
+    // older exports only; current ones omit it (no source) — absent stays absent, never 0
+    ...(b.boostPsi != null && Number.isFinite(Number(b.boostPsi)) ? { boostPsi: Number(b.boostPsi) } : {}),
   }))
 
   return { version: Number(data.version || 1), drive, peaks, thermalProgression, modeTimeline, bookmarks }
@@ -438,7 +493,6 @@ function computeSummary(points: TripPoint[]): TripSummary {
   }
 
   const rpmArr = points.map((p) => p.rpm)
-  const boostArr = points.map((p) => p.boostPsi)
   const speedArr = points.map((p) => p.speedKph)
   const latGArr = points.map((p) => Math.abs(p.latG))
   const longGArr = points.map((p) => Math.abs(p.longG))
@@ -461,7 +515,23 @@ function computeSummary(points: TripPoint[]): TripSummary {
     }
   }
   addPeak('rpm', rpmArr, points)
-  addPeak('boost', boostArr, points)
+  // #207: one boost peak per measurement (TIP, CAN 0x0F8, source not recorded) — never one max across them; points
+  // without a reading take no part
+  const boostGroups = new Map<string, TripPoint[]>()
+  for (const p of points) {
+    if (p.boostPsi == null) continue
+    const k = p.boostSource ?? ''
+    boostGroups.set(k, [...(boostGroups.get(k) ?? []), p])
+  }
+  let peakBoost: { psi: number; source: BoostSource | null } | null = null
+  for (const [k, pts] of boostGroups) {
+    const best = pts.reduce((a, b) => ((b.boostPsi ?? -Infinity) > (a.boostPsi ?? -Infinity) ? b : a))
+    const source = parseBoostSource(k)
+    peakEvents.push({ type: 'boost', value: best.boostPsi!, ts: best.ts, lat: best.lat, lng: best.lng, source })
+    // The drive peak: the highest sourced reading with its source (as Android); unsourced values only without one
+    if (!peakBoost || (source && (!peakBoost.source || best.boostPsi! > peakBoost.psi)) ||
+        (!source && !peakBoost.source && best.boostPsi! > peakBoost.psi)) peakBoost = { psi: best.boostPsi!, source }
+  }
   addPeak('speed', speedArr, points)
   addPeak('latG', latGArr.map((_, i) => Math.abs(points[i].latG)), points)
 
@@ -471,7 +541,8 @@ function computeSummary(points: TripPoint[]): TripSummary {
     fuelUsedL: computeFuelUsedL(points),
     avgSpeedKph: avg(speedArr),
     peakRpm: Math.max(...rpmArr),
-    peakBoostPsi: Math.max(...boostArr),
+    peakBoostPsi: peakBoost?.psi ?? null,
+    peakBoostSource: peakBoost?.source ?? null,
     peakLatG: Math.max(...latGArr),
     peakLongG: Math.max(...longGArr),
     peakSpeedKph: Math.max(...speedArr),

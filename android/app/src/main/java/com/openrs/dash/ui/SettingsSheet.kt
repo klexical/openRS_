@@ -40,7 +40,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.ui.graphics.Brush
-import com.openrs.dash.BuildConfig
 import com.openrs.dash.can.WicanDiscovery
 import com.openrs.dash.service.HudOverlayService
 import com.openrs.dash.update.UpdateManager
@@ -120,6 +119,8 @@ fun SettingsDialog(
     onCustomDash: () -> Unit = {},
     onStartDemo: (com.openrs.dash.demo.DemoScenario) -> Unit = {},
     onExitDemo: () -> Unit = {},
+    /** Open on CONNECTION — from the dashboard's "select a Bluetooth device" prompt (#234). */
+    openConnection: Boolean = false,
 ) {
     val ctx = LocalContext.current
     val accent = LocalThemeAccent.current
@@ -132,9 +133,10 @@ fun SettingsDialog(
     var tempUnit        by remember { mutableStateOf(current.tempUnit) }
     var boostUnit       by remember { mutableStateOf(current.boostUnit) }
     var tireUnit        by remember { mutableStateOf(current.tireUnit) }
-    var tireLowPsi      by remember { mutableStateOf(current.tireLowPsi.toString()) }
-    var tireWarnPsi     by remember { mutableStateOf(current.tireWarnPsi.toString()) }
-    var tireHighPsi     by remember { mutableStateOf(current.tireHighPsi.toString()) }
+    // TPMS thresholds: edited in the staged tyre unit, stored as exact PSI (#219)
+    var tireLow         by remember { mutableStateOf(TyreThreshold.of(current.tireLowPsi, current.tireUnit)) }
+    var tireWarn        by remember { mutableStateOf(TyreThreshold.of(current.tireWarnPsi, current.tireUnit)) }
+    var tireHigh        by remember { mutableStateOf(TyreThreshold.of(current.tireHighPsi, current.tireUnit)) }
     var screenOn        by remember { mutableStateOf(current.screenOn) }
     var autoReconnect   by remember { mutableStateOf(current.autoReconnect) }
     var reconnectSec    by remember { mutableStateOf(current.reconnectIntervalSec.toString()) }
@@ -171,9 +173,13 @@ fun SettingsDialog(
 
     // Navigation / search state — session-local
     var searchQuery      by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf<SettingsCategory?>(null) }
+    var selectedCategory by remember { mutableStateOf(if (openConnection) SettingsCategory.CONNECTION else null) }
     var aboutExpanded    by remember { mutableStateOf(false) }
     var showBlePicker    by remember { mutableStateOf(false) }
+    // Bluetooth adapter: staged like every other setting — shown at once, saved on SAVE (#218)
+    var bleDraft by remember {
+        mutableStateOf(BleDeviceDraft.of(AppSettings.getBleDeviceAddress(ctx), AppSettings.getBleDeviceName(ctx)))
+    }
 
     // Every exit except SAVE discards: revert the live-preview side effects (theme mode, fonts, paint) to the
     // committed prefs. Back, tapping outside and ✕ used to dismiss without this, leaving an unsaved preview on.
@@ -411,7 +417,13 @@ fun SettingsDialog(
                     SettingsPicker(
                         options = listOf("PSI", "BAR"),
                         selected = tireUnit,
-                        onSelect = { tireUnit = it },
+                        onSelect = { unit ->
+                            // Same physical thresholds, shown in the new unit — nothing re-rounded into the saved PSI
+                            tireLow = tireLow.convert(tireUnit, unit)
+                            tireWarn = tireWarn.convert(tireUnit, unit)
+                            tireHigh = tireHigh.convert(tireUnit, unit)
+                            tireUnit = unit
+                        },
                     )
                 }
             }
@@ -424,8 +436,8 @@ fun SettingsDialog(
             SettingsSection("TPMS THRESHOLDS") {
                 SettingsRow("Low (critical)") {
                     OutlinedTextField(
-                        value = tireLowPsi, onValueChange = { tireLowPsi = it; error = null },
-                        label = { Text("PSI", fontFamily = ShareTechMono, fontSize = 10.sp) },
+                        value = tireLow.text, onValueChange = { tireLow = tireLow.edit(it); error = null },
+                        label = { Text(tireUnit, fontFamily = ShareTechMono, fontSize = 10.sp) },
                         singleLine = true, modifier = Modifier.width(90.dp),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         colors = outlinedFieldColors(),
@@ -435,8 +447,8 @@ fun SettingsDialog(
                 }
                 SettingsRow("Warn (getting low)") {
                     OutlinedTextField(
-                        value = tireWarnPsi, onValueChange = { tireWarnPsi = it; error = null },
-                        label = { Text("PSI", fontFamily = ShareTechMono, fontSize = 10.sp) },
+                        value = tireWarn.text, onValueChange = { tireWarn = tireWarn.edit(it); error = null },
+                        label = { Text(tireUnit, fontFamily = ShareTechMono, fontSize = 10.sp) },
                         singleLine = true, modifier = Modifier.width(90.dp),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         colors = outlinedFieldColors(),
@@ -446,8 +458,8 @@ fun SettingsDialog(
                 }
                 SettingsRow("High (over-inflated)") {
                     OutlinedTextField(
-                        value = tireHighPsi, onValueChange = { tireHighPsi = it; error = null },
-                        label = { Text("PSI", fontFamily = ShareTechMono, fontSize = 10.sp) },
+                        value = tireHigh.text, onValueChange = { tireHigh = tireHigh.edit(it); error = null },
+                        label = { Text(tireUnit, fontFamily = ShareTechMono, fontSize = 10.sp) },
                         singleLine = true, modifier = Modifier.width(90.dp),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         colors = outlinedFieldColors(),
@@ -457,9 +469,10 @@ fun SettingsDialog(
                 }
                 Spacer(Modifier.height(6.dp))
                 SettingsNote(
-                    "Below Low = critical · below Warn = caution · above High = over-inflated. " +
-                        "Defaults ${AppSettings.DEFAULT_TIRE_LOW_PSI} / ${AppSettings.DEFAULT_TIRE_WARN_PSI} / " +
-                        "${AppSettings.DEFAULT_TIRE_HIGH_PSI} psi."
+                    "Below Low = critical · below Warn = caution · above High = over-inflated. In ${tireUnit} " +
+                        "(Tire Pressure unit). Defaults ${TyreThreshold.display(AppSettings.DEFAULT_TIRE_LOW_PSI, tireUnit)} / " +
+                        "${TyreThreshold.display(AppSettings.DEFAULT_TIRE_WARN_PSI, tireUnit)} / " +
+                        "${TyreThreshold.display(AppSettings.DEFAULT_TIRE_HIGH_PSI, tireUnit)} ${tireUnit.lowercase()}."
                 )
             }
         },
@@ -582,6 +595,7 @@ fun SettingsDialog(
                         selected = if (connectionMethod == "BLUETOOTH") "Bluetooth" else "WiFi",
                         onSelect = { selected ->
                             connectionMethod = if (selected == "Bluetooth") "BLUETOOTH" else "WIFI"
+                            error = null
                         },
                     )
                 }
@@ -593,10 +607,20 @@ fun SettingsDialog(
             listOf("ble", "bluetooth", "pair", "scan", "wifi", "host", "ip", "port", "address"),
         ) {
             if (connectionMethod == "BLUETOOTH") {
-                val bleAddr = remember { mutableStateOf(AppSettings.getBleDeviceAddress(ctx)) }
-                val bleName = remember { mutableStateOf(AppSettings.getBleDeviceName(ctx)) }
+                val staged = bleDraft.staged
                 SettingsSection("BLUETOOTH DEVICE") {
-                    if (bleAddr.value != null) {
+                    if (staged != null) {
+                        // Selected is not the same as paired: read the phone's real bond state for this address
+                        val bonded = remember(staged.first) {
+                            // Bond state needs BLUETOOTH_CONNECT on Android 12+; without it the state is unknown, not "unpaired"
+                            val canRead = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S ||
+                                androidx.core.content.ContextCompat.checkSelfPermission(ctx,
+                                    android.Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                            if (!canRead) null else try {
+                                val bm = ctx.getSystemService(android.bluetooth.BluetoothManager::class.java)
+                                bm?.adapter?.getRemoteDevice(staged.first)?.bondState == android.bluetooth.BluetoothDevice.BOND_BONDED
+                            } catch (_: Exception) { null }       // permission revoked meanwhile / bad address
+                        }
                         Row(
                             Modifier.fillMaxWidth()
                                 .background(Surf2, RoundedCornerShape(10.dp))
@@ -605,13 +629,19 @@ fun SettingsDialog(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f)) {
-                                InstrumentLabel("PAIRED DEVICE")
+                                InstrumentLabel(if (bleDraft.changed) "SELECTED DEVICE \u00B7 NOT SAVED" else "SELECTED DEVICE")
                                 Spacer(Modifier.height(4.dp))
-                                Text(bleName.value ?: "WiCAN", fontSize = 13.sp, color = Frost,
+                                Text(staged.second, fontSize = 13.sp, color = Frost,
                                     fontFamily = ShareTechMono, fontWeight = FontWeight.SemiBold)
                                 Spacer(Modifier.height(2.dp))
-                                Text(bleAddr.value ?: "", fontSize = 10.sp, color = Dim,
+                                Text(staged.first, fontSize = 10.sp, color = Dim,
                                     fontFamily = ShareTechMono, letterSpacing = 0.05.sp)
+                                Spacer(Modifier.height(2.dp))
+                                Text(when (bonded) {
+                                        true  -> "Paired with this phone"
+                                        false -> "Not paired yet — the adapter asks to pair on first connect"
+                                        null  -> "Pairing status unavailable"
+                                    }, fontSize = 10.sp, color = Mid, fontFamily = ShareTechMono)
                             }
                         }
                         Spacer(Modifier.height(10.dp))
@@ -623,17 +653,22 @@ fun SettingsDialog(
                                 .padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text("No device paired", fontSize = 12.sp, color = Mid,
-                                fontFamily = ShareTechMono)
+                            Column {
+                                Text(if (bleDraft.changed) "No device selected \u00B7 not saved" else "No device selected",
+                                    fontSize = 12.sp, color = Mid, fontFamily = ShareTechMono)
+                                // Bluetooth can't connect without one (#234) — say how to get out of it
+                                Spacer(Modifier.height(4.dp))
+                                Text("Tap SCAN FOR DEVICES to choose your adapter, or switch the connection method to WiFi.",
+                                    fontSize = 10.sp, color = Dim, fontFamily = ShareTechMono)
+                            }
                         }
                         Spacer(Modifier.height(10.dp))
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         SettingsAction("SCAN FOR DEVICES", Modifier.weight(1f)) { showBlePicker = true }
-                        if (bleAddr.value != null) {
+                        if (staged != null) {
                             SettingsAction("FORGET", Modifier.weight(1f), tone = ActionTone.DESTRUCTIVE) {
-                                AppSettings.clearBleDevice(ctx)
-                                bleAddr.value = null; bleName.value = null
+                                bleDraft = bleDraft.forget()
                             }
                         }
                     }
@@ -843,7 +878,7 @@ fun SettingsDialog(
             listOf("changelog", "whats", "new", "version", "release"),
         ) {
             var showWhatsNewLocal by remember { mutableStateOf(false) }
-            SettingsAction("WHAT'S NEW IN v${BuildConfig.VERSION_NAME}", Modifier.fillMaxWidth()) {
+            SettingsAction("WHAT'S NEW IN v${com.openrs.dash.update.BuildInfo.releaseName}", Modifier.fillMaxWidth()) {
                 showWhatsNewLocal = true
             }
             if (showWhatsNewLocal) {
@@ -1032,7 +1067,8 @@ fun SettingsDialog(
             if (showBlePicker) {
                 BleDevicePickerDialog(
                     onDeviceSelected = { address, name ->
-                        AppSettings.saveBleDevice(ctx, address, name)
+                        bleDraft = bleDraft.select(address, name)       // shown at once; saved on SAVE
+                        error = null
                         showBlePicker = false
                     },
                     onDismiss = { showBlePicker = false },
@@ -1083,9 +1119,9 @@ fun SettingsDialog(
                         tempUnit      = AppSettings.DEFAULT_TEMP_UNIT
                         boostUnit     = AppSettings.DEFAULT_BOOST_UNIT
                         tireUnit      = AppSettings.DEFAULT_TIRE_UNIT
-                        tireLowPsi    = AppSettings.DEFAULT_TIRE_LOW_PSI.toString()
-                        tireWarnPsi   = AppSettings.DEFAULT_TIRE_WARN_PSI.toString()
-                        tireHighPsi   = AppSettings.DEFAULT_TIRE_HIGH_PSI.toString()
+                        tireLow       = TyreThreshold.of(AppSettings.DEFAULT_TIRE_LOW_PSI, AppSettings.DEFAULT_TIRE_UNIT)
+                        tireWarn      = TyreThreshold.of(AppSettings.DEFAULT_TIRE_WARN_PSI, AppSettings.DEFAULT_TIRE_UNIT)
+                        tireHigh      = TyreThreshold.of(AppSettings.DEFAULT_TIRE_HIGH_PSI, AppSettings.DEFAULT_TIRE_UNIT)
                         screenOn      = AppSettings.DEFAULT_SCREEN_ON
                         autoReconnect = AppSettings.DEFAULT_AUTO_RECONNECT
                         reconnectSec  = AppSettings.DEFAULT_RECONNECT_INTERVAL.toString()
@@ -1125,15 +1161,18 @@ fun SettingsDialog(
                 Button(
                     onClick = {
                         val p = port.toIntOrNull()
-                        val threshold = tireLowPsi.toFloatOrNull()
-                        val warnThr   = tireWarnPsi.toFloatOrNull()
-                        val highThr   = tireHighPsi.toFloatOrNull()
+                        val threshold = tireLow.resolvePsi(tireUnit)
+                        val warnThr   = tireWarn.resolvePsi(tireUnit)
+                        val highThr   = tireHigh.resolvePsi(tireUnit)
                         val retryInt = if (autoReconnect) reconnectSec.toIntOrNull()
                                        else reconnectSec.toIntOrNull() ?: AppSettings.DEFAULT_RECONNECT_INTERVAL
                         val maxZips = maxDiagZips.toIntOrNull()
                         val maxDrives = maxSavedDrives.toIntOrNull()
                         val shiftRpm = edgeShiftRpm.toIntOrNull()
+                        // Bluetooth needs a device in the DRAFT — FORGET then SAVE is refused too (#234)
+                        val setupProblem = bleDraft.saveProblem(connectionMethod)
                         when {
+                            setupProblem != null -> error = setupProblem
                             host.isBlank() -> error = "Host cannot be empty"
                             p == null || p !in 1..65535 -> error = "Port must be 1–65535"
                             threshold == null || threshold <= 0 -> error = "Low threshold must be > 0"
@@ -1146,6 +1185,8 @@ fun SettingsDialog(
                             thermalErrors.isNotEmpty() -> error = "THERMAL: fix the highlighted custom values"
                             else -> {
                                 AppSettings.save(ctx, host, p)
+                                bleDraft.commit(save = { a, n -> AppSettings.saveBleDevice(ctx, a, n) },
+                                    clear = { AppSettings.clearBleDevice(ctx) })
                                 UserPrefsStore.update(ctx) { it.copy(
                                     speedUnit            = speedUnit,
                                     tempUnit             = tempUnit,
@@ -1214,8 +1255,7 @@ private fun AboutStrip(
 ) {
     val accent = LocalThemeAccent.current
     val label = buildString {
-        append("openRS_ v").append(BuildConfig.VERSION_NAME)
-        if (BuildConfig.RC_SUFFIX.isNotEmpty()) append("-").append(BuildConfig.RC_SUFFIX)
+        append("openRS_ v").append(com.openrs.dash.update.BuildInfo.settingsLabel)
         append(" · ").append(updateChannel)
     }
     Column(Modifier.fillMaxWidth().instrumentSurface(radius = 10.dp)) {

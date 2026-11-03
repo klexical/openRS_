@@ -72,6 +72,12 @@ class DtcScanner(private val ctx: Context) {
         /**
          * Parse a UDS 0x19/02 response payload into [DtcResult] records.
          * Description lookup uses [DtcDatabase] — returns "" if DB not loaded.
+         *
+         * Layout (ISO 14229-1 reportDTCByStatusMask; python-udsoncan parses it the same way):
+         * `59 02 <availability mask>` then 4-byte records `DTC high, DTC middle, DTC low (failure type), status`.
+         * Earlier builds read 3-byte records (high, mid, status), which takes the failure-type byte as the status and
+         * misaligns every later record (#215). An incomplete trailing record is ignored here; [DtcReply.classify]
+         * already rejects such a reply as MALFORMED. All-zero DTCs are padding.
          */
         internal fun parsePayload(module: String, payload: ByteArray): List<DtcResult> {
             if (payload.size < 3) return emptyList()
@@ -82,13 +88,14 @@ class DtcScanner(private val ctx: Context) {
             var offset = 3
             val results = mutableListOf<DtcResult>()
 
-            while (offset + 2 < payload.size) {
-                val high   = payload[offset].toInt()     and 0xFF
-                val mid    = payload[offset + 1].toInt() and 0xFF
-                val status = payload[offset + 2].toInt() and 0xFF
-                offset += 3
+            while (offset + DtcReply.RECORD_SIZE <= payload.size) {
+                val high    = payload[offset].toInt()     and 0xFF
+                val mid     = payload[offset + 1].toInt() and 0xFF
+                val failure = payload[offset + 2].toInt() and 0xFF
+                val status  = payload[offset + 3].toInt() and 0xFF
+                offset += DtcReply.RECORD_SIZE
 
-                if (high == 0 && mid == 0) continue
+                if (high == 0 && mid == 0 && failure == 0) continue
 
                 val code      = decodeDtcCode(high, mid)
                 val description = DtcDatabase.describe(code)
@@ -98,7 +105,8 @@ class DtcScanner(private val ctx: Context) {
                     module      = module,
                     code        = code,
                     description = description,
-                    status      = dtcStatus
+                    status      = dtcStatus,
+                    failureType = failure
                 )
             }
 
@@ -106,16 +114,93 @@ class DtcScanner(private val ctx: Context) {
         }
 
         /**
-         * Compute the diff between the current scan and a previous set of codes.
-         * [previousCodes] is a set of DTC code strings from the last scan.
+         * Turn one scan pass's raw replies into codes + per-module status (#215). A module counts as scanned (OK) only
+         * for a valid positive 0x19 02 reply; its records are parsed then. Negative → REJECTED, malformed → MALFORMED,
+         * only "pending" → PENDING, unsent → ERROR, nothing → TIMEOUT — none of these can produce a clean result.
          */
-        fun computeDiff(current: List<DtcResult>, previousCodes: Set<String>): DtcDiff {
-            val currentCodeSet = current.map { it.code }.toSet()
+        internal fun interpret(modules: List<DtcModuleSpec>, raw: DtcRawScan): Pair<List<DtcResult>, Map<String, ModuleScanStatus>> {
+            val codes = mutableListOf<DtcResult>()
+            val statuses = LinkedHashMap<String, ModuleScanStatus>()
+            for (module in modules) {
+                val payload = raw.payloads[module.name]
+                statuses[module.name] = when {
+                    payload != null -> DtcReply.classify(payload).also {
+                        if (it == DtcReply.Positive) codes += parsePayload(module.name, payload)
+                    }.status
+                    else -> raw.statusWithoutReply(module.name)
+                }
+            }
+            return codes to statuses
+        }
+
+        /** One scan pass over [modules] through the live connection, interpreted. No Room, no Context. */
+        internal suspend fun runScan(
+            conn: SlcanConnection,
+            modules: List<DtcModuleSpec>,
+            onModuleProgress: ((String, ModuleScanStatus?) -> Unit)? = null,
+        ): DtcScanResult {
+            val startMs = System.currentTimeMillis()
+            val raw = conn.performDtcScan(modules, onModuleProgress)
+            val (codes, statuses) = interpret(modules, raw)
+            raw.payloads.forEach { (name, payload) ->
+                val reply = DtcReply.classify(payload)
+                if (reply is DtcReply.Negative) DiagnosticLogger.event("DTC", "$name refused 0x19 02 — NRC 0x%02X".format(reply.nrc))
+                else if (reply == DtcReply.Malformed) DiagnosticLogger.event("DTC", "$name malformed reply: " +
+                    payload.joinToString(" ") { "%02X".format(it.toInt() and 0xFF) })
+            }
+            raw.pending.forEach { DiagnosticLogger.event("DTC", "$it: response pending, no final reply") }
+            raw.failures.forEach { (name, f) -> DiagnosticLogger.event("DTC", "$name: ${f.note}") }
+            // A note only where it explains the status: not beside a valid reply, and not beside PENDING — a failed
+            // session write the module answered anyway isn't why it is still pending (the failure stays an event)
+            val notes = raw.failures.filterKeys { statuses[it] != ModuleScanStatus.OK && statuses[it] != ModuleScanStatus.PENDING }
+                .mapValues { it.value.note }
+            return DtcScanResult(codes, statuses, System.currentTimeMillis() - startMs, notes)
+        }
+
+        /** A one-module scan pass as a retry outcome: codes, status and that pass's own explanation (or none). */
+        internal fun retryOf(module: String, r: DtcScanResult) = DtcModuleRetry(
+            module, r.codes.filter { it.module == module }, r.moduleStatuses[module] ?: ModuleScanStatus.TIMEOUT,
+            r.moduleNotes[module])
+
+        /**
+         * NEW / RESOLVED against [previous] (#215), coverage-aware: only modules read OK in both scans are compared —
+         * a module the previous scan failed to read can't make a current fault NEW, and one this scan failed to read
+         * can't make a previous fault RESOLVED. Faults match on module + base code + failure type ([DtcResult.sameFault]).
+         * No previous scan → nothing is compared.
+         */
+        fun computeDiff(
+            current: List<DtcResult>,
+            previous: PreviousDtcScan?,
+            moduleStatuses: Map<String, ModuleScanStatus>,
+        ): DtcDiff {
+            if (previous == null) return DtcDiff(emptyList(), emptyList(), emptyList())
+            val compared = moduleStatuses.filterValues { it == ModuleScanStatus.OK }.keys
+                .filter { previous.moduleStatuses[it] == ModuleScanStatus.OK }.toSet()
+            val cur = current.filter { it.module in compared }
+            val prev = previous.codes.filter { it.module in compared }
+            val baseOnly = cur.any { c -> prev.any { p -> p.module == c.module && p.code == c.code &&
+                (p.failureType == null || c.failureType == null) } }
             return DtcDiff(
-                newCodes   = current.filter { it.code !in previousCodes },
-                goneCodes  = previousCodes.filter { it !in currentCodeSet }.toList(),
-                persistent = current.filter { it.code in previousCodes }
+                newCodes   = cur.filter { c -> prev.none { it.sameFault(c) } },
+                goneCodes  = prev.filter { p -> cur.none { it.sameFault(p) } },
+                persistent = cur.filter { c -> prev.any { it.sameFault(c) } },
+                comparedModules = compared,
+                baseCodeOnly = baseOnly,
             )
+        }
+
+        /** A saved scan back as the NEW / RESOLVED baseline; an unreadable status JSON reads as "nothing read OK". */
+        internal fun previousFrom(scan: DtcScanEntity, codes: List<DtcCodeEntity>): PreviousDtcScan {
+            val statuses = try {
+                val o = JSONObject(scan.moduleStatuses)
+                o.keys().asSequence().mapNotNull { k ->
+                    runCatching { k to ModuleScanStatus.valueOf(o.getString(k)) }.getOrNull()
+                }.toMap()
+            } catch (_: Exception) { emptyMap() }
+            return PreviousDtcScan(scan.timestamp, codes.map {
+                DtcResult(it.module, it.code, it.description,
+                    runCatching { DtcStatus.valueOf(it.status) }.getOrDefault(DtcStatus.UNKNOWN), failureType = it.failureType)
+            }, statuses)
         }
     }
 
@@ -130,35 +215,10 @@ class DtcScanner(private val ctx: Context) {
         onModuleProgress: ((String, ModuleScanStatus?) -> Unit)? = null
     ): DtcScanResult {
         DtcDatabase.load(ctx)
-        val startMs = System.currentTimeMillis()
-        val raw = conn.performDtcScan(MODULES, onModuleProgress)
-        val durationMs = System.currentTimeMillis() - startMs
-
-        val codes = mutableListOf<DtcResult>()
-        val statuses = mutableMapOf<String, ModuleScanStatus>()
-
-        for (module in MODULES) {
-            val result = raw[module.name]
-            when {
-                result == null -> {
-                    statuses[module.name] = ModuleScanStatus.TIMEOUT
-                }
-                result.isEmpty() -> {
-                    statuses[module.name] = ModuleScanStatus.OK
-                }
-                else -> {
-                    val parsed = parsePayload(module.name, result)
-                    codes.addAll(parsed)
-                    statuses[module.name] = ModuleScanStatus.OK
-                }
-            }
-        }
-
-        val result = DtcScanResult(
-            codes = codes,
-            moduleStatuses = statuses,
-            scanDurationMs = durationMs
-        )
+        val result = runScan(conn, MODULES, onModuleProgress)
+        val codes = result.codes
+        val statuses = result.moduleStatuses
+        val durationMs = result.scanDurationMs
 
         // Persist scan results to Room database
         try {
@@ -180,7 +240,8 @@ class DtcScanner(private val ctx: Context) {
                         module = dtc.module,
                         code = dtc.code,
                         description = dtc.description,
-                        status = dtc.status.name
+                        status = dtc.status.name,
+                        failureType = dtc.failureType
                     )
                 })
             }
@@ -245,36 +306,21 @@ class DtcScanner(private val ctx: Context) {
     }
 
     /**
-     * Retry scan for a single module that previously timed out.
+     * Retry scan for a single module that didn't give a valid reply — same validation as [scan], and its explanation
+     * is kept ([retryOf]).
      */
-    suspend fun scanSingleModule(
-        conn: SlcanConnection,
-        moduleName: String
-    ): Pair<List<DtcResult>, ModuleScanStatus> {
+    suspend fun scanSingleModule(conn: SlcanConnection, moduleName: String): DtcModuleRetry {
         DtcDatabase.load(ctx)
         val module = MODULES.find { it.name == moduleName }
-            ?: return emptyList<DtcResult>() to ModuleScanStatus.ERROR
-        val raw = conn.performDtcScan(listOf(module), null)
-        val result = raw[module.name]
-        return if (result != null && result.isNotEmpty()) {
-            parsePayload(module.name, result) to ModuleScanStatus.OK
-        } else if (result != null) {
-            emptyList<DtcResult>() to ModuleScanStatus.OK
-        } else {
-            emptyList<DtcResult>() to ModuleScanStatus.TIMEOUT
-        }
+            ?: return DtcModuleRetry(moduleName, emptyList(), ModuleScanStatus.ERROR, "unknown module")
+        return retryOf(module.name, runScan(conn, listOf(module)))
     }
 
-    /**
-     * Get the set of DTC codes from the most recent persisted scan.
-     * Used for diff comparison (NEW/RESOLVED badges).
-     */
-    fun getPreviousScanCodes(): Set<String> {
-        return try {
-            val db = DriveDatabase.getInstance(ctx)
-            db.driveDao().getLastScanCodes().map { it.code }.toSet()
-        } catch (_: Exception) { emptySet() }
-    }
+    /** The most recent saved scan — codes and module coverage — as the NEW / RESOLVED baseline (null = none). */
+    fun getPreviousScan(): PreviousDtcScan? = try {
+        val dao = DriveDatabase.getInstance(ctx).driveDao()
+        dao.getRecentDtcScans(1).firstOrNull()?.let { previousFrom(it, dao.getDtcCodes(it.id)) }
+    } catch (_: Exception) { null }
 
     /**
      * Get code occurrence history for the DTC detail sheet.

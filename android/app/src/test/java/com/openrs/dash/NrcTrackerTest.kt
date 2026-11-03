@@ -2,6 +2,7 @@ package com.openrs.dash
 
 import com.openrs.dash.can.NrcTracker
 import com.openrs.dash.can.ObdConstants
+import com.openrs.dash.can.PcmRequestLedger
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -18,7 +19,8 @@ class NrcTrackerTest {
     // ── NRC 0x31 (requestOutOfRange) ────────────────────────────────────────
 
     @Test
-    fun `NRC 0x31 suppresses after 1 occurrence`() {
+    fun `NRC 0x31 suppresses after 2 consecutive attributed occurrences`() {
+        assertFalse(tracker.recordNrc(0x03ED, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 500L))   // one alone never suppresses (#216)
         val suppressed = tracker.recordNrc(0x03ED, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 1000L)
         assertTrue(suppressed)
         assertTrue(tracker.isSuppressed(0x03ED))
@@ -27,7 +29,8 @@ class NrcTrackerTest {
     // ── NRC 0x33 (securityAccessDenied) ─────────────────────────────────────
 
     @Test
-    fun `NRC 0x33 suppresses after 1 occurrence`() {
+    fun `NRC 0x33 suppresses after 2 consecutive attributed occurrences`() {
+        assertFalse(tracker.recordNrc(0x1E8A, NrcTracker.NRC_SECURITY_ACCESS_DENIED, 1500L))
         val suppressed = tracker.recordNrc(0x1E8A, NrcTracker.NRC_SECURITY_ACCESS_DENIED, 2000L)
         assertTrue(suppressed)
         assertTrue(tracker.isSuppressed(0x1E8A))
@@ -69,8 +72,8 @@ class NrcTrackerTest {
 
     @Test
     fun `reset clears all suppressed state`() {
-        tracker.recordNrc(0x03ED, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 1000L)
-        tracker.recordNrc(0x03EE, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 2000L)
+        repeat(2) { tracker.recordNrc(0x03ED, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 1000L) }
+        repeat(2) { tracker.recordNrc(0x03EE, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 2000L) }
         assertTrue(tracker.isSuppressed(0x03ED))
         assertTrue(tracker.isSuppressed(0x03EE))
 
@@ -98,8 +101,8 @@ class NrcTrackerTest {
 
     @Test
     fun `getSuppressed returns correct records`() {
-        tracker.recordNrc(0x03ED, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 1000L)
-        tracker.recordNrc(0xF422, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 2000L)
+        repeat(2) { tracker.recordNrc(0x03ED, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 1000L) }
+        repeat(2) { tracker.recordNrc(0xF422, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 2000L) }
 
         val map = tracker.getSuppressed()
         assertEquals(2, map.size)
@@ -108,13 +111,14 @@ class NrcTrackerTest {
         assertEquals(0x03ED, rec.did)
         assertEquals(NrcTracker.NRC_REQUEST_OUT_OF_RANGE, rec.nrcCode)
         assertEquals(1000L, rec.firstSeenMs)
-        assertEquals(1, rec.suppressedAfterCount)
+        assertEquals(2, rec.suppressedAfterCount)
     }
 
     // ── Duplicate and idempotency ───────────────────────────────────────────
 
     @Test
     fun `recordNrc returns false for already-suppressed DID`() {
+        assertFalse(tracker.recordNrc(0x03ED, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 500L))
         assertTrue(tracker.recordNrc(0x03ED, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 1000L))
         assertFalse(tracker.recordNrc(0x03ED, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 2000L))
 
@@ -142,5 +146,148 @@ class NrcTrackerTest {
     fun `extractDid returns null for short strings`() {
         assertNull(ObdConstants.extractDid("t7E0803"))
         assertNull(ObdConstants.extractDid(""))
+    }
+
+    @Test
+    fun `a positive reply clears the count and recovers a suppressed DID`() {
+        tracker.recordNrc(0x03EF, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 1000L)
+        tracker.recordPositive(0x03EF)
+        assertFalse("count reset by the positive reply", tracker.recordNrc(0x03EF, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 2000L))
+        assertTrue(tracker.recordNrc(0x03EF, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 3000L))
+        assertTrue(tracker.recordPositive(0x03EF))
+        assertFalse(tracker.isSuppressed(0x03EF))
+    }
+
+    @Test
+    fun `a suppressed DID is re-probed after REPROBE_MS and one more rejection suppresses it again`() {
+        repeat(2) { tracker.recordNrc(0x03ED, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 1000L) }
+        assertFalse(tracker.shouldPoll(0x03ED, 1000L + NrcTracker.REPROBE_MS - 1))
+        assertTrue(tracker.shouldPoll(0x03ED, 1000L + NrcTracker.REPROBE_MS))
+        assertTrue(tracker.recordNrc(0x03ED, NrcTracker.NRC_REQUEST_OUT_OF_RANGE, 70_000L))
+    }
+
+    @Test
+    fun `response pending 0x78 never counts`() {
+        repeat(5) { assertFalse(tracker.recordNrc(0x0466, NrcTracker.NRC_RESPONSE_PENDING, 1000L)) }
+        assertFalse(tracker.isSuppressed(0x0466))
+    }
+
+    @Test
+    fun `ledger — the A, B, C counterexample — a late NRC for A is never attributed to C`() {
+        val l = PcmRequestLedger()
+        l.sent(0x0A0A, 0); l.sent(0x0B0B, 100)
+        assertTrue(l.positive(0x0B0B))                                // B answered: only B is resolved
+        l.sent(0x0C0C, 200)
+        assertNull(l.negative(300))                                   // A or C? ambiguous — nobody is charged
+    }
+
+    @Test
+    fun `ledger — a single outstanding request owns the NRC`() {
+        val l = PcmRequestLedger()
+        l.sent(0x03ED, 0)
+        assertEquals(0x03ED, l.negative(160))
+        assertNull(l.negative(170))                                   // nothing outstanding any more
+    }
+
+    @Test
+    fun `ledger — repeated queries of one DID are unambiguous`() {
+        val l = PcmRequestLedger()
+        l.sent(0x03ED, 0); l.sent(0x03ED, 1_000)
+        assertEquals(0x03ED, l.negative(1_100))
+        assertEquals(0x03ED, l.negative(1_200))
+        assertNull(l.negative(1_300))
+    }
+
+    @Test
+    fun `ledger — a positive reply resolves only its own DID, unanswered requests age out`() {
+        val l = PcmRequestLedger(maxAgeMs = 2_000L)
+        l.sent(0x0466, 0); l.sent(0x0462, 100)
+        assertTrue(l.positive(0x0462))
+        assertEquals(0x0466, l.negative(500))                         // 0466 is still the only one waiting
+        l.sent(0x0461, 1_000)
+        assertFalse(l.positive(0x9999))                               // unsolicited — changes nothing
+        assertEquals(0x0461, l.negative(3_500 - 600))
+        l.sent(0x0318, 4_000)
+        assertNull(l.negative(6_100))                                 // older than maxAge: no reply ever came
+    }
+
+    // ── Expiry never creates ownership (2026-10-29 corrections): the ledger boundary counterexample ──
+
+    @Test
+    fun `ledger — A at 0, B at 1900, A's late NRC at 2101 is not charged to B`() {
+        val l = PcmRequestLedger(maxAgeMs = 2_000L)
+        l.sent(0x0A0A, 0); l.sent(0x0B0B, 1_900)
+        // Before: A was pruned at 2 s, leaving B as the only request waiting — A's rejection was charged to B
+        assertNull(l.negative(2_101))
+        assertEquals(listOf(0x0A0A, 0x0B0B), l.waiting(2_101))        // A is still a possible owner, B still waiting
+    }
+
+    @Test
+    fun `ledger — response pending then a late final NRC after B was sent is ambiguous`() {
+        val l = PcmRequestLedger(maxAgeMs = 2_000L)
+        l.sent(0x0A0A, 0)
+        l.pending(50)                                                 // 7F 22 78 — the server is still working on A
+        l.sent(0x0B0B, 1_900)
+        assertNull(l.negative(2_101))                                 // A's final reply or B's? nobody is charged
+    }
+
+    @Test
+    fun `ledger — an unanswered request blocks attribution until its own positive reply, never until a time passes`() {
+        val l = PcmRequestLedger(maxAgeMs = 2_000L)
+        l.sent(0x0A0A, 0)
+        l.sent(0x0B0B, 2_500)
+        assertNull(l.negative(2_600))                                 // A lapsed but may still answer
+        l.sent(0x0B0B, 3_000)
+        assertTrue(l.positive(0x0A0A))                                // A's late positive: A is resolved
+        assertEquals(0x0B0B, l.negative(3_100))                       // only B (repeats) can own it now
+        l.sent(0x0C0C, 4_000)                                         // C never answers
+        assertNull(l.negative(6_200))                                 // C lapsed at 6 s: ambiguous
+        // The 2026-10-29 version released C after a 5 s hold and charged the next lone request; no hold any more
+        l.sent(0x0D0D, 60_000)
+        assertNull(l.negative(60_100))
+        assertNull(l.negative(600_000))
+        assertTrue(l.unresolved(600_000))
+    }
+
+    // ── Follow-up (2026-10-29 review): no time-based release of uncertainty at all ──
+
+    @Test
+    fun `ledger — A at 0, B at 6900, A's late NRC at 7101 is not charged to B (beyond the old 5 s hold)`() {
+        val l = PcmRequestLedger(maxAgeMs = 2_000L)
+        l.sent(0x0A0A, 0); l.sent(0x0B0B, 6_900)
+        assertEquals(listOf(0x0A0A, 0x0B0B), l.waiting(7_101))
+        assertNull(l.negative(7_101))
+    }
+
+    @Test
+    fun `ledger — repeated response-pending never lets a later request take the final NRC`() {
+        val l = PcmRequestLedger(maxAgeMs = 2_000L)
+        l.sent(0x0A0A, 0)
+        for (t in listOf(50L, 4_000L, 9_000L, 14_000L)) l.pending(t)  // 7F 22 78 again and again
+        l.sent(0x0B0B, 20_000)
+        assertNull(l.negative(20_100))
+        l.sent(0x0C0C, 39_000)                                        // long after every former hold: still A's?
+        assertNull(l.negative(39_100))
+    }
+
+    @Test
+    fun `ledger — a lone request that got response-pending owns the final NRC however late`() {
+        val l = PcmRequestLedger(maxAgeMs = 2_000L)
+        l.sent(0x03EE, 0)
+        l.pending(50)
+        assertEquals(0x03EE, l.negative(30_000))                      // it never lapses while pending, nothing else waits
+    }
+
+    @Test
+    fun `ledger — queue eviction leaves the session unresolved, later positives can't clear it`() {
+        val l = PcmRequestLedger(maxAgeMs = 2_000L)
+        for (i in 0 until 40) l.sent(0x1000 + i, i.toLong())          // 40 unanswered requests: 8 evicted
+        for (i in 0 until 40) l.positive(0x1000 + i)                   // every DID answers late
+        l.sent(0x0B0B, 100)
+        assertNull(l.negative(150))                                   // an evicted request could still own it
+        assertTrue(l.unresolved(150))
+        l.clear()                                                     // a new connection starts a new ledger
+        l.sent(0x0B0B, 200)
+        assertEquals(0x0B0B, l.negative(250))
     }
 }

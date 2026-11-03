@@ -24,9 +24,15 @@ object PerformanceTimer {
         val zeroTo60Ms: Long,
         val zeroTo100Ms: Long? = null,
         val peakRpm: Double = 0.0,
-        val peakBoostPsi: Double = 0.0,
+        /** Peak gauge psi per measurement during the run (#207) — no entry = that source gave no reading. */
+        val boostPeaks: Map<BoostSource, Double> = emptyMap(),
         val launchRpm: Double = 0.0
-    )
+    ) {
+        /** The peak shown for the run: TIP if it read, else CAN 0x0F8 (the gauge's order), with its source. */
+        val shownBoostPeak: Pair<BoostSource, Double>? get() =
+            boostPeaks[BoostSource.TIP_033E]?.let { BoostSource.TIP_033E to it }
+                ?: boostPeaks[BoostSource.CAN_0F8]?.let { BoostSource.CAN_0F8 to it }
+    }
 
     private val _state = MutableStateFlow(State.IDLE)
     val state = _state.asStateFlow()
@@ -52,7 +58,7 @@ object PerformanceTimer {
     @Volatile private var startNanos = 0L
     @Volatile private var trackLaunchRpm = 0.0
     @Volatile private var trackPeakRpm = 0.0
-    @Volatile private var trackPeakBoost = 0.0
+    @Volatile private var trackBoostPeaks: Map<BoostSource, Double> = emptyMap()
     @Volatile private var split60Captured = false
     @Volatile private var split60Ms: Long = 0
 
@@ -68,7 +74,7 @@ object PerformanceTimer {
         startNanos = 0
         trackLaunchRpm = 0.0
         trackPeakRpm = 0.0
-        trackPeakBoost = 0.0
+        trackBoostPeaks = emptyMap()
         split60Captured = false
         split60Ms = 0
         _state.value = State.ARMED
@@ -86,7 +92,7 @@ object PerformanceTimer {
      * @return pair of (sixty_split_just_captured, hundred_split_just_captured)
      *         for haptic feedback in the UI.
      */
-    fun onSpeedUpdate(speedKph: Double, rpm: Double, boostPsi: Double): Pair<Boolean, Boolean> {
+    fun onSpeedUpdate(speedKph: Double, rpm: Double, boost: BoostReading): Pair<Boolean, Boolean> {
         _currentSpeedMph.value = speedKph * 0.621371
 
         return when (_state.value) {
@@ -100,7 +106,8 @@ object PerformanceTimer {
                     startNanos = System.nanoTime()
                     trackLaunchRpm = rpm
                     trackPeakRpm = rpm
-                    trackPeakBoost = boostPsi
+                    trackBoostPeaks = emptyMap()
+                    trackBoost(boost)
                     _state.value = State.RUNNING
                 }
                 false to false
@@ -109,7 +116,7 @@ object PerformanceTimer {
                 val elapsed = (System.nanoTime() - startNanos) / 1_000_000
                 _elapsedMs.value = elapsed
                 trackPeakRpm = max(trackPeakRpm, rpm)
-                trackPeakBoost = max(trackPeakBoost, boostPsi)
+                trackBoost(boost)
 
                 var sixty = false
                 var hundred = false
@@ -132,7 +139,7 @@ object PerformanceTimer {
                         zeroTo60Ms = split60Ms,
                         zeroTo100Ms = elapsed,
                         peakRpm = trackPeakRpm,
-                        peakBoostPsi = trackPeakBoost,
+                        boostPeaks = trackBoostPeaks,
                         launchRpm = trackLaunchRpm
                     )
                     _state.value = State.FINISHED
@@ -144,13 +151,20 @@ object PerformanceTimer {
         }
     }
 
+    /** A reading's own peak; no reading sets nothing (never a 0). */
+    private fun trackBoost(b: BoostReading) {
+        val psi = b.psi ?: return
+        val cur = trackBoostPeaks[b.source]
+        if (cur == null || psi > cur) trackBoostPeaks = trackBoostPeaks + (b.source to psi)
+    }
+
     /** Manually finish at the 0-60 mark (user doesn't want to continue to 100). */
     fun finishAt60() {
         if (_state.value != State.RUNNING || !split60Captured) return
         _result.value = TimerResult(
             zeroTo60Ms = split60Ms,
             peakRpm = trackPeakRpm,
-            peakBoostPsi = trackPeakBoost,
+            boostPeaks = trackBoostPeaks,
             launchRpm = trackLaunchRpm
         )
         _state.value = State.FINISHED

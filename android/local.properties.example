@@ -9,3 +9,8 @@ sdk.dir=/Users/<username>/Library/Android/sdk
 
 # Windows:
 # sdk.dir=C\:\\Users\\<username>\\AppData\\Local\\Android\\Sdk
+
+# Optional API keys (#235). Without them the build still works: no map tiles on TRIP, no weather.
+# The same names in the environment are used when a key is missing here (CI's publish-release passes repository secrets).
+# MAPS_API_KEY=<Google Maps SDK for Android key>
+# OPENWEATHER_API_KEY=<OpenWeatherMap key>

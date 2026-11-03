@@ -24,7 +24,8 @@ object BoostSessionLog {
         val rpm: Double,
         val actualKpa: Double,       // TIP actual, absolute
         val targetKpa: Double?,      // TIP desired, absolute; null = not fresh with this sample
-        val wgdcPct: Double?         // null = not fresh with this sample
+        val wgdcPct: Double?,        // null = not fresh with this sample
+        val baroKpa: Double? = null  // measured baro at the sample (#207); null = unknown → chart reads vs std atm
     )
 
     private var gate = FreshnessGate(0L)
@@ -51,7 +52,8 @@ object BoostSessionLog {
             rpm = vs.rpm,
             actualKpa = vs.tipActualKpa,
             targetKpa = vs.tipDesiredKpa.takeIf { pairedFresh("tipDesiredKpa") && it >= 50.0 },
-            wgdcPct = vs.wgdcDesired.takeIf { pairedFresh("wgdcDesired") && it >= 0.0 }
+            wgdcPct = vs.wgdcDesired.takeIf { pairedFresh("wgdcDesired") && it >= 0.0 },
+            baroKpa = BoostRule.baroKpa(vs)
         )
         val cutoff = nowMs - WINDOW_MS
         _samples.value = _samples.value.filter { it.tMs > cutoff } + sample

@@ -69,7 +69,7 @@ import kotlin.math.roundToInt
     vs: VehicleState,
     onScanDtcs: (suspend (DtcProgressCallback?) -> DtcScanResult)?,
     onClearDtcs: (suspend () -> Map<String, Boolean>)? = null,
-    onRetryScanModule: (suspend (String) -> Pair<List<DtcResult>, ModuleScanStatus>)? = null,
+    onRetryScanModule: (suspend (String) -> com.openrs.dash.data.DtcModuleRetry)? = null,
     onFetchFreezeFrames: (suspend (List<DtcResult>) -> List<DtcResult>)? = null,
     onSendRawQuery: (suspend (responseId: Int, frame: String, timeoutMs: Long) -> ByteArray?)? = null,
     onResetSession: () -> Unit = {},
@@ -89,6 +89,15 @@ import kotlin.math.roundToInt
     var dtcClearStatus by remember { mutableStateOf<String?>(null) }
     var showClearConfirm by remember { mutableStateOf(false) }
     var dtcScanJob   by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    // The export record of the scan on screen (#215): retries publish into it, an abort / dispose closes it
+    var dtcScanTicket by remember { mutableStateOf<com.openrs.dash.diagnostics.DtcScanLedger.Ticket?>(null) }
+    // Scan completion and module retries go through the view + ledger together, so screen and export agree (#215)
+    // The header count is published only with an accepted result (#215)
+    val dtcView = remember {
+        com.openrs.dash.diagnostics.DtcScanView(DiagnosticLogger.dtcScans) {
+            com.openrs.dash.OpenRSDashApp.instance.activeDtcCount.value = it
+        }
+    }
     var dtcScanStartMs by remember { mutableStateOf(0L) }
     var dtcScanElapsed by remember { mutableStateOf(0) }
     // Per-module progress: null value = querying, non-null = done
@@ -98,8 +107,8 @@ import kotlin.math.roundToInt
     // Detail sheet
     var selectedDtc by remember { mutableStateOf<DtcResult?>(null) }
     var selectedDtcHistory by remember { mutableStateOf<List<com.openrs.dash.data.DtcCodeEntity>?>(null) }
-    // Diff: set of codes from previous scan
-    var previousScanCodes by remember { mutableStateOf<Set<String>>(emptySet()) }
+    // Diff baseline: the latest saved scan's faults and module coverage (#215)
+    var previousScan by remember { mutableStateOf<com.openrs.dash.data.PreviousDtcScan?>(null) }
     LaunchedEffect(dtcScanning) {
         if (dtcScanning) {
             dtcScanStartMs = System.currentTimeMillis()
@@ -130,7 +139,9 @@ import kotlin.math.roundToInt
     LaunchedEffect(Unit) { pageEntered = true }
 
     var scanComplete by remember { mutableStateOf(false) }
-    LaunchedEffect(dtcResults) { if (!dtcResults.isNullOrEmpty()) scanComplete = true }
+    // Keyed on the scan finishing as well: a rescan returning the same codes leaves dtcResults equal, so a key on the
+    // list alone never re-ran and the rows stayed at alpha 0 (found in the rc.7 release smoke check)
+    LaunchedEffect(dtcResults, dtcScanning) { if (!dtcScanning && !dtcResults.isNullOrEmpty()) scanComplete = true }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
         .padding(start = Tokens.PagePad, end = Tokens.PagePad, top = Tokens.PagePad, bottom = pageBottomPadding())) {
@@ -394,6 +405,7 @@ import kotlin.math.roundToInt
                                     || (!dtcBusy && vs.isConnected && onScanDtcs != null)
                             ) {
                                 if (dtcScanning) {
+                                    dtcScanTicket?.let { DiagnosticLogger.dtcScans.cancel(it, System.currentTimeMillis()) }
                                     dtcScanJob?.cancel()
                                     dtcScanJob = null
                                     dtcScanning = false
@@ -406,15 +418,19 @@ import kotlin.math.roundToInt
                                     statusFilter = null
                                     moduleProgress = com.openrs.dash.diagnostics.DtcScanner.MODULES
                                         .associate { it.name to null as ModuleScanStatus? }
+                                    val ticket = DiagnosticLogger.dtcScans.begin("manual",
+                                        com.openrs.dash.diagnostics.DtcScanner.MODULES.map { it.name }, System.currentTimeMillis())
+                                    dtcScanTicket = ticket
+                                    dtcView.begin(ticket)
                                     dtcScanJob = scope.launch(Dispatchers.IO) {
-                                        // Load previous scan codes for diff
-                                        val prevCodes = try {
-                                            com.openrs.dash.diagnostics.DtcScanner(ctx).getPreviousScanCodes()
-                                        } catch (_: Exception) { emptySet<String>() }
-                                        withContext(Dispatchers.Main) { previousScanCodes = prevCodes }
+                                      try {
+                                        // Baseline for NEW / RESOLVED: the latest saved scan, before this one is saved
+                                        val prev = com.openrs.dash.diagnostics.DtcScanner(ctx).getPreviousScan()
+                                        withContext(Dispatchers.Main) { previousScan = prev }
 
                                         var result = try {
                                             onScanDtcs?.invoke { name, status ->
+                                                DiagnosticLogger.dtcScans.progress(ticket, name, status)
                                                 // Update progress on Main thread
                                                 launch(Dispatchers.Main) {
                                                     moduleProgress = moduleProgress + (name to status)
@@ -434,16 +450,22 @@ import kotlin.math.roundToInt
                                             if (dtcScanning) {
                                                 dtcScanning = false
                                                 if (result != null) {
-                                                    dtcScanResult = result
-                                                    DiagnosticLogger.lastDtcResults = result.codes
-                                                    com.openrs.dash.OpenRSDashApp.instance.activeDtcCount.value =
-                                                        result.codes.count { it.status == com.openrs.dash.data.DtcStatus.ACTIVE }
+                                                    // Screen, export and count only if this scan still owns the record
+                                                    if (dtcView.finish(ticket, result, System.currentTimeMillis())) dtcScanResult = dtcView.result
+                                                    else dtcError = "Scan result not shown — a newer scan or connection session replaced it"
                                                 } else {
                                                     dtcError = "Scan failed — check adapter connection"
+                                                    DiagnosticLogger.dtcScans.fail(ticket, System.currentTimeMillis(), "Scan failed")
                                                 }
                                             }
                                             dtcScanJob = null
                                         }
+                                      } catch (e: kotlinx.coroutines.CancellationException) {
+                                        // Screen disposed (or aborted — then already CANCELLED and this is a no-op).
+                                        // A plain ledger write: no withContext under cancellation.
+                                        DiagnosticLogger.dtcScans.interrupt(ticket, System.currentTimeMillis(), "DIAG screen closed")
+                                        throw e
+                                      }
                                     }
                                 }
                             }
@@ -472,7 +494,7 @@ import kotlin.math.roundToInt
                             Modifier.width(72.dp)
                                 .background(Surf3, RoundedCornerShape(10.dp))
                                 .border(CardBorder, Dim.copy(0.3f), RoundedCornerShape(10.dp))
-                                .clickable(enabled = !dtcBusy) { dtcScanResult = null; dtcError = null; dtcClearStatus = null; statusFilter = null }
+                                .clickable(enabled = !dtcBusy) { dtcView.clear(); dtcScanResult = null; dtcError = null; dtcClearStatus = null; statusFilter = null }
                                 .padding(vertical = 13.dp),
                             contentAlignment = Alignment.Center
                         ) {
@@ -588,6 +610,9 @@ import kotlin.math.roundToInt
                 if (results != null) lastResults = results
                 AnimatedVisibility(visible = results != null) {
                     lastResults?.let { r ->
+                        // NEW / RESOLVED only over modules read OK in both scans (#215)
+                        val diff = com.openrs.dash.diagnostics.DtcScanner.computeDiff(r, previousScan,
+                            scanRes?.moduleStatuses ?: emptyMap())
                         Column(Modifier.fillMaxWidth()) {
                             // Status filter chips (only when there are results)
                             if (r.isNotEmpty()) {
@@ -625,9 +650,9 @@ import kotlin.math.roundToInt
 
                             val filtered = if (statusFilter != null) r.filter { it.status == statusFilter } else r
                             if (filtered.isEmpty() && r.isEmpty()) {
-                                // Scan completed with zero codes — but check for timeouts
-                                val timeouts = scanRes?.moduleStatuses?.filter { it.value == ModuleScanStatus.TIMEOUT }
-                                if (timeouts.isNullOrEmpty()) {
+                                // Zero codes is only clean when every module gave a valid reply (#215)
+                                val notScanned = scanRes?.moduleStatuses?.filter { it.value != ModuleScanStatus.OK }
+                                if (notScanned.isNullOrEmpty()) {
                                     Box(
                                         Modifier.fillMaxWidth()
                                             .background(Ok.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
@@ -638,14 +663,15 @@ import kotlin.math.roundToInt
                                         MonoLabel("✓  NO FAULT CODES — all modules clean", 11.sp, Ok)
                                     }
                                 } else {
+                                    val total = scanRes.moduleStatuses.size
                                     Box(
                                         Modifier.fillMaxWidth()
-                                            .background(Ok.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
-                                            .border(CardBorder, Ok.copy(0.25f), RoundedCornerShape(10.dp))
+                                            .background(Warn.copy(alpha = 0.06f), RoundedCornerShape(10.dp))
+                                            .border(CardBorder, Warn.copy(0.25f), RoundedCornerShape(10.dp))
                                             .padding(14.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        MonoLabel("✓  NO FAULT CODES from responding modules", 11.sp, Ok)
+                                        MonoLabel("NO CODES IN ${total - notScanned.size} OF $total MODULES — NOT A CLEAN SCAN", 11.sp, Warn)
                                     }
                                 }
                             } else if (filtered.isNotEmpty()) {
@@ -666,7 +692,7 @@ import kotlin.math.roundToInt
                                             Box(pageEntrance(dtcIdx, scanComplete, staggerDelayMs = 60)) {
                                                 DtcRow(
                                                     dtc = dtc,
-                                                    isNew = previousScanCodes.isNotEmpty() && dtc.code !in previousScanCodes,
+                                                    isNew = diff.isNew(dtc),
                                                     onClick = {
                                                         selectedDtc = dtc
                                                         // Load history in background
@@ -685,9 +711,9 @@ import kotlin.math.roundToInt
                                 }
                             }
 
-                            // Timed-out modules with retry buttons
-                            val timeouts = scanRes?.moduleStatuses?.filter { it.value == ModuleScanStatus.TIMEOUT }
-                            if (!timeouts.isNullOrEmpty()) {
+                            // Modules without a valid reply, with retry buttons (#215). A refusal (NRC) won't change on retry.
+                            val notScanned = scanRes?.moduleStatuses?.filter { it.value != ModuleScanStatus.OK }
+                            if (!notScanned.isNullOrEmpty()) {
                                 Spacer(Modifier.height(6.dp))
                                 Column(
                                     Modifier.fillMaxWidth()
@@ -696,15 +722,17 @@ import kotlin.math.roundToInt
                                         .padding(10.dp),
                                     verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
-                                    MonoLabel("⚠  TIMED OUT", 9.sp, Warn, letterSpacing = 1.sp)
-                                    for ((name, _) in timeouts) {
+                                    MonoLabel("⚠  NOT SCANNED", 9.sp, Warn, letterSpacing = 1.sp)
+                                    for ((name, moduleStatus) in notScanned) {
                                         Row(
                                             Modifier.fillMaxWidth(),
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
-                                            MonoLabel("$name — no response within 2.5s", 9.sp, Dim)
-                                            if (onRetryScanModule != null && vs.isConnected) {
+                                            // The write that failed, when the app knows it — from the scan on screen (#215)
+                                            MonoLabel(com.openrs.dash.diagnostics.DtcScanView.notScannedText(scanRes, name,
+                                                ::notScannedReason), 9.sp, Dim)
+                                            if (onRetryScanModule != null && vs.isConnected && moduleStatus != ModuleScanStatus.REJECTED) {
                                                 var retrying by remember(name) { mutableStateOf(false) }
                                                 Box(
                                                     Modifier
@@ -712,22 +740,24 @@ import kotlin.math.roundToInt
                                                         .border(CardBorder, accent.copy(0.3f), RoundedCornerShape(6.dp))
                                                         .clickable(enabled = !retrying) {
                                                             retrying = true
+                                                            // The scan this retry belongs to — captured now, not after the await (#215)
+                                                            val retryTicket = dtcView.ticket
                                                             scope.launch(Dispatchers.IO) {
-                                                                val (codes, status) = try {
+                                                                val retry = try {
                                                                     onRetryScanModule.invoke(name)
-                                                                } catch (_: Exception) {
-                                                                    emptyList<DtcResult>() to ModuleScanStatus.ERROR
+                                                                } catch (e: Exception) {
+                                                                    if (e is kotlinx.coroutines.CancellationException) throw e
+                                                                    com.openrs.dash.data.DtcModuleRetry(name, emptyList(), ModuleScanStatus.ERROR,
+                                                                        "retry failed — ${com.openrs.dash.diagnostics.LogText.sanitizeReason(e)}")
                                                                 }
                                                                 withContext(Dispatchers.Main) {
                                                                     retrying = false
-                                                                    val updatedStatuses = (scanRes.moduleStatuses + (name to status)).toMutableMap()
-                                                                    val updatedCodes = (scanRes.codes + codes).toMutableList()
-                                                                    dtcScanResult = scanRes.copy(
-                                                                        codes = updatedCodes,
-                                                                        moduleStatuses = updatedStatuses
-                                                                    )
-                                                                    com.openrs.dash.OpenRSDashApp.instance.activeDtcCount.value =
-                                                                        updatedCodes.count { it.status == DtcStatus.ACTIVE }
+                                                                    // Merged into the latest result and the export together; dropped if a newer
+                                                                    // scan or session took over meanwhile
+                                                                    if (retryTicket != null &&
+                                                                        dtcView.retryFinished(retryTicket, retry, System.currentTimeMillis())) {
+                                                                        dtcScanResult = dtcView.result
+                                                                    }
                                                                 }
                                                             }
                                                         }
@@ -745,29 +775,42 @@ import kotlin.math.roundToInt
                             }
 
                             // Resolved codes (from diff)
-                            if (previousScanCodes.isNotEmpty()) {
-                                val diff = com.openrs.dash.diagnostics.DtcScanner.computeDiff(r, previousScanCodes)
-                                if (diff.goneCodes.isNotEmpty()) {
-                                    Spacer(Modifier.height(6.dp))
-                                    Column(
-                                        Modifier.fillMaxWidth()
-                                            .background(Ok.copy(0.06f), RoundedCornerShape(10.dp))
-                                            .border(CardBorder, Ok.copy(0.2f), RoundedCornerShape(10.dp))
-                                            .padding(10.dp),
-                                        verticalArrangement = Arrangement.spacedBy(2.dp)
-                                    ) {
-                                        MonoLabel("RESOLVED SINCE LAST SCAN", 9.sp, Ok, letterSpacing = 1.sp)
-                                        for (code in diff.goneCodes) {
-                                            MonoLabel(code, 9.sp, Ok.copy(0.7f))
-                                        }
+                            if (diff.goneCodes.isNotEmpty()) {
+                                Spacer(Modifier.height(6.dp))
+                                Column(
+                                    Modifier.fillMaxWidth()
+                                        .background(Ok.copy(0.06f), RoundedCornerShape(10.dp))
+                                        .border(CardBorder, Ok.copy(0.2f), RoundedCornerShape(10.dp))
+                                        .padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    MonoLabel("NOT FOUND THIS SCAN — WAS IN THE LAST SCAN", 9.sp, Ok, letterSpacing = 1.sp)
+                                    for (gone in diff.goneCodes) {
+                                        MonoLabel("${gone.module} ${gone.displayCode}", 9.sp, Ok.copy(0.7f))
                                     }
                                 }
+                            }
+                            // What NEW / NOT FOUND compared — modules read OK in both scans only
+                            previousScan?.let { prev ->
+                                val all = scanRes?.moduleStatuses?.keys ?: emptySet()
+                                val skipped = all - diff.comparedModules
+                                Spacer(Modifier.height(6.dp))
+                                MonoLabel(
+                                    "Compared with the last saved scan (" +
+                                        java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT)
+                                            .format(java.util.Date(prev.timestampMs)) + ") over " +
+                                        (if (diff.comparedModules.isEmpty()) "no module" else diff.comparedModules.sorted().joinToString(", ")) +
+                                        (if (skipped.isNotEmpty()) " · not compared (not read in both): ${skipped.sorted().joinToString(", ")}" else "") +
+                                        (if (diff.baseCodeOnly) " · older saved codes have no failure type — matched by base code" else "") + ".",
+                                    8.sp, Dim
+                                )
                             }
 
                             Spacer(Modifier.height(8.dp))
                             val duration = scanRes?.scanDurationMs?.let { " in ${it / 1000}s" } ?: ""
                             MonoLabel(
                                 "${r.size} fault code(s) in ${r.map { it.module }.distinct().size} module(s) · " +
+                                    "${scanRes?.moduleStatuses?.count { it.value == ModuleScanStatus.OK } ?: 0} of " +
                                     "${scanRes?.moduleStatuses?.size ?: 0} module(s) scanned$duration.",
                                 9.sp, Dim, modifier = Modifier.padding(bottom = 10.dp)
                             )
@@ -1007,6 +1050,17 @@ internal fun ignitionStatusLabel(v: Int): String = when (v) {
     else -> "$v"
 }
 
+/** Why a module's codes are unknown after a scan (#215). */
+private fun notScannedReason(s: ModuleScanStatus): String = when (s) {
+    ModuleScanStatus.TIMEOUT     -> "no reply"
+    ModuleScanStatus.PENDING     -> "busy (response pending), no final reply"
+    ModuleScanStatus.REJECTED    -> "refused the request"
+    ModuleScanStatus.MALFORMED   -> "unreadable reply"
+    ModuleScanStatus.ERROR       -> "request not sent"
+    ModuleScanStatus.NO_RESPONSE -> "no reply"
+    ModuleScanStatus.OK          -> "scanned"
+}
+
 // ── DTC result row composable ─────────────────────────────────────────────
 
 @Composable
@@ -1029,8 +1083,9 @@ private fun DtcRow(
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Column(Modifier.width(54.dp)) {
-            MonoLabel(dtc.code, 10.sp, statusColor)
+        Column(Modifier.width(72.dp)) {
+            // Full fault identity: base code + failure type ("P0123-1C") when known
+            MonoLabel(dtc.displayCode, 10.sp, statusColor)
             // Severity dot
             val sevColor = when (severity) {
                 com.openrs.dash.data.DtcSeverity.HIGH -> Orange

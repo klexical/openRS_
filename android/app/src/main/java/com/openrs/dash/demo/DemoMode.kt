@@ -165,9 +165,10 @@ object DemoMode {
         simDtcs = dtcsFor(scenario)
         OpenRSDashApp.instance.knockEventCount.value = 0
         OpenRSDashApp.instance.activeDtcCount.value = 0
-        DiagnosticLogger.lastDtcResults = null
+        DiagnosticLogger.dtcScans.newSession()
         KnockSessionLog.reset()
         BoostSessionLog.reset()
+        com.openrs.dash.data.BoostSession.reset()
         FuelEconomy.reset()
         PerformanceTimer.resetSession()
         _status.update { it.copy(elapsedMs = 0L) }
@@ -184,9 +185,10 @@ object DemoMode {
         OpenRSDashApp.instance.knockEventCount.value = 0
         OpenRSDashApp.instance.activeDtcCount.value = 0
         OpenRSDashApp.instance.deviceStatus.value = null
-        DiagnosticLogger.lastDtcResults = null
+        DiagnosticLogger.dtcScans.newSession()
         KnockSessionLog.reset()
         BoostSessionLog.reset()
+        com.openrs.dash.data.BoostSession.reset()
         FuelEconomy.reset()
         PerformanceTimer.resetSession()
     }
@@ -228,7 +230,8 @@ object DemoMode {
         // Same side effects CanDataService runs for real frames — in-memory only, cleared on exit.
         val vs = app.vehicleState.value
         FuelEconomy.onUpdate(vs.fuelLevelPct, vs.speedKph)
-        PerformanceTimer.onSpeedUpdate(vs.speedKph, vs.rpm, vs.boostPsi)
+        val boost = com.openrs.dash.data.BoostSession.onState(vs, now)
+        PerformanceTimer.onSpeedUpdate(vs.speedKph, vs.rpm, boost)
         if (stamp && link == DemoLink.LIVE) {
             KnockSessionLog.onState(vs, now)
             BoostSessionLog.onState(vs, now)
@@ -293,10 +296,10 @@ object DemoMode {
         return DtcScanResult(codes, statuses, SystemClock.elapsedRealtime() - startMs)
     }
 
-    suspend fun retryScanModule(moduleName: String): Pair<List<DtcResult>, ModuleScanStatus> {
+    suspend fun retryScanModule(moduleName: String): com.openrs.dash.data.DtcModuleRetry {
         delay(300L)
-        return if (linkUp()) simDtcs.filter { it.module == moduleName } to ModuleScanStatus.OK
-               else emptyList<DtcResult>() to ModuleScanStatus.TIMEOUT
+        return if (linkUp()) com.openrs.dash.data.DtcModuleRetry(moduleName, simDtcs.filter { it.module == moduleName }, ModuleScanStatus.OK)
+               else com.openrs.dash.data.DtcModuleRetry(moduleName, emptyList(), ModuleScanStatus.TIMEOUT)
     }
 
     suspend fun clearDtcs(): Map<String, Boolean> {

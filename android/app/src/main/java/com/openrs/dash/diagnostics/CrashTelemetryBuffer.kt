@@ -57,7 +57,10 @@ object CrashTelemetryBuffer {
         file: File,
         exception: Throwable,
         threadName: String,
-        appVersion: String
+        appVersion: String,
+        versionCode: Int = 0,
+        sourceCommit: String = "",
+        buildType: String = ""
     ) {
         try {
             val snapshots: List<Snapshot>
@@ -77,6 +80,9 @@ object CrashTelemetryBuffer {
             sb.append("  \"stackTrace\": \"${exception.stackTraceToString().jsonEsc()}\",\n")
             sb.append("  \"thread\": \"${threadName.jsonEsc()}\",\n")
             sb.append("  \"appVersion\": \"${appVersion.jsonEsc()}\",\n")
+            sb.append("  \"versionCode\": $versionCode,\n")
+            sb.append("  \"sourceCommit\": \"${sourceCommit.jsonEsc()}\",\n")
+            sb.append("  \"buildType\": \"${buildType.jsonEsc()}\",\n")
             sb.append("  \"snapshotCount\": ${snapshots.size},\n")
             sb.append("  \"snapshots\": [\n")
 
@@ -85,19 +91,19 @@ object CrashTelemetryBuffer {
                 val comma = if (i < snapshots.size - 1) "," else ""
                 sb.append("    {")
                 sb.append("\"ts\":${snap.timestampMs},")
-                sb.append("\"rpm\":${"%.1f".format(s.rpm)},")
-                sb.append("\"speedKph\":${"%.1f".format(s.speedKph)},")
-                sb.append("\"boostKpa\":${"%.1f".format(s.boostKpa)},")
-                sb.append("\"throttle\":${"%.1f".format(s.throttlePct)},")
-                sb.append("\"pedal\":${"%.1f".format(s.accelPedalPct)},")
-                sb.append("\"brake\":${"%.1f".format(s.brakePressure)},")
-                sb.append("\"coolant\":${"%.1f".format(s.coolantTempC)},")
-                sb.append("\"oilTemp\":${"%.1f".format(s.oilTempC)},")
+                sb.append("\"rpm\":${"%.1f".format(Locale.ROOT, s.rpm)},")
+                sb.append("\"speedKph\":${"%.1f".format(Locale.ROOT, s.speedKph)},")
+                sb.append("\"boostKpa\":${"%.1f".format(Locale.ROOT, s.boostKpa)},")
+                sb.append("\"throttle\":${"%.1f".format(Locale.ROOT, s.throttlePct)},")
+                sb.append("\"pedal\":${"%.1f".format(Locale.ROOT, s.accelPedalPct)},")
+                sb.append("\"brake\":${"%.1f".format(Locale.ROOT, s.brakePressure)},")
+                sb.append("\"coolant\":${"%.1f".format(Locale.ROOT, s.coolantTempC)},")
+                sb.append("\"oilTemp\":${"%.1f".format(Locale.ROOT, s.oilTempC)},")
                 sb.append("\"gear\":${s.gear},")
-                sb.append("\"latG\":${"%.3f".format(s.lateralG)},")
-                sb.append("\"lonG\":${"%.3f".format(s.longitudinalG)},")
-                sb.append("\"steer\":${"%.1f".format(s.steeringAngle)},")
-                sb.append("\"battV\":${"%.2f".format(s.batteryVoltage)},")
+                sb.append("\"latG\":${"%.3f".format(Locale.ROOT, s.lateralG)},")
+                sb.append("\"lonG\":${"%.3f".format(Locale.ROOT, s.longitudinalG)},")
+                sb.append("\"steer\":${"%.1f".format(Locale.ROOT, s.steeringAngle)},")
+                sb.append("\"battV\":${"%.2f".format(Locale.ROOT, s.batteryVoltage)},")
                 sb.append("\"esc\":\"${s.escStatus.label}\",")
                 sb.append("\"mode\":\"${s.driveMode.label}\"")
                 sb.append("}$comma\n")

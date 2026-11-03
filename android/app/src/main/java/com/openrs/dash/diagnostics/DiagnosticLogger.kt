@@ -161,8 +161,38 @@ object DiagnosticLogger {
     @Volatile var sessionTransport: String = ""
     @Volatile var sessionPrefs: UserPrefs? = null
     @Volatile private var nrcSnapshot: Map<Int, NrcTracker.NrcRecord> = emptyMap()
-    @Volatile var deviceStatus: DeviceStatus? = null
-    @Volatile var lastDtcResults: List<com.openrs.dash.data.DtcResult>? = null
+    /**
+     * The adapter's own status page (`/check_status`) for THIS session only — reset by [sessionStart], so a Bluetooth
+     * session or another adapter never exports an earlier Wi-Fi session's fields (#233). Separate from [firmwareVersion]
+     * (the live OPENRS? handshake): neither is derived from the other.
+     */
+    @Volatile var adapterStatus: AdapterStatusRecord = AdapterStatusRecord.NotRequested(AdapterStatusRecord.NO_REQUEST)
+        private set
+    /** Fetched device status of this session, or null (not requested, waiting, or failed). */
+    val deviceStatus: DeviceStatus? get() = (adapterStatus as? AdapterStatusRecord.Fetched)?.status
+
+    /** Every PCM NRC of this session that couldn't be attributed — exact, though repeated log lines are folded (#216). */
+    @Volatile var nrcUnattributedTotal: Int = 0; private set
+    fun countUnattributedNrc() = synchronized(lock) { nrcUnattributedTotal++ }
+
+    /** Identity of the current session — [sessionStart] returns it; adapter-status writes carry it (#233). */
+    @Volatile private var sessionToken: Long = 0L
+
+    /** Applies [record] only while [token] is still the current session — a late write from an older connection is dropped. */
+    private fun setAdapterStatus(token: Long, record: AdapterStatusRecord) = synchronized(lock) {
+        if (token == sessionToken) adapterStatus = record
+    }
+    fun adapterStatusRequested(token: Long) = setAdapterStatus(token, AdapterStatusRecord.Requested)
+    fun adapterStatusFetched(token: Long, status: DeviceStatus, atMs: Long = System.currentTimeMillis()) =
+        setAdapterStatus(token, AdapterStatusRecord.Fetched(status, atMs))
+    fun adapterStatusFailed(token: Long) = setAdapterStatus(token, AdapterStatusRecord.Failed)
+
+    /** One read of the adapter status + session start — an export builds its text and JSON from the same snapshot (#233). */
+    fun snapshotAdapterStatus(): AdapterStatusSnapshot = synchronized(lock) { AdapterStatusSnapshot(adapterStatus, sessionStartMs) }
+    /** This session's DTC scan record — the single publication path for scans and retries (#215). */
+    val dtcScans = DtcScanLedger()
+    /** Last DTC scan of this session (any outcome) — null = no scan; exported with status and module coverage (#215). */
+    val lastDtcScan: com.openrs.dash.data.DtcScanRecord? get() = dtcScans.current
 
     /** Capture NRC suppression state from the active NrcTracker for diagnostic export. */
     fun snapshotNrc(tracker: NrcTracker) {
@@ -209,7 +239,16 @@ object DiagnosticLogger {
      *                "session_slcan.log". Pass [android.content.Context.filesDir]
      *                resolved to a "diagnostics" sub-folder from the calling service.
      */
-    fun sessionStart(host: String, port: Int, prefs: UserPrefs?, logDir: File? = null, transport: String = "") {
+    /**
+     * Starts a diagnostic session and returns its token. [adapterStatusReason] is the session's initial adapter-status
+     * state (Bluetooth: [AdapterStatusRecord.BLUETOOTH]) — set together with the session, so no window exists in which an
+     * older connection's status could show (#233).
+     */
+    fun sessionStart(
+        host: String, port: Int, prefs: UserPrefs?, logDir: File? = null, transport: String = "",
+        adapterStatusReason: String = AdapterStatusRecord.NO_REQUEST,
+    ): Long {
+        val token: Long
         synchronized(lock) {
             // Close any previous SLCAN writer
             try { slcanWriter?.flush(); slcanWriter?.close() } catch (_: Exception) {}
@@ -225,6 +264,8 @@ object DiagnosticLogger {
             sessionPrefs = prefs
             isOpenRsFirmware = false
             firmwareVersion = "WiCAN stock"
+            token = ++sessionToken
+            adapterStatus = AdapterStatusRecord.NotRequested(adapterStatusReason)
             lastVehicleState = null
             frameInventory.clear()
             decodeTraceDeque.clear()
@@ -232,6 +273,9 @@ object DiagnosticLogger {
             fpsTimelineDeque.clear()
             probeSessionsList.clear()
             lastSampleTimeMs.clear()
+            dtcScans.newSession()      // a new session starts with no scan; older scans can't publish into it
+            nrcSnapshot = emptyMap()   // NRC suppression is per connection (#216)
+            nrcUnattributedTotal = 0
 
             // Option C: open SLCAN log file
             if (logDir != null) {
@@ -254,6 +298,7 @@ object DiagnosticLogger {
             }
         }
         event("SESSION", "Started — $host:$port")
+        return token
     }
 
     fun sessionEnd() {
@@ -387,10 +432,23 @@ object DiagnosticLogger {
         }
     }
 
-    /** Build a candump-format line outside the lock to keep hot-path holds short. */
-    private fun buildSlcanLine(relMs: Long, canId: Int, compactHex: String): String {
+    /**
+     * An outgoing frame the app wrote (DTC scan requests / flow control, #215) — a `# TX` comment line in the SLCAN
+     * log, so candump / SavvyCAN readers skip it and a reader can tell requests from the replies around them.
+     * [slcanFrame] is the SLCAN text written to the adapter (`t<id><dlc><data>\r`).
+     */
+    fun logTxLine(slcanFrame: String) {
+        val f = slcanFrame.trimEnd('\r')
+        if (f.length < 5 || f[0] != 't') return
+        val relMs = relativeMs()
+        val line = "# TX " + buildSlcanLine(relMs, f.substring(1, 4).toIntOrNull(16) ?: return, f.substring(5))
+        synchronized(lock) { writePreformattedSlcanLine(relMs, line) }
+    }
+
+    /** Build a candump-format line outside the lock to keep hot-path holds short. Always `.` decimals (candump / SavvyCAN). */
+    internal fun buildSlcanLine(relMs: Long, canId: Int, compactHex: String): String {
         val seconds = relMs / 1000.0
-        return "(%10.3f) can0 %03X#%s\n".format(seconds, canId, compactHex)
+        return "(%10.3f) can0 %03X#%s\n".format(java.util.Locale.ROOT, seconds, canId, compactHex)
     }
 
     /**
@@ -454,5 +512,30 @@ object DiagnosticLogger {
     fun formatDuration(ms: Long): String {
         val s = ms / 1000
         return "%02d:%02d:%02d".format(s / 3600, (s % 3600) / 60, s % 60)
+    }
+}
+
+/**
+ * Where this session's adapter status came from (#233). Only [Fetched] carries fields; the others say why there are none,
+ * so an export never shows a status from another session, transport or adapter — and never a substitute version.
+ */
+/** This session's adapter-status record and session start, read once per export (#233). */
+data class AdapterStatusSnapshot(val record: AdapterStatusRecord, val sessionStartMs: Long) {
+    val deviceStatus: DeviceStatus? get() = (record as? AdapterStatusRecord.Fetched)?.status
+}
+
+sealed interface AdapterStatusRecord {
+    /** Not requested in this session — [reason] says why (Bluetooth: the status page is read over Wi-Fi only). */
+    data class NotRequested(val reason: String) : AdapterStatusRecord
+    /** Requested over Wi-Fi, no answer yet. */
+    data object Requested : AdapterStatusRecord
+    /** Read from `/check_status` over Wi-Fi in this session at [atMs]. */
+    data class Fetched(val status: DeviceStatus, val atMs: Long) : AdapterStatusRecord
+    /** The Wi-Fi request failed or the reply couldn't be read. */
+    data object Failed : AdapterStatusRecord
+
+    companion object {
+        const val NO_REQUEST = "no status request in this session"
+        const val BLUETOOTH = "Bluetooth session — the adapter status page (/check_status) is read over Wi-Fi only"
     }
 }

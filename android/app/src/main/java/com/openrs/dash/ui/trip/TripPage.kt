@@ -69,7 +69,6 @@ import com.openrs.dash.data.DriveEntity
 import com.openrs.dash.data.DriveThermalReview
 import com.openrs.dash.data.DrivePointEntity
 import com.openrs.dash.data.DriveState
-import com.openrs.dash.data.LapTimer
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticExporter
 import com.openrs.dash.diagnostics.ExportProgress
@@ -274,9 +273,8 @@ private fun TripPageContent(
     // Export options sheet
     var exportDrive by remember { mutableStateOf<DriveEntity?>(null) }
 
-    // Lap timer — shared with DriveRecorder for persistence on drive stop
-    val lapTimer = remember { LapTimer() }
-    LaunchedEffect(recorder) { recorder.lapTimer = lapTimer }
+    // Lap timer — the recorder's own (STOP saves its laps); a recreated TRIP gets the same one back (#238 review)
+    val lapTimer = remember(recorder) { recorder.lapTimerForUi() }
 
     // Post-drive summary: queued app-wide by DriveRecorder until closed here. A summary opened from a
     // history row (summaryDrive) takes precedence; the queued one follows when that closes.
@@ -307,13 +305,21 @@ private fun TripPageContent(
         }
     }
 
-    // Load drive history (preview: the sample list)
-    LaunchedEffect(driveState.isRecording, preview) {
+    // Drive history (preview: the sample list), observed from Room so it follows every write to `drives`. STOP only
+    // flips isRecording at once; the drive's end is written later on IO (after the recording loop's last flush and the
+    // reverse geocode), so a list read at STOP still held endTime = 0 and the row stayed ACTIVE until a reload (#228).
+    // Also covers an auto-record stop on a link drop and orphan drives finalized at startup. The observation is the
+    // list's only source for real drives — delete / tag / rename only write (DriveHistory). The selected drive's row
+    // follows it too (the stats overlay read a copy taken at selection: duration 0 for a drive selected while ACTIVE).
+    val previewRecording = preview != null && driveState.isRecording
+    LaunchedEffect(preview, previewRecording, prefs.maxSavedDrives) {
         if (preview != null) { drives = TripPreview.drives(); return@LaunchedEffect }
-        withContext(Dispatchers.IO) {
-            drives = DriveDatabase.getInstance(context).driveDao()
-                .getRecentDrives(AppSettings.getMaxSavedDrives(context))
-        }
+        DriveHistory.observe(DriveDatabase.getInstance(context).driveDao(), prefs.maxSavedDrives)
+            .collect { list ->
+                drives = list
+                val id = selectedDriveId
+                if (id != null && id > 0) list.firstOrNull { it.id == id }?.let { selectedDrive = it }
+            }
     }
 
     // Preview states that need a selection or the summary open; leaving preview drops sample state.
@@ -497,7 +503,8 @@ private fun TripPageContent(
                         if (preview != null) return@MapControl
                         if (sfSet) lapTimer.clearStartFinish()
                         else driveState.currentLocation?.let { loc ->
-                            lapTimer.setStartFinish(loc.latitude, loc.longitude, loc.bearing)
+                            // No bearing ≠ 0° north: the line then takes the direction the car leaves it in (LapTimer)
+                            lapTimer.setStartFinish(loc.latitude, loc.longitude, loc.bearing.takeIf { loc.hasBearing() })
                         }
                     }) { MonoText(if (sfSet) "CLEAR S/F" else "SET S/F", 11.sp, if (sfSet) Orange else ink, FontWeight.Bold) }
 
@@ -592,9 +599,9 @@ private fun TripPageContent(
 
                         // 1.1 — DTE + boost (live recording only)
                         if (driveState.isRecording) {
-                            val boostPsi = vehicleState.boostPsi
-                            // Boost bands (8 / 16 psi) weren't limits — read it in ink like the live panel.
-                            MonoText("BOOST ${prefs.displayBoost(vehicleState.boostKpa).let { (v, u) -> "$v $u" }}", 10.sp, Dim)
+                            // Boost bands (8 / 16 psi) weren't limits — read it in ink like the live panel. TIP gauge (#207).
+                            val boost = com.openrs.dash.data.BoostSession.gauge(vehicleState, com.openrs.dash.ui.wallClockMs())
+                            MonoText("${boost.source.label} ${boost.gaugeKpa?.let { g -> prefs.displayGauge(g).let { (v, u) -> "$v $u" } } ?: "—"}", 10.sp, Dim)
                             val dte = driveState.distanceToEmptyKm
                             if (dte > 0) {
                                 val dteStr = if (prefs.speedUnit == "MPH")
@@ -648,7 +655,10 @@ private fun TripPageContent(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     val unit = legendUnit(colorMode, prefs)
-                    MonoText(if (unit.isEmpty()) colorMode.label else "${colorMode.label} $unit", 10.sp, actionInk(accent), FontWeight.Bold)
+                    // #229: the live drive is recorded with this build's mapping; a history drive with its own
+                    val modeLabel = legendLabel(colorMode, mapPoints,
+                        if (driveState.isRecording) com.openrs.dash.data.OilPtuMapping.CURRENT else selectedDrive?.oilPtuMapping)
+                    MonoText(if (unit.isEmpty()) modeLabel else "$modeLabel $unit", 10.sp, actionInk(accent), FontWeight.Bold)
                     colorLegend(colorMode, prefs).forEach { (label, color) ->
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(3.dp),
@@ -691,11 +701,7 @@ private fun TripPageContent(
                 onResume = { if (preview != null) TripPreview.set(TripPreview.Mode.RECORDING) else recorder.resumeDrive() },
                 onStop = {
                     if (preview != null) { TripPreview.set(TripPreview.Mode.SUMMARY); return@LiveHud }
-                    recorder.stopDrive()
-                    scope.launch(Dispatchers.IO) {
-                        drives = DriveDatabase.getInstance(context).driveDao()
-                            .getRecentDrives(AppSettings.getMaxSavedDrives(context))
-                    }
+                    recorder.stopDrive()   // the history updates when the drive's end is written (observed list)
                 },
                 modifier = Modifier.weight(0.45f).fillMaxWidth()
             )
@@ -725,12 +731,7 @@ private fun TripPageContent(
                 onExport = { drive -> exportDrive = drive },   // the sheet's EXPORT no-ops for a sample drive
                 onDelete = { drive ->
                     if (drive.id < 0) return@DriveHistoryList
-                    scope.launch(Dispatchers.IO) {
-                        DriveDatabase.getInstance(context).driveDao().deleteDrive(drive.id)
-                        DriveDatabase.getInstance(context).driveDao().deleteOrphanLapSessions()
-                        drives = DriveDatabase.getInstance(context).driveDao()
-                            .getRecentDrives(AppSettings.getMaxSavedDrives(context))
-                    }
+                    scope.launch(Dispatchers.IO) { DriveHistory.delete(DriveDatabase.getInstance(context).driveDao(), drive.id) }
                     if (selectedDriveId == drive.id) {
                         selectedDriveId = null
                         selectedDrive = null
@@ -744,11 +745,7 @@ private fun TripPageContent(
                 },
                 onTagsChanged = { drive, tags ->
                     if (drive.id < 0) return@DriveHistoryList
-                    scope.launch(Dispatchers.IO) {
-                        DriveDatabase.getInstance(context).driveDao().updateDriveTags(drive.id, tags)
-                        drives = DriveDatabase.getInstance(context).driveDao()
-                            .getRecentDrives(AppSettings.getMaxSavedDrives(context))
-                    }
+                    scope.launch(Dispatchers.IO) { DriveHistory.setTags(DriveDatabase.getInstance(context).driveDao(), drive.id, tags) }
                 },
                 onReplay = { drive ->
                     replayDrive = drive
@@ -887,12 +884,7 @@ private fun TripPageContent(
                         .clickable {
                             val id = renameDriveId ?: return@clickable
                             val name = renameText.ifBlank { null }
-                            scope.launch(Dispatchers.IO) {
-                                DriveDatabase.getInstance(context).driveDao()
-                                    .updateDriveName(id, name)
-                                drives = DriveDatabase.getInstance(context).driveDao()
-                                    .getRecentDrives(AppSettings.getMaxSavedDrives(context))
-                            }
+                            scope.launch(Dispatchers.IO) { DriveHistory.rename(DriveDatabase.getInstance(context).driveDao(), id, name) }
                             renameDriveId = null
                         }
                         .padding(horizontal = 16.dp, vertical = 8.dp)
@@ -1015,8 +1007,10 @@ private fun LiveHud(
                         Readout("RPM", if (live) "%.0f".format(vehicleState.rpm) else ph),
                         Readout("GEAR", if (live) vehicleState.gearDisplay else ph),
                         // Value + the user's pressure unit; DAY reads the darker paint (actionInk) like the map labels.
-                        Readout("BOOST", if (live) prefs.displayBoost(vehicleState.boostKpa).let { (v, u) -> "$v $u" } else ph,
-                            color = actionInk(accent)),
+                        com.openrs.dash.data.BoostSession.gauge(vehicleState, com.openrs.dash.ui.wallClockMs()).let { b ->
+                            Readout(b.source.label, if (live) b.gaugeKpa?.let { g -> prefs.displayGauge(g).let { (v, u) -> "$v $u" } } ?: ph else ph,
+                                color = actionInk(accent))
+                        },
                     ),
                     listOf(clt, oil, amb, fuel),
                     listOf(rdu, ptu, used, econ),
@@ -1476,8 +1470,10 @@ private fun DriveCard(
                 "%.1f mi".format(drive.distanceKm * 0.621371) else "%.1f km".format(drive.distanceKm))
             if (drive.maxSpeedKph > 0) add("TOP" to "${prefs.displaySpeed(drive.maxSpeedKph)} ${prefs.speedLabel.lowercase()}")
             if (drive.peakRpm > 0) add("RPM" to "${drive.peakRpm}")
-            if (drive.peakBoostPsi > 0) add("BOOST" to prefs.displayBoost(drive.peakBoostPsi / UnitConversions.KPA_TO_PSI +
-                UnitConversions.STD_ATM_KPA).let { (v, u) -> "$v ${u.lowercase()}" })
+            // Named by the peak's own source (#207) — a genuine 0 shows; no reading doesn't; older drives: as recorded
+            val peak = com.openrs.dash.data.StoredBoost.drivePeak(drive)
+            peak.psiOrNull?.let { psi -> add(peak.label to prefs.displayBoost(psi / UnitConversions.KPA_TO_PSI +
+                UnitConversions.STD_ATM_KPA).let { (v, u) -> "$v ${u.lowercase()}" }) }
             if (drive.peakLateralG > 0) add("LAT G" to "%.2f g".format(drive.peakLateralG))
         }
         Row(Modifier.fillMaxWidth()) {
