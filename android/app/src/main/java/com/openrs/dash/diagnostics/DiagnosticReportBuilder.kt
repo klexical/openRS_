@@ -79,10 +79,19 @@ internal object DiagnosticReportBuilder {
      * Text + JSON of one export from ONE adapter-status snapshot (#233): a reply landing while the export is written
      * can't make the two files (or two lines of one file) disagree. The exporter uses this at every call site.
      */
-    fun buildSummaryAndDetail(ts: String, snap: AdapterStatusSnapshot = DiagnosticLogger.snapshotAdapterStatus()): Pair<String, String> =
-        buildSummaryText(ts, snap) to buildDetailJson(ts, snap)
+    fun buildSummaryAndDetail(
+        ts: String,
+        snap: AdapterStatusSnapshot = DiagnosticLogger.snapshotAdapterStatus(),
+        // Likewise one DTC scan record (immutable) for both files and the export's dtc_scan_* files (#238 review)
+        dtcScan: com.openrs.dash.data.DtcScanRecord? = DiagnosticLogger.lastDtcScan,
+    ): Pair<String, String> =
+        buildSummaryText(ts, snap, dtcScan) to buildDetailJson(ts, snap, dtcScan)
 
-    fun buildSummaryText(ts: String, snap: AdapterStatusSnapshot = DiagnosticLogger.snapshotAdapterStatus()): String = buildString {
+    fun buildSummaryText(
+        ts: String,
+        snap: AdapterStatusSnapshot = DiagnosticLogger.snapshotAdapterStatus(),
+        dtcScan: com.openrs.dash.data.DtcScanRecord? = DiagnosticLogger.lastDtcScan,
+    ): String = buildString {
         val log = DiagnosticLogger
         val vs  = log.lastVehicleState
         val p   = log.sessionPrefs
@@ -108,8 +117,8 @@ internal object DiagnosticReportBuilder {
 
         // ── DTC scan (#215): no scan, a clean scan and a partial / failed / cancelled one stay distinct
         appendLine("─── DTC SCAN ──────────────────────────────────────────────")
-        appendLine("  ${dtcScanLine(log.lastDtcScan)}")
-        log.lastDtcScan?.notes?.forEach { (m, n) -> appendLine("  $m: $n") }
+        appendLine("  ${dtcScanLine(dtcScan)}")
+        dtcScan?.notes?.forEach { (m, n) -> appendLine("  $m: $n") }
         appendLine()
 
         // ── Adapter device status (/check_status) — this session's only; "Firmware :" above is the live handshake (#233)
@@ -357,7 +366,11 @@ internal object DiagnosticReportBuilder {
 
     // ── JSON detail (built with JSONObject for safe escaping + structure) ─────
 
-    fun buildDetailJson(ts: String, snap: AdapterStatusSnapshot = DiagnosticLogger.snapshotAdapterStatus()): String {
+    fun buildDetailJson(
+        ts: String,
+        snap: AdapterStatusSnapshot = DiagnosticLogger.snapshotAdapterStatus(),
+        dtcScan: com.openrs.dash.data.DtcScanRecord? = DiagnosticLogger.lastDtcScan,
+    ): String {
         val log = DiagnosticLogger
         val vs  = log.lastVehicleState
         val p   = log.sessionPrefs
@@ -382,7 +395,7 @@ internal object DiagnosticReportBuilder {
             put("slcanFileIncluded", log.slcanLogFile != null && log.slcanLineCount > 0)
         })
 
-        root.put("dtcScan", dtcScanJson(log.lastDtcScan))
+        root.put("dtcScan", dtcScanJson(dtcScan))
 
         // settings
         if (p != null) {

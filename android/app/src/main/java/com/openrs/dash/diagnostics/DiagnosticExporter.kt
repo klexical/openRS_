@@ -102,8 +102,10 @@ object DiagnosticExporter {
                     entries += name to inferType(name)
                 }
 
-                // One adapter-status snapshot for both files (#233)
-                val (summaryText, detailJson) = DiagnosticReportBuilder.buildSummaryAndDetail(ts)
+                // One adapter-status snapshot for both files (#233), one DTC scan record for every file of this ZIP —
+                // a scan completing / retried / a new session meanwhile can't make them disagree (#238 review)
+                val dtcScan = DiagnosticLogger.lastDtcScan
+                val (summaryText, detailJson) = DiagnosticReportBuilder.buildSummaryAndDetail(ts, dtcScan = dtcScan)
                 addEntry("diagnostic_summary_$ts.txt", summaryText.toByteArray(Charsets.UTF_8))
                 addEntry("diagnostic_detail_$ts.json", detailJson.toByteArray(Charsets.UTF_8))
 
@@ -141,7 +143,6 @@ object DiagnosticExporter {
 
                 // DTC scan (#215): written whenever a scan ran — also with zero codes, with its status and module
                 // coverage — so a clean scan, a partial one and "no scan" (no files; dtcScan NONE in the detail) differ
-                val dtcScan = DiagnosticLogger.lastDtcScan
                 if (dtcScan != null) {
                     addEntry("dtc_scan_$ts.txt",
                         DriveExportBuilder.buildDtcText(dtcScan.codes, dtcScan).toByteArray(Charsets.UTF_8))
