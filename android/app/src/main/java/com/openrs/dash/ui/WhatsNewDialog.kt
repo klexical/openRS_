@@ -58,7 +58,7 @@ private val versionHighlights: Map<String, List<String>> = mapOf(
         "TPMS thresholds follow your tyre-pressure unit (PSI or BAR); DTC scans show the full fault code (e.g. P0123-1C), never call a partial scan clean, and compare with the last scan only where both read the module. Settings stays reachable while recording.",
         "Fixed: drive, knock, RaceChrono and TrackAddict exports, GPX and logs are no longer corrupted on phones set to a language that uses a decimal comma.",
         "Connection states are truthful — CONNECTING (tap to cancel, except while a drive is recording), RECONNECTING only after a dropped link, and a failed attempt no longer leaves a notification behind; tapping the notification opens the app.",
-        "Settings shows the exact build (2.2.7-rc.7 · Build 36), and a diagnostic export says whether a DTC scan ran this session and which modules gave a valid reply — a refused or missing reply is never reported as clean.",
+        "Settings shows the exact build (2.2.7-rc.7 · Build 37), and a diagnostic export says whether a DTC scan ran this session and which modules gave a valid reply — a refused or missing reply is never reported as clean.",
         "Calmer DRIVE and THERMAL — readings in ink, colour only when a limit is crossed, and a fixed status line on DRIVE that leads with the most important condition.",
         "Thermal readiness — one verdict (TEMPS READY, ENGINE / DRIVETRAIN WARMING, TEMP HIGH, TEMP CRITICAL, HEAT RISING, CHECKING) shared by DRIVE, THERMAL and the drive recorder, with a checklist that shows every rule.",
         "Custom thermal profile — copy STREET, TRACK or RACE and edit its warm-up, warning and critical limits in °C or °F (Settings → THERMAL).",

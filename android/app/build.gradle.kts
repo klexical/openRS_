@@ -23,7 +23,7 @@ val keystoreProps = Properties().also { props ->
 val releaseBase = "2.2.7"
 val releaseStage = "rc"          // "rc" for a release candidate, "" for stable
 val releaseCandidate = 7         // ignored when releaseStage is ""
-val releaseVersionCode = 36
+val releaseVersionCode = 37
 val releaseName = if (releaseStage.isEmpty()) releaseBase else "$releaseBase-$releaseStage.$releaseCandidate"
 
 // The old -PrcSuffix flag appended an RC label separately from versionName; refuse it so nothing builds a mismatch.

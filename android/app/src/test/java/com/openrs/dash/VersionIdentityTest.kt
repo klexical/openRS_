@@ -16,9 +16,9 @@ import org.junit.Test
 /** One release identity across build, updater, Settings and What's New (#214). */
 class VersionIdentityTest {
 
-    @Test fun `this build is 2_2_7-rc_7, versionCode 36`() {
+    @Test fun `this build is 2_2_7-rc_7, versionCode 37`() {
         assertEquals("2.2.7-rc.7", BuildConfig.RELEASE_NAME)
-        assertEquals(36, BuildConfig.VERSION_CODE)
+        assertEquals(37, BuildConfig.VERSION_CODE)
         assertEquals(AppVersion(2, 2, 7, 7), AppVersion.current())
         assertTrue(BuildConfig.VERSION_NAME.startsWith("2.2.7-rc.7"))           // debug adds -dev+<commit>
     }
