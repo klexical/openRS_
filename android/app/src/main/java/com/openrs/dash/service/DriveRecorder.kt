@@ -127,8 +127,15 @@ class DriveRecorder(
      * points to the old one. These used to be recorder fields that [startDrive] reassigned under the old drive.
      */
     private class DriveRun(vs: VehicleState, startMs: Long) {
-        /** Buffer for batch writes — flushed to Room every FLUSH_SIZE points. */
+        /** Buffer for batch writes — flushed to Room every FLUSH_SIZE points. Shared by the loop (add, batch / final
+         *  drain) and the drains outside it (pause, export): every access goes through [addPoint] / [bufferedCount] /
+         *  [takePoints], one monitor, so a point added during a take is never cleared unstored and two takes never
+         *  hold the same points (#238 review). Nothing suspends inside it; inserts run after the take. */
         val pointsBuffer = ArrayList<DrivePointEntity>(FLUSH_SIZE * 2)
+        fun addPoint(p: DrivePointEntity) = synchronized(pointsBuffer) { pointsBuffer.add(p) }
+        fun bufferedCount() = synchronized(pointsBuffer) { pointsBuffer.size }
+        fun takePoints(): List<DrivePointEntity> =
+            synchronized(pointsBuffer) { ArrayList(pointsBuffer).also { pointsBuffer.clear() } }
         /** Recent points kept in memory for live polyline rendering + the aggression score. */
         val recentPoints = ArrayList<DrivePointEntity>(MAX_RECENT_POINTS)
         /** Start-of-drive temps captured from VehicleState at startDrive(). */
@@ -577,7 +584,7 @@ class DriveRecorder(
                     }
 
                     // Buffer point
-                    run.pointsBuffer.add(point)
+                    run.addPoint(point)
 
                     // Update recent points list for live UI
                     run.recentPoints.add(point)
@@ -627,7 +634,7 @@ class DriveRecorder(
 
                     // Flush to Room when the buffer is full — last, so a STOP cancellation delivered when the insert
                     // returns (flushBuffer rethrows it) can't cut this point's state update short
-                    if (run.pointsBuffer.size >= FLUSH_SIZE) {
+                    if (run.bufferedCount() >= FLUSH_SIZE) {
                         flushBuffer(run)
                     }
                 }
@@ -661,8 +668,7 @@ class DriveRecorder(
      * has landed or failed — so it never counts as a failed write; it is rethrown once the outcome is recorded.
      */
     private suspend fun flushBuffer(run: DriveRun): Boolean {
-        val toFlush = ArrayList(run.pointsBuffer)
-        run.pointsBuffer.clear()
+        val toFlush = run.takePoints()
         if (toFlush.isEmpty()) return true
         var failure: Exception? = null
         try {
