@@ -47,7 +47,7 @@ import com.openrs.dash.ui.anim.pageEntrance
  */
 private val versionHighlights: Map<String, List<String>> = mapOf(
     "2.2.7" to listOf(
-        "Changed: the pressure gauge shows throttle-inlet pressure above measured air pressure, labelled TIP, and — when TIP isn't current — never switches to another signal. Drives record TIP or, when TIP isn't current, the car's CAN boost signal, each named by its source; the two are kept apart in peaks, charts and exports. Which pressure each signal measures on the car is not yet confirmed.",
+        "Changed: the pressure gauge shows throttle-inlet pressure above measured air pressure, labelled BOOST · THROTTLE INLET, and — when TIP isn't current — never switches to another signal. Drives record TIP or, when TIP isn't current, the car's CAN boost signal, each named by its source; the two are kept apart in peaks, charts and exports. Which pressure each signal measures on the car is not yet confirmed.",
         "Fixed: OIL and PTU temperatures were each other's reading (found on one car's capture) — readiness, alerts, recordings and exports now use the corrected values. Drives recorded before keep their values and are marked as recorded before the fix.",
         "Changed: AWD shows rear left / right torque; the front/rear percentage is withdrawn (it compared torque from different points of the drivetrain). DRIVE no longer shows a clutch-pedal card.",
         "Fixed: throttle angle is no longer 6.25× too high. SPARK now reads the full signed value (negative advance kept), but what it measures is not yet confirmed. Polled values that stop refreshing are marked STALE instead of looking live.",

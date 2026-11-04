@@ -259,7 +259,8 @@ object CanDecoder {
             // PCMmsg07 (20 ms broadcast). Offsets travel with their bytes:
             //   byte7, raw−60 °C → ENGINE OIL. The DBC names it PTUTemp (63|8@0+ (1,−60)); in one car's capture the
             //                    oil reply (ICM 0x78C DID 0x6017, same clock) tracked it (#229).
-            //   Boost         : 47|8@0+ (0.01,0)   → byte5, raw×0.01 bar (1 kPa) gauge, unsigned
+            //   Boost         : 47|8@0+ (0.01,0)   → byte5, raw×0.01 bar (1 kPa) gauge, unsigned — the DBC's definition;
+            //                    physical identity / reference / scale unverified (#207)
             //                    stored as gauge + 101.325 (the displayBoost form) — independent of baro, so a baro
             //                    arriving or changing later can't shift it (#207). Receipt is stamped ("boostKpa").
             //   byte1, raw−50 °C → PTU. The DBC names it EngineOilTemp (15|8@0+ (1,−50)); in the same capture the

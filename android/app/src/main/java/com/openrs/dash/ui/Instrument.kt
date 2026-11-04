@@ -33,7 +33,9 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -161,6 +163,25 @@ fun Modifier.instrumentSurface(level: Level = Level.NORMAL, radius: Dp = Tokens.
 @Composable fun InstrumentMeta(text: String, modifier: Modifier = Modifier, color: Color = Dim) =
     MonoLabel(text, 10.sp, color, letterSpacing = 0.2.sp, modifier = modifier)
 
+/** A caption's qualifier (where a reading is measured): [full], or [compact] where [full] doesn't fit on one line. */
+data class Qualifier(val full: String, val compact: String)
+
+/**
+ * One line of supporting text for a [Qualifier]: the full form when it fits the width, else the compact one — never
+ * wrapped (a second line would move the card) and never cut mid-word. A null [q] keeps the line's height empty, so
+ * cards in one row stay aligned. A plain Layout, not BoxWithConstraints: the DRIVE hero row asks for intrinsic sizes.
+ */
+@Composable fun QualifierLine(q: Qualifier?, modifier: Modifier = Modifier, color: Color = Dim, fontSize: TextUnit = 10.sp) {
+    @Composable fun line(text: String) = androidx.compose.material3.Text(
+        text, fontSize = fontSize, fontFamily = JetBrainsMonoFamily, color = textColor(color), letterSpacing = 0.2.sp,
+        maxLines = 1, softWrap = false)
+    Layout(content = { line(q?.full ?: ""); line(q?.compact ?: "") }, modifier = modifier) { measurables, c ->
+        val full = measurables[0].measure(Constraints(maxHeight = c.maxHeight))
+        val shown = if (full.width <= c.maxWidth) full else measurables[1].measure(c.copy(minWidth = 0))
+        layout(shown.width.coerceAtLeast(c.minWidth), shown.height) { shown.place(0, 0) }
+    }
+}
+
 /** Telltale glyph (res/drawable/ic_tt_*) tinted to its state. */
 @Composable fun Telltale(@DrawableRes icon: Int, tint: Color, size: Dp = 14.dp, contentDescription: String? = null) =
     Icon(painterResource(icon), contentDescription, Modifier.size(size), tint = tint)
@@ -186,6 +207,10 @@ fun Modifier.instrumentSurface(level: Level = Level.NORMAL, radius: Dp = Tokens.
     /** Optional symbol before the caption (sheet family) and its treatment. */
     icon: RsIcon? = null,
     iconTone: IconTone = level.iconTone(),
+    /** Line under the caption saying where the reading is measured ([QualifierLine]). */
+    qualifier: Qualifier? = null,
+    /** Keep that line (empty) without a qualifier, so heroes in one row stay aligned. */
+    qualifierSlot: Boolean = qualifier != null,
 ) {
     val accent = LocalThemeAccent.current
     var hold by remember { mutableStateOf(false) }
@@ -210,6 +235,7 @@ fun Modifier.instrumentSurface(level: Level = Level.NORMAL, radius: Dp = Tokens.
             }
             InstrumentMeta(unit)
         }
+        if (qualifierSlot) QualifierLine(qualifier, Modifier.fillMaxWidth())
         Box(Modifier.fillMaxWidth().height(valueBox), contentAlignment = Alignment.BottomCenter) {
             DriveNum(if (hold && peakHoldValue != null) peakHoldValue else value,
                 valueSize, valueColor, Modifier.fillMaxWidth())
@@ -352,6 +378,8 @@ internal data class Readout(
     val color: Color = Color.Unspecified,
     val sub: String? = null,
     val spark: List<Float>? = null,
+    /** Where the reading is measured, under the value (keeps the row's captions and values aligned). */
+    val qualifier: Qualifier? = null,
 )
 
 /**
@@ -380,6 +408,7 @@ internal data class Readout(
                             Spacer(Modifier.height(2.dp))
                             DataNum(r.value, if (dense) 16.sp else 18.sp,
                                 if (placeholder) Dim else if (r.color == Color.Unspecified) Frost else r.color)
+                            r.qualifier?.let { QualifierLine(it, Modifier.fillMaxWidth(), fontSize = 9.sp) }
                             r.sub?.let { MonoLabel(it, 9.sp, WarnInk, letterSpacing = 0.2.sp) }
                             if (r.spark != null && !placeholder) {
                                 Spacer(Modifier.height(3.dp))
