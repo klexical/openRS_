@@ -1,23 +1,16 @@
 # openRS_
 
 Native Android telemetry dashboard for the Ford Focus RS MK3.
-Kotlin 2.0.21 + Jetpack Compose (Material3). Current: **stable v2.2.6 on main**; **v2.2.7-rc.6 published as a prerelease from staging** (tag `android-v2.2.7-rc.6` →
-`d2f7dc6`, versionCode 35 — not on main, not stable). Sapphire (web/ only) deployed from main `0d64248`. Record: Branch / Release Workflow → rc.6.
-**rc.7 = local development + hardware testing — NOT a published release (no `android-v2.2.7-rc.7` tag; unpushed).** Testing candidate
-`a605b1c` frozen + owner-tested 2026-10-31; approved fixes + source-review corrections + #234 fix accepted and fast-forwarded
-locally into `feature/rc7` (`931447a`), then docs-only `12b6e4f` (no rebuild). Owner-test APK = source `81baa76`, vc 36,
-SHA-256 `efe622c4…7a98` — owner Bluetooth hardware testing on it **pending** (kept separate from the new candidate).
-**Clean candidate `feature/rc7-candidate`** (clone `~/Documents/openRS_-publish`, push disabled until the owner approves; history
-cleanup run 2026-11-01, old → new map private): + #236 STOP finalization + peak carryover + #237 lap feed + crossings (merge `e1bbc14`). **Tested source `8d1903e`** (Temurin 17:
-1066 / 86 per variant, lint 0 / 47, APK `af3c1ad6…`, vc 36, disposable-AVD cold launch, laps 3 / 3 / 3 over 3 synthetic runs);
-later commits docs-only; supersedes `0e4c120`. Not distributed; no hardware results on any candidate build.
-Superseded by it — **Integration candidate — DO NOT PUSH** (branch `integration/rc7-candidate-DO-NOT-PUSH`, worktree `rc7-integration`; its
-ancestry holds real adapter identifiers; kept unchanged): `12b6e4f` + #228 / #226 + sanitized test +
-#235 CI keys + #228 edits-only-write + docs. **Tested source `7bb8a9a`** (1034 / 81 per variant, lint 0 / 45, APK
-`7ee08484…`, vc 36, disposable-AVD cold launch); later commits docs-only. Not distributed. Record: Branch / Release
-Workflow → rc.7 (integration). Issues #204–#237. Branch `feature/rc7` (from staging `d2f7dc6`) — 2.2.7-rc.7 / versionCode 36, milestone
-v2.2.7-rc.7 (#211 locale exports, #212 connection lifecycle, #213 splash per task, #214 versioning, #215 DTC scan status);
-Sapphire row validation #204 also on `fix/sapphire-row-validation` (from main). Record: Branch / Release Workflow → rc.7.
+Kotlin 2.0.21 + Jetpack Compose (Material3). Current: **stable v2.2.6 on main** (unchanged); **v2.2.7-rc.7 published as a
+prerelease from staging** (2026-11-03: tag `android-v2.2.7-rc.7` → `43ad5e1`, Build 37 / versionCode 37 — not on main, not
+stable). Sapphire (web/ only) live from main `9a194bf` (#239); main tip `a37fa29` adds web CI (#242). Record: Branch / Release
+Workflow → **rc.7 publication record**.
+**rc.7 = PR #238 (staging merge `3937306`, head `040a1f8`) + PR #244 (CHANGELOG entries for the #238 final-review fixes, merge
+`43ad5e1`).** Public asset `openRS_v2.2.7-rc.7.apk` — built, signed and attested by CI from the tag; SHA-256 `eb937284…2464e`,
+signer `c99b6f26…` (= rc.6), Maps key present, no weather key — verified independently by two sessions and smoked on a
+disposable emulator (synthetic adapter / GPS). **Hardware:** no phone
+or car run of Build 37 or of the published APK; the owner's phone / Bluetooth and on-car checks were on Build 36 builds (see the
+record). Everything below about candidates, integration branches and "unpushed" work is **history** — kept as the record.
 Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashboard) → `web/`  |  Docs → `docs/`  |  Feature pipeline → `docs/feature-roadmap.md`
 
 ## Source Layout
@@ -312,11 +305,12 @@ update/
 0x080  accel pedal (bits 0-9 LE × 0.1%), reverse (bit 5)
 0x090  RPM (bytes 4-5) + baro (byte2 × 0.5 kPa)
 0x0C8  gauge brightness (bits 0-4), e-brake (byte3 bit 6), ignition (byte2 bits 3-6)
-0x0F8  oil temp (byte1−50°C), boost (byte5, gauge — see the boost gotcha), PTU temp (byte7−60°C)
-       — oil / PTU byte identity disputed by a contributor's DBC (#229): unconfirmed until a capture; never swap silently
-       — 2026-11-01 offline review: no export holds a positive 0x6017 (ICM 0x78C) / 0x070D (PCM 0x7E8) reply, so no paired
-         independent reference exists; the app polls neither (AWD trans oil = 0x1E80, not 0x1E3F). Oil and PTU identity
-         each inconclusive; thermal acceptance unresolved; no swap / threshold change / history rewrite authorised
+0x0F8  engine oil temp (byte7−60°C), boost (byte5, gauge — see the boost gotcha), PTU temp (byte1−50°C)
+       — #229 CONFIRMED 2026-11-02 (one car): the reverse of RS_HS.dbc's names and of every build up to #238 `d3264c8`
+         (they read oil = byte1, PTU = byte7). Basis: a capture with ICM 0x78C DID 0x6017 (engine oil, X/100) and PCM 0x7E8
+         DID 0x070D (transfer case fluid, signed X/16) on one clock — oil = byte7−60 in 423/424, PTU = ⌊byte1−50⌋ 420/420,
+         bytes 20–24 °C apart. Fixed in #238 `2033fda` (`81e459c` + docs `7cd78fc`), released in rc.7; new drives carry
+         `DriveEntity.oilPtuMapping` (null = recorded before the fix, never relabelled). Not validated on other cars
 0x130  speed (bytes 6-7 BE × 0.01 kph)
 0x138  clutch pedal % (17|10 × 0.1) — decoded for diagnostics only; NOT shown on DRIVE (#225)
 0x160  longitudinal G (bits 48-57 LE)
@@ -403,6 +397,10 @@ data[5] = B5,  data[6] = B6 …
 - `fengTimedOut` / `rsprotTimedOut` = true after 3 failed probe cycles — do not suggest retrying indefinitely
 - **Drive mode cold-start gate** — `has420Arrived` flag in CanDecoder prevents Sport/Track resolution until the first `0x420` frame is received. Without this gate, `0x1B0` nibble=1 resolves against stale `modeDetail420` default during the 0-600ms blind window after connection, causing wrong mode flashes. The drive mode confirmation loop in MorePage adds a 2s post-command settling delay, a 15s timeout, and auto-correction if the car lands on the wrong mode (sends a corrective command automatically).
 - Android 10+ silently routes new sockets through cellular when WiFi has no internet — `WiFiFirmwareApi` uses `Network.socketFactory` via `ConnectivityManager` to force all traffic on WiFi. BLE transport avoids this entirely (not a "network" in Android's routing model)
+- **Firmware commands never throw (#238 review F1, `2b59644`)** — `BleFirmwareApi.sendCommand` turns the write's
+  IOException into `Result.failure` (cancellation still propagates). The UI launches (DriveModeDock, MorePage ESC) have
+  no catch, so an escaped exception ended the process. Keep every `FirmwareCommandSender` inside its `Result` contract.
+  `BleCommandSendFailureTest` (real SlcanConnection over BleGattCore, fake GATT)
 - **BLE write timeout = link closed (#218)** — Android's `onCharacteristicWrite` names no write; after a 2 s timeout a late
   callback would complete the next write. `BleGattCore` invalidates + closes the link (reader EOF → SlcanConnection
   reconnects); later writes fail at once. `SlcanConnection` swallows write errors, so teardown must come from the reader.
@@ -444,6 +442,10 @@ data[5] = B5,  data[6] = B6 …
 - **Transport abort** — TCP / WebSocket assign their socket before `connect()` so `abort()` ends a blocked connect at once
   (emulator: ≤ 0.5 s). Without a cancel, an adapter that accepts but never answers (WS upgrade / SLCAN handshake) holds
   the attempt for the 20 s socket read timeout — the 3 s handshake `withTimeoutOrNull` can't interrupt a blocking read
+- **One DTC record per export (#238 review F4, `d6ef14e`)** — `DiagnosticExporter.export` reads
+  `DiagnosticLogger.lastDtcScan` once and passes it to `buildSummaryAndDetail(ts, dtcScan = …)` and the `dtc_scan_*`
+  files; never read the ledger again inside one export. Ledger records are immutable, so one read is a snapshot.
+  `DiagnosticExportDtcSnapshotTest` (Context seam between the summary and the DTC files)
 - **DTC scan truth (#215)** — a module is OK only for a valid positive `59 02 …` reply (`DtcReply.classify`); 7F 19 NRC →
   REJECTED, malformed → MALFORMED, 7F 19 78 waits (P2* 5 s, cap 12 s) → else PENDING, none → TIMEOUT. The export record
   is published only through `DiagnosticLogger.dtcScans` (`DtcScanLedger`, session-scoped); never write a DtcScanRecord
@@ -486,6 +488,37 @@ data[5] = B5,  data[6] = B6 …
   it debug-only before stable (reviewer N-a). Unmeasured on phones: the 2 s fix age (late / batched fixes → no laps; read
   `STALE=` at STOP). Lap `peakBoostPsi` is a mixed-source `read()` value — never display or export it. Tests use the real Room database through
   test-only Robolectric 4.14.1 on SDK 35 (`src/test/resources/robolectric.properties`; the first run downloads android-all)
+  **One timer per recorder (#238 review F3, `71bd7eb`):** TRIP takes `remember(recorder) { recorder.lapTimerForUi() }` and never
+  installs its own — `remember { LapTimer() }` + assignment let a recreated activity (rotation) put a new, unarmed timer on the
+  recorder mid-drive, so the line vanished and STOP lost the laps before it. `recorder.lapTimer` stays assignable for tests
+  (`LapRecreationTest`)
+- **STOP waits for the drive's out-of-loop point writes (#241, fix branch `d3264c8`)** — an active export
+  (`snapshotActiveDrive`) or pause flush takes points from `DriveRun.pointsBuffer` and inserts them outside the loop; STOP
+  read the thumbnail input while that insert ran (3 / 23 points, partial PNG cached for good — `generateAndCache` never
+  rewrites). Those writers hold the run's `outsideLoopWrites` Mutex around take + insert; the finalize takes the stopped
+  run's lock after the loop join. Loop flushes stay unlocked. Failed inserts count in `failedPointWrites` and are reported
+  at STOP. Never wait on another drive's lock. `ThumbnailInputRegressionTest` (6). `DiagnosticExporter.share` still ships
+  a ZIP without drive files on a null snapshot, silently (pre-existing). **False "not saved" at STOP (QA 2026-11-02; FIXED
+  `20df014`, in #238 `2033fda`, QA-ACCEPTED — the insert's outcome is recorded inside `NonCancellable`, only a real
+  failure counts, cancellation rethrown; `StopFlushOutcomeTest`):** the loop's final `flushBuffer` in the cancelled finally — `withContext(NonCancellable + IO)` completes the
+  insert, then rethrows the cancellation, and `catch (Exception)` counts it, so nearly every STOP logs "Point flush failed …
+  JobCancellationException" + "Drive N ended with 1 failed point write(s) — those points are not saved" (logcat + a
+  DiagnosticLogger REC event in diagnostic ZIPs) while Room holds every point (`QaStopFlushWarningTest`, evidence
+  `rc7-229-oil-ptu-2026-11-02/qa/partB/`) — that was the bug. The loop's batch flush now runs at the end of the point, the final flush
+  keeps its `isRecording` update in a `finally`, and `snapshotActiveDrive` rethrows cancellation. The knock insert has the same
+  catch shape (false debug log only, not counted) and was left unchanged. **The buffer itself has one monitor (#238
+  review F2, `06fe4c7`):** every access goes through `DriveRun.addPoint` / `bufferedCount` / `takePoints` (copy + clear
+  in one step). `outsideLoopWrites` never covered the loop's GPS add or batch / final drain, so an export's take could
+  lose a fix added between copy and clear, or store a batch twice (inherited from rc.6). Inserts stay outside the
+  monitor; never suspend inside it. `PointBufferRaceTest` (test-only `HookedPointBuffer` swapped in by reflection — keep
+  `pointsBuffer` an `ArrayList`)
+- **Oil / PTU byte mapping (#229, in #238 `2033fda`)** — `OilPtuMapping.CURRENT` (`0f8-oil-b7-ptu-b1`) is
+  saved on every new drive (Room v14 `drives.oilPtuMapping`, nullable, never backfilled). NULL = recorded before the
+  correction: never restamp, infer (date / version / thermal record v2 / re-export) or recompute; TRIP and exports say
+  "not recorded" / "map n/r" (summary note, chart chip, legend, replay, CSV format line, GPX metadata, profile JSON).
+  Trends and comparisons never join the two kinds. Thermal record stays v2 (decode rejects other versions). The Custom
+  editor's ranges follow the bytes (OIL −60..195, PTU −50..205); saved limits are never changed on load. AWD 0x1E3F is NOT a
+  separate rear reading: in the capture it equalled byte1−50 in 67/67 (labels conflict between sources); 0x1E8A is the rear one
 - **KR sign convention** — `ignCorrCyl1..4 = raw / −512` → retard is **POSITIVE**. Knock capture uses `≥ 0.1°`, the header counter and POWER KR cells `> 1°`. Cyl 2–4 DIDs (0x03ED–EF) are unverified — 0x03ED/0x03EE NRC 0x31 on two RS PCMs (EU tuned #182 + user's car), so not tune-specific; 0x03EF answers but read 0 for a whole drive. NrcTracker suppresses 2/3; polling left as is (user decision 2026-10-22)
 - **TIP is `raw / 128` kPa absolute** — 0x033E/0x0466 (DigiCluster, on-car verified). rc.4/rc.5 used `/903.81`, which is the Ford-DID **psi** formula, hiding TIP and starving BOOST SWEEP ([#198](https://github.com/klexical/openRS_/issues/198)). Do not reintroduce 903.81
 - **Mode 01 equivalents live in Mode 22 `22F4xx`** — load (F404), timing (F40E), O2 V (F415), STFT/LTFT (F406/07), λ (F434/F444). `ObdPids.kt` (the Mode 01 path) was deleted in a7b01d0 and silently took the load/timing/AFR decoders with it — if a VehicleState field has no writer in ObdResponseParser/CanDecoder, it is dead. HP fuel is **0xF423** (DI gauge, ×10 kPa); 0xF422 is the port-injection PID and is rejected. LP fuel = **0x0548** (`raw × 0.5` kPa)
@@ -501,13 +534,15 @@ data[5] = B5,  data[6] = B6 …
 - **Lint version is pinned above AGP** — `android/gradle.properties` sets `android.experimental.lint.version=8.13.0` because AGP 8.7.3's bundled lint crashes (`IncompatibleClassChangeError`) on the lint checks shipped in Compose BOM 2025.11 / Lifecycle. Don't remove it unless AGP is upgraded to ≥ 8.13. `abortOnError = false`, so lint findings never fail CI — only crashes do; check `app/build/reports/lint-results-debug.txt` for errors ([#196](https://github.com/klexical/openRS_/issues/196))
 - **`MutableList.removeFirst()/removeLast()` crash below API 35** — with compileSdk 35 they resolve to `java.util.List.removeFirst` (Android 15+) and throw `NoSuchMethodError` on Android 9–14 (minSdk 28). Use `removeAt(0)` / `removeAt(lastIndex)`. `ArrayDeque.removeFirst()` is fine
 - **Location permission** — always request `ACCESS_COARSE_LOCATION` together with `ACCESS_FINE_LOCATION` (Android 12+ requirement); recording still needs FINE granted
-- **Release identity (#214)** — one definition at the top of `android/app/build.gradle.kts` (base / stage / candidate / versionCode) drives versionName (`2.2.7-rc.7`), the Settings label (`2.2.7-rc.7 · Build 36`), the APK name, the expected tag, `BuildConfig.RELEASE_NAME` / `SOURCE_COMMIT`, export and crash metadata, the updater (`AppVersion.current()`) and the What's New gate (once per release name; content by base version, never another version's notes). `-PrcSuffix` is gone (the build refuses it). CI `publish-release` runs `android/scripts/verify-release.sh` (tag = versionName = filename, versionCode above every earlier tag, release signer). Bump the versionCode for every distributed production build, stable included; debug builds carry `-dev+<commit>[.dirty]` — dirty = tracked changes or non-ignored untracked files under `android/`. `verify-release.sh` fails on an earlier tag whose versionCode it can't read (exception list `LEGACY_TAGS`, empty) or a checkout without tags. It rejects the rc.6 APK (embeds `2.2.7`, the convention then) — expected, not an rc.6 defect. rc.2–rc.6 all shipped as code 35 with versionName `2.2.7`. rc.6 was the first RC published by this job (the rc.3–rc.5 tag runs failed on the pre-#196 lint crash and were attached by hand). CI's keystore secrets sign with the same certificate as the published APKs (`c99b6f26…`)
-- **Release API keys (#235, integration candidate)** — `apiKey(name)` in `app/build.gradle.kts`: `local.properties`, else the
+- **Release identity (#214)** — one definition at the top of `android/app/build.gradle.kts` (base / stage / candidate / versionCode) drives versionName (`2.2.7-rc.7`), the Settings label (`2.2.7-rc.7 · Build 37`), the APK name, the expected tag, `BuildConfig.RELEASE_NAME` / `SOURCE_COMMIT`, export and crash metadata, the updater (`AppVersion.current()`) and the What's New gate (once per release name; content by base version, never another version's notes). `-PrcSuffix` is gone (the build refuses it). CI `publish-release` runs `android/scripts/verify-release.sh` (tag = versionName = filename, versionCode above every earlier tag, release signer). Bump the versionCode for every distributed production build, stable included; debug builds carry `-dev+<commit>[.dirty]` — dirty = tracked changes or non-ignored untracked files under `android/`. `verify-release.sh` fails on an earlier tag whose versionCode it can't read (exception list `LEGACY_TAGS`, empty) or a checkout without tags. It rejects the rc.6 APK (embeds `2.2.7`, the convention then) — expected, not an rc.6 defect. rc.2–rc.6 all shipped as code 35 with versionName `2.2.7`. rc.6 was the first RC published by this job (the rc.3–rc.5 tag runs failed on the pre-#196 lint crash and were attached by hand). CI's keystore secrets sign with the same certificate as the published APKs (`c99b6f26…`)
+- **Release API keys (#235)** — `apiKey(name)` in `app/build.gradle.kts`: `local.properties`, else the
   environment; optional for every build. `publish-release` maps the repository secrets `MAPS_API_KEY` /
-  `OPENWEATHER_API_KEY` (not configured yet — owner step) and runs `scripts/check-release-config.sh` (Maps required, weather
+  `OPENWEATHER_API_KEY` and runs `scripts/check-release-config.sh` (Maps required, weather
   a notice); `verify-release.sh` step 5 (`check-apk-maps-key.sh`) fails an APK with an absent / empty / placeholder Maps
   key, so it now rejects keyless local builds and the published rc.6 asset. Scripts print lengths only — never a key value.
-  The rc.6 asset has no Maps key (blank TRIP map) and no weather key
+  The rc.6 asset has no Maps key (blank TRIP map) and no weather key. `MAPS_API_KEY` was set 2026-11-03 (owner); the rc.7 asset
+  carries the Maps key (presence verified, value never printed). `OPENWEATHER_API_KEY` is not configured, so published builds
+  have no weather — expected, not a bug
 - **VehicleState slot ceiling** — `copy()` on the 162-param data class is at the JVM 255-slot limit. Adding any new field requires either collapsing an unused existing field (speculative AWD DIDs are candidates) or storing it off-state (DiagnosticLogger / genericValues Map). 0x040 lamp state is decoded + validated but not yet persisted on VehicleState for this reason
 - **Demo mode owns VehicleState while active** — `CanDataService.enterDemoMode()` finalizes any recording drive, calls
   `stopConnection()`, then `DemoMode.start()`. While `DemoMode.isActive`: `processCanFrame` / `mergeObdState` / the adapter
@@ -668,6 +703,25 @@ data[5] = B5,  data[6] = B6 …
 - **Fresh Play-services AVDs kill the app mid-test** — the Maps SDK's Dynamite loader SIGKILLs its own process when GMS is
   replaced during first-boot updates; `pm disable-user com.android.vending` on the throwaway AVD before smoke tests
 
+- **Private minified smoke without copying signing files** — in a scratch clone, run `assembleRelease` with
+  `ANDROID_HOME=$HOME/Library/Android/sdk` in the environment (no `local.properties` needed; the API keys are optional) and
+  AGP's `-Pandroid.injected.signing.{store.file,store.password,key.alias,key.password}` pointing at
+  `~/.android/debug.keystore` (`android` / `androiddebugkey`). The R8 output is the release's; the signer and the missing
+  keys (blank map, one Maps "Authorization failure" log line) make it NOT distributable. Use it only on a NEW disposable
+  AVD. The Maps key is restricted to the release cert, so a debug-signed build fails Maps even WITH the key.
+- **Private release-signed build (owner approval per build)** — in a scratch clone (all tags fetched, no rc tag created),
+  SYMLINK (never copy) `android/keystore.properties`, `android/local.properties` AND `android/openrs-release.jks` from the
+  main checkout: `storeFile` is relative to `android/`, so linking the properties alone doesn't find the keystore. All
+  three are gitignored (`SOURCE_DIRTY` stays false). Remove the links after `assembleRelease`, delete the build outputs
+  (they embed the keys), and scrub logs by count only. The Maps "Authorization failure" logcat block prints the API key —
+  redact it before filing. Done twice: Build 37 from `dab66a8` (`rc7-build37-2026-11-03/qa/`, `scripts/signing-links.sh`,
+  `scrub-count.sh`) and from `040a1f80` (`rc7-pr238-fixes-build-2026-11-03/qa/`). The keyAlias value is a public word, so
+  its scrub count is never 0: classify the matches by context with the value masked. Public contexts are the package
+  `com.<alias>.dash` / `com/<alias>/dash`, the committed `<alias>-release.jks` name and the GPX namespace `<alias>:`.
+- **Robolectric tests:** test-only and pinned (4.14.1 + androidx.test:core 1.6.1), `sdk=35` + a plain `Application` in
+  `app/src/test/resources/robolectric.properties`. SDK 35 needs only Java 17; Java 21 is needed from SDK 36 (an earlier
+  claim otherwise was wrong). Temurin 17.0.21 is at `~/Documents/openRS_-tools/jdk17-temurin/jdk-17.0.21+9/Contents/Home`
+  (CI's major version); the Android Studio JBR is a different JDK.
 ## Theme Colors
 
 v2.2.7 "Daylight" ships three discrete palettes selected via `setThemeMode(ThemeMode)`.
@@ -725,8 +779,8 @@ Regenerate the FORScan catalog: `python3 android/scripts/gen_forscan_catalog.py`
 cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{releaseName}.apk (e.g. openRS_v2.2.7-rc.7.apk; set in app/build.gradle.kts)
-./gradlew test                             # 1025 unit tests across 79 files, each variant (source 81baa76 = feature/rc7 code through 12b6e4f; integration 86e4af8: 1030 / 80; tested integration tip 7bb8a9a: 1034 / 81; clean candidate 0e4c120: 1045 / 84; 8d1903e: 1066 / 86)
-./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 45 warnings rc.6)
+./gradlew test                             # 1102 tests / 94 classes per variant at rc.7 (`43ad5e1`); older totals under Tests
+./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 47 warnings rc.7)
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
 
@@ -816,7 +870,7 @@ Drive-mode dock / ESC buttons / DTC clear act on simulated state only (mode land
 
 Keys: `android/local.properties` (`MAPS_API_KEY`, `OPENWEATHER_API_KEY`) or the same names in the environment — optional for
 local builds (#235); `android/keystore.properties` for release signing.
-Version display format: `openRS_ v2.2.7-rc.7 · Build 36` (Settings) — the release name comes from `app/build.gradle.kts`
+Version display format: `openRS_ v2.2.7-rc.7 · Build 37` (Settings) — the release name comes from `app/build.gradle.kts`
 (see the Release identity gotcha); there is no `-PrcSuffix` any more.
 
 ## Tests
@@ -912,12 +966,16 @@ android/app/src/test/java/com/openrs/dash/
   scripts/test-release-config.sh 8 (#235, shell — not in the Gradle count)
   #236 / #237 2026-11-01 (real Room via Robolectric): DriveFinalizeTest 7 · DriveDbForeignKeyTest 5 · LapFeedTest 3 ·
   LapHandoffTest 1 · LapReplayTest 3 (shared route `LapReplay.kt` = the emulator script's) · LapTimerTest 42
+  #229 / #241 2026-11-02/03: OilPtuMappingTest 6 · OilPtuRecorderTest 2 · StopFlushOutcomeTest 5 · ThumbnailInputRegressionTest 6
+  #238 final review 2026-11-03: BleCommandSendFailureTest 6 (F1) · PointBufferRaceTest 3 (F2, `testing/HookedPointBuffer.java`) ·
+  LapRecreationTest 3 (F3) · DiagnosticExportDtcSnapshotTest 5 (F4)
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **1025 tests across 79 files** (Android, `./gradlew test` at source `81baa76` — debug and release variants each;
-`feature/rc7` code is unchanged through `12b6e4f`, later commits docs-only; unmerged work branches carry their own totals; integration candidate `86e4af8`: **1030 / 80** per
-variant; tested integration tip `7bb8a9a`: **1034 / 81** per variant; clean candidate `0e4c120`: **1045 / 84** per variant; tested clean candidate `8d1903e`: **1066 / 86** per variant, Temurin 17) + **282 vitest across 25 files** (Sapphire — run `web/node_modules/.bin/vitest run` and `tsc -b`).
+Current count: **1102 tests / 94 classes** per variant (Android, rc.7 = `43ad5e1`, same Android sources as #238 head `040a1f8`;
+Temurin 17) + **293 vitest across 26 files** (Sapphire at rc.7 — run `web/node_modules/.bin/vitest run` and `tsc -b`). Earlier
+totals: 1085 / 90 `2033fda`; 1072 / 87 `d3264c8`; 1066 / 86 `8d1903e`; 1045 / 84 `0e4c120`; 1034 / 81 `7bb8a9a`; 1025 / 79
+`81baa76` (`8d1903e` / `0e4c120` / `7bb8a9a` / `81baa76` are local build IDs from the pre-cleanup history — not on GitHub).
 
 ## Branch / Release Workflow
 
@@ -1206,7 +1264,7 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   only** — sticky service restart without the app (#234), BLE GATT layouts (#218); **untested** — real BLE device
   selection on `81baa76`, ESC change confirmation on a car (#125), openRS_ firmware Wi-Fi detection on current firmware
   (#220), unreleased firmware source (never flashed).
-- Still open (2026-11-01):
+- Still open as of 2026-11-01 (**historical** — current state: rc.7 publication record below):
   - **Gates before any rc.7 tag (owner's go-ahead for each):** owner hardware test on `81baa76` (pending — no result
     recorded); a new versionCode for any distributed build (every review APK so far is vc 36); minified-release smoke of
     the final build (R8 gotcha / #227); repository secrets for #235 (Maps required) before any tag; PRs (feature/rc7 → staging, fix/sapphire-row-validation → main); the tag.
@@ -1229,6 +1287,55 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
     v2.x interface, #218) — both local, not pushed. At staging → main take main's
     `README.md` (feature/rc7 is only behind) and `docs/feature-roadmap.md` (both sides edited — `5606ac7` vs `b2fbe87`),
     cleanup, stable promotion.
+
+**rc.7 publication record (2026-11-03 UTC; evidence `~/Documents/openRS_-evidence/rc7-publish-2026-11-03/`):**
+- **Android:**
+  - PR #238 (`feature/rc7-candidate` @ `040a1f8`) → staging merge `3937306` (parents `9f3c100` + `040a1f8`); staging CI 41737621572 green.
+  - PR #244 (CHANGELOG "Fixed (rc.7 — final review 2026-11-03)" for F1–F4, `b0d7349`, CHANGELOG only) → staging merge `43ad5e1`; PR CI 41741749888 + staging CI 41742463569 green.
+  - Tag `android-v2.2.7-rc.7` → `43ad5e1` (lightweight, created by `gh release create --prerelease --latest=false`); tag CI 41743255767 green (Build & Test, Lint, Verify Firmware, Attach APK).
+  - Prerelease https://github.com/klexical/openRS_/releases/tag/android-v2.2.7-rc.7. The latest release stays `android-v2.2.6`.
+  - Each step was taken on the owner's direct approval naming the SHA. Pushes went from the noreply publish clone under single-use gates v2s4–v2s7 (`rc7-integration-docs-2026-11-01/prepush-supplemental-*`; all stale now).
+- **Asset:** `openRS_v2.2.7-rc.7.apk`.
+  - 6,589,736 B, SHA-256 `eb937284564afb99c4b469a2d07d0c90885c3cb265a7bea6cd21591b9eb2464e` (= GitHub's asset digest).
+  - `com.openrs.dash`, versionName `2.2.7-rc.7`, versionCode 37, min 28 / target 35.
+  - APK Signature Scheme v2, cert SHA-256 `c99b6f263ee3b5bb610040431403d459e0e7b12aa941f114f0d9717d974ada74` (= rc.6). `verify-release.sh` OK.
+  - Maps key present (length only). No weather key: no `OPENWEATHER_API_KEY` secret.
+  - Build-provenance attestation → `ci.yml` @ the tag, commit `43ad5e1`, run 41743255767.
+  - Verified from fresh downloads by two sessions (integrator + QA, `verify-e1/`, `verify-9d/`). Not installed on any owner device.
+- **Notes:** CHANGELOG-based highlights, "Known limitations / RC testing status", Download block filled from the verified asset (`rc7-build37-2026-11-03/publish/notes-final.md`).
+- **What was tested, by binary** (`81baa76` and `a605b1c` are local build IDs from the pre-cleanup history — not on GitHub; the
+  Build 36 review APK is SHA-256 `efe622c4…7a98`):
+  - **Published APK `eb937284…`:** disposable read-only AVD (synthetic adapter + GPS; `rc7-public-apk-smoke-2026-11-04/dev/RESULTS.md`), installed bytes = `eb937284…`: cold launch + every tab, Settings `2.2.7-rc.7 · Build 37`, 0 verifier / fatal / ANR / Maps-authorization lines, real map imagery with CI's key, a recorded drive + STOP (no false "not saved", no false ACTIVE, whole-route thumbnail, 0 duplicate points), drive + diagnostic exports (`sourceCommit` 43ad5e1, oil / PTU mapping lines), 6 laps persisted across two rotations, in-place upgrade from Build 36 `81baa76` (settings kept, Room v13 → v14, old drive "not recorded"). Points follow the emulator's location callbacks (~1.2 s), not 1:1 with injected fixes — unverified on a phone
+  - **Private release-signed Build 37** (same Android sources, a different binary, local key injection; `0d18298c…` from `040a1f8`): disposable-AVD smoke — upgrade from `81baa76`, Room v13 → v14, STOP, export, every tab, map tiles, F3 laps across two rotations (`rc7-pr238-fixes-build-2026-11-03/qa/RESULTS.md`). Never distributed.
+  - **Build 36 (vc 36):**
+    - The owner's quick phone + Bluetooth check of the review APK `81baa76` was reported PASS (owner-reported, no diagnostics).
+    - The frozen `a605b1c` ran on one car with one WiCAN Pro over BLE: telemetry and parked drive mode PASS, ESC not passed, DTC partial (`rc7-hw-oct31/TRIAGE.md`).
+    - Features in each build: the review APK `81baa76` already includes the 2026-10-31 fix round, with the CAN-confirmed
+      drive-mode result and the DTC write-failure reporting. The frozen `a605b1c` predates both. Both Build 36 builds
+      predate every 2026-11-01..03 fix.
+    - Hardware evidence for those two features: none. The car run used `a605b1c`, where drive mode passed under the
+      older "accepted" result and the DTC write failures had no recorded reason. The quick check of `81baa76` recorded no
+      diagnostics.
+  - **No phone or car run** of Build 37 or of the published APK.
+- **Open after publication** (hardware / investigations, unchanged by the release):
+  - ESC on a car (#125);
+  - Wi-Fi drive mode / firmware detection (#220);
+  - USB BLE layout (#218);
+  - #229 on other cars;
+  - signal identities (#205 #207 #230, battery SoC, KR cyl 2–4, sub-zero ambient #185);
+  - real-GPS laps (#237);
+  - real DTC replies (#215);
+  - a decimal-comma phone export (#211);
+  - head-unit side bars (#231);
+  - GPS-independent recording (#221);
+  - Sapphire tiles (#240).
+- **Follow-ups seen, not changed:**
+  - the release-build per-fix `LapTimer` log line (make it debug-only before stable);
+  - knock-insert false debug log on a cancelled STOP;
+  - 20 s silent-adapter hold;
+  - boost peak caption in psi;
+  - the Sapphire per-source peaks O(n²).
+- **Not done:** issue closures, stable promotion (staging → main), cleanup of disposable AVDs / scratch clones / worktrees. Each needs the owner.
 
 **rc.6 publication record (2026-10-28 UTC; evidence `~/Documents/openRS_-evidence/rc6-release-2026-10-27/PUBLISHED.txt`):**
 - Android: PR #202 (feature/design-pass `056556b`) → staging merge `d2f7dc6`; staging CI 40625379258 green; tag
