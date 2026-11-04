@@ -1310,7 +1310,12 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   - **Build 36 (vc 36):**
     - The owner's quick phone + Bluetooth check of the review APK `81baa76` was reported PASS (owner-reported, no diagnostics).
     - The frozen `a605b1c` ran on one car with one WiCAN Pro over BLE: telemetry and parked drive mode PASS, ESC not passed, DTC partial (`rc7-hw-oct31/TRIAGE.md`).
-    - Both predate the CAN-confirmed drive-mode result, the DTC write-failure reporting and every 2026-11-01..03 fix.
+    - Features in each build: the review APK `81baa76` already includes the 2026-10-31 fix round, with the CAN-confirmed
+      drive-mode result and the DTC write-failure reporting. The frozen `a605b1c` predates both. Both Build 36 builds
+      predate every 2026-11-01..03 fix.
+    - Hardware evidence for those two features: none. The car run used `a605b1c`, where drive mode passed under the
+      older "accepted" result and the DTC write failures had no recorded reason. The quick check of `81baa76` recorded no
+      diagnostics.
   - **No phone or car run** of Build 37 or of the published APK.
 - **Open after publication** (hardware / investigations, unchanged by the release):
   - ESC on a car (#125);
