@@ -16,9 +16,9 @@ import org.junit.Test
 /** One release identity across build, updater, Settings and What's New (#214). */
 class VersionIdentityTest {
 
-    @Test fun `this build is 2_2_7-rc_7, versionCode 37`() {
+    @Test fun `this build is 2_2_7-rc_7, versionCode 38 (rc_7 Build 38 maintenance asset)`() {
         assertEquals("2.2.7-rc.7", BuildConfig.RELEASE_NAME)
-        assertEquals(37, BuildConfig.VERSION_CODE)
+        assertEquals(38, BuildConfig.VERSION_CODE)
         assertEquals(AppVersion(2, 2, 7, 7), AppVersion.current())
         assertTrue(BuildConfig.VERSION_NAME.startsWith("2.2.7-rc.7"))           // debug adds -dev+<commit>
     }
@@ -71,6 +71,30 @@ class VersionIdentityTest {
         assertEquals(AppVersion(2, 2, 7, 7), UpdateChecker.parseReleases(json, "beta", AppVersion(2, 2, 6))!!.version)
     }
 
+    // rc.7 Build 38 ships as an extra asset on the existing rc.7 release, named outside the updater's
+    // openRS_*.apk matcher: the updater keeps reading the original asset, and Build 38 is a manual in-place upgrade.
+    private fun releaseWith(tag: String, prerelease: Boolean, vararg apks: String) = JSONObject().apply {
+        put("tag_name", tag); put("prerelease", prerelease); put("draft", false); put("body", "notes $tag")
+        put("assets", JSONArray().apply {
+            apks.forEach { apk -> put(JSONObject().apply {
+                put("name", apk); put("browser_download_url", "https://example.invalid/$apk"); put("size", 1)
+            }) }
+        })
+    }
+
+    @Test fun `the Build 38 maintenance asset is outside the updater's matcher, the original asset still matches`() {
+        val original = "openRS_v2.2.7-rc.7.apk"; val build38 = "openrs-2.2.7-rc.7-build38.apk"
+        for (order in listOf(arrayOf(original, build38), arrayOf(build38, original))) {
+            val json = releases(releaseWith("android-v2.2.7-rc.7", true, *order))
+            val fromRc6 = UpdateChecker.parseReleases(json, "beta", AppVersion(2, 2, 7, 6))!!
+            assertEquals(AppVersion(2, 2, 7, 7), fromRc6.version)
+            assertEquals("https://example.invalid/$original", fromRc6.downloadUrl)                // never the Build 38 file
+            assertNull(UpdateChecker.parseReleases(json, "beta", AppVersion(2, 2, 7, 7)))      // Build 37 / 38: up to date
+        }
+        // Alone, the maintenance asset is no update at all — its name is not openRS_*.apk (case and separator differ)
+        assertNull(UpdateChecker.parseReleases(releases(releaseWith("android-v2.2.7-rc.7", true, build38)), "beta", AppVersion(2, 2, 7, 6)))
+    }
+
     @Test fun `Settings label — release, debug with revision and dirty marker`() {
         assertEquals("2.2.7-rc.7 · Build 36", BuildInfo.settingsLabel("2.2.7-rc.7", 36, "release", "1c3e602a9b1d", false))
         assertEquals("2.2.7-rc.7 · Build 36 · debug 1c3e602*", BuildInfo.settingsLabel("2.2.7-rc.7", 36, "debug", "1c3e602a9b1d", true))
@@ -81,6 +105,11 @@ class VersionIdentityTest {
         assertTrue(shouldShowWhatsNew(lastSeen = "2.2.7", releaseName = "2.2.7-rc.7", base = "2.2.7"))        // from rc.6 (stored base)
         assertTrue(shouldShowWhatsNew(lastSeen = "2.2.7-rc.6", releaseName = "2.2.7-rc.7", base = "2.2.7"))
         assertFalse(shouldShowWhatsNew(lastSeen = "2.2.7-rc.7", releaseName = "2.2.7-rc.7", base = "2.2.7"))  // already seen
+        // Build 37 → Build 38 keeps the release name, so the dialog does not reopen on that upgrade; its Build 38 line
+        // shows on a fresh install or from Settings → What's New
+        assertFalse(shouldShowWhatsNew(lastSeen = BuildConfig.RELEASE_NAME, releaseName = BuildConfig.RELEASE_NAME, base = "2.2.7"))
+        assertTrue(whatsNewHighlights("2.2.7")!!.first().startsWith("rc.7 · Build ${BuildConfig.VERSION_CODE}: "))
+        assertTrue(whatsNewHighlights("2.2.7")!!.any { it.contains("labelled TIP, and") })      // rc.7's published line kept
         assertFalse(shouldShowWhatsNew(lastSeen = "2.2.7-rc.7", releaseName = "2.2.8-rc.1", base = "2.2.8"))  // no 2.2.8 notes
         assertNull(whatsNewHighlights("9.9.9"))
         assertTrue(whatsNewHighlights("2.2.7")!!.isNotEmpty())
