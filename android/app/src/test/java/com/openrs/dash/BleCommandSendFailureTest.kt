@@ -14,6 +14,8 @@ import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.EscStatus
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticLogger
+import com.openrs.dash.diagnostics.DidProbeEnd
+import com.openrs.dash.diagnostics.runDidProbeScan
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -50,6 +52,7 @@ class BleCommandSendFailureTest {
     private inner class FakeGatt(val core: BleGattCore, val scope: CoroutineScope) : GattLink {
         var frs = FrsWrite.OK
         val frsWrites = mutableListOf<String>()
+        var slcanWriteStatus: (String) -> Int = { BleSetupPolicy.GATT_SUCCESS }
         var closed = false
         override fun discoverServices() = true
         override fun setNotify(service: UUID, characteristic: UUID, enable: Boolean) = true
@@ -58,7 +61,11 @@ class BleCommandSendFailureTest {
         }
         override fun write(service: UUID, characteristic: UUID, value: ByteArray, writeType: Int): Boolean {
             val text = String(value, Charsets.ISO_8859_1)
-            if (!text.startsWith("AT+FRS")) { scope.launch { delay(10); core.onWrite(BleSetupPolicy.GATT_SUCCESS) }; return true }
+            if (!text.startsWith("AT+FRS")) {
+                val status = slcanWriteStatus(text)
+                scope.launch { delay(10); core.onWrite(status) }
+                return true
+            }
             frsWrites += text
             when (frs) {
                 FrsWrite.OK -> scope.launch {
@@ -132,6 +139,56 @@ class BleCommandSendFailureTest {
         EscCommand.execute(api, target, { car }, connectionId = { 1 }, clock = { testScheduler.currentTime })
 
     @Before fun session() { DiagnosticLogger.sessionStart("test", 0, prefs = null) }
+
+    @Test fun `DID prober - GATT 13 on the first write produces no result or completed session`() = runTest {
+        val link = connected(FrsWrite.OK)
+        val frames = listOf("t7E080322ABCD00000000\r", "t7E080322ABCE00000000\r")
+        val sent = mutableListOf<String>()
+        link.first.slcanWriteStatus = { frame ->
+            if (frame in frames) { sent.add(frame); 13 } else BleSetupPolicy.GATT_SUCCESS
+        }
+        val end = runDidProbeScan("PCM", 0x7E0, 0x7E8, listOf(0xABCD, 0xABCE),
+            link.conn::sendRawQuery, { false }) { error("unacknowledged write produced a DID result") }
+        assertEquals(DidProbeEnd.Failed(0xABCD, "IOException: BLE write failed (GATT 13)"), end)
+        assertEquals(frames.take(1), sent)
+        assertTrue(DiagnosticLogger.probeSessions.isEmpty())
+        val event = DiagnosticLogger.sessionEvents.single { it.type == "PROBE" }
+        assertTrue(event.message.contains("0/2 probed"))
+    }
+
+    @Test fun `DID prober - GATT 13 stops after one failed write and a fresh scan can complete`() = runTest {
+        val link = connected(FrsWrite.OK)
+        val dids = (0xABCD..0xABCF).toList() // outside the ordinary poll set
+        val frames = dids.map { "t7E080322%04X00000000\r".format(it) }
+        val sent = mutableListOf<String>()
+        val shown = mutableListOf<DiagnosticLogger.ProbeResult>()
+        link.first.slcanWriteStatus = { frame ->
+            if (frame in frames) sent.add(frame)
+            if (frame == frames[0]) backgroundScope.launch {
+                delay(30)
+                link.first.core.onNotify(pro.notify, "t7E880462ABCDBA000000\r".toByteArray())
+            }
+            if (frame == frames[1]) 13 else BleSetupPolicy.GATT_SUCCESS
+        }
+
+        val end = runDidProbeScan("PCM", 0x7E0, 0x7E8, dids, link.conn::sendRawQuery, { false }) { shown.add(it) }
+        val first = DiagnosticLogger.ProbeResult(dids.first(), "FOUND", "BA 00 00 00")
+        assertEquals(DidProbeEnd.Failed(dids[1], "IOException: BLE write failed (GATT 13)"), end)
+        assertEquals(frames.take(2), sent) // no retry and no third DID
+        assertEquals(listOf(first), shown)
+        assertTrue(DiagnosticLogger.probeSessions.isEmpty())
+        val events = DiagnosticLogger.sessionEvents.filter { it.type == "PROBE" }
+        assertEquals(1, events.size)
+        assertTrue(events.single().message.contains("GATT 13"))
+        assertFalse(events.single().message.contains("scan complete"))
+
+        shown.clear()
+        val next = runDidProbeScan("PCM", 0x7E0, 0x7E8, dids.take(1), link.conn::sendRawQuery, { false }) { shown.add(it) }
+        assertEquals(DidProbeEnd.Complete, next)
+        assertEquals(listOf(first), shown)
+        assertEquals(listOf(first), DiagnosticLogger.probeSessions.single().results)
+        assertEquals(listOf(frames[0], frames[1], frames[0]), sent)
+    }
 
     @Test fun `harness - an acknowledged AT+FRS with a CAN report after it confirms the drive mode`() = runTest {
         val link = connected(FrsWrite.OK)

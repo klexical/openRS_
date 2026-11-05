@@ -33,22 +33,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import com.openrs.dash.ui.Tokens.CardBorder
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.openrs.dash.diagnostics.DiagnosticLogger
+import com.openrs.dash.R
 import com.openrs.dash.data.ForscanCatalog
 import com.openrs.dash.data.ForscanModule
 import com.openrs.dash.data.VehicleState
+import com.openrs.dash.diagnostics.DiagnosticLogger.ProbeResult
+import com.openrs.dash.diagnostics.DidProbeEnd
+import com.openrs.dash.diagnostics.runDidProbeScan
+import com.openrs.dash.ui.Tokens.CardBorder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-
-private data class ProbeEntry(
-    val did: Int,
-    val status: String,
-    val responseHex: String
-)
+import kotlinx.coroutines.withContext
 
 @Composable
 fun DidProberSection(
@@ -77,7 +76,8 @@ fun DidProberSection(
     var progress by remember { mutableIntStateOf(0) }
     var total by remember { mutableIntStateOf(0) }
     var probeStartMs by remember { mutableLongStateOf(0L) }
-    val results = remember { mutableStateListOf<ProbeEntry>() }
+    var scanEnd by remember { mutableStateOf<DidProbeEnd?>(null) }
+    val results = remember { mutableStateListOf<ProbeResult>() }
     var expanded by remember { mutableStateOf(false) }
 
     val selectedModule = probableModules[selectedIdx.coerceIn(probableModules.indices)]
@@ -150,8 +150,11 @@ fun DidProberSection(
                         RoundedCornerShape(8.dp)
                     )
                     .clickable(enabled = canProbe) {
+                        if (probing) return@clickable
+                        val sendFn = onSendRawQuery ?: return@clickable
                         probing = true
                         cancelled = false
+                        scanEnd = null
                         results.clear()
                         progress = 0
                         probeStartMs = System.currentTimeMillis()
@@ -160,30 +163,17 @@ fun DidProberSection(
                         total = dids.size
 
                         scope.launch {
-                            val sendFn = onSendRawQuery ?: return@launch
-                            for (did in dids) {
-                                if (cancelled) break
-                                val frame = "t%03X80322%04X00000000\r".format(requestId, did)
-                                val resp = kotlinx.coroutines.withContext(Dispatchers.IO) {
-                                    sendFn(responseId, frame, 1_000L)
-                                }
-                                val entry = classifyResponse(did, resp)
-                                // State mutations on Main thread (default dispatcher)
-                                results.add(entry)
-                                progress = results.size
-                                kotlinx.coroutines.delay(100L)
-                            }
-                            probing = false
-                            // Log probe results for diagnostic export
-                            if (results.isNotEmpty()) {
-                                DiagnosticLogger.recordProbeSession(
-                                    module = selectedModule.id,
-                                    requestId = requestId,
-                                    responseId = responseId,
-                                    results = results.map {
-                                        DiagnosticLogger.ProbeResult(it.did, it.status, it.responseHex)
-                                    }
+                            try {
+                                scanEnd = runDidProbeScan(
+                                    selectedModule.id, requestId, responseId, dids,
+                                    sendRawQuery = { id, frame, timeout ->
+                                        withContext(Dispatchers.IO) { sendFn(id, frame, timeout) }
+                                    },
+                                    stopRequested = { cancelled },
+                                    onResult = { results.add(it); progress = results.size },
                                 )
+                            } finally {
+                                probing = false
                             }
                         }
                     }
@@ -219,16 +209,21 @@ fun DidProberSection(
                         .width(72.dp)
                         .background(Orange.copy(0.08f), RoundedCornerShape(8.dp))
                         .border(CardBorder, Orange.copy(0.3f), RoundedCornerShape(8.dp))
-                        .clickable {
-                            cancelled = true
-                            probing = false
-                        }
+                        .clickable(enabled = !cancelled) { cancelled = true }
                         .padding(vertical = 12.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     MonoLabel("STOP", 10.sp, Orange)
                 }
             }
+        }
+
+        when (val end = scanEnd) {
+            is DidProbeEnd.Failed -> MonoLabel(
+                stringResource(R.string.did_probe_failed, end.did, end.reason, progress, total), 10.sp, Orange
+            )
+            DidProbeEnd.Stopped -> MonoLabel(stringResource(R.string.did_probe_stopped, progress, total), 10.sp, Dim)
+            else -> Unit
         }
 
         if (probing && total > 0) {
@@ -288,7 +283,7 @@ fun DidProberSection(
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     val sortedResults = results.sortedWith(
-                        compareByDescending<ProbeEntry> { it.status == "FOUND" }
+                        compareByDescending<ProbeResult> { it.status == "FOUND" }
                             .thenBy { it.did }
                     )
                     sortedResults.forEach { entry ->
@@ -309,7 +304,7 @@ fun DidProberSection(
 
 @Composable
 private fun ProbeResultRow(
-    entry: ProbeEntry,
+    entry: ProbeResult,
     accent: androidx.compose.ui.graphics.Color
 ) {
     val color = when (entry.status) {
@@ -354,36 +349,4 @@ private fun generateCandidateDids(module: ForscanModule): List<Int> {
     for (range in ranges) dids.addAll(range)
 
     return dids.sorted()
-}
-
-private fun classifyResponse(did: Int, data: ByteArray?): ProbeEntry {
-    if (data == null || data.size < 2) return ProbeEntry(did, "TIMEOUT", "")
-    val svc = data[1].toInt() and 0xFF
-    return when (svc) {
-        0x62 -> ProbeEntry(
-            did, "FOUND",
-            data.drop(4).joinToString(" ") { "%02X".format(it) }
-        )
-        0x7F -> {
-            val code = if (data.size > 3) data[3].toInt() and 0xFF else null
-            val label = if (code != null) "NRC 0x%02X — %s".format(code, nrcLabel(code)) else "NRC ??"
-            ProbeEntry(did, "NRC", label)
-        }
-        else -> ProbeEntry(did, "TIMEOUT", data.joinToString(" ") { "%02X".format(it) })
-    }
-}
-
-private fun nrcLabel(code: Int): String = when (code) {
-    0x10 -> "general reject"
-    0x11 -> "service not supported"
-    0x12 -> "sub-function not supported"
-    0x13 -> "incorrect message length"
-    0x14 -> "response too long"
-    0x22 -> "conditions not correct"
-    0x31 -> "request out of range"
-    0x33 -> "security access denied"
-    0x35 -> "invalid key"
-    0x72 -> "general programming failure"
-    0x78 -> "request correctly received, response pending"
-    else -> "NRC 0x%02X".format(code)
 }
