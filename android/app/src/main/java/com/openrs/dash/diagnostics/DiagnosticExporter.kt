@@ -551,14 +551,22 @@ object DiagnosticExporter {
         probes.forEachIndexed { idx, session ->
             val name = "did_probe_${session.module.lowercase()}_${idx + 1}.csv"
             zip.putNextEntry(ZipEntry(name))
-            val csv = buildString {
-                appendLine("DID,Status,ResponseHex")
-                session.results.forEach { r ->
-                    appendLine("0x${"%04X".format(r.did)},${r.status},${r.responseHex}")
-                }
-            }
-            zip.write(csv.toByteArray(Charsets.UTF_8))
+            zip.write(probeCsv(session).toByteArray(Charsets.UTF_8))
             zip.closeEntry()
         }
+    }
+}
+
+/**
+ * One probe session as CSV. A complete scan is unchanged; a stopped / failed one starts with a `#` line (like the drive
+ * CSVs' `# openrs_csv_v2`) so its rows can't be read as a whole scan.
+ */
+internal fun probeCsv(session: DiagnosticLogger.ProbeSession): String = buildString {
+    if (session.outcome != DiagnosticLogger.PROBE_COMPLETE) {
+        appendLine("# outcome=${session.outcome} probed=${session.results.size} planned=${session.planned}")
+    }
+    appendLine("DID,Status,ResponseHex")
+    session.results.forEach { r ->
+        appendLine("0x${"%04X".format(r.did)},${r.status},${r.responseHex}")
     }
 }

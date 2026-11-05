@@ -176,7 +176,11 @@ class BleCommandSendFailureTest {
         assertEquals(DidProbeEnd.Failed(dids[1], "IOException: BLE write failed (GATT 13)"), end)
         assertEquals(frames.take(2), sent) // no retry and no third DID
         assertEquals(listOf(first), shown)
-        assertTrue(DiagnosticLogger.probeSessions.isEmpty())
+        // the result it has is kept, labelled FAILED with the planned count — never a whole scan
+        val failed = DiagnosticLogger.probeSessions.single()
+        assertEquals(DiagnosticLogger.PROBE_FAILED, failed.outcome)
+        assertEquals(3, failed.planned)
+        assertEquals(listOf(first), failed.results)
         val events = DiagnosticLogger.sessionEvents.filter { it.type == "PROBE" }
         assertEquals(1, events.size)
         assertTrue(events.single().message.contains("GATT 13"))
@@ -186,7 +190,10 @@ class BleCommandSendFailureTest {
         val next = runDidProbeScan("PCM", 0x7E0, 0x7E8, dids.take(1), link.conn::sendRawQuery, { false }) { shown.add(it) }
         assertEquals(DidProbeEnd.Complete, next)
         assertEquals(listOf(first), shown)
-        assertEquals(listOf(first), DiagnosticLogger.probeSessions.single().results)
+        val fresh = DiagnosticLogger.probeSessions.last()
+        assertEquals(2, DiagnosticLogger.probeSessions.size)
+        assertEquals(DiagnosticLogger.PROBE_COMPLETE, fresh.outcome)
+        assertEquals(listOf(first), fresh.results)
         assertEquals(listOf(frames[0], frames[1], frames[0]), sent)
     }
 

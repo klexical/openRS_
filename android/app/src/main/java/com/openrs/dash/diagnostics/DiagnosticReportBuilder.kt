@@ -350,7 +350,9 @@ internal object DiagnosticReportBuilder {
                 val nrc     = ps.results.count { it.status == "NRC" }
                 val timeout = ps.results.count { it.status == "TIMEOUT" }
                 appendLine("  ${ps.module} (0x${"%03X".format(ps.requestId)}→0x${"%03X".format(ps.responseId)}) @ +${log.formatDuration(ps.relMs)}")
-                appendLine("    ${ps.results.size} probed — $found found, $nrc rejected, $timeout timeout")
+                val probed = if (ps.outcome == DiagnosticLogger.PROBE_COMPLETE) "${ps.results.size} probed"
+                    else "${ps.outcome} — ${ps.results.size} of ${ps.planned} probed"
+                appendLine("    $probed — $found found, $nrc rejected, $timeout timeout")
                 ps.results.filter { it.status == "FOUND" }.forEach { r ->
                     appendLine("    ✓ 0x${"%04X".format(r.did)}  ${r.responseHex}")
                 }
@@ -521,6 +523,8 @@ internal object DiagnosticReportBuilder {
                     put("requestId", "0x%03X".format(ps.requestId))
                     put("responseId", "0x%03X".format(ps.responseId))
                     put("totalProbed", ps.results.size)
+                    put("outcome", ps.outcome)
+                    put("planned", ps.planned)
                     put("found", ps.results.count { it.status == "FOUND" })
                     put("results", JSONArray().apply {
                         ps.results.forEach { r ->
