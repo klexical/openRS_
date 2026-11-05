@@ -1038,7 +1038,7 @@ android/app/src/test/java/com/openrs/dash/
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **1136 tests / 100 classes** per variant (Android, `feature/rc8-diagnostics` `df7bcb9`, 13 skipped =
+Current count: **1136 tests / 100 classes** per variant (Android, `feature/rc8-diagnostics` `9018d11` (tests identical to `df7bcb9`), 13 skipped =
 the @Ignore'd red cases; Temurin 17); **1108 / 95** on the rc.7 Build 38 branch `feature/boost-label-throttle-inlet`; **1102 / 94** at rc.7 = `43ad5e1` (same Android sources as #238 head `040a1f8`) + **293 vitest across 26 files** (Sapphire at rc.7 — run `web/node_modules/.bin/vitest run` and `tsc -b`). Earlier
 totals: 1085 / 90 `2033fda`; 1072 / 87 `d3264c8`; 1066 / 86 `8d1903e`; 1045 / 84 `0e4c120`; 1034 / 81 `7bb8a9a`; 1025 / 79
 `81baa76` (`8d1903e` / `0e4c120` / `7bb8a9a` / `81baa76` are local build IDs from the pre-cleanup history — not on GitHub).
