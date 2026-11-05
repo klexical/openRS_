@@ -55,5 +55,19 @@ D=$(repo); jq '.source_tree = "not-a-tree"' "$D/android/release-maintenance.json
   && mv "$D/m" "$D/android/release-maintenance.json" && git -C "$D" commit -qam "bad tree"
 if o=$(run "$D"); then bad "bad tree id passed: $o"; else ok "malformed source_tree → error"; fi
 
+# A marker updated after one exists: the parent's tree still holds the OLD marker, so "parent tree" is the wrong pin
+# (that slip happened once); source-tree gives the right one.
+D=$(repo); echo "code v3" > "$D/android/app/Main.kt"; git -C "$D" commit -qam "a fix after the first marker"
+PARENT=$(git -C "$D" rev-parse 'HEAD^{tree}')
+RIGHT=$(cd "$D" && bash android/scripts/rc-maintenance.sh source-tree android/release-maintenance.json)
+[ "$RIGHT" != "$PARENT" ] && ok "updated marker: source-tree differs from the parent's tree (old marker inside)" \
+  || bad "source-tree equals the parent tree"
+jq --arg t "$PARENT" '.source_tree = $t' "$D/android/release-maintenance.json" > "$D/m" && mv "$D/m" "$D/android/release-maintenance.json"
+git -C "$D" commit -qam "marker = parent tree (wrong)"
+o=$(run "$D"); grep -q '^pinned=false$' <<<"$o" && ok "updated marker pinned to the parent's tree → not built" || bad "parent-tree pin: $o"
+jq --arg t "$RIGHT" '.source_tree = $t' "$D/android/release-maintenance.json" > "$D/m" && mv "$D/m" "$D/android/release-maintenance.json"
+git -C "$D" commit -qam "marker = source-tree (right)"
+o=$(run "$D"); grep -q '^pinned=true$' <<<"$o" && ok "updated marker pinned to source-tree → pinned" || bad "source-tree pin: $o"
+
 echo "rc-maintenance source pin: $PASS passed, $FAILS failed"
 [ "$FAILS" -eq 0 ]

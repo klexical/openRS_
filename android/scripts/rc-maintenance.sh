@@ -9,6 +9,9 @@
 #                   covers every byte that is built, this script and the workflow. The marker's other fields must
 #                   equal the workflow's own constants (EXPECT_* in the environment), so none of them is free either.
 #                   A missing marker or a different tree is "not the pinned source" (exit 0), never an error.
+#   source-tree     Prints that tree for HEAD (marker present or not) — the value to write into source_tree. It equals
+#                   the parent's tree only when the marker commit ADDS the file; once a marker exists, a later marker
+#                   commit must use this value (the parent's tree still contains the old marker). Use it, never by hand.
 #   release-before  The release as pinned (GH_TOKEN, GITHUB_REPOSITORY): tag → release_tag_commit, prerelease, not a
 #                   draft, original asset present with its SHA-256. Prints uploaded=true|false for asset_name.
 #   release-upload  Same checks; FAILS if asset_name is already on the release (the workflow never replaces an asset).
@@ -22,6 +25,12 @@ out() { echo "$1"; if [ -n "${GITHUB_OUTPUT:-}" ]; then echo "$1" >> "$GITHUB_OU
 field() { jq -er --arg k "$1" '.[$k] | tostring' "$ROOT/$MARKER"; }
 
 ROOT=$(git rev-parse --show-toplevel)
+tree_without_marker() {   # the tree of HEAD with the marker removed from a temporary index (HEAD itself untouched)
+  local idx; idx=$(mktemp)
+  GIT_INDEX_FILE="$idx" git -C "$ROOT" read-tree HEAD
+  GIT_INDEX_FILE="$idx" git -C "$ROOT" rm --cached -q --ignore-unmatch -- "$MARKER"
+  GIT_INDEX_FILE="$idx" git -C "$ROOT" write-tree; rm -f "$idx"
+}
 
 case "$CMD" in
   source)
@@ -31,10 +40,7 @@ case "$CMD" in
     jq -e . "$ROOT/$MARKER" >/dev/null || fail "$MARKER is not valid JSON"
     WANT=$(field source_tree)
     [[ "$WANT" =~ ^[0-9a-f]{40}$ ]] || fail "$MARKER source_tree '$WANT' is not a 40-hex tree id"
-    IDX=$(mktemp); trap 'rm -f "$IDX"' EXIT
-    GIT_INDEX_FILE="$IDX" git -C "$ROOT" read-tree HEAD
-    GIT_INDEX_FILE="$IDX" git -C "$ROOT" rm --cached -q -- "$MARKER"
-    HAVE=$(GIT_INDEX_FILE="$IDX" git -C "$ROOT" write-tree)
+    HAVE=$(tree_without_marker)
     if [ "$HAVE" != "$WANT" ]; then
       echo "::notice::not the pinned source (tree without the marker $HAVE, pinned $WANT) — nothing to build"
       out "pinned=false"; exit 0
@@ -46,6 +52,10 @@ case "$CMD" in
     done
     echo "Pinned source: tree without the marker = $HAVE; $(field asset_name) for $(field release_tag)"
     out "pinned=true"
+    ;;
+
+  source-tree)
+    tree_without_marker
     ;;
 
   release-before|release-upload|release-after)
