@@ -16,7 +16,7 @@ record). Everything below about candidates, integration branches and "unpushed" 
 untouched `openRS_v2.2.7-rc.7.apk` (Build 37) — same versionName `2.2.7-rc.7`, same certificate, no new tag / release; the
 tag (`43ad5e1`), the original asset and the prerelease flag are unchanged. Its one change: the live gauge is labelled plain
 BOOST again — Build 37 showed TIP (#207). PR #247 → staging `32b13ac`; built, attested and uploaded by
-`.github/workflows/rc-maintenance-asset.yml` (run 41956174329) from the source pinned in `android/release-maintenance.json`.
+`.github/workflows/rc-maintenance-asset.yml` (run 41956174329; since retired) from the source pinned in `android/release-maintenance.json`.
 Manual in-place upgrade from the release notes; the in-app updater never offers it. Record: Branch / Release Workflow → rc.7
 → Build 38.
 Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashboard) → `web/`  |  Docs → `docs/`  |  Feature pipeline → `docs/feature-roadmap.md`
