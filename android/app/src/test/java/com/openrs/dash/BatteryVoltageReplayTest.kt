@@ -24,7 +24,8 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class BatteryVoltageReplayTest {
     private companion object {
-        const val DEFECT = "battery: reproduced, not fixed"
+        const val DEFECT = "battery: reproduced, not fixed"                  // the ObdMerge-by-value vectors (#223)
+        const val TRUNCATED = "slcan-integrity: reproduced, not fixed"       // short / PCI-short Mode 22 replies
         const val FIRST = 0x77AE / 2048.0   // 14.9599609375 V, the fixture's complete reply
         const val BACKDATED = 1L
     }
@@ -55,13 +56,13 @@ class BatteryVoltageReplayTest {
         }
     }
 
-    @Ignore(DEFECT) @Test fun `a reply missing its low byte (DLC 5) changes neither value nor stamp`() = runTest {
+    @Ignore(TRUNCATED) @Test fun `a reply missing its low byte (DLC 5) changes neither value nor stamp`() = runTest {
         val vs = afterFirstReply("t7E850462030478")                  // 04 62 03 04 78 — B absent
         assertEquals("decoded with B = 0 → 15.00 V", FIRST, vs.batteryVoltage, 0.0)
         assertEquals(BACKDATED, vs.fieldLastUpdateMs["batteryVoltage"])
     }
 
-    @Ignore(DEFECT) @Test fun `a PCI shorter than the payload (padding read as B) changes neither value nor stamp`() = runTest {
+    @Ignore(TRUNCATED) @Test fun `a PCI shorter than the payload (padding read as B) changes neither value nor stamp`() = runTest {
         val vs = afterFirstReply("t7E880462030478000000")            // PCI 04: one data byte; the 00 after it is padding
         assertEquals("padding read as B → 15.00 V", FIRST, vs.batteryVoltage, 0.0)
         assertEquals(BACKDATED, vs.fieldLastUpdateMs["batteryVoltage"])
@@ -78,7 +79,8 @@ class BatteryVoltageReplayTest {
 
     @Ignore(DEFECT) @Test fun `a reply decoded from an older snapshot never reverts a newer voltage`() {
         // CanDataService posts each merge to Main, so a reply can be parsed against a snapshot older than the state it
-        // merges into (the AwdReqTorqueMergeTest race). Production parse + ObdMerge.merge, as there.
+        // merges into (the AwdReqTorqueMergeTest race). Production parse + ObdMerge.merge, as there. ObdMerge takes the
+        // voltage by value > 0 — the pattern #226 fixed for REQ L / R with ObdMerge.carried.
         val now = System.currentTimeMillis()
         val old = VehicleState(isConnected = true, batteryVoltage = 12.5,
             fieldLastUpdateMs = mapOf("batteryVoltage" to now - 30_000))
