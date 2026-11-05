@@ -199,7 +199,7 @@ class CanDataService : Service() {
     suspend fun sendRawQuery(responseId: Int, frame: String, timeoutMs: Long = 1_500L): ByteArray? {
         // Demo: no ECU on the other end — probes time out as they would with no response.
         if (DemoMode.isActive) { delay(timeoutMs.coerceAtMost(600L)); return null }
-        val conn = connection ?: throw java.io.IOException("Adapter disconnected")
+        val conn = connection ?: throw java.io.IOException(com.openrs.dash.diagnostics.QUERY_NOT_CONNECTED)
         return conn.sendRawQuery(responseId, frame, timeoutMs)
     }
 

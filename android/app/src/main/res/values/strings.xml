@@ -9,5 +9,6 @@
     <string name="hud_demo">DEMO · simulated</string>
     <string name="hud_oil">OIL: %1$s%2$s</string>
     <string name="did_probe_failed">Probe stopped at DID 0x%1$04X: %2$s (%3$d of %4$d probed). The adapter reported the write as failed. The module may still have received it.</string>
+    <string name="did_probe_not_sent">Probe stopped at DID 0x%1$04X: %2$s (%3$d of %4$d probed). Nothing was sent for this DID.</string>
     <string name="did_probe_stopped">Probe stopped: %1$d of %2$d probed.</string>
 </resources>

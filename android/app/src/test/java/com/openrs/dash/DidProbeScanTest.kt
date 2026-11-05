@@ -39,7 +39,7 @@ class DidProbeScanTest {
         val end = runDidProbeScan("PCM", 0x7E0, 0x7E8, listOf(1, 2), conn::sendRawQuery, { false }) {
             error("unsent query must not produce a result")
         }
-        assertTrue(end is DidProbeEnd.Failed && end.did == 1)
+        assertEquals(DidProbeEnd.Failed(1, "IOException: Adapter disconnected", sent = false), end)
         assertTrue(DiagnosticLogger.probeSessions.isEmpty())
     }
 

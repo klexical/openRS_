@@ -220,7 +220,10 @@ fun DidProberSection(
 
         when (val end = scanEnd) {
             is DidProbeEnd.Failed -> MonoLabel(
-                stringResource(R.string.did_probe_failed, end.did, end.reason, progress, total), 10.sp, Orange
+                stringResource(
+                    if (end.sent) R.string.did_probe_failed else R.string.did_probe_not_sent,
+                    end.did, end.reason, progress, total
+                ), 10.sp, Orange
             )
             DidProbeEnd.Stopped -> MonoLabel(stringResource(R.string.did_probe_stopped, progress, total), 10.sp, Dim)
             else -> Unit

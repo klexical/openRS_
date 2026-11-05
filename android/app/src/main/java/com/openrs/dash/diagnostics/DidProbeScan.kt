@@ -9,8 +9,12 @@ import kotlinx.coroutines.ensureActive
 internal sealed interface DidProbeEnd {
     data object Complete : DidProbeEnd
     data object Stopped : DidProbeEnd
-    data class Failed(val did: Int, val reason: String) : DidProbeEnd
+    /** [sent] = false when the query never reached the adapter (no connection), so nothing went out for [did]. */
+    data class Failed(val did: Int, val reason: String, val sent: Boolean = true) : DidProbeEnd
 }
+
+/** The one message for "no adapter to send through" — the scan tells it apart from a write the adapter refused. */
+internal const val QUERY_NOT_CONNECTED = "Adapter disconnected"
 
 /**
  * A null ECU reply is a DID timeout; a failed transport write ends the scan without a result for that DID. A stopped or
@@ -46,7 +50,7 @@ internal suspend fun runDidProbeScan(
             val reason = LogText.sanitizeReason(e)
             DiagnosticLogger.event("PROBE", "%s scan stopped at 0x%04X (%d/%d probed): %s"
                 .format(module, did, results.size, dids.size, reason))
-            return end(DiagnosticLogger.PROBE_FAILED, DidProbeEnd.Failed(did, reason))
+            return end(DiagnosticLogger.PROBE_FAILED, DidProbeEnd.Failed(did, reason, sent = e.message != QUERY_NOT_CONNECTED))
         }
         currentCoroutineContext().ensureActive()
         if (stopRequested()) return end(DiagnosticLogger.PROBE_STOPPED, DidProbeEnd.Stopped)
