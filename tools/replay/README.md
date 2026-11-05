@@ -38,3 +38,20 @@ This reader does not accept CAN FD, candump, CSV, JSON, BLE notifications with w
 - **Default report:** no actual arbitration addresses, DID numbers, raw bytes, decoded values, source filename or absolute timestamps. **Private engineering report:** `--private-protocol-ids` adds observed arbitration addresses and first-DID event counts on explicitly configured UDS response addresses; it still omits actual signal/identifier values and raw payloads. After 4,096 distinct address/DID buckets, events for additional combinations are counted as unbucketed. Keep this output local if protocol fingerprints are sensitive.
 
 This is **not a sanitizer for arbitrary exports**. It generates a new, tightly scoped summary of supported frame records; it does not clean the original file. Even aggregate timing and traffic patterns can fingerprint a capture. Review the actual report before sharing it. Use a separate input per bus, capture session and test condition; neither stream labels nor timestamps establish cross-file or cross-bus identity.
+
+## openRS_ app logs (candump adapter)
+
+The app's diagnostic ZIP holds `session_slcan.log` in candump form (`(seconds) can0 ID#DATA`), which `replay.py` does not
+read. Convert it first:
+
+```sh
+python3 -B candump_to_slcan.py session_slcan.log --timestamps > capture.slcan
+python3 -B replay.py capture.slcan --timestamps
+```
+
+The adapter writes frames only. It drops every `#` comment line (the app's header names the adapter host / port and the
+session's epoch time), excludes `# TX` lines (requests the app sent, not observed bus traffic) and never echoes a rejected
+line. Its counts go to stderr. With `--timestamps`, ticks are the log's relative milliseconds mod 65,536, so `replay.py`
+sees a clock regression about every 65.5 s and excludes the intervals across it. CAN FD (`##`) lines are rejected.
+`fixtures/synthetic.candump.log` is synthetic (documentation-range address, invented values). Keep converted private logs
+and their reports local.
