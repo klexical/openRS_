@@ -14,7 +14,7 @@ import org.junit.Ignore
 import org.junit.Test
 
 /**
- * rc.8 "slcan-integrity" — SYNTHETIC replay through production code ([ReplayRun]: SlcanConnection → SlcanParser →
+ * rc.8 "slcan-integrity" (#251) — SYNTHETIC replay through production code ([ReplayRun]: SlcanConnection → SlcanParser →
  * LinkSession / CanDecoder → peaks). Guards pass today; the red cases reproduce the defect and are @Ignore'd until the fix.
  * Agreed framing rule: a data payload of exactly DLC×2 hex characters (DLC×2 + 4 only if the app itself enabled SLCAN
  * timestamps on that connection — it never sends Z1 today); DLC 0 parses but can't feed a decoder that needs bytes.
@@ -22,7 +22,7 @@ import org.junit.Test
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SlcanIntegrityReplayTest {
-    private companion object { const val DEFECT = "slcan-integrity: reproduced, not fixed" }
+    private companion object { const val DEFECT = "#251 slcan-integrity: reproduced, not fixed" }
 
     @Before fun session() { DiagnosticLogger.sessionStart("test", 0, prefs = null) }
 

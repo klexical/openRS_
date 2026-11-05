@@ -15,7 +15,7 @@ import org.junit.Ignore
 import org.junit.Test
 
 /**
- * rc.8 "battery" — PCM 0x0304 through production code, SYNTHETIC replies. The tested invariant is policy-independent:
+ * rc.8 "battery" (#223) — PCM 0x0304 through production code, SYNTHETIC replies. The tested invariant is policy-independent:
  * the battery value, its validity and its stamp all describe the SAME reply. A truncated reply (missing low byte, or a
  * PCI length shorter than the payload) changes neither value nor stamp; a decoded zero never advances the stamp of an
  * old value it didn't replace; an older snapshot never supersedes a newer reply. Whether a raw 0 means "unavailable"
@@ -24,8 +24,8 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class BatteryVoltageReplayTest {
     private companion object {
-        const val DEFECT = "battery: reproduced, not fixed"                  // the ObdMerge-by-value vectors (#223)
-        const val TRUNCATED = "slcan-integrity: reproduced, not fixed"       // short / PCI-short Mode 22 replies
+        const val DEFECT = "#223 battery: reproduced, not fixed"             // the ObdMerge-by-value vectors
+        const val TRUNCATED = "#251 slcan-integrity: reproduced, not fixed"  // short / PCI-short Mode 22 replies
         const val FIRST = 0x77AE / 2048.0   // 14.9599609375 V, the fixture's complete reply
         const val BACKDATED = 1L
     }

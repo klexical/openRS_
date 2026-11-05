@@ -21,7 +21,7 @@ import org.junit.Ignore
 import org.junit.Test
 
 /**
- * rc.8 "mode-attribution" — drive-mode confirmation from DECODED frames, SYNTHETIC fixtures (test/resources/replay/mode-*).
+ * rc.8 "mode-attribution" (#252) — drive-mode confirmation from DECODED frames, SYNTHETIC fixtures (test/resources/replay/mode-*).
  * RX lines go through the production SlcanParser, CanDecoder.decode and CanDecoder.stampFresh (what
  * LinkSession.processCanFrame does — called here with the virtual clock, because LinkSession stamps with the wall clock
  * and throttles stamps to 1 s, which a virtual-time replay can't drive); the request runs the production
@@ -34,7 +34,7 @@ import org.junit.Test
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ModeAttributionReplayTest {
-    private companion object { const val DEFECT = "mode-attribution: reproduced, not fixed" }
+    private companion object { const val DEFECT = "#252 mode-attribution: reproduced, not fixed" }
 
     private class Sender : FirmwareCommandSender {
         var calls = 0

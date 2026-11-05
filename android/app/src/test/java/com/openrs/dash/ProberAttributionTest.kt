@@ -21,7 +21,7 @@ import org.junit.Ignore
 import org.junit.Test
 
 /**
- * DID prober reply attribution (rc.8 "prober-attribution"). `sendRawQuery` opens a DTC-channel operation with no
+ * DID prober reply attribution (rc.8 "prober-attribution", #250). `sendRawQuery` opens a DTC-channel operation with no
  * expected service, so every frame from the response ID is diverted to it while it waits, and the first one is returned
  * whatever DID it answers. The PCM poller keeps polling the same ECU during a probe, so the probe can record a poll
  * reply as its own result, and that diverted poll reply never reaches the PcmRequestLedger — its request stays
@@ -34,7 +34,7 @@ import org.junit.Test
 class ProberAttributionTest {
     private companion object {
         /** Red at this commit (reproduces the defect; results in the rc.8 kickoff evidence) — remove with the fix. */
-        const val DEFECT = "prober-attribution: defect reproduced, not fixed yet"
+        const val DEFECT = "#250 prober-attribution: reproduced, not fixed"
     }
 
     private val probeDid = 0xABCD
