@@ -55,3 +55,8 @@ line. Its counts go to stderr. With `--timestamps`, ticks are the log's relative
 sees a clock regression about every 65.5 s and excludes the intervals across it. CAN FD (`##`) lines are rejected.
 `fixtures/synthetic.candump.txt` is synthetic (documentation-range address, invented values). Keep converted private logs
 and their reports local.
+
+**The converted file is still raw bus data, not a sanitized artifact.** Dropping the header and TX lines removes the host,
+port and start time, but every frame keeps its arbitration ID and payload — which can carry a VIN, odometer, module
+identifiers and driving behaviour. Treat `capture.slcan` exactly like the original log: private, local, never attached
+to an issue. Only `replay.py`'s default aggregate report is meant for review, and even that should be read before sharing.
