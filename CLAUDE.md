@@ -428,15 +428,15 @@ data[5] = B5,  data[6] = B6 …
   - Effects:
     - `SlcanConnection.sendRawQuery` wraps `writeLine` in try / finally with no catch, and `CanDataService.sendRawQuery`
       passes it through. DIAG → DID PROBER calls it from `scope.launch` with no handler → uncaught crash (#249).
-    - The PCM poller withdraws a request whose write failed (`PcmRequestLedger.withdraw`), so a reply that does arrive is
+    - The PCM poller withdraws a request whose write failed (`PcmRequestLedger.withdraw`), so an NRC that does arrive is
       never attributed and NRC suppression can't engage (#216).
     - DTC scan modules report "write failed".
-  - Lines under 20 bytes (`OPENRS?`, `AT+FRS…`) are not affected.
+  - Lines of 20 bytes or less (`OPENRS?`, `AT+FRS…`) are not affected.
   - Before fixing by splitting writes to ≤ 20 bytes, confirm the adapter firmware reassembles one SLCAN line from several
     writes (unverified). A never-throwing `sendRawQuery` is needed either way.
   - Separately, `sendRawQuery` takes the first frame from the module's response ID without checking the DID, so a poll
     reply or NRC can become the probe's result (#250).
-- **`SlcanParser` accepts short-DLC and over-long lines (#251)**
+- **`SlcanParser` accepts DLC-0 and over-long lines (#251)**
   - A `t` / `T` line parses as soon as it holds the bytes its DLC needs. Trailing characters are ignored, and DLC 0 gives an
     empty payload (`parseStdFrame` / `parseExtFrame` check `length <` only).
   - On a lossy link (reported over BLE), a corrupt line can reach the decoders as a valid frame. A single bad 0x1B0 / 0x420
