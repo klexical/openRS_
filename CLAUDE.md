@@ -1012,6 +1012,13 @@ Temurin 17); **1102 / 94** at rc.7 = `43ad5e1` (same Android sources as #238 hea
 totals: 1085 / 90 `2033fda`; 1072 / 87 `d3264c8`; 1066 / 86 `8d1903e`; 1045 / 84 `0e4c120`; 1034 / 81 `7bb8a9a`; 1025 / 79
 `81baa76` (`8d1903e` / `0e4c120` / `7bb8a9a` / `81baa76` are local build IDs from the pre-cleanup history — not on GitHub).
 
+## Issue tracking and field evidence
+
+- When a new defect, safety-sensitive control ambiguity, or unresolved telemetry discrepancy is found, search open *and closed* issues, then update the matching issue or file a narrowly scoped one. Do this at triage, even when it came up during an RC. A private evidence note alone does not complete triage.
+- Record the build/source, transport, expected vs observed behavior, evidence class (owner report, captured, reproduced, or hypothesis), priority, component, verification owner and acceptance test. Use only sanitized facts on GitHub. Keep raw captures, human/device identifiers, routes and secrets local.
+- If GitHub writes are unavailable or not yet approved, keep a private pending ledger; reconcile each entry to an actual issue URL and status as soon as access returns. Do not report drafts as filed. Link issues in fixes, regression evidence and changelog. Carry unresolved work into the next milestone; close only the shipped and verified scope.
+- For vehicle controls, a matching broadcast after a request is an observation, not proof of causation when factory controls or another client could have set that state.
+
 ## Branch / Release Workflow
 
 ```
@@ -1438,7 +1445,7 @@ Every release follows the same structure. Consistency matters — do not deviate
 **Rules:**
 1. **Sections** — use only these four, in this order: `Added`, `Fixed`, `Changed`, `Removed`. No synonyms (not "Improved", "Refactored", "Stability", "Performance").
 2. **RC sub-sections** — append `(rc.N)` to the section header when a version has multiple RCs: `### Fixed (rc.3)`. Add a short label after the RC number for context: `### Added (rc.4 — visual polish)`.
-3. **Issue links are mandatory** — every entry that originated from or addresses a GitHub issue MUST end with the issue link: `([#N](url))`. If it addresses a sub-item in an umbrella issue, use: `(addresses [#N](url))`. Entries for bugs found and fixed within the same RC (no issue exists) are exempt.
+3. **Issue links are mandatory** — every entry that originated from or addresses a GitHub issue MUST end with the issue link: `([#N](url))`. If it addresses a sub-item in an umbrella issue, use: `(addresses [#N](url))`. Bugs found and fixed in the same RC also get a tracking issue and link.
 4. **One format for links** — always `[#N](https://github.com/klexical/openRS_/issues/N)`. Never bare `(#N)`, never `Fixes #N` or `Addresses sub-item in #N` inline.
 5. **Entry length** — 1-3 sentences. Lead with what changed, then why. Include the file/class name when it helps locate the change. Do not write paragraphs — the commit message has the full detail.
 6. **Never shorten or rewrite previous RC entries** — when adding a new RC section, append it. Do not edit, condense, or rephrase entries from earlier RCs.
