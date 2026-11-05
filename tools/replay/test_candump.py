@@ -5,7 +5,7 @@ from pathlib import Path
 from candump_to_slcan import LineError, convert, convert_line
 from replay import summarize
 
-FIXTURE = Path(__file__).with_name("fixtures") / "synthetic.candump.log"
+FIXTURE = Path(__file__).with_name("fixtures") / "synthetic.candump.txt"
 
 
 def run(text, **kw):

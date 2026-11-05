@@ -53,5 +53,5 @@ The adapter writes frames only. It drops every `#` comment line (the app's heade
 session's epoch time), excludes `# TX` lines (requests the app sent, not observed bus traffic) and never echoes a rejected
 line. Its counts go to stderr. With `--timestamps`, ticks are the log's relative milliseconds mod 65,536, so `replay.py`
 sees a clock regression about every 65.5 s and excludes the intervals across it. CAN FD (`##`) lines are rejected.
-`fixtures/synthetic.candump.log` is synthetic (documentation-range address, invented values). Keep converted private logs
+`fixtures/synthetic.candump.txt` is synthetic (documentation-range address, invented values). Keep converted private logs
 and their reports local.

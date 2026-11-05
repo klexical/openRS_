@@ -1,0 +1,14 @@
+# openRS_ SLCAN log — 198.51.100.7:35000 (TCP SLCAN (198.51.100.7:35000))
+# Session started: 1000000000000 ms epoch
+# Format: (relative_seconds) can0 ID#DATA
+# Compatible with candump, SavvyCAN, Kayak
+(     0.000) can0 321#0A0B
+(     0.004) can0 321#0A0B
+# TX (     0.006) can0 7E0#0322123400000000
+(     0.008) can0 321#0A0C
+(     0.010) can0 222#04621234AA000000
+(     0.012) can0 321#R2
+(     0.014) can0 00000321#
+(    65.540) can0 321#0A0C
+(     0.016) can0 400#1GG2
+# LOG CAP REACHED — further frames not written
