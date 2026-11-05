@@ -265,7 +265,8 @@ object ObdResponseParser {
             0xF40E -> onObdUpdate(currentState.copy(timingAdvance = b4 / 2.0 - 64.0).markFresh("timingAdvance"))
             // O2 bank 1 sensor 2 voltage (PID 0x15): A/200 V
             0xF415 -> onObdUpdate(currentState.copy(o2Voltage = b4 / 200.0).markFresh("o2Voltage"))
-            // TIP absolute: raw / 128 kPa (DigiCluster, on-car verified — #198; was /903.81 ≈ psi)
+            // TIP absolute: raw / 128 kPa — FORScan TCBP / DigiCluster catalogs; replies on the owner's car read ≈ baro at
+            // rest, not checked against an independent gauge (#198 / #207; rc.4–rc.5 used /903.81, a Ford DID-sheet psi formula)
             0x033E -> onObdUpdate(currentState.copy(tipActualKpa  = ((b4 shl 8) or b5) / 128.0).markFresh("tipActualKpa"))
             0x0466 -> onObdUpdate(currentState.copy(tipDesiredKpa = ((b4 shl 8) or b5) / 128.0).markFresh("tipDesiredKpa"))
             // Low-side fuel pressure: raw × 0.5 kPa (DigiCluster dc_frs_0548, verified)

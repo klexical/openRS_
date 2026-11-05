@@ -1,0 +1,11 @@
+{
+  "_comment": "rc.7 Build 38 maintenance asset — read by .github/workflows/rc-maintenance-asset.yml via android/scripts/rc-maintenance.sh. source_tree = the tree of the commit with THIS FILE removed from the index (a file cannot contain its own tree hash); write it with `rc-maintenance.sh source-tree`. Every other field must equal the workflow EXPECT_* constants. The original asset, tag and release flags are never changed.",
+  "release_tag": "android-v2.2.7-rc.7",
+  "release_tag_commit": "43ad5e157bc4ff3a88dd4dacc09ae12af25a4f19",
+  "original_asset": "openRS_v2.2.7-rc.7.apk",
+  "original_asset_sha256": "eb937284564afb99c4b469a2d07d0c90885c3cb265a7bea6cd21591b9eb2464e",
+  "asset_name": "openrs-2.2.7-rc.7-build38.apk",
+  "version_name": "2.2.7-rc.7",
+  "version_code": 38,
+  "source_tree": "fed01d65162cbdb0af29a908302c7b8f22a743c8"
+}

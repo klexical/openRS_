@@ -5,12 +5,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * The two pressure measurements the app can show as boost (#207). They are different quantities at different places
- * and are never presented under one name:
- *  - [CAN_0F8] — HS-CAN 0x0F8 byte 5, the car's "Boost" signal (RS_HS.dbc): gauge pressure, 0.01 bar (1 kPa) per bit,
- *    unsigned (reads 0 at or below ambient — no vacuum). Sensor location not documented (manifold side presumed,
- *    unverified). Broadcast ~50 Hz.
- *  - [TIP_033E] — PCM DID 0x033E throttle inlet pressure, absolute, raw / 128 kPa (DigiCluster, on-car). Upstream of
+ * The two pressure measurements the app can show as boost (#207). They are different quantities at different places:
+ * recorded and mixed-source views name each by [label] (TIP / BOOST) and never mix them; the live gauge shows only TIP,
+ * captioned BOOST (ui.LiveBoostLabel) — on a recorded view BOOST still means CAN 0x0F8:
+ *  - [CAN_0F8] — HS-CAN 0x0F8 byte 5, named "Boost" in RS_HS.dbc: gauge pressure, 0.01 bar (1 kPa) per bit, unsigned
+ *    (reads 0 at or below ambient — no vacuum) — the DBC's definition, read that way here; what the byte physically
+ *    measures, its reference and its scale are unverified (android/docs/pid-reference.md). Broadcast ~50 Hz.
+ *  - [TIP_033E] — PCM DID 0x033E throttle inlet pressure, absolute, raw / 128 kPa (FORScan / DigiCluster catalogs;
+ *    plausible on the owner's car, not independently validated). Upstream of
  *    the throttle plate: at part throttle it can sit well above manifold pressure; at wide-open throttle the two
  *    should be close (not verified on this car). Polled ~0.8 Hz while the engine runs. Shown as TIP − measured baro.
  */
@@ -80,8 +82,8 @@ object BoostRule {
     }
 
     /**
-     * The live pressure gauge (DRIVE, HUD, TRIP live readout, Custom Dashboard): TIP − measured baro only, labelled TIP,
-     * "—" when TIP isn't fresh. It never falls back to CAN 0x0F8 — a brief TIP polling gap must not flip the gauge to a
+     * The live pressure gauge (DRIVE, HUD, TRIP live readout, Custom Dashboard): TIP − measured baro only, shown as
+     * BOOST (ui.LiveBoostLabel; source stays [BoostSource.TIP_033E]), "—" when TIP isn't fresh. It never falls back to CAN 0x0F8 — a brief TIP polling gap must not flip the gauge to a
      * different measurement — and freshness isn't stretched to hide gaps. CAN 0x0F8 stays in recordings ([read]) and
      * in the diagnostic report.
      */

@@ -238,8 +238,8 @@ import kotlin.math.roundToInt
                     modifier = Modifier.weight(1f).fillMaxHeight()
                 )
                 InstrumentHero(
-                    // TIP (throttle inlet − measured baro), always the same measurement on this gauge
-                    label = boost.source.label, unit = boostLbl, value = boostVal,
+                    // TIP (throttle inlet − measured baro), always the same measurement on this gauge, named BOOST
+                    label = liveGaugeLabel(boost), unit = boostLbl, value = boostVal,
                     icon = RsIcon.BOOST, iconTone = if (stale) IconTone.UNAVAILABLE else IconTone.NORMAL,
                     valueColor = if (stale) Frost else accent,
                     valueSize = 44.sp,

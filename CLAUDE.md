@@ -11,6 +11,12 @@ signer `c99b6f26…` (= rc.6), Maps key present, no weather key — verified ind
 disposable emulator (synthetic adapter / GPS). **Hardware:** no phone
 or car run of Build 37 or of the published APK; the owner's phone / Bluetooth and on-car checks were on Build 36 builds (see the
 record). Everything below about candidates, integration branches and "unpushed" work is **history** — kept as the record.
+**rc.7 Build 38 (maintenance asset, prepared 2026-11-04 — NOT published until the owner approves):** versionCode 38 = rc.7
+maintenance asset `openrs-2.2.7-rc.7-build38.apk`, to be ADDED to the existing `android-v2.2.7-rc.7` release beside the
+untouched `openRS_v2.2.7-rc.7.apk` (Build 37) — same versionName `2.2.7-rc.7`, same certificate, no new tag / release. Its one
+change: the live gauge is labelled plain BOOST again — Build 37 showed TIP (#207). Built, attested and uploaded only by
+`.github/workflows/rc-maintenance-asset.yml` from the source pinned in `android/release-maintenance.json`. Manual in-place
+upgrade from the release notes; the in-app updater never offers it. Record: Branch / Release Workflow → rc.7 → Build 38.
 Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashboard) → `web/`  |  Docs → `docs/`  |  Feature pipeline → `docs/feature-roadmap.md`
 
 ## Source Layout
@@ -390,6 +396,15 @@ data[5] = B5,  data[6] = B6 …
   by-gear stats use stored baro or say std atm. VehicleState has no boost getters; `withPeaksUpdated` doesn't touch
   `peakBoostPsi`. Drives store per-point source + baro and the peak's source; never infer them for old rows. Which
   pressure byte 5 measures and TIP ≈ MAP at WOT are unverified on the car
+- **Live gauge name vs recorded source labels (#207, rc.7 Build 38)** — the live gauge (DRIVE hero, HUD, TRIP live readouts,
+  Custom Dashboard `boostKpa`, incl. saved layouts that say "TIP") is labelled plain **BOOST** — no qualifier, subtitle or
+  help text (owner's direction 2026-11-04, after rejecting a "THROTTLE INLET" line) — via `liveGaugeLabel()` /
+  `dashCellLabel()` in `ui/BoostLabels.kt`. It names the *live* rule only: TIP 0x033E − measured baro,
+  TIP ≤ 2.5 s, otherwise "—" — never CAN. Recorded / mixed-source views name each point's source (`read()`: **TIP** for
+  0x033E, **BOOST** for CAN 0x0F8 when TIP isn't current), and exports keep the source IDs. So "BOOST" means TIP live but
+  CAN 0x0F8 in a recorded drive — don't "unify" them by relabelling history or exports. A display-only "BOOST (CAN)" label
+  for recorded views is a separate follow-up (not done). The label is display only: no decode, scale, baro, freshness,
+  recording, export or schema change
 - TPMS PID `0x280B` is multi-frame ISO-TP — send `BCM_FLOW_CONTROL` after receiving First Frame
 - Extended session (`0x10 0x03`) required before: RDU_STATUS (AWD 0x703), PDC (PSCM 0x730), FENG (0x727), RSProt (0x731)
 - Firmware drive mode is **hybrid scroll-then-wait** (v1.61+) — pre-calculates scroll count, sends all presses open-loop, waits up to 6s for auto-confirm. Do NOT revert to closed-loop press-and-poll (v1.6 bug) or pure open-loop press counting (v1.5 bug). The Focus RS mode selector GUI requires ~4s of inactivity to auto-confirm — CAN does not update during scrolling
@@ -543,6 +558,23 @@ data[5] = B5,  data[6] = B6 …
   The rc.6 asset has no Maps key (blank TRIP map) and no weather key. `MAPS_API_KEY` was set 2026-11-03 (owner); the rc.7 asset
   carries the Maps key (presence verified, value never printed). `OPENWEATHER_API_KEY` is not configured, so published builds
   have no weather — expected, not a bug
+- **RC maintenance asset (rc.7 Build 38)** — an extra, separately named APK on an EXISTING release, never a re-run of the tag
+  publisher (that would rebuild the tag's old source). `.github/workflows/rc-maintenance-asset.yml` runs on pushes to staging
+  and builds only when `android/scripts/rc-maintenance.sh source` finds the pinned tree: the marker
+  `android/release-maintenance.json` can't hold its own tree's hash, so it pins the tree of HEAD *with the marker removed
+  from the index* — write it with `rc-maintenance.sh source-tree`, never by hand: it equals the parent's tree only when
+  the marker commit first ADDS the file (a later marker update pinned to the parent's tree is never built — happened once,
+  caught by the real-history check). A `--no-ff` merge onto an unchanged staging keeps it. Its other fields
+  must equal the workflow's `EXPECT_*` constants. Then: release state as pinned (tag → `43ad5e1`, prerelease, original asset
+  digest `eb937284…`), stop if the asset already exists, release-signed `test assembleRelease` with the tag job's secrets
+  (missing keystore = error), `verify-release.sh android-v2.2.7-rc.7` on the native `openRS_v2.2.7-rc.7.apk` (its versionCode
+  rule skips the tag it is given, so the workflow also checks 38 > the tag's own 37), rename, attest, `gh release upload`
+  (no `--clobber`; refused if the name exists), then a read-only check that only the new asset was added. The name
+  `openrs-2.2.7-rc.7-build38.apk` is outside the updater's `startsWith("openRS_") && endsWith(".apk")` matcher on purpose
+  (`VersionIdentityTest`), and What's New is once per release NAME, so Build 37 → 38 shows no dialog (the Build 38 line is
+  in Settings → What's New). `android/scripts/test-rc-maintenance.sh` checks the source pin in throwaway repos (10 cases).
+  Any earlier commit whose own marker matches its own tree stays buildable if pushed to staging AS THE HEAD (the superseded
+  `e8e0f10` is one) — push only the final tip; a push runs the workflow on its head commit only
 - **VehicleState slot ceiling** — `copy()` on the 162-param data class is at the JVM 255-slot limit. Adding any new field requires either collapsing an unused existing field (speculative AWD DIDs are candidates) or storing it off-state (DiagnosticLogger / genericValues Map). 0x040 lamp state is decoded + validated but not yet persisted on VehicleState for this reason
 - **Demo mode owns VehicleState while active** — `CanDataService.enterDemoMode()` finalizes any recording drive, calls
   `stopConnection()`, then `DemoMode.start()`. While `DemoMode.isActive`: `processCanFrame` / `mergeObdState` / the adapter
@@ -636,7 +668,10 @@ data[5] = B5,  data[6] = B6 …
   (`(viewportH × 0.22).coerceIn(124, 176) dp`, digit 84 sp / 72 sp under 680 dp); no auto-zoom, no gear pop/scale (the
   old `driveAutoZoom` setting is removed). Only data availability (ECONOMY, recording strip, VEHICLE alert chips)
   may add rows below the instruments; the StatusLine is permanent so alerts only change its content. Verify by
-  comparing card edges across `at:2.5 / 9.5 / 23` frames
+  comparing card edges across `at:2.5 / 9.5 / 23` frames. The plain BOOST label (rc.7 Build 38) costs 0 dp: every row
+  below the hero row is pixel-identical to Build 37's TIP layout at 411 / 360 / 320 dp and landscape (measured). The
+  rejected "THROTTLE INLET" line had made the row ≈ 24 dp taller and moved everything below it — a line under one
+  hero moves the whole page
 - **ESC confirmation (#125)** — the adapter's OK is acceptance only. `EscCommand` waits the firmware's own press plan
   (5 s long press for OFF, 300 ms presses, 1 s gap) + 3 s (unmeasured), needs a 0x1C0 frame stamped (`escStatus`) after the
   request on the same `CanDataService.link.generation`; reconnect → ConnectionLost; one request at a time. Firmware
@@ -870,7 +905,7 @@ Drive-mode dock / ESC buttons / DTC clear act on simulated state only (mode land
 
 Keys: `android/local.properties` (`MAPS_API_KEY`, `OPENWEATHER_API_KEY`) or the same names in the environment — optional for
 local builds (#235); `android/keystore.properties` for release signing.
-Version display format: `openRS_ v2.2.7-rc.7 · Build 37` (Settings) — the release name comes from `app/build.gradle.kts`
+Version display format: `openRS_ v2.2.7-rc.7 · Build 38` (Settings; `Build 37` = the published tag's asset) — the release name comes from `app/build.gradle.kts`
 (see the Release identity gotcha); there is no `-PrcSuffix` any more.
 
 ## Tests
@@ -972,8 +1007,8 @@ android/app/src/test/java/com/openrs/dash/
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **1102 tests / 94 classes** per variant (Android, rc.7 = `43ad5e1`, same Android sources as #238 head `040a1f8`;
-Temurin 17) + **293 vitest across 26 files** (Sapphire at rc.7 — run `web/node_modules/.bin/vitest run` and `tsc -b`). Earlier
+Current count: **1108 tests / 95 classes** per variant (Android, rc.7 Build 38 branch `feature/boost-label-throttle-inlet`;
+Temurin 17); **1102 / 94** at rc.7 = `43ad5e1` (same Android sources as #238 head `040a1f8`) + **293 vitest across 26 files** (Sapphire at rc.7 — run `web/node_modules/.bin/vitest run` and `tsc -b`). Earlier
 totals: 1085 / 90 `2033fda`; 1072 / 87 `d3264c8`; 1066 / 86 `8d1903e`; 1045 / 84 `0e4c120`; 1034 / 81 `7bb8a9a`; 1025 / 79
 `81baa76` (`8d1903e` / `0e4c120` / `7bb8a9a` / `81baa76` are local build IDs from the pre-cleanup history — not on GitHub).
 
@@ -1334,8 +1369,26 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   - knock-insert false debug log on a cancelled STOP;
   - 20 s silent-adapter hold;
   - boost peak caption in psi;
-  - the Sapphire per-source peaks O(n²).
+  - the Sapphire per-source peaks O(n²);
+  - recorded views: a display-only "BOOST (CAN)" label for CAN 0x0F8 points, so a recorded "BOOST" isn't read as the live
+    TIP gauge (#207 follow-up; no export / schema / history change).
 - **Not done:** issue closures, stable promotion (staging → main), cleanup of disposable AVDs / scratch clones / worktrees. Each needs the owner.
+- **Build 38 — rc.7 maintenance asset (prepared 2026-11-04; publication pending the owner's direct approval):**
+  - Owner-approved scope: amend the EXISTING rc.7 release — no new release, tag or retag; the original tag, asset
+    `openRS_v2.2.7-rc.7.apk` (`eb937284…`), its attestation and the prerelease flag are never touched.
+  - Source: `feature/boost-label-throttle-inlet` on `b314729` (= staging `256758f`'s tree): `c1392a6` live gauge label,
+    `fc3ce26` + `451387c` docs (#207), What's New option C (published rc.7 line kept byte-identical, separate Build 38
+    line), versionCode 38, CHANGELOG, the maintenance workflow, then `9c49ecb` plain BOOST (the owner rejected the
+    "THROTTLE INLET" line of `c1392a6`), this record, and a new marker last (`e8e0f10`'s marker is superseded).
+  - What's New Build 38 line (owner-approved wording): "rc.7 · Build 38: the live gauge is labelled BOOST again (Build 37
+    showed TIP). Only the name changed; the reading is the same." (`BUILD_38_NOTE` in `ui/WhatsNewDialog.kt`)
+  - Asset `openrs-2.2.7-rc.7-build38.apk`: versionCode 38 (no earlier build used 38 — local repos, every APK on disk and
+    the release assets checked 2026-11-04), versionName `2.2.7-rc.7`, Settings `2.2.7-rc.7 · Build 38`, same certificate.
+    CI builds, attests and adds it (see the RC maintenance asset gotcha); nothing is uploaded from a local build.
+  - What's New: once per release name, so an in-place upgrade from Build 37 doesn't reopen it; the Build 38 line is in
+    Settings → What's New (a fresh install shows it). The updater doesn't offer Build 38 (name outside its matcher, and
+    it compares release names) — the release notes link it as a manual in-place upgrade.
+  - Evidence: `~/Documents/openRS_-evidence/boost-label-throttle-inlet-2026-11-04/dev/RESULTS.md` (Build 38 section).
 
 **rc.6 publication record (2026-10-28 UTC; evidence `~/Documents/openRS_-evidence/rc6-release-2026-10-27/PUBLISHED.txt`):**
 - Android: PR #202 (feature/design-pass `056556b`) → staging merge `d2f7dc6`; staging CI 40625379258 green; tag

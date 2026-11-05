@@ -23,7 +23,7 @@ val keystoreProps = Properties().also { props ->
 val releaseBase = "2.2.7"
 val releaseStage = "rc"          // "rc" for a release candidate, "" for stable
 val releaseCandidate = 7         // ignored when releaseStage is ""
-val releaseVersionCode = 37
+val releaseVersionCode = 38     // 38 = rc.7 maintenance asset openrs-2.2.7-rc.7-build38.apk on the existing rc.7 release (37 = tag)
 val releaseName = if (releaseStage.isEmpty()) releaseBase else "$releaseBase-$releaseStage.$releaseCandidate"
 
 // The old -PrcSuffix flag appended an RC label separately from versionName; refuse it so nothing builds a mismatch.

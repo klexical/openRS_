@@ -2,7 +2,8 @@
 <resources>
     <string name="app_name">openRS_</string>
     <!-- HUD overlay readouts (HudOverlayService) -->
-    <string name="hud_boost">TIP: %1$s %2$s</string>
+    <!-- The live gauge (#207): BOOST (ui.LiveBoostLabel) -->
+    <string name="hud_boost">BOOST: %1$s %2$s</string>
     <string name="hud_rpm">RPM: %1$d</string>
     <string name="hud_rpm_none">RPM: ----</string>
     <string name="hud_demo">DEMO · simulated</string>

@@ -48,8 +48,8 @@ The following PCM Mode 22 PIDs are polled by the app every 30 seconds via ISO-TP
 | 0xF444 | AFR Desired | `22F444` | 1 | A × 0.1144 | :1 | 2 | DigiCluster |
 | 0x093C | ETC Angle Actual | `22093C` | 2 | (A×256+B) × (100/8192) | % | 1 | DigiCluster |
 | 0x091A | ETC Angle Desired | `22091A` | 2 | (A×256+B) × (100/8192) | % | 2 | DigiCluster |
-| 0x033E | TIP Actual | `22033E` | 2 | (A×256+B) / 903.81 | kPa | 1 | DigiCluster |
-| 0x0466 | TIP Desired | `220466` | 2 | (A×256+B) / 903.81 | kPa | 2 | DigiCluster |
+| 0x033E | TIP Actual | `22033E` | 2 | (A×256+B) / 128 | kPa absolute | 1 | DigiCluster; FORScan catalog `TCBP` — see *Boost / TIP pressure* below |
+| 0x0466 | TIP Desired | `220466` | 2 | (A×256+B) / 128 | kPa absolute | 2 | DigiCluster; FORScan catalog `TCBP_DSD` — see below |
 | 0x0462 | WGDC Desired | `220462` | 1 | B4 × 100/128 | % | 2 | DigiCluster |
 | 0x0318 | VCT Intake Angle | `220318` | 2 | (signed(A)×256+B) / 16 | ° | 3 | DigiCluster |
 | 0x0319 | VCT Exhaust Angle | `220319` | 2 | (signed(A)×256+B) / 16 | ° | 3 | DigiCluster |
@@ -59,6 +59,23 @@ The following PCM Mode 22 PIDs are polled by the app every 30 seconds via ISO-TP
 | 0x0461 | Charge Air Temp | `220461` | 2 | (signed(A)×256+B) / 64 | °C | 2 | DigiCluster |
 | 0xF422 | HP Fuel Rail Pressure | `22F422` | 2 | (A×256+B) × 1.45038 | PSI | 2 | DigiCluster |
 | 0xF43C | Catalytic Temp | `22F43C` | 2 | (A×256+B) / 10 − 40 | °C | 3 | DigiCluster |
+
+### Boost / TIP pressure — what each claim rests on ([#207](https://github.com/klexical/openRS_/issues/207))
+
+Earlier versions of this table gave TIP as `(A×256+B) / 903.81` kPa. That is a Ford DID-sheet **psi** formula (catalog entry
+`ford_did_1_35D32…`, the TIP-desired entry, `/903.8107848` psi, unverified); the app decodes `/128` kPa absolute since rc.6 ([#198](https://github.com/klexical/openRS_/issues/198)).
+The two are not the same scale either: `/128` kPa equals `/882.5` psi, about 2.4 % apart. The table keeps four kinds of
+evidence apart:
+
+| Signal | Upstream catalogs (assertions) | Implemented decoder | Observed replies | Independent validation |
+|--------|-------------------------------|---------------------|------------------|------------------------|
+| PCM 0x033E TIP actual | FORScan `forscan_modules.json` `TCBP` "Measured Boost at Throttle Inlet Pressure Sensor", `/128` kPa; DigiCluster `combined_catalog.json` `dc_frs_033E…` `raw / 128` kPa absolute (≈ 98.9 kPa captured at rest). Ford OBD system manual OBDSM1704 calls TIP "Turbocharger Boost Sensor A", upstream of the throttle (MAP is after it) — terminology, not proof of the RS DID or its scale | `ObdResponseParser`: `raw / 128` kPa absolute → `tipActualKpa`. The live gauge (DRIVE, HUD, TRIP, Custom Dashboard) shows TIP − measured baro, labelled **BOOST · THROTTLE INLET**; recordings and exports name the source `TIP_033E` | Owner's car: ≈ baro at rest; 158.20 kPa (raw `4F1A`) at baro 96.5 kPa under load (2026-10-28 drives) | None: no comparison with an independent gauge or MAP sensor. Manifold boost and factory-gauge equivalence are not established |
+| PCM 0x0466 TIP desired | FORScan `TCBP_DSD` "Desired Boost Pressure"; DigiCluster `dc_frs_0466…`; both `/128` kPa | `raw / 128` kPa absolute → `tipDesiredKpa` (POWER TIP DES, sweep chart target) | Decoded in the owner's drives | None |
+| HS-CAN 0x0F8 byte 5 | RS_HS.dbc PCMmsg07 `Boost` `47\|8@0+ (0.01,0)` bar; DigiCluster `can_0xF8_boost_pressure` says "Turbo inlet pressure (absolute kPa)… Does NOT work in my car" (the two notes conflict) | Byte 5 read as gauge kPa, stored `B5 + 101.325` (`boostKpa`); the recorded BOOST source only when TIP isn't fresh; never on the live gauge | 0 throughout the 2026-10-28 morning drive, including at TIP 158 kPa; rare non-zero values (≤ 21) in that afternoon's drive and more in later logs | None: what it physically measures, its reference and its scale are unverified. Low correlation with TIP doesn't prove it broken, and agreement wouldn't prove its identity |
+| HS-CAN 0x090 byte 2 baro | DigiCluster HS-CAN | `B2 × 0.5` kPa, a reference only within 60–115 kPa | 96.5 kPa on the owner's car | None |
+
+The combined catalog also lists strategy-specific DMR "Boost Pressure (Gauge)" and MAP entries marked `verified`. That
+flag is the upstream's; none were checked on this PCM, so the app doesn't poll them.
 
 ## TPMS — BCM Mode 22 (current method, v1.1.6+)
 

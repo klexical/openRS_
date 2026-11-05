@@ -305,8 +305,8 @@ private fun CustomGaugeCell(
     val now = wallClockMs()   // a stalled link must still age readings out (#207 / #217)
     val (displayValue, rawValue) = resolveValue(vs, prefs, cell, now)
     val boost = if (cell.fieldKey == "boostKpa") com.openrs.dash.data.BoostSession.gauge(vs, now) else null
-    // The pressure cell is the TIP gauge (#207): named TIP whatever label an older saved layout carries
-    val label = if (cell.fieldKey == "boostKpa") "TIP" else cell.label
+    // The pressure cell is the live gauge (#207): BOOST whatever label a saved layout carries
+    val label = dashCellLabel(cell)
     // This overlay hides the header / RECONNECTING strip, so frozen last-frame values
     // would read as live after an adapter drop — show placeholders instead.
     val stale = !vs.isConnected
@@ -331,7 +331,7 @@ private fun CustomGaugeCell(
             }
             // Raw value, 1:1 with the frame (no spring) — the same rule as DRIVE's heroes.
             InstrumentHero(
-                // A TIP reading is never presented under the BOOST name (#207)
+                // The TIP gauge's name; a CAN 0x0F8 reading never reaches this cell (#207)
                 label = label,
                 unit = unit,
                 value = if (stale) "—" else displayValue,
@@ -589,7 +589,7 @@ private fun DashBuilderSheet(
                                     .padding(horizontal = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                MonoLabel(field.label, 11.sp, Frost, letterSpacing = 0.1.sp, modifier = Modifier.weight(1f))
+                                MonoLabel(dashCellLabel(field), 11.sp, Frost, letterSpacing = 0.1.sp, modifier = Modifier.weight(1f))
                                 DisplayTypeBadge(field.displayType)
                                 Spacer(Modifier.width(12.dp))
                                 MonoLabel("+", 16.sp, actionInk(accent), FontWeight.Bold)
@@ -687,12 +687,12 @@ private fun EditorCellRow(
             ) {
                 MonoLabel("⠇", 18.sp, Dim)
             }
-            MonoLabel(cell.label, 12.sp, Frost, FontWeight.Bold, 0.1.sp, modifier = Modifier.weight(1f))
+            MonoLabel(dashCellLabel(cell), 12.sp, Frost, FontWeight.Bold, 0.1.sp, modifier = Modifier.weight(1f))
             Box(
                 Modifier
                     .size(48.dp)
                     .clip(CircleShape)
-                    .clickable(onClickLabel = "Remove ${cell.label}") { onRemove() },
+                    .clickable(onClickLabel = "Remove ${dashCellLabel(cell)}") { onRemove() },
                 contentAlignment = Alignment.Center
             ) {
                 Box(
@@ -744,8 +744,8 @@ private fun EditorCellRow(
                 }
             }
             Spacer(Modifier.weight(1f))
-            MoveButton("▲", "Move ${cell.label} up", canMoveUp, onMoveUp)
-            MoveButton("▼", "Move ${cell.label} down", canMoveDown, onMoveDown)
+            MoveButton("▲", "Move ${dashCellLabel(cell)} up", canMoveUp, onMoveUp)
+            MoveButton("▼", "Move ${dashCellLabel(cell)} down", canMoveDown, onMoveDown)
         }
     }
 }
