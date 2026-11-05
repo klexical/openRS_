@@ -14,7 +14,7 @@ record). Everything below about candidates, integration branches and "unpushed" 
 **rc.7 Build 38 (maintenance asset, prepared 2026-11-04 — NOT published until the owner approves):** versionCode 38 = rc.7
 maintenance asset `openrs-2.2.7-rc.7-build38.apk`, to be ADDED to the existing `android-v2.2.7-rc.7` release beside the
 untouched `openRS_v2.2.7-rc.7.apk` (Build 37) — same versionName `2.2.7-rc.7`, same certificate, no new tag / release. Its one
-change: the live gauge is named BOOST · THROTTLE INLET (#207). Built, attested and uploaded only by
+change: the live gauge is labelled plain BOOST again — Build 37 showed TIP (#207). Built, attested and uploaded only by
 `.github/workflows/rc-maintenance-asset.yml` from the source pinned in `android/release-maintenance.json`. Manual in-place
 upgrade from the release notes; the in-app updater never offers it. Record: Branch / Release Workflow → rc.7 → Build 38.
 Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashboard) → `web/`  |  Docs → `docs/`  |  Feature pipeline → `docs/feature-roadmap.md`
@@ -397,12 +397,13 @@ data[5] = B5,  data[6] = B6 …
   `peakBoostPsi`. Drives store per-point source + baro and the peak's source; never infer them for old rows. Which
   pressure byte 5 measures and TIP ≈ MAP at WOT are unverified on the car
 - **Live gauge name vs recorded source labels (#207, rc.7 Build 38)** — the live gauge (DRIVE hero, HUD, TRIP live readouts,
-  Custom Dashboard `boostKpa`) is titled **BOOST** with a **THROTTLE INLET** qualifier (THR INLET when narrow), via
-  `liveGaugeName()` / `dashCellLabel()` in `ui/BoostLabels.kt`. It names the *live* rule only: TIP 0x033E − measured baro,
+  Custom Dashboard `boostKpa`, incl. saved layouts that say "TIP") is labelled plain **BOOST** — no qualifier, subtitle or
+  help text (owner's direction 2026-11-04, after rejecting a "THROTTLE INLET" line) — via `liveGaugeLabel()` /
+  `dashCellLabel()` in `ui/BoostLabels.kt`. It names the *live* rule only: TIP 0x033E − measured baro,
   TIP ≤ 2.5 s, otherwise "—" — never CAN. Recorded / mixed-source views name each point's source (`read()`: **TIP** for
   0x033E, **BOOST** for CAN 0x0F8 when TIP isn't current), and exports keep the source IDs. So "BOOST" means TIP live but
   CAN 0x0F8 in a recorded drive — don't "unify" them by relabelling history or exports. A display-only "BOOST (CAN)" label
-  for recorded views is a separate follow-up (not done). The qualifier is display only: no decode, scale, baro, freshness,
+  for recorded views is a separate follow-up (not done). The label is display only: no decode, scale, baro, freshness,
   recording, export or schema change
 - TPMS PID `0x280B` is multi-frame ISO-TP — send `BCM_FLOW_CONTROL` after receiving First Frame
 - Extended session (`0x10 0x03`) required before: RDU_STATUS (AWD 0x703), PDC (PSCM 0x730), FENG (0x727), RSProt (0x731)
@@ -663,9 +664,10 @@ data[5] = B5,  data[6] = B6 …
   (`(viewportH × 0.22).coerceIn(124, 176) dp`, digit 84 sp / 72 sp under 680 dp); no auto-zoom, no gear pop/scale (the
   old `driveAutoZoom` setting is removed). Only data availability (ECONOMY, recording strip, VEHICLE alert chips)
   may add rows below the instruments; the StatusLine is permanent so alerts only change its content. Verify by
-  comparing card edges across `at:2.5 / 9.5 / 23` frames. The BOOST hero's THROTTLE INLET line (rc.7 Build 38) makes the
-  hero row ≈ 24 dp taller (measured; landscape moves the gear module down by the same amount); RPM and SPEED reserve an
-  empty qualifier slot (`qualifierSlot`) so the row is aligned and the height never changes with data or freshness
+  comparing card edges across `at:2.5 / 9.5 / 23` frames. The plain BOOST label (rc.7 Build 38) costs 0 dp: every row
+  below the hero row is pixel-identical to Build 37's TIP layout at 411 / 360 / 320 dp and landscape (measured). The
+  rejected "THROTTLE INLET" line had made the row ≈ 24 dp taller and moved everything below it — a line under one
+  hero moves the whole page
 - **ESC confirmation (#125)** — the adapter's OK is acceptance only. `EscCommand` waits the firmware's own press plan
   (5 s long press for OFF, 300 ms presses, 1 s gap) + 3 s (unmeasured), needs a 0x1C0 frame stamped (`escStatus`) after the
   request on the same `CanDataService.link.generation`; reconnect → ConnectionLost; one request at a time. Firmware
@@ -1370,9 +1372,12 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
 - **Build 38 — rc.7 maintenance asset (prepared 2026-11-04; publication pending the owner's direct approval):**
   - Owner-approved scope: amend the EXISTING rc.7 release — no new release, tag or retag; the original tag, asset
     `openRS_v2.2.7-rc.7.apk` (`eb937284…`), its attestation and the prerelease flag are never touched.
-  - Source: `feature/boost-label-throttle-inlet` on `b314729` (= staging `256758f`'s tree): `c1392a6` live gauge BOOST ·
-    THROTTLE INLET, `fc3ce26` + `451387c` docs (#207), then What's New option C (published rc.7 line kept, separate
-    "rc.7 · Build 38" line), versionCode 38, CHANGELOG, this record, the maintenance workflow, and the marker last.
+  - Source: `feature/boost-label-throttle-inlet` on `b314729` (= staging `256758f`'s tree): `c1392a6` live gauge label,
+    `fc3ce26` + `451387c` docs (#207), What's New option C (published rc.7 line kept byte-identical, separate Build 38
+    line), versionCode 38, CHANGELOG, the maintenance workflow, then `9c49ecb` plain BOOST (the owner rejected the
+    "THROTTLE INLET" line of `c1392a6`), this record, and a new marker last (`e8e0f10`'s marker is superseded).
+  - What's New Build 38 line (owner-approved wording): "rc.7 · Build 38: the live gauge is labelled BOOST again (Build 37
+    showed TIP). Only the name changed; the reading is the same." (`BUILD_38_NOTE` in `ui/WhatsNewDialog.kt`)
   - Asset `openrs-2.2.7-rc.7-build38.apk`: versionCode 38 (no earlier build used 38 — local repos, every APK on disk and
     the release assets checked 2026-11-04), versionName `2.2.7-rc.7`, Settings `2.2.7-rc.7 · Build 38`, same certificate.
     CI builds, attests and adds it (see the RC maintenance asset gotcha); nothing is uploaded from a local build.
