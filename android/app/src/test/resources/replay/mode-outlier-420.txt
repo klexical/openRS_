@@ -1,0 +1,10 @@
+# SYNTHETIC. The car stays in Track; the app requests Sport. One 0x420 frame with an undocumented byte 6 (0x13) and
+# bit 0 = 0 arrives, then a 0x1B0 — the only "Sport" evidence is that single outlier. Regular Track detail follows.
++0      RX t420800000000000011CD
++300    RX t1B080000000000001000     # car in Track
++10000  REQ SPORT
++12900  RX t420800000000000013CC
++13000  RX t1B080000000000001000
++13500  RX t420800000000000011CD
++14100  RX t420800000000000011CD
++14200  NOTE nothing after this point reports Sport
