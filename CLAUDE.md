@@ -558,23 +558,13 @@ data[5] = B5,  data[6] = B6 …
   The rc.6 asset has no Maps key (blank TRIP map) and no weather key. `MAPS_API_KEY` was set 2026-11-03 (owner); the rc.7 asset
   carries the Maps key (presence verified, value never printed). `OPENWEATHER_API_KEY` is not configured, so published builds
   have no weather — expected, not a bug
-- **RC maintenance asset (rc.7 Build 38)** — an extra, separately named APK on an EXISTING release, never a re-run of the tag
-  publisher (that would rebuild the tag's old source). `.github/workflows/rc-maintenance-asset.yml` runs on pushes to staging
-  and builds only when `android/scripts/rc-maintenance.sh source` finds the pinned tree: the marker
-  `android/release-maintenance.json` can't hold its own tree's hash, so it pins the tree of HEAD *with the marker removed
-  from the index* — write it with `rc-maintenance.sh source-tree`, never by hand: it equals the parent's tree only when
-  the marker commit first ADDS the file (a later marker update pinned to the parent's tree is never built — happened once,
-  caught by the real-history check). A `--no-ff` merge onto an unchanged staging keeps it. Its other fields
-  must equal the workflow's `EXPECT_*` constants. Then: release state as pinned (tag → `43ad5e1`, prerelease, original asset
-  digest `eb937284…`), stop if the asset already exists, release-signed `test assembleRelease` with the tag job's secrets
-  (missing keystore = error), `verify-release.sh android-v2.2.7-rc.7` on the native `openRS_v2.2.7-rc.7.apk` (its versionCode
-  rule skips the tag it is given, so the workflow also checks 38 > the tag's own 37), rename, attest, `gh release upload`
-  (no `--clobber`; refused if the name exists), then a read-only check that only the new asset was added. The name
-  `openrs-2.2.7-rc.7-build38.apk` is outside the updater's `startsWith("openRS_") && endsWith(".apk")` matcher on purpose
-  (`VersionIdentityTest`), and What's New is once per release NAME, so Build 37 → 38 shows no dialog (the Build 38 line is
-  in Settings → What's New). `android/scripts/test-rc-maintenance.sh` checks the source pin in throwaway repos (10 cases).
-  Any earlier commit whose own marker matches its own tree stays buildable if pushed to staging AS THE HEAD (the superseded
-  `e8e0f10` is one) — push only the final tip; a push runs the workflow on its head commit only
+- **RC maintenance asset (rc.7 Build 38) — history** — a one-shot publisher (workflow `rc-maintenance-asset.yml`, marker
+  `android/release-maintenance.json`, `android/scripts/rc-maintenance.sh` + its test script) added
+  `openrs-2.2.7-rc.7-build38.apk` to the existing rc.7 release. It ran once, on the staging push of `32b13ac`, and all four
+  files were then deleted (`chore/rc7-retire-maintenance-asset`). The asset stays on the rc.7 release; the original
+  `openRS_v2.2.7-rc.7.apk`, the tag and the prerelease flag are unchanged. Its name stays outside the updater's
+  `startsWith("openRS_") && endsWith(".apk")` matcher (`VersionIdentityTest`), and What's New is once per release NAME. A
+  future maintenance asset needs a new, reviewed publisher — this one's pin and `EXPECT_*` constants were rc.7-only
 - **VehicleState slot ceiling** — `copy()` on the 162-param data class is at the JVM 255-slot limit. Adding any new field requires either collapsing an unused existing field (speculative AWD DIDs are candidates) or storing it off-state (DiagnosticLogger / genericValues Map). 0x040 lamp state is decoded + validated but not yet persisted on VehicleState for this reason
 - **Demo mode owns VehicleState while active** — `CanDataService.enterDemoMode()` finalizes any recording drive, calls
   `stopConnection()`, then `DemoMode.start()`. While `DemoMode.isActive`: `processCanFrame` / `mergeObdState` / the adapter
