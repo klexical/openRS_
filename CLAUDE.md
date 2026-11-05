@@ -418,6 +418,30 @@ data[5] = B5,  data[6] = B6 …
   IOException into `Result.failure` (cancellation still propagates). The UI launches (DriveModeDock, MorePage ESC) have
   no catch, so an escaped exception ended the process. Keep every `FirmwareCommandSender` inside its `Result` contract.
   `BleCommandSendFailureTest` (real SlcanConnection over BleGattCore, fake GATT)
+- **A BLE write can fail yet reach the bus; `sendRawQuery` has no catch (open in rc.7 Builds 37 / 38: #248, #249)**
+  - `BleGattCore.writeLine` sends each SLCAN line in `mtu − 3` byte chunks. After the MTU 247 request, a 22-byte `t…`
+    frame (PCM polls, DTC requests, the DID prober's `t7E08…` + CR) is one ATT write.
+  - Any non-success status becomes `IOException("BLE write failed (GATT N)")` (`BleAdapterProfile.afterWrite`).
+  - An adapter that answers writes over 20 bytes with GATT 13 (0x0D, invalid attribute length) while still delivering them
+    makes every frame write "fail". This is reported for the WiCAN Pro's FFF2 and not verified in this repo (upstream
+    `ble.c` isn't vendored).
+  - Effects:
+    - `SlcanConnection.sendRawQuery` wraps `writeLine` in try / finally with no catch, and `CanDataService.sendRawQuery`
+      passes it through. DIAG → DID PROBER calls it from `scope.launch` with no handler → uncaught crash (#249).
+    - The PCM poller withdraws a request whose write failed (`PcmRequestLedger.withdraw`), so a reply that does arrive is
+      never attributed and NRC suppression can't engage (#216).
+    - DTC scan modules report "write failed".
+  - Lines under 20 bytes (`OPENRS?`, `AT+FRS…`) are not affected.
+  - Before fixing by splitting writes to ≤ 20 bytes, confirm the adapter firmware reassembles one SLCAN line from several
+    writes (unverified). A never-throwing `sendRawQuery` is needed either way.
+  - Separately, `sendRawQuery` takes the first frame from the module's response ID without checking the DID, so a poll
+    reply or NRC can become the probe's result (#250).
+- **`SlcanParser` accepts short-DLC and over-long lines (#251)**
+  - A `t` / `T` line parses as soon as it holds the bytes its DLC needs. Trailing characters are ignored, and DLC 0 gives an
+    empty payload (`parseStdFrame` / `parseExtFrame` check `length <` only).
+  - On a lossy link (reported over BLE), a corrupt line can reach the decoders as a valid frame. A single bad 0x1B0 / 0x420
+    frame can flip the decoded drive mode briefly and could satisfy a drive-mode confirmation (#252).
+  - The PCM Mode 22 parser also doesn't check the PCI payload length; a short reply's missing low byte reads as 0.
 - **BLE write timeout = link closed (#218)** — Android's `onCharacteristicWrite` names no write; after a 2 s timeout a late
   callback would complete the next write. `BleGattCore` invalidates + closes the link (reader EOF → SlcanConnection
   reconnects); later writes fail at once. `SlcanConnection` swallows write errors, so teardown must come from the reader.
