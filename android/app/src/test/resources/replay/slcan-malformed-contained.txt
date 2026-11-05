@@ -1,0 +1,5 @@
+# SYNTHETIC. Lines the production parser already refuses or the decoder can't use (guards — pass today).
++1500   RX t0F80                                   # DLC 0 on 0x0F8 (legal on the bus; the oil decoder needs 8 bytes)
++1540   RX t0F88005A                               # short: DLC 8, two data bytes
++1580   RX t0F88005A00000000G082                   # bad hex
++1620   RX t0F89005A000000000082                   # DLC 9

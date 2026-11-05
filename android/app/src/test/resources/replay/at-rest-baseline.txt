@@ -1,0 +1,5 @@
+# SYNTHETIC — invented values, no capture data. A car at rest: 0x090 engine frame, 0x130 speed 0, 0x0F8 oil 70 °C.
++0      RX t09080000C1FF617D0000
++200    RX t09080000C1FF617D0000
++1000   RX t13080000000000000000
++1040   RX t0F88005A000000000082
