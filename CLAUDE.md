@@ -118,6 +118,8 @@ diagnostics/
                             the one path (full scan, auto-scan, retry); only DtcReply.Positive → OK (#215)
   DtcScanLedger.kt        — rc.7 — the session's DTC export record (DiagnosticLogger.dtcScans): begin (RUNNING) / progress /
                             complete / fail / cancel / interrupt / retry; cleared by sessionStart, stale tickets can't publish
+  DidProbeScan.kt         — rc.8 — DID prober scan loop (`runDidProbeScan` → `DidProbeEnd` Complete / Stopped /
+                            Failed(did, reason, sent)); records the labelled ProbeSession (see the DID prober gotcha, #249)
   DiagnosticLogger.kt     — Thread-safe singleton: frame inventory (opt B), decode trace, SLCAN log (opt C)
                             Pre-allocated hex lookup table; hex conversion outside lock for reduced contention
                             sessionTransport field: transport label for diagnostic reports and share intents
@@ -267,7 +269,8 @@ ui/
     CarDiagram.kt           — TopDownCar: approved top-down RS art (body in ink, tyres tinted per state, TOPDOWN_ASPECT,
                             WHEEL_ANCHORS measured from the tyre layer)
   PidBrowserSection.kt    — DIAG tab: expandable FORScan catalog per module with coverage bar
-  DidProberSection.kt     — DIAG tab: interactive Mode 22 scanner for any ECU+DID
+  DidProberSection.kt     — DIAG tab: interactive Mode 22 scanner for any ECU+DID (UI only; the scan runs in
+                            diagnostics/DidProbeScan.kt)
   WhatsNewDialog.kt       — Version changelog dialog; shown on first launch after update
   trip/
     DrivePage.kt          — MAP tab: live mode (Google Maps + HUD + controls) + history mode (drive list)
@@ -704,6 +707,28 @@ data[5] = B5,  data[6] = B6 …
   (codes, status, note); the ledger record and DIAG's result apply it with ONE rule (`DtcScanLedger.withNote`: replaced on
   failure, cleared on OK / genuine timeout). DIAG's NOT SCANNED row reads the DISPLAYED result
   (`DtcScanView.notScannedText`) — never `DiagnosticLogger.lastDtcScan` (a newer auto-scan / session would label an older row)
+- **DID prober (rc.8, #249)** — the scan runs in `diagnostics/DidProbeScan.kt` (`runDidProbeScan`); `DidProberSection`
+  only starts it and shows the end.
+  - A failed query never reaches the UI scope: any exception except cancellation (rethrown) ends the scan as
+    `DidProbeEnd.Failed(did, reason, sent)` with one sanitized `PROBE` event (DID, n / m probed, reason) and no result for
+    that DID. The failed DID is never retransmitted; only a new scan started by the user sends again.
+  - `probing` clears only in `finally`, so a second scan can't run beside the first. STOP only requests the stop (checked
+    before each send and after each reply).
+  - `SlcanConnection` / `CanDataService.sendRawQuery` throw `IOException(QUERY_NOT_CONNECTED)` when there is no
+    connection / transport (`_transport` is cleared in the connection loop's finally); they used to return null, which
+    recorded a fake TIMEOUT. Only that message gives `sent = false` → DIAG "Nothing was sent for this DID."; every other
+    failure reads "The adapter reported the write as failed. The module may still have received it." A shared message,
+    not an exception subclass: R8 renames classes and `LogText.sanitizeReason` prints the simple name. The DID in flight
+    when the link drops still records TIMEOUT; after a reconnect the scan just continues; a transport closed but not yet
+    torn down, and a BLE refusal before the write, get the "may still" line (known limit, #248).
+  - Partial scans are kept and labelled: `ProbeSession.outcome` (COMPLETE / STOPPED / FAILED) + `planned` → text
+    "STOPPED — n of m probed", JSON `outcome` / `planned` (`totalProbed` unchanged), CSV first line
+    `# outcome=… probed=… planned=…`; a complete scan exports exactly as before. A FAILED session logs no extra "scan …"
+    event (the failure event already names the DID and reason).
+  - The fix contains the crash only: over BLE on the WiCAN Pro (MTU above 23) the first 22-byte probe write already fails (#248).
+  - Open: `sendRawQuery` takes the first frame from the response ID (`beginDtcOperation(sid = -1)`), so a poll reply or NRC
+    can become the probe's result and the stolen poll stays outstanding in `PcmRequestLedger` (#250, `ProberAttributionTest`,
+    @Ignore'd).
 - **Every release build needs an on-device launch (R8)** — on 2026-10-29 R8 (AGP 8.7.3) emitted an unverifiable
   `DrivePageKt$DrivePage$7` after a harmless edit (removing the CLUTCH row): ART threw `VerifyError … register has type
   Conflict` at the first DRIVE frame; debug and every JVM test were fine. Worked around by moving ECONOMY into
@@ -1004,11 +1029,17 @@ android/app/src/test/java/com/openrs/dash/
   #229 / #241 2026-11-02/03: OilPtuMappingTest 6 · OilPtuRecorderTest 2 · StopFlushOutcomeTest 5 · ThumbnailInputRegressionTest 6
   #238 final review 2026-11-03: BleCommandSendFailureTest 6 (F1) · PointBufferRaceTest 3 (F2, `testing/HookedPointBuffer.java`) ·
   LapRecreationTest 3 (F3) · DiagnosticExportDtcSnapshotTest 5 (F4)
+  rc.8 diagnostics 2026-11-05: DidProbeScanTest 7 (#249) · BleCommandSendFailureTest +2 (prober over the fake GATT) ·
+  ProberAttributionTest 4 (3 @Ignore'd, #250) · JVM replay through production code (`ReplayHarness.kt`, SYNTHETIC fixtures in
+  `test/resources/replay/`; `+ms RX|REQ|NOTE`, NOTE never fed): SlcanIntegrityReplayTest 6 (3 @Ignore'd, #251) ·
+  BatteryVoltageReplayTest 5 (4 @Ignore'd, #251 / #223) · ModeAttributionReplayTest 4 (3 @Ignore'd, #252). Offline tool:
+  `tools/replay/` (python3 test_replay / test_slcan / test_candump: 7 / 7 / 6; `candump_to_slcan.py` output is still raw,
+  private bus data)
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **1108 tests / 95 classes** per variant (Android, rc.7 Build 38 branch `feature/boost-label-throttle-inlet`;
-Temurin 17); **1102 / 94** at rc.7 = `43ad5e1` (same Android sources as #238 head `040a1f8`) + **293 vitest across 26 files** (Sapphire at rc.7 — run `web/node_modules/.bin/vitest run` and `tsc -b`). Earlier
+Current count: **1136 tests / 100 classes** per variant (Android, `feature/rc8-diagnostics` `df7bcb9`, 13 skipped =
+the @Ignore'd red cases; Temurin 17); **1108 / 95** on the rc.7 Build 38 branch `feature/boost-label-throttle-inlet`; **1102 / 94** at rc.7 = `43ad5e1` (same Android sources as #238 head `040a1f8`) + **293 vitest across 26 files** (Sapphire at rc.7 — run `web/node_modules/.bin/vitest run` and `tsc -b`). Earlier
 totals: 1085 / 90 `2033fda`; 1072 / 87 `d3264c8`; 1066 / 86 `8d1903e`; 1045 / 84 `0e4c120`; 1034 / 81 `7bb8a9a`; 1025 / 79
 `81baa76` (`8d1903e` / `0e4c120` / `7bb8a9a` / `81baa76` are local build IDs from the pre-cleanup history — not on GitHub).
 
