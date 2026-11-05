@@ -427,13 +427,14 @@ data[5] = B5,  data[6] = B6 …
     `ble.c` isn't vendored).
   - Effects:
     - `SlcanConnection.sendRawQuery` wraps `writeLine` in try / finally with no catch, and `CanDataService.sendRawQuery`
-      passes it through. DIAG → DID PROBER calls it from `scope.launch` with no handler → uncaught crash (#249).
+      passes it through. DIAG → DID PROBER calls it from `scope.launch` with no handler → uncaught crash in Builds 37 / 38
+      (#249; the rc.8 fix contains it in the scan loop; see the DID prober gotcha).
     - The PCM poller withdraws a request whose write failed (`PcmRequestLedger.withdraw`), so an NRC that does arrive is
       never attributed and NRC suppression can't engage (#216).
     - DTC scan modules report "write failed".
   - Lines of 20 bytes or less (`OPENRS?`, `AT+FRS…`) are not affected.
   - Before fixing by splitting writes to ≤ 20 bytes, confirm the adapter firmware reassembles one SLCAN line from several
-    writes (unverified). A never-throwing `sendRawQuery` is needed either way.
+    writes (unverified). `sendRawQuery` throws on write failure / no connection, so every caller must catch.
   - Separately, `sendRawQuery` takes the first frame from the module's response ID without checking the DID, so a poll
     reply or NRC can become the probe's result (#250).
 - **`SlcanParser` accepts DLC-0 and over-long lines (#251)**
