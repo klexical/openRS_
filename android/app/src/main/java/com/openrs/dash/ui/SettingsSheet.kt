@@ -405,7 +405,7 @@ fun SettingsDialog(
                     )
                 }
                 Spacer(Modifier.height(4.dp))
-                SettingsRow("Boost Pressure", help = LiveBoostLabel.HELP) {
+                SettingsRow("Boost Pressure") {
                     SettingsPicker(
                         options = listOf("PSI", "BAR", "kPa"),
                         selected = when (boostUnit) { "BAR" -> "BAR"; "KPA" -> "kPa"; else -> "PSI" },

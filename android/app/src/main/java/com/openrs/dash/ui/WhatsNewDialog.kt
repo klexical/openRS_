@@ -41,13 +41,17 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.openrs.dash.ui.anim.pageEntrance
 
+/** rc.7 Build 38 (a maintenance asset on the same rc.7 release): one owner-facing line, first in the 2.2.7 list. */
+private const val BUILD_38_NOTE =
+    "rc.7 · Build 38: the live gauge is labelled BOOST again (Build 37 showed TIP). Only the name changed; the reading is the same."
+
 /**
  * Version highlights for the "What's New" dialog.
  * Key = versionName (e.g. "2.2.5"), Value = list of user-facing highlights.
  */
 private val versionHighlights: Map<String, List<String>> = mapOf(
     "2.2.7" to listOf(
-        "rc.7 · Build 38: the live pressure gauge is now labelled BOOST · THROTTLE INLET (Build 37 labelled it TIP). Only the name changed — same throttle-inlet reading, still \"—\" when TIP isn't current; recordings, exports and saved drives are as before.",
+        BUILD_38_NOTE,
         "Changed: the pressure gauge shows throttle-inlet pressure above measured air pressure, labelled TIP, and — when TIP isn't current — never switches to another signal. Drives record TIP or, when TIP isn't current, the car's CAN boost signal, each named by its source; the two are kept apart in peaks, charts and exports. Which pressure each signal measures on the car is not yet confirmed.",
         "Fixed: OIL and PTU temperatures were each other's reading (found on one car's capture) — readiness, alerts, recordings and exports now use the corrected values. Drives recorded before keep their values and are marked as recorded before the fix.",
         "Changed: AWD shows rear left / right torque; the front/rear percentage is withdrawn (it compared torque from different points of the drivetrain). DRIVE no longer shows a clutch-pedal card.",

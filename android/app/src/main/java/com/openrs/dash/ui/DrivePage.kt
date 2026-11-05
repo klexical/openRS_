@@ -101,7 +101,6 @@ import kotlin.math.roundToInt
     // The pressure gauge is TIP only (#207): "—" in a TIP gap, never CAN 0x0F8 in its place; wall clock, not lastUpdate
     val now = wallClockMs()
     val boost = com.openrs.dash.data.BoostSession.gauge(vs, now)
-    val boostName = liveGaugeName(boost)
     val boostLbl = p.displayGauge(0.0).second
 
     // B1: raw live values for hero numerics — spring smoothing removed so the
@@ -233,15 +232,14 @@ import kotlin.math.roundToInt
                     label = "ENGINE", unit = "RPM", value = rpmStr,
                     valueColor = if (atShift) Orange else Frost,
                     valueSize = 34.sp,
-                    qualifierSlot = true,   // the BOOST hero's qualifier line — same height across the row
                     peak = "PEAK ${vs.peakRpm.toInt()}",
                     peakHoldValue = vs.peakRpm.toInt().toString(),
                     spark = rpmSnap, sparkColor = accentMid(),
                     modifier = Modifier.weight(1f).fillMaxHeight()
                 )
                 InstrumentHero(
-                    // TIP (throttle inlet − measured baro), always the same measurement on this gauge: BOOST · THROTTLE INLET
-                    label = boostName.title, qualifier = boostName.qualifier, unit = boostLbl, value = boostVal,
+                    // TIP (throttle inlet − measured baro), always the same measurement on this gauge, named BOOST
+                    label = liveGaugeLabel(boost), unit = boostLbl, value = boostVal,
                     icon = RsIcon.BOOST, iconTone = if (stale) IconTone.UNAVAILABLE else IconTone.NORMAL,
                     valueColor = if (stale) Frost else accent,
                     valueSize = 44.sp,
@@ -254,7 +252,6 @@ import kotlin.math.roundToInt
                 InstrumentHero(
                     label = "SPEED", unit = p.speedLabel, value = speedStr,
                     valueSize = 34.sp,
-                    qualifierSlot = true,
                     peak = "PEAK ${p.displaySpeed(vs.peakSpeedKph)}",
                     peakHoldValue = p.displaySpeed(vs.peakSpeedKph),
                     spark = speedSnap, sparkColor = accentMid(),

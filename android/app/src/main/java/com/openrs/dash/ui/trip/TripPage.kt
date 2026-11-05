@@ -601,9 +601,7 @@ private fun TripPageContent(
                         if (driveState.isRecording) {
                             // Boost bands (8 / 16 psi) weren't limits — read it in ink like the live panel. TIP gauge (#207).
                             val boost = com.openrs.dash.data.BoostSession.gauge(vehicleState, com.openrs.dash.ui.wallClockMs())
-                            val boostName = com.openrs.dash.ui.liveGaugeName(boost)
-                            MonoText("${boostName.title} ${boost.gaugeKpa?.let { g -> prefs.displayGauge(g).let { (v, u) -> "$v $u" } } ?: "—"}", 10.sp, Dim)
-                            boostName.qualifier?.let { MonoText(it.full, 9.sp, Dim) }
+                            MonoText("${com.openrs.dash.ui.liveGaugeLabel(boost)} ${boost.gaugeKpa?.let { g -> prefs.displayGauge(g).let { (v, u) -> "$v $u" } } ?: "—"}", 10.sp, Dim)
                             val dte = driveState.distanceToEmptyKm
                             if (dte > 0) {
                                 val dteStr = if (prefs.speedUnit == "MPH")
@@ -1010,9 +1008,8 @@ private fun LiveHud(
                         Readout("GEAR", if (live) vehicleState.gearDisplay else ph),
                         // Value + the user's pressure unit; DAY reads the darker paint (actionInk) like the map labels.
                         com.openrs.dash.data.BoostSession.gauge(vehicleState, com.openrs.dash.ui.wallClockMs()).let { b ->
-                            val name = com.openrs.dash.ui.liveGaugeName(b)
-                            Readout(name.title, if (live) b.gaugeKpa?.let { g -> prefs.displayGauge(g).let { (v, u) -> "$v $u" } } ?: ph else ph,
-                                color = actionInk(accent), qualifier = name.qualifier)
+                            Readout(com.openrs.dash.ui.liveGaugeLabel(b), if (live) b.gaugeKpa?.let { g -> prefs.displayGauge(g).let { (v, u) -> "$v $u" } } ?: ph else ph,
+                                color = actionInk(accent))
                         },
                     ),
                     listOf(clt, oil, amb, fuel),

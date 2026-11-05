@@ -16,13 +16,9 @@ import com.openrs.dash.data.resolveValue
 import com.openrs.dash.diagnostics.DiagnosticLogger
 import com.openrs.dash.service.LinkOwnership
 import com.openrs.dash.service.LinkSession
-import com.openrs.dash.ui.GaugeName
-import com.openrs.dash.ui.LiveBoostLabel
 import com.openrs.dash.ui.UserPrefs
-import com.openrs.dash.ui.dashCellEditorLabel
 import com.openrs.dash.ui.dashCellLabel
-import com.openrs.dash.ui.dashCellQualifier
-import com.openrs.dash.ui.liveGaugeName
+import com.openrs.dash.ui.liveGaugeLabel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import org.junit.After
@@ -33,7 +29,7 @@ import org.junit.Test
 import java.io.File
 
 /**
- * #207 — the live gauge's name (BOOST · THROTTLE INLET) on the consumer paths, with the reading itself unchanged: CAN
+ * #207 — the live gauge's name (plain BOOST, nothing under it) on the consumer paths, with the reading itself unchanged: CAN
  * frames through [LinkSession.onCanFrame], TIP through the PCM parser and [ObdMerge], then what DRIVE / TRIP / HUD /
  * Custom Dashboard read ([BoostSession.gauge], [resolveValue], the HUD format). Payloads as in BoostSourceTest: TIP
  * 0x033E raw 4F1A = 158.20 kPa at baro 96.5 kPa (0x090 byte 2 = C1) → 61.7 kPa ≈ 8.9 psi.
@@ -45,7 +41,7 @@ class LiveBoostLabelTest {
     private val own = LinkOwnership()
     private lateinit var link: LinkSession
     private val prefs = UserPrefs()                                      // PSI
-    private val live = GaugeName(LiveBoostLabel.TITLE, LiveBoostLabel.QUALIFIER)
+    private val live = "BOOST"
 
     private class NoRecorder : LinkSession.Recorder {
         override val isRecording = false; override val isPaused = false; override val activeDriveId: Long? = null
@@ -72,21 +68,21 @@ class LiveBoostLabelTest {
     private fun gauge(at: Long = now()) = BoostSession.gauge(state.value, at)
     private fun shown(at: Long = now()) = gauge(at).gaugeKpa?.let { prefs.displayGauge(it).first }
 
-    @Test fun `normal, stale and recovered — the caption stays BOOST · THROTTLE INLET, the value follows TIP alone`() {
+    @Test fun `normal, stale and recovered — the caption stays BOOST, the value follows TIP alone`() {
         rpmFrame(); boostFrame(0); tip(0x4F1A)
-        assertEquals(live, liveGaugeName(gauge()))
+        assertEquals(live, liveGaugeLabel(gauge()))
         assertEquals(158.203 - 96.5, gauge().gaugeKpa!!, 0.01)
         assertEquals("8.9", shown())
         val gap = now() + BoostRule.TIP_FRESH_MS + 100                   // TIP poll gap, CAN 0x0F8 still arriving
         rpmFrame(); boostFrame(0)
         assertNull("stale → \"—\", never CAN 0x0F8 in its place", shown(gap))
-        assertEquals("the caption doesn't flip with freshness", live, liveGaugeName(gauge(gap)))
+        assertEquals("the caption doesn't flip with freshness", live, liveGaugeLabel(gauge(gap)))
         rpmFrame(); tip(0x4F1A)                                          // recovered
         assertEquals("8.9", shown())
-        assertEquals(live, liveGaugeName(gauge()))
+        assertEquals(live, liveGaugeLabel(gauge()))
     }
 
-    @Test fun `a CAN 0x0F8 reading never gets the throttle-inlet name — provenance keeps TIP`() {
+    @Test fun `the live name doesn't change provenance — TIP readings stay TIP, CAN 0x0F8 keeps its own label`() {
         rpmFrame(); boostFrame(0); tip(0x4F1A)
         val tipRead = BoostSession.read(state.value, now())
         assertEquals(BoostSource.TIP_033E, tipRead.source)
@@ -95,31 +91,28 @@ class LiveBoostLabelTest {
         val canRead = BoostSession.read(state.value, now())
         assertEquals(BoostSource.CAN_0F8, canRead.source)
         assertEquals(0.0, canRead.gaugeKpa!!, 1e-9)                      // a genuine CAN 0 is still a reading
-        assertEquals(GaugeName("BOOST", null), liveGaugeName(canRead))
+        assertEquals("BOOST", liveGaugeLabel(canRead))                    // CAN_0F8's own label, as recorded
         assertNull("the live gauge shows no CAN value", gauge().gaugeKpa)
     }
 
-    @Test fun `Custom Dashboard — saved TIP, older BOOST and new cells all read as the live gauge, values unchanged`() {
+    @Test fun `Custom Dashboard — saved TIP, older BOOST and new cells all read BOOST, values unchanged`() {
         rpmFrame(); tip(0x4F1A)
         val saved = listOf(DashCell("boostKpa", "hero", "TIP"), DashCell("boostKpa", "number", "BOOST"),
             defaultCellFor("boostKpa")!!)
         for (cell in saved) {
-            assertEquals(LiveBoostLabel.TITLE, dashCellLabel(cell))
-            assertEquals(LiveBoostLabel.QUALIFIER, dashCellQualifier(cell))
-            assertEquals("BOOST · THROTTLE INLET", dashCellEditorLabel(cell))
+            assertEquals("BOOST", dashCellLabel(cell))
             assertEquals("8.9", resolveValue(state.value, prefs, cell, now()).first)
         }
         assertEquals("— —", resolveValue(state.value, prefs, saved[0], now() + BoostRule.TIP_FRESH_MS + 100).first)
         val tipActual = DashCell("tipActualKpa", "number", "TIP ACTUAL")    // technical cell keeps its name
-        assertEquals("TIP ACTUAL", dashCellLabel(tipActual)); assertNull(dashCellQualifier(tipActual))
-        assertEquals("TIP ACTUAL", dashCellEditorLabel(tipActual))
+        assertEquals("TIP ACTUAL", dashCellLabel(tipActual))
     }
 
-    @Test fun `a genuine 0 at the throttle inlet stays 0, not unavailable`() {
+    @Test fun `a genuine 0 stays 0, not unavailable`() {
         rpmFrame(); tip(0x3040)                                          // 96.5 kPa abs = measured baro
         assertEquals(0.0, gauge().gaugeKpa!!, 1e-9)
         assertEquals(prefs.displayGauge(0.0).first, resolveValue(state.value, prefs, DashCell("boostKpa", "hero", "TIP"), now()).first)
-        assertEquals(live, liveGaugeName(gauge()))
+        assertEquals(live, liveGaugeLabel(gauge()))
     }
 
     @Test fun `HUD line reads BOOST with the gauge's value and unit`() {

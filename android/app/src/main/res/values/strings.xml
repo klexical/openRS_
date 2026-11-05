@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">openRS_</string>
     <!-- HUD overlay readouts (HudOverlayService) -->
-    <!-- The live gauge (#207): BOOST, with the THROTTLE INLET line under it (ui.LiveBoostLabel) -->
+    <!-- The live gauge (#207): BOOST (ui.LiveBoostLabel) -->
     <string name="hud_boost">BOOST: %1$s %2$s</string>
     <string name="hud_rpm">RPM: %1$d</string>
     <string name="hud_rpm_none">RPM: ----</string>

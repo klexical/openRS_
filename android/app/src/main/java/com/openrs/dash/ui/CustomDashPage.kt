@@ -181,14 +181,13 @@ fun CustomDashPage(
                     verticalArrangement = Arrangement.spacedBy(Tokens.CardGap)
                 ) {
                     layout.cells.chunked(columns).forEach { row ->
-                        val heroQualifier = row.any { it.displayType == "hero" && dashCellQualifier(it) != null }
                         Row(
                             Modifier.fillMaxWidth().height(IntrinsicSize.Max),
                             horizontalArrangement = Arrangement.spacedBy(Tokens.CardGap)
                         ) {
                             row.forEach { cell ->
                                 key(cell.fieldKey) {
-                                    CustomGaugeCell(vehicleState, prefs, cell, Modifier.weight(1f).fillMaxHeight(), qualifierSlot = heroQualifier)
+                                    CustomGaugeCell(vehicleState, prefs, cell, Modifier.weight(1f).fillMaxHeight())
                                 }
                             }
                             repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
@@ -290,9 +289,7 @@ private fun CustomGaugeCell(
     vs: VehicleState,
     prefs: UserPrefs,
     cell: DashCell,
-    modifier: Modifier = Modifier,
-    /** A hero in the same row has a qualifier line: keep that line here too, so the row's values stay aligned. */
-    qualifierSlot: Boolean = false,
+    modifier: Modifier = Modifier
 ) {
     val accent = LocalThemeAccent.current
     // A withdrawn reading kept in a saved layout: the cell stays, unavailable, with the reason (#226)
@@ -308,9 +305,8 @@ private fun CustomGaugeCell(
     val now = wallClockMs()   // a stalled link must still age readings out (#207 / #217)
     val (displayValue, rawValue) = resolveValue(vs, prefs, cell, now)
     val boost = if (cell.fieldKey == "boostKpa") com.openrs.dash.data.BoostSession.gauge(vs, now) else null
-    // The pressure cell is the live gauge (#207): BOOST · THROTTLE INLET whatever label a saved layout carries
+    // The pressure cell is the live gauge (#207): BOOST whatever label a saved layout carries
     val label = dashCellLabel(cell)
-    val qualifier = dashCellQualifier(cell)
     // This overlay hides the header / RECONNECTING strip, so frozen last-frame values
     // would read as live after an adapter drop — show placeholders instead.
     val stale = !vs.isConnected
@@ -337,8 +333,6 @@ private fun CustomGaugeCell(
             InstrumentHero(
                 // The TIP gauge's name; a CAN 0x0F8 reading never reaches this cell (#207)
                 label = label,
-                qualifier = qualifier,
-                qualifierSlot = qualifier != null || qualifierSlot,
                 unit = unit,
                 value = if (stale) "—" else displayValue,
                 valueColor = when {
@@ -364,7 +358,6 @@ private fun CustomGaugeCell(
                     .padding(horizontal = 14.dp, vertical = 12.dp)
             ) {
                 InstrumentLabel(label)
-                if (qualifier != null) QualifierLine(qualifier, Modifier.fillMaxWidth())
                 Spacer(Modifier.height(2.dp))
                 val v = if (stale) "— —" else displayValue
                 DataNum(v, 22.sp, if (v.startsWith("—")) Dim else if (alert) levelColor(level) else Frost)
@@ -396,7 +389,6 @@ private fun CustomGaugeCell(
                     .padding(horizontal = 14.dp, vertical = 12.dp)
             ) {
                 InstrumentLabel(label)
-                if (qualifier != null) QualifierLine(qualifier, Modifier.fillMaxWidth())
                 Spacer(Modifier.height(2.dp))
                 DataNum(v, 22.sp, if (v.startsWith("—")) Dim else if (alert) levelColor(level) else Frost)
             }
@@ -597,7 +589,7 @@ private fun DashBuilderSheet(
                                     .padding(horizontal = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                MonoLabel(dashCellEditorLabel(field), 11.sp, Frost, letterSpacing = 0.1.sp, modifier = Modifier.weight(1f))
+                                MonoLabel(dashCellLabel(field), 11.sp, Frost, letterSpacing = 0.1.sp, modifier = Modifier.weight(1f))
                                 DisplayTypeBadge(field.displayType)
                                 Spacer(Modifier.width(12.dp))
                                 MonoLabel("+", 16.sp, actionInk(accent), FontWeight.Bold)
@@ -695,7 +687,7 @@ private fun EditorCellRow(
             ) {
                 MonoLabel("⠇", 18.sp, Dim)
             }
-            MonoLabel(dashCellEditorLabel(cell), 12.sp, Frost, FontWeight.Bold, 0.1.sp, modifier = Modifier.weight(1f))
+            MonoLabel(dashCellLabel(cell), 12.sp, Frost, FontWeight.Bold, 0.1.sp, modifier = Modifier.weight(1f))
             Box(
                 Modifier
                     .size(48.dp)

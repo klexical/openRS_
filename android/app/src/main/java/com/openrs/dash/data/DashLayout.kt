@@ -20,7 +20,7 @@ data class DashLayout(
 /** All VehicleState fields available for the custom dashboard builder. */
 val AVAILABLE_FIELDS = listOf(
     DashCell("rpm", "hero", "RPM"),
-    DashCell("boostKpa", "hero", "BOOST"),   // the live gauge; shown as BOOST · THROTTLE INLET (ui.dashCellLabel)
+    DashCell("boostKpa", "hero", "BOOST"),   // the live gauge, shown as BOOST (ui.dashCellLabel)
     DashCell("speedKph", "hero", "SPEED"),
     DashCell("oilTempC", "number", "OIL TEMP"),
     DashCell("coolantTempC", "number", "COOLANT"),

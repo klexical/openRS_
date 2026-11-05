@@ -116,20 +116,10 @@ class HudOverlayService : Service() {
         }
 
         boostTv = makeLabel(getString(R.string.hud_boost, "---", "PSI"))
-        // Where the gauge measures (#207) — the same qualifier as DRIVE / TRIP / Custom Dashboard
-        val boostQualifierTv = TextView(this).apply {
-            text = com.openrs.dash.ui.LiveBoostLabel.QUALIFIER.full
-            setTextColor(0xFF7A9AB8.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 9f)
-            typeface = mono
-            includeFontPadding = false
-            setPadding(0, 0, 0, dp(3f))
-        }
         rpmTv   = makeLabel("RPM:  ----")
         oilTv   = makeLabel("OIL:  ---\u00B0")
 
         root.addView(boostTv)
-        root.addView(boostQualifierTv)
         root.addView(rpmTv)
         root.addView(oilTv)
 
@@ -192,7 +182,7 @@ class HudOverlayService : Service() {
 
                     // Boost — respect user's preferred unit. Disconnected: last values are
                     // frozen, so show the same "---" placeholder as a missing oil temp.
-                    // The live gauge (#207), BOOST · THROTTLE INLET: TIP only, no fresh TIP → "---" (re-evaluated every second as well)
+                    // The live gauge (#207), BOOST: TIP only, no fresh TIP → "---" (re-evaluated every second as well)
                     val boost = com.openrs.dash.data.BoostSession.gauge(vs, System.currentTimeMillis())
                     val bUnit = prefs.displayGauge(0.0).second
                     val bVal = boost.gaugeKpa?.takeIf { vs.isConnected }?.let { prefs.displayGauge(it).first } ?: "---"
