@@ -196,7 +196,7 @@ class CanDataService : Service() {
      * Send a single Mode 22 (or arbitrary) SLCAN frame and wait for a response.
      * Used by the DID prober to test individual DIDs against an ECU.
      */
-    suspend fun sendRawQuery(responseId: Int, frame: String, timeoutMs: Long = 1_500L): ByteArray? {
+    suspend fun sendRawQuery(responseId: Int, frame: String, timeoutMs: Long = 1_500L): com.openrs.dash.can.RawReply? {
         // Demo: no ECU on the other end — probes time out as they would with no response.
         if (DemoMode.isActive) { delay(timeoutMs.coerceAtMost(600L)); return null }
         val conn = connection ?: throw java.io.IOException(com.openrs.dash.diagnostics.QUERY_NOT_CONNECTED)

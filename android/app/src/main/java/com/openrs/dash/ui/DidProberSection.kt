@@ -52,7 +52,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun DidProberSection(
     vs: VehicleState,
-    onSendRawQuery: (suspend (responseId: Int, frame: String, timeoutMs: Long) -> ByteArray?)? = null
+    onSendRawQuery: (suspend (responseId: Int, frame: String, timeoutMs: Long) -> com.openrs.dash.can.RawReply?)? = null
 ) {
     val ctx = LocalContext.current
     val accent = LocalThemeAccent.current
@@ -249,6 +249,7 @@ fun DidProberSection(
         val found = results.count { it.status == "FOUND" }
         val rejected = results.count { it.status == "NRC" }
         val timeout = results.count { it.status == "TIMEOUT" }
+        val ambiguous = results.count { it.status == com.openrs.dash.diagnostics.PROBE_NRC_AMBIGUOUS }
 
         if (results.isNotEmpty()) {
             Row(
@@ -258,6 +259,7 @@ fun DidProberSection(
                 MonoLabel("$found found", 10.sp, Ok)
                 MonoLabel("$rejected rejected", 10.sp, Orange.copy(0.7f))
                 MonoLabel("$timeout timeout", 10.sp, Dim)
+                if (ambiguous > 0) MonoLabel("$ambiguous NRC owner ambiguous", 10.sp, Orange.copy(0.5f))
             }
 
             Box(
@@ -312,7 +314,7 @@ private fun ProbeResultRow(
 ) {
     val color = when (entry.status) {
         "FOUND" -> Ok
-        "NRC" -> Orange.copy(0.5f)
+        "NRC", com.openrs.dash.diagnostics.PROBE_NRC_AMBIGUOUS -> Orange.copy(0.5f)
         else -> Dim.copy(0.4f)
     }
     Row(

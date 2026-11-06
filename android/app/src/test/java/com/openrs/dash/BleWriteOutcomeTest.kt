@@ -193,7 +193,6 @@ class BleWriteOutcomeTest {
     private val probeDids = listOf(0xABCD, 0xABCE, 0xABCF)
     private fun probeReply(did: Int) = "t7E880462%04XBA000000".format(did)
 
-    @org.junit.Ignore("#250 prober-attribution: needs the reply match by DID — enabled with that fix")
     @Test fun `prober over BLE - GATT 13 on every probe write still completes DID by DID`() = runTest {
         val link = connected(rpm = 0.0) {
             it.status = { line -> if (line.length > 20) 13 else BleSetupPolicy.GATT_SUCCESS }

@@ -349,10 +349,12 @@ internal object DiagnosticReportBuilder {
                 val found   = ps.results.count { it.status == "FOUND" }
                 val nrc     = ps.results.count { it.status == "NRC" }
                 val timeout = ps.results.count { it.status == "TIMEOUT" }
+                val ambiguous = ps.results.count { it.status == PROBE_NRC_AMBIGUOUS }
                 appendLine("  ${ps.module} (0x${"%03X".format(ps.requestId)}→0x${"%03X".format(ps.responseId)}) @ +${log.formatDuration(ps.relMs)}")
                 val probed = if (ps.outcome == DiagnosticLogger.PROBE_COMPLETE) "${ps.results.size} probed"
                     else "${ps.outcome} — ${ps.results.size} of ${ps.planned} probed"
-                appendLine("    $probed — $found found, $nrc rejected, $timeout timeout")
+                appendLine("    $probed — $found found, $nrc rejected, $timeout timeout" +
+                    if (ambiguous > 0) ", $ambiguous NRC owner ambiguous" else "")
                 ps.results.filter { it.status == "FOUND" }.forEach { r ->
                     appendLine("    ✓ 0x${"%04X".format(r.did)}  ${r.responseHex}")
                 }

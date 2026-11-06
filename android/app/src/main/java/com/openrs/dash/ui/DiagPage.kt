@@ -71,7 +71,7 @@ import kotlin.math.roundToInt
     onClearDtcs: (suspend () -> Map<String, Boolean>)? = null,
     onRetryScanModule: (suspend (String) -> com.openrs.dash.data.DtcModuleRetry)? = null,
     onFetchFreezeFrames: (suspend (List<DtcResult>) -> List<DtcResult>)? = null,
-    onSendRawQuery: (suspend (responseId: Int, frame: String, timeoutMs: Long) -> ByteArray?)? = null,
+    onSendRawQuery: (suspend (responseId: Int, frame: String, timeoutMs: Long) -> com.openrs.dash.can.RawReply?)? = null,
     onResetSession: () -> Unit = {},
     snackbarHostState: androidx.compose.material3.SnackbarHostState? = null,
 ) {
