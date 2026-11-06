@@ -7,8 +7,8 @@ Kotlin 2.0.21 + Jetpack Compose (Material3).
 Build 37 / versionCode 37, asset `openRS_v2.2.7-rc.7.apk` (SHA-256 `eb937284…2464e`, signer `c99b6f26…` = rc.6), plus the
 Build 38 maintenance asset `openrs-2.2.7-rc.7-build38.apk` (`839cdf3e…a0cd1`, versionCode 38) on the same release: the live
 gauge is labelled plain BOOST again, same versionName and certificate, manual in-place upgrade only (the in-app updater never
-offers it). Sapphire (web/ only) is live from main `9a194bf` (#239). **Hardware:** no phone or car run of Build 37 or of the
-published APK.
+offers it). Sapphire (web/ only) is live from main `9a194bf` (#239). **Hardware:** the published Build 37 has run on the
+owner's phone over Bluetooth (two diagnostic captures, the source of #248–#253); hardware checks are tracked per issue.
 **History is not kept in this file.** Release and work records were moved out on 2026-11-05: see Branch / Release Workflow →
 Release records.
 Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashboard) → `web/`  |  Docs → `docs/`  |  Feature pipeline → `docs/feature-roadmap.md`
@@ -790,8 +790,18 @@ data[5] = B5,  data[6] = B6 …
   DEVICE and Connect opens Settings on CONNECTION; prefs never switched. `connectHybrid` guards `transportFactory()`
   (`UnbuiltTransport` → ordinary failed attempt; cancellation rethrown). Release logcat `Session N started` (autoGenerate
   ids) is how to count sessions on a non-debuggable build
-- **Disposable AVDs, private smoke builds and release-signed private builds** — the three recipes were moved out on 2026-11-05
-  (last full copy: this file at commit `000c572`). A release-signed build still needs the owner's approval per build.
+- **Fresh Play-services AVDs kill the app mid-test** — the Maps SDK's Dynamite loader SIGKILLs its own process when GMS is
+  replaced during first-boot updates; `pm disable-user com.android.vending` on the throwaway AVD before smoke tests
+- **Private builds: the safety rules** — the step-by-step recipes were moved out on 2026-11-05 (last full copy: this file
+  at staging commit `743230fb`); these rules stay:
+  - Private minified smoke: `assembleRelease` with AGP's injected signing pointed at the debug keystore. Never copy signing
+    files. The result is NOT distributable; use it only on a NEW disposable AVD. Trust an R8 mapping for a published trace
+    only after the rebuilt dex is byte-identical to the published APK's.
+  - Private release-signed build (owner approval per build): symlink the signing files, never copy them; remove the links
+    after the build and delete the build outputs (they embed the keys); scrub logs by count only. The Maps "Authorization
+    failure" logcat block prints the API key — redact it before filing.
+  - Locally built release-signed APKs, and evidence archives that contain them, stay private: they embed the Maps key. The
+    public APK is the one CI builds from the tag.
 - **Robolectric tests:** test-only and pinned (4.14.1 + androidx.test:core 1.6.1), `sdk=35` + a plain `Application` in
   `app/src/test/resources/robolectric.properties`. SDK 35 needs only Java 17; Java 21 is needed from SDK 36 (an earlier
   claim otherwise was wrong). Temurin 17.0.21 is at `~/Documents/openRS_-tools/jdk17-temurin/jdk-17.0.21+9/Contents/Home`
@@ -885,7 +895,8 @@ adb shell am start --activity-single-top -n com.openrs.dash.debug/com.openrs.das
 ```
 
 The in-app demo controls, the scenario checklist and the emulator testing gotchas were moved out on 2026-11-05 (last full
-copy: this file at commit `000c572`, section Build).
+copy: this file at staging commit `743230fb`, section Build). One rule from them stays: the header pill always says DEMO in
+demo mode (`DEMO · RCN` during LOSS) — never drop the simulation label.
 
 Keys: `android/local.properties` (`MAPS_API_KEY`, `OPENWEATHER_API_KEY`) or the same names in the environment — optional for
 local builds (#235); `android/keystore.properties` for release signing.
@@ -896,13 +907,12 @@ Version display format: `openRS_ v2.2.7-rc.7 · Build 38` (Settings; `Build 37` 
 
 Unit tests live in `android/app/src/test/java/com/openrs/dash/` (JVM, plus Robolectric on SDK 35 for the Room-backed tests) and
 in `web/src/` (`*.test.ts`, `*.test.tsx`) for Sapphire. Run one class with `./gradlew test --tests '*ClassName*'`. The
-per-class catalog that used to be listed here was moved out on 2026-11-05 (last full copy: this file at commit `000c572`);
-list the folder instead.
+per-class catalog and the history of counts were moved out on 2026-11-05 (last full copy: this file at staging commit
+`743230fb`); list the folder instead.
 
 Current count: **1200 tests / 107 classes** per variant (Android, `feature/rc8-reliability` `134bee3`, 1 skipped = `#251 outlier
-policy`; Temurin 17); **1136 / 100** (13 skipped) at staging `743230fb`; **1108 / 95** on the rc.7 Build 38 branch `feature/boost-label-throttle-inlet`; **1102 / 94** at rc.7 = `43ad5e1` (same Android sources as #238 head `040a1f8`) + **293 vitest across 26 files** (Sapphire at rc.7 — run `web/node_modules/.bin/vitest run` and `tsc -b`). Earlier
-totals: 1085 / 90 `2033fda`; 1072 / 87 `d3264c8`; 1066 / 86 `8d1903e`; 1045 / 84 `0e4c120`; 1034 / 81 `7bb8a9a`; 1025 / 79
-`81baa76` (`8d1903e` / `0e4c120` / `7bb8a9a` / `81baa76` are local build IDs from the pre-cleanup history — not on GitHub).
+policy`; Temurin 17); **1136 / 100** (13 skipped) at staging `743230fb`. Sapphire: **293 vitest across 26 files** (run
+`web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Issue tracking and field evidence
 
@@ -923,6 +933,9 @@ RCs: one pre-release per RC tag (android-v2.2.7-rc.4, -rc.5, -rc.6 …), tagged 
 Android RCs ship from **staging**; **main** carries stable Android (v2.2.6) and Sapphire. Sapphire may reach main web/-only
 (as for rc.6, PR #203) without the Android RC.
 
+Commits carry the committer's GitHub noreply e-mail (`<id>+<login>@users.noreply.github.com`). The owner's account blocks
+pushes that would publish a private address (GH007), and fixing that afterwards means rewriting commits.
+
 **RC publication (as done for rc.6):** merge the feature PR into staging → wait for CI on the staging merge commit →
 `gh release create android-v<ver>-rc.N --target <full staging SHA> --prerelease --title "openRS_ v<ver>-rc.N"
 --notes-file <notes>` (creates the lightweight tag; the tag push runs `publish-release`, which attaches the signed APK
@@ -931,10 +944,9 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
 
 **Release records (moved out 2026-11-05).** The rc.7 work record, the rc.7 publication record (Build 38 included) and the
 rc.6 publication record were dated diaries of commits, hashes, CI runs and evidence notes, not instructions, and made up
-about a quarter of this file. They are no longer kept here. The last full copy is this file at commit `000c572`
-(`git show 000c572:CLAUDE.md`; those sections are unchanged since staging `743230fb`). Release facts live in
-`android/CHANGELOG.md` and on the GitHub Releases page; open work lives in the issue tracker. Do not add dated status or
-work-log entries to this file again.
+about a quarter of this file. They are no longer kept here. The last full copy is this file at staging commit `743230fb`
+(`git show 743230fb:CLAUDE.md`). Release facts live in `android/CHANGELOG.md` and on the GitHub Releases page; open work
+lives in the issue tracker. Do not add dated status or work-log entries to this file again.
 
 Docs branches skip staging entirely — branch from main, PR to main.
 Never route README.md, assets/, or docs/ through staging.
@@ -1043,12 +1055,12 @@ pnpm preview                  # preview production build
 
 **Release merge checklist (staging ↔ main):** moved out on 2026-11-05. It is a one-time runbook for the stable promotion
 (which side to take per file, the `ci.yml` hand-merge, the checks to run after the merge). Read it before merging staging
-into main: the last full copy is this file at commit `000c572`, section Sapphire. The follow-ups below came with it and are
-still open.
+into main: the last full copy is this file at staging commit `743230fb`, section Sapphire. The follow-ups below came with
+it and are still open.
 
-*Separate follow-ups (documented, not release blockers for this checklist):*
+*Separate follow-ups (noted when the merge checklist was written; not release blockers):*
 - `DriveRecorder` stores points only from location updates, so a drive without GPS records no telemetry (the export
-  fix above covers seeded / legacy data and any later recorder change).
+  fix `9a52612`, for drive CSVs without GPS, covers seeded / legacy data and any later recorder change).
 - TRIP's map draws a marker at a no-GPS drive's stored coordinates — only reachable with seeded data (real no-GPS
   drives have no points).
 - thermalRecord visualisation in Sapphire (the block imports and is ignored today).
