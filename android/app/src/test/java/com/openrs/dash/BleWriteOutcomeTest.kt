@@ -6,6 +6,10 @@ import com.openrs.dash.can.BleSetupPolicy
 import com.openrs.dash.can.GattLink
 import com.openrs.dash.can.SlcanConnection
 import com.openrs.dash.can.SlcanTransport
+import com.openrs.dash.can.WriteFailure
+import com.openrs.dash.can.WriteOutcome
+import com.openrs.dash.data.ModuleScanStatus
+import com.openrs.dash.diagnostics.DtcScanner
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticLogger
 import com.openrs.dash.diagnostics.DidProbeEnd
@@ -73,6 +77,10 @@ class BleWriteOutcomeTest {
             return true
         }
         private fun forward(line: String) {
+            if (line.startsWith("t7E08") && line.substring(5, 13) == "031902FF") {     // DTC read: valid, zero codes
+                scope.launch { delay(40); core.onNotify(pro.notify, "t7E88035902FF00000000\r".toByteArray()) }
+                return
+            }
             if (!line.startsWith("t7E08") || line.substring(5, 9) != "0322") return
             val did = line.substring(9, 13).toInt(16)
             val answer = reply(did) ?: return
@@ -110,6 +118,7 @@ class BleWriteOutcomeTest {
                 }
                 override suspend fun readLine() = core.readLine()
                 override suspend fun writeLine(frame: String) = core.writeLine(frame)
+                override suspend fun write(frame: String) = core.write(frame)          // as BleSlcanTransport does
                 override fun close() = core.close()
                 override val label = "BLE fake"
                 override val stockFirmwareLabel = "fake"
@@ -238,5 +247,55 @@ class BleWriteOutcomeTest {
         assertTrue("reconnected", link.fakes.size >= 2)
         assertTrue(link.fakes.drop(1).none { f -> f.chunks.any { it == lineOf(0xABCD) } })
         assertEquals(1, link.first.chunks.count { it == lineOf(0xABCD) })
+    }
+
+    // ── QA follow-ups (9d area 1 review F1 / F3) ─────────────────────────────────────────────────────────────────────
+
+    private fun bleWriteEvents() = DiagnosticLogger.sessionEvents.filter { it.type == "BLE_WRITE" }
+
+    @Test fun `core - GATT 13 is POSSIBLY_DELIVERED, status 0 is SENT`() = runTest {
+        val marker = lineOf(0xABC0)
+        val link = connected(rpm = 0.0) { it.status = { line -> if (line == marker) 13 else BleSetupPolicy.GATT_SUCCESS } }
+        assertEquals(WriteOutcome.POSSIBLY_DELIVERED, link.first.core.write(marker))
+        assertEquals(WriteOutcome.SENT, link.first.core.write(lineOf(0xABC1)))
+    }
+
+    @Test fun `core - a refusal after the first part at MTU 23 is uncertain, a refusal of the first part is not sent`() = runTest {
+        val second = lineOf(0xABC2); val first = lineOf(0xABC3)
+        val link = connected(mtu = 23, rpm = 0.0) {
+            it.refuse = { line -> line == second || line == first.take(20) }   // second: its 2-byte tail; first: its head
+        }
+        val e = runCatching { link.first.core.write(second) }.exceptionOrNull()
+        assertTrue("$e", e != null && WriteFailure.isUncertain(e) && !WriteFailure.isNotSent(e))
+        val f = runCatching { link.first.core.write(first) }.exceptionOrNull()
+        assertTrue("$f", f != null && WriteFailure.isNotSent(f) && !WriteFailure.isUncertain(f))
+    }
+
+    @Test fun `core - the link closing mid-write is uncertain`() = runTest {
+        val marker = lineOf(0xABC4)
+        val link = connected(rpm = 0.0) { it.status = { line -> if (line == marker) null else BleSetupPolicy.GATT_SUCCESS } }
+        backgroundScope.launch { delay(100); link.first.core.close() }
+        val e = runCatching { link.first.core.write(marker) }.exceptionOrNull()
+        assertTrue("$e", e != null && WriteFailure.isUncertain(e))
+    }
+
+    @Test fun `BLE_WRITE is logged once per connection - and once more after a reconnect`() = runTest {
+        val link = connected { it.status = { line -> if (line.length > 20) 13 else BleSetupPolicy.GATT_SUCCESS } }
+        advanceTimeBy(30_000L)                                    // many possibly-delivered polls on this connection
+        assertEquals(bleWriteEvents().map { it.message }.toString(), 1, bleWriteEvents().size)
+        assertTrue(bleWriteEvents().single().message.contains("possibly delivered"))
+        link.first.core.onDisconnected(8)                         // link lost → EOF → SlcanConnection reconnects
+        advanceTimeBy(60_000L)
+        assertTrue("reconnected", link.fakes.size >= 2 && link.fakes.last().chunks.any { it.startsWith("t7E08") })
+        assertEquals(bleWriteEvents().map { it.message }.toString(), 2, bleWriteEvents().size)
+    }
+
+    @Test fun `DTC scan over GATT 13 - the module waits for its reply and reads OK, no write-failed note`() = runTest {
+        val link = connected(rpm = 0.0) { it.status = { line -> if (line.length > 20) 13 else BleSetupPolicy.GATT_SUCCESS } }
+        advanceTimeBy(1_000L)
+        val pcm = DtcScanner.MODULES.first { it.name == "PCM" }
+        val result = DtcScanner.runScan(link.conn, listOf(pcm)) { _, _ -> }
+        assertEquals(ModuleScanStatus.OK, result.moduleStatuses["PCM"])
+        assertTrue(result.moduleNotes.toString(), result.moduleNotes.isEmpty())
     }
 }

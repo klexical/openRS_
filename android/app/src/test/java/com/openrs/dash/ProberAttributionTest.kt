@@ -46,6 +46,7 @@ class ProberAttributionTest {
         private val scope: CoroutineScope,
         private val probeReply: (id: String, did: Int) -> String? = { id, _ -> "t${resp(id)}80462ABCDBA000000" },
         private val onProbe: (Ecu, Int) -> Unit = { _, _ -> },
+        private val bcm: (Int) -> String? = { did -> "t72E80562%04X00000000".format(did).take(21) },
         private val poll: (Int) -> String?,
     ) : SlcanTransport {
         private val lines = Channel<String>(Channel.UNLIMITED).apply { trySend("t09080000C1FF617D0000") }
@@ -61,7 +62,7 @@ class ProberAttributionTest {
             val did = frame.substring(9, 13).toInt(16)
             sent[did] = (sent[did] ?: 0) + 1
             val (line, afterMs) = if (did in 0xAB00..0xABFF) { onProbe(this, did); probeReply(id, did) to 300L }
-                else if (id == "7E0") poll(did) to 40L else "t72E80562%04X00000000".format(did).take(21) to 40L
+                else if (id == "7E0") poll(did) to 40L else bcm(did) to 40L
             if (line != null) scope.launch { delay(afterMs); lines.trySend(line) }
         }
         fun inject(line: String, afterMs: Long) { scope.launch { delay(afterMs); lines.trySend(line) } }
@@ -212,5 +213,40 @@ class ProberAttributionTest {
         val conn = connect(ecu)
         val shown = probe(conn, req = 0x726, resp = 0x72E)
         assertEquals(listOf(found), shown)
+    }
+
+    // ── QA follow-up (9d area 1 review F2): the probe's only reply is a 7F 22 another request could own ────────────────
+
+    private fun ambiguousResult(code: Int) = DiagnosticLogger.ProbeResult(0xABCD, "NRC_AMBIGUOUS",
+        "NRC 0x%02X — request out of range; another request could own it".format(code))
+
+    @Test fun `PCM - a probe NRC while a poll request is unanswered is NRC_AMBIGUOUS, charged to nobody`() = runTest {
+        // 0x0462 (WGDC) is never answered: it lapses and may still own any later 7F 22 (#216)
+        val conn = connect(Ecu(backgroundScope, probeReply = { _, _ -> nrc(0x31) }) { if (it == 0x0462) null else positive(it) })
+        assertEquals(listOf(ambiguousResult(0x31)), probe(conn))
+        assertTrue(suppressEvents().toString(), suppressEvents().isEmpty())
+        assertFalse(0xABCD in DiagnosticLogger.nrcSuppressed.keys)
+        assertTrue(unattributed().toString(), unattributed().any { it.contains("ABCD") })
+        val summary = com.openrs.dash.diagnostics.DiagnosticReportBuilder.buildSummaryText("t")
+        assertTrue(summary, summary.contains("1 NRC owner ambiguous"))
+    }
+
+    @Test fun `BCM - a probe NRC while a BCM poll request is unanswered is NRC_AMBIGUOUS`() = runTest {
+        val bcmPollDid = com.openrs.dash.can.ObdConstants.extractDid(com.openrs.dash.can.ObdConstants.BCM_QUERIES.first())!!
+        val ecu = Ecu(backgroundScope,
+            probeReply = { _, _ -> "t72E8037F2231000000000".take(21) },
+            bcm = { did -> if (did == bcmPollDid) null else "t72E80562%04X00000000".format(did).take(21) },
+        ) { positive(it) }
+        val conn = connect(ecu)
+        assertTrue("the BCM poller asked the unanswered DID", ecu.sent.containsKey(bcmPollDid))
+        assertEquals(listOf(ambiguousResult(0x31)), probe(conn, req = 0x726, resp = 0x72E))
+        assertTrue(suppressEvents().toString(), suppressEvents().isEmpty())
+    }
+
+    @Test fun `control - a BCM probe NRC with no BCM request waiting is recorded as the probe's NRC`() = runTest {
+        val ecu = Ecu(backgroundScope, probeReply = { _, _ -> "t72E8037F2231000000000".take(21) }) { positive(it) }
+        val conn = connect(ecu)
+        assertEquals(listOf(DiagnosticLogger.ProbeResult(0xABCD, "NRC", "NRC 0x31 — request out of range")),
+            probe(conn, req = 0x726, resp = 0x72E))
     }
 }
