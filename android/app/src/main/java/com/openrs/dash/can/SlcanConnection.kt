@@ -262,8 +262,9 @@ class SlcanConnection(
                         try { transport.readLine() } catch (_: Exception) { null }
                     }
                     if (line == null) break  // transport closed or timed out
-                    // Accept firmware probe response OR any parseable SLCAN frame
-                    if (line.startsWith("OPENRS:") || SlcanParser.parse(line) != null) {
+                    // Accept firmware probe response OR any SLCAN data frame, plain or timestamped (#251: the framing
+                    // mode is decided by the frame loop)
+                    if (line.startsWith("OPENRS:") || SlcanParser.shape(line) != null) {
                         handshakeOk = true
                         firstLine = line
                         break
@@ -294,6 +295,7 @@ class SlcanConnection(
                 val nrcLog = UnattributedNrcLog()
                 // Requests waiting for a reply, oldest first: a 7F 22 NRC belongs to the oldest one (#216)
                 val pcmRequests = PcmRequestLedger()
+                val framing = SlcanFraming()                     // #251: plain unless the first frames are timestamped
                 // Other modules' Mode 22 requests (pollers + prober) by response ID: decides who may own a 7F 22 (#250)
                 val moduleLedgers = java.util.concurrent.ConcurrentHashMap<Int, PcmRequestLedger>()
                 fun ledgerFor(responseId: Int): PcmRequestLedger =
@@ -513,12 +515,16 @@ class SlcanConnection(
                             continue
                         }
 
-                        val frame = SlcanParser.parse(line)
+                        framing.observe(line)?.let { DiagnosticLogger.event("FRAMING", it) }
+                        val frame = SlcanParser.parse(line, framing.timestamped)
                         if (frame == null) {
+                            framing.refused(line)?.let { DiagnosticLogger.event("FRAMING", it) }
                             // Counted for the probe verdict only — adapter text is never logged (#220)
                             if (line.isNotEmpty() && !firmwareDetected.get() && !verdictDone.get()) noise.incrementAndGet()
                             continue
                         }
+
+                        framing.accepted()
 
                         // The prober's own positive reply: response ID + 62 + DID (#250); anything else takes the normal path
                         val probing = _probe
