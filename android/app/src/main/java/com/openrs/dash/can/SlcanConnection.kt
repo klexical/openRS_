@@ -142,6 +142,16 @@ class SlcanConnection(
         _dtcMultiFrameIds.clear()
     }
 
+    private val possiblyDeliveredNoted = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** One bounded line per connection the first time a write comes back possibly delivered (#248). */
+    private fun noteWrite(outcome: WriteOutcome) {
+        if (outcome == WriteOutcome.POSSIBLY_DELIVERED && possiblyDeliveredNoted.compareAndSet(false, true)) {
+            DiagnosticLogger.event("BLE_WRITE", "Adapter answered a write with GATT 13 (longer than its declared maximum); " +
+                "treated as possibly delivered — the request stays outstanding until its reply and is never resent")
+        }
+    }
+
     suspend fun sendRawQuery(
         responseId: Int,
         frame: String,
@@ -262,6 +272,7 @@ class SlcanConnection(
                 val nrcLog = UnattributedNrcLog()
                 // Requests waiting for a reply, oldest first: a 7F 22 NRC belongs to the oldest one (#216)
                 val pcmRequests = PcmRequestLedger()
+                possiblyDeliveredNoted.set(false)
 
                 // ── BCM OBD poller ────────────────────────────────────────
                 val obdJob = launch {
@@ -298,10 +309,13 @@ class SlcanConnection(
                             val did = ObdConstants.extractDid(q)
                             if (did != null && !nrcTracker.shouldPoll(did, clock())) return@forEach
                             // Registered before the write so an instant reply finds it; withdrawn if the write
-                            // failed — a request that never reached the bus can't own a reply (#216)
+                            // certainly didn't reach the bus (#216) — a BLE write that failed after it was handed to the
+                            // stack may have, so it keeps its request (it lapses) and is never resent (#248)
                             val start = clock()
                             var req = did?.let { pcmRequests.sent(it, start) }
-                            try { transport.writeLine(q) } catch (_: Exception) { req?.let { pcmRequests.withdraw(it) }; req = null }
+                            try { noteWrite(transport.write(q)) } catch (e: Exception) {
+                                if (!WriteFailure.isUncertain(e)) { req?.let { pcmRequests.withdraw(it) }; req = null }
+                            }
                             sentAny = true
                             // Wait (bounded) for the reply, so normally one request is in flight and its NRC attributable
                             if (req != null) withTimeoutOrNull(PcmRequestLedger.REPLY_WINDOW_MS) { req.reply.await() }

@@ -1,5 +1,6 @@
 package com.openrs.dash.diagnostics
 
+import com.openrs.dash.can.WriteFailure
 import com.openrs.dash.diagnostics.DiagnosticLogger.ProbeResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
@@ -50,7 +51,7 @@ internal suspend fun runDidProbeScan(
             val reason = LogText.sanitizeReason(e)
             DiagnosticLogger.event("PROBE", "%s scan stopped at 0x%04X (%d/%d probed): %s"
                 .format(module, did, results.size, dids.size, reason))
-            return end(DiagnosticLogger.PROBE_FAILED, DidProbeEnd.Failed(did, reason, sent = e.message != QUERY_NOT_CONNECTED))
+            return end(DiagnosticLogger.PROBE_FAILED, DidProbeEnd.Failed(did, reason, sent = !WriteFailure.isNotSent(e)))
         }
         currentCoroutineContext().ensureActive()
         if (stopRequested()) return end(DiagnosticLogger.PROBE_STOPPED, DidProbeEnd.Stopped)
