@@ -68,7 +68,7 @@ can/
                             names for logs — R8 renames the classes) + LinkPhase (OFF/CONNECTING/CONNECTED/RECONNECTING/FAILED)
   SlcanParser.kt          — SLCAN frame tokenizer ('t'=standard, 'T'=extended); exact DLC × 2 data (+4 only when timestamped)
   SlcanFraming.kt         — rc.8 — per-connection framing mode (plain / timestamped, locked from the first 8 frames) + counters
-  Mode22Frames.kt         — rc.8 — Mode 22 single-frame PCI length check (`singleFrameDataBytes`)
+  Mode22Frames.kt         — rc.8 — `Mode22`: request DID / positive DID / NRC helpers + `RawReply` (Frame / AmbiguousNrc) for probe matching
   WriteOutcome.kt         — rc.8 — transport write outcome: SENT / POSSIBLY_DELIVERED (GATT 13) / WriteFailure (not sent / uncertain)
   IsoTpBuffer.kt          — ISO-TP SF/FF/CF reassembly; caller sends BCM_FLOW_CONTROL after FF
   EscCommand.kt           — rc.7 — ESC request + confirmation (#125): window = firmware press plan + 3 s; only a 0x1C0 frame
@@ -442,8 +442,8 @@ data[5] = B5,  data[6] = B6 …
   the first 8 well-formed frames all carry the suffix (adapter left in `Z1` by another client); no mid-connection switch;
   50 consecutive other-shape lines log one FRAMING event (no raw line). Never accept "+4" statelessly: a spliced line and a
   one-nibble DLC corruption both look like +4. `SLCAN_INIT` is unchanged (sending `Z0` is a reviewed follow-up, not done).
-  - Mode 22: a single frame must hold the bytes its PCI declares (`Mode22Frames.singleFrameDataBytes`); a short reply
-    updates nothing (it used to read the missing byte as 0). `PidRegistry.decode` refuses a two-byte formula without B.
+  - Mode 22: a single frame must hold the bytes its PCI declares; a short reply
+    updates nothing (it used to read the missing byte as 0; `ObdResponseParser.singleFrameDataBytes`). `PidRegistry.decode` refuses a two-byte formula without B.
   - Well-formed but implausible single frames (e.g. 0x130 = 0xFFFF → 655.35 km/h) are NOT filtered — an open owner decision
     (`#251 outlier policy`, the one @Ignore'd test). Don't invent physical limits.
 - **BLE write timeout = link closed (#218)** — Android's `onCharacteristicWrite` names no write; after a 2 s timeout a late
