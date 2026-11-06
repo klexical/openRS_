@@ -10,8 +10,9 @@ class SlcanParserTest {
 
     @Test
     fun `parse standard frame with 8 bytes`() {
-        // t{ID3}{DLC}{DATA} -> t09060011BBCA000032
-        val result = SlcanParser.parse("t09060011BBCA000032")
+        // t{ID3}{DLC}{DATA} -> t09060011BBCA0000 (rc.8 #251: the line used to carry 2 extra hex characters after its
+        // DLC-6 data, which only passed while trailing characters were ignored)
+        val result = SlcanParser.parse("t09060011BBCA0000")
         assertNotNull(result)
         assertEquals(0x090, result!!.first)
         assertEquals(6, result.second.size)
@@ -126,12 +127,10 @@ class SlcanParserTest {
     // ── Edge cases ──────────────────────────────────────────────────────────
 
     @Test
-    fun `standard frame with extra trailing data is ok`() {
-        // DLC=1, data=FF, then extra "AABB" should be ignored
-        val result = SlcanParser.parse("t0901FFAABB")
-        assertNotNull(result)
-        assertEquals(1, result!!.second.size)
-        assertEquals(0xFF.toByte(), result.second[0])
+    fun `standard frame with extra trailing data is refused`() {
+        // DLC=1, data=FF, then extra "AABB": a spliced / coalesced line — rc.8 #251 refuses it (it used to be accepted
+        // and its first DLC bytes decoded). The app never enables SLCAN timestamps (Z1), so no suffix is legal.
+        assertNull(SlcanParser.parse("t0901FFAABB"))
     }
 
     @Test

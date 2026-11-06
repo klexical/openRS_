@@ -11,6 +11,11 @@ import android.util.Log
  *
  * Index-based hex parse — 500 kbps HS-CAN can emit hundreds of frames/sec,
  * so this path avoids substring / toIntOrNull allocations entirely.
+ *
+ * Strict length (#251): the data field is exactly DLC × 2 hex characters. A line with characters after it (two lines
+ * spliced together, a coalesced fragment) is refused instead of decoding its first DLC bytes. SLCAN's optional 4-hex
+ * timestamp suffix exists only after a `Z1` command, which the app never sends (`ObdConstants.SLCAN_INIT`), so no
+ * suffix is legal here. DLC 0 is a legal empty frame (decoders that need bytes ignore it).
  */
 object SlcanParser {
 
@@ -27,7 +32,7 @@ object SlcanParser {
         if (msg.length < 5) return null
         val id = parseHex(msg, 1, 3); if (id < 0) return null
         val dlc = hexDigit(msg[4]); if (dlc < 0 || dlc > 8) return null
-        if (msg.length < 5 + dlc * 2) return null
+        if (msg.length != 5 + dlc * 2) return null
         return parseDataBytes(msg, 5, dlc)?.let { Pair(id, it) }
     }
 
@@ -35,7 +40,7 @@ object SlcanParser {
         if (msg.length < 10) return null
         val id = parseHex(msg, 1, 8); if (id < 0) return null
         val dlc = hexDigit(msg[9]); if (dlc < 0 || dlc > 8) return null
-        if (msg.length < 10 + dlc * 2) return null
+        if (msg.length != 10 + dlc * 2) return null
         return parseDataBytes(msg, 10, dlc)?.let { Pair(id, it) }
     }
 
