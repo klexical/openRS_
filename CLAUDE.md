@@ -442,8 +442,9 @@ data[5] = B5,  data[6] = B6 …
   the first 8 well-formed frames all carry the suffix (adapter left in `Z1` by another client); no mid-connection switch;
   50 consecutive other-shape lines log one FRAMING event (no raw line). Never accept "+4" statelessly: a spliced line and a
   one-nibble DLC corruption both look like +4. `SLCAN_INIT` is unchanged (sending `Z0` is a reviewed follow-up, not done).
-  - Mode 22: a single frame must hold the bytes its PCI declares; a short reply
-    updates nothing (it used to read the missing byte as 0; `ObdResponseParser.singleFrameDataBytes`). `PidRegistry.decode` refuses a two-byte formula without B.
+  - Mode 22: a PCI that claims more bytes than the frame holds (or no data byte) is refused
+    (`ObdResponseParser.singleFrameDataBytes`); a decoder whose value needs a byte the reply doesn't carry updates nothing
+    (it used to read the missing byte as 0). A one-byte value in a short reply still decodes. `PidRegistry.decode` refuses a two-byte formula without B.
   - Well-formed but implausible single frames (e.g. 0x130 = 0xFFFF → 655.35 km/h) are NOT filtered — an open owner decision
     (`#251 outlier policy`, the one @Ignore'd test). Don't invent physical limits.
 - **BLE write timeout = link closed (#218)** — Android's `onCharacteristicWrite` names no write; after a 2 s timeout a late
@@ -711,12 +712,13 @@ data[5] = B5,  data[6] = B6 …
 - **Drive-mode confirmation (#252, rc.8; accepted-vs-confirmed since `4937cfb`)** — the adapter's OK is "ACCEPTED";
   `executeDriveModeChange` confirms only from CAN observed AFTER the request on the same link generation: two agreeing resolved
   0x1B0 reports (stamp `driveMode`), and for Sport / Track also two agreeing documented 0x420 details
-  (`driveModeDetail`, byte 6 0x10 / 0x11 / 0x12 ± LC bit) received after the request and before the resolving report
-  (`driveModeResolvedDetail`). An undocumented 0x420 byte 6 changes nothing; a 0x1B0 that changes the resolved mode is stamped
+  (byte 6 0x10 / 0x11 / 0x12 ± LC bit) received after the request, the second before the resolving report
+  (`driveModeDetailPair` → copied to `driveModeResolvedPair`), and the current 0x1B0 run is the target (`driveModeRun.<MODE>`,
+  `driveModeRunPrev`). `driveModeDetail` / `driveModeResolvedDetail` are provenance only (export text, `fieldAgesMs`). An undocumented 0x420 byte 6 changes nothing; a 0x1B0 that changes the resolved mode is stamped
   at once (the 1 s throttle applies only to unchanged reports). The one overshoot correction needs the same corroboration, so
   a single stray frame can never trigger it. OBD merges must not bring back drive-mode provenance keys from their snapshot
   (`ModeProvenanceMergeTest`). Requesting the current mode now confirms ~1 s later (two stamped reports). A confirmation states
-  the car's mode after the request, not that the app caused it (a manual selection looks identical; the button bit on 0x305 never set in the captures).
+  the car's mode after the request, not that the app caused it (a manual selection looks identical; in capture A the 0x305 button bit never set, 0 of 874 frames — QA analysis).
   Timing (2 s + 15 s), retries, ESC and firmware unchanged; reconnect → `DriveCommandResult.ConnectionLost`. Demo must stamp
   every CAN tag (`CanDecoder.canStampTags` ⊆ `DemoSimulator.CAN_TAGS`, DemoSimulatorTest) or confirmations time out in demo.
   ESC confirmation (#125) still reads `escStatus` under the 1 s throttle (can confirm up to ~1 s late; not changed)
