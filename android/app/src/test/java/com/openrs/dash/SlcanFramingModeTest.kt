@@ -84,8 +84,11 @@ class SlcanFramingModeTest {
     }
 
     @Test fun `one +4 line among the first plain lines can't win detection - it stays plain and is refused`() = runTest {
-        // the kickoff splice vector shape: DLC 8 + 4 extra hex, oil 195 — first line of the connection
-        val vs = replay(listOf(ts(oil(195), 0)) + (0 until 20).map { oil(70) })
+        // The handshake consumes the connection's first line, so a plain line goes first; the next line — the first the
+        // frame loop sees, i.e. inside the detection window — is the kickoff splice vector shape (DLC 8 + 4 extra hex,
+        // oil 195). (First version of this test put the +4 line first, where the handshake took it: it never reached
+        // detection — corrected after review.)
+        val vs = replay(listOf(oil(70), ts(oil(195), 0)) + (0 until 20).map { oil(70) })
         assertEquals(70.0, vs.oilTempC, 0.0)
         assertEquals("no peak from the +4 line", 70.0, vs.peakOilTempC, 0.0)
         assertTrue(framingEvents().toString(), framingEvents().isEmpty())
