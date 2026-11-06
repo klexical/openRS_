@@ -124,13 +124,18 @@ object DiagnosticLogger {
     /** A single DID probe result from the DID Prober. */
     data class ProbeResult(val did: Int, val status: String, val responseHex: String)
 
-    /** One completed DID probe session (one module scan). */
+    /**
+     * One DID probe session (one module scan). [outcome] says how it ended and [planned] how many DIDs it set out to
+     * probe, so a stopped or failed scan's partial results are kept and never read as a whole scan.
+     */
     data class ProbeSession(
         val relMs: Long,
         val module: String,
         val requestId: Int,
         val responseId: Int,
-        val results: List<ProbeResult>
+        val results: List<ProbeResult>,
+        val outcome: String = PROBE_COMPLETE,
+        val planned: Int = results.size,
     )
 
     // ── Internal state ───────────────────────────────────────────────────────
@@ -487,22 +492,32 @@ object DiagnosticLogger {
 
     // ── DID Probe results ────────────────────────────────────────────────────
 
+    const val PROBE_COMPLETE = "COMPLETE"
+    const val PROBE_STOPPED = "STOPPED"
+    const val PROBE_FAILED = "FAILED"
+
+    /** A FAILED session logs no event here — the scan's own failure event names the DID and the reason. */
     fun recordProbeSession(
         module: String,
         requestId: Int,
         responseId: Int,
-        results: List<ProbeResult>
+        results: List<ProbeResult>,
+        outcome: String = PROBE_COMPLETE,
+        planned: Int = results.size,
     ) {
         synchronized(lock) {
             probeSessionsList.add(
-                ProbeSession(relativeMs(), module, requestId, responseId, results)
+                ProbeSession(relativeMs(), module, requestId, responseId, results, outcome, planned)
             )
             // removeAt(0), not removeFirst(): on a MutableList that compiles to java.util.List.removeFirst
             // (API 35+) and throws NoSuchMethodError on Android 9–14 (#196 lint NewApi)
             while (probeSessionsList.size > MAX_PROBE_SESSIONS) probeSessionsList.removeAt(0)
         }
         val found = results.count { it.status == "FOUND" }
-        event("PROBE", "$module scan complete: ${results.size} probed, $found found")
+        when (outcome) {
+            PROBE_COMPLETE -> event("PROBE", "$module scan complete: ${results.size} probed, $found found")
+            PROBE_STOPPED -> event("PROBE", "$module scan stopped: ${results.size} of $planned probed, $found found")
+        }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

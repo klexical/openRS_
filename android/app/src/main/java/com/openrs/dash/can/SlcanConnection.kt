@@ -147,7 +147,7 @@ class SlcanConnection(
         frame: String,
         timeoutMs: Long = 1_500L
     ): ByteArray? = _dtcMutex.withLock {
-        val transport = _transport ?: return null
+        val transport = _transport ?: throw java.io.IOException(com.openrs.dash.diagnostics.QUERY_NOT_CONNECTED)
         beginDtcOperation(setOf(responseId), sid = -1)
         while (_dtcChannel.tryReceive().isSuccess) { /* drain stale */ }
         try {

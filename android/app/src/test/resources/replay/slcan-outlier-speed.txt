@@ -1,0 +1,3 @@
+# SYNTHETIC. One well-formed but physically impossible 0x130 frame (0xFFFF × 0.01 = 655.35 km/h) between speed-0 frames.
++1500   RX t1308000000000000FFFF
++1600   RX t13080000000000000000

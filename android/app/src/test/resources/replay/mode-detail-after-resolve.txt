@@ -1,0 +1,7 @@
+# SYNTHETIC. BATTERY-AND-MODE.md sequence 1: Sport detail cached, the app requests Track; the first 0x1B0 after the
+# request resolves Sport (old detail), then a 0x420 Track detail flips the display — no 0x1B0 resolves Track afterwards.
++0      RX t420800000000000011CC
++300    RX t1B080000000000001000     # car in Sport (detail before the 0x1B0)
++10000  REQ TRACK
++11100  RX t1B080000000000001000
++11500  RX t420800000000000011CD

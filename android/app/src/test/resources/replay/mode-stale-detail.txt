@@ -1,0 +1,6 @@
+# SYNTHETIC. Sequence 2: Track detail cached BEFORE the request (car in Normal); after the request only an ambiguous
+# Sport-or-Track 0x1B0 arrives — no 0x420 after the request.
++0      RX t1B080000000000000000
++300    RX t420800000000000011CD
++10000  REQ TRACK
++12500  RX t1B080000000000001000

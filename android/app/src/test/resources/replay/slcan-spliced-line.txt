@@ -1,0 +1,4 @@
+# SYNTHETIC. One 0x0F8 line with four extra hex characters after its eight data bytes (a spliced / coalesced line).
+# The data bytes read oil = 0xFF − 60 = 195 °C. The app never enables SLCAN timestamps (no Z1), so no suffix is legal.
++1500   RX t0F88005A0000000000FF2710
++1600   RX t0F88005A000000000082
