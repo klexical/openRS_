@@ -94,7 +94,8 @@ fun resolveValue(vs: VehicleState, prefs: UserPrefs, cell: DashCell, nowMs: Long
         "batteryVoltage" -> {
             // 2 decimals so variation is visible — a voltage that sits at
             // 14.9X vs 15.00 tells you the alternator is still modulating.
-            if (vs.batteryVoltage > 0) "%.2fV".format(vs.batteryVoltage) to vs.batteryVoltage
+            // Polled (PCM 0x0304): shown only while current, like the other polled cells (#217, #223)
+            if (vs.batteryVoltage > 0) polled("batteryVoltage", vs.batteryVoltage) { "%.2fV".format(it) }
             else "\u2014 \u2014" to 0.0
         }
         "lateralG" -> "%.2f".format(vs.lateralG) to vs.lateralG

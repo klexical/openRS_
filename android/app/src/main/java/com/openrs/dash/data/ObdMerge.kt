@@ -5,7 +5,9 @@ package com.openrs.dash.data
  * applies for every OBD reply (moved here so the production merge is unit-tested, #205). Fields a reply didn't carry
  * keep the current value through their "not received" sentinel; freshness stamps merge per key. Fields whose valid range
  * includes their default (AWD REQ L / R, demanded pressure, pump current: a decoded 0 is a reading) are taken only when
- * the reply stamped them — see [carried].
+ * the reply stamped them — see [carried]. Battery voltage (PCM 0x0304) too (#223): its value and its stamp always come
+ * from the same reply — a decoded 0 is taken with its own stamp (never re-stamps the old value), and a reply parsed
+ * from an older snapshot never puts an older voltage back.
  */
 object ObdMerge {
     /**
@@ -87,7 +89,7 @@ object ObdMerge {
             awdClutchPressureR = if (obd.awdClutchPressureR >= 0) obd.awdClutchPressureR else current.awdClutchPressureR,
             transOilTempC  = if (obd.transOilTempC > -90) obd.transOilTempC else current.transOilTempC,
             hpFuelRailPsi = if (obd.hpFuelRailPsi >= 0) obd.hpFuelRailPsi else current.hpFuelRailPsi,
-            batteryVoltage = if (obd.batteryVoltage > 0) obd.batteryVoltage else current.batteryVoltage,
+            batteryVoltage = if (carried("batteryVoltage", current, obd)) obd.batteryVoltage else current.batteryVoltage,
             rduEnabled   = obd.rduEnabled   ?: current.rduEnabled,
             pdcEnabled   = obd.pdcEnabled   ?: current.pdcEnabled,
             fengEnabled  = obd.fengEnabled  ?: current.fengEnabled,
