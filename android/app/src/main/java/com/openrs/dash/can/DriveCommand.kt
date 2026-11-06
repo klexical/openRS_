@@ -51,7 +51,10 @@ fun successHapticFor(mode: DriveMode): HapticFeedbackType = when (mode) {
  * The adapter's OK is only acceptance. Confirmation is the car reporting [targetMode] in a resolved 0x1B0 frame
  * stamped AFTER the request ([STAMP_TAG]) on the SAME connection ([connectionId]) — a cached / held matching value never
  * confirms, a transient mode on the way (Track via Sport) isn't judged until the window ends, and a reconnect while
- * waiting is [DriveCommandResult.ConnectionLost] with no correction. Timing and the single correction are unchanged.
+ * waiting is [DriveCommandResult.ConnectionLost] with no correction. Sport / Track also need the 0x420 detail that 0x1B0
+ * resolved with to be received after the request (#252, [reportedAfter]) — a detail cached before it, a 0x420 flip after
+ * the last 0x1B0, or an undocumented 0x420 never confirms, and never triggers the correction. A matching report says
+ * what the car is in after the request, not that the request caused it. Timing and the single correction are unchanged.
  *
  * Returns a [DriveCommandResult] — callers map it to UI feedback.
  */
@@ -90,7 +93,7 @@ suspend fun executeDriveModeChange(
     when (awaitMode(targetMode, requestedAt, link, state, connectionId)) {
         Wait.CONFIRMED -> {
             DiagnosticLogger.event("DM_CMD", "CONFIRMED by CAN: ${targetMode.label} reported " +
-                "${clock() - requestedAt} ms after the request")
+                "${clock() - requestedAt} ms after the request (the car's state after it — not proof the request caused it)")
             return DriveCommandResult.Success
         }
         Wait.LINK_CHANGED -> return connectionLost(targetMode)
@@ -99,8 +102,8 @@ suspend fun executeDriveModeChange(
 
     val live = state()
     val landed = live.driveMode
-    // Only a mode the car reported after the request can be an overshoot — never a held value
-    val landedFresh = observedAfter(live, requestedAt)
+    // Only a mode the car reported after the request can be an overshoot — never a held value or unresolved evidence
+    val landedFresh = reportedAfter(live, landed, requestedAt)
 
     // Mode changed, but to the wrong one — auto-correct.
     if (landedFresh && landed != targetMode && landed != DriveMode.UNKNOWN && landed != currentMode) {
@@ -141,8 +144,15 @@ const val STAMP_TAG = "driveMode"
 
 private enum class Wait { CONFIRMED, LINK_CHANGED, TIMED_OUT }
 
-private fun observedAfter(vs: VehicleState, requestedAt: Long): Boolean =
-    (vs.fieldLastUpdateMs[STAMP_TAG] ?: Long.MIN_VALUE) > requestedAt
+/**
+ * [mode] rests on reports received after [requestedAt]: a resolving 0x1B0 stamped after it, and — for Sport / Track,
+ * which 0x1B0 alone can't tell apart — the 0x420 detail that 0x1B0 resolved with, received after it too (#252).
+ */
+private fun reportedAfter(vs: VehicleState, mode: DriveMode, requestedAt: Long): Boolean {
+    if ((vs.fieldLastUpdateMs[STAMP_TAG] ?: Long.MIN_VALUE) <= requestedAt) return false
+    if (mode != DriveMode.SPORT && mode != DriveMode.TRACK) return true
+    return (vs.fieldLastUpdateMs[CanDecoder.MODE_RESOLVED_DETAIL_TAG] ?: Long.MIN_VALUE) > requestedAt
+}
 
 /** 150 × 100 ms: the requested mode in a frame after [requestedAt] on connection [link]. */
 private suspend fun awaitMode(
@@ -152,7 +162,7 @@ private suspend fun awaitMode(
         delay(100)
         val live = state()
         if (!live.isConnected || connectionId() != link) return Wait.LINK_CHANGED
-        if (live.driveMode == target && observedAfter(live, requestedAt)) return Wait.CONFIRMED
+        if (live.driveMode == target && reportedAfter(live, target, requestedAt)) return Wait.CONFIRMED
     }
     return Wait.TIMED_OUT
 }

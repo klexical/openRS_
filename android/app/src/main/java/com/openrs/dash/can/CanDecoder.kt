@@ -190,12 +190,22 @@ object CanDecoder {
      * Stamped by CanDataService.processCanFrame, throttled per ID — see [CAN_STAMP_THROTTLE_MS].
      */
     /** Every freshness tag a CAN frame stamps (demo mode must stamp the same set — DemoSimulatorTest). */
-    val canStampTags: Set<String> get() = FRESH_TAGS.values.flatMap { it.toList() }.toSet()
+    val canStampTags: Set<String> get() = FRESH_TAGS.values.flatMap { it.toList() }.toSet() + MODE_RESOLVED_DETAIL_TAG
+
+    /**
+     * Drive-mode provenance (#252). [MODE_DETAIL_TAG] = receipt time of the latest DOCUMENTED 0x420 detail (every frame,
+     * ~600 ms). [MODE_RESOLVED_DETAIL_TAG] = receipt time of the detail a resolved 0x1B0 used, written together with that
+     * 0x1B0's own "driveMode" stamp — so a Sport / Track report says which detail it rests on. Kept in fieldLastUpdateMs
+     * (no VehicleState field: the 255-slot ceiling).
+     */
+    const val MODE_DETAIL_TAG = "driveModeDetail"
+    const val MODE_RESOLVED_DETAIL_TAG = "driveModeResolvedDetail"
 
     private val FRESH_TAGS: Map<Int, Array<String>> = mapOf(
         ID_ENGINE_TEMPS to arrayOf("oilTempC", "ptuTempC", "boostKpa"),   // boostKpa = 0x0F8 receipt (#207)
         ID_ESC_ABS      to arrayOf("escStatus"),                         // ESC confirmation needs a post-request frame (#125)
         ID_DRIVE_MODE   to arrayOf("driveMode"),                         // drive-mode confirmation: a resolved 0x1B0 after the request
+        ID_DRIVE_MODE_EXT to arrayOf(MODE_DETAIL_TAG),                   // the 0x420 detail a Sport / Track resolve rests on (#252)
         ID_COOLANT      to arrayOf("coolantTempC", "intakeTempC"),
         ID_AMBIENT_TEMP to arrayOf("ambientTempC"),
         ID_PCM_AMBIENT  to arrayOf("ambientTempC"),
@@ -232,11 +242,20 @@ object CanDecoder {
      * Returns [decoded] with [id]'s freshness tags stamped at [now] when the previous stamp
      * in [previous] is older than [CAN_STAMP_THROTTLE_MS]; otherwise [decoded] unchanged.
      * Pure (reads only its inputs), so it is safe inside a StateFlow.update{} CAS lambda.
+     * Drive mode (#252): a documented 0x420 detail is stamped on every frame (~600 ms, never throttled — its receipt time
+     * is provenance); a 0x1B0 that changes the resolved mode is stamped at once (a change inside the throttle used to keep
+     * the previous report's stamp), and every 0x1B0 stamp records the detail receipt it resolved with.
      */
     fun stampFresh(id: Int, previous: VehicleState, decoded: VehicleState, now: Long): VehicleState {
+        if (id == ID_DRIVE_MODE_EXT) return decoded.markFresh(MODE_DETAIL_TAG, now = now)
         val tags = FRESH_TAGS[id] ?: return decoded
         val last = previous.fieldLastUpdateMs[tags[0]] ?: 0L
-        return if (now - last >= CAN_STAMP_THROTTLE_MS) decoded.markFresh(*tags, now = now) else decoded
+        val modeChanged = id == ID_DRIVE_MODE && decoded.driveMode != previous.driveMode
+        if (!modeChanged && now - last < CAN_STAMP_THROTTLE_MS) return decoded
+        val stamped = decoded.markFresh(*tags, now = now)
+        if (id != ID_DRIVE_MODE) return stamped
+        val detailAt = previous.fieldLastUpdateMs[MODE_DETAIL_TAG] ?: return stamped
+        return stamped.copy(fieldLastUpdateMs = stamped.fieldLastUpdateMs + (MODE_RESOLVED_DETAIL_TAG to detailAt))
     }
 
     fun decode(id: Int, data: ByteArray, state: VehicleState): VehicleState? {
@@ -508,6 +527,9 @@ object CanDecoder {
             // byte7 bit 0 disambiguates: 0=Sport (0xCC), 1=Track (0xCD).
             // When the value changes, immediately re-resolve VehicleState.driveMode.
             ID_DRIVE_MODE_EXT -> if (n >= 8) {
+                // Only the documented byte-6 values (0x10 / 0x11 / 0x12, with the launch-control bit 2 either way) are
+                // used (#252): an undocumented one (capture A: 3 of 106 frames) changes nothing — recognized, unchanged
+                if ((ubyte(data, 6) and 0x04.inv()) !in 0x10..0x12) return state
                 val newDetail = (ubyte(data, 6) shl 8) or ubyte(data, 7)
                 modeDetail420 = newDetail
                 has420Arrived = true
