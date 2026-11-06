@@ -1,24 +1,16 @@
 # openRS_
 
 Native Android telemetry dashboard for the Ford Focus RS MK3.
-Kotlin 2.0.21 + Jetpack Compose (Material3). Current: **stable v2.2.6 on main** (unchanged); **v2.2.7-rc.7 published as a
-prerelease from staging** (2026-11-03: tag `android-v2.2.7-rc.7` → `43ad5e1`, Build 37 / versionCode 37 — not on main, not
-stable). Sapphire (web/ only) live from main `9a194bf` (#239); main tip `a37fa29` adds web CI (#242). Record: Branch / Release
-Workflow → **rc.7 publication record**.
-**rc.7 = PR #238 (staging merge `3937306`, head `040a1f8`) + PR #244 (CHANGELOG entries for the #238 final-review fixes, merge
-`43ad5e1`).** Public asset `openRS_v2.2.7-rc.7.apk` — built, signed and attested by CI from the tag; SHA-256 `eb937284…2464e`,
-signer `c99b6f26…` (= rc.6), Maps key present, no weather key — verified independently by two sessions and smoked on a
-disposable emulator (synthetic adapter / GPS). **Hardware:** no phone
-or car run of Build 37 or of the published APK; the owner's phone / Bluetooth and on-car checks were on Build 36 builds (see the
-record). Everything below about candidates, integration branches and "unpushed" work is **history** — kept as the record.
-**rc.7 Build 38 (maintenance asset, published 2026-11-05 UTC):** versionCode 38 = rc.7 maintenance asset
-`openrs-2.2.7-rc.7-build38.apk` (SHA-256 `839cdf3e…a0cd1`), ADDED to the existing `android-v2.2.7-rc.7` release beside the
-untouched `openRS_v2.2.7-rc.7.apk` (Build 37) — same versionName `2.2.7-rc.7`, same certificate, no new tag / release; the
-tag (`43ad5e1`), the original asset and the prerelease flag are unchanged. Its one change: the live gauge is labelled plain
-BOOST again — Build 37 showed TIP (#207). PR #247 → staging `32b13ac`; built, attested and uploaded by
-`.github/workflows/rc-maintenance-asset.yml` (run 41956174329; since retired) from the source pinned in `android/release-maintenance.json`.
-Manual in-place upgrade from the release notes; the in-app updater never offers it. Record: Branch / Release Workflow → rc.7
-→ Build 38.
+Kotlin 2.0.21 + Jetpack Compose (Material3).
+
+**Releases:** stable **v2.2.6** on main. Prerelease **v2.2.7-rc.7** from staging: tag `android-v2.2.7-rc.7` → `43ad5e1`,
+Build 37 / versionCode 37, asset `openRS_v2.2.7-rc.7.apk` (SHA-256 `eb937284…2464e`, signer `c99b6f26…` = rc.6), plus the
+Build 38 maintenance asset `openrs-2.2.7-rc.7-build38.apk` (`839cdf3e…a0cd1`, versionCode 38) on the same release: the live
+gauge is labelled plain BOOST again, same versionName and certificate, manual in-place upgrade only (the in-app updater never
+offers it). Sapphire (web/ only) is live from main `9a194bf` (#239). **Hardware:** no phone or car run of Build 37 or of the
+published APK.
+**History is not kept in this file.** Release and work records were moved out on 2026-11-05: see Branch / Release Workflow →
+Release records.
 Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashboard) → `web/`  |  Docs → `docs/`  |  Feature pipeline → `docs/feature-roadmap.md`
 
 ## Source Layout
@@ -36,7 +28,7 @@ can/
   ObdConstants.kt         — All SLCAN query strings, ECU request/response IDs, poll intervals
                             PCM_FAST_QUERIES (TIP act/des, WGDC, KR1–4) + PCM_SLOW_QUERIES (rc.5; 20 DIDs rc.6 —
                             incl. F404 load, F40E timing, F415 O2 V, F423 HP fuel, 0548 LP fuel)
-  PcmPollSchedule.kt      — rc.5 — Pure PCM poll schedule: engine running (>400 RPM) = fast group + 1 slow DID
+  PcmPollSchedule.kt      — Pure PCM poll schedule: engine running (>400 RPM) = fast group + 1 slow DID
                             per cycle at 150 ms (~0.8 Hz fast); engine off = full sweep + 30 s idle
   ObdResponseParser.kt    — Mode 22 DID dispatch by module (PCM/BCM/AWD/PSCM/FENG/RSProt/HVAC/IPC)
   PidRegistry.kt          — Data-driven catalog decoder; builds index from ForscanCatalog on first load
@@ -46,7 +38,7 @@ can/
   WebSocketSlcanTransport.kt — MeatPi USB: WebSocket ws://192.168.80.1:80/ws
   BleSlcanTransport.kt    — BLE GATT transport: connects and forwards BluetoothGatt callbacks to BleGattCore; GattLink over
                             BluetoothGatt. autoConnect=true after a first success with that MAC (per process), MTU 247 w/ fallback
-  BleGattCore.kt          — rc.7 — Android-free setup sequence / writes / framing (#218): layout from BleAdapterProfile (Pro
+  BleGattCore.kt          — Android-free setup sequence / writes / framing (#218): layout from BleAdapterProfile (Pro
                             FFF0/FFF2/FFF1, USB FEE0/FEE1, legacy FFE0) chosen from discovered services + characteristic
                             properties (write type, notify vs indicate); bonds once; every wait bounded (write callback 2 s).
                             A write timeout closes the link (the callback names no write — a late one would ack the next)
@@ -67,11 +59,11 @@ can/
   AdapterState.kt         — Disconnected / Connecting / Connected / Reconnecting / Idle / Error (sealed, `label` = fixed
                             names for logs — R8 renames the classes) + LinkPhase (OFF/CONNECTING/CONNECTED/RECONNECTING/FAILED)
   SlcanParser.kt          — SLCAN frame tokenizer ('t'=standard, 'T'=extended); exact DLC × 2 data (+4 only when timestamped)
-  SlcanFraming.kt         — rc.8 — per-connection framing mode (plain / timestamped, locked from the first 8 frames) + counters
-  Mode22Frames.kt         — rc.8 — `Mode22`: request DID / positive DID / NRC helpers + `RawReply` (Frame / AmbiguousNrc) for probe matching
-  WriteOutcome.kt         — rc.8 — transport write outcome: SENT / POSSIBLY_DELIVERED (GATT 13) / WriteFailure (not sent / uncertain)
+  SlcanFraming.kt         — per-connection framing mode (plain / timestamped, locked from the first 8 frames) + counters
+  Mode22Frames.kt         — `Mode22`: request DID / positive DID / NRC helpers + `RawReply` (Frame / AmbiguousNrc) for probe matching
+  WriteOutcome.kt         — transport write outcome: SENT / POSSIBLY_DELIVERED (GATT 13) / WriteFailure (not sent / uncertain)
   IsoTpBuffer.kt          — ISO-TP SF/FF/CF reassembly; caller sends BCM_FLOW_CONTROL after FF
-  EscCommand.kt           — rc.7 — ESC request + confirmation (#125): window = firmware press plan + 3 s; only a 0x1C0 frame
+  EscCommand.kt           — ESC request + confirmation (#125): window = firmware press plan + 3 s; only a 0x1C0 frame
                             stamped after the request on the same link generation confirms; one request at a time (Busy)
   FirmwareApi.kt          — FirmwareCommandSender interface + WiFiFirmwareApi (REST /api/frs) +
                             BleFirmwareApi (AT+FRS= over SLCAN transport). Both throw BusyException
@@ -88,7 +80,7 @@ demo/                     — DEBUG BUILDS ONLY (DemoMode.AVAILABLE = BuildConfi
 data/
   VehicleState.kt         — Immutable data class ~95 fields. See sentinel rules below.
   DashLayout.kt           — Custom dashboard layout: DashCell grid, AVAILABLE_FIELDS catalog; JSON via AppSettings
-  BoostRule.kt            — rc.7 — BoostSource / BoostReading / BoostRule (policy rc7-boost-v3) / BoostSession / StoredBoost
+  BoostRule.kt            — BoostSource / BoostReading / BoostRule (policy rc7-boost-v3) / BoostSession / StoredBoost
                             (#207): the one boost rule for every consumer + what a recorded value is; see the boostKpa gotcha
   DriveDatabase.kt        — Room DB v13: DriveEntity (+ avgStftPct/avgLtftPct/trimSamples v11, pullCount/knockPullCount v12,
                             peakBoostSource/boostPolicy v13), DrivePointEntity (+ boostSource/baroKpa v13), KnockEventEntity
@@ -103,27 +95,27 @@ data/
   FuelEconomy.kt          — Real-time fuel economy: 60s rolling window, instant/avg, distance-to-empty
   PerformanceTimer.kt     — 0-60 / 0-100 timer using CAN speed: IDLE → ARMED → RUNNING → FINISHED
   SessionDatabase.kt      — Room DB for session snapshots: SessionEntity, SnapshotEntity, SessionDao
-  BoostSweepStats.kt      — rc.4 — Target-vs-actual boost delta analytics; rc.5 uses fresh-only samples;
+  BoostSweepStats.kt      — Target-vs-actual boost delta analytics; rc.5 uses fresh-only samples;
                             rc.6 adds avgWgdcAtPeak (≥ 90 % of peak TIP) + byGear (gauge PSI vs std atm)
-  BoostSessionLog.kt      — rc.6 — Live 90 s window of fresh TIP decodes (+ target/WGDC if ≤ 2.5 s old) for the POWER
+  BoostSessionLog.kt      — Live 90 s window of fresh TIP decodes (+ target/WGDC if ≤ 2.5 s old) for the POWER
                             BOOST SWEEP chart; fed from CanDataService.mergeObdState, reset with KnockSessionLog
-  FreshnessGate.kt        — rc.5 — Per-drive gate: polled values recorded once per decode, never pre-drive
-  KnockCapture.kt         — rc.5 — Per-cylinder knock events from fresh KR (retard POSITIVE, ≥ 0.1°)
-  KnockStats.kt           — rc.5 — Shared knock aggregation: half-open buckets, per-cylinder split
-  KnockSessionLog.kt      — rc.6 — In-memory session knock capture (no recording needed), cap 2,000, own FreshnessGate +
+  FreshnessGate.kt        — Per-drive gate: polled values recorded once per decode, never pre-drive
+  KnockCapture.kt         — Per-cylinder knock events from fresh KR (retard POSITIVE, ≥ 0.1°)
+  KnockStats.kt           — Shared knock aggregation: half-open buckets, per-cylinder split
+  KnockSessionLog.kt      — In-memory session knock capture (no recording needed), cap 2,000, own FreshnessGate +
                             PullTracker; fed from CanDataService.mergeObdState, reset with knockEventCount
-  PullTracker.kt          — rc.6 — Streaming WOT pull detector (≥80 % throttle, ≥2,500 RPM, ≥2 s; ≤2 s gaps) + knock attribution
-  FuelTrim.kt             — rc.5 — FuelTrimAccumulator (fresh + warm STFT/LTFT avg) + FuelTrimDrift alert (±8 %)
-  DriveThermalRecord.kt   — rc.6 — Drive thermal record (thermalPeaksJson v2): DriveThermalTracker (recorder, profile segments),
+  PullTracker.kt          — Streaming WOT pull detector (≥80 % throttle, ≥2,500 RPM, ≥2 s; ≤2 s gaps) + knock attribution
+  FuelTrim.kt             — FuelTrimAccumulator (fresh + warm STFT/LTFT avg) + FuelTrimDrift alert (±8 %)
+  DriveThermalRecord.kt   — Drive thermal record (thermalPeaksJson v2): DriveThermalTracker (recorder, profile segments),
                             DriveThermalReview (TRIP TEMP badge + summary; PROFILE / LEGACY array / NONE), 95 % of crit in °C
   TripState.kt            — PeakType enum (RPM/BOOST/LATERAL_G/SPEED) + PeakEvent data class
   WeatherData.kt          — OpenWeatherMap snapshot: temp, wind, humidity, icon-to-emoji mapping
 diagnostics/
   DtcScanner.kt           — UDS 0x19/02 scan across PCM(7E0)/BCM(726)/ABS(760)/AWD(703)/PSCM(730)/GFM(7D2); runScan/interpret =
                             the one path (full scan, auto-scan, retry); only DtcReply.Positive → OK (#215)
-  DtcScanLedger.kt        — rc.7 — the session's DTC export record (DiagnosticLogger.dtcScans): begin (RUNNING) / progress /
+  DtcScanLedger.kt        — the session's DTC export record (DiagnosticLogger.dtcScans): begin (RUNNING) / progress /
                             complete / fail / cancel / interrupt / retry; cleared by sessionStart, stale tickets can't publish
-  DidProbeScan.kt         — rc.8 — DID prober scan loop (`runDidProbeScan` → `DidProbeEnd` Complete / Stopped /
+  DidProbeScan.kt         — DID prober scan loop (`runDidProbeScan` → `DidProbeEnd` Complete / Stopped /
                             Failed(did, reason, sent)); records the labelled ProbeSession (see the DID prober gotcha, #249)
   DiagnosticLogger.kt     — Thread-safe singleton: frame inventory (opt B), decode trace, SLCAN log (opt C)
                             Pre-allocated hex lookup table; hex conversion outside lock for reduced contention
@@ -140,10 +132,10 @@ service/
                             WiFi/BLE-gated auto-reconnect; owns connection lifecycle
                             Transport selected by connectionMethod (WiFi vs BLE) + adapterType (TCP vs WebSocket)
                             Auto-record integration: starts/stops DriveRecorder on connect/disconnect (if setting enabled)
-  LinkOwnership.kt        — rc.7 — process-wide connection ownership (#212): generation, phase, manual-connect block, cancel
+  LinkOwnership.kt        — process-wide connection ownership (#212): generation, phase, manual-connect block, cancel
                             policy; autoStart / publish / deliver run under one lock (LinkOwnershipTest)
-  LinkPresentation.kt     — rc.7 — AdapterState → LinkPhase, notification text (+ recording / paused), offersCancel (the one rule)
-  AutoRecordPolicy.kt     — rc.7 — auto-record on a new connection: still recording → keep (never split), paused ≤ 15 min → resume
+  LinkPresentation.kt     — AdapterState → LinkPhase, notification text (+ recording / paused), offersCancel (the one rule)
+  AutoRecordPolicy.kt     — auto-record on a new connection: still recording → keep (never split), paused ≤ 15 min → resume
   DriveRecorder.kt        — Room-backed drive recorder: start/stop/pause/resume, 1 Hz GPS + telemetry
                             FusedLocationProviderClient @ 1 Hz; batch writes (30 points/flush); peak tracking
                             Per-drive state = `DriveRun` (#236); STOP = one-transaction re-read + recorder columns; feeds
@@ -196,12 +188,12 @@ ui/
   CustomDashPage.kt        — Custom dashboard overlay: user-configurable gauge rows from DashLayout (instrument cells,
                             limit-only colours, temps on ThresholdBar); hides the bottom nav, takes every touch, Back
                             closes it; title carries the header pill's link state (DEMO · RCN / RCN / OFF)
-  KnockScatter.kt         — rc.4 — RPM × boost scatter + aggregate card for PerfPage knock events section
+  KnockScatter.kt         — RPM × boost scatter + aggregate card for PerfPage knock events section
                             rc.6: tap-to-select dot → KnockEventDetail; PULLS cell; KnockScatterMath = shared projection/hit-test
-  BoostSweepChart.kt      — rc.6 — POWER THROTTLE & BOOST chart: RPM x-axis, target (dashed) / actual / WGDC; BoostSweepMath =
+  BoostSweepChart.kt      — POWER THROTTLE & BOOST chart: RPM x-axis, target (dashed) / actual / WGDC; BoostSweepMath =
                             pure 250-rpm binning (1,500–7,000), null bins = gaps, min 40 kPa Y span
-  FuelTrimDriftCard.kt    — rc.5 — PERF card: per-drive STFT/LTFT trend (last 20 drives), ±5/±10 % bands, drift alert
-  trip/TimeSeriesMath.kt  — rc.5 — Pure gap segmentation + shared-axis ranges for DriveTimeSeries
+  FuelTrimDriftCard.kt    — PERF card: per-drive STFT/LTFT trend (last 20 drives), ±5/±10 % bands, drift alert
+  trip/TimeSeriesMath.kt  — Pure gap segmentation + shared-axis ranges for DriveTimeSeries
   BottomNavBar.kt         — Custom bottom nav: 5 Precision-family icons (nav_<tab>_whole|base|accent alpha layers — inactive
                             whole glyph in Dim, selected two-tone; DAY selected ink = actionInk), frosted glass via Haze (hazeEffect),
                             spring-animated indicator bar, one top hairline, pressClick + haptics
@@ -798,28 +790,8 @@ data[5] = B5,  data[6] = B6 …
   DEVICE and Connect opens Settings on CONNECTION; prefs never switched. `connectHybrid` guards `transportFactory()`
   (`UnbuiltTransport` → ordinary failed attempt; cancellation rethrown). Release logcat `Session N started` (autoGenerate
   ids) is how to count sessions on a non-debuggable build
-- **Fresh Play-services AVDs kill the app mid-test** — the Maps SDK's Dynamite loader SIGKILLs its own process when GMS is
-  replaced during first-boot updates; `pm disable-user com.android.vending` on the throwaway AVD before smoke tests
-
-- **Private minified smoke without copying signing files** — in a scratch clone, run `assembleRelease` with
-  `ANDROID_HOME=$HOME/Library/Android/sdk` in the environment (no `local.properties` needed; the API keys are optional) and
-  AGP's `-Pandroid.injected.signing.{store.file,store.password,key.alias,key.password}` pointing at
-  `~/.android/debug.keystore` (`android` / `androiddebugkey`). The R8 output is the release's; the signer and the missing
-  keys (blank map, one Maps "Authorization failure" log line) make it NOT distributable. Use it only on a NEW disposable
-  AVD. The Maps key is restricted to the release cert, so a debug-signed build fails Maps even WITH the key.
-  To de-obfuscate a published release's stack trace, rebuild that tag's commit from a clean checkout this way and confirm
-  its dex is byte-identical to the published APK's before trusting the R8 mapping. The weather key is a `BuildConfig`
-  field (it lands in the dex) and `SOURCE_COMMIT` / `SOURCE_DIRTY` are too; the Maps key is a manifest placeholder (it
-  doesn't). So this only works for a release built without a weather key (the rc.7 assets) from the same, clean commit.
-- **Private release-signed build (owner approval per build)** — in a scratch clone (all tags fetched, no rc tag created),
-  SYMLINK (never copy) `android/keystore.properties`, `android/local.properties` AND `android/openrs-release.jks` from the
-  main checkout: `storeFile` is relative to `android/`, so linking the properties alone doesn't find the keystore. All
-  three are gitignored (`SOURCE_DIRTY` stays false). Remove the links after `assembleRelease`, delete the build outputs
-  (they embed the keys), and scrub logs by count only. The Maps "Authorization failure" logcat block prints the API key —
-  redact it before filing. Done twice: Build 37 from `dab66a8` (`rc7-build37-2026-11-03/qa/`, `scripts/signing-links.sh`,
-  `scrub-count.sh`) and from `040a1f80` (`rc7-pr238-fixes-build-2026-11-03/qa/`). The keyAlias value is a public word, so
-  its scrub count is never 0: classify the matches by context with the value masked. Public contexts are the package
-  `com.<alias>.dash` / `com/<alias>/dash`, the committed `<alias>-release.jks` name and the GPX namespace `<alias>:`.
+- **Disposable AVDs, private smoke builds and release-signed private builds** — the three recipes were moved out on 2026-11-05
+  (last full copy: this file at commit `000c572`). A release-signed build still needs the owner's approval per build.
 - **Robolectric tests:** test-only and pinned (4.14.1 + androidx.test:core 1.6.1), `sdk=35` + a plain `Application` in
   `app/src/test/resources/robolectric.properties`. SDK 35 needs only Java 17; Java 21 is needed from SDK 36 (an earlier
   claim otherwise was wrong). Temurin 17.0.21 is at `~/Documents/openRS_-tools/jdk17-temurin/jdk-17.0.21+9/Contents/Home`
@@ -912,72 +884,8 @@ adb shell am start --activity-single-top -n com.openrs.dash.debug/com.openrs.das
 # Cold start with an extra: am start -S -n … --es demo idle   (without -S the intent is only brought to front)
 ```
 
-**In-app:** ⚙ → DEVELOPER (debug builds only) → pick a scenario. While active, an amber strip under the header shows
-`DEMO`, scenario time, a scenario menu (IDLE/DRIVE/WARN/LOSS), pause ❚❚ / ▶, reset ↺, exit ✕ — every control a
-≥ 48 dp touch target; the header pill reads DEMO and the floating HUD shows "DEMO · simulated". Tap `DEMO 0:42 ▴`
-to fold the strip (design reviews); tap the header DEMO pill to unfold it. The pill always says DEMO in demo mode
-(`DEMO · RCN` during LOSS) — never drop the simulation label.
-Exit leaves the app OFF ("TAP TO CONNECT") until you tap connect.
-
-| Scenario | What to check |
-|---|---|
-| IDLE | Cold start: fast idle ~1200→850 rpm, vacuum, E-BRAKE strip, THERMAL "WARMING UP — NOT RACE READY" |
-| DRIVING | 60 s loop: launch, pull to 125 km/h (shift bar, gear 1→6, boost ~23 psi), braking, ±0.9 g corner, cruise; gear module + panels must not move |
-| WARNING | Oil/coolant/PTU critical, RL tyre 29→24 psi banner, KR 3–4° (knock badge + scatter), underboost + WGDC 98 %, LOW FUEL, 11.9 V; DTC scan returns P0217/P0171/P0325/P0562 |
-| LOSS | 40 s loop: live 0–10 s → RCN/RECONNECTING, frozen values 10–22 s → TPMS/RDU sentinels ("— psi N/A") 22–26 s → live |
-| LAUNCH | 40 s: e-brake 0–25 s, LC on (0x420) 5–33 s, link lost 10–15 s / recovering to 17 s, LC engaged (0x225, holding 4,500 rpm) 23–27 s, launch, cruise |
-| COOL | Readiness walk-through (~215 s, real time): oil cools past warn (0–34 s, recovery hold) → READY → RDU forecast (~45 s) → RDU warn (~64 s), coolant invalid 85–100 s → RDU replies stop at 70 s, stale + warning dropped at 160 s → fresh poll 170 s → oil below 80 °C ≈ 205 s (ENGINE WARMING) → clutches past fixed warn ≈ 236 s / crit ≈ 248 s, cooling from 255 s |
-
-Drive-mode dock / ESC buttons / DTC clear act on simulated state only (mode lands ~1.5 s after the command).
-
-**Testing gotchas:**
-- Android 17 relaunches an updated app's task from SystemUI ~1 s after `adb install` (no extras, CLEAR_TASK) — a
-  launch sent immediately loses its extras. `install-debug.sh` waits 3 s then uses `am start -S`
-- Mobile MCP's `uiautomator` dump fails whenever the app is open (infinite header animations — even with the demo
-  paused) and each failed call blocks for minutes, delaying the next command. Tap by coordinates instead. Its
-  screenshots can lag; `adb exec-out screencap -p` is always current. Check crops at full resolution — a 700 px
-  downscale hid clipped digits once
-- Debug builds report `2.2.7-rc.7-dev+<commit>[.dirty]` (Settings: `… · debug <commit>*`), so the source revision is
-  visible; still hash `adb exec-out cat <pm path>` against the APK to prove which build is installed
-- Settings categories animate in for ~2.5 s after the sheet opens — tapping a row sooner can land on the wrong one
-- `--es demo at:N` replays the scenario **in real time** from 0 and pauses at N — wait N s before capturing
-  (WARNING at:55 = oil + PTU past the STREET crit, coolant + RDU at WARN)
-- Settings ignores taps in the margin around it — behaviour, not a bug: the dialog window spans the screen
-  (`usePlatformDefaultWidth = false`), so those taps land inside it; ✕ / Back / CANCEL close and revert previews
-- The BLE device picker is unverified on the emulator (no BLE, Bluetooth permissions not granted) — check on a phone
-- Isolated DB / release checks: build throwaway variants with a different `applicationIdSuffix` (the FileProvider
-  authority follows the id) and run them on a second AVD started with `-read-only` (nothing persists). The v11 → v12
-  upgrade was verified that way on 2026-10-26 (real v11-created DB → current build; data, FKs, TIP rescale, hash)
-- Real share-sheet exports (Sapphire fixtures in `web/src/lib/__fixtures__/android-exports/`): on the read-only AVD,
-  install the debug APK (hash-check it) + the receiver app, seed the drive DB with
-  `adb exec-in run-as com.openrs.dash.debug sh -c 'cat > databases/<f>' < <f>` (app stopped; a glob `cp` from
-  /data/local/tmp fails under run-as), share from TRIP (card → SHARE, or long-press → multi-select → EXPORT), pick
-  ShareTest; it logs `ShareTest: … RESULT=PASS` and keeps the ZIP in its `files/`. Seed DB (d1 GPS 5 pts, d2 no-GPS 0 pts,
-  d3 no-GPS 3 pts + knock) and receiver source / APK: `~/Documents/openRS_-evidence/export-tooling-2026-10-26/`
-- Sapphire tests touching `localStorage` (store / App): Node 25's own `localStorage` global (non-functional without
-  `--localstorage-file`) shadows jsdom's — stub one per test (`vi.stubGlobal('localStorage', …)`, see `App.test.tsx`)
-- Sapphire browser smoke (prod build, chart gaps / paints / remembered view): `node smoke.mjs <dist> <profile> <shots>
-  <fixtures>` from `~/Documents/openRS_-evidence/sapphire-smoke-2026-10-27/` with Playwright (same setup as
-  `web/scripts/idb-check/check.mjs`); build with `--outDir` outside the repo; IndexedDB is per origin, so each run
-  (random port) starts empty
-- Sapphire import contract: `web/src/lib/import.androidExport.test.tsx` imports complete Android exports from
-  `__fixtures__/android-export-rc6/`; regenerate with `OPENRS_EXPORT_SAMPLES=<dir> ./gradlew test --tests '*DriveExportThermalTest'`
-- Lifecycle tests without a car (rc.7): `~/Documents/openRS_-evidence/rc7-lifecycle-2026-10-28/fake_slcan.py` is a fake
-  SLCAN TCP adapter on the host; on the disposable AVD set adapter MEATPI_PRO, host `10.0.2.2`, port 35000 (edit
-  `shared_prefs/openrs_settings.xml` via `exec-out run-as … cat` / `exec-in run-as … sh -c 'cat > …'`). Kill / restart
-  the script to drop / restore the link. Recents dismissal on the Android 16 launcher needs `input motionevent
-  DOWN/MOVE…/UP` — `input swipe` is ignored. `probe.sh` there snapshots pid / service / notification / task
-- The HUD overlay needs `adb shell appops set com.openrs.dash.debug SYSTEM_ALERT_WINDOW allow` on a fresh emulator
-  (restore with `… default`); start it from ⚙ → DISPLAY → FLOATING HUD. A reinstall stops it
-- Lap / GPS checks on the emulator:
-  - The fused provider attaches its own, noisy bearing to `geo fix` fixes. TRIP's SET S/F passes the fix's bearing
-    whenever `hasBearing()` (`LapTimer.setStartFinish`), so a line set while parked can point any way and every pass reads
-    NO_CROSSING — set S/F while the injected route is moving.
-  - The recorder stores one point per fused-location callback (`result.lastLocation`; ~1.2 s apart against a 1 s
-    `geo fix`), so injected fixes and recorded points are not 1:1 — count by timestamp window, not by fix.
-  - TRIP shows the drive history only while it isn't live (`isLive` = connected or recording, `TripPage`): disconnect
-    from the header pill, with no drive recording, to see it.
-  - On a non-debuggable build, read saved laps from the drive export's `drive_profile_*.json` (`laps` array).
+The in-app demo controls, the scenario checklist and the emulator testing gotchas were moved out on 2026-11-05 (last full
+copy: this file at commit `000c572`, section Build).
 
 Keys: `android/local.properties` (`MAPS_API_KEY`, `OPENWEATHER_API_KEY`) or the same names in the environment — optional for
 local builds (#235); `android/keystore.properties` for release signing.
@@ -986,112 +894,10 @@ Version display format: `openRS_ v2.2.7-rc.7 · Build 38` (Settings; `Build 37` 
 
 ## Tests
 
-```
-android/app/src/test/java/com/openrs/dash/
-  CanDecoderTest.kt           — 90+ tests: all passive-CAN decoders, 0x040/0x300 identity, 0x435 crosstalk guard, 0x1A4 unsigned + 55°C guard, CAN freshness stamps
-  ObdResponseParserTest.kt    — 68 tests: PCM/BCM/AWD/PSCM/FENG/RSProt DIDs (rc.6: TIP /128, F404/F40E/F415/F423/0548,
-                                decoder-coverage guards: every polled PCM/BCM/AWD DID must decode + stamp)
-  DriveStateTest.kt           — 39 tests: fuel economy, averages, haversine, peaks, sentinels
-  VehicleStateTest.kt         — 32 tests: conversions, peaks, TPMS, RTR (3 AWD split tests removed with the % — #226)
-  AppVersionTest.kt           — 30 tests: version code/name, RC suffix, build config
-  DtcScannerTest.kt           — 28 tests: SAE J2012 decoding, UDS status bit priority
-  SlcanParserTest.kt          — 20 tests: standard/extended frames
-  PidRegistryTest.kt          — 18 tests: catalog loading, DID lookup, fallback decoding
-  UserPrefsTest.kt            — 16 tests: conversion math, sentinel edge cases
-  IsoTpBufferTest.kt          — 12 tests: SF/FF/CF reassembly
-  RingBufferTest.kt           — 10 tests: capacity, overflow, iteration
-  KnockLoggerTest.kt          — 9 tests: KnockStats aggregation, buckets sum to count, per-cylinder, knock CSV v2
-  KnockCaptureTest.kt         — 4 tests (rc.5): per-cylinder, pre-drive rejection, repeat values, threshold
-  KnockSessionLogTest.kt      — 5 tests (rc.6): fresh-only session capture, pre-session rejection, pulls, cap, reset
-  PullTrackerTest.kt          — 7 tests (rc.6): threshold, min duration, gap split, knock attribution
-  KnockScatterMathTest.kt     — 4 tests (rc.6): tap hit-test, overlap → worst KR, boost text / gridlines follow the unit
-  BoostSessionLogTest.kt      — 6 tests (rc.6): fresh-only TIP, stale target/WGDC → null, pre-session, 90 s window
-  BoostSweepMathTest.kt       — 4 tests (rc.6): half-open bins, per-channel means, gaps, min Y span
-  BoostSweepStatsTest.kt      — 16 tests: delta math, WGDC saturation, loaded-sample filter, fresh-only sentinels, WGDC at peak, by gear
-  PcmPollScheduleTest.kt      — 6 tests (rc.5): fast/slow coverage, rotation, engine-off sweep
-  FreshnessGateTest.kt        — 5 tests (rc.5): pre-drive stamps, consume-once, per-tag tracking
-  TimeSeriesMathTest.kt       — 5 tests (rc.5): gap bridging/breaking, shared-axis range
-  FuelTrimTest.kt             — 8 tests (rc.5): warm/fresh gating, min samples, LEAN/RICH drift alert
-  DriveExportThermalTest.kt   — 7 tests: profile export `thermalRecord` + coherent curves per basis (built-in, Custom, mixed
-                                peak vs flag, legacy driveEndC, absent vs unreadable, endpoints above peak → no curve);
-                                `OPENRS_EXPORT_EXCERPTS=<dir>` writes review excerpts
-  DriveExportBuilderTest.kt   — 64 tests: CSV/GPX/JSON builders, schema v2, fuelTrim export, knock pulls, boost sweep by gear,
-                                track files (no-GPS CSV without coordinates, routes only with GPS, empty drive → none)
-  DemoSimulatorTest.kt        — 8 tests (incl. LAUNCH states): determinism, LOSS freeze / recovery sentinels, freshness stamps, no-decoder sentinels,
-                                WARNING thresholds, DRIVING plausibility + continuity
-  DriveThermalRecordTest.kt   — 17 tests (incl. START → PEAK → END endpoint rule): saved profile limits (built-ins + Custom), 95 % boundary + levels, °C / °F + displayed
-                                flag threshold, later edits, mid-drive segments, stale reading across a profile change, peak vs
-                                flag reading, service-only prefs load, legacy array records, round trip
-  ThermalProfileTest.kt       — 7 tests: built-ins unchanged, Custom selection, JSON round trip, no unit drift, validation,
-                                custom threshold moves verdict + gauge together, no warm-up hold across a changed minimum
-  ThermalReadinessTest.kt     — 32 tests: warm-up target + hold, delayed evaluation, drop below minimum, warn / crit recovery holds,
-                                forecast + clearing hold, warning with missing data, stale-warning removal, preset change, offline /
-                                reset, missed AWD polls (90 s, incl. trans oil), stamps never refreshed, shared freshness, units, clutch
-                                limits / recovery / stale, checklist incomplete rows, VEHICLE advisory, banner wording, COOLDOWN sequence
-  ReplaySeekTest.kt           — 2 tests: replay ±10s seeks by timestamp (1 Hz and sparse data), clamps, steps across gaps
-  FuelEconomyConcurrencyTest.kt — 2 tests: concurrent onUpdate / reset never throw (demo-switch crash), reset is clean
-  PendingSummaryTest.kt       — 2 tests: post-drive summary stays queued until consumed, newer drive survives an older close
-  TyrePressureLevelTest.kt    — 6 tests: THERMAL tyre state + DRIVE tyre alerts follow the saved Low / Warn / High
-                                (boundaries, custom, PSI = BAR, over-inflation alert, missing readings)
-  LinkOwnershipTest.kt        — 10 tests (rc.7): callback vs cancel, stop vs publication, late merge / phase after reconnect,
-                                cancel policy (stale after CONNECTED, recording → RCN → CONN, recording began, racing CONNECTED)
-  SlcanConnectionLifecycleTest.kt — 8 tests (rc.7): Connecting vs Reconnecting, exhaustion, recording keeps retrying, recording
-                                end mid-backoff → released ≤ 1 s, healthy link kept, budget left → bounded retries, abort
-  LinkPresentationTest.kt     — 5 tests (rc.7): phases, notification text incl. recording / paused, Cancel rule, UI labels, demo
-  OpeningStateTest.kt / DtcScanRecordTest.kt / VersionIdentityTest.kt / ExportLocaleTest.kt — 4 / 6 / 9 / 7 tests (rc.7: splash
-                                per task, DTC record + report lines, release identity, en / pl / de exports)
-  TransportAbortTest.kt       — 3 tests (rc.7): real TcpSlcanTransport closed before open / during connect / during read
-  AutoRecordPolicyTest.kt     — 4 tests (rc.7): keep / resume / finalize + start / start
-  DtcScanPathTest.kt          — 8 tests (rc.7): live SlcanConnection + scripted adapter — zero codes, codes (SF + multi-frame),
-                                NRC, malformed, pending → final, pending only, timeout
-  DtcScanLedgerTest.kt        — 10 tests (rc.7): session A → B without scan, retry finds codes / completes coverage / refused,
-                                stale retry, interrupted keeps coverage, abort vs late interrupt, RUNNING export
-  ForegroundControllerTest.kt — 6 tests: idle bound service never foreground, self-start always followed by startForeground,
-                                demote leaves both, refused start / startForeground leave nothing started
-  Drive-review pass (rc.7): LinkSessionRaceTest 2 · NrcAttributionTest 4 (+ NrcTrackerTest 16) · StalePolledValueTest 5 ·
-  ObdDecodeMergeTest 2 · BoostSourceTest 3 · DtcScanPathTest 12 · DtcScanViewTest 5 · FirmwareProbeTest 4 · BleAdapterProfileTest 9 ·
-  TyreThresholdTest 6 · EscCommandTest 4 · RecordingGapMonitorTest 3 · LinkOwnershipTest 14
-  Acceptance corrections (rc.7): NrcAttributionTest 9 · NrcTrackerTest (ledger ownership) · DtcScanViewTest 18 · BoostSourceTest 15 ·
-  EscCommandTest 8 · FirmwareProbeTest 6 · BleTransportTest 10 (fake GATT) · firmware/tests/run.sh (host C, 11 checks)
-  Corrections 2026-10-29: BoostExportConsumerTest 8 (real export builders + map colour) · BoostProvenanceTest 5 (StoredBoost,
-  trend, compare, legend, knock scatter) · NrcTrackerTest +4 / NrcAttributionTest +1 (lapsed hold, production poller) ·
-  BleTransportTest 12 (late callback, production path through SlcanConnection) · CanDecoderTest AWD from recorded 0x2C0
-  frames · PerformanceTimerTest per-source peaks · firmware/tests/test_esc_confirm.c (real focusrs.c on host stubs, 8)
-  Sapphire: import.boostProvenance.test.ts 8 · import.androidExportRc7.test.ts 3 (the final release APK's own export,
-  `__fixtures__/android-export-rc7/`)
-  Follow-up 2026-10-29: AwdReadoutTest 5 (REQ L/R own freshness, withdrawn cell, JSON) · NrcTrackerTest ledger (no time
-  release, repeated 0x78, eviction) · BoostSourceTest gauge · TimeSeriesMathTest +2 (gaps survive downsampling) ·
-  BoostProvenanceTest knock axis · BoostExportConsumerTest track files without pressure · Sapphire pressureDisplay 5 +
-  import.androidExportRc7Gaps 6 (release export with TIP → CAN 0 → none → TIP, `release-pressure-gaps-drive.zip`)
-  REQ-zero 2026-10-30: AwdReqTorqueMergeTest 6 (real 0x70B frames → parser → ObdMerge → awdDetailRows: positive → 0 per
-  side, unrelated / older-snapshot reply, never received, stale → recovery with 0)
-  Fix branch 2026-10-31: AdapterStatusExportTest 5 · AdapterStatusSnapshotTest 2 · FirmwareProbeLogTest 6 · DriveModeConfirmTest 5 ·
-  DtcScanExplainTest 7 · TpmsFooterTest 4 · TyreImbalanceTest 1 · NrcLogFloodTest 3 · BlePickerScanTest 6 (fake backend) ·
-  DemoSimulatorTest +1 (demo stamps every CAN tag)
-  Source review 2026-10-31: BlePickerScanTest +5 (old-scan callbacks, prompt / broadcast order) · DtcScanExplainTest +5 (FC
-  failure after pending, live retry) · DtcRetryExplainTest 5 (retry notes screen = export = JSON = text, displayed-scan rows)
-  · FirmwareProbeLogTest +2 (probe 1 write failure, handshake silence)
-  #234 2026-10-31: ConnectionSetupTest 4 (SAVE draft rule, already-invalid prefs) · SlcanConnectionLifecycleTest +3 (factory
-  throws / throws once / cancelled)
-  Integration 2026-11-01: AwdDemandPumpMergeTest 5 (#226 decoded 0) · DriveHistoryTest 4 (#228 edits only write, fake DAO) ·
-  scripts/test-release-config.sh 8 (#235, shell — not in the Gradle count)
-  #236 / #237 2026-11-01 (real Room via Robolectric): DriveFinalizeTest 7 · DriveDbForeignKeyTest 5 · LapFeedTest 3 ·
-  LapHandoffTest 1 · LapReplayTest 3 (shared route `LapReplay.kt` = the emulator script's) · LapTimerTest 42
-  #229 / #241 2026-11-02/03: OilPtuMappingTest 6 · OilPtuRecorderTest 2 · StopFlushOutcomeTest 5 · ThumbnailInputRegressionTest 6
-  #238 final review 2026-11-03: BleCommandSendFailureTest 6 (F1) · PointBufferRaceTest 3 (F2, `testing/HookedPointBuffer.java`) ·
-  LapRecreationTest 3 (F3) · DiagnosticExportDtcSnapshotTest 5 (F4)
-  rc.8 diagnostics 2026-11-05: DidProbeScanTest 7 (#249) · BleCommandSendFailureTest +2 (prober over the fake GATT) ·
-  ProberAttributionTest 4 (3 @Ignore'd, #250) · JVM replay through production code (`ReplayHarness.kt`, SYNTHETIC fixtures in
-  `test/resources/replay/`; `+ms RX|REQ|NOTE`, NOTE never fed): SlcanIntegrityReplayTest 6 (3 @Ignore'd, #251) ·
-  BatteryVoltageReplayTest 5 (4 @Ignore'd, #251 / #223) · ModeAttributionReplayTest 4 (3 @Ignore'd, #252). Offline tool:
-  `tools/replay/` (python3 test_replay / test_slcan / test_candump: 7 / 7 / 6; `candump_to_slcan.py` output is still raw,
-  private bus data)
-  rc.8 reliability 2026-11-06: BleWriteOutcomeTest 14 (#248) · ProberAttributionTest 14 (#250, case 3 split) ·
-  SlcanFramingTest 8 · SlcanFramingModeTest 7 · Mode22LengthTest 7 (#251) · BatteryFreshnessTest 6 (#223) ·
-  ModeAttributionReplayTest 11 · ModeProvenanceMergeTest 2 (#252) · LinkIntegrityExportTest 3 (#253); every earlier
-  @Ignore'd red now runs except `#251 outlier policy` (owner decision)
-  (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
-```
+Unit tests live in `android/app/src/test/java/com/openrs/dash/` (JVM, plus Robolectric on SDK 35 for the Room-backed tests) and
+in `web/src/` (`*.test.ts`, `*.test.tsx`) for Sapphire. Run one class with `./gradlew test --tests '*ClassName*'`. The
+per-class catalog that used to be listed here was moved out on 2026-11-05 (last full copy: this file at commit `000c572`);
+list the folder instead.
 
 Current count: **1200 tests / 107 classes** per variant (Android, `feature/rc8-reliability` `134bee3`, 1 skipped = `#251 outlier
 policy`; Temurin 17); **1136 / 100** (13 skipped) at staging `743230fb`; **1108 / 95** on the rc.7 Build 38 branch `feature/boost-label-throttle-inlet`; **1102 / 94** at rc.7 = `43ad5e1` (same Android sources as #238 head `040a1f8`) + **293 vitest across 26 files** (Sapphire at rc.7 — run `web/node_modules/.bin/vitest run` and `tsc -b`). Earlier
@@ -1123,400 +929,19 @@ Android RCs ship from **staging**; **main** carries stable Android (v2.2.6) and 
 to that release) → download the asset and check name, `apksigner verify --print-certs` (cert `c99b6f26…`), versionCode /
 RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an older RC release.
 
-**rc.7 work record (2026-10-28, local — nothing pushed / merged / tagged / deployed):**
-- Issues: milestone **v2.2.7-rc.7** = #211, #212, #213, #214, #215 (status comments posted, none closed — close via merged
-  PRs). Web #204 (no milestone). Investigations / proposals, no milestone and no formula changes until evidence supports
-  one: #205 spark 0x116B, #206 ETC scale, #207 0x0F8 boost reference, #208 AWD NRCs, #209 TX logging, #210 auto-connect
-  eligibility.
-- `feature/rc7`: `5e6639c` (= `6906e52`) · `710b8ed` #211 · `894c8e8` + `8f9ef32` #204 · `f46100e` #212 · `2e940ee` #213 ·
-  `e18df43` #215 · `bbc26b9` #214 · `39aab99` What's New · docs `2b91a2b` `fc65455` `7eacd9f`. `fix/sapphire-row-validation`
-  `c012086` (web/ identical to feature/rc7).
-- Checks: Android 779 / 47 tests, lint 0 / 45, debug + release builds; Sapphire 260 / 21, ESLint 0, tsc, idb-check 9/9.
-  Local release APK `openRS_v2.2.7-rc.7.apk` vc 36, source `39aab99` clean, SHA-256 `e1706bb4…`, cert `c99b6f26…`;
-  `android/scripts/verify-release.sh` passes it, rejects the rc.6 APK (embedded `2.2.7`) and a debug-signed copy.
-- Emulator lifecycle / splash results: `~/Documents/openRS_-evidence/rc7-lifecycle-2026-10-28/RESULTS.md` (Android 16: Back
-  removed the task → next launch new task → opening). Corrected diag report: `~/Documents/openRS_-evidence/diag-rc5-20261020/`.
-- Correction pass (same day, #212 / #214 / #215): `6e35fec` transport abort · `a23547a` ownership · `8163a6c` Cancel policy ·
-  `e82e6d7` recording retry + notification · `aa5b36b` DTC reply validation · `20664c7` DTC ledger · `ba79a00` provenance ·
-  `b058673` What's New (SPARK) · `b09050a` auto-record split · `7a98c8d` notification body · `5fca692` DIAG footer; docs on
-  top. Android 817 / 52 tests, lint 0 / 45. Release APK at `5fca692` (clean): SHA-256 `f7e3514f…1029c`, vc 36, cert
-  `c99b6f26…`, verify-release passes. Evidence + revised behaviour table:
-  `~/Documents/openRS_-evidence/rc7-corrections-2026-10-28/RESULTS.md` (release exports with readable states and DTC
-  outcomes, cancel latency per transport, recording protection, notification body). That run showed the earlier
-  "Wi-Fi off / on after cancel" row proves nothing (Wi-Fi cycling doesn't reconnect on that emulator either way).
-- Drive-review pass (same day, from the user's two 2026-10-28 drive exports + review): issues #216–#224 created, #125 and
-  #205–#208 updated, milestone re-prioritised (decoders now P1). Commits `e6c1d09`…`24c1d41` (+ docs) — #212 ownership
-  window + persistent Cancel, #216 NRC, #217 stale, #205 spark, #206 throttle, #207 boost, #215 layout / interleaving /
-  retries / resolution, #220 probe, #218 BLE, #219 TPMS units, #125 ESC confirmation, #221 gap diagnostics. The issue
-  tracker is authoritative; acceptance matrix, failing-before / passing-after log, emulator evidence, final build identity
-  and the parked hardware checklist: `~/Documents/openRS_-evidence/rc7-drive-review-2026-10-28/` (`ACCEPTANCE-MATRIX.md`,
-  `HARDWARE-CHECKLIST.md`; private drive exports under `private/`, never published).
-- Final local release APK (drive-review pass): source `24c1d41` clean, SHA-256 `1e297ccb…cf7b`, vc 36, signer `c99b6f26…`,
-  verify-release OK (later commits docs-only). **Decisions then (superseded by the acceptance-corrections pass below):** boost source — TIP-first (current) vs CAN-first
-  with TIP fallback (one getter, `VehicleState.boostGaugeKpa`); NRC re-probe every 60 s logs a suppress pair per minute
-  for genuinely rejected DIDs (backoff / transition-only logging?); "previous scan" = latest saved scan; DTC failure-type
-  byte parsed but not shown on DIAG / export.
-- Acceptance-corrections pass (2026-10-28/29, from the user's acceptance review; nothing pushed): `b2a3c23` #216 NRC
-  ownership · `405c9a1` #215 publication gate / failure type / coverage + Room v13 · `88bc6c4` `6cfef1e` `4087b5e` #207
-  boost rule (rc7-boost-v2) · `20104b7` #125 ESC (Android) · `2f86462` #125 firmware source (not built / flashed) ·
-  `aaedd7a` #220 quiet-adapter probe · `1ace464` #218 BLE core · `8b971d2` `85fe34d` #224 header · `3790846` DTC export
-  test · `e0616b5` DTC rescan rows (found in release smoke) · `b5bd5d2` diagnostic JSON boost peaks. Final local release APK:
-  source `b5bd5d2` clean, 6,524,204 B, SHA-256 `47e75313…c445`, vc 36, signer `c99b6f26…`, verify-release OK; 924 / 64
-  tests (debug + release), lint 0 / 45 (minified smoke on the `e0616b5` release, not repeated for the JSON-only change).
-  Matrix, regression log, emulator evidence, revised hardware checklist (app / adapter / vehicle-protocol):
-  `~/Documents/openRS_-evidence/rc7-acceptance-corrections-2026-10-28/` (`ACCEPTANCE.md`, `REGRESSION-LOG.md`,
-  `HARDWARE-CHECKLIST.md`, `fake_ecu_v2.py` with `--stale DID:A:S` / `--wot`). Issues updated; #215 retitled → P1.
-  **Decisions then (superseded 2026-10-29 — the user rejected the inference):** boost — CAN trusted until contradicted at ≥ 80 % throttle, session-scoped (alternatives:
-  trust nothing until proven / persist per adapter); evidence thresholds, ESC REACTION_MS 3 s and NRC 300 ms window
-  unmeasured; #224 trade-off (411 dp full chips → "REC" only). Superseded: the drive-review "TIP-first vs CAN-first" and
-  failure-type decisions (both resolved in this pass). Final report delivered 2026-10-29; the APK was **not** offered for
-  hardware acceptance (user reviews first). Next steps each need the user's go-ahead: answers to the decisions above,
-  hardware checklist, firmware build / flash, PRs, rc.7 tag.
-- Corrections pass (2026-10-29, from the user's review + video + evidence ZIP; nothing pushed / flashed): `da7e298` #225
-  CLUTCH row removed · `2182b6b` #216 lapsed NRC hold · `f67f7ac` #218 BLE write timeout closes the link · `f80f061` #125
-  firmware raw-3 + host integration test · `e11d8c4` #207 inference removed (v3) · `38f5bbb` #207 Android consumers
-  (StoredBoost) · `52fe6c2` #207 Sapphire provenance · `5854f08` #226 AWD 0x2C0 DBC fields · `625c43b` R8 VerifyError
-  workaround (found in the release smoke) · `4941825` Sapphire release-export fixture. New issues #225, #226; #207 #216
-  #218 #125 #224 commented. Final local release: source `625c43b` clean, 6,540,588 B, SHA-256 `1d155b35…97b9`, vc 36,
-  signer `c99b6f26…`, verify-release OK. 945 / 66 tests (debug + release), lint 0 / 45; Sapphire 271 / 23, ESLint 0,
-  tsc, build, idb-check pass; firmware run.sh pass; PRO firmware built once in isolation (not flashed, repo release/
-  untouched). Evidence + matrix + regression log + revised checklist (routine vs investigation):
-  `~/Documents/openRS_-evidence/rc7-corrections-2026-10-29/` (video frames under `private/`). Throwaway AVD
-  `Rc7_Disposable` (the Medium_Phone AVD was running non-read-only on 5554 from Android Studio — never touched).
-  **Decisions awaiting the user:** the AWD front/rear split (rear Nm ÷ engine torque is not a physical split — withdraw
-  or define), the TIP-first order for the DRIVE gauge (label alternates when TIP freshness drops), unmeasured P2* hold /
-  3 s ESC window. APK not offered for hardware acceptance. Follow-ups seen, not changed: TRIP history lists a just-stopped
-  drive as ACTIVE until reload (list read before `stopDrive()` finishes); `fix/sapphire-row-validation` is behind the web/
-  changes here — port before any Sapphire PR. Final report delivered 2026-10-29 (APK still not offered for hardware
-  acceptance); next steps each need the user's go-ahead: the three decisions above, hardware checklist, firmware flash,
-  PRs, rc.7 tag.
-- Follow-up pass (2026-10-29, from the user's "focused follow-up"; nothing pushed / merged / released / flashed): `86cd683`
-  #216 no time release (unresolved → unattributed) · `95e740e` #226 front/rear % withdrawn, REQ L/R freshness, MAX not
-  exported · `3aac7ab` #207 TIP-only live gauge · `bb3d24f` #207 chart gaps / knock axis / track files · `618d7a5` #207
-  Sapphire units / sparkline / source names · `0c7431a` What's New · `fd1ade3` Sapphire fixture from the final release's
-  export (TIP → CAN 0 → none → TIP). New issues #227 (R8 VerifyError), #228 (ACTIVE after stop), #229 (0x0F8 oil / PTU
-  identity — priority before thermal acceptance), #230 (0x138 PCM gear); #207 #216 #226 #125 #225 #227 commented. Final
-  local release: source `0c7431a` clean, 6,540,588 B, SHA-256 `d88456d4…f6c3`, vc 36, signer `c99b6f26…`, verify-release OK,
-  installed + smoked (DRIVE renders, crash buffer empty). 955 / 67 tests (debug + release), lint 0 / 45; Sapphire 282 / 25, ESLint 0, tsc, build,
-  idb-check. Evidence, matrix, regression log, checklist: `~/Documents/openRS_-evidence/rc7-followup-2026-10-29/`. Throwaway
-  AVD `Rc7_Followup` (deleted after). Resolved decisions from the corrections pass: AWD % withdrawn; gauge TIP-only; NRC
-  without a time hold. Still unmeasured: ESC 3 s window. APK not offered for hardware acceptance. Close-out `d0af91e`
-  (lint 0 / 45 rerun; fixture ZIP also carries the 5854f08 crash record — bundled crash history, Sapphire ignores it).
-  Final report delivered 2026-10-30; next steps (hardware checklist, PRs, rc.7 tag, firmware flash) each need the
-  user's go-ahead.
-- REQ-zero correction + testing candidate (2026-10-30, nothing pushed / released / flashed): `a605b1c` #226 — `ObdMerge` took
-  REQ L / R only when > 0, so a decoded, stamped 0 kept the old value under a fresh stamp (and a reply parsed from an older
-  snapshot could put an old value back); now taken by the reply's own stamp (`ObdMerge.carried`). `awdDmdPressure` /
-  `awdPumpCurrent` keep the `> 0` merge (deferred, on #226). Candidate: release from `a605b1c` clean, 6,540,588 B,
-  SHA-256 `0fee0c82…f0e0`, vc 36, signer `c99b6f26…`, verify-release OK; 961 / 68 (debug + release), lint 0 / 45; Sapphire
-  282 / 25 (web/ unchanged). Throwaway AVD `Rc7_ReqZero` (deleted): logcat cleared before the cold start → 0 verifier lines,
-  DRIVE rendered, THERMAL REQ 412 / 388 → 0 / 388 → 0 / 0 → "—" offline → 0 / 0 on recovery, layout pixel-stable.
-  Evidence, status table (software-fixed vs hardware-unverified), private handoff (APK copy, routine checks, signal
-  investigations, drive-mode read-only conditions): `~/Documents/openRS_-evidence/rc7-reqzero-2026-10-30/` (`HANDOFF.md`).
-  #226 + 11 candidate issues commented. The owner performs the hardware checks.
-- Owner hardware tests on frozen `a605b1c` (2026-10-31; private triage `~/Documents/openRS_-evidence/rc7-hw-oct31/TRIAGE.md`):
-  owner's WiCAN Pro over **Wi-Fi** — telemetry OK, OPENRS? never answered (also rc.6); over **BLE** (adapter BLE enabled) —
-  connected ~9 s, `openRS_ PRO v1.2-rc.1` on probe 1, telemetry PASS, parked drive mode PASS (5 OK, raw CAN
-  N→S→D→N→T→N), ESC NOT passed (#125), DTC PARTIAL (4 modules "ERROR" = write failed, reason unrecorded; GFM U1000-00 /
-  U3000-49). My first conclusion "4.45 ⇒ not openRS_ firmware" was WRONG (corrected on #220); owner's assessment: Pro likely
-  wasn't on openRS_ fw during the Wi-Fi test — Wi-Fi detection on current fw untested, not a regression. Second tester
-  (DIY C3, build unconfirmed): splash / Cancel / TPMS BAR OK, phone BLE live, box BLE drops, SYNC sidebar (#231). New
-  issues #231 (side insets), #232 (TPMS footer), #233 (stale adapter status in export).
-- Approved fixes (2026-10-31, branch `fix/rc7-adapter-status-export` from `1bb0373`; not merged / pushed): `9cd8b50` +
-  `b0c1c57` #233 · `4b2b253` #220 probe log · `4937cfb` drive mode accepted vs CAN-confirmed · `80d6dba` #215 · `a0a1eed`
-  #232 · `d68f877` tyre imbalance unit (4 psi = 0.28 bar) · `8f93ad8` #216 NRC line folding · `24b70d8` #218 picker ·
-  `613d2a0` #231 · `0960144` demo driveMode stamp. 1001 / 77 debug + release, lint 0 / 45. Final review APK `0960144`
-  SHA-256 `0314960b…74fbd`, vc 36 (same name / vc as frozen — distinguish by SHA), cold-launched every tab, 0 verifier lines.
-  Evidence + failing-before / passing-after: `~/Documents/openRS_-evidence/rc7-fixes-2026-10-31/RESULTS.md` (regression XML
-  in `rc7-hw-oct31/regression/`, `fake_ecu_v6.py` with TPMS). All 31 issues open. Next (owner's go-ahead): review → merge
-  into feature/rc7, new versionCode for any distributed build, PRs, rc.7 tag.
-- Source-review corrections (2026-10-31, same branch, from the owner's source review; JVM-reproduced source findings, not
-  seen on hardware): `d226274` #218 picker scan id + one scan on enable · `a7a20ea` + `2868ab9` #215 FC failure after
-  pending stays ERROR · `4821e99` #215 retry notes (`DtcModuleRetry`) + rows from the displayed scan · `21fd915` + `5c7bca7`
-  #220 probe 1 logged before the handshake · `23ed9f8` #231 picker scrolls (landscape CANCEL was unreachable — found by the
-  emulator dialog check) · `33cbd87` imbalance fix linked to #219. 1018 / 78 debug + release, lint 0 / 45. Final review APK
-  `23ed9f8` SHA-256 `3063ef08…aef5`, vc 36 (same name / vc as frozen), cold launch + every tab + DIAG + dialogs in both
-  landscape rotations / split / portrait, 0 verifier lines. New issue #234 (Bluetooth saved without a device → crash at
-  every launch, pre-existing, reproduced on the frozen APK; fix proposed, not implemented). Evidence:
-  `~/Documents/openRS_-evidence/rc7-source-review-2026-10-31/RESULTS.md`.
-- #234 fix (2026-10-31, same branch, owner-approved): `4e1d200` SAVE refused without a device · `e5b82a7` start gate before
-  promote / session + DRIVE prompt · `81baa76` factory guard. 1025 / 79 debug + release, lint 0 / 45. Review APK
-  `openRS_v2.2.7-rc.7_review-81baa76.apk` SHA-256 `efe622c4…7a98`, vc 36. Emulator: frozen APK → record drive + KPH → save
-  Bluetooth / no device → crash (+ an empty session per crash) → `install -r` fix → 2 cold launches open, drive + KPH kept,
-  no session (next id after recovery = last + 1), BT on → nothing, Wi-Fi recovery, every tab 0 verifier lines. Device
-  selection only up to the picker (no BLE peripherals); sticky restart argued. Evidence:
-  `~/Documents/openRS_-evidence/rc7-ble-no-device-2026-10-31/RESULTS.md`; #234 commented (left open). Owner accepted the fix
-  + the six corrections; `feature/rc7` fast-forwarded locally `1bb0373` → `931447a` (`--ff-only`; both branches and both
-  evidence APKs kept). Next: owner hardware testing on APK `81baa76` (`efe622c4…`, no rebuild, vc 36). Unverified on this
-  APK: real BLE device selection, a service restart without the app open. Then (owner's go-ahead): versionCode, PRs, tag.
-- #229 offline evidence review (2026-11-01, no repo / code change; the CLAUDE.md note was reconciled on
-  `docs/rc7-reconcile`): every private export searched (26 ZIPs, 22 SLCAN logs) — no positive `62 60 17` (ICM 0x78C) or
-  `62 07 0D` (PCM 0x7E8) reply anywhere, so **no paired independent oil / PTU reference reading exists**. The one
-  `62 1E 3F` reply (AWD 0x1E3F, 76 °C, untimed — RDU sump per the PID sheet) is **not a PTU reference**. RS_HS.dbc agrees
-  with openRS_ but is not independent. Oil identity and PTU identity are each **inconclusive**; thermal acceptance stays
-  unresolved. No decoder swap, threshold change or history rewrite is authorised. Next evidence: one raw log on one clock
-  from the #229 contributor — hot-soak (20–40 min) restart, ~3 min idle + ~10 min drive, passive 0x0F8 plus 0x6017 /
-  0x070D replies polled every 1–2 s, each reply within 1 s of a 0x0F8 frame. If a swap were ever proven: values keep
-  their offsets (they go with the bytes), names change — live DRIVE / THERMAL / HUD / Custom cells, readiness (oil
-  required, min 80 °C; PTU optional, min 40 °C), alerts, forecasts, TRIP TEMP map; profiles are per component. Any
-  reinterpretation of recorded drives needs known decoder provenance per drive (which mapping wrote it) — thermal-record
-  format v2 alone does not identify the mapping. Shown alerts / readiness / RTR timing, drive-level oil start / peak / end
-  columns, session snapshots, legacy arrays and shared exports cannot be re-derived. Never rewrite history.
-- Integration candidate (2026-11-01, local only — DO NOT PUSH; nothing pushed / merged into feature/rc7 / tagged / rebuilt
-  for the owner): branch `integration/rc7-candidate-DO-NOT-PUSH` (worktree `~/Documents/openRS_-worktrees/rc7-integration`,
-  `pushRemote` = a non-remote + branch description) from `12b6e4f`: `6605808` merge of `918add4` + `690be8d` (maintenance),
-  `121d7c4` merge of `24023ce` (sanitization), `86e4af8` merge of `bccf54c` + `f6600c4` + `cfb0f94` (docs). No conflicts;
-  8 files, each identical to its one source; reviewer's independent merge-tree = tree `634d5db4c1` = `86e4af8^{tree}`.
-  Feature/rc7 and the main checkout's uncommitted CLAUDE.md edit untouched (that note's facts are in `bccf54c`, minus the
-  convergence claim, private readings, a name and the "derived view" overstatement).
-  - Verification of `86e4af8` (developer, `~/Documents/openRS_-evidence/rc7-integration-2026-11-01/RESULTS.md`): clean
-    `testDebugUnitTest testReleaseUnitTest lint assembleRelease` once — **1030 tests / 80 files per variant**, 0 failures;
-    lint 0 errors / 45 warnings. APK `openRS_v2.2.7-rc.7_integration-86e4af8_DO-NOT-PUSH.apk` 6,573,356 B, SHA-256
-    `557c5d2b…2b87`, vc 36 (same name / vc as `81baa76` — tell them apart by hash), signer `c99b6f26…`, dex names
-    `86e4af867a4a`, verify-release OK (local keys — doesn't verify the CI path, #235). Disposable AVD `Rc7_Integ` (deleted):
-    logcat cleared, cold start → DRIVE, fake Wi-Fi adapter, #228 manual STOP → card complete without restart, every tab
-    incl. THERMAL AWD, 0 verifier / FATAL / ANR lines. 1025 / 79 stays `81baa76`'s count; 86e4af8's APK is superseded (not distributed).
-  - Merged after review (openrs-9d accepted each, `rc7-integration-review-2026-11-01/REVIEW.md`): `d17411a` #235 release
-    API keys (CI passes repository secrets as env, publication stops without a valid Maps key, `verify-release.sh` step 5)
-    and `4a9f92b` #228 edits only write (`DriveHistory`; TripPage reads the list only from the observed query), via
-    `--no-ff` `984a215`; docs-only `7bb8a9a` (CHANGELOG #228 / #235, this file). Reviewer notes, not blocking: TripPage's
-    saved-state restore still does a one-off `getDrive` (pre-existing); DriveHistoryTest guards DriveHistory, not
-    TripPage's wiring, and doesn't reproduce the race; `check-apk-maps-key.sh` has no automated test of its own.
-  - **Final verification — tested source `7bb8a9a7db48e6d44955d15a58f943323c1f0c41`** (developer,
-    `~/Documents/openRS_-evidence/rc7-integration-final-2026-11-01/RESULTS.md`; reviewer openrs-9d: consistent with its claims, qualifications correct — no rebuild of its own; 0 leaks of the Maps
-    key or identifiers in 517 evidence files; the on-device install hash is stated but has no artifact this time): clean
-    `testDebugUnitTest testReleaseUnitTest lint assembleRelease` once — **1034 tests / 81 files per variant**, 0 failures;
-    lint 0 / 45; `test-release-config.sh` 8 / 8; verify-release OK incl. step 5 (Maps key from the worktree's
-    local.properties — does NOT verify the CI secret path; that was tested in a keyless clone with placeholders,
-    `rc7-dev-2026-11-01/RESULTS.md`). APK `openRS_v2.2.7-rc.7_integration-7bb8a9a_DO-NOT-PUSH.apk` 6,573,356 B, SHA-256
-    `7ee0848493c299da9f3750fc1e3503d71d17e8a10116ff2ef500f944f13fa98f`, vc 36 (unchanged), signer `c99b6f26…`,
-    SOURCE_COMMIT `7bb8a9a7db48`, SOURCE_DIRTY false — not distributed. New disposable AVD `Rc7_Final` (deleted): logcat
-    cleared, COLD start → DRIVE, every tab, TRIP tiles, #228 START → STOP (also with the link down) → tag / rename / Back
-    / delete — no card ACTIVE after STOP; 0 verifier / FATAL / ANR / Fatal signal / Maps "Authorization failure" lines.
-    Later commits on the branch are documentation only (they don't change the tested Android source).
-  - Seen in that run, pre-existing, not changed: TRIP keeps the last recording's map pins with nothing selected; header
-    OFF instead of RCN while recording with Wi-Fi off; relaunch after a Back exit auto-connects (DISCONNECT is not a
-    persisted Cancel); false "Point flush failed" at STOP. Code-path finding (not reproduced — the end was written
-    ~0.55 s after STOP): `DriveRecorder.stopDrive` reads the row before the reverse geocode and writes the whole row
-    after, so a rename / tag in that window can be overwritten and a drive deleted in it can still get lap sessions /
-    a summary — open finding (reviewer confirmed the code path: `getDrive` → `reverseGeocode` → full-row `updateDrive`),
-    not fixed here — filed as #236, fixed on the clean candidate (record below).
-  - #235 owner setup (no values anywhere): repository secret `MAPS_API_KEY` (required for publication) — restrict the key
-    to Android apps, package `com.openrs.dash` + release-cert **SHA-1** `5F:74:08:7D:B0:FE:B2:12:17:9B:EB:AA:AE:BC:95:A4:E8:B8:EB:CE`,
-    API Maps SDK for Android (debug `com.openrs.dash.debug` needs its own key); `OPENWEATHER_API_KEY` optional (notice +
-    no weather requests without it; OpenWeather restriction options unverified). Either key is extractable from a
-    published APK. Unchanged: the main-push `release` job builds without keys (artifact only); the keystore step exits 0
-    without its secrets (caught later by the signer check).
-  - Reviewer (`~/Documents/openRS_-evidence/rc7-integration-review-2026-11-01/REVIEW.md`): provenance verified; **R1** minor,
-    not fixed — TripPage delete / tags / rename handlers still reload `getRecentDrives` by hand on IO and can overwrite a
-    newer Room emission (card ACTIVE until the next write). #226: `carried` keys match the `markFresh` tags; PUMP still "—"
-    at 0 A (`> 0` gate, ChassisPage), demanded pressure has no screen consumer; hardware meaning / scale unverified. #228:
-    only manual STOP exercised (emulator) — auto-record stop / orphan finalization expected, not tested. Docs D1–D4
-    (CONTRIBUTING → `ObdMerge.merge` with CanDataService as caller; CHANGELOG #228 / #226 wording; this record): landed as
-    docs-only `64256ba` + this record (merge of `0d52b7c`, then updates).
-  - Privacy audit (`~/Documents/openRS_-evidence/repo-privacy-audit-2026-11-01/REPORT.md`, revised 10:30): the adapter
-    identifiers were found only in `FirmwareProbeLogTest.kt` history (introduced `4b2b253`; local, unpublished when
-    inspected — "not found" = inspected scope only, not proof of absence); fixed at the tip by `24023ce`; history not
-    cleaned — tainted commits are counted by the cleanup plan's freeze step (the figure changes as refs move); refs feature/rc7, fix/rc7-adapter-status-export, docs/rc7-reconcile,
-    fix/rc7-trip-active-awd-zero, fix/rc7-sanitize-adapter-ids, the integration branch (+ reflogs / worktree HEADs).
-    Every one stays unpublished. F2: client API keys inside APKs published before rc.6 (to verify: Maps restriction by
-    package + release-cert **SHA-1**; OpenWeather options / replacement consequences); rc.6 asset carries no keys (CI path
-    — developer investigating, `rc7-ci-keys-2026-11-01/`). F3: personal email in published commit metadata — never rewrite
-    published history. Never quote identifier values anywhere.
-  - History cleanup (`~/Documents/openRS_-evidence/rc7-history-cleanup-plan-2026-11-01/PLAN.md`) — **proposal, not
-    executed, awaiting the owner**: rewrite only `b0c1c57..86e4af8` (33 commits) of the candidate in an isolated clone
-    (blob SHA → SHA swap, re-signed), published main / staging / tags byte-identical; private pre-cleanup bundle; old → new
-    `commit-map.tsv`; publishable clone with only the new line; whole-object-DB + push-set checks; pre-push deny-list.
-  - Main-route docs: `docs/setup-guides-ble-fw` (from origin/main `0d64248`): `d3757a7` Bluetooth manual + device (#234),
-    v1.61 flash name, ESC #125; `a388e90` firmware/README + hardware-setup — GATT layout **unresolved** (FFE0 = planned
-    fw v2.x interface in an unimplemented header; v1.x keeps upstream `ble.c`, unpatched; FFF0 / FEE0 from upstream source
-    reading only; no GATT trace), v1.61 / v1.2 file names, BLE device name unsourced.
-  - Open-issue triage (2026-11-01, 50 open issues read: labels, milestone, today's events): 28 label events on 14 issues
-    (#125, #205–#208, #225–#230, #234) by the maintenance role, no milestone changes, comments on #226 / #228 / #234. Left
-    for the owner: no milestone on #226–#234; no priority on #222 / #223 / #230; #206 lacks `investigation`; #174 / #175 /
-    #198 shipped in prereleases but open (close via merged PRs per the release checklist).
-- Clean candidate (2026-11-01, local only — push disabled; nothing pushed / tagged / distributed): history cleanup steps
-  02–07 (owner-approved; record `~/Documents/openRS_-evidence/rc7-history-cleanup-run/RESULT-02-07.md`, private
-  `commit-map.tsv` / `cited.tsv`) rewrote `b0c1c57..2aabca9` (43 commits, re-signed) → `feature/rc7-candidate` @ `86337bc`,
-  tree = the frozen tip's; identifier scan 0 on the clone / push set / full history; step 08 not run. Old IDs in this file
-  stay as written (translate with `cited.tsv`): `7bb8a9a` → `08e05f5`, `2aabca9` → `86337bc`, `81baa76` → `e0c419d`;
-  `a605b1c` unchanged. The old private repo and the integration branch are unchanged.
-  - Merged after review (openrs-9d accepted, `rc7-integration-review-2026-11-01/REVIEW.md` last section): `f164a2e` merge
-    of `2c51982` (#236 — `d775bed` test-only Robolectric 4.14.1 + recorder seams, `db79c54` fix: STOP re-reads the row in
-    one Room transaction and writes recorder columns only, per-drive `DriveRun`; `2c51982` SDK 35) and `4a28744` merge of
-    `3280241` (#237 — `b78d672` the loop feeds `LapTimer`, STOP `takeLaps()` re-arms); docs `0e4c120`. Developer
-    regressions (`rc7-drive-finalize-2026-11-01/`): DriveFinalizeTest 17 of 48 checks fail on the old finalization → 48 / 48;
-    LapFeedTest ARMED → TIMING. Reviewer notes, not blocking: N1 one-fix window (the old loop's last fix can reach the next
-    drive's timer); N2 phantom laps / bearing 0°; N3 lap `peakBoostPsi` mixed-source (not shown / exported — keep it so);
-    N4 no JDK 17 / CI run; N6 FINALIZE_AND_START not driven through LinkSession; N7 LapTimer overlay fields not @Volatile.
-  - **Final verification — tested source `0e4c1202326252bf84c7f8a07e58b9532f6123c5`** (developer,
-    `~/Documents/openRS_-evidence/rc7-candidate-final-2026-11-01/RESULTS.md`): clean `testDebugUnitTest testReleaseUnitTest
-    lint assembleRelease` once — **1045 tests / 84 classes per variant**, 0 failures; lint 0 / 47 (+2 NewerVersionAvailable,
-    the pinned test dependencies); `test-release-config.sh` 8 / 8; verify-release OK (local keys — not the CI path). APK
-    `openRS_v2.2.7-rc.7_candidate-0e4c120_DO-NOT-DISTRIBUTE.apk` 6,573,356 B, SHA-256
-    `ce82d4b203edd898f21932f1ea1a72081ec494813349e68e400bbc4e2811ed42`, vc 36, signer `c99b6f26…`, SOURCE_COMMIT
-    `0e4c12023262`, SOURCE_DIRTY false — not distributed (carries the local keys). New AVD `Rc7_CandFinal` (deleted):
-    installed hash = expected; logcat saved from before the COLD start (20,313 lines) — 0 verifier / VerifyError / FATAL /
-    ANR / Fatal signal / Authorization failure; DRIVE + every tab, TRIP tiles; #236 STOP → START 0.3 s apart → two distinct
-    drives, one summary each; #228 no card ACTIVE after 3 STOPs; #237 a lap completed and persisted, next drive re-armed —
-    **but only 1 of 2 scripted loops counted, and a repeat in drive 3 none** (earlier AVD 3 / 3 + phantom laps); cause not
-    established (fused provider dropping scripted fixes, or bearing at the crossing). Lap reliability = owner / hardware
-    question. JDK 17: not on this Mac, not run. `81baa76` APK re-hashed unchanged. Superseded by the round below.
-  - Merged after review (openrs-9d: `1ec1a59` accepted, `f74c841` accepted with notes, `a47c259` accepted as a delta —
-    `rc7-thermal-laps-review-2026-11-01/RESULTS.md`): `e1bbc14` merge of `a47c259` — #236 empty peaks per drive, #237 laps
-    from gate crossings (old timer: 5 laps on the 3-loop replay route, new: 3), b= in the per-fix log. Reviewer's own gate
-    under Temurin 17.0.21+9 (JVM recorded): `f74c841` tests 1066 / 86 per variant + lint 0 / 47; `a47c259` tests only;
-    device (the `f74c841` debug APK, DB read): own peaks after a hot drive, laps 3 / 3 / 1 for 3 / 3 / 1 loops incl. STOP → START. Notes: N-a
-    per-fix log debug-only before stable; N-b 2 s fix age unmeasured on phones; N-c a backwards fix time is refused until
-    time passes it; N7 open. Pre-push: `procedure/prepush-check.sh <full SHA>` on the final tip (PLAN.md §8; read-only,
-    pinned accept / deny-list digests; passes in `rc7-history-cleanup-run/prepush/PASSED.tsv`; a pass is not push
-    authorization).
-  - **Final verification — tested source `8d1903e2383d388ea33d58038b9b39fa6afa2ed9`** (integrator,
-    `~/Documents/openRS_-evidence/rc7-candidate-final2-2026-11-01/RESULTS.md`): isolated Temurin 17.0.21+9 (CI's
-    distribution / major; Adoptium SHA-256 verified; test-worker JVMs recorded; Mac default untouched) — clean
-    `testDebugUnitTest testReleaseUnitTest lint assembleRelease` once, no build cache: **1066 tests / 86 classes per
-    variant**, 0 failures; lint 0 / 47; `test-release-config.sh` all passed; verify-release OK (local keys — not the CI
-    path). APK `openRS_v2.2.7-rc.7_candidate-8d1903e_DO-NOT-DISTRIBUTE.apk` 6,589,740 B, SHA-256
-    `af3c1ad69b69a15455df59871c51b21ffcdbd3b8d680eb5c4d3a0c3cfd18aa8a`, vc 36, signer `c99b6f26…`, dex `8d1903e2383d`, no
-    -dev / .dirty — not distributed (local keys). New AVD `Rc7_Final2` (deleted): installed hash = expected; logcat
-    continuous from before the COLD start (64,851 lines, one process) — 0 verifier / VerifyError / FATAL / ANR / Fatal signal
-    / Authorization failure / API Key; every tab, TRIP satellite tiles. **Laps (`lap_route.py`, route = `LapReplay`): expected
-    3 per run × 3 runs → 3 / 3 / 3 displayed and persisted** (run 1 SET S/F; run 2 after STOP → START 0.3 s, line kept; run 3
-    separate START + CLEAR / SET), no phantom laps; history: 3 complete drives, none ACTIVE, one summary each. AVD fixes:
-    mostly b=none; max age at the timer 1,795 ms (205 ms under the 2 s limit — N-b). `81baa76` APK re-hashed unchanged.
-    Not covered: CI itself, real GPS / phones, #236 peaks on this device (reviewer's device run + JVM). Later commits docs-only.
-- Evidence classes for rc.7 (keep them apart in reports): **owner-verified hardware** — frozen `a605b1c` only (2026-10-31:
-  Pro over BLE telemetry, firmware probe, parked drive-mode confirmation over BLE; ESC not passed; DTC partial; Pro over
-  Wi-Fi telemetry); **tester report, build unconfirmed** — second tester (DIY C3); **emulator / fake adapter** — every
-  fix since `a605b1c`, incl. #234 (`81baa76`); **unit tests** — 1025 / 79 per variant at `81baa76`; **source reasoning
-  only** — sticky service restart without the app (#234), BLE GATT layouts (#218); **untested** — real BLE device
-  selection on `81baa76`, ESC change confirmation on a car (#125), openRS_ firmware Wi-Fi detection on current firmware
-  (#220), unreleased firmware source (never flashed).
-- Still open as of 2026-11-01 (**historical** — current state: rc.7 publication record below):
-  - **Gates before any rc.7 tag (owner's go-ahead for each):** owner hardware test on `81baa76` (pending — no result
-    recorded); a new versionCode for any distributed build (every review APK so far is vc 36); minified-release smoke of
-    the final build (R8 gotcha / #227); repository secrets for #235 (Maps required) before any tag; PRs (feature/rc7 → staging, fix/sapphire-row-validation → main); the tag.
-  - **Hardware investigations:** hardware checklist (Samsung, BLE selection, firmware capability, boost signal identity
-    #207, spark #205 / throttle #206, real DTC replies #215, TPMS BAR on the phone #219, 0304 / 03EF identity, button bit
-    captures); ESC confirmation (#125); oil / PTU identity (#229) — blocks thermal acceptance; 0x138 gear (#230); AWD
-    NRCs (#208); a real decimal-comma-phone export.
-  - **Disclosed limitations (behaviour as built):** recording needs GPS — gaps are explained, not filled (#221); boost
-    signal identities unconfirmed (#207); ESC 3 s confirmation window unmeasured (#125); BLE layouts source-verified only
-    (#218).
-  - **In the integration candidate only (emulator / JVM evidence at `86e4af8`), not in the owner-test APK `81baa76`:**
-    `918add4` #228 ACTIVE after stop (manual STOP only), `690be8d` #226 demanded pressure / pump current take a decoded 0
-    (JVM only), `24023ce` synthetic identifiers in `FirmwareProbeLogTest`, `d17411a` #235 release keys (CI path tested
-    in a keyless clone; secrets not configured), `4a9f92b` #228 edits only write (emulator) — tested together at `7bb8a9a`. Publication hold: see the integration record below.
-  - **Deferred enhancements / follow-ups seen, not changed:** GPS-independent recording (#221, schema change); false
-    "Point flush failed" warning; 20 s silent-adapter hold; boost peak caption is psi in any unit; debug Settings label
-    squeezes UPDATES. Separate: Sapphire map tiles, `docs/thermal-thresholds` PR, docs on main — local `docs/setup-guides-ble-fw` (from origin/main
-    `0d64248`, `d3757a7`: android/docs Bluetooth note #234, v1.61 flash file name, ESC #125; android/docs guides go via
-    main, as `1ec8dc7` did) and `a388e90` (firmware/README v1.61 / v1.2 file names; GATT layout unresolved, FFE0 = planned
-    v2.x interface, #218) — both local, not pushed. At staging → main take main's
-    `README.md` (feature/rc7 is only behind) and `docs/feature-roadmap.md` (both sides edited — `5606ac7` vs `b2fbe87`),
-    cleanup, stable promotion.
-
-**rc.7 publication record (2026-11-03 UTC; evidence `~/Documents/openRS_-evidence/rc7-publish-2026-11-03/`):**
-- **Android:**
-  - PR #238 (`feature/rc7-candidate` @ `040a1f8`) → staging merge `3937306` (parents `9f3c100` + `040a1f8`); staging CI 41737621572 green.
-  - PR #244 (CHANGELOG "Fixed (rc.7 — final review 2026-11-03)" for F1–F4, `b0d7349`, CHANGELOG only) → staging merge `43ad5e1`; PR CI 41741749888 + staging CI 41742463569 green.
-  - Tag `android-v2.2.7-rc.7` → `43ad5e1` (lightweight, created by `gh release create --prerelease --latest=false`); tag CI 41743255767 green (Build & Test, Lint, Verify Firmware, Attach APK).
-  - Prerelease https://github.com/klexical/openRS_/releases/tag/android-v2.2.7-rc.7. The latest release stays `android-v2.2.6`.
-  - Each step was taken on the owner's direct approval naming the SHA. Pushes went from the noreply publish clone under single-use gates v2s4–v2s7 (`rc7-integration-docs-2026-11-01/prepush-supplemental-*`; all stale now).
-- **Asset:** `openRS_v2.2.7-rc.7.apk`.
-  - 6,589,736 B, SHA-256 `eb937284564afb99c4b469a2d07d0c90885c3cb265a7bea6cd21591b9eb2464e` (= GitHub's asset digest).
-  - `com.openrs.dash`, versionName `2.2.7-rc.7`, versionCode 37, min 28 / target 35.
-  - APK Signature Scheme v2, cert SHA-256 `c99b6f263ee3b5bb610040431403d459e0e7b12aa941f114f0d9717d974ada74` (= rc.6). `verify-release.sh` OK.
-  - Maps key present (length only). No weather key: no `OPENWEATHER_API_KEY` secret.
-  - Build-provenance attestation → `ci.yml` @ the tag, commit `43ad5e1`, run 41743255767.
-  - Verified from fresh downloads by two sessions (integrator + QA, `verify-e1/`, `verify-9d/`). Not installed on any owner device.
-- **Notes:** CHANGELOG-based highlights, "Known limitations / RC testing status", Download block filled from the verified asset (`rc7-build37-2026-11-03/publish/notes-final.md`).
-- **What was tested, by binary** (`81baa76` and `a605b1c` are local build IDs from the pre-cleanup history — not on GitHub; the
-  Build 36 review APK is SHA-256 `efe622c4…7a98`):
-  - **Published APK `eb937284…`:** disposable read-only AVD (synthetic adapter + GPS; `rc7-public-apk-smoke-2026-11-04/dev/RESULTS.md`), installed bytes = `eb937284…`: cold launch + every tab, Settings `2.2.7-rc.7 · Build 37`, 0 verifier / fatal / ANR / Maps-authorization lines, real map imagery with CI's key, a recorded drive + STOP (no false "not saved", no false ACTIVE, whole-route thumbnail, 0 duplicate points), drive + diagnostic exports (`sourceCommit` 43ad5e1, oil / PTU mapping lines), 6 laps persisted across two rotations, in-place upgrade from Build 36 `81baa76` (settings kept, Room v13 → v14, old drive "not recorded"). Points follow the emulator's location callbacks (~1.2 s), not 1:1 with injected fixes — unverified on a phone
-  - **Private release-signed Build 37** (same Android sources, a different binary, local key injection; `0d18298c…` from `040a1f8`): disposable-AVD smoke — upgrade from `81baa76`, Room v13 → v14, STOP, export, every tab, map tiles, F3 laps across two rotations (`rc7-pr238-fixes-build-2026-11-03/qa/RESULTS.md`). Never distributed.
-  - **Build 36 (vc 36):**
-    - The owner's quick phone + Bluetooth check of the review APK `81baa76` was reported PASS (owner-reported, no diagnostics).
-    - The frozen `a605b1c` ran on one car with one WiCAN Pro over BLE: telemetry and parked drive mode PASS, ESC not passed, DTC partial (`rc7-hw-oct31/TRIAGE.md`).
-    - Features in each build: the review APK `81baa76` already includes the 2026-10-31 fix round, with the CAN-confirmed
-      drive-mode result and the DTC write-failure reporting. The frozen `a605b1c` predates both. Both Build 36 builds
-      predate every 2026-11-01..03 fix.
-    - Hardware evidence for those two features: none. The car run used `a605b1c`, where drive mode passed under the
-      older "accepted" result and the DTC write failures had no recorded reason. The quick check of `81baa76` recorded no
-      diagnostics.
-  - **No phone or car run** of Build 37 or of the published APK.
-- **Open after publication** (hardware / investigations, unchanged by the release):
-  - ESC on a car (#125);
-  - Wi-Fi drive mode / firmware detection (#220);
-  - USB BLE layout (#218);
-  - #229 on other cars;
-  - signal identities (#205 #207 #230, battery SoC, KR cyl 2–4, sub-zero ambient #185);
-  - real-GPS laps (#237);
-  - real DTC replies (#215);
-  - a decimal-comma phone export (#211);
-  - head-unit side bars (#231);
-  - GPS-independent recording (#221);
-  - Sapphire tiles (#240).
-- **Follow-ups seen, not changed:**
-  - the release-build per-fix `LapTimer` log line (make it debug-only before stable);
-  - knock-insert false debug log on a cancelled STOP;
-  - 20 s silent-adapter hold;
-  - boost peak caption in psi;
-  - the Sapphire per-source peaks O(n²);
-  - recorded views: a display-only "BOOST (CAN)" label for CAN 0x0F8 points, so a recorded "BOOST" isn't read as the live
-    TIP gauge (#207 follow-up; no export / schema / history change);
-  - What's New's #229 line says older drives "are marked as recorded before the fix" (`ui/WhatsNewDialog.kt`), but
-    RaceChrono / TrackAddict files can't carry that mark (CHANGELOG #229 limitation) — the line overstates for those two
-    formats;
-  - RaceChrono / TrackAddict CSVs write the `-99.0` "not received" sentinel for a missing coolant / oil temperature;
-    blank cells would suit third-party tools.
-- **Not done:** issue closures, stable promotion (staging → main), cleanup of disposable AVDs / scratch clones / worktrees. Each needs the owner.
-- **Build 38 — rc.7 maintenance asset (published 2026-11-05 UTC: PR #247 → staging `32b13ac`, `rc-maintenance-asset.yml`
-  run 41956174329; asset `openrs-2.2.7-rc.7-build38.apk`, 6,589,740 B, SHA-256 `839cdf3e…a0cd1`; original asset, tag and
-  prerelease flag unchanged):**
-  - Owner-approved scope: amend the EXISTING rc.7 release — no new release, tag or retag; the original tag, asset
-    `openRS_v2.2.7-rc.7.apk` (`eb937284…`), its attestation and the prerelease flag are never touched.
-  - Source: `feature/boost-label-throttle-inlet` on `b314729` (= staging `256758f`'s tree): `c1392a6` live gauge label,
-    `fc3ce26` + `451387c` docs (#207), What's New option C (published rc.7 line kept byte-identical, separate Build 38
-    line), versionCode 38, CHANGELOG, the maintenance workflow, then `9c49ecb` plain BOOST (the owner rejected the
-    "THROTTLE INLET" line of `c1392a6`), this record, and a new marker last (`e8e0f10`'s marker is superseded).
-  - What's New Build 38 line (owner-approved wording): "rc.7 · Build 38: the live gauge is labelled BOOST again (Build 37
-    showed TIP). Only the name changed; the reading is the same." (`BUILD_38_NOTE` in `ui/WhatsNewDialog.kt`)
-  - Asset `openrs-2.2.7-rc.7-build38.apk`: versionCode 38 (no earlier build used 38 — local repos, every APK on disk and
-    the release assets checked 2026-11-04), versionName `2.2.7-rc.7`, Settings `2.2.7-rc.7 · Build 38`, same certificate.
-    CI builds, attests and adds it (see the RC maintenance asset gotcha); nothing is uploaded from a local build.
-  - What's New: once per release name, so an in-place upgrade from Build 37 doesn't reopen it; the Build 38 line is in
-    Settings → What's New (a fresh install shows it). The updater doesn't offer Build 38 (name outside its matcher, and
-    it compares release names) — the release notes link it as a manual in-place upgrade.
-  - Evidence: `~/Documents/openRS_-evidence/boost-label-throttle-inlet-2026-11-04/dev/RESULTS.md` (Build 38 section).
-
-**rc.6 publication record (2026-10-28 UTC; evidence `~/Documents/openRS_-evidence/rc6-release-2026-10-27/PUBLISHED.txt`):**
-- Android: PR #202 (feature/design-pass `056556b`) → staging merge `d2f7dc6`; staging CI 40625379258 green; tag
-  `android-v2.2.7-rc.6` → `d2f7dc6`; tag CI 40625789185 green (Build & Test, Lint, Verify Firmware, Attach APK).
-  Prerelease https://github.com/klexical/openRS_/releases/tag/android-v2.2.7-rc.6 — `openRS_v2.2.7-rc.6.apk`,
-  6,458,616 bytes, SHA-256 `1e7d692f80f736bc3eeb02d9c391e388a5f3e5b948e4adf70b2fbc4d3210d096`, APK Signature Scheme v2,
-  cert SHA-256 `c99b6f263ee3b5bb610040431403d459e0e7b12aa941f114f0d9717d974ada74` (= rc.5), `com.openrs.dash` vc 35,
-  2.2.7 + RC "rc.6", build-provenance attestation for the tag @ `d2f7dc6`. Notes = changelog-based highlights + "Known
-  limitations / RC testing status".
-- Sapphire: PR #203 (`release/sapphire-main` `d5a3107`, web/ only) → main merge `0d64248`; main CI 40624756338 green
-  (its Lint job hides the pre-existing lint crash + detekt 92, both advisory); deploy-pages 40624756293 →
-  https://klexical.github.io/openRS_/; live import of real rc.6 TRIP exports in a disposable profile 11/11, no app errors.
-- **Hardware-testing limitations (rc.6, unverified — see the changelog section):** no real-phone or on-car run of rc.6;
-  battery SoC (BCM 0x4028) unverified; KR cyl 2–4 rejected / zero on tested PCMs; charge air 0x0461 = `0x0000` on some
-  PCMs; throttle 0x076 absent on some cars (pedal fallback); sub-zero ambient (#185); recording needs GPS; Bluetooth
-  picker not checked on a phone; What's New not re-shown between RCs.
-- **Sapphire known issue (separate, not from rc.6):** route map tiles (`GpsMap.tsx`, Carto `dark_all`, URL unchanged since
-  April) now come back as "API KEY REQUIRED" placeholder images on the live site; the route line and markers still draw.
-  Needs a tile-provider decision — tracked as its own fix, not part of rc.6.
-- Still open: user's on-car / phone checks; `docs/thermal-thresholds` PR to main (merges clean); retiring
-  `fix/sapphire-csv-import` (superseded, Sapphire now live); staging → main stable merge (plan under Sapphire →
-  Integration / deployment). Local rehearsal branches `release/rc6-staging` (`b023d1a`, APK rehearsal source) and
-  worktrees in `~/Documents/openRS_-worktrees/` can go once no longer needed.
+**Release records (moved out 2026-11-05).** The rc.7 work record, the rc.7 publication record (Build 38 included) and the
+rc.6 publication record were dated diaries of commits, hashes, CI runs and evidence notes, not instructions, and made up
+about a quarter of this file. They are no longer kept here. The last full copy is this file at commit `000c572`
+(`git show 000c572:CLAUDE.md`; those sections are unchanged since staging `743230fb`). Release facts live in
+`android/CHANGELOG.md` and on the GitHub Releases page; open work lives in the issue tracker. Do not add dated status or
+work-log entries to this file again.
 
 Docs branches skip staging entirely — branch from main, PR to main.
 Never route README.md, assets/, or docs/ through staging.
 
 **Release checklist (staging → main):**
+0. Read the Sapphire staging ↔ main merge runbook first (see the Sapphire section: which side to take, the `ci.yml` hand-merge,
+   the checks to run after the merge).
 1. Scan open GitHub issues for any fixed by commits in the release (`gh issue list --state open` vs commit history)
 2. Close standalone issues that shipped — comment with commit SHA
 3. Update umbrella issue checklists — check off shipped sub-items with version annotation
@@ -1606,58 +1031,10 @@ pnpm build                    # production build → dist/
 pnpm preview                  # preview production build
 ```
 
-**Release merge checklist — Sapphire (staging ↔ main diverged; updated 2026-10-27):**
-
-*Resolved on feature/design-pass — every main-only `web/` change (`e5080c8`, `e0c8b5e`, `e9cd565`, `dc32b8b`) is ported or
-superseded, so **take this side for every `web/` file** when merging:*
-- Importer structure: manifest-driven single / batch import (`importBatchZip`, `isBatchZip`), profile JSON merge
-  (full drive export → 6,700 RPM from the profile, not the CSV's 4,600).
-- Drive CSV choice by name — `isDriveCsvName` / `isDriveCsvEntry` skip RaceChrono / TrackAddict / knock CSVs (#183).
-- `parseTripDataFromCsv`: BOM strip, then `trim()`, then skip `#` lines (`# openrs_csv_v2`), then the
-  `< 2 lines` → no-trip return, then the required-columns `ImportError` (`REQUIRED_COLUMN_GROUPS`: timestamp + rpm,
-  main's `e9cd565`; `abef459`). Only drive CSVs are checked. Main's BOM + ImportError tests are in `import.test.ts`
-  (`5eace3d`, `abef459`).
-- Batch import is all-or-nothing (`3f7302f`, `5bf6435`): one malformed drive CSV rejects the batch in either order,
-  and a valid batch is stored with `putSessions` (one IndexedDB transaction, aborted if any `put` throws) before any
-  session reaches the store — keep ImportPanel's `putSessions` call when merging. `ImportPanel.test.tsx` guards the
-  panel; `web/scripts/idb-check/` checks the real database (Chromium via Playwright installed outside the repo — steps
-  in `check.mjs`): reload / restart persistence, quota and clone failures roll back.
-- Profile ↔ drive association (`e7f7416`): single and batch imports share `findProfileFor` — by filename identity
-  (`drive_<ts>.csv` → `drive_profile_<ts>.json`, `drive_<id>_<ts>.csv` → `drive_<id>_<ts>_profile.json`), manifest
-  type not needed; one-CSV + one-profile fallback only when names don't identify different drives; never by ZIP
-  order. Android batch manifest now types these `drive_profile` / `drive_summary` (`535253e`; rc.6 batches said
-  `unknown` and still import). `import.batchProfile.test.ts` (real TRIP batches, both manifest generations).
-- Android half of `e5080c8` (drive CSV without GPS) — `9a52612`: `DriveExportBuilder.driveTrackFiles` / `hasRoute` used
-  by the diagnostic export, `shareDrive` and `shareDrives`; no-GPS CSV has empty lat / lng, GPX / RaceChrono /
-  TrackAddict only with GPS, empty drives get no track files. Real TRIP exports in `__fixtures__/android-exports/`
-  (`drive-nogps-telemetry.zip`, `batch-gps-nogps-empty.zip`, `import.noGpsExport.test.tsx`). Keep this side's exporter.
-- Hook order (main's `e5080c8` TripPanel, `e9cd565` DashboardPanel / ComparePanel / SessionsPanel, `e0c8b5e`
-  Sparkline `useId`) — `aa79eb3`; whole-app ESLint 0 errors. `hookOrder.test.tsx` keeps each component mounted
-  through empty → data → other drive → diagnostics-only → empty.
-- Compare panel crash on mount: `useCompareSessions` built a new array per store read → "Maximum update depth
-  exceeded" (zustand 5) — fixed with `useShallow` (`65fe314`). Main has the same selector + zustand 5, so it is expected
-  there too — UNVERIFIED (not run on main; no hotfix requested). Keep the fix when merging main's ComparePanel.
-- `dc32b8b` (v2.2.6 release merge) carries no Sapphire difference — its `web/` equals staging `94883ca`, already here.
-- Chart gaps (`a913177`): `lib/readings.ts` maps temps ≤ −90, polled −1 and NaN to `null` (TripPanel, TempStackChart —
-  main floored the stack at 0, Recharts 3.8 breaks a stacked layer at null; TimeSeriesChart `number | null`); genuine
-  zeros stay. Per-corner Dashboard TPMS + "—" corners; TripPanel diagnostics-only hint (TRIP → SHARE wording).
-- Paint accents (`c08b731`): `colors.accent` = `var(--color-accent)` written by App.tsx (+ `--color-accent-d`,
-  `--color-accent-print` for paper); fixed `colors.cyan` for map buckets, multi-series legends, ModeTimeline, TPMS
-  band and DiagnosticsPanel INFO / session (main left those on the accent — its `accent + '15'` chips are invalid CSS).
-  Sapphire is dark-only (no DAY palette); `tokens.test.ts` checks every paint on the dark surfaces + print.
-- Remembered panel / session (`e5f87bd`): `sapphire_view` in the store; App keeps the saved session if it still
-  exists, else the newest import (or none); IndexedDB load `.catch`. `App.test.tsx`.
-- Compare (`74f6cf6`): DeltaCard per-unit neutral floor (+ `L`, `/100`). **Not taken:** main's `pctChange =
-  diff / baseValue` — it flips the sign for a negative baseline; this side's `diff / |baseValue|` is kept (main's
-  tests pass here, plus a negative-baseline test). Overlays: `normalizePoints` maps missing coolant / oil / throttle
-  through `lib/readings.ts` → null (a gap), genuine zeros kept — main clamped them to 0 (`compare.test.ts`,
-  `ComparisonChart.test.tsx`).
-- Perf / UX (`1c3e602`): GpsMap per-mode precompute (with bookmarks), ComparisonChart resample cache, GForceScatter
-  keeps lat-G peaks (`lib/gforce.ts`), ModeTimeline case normalisation (CSV + profile timeline), SessionsPanel
-  `allSettled` bulk delete, SettingsPanel copy. **Not taken:** main's 150 ms SessionsPanel debounce — SearchBar already
-  debounces 200 ms (on main too).
-- Browser smoke (2026-10-27, production build, Playwright Chromium; script + ZIP + screenshots in `~/Documents/openRS_-evidence/sapphire-smoke-2026-10-27/`): gaps vs zeros
-  in the SVG, all six paints on screen + print, reload restore, missing / deleted saved session — 29/29 checks, no page errors.
+**Release merge checklist (staging ↔ main):** moved out on 2026-11-05. It is a one-time runbook for the stable promotion
+(which side to take per file, the `ci.yml` hand-merge, the checks to run after the merge). Read it before merging staging
+into main: the last full copy is this file at commit `000c572`, section Sapphire. The follow-ups below came with it and are
+still open.
 
 *Separate follow-ups (documented, not release blockers for this checklist):*
 - `DriveRecorder` stores points only from location updates, so a drive without GPS records no telemetry (the export
@@ -1667,34 +1044,6 @@ superseded, so **take this side for every `web/` file** when merging:*
 - thermalRecord visualisation in Sapphire (the block imports and is ignored today).
 - Thermal Soak is a stacked chart: while one layer is missing, the layers above it sit lower (stack total). Inherent to
   stacking (main's 0-floor shifts them the same way); a non-stacked view would be a design change.
-
-*Integration / deployment steps (rc.6 done 2026-10-28 UTC — record under Branch / Release Workflow):*
-- Android → staging: `release/rc6-staging` = `origin/staging` + `--no-ff` merge of feature/design-pass (tree identical to
-  feature/design-pass; nothing behind staging). DONE: PR #202 → staging `d2f7dc6`, tagged `android-v2.2.7-rc.6`,
-  published by `publish-release` as a prerelease.
-- Sapphire → main: `release/sapphire-main` = `origin/main` + one commit taking `web/` whole from feature/design-pass
-  (main has no `web/` change after `e9cd565`; `package.json` / `package-lock.json` identical, so deploy's `npm ci`
-  is unchanged). Nothing outside `web/` — main's Android, version files, CHANGELOG, docs, CLAUDE.md and
-  `android/browser-emulator` stay as they are. DONE: PR #203 → main `0d64248`, deployed and live-checked. Supersedes
-  `fix/sapphire-csv-import` (`1d1991e`). The later staging → main merge sees identical `web/` trees (unless web/ changes again).
-- Staging → main (stable, later): keep this side for `web/` and the Android exporter; don't take main's release-version
-  files from `dc32b8b`. `ci.yml` by hand, never wholesale: keep staging's `publish-release` (tag RC suffix + `prerelease`
-  — main's copy has neither); the release-job verify path fix (main `8bba37f`) is already here (`1720595`); take main's
-  release-job keystore decode; decide `38fcf67` (lint advisory — staging's lint no longer crashes, #196) and `8905b1f`
-  (detekt — baseline predates rc.6, not run against this code; firmware script tests pass on both). `firmware/release/`
-  binaries differ between main and staging; each side passes `verify-release.sh` against its own manifests.
-- After any merge, run all of: `vitest run` (incl. `import.appExports.test.ts` — real ZIPs in
-  `__fixtures__/android-exports/`, `import.androidExport.test.tsx` — `__fixtures__/android-export-rc6/`,
-  `import.noGpsExport.test.tsx`, `import.batchProfile.test.ts`, `hookOrder.test.tsx`, `ImportPanel.test.tsx`,
-  `App.test.tsx`, `readings.test.tsx`, `ComparisonChart.test.tsx`), `eslint .` (0 errors), `tsc -b`, `vite build`, and
-  `scripts/idb-check` (9/9 checks). deploy-pages runs Node 22 `npm ci` + `npm run build` + copies the emulator to
-  `dist/emulator` — checked with Node 22 on `release/sapphire-main`.
-- Deploy (`deploy-pages.yml`: push to main touching `web/**`, or manual dispatch) only from the merged result.
-  Deployed Sapphire (main `0d64248`) imports rc.4+ / rc.6 exports. Known issue: map tiles show "API KEY REQUIRED"
-  (provider, see the rc.6 record).
-- PR checks (`.github/workflows/web-ci.yml`, "Sapphire Web CI", #242): pull requests to main / staging that touch `web/**`
-  or the workflow (plus manual dispatch) run on Node 22 in `web/`: `npm ci`, `npm test`, `npm run lint`, `npx tsc -b`,
-  `npm run build`. Read-only permissions, no deploy, no secrets — separate from `ci.yml` and `deploy-pages.yml`.
 
 Old `MissionControlHtmlBuilder.kt` + `mission_control.html` remain as a "lite" fallback
 until Sapphire reaches feature parity.
