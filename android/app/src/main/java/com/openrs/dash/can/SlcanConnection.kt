@@ -157,8 +157,20 @@ class SlcanConnection(
     @Volatile private var _ledgerFor: ((Int) -> PcmRequestLedger)? = null
     private val possiblyDeliveredNoted = java.util.concurrent.atomic.AtomicBoolean(false)
 
+    /** A tracked request write that threw, counted by what it established (#253 diagnostics). */
+    private fun noteWriteFailure(e: Exception) {
+        if (e is CancellationException) return
+        DiagnosticLogger.countWrite(when {
+            WriteFailure.isNotSent(e) -> DiagnosticLogger.WRITE_NOT_SENT
+            WriteFailure.isUncertain(e) -> DiagnosticLogger.WRITE_UNCERTAIN
+            else -> DiagnosticLogger.WRITE_OTHER_FAILURE
+        })
+    }
+
     /** One bounded line per connection the first time a write comes back possibly delivered (#248). */
     private fun noteWrite(outcome: WriteOutcome) {
+        DiagnosticLogger.countWrite(if (outcome == WriteOutcome.POSSIBLY_DELIVERED) DiagnosticLogger.WRITE_POSSIBLY_DELIVERED
+            else DiagnosticLogger.WRITE_SENT)
         if (outcome == WriteOutcome.POSSIBLY_DELIVERED && possiblyDeliveredNoted.compareAndSet(false, true)) {
             DiagnosticLogger.event("BLE_WRITE", "Adapter answered a write with GATT 13 (longer than its declared maximum); " +
                 "treated as possibly delivered — the request stays outstanding until its reply and is never resent")
@@ -186,6 +198,7 @@ class SlcanConnection(
         _probe = probe
         try {
             try { noteWrite(transport.write(frame)) } catch (e: Exception) {
+                noteWriteFailure(e)
                 // Withdrawn only when certainly not sent — an uncertain or cancelled write may have reached CAN (#248)
                 if (e !is CancellationException && !WriteFailure.isUncertain(e)) ledger.withdraw(req)
                 throw e
@@ -296,6 +309,7 @@ class SlcanConnection(
                 // Requests waiting for a reply, oldest first: a 7F 22 NRC belongs to the oldest one (#216)
                 val pcmRequests = PcmRequestLedger()
                 val framing = SlcanFraming()                     // #251: plain unless the first frames are timestamped
+                var framingNoted = false
                 // Other modules' Mode 22 requests (pollers + prober) by response ID: decides who may own a 7F 22 (#250)
                 val moduleLedgers = java.util.concurrent.ConcurrentHashMap<Int, PcmRequestLedger>()
                 fun ledgerFor(responseId: Int): PcmRequestLedger =
@@ -312,6 +326,7 @@ class SlcanConnection(
                     val ledger = target?.let { ledgerFor(it.first + 8) }
                     val req = target?.let { ledger!!.sent(it.second, clock()) }
                     try { noteWrite(transport.write(q)) } catch (e: Exception) {
+                        noteWriteFailure(e)
                         if (req != null && !WriteFailure.isUncertain(e)) ledger!!.withdraw(req)
                         throw e
                     }
@@ -368,6 +383,7 @@ class SlcanConnection(
                             val start = clock()
                             var req = did?.let { pcmRequests.sent(it, start) }
                             try { noteWrite(transport.write(q)) } catch (e: Exception) {
+                                noteWriteFailure(e)
                                 if (!WriteFailure.isUncertain(e)) { req?.let { pcmRequests.withdraw(it) }; req = null }
                             }
                             sentAny = true
@@ -516,8 +532,10 @@ class SlcanConnection(
                         }
 
                         framing.observe(line)?.let { DiagnosticLogger.event("FRAMING", it) }
+                        if (!framingNoted && framing.locked) { framingNoted = true; DiagnosticLogger.framingDecided(framing.timestamped) }
                         val frame = SlcanParser.parse(line, framing.timestamped)
                         if (frame == null) {
+                            if (line.startsWith("t") || line.startsWith("T")) DiagnosticLogger.countRefusedFrameLine(framing.isOtherShape(line))
                             framing.refused(line)?.let { DiagnosticLogger.event("FRAMING", it) }
                             // Counted for the probe verdict only — adapter text is never logged (#220)
                             if (line.isNotEmpty() && !firmwareDetected.get() && !verdictDone.get()) noise.incrementAndGet()
@@ -592,12 +610,15 @@ class SlcanConnection(
                                         nrcLog.record(nrcCode, reason,
                                             "NRC 0x%02X (%s) — %s; not counted".format(nrcCode, nrcLabel(nrcCode), why), clock())
                                             ?.let { DiagnosticLogger.event("NRC_UNATTRIBUTED", it) }
-                                    } else if ((probing == null || did != probing.did || did in PCM_POLLED_DIDS) &&
-                                               nrcTracker.recordNrc(did, nrcCode, clock())) {
-                                        DiagnosticLogger.event("NRC_SUPPRESS",
-                                            "DID 0x%04X suppressed: NRC 0x%02X (%s), the only request waiting; re-probed after %d s".format(
-                                                did, nrcCode, nrcLabel(nrcCode), NrcTracker.REPROBE_MS / 1000))
-                                        DiagnosticLogger.snapshotNrc(nrcTracker)
+                                    } else {
+                                        DiagnosticLogger.countAttributedNrc()
+                                        if ((probing == null || did != probing.did || did in PCM_POLLED_DIDS) &&
+                                            nrcTracker.recordNrc(did, nrcCode, clock())) {
+                                            DiagnosticLogger.event("NRC_SUPPRESS",
+                                                "DID 0x%04X suppressed: NRC 0x%02X (%s), the only request waiting; re-probed after %d s".format(
+                                                    did, nrcCode, nrcLabel(nrcCode), NrcTracker.REPROBE_MS / 1000))
+                                            DiagnosticLogger.snapshotNrc(nrcTracker)
+                                        }
                                     }
                                 }
                                 continue

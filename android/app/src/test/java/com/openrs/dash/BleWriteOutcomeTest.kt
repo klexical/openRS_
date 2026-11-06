@@ -284,6 +284,9 @@ class BleWriteOutcomeTest {
         advanceTimeBy(30_000L)                                    // many possibly-delivered polls on this connection
         assertEquals(bleWriteEvents().map { it.message }.toString(), 1, bleWriteEvents().size)
         assertTrue(bleWriteEvents().single().message.contains("possibly delivered"))
+        // every possibly-delivered write is counted for the export (#253), though logged once
+        assertTrue(DiagnosticLogger.linkIntegrity.writes.toString(),
+            (DiagnosticLogger.linkIntegrity.writes[DiagnosticLogger.WRITE_POSSIBLY_DELIVERED] ?: 0) > 1)
         link.first.core.onDisconnected(8)                         // link lost → EOF → SlcanConnection reconnects
         advanceTimeBy(60_000L)
         assertTrue("reconnected", link.fakes.size >= 2 && link.fakes.last().chunks.any { it.startsWith("t7E08") })

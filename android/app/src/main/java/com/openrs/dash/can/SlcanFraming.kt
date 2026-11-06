@@ -17,6 +17,15 @@ internal class SlcanFraming {
     /** Lines of the other shape refused on this connection (area 4 diagnostics). */
     @Volatile var otherShapeRejected = 0
         private set
+    /** The connection's framing is decided (plain or timestamped). */
+    val locked: Boolean get() = !detecting
+
+    /** Whether a refused [line] has the shape this connection does NOT use (false while detecting). */
+    fun isOtherShape(line: String): Boolean {
+        if (detecting) return false
+        val shape = SlcanParser.shape(line) ?: return false
+        return (shape == SlcanParser.Shape.TIMESTAMPED) != timestamped
+    }
 
     /** Before parsing [line]: advances detection. Returns an event text to log once, else null. */
     fun observe(line: String): String? {

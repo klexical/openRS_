@@ -5,6 +5,7 @@ import com.openrs.dash.data.VehicleState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 /**
@@ -15,6 +16,8 @@ import org.junit.Test
  * One-byte values in a short reply and complete replies with padding are controls. SYNTHETIC frames.
  */
 class Mode22LengthTest {
+    @Before fun session() { com.openrs.dash.diagnostics.DiagnosticLogger.sessionStart("test", 0, prefs = null) }
+
     private fun bytes(vararg b: Int) = ByteArray(b.size) { b[it].toByte() }
     private val base = VehicleState(isConnected = true)
 
@@ -26,6 +29,7 @@ class Mode22LengthTest {
 
     @Test fun `a two-byte value whose PCI carries one data byte changes nothing - TIP 0x033E`() {
         assertNull(pcm(0x04, 0x62, 0x03, 0x3E, 0x4F, 0x00, 0x00, 0x00))          // PCI 04: the 00 after 4F is padding
+        assertEquals("counted for the export (#253)", 1, com.openrs.dash.diagnostics.DiagnosticLogger.linkIntegrity.refusedReplies)
     }
 
     @Test fun `a PCI that claims more bytes than the frame holds is refused - 0x0304`() {

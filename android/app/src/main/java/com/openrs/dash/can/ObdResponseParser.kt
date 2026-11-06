@@ -21,6 +21,7 @@ object ObdResponseParser {
     private const val TAG = "OBD"
 
     private fun logMalformed(module: String, data: ByteArray, reason: String) {
+        com.openrs.dash.diagnostics.DiagnosticLogger.countRefusedReply()            // counted for the export (#253)
         Log.w(TAG, "$module: $reason [${data.joinToString(" ") { "%02X".format(it) }}]")
     }
 

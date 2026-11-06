@@ -75,6 +75,7 @@ class SlcanFramingModeTest {
         assertEquals(80.0, vs.peakOilTempC, 0.0)
         assertEquals(framingEvents().toString(), 1, framingEvents().size)
         assertTrue(framingEvents().single().contains("timestamp"))
+        assertEquals(true, DiagnosticLogger.linkIntegrity.framingTimestamped)
     }
 
     @Test fun `control - a plain stream stays plain with no FRAMING event`() = runTest {
@@ -92,6 +93,10 @@ class SlcanFramingModeTest {
         assertEquals(70.0, vs.oilTempC, 0.0)
         assertEquals("no peak from the +4 line", 70.0, vs.peakOilTempC, 0.0)
         assertTrue(framingEvents().toString(), framingEvents().isEmpty())
+        val li = DiagnosticLogger.linkIntegrity
+        assertEquals("locked plain", false, li.framingTimestamped)
+        assertEquals("the +4 line was refused (it came before the plain lock, so not counted as other-shape)", 1,
+            li.refusedFrameLines)
     }
 
     @Test fun `a plain line inside a timestamped stream is refused`() = runTest {
@@ -105,6 +110,9 @@ class SlcanFramingModeTest {
         assertEquals("never switched mid-connection", 70.0, vs.oilTempC, 0.0)
         assertEquals(framingEvents().toString(), 1, framingEvents().size)
         assertTrue(framingEvents().single().contains("50 consecutive timestamped"))
+        val li = DiagnosticLogger.linkIntegrity
+        assertEquals(120, li.refusedFrameLines)
+        assertEquals("all counted, not only the first 50", 120, li.refusedOtherShape)
     }
 
     // ── A new connection detects again ──────────────────────────────────────────────────────────────────────────────

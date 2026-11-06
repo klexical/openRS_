@@ -140,6 +140,7 @@ class ProberAttributionTest {
     @Test fun `control - without a probe a DID that starts rejecting is suppressed`() = runTest {
         rejectionAfterProbe(withProbe = false)
         assertTrue(DiagnosticLogger.nrcSuppressed.keys.toString(), 0x03ED in DiagnosticLogger.nrcSuppressed.keys)
+        assertTrue("attributed NRCs counted for the export (#253)", DiagnosticLogger.linkIntegrity.nrcAttributed >= 2)
     }
 
     // Case 3 split (rc.8 reliability pass): each invariant fails on its own — the first assertion no longer hides the second.
