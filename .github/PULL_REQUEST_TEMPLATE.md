@@ -7,6 +7,11 @@ Brief description of the changes.
 - [ ] Documentation update
 - [ ] Refactor / performance improvement
 
+## Issues and evidence
+- Tracking issue(s), including any newly discovered follow-ups:
+- Evidence: what failed before, what passed after, and which checks were synthetic, emulator, or hardware:
+- Diagnostic/vehicle changes: source and session attribution, genuine zero vs unavailable/stale, and sanitized fixture or reason unavailable:
+
 ## Testing
 - [ ] Tested on phone UI
 - [ ] Tested with real WiCAN + Focus RS

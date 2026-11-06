@@ -11,12 +11,14 @@ signer `c99b6f26…` (= rc.6), Maps key present, no weather key — verified ind
 disposable emulator (synthetic adapter / GPS). **Hardware:** no phone
 or car run of Build 37 or of the published APK; the owner's phone / Bluetooth and on-car checks were on Build 36 builds (see the
 record). Everything below about candidates, integration branches and "unpushed" work is **history** — kept as the record.
-**rc.7 Build 38 (maintenance asset, prepared 2026-11-04 — NOT published until the owner approves):** versionCode 38 = rc.7
-maintenance asset `openrs-2.2.7-rc.7-build38.apk`, to be ADDED to the existing `android-v2.2.7-rc.7` release beside the
-untouched `openRS_v2.2.7-rc.7.apk` (Build 37) — same versionName `2.2.7-rc.7`, same certificate, no new tag / release. Its one
-change: the live gauge is labelled plain BOOST again — Build 37 showed TIP (#207). Built, attested and uploaded only by
-`.github/workflows/rc-maintenance-asset.yml` from the source pinned in `android/release-maintenance.json`. Manual in-place
-upgrade from the release notes; the in-app updater never offers it. Record: Branch / Release Workflow → rc.7 → Build 38.
+**rc.7 Build 38 (maintenance asset, published 2026-11-05 UTC):** versionCode 38 = rc.7 maintenance asset
+`openrs-2.2.7-rc.7-build38.apk` (SHA-256 `839cdf3e…a0cd1`), ADDED to the existing `android-v2.2.7-rc.7` release beside the
+untouched `openRS_v2.2.7-rc.7.apk` (Build 37) — same versionName `2.2.7-rc.7`, same certificate, no new tag / release; the
+tag (`43ad5e1`), the original asset and the prerelease flag are unchanged. Its one change: the live gauge is labelled plain
+BOOST again — Build 37 showed TIP (#207). PR #247 → staging `32b13ac`; built, attested and uploaded by
+`.github/workflows/rc-maintenance-asset.yml` (run 41956174329; since retired) from the source pinned in `android/release-maintenance.json`.
+Manual in-place upgrade from the release notes; the in-app updater never offers it. Record: Branch / Release Workflow → rc.7
+→ Build 38.
 Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashboard) → `web/`  |  Docs → `docs/`  |  Feature pipeline → `docs/feature-roadmap.md`
 
 ## Source Layout
@@ -416,6 +418,31 @@ data[5] = B5,  data[6] = B6 …
   IOException into `Result.failure` (cancellation still propagates). The UI launches (DriveModeDock, MorePage ESC) have
   no catch, so an escaped exception ended the process. Keep every `FirmwareCommandSender` inside its `Result` contract.
   `BleCommandSendFailureTest` (real SlcanConnection over BleGattCore, fake GATT)
+- **A BLE write can fail yet reach the bus; `sendRawQuery` has no catch (open in rc.7 Builds 37 / 38: #248, #249)**
+  - `BleGattCore.writeLine` sends each SLCAN line in `mtu − 3` byte chunks. After the MTU 247 request, a 22-byte `t…`
+    frame (PCM polls, DTC requests, the DID prober's `t7E08…` + CR) is one ATT write.
+  - Any non-success status becomes `IOException("BLE write failed (GATT N)")` (`BleAdapterProfile.afterWrite`).
+  - An adapter that answers writes over 20 bytes with GATT 13 (0x0D, invalid attribute length) while still delivering them
+    makes every frame write "fail". This is reported for the WiCAN Pro's FFF2 and not verified in this repo (upstream
+    `ble.c` isn't vendored).
+  - Effects:
+    - `SlcanConnection.sendRawQuery` wraps `writeLine` in try / finally with no catch, and `CanDataService.sendRawQuery`
+      passes it through. DIAG → DID PROBER calls it from `scope.launch` with no handler → uncaught crash in Builds 37 / 38
+      (#249; the rc.8 fix contains it in the scan loop; see the DID prober gotcha).
+    - The PCM poller withdraws a request whose write failed (`PcmRequestLedger.withdraw`), so an NRC that does arrive is
+      never attributed and NRC suppression can't engage (#216).
+    - DTC scan modules report "write failed".
+  - Lines of 20 bytes or less (`OPENRS?`, `AT+FRS…`) are not affected.
+  - Before fixing by splitting writes to ≤ 20 bytes, confirm the adapter firmware reassembles one SLCAN line from several
+    writes (unverified). `sendRawQuery` throws on write failure / no connection, so every caller must catch.
+  - Separately, `sendRawQuery` takes the first frame from the module's response ID without checking the DID, so a poll
+    reply or NRC can become the probe's result (#250).
+- **`SlcanParser` accepts DLC-0 and over-long lines (#251)**
+  - A `t` / `T` line parses as soon as it holds the bytes its DLC needs. Trailing characters are ignored, and DLC 0 gives an
+    empty payload (`parseStdFrame` / `parseExtFrame` check `length <` only).
+  - On a lossy link (reported over BLE), a corrupt line can reach the decoders as a valid frame. A single bad 0x1B0 / 0x420
+    frame can flip the decoded drive mode briefly and could satisfy a drive-mode confirmation (#252).
+  - The PCM Mode 22 parser also doesn't check the PCI payload length; a short reply's missing low byte reads as 0.
 - **BLE write timeout = link closed (#218)** — Android's `onCharacteristicWrite` names no write; after a 2 s timeout a late
   callback would complete the next write. `BleGattCore` invalidates + closes the link (reader EOF → SlcanConnection
   reconnects); later writes fail at once. `SlcanConnection` swallows write errors, so teardown must come from the reader.
@@ -507,6 +534,12 @@ data[5] = B5,  data[6] = B6 …
   installs its own — `remember { LapTimer() }` + assignment let a recreated activity (rotation) put a new, unarmed timer on the
   recorder mid-drive, so the line vanished and STOP lost the laps before it. `recorder.lapTimer` stays assignable for tests
   (`LapRecreationTest`)
+  `stopDrive()` takes its STOP time (= `endTime`), end readings, fuel economy and `takeLaps(driveId)` at the call and
+  returns the finalization `Job` (tests join it); the reverse-geocode name lookup runs before, outside the transaction. A
+  paused or disconnected fix is never fed to the timer — the loop calls `LapTimer.breakTrack(driveId)` instead. LapTimer's
+  mutating methods are `@Synchronized` (the overlay getters `currentLapElapsedMs` / `deltaVsBestMs` are not — #246).
+  Test seams: `DriveRecorder(…, dao, geocode, locationSource, onSummary)`; constructor defaults are production
+  (`DriveFinalizeTest`)
 - **STOP waits for the drive's out-of-loop point writes (#241, fix branch `d3264c8`)** — an active export
   (`snapshotActiveDrive`) or pause flush takes points from `DriveRun.pointsBuffer` and inserts them outside the loop; STOP
   read the thumbnail input while that insert ran (3 / 23 points, partial PNG cached for good — `generateAndCache` never
@@ -734,6 +767,10 @@ data[5] = B5,  data[6] = B6 …
   `~/.android/debug.keystore` (`android` / `androiddebugkey`). The R8 output is the release's; the signer and the missing
   keys (blank map, one Maps "Authorization failure" log line) make it NOT distributable. Use it only on a NEW disposable
   AVD. The Maps key is restricted to the release cert, so a debug-signed build fails Maps even WITH the key.
+  To de-obfuscate a published release's stack trace, rebuild that tag's commit from a clean checkout this way and confirm
+  its dex is byte-identical to the published APK's before trusting the R8 mapping. The weather key is a `BuildConfig`
+  field (it lands in the dex) and `SOURCE_COMMIT` / `SOURCE_DIRTY` are too; the Maps key is a manifest placeholder (it
+  doesn't). So this only works for a release built without a weather key (the rc.7 assets) from the same, clean commit.
 - **Private release-signed build (owner approval per build)** — in a scratch clone (all tags fetched, no rc tag created),
   SYMLINK (never copy) `android/keystore.properties`, `android/local.properties` AND `android/openrs-release.jks` from the
   main checkout: `storeFile` is relative to `android/`, so linking the properties alone doesn't find the keystore. All
@@ -892,6 +929,15 @@ Drive-mode dock / ESC buttons / DTC clear act on simulated state only (mode land
   DOWN/MOVE…/UP` — `input swipe` is ignored. `probe.sh` there snapshots pid / service / notification / task
 - The HUD overlay needs `adb shell appops set com.openrs.dash.debug SYSTEM_ALERT_WINDOW allow` on a fresh emulator
   (restore with `… default`); start it from ⚙ → DISPLAY → FLOATING HUD. A reinstall stops it
+- Lap / GPS checks on the emulator:
+  - The fused provider attaches its own, noisy bearing to `geo fix` fixes. TRIP's SET S/F passes the fix's bearing
+    whenever `hasBearing()` (`LapTimer.setStartFinish`), so a line set while parked can point any way and every pass reads
+    NO_CROSSING — set S/F while the injected route is moving.
+  - The recorder stores one point per fused-location callback (`result.lastLocation`; ~1.2 s apart against a 1 s
+    `geo fix`), so injected fixes and recorded points are not 1:1 — count by timestamp window, not by fix.
+  - TRIP shows the drive history only while it isn't live (`isLive` = connected or recording, `TripPage`): disconnect
+    from the header pill, with no drive recording, to see it.
+  - On a non-debuggable build, read saved laps from the drive export's `drive_profile_*.json` (`laps` array).
 
 Keys: `android/local.properties` (`MAPS_API_KEY`, `OPENWEATHER_API_KEY`) or the same names in the environment — optional for
 local builds (#235); `android/keystore.properties` for release signing.
@@ -1001,6 +1047,13 @@ Current count: **1108 tests / 95 classes** per variant (Android, rc.7 Build 38 b
 Temurin 17); **1102 / 94** at rc.7 = `43ad5e1` (same Android sources as #238 head `040a1f8`) + **293 vitest across 26 files** (Sapphire at rc.7 — run `web/node_modules/.bin/vitest run` and `tsc -b`). Earlier
 totals: 1085 / 90 `2033fda`; 1072 / 87 `d3264c8`; 1066 / 86 `8d1903e`; 1045 / 84 `0e4c120`; 1034 / 81 `7bb8a9a`; 1025 / 79
 `81baa76` (`8d1903e` / `0e4c120` / `7bb8a9a` / `81baa76` are local build IDs from the pre-cleanup history — not on GitHub).
+
+## Issue tracking and field evidence
+
+- When a new defect, safety-sensitive control ambiguity, or unresolved telemetry discrepancy is found, search open *and closed* issues, then update the matching issue or file a narrowly scoped one. Do this at triage, even when it came up during an RC. A private evidence note alone does not complete triage.
+- Record the build/source, transport, expected vs observed behavior, evidence class (owner report, captured, reproduced, or hypothesis), priority, component, verification owner and acceptance test. Use only sanitized facts on GitHub. Keep raw captures, human/device identifiers, routes and secrets local.
+- If GitHub writes are unavailable or not yet approved, keep a private pending ledger; reconcile each entry to an actual issue URL and status as soon as access returns. Do not report drafts as filed. Link issues in fixes, regression evidence and changelog. Carry unresolved work into the next milestone; close only the shipped and verified scope.
+- For vehicle controls, a matching broadcast after a request is an observation, not proof of causation when factory controls or another client could have set that state.
 
 ## Branch / Release Workflow
 
@@ -1361,9 +1414,16 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
   - boost peak caption in psi;
   - the Sapphire per-source peaks O(n²);
   - recorded views: a display-only "BOOST (CAN)" label for CAN 0x0F8 points, so a recorded "BOOST" isn't read as the live
-    TIP gauge (#207 follow-up; no export / schema / history change).
+    TIP gauge (#207 follow-up; no export / schema / history change);
+  - What's New's #229 line says older drives "are marked as recorded before the fix" (`ui/WhatsNewDialog.kt`), but
+    RaceChrono / TrackAddict files can't carry that mark (CHANGELOG #229 limitation) — the line overstates for those two
+    formats;
+  - RaceChrono / TrackAddict CSVs write the `-99.0` "not received" sentinel for a missing coolant / oil temperature;
+    blank cells would suit third-party tools.
 - **Not done:** issue closures, stable promotion (staging → main), cleanup of disposable AVDs / scratch clones / worktrees. Each needs the owner.
-- **Build 38 — rc.7 maintenance asset (prepared 2026-11-04; publication pending the owner's direct approval):**
+- **Build 38 — rc.7 maintenance asset (published 2026-11-05 UTC: PR #247 → staging `32b13ac`, `rc-maintenance-asset.yml`
+  run 41956174329; asset `openrs-2.2.7-rc.7-build38.apk`, 6,589,740 B, SHA-256 `839cdf3e…a0cd1`; original asset, tag and
+  prerelease flag unchanged):**
   - Owner-approved scope: amend the EXISTING rc.7 release — no new release, tag or retag; the original tag, asset
     `openRS_v2.2.7-rc.7.apk` (`eb937284…`), its attestation and the prerelease flag are never touched.
   - Source: `feature/boost-label-throttle-inlet` on `b314729` (= staging `256758f`'s tree): `c1392a6` live gauge label,
@@ -1428,7 +1488,7 @@ Every release follows the same structure. Consistency matters — do not deviate
 **Rules:**
 1. **Sections** — use only these four, in this order: `Added`, `Fixed`, `Changed`, `Removed`. No synonyms (not "Improved", "Refactored", "Stability", "Performance").
 2. **RC sub-sections** — append `(rc.N)` to the section header when a version has multiple RCs: `### Fixed (rc.3)`. Add a short label after the RC number for context: `### Added (rc.4 — visual polish)`.
-3. **Issue links are mandatory** — every entry that originated from or addresses a GitHub issue MUST end with the issue link: `([#N](url))`. If it addresses a sub-item in an umbrella issue, use: `(addresses [#N](url))`. Entries for bugs found and fixed within the same RC (no issue exists) are exempt.
+3. **Issue links are mandatory** — every entry that originated from or addresses a GitHub issue MUST end with the issue link: `([#N](url))`. If it addresses a sub-item in an umbrella issue, use: `(addresses [#N](url))`. Bugs found and fixed in the same RC also get a tracking issue and link.
 4. **One format for links** — always `[#N](https://github.com/klexical/openRS_/issues/N)`. Never bare `(#N)`, never `Fixes #N` or `Addresses sub-item in #N` inline.
 5. **Entry length** — 1-3 sentences. Lead with what changed, then why. Include the file/class name when it helps locate the change. Do not write paragraphs — the commit message has the full detail.
 6. **Never shorten or rewrite previous RC entries** — when adding a new RC section, append it. Do not edit, condense, or rephrase entries from earlier RCs.
@@ -1582,6 +1642,9 @@ superseded, so **take this side for every `web/` file** when merging:*
 - Deploy (`deploy-pages.yml`: push to main touching `web/**`, or manual dispatch) only from the merged result.
   Deployed Sapphire (main `0d64248`) imports rc.4+ / rc.6 exports. Known issue: map tiles show "API KEY REQUIRED"
   (provider, see the rc.6 record).
+- PR checks (`.github/workflows/web-ci.yml`, "Sapphire Web CI", #242): pull requests to main / staging that touch `web/**`
+  or the workflow (plus manual dispatch) run on Node 22 in `web/`: `npm ci`, `npm test`, `npm run lint`, `npx tsc -b`,
+  `npm run build`. Read-only permissions, no deploy, no secrets — separate from `ci.yml` and `deploy-pages.yml`.
 
 Old `MissionControlHtmlBuilder.kt` + `mission_control.html` remain as a "lite" fallback
 until Sapphire reaches feature parity.
