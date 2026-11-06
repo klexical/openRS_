@@ -10,6 +10,9 @@ package com.openrs.dash.data
  * from an older snapshot never puts an older voltage back.
  */
 object ObdMerge {
+    /** Prefix of every drive-mode stamp key — all written by CanDecoder.stampFresh only (#252); OBD never stamps one. */
+    private const val DRIVE_MODE_KEYS = "driveMode"
+
     /**
      * The reply is a copy of the live-state snapshot with the decoded field stamped, so it carried [tag] when its stamp is
      * at least as new as the current one. An unrelated reply holds the snapshot's older stamp (or none) and leaves the
@@ -109,6 +112,9 @@ object ObdMerge {
             warnTempHigh    = obd.warnTempHigh    ?: current.warnTempHigh,
             // Freshness stamps from markFresh()/putGeneric() — previously dropped here,
             // which left every OBD field without a stamp (UI read them as STALE).
-            fieldLastUpdateMs = VehicleState.mergeStamps(current.fieldLastUpdateMs, obd.fieldLastUpdateMs),
+            // Drive-mode provenance keys are CAN-only and partly signalled by ABSENCE (#252): an OBD reply carries the
+            // snapshot it was parsed against, so they are never taken from it — the live state's set is kept exactly
+            fieldLastUpdateMs = VehicleState.mergeStamps(current.fieldLastUpdateMs,
+                obd.fieldLastUpdateMs.filterKeys { !it.startsWith(DRIVE_MODE_KEYS) }),
         )
 }

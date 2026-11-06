@@ -188,7 +188,7 @@ class ModeAttributionReplayTest {
 
     // ── Corroboration (9d area 3 review F1): a single well-formed outlier never confirms or corrects ─────────────────
 
-    @Test fun `TRAFFIC - one documented but wrong 0x420 can't confirm Sport while the car stays in Track`() = runTest {
+    @Test fun `SPEC - one documented but wrong 0x420 can't confirm Sport while the car stays in Track`() = runTest {
         // 9d's probe: byte 6 0x11 is documented, bit 0 says Sport — a single frame, then Track detail again
         val sender = Sender()
         val (r, car) = play(rows("""
