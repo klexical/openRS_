@@ -1031,6 +1031,16 @@ pnpm build                    # production build → dist/
 pnpm preview                  # preview production build
 ```
 
+**Testing notes:**
+- Sapphire tests touching `localStorage` (store / App): Node 25's own `localStorage` global (non-functional without
+  `--localstorage-file`) shadows jsdom's — stub one per test (`vi.stubGlobal('localStorage', …)`, see `App.test.tsx`)
+- Sapphire browser smoke (prod build, chart gaps / paints / remembered view): `node smoke.mjs <dist> <profile> <shots>
+  <fixtures>` from `~/Documents/openRS_-evidence/sapphire-smoke-2026-10-27/` with Playwright (same setup as
+  `web/scripts/idb-check/check.mjs`); build with `--outDir` outside the repo; IndexedDB is per origin, so each run
+  (random port) starts empty
+- Sapphire import contract: `web/src/lib/import.androidExport.test.tsx` imports complete Android exports from
+  `__fixtures__/android-export-rc6/`; regenerate with `OPENRS_EXPORT_SAMPLES=<dir> ./gradlew test --tests '*DriveExportThermalTest'`
+
 **Release merge checklist (staging ↔ main):** moved out on 2026-11-05. It is a one-time runbook for the stable promotion
 (which side to take per file, the `ci.yml` hand-merge, the checks to run after the merge). Read it before merging staging
 into main: the last full copy is this file at commit `000c572`, section Sapphire. The follow-ups below came with it and are
