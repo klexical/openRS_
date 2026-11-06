@@ -190,7 +190,7 @@ class ObdResponseParserTest {
         // 128 -> 128 * 0.1144 = 14.64
         var result: VehicleState? = null
         ObdResponseParser.parsePcmResponse(
-            makeResponse(0xF4, 0x44, 128),
+            makeResponse(0xF4, 0x44, 128, 0),   // 0xF444 is two bytes (λ); rc.8 #251 refuses a one-byte reply
             blank
         ) { result = it }
         assertNotNull(result)

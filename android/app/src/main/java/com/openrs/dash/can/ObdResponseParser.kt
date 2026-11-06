@@ -24,6 +24,22 @@ object ObdResponseParser {
         Log.w(TAG, "$module: $reason [${data.joinToString(" ") { "%02X".format(it) }}]")
     }
 
+    /**
+     * Data bytes a single-frame positive reply carries per its own PCI (#251): `0N 62 DH DL d1 … d(N−3)` → N − 3. Null when
+     * the PCI isn't a single frame, claims no data byte, or claims more bytes than the frame holds (a truncated line) —
+     * bytes past the PCI length are padding and never read as data.
+     */
+    internal fun singleFrameDataBytes(data: ByteArray): Int? {
+        val pci = data[0].toInt() and 0xFF
+        if (pci shr 4 != 0) return null
+        val n = pci and 0x0F
+        if (n < 4 || n > data.size - 1) return null
+        return n - 3
+    }
+
+    /** A decoder read a data byte its reply doesn't carry — nothing is updated (no value, no freshness stamp). */
+    private class ShortReply : RuntimeException("reply shorter than its value", null, false, false)
+
     fun parseBcmResponse(
         data: ByteArray,
         currentState: VehicleState,
@@ -31,11 +47,12 @@ object ObdResponseParser {
     ) {
         if (data.size < 5) { logMalformed("BCM", data, "too short (${data.size} < 5)"); return }
         if ((data[1].toInt() and 0xFF) != 0x62) return
+        val avail = singleFrameDataBytes(data) ?: run { logMalformed("BCM", data, "PCI and frame length disagree"); return }
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
         when (did) {
             0xDD01 -> {
-                if (data.size < 7) return
+                if (avail < 3) return
                 val km = ((b4 shl 16) or
                          ((data[5].toInt() and 0xFF) shl 8) or
                           (data[6].toInt() and 0xFF)).toLong()
@@ -47,7 +64,7 @@ object ObdResponseParser {
             0x411D -> onObdUpdate(currentState.copy(batteryChargingVoltageDesired = b4 * 0.1).markFresh("batteryChargingVoltageDesired"))
             // Battery current: ((A*256+B)/16) - 511.7 amps; signed (+ charging, − discharging)
             0x4090 -> {
-                if (data.size < 6) return
+                if (avail < 2) return
                 val b5 = data[5].toInt() and 0xFF
                 onObdUpdate(currentState.copy(
                     batteryCurrentA = ((b4 * 256 + b5) / 16.0) - 511.7
@@ -55,7 +72,7 @@ object ObdResponseParser {
             }
             // TPMS: PSI = (((256*A)+B) / 3.0 + 22.0/3.0) * 0.145
             0x2813, 0x2814, 0x2816, 0x2815 -> {
-                if (data.size < 6) return
+                if (avail < 2) return
                 val b5 = data[5].toInt() and 0xFF
                 val psi = ((b4 * 256.0 + b5) / 3.0 + 22.0 / 3.0) * 0.145
                 if (psi < 5.0 || psi > 70.0) return
@@ -69,7 +86,7 @@ object ObdResponseParser {
             }
             // TPMS sensor IDs — 4-byte ID per tire position, polled once on connect
             0x280F, 0x2810, 0x2811, 0x2812 -> {
-                if (data.size < 8) return
+                if (avail < 4) return
                 val sensorId = ((b4.toLong() shl 24) or
                     ((data[5].toInt() and 0xFF).toLong() shl 16) or
                     ((data[6].toInt() and 0xFF).toLong() shl 8) or
@@ -162,40 +179,46 @@ object ObdResponseParser {
     ) {
         if (data.size < 5) { logMalformed("AWD", data, "too short (${data.size} < 5)"); return }
         if ((data[1].toInt() and 0xFF) != 0x62) return
+        val avail = singleFrameDataBytes(data) ?: run { logMalformed("AWD", data, "PCI and frame length disagree"); return }
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
         val b4s = data[4].toInt()
-        val b5  = if (data.size > 5) data[5].toInt() and 0xFF else 0
-        when (did) {
-            0x1E8A -> onObdUpdate(currentState.copy(rduTempC = (b4 - 40).toDouble()).markFresh("rduTempC"))
-            0x1E8B -> onObdUpdate(currentState.copy(awdClutchTempL = (b4 - 40).toDouble()).markFresh("awdClutchTempL"))
-            0x1E8C -> onObdUpdate(currentState.copy(awdClutchTempR = (b4 - 40).toDouble()).markFresh("awdClutchTempR"))
-            0x1E90 -> onObdUpdate(currentState.copy(awdReqTorqueL = ((b4 shl 8) or b5).toDouble()).markFresh("awdReqTorqueL"))
-            0x1E91 -> onObdUpdate(currentState.copy(awdReqTorqueR = ((b4 shl 8) or b5).toDouble()).markFresh("awdReqTorqueR"))
-            0x1E92 -> onObdUpdate(currentState.copy(awdDmdPressure = ((b4 shl 8) or b5).toDouble()).markFresh("awdDmdPressure"))
-            0x1E93 -> onObdUpdate(currentState.copy(awdPumpCurrent = b4 * 0.1).markFresh("awdPumpCurrent"))
-            0x1E80 -> onObdUpdate(currentState.copy(transOilTempC = (b4 - 40).toDouble()).markFresh("transOilTempC"))
-            // Per-clutch hydraulic actuator currents/pressures (focusrs.org RDU thread)
-            0x1E9E -> onObdUpdate(currentState.copy(
-                awdClutchCurL = ((b4s.toByte().toInt() shl 8) or b5) / 128.0
-            ).markFresh("awdClutchCurL"))
-            0x1E9F -> onObdUpdate(currentState.copy(
-                awdClutchCurR = ((b4s.toByte().toInt() shl 8) or b5) / 128.0
-            ).markFresh("awdClutchCurR"))
-            0x1ED1 -> onObdUpdate(currentState.copy(
-                awdClutchPressureL = (((b4s.toByte().toInt() shl 8) or b5) * 2).toDouble()
-            ).markFresh("awdClutchPressureL"))
-            0x1ED2 -> onObdUpdate(currentState.copy(
-                awdClutchPressureR = (((b4s.toByte().toInt() shl 8) or b5) * 2).toDouble()
-            ).markFresh("awdClutchPressureR"))
-            0xEE0B -> onObdUpdate(currentState.copy(rduEnabled = b4 == 0x01).markFresh("rduEnabled"))
-            else -> {
-                val decoded = PidRegistry.decode(ObdConstants.AWD_RESPONSE_ID, did, b4)
-                if (decoded != null) {
-                    val (field, value) = decoded
-                    onObdUpdate(currentState.putGeneric(field, value))
+        val b5OrNull = if (avail >= 2) data[5].toInt() and 0xFF else null
+        val b5 by lazy(LazyThreadSafetyMode.NONE) { b5OrNull ?: throw ShortReply() }
+        try {
+            when (did) {
+                0x1E8A -> onObdUpdate(currentState.copy(rduTempC = (b4 - 40).toDouble()).markFresh("rduTempC"))
+                0x1E8B -> onObdUpdate(currentState.copy(awdClutchTempL = (b4 - 40).toDouble()).markFresh("awdClutchTempL"))
+                0x1E8C -> onObdUpdate(currentState.copy(awdClutchTempR = (b4 - 40).toDouble()).markFresh("awdClutchTempR"))
+                0x1E90 -> onObdUpdate(currentState.copy(awdReqTorqueL = ((b4 shl 8) or b5).toDouble()).markFresh("awdReqTorqueL"))
+                0x1E91 -> onObdUpdate(currentState.copy(awdReqTorqueR = ((b4 shl 8) or b5).toDouble()).markFresh("awdReqTorqueR"))
+                0x1E92 -> onObdUpdate(currentState.copy(awdDmdPressure = ((b4 shl 8) or b5).toDouble()).markFresh("awdDmdPressure"))
+                0x1E93 -> onObdUpdate(currentState.copy(awdPumpCurrent = b4 * 0.1).markFresh("awdPumpCurrent"))
+                0x1E80 -> onObdUpdate(currentState.copy(transOilTempC = (b4 - 40).toDouble()).markFresh("transOilTempC"))
+                // Per-clutch hydraulic actuator currents/pressures (focusrs.org RDU thread)
+                0x1E9E -> onObdUpdate(currentState.copy(
+                    awdClutchCurL = ((b4s.toByte().toInt() shl 8) or b5) / 128.0
+                ).markFresh("awdClutchCurL"))
+                0x1E9F -> onObdUpdate(currentState.copy(
+                    awdClutchCurR = ((b4s.toByte().toInt() shl 8) or b5) / 128.0
+                ).markFresh("awdClutchCurR"))
+                0x1ED1 -> onObdUpdate(currentState.copy(
+                    awdClutchPressureL = (((b4s.toByte().toInt() shl 8) or b5) * 2).toDouble()
+                ).markFresh("awdClutchPressureL"))
+                0x1ED2 -> onObdUpdate(currentState.copy(
+                    awdClutchPressureR = (((b4s.toByte().toInt() shl 8) or b5) * 2).toDouble()
+                ).markFresh("awdClutchPressureR"))
+                0xEE0B -> onObdUpdate(currentState.copy(rduEnabled = b4 == 0x01).markFresh("rduEnabled"))
+                else -> {
+                    val decoded = PidRegistry.decode(ObdConstants.AWD_RESPONSE_ID, did, b4, b5OrNull)
+                    if (decoded != null) {
+                        val (field, value) = decoded
+                        onObdUpdate(currentState.putGeneric(field, value))
+                    }
                 }
             }
+        } catch (_: ShortReply) {
+            logMalformed("AWD", data, "DID 0x%04X: $avail data byte(s), its value needs more".format(did))
         }
     }
 
@@ -210,104 +233,110 @@ object ObdResponseParser {
     ) {
         if (data.size < 5) { logMalformed("PCM", data, "too short (${data.size} < 5)"); return }
         if ((data[1].toInt() and 0xFF) != 0x62) return
+        val avail = singleFrameDataBytes(data) ?: run { logMalformed("PCM", data, "PCI and frame length disagree"); return }
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
         val b4s = data[4].toInt()
-        val b5  = if (data.size > 5) data[5].toInt() and 0xFF else 0
-        when (did) {
-            // ETC throttle plate angle, unsigned 16-bit / 512 = degrees (#206 — DigiCluster on-car verified "1.71°
-            // matched AP"; the FORScan-catalog ×100/8192 read 6.25× high: 111° desired). Not pedal / throttle %.
-            0x093C -> onObdUpdate(currentState.copy(
-                etcAngleActual = ((b4 shl 8) or b5) / 512.0
-            ).markFresh("etcAngleActual"))
-            0x091A -> onObdUpdate(currentState.copy(
-                etcAngleDesired = ((b4 shl 8) or b5) / 512.0
-            ).markFresh("etcAngleDesired"))
-            0x0462 -> onObdUpdate(currentState.copy(
-                wgdcDesired = b4 * 100.0 / 128.0
-            ).markFresh("wgdcDesired"))
-            0x03EC -> onObdUpdate(currentState.copy(
-                ignCorrCyl1 = ((b4s.toByte().toInt() shl 8) or b5) / -512.0
-            ).markFresh("ignCorrCyl1"))
-            0x03ED -> onObdUpdate(currentState.copy(
-                ignCorrCyl2 = ((b4s.toByte().toInt() shl 8) or b5) / -512.0
-            ).markFresh("ignCorrCyl2"))
-            0x03EE -> onObdUpdate(currentState.copy(
-                ignCorrCyl3 = ((b4s.toByte().toInt() shl 8) or b5) / -512.0
-            ).markFresh("ignCorrCyl3"))
-            0x03EF -> onObdUpdate(currentState.copy(
-                ignCorrCyl4 = ((b4s.toByte().toInt() shl 8) or b5) / -512.0
-            ).markFresh("ignCorrCyl4"))
-            0x03E8 -> onObdUpdate(currentState.copy(
-                octaneAdjustRatio = ((b4s.toByte().toInt() shl 8) or b5) / 16384.0
-            ).markFresh("octaneAdjustRatio"))
-            // Charge air temp: signed /64 °C. Raw 0x0000 = no data — two RS PCMs answered 0x0000 for a whole
-            // warming drive (ambient 3.5 °C, Discussion #182 + 2026-10-22 log); leave −99 rather than show 0.0 °C.
-            0x0461 -> if (b4 != 0 || b5 != 0) onObdUpdate(currentState.copy(
-                chargeAirTempC = ((b4s.toByte().toInt() shl 8) or b5) / 64.0
-            ).markFresh("chargeAirTempC"))
-            0xF43C -> onObdUpdate(currentState.copy(
-                catalyticTempC = ((b4 shl 8) or b5) / 10.0 - 40.0
-            ).markFresh("catalyticTempC"))
-            0xF434 -> {
-                val afr = ((b4 shl 8) or b5) * 0.0004486
-                onObdUpdate(currentState.copy(afrActual = afr, lambdaActual = afr / 14.7, afrSensor1 = afr)
-                    .markFresh("afrActual", "lambdaActual", "afrSensor1"))
-            }
-            // Commanded equivalence ratio (Mode 01 PID 0x44): 2 bytes, λ = raw / 32768
-            0xF444 -> onObdUpdate(currentState.copy(
-                afrDesired   = b4 * 0.1144,
-                commandedAfr = ((b4 shl 8) or b5) / 32768.0
-            ).markFresh("afrDesired", "commandedAfr"))
-            // Calculated load (PID 0x04): A × 100/255 %
-            0xF404 -> onObdUpdate(currentState.copy(calcLoad = b4 * 100.0 / 255.0).markFresh("calcLoad"))
-            // Timing advance (PID 0x0E): A/2 − 64 °BTDC
-            0xF40E -> onObdUpdate(currentState.copy(timingAdvance = b4 / 2.0 - 64.0).markFresh("timingAdvance"))
-            // O2 bank 1 sensor 2 voltage (PID 0x15): A/200 V
-            0xF415 -> onObdUpdate(currentState.copy(o2Voltage = b4 / 200.0).markFresh("o2Voltage"))
-            // TIP absolute: raw / 128 kPa — FORScan TCBP / DigiCluster catalogs; replies on the owner's car read ≈ baro at
-            // rest, not checked against an independent gauge (#198 / #207; rc.4–rc.5 used /903.81, a Ford DID-sheet psi formula)
-            0x033E -> onObdUpdate(currentState.copy(tipActualKpa  = ((b4 shl 8) or b5) / 128.0).markFresh("tipActualKpa"))
-            0x0466 -> onObdUpdate(currentState.copy(tipDesiredKpa = ((b4 shl 8) or b5) / 128.0).markFresh("tipDesiredKpa"))
-            // Low-side fuel pressure: raw × 0.5 kPa (DigiCluster dc_frs_0548, verified)
-            0x0548 -> onObdUpdate(currentState.copy(
-                fuelRailPressure = ((b4 shl 8) or b5) * 0.5
-            ).markFresh("fuelRailPressure"))
-            0x0318 -> onObdUpdate(currentState.copy(
-                vctIntakeAngle = ((b4s.toByte().toInt() shl 8) or b5) / 16.0
-            ).markFresh("vctIntakeAngle"))
-            0x0319 -> onObdUpdate(currentState.copy(
-                vctExhaustAngle = ((b4s.toByte().toInt() shl 8) or b5) / 16.0
-            ).markFresh("vctExhaustAngle"))
-            0x054B -> onObdUpdate(currentState.copy(oilLifePct = b4.toDouble().coerceIn(0.0, 100.0)).markFresh("oilLifePct"))
-            // HP fuel rail gauge pressure (PID 0x23, direct injection): raw × 10 kPa → psi.
-            // 0xF422 (PID 0x22) is the port-injection relative pressure — NRC 0x31 on DI PCMs (#198).
-            0xF423 -> onObdUpdate(currentState.copy(
-                hpFuelRailPsi = ((b4 shl 8) or b5) * 1.45038
-            ).markFresh("hpFuelRailPsi"))
-            0xF42F -> onObdUpdate(currentState.putGeneric(
-                "FuelLevel_OBD", (b4 * 100.0 / 255.0).coerceIn(0.0, 100.0)
-            ))
-            0x0304 -> onObdUpdate(currentState.copy(
-                batteryVoltage = ((b4 shl 8) or b5) / 2048.0
-            ).markFresh("batteryVoltage"))
-            // Spark advance: B4 × 0.25 deg
-            // TODO: verify single-byte vs two-byte on real car
-            // Spark advance, signed 16-bit / 4 = degrees (#205): the high byte alone read 0.00 for every positive
-            // reply and 63.75 for −5.5°. Negative advance is valid.
-            0x116B -> onObdUpdate(currentState.copy(
-                sparkAdvance = ((b4 shl 8) or b5).toShort() / 4.0
-            ).markFresh("sparkAdvance"))
-            // Fuel trims via Ford fast-path 22F4xx: A * 100/128 - 100 (%)
-            0xF406 -> onObdUpdate(currentState.copy(shortFuelTrim = b4 * 100.0 / 128.0 - 100.0).markFresh("shortFuelTrim"))
-            0xF407 -> onObdUpdate(currentState.copy(longFuelTrim  = b4 * 100.0 / 128.0 - 100.0).markFresh("longFuelTrim"))
-            else -> {
-                val decoded = PidRegistry.decode(ObdConstants.PCM_RESPONSE_ID, did, b4, b5)
-                if (decoded != null) {
-                    val (field, value) = decoded
-                    onObdUpdate(currentState.putGeneric(field, value))
+        val b5OrNull = if (avail >= 2) data[5].toInt() and 0xFF else null
+        val b5 by lazy(LazyThreadSafetyMode.NONE) { b5OrNull ?: throw ShortReply() }
+        try {
+            when (did) {
+                // ETC throttle plate angle, unsigned 16-bit / 512 = degrees (#206 — DigiCluster on-car verified "1.71°
+                // matched AP"; the FORScan-catalog ×100/8192 read 6.25× high: 111° desired). Not pedal / throttle %.
+                0x093C -> onObdUpdate(currentState.copy(
+                    etcAngleActual = ((b4 shl 8) or b5) / 512.0
+                ).markFresh("etcAngleActual"))
+                0x091A -> onObdUpdate(currentState.copy(
+                    etcAngleDesired = ((b4 shl 8) or b5) / 512.0
+                ).markFresh("etcAngleDesired"))
+                0x0462 -> onObdUpdate(currentState.copy(
+                    wgdcDesired = b4 * 100.0 / 128.0
+                ).markFresh("wgdcDesired"))
+                0x03EC -> onObdUpdate(currentState.copy(
+                    ignCorrCyl1 = ((b4s.toByte().toInt() shl 8) or b5) / -512.0
+                ).markFresh("ignCorrCyl1"))
+                0x03ED -> onObdUpdate(currentState.copy(
+                    ignCorrCyl2 = ((b4s.toByte().toInt() shl 8) or b5) / -512.0
+                ).markFresh("ignCorrCyl2"))
+                0x03EE -> onObdUpdate(currentState.copy(
+                    ignCorrCyl3 = ((b4s.toByte().toInt() shl 8) or b5) / -512.0
+                ).markFresh("ignCorrCyl3"))
+                0x03EF -> onObdUpdate(currentState.copy(
+                    ignCorrCyl4 = ((b4s.toByte().toInt() shl 8) or b5) / -512.0
+                ).markFresh("ignCorrCyl4"))
+                0x03E8 -> onObdUpdate(currentState.copy(
+                    octaneAdjustRatio = ((b4s.toByte().toInt() shl 8) or b5) / 16384.0
+                ).markFresh("octaneAdjustRatio"))
+                // Charge air temp: signed /64 °C. Raw 0x0000 = no data — two RS PCMs answered 0x0000 for a whole
+                // warming drive (ambient 3.5 °C, Discussion #182 + 2026-10-22 log); leave −99 rather than show 0.0 °C.
+                0x0461 -> if (b4 != 0 || b5 != 0) onObdUpdate(currentState.copy(
+                    chargeAirTempC = ((b4s.toByte().toInt() shl 8) or b5) / 64.0
+                ).markFresh("chargeAirTempC"))
+                0xF43C -> onObdUpdate(currentState.copy(
+                    catalyticTempC = ((b4 shl 8) or b5) / 10.0 - 40.0
+                ).markFresh("catalyticTempC"))
+                0xF434 -> {
+                    val afr = ((b4 shl 8) or b5) * 0.0004486
+                    onObdUpdate(currentState.copy(afrActual = afr, lambdaActual = afr / 14.7, afrSensor1 = afr)
+                        .markFresh("afrActual", "lambdaActual", "afrSensor1"))
+                }
+                // Commanded equivalence ratio (Mode 01 PID 0x44): 2 bytes, λ = raw / 32768
+                0xF444 -> onObdUpdate(currentState.copy(
+                    afrDesired   = b4 * 0.1144,
+                    commandedAfr = ((b4 shl 8) or b5) / 32768.0
+                ).markFresh("afrDesired", "commandedAfr"))
+                // Calculated load (PID 0x04): A × 100/255 %
+                0xF404 -> onObdUpdate(currentState.copy(calcLoad = b4 * 100.0 / 255.0).markFresh("calcLoad"))
+                // Timing advance (PID 0x0E): A/2 − 64 °BTDC
+                0xF40E -> onObdUpdate(currentState.copy(timingAdvance = b4 / 2.0 - 64.0).markFresh("timingAdvance"))
+                // O2 bank 1 sensor 2 voltage (PID 0x15): A/200 V
+                0xF415 -> onObdUpdate(currentState.copy(o2Voltage = b4 / 200.0).markFresh("o2Voltage"))
+                // TIP absolute: raw / 128 kPa — FORScan TCBP / DigiCluster catalogs; replies on the owner's car read ≈ baro at
+                // rest, not checked against an independent gauge (#198 / #207; rc.4–rc.5 used /903.81, a Ford DID-sheet psi formula)
+                0x033E -> onObdUpdate(currentState.copy(tipActualKpa  = ((b4 shl 8) or b5) / 128.0).markFresh("tipActualKpa"))
+                0x0466 -> onObdUpdate(currentState.copy(tipDesiredKpa = ((b4 shl 8) or b5) / 128.0).markFresh("tipDesiredKpa"))
+                // Low-side fuel pressure: raw × 0.5 kPa (DigiCluster dc_frs_0548, verified)
+                0x0548 -> onObdUpdate(currentState.copy(
+                    fuelRailPressure = ((b4 shl 8) or b5) * 0.5
+                ).markFresh("fuelRailPressure"))
+                0x0318 -> onObdUpdate(currentState.copy(
+                    vctIntakeAngle = ((b4s.toByte().toInt() shl 8) or b5) / 16.0
+                ).markFresh("vctIntakeAngle"))
+                0x0319 -> onObdUpdate(currentState.copy(
+                    vctExhaustAngle = ((b4s.toByte().toInt() shl 8) or b5) / 16.0
+                ).markFresh("vctExhaustAngle"))
+                0x054B -> onObdUpdate(currentState.copy(oilLifePct = b4.toDouble().coerceIn(0.0, 100.0)).markFresh("oilLifePct"))
+                // HP fuel rail gauge pressure (PID 0x23, direct injection): raw × 10 kPa → psi.
+                // 0xF422 (PID 0x22) is the port-injection relative pressure — NRC 0x31 on DI PCMs (#198).
+                0xF423 -> onObdUpdate(currentState.copy(
+                    hpFuelRailPsi = ((b4 shl 8) or b5) * 1.45038
+                ).markFresh("hpFuelRailPsi"))
+                0xF42F -> onObdUpdate(currentState.putGeneric(
+                    "FuelLevel_OBD", (b4 * 100.0 / 255.0).coerceIn(0.0, 100.0)
+                ))
+                0x0304 -> onObdUpdate(currentState.copy(
+                    batteryVoltage = ((b4 shl 8) or b5) / 2048.0
+                ).markFresh("batteryVoltage"))
+                // Spark advance: B4 × 0.25 deg
+                // TODO: verify single-byte vs two-byte on real car
+                // Spark advance, signed 16-bit / 4 = degrees (#205): the high byte alone read 0.00 for every positive
+                // reply and 63.75 for −5.5°. Negative advance is valid.
+                0x116B -> onObdUpdate(currentState.copy(
+                    sparkAdvance = ((b4 shl 8) or b5).toShort() / 4.0
+                ).markFresh("sparkAdvance"))
+                // Fuel trims via Ford fast-path 22F4xx: A * 100/128 - 100 (%)
+                0xF406 -> onObdUpdate(currentState.copy(shortFuelTrim = b4 * 100.0 / 128.0 - 100.0).markFresh("shortFuelTrim"))
+                0xF407 -> onObdUpdate(currentState.copy(longFuelTrim  = b4 * 100.0 / 128.0 - 100.0).markFresh("longFuelTrim"))
+                else -> {
+                    val decoded = PidRegistry.decode(ObdConstants.PCM_RESPONSE_ID, did, b4, b5OrNull)
+                    if (decoded != null) {
+                        val (field, value) = decoded
+                        onObdUpdate(currentState.putGeneric(field, value))
+                    }
                 }
             }
+        } catch (_: ShortReply) {
+            logMalformed("PCM", data, "DID 0x%04X: $avail data byte(s), its value needs more".format(did))
         }
     }
 
@@ -323,10 +352,11 @@ object ObdResponseParser {
     ) {
         if (data.size < 5) { logMalformed("HVAC", data, "too short (${data.size} < 5)"); return }
         if ((data[1].toInt() and 0xFF) != 0x62) return
+        val avail = singleFrameDataBytes(data) ?: run { logMalformed("HVAC", data, "PCI and frame length disagree"); return }
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
-        val b5  = if (data.size > 5) data[5].toInt() and 0xFF else 0
-        val decoded = PidRegistry.decode(ObdConstants.HVAC_RESPONSE_ID, did, b4, b5)
+        val b5OrNull = if (avail >= 2) data[5].toInt() and 0xFF else null
+        val decoded = PidRegistry.decode(ObdConstants.HVAC_RESPONSE_ID, did, b4, b5OrNull)
         if (decoded != null) {
             val (field, value) = decoded
             onObdUpdate(currentState.putGeneric(field, value))
@@ -345,10 +375,11 @@ object ObdResponseParser {
     ) {
         if (data.size < 5) { logMalformed("IPC", data, "too short (${data.size} < 5)"); return }
         if ((data[1].toInt() and 0xFF) != 0x62) return
+        val avail = singleFrameDataBytes(data) ?: run { logMalformed("IPC", data, "PCI and frame length disagree"); return }
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
-        val b5  = if (data.size > 5) data[5].toInt() and 0xFF else 0
-        val decoded = PidRegistry.decode(ObdConstants.IPC_RESPONSE_ID, did, b4, b5)
+        val b5OrNull = if (avail >= 2) data[5].toInt() and 0xFF else null
+        val decoded = PidRegistry.decode(ObdConstants.IPC_RESPONSE_ID, did, b4, b5OrNull)
         if (decoded != null) {
             val (field, value) = decoded
             onObdUpdate(currentState.putGeneric(field, value))
@@ -363,6 +394,7 @@ object ObdResponseParser {
     ) {
         if (data.size < 5) { logMalformed("PSCM", data, "too short (${data.size} < 5)"); return }
         if ((data[1].toInt() and 0xFF) != 0x62) return
+        singleFrameDataBytes(data) ?: run { logMalformed("PSCM", data, "PCI and frame length disagree"); return }
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
         when (did) {
@@ -378,6 +410,7 @@ object ObdResponseParser {
     ) {
         if (data.size < 5) { logMalformed("FENG", data, "too short (${data.size} < 5)"); return }
         if ((data[1].toInt() and 0xFF) != 0x62) return
+        singleFrameDataBytes(data) ?: run { logMalformed("FENG", data, "PCI and frame length disagree"); return }
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
         when (did) {
@@ -398,18 +431,24 @@ object ObdResponseParser {
     ) {
         if (data.size < 5) { logMalformed("RSProt", data, "too short (${data.size} < 5)"); return }
         if ((data[1].toInt() and 0xFF) != 0x62) return
+        val avail = singleFrameDataBytes(data) ?: run { logMalformed("RSProt", data, "PCI and frame length disagree"); return }
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
-        val b5  = if (data.size > 5) data[5].toInt() and 0xFF else 0
+        val b5OrNull = if (avail >= 2) data[5].toInt() and 0xFF else null
+        val b5 by lazy(LazyThreadSafetyMode.NONE) { b5OrNull ?: throw ShortReply() }
 
         onDebug?.invoke("RSProt 0x%04X → B4=0x%02X B5=0x%02X".format(did, b4, b5))
 
-        when (did) {
-            0xDE00 -> onObdUpdate(currentState.copy(lcArmed = b4 == 0x01).markFresh("lcArmed"))
-            0xDE01 -> onObdUpdate(currentState.copy(lcRpmTarget = (b4 shl 8) or b5).markFresh("lcRpmTarget"))
-            0xDE02 -> onObdUpdate(currentState.copy(assEnabled = b4 == 0x01).markFresh("assEnabled"))
-            0xEE01 -> onDebug?.invoke("RSProt 0xEE01 → $b4 (candidate)")
-            0xFD01 -> onDebug?.invoke("RSProt 0xFD01 → $b4 (candidate)")
+        try {
+            when (did) {
+                0xDE00 -> onObdUpdate(currentState.copy(lcArmed = b4 == 0x01).markFresh("lcArmed"))
+                0xDE01 -> onObdUpdate(currentState.copy(lcRpmTarget = (b4 shl 8) or b5).markFresh("lcRpmTarget"))
+                0xDE02 -> onObdUpdate(currentState.copy(assEnabled = b4 == 0x01).markFresh("assEnabled"))
+                0xEE01 -> onDebug?.invoke("RSProt 0xEE01 → $b4 (candidate)")
+                0xFD01 -> onDebug?.invoke("RSProt 0xFD01 → $b4 (candidate)")
+            }
+        } catch (_: ShortReply) {
+            logMalformed("RSProt", data, "DID 0x%04X: $avail data byte(s), its value needs more".format(did))
         }
     }
 }
