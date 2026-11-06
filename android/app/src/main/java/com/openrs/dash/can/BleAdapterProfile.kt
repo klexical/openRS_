@@ -64,6 +64,8 @@ object BleSetupPolicy {
     const val GATT_SUCCESS = 0
     const val GATT_INSUFFICIENT_AUTHENTICATION = 5
     const val GATT_INSUFFICIENT_ENCRYPTION = 15
+    /** "Invalid attribute value length": the WiCAN Pro's answer to a write longer than its 20-byte FFF2 (#248). */
+    const val GATT_INVALID_ATTRIBUTE_LENGTH = 13
     /** Android's generic "auth failed" (0x89) reported by some stacks for a refused / failed pairing. */
     const val GATT_AUTH_FAIL = 137
 

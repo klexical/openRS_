@@ -65,14 +65,16 @@ object PidRegistry {
      * @param ecuResponseId the CAN ID the response arrived on (e.g. 0x7E8)
      * @param did the 16-bit DID from the response
      * @param b4 first data byte (unsigned)
-     * @param b5 second data byte (unsigned), 0 if not present
-     * @return (fieldName, decodedValue) or null if no formula is registered
+     * @param b5 second data byte (unsigned), null if the reply doesn't carry one
+     * @return (fieldName, decodedValue) or null if no formula is registered, or its formula needs B and there is none
+     *   (#251 — a missing byte is never read as 0)
      */
-    fun decode(ecuResponseId: Int, did: Int, b4: Int, b5: Int = 0): Pair<String, Double>? {
+    fun decode(ecuResponseId: Int, did: Int, b4: Int, b5: Int? = null): Pair<String, Double>? {
         val entry = index[Pair(ecuResponseId, did)] ?: return null
         val pid = entry.pid
         if (pid.field.isEmpty() || pid.formula.isEmpty()) return null
-        val value = evaluateFormula(pid.formula, b4, b5) ?: return null
+        if (b5 == null && USES_B.containsMatchIn(pid.formula)) return null
+        val value = evaluateFormula(pid.formula, b4, b5 ?: 0) ?: return null
         if (value.isInfinite() || value.isNaN()) return null
         return Pair(pid.field, value)
     }
@@ -84,6 +86,9 @@ object PidRegistry {
      *  - Standard arithmetic: `+`, `-`, `*`, `/`, parentheses
      *  - Numeric literals (integer and decimal)
      */
+    /** The formula's second-byte variable `B` as a token (not a letter inside a name such as a future `ABS(`). */
+    private val USES_B = Regex("(?<![A-Za-z])B(?![A-Za-z])")
+
     internal fun evaluateFormula(formula: String, a: Int, b: Int): Double? {
         return try {
             val tokens = tokenize(formula, a.toDouble(), b.toDouble())

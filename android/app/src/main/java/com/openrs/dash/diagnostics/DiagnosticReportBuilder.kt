@@ -168,10 +168,10 @@ internal object DiagnosticReportBuilder {
             appendLine("  Baro       : ${"%.1f".format(vs.barometricPressure)} kPa")
             appendLine("  Lat G      : ${"%.3f".format(vs.lateralG)} g")
             appendLine("  Lon G      : ${"%.3f".format(vs.longitudinalG)} g")
-            appendLine("  Drive Mode : ${vs.driveMode.label}")
+            appendLine("  Drive Mode : ${vs.driveMode.label}${modeProvenance(vs, nowMs)}")
             appendLine("  ESC        : ${vs.escStatus.label}")
             appendLine("  Gear       : ${vs.gearDisplay}")
-            appendLine("  Battery    : ${"%.2f".format(vs.batteryVoltage)} V")
+            appendLine("  Battery    : ${"%.2f".format(vs.batteryVoltage)} V  (PCM 0x0304 as reported; last reply ${age("batteryVoltage")})")
             appendLine("  Fuel       : ${"%.0f".format(vs.fuelLevelPct)} %")
             appendLine("  Throttle   : ${"%.1f".format(vs.throttlePct)} %  (0x076 ${if (vs.throttleHasSource) "seen" else "absent — pedal ${"%.1f".format(vs.accelPedalPct)} % used"})")
             appendLine("  Torque     : ${"%.0f".format(vs.torqueAtTrans)} Nm")
@@ -295,6 +295,10 @@ internal object DiagnosticReportBuilder {
             }
             appendLine()
         }
+        // Link integrity (rc.8 #253): counts only — what writes established, what framing / length checks refused
+        linkIntegrityText(log.linkIntegrity, log.nrcUnattributedTotal).forEach { appendLine(it) }
+        appendLine()
+
         // Unattributed NRCs: exact count; their event lines are folded to ≤ 1 per minute per kind (#216)
         if (log.nrcUnattributedTotal > 0) {
             appendLine("─── NRC UNATTRIBUTED ──────────────────────────────────────")
@@ -349,10 +353,12 @@ internal object DiagnosticReportBuilder {
                 val found   = ps.results.count { it.status == "FOUND" }
                 val nrc     = ps.results.count { it.status == "NRC" }
                 val timeout = ps.results.count { it.status == "TIMEOUT" }
+                val ambiguous = ps.results.count { it.status == PROBE_NRC_AMBIGUOUS }
                 appendLine("  ${ps.module} (0x${"%03X".format(ps.requestId)}→0x${"%03X".format(ps.responseId)}) @ +${log.formatDuration(ps.relMs)}")
                 val probed = if (ps.outcome == DiagnosticLogger.PROBE_COMPLETE) "${ps.results.size} probed"
                     else "${ps.outcome} — ${ps.results.size} of ${ps.planned} probed"
-                appendLine("    $probed — $found found, $nrc rejected, $timeout timeout")
+                appendLine("    $probed — $found found, $nrc rejected, $timeout timeout" +
+                    if (ambiguous > 0) ", $ambiguous NRC owner ambiguous" else "")
                 ps.results.filter { it.status == "FOUND" }.forEach { r ->
                     appendLine("    ✓ 0x${"%04X".format(r.did)}  ${r.responseHex}")
                 }
@@ -492,6 +498,7 @@ internal object DiagnosticReportBuilder {
         })
 
         root.put("nrcUnattributedTotal", log.nrcUnattributedTotal)   // exact, even though lines are folded (#216)
+        root.put("linkIntegrity", linkIntegrityJson(log.linkIntegrity, log.nrcUnattributedTotal))   // rc.8 #253, additive
 
         // nrcSuppression
         val nrcMap = log.nrcSuppressed
@@ -544,7 +551,43 @@ internal object DiagnosticReportBuilder {
 }
 
 /** Serialize VehicleState to a JSONObject with full-precision numeric values. */
-internal fun VehicleState.toJsonObject(): JSONObject = JSONObject().apply {
+/** LINK INTEGRITY summary lines (rc.8 #253) — counts only, never a raw line. */
+internal fun linkIntegrityText(li: DiagnosticLogger.LinkIntegrity, nrcUnattributed: Int): List<String> = listOf(
+    "─── LINK INTEGRITY ────────────────────────────────────────",
+    "  Writes   : %d sent · %d possibly delivered (GATT 13) · %d not sent · %d delivery unknown · %d other failures".format(
+        li.writes[DiagnosticLogger.WRITE_SENT], li.writes[DiagnosticLogger.WRITE_POSSIBLY_DELIVERED],
+        li.writes[DiagnosticLogger.WRITE_NOT_SENT], li.writes[DiagnosticLogger.WRITE_UNCERTAIN],
+        li.writes[DiagnosticLogger.WRITE_OTHER_FAILURE]) + "  (Mode 22 polls + DID probes)",
+    "  Framing  : ${when (li.framingTimestamped) { null -> "not decided"; true -> "timestamped (Z1 set on the adapter)"; false -> "plain" }}" +
+        " · ${li.refusedFrameLines} frame line(s) refused (${li.refusedOtherShape} of the other shape)",
+    "  Replies  : ${li.refusedReplies} Mode 22 reply(ies) refused for their length / PCI",
+    "  NRC      : ${li.nrcAttributed} attributed · $nrcUnattributed unattributed (PCM)",
+)
+
+internal fun linkIntegrityJson(li: DiagnosticLogger.LinkIntegrity, nrcUnattributed: Int): JSONObject = JSONObject().apply {
+    put("writes", JSONObject().apply { li.writes.forEach { (k, v) -> put(k, v) } })
+    put("framing", when (li.framingTimestamped) { null -> "undecided"; true -> "timestamped"; false -> "plain" })
+    put("refusedFrameLines", li.refusedFrameLines)
+    put("refusedOtherShape", li.refusedOtherShape)
+    put("refusedReplies", li.refusedReplies)
+    put("nrcAttributed", li.nrcAttributed)
+    put("nrcUnattributed", nrcUnattributed)
+}
+
+/** " (0x1B0 Ns ago, its 0x420 detail Ms ago)" — what a Sport / Track reading rests on (#252); "" before any report. */
+internal fun modeProvenance(vs: VehicleState, nowMs: Long): String {
+    val resolved = vs.fieldLastUpdateMs["driveMode"] ?: return ""
+    val detail = vs.fieldLastUpdateMs[com.openrs.dash.can.CanDecoder.MODE_RESOLVED_DETAIL_TAG]
+    return "  (0x1B0 ${(nowMs - resolved) / 1000} s ago" + (detail?.let { ", its 0x420 detail ${(nowMs - it) / 1000} s ago" } ?: "") + ")"
+}
+
+/** Tags whose age the detail JSON reports (rc.8 #253): the polled voltage and the drive-mode provenance (#223, #252). */
+private val AGE_TAGS = listOf("batteryVoltage", "driveMode", com.openrs.dash.can.CanDecoder.MODE_DETAIL_TAG,
+    com.openrs.dash.can.CanDecoder.MODE_RESOLVED_DETAIL_TAG)
+
+internal fun VehicleState.toJsonObject(nowMs: Long = System.currentTimeMillis()): JSONObject = JSONObject().apply {
+    // Additive (rc.8 #253): ages at export time, never absolute times
+    put("fieldAgesMs", JSONObject().apply { AGE_TAGS.forEach { t -> fieldLastUpdateMs[t]?.let { put(t, nowMs - it) } } })
     put("rpm", rpm)
     put("speedKph", speedKph)
     put("speedMph", speedKph * 0.621371)

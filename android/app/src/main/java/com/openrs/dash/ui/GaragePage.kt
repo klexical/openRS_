@@ -56,7 +56,7 @@ fun GaragePage(
     onClearDtcs: (suspend () -> Map<String, Boolean>)? = null,
     onRetryScanModule: (suspend (String) -> com.openrs.dash.data.DtcModuleRetry)? = null,
     onFetchFreezeFrames: (suspend (List<DtcResult>) -> List<DtcResult>)? = null,
-    onSendRawQuery: (suspend (Int, String, Long) -> ByteArray?)? = null,
+    onSendRawQuery: (suspend (Int, String, Long) -> com.openrs.dash.can.RawReply?)? = null,
     onResetSession: () -> Unit = {},
     onOpenDock: () -> Unit = {},
 ) {

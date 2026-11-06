@@ -39,6 +39,10 @@ interface GattLink {
  * Writes use the characteristic's own write type (with response when supported, else without) and wait at most
  * [writeTimeoutMs] for the write callback — a missing callback fails the write instead of holding the write lock, and
  * closes the link: the callback names no write, so a late one would otherwise acknowledge the next write.
+ * A write's result is one of ([write], #248): sent; possibly delivered (GATT 13 — see [WriteOutcome.POSSIBLY_DELIVERED]);
+ * not sent (refused before anything left the phone); or uncertain (failed after it was handed to the stack). Lines are
+ * split at MTU − 3 as before; there is no chunking to a smaller size on purpose — the WiCAN Pro's SLCAN parser drops a
+ * line whose continuation arrives more than 100 ms after its previous byte (upstream v4.48p `slcan_parse_str`).
  */
 class BleGattCore(
     private val adapterType: String?,
@@ -72,7 +76,7 @@ class BleGattCore(
     private val lines = Channel<String>(256)
     private val lineBuffer = StringBuilder()
     private val writeMutex = Mutex()
-    @Volatile private var writeDone = CompletableDeferred<Unit>()
+    @Volatile private var writeDone = CompletableDeferred<Int>()       // the write callback's GATT status
     /** A write went unacknowledged: callbacks can no longer be matched to writes, the link is closed for good. */
     @Volatile private var invalidated = false
     private val servicesReady = CompletableDeferred<Unit>()
@@ -129,10 +133,7 @@ class BleGattCore(
 
     fun onWrite(status: Int) {
         if (invalidated) return                                // a late callback for a write that already timed out
-        when (val failure = BleSetupPolicy.afterWrite(status)) {
-            null -> writeDone.complete(Unit)
-            else -> writeDone.completeExceptionally(IOException(failure))
-        }
+        writeDone.complete(status)
     }
 
     /** Notification bytes on [characteristic]; a frame may span notifications, a notification may hold several. */
@@ -194,34 +195,49 @@ class BleGattCore(
 
     suspend fun readLine(): String? = try { lines.receive() } catch (_: Exception) { null }
 
-    suspend fun writeLine(frame: String) = writeMutex.withLock {
-        if (invalidated) throw IOException("BLE link closed after an unacknowledged write")
-        val l = link ?: throw IOException("BLE not connected")
-        val p = profile ?: throw IOException("BLE not set up")
+    suspend fun writeLine(frame: String) { write(frame) }
+
+    /** Writes [frame] (split at MTU − 3) and says what that established; throws [WriteFailure] not-sent / uncertain. */
+    suspend fun write(frame: String): WriteOutcome = writeMutex.withLock {
+        if (invalidated) throw WriteFailure.notSent("BLE link closed after an unacknowledged write")
+        val l = link ?: throw WriteFailure.notSent("BLE not connected")
+        val p = profile ?: throw WriteFailure.notSent("BLE not set up")
         val payload = frame.toByteArray(Charsets.ISO_8859_1)
         val max = mtu - 3                                       // ATT overhead
+        var outcome = WriteOutcome.SENT
         var offset = 0
         while (offset < payload.size) {
             val end = minOf(offset + max, payload.size)
             writeDone = CompletableDeferred()
             if (!l.write(p.service, p.write, payload.copyOfRange(offset, end), writeType)) {
-                throw IOException("BLE write couldn't be sent (stack busy or not connected)")
+                // Nothing of this part left the phone — but an earlier part of the same line may have
+                throw if (offset == 0) WriteFailure.notSent("BLE write couldn't be sent (stack busy or not connected)")
+                    else WriteFailure.uncertain("BLE write couldn't be sent after $offset of ${payload.size} bytes")
             }
-            try {
+            val status = try {
                 withTimeoutOrNull(writeTimeoutMs) { writeDone.await() } ?: run {
                     // Android's write callback carries no request id, so this write's late callback could not be told
                     // from the next write's — close the link instead of reusing it (#218). The reader sees EOF and
                     // SlcanConnection reconnects with a new transport; later writes here fail at once.
                     invalidated = true
                     close()
-                    throw IOException("BLE write not acknowledged in $writeTimeoutMs ms — link closed")
+                    throw WriteFailure.uncertain("BLE write not acknowledged in $writeTimeoutMs ms — link closed")
                 }
-            } catch (e: IOException) { throw e } catch (e: Exception) {
+            } catch (e: IOException) {
+                if (WriteFailure.isUncertain(e)) throw e
+                throw WriteFailure.uncertain("BLE write interrupted (${e.message})", e)   // disconnected / closed mid-write
+            } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                throw IOException("BLE write failed: ${e.message}", e)
+                throw WriteFailure.uncertain("BLE write failed: ${e.message}", e)
+            }
+            when (status) {
+                BleSetupPolicy.GATT_SUCCESS -> Unit
+                BleSetupPolicy.GATT_INVALID_ATTRIBUTE_LENGTH -> outcome = WriteOutcome.POSSIBLY_DELIVERED
+                else -> throw WriteFailure.uncertain(BleSetupPolicy.afterWrite(status) ?: "BLE write failed (GATT $status)")
             }
             offset = end
         }
+        outcome
     }
 
     fun close() {

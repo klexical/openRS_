@@ -66,7 +66,10 @@ can/
                             Command response channel routes +FRS: lines separately from SLCAN frames
   AdapterState.kt         — Disconnected / Connecting / Connected / Reconnecting / Idle / Error (sealed, `label` = fixed
                             names for logs — R8 renames the classes) + LinkPhase (OFF/CONNECTING/CONNECTED/RECONNECTING/FAILED)
-  SlcanParser.kt          — SLCAN frame tokenizer ('t'=standard, 'T'=extended)
+  SlcanParser.kt          — SLCAN frame tokenizer ('t'=standard, 'T'=extended); exact DLC × 2 data (+4 only when timestamped)
+  SlcanFraming.kt         — rc.8 — per-connection framing mode (plain / timestamped, locked from the first 8 frames) + counters
+  Mode22Frames.kt         — rc.8 — `Mode22`: request DID / positive DID / NRC helpers + `RawReply` (Frame / AmbiguousNrc) for probe matching
+  WriteOutcome.kt         — rc.8 — transport write outcome: SENT / POSSIBLY_DELIVERED (GATT 13) / WriteFailure (not sent / uncertain)
   IsoTpBuffer.kt          — ISO-TP SF/FF/CF reassembly; caller sends BCM_FLOW_CONTROL after FF
   EscCommand.kt           — rc.7 — ESC request + confirmation (#125): window = firmware press plan + 3 s; only a 0x1C0 frame
                             stamped after the request on the same link generation confirms; one request at a time (Busy)
@@ -421,31 +424,29 @@ data[5] = B5,  data[6] = B6 …
   IOException into `Result.failure` (cancellation still propagates). The UI launches (DriveModeDock, MorePage ESC) have
   no catch, so an escaped exception ended the process. Keep every `FirmwareCommandSender` inside its `Result` contract.
   `BleCommandSendFailureTest` (real SlcanConnection over BleGattCore, fake GATT)
-- **A BLE write can fail yet reach the bus; `sendRawQuery` has no catch (open in rc.7 Builds 37 / 38: #248, #249)**
-  - `BleGattCore.writeLine` sends each SLCAN line in `mtu − 3` byte chunks. After the MTU 247 request, a 22-byte `t…`
-    frame (PCM polls, DTC requests, the DID prober's `t7E08…` + CR) is one ATT write.
-  - Any non-success status becomes `IOException("BLE write failed (GATT N)")` (`BleAdapterProfile.afterWrite`).
-  - An adapter that answers writes over 20 bytes with GATT 13 (0x0D, invalid attribute length) while still delivering them
-    makes every frame write "fail". This is reported for the WiCAN Pro's FFF2 and not verified in this repo (upstream
-    `ble.c` isn't vendored).
-  - Effects:
-    - `SlcanConnection.sendRawQuery` wraps `writeLine` in try / finally with no catch, and `CanDataService.sendRawQuery`
-      passes it through. DIAG → DID PROBER calls it from `scope.launch` with no handler → uncaught crash in Builds 37 / 38
-      (#249; the rc.8 fix contains it in the scan loop; see the DID prober gotcha).
-    - The PCM poller withdraws a request whose write failed (`PcmRequestLedger.withdraw`), so an NRC that does arrive is
-      never attributed and NRC suppression can't engage (#216).
-    - DTC scan modules report "write failed".
-  - Lines of 20 bytes or less (`OPENRS?`, `AT+FRS…`) are not affected.
-  - Before fixing by splitting writes to ≤ 20 bytes, confirm the adapter firmware reassembles one SLCAN line from several
-    writes (unverified). `sendRawQuery` throws on write failure / no connection, so every caller must catch.
-  - Separately, `sendRawQuery` takes the first frame from the module's response ID without checking the DID, so a poll
-    reply or NRC can become the probe's result (#250).
-- **`SlcanParser` accepts DLC-0 and over-long lines (#251)**
-  - A `t` / `T` line parses as soon as it holds the bytes its DLC needs. Trailing characters are ignored, and DLC 0 gives an
-    empty payload (`parseStdFrame` / `parseExtFrame` check `length <` only).
-  - On a lossy link (reported over BLE), a corrupt line can reach the decoders as a valid frame. A single bad 0x1B0 / 0x420
-    frame can flip the decoded drive mode briefly and could satisfy a drive-mode confirmation (#252).
-  - The PCM Mode 22 parser also doesn't check the PCI payload length; a short reply's missing low byte reads as 0.
+- **BLE writes have three outcomes (#248, rc.8)** — `BleGattCore.write` returns a `WriteOutcome`: SENT, POSSIBLY_DELIVERED
+  (GATT 13) or a `WriteFailure` (not sent / uncertain).
+  - **Why:** the WiCAN Pro (upstream v4.48p) declares FFF2 with a 20-byte maximum but its stack (ESP-IDF 5.2.3) delivers a longer
+    write and then answers 0x0D. Every 22-byte `t…` frame (PCM polls, DTC requests, probes) is one ATT write at MTU 247.
+    Source-level only: no GATT trace from a real adapter. USB FEE1 allows 64 bytes.
+  - **Rule:** POSSIBLY_DELIVERED keeps the request outstanding and waits for its reply; nothing is ever resent, and it is never
+    a drive-mode / ESC confirmation (CAN only). Only a certainly-not-sent failure withdraws the request
+    (`PcmRequestLedger.withdraw`). Other post-send failures are uncertain and kept. TCP / WebSocket unchanged.
+  - The first GATT 13 on a connection logs one BLE_WRITE event. `OPENRS?` / `AT+FRS…` (≤ 19 bytes) are unaffected.
+  - Don't chunk to ≤ 20 bytes: the firmware rebuilds a split line only if the pieces arrive within 100 ms (`slcan_parse_str`
+    static state). The MTU-23 path (20 + 2) already depends on that window — pre-existing, hardware-unverified.
+  - Builds 37 / 38 threw on GATT 13 → the DID prober crash (#249) and never-attributed NRCs over BLE (#216).
+- **SLCAN framing is exact, per connection (#251, rc.8)** — a `t` / `T` line's data field must be exactly DLC × 2 hex digits
+  (`SlcanParser.parse(line, timestamped)`); anything else is refused and counted (LINK INTEGRITY in exports). `SlcanFraming`
+  in `SlcanConnection` starts each connection plain and locks to timestamped (exactly DLC × 2 + 4 hex, suffix stripped) only if
+  the first 8 well-formed frames all carry the suffix (adapter left in `Z1` by another client); no mid-connection switch;
+  50 consecutive other-shape lines log one FRAMING event (no raw line). Never accept "+4" statelessly: a spliced line and a
+  one-nibble DLC corruption both look like +4. `SLCAN_INIT` is unchanged (sending `Z0` is a reviewed follow-up, not done).
+  - Mode 22: a PCI that claims more bytes than the frame holds (or no data byte) is refused
+    (`ObdResponseParser.singleFrameDataBytes`); a decoder whose value needs a byte the reply doesn't carry updates nothing
+    (it used to read the missing byte as 0). A one-byte value in a short reply still decodes. `PidRegistry.decode` refuses a two-byte formula without B.
+  - Well-formed but implausible single frames (e.g. 0x130 = 0xFFFF → 655.35 km/h) are NOT filtered — an open owner decision
+    (`#251 outlier policy`, the one @Ignore'd test). Don't invent physical limits.
 - **BLE write timeout = link closed (#218)** — Android's `onCharacteristicWrite` names no write; after a 2 s timeout a late
   callback would complete the next write. `BleGattCore` invalidates + closes the link (reader EOF → SlcanConnection
   reconnects); later writes fail at once. `SlcanConnection` swallows write errors, so teardown must come from the reader.
@@ -518,7 +519,10 @@ data[5] = B5,  data[6] = B6 …
 - **Freshness stamps (`fieldLastUpdateMs`)** — Mode 22 decoders stamp via `markFresh()`; `ObdMerge.merge()` (data/ObdMerge.kt, called by `CanDataService.mergeObdState()`) MUST merge them with
   `VehicleState.mergeStamps` (per-key max) or the UI reads every OBD field as STALE (pre-rc.5 bug). CAN-sourced THERMAL fields are stamped by `CanDecoder.stampFresh()` throttled to 1 s per ID — never `markFresh()` per CAN frame (map copy at hundreds of fps). A decoder returning the **same** `state` instance means "recognized, nothing changed": `processCanFrame` logs it and skips the copy/emit (0x040, 0x300, rejected 0x1A4). `ObdMerge` keeps a field through its "not received" sentinel; a field whose
   valid range includes its default (REQ L / R: 0 Nm) is merged by the reply's own stamp (`ObdMerge.carried`), never by
-  value — a `> 0` guard keeps the old value under a fresh stamp (#226)
+  value — a `> 0` guard keeps the old value under a fresh stamp (#226). Battery voltage (PCM 0x0304) is merged the same way since rc.8 (#223): a decoded 0 or an older
+  snapshot can't freshen or overwrite it; DRIVE BATT reads STALE past `PolledFreshness` 2 × 40 s and "— —" for a reported 0
+  (GARAGE → DIAG still prints 0.00 V — raw-zero policy undecided). 0x0304 is the PCM's reported value, not established as
+  measured battery voltage
 - **Recorder only stores fresh polled values** — `DriveRecorder` writes TIP/target/WGDC/KR/STFT/LTFT only when `FreshnessGate.takeIfFresh()` passes; otherwise sentinels (`tipActualKpa`/`boostTargetKpa` 0.0, `wgdcPct` −1.0). Never record held VehicleState values for slow DIDs — they repeat one reading many times
 - **A drive's state belongs to its `DriveRun` (#236)** — `startDrive` creates a new `DriveRun` (points buffer, recent
   points, start temps, freshness gate, trims, pulls, thermal tracker); that drive's loop and STOP hold it, and the loop's
@@ -705,11 +709,19 @@ data[5] = B5,  data[6] = B6 …
   Off / Sport counts (raw 3 no longer advances `esc_frames`). `firmware/tests/run.sh` runs the real `focusrs.c` against
   host stubs (`tests/stubs/`). PRO built once in isolation 2026-10-29 (evidence dir), **never flashed** — adapters keep
   their old firmware. Firmware detection ≠ control capability
-- **Drive-mode confirmation (fix branch, `4937cfb`)** — the adapter's OK is "ACCEPTED"; `executeDriveModeChange` confirms only
-  from a resolved 0x1B0 report stamped `driveMode` AFTER the request on the same link generation (cached values never count;
-  reconnect → `DriveCommandResult.ConnectionLost`, no correction). Timing (2 s + 15 s) and the one correction unchanged.
-  Demo must stamp every CAN tag (`CanDecoder.canStampTags` ⊆ `DemoSimulator.CAN_TAGS`, DemoSimulatorTest) or confirmations
-  time out in demo. Requesting the mode the car is already in confirms from the next re-broadcast
+- **Drive-mode confirmation (#252, rc.8; accepted-vs-confirmed since `4937cfb`)** — the adapter's OK is "ACCEPTED";
+  `executeDriveModeChange` confirms only from CAN observed AFTER the request on the same link generation: two agreeing resolved
+  0x1B0 reports (stamp `driveMode`), and for Sport / Track also two agreeing documented 0x420 details
+  (byte 6 0x10 / 0x11 / 0x12 ± LC bit) received after the request, the second before the resolving report
+  (`driveModeDetailPair` → copied to `driveModeResolvedPair`), and the current 0x1B0 run is the target (`driveModeRun.<MODE>`,
+  `driveModeRunPrev`). `driveModeDetail` / `driveModeResolvedDetail` are provenance only (export text, `fieldAgesMs`). An undocumented 0x420 byte 6 changes nothing; a 0x1B0 that changes the resolved mode is stamped
+  at once (the 1 s throttle applies only to unchanged reports). The one overshoot correction needs the same corroboration, so
+  a single stray frame can never trigger it. OBD merges must not bring back drive-mode provenance keys from their snapshot
+  (`ModeProvenanceMergeTest`). Requesting the current mode now confirms ~1 s later (two stamped reports). A confirmation states
+  the car's mode after the request, not that the app caused it (a manual selection looks identical; in capture A the 0x305 button bit never set, 0 of 874 frames — QA analysis).
+  Timing (2 s + 15 s), retries, ESC and firmware unchanged; reconnect → `DriveCommandResult.ConnectionLost`. Demo must stamp
+  every CAN tag (`CanDecoder.canStampTags` ⊆ `DemoSimulator.CAN_TAGS`, DemoSimulatorTest) or confirmations time out in demo.
+  ESC confirmation (#125) still reads `escStatus` under the 1 s throttle (can confirm up to ~1 s late; not changed)
 - **Diagnostic-export adapter status (#233, fix branch)** — `/check_status` belongs to the session: `sessionStart` returns a
   token + takes the initial reason (Bluetooth = not requested); `adapterStatusRequested/Fetched/Failed(token, …)` drop stale
   tokens; exports build text + JSON from ONE `AdapterStatusSnapshot` (`buildSummaryAndDetail`). The `Firmware :` line is
@@ -748,10 +760,13 @@ data[5] = B5,  data[6] = B6 …
     "STOPPED — n of m probed", JSON `outcome` / `planned` (`totalProbed` unchanged), CSV first line
     `# outcome=… probed=… planned=…`; a complete scan exports exactly as before. A FAILED session logs no extra "scan …"
     event (the failure event already names the DID and reason).
-  - The fix contains the crash only: over BLE on the WiCAN Pro (MTU above 23) the first 22-byte probe write already fails (#248).
-  - Open: `sendRawQuery` takes the first frame from the response ID (`beginDtcOperation(sid = -1)`), so a poll reply or NRC
-    can become the probe's result and the stolen poll stays outstanding in `PcmRequestLedger` (#250, `ProberAttributionTest`,
-    @Ignore'd).
+  - Reply matching (#250, rc.8): a probe reply must match the module's response ID + 0x62 + the probed DID (single or first
+    frame); every other frame goes back to the normal poll path (parser + ledger). The probe request sits in its module's
+    request ledger (`PcmRequestLedger` for PCM; per-response-ID ledgers for other modules, ownership only), so a `7F 22` is
+    charged to the probe only when the ledger can attribute it — otherwise to nobody, and the probe reads `NRC_AMBIGUOUS`.
+    No time release (#216): after a scan in which a probed DID never answered, PCM NRC suppression stays off until the next
+    connection. A multi-frame positive shows only its first-frame bytes (no flow control sent).
+  - Over BLE, GATT 13 is "possibly delivered" (see the BLE writes gotcha), so a scan no longer stops at the first DID.
 - **Every release build needs an on-device launch (R8)** — on 2026-10-29 R8 (AGP 8.7.3) emitted an unverifiable
   `DrivePageKt$DrivePage$7` after a harmless edit (removing the CLUTCH row): ART threw `VerifyError … register has type
   Conflict` at the first DRIVE frame; debug and every JVM test were fine. Worked around by moving ECONOMY into
@@ -1071,11 +1086,15 @@ android/app/src/test/java/com/openrs/dash/
   BatteryVoltageReplayTest 5 (4 @Ignore'd, #251 / #223) · ModeAttributionReplayTest 4 (3 @Ignore'd, #252). Offline tool:
   `tools/replay/` (python3 test_replay / test_slcan / test_candump: 7 / 7 / 6; `candump_to_slcan.py` output is still raw,
   private bus data)
+  rc.8 reliability 2026-11-06: BleWriteOutcomeTest 14 (#248) · ProberAttributionTest 14 (#250, case 3 split) ·
+  SlcanFramingTest 8 · SlcanFramingModeTest 7 · Mode22LengthTest 7 (#251) · BatteryFreshnessTest 6 (#223) ·
+  ModeAttributionReplayTest 11 · ModeProvenanceMergeTest 2 (#252) · LinkIntegrityExportTest 3 (#253); every earlier
+  @Ignore'd red now runs except `#251 outlier policy` (owner decision)
   (plus LapTimer, PerformanceTimer, FuelEconomy, CrashTelemetryBuffer, NrcTracker, ThermalPredictor, DiagnosticExporter)
 ```
 
-Current count: **1136 tests / 100 classes** per variant (Android, `feature/rc8-diagnostics` `9018d11` (tests identical to `df7bcb9`), 13 skipped =
-the @Ignore'd red cases; Temurin 17); **1108 / 95** on the rc.7 Build 38 branch `feature/boost-label-throttle-inlet`; **1102 / 94** at rc.7 = `43ad5e1` (same Android sources as #238 head `040a1f8`) + **293 vitest across 26 files** (Sapphire at rc.7 — run `web/node_modules/.bin/vitest run` and `tsc -b`). Earlier
+Current count: **1200 tests / 107 classes** per variant (Android, `feature/rc8-reliability` `134bee3`, 1 skipped = `#251 outlier
+policy`; Temurin 17); **1136 / 100** (13 skipped) at staging `743230fb`; **1108 / 95** on the rc.7 Build 38 branch `feature/boost-label-throttle-inlet`; **1102 / 94** at rc.7 = `43ad5e1` (same Android sources as #238 head `040a1f8`) + **293 vitest across 26 files** (Sapphire at rc.7 — run `web/node_modules/.bin/vitest run` and `tsc -b`). Earlier
 totals: 1085 / 90 `2033fda`; 1072 / 87 `d3264c8`; 1066 / 86 `8d1903e`; 1045 / 84 `0e4c120`; 1034 / 81 `7bb8a9a`; 1025 / 79
 `81baa76` (`8d1903e` / `0e4c120` / `7bb8a9a` / `81baa76` are local build IDs from the pre-cleanup history — not on GitHub).
 

@@ -100,10 +100,10 @@ class SlcanConnection(
     @Volatile private var _dtcWatchIds: Set<Int> = emptySet()
     @Volatile private var _dtcScanActive: Boolean = false
     /**
-     * Service the active DTC operation expects replies to (0x19 read DTC, 0x14 clear), or −1 for a raw query (DID
-     * prober: everything from the watched ID). Ordinary polling continues during a scan, so only replies to this
-     * service — and the consecutive frames of a multi-frame reply that started as one — are diverted; a `62` poll
-     * reply or the scan's own `50 03` session reply goes to the normal path instead of finishing the module (#215).
+     * Service the active DTC operation expects replies to (0x19 read DTC, 0x14 clear), −1 = none. Ordinary polling
+     * continues during a scan, so only replies to this service — and the consecutive frames of a multi-frame reply that
+     * started as one — are diverted; a `62` poll reply or the scan's own `50 03` session reply goes to the normal path
+     * instead of finishing the module (#215). The DID prober no longer uses this channel (#250, [ProbeQuery]).
      */
     @Volatile private var _dtcExpectSid: Int = -1
     private val _dtcMultiFrameIds = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
@@ -111,7 +111,7 @@ class SlcanConnection(
     /** Frame loop: should this frame from a watched ID go to the DTC channel? */
     private fun divertToDtc(id: Int, d: ByteArray): Boolean {
         val sid = _dtcExpectSid
-        if (sid < 0) return true
+        if (sid < 0) return false
         if (d.isEmpty()) return false
         return when ((d[0].toInt() and 0xF0) shr 4) {
             0 -> { _dtcMultiFrameIds.remove(id); d.size >= 2 && isReplyTo(sid, d, 1) }
@@ -142,26 +142,71 @@ class SlcanConnection(
         _dtcMultiFrameIds.clear()
     }
 
+    /**
+     * The DID prober's one in-flight query (#250). Only its own reply is taken from the frame loop: a positive matched by
+     * response ID + `62` + DID, or a `7F 22` the module's ledger attributes to its DID. Every other frame — poll replies,
+     * NRCs another request could own — takes the normal path (parser, ledger, NRC tracker).
+     */
+    private class ProbeQuery(val responseId: Int, val did: Int, val ledger: PcmRequestLedger) {
+        val reply = CompletableDeferred<ByteArray>()
+        /** A `7F 22` arrived while another request could own it (charged to nobody). */
+        @Volatile var ambiguousNrc: Int? = null
+    }
+    @Volatile private var _probe: ProbeQuery? = null
+    /** This connection's Mode 22 request ledger for a response ID (the PCM's is the poller's own), null when offline. */
+    @Volatile private var _ledgerFor: ((Int) -> PcmRequestLedger)? = null
+    private val possiblyDeliveredNoted = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** A tracked request write that threw, counted by what it established (#253 diagnostics). */
+    private fun noteWriteFailure(e: Exception) {
+        if (e is CancellationException) return
+        DiagnosticLogger.countWrite(when {
+            WriteFailure.isNotSent(e) -> DiagnosticLogger.WRITE_NOT_SENT
+            WriteFailure.isUncertain(e) -> DiagnosticLogger.WRITE_UNCERTAIN
+            else -> DiagnosticLogger.WRITE_OTHER_FAILURE
+        })
+    }
+
+    /** One bounded line per connection the first time a write comes back possibly delivered (#248). */
+    private fun noteWrite(outcome: WriteOutcome) {
+        DiagnosticLogger.countWrite(if (outcome == WriteOutcome.POSSIBLY_DELIVERED) DiagnosticLogger.WRITE_POSSIBLY_DELIVERED
+            else DiagnosticLogger.WRITE_SENT)
+        if (outcome == WriteOutcome.POSSIBLY_DELIVERED && possiblyDeliveredNoted.compareAndSet(false, true)) {
+            DiagnosticLogger.event("BLE_WRITE", "Adapter answered a write with GATT 13 (longer than its declared maximum); " +
+                "treated as possibly delivered — the request stays outstanding until its reply and is never resent")
+        }
+    }
+
+    /**
+     * Send one Mode 22 read ([frame], `tIII8 03 22 DH DL …`) for the DID prober and wait up to [timeoutMs] for ITS reply
+     * from [responseId] (#250). The request is registered in that module's ledger like a poll (e1 decision B, #216): a
+     * probe DID that never answers lapses like any unanswered request, so NRC suppression stays off until the next
+     * connection — it can lose suppression, never charge an NRC to the wrong DID. Never retransmitted. Throws on a write
+     * failure ([WriteFailure]: withdrawn only when certainly not sent) or [com.openrs.dash.diagnostics.QUERY_NOT_CONNECTED].
+     */
     suspend fun sendRawQuery(
         responseId: Int,
         frame: String,
         timeoutMs: Long = 1_500L
-    ): ByteArray? = _dtcMutex.withLock {
+    ): RawReply? = _dtcMutex.withLock {
         val transport = _transport ?: throw java.io.IOException(com.openrs.dash.diagnostics.QUERY_NOT_CONNECTED)
-        beginDtcOperation(setOf(responseId), sid = -1)
-        while (_dtcChannel.tryReceive().isSuccess) { /* drain stale */ }
+        val ledgerFor = _ledgerFor ?: throw java.io.IOException(com.openrs.dash.diagnostics.QUERY_NOT_CONNECTED)
+        val did = Mode22.request(frame)?.second ?: throw WriteFailure.notSent("not a Mode 22 read request")
+        val ledger = ledgerFor(responseId)
+        val probe = ProbeQuery(responseId, did, ledger)
+        val req = ledger.sent(did, clock())
+        _probe = probe
         try {
-            transport.writeLine(frame)
-            val deadline = System.currentTimeMillis() + timeoutMs
-            while (System.currentTimeMillis() < deadline) {
-                val remaining = deadline - System.currentTimeMillis()
-                if (remaining <= 0) break
-                val resp = withTimeoutOrNull(remaining) { _dtcChannel.receive() } ?: break
-                if (resp.first == responseId) return@withLock resp.second
+            try { noteWrite(transport.write(frame)) } catch (e: Exception) {
+                noteWriteFailure(e)
+                // Withdrawn only when certainly not sent — an uncertain or cancelled write may have reached CAN (#248)
+                if (e !is CancellationException && !WriteFailure.isUncertain(e)) ledger.withdraw(req)
+                throw e
             }
-            null
+            withTimeoutOrNull(timeoutMs) { probe.reply.await() }?.let { RawReply.Frame(it) }
+                ?: probe.ambiguousNrc?.let { RawReply.AmbiguousNrc(it) }
         } finally {
-            endDtcOperation()
+            if (_probe === probe) _probe = null
         }
     }
 
@@ -230,8 +275,9 @@ class SlcanConnection(
                         try { transport.readLine() } catch (_: Exception) { null }
                     }
                     if (line == null) break  // transport closed or timed out
-                    // Accept firmware probe response OR any parseable SLCAN frame
-                    if (line.startsWith("OPENRS:") || SlcanParser.parse(line) != null) {
+                    // Accept firmware probe response OR any SLCAN data frame, plain or timestamped (#251: the framing
+                    // mode is decided by the frame loop)
+                    if (line.startsWith("OPENRS:") || SlcanParser.shape(line) != null) {
                         handshakeOk = true
                         firstLine = line
                         break
@@ -262,21 +308,55 @@ class SlcanConnection(
                 val nrcLog = UnattributedNrcLog()
                 // Requests waiting for a reply, oldest first: a 7F 22 NRC belongs to the oldest one (#216)
                 val pcmRequests = PcmRequestLedger()
+                val framing = SlcanFraming()                     // #251: plain unless the first frames are timestamped
+                var framingNoted = false
+                // Other modules' Mode 22 requests (pollers + prober) by response ID: decides who may own a 7F 22 (#250)
+                val moduleLedgers = java.util.concurrent.ConcurrentHashMap<Int, PcmRequestLedger>()
+                fun ledgerFor(responseId: Int): PcmRequestLedger =
+                    if (responseId == ObdConstants.PCM_RESPONSE_ID) pcmRequests
+                    else moduleLedgers.getOrPut(responseId) { PcmRequestLedger() }
+                _ledgerFor = ::ledgerFor
+                possiblyDeliveredNoted.set(false)
+                /**
+                 * A non-PCM poll write: a Mode 22 read is registered in its module's ledger (response ID = request ID + 8
+                 * for every polled module) and withdrawn only when certainly not sent (#248); other lines pass through.
+                 */
+                suspend fun pollWrite(q: String) {
+                    val target = Mode22.request(q)
+                    val ledger = target?.let { ledgerFor(it.first + 8) }
+                    val req = target?.let { ledger!!.sent(it.second, clock()) }
+                    try { noteWrite(transport.write(q)) } catch (e: Exception) {
+                        noteWriteFailure(e)
+                        if (req != null && !WriteFailure.isUncertain(e)) ledger!!.withdraw(req)
+                        throw e
+                    }
+                }
+                /** Keeps a non-PCM module's ledger in step with its replies; true = the frame is the prober's NRC (taken). */
+                fun moduleReply(ledger: PcmRequestLedger, id: Int, d: ByteArray): Boolean {
+                    Mode22.positiveDid(d)?.let { ledger.positive(it); return false }
+                    val code = Mode22.negativeCode(d) ?: return false
+                    if (code == NrcTracker.NRC_RESPONSE_PENDING) { ledger.pending(clock()); return false }
+                    val owner = ledger.negative(clock())
+                    val probing = _probe?.takeIf { it.responseId == id } ?: return false
+                    if (owner == probing.did) { DiagnosticLogger.logObdFrame(id, d); probing.reply.complete(d); return true }
+                    if (owner == null) probing.ambiguousNrc = code
+                    return false
+                }
 
                 // ── BCM OBD poller ────────────────────────────────────────
                 val obdJob = launch {
                     delay(ObdConstants.BCM_INITIAL_DELAY_MS)
                     ObdConstants.BCM_TPMS_ID_QUERIES.forEach { q ->
-                        try { transport.writeLine(q) } catch (_: Exception) { }
+                        try { pollWrite(q) } catch (_: Exception) { }
                         delay(ObdConstants.BCM_QUERY_GAP_MS)
                     }
                     while (isActive) {
                         ObdConstants.BCM_QUERIES.forEach { q ->
-                            try { transport.writeLine(q) } catch (_: Exception) { }
+                            try { pollWrite(q) } catch (_: Exception) { }
                             delay(ObdConstants.BCM_QUERY_GAP_MS)
                         }
                         ObdConstants.AWD_QUERIES.forEach { q ->
-                            try { transport.writeLine(q) } catch (_: Exception) { }
+                            try { pollWrite(q) } catch (_: Exception) { }
                             delay(ObdConstants.BCM_QUERY_GAP_MS)
                         }
                         delay(ObdConstants.BCM_POLL_INTERVAL_MS)
@@ -298,10 +378,14 @@ class SlcanConnection(
                             val did = ObdConstants.extractDid(q)
                             if (did != null && !nrcTracker.shouldPoll(did, clock())) return@forEach
                             // Registered before the write so an instant reply finds it; withdrawn if the write
-                            // failed — a request that never reached the bus can't own a reply (#216)
+                            // certainly didn't reach the bus (#216) — a BLE write that failed after it was handed to the
+                            // stack may have, so it keeps its request (it lapses) and is never resent (#248)
                             val start = clock()
                             var req = did?.let { pcmRequests.sent(it, start) }
-                            try { transport.writeLine(q) } catch (_: Exception) { req?.let { pcmRequests.withdraw(it) }; req = null }
+                            try { noteWrite(transport.write(q)) } catch (e: Exception) {
+                                noteWriteFailure(e)
+                                if (!WriteFailure.isUncertain(e)) { req?.let { pcmRequests.withdraw(it) }; req = null }
+                            }
                             sentAny = true
                             // Wait (bounded) for the reply, so normally one request is in flight and its NRC attributable
                             if (req != null) withTimeoutOrNull(PcmRequestLedger.REPLY_WINDOW_MS) { req.reply.await() }
@@ -330,25 +414,25 @@ class SlcanConnection(
                     var odometerPolled = false
                     while (isActive) {
                         if (!odometerPolled) {
-                            try { transport.writeLine(ObdConstants.EXT_SESSION_BCM);   delay(ObdConstants.EXT_SESSION_GAP_MS)
-                                  transport.writeLine(ObdConstants.BCM_QUERY_ODOMETER); delay(ObdConstants.EXT_QUERY_GAP_MS)
+                            try { pollWrite(ObdConstants.EXT_SESSION_BCM);   delay(ObdConstants.EXT_SESSION_GAP_MS)
+                                  pollWrite(ObdConstants.BCM_QUERY_ODOMETER); delay(ObdConstants.EXT_QUERY_GAP_MS)
                                   odometerPolled = true } catch (_: Exception) { }
                         }
-                        try { transport.writeLine(ObdConstants.EXT_SESSION_AWD);   delay(ObdConstants.EXT_SESSION_GAP_MS)
-                              transport.writeLine(ObdConstants.AWD_QUERY_RDU_STATUS); delay(ObdConstants.EXT_QUERY_GAP_MS) } catch (_: Exception) { }
-                        try { transport.writeLine(ObdConstants.EXT_SESSION_PSCM);  delay(ObdConstants.EXT_SESSION_GAP_MS)
-                              transport.writeLine(ObdConstants.PSCM_QUERY_PDC);    delay(ObdConstants.EXT_QUERY_GAP_MS) } catch (_: Exception) { }
+                        try { pollWrite(ObdConstants.EXT_SESSION_AWD);   delay(ObdConstants.EXT_SESSION_GAP_MS)
+                              pollWrite(ObdConstants.AWD_QUERY_RDU_STATUS); delay(ObdConstants.EXT_QUERY_GAP_MS) } catch (_: Exception) { }
+                        try { pollWrite(ObdConstants.EXT_SESSION_PSCM);  delay(ObdConstants.EXT_SESSION_GAP_MS)
+                              pollWrite(ObdConstants.PSCM_QUERY_PDC);    delay(ObdConstants.EXT_QUERY_GAP_MS) } catch (_: Exception) { }
                         if (fengMisses.get() < PROBE_TIMEOUT_CYCLES) {
-                            try { transport.writeLine(ObdConstants.EXT_SESSION_FENG);  delay(ObdConstants.EXT_SESSION_GAP_MS)
-                                  transport.writeLine(ObdConstants.FENG_QUERY_STATUS); delay(ObdConstants.EXT_QUERY_GAP_MS) } catch (_: Exception) { }
+                            try { pollWrite(ObdConstants.EXT_SESSION_FENG);  delay(ObdConstants.EXT_SESSION_GAP_MS)
+                                  pollWrite(ObdConstants.FENG_QUERY_STATUS); delay(ObdConstants.EXT_QUERY_GAP_MS) } catch (_: Exception) { }
                             if (fengMisses.incrementAndGet() >= PROBE_TIMEOUT_CYCLES) {
                                 onObdUpdate(getCurrentState().copy(fengTimedOut = true))
                             }
                         }
                         if (rsprotMisses.get() < PROBE_TIMEOUT_CYCLES) {
                             ObdConstants.RSPROT_PROBE_QUERIES.forEach { q ->
-                                try { transport.writeLine(ObdConstants.EXT_SESSION_RSPROT); delay(ObdConstants.EXT_SESSION_GAP_MS)
-                                      transport.writeLine(q);                               delay(ObdConstants.EXT_QUERY_GAP_MS) } catch (_: Exception) { }
+                                try { pollWrite(ObdConstants.EXT_SESSION_RSPROT); delay(ObdConstants.EXT_SESSION_GAP_MS)
+                                      pollWrite(q);                               delay(ObdConstants.EXT_QUERY_GAP_MS) } catch (_: Exception) { }
                             }
                             if (rsprotMisses.incrementAndGet() >= PROBE_TIMEOUT_CYCLES) {
                                 onObdUpdate(getCurrentState().copy(rsprotTimedOut = true))
@@ -447,10 +531,26 @@ class SlcanConnection(
                             continue
                         }
 
-                        val frame = SlcanParser.parse(line)
+                        framing.observe(line)?.let { DiagnosticLogger.event("FRAMING", it) }
+                        if (!framingNoted && framing.locked) { framingNoted = true; DiagnosticLogger.framingDecided(framing.timestamped) }
+                        val frame = SlcanParser.parse(line, framing.timestamped)
                         if (frame == null) {
+                            if (line.startsWith("t") || line.startsWith("T")) DiagnosticLogger.countRefusedFrameLine(framing.isOtherShape(line))
+                            framing.refused(line)?.let { DiagnosticLogger.event("FRAMING", it) }
                             // Counted for the probe verdict only — adapter text is never logged (#220)
                             if (line.isNotEmpty() && !firmwareDetected.get() && !verdictDone.get()) noise.incrementAndGet()
+                            continue
+                        }
+
+                        framing.accepted()
+
+                        // The prober's own positive reply: response ID + 62 + DID (#250); anything else takes the normal path
+                        val probing = _probe
+                        if (probing != null && frame.first == probing.responseId &&
+                            Mode22.positiveDid(frame.second) == probing.did) {
+                            probing.ledger.positive(probing.did)
+                            DiagnosticLogger.logObdFrame(frame.first, frame.second)
+                            probing.reply.complete(frame.second)
                             continue
                         }
 
@@ -458,6 +558,11 @@ class SlcanConnection(
                             DiagnosticLogger.logObdFrame(frame.first, frame.second)   // the reply itself, once (#215)
                             _dtcChannel.trySend(frame)
                             continue
+                        }
+
+                        if (frame.first != ObdConstants.PCM_RESPONSE_ID) {
+                            val ledger = moduleLedgers[frame.first]
+                            if (ledger != null && moduleReply(ledger, frame.first, frame.second)) continue
                         }
 
                         if (frame.first in ObdConstants.OBD_RESPONSE_IDS) {
@@ -490,6 +595,9 @@ class SlcanConnection(
                                     val waiting = pcmRequests.waiting(clock())
                                     val unresolved = pcmRequests.unresolved(clock())
                                     val did = pcmRequests.negative(clock())
+                                    val probing = _probe?.takeIf { it.responseId == ObdConstants.PCM_RESPONSE_ID }
+                                    if (probing != null && did == null) probing.ambiguousNrc = nrcCode
+                                    if (probing != null && did == probing.did) probing.reply.complete(d)
                                     if (did == null) {
                                         // Same policy; the LINE is rate-limited per (NRC, reason) and totals kept (#216)
                                         DiagnosticLogger.countUnattributedNrc()
@@ -502,11 +610,15 @@ class SlcanConnection(
                                         nrcLog.record(nrcCode, reason,
                                             "NRC 0x%02X (%s) — %s; not counted".format(nrcCode, nrcLabel(nrcCode), why), clock())
                                             ?.let { DiagnosticLogger.event("NRC_UNATTRIBUTED", it) }
-                                    } else if (nrcTracker.recordNrc(did, nrcCode, clock())) {
-                                        DiagnosticLogger.event("NRC_SUPPRESS",
-                                            "DID 0x%04X suppressed: NRC 0x%02X (%s), the only request waiting; re-probed after %d s".format(
-                                                did, nrcCode, nrcLabel(nrcCode), NrcTracker.REPROBE_MS / 1000))
-                                        DiagnosticLogger.snapshotNrc(nrcTracker)
+                                    } else {
+                                        DiagnosticLogger.countAttributedNrc()
+                                        if ((probing == null || did != probing.did || did in PCM_POLLED_DIDS) &&
+                                            nrcTracker.recordNrc(did, nrcCode, clock())) {
+                                            DiagnosticLogger.event("NRC_SUPPRESS",
+                                                "DID 0x%04X suppressed: NRC 0x%02X (%s), the only request waiting; re-probed after %d s".format(
+                                                    did, nrcCode, nrcLabel(nrcCode), NrcTracker.REPROBE_MS / 1000))
+                                            DiagnosticLogger.snapshotNrc(nrcTracker)
+                                        }
                                     }
                                 }
                                 continue
@@ -577,6 +689,7 @@ class SlcanConnection(
                 addDebugLine("Error: ${e.message}")
             } finally {
                 _transport = null
+                _ledgerFor = null
                 attemptTransport = null
                 _dtcScanActive = false
                 transport.close()
@@ -851,6 +964,8 @@ class SlcanConnection(
         const val DTC_P2_STAR_MS = 5_000L
         /** A scan never waits longer than this in total, however often modules report pending. */
         const val DTC_SCAN_CAP_MS = 12_000L
+        /** DIDs the PCM poller asks for: a probe NRC charged to any other DID never reaches the NRC tracker (#250). */
+        val PCM_POLLED_DIDS: Set<Int> = ObdConstants.PCM_QUERIES.mapNotNull { ObdConstants.extractDid(it) }.toSet()
     }
 
     // ── NRC helpers ─────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 package com.openrs.dash
 
+import com.openrs.dash.can.CanDecoder
 import com.openrs.dash.can.DriveCommandResult
 import com.openrs.dash.can.FirmwareCommandSender
 import com.openrs.dash.can.executeDriveModeChange
@@ -34,9 +35,18 @@ class DriveModeConfirmTest {
     /** The car: [mode] reported at [atMs] (stamped then), on connection [link]. */
     private class Car(var vs: VehicleState, var link: Int = 1)
 
+    /**
+     * A corroborated resolved report of [mode] at [atMs] — what the decoder's stamps say after two agreeing 0x1B0 reports
+     * and, for Sport / Track, two agreeing 0x420 details before them (rc.8 #252; before #252 the harness stamped only
+     * "driveMode", then also the detail). The car's run is [mode] from then on.
+     */
     private fun TestScope.report(car: Car, mode: DriveMode, atMs: Long) = backgroundScope.launch {
         kotlinx.coroutines.delay(atMs - testScheduler.currentTime)
-        car.vs = car.vs.copy(driveMode = mode).markFresh("driveMode", now = testScheduler.currentTime)
+        val now = testScheduler.currentTime
+        car.vs = car.vs.copy(driveMode = mode, fieldLastUpdateMs = car.vs.fieldLastUpdateMs
+            .filterKeys { !it.startsWith(CanDecoder.MODE_RUN_PREFIX) } + (CanDecoder.modeRunTag(mode) to now))
+            .markFresh("driveMode", CanDecoder.MODE_RUN_PREV_TAG, CanDecoder.MODE_DETAIL_TAG,
+                CanDecoder.MODE_DETAIL_PAIR_TAG, CanDecoder.MODE_RESOLVED_DETAIL_TAG, CanDecoder.MODE_RESOLVED_PAIR_TAG, now = now)
     }
 
     private suspend fun TestScope.run(car: Car, sender: Sender, target: DriveMode, current: DriveMode) =
@@ -89,7 +99,9 @@ class DriveModeConfirmTest {
         report(car, DriveMode.SPORT, 4_500)
         val r = run(car, Sender(), DriveMode.SPORT, DriveMode.NORMAL)
         assertEquals(DriveCommandResult.Success, r)
-        assertTrue(events().toString(), events().any { it == "CONFIRMED by CAN: Sport reported 4500 ms after the request" })
+        // rc.8 #252 wording: a matching report is the car's state after the request, not proof the request caused it
+        assertTrue(events().toString(), events().any { it == "CONFIRMED by CAN: Sport reported 4500 ms after the request " +
+            "(the car's state after it — not proof the request caused it)" })
     }
 
     @Test fun `a fresh overshoot still gets the one correction, confirmed only by a later report`() = runTest {

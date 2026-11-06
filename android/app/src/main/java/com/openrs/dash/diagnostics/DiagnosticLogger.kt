@@ -180,6 +180,36 @@ object DiagnosticLogger {
     @Volatile var nrcUnattributedTotal: Int = 0; private set
     fun countUnattributedNrc() = synchronized(lock) { nrcUnattributedTotal++ }
 
+    /**
+     * Link-integrity counters of this session (rc.8 #253), exported as LINK INTEGRITY / `linkIntegrity`. Bounded: counts
+     * only, never a raw line. [LinkIntegrity.writes] covers the tracked request writes (Mode 22 polls and DID probes):
+     * what each write established (#248), not what a module did with it.
+     */
+    class LinkIntegrity {
+        val writes = linkedMapOf(WRITE_SENT to 0, WRITE_POSSIBLY_DELIVERED to 0, WRITE_NOT_SENT to 0, WRITE_UNCERTAIN to 0,
+            WRITE_OTHER_FAILURE to 0)
+        /** null = no connection reached a framing decision yet; else whether frames carried the Z1 timestamp (#251). */
+        var framingTimestamped: Boolean? = null
+        var refusedFrameLines = 0          // frame-shaped lines refused by strict framing (#251)
+        var refusedOtherShape = 0          // … of them, lines of the other framing shape on a locked connection
+        var refusedReplies = 0             // Mode 22 replies refused for their length / PCI (#251)
+        var nrcAttributed = 0              // PCM NRCs charged to exactly one request (#216)
+        fun copy() = LinkIntegrity().also {
+            it.writes.putAll(writes); it.framingTimestamped = framingTimestamped; it.refusedFrameLines = refusedFrameLines
+            it.refusedOtherShape = refusedOtherShape; it.refusedReplies = refusedReplies; it.nrcAttributed = nrcAttributed
+        }
+    }
+    private var linkIntegrityLive = LinkIntegrity()
+    /** A consistent copy of this session's counters. */
+    val linkIntegrity: LinkIntegrity get() = synchronized(lock) { linkIntegrityLive.copy() }
+    fun countWrite(kind: String) = synchronized(lock) { linkIntegrityLive.writes[kind] = (linkIntegrityLive.writes[kind] ?: 0) + 1 }
+    fun framingDecided(timestamped: Boolean) = synchronized(lock) { linkIntegrityLive.framingTimestamped = timestamped }
+    fun countRefusedFrameLine(otherShape: Boolean) = synchronized(lock) {
+        linkIntegrityLive.refusedFrameLines++; if (otherShape) linkIntegrityLive.refusedOtherShape++
+    }
+    fun countRefusedReply() = synchronized(lock) { linkIntegrityLive.refusedReplies++ }
+    fun countAttributedNrc() = synchronized(lock) { linkIntegrityLive.nrcAttributed++ }
+
     /** Identity of the current session — [sessionStart] returns it; adapter-status writes carry it (#233). */
     @Volatile private var sessionToken: Long = 0L
 
@@ -281,6 +311,7 @@ object DiagnosticLogger {
             dtcScans.newSession()      // a new session starts with no scan; older scans can't publish into it
             nrcSnapshot = emptyMap()   // NRC suppression is per connection (#216)
             nrcUnattributedTotal = 0
+            linkIntegrityLive = LinkIntegrity()
 
             // Option C: open SLCAN log file
             if (logDir != null) {
@@ -491,6 +522,12 @@ object DiagnosticLogger {
     }
 
     // ── DID Probe results ────────────────────────────────────────────────────
+
+    const val WRITE_SENT = "sent"
+    const val WRITE_POSSIBLY_DELIVERED = "possiblyDelivered"
+    const val WRITE_NOT_SENT = "notSent"
+    const val WRITE_UNCERTAIN = "deliveryUnknown"
+    const val WRITE_OTHER_FAILURE = "otherFailure"
 
     const val PROBE_COMPLETE = "COMPLETE"
     const val PROBE_STOPPED = "STOPPED"

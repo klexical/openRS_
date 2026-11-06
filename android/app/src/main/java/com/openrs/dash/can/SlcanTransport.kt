@@ -29,6 +29,12 @@ interface SlcanTransport {
      */
     suspend fun writeLine(frame: String)
 
+    /**
+     * [writeLine] with what it established about delivery (#248). A transport that can only succeed or throw keeps this
+     * default; a failure is still thrown (see [WriteFailure] for the not-sent / uncertain prefixes).
+     */
+    suspend fun write(frame: String): WriteOutcome { writeLine(frame); return WriteOutcome.SENT }
+
     /** Close the connection and release resources. */
     fun close()
 

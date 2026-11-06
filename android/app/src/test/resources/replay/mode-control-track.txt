@@ -1,8 +1,12 @@
-# SYNTHETIC. Control: Normal, the app requests Track, the car reports the 0x420 Track detail and then a resolving 0x1B0.
+# SYNTHETIC. Control: Normal, the app requests Track, the car reports the 0x420 Track detail and then resolving 0x1B0s.
 # 0x1B0: byte 4 = 0 (steady), byte 6 high nibble 0 Normal / 1 Sport-or-Track / 2 Drift. 0x420: byte 6 0x11, byte 7 0xCC
-# Sport / 0xCD Track (bit 0).
+# Sport / 0xCD Track (bit 0). Cadence (rc.8 #252): 0x420 every ~600 ms, repeated 0x1B0 reports — a confirmation needs two
+# agreeing details and two agreeing 0x1B0 reports after the request (the first version had one of each).
 +0      RX t1B080000000000000000
 +300    RX t42080000000000001000
 +10000  REQ TRACK
 +12300  RX t420800000000000011CD
 +12500  RX t1B080000000000001000
++12900  RX t420800000000000011CD
++13000  RX t1B080000000000001000
++13100  RX t1B080000000000001000

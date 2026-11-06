@@ -1,5 +1,7 @@
 package com.openrs.dash.diagnostics
 
+import com.openrs.dash.can.RawReply
+import com.openrs.dash.can.WriteFailure
 import com.openrs.dash.diagnostics.DiagnosticLogger.ProbeResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
@@ -9,7 +11,10 @@ import kotlinx.coroutines.ensureActive
 internal sealed interface DidProbeEnd {
     data object Complete : DidProbeEnd
     data object Stopped : DidProbeEnd
-    /** [sent] = false when the query never reached the adapter (no connection), so nothing went out for [did]. */
+    /**
+     * [sent] = false only when nothing certainly left the phone for [did] (no connection, or the stack refused the write —
+     * `WriteFailure.isNotSent`); true when it may have reached CAN.
+     */
     data class Failed(val did: Int, val reason: String, val sent: Boolean = true) : DidProbeEnd
 }
 
@@ -25,7 +30,7 @@ internal suspend fun runDidProbeScan(
     requestId: Int,
     responseId: Int,
     dids: List<Int>,
-    sendRawQuery: suspend (Int, String, Long) -> ByteArray?,
+    sendRawQuery: suspend (Int, String, Long) -> RawReply?,
     stopRequested: () -> Boolean,
     onResult: (ProbeResult) -> Unit,
 ): DidProbeEnd {
@@ -50,7 +55,7 @@ internal suspend fun runDidProbeScan(
             val reason = LogText.sanitizeReason(e)
             DiagnosticLogger.event("PROBE", "%s scan stopped at 0x%04X (%d/%d probed): %s"
                 .format(module, did, results.size, dids.size, reason))
-            return end(DiagnosticLogger.PROBE_FAILED, DidProbeEnd.Failed(did, reason, sent = e.message != QUERY_NOT_CONNECTED))
+            return end(DiagnosticLogger.PROBE_FAILED, DidProbeEnd.Failed(did, reason, sent = !WriteFailure.isNotSent(e)))
         }
         currentCoroutineContext().ensureActive()
         if (stopRequested()) return end(DiagnosticLogger.PROBE_STOPPED, DidProbeEnd.Stopped)
@@ -62,8 +67,20 @@ internal suspend fun runDidProbeScan(
     return end(DiagnosticLogger.PROBE_COMPLETE, DidProbeEnd.Complete)
 }
 
-private fun classifyResponse(did: Int, data: ByteArray?): ProbeResult {
+/** Probe result status for a `7F 22` that another request could equally own (#250) — charged to nobody. */
+internal const val PROBE_NRC_AMBIGUOUS = "NRC_AMBIGUOUS"
+
+private fun classifyResponse(did: Int, reply: RawReply?): ProbeResult {
+    if (reply is RawReply.AmbiguousNrc) {
+        return ProbeResult(did, PROBE_NRC_AMBIGUOUS,
+            "NRC 0x%02X — %s; another request could own it".format(reply.code, nrcLabel(reply.code)))
+    }
+    val data = (reply as? RawReply.Frame)?.data
     if (data == null || data.size < 2) return ProbeResult(did, "TIMEOUT", "")
+    // First frame of a multi-frame positive (10 LL 62 DH DL …): only its first bytes — the prober sends no flow control
+    if ((data[0].toInt() and 0xF0) == 0x10 && data.size >= 5 && (data[2].toInt() and 0xFF) == 0x62) {
+        return ProbeResult(did, "FOUND", data.drop(5).joinToString(" ") { "%02X".format(it) })
+    }
     val svc = data[1].toInt() and 0xFF
     return when (svc) {
         0x62 -> ProbeResult(

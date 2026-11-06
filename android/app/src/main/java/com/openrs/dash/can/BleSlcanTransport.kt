@@ -124,6 +124,8 @@ class BleSlcanTransport(
 
     override suspend fun writeLine(frame: String) = core.writeLine(frame)
 
+    override suspend fun write(frame: String): WriteOutcome = core.write(frame)
+
     override fun close() {
         core.close()                                            // closes the GATT once connected (via the link)
         try { gatt?.disconnect(); gatt?.close() } catch (_: Exception) { }   // or before it ever connected

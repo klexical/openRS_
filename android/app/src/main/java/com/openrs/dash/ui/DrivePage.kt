@@ -74,6 +74,7 @@ import androidx.compose.runtime.collectAsState
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.FuelEconomy
+import com.openrs.dash.data.PolledFreshness
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.ui.anim.ShiftLightBar
 import com.openrs.dash.ui.anim.SparklineData
@@ -163,7 +164,7 @@ import kotlin.math.roundToInt
     // ── F2: fuel economy ─────────────────────────────────────────────────
     val econState by FuelEconomy.state.collectAsState()
     val knockCount by OpenRSDashApp.instance.knockEventCount.collectAsState()
-    val status = vehicleStatus(vs, p, knockCount)
+    val status = vehicleStatus(vs, p, knockCount, now)
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val viewportH = maxHeight
@@ -473,7 +474,22 @@ private data class VehicleStatus(
 )
 
 /** Every rule here is an existing limit (THERMAL preset, TPMS low / warn psi, fuel < 10 %, knock counter). */
-private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): VehicleStatus {
+/**
+ * DRIVE → VEHICLE → BATT (#223): PCM 0x0304 as reported — "— —" until a reading arrives (or when it reads 0), STALE while
+ * disconnected or once the reading is older than the polled-value rule allows ([PolledFreshness]: 2 × 40 s), so a held
+ * value never looks live. No voltage limit (none is established) and no claim beyond "the PCM's reported voltage".
+ */
+internal fun batteryCell(vs: VehicleState, nowMs: Long): Pair<String, Level> {
+    if (vs.batteryVoltage <= 0) return "— —" to Level.NONE
+    val lvl = when {
+        !vs.isConnected -> Level.STALE
+        !PolledFreshness.isFresh(vs, "batteryVoltage", nowMs) -> Level.STALE
+        else -> Level.NORMAL
+    }
+    return "${"%.1f".format(vs.batteryVoltage)}V" to lvl
+}
+
+private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int, nowMs: Long): VehicleStatus {
     val connected = vs.isConnected
     fun avail(c: Double, tag: String) = vs.tempAvail(c, tag)
     fun temp(c: Double) = if (c > -90) "${p.displayTemp(c)}${p.tempLabel}" else "— —"
@@ -486,8 +502,7 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
         vs.fuelLevelPct < 10.0 -> Level.WARN          // DRIVE "LOW FUEL" rule (< 10 %)
         else -> Level.NORMAL
     }
-    val hasBatt = vs.batteryVoltage > 0
-    val battLvl = when { !hasBatt -> Level.NONE; !connected -> Level.STALE; else -> Level.NORMAL }
+    val (battStr, battLvl) = batteryCell(vs, nowMs)
     val fuelStr = if (hasFuel) "${vs.fuelLevelPct.roundToInt()}%" else "— —"
 
     fun hotTitle(name: String, l: Level) = if (l == Level.CRIT) "$name CRITICAL" else "$name HOT"
@@ -525,7 +540,7 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int): Vehi
     return VehicleStatus(
         connected,
         temp(vs.oilTempC), oilLvl, temp(vs.coolantTempC), coolLvl,
-        fuelStr, fuelLvl, if (hasBatt) "${"%.1f".format(vs.batteryVoltage)}V" else "— —", battLvl,
+        fuelStr, fuelLvl, battStr, battLvl,
         alerts,
     )
 }

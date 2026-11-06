@@ -64,7 +64,10 @@ object DemoSimulator {
 
     /** Freshness tags the simulator writes — CAN-sourced THERMAL tags + every polled Mode 22 tag. */
     // Every tag CanDecoder stamps from CAN — incl. "driveMode", which drive-mode confirmation needs (demo dock)
-    val CAN_TAGS = arrayOf("oilTempC", "ptuTempC", "boostKpa", "escStatus", "driveMode", "coolantTempC", "intakeTempC", "ambientTempC")
+    val CAN_TAGS = arrayOf("oilTempC", "ptuTempC", "boostKpa", "escStatus", "driveMode", "coolantTempC", "intakeTempC", "ambientTempC",
+        com.openrs.dash.can.CanDecoder.MODE_DETAIL_TAG, com.openrs.dash.can.CanDecoder.MODE_RESOLVED_DETAIL_TAG,
+        com.openrs.dash.can.CanDecoder.MODE_DETAIL_PAIR_TAG, com.openrs.dash.can.CanDecoder.MODE_RESOLVED_PAIR_TAG,
+        com.openrs.dash.can.CanDecoder.MODE_RUN_PREV_TAG)
     val OBD_TAGS = arrayOf(
         "calcLoad", "shortFuelTrim", "longFuelTrim", "timingAdvance", "fuelRailPressure",
         "o2Voltage", "afrActual", "lambdaActual", "afrSensor1", "afrDesired", "commandedAfr",
@@ -137,6 +140,10 @@ object DemoSimulator {
                     next.markFresh(*CAN_TAGS, *OBD_TAGS.filter { it != "rduTempC" }.toTypedArray(), now = nowMs)
                 else -> next.markFresh(*CAN_TAGS, *OBD_TAGS, now = nowMs)
             }
+            // The simulated mode is the current 0x1B0 run (#252: confirmations need the run to be the target)
+            next = next.copy(fieldLastUpdateMs = next.fieldLastUpdateMs
+                .filterKeys { !it.startsWith(com.openrs.dash.can.CanDecoder.MODE_RUN_PREFIX) } +
+                (com.openrs.dash.can.CanDecoder.modeRunTag(next.driveMode) to nowMs))
         }
         return next
     }

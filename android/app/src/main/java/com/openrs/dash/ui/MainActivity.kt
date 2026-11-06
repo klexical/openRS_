@@ -442,7 +442,7 @@ class MainActivity : ComponentActivity() {
                                                         fn
                                                     },
                                                     onSendRawQuery = service?.let { svc ->
-                                                        val q: suspend (Int, String, Long) -> ByteArray? =
+                                                        val q: suspend (Int, String, Long) -> com.openrs.dash.can.RawReply? =
                                                             { r, f, t -> svc.sendRawQuery(r, f, t) }
                                                         q
                                                     },

@@ -113,7 +113,9 @@ class DtcScanExplainTest {
     }
 
     @Test fun `a negative reply is REJECTED and logged once in the raw log`() = runTest {
-        val (r, progress) = scan(listOf(spec("ABS")), mapOf(0x760 to listOf("t7688037F1931000000000" to 20L)))
+        // rc.8 #251: the line carried one extra hex digit after its DLC-8 data (17 characters) — only parsed while
+        // trailing characters were ignored; the logged frame below always said the 16-character line was meant
+        val (r, progress) = scan(listOf(spec("ABS")), mapOf(0x760 to listOf("t7688037F193100000000" to 20L)))
         assertEquals(ModuleScanStatus.REJECTED, r.moduleStatuses["ABS"])
         assertEquals(ModuleScanStatus.REJECTED, progress["ABS"])
         assertEquals(1, Regex("768#037F193100000000").findAll(log()).count())
