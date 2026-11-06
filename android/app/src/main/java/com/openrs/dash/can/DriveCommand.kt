@@ -51,10 +51,11 @@ fun successHapticFor(mode: DriveMode): HapticFeedbackType = when (mode) {
  * The adapter's OK is only acceptance. Confirmation is the car reporting [targetMode] in a resolved 0x1B0 frame
  * stamped AFTER the request ([STAMP_TAG]) on the SAME connection ([connectionId]) — a cached / held matching value never
  * confirms, a transient mode on the way (Track via Sport) isn't judged until the window ends, and a reconnect while
- * waiting is [DriveCommandResult.ConnectionLost] with no correction. Sport / Track also need the 0x420 detail that 0x1B0
- * resolved with to be received after the request (#252, [reportedAfter]) — a detail cached before it, a 0x420 flip after
- * the last 0x1B0, or an undocumented 0x420 never confirms, and never triggers the correction. A matching report says
- * what the car is in after the request, not that the request caused it. Timing and the single correction are unchanged.
+ * waiting is [DriveCommandResult.ConnectionLost] with no correction. The report must be corroborated after the request
+ * (#252, [reportedAfter]): two agreeing 0x1B0 reports, and for Sport / Track two agreeing 0x420 details before them — a
+ * detail cached before the request, a 0x420 flip after the last 0x1B0, an undocumented 0x420 or any single frame never
+ * confirms, and never triggers the correction. A matching report says what the car is in after the request, not that
+ * the request caused it. Timing and the single correction are unchanged.
  *
  * Returns a [DriveCommandResult] — callers map it to UI feedback.
  */
@@ -145,13 +146,20 @@ const val STAMP_TAG = "driveMode"
 private enum class Wait { CONFIRMED, LINK_CHANGED, TIMED_OUT }
 
 /**
- * [mode] rests on reports received after [requestedAt]: a resolving 0x1B0 stamped after it, and — for Sport / Track,
- * which 0x1B0 alone can't tell apart — the 0x420 detail that 0x1B0 resolved with, received after it too (#252).
+ * [mode] rests on corroborated reports received after [requestedAt] (#252) — no single frame is enough:
+ *  - the current run of resolved 0x1B0 reports is [mode], and two of its reports are after the request
+ *    ([CanDecoder.MODE_RUN_PREV_TAG] and the "driveMode" stamp);
+ *  - for Sport / Track, which 0x1B0 alone can't tell apart, the latest report resolved with a 0x420 detail corroborated by
+ *    the agreeing detail before it, both after the request ([CanDecoder.MODE_RESOLVED_PAIR_TAG]).
+ * The same rule gates the overshoot correction, so a single wrong-mode frame never sends a corrective command.
  */
 private fun reportedAfter(vs: VehicleState, mode: DriveMode, requestedAt: Long): Boolean {
-    if ((vs.fieldLastUpdateMs[STAMP_TAG] ?: Long.MIN_VALUE) <= requestedAt) return false
+    val s = vs.fieldLastUpdateMs
+    if (!s.containsKey(CanDecoder.modeRunTag(mode))) return false
+    if ((s[STAMP_TAG] ?: Long.MIN_VALUE) <= requestedAt) return false
+    if ((s[CanDecoder.MODE_RUN_PREV_TAG] ?: Long.MIN_VALUE) <= requestedAt) return false
     if (mode != DriveMode.SPORT && mode != DriveMode.TRACK) return true
-    return (vs.fieldLastUpdateMs[CanDecoder.MODE_RESOLVED_DETAIL_TAG] ?: Long.MIN_VALUE) > requestedAt
+    return (s[CanDecoder.MODE_RESOLVED_PAIR_TAG] ?: Long.MIN_VALUE) > requestedAt
 }
 
 /** 150 × 100 ms: the requested mode in a frame after [requestedAt] on connection [link]. */

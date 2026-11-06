@@ -31,7 +31,10 @@ import org.junit.Test
  * that detail. A detail cached before the request can't disambiguate; a single outlier frame can't confirm; unresolved
  * evidence never triggers a correction. Fixed in the rc.8 reliability pass (#252): a resolved 0x1B0 records the receipt
  * time of the 0x420 detail it used, and a Sport / Track confirmation needs both after the request; an undocumented 0x420
- * byte 6 is not used; a resolved mode change is stamped at once (not held by the 1 s stamp throttle).
+ * byte 6 is not used; a resolved mode change is stamped at once (not held by the 1 s stamp throttle). Corroboration
+ * (9d area 3 review F1): no single frame confirms or corrects — two agreeing 0x1B0 reports after the request, and for
+ * Sport / Track two agreeing 0x420 details before them. Control fixtures carry a realistic cadence (0x420 ~600 ms,
+ * repeated 0x1B0) for that reason.
  * SPEC cases test the provenance rule on constructed sequences; TRAFFIC cases replay the ordinary sequences a car sends.
  * A mode reported after a request establishes the car's state — not that the request caused it.
  */
@@ -114,7 +117,8 @@ class ModeAttributionReplayTest {
             +300    RX t1B080000000000001000
             +9800   RX t1B080000000000001000   # Sport again: stamp refreshed just before the request
             +10000  REQ NORMAL
-            +10400  RX t1B080000000000000000   # Normal 600 ms after the last stamp — the only report after the request
+            +10400  RX t1B080000000000000000   # Normal 600 ms after the last stamp (inside the 1 s throttle)
+            +10450  RX t1B080000000000000000   # its second report: both after the request (corroborated, #252)
         """.trimIndent()), sender)
         assertEquals(DriveMode.NORMAL, car.vs.driveMode)
         assertEquals(DriveCommandResult.Success, r)
@@ -131,6 +135,9 @@ class ModeAttributionReplayTest {
             +11100  RX t1B080000000000001000
             +13000  RX t420800000000000011CD   # then Track
             +13100  RX t1B080000000000001000
+            +13600  RX t420800000000000011CD
+            +13700  RX t1B080000000000001000
+            +13800  RX t1B080000000000001000
         """.trimIndent()), sender)
         assertEquals(DriveMode.TRACK, car.vs.driveMode)
         assertEquals(DriveCommandResult.Success, r)
@@ -142,8 +149,24 @@ class ModeAttributionReplayTest {
             +0      RX t420800000000000011CD
             +300    RX t1B080000000000001000
             +10000  REQ TRACK
-            +10600  RX t420800000000000011CD
+            +10600  RX t420800000000000011CD   # re-broadcast: 0x420 ~600 ms, 0x1B0 every 100 ms (synthetic cadence)
             +10700  RX t1B080000000000001000
+            +10800  RX t1B080000000000001000
+            +10900  RX t1B080000000000001000
+            +11000  RX t1B080000000000001000
+            +11100  RX t1B080000000000001000
+            +11200  RX t420800000000000011CD
+            +11200  RX t1B080000000000001000
+            +11300  RX t1B080000000000001000
+            +11400  RX t1B080000000000001000
+            +11500  RX t1B080000000000001000
+            +11600  RX t1B080000000000001000
+            +11700  RX t1B080000000000001000
+            +11800  RX t420800000000000011CD
+            +11800  RX t1B080000000000001000
+            +11900  RX t1B080000000000001000
+            +12000  RX t1B080000000000001000
+            +12100  RX t1B080000000000001000
         """.trimIndent()))
         assertEquals(DriveCommandResult.Success, r)
     }
@@ -155,8 +178,60 @@ class ModeAttributionReplayTest {
             +10000  REQ TRACK
             +12300  RX t420800000000000015CD   # byte 6 0x15 = 0x11 | launch control (bit 2)
             +12500  RX t1B080000000000001000
+            +12900  RX t420800000000000015CD
+            +13000  RX t1B080000000000001000
+            +13100  RX t1B080000000000001000
         """.trimIndent()))
         assertEquals(DriveMode.TRACK, car.vs.driveMode)
         assertEquals(DriveCommandResult.Success, r)
+    }
+
+    // ── Corroboration (9d area 3 review F1): a single well-formed outlier never confirms or corrects ─────────────────
+
+    @Test fun `TRAFFIC - one documented but wrong 0x420 can't confirm Sport while the car stays in Track`() = runTest {
+        // 9d's probe: byte 6 0x11 is documented, bit 0 says Sport — a single frame, then Track detail again
+        val sender = Sender()
+        val (r, car) = play(rows("""
+            +0      RX t420800000000000011CD
+            +300    RX t1B080000000000001000
+            +10000  REQ SPORT
+            +12900  RX t420800000000000011CC
+            +13000  RX t1B080000000000001000
+            +13500  RX t420800000000000011CD
+            +13600  RX t1B080000000000001000
+            +14100  RX t420800000000000011CD
+            +14200  RX t1B080000000000001000
+        """.trimIndent()), sender)
+        assertEquals(DriveMode.TRACK, car.vs.driveMode)
+        assertNotEquals("confirmed Sport from one 0x420 frame", DriveCommandResult.Success, r)
+        assertEquals(1, sender.calls)
+    }
+
+    @Test fun `TRAFFIC - a single 0x1B0 blip to the target can't confirm Drift`() = runTest {
+        val sender = Sender()
+        val (r, car) = play(rows("""
+            +0      RX t420800000000000011CC
+            +300    RX t1B080000000000001000
+            +10000  REQ DRIFT
+            +12000  RX t1B080000000000002000   # one Drift report
+            +12400  RX t1B080000000000001000   # back to Sport
+            +13000  RX t420800000000000011CC
+            +13100  RX t1B080000000000001000
+        """.trimIndent()), sender)
+        assertEquals(DriveMode.SPORT, car.vs.driveMode)
+        assertNotEquals("confirmed Drift from one 0x1B0 frame", DriveCommandResult.Success, r)
+        assertEquals(1, sender.calls)
+    }
+
+    @Test fun `TRAFFIC - a single wrong-mode blip at the timeout triggers no correction`() = runTest {
+        val sender = Sender()
+        val (r, _) = play(rows("""
+            +0      RX t1B080000000000000000
+            +300    RX t42080000000000001000
+            +10000  REQ SPORT
+            +26500  RX t1B080000000000002000   # one Drift report just before the window ends, nothing after
+        """.trimIndent()), sender)
+        assertNotEquals(DriveCommandResult.Success, r)
+        assertEquals("no corrective command from a single frame", 1, sender.calls)
     }
 }

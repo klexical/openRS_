@@ -204,9 +204,11 @@ class BleCommandSendFailureTest {
         val link = connected(FrsWrite.OK)
         backgroundScope.launch {
             delay(3_000L)
-            // a resolved Sport report and the 0x420 detail it rests on, both after the request (#252)
-            car = car.copy(driveMode = DriveMode.SPORT).markFresh("driveMode",
-                com.openrs.dash.can.CanDecoder.MODE_DETAIL_TAG, com.openrs.dash.can.CanDecoder.MODE_RESOLVED_DETAIL_TAG,
+            // a corroborated resolved Sport report and the detail pair it rests on, all after the request (#252)
+            val d = com.openrs.dash.can.CanDecoder
+            car = car.copy(driveMode = DriveMode.SPORT, fieldLastUpdateMs = car.fieldLastUpdateMs +
+                (d.modeRunTag(DriveMode.SPORT) to testScheduler.currentTime)).markFresh("driveMode", d.MODE_RUN_PREV_TAG,
+                d.MODE_DETAIL_TAG, d.MODE_DETAIL_PAIR_TAG, d.MODE_RESOLVED_DETAIL_TAG, d.MODE_RESOLVED_PAIR_TAG,
                 now = testScheduler.currentTime)
         }
         val r = driveMode(BleFirmwareApi(link.conn))

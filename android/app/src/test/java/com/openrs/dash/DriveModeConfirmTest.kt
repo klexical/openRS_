@@ -36,14 +36,17 @@ class DriveModeConfirmTest {
     private class Car(var vs: VehicleState, var link: Int = 1)
 
     /**
-     * A resolved 0x1B0 report at [atMs]. rc.8 #252: a car's report also carries the receipt time of the 0x420 detail it
-     * resolved with — here received just before, so a Sport / Track report rests on a detail after the request too
-     * (before #252 the harness stamped only "driveMode"; the rule now also reads the detail's time).
+     * A corroborated resolved report of [mode] at [atMs] — what the decoder's stamps say after two agreeing 0x1B0 reports
+     * and, for Sport / Track, two agreeing 0x420 details before them (rc.8 #252; before #252 the harness stamped only
+     * "driveMode", then also the detail). The car's run is [mode] from then on.
      */
     private fun TestScope.report(car: Car, mode: DriveMode, atMs: Long) = backgroundScope.launch {
         kotlinx.coroutines.delay(atMs - testScheduler.currentTime)
-        car.vs = car.vs.copy(driveMode = mode).markFresh("driveMode", CanDecoder.MODE_DETAIL_TAG,
-            CanDecoder.MODE_RESOLVED_DETAIL_TAG, now = testScheduler.currentTime)
+        val now = testScheduler.currentTime
+        car.vs = car.vs.copy(driveMode = mode, fieldLastUpdateMs = car.vs.fieldLastUpdateMs
+            .filterKeys { !it.startsWith(CanDecoder.MODE_RUN_PREFIX) } + (CanDecoder.modeRunTag(mode) to now))
+            .markFresh("driveMode", CanDecoder.MODE_RUN_PREV_TAG, CanDecoder.MODE_DETAIL_TAG,
+                CanDecoder.MODE_DETAIL_PAIR_TAG, CanDecoder.MODE_RESOLVED_DETAIL_TAG, CanDecoder.MODE_RESOLVED_PAIR_TAG, now = now)
     }
 
     private suspend fun TestScope.run(car: Car, sender: Sender, target: DriveMode, current: DriveMode) =
