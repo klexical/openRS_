@@ -303,7 +303,7 @@ object CanDecoder {
         val before = previous.fieldLastUpdateMs
         val sameRun = before.containsKey(runTag)
         val last = before["driveMode"] ?: 0L
-        // A pair corroborates a mode only if its details are of that mode: Normal's 10CC and Drift's 12CC read bit 0 = 0 like Sport's (#252)
+        // A pair corroborates a mode only if its details are of that mode: Normal's 10C4 and Drift's 12C4 read bit 0 = 0 like Sport's (#252)
         val pair = before[MODE_DETAIL_PAIR_TAG]?.takeIf { detailsMatch(decoded.driveMode, before) }
         val due = !sameRun || !before.containsKey(MODE_RUN_PREV_TAG) || now - last >= CAN_STAMP_THROTTLE_MS ||
             (pair != null && !before.containsKey(MODE_RESOLVED_PAIR_TAG))   // the first matching pair shouldn't wait a second for a report

@@ -19,8 +19,8 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * #252: a Sport / Track confirmation rests on details of that mode. 0x1B0 nibble 1 resolves through 0x420 bit 0, and Normal's 10CC and
- * Drift's 12CC have bit 0 = 0 like Sport's, so a stale pair of them used to corroborate Sport while the car was on its way to
+ * #252: a Sport / Track confirmation rests on details of that mode. 0x1B0 nibble 1 resolves through 0x420 bit 0, and Normal's 10C4 and
+ * Drift's 12C4 have bit 0 = 0 like Sport's, so a stale pair of them used to corroborate Sport while the car was on its way to
  * Track. Real decoder and stamps on a virtual clock, the real wait, 0x1B0 every 100 ms and 0x420 every 600 ms at every 50 ms phase.
  * That 0x1B0 can lead 0x420 at all is this script's model: the order on a car is unknown. SYNTHETIC.
  */
@@ -42,7 +42,7 @@ class ModeDetailClassTest {
         const val LANDS_AFTER_MS = 4_000L
         val PHASES = 0L until 600L step 50L
         fun defaultDetail(m: DriveMode) = when (m) {
-            DriveMode.NORMAL -> 0x10CC; DriveMode.SPORT -> 0x11CC; DriveMode.TRACK -> 0x11CD; else -> 0x12CC
+            DriveMode.NORMAL -> 0x10C4; DriveMode.SPORT -> 0x11CC; DriveMode.TRACK -> 0x11CD; else -> 0x12C4
         }
         fun nibble(m: DriveMode) = when (m) { DriveMode.NORMAL -> 0; DriveMode.DRIFT -> 2; else -> 1 }
     }
