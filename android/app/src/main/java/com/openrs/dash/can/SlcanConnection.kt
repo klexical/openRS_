@@ -519,7 +519,7 @@ class SlcanConnection(
                     while (currentCoroutineContext().isActive) {
                         val line = try { transport.readLine() } catch (e: Exception) {
                             android.util.Log.d("SLCAN", "readLine failed", e); null
-                        } ?: break
+                        }?.removePrefix("\n") ?: break     // the firmware ends OPENRS: with CR LF: the LF leads the next line
 
                         if (line.startsWith("OPENRS:")) {
                             detected(line)
@@ -527,7 +527,8 @@ class SlcanConnection(
                         }
                         // Route firmware command responses to dedicated channel
                         if (line.startsWith("+FRS:")) {
-                            commandResponseChannel.trySend(line)
+                            // Nobody waiting and full: the newest is dropped; a command drains stale replies before it writes
+                            if (commandResponseChannel.trySend(line).isFailure) DiagnosticLogger.countCommandReplyDropped()
                             continue
                         }
 
@@ -556,7 +557,8 @@ class SlcanConnection(
 
                         if (_dtcScanActive && frame.first in _dtcWatchIds && divertToDtc(frame.first, frame.second)) {
                             DiagnosticLogger.logObdFrame(frame.first, frame.second)   // the reply itself, once (#215)
-                            _dtcChannel.trySend(frame)
+                            // Full: a lost frame leaves the reply incomplete, so the module ends unread — counted, never OK
+                            if (_dtcChannel.trySend(frame).isFailure) DiagnosticLogger.countDtcFrameDropped()
                             continue
                         }
 

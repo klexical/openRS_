@@ -28,6 +28,10 @@ object KnockSessionLog {
     private val _pulls = MutableStateFlow(Pulls())
     val pulls: StateFlow<Pulls> = _pulls.asStateFlow()
 
+    /** Oldest events rolled off past [MAX_EVENTS] this session — the export reports it (A4 #253). */
+    @Volatile var droppedEvents: Int = 0
+        private set
+
     /** Start a new session at [nowMs] — drops events and rejects stamps older than it. */
     @Synchronized
     fun reset(nowMs: Long = System.currentTimeMillis()) {
@@ -35,6 +39,7 @@ object KnockSessionLog {
         tracker = PullTracker()
         _events.value = emptyList()
         _pulls.value = Pulls()
+        droppedEvents = 0
     }
 
     /** Feed the merged live state after an OBD merge. */
@@ -45,6 +50,7 @@ object KnockSessionLog {
         if (captured.isNotEmpty()) {
             tracker.markKnock(nowMs)
             val merged = _events.value + captured
+            if (merged.size > MAX_EVENTS) droppedEvents += merged.size - MAX_EVENTS
             _events.value = if (merged.size > MAX_EVENTS) merged.subList(merged.size - MAX_EVENTS, merged.size).toList() else merged
         }
         val p = Pulls(tracker.pullCount, tracker.knockPullCount)

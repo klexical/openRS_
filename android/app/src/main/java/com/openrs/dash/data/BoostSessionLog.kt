@@ -42,6 +42,10 @@ object BoostSessionLog {
     /** Feed the merged live state after an OBD merge. */
     @Synchronized
     fun onState(vs: VehicleState, nowMs: Long) {
+        // The window ends on every merge, not only on a new TIP decode: once TIP stops, the chart's "last 90 s" still ends
+        val cutoff = nowMs - WINDOW_MS
+        val kept = _samples.value.filter { it.tMs > cutoff }
+        if (kept.size != _samples.value.size) _samples.value = kept
         val stamps = vs.fieldLastUpdateMs
         if (!gate.takeIfFresh("tipActualKpa", stamps)) return
         // < 50 kPa absolute can only be a bad decode (same gate as the POWER TIP cell)
@@ -55,7 +59,6 @@ object BoostSessionLog {
             wgdcPct = vs.wgdcDesired.takeIf { pairedFresh("wgdcDesired") && it >= 0.0 },
             baroKpa = BoostRule.baroKpa(vs)
         )
-        val cutoff = nowMs - WINDOW_MS
-        _samples.value = _samples.value.filter { it.tMs > cutoff } + sample
+        _samples.value = kept + sample
     }
 }

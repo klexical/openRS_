@@ -1,5 +1,6 @@
 package com.openrs.dash.can
 
+import com.openrs.dash.diagnostics.DiagnosticLogger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -75,6 +76,8 @@ class BleGattCore(
 
     private val lines = Channel<String>(256)
     private val lineBuffer = StringBuilder()
+    /** The line being received passed [MAX_SLCAN_LINE_CHARS]: it is discarded up to its CR, and the next line starts clean. */
+    private var discardingLine = false
     private val writeMutex = Mutex()
     @Volatile private var writeDone = CompletableDeferred<Int>()       // the write callback's GATT status
     /** A write went unacknowledged: callbacks can no longer be matched to writes, the link is closed for good. */
@@ -136,14 +139,29 @@ class BleGattCore(
         writeDone.complete(status)
     }
 
-    /** Notification bytes on [characteristic]; a frame may span notifications, a notification may hold several. */
+    /**
+     * Notification bytes on [characteristic]; a frame may span notifications, a notification may hold several. A line past
+     * [MAX_SLCAN_LINE_CHARS] is refused whole and counted; with the line queue full the newest line is dropped and counted.
+     */
     fun onNotify(characteristic: UUID, bytes: ByteArray) {
         if (characteristic != profile?.notify) return
         for (b in bytes) {
             if (b.toInt() and 0xFF == 0x0D) {
                 val line = lineBuffer.toString(); lineBuffer.clear()
-                if (line.isNotEmpty()) lines.trySend(line)
-            } else if (lineBuffer.length < 256) lineBuffer.append(b.toInt().toChar())
+                if (discardingLine) { discardingLine = false; continue }
+                if (line.isNotEmpty()) {
+                    val sent = lines.trySend(line)
+                    if (sent.isFailure && !sent.isClosed) DiagnosticLogger.countLineDropped()   // full; closed = link gone
+                }
+            } else if (discardingLine) {
+                continue
+            } else if (lineBuffer.length < MAX_SLCAN_LINE_CHARS) {
+                lineBuffer.append(b.toInt().toChar())
+            } else {
+                discardingLine = true
+                lineBuffer.clear()
+                DiagnosticLogger.countOverlongLine()
+            }
         }
     }
 

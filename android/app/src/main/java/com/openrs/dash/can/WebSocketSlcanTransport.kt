@@ -1,5 +1,6 @@
 package com.openrs.dash.can
 
+import com.openrs.dash.diagnostics.DiagnosticLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -23,6 +24,8 @@ class WebSocketSlcanTransport(
 
     private companion object {
         const val WS_PATH = "/ws"
+        /** Far above an ESP-IDF httpd upgrade response; a peer that never ends its headers can't grow this for ever. */
+        const val MAX_HTTP_HEADER_CHARS = 16 * 1024
     }
 
     private val rng = SecureRandom()
@@ -55,10 +58,18 @@ class WebSocketSlcanTransport(
     override suspend fun readLine(): String? = withContext(Dispatchers.IO) {
         val input = inp ?: return@withContext null
         val output = out ?: return@withContext null
-        val result = readWsFrame(input, output) ?: return@withContext null
-        val (opcode, payload) = result
-        if (opcode == 0x8) return@withContext null  // close frame
-        payload.toString(Charsets.UTF_8).trimEnd()
+        nextLine(input, output)
+    }
+
+    /** One WS message = one line. An overlong one is refused and counted; the next message starts clean. */
+    private fun nextLine(input: InputStream, output: OutputStream): String? {
+        while (true) {
+            val (opcode, payload) = readWsFrame(input, output) ?: return null
+            if (opcode == 0x8) return null  // close frame
+            val line = payload.toString(Charsets.UTF_8).trimEnd()
+            if (line.length <= MAX_SLCAN_LINE_CHARS) return line
+            DiagnosticLogger.countOverlongLine()
+        }
     }
 
     override suspend fun writeLine(frame: String) = withContext(Dispatchers.IO) {
@@ -97,6 +108,7 @@ class WebSocketSlcanTransport(
             if (b == -1) break
             sb.append(b.toChar())
             if (sb.endsWith("\r\n\r\n")) break
+            if (sb.length >= MAX_HTTP_HEADER_CHARS) throw IOException("Upgrade failed: response headers over $MAX_HTTP_HEADER_CHARS bytes")
         }
         return sb.toString()
     }
@@ -155,7 +167,10 @@ class WebSocketSlcanTransport(
                 len == 127 -> {
                     val lenBytes = readExactly(inp, 8)
                     val bigLen = lenBytes.fold(0L) { acc, b -> (acc shl 8) or (b.toLong() and 0xFF) }
-                    if (bigLen < 0 || bigLen > 1_048_576L) throw IOException("WS frame too large: $bigLen bytes")
+                    if (bigLen < 0 || bigLen > 1_048_576L) {
+                        DiagnosticLogger.countOverlongLine()
+                        throw IOException("WS frame too large: $bigLen bytes")
+                    }
                     val mask64 = if (masked) readExactly(inp, 4) else null
                     val payload64 = readExactly(inp, bigLen.toInt())
                     if (mask64 != null) {

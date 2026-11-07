@@ -298,6 +298,8 @@ internal object DiagnosticReportBuilder {
         // Link integrity (rc.8 #253): counts only — what writes established, what framing / length checks refused
         linkIntegrityText(log.linkIntegrity, log.nrcUnattributedTotal).forEach { appendLine(it) }
         appendLine()
+        logLimitsText(log.logLimits, knockSessionDropped()).forEach { appendLine(it) }
+        appendLine()
 
         // Unattributed NRCs: exact count; their event lines are folded to ≤ 1 per minute per kind (#216)
         if (log.nrcUnattributedTotal > 0) {
@@ -499,6 +501,7 @@ internal object DiagnosticReportBuilder {
 
         root.put("nrcUnattributedTotal", log.nrcUnattributedTotal)   // exact, even though lines are folded (#216)
         root.put("linkIntegrity", linkIntegrityJson(log.linkIntegrity, log.nrcUnattributedTotal))   // rc.8 #253, additive
+        root.put("logLimits", logLimitsJson(log.logLimits, knockSessionDropped()))  // additive
 
         // nrcSuppression
         val nrcMap = log.nrcSuppressed
@@ -562,7 +565,36 @@ internal fun linkIntegrityText(li: DiagnosticLogger.LinkIntegrity, nrcUnattribut
         " · ${li.refusedFrameLines} frame line(s) refused (${li.refusedOtherShape} of the other shape)",
     "  Replies  : ${li.refusedReplies} Mode 22 reply(ies) refused for their length / PCI",
     "  NRC      : ${li.nrcAttributed} attributed · $nrcUnattributed unattributed (PCM)",
+    "  Buffers  : ${li.overlongLines} overlong line(s) refused · ${li.linesDropped} line(s) dropped (BLE queue full) · " +
+        "${li.commandRepliesDropped} command reply(ies) dropped · ${li.dtcFramesDropped} DTC frame(s) dropped",
 )
+
+/** Demo knock events are simulated: like the session-knock CSV, they never reach an export. */
+private fun knockSessionDropped() =
+    if (com.openrs.dash.demo.DemoMode.isActive) 0 else com.openrs.dash.data.KnockSessionLog.droppedEvents
+
+/** LOG LIMITS summary lines (A4 #253): what this session's rolling / capped logs no longer hold. */
+internal fun logLimitsText(l: DiagnosticLogger.LogLimits, knockDropped: Int): List<String> = buildList {
+    add("─── LOG LIMITS ────────────────────────────────────────────")
+    if (l.decodeTraceDropped > 0) add("  ${l.decodeTraceDropped} older decode trace entries rolled off (per-ID totals stay exact)")
+    if (l.eventsDropped > 0) add("  ${l.eventsDropped} older session event(s) rolled off: SESSION EVENTS below is not the whole session")
+    if (l.fpsPointsDropped > 0) add("  ${l.fpsPointsDropped} older FPS sample(s) rolled off")
+    if (l.probeSessionsDropped > 0) add("  ${l.probeSessionsDropped} older DID probe session(s) rolled off")
+    if (l.inventoryFramesNotListed > 0) add("  ${l.inventoryFramesNotListed} frame(s) of IDs past the inventory limit: FRAME INVENTORY is not every ID")
+    if (l.slcanCapReached) add("  SLCAN log cap reached: later frames are not in the raw log")
+    if (knockDropped > 0) add("  $knockDropped older session knock event(s) rolled off: drive_knock_session holds the newest only")
+    if (size == 1) add("  no limit reached")
+}
+
+internal fun logLimitsJson(l: DiagnosticLogger.LogLimits, knockDropped: Int): JSONObject = JSONObject().apply {
+    put("decodeTraceDropped", l.decodeTraceDropped)
+    put("eventsDropped", l.eventsDropped)
+    put("fpsPointsDropped", l.fpsPointsDropped)
+    put("probeSessionsDropped", l.probeSessionsDropped)
+    put("inventoryFramesNotListed", l.inventoryFramesNotListed)
+    put("slcanCapReached", l.slcanCapReached)
+    put("knockSessionDropped", knockDropped)
+}
 
 internal fun linkIntegrityJson(li: DiagnosticLogger.LinkIntegrity, nrcUnattributed: Int): JSONObject = JSONObject().apply {
     put("writes", JSONObject().apply { li.writes.forEach { (k, v) -> put(k, v) } })
@@ -572,6 +604,10 @@ internal fun linkIntegrityJson(li: DiagnosticLogger.LinkIntegrity, nrcUnattribut
     put("refusedReplies", li.refusedReplies)
     put("nrcAttributed", li.nrcAttributed)
     put("nrcUnattributed", nrcUnattributed)
+    put("overlongLines", li.overlongLines)
+    put("linesDropped", li.linesDropped)
+    put("commandRepliesDropped", li.commandRepliesDropped)
+    put("dtcFramesDropped", li.dtcFramesDropped)
 }
 
 /** " (0x1B0 Ns ago, its 0x420 detail Ms ago)" — what a Sport / Track reading rests on (#252); "" before any report. */

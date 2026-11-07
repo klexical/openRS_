@@ -55,6 +55,12 @@ object DiagnosticLogger {
     /** Maximum DID probe sessions stored per diagnostic session. */
     private const val MAX_PROBE_SESSIONS = 50
 
+    /**
+     * Unique CAN IDs in the frame inventory. Above every standard ID (2,048), so only extended IDs can reach it; their
+     * key space is 2^29 and comes straight off the wire. Frames of an ID past it still reach the trace and the SLCAN log.
+     */
+    private const val MAX_INVENTORY_IDS  = 4_096
+
     // ── Pre-allocated hex lookup (eliminates per-byte format() calls) ────────
 
     /** 256-entry table: index 0→"00", 1→"01", …, 255→"FF". */
@@ -155,7 +161,8 @@ object DiagnosticLogger {
     private var slcanWriter: BufferedWriter? = null
     private var _slcanFile: File? = null
     private var slcanLinesWritten = 0L
-    private var slcanCapReached = false
+    private var slcanCapReached = false   // cap reached or a write failed: only the first of either logs an event
+    private var slcanCapHit = false       // the line cap itself, for the export
 
     @Volatile var sessionStartMs: Long = 0L; private set
     @Volatile var lastVehicleState: VehicleState? = null
@@ -194,9 +201,15 @@ object DiagnosticLogger {
         var refusedOtherShape = 0          // … of them, lines of the other framing shape on a locked connection
         var refusedReplies = 0             // Mode 22 replies refused for their length / PCI (#251)
         var nrcAttributed = 0              // PCM NRCs charged to exactly one request (#216)
+        var overlongLines = 0              // adapter lines past the transport's bound, refused whole (A4)
+        var linesDropped = 0               // BLE lines lost to a full receive queue (A4)
+        var commandRepliesDropped = 0      // +FRS: lines lost to a full reply channel, nobody waiting (A4)
+        var dtcFramesDropped = 0           // DTC reply frames lost to a full channel (A4)
         fun copy() = LinkIntegrity().also {
             it.writes.putAll(writes); it.framingTimestamped = framingTimestamped; it.refusedFrameLines = refusedFrameLines
             it.refusedOtherShape = refusedOtherShape; it.refusedReplies = refusedReplies; it.nrcAttributed = nrcAttributed
+            it.overlongLines = overlongLines; it.linesDropped = linesDropped
+            it.commandRepliesDropped = commandRepliesDropped; it.dtcFramesDropped = dtcFramesDropped
         }
     }
     private var linkIntegrityLive = LinkIntegrity()
@@ -209,6 +222,28 @@ object DiagnosticLogger {
     }
     fun countRefusedReply() = synchronized(lock) { linkIntegrityLive.refusedReplies++ }
     fun countAttributedNrc() = synchronized(lock) { linkIntegrityLive.nrcAttributed++ }
+    fun countOverlongLine() = synchronized(lock) { linkIntegrityLive.overlongLines++ }
+    fun countLineDropped() = synchronized(lock) { linkIntegrityLive.linesDropped++ }
+    fun countCommandReplyDropped() = synchronized(lock) { linkIntegrityLive.commandRepliesDropped++ }
+    fun countDtcFrameDropped() = synchronized(lock) { linkIntegrityLive.dtcFramesDropped++ }
+
+    /**
+     * What this session's logs no longer hold (A4 #253), so a rolling or capped list is never read as the whole session.
+     * Oldest entries roll off the trace, events, FPS timeline and probe sessions; the SLCAN log stops at its cap.
+     */
+    data class LogLimits(
+        val decodeTraceDropped: Long = 0, val eventsDropped: Long = 0, val fpsPointsDropped: Long = 0,
+        val probeSessionsDropped: Long = 0, val inventoryFramesNotListed: Long = 0, val slcanCapReached: Boolean = false,
+    )
+    private var traceDropped = 0L
+    private var eventsDropped = 0L
+    private var fpsDropped = 0L
+    private var probeSessionsDropped = 0L
+    private var inventoryNotListed = 0L
+    /** A consistent copy of this session's counts. */
+    val logLimits: LogLimits get() = synchronized(lock) {
+        LogLimits(traceDropped, eventsDropped, fpsDropped, probeSessionsDropped, inventoryNotListed, slcanCapHit)
+    }
 
     /** Identity of the current session — [sessionStart] returns it; adapter-status writes carry it (#233). */
     @Volatile private var sessionToken: Long = 0L
@@ -312,6 +347,8 @@ object DiagnosticLogger {
             nrcSnapshot = emptyMap()   // NRC suppression is per connection (#216)
             nrcUnattributedTotal = 0
             linkIntegrityLive = LinkIntegrity()
+            traceDropped = 0L; eventsDropped = 0L; fpsDropped = 0L; probeSessionsDropped = 0L; inventoryNotListed = 0L
+            slcanCapHit = false
 
             // Option C: open SLCAN log file
             if (logDir != null) {
@@ -362,16 +399,36 @@ object DiagnosticLogger {
 
     fun event(type: String, msg: String) {
         synchronized(lock) {
-            val rel = relativeMs()
-            sessionEventsDeque.addLast(SessionEvent(rel, type, msg))
-            while (sessionEventsDeque.size > MAX_EVENTS) sessionEventsDeque.removeFirst()
+            addEventLocked(SessionEvent(relativeMs(), type, msg))
         }
+    }
+
+    /** Must be called within [synchronized](lock). */
+    private fun addEventLocked(ev: SessionEvent) {
+        sessionEventsDeque.addLast(ev)
+        while (sessionEventsDeque.size > MAX_EVENTS) {
+            sessionEventsDeque.removeFirst()
+            eventsDropped++
+        }
+    }
+
+    /** The ID's inventory row, or null once [MAX_INVENTORY_IDS] are listed (counted). Within [synchronized](lock). */
+    private fun inventoryRowLocked(canId: Int): FrameInfo? {
+        frameInventory[canId]?.let { return it }
+        if (frameInventory.size >= MAX_INVENTORY_IDS) {
+            inventoryNotListed++
+            return null
+        }
+        return FrameInfo().also { frameInventory[canId] = it }
     }
 
     fun fps(value: Double) {
         synchronized(lock) {
             fpsTimelineDeque.addLast(FpsPoint(relativeMs(), value))
-            while (fpsTimelineDeque.size > MAX_FPS_POINTS) fpsTimelineDeque.removeFirst()
+            while (fpsTimelineDeque.size > MAX_FPS_POINTS) {
+                fpsTimelineDeque.removeFirst()
+                fpsDropped++
+            }
         }
     }
 
@@ -395,26 +452,30 @@ object DiagnosticLogger {
 
         synchronized(lock) {
             // ── Option B: enriched frame inventory ───────────────────────────
-            val info = frameInventory.getOrPut(canId) { FrameInfo() }
-            info.totalReceived++
-            info.lastSeenMs = System.currentTimeMillis()
-            if (info.firstRawHex.isEmpty()) info.firstRawHex = rawHex
-            if (!info.hasChanged && rawHex != info.firstRawHex) info.hasChanged = true
-            info.lastRawHex  = rawHex
-            info.lastDecoded = decoded
-            if (issue != null) info.validationIssues += issue
+            inventoryRowLocked(canId)?.let { info ->
+                info.totalReceived++
+                info.lastSeenMs = System.currentTimeMillis()
+                if (info.firstRawHex.isEmpty()) info.firstRawHex = rawHex
+                if (!info.hasChanged && rawHex != info.firstRawHex) info.hasChanged = true
+                info.lastRawHex  = rawHex
+                info.lastDecoded = decoded
+                if (issue != null) info.validationIssues += issue
 
-            // Periodic sample: one snapshot per ID every SAMPLE_INTERVAL_MS
-            val lastSample = lastSampleTimeMs[canId] ?: 0L
-            if (relMs - lastSample >= SAMPLE_INTERVAL_MS) {
-                info.periodicSamples.addLast(PeriodicSample(relMs, rawHex))
-                while (info.periodicSamples.size > MAX_SAMPLES_PER_ID) info.periodicSamples.removeFirst()
-                lastSampleTimeMs[canId] = relMs
+                // Periodic sample: one snapshot per ID every SAMPLE_INTERVAL_MS
+                val lastSample = lastSampleTimeMs[canId] ?: 0L
+                if (relMs - lastSample >= SAMPLE_INTERVAL_MS) {
+                    info.periodicSamples.addLast(PeriodicSample(relMs, rawHex))
+                    while (info.periodicSamples.size > MAX_SAMPLES_PER_ID) info.periodicSamples.removeFirst()
+                    lastSampleTimeMs[canId] = relMs
+                }
             }
 
             // ── Rolling decode trace ─────────────────────────────────────────
             decodeTraceDeque.addLast(TraceEvent(relMs, idHex, rawHex, decoded, issue))
-            while (decodeTraceDeque.size > MAX_TRACE) decodeTraceDeque.removeFirst()
+            while (decodeTraceDeque.size > MAX_TRACE) {
+                decodeTraceDeque.removeFirst()
+                traceDropped++
+            }
 
             lastVehicleState = newState
 
@@ -435,19 +496,20 @@ object DiagnosticLogger {
         val slcanLine  = buildSlcanLine(relMs, canId, compactHex)
 
         synchronized(lock) {
-            val info = frameInventory.getOrPut(canId) { FrameInfo() }
-            info.totalReceived++
-            info.lastSeenMs = System.currentTimeMillis()
-            if (info.firstRawHex.isEmpty()) info.firstRawHex = rawHex
-            if (!info.hasChanged && rawHex != info.firstRawHex) info.hasChanged = true
-            info.lastRawHex = rawHex
+            inventoryRowLocked(canId)?.let { info ->
+                info.totalReceived++
+                info.lastSeenMs = System.currentTimeMillis()
+                if (info.firstRawHex.isEmpty()) info.firstRawHex = rawHex
+                if (!info.hasChanged && rawHex != info.firstRawHex) info.hasChanged = true
+                info.lastRawHex = rawHex
 
-            // Periodic sample for unknown frames too
-            val lastSample = lastSampleTimeMs[canId] ?: 0L
-            if (relMs - lastSample >= SAMPLE_INTERVAL_MS) {
-                info.periodicSamples.addLast(PeriodicSample(relMs, rawHex))
-                while (info.periodicSamples.size > MAX_SAMPLES_PER_ID) info.periodicSamples.removeFirst()
-                lastSampleTimeMs[canId] = relMs
+                // Periodic sample for unknown frames too
+                val lastSample = lastSampleTimeMs[canId] ?: 0L
+                if (relMs - lastSample >= SAMPLE_INTERVAL_MS) {
+                    info.periodicSamples.addLast(PeriodicSample(relMs, rawHex))
+                    while (info.periodicSamples.size > MAX_SAMPLES_PER_ID) info.periodicSamples.removeFirst()
+                    lastSampleTimeMs[canId] = relMs
+                }
             }
 
             writePreformattedSlcanLine(relMs, slcanLine)
@@ -498,10 +560,9 @@ object DiagnosticLogger {
             if (!slcanCapReached) {
                 slcanCapReached = true
                 try { w.write("# LOG CAP REACHED — further frames not written\n"); w.flush() } catch (_: Exception) {}
-                // Post event outside lock would cause deadlock; use direct deque insert
-                sessionEventsDeque.addLast(
-                    SessionEvent(relMs, "SLCAN", "SLCAN log cap reached ($MAX_SLCAN_LINES lines)")
-                )
+                slcanCapHit = true
+                // Already within the lock
+                addEventLocked(SessionEvent(relMs, "SLCAN", "SLCAN log cap reached ($MAX_SLCAN_LINES lines)"))
             }
             return
         }
@@ -514,9 +575,7 @@ object DiagnosticLogger {
             // Log the first write failure so disk-full isn't completely silent
             if (!slcanCapReached) {
                 slcanCapReached = true
-                sessionEventsDeque.addLast(
-                    SessionEvent(relMs, "SLCAN", "SLCAN write failed: ${e.message}")
-                )
+                addEventLocked(SessionEvent(relMs, "SLCAN", "SLCAN write failed: ${e.message}"))
             }
         }
     }
@@ -548,7 +607,10 @@ object DiagnosticLogger {
             )
             // removeAt(0), not removeFirst(): on a MutableList that compiles to java.util.List.removeFirst
             // (API 35+) and throws NoSuchMethodError on Android 9–14 (#196 lint NewApi)
-            while (probeSessionsList.size > MAX_PROBE_SESSIONS) probeSessionsList.removeAt(0)
+            while (probeSessionsList.size > MAX_PROBE_SESSIONS) {
+                probeSessionsList.removeAt(0)
+                probeSessionsDropped++
+            }
         }
         val found = results.count { it.status == "FOUND" }
         when (outcome) {
