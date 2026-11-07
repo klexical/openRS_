@@ -22,8 +22,8 @@ val keystoreProps = Properties().also { props ->
 // stable); CI rejects a reused code. Room / export schema versions are separate and unaffected.
 val releaseBase = "2.2.7"
 val releaseStage = "rc"          // "rc" for a release candidate, "" for stable
-val releaseCandidate = 7         // ignored when releaseStage is ""
-val releaseVersionCode = 38     // 38 = rc.7 maintenance asset openrs-2.2.7-rc.7-build38.apk on the existing rc.7 release (37 = tag)
+val releaseCandidate = 8         // ignored when releaseStage is ""
+val releaseVersionCode = 39     // 39 = rc.8 (38 = rc.7 maintenance asset openrs-2.2.7-rc.7-build38.apk, 37 = rc.7 tag)
 val releaseName = if (releaseStage.isEmpty()) releaseBase else "$releaseBase-$releaseStage.$releaseCandidate"
 
 // The old -PrcSuffix flag appended an RC label separately from versionName; refuse it so nothing builds a mismatch.
