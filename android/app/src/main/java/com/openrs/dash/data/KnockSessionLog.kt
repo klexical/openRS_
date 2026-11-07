@@ -28,7 +28,7 @@ object KnockSessionLog {
     private val _pulls = MutableStateFlow(Pulls())
     val pulls: StateFlow<Pulls> = _pulls.asStateFlow()
 
-    /** Oldest events rolled off past [MAX_EVENTS] this session — the export reports it (A4 #253). */
+    /** Oldest events rolled off past [MAX_EVENTS] this session — the export reports it (#253). */
     @Volatile var droppedEvents: Int = 0
         private set
 

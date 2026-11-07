@@ -71,7 +71,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * rc.8 #253 stream A4, buffers — every bounded buffer between the adapter and the diagnostic export, through production
+ * rc.8 #253, buffers — every bounded buffer between the adapter and the diagnostic export, through production
  * code: BleGattCore (fake GATT), TcpSlcanTransport / WebSocketSlcanTransport (a real loopback socket), SlcanConnection
  * (frame loop, channels, pollers), PcmRequestLedger, DiagnosticLogger + DiagnosticReportBuilder, KnockSessionLog,
  * BoostSessionLog, runDidProbeScan, CrashTelemetryBuffer. For each: the limit, what survives it, that the link keeps
@@ -697,7 +697,7 @@ class BufferBoundsTest {
             "inventoryFramesNotListed", "knockSessionDropped")) assertEquals(k, 0, limit(k))
         assertEquals(false, detail().optJSONObject("logLimits")?.optBoolean("slcanCapReached", true))
         assertTrue(summary(), summary().contains("─── LOG LIMITS"))
-        assertTrue(summary(), summary().contains("no limit reached"))
+        assertTrue(summary(), summary().contains("no counted limit reached"))
     }
 
     @Test fun `logger - counts reset with the session`() {
@@ -751,7 +751,8 @@ class BufferBoundsTest {
         assertEquals(1, DiagnosticLogger.sessionEvents.count { it.type == "SLCAN" })
         assertEquals("the inventory keeps counting past the cap", 1L, DiagnosticLogger.frameInventorySnapshot.getValue(0x123).totalReceived)
         assertEquals(true, detail().optJSONObject("logLimits")?.optBoolean("slcanCapReached", false))
-        assertTrue(summary(), summary().contains("SLCAN log cap reached"))
+        val limitsBlock = summary().lines().dropWhile { !it.startsWith("─── LOG LIMITS") }.drop(1).takeWhile { !it.startsWith("───") }
+        assertTrue(limitsBlock.toString(), limitsBlock.any { it.contains("SLCAN log cap reached") })
     }
 
     @Test fun `logger - the SLCAN cap's own event can't push the event list past its limit`() {

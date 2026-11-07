@@ -1,7 +1,7 @@
 package com.openrs.dash.can
 
 /**
- * The longest adapter line any transport passes on (A4 #253). Above every legal line: an SLCAN data frame is at most 30
+ * The longest adapter line any transport passes on (#253). Above every legal line: an SLCAN data frame is at most 30
  * characters (`T` + 8 ID + DLC + 16 data + 4 timestamp) and the longest documented adapter line is the ~84-character
  * `AT+FRS?` state reply. A longer line is refused whole and counted, never delivered cut short: `OPENRS:` / `+FRS:` lines
  * are matched by prefix, so a truncated one would still read as a reply.

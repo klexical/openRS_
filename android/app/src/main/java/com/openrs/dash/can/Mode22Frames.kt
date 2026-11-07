@@ -10,11 +10,21 @@ internal object Mode22 {
         return id to did
     }
 
+    /**
+     * A single frame that holds what its PCI claims and at least a service, a second byte and a third: `0N` with 3 ≤ N ≤ what
+     * follows it. A reply cut short, or claiming too little for its own bytes, belongs to no request (#253, as the parser, #251).
+     */
+    fun wholeSingleFrame(d: ByteArray): Boolean {
+        if (d.isEmpty() || (d[0].toInt() and 0xF0) != 0) return false
+        val n = d[0].toInt() and 0x0F
+        return n >= 3 && n + 1 <= d.size
+    }
+
     /** The DID a positive reply (`62 DH DL`) echoes — a single frame or the first frame of a multi-frame reply — else null. */
     fun positiveDid(d: ByteArray): Int? {
         if (d.isEmpty()) return null
         return when (d[0].toInt() and 0xF0) {
-            0x00 -> if (d.size >= 4 && (d[1].toInt() and 0xFF) == 0x62) did(d, 2) else null
+            0x00 -> if (wholeSingleFrame(d) && (d[1].toInt() and 0xFF) == 0x62) did(d, 2) else null
             0x10 -> if (d.size >= 5 && (d[2].toInt() and 0xFF) == 0x62) did(d, 3) else null
             else -> null
         }
@@ -22,7 +32,7 @@ internal object Mode22 {
 
     /** A single-frame `7F 22 xx`: the NRC code, else null. It names no DID — its owner comes from a ledger. */
     fun negativeCode(d: ByteArray): Int? =
-        if (d.size >= 4 && (d[0].toInt() and 0xF0) == 0 && (d[1].toInt() and 0xFF) == 0x7F && (d[2].toInt() and 0xFF) == 0x22)
+        if (wholeSingleFrame(d) && (d[1].toInt() and 0xFF) == 0x7F && (d[2].toInt() and 0xFF) == 0x22)
             d[3].toInt() and 0xFF
         else null
 

@@ -187,7 +187,7 @@ object CanDecoder {
     /**
      * Freshness tags written by each passive CAN decoder (#194). Only fields the UI
      * classifies via `fieldLastUpdateMs` (THERMAL availability) need an entry.
-     * Stamped by CanDataService.processCanFrame, throttled per ID — see [CAN_STAMP_THROTTLE_MS].
+     * Stamped through [stampFresh]: throttled per ID ([CAN_STAMP_THROTTLE_MS]), except a drive-mode or ESC change, at once.
      */
     /** Every freshness tag a CAN frame stamps (demo mode must stamp the same set — DemoSimulatorTest). */
     val canStampTags: Set<String> get() = FRESH_TAGS.values.flatMap { it.toList() }.toSet() +
@@ -246,7 +246,7 @@ object CanDecoder {
         else               -> "0x%03X recognized, no state change".format(id) to null
     }
 
-    /** Re-stamp a CAN ID's tags at most this often — avoids a map copy on every frame. */
+    /** Re-stamp an unchanged report's tags at most this often — avoids a map copy on every frame. */
     const val CAN_STAMP_THROTTLE_MS = 1_000L
 
     fun freshTagsFor(id: Int): Array<String>? = FRESH_TAGS[id]

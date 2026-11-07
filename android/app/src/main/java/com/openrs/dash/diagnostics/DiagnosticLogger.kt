@@ -57,7 +57,8 @@ object DiagnosticLogger {
 
     /**
      * Unique CAN IDs in the frame inventory. Above every standard ID (2,048), so only extended IDs can reach it; their
-     * key space is 2^29 and comes straight off the wire. Frames of an ID past it still reach the trace and the SLCAN log.
+     * key space is 2^29 and comes straight off the wire. They fill it in arrival order, so a flood of extended IDs can leave a
+     * standard ID first seen after it without a row (counted as not listed). Frames of an ID past it still reach the SLCAN log.
      */
     private const val MAX_INVENTORY_IDS  = 4_096
 
@@ -161,8 +162,8 @@ object DiagnosticLogger {
     private var slcanWriter: BufferedWriter? = null
     private var _slcanFile: File? = null
     private var slcanLinesWritten = 0L
-    private var slcanCapReached = false   // cap reached or a write failed: only the first of either logs an event
-    private var slcanCapHit = false       // the line cap itself, for the export
+    private var slcanWriteFailed = false  // a write failed: lines are missing from the raw log, first one logs an event
+    private var slcanCapHit = false       // the line cap itself, for the export; first one marks the log and logs an event
 
     @Volatile var sessionStartMs: Long = 0L; private set
     @Volatile var lastVehicleState: VehicleState? = null
@@ -201,10 +202,10 @@ object DiagnosticLogger {
         var refusedOtherShape = 0          // … of them, lines of the other framing shape on a locked connection
         var refusedReplies = 0             // Mode 22 replies refused for their length / PCI (#251)
         var nrcAttributed = 0              // PCM NRCs charged to exactly one request (#216)
-        var overlongLines = 0              // adapter lines past the transport's bound, refused whole (A4)
-        var linesDropped = 0               // BLE lines lost to a full receive queue (A4)
-        var commandRepliesDropped = 0      // +FRS: lines lost to a full reply channel, nobody waiting (A4)
-        var dtcFramesDropped = 0           // DTC reply frames lost to a full channel (A4)
+        var overlongLines = 0              // adapter lines past the transport's bound, refused whole (#253)
+        var linesDropped = 0               // BLE lines lost to a full receive queue (#253)
+        var commandRepliesDropped = 0      // +FRS: lines lost to a full reply channel, nobody waiting (#253)
+        var dtcFramesDropped = 0           // DTC reply frames lost to a full channel (#253)
         fun copy() = LinkIntegrity().also {
             it.writes.putAll(writes); it.framingTimestamped = framingTimestamped; it.refusedFrameLines = refusedFrameLines
             it.refusedOtherShape = refusedOtherShape; it.refusedReplies = refusedReplies; it.nrcAttributed = nrcAttributed
@@ -228,12 +229,12 @@ object DiagnosticLogger {
     fun countDtcFrameDropped() = synchronized(lock) { linkIntegrityLive.dtcFramesDropped++ }
 
     /**
-     * What this session's logs no longer hold (A4 #253), so a rolling or capped list is never read as the whole session.
+     * What this session's logs no longer hold (#253), so a rolling or capped list is never read as the whole session.
      * Oldest entries roll off the trace, events, FPS timeline and probe sessions; the SLCAN log stops at its cap.
      */
     data class LogLimits(
         val decodeTraceDropped: Long = 0, val eventsDropped: Long = 0, val fpsPointsDropped: Long = 0,
-        val probeSessionsDropped: Long = 0, val inventoryFramesNotListed: Long = 0, val slcanCapReached: Boolean = false,
+        val probeSessionsDropped: Long = 0, val inventoryFramesNotListed: Long = 0, val slcanCapReached: Boolean = false, val slcanWriteFailed: Boolean = false,
     )
     private var traceDropped = 0L
     private var eventsDropped = 0L
@@ -242,7 +243,7 @@ object DiagnosticLogger {
     private var inventoryNotListed = 0L
     /** A consistent copy of this session's counts. */
     val logLimits: LogLimits get() = synchronized(lock) {
-        LogLimits(traceDropped, eventsDropped, fpsDropped, probeSessionsDropped, inventoryNotListed, slcanCapHit)
+        LogLimits(traceDropped, eventsDropped, fpsDropped, probeSessionsDropped, inventoryNotListed, slcanCapHit, slcanWriteFailed)
     }
 
     /** Identity of the current session — [sessionStart] returns it; adapter-status writes carry it (#233). */
@@ -325,7 +326,7 @@ object DiagnosticLogger {
             slcanWriter = null
             _slcanFile = null
             slcanLinesWritten = 0L
-            slcanCapReached = false
+            slcanWriteFailed = false
 
             sessionStartMs = System.currentTimeMillis()
             sessionHost = host
@@ -557,10 +558,9 @@ object DiagnosticLogger {
     private fun writePreformattedSlcanLine(relMs: Long, line: String) {
         val w = slcanWriter ?: return
         if (slcanLinesWritten >= MAX_SLCAN_LINES) {
-            if (!slcanCapReached) {
-                slcanCapReached = true
-                try { w.write("# LOG CAP REACHED — further frames not written\n"); w.flush() } catch (_: Exception) {}
+            if (!slcanCapHit) {
                 slcanCapHit = true
+                try { w.write("# LOG CAP REACHED — further frames not written\n"); w.flush() } catch (_: Exception) {}
                 // Already within the lock
                 addEventLocked(SessionEvent(relMs, "SLCAN", "SLCAN log cap reached ($MAX_SLCAN_LINES lines)"))
             }
@@ -573,8 +573,8 @@ object DiagnosticLogger {
             if (slcanLinesWritten % 200L == 0L) w.flush()
         } catch (e: Exception) {
             // Log the first write failure so disk-full isn't completely silent
-            if (!slcanCapReached) {
-                slcanCapReached = true
+            if (!slcanWriteFailed) {
+                slcanWriteFailed = true
                 addEventLocked(SessionEvent(relMs, "SLCAN", "SLCAN write failed: ${e.message}"))
             }
         }

@@ -140,7 +140,7 @@ suspend fun executeDriveModeChange(
     return DriveCommandResult.NoConfirmation
 }
 
-/** Freshness tag for drive mode — stamped by resolved 0x1B0 frames (CanDecoder, ≤ 1 s throttle). */
+/** Freshness tag for drive mode — stamped by resolved 0x1B0 frames (CanDecoder: a changed mode at once, unchanged ≤ 1 s). */
 const val STAMP_TAG = "driveMode"
 
 private enum class Wait { CONFIRMED, LINK_CHANGED, TIMED_OUT }

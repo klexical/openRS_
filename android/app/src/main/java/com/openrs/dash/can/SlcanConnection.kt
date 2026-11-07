@@ -588,7 +588,7 @@ class SlcanConnection(
                         if (frame.first == ObdConstants.PCM_RESPONSE_ID) {
                             val d = frame.second
                             // PCI first: a first / consecutive frame's bytes can read 7F 22 xx or 62 DH DL by chance (#253)
-                            if (d.size >= 4 && (d[0].toInt() and 0xF0) == 0 && (d[1].toInt() and 0xFF) == 0x7F) {
+                            if (Mode22.wholeSingleFrame(d) && (d[1].toInt() and 0xFF) == 0x7F) {
                                 val nrcCode = d[3].toInt() and 0xFF
                                 // 0x78 = response pending: the real reply follows (no time bound assumed), still outstanding
                                 if ((d[2].toInt() and 0xFF) == 0x22 && nrcCode == NrcTracker.NRC_RESPONSE_PENDING) {

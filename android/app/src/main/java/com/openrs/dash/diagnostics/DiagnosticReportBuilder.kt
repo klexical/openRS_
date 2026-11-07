@@ -587,7 +587,7 @@ internal fun linkIntegrityText(li: DiagnosticLogger.LinkIntegrity, nrcUnattribut
 private fun knockSessionDropped() =
     if (com.openrs.dash.demo.DemoMode.isActive) 0 else com.openrs.dash.data.KnockSessionLog.droppedEvents
 
-/** LOG LIMITS summary lines (A4 #253): what this session's rolling / capped logs no longer hold. */
+/** LOG LIMITS summary lines (#253): what this session's rolling / capped logs no longer hold. */
 internal fun logLimitsText(l: DiagnosticLogger.LogLimits, knockDropped: Int): List<String> = buildList {
     add("─── LOG LIMITS ────────────────────────────────────────────")
     if (l.decodeTraceDropped > 0) add("  ${l.decodeTraceDropped} older decode trace entries rolled off (per-ID totals stay exact)")
@@ -596,8 +596,9 @@ internal fun logLimitsText(l: DiagnosticLogger.LogLimits, knockDropped: Int): Li
     if (l.probeSessionsDropped > 0) add("  ${l.probeSessionsDropped} older DID probe session(s) rolled off")
     if (l.inventoryFramesNotListed > 0) add("  ${l.inventoryFramesNotListed} frame(s) of IDs past the inventory limit: FRAME INVENTORY is not every ID")
     if (l.slcanCapReached) add("  SLCAN log cap reached: later frames are not in the raw log")
+    if (l.slcanWriteFailed) add("  SLCAN log write failed: frames may be missing from the raw log")
     if (knockDropped > 0) add("  $knockDropped older session knock event(s) rolled off: drive_knock_session holds the newest only")
-    if (size == 1) add("  no limit reached")
+    if (size == 1) add("  no counted limit reached")
 }
 
 internal fun logLimitsJson(l: DiagnosticLogger.LogLimits, knockDropped: Int): JSONObject = JSONObject().apply {
@@ -607,6 +608,7 @@ internal fun logLimitsJson(l: DiagnosticLogger.LogLimits, knockDropped: Int): JS
     put("probeSessionsDropped", l.probeSessionsDropped)
     put("inventoryFramesNotListed", l.inventoryFramesNotListed)
     put("slcanCapReached", l.slcanCapReached)
+    put("slcanWriteFailed", l.slcanWriteFailed)
     put("knockSessionDropped", knockDropped)
 }
 

@@ -30,7 +30,7 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * ISO-TP beyond the BCM happy path (#253 diagnostic and replay coverage, stream A4) — through the real [IsoTpBuffer] and the
+ * ISO-TP beyond the BCM happy path (#253 diagnostic and replay coverage) — through the real [IsoTpBuffer] and the
  * production [SlcanConnection] paths that reassemble: the BCM frame-loop buffer, the DTC scan's per-module buffers and
  * `assembleIsotpResponse` (DTC clear, freeze frames). A scripted transport feeds SLCAN lines after the handshake line,
  * which the connection consumes itself. JVM, virtual time, SYNTHETIC frames only — no adapter, no module.
@@ -837,6 +837,15 @@ class IsoTpCoverageTest {
         val unresolved = DiagnosticLogger.sessionEvents.filter { it.type == "NRC_UNATTRIBUTED" && it.message.contains("still unanswered") }
         assertTrue(unresolved.map { it.message }.toString(), unresolved.isEmpty())
         assertTrue(DiagnosticLogger.nrcSuppressed.keys.toString(), 0x03ED in DiagnosticLogger.nrcSuppressed.keys)
+    }
+
+    @Test fun `PCM - a truncated single frame shaped like an NRC is not an NRC`() = runTest {
+        val l = link(pcmEcu(backgroundScope) { positive(it) })
+        repeat(2) { l.bus.rx(line(0x7E8, bytes(0x07, 0x7F, 0x22, 0x31))) }
+        runCurrent()
+        assertEquals(0, DiagnosticLogger.nrcUnattributedTotal)
+        assertEquals(0, DiagnosticLogger.linkIntegrity.nrcAttributed)
+        assertTrue(DiagnosticLogger.nrcSuppressed.keys.toString(), DiagnosticLogger.nrcSuppressed.isEmpty())
     }
 
     @Test fun `PCM - a consecutive frame shaped like an NRC is not an NRC`() = runTest {

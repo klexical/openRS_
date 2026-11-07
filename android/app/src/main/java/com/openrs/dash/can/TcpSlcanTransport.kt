@@ -50,7 +50,7 @@ class TcpSlcanTransport(
             if (b == -1) return@withContext null
             if (b == 0x0D) break
             // Guard runaway lines (#127): the attempt ends and SlcanConnection reconnects. Was 33 characters, which read the
-            // adapter's legal AT+FRS? state reply as a lost link (A4 #253).
+            // adapter's legal AT+FRS? state reply as a lost link (#253).
             if (lineBuf.length >= MAX_SLCAN_LINE_CHARS) {
                 DiagnosticLogger.countOverlongLine()
                 return@withContext null

@@ -78,7 +78,10 @@ class IsoTpBuffer {
         const val CAN_FRAME_BYTES = 8
         const val FF_DATA_BYTES = 6
         const val CF_DATA_BYTES = 7
-        /** Fewer bytes fit a Single Frame; ISO 15765-2 has the receiver ignore such an FF and send no flow control. */
+        /**
+         * Fewer bytes fit a Single Frame, so such an FF is refused with no flow control. Unverified: this cites ISO 15765-2 from
+         * memory (the standard isn't in the repository), and no real module has been seen sending one.
+         */
         const val MIN_FF_LENGTH = 8
     }
 }
