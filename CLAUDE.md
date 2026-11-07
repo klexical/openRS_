@@ -110,7 +110,9 @@ The gotchas live in `.claude/rules/` as path-scoped Claude Code rules, one file 
 so they also match from a workspace that holds this repository in a subfolder. Rules for editing them:
 
 - A new gotcha goes at the end of its area's file, in the same `- **Title** — …` style; a cross-cutting one goes to
-  `android-general.md`. Never move, merge or reword an existing entry while adding one.
+  `android-general.md`. Never move, merge or reword an existing entry while adding one. The one exception: an entry's facts
+  changed (a decision landed, a mapping was confirmed) — correct those words only, in a commit whose message names each corrected
+  line; rules carry no perishable status ("pending", "undecided"), only the decision or a pointer to the issue that holds it.
 - A rule loads through the file tools (Read / Write / Edit, or `cat` / `head` of one file); a `git diff` or `git show` loads
   nothing — when reviewing a change that way, read the area's rule file explicitly first.
 - Keep every rules file under 40,000 characters (`wc -m`): the Claude Code docs give that as the per-file limit for
@@ -124,12 +126,12 @@ so they also match from a workspace that holds this repository in a subfolder. R
 | `source-layout.md` | Source Layout (the android/ source map) | any file under `android/` |
 | `android-general.md` | Android, any file (3) | any file under `android/app/src/` |
 | `can-decoding.md` | CAN decoding and VehicleState (11) | `CanDecoder.kt`, `VehicleState.kt`, `DemoSimulator.kt`, `PullTracker.kt`, `Knock*.kt`, `data/Drive*.kt`, `OilPtuMapping*`, `DriveRecorder.kt`, their tests, `test/resources/dbc/` |
-| `obd-polling.md` | OBD Mode 22 polling, decoders and freshness (10) | `Obd*.kt`, `PcmPollSchedule.kt`, `PidRegistry.kt`, `NrcTracker.kt`, `CanDecoder.kt`, `SlcanConnection.kt`, `CanDataService.kt`, `ObdMerge.kt`, `FreshnessGate.kt`, `PowerPage.kt`, `CustomDashPage.kt`, the PID assets, their tests |
+| `obd-polling.md` | OBD Mode 22 polling, decoders and freshness (9) | `Obd*.kt`, `PcmPollSchedule.kt`, `PidRegistry.kt`, `NrcTracker.kt`, `CanDecoder.kt`, `SlcanConnection.kt`, `CanDataService.kt`, `ObdMerge.kt`, `FreshnessGate.kt`, `VehicleState.kt`, `*ModeProvenance*`, `PowerPage.kt`, `CustomDashPage.kt`, the PID assets, their tests |
 | `boost.md` | Boost / TIP rule (#207) (3) | any `*Boost*` file, `DrivePage.kt`, `CustomDashPage.kt`, `HudOverlayService.kt`, `DriveRecorder.kt`, `KnockScatter.kt`, `KnockCapture.kt`, `ui/trip/`, `web/src/lib/boost.ts` |
-| `connection-link.md` | Connection, SLCAN link, service ownership, firmware commands (13) | `Slcan*.kt`, transports, `ObdResponseParser.kt`, `PidRegistry.kt`, `FirmwareApi.kt`, `DriveCommand.kt`, `EscCommand.kt`, `CanDataService.kt`, `Link*.kt`, `ConnectionSetup.kt`, `CanDecoder.kt`, `ObdMerge.kt`, `DemoSimulator.kt`, `DriveModeDock.kt`, `MorePage.kt`, `SettingsSheet.kt`, `BleDeviceDraft.kt`, `firmware/`, their tests |
+| `connection-link.md` | Connection, SLCAN link, service ownership, firmware commands (11) | `Slcan*.kt`, transports, `ObdResponseParser.kt`, `PidRegistry.kt`, `FirmwareApi.kt`, `DriveCommand.kt`, `EscCommand.kt`, `CanDataService.kt`, `Link*.kt`, `ConnectionSetup.kt`, `CanDecoder.kt`, `ObdMerge.kt`, `DemoSimulator.kt`, `DriveModeDock.kt`, `MorePage.kt`, `SettingsSheet.kt`, `BleDeviceDraft.kt`, `MainActivity.kt`, `ObdConstants.kt`, `ForegroundController.kt`, `firmware/`, their tests |
 | `ble.md` | BLE GATT transport and picker (7) | `Ble*.kt`, `BleDevicePickerDialog.kt`, `SlcanConnection.kt`, `*Ledger*`, `WriteOutcome.kt`, their tests |
 | `recorder-trip.md` | Drive recorder, laps and the TRIP tab (7) | `DriveRecorder.kt`, `data/Drive*.kt`, lap files, `ui/trip/` (incl. `TripPage.kt`), `TripPreview.kt`, `MainActivity.kt`, `DriveExportBuilder.kt`, their tests |
-| `diagnostics.md` | DTC scans, DID prober, diagnostic export (8) | `diagnostics/`, `DiagPage.kt`, `SlcanConnection.kt`, `*Ledger*`, `CanDataService.kt`, `DidProberSection.kt`, `PidBrowserSection.kt`, `data/Dtc*.kt`, their tests |
+| `diagnostics.md` | DTC scans, DID prober, diagnostic export (11) | `diagnostics/`, `DiagPage.kt`, `SlcanConnection.kt`, `*Ledger*`, `CanDataService.kt`, `DidProberSection.kt`, `PidBrowserSection.kt`, `data/Dtc*.kt`, their tests |
 | `ui-compose.md` | Compose UI (layout, theme, navigation) (15) | any file under `ui/` or `res/`, `HudOverlayService.kt` |
 | `thermal.md` | Thermal readiness, temperature freshness, drive thermal record (5) | any `*Thermal*` file, `TempsPage.kt` (home of `TempAvail`), `ChassisPage.kt`, `DrivePage.kt`, `DriveRecorder.kt`, their tests |
 | `demo-mode.md` | Demo mode (debug builds) (5) | any file under `com/openrs/dash/` (its rules bind every writer of live telemetry) |
@@ -239,8 +241,9 @@ in `web/src/` (`*.test.ts`, `*.test.tsx`) for Sapphire. Run one class with `./gr
 per-class catalog and the history of counts were moved out on 2026-11-05 (last full copy: this file at staging commit
 `743230fb`); list the folder instead.
 
-Current count: **1200 tests / 107 classes** per variant (Android, `feature/rc8-reliability` `134bee3`, 1 skipped = `#251 outlier
-policy`; Temurin 17); **1136 / 100** (13 skipped) at staging `743230fb`. Sapphire: **293 vitest across 26 files** (run
+Current count: **1330 tests / 111 classes** per variant (Android, `feature/rc8-build39` `b8468d9`, 1 skipped = `#251 outlier
+policy`; Temurin 17, `clean test lint --no-build-cache` — a plain run can restore results from the Gradle build cache);
+**1200 / 107** at staging `3cb229ce`. Sapphire: **343 vitest across 27 files** (run
 `web/node_modules/.bin/vitest run` and `tsc -b`).
 
 ## Issue tracking and field evidence

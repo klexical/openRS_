@@ -11,6 +11,8 @@ paths:
   - "**/com/openrs/dash/can/IsoTpBuffer.kt"
   - "**/com/openrs/dash/can/ObdResponseParser.kt"
   - "**/com/openrs/dash/ui/MainActivity.kt"
+  - "**/com/openrs/dash/can/ObdConstants.kt"
+  - "**/com/openrs/dash/service/ForegroundController.kt"
   - "**/com/openrs/dash/can/PidRegistry.kt"
   - "**/com/openrs/dash/service/CanDataService.kt"
   - "**/com/openrs/dash/service/Link*.kt"
@@ -104,7 +106,9 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   Timing (2 s + 15 s), retries, ESC and firmware unchanged; reconnect → `DriveCommandResult.ConnectionLost`. Demo must stamp
   every CAN tag (`CanDecoder.canStampTags` ⊆ `DemoSimulator.CAN_TAGS`, DemoSimulatorTest) or confirmations time out in demo.
   ESC confirmation (#125): since `7130082` (rc.8 Build 39) a 0x1C0 ESC CHANGE is stamped when it arrives; only an unchanged report
-  stays under the 1 s throttle (`EscStampThrottleTest`). It still confirms on ONE post-request report (drive mode needs two) — owner decision pending
+  stays under the 1 s throttle (`EscStampThrottleTest`); since `cdffbbe` the 1 s reports keep their own tick (`escStatusReportTick`)
+  and a change adds one stamp on top, so a change just before the request no longer delays its confirmation. It confirms on ONE
+  post-request report (drive mode needs two): see #125 for the rule's status
 - **Bluetooth with no saved device (#234, fixed on feature/rc7 — verified on the emulator only; trigger: connection method
   Bluetooth saved with no device selected — on such installs `a605b1c` and earlier crash at every launch; Wi-Fi, or
   Bluetooth with a device, is unaffected)** — one rule,
@@ -114,7 +118,8 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   DEVICE and Connect opens Settings on CONNECTION; prefs never switched. `connectHybrid` guards `transportFactory()`
   (`UnbuiltTransport` → ordinary failed attempt; cancellation rethrown). Release logcat `Session N started` (autoGenerate
   ids) is how to count sessions on a non-debuggable build
-- **The SLCAN handshake consumes a connection's first line (rc.8, #253 review)** — `SlcanConnection` reads the first line after
-  `SLCAN_INIT` as the handshake probe (3 s wait for a well-formed frame / `OPENRS:` reply); that line never reaches the frame loop,
-  the framing latch or a test's expectations. A replay or fake-adapter test that feeds N lines and asserts N decodes is vacuous by
-  one (fix `8a872ba` in #257 corrected such a test). Feed the handshake its own line first, then count from the second.
+- **The SLCAN handshake consumes every line up to and including the first well-formed frame or `OPENRS:` reply (rc.8, #253
+  review)** — `SlcanConnection` waits up to 3 s after `SLCAN_INIT` for that first acceptable line; it and anything before it never
+  reach the frame loop, the framing latch or a test's expectations. A replay or fake-adapter test whose asserted line is the first
+  one sent asserts nothing (fix `8a872ba` in #257 corrected such a negative assertion). Send a handshake line first, then the lines
+  the test is about.

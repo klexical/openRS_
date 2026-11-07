@@ -86,3 +86,16 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   Sapphire (`web/src/lib/exportSchema.ts`) never blocks on it: absent or malformed (only a positive safe integer counts) records
   nothing, and a higher number is recorded in `session.meta` and noted on the dashboard. A bump needs Sapphire's
   `KNOWN_EXPORT_SCHEMA_VERSION` raised when it learns the new contract; until then the note is the correct behaviour.
+- **Adapter lines and diagnostic logs are bounded, and the export says when a limit was reached (#253, rc.8 Build 39)** — a
+  received line past `MAX_SLCAN_LINE_CHARS` (256) is discarded up to its CR and counted, and the next line starts clean (a spliced
+  34–256-char TCP line is refused and counted, never a reconnect); the WebSocket upgrade refuses headers over
+  `MAX_HTTP_HEADER_CHARS` (16 KiB); `DiagnosticLogger` caps session events (`MAX_EVENTS`, oldest rolled off and counted in
+  `droppedEvents`), inventory IDs (`MAX_INVENTORY_IDS` 4,096), fps points, periodic samples per ID, the decode trace, the SLCAN log
+  (one "SLCAN log cap reached" event) and probe sessions. The export carries a LOG LIMITS section and a `logLimits` JSON object
+  ("no limit reached" when none; additive). Known overclaim under fix: after an SLCAN write failure it can say "no limit reached"
+  with lines lost. The `hardware-acceptance` checker reads these fields once it is updated for rc.8 Build 39.
+- **Public export fixtures carry synthetic times only (#253, rule 2)** — the Sapphire fixtures under
+  `web/src/lib/__fixtures__/android-export-rc8/` use the stamp `…_20260101_000000` and `exportedAt` 1767225600000
+  (2026-01-01T00:00:00Z, offset zero), written by the sample writer in `ExportSchemaVersionTest`, which fixes every
+  `yyyyMMdd_HHmmss` stamp and `exportedAt` at write time (the exporter has no injectable clock); rc.6's fixtures use
+  `…_20261026_120000`. A real run time in a fixture reached a branch once and had to be rewritten out of history before the push.
