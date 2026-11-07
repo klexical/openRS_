@@ -108,7 +108,16 @@ class ExportVinScanTest {
         val activity = org.robolectric.Robolectric.buildActivity(android.app.Activity::class.java).create().get()
         DiagnosticExporter.startChooser(activity, android.content.Intent(android.content.Intent.ACTION_SEND), "t")
         org.robolectric.shadows.ShadowLooper.idleMainLooper()
-        assertEquals(DiagnosticExporter.SHARE_NOTICE, org.robolectric.shadows.ShadowToast.getTextOfLatestToast())
+        assertEquals(DiagnosticExporter.SHARE_TOAST, org.robolectric.shadows.ShadowToast.getTextOfLatestToast())
+        assertEquals(android.content.Intent.ACTION_CHOOSER, org.robolectric.Shadows.shadowOf(activity).nextStartedActivity?.action)
+    }
+
+    @Test fun `the notice is short enough to name the VIN in a Toast`() {
+        // Android cuts a Toast at two lines. The old 122-character notice was cut before "VIN" on an emulator; the words a screen shows are the re-smoke's to check
+        val t = DiagnosticExporter.SHARE_TOAST
+        assertTrue("${t.length} characters: $t", t.length <= 54)
+        assertTrue("the VIN comes first, in case a screen cuts the rest: $t", t.indexOf("VIN") in 0..20)
+        assertTrue(t, t.contains("GPS route"))
     }
 
     @Test fun `the share text holds no VIN and names what the ZIP contains`() {

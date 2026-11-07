@@ -461,12 +461,15 @@ object DiagnosticExporter {
     /** The chooser, with the notice over it for the user who is about to pick a recipient (#260). */
     internal fun startChooser(ctx: Context, intent: Intent, title: String) {
         Handler(Looper.getMainLooper()).post {
-            android.widget.Toast.makeText(ctx, SHARE_NOTICE, android.widget.Toast.LENGTH_LONG).show()
+            android.widget.Toast.makeText(ctx, SHARE_TOAST, android.widget.Toast.LENGTH_LONG).show()
             ctx.startActivity(Intent.createChooser(intent, title))
         }
     }
 
-    /** What a share hands over (#260): shown when sharing and carried in the share text. */
+    /** What fits a Toast: Android cuts one at two lines. The share text carries [SHARE_NOTICE]. */
+    internal const val SHARE_TOAST = "Can hold your VIN and GPS route. Check before sharing."
+
+    /** What a share hands over (#260), carried in the share text. */
     internal const val SHARE_NOTICE =
         "This file can hold your GPS route and raw CAN frames, and raw CAN frames can include your car's VIN. Check before sharing."
 
