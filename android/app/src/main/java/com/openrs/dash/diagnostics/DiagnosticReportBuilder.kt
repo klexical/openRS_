@@ -102,6 +102,7 @@ internal object DiagnosticReportBuilder {
         appendLine("  Source    : ${BuildConfig.SOURCE_COMMIT}${if (BuildConfig.SOURCE_DIRTY) " (uncommitted changes)" else ""}")
         appendLine("  Generated : $ts")
         appendLine("  Session   : ${log.formatDuration(log.sessionDurationMs)}")
+        appendLine("  Schema    : export schema $EXPORT_SCHEMA_VERSION")
         appendLine("═══════════════════════════════════════════════════════════")
         appendLine()
 
@@ -502,6 +503,7 @@ internal object DiagnosticReportBuilder {
         root.put("nrcUnattributedTotal", log.nrcUnattributedTotal)   // exact, even though lines are folded (#216)
         root.put("linkIntegrity", linkIntegrityJson(log.linkIntegrity, log.nrcUnattributedTotal))   // rc.8 #253, additive
         root.put("logLimits", logLimitsJson(log.logLimits, knockSessionDropped()))  // additive
+        root.put("exportSchemaVersion", EXPORT_SCHEMA_VERSION)   // rc.8 #253, additive; when it changes: see the constant
 
         // nrcSuppression
         val nrcMap = log.nrcSuppressed
@@ -554,6 +556,18 @@ internal object DiagnosticReportBuilder {
 }
 
 /** Serialize VehicleState to a JSONObject with full-precision numeric values. */
+/**
+ * Contract version of an export ZIP (rc.8 #253), at the root of `manifest.json` and of the diagnostic detail JSON. Absent =
+ * exported before this field existed (rc.7 and earlier). It is not `manifest.json`'s own `version`, which has always been 1
+ * and so can't tell those exports apart.
+ *
+ * Bump it only when a reader of the current number could misread an export: a field or file removed or renamed, or a value
+ * whose type, unit, scale or meaning changes. Additive changes keep the number (a new section such as `linkIntegrity`, a new
+ * key, a new file): readers ignore what they don't know and detect an added section by its presence. Sapphire imports every
+ * number and says so when one is higher than it knows (`web/src/lib/exportSchema.ts`).
+ */
+internal const val EXPORT_SCHEMA_VERSION = 1
+
 /** LINK INTEGRITY summary lines (rc.8 #253) — counts only, never a raw line. */
 internal fun linkIntegrityText(li: DiagnosticLogger.LinkIntegrity, nrcUnattributed: Int): List<String> = listOf(
     "─── LINK INTEGRITY ────────────────────────────────────────",

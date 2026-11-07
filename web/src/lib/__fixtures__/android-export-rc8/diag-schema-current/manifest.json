@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "exportSchemaVersion": 1,
+  "app": "openRS_",
+  "appVersion": "2.2.7-rc.7-dev+5f05bf8a80fa.dirty",
+  "appBuild": 38,
+  "releaseVersion": "2.2.7-rc.7",
+  "versionCode": 38,
+  "sourceCommit": "5f05bf8a80fa",
+  "sourceDirty": true,
+  "buildType": "debug",
+  "exportedAt": 1767225600000,
+  "files": [
+    {
+      "name": "diagnostic_summary_20260101_000000.txt",
+      "type": "diagnostic_summary"
+    },
+    {
+      "name": "diagnostic_detail_20260101_000000.json",
+      "type": "diagnostic_detail"
+    }
+  ]
+}

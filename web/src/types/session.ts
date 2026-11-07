@@ -21,6 +21,8 @@ export interface SessionMeta {
   generatedAt: string
   appBuild?: number
   exportedAt?: number
+  /** Export contract version (lib/exportSchema.ts); absent = none stated (rc.7 and earlier). */
+  exportSchemaVersion?: number
 }
 
 // ── Trip ──

@@ -78,3 +78,11 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
     No time release (#216): after a scan in which a probed DID never answered, PCM NRC suppression stays off until the next
     connection. A multi-frame positive shows only its first-frame bytes (no flow control sent).
   - Over BLE, GATT 13 is "possibly delivered" (see the BLE writes gotcha), so a scan no longer stops at the first DID.
+- **Export schema version (#253)** — `EXPORT_SCHEMA_VERSION` (`DiagnosticReportBuilder.kt`) is written at the root of every
+  `manifest.json` (diagnostic, drive, batch) and of the diagnostic detail JSON, plus one summary header line. Absent = rc.7 or
+  earlier. Bump it only for a change a reader could misread (a field or file removed or renamed; a type, unit, scale or meaning
+  changed); additive changes keep the number, and readers detect an added section by its presence. `manifest.json`'s own
+  `version` is a different number: always 1 on every export, so it can't tell legacy from current; don't bump or reuse it.
+  Sapphire (`web/src/lib/exportSchema.ts`) never blocks on it: absent or malformed (only a positive safe integer counts) records
+  nothing, and a higher number is recorded in `session.meta` and noted on the dashboard. A bump needs Sapphire's
+  `KNOWN_EXPORT_SCHEMA_VERSION` raised when it learns the new contract; until then the note is the correct behaviour.

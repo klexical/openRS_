@@ -505,6 +505,7 @@ object DiagnosticExporter {
     private fun buildManifest(files: List<Pair<String, String>>): String {
         val root = JSONObject()
         root.put("version", 1)
+        root.put("exportSchemaVersion", EXPORT_SCHEMA_VERSION)   // not `version` above, which is 1 on every export ever written
         root.put("app", "openRS_")
         root.put("appVersion", appVersion)
         root.put("appBuild", appBuild)
