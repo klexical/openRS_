@@ -15,7 +15,7 @@ paths:
 ---
 # openRS_ Known Gotchas — DTC scans, DID prober, diagnostic export
 
-Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-06. Add a new gotcha of this area at the end; never reword an existing one here.
+Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-06. Add a new gotcha of this area at the end; never reword an existing one here, with one exception: when an entry's facts changed (a decision landed, a mapping was confirmed), correct those words only, in a commit whose message names each corrected line. Entries carry no perishable status, only the decision or a pointer to the issue that holds it.
 
 - **One DTC record per export (#238 review F4, `d6ef14e`)** — `DiagnosticExporter.export` reads
   `DiagnosticLogger.lastDtcScan` once and passes it to `buildSummaryAndDetail(ts, dtcScan = …)` and the `dtc_scan_*`
@@ -92,10 +92,9 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   `MAX_HTTP_HEADER_CHARS` (16 KiB); `DiagnosticLogger` caps session events (`MAX_EVENTS`, oldest rolled off and counted in
   `droppedEvents`), inventory IDs (`MAX_INVENTORY_IDS` 4,096), fps points, periodic samples per ID, the decode trace, the SLCAN log
   (one "SLCAN log cap reached" event) and probe sessions. The export carries a LOG LIMITS section and a `logLimits` JSON object
-  ("no limit reached" when none; additive). Known overclaim under fix: after an SLCAN write failure it can say "no limit reached"
-  with lines lost. The `hardware-acceptance` checker reads these fields once it is updated for rc.8 Build 39.
-- **Public export fixtures carry synthetic times only (#253, rule 2)** — the Sapphire fixtures under
+  ("no counted limit reached" when none; `slcanWriteFailed` says lines were lost to a write failure; additive).
+- **Public export fixtures carry synthetic times only (#253)** — the Sapphire fixtures under
   `web/src/lib/__fixtures__/android-export-rc8/` use the stamp `…_20260101_000000` and `exportedAt` 1767225600000
   (2026-01-01T00:00:00Z, offset zero), written by the sample writer in `ExportSchemaVersionTest`, which fixes every
   `yyyyMMdd_HHmmss` stamp and `exportedAt` at write time (the exporter has no injectable clock); rc.6's fixtures use
-  `…_20261026_120000`. A real run time in a fixture reached a branch once and had to be rewritten out of history before the push.
+  `…_20261026_120000`.

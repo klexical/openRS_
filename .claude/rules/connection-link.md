@@ -38,7 +38,7 @@ paths:
 ---
 # openRS_ Known Gotchas — Connection, SLCAN link, service ownership, firmware commands
 
-Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-06. Add a new gotcha of this area at the end; never reword an existing one here.
+Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-06. Add a new gotcha of this area at the end; never reword an existing one here, with one exception: when an entry's facts changed (a decision landed, a mapping was confirmed), correct those words only, in a commit whose message names each corrected line. Entries carry no perishable status, only the decision or a pointer to the issue that holds it.
 
 - Firmware drive mode is **hybrid scroll-then-wait** (v1.61+) — pre-calculates scroll count, sends all presses open-loop, waits up to 6s for auto-confirm. Do NOT revert to closed-loop press-and-poll (v1.6 bug) or pure open-loop press counting (v1.5 bug). The Focus RS mode selector GUI requires ~4s of inactivity to auto-confirm — CAN does not update during scrolling
 - Firmware REST POST `/api/frs` returns `{"ok":false,"busy":true}` when a drive mode change is in progress — app must handle this

@@ -24,7 +24,7 @@ paths:
 ---
 # openRS_ Known Gotchas — OBD Mode 22 polling, decoders and freshness
 
-Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-06. Add a new gotcha of this area at the end; never reword an existing one here.
+Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-06. Add a new gotcha of this area at the end; never reword an existing one here, with one exception: when an entry's facts changed (a decision landed, a mapping was confirmed), correct those words only, in a commit whose message names each corrected line. Entries carry no perishable status, only the decision or a pointer to the issue that holds it.
 
 - TPMS PID `0x280B` is multi-frame ISO-TP — send `BCM_FLOW_CONTROL` after receiving First Frame
 - Extended session (`0x10 0x03`) required before: RDU_STATUS (AWD 0x703), PDC (PSCM 0x730), FENG (0x727), RSProt (0x731)
@@ -57,6 +57,6 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   discards a partial reply; a sequence break or the deadline returns nothing, never partial bytes; a partial reply has no timer and
   stays open until the next FF or SF. The PCM frame branch reads the PCI first, a PCM first-frame positive resolves its ledger
   request, and **a polled DID that answers with an FF releases the poller at the FF instead of after the 300 ms pacing window**
-  (poll pacing, not command timing; accepted provisionally by the integrator, pinned by `IsoTpCoverageTest`, owner may reject).
+  (poll pacing, not command timing; hardware-unverified; pinned by `IsoTpCoverageTest`; tracked on #216).
   Open: no N_Cr timer (two lost lines can join reply B to reply A's head), a restarted reply waiting for FC ends as TIMEOUT, no
   counter for dropped ISO-TP replies.

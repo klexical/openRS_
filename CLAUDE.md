@@ -105,8 +105,8 @@ data[5] = B5,  data[6] = B6 …
 
 ## Known Gotchas
 
-The gotchas live in `.claude/rules/` as path-scoped Claude Code rules, one file per area (93 entries, moved verbatim on
-2026-11-06). Each file loads on demand when a file matching its `paths:` globs is read or edited; the globs start with `**/`
+The gotchas live in `.claude/rules/` as path-scoped Claude Code rules, one file per area (95 entries, moved verbatim on
+2026-11-06; 101 now). Each file loads on demand when a file matching its `paths:` globs is read or edited; the globs start with `**/`
 so they also match from a workspace that holds this repository in a subfolder. Rules for editing them:
 
 - A new gotcha goes at the end of its area's file, in the same `- **Title** — …` style; a cross-cutting one goes to
@@ -125,11 +125,11 @@ so they also match from a workspace that holds this repository in a subfolder. R
 |---|---|---|
 | `source-layout.md` | Source Layout (the android/ source map) | any file under `android/` |
 | `android-general.md` | Android, any file (3) | any file under `android/app/src/` |
-| `can-decoding.md` | CAN decoding and VehicleState (7) | `CanDecoder.kt`, `VehicleState.kt`, `DemoSimulator.kt`, `PullTracker.kt`, `Knock*.kt`, `data/Drive*.kt`, `OilPtuMapping*`, `DriveRecorder.kt`, their tests, `test/resources/dbc/` |
-| `obd-polling.md` | OBD Mode 22 polling, decoders and freshness (9) | `Obd*.kt`, `PcmPollSchedule.kt`, `PidRegistry.kt`, `NrcTracker.kt`, `CanDecoder.kt`, `SlcanConnection.kt`, `CanDataService.kt`, `ObdMerge.kt`, `FreshnessGate.kt`, `VehicleState.kt`, `*ModeProvenance*`, `PowerPage.kt`, `CustomDashPage.kt`, the PID assets, their tests |
+| `can-decoding.md` | CAN decoding and VehicleState (11) | `CanDecoder.kt`, `VehicleState.kt`, `DemoSimulator.kt`, `PullTracker.kt`, `Knock*.kt`, `data/Drive*.kt`, `OilPtuMapping*`, `DriveRecorder.kt`, their tests, `test/resources/dbc/` |
+| `obd-polling.md` | OBD Mode 22 polling, decoders and freshness (12) | `Obd*.kt`, `PcmPollSchedule.kt`, `PidRegistry.kt`, `NrcTracker.kt`, `CanDecoder.kt`, `SlcanConnection.kt`, `CanDataService.kt`, `ObdMerge.kt`, `FreshnessGate.kt`, `VehicleState.kt`, `*ModeProvenance*`, `PowerPage.kt`, `CustomDashPage.kt`, the PID assets, their tests |
 | `boost.md` | Boost / TIP rule (#207) (3) | any `*Boost*` file, `DrivePage.kt`, `CustomDashPage.kt`, `HudOverlayService.kt`, `DriveRecorder.kt`, `KnockScatter.kt`, `KnockCapture.kt`, `ui/trip/`, `web/src/lib/boost.ts` |
-| `connection-link.md` | Connection, SLCAN link, service ownership, firmware commands (11) | `Slcan*.kt`, transports, `ObdResponseParser.kt`, `PidRegistry.kt`, `FirmwareApi.kt`, `DriveCommand.kt`, `EscCommand.kt`, `CanDataService.kt`, `Link*.kt`, `ConnectionSetup.kt`, `CanDecoder.kt`, `ObdMerge.kt`, `DemoSimulator.kt`, `DriveModeDock.kt`, `MorePage.kt`, `SettingsSheet.kt`, `BleDeviceDraft.kt`, `MainActivity.kt`, `ObdConstants.kt`, `ForegroundController.kt`, `firmware/`, their tests |
-| `ble.md` | BLE GATT transport and picker (9) | `Ble*.kt`, `BleDevicePickerDialog.kt`, `SlcanConnection.kt`, `*Ledger*`, `WriteOutcome.kt`, their tests |
+| `connection-link.md` | Connection, SLCAN link, service ownership, firmware commands (14) | `Slcan*.kt`, transports, `ObdResponseParser.kt`, `PidRegistry.kt`, `FirmwareApi.kt`, `DriveCommand.kt`, `EscCommand.kt`, `CanDataService.kt`, `Link*.kt`, `ConnectionSetup.kt`, `CanDecoder.kt`, `ObdMerge.kt`, `DemoSimulator.kt`, `DriveModeDock.kt`, `MorePage.kt`, `SettingsSheet.kt`, `BleDeviceDraft.kt`, `MainActivity.kt`, `ObdConstants.kt`, `ForegroundController.kt`, `firmware/`, their tests |
+| `ble.md` | BLE GATT transport and picker (7) | `Ble*.kt`, `BleDevicePickerDialog.kt`, `SlcanConnection.kt`, `*Ledger*`, `WriteOutcome.kt`, their tests |
 | `recorder-trip.md` | Drive recorder, laps and the TRIP tab (7) | `DriveRecorder.kt`, `data/Drive*.kt`, lap files, `ui/trip/` (incl. `TripPage.kt`), `TripPreview.kt`, `MainActivity.kt`, `DriveExportBuilder.kt`, their tests |
 | `diagnostics.md` | DTC scans, DID prober, diagnostic export (11) | `diagnostics/`, `DiagPage.kt`, `SlcanConnection.kt`, `*Ledger*`, `CanDataService.kt`, `DidProberSection.kt`, `PidBrowserSection.kt`, `data/Dtc*.kt`, their tests |
 | `ui-compose.md` | Compose UI (layout, theme, navigation) (15) | any file under `ui/` or `res/`, `HudOverlayService.kt` |
