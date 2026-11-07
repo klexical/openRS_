@@ -64,6 +64,7 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   sidebar is a reported system bar is unknown
 - **Snackbars go above the bottom nav** — the main Scaffold's `SnackbarHost` carries `Modifier.padding(bottom = navBarClearance())`:
   `BottomNavBar` is drawn over the Scaffold and its `contentWindowInsets` is status bars only, so a host at the Scaffold's bottom edge
-  sits under the tab bar — invisible, its action untappable (measured on an emulator, three-button and gesture nav; every build up to
+  sits under the tab bar — invisible, its action untappable (measured on an emulator with three-button nav; on gesture nav a before-shot
+  showed a sliver of its top edge; after-shots on both styles are QA's check; every build up to
   rc.8 Build 39 had it: NOT CONFIRMED, Connection changed, Busy, ESC results). A UI text dump still reports such a snackbar with
   bounds, so "shown" in a dump is not "visible" — a visibility claim needs a screenshot (#252 follow-up, rc.8 ledger L14)
