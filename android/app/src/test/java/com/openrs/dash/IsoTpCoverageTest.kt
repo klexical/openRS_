@@ -839,6 +839,24 @@ class IsoTpCoverageTest {
         assertTrue(DiagnosticLogger.nrcSuppressed.keys.toString(), 0x03ED in DiagnosticLogger.nrcSuppressed.keys)
     }
 
+    /** Gaps from each write of [did] to the next PCM request (provisional poll pacing, #253). */
+    private fun TestScope.gapsAfter(did: Int, reply: (Int) -> String?): List<Long> {
+        val writes = mutableListOf<Pair<Int, Long>>()
+        link(pcmEcu(backgroundScope) { d -> writes += d to testScheduler.currentTime; reply(d) }, rpm = 1_500.0)
+        advanceTimeBy(40_000L)
+        return writes.zipWithNext().filter { (a, _) -> a.first == did }.map { (a, b) -> b.second - a.second }
+    }
+
+    @Test fun `pacing - a DID answering with a first frame releases the poller before the 300 ms window`() = runTest {
+        val gaps = gapsAfter(0x033E) { d -> if (d == 0x033E) line(0x7E8, bytes(0x10, 0x0A, 0x62, 0x03, 0x3E, 0x40, 0x00, 0x00)) else positive(d) }
+        assertTrue(gaps.toString(), gaps.isNotEmpty() && gaps.all { it < 300L })
+    }
+
+    @Test fun `pacing - control, a silent DID holds the poller for the 300 ms window`() = runTest {
+        val gaps = gapsAfter(0x033E) { d -> if (d == 0x033E) null else positive(d) }
+        assertTrue(gaps.toString(), gaps.isNotEmpty() && gaps.all { it >= 300L })
+    }
+
     @Test fun `PCM - a truncated single frame shaped like an NRC is not an NRC`() = runTest {
         val l = link(pcmEcu(backgroundScope) { positive(it) })
         repeat(2) { l.bus.rx(line(0x7E8, bytes(0x07, 0x7F, 0x22, 0x31))) }
