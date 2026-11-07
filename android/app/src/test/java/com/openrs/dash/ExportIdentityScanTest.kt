@@ -89,6 +89,26 @@ class ExportIdentityScanTest {
         assertTrue("the Host line a Wi-Fi diagnosis needs", summary.contains("192.168.0.10:35000"))
     }
 
+    private fun wifiTransportLabel(adapter: String, host: String): String {
+        ctx.getSharedPreferences("openrs_settings", Context.MODE_PRIVATE).edit()
+            .putString("connection_method", "WIFI").putString("adapter_type", adapter).putString("wican_host", host).commit()
+        val cm = ctx.getSystemService(android.net.ConnectivityManager::class.java)
+        val wifi = org.robolectric.shadows.ShadowNetworkCapabilities.newInstance()
+        Shadows.shadowOf(wifi).addTransportType(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+        Shadows.shadowOf(cm).setNetworkCapabilities(cm.activeNetwork, wifi)
+        DiagnosticLogger.sessionStart("before", 0, transport = "before", prefs = null)
+        val service = Robolectric.buildService(CanDataService::class.java).create().get()
+        service.startConnection()
+        val label = DiagnosticLogger.sessionTransport
+        service.stopConnection(com.openrs.dash.service.LinkStopReason.USER_DISCONNECT)
+        return label
+    }
+
+    @Test fun `the transport line the service builds for Wi-Fi names kind and profile, not the address`() {
+        assertEquals("TCP SLCAN (MeatPi Pro)", wifiTransportLabel("MEATPI_PRO", "192.168.0.77"))
+        assertEquals("WebSocket SLCAN (MeatPi USB)", wifiTransportLabel("MEATPI_USB", "192.168.0.77"))
+    }
+
     @Test fun `error text keeps its diagnostic tail and loses its identifiers`() {
         val api = object : com.openrs.dash.can.FirmwareCommandSender {
             override suspend fun setDriveMode(mode: Int) = Result.failure<Unit>(java.io.IOException("BLE write failed (GATT 133) to $MAC"))
