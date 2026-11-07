@@ -65,7 +65,7 @@ suspend fun executeDriveModeChange(
     targetMode: DriveMode,
     currentMode: DriveMode,
     state: () -> VehicleState = { OpenRSDashApp.instance.vehicleState.value },
-    connectionId: () -> Int = { com.openrs.dash.service.CanDataService.link.generation },
+    connectionId: () -> Int = { com.openrs.dash.service.CanDataService.link.connectionEpoch },
     clock: () -> Long = System::currentTimeMillis,
     firmwareLabel: () -> String = { OpenRSDashApp.instance.firmwareVersionLabel.value },
 ): DriveCommandResult {

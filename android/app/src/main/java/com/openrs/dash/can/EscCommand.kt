@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  *  - only a 0x1C0 frame stamped after the request counts (stamp `escStatus`: a value change at once, an unchanged
  *    report at most once a second) — a held or earlier matching state never confirms. One report is enough here, unlike
  *    drive mode's two (#252), so a stray frame seen by a poll reads as confirmed;
- *  - the connection identity ([connectionId], the link generation) must not change while waiting: a reconnect is
+ *  - the connection identity ([connectionId], the link's connection epoch) must not change while waiting: a reconnect is
  *    ConnectionLost even if the new link then reports the requested mode;
  *  - one request at a time in the app: a second one while a request is waiting is Busy, nothing sent.
  * The observed CAN state stays authoritative; nothing here is persisted. The injection protocol itself is unchanged
@@ -67,7 +67,7 @@ object EscCommand {
         api: FirmwareCommandSender?,
         target: EscStatus,
         state: () -> VehicleState,
-        connectionId: () -> Int = { 0 },
+        connectionId: () -> Int = { com.openrs.dash.service.CanDataService.link.connectionEpoch },
         clock: () -> Long = System::currentTimeMillis,
     ): Outcome {
         if (api == null) return Outcome.Unsupported
