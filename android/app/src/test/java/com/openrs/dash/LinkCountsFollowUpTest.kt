@@ -5,6 +5,7 @@ import com.openrs.dash.can.ObdResponseParser
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticLogger
 import com.openrs.dash.diagnostics.DiagnosticReportBuilder
+import com.openrs.dash.diagnostics.toJsonObject
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
@@ -94,6 +95,17 @@ class LinkCountsFollowUpTest {
         ReplayRun(this, rows)
         advanceTimeBy(5_000L)
         assertEquals(2, DiagnosticLogger.linkIntegrity.refusedFrameLines)
+    }
+
+    // #252: the export can show what a confirmation rested on
+    @Test fun `field ages carry the run, its previous report and the resolved pair, and only the current run`() {
+        val vs = VehicleState().markFresh(com.openrs.dash.can.CanDecoder.modeRunTag(com.openrs.dash.data.DriveMode.TRACK),
+            com.openrs.dash.can.CanDecoder.MODE_RUN_PREV_TAG, com.openrs.dash.can.CanDecoder.MODE_RESOLVED_PAIR_TAG, now = 1_000L)
+        val ages = vs.toJsonObject(nowMs = 1_500L).getJSONObject("fieldAgesMs")
+        assertEquals(500L, ages.getLong(com.openrs.dash.can.CanDecoder.modeRunTag(com.openrs.dash.data.DriveMode.TRACK)))
+        assertEquals(500L, ages.getLong(com.openrs.dash.can.CanDecoder.MODE_RUN_PREV_TAG))
+        assertEquals(500L, ages.getLong(com.openrs.dash.can.CanDecoder.MODE_RESOLVED_PAIR_TAG))
+        assertFalse(ages.toString(), ages.has(com.openrs.dash.can.CanDecoder.modeRunTag(com.openrs.dash.data.DriveMode.SPORT)))
     }
 
     // (6) "Mode 22 reply(ies) refused" counts Mode 22 replies

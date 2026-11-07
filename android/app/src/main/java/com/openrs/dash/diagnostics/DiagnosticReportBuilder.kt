@@ -641,11 +641,16 @@ internal fun modeProvenance(vs: VehicleState, nowMs: Long): String {
 
 /** Tags whose age the detail JSON reports (rc.8 #253): the polled voltage and the drive-mode provenance (#223, #252). */
 private val AGE_TAGS = listOf("batteryVoltage", "driveMode", com.openrs.dash.can.CanDecoder.MODE_DETAIL_TAG,
-    com.openrs.dash.can.CanDecoder.MODE_RESOLVED_DETAIL_TAG)
+    com.openrs.dash.can.CanDecoder.MODE_RESOLVED_DETAIL_TAG, com.openrs.dash.can.CanDecoder.MODE_RUN_PREV_TAG,
+    com.openrs.dash.can.CanDecoder.MODE_RESOLVED_PAIR_TAG)
 
 internal fun VehicleState.toJsonObject(nowMs: Long = System.currentTimeMillis()): JSONObject = JSONObject().apply {
     // Additive (rc.8 #253): ages at export time, never absolute times
-    put("fieldAgesMs", JSONObject().apply { AGE_TAGS.forEach { t -> fieldLastUpdateMs[t]?.let { put(t, nowMs - it) } } })
+    put("fieldAgesMs", JSONObject().apply {
+        AGE_TAGS.forEach { t -> fieldLastUpdateMs[t]?.let { put(t, nowMs - it) } }
+        // The current run's tag (#252): with the run's previous report and the resolved pair, what a confirmation rested on
+        fieldLastUpdateMs.forEach { (t, at) -> if (t.startsWith(com.openrs.dash.can.CanDecoder.MODE_RUN_PREFIX)) put(t, nowMs - at) }
+    })
     put("rpm", rpm)
     put("speedKph", speedKph)
     put("speedMph", speedKph * 0.621371)
