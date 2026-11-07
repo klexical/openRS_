@@ -12,8 +12,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  *  - the wait is sized from the firmware's own button timing ([pressMs]: a 5 s long press for OFF, 300 ms short
  *    presses, 1 s between two presses) plus [REACTION_MS] for the ABS module to report it — the old fixed 4 s ended
  *    before a long press had even finished;
- *  - only a 0x1C0 frame stamped after the request counts (stamp `escStatus`, ≤ 1 s throttle) — a held or earlier
- *    matching state never confirms;
+ *  - only a 0x1C0 frame stamped after the request counts (stamp `escStatus`: a value change at once, an unchanged
+ *    report at most once a second) — a held or earlier matching state never confirms. One report is enough here, unlike
+ *    drive mode's two (#252), so a stray frame seen by a poll reads as confirmed;
  *  - the connection identity ([connectionId], the link generation) must not change while waiting: a reconnect is
  *    ConnectionLost even if the new link then reports the requested mode;
  *  - one request at a time in the app: a second one while a request is waiting is Busy, nothing sent.
@@ -41,7 +42,7 @@ object EscCommand {
     const val LONG_PRESS_MS = 5_000L
     const val PRESS_GAP_MS = 1_000L
     /**
-     * After the injection ends: ABS reacting + the next 0x1C0 frame + the ≤ 1 s freshness stamp. **Provisional** — not
+     * After the injection ends: ABS reacting + the next 0x1C0 frame + its stamp. **Provisional** — not
      * measured on a car. Reaching the window's end is NOT CONFIRMED, never inferred success.
      */
     const val REACTION_MS = 3_000L
