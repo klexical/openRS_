@@ -44,3 +44,8 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   so after one lost reply NRCs stay unattributed for that connection), recovers on a positive reply and re-probes after 60 s (provisional settings);
   the PCM poller always suspends. Emulator capture current → STALE → recovered: fake_ecu_v2.py `--stale DID:A:S`.
 - **POWER cells are gated per field** — engine cells show only when `rpm > FAST_POLL_MIN_RPM` AND `fieldLastUpdateMs[tag] != null`; never gate on another field's value (the old `calcLoad > 0` gate hid everything once load lost its decoder)
+- **An OBD merge can resurrect a stamp key the CAN side removed (#252 review, fix `134bee3`)** — `ObdMerge.merge()` merges
+  `fieldLastUpdateMs` by per-key max from the reply's SNAPSHOT of VehicleState; a key that CAN-side code deleted after the snapshot
+  was taken comes back from the merge. Any key that must be CAN-only (today: every `driveMode*` tag, dropped by `ObdMerge`) needs
+  the same explicit drop; `ModeProvenanceMergeTest` guards the drive-mode set. When you remove a stamp key from the state, add it
+  to the drop set or a merge can bring it back.

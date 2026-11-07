@@ -10,6 +10,7 @@ paths:
   - "**/com/openrs/dash/can/AdapterState.kt"
   - "**/com/openrs/dash/can/IsoTpBuffer.kt"
   - "**/com/openrs/dash/can/ObdResponseParser.kt"
+  - "**/com/openrs/dash/ui/MainActivity.kt"
   - "**/com/openrs/dash/can/PidRegistry.kt"
   - "**/com/openrs/dash/service/CanDataService.kt"
   - "**/com/openrs/dash/service/Link*.kt"
@@ -49,11 +50,11 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   in `SlcanConnection` starts each connection plain and locks to timestamped (exactly DLC × 2 + 4 hex, suffix stripped) only if
   the first 8 well-formed frames all carry the suffix (adapter left in `Z1` by another client); no mid-connection switch;
   50 consecutive other-shape lines log one FRAMING event (no raw line). Never accept "+4" statelessly: a spliced line and a
-  one-nibble DLC corruption both look like +4. `SLCAN_INIT` is unchanged (sending `Z0` is a reviewed follow-up, not done).
+  one-nibble DLC corruption both look like +4. `SLCAN_INIT` is unchanged (sending `Z0` at init was decided against on 2026-11-06: the per-connection latch only).
   - Mode 22: a PCI that claims more bytes than the frame holds (or no data byte) is refused
     (`ObdResponseParser.singleFrameDataBytes`); a decoder whose value needs a byte the reply doesn't carry updates nothing
     (it used to read the missing byte as 0). A one-byte value in a short reply still decodes. `PidRegistry.decode` refuses a two-byte formula without B.
-  - Well-formed but implausible single frames (e.g. 0x130 = 0xFFFF → 655.35 km/h) are NOT filtered — an open owner decision
+  - Well-formed but implausible single frames (e.g. 0x130 = 0xFFFF → 655.35 km/h) are NOT filtered — decided on 2026-11-06: left unfiltered
     (`#251 outlier policy`, the one @Ignore'd test). Don't invent physical limits.
 - **Foreground service only while connected** — `MainActivity.startSvc()` only **binds** `CanDataService`. `startConnection()`
   promotes it via `ForegroundController.promote()` (startForegroundService(self) immediately followed by startForeground);
@@ -102,7 +103,8 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   the car's mode after the request, not that the app caused it (a manual selection looks identical; in capture A the 0x305 button bit never set, 0 of 874 frames — QA analysis).
   Timing (2 s + 15 s), retries, ESC and firmware unchanged; reconnect → `DriveCommandResult.ConnectionLost`. Demo must stamp
   every CAN tag (`CanDecoder.canStampTags` ⊆ `DemoSimulator.CAN_TAGS`, DemoSimulatorTest) or confirmations time out in demo.
-  ESC confirmation (#125) still reads `escStatus` under the 1 s throttle (can confirm up to ~1 s late; not changed)
+  ESC confirmation (#125): since `7130082` (rc.8 Build 39) a 0x1C0 ESC CHANGE is stamped when it arrives; only an unchanged report
+  stays under the 1 s throttle (`EscStampThrottleTest`). It still confirms on ONE post-request report (drive mode needs two) — owner decision pending
 - **Bluetooth with no saved device (#234, fixed on feature/rc7 — verified on the emulator only; trigger: connection method
   Bluetooth saved with no device selected — on such installs `a605b1c` and earlier crash at every launch; Wi-Fi, or
   Bluetooth with a device, is unaffected)** — one rule,
@@ -112,3 +114,7 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   DEVICE and Connect opens Settings on CONNECTION; prefs never switched. `connectHybrid` guards `transportFactory()`
   (`UnbuiltTransport` → ordinary failed attempt; cancellation rethrown). Release logcat `Session N started` (autoGenerate
   ids) is how to count sessions on a non-debuggable build
+- **The SLCAN handshake consumes a connection's first line (rc.8, #253 review)** — `SlcanConnection` reads the first line after
+  `SLCAN_INIT` as the handshake probe (3 s wait for a well-formed frame / `OPENRS:` reply); that line never reaches the frame loop,
+  the framing latch or a test's expectations. A replay or fake-adapter test that feeds N lines and asserts N decodes is vacuous by
+  one (fix `8a872ba` in #257 corrected such a test). Feed the handshake its own line first, then count from the second.
