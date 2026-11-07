@@ -258,6 +258,13 @@ class ExportVinScanTest {
         assertEquals(listOf("101462F190000000", "2100000000000000", "2200000000000000", "2301020304050607", "101462DE00112233", "2144556677112233"), lines(rawNow(), "72E"))
     }
 
+    @Test fun `a 0xF190 reply in a single frame reads 00 past the DID, which a whole VIN can't fit but a short reply can`() {
+        DiagnosticLogger.sessionStart("test", 0, prefs = null, logDir = File(root, "diagnostics"))
+        DiagnosticLogger.logObdFrame(0x72E, byteArrayOf(0x06, 0x62, 0xF1.toByte(), 0x90.toByte()) + hexBytes(VIN.substring(0, 3)))
+        DiagnosticLogger.logObdFrame(0x72E, byteArrayOf(0x06, 0x62, 0xDE.toByte(), 0x00, 0x11, 0x22, 0x33))
+        assertEquals(listOf("0662F190000000", "0662DE00112233"), lines(rawNow(), "72E"))
+    }
+
     @Test fun `a 0xF190 result's bytes are masked in the probe CSV and the reports, another DID's aren't`() {
         val files = f190()
         val csv = files.entries.single { it.key.startsWith("did_probe_") }.value
