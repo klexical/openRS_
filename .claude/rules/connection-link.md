@@ -10,6 +10,9 @@ paths:
   - "**/com/openrs/dash/can/AdapterState.kt"
   - "**/com/openrs/dash/can/IsoTpBuffer.kt"
   - "**/com/openrs/dash/can/ObdResponseParser.kt"
+  - "**/com/openrs/dash/ui/MainActivity.kt"
+  - "**/com/openrs/dash/can/ObdConstants.kt"
+  - "**/com/openrs/dash/service/ForegroundController.kt"
   - "**/com/openrs/dash/can/PidRegistry.kt"
   - "**/com/openrs/dash/service/CanDataService.kt"
   - "**/com/openrs/dash/service/Link*.kt"
@@ -35,7 +38,7 @@ paths:
 ---
 # openRS_ Known Gotchas — Connection, SLCAN link, service ownership, firmware commands
 
-Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-06. Add a new gotcha of this area at the end; never reword an existing one here.
+Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-06. Add a new gotcha of this area at the end; never reword an existing one here, with one exception: when an entry's facts changed (a decision landed, a mapping was confirmed), correct those words only, in a commit whose message names each corrected line. Entries carry no perishable status, only the decision or a pointer to the issue that holds it.
 
 - Firmware drive mode is **hybrid scroll-then-wait** (v1.61+) — pre-calculates scroll count, sends all presses open-loop, waits up to 6s for auto-confirm. Do NOT revert to closed-loop press-and-poll (v1.6 bug) or pure open-loop press counting (v1.5 bug). The Focus RS mode selector GUI requires ~4s of inactivity to auto-confirm — CAN does not update during scrolling
 - Firmware REST POST `/api/frs` returns `{"ok":false,"busy":true}` when a drive mode change is in progress — app must handle this
@@ -49,11 +52,11 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   in `SlcanConnection` starts each connection plain and locks to timestamped (exactly DLC × 2 + 4 hex, suffix stripped) only if
   the first 8 well-formed frames all carry the suffix (adapter left in `Z1` by another client); no mid-connection switch;
   50 consecutive other-shape lines log one FRAMING event (no raw line). Never accept "+4" statelessly: a spliced line and a
-  one-nibble DLC corruption both look like +4. `SLCAN_INIT` is unchanged (sending `Z0` is a reviewed follow-up, not done).
+  one-nibble DLC corruption both look like +4. `SLCAN_INIT` is unchanged (sending `Z0` at init was decided against on 2026-11-06: the per-connection latch only).
   - Mode 22: a PCI that claims more bytes than the frame holds (or no data byte) is refused
     (`ObdResponseParser.singleFrameDataBytes`); a decoder whose value needs a byte the reply doesn't carry updates nothing
     (it used to read the missing byte as 0). A one-byte value in a short reply still decodes. `PidRegistry.decode` refuses a two-byte formula without B.
-  - Well-formed but implausible single frames (e.g. 0x130 = 0xFFFF → 655.35 km/h) are NOT filtered — an open owner decision
+  - Well-formed but implausible single frames (e.g. 0x130 = 0xFFFF → 655.35 km/h) are NOT filtered — decided on 2026-11-06: left unfiltered
     (`#251 outlier policy`, the one @Ignore'd test). Don't invent physical limits.
 - **Foreground service only while connected** — `MainActivity.startSvc()` only **binds** `CanDataService`. `startConnection()`
   promotes it via `ForegroundController.promote()` (startForegroundService(self) immediately followed by startForeground);
@@ -98,11 +101,19 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   `driveModeRunPrev`). `driveModeDetail` / `driveModeResolvedDetail` are provenance only (export text, `fieldAgesMs`). An undocumented 0x420 byte 6 changes nothing; a 0x1B0 that changes the resolved mode is stamped
   at once (the 1 s throttle applies only to unchanged reports). The one overshoot correction needs the same corroboration, so
   a single stray frame can never trigger it. OBD merges must not bring back drive-mode provenance keys from their snapshot
-  (`ModeProvenanceMergeTest`). Requesting the current mode now confirms ~1 s later (two stamped reports). A confirmation states
-  the car's mode after the request, not that the app caused it (a manual selection looks identical; in capture A the 0x305 button bit never set, 0 of 874 frames — QA analysis).
+  (`ModeProvenanceMergeTest`). The current mode's chip can't be tapped once the screen shows that state (a request for it reaches the code only if
+  the tap beats the screen update — not run); a real change via Sport confirms about 1.2–1.3 s later than before the corroboration
+  rule (emulator, synthetic adapter; #252 A2 run). A confirmation states
+  the car's mode after the request, not that the app caused it (a manual selection looks identical; which 0x305 bit is the mode button is unresolved — in capture A, 874 frames, the bit the decoder reads (byte 4 bit 5) is never
+  set, the firmware's bit (byte 4 bit 2) is set in 5 frames between the Drift send and its confirmation, and closed #120's bit
+  (byte 4 bit 4) flips only at the two mode changes, a state not a press by inference; capture B shows neither; so
+  `driveModeButtonPressed` reads a bit never set in either capture — QA counts 2026-11-07).
   Timing (2 s + 15 s), retries, ESC and firmware unchanged; reconnect → `DriveCommandResult.ConnectionLost`. Demo must stamp
   every CAN tag (`CanDecoder.canStampTags` ⊆ `DemoSimulator.CAN_TAGS`, DemoSimulatorTest) or confirmations time out in demo.
-  ESC confirmation (#125) still reads `escStatus` under the 1 s throttle (can confirm up to ~1 s late; not changed)
+  ESC confirmation (#125): since `7130082` (rc.8 Build 39) a 0x1C0 ESC CHANGE is stamped when it arrives; only an unchanged report
+  stays under the 1 s throttle (`EscStampThrottleTest`); since `cdffbbe` the 1 s reports keep their own tick (`escStatusReportTick`)
+  and a change adds one stamp on top, so a change just before the request no longer delays its confirmation. It confirms on ONE
+  post-request report (drive mode needs two): see #125 for the rule's status
 - **Bluetooth with no saved device (#234, fixed on feature/rc7 — verified on the emulator only; trigger: connection method
   Bluetooth saved with no device selected — on such installs `a605b1c` and earlier crash at every launch; Wi-Fi, or
   Bluetooth with a device, is unaffected)** — one rule,
@@ -112,3 +123,16 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   DEVICE and Connect opens Settings on CONNECTION; prefs never switched. `connectHybrid` guards `transportFactory()`
   (`UnbuiltTransport` → ordinary failed attempt; cancellation rethrown). Release logcat `Session N started` (autoGenerate
   ids) is how to count sessions on a non-debuggable build
+- **The SLCAN handshake consumes every line up to and including the first well-formed frame or `OPENRS:` reply (rc.8, #253
+  review)** — `SlcanConnection` waits up to 3 s after `SLCAN_INIT` for that first acceptable line; it and anything before it never
+  reach the frame loop, the framing latch or a test's expectations. A replay or fake-adapter test whose asserted line is the first
+  one sent asserts nothing (fix `8a872ba` in #257 corrected such a negative assertion). Send a handshake line first, then the lines
+  the test is about.
+- **Impossible CAN IDs and 29-bit frames numbered like 11-bit ones are refused (#253, rc.8 Build 39)** — `SlcanParser` returns
+  an ID number only, not the frame's kind, so the fix is refusal: a `T` (extended) frame whose ID is ≤ 0x7FF, or any ID outside its
+  range, is refused and counted, and can neither reach a decoder keyed on the 11-bit ID (a synthetic `T000000F8…` line moved the oil
+  peak in a test) nor answer a DID probe as if it were the module's 0x7E8. The only support for refusing `T` ≤ 0x7FF is the firmware
+  source (it sets `T` from the frame's extended flag, Pro and USB): the SLCAN log records parsed IDs, never `t` vs `T`, so the
+  captures (no ID above 0x7FF logged) cannot exclude such frames, and no raw-line capture exists; the first real session's refused
+  frame-line count is the hardware check. A line with a non-hex data character is refused without printing it anywhere (logcat
+  included). `SlcanParserTest` carries real 29-bit IDs for the extended cases.

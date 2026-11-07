@@ -159,7 +159,7 @@ object DiagnosticExporter {
 
             FileProvider.getUriForFile(ctx, authority(ctx), zipFile)
         } catch (e: Exception) {
-            DiagnosticLogger.event("EXPORT_ERROR", e.message ?: "unknown")
+            DiagnosticLogger.event("EXPORT_ERROR", LogText.sanitizeReason(e))
             null
         }
     }
@@ -304,18 +304,16 @@ object DiagnosticExporter {
                     Intent.EXTRA_TEXT,
                     "openRS_ v${appVersion} drive export.\n" +
                     "${points.size} waypoints, ${"%.1f".format(drive.distanceKm)} km.\n\n" +
-                    "View in Sapphire → https://klexical.github.io/openRS_/"
+                    "View in Sapphire → https://klexical.github.io/openRS_/\n\n$SHARE_NOTICE"
                 )
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            Handler(Looper.getMainLooper()).post {
-                ctx.startActivity(Intent.createChooser(intent, "Share Drive Data"))
-            }
+            startChooser(ctx, intent, "Share Drive Data")
             _exportProgress.value = ExportProgress.Done
             _exportProgress.value = ExportProgress.Idle
         } catch (e: Exception) {
             _exportProgress.value = ExportProgress.Error(e.message ?: "unknown")
-            DiagnosticLogger.event("DRIVE_EXPORT_ERROR", e.message ?: "unknown")
+            DiagnosticLogger.event("DRIVE_EXPORT_ERROR", LogText.sanitizeReason(e))
             _exportProgress.value = ExportProgress.Idle
         }
     }
@@ -394,18 +392,16 @@ object DiagnosticExporter {
                     Intent.EXTRA_TEXT,
                     "openRS_ v${appVersion} batch export.\n" +
                     "${drives.size} drives, $totalPts waypoints, ${"%.1f".format(totalDist)} km total.\n\n" +
-                    "View in Sapphire → https://klexical.github.io/openRS_/"
+                    "View in Sapphire → https://klexical.github.io/openRS_/\n\n$SHARE_NOTICE"
                 )
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            Handler(Looper.getMainLooper()).post {
-                ctx.startActivity(Intent.createChooser(intent, "Share Batch Drive Data"))
-            }
+            startChooser(ctx, intent, "Share Batch Drive Data")
             _exportProgress.value = ExportProgress.Done
             _exportProgress.value = ExportProgress.Idle
         } catch (e: Exception) {
             _exportProgress.value = ExportProgress.Error(e.message ?: "unknown")
-            DiagnosticLogger.event("BATCH_EXPORT_ERROR", e.message ?: "unknown")
+            DiagnosticLogger.event("BATCH_EXPORT_ERROR", LogText.sanitizeReason(e))
             _exportProgress.value = ExportProgress.Idle
         }
     }
@@ -449,23 +445,10 @@ object DiagnosticExporter {
             putExtra(Intent.EXTRA_STREAM, uri)
             clipData = shareClip(uri)
             putExtra(Intent.EXTRA_SUBJECT, "openRS_ Diagnostic Report")
-            putExtra(
-                Intent.EXTRA_TEXT,
-                "openRS_ v${appVersion} diagnostic bundle.\n" +
-                "• diagnostic_summary_*.txt  — human-readable report\n" +
-                "• diagnostic_detail_*.json  — full machine-readable data$slcanNote$driveNote\n\n" +
-                "App      : v${appVersion} (build ${appBuild})\n" +
-                "Session  : ${DiagnosticLogger.formatDuration(DiagnosticLogger.sessionDurationMs)}\n" +
-                "Firmware : ${DiagnosticLogger.firmwareVersion}\n" +
-                "Host     : ${DiagnosticLogger.sessionHost}:${DiagnosticLogger.sessionPort}" +
-                if (DiagnosticLogger.sessionTransport.isNotEmpty())
-                    "\nTransport: ${DiagnosticLogger.sessionTransport}" else ""
-            )
+            putExtra(Intent.EXTRA_TEXT, diagnosticShareText(slcanNote, driveNote))
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        Handler(Looper.getMainLooper()).post {
-            ctx.startActivity(Intent.createChooser(intent, "Share openRS_ Diagnostics"))
-        }
+        startChooser(ctx, intent, "Share openRS_ Diagnostics")
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -475,6 +458,34 @@ object DiagnosticExporter {
      * and never grants the share sheet itself, so its preview was denied (`Permission Denial … intentresolver`).
      * With ClipData on the target, Intent.createChooser carries it and FLAG_GRANT_READ_URI_PERMISSION to the chooser.
      */
+    /** The chooser, with the notice over it for the user who is about to pick a recipient (#260). */
+    internal fun startChooser(ctx: Context, intent: Intent, title: String) {
+        Handler(Looper.getMainLooper()).post {
+            android.widget.Toast.makeText(ctx, SHARE_TOAST, android.widget.Toast.LENGTH_LONG).show()
+            ctx.startActivity(Intent.createChooser(intent, title))
+        }
+    }
+
+    /** What fits a Toast: Android cuts one at two lines. The share text carries [SHARE_NOTICE]. */
+    internal const val SHARE_TOAST = "Can hold your VIN and GPS route. Check before sharing."
+
+    /** What a share hands over (#260), carried in the share text. */
+    internal const val SHARE_NOTICE =
+        "This file can hold your GPS route and raw CAN frames, and raw CAN frames can include your car's VIN. Check before sharing."
+
+    /** The share sheet's text, outside the ZIP and so outside any file the user can read first. */
+    internal fun diagnosticShareText(slcanNote: String = "", driveNote: String = ""): String =
+        "openRS_ v${appVersion} diagnostic bundle.\n" +
+        "• diagnostic_summary_*.txt  — human-readable report\n" +
+        "• diagnostic_detail_*.json  — full machine-readable data$slcanNote$driveNote\n\n" +
+        "App      : v${appVersion} (build ${appBuild})\n" +
+        "Session  : ${DiagnosticLogger.formatDuration(DiagnosticLogger.sessionDurationMs)}\n" +
+        "Firmware : ${DiagnosticLogger.firmwareVersion}\n" +
+        "Host     : ${DiagnosticLogger.sessionHost}:${DiagnosticLogger.sessionPort}" +
+        (if (DiagnosticLogger.sessionTransport.isNotEmpty())
+            "\nTransport: ${DiagnosticLogger.sessionTransport}" else "") +
+        "\n\n$SHARE_NOTICE"
+
     private fun shareClip(uri: android.net.Uri) = android.content.ClipData.newRawUri("openRS_ export", uri)
 
     /** Add crash telemetry JSON files to the ZIP. */
@@ -505,6 +516,7 @@ object DiagnosticExporter {
     private fun buildManifest(files: List<Pair<String, String>>): String {
         val root = JSONObject()
         root.put("version", 1)
+        root.put("exportSchemaVersion", EXPORT_SCHEMA_VERSION)   // not `version` above, which is 1 on every export ever written
         root.put("app", "openRS_")
         root.put("appVersion", appVersion)
         root.put("appBuild", appBuild)

@@ -48,18 +48,25 @@ class SlcanParserTest {
 
     @Test
     fun `parse extended frame`() {
-        // T{ID8}{DLC}{DATA} -> T000001B08AABBCCDD00112233
-        val result = SlcanParser.parse("T000001B08AABBCCDD00112233")
+        // T{ID8}{DLC}{DATA} -> T18DAF1108AABBCCDD00112233
+        val result = SlcanParser.parse("T18DAF1108AABBCCDD00112233")
         assertNotNull(result)
-        assertEquals(0x1B0, result!!.first)
+        assertEquals(0x18DAF110, result!!.first)
         assertEquals(8, result.second.size)
     }
 
     @Test
+    fun `an extended frame numbered in the 11-bit range is refused, never read as that 11-bit ID`() {
+        assertNull(SlcanParser.parse("T000001B08AABBCCDD00112233"))
+        assertNull(SlcanParser.parse("T000007FF0"))
+        assertNotNull(SlcanParser.parse("T000008000"))
+    }
+
+    @Test
     fun `parse extended frame zero data`() {
-        val result = SlcanParser.parse("T000000900")
+        val result = SlcanParser.parse("T18DAF1100")
         assertNotNull(result)
-        assertEquals(0x090, result!!.first)
+        assertEquals(0x18DAF110, result!!.first)
         assertEquals(0, result.second.size)
     }
 

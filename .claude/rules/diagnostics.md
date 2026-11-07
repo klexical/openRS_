@@ -15,7 +15,7 @@ paths:
 ---
 # openRS_ Known Gotchas — DTC scans, DID prober, diagnostic export
 
-Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-06. Add a new gotcha of this area at the end; never reword an existing one here.
+Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-06. Add a new gotcha of this area at the end; never reword an existing one here, with one exception: when an entry's facts changed (a decision landed, a mapping was confirmed), correct those words only, in a commit whose message names each corrected line. Entries carry no perishable status, only the decision or a pointer to the issue that holds it.
 
 - **One DTC record per export (#238 review F4, `d6ef14e`)** — `DiagnosticExporter.export` reads
   `DiagnosticLogger.lastDtcScan` once and passes it to `buildSummaryAndDetail(ts, dtcScan = …)` and the `dtc_scan_*`
@@ -78,3 +78,24 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
     No time release (#216): after a scan in which a probed DID never answered, PCM NRC suppression stays off until the next
     connection. A multi-frame positive shows only its first-frame bytes (no flow control sent).
   - Over BLE, GATT 13 is "possibly delivered" (see the BLE writes gotcha), so a scan no longer stops at the first DID.
+- **Export schema version (#253)** — `EXPORT_SCHEMA_VERSION` (`DiagnosticReportBuilder.kt`) is written at the root of every
+  `manifest.json` (diagnostic, drive, batch) and of the diagnostic detail JSON, plus one summary header line. Absent = rc.7 or
+  earlier. Bump it only for a change a reader could misread (a field or file removed or renamed; a type, unit, scale or meaning
+  changed); additive changes keep the number, and readers detect an added section by its presence. `manifest.json`'s own
+  `version` is a different number: always 1 on every export, so it can't tell legacy from current; don't bump or reuse it.
+  Sapphire (`web/src/lib/exportSchema.ts`) never blocks on it: absent or malformed (only a positive safe integer counts) records
+  nothing, and a higher number is recorded in `session.meta` and noted on the dashboard. A bump needs Sapphire's
+  `KNOWN_EXPORT_SCHEMA_VERSION` raised when it learns the new contract; until then the note is the correct behaviour.
+- **Adapter lines and diagnostic logs are bounded, and the export says when a limit was reached (#253, rc.8 Build 39)** — a
+  received line past `MAX_SLCAN_LINE_CHARS` (256) is refused and counted, per transport: over Bluetooth it is discarded up to its CR
+  and the next line starts clean; over WebSocket the message is refused whole and the connection continues; over TCP the read ends,
+  so the attempt ends and the app reconnects (a 34–256-char TCP line is refused and counted, never a reconnect); the WebSocket upgrade refuses headers over
+  `MAX_HTTP_HEADER_CHARS` (16 KiB); `DiagnosticLogger` caps session events (`MAX_EVENTS`, oldest rolled off and counted in
+  `droppedEvents`), inventory IDs (`MAX_INVENTORY_IDS` 4,096), fps points, periodic samples per ID, the decode trace, the SLCAN log
+  (one "SLCAN log cap reached" event) and probe sessions. The export carries a LOG LIMITS section and a `logLimits` JSON object
+  ("no counted limit reached" when none; `slcanWriteFailed` says lines were lost to a write failure; additive).
+- **Public export fixtures carry synthetic times only (#253)** — the Sapphire fixtures under
+  `web/src/lib/__fixtures__/android-export-rc8/` use the stamp `…_20260101_000000` and `exportedAt` 1767225600000
+  (2026-01-01T00:00:00Z, offset zero), written by the sample writer in `ExportSchemaVersionTest`, which fixes every
+  `yyyyMMdd_HHmmss` stamp and `exportedAt` at write time (the exporter has no injectable clock); rc.6's fixtures use
+  `…_20261026_120000`.

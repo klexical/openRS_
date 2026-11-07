@@ -187,7 +187,7 @@ object CanDecoder {
     /**
      * Freshness tags written by each passive CAN decoder (#194). Only fields the UI
      * classifies via `fieldLastUpdateMs` (THERMAL availability) need an entry.
-     * Stamped by CanDataService.processCanFrame, throttled per ID — see [CAN_STAMP_THROTTLE_MS].
+     * Stamped through [stampFresh]: throttled per ID ([CAN_STAMP_THROTTLE_MS]), except a drive-mode or ESC change, at once.
      */
     /** Every freshness tag a CAN frame stamps (demo mode must stamp the same set — DemoSimulatorTest). */
     val canStampTags: Set<String> get() = FRESH_TAGS.values.flatMap { it.toList() }.toSet() +
@@ -246,7 +246,7 @@ object CanDecoder {
         else               -> "0x%03X recognized, no state change".format(id) to null
     }
 
-    /** Re-stamp a CAN ID's tags at most this often — avoids a map copy on every frame. */
+    /** Re-stamp an unchanged report's tags at most this often — avoids a map copy on every frame. */
     const val CAN_STAMP_THROTTLE_MS = 1_000L
 
     fun freshTagsFor(id: Int): Array<String>? = FRESH_TAGS[id]
@@ -258,13 +258,29 @@ object CanDecoder {
      * Drive mode (#252): a documented 0x420 detail is stamped on every frame (~600 ms, never throttled — its receipt time
      * is provenance); a 0x1B0 that changes the resolved mode is stamped at once (a change inside the throttle used to keep
      * the previous report's stamp), and every 0x1B0 stamp records the detail receipt it resolved with.
+     * ESC (#125): a 0x1C0 frame whose [VehicleState.escStatus] differs from [previous]'s is stamped at once, the same way.
+     * That extra stamp leaves the 1 s reports on their own rhythm ([ESC_REPORT_TICK_TAG]), so a change just before a request
+     * can't delay the first report after it.
      */
     fun stampFresh(id: Int, previous: VehicleState, decoded: VehicleState, now: Long): VehicleState {
         if (id == ID_DRIVE_MODE_EXT) return stampDetail(previous, decoded, now)
         if (id == ID_DRIVE_MODE) return stampResolve(previous, decoded, now)
         val tags = FRESH_TAGS[id] ?: return decoded
+        if (id == ID_ESC_ABS) return stampEsc(previous, decoded, now)
         val last = previous.fieldLastUpdateMs[tags[0]] ?: 0L
         return if (now - last >= CAN_STAMP_THROTTLE_MS) decoded.markFresh(*tags, now = now) else decoded
+    }
+
+    /** Last 1 s report of 0x1C0: the throttle's own clock, separate from the `escStatus` stamp that a change also moves. */
+    private const val ESC_REPORT_TICK_TAG = "escStatusReportTick"
+
+    private fun stampEsc(previous: VehicleState, decoded: VehicleState, now: Long): VehicleState {
+        val lastReport = previous.fieldLastUpdateMs[ESC_REPORT_TICK_TAG] ?: 0L
+        return when {
+            now - lastReport >= CAN_STAMP_THROTTLE_MS -> decoded.markFresh("escStatus", ESC_REPORT_TICK_TAG, now = now)
+            decoded.escStatus != previous.escStatus -> decoded.markFresh("escStatus", now = now)
+            else -> decoded
+        }
     }
 
     /** A documented 0x420 (the decoder just stored it in [modeDetail420]); undocumented ones never get here. */
@@ -287,15 +303,25 @@ object CanDecoder {
         val before = previous.fieldLastUpdateMs
         val sameRun = before.containsKey(runTag)
         val last = before["driveMode"] ?: 0L
-        val due = !sameRun || !before.containsKey(MODE_RUN_PREV_TAG) || now - last >= CAN_STAMP_THROTTLE_MS
+        // A pair corroborates a mode only if its details are of that mode: Normal's 10C4 and Drift's 12C4 read bit 0 = 0 like Sport's (#252)
+        val pair = before[MODE_DETAIL_PAIR_TAG]?.takeIf { detailsMatch(decoded.driveMode, before) }
+        val due = !sameRun || !before.containsKey(MODE_RUN_PREV_TAG) || now - last >= CAN_STAMP_THROTTLE_MS ||
+            (pair != null && !before.containsKey(MODE_RESOLVED_PAIR_TAG))   // the first matching pair shouldn't wait a second for a report
         if (!due) return decoded
         val m = decoded.fieldLastUpdateMs.toMutableMap()
         m.keys.removeAll { it.startsWith(MODE_RUN_PREFIX) && it != runTag }
         if (!sameRun) { m[runTag] = now; m.remove(MODE_RUN_PREV_TAG) } else m[MODE_RUN_PREV_TAG] = last
         m["driveMode"] = now
         before[MODE_DETAIL_TAG]?.let { m[MODE_RESOLVED_DETAIL_TAG] = it }
-        before[MODE_DETAIL_PAIR_TAG]?.let { m[MODE_RESOLVED_PAIR_TAG] = it } ?: m.remove(MODE_RESOLVED_PAIR_TAG)
+        pair?.let { m[MODE_RESOLVED_PAIR_TAG] = it } ?: m.remove(MODE_RESOLVED_PAIR_TAG)
         return decoded.copy(fieldLastUpdateMs = m)
+    }
+
+    /** The current detail is byte 6 = 0x11 (launch-control bit aside) with the bit 0 of [mode]. Read from the stamps: pure, for the CAS. */
+    private fun detailsMatch(mode: DriveMode, stamps: Map<String, Long>) = when (mode) {
+        DriveMode.SPORT -> stamps.containsKey(DETAIL_KEY_PREFIX + "11.0")
+        DriveMode.TRACK -> stamps.containsKey(DETAIL_KEY_PREFIX + "11.1")
+        else -> false
     }
 
     fun decode(id: Int, data: ByteArray, state: VehicleState): VehicleState? {
@@ -729,7 +755,7 @@ object CanDecoder {
         ID_WHEEL_ROT    -> "rotFL=${state.wheelRotFL} FR=${state.wheelRotFR} RL=${state.wheelRotRL} RR=${state.wheelRotRR} avgFront=${"%.2f".format(state.avgFrontWheelSpeedKph)}kph"
         ID_FUEL_LEVEL   -> "fuelPct=${"%.1f".format(state.fuelLevelPct)} (0x380 Motorola)"
         ID_ODOMETER     -> "odometerKm=${state.odometerKm} engStatus=${state.engineStatus} (0x360 passive)"
-        ID_VIN_MUX      -> "vin=${state.vin.ifEmpty { "(assembling)" }}"
+        ID_VIN_MUX      -> if (state.vin.isEmpty()) "vin=(assembling)" else "vin=<masked>"   // goes into exports (#260); DIAG reads the value
         ID_BUTTONS_260  -> "assBtn=${state.autoStartStopButtonPressed} escOffBtn=${state.escOffButtonPressed}"
         ID_DRIVE_MODE_BTN -> "modeBtn=${state.driveModeButtonPressed}"
         else            -> "(unknown id 0x%03X)".format(id)

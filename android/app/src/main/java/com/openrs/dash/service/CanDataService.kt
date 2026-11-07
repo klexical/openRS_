@@ -45,6 +45,7 @@ import com.openrs.dash.demo.DemoMode
 import com.openrs.dash.demo.DemoScenario
 import com.openrs.dash.diagnostics.DtcDatabase
 import com.openrs.dash.diagnostics.DiagnosticLogger
+import com.openrs.dash.diagnostics.LogText
 import com.openrs.dash.diagnostics.DtcScanner
 import com.openrs.dash.ui.AppSettings
 import com.openrs.dash.ui.UserPrefsStore
@@ -250,10 +251,24 @@ class CanDataService : Service() {
         return START_STICKY
     }
 
+    /** A line only (#212), no ownership action: what a task removal should do to the connection is the owner's decision. */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        link.transition {
+            DiagnosticLogger.event(DiagnosticLogger.EVENT_LINK_TASK_REMOVED, LinkStopLog.taskRemovedLine(
+                link.phase, connectionJob?.isActive == true, recNow(), DemoMode.isActive))
+        }
+        super.onTaskRemoved(rootIntent)
+    }
+
+    private fun recNow(): String {
+        val ds = OpenRSDashApp.instance.driveRecorder.driveState.value
+        return LinkStopLog.rec(ds.isRecording, ds.isPaused)
+    }
+
     override fun onDestroy() {
         unregisterWifiCallback()
         unregisterBluetoothCallback()
-        stopConnection()   // flush sessionEnd() before scope is torn down
+        stopConnection(LinkStopReason.SERVICE_DESTROYED)   // flush sessionEnd() before scope is torn down
         scope.cancel()
         super.onDestroy()
     }
@@ -291,12 +306,13 @@ class CanDataService : Service() {
                     try {
                         autoStartConnection()
                     } catch (e: Exception) {
+                        DiagnosticLogger.event(DiagnosticLogger.EVENT_LINK_START_REFUSED, "auto-start failed: ${LogText.sanitizeReason(e)}")
                         android.util.Log.w("CAN", "Cannot start foreground service from background", e)
                     }
                 }
             }
             override fun onLost(network: Network) {
-                if (!isBluetooth()) stopConnection()
+                if (!isBluetooth()) stopConnection(LinkStopReason.WIFI_LOST)
             }
         }
         try { cm.registerNetworkCallback(request, wifiCallback!!) } catch (e: Exception) {
@@ -324,12 +340,13 @@ class CanDataService : Service() {
                     BluetoothAdapter.STATE_ON -> {
                         if (connectionJob?.isActive != true) {
                             try { autoStartConnection() } catch (e: Exception) {
+                                DiagnosticLogger.event(DiagnosticLogger.EVENT_LINK_START_REFUSED, "auto-start failed: ${LogText.sanitizeReason(e)}")
                                 android.util.Log.w("CAN", "Cannot start service from BT callback", e)
                             }
                         }
                     }
-                    BluetoothAdapter.STATE_OFF,
-                    BluetoothAdapter.STATE_TURNING_OFF -> stopConnection()
+                    BluetoothAdapter.STATE_OFF -> stopConnection(LinkStopReason.BLUETOOTH_OFF)
+                    BluetoothAdapter.STATE_TURNING_OFF -> stopConnection(LinkStopReason.BLUETOOTH_TURNING_OFF)
                 }
             }
         }
@@ -501,7 +518,8 @@ class CanDataService : Service() {
      * cancel, then start anyway.
      */
     private fun autoStartConnection() {
-        link.autoStart(blocked = { DemoMode.isActive || DemoMode.launchRequested }) { beginConnection() }
+        val allowed = link.autoStart(blocked = { DemoMode.isActive || DemoMode.launchRequested }) { beginConnection() }
+        if (!allowed) DiagnosticLogger.event(DiagnosticLogger.EVENT_LINK_START_REFUSED, "auto-start held: a saved Cancel or demo mode")
     }
 
     /** Explicit (user) connect. No-op while demo mode owns the vehicle state. */
@@ -520,6 +538,7 @@ class CanDataService : Service() {
         // session begins, so no notification, no session record, no retries. Every start path lands here (launch,
         // Connect, Bluetooth on, a sticky restart with no activity); the dashboard explains it, the choice is kept.
         ConnectionSetup.problem(AppSettings.getConnectionMethod(this), AppSettings.getBleDeviceAddress(this))?.let {
+            DiagnosticLogger.event(DiagnosticLogger.EVENT_LINK_START_REFUSED, "no saved Bluetooth device")
             android.util.Log.i("CAN", "Not connecting — $it")
             return@transition false
         }
@@ -527,6 +546,7 @@ class CanDataService : Service() {
         try {
             foreground.promote()
         } catch (e: Exception) {
+            DiagnosticLogger.event(DiagnosticLogger.EVENT_LINK_START_REFUSED, "foreground not allowed: ${LogText.sanitizeReason(e)}")
             android.util.Log.w("CAN", "Cannot go foreground — skipping connection start", e)
             return@transition false
         }
@@ -535,15 +555,17 @@ class CanDataService : Service() {
         val connMethod = s.getConnectionMethod(this)
         val adapterType = s.getAdapterType(this)
         val isBle = connMethod == "BLUETOOTH"
+        // Kind + profile only (#263): an export never carries the adapter's MAC or name, whatever the user or vendor called it
+        val profile = if (adapterType == "MEATPI_PRO") "MeatPi Pro" else "MeatPi USB"
         val transportLabel = if (isBle) {
-            "Bluetooth (${s.getBleDeviceName(this) ?: "BLE"} / ${s.getBleDeviceAddress(this) ?: "?"})"
+            "Bluetooth ($profile)"
         } else {
             val protocol = if (adapterType == "MEATPI_PRO") "TCP SLCAN" else "WebSocket SLCAN"
-            "$protocol (${s.getHost(this)}:${s.getPort(this)})"
+            "$protocol ($profile)"     // the Host line keeps the address a Wi-Fi diagnosis needs
         }
         // Bluetooth starts "not requested" together with the session; Wi-Fi status writes carry this session's token (#233)
         val diagSession = DiagnosticLogger.sessionStart(
-            host      = if (isBle) s.getBleDeviceAddress(this) ?: "BLE" else s.getHost(this),
+            host      = if (isBle) "Bluetooth" else s.getHost(this),
             port      = if (isBle) 0 else s.getPort(this),
             transport = transportLabel,
             prefs  = UserPrefsStore.prefs.value,
@@ -567,6 +589,11 @@ class CanDataService : Service() {
         applyPhase(LinkPhase.CONNECTING)
 
         connectionJob = scope.launch {
+            launch(Dispatchers.IO) {
+                lastProcessExitLine()?.let { line ->
+                    link.deliver(gen) { DiagnosticLogger.event(DiagnosticLogger.EVENT_LINK_PREV_EXIT, line) }
+                }
+            }
             launch {
                 conn.state.collect { state ->
                     if (DemoMode.isActive || !link.owns(gen)) return@collect
@@ -594,9 +621,9 @@ class CanDataService : Service() {
                     if (status != null) link.deliver(gen) {
                         OpenRSDashApp.instance.deviceStatus.value = status
                         DiagnosticLogger.adapterStatusFetched(diagSession, status)
-                        DiagnosticLogger.event("DEVICE_STATUS",
+                        DiagnosticLogger.event("DEVICE_STATUS", LogText.sanitize(
                             "${status.hardwareVersion} fw=${status.firmwareVersion} " +
-                            "can=${status.canDatarate} vbatt=${status.obdPortVoltage}V")
+                            "can=${status.canDatarate} vbatt=${status.obdPortVoltage}V"))
                     } else link.deliver(gen) {
                         DiagnosticLogger.adapterStatusFailed(diagSession)
                         DiagnosticLogger.event("DEVICE_STATUS", "/check_status request failed — adapter details unknown this session")
@@ -726,7 +753,8 @@ class CanDataService : Service() {
         },
     )
 
-    fun stopConnection(): Unit = link.transition {
+    fun stopConnection(reason: LinkStopReason): Unit = link.transition {
+        val rec = recNow()   // before the auto-pause below, so a running recording doesn't read as paused
         // Auto-pause drive if recording — do NOT finalize here. A brief
         // disconnect (WiFi drop, adapter reboot) should not end the
         // drive. On reconnect within AUTO_RESUME_WINDOW_MS the drive
@@ -738,7 +766,7 @@ class CanDataService : Service() {
         if (ds.isRecording && !ds.isPaused && AppSettings.getAutoRecordDrives(this)) {
             recorder.pauseDrive()
         }
-        endConnection(LinkPhase.OFF)
+        endConnection(LinkPhase.OFF, reason, rec)
     }
 
     /**
@@ -746,8 +774,8 @@ class CanDataService : Service() {
      * FAILED when the attempts ran out. Ending ownership first means a cancelled job that is still unwinding can't
      * publish state, a merge or a notification over a newer attempt.
      */
-    private fun endConnection(finalPhase: LinkPhase): Unit = link.transition {
-        teardownJob(finalPhase)
+    private fun endConnection(finalPhase: LinkPhase, reason: LinkStopReason, rec: String): Unit = link.transition {
+        teardownJob(finalPhase, reason, rec)
         OpenRSDashApp.instance.linkPhase.value = finalPhase
         // Demo owns the connection flags (WiFi/BT-loss callbacks still land here).
         if (!DemoMode.isActive) {
@@ -759,13 +787,30 @@ class CanDataService : Service() {
     }
 
     /** Ends ownership and the job: session records closed, transport aborted, job cancelled. */
-    private fun teardownJob(phase: LinkPhase) {
+    private fun teardownJob(phase: LinkPhase, reason: LinkStopReason, rec: String) {
+        val stopLine = LinkStopLog.stopLine(reason, link.phase, link.generation, rec, DemoMode.isActive)
+        val stopType = if (connectionJob?.isActive == true) DiagnosticLogger.EVENT_LINK_STOP else DiagnosticLogger.EVENT_LINK_STOP_IDLE
         link.end(phase)
         stopSessionRecording()
+        DiagnosticLogger.event(stopType, stopLine)
         DiagnosticLogger.sessionEnd()
         connection?.abort()          // a blocking connect / read returns now instead of after its timeout
         connectionJob?.cancel()
         connectionJob = null
+    }
+
+    /** How this app's last process ended, as the system recorded it (#212): API 30+, never fails a connection. */
+    private fun lastProcessExitLine(): String? {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) return null
+        return try {
+            getSystemService(android.app.ActivityManager::class.java)
+                .getHistoricalProcessExitReasons(packageName, 0, 1).firstOrNull()?.let {
+                    LinkStopLog.exitLine(it.reason, it.status, it.importance,
+                        (System.currentTimeMillis() - it.timestamp).coerceAtLeast(0L), it.description)
+                }
+        } catch (e: Exception) {
+            null
+        }
     }
 
     /** Publish a live phase (the job is current — called inside the ownership lock): link phase, VehicleState flags, notification. */
@@ -793,10 +838,11 @@ class CanDataService : Service() {
         if (!link.owns(gen)) return@transition
         DiagnosticLogger.event("STATE", label)
         android.util.Log.i("CAN", "Connection attempts exhausted — released")
+        val rec = recNow()   // before the auto-pause below
         val recorder = OpenRSDashApp.instance.driveRecorder
         val ds = recorder.driveState.value
         if (ds.isRecording && !ds.isPaused && AppSettings.getAutoRecordDrives(this)) recorder.pauseDrive()
-        endConnection(LinkPhase.FAILED)
+        endConnection(LinkPhase.FAILED, LinkStopReason.ATTEMPTS_EXHAUSTED, rec)
     }
 
     /**
@@ -810,7 +856,7 @@ class CanDataService : Service() {
         if (DemoMode.isActive) return@transition false
         val cancelled = link.cancel(recording = { isRecording() }) {
             DiagnosticLogger.event("STATE", "Cancelled by user")
-            stopConnection()
+            stopConnection(LinkStopReason.USER_CANCEL)
         }
         if (!cancelled) {
             val why = if (isRecording()) "a drive is recording" else "link ${link.phase.name.lowercase()}"
@@ -825,7 +871,8 @@ class CanDataService : Service() {
         if (DemoMode.isActive) return@transition
         link.clearManualConnect()
         // Old job, its session record and diagnostic session end before the new ones begin
-        teardownJob(LinkPhase.OFF)
+        val rec = recNow()
+        teardownJob(LinkPhase.OFF, LinkStopReason.USER_RETRY, rec)
         // L-6 fix: reset OBD-polled fields to sentinels so stale values from the
         // previous session don't persist for up to 30 s while new polls complete.
         OpenRSDashApp.instance.vehicleState.update {
@@ -840,7 +887,7 @@ class CanDataService : Service() {
             )
         }
         // Transport down (or no foreground allowed): nothing started, so release instead of keeping a stale notification
-        if (!beginConnection()) endConnection(LinkPhase.OFF)
+        if (!beginConnection()) endConnection(LinkPhase.OFF, LinkStopReason.RETRY_NOT_STARTED, rec)
     }
 
     fun resetPeaks() {
@@ -878,7 +925,7 @@ class CanDataService : Service() {
         if (DemoMode.isActive) { DemoMode.select(scenario); return@transition }
         val recorder = OpenRSDashApp.instance.driveRecorder
         if (recorder.driveState.value.isRecording) recorder.stopDrive()
-        stopConnection()
+        stopConnection(LinkStopReason.DEMO_ENTRY)
         connection = null
         adapterFirmwareApi = null
         link.requireManualConnect()

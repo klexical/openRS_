@@ -17,8 +17,8 @@ import org.junit.Test
  * rc.8 "battery" (#223) — PCM 0x0304 through production code, SYNTHETIC replies. The tested invariant is policy-independent:
  * the battery value, its validity and its stamp all describe the SAME reply. A truncated reply (missing low byte, or a
  * PCI length shorter than the payload) changes neither value nor stamp; a decoded zero never advances the stamp of an
- * old value it didn't replace; an older snapshot never supersedes a newer reply. Whether a raw 0 means "unavailable"
- * or a real 0 V is a fix-time decision (owner) and is NOT asserted here. Fixed in the rc.8 reliability pass: truncated
+ * old value it didn't replace; an older snapshot never supersedes a newer reply. Owner's decision (#223): a reported 0 reads
+ * as unavailable on DRIVE and raw on DIAG; what a raw 0 means physically isn't established and is NOT asserted here. Fixed in the rc.8 reliability pass: truncated
  * replies by the Mode 22 PCI-length check (#251), zero / older snapshot by the stamp-based merge (#223).
  */
 @OptIn(ExperimentalCoroutinesApi::class)

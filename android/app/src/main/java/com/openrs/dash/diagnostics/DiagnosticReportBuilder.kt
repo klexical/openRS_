@@ -102,6 +102,7 @@ internal object DiagnosticReportBuilder {
         appendLine("  Source    : ${BuildConfig.SOURCE_COMMIT}${if (BuildConfig.SOURCE_DIRTY) " (uncommitted changes)" else ""}")
         appendLine("  Generated : $ts")
         appendLine("  Session   : ${log.formatDuration(log.sessionDurationMs)}")
+        appendLine("  Schema    : export schema $EXPORT_SCHEMA_VERSION")
         appendLine("═══════════════════════════════════════════════════════════")
         appendLine()
 
@@ -125,14 +126,14 @@ internal object DiagnosticReportBuilder {
         appendLine("─── ADAPTER ──────────────────────────────────────────────")
         appendLine("  Status   : ${adapterStatusLine(snap.record, snap.sessionStartMs)}")
         snap.deviceStatus?.let { ds ->
-            if (ds.hardwareVersion.isNotBlank()) appendLine("  Hardware : ${ds.hardwareVersion}")
-            if (ds.firmwareVersion.isNotBlank()) appendLine("  Device FW: v${ds.firmwareVersion}")
-            if (ds.deviceId.isNotBlank())        appendLine("  Device ID: ${ds.deviceId}")
-            if (ds.canDatarate.isNotBlank())     appendLine("  CAN Bus  : ${ds.canDatarate} ${ds.canMode}")
+            if (ds.hardwareVersion.isNotBlank()) appendLine("  Hardware : ${LogText.sanitize(ds.hardwareVersion)}")
+            if (ds.firmwareVersion.isNotBlank()) appendLine("  Device FW: v${LogText.sanitize(ds.firmwareVersion)}")
+            if (ds.deviceId.isNotBlank())        appendLine("  Device ID: $DEVICE_ID_MASKED")
+            if (ds.canDatarate.isNotBlank())     appendLine("  CAN Bus  : ${LogText.sanitize("${ds.canDatarate} ${ds.canMode}")}")
             if (ds.obdPortVoltage > 0)           appendLine("  OBD Port : ${"%.1f".format(ds.obdPortVoltage)}V")
-            if (ds.bleStatus.isNotBlank())        appendLine("  BLE      : ${ds.bleStatus}")
-            if (ds.protocol.isNotBlank())         appendLine("  Protocol : ${ds.protocol}")
-            if (ds.sleepStatus.isNotBlank())      appendLine("  Sleep    : ${ds.sleepStatus} (${ds.sleepVolt}V)")
+            if (ds.bleStatus.isNotBlank())        appendLine("  BLE      : ${LogText.sanitize(ds.bleStatus)}")
+            if (ds.protocol.isNotBlank())         appendLine("  Protocol : ${LogText.sanitize(ds.protocol)}")
+            if (ds.sleepStatus.isNotBlank())      appendLine("  Sleep    : ${LogText.sanitize("${ds.sleepStatus} (${ds.sleepVolt}V)")}")
         }
         appendLine()
 
@@ -298,6 +299,8 @@ internal object DiagnosticReportBuilder {
         // Link integrity (rc.8 #253): counts only — what writes established, what framing / length checks refused
         linkIntegrityText(log.linkIntegrity, log.nrcUnattributedTotal).forEach { appendLine(it) }
         appendLine()
+        logLimitsText(log.logLimits, knockSessionDropped(), log.linkIntegrity).forEach { appendLine(it) }
+        appendLine()
 
         // Unattributed NRCs: exact count; their event lines are folded to ≤ 1 per minute per kind (#216)
         if (log.nrcUnattributedTotal > 0) {
@@ -423,17 +426,17 @@ internal object DiagnosticReportBuilder {
         root.put("adapterStatusSource", adapterStatusSourceJson(snap.record, snap.sessionStartMs))
         snap.deviceStatus?.let { ds ->
             root.put("adapterStatus", JSONObject().apply {
-                put("hardwareVersion", ds.hardwareVersion)
-                put("firmwareVersion", ds.firmwareVersion)
-                put("deviceId", ds.deviceId)
-                put("canDatarate", ds.canDatarate)
-                put("canMode", ds.canMode)
-                put("protocol", ds.protocol)
-                put("bleStatus", ds.bleStatus)
+                put("hardwareVersion", LogText.sanitize(ds.hardwareVersion))
+                put("firmwareVersion", LogText.sanitize(ds.firmwareVersion))
+                put("deviceId", if (ds.deviceId.isBlank()) "" else DEVICE_ID_MASKED)   // key kept: readers see no removed field
+                put("canDatarate", LogText.sanitize(ds.canDatarate))
+                put("canMode", LogText.sanitize(ds.canMode))
+                put("protocol", LogText.sanitize(ds.protocol))
+                put("bleStatus", LogText.sanitize(ds.bleStatus))
                 put("obdPortVoltage", ds.obdPortVoltage)
-                put("sleepStatus", ds.sleepStatus)
-                put("sleepVolt", ds.sleepVolt)
-                put("wifiMode", ds.wifiMode)
+                put("sleepStatus", LogText.sanitize(ds.sleepStatus))
+                put("sleepVolt", LogText.sanitize(ds.sleepVolt))
+                put("wifiMode", LogText.sanitize(ds.wifiMode))
             })
         }
 
@@ -499,6 +502,8 @@ internal object DiagnosticReportBuilder {
 
         root.put("nrcUnattributedTotal", log.nrcUnattributedTotal)   // exact, even though lines are folded (#216)
         root.put("linkIntegrity", linkIntegrityJson(log.linkIntegrity, log.nrcUnattributedTotal))   // rc.8 #253, additive
+        root.put("logLimits", logLimitsJson(log.logLimits, knockSessionDropped()))  // additive
+        root.put("exportSchemaVersion", EXPORT_SCHEMA_VERSION)   // rc.8 #253, additive; when it changes: see the constant
 
         // nrcSuppression
         val nrcMap = log.nrcSuppressed
@@ -551,6 +556,18 @@ internal object DiagnosticReportBuilder {
 }
 
 /** Serialize VehicleState to a JSONObject with full-precision numeric values. */
+/**
+ * Contract version of an export ZIP (rc.8 #253), at the root of `manifest.json` and of the diagnostic detail JSON. Absent =
+ * exported before this field existed (rc.7 and earlier). It is not `manifest.json`'s own `version`, which has always been 1
+ * and so can't tell those exports apart.
+ *
+ * Bump it only when a reader of the current number could misread an export: a field or file removed or renamed, or a value
+ * whose type, unit, scale or meaning changes. Additive changes keep the number (a new section such as `linkIntegrity`, a new
+ * key, a new file): readers ignore what they don't know and detect an added section by its presence. Sapphire imports every
+ * number and says so when one is higher than it knows (`web/src/lib/exportSchema.ts`).
+ */
+internal const val EXPORT_SCHEMA_VERSION = 1
+
 /** LINK INTEGRITY summary lines (rc.8 #253) — counts only, never a raw line. */
 internal fun linkIntegrityText(li: DiagnosticLogger.LinkIntegrity, nrcUnattributed: Int): List<String> = listOf(
     "─── LINK INTEGRITY ────────────────────────────────────────",
@@ -562,7 +579,44 @@ internal fun linkIntegrityText(li: DiagnosticLogger.LinkIntegrity, nrcUnattribut
         " · ${li.refusedFrameLines} frame line(s) refused (${li.refusedOtherShape} of the other shape)",
     "  Replies  : ${li.refusedReplies} Mode 22 reply(ies) refused for their length / PCI",
     "  NRC      : ${li.nrcAttributed} attributed · $nrcUnattributed unattributed (PCM)",
+    "  Buffers  : ${li.overlongLines} overlong line(s) refused · ${li.linesDropped} line(s) dropped (BLE queue full) · " +
+        "${li.commandRepliesDropped} command reply(ies) dropped · ${li.dtcFramesDropped} DTC frame(s) dropped",
 )
+
+/** Demo knock events are simulated: like the session-knock CSV, they never reach an export. */
+private fun knockSessionDropped() =
+    if (com.openrs.dash.demo.DemoMode.isActive) 0 else com.openrs.dash.data.KnockSessionLog.droppedEvents
+
+/** The adapter's device ID never leaves the app in an export (#263); GARAGE still shows it. */
+private const val DEVICE_ID_MASKED = "<masked>"
+
+/** LOG LIMITS summary lines (#253): what this session's rolling / capped logs no longer hold. */
+internal fun logLimitsText(l: DiagnosticLogger.LogLimits, knockDropped: Int, li: DiagnosticLogger.LinkIntegrity): List<String> = buildList {
+    add("─── LOG LIMITS ────────────────────────────────────────────")
+    if (l.decodeTraceDropped > 0) add("  ${l.decodeTraceDropped} older decode trace entries rolled off (per-ID totals stay exact)")
+    if (l.eventsDropped > 0) add("  ${l.eventsDropped} older session event(s) rolled off: SESSION EVENTS below is not the whole session")
+    if (l.fpsPointsDropped > 0) add("  ${l.fpsPointsDropped} older FPS sample(s) rolled off")
+    if (l.probeSessionsDropped > 0) add("  ${l.probeSessionsDropped} older DID probe session(s) rolled off")
+    if (l.inventoryFramesNotListed > 0) add("  ${l.inventoryFramesNotListed} frame(s) of IDs past the inventory limit: FRAME INVENTORY is not every ID")
+    if (l.slcanCapReached) add("  SLCAN log cap reached: later frames are not in the raw log")
+    if (l.slcanWriteFailed) add("  SLCAN log write failed: frames may be missing from the raw log")
+    if (knockDropped > 0) add("  $knockDropped older session knock event(s) rolled off: drive_knock_session holds the newest only")
+    if (size == 1) {
+        val buffersHit = li.overlongLines + li.linesDropped + li.commandRepliesDropped + li.dtcFramesDropped > 0
+        add(if (buffersHit) "  no log limit reached; lines were refused or dropped, see Buffers above" else "  no counted limit reached")
+    }
+}
+
+internal fun logLimitsJson(l: DiagnosticLogger.LogLimits, knockDropped: Int): JSONObject = JSONObject().apply {
+    put("decodeTraceDropped", l.decodeTraceDropped)
+    put("eventsDropped", l.eventsDropped)
+    put("fpsPointsDropped", l.fpsPointsDropped)
+    put("probeSessionsDropped", l.probeSessionsDropped)
+    put("inventoryFramesNotListed", l.inventoryFramesNotListed)
+    put("slcanCapReached", l.slcanCapReached)
+    put("slcanWriteFailed", l.slcanWriteFailed)
+    put("knockSessionDropped", knockDropped)
+}
 
 internal fun linkIntegrityJson(li: DiagnosticLogger.LinkIntegrity, nrcUnattributed: Int): JSONObject = JSONObject().apply {
     put("writes", JSONObject().apply { li.writes.forEach { (k, v) -> put(k, v) } })
@@ -572,6 +626,10 @@ internal fun linkIntegrityJson(li: DiagnosticLogger.LinkIntegrity, nrcUnattribut
     put("refusedReplies", li.refusedReplies)
     put("nrcAttributed", li.nrcAttributed)
     put("nrcUnattributed", nrcUnattributed)
+    put("overlongLines", li.overlongLines)
+    put("linesDropped", li.linesDropped)
+    put("commandRepliesDropped", li.commandRepliesDropped)
+    put("dtcFramesDropped", li.dtcFramesDropped)
 }
 
 /** " (0x1B0 Ns ago, its 0x420 detail Ms ago)" — what a Sport / Track reading rests on (#252); "" before any report. */
@@ -583,11 +641,16 @@ internal fun modeProvenance(vs: VehicleState, nowMs: Long): String {
 
 /** Tags whose age the detail JSON reports (rc.8 #253): the polled voltage and the drive-mode provenance (#223, #252). */
 private val AGE_TAGS = listOf("batteryVoltage", "driveMode", com.openrs.dash.can.CanDecoder.MODE_DETAIL_TAG,
-    com.openrs.dash.can.CanDecoder.MODE_RESOLVED_DETAIL_TAG)
+    com.openrs.dash.can.CanDecoder.MODE_RESOLVED_DETAIL_TAG, com.openrs.dash.can.CanDecoder.MODE_RUN_PREV_TAG,
+    com.openrs.dash.can.CanDecoder.MODE_RESOLVED_PAIR_TAG)
 
 internal fun VehicleState.toJsonObject(nowMs: Long = System.currentTimeMillis()): JSONObject = JSONObject().apply {
     // Additive (rc.8 #253): ages at export time, never absolute times
-    put("fieldAgesMs", JSONObject().apply { AGE_TAGS.forEach { t -> fieldLastUpdateMs[t]?.let { put(t, nowMs - it) } } })
+    put("fieldAgesMs", JSONObject().apply {
+        AGE_TAGS.forEach { t -> fieldLastUpdateMs[t]?.let { put(t, nowMs - it) } }
+        // The current run's tag (#252): with the run's previous report and the resolved pair, what a confirmation rested on
+        fieldLastUpdateMs.forEach { (t, at) -> if (t.startsWith(com.openrs.dash.can.CanDecoder.MODE_RUN_PREFIX)) put(t, nowMs - at) }
+    })
     put("rpm", rpm)
     put("speedKph", speedKph)
     put("speedMph", speedKph * 0.621371)

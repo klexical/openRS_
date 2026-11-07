@@ -1,5 +1,6 @@
 package com.openrs.dash.can
 
+import com.openrs.dash.diagnostics.DiagnosticLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -24,7 +25,7 @@ class TcpSlcanTransport(
     @Volatile private var closed = false
     private var inp: InputStream? = null
     private var out: OutputStream? = null
-    /** Reused per-frame line buffer — SLCAN frames cap at ~26 chars. */
+    /** Reused per-line buffer — SLCAN frames cap at 30 chars, adapter lines at [MAX_SLCAN_LINE_CHARS]. */
     private val lineBuf = StringBuilder(32)
 
     override val label: String get() = "TCP $host:$port"
@@ -48,7 +49,12 @@ class TcpSlcanTransport(
             val b = input.read()
             if (b == -1) return@withContext null
             if (b == 0x0D) break
-            if (lineBuf.length > 32) return@withContext null  // guard runaway frames (#127)
+            // Guard runaway lines (#127): the attempt ends and SlcanConnection reconnects. Was 33 characters, which read the
+            // adapter's legal AT+FRS? state reply as a lost link (#253).
+            if (lineBuf.length >= MAX_SLCAN_LINE_CHARS) {
+                DiagnosticLogger.countOverlongLine()
+                return@withContext null
+            }
             lineBuf.append(b.toChar())
         }
         lineBuf.toString()

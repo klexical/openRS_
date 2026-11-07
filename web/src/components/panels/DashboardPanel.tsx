@@ -14,6 +14,7 @@ import { ThermalProgressionChart } from '../charts/ThermalProgressionChart'
 import { ExportDropdown } from '../ui/ExportDropdown'
 import { fmtNumber, fmtDuration, useUnitFormatters } from '../../lib/format'
 import { latestTpms } from '../../lib/readings'
+import { exportSchemaNote } from '../../lib/exportSchema'
 import { colors } from '../../styles/tokens'
 
 export function DashboardPanel() {
@@ -83,6 +84,8 @@ export function DashboardPanel() {
     )
   }
 
+  const schemaNote = exportSchemaNote(session.meta.exportSchemaVersion)
+
   return (
     <div className="max-w-6xl mx-auto">
       {/* Session header */}
@@ -96,6 +99,9 @@ export function DashboardPanel() {
             )}
             <span>{session.meta.sessionStart}</span>
           </div>
+          {schemaNote && (
+            <p className="mt-1 text-xs font-mono" style={{ color: colors.warn }}>{schemaNote}</p>
+          )}
           {/* Tags (T2H) */}
           {session.tags.length > 0 && (
             <div className="flex gap-1.5 mt-2 flex-wrap">

@@ -6,6 +6,7 @@ import type {
   FreezeFrameEntry,
 } from '../types/session'
 import { parseBoostSource, type BoostSource } from './boost'
+import { parseExportSchemaVersion } from './exportSchema'
 
 /** Thrown when an imported ZIP cannot be parsed — surfaced to the user via ImportPanel. */
 export class ImportError extends Error {
@@ -22,6 +23,7 @@ interface ManifestEntry {
 }
 
 interface ExportManifest {
+  /** The manifest's own format, always 1; the export's contract is `exportSchemaVersion` (lib/exportSchema.ts). */
   version: number
   app: string
   appVersion: string
@@ -49,15 +51,28 @@ export function isDriveCsvEntry(e: { name: string; type: string }): boolean {
   return e.type === 'drive_csv' && isDriveCsvName(e.name)
 }
 
-/** Read manifest.json from ZIP if present. */
-async function readManifest(zip: JSZip): Promise<ExportManifest | null> {
+/** manifest.json's root if it's a JSON object; null when absent or unreadable. */
+async function readManifestObject(zip: JSZip): Promise<Record<string, unknown> | null> {
   const f = zip.files['manifest.json']
   if (!f) return null
   try {
-    return JSON.parse(await f.async('string'))
+    const m: unknown = JSON.parse(await f.async('string'))
+    return m && typeof m === 'object' && !Array.isArray(m) ? (m as Record<string, unknown>) : null
   } catch {
     return null
   }
+}
+
+const isManifestEntry = (e: unknown): boolean =>
+  !!e && typeof (e as ManifestEntry).name === 'string' && typeof (e as ManifestEntry).type === 'string'
+
+/**
+ * Read manifest.json from ZIP if present. One without a usable file list (a shape this Sapphire doesn't know, e.g. from a
+ * newer export) counts as no manifest: the files are then found by name, so the drive isn't lost or the import stopped.
+ */
+async function readManifest(zip: JSZip): Promise<ExportManifest | null> {
+  const m = await readManifestObject(zip)
+  return m && Array.isArray(m.files) && m.files.every(isManifestEntry) ? (m as unknown as ExportManifest) : null
 }
 
 /** Import a ZIP file exported by the openRS_ Android app. */
@@ -89,11 +104,10 @@ export function isBatchZip(manifest: ExportManifest | null, zip: JSZip): boolean
   return countDriveCsvs(zip, manifest) > 1
 }
 
-/** Drive CSVs in the ZIP — from the manifest when present, else by filename. */
+/** Drive CSVs in the ZIP — from the manifest when it lists any, else by filename (a list this Sapphire can't read loses no drive). */
 function driveCsvFiles(zip: JSZip, manifest: ExportManifest | null): string[] {
-  return manifest
-    ? manifest.files.filter(isDriveCsvEntry).map((e) => e.name)
-    : Object.keys(zip.files).filter(isDriveCsvName)
+  const listed = manifest ? manifest.files.filter(isDriveCsvEntry).map((e) => e.name) : []
+  return listed.length > 0 ? listed : Object.keys(zip.files).filter(isDriveCsvName)
 }
 
 function countDriveCsvs(zip: JSZip, manifest: ExportManifest | null): number {
@@ -595,11 +609,8 @@ function computeAvgFuelEconomy(fuelUsedL: number, distanceKm: number): number {
 // ── DTC text parsing ──
 
 async function parseDtcData(zip: JSZip, manifest: ExportManifest | null): Promise<DtcEntry[]> {
-  const dtcFile = manifest
-    ? manifest.files.find((e) => e.type === 'dtc_text')?.name
-    : Object.keys(zip.files).find(
-        (f) => f.startsWith('dtc_scan_') && f.endsWith('.txt')
-      )
+  const dtcFile = manifest?.files.find((e) => e.type === 'dtc_text')?.name
+    ?? Object.keys(zip.files).find((f) => f.startsWith('dtc_scan_') && f.endsWith('.txt'))
   if (!dtcFile) return []
 
   const text = await zip.files[dtcFile].async('string')
@@ -629,11 +640,8 @@ async function parseDtcData(zip: JSZip, manifest: ExportManifest | null): Promis
 // ── DTC JSON parsing (T1E — preferred over TXT) ──
 
 async function parseDtcJsonData(zip: JSZip, manifest: ExportManifest | null): Promise<DtcEntry[] | null> {
-  const jsonFile = manifest
-    ? manifest.files.find((e) => e.type === 'dtc_json')?.name
-    : Object.keys(zip.files).find(
-        (f) => f.startsWith('dtc_scan_') && f.endsWith('.json')
-      )
+  const jsonFile = manifest?.files.find((e) => e.type === 'dtc_json')?.name
+    ?? Object.keys(zip.files).find((f) => f.startsWith('dtc_scan_') && f.endsWith('.json'))
   if (!jsonFile || !zip.files[jsonFile]) return null
 
   try {
@@ -671,12 +679,13 @@ async function parseDtcJsonData(zip: JSZip, manifest: ExportManifest | null): Pr
 
 // ── Diagnostic JSON parsing ──
 
+function diagnosticDetailFile(zip: JSZip, manifest: ExportManifest | null): string | undefined {
+  return manifest?.files.find((e) => e.type === 'diagnostic_detail')?.name
+    ?? Object.keys(zip.files).find((f) => f.startsWith('diagnostic_detail_') && f.endsWith('.json'))
+}
+
 async function parseDiagnosticData(zip: JSZip, dtcResults: DtcEntry[], manifest: ExportManifest | null): Promise<DiagnosticData | null> {
-  const jsonFile = manifest
-    ? manifest.files.find((e) => e.type === 'diagnostic_detail')?.name
-    : Object.keys(zip.files).find(
-        (f) => f.startsWith('diagnostic_detail_') && f.endsWith('.json')
-      )
+  const jsonFile = diagnosticDetailFile(zip, manifest)
   if (!jsonFile) {
     if (dtcResults.length > 0) {
       return { canInventory: [], fpsTimeline: [], sessionEvents: [], decodeTrace: [], probeResults: [], dtcResults }
@@ -817,15 +826,38 @@ function parseNrcSuppression(data: Record<string, unknown>): NrcSuppression[] | 
 
 // ── Meta (T1G: manifest metadata) ──
 
+/** The export's contract version: the manifest's, else the detail JSON's. Undefined = none stated; never blocks an import. */
+async function readExportSchemaVersion(zip: JSZip, manifest: ExportManifest | null): Promise<number | undefined> {
+  const fromManifest = parseExportSchemaVersion((await readManifestObject(zip))?.exportSchemaVersion)
+  if (fromManifest !== undefined) return fromManifest
+  const jsonFile = diagnosticDetailFile(zip, manifest)
+  if (!jsonFile || !zip.files[jsonFile]) return undefined
+  try {
+    return parseExportSchemaVersion(JSON.parse(await zip.files[jsonFile].async('string'))?.exportSchemaVersion)
+  } catch {
+    return undefined
+  }
+}
+
 async function parseMeta(zip: JSZip, filename: string, manifest: ExportManifest | null): Promise<SessionMeta> {
+  const meta = await parseExportMeta(zip, filename, manifest)
+  const exportSchemaVersion = await readExportSchemaVersion(zip, manifest)
+  // No key at all without a version: a legacy export's session stays as it was
+  return exportSchemaVersion === undefined ? meta : { ...meta, exportSchemaVersion }
+}
+
+async function parseExportMeta(zip: JSZip, filename: string, manifest: ExportManifest | null): Promise<SessionMeta> {
   if (manifest) {
+    // Only a date that exists: new Date(x).toISOString() throws on anything else and would stop the import
+    const exportedAt = typeof manifest.exportedAt === 'number' && !Number.isNaN(new Date(manifest.exportedAt).getTime())
+      ? manifest.exportedAt : undefined
     return {
-      appVersion: manifest.appVersion || 'unknown',
+      appVersion: typeof manifest.appVersion === 'string' && manifest.appVersion ? manifest.appVersion : 'unknown',
       firmwareVersion: 'unknown',
       sessionStart: '',
-      generatedAt: new Date(manifest.exportedAt).toISOString(),
-      appBuild: manifest.appBuild,
-      exportedAt: manifest.exportedAt,
+      generatedAt: new Date(exportedAt ?? Date.now()).toISOString(),
+      appBuild: typeof manifest.appBuild === 'number' ? manifest.appBuild : undefined,
+      exportedAt,
     }
   }
 

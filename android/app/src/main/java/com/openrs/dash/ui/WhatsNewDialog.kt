@@ -41,7 +41,11 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.openrs.dash.ui.anim.pageEntrance
 
-/** rc.7 Build 38 (a maintenance asset on the same rc.7 release): one owner-facing line, first in the 2.2.7 list. */
+/** rc.8 (Build 39): one owner-facing line, first in the 2.2.7 list; extended as fixes join this RC (#214). */
+private const val RC_8_NOTE =
+    "rc.8 · Build 39: not yet tested on a phone, adapter or car. A WiCAN Pro write reported as failed (GATT 13) is no longer treated as never sent, and the DID Prober no longer crashes over Bluetooth and matches each reply to its own DID. Malformed adapter lines are refused instead of reaching readings and peaks. DRIVE's battery reading marks a reply that has stopped arriving as STALE, a drive-mode change is confirmed only by agreeing car reports after the request, and diagnostic exports gain a LINK INTEGRITY section."
+
+/** rc.7 Build 38 (a maintenance asset on the same rc.7 release): one owner-facing line, kept in the 2.2.7 list. */
 private const val BUILD_38_NOTE =
     "rc.7 · Build 38: the live gauge is labelled BOOST again (Build 37 showed TIP). Only the name changed; the reading is the same."
 
@@ -51,6 +55,7 @@ private const val BUILD_38_NOTE =
  */
 private val versionHighlights: Map<String, List<String>> = mapOf(
     "2.2.7" to listOf(
+        RC_8_NOTE,
         BUILD_38_NOTE,
         "Changed: the pressure gauge shows throttle-inlet pressure above measured air pressure, labelled TIP, and — when TIP isn't current — never switches to another signal. Drives record TIP or, when TIP isn't current, the car's CAN boost signal, each named by its source; the two are kept apart in peaks, charts and exports. Which pressure each signal measures on the car is not yet confirmed.",
         "Fixed: OIL and PTU temperatures were each other's reading (found on one car's capture) — readiness, alerts, recordings and exports now use the corrected values. Drives recorded before keep their values and are marked as recorded before the fix.",

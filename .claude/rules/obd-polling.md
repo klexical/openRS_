@@ -19,10 +19,12 @@ paths:
   - "**/android/app/src/test/java/com/openrs/dash/*Nrc*"
   - "**/android/app/src/main/assets/pids/**"
   - "**/android/scripts/gen_forscan_catalog.py"
+  - "**/com/openrs/dash/data/VehicleState.kt"
+  - "**/com/openrs/dash/*ModeProvenance*"
 ---
 # openRS_ Known Gotchas — OBD Mode 22 polling, decoders and freshness
 
-Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-06. Add a new gotcha of this area at the end; never reword an existing one here.
+Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-06. Add a new gotcha of this area at the end; never reword an existing one here, with one exception: when an entry's facts changed (a decision landed, a mapping was confirmed), correct those words only, in a commit whose message names each corrected line. Entries carry no perishable status, only the decision or a pointer to the issue that holds it.
 
 - TPMS PID `0x280B` is multi-frame ISO-TP — send `BCM_FLOW_CONTROL` after receiving First Frame
 - Extended session (`0x10 0x03`) required before: RDU_STATUS (AWD 0x703), PDC (PSCM 0x730), FENG (0x727), RSProt (0x731)
@@ -32,7 +34,7 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   valid range includes its default (REQ L / R: 0 Nm) is merged by the reply's own stamp (`ObdMerge.carried`), never by
   value — a `> 0` guard keeps the old value under a fresh stamp (#226). Battery voltage (PCM 0x0304) is merged the same way since rc.8 (#223): a decoded 0 or an older
   snapshot can't freshen or overwrite it; DRIVE BATT reads STALE past `PolledFreshness` 2 × 40 s and "— —" for a reported 0
-  (GARAGE → DIAG still prints 0.00 V — raw-zero policy undecided). 0x0304 is the PCM's reported value, not established as
+  (GARAGE → DIAG keeps the raw value, "0.00 V" — decided 2026-11-06: unavailable on DRIVE, raw on DIAG). 0x0304 is the PCM's reported value, not established as
   measured battery voltage
 - **KR sign convention** — `ignCorrCyl1..4 = raw / −512` → retard is **POSITIVE**. Knock capture uses `≥ 0.1°`, the header counter and POWER KR cells `> 1°`. Cyl 2–4 DIDs (0x03ED–EF) are unverified — 0x03ED/0x03EE NRC 0x31 on two RS PCMs (EU tuned #182 + user's car), so not tune-specific; 0x03EF answers but read 0 for a whole drive. NrcTracker suppresses 2/3; polling left as is (user decision 2026-10-22)
 - **Mode 01 equivalents live in Mode 22 `22F4xx`** — load (F404), timing (F40E), O2 V (F415), STFT/LTFT (F406/07), λ (F434/F444). `ObdPids.kt` (the Mode 01 path) was deleted in a7b01d0 and silently took the load/timing/AFR decoders with it — if a VehicleState field has no writer in ObdResponseParser/CanDecoder, it is dead. HP fuel is **0xF423** (DI gauge, ×10 kPa); 0xF422 is the port-injection PID and is rejected. LP fuel = **0x0548** (`raw × 0.5` kPa)
@@ -44,3 +46,17 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   so after one lost reply NRCs stay unattributed for that connection), recovers on a positive reply and re-probes after 60 s (provisional settings);
   the PCM poller always suspends. Emulator capture current → STALE → recovered: fake_ecu_v2.py `--stale DID:A:S`.
 - **POWER cells are gated per field** — engine cells show only when `rpm > FAST_POLL_MIN_RPM` AND `fieldLastUpdateMs[tag] != null`; never gate on another field's value (the old `calcLoad > 0` gate hid everything once load lost its decoder)
+- **An OBD merge can resurrect a stamp key the CAN side removed (#252 review, fix `134bee3`)** — `ObdMerge.merge()` merges
+  `fieldLastUpdateMs` by per-key max from the reply's SNAPSHOT of VehicleState; a key that CAN-side code deleted after the snapshot
+  was taken comes back from the merge. Any key that must be CAN-only (today: every `driveMode*` tag, dropped by `ObdMerge`) needs
+  the same explicit drop; `ModeProvenanceMergeTest` guards the drive-mode set. When you remove a stamp key from the state, add it
+  to the drop set or a merge can bring it back.
+- **ISO-TP replies are whole or nothing (#253, rc.8 Build 39)** — `IsoTpBuffer` and `assembleIsotpResponse` refuse a truncated SF /
+  FF / CF and an FF that claims fewer than `MIN_FF_LENGTH` (8) bytes (no flow control is written for a refused FF; the "fewer bytes
+  fit a single frame" rule cites ISO 15765-2 from memory — the standard is not in the repo, so it is marked unverified); a new FF
+  discards a partial reply; a sequence break or the deadline returns nothing, never partial bytes; a partial reply has no timer and
+  stays open until the next FF or SF. The PCM frame branch reads the PCI first, a PCM first-frame positive resolves its ledger
+  request, and **a polled DID that answers with an FF releases the poller at the FF instead of after the 300 ms pacing window**
+  (poll pacing, not command timing; hardware-unverified; pinned by `IsoTpCoverageTest`; tracked on #216).
+  Open: no N_Cr timer (two lost lines can join reply B to reply A's head), a restarted reply waiting for FC ends as TIMEOUT, no
+  counter for dropped ISO-TP replies.

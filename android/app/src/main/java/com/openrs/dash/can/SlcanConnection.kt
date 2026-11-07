@@ -282,6 +282,8 @@ class SlcanConnection(
                         firstLine = line
                         break
                     }
+                    // A refused frame line counts here as in the frame loop; the handshake never logs a line (#253)
+                    if (line.startsWith("t") || line.startsWith("T")) DiagnosticLogger.countRefusedFrameLine(otherShape = false)
                     // Some adapters echo back init commands — keep waiting
                     if (line.isNotEmpty()) probeNoise++
                 }
@@ -471,11 +473,11 @@ class SlcanConnection(
                 // sanitized version; non-frame lines are only counted. Probe 1 was logged when it was written.
                 fun detected(line: String) = synchronized(firmwareDetected) {
                     if (!firmwareDetected.compareAndSet(false, true)) return@synchronized
-                    val version = line.removePrefix("OPENRS:").trim()
+                    val version = LogText.sanitize(line.removePrefix("OPENRS:").trim(), 40)   // adapter text, in every export (#263)
                     publish(FirmwareStatus(openRs = true, probing = false, label = "openRS_ $version"))
                     val ms = clock() - probeStartMs
                     addDebugLine("Firmware: openRS_ $version \u2713 (${ms} ms, probe ${probesSent.get()})")
-                    DiagnosticLogger.event("FIRMWARE", "Reply recognized: openRS_ ${LogText.sanitize(version, 40)} after probe " +
+                    DiagnosticLogger.event("FIRMWARE", "Reply recognized: openRS_ $version after probe " +
                         "${probesSent.get()} of $probeTotal ($kind, +${fromAttempt()} ms" +
                         "${if (verdictDone.get()) ", late reply after the verdict" else ""})")
                 }
@@ -519,7 +521,7 @@ class SlcanConnection(
                     while (currentCoroutineContext().isActive) {
                         val line = try { transport.readLine() } catch (e: Exception) {
                             android.util.Log.d("SLCAN", "readLine failed", e); null
-                        } ?: break
+                        }?.removePrefix("\n") ?: break     // the firmware ends OPENRS: with CR LF: the LF leads the next line
 
                         if (line.startsWith("OPENRS:")) {
                             detected(line)
@@ -527,7 +529,8 @@ class SlcanConnection(
                         }
                         // Route firmware command responses to dedicated channel
                         if (line.startsWith("+FRS:")) {
-                            commandResponseChannel.trySend(line)
+                            // Nobody waiting and full: the newest is dropped; a command drains stale replies before it writes
+                            if (commandResponseChannel.trySend(line).isFailure) DiagnosticLogger.countCommandReplyDropped()
                             continue
                         }
 
@@ -556,7 +559,8 @@ class SlcanConnection(
 
                         if (_dtcScanActive && frame.first in _dtcWatchIds && divertToDtc(frame.first, frame.second)) {
                             DiagnosticLogger.logObdFrame(frame.first, frame.second)   // the reply itself, once (#215)
-                            _dtcChannel.trySend(frame)
+                            // Full: a lost frame leaves the reply incomplete, so the module ends unread — counted, never OK
+                            if (_dtcChannel.trySend(frame).isFailure) DiagnosticLogger.countDtcFrameDropped()
                             continue
                         }
 
@@ -574,10 +578,9 @@ class SlcanConnection(
                             if (isFF) {
                                 try { transport.writeLine(ObdConstants.BCM_FLOW_CONTROL) } catch (_: Exception) {}
                             }
-                            if (reassembled != null) {
-                                if (isSF) ObdResponseParser.parseBcmResponse(frame.second, getCurrentState(), onObdUpdate)
-                                else      ObdResponseParser.parseBcmReassembled(reassembled, getCurrentState(), onObdUpdate)
-                            }
+                            // A single frame goes to its parser even when the buffer refused it: the parser counts a truncated reply
+                            if (isSF) ObdResponseParser.parseBcmResponse(frame.second, getCurrentState(), onObdUpdate)
+                            else if (reassembled != null) ObdResponseParser.parseBcmReassembled(reassembled, getCurrentState(), onObdUpdate)
                             continue
                         }
                         if (frame.first == ObdConstants.AWD_RESPONSE_ID) {
@@ -586,7 +589,8 @@ class SlcanConnection(
                         }
                         if (frame.first == ObdConstants.PCM_RESPONSE_ID) {
                             val d = frame.second
-                            if (d.size >= 4 && (d[1].toInt() and 0xFF) == 0x7F) {
+                            // PCI first: a first / consecutive frame's bytes can read 7F 22 xx or 62 DH DL by chance (#253)
+                            if (Mode22.wholeSingleFrame(d) && (d[1].toInt() and 0xFF) == 0x7F) {
                                 val nrcCode = d[3].toInt() and 0xFF
                                 // 0x78 = response pending: the real reply follows (no time bound assumed), still outstanding
                                 if ((d[2].toInt() and 0xFF) == 0x22 && nrcCode == NrcTracker.NRC_RESPONSE_PENDING) {
@@ -623,8 +627,8 @@ class SlcanConnection(
                                 }
                                 continue
                             }
-                            if (d.size >= 4 && (d[1].toInt() and 0xFF) == 0x62) {
-                                val did = ((d[2].toInt() and 0xFF) shl 8) or (d[3].toInt() and 0xFF)
+                            // A single frame or the first frame of a multi-frame reply: either way the DID answered (no flow control is sent)
+                            Mode22.positiveDid(d)?.let { did ->
                                 pcmRequests.positive(did)
                                 if (nrcTracker.recordPositive(did)) {
                                     DiagnosticLogger.event("NRC_RECOVER", "DID 0x%04X answered — no longer suppressed".format(did))
@@ -685,8 +689,9 @@ class SlcanConnection(
                 throw e
             } catch (e: Exception) {
                 if (!connectionSucceeded) failedAttempts++
-                _state.value = AdapterState.Error(e.message ?: "Connection failed")
-                addDebugLine("Error: ${e.message}")
+                val why = LogText.sanitize(e.message ?: "Connection failed")   // exported as a STATE line (#263)
+                _state.value = AdapterState.Error(why)
+                addDebugLine("Error: $why")
             } finally {
                 _transport = null
                 _ledgerFor = null
@@ -877,6 +882,7 @@ class SlcanConnection(
         val deadline = System.currentTimeMillis() + timeoutMs
         var totalLen = 0; var received = 0
         val buf = ByteArrayOutputStream(); var seqNext = 1
+        // Same rule as IsoTpBuffer: a reply is whole or nothing (#253). Kept separate because it writes flow control itself
 
         while (System.currentTimeMillis() < deadline) {
             val remaining = deadline - System.currentTimeMillis()
@@ -891,21 +897,26 @@ class SlcanConnection(
                     return data.copyOfRange(1, 1 + len)
                 }
                 1 -> {
-                    totalLen = ((data[0].toInt() and 0x0F) shl 8) or (data[1].toInt() and 0xFF)
-                    val fb = minOf(6, totalLen, data.size - 2); if (fb > 0) buf.write(data, 2, fb); received = fb  // cap by totalLen (#129)
+                    buf.reset(); received = 0; totalLen = 0; seqNext = 1     // a new reply started: nothing of the old one stays
+                    if (data.size < IsoTpBuffer.CAN_FRAME_BYTES) continue
+                    val length = ((data[0].toInt() and 0x0F) shl 8) or (data[1].toInt() and 0xFF)
+                    if (length < IsoTpBuffer.MIN_FF_LENGTH) continue
+                    totalLen = length
+                    buf.write(data, 2, IsoTpBuffer.FF_DATA_BYTES); received = IsoTpBuffer.FF_DATA_BYTES
                     val fcFrame = "t%03X83000000000000000\r".format(requestId)
                     try { transport.writeLine(fcFrame) } catch (_: Exception) { }
                 }
                 2 -> {
-                    val seq = data[0].toInt() and 0x0F; if (seq != seqNext) break
+                    val seq = data[0].toInt() and 0x0F; if (seq != seqNext) return null
                     seqNext = (seqNext + 1) and 0x0F
-                    val take = minOf(7, data.size - 1, totalLen - received)
-                    if (take <= 0) break; buf.write(data, 1, take); received += take
+                    val take = minOf(IsoTpBuffer.CF_DATA_BYTES, totalLen - received)
+                    if (take <= 0 || data.size - 1 < take) return null
+                    buf.write(data, 1, take); received += take
                     if (received >= totalLen) return buf.toByteArray()
                 }
             }
         }
-        return if (buf.size() > 0) buf.toByteArray() else null
+        return null                                                  // the deadline passed: partial bytes aren't a reply
     }
 
     // ── Freeze frame reads ─────────────────────────────────────────────────

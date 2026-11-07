@@ -1,5 +1,6 @@
 package com.openrs.dash.diagnostics
 
+import com.openrs.dash.can.CanDecoder
 import com.openrs.dash.can.DeviceStatus
 import com.openrs.dash.can.NrcTracker
 import com.openrs.dash.data.VehicleState
@@ -52,8 +53,24 @@ object DiagnosticLogger {
      */
     private const val MAX_SLCAN_LINES    = 2_000_000L
 
+    const val EVENT_LINK_STOP = "LINK_STOP"
+    /** A stop with no job running: the second teardown after `stopSelf` → `onDestroy`, which must not mask the real reason. */
+    const val EVENT_LINK_STOP_IDLE = "LINK_STOP_IDLE"
+    const val EVENT_LINK_START_REFUSED = "LINK_START_REFUSED"
+    const val EVENT_LINK_TASK_REMOVED = "LINK_TASK_REMOVED"
+    const val EVENT_LINK_PREV = "LINK_PREV"
+    const val EVENT_LINK_PREV_EXIT = "LINK_PREV_EXIT"
+    private val CARRIED_EVENT_TYPES = listOf(EVENT_LINK_STOP, EVENT_LINK_START_REFUSED, EVENT_LINK_TASK_REMOVED)
+
     /** Maximum DID probe sessions stored per diagnostic session. */
     private const val MAX_PROBE_SESSIONS = 50
+
+    /**
+     * Unique CAN IDs in the frame inventory. Above every standard ID (2,048), so only extended IDs can reach it; their
+     * key space is 2^29 and comes straight off the wire. They fill it in arrival order, so a flood of extended IDs can leave a
+     * standard ID first seen after it without a row (counted as not listed). Frames of an ID past it still reach the SLCAN log.
+     */
+    private const val MAX_INVENTORY_IDS  = 4_096
 
     // ── Pre-allocated hex lookup (eliminates per-byte format() calls) ────────
 
@@ -155,7 +172,8 @@ object DiagnosticLogger {
     private var slcanWriter: BufferedWriter? = null
     private var _slcanFile: File? = null
     private var slcanLinesWritten = 0L
-    private var slcanCapReached = false
+    private var slcanWriteFailed = false  // a write failed: lines are missing from the raw log, first one logs an event
+    private var slcanCapHit = false       // the line cap itself, for the export; first one marks the log and logs an event
 
     @Volatile var sessionStartMs: Long = 0L; private set
     @Volatile var lastVehicleState: VehicleState? = null
@@ -194,9 +212,15 @@ object DiagnosticLogger {
         var refusedOtherShape = 0          // … of them, lines of the other framing shape on a locked connection
         var refusedReplies = 0             // Mode 22 replies refused for their length / PCI (#251)
         var nrcAttributed = 0              // PCM NRCs charged to exactly one request (#216)
+        var overlongLines = 0              // adapter lines past the transport's bound, refused whole (#253)
+        var linesDropped = 0               // BLE lines lost to a full receive queue (#253)
+        var commandRepliesDropped = 0      // +FRS: lines lost to a full reply channel, nobody waiting (#253)
+        var dtcFramesDropped = 0           // DTC reply frames lost to a full channel (#253)
         fun copy() = LinkIntegrity().also {
             it.writes.putAll(writes); it.framingTimestamped = framingTimestamped; it.refusedFrameLines = refusedFrameLines
             it.refusedOtherShape = refusedOtherShape; it.refusedReplies = refusedReplies; it.nrcAttributed = nrcAttributed
+            it.overlongLines = overlongLines; it.linesDropped = linesDropped
+            it.commandRepliesDropped = commandRepliesDropped; it.dtcFramesDropped = dtcFramesDropped
         }
     }
     private var linkIntegrityLive = LinkIntegrity()
@@ -209,6 +233,28 @@ object DiagnosticLogger {
     }
     fun countRefusedReply() = synchronized(lock) { linkIntegrityLive.refusedReplies++ }
     fun countAttributedNrc() = synchronized(lock) { linkIntegrityLive.nrcAttributed++ }
+    fun countOverlongLine() = synchronized(lock) { linkIntegrityLive.overlongLines++ }
+    fun countLineDropped() = synchronized(lock) { linkIntegrityLive.linesDropped++ }
+    fun countCommandReplyDropped() = synchronized(lock) { linkIntegrityLive.commandRepliesDropped++ }
+    fun countDtcFrameDropped() = synchronized(lock) { linkIntegrityLive.dtcFramesDropped++ }
+
+    /**
+     * What this session's logs no longer hold (#253), so a rolling or capped list is never read as the whole session.
+     * Oldest entries roll off the trace, events, FPS timeline and probe sessions; the SLCAN log stops at its cap.
+     */
+    data class LogLimits(
+        val decodeTraceDropped: Long = 0, val eventsDropped: Long = 0, val fpsPointsDropped: Long = 0,
+        val probeSessionsDropped: Long = 0, val inventoryFramesNotListed: Long = 0, val slcanCapReached: Boolean = false, val slcanWriteFailed: Boolean = false,
+    )
+    private var traceDropped = 0L
+    private var eventsDropped = 0L
+    private var fpsDropped = 0L
+    private var probeSessionsDropped = 0L
+    private var inventoryNotListed = 0L
+    /** A consistent copy of this session's counts. */
+    val logLimits: LogLimits get() = synchronized(lock) {
+        LogLimits(traceDropped, eventsDropped, fpsDropped, probeSessionsDropped, inventoryNotListed, slcanCapHit, slcanWriteFailed)
+    }
 
     /** Identity of the current session — [sessionStart] returns it; adapter-status writes carry it (#233). */
     @Volatile private var sessionToken: Long = 0L
@@ -284,18 +330,29 @@ object DiagnosticLogger {
         adapterStatusReason: String = AdapterStatusRecord.NO_REQUEST,
     ): Long {
         val token: Long
+        val carried: List<String>
+        val safeHost = LogText.sanitize(host)            // goes into the summary, JSON, SLCAN header and share text (#263)
+        val safeTransport = LogText.sanitize(transport)
         synchronized(lock) {
+            // Why the last link stopped survives this wipe, one hop (#212); a first session's events have no session to be relative to
+            val hadSession = sessionStartMs > 0
+            carried = CARRIED_EVENT_TYPES.mapNotNull { type ->
+                sessionEventsDeque.lastOrNull { it.type == type }?.let { ev ->
+                    "$type +${if (hadSession) "${ev.relMs}ms" else "?"} ${ev.message}"
+                }
+            }
+
             // Close any previous SLCAN writer
             try { slcanWriter?.flush(); slcanWriter?.close() } catch (_: Exception) {}
             slcanWriter = null
             _slcanFile = null
             slcanLinesWritten = 0L
-            slcanCapReached = false
+            slcanWriteFailed = false
 
             sessionStartMs = System.currentTimeMillis()
-            sessionHost = host
+            sessionHost = safeHost
             sessionPort = port
-            sessionTransport = transport
+            sessionTransport = safeTransport
             sessionPrefs = prefs
             isOpenRsFirmware = false
             firmwareVersion = "WiCAN stock"
@@ -312,6 +369,8 @@ object DiagnosticLogger {
             nrcSnapshot = emptyMap()   // NRC suppression is per connection (#216)
             nrcUnattributedTotal = 0
             linkIntegrityLive = LinkIntegrity()
+            traceDropped = 0L; eventsDropped = 0L; fpsDropped = 0L; probeSessionsDropped = 0L; inventoryNotListed = 0L
+            slcanCapHit = false
 
             // Option C: open SLCAN log file
             if (logDir != null) {
@@ -320,8 +379,8 @@ object DiagnosticLogger {
                     val f = File(logDir, "session_slcan.log")
                     f.delete()
                     val w = f.bufferedWriter(Charsets.UTF_8)
-                    val transportLabel = if (transport.isNotEmpty()) " ($transport)" else ""
-                    w.write("# openRS_ SLCAN log — $host:$port$transportLabel\n")
+                    val transportLabel = if (safeTransport.isNotEmpty()) " ($safeTransport)" else ""
+                    w.write("# openRS_ SLCAN log — $safeHost:$port$transportLabel\n")
                     w.write("# Session started: ${System.currentTimeMillis()} ms epoch\n")
                     w.write("# Format: (relative_seconds) can0 ID#DATA\n")
                     w.write("# Compatible with candump, SavvyCAN, Kayak\n")
@@ -333,7 +392,8 @@ object DiagnosticLogger {
                 }
             }
         }
-        event("SESSION", "Started — $host:$port")
+        event("SESSION", "Started — $safeHost:$port")
+        carried.forEach { event(EVENT_LINK_PREV, it) }
         return token
     }
 
@@ -343,7 +403,7 @@ object DiagnosticLogger {
             try {
                 slcanWriter?.flush()
                 slcanWriter?.close()
-            } catch (_: Exception) {}
+            } catch (e: Exception) { noteSlcanWriteFailedLocked(relativeMs(), e) }
             slcanWriter = null
         }
     }
@@ -354,7 +414,7 @@ object DiagnosticLogger {
      */
     fun flushSlcan() {
         synchronized(lock) {
-            try { slcanWriter?.flush() } catch (_: Exception) {}
+            try { slcanWriter?.flush() } catch (e: Exception) { noteSlcanWriteFailedLocked(relativeMs(), e) }
         }
     }
 
@@ -362,16 +422,36 @@ object DiagnosticLogger {
 
     fun event(type: String, msg: String) {
         synchronized(lock) {
-            val rel = relativeMs()
-            sessionEventsDeque.addLast(SessionEvent(rel, type, msg))
-            while (sessionEventsDeque.size > MAX_EVENTS) sessionEventsDeque.removeFirst()
+            addEventLocked(SessionEvent(relativeMs(), type, msg))
         }
+    }
+
+    /** Must be called within [synchronized](lock). */
+    private fun addEventLocked(ev: SessionEvent) {
+        sessionEventsDeque.addLast(ev)
+        while (sessionEventsDeque.size > MAX_EVENTS) {
+            sessionEventsDeque.removeFirst()
+            eventsDropped++
+        }
+    }
+
+    /** The ID's inventory row, or null once [MAX_INVENTORY_IDS] are listed (counted). Within [synchronized](lock). */
+    private fun inventoryRowLocked(canId: Int): FrameInfo? {
+        frameInventory[canId]?.let { return it }
+        if (frameInventory.size >= MAX_INVENTORY_IDS) {
+            inventoryNotListed++
+            return null
+        }
+        return FrameInfo().also { frameInventory[canId] = it }
     }
 
     fun fps(value: Double) {
         synchronized(lock) {
             fpsTimelineDeque.addLast(FpsPoint(relativeMs(), value))
-            while (fpsTimelineDeque.size > MAX_FPS_POINTS) fpsTimelineDeque.removeFirst()
+            while (fpsTimelineDeque.size > MAX_FPS_POINTS) {
+                fpsTimelineDeque.removeFirst()
+                fpsDropped++
+            }
         }
     }
 
@@ -379,6 +459,13 @@ object DiagnosticLogger {
      * Called after a successful decode.
      * Logs to: frame inventory (with Option B enrichment) + decode trace + SLCAN file (Option C).
      */
+    /** A 0x40A VIN page (mux C1 xx): its data bytes are the VIN in ASCII, so they stay out of the inventory and trace (#260). */
+    private fun isVinPage(canId: Int, d: ByteArray) =
+        canId == CanDecoder.ID_VIN_MUX && d.isNotEmpty() && (d[0].toInt() and 0xFF) == 0xC1
+
+    /** "C1 02 ** ** ** ** ** **": the mux bytes still say which page arrived and how long it was. */
+    private fun ByteArray.vinPageMaskedHex() = indices.joinToString(" ") { i -> if (i < 2) "%02X".format(this[i]) else "**" }
+
     fun logFrame(
         canId: Int,
         rawData: ByteArray,
@@ -387,34 +474,38 @@ object DiagnosticLogger {
         issue: String?
     ) {
         // Pre-compute hex + SLCAN line outside lock — no allocations under contention
-        val rawHex     = rawData.toSpacedHex()
-        val compactHex = rawData.toCompactHex()
+        val rawHex     = if (isVinPage(canId, rawData)) rawData.vinPageMaskedHex() else rawData.toSpacedHex()
+        val compactHex = rawData.toCompactHex()   // the raw log keeps every frame: its VIN pages are the owner's open decision (#260)
         val idHex      = "0x%03X".format(canId)
         val relMs      = relativeMs()
         val slcanLine  = buildSlcanLine(relMs, canId, compactHex)
 
         synchronized(lock) {
             // ── Option B: enriched frame inventory ───────────────────────────
-            val info = frameInventory.getOrPut(canId) { FrameInfo() }
-            info.totalReceived++
-            info.lastSeenMs = System.currentTimeMillis()
-            if (info.firstRawHex.isEmpty()) info.firstRawHex = rawHex
-            if (!info.hasChanged && rawHex != info.firstRawHex) info.hasChanged = true
-            info.lastRawHex  = rawHex
-            info.lastDecoded = decoded
-            if (issue != null) info.validationIssues += issue
+            inventoryRowLocked(canId)?.let { info ->
+                info.totalReceived++
+                info.lastSeenMs = System.currentTimeMillis()
+                if (info.firstRawHex.isEmpty()) info.firstRawHex = rawHex
+                if (!info.hasChanged && rawHex != info.firstRawHex) info.hasChanged = true
+                info.lastRawHex  = rawHex
+                info.lastDecoded = decoded
+                if (issue != null) info.validationIssues += issue
 
-            // Periodic sample: one snapshot per ID every SAMPLE_INTERVAL_MS
-            val lastSample = lastSampleTimeMs[canId] ?: 0L
-            if (relMs - lastSample >= SAMPLE_INTERVAL_MS) {
-                info.periodicSamples.addLast(PeriodicSample(relMs, rawHex))
-                while (info.periodicSamples.size > MAX_SAMPLES_PER_ID) info.periodicSamples.removeFirst()
-                lastSampleTimeMs[canId] = relMs
+                // Periodic sample: one snapshot per ID every SAMPLE_INTERVAL_MS
+                val lastSample = lastSampleTimeMs[canId] ?: 0L
+                if (relMs - lastSample >= SAMPLE_INTERVAL_MS) {
+                    info.periodicSamples.addLast(PeriodicSample(relMs, rawHex))
+                    while (info.periodicSamples.size > MAX_SAMPLES_PER_ID) info.periodicSamples.removeFirst()
+                    lastSampleTimeMs[canId] = relMs
+                }
             }
 
             // ── Rolling decode trace ─────────────────────────────────────────
             decodeTraceDeque.addLast(TraceEvent(relMs, idHex, rawHex, decoded, issue))
-            while (decodeTraceDeque.size > MAX_TRACE) decodeTraceDeque.removeFirst()
+            while (decodeTraceDeque.size > MAX_TRACE) {
+                decodeTraceDeque.removeFirst()
+                traceDropped++
+            }
 
             lastVehicleState = newState
 
@@ -429,25 +520,26 @@ object DiagnosticLogger {
      */
     fun logUnknownFrame(canId: Int, rawData: ByteArray) {
         // Pre-compute hex + SLCAN line outside lock
-        val rawHex     = rawData.toSpacedHex()
+        val rawHex     = if (isVinPage(canId, rawData)) rawData.vinPageMaskedHex() else rawData.toSpacedHex()
         val compactHex = rawData.toCompactHex()
         val relMs      = relativeMs()
         val slcanLine  = buildSlcanLine(relMs, canId, compactHex)
 
         synchronized(lock) {
-            val info = frameInventory.getOrPut(canId) { FrameInfo() }
-            info.totalReceived++
-            info.lastSeenMs = System.currentTimeMillis()
-            if (info.firstRawHex.isEmpty()) info.firstRawHex = rawHex
-            if (!info.hasChanged && rawHex != info.firstRawHex) info.hasChanged = true
-            info.lastRawHex = rawHex
+            inventoryRowLocked(canId)?.let { info ->
+                info.totalReceived++
+                info.lastSeenMs = System.currentTimeMillis()
+                if (info.firstRawHex.isEmpty()) info.firstRawHex = rawHex
+                if (!info.hasChanged && rawHex != info.firstRawHex) info.hasChanged = true
+                info.lastRawHex = rawHex
 
-            // Periodic sample for unknown frames too
-            val lastSample = lastSampleTimeMs[canId] ?: 0L
-            if (relMs - lastSample >= SAMPLE_INTERVAL_MS) {
-                info.periodicSamples.addLast(PeriodicSample(relMs, rawHex))
-                while (info.periodicSamples.size > MAX_SAMPLES_PER_ID) info.periodicSamples.removeFirst()
-                lastSampleTimeMs[canId] = relMs
+                // Periodic sample for unknown frames too
+                val lastSample = lastSampleTimeMs[canId] ?: 0L
+                if (relMs - lastSample >= SAMPLE_INTERVAL_MS) {
+                    info.periodicSamples.addLast(PeriodicSample(relMs, rawHex))
+                    while (info.periodicSamples.size > MAX_SAMPLES_PER_ID) info.periodicSamples.removeFirst()
+                    lastSampleTimeMs[canId] = relMs
+                }
             }
 
             writePreformattedSlcanLine(relMs, slcanLine)
@@ -495,13 +587,11 @@ object DiagnosticLogger {
     private fun writePreformattedSlcanLine(relMs: Long, line: String) {
         val w = slcanWriter ?: return
         if (slcanLinesWritten >= MAX_SLCAN_LINES) {
-            if (!slcanCapReached) {
-                slcanCapReached = true
+            if (!slcanCapHit) {
+                slcanCapHit = true
                 try { w.write("# LOG CAP REACHED — further frames not written\n"); w.flush() } catch (_: Exception) {}
-                // Post event outside lock would cause deadlock; use direct deque insert
-                sessionEventsDeque.addLast(
-                    SessionEvent(relMs, "SLCAN", "SLCAN log cap reached ($MAX_SLCAN_LINES lines)")
-                )
+                // Already within the lock
+                addEventLocked(SessionEvent(relMs, "SLCAN", "SLCAN log cap reached ($MAX_SLCAN_LINES lines)"))
             }
             return
         }
@@ -511,14 +601,15 @@ object DiagnosticLogger {
             // Flush to disk every 200 lines to limit data loss on crash
             if (slcanLinesWritten % 200L == 0L) w.flush()
         } catch (e: Exception) {
-            // Log the first write failure so disk-full isn't completely silent
-            if (!slcanCapReached) {
-                slcanCapReached = true
-                sessionEventsDeque.addLast(
-                    SessionEvent(relMs, "SLCAN", "SLCAN write failed: ${e.message}")
-                )
-            }
+            noteSlcanWriteFailedLocked(relMs, e)
         }
+    }
+
+    /** The first write or flush failure: lines are missing from the raw log, so the export says so (#253). */
+    private fun noteSlcanWriteFailedLocked(relMs: Long, e: Exception) {
+        if (slcanWriteFailed) return
+        slcanWriteFailed = true
+        addEventLocked(SessionEvent(relMs, "SLCAN", "SLCAN write failed: ${LogText.sanitizeReason(e)}"))
     }
 
     // ── DID Probe results ────────────────────────────────────────────────────
@@ -548,7 +639,10 @@ object DiagnosticLogger {
             )
             // removeAt(0), not removeFirst(): on a MutableList that compiles to java.util.List.removeFirst
             // (API 35+) and throws NoSuchMethodError on Android 9–14 (#196 lint NewApi)
-            while (probeSessionsList.size > MAX_PROBE_SESSIONS) probeSessionsList.removeAt(0)
+            while (probeSessionsList.size > MAX_PROBE_SESSIONS) {
+                probeSessionsList.removeAt(0)
+                probeSessionsDropped++
+            }
         }
         val found = results.count { it.status == "FOUND" }
         when (outcome) {

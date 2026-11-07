@@ -19,6 +19,10 @@ import android.util.Log
  * connection whose frames all carry it is parsed with [parse]`(timestamped = true)` — exactly DLC × 2 + 4, suffix
  * dropped. Which shape a connection uses is decided once per connection by SlcanConnection ([shape]); the parser itself
  * stays stateless, and in either mode every other length is refused (a stray +4 line in a plain stream included).
+ *
+ * IDs (#253): an ID that can't exist on CAN is refused (above 0x7FF on `t`, above 0x1FFFFFFF on `T`). So is a `T` frame numbered
+ * 0x7FF or below: it is a different identifier from the `t` frame with that number, and [parse] returns only the number, so it
+ * would reach the 11-bit decoders and module replies. Case doesn't matter: hex reads by value.
  */
 object SlcanParser {
 
@@ -45,11 +49,15 @@ object SlcanParser {
 
     private const val TIMESTAMP_CHARS = 4
     private const val TIMESTAMP_LIMIT = 60_000
+    private const val MAX_STANDARD_ID = 0x7FF
+    private const val MAX_EXTENDED_ID = 0x1FFFFFFF
 
     private fun parseFrame(msg: String, idLen: Int, suffix: Int): Pair<Int, ByteArray>? {
         val dataStart = 1 + idLen + 1
         if (msg.length < dataStart) return null
         val id = parseHex(msg, 1, idLen); if (id < 0) return null
+        if (idLen == 3 && id > MAX_STANDARD_ID) return null
+        if (idLen == 8 && (id <= MAX_STANDARD_ID || id > MAX_EXTENDED_ID)) return null
         val dlc = hexDigit(msg[idLen + 1]); if (dlc < 0 || dlc > 8) return null
         if (msg.length != dataStart + dlc * 2 + suffix) return null
         // The adapter's timestamp is milliseconds modulo 60 000 (WiCAN v4.48p slcan_get_time): 0000..EA5F
@@ -63,7 +71,7 @@ object SlcanParser {
             val hi = hexDigit(msg[start + i * 2])
             val lo = hexDigit(msg[start + i * 2 + 1])
             if (hi < 0 || lo < 0) {
-                Log.w("SLCAN", "parseDataBytes invalid hex at byte $i: ${msg.take(30)}")
+                Log.w("SLCAN", "parseDataBytes invalid hex at byte $i")      // never the line: logcat ships in release
                 return null
             }
             out[i] = ((hi shl 4) or lo).toByte()

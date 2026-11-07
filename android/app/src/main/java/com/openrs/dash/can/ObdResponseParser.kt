@@ -20,9 +20,14 @@ object ObdResponseParser {
 
     private const val TAG = "OBD"
 
-    private fun logMalformed(module: String, data: ByteArray, reason: String) {
+    private fun logMalformed(module: String, reason: String) {
         com.openrs.dash.diagnostics.DiagnosticLogger.countRefusedReply()            // counted for the export (#253)
-        Log.w(TAG, "$module: $reason [${data.joinToString(" ") { "%02X".format(it) }}]")
+        Log.w(TAG, "$module: $reason")     // never the bytes: logcat ships in release (#263)
+    }
+
+    /** Too short to decode: a refused reply only if it is one, not an NRC, a flow control or a consecutive frame (#253). */
+    private fun logShort(module: String, data: ByteArray) {
+        if (data.size >= 2 && (data[1].toInt() and 0xFF) == 0x62) logMalformed(module, "too short (${data.size} < 5)")
     }
 
     /**
@@ -46,9 +51,9 @@ object ObdResponseParser {
         currentState: VehicleState,
         onObdUpdate: (VehicleState) -> Unit
     ) {
-        if (data.size < 5) { logMalformed("BCM", data, "too short (${data.size} < 5)"); return }
+        if (data.size < 5) { logShort("BCM", data); return }
         if ((data[1].toInt() and 0xFF) != 0x62) return
-        val avail = singleFrameDataBytes(data) ?: run { logMalformed("BCM", data, "PCI and frame length disagree"); return }
+        val avail = singleFrameDataBytes(data) ?: run { logMalformed("BCM", "PCI and frame length disagree"); return }
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
         when (did) {
@@ -127,7 +132,7 @@ object ObdResponseParser {
         when (did) {
             0x280B -> {
                 if (payload.size < 11) {
-                    logMalformed("BCM-MF", payload, "0x280B too short (${payload.size} < 11)")
+                    logMalformed("BCM-MF", "0x280B too short (${payload.size} < 11)")
                     return
                 }
                 val status = payload[10].toInt() and 0xFF
@@ -178,9 +183,9 @@ object ObdResponseParser {
         currentState: VehicleState,
         onObdUpdate: (VehicleState) -> Unit
     ) {
-        if (data.size < 5) { logMalformed("AWD", data, "too short (${data.size} < 5)"); return }
+        if (data.size < 5) { logShort("AWD", data); return }
         if ((data[1].toInt() and 0xFF) != 0x62) return
-        val avail = singleFrameDataBytes(data) ?: run { logMalformed("AWD", data, "PCI and frame length disagree"); return }
+        val avail = singleFrameDataBytes(data) ?: run { logMalformed("AWD", "PCI and frame length disagree"); return }
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
         val b4s = data[4].toInt()
@@ -219,7 +224,7 @@ object ObdResponseParser {
                 }
             }
         } catch (_: ShortReply) {
-            logMalformed("AWD", data, "DID 0x%04X: $avail data byte(s), its value needs more".format(did))
+            logMalformed("AWD", "DID 0x%04X: $avail data byte(s), its value needs more".format(did))
         }
     }
 
@@ -232,9 +237,9 @@ object ObdResponseParser {
         currentState: VehicleState,
         onObdUpdate: (VehicleState) -> Unit
     ) {
-        if (data.size < 5) { logMalformed("PCM", data, "too short (${data.size} < 5)"); return }
+        if (data.size < 5) { logShort("PCM", data); return }
         if ((data[1].toInt() and 0xFF) != 0x62) return
-        val avail = singleFrameDataBytes(data) ?: run { logMalformed("PCM", data, "PCI and frame length disagree"); return }
+        val avail = singleFrameDataBytes(data) ?: run { logMalformed("PCM", "PCI and frame length disagree"); return }
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
         val b4s = data[4].toInt()
@@ -337,7 +342,7 @@ object ObdResponseParser {
                 }
             }
         } catch (_: ShortReply) {
-            logMalformed("PCM", data, "DID 0x%04X: $avail data byte(s), its value needs more".format(did))
+            logMalformed("PCM", "DID 0x%04X: $avail data byte(s), its value needs more".format(did))
         }
     }
 
@@ -351,9 +356,9 @@ object ObdResponseParser {
         currentState: VehicleState,
         onObdUpdate: (VehicleState) -> Unit
     ) {
-        if (data.size < 5) { logMalformed("HVAC", data, "too short (${data.size} < 5)"); return }
+        if (data.size < 5) { logShort("HVAC", data); return }
         if ((data[1].toInt() and 0xFF) != 0x62) return
-        val avail = singleFrameDataBytes(data) ?: run { logMalformed("HVAC", data, "PCI and frame length disagree"); return }
+        val avail = singleFrameDataBytes(data) ?: run { logMalformed("HVAC", "PCI and frame length disagree"); return }
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
         val b5OrNull = if (avail >= 2) data[5].toInt() and 0xFF else null
@@ -374,9 +379,9 @@ object ObdResponseParser {
         currentState: VehicleState,
         onObdUpdate: (VehicleState) -> Unit
     ) {
-        if (data.size < 5) { logMalformed("IPC", data, "too short (${data.size} < 5)"); return }
+        if (data.size < 5) { logShort("IPC", data); return }
         if ((data[1].toInt() and 0xFF) != 0x62) return
-        val avail = singleFrameDataBytes(data) ?: run { logMalformed("IPC", data, "PCI and frame length disagree"); return }
+        val avail = singleFrameDataBytes(data) ?: run { logMalformed("IPC", "PCI and frame length disagree"); return }
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
         val b5OrNull = if (avail >= 2) data[5].toInt() and 0xFF else null
@@ -393,9 +398,9 @@ object ObdResponseParser {
         currentState: VehicleState,
         onObdUpdate: (VehicleState) -> Unit
     ) {
-        if (data.size < 5) { logMalformed("PSCM", data, "too short (${data.size} < 5)"); return }
+        if (data.size < 5) { logShort("PSCM", data); return }
         if ((data[1].toInt() and 0xFF) != 0x62) return
-        singleFrameDataBytes(data) ?: run { logMalformed("PSCM", data, "PCI and frame length disagree"); return }
+        singleFrameDataBytes(data) ?: run { logMalformed("PSCM", "PCI and frame length disagree"); return }
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
         when (did) {
@@ -409,9 +414,9 @@ object ObdResponseParser {
         currentState: VehicleState,
         onObdUpdate: (VehicleState) -> Unit
     ) {
-        if (data.size < 5) { logMalformed("FENG", data, "too short (${data.size} < 5)"); return }
+        if (data.size < 5) { logShort("FENG", data); return }
         if ((data[1].toInt() and 0xFF) != 0x62) return
-        singleFrameDataBytes(data) ?: run { logMalformed("FENG", data, "PCI and frame length disagree"); return }
+        singleFrameDataBytes(data) ?: run { logMalformed("FENG", "PCI and frame length disagree"); return }
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
         when (did) {
@@ -430,9 +435,9 @@ object ObdResponseParser {
         onObdUpdate: (VehicleState) -> Unit,
         onDebug: ((String) -> Unit)? = null
     ) {
-        if (data.size < 5) { logMalformed("RSProt", data, "too short (${data.size} < 5)"); return }
+        if (data.size < 5) { logShort("RSProt", data); return }
         if ((data[1].toInt() and 0xFF) != 0x62) return
-        val avail = singleFrameDataBytes(data) ?: run { logMalformed("RSProt", data, "PCI and frame length disagree"); return }
+        val avail = singleFrameDataBytes(data) ?: run { logMalformed("RSProt", "PCI and frame length disagree"); return }
         val did = ((data[2].toInt() and 0xFF) shl 8) or (data[3].toInt() and 0xFF)
         val b4  = data[4].toInt() and 0xFF
         val b5OrNull = if (avail >= 2) data[5].toInt() and 0xFF else null
@@ -449,7 +454,7 @@ object ObdResponseParser {
                 0xFD01 -> onDebug?.invoke("RSProt 0xFD01 → $b4 (candidate)")
             }
         } catch (_: ShortReply) {
-            logMalformed("RSProt", data, "DID 0x%04X: $avail data byte(s), its value needs more".format(did))
+            logMalformed("RSProt", "DID 0x%04X: $avail data byte(s), its value needs more".format(did))
         }
     }
 }

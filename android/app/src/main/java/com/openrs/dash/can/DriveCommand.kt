@@ -7,6 +7,7 @@ import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticLogger
+import com.openrs.dash.diagnostics.LogText
 import kotlinx.coroutines.delay
 
 /**
@@ -64,7 +65,7 @@ suspend fun executeDriveModeChange(
     targetMode: DriveMode,
     currentMode: DriveMode,
     state: () -> VehicleState = { OpenRSDashApp.instance.vehicleState.value },
-    connectionId: () -> Int = { com.openrs.dash.service.CanDataService.link.generation },
+    connectionId: () -> Int = { com.openrs.dash.service.CanDataService.link.connectionEpoch },
     clock: () -> Long = System::currentTimeMillis,
     firmwareLabel: () -> String = { OpenRSDashApp.instance.firmwareVersionLabel.value },
 ): DriveCommandResult {
@@ -78,7 +79,7 @@ suspend fun executeDriveModeChange(
     val result = sender.setDriveMode(targetMode.toFirmwareInt())
     if (result.isFailure) {
         val ex = result.exceptionOrNull()
-        DiagnosticLogger.event("DM_CMD", "FAILED: ${ex?.message}")
+        DiagnosticLogger.event("DM_CMD", "FAILED: ${LogText.sanitize(ex?.message ?: "no message")}")
         return if (ex is BusyException) DriveCommandResult.Busy
                else DriveCommandResult.Failed(ex?.message ?: "Drive mode command failed")
     }
@@ -140,7 +141,7 @@ suspend fun executeDriveModeChange(
     return DriveCommandResult.NoConfirmation
 }
 
-/** Freshness tag for drive mode — stamped by resolved 0x1B0 frames (CanDecoder, ≤ 1 s throttle). */
+/** Freshness tag for drive mode — stamped by resolved 0x1B0 frames (CanDecoder: a changed mode at once, unchanged ≤ 1 s). */
 const val STAMP_TAG = "driveMode"
 
 private enum class Wait { CONFIRMED, LINK_CHANGED, TIMED_OUT }

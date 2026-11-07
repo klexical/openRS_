@@ -20,6 +20,14 @@ internal class LinkOwnership {
     @Volatile var generation = 0
         private set
 
+    /**
+     * One connection's identity, for a wait that must end on the connection it began on (#252, #125). Bumped by [begin], [end] and
+     * every phase change a job publishes: SlcanConnection retries inside one job, so [generation] doesn't move when the link drops
+     * and comes back, and neither `isConnected` nor a poll sees a gap that closes between two looks.
+     */
+    @Volatile var connectionEpoch = 0
+        private set
+
     /** The phase last published (UI flow mirrors it). Read under [transition] for decisions such as cancel. */
     @Volatile var phase: LinkPhase = LinkPhase.OFF
         private set
@@ -76,10 +84,10 @@ internal class LinkOwnership {
     }
 
     /** A new connection job takes ownership; returns its generation. */
-    fun begin(): Int = synchronized(lock) { phase = LinkPhase.CONNECTING; ++generation }
+    fun begin(): Int = synchronized(lock) { phase = LinkPhase.CONNECTING; connectionEpoch++; ++generation }
 
     /** Ownership ends (stop / cancel / exhausted / before a reconnect): every job begun so far is now stale. */
-    fun end(finalPhase: LinkPhase) = synchronized(lock) { generation++; phase = finalPhase }
+    fun end(finalPhase: LinkPhase) = synchronized(lock) { generation++; connectionEpoch++; phase = finalPhase }
 
     fun owns(gen: Int): Boolean = gen == generation
 
@@ -95,7 +103,10 @@ internal class LinkOwnership {
 
     /** A job publishes a phase: applied (with [apply]) only while [gen] is current — atomically with the check. */
     fun publish(gen: Int, newPhase: LinkPhase, apply: (LinkPhase) -> Unit): Boolean = synchronized(lock) {
-        if (gen != generation) false else { phase = newPhase; apply(newPhase); true }
+        if (gen != generation) false else {
+            if (newPhase != phase) connectionEpoch++
+            phase = newPhase; apply(newPhase); true
+        }
     }
 
     /** A delayed result from job [gen] (OBD merge, status reply): [apply] runs only while that job still owns the link. */

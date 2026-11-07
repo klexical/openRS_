@@ -16,11 +16,11 @@ import org.junit.Test
 /** One release identity across build, updater, Settings and What's New (#214). */
 class VersionIdentityTest {
 
-    @Test fun `this build is 2_2_7-rc_7, versionCode 38 (rc_7 Build 38 maintenance asset)`() {
-        assertEquals("2.2.7-rc.7", BuildConfig.RELEASE_NAME)
-        assertEquals(38, BuildConfig.VERSION_CODE)
-        assertEquals(AppVersion(2, 2, 7, 7), AppVersion.current())
-        assertTrue(BuildConfig.VERSION_NAME.startsWith("2.2.7-rc.7"))           // debug adds -dev+<commit>
+    @Test fun `this build is 2_2_7-rc_8, versionCode 39`() {
+        assertEquals("2.2.7-rc.8", BuildConfig.RELEASE_NAME)
+        assertEquals(39, BuildConfig.VERSION_CODE)
+        assertEquals(AppVersion(2, 2, 7, 8), AppVersion.current())
+        assertTrue(BuildConfig.VERSION_NAME.startsWith("2.2.7-rc.8"))           // debug adds -dev+<commit>
     }
 
     @Test fun `version names parse with and without RC and dev suffix`() {
@@ -35,7 +35,7 @@ class VersionIdentityTest {
         val v = AppVersion.fromVersionName(BuildConfig.RELEASE_NAME)!!
         assertEquals(v, AppVersion.fromTagName("android-v${BuildConfig.RELEASE_NAME}"))
         assertEquals(v, AppVersion.fromApkFilename("openRS_v${BuildConfig.RELEASE_NAME}.apk"))
-        assertEquals("android-v2.2.7-rc.7", "android-v${v.displayName}")
+        assertEquals("android-v2.2.7-rc.8", "android-v${v.displayName}")
     }
 
     private fun release(tag: String, apk: String, prerelease: Boolean) = JSONObject().apply {
@@ -108,7 +108,9 @@ class VersionIdentityTest {
         // Build 37 → Build 38 keeps the release name, so the dialog does not reopen on that upgrade; its Build 38 line
         // shows on a fresh install or from Settings → What's New
         assertFalse(shouldShowWhatsNew(lastSeen = BuildConfig.RELEASE_NAME, releaseName = BuildConfig.RELEASE_NAME, base = "2.2.7"))
-        assertTrue(whatsNewHighlights("2.2.7")!!.first().startsWith("rc.7 · Build ${BuildConfig.VERSION_CODE}: "))
+        assertTrue(shouldShowWhatsNew(lastSeen = "2.2.7-rc.7", releaseName = "2.2.7-rc.8", base = "2.2.7"))   // rc.7 → rc.8 shows it
+        assertTrue(whatsNewHighlights("2.2.7")!!.first().startsWith("rc.8 · Build ${BuildConfig.VERSION_CODE}: "))
+        assertTrue(whatsNewHighlights("2.2.7")!!.any { it.startsWith("rc.7 · Build 38: ") })    // rc.7's maintenance line kept
         assertTrue(whatsNewHighlights("2.2.7")!!.any { it.contains("labelled TIP, and") })      // rc.7's published line kept
         assertFalse(shouldShowWhatsNew(lastSeen = "2.2.7-rc.7", releaseName = "2.2.8-rc.1", base = "2.2.8"))  // no 2.2.8 notes
         assertNull(whatsNewHighlights("9.9.9"))
