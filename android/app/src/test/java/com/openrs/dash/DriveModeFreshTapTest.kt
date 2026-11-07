@@ -115,6 +115,35 @@ class DriveModeFreshTapTest {
         }
     }
 
+    // ── No false question: the offer's own gate (QA, S5 review) ──
+
+    @Test fun `a single stray frame of another mode at the window's end reads NoConfirmation, with no question`() = runTest {
+        CanDecoder.resetSessionState()
+        val car = Car(DriveMode.NORMAL)
+        backgroundScope.launch {                                                  // the last poll is at R + 17 s = 20 s
+            while (testScheduler.currentTime < 19_500L) { feed(car, 0x1B0, ByteArray(8).also { it[6] = 0 }); delay(100) }
+            delay(19_950L - testScheduler.currentTime)
+            feed(car, 0x1B0, ByteArray(8).also { it[6] = 0x20 })                  // one Drift report, then nothing
+        }
+        backgroundScope.launch { while (true) { feed(car, 0x420, ByteArray(8).also { it[6] = 0x10; it[7] = 0xC4.toByte() }); delay(600) } }
+        delay(REQUEST_MS)
+        val sender = Sender(car, this) { _, _ -> null }
+        val r = executeDriveModeChange(sender, DriveMode.SPORT, DriveMode.NORMAL, state = { car.vs }, connectionId = { car.link },
+            clock = { testScheduler.currentTime }, firmwareLabel = { "t" })
+        assertEquals("premise: the stray is what the app reads", DriveMode.DRIFT, car.vs.driveMode)
+        assertEquals(DriveCommandResult.NoConfirmation, r)
+        assertEquals(1, sender.calls)
+    }
+
+    @Test fun `the car staying on the current mode reads NoConfirmation, with no question, at every phase`() {
+        for (p in PHASES) {
+            val o = overshoot(p, { _, _ -> null })
+            assertEquals("phase $p", DriveCommandResult.NoConfirmation, o.result)
+            assertEquals("phase $p: commands", 1, o.calls)
+            assertEquals("phase $p: car", DriveMode.NORMAL, o.finalMode)
+        }
+    }
+
     // ── The offer ──
 
     private fun landed(requested: DriveMode = DriveMode.SPORT, observed: DriveMode = DriveMode.TRACK, run: Long = 5L, link: Int = 7) =
