@@ -555,15 +555,17 @@ class CanDataService : Service() {
         val connMethod = s.getConnectionMethod(this)
         val adapterType = s.getAdapterType(this)
         val isBle = connMethod == "BLUETOOTH"
+        // Kind + profile only (#263): an export never carries the adapter's MAC or name, whatever the user or vendor called it
+        val profile = if (adapterType == "MEATPI_PRO") "MeatPi Pro" else "MeatPi USB"
         val transportLabel = if (isBle) {
-            "Bluetooth (${s.getBleDeviceName(this) ?: "BLE"} / ${s.getBleDeviceAddress(this) ?: "?"})"
+            "Bluetooth ($profile)"
         } else {
             val protocol = if (adapterType == "MEATPI_PRO") "TCP SLCAN" else "WebSocket SLCAN"
             "$protocol (${s.getHost(this)}:${s.getPort(this)})"
         }
         // Bluetooth starts "not requested" together with the session; Wi-Fi status writes carry this session's token (#233)
         val diagSession = DiagnosticLogger.sessionStart(
-            host      = if (isBle) s.getBleDeviceAddress(this) ?: "BLE" else s.getHost(this),
+            host      = if (isBle) "Bluetooth" else s.getHost(this),
             port      = if (isBle) 0 else s.getPort(this),
             transport = transportLabel,
             prefs  = UserPrefsStore.prefs.value,
@@ -619,9 +621,9 @@ class CanDataService : Service() {
                     if (status != null) link.deliver(gen) {
                         OpenRSDashApp.instance.deviceStatus.value = status
                         DiagnosticLogger.adapterStatusFetched(diagSession, status)
-                        DiagnosticLogger.event("DEVICE_STATUS",
+                        DiagnosticLogger.event("DEVICE_STATUS", LogText.sanitize(
                             "${status.hardwareVersion} fw=${status.firmwareVersion} " +
-                            "can=${status.canDatarate} vbatt=${status.obdPortVoltage}V")
+                            "can=${status.canDatarate} vbatt=${status.obdPortVoltage}V"))
                     } else link.deliver(gen) {
                         DiagnosticLogger.adapterStatusFailed(diagSession)
                         DiagnosticLogger.event("DEVICE_STATUS", "/check_status request failed — adapter details unknown this session")

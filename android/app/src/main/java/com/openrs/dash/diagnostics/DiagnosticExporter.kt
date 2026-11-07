@@ -159,7 +159,7 @@ object DiagnosticExporter {
 
             FileProvider.getUriForFile(ctx, authority(ctx), zipFile)
         } catch (e: Exception) {
-            DiagnosticLogger.event("EXPORT_ERROR", e.message ?: "unknown")
+            DiagnosticLogger.event("EXPORT_ERROR", LogText.sanitizeReason(e))
             null
         }
     }
@@ -315,7 +315,7 @@ object DiagnosticExporter {
             _exportProgress.value = ExportProgress.Idle
         } catch (e: Exception) {
             _exportProgress.value = ExportProgress.Error(e.message ?: "unknown")
-            DiagnosticLogger.event("DRIVE_EXPORT_ERROR", e.message ?: "unknown")
+            DiagnosticLogger.event("DRIVE_EXPORT_ERROR", LogText.sanitizeReason(e))
             _exportProgress.value = ExportProgress.Idle
         }
     }
@@ -405,7 +405,7 @@ object DiagnosticExporter {
             _exportProgress.value = ExportProgress.Idle
         } catch (e: Exception) {
             _exportProgress.value = ExportProgress.Error(e.message ?: "unknown")
-            DiagnosticLogger.event("BATCH_EXPORT_ERROR", e.message ?: "unknown")
+            DiagnosticLogger.event("BATCH_EXPORT_ERROR", LogText.sanitizeReason(e))
             _exportProgress.value = ExportProgress.Idle
         }
     }
@@ -449,18 +449,7 @@ object DiagnosticExporter {
             putExtra(Intent.EXTRA_STREAM, uri)
             clipData = shareClip(uri)
             putExtra(Intent.EXTRA_SUBJECT, "openRS_ Diagnostic Report")
-            putExtra(
-                Intent.EXTRA_TEXT,
-                "openRS_ v${appVersion} diagnostic bundle.\n" +
-                "• diagnostic_summary_*.txt  — human-readable report\n" +
-                "• diagnostic_detail_*.json  — full machine-readable data$slcanNote$driveNote\n\n" +
-                "App      : v${appVersion} (build ${appBuild})\n" +
-                "Session  : ${DiagnosticLogger.formatDuration(DiagnosticLogger.sessionDurationMs)}\n" +
-                "Firmware : ${DiagnosticLogger.firmwareVersion}\n" +
-                "Host     : ${DiagnosticLogger.sessionHost}:${DiagnosticLogger.sessionPort}" +
-                if (DiagnosticLogger.sessionTransport.isNotEmpty())
-                    "\nTransport: ${DiagnosticLogger.sessionTransport}" else ""
-            )
+            putExtra(Intent.EXTRA_TEXT, diagnosticShareText(slcanNote, driveNote))
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         Handler(Looper.getMainLooper()).post {
@@ -475,6 +464,18 @@ object DiagnosticExporter {
      * and never grants the share sheet itself, so its preview was denied (`Permission Denial … intentresolver`).
      * With ClipData on the target, Intent.createChooser carries it and FLAG_GRANT_READ_URI_PERMISSION to the chooser.
      */
+    /** The share sheet's text, outside the ZIP and so outside any file the user can read first. */
+    internal fun diagnosticShareText(slcanNote: String = "", driveNote: String = ""): String =
+        "openRS_ v${appVersion} diagnostic bundle.\n" +
+        "• diagnostic_summary_*.txt  — human-readable report\n" +
+        "• diagnostic_detail_*.json  — full machine-readable data$slcanNote$driveNote\n\n" +
+        "App      : v${appVersion} (build ${appBuild})\n" +
+        "Session  : ${DiagnosticLogger.formatDuration(DiagnosticLogger.sessionDurationMs)}\n" +
+        "Firmware : ${DiagnosticLogger.firmwareVersion}\n" +
+        "Host     : ${DiagnosticLogger.sessionHost}:${DiagnosticLogger.sessionPort}" +
+        if (DiagnosticLogger.sessionTransport.isNotEmpty())
+            "\nTransport: ${DiagnosticLogger.sessionTransport}" else ""
+
     private fun shareClip(uri: android.net.Uri) = android.content.ClipData.newRawUri("openRS_ export", uri)
 
     /** Add crash telemetry JSON files to the ZIP. */

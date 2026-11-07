@@ -2,6 +2,7 @@ package com.openrs.dash.can
 
 import com.openrs.dash.data.EscStatus
 import com.openrs.dash.data.VehicleState
+import com.openrs.dash.diagnostics.LogText
 import kotlinx.coroutines.delay
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -100,7 +101,7 @@ object EscCommand {
         is Outcome.NotConfirmed -> "NOT CONFIRMED — adapter accepted ${target.label}, no 0x1C0 frame after the request reported it " +
             "in ${o.waitedMs} ms (car reports ${o.observed.label})"
         Outcome.Busy -> "BUSY — an ESC change is already in progress"
-        is Outcome.Failed -> "FAILED — ${o.message}"
+        is Outcome.Failed -> "FAILED — ${LogText.sanitize(o.message)}"
         Outcome.ConnectionLost -> "CONNECTION LOST or replaced while waiting for the car"
         Outcome.Unsupported -> "UNSUPPORTED — no openRS_ firmware command path"
     }

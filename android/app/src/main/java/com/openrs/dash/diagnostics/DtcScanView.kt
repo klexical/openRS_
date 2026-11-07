@@ -78,7 +78,7 @@ class DtcScanView(private val ledger: DtcScanLedger, private val countSink: (Int
                 throw e
             } catch (e: Exception) {
                 // Best-effort, but a failed one is still reported as failed, never as clean
-                ledger.fail(ticket, clock(), e.message)
+                ledger.fail(ticket, clock(), e.message?.let { LogText.sanitize(it) })
                 return null
             }
         }

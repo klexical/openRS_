@@ -40,13 +40,13 @@ class AdapterStatusExportTest {
         val a = wifiSession("192.168.0.10")
         DiagnosticLogger.adapterStatusFetched(a, status("4.45", "aaaaaaaaaaaa", "disable"))
         DiagnosticLogger.sessionEnd()
-        DiagnosticLogger.sessionStart("AA:BB", 0, prefs = null, transport = "Bluetooth (WiC_test / AA:BB)",
+        DiagnosticLogger.sessionStart("Bluetooth", 0, prefs = null, transport = "Bluetooth (MeatPi Pro)",
             adapterStatusReason = com.openrs.dash.diagnostics.AdapterStatusRecord.BLUETOOTH)
         DiagnosticLogger.firmwareVersion = "openRS_ PRO v1.2-rc.1"      // live handshake on the Bluetooth session
 
         val text = text(); val json = json()
         assertNoStatusFields(text, json, "aaaaaaaaaaaa")
-        assertTrue(text.contains("Transport: Bluetooth (WiC_test / AA:BB)"))
+        assertTrue(text.contains("Transport: Bluetooth (MeatPi Pro)"))
         assertTrue(text.contains("Status   : not available — Bluetooth session"))
         assertTrue("handshake stays authoritative", text.contains("Firmware : openRS_ PRO v1.2-rc.1"))
         val src = json.getJSONObject("adapterStatusSource")

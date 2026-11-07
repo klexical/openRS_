@@ -126,14 +126,14 @@ internal object DiagnosticReportBuilder {
         appendLine("─── ADAPTER ──────────────────────────────────────────────")
         appendLine("  Status   : ${adapterStatusLine(snap.record, snap.sessionStartMs)}")
         snap.deviceStatus?.let { ds ->
-            if (ds.hardwareVersion.isNotBlank()) appendLine("  Hardware : ${ds.hardwareVersion}")
-            if (ds.firmwareVersion.isNotBlank()) appendLine("  Device FW: v${ds.firmwareVersion}")
-            if (ds.deviceId.isNotBlank())        appendLine("  Device ID: ${ds.deviceId}")
-            if (ds.canDatarate.isNotBlank())     appendLine("  CAN Bus  : ${ds.canDatarate} ${ds.canMode}")
+            if (ds.hardwareVersion.isNotBlank()) appendLine("  Hardware : ${LogText.sanitize(ds.hardwareVersion)}")
+            if (ds.firmwareVersion.isNotBlank()) appendLine("  Device FW: v${LogText.sanitize(ds.firmwareVersion)}")
+            if (ds.deviceId.isNotBlank())        appendLine("  Device ID: $DEVICE_ID_MASKED")
+            if (ds.canDatarate.isNotBlank())     appendLine("  CAN Bus  : ${LogText.sanitize("${ds.canDatarate} ${ds.canMode}")}")
             if (ds.obdPortVoltage > 0)           appendLine("  OBD Port : ${"%.1f".format(ds.obdPortVoltage)}V")
-            if (ds.bleStatus.isNotBlank())        appendLine("  BLE      : ${ds.bleStatus}")
-            if (ds.protocol.isNotBlank())         appendLine("  Protocol : ${ds.protocol}")
-            if (ds.sleepStatus.isNotBlank())      appendLine("  Sleep    : ${ds.sleepStatus} (${ds.sleepVolt}V)")
+            if (ds.bleStatus.isNotBlank())        appendLine("  BLE      : ${LogText.sanitize(ds.bleStatus)}")
+            if (ds.protocol.isNotBlank())         appendLine("  Protocol : ${LogText.sanitize(ds.protocol)}")
+            if (ds.sleepStatus.isNotBlank())      appendLine("  Sleep    : ${LogText.sanitize("${ds.sleepStatus} (${ds.sleepVolt}V)")}")
         }
         appendLine()
 
@@ -426,17 +426,17 @@ internal object DiagnosticReportBuilder {
         root.put("adapterStatusSource", adapterStatusSourceJson(snap.record, snap.sessionStartMs))
         snap.deviceStatus?.let { ds ->
             root.put("adapterStatus", JSONObject().apply {
-                put("hardwareVersion", ds.hardwareVersion)
-                put("firmwareVersion", ds.firmwareVersion)
-                put("deviceId", ds.deviceId)
-                put("canDatarate", ds.canDatarate)
-                put("canMode", ds.canMode)
-                put("protocol", ds.protocol)
-                put("bleStatus", ds.bleStatus)
+                put("hardwareVersion", LogText.sanitize(ds.hardwareVersion))
+                put("firmwareVersion", LogText.sanitize(ds.firmwareVersion))
+                put("deviceId", if (ds.deviceId.isBlank()) "" else DEVICE_ID_MASKED)   // key kept: readers see no removed field
+                put("canDatarate", LogText.sanitize(ds.canDatarate))
+                put("canMode", LogText.sanitize(ds.canMode))
+                put("protocol", LogText.sanitize(ds.protocol))
+                put("bleStatus", LogText.sanitize(ds.bleStatus))
                 put("obdPortVoltage", ds.obdPortVoltage)
-                put("sleepStatus", ds.sleepStatus)
-                put("sleepVolt", ds.sleepVolt)
-                put("wifiMode", ds.wifiMode)
+                put("sleepStatus", LogText.sanitize(ds.sleepStatus))
+                put("sleepVolt", LogText.sanitize(ds.sleepVolt))
+                put("wifiMode", LogText.sanitize(ds.wifiMode))
             })
         }
 
@@ -586,6 +586,9 @@ internal fun linkIntegrityText(li: DiagnosticLogger.LinkIntegrity, nrcUnattribut
 /** Demo knock events are simulated: like the session-knock CSV, they never reach an export. */
 private fun knockSessionDropped() =
     if (com.openrs.dash.demo.DemoMode.isActive) 0 else com.openrs.dash.data.KnockSessionLog.droppedEvents
+
+/** The adapter's device ID never leaves the app in an export (#263); GARAGE still shows it. */
+private const val DEVICE_ID_MASKED = "<masked>"
 
 /** LOG LIMITS summary lines (#253): what this session's rolling / capped logs no longer hold. */
 internal fun logLimitsText(l: DiagnosticLogger.LogLimits, knockDropped: Int): List<String> = buildList {

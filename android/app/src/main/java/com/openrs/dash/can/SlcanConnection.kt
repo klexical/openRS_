@@ -471,11 +471,11 @@ class SlcanConnection(
                 // sanitized version; non-frame lines are only counted. Probe 1 was logged when it was written.
                 fun detected(line: String) = synchronized(firmwareDetected) {
                     if (!firmwareDetected.compareAndSet(false, true)) return@synchronized
-                    val version = line.removePrefix("OPENRS:").trim()
+                    val version = LogText.sanitize(line.removePrefix("OPENRS:").trim(), 40)   // adapter text, in every export (#263)
                     publish(FirmwareStatus(openRs = true, probing = false, label = "openRS_ $version"))
                     val ms = clock() - probeStartMs
                     addDebugLine("Firmware: openRS_ $version \u2713 (${ms} ms, probe ${probesSent.get()})")
-                    DiagnosticLogger.event("FIRMWARE", "Reply recognized: openRS_ ${LogText.sanitize(version, 40)} after probe " +
+                    DiagnosticLogger.event("FIRMWARE", "Reply recognized: openRS_ $version after probe " +
                         "${probesSent.get()} of $probeTotal ($kind, +${fromAttempt()} ms" +
                         "${if (verdictDone.get()) ", late reply after the verdict" else ""})")
                 }
@@ -687,8 +687,9 @@ class SlcanConnection(
                 throw e
             } catch (e: Exception) {
                 if (!connectionSucceeded) failedAttempts++
-                _state.value = AdapterState.Error(e.message ?: "Connection failed")
-                addDebugLine("Error: ${e.message}")
+                val why = LogText.sanitize(e.message ?: "Connection failed")   // exported as a STATE line (#263)
+                _state.value = AdapterState.Error(why)
+                addDebugLine("Error: $why")
             } finally {
                 _transport = null
                 _ledgerFor = null

@@ -330,6 +330,8 @@ object DiagnosticLogger {
     ): Long {
         val token: Long
         val carried: List<String>
+        val safeHost = LogText.sanitize(host)            // goes into the summary, JSON, SLCAN header and share text (#263)
+        val safeTransport = LogText.sanitize(transport)
         synchronized(lock) {
             // Why the last link stopped survives this wipe, one hop (#212); a first session's events have no session to be relative to
             val hadSession = sessionStartMs > 0
@@ -347,9 +349,9 @@ object DiagnosticLogger {
             slcanWriteFailed = false
 
             sessionStartMs = System.currentTimeMillis()
-            sessionHost = host
+            sessionHost = safeHost
             sessionPort = port
-            sessionTransport = transport
+            sessionTransport = safeTransport
             sessionPrefs = prefs
             isOpenRsFirmware = false
             firmwareVersion = "WiCAN stock"
@@ -376,8 +378,8 @@ object DiagnosticLogger {
                     val f = File(logDir, "session_slcan.log")
                     f.delete()
                     val w = f.bufferedWriter(Charsets.UTF_8)
-                    val transportLabel = if (transport.isNotEmpty()) " ($transport)" else ""
-                    w.write("# openRS_ SLCAN log — $host:$port$transportLabel\n")
+                    val transportLabel = if (safeTransport.isNotEmpty()) " ($safeTransport)" else ""
+                    w.write("# openRS_ SLCAN log — $safeHost:$port$transportLabel\n")
                     w.write("# Session started: ${System.currentTimeMillis()} ms epoch\n")
                     w.write("# Format: (relative_seconds) can0 ID#DATA\n")
                     w.write("# Compatible with candump, SavvyCAN, Kayak\n")
@@ -389,7 +391,7 @@ object DiagnosticLogger {
                 }
             }
         }
-        event("SESSION", "Started — $host:$port")
+        event("SESSION", "Started — $safeHost:$port")
         carried.forEach { event(EVENT_LINK_PREV, it) }
         return token
     }
@@ -594,7 +596,7 @@ object DiagnosticLogger {
             // Log the first write failure so disk-full isn't completely silent
             if (!slcanWriteFailed) {
                 slcanWriteFailed = true
-                addEventLocked(SessionEvent(relMs, "SLCAN", "SLCAN write failed: ${e.message}"))
+                addEventLocked(SessionEvent(relMs, "SLCAN", "SLCAN write failed: ${LogText.sanitizeReason(e)}"))
             }
         }
     }
