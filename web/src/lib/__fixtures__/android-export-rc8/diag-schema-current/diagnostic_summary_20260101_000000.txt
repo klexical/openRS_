@@ -1,7 +1,7 @@
 ═══════════════════════════════════════════════════════════
   openRS_ Diagnostic Report
-  App       : v2.2.7-rc.7 (build 38, debug)
-  Source    : 5f05bf8a80fa (uncommitted changes)
+  App       : v2.2.7-rc.8 (build 39, debug)
+  Source    : dfb092e9a604 (uncommitted changes)
   Generated : 20260101_000000
   Session   : 00:00:00
   Schema    : export schema 1
@@ -37,7 +37,7 @@
   Buffers  : 0 overlong line(s) refused · 0 line(s) dropped (BLE queue full) · 0 command reply(ies) dropped · 0 DTC frame(s) dropped
 
 ─── LOG LIMITS ────────────────────────────────────────────
-  no limit reached
+  no counted limit reached
 
 ─── FPS TIMELINE (0 samples) ────────────────────────────
   No FPS data recorded

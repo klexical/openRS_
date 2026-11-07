@@ -102,6 +102,11 @@ class ExportSchemaVersionTest {
         assertFalse("one place in the JSON: the root, not the meta block", detail.getJSONObject("meta").has("exportSchemaVersion"))
     }
 
+    @Test fun `the export schema version is 1 until a bump is decided`() {
+        // A bump is deliberate: see the rule beside the constant, and raise Sapphire's KNOWN_EXPORT_SCHEMA_VERSION with it
+        assertEquals(1, EXPORT_SCHEMA_VERSION)
+    }
+
     @Test fun `a drive export states it in the manifest and in its diagnostic detail`() {
         DiagnosticExporter.shareDrive(ctx, drive, points, includeDiagnostics = true)
         val zip = written("openrs_export_")

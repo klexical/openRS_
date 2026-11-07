@@ -1,15 +1,15 @@
 {
   "meta": {
     "app": "openRS_",
-    "appVersion": "2.2.7-rc.7-dev+5f05bf8a80fa.dirty",
-    "appBuild": 38,
-    "releaseVersion": "2.2.7-rc.7",
-    "versionCode": 38,
-    "sourceCommit": "5f05bf8a80fa",
+    "appVersion": "2.2.7-rc.8-dev+dfb092e9a604.dirty",
+    "appBuild": 39,
+    "releaseVersion": "2.2.7-rc.8",
+    "versionCode": 39,
+    "sourceCommit": "dfb092e9a604",
     "sourceDirty": true,
     "buildType": "debug",
     "generatedAt": "20260101_000000",
-    "sessionDurationMs": 2,
+    "sessionDurationMs": 0,
     "sessionDurationHuman": "00:00:00",
     "firmware": "WiCAN stock",
     "isOpenRsFirmware": false,
@@ -31,7 +31,7 @@
   "decodeTrace": [],
   "sessionEvents": [
     {
-      "relMs": 1,
+      "relMs": 0,
       "type": "SESSION",
       "message": "Started — test:0"
     }
@@ -63,6 +63,7 @@
     "probeSessionsDropped": 0,
     "inventoryFramesNotListed": 0,
     "slcanCapReached": false,
+    "slcanWriteFailed": false,
     "knockSessionDropped": 0
   },
   "exportSchemaVersion": 1,

@@ -124,6 +124,55 @@ describe('current export', () => {
   })
 })
 
+describe('checked-in sample', () => {
+  it('holds no real run time: the only time values are the fixed ones', () => {
+    const files = dirFiles(CURRENT_DIAG)
+    const text = Object.entries(files).map(([name, body]) => `${name}\n${body}`).join('\n')
+    // Any 13-digit number could be an epoch time, so a new time field can't bring a real run time back on regeneration
+    expect([...new Set(text.match(/\d{13}/g) ?? [])]).toEqual(['1767225600000'])
+    expect([...new Set(text.match(/\d{8}_\d{6}/g) ?? [])]).toEqual(['20260101_000000'])
+  })
+})
+
+describe('manifest that lists no drive CSV', () => {
+  it.each([
+    ['an empty list', { files: [] }],
+    ['entries of a type this Sapphire does not know', { files: [{ name: 'x.bin', type: 'future_type' }] }],
+  ])('%s: the drive in the ZIP is found by name', async (_label, edit) => {
+    const f = dirFiles(LEGACY_DRIVE)
+    const named = await importZip(await file(f))
+    const s = await importZip(await file({ ...f, 'manifest.json': JSON.stringify({ ...JSON.parse(f['manifest.json']), ...edit }) }))
+    expect(s.trip?.points.length).toBeGreaterThan(0)
+    expect(s.trip?.points.length).toBe(named.trip?.points.length)
+  })
+
+  it('an empty list: the diagnostic detail in the ZIP is still read', async () => {
+    const f = dirFiles(CURRENT_DIAG)
+    const s = await importZip(await file({ ...f, 'manifest.json': JSON.stringify({ ...JSON.parse(f['manifest.json']), files: [] }) }))
+    expect(s.diagnostics).toBeTruthy()
+    expect(s.meta.exportSchemaVersion).toBe(KNOWN_EXPORT_SCHEMA_VERSION)
+  })
+
+  it('a diagnostic-only export stays without a trip', async () => {
+    const s = await importZip(await file(dirFiles(CURRENT_DIAG)))
+    expect(s.trip).toBeFalsy()
+  })
+})
+
+describe('manifest identity fields of the wrong type', () => {
+  it.each([
+    ['appVersion object', { appVersion: { a: 1 } }],
+    ['appVersion number', { appVersion: 7 }],
+    ['appBuild object', { appBuild: { a: 1 } }],
+    ['appBuild string', { appBuild: '39' }],
+  ])('%s: imports with printable identity fields', async (_label, edit) => {
+    const f = dirFiles(LEGACY_DRIVE)
+    const s = await importZip(await file({ ...f, 'manifest.json': JSON.stringify({ ...JSON.parse(f['manifest.json']), ...edit }) }))
+    expect(typeof s.meta.appVersion).toBe('string')
+    expect(s.meta.appBuild === undefined || typeof s.meta.appBuild === 'number').toBe(true)
+  })
+})
+
 describe('future version', () => {
   it('imports the same, records the number and says so', async () => {
     const files = dirFiles(LEGACY_DRIVE)

@@ -104,11 +104,10 @@ export function isBatchZip(manifest: ExportManifest | null, zip: JSZip): boolean
   return countDriveCsvs(zip, manifest) > 1
 }
 
-/** Drive CSVs in the ZIP — from the manifest when present, else by filename. */
+/** Drive CSVs in the ZIP — from the manifest when it lists any, else by filename (a list this Sapphire can't read loses no drive). */
 function driveCsvFiles(zip: JSZip, manifest: ExportManifest | null): string[] {
-  return manifest
-    ? manifest.files.filter(isDriveCsvEntry).map((e) => e.name)
-    : Object.keys(zip.files).filter(isDriveCsvName)
+  const listed = manifest ? manifest.files.filter(isDriveCsvEntry).map((e) => e.name) : []
+  return listed.length > 0 ? listed : Object.keys(zip.files).filter(isDriveCsvName)
 }
 
 function countDriveCsvs(zip: JSZip, manifest: ExportManifest | null): number {
@@ -610,11 +609,8 @@ function computeAvgFuelEconomy(fuelUsedL: number, distanceKm: number): number {
 // ── DTC text parsing ──
 
 async function parseDtcData(zip: JSZip, manifest: ExportManifest | null): Promise<DtcEntry[]> {
-  const dtcFile = manifest
-    ? manifest.files.find((e) => e.type === 'dtc_text')?.name
-    : Object.keys(zip.files).find(
-        (f) => f.startsWith('dtc_scan_') && f.endsWith('.txt')
-      )
+  const dtcFile = manifest?.files.find((e) => e.type === 'dtc_text')?.name
+    ?? Object.keys(zip.files).find((f) => f.startsWith('dtc_scan_') && f.endsWith('.txt'))
   if (!dtcFile) return []
 
   const text = await zip.files[dtcFile].async('string')
@@ -644,11 +640,8 @@ async function parseDtcData(zip: JSZip, manifest: ExportManifest | null): Promis
 // ── DTC JSON parsing (T1E — preferred over TXT) ──
 
 async function parseDtcJsonData(zip: JSZip, manifest: ExportManifest | null): Promise<DtcEntry[] | null> {
-  const jsonFile = manifest
-    ? manifest.files.find((e) => e.type === 'dtc_json')?.name
-    : Object.keys(zip.files).find(
-        (f) => f.startsWith('dtc_scan_') && f.endsWith('.json')
-      )
+  const jsonFile = manifest?.files.find((e) => e.type === 'dtc_json')?.name
+    ?? Object.keys(zip.files).find((f) => f.startsWith('dtc_scan_') && f.endsWith('.json'))
   if (!jsonFile || !zip.files[jsonFile]) return null
 
   try {
@@ -687,11 +680,8 @@ async function parseDtcJsonData(zip: JSZip, manifest: ExportManifest | null): Pr
 // ── Diagnostic JSON parsing ──
 
 function diagnosticDetailFile(zip: JSZip, manifest: ExportManifest | null): string | undefined {
-  return manifest
-    ? manifest.files.find((e) => e.type === 'diagnostic_detail')?.name
-    : Object.keys(zip.files).find(
-        (f) => f.startsWith('diagnostic_detail_') && f.endsWith('.json')
-      )
+  return manifest?.files.find((e) => e.type === 'diagnostic_detail')?.name
+    ?? Object.keys(zip.files).find((f) => f.startsWith('diagnostic_detail_') && f.endsWith('.json'))
 }
 
 async function parseDiagnosticData(zip: JSZip, dtcResults: DtcEntry[], manifest: ExportManifest | null): Promise<DiagnosticData | null> {
@@ -862,11 +852,11 @@ async function parseExportMeta(zip: JSZip, filename: string, manifest: ExportMan
     const exportedAt = typeof manifest.exportedAt === 'number' && !Number.isNaN(new Date(manifest.exportedAt).getTime())
       ? manifest.exportedAt : undefined
     return {
-      appVersion: manifest.appVersion || 'unknown',
+      appVersion: typeof manifest.appVersion === 'string' && manifest.appVersion ? manifest.appVersion : 'unknown',
       firmwareVersion: 'unknown',
       sessionStart: '',
       generatedAt: new Date(exportedAt ?? Date.now()).toISOString(),
-      appBuild: manifest.appBuild,
+      appBuild: typeof manifest.appBuild === 'number' ? manifest.appBuild : undefined,
       exportedAt,
     }
   }
