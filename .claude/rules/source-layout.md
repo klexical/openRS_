@@ -112,9 +112,10 @@ diagnostics/
   DiagnosticLogger.kt     — Thread-safe singleton: frame inventory (opt B), decode trace, SLCAN log (opt C)
                             Pre-allocated hex lookup table; hex conversion outside lock for reduced contention
                             VIN masking at one write-time choke point (#260, rc.8 follow-up): 0x40A C1 pages, 0x405 pages 10/11/12,
-                            0xF190 replies incl. consecutive frames (page rule), plus any frame holding 3+ consecutive bytes of
-                            the assembled VIN (content layer); raw log data → 00 (ID/DLC/timing kept), inventory/trace → **,
-                            probe CSV; counted separately in LOG LIMITS; `ExportCounters` = one locked reading for both files
+                            0xF190 replies incl. consecutive frames (page rule), plus any frame holding 4+ consecutive bytes of
+                            the assembled VIN (content layer, `VIN_RUN_MIN = 4`); raw log data → 00 (ID/DLC/timing kept),
+                            inventory/trace → **, and every stored probe reply at export read (`probeSessions`); counted
+                            separately in LOG LIMITS; `ExportCounters` = one locked reading for both files
                             sessionTransport field: transport label for diagnostic reports and share intents
   DiagnosticExporter.kt   — ZIP orchestrator + share intents + crash history; delegates format generation
                             to DiagnosticReportBuilder and DriveExportBuilder; rc.6 adds drive_knock_session_*.csv (KnockSessionLog)
