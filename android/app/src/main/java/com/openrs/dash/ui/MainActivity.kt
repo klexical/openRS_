@@ -306,7 +306,8 @@ class MainActivity : ComponentActivity() {
                     val sideInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
                     Box(Modifier.fillMaxSize().background(Bg).windowInsetsPadding(sideInsets)) {
                         Scaffold(
-                            snackbarHost   = { SnackbarHost(snackbarHostState) },
+                            // Above the bottom nav overlay, which is drawn over this Scaffold: a snackbar at the Scaffold's bottom edge can't be seen or tapped
+                            snackbarHost   = { SnackbarHost(snackbarHostState, Modifier.padding(bottom = navBarClearance())) },
                             containerColor = Bg,
                             contentWindowInsets = WindowInsets.statusBars
                         ) { innerPadding ->
