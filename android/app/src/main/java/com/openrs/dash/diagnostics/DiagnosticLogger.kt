@@ -305,7 +305,11 @@ object DiagnosticLogger {
     val fpsTimeline: List<FpsPoint>
         get() = synchronized(lock) { fpsTimelineDeque.toList() }
     val probeSessions: List<ProbeSession>
-        get() = synchronized(lock) { probeSessionsList.toList() }
+        get() = synchronized(lock) {
+            // At read, not at record: a reply stored before the VIN was decoded is covered too. The exports are the only readers (#260)
+            if (knownVin == null) probeSessionsList.toList()
+            else probeSessionsList.map { s -> s.copy(results = s.results.map { it.vinRunMasked() }) }
+        }
     val frameInventorySnapshot: Map<Int, FrameInfo>
         get() = synchronized(lock) {
             frameInventory.mapValues { (_, info) ->
@@ -541,7 +545,7 @@ object DiagnosticLogger {
     /** "C1 02 ** ** ** ** ** **": the rest still says which page arrived and how long it was. */
     private fun ByteArray.maskedSpacedHex(bits: Int) = indices.joinToString(" ") { i -> if (bits and (1 shl i) != 0) "**" else "%02X".format(this[i]) }
 
-    /** The raw log keeps candump's shape, so a masked byte reads 00. */
+    /** The raw log keeps candump's fields, so a masked byte reads 00. */
     private fun ByteArray.maskedCompactHex(bits: Int) = copyOf().also { c -> for (i in c.indices) if (bits and (1 shl i) != 0) c[i] = 0 }.toCompactHex()
 
     fun logFrame(
@@ -709,6 +713,16 @@ object DiagnosticLogger {
     /** A 0xF190 reply's bytes are the VIN (#260): the export says the DID answered and how long, not what. The screen keeps its own list. */
     private fun ProbeResult.vinMasked() =
         if (did == 0xF190 && status != "NRC" && status != PROBE_NRC_AMBIGUOUS) copy(responseHex = responseHex.replace(Regex("[0-9A-Fa-f]{2}"), "00")) else this
+
+    /** The content layer for a stored reply on any DID: the same run rule as a frame. The frame itself is already counted, so this adds no count. */
+    private fun ProbeResult.vinRunMasked(): ProbeResult {
+        if (!PROBE_HEX.matches(responseHex)) return this
+        val tokens = responseHex.split(' ')
+        val bits = vinRunBytes(ByteArray(tokens.size) { tokens[it].toInt(16).toByte() })
+        if (bits == 0) return this
+        return copy(responseHex = tokens.indices.joinToString(" ") { i -> if (bits and (1 shl i) != 0) "00" else tokens[i] })
+    }
+    private val PROBE_HEX = Regex("[0-9A-Fa-f]{2}( [0-9A-Fa-f]{2}){0,30}")
 
     /** A FAILED session logs no event here — the scan's own failure event names the DID and the reason. */
     fun recordProbeSession(

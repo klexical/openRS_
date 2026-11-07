@@ -265,6 +265,44 @@ class ExportVinScanTest {
         assertEquals(listOf("0662F190000000", "0662DE00112233"), lines(rawNow(), "72E"))
     }
 
+    // ── a stored probe reply on any DID: QA found it bypassed the content layer on a minified build ──────────────────
+
+    private fun probeFiles(vararg results: DiagnosticLogger.ProbeResult): Map<String, String> {
+        DiagnosticLogger.recordProbeSession("BCM", 0x726, 0x72E, results.toList())
+        DiagnosticExporter.export(ctx)
+        return zip("openrs_diag_")
+    }
+
+    @Test fun `4 VIN bytes in a probe reply on any DID read 00 in the CSV, the summary and the detail, once the VIN is known`() {
+        val files = probeFiles(DiagnosticLogger.ProbeResult(0xFD10, "FOUND", spaced(VIN.substring(4, 8))))
+        val csv = files.entries.single { it.key.startsWith("did_probe_") }.value
+        assertTrue(csv, csv.contains("0xFD10,FOUND,00 00 00 00"))
+        for ((name, text) in files) assertFalse(name, text.contains(spaced(VIN.substring(4, 8))))
+    }
+
+    @Test fun `only the run reads 00, and a reply stored before the VIN was known is covered at export`() {
+        DiagnosticLogger.sessionStart("test", 0, prefs = null, logDir = File(root, "diagnostics"))
+        DiagnosticLogger.recordProbeSession("BCM", 0x726, 0x72E, listOf(DiagnosticLogger.ProbeResult(0xFD11, "FOUND", "7A " + spaced(VIN.substring(4, 8)) + " 7B")))
+        val own = LinkOwnership(); val gen = own.transition { own.begin() }
+        val s = LinkSession(own, gen, state, Rec(), onFrameCounted = {}, perfRunSink = {})
+        s.onCanFrame(0x40A, page(0, VIN.substring(0, 6)), 0.0); s.onCanFrame(0x40A, page(1, VIN.substring(6, 12)), 0.0); s.onCanFrame(0x40A, page(2, VIN.substring(12)), 0.0)
+        DiagnosticExporter.export(ctx)
+        val csv = zip("openrs_diag_").entries.single { it.key.startsWith("did_probe_") }.value
+        assertTrue(csv, csv.contains("0xFD11,FOUND,7A 00 00 00 00 7B"))
+    }
+
+    @Test fun `control - 3 VIN bytes in a probe reply, another DID's bytes and a rejection's text stay`() {
+        val files = probeFiles(
+            DiagnosticLogger.ProbeResult(0xFD12, "FOUND", spaced(VIN.substring(11, 14))),
+            DiagnosticLogger.ProbeResult(0xFD13, "FOUND", "11 22 33 44"),
+            DiagnosticLogger.ProbeResult(0xFD14, "NRC", "NRC 0x31 — request out of range"),
+        )
+        val csv = files.entries.single { it.key.startsWith("did_probe_") }.value
+        assertTrue(csv, csv.contains("0xFD12,FOUND," + spaced(VIN.substring(11, 14))))
+        assertTrue(csv, csv.contains("0xFD13,FOUND,11 22 33 44"))
+        assertTrue(csv, csv.contains("NRC 0x31"))
+    }
+
     @Test fun `a 0xF190 result's bytes are masked in the probe CSV and the reports, another DID's aren't`() {
         val files = f190()
         val csv = files.entries.single { it.key.startsWith("did_probe_") }.value
