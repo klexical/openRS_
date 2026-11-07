@@ -99,11 +99,13 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   (byte 6 0x10 / 0x11 / 0x12 ± LC bit) received after the request, the second before the resolving report
   (`driveModeDetailPair` → copied to `driveModeResolvedPair`), and the current 0x1B0 run is the target (`driveModeRun.<MODE>`,
   `driveModeRunPrev`). `driveModeDetail` / `driveModeResolvedDetail` are provenance only (export text, `fieldAgesMs`). An undocumented 0x420 byte 6 changes nothing; a 0x1B0 that changes the resolved mode is stamped
-  at once (the 1 s throttle applies only to unchanged reports). The one overshoot correction needs the same corroboration, so
-  a single stray frame can never trigger it. OBD merges must not bring back drive-mode provenance keys from their snapshot
+  at once (the 1 s throttle applies only to unchanged reports). There is no automatic correction any more (rc.8 follow-up, #252 S5): when
+  the wait ends with the car reporting another mode, the app asks ("Car is in Track. You asked for Sport.") and only the driver's tap sends
+  a further command, through the same confirmation; the question comes only at the window's end (a mode on the way, Track via Sport,
+  must not raise it), and closing the dock during the wait ends it with no question and no verdict. OBD merges must not bring back drive-mode provenance keys from their snapshot
   (`ModeProvenanceMergeTest`). The current mode's chip can't be tapped once the screen shows that state (a request for it reaches the code only if
-  the tap beats the screen update — not run); a real change via Sport confirms about 1.2–1.3 s later than before the corroboration
-  rule (emulator, synthetic adapter; #252 A2 run). A confirmation states
+  the tap beats the screen update — not run); a real change via Sport confirms about 0.9 s later at the median than before the
+  corroboration rule (emulator, synthetic adapter, 0x420 every 600 ms, 8 runs; not a maximum; real 0x420 is slower). A confirmation states
   the car's mode after the request, not that the app caused it (a manual selection looks identical; which 0x305 bit is the mode button is unresolved — in capture A, 874 frames, the bit the decoder reads (byte 4 bit 5) is never
   set, the firmware's bit (byte 4 bit 2) is set in 5 frames between the Drift send and its confirmation, and closed #120's bit
   (byte 4 bit 4) flips only at the two mode changes, a state not a press by inference; capture B shows neither; so

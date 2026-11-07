@@ -59,7 +59,8 @@ can/
   FirmwareApi.kt          — FirmwareCommandSender interface + WiFiFirmwareApi (REST /api/frs) +
                             BleFirmwareApi (AT+FRS= over SLCAN transport). Both throw BusyException
   DriveCommand.kt         — Shared drive mode command flow: executeDriveModeChange() suspend function
-                            Accepts FirmwareCommandSender → 2s settle → 15s CAN poll → auto-correct
+                            Accepts FirmwareCommandSender → 2s settle → 15s CAN poll → offer (no further
+                            command without the driver's tap, #252 S5)
                             Returns DriveCommandResult sealed class; used by MorePage + DriveModeDock
 demo/                     — DEBUG BUILDS ONLY (DemoMode.AVAILABLE = BuildConfig.DEBUG)
   DemoSimulator.kt        — Pure, deterministic VehicleState generator per DemoScenario (IDLE / DRIVING / WARNING /
