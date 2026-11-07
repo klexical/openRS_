@@ -322,7 +322,7 @@ class MainActivity : ComponentActivity() {
                                         prefs        = prefs,
                                         onSettings   = { settingsOpen = true },
                                         onConnect    = connect,
-                                        onDisconnect = { service?.stopConnection() },
+                                        onDisconnect = { service?.stopConnection(com.openrs.dash.service.LinkStopReason.USER_DISCONNECT) },
                                         onReconnect  = { service?.reconnect() },
                                         onCancel     = { service?.cancelConnection() },
                                         link         = link,

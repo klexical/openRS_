@@ -52,6 +52,15 @@ object DiagnosticLogger {
      */
     private const val MAX_SLCAN_LINES    = 2_000_000L
 
+    const val EVENT_LINK_STOP = "LINK_STOP"
+    /** A stop with no job running: the second teardown after `stopSelf` → `onDestroy`, which must not mask the real reason. */
+    const val EVENT_LINK_STOP_IDLE = "LINK_STOP_IDLE"
+    const val EVENT_LINK_START_REFUSED = "LINK_START_REFUSED"
+    const val EVENT_LINK_TASK_REMOVED = "LINK_TASK_REMOVED"
+    const val EVENT_LINK_PREV = "LINK_PREV"
+    const val EVENT_LINK_PREV_EXIT = "LINK_PREV_EXIT"
+    private val CARRIED_EVENT_TYPES = listOf(EVENT_LINK_STOP, EVENT_LINK_START_REFUSED, EVENT_LINK_TASK_REMOVED)
+
     /** Maximum DID probe sessions stored per diagnostic session. */
     private const val MAX_PROBE_SESSIONS = 50
 
@@ -320,7 +329,16 @@ object DiagnosticLogger {
         adapterStatusReason: String = AdapterStatusRecord.NO_REQUEST,
     ): Long {
         val token: Long
+        val carried: List<String>
         synchronized(lock) {
+            // Why the last link stopped survives this wipe, one hop (#212); a first session's events have no session to be relative to
+            val hadSession = sessionStartMs > 0
+            carried = CARRIED_EVENT_TYPES.mapNotNull { type ->
+                sessionEventsDeque.lastOrNull { it.type == type }?.let { ev ->
+                    "$type +${if (hadSession) "${ev.relMs}ms" else "?"} ${ev.message}"
+                }
+            }
+
             // Close any previous SLCAN writer
             try { slcanWriter?.flush(); slcanWriter?.close() } catch (_: Exception) {}
             slcanWriter = null
@@ -372,6 +390,7 @@ object DiagnosticLogger {
             }
         }
         event("SESSION", "Started — $host:$port")
+        carried.forEach { event(EVENT_LINK_PREV, it) }
         return token
     }
 
