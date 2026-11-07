@@ -226,6 +226,10 @@ object DiagnosticLogger {
     private var linkIntegrityLive = LinkIntegrity()
     /** A consistent copy of this session's counters. */
     val linkIntegrity: LinkIntegrity get() = synchronized(lock) { linkIntegrityLive.copy() }
+
+    /** One reading of the counters an export reports, taken under one lock: its summary and detail state the same numbers (L12). */
+    class ExportCounters(val integrity: LinkIntegrity, val nrcUnattributed: Int, val limits: LogLimits)
+    val exportCounters: ExportCounters get() = synchronized(lock) { ExportCounters(linkIntegrityLive.copy(), nrcUnattributedTotal, logLimits) }
     fun countWrite(kind: String) = synchronized(lock) { linkIntegrityLive.writes[kind] = (linkIntegrityLive.writes[kind] ?: 0) + 1 }
     fun framingDecided(timestamped: Boolean) = synchronized(lock) { linkIntegrityLive.framingTimestamped = timestamped }
     fun countRefusedFrameLine(otherShape: Boolean) = synchronized(lock) {

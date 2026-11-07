@@ -84,13 +84,16 @@ internal object DiagnosticReportBuilder {
         snap: AdapterStatusSnapshot = DiagnosticLogger.snapshotAdapterStatus(),
         // Likewise one DTC scan record (immutable) for both files and the export's dtc_scan_* files (#238 review)
         dtcScan: com.openrs.dash.data.DtcScanRecord? = DiagnosticLogger.lastDtcScan,
+        // And one reading of the counters, or a live export's two files disagree (L12)
+        counters: DiagnosticLogger.ExportCounters = DiagnosticLogger.exportCounters,
     ): Pair<String, String> =
-        buildSummaryText(ts, snap, dtcScan) to buildDetailJson(ts, snap, dtcScan)
+        buildSummaryText(ts, snap, dtcScan, counters) to buildDetailJson(ts, snap, dtcScan, counters)
 
     fun buildSummaryText(
         ts: String,
         snap: AdapterStatusSnapshot = DiagnosticLogger.snapshotAdapterStatus(),
         dtcScan: com.openrs.dash.data.DtcScanRecord? = DiagnosticLogger.lastDtcScan,
+        counters: DiagnosticLogger.ExportCounters = DiagnosticLogger.exportCounters,
     ): String = buildString {
         val log = DiagnosticLogger
         val vs  = log.lastVehicleState
@@ -297,15 +300,15 @@ internal object DiagnosticReportBuilder {
             appendLine()
         }
         // Link integrity (rc.8 #253): counts only — what writes established, what framing / length checks refused
-        linkIntegrityText(log.linkIntegrity, log.nrcUnattributedTotal).forEach { appendLine(it) }
+        linkIntegrityText(counters.integrity, counters.nrcUnattributed).forEach { appendLine(it) }
         appendLine()
-        logLimitsText(log.logLimits, knockSessionDropped(), log.linkIntegrity).forEach { appendLine(it) }
+        logLimitsText(counters.limits, knockSessionDropped(), counters.integrity).forEach { appendLine(it) }
         appendLine()
 
         // Unattributed NRCs: exact count; their event lines are folded to ≤ 1 per minute per kind (#216)
-        if (log.nrcUnattributedTotal > 0) {
+        if (counters.nrcUnattributed > 0) {
             appendLine("─── NRC UNATTRIBUTED ──────────────────────────────────────")
-            appendLine("  ${log.nrcUnattributedTotal} this session (not counted toward suppression; event lines show the " +
+            appendLine("  ${counters.nrcUnattributed} this session (not counted toward suppression; event lines show the " +
                 "first of each kind, then one summary per minute)")
             appendLine()
         }
@@ -381,6 +384,7 @@ internal object DiagnosticReportBuilder {
         ts: String,
         snap: AdapterStatusSnapshot = DiagnosticLogger.snapshotAdapterStatus(),
         dtcScan: com.openrs.dash.data.DtcScanRecord? = DiagnosticLogger.lastDtcScan,
+        counters: DiagnosticLogger.ExportCounters = DiagnosticLogger.exportCounters,
     ): String {
         val log = DiagnosticLogger
         val vs  = log.lastVehicleState
@@ -500,9 +504,9 @@ internal object DiagnosticReportBuilder {
             }
         })
 
-        root.put("nrcUnattributedTotal", log.nrcUnattributedTotal)   // exact, even though lines are folded (#216)
-        root.put("linkIntegrity", linkIntegrityJson(log.linkIntegrity, log.nrcUnattributedTotal))   // rc.8 #253, additive
-        root.put("logLimits", logLimitsJson(log.logLimits, knockSessionDropped()))  // additive
+        root.put("nrcUnattributedTotal", counters.nrcUnattributed)   // exact, even though lines are folded (#216)
+        root.put("linkIntegrity", linkIntegrityJson(counters.integrity, counters.nrcUnattributed))   // rc.8 #253, additive
+        root.put("logLimits", logLimitsJson(counters.limits, knockSessionDropped()))  // additive
         root.put("exportSchemaVersion", EXPORT_SCHEMA_VERSION)   // rc.8 #253, additive; when it changes: see the constant
 
         // nrcSuppression
