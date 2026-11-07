@@ -303,15 +303,25 @@ object CanDecoder {
         val before = previous.fieldLastUpdateMs
         val sameRun = before.containsKey(runTag)
         val last = before["driveMode"] ?: 0L
-        val due = !sameRun || !before.containsKey(MODE_RUN_PREV_TAG) || now - last >= CAN_STAMP_THROTTLE_MS
+        // A pair corroborates a mode only if its details are of that mode: Normal's 10CC and Drift's 12CC read bit 0 = 0 like Sport's (#252)
+        val pair = before[MODE_DETAIL_PAIR_TAG]?.takeIf { detailsMatch(decoded.driveMode, before) }
+        val due = !sameRun || !before.containsKey(MODE_RUN_PREV_TAG) || now - last >= CAN_STAMP_THROTTLE_MS ||
+            (pair != null && !before.containsKey(MODE_RESOLVED_PAIR_TAG))   // the first matching pair shouldn't wait a second for a report
         if (!due) return decoded
         val m = decoded.fieldLastUpdateMs.toMutableMap()
         m.keys.removeAll { it.startsWith(MODE_RUN_PREFIX) && it != runTag }
         if (!sameRun) { m[runTag] = now; m.remove(MODE_RUN_PREV_TAG) } else m[MODE_RUN_PREV_TAG] = last
         m["driveMode"] = now
         before[MODE_DETAIL_TAG]?.let { m[MODE_RESOLVED_DETAIL_TAG] = it }
-        before[MODE_DETAIL_PAIR_TAG]?.let { m[MODE_RESOLVED_PAIR_TAG] = it } ?: m.remove(MODE_RESOLVED_PAIR_TAG)
+        pair?.let { m[MODE_RESOLVED_PAIR_TAG] = it } ?: m.remove(MODE_RESOLVED_PAIR_TAG)
         return decoded.copy(fieldLastUpdateMs = m)
+    }
+
+    /** The current detail is byte 6 = 0x11 (launch-control bit aside) with the bit 0 of [mode]. Read from the stamps: pure, for the CAS. */
+    private fun detailsMatch(mode: DriveMode, stamps: Map<String, Long>) = when (mode) {
+        DriveMode.SPORT -> stamps.containsKey(DETAIL_KEY_PREFIX + "11.0")
+        DriveMode.TRACK -> stamps.containsKey(DETAIL_KEY_PREFIX + "11.1")
+        else -> false
     }
 
     fun decode(id: Int, data: ByteArray, state: VehicleState): VehicleState? {
