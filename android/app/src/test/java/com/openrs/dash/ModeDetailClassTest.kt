@@ -105,8 +105,13 @@ class ModeDetailClassTest {
 
     @Test fun `Sport requested from Drift, car lands on Track - never confirmed, at any 0x420 phase`() = assertNoFalseSport(DriveMode.DRIFT)
 
-    @Test fun `the one correction goes out for that overshoot, at every phase`() {
-        for (p in PHASES) assertEquals("phase $p", 2, scenario(DriveMode.NORMAL, DriveMode.SPORT, DriveMode.TRACK, p).calls)
+    @Test fun `that overshoot sends nothing more and offers Sport with the car on Track, at every phase`() {
+        for (p in PHASES) {
+            val o = scenario(DriveMode.NORMAL, DriveMode.SPORT, DriveMode.TRACK, p)
+            assertEquals("phase $p", 1, o.calls)
+            val offer = (o.result as DriveCommandResult.LandedElsewhere).offer
+            assertEquals("phase $p", DriveMode.SPORT to DriveMode.TRACK, offer.requested to offer.observed)
+        }
     }
 
     @Test fun `a real Sport landing confirms on two real Sport details, at every phase, inside the window`() {
@@ -126,7 +131,7 @@ class ModeDetailClassTest {
         for (p in PHASES) {
             val o = scenario(DriveMode.NORMAL, DriveMode.SPORT, DriveMode.TRACK, p, gap = longGap)
             assertNotEquals("phase $p: ${o.afterMs} ms", DriveCommandResult.Success, o.result)
-            assertEquals("phase $p: the correction, once the car's Track is corroborated", 2, o.calls)
+            assertEquals("phase $p: one command, whatever the car does", 1, o.calls)
         }
     }
 

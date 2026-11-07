@@ -20,7 +20,7 @@ import org.junit.Test
 /**
  * Drive-mode confirmation (#220 follow-up): the adapter's OK is "accepted"; only a resolved 0x1B0 report of the target
  * stamped after the request, on the same connection, is "confirmed". Production function, virtual time; the "car" is a
- * scripted VehicleState timeline (mode + `driveMode` stamp). Timing (2 s settle + 15 s) and the single correction are
+ * scripted VehicleState timeline (mode + `driveMode` stamp). Timing (2 s settle + 15 s) are
  * unchanged.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -104,14 +104,15 @@ class DriveModeConfirmTest {
             "(the car's state after it — not proof the request caused it)" })
     }
 
-    @Test fun `a fresh overshoot still gets the one correction, confirmed only by a later report`() = runTest {
+    @Test fun `a fresh landing elsewhere sends nothing more and offers the requested and the observed mode`() = runTest {
         val car = Car(VehicleState(isConnected = true, driveMode = DriveMode.NORMAL))
-        report(car, DriveMode.DRIFT, 4_000)                                                    // overshoot
-        report(car, DriveMode.SPORT, 22_000)                                                   // after the correction
+        report(car, DriveMode.DRIFT, 4_000)
         val sender = Sender()
         val r = run(car, sender, DriveMode.SPORT, DriveMode.NORMAL)
-        assertEquals(DriveCommandResult.Success, r)
-        assertEquals(2, sender.calls)
-        assertTrue(events().toString(), events().any { it.startsWith("Auto-correction succeeded — CONFIRMED by CAN") })
+        assertEquals(1, sender.calls)
+        val offer = (r as com.openrs.dash.can.DriveCommandResult.LandedElsewhere).offer
+        assertEquals(DriveMode.SPORT, offer.requested)
+        assertEquals(DriveMode.DRIFT, offer.observed)
+        assertTrue(events().toString(), events().any { it.startsWith("LANDED ELSEWHERE: car reports Drift, requested Sport") })
     }
 }

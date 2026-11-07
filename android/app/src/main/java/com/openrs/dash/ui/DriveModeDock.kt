@@ -21,7 +21,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -47,6 +49,8 @@ import androidx.compose.ui.unit.sp
 import com.openrs.dash.can.DriveCommandResult
 import com.openrs.dash.can.FirmwareCommandSender
 import com.openrs.dash.can.driveModePending
+import com.openrs.dash.can.DriveModeOffer
+import com.openrs.dash.can.askDriver
 import com.openrs.dash.can.executeDriveModeChange
 import com.openrs.dash.can.modeChangeBreath
 import com.openrs.dash.can.successHapticFor
@@ -54,6 +58,7 @@ import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.ui.Tokens.PagePad
 import com.openrs.dash.ui.anim.pressClick
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -79,6 +84,80 @@ import kotlinx.coroutines.launch
     val scope = rememberCoroutineScope()
     var pendingDriveMode by remember { mutableStateOf<DriveMode?>(null) }
     var confirmedMode by remember { mutableStateOf<DriveMode?>(null) }
+
+    val offerJob = remember { mutableStateOf<Job?>(null) }
+
+    /** One tap, one command. A landing elsewhere only asks (#252): a further command needs the driver's tap on that question. */
+    fun requestMode(target: DriveMode, current: DriveMode) {
+        offerJob.value?.cancel()
+        haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+        pendingDriveMode = target
+        driveModePending.value = target
+        confirmedMode = null
+        scope.launch {
+            var offer: DriveModeOffer? = null
+            try {
+                when (val r = executeDriveModeChange(firmwareApi!!, target, current)) {
+                    is DriveCommandResult.Success -> {
+                        haptic.performHapticFeedback(successHapticFor(target))
+                        confirmedMode = target
+                        modeChangeBreath.value = target
+                        // Dwell on the confirmed state, then clear the breath
+                        // and dismiss. Keeping both delays in the outer coroutine
+                        // ensures they share the same cancellation scope as the
+                        // finally{} cleanup below.
+                        delay(1_200)
+                        if (modeChangeBreath.value == target) modeChangeBreath.value = null
+                        delay(300)
+                        onDismiss()
+                    }
+                    is DriveCommandResult.Busy -> {
+                        haptic.performHapticFeedback(HapticFeedbackType.Reject)
+                        snackbarHostState.showSnackbar("Mode change in progress \u2014 please wait")
+                    }
+                    is DriveCommandResult.Failed -> {
+                        haptic.performHapticFeedback(HapticFeedbackType.Reject)
+                        snackbarHostState.showSnackbar(r.message)
+                    }
+                    is DriveCommandResult.LandedElsewhere -> {
+                        haptic.performHapticFeedback(HapticFeedbackType.Reject)
+                        offer = r.offer
+                    }
+                    is DriveCommandResult.NoConfirmation -> {
+                        haptic.performHapticFeedback(HapticFeedbackType.Reject)
+                        snackbarHostState.showSnackbar("Mode change didn\u2019t take effect \u2014 try again")
+                    }
+                    is DriveCommandResult.ConnectionLost -> {
+                        haptic.performHapticFeedback(HapticFeedbackType.Reject)
+                        snackbarHostState.showSnackbar("Connection changed \u2014 mode change not confirmed")
+                    }
+                }
+            } finally {
+                // Always release the in-flight globals so the header MODE pill
+                // and nav indicator can't get stuck if the dock composition is
+                // disposed (and this scope cancelled) mid-command. Only clear
+                // modeChangeBreath if we own it — a rapid successor tap may
+                // have already set it to a different mode.
+                pendingDriveMode = null
+                driveModePending.value = null
+                if (modeChangeBreath.value == target) modeChangeBreath.value = null
+            }
+            // Outside the in-flight state, so another mode can be tapped while this is up; closing the dock takes it away with this scope
+            offer?.let { o ->
+                offerJob.value = scope.launch {
+                    val tapped = askDriver(o, ask = {
+                        snackbarHostState.showSnackbar(
+                            message = "Car is in ${o.observed.label}. You asked for ${o.requested.label}.",
+                            actionLabel = "SWITCH TO ${o.requested.label.uppercase()}",
+                            withDismissAction = true,
+                            duration = SnackbarDuration.Indefinite,
+                        ) == SnackbarResult.ActionPerformed
+                    })
+                    if (tapped) requestMode(o.requested, o.observed)
+                }
+            }
+        }
+    }
 
     // Staggered entrance — each button delays 40ms
     val modes = remember {
@@ -225,58 +304,7 @@ import kotlinx.coroutines.launch
                             }
                         }
                         .pressClick(enabled = canControl && firmwareApi != null && !isActive && pendingDriveMode == null) {
-                            haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                            pendingDriveMode = mode
-                            driveModePending.value = mode
-                            confirmedMode = null
-                            scope.launch {
-                                try {
-                                    when (val r = executeDriveModeChange(firmwareApi!!, mode, vs.driveMode)) {
-                                        is DriveCommandResult.Success -> {
-                                            haptic.performHapticFeedback(successHapticFor(mode))
-                                            confirmedMode = mode
-                                            modeChangeBreath.value = mode
-                                            // Dwell on the confirmed state, then clear the breath
-                                            // and dismiss. Keeping both delays in the outer coroutine
-                                            // ensures they share the same cancellation scope as the
-                                            // finally{} cleanup below.
-                                            delay(1_200)
-                                            if (modeChangeBreath.value == mode) modeChangeBreath.value = null
-                                            delay(300)
-                                            onDismiss()
-                                        }
-                                        is DriveCommandResult.Busy -> {
-                                            haptic.performHapticFeedback(HapticFeedbackType.Reject)
-                                            snackbarHostState.showSnackbar("Mode change in progress \u2014 please wait")
-                                        }
-                                        is DriveCommandResult.Failed -> {
-                                            haptic.performHapticFeedback(HapticFeedbackType.Reject)
-                                            snackbarHostState.showSnackbar(r.message)
-                                        }
-                                        is DriveCommandResult.CorrectionFailed -> {
-                                            haptic.performHapticFeedback(HapticFeedbackType.Reject)
-                                            snackbarHostState.showSnackbar("Mode correction failed \u2014 try again manually")
-                                        }
-                                        is DriveCommandResult.NoConfirmation -> {
-                                            haptic.performHapticFeedback(HapticFeedbackType.Reject)
-                                            snackbarHostState.showSnackbar("Mode change didn\u2019t take effect \u2014 try again")
-                                        }
-                                        is DriveCommandResult.ConnectionLost -> {
-                                            haptic.performHapticFeedback(HapticFeedbackType.Reject)
-                                            snackbarHostState.showSnackbar("Connection changed \u2014 mode change not confirmed")
-                                        }
-                                    }
-                                } finally {
-                                    // Always release the in-flight globals so the header MODE pill
-                                    // and nav indicator can't get stuck if the dock composition is
-                                    // disposed (and this scope cancelled) mid-command. Only clear
-                                    // modeChangeBreath if we own it — a rapid successor tap may
-                                    // have already set it to a different mode.
-                                    pendingDriveMode = null
-                                    driveModePending.value = null
-                                    if (modeChangeBreath.value == mode) modeChangeBreath.value = null
-                                }
-                            }
+                            requestMode(mode, vs.driveMode)
                         }
                         .padding(vertical = 10.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
