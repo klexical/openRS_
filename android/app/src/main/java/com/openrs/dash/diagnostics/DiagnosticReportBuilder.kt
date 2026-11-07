@@ -605,6 +605,8 @@ internal fun logLimitsText(l: DiagnosticLogger.LogLimits, knockDropped: Int, li:
         val buffersHit = li.overlongLines + li.linesDropped + li.commandRepliesDropped + li.dtcFramesDropped > 0
         add(if (buffersHit) "  no log limit reached; lines were refused or dropped, see Buffers above" else "  no counted limit reached")
     }
+    if (l.vinFramesMaskedPage > 0) add("  ${l.vinFramesMaskedPage} VIN-bearing frame(s) masked: data bytes read 00 in the raw log, ** in the inventory and trace")
+    if (l.vinFramesMaskedContent > 0) add("  ${l.vinFramesMaskedContent} further frame(s) masked for holding ${DiagnosticLogger.VIN_RUN_MIN} or more consecutive VIN bytes: can be an unrelated frame")
 }
 
 internal fun logLimitsJson(l: DiagnosticLogger.LogLimits, knockDropped: Int): JSONObject = JSONObject().apply {
@@ -615,6 +617,8 @@ internal fun logLimitsJson(l: DiagnosticLogger.LogLimits, knockDropped: Int): JS
     put("inventoryFramesNotListed", l.inventoryFramesNotListed)
     put("slcanCapReached", l.slcanCapReached)
     put("slcanWriteFailed", l.slcanWriteFailed)
+    put("vinFramesMaskedPage", l.vinFramesMaskedPage)
+    put("vinFramesMaskedContent", l.vinFramesMaskedContent)
     put("knockSessionDropped", knockDropped)
 }
 

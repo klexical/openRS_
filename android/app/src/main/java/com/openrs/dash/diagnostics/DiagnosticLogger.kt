@@ -245,7 +245,16 @@ object DiagnosticLogger {
     data class LogLimits(
         val decodeTraceDropped: Long = 0, val eventsDropped: Long = 0, val fpsPointsDropped: Long = 0,
         val probeSessionsDropped: Long = 0, val inventoryFramesNotListed: Long = 0, val slcanCapReached: Boolean = false, val slcanWriteFailed: Boolean = false,
+        val vinFramesMaskedPage: Long = 0, val vinFramesMaskedContent: Long = 0,
     )
+    /** Second ID holding the VIN (#260). No decoder. */
+    private const val ID_VIN_MUX_2 = 0x405
+    /** Consecutive VIN bytes that make a frame count as holding it, once the VIN is known. Cheap to tune. */
+    internal const val VIN_RUN_MIN = 4
+    @Volatile private var knownVin: ByteArray? = null
+    private val f190CfBytesLeft = HashMap<Int, Int>()
+    private var vinFramesMaskedPage = 0L
+    private var vinFramesMaskedContent = 0L
     private var traceDropped = 0L
     private var eventsDropped = 0L
     private var fpsDropped = 0L
@@ -253,7 +262,8 @@ object DiagnosticLogger {
     private var inventoryNotListed = 0L
     /** A consistent copy of this session's counts. */
     val logLimits: LogLimits get() = synchronized(lock) {
-        LogLimits(traceDropped, eventsDropped, fpsDropped, probeSessionsDropped, inventoryNotListed, slcanCapHit, slcanWriteFailed)
+        LogLimits(traceDropped, eventsDropped, fpsDropped, probeSessionsDropped, inventoryNotListed, slcanCapHit, slcanWriteFailed,
+            vinFramesMaskedPage, vinFramesMaskedContent)
     }
 
     /** Identity of the current session — [sessionStart] returns it; adapter-status writes carry it (#233). */
@@ -348,6 +358,10 @@ object DiagnosticLogger {
             _slcanFile = null
             slcanLinesWritten = 0L
             slcanWriteFailed = false
+            knownVin = null
+            f190CfBytesLeft.clear()
+            vinFramesMaskedPage = 0L
+            vinFramesMaskedContent = 0L
 
             sessionStartMs = System.currentTimeMillis()
             sessionHost = safeHost
@@ -384,6 +398,7 @@ object DiagnosticLogger {
                     w.write("# Session started: ${System.currentTimeMillis()} ms epoch\n")
                     w.write("# Format: (relative_seconds) can0 ID#DATA\n")
                     w.write("# Compatible with candump, SavvyCAN, Kayak\n")
+                    w.write("# VIN-bearing frames keep ID, length, time and mux; their data bytes read 00\n")
                     w.flush()
                     slcanWriter = w
                     _slcanFile = f
@@ -459,12 +474,71 @@ object DiagnosticLogger {
      * Called after a successful decode.
      * Logs to: frame inventory (with Option B enrichment) + decode trace + SLCAN file (Option C).
      */
-    /** A 0x40A VIN page (mux C1 xx): its data bytes are the VIN in ASCII, so they stay out of the inventory and trace (#260). */
-    private fun isVinPage(canId: Int, d: ByteArray) =
-        canId == CanDecoder.ID_VIN_MUX && d.isNotEmpty() && (d[0].toInt() and 0xFF) == 0xC1
+    /**
+     * Which of a frame's data bytes can hold the VIN (#260), as a bit per byte; 0 for an ordinary frame, which is nearly all of them.
+     * One choke point for the raw log, the inventory and the trace:
+     *  - pages, known before the VIN is: 0x40A mux C1 from byte 2; 0x405 (no decoder, real captures, one car) page 10 from byte 5, pages 11 and 12
+     *    from byte 1. Other 0x405 pages held no VIN bytes in those captures; what they do hold is unknown, and they stay;
+     *  - a DID 0xF190 reply on a module ID, with any consecutive frames that follow it;
+     *  - once the VIN is decoded, [VIN_RUN_MIN] or more consecutive bytes of it in any other frame, for another car's layout. That can mask an
+     *    unrelated frame, so it has its own count. Three bytes collide too easily; a test measures that.
+     */
+    private fun vinBytes(canId: Int, d: ByteArray): Int {
+        if (d.isEmpty()) return 0
+        val b0 = d[0].toInt() and 0xFF
+        val page = when {
+            canId == CanDecoder.ID_VIN_MUX && b0 == 0xC1 -> fromByte(2, d.size)
+            canId == ID_VIN_MUX_2 && b0 == 0x10 -> fromByte(5, d.size)
+            canId == ID_VIN_MUX_2 && (b0 == 0x11 || b0 == 0x12) -> fromByte(1, d.size)
+            canId in 0x700..0x7FF -> f190Bytes(canId, d, b0)
+            else -> 0
+        }
+        if (page != 0) { synchronized(lock) { vinFramesMaskedPage++ }; return page }
+        val run = vinRunBytes(d)
+        if (run != 0) synchronized(lock) { vinFramesMaskedContent++ }
+        return run
+    }
 
-    /** "C1 02 ** ** ** ** ** **": the mux bytes still say which page arrived and how long it was. */
-    private fun ByteArray.vinPageMaskedHex() = indices.joinToString(" ") { i -> if (i < 2) "%02X".format(this[i]) else "**" }
+    private fun fromByte(first: Int, size: Int): Int = if (first >= size) 0 else ((1 shl size) - 1) and ((1 shl first) - 1).inv()
+
+    /** SF `0N 62 F1 90 …`, FF `1L LL 62 F1 90 …`, then the CFs that FF announced. Any other FF on that ID ends the count. */
+    private fun f190Bytes(canId: Int, d: ByteArray, b0: Int): Int = synchronized(lock) {
+        fun u(i: Int) = d[i].toInt() and 0xFF
+        when (b0 and 0xF0) {
+            0x00 -> if (d.size > 4 && u(1) == 0x62 && u(2) == 0xF1 && u(3) == 0x90) fromByte(4, d.size) else 0
+            0x10 -> if (d.size >= 5 && u(2) == 0x62 && u(3) == 0xF1 && u(4) == 0x90) {
+                f190CfBytesLeft[canId] = (((b0 and 0x0F) shl 8) or u(1)) - (d.size - 2)
+                fromByte(5, d.size)
+            } else { f190CfBytesLeft.remove(canId); 0 }
+            0x20 -> {
+                val left = f190CfBytesLeft[canId] ?: 0
+                if (left > 0) { f190CfBytesLeft[canId] = left - (d.size - 1); fromByte(1, d.size) } else 0
+            }
+            else -> 0
+        }
+    }
+
+    private fun vinRunBytes(d: ByteArray): Int {
+        val vin = knownVin ?: return 0
+        var bits = 0
+        var o = 0
+        while (o <= d.size - VIN_RUN_MIN) {
+            var best = 0
+            for (v in vin.indices) {
+                var k = 0
+                while (o + k < d.size && v + k < vin.size && d[o + k] == vin[v + k]) k++
+                if (k > best) best = k
+            }
+            if (best >= VIN_RUN_MIN) { for (i in o until o + best) bits = bits or (1 shl i); o += best } else o++
+        }
+        return bits
+    }
+
+    /** "C1 02 ** ** ** ** ** **": the rest still says which page arrived and how long it was. */
+    private fun ByteArray.maskedSpacedHex(bits: Int) = indices.joinToString(" ") { i -> if (bits and (1 shl i) != 0) "**" else "%02X".format(this[i]) }
+
+    /** The raw log keeps candump's shape, so a masked byte reads 00. */
+    private fun ByteArray.maskedCompactHex(bits: Int) = copyOf().also { c -> for (i in c.indices) if (bits and (1 shl i) != 0) c[i] = 0 }.toCompactHex()
 
     fun logFrame(
         canId: Int,
@@ -474,8 +548,10 @@ object DiagnosticLogger {
         issue: String?
     ) {
         // Pre-compute hex + SLCAN line outside lock — no allocations under contention
-        val rawHex     = if (isVinPage(canId, rawData)) rawData.vinPageMaskedHex() else rawData.toSpacedHex()
-        val compactHex = rawData.toCompactHex()   // the raw log keeps every frame: its VIN pages are the owner's open decision (#260)
+        if (newState.vin.isNotEmpty()) knownVin = newState.vin.toByteArray(Charsets.US_ASCII)
+        val vin        = vinBytes(canId, rawData)
+        val rawHex     = if (vin != 0) rawData.maskedSpacedHex(vin) else rawData.toSpacedHex()
+        val compactHex = if (vin != 0) rawData.maskedCompactHex(vin) else rawData.toCompactHex()
         val idHex      = "0x%03X".format(canId)
         val relMs      = relativeMs()
         val slcanLine  = buildSlcanLine(relMs, canId, compactHex)
@@ -520,8 +596,9 @@ object DiagnosticLogger {
      */
     fun logUnknownFrame(canId: Int, rawData: ByteArray) {
         // Pre-compute hex + SLCAN line outside lock
-        val rawHex     = if (isVinPage(canId, rawData)) rawData.vinPageMaskedHex() else rawData.toSpacedHex()
-        val compactHex = rawData.toCompactHex()
+        val vin        = vinBytes(canId, rawData)
+        val rawHex     = if (vin != 0) rawData.maskedSpacedHex(vin) else rawData.toSpacedHex()
+        val compactHex = if (vin != 0) rawData.maskedCompactHex(vin) else rawData.toCompactHex()
         val relMs      = relativeMs()
         val slcanLine  = buildSlcanLine(relMs, canId, compactHex)
 
@@ -552,7 +629,8 @@ object DiagnosticLogger {
      * processCanFrame, so this ensures they still appear in the SLCAN export.
      */
     fun logObdFrame(canId: Int, rawData: ByteArray) {
-        val compactHex = rawData.toCompactHex()
+        val vin        = vinBytes(canId, rawData)
+        val compactHex = if (vin != 0) rawData.maskedCompactHex(vin) else rawData.toCompactHex()
         val relMs      = relativeMs()
         val slcanLine  = buildSlcanLine(relMs, canId, compactHex)
         synchronized(lock) {
@@ -624,6 +702,10 @@ object DiagnosticLogger {
     const val PROBE_STOPPED = "STOPPED"
     const val PROBE_FAILED = "FAILED"
 
+    /** A 0xF190 reply's bytes are the VIN (#260): the export says the DID answered and how long, not what. The screen keeps its own list. */
+    private fun ProbeResult.vinMasked() =
+        if (did == 0xF190 && status != "NRC" && status != PROBE_NRC_AMBIGUOUS) copy(responseHex = responseHex.replace(Regex("[0-9A-Fa-f]{2}"), "00")) else this
+
     /** A FAILED session logs no event here — the scan's own failure event names the DID and the reason. */
     fun recordProbeSession(
         module: String,
@@ -635,7 +717,7 @@ object DiagnosticLogger {
     ) {
         synchronized(lock) {
             probeSessionsList.add(
-                ProbeSession(relativeMs(), module, requestId, responseId, results, outcome, planned)
+                ProbeSession(relativeMs(), module, requestId, responseId, results.map { it.vinMasked() }, outcome, planned)
             )
             // removeAt(0), not removeFirst(): on a MutableList that compiles to java.util.List.removeFirst
             // (API 35+) and throws NoSuchMethodError on Android 9–14 (#196 lint NewApi)
