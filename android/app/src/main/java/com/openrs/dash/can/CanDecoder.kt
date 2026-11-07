@@ -258,16 +258,29 @@ object CanDecoder {
      * Drive mode (#252): a documented 0x420 detail is stamped on every frame (~600 ms, never throttled — its receipt time
      * is provenance); a 0x1B0 that changes the resolved mode is stamped at once (a change inside the throttle used to keep
      * the previous report's stamp), and every 0x1B0 stamp records the detail receipt it resolved with.
-     * ESC (#125): a 0x1C0 frame whose [VehicleState.escStatus] differs from [previous]'s is stamped at once, the same way;
-     * unchanged frames stay throttled.
+     * ESC (#125): a 0x1C0 frame whose [VehicleState.escStatus] differs from [previous]'s is stamped at once, the same way.
+     * That extra stamp leaves the 1 s reports on their own rhythm ([ESC_REPORT_TICK_TAG]), so a change just before a request
+     * can't delay the first report after it.
      */
     fun stampFresh(id: Int, previous: VehicleState, decoded: VehicleState, now: Long): VehicleState {
         if (id == ID_DRIVE_MODE_EXT) return stampDetail(previous, decoded, now)
         if (id == ID_DRIVE_MODE) return stampResolve(previous, decoded, now)
         val tags = FRESH_TAGS[id] ?: return decoded
-        if (id == ID_ESC_ABS && decoded.escStatus != previous.escStatus) return decoded.markFresh(*tags, now = now)
+        if (id == ID_ESC_ABS) return stampEsc(previous, decoded, now)
         val last = previous.fieldLastUpdateMs[tags[0]] ?: 0L
         return if (now - last >= CAN_STAMP_THROTTLE_MS) decoded.markFresh(*tags, now = now) else decoded
+    }
+
+    /** Last 1 s report of 0x1C0: the throttle's own clock, separate from the `escStatus` stamp that a change also moves. */
+    private const val ESC_REPORT_TICK_TAG = "escStatusReportTick"
+
+    private fun stampEsc(previous: VehicleState, decoded: VehicleState, now: Long): VehicleState {
+        val lastReport = previous.fieldLastUpdateMs[ESC_REPORT_TICK_TAG] ?: 0L
+        return when {
+            now - lastReport >= CAN_STAMP_THROTTLE_MS -> decoded.markFresh("escStatus", ESC_REPORT_TICK_TAG, now = now)
+            decoded.escStatus != previous.escStatus -> decoded.markFresh("escStatus", now = now)
+            else -> decoded
+        }
     }
 
     /** A documented 0x420 (the decoder just stored it in [modeDetail420]); undocumented ones never get here. */

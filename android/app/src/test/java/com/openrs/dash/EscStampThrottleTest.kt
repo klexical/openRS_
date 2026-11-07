@@ -23,7 +23,8 @@ import org.junit.Test
  * confirmation came up to 1 s late (red-a) or, with no later 0x1C0 before the window ended, not at all (red-b). A change
  * late in the window was never lost (the late-window controls pass before and after the fix). The stamp is the CAN report,
  * not proof the request caused it. The stray-frame tests pin the known cost: ESC confirms on one report (#252's two-report
- * rule is drive mode only), and a stamp at once also exposes the first second after the request.
+ * rule is drive mode only), and a stamp at once also exposes the first second after the request. A change adds one stamp
+ * and leaves the 1 s reports on their own rhythm, so a change just before a request can't delay the report after it.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class EscStampThrottleTest {
@@ -71,6 +72,45 @@ class EscStampThrottleTest {
     @Test fun `red-b - change inside the throttle, then no further 0x1C0 until the window ends, confirms`() = runTest {
         frames(1_000L to ON, 2_000L to ON, 2_400L to SPORT)
         assertEquals(EscCommand.Outcome.Confirmed(400L), request(EscStatus.PARTIAL))
+    }
+
+    // ── a change just before the request must not delay the first report after it ──────────────────────────────────
+
+    /** Request at [at] for the mode the car just reached; the last unchanged stamp is 2000, the change 2900. */
+    private suspend fun TestScope.requestAt(at: Long, target: EscStatus): EscCommand.Outcome {
+        testScheduler.advanceTimeBy(at - testScheduler.currentTime)
+        return EscCommand.execute(Api(), target, { vs }, connectionId = { gen }, clock = { testScheduler.currentTime })
+    }
+
+    @Test fun `held-a - change just before the request, steady broadcast, confirms at the regular report`() = runTest {
+        bus { t -> if (t >= 2_900L) SPORT else ON }
+        assertEquals(EscCommand.Outcome.Confirmed(100L), requestAt(2_905L, EscStatus.PARTIAL))
+    }
+
+    @Test fun `held-b - change just before the request, sparse frames, still confirms`() = runTest {
+        frames(1_000L to ON, 2_000L to ON, 2_900L to SPORT, 3_100L to SPORT)
+        assertEquals(EscCommand.Outcome.Confirmed(200L), requestAt(2_905L, EscStatus.PARTIAL))
+    }
+
+    // ── a change is stamped whatever the gap since the last stamp, and whichever values it joins ─────────────────────
+
+    @Test fun `gap - a change 20 ms after the last stamp is stamped at once`() = runTest {
+        frames(1_000L to ON, 2_000L to ON, 2_020L to SPORT)
+        assertEquals(EscCommand.Outcome.Confirmed(100L), request(EscStatus.PARTIAL))
+    }
+
+    @Test fun `gap - a change 980 ms after the last stamp is stamped at once`() = runTest {
+        frames(1_000L to ON, 2_000L to ON, 2_980L to SPORT)
+        assertEquals(EscCommand.Outcome.Confirmed(1_000L), request(EscStatus.PARTIAL))
+    }
+
+    @Test fun `value - every change between ON, OFF and SPORT is stamped at once`() {
+        val raws = listOf(ON, OFF, SPORT)
+        for (from in raws) for (to in raws) if (from != to) {
+            vs = VehicleState(isConnected = true)
+            frame(from, 1_000L); frame(from, 2_000L); frame(to, 2_400L)
+            assertEquals("$from -> $to", 2_400L, stamp)
+        }
     }
 
     // ── controls: a change late in the window was never lost ─────────────────────────────────────────────────────────
@@ -123,6 +163,7 @@ class EscStampThrottleTest {
     @Test fun `d - a change before the request with no later report never confirms`() = runTest {
         frames(1_000L to ON, 2_000L to ON, 2_001L to SPORT)              // its stamp moves from 2000 to 2001 with the fix
         assertEquals(EscCommand.Outcome.NotConfirmed(EscStatus.PARTIAL, 3_000L), request(EscStatus.PARTIAL, stampAtRequest = null))
+        assertEquals(2_001L, stamp)
     }
 
     @Test fun `e - the confirmation window is unchanged for each from - to`() {
@@ -146,7 +187,7 @@ class EscStampThrottleTest {
 
     // ── fix-specific: fail before the fix, describe it after ─────────────────────────────────────────────────────────
 
-    @Test fun `red-c - a change inside the throttle is stamped at once, and the throttle restarts from that stamp`() {
+    @Test fun `red-c - a change inside the throttle is stamped at once, and the 1 s reports keep their own rhythm`() {
         val stamps = mutableListOf<Long?>()
         var t = 1_000L
         while (t <= 4_500L) {
@@ -154,13 +195,13 @@ class EscStampThrottleTest {
             if (stamps.lastOrNull() != stamp) stamps += stamp
             t += 20L
         }
-        assertEquals(listOf<Long?>(1_000L, 2_000L, 2_400L, 3_400L, 4_400L), stamps)
+        assertEquals(listOf<Long?>(1_000L, 2_000L, 2_400L, 3_000L, 4_000L), stamps)
     }
 
     // ── known exposure, pinned so it stays visible (one 0x1C0 report confirms; #252's two-report rule is drive mode only) ─
 
     @Test fun `stray red-d - one stray frame in the first second, seen by a poll, confirms`() = runTest {
-        // 20 ms on the bus, reverted before the car ever changed; the wrong CONFIRMED is the accepted cost of the fix
+        // 20 ms on the bus, reverted before the car ever changed. A cost of the fix, pending the owner's decision (#125)
         bus { t -> if (t == 2_400L) SPORT else ON }
         assertEquals(EscCommand.Outcome.Confirmed(400L), request(EscStatus.PARTIAL))
     }
