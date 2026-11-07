@@ -1,6 +1,7 @@
 ---
 paths:
   - "**/com/openrs/dash/ui/**"
+  - "**/com/openrs/dash/service/HudOverlayService.kt"
   - "**/android/app/src/main/res/**"
 ---
 # openRS_ Known Gotchas — Compose UI (layout, theme, navigation)

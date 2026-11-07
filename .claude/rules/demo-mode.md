@@ -1,7 +1,6 @@
 ---
 paths:
-  - "**/com/openrs/dash/demo/**"
-  - "**/com/openrs/dash/**/*Demo*"
+  - "**/com/openrs/dash/**"
 ---
 # openRS_ Known Gotchas — Demo mode (debug builds)
 

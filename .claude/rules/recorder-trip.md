@@ -8,6 +8,7 @@ paths:
   - "**/com/openrs/dash/data/SessionDatabase.kt"
   - "**/com/openrs/dash/demo/TripPreview.kt"
   - "**/com/openrs/dash/ui/trip/**"
+  - "**/com/openrs/dash/ui/MainActivity.kt"
   - "**/com/openrs/dash/diagnostics/DriveExportBuilder.kt"
   - "**/android/app/src/test/java/com/openrs/dash/*Drive*"
   - "**/android/app/src/test/java/com/openrs/dash/*Thumbnail*"

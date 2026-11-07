@@ -4,6 +4,7 @@ paths:
   - "**/com/openrs/dash/can/PcmPollSchedule.kt"
   - "**/com/openrs/dash/can/PidRegistry.kt"
   - "**/com/openrs/dash/can/*Ledger*"
+  - "**/com/openrs/dash/can/*Nrc*"
   - "**/com/openrs/dash/data/ObdMerge.kt"
   - "**/com/openrs/dash/data/FreshnessGate.kt"
   - "**/com/openrs/dash/**/PolledFreshness*"

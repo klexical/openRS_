@@ -4,6 +4,7 @@ paths:
   - "**/com/openrs/dash/ui/TempsPage.kt"
   - "**/com/openrs/dash/ui/ChassisPage.kt"
   - "**/com/openrs/dash/ui/DrivePage.kt"
+  - "**/com/openrs/dash/service/DriveRecorder.kt"
   - "**/android/app/src/test/java/com/openrs/dash/*Readiness*"
   - "**/android/app/src/test/java/com/openrs/dash/*Thermal*"
 ---

@@ -111,8 +111,11 @@ so they also match from a workspace that holds this repository in a subfolder. R
 
 - A new gotcha goes at the end of its area's file, in the same `- **Title** — …` style; a cross-cutting one goes to
   `android-general.md`. Never move, merge or reword an existing entry while adding one.
-- Keep every rules file under 40,000 characters (`wc -m`), the per-file limit for on-demand rules on a 200K context
-  window — split an area into two files rather than trim it. Sizes at the split: `source-layout.md` 28 KB, the largest
+- A rule loads through the file tools (Read / Write / Edit, or `cat` / `head` of one file); a `git diff` or `git show` loads
+  nothing — when reviewing a change that way, read the area's rule file explicitly first.
+- Keep every rules file under 40,000 characters (`wc -m`): the Claude Code docs give that as the per-file limit for
+  path-scoped rules and subdirectory CLAUDE.md files on a 200K context window (150,000 on 1M) — split an area into two
+  files rather than trim it. Sizes at the split: `source-layout.md` 28 KB, the largest
   gotcha file (`connection-link.md`) 10.5 KB.
 - The ECU / CAN ID tables, VehicleState rules and the Mode 22 layout above stay in this file: every session needs them.
 
@@ -120,16 +123,16 @@ so they also match from a workspace that holds this repository in a subfolder. R
 |---|---|---|
 | `source-layout.md` | Source Layout (the android/ source map) | any file under `android/` |
 | `android-general.md` | Android, any file (3) | any file under `android/app/src/` |
-| `can-decoding.md` | CAN decoding and VehicleState (11) | `CanDecoder.kt`, `VehicleState.kt`, `DemoSimulator.kt`, their tests, `test/resources/dbc/` |
-| `obd-polling.md` | OBD Mode 22 polling, decoders and freshness (10) | `Obd*.kt`, `PcmPollSchedule.kt`, `PidRegistry.kt`, `ObdMerge.kt`, `FreshnessGate.kt`, `PowerPage.kt`, `CustomDashPage.kt`, the PID assets, their tests |
-| `boost.md` | Boost / TIP rule (#207) (3) | any `*Boost*` file, `DrivePage.kt`, `CustomDashPage.kt`, `HudOverlayService.kt`, `DriveRecorder.kt`, knock files, `ui/trip/`, `web/src/lib/boost.ts` |
-| `connection-link.md` | Connection, SLCAN link, service ownership, firmware commands (13) | `Slcan*.kt`, transports, `FirmwareApi.kt`, `DriveCommand.kt`, `EscCommand.kt`, `CanDataService.kt`, `Link*.kt`, `DriveModeDock.kt`, `MorePage.kt`, `SettingsSheet.kt`, `firmware/`, their tests |
+| `can-decoding.md` | CAN decoding and VehicleState (11) | `CanDecoder.kt`, `VehicleState.kt`, `DemoSimulator.kt`, `PullTracker.kt`, `Knock*.kt`, `data/Drive*.kt`, `OilPtuMapping*`, `DriveRecorder.kt`, their tests, `test/resources/dbc/` |
+| `obd-polling.md` | OBD Mode 22 polling, decoders and freshness (10) | `Obd*.kt`, `PcmPollSchedule.kt`, `PidRegistry.kt`, `NrcTracker.kt`, `ObdMerge.kt`, `FreshnessGate.kt`, `PowerPage.kt`, `CustomDashPage.kt`, the PID assets, their tests |
+| `boost.md` | Boost / TIP rule (#207) (3) | any `*Boost*` file, `DrivePage.kt`, `CustomDashPage.kt`, `HudOverlayService.kt`, `DriveRecorder.kt`, `KnockScatter.kt`, `KnockCapture.kt`, `ui/trip/`, `web/src/lib/boost.ts` |
+| `connection-link.md` | Connection, SLCAN link, service ownership, firmware commands (13) | `Slcan*.kt`, transports, `FirmwareApi.kt`, `DriveCommand.kt`, `EscCommand.kt`, `CanDataService.kt`, `Link*.kt`, `ConnectionSetup.kt`, `CanDecoder.kt`, `ObdMerge.kt`, `DemoSimulator.kt`, `DriveModeDock.kt`, `MorePage.kt`, `SettingsSheet.kt`, `BleDeviceDraft.kt`, `firmware/`, their tests |
 | `ble.md` | BLE GATT transport and picker (7) | `Ble*.kt`, `BleDevicePickerDialog.kt`, their tests |
-| `recorder-trip.md` | Drive recorder, laps and the TRIP tab (7) | `DriveRecorder.kt`, `data/Drive*.kt`, lap files, `ui/trip/` (incl. `TripPage.kt`), `TripPreview.kt`, `DriveExportBuilder.kt`, their tests |
+| `recorder-trip.md` | Drive recorder, laps and the TRIP tab (7) | `DriveRecorder.kt`, `data/Drive*.kt`, lap files, `ui/trip/` (incl. `TripPage.kt`), `TripPreview.kt`, `MainActivity.kt`, `DriveExportBuilder.kt`, their tests |
 | `diagnostics.md` | DTC scans, DID prober, diagnostic export (8) | `diagnostics/`, `DiagPage.kt`, `DidProberSection.kt`, `PidBrowserSection.kt`, `data/Dtc*.kt`, their tests |
-| `ui-compose.md` | Compose UI (layout, theme, navigation) (15) | any file under `ui/` or `res/` |
-| `thermal.md` | Thermal readiness, temperature freshness, drive thermal record (5) | any `*Thermal*` file, `TempsPage.kt` (home of `TempAvail`), `ChassisPage.kt`, `DrivePage.kt`, their tests |
-| `demo-mode.md` | Demo mode (debug builds) (5) | `demo/`, any `*Demo*` file |
+| `ui-compose.md` | Compose UI (layout, theme, navigation) (15) | any file under `ui/` or `res/`, `HudOverlayService.kt` |
+| `thermal.md` | Thermal readiness, temperature freshness, drive thermal record (5) | any `*Thermal*` file, `TempsPage.kt` (home of `TempAvail`), `ChassisPage.kt`, `DrivePage.kt`, `DriveRecorder.kt`, their tests |
+| `demo-mode.md` | Demo mode (debug builds) (5) | any file under `com/openrs/dash/` (its rules bind every writer of live telemetry) |
 | `build-release.md` | Build, release identity, CI, private builds, test runtime (8) | Gradle files, `android/scripts/`, `android/CHANGELOG.md`, `robolectric.properties`, `update/`, `BuildInfo*`, `*Version*`, `.github/workflows/` |
 
 ## Theme Colors
