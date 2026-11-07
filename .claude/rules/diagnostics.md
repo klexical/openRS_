@@ -99,3 +99,13 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   (2026-01-01T00:00:00Z, offset zero), written by the sample writer in `ExportSchemaVersionTest`, which fixes every
   `yyyyMMdd_HHmmss` stamp and `exportedAt` at write time (the exporter has no injectable clock); rc.6's fixtures use
   `…_20261026_120000`.
+- **VIN masking is export-only and has three layers (#260, rc.8 follow-up)** — on a real car the VIN is on 0x40A (C1 pages) AND on
+  0x405 (pages 10 / 11 / 12 by byte 0; one car, two captures, counts only), and a DID 0xF190 reply carries it too. rc.8 Build 39 masked
+  0x40A only, so its raw log held the VIN a second time and the inventory / summary / drive export CAN hold it depending on which
+  frames are sampled. Now one choke point in `DiagnosticLogger` masks the page rule (both IDs + 0xF190 incl. consecutive frames) and a
+  content layer (any frame with 3+ consecutive bytes of the assembled VIN — can mask an unrelated frame, counted separately); raw log
+  data bytes → `00` with ID / DLC / timing / mux kept so candump / SavvyCAN still parse, inventory and trace → `**`, probe CSV too; the
+  other 0x405 pages stay (content unknown). DIAG still shows the VIN and the DID prober's on-screen list still shows the reply bytes —
+  never claim the app hides it. Older ZIPs on the device are untouched. A clean scan means nothing unless the fake sends 0x405
+  (`fake_ecu_v12.py --vin`); `check_export.py` reads `li_disagree` from one `ExportCounters` snapshot since L12 (a small `sent`
+  difference on a live export was the two-readings artefact before that)

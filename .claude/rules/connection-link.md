@@ -73,7 +73,13 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   `LinkOwnership.cancel` when the request is handled (stale notification actions are ignored) and mirrored by the pill /
   DRIVE (`cancelable`). An explicit Cancel is **persisted** (`LinkOwnership.CancelStore`, prefs file `openrs_link`, loaded
   first in `CanDataService.onCreate`) until Connect / Retry — Home, Back, Recents, process death and Force stop keep it;
-  the demo hold is memory-only. Raw CAN frames and auto-record go through `LinkSession` (`deliver(gen)`); blocking work
+  the demo hold is memory-only. A system task removal (`CanDataService.onTaskRemoved`: a swipe out of Recents, Clear all, Recents
+  trimming — the same callback) ends ONLY an initial attempt where the app offers Cancel (`offersCancel`: no drive recording, paused or
+  finalizing, link not yet up); it saves nothing (next launch auto-connects) and sets a memory-only hold in `LinkOwnership` that a
+  transport callback cannot restart until the next bind (`onActivityBound`, one line no JVM test reaches — device check);
+  `DriveRecorder.isFinalizing` refuses it while a finalize runs (`stopDrive` starts its finalize before the state says not recording;
+  `TaskRemovalTest`, `DriveFinalizeTest`). Whether Back delivers `onTaskRemoved` on Android 16 is not established (#212 option 2,
+  rc.8 follow-up; the commit is droppable). Raw CAN frames and auto-record go through `LinkSession` (`deliver(gen)`); blocking work
   (perf-run insert) runs after the lock. `reconnect()` (RCN tap) builds a fresh SlcanConnection, so it reads CONN; while
   recording it can't be cancelled
 - **Retry while recording** — `keepRetrying` (= recording) extends retries past `maxRetries` with a 30 s backoff polled every
@@ -88,8 +94,9 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   that reads `UserPrefsStore.prefs` relies on that
 - **ESC confirmation (#125)** — the adapter's OK is acceptance only. `EscCommand` waits the firmware's own press plan
   (5 s long press for OFF, 300 ms presses, 1 s gap) + 3 s (unmeasured), needs the last two 0x1C0 frames both reporting the requested
-  mode, both stamped (`escStatus`) after the request on the same `CanDataService.link.generation` (rule C, rc.8 follow-up;
-  `EscRuleCTest`); reconnect → ConnectionLost; one request at a time. Firmware
+  mode (`escFrameLast` / `escFramePrev`), both after the request on the same `connectionEpoch` (rule C, rc.8 follow-up;
+  `EscRuleCTest`); reconnect → ConnectionLost; one request at a time; while the message shows, the pending state is already cleared
+  (the message comes after the `finally`). Firmware
   (`focusrs.c` / `focusrs_esc_plan.c`) saves boot ESC only for a CAN-confirmed change; only a 0x1C0 frame decoding to On /
   Off / Sport counts (raw 3 no longer advances `esc_frames`). `firmware/tests/run.sh` runs the real `focusrs.c` against
   host stubs (`tests/stubs/`). PRO built once in isolation 2026-10-29 (evidence dir), **never flashed** — adapters keep
@@ -118,8 +125,9 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   stays under the 1 s throttle (`EscStampThrottleTest`); since `cdffbbe` the 1 s reports keep their own tick (`escStatusReportTick`)
   and a change adds one stamp on top, so a change just before the request no longer delays its confirmation. Since the rc.8 follow-up
   it confirms on TWO agreeing post-request frames (rule C, as drive mode): a single stray frame no longer confirms, a blip of two or
-  more frames still does (QA matrix: 16 of 32 never-reached cells; the sweep confirms as often as one report from 120 ms), the window
-  is unchanged, and OBD merges must not bring back a removed ESC run tag (the drive-mode filter now covers ESC). The label is not to be
+  more frames still does (QA matrix: 16 of 32 never-reached cells; the blip sweep confirms exactly as often as one report at every
+  blip length), the window is unchanged, and OBD merges must not bring back a removed ESC frame key (the drive-mode filter now covers
+  ESC). The label is not to be
   relied on in a car until #125's hardware acceptance (the raw 0x1C0 run read from an export)
 - **Bluetooth with no saved device (#234, fixed on feature/rc7 — verified on the emulator only; trigger: connection method
   Bluetooth saved with no device selected — on such installs `a605b1c` and earlier crash at every launch; Wi-Fi, or
