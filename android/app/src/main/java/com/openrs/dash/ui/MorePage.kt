@@ -183,7 +183,7 @@ import kotlinx.coroutines.launch
                                             when (outcome) {
                                                 is com.openrs.dash.can.EscCommand.Outcome.Confirmed -> Unit
                                                 is com.openrs.dash.can.EscCommand.Outcome.NotConfirmed -> snackbarHostState.showSnackbar(
-                                                    if (outcome.observed == status) "Adapter accepted ${status.label}. The car reports it, but too briefly to confirm"
+                                                    if (outcome.observed == status) "Adapter accepted ${status.label}. The car reports it, but not on two frames since the request"
                                                     else "Adapter accepted ${status.label}, but the car still reports ${outcome.observed.label}")
                                                 com.openrs.dash.can.EscCommand.Outcome.Busy -> snackbarHostState.showSnackbar("An ESC change is already in progress — try again")
                                                 com.openrs.dash.can.EscCommand.Outcome.ConnectionLost -> snackbarHostState.showSnackbar("Connection lost — ESC not confirmed")
