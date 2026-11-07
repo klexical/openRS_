@@ -123,9 +123,11 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   reach the frame loop, the framing latch or a test's expectations. A replay or fake-adapter test whose asserted line is the first
   one sent asserts nothing (fix `8a872ba` in #257 corrected such a negative assertion). Send a handshake line first, then the lines
   the test is about.
-- **Impossible CAN IDs and 29-bit frames numbered like 11-bit ones are refused (#253, rc.8 Build 39)** — `SlcanParser` returns the
-  frame's kind with its number: a `T` (extended) frame whose ID is ≤ 0x7FF, or any ID outside its range, is refused and counted,
-  so it can neither reach a decoder keyed on the 11-bit ID (a `T000000F8…` line once moved the oil peak) nor answer a DID probe as
-  if it were the module's 0x7E8. The firmware sets `T` only from the frame's extended flag (source reading, Pro and USB) and the
-  BLE captures hold no `T` frame at all. A line with a non-hex data character is refused without printing it anywhere (logcat
+- **Impossible CAN IDs and 29-bit frames numbered like 11-bit ones are refused (#253, rc.8 Build 39)** — `SlcanParser` returns
+  an ID number only, not the frame's kind, so the fix is refusal: a `T` (extended) frame whose ID is ≤ 0x7FF, or any ID outside its
+  range, is refused and counted, and can neither reach a decoder keyed on the 11-bit ID (a synthetic `T000000F8…` line moved the oil
+  peak in a test) nor answer a DID probe as if it were the module's 0x7E8. The only support for refusing `T` ≤ 0x7FF is the firmware
+  source (it sets `T` from the frame's extended flag, Pro and USB): the SLCAN log records parsed IDs, never `t` vs `T`, so the
+  captures (no ID above 0x7FF logged) cannot exclude such frames, and no raw-line capture exists; the first real session's refused
+  frame-line count is the hardware check. A line with a non-hex data character is refused without printing it anywhere (logcat
   included). `SlcanParserTest` carries real 29-bit IDs for the extended cases.

@@ -87,8 +87,9 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   nothing, and a higher number is recorded in `session.meta` and noted on the dashboard. A bump needs Sapphire's
   `KNOWN_EXPORT_SCHEMA_VERSION` raised when it learns the new contract; until then the note is the correct behaviour.
 - **Adapter lines and diagnostic logs are bounded, and the export says when a limit was reached (#253, rc.8 Build 39)** — a
-  received line past `MAX_SLCAN_LINE_CHARS` (256) is discarded up to its CR and counted, and the next line starts clean (a spliced
-  34–256-char TCP line is refused and counted, never a reconnect); the WebSocket upgrade refuses headers over
+  received line past `MAX_SLCAN_LINE_CHARS` (256) is refused and counted, per transport: over Bluetooth it is discarded up to its CR
+  and the next line starts clean; over WebSocket the message is refused whole and the connection continues; over TCP the read ends,
+  so the attempt ends and the app reconnects (a 34–256-char TCP line is refused and counted, never a reconnect); the WebSocket upgrade refuses headers over
   `MAX_HTTP_HEADER_CHARS` (16 KiB); `DiagnosticLogger` caps session events (`MAX_EVENTS`, oldest rolled off and counted in
   `droppedEvents`), inventory IDs (`MAX_INVENTORY_IDS` 4,096), fps points, periodic samples per ID, the decode trace, the SLCAN log
   (one "SLCAN log cap reached" event) and probe sessions. The export carries a LOG LIMITS section and a `logLimits` JSON object
