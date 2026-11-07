@@ -745,7 +745,7 @@ object CanDecoder {
         ID_WHEEL_ROT    -> "rotFL=${state.wheelRotFL} FR=${state.wheelRotFR} RL=${state.wheelRotRL} RR=${state.wheelRotRR} avgFront=${"%.2f".format(state.avgFrontWheelSpeedKph)}kph"
         ID_FUEL_LEVEL   -> "fuelPct=${"%.1f".format(state.fuelLevelPct)} (0x380 Motorola)"
         ID_ODOMETER     -> "odometerKm=${state.odometerKm} engStatus=${state.engineStatus} (0x360 passive)"
-        ID_VIN_MUX      -> "vin=${state.vin.ifEmpty { "(assembling)" }}"
+        ID_VIN_MUX      -> if (state.vin.isEmpty()) "vin=(assembling)" else "vin=<masked>"   // goes into exports (#260); DIAG reads the value
         ID_BUTTONS_260  -> "assBtn=${state.autoStartStopButtonPressed} escOffBtn=${state.escOffButtonPressed}"
         ID_DRIVE_MODE_BTN -> "modeBtn=${state.driveModeButtonPressed}"
         else            -> "(unknown id 0x%03X)".format(id)

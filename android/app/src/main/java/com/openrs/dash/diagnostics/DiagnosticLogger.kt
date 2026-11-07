@@ -1,5 +1,6 @@
 package com.openrs.dash.diagnostics
 
+import com.openrs.dash.can.CanDecoder
 import com.openrs.dash.can.DeviceStatus
 import com.openrs.dash.can.NrcTracker
 import com.openrs.dash.data.VehicleState
@@ -458,6 +459,13 @@ object DiagnosticLogger {
      * Called after a successful decode.
      * Logs to: frame inventory (with Option B enrichment) + decode trace + SLCAN file (Option C).
      */
+    /** A 0x40A VIN page (mux C1 xx): its data bytes are the VIN in ASCII, so they stay out of the inventory and trace (#260). */
+    private fun isVinPage(canId: Int, d: ByteArray) =
+        canId == CanDecoder.ID_VIN_MUX && d.isNotEmpty() && (d[0].toInt() and 0xFF) == 0xC1
+
+    /** "C1 02 ** ** ** ** ** **": the mux bytes still say which page arrived and how long it was. */
+    private fun ByteArray.vinPageMaskedHex() = indices.joinToString(" ") { i -> if (i < 2) "%02X".format(this[i]) else "**" }
+
     fun logFrame(
         canId: Int,
         rawData: ByteArray,
@@ -466,8 +474,8 @@ object DiagnosticLogger {
         issue: String?
     ) {
         // Pre-compute hex + SLCAN line outside lock — no allocations under contention
-        val rawHex     = rawData.toSpacedHex()
-        val compactHex = rawData.toCompactHex()
+        val rawHex     = if (isVinPage(canId, rawData)) rawData.vinPageMaskedHex() else rawData.toSpacedHex()
+        val compactHex = rawData.toCompactHex()   // the raw log keeps every frame: its VIN pages are the owner's open decision (#260)
         val idHex      = "0x%03X".format(canId)
         val relMs      = relativeMs()
         val slcanLine  = buildSlcanLine(relMs, canId, compactHex)
@@ -512,7 +520,7 @@ object DiagnosticLogger {
      */
     fun logUnknownFrame(canId: Int, rawData: ByteArray) {
         // Pre-compute hex + SLCAN line outside lock
-        val rawHex     = rawData.toSpacedHex()
+        val rawHex     = if (isVinPage(canId, rawData)) rawData.vinPageMaskedHex() else rawData.toSpacedHex()
         val compactHex = rawData.toCompactHex()
         val relMs      = relativeMs()
         val slcanLine  = buildSlcanLine(relMs, canId, compactHex)
