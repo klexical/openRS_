@@ -180,6 +180,7 @@ import kotlinx.coroutines.launch
                                             val outcome = com.openrs.dash.can.EscCommand.execute(firmwareApi, status,
                                                 { com.openrs.dash.OpenRSDashApp.instance.vehicleState.value })
                                             DiagnosticLogger.event("ESC_CMD", com.openrs.dash.can.EscCommand.describe(status, outcome))
+                                            pendingEsc = null                     // before the message, which suspends until it ends
                                             when (outcome) {
                                                 is com.openrs.dash.can.EscCommand.Outcome.Confirmed -> Unit
                                                 is com.openrs.dash.can.EscCommand.Outcome.NotConfirmed -> snackbarHostState.showSnackbar(
@@ -189,7 +190,6 @@ import kotlinx.coroutines.launch
                                                 com.openrs.dash.can.EscCommand.Outcome.ConnectionLost -> snackbarHostState.showSnackbar("Connection lost — ESC not confirmed")
                                                 else -> snackbarHostState.showSnackbar("ESC command failed")
                                             }
-                                            pendingEsc = null
                                         }
                                     }
                                     .heightIn(min = 48.dp),

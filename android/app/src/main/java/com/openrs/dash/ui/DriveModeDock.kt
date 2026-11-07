@@ -96,6 +96,7 @@ import kotlinx.coroutines.launch
         confirmedMode = null
         scope.launch {
             var offer: DriveModeOffer? = null
+            var message: String? = null                  // shown after the in-flight state clears, or the dock reads "switching" under a failure
             try {
                 when (val r = executeDriveModeChange(firmwareApi!!, target, current)) {
                     is DriveCommandResult.Success -> {
@@ -113,11 +114,11 @@ import kotlinx.coroutines.launch
                     }
                     is DriveCommandResult.Busy -> {
                         haptic.performHapticFeedback(HapticFeedbackType.Reject)
-                        snackbarHostState.showSnackbar("Mode change in progress \u2014 please wait")
+                        message = "Mode change in progress \u2014 please wait"
                     }
                     is DriveCommandResult.Failed -> {
                         haptic.performHapticFeedback(HapticFeedbackType.Reject)
-                        snackbarHostState.showSnackbar(r.message)
+                        message = r.message
                     }
                     is DriveCommandResult.LandedElsewhere -> {
                         haptic.performHapticFeedback(HapticFeedbackType.Reject)
@@ -125,11 +126,11 @@ import kotlinx.coroutines.launch
                     }
                     is DriveCommandResult.NoConfirmation -> {
                         haptic.performHapticFeedback(HapticFeedbackType.Reject)
-                        snackbarHostState.showSnackbar("Mode change didn\u2019t take effect \u2014 try again")
+                        message = "Mode change didn\u2019t take effect \u2014 try again"
                     }
                     is DriveCommandResult.ConnectionLost -> {
                         haptic.performHapticFeedback(HapticFeedbackType.Reject)
-                        snackbarHostState.showSnackbar("Connection changed \u2014 mode change not confirmed")
+                        message = "Connection changed \u2014 mode change not confirmed"
                     }
                 }
             } finally {
@@ -142,6 +143,7 @@ import kotlinx.coroutines.launch
                 driveModePending.value = null
                 if (modeChangeBreath.value == target) modeChangeBreath.value = null
             }
+            message?.let { snackbarHostState.showSnackbar(it) }
             // Outside the in-flight state, so another mode can be tapped while this is up; closing the dock takes it away with this scope
             offer?.let { o ->
                 offerJob.value = scope.launch {
