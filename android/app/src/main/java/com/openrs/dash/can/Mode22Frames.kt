@@ -20,12 +20,18 @@ internal object Mode22 {
         return n >= 3 && n + 1 <= d.size
     }
 
+    /** A first frame the reassembly would accept: a whole CAN frame, and a length a single frame couldn't carry (#253). */
+    private fun wholeFirstFrame(d: ByteArray): Boolean {
+        if (d.size != IsoTpBuffer.CAN_FRAME_BYTES) return false
+        return (((d[0].toInt() and 0x0F) shl 8) or (d[1].toInt() and 0xFF)) >= IsoTpBuffer.MIN_FF_LENGTH
+    }
+
     /** The DID a positive reply (`62 DH DL`) echoes — a single frame or the first frame of a multi-frame reply — else null. */
     fun positiveDid(d: ByteArray): Int? {
         if (d.isEmpty()) return null
         return when (d[0].toInt() and 0xF0) {
             0x00 -> if (wholeSingleFrame(d) && (d[1].toInt() and 0xFF) == 0x62) did(d, 2) else null
-            0x10 -> if (d.size >= 5 && (d[2].toInt() and 0xFF) == 0x62) did(d, 3) else null
+            0x10 -> if (wholeFirstFrame(d) && (d[2].toInt() and 0xFF) == 0x62) did(d, 3) else null
             else -> null
         }
     }

@@ -282,6 +282,8 @@ class SlcanConnection(
                         firstLine = line
                         break
                     }
+                    // A refused frame line counts here as in the frame loop; the handshake never logs a line (#253)
+                    if (line.startsWith("t") || line.startsWith("T")) DiagnosticLogger.countRefusedFrameLine(otherShape = false)
                     // Some adapters echo back init commands — keep waiting
                     if (line.isNotEmpty()) probeNoise++
                 }

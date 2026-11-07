@@ -403,7 +403,7 @@ object DiagnosticLogger {
             try {
                 slcanWriter?.flush()
                 slcanWriter?.close()
-            } catch (_: Exception) {}
+            } catch (e: Exception) { noteSlcanWriteFailedLocked(relativeMs(), e) }
             slcanWriter = null
         }
     }
@@ -414,7 +414,7 @@ object DiagnosticLogger {
      */
     fun flushSlcan() {
         synchronized(lock) {
-            try { slcanWriter?.flush() } catch (_: Exception) {}
+            try { slcanWriter?.flush() } catch (e: Exception) { noteSlcanWriteFailedLocked(relativeMs(), e) }
         }
     }
 
@@ -601,12 +601,15 @@ object DiagnosticLogger {
             // Flush to disk every 200 lines to limit data loss on crash
             if (slcanLinesWritten % 200L == 0L) w.flush()
         } catch (e: Exception) {
-            // Log the first write failure so disk-full isn't completely silent
-            if (!slcanWriteFailed) {
-                slcanWriteFailed = true
-                addEventLocked(SessionEvent(relMs, "SLCAN", "SLCAN write failed: ${LogText.sanitizeReason(e)}"))
-            }
+            noteSlcanWriteFailedLocked(relMs, e)
         }
+    }
+
+    /** The first write or flush failure: lines are missing from the raw log, so the export says so (#253). */
+    private fun noteSlcanWriteFailedLocked(relMs: Long, e: Exception) {
+        if (slcanWriteFailed) return
+        slcanWriteFailed = true
+        addEventLocked(SessionEvent(relMs, "SLCAN", "SLCAN write failed: ${LogText.sanitizeReason(e)}"))
     }
 
     // ── DID Probe results ────────────────────────────────────────────────────

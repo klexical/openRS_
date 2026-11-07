@@ -299,7 +299,7 @@ internal object DiagnosticReportBuilder {
         // Link integrity (rc.8 #253): counts only — what writes established, what framing / length checks refused
         linkIntegrityText(log.linkIntegrity, log.nrcUnattributedTotal).forEach { appendLine(it) }
         appendLine()
-        logLimitsText(log.logLimits, knockSessionDropped()).forEach { appendLine(it) }
+        logLimitsText(log.logLimits, knockSessionDropped(), log.linkIntegrity).forEach { appendLine(it) }
         appendLine()
 
         // Unattributed NRCs: exact count; their event lines are folded to ≤ 1 per minute per kind (#216)
@@ -591,7 +591,7 @@ private fun knockSessionDropped() =
 private const val DEVICE_ID_MASKED = "<masked>"
 
 /** LOG LIMITS summary lines (#253): what this session's rolling / capped logs no longer hold. */
-internal fun logLimitsText(l: DiagnosticLogger.LogLimits, knockDropped: Int): List<String> = buildList {
+internal fun logLimitsText(l: DiagnosticLogger.LogLimits, knockDropped: Int, li: DiagnosticLogger.LinkIntegrity): List<String> = buildList {
     add("─── LOG LIMITS ────────────────────────────────────────────")
     if (l.decodeTraceDropped > 0) add("  ${l.decodeTraceDropped} older decode trace entries rolled off (per-ID totals stay exact)")
     if (l.eventsDropped > 0) add("  ${l.eventsDropped} older session event(s) rolled off: SESSION EVENTS below is not the whole session")
@@ -601,7 +601,10 @@ internal fun logLimitsText(l: DiagnosticLogger.LogLimits, knockDropped: Int): Li
     if (l.slcanCapReached) add("  SLCAN log cap reached: later frames are not in the raw log")
     if (l.slcanWriteFailed) add("  SLCAN log write failed: frames may be missing from the raw log")
     if (knockDropped > 0) add("  $knockDropped older session knock event(s) rolled off: drive_knock_session holds the newest only")
-    if (size == 1) add("  no counted limit reached")
+    if (size == 1) {
+        val buffersHit = li.overlongLines + li.linesDropped + li.commandRepliesDropped + li.dtcFramesDropped > 0
+        add(if (buffersHit) "  no log limit reached; lines were refused or dropped, see Buffers above" else "  no counted limit reached")
+    }
 }
 
 internal fun logLimitsJson(l: DiagnosticLogger.LogLimits, knockDropped: Int): JSONObject = JSONObject().apply {
