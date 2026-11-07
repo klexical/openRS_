@@ -2,6 +2,9 @@
 paths:
   - "**/com/openrs/dash/diagnostics/**"
   - "**/com/openrs/dash/ui/DiagPage.kt"
+  - "**/com/openrs/dash/can/SlcanConnection.kt"
+  - "**/com/openrs/dash/can/*Ledger*"
+  - "**/com/openrs/dash/service/CanDataService.kt"
   - "**/com/openrs/dash/ui/DidProberSection.kt"
   - "**/com/openrs/dash/ui/PidBrowserSection.kt"
   - "**/com/openrs/dash/data/Dtc*.kt"

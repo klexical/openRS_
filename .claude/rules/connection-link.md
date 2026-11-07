@@ -9,6 +9,8 @@ paths:
   - "**/com/openrs/dash/can/WriteOutcome.kt"
   - "**/com/openrs/dash/can/AdapterState.kt"
   - "**/com/openrs/dash/can/IsoTpBuffer.kt"
+  - "**/com/openrs/dash/can/ObdResponseParser.kt"
+  - "**/com/openrs/dash/can/PidRegistry.kt"
   - "**/com/openrs/dash/service/CanDataService.kt"
   - "**/com/openrs/dash/service/Link*.kt"
   - "**/com/openrs/dash/service/AutoRecordPolicy.kt"

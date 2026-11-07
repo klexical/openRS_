@@ -2,6 +2,9 @@
 paths:
   - "**/com/openrs/dash/can/Ble*.kt"
   - "**/com/openrs/dash/ui/*Ble*"
+  - "**/com/openrs/dash/can/SlcanConnection.kt"
+  - "**/com/openrs/dash/can/*Ledger*"
+  - "**/com/openrs/dash/can/WriteOutcome.kt"
   - "**/android/app/src/test/java/com/openrs/dash/*Ble*"
 ---
 # openRS_ Known Gotchas — BLE GATT transport and picker
