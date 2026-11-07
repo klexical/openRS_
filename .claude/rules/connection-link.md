@@ -101,7 +101,9 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   `driveModeRunPrev`). `driveModeDetail` / `driveModeResolvedDetail` are provenance only (export text, `fieldAgesMs`). An undocumented 0x420 byte 6 changes nothing; a 0x1B0 that changes the resolved mode is stamped
   at once (the 1 s throttle applies only to unchanged reports). The one overshoot correction needs the same corroboration, so
   a single stray frame can never trigger it. OBD merges must not bring back drive-mode provenance keys from their snapshot
-  (`ModeProvenanceMergeTest`). Requesting the current mode now confirms ~1 s later (two stamped reports). A confirmation states
+  (`ModeProvenanceMergeTest`). The current mode's chip can't be tapped once the screen shows that state (a request for it reaches the code only if
+  the tap beats the screen update — not run); a real change via Sport confirms about 1.2–1.3 s later than before the corroboration
+  rule (emulator, synthetic adapter; #252 A2 run). A confirmation states
   the car's mode after the request, not that the app caused it (a manual selection looks identical; in capture A the 0x305 button bit never set, 0 of 874 frames — QA analysis).
   Timing (2 s + 15 s), retries, ESC and firmware unchanged; reconnect → `DriveCommandResult.ConnectionLost`. Demo must stamp
   every CAN tag (`CanDecoder.canStampTags` ⊆ `DemoSimulator.CAN_TAGS`, DemoSimulatorTest) or confirmations time out in demo.
