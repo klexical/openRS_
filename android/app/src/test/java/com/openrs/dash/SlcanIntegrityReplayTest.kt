@@ -16,20 +16,19 @@ import org.junit.Test
 /**
  * rc.8 "slcan-integrity" (#251) — SYNTHETIC replay through production code ([ReplayRun]: SlcanConnection → SlcanParser →
  * LinkSession / CanDecoder → peaks). The framing reds (trailing characters, spliced line) are fixed by the strict parser
- * (rc.8 reliability pass); the well-formed outlier stays @Ignore'd as a separate policy question ([OUTLIER_POLICY]).
- * Agreed framing rule: a data payload of exactly DLC×2 hex characters (DLC×2 + 4 only if the app itself enabled SLCAN
- * timestamps on that connection — it never sends Z1 today); DLC 0 parses but can't feed a decoder that needs bytes.
- * Implausible but well-formed frames stay in the raw log, flagged, and must not refresh live state, stamps or peaks.
+ * (rc.8 reliability pass); the well-formed outlier stays @Ignore'd under the owner's decision ([OUTLIER_POLICY]).
+ * Agreed framing rule: a data payload of exactly DLC×2 hex characters (DLC×2 + 4 only on a connection detected as
+ * timestamped, `SlcanFraming`); DLC 0 parses but can't feed a decoder that needs bytes.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SlcanIntegrityReplayTest {
     private companion object {
         /**
-         * Not a framing defect: the frame is well-formed (0xFFFF × 0.01 = 655.35 km/h). Whether such a value may set a peak
-         * needs a plausibility policy — an owner decision (no physical limit is invented here; proposal in the rc.8
-         * reliability RESULTS). Kept red, isolated from the deterministic framing fix.
+         * Not a framing defect: the frame is well-formed (0xFFFF × 0.01 = 655.35 km/h), and such a value still sets a peak.
+         * The owner's decision is to leave that as it is (#251), so this test describes behaviour the app does not have:
+         * it stays skipped, isolated from the deterministic framing fix. No physical limit is invented here.
          */
-        const val OUTLIER_POLICY = "#251 outlier policy: reproduced, owner decision pending (well-formed frame)"
+        const val OUTLIER_POLICY = "#251 outlier policy: reproduced; owner decision = leave, well-formed frames are not filtered"
     }
 
     @Before fun session() { DiagnosticLogger.sessionStart("test", 0, prefs = null) }

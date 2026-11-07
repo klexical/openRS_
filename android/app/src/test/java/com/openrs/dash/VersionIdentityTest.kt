@@ -108,7 +108,9 @@ class VersionIdentityTest {
         // Build 37 → Build 38 keeps the release name, so the dialog does not reopen on that upgrade; its Build 38 line
         // shows on a fresh install or from Settings → What's New
         assertFalse(shouldShowWhatsNew(lastSeen = BuildConfig.RELEASE_NAME, releaseName = BuildConfig.RELEASE_NAME, base = "2.2.7"))
-        assertTrue(whatsNewHighlights("2.2.7")!!.first().startsWith("rc.7 · Build ${BuildConfig.VERSION_CODE}: "))
+        assertTrue(shouldShowWhatsNew(lastSeen = "2.2.7-rc.7", releaseName = "2.2.7-rc.8", base = "2.2.7"))   // rc.7 → rc.8 shows it
+        assertTrue(whatsNewHighlights("2.2.7")!!.first().startsWith("rc.8 · Build 39: "))
+        assertTrue(whatsNewHighlights("2.2.7")!!.any { it.startsWith("rc.7 · Build 38: ") })    // rc.7's maintenance line kept
         assertTrue(whatsNewHighlights("2.2.7")!!.any { it.contains("labelled TIP, and") })      // rc.7's published line kept
         assertFalse(shouldShowWhatsNew(lastSeen = "2.2.7-rc.7", releaseName = "2.2.8-rc.1", base = "2.2.8"))  // no 2.2.8 notes
         assertNull(whatsNewHighlights("9.9.9"))
