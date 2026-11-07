@@ -642,7 +642,7 @@ internal fun modeProvenance(vs: VehicleState, nowMs: Long): String {
 /** Tags whose age the detail JSON reports (rc.8 #253): the polled voltage and the drive-mode provenance (#223, #252). */
 private val AGE_TAGS = listOf("batteryVoltage", "driveMode", com.openrs.dash.can.CanDecoder.MODE_DETAIL_TAG,
     com.openrs.dash.can.CanDecoder.MODE_RESOLVED_DETAIL_TAG, com.openrs.dash.can.CanDecoder.MODE_RUN_PREV_TAG,
-    com.openrs.dash.can.CanDecoder.MODE_RESOLVED_PAIR_TAG)
+    com.openrs.dash.can.CanDecoder.MODE_RESOLVED_PAIR_TAG, com.openrs.dash.can.CanDecoder.ESC_FRAME_TAG, com.openrs.dash.can.CanDecoder.ESC_FRAME_PREV_TAG)
 
 internal fun VehicleState.toJsonObject(nowMs: Long = System.currentTimeMillis()): JSONObject = JSONObject().apply {
     // Additive (rc.8 #253): ages at export time, never absolute times

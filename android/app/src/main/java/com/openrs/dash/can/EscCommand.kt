@@ -13,9 +13,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  *  - the wait is sized from the firmware's own button timing ([pressMs]: a 5 s long press for OFF, 300 ms short
  *    presses, 1 s between two presses) plus [REACTION_MS] for the ABS module to report it — the old fixed 4 s ended
  *    before a long press had even finished;
- *  - only a 0x1C0 frame stamped after the request counts (stamp `escStatus`: a value change at once, an unchanged
- *    report at most once a second) — a held or earlier matching state never confirms. One report is enough here, unlike
- *    drive mode's two (#252), so a stray frame seen by a poll reads as confirmed;
+ *  - rule C: the last two 0x1C0 frames must both report the requested mode, both received after the request, read at a poll
+ *    ([CanDecoder.ESC_FRAME_TAG], [CanDecoder.ESC_FRAME_PREV_TAG]). A held or earlier matching state and a single stray frame
+ *    never confirm; a two-frame blip seen by a poll still can. A real change costs one frame interval, and one whose second
+ *    frame doesn't arrive inside the window reads NOT CONFIRMED with the car on the target;
  *  - the connection identity ([connectionId], the link's connection epoch) must not change while waiting: a reconnect is
  *    ConnectionLost even if the new link then reports the requested mode;
  *  - one request at a time in the app: a second one while a request is waiting is Busy, nothing sent.
@@ -24,9 +25,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 object EscCommand {
     sealed interface Outcome {
-        /** A 0x1C0 frame after the request reports the requested mode. */
+        /** The last two 0x1C0 frames, both after the request, report the requested mode. */
         data class Confirmed(val afterMs: Long) : Outcome
-        /** The adapter accepted the request but no post-request frame reported it within [waitedMs]; [observed] = last state. */
+        /** The adapter accepted the request but two post-request frames didn't report it within [waitedMs]; [observed] = last state. */
         data class NotConfirmed(val observed: EscStatus, val waitedMs: Long) : Outcome
         /** The adapter (or another request in this app) is busy with an ESC change. */
         data object Busy : Outcome
@@ -85,8 +86,11 @@ object EscCommand {
                 val vs = state()
                 val elapsed = clock() - requestedAt
                 if (!vs.isConnected || connectionId() != link) return Outcome.ConnectionLost
-                val frameAt = vs.fieldLastUpdateMs[STAMP_TAG]
-                if (frameAt != null && frameAt > requestedAt && vs.escStatus == target) return Outcome.Confirmed(elapsed)
+                val last = vs.fieldLastUpdateMs[CanDecoder.ESC_FRAME_TAG]
+                val prev = vs.fieldLastUpdateMs[CanDecoder.ESC_FRAME_PREV_TAG]
+                if (vs.escStatus == target && last != null && prev != null && last > requestedAt && prev > requestedAt) {
+                    return Outcome.Confirmed(elapsed)
+                }
                 if (elapsed >= window) return Outcome.NotConfirmed(vs.escStatus, elapsed)
                 delay(POLL_MS)
             }
@@ -97,8 +101,8 @@ object EscCommand {
 
     /** One line for the diagnostic log. */
     fun describe(target: EscStatus, o: Outcome): String = when (o) {
-        is Outcome.Confirmed -> "CONFIRMED ${target.label} by a CAN 0x1C0 frame after the request (${o.afterMs} ms)"
-        is Outcome.NotConfirmed -> "NOT CONFIRMED — adapter accepted ${target.label}, no 0x1C0 frame after the request reported it " +
+        is Outcome.Confirmed -> "CONFIRMED ${target.label} by two CAN 0x1C0 frames after the request (${o.afterMs} ms)"
+        is Outcome.NotConfirmed -> "NOT CONFIRMED — adapter accepted ${target.label}, two 0x1C0 frames after the request didn't report it " +
             "in ${o.waitedMs} ms (car reports ${o.observed.label})"
         Outcome.Busy -> "BUSY — an ESC change is already in progress"
         is Outcome.Failed -> "FAILED — ${LogText.sanitize(o.message)}"

@@ -111,7 +111,8 @@ class CommandReconnectTest {
 
     @Test fun `ESC - control, with no drop the same report confirms`() = runTest {
         vs = vs.copy(escStatus = EscStatus.ON)
-        at(170) { vs = vs.copy(escStatus = EscStatus.PARTIAL).markFresh(EscCommand.STAMP_TAG, now = testScheduler.currentTime) }
+        at(170) { vs = vs.copy(escStatus = EscStatus.PARTIAL).markFresh(EscCommand.STAMP_TAG, com.openrs.dash.can.CanDecoder.ESC_FRAME_TAG,
+            com.openrs.dash.can.CanDecoder.ESC_FRAME_PREV_TAG, now = testScheduler.currentTime) }
         val o = EscCommand.execute(Sender(), EscStatus.PARTIAL, { vs }, clock = { testScheduler.currentTime })
         assertEquals(EscCommand.Outcome.Confirmed(200L), o)
     }

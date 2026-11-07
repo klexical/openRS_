@@ -78,7 +78,7 @@ class EscLinkSessionTest {
     @Test fun `end to end on the wall clock - change inside the throttle confirms well inside 1 s`() = runBlocking {
         f(0)                                                   // unchanged stamp just before the request
         Thread.sleep(20)
-        val job = launch { delay(300); f(2) }
+        val job = launch { delay(300); f(2); delay(20); f(2) }                 // rule C: two frames after the request
         val o = EscCommand.execute(Api(), EscStatus.PARTIAL, { state.value }, connectionId = { gen })
         job.join()
         assertTrue("$o", o is EscCommand.Outcome.Confirmed && o.afterMs < 900L)

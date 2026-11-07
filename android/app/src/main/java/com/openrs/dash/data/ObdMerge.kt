@@ -1,5 +1,6 @@
 package com.openrs.dash.data
 
+import com.openrs.dash.can.CanDecoder
 /**
  * Merge of a polled (Mode 22) decode into the live VehicleState — the update [com.openrs.dash.service.CanDataService]
  * applies for every OBD reply (moved here so the production merge is unit-tested, #205). Fields a reply didn't carry
@@ -112,9 +113,9 @@ object ObdMerge {
             warnTempHigh    = obd.warnTempHigh    ?: current.warnTempHigh,
             // Freshness stamps from markFresh()/putGeneric() — previously dropped here,
             // which left every OBD field without a stamp (UI read them as STALE).
-            // Drive-mode provenance keys are CAN-only and partly signalled by ABSENCE (#252): an OBD reply carries the
+            // Drive-mode and ESC-frame provenance keys are CAN-only and partly signalled by ABSENCE (#252, #125): an OBD reply carries the
             // snapshot it was parsed against, so they are never taken from it — the live state's set is kept exactly
             fieldLastUpdateMs = VehicleState.mergeStamps(current.fieldLastUpdateMs,
-                obd.fieldLastUpdateMs.filterKeys { !it.startsWith(DRIVE_MODE_KEYS) }),
+                obd.fieldLastUpdateMs.filterKeys { !it.startsWith(DRIVE_MODE_KEYS) && !it.startsWith(CanDecoder.ESC_FRAME_PREFIX) }),
         )
 }

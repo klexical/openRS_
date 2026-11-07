@@ -274,13 +274,25 @@ object CanDecoder {
     /** Last 1 s report of 0x1C0: the throttle's own clock, separate from the `escStatus` stamp that a change also moves. */
     private const val ESC_REPORT_TICK_TAG = "escStatusReportTick"
 
+    /** Prefix of the per-frame ESC keys. CAN-only and partly signalled by absence, so ObdMerge never takes them from a reply (#125). */
+    const val ESC_FRAME_PREFIX = "escFrame"
+    /** Receipt of the latest 0x1C0 frame, whatever it reported. Not throttled: rule C reads frames, not 1 s reports (#125). */
+    const val ESC_FRAME_TAG = "escFrameLast"
+    /** Receipt of the frame before it, only when both report the same ESC mode. */
+    const val ESC_FRAME_PREV_TAG = "escFramePrev"
+
     private fun stampEsc(previous: VehicleState, decoded: VehicleState, now: Long): VehicleState {
         val lastReport = previous.fieldLastUpdateMs[ESC_REPORT_TICK_TAG] ?: 0L
-        return when {
+        val stamped = when {
             now - lastReport >= CAN_STAMP_THROTTLE_MS -> decoded.markFresh("escStatus", ESC_REPORT_TICK_TAG, now = now)
             decoded.escStatus != previous.escStatus -> decoded.markFresh("escStatus", now = now)
             else -> decoded
         }
+        val m = HashMap(stamped.fieldLastUpdateMs)
+        val prev = previous.fieldLastUpdateMs[ESC_FRAME_TAG]?.takeIf { decoded.escStatus == previous.escStatus }
+        if (prev != null) m[ESC_FRAME_PREV_TAG] = prev else m.remove(ESC_FRAME_PREV_TAG)
+        m[ESC_FRAME_TAG] = now
+        return stamped.copy(fieldLastUpdateMs = m)
     }
 
     /** A documented 0x420 (the decoder just stored it in [modeDetail420]); undocumented ones never get here. */
