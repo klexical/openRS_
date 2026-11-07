@@ -8,6 +8,10 @@ package com.openrs.dash.can
  * Flow Control frame. Consecutive Frames (high nibble = 2) are appended
  * until the full payload is assembled.
  *
+ * A reply is delivered whole or not at all (#253): a frame that can't be what its PCI says (a truncated SF / FF / CF, an FF
+ * claiming fewer than [MIN_FF_LENGTH] bytes — it would fit an SF) ends the reply and is never read past its own bytes, so a
+ * later frame's padding can't make up the missing ones. A partial reply has no timer: it stays open until the next FF or SF.
+ *
  * Thread-safety: instances are used within a single coroutine, no locking needed.
  */
 class IsoTpBuffer {
@@ -20,8 +24,8 @@ class IsoTpBuffer {
      * Feed a raw 8-byte CAN frame.
      *
      * @return Triple of (reassembledPayload?, isFirstFrame, isSingleFrame).
-     *   - SF: returns (strippedPayload, false, true)
-     *   - FF: returns (null, true, false) -- caller must send FC
+     *   - SF: returns (strippedPayload, false, true); (null, false, true) when its PCI claims more than the frame holds
+     *   - FF: returns (null, true, false) -- caller must send FC; (null, false, false) when refused -- no FC
      *   - CF: returns (reassembledPayload, false, false) when complete, (null, false, false) otherwise
      */
     fun feed(data: ByteArray): Triple<ByteArray?, Boolean, Boolean> {
@@ -30,15 +34,18 @@ class IsoTpBuffer {
         return when (pciType) {
             0 -> {
                 payload = null
-                val len = (data[0].toInt() and 0x0F).coerceAtMost(data.size - 1)
+                val len = data[0].toInt() and 0x0F
+                if (len > data.size - 1) return Triple(null, false, true)
                 Triple(data.copyOfRange(1, 1 + len), false, true)
             }
             1 -> {
-                expected = ((data[0].toInt() and 0x0F) shl 8) or (data[1].toInt() and 0xFF)
+                payload = null                         // valid or not, a new reply started: the old one is over
+                val length = ((data[0].toInt() and 0x0F) shl 8) or (data[1].toInt() and 0xFF)
+                if (data.size < CAN_FRAME_BYTES || length < MIN_FF_LENGTH) return Triple(null, false, false)
+                expected = length
                 payload = ByteArray(expected)
-                val n = minOf(6, expected, data.size - 2)
-                System.arraycopy(data, 2, payload!!, 0, n)
-                received = n
+                System.arraycopy(data, 2, payload!!, 0, FF_DATA_BYTES)
+                received = FF_DATA_BYTES
                 seqNext = 1
                 Triple(null, true, false)
             }
@@ -50,8 +57,11 @@ class IsoTpBuffer {
                     return Triple(null, false, false)
                 }
                 seqNext = (seqNext + 1) and 0x0F
-                val remaining = expected - received
-                val n = minOf(7, remaining, data.size - 1)
+                val n = minOf(CF_DATA_BYTES, expected - received)
+                if (data.size - 1 < n) {               // shorter than the remainder: the next frame would land at the wrong offset
+                    payload = null; received = 0; seqNext = 1
+                    return Triple(null, false, false)
+                }
                 System.arraycopy(data, 1, buf, received, n)
                 received += n
                 if (received >= expected) {
@@ -61,5 +71,14 @@ class IsoTpBuffer {
             }
             else -> Triple(null, false, false)
         }
+    }
+
+    internal companion object {
+        /** Classic CAN: an FF fills the frame. */
+        const val CAN_FRAME_BYTES = 8
+        const val FF_DATA_BYTES = 6
+        const val CF_DATA_BYTES = 7
+        /** Fewer bytes fit a Single Frame; ISO 15765-2 has the receiver ignore such an FF and send no flow control. */
+        const val MIN_FF_LENGTH = 8
     }
 }
