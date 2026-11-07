@@ -68,4 +68,5 @@ stargate/
 # ═══ Local Claude Code orientation (never commit) ══════
 CLAUDE.md
 android/CLAUDE.md
-.claude/
+.claude/*
+!.claude/rules/
