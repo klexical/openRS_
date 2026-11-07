@@ -104,7 +104,10 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   (`ModeProvenanceMergeTest`). The current mode's chip can't be tapped once the screen shows that state (a request for it reaches the code only if
   the tap beats the screen update — not run); a real change via Sport confirms about 1.2–1.3 s later than before the corroboration
   rule (emulator, synthetic adapter; #252 A2 run). A confirmation states
-  the car's mode after the request, not that the app caused it (a manual selection looks identical; in capture A the 0x305 button bit never set, 0 of 874 frames — QA analysis).
+  the car's mode after the request, not that the app caused it (a manual selection looks identical; which 0x305 bit is the mode button is unresolved — in capture A, 874 frames, the bit the decoder reads (byte 4 bit 5) is never
+  set, the firmware's bit (byte 4 bit 2) is set in 5 frames between the Drift send and its confirmation, and closed #120's bit
+  (byte 4 bit 4) flips only at the two mode changes, a state not a press by inference; capture B shows neither; so
+  `driveModeButtonPressed` reads a bit never set in either capture — QA counts 2026-11-07).
   Timing (2 s + 15 s), retries, ESC and firmware unchanged; reconnect → `DriveCommandResult.ConnectionLost`. Demo must stamp
   every CAN tag (`CanDecoder.canStampTags` ⊆ `DemoSimulator.CAN_TAGS`, DemoSimulatorTest) or confirmations time out in demo.
   ESC confirmation (#125): since `7130082` (rc.8 Build 39) a 0x1C0 ESC CHANGE is stamped when it arrives; only an unchanged report
