@@ -52,7 +52,10 @@ internal class LinkOwnership {
      * Cancel (persisted) or demo mode (this process only). An explicit connect clears both. It is separate from the
      * saved auto-connect preference, which it never changes.
      */
-    val manualConnectRequired: Boolean get() = userCancelled || demoHold
+    val manualConnectRequired: Boolean get() = userCancelled || demoHold || taskRemovedHold
+
+    /** A task removal ended an attempt (#212): callbacks wait for the next activity. Memory only, so the next launch still auto-connects. */
+    @Volatile private var taskRemovedHold = false
 
     /**
      * Attach the persistent store and load the saved Cancel. [CanDataService] calls this in `onCreate` before it
@@ -77,9 +80,22 @@ internal class LinkOwnership {
     /** Demo mode entered / left: hold automatic connects for the rest of this process. */
     fun requireManualConnect() = synchronized(lock) { demoHold = true }
 
-    /** An explicit Connect / Retry: clears the persisted Cancel and the demo hold. */
+    /**
+     * A task removal (#212): ends only what Cancel would, at the moment it is handled, and never while a drive is being finalized, whose write the foreground
+     * service is keeping alive. Unlike [cancel] it saves nothing: a swipe isn't a Cancel. Returns whether it ended the attempt.
+     */
+    fun cancelOnTaskRemoved(recording: () -> Boolean, finalizing: () -> Boolean, end: () -> Unit): Boolean = synchronized(lock) {
+        if (!LinkPresentation.offersCancel(phase, recording()) || finalizing()) false
+        else { taskRemovedHold = true; end(); true }
+    }
+
+    /** An activity is back: true if a task removal was holding automatic connects, which it no longer does. */
+    fun releaseTaskRemovedHold(): Boolean = synchronized(lock) { taskRemovedHold.also { taskRemovedHold = false } }
+
+    /** An explicit Connect / Retry: clears the persisted Cancel, the demo hold and a task removal's hold. */
     fun clearManualConnect() = synchronized(lock) {
         demoHold = false
+        taskRemovedHold = false
         if (userCancelled) { userCancelled = false; store?.save(false) }
     }
 

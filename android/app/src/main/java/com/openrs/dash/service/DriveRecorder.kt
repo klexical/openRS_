@@ -187,6 +187,10 @@ class DriveRecorder(
      * (recent pause) or whether to finalize and start fresh.
      */
     @Volatile private var pausedAtMs: Long = 0L
+    @Volatile private var finalizeJob: Job? = null
+
+    /** STOP's writes are still running: the process must not lose its foreground service now (#212). */
+    val isFinalizing: Boolean get() = finalizeJob?.isActive == true
 
     init {
         // Finalize any drives left with endTime=0 from a previous app session
@@ -317,7 +321,7 @@ class DriveRecorder(
         val stopped = run
         val fuelState = FuelEconomy.state.value
         val laps = lapTimer?.takeLaps(state.driveId)
-        val finalize = scope.launch(Dispatchers.IO) {
+        val finalize = scope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY, context = Dispatchers.IO) {
             // Wait for the recording loop's finally{} to flush buffered points
             // before we write the drive summary. This avoids racing our own
             // flush against the loop's flush (both would copy pointsBuffer
@@ -418,6 +422,9 @@ class DriveRecorder(
                 }
             }
         }
+        // Set before the state says not recording, so a reader never sees neither (#212)
+        finalizeJob = finalize
+        finalize.start()
         _driveState.update {
             it.copy(isRecording = false, isPaused = false)
         }

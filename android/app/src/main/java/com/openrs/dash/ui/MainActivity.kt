@@ -82,6 +82,7 @@ class MainActivity : ComponentActivity() {
     private val conn = object : ServiceConnection {
         override fun onServiceConnected(n: ComponentName, b: IBinder) {
             service = (b as CanDataService.LocalBinder).getService()
+            service?.onActivityBound()
             pendingDemo?.let { applyDemoExtra(it) }
             pendingDemo = null
         }
