@@ -561,7 +561,7 @@ class CanDataService : Service() {
             "Bluetooth ($profile)"
         } else {
             val protocol = if (adapterType == "MEATPI_PRO") "TCP SLCAN" else "WebSocket SLCAN"
-            "$protocol (${s.getHost(this)}:${s.getPort(this)})"
+            "$protocol ($profile)"     // the Host line keeps the address a Wi-Fi diagnosis needs
         }
         // Bluetooth starts "not requested" together with the session; Wi-Fi status writes carry this session's token (#233)
         val diagSession = DiagnosticLogger.sessionStart(
