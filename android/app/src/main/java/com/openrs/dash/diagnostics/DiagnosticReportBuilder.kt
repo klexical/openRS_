@@ -588,7 +588,7 @@ internal fun linkIntegrityText(li: DiagnosticLogger.LinkIntegrity, nrcUnattribut
     "  NRC      : ${li.nrcAttributed} attributed · $nrcUnattributed unattributed (PCM)",
     "  Buffers  : ${li.overlongLines} overlong line(s) refused · ${li.linesDropped} line(s) dropped (BLE queue full) · " +
         "${li.commandRepliesDropped} command reply(ies) dropped · ${li.dtcFramesDropped} DTC frame(s) dropped",
-    "  ISO-TP   : ${li.isoTpRefused} frame(s) refused or reply(ies) abandoned (truncated, too short, sequence break)",
+    "  ISO-TP   : ${li.isoTpRefused} frame(s) refused or reply(ies) abandoned (truncated, too short, sequence break, superseded by a new reply, open at a DTC / freeze-frame deadline)",
 )
 
 /** A module's name for its Mode 22 response ID (the ECU table), else the hex ID. */

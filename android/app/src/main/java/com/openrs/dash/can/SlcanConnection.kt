@@ -854,6 +854,7 @@ class SlcanConnection(
                     }
                 }
 
+                buffers.values.forEach { it.abandon() }               // a reply still open at the deadline: counted (#253 L1)
                 // Modules without a final reply: the same rule as the final result (#215) — progress, screen and export agree
                 val raw = DtcRawScan(results, pending - results.keys, failures.filterKeys { it !in results })
                 for (module in modules) {
@@ -908,11 +909,13 @@ class SlcanConnection(
             val data = frame.second; if (data.isEmpty()) continue
             when ((data[0].toInt() and 0xF0) shr 4) {
                 0 -> {
+                    if (totalLen > 0) DiagnosticLogger.countIsoTpRefused()   // a partial reply superseded by a single frame (#253 L1)
                     val len = data[0].toInt() and 0x0F
                     if (len <= 0 || data.size < len + 1) { DiagnosticLogger.countIsoTpRefused(); return null }
                     return data.copyOfRange(1, 1 + len)
                 }
                 1 -> {
+                    if (totalLen > 0) DiagnosticLogger.countIsoTpRefused()   // a partial reply superseded by a first frame (#253 L1)
                     buf.reset(); received = 0; totalLen = 0; seqNext = 1     // a new reply started: nothing of the old one stays
                     if (data.size < IsoTpBuffer.CAN_FRAME_BYTES) { DiagnosticLogger.countIsoTpRefused(); continue }
                     val length = ((data[0].toInt() and 0x0F) shl 8) or (data[1].toInt() and 0xFF)
@@ -932,6 +935,7 @@ class SlcanConnection(
                 }
             }
         }
+        if (totalLen > 0) DiagnosticLogger.countIsoTpRefused()       // a reply still open at the deadline: abandoned (#253 L1)
         return null                                                  // the deadline passed: partial bytes aren't a reply
     }
 

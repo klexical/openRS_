@@ -216,7 +216,7 @@ object DiagnosticLogger {
         var linesDropped = 0               // BLE lines lost to a full receive queue (#253)
         var commandRepliesDropped = 0      // +FRS: lines lost to a full reply channel, nobody waiting (#253)
         var dtcFramesDropped = 0           // DTC reply frames lost to a full channel (#253)
-        var isoTpRefused = 0               // ISO-TP frames refused or replies abandoned: truncated SF / FF / CF, FF < 8, sequence break (#253)
+        var isoTpRefused = 0               // ISO-TP frames refused or replies abandoned: truncated SF / FF / CF, FF < 8, sequence break, superseded, deadline (#253)
         fun copy() = LinkIntegrity().also {
             it.writes.putAll(writes); it.framingTimestamped = framingTimestamped; it.refusedFrameLines = refusedFrameLines
             it.refusedOtherShape = refusedOtherShape; it.refusedReplies = refusedReplies; it.nrcAttributed = nrcAttributed
