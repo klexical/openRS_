@@ -1,0 +1,201 @@
+package com.openrs.dash
+
+import android.Manifest
+import android.app.Application
+import android.content.Context
+import android.location.Location
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import com.openrs.dash.can.LinkPhase
+import com.openrs.dash.data.DriveDao
+import com.openrs.dash.data.DriveDatabase
+import com.openrs.dash.data.VehicleState
+import com.openrs.dash.service.CanDataService
+import com.openrs.dash.service.DriveRecorder
+import com.openrs.dash.service.ForegroundController
+import com.openrs.dash.service.LinkStopReason
+import com.openrs.dash.service.WeatherRepository
+import com.openrs.dash.ui.AppSettings
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.receiveAsFlow
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.Robolectric
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
+import java.lang.reflect.InvocationTargetException
+import java.lang.reflect.Proxy
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+
+/**
+ * N2 (#262): at a link end the foreground service stays until the drive's points are durable — the buffered ones AND a batch
+ * insert already in flight — and then leaves it exactly once; a new attempt started meanwhile keeps it. Real CanDataService
+ * (Robolectric, real app class) promoted through its own ForegroundController (a counting host), real DriveRecorder on
+ * in-memory Room behind a DAO whose point inserts can be held or failed. Only APIs that exist on c1c739d (red there: the
+ * service left the foreground at once, with the insert still in flight).
+ */
+@RunWith(RobolectricTestRunner::class)
+@Config(application = OpenRSDashApp::class)
+class ServiceFlushDemoteTest {
+    private class FakeGps : DriveRecorder.LocationSource {
+        @Volatile var current: Channel<Location>? = null
+        val opened = AtomicInteger()
+        override fun updates(): Flow<Location> =
+            Channel<Location>(Channel.UNLIMITED).also { current = it; opened.incrementAndGet() }.receiveAsFlow()
+        override suspend fun last(): Location? = null
+    }
+
+    /** Point inserts can be held (until [release]) or failed. */
+    private class GatedDao(real: DriveDao) {
+        @Volatile var hold = false
+        @Volatile var fail = false
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val dao: DriveDao = Proxy.newProxyInstance(DriveDao::class.java.classLoader, arrayOf(DriveDao::class.java)) { _, m, args ->
+            if (m.name == "insertPoints") {
+                if (fail) throw IllegalStateException("simulated write failure")
+                if (hold) { entered.countDown(); release.await(20, TimeUnit.SECONDS) }
+            }
+            try { m.invoke(real, *(args ?: emptyArray())) } catch (e: InvocationTargetException) { throw e.targetException }
+        } as DriveDao
+    }
+
+    /** Counts what the service's foreground does. */
+    private class CountingHost : ForegroundController.Host {
+        val exits = AtomicInteger(); val stops = AtomicInteger()
+        override fun startSelf() = Unit
+        override fun enterForeground() = Unit
+        override fun exitForeground() { exits.incrementAndGet() }
+        override fun stopSelf() { stops.incrementAndGet() }
+    }
+
+    private lateinit var app: Application
+    private lateinit var db: DriveDatabase
+    private lateinit var gated: GatedDao
+    private lateinit var rec: DriveRecorder
+    private lateinit var service: CanDataService
+    private val host = CountingHost()
+    private lateinit var fg: ForegroundController
+    private val gps = FakeGps()
+    private val appVs get() = OpenRSDashApp.instance.vehicleState
+
+    @Before fun setUp() {
+        app = ApplicationProvider.getApplicationContext()
+        shadowOf(app).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
+        db = Room.inMemoryDatabaseBuilder(app, DriveDatabase::class.java).allowMainThreadQueries().build()
+        gated = GatedDao(db.driveDao())
+        rec = DriveRecorder(app, appVs, WeatherRepository(""), db, gated.dao, { _, _ -> null }, gps, { })
+        OpenRSDashApp::class.java.getDeclaredField("driveRecorder\$delegate").apply { isAccessible = true }.set(OpenRSDashApp.instance, lazyOf(rec))
+        service = Robolectric.buildService(CanDataService::class.java).create().get()
+        fg = ForegroundController(host)
+        CanDataService::class.java.getDeclaredField("foreground").apply { isAccessible = true }.set(service, fg)
+        fg.promote()                                                    // as a running connection has it
+        assertTrue(fg.isForeground)
+    }
+
+    @After fun tearDown() { gated.release.countDown(); rec.cancel(); db.close() }
+
+    private fun autoRecord(on: Boolean) {
+        app.getSharedPreferences("openrs_settings", Context.MODE_PRIVATE).edit().putBoolean(AppSettings.KEY_AUTO_RECORD_DRIVES, on).commit()
+    }
+    private fun waitUntil(timeoutMs: Long = 5_000, cond: () -> Boolean): Boolean {
+        val end = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < end) { if (cond()) return true; Thread.sleep(5) }
+        return cond()
+    }
+    private fun recordPoints(n: Int): Long {
+        appVs.value = VehicleState(isConnected = true, speedKph = 50.0)
+        rec.startDrive()
+        check(waitUntil { rec.driveState.value.let { it.isRecording && it.driveId > 0 } && gps.opened.get() > 0 })
+        for (i in 0 until n) {
+            val before = rec.driveState.value.totalPointCount
+            gps.current!!.trySend(Location("t").apply { latitude = 51.5 + i * 1e-4; longitude = -0.1; time = System.currentTimeMillis() })
+            check(waitUntil { rec.driveState.value.totalPointCount == before + 1 }) { "point $i not recorded" }
+        }
+        return rec.driveState.value.driveId
+    }
+    private fun rows(id: Long) = db.driveDao().getPoints(id).size
+
+    @Test fun `a full 30-point batch insert in flight - the service stays foreground until it lands, then leaves once`() {
+        autoRecord(false)
+        gated.hold = true
+        val id = recordPoints(30)                                       // the 30th point makes the loop take all 30 and insert
+        assertTrue("the batch insert is in flight", gated.entered.await(5, TimeUnit.SECONDS))
+        service.stopConnection(LinkStopReason.WIFI_LOST)
+        Thread.sleep(300)
+        assertTrue("still foreground while 30 points are not durable", fg.isForeground)
+        assertEquals(0, host.exits.get())
+        gated.release.countDown()
+        assertTrue("30 rows", waitUntil { rows(id) == 30 })
+        assertTrue("left the foreground", waitUntil { !fg.isForeground })
+        Thread.sleep(200)
+        assertEquals("exactly one demotion", 1, host.exits.get()); assertEquals(1, host.stops.get())
+        assertEquals(30, rows(id))
+    }
+
+    @Test fun `a partial buffer - the link-end flush is held - the service stays until it lands, then leaves once`() {
+        autoRecord(false)
+        val id = recordPoints(12)                                       // below the batch size: all 12 in the buffer
+        gated.hold = true
+        service.stopConnection(LinkStopReason.USER_DISCONNECT)
+        assertTrue("the link-end flush is writing", gated.entered.await(5, TimeUnit.SECONDS))
+        Thread.sleep(300)
+        assertTrue("still foreground while 12 points are not durable", fg.isForeground)
+        gated.release.countDown()
+        assertTrue(waitUntil { rows(id) == 12 })
+        assertTrue(waitUntil { !fg.isForeground })
+        Thread.sleep(200)
+        assertEquals(1, host.exits.get())
+    }
+
+    @Test fun `auto-record on - the pause flush is held - the service stays until it lands`() {
+        autoRecord(true)
+        val id = recordPoints(12)
+        gated.hold = true
+        service.stopConnection(LinkStopReason.WIFI_LOST)
+        assertTrue(gated.entered.await(5, TimeUnit.SECONDS))
+        Thread.sleep(300)
+        assertTrue("still foreground while the pause flush writes", fg.isForeground)
+        gated.release.countDown()
+        assertTrue(waitUntil { rows(id) == 12 })
+        assertTrue(waitUntil { !fg.isForeground })
+        assertTrue(rec.driveState.value.isPaused)
+    }
+
+    @Test fun `a failed write - the service still leaves the foreground, once, and nothing hangs`() {
+        autoRecord(false)
+        recordPoints(5)
+        gated.fail = true
+        service.stopConnection(LinkStopReason.WIFI_LOST)
+        assertTrue(waitUntil { !fg.isForeground })
+        Thread.sleep(200)
+        assertEquals(1, host.exits.get())
+    }
+
+    @Test fun `a new attempt started while the flush is held keeps the foreground`() {
+        autoRecord(false)
+        recordPoints(12)
+        gated.hold = true
+        service.stopConnection(LinkStopReason.WIFI_LOST)
+        assertTrue(gated.entered.await(5, TimeUnit.SECONDS))
+        val gen = CanDataService.link.begin()                            // a new attempt (as beginConnection does), still promoted
+        try {
+            gated.release.countDown()
+            Thread.sleep(800)
+            assertTrue("the new attempt's foreground is kept", fg.isForeground)
+            assertEquals(0, host.exits.get())
+        } finally {
+            if (CanDataService.link.owns(gen)) CanDataService.link.end(LinkPhase.OFF)
+        }
+        assertFalse(rec.driveState.value.isPaused)
+    }
+}
