@@ -526,13 +526,15 @@ class CanDataService : Service() {
     // ── Connection control ───────────────────────────────────────────────────
 
     /**
-     * Transport-callback entry point — honours [LinkOwnership.manualConnectRequired] (after a cancel or demo mode). The
+     * Transport-callback entry point — honours [LinkOwnership.manualConnectRequired] (after a cancel, demo mode or a task removal). The
      * check and the start are one step under the ownership lock: a callback can't pass the check, lose the race to a
      * cancel, then start anyway.
      */
     private fun autoStartConnection() {
-        val allowed = link.autoStart(blocked = { DemoMode.isActive || DemoMode.launchRequested }) { beginConnection() }
-        if (!allowed) DiagnosticLogger.event(DiagnosticLogger.EVENT_LINK_START_REFUSED, "auto-start held: a saved Cancel or demo mode")
+        link.autoStart(
+            blocked = { DemoMode.isActive || DemoMode.launchRequested },
+            onHeld = { holds -> DiagnosticLogger.event(DiagnosticLogger.EVENT_LINK_START_REFUSED, "auto-start held: $holds") },
+        ) { beginConnection() }
     }
 
     /** Explicit (user) connect. No-op while demo mode owns the vehicle state. */

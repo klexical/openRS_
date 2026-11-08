@@ -71,11 +71,20 @@ internal class LinkOwnership {
 
     /**
      * Callback start: the eligibility check ([blocked], plus [manualConnectRequired]) and [start] run as one step, so a
-     * cancel can't fall between them. Returns whether [start] ran.
+     * cancel can't fall between them. Returns whether [start] ran; when it didn't, [onHeld] gets the holds that applied
+     * at that moment ([holdsNow]), read under the same lock.
      */
-    fun autoStart(blocked: () -> Boolean, start: () -> Unit): Boolean = synchronized(lock) {
-        if (manualConnectRequired || blocked()) false else { start(); true }
+    fun autoStart(blocked: () -> Boolean, onHeld: (String) -> Unit = {}, start: () -> Unit): Boolean = synchronized(lock) {
+        val demo = blocked()
+        if (manualConnectRequired || demo) { onHeld(holdsNow(demo)); false } else { start(); true }
     }
+
+    /** The holds on automatic connects right now, for the refusal line: each one that applies, in a fixed order. */
+    private fun holdsNow(demoActive: Boolean): String = listOfNotNull(
+        "a saved Cancel".takeIf { userCancelled },
+        "demo mode".takeIf { demoHold || demoActive },
+        "a task removal, until the app is opened".takeIf { taskRemovedHold },
+    ).joinToString(" + ")
 
     /** Demo mode entered / left: hold automatic connects for the rest of this process. */
     fun requireManualConnect() = synchronized(lock) { demoHold = true }

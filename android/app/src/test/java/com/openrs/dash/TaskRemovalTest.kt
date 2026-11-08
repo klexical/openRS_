@@ -168,6 +168,49 @@ class TaskRemovalTest {
         next.stopConnection(com.openrs.dash.service.LinkStopReason.USER_DISCONNECT)
     }
 
+    @Test fun `the next launch's refused service start names the task removal's hold`() {
+        attempt()
+        service.onTaskRemoved(null)
+        val next = Robolectric.buildService(CanDataService::class.java).create().get()
+        assertEquals(listOf("auto-start held: a task removal, until the app is opened"), lines(DiagnosticLogger.EVENT_LINK_START_REFUSED))
+        next.onActivityBound()
+        assertEquals(LinkPhase.CONNECTING, link.phase)
+        next.stopConnection(com.openrs.dash.service.LinkStopReason.USER_DISCONNECT)
+    }
+
+    @Test fun `control - a refused start names a saved Cancel, and demo mode, as what holds it`() {
+        attempt()
+        assertTrue(service.cancelConnection())
+        Robolectric.buildService(CanDataService::class.java).create().get()
+        link.requireManualConnect()
+        Robolectric.buildService(CanDataService::class.java).create().get()
+        assertEquals(listOf("auto-start held: a saved Cancel", "auto-start held: a saved Cancel + demo mode"),
+            lines(DiagnosticLogger.EVENT_LINK_START_REFUSED))
+    }
+
+    /**
+     * The guard in onTaskRemoved: while demo mode owns the vehicle state a removal leaves the link alone. It is defensive: through today's service paths
+     * removing it changes nothing, because enterDemoMode stops the link before demo starts and every start path (Connect, Retry, callbacks, reconnect)
+     * refuses while demo is active, so demo mode and a running attempt never meet. The test therefore sets demo's status flag by reflection while a real
+     * attempt runs: DemoMode.start returns early in release builds, and this keeps the test in both variants. It pins the guard against a future start path.
+     */
+    @Test fun `in demo mode a removal leaves an attempt alone and holds nothing`() {
+        attempt()
+        @Suppress("UNCHECKED_CAST")
+        val status = com.openrs.dash.demo.DemoMode::class.java.getDeclaredField("_status").apply { isAccessible = true }
+            .get(com.openrs.dash.demo.DemoMode) as MutableStateFlow<com.openrs.dash.demo.DemoMode.Status>
+        status.value = com.openrs.dash.demo.DemoMode.Status(active = true)
+        try {
+            service.onTaskRemoved(null)
+            assertTrue(lines(DiagnosticLogger.EVENT_LINK_TASK_REMOVED).last(), lines(DiagnosticLogger.EVENT_LINK_TASK_REMOVED).last().endsWith("demo=yes"))
+            assertEquals(LinkPhase.CONNECTING, link.phase)
+            assertFalse(link.manualConnectRequired)
+            assertTrue(lines(DiagnosticLogger.EVENT_LINK_STOP).none { "TASK_REMOVED" in it })
+        } finally {
+            status.value = com.openrs.dash.demo.DemoMode.Status()
+        }
+    }
+
     @Test fun `binding with no removal behind it starts nothing`() {
         service.onActivityBound()
         assertEquals(LinkPhase.OFF, link.phase)
