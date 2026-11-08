@@ -163,6 +163,9 @@ class DriveRecorder(
         val outsideLoopWrites = Mutex()
         /** Point inserts that failed for this drive (their points are not in Room); reported at STOP. */
         val failedPointWrites = java.util.concurrent.atomic.AtomicInteger()
+        /** When the drive last resumed from a pause (N1, QA Q1): the loop raises its gate's floor to it at the next fix, so a
+         *  decode made during a pause that saw no fix is not stored either. Written by [resumeDrive], read by the loop. */
+        @Volatile var resumedAtMs = 0L
         /** Point inserts of this drive under way (#262 N2): counted from before the points leave the buffer, so a
          *  [durabilityBarrier] can't miss a batch the loop has taken but Room hasn't stored yet. */
         val inFlight = MutableStateFlow(0)
@@ -321,6 +324,7 @@ class DriveRecorder(
 
     fun resumeDrive() {
         pausedAtMs = 0L
+        run.resumedAtMs = System.currentTimeMillis()   // N1 / Q1: the loop's next fix takes nothing decoded before this
         run.prevPoint = null  // Gap in polyline — next point won't connect to prev
         _driveState.update { it.copy(isPaused = false) }
     }
@@ -529,7 +533,9 @@ class DriveRecorder(
                     val gate = run.freshGate
                     // Boost-sweep DIDs: value only on a fresh decode, otherwise the
                     // "absent" sentinel (0.0 kPa / -1.0 %) so stats never count a held value.
-                    // N1: each polled value only from a decode made after the last skipped fix and within twice its poll budget
+                    // N1: each polled value only from a decode made after the last skipped fix and within twice its poll budget;
+                    // Q1: and after the last resume (a pause can pass with no fix to skip). The gate is touched only here.
+                    run.resumedAtMs.takeIf { it > 0 }?.let { gate.skip(it) }
                     val tipFresh    = gate.takeIfCurrent("tipActualKpa", vs, now)
                     val targetFresh = gate.takeIfCurrent("tipDesiredKpa", vs, now)
                     val wgdcFresh   = gate.takeIfCurrent("wgdcDesired", vs, now)
