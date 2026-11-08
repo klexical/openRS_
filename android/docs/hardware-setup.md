@@ -220,7 +220,7 @@ openRS_ also supports the [MeatPi Pro](https://www.meatpi.com/) via raw TCP SLCA
 
 ---
 
-## OBD-II Port Pinout (Focus RS MK3)
+## OBD-II Port Pinout (Focus RS Mk3)
 
 | Pin | Signal | Notes |
 |-----|--------|-------|
@@ -236,4 +236,4 @@ openRS uses the HS-CAN bus (pins 6/14) for all data. The standard WiCAN connects
 
 ## OBD-II Port Location
 
-The Focus RS MK3 OBD-II port is under the steering column, to the left of the hood release lever. The WiCAN's angled connector faces down to avoid knee contact.
+The Focus RS Mk3 OBD-II port is under the steering column, to the left of the hood release lever. The WiCAN's angled connector faces down to avoid knee contact.

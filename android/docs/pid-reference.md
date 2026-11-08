@@ -1,4 +1,4 @@
-# OBD PID Reference — Ford Focus RS MK3
+# OBD PID Reference — Ford Focus RS Mk3
 
 Complete reference for all OBD-II parameters used by openRS_ (current as of v2.2.4). The CAN frame table, the polling
 summary and the catalog note were brought up to date on 2026-11-08, when they moved here from the README.
@@ -109,7 +109,7 @@ Decoding `0x280B` data bytes (after `62 280B`):
 
 ### TPMS PIDs -- alternative/legacy formula reference
 
-> **Formula note:** MeatPi's official Focus RS vehicle profile uses `([B4:B5]/10)/2.036`. The app uses `(((256*A)+B)/3 + 22/3) * 0.145`, which was validated against known tire pressures on the Focus RS MK3.
+> **Formula note:** MeatPi's official Focus RS vehicle profile uses `([B4:B5]/10)/2.036`. The app uses `(((256*A)+B)/3 + 22/3) * 0.145`, which was validated against known tire pressures on the Focus RS Mk3.
 
 > **Unsupported (0x2823–0x2826):** On this BCM, those per-tire temp PIDs are rejected (`7F 22 31`). Tire temperatures in the app use **0x280B** (see the **TPMS — BCM Mode 22** section above), not these rows.
 

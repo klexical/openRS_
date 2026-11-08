@@ -1,6 +1,6 @@
 # openrs-fw
 
-Custom firmware for MeatPi WiCAN adapters, purpose-built for the Ford Focus RS MK3. Part of the [openRS_ project](../README.md).
+Custom firmware for MeatPi WiCAN adapters, purpose-built for the Ford Focus RS Mk3. Part of the [openRS_ project](../README.md).
 
 Forked from [`meatpiHQ/wican-fw`](https://github.com/meatpiHQ/wican-fw) — the proven WiFi/CAN/OTA stack is retained and a Focus RS module (`focusrs`) is layered on top.
 
@@ -28,12 +28,10 @@ Forked from [`meatpiHQ/wican-fw`](https://github.com/meatpiHQ/wican-fw) — the 
 - **Launch Control enable/disable**
 - **Auto Start/Stop kill** — simulates ASS button on CAN 0x260 (byte 1, bit 0)
 - **Boot apply** — on startup, automatically applies persisted drive mode, ESC mode, and ASS kill
-- **BLE GATT transport** — exposes ELM327 stream over BLE 5.0
-  - Fallback when the phone's WiFi radio is occupied (e.g. wireless projection)
-  - Coexists with WiFi — both active simultaneously
+- **Bluetooth LE** uses the MeatPi firmware's transport. Enable it in the adapter's web interface before pairing. See [connection support by app release](../android/docs/hardware-setup.md#which-connection-to-use).
 - **Battery protection** — configurable voltage threshold (default 12.2V) for sleep mode
 - **Battery voltage REST API** (`GET /api/frs` → includes `battery_mv`)
-- Branded as `openRS_` (SSID: `openRS_XXXXXX`, BLE: `openRS_WiCAN`)
+- Wi-Fi network names start with `openRS_` on openrs-fw. Bluetooth names start with `WiC_`. Both prefixes are followed by 12 hexadecimal characters.
 
 ---
 
@@ -207,14 +205,7 @@ Returns current vehicle PID values (same format as Nutron RSdash).
 
 ## BLE GATT Service
 
-**Service UUID:** `0000FFE0-0000-1000-8000-00805F9B34FB`
-
-| Characteristic | UUID | Properties | Description |
-|----------------|------|------------|-------------|
-| ELM327 RX | `FFE1` | Write | Send AT commands / OBD requests |
-| ELM327 TX | `FFE2` | Notify | Receive ELM327 responses |
-
-The BLE interface is protocol-compatible with the WiFi TCP interface. The openRS_ Android app uses the same SLCAN parser for both transports.
+The MeatPi USB adapter uses service `FEE0`. The Pro uses `FFF0`. Stable Android v2.2.6 expects a different service and should use Wi-Fi. See the [hardware setup guide](../android/docs/hardware-setup.md#which-connection-to-use) for pairing and the configurations verified on a car.
 
 ### AT+FRS Command Channel (BLE + TCP + WebSocket)
 
@@ -309,7 +300,7 @@ firmware/
 │   │   ├── focusrs_nvs.h
 │   │   ├── focusrs_uds.c             ← UDS ABS probe
 │   │   └── focusrs_uds.h
-│   └── ble_transport/                 ← BLE GATT ELM327 bridge
+│   └── ble_transport/                 ← header-only placeholder for a future BLE GATT transport (not built in v1.x)
 │       ├── CMakeLists.txt
 │       └── ble_transport.h
 ├── patches/
@@ -357,7 +348,7 @@ For the full project roadmap (app + firmware), see the [root README](../README.m
 openrs-fw is part of the openRS_ project. Issues and PRs welcome at:
 `https://github.com/klexical/openRS_`
 
-CAN frame data was validated on a 2018 Focus RS MK3. If you have captured frames from a different model year, please open an issue with your data.
+CAN frame data was validated on a 2018 Focus RS Mk3. If you have captured frames from a different model year, please open an issue with your data.
 
 ---
 
