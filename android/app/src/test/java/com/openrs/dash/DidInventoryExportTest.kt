@@ -121,6 +121,22 @@ class DidInventoryExportTest {
         assertEquals(1, refused)
     }
 
+    @Test fun `L1 - a partial reply superseded by a new FF or SF, or abandoned by the caller, counts once each`() {
+        var refused = 0
+        val buf = com.openrs.dash.can.IsoTpBuffer { refused++ }
+        fun hex(s: String) = ByteArray(s.length / 2) { s.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
+        buf.feed(hex("100A62280B010203"))                                      // partial
+        buf.feed(hex("100A62280B010203"))                                      // superseded by an FF
+        assertEquals(1, refused)
+        buf.feed(hex("0562280B01020000"))                                      // superseded by an SF (delivered)
+        assertEquals(2, refused)
+        buf.feed(hex("100A62280B010203")); buf.abandon()                       // open when the caller stops waiting
+        assertEquals(3, refused)
+        buf.abandon()                                                          // nothing open: no count
+        buf.feed(hex("100A62280B010203")); buf.feed(hex("2104050607080900")); buf.abandon()   // completed, then abandon
+        assertEquals("a completed reply is not abandoned", 3, refused)
+    }
+
     @Test fun `the same DID from two modules is two rows - the inventory is per module address`() = runTest {
         DiagnosticLogger.countDidPositive(0x72E, 0x4028); DiagnosticLogger.countDidPositive(0x72E, 0x4028)
         DiagnosticLogger.countDidPositive(0x70B, 0x4028)
