@@ -36,7 +36,7 @@
 
 **openRS_** is a native Android app that turns your phone into a full telemetry dashboard for the Ford Focus RS MK3. It connects to a [MeatPi USB (C3)](https://www.mouser.com/ProductDetail/MeatPi/WICAN-USB-C3?qs=rQFj71Wb1eVDX2eEy0FC7A%3D%3D) or [MeatPi Pro (S3)](https://www.meatpi.com/) adapter — over **Wi-Fi or Bluetooth Low Energy**. openRS_ reads supported signals from the vehicle's high-speed CAN bus (HS-CAN) and polls Ford modules for additional telemetry.
 
-Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It shows the GKN Twinster AWD system, polls TPMS tire pressures and temperatures from the BCM, and presents everything in a dark, glanceable interface tuned for track days. A bundled **FORScan PID catalog** (1,149 entries across 8 ECU modules) is a searchable list of candidates, not a count of signals confirmed on the RS. Entries can be added to the live display via JSON without touching code.
+Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It shows the GKN Twinster AWD system, polls TPMS tire pressures and temperatures from the BCM, and presents everything in a dark, glanceable interface tuned for track days. A bundled **FORScan PID catalog** (1,148 entries across 20 modules) is a searchable reference list, not a count of signals confirmed on the RS.
 
 > **Try it now:** [klexical.github.io/openRS_/emulator](https://klexical.github.io/openRS_/emulator/) — live browser emulator with animated demo data, no hardware required.
 >
@@ -100,7 +100,7 @@ These images come from **RC8 Build 39, which is not released**. They were captur
 | **CHASSIS** | AWD detail (4 wheel speeds, wheel rotation counts, torque bar, F/R delta, L/R delta, rear bias, clutch temps L/R, **clutch actuator current L/R**, **hydraulic pressure L/R**, trans oil temp), G-force + yaw + steering with peak reset, TPMS Focus RS wireframe (pressure + temp, 3-tier colour-coded Low/Warn/High thresholds), pressure spread warning (⚠ PRESSURE IMBALANCE when spread ≥ 4 PSI), temperature range legend |
 | **TEMPS** | Animated Ready-to-Race banner, 14 temperature cards each with a colour indicator bar (oil, coolant, intake, ambient, RDU, PTU, charge air, manifold charge, catalytic, cabin, battery, clutch L, clutch R, trans oil) |
 | **MAP** | Live drive tracking with **Google Maps** — 6 colour modes (speed, drive mode, boost, throttle, lateral G, temp), start/finish markers, peak event markers (RPM/boost/lat-G/speed), pause markers, route stats HUD, weather card, custom recenter / zoom controls. Drive history grouped by date with status badges, swipe-to-delete, per-drive export (GPX/CSV/summary). |
-| **DIAG** | DTC Scanner (full-module scan including GFM 0x7D2, count badges, freeze-frame, clear), DID Prober (scan any ECU for valid Mode 22 DIDs), PID Browser (1,149 FORScan PIDs across 8 modules, searchable), frame inventory with per-ID change tracking, SLCAN raw log, **live button input feedback** (drive mode toggle, suspension, ASS, ESC defeat), **battery row with charge/discharge current**, one-tap ZIP export (SavvyCAN/Kayak compatible) |
+| **DIAG** | DTC Scanner (full-module scan including GFM 0x7D2, count badges, freeze-frame, clear), DID Prober (scan any ECU for valid Mode 22 DIDs), PID Browser (1,148 FORScan catalog PIDs across 20 modules, searchable), frame inventory with per-ID change tracking, SLCAN raw log, **live button input feedback** (drive mode toggle, suspension, ASS, ESC defeat), **battery row with charge/discharge current**, one-tap ZIP export (SavvyCAN/Kayak compatible) |
 | **MORE** | Drive mode (N/S/T/D, tap-to-change with openrs-fw firmware), ESC status, firmware version display, firmware-gated features (Launch Control, Auto S/S Kill), Module Status (RDU/PDC/FENG live OBD), passive VIN decode (CAN 0x40A), connection & snapshot, in-app update checker (stable + beta channels) |
 
 A frosted-glass **bottom nav bar** with vector icons + spring-animated indicator persists across all tabs. **Quick Mode Dock** drops down from the status bar's MODE pill from any tab for one-tap drive mode changes.
@@ -152,7 +152,7 @@ The banner shows which sensors are still below threshold with live °C values. A
 <details>
 <summary><strong>Live CAN Parameters — WebSocket SLCAN (passive at full bus speed)</strong></summary>
 
-All data is received passively from the CAN bus via WebSocket SLCAN at ~2100 fps. No OBD polling windows or header switching required for primary gauges.
+Broadcast data is received passively from the HS-CAN bus (WebSocket SLCAN at ~2100 fps over Wi-Fi); the primary gauges need no OBD polling windows or header switching. Additional values are polled from Ford modules (Mode 22).
 
 | CAN ID | Parameters | Source |
 |--------|-----------|--------|
@@ -194,7 +194,7 @@ All data is received passively from the CAN bus via WebSocket SLCAN at ~2100 fps
 | HVAC (candidate) | 0x733 | 0x73B | Blower %, interior temp, discharge air temp, blend doors L/R, defrost door — response handler wired, **DIDs unconfirmed** (use DID prober) | — |
 | IPC (candidate) | 0x720 | 0x728 | Warning lamps (MIL/CEL, ABS, brake, charge, oil pressure, high temp) — response handler wired, **DIDs unconfirmed** (use DID prober) | — |
 
-**FORScan PID Catalog — data-driven decode:** A bundled JSON catalog lists **1,149 PIDs across 8 ECU modules** (a searchable catalog; not every entry is confirmed on the RS) (PCM, OBDII, BCM, ABS, AWD, HVAC, IPC, PSCM). `PidRegistry` evaluates formula expressions from the catalog at runtime — new PIDs can be added via JSON without modifying Kotlin code. Decoded values accumulate in `VehicleState.genericValues`.
+**FORScan PID Catalog — data-driven decode:** A bundled JSON catalog lists **1,148 PIDs across 20 modules**, 24 of them with a DID and formula (a searchable catalog; not every entry is confirmed on the RS) (PCM, OBDII, BCM, ABS, AWD, HVAC, IPC, PSCM). `PidRegistry` evaluates formula expressions from the catalog at runtime — new PIDs can be added via JSON without modifying Kotlin code. Decoded values accumulate in `VehicleState.genericValues`.
 
 </details>
 
@@ -323,7 +323,7 @@ Drop an export ZIP from the app into the web dashboard to explore your session d
 │  Peak tracking       │  Network.socketFactory pins Wi-Fi route       │
 ├──────────────────────┴───────────────────────────────────────────────┤
 │  PidRegistry — data-driven decode from FORScan catalog (JSON)        │
-│  1,149 PIDs · 8 modules · formula evaluator · genericValues output   │
+│  1,148 catalog PIDs · 20 modules · formula evaluator · genericValues │
 ├──────────────────────────────────────────────────────────────────────┤
 │  ObdConstants / ObdResponseParser / SlcanParser / IsoTpBuffer        │
 │  PCM/BCM/AWD/PSCM/FENG/RSProt response parsers                       │
@@ -345,8 +345,8 @@ Drop an export ZIP from the app into the web dashboard to explore your session d
 │  ESP32-C3 · Wi-Fi+BLE│  ESP32-S3 · Wi-Fi+BLE+GPS+MicroSD             │
 │  openrs-fw v1.61     │  openrs-fw v1.2                               │
 ├──────────────────────┴───────────────────────────────────────────────┤
-│  HS-CAN 500k         │  MS-CAN 125k (bridged via GWM)                │
-│  0x010–0x420 frames  │  Ambient 0x340/0x1A4 (GWM bridged)            │
+│  HS-CAN 500k         │  MS-CAN 125k: not read by the app             │
+│  0x010–0x420 frames  │  (0x1A4 ambient is bridged onto HS)           │
 └──────────────────────┴───────────────────────────────────────────────┘
 ```
 
@@ -361,7 +361,7 @@ Drop an export ZIP from the app into the web dashboard to explore your session d
 
 **How does firmware detection work?** After SLCAN initialisation, the app sends `OPENRS?\r`. openRS_ firmware responds with `OPENRS:<version>`; stock WiCAN ignores it. Every incoming CAN frame for the first **3 seconds** is scanned for the probe response — this time-based window ensures the probe reply is not missed even on high-throughput buses (~1700 fps). After 3 seconds without a response, firmware latches as "WiCAN stock" for the session. MORE tab feature buttons unlock when openRS_ firmware is confirmed.
 
-**How does the FORScan PID catalog work?** `PidRegistry` lazy-loads `forscan_modules.json` at first use and indexes 1,149 PIDs by `(ecuResponseId, did)` tuple. Each PID entry carries a formula expression string (e.g. `"signed(A*256+B)/-512.0"`). A custom recursive-descent parser evaluates the formula at runtime using bytes from the OBD response. All four OBD parsers (PCM, AWD, HVAC, IPC) fall through to `PidRegistry` for unrecognised DIDs, storing results in `VehicleState.genericValues`. New PIDs can be onboarded via JSON without modifying Kotlin code.
+**How does the FORScan PID catalog work?** `PidRegistry` lazy-loads `forscan_modules.json` at first use and indexes the catalog's 1,148 PIDs by `(ecuResponseId, did)` tuple. Each PID entry carries a formula expression string (e.g. `"signed(A*256+B)/-512.0"`). A custom recursive-descent parser evaluates the formula at runtime using bytes from the OBD response. All four OBD parsers (PCM, AWD, HVAC, IPC) fall through to `PidRegistry` for unrecognised DIDs, storing results in `VehicleState.genericValues`. New PIDs can be onboarded via JSON without modifying Kotlin code.
 
 **How does the DID prober work?** `DidProberSection` (DIAG tab) sends Mode 22 UDS queries across module-specific DID ranges using `sendRawQuery()` — a new infrastructure method on both `WiCanConnection` and `MeatPiConnection`. Responses are classified as FOUND (0x62 positive), NRC (0x7F negative, NRC code shown), or TIMEOUT. A live progress bar, counters, and expandable result list with raw hex data make it easy to discover new ECU parameters.
 
@@ -394,7 +394,7 @@ web/                                         # Sapphire — post-session analyti
 android/
 ├── app/src/main/
 │   ├── assets/pids/
-│   │   ├── forscan_modules.json          # Bundled FORScan catalog (1,149 PIDs, 8 modules)
+│   │   ├── forscan_modules.json          # Bundled FORScan catalog (1,148 PIDs, 20 modules)
 │   │   └── combined_catalog.json         # Merged PID catalog
 │   ├── java/com/openrs/dash/
 │   │   ├── OpenRSDashApp.kt              # App singleton + driveDb/Recorder/State
@@ -589,7 +589,7 @@ Full detail: [android/CHANGELOG.md on staging](https://github.com/klexical/openR
 - [x] Phase 7 — Data export + MeatPi Pro: trip ZIP (GPX/CSV/TXT), diagnostics ZIP, raw TCP SLCAN adapter support (v2.2.1)
 - [x] Phase 7.5 — Sensor data + polish: GPS permission fix, Module Status/LC/ASS live OBD, full diagnostic export (~24 new fields), SLCAN OBD frame capture, code review fixes (v2.2.3)
 - [x] Phase 8.0 — Car test fixes + signal expansion: ESC decode fix, throttle fallback, battery voltage OBD, crash telemetry ring buffer, passive odometer (CAN 0x360), tap-to-change drive mode/ESC, RS MK3 theme colour correction, MeatPi default fix, free CAN signal extraction (vertical G, launch control, engine status, ignition status, ESC Launch mode), full repo audit hardening (v2.2.4)
-- [x] Phase 8.1 — FORScan PID catalog (1,149 PIDs, 8 modules), data-driven decode (PidRegistry + formula evaluator), DID prober, PID browser, AWD expansion (clutch temps L/R, trans oil temp, req torques, demanded pressure, pump current), per-cylinder knock correction (KR C1–C4), HVAC/IPC scaffolding, warning lamp banner (v2.2.5)
+- [x] Phase 8.1 — FORScan PID catalog (1,148 PIDs, 20 modules), data-driven decode (PidRegistry + formula evaluator), DID prober, PID browser, AWD expansion (clutch temps L/R, trans oil temp, req torques, demanded pressure, pump current), per-cylinder knock correction (KR C1–C4), HVAC/IPC scaffolding, warning lamp banner (v2.2.5)
 - [x] Phase 8.2 — Drive mode reliability (pre-flight logging, auto-correction on overshoot), 0-60/0-100 performance timer, real-time fuel economy (idle/instant/average/DTE), clutch pedal (CAN 0x138), passive VIN decode (CAN 0x40A), wheel rotation counts (CAN 0x1E0), 3-tier TPMS thresholds, TPMS + temps in trip CSV exports, peripheral edge shift light, crash telemetry ring buffer (v2.2.5)
 - [x] Phase 8.3 — MAP tab + drive recorder: Google Maps integration with 6 colour modes (speed/mode/boost/throttle/lat-G/temp), Room-backed `DriveRecorder` with 1 Hz GPS + telemetry, drive history with date grouping, per-drive GPX/CSV/summary export, weather card, hoisted camera state, peak markers (v2.2.6 rc.1–rc.6)
 - [x] Phase 8.4 — BLE GATT transport: `BleSlcanTransport` (FFE0/FFE1/FFE2, MTU 247, auto-reconnect), `BleDeviceScanner`, in-app device picker with RSSI bars, adapter naming refactor (MeatPi USB / Pro × Wi-Fi / BLE), Wi-Fi coexistence banner, `BleFirmwareApi` (`AT+FRS=`), `Network.socketFactory` Wi-Fi route pinning (v2.2.6 rc.7)
