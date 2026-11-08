@@ -252,6 +252,9 @@ Once openrs-fw is running, all future updates use **OTA via the web UI** — no 
 | **Auto-discovery** (app finds device) | ❌ | ✅ |
 | openRS_ branding (SSID, web UI) | ❌ | ✅ |
 
+> A ✅ means the firmware has the command. It is not a claim that the feature is verified on a car: ESC control from
+> the app, for example, is not yet confirmed on a car ([#125](https://github.com/klexical/openRS_/issues/125)).
+
 ---
 
 ## Troubleshooting
