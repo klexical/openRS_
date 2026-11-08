@@ -16,7 +16,8 @@ import org.junit.Test
  * apart (before: MAP was the last fast DID, ≥ 7 slots after TIP); and the recording state is read again just before the MAP
  * request, so a STOP or PAUSE that lands mid-batch sends no further F40B (a late reply to an earlier request is fine).
  * Production poller (SlcanConnection's PCM loop on virtual time, engine running), checking the frames it writes, in order.
- * Only APIs that exist on 5bed73a (red there).
+ * Only APIs that exist on 5bed73a (red there). Order is checked within the PCM requests (t7E0…): other modules' pollers
+ * write on the same transport.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class MapPollTimingTest {
@@ -28,7 +29,8 @@ class MapPollTimingTest {
     @Test fun `while recording, every MAP request comes right after a TIP request`() = runTest {
         val run = ReplayRun(this, ReplayFixture.load("at-rest-baseline.txt"), rpm = 3_000.0, mapPoll = { true })
         advanceTimeBy(80_000L)
-        val w = run.transport.writes.toList()
+        // The PCM sender's own sequence (the BCM / AWD pollers share the transport, so their requests interleave)
+        val w = run.transport.writes.filter { it.startsWith("t7E0") }
         val mapAt = w.indices.filter { isMap(w[it]) }
         assertTrue("MAP was requested (${mapAt.size})", mapAt.size >= 10)
         val notAfterTip = mapAt.filter { it == 0 || !isTip(w[it - 1]) }

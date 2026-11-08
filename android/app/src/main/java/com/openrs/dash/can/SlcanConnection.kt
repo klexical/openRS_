@@ -381,6 +381,8 @@ class SlcanConnection(
                         batch.queries.forEach { q ->
                             val did = ObdConstants.extractDid(q)
                             if (did != null && !nrcTracker.shouldPoll(did, clock())) return@forEach
+                            // #271: the batch was built while recording; a STOP / PAUSE since then sends no MAP request
+                            if (q == ObdConstants.PCM_QUERY_MAP && !mapPoll()) return@forEach
                             // Registered before the write so an instant reply finds it; withdrawn if the write
                             // certainly didn't reach the bus (#216) — a BLE write that failed after it was handed to the
                             // stack may have, so it keeps its request (it lapses) and is never resent (#248)
