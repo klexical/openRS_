@@ -483,6 +483,8 @@ class DriveRecorder(
 
                     // Skip recording when paused
                     if (state.isPaused) {
+                        // N1: nothing decoded before or during the pause may be stored at a fix after it
+                        run.freshGate.skip(System.currentTimeMillis())
                         lapTimer?.breakTrack(driveId)
                         gaps.onLocation(System.currentTimeMillis(), written = false, skipped = RecordingGapMonitor.Reason.PAUSED)
                             ?.let { DiagnosticLogger.event("REC_GAP", "drive $driveId: ${it.describe()}") }
@@ -504,6 +506,7 @@ class DriveRecorder(
                     // polyline. The live position dot above keeps updating; distance driven during
                     // the gap is not counted.
                     if (!vs.isConnected) {
+                        run.freshGate.skip(now)                       // N1: the same across a link gap
                         run.prevPoint = null
                         lapTimer?.breakTrack(driveId)
                         gaps.onLocation(now, written = false, skipped = RecordingGapMonitor.Reason.DISCONNECTED)
@@ -512,14 +515,14 @@ class DriveRecorder(
                     }
                     gaps.onLocation(now, written = true)?.let { DiagnosticLogger.event("REC_GAP", "drive $driveId: ${it.describe()}") }
                     val gate = run.freshGate
-                    val stamps = vs.fieldLastUpdateMs
                     // Boost-sweep DIDs: value only on a fresh decode, otherwise the
                     // "absent" sentinel (0.0 kPa / -1.0 %) so stats never count a held value.
-                    val tipFresh    = gate.takeIfFresh("tipActualKpa", stamps)
-                    val targetFresh = gate.takeIfFresh("tipDesiredKpa", stamps)
-                    val wgdcFresh   = gate.takeIfFresh("wgdcDesired", stamps)
+                    // N1: each polled value only from a decode made after the last skipped fix and within twice its poll budget
+                    val tipFresh    = gate.takeIfCurrent("tipActualKpa", vs, now)
+                    val targetFresh = gate.takeIfCurrent("tipDesiredKpa", vs, now)
+                    val wgdcFresh   = gate.takeIfCurrent("wgdcDesired", vs, now)
                     // MAP 0xF40B (#271): a value only on a fresh decode, otherwise null — never a held reading
-                    val mapFresh    = gate.takeIfFresh(com.openrs.dash.data.MapF40b.TAG, stamps)
+                    val mapFresh    = gate.takeIfCurrent(com.openrs.dash.data.MapF40b.TAG, vs, now)
                     // Boost by the source rule (#207): the reading + its source; NONE = no fresh source (0.0 is not a reading)
                     val boost = com.openrs.dash.data.BoostSession.read(vs, now)
                     // The shared verdict (DRIVE row / THERMAL card) including its holds: TEMPS READY only.
@@ -582,8 +585,8 @@ class DriveRecorder(
 
                     // Fuel trim drift — fresh decodes only, warm-engine gate inside the accumulator
                     run.fuelTrims.add(
-                        stftFresh = gate.takeIfFresh("shortFuelTrim", stamps), stft = vs.shortFuelTrim,
-                        ltftFresh = gate.takeIfFresh("longFuelTrim", stamps),  ltft = vs.longFuelTrim,
+                        stftFresh = gate.takeIfCurrent("shortFuelTrim", vs, now), stft = vs.shortFuelTrim,
+                        ltftFresh = gate.takeIfCurrent("longFuelTrim", vs, now),  ltft = vs.longFuelTrim,
                         coolantC = vs.coolantTempC, rpm = vs.rpm
                     )
 

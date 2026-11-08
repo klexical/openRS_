@@ -35,11 +35,10 @@ object KnockCapture {
         lat: Double?,
         lng: Double?
     ): List<KnockEventEntity> {
-        val stamps = vs.fieldLastUpdateMs
         var out: MutableList<KnockEventEntity>? = null
         val boost = BoostSession.read(vs, now)   // #207: the reading and its source, or none
         for (cyl in 1..4) {
-            if (!gate.takeIfFresh(KR_TAGS[cyl - 1], stamps)) continue
+            if (!gate.takeIfCurrent(KR_TAGS[cyl - 1], vs, now)) continue     // N1: a decode older than its budget is no event
             val kr = krFor(vs, cyl)
             if (kr < KnockEventEntity.KNOCK_MIN_DEG) continue
             val list = out ?: ArrayList<KnockEventEntity>(4).also { out = it }
