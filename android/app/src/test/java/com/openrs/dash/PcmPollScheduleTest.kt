@@ -26,20 +26,35 @@ class PcmPollScheduleTest {
     @Test
     fun `fast group holds the boost sweep and knock DIDs`() {
         val dids = fast.mapNotNull { ObdConstants.extractDid(it) }.toSet()
-        assertEquals(setOf(0x033E, 0x0466, 0x0462, 0x03EC, 0x03ED, 0x03EE, 0x03EF, 0xF40B), dids)
+        assertEquals(setOf(0x033E, 0x0466, 0x0462, 0x03EC, 0x03ED, 0x03EE, 0x03EF), dids)
     }
 
     @Test
-    fun `MAP in the fast group - the cycle and the slow rotation it costs (#271)`() {
-        // Pinned so the pacing cost of the eighth fast DID is explicit: one cycle = the fast group + one slow DID at the
-        // engine-running gap (reply time not included). Before #271: 7 + 1 = 1,200 ms.
-        val cycleMs = (fast.size + 1) * ObdConstants.PCM_FAST_GAP_MS
+    fun `default - MAP is slow and the fast cycle keeps its pre-#271 timing (owner decision F1)`() {
+        // One cycle = the fast group + one slow DID at the engine-running gap (reply time not included)
+        val f = ObdConstants.pcmFastQueries(mapComparison = false); val s = ObdConstants.pcmSlowQueries(mapComparison = false)
+        assertEquals(fast, f)
+        assertTrue(0xF40B in s.mapNotNull { ObdConstants.extractDid(it) })
+        val cycleMs = (f.size + 1) * ObdConstants.PCM_FAST_GAP_MS
+        assertEquals(1_200L, cycleMs)                                     // as before #271
+        assertEquals(25_200L, s.size * cycleMs)                           // 21 slow DIDs; inside the 40 s budget
+        assertTrue(s.size * cycleMs <= ObdConstants.PCM_SLOW_REFRESH_MS)
+        val b = PcmPollSchedule.nextBatch(slowIndex = 0, engineRunning = true, mapComparison = false)
+        assertEquals(f.size + 1, b.queries.size)
+    }
+
+    @Test
+    fun `MAP comparison mode - MAP joins the fast group, every DID still sent exactly once per round (#271)`() {
+        val f = ObdConstants.pcmFastQueries(mapComparison = true); val s = ObdConstants.pcmSlowQueries(mapComparison = true)
+        assertEquals(fast + ObdConstants.PCM_QUERY_MAP, f)
+        assertTrue(0xF40B !in s.mapNotNull { ObdConstants.extractDid(it) })
+        assertEquals((f + s).toSet(), ObdConstants.PCM_QUERIES.toSet()); assertEquals((f + s).size, (f + s).toSet().size)
+        val cycleMs = (f.size + 1) * ObdConstants.PCM_FAST_GAP_MS
         assertEquals(1_350L, cycleMs)
-        // Each slow DID comes round once per slow-list rotation; that stays inside the slow staleness budget
-        assertEquals(27_000L, slow.size * cycleMs)
-        assertTrue(slow.size * cycleMs <= ObdConstants.PCM_SLOW_REFRESH_MS)
-        // A fast DID is due again within the fast freshness budget, with room for reply time
+        assertEquals(27_000L, s.size * cycleMs)
         assertTrue(cycleMs < com.openrs.dash.data.PolledFreshness.FAST_REFRESH_MS)
+        val b = PcmPollSchedule.nextBatch(slowIndex = 0, engineRunning = true, mapComparison = true)
+        assertEquals(ObdConstants.PCM_QUERY_MAP, b.queries[f.size - 1])
     }
 
     @Test

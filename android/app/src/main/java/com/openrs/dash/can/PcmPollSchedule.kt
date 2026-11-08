@@ -3,9 +3,11 @@ package com.openrs.dash.can
 /**
  * PCM Mode 22 poll schedule (rc.5, #184).
  *
- * Engine running: every cycle sends the whole fast group (TIP actual/desired, WGDC, KR1–4, MAP since #271)
+ * Engine running: every cycle sends the whole fast group (TIP actual/desired, WGDC, KR1–4)
  * followed by ONE slow DID, rotating through the slow list. At 150 ms gaps that is
- * ~1.35 s per cycle — fast DIDs refresh at ~0.74 Hz, each slow DID every ~27 s (before reply time).
+ * ~1.2 s per cycle — fast DIDs refresh at ~0.8 Hz, each slow DID every ~25 s (before reply time).
+ * MAP 0xF40B (#271) is in the slow rotation unless the MAP comparison test mode is on, which moves it into the fast group
+ * for that time (~1.35 s per cycle); the mode is read for every batch.
  *
  * Engine off: the pre-rc.5 behaviour — full sweep of every DID, then a 30 s idle.
  *
@@ -24,8 +26,9 @@ object PcmPollSchedule {
     fun nextBatch(
         slowIndex: Int,
         engineRunning: Boolean,
-        fast: List<String> = ObdConstants.PCM_FAST_QUERIES,
-        slow: List<String> = ObdConstants.PCM_SLOW_QUERIES
+        mapComparison: Boolean = com.openrs.dash.data.MapComparisonMode.isOn,
+        fast: List<String> = ObdConstants.pcmFastQueries(mapComparison),
+        slow: List<String> = ObdConstants.pcmSlowQueries(mapComparison)
     ): Batch {
         if (!engineRunning || slow.isEmpty()) {
             return Batch(

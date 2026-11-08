@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -918,6 +919,11 @@ import kotlin.math.roundToInt
 
         Spacer(Modifier.height(Tokens.SectionGap))
 
+        // ── MAP comparison test mode (#271): memory only, off at every app start ──
+        MapComparisonRow()
+
+        Spacer(Modifier.height(Tokens.SectionGap))
+
         // ── Crash History (collapsed by default) ─────────────────────────────
         SectionLabel("CRASH HISTORY", collapsible = true, expanded = crashExpanded,
             onToggle = { crashExpanded = !crashExpanded })
@@ -1184,4 +1190,38 @@ private fun CrashHistorySection() {
     }
     Spacer(Modifier.height(4.dp))
     MonoLabel("Crash reports are auto-included in diagnostic ZIP exports.", 9.sp, Dim)
+}
+
+/**
+ * The "MAP comparison" test mode switch (#271, owner decision F1): while on, MAP 0xF40B is polled with TIP every engine-running
+ * cycle for the TIP scale check. The state lives in [com.openrs.dash.data.MapComparisonMode] (memory only, off at every app
+ * start); each change is logged as a MAP_COMPARISON session event.
+ */
+@Composable
+private fun MapComparisonRow() {
+    val on by com.openrs.dash.data.MapComparisonMode.on.collectAsState()
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("MAP COMPARISON (TEST)", fontSize = 12.sp, color = Frost, fontFamily = ShareTechMono, modifier = Modifier.weight(1f))
+            androidx.compose.material3.Switch(
+                checked = on,
+                onCheckedChange = { com.openrs.dash.data.MapComparisonMode.set(it) { t, m -> DiagnosticLogger.event(t, m) } },
+                colors = androidx.compose.material3.SwitchDefaults.colors(
+                    checkedThumbColor    = OnAccent,
+                    checkedTrackColor    = LocalThemeAccent.current,
+                    checkedBorderColor   = LocalThemeAccent.current,
+                    uncheckedThumbColor  = Mid,
+                    uncheckedTrackColor  = Surf3,
+                    uncheckedBorderColor = Mid.copy(alpha = 0.6f),
+                ),
+            )
+        }
+        Text("Polls MAP (0xF40B) with TIP every cycle for the TIP scale check; the poll cycle is then 1.35 s instead of 1.2 s. " +
+            "Off at every app start. Drives record whether it was on.",
+            fontSize = 11.sp, color = Dim, fontFamily = ShareTechMono)
+    }
 }

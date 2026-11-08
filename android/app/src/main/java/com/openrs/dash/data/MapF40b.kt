@@ -17,3 +17,25 @@ object MapF40b {
     /** The current reading, or null before the first reply. Freshness is the caller's ([PolledFreshness] / [FreshnessGate]). */
     fun kpa(vs: VehicleState): Double? = vs.genericValues[TAG]
 }
+
+/**
+ * The "MAP comparison" test mode (#271, owner decision F1): while on, MAP 0xF40B joins the PCM fast group (a TIP / MAP pair every
+ * engine-running cycle, the cycle 1.35 s instead of 1.2 s); off, it is in the slow rotation. Toggled from GARAGE → DIAG →
+ * DEVELOPER only. Memory only: off at every app start, never saved to preferences, so it can't become a hidden always-on
+ * setting; it survives reconnects and drives within one run of the app. A drive records whether it was on at any of its points
+ * (`DriveEntity.mapComparison`), and every change is a MAP_COMPARISON session event in the diagnostic export.
+ */
+object MapComparisonMode {
+    const val EVENT = "MAP_COMPARISON"
+    private val _on = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val on: kotlinx.coroutines.flow.StateFlow<Boolean> = _on
+
+    val isOn: Boolean get() = _on.value
+
+    /** Sets the mode; [log] receives one line per actual change (DiagnosticLogger.event in the app). */
+    fun set(value: Boolean, log: (String, String) -> Unit = { _, _ -> }) {
+        if (_on.value == value) return
+        _on.value = value
+        log(EVENT, if (value) "on — MAP 0xF40B in the PCM fast group" else "off — MAP 0xF40B in the slow rotation")
+    }
+}

@@ -160,6 +160,8 @@ class DriveRecorder(
          *  [pointsBuffer] and insert. STOP's finalize takes it after the loop has ended, so the thumbnail reads every
          *  point those writes took (#241). Never another drive's — each run has its own. */
         val outsideLoopWrites = Mutex()
+        /** The MAP comparison test mode was on at one of this drive's recorded points (#271); written at STOP. */
+        @Volatile var mapComparisonSeen = false
         /** Point inserts that failed for this drive (their points are not in Room); reported at STOP. */
         val failedPointWrites = java.util.concurrent.atomic.AtomicInteger()
     }
@@ -409,7 +411,8 @@ class DriveRecorder(
                             avgLtftPct = trims.avgLtftPct,
                             trimSamples = trims.samples,
                             pullCount = pullTracker.pullCount,
-                            knockPullCount = pullTracker.knockPullCount
+                            knockPullCount = pullTracker.knockPullCount,
+                            mapComparison = stopped.mapComparisonSeen
                         ).also { final ->
                             dao.updateDrive(final)
                             // Lap timer results completed in this drive, with the row (no FK from lap_sessions)
@@ -622,6 +625,7 @@ class DriveRecorder(
 
                     // Buffer point
                     run.addPoint(point)
+                    if (com.openrs.dash.data.MapComparisonMode.isOn) run.mapComparisonSeen = true
 
                     // Update recent points list for live UI
                     run.recentPoints.add(point)

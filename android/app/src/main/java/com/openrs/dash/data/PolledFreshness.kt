@@ -18,11 +18,18 @@ object PolledFreshness {
     val FAST_TAGS = setOf(
         "tipActualKpa", "tipDesiredKpa", "wgdcDesired",
         "ignCorrCyl1", "ignCorrCyl2", "ignCorrCyl3", "ignCorrCyl4",
-        MapF40b.TAG,
     )
 
-    fun refreshMs(tag: String, engineRunning: Boolean): Long =
-        if (engineRunning && tag in FAST_TAGS) FAST_REFRESH_MS else ObdConstants.PCM_SLOW_REFRESH_MS
+    /**
+     * MAP 0xF40B (#271) is a pressure snapshot: whatever group polls it (slow by default, fast in the MAP comparison mode),
+     * it is current only within the fast budget, engine running or off — a 27 s-old reading from the slow rotation is
+     * never shown or used as current.
+     */
+    fun refreshMs(tag: String, engineRunning: Boolean): Long = when {
+        tag == MapF40b.TAG -> FAST_REFRESH_MS
+        engineRunning && tag in FAST_TAGS -> FAST_REFRESH_MS
+        else -> ObdConstants.PCM_SLOW_REFRESH_MS
+    }
 
     /** [fieldState] of [value] under this rule: NotPolled (never decoded), Available, or Stale (with its age). */
     fun <T> state(vs: VehicleState, tag: String, value: T, nowMs: Long = System.currentTimeMillis()): FieldState<T> =

@@ -117,17 +117,11 @@ object ObdConstants {
     // Fuel trims via Ford fast-path 22F4xx (maps to OBD Mode 01 PIDs at Mode 22 rates)
     const val PCM_QUERY_STFT         = "t7E080322F40600000000\r"  // 0xF406: A*100/128 - 100 (%)
     const val PCM_QUERY_LTFT         = "t7E080322F40700000000\r"  // 0xF407: A*100/128 - 100 (%)
-    /**
-     * rc.5 — boost-sweep + knock DIDs, polled every cycle while the engine runs. MAP 0xF40B joined in rc.8 (#271): the TIP
-     * scale check needs TIP / MAP pairs at wide-open throttle, which a slow-group DID (one per ~27 s rotation) can't give.
-     * Cost: the engine-running cycle is 8 fast + 1 slow at 150 ms = 1.35 s (was 1.2 s), so each fast value refreshes at
-     * ~0.74 Hz instead of ~0.83 Hz; pinned in PcmPollScheduleTest. Hardware-unverified.
-     */
+    /** rc.5 — boost-sweep + knock DIDs, polled every cycle while the engine runs (~0.8 Hz). */
     val PCM_FAST_QUERIES = listOf(
         PCM_QUERY_TIP_ACTUAL, PCM_QUERY_TIP_DESIRED,
         PCM_QUERY_WGDC,
-        PCM_QUERY_KR_CYL1, PCM_QUERY_KR_CYL2, PCM_QUERY_KR_CYL3, PCM_QUERY_KR_CYL4,
-        PCM_QUERY_MAP
+        PCM_QUERY_KR_CYL1, PCM_QUERY_KR_CYL2, PCM_QUERY_KR_CYL3, PCM_QUERY_KR_CYL4
     )
     /** Everything else — one per fast cycle while running, full sweep + idle when off. */
     val PCM_SLOW_QUERIES = listOf(
@@ -139,9 +133,20 @@ object ObdConstants {
         PCM_QUERY_OIL_LIFE, PCM_QUERY_HP_FUEL_RAIL, PCM_QUERY_FUEL_LEVEL,
         PCM_QUERY_BATTERY, PCM_QUERY_SPARK_ADV,
         PCM_QUERY_STFT, PCM_QUERY_LTFT,
-        PCM_QUERY_LOAD, PCM_QUERY_TIMING, PCM_QUERY_O2_VOLT, PCM_QUERY_LP_FUEL
+        PCM_QUERY_LOAD, PCM_QUERY_TIMING, PCM_QUERY_O2_VOLT, PCM_QUERY_LP_FUEL,
+        PCM_QUERY_MAP   // #271: slow by default (owner decision F1); the MAP comparison test mode moves it into the fast group
     )
     val PCM_QUERIES = PCM_FAST_QUERIES + PCM_SLOW_QUERIES
+
+    /**
+     * The engine-running groups for the current MAP comparison mode (#271, owner decision F1 "slow + test mode"). Off (the
+     * default): the pre-#271 fast group, MAP in the slow rotation. On: MAP joins the fast group, so a wide-open-throttle drive
+     * gives a TIP / MAP pair every cycle — at the cost of one more 150 ms slot per cycle (1.35 s instead of 1.2 s).
+     */
+    fun pcmFastQueries(mapComparison: Boolean): List<String> =
+        if (mapComparison) PCM_FAST_QUERIES + PCM_QUERY_MAP else PCM_FAST_QUERIES
+    fun pcmSlowQueries(mapComparison: Boolean): List<String> =
+        if (mapComparison) PCM_SLOW_QUERIES - PCM_QUERY_MAP else PCM_SLOW_QUERIES
     const val PCM_POLL_INTERVAL_MS  = 30_000L   // engine-off idle between full sweeps
     const val PCM_QUERY_GAP_MS      =    200L   // engine-off gap
     const val PCM_FAST_GAP_MS       =    150L   // engine-running gap

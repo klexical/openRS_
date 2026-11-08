@@ -52,7 +52,10 @@ data class DriveEntity(
     val boostPolicy: String? = null,               // BoostRule.POLICY the drive was recorded under
     // ── Oil / PTU mapping (v14) — OilPtuMapping.CURRENT for new drives; null = recorded before the #229 correction
     //    (unknown), never backfilled ──
-    val oilPtuMapping: String? = null
+    val oilPtuMapping: String? = null,
+    // ── MAP comparison test mode (v15, #271): true = the mode was on at one or more of the drive's recorded points (MAP polled
+    //    every cycle), false = off throughout; null = not recorded (before v15, or a drive closed after the app ended) ──
+    val mapComparison: Boolean? = null
 )
 
 @Entity(
@@ -794,10 +797,12 @@ abstract class DriveDatabase : RoomDatabase() {
             }
         }
 
-        /** v15 (#271): MAP 0xF40B per drive point, nullable — older rows read null ("not recorded"), never backfilled. */
+        /** v15 (#271): MAP 0xF40B per drive point and the drive's MAP comparison mode, both nullable — older rows read null
+         *  ("not recorded"), never backfilled. */
         internal val MIGRATION_14_15 = object : Migration(14, 15) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE drive_points ADD COLUMN mapKpa REAL")
+                db.execSQL("ALTER TABLE drives ADD COLUMN mapComparison INTEGER")
             }
         }
 
