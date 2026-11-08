@@ -17,6 +17,16 @@ Thanks for your interest in contributing to openRS_! This project aims to give F
 - **Android SDK 35** + Build Tools 35.0.0
 - **Kotlin 2.0.21** (managed by Gradle)
 
+## Building a release APK
+
+```bash
+git clone https://github.com/klexical/openRS_.git
+cd openRS_/android
+./gradlew assembleRelease
+# Output: app/build/outputs/apk/release/openRS_v2.2.6.apk
+# (Requires keystore — see android/docs/signing-setup.md)
+```
+
 ## Code Style
 
 - Follow standard [Kotlin coding conventions](https://kotlinlang.org/docs/coding-conventions.html)
@@ -89,6 +99,13 @@ We especially need help with:
 - **Additional BCM/IPC PIDs**: The BCM has hundreds of PIDs we haven't mapped
 
 If you have a Focus RS with FORScan or an OBDLink MX+, your PID dumps are incredibly valuable.
+
+## Help verifying on a car
+
+If you have a Focus RS and FORScan/OBDLink, we'd love help verifying:
+- Brake pressure bar calibration (raw ADC 0–4095 from `0x252`, need known-pressure reference)
+- HVAC / IPC ECU address and DID confirmation (use built-in DID prober)
+- MS-CAN parameters (requires second adapter)
 
 ## License
 

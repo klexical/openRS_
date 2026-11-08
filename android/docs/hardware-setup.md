@@ -11,6 +11,17 @@ Both adapters expose a BLE GATT service (UUID `0xFFE0` / RX `0xFFE1` / TX `0xFFE
 
 > **Wi-Fi vs BLE:** BLE leaves your phone's Wi-Fi free for cellular hand-off (weather, maps, in-app updates). Wi-Fi delivers slightly higher CAN throughput. Both transports drive the same `SlcanConnection` lifecycle.
 
+## Wi-Fi network names
+
+**Wi-Fi** — connect your phone to the adapter's Wi-Fi network:
+
+| Adapter / Firmware | SSID | Password |
+|--------------------|------|----------|
+| **Stock MeatPi USB** | `WiCAN_XXXXXX` | `@meatpi#` |
+| **openrs-fw USB** | `openRS_XXXXXX` | `openrs_2026` |
+| **Stock MeatPi Pro** | `MeatPi_PRO_XXXXXX` | `@meatpi#` |
+| **openrs-fw Pro** | `openRS_PRO_XXXXXX` | `openrs_2026` |
+
 ---
 
 ## MeatPi USB (C3) Adapter

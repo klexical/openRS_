@@ -336,7 +336,7 @@ firmware/
 
 ## Roadmap
 
-For the full project roadmap (app + firmware), see the [root README](../README.md#roadmap).
+For the full project roadmap (app + firmware), see the [root README](../README.md#development-and-direction).
 
 ### Next — ESC Fix and Polish
 
