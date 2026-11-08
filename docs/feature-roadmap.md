@@ -1,7 +1,7 @@
 # openRS\_ Feature Roadmap
 
 > **Vision document** — this file captures long-horizon feature ideas beyond the
-> [active release plan](../README.md#roadmap). Nothing here is committed to a
+> [active release plan](../README.md#development-and-direction). Nothing here is committed to a
 > release. When a feature moves to active development, a GitHub Issue is created
 > and linked back to the relevant section.
 
