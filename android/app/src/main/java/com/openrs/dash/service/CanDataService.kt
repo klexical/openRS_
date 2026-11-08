@@ -790,6 +790,10 @@ class CanDataService : Service() {
      * publish state, a merge or a notification over a newer attempt.
      */
     private fun endConnection(finalPhase: LinkPhase, reason: LinkStopReason, rec: String): Unit = link.transition {
+        // A drive still recording (auto-record off keeps it recording through a link gap) stores its buffered points now:
+        // the foreground service goes below, and nothing else keeps the process alive to write them (#262). Auto-record's
+        // pause above already flushed; this is then a no-op.
+        OpenRSDashApp.instance.driveRecorder.flushBuffered()
         teardownJob(finalPhase, reason, rec)
         OpenRSDashApp.instance.linkPhase.value = finalPhase
         // Demo owns the connection flags (WiFi/BT-loss callbacks still land here).
