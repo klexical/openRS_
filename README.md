@@ -34,9 +34,9 @@
 
 ## What is openRS_?
 
-**openRS_** is a native Android app that turns your phone into a full telemetry dashboard for the Ford Focus RS MK3. It connects to a [MeatPi USB (C3)](https://www.mouser.com/ProductDetail/MeatPi/WICAN-USB-C3?qs=rQFj71Wb1eVDX2eEy0FC7A%3D%3D) or [MeatPi Pro (S3)](https://www.meatpi.com/) adapter — over **Wi-Fi or Bluetooth Low Energy** — and passively monitors the full CAN bus (~2100 fps over Wi-Fi WebSocket), decoding every parameter the car broadcasts in real time.
+**openRS_** is a native Android app that turns your phone into a full telemetry dashboard for the Ford Focus RS MK3. It connects to a [MeatPi USB (C3)](https://www.mouser.com/ProductDetail/MeatPi/WICAN-USB-C3?qs=rQFj71Wb1eVDX2eEy0FC7A%3D%3D) or [MeatPi Pro (S3)](https://www.meatpi.com/) adapter — over **Wi-Fi or Bluetooth Low Energy**. openRS_ reads supported signals from the vehicle's high-speed CAN bus (HS-CAN) and polls Ford modules for additional telemetry.
 
-Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It understands the GKN Twinster AWD system, polls TPMS tire pressures and temperatures from the BCM, decodes Ford-specific parameters across HS-CAN and MS-CAN, and presents everything in a dark, glanceable interface tuned for track days. A bundled **FORScan PID catalog** covers 1,149 PIDs across 8 ECU modules (PCM, OBDII, BCM, ABS, AWD, HVAC, IPC, PSCM) — and new parameters can be added from the catalog via JSON without touching code.
+Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It shows the GKN Twinster AWD system, polls TPMS tire pressures and temperatures from the BCM, and presents everything in a dark, glanceable interface tuned for track days. A bundled **FORScan PID catalog** (1,149 entries across 8 ECU modules) is a searchable list of candidates, not a count of signals confirmed on the RS. Entries can be added to the live display via JSON without touching code.
 
 > **Try it now:** [klexical.github.io/openRS_/emulator](https://klexical.github.io/openRS_/emulator/) — live browser emulator with animated demo data, no hardware required.
 >
@@ -194,7 +194,7 @@ All data is received passively from the CAN bus via WebSocket SLCAN at ~2100 fps
 | HVAC (candidate) | 0x733 | 0x73B | Blower %, interior temp, discharge air temp, blend doors L/R, defrost door — response handler wired, **DIDs unconfirmed** (use DID prober) | — |
 | IPC (candidate) | 0x720 | 0x728 | Warning lamps (MIL/CEL, ABS, brake, charge, oil pressure, high temp) — response handler wired, **DIDs unconfirmed** (use DID prober) | — |
 
-**FORScan PID Catalog — data-driven decode:** A bundled JSON catalog covers **1,149 PIDs across 8 ECU modules** (PCM, OBDII, BCM, ABS, AWD, HVAC, IPC, PSCM). `PidRegistry` evaluates formula expressions from the catalog at runtime — new PIDs can be added via JSON without modifying Kotlin code. Decoded values accumulate in `VehicleState.genericValues`.
+**FORScan PID Catalog — data-driven decode:** A bundled JSON catalog lists **1,149 PIDs across 8 ECU modules** (a searchable catalog; not every entry is confirmed on the RS) (PCM, OBDII, BCM, ABS, AWD, HVAC, IPC, PSCM). `PidRegistry` evaluates formula expressions from the catalog at runtime — new PIDs can be added via JSON without modifying Kotlin code. Decoded values accumulate in `VehicleState.genericValues`.
 
 </details>
 
