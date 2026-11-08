@@ -115,8 +115,9 @@ object BoostRule {
 /**
  * Session state of the boost rule (#207), app-level like [KnockSessionLog]; reset on every new connection, session
  * reset and demo change: the peak of each measurement (gauge kPa, whenever it is fresh), so a caption shows the peak
- * of the source it names — never one another source produced. Source changes of the shown reading are logged
- * (BOOST_SOURCE, at most one line per [LOG_INTERVAL_MS], with the count of changes in between). Never persisted.
+ * of the source it names — never one another source produced. Source changes of the recorded reading ([read], the rule
+ * the recorder uses; the live gauge is TIP only) are logged as "recorded source A → B" (BOOST_SOURCE, at most one line per
+ * [LOG_INTERVAL_MS], with the count of changes in between). Never persisted.
  */
 object BoostSession {
     const val LOG_INTERVAL_MS = 10_000L
@@ -159,7 +160,8 @@ object BoostSession {
         if (previous == null) return                                    // first reading of the session
         if (lastLogMs?.let { nowMs - it < LOG_INTERVAL_MS } == true) { unlogged++; return }
         fun kpa(v: Double?) = v?.let { "%.1f kPa".format(java.util.Locale.ROOT, it) } ?: "not fresh"
-        log("shown ${previous.name} → ${source.name} (TIP ${kpa(tip)}, CAN 0x0F8 ${kpa(can)})" +
+        // The recorded source (read(): TIP → CAN 0x0F8 → none), not what the live gauge shows: the gauge is TIP only (#207)
+        log("recorded source ${previous.name} → ${source.name} (TIP ${kpa(tip)}, CAN 0x0F8 ${kpa(can)})" +
             (if (unlogged > 0) " · $unlogged earlier change(s) not logged" else ""))
         lastLogMs = nowMs; unlogged = 0
     }

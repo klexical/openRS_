@@ -113,7 +113,9 @@ class CanDataService : Service() {
             maxRetries       = maxRetries,
             reconnectDelayMs = reconnectDelayMs,
             rpmProvider      = { OpenRSDashApp.instance.vehicleState.value.rpm },
-            keepRetrying     = { isRecording() }
+            keepRetrying     = { isRecording() },
+            // #271: MAP 0xF40B is polled (fast group) only while a drive is recording, not paused
+            mapPoll          = { com.openrs.dash.data.MapF40b.pollActive(OpenRSDashApp.instance.driveRecorder.driveState.value) }
         )
 
         // Create the appropriate firmware command sender

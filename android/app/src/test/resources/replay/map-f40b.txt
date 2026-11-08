@@ -1,0 +1,3 @@
+# SYNTHETIC. PCM DID 0xF40B (standard MAP, OBD PID 0x0B through the 22F4xx path): one data byte A = kPa absolute (0–255).
+# A complete single frame is PCI 04: 62 F4 0B A. Values are invented, not from a capture.
++1000   RX t7E880462F40B64000000                   # PCI 04, A = 0x64 → 100 kPa

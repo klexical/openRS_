@@ -115,7 +115,10 @@ data class DrivePointEntity(
     val isRaceReady: Boolean = false,
     // ── Boost provenance (v13) — null = recorded before the rc.7 rule (source unknown, no baro) ──
     val boostSource: String? = null,         // BoostSource name; NONE = no fresh source (boostPsi not a reading)
-    val baroKpa: Double? = null              // measured baro (0x090) at the sample, when available
+    val baroKpa: Double? = null,             // measured baro (0x090) at the sample, when available
+    // ── MAP (v15, #271) — PCM 0xF40B, kPa absolute, only from a fresh decode; null = none at this point or recorded before v15
+    //    (never backfilled). 255 is the byte's ceiling: a saturated value, not a measurement (MapF40b.isSaturated) ──
+    val mapKpa: Double? = null
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -501,7 +504,7 @@ interface DriveDao {
         DriveBookmarkEntity::class,
         KnockEventEntity::class
     ],
-    version = 14,
+    version = 15,
     exportSchema = false
 )
 abstract class DriveDatabase : RoomDatabase() {
@@ -791,6 +794,13 @@ abstract class DriveDatabase : RoomDatabase() {
             }
         }
 
+        /** v15 (#271): MAP 0xF40B per drive point, nullable — older rows read null ("not recorded"), never backfilled. */
+        internal val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE drive_points ADD COLUMN mapKpa REAL")
+            }
+        }
+
         /** Old TIP scale (raw / 903.81) → correct (raw / 128). */
         internal const val TIP_RESCALE = 903.81 / 128.0
 
@@ -801,7 +811,7 @@ abstract class DriveDatabase : RoomDatabase() {
                     DriveDatabase::class.java,
                     "openrs_sessions.db"      // same DB file — migration adds new tables
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
                     .build()
                     .also { INSTANCE = it }
             }

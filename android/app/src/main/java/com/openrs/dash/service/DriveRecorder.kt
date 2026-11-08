@@ -518,6 +518,8 @@ class DriveRecorder(
                     val tipFresh    = gate.takeIfFresh("tipActualKpa", stamps)
                     val targetFresh = gate.takeIfFresh("tipDesiredKpa", stamps)
                     val wgdcFresh   = gate.takeIfFresh("wgdcDesired", stamps)
+                    // MAP 0xF40B (#271): a value only on a fresh decode, otherwise null — never a held reading
+                    val mapFresh    = gate.takeIfFresh(com.openrs.dash.data.MapF40b.TAG, stamps)
                     // Boost by the source rule (#207): the reading + its source; NONE = no fresh source (0.0 is not a reading)
                     val boost = com.openrs.dash.data.BoostSession.read(vs, now)
                     // The shared verdict (DRIVE row / THERMAL card) including its holds: TEMPS READY only.
@@ -560,6 +562,7 @@ class DriveRecorder(
                         tipActualKpa   = if (tipFresh) vs.tipActualKpa else 0.0,
                         boostTargetKpa = if (targetFresh) vs.tipDesiredKpa else 0.0,
                         wgdcPct        = if (wgdcFresh) vs.wgdcDesired else -1.0,
+                        mapKpa         = if (mapFresh) com.openrs.dash.data.MapF40b.kpa(vs) else null,
                         isRaceReady    = raceReady
                     )
 

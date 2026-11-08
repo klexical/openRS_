@@ -100,6 +100,8 @@ object ObdConstants {
     const val PCM_QUERY_AFR_DESIRED  = "t7E080322F44400000000\r"
     const val PCM_QUERY_TIP_ACTUAL   = "t7E080322033E00000000\r"
     const val PCM_QUERY_TIP_DESIRED  = "t7E080322046600000000\r"
+    /** Standard MAP (OBD PID 0x0B via 22F4xx): 1 byte, kPa absolute, saturates at 255 (#271 — TIP 0x033E scale check). */
+    const val PCM_QUERY_MAP          = "t7E080322F40B00000000\r"
     const val PCM_QUERY_VCT_INTAKE   = "t7E080322031800000000\r"
     const val PCM_QUERY_VCT_EXHAUST  = "t7E080322031900000000\r"
     const val PCM_QUERY_OIL_LIFE     = "t7E080322054B00000000\r"
@@ -133,7 +135,16 @@ object ObdConstants {
         PCM_QUERY_STFT, PCM_QUERY_LTFT,
         PCM_QUERY_LOAD, PCM_QUERY_TIMING, PCM_QUERY_O2_VOLT, PCM_QUERY_LP_FUEL
     )
-    val PCM_QUERIES = PCM_FAST_QUERIES + PCM_SLOW_QUERIES
+    /** Every PCM DID the app may poll: both groups, plus MAP 0xF40B, which is polled only while a drive records (#271). */
+    val PCM_QUERIES = PCM_FAST_QUERIES + PCM_SLOW_QUERIES + PCM_QUERY_MAP
+
+    /**
+     * The fast group for this batch (#271, owner's final decision F1 "Only while recording"): while a drive is recording (not
+     * paused), MAP 0xF40B joins it, so a wide-open-throttle drive gives a TIP / MAP pair every cycle — at the cost of one more
+     * 150 ms slot (1.35 s instead of 1.2 s per cycle). Otherwise MAP isn't polled at all.
+     */
+    fun pcmFastQueries(mapPoll: Boolean): List<String> =
+        if (mapPoll) PCM_FAST_QUERIES + PCM_QUERY_MAP else PCM_FAST_QUERIES
     const val PCM_POLL_INTERVAL_MS  = 30_000L   // engine-off idle between full sweeps
     const val PCM_QUERY_GAP_MS      =    200L   // engine-off gap
     const val PCM_FAST_GAP_MS       =    150L   // engine-running gap
