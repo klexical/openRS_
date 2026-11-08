@@ -102,7 +102,9 @@ class ServiceFlushDemoteTest {
         assertTrue(fg.isForeground)
     }
 
-    @After fun tearDown() { gated.release.countDown(); rec.cancel(); db.close() }
+    // Destroy the service first: its scope collects rec.driveState, and a live collector would publish a notification
+    // from a worker thread after Robolectric's reset (an uncaught NPE charged to a later test, gate on 16c5c2c).
+    @After fun tearDown() { gated.release.countDown(); service.onDestroy(); rec.cancel(); db.close() }
 
     private fun autoRecord(on: Boolean) {
         app.getSharedPreferences("openrs_settings", Context.MODE_PRIVATE).edit().putBoolean(AppSettings.KEY_AUTO_RECORD_DRIVES, on).commit()
