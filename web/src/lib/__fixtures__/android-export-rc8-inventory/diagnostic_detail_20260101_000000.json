@@ -1,0 +1,113 @@
+{
+  "meta": {
+    "app": "openRS_",
+    "appVersion": "2.2.7-rc.8-dev+16094e86e38a",
+    "appBuild": 39,
+    "releaseVersion": "2.2.7-rc.8",
+    "versionCode": 39,
+    "sourceCommit": "16094e86e38a",
+    "sourceDirty": false,
+    "buildType": "debug",
+    "generatedAt": "20260101_000000",
+    "sessionDurationMs": 1,
+    "sessionDurationHuman": "00:00:00",
+    "firmware": "WiCAN stock",
+    "isOpenRsFirmware": false,
+    "host": "test",
+    "port": 0,
+    "slcanLinesLogged": 0,
+    "slcanFileIncluded": false
+  },
+  "dtcScan": {
+    "status": "NONE"
+  },
+  "adapterStatusSource": {
+    "state": "NOT_REQUESTED",
+    "detail": "no status request in this session"
+  },
+  "vehicleState": {},
+  "canFrameInventory": {},
+  "fpsTimeline": [],
+  "decodeTrace": [],
+  "sessionEvents": [
+    {
+      "relMs": 0,
+      "type": "SESSION",
+      "message": "Started — test:0"
+    }
+  ],
+  "nrcUnattributedTotal": 0,
+  "linkIntegrity": {
+    "writes": {
+      "sent": 0,
+      "possiblyDelivered": 0,
+      "notSent": 0,
+      "deliveryUnknown": 0,
+      "otherFailure": 0
+    },
+    "framing": "undecided",
+    "refusedFrameLines": 0,
+    "refusedOtherShape": 0,
+    "refusedReplies": 0,
+    "nrcAttributed": 0,
+    "nrcUnattributed": 0,
+    "overlongLines": 0,
+    "linesDropped": 0,
+    "commandRepliesDropped": 0,
+    "dtcFramesDropped": 0,
+    "isoTpRefused": 1
+  },
+  "didInventory": {
+    "rows": [
+      {
+        "module": "BCM",
+        "responseId": "72E",
+        "did": "4028",
+        "sent": 1,
+        "positive": 1,
+        "nrcAttributed": 0,
+        "lastPositiveRelMs": 0
+      },
+      {
+        "module": "PCM",
+        "responseId": "7E8",
+        "did": "033E",
+        "sent": 3,
+        "positive": 3,
+        "nrcAttributed": 0,
+        "lastPositiveRelMs": 0
+      },
+      {
+        "module": "PCM",
+        "responseId": "7E8",
+        "did": "03ED",
+        "sent": 2,
+        "positive": 0,
+        "nrcAttributed": 2
+      },
+      {
+        "module": "PCM",
+        "responseId": "7E8",
+        "did": "0466",
+        "sent": 2,
+        "positive": 0,
+        "nrcAttributed": 0
+      }
+    ],
+    "overflow": 0
+  },
+  "logLimits": {
+    "decodeTraceDropped": 0,
+    "eventsDropped": 0,
+    "fpsPointsDropped": 0,
+    "probeSessionsDropped": 0,
+    "inventoryFramesNotListed": 0,
+    "slcanCapReached": false,
+    "slcanWriteFailed": false,
+    "vinFramesMaskedPage": 0,
+    "vinFramesMaskedContent": 0,
+    "knockSessionDropped": 0
+  },
+  "exportSchemaVersion": 1,
+  "probeResults": []
+}

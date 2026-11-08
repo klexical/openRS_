@@ -1,0 +1,60 @@
+═══════════════════════════════════════════════════════════
+  openRS_ Diagnostic Report
+  App       : v2.2.7-rc.8 (build 39, debug)
+  Source    : 16094e86e38a
+  Generated : 20260101_000000
+  Session   : 00:00:00
+  Schema    : export schema 1
+═══════════════════════════════════════════════════════════
+
+─── CONNECTION ────────────────────────────────────────────
+  Host     : test:0
+  Firmware : WiCAN stock
+  Last evt : Started — test:0
+
+─── DTC SCAN ──────────────────────────────────────────────
+  No scan this session
+
+─── ADAPTER ──────────────────────────────────────────────
+  Status   : not available — no status request in this session
+
+─── SLCAN RAW LOG (Option C) ───────────────────────────────
+  No SLCAN log recorded (log directory not available this session)
+
+─── CAN FRAME INVENTORY  (0 unique IDs, 0 dynamic) ──
+  Legend: ✓=decoded  ?=unknown  Δ=bytes changed during session
+  Format: TAG ID | count | Δ | last raw hex | decoded | issues
+
+
+─── VALIDATION ISSUES (0) ────────────────────────────────
+  None — all decoded values within expected physical ranges
+
+─── LINK INTEGRITY ────────────────────────────────────────
+  Writes   : 0 sent · 0 possibly delivered (GATT 13) · 0 not sent · 0 delivery unknown · 0 other failures  (Mode 22 polls + DID probes)
+  Framing  : not decided · 0 frame line(s) refused (0 of the other shape)
+  Replies  : 0 Mode 22 reply(ies) refused for their length / PCI
+  NRC      : 0 attributed · 0 unattributed (PCM)
+  Buffers  : 0 overlong line(s) refused · 0 line(s) dropped (BLE queue full) · 0 command reply(ies) dropped · 0 DTC frame(s) dropped
+  ISO-TP   : 1 frame(s) refused or reply(ies) abandoned (truncated, too short, sequence break)
+
+─── DID INVENTORY (Mode 22, this session) ─────────────────
+  BCM    0x4028 : 1 sent · 1 answered · 0 rejected · last answer at +0.0 s
+  PCM    0x033E : 3 sent · 3 answered · 0 rejected · last answer at +0.0 s
+  PCM    0x03ED : 2 sent · 0 answered · 2 rejected
+  PCM    0x0466 : 2 sent · 0 answered · 0 rejected · never answered
+
+─── LOG LIMITS ────────────────────────────────────────────
+  no counted limit reached
+
+─── FPS TIMELINE (0 samples) ────────────────────────────
+  No FPS data recorded
+
+─── SESSION EVENTS ─────────────────────────────────────────
+  +00:00:00 [SESSION] Started — test:0
+
+─── RECENT DECODE TRACE (last 0 of up to 10,000) ──────────
+  Format: +time | ID | raw hex | decoded | ⚠issue
+
+═══════════════════════════════════════════════════════════
+  END OF REPORT — full data in diagnostic_detail_20260101_000000.json
+═══════════════════════════════════════════════════════════
