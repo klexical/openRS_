@@ -84,13 +84,16 @@ internal object DiagnosticReportBuilder {
         snap: AdapterStatusSnapshot = DiagnosticLogger.snapshotAdapterStatus(),
         // Likewise one DTC scan record (immutable) for both files and the export's dtc_scan_* files (#238 review)
         dtcScan: com.openrs.dash.data.DtcScanRecord? = DiagnosticLogger.lastDtcScan,
+        // And one reading of the counters, or a live export's two files disagree (L12)
+        counters: DiagnosticLogger.ExportCounters = DiagnosticLogger.exportCounters,
     ): Pair<String, String> =
-        buildSummaryText(ts, snap, dtcScan) to buildDetailJson(ts, snap, dtcScan)
+        buildSummaryText(ts, snap, dtcScan, counters) to buildDetailJson(ts, snap, dtcScan, counters)
 
     fun buildSummaryText(
         ts: String,
         snap: AdapterStatusSnapshot = DiagnosticLogger.snapshotAdapterStatus(),
         dtcScan: com.openrs.dash.data.DtcScanRecord? = DiagnosticLogger.lastDtcScan,
+        counters: DiagnosticLogger.ExportCounters = DiagnosticLogger.exportCounters,
     ): String = buildString {
         val log = DiagnosticLogger
         val vs  = log.lastVehicleState
@@ -297,15 +300,15 @@ internal object DiagnosticReportBuilder {
             appendLine()
         }
         // Link integrity (rc.8 #253): counts only — what writes established, what framing / length checks refused
-        linkIntegrityText(log.linkIntegrity, log.nrcUnattributedTotal).forEach { appendLine(it) }
+        linkIntegrityText(counters.integrity, counters.nrcUnattributed).forEach { appendLine(it) }
         appendLine()
-        logLimitsText(log.logLimits, knockSessionDropped(), log.linkIntegrity).forEach { appendLine(it) }
+        logLimitsText(counters.limits, knockSessionDropped(), counters.integrity).forEach { appendLine(it) }
         appendLine()
 
         // Unattributed NRCs: exact count; their event lines are folded to ≤ 1 per minute per kind (#216)
-        if (log.nrcUnattributedTotal > 0) {
+        if (counters.nrcUnattributed > 0) {
             appendLine("─── NRC UNATTRIBUTED ──────────────────────────────────────")
-            appendLine("  ${log.nrcUnattributedTotal} this session (not counted toward suppression; event lines show the " +
+            appendLine("  ${counters.nrcUnattributed} this session (not counted toward suppression; event lines show the " +
                 "first of each kind, then one summary per minute)")
             appendLine()
         }
@@ -381,6 +384,7 @@ internal object DiagnosticReportBuilder {
         ts: String,
         snap: AdapterStatusSnapshot = DiagnosticLogger.snapshotAdapterStatus(),
         dtcScan: com.openrs.dash.data.DtcScanRecord? = DiagnosticLogger.lastDtcScan,
+        counters: DiagnosticLogger.ExportCounters = DiagnosticLogger.exportCounters,
     ): String {
         val log = DiagnosticLogger
         val vs  = log.lastVehicleState
@@ -500,9 +504,9 @@ internal object DiagnosticReportBuilder {
             }
         })
 
-        root.put("nrcUnattributedTotal", log.nrcUnattributedTotal)   // exact, even though lines are folded (#216)
-        root.put("linkIntegrity", linkIntegrityJson(log.linkIntegrity, log.nrcUnattributedTotal))   // rc.8 #253, additive
-        root.put("logLimits", logLimitsJson(log.logLimits, knockSessionDropped()))  // additive
+        root.put("nrcUnattributedTotal", counters.nrcUnattributed)   // exact, even though lines are folded (#216)
+        root.put("linkIntegrity", linkIntegrityJson(counters.integrity, counters.nrcUnattributed))   // rc.8 #253, additive
+        root.put("logLimits", logLimitsJson(counters.limits, knockSessionDropped()))  // additive
         root.put("exportSchemaVersion", EXPORT_SCHEMA_VERSION)   // rc.8 #253, additive; when it changes: see the constant
 
         // nrcSuppression
@@ -605,6 +609,8 @@ internal fun logLimitsText(l: DiagnosticLogger.LogLimits, knockDropped: Int, li:
         val buffersHit = li.overlongLines + li.linesDropped + li.commandRepliesDropped + li.dtcFramesDropped > 0
         add(if (buffersHit) "  no log limit reached; lines were refused or dropped, see Buffers above" else "  no counted limit reached")
     }
+    if (l.vinFramesMaskedPage > 0) add("  ${l.vinFramesMaskedPage} VIN-bearing frame(s) masked: data bytes read 00 in the raw log, ** in the inventory and trace")
+    if (l.vinFramesMaskedContent > 0) add("  ${l.vinFramesMaskedContent} further frame(s) masked for holding ${DiagnosticLogger.VIN_RUN_MIN} or more consecutive VIN bytes: can be an unrelated frame")
 }
 
 internal fun logLimitsJson(l: DiagnosticLogger.LogLimits, knockDropped: Int): JSONObject = JSONObject().apply {
@@ -615,6 +621,8 @@ internal fun logLimitsJson(l: DiagnosticLogger.LogLimits, knockDropped: Int): JS
     put("inventoryFramesNotListed", l.inventoryFramesNotListed)
     put("slcanCapReached", l.slcanCapReached)
     put("slcanWriteFailed", l.slcanWriteFailed)
+    put("vinFramesMaskedPage", l.vinFramesMaskedPage)
+    put("vinFramesMaskedContent", l.vinFramesMaskedContent)
     put("knockSessionDropped", knockDropped)
 }
 
@@ -642,7 +650,7 @@ internal fun modeProvenance(vs: VehicleState, nowMs: Long): String {
 /** Tags whose age the detail JSON reports (rc.8 #253): the polled voltage and the drive-mode provenance (#223, #252). */
 private val AGE_TAGS = listOf("batteryVoltage", "driveMode", com.openrs.dash.can.CanDecoder.MODE_DETAIL_TAG,
     com.openrs.dash.can.CanDecoder.MODE_RESOLVED_DETAIL_TAG, com.openrs.dash.can.CanDecoder.MODE_RUN_PREV_TAG,
-    com.openrs.dash.can.CanDecoder.MODE_RESOLVED_PAIR_TAG)
+    com.openrs.dash.can.CanDecoder.MODE_RESOLVED_PAIR_TAG, com.openrs.dash.can.CanDecoder.ESC_FRAME_TAG, com.openrs.dash.can.CanDecoder.ESC_FRAME_PREV_TAG)
 
 internal fun VehicleState.toJsonObject(nowMs: Long = System.currentTimeMillis()): JSONObject = JSONObject().apply {
     // Additive (rc.8 #253): ages at export time, never absolute times

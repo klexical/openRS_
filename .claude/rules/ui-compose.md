@@ -62,3 +62,11 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   the default `decorFitsSystemWindows` — Android insets them (emulator: both rotations + split screen, portrait identical
   to the frozen APK). Rotating portrait ↔ landscape closes Settings (state not saved, unchanged). Whether a head unit's
   sidebar is a reported system bar is unknown
+- **Snackbars go above the bottom nav and the Custom Dashboard** — the `SnackbarHost` is the LAST child of MainActivity's root Box,
+  not the Scaffold's `snackbarHost`: `BottomNavBar` and the Custom Dashboard overlay are drawn after the Scaffold, so a host inside it
+  (even padded by `navBarClearance()`, the first fix) sat under them — invisible, its action untappable (measured on an emulator with
+  three-button nav; gesture nav showed a sliver; the padded host was accepted on both styles, the moved host's placement is QA's check
+  again; Settings is its own dialog window and still sits over a message); bottom padding = `navBarClearance()` on the pages, the
+  system navigation-bar inset over the dashboard; every build up to
+  rc.8 Build 39 had it: NOT CONFIRMED, Connection changed, Busy, ESC results). A UI text dump still reports such a snackbar with
+  bounds, so "shown" in a dump is not "visible" — a visibility claim needs a screenshot (#252 follow-up, rc.8 ledger L14)

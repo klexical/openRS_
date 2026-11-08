@@ -9,6 +9,7 @@ import com.openrs.dash.diagnostics.LogText
 enum class LinkStopReason(val label: String) {
     USER_DISCONNECT("USER_DISCONNECT"),
     USER_CANCEL("USER_CANCEL"),
+    TASK_REMOVED("TASK_REMOVED"),
     ATTEMPTS_EXHAUSTED("ATTEMPTS_EXHAUSTED"),
     WIFI_LOST("WIFI_LOST"),
     BLUETOOTH_TURNING_OFF("BLUETOOTH_TURNING_OFF"),

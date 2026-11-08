@@ -67,7 +67,7 @@ object DemoSimulator {
     val CAN_TAGS = arrayOf("oilTempC", "ptuTempC", "boostKpa", "escStatus", "driveMode", "coolantTempC", "intakeTempC", "ambientTempC",
         com.openrs.dash.can.CanDecoder.MODE_DETAIL_TAG, com.openrs.dash.can.CanDecoder.MODE_RESOLVED_DETAIL_TAG,
         com.openrs.dash.can.CanDecoder.MODE_DETAIL_PAIR_TAG, com.openrs.dash.can.CanDecoder.MODE_RESOLVED_PAIR_TAG,
-        com.openrs.dash.can.CanDecoder.MODE_RUN_PREV_TAG)
+        com.openrs.dash.can.CanDecoder.MODE_RUN_PREV_TAG, com.openrs.dash.can.CanDecoder.ESC_FRAME_TAG, com.openrs.dash.can.CanDecoder.ESC_FRAME_PREV_TAG)
     val OBD_TAGS = arrayOf(
         "calcLoad", "shortFuelTrim", "longFuelTrim", "timingAdvance", "fuelRailPressure",
         "o2Voltage", "afrActual", "lambdaActual", "afrSensor1", "afrDesired", "commandedAfr",

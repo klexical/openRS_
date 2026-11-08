@@ -82,6 +82,7 @@ class MainActivity : ComponentActivity() {
     private val conn = object : ServiceConnection {
         override fun onServiceConnected(n: ComponentName, b: IBinder) {
             service = (b as CanDataService.LocalBinder).getService()
+            service?.onActivityBound()
             pendingDemo?.let { applyDemoExtra(it) }
             pendingDemo = null
         }
@@ -306,7 +307,6 @@ class MainActivity : ComponentActivity() {
                     val sideInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
                     Box(Modifier.fillMaxSize().background(Bg).windowInsetsPadding(sideInsets)) {
                         Scaffold(
-                            snackbarHost   = { SnackbarHost(snackbarHostState) },
                             containerColor = Bg,
                             contentWindowInsets = WindowInsets.statusBars
                         ) { innerPadding ->
@@ -527,6 +527,9 @@ class MainActivity : ComponentActivity() {
                             navTabIdentity = prefs.navTabIdentity,
                         )
 
+                        // Last in this Box, over the pages, the bottom nav and the Custom Dashboard. Inside the Scaffold it sat under the last two, unseen and untappable
+                        SnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter).padding(bottom =
+                            if (showCustomDash) WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() else navBarClearance()))
                     }
                 }
                 }

@@ -251,13 +251,26 @@ class CanDataService : Service() {
         return START_STICKY
     }
 
-    /** A line only (#212), no ownership action: what a task removal should do to the connection is the owner's decision. */
+    /**
+     * Owner's decision on #212: a task removal ends only an initial attempt, where the app offers Cancel, and saves nothing. Established links, reconnects
+     * and open or finalizing drives are untouched. It can't tell a Recents swipe from Clear all or Recents trimming: the same callback covers them.
+     */
     override fun onTaskRemoved(rootIntent: Intent?) {
         link.transition {
             DiagnosticLogger.event(DiagnosticLogger.EVENT_LINK_TASK_REMOVED, LinkStopLog.taskRemovedLine(
                 link.phase, connectionJob?.isActive == true, recNow(), DemoMode.isActive))
+            if (!DemoMode.isActive) {
+                link.cancelOnTaskRemoved(recording = { isRecording() }, finalizing = { OpenRSDashApp.instance.driveRecorder.isFinalizing }) {
+                    stopConnection(LinkStopReason.TASK_REMOVED)
+                }
+            }
         }
         super.onTaskRemoved(rootIntent)
+    }
+
+    /** MainActivity is bound: what a task removal held back can start, so the next launch auto-connects even if this service or process survived. */
+    fun onActivityBound(): Unit = link.transition {
+        if (link.releaseTaskRemovedHold() && isTransportReady()) autoStartConnection()
     }
 
     private fun recNow(): String {
@@ -513,13 +526,15 @@ class CanDataService : Service() {
     // ── Connection control ───────────────────────────────────────────────────
 
     /**
-     * Transport-callback entry point — honours [LinkOwnership.manualConnectRequired] (after a cancel or demo mode). The
+     * Transport-callback entry point — honours [LinkOwnership.manualConnectRequired] (after a cancel, demo mode or a task removal). The
      * check and the start are one step under the ownership lock: a callback can't pass the check, lose the race to a
      * cancel, then start anyway.
      */
     private fun autoStartConnection() {
-        val allowed = link.autoStart(blocked = { DemoMode.isActive || DemoMode.launchRequested }) { beginConnection() }
-        if (!allowed) DiagnosticLogger.event(DiagnosticLogger.EVENT_LINK_START_REFUSED, "auto-start held: a saved Cancel or demo mode")
+        link.autoStart(
+            blocked = { DemoMode.isActive || DemoMode.launchRequested },
+            onHeld = { holds -> DiagnosticLogger.event(DiagnosticLogger.EVENT_LINK_START_REFUSED, "auto-start held: $holds") },
+        ) { beginConnection() }
     }
 
     /** Explicit (user) connect. No-op while demo mode owns the vehicle state. */

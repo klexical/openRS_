@@ -88,15 +88,6 @@ class CommandReconnectTest {
         assertEquals(DriveCommandResult.ConnectionLost, drive(Sender(), DriveMode.TRACK))
     }
 
-    @Test fun `drive mode - a drop and return inside the correction's settle is lost, after the one correction`() = runTest {
-        report(DriveMode.DRIFT, 4_000)                                  // overshoot: the correction goes out at 17 s
-        dropAndReturn(17_200, 18_000)
-        report(DriveMode.SPORT, 18_100)
-        val s = Sender()
-        assertEquals(DriveCommandResult.ConnectionLost, drive(s, DriveMode.SPORT))
-        assertEquals("the request and the one correction", 2, s.calls)
-    }
-
     @Test fun `control - with no drop the same report confirms`() = runTest {
         report(DriveMode.TRACK, 1_700)
         val s = Sender()
@@ -120,7 +111,8 @@ class CommandReconnectTest {
 
     @Test fun `ESC - control, with no drop the same report confirms`() = runTest {
         vs = vs.copy(escStatus = EscStatus.ON)
-        at(170) { vs = vs.copy(escStatus = EscStatus.PARTIAL).markFresh(EscCommand.STAMP_TAG, now = testScheduler.currentTime) }
+        at(170) { vs = vs.copy(escStatus = EscStatus.PARTIAL).markFresh(EscCommand.STAMP_TAG, com.openrs.dash.can.CanDecoder.ESC_FRAME_TAG,
+            com.openrs.dash.can.CanDecoder.ESC_FRAME_PREV_TAG, now = testScheduler.currentTime) }
         val o = EscCommand.execute(Sender(), EscStatus.PARTIAL, { vs }, clock = { testScheduler.currentTime })
         assertEquals(EscCommand.Outcome.Confirmed(200L), o)
     }

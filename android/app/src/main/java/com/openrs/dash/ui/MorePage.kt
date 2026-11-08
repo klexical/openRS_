@@ -180,15 +180,16 @@ import kotlinx.coroutines.launch
                                             val outcome = com.openrs.dash.can.EscCommand.execute(firmwareApi, status,
                                                 { com.openrs.dash.OpenRSDashApp.instance.vehicleState.value })
                                             DiagnosticLogger.event("ESC_CMD", com.openrs.dash.can.EscCommand.describe(status, outcome))
+                                            pendingEsc = null                     // before the message, which suspends until it ends
                                             when (outcome) {
                                                 is com.openrs.dash.can.EscCommand.Outcome.Confirmed -> Unit
                                                 is com.openrs.dash.can.EscCommand.Outcome.NotConfirmed -> snackbarHostState.showSnackbar(
-                                                    "Adapter accepted ${status.label}, but the car still reports ${outcome.observed.label}")
+                                                    if (outcome.observed == status) "Adapter accepted ${status.label}. The car reports it, but not on two frames since the request"
+                                                    else "Adapter accepted ${status.label}, but the car still reports ${outcome.observed.label}")
                                                 com.openrs.dash.can.EscCommand.Outcome.Busy -> snackbarHostState.showSnackbar("An ESC change is already in progress — try again")
                                                 com.openrs.dash.can.EscCommand.Outcome.ConnectionLost -> snackbarHostState.showSnackbar("Connection lost — ESC not confirmed")
                                                 else -> snackbarHostState.showSnackbar("ESC command failed")
                                             }
-                                            pendingEsc = null
                                         }
                                     }
                                     .heightIn(min = 48.dp),

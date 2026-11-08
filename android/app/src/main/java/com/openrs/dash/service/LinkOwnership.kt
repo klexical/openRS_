@@ -52,7 +52,10 @@ internal class LinkOwnership {
      * Cancel (persisted) or demo mode (this process only). An explicit connect clears both. It is separate from the
      * saved auto-connect preference, which it never changes.
      */
-    val manualConnectRequired: Boolean get() = userCancelled || demoHold
+    val manualConnectRequired: Boolean get() = userCancelled || demoHold || taskRemovedHold
+
+    /** A task removal ended an attempt (#212): callbacks wait for the next activity. Memory only, so the next launch still auto-connects. */
+    @Volatile private var taskRemovedHold = false
 
     /**
      * Attach the persistent store and load the saved Cancel. [CanDataService] calls this in `onCreate` before it
@@ -68,18 +71,40 @@ internal class LinkOwnership {
 
     /**
      * Callback start: the eligibility check ([blocked], plus [manualConnectRequired]) and [start] run as one step, so a
-     * cancel can't fall between them. Returns whether [start] ran.
+     * cancel can't fall between them. Returns whether [start] ran; when it didn't, [onHeld] gets the holds that applied
+     * at that moment ([holdsNow]), read under the same lock.
      */
-    fun autoStart(blocked: () -> Boolean, start: () -> Unit): Boolean = synchronized(lock) {
-        if (manualConnectRequired || blocked()) false else { start(); true }
+    fun autoStart(blocked: () -> Boolean, onHeld: (String) -> Unit = {}, start: () -> Unit): Boolean = synchronized(lock) {
+        val demo = blocked()
+        if (manualConnectRequired || demo) { onHeld(holdsNow(demo)); false } else { start(); true }
     }
+
+    /** The holds on automatic connects right now, for the refusal line: each one that applies, in a fixed order. */
+    private fun holdsNow(demoActive: Boolean): String = listOfNotNull(
+        "a saved Cancel".takeIf { userCancelled },
+        "demo mode".takeIf { demoHold || demoActive },
+        "a task removal, until the app is opened".takeIf { taskRemovedHold },
+    ).joinToString(" + ")
 
     /** Demo mode entered / left: hold automatic connects for the rest of this process. */
     fun requireManualConnect() = synchronized(lock) { demoHold = true }
 
-    /** An explicit Connect / Retry: clears the persisted Cancel and the demo hold. */
+    /**
+     * A task removal (#212): ends only what Cancel would, at the moment it is handled, and never while a drive is being finalized, whose write the foreground
+     * service is keeping alive. Unlike [cancel] it saves nothing: a swipe isn't a Cancel. Returns whether it ended the attempt.
+     */
+    fun cancelOnTaskRemoved(recording: () -> Boolean, finalizing: () -> Boolean, end: () -> Unit): Boolean = synchronized(lock) {
+        if (!LinkPresentation.offersCancel(phase, recording()) || finalizing()) false
+        else { taskRemovedHold = true; end(); true }
+    }
+
+    /** An activity is back: true if a task removal was holding automatic connects, which it no longer does. */
+    fun releaseTaskRemovedHold(): Boolean = synchronized(lock) { taskRemovedHold.also { taskRemovedHold = false } }
+
+    /** An explicit Connect / Retry: clears the persisted Cancel, the demo hold and a task removal's hold. */
     fun clearManualConnect() = synchronized(lock) {
         demoHold = false
+        taskRemovedHold = false
         if (userCancelled) { userCancelled = false; store?.save(false) }
     }
 

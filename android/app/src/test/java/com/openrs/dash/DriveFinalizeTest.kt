@@ -199,6 +199,26 @@ class DriveFinalizeTest {
     // ── Cases ───────────────────────────────────────────────────────────────
 
     @Test
+    fun `while STOP's writes run the recorder says it's finalizing, so a task removal leaves the foreground service alone`() {
+        val c = Checks("finalizing")
+        val geo = Geocoder("Geocoded Rd", held = true)
+        val rec = recorder(geo)
+        vs.value = telemetry(95.0, 88.0, 900.0, 0.0, 0.0)
+        start(rec)
+        record(rec, 12, mk = hot)
+        c.check("not finalizing before STOP", !rec.isFinalizing)
+        val job = rec.stopDrive()
+        c.check("finalizing from the moment STOP returns", rec.isFinalizing)
+        c.check("finalize reached the address lookup", geo.entered.await(5, TimeUnit.SECONDS))
+        c.check("no longer recording", !rec.driveState.value.isRecording)
+        c.check("still finalizing mid-write", rec.isFinalizing)
+        geo.release.countDown()
+        join(job)
+        c.check("done", !rec.isFinalizing)
+        c.done()
+    }
+
+    @Test
     fun `rename and tag after the finalize read the row - the user's edits survive`() {
         val c = Checks("rename+tag")
         val geo = Geocoder("Geocoded Rd", held = true)

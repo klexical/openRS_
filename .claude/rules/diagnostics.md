@@ -99,3 +99,14 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   (2026-01-01T00:00:00Z, offset zero), written by the sample writer in `ExportSchemaVersionTest`, which fixes every
   `yyyyMMdd_HHmmss` stamp and `exportedAt` at write time (the exporter has no injectable clock); rc.6's fixtures use
   `…_20261026_120000`.
+- **VIN masking is export-only and has three layers (#260, rc.8 follow-up)** — on a real car the VIN is on 0x40A (C1 pages) AND on
+  0x405 (pages 10 / 11 / 12 by byte 0; one car, two captures, counts only), and a DID 0xF190 reply carries it too. rc.8 Build 39 masked
+  0x40A only, so its raw log held the VIN a second time and the inventory / summary / drive export CAN hold it depending on which
+  frames are sampled. Now one choke point in `DiagnosticLogger` masks the page rule (both IDs + 0xF190 incl. consecutive frames) and a
+  content layer (any frame with 4+ consecutive bytes of the assembled VIN, `VIN_RUN_MIN = 4`, 3 stays unmasked by a pinned test — can mask an unrelated frame, counted separately); stored DID-prober replies on ANY DID get the same run mask at export read time, but only once the VIN is known (`probeSessions` returns them unmasked while `knownVin` is null; it is cleared at session start and set from state): a reply stored before the VIN was decoded is covered if the VIN arrives before the export, while an export written before that keeps a probe reply's bytes in every member (cold start only; pinned by a limit test); only the run reads 00, a rejection's text stays; the 0xF190 branch in `vinMasked()` is dead on the probe path, the prober cannot request it); raw log
+  data bytes → `00` with ID / DLC / timing / mux kept so candump / SavvyCAN still parse, inventory and trace → `**`, probe CSV too; the
+  other 0x405 pages stay (content unknown). DIAG still shows the VIN and the DID prober's on-screen list still shows the reply bytes —
+  never claim the app hides it. Older ZIPs on the device are untouched. A clean scan means nothing unless the fake sends 0x405
+  (`fake_ecu_v12.py --vin`); since L12 the app writes the summary and the detail from one `ExportCounters` snapshot, so `check_export.py`'s
+  `li_disagree` (it only compares the two files) no longer flags the two-readings artefact on a live export. The raw log keeps
+  candump's fields on a masked line; neither candump nor SavvyCAN has been run on it (its time field is padded)
