@@ -58,6 +58,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -162,6 +163,9 @@ class DriveRecorder(
         val outsideLoopWrites = Mutex()
         /** Point inserts that failed for this drive (their points are not in Room); reported at STOP. */
         val failedPointWrites = java.util.concurrent.atomic.AtomicInteger()
+        /** Point inserts of this drive under way (#262 N2): counted from before the points leave the buffer, so a
+         *  [durabilityBarrier] can't miss a batch the loop has taken but Room hasn't stored yet. */
+        val inFlight = MutableStateFlow(0)
     }
 
     /** The drive being recorded (or the last one); see [DriveRun]. */
@@ -296,15 +300,23 @@ class DriveRecorder(
     }
 
     /**
-     * Stores the drive's buffered points now, without pausing it (#262). Called by the service whenever a connection
-     * ends: with auto-record off a drive keeps recording through a link gap (no new points while disconnected), but up to
-     * FLUSH_SIZE − 1 points sat in memory with no foreground service left to keep the process alive. Same lock as
-     * [pauseDrive]'s flush (#241); no-op when not recording or the buffer is empty.
+     * The point at which every point the drive recorded is in Room (#262, N2): stores the buffered points now, without pausing
+     * the drive (same lock as [pauseDrive]'s flush, #241), then waits for every point insert under way — the loop's 30-point
+     * batch too, which takes its points from the buffer before Room stores them — and for a STOP's finalize. The service keeps
+     * its foreground until this completes: with auto-record off a drive keeps recording through a link gap, and without the
+     * foreground nothing keeps the process alive to finish the writes. Null when there is nothing to wait for. Never blocks the
+     * caller; a failed insert still completes it (the failure is counted, as before).
      */
-    fun flushBuffered() {
-        if (!_driveState.value.isRecording) return
+    fun durabilityBarrier(): Job? {
         val r = run
-        scope.launch { r.outsideLoopWrites.withLock { flushBuffer(r) } }
+        val recording = _driveState.value.isRecording
+        val finalizing = finalizeJob?.takeIf { it.isActive }
+        if (!recording && r.inFlight.value == 0 && finalizing == null) return null
+        return scope.launch {
+            if (recording) r.outsideLoopWrites.withLock { flushBuffer(r) }
+            r.inFlight.first { it == 0 }
+            finalizing?.join()
+        }
     }
 
     fun resumeDrive() {
@@ -708,18 +720,23 @@ class DriveRecorder(
      * has landed or failed — so it never counts as a failed write; it is rethrown once the outcome is recorded.
      */
     private suspend fun flushBuffer(run: DriveRun): Boolean {
-        val toFlush = run.takePoints()
-        if (toFlush.isEmpty()) return true
+        run.inFlight.update { it + 1 }                 // before the take: a barrier never sees taken-but-unstored points as done
         var failure: Exception? = null
         try {
-            withContext(NonCancellable + Dispatchers.IO) {
-                try { dao.insertPoints(toFlush) } catch (e: Exception) { failure = e }
+            val toFlush = run.takePoints()
+            if (toFlush.isEmpty()) return true
+            try {
+                withContext(NonCancellable + Dispatchers.IO) {
+                    try { dao.insertPoints(toFlush) } catch (e: Exception) { failure = e }
+                }
+            } finally {
+                failure?.let {
+                    run.failedPointWrites.incrementAndGet()
+                    Log.w(TAG, "Point flush failed (${toFlush.size} points)", it)
+                }
             }
         } finally {
-            failure?.let {
-                run.failedPointWrites.incrementAndGet()
-                Log.w(TAG, "Point flush failed (${toFlush.size} points)", it)
-            }
+            run.inFlight.update { it - 1 }
         }
         return failure == null
     }

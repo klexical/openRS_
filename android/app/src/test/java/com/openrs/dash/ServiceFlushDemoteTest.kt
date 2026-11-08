@@ -181,6 +181,21 @@ class ServiceFlushDemoteTest {
         assertEquals(1, host.exits.get())
     }
 
+    @Test fun `a write that never completes can't hold the foreground - it is released after the bounded wait, once`() {
+        autoRecord(false)
+        recordPoints(5)
+        gated.hold = true                                               // never released during the test
+        val before = CanDataService.flushDemoteWaitMs
+        CanDataService.flushDemoteWaitMs = 500L
+        try {
+            service.stopConnection(LinkStopReason.WIFI_LOST)
+            assertTrue(gated.entered.await(5, TimeUnit.SECONDS))
+            assertTrue("released after the bounded wait", waitUntil(3_000) { !fg.isForeground })
+            Thread.sleep(200)
+            assertEquals(1, host.exits.get())
+        } finally { CanDataService.flushDemoteWaitMs = before }
+    }
+
     @Test fun `a new attempt started while the flush is held keeps the foreground`() {
         autoRecord(false)
         recordPoints(12)
