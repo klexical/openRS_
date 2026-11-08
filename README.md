@@ -25,15 +25,16 @@ for track days.
 
 ## Next release preview
 
+<p align="center"><b>RC8 Build 39 · unreleased · simulated data</b></p>
+
 <div align="center">
-  <a href="assets/screenshots/v2.2.7-preview/drive-night.png"><img src="assets/screenshots/v2.2.7-preview/drive-night.png" width="240" alt="DRIVE tab, RC8 Build 39 preview, simulated data"></a>
+  <a href="assets/screenshots/v2.2.7-preview/drive-night-normal.png"><img src="assets/screenshots/v2.2.7-preview/drive-night-normal.png" width="240" alt="DRIVE tab with no active alerts, RC8 Build 39 preview, simulated data"></a>
   <a href="assets/screenshots/v2.2.7-preview/thermal-night.png"><img src="assets/screenshots/v2.2.7-preview/thermal-night.png" width="240" alt="THERMAL tab, RC8 Build 39 preview, simulated data"></a>
   <a href="assets/screenshots/v2.2.7-preview/trip-summary-night.png"><img src="assets/screenshots/v2.2.7-preview/trip-summary-night.png" width="240" alt="TRIP drive summary, RC8 Build 39 preview, simulated data"></a>
 </div>
 
 <p align="center">
-  <sub><b>RC8 · Build 39 · Unreleased · Simulated data</b><br/>
-  DRIVE: the essentials at a glance &nbsp;·&nbsp; THERMAL: is the car warm enough to push? &nbsp;·&nbsp; TRIP: review a drive afterwards</sub>
+  <sub>DRIVE: the essentials at a glance &nbsp;·&nbsp; THERMAL: is the car warm enough to push? &nbsp;·&nbsp; TRIP: review a drive afterwards</sub>
 </p>
 
 These images come from **RC8 Build 39, which is not released** and has no download. They were captured from a debug
@@ -41,14 +42,17 @@ build in its demo mode on an emulator: the **DEMO** label in the header marks si
 carries its own "PREVIEW · SAMPLE DATA — NOT SAVED" banner. Features may still change before release.
 
 <details>
-<summary><b>More preview screens</b> (DAY theme, PERF, GARAGE)</summary>
+<summary><b>More preview screens</b> (an alert, DAY theme, PERF, GARAGE)</summary>
 <br/>
+<p align="center"><b>RC8 Build 39 · unreleased · simulated data</b></p>
 <div align="center">
+  <a href="assets/screenshots/v2.2.7-preview/drive-night.png"><img src="assets/screenshots/v2.2.7-preview/drive-night.png" width="240" alt="DRIVE tab showing a HEAT RISING alert, RC8 Build 39 preview, simulated data"></a>
   <a href="assets/screenshots/v2.2.7-preview/drive-day.png"><img src="assets/screenshots/v2.2.7-preview/drive-day.png" width="240" alt="DRIVE tab, DAY theme, RC8 Build 39 preview, simulated data"></a>
+  <br/>
   <a href="assets/screenshots/v2.2.7-preview/perf-night.png"><img src="assets/screenshots/v2.2.7-preview/perf-night.png" width="240" alt="PERF tab, RC8 Build 39 preview, simulated data"></a>
   <a href="assets/screenshots/v2.2.7-preview/garage-night.png"><img src="assets/screenshots/v2.2.7-preview/garage-night.png" width="240" alt="GARAGE tab, RC8 Build 39 preview, simulated data"></a>
 </div>
-<p align="center"><sub><b>RC8 · Build 39 · Unreleased · Simulated data</b><br/>DRIVE in the DAY theme &nbsp;·&nbsp; PERF &nbsp;·&nbsp; GARAGE</sub></p>
+<p align="center"><sub>An alert on DRIVE: HEAT RISING forecasts a temperature reaching its critical limit &nbsp;·&nbsp; DRIVE in the DAY theme &nbsp;·&nbsp; PERF &nbsp;·&nbsp; GARAGE</sub></p>
 
 The GARAGE screen shows the drive-mode and ESC controls. These need openRS_ adapter firmware, and ESC control from the
 app is **not yet confirmed on a car** ([#125](https://github.com/klexical/openRS_/issues/125)).
@@ -58,15 +62,19 @@ The stable v2.2.6 screens are in the [app guide](docs/app-guide.md#screens-v226)
 
 ## Choose a release
 
-| Channel | Version | Download | For |
-|---|---|---|---|
-| **Stable** | v2.2.6 | [`openRS_v2.2.6.apk`](https://github.com/klexical/openRS_/releases/tag/android-v2.2.6) | Most owners |
-| **Testing** | v2.2.7-rc.7 · Build 38 | [`openrs-2.2.7-rc.7-build38.apk`](https://github.com/klexical/openRS_/releases/tag/android-v2.2.7-rc.7) | Testers who accept prerelease software |
-| **Preview** | RC8 · Build 39 | None: not released | Shown above only |
+**Stable · v2.2.6** — for most owners<br/>
+[Release page](https://github.com/klexical/openRS_/releases/tag/android-v2.2.6) · download `openRS_v2.2.6.apk`
 
-Build 38 is a manual install: it upgrades rc.7 Build 37 in place (same version name and signing certificate), and the
-in-app updater does not offer it. Release notes and checksums are on each release page. The channel says how a build
-is distributed, not that every feature in it is verified on a car.
+**Testing · v2.2.7-rc.7, Build 38** — prerelease, for testers<br/>
+[Release page](https://github.com/klexical/openRS_/releases/tag/android-v2.2.7-rc.7) · download `openrs-2.2.7-rc.7-build38.apk`<br/>
+A manual install: it upgrades rc.7 Build 37 in place (same version name and signing certificate), and the in-app
+updater does not offer it.
+
+**Preview · RC8, Build 39** — not released, no download<br/>
+Shown in the screenshots above only.
+
+Release notes and checksums are on each release page. The channel says how a build is distributed, not that every
+feature in it is verified on a car.
 
 ## What you can do
 
@@ -109,7 +117,7 @@ by feature: ESC control from the app, for example, is not yet confirmed on a car
 ## Get started
 
 1. **Check your setup** against the [compatibility table](#compatibility).
-2. **Choose a release** from the [table above](#choose-a-release). Stable is the right choice for most owners.
+2. **Choose a release** from the [list above](#choose-a-release). Stable is the right choice for most owners.
 3. **Install the app.** Download the APK from the release page on your phone and open it; Android asks you to allow
    installs from your browser or file manager.
 4. **Set up the adapter** with the [hardware setup guide](android/docs/hardware-setup.md): plug it into the OBD-II port
