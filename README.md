@@ -114,6 +114,12 @@ by feature: ESC control from the app, for example, is not yet confirmed on a car
 ([#125](https://github.com/klexical/openRS_/issues/125)). See the
 [firmware update guide](android/docs/firmware-update.md).
 
+**Which connection?** On stable v2.2.6, connect over **Wi-Fi**: its Bluetooth looks for a service that no MeatPi firmware
+provides ([#218](https://github.com/klexical/openRS_/issues/218)). Bluetooth LE works from v2.2.7-rc.7 on; it has been
+seen working on a car with a MeatPi Pro running openrs-fw, and the other combinations are expected to work from the source.
+The [hardware setup guide](android/docs/hardware-setup.md#which-connection-to-use) has the details by release, adapter and
+firmware.
+
 ## Get started
 
 1. **Check your setup** against the [compatibility table](#compatibility).
@@ -121,8 +127,9 @@ by feature: ESC control from the app, for example, is not yet confirmed on a car
 3. **Install the app.** Download the APK from the release page on your phone and open it; Android asks you to allow
    installs from your browser or file manager.
 4. **Set up the adapter** with the [hardware setup guide](android/docs/hardware-setup.md): plug it into the OBD-II port
-   under the steering column, then pick the adapter and the connection method (Wi-Fi or Bluetooth LE) in Settings.
-   A MeatPi Pro must be switched to SLCAN first ([Pro setup](android/docs/hardware-setup.md#meatpi-pro-s3-adapter)).
+   under the steering column, join its Wi-Fi network (it starts with `WiCAN_` or `openRS_`), then pick the adapter and
+   the connection method in Settings: Wi-Fi on v2.2.6; Bluetooth LE needs v2.2.7-rc.7 or later and has to be turned on in
+   the adapter's web page. A MeatPi Pro must be switched to SLCAN first ([Pro setup](android/docs/hardware-setup.md#meatpi-pro-s3-adapter)).
 5. **Connect.** Tap the connection indicator in the header. Once CAN frames arrive the link shows as connected and the
    gauges fill in. If no frames arrive, check the adapter's protocol and port settings in the setup guide.
 

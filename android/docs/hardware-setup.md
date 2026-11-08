@@ -7,20 +7,36 @@ openRS_ supports two MeatPi adapters, each with both **Wi-Fi** and **Bluetooth L
 | **MeatPi USB (C3)** | ESP32-C3 | WebSocket SLCAN | `ws://192.168.80.1:80/ws` |
 | **MeatPi Pro (S3)** | ESP32-S3 + GPS + MicroSD | Raw TCP SLCAN | `tcp://192.168.0.10:35000` |
 
-Both adapters expose a BLE GATT service (UUID `0xFFE0` / RX `0xFFE1` / TX `0xFFE2`) when running openrs-fw firmware (v1.61 USB / v1.2 Pro). Choose the transport in **Settings → Adapter** + **Settings → Connection method**.
+Choose the transport in **Settings → Adapter** + **Settings → Connection method**. Which transport works depends on the app release: see [Which connection to use](#which-connection-to-use).
 
 > **Wi-Fi vs BLE:** BLE leaves your phone's Wi-Fi free for cellular hand-off (weather, maps, in-app updates). Wi-Fi delivers slightly higher CAN throughput. Both transports drive the same `SlcanConnection` lifecycle.
+
+## Which connection to use
+
+| App release | Wi-Fi | Bluetooth LE |
+|-------------|-------|--------------|
+| **Stable v2.2.6** | **Use Wi-Fi.** A MeatPi USB with openrs-fw USB v1.61 over Wi-Fi has been seen working on a car with v2.2.6. The Pro over Wi-Fi is expected to work (from the source; not yet seen on a car with v2.2.6). | **Does not work.** v2.2.6 looks for Bluetooth service `0xFFE0`, which neither the stock MeatPi firmware nor openrs-fw provides ([#218](https://github.com/klexical/openRS_/issues/218)). |
+| **v2.2.7-rc.7 (Build 38) and later release candidates** | As for v2.2.6. | Reworked ([#218](https://github.com/klexical/openRS_/issues/218)): the app finds the Pro (service `FFF0`) and USB (`FEE0`) layouts. Seen working on a car with a MeatPi Pro running openrs-fw Pro v1.2. A Pro with stock firmware, and the USB with either firmware, are expected to work (from the source; not yet seen on hardware). |
+
+Bluetooth comes from the MeatPi firmware itself (stock or openrs-fw), not from an openRS_ addition. It is **off by default**:
+turn it on in the adapter's web page and pair with its passkey (default `123456`). On the MeatPi USB, Bluetooth works
+only while the adapter runs in AP (hotspot) Wi-Fi mode.
 
 ## Wi-Fi network names
 
 **Wi-Fi** — connect your phone to the adapter's Wi-Fi network:
 
-| Adapter / Firmware | SSID | Password |
-|--------------------|------|----------|
-| **Stock MeatPi USB** | `WiCAN_XXXXXX` | `@meatpi#` |
-| **openrs-fw USB** | `openRS_XXXXXX` | `openrs_2026` |
-| **Stock MeatPi Pro** | `MeatPi_PRO_XXXXXX` | `@meatpi#` |
-| **openrs-fw Pro** | `openRS_PRO_XXXXXX` | `openrs_2026` |
+| Adapter / Firmware | Network name (SSID) | Password |
+|--------------------|---------------------|----------|
+| **Stock MeatPi USB or Pro** | `WiCAN_` followed by 12 letters and digits | `@meatpi#` |
+| **openrs-fw (USB v1.61 or Pro v1.2)** | `openRS_` followed by 12 letters and digits | `openrs_2026` |
+
+**Finding your adapter's network:** power the adapter in the car, then look on the phone for a Wi-Fi network that starts
+with `WiCAN_` (stock firmware) or `openRS_` (openrs-fw), followed by 12 letters and digits. Join it and open the adapter's
+web page (USB `http://192.168.80.1`, Pro `http://192.168.0.10`); its Status tab shows the device. A Pro whose owner set a
+custom network name shows that name instead, and an openrs-fw Pro in safe mode shows the stock `WiCAN_` name and password.
+These defaults are read from the MeatPi firmware the openrs-fw releases are built on (USB v4.20u, Pro v4.48p); later stock
+versions may differ.
 
 ---
 
@@ -43,7 +59,7 @@ openRS_ connects to a [MeatPi USB-C3](https://www.mouser.ca/ProductDetail/MeatPi
 | **RoHS** | Compliant |
 | **Price (CAD)** | ~$64.47 (qty 1) |
 
-> **BLE fallback note:** If your phone's WiFi radio is occupied (e.g. by a wireless projection dongle), the openRS_ firmware exposes a BLE GATT data service as a fallback — the app can connect over BLE when WiFi isn't available. No manual switching required.
+> **Bluetooth instead of Wi-Fi:** if your phone's Wi-Fi radio is occupied (e.g. by a wireless projection dongle), Bluetooth LE can carry the data instead, from the v2.2.7 release candidates on. See [Which connection to use](#which-connection-to-use).
 
 ### Configuration
 
@@ -51,7 +67,7 @@ openRS_ uses the WiCAN's **WebSocket endpoint** — no mode change required in t
 
 | Setting | Value |
 |---------|-------|
-| Wi-Fi SSID | `WiCAN_XXXXXX` |
+| Wi-Fi SSID | `WiCAN_` + 12 letters and digits (stock; see [Wi-Fi network names](#wi-fi-network-names)) |
 | IP Address | `192.168.80.1` |
 | WebSocket Port | `80` |
 | WebSocket Path | `/ws` |
@@ -69,8 +85,8 @@ openRS_ uses the WiCAN's **WebSocket endpoint** — no mode change required in t
 
 **Step 2 — Connect your phone to the WiCAN hotspot**
 1. On your phone, open WiFi settings
-2. Connect to the network named `WiCAN_XXXXXX` (device ID printed on device label)
-3. Default password: `@meatpi#`
+2. Connect to the network named `WiCAN_` followed by 12 letters and digits (`openRS_…` with openrs-fw; see [Wi-Fi network names](#wi-fi-network-names))
+3. Default password: `@meatpi#` (`openrs_2026` with openrs-fw)
 
 **Step 3 — Verify WiCAN configuration**
 1. Open a browser on your phone → go to `http://192.168.80.1`
@@ -106,14 +122,19 @@ The app saves your last-used values and reconnects automatically.
 
 ### Bluetooth Low Energy (BLE) Setup
 
-openrs-fw exposes a BLE GATT SLCAN transport that lets the app connect without occupying your phone's Wi-Fi radio. This is the recommended transport when you also want internet access (weather, maps, in-app updates).
+Bluetooth needs a **v2.2.7 release candidate (rc.7 or later)**: v2.2.6 cannot connect over Bluetooth ([#218](https://github.com/klexical/openRS_/issues/218)). It leaves
+your phone's Wi-Fi radio free, which helps when you also want internet access (weather, maps, in-app updates).
 
-1. Open openRS_ → **Settings → Connection method → Bluetooth Low Energy**
-2. Tap **Pick BLE device** — Android will request `BLUETOOTH_SCAN` + `BLUETOOTH_CONNECT` permissions on first use
-3. The picker scans for devices advertising service UUID `0xFFE0` and shows live RSSI bars
-4. Select your adapter — the app saves the MAC address and reconnects automatically on future launches
+1. On the adapter's web page, turn Bluetooth on (it is off by default) and note the passkey (default `123456`). On the MeatPi
+   USB, keep the Wi-Fi mode on AP.
+2. Open openRS_ → **Settings → Connection method → Bluetooth Low Energy**
+3. Tap **Pick BLE device** — Android will request `BLUETOOTH_SCAN` + `BLUETOOTH_CONNECT` permissions on first use
+4. The picker scans for the adapters' Bluetooth services (Pro `FFF0`, USB `FEE0`, and the legacy `FFE0`) and shows live RSSI
+   bars. The adapter's Bluetooth name starts with `WiC_`.
+5. Select your adapter and pair with the passkey when Android asks — the app saves the adapter and reconnects automatically on
+   future launches
 
-> **0xFFE0 is not unique to WiCAN.** Many cheap BLE peripherals (LED strip controllers, HM-10 clones) advertise the same service. The picker shows an orange "not a known adapter" hint for unrecognised device names, and `SlcanConnection` runs a 3-second handshake that rejects non-SLCAN devices before declaring the connection live.
+> **Not every match is an adapter.** `0xFFE0` in particular is shared by many cheap BLE peripherals (LED strip controllers, HM-10 clones). The picker shows an orange "not a known adapter" hint for unrecognised device names, and `SlcanConnection` runs a 3-second handshake that rejects non-SLCAN devices before declaring the connection live.
 
 > **Auto-reconnect:** After the first successful BLE connection, the transport uses `autoConnect=true` so Android will silently re-establish the link when the device returns to range. App-side retry logic takes over if the auto-reconnect window times out.
 
@@ -123,12 +144,15 @@ openrs-fw exposes a BLE GATT SLCAN transport that lets the app connect without o
 
 The WiCAN ships with the official MeatPi firmware. openRS_ works with the stock firmware for all PID telemetry.
 
-For drive mode control, ESC write, Launch Control, BLE transport, and Auto-discovery, flash **openrs-fw**:
+For drive mode control, ESC write, Launch Control and Auto-discovery, flash **openrs-fw** (Bluetooth comes from the MeatPi firmware itself; see [Which connection to use](#which-connection-to-use)):
 
 | Firmware | Use case | Download |
 |----------|----------|----------|
 | Official WiCAN | Basic PID telemetry (first test) | [GitHub Releases](https://github.com/meatpiHQ/wican-fw/releases/latest) |
 | **openrs-fw USB v1.61** | Full openRS_ feature set + BLE `AT+FRS` channel | [openRS_ Releases](https://github.com/klexical/openRS_/releases/tag/fw-usb-v1.61) |
+
+openrs-fw provides these commands; that is not a claim that each one is verified on a car. ESC control from the app, for
+example, is not yet confirmed on a car ([#125](https://github.com/klexical/openRS_/issues/125)).
 
 See the [Firmware Update Guide](firmware-update.md) for step-by-step flashing instructions with screenshots.
 
@@ -155,7 +179,7 @@ openRS_ also supports the [MeatPi Pro](https://www.meatpi.com/) via raw TCP SLCA
 2. Turn the car to ACC or RUN — the Pro LED will flash then go solid
 
 **Step 2 — Connect to the Pro's hotspot**
-1. Connect your phone to `WiCAN_XXXXXX` (default password `@meatpi#`)
+1. Connect your phone to the network named `WiCAN_` followed by 12 letters and digits (default password `@meatpi#`; `openRS_…` / `openrs_2026` with openrs-fw)
 2. Default AP address: `192.168.0.10`
 
 **Step 3 — Set protocol to SLCAN (required)**
