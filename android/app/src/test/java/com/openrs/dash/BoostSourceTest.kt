@@ -223,17 +223,19 @@ class BoostSourceTest {
         assertFalse(json.getJSONObject("drive").has("peakBoostSource"))
         assertFalse(json.getJSONObject("drive").has("boostPolicy"))
         assertFalse(json.has("boostSources"))
-        val row = DriveExportBuilder.buildCsv(pts).lines()[2].split(",")
-        assertEquals("-0.630", row[6])                                    // as recorded, never rewritten
-        assertEquals("", row[row.size - 2]); assertEquals("", row.last())
+        val lines = DriveExportBuilder.buildCsv(pts).lines()
+        val h = lines[1].split(","); val row = lines[2].split(",")          // by header name, as Sapphire reads it
+        assertEquals("-0.630", row[h.indexOf("boost_psi")])               // as recorded, never rewritten
+        assertEquals("", row[h.indexOf("boost_source")]); assertEquals("", row[h.indexOf("baro_kpa")])
     }
 
     @Test fun `a new drive with mixed sources exports each point's source, gaps for NONE`() {
         val d = drive(BoostRule.POLICY, "TIP_033E")
         val pts = listOf(pt(0, 0.0, "CAN_0F8", 96.5), pt(1_000, 0.0, "NONE", 96.5), pt(2_000, 8.9, "TIP_033E", 96.5))
         val csv = DriveExportBuilder.buildCsv(pts).lines()
-        assertTrue(csv[1].endsWith("boost_source,baro_kpa"))
-        assertEquals(listOf("CAN_0F8", "NONE", "TIP_033E"), csv.subList(2, 5).map { it.split(",").let { c -> c[c.size - 2] } })
+        val h = csv[1].split(",")                                         // by header name, as Sapphire reads it (#271 appended MAP columns)
+        assertTrue(h.indexOf("baro_kpa") == h.indexOf("boost_source") + 1)
+        assertEquals(listOf("CAN_0F8", "NONE", "TIP_033E"), csv.subList(2, 5).map { it.split(",")[h.indexOf("boost_source")] })
         assertEquals("", csv[3].split(",")[6])                            // no source → no boost value
         val json = JSONObject(DriveExportBuilder.buildProfileJson(d, pts))
         assertEquals("TIP_033E", json.getJSONObject("drive").getString("peakBoostSource"))

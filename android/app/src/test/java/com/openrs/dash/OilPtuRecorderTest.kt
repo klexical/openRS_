@@ -139,7 +139,7 @@ class OilPtuRecorderTest {
         }
 
         val upgraded = Room.databaseBuilder(app, DriveDatabase::class.java, file.absolutePath)
-            .addMigrations(DriveDatabase.MIGRATION_13_14).allowMainThreadQueries().build()
+            .addMigrations(DriveDatabase.MIGRATION_13_14, DriveDatabase.MIGRATION_14_15).allowMainThreadQueries().build()   // v15 since #271
         try {
             val row = upgraded.driveDao().getRecentDrives().single()             // Room validates the v14 schema on open
             assertNull(row.oilPtuMapping)                                        // never backfilled
@@ -148,7 +148,7 @@ class OilPtuRecorderTest {
             assertEquals(110.0, row.endOilTempC, 1e-9)
             assertEquals(thermal, row.thermalPeaksJson)                          // record untouched
             assertEquals("rc7-boost-v3", row.boostPolicy)
-            assertEquals(14, upgraded.openHelper.readableDatabase.version)
+            assertEquals(15, upgraded.openHelper.readableDatabase.version)
         } finally { upgraded.close() }
     }
 }

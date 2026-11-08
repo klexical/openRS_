@@ -131,7 +131,10 @@ internal object DriveExportBuilder {
             "lateral_g,longitudinal_g,brake_pressure,steering_angle,throttle_pct,drive_mode,race_ready," +
             "tip_actual_kpa,boost_target_kpa,wgdc_pct," +
             // #207 provenance: empty for points recorded before the rule (never inferred); boost_psi empty when no source
-            "boost_source,baro_kpa"
+            "boost_source,baro_kpa," +
+            // #271: PCM 0xF40B MAP, kPa absolute, beside TIP; empty when no fresh decode at the point (or before v15);
+            // saturated = 1 at the byte's 255 ceiling (at least 255 kPa, not a measurement)
+            "map_f40b_kpa_abs,map_f40b_saturated"
         )
         points.forEach { pt ->
             appendLine(
@@ -170,7 +173,9 @@ internal object DriveExportBuilder {
                 "${"%.2f".format(Locale.ROOT, pt.boostTargetKpa)}," +
                 "${"%.1f".format(Locale.ROOT, pt.wgdcPct)}," +
                 "${pt.boostSource ?: ""}," +
-                "${pt.baroKpa?.let { "%.1f".format(Locale.ROOT, it) } ?: ""}"
+                "${pt.baroKpa?.let { "%.1f".format(Locale.ROOT, it) } ?: ""}," +
+                "${pt.mapKpa?.let { "%.0f".format(Locale.ROOT, it) } ?: ""}," +
+                (pt.mapKpa?.let { if (com.openrs.dash.data.MapF40b.isSaturated(it)) "1" else "0" } ?: "")
             )
         }
     }
