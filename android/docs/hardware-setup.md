@@ -13,10 +13,17 @@ Choose the transport in **Settings → Adapter** + **Settings → Connection met
 
 ## Which connection to use
 
-| App release | Wi-Fi | Bluetooth LE |
-|-------------|-------|--------------|
-| **Stable v2.2.6** | **Use Wi-Fi.** A MeatPi USB with openrs-fw USB v1.61 over Wi-Fi has been seen working on a car with v2.2.6. The Pro over Wi-Fi is expected to work (from the source; not yet seen on a car with v2.2.6). | **Does not work.** v2.2.6 looks for Bluetooth service `0xFFE0`, which neither the stock MeatPi firmware nor openrs-fw provides ([#218](https://github.com/klexical/openRS_/issues/218)). |
-| **v2.2.7-rc.7 (Build 38) and later release candidates** | As for v2.2.6. | Reworked ([#218](https://github.com/klexical/openRS_/issues/218)): the app finds the Pro (service `FFF0`) and USB (`FEE0`) layouts. Seen working on a car with a MeatPi Pro running openrs-fw Pro v1.2. A Pro with stock firmware, and the USB with either firmware, are expected to work (from the source; not yet seen on hardware). |
+**Stable v2.2.6**
+- **Wi-Fi: use it.** A MeatPi USB with openrs-fw USB v1.61 over Wi-Fi has been seen working on a car with v2.2.6. The Pro
+  over Wi-Fi is expected to work (from the source; not yet seen on a car with v2.2.6).
+- **Bluetooth LE: does not work.** v2.2.6 looks for Bluetooth service `0xFFE0`, which neither the stock MeatPi firmware nor
+  openrs-fw provides ([#218](https://github.com/klexical/openRS_/issues/218)).
+
+**v2.2.7-rc.7 (Build 38) and later release candidates**
+- **Wi-Fi:** as for v2.2.6.
+- **Bluetooth LE: reworked** ([#218](https://github.com/klexical/openRS_/issues/218)): the app finds the Pro (service `FFF0`) and USB (`FEE0`) layouts. Seen working on a car
+  with a MeatPi Pro running openrs-fw Pro v1.2. A Pro with stock firmware, and the USB with either firmware, are expected
+  to work (from the source; not yet seen on hardware).
 
 Bluetooth comes from the MeatPi firmware itself (stock or openrs-fw), not from an openRS_ addition. It is **off by default**:
 turn it on in the adapter's web page and pair with its passkey (default `123456`). On the MeatPi USB, Bluetooth works
