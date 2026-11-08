@@ -1,6 +1,7 @@
 # OBD PID Reference — Ford Focus RS MK3
 
-Complete reference for all OBD-II parameters used by openRS_ (current as of v2.2.4).
+Complete reference for all OBD-II parameters used by openRS_ (current as of v2.2.4). The CAN frame table, the polling
+summary and the catalog note were brought up to date on 2026-11-08, when they moved here from the README.
 
 ## ECU Address Map
 
@@ -132,22 +133,47 @@ All formulas re-validated against DigiCluster `can0_hs.json` and `can1_ms.json`.
 | 0x010 | Steering wheel angle | `((B6&0x7F)<<8\|B7)×0.04395`; sign: `B4 bit 7` (1=right, 0=left) | RS_HS.dbc |
 | 0x070 | Torque at transmission | Motorola `bits(37,11) − 500` Nm | RS_HS.dbc |
 | 0x076 | Throttle % (ECU) | `B0 × 0.392` — may not broadcast on all tunes | RS_HS.dbc |
-| 0x080 | Throttle %, accel pedal % | bytes 2-3 / 2.55 | DigiCluster HS-CAN |
+| 0x080 | Accelerator pedal %, reverse | pedal: `((B0&0x03)<<8\|B1)×0.1` (bits 0-9); reverse: `B0 bit 5` | RS_HS.dbc |
 | 0x090 | RPM, baro pressure | RPM: `((B4&0x0F)<<8\|B5)×2`; baro: `B2×0.5 kPa` | DigiCluster HS-CAN |
 | 0x0C8 | Gauge brightness, e-brake, ignition status | brightness: `B0&0x1F`; e-brake: `B3&0x40`; ignition: `B2&0x1F` (0=KeyOut..7=Running..9=Cranking) | DigiCluster HS-CAN + RS_HS.dbc |
-| 0x0F8 | Oil temp, boost, PTU temp | oil: `B1−50 °C`; boost: B5 absolute kPa; PTU: `B7−60 °C` | RS_HS.dbc PCMmsg07 |
+| 0x0F8 | Oil temp, boost, PTU temp | oil: `B7−60 °C`; boost: B5 absolute kPa; PTU: `B1−50 °C` — the reverse of the DBC's names, confirmed on one car ([#229](https://github.com/klexical/openRS_/issues/229)); v2.2.6 and builds before v2.2.7-rc.7 read them the other way round | RS_HS.dbc PCMmsg07 |
 | 0x130 | Speed kph | `word(B6-B7)×0.01` | DigiCluster HS-CAN |
+| 0x138 | Clutch pedal position (%) | 10-bit Motorola × 0.1 % | RS_HS.dbc PCMmsg10 |
 | 0x160 | Longitudinal G | `((B6&0x03)<<8\|B7)×0.00390625−2.0` | DigiCluster HS-CAN |
 | 0x180 | Lateral G, yaw rate, vertical G | latG: `((B2&0x03)<<8\|B3)×0.00390625−2.0`; yaw: `((B4&0x0F)<<8\|B5)×0.03663−75 °/s`; vertG: `((B0&0x03)<<8\|B1)×0.00390625−2.0` | RS_HS.dbc ABSmsg02 |
-| 0x1A4 | Ambient temp | `B4 signed × 0.25 °C` | DigiCluster MS-CAN bridged |
+| 0x1A4 | Ambient temp | `B4 unsigned × 0.25 °C`; values above 55 °C rejected ([#185](https://github.com/klexical/openRS_/issues/185)) | DigiCluster MS-CAN bridged |
 | 0x1B0 | Drive mode (coarse) | `(B6>>4)&0x0F` — 0=Normal, 1=Sport/Track, 2=Drift | RS_HS.dbc AWDmsg01 |
 | 0x420 | Drive mode (detail), launch control | B6: 0x10=Normal, 0x11=Sport/Track, 0x12=Drift; B7 bit0: 0=Sport, 1=Track; LC: `(B6>>2)&1` | RS_HS.dbc + empirical (2026-03-11) |
 | 0x1C0 | ESC mode status | `bits(10,2)`: 0=On, 1=Off, 2=Sport, 3=Launch (byte1 bits 5–4) | RS_HS.dbc VAL_ 448 + SLCAN-verified |
 | 0x190 | 4× wheel speeds | FL/FR/RL/RR: 15-bit Motorola × 0.011343006 kph | RS_HS.dbc ABSmsg03 |
-| 0x230 | Gear position | `bits(0,4)` — 0=Park/Neutral, 1–6=gears, 7=Reverse | RS_HS.dbc |
+| 0x1E0 | Wheel rotation counts, average front wheel speed | 4 × 8-bit rolling counts FL/FR/RL/RR | RS_HS.dbc ABSmsg06 |
+| 0x230 | Gear position | `bits(0,4)` — 0=Park/Neutral, 1–6=gears, 7=Reverse — does not broadcast on this car | RS_HS.dbc |
 | 0x252 | Brake pressure | `((B1&0x0F)<<8\|B2) / 40.95` — 12-bit ADC, normalised 0–100% | RS_HS.dbc ABSmsg10 |
 | 0x2C0 | AWD L/R torque | 12-bit words scaled | DigiCluster HS-CAN |
 | 0x2F0 | Coolant temp, IAT | coolant: `((B4&0x03)<<8\|B5) − 60 °C`; IAT: `((B6&0x03)<<8\|B7) × 0.25 − 127 °C` | RS_HS.dbc PCMmsg16 |
 | 0x340 | Ambient temp (PCMmsg17) | `byte7 signed × 0.25 °C` — **not** TPMS | RS_HS.dbc PCMmsg17 |
 | 0x360 | Odometer (km), engine status | odo: `(data[3]<<16\|data[4]<<8\|data[5])` — 24-bit BE, 1 km/bit; engine: `data[0]` (0=Idle, 2=Off, 183=Running, 186=Kill, 191=RecentStart, 196=Warmup) | RS_HS.dbc + community [#102](https://github.com/klexical/openRS_/discussions/102) |
 | 0x380 | Fuel level % (FuelLevelFiltered) | Motorola 10-bit: `((data[2]&0x03)<<8\|data[3]) × 0.4` | RS_HS.dbc PCMmsg30 |
+| 0x40A | VIN (multiplexed) + odometer | 3 pages × 6 bytes → 17-character VIN | community (@adamsouthern) |
+
+> **Note:** `0x230` (gear position) and `0x3C0` (battery voltage) do not broadcast on this vehicle. Battery voltage is polled via OBD. Gear display has been removed.
+
+Broadcast data is received passively from the HS-CAN bus (WebSocket SLCAN at ~2100 fps over Wi-Fi); the primary gauges need no OBD polling windows or header switching. Additional values are polled from Ford modules (Mode 22).
+
+## Polling summary (Mode 22)
+
+The polling set and intervals of v2.2.6. The v2.2.7 release candidates poll the PCM on a fast / slow schedule
+instead of every 30 s (see the CHANGELOG on staging).
+
+| ECU | Request | Response | PIDs / Function | Interval |
+|-----|---------|----------|-----------------|----------|
+| PCM | 0x7E0 | 0x7E8 | ETC actual (0x093C), ETC desired (0x091A), WGDC (0x0462), **KR cyl 1–4** (0x03EC–0x03EF), OAR (0x03E8), Charge Air Temp (0x0461), Catalyst Temp (0xF43C), AFR actual (0xF434), AFR desired (0xF444), TIP actual (0x033E), TIP desired (0x0466), VCT intake (0x0318), VCT exhaust (0x0319), Oil Life (0x054B), HP Fuel Rail (0xF422), Fuel Level (0xF42F), Battery Voltage (0x0304) | 30 s |
+| BCM | 0x726 | 0x72E | Battery SOC (0x4028), Battery temp (0x4029), Cabin temp (0xDD04), **TPMS pressure LF/RF/LR/RR** (0x2813–0x2816) `(((256*A)+B)/3 + 22/3) * 0.145 PSI`, **TPMS last sensor** (0x280B) `temp = raw - 40 °C, pressure = (A*256+B)/20 PSI` (multi-frame ISO-TP, matched by sensor ID) | 30 s |
+| BCM (once) | 0x726 | 0x72E | Odometer (0xDD01) — extended session, **TPMS sensor IDs** (0x280F LF, 0x2810 RF, 0x2811 RR, 0x2812 LR) — 4-byte IDs for 0x280B matching | once |
+| AWD module | 0x703 | 0x70B | RDU oil temp (0x1E8A), **clutch temp L/R** (0x1E8B/0x1E8C), trans oil temp (0x1E80), **req torque L/R** (0x1E90/0x1E91), demanded pressure (0x1E92), pump current (0x1E93) — all `A − 40 °C` or raw | 60 s |
+| HVAC (candidate) | 0x733 | 0x73B | Blower %, interior temp, discharge air temp, blend doors L/R, defrost door — response handler wired, **DIDs unconfirmed** (use DID prober) | — |
+| IPC (candidate) | 0x720 | 0x728 | Warning lamps (MIL/CEL, ABS, brake, charge, oil pressure, high temp) — response handler wired, **DIDs unconfirmed** (use DID prober) | — |
+
+## FORScan PID catalog
+
+**FORScan PID Catalog — data-driven decode:** A bundled JSON catalog lists **1,148 PIDs across 20 modules**, 24 of them with a DID and formula (a searchable catalog; not every entry is confirmed on the RS). `PidRegistry` evaluates those formulas at runtime for replies to DIDs the app already polls but has no dedicated decoder for. The results go to `VehicleState.genericValues`, which no screen shows today.
