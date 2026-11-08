@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -99,6 +100,7 @@ class DidInventoryExportTest {
         val rows = json.getJSONObject("didInventory").getJSONArray("rows")
         val desired = row(rows, "PCM", "0466")!!
         assertTrue(desired.getInt("sent") > 0); assertEquals(0, desired.getInt("positive")); assertEquals(0, desired.getInt("nrcAttributed"))
+        assertFalse("never answered: no time, not a zero time", desired.has("lastPositiveRelMs"))
         assertEquals("KR2's rejections are not attributed once a request is unresolved (#216)", 0, row(rows, "PCM", "03ED")!!.getInt("nrcAttributed"))
         assertTrue(json.getJSONObject("linkIntegrity").getInt("nrcUnattributed") >= 1)
         val text = DiagnosticReportBuilder.buildSummaryText("t")
