@@ -166,8 +166,8 @@ To find your COM port: open **Device Manager** → expand **Ports (COM & LPT)** 
 
 | Firmware | SSID | Password |
 |----------|------|----------|
-| **Stock WiCAN** | `WiCAN_XXXXXX` | `@meatpi#` |
-| **openrs-fw** | `openRS_XXXXXX` | `openrs_2026` |
+| **Stock WiCAN** | `WiCAN_` + 12 letters and digits | `@meatpi#` |
+| **openrs-fw** | `openRS_` + 12 letters and digits | `openrs_2026` |
 
 5. Open `http://192.168.80.1` in a browser
 6. The WiCAN web interface loads — confirm the firmware version shown
@@ -219,14 +219,14 @@ firmware/release/
 
 Same tool, same settings (40MHz, DIO, DoNotChgBin, 115200 baud).
 
-After flashing openrs-fw, the WiFi SSID changes from `WiCAN_XXXXXX` to `openRS_XXXXXX` and the password changes to `openrs_2026`.
+After flashing openrs-fw, the WiFi SSID changes from `WiCAN_` to `openRS_` (each followed by the same 12 letters and digits) and the password changes to `openrs_2026`.
 
 ### Subsequent openrs-fw updates (OTA)
 
 Once openrs-fw is running, all future updates use **OTA via the web UI** — no cables, no bootloader mode needed.
 
 1. Download the new `openrs-fw-usb_vXXX.bin` from `https://github.com/klexical/openRS_/releases`
-2. Connect phone to `openRS_XXXXXX` WiFi
+2. Connect phone to the `openRS_…` WiFi network
 3. Open `http://192.168.80.1` → **Settings** → scroll to **Firmware Update**
 4. Tap **Choose File** → select the `.bin` → tap **Upload & Update**
 5. Wait 30–60 seconds — **do not turn off the car during this**
@@ -248,7 +248,7 @@ Once openrs-fw is running, all future updates use **OTA via the web UI** — no 
 | **ESC write** (On/Sport/Off) | ❌ | ✅ |
 | **Launch Control enable** | ❌ | ✅ |
 | **Auto Start/Stop kill** | ❌ | ✅ |
-| **BLE GATT data transport** | ❌ | ✅ |
+| **BLE GATT data transport** (MeatPi's own Bluetooth, off by default; see [Which connection to use](hardware-setup.md#which-connection-to-use)) | ✅ | ✅ |
 | **Auto-discovery** (app finds device) | ❌ | ✅ |
 | openRS_ branding (SSID, web UI) | ❌ | ✅ |
 

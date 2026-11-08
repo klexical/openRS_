@@ -115,7 +115,7 @@ by feature: ESC control from the app, for example, is not yet confirmed on a car
 [firmware update guide](android/docs/firmware-update.md).
 
 **Which connection?** On stable v2.2.6, connect over **Wi-Fi**: its Bluetooth looks for a service that no MeatPi firmware
-provides ([#218](https://github.com/klexical/openRS_/issues/218)). Bluetooth LE works from v2.2.7-rc.7 on; it has been
+provides ([#218](https://github.com/klexical/openRS_/issues/218)). Bluetooth LE needs v2.2.7-rc.7 or later; it has been
 seen working on a car with a MeatPi Pro running openrs-fw, and the other combinations are expected to work from the source.
 The [hardware setup guide](android/docs/hardware-setup.md#which-connection-to-use) has the details by release, adapter and
 firmware.
