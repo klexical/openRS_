@@ -82,7 +82,7 @@ class CanDataService : Service() {
             androidx.core.content.ContextCompat.startForegroundService(
                 this@CanDataService, Intent(this@CanDataService, CanDataService::class.java))
         }
-        override fun enterForeground() = goForeground()
+        override fun enterForeground(location: Boolean) = goForeground(location = location)
         override fun exitForeground() = leaveForeground()
         override fun stopSelf() = this@CanDataService.stopSelf()
     })
@@ -237,7 +237,11 @@ class CanDataService : Service() {
             OpenRSDashApp.instance.driveRecorder.driveState
                 .map { it.isRecording to it.isPaused }
                 .distinctUntilChanged()
-                .collect { link.transition { publishNotification(link.phase) } }
+                .collect { link.transition { publishNotification(link.phase); retypeForeground() } }
+        }
+        // #261: the location type can be added only while the app is visible — a recording started behind gets it on return
+        scope.launch {
+            AppVisibility.visible.collect { visible -> if (visible) link.transition { retypeForeground() } }
         }
         if (isTransportReady()) autoStartConnection()
         com.openrs.dash.ui.StartupTrace.mark("CanDataService.onCreate end")
@@ -425,14 +429,14 @@ class CanDataService : Service() {
             .build()
     }
 
-    private fun goForeground(text: String = "Connecting to vehicle…") {
+    private fun goForeground(text: String = "Connecting to vehicle…", location: Boolean = false) {
         val notification = buildNotification(text, offerCancel = !isRecording())
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ServiceCompat.startForeground(
-                this, NOTIF_ID, notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-            )
+            // #261: location only while a drive records with fine location and the app was visible (ForegroundTypes)
+            val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
+                (if (location) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0)
+            ServiceCompat.startForeground(this, NOTIF_ID, notification, types)
         } else {
             startForeground(NOTIF_ID, notification)
         }
@@ -447,6 +451,32 @@ class CanDataService : Service() {
 
     private fun leaveForeground() {
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+    }
+
+    /**
+     * #261: give the foreground the location type while a drive records (not paused) with fine location granted, added only
+     * while the app is visible; drop it on pause / stop. Call under [link]'s transition. A no-op when not foreground, so it
+     * never promotes or demotes (the link end's demote stays N2's). Each change is one FGS_LOCATION event in the export.
+     */
+    private fun retypeForeground() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return     // no service types before Android 10
+        val ds = OpenRSDashApp.instance.driveRecorder.driveState.value
+        val fine = androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        val want = ForegroundTypes.wantsLocation(ds.isRecording, ds.isPaused, fine)
+        val text = when (val c = foreground.applyTypes(want, AppVisibility.visible.value)) {
+            ForegroundController.TypeChange.None -> null
+            ForegroundController.TypeChange.Added -> "location type added (recording, app visible)"
+            ForegroundController.TypeChange.Dropped -> "location type dropped (" + (if (ds.isRecording) "paused" else "not recording") + ")"
+            ForegroundController.TypeChange.Deferred ->
+                "recording while the app is not visible: connectedDevice only, GPS may stop until the app is opened"
+            is ForegroundController.TypeChange.Refused -> "location type refused: ${LogText.sanitizeReason(c.error)}; connectedDevice only"
+            is ForegroundController.TypeChange.DropRefused -> "dropping the location type refused: ${LogText.sanitizeReason(c.error)}"
+        }
+        text?.let {
+            DiagnosticLogger.event(DiagnosticLogger.EVENT_FGS_LOCATION, it)
+            android.util.Log.i("CAN", "Foreground: $it")
+        }
     }
 
     // ── Session History helpers ─────────────────────────────────────────────
@@ -569,6 +599,7 @@ class CanDataService : Service() {
             android.util.Log.w("CAN", "Cannot go foreground — skipping connection start", e)
             return@transition false
         }
+        retypeForeground()   // #261: a reconnect while a drive records keeps (or gains) the location type
 
         val s = AppSettings
         val connMethod = s.getConnectionMethod(this)

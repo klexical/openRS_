@@ -558,6 +558,17 @@ class MainActivity : ComponentActivity() {
         bindService(Intent(this, CanDataService::class.java), conn, Context.BIND_AUTO_CREATE)
     }
 
+    // #261: the service may add the location foreground type only while the app is visible (Android 14+ while-in-use rule)
+    override fun onStart() {
+        super.onStart()
+        com.openrs.dash.service.AppVisibility.visible.value = true
+    }
+
+    override fun onStop() {
+        com.openrs.dash.service.AppVisibility.visible.value = false
+        super.onStop()
+    }
+
     override fun onDestroy() {
         try { unbindService(conn) } catch (_: Exception) {}
         super.onDestroy()
