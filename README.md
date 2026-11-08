@@ -18,11 +18,7 @@
 
 <p align="center"><sub>Stable v2.2.6 · Testing v2.2.7-rc.7 (Build 38) · Preview RC8 Build 39, unreleased</sub></p>
 
-**openRS_** is a native Android app that turns your phone into a telemetry dashboard for the Ford Focus RS Mk3. It
-connects to a MeatPi USB (C3) or MeatPi Pro (S3) adapter over **Wi-Fi or Bluetooth Low Energy**, reads supported signals
-from the car's high-speed CAN bus (HS-CAN) and polls Ford modules for more. Unlike a generic OBD app it is built for
-the RS: the GKN Twinster AWD system, TPMS pressures and temperatures from the BCM, and a dark, glanceable layout tuned
-for track days.
+See boost, rear-axle torque, tire pressures and temperatures from your Focus RS. Connect a supported MeatPi adapter over **Wi-Fi on stable v2.2.6**. The [setup guide](android/docs/hardware-setup.md#which-connection-to-use) covers Bluetooth LE on supported release-candidate configurations.
 
 ## Next release preview
 
@@ -85,8 +81,8 @@ The tab names below are those of the v2.2.7 release candidates; the v2.2.6 names
   and alerts.
 - **Monitor temperatures.** Oil, coolant, PTU, RDU, clutch and transmission temperatures with a Street / Track / Race
   readiness verdict on THERMAL (TEMPS), plus TPMS pressures and temperatures.
-- **Review engine and performance data.** AFR, boost target against actual with wastegate duty, per-cylinder knock
-  correction and fuel trims on PERF (POWER). The knock logger, the boost sweep and the fuel-trim drift tracker are new
+- **Review engine and performance data.** AFR, boost target against actual with wastegate duty, knock logging and fuel trims on PERF (POWER).
+  The cylinder 2–4 signal mappings are [under investigation](https://github.com/klexical/openRS_/issues/222). The knock logger, the boost sweep and the fuel-trim drift tracker are new
   in the v2.2.7 release candidates.
 - **Record and revisit drives.** GPS drive recording with a map, peaks and a drive summary on TRIP (MAP), and export
   to GPX, CSV and a text summary. Lap timing is in the release candidates and so far verified with synthetic GPS only
@@ -166,7 +162,8 @@ temperature mapping and Bluetooth LE fixes. RC8 adds diagnostics, reliability an
 staging and not yet released.
 
 **Next priorities.**
-- More PCM data: MAP, barometric pressure, engine load, oil pressure and knock counters.
+- RC8 on staging records manifold absolute pressure (MAP) beside throttle-inlet pressure (TIP) during active drive recording. [Validating the TIP scale](https://github.com/klexical/openRS_/issues/271) still needs vehicle data.
+- Planned PCM work includes barometric pressure, engine load, oil pressure and knock counters.
 - Track days: geofenced lap timing, track map overlays and better drive comparison.
 - Hardware: the MeatPi Pro's own GPS, and MS-CAN through a second adapter.
 - High-frequency telemetry through a UDS fast-rate session (about 100 Hz).
