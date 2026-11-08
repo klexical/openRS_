@@ -73,7 +73,7 @@ class ServiceFlushDemoteTest {
     private class CountingHost : ForegroundController.Host {
         val exits = AtomicInteger(); val stops = AtomicInteger()
         override fun startSelf() = Unit
-        override fun enterForeground() = Unit
+        override fun enterForeground(location: Boolean) = Unit
         override fun exitForeground() { exits.incrementAndGet() }
         override fun stopSelf() { stops.incrementAndGet() }
     }

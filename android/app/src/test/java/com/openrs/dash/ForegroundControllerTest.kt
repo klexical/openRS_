@@ -17,7 +17,12 @@ class ForegroundControllerTest {
         ForegroundController.Host {
         val calls = mutableListOf<String>()
         override fun startSelf() { if (failStartSelf) throw IllegalStateException("bg start"); calls += "startSelf" }
-        override fun enterForeground() { if (failStartForeground) throw IllegalStateException("fgs"); calls += "enterForeground" }
+        var failLocation = false
+        override fun enterForeground(location: Boolean) {
+            if (failStartForeground) throw IllegalStateException("fgs")
+            if (location && failLocation) throw SecurityException("location fgs not allowed")
+            calls += if (location) "enterForeground+location" else "enterForeground"
+        }
         override fun exitForeground() { calls += "exitForeground" }
         override fun stopSelf() { calls += "stopSelf" }
     }
