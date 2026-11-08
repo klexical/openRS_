@@ -118,6 +118,17 @@ class RecorderFreshnessTest {
         assertNoPolledValue(p[1], "first point after resume")
     }
 
+    @Test fun `pause with no fix during it - a decode made during the pause is not stored after resume (QA Q1)`() {
+        map(120); fix(0)
+        rec.pauseDrive()
+        map(203)                                                        // decoded during the pause; no fix arrives while paused
+        Thread.sleep(1_500)                                             // well inside MAP's 4 s budget
+        rec.resumeDrive()
+        fix(1)                                                          // first fix after resume: no decode since the resume
+        map(130); fix(2)
+        assertEquals(listOf(120.0, null, 130.0), stop().second.map { it.mapKpa })
+    }
+
     @Test fun `pause - TIP alone`() {
         tip(0x4F00); fix(0); tip(0x5800); pauseAndResume(); fix(1)
         assertEquals(0.0, stop().second[1].tipActualKpa, 0.0)
