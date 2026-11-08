@@ -302,6 +302,8 @@ internal object DiagnosticReportBuilder {
         // Link integrity (rc.8 #253): counts only — what writes established, what framing / length checks refused
         linkIntegrityText(counters.integrity, counters.nrcUnattributed).forEach { appendLine(it) }
         appendLine()
+        didInventoryText(counters.dids).forEach { appendLine(it) }   // rc.8 #253, additive
+        appendLine()
         logLimitsText(counters.limits, knockSessionDropped(), counters.integrity).forEach { appendLine(it) }
         appendLine()
 
@@ -506,6 +508,7 @@ internal object DiagnosticReportBuilder {
 
         root.put("nrcUnattributedTotal", counters.nrcUnattributed)   // exact, even though lines are folded (#216)
         root.put("linkIntegrity", linkIntegrityJson(counters.integrity, counters.nrcUnattributed))   // rc.8 #253, additive
+        root.put("didInventory", didInventoryJson(counters.dids))   // rc.8 #253, additive
         root.put("logLimits", logLimitsJson(counters.limits, knockSessionDropped()))  // additive
         root.put("exportSchemaVersion", EXPORT_SCHEMA_VERSION)   // rc.8 #253, additive; when it changes: see the constant
 
@@ -585,7 +588,48 @@ internal fun linkIntegrityText(li: DiagnosticLogger.LinkIntegrity, nrcUnattribut
     "  NRC      : ${li.nrcAttributed} attributed · $nrcUnattributed unattributed (PCM)",
     "  Buffers  : ${li.overlongLines} overlong line(s) refused · ${li.linesDropped} line(s) dropped (BLE queue full) · " +
         "${li.commandRepliesDropped} command reply(ies) dropped · ${li.dtcFramesDropped} DTC frame(s) dropped",
+    "  ISO-TP   : ${li.isoTpRefused} frame(s) refused or reply(ies) abandoned (truncated, too short, sequence break)",
 )
+
+/** A module's name for its Mode 22 response ID (the ECU table), else the hex ID. */
+internal fun moduleName(responseId: Int): String = when (responseId) {
+    0x7E8 -> "PCM"; 0x72E -> "BCM"; 0x70B -> "AWD"; 0x768 -> "ABS"; 0x738 -> "PSCM"; 0x72F -> "FENG"; 0x739 -> "RSProt"
+    0x7DA -> "GFM"; 0x728 -> "IPC"; 0x73B -> "HVAC"
+    else -> "0x%03X".format(responseId)
+}
+
+/**
+ * DID INVENTORY summary lines (rc.8 #253): per module and DID, what this session's pollers asked and what came back.
+ * "sent" counts writes not certainly lost; "answered" positive single / first frames (DID-prober answers excluded);
+ * "rejected" NRCs charged to that DID (unattributed ones are in LINK INTEGRITY). Times are relative to the session start.
+ */
+internal fun didInventoryText(inv: DiagnosticLogger.DidInventory): List<String> = buildList {
+    add("─── DID INVENTORY (Mode 22, this session) ─────────────────")
+    if (inv.rows.isEmpty()) add("  none")
+    for (r in inv.rows.sortedWith(compareBy({ it.responseId }, { it.did }))) {
+        val silent = r.sent > 0 && r.positive == 0 && r.nrcAttributed == 0
+        add("  %-6s 0x%04X : %d sent · %d answered · %d rejected%s".format(moduleName(r.responseId), r.did, r.sent, r.positive,
+            r.nrcAttributed, when {
+                r.lastPositiveRelMs >= 0 -> " · last answer at +%.1f s".format(r.lastPositiveRelMs / 1000.0)
+                silent -> " · never answered"
+                else -> ""
+            }))
+    }
+    if (inv.overflow > 0) add("  ${inv.overflow} further count(s) of DIDs past the ${DiagnosticLogger.MAX_INVENTORY_DIDS}-row limit: not listed")
+}
+
+internal fun didInventoryJson(inv: DiagnosticLogger.DidInventory): JSONObject = JSONObject().apply {
+    put("rows", org.json.JSONArray().apply {
+        inv.rows.sortedWith(compareBy({ it.responseId }, { it.did })).forEach { r ->
+            put(JSONObject().apply {
+                put("module", moduleName(r.responseId)); put("responseId", "%03X".format(r.responseId)); put("did", "%04X".format(r.did))
+                put("sent", r.sent); put("positive", r.positive); put("nrcAttributed", r.nrcAttributed)
+                if (r.lastPositiveRelMs >= 0) put("lastPositiveRelMs", r.lastPositiveRelMs)
+            })
+        }
+    })
+    put("overflow", inv.overflow)
+}
 
 /** Demo knock events are simulated: like the session-knock CSV, they never reach an export. */
 private fun knockSessionDropped() =
@@ -638,6 +682,7 @@ internal fun linkIntegrityJson(li: DiagnosticLogger.LinkIntegrity, nrcUnattribut
     put("linesDropped", li.linesDropped)
     put("commandRepliesDropped", li.commandRepliesDropped)
     put("dtcFramesDropped", li.dtcFramesDropped)
+    put("isoTpRefused", li.isoTpRefused)
 }
 
 /** " (0x1B0 Ns ago, its 0x420 detail Ms ago)" — what a Sport / Track reading rests on (#252); "" before any report. */

@@ -14,7 +14,8 @@ package com.openrs.dash.can
  *
  * Thread-safety: instances are used within a single coroutine, no locking needed.
  */
-class IsoTpBuffer {
+/** [onRefused] is told about every frame refused or reply abandoned (counted in the export, #253). */
+class IsoTpBuffer(private val onRefused: () -> Unit = {}) {
     private var payload: ByteArray? = null
     private var expected = 0
     private var received = 0
@@ -35,13 +36,13 @@ class IsoTpBuffer {
             0 -> {
                 payload = null
                 val len = data[0].toInt() and 0x0F
-                if (len > data.size - 1) return Triple(null, false, true)
+                if (len > data.size - 1) { onRefused(); return Triple(null, false, true) }
                 Triple(data.copyOfRange(1, 1 + len), false, true)
             }
             1 -> {
                 payload = null                         // valid or not, a new reply started: the old one is over
                 val length = ((data[0].toInt() and 0x0F) shl 8) or (data[1].toInt() and 0xFF)
-                if (data.size < CAN_FRAME_BYTES || length < MIN_FF_LENGTH) return Triple(null, false, false)
+                if (data.size < CAN_FRAME_BYTES || length < MIN_FF_LENGTH) { onRefused(); return Triple(null, false, false) }
                 expected = length
                 payload = ByteArray(expected)
                 System.arraycopy(data, 2, payload!!, 0, FF_DATA_BYTES)
@@ -53,13 +54,13 @@ class IsoTpBuffer {
                 val buf = payload ?: return Triple(null, false, false)
                 val seq = data[0].toInt() and 0x0F
                 if (seq != seqNext) {  // out-of-order or duplicate CF (#128)
-                    payload = null; received = 0; seqNext = 1
+                    payload = null; received = 0; seqNext = 1; onRefused()
                     return Triple(null, false, false)
                 }
                 seqNext = (seqNext + 1) and 0x0F
                 val n = minOf(CF_DATA_BYTES, expected - received)
                 if (data.size - 1 < n) {               // shorter than the remainder: the next frame would land at the wrong offset
-                    payload = null; received = 0; seqNext = 1
+                    payload = null; received = 0; seqNext = 1; onRefused()
                     return Triple(null, false, false)
                 }
                 System.arraycopy(data, 1, buf, received, n)
