@@ -196,14 +196,21 @@ class DriveRecorder(
         // Finalize any drives left with endTime=0 from a previous app session
         // (app killed mid-drive, crash, etc.). In-memory pause state is lost
         // at restart, so these cannot be resumed — close them out cleanly so
-        // "endTime == 0" keeps meaning "truly in progress."
+        // "endTime == 0" keeps meaning "truly in progress." Such a drive never got STOP's summary: it gets the parts
+        // that follow from its stored points (#262, [closedOrphan]); the rest stays at the row's defaults.
+        // Only drives started before this recorder existed are orphans: a drive this recorder starts can be inserted before
+        // the query below runs, and used to be closed here at its start with no points (#262, found by its regression).
+        val createdAtMs = System.currentTimeMillis()
         scope.launch(Dispatchers.IO) {
             try {
-                val orphans = dao.getUnfinishedDrives()
+                val orphans = dao.getUnfinishedDrives().filter { it.startTime < createdAtMs }
                 for (orphan in orphans) {
-                    val lastPt = dao.getLastPointTimestamp(orphan.id) ?: orphan.startTime
-                    dao.updateDrive(orphan.copy(endTime = lastPt))
-                    Log.d(TAG, "Finalized orphan drive ${orphan.id} (endTime=$lastPt)")
+                    val points = dao.getPoints(orphan.id)
+                    val closed = closedOrphan(orphan, points)
+                    dao.updateDrive(closed)
+                    Log.d(TAG, "Finalized orphan drive ${orphan.id} (endTime=${closed.endTime}, ${points.size} points)")
+                    DiagnosticLogger.event("REC", "drive ${orphan.id} closed after the app ended mid-drive: " +
+                        "${points.size} stored point(s), summary from those points")
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Orphan drive cleanup failed", e)
@@ -288,6 +295,18 @@ class DriveRecorder(
         scope.launch { r.outsideLoopWrites.withLock { flushBuffer(r) } }
     }
 
+    /**
+     * Stores the drive's buffered points now, without pausing it (#262). Called by the service whenever a connection
+     * ends: with auto-record off a drive keeps recording through a link gap (no new points while disconnected), but up to
+     * FLUSH_SIZE − 1 points sat in memory with no foreground service left to keep the process alive. Same lock as
+     * [pauseDrive]'s flush (#241); no-op when not recording or the buffer is empty.
+     */
+    fun flushBuffered() {
+        if (!_driveState.value.isRecording) return
+        val r = run
+        scope.launch { r.outsideLoopWrites.withLock { flushBuffer(r) } }
+    }
+
     fun resumeDrive() {
         pausedAtMs = 0L
         run.prevPoint = null  // Gap in polyline — next point won't connect to prev
@@ -343,7 +362,7 @@ class DriveRecorder(
                         }
                     }.toString()
                     // Compute aggression score from session averages
-                    val score = computeAggressionScore(state, stopped.recentPoints)
+                    val score = computeAggressionScore(state.totalPointCount, stopped.recentPoints)
 
                     // Auto-name via reverse geocoder if no user name set — outside the transaction (network)
                     val autoName = if (drive.name == null) reverseGeocode(state) else null
@@ -853,8 +872,8 @@ class DriveRecorder(
      * Computes a 0-100 aggression score from session averages:
      *   30% avg throttle, 25% avg |lateralG|, 25% avg RPM fraction, 20% avg boost fraction.
      */
-    private fun computeAggressionScore(state: DriveState, points: List<DrivePointEntity>): Int {
-        if (state.totalPointCount < 10) return 0
+    private fun computeAggressionScore(totalPointCount: Int, points: List<DrivePointEntity>): Int {
+        if (totalPointCount < 10) return 0
         if (points.isEmpty()) return 0
 
         val avgThrottle = points.sumOf { it.throttlePct } / points.size / 100.0
@@ -869,6 +888,46 @@ class DriveRecorder(
         val raw = if (boostPsis.isEmpty()) base / 0.80 * 100.0
                   else (base + boostPsis.sumOf { it.coerceAtLeast(0.0) } / boostPsis.size / 22.0 * 0.20) * 100.0
         return min(100, raw.toInt().coerceAtLeast(0))
+    }
+
+    /**
+     * A drive left open by a process death, closed (#262): it ends at its last stored point (its start without one), and
+     * gets the summary fields that follow from the stored points alone — max / average speed, peak RPM, peak |lateral G|,
+     * peak / first / last oil and coolant (valid readings only), the mode breakdown and the aggression score, each by the
+     * same rule STOP uses over the recorded points. Distance joins only consecutive stored points at most
+     * [ORPHAN_SEGMENT_MAX_GAP_MS] apart: a pause or a link loss breaks the live polyline and its fixes are never stored, so
+     * a longer gap is not driven distance (a late fix is left out too, and a single skipped fix can be bridged — so it can
+     * differ slightly from what STOP would have written). Fuel, fuel economy, trims, pulls, the thermal record, laps,
+     * weather and the name stay at the row's values: they lived in memory only. No summary sheet is posted for it.
+     */
+    private fun closedOrphan(orphan: DriveEntity, points: List<DrivePointEntity>): DriveEntity {
+        if (points.isEmpty()) return orphan.copy(endTime = orphan.startTime)
+        var distanceKm = 0.0
+        for (i in 1 until points.size) {
+            val a = points[i - 1]; val b = points[i]
+            if (b.timestamp - a.timestamp <= ORPHAN_SEGMENT_MAX_GAP_MS) distanceKm += DriveState.haversineKm(a.lat, a.lng, b.lat, b.lng)
+        }
+        val oil = points.filter { it.oilTempC > -90 }
+        val coolant = points.filter { it.coolantTempC > -90 }
+        val modes = JSONObject().apply {
+            points.groupingBy { it.driveMode }.eachCount().forEach { (mode, n) -> put(mode, n.toDouble() / points.size) }
+        }.toString()
+        return orphan.copy(
+            endTime = points.last().timestamp,
+            distanceKm = distanceKm,
+            avgSpeedKph = points.sumOf { it.speedKph } / points.size,
+            maxSpeedKph = points.maxOf { it.speedKph },
+            peakRpm = points.maxOf { it.rpm },
+            peakLateralG = points.maxOf { abs(it.lateralG) },
+            peakOilTempC = oil.maxOfOrNull { it.oilTempC } ?: orphan.peakOilTempC,
+            startOilTempC = oil.firstOrNull()?.oilTempC ?: orphan.startOilTempC,
+            endOilTempC = oil.lastOrNull()?.oilTempC ?: orphan.endOilTempC,
+            peakCoolantTempC = coolant.maxOfOrNull { it.coolantTempC } ?: orphan.peakCoolantTempC,
+            startCoolantTempC = coolant.firstOrNull()?.coolantTempC ?: orphan.startCoolantTempC,
+            endCoolantTempC = coolant.lastOrNull()?.coolantTempC ?: orphan.endCoolantTempC,
+            driveModeBreakdown = modes,
+            aggressionScore = computeAggressionScore(points.size, points)
+        )
     }
 
     // ── Auto-naming ─────────────────────────────────────────────────────────
@@ -977,6 +1036,8 @@ class DriveRecorder(
         }
         private const val WEATHER_REFRESH_MS = 15 * 60_000L
         private const val FLUSH_SIZE = 30           // flush every ~30 seconds at 1 Hz
+        /** An orphan's distance joins two stored points only this close (1 Hz fixes; see [closedOrphan], #262). */
+        private const val ORPHAN_SEGMENT_MAX_GAP_MS = 2_000L
         private const val MAX_RECENT_POINTS = 3600  // ~1 hour of points for live polyline
     }
 }
