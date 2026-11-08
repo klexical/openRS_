@@ -21,9 +21,8 @@ object PolledFreshness {
     )
 
     /**
-     * MAP 0xF40B (#271) is a pressure snapshot: whatever group polls it (slow by default, fast in the MAP comparison mode),
-     * it is current only within the fast budget, engine running or off — a 27 s-old reading from the slow rotation is
-     * never shown or used as current.
+     * MAP 0xF40B (#271) is a pressure snapshot, polled only while a drive records: it is current only within the fast
+     * budget, engine running or off, so a reading held from before a pause or a stop is never shown or used as current.
      */
     fun refreshMs(tag: String, engineRunning: Boolean): Long = when {
         tag == MapF40b.TAG -> FAST_REFRESH_MS

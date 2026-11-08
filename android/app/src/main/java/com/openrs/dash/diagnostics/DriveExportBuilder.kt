@@ -243,8 +243,6 @@ internal object DriveExportBuilder {
                 "fresh; none → no reading"
         })
         appendLine("  Oil / PTU   : " + com.openrs.dash.data.OilPtuMapping.describe(drive.oilPtuMapping))
-        // #271: a MAP comparison drive is identifiable (MAP 0xF40B polled every cycle while the test mode was on)
-        drive.mapComparison?.let { appendLine("  MAP compare : " + if (it) "test mode ON during this drive (MAP polled every cycle)" else "off") }
         appendLine("  Peak Lat G  : ${"%.2f".format(drive.peakLateralG)} g")
         if (drive.avgStftPct != null || drive.avgLtftPct != null) {
             fun pct(v: Double?) = v?.let { "%+.1f%%".format(it) } ?: "—"
@@ -384,8 +382,6 @@ internal object DriveExportBuilder {
             put("peakCoolantTempC", drive.peakCoolantTempC)
             // #229: which 0x0F8 bytes oil / PTU came from — present only when saved with the drive; absent = unknown
             drive.oilPtuMapping?.let { put("oilPtuMapping", it) }
-            // #271: the MAP comparison test mode — present only when saved with the drive; absent = not recorded
-            drive.mapComparison?.let { put("mapComparisonMode", it) }
             put("fuelUsedL", drive.fuelUsedL)
             put("aggressionScore", drive.aggressionScore)
             put("tags", drive.tags)

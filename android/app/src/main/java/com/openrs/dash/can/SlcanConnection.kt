@@ -42,6 +42,8 @@ class SlcanConnection(
      * attempt. A connected link is never dropped because recording stopped.
      */
     private val keepRetrying: () -> Boolean = { false },
+    /** True while a drive is recording, not paused: MAP 0xF40B joins the PCM fast group (#271). Read for every batch. */
+    private val mapPoll: () -> Boolean = { false },
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val debugSink: (String) -> Unit = { OpenRSDashApp.instance.pushDebugLine(it) },
     /** Wall clock for NRC attribution / re-probe timing — tests pass the virtual clock. */
@@ -373,7 +375,7 @@ class SlcanConnection(
                     var slowIndex = 0
                     while (isActive) {
                         val running = rpmProvider() > ObdConstants.FAST_POLL_MIN_RPM
-                        val batch = PcmPollSchedule.nextBatch(slowIndex, running)
+                        val batch = PcmPollSchedule.nextBatch(slowIndex, running, mapPoll())
                         slowIndex = batch.nextSlowIndex
                         var sentAny = false
                         batch.queries.forEach { q ->

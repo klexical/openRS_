@@ -156,7 +156,6 @@ class MapF40bStorageTest {
             .addMigrations(DriveDatabase.MIGRATION_13_14, DriveDatabase.MIGRATION_14_15).allowMainThreadQueries().build()
         try {
             val row = upgraded.driveDao().getRecentDrives().single()                 // Room validates the v15 schema on open
-            assertNull("the drive's MAP comparison mode is not recorded (never backfilled)", row.mapComparison)
             val id = row.id
             val p = upgraded.driveDao().getPoints(id).single()
             assertNull("never backfilled", p.mapKpa)
