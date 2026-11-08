@@ -136,7 +136,7 @@ All formulas re-validated against DigiCluster `can0_hs.json` and `can1_ms.json`.
 | 0x080 | Accelerator pedal %, reverse | pedal: `((B0&0x03)<<8\|B1)×0.1` (bits 0-9); reverse: `B0 bit 5` | RS_HS.dbc |
 | 0x090 | RPM, baro pressure | RPM: `((B4&0x0F)<<8\|B5)×2`; baro: `B2×0.5 kPa` | DigiCluster HS-CAN |
 | 0x0C8 | Gauge brightness, e-brake, ignition status | brightness: `B0&0x1F`; e-brake: `B3&0x40`; ignition: `B2&0x1F` (0=KeyOut..7=Running..9=Cranking) | DigiCluster HS-CAN + RS_HS.dbc |
-| 0x0F8 | Oil temp, boost, PTU temp | oil: `B7−60 °C`; boost: B5 absolute kPa; PTU: `B1−50 °C` — the reverse of the DBC's names, confirmed on one car ([#229](https://github.com/klexical/openRS_/issues/229)); v2.2.6 and builds before v2.2.7-rc.7 read them the other way round | RS_HS.dbc PCMmsg07 |
+| 0x0F8 | Oil temp, boost, PTU temp | oil: `B7−60 °C`; boost: `B5` gauge kPa (1 kPa/bit, unsigned; the app stores `B5 + 101.325`; physical identity unverified, [#207](https://github.com/klexical/openRS_/issues/207)); PTU: `B1−50 °C` — the reverse of the DBC's names, confirmed on one car ([#229](https://github.com/klexical/openRS_/issues/229)); v2.2.6 and builds before v2.2.7-rc.7 read them the other way round | RS_HS.dbc PCMmsg07 |
 | 0x130 | Speed kph | `word(B6-B7)×0.01` | DigiCluster HS-CAN |
 | 0x138 | Clutch pedal position (%) | 10-bit Motorola × 0.1 % | RS_HS.dbc PCMmsg10 |
 | 0x160 | Longitudinal G | `((B6&0x03)<<8\|B7)×0.00390625−2.0` | DigiCluster HS-CAN |
@@ -146,7 +146,7 @@ All formulas re-validated against DigiCluster `can0_hs.json` and `can1_ms.json`.
 | 0x420 | Drive mode (detail), launch control | B6: 0x10=Normal, 0x11=Sport/Track, 0x12=Drift; B7 bit0: 0=Sport, 1=Track; LC: `(B6>>2)&1` | RS_HS.dbc + empirical (2026-03-11) |
 | 0x1C0 | ESC mode status | `bits(10,2)`: 0=On, 1=Off, 2=Sport, 3=Launch (byte1 bits 5–4) | RS_HS.dbc VAL_ 448 + SLCAN-verified |
 | 0x190 | 4× wheel speeds | FL/FR/RL/RR: 15-bit Motorola × 0.011343006 kph | RS_HS.dbc ABSmsg03 |
-| 0x1E0 | Wheel rotation counts, average front wheel speed | 4 × 8-bit rolling counts FL/FR/RL/RR | RS_HS.dbc ABSmsg06 |
+| 0x1E0 | Wheel rotation counts, average front wheel speed | 4 × 8-bit rolling counts FL/FR/RL/RR (B0–B3); average front speed: `word(B4-B5)×0.01` km/h | RS_HS.dbc ABSmsg06 |
 | 0x230 | Gear position | `bits(0,4)` — 0=Park/Neutral, 1–6=gears, 7=Reverse — does not broadcast on this car | RS_HS.dbc |
 | 0x252 | Brake pressure | `((B1&0x0F)<<8\|B2) / 40.95` — 12-bit ADC, normalised 0–100% | RS_HS.dbc ABSmsg10 |
 | 0x2C0 | AWD L/R torque | 12-bit words scaled | DigiCluster HS-CAN |
@@ -154,7 +154,7 @@ All formulas re-validated against DigiCluster `can0_hs.json` and `can1_ms.json`.
 | 0x340 | Ambient temp (PCMmsg17) | `byte7 signed × 0.25 °C` — **not** TPMS | RS_HS.dbc PCMmsg17 |
 | 0x360 | Odometer (km), engine status | odo: `(data[3]<<16\|data[4]<<8\|data[5])` — 24-bit BE, 1 km/bit; engine: `data[0]` (0=Idle, 2=Off, 183=Running, 186=Kill, 191=RecentStart, 196=Warmup) | RS_HS.dbc + community [#102](https://github.com/klexical/openRS_/discussions/102) |
 | 0x380 | Fuel level % (FuelLevelFiltered) | Motorola 10-bit: `((data[2]&0x03)<<8\|data[3]) × 0.4` | RS_HS.dbc PCMmsg30 |
-| 0x40A | VIN (multiplexed) + odometer | 3 pages × 6 bytes → 17-character VIN | community (@adamsouthern) |
+| 0x40A | VIN (multiplexed) | pages `C1 00` / `C1 01` / `C1 02` (6 + 6 + 5 bytes) → 17-character VIN; the frame's odometer page is not decoded | community (@adamsouthern) |
 
 > **Note:** `0x230` (gear position) and `0x3C0` (battery voltage) do not broadcast on this vehicle. Battery voltage is polled via OBD. Gear display has been removed.
 
