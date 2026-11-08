@@ -21,7 +21,7 @@
 | 4.2 | Portrait / landscape adaptive | UI / UX | Medium | Medium | `idea` |
 | 4.3 | Night / track mode | UI / UX | Medium | Low | `idea` |
 | 4.4 | Android home screen widget | UI / UX | Medium | Medium | `idea` |
-| 5.1 | Lap timer + geofence | Track Day | Medium | High | `in-progress`: start/finish lap timing on TRIP in v2.2.7-rc.7 (prerelease) |
+| 5.1 | Lap timer + geofence | Track Day | Medium | High | `in-progress`: start/finish lap timing on TRIP in v2.2.7-rc.7 (prerelease; verified with synthetic GPS only, [#237](https://github.com/klexical/openRS_/issues/237)) |
 | 5.2 | Sector timing | Track Day | Medium | High | `idea` |
 | 5.3 | Oversteer / understeer detection | Track Day | Long | High | `idea` |
 | 5.4 | Dyno power run analysis | Track Day | Long | High | `idea` |
