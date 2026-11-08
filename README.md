@@ -82,7 +82,7 @@ The tab names below are those of the v2.2.7 release candidates; the v2.2.6 names
 - **Monitor temperatures.** Oil, coolant, PTU, RDU, clutch and transmission temperatures with a Street / Track / Race
   readiness verdict on THERMAL (TEMPS), plus TPMS pressures and temperatures.
 - **Review engine and performance data.** AFR, boost target against actual with wastegate duty, knock logging and fuel trims on PERF (POWER).
-  The cylinder 2–4 signal mappings are [under investigation](https://github.com/klexical/openRS_/issues/222). The knock logger, the boost sweep and the fuel-trim drift tracker are new
+  Which knock signal belongs to which cylinder is [under investigation](https://github.com/klexical/openRS_/issues/222). The knock logger, the boost sweep and the fuel-trim drift tracker are new
   in the v2.2.7 release candidates.
 - **Record and revisit drives.** GPS drive recording with a map, peaks and a drive summary on TRIP (MAP), and export
   to GPX, CSV and a text summary. Lap timing is in the release candidates and so far verified with synthetic GPS only
@@ -162,7 +162,7 @@ temperature mapping and Bluetooth LE fixes. RC8 adds diagnostics, reliability an
 staging and not yet released.
 
 **Next priorities.**
-- RC8 on staging records manifold absolute pressure (MAP) beside throttle-inlet pressure (TIP) during active drive recording. [Validating the TIP scale](https://github.com/klexical/openRS_/issues/271) still needs vehicle data.
+- RC8 on staging polls manifold absolute pressure (MAP, PCM 0xF40B) beside throttle-inlet pressure (TIP) during active drive recording. Whether this PCM answers it, and [validating the TIP scale](https://github.com/klexical/openRS_/issues/271), still need vehicle data.
 - Planned PCM work includes barometric pressure, engine load, oil pressure and knock counters.
 - Track days: geofenced lap timing, track map overlays and better drive comparison.
 - Hardware: the MeatPi Pro's own GPS, and MS-CAN through a second adapter.

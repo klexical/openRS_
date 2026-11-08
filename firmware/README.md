@@ -300,7 +300,7 @@ firmware/
 │   │   ├── focusrs_nvs.h
 │   │   ├── focusrs_uds.c             ← UDS ABS probe
 │   │   └── focusrs_uds.h
-│   └── ble_transport/                 ← BLE GATT ELM327 bridge
+│   └── ble_transport/                 ← header-only placeholder for a future BLE GATT transport (not built in v1.x)
 │       ├── CMakeLists.txt
 │       └── ble_transport.h
 ├── patches/
