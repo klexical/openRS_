@@ -174,6 +174,17 @@ class BoostSourceTest {
         assertTrue(events.last(), events.last().contains("TIP_033E → CAN_0F8") && events.last().contains("1 earlier change"))
     }
 
+    @Test fun `the BOOST_SOURCE line names the recorded source, not a shown one (#207)`() {
+        // BoostSession.onState follows read() — the recording rule (TIP → CAN 0x0F8 → none) — while the live gauge is TIP only
+        // (gauge()), so a CAN source here is never what the gauge shows. The line must say so.
+        BoostSession.onState(state.value, now())
+        rpmFrame(); boostFrame(0)
+        BoostSession.onState(state.value, now())                          // NONE → CAN_0F8
+        val line = events.single()
+        assertTrue(line, line.startsWith("recorded source NONE → CAN_0F8"))
+        assertTrue(line, "shown" !in line)
+    }
+
     @Test fun `peaks are per source — a caption never shows another source's peak`() {
         rpmFrame(); boostFrame(12)                                       // CAN peak 12 kPa
         waitForStamp(); boostFrame(0)
