@@ -6,7 +6,9 @@
 <p align="center">
   <a href="https://klexical.github.io/openRS_/">🔷 Sapphire Dashboard</a> •
   <a href="https://klexical.github.io/openRS_/emulator/">🚀 Live Emulator</a> •
+  <a href="#rc8-build-39-preview">RC8 Preview</a> •
   <a href="#screenshots">Screenshots</a> •
+  <a href="#download">Download</a> •
   <a href="#features">Features</a> •
   <a href="#hardware">Hardware</a> •
   <a href="#quick-start">Quick Start</a> •
@@ -15,7 +17,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.2.6-blue" alt="Version">
+  <a href="https://github.com/klexical/openRS_/releases/tag/android-v2.2.6"><img src="https://img.shields.io/badge/stable-2.2.6-blue" alt="Stable 2.2.6"></a>
+  <a href="https://github.com/klexical/openRS_/releases/tag/android-v2.2.7-rc.7"><img src="https://img.shields.io/badge/prerelease-2.2.7--rc.7-orange" alt="Prerelease 2.2.7-rc.7"></a>
   <img src="https://img.shields.io/badge/platform-Android-brightgreen?logo=android" alt="Platform">
   <img src="https://img.shields.io/badge/Kotlin-2.0-purple?logo=kotlin" alt="Kotlin">
   <img src="https://img.shields.io/badge/Jetpack_Compose-Material3-4285F4?logo=jetpackcompose" alt="Compose">
@@ -31,7 +34,7 @@
 
 ## What is openRS_?
 
-**openRS_** is a native Android app that turns your phone into a full telemetry dashboard for the Ford Focus RS MK3. It connects to a [MeatPi USB (C3)](https://www.mouser.com/ProductDetail/MeatPi/WICAN-USB-C3?qs=rQFj71Wb1eVDX2eEy0FC7A%3D%3D) or [MeatPi Pro (S3)](https://www.meatpi.com/) adapter — over **Wi-Fi or Bluetooth Low Energy** — and passively monitors the full CAN bus at ~2100 fps, decoding every parameter the car broadcasts in real time.
+**openRS_** is a native Android app that turns your phone into a full telemetry dashboard for the Ford Focus RS MK3. It connects to a [MeatPi USB (C3)](https://www.mouser.com/ProductDetail/MeatPi/WICAN-USB-C3?qs=rQFj71Wb1eVDX2eEy0FC7A%3D%3D) or [MeatPi Pro (S3)](https://www.meatpi.com/) adapter — over **Wi-Fi or Bluetooth Low Energy** — and passively monitors the full CAN bus (~2100 fps over Wi-Fi WebSocket), decoding every parameter the car broadcasts in real time.
 
 Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It understands the GKN Twinster AWD system, polls TPMS tire pressures and temperatures from the BCM, decodes Ford-specific parameters across HS-CAN and MS-CAN, and presents everything in a dark, glanceable interface tuned for track days. A bundled **FORScan PID catalog** covers 1,149 PIDs across 8 ECU modules (PCM, OBDII, BCM, ABS, AWD, HVAC, IPC, PSCM) — and new parameters can be added from the catalog via JSON without touching code.
 
@@ -41,7 +44,35 @@ Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It understan
 
 ---
 
+## RC8 Build 39 preview
+
+<p align="center"><b>RC8 Build 39 preview · demo data · unreleased</b></p>
+
+<div align="center">
+  <img src="assets/screenshots/v2.2.7-preview/drive-night.png" width="160" alt="DRIVE tab, RC8 Build 39 preview, demo data">
+  <img src="assets/screenshots/v2.2.7-preview/drive-day.png" width="160" alt="DRIVE tab, DAY theme, RC8 Build 39 preview, demo data">
+  <img src="assets/screenshots/v2.2.7-preview/perf-night.png" width="160" alt="PERF tab, RC8 Build 39 preview, demo data">
+  <img src="assets/screenshots/v2.2.7-preview/thermal-night.png" width="160" alt="THERMAL tab, RC8 Build 39 preview, demo data">
+  <img src="assets/screenshots/v2.2.7-preview/trip-summary-night.png" width="160" alt="TRIP drive summary, RC8 Build 39 preview, demo data">
+  <img src="assets/screenshots/v2.2.7-preview/garage-night.png" width="160" alt="GARAGE tab, RC8 Build 39 preview, demo data">
+</div>
+
+<p align="center">
+  <sub>DRIVE &nbsp;·&nbsp; DRIVE (DAY theme) &nbsp;·&nbsp; PERF &nbsp;·&nbsp; THERMAL &nbsp;·&nbsp; TRIP summary &nbsp;·&nbsp; GARAGE</sub>
+</p>
+
+The v2.2.7 release candidates have a redesigned app ("Daylight"):
+- **Five tabs:** DRIVE, PERF, THERMAL, TRIP and GARAGE; Settings sits behind the cog.
+- **Themes:** NIGHT, DAY, AUTO and ULTRA.
+- **New in the RCs:** a redesigned drive-mode dock, lap timing on TRIP, a knock logger, a boost target-vs-actual sweep and a fuel-trim drift tracker.
+
+These images come from **RC8 Build 39, which is not released**. They were captured from a debug build in its demo mode on an emulator: the **DEMO** label in the header marks simulated data, and the TRIP summary carries its own "PREVIEW · SAMPLE DATA — NOT SAVED" banner. The GARAGE screen shows the drive-mode and ESC controls. ESC control from the app is **not yet confirmed on a car** ([#125](https://github.com/klexical/openRS_/issues/125)), and these controls need openRS_ adapter firmware. Features may still change before release. The newest published prerelease is [v2.2.7-rc.7](https://github.com/klexical/openRS_/releases/tag/android-v2.2.7-rc.7); the current stable release is [v2.2.6](https://github.com/klexical/openRS_/releases/tag/android-v2.2.6). The gallery below shows v2.2.6.
+
+---
+
 ## Screenshots
+
+<p align="center"><b>Stable v2.2.6</b></p>
 
 <div align="center">
   <img src="assets/screenshots/dash.png" width="160" alt="DASH tab">
@@ -53,14 +84,14 @@ Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It understan
 </div>
 
 <p align="center">
-  <sub>DASH &nbsp;·&nbsp; POWER &nbsp;·&nbsp; CHASSIS &nbsp;·&nbsp; TEMPS &nbsp;·&nbsp; MAP &nbsp;·&nbsp; DIAG &nbsp;·&nbsp; MORE</sub>
+  <sub>DASH &nbsp;·&nbsp; POWER &nbsp;·&nbsp; CHASSIS &nbsp;·&nbsp; TEMPS &nbsp;·&nbsp; DIAG &nbsp;·&nbsp; MORE &nbsp;&nbsp;(v2.2.6; the MAP tab is not pictured)</sub>
 </p>
 
 ---
 
 ## Features
 
-### 7 Tabs
+### 7 Tabs (stable v2.2.6)
 
 | Screen | Description |
 |--------|-------------|
@@ -206,6 +237,15 @@ All data is received passively from the CAN bus via WebSocket SLCAN at ~2100 fps
 
 ---
 
+## Download
+
+| Channel | Version | Where |
+|---|---|---|
+| **Stable** (recommended) | v2.2.6 | [Release android-v2.2.6](https://github.com/klexical/openRS_/releases/tag/android-v2.2.6): `openRS_v2.2.6.apk` |
+| **Prerelease** (testing) | v2.2.7-rc.7 | [Release android-v2.2.7-rc.7](https://github.com/klexical/openRS_/releases/tag/android-v2.2.7-rc.7): `openRS_v2.2.7-rc.7.apk` |
+
+RC8 Build 39 (shown in the preview above) is **not released**: there is no download for it yet. Release notes and checksums are on each release page.
+
 ## Quick Start
 
 ### Prerequisites
@@ -265,7 +305,7 @@ Drop an export ZIP from the app into the web dashboard to explore your session d
 │  UserPrefsStore (StateFlow) — units, thresholds, brightness, BLE    │
 ├──────────────────────────────────────────────────────────────────────┤
 │                  VehicleState (StateFlow)                            │
-│    Immutable data class · ~110 fields · genericValues map · RTR      │
+│    Immutable data class · ~140 fields · genericValues map · RTR      │
 │    + DriveState (live recording, peaks, fuel economy)                │
 ├──────────────────────────────────────────────────────────────────────┤
 │              CanDataService (Foreground Service)                     │
@@ -385,7 +425,7 @@ android/
 │   │   │   ├── PerformanceTimer.kt       # 0-60 / 0-100 timer state machine
 │   │   │   ├── SessionDatabase.kt        # Room DB for session snapshots
 │   │   │   ├── TripState.kt              # Peak event types
-│   │   │   ├── VehicleState.kt           # Immutable state (~110 fields, genericValues)
+│   │   │   ├── VehicleState.kt           # Immutable state (~140 fields, genericValues)
 │   │   │   └── WeatherData.kt            # OpenWeatherMap snapshot
 │   │   ├── diagnostics/
 │   │   │   ├── CrashReporter.kt          # UncaughtExceptionHandler + persistence
@@ -509,10 +549,20 @@ Complete decode formulas, byte-level breakdowns, and all Mode 22 PIDs: [`android
 
 ### Planned
 
-- [ ] Phase 8.6 — Tier 2 PIDs (Apr 2026 research): MAP/baro/engine load, oil pressure, PTU oil temp, panel illumination, COBB-style WG canister pressure + knock counters (v2.3.x)
-- [ ] Phase 9 — Track day intelligence: lap timer with geofence, track map overlay enhancements, drive comparison enhancements (v2.4.x)
+- [ ] Phase 8.6 — Tier 2 PIDs (Apr 2026 research): MAP/baro/engine load, oil pressure, panel illumination, COBB-style WG canister pressure + knock counters (v2.3.x)
+- [ ] Phase 9 — Track day intelligence: lap timer with geofence (start/finish lap timing is in the 2.2.7 RCs), track map overlay enhancements, drive comparison enhancements (v2.4.x)
 - [ ] Phase 10 — Hardware expansion: MeatPi Pro on-board GPS integration, MS-CAN second adapter (v2.5.x)
 - [ ] Phase 11 — High-frequency telemetry: UDS Fast Rate Session via DDDI 0x2C (~100 Hz) (v3.x)
+
+### In the v2.2.7 release candidates (prerelease, not yet stable)
+
+- [x] "Daylight" redesign: five tabs (DRIVE / PERF / THERMAL / TRIP / GARAGE), DAY / NIGHT / AUTO / ULTRA themes (rc.1–rc.2)
+- [x] Knock event logger with persistence, and boost target vs actual with WGDC (rc.4; boost sweep chart and session knock log in rc.6)
+- [x] Fuel trim drift tracker (rc.5)
+- [x] Lap timing fixes on TRIP (verified with synthetic GPS only, [#237](https://github.com/klexical/openRS_/issues/237)), corrected oil / PTU temperature mapping, Bluetooth LE fixes (rc.7)
+- [x] Diagnostics, reliability and ESC-confirmation fixes (rc.8, staging; not yet released)
+
+Full detail: [android/CHANGELOG.md on staging](https://github.com/klexical/openRS_/blob/staging/android/CHANGELOG.md).
 
 ### Future / Exploratory
 
