@@ -116,7 +116,7 @@ by feature: ESC control from the app, for example, is not yet confirmed on a car
    under the steering column, then pick the adapter and the connection method (Wi-Fi or Bluetooth LE) in Settings.
    A MeatPi Pro must be switched to SLCAN first ([Pro setup](android/docs/hardware-setup.md#meatpi-pro-s3-adapter)).
 5. **Connect.** Tap the connection indicator in the header. Once CAN frames arrive the link shows as connected and the
-   gauges fill in; the setup guide lists common causes if they do not.
+   gauges fill in. If no frames arrive, check the adapter's protocol and port settings in the setup guide.
 
 ## Companion tools
 
@@ -137,7 +137,7 @@ there (IndexedDB). Source and details: [web/README.md](web/README.md).
 | Learn the screens, thresholds and settings | [App guide (v2.2.6)](docs/app-guide.md) |
 | Look up CAN frames, Mode 22 PIDs and formulas | [Telemetry reference](android/docs/pid-reference.md) |
 | Analyse an exported session | [Sapphire](https://klexical.github.io/openRS_/) · [web/README.md](web/README.md) |
-| Fix a problem or report one | [Firmware troubleshooting](android/docs/firmware-update.md#troubleshooting) · [Issues](https://github.com/klexical/openRS_/issues) |
+| Fix a problem or report one | [Connection settings](android/docs/hardware-setup.md) · [Firmware flashing troubleshooting](android/docs/firmware-update.md#troubleshooting) · [Issues](https://github.com/klexical/openRS_/issues) |
 | Build the app or contribute | [Contributing](CONTRIBUTING.md) |
 | Understand the code and the design | [Architecture](docs/architecture.md) · [Brand tokens](docs/brand.md) |
 | Follow releases and plans | [Releases](https://github.com/klexical/openRS_/releases) · [Changelog (staging)](https://github.com/klexical/openRS_/blob/staging/android/CHANGELOG.md) · [Feature roadmap](docs/feature-roadmap.md) |
