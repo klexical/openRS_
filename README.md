@@ -5,8 +5,9 @@
 
 <p align="center">
   <a href="#choose-a-release"><b>Download</b></a> •
-  <a href="android/docs/hardware-setup.md"><b>Setup guide</b></a> •
-  <a href="https://klexical.github.io/openRS_/emulator/"><b>Browser demo · v2.2.6</b></a>
+  <a href="android/docs/hardware-setup.md"><b>Setup&nbsp;guide</b></a> •
+  <a href="https://klexical.github.io/openRS_/emulator/"><b>Browser&nbsp;demo&nbsp;·&nbsp;v2.2.6</b></a><br/>
+  <a href="https://klexical.github.io/openRS_/"><b>Sapphire&nbsp;—&nbsp;session&nbsp;analysis</b></a>
 </p>
 
 <p align="center">
