@@ -306,7 +306,8 @@ object DiagnosticLogger {
         get() = synchronized(lock) { fpsTimelineDeque.toList() }
     val probeSessions: List<ProbeSession>
         get() = synchronized(lock) {
-            // At read, not at record: a reply stored before the VIN was decoded is covered too. The exports are the only readers (#260)
+            // At read, not at record: a reply stored before the VIN was decoded is covered once the VIN is decoded before the export. An export
+            // written before that (knownVin is cleared at session start) keeps the reply's bytes in every member: cold start only. The exports are the only readers (#260)
             if (knownVin == null) probeSessionsList.toList()
             else probeSessionsList.map { s -> s.copy(results = s.results.map { it.vinRunMasked() }) }
         }

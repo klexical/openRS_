@@ -291,6 +291,26 @@ class ExportVinScanTest {
         assertTrue(csv, csv.contains("0xFD11,FOUND,7A 00 00 00 00 7B"))
     }
 
+    /**
+     * The limit, held rather than inferred: probe replies are masked at read only once the VIN is known, and session start forgets it until a state carrying
+     * it arrives. An export written in between keeps a reply's VIN bytes in every member that shows probe results (cold start only).
+     */
+    @Test fun `limit - a probe reply exported before the VIN is decoded keeps its bytes in the CSV, the summary and the detail, and the next export masks them`() {
+        DiagnosticLogger.sessionStart("test", 0, prefs = null, logDir = File(root, "diagnostics"))
+        val run = spaced(VIN.substring(4, 8))
+        DiagnosticLogger.recordProbeSession("BCM", 0x726, 0x72E, listOf(DiagnosticLogger.ProbeResult(0xFD15, "FOUND", run)))
+        DiagnosticExporter.export(ctx)
+        val before = zip("openrs_diag_")
+        for (prefix in listOf("did_probe_", "diagnostic_summary_", "diagnostic_detail_"))
+            assertTrue(prefix, before.entries.single { it.key.startsWith(prefix) }.value.contains(run))
+        val own = LinkOwnership(); val gen = own.transition { own.begin() }
+        val s = LinkSession(own, gen, state, Rec(), onFrameCounted = {}, perfRunSink = {})
+        s.onCanFrame(0x40A, page(0, VIN.substring(0, 6)), 0.0); s.onCanFrame(0x40A, page(1, VIN.substring(6, 12)), 0.0); s.onCanFrame(0x40A, page(2, VIN.substring(12)), 0.0)
+        File(root, "diagnostics").listFiles { x -> x.name.startsWith("openrs_diag_") }.orEmpty().forEach { it.delete() }   // zip() reads the one export
+        DiagnosticExporter.export(ctx)
+        for ((name, text) in zip("openrs_diag_")) assertFalse(name, text.contains(run))
+    }
+
     @Test fun `control - 3 VIN bytes in a probe reply, another DID's bytes and a rejection's text stay`() {
         val files = probeFiles(
             DiagnosticLogger.ProbeResult(0xFD12, "FOUND", spaced(VIN.substring(11, 14))),
