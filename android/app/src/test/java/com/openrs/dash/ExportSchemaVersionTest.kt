@@ -72,14 +72,47 @@ class ExportSchemaVersionTest {
 
         // Samples for Sapphire's import check, as they leave the exporter (web/src/lib/__fixtures__/android-export-rc8/):
         // OPENRS_EXPORT_SCHEMA_SAMPLES=<dir> ./gradlew testDebugUnitTest --tests '*ExportSchemaVersionTest'
-        System.getenv("OPENRS_EXPORT_SCHEMA_SAMPLES")?.let { dir ->
-            val out = File(dir).apply { mkdirs() }
-            // Checked-in samples carry a fixed time, never the run's own: names, generatedAt, exportedAt (2026-01-01 00:00 UTC)
-            val stamp = Regex("""\d{8}_\d{6}""")
-            val exportedAt = Regex(""""exportedAt": \d+""")
-            fun fixed(t: String) = exportedAt.replace(stamp.replace(t, "20260101_000000"), "\"exportedAt\": 1767225600000")
-            zip.forEach { (name, text) -> File(out, fixed(name)).writeText(fixed(text)) }
-        }
+        System.getenv("OPENRS_EXPORT_SCHEMA_SAMPLES")?.let { writeSample(it, zip) }
+    }
+
+    /** Checked-in samples carry a fixed time, never the run's own: names, generatedAt, exportedAt (2026-01-01 00:00 UTC). */
+    private fun writeSample(dir: String, zip: Map<String, String>) {
+        val out = File(dir).apply { mkdirs() }
+        val stamp = Regex("""\d{8}_\d{6}""")
+        val exportedAt = Regex(""""exportedAt": \d+""")
+        fun fixed(t: String) = exportedAt.replace(stamp.replace(t, "20260101_000000"), "\"exportedAt\": 1767225600000")
+        zip.forEach { (name, text) -> File(out, fixed(name)).writeText(fixed(text)) }
+    }
+
+    @Test fun `a diagnostic export carries the DID inventory and the ISO-TP count, additively`() {
+        // Seeded counts (the polled path is pinned by DidInventoryExportTest): answered, rejected, never answered, a BCM row
+        repeat(3) { DiagnosticLogger.countDidSent(0x7E8, 0x033E); DiagnosticLogger.countDidPositive(0x7E8, 0x033E) }
+        repeat(2) { DiagnosticLogger.countDidSent(0x7E8, 0x03ED); DiagnosticLogger.countDidNrc(0x7E8, 0x03ED) }
+        repeat(2) { DiagnosticLogger.countDidSent(0x7E8, 0x0466) }
+        DiagnosticLogger.countDidSent(0x72E, 0x4028); DiagnosticLogger.countDidPositive(0x72E, 0x4028)
+        DiagnosticLogger.countIsoTpRefused()
+        DiagnosticExporter.export(ctx)
+        val zip = written("openrs_diag_")
+
+        val detail = JSONObject(zip.named("diagnostic_detail_"))
+        assertEquals("additive: the schema version is unchanged", EXPORT_SCHEMA_VERSION, detail.getInt("exportSchemaVersion"))
+        assertEquals(1, detail.getJSONObject("linkIntegrity").getInt("isoTpRefused"))
+        val inv = detail.getJSONObject("didInventory")
+        val rows = (0 until inv.getJSONArray("rows").length()).map { inv.getJSONArray("rows").getJSONObject(it) }
+        assertEquals(listOf("PCM 033E", "PCM 03ED", "PCM 0466", "BCM 4028").sorted(),
+            rows.map { "${it.getString("module")} ${it.getString("did")}" }.sorted())
+        val never = rows.single { it.getString("did") == "0466" }
+        assertEquals(2, never.getInt("sent")); assertEquals(0, never.getInt("positive"))
+        assertFalse("never answered: no time", never.has("lastPositiveRelMs"))
+        assertTrue(rows.single { it.getString("did") == "033E" }.has("lastPositiveRelMs"))
+        assertEquals(0, inv.getInt("overflow"))
+        val summary = zip.named("diagnostic_summary_")
+        assertTrue(summary, summary.contains("─── DID INVENTORY"))
+        assertTrue(summary, summary.contains("0x0466 : 2 sent · 0 answered · 0 rejected · never answered"))
+
+        // Sapphire fixture (web/src/lib/__fixtures__/android-export-rc8-inventory/), synthetic time:
+        // OPENRS_EXPORT_SAMPLES_INVENTORY=<dir> ./gradlew testDebugUnitTest --tests '*ExportSchemaVersionTest'
+        System.getenv("OPENRS_EXPORT_SAMPLES_INVENTORY")?.let { writeSample(it, zip) }
     }
 
     @Test fun `the version is additive - what readers already use stays as it was`() {
