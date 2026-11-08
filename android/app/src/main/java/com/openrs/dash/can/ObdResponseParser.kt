@@ -301,6 +301,10 @@ object ObdResponseParser {
                 // rest, not checked against an independent gauge (#198 / #207; rc.4–rc.5 used /903.81, a Ford DID-sheet psi formula)
                 0x033E -> onObdUpdate(currentState.copy(tipActualKpa  = ((b4 shl 8) or b5) / 128.0).markFresh("tipActualKpa"))
                 0x0466 -> onObdUpdate(currentState.copy(tipDesiredKpa = ((b4 shl 8) or b5) / 128.0).markFresh("tipDesiredKpa"))
+                // Standard MAP (OBD PID 0x0B): A = kPa absolute, 0–255 (#271). Every byte is a reading, 0 included — no
+                // "no data" value is established; 255 is the byte's ceiling (MapF40b.isSaturated). Stored off-state
+                // (VehicleState has no free slot, #199). Unverified on a car.
+                0xF40B -> onObdUpdate(currentState.putGeneric(com.openrs.dash.data.MapF40b.TAG, b4.toDouble()))
                 // Low-side fuel pressure: raw × 0.5 kPa (DigiCluster dc_frs_0548, verified)
                 0x0548 -> onObdUpdate(currentState.copy(
                     fuelRailPressure = ((b4 shl 8) or b5) * 0.5

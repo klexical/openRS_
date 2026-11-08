@@ -8,7 +8,8 @@ import com.openrs.dash.can.CanDecoder
  * includes their default (AWD REQ L / R, demanded pressure, pump current: a decoded 0 is a reading) are taken only when
  * the reply stamped them — see [carried]. Battery voltage (PCM 0x0304) too (#223): its value and its stamp always come
  * from the same reply — a decoded 0 is taken with its own stamp (never re-stamps the old value), and a reply parsed
- * from an older snapshot never puts an older voltage back.
+ * from an older snapshot never puts an older voltage back. Generic values (catalog DIDs, MAP 0xF40B) the same way (#271):
+ * only the keys this reply stamped are taken, so a reply's snapshot can't bring older generic values back.
  */
 object ObdMerge {
     /** Prefix of every drive-mode stamp key — all written by CanDecoder.stampFresh only (#252); OBD never stamps one. */
@@ -102,8 +103,10 @@ object ObdMerge {
             lcRpmTarget  = if (obd.lcRpmTarget >= 0) obd.lcRpmTarget else current.lcRpmTarget,
             assEnabled   = obd.assEnabled   ?: current.assEnabled,
             rsprotTimedOut = obd.rsprotTimedOut || current.rsprotTimedOut,
+            // Only the keys this reply stamped (putGeneric stamps its own key): the rest of the reply's map is its snapshot's
+            // copy, which can be older than the live one (#271)
             genericValues = if (obd.genericValues.isNotEmpty())
-                current.genericValues + obd.genericValues
+                current.genericValues + obd.genericValues.filterKeys { carried(it, current, obd) }
             else current.genericValues,
             warnMil         = obd.warnMil         ?: current.warnMil,
             warnAbs         = obd.warnAbs         ?: current.warnAbs,

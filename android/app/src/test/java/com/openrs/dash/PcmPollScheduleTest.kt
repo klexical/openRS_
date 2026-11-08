@@ -19,14 +19,27 @@ class PcmPollScheduleTest {
     fun `fast and slow groups cover every PCM DID exactly once`() {
         val all = fast + slow
         assertEquals(all.size, all.toSet().size)
-        assertEquals(27, all.size)
+        assertEquals(28, all.size)
         assertEquals(ObdConstants.PCM_QUERIES.toSet(), all.toSet())
     }
 
     @Test
     fun `fast group holds the boost sweep and knock DIDs`() {
         val dids = fast.mapNotNull { ObdConstants.extractDid(it) }.toSet()
-        assertEquals(setOf(0x033E, 0x0466, 0x0462, 0x03EC, 0x03ED, 0x03EE, 0x03EF), dids)
+        assertEquals(setOf(0x033E, 0x0466, 0x0462, 0x03EC, 0x03ED, 0x03EE, 0x03EF, 0xF40B), dids)
+    }
+
+    @Test
+    fun `MAP in the fast group - the cycle and the slow rotation it costs (#271)`() {
+        // Pinned so the pacing cost of the eighth fast DID is explicit: one cycle = the fast group + one slow DID at the
+        // engine-running gap (reply time not included). Before #271: 7 + 1 = 1,200 ms.
+        val cycleMs = (fast.size + 1) * ObdConstants.PCM_FAST_GAP_MS
+        assertEquals(1_350L, cycleMs)
+        // Each slow DID comes round once per slow-list rotation; that stays inside the slow staleness budget
+        assertEquals(27_000L, slow.size * cycleMs)
+        assertTrue(slow.size * cycleMs <= ObdConstants.PCM_SLOW_REFRESH_MS)
+        // A fast DID is due again within the fast freshness budget, with room for reply time
+        assertTrue(cycleMs < com.openrs.dash.data.PolledFreshness.FAST_REFRESH_MS)
     }
 
     @Test

@@ -100,6 +100,8 @@ object ObdConstants {
     const val PCM_QUERY_AFR_DESIRED  = "t7E080322F44400000000\r"
     const val PCM_QUERY_TIP_ACTUAL   = "t7E080322033E00000000\r"
     const val PCM_QUERY_TIP_DESIRED  = "t7E080322046600000000\r"
+    /** Standard MAP (OBD PID 0x0B via 22F4xx): 1 byte, kPa absolute, saturates at 255 (#271 — TIP 0x033E scale check). */
+    const val PCM_QUERY_MAP          = "t7E080322F40B00000000\r"
     const val PCM_QUERY_VCT_INTAKE   = "t7E080322031800000000\r"
     const val PCM_QUERY_VCT_EXHAUST  = "t7E080322031900000000\r"
     const val PCM_QUERY_OIL_LIFE     = "t7E080322054B00000000\r"
@@ -115,11 +117,17 @@ object ObdConstants {
     // Fuel trims via Ford fast-path 22F4xx (maps to OBD Mode 01 PIDs at Mode 22 rates)
     const val PCM_QUERY_STFT         = "t7E080322F40600000000\r"  // 0xF406: A*100/128 - 100 (%)
     const val PCM_QUERY_LTFT         = "t7E080322F40700000000\r"  // 0xF407: A*100/128 - 100 (%)
-    /** rc.5 — boost-sweep + knock DIDs, polled every cycle while the engine runs (~0.8 Hz). */
+    /**
+     * rc.5 — boost-sweep + knock DIDs, polled every cycle while the engine runs. MAP 0xF40B joined in rc.8 (#271): the TIP
+     * scale check needs TIP / MAP pairs at wide-open throttle, which a slow-group DID (one per ~27 s rotation) can't give.
+     * Cost: the engine-running cycle is 8 fast + 1 slow at 150 ms = 1.35 s (was 1.2 s), so each fast value refreshes at
+     * ~0.74 Hz instead of ~0.83 Hz; pinned in PcmPollScheduleTest. Hardware-unverified.
+     */
     val PCM_FAST_QUERIES = listOf(
         PCM_QUERY_TIP_ACTUAL, PCM_QUERY_TIP_DESIRED,
         PCM_QUERY_WGDC,
-        PCM_QUERY_KR_CYL1, PCM_QUERY_KR_CYL2, PCM_QUERY_KR_CYL3, PCM_QUERY_KR_CYL4
+        PCM_QUERY_KR_CYL1, PCM_QUERY_KR_CYL2, PCM_QUERY_KR_CYL3, PCM_QUERY_KR_CYL4,
+        PCM_QUERY_MAP
     )
     /** Everything else — one per fast cycle while running, full sweep + idle when off. */
     val PCM_SLOW_QUERIES = listOf(

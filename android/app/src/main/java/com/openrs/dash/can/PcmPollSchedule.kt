@@ -3,9 +3,9 @@ package com.openrs.dash.can
 /**
  * PCM Mode 22 poll schedule (rc.5, #184).
  *
- * Engine running: every cycle sends the whole fast group (TIP actual/desired, WGDC, KR1–4)
+ * Engine running: every cycle sends the whole fast group (TIP actual/desired, WGDC, KR1–4, MAP since #271)
  * followed by ONE slow DID, rotating through the slow list. At 150 ms gaps that is
- * ~1.2 s per cycle — fast DIDs refresh at ~0.8 Hz, each slow DID every ~19 s.
+ * ~1.35 s per cycle — fast DIDs refresh at ~0.74 Hz, each slow DID every ~27 s (before reply time).
  *
  * Engine off: the pre-rc.5 behaviour — full sweep of every DID, then a 30 s idle.
  *

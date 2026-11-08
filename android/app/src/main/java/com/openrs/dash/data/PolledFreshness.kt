@@ -18,6 +18,7 @@ object PolledFreshness {
     val FAST_TAGS = setOf(
         "tipActualKpa", "tipDesiredKpa", "wgdcDesired",
         "ignCorrCyl1", "ignCorrCyl2", "ignCorrCyl3", "ignCorrCyl4",
+        MapF40b.TAG,
     )
 
     fun refreshMs(tag: String, engineRunning: Boolean): Long =
