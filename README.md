@@ -6,7 +6,9 @@
 <p align="center">
   <a href="https://klexical.github.io/openRS_/">🔷 Sapphire Dashboard</a> •
   <a href="https://klexical.github.io/openRS_/emulator/">🚀 Live Emulator</a> •
+  <a href="#rc8-build-39-preview">RC8 Preview</a> •
   <a href="#screenshots">Screenshots</a> •
+  <a href="#download">Download</a> •
   <a href="#features">Features</a> •
   <a href="#hardware">Hardware</a> •
   <a href="#quick-start">Quick Start</a> •
@@ -15,7 +17,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.2.6-blue" alt="Version">
+  <a href="https://github.com/klexical/openRS_/releases/tag/android-v2.2.6"><img src="https://img.shields.io/badge/stable-2.2.6-blue" alt="Stable 2.2.6"></a>
+  <a href="https://github.com/klexical/openRS_/releases/tag/android-v2.2.7-rc.7"><img src="https://img.shields.io/badge/prerelease-2.2.7--rc.7-orange" alt="Prerelease 2.2.7-rc.7"></a>
   <img src="https://img.shields.io/badge/platform-Android-brightgreen?logo=android" alt="Platform">
   <img src="https://img.shields.io/badge/Kotlin-2.0-purple?logo=kotlin" alt="Kotlin">
   <img src="https://img.shields.io/badge/Jetpack_Compose-Material3-4285F4?logo=jetpackcompose" alt="Compose">
@@ -31,9 +34,9 @@
 
 ## What is openRS_?
 
-**openRS_** is a native Android app that turns your phone into a full telemetry dashboard for the Ford Focus RS MK3. It connects to a [MeatPi USB (C3)](https://www.mouser.com/ProductDetail/MeatPi/WICAN-USB-C3?qs=rQFj71Wb1eVDX2eEy0FC7A%3D%3D) or [MeatPi Pro (S3)](https://www.meatpi.com/) adapter — over **Wi-Fi or Bluetooth Low Energy** — and passively monitors the full CAN bus at ~2100 fps, decoding every parameter the car broadcasts in real time.
+**openRS_** is a native Android app that turns your phone into a full telemetry dashboard for the Ford Focus RS MK3. It connects to a [MeatPi USB (C3)](https://www.mouser.com/ProductDetail/MeatPi/WICAN-USB-C3?qs=rQFj71Wb1eVDX2eEy0FC7A%3D%3D) or [MeatPi Pro (S3)](https://www.meatpi.com/) adapter — over **Wi-Fi or Bluetooth Low Energy**. openRS_ reads supported signals from the vehicle's high-speed CAN bus (HS-CAN) and polls Ford modules for additional telemetry.
 
-Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It understands the GKN Twinster AWD system, polls TPMS tire pressures and temperatures from the BCM, decodes Ford-specific parameters across HS-CAN and MS-CAN, and presents everything in a dark, glanceable interface tuned for track days. A bundled **FORScan PID catalog** covers 1,149 PIDs across 8 ECU modules (PCM, OBDII, BCM, ABS, AWD, HVAC, IPC, PSCM) — and new parameters can be added from the catalog via JSON without touching code.
+Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It shows the GKN Twinster AWD system, polls TPMS tire pressures and temperatures from the BCM, and presents everything in a dark, glanceable interface tuned for track days. A bundled **FORScan PID catalog** (1,148 entries across 20 modules) is a searchable reference list, not a count of signals confirmed on the RS.
 
 > **Try it now:** [klexical.github.io/openRS_/emulator](https://klexical.github.io/openRS_/emulator/) — live browser emulator with animated demo data, no hardware required.
 >
@@ -41,7 +44,35 @@ Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It understan
 
 ---
 
+## RC8 Build 39 preview
+
+<p align="center"><b>RC8 Build 39 preview · demo data · unreleased</b></p>
+
+<div align="center">
+  <img src="assets/screenshots/v2.2.7-preview/drive-night.png" width="160" alt="DRIVE tab, RC8 Build 39 preview, demo data">
+  <img src="assets/screenshots/v2.2.7-preview/drive-day.png" width="160" alt="DRIVE tab, DAY theme, RC8 Build 39 preview, demo data">
+  <img src="assets/screenshots/v2.2.7-preview/perf-night.png" width="160" alt="PERF tab, RC8 Build 39 preview, demo data">
+  <img src="assets/screenshots/v2.2.7-preview/thermal-night.png" width="160" alt="THERMAL tab, RC8 Build 39 preview, demo data">
+  <img src="assets/screenshots/v2.2.7-preview/trip-summary-night.png" width="160" alt="TRIP drive summary, RC8 Build 39 preview, demo data">
+  <img src="assets/screenshots/v2.2.7-preview/garage-night.png" width="160" alt="GARAGE tab, RC8 Build 39 preview, demo data">
+</div>
+
+<p align="center">
+  <sub>DRIVE &nbsp;·&nbsp; DRIVE (DAY theme) &nbsp;·&nbsp; PERF &nbsp;·&nbsp; THERMAL &nbsp;·&nbsp; TRIP summary &nbsp;·&nbsp; GARAGE</sub>
+</p>
+
+The v2.2.7 release candidates have a redesigned app ("Daylight"):
+- **Five tabs:** DRIVE, PERF, THERMAL, TRIP and GARAGE; Settings sits behind the cog.
+- **Themes:** NIGHT, DAY, AUTO and ULTRA.
+- **New in the RCs:** a redesigned drive-mode dock, lap timing on TRIP, a knock logger, a boost target-vs-actual sweep and a fuel-trim drift tracker.
+
+These images come from **RC8 Build 39, which is not released**. They were captured from a debug build in its demo mode on an emulator: the **DEMO** label in the header marks simulated data, and the TRIP summary carries its own "PREVIEW · SAMPLE DATA — NOT SAVED" banner. The GARAGE screen shows the drive-mode and ESC controls. ESC control from the app is **not yet confirmed on a car** ([#125](https://github.com/klexical/openRS_/issues/125)), and these controls need openRS_ adapter firmware. Features may still change before release. The newest published prerelease is [v2.2.7-rc.7](https://github.com/klexical/openRS_/releases/tag/android-v2.2.7-rc.7); the current stable release is [v2.2.6](https://github.com/klexical/openRS_/releases/tag/android-v2.2.6). The gallery below shows v2.2.6.
+
+---
+
 ## Screenshots
+
+<p align="center"><b>Stable v2.2.6</b></p>
 
 <div align="center">
   <img src="assets/screenshots/dash.png" width="160" alt="DASH tab">
@@ -53,23 +84,23 @@ Unlike generic OBD apps, openRS_ is purpose-built for the Focus RS. It understan
 </div>
 
 <p align="center">
-  <sub>DASH &nbsp;·&nbsp; POWER &nbsp;·&nbsp; CHASSIS &nbsp;·&nbsp; TEMPS &nbsp;·&nbsp; MAP &nbsp;·&nbsp; DIAG &nbsp;·&nbsp; MORE</sub>
+  <sub>DASH &nbsp;·&nbsp; POWER &nbsp;·&nbsp; CHASSIS &nbsp;·&nbsp; TEMPS &nbsp;·&nbsp; DIAG &nbsp;·&nbsp; MORE &nbsp;&nbsp;(v2.2.6; the MAP tab is not pictured)</sub>
 </p>
 
 ---
 
 ## Features
 
-### 7 Tabs
+### 7 Tabs (stable v2.2.6)
 
 | Screen | Description |
 |--------|-------------|
 | **DASH** | Hero boost/RPM/speed gauges (with session peak values), 0-60 / 0-100 performance timer, real-time fuel economy (idle L/hr, instant/average MPG or L/100km, DTE), throttle/brake/clutch/fuel/battery, Temps Quick (oil, coolant, intake, oil life), G-forces (lat, lon, torque), animated AWD split bar, IPC warning lamp banner (CEL, ABS, BRK, CHRG, OIL, TEMP) |
-| **POWER** | AFR hero cards (actual/desired/lambda), commanded AFR (CMD AFR), ETC actual/desired, WGDC, TIP, HP fuel rail PSI, low-pressure fuel rail (LP FUEL), timing, engine load, OAR, per-cylinder knock correction (KR C1–C4, colour-coded), VCT intake/exhaust, **STFT/LTFT short/long-term fuel trims** |
+| **POWER** | AFR hero cards (actual/desired/lambda), commanded AFR (CMD AFR), ETC actual/desired, WGDC, TIP, HP fuel rail PSI, low-pressure fuel rail (LP FUEL), timing, engine load, OAR, per-cylinder knock correction (KR C1–C4, colour-coded; the cylinder 2–4 DIDs are under investigation, [#222](https://github.com/klexical/openRS_/issues/222)), VCT intake/exhaust, **STFT/LTFT short/long-term fuel trims** |
 | **CHASSIS** | AWD detail (4 wheel speeds, wheel rotation counts, torque bar, F/R delta, L/R delta, rear bias, clutch temps L/R, **clutch actuator current L/R**, **hydraulic pressure L/R**, trans oil temp), G-force + yaw + steering with peak reset, TPMS Focus RS wireframe (pressure + temp, 3-tier colour-coded Low/Warn/High thresholds), pressure spread warning (⚠ PRESSURE IMBALANCE when spread ≥ 4 PSI), temperature range legend |
 | **TEMPS** | Animated Ready-to-Race banner, 14 temperature cards each with a colour indicator bar (oil, coolant, intake, ambient, RDU, PTU, charge air, manifold charge, catalytic, cabin, battery, clutch L, clutch R, trans oil) |
 | **MAP** | Live drive tracking with **Google Maps** — 6 colour modes (speed, drive mode, boost, throttle, lateral G, temp), start/finish markers, peak event markers (RPM/boost/lat-G/speed), pause markers, route stats HUD, weather card, custom recenter / zoom controls. Drive history grouped by date with status badges, swipe-to-delete, per-drive export (GPX/CSV/summary). |
-| **DIAG** | DTC Scanner (full-module scan including GFM 0x7D2, count badges, freeze-frame, clear), DID Prober (scan any ECU for valid Mode 22 DIDs), PID Browser (1,149 FORScan PIDs across 8 modules, searchable), frame inventory with per-ID change tracking, SLCAN raw log, **live button input feedback** (drive mode toggle, suspension, ASS, ESC defeat), **battery row with charge/discharge current**, one-tap ZIP export (SavvyCAN/Kayak compatible) |
+| **DIAG** | DTC Scanner (full-module scan including GFM 0x7D2, count badges, freeze-frame, clear), DID Prober (scan any ECU for valid Mode 22 DIDs), PID Browser (1,148 FORScan catalog PIDs across 20 modules, searchable), frame inventory with per-ID change tracking, SLCAN raw log, **live button input feedback** (drive mode toggle, suspension, ASS, ESC defeat), **battery row with charge/discharge current**, one-tap ZIP export (SavvyCAN/Kayak compatible) |
 | **MORE** | Drive mode (N/S/T/D, tap-to-change with openrs-fw firmware), ESC status, firmware version display, firmware-gated features (Launch Control, Auto S/S Kill), Module Status (RDU/PDC/FENG live OBD), passive VIN decode (CAN 0x40A), connection & snapshot, in-app update checker (stable + beta channels) |
 
 A frosted-glass **bottom nav bar** with vector icons + spring-animated indicator persists across all tabs. **Quick Mode Dock** drops down from the status bar's MODE pill from any tab for one-tap drive mode changes.
@@ -121,7 +152,7 @@ The banner shows which sensors are still below threshold with live °C values. A
 <details>
 <summary><strong>Live CAN Parameters — WebSocket SLCAN (passive at full bus speed)</strong></summary>
 
-All data is received passively from the CAN bus via WebSocket SLCAN at ~2100 fps. No OBD polling windows or header switching required for primary gauges.
+Broadcast data is received passively from the HS-CAN bus (WebSocket SLCAN at ~2100 fps over Wi-Fi); the primary gauges need no OBD polling windows or header switching. Additional values are polled from Ford modules (Mode 22).
 
 | CAN ID | Parameters | Source |
 |--------|-----------|--------|
@@ -163,7 +194,7 @@ All data is received passively from the CAN bus via WebSocket SLCAN at ~2100 fps
 | HVAC (candidate) | 0x733 | 0x73B | Blower %, interior temp, discharge air temp, blend doors L/R, defrost door — response handler wired, **DIDs unconfirmed** (use DID prober) | — |
 | IPC (candidate) | 0x720 | 0x728 | Warning lamps (MIL/CEL, ABS, brake, charge, oil pressure, high temp) — response handler wired, **DIDs unconfirmed** (use DID prober) | — |
 
-**FORScan PID Catalog — data-driven decode:** A bundled JSON catalog covers **1,149 PIDs across 8 ECU modules** (PCM, OBDII, BCM, ABS, AWD, HVAC, IPC, PSCM). `PidRegistry` evaluates formula expressions from the catalog at runtime — new PIDs can be added via JSON without modifying Kotlin code. Decoded values accumulate in `VehicleState.genericValues`.
+**FORScan PID Catalog — data-driven decode:** A bundled JSON catalog lists **1,148 PIDs across 20 modules**, 24 of them with a DID and formula (a searchable catalog; not every entry is confirmed on the RS). `PidRegistry` evaluates those formulas at runtime for replies to DIDs the app already polls but has no dedicated decoder for. The results go to `VehicleState.genericValues`, which no screen shows today.
 
 </details>
 
@@ -205,6 +236,15 @@ All data is received passively from the CAN bus via WebSocket SLCAN at ~2100 fps
 > **BLE vs Wi-Fi:** BLE leaves your phone's Wi-Fi free for internet (weather, maps, in-app updates). Wi-Fi delivers slightly higher CAN throughput. The app supports both transports for both adapters.
 
 ---
+
+## Download
+
+| Channel | Version | Where |
+|---|---|---|
+| **Stable** (recommended) | v2.2.6 | [Release android-v2.2.6](https://github.com/klexical/openRS_/releases/tag/android-v2.2.6): `openRS_v2.2.6.apk` |
+| **Prerelease** (testing) | v2.2.7-rc.7 | [Release android-v2.2.7-rc.7](https://github.com/klexical/openRS_/releases/tag/android-v2.2.7-rc.7): `openRS_v2.2.7-rc.7.apk` |
+
+RC8 Build 39 (shown in the preview above) is **not released**: there is no download for it yet. Release notes and checksums are on each release page.
 
 ## Quick Start
 
@@ -265,7 +305,7 @@ Drop an export ZIP from the app into the web dashboard to explore your session d
 │  UserPrefsStore (StateFlow) — units, thresholds, brightness, BLE    │
 ├──────────────────────────────────────────────────────────────────────┤
 │                  VehicleState (StateFlow)                            │
-│    Immutable data class · ~110 fields · genericValues map · RTR      │
+│    Immutable data class · ~140 fields · genericValues map · RTR      │
 │    + DriveState (live recording, peaks, fuel economy)                │
 ├──────────────────────────────────────────────────────────────────────┤
 │              CanDataService (Foreground Service)                     │
@@ -283,7 +323,7 @@ Drop an export ZIP from the app into the web dashboard to explore your session d
 │  Peak tracking       │  Network.socketFactory pins Wi-Fi route       │
 ├──────────────────────┴───────────────────────────────────────────────┤
 │  PidRegistry — data-driven decode from FORScan catalog (JSON)        │
-│  1,149 PIDs · 8 modules · formula evaluator · genericValues output   │
+│  1,148 catalog PIDs · 20 modules · formula evaluator · genericValues │
 ├──────────────────────────────────────────────────────────────────────┤
 │  ObdConstants / ObdResponseParser / SlcanParser / IsoTpBuffer        │
 │  PCM/BCM/AWD/PSCM/FENG/RSProt response parsers                       │
@@ -305,8 +345,8 @@ Drop an export ZIP from the app into the web dashboard to explore your session d
 │  ESP32-C3 · Wi-Fi+BLE│  ESP32-S3 · Wi-Fi+BLE+GPS+MicroSD             │
 │  openrs-fw v1.61     │  openrs-fw v1.2                               │
 ├──────────────────────┴───────────────────────────────────────────────┤
-│  HS-CAN 500k         │  MS-CAN 125k (bridged via GWM)                │
-│  0x010–0x420 frames  │  Ambient 0x340/0x1A4 (GWM bridged)            │
+│  HS-CAN 500k         │  MS-CAN 125k: not read by the app             │
+│  0x010–0x420 frames  │  (0x1A4 ambient is bridged onto HS)           │
 └──────────────────────┴───────────────────────────────────────────────┘
 ```
 
@@ -321,7 +361,7 @@ Drop an export ZIP from the app into the web dashboard to explore your session d
 
 **How does firmware detection work?** After SLCAN initialisation, the app sends `OPENRS?\r`. openRS_ firmware responds with `OPENRS:<version>`; stock WiCAN ignores it. Every incoming CAN frame for the first **3 seconds** is scanned for the probe response — this time-based window ensures the probe reply is not missed even on high-throughput buses (~1700 fps). After 3 seconds without a response, firmware latches as "WiCAN stock" for the session. MORE tab feature buttons unlock when openRS_ firmware is confirmed.
 
-**How does the FORScan PID catalog work?** `PidRegistry` lazy-loads `forscan_modules.json` at first use and indexes 1,149 PIDs by `(ecuResponseId, did)` tuple. Each PID entry carries a formula expression string (e.g. `"signed(A*256+B)/-512.0"`). A custom recursive-descent parser evaluates the formula at runtime using bytes from the OBD response. All four OBD parsers (PCM, AWD, HVAC, IPC) fall through to `PidRegistry` for unrecognised DIDs, storing results in `VehicleState.genericValues`. New PIDs can be onboarded via JSON without modifying Kotlin code.
+**How does the FORScan PID catalog work?** `PidRegistry` lazy-loads `forscan_modules.json` at first use and indexes the catalog entries that have both a DID and a formula (24 of the 1,148) by `(ecuResponseId, did)` tuple. Each indexed entry carries a formula expression string (e.g. `"signed(A*256+B)/-512.0"`). A custom recursive-descent parser evaluates the formula at runtime using bytes from the OBD response. All four OBD parsers (PCM, AWD, HVAC, IPC) fall through to `PidRegistry` for unrecognised DIDs, storing results in `VehicleState.genericValues`. Only DIDs the app already polls reach it: adding a catalog entry alone does not add a reading.
 
 **How does the DID prober work?** `DidProberSection` (DIAG tab) sends Mode 22 UDS queries across module-specific DID ranges using `sendRawQuery()` — a new infrastructure method on both `WiCanConnection` and `MeatPiConnection`. Responses are classified as FOUND (0x62 positive), NRC (0x7F negative, NRC code shown), or TIMEOUT. A live progress bar, counters, and expandable result list with raw hex data make it easy to discover new ECU parameters.
 
@@ -354,7 +394,7 @@ web/                                         # Sapphire — post-session analyti
 android/
 ├── app/src/main/
 │   ├── assets/pids/
-│   │   ├── forscan_modules.json          # Bundled FORScan catalog (1,149 PIDs, 8 modules)
+│   │   ├── forscan_modules.json          # Bundled FORScan catalog (1,148 PIDs, 20 modules)
 │   │   └── combined_catalog.json         # Merged PID catalog
 │   ├── java/com/openrs/dash/
 │   │   ├── OpenRSDashApp.kt              # App singleton + driveDb/Recorder/State
@@ -385,7 +425,7 @@ android/
 │   │   │   ├── PerformanceTimer.kt       # 0-60 / 0-100 timer state machine
 │   │   │   ├── SessionDatabase.kt        # Room DB for session snapshots
 │   │   │   ├── TripState.kt              # Peak event types
-│   │   │   ├── VehicleState.kt           # Immutable state (~110 fields, genericValues)
+│   │   │   ├── VehicleState.kt           # Immutable state (~140 fields, genericValues)
 │   │   │   └── WeatherData.kt            # OpenWeatherMap snapshot
 │   │   ├── diagnostics/
 │   │   │   ├── CrashReporter.kt          # UncaughtExceptionHandler + persistence
@@ -509,10 +549,20 @@ Complete decode formulas, byte-level breakdowns, and all Mode 22 PIDs: [`android
 
 ### Planned
 
-- [ ] Phase 8.6 — Tier 2 PIDs (Apr 2026 research): MAP/baro/engine load, oil pressure, PTU oil temp, panel illumination, COBB-style WG canister pressure + knock counters (v2.3.x)
-- [ ] Phase 9 — Track day intelligence: lap timer with geofence, track map overlay enhancements, drive comparison enhancements (v2.4.x)
+- [ ] Phase 8.6 — Tier 2 PIDs (Apr 2026 research): MAP/baro/engine load, oil pressure, panel illumination, COBB-style WG canister pressure + knock counters (v2.3.x)
+- [ ] Phase 9 — Track day intelligence: lap timer with geofence (start/finish lap timing is in the 2.2.7 RCs), track map overlay enhancements, drive comparison enhancements (v2.4.x)
 - [ ] Phase 10 — Hardware expansion: MeatPi Pro on-board GPS integration, MS-CAN second adapter (v2.5.x)
 - [ ] Phase 11 — High-frequency telemetry: UDS Fast Rate Session via DDDI 0x2C (~100 Hz) (v3.x)
+
+### In the v2.2.7 release candidates (prerelease, not yet stable)
+
+- [x] "Daylight" redesign: five tabs (DRIVE / PERF / THERMAL / TRIP / GARAGE), DAY / NIGHT / AUTO / ULTRA themes (rc.1–rc.2)
+- [x] Knock event logger with persistence, and boost target vs actual with WGDC (rc.4; boost sweep chart and session knock log in rc.6)
+- [x] Fuel trim drift tracker (rc.5)
+- [x] Lap timing fixes on TRIP (verified with synthetic GPS only, [#237](https://github.com/klexical/openRS_/issues/237)), corrected oil / PTU temperature mapping, Bluetooth LE fixes (rc.7)
+- [x] Diagnostics, reliability and ESC-confirmation fixes (rc.8, staging; not yet released)
+
+Full detail: [android/CHANGELOG.md on staging](https://github.com/klexical/openRS_/blob/staging/android/CHANGELOG.md).
 
 ### Future / Exploratory
 
@@ -539,7 +589,7 @@ Complete decode formulas, byte-level breakdowns, and all Mode 22 PIDs: [`android
 - [x] Phase 7 — Data export + MeatPi Pro: trip ZIP (GPX/CSV/TXT), diagnostics ZIP, raw TCP SLCAN adapter support (v2.2.1)
 - [x] Phase 7.5 — Sensor data + polish: GPS permission fix, Module Status/LC/ASS live OBD, full diagnostic export (~24 new fields), SLCAN OBD frame capture, code review fixes (v2.2.3)
 - [x] Phase 8.0 — Car test fixes + signal expansion: ESC decode fix, throttle fallback, battery voltage OBD, crash telemetry ring buffer, passive odometer (CAN 0x360), tap-to-change drive mode/ESC, RS MK3 theme colour correction, MeatPi default fix, free CAN signal extraction (vertical G, launch control, engine status, ignition status, ESC Launch mode), full repo audit hardening (v2.2.4)
-- [x] Phase 8.1 — FORScan PID catalog (1,149 PIDs, 8 modules), data-driven decode (PidRegistry + formula evaluator), DID prober, PID browser, AWD expansion (clutch temps L/R, trans oil temp, req torques, demanded pressure, pump current), per-cylinder knock correction (KR C1–C4), HVAC/IPC scaffolding, warning lamp banner (v2.2.5)
+- [x] Phase 8.1 — FORScan PID catalog (1,148 PIDs, 20 modules), data-driven decode (PidRegistry + formula evaluator), DID prober, PID browser, AWD expansion (clutch temps L/R, trans oil temp, req torques, demanded pressure, pump current), per-cylinder knock correction (KR C1–C4; cylinder 2–4 DIDs under investigation, [#222](https://github.com/klexical/openRS_/issues/222)), HVAC/IPC scaffolding, warning lamp banner (v2.2.5)
 - [x] Phase 8.2 — Drive mode reliability (pre-flight logging, auto-correction on overshoot), 0-60/0-100 performance timer, real-time fuel economy (idle/instant/average/DTE), clutch pedal (CAN 0x138), passive VIN decode (CAN 0x40A), wheel rotation counts (CAN 0x1E0), 3-tier TPMS thresholds, TPMS + temps in trip CSV exports, peripheral edge shift light, crash telemetry ring buffer (v2.2.5)
 - [x] Phase 8.3 — MAP tab + drive recorder: Google Maps integration with 6 colour modes (speed/mode/boost/throttle/lat-G/temp), Room-backed `DriveRecorder` with 1 Hz GPS + telemetry, drive history with date grouping, per-drive GPX/CSV/summary export, weather card, hoisted camera state, peak markers (v2.2.6 rc.1–rc.6)
 - [x] Phase 8.4 — BLE GATT transport: `BleSlcanTransport` (FFE0/FFE1/FFE2, MTU 247, auto-reconnect), `BleDeviceScanner`, in-app device picker with RSSI bars, adapter naming refactor (MeatPi USB / Pro × Wi-Fi / BLE), Wi-Fi coexistence banner, `BleFirmwareApi` (`AT+FRS=`), `Network.socketFactory` Wi-Fi route pinning (v2.2.6 rc.7)
