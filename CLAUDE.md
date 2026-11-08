@@ -241,7 +241,7 @@ in `web/src/` (`*.test.ts`, `*.test.tsx`) for Sapphire. Run one class with `./gr
 per-class catalog and the history of counts were moved out on 2026-11-05 (last full copy: this file at staging commit
 `743230fb`); list the folder instead.
 
-Current count: **1560 tests / 128 classes** per variant (Android, `feature/rc8-followup` `8bbdd92`, 1 skipped = `#251 outlier
+Current count: **1564 tests / 128 classes** per variant (Android, `feature/rc8-followup` `1499f69`, 1 skipped = `#251 outlier
 policy`; Temurin 17, `clean test lint --no-build-cache` — a plain run can restore results from the Gradle build cache);
 **1200 / 107** at staging `3cb229ce`. Sapphire: **343 vitest across 27 files** (run
 `web/node_modules/.bin/vitest run` and `tsc -b`).
