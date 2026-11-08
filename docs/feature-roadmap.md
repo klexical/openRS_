@@ -1032,6 +1032,33 @@ section. They are captured here for completeness.
 
 ---
 
+## Completed phases (moved from the README on 2026-11-08)
+
+- [x] Phase 1 — CAN sniffing + basic OBD (v1.0)
+- [x] Phase 2 — Hybrid ATMA+OBD (v2.0)
+- [x] Phase 2.5 — TPMS+, AFR, ETC/TIP/WGDC, VCT, multi-ECU polling
+- [x] Phase 2.6 — Nitrous Blue/Frost White theme, openRS_ branding, live browser emulator
+- [x] Phase 2.7 — WebSocket SLCAN rewrite (~2100 fps), user settings, diagnostics export, firmware detection (fw-v1.1.0)
+- [x] Phase 2.8 — DBC-verified signal corrections, BCM/AWD polling, IAT, ambient, wheel speeds, SLCAN raw log + per-ID sampling (v1.1.1–v1.1.5)
+- [x] Phase 2.9 — TPMS formula fix, firmware detection timing fix, app version in logs (v1.1.6)
+- [x] Phase 3 — Full UI redesign: 6-tab layout, new fonts, new CAN signals (steering, yaw, brake), PCM Mode 22 polling, updated RTR thresholds (v1.2.0)
+- [x] Phase 4 — Trip recording: GPS trip page with OSM map, weather overlay, peak markers, live HUD, trip summary (v2.1.0)
+- [x] Phase 5 — UI architecture split, per-tab composables, share trip export (v2.2.0)
+- [x] Phase 6 — DTC scanning: 873-code Ford DTC database, full-module scan + clear via UDS 0x19/0x14 (v2.2.1)
+- [x] Phase 7 — Data export + MeatPi Pro: trip ZIP (GPX/CSV/TXT), diagnostics ZIP, raw TCP SLCAN adapter support (v2.2.1)
+- [x] Phase 7.5 — Sensor data + polish: GPS permission fix, Module Status/LC/ASS live OBD, full diagnostic export (~24 new fields), SLCAN OBD frame capture, code review fixes (v2.2.3)
+- [x] Phase 8.0 — Car test fixes + signal expansion: ESC decode fix, throttle fallback, battery voltage OBD, crash telemetry ring buffer, passive odometer (CAN 0x360), tap-to-change drive mode/ESC, RS MK3 theme colour correction, MeatPi default fix, free CAN signal extraction (vertical G, launch control, engine status, ignition status, ESC Launch mode), full repo audit hardening (v2.2.4)
+- [x] Phase 8.1 — FORScan PID catalog (1,148 PIDs, 20 modules), data-driven decode (PidRegistry + formula evaluator), DID prober, PID browser, AWD expansion (clutch temps L/R, trans oil temp, req torques, demanded pressure, pump current), per-cylinder knock correction (KR C1–C4; cylinder 2–4 DIDs under investigation, [#222](https://github.com/klexical/openRS_/issues/222)), HVAC/IPC scaffolding, warning lamp banner (v2.2.5)
+- [x] Phase 8.2 — Drive mode reliability (pre-flight logging, auto-correction on overshoot), 0-60/0-100 performance timer, real-time fuel economy (idle/instant/average/DTE), clutch pedal (CAN 0x138), passive VIN decode (CAN 0x40A), wheel rotation counts (CAN 0x1E0), 3-tier TPMS thresholds, TPMS + temps in trip CSV exports, peripheral edge shift light, crash telemetry ring buffer (v2.2.5)
+- [x] Phase 8.3 — MAP tab + drive recorder: Google Maps integration with 6 colour modes (speed/mode/boost/throttle/lat-G/temp), Room-backed `DriveRecorder` with 1 Hz GPS + telemetry, drive history with date grouping, per-drive GPX/CSV/summary export, weather card, hoisted camera state, peak markers (v2.2.6 rc.1–rc.6)
+- [x] Phase 8.4 — BLE GATT transport: `BleSlcanTransport` (FFE0/FFE1/FFE2, MTU 247, auto-reconnect), `BleDeviceScanner`, in-app device picker with RSSI bars, adapter naming refactor (MeatPi USB / Pro × Wi-Fi / BLE), Wi-Fi coexistence banner, `BleFirmwareApi` (`AT+FRS=`), `Network.socketFactory` Wi-Fi route pinning (v2.2.6 rc.7)
+- [x] Phase 8.5 — Drive mode cold-start gate (`has420Arrived`), corrective auto-loop in MorePage, hybrid scroll-then-wait firmware (USB v1.61 / Pro v1.2 with `AT+FRS` BLE channel), drive mode reliability under reconnect (v2.2.6 rc.7)
+- [x] Phase 8.6 — Tier 1 PIDs (Apr 2026 research): STFT/LTFT, AWD clutch actuator current L/R, AWD hydraulic pressure L/R, battery current; new CAN decoders for `0x305` mode toggle button, `0x260` ASS/ESC defeat buttons, `0x225` LC engaged, `0x070` suspension button; spark advance + charging voltage desired; GFM (`0x7D2`) DTC scanning; critical `mergeObdState()` allowlist fix (v2.2.6 rc.8)
+- [x] Phase 8.7 — UI overhaul: bottom nav bar (Haze frosted glass + spring indicator), compact status bar (78dp → 34dp), Quick Mode Dock, G-Force plot redesign, visibility presets (Night/Day/Sun + brightness slider with live `lerp` recompose), hybrid glow system (ambient `cardGlow` + accent glow gates), `AggressiveNum` typography, 0.5dp card borders (v2.2.6 rc.9)
+- [x] Phase 8.8 — In-app updater: GitHub Releases API client, stable + beta channels, `Network.socketFactory` to bypass adapter Wi-Fi for download, **rolling-RC tag bug fix** (`UpdateChecker` reads version from APK filename, not git tag), CI build provenance attestation via SLSA, lint advisory in CI, 344 unit tests across 11 files, Sapphire V2 web dashboard rewrite (129 vitest tests) (v2.2.6 stable)
+
+---
+
 *When a feature moves to active development, create a GitHub Issue with the
 appropriate labels (`enhancement`, priority, area) and link it back to this
 document. Update the Status column in the overview table to `in-progress`.*
