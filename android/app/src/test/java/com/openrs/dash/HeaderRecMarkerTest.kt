@@ -135,15 +135,8 @@ class HeaderRecMarkerTest {
         assertCog(s, "360 SPORT")
     }
 
-    // ESC LAUNCH ("LAUNCH", never observed with a recording; QA inferred it): at 0 dp gaps the REC slot is 1.7 dp, 5.3 dp
-    // short of the dot (measured, xxhdpi). Room would have to come from the pills' text — an owner decision (#283).
-    @Ignore("#283: ESC LAUNCH at 360 dp — where the dot's last 5 dp come from is an owner decision")
-    @Config(qualifiers = "w360dp-h780dp-xxhdpi")
-    @Test fun `360 dp LIVE NORMAL ESC LAUNCH recording keeps the REC dot and the cog`() {
-        val s = render(EscStatus.LAUNCH)
-        assertDotDrawn(s, "360 LAUNCH")
-        assertCog(s, "360 LAUNCH")
-    }
+    // (The ignored "ESC LAUNCH" case is gone: raw 3 has no name and shows the placeholder — REQ-rc8-esc-owner-wording.)
+    // Drive mode + ESC pairs in this class are synthetic: the two are independent readings.
 
     @Config(qualifiers = "w360dp-h780dp-xxhdpi")
     @Test fun `360 dp LIVE CUSTOM ESC SPORT recording keeps the REC dot and the cog`() {

@@ -161,7 +161,7 @@ All formulas re-validated against DigiCluster `can0_hs.json` and `can1_ms.json`.
 | 0x1A4 | Ambient temp | `B4 signed × 0.25 °C` | DigiCluster MS-CAN bridged |
 | 0x1B0 | Drive mode (coarse) | `(B6>>4)&0x0F` — 0=Normal, 1=Sport/Track, 2=Drift | RS_HS.dbc AWDmsg01 |
 | 0x420 | Drive mode (detail), launch control | B6: 0x10=Normal, 0x11=Sport/Track, 0x12=Drift; B7 bit0: 0=Sport, 1=Track; LC: `(B6>>2)&1` | RS_HS.dbc + empirical (2026-03-11) |
-| 0x1C0 | ESC mode status | `bits(10,2)`: 0=On, 1=Off, 2=Sport, 3=Launch (byte1 bits 5–4) | RS_HS.dbc VAL_ 448 + SLCAN-verified |
+| 0x1C0 | ESC setting | `bits(10,2)` (byte1 bits 5–4): 0 = Normal, 1 = Off, 2 = Sport — Ford's names (2018 RS supplement pp. 9, 19), mapping CAN-mapped from the DBC ([#125](https://github.com/klexical/openRS_/issues/125)); 3 = unrecognized (the community DBC names it "Launch", without basis; never observed) | RS_HS.dbc VAL_ 448 + the owner's captures: 0, 1 and 2 seen in captures, 3 never |
 | 0x190 | 4× wheel speeds | FL/FR/RL/RR: 15-bit Motorola × 0.011343006 kph | RS_HS.dbc ABSmsg03 |
 | 0x230 | Gear position | `bits(0,4)` — 0=Park/Neutral, 1–6=gears, 7=Reverse | RS_HS.dbc |
 | 0x252 | Brake pressure | `((B1&0x0F)<<8\|B2) / 40.95` — 12-bit ADC, normalised 0–100% | RS_HS.dbc ABSmsg10 |

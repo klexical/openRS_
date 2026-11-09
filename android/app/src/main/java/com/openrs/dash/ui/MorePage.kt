@@ -148,7 +148,8 @@ import kotlinx.coroutines.launch
                 // ── ESC ──────────────────────────────────────────────────
                 InstrumentLabel("ESC")
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(EscStatus.ON to "ESC ON", EscStatus.PARTIAL to "SPORT", EscStatus.OFF to "ESC OFF")
+                    // Ford's names (Normal / Sport / Off); the row is already labelled ESC
+                    listOf(EscStatus.ON to "NORMAL", EscStatus.PARTIAL to "SPORT", EscStatus.OFF to "OFF")
                         .forEach { (status, label) ->
                             val isActive = vs.escStatus == status
                             val isPending = pendingEsc == status && !isActive
@@ -170,12 +171,12 @@ import kotlinx.coroutines.launch
                                         if (isActive || isPending) color else Brd,
                                         RoundedCornerShape(10.dp)
                                     )
-                                    .pressClick(enabled = canControl && firmwareApi != null && !isActive) {
+                                    .pressClick(enabled = escChipEnabled(vs.escStatus, status, canControl, firmwareApi != null)) {
                                         haptic.performHapticFeedback(HapticFeedbackType.Confirm)
                                         pendingEsc = status
                                         scope.launch {
                                             DiagnosticLogger.event("ESC_CMD",
-                                                "Sending escMode=${status.toFirmwareInt()} (${status.label})")
+                                                "Sending escMode=${status.firmwareMode} (${status.diagnostic})")
                                             // Acceptance by the adapter isn't success — wait for CAN 0x1C0 (#125)
                                             val outcome = com.openrs.dash.can.EscCommand.execute(firmwareApi, status,
                                                 { com.openrs.dash.OpenRSDashApp.instance.vehicleState.value })
@@ -184,8 +185,9 @@ import kotlinx.coroutines.launch
                                             when (outcome) {
                                                 is com.openrs.dash.can.EscCommand.Outcome.Confirmed -> Unit
                                                 is com.openrs.dash.can.EscCommand.Outcome.NotConfirmed -> snackbarHostState.showSnackbar(
-                                                    if (outcome.observed == status) "Adapter accepted ${status.label}. The car reports it, but not on two frames since the request"
-                                                    else "Adapter accepted ${status.label}, but the car still reports ${outcome.observed.label}")
+                                                    if (outcome.observed == status) "Adapter accepted ESC ${status.label}. The car reports it, but not on two frames since the request"
+                                                    else "Adapter accepted ESC ${status.label}, but the car reports ESC ${outcome.observed.label}")
+                                                com.openrs.dash.can.EscCommand.Outcome.Refused -> snackbarHostState.showSnackbar("ESC state unknown — nothing sent")
                                                 com.openrs.dash.can.EscCommand.Outcome.Busy -> snackbarHostState.showSnackbar("An ESC change is already in progress — try again")
                                                 com.openrs.dash.can.EscCommand.Outcome.ConnectionLost -> snackbarHostState.showSnackbar("Connection lost — ESC not confirmed")
                                                 else -> snackbarHostState.showSnackbar("ESC command failed")
@@ -203,20 +205,13 @@ import kotlinx.coroutines.launch
                             }
                         }
                 }
-                if (vs.escStatus == EscStatus.LAUNCH) {
-                    Box(
-                        Modifier.fillMaxWidth()
-                            .background(Warn.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                            .border(CardBorder, Warn.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
-                            .padding(10.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        MonoLabel("⚡ ESC LAUNCH MODE", 10.sp, Warn, letterSpacing = 0.1.sp)
-                    }
-                }
                 InstrumentMeta(
-                    if (canControl) "Tap to change · Live from CAN 0x1C0"
-                    else "Current: ${vs.escStatus.label} (CAN 0x1C0). Use ESC button in car."
+                    when {
+                        // Owner decision: no ESC request while the car's ESC state is unknown (no 0x1C0 yet, or raw 3)
+                        !vs.escStatus.isKnown -> "Waiting for the car's ESC report (CAN 0x1C0) — buttons off until it arrives"
+                        canControl            -> "Tap to change · Live from CAN 0x1C0"
+                        else                  -> "Current: ESC ${vs.escStatus.label} (CAN 0x1C0). Use ESC button in car."
+                    }
                 )
             }
         } else {
@@ -472,3 +467,9 @@ import kotlinx.coroutines.launch
     }
 }
 
+/**
+ * An ESC chip can be tapped only to change a state the car reported: never while the current state is unknown (no 0x1C0
+ * frame yet, or raw 3 — owner decision, REQ-rc8-esc-owner-wording), never for the active state, and only with a command path.
+ */
+internal fun escChipEnabled(current: EscStatus, chip: EscStatus, canControl: Boolean, hasCommandPath: Boolean): Boolean =
+    canControl && hasCommandPath && current.isKnown && chip.isKnown && current != chip

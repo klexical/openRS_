@@ -49,7 +49,7 @@ class EscHeaderPillTest {
         val compose = activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as ViewGroup
         val found = mutableListOf<String>()
         fun walk(n: SemanticsNode) {
-            n.config.getOrNull(SemanticsProperties.ContentDescription)?.filter { it.startsWith("ESC") }?.let { found += it }
+            n.config.getOrNull(SemanticsProperties.ContentDescription)?.filter { it.startsWith("Stability control") }?.let { found += it }
             n.children.forEach { walk(it) }
         }
         walk((compose.getChildAt(0) as ViewRootForTest).semanticsOwner.unmergedRootSemanticsNode)
@@ -57,14 +57,14 @@ class EscHeaderPillTest {
     }
 
     @Test fun `no 0x1C0 frame yet - the ESC pill says unknown, not ON`() =
-        assertEquals("ESC unknown", escDescription(VehicleState(isConnected = true)))
+        assertEquals("Stability control: unknown", escDescription(VehicleState(isConnected = true)))
 
     @Test fun `raw 3 - the ESC pill says unknown, not Launch`() =
-        assertEquals("ESC unknown", escDescription(VehicleState(isConnected = true, escStatus = EscStatus.fromInt(3))))
+        assertEquals("Stability control: unknown", escDescription(VehicleState(isConnected = true, escStatus = EscStatus.fromInt(3))))
 
     @Test fun `known states use Ford's words`() {
-        assertEquals("ESC Normal", escDescription(VehicleState(isConnected = true, escStatus = EscStatus.fromInt(0))))
-        assertEquals("ESC Sport", escDescription(VehicleState(isConnected = true, escStatus = EscStatus.fromInt(2))))
-        assertEquals("ESC Off", escDescription(VehicleState(isConnected = true, escStatus = EscStatus.fromInt(1))))
+        assertEquals("Stability control: Normal", escDescription(VehicleState(isConnected = true, escStatus = EscStatus.fromInt(0))))
+        assertEquals("Stability control: Sport", escDescription(VehicleState(isConnected = true, escStatus = EscStatus.fromInt(2))))
+        assertEquals("Stability control: Off", escDescription(VehicleState(isConnected = true, escStatus = EscStatus.fromInt(1))))
     }
 }

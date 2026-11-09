@@ -128,7 +128,7 @@ class BleCommandSendFailureTest {
         return Link(conn, gatts)
     }
 
-    private var car = VehicleState(isConnected = true, driveMode = DriveMode.NORMAL)
+    private var car = VehicleState(isConnected = true, driveMode = DriveMode.NORMAL, escStatus = EscStatus.ON)  // synthetic: the car has reported ESC Normal (a command needs a known starting state)
     private fun dmEvents() = DiagnosticLogger.sessionEvents.filter { it.type == "DM_CMD" }.map { it.message }
 
     private suspend fun TestScope.driveMode(api: BleFirmwareApi, target: DriveMode = DriveMode.SPORT) =

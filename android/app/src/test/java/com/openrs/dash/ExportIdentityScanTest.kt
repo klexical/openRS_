@@ -121,7 +121,7 @@ class ExportIdentityScanTest {
         val line = DiagnosticLogger.sessionEvents.last { it.type == "DM_CMD" }.message
         assertTrue(line, line.contains("GATT 133"))
         assertFalse(line, line.contains(MAC))
-        val esc = runBlocking { EscCommand.execute(api, EscStatus.OFF, { com.openrs.dash.data.VehicleState(isConnected = true) }) }
+        val esc = runBlocking { EscCommand.execute(api, EscStatus.OFF, { com.openrs.dash.data.VehicleState(isConnected = true, escStatus = EscStatus.ON) }) }
         val text = EscCommand.describe(EscStatus.OFF, esc)
         assertTrue(text, text.contains("GATT 133"))
         assertFalse(text, text.contains(MAC))

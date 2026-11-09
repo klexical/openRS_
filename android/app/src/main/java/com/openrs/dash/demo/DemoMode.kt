@@ -316,7 +316,10 @@ object DemoFirmwareApi : FirmwareCommandSender {
         when (mode) { 1 -> DriveMode.SPORT; 2 -> DriveMode.DRIFT; 3 -> DriveMode.TRACK; else -> DriveMode.NORMAL }
     )
 
-    override suspend fun setEscMode(mode: Int): Result<Unit> = DemoMode.requestEsc(
-        when (mode) { 1 -> EscStatus.PARTIAL; 2 -> EscStatus.OFF; else -> EscStatus.ON }
-    )
+    override suspend fun setEscMode(mode: Int): Result<Unit> {
+        // firmware escMode 0 Normal / 1 Sport / 2 Off; anything else is refused, never turned into Normal
+        val target = when (mode) { 0 -> EscStatus.ON; 1 -> EscStatus.PARTIAL; 2 -> EscStatus.OFF
+            else -> return Result.failure(IllegalArgumentException("escMode $mode is not an ESC setting")) }
+        return DemoMode.requestEsc(target)
+    }
 }

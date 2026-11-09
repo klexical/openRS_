@@ -998,17 +998,26 @@ private fun HeaderModeEscPills(vs: VehicleState, accent: Color, onModeClick: () 
     // Calm cockpit: the selected mode is a reading (ink), not an alert — TRACK in amber read as a
     // warning. ESC keeps its existing colours for reduced stability control (Sport / Launch / Off).
     val modeColor = if (connected) Frost else Dim
+    val esc = vs.escStatus
+    val escKnown = connected && esc.isKnown
     val escColor = when {
-        !connected                          -> Dim
-        vs.escStatus == EscStatus.OFF       -> Orange
-        vs.escStatus == EscStatus.PARTIAL   -> Warn
-        vs.escStatus == EscStatus.LAUNCH    -> Warn
-        else                                -> Frost
+        !escKnown                   -> Dim
+        esc == EscStatus.OFF        -> Orange
+        esc == EscStatus.PARTIAL    -> Warn
+        else                        -> Frost
     }
     val modeValue = if (connected) vs.driveMode.label.uppercase() else "\u2014"
     // The mode names are self-describing; the MODE caption only labels the offline placeholder.
-    // The pill already says ESC — "ESC On" read as "ESC ESC ON".
-    val escValue  = if (connected) vs.escStatus.label.removePrefix("ESC ").uppercase() else "\u2014"
+    // ESC = Ford's names (Normal / Sport / Off); unknown (no 0x1C0 yet, raw 3) = the placeholder. The ESC setting is its own
+    // reading, independent of the drive mode, so its pill never repeats the MODE pill's word: Normal (ESC fully on) is the
+    // traction symbol alone — like the car's cluster, which flags only a reduced or off ESC — and Sport / Off add the word.
+    // What TalkBack says always names it: "Stability control: Sport" (REQ-rc8-esc-owner-wording).
+    val escValue = when {
+        !escKnown              -> "\u2014"
+        esc == EscStatus.ON    -> ""
+        else                   -> esc.label.uppercase()
+    }
+    val escSpoken = "Stability control: " + if (escKnown) esc.label else "unknown"
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         val pending = com.openrs.dash.can.driveModePending.value != null
@@ -1038,12 +1047,12 @@ private fun HeaderModeEscPills(vs: VehicleState, accent: Color, onModeClick: () 
             onClick = null,
             icon = RsIcon.TRACTION,
             iconTone = when {
-                !connected -> IconTone.UNAVAILABLE
-                vs.escStatus == EscStatus.OFF -> IconTone.CRITICAL
-                vs.escStatus == EscStatus.PARTIAL || vs.escStatus == EscStatus.LAUNCH -> IconTone.WARNING
+                !escKnown -> IconTone.UNAVAILABLE
+                esc == EscStatus.OFF -> IconTone.CRITICAL
+                esc == EscStatus.PARTIAL -> IconTone.WARNING
                 else -> IconTone.NORMAL
             },
-            description = "ESC $escValue",
+            description = escSpoken,
         )
     }
 }
@@ -1178,7 +1187,7 @@ private sealed class AnomalyKind {
         ) {
             icon?.let { TelemetryIcon(it, iconTone, 13.dp, contentDescription = description) }
             label?.let { MonoLabel(it, 9.sp, Dim, letterSpacing = 0.3.sp) }
-            MonoLabel(value, 10.sp, valueColor, FontWeight.Bold, 0.3.sp)
+            if (value.isNotEmpty()) MonoLabel(value, 10.sp, valueColor, FontWeight.Bold, 0.3.sp)
             if (chevron) MonoLabel("\u25BE", 9.sp, Dim)
         }
         // Pulsing accent bar at bottom (MODE pill)

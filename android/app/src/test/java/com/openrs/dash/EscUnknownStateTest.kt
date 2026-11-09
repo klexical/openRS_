@@ -92,4 +92,28 @@ class EscUnknownStateTest {
         assertEquals("Sport", after1C0(2).escStatus.label)
         assertEquals("Off", after1C0(1).escStatus.label)
     }
+
+    // ── Owner decision: the GARAGE buttons are off while the state is unknown ─
+    @Test fun `GARAGE ESC buttons are disabled while the car's ESC state is unknown`() {
+        for (current in listOf(EscStatus.UNKNOWN, EscStatus.fromInt(3)))
+            for (chip in listOf(EscStatus.ON, EscStatus.PARTIAL, EscStatus.OFF))
+                assertFalse("$current → $chip", com.openrs.dash.ui.escChipEnabled(current, chip, canControl = true, hasCommandPath = true))
+        assertTrue(com.openrs.dash.ui.escChipEnabled(EscStatus.ON, EscStatus.PARTIAL, canControl = true, hasCommandPath = true))
+        assertFalse("the active state", com.openrs.dash.ui.escChipEnabled(EscStatus.PARTIAL, EscStatus.PARTIAL, true, true))
+    }
+
+    @Test fun `the refusal is logged as nothing sent`() =
+        assertTrue(EscCommand.describe(EscStatus.UNKNOWN, EscCommand.Outcome.Refused).contains("nothing sent"))
+
+    @Test fun `demo ESC commands refuse anything but 0, 1, 2 (no fallback to Normal)`() = runTest {
+        assertTrue(com.openrs.dash.demo.DemoFirmwareApi.setEscMode(3).isFailure)
+        assertTrue(com.openrs.dash.demo.DemoFirmwareApi.setEscMode(-1).isFailure)
+    }
+
+    @Test fun `diagnostics tell no frame and raw 3 apart`() {
+        assertEquals("not received", VehicleState().escStatus.diagnostic)
+        assertEquals("unrecognized (raw 3)", EscStatus.fromInt(3).diagnostic)
+        assertEquals("Sport (raw 2)", EscStatus.fromInt(2).diagnostic)
+        assertEquals(listOf(0, 1, 2), listOf(EscStatus.ON, EscStatus.PARTIAL, EscStatus.OFF).map { it.firmwareMode })
+    }
 }

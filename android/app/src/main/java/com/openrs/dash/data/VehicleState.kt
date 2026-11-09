@@ -151,7 +151,7 @@ data class VehicleState(
 
     // ── Vehicle Status (CAN Sniffed) ────────────────────────
     val driveMode: DriveMode = DriveMode.NORMAL,
-    val escStatus: EscStatus = EscStatus.ON,
+    val escStatus: EscStatus = EscStatus.UNKNOWN,   // unknown until a 0x1C0 frame arrives (REQ-rc8-esc-owner-wording)
     val gear: Int = 0,
     val batteryVoltage: Double = 0.0,
     val fuelLevelPct: Double = 0.0,
@@ -444,18 +444,37 @@ enum class DriveMode(val label: String) {
     }
 }
 
-enum class EscStatus(val label: String) {
-    ON("ESC On"), PARTIAL("ESC Sport"), OFF("ESC Off"), LAUNCH("Launch"), UNKNOWN("--");
+/**
+ * ESC setting. [label] is what the driver reads: Ford's names Normal / Sport / Off (2018 Focus RS supplement); the raw
+ * value → name mapping is CAN-mapped only (RS_HS.dbc VAL_ 448, #125). [UNRECOGNIZED] (raw 3) and [UNKNOWN] (no 0x1C0 frame
+ * on this connection) both read "Unknown" and can't be commanded or commanded from; [diagnostic] tells them apart.
+ */
+enum class EscStatus(val label: String, val raw: Int?) {
+    ON("Normal", 0), PARTIAL("Sport", 2), OFF("Off", 1), UNRECOGNIZED("Unknown", 3), UNKNOWN("Unknown", null);
 
-    /** Maps to firmware REST API `escMode` field (0=On, 1=Sport, 2=Off). */
-    fun toFirmwareInt(): Int = when (this) {
-        ON -> 0; PARTIAL -> 1; OFF -> 2; else -> 0
+    /**
+     * Firmware REST / AT+FRS `escMode` (0 Normal, 1 Sport, 2 Off); null = not a state a command may target. There is no
+     * fallback: an unknown state used to become 0, a Normal request.
+     */
+    val firmwareMode: Int? get() = when (this) {
+        ON -> 0; PARTIAL -> 1; OFF -> 2; UNRECOGNIZED, UNKNOWN -> null
+    }
+
+    /** A state the car reported and the app can name (and so command from / to). */
+    val isKnown: Boolean get() = firmwareMode != null
+
+    /** Diagnostics: Ford's name with its raw value, or why it is unknown. */
+    val diagnostic: String get() = when (this) {
+        UNRECOGNIZED -> "unrecognized (raw 3)"
+        UNKNOWN      -> "not received"
+        else         -> "$label (raw $raw)"
     }
 
     companion object {
-        // CAN 0x1C0 ESCMode: 0=Normal, 1=ESC Off, 2=Sport, 3=Launch (RS_HS.dbc VAL_ 448)
+        // CAN 0x1C0 ESCMode (2 bits): 0 = Normal, 1 = Off, 2 = Sport — RS_HS.dbc VAL_ 448, seen in captures (#125).
+        // 3 = unrecognized: the community DBC (not in this repo) calls it "Launch"; never seen on the car, no Ford basis.
         fun fromInt(v: Int): EscStatus = when (v) {
-            0 -> ON; 1 -> OFF; 2 -> PARTIAL; 3 -> LAUNCH; else -> UNKNOWN
+            0 -> ON; 1 -> OFF; 2 -> PARTIAL; 3 -> UNRECOGNIZED; else -> UNKNOWN
         }
     }
 }

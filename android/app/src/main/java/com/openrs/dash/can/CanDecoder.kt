@@ -759,7 +759,7 @@ object CanDecoder {
         ID_WHEEL_SPEEDS -> "FL=${"%.1f".format(state.wheelSpeedFL)} FR=${"%.1f".format(state.wheelSpeedFR)} RL=${"%.1f".format(state.wheelSpeedRL)} RR=${"%.1f".format(state.wheelSpeedRR)} km/h"
         ID_AWD_TORQUE   -> "L=${"%.0f".format(state.awdLeftTorque)}Nm R=${"%.0f".format(state.awdRightTorque)}Nm"
         ID_DRIVE_MODE   -> "driveMode=${state.driveMode.label} (0x1B0 byte6)"
-        ID_ESC_ABS      -> "escStatus=${state.escStatus.label}"
+        ID_ESC_ABS      -> "escStatus=${state.escStatus.diagnostic}"
         ID_GEAR         -> "gear=${state.gearDisplay}"
         ID_TORQUE       -> "torqueNm=${"%.0f".format(state.torqueAtTrans)} suspBtn=${state.suspensionButtonPressed}"
         ID_LAUNCH_CTRL  -> "lcEngaged=${state.launchControlEngaged}"
