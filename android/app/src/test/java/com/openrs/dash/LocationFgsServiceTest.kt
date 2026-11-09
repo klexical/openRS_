@@ -26,7 +26,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
@@ -67,11 +66,11 @@ class LocationFgsServiceTest {
         db = Room.inMemoryDatabaseBuilder(app, DriveDatabase::class.java).allowMainThreadQueries().build()
         rec = DriveRecorder(app, appVs, WeatherRepository(""), db, db.driveDao(), { _, _ -> null }, gps, { })
         OpenRSDashApp::class.java.getDeclaredField("driveRecorder\$delegate").apply { isAccessible = true }.set(OpenRSDashApp.instance, lazyOf(rec))
-        service = Robolectric.buildService(CanDataService::class.java).create().get()
+        service = TestServices.create()
     }
 
     // The service first (its scope collects rec.driveState and AppVisibility), then the recorder; visibility back to default
-    @After fun tearDown() { service.onDestroy(); rec.cancel(); db.close(); AppVisibility.visible.value = false }
+    @After fun tearDown() { TestServices.destroyAll(); rec.cancel(); db.close(); AppVisibility.visible.value = false }
 
     private val fg get() = CanDataService::class.java.getDeclaredField("foreground").apply { isAccessible = true }.get(service) as ForegroundController
     private fun promote() = CanDataService.link.transition { fg.promote() }      // as beginConnection does, real host

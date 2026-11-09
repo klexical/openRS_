@@ -15,7 +15,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows
 import org.robolectric.annotation.Config
@@ -70,7 +69,7 @@ class TaskRemovalTest {
         DiagnosticLogger.sessionStart("test", 0, prefs = null)
         wifiUp()
         link.clearManualConnect()
-        service = Robolectric.buildService(CanDataService::class.java).create().get()
+        service = TestServices.create()
         service.stopConnection(com.openrs.dash.service.LinkStopReason.USER_DISCONNECT)
         recording(false)
     }
@@ -79,6 +78,7 @@ class TaskRemovalTest {
         recording(false)
         service.stopConnection(com.openrs.dash.service.LinkStopReason.USER_DISCONNECT)
         link.clearManualConnect()
+        TestServices.destroyAll()                                       // this test's services, `next` ones included
     }
 
     @Test fun `an initial attempt ends, with its reason, and no Cancel is saved`() {
@@ -161,7 +161,7 @@ class TaskRemovalTest {
     @Test fun `the next launch auto-connects with a new service and nothing saved`() {
         attempt()
         service.onTaskRemoved(null)
-        val next = Robolectric.buildService(CanDataService::class.java).create().get()
+        val next = TestServices.create()
         assertEquals("the hold still covers the service's own start", LinkPhase.OFF, link.phase)
         next.onActivityBound()
         assertEquals(LinkPhase.CONNECTING, link.phase)
@@ -171,7 +171,7 @@ class TaskRemovalTest {
     @Test fun `the next launch's refused service start names the task removal's hold`() {
         attempt()
         service.onTaskRemoved(null)
-        val next = Robolectric.buildService(CanDataService::class.java).create().get()
+        val next = TestServices.create()
         assertEquals(listOf("auto-start held: a task removal, until the app is opened"), lines(DiagnosticLogger.EVENT_LINK_START_REFUSED))
         next.onActivityBound()
         assertEquals(LinkPhase.CONNECTING, link.phase)
@@ -181,9 +181,9 @@ class TaskRemovalTest {
     @Test fun `control - a refused start names a saved Cancel, and demo mode, as what holds it`() {
         attempt()
         assertTrue(service.cancelConnection())
-        Robolectric.buildService(CanDataService::class.java).create().get()
+        TestServices.create()
         link.requireManualConnect()
-        Robolectric.buildService(CanDataService::class.java).create().get()
+        TestServices.create()
         assertEquals(listOf("auto-start held: a saved Cancel", "auto-start held: a saved Cancel + demo mode"),
             lines(DiagnosticLogger.EVENT_LINK_START_REFUSED))
     }

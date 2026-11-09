@@ -15,7 +15,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowNetwork
@@ -28,7 +27,7 @@ import org.robolectric.shadows.ShadowNetwork
 @RunWith(RobolectricTestRunner::class)
 @Config(application = OpenRSDashApp::class)
 class LinkStopServiceTest {
-    private val controller = Robolectric.buildService(CanDataService::class.java)
+    private val controller = TestServices.controller()
     private val service get() = controller.get()
     private fun lines(type: String) = DiagnosticLogger.sessionEvents.filter { it.type == type }.map { it.message }
     private fun idleReasons() = lines(DiagnosticLogger.EVENT_LINK_STOP_IDLE).map { it.substringAfter("reason=").substringBefore(' ') }
@@ -43,6 +42,8 @@ class LinkStopServiceTest {
         DiagnosticLogger.sessionStart("test", 0, prefs = null)
         controller.create()
     }
+
+    @org.junit.After fun destroyServices() { TestServices.destroyAll() }
 
     @Test fun `disconnect writes its reason, phase, generation and no recording`() {
         service.stopConnection(LinkStopReason.USER_DISCONNECT)

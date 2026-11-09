@@ -30,7 +30,7 @@ class ServiceTeardownGuardTest {
     @Test fun `every test class that creates a service destroys it at teardown`() {
         val users = sources.filter { (name, text) -> name != helper && name != self && Regex("""TestServices\.(create|controller)\(""").containsMatchIn(text) }
         val missing = users.filter { (_, text) ->
-            !Regex("""@After[^\n]*\n?[^\n]*TestServices\.destroyAll\(\)|@After\s+fun\s+\w+\(\)\s*\{[^}]*TestServices\.destroyAll\(\)""").containsMatchIn(text)
+            !Regex("""@(org\.junit\.)?After\s+fun\s+\w+\(\)\s*\{[^}]*TestServices\.destroyAll\(\)""").containsMatchIn(text)
         }.keys.sorted()
         assertTrue("at least one service test is checked", users.isNotEmpty())
         assertEquals("call TestServices.destroyAll() in an @After, before cancelling recorders", emptyList<String>(), missing)
