@@ -23,7 +23,6 @@ import com.openrs.dash.ui.LinkUi
 import com.openrs.dash.ui.UserPrefs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -180,9 +179,8 @@ class HeaderRecMarkerTest {
         assertCog(s, "360 SPORT idle")
     }
 
-    // Font scale (system "font size"): the pills' sp text grows. Measured at 360 dp SPORT: 1.15 → the fixed parts already
-    // exceed the row by 5 dp, 1.3 → by 20 dp (the header overflows with no recording at all — pre-existing). An owner decision.
-    @Ignore("#283: font scale > 1 at 360 dp — the header itself overflows; owner decision")
+    // Font scale (system "font size"): the pills' sp text grows. At 1.15 the header stays one line (compact pills); from
+    // 1.3 the pills take a second line — HeaderFitMatrixTest covers 1.3 and 2.0 (#283, owner: keep the system font size).
     @Config(qualifiers = "w360dp-h780dp-xxhdpi")
     @Test fun `360 dp ESC SPORT recording at font scale 1_15 keeps the REC dot`() {
         assertDotDrawn(render(EscStatus.PARTIAL, fontScale = 1.15f), "360 SPORT font 1.15")
