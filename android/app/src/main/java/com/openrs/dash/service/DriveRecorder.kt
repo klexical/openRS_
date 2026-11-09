@@ -58,6 +58,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -162,6 +163,12 @@ class DriveRecorder(
         val outsideLoopWrites = Mutex()
         /** Point inserts that failed for this drive (their points are not in Room); reported at STOP. */
         val failedPointWrites = java.util.concurrent.atomic.AtomicInteger()
+        /** When the drive last resumed from a pause (N1, QA Q1): the loop raises its gate's floor to it at the next fix, so a
+         *  decode made during a pause that saw no fix is not stored either. Written by [resumeDrive], read by the loop. */
+        @Volatile var resumedAtMs = 0L
+        /** Point inserts of this drive under way (#262 N2): counted from before the points leave the buffer, so a
+         *  [durabilityBarrier] can't miss a batch the loop has taken but Room hasn't stored yet. */
+        val inFlight = MutableStateFlow(0)
     }
 
     /** The drive being recorded (or the last one); see [DriveRun]. */
@@ -296,19 +303,28 @@ class DriveRecorder(
     }
 
     /**
-     * Stores the drive's buffered points now, without pausing it (#262). Called by the service whenever a connection
-     * ends: with auto-record off a drive keeps recording through a link gap (no new points while disconnected), but up to
-     * FLUSH_SIZE − 1 points sat in memory with no foreground service left to keep the process alive. Same lock as
-     * [pauseDrive]'s flush (#241); no-op when not recording or the buffer is empty.
+     * The point at which every point the drive recorded is in Room (#262, N2): stores the buffered points now, without pausing
+     * the drive (same lock as [pauseDrive]'s flush, #241), then waits for every point insert under way — the loop's 30-point
+     * batch too, which takes its points from the buffer before Room stores them — and for a STOP's finalize. The service keeps
+     * its foreground until this completes: with auto-record off a drive keeps recording through a link gap, and without the
+     * foreground nothing keeps the process alive to finish the writes. Null when there is nothing to wait for. Never blocks the
+     * caller; a failed insert still completes it (the failure is counted, as before).
      */
-    fun flushBuffered() {
-        if (!_driveState.value.isRecording) return
+    fun durabilityBarrier(): Job? {
         val r = run
-        scope.launch { r.outsideLoopWrites.withLock { flushBuffer(r) } }
+        val recording = _driveState.value.isRecording
+        val finalizing = finalizeJob?.takeIf { it.isActive }
+        if (!recording && r.inFlight.value == 0 && finalizing == null) return null
+        return scope.launch {
+            if (recording) r.outsideLoopWrites.withLock { flushBuffer(r) }
+            r.inFlight.first { it == 0 }
+            finalizing?.join()
+        }
     }
 
     fun resumeDrive() {
         pausedAtMs = 0L
+        run.resumedAtMs = System.currentTimeMillis()   // N1 / Q1: the loop's next fix takes nothing decoded before this
         run.prevPoint = null  // Gap in polyline — next point won't connect to prev
         _driveState.update { it.copy(isPaused = false) }
     }
@@ -483,6 +499,8 @@ class DriveRecorder(
 
                     // Skip recording when paused
                     if (state.isPaused) {
+                        // N1: nothing decoded before or during the pause may be stored at a fix after it
+                        run.freshGate.skip(System.currentTimeMillis())
                         lapTimer?.breakTrack(driveId)
                         gaps.onLocation(System.currentTimeMillis(), written = false, skipped = RecordingGapMonitor.Reason.PAUSED)
                             ?.let { DiagnosticLogger.event("REC_GAP", "drive $driveId: ${it.describe()}") }
@@ -504,6 +522,7 @@ class DriveRecorder(
                     // polyline. The live position dot above keeps updating; distance driven during
                     // the gap is not counted.
                     if (!vs.isConnected) {
+                        run.freshGate.skip(now)                       // N1: the same across a link gap
                         run.prevPoint = null
                         lapTimer?.breakTrack(driveId)
                         gaps.onLocation(now, written = false, skipped = RecordingGapMonitor.Reason.DISCONNECTED)
@@ -512,14 +531,16 @@ class DriveRecorder(
                     }
                     gaps.onLocation(now, written = true)?.let { DiagnosticLogger.event("REC_GAP", "drive $driveId: ${it.describe()}") }
                     val gate = run.freshGate
-                    val stamps = vs.fieldLastUpdateMs
                     // Boost-sweep DIDs: value only on a fresh decode, otherwise the
                     // "absent" sentinel (0.0 kPa / -1.0 %) so stats never count a held value.
-                    val tipFresh    = gate.takeIfFresh("tipActualKpa", stamps)
-                    val targetFresh = gate.takeIfFresh("tipDesiredKpa", stamps)
-                    val wgdcFresh   = gate.takeIfFresh("wgdcDesired", stamps)
+                    // N1: each polled value only from a decode made after the last skipped fix and within twice its poll budget;
+                    // Q1: and after the last resume (a pause can pass with no fix to skip). The gate is touched only here.
+                    run.resumedAtMs.takeIf { it > 0 }?.let { gate.skip(it) }
+                    val tipFresh    = gate.takeIfCurrent("tipActualKpa", vs, now)
+                    val targetFresh = gate.takeIfCurrent("tipDesiredKpa", vs, now)
+                    val wgdcFresh   = gate.takeIfCurrent("wgdcDesired", vs, now)
                     // MAP 0xF40B (#271): a value only on a fresh decode, otherwise null — never a held reading
-                    val mapFresh    = gate.takeIfFresh(com.openrs.dash.data.MapF40b.TAG, stamps)
+                    val mapFresh    = gate.takeIfCurrent(com.openrs.dash.data.MapF40b.TAG, vs, now)
                     // Boost by the source rule (#207): the reading + its source; NONE = no fresh source (0.0 is not a reading)
                     val boost = com.openrs.dash.data.BoostSession.read(vs, now)
                     // The shared verdict (DRIVE row / THERMAL card) including its holds: TEMPS READY only.
@@ -582,8 +603,8 @@ class DriveRecorder(
 
                     // Fuel trim drift — fresh decodes only, warm-engine gate inside the accumulator
                     run.fuelTrims.add(
-                        stftFresh = gate.takeIfFresh("shortFuelTrim", stamps), stft = vs.shortFuelTrim,
-                        ltftFresh = gate.takeIfFresh("longFuelTrim", stamps),  ltft = vs.longFuelTrim,
+                        stftFresh = gate.takeIfCurrent("shortFuelTrim", vs, now), stft = vs.shortFuelTrim,
+                        ltftFresh = gate.takeIfCurrent("longFuelTrim", vs, now),  ltft = vs.longFuelTrim,
                         coolantC = vs.coolantTempC, rpm = vs.rpm
                     )
 
@@ -705,18 +726,23 @@ class DriveRecorder(
      * has landed or failed — so it never counts as a failed write; it is rethrown once the outcome is recorded.
      */
     private suspend fun flushBuffer(run: DriveRun): Boolean {
-        val toFlush = run.takePoints()
-        if (toFlush.isEmpty()) return true
+        run.inFlight.update { it + 1 }                 // before the take: a barrier never sees taken-but-unstored points as done
         var failure: Exception? = null
         try {
-            withContext(NonCancellable + Dispatchers.IO) {
-                try { dao.insertPoints(toFlush) } catch (e: Exception) { failure = e }
+            val toFlush = run.takePoints()
+            if (toFlush.isEmpty()) return true
+            try {
+                withContext(NonCancellable + Dispatchers.IO) {
+                    try { dao.insertPoints(toFlush) } catch (e: Exception) { failure = e }
+                }
+            } finally {
+                failure?.let {
+                    run.failedPointWrites.incrementAndGet()
+                    Log.w(TAG, "Point flush failed (${toFlush.size} points)", it)
+                }
             }
         } finally {
-            failure?.let {
-                run.failedPointWrites.incrementAndGet()
-                Log.w(TAG, "Point flush failed (${toFlush.size} points)", it)
-            }
+            run.inFlight.update { it - 1 }
         }
         return failure == null
     }

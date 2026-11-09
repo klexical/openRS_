@@ -141,10 +141,13 @@ object ObdConstants {
     /**
      * The fast group for this batch (#271, owner's final decision F1 "Only while recording"): while a drive is recording (not
      * paused), MAP 0xF40B joins it, so a wide-open-throttle drive gives a TIP / MAP pair every cycle — at the cost of one more
-     * 150 ms slot (1.35 s instead of 1.2 s per cycle). Otherwise MAP isn't polled at all.
+     * 150 ms slot (1.35 s instead of 1.2 s per cycle). Otherwise MAP isn't polled at all. MAP goes directly after TIP actual,
+     * so a pair is one request apart (it was the last fast DID, ≥ 7 slots after TIP); the poller re-checks the recording
+     * state just before the MAP request (SlcanConnection).
      */
     fun pcmFastQueries(mapPoll: Boolean): List<String> =
-        if (mapPoll) PCM_FAST_QUERIES + PCM_QUERY_MAP else PCM_FAST_QUERIES
+        if (mapPoll) listOf(PCM_QUERY_TIP_ACTUAL, PCM_QUERY_MAP) + (PCM_FAST_QUERIES - PCM_QUERY_TIP_ACTUAL)
+        else PCM_FAST_QUERIES
     const val PCM_POLL_INTERVAL_MS  = 30_000L   // engine-off idle between full sweeps
     const val PCM_QUERY_GAP_MS      =    200L   // engine-off gap
     const val PCM_FAST_GAP_MS       =    150L   // engine-running gap

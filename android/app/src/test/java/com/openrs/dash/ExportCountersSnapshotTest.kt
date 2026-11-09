@@ -46,6 +46,21 @@ class ExportCountersSnapshotTest {
         assertEquals("exports whose summary and detail disagree, of 40", 0, differ)
     }
 
+    @Test fun `the summary and the detail read the same DID inventory while answers arrive (#253)`() {
+        var stop = false
+        val mover = thread { while (!stop) DiagnosticLogger.countDidPositive(0x7E8, 0x033E) }
+        val differ = try {
+            (1..40).count {
+                val (text, detail) = DiagnosticReportBuilder.buildSummaryAndDetail("t")
+                val t = Regex("""PCM\s+0x033E : \d+ sent · (\d+) answered""").find(text)?.groupValues?.get(1)?.toInt() ?: -1
+                val rows = JSONObject(detail).getJSONObject("didInventory").getJSONArray("rows")
+                val j = (0 until rows.length()).map { rows.getJSONObject(it) }.firstOrNull { it.getString("did") == "033E" }?.getInt("positive") ?: -1
+                t != j
+            }
+        } finally { stop = true; mover.join() }
+        assertEquals("exports whose summary and detail disagree, of 40", 0, differ)
+    }
+
     @Test fun `control - a later export reads the newer count`() {
         DiagnosticLogger.countWrite(DiagnosticLogger.WRITE_SENT)
         val (a, _) = DiagnosticReportBuilder.buildSummaryAndDetail("t")

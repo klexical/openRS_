@@ -307,7 +307,7 @@ class SlcanConnection(
                 connectedAtMs = System.currentTimeMillis()
                 failedAttempts = 0
                 firmwareVersion = transport.stockFirmwareLabel
-                val bcmIsoTp = IsoTpBuffer()
+                val bcmIsoTp = IsoTpBuffer { DiagnosticLogger.countIsoTpRefused() }
                 val nrcTracker = NrcTracker()
                 val nrcLog = UnattributedNrcLog()
                 // Requests waiting for a reply, oldest first: a 7F 22 NRC belongs to the oldest one (#216)
@@ -332,8 +332,10 @@ class SlcanConnection(
                     try { noteWrite(transport.write(q)) } catch (e: Exception) {
                         noteWriteFailure(e)
                         if (req != null && !WriteFailure.isUncertain(e)) ledger!!.withdraw(req)
+                        else if (target != null) DiagnosticLogger.countDidSent(target.first + 8, target.second)   // may have gone out
                         throw e
                     }
+                    target?.let { DiagnosticLogger.countDidSent(it.first + 8, it.second) }                     // inventory (#253)
                 }
                 /** Keeps a non-PCM module's ledger in step with its replies; true = the frame is the prober's NRC (taken). */
                 fun moduleReply(ledger: PcmRequestLedger, id: Int, d: ByteArray): Boolean {
@@ -341,7 +343,9 @@ class SlcanConnection(
                     val code = Mode22.negativeCode(d) ?: return false
                     if (code == NrcTracker.NRC_RESPONSE_PENDING) { ledger.pending(clock()); return false }
                     val owner = ledger.negative(clock())
-                    val probing = _probe?.takeIf { it.responseId == id } ?: return false
+                    val probing = _probe?.takeIf { it.responseId == id }
+                    if (owner != null && owner != probing?.did) DiagnosticLogger.countDidNrc(id, owner)          // inventory (#253)
+                    probing ?: return false
                     if (owner == probing.did) { DiagnosticLogger.logObdFrame(id, d); probing.reply.complete(d); return true }
                     if (owner == null) probing.ambiguousNrc = code
                     return false
@@ -381,6 +385,8 @@ class SlcanConnection(
                         batch.queries.forEach { q ->
                             val did = ObdConstants.extractDid(q)
                             if (did != null && !nrcTracker.shouldPoll(did, clock())) return@forEach
+                            // #271: the batch was built while recording; a STOP / PAUSE since then sends no MAP request
+                            if (q == ObdConstants.PCM_QUERY_MAP && !mapPoll()) return@forEach
                             // Registered before the write so an instant reply finds it; withdrawn if the write
                             // certainly didn't reach the bus (#216) — a BLE write that failed after it was handed to the
                             // stack may have, so it keeps its request (it lapses) and is never resent (#248)
@@ -390,6 +396,7 @@ class SlcanConnection(
                                 noteWriteFailure(e)
                                 if (!WriteFailure.isUncertain(e)) { req?.let { pcmRequests.withdraw(it) }; req = null }
                             }
+                            if (did != null && req != null) DiagnosticLogger.countDidSent(ObdConstants.PCM_RESPONSE_ID, did)   // inventory (#253)
                             sentAny = true
                             // Wait (bounded) for the reply, so normally one request is in flight and its NRC attributable
                             if (req != null) withTimeoutOrNull(PcmRequestLedger.REPLY_WINDOW_MS) { req.reply.await() }
@@ -573,6 +580,12 @@ class SlcanConnection(
 
                         if (frame.first in ObdConstants.OBD_RESPONSE_IDS) {
                             DiagnosticLogger.logObdFrame(frame.first, frame.second)
+                            // Inventory (#253): a positive answer (single or first frame) to a poll — the prober's own answers aren't counted
+                            Mode22.positiveDid(frame.second)?.let { did ->
+                                val probing = _probe
+                                if (probing == null || probing.responseId != frame.first || probing.did != did)
+                                    DiagnosticLogger.countDidPositive(frame.first, did)
+                            }
                         }
 
                         if (frame.first == ObdConstants.BCM_RESPONSE_ID) {
@@ -618,6 +631,7 @@ class SlcanConnection(
                                             ?.let { DiagnosticLogger.event("NRC_UNATTRIBUTED", it) }
                                     } else {
                                         DiagnosticLogger.countAttributedNrc()
+                                        if (probing == null || did != probing.did) DiagnosticLogger.countDidNrc(ObdConstants.PCM_RESPONSE_ID, did)
                                         if ((probing == null || did != probing.did || did in PCM_POLLED_DIDS) &&
                                             nrcTracker.recordNrc(did, nrcCode, clock())) {
                                             DiagnosticLogger.event("NRC_SUPPRESS",
@@ -789,7 +803,7 @@ class SlcanConnection(
                 // Mark all as querying
                 modules.forEach { m ->
                     onModuleProgress?.invoke(m.name, null)
-                    buffers[m.responseId] = IsoTpBuffer()
+                    buffers[m.responseId] = IsoTpBuffer { DiagnosticLogger.countIsoTpRefused() }
                 }
 
                 // Send all requests with 50ms between each
@@ -829,7 +843,7 @@ class SlcanConnection(
                         if (reply == DtcReply.Pending) {
                             // Real answer follows: fresh buffer, wait P2* more (never past the cap)
                             pending += mod.name
-                            buffers[frame.first] = IsoTpBuffer()
+                            buffers[frame.first] = IsoTpBuffer { DiagnosticLogger.countIsoTpRefused() }
                             fcSent -= frame.first
                             deadline = minOf(maxOf(deadline, System.currentTimeMillis() + DTC_P2_STAR_MS), scanStart + DTC_SCAN_CAP_MS)
                             continue
@@ -840,6 +854,7 @@ class SlcanConnection(
                     }
                 }
 
+                buffers.values.forEach { it.abandon() }               // a reply still open at the deadline: counted (#253 L1)
                 // Modules without a final reply: the same rule as the final result (#215) — progress, screen and export agree
                 val raw = DtcRawScan(results, pending - results.keys, failures.filterKeys { it !in results })
                 for (module in modules) {
@@ -894,30 +909,33 @@ class SlcanConnection(
             val data = frame.second; if (data.isEmpty()) continue
             when ((data[0].toInt() and 0xF0) shr 4) {
                 0 -> {
+                    if (totalLen > 0) DiagnosticLogger.countIsoTpRefused()   // a partial reply superseded by a single frame (#253 L1)
                     val len = data[0].toInt() and 0x0F
-                    if (len <= 0 || data.size < len + 1) return null
+                    if (len <= 0 || data.size < len + 1) { DiagnosticLogger.countIsoTpRefused(); return null }
                     return data.copyOfRange(1, 1 + len)
                 }
                 1 -> {
+                    if (totalLen > 0) DiagnosticLogger.countIsoTpRefused()   // a partial reply superseded by a first frame (#253 L1)
                     buf.reset(); received = 0; totalLen = 0; seqNext = 1     // a new reply started: nothing of the old one stays
-                    if (data.size < IsoTpBuffer.CAN_FRAME_BYTES) continue
+                    if (data.size < IsoTpBuffer.CAN_FRAME_BYTES) { DiagnosticLogger.countIsoTpRefused(); continue }
                     val length = ((data[0].toInt() and 0x0F) shl 8) or (data[1].toInt() and 0xFF)
-                    if (length < IsoTpBuffer.MIN_FF_LENGTH) continue
+                    if (length < IsoTpBuffer.MIN_FF_LENGTH) { DiagnosticLogger.countIsoTpRefused(); continue }
                     totalLen = length
                     buf.write(data, 2, IsoTpBuffer.FF_DATA_BYTES); received = IsoTpBuffer.FF_DATA_BYTES
                     val fcFrame = "t%03X83000000000000000\r".format(requestId)
                     try { transport.writeLine(fcFrame) } catch (_: Exception) { }
                 }
                 2 -> {
-                    val seq = data[0].toInt() and 0x0F; if (seq != seqNext) return null
+                    val seq = data[0].toInt() and 0x0F; if (seq != seqNext) { DiagnosticLogger.countIsoTpRefused(); return null }
                     seqNext = (seqNext + 1) and 0x0F
                     val take = minOf(IsoTpBuffer.CF_DATA_BYTES, totalLen - received)
-                    if (take <= 0 || data.size - 1 < take) return null
+                    if (take <= 0 || data.size - 1 < take) { DiagnosticLogger.countIsoTpRefused(); return null }
                     buf.write(data, 1, take); received += take
                     if (received >= totalLen) return buf.toByteArray()
                 }
             }
         }
+        if (totalLen > 0) DiagnosticLogger.countIsoTpRefused()       // a reply still open at the deadline: abandoned (#253 L1)
         return null                                                  // the deadline passed: partial bytes aren't a reply
     }
 

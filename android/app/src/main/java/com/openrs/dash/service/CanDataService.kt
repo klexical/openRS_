@@ -385,6 +385,8 @@ class CanDataService : Service() {
          * Process-wide: an idle service stops when the activity unbinds, and the next instance must still honour it.
          */
         val link = LinkOwnership()
+        /** Longest the foreground waits at a link end for the drive's points to be stored (#262, N2). Tests shorten it. */
+        @Volatile internal var flushDemoteWaitMs = 10_000L
 
         /** Notification action: cancel an initial connection attempt (#212). */
         const val ACTION_CANCEL_CONNECT = "com.openrs.dash.action.CANCEL_CONNECT"
@@ -792,10 +794,10 @@ class CanDataService : Service() {
      * publish state, a merge or a notification over a newer attempt.
      */
     private fun endConnection(finalPhase: LinkPhase, reason: LinkStopReason, rec: String): Unit = link.transition {
-        // A drive still recording (auto-record off keeps it recording through a link gap) stores its buffered points now:
-        // the foreground service goes below, and nothing else keeps the process alive to write them (#262). Auto-record's
-        // pause above already flushed; this is then a no-op.
-        OpenRSDashApp.instance.driveRecorder.flushBuffered()
+        // The drive's points must be durable before the foreground goes (#262, N2): the barrier stores the buffered ones and
+        // waits for every insert under way (a 30-point batch the loop has taken too) and a STOP's finalize. Nothing here
+        // waits: the demote below runs once the barrier completes, outside link.transition.
+        val durable = OpenRSDashApp.instance.driveRecorder.durabilityBarrier()
         teardownJob(finalPhase, reason, rec)
         OpenRSDashApp.instance.linkPhase.value = finalPhase
         // Demo owns the connection flags (WiFi/BT-loss callbacks still land here).
@@ -803,8 +805,17 @@ class CanDataService : Service() {
             OpenRSDashApp.instance.vehicleState.update { it.copy(isConnected = false, isReconnecting = false) }
             OpenRSDashApp.instance.deviceStatus.value = null
         }
-        // Leave the foreground and the started state: with no activity bound the service now stops.
-        foreground.demote()
+        // Leave the foreground and the started state: with no activity bound the service now stops. With points still being
+        // stored, only once they are (bounded by FLUSH_DEMOTE_WAIT_MS, so a hung write can't hold the foreground), and only if
+        // no newer attempt has taken the link meanwhile (it promoted the service for itself).
+        if (durable == null) foreground.demote()
+        else {
+            val gen = link.generation
+            scope.launch {
+                withTimeoutOrNull(flushDemoteWaitMs) { durable.join() }
+                link.transition { if (link.owns(gen)) foreground.demote() }
+            }
+        }
     }
 
     /** Ends ownership and the job: session records closed, transport aborted, job cancelled. */

@@ -216,20 +216,54 @@ object DiagnosticLogger {
         var linesDropped = 0               // BLE lines lost to a full receive queue (#253)
         var commandRepliesDropped = 0      // +FRS: lines lost to a full reply channel, nobody waiting (#253)
         var dtcFramesDropped = 0           // DTC reply frames lost to a full channel (#253)
+        var isoTpRefused = 0               // ISO-TP frames refused or replies abandoned: truncated SF / FF / CF, FF < 8, sequence break, superseded, deadline (#253)
         fun copy() = LinkIntegrity().also {
             it.writes.putAll(writes); it.framingTimestamped = framingTimestamped; it.refusedFrameLines = refusedFrameLines
             it.refusedOtherShape = refusedOtherShape; it.refusedReplies = refusedReplies; it.nrcAttributed = nrcAttributed
             it.overlongLines = overlongLines; it.linesDropped = linesDropped
             it.commandRepliesDropped = commandRepliesDropped; it.dtcFramesDropped = dtcFramesDropped
+            it.isoTpRefused = isoTpRefused
         }
     }
+
+    /**
+     * Per-module, per-DID Mode 22 inventory of this session (#253): requests the pollers wrote (not certainly lost),
+     * positive answers (single or first frame; DID-prober answers are not counted), and rejections charged to that DID.
+     * Counts only. At most [MAX_INVENTORY_DIDS] rows; further DIDs are counted in [DidInventory.overflow].
+     */
+    class DidStat(val responseId: Int, val did: Int) {
+        var sent = 0; var positive = 0; var nrcAttributed = 0
+        /** Session-relative time of the last positive answer, or -1. */
+        var lastPositiveRelMs = -1L
+        fun copy() = DidStat(responseId, did).also { it.sent = sent; it.positive = positive; it.nrcAttributed = nrcAttributed; it.lastPositiveRelMs = lastPositiveRelMs }
+    }
+    class DidInventory(val rows: List<DidStat>, val overflow: Int)
+    const val MAX_INVENTORY_DIDS = 256
+    private val didInventoryLive = LinkedHashMap<Long, DidStat>()
+    private var didInventoryOverflow = 0
+    private fun didStatLocked(responseId: Int, did: Int): DidStat? {
+        val key = (responseId.toLong() shl 16) or (did.toLong() and 0xFFFF)
+        didInventoryLive[key]?.let { return it }
+        if (didInventoryLive.size >= MAX_INVENTORY_DIDS) { didInventoryOverflow++; return null }
+        return DidStat(responseId, did).also { didInventoryLive[key] = it }
+    }
+    fun countDidSent(responseId: Int, did: Int) = synchronized(lock) { didStatLocked(responseId, did)?.let { it.sent++ } }
+    fun countDidPositive(responseId: Int, did: Int) = synchronized(lock) {
+        didStatLocked(responseId, did)?.let { it.positive++; it.lastPositiveRelMs = System.currentTimeMillis() - sessionStartMs }
+    }
+    fun countDidNrc(responseId: Int, did: Int) = synchronized(lock) { didStatLocked(responseId, did)?.let { it.nrcAttributed++ } }
+    val didInventory: DidInventory get() = synchronized(lock) { DidInventory(didInventoryLive.values.map { it.copy() }, didInventoryOverflow) }
     private var linkIntegrityLive = LinkIntegrity()
     /** A consistent copy of this session's counters. */
     val linkIntegrity: LinkIntegrity get() = synchronized(lock) { linkIntegrityLive.copy() }
 
     /** One reading of the counters an export reports, taken under one lock: its summary and detail state the same numbers (L12). */
-    class ExportCounters(val integrity: LinkIntegrity, val nrcUnattributed: Int, val limits: LogLimits)
-    val exportCounters: ExportCounters get() = synchronized(lock) { ExportCounters(linkIntegrityLive.copy(), nrcUnattributedTotal, logLimits) }
+    class ExportCounters(val integrity: LinkIntegrity, val nrcUnattributed: Int, val limits: LogLimits,
+                         val dids: DidInventory = DidInventory(emptyList(), 0))
+    val exportCounters: ExportCounters get() = synchronized(lock) {
+        ExportCounters(linkIntegrityLive.copy(), nrcUnattributedTotal, logLimits,
+            DidInventory(didInventoryLive.values.map { it.copy() }, didInventoryOverflow))
+    }
     fun countWrite(kind: String) = synchronized(lock) { linkIntegrityLive.writes[kind] = (linkIntegrityLive.writes[kind] ?: 0) + 1 }
     fun framingDecided(timestamped: Boolean) = synchronized(lock) { linkIntegrityLive.framingTimestamped = timestamped }
     fun countRefusedFrameLine(otherShape: Boolean) = synchronized(lock) {
@@ -241,6 +275,7 @@ object DiagnosticLogger {
     fun countLineDropped() = synchronized(lock) { linkIntegrityLive.linesDropped++ }
     fun countCommandReplyDropped() = synchronized(lock) { linkIntegrityLive.commandRepliesDropped++ }
     fun countDtcFrameDropped() = synchronized(lock) { linkIntegrityLive.dtcFramesDropped++ }
+    fun countIsoTpRefused() = synchronized(lock) { linkIntegrityLive.isoTpRefused++ }
 
     /**
      * What this session's logs no longer hold (#253), so a rolling or capped list is never read as the whole session.
@@ -392,6 +427,7 @@ object DiagnosticLogger {
             nrcSnapshot = emptyMap()   // NRC suppression is per connection (#216)
             nrcUnattributedTotal = 0
             linkIntegrityLive = LinkIntegrity()
+            didInventoryLive.clear(); didInventoryOverflow = 0
             traceDropped = 0L; eventsDropped = 0L; fpsDropped = 0L; probeSessionsDropped = 0L; inventoryNotListed = 0L
             slcanCapHit = false
 

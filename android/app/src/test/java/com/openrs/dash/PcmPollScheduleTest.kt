@@ -47,13 +47,15 @@ class PcmPollScheduleTest {
     @Test
     fun `recording - MAP joins the fast group and the engine-off sweep (#271)`() {
         val f = ObdConstants.pcmFastQueries(mapPoll = true)
-        assertEquals(fast + ObdConstants.PCM_QUERY_MAP, f)
+        // MAP directly after TIP actual: a TIP / MAP pair is one request apart (#271)
+        assertEquals(listOf(ObdConstants.PCM_QUERY_TIP_ACTUAL, ObdConstants.PCM_QUERY_MAP) + (fast - ObdConstants.PCM_QUERY_TIP_ACTUAL), f)
+        assertEquals(fast.toSet() + ObdConstants.PCM_QUERY_MAP, f.toSet())
         val cycleMs = (f.size + 1) * ObdConstants.PCM_FAST_GAP_MS
         assertEquals(1_350L, cycleMs)
         assertEquals(27_000L, slow.size * cycleMs)
         assertTrue(cycleMs < com.openrs.dash.data.PolledFreshness.FAST_REFRESH_MS)
         val run = PcmPollSchedule.nextBatch(slowIndex = 0, engineRunning = true, mapPoll = true)
-        assertEquals(ObdConstants.PCM_QUERY_MAP, run.queries[f.size - 1])
+        assertEquals(ObdConstants.PCM_QUERY_MAP, run.queries[run.queries.indexOf(ObdConstants.PCM_QUERY_TIP_ACTUAL) + 1])
         // Engine off while recording: the sweep carries MAP too (the key-on / engine-off reading the scale check needs)
         val off = PcmPollSchedule.nextBatch(slowIndex = 0, engineRunning = false, mapPoll = true)
         assertTrue(ObdConstants.PCM_QUERY_MAP in off.queries)

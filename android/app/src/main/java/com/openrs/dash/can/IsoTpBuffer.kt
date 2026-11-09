@@ -14,7 +14,12 @@ package com.openrs.dash.can
  *
  * Thread-safety: instances are used within a single coroutine, no locking needed.
  */
-class IsoTpBuffer {
+/**
+ * [onRefused] is told about every frame refused and every reply abandoned (counted in the export, #253): truncated or
+ * too-short frames, a sequence break, a partial reply superseded by a new single or first frame, and one still open when
+ * the caller gives up ([abandon]).
+ */
+class IsoTpBuffer(private val onRefused: () -> Unit = {}) {
     private var payload: ByteArray? = null
     private var expected = 0
     private var received = 0
@@ -28,20 +33,27 @@ class IsoTpBuffer {
      *   - FF: returns (null, true, false) -- caller must send FC; (null, false, false) when refused -- no FC
      *   - CF: returns (reassembledPayload, false, false) when complete, (null, false, false) otherwise
      */
+    /** The caller stops waiting (a deadline): a partial reply still open is abandoned and counted. No-op otherwise. */
+    fun abandon() {
+        if (payload != null) { payload = null; received = 0; seqNext = 1; onRefused() }
+    }
+
     fun feed(data: ByteArray): Triple<ByteArray?, Boolean, Boolean> {
         if (data.size < 2) return Triple(null, false, false)
         val pciType = (data[0].toInt() and 0xF0) ushr 4
         return when (pciType) {
             0 -> {
+                if (payload != null) onRefused()       // a partial reply superseded by a new single frame: abandoned (#253 L1)
                 payload = null
                 val len = data[0].toInt() and 0x0F
-                if (len > data.size - 1) return Triple(null, false, true)
+                if (len > data.size - 1) { onRefused(); return Triple(null, false, true) }
                 Triple(data.copyOfRange(1, 1 + len), false, true)
             }
             1 -> {
+                if (payload != null) onRefused()       // a partial reply superseded by a new first frame: abandoned (#253 L1)
                 payload = null                         // valid or not, a new reply started: the old one is over
                 val length = ((data[0].toInt() and 0x0F) shl 8) or (data[1].toInt() and 0xFF)
-                if (data.size < CAN_FRAME_BYTES || length < MIN_FF_LENGTH) return Triple(null, false, false)
+                if (data.size < CAN_FRAME_BYTES || length < MIN_FF_LENGTH) { onRefused(); return Triple(null, false, false) }
                 expected = length
                 payload = ByteArray(expected)
                 System.arraycopy(data, 2, payload!!, 0, FF_DATA_BYTES)
@@ -53,13 +65,13 @@ class IsoTpBuffer {
                 val buf = payload ?: return Triple(null, false, false)
                 val seq = data[0].toInt() and 0x0F
                 if (seq != seqNext) {  // out-of-order or duplicate CF (#128)
-                    payload = null; received = 0; seqNext = 1
+                    payload = null; received = 0; seqNext = 1; onRefused()
                     return Triple(null, false, false)
                 }
                 seqNext = (seqNext + 1) and 0x0F
                 val n = minOf(CF_DATA_BYTES, expected - received)
                 if (data.size - 1 < n) {               // shorter than the remainder: the next frame would land at the wrong offset
-                    payload = null; received = 0; seqNext = 1
+                    payload = null; received = 0; seqNext = 1; onRefused()
                     return Triple(null, false, false)
                 }
                 System.arraycopy(data, 1, buf, received, n)

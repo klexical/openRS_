@@ -917,6 +917,77 @@ class IsoTpCoverageTest {
         assertEquals("a real reply afterwards is whole", 25.0, l.state.tireTempLF, 0.0)
     }
 
+    // ── #253 L1: an abandoned reply is counted (isoTpRefused), on every reassembler ───────────────────────
+
+    private val refused get() = DiagnosticLogger.linkIntegrity.isoTpRefused
+
+    @Test fun `L1 BCM path - a partial reply superseded by a new FF counts once, the new reply none`() = runTest {
+        val l = link(Bus(backgroundScope), tpmsState())
+        val a = lines(0x72E, segment(tpmsPayload(660, 65, tail = 14)))
+        val b = lines(0x72E, segment(tpmsPayload(700, 70)))
+        bcm(l, a[0], b[0], b[1])
+        assertEquals(30.0, l.state.tireTempLF, 0.0)
+        assertEquals(1, refused)
+    }
+
+    @Test fun `L1 BCM path - control, a whole reply counts nothing`() = runTest {
+        val l = link(Bus(backgroundScope), tpmsState())
+        bcm(l, *lines(0x72E, segment(tpmsPayload(700, 70))).toTypedArray())
+        assertEquals(30.0, l.state.tireTempLF, 0.0)
+        assertEquals(0, refused)
+    }
+
+    @Test fun `L1 DTC scan - a partial reply superseded by a new FF counts once`() = runTest {
+        val old = lines(0x7E8, segment(dtcReply(10)))
+        val new = lines(0x7E8, segment(dtcReply(4)))
+        val l = link(scanBus(backgroundScope, mapOf(0x7E0 to listOf(old.take(2) + new))))
+        assertEquals(codes(4), scan(l, pcmSpec).codes.map { it.code })
+        assertEquals(1, refused)
+    }
+
+    @Test fun `L1 DTC scan - a reply still open at the deadline counts, as does the one it superseded`() = runTest {
+        val old = lines(0x7E8, segment(dtcReply(10)))
+        val new = lines(0x7E8, segment(dtcReply(4)))
+        var flowControls = 0
+        val bus = Bus(backgroundScope) { b, frame ->
+            if (isScanRequest(frame)) b.rx(old[0])
+            if (frame.startsWith("t7E0830")) { flowControls++; if (flowControls == 1) b.paced(listOf(old[1], new[0])) }
+        }
+        assertEquals(ModuleScanStatus.TIMEOUT, scan(link(bus), pcmSpec).moduleStatuses["PCM"])
+        assertEquals("old superseded + new open at the deadline", 2, refused)
+    }
+
+    @Test fun `L1 DTC scan - control, a whole multi-frame reply counts nothing`() = runTest {
+        val l = link(scanBus(backgroundScope, mapOf(0x7E0 to listOf(lines(0x7E8, segment(dtcReply(30)))))))
+        assertEquals(codes(30), scan(l, pcmSpec).codes.map { it.code })
+        assertEquals(0, refused)
+    }
+
+    @Test fun `L1 freeze id - a reply cut short by the deadline counts once`() = runTest {
+        val l = link(freezeBus(backgroundScope, lines(0x7E8, segment(snapshotReply(10))).take(3)))
+        assertNull(l.conn.performFreezeFrameIdentification(pcmSpec))
+        assertEquals(1, refused)
+    }
+
+    @Test fun `L1 freeze id - a partial reply superseded by a new FF or by an SF counts once`() = runTest {
+        val old = lines(0x7E8, segment(snapshotReply(10)))
+        val newPayload = snapshotReply(6, salt = 1)
+        val l = link(freezeBus(backgroundScope, old.take(2) + lines(0x7E8, segment(newPayload))))
+        assertArrayEquals(newPayload, l.conn.performFreezeFrameIdentification(pcmSpec))
+        assertEquals(1, refused)
+        val sf = line(0x7E8, bytes(0x06, 0x59, 0x04, 0x01, 0x00, 0x00, 0x01, 0x00))
+        val l2 = link(freezeBus(backgroundScope, old.take(2) + sf))
+        assertEquals(6, l2.conn.performFreezeFrameIdentification(pcmSpec)!!.size)
+        assertEquals(2, refused)
+    }
+
+    @Test fun `L1 freeze id - control, a whole reply counts nothing`() = runTest {
+        val payload = snapshotReply(30)
+        val l = link(freezeBus(backgroundScope, lines(0x7E8, segment(payload))))
+        assertArrayEquals(payload, l.conn.performFreezeFrameIdentification(pcmSpec))
+        assertEquals(0, refused)
+    }
+
     private companion object {
         /** Padding a synthetic frame carries; pattern() bytes are chosen so a stitch shows regardless. */
         const val PAD: Byte = 0xCC.toByte()
