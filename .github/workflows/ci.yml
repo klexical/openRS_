@@ -33,7 +33,34 @@ jobs:
         run: ./gradlew assembleDebug --no-daemon
 
       - name: Run unit tests
+        id: unit-tests
         run: ./gradlew test --no-daemon
+
+      # A failed unit-test run keeps Gradle's reports, so a failure that only happens on CI (class order, timing) comes with
+      # its stack. One artifact per variant: `test` stops at the first failing variant, so the other's may not exist.
+      # Contents: test names, assertion messages, stack traces and test stdout from this checkout only (the build job has no
+      # secrets or API keys).
+      - name: Upload unit-test reports (debug)
+        if: failure() && steps.unit-tests.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports-debug-attempt-${{ github.run_attempt }}
+          path: |
+            android/app/build/reports/tests/testDebugUnitTest/
+            android/app/build/test-results/testDebugUnitTest/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload unit-test reports (release)
+        if: failure() && steps.unit-tests.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports-release-attempt-${{ github.run_attempt }}
+          path: |
+            android/app/build/reports/tests/testReleaseUnitTest/
+            android/app/build/test-results/testReleaseUnitTest/
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Test the release configuration check
         run: bash scripts/test-release-config.sh
