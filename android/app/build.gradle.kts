@@ -139,6 +139,8 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+        // #283: Robolectric tests that compose production UI (HeaderRecMarkerTest) need the app's drawables and fonts
+        unitTests.isIncludeAndroidResources = true
     }
 
     lint {
