@@ -123,21 +123,28 @@ class DemoSimulatorTest {
     }
 
     @Test
-    fun `LAUNCH walks the e-brake and launch-control states a real decoder reports`() {
+    fun `LAUNCH walks the e-brake and the 0x420 LC bit - no ENGAGED phase, no probe values`() {
+        // #289: the demo used to fabricate an "engaged" phase (0x225, MS-CAN, never seen on HS) and a 4,500 rpm 0x731 setpoint
         fun at(sec: Double) = frame(DemoScenario.LAUNCH, (sec * 1000).toLong())
         assertTrue(at(3.0).eBrake); assertTrue(!at(3.0).launchControlActive)                     // e-brake only
-        assertTrue(at(8.0).eBrake && at(8.0).launchControlActive && !at(8.0).launchControlEngaged) // both
+        assertTrue(at(8.0).eBrake && at(8.0).launchControlActive)                               // e-brake + LC
         assertEquals(DemoLink.LOST, DemoSimulator.link(DemoScenario.LAUNCH, 12.0))
         assertEquals(DemoLink.RECOVERING, DemoSimulator.link(DemoScenario.LAUNCH, 16.0))
-        assertTrue(at(21.0).eBrake && at(21.0).launchControlActive)                            // e-brake + LC on
-        assertTrue(at(24.0).eBrake && at(24.0).launchControlEngaged)                           // e-brake + LC engaged
-        val engaged = at(26.0)
-        assertTrue(!engaged.eBrake)
-        assertTrue(engaged.launchControlEngaged && engaged.launchControlActive)
-        assertTrue(abs(engaged.rpm - 4500) < 200 && engaged.speedKph < 1.0)                     // holding launch rpm
-        assertTrue(!at(29.0).launchControlEngaged && at(29.0).speedKph > 5)                      // launched
+        assertTrue(at(21.0).eBrake && at(21.0).launchControlActive)                            // e-brake + LC
+        val hold = at(26.0)
+        assertTrue(!hold.eBrake && hold.launchControlActive)
+        assertTrue(abs(hold.rpm - 4500) < 200 && hold.speedKph < 1.0)                            // simulated launch rpm hold
+        assertTrue(at(29.0).launchControlActive && at(29.0).speedKph > 5)                        // launched, LC still on
         assertTrue(!at(36.0).launchControlActive && !at(36.0).eBrake)                            // cleared
         assertEquals(DemoLink.LIVE, DemoSimulator.link(DemoScenario.LAUNCH, 36.0))
+        for (sec in 0..39) {
+            val s = at(sec.toDouble())
+            assertTrue("no 0x225 'engaged' at $sec s", !s.launchControlEngaged)
+            assertEquals("no 0x731 DE00 at $sec s", null, s.lcArmed)
+            assertEquals("no 0x731 DE01 setpoint at $sec s", -1, s.lcRpmTarget)
+            assertEquals("no 0x731 DE02 at $sec s", null, s.assEnabled)
+        }
+        assertTrue("the probe tags aren't stamped", DemoSimulator.OBD_TAGS.none { it == "lcArmed" || it == "lcRpmTarget" || it == "assEnabled" })
     }
 
     @Test fun `demo stamps every tag a real CAN frame stamps — drive-mode confirmation works in demo`() {
