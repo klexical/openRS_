@@ -59,13 +59,20 @@ class LaunchControlDisplayTest {
 
     private val live = VehicleState(isConnected = true, escStatus = EscStatus.fromInt(2))
 
-    /** Every text, content description and state description the composition exposes (unmerged tree). */
-    private fun said(content: @Composable () -> Unit): List<String> {
+    /**
+     * Every text, content description and state description the composition exposes (unmerged tree). [state] is built again
+     * just before the last frames, so a frame stamped "now" is a few frames old when read, however long the activity took to
+     * set up (the LC window is 1.5 s of wall clock; a cold Robolectric render can take longer).
+     */
+    private fun said(state: () -> VehicleState, content: @Composable (VehicleState) -> Unit): List<String> {
         ShadowChoreographer.setPaused(true)
         ShadowChoreographer.setFrameDelay(Duration.ofMillis(16))
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
         val activity = controller.get()
-        activity.setContent { Box(Modifier.fillMaxSize()) { content() } }
+        val vs = androidx.compose.runtime.mutableStateOf(state())
+        activity.setContent { Box(Modifier.fillMaxSize()) { content(vs.value) } }
+        repeat(4) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16)) }
+        vs.value = state()
         repeat(4) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16)) }
         val compose = activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as ViewGroup
         val out = mutableListOf<String>()
@@ -80,11 +87,11 @@ class LaunchControlDisplayTest {
         return out
     }
 
-    private fun header(vs: VehicleState) = said {
+    private fun header(state: () -> VehicleState) = said(state) { vs ->
         AppHeader(vs = vs, prefs = UserPrefs(), onSettings = {}, onConnect = {}, onDisconnect = {}, onReconnect = {}, link = LinkUi.LIVE)
     }
-    private fun drive(vs: VehicleState) = said { DrivePage(vs = vs, p = UserPrefs(), link = LinkUi.LIVE) }
-    private fun garage(vs: VehicleState) = said { MorePage(vs = vs, p = UserPrefs(), snackbarHostState = SnackbarHostState()) }
+    private fun drive(state: () -> VehicleState) = said(state) { vs -> DrivePage(vs = vs, p = UserPrefs(), link = LinkUi.LIVE) }
+    private fun garage(state: () -> VehicleState) = said(state) { vs -> MorePage(vs = vs, p = UserPrefs(), snackbarHostState = SnackbarHostState()) }
 
     /** Any launch-control wording on screen or for TalkBack. */
     private fun lcWords(said: List<String>) = said.filter {
@@ -97,7 +104,7 @@ class LaunchControlDisplayTest {
     }
 
     @Test fun `positive - a fresh documented 0x420 with bit 2 shows LC, in the header and on DRIVE, and no state word`() {
-        val vs = feed(live, CanDecoder.ID_DRIVE_MODE_EXT, f420(lc = true), now)
+        val vs = { feed(live, CanDecoder.ID_DRIVE_MODE_EXT, f420(lc = true), now) }
         val h = header(vs); val d = drive(vs)
         assertTrue("header shows LC: $h", "LC" in h)
         assertTrue("DRIVE shows LC: ${lcWords(d)}", "LC" in d)
@@ -105,32 +112,32 @@ class LaunchControlDisplayTest {
     }
 
     @Test fun `negative - bit 2 clear shows no LC`() {
-        val vs = feed(live, CanDecoder.ID_DRIVE_MODE_EXT, f420(lc = false), now)
+        val vs = { feed(live, CanDecoder.ID_DRIVE_MODE_EXT, f420(lc = false), now) }
         assertEquals(emptyList<String>(), lcWords(header(vs)) + lcWords(drive(vs)))
     }
 
     @Test fun `stale - the last 0x420 is older than 1_5 s with the link up - no LC`() {
-        val vs = feed(live, CanDecoder.ID_DRIVE_MODE_EXT, f420(lc = true), now - 2_000L)
+        val vs = { feed(live, CanDecoder.ID_DRIVE_MODE_EXT, f420(lc = true), now - 2_000L) }
         assertEquals(emptyList<String>(), lcWords(header(vs)) + lcWords(drive(vs)))
     }
 
     @Test fun `missing - a held flag with no 0x420 received shows no LC`() {
-        val vs = live.copy(launchControlActive = true)
+        val vs = { live.copy(launchControlActive = true) }
         assertEquals(emptyList<String>(), lcWords(header(vs)) + lcWords(drive(vs)))
     }
 
     @Test fun `0x225 bit 3 set never shows LC or ENGAGED`() {
-        val vs = feed(live, CanDecoder.ID_LAUNCH_CTRL, f225(on = true), now)
+        val vs = { feed(live, CanDecoder.ID_LAUNCH_CTRL, f225(on = true), now) }
         assertEquals(emptyList<String>(), lcWords(header(vs)) + lcWords(drive(vs)))
     }
 
     @Test fun `ESC raw 3 alone shows no LC`() {
-        val vs = live.copy(escStatus = EscStatus.fromInt(3))
+        val vs = { live.copy(escStatus = EscStatus.fromInt(3)) }
         assertEquals(emptyList<String>(), lcWords(header(vs)) + lcWords(drive(vs)))
     }
 
     @Test fun `GARAGE shows no 0x731 probe state - no ARMED, STANDBY, RPM setpoint or Auto Start-Stop ACTIVE`() {
-        val vs = live.copy(lcArmed = true, lcRpmTarget = 4500, assEnabled = true)
+        val vs = { live.copy(lcArmed = true, lcRpmTarget = 4500, assEnabled = true) }
         val g = garage(vs)
         assertTrue("the FEATURES rows are on screen: $g", "Launch Control" in g && "Auto Start-Stop" in g)
         val probe = g.filter { it == "ARMED" || it == "STANDBY" || it.endsWith(" RPM") || it == "ACTIVE" }
@@ -139,9 +146,9 @@ class LaunchControlDisplayTest {
     }
 
     @Test fun `GARAGE's Launch Control row reads LC only from a fresh 0x420, never from the probe`() {
-        val armedOnly = garage(live.copy(lcArmed = true))
+        val armedOnly = garage { live.copy(lcArmed = true) }
         assertTrue("no LC from the probe alone: $armedOnly", "LC" !in armedOnly)
-        val fresh = garage(feed(live, CanDecoder.ID_DRIVE_MODE_EXT, f420(lc = true), now))
+        val fresh = garage { feed(live, CanDecoder.ID_DRIVE_MODE_EXT, f420(lc = true), now) }
         assertTrue("LC from a fresh 0x420: $fresh", "LC" in fresh)
         assertEquals(emptyList<String>(), forbidden(fresh))
     }

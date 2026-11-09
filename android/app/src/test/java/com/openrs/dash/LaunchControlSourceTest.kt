@@ -84,9 +84,10 @@ class LaunchControlSourceTest {
         val l225 = lines.single { it.contains("0x225") && it.contains("MS-CAN") }
         assertTrue(l225, l225.contains("not received"))
         val de00 = lines.single { it.contains("0x731 DE00") }
-        assertTrue(de00, de00.contains("true") && de00.contains("undocumented") && de00.contains("keyless") && de00.contains("5 s ago"))
+        val fiveOrSix = Regex("""\b[56] s ago""")   // stamped 5 s before t; the summary reads the clock a moment later
+        assertTrue(de00, de00.contains("true") && de00.contains("undocumented") && de00.contains("keyless") && fiveOrSix.containsMatchIn(de00))
         val de01 = lines.single { it.contains("0x731 DE01") }
-        assertTrue(de01, de01.contains("4500") && de01.contains("5 s ago") && !de01.contains("RPM"))
+        assertTrue(de01, de01.contains("4500") && fiveOrSix.containsMatchIn(de01) && !de01.contains("RPM"))
         val de02 = lines.single { it.contains("0x731 DE02") }
         assertTrue(de02, de02.contains("false") && de02.contains("never"))
     }
