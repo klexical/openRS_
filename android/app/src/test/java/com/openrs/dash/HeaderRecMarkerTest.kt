@@ -110,7 +110,17 @@ class HeaderRecMarkerTest {
         return Marker(n, x0, x1, y0, y1)
     }
 
+    /** OPENRS_HEADER_SHOTS=<dir>: each case's header crop as PNG, for comparing a layout before and after a change. */
+    private fun save(s: Shot, case: String) {
+        val dir = System.getenv("OPENRS_HEADER_SHOTS") ?: return
+        java.io.File(dir).mkdirs()
+        java.io.FileOutputStream(java.io.File(dir, case.replace(' ', '_') + ".png")).use {
+            s.bmp.compress(Bitmap.CompressFormat.PNG, 100, it)
+        }
+    }
+
     private fun assertDotDrawn(s: Shot, case: String) {
+        save(s, case)
         val m = orange(s.bmp)
         val dp = s.density
         println("#283 [$case] orange px=${m.count} x=${m.minX}..${m.maxX} (${"%.1f".format((m.maxX - m.minX + 1) / dp)} dp) " +
@@ -165,6 +175,7 @@ class HeaderRecMarkerTest {
     @Config(qualifiers = "w360dp-h780dp-xxhdpi")
     @Test fun `not recording draws no REC marker`() {
         val s = render(EscStatus.PARTIAL, recording = false)
+        save(s, "360 SPORT idle")
         assertEquals("no Orange pixel without a recording", 0, orange(s.bmp).count)
         assertCog(s, "360 SPORT idle")
     }
