@@ -57,6 +57,8 @@ object DiagnosticLogger {
     /** A stop with no job running: the second teardown after `stopSelf` → `onDestroy`, which must not mask the real reason. */
     const val EVENT_LINK_STOP_IDLE = "LINK_STOP_IDLE"
     const val EVENT_LINK_START_REFUSED = "LINK_START_REFUSED"
+    /** The foreground service's location type was added, dropped, deferred (app not visible) or refused (#261). */
+    const val EVENT_FGS_LOCATION = "FGS_LOCATION"
     const val EVENT_LINK_TASK_REMOVED = "LINK_TASK_REMOVED"
     const val EVENT_LINK_PREV = "LINK_PREV"
     const val EVENT_LINK_PREV_EXIT = "LINK_PREV_EXIT"

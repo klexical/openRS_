@@ -26,7 +26,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
@@ -73,7 +72,7 @@ class ServiceFlushDemoteTest {
     private class CountingHost : ForegroundController.Host {
         val exits = AtomicInteger(); val stops = AtomicInteger()
         override fun startSelf() = Unit
-        override fun enterForeground() = Unit
+        override fun enterForeground(location: Boolean) = Unit
         override fun exitForeground() { exits.incrementAndGet() }
         override fun stopSelf() { stops.incrementAndGet() }
     }
@@ -95,7 +94,7 @@ class ServiceFlushDemoteTest {
         gated = GatedDao(db.driveDao())
         rec = DriveRecorder(app, appVs, WeatherRepository(""), db, gated.dao, { _, _ -> null }, gps, { })
         OpenRSDashApp::class.java.getDeclaredField("driveRecorder\$delegate").apply { isAccessible = true }.set(OpenRSDashApp.instance, lazyOf(rec))
-        service = Robolectric.buildService(CanDataService::class.java).create().get()
+        service = TestServices.create()
         fg = ForegroundController(host)
         CanDataService::class.java.getDeclaredField("foreground").apply { isAccessible = true }.set(service, fg)
         fg.promote()                                                    // as a running connection has it
@@ -104,7 +103,7 @@ class ServiceFlushDemoteTest {
 
     // Destroy the service first: its scope collects rec.driveState, and a live collector would publish a notification
     // from a worker thread after Robolectric's reset (an uncaught NPE charged to a later test, gate on 16c5c2c).
-    @After fun tearDown() { gated.release.countDown(); service.onDestroy(); rec.cancel(); db.close() }
+    @After fun tearDown() { gated.release.countDown(); TestServices.destroyAll(); rec.cancel(); db.close() }
 
     private fun autoRecord(on: Boolean) {
         app.getSharedPreferences("openrs_settings", Context.MODE_PRIVATE).edit().putBoolean(AppSettings.KEY_AUTO_RECORD_DRIVES, on).commit()

@@ -26,7 +26,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
@@ -81,6 +80,7 @@ class DriveLinkEndFlushTest {
     }
 
     @After fun tearDown() {
+        TestServices.destroyAll()                                       // before the recorders: no collector outlives the test
         recorders.forEach { it.cancel() }
         db.close()
     }
@@ -136,8 +136,7 @@ class DriveLinkEndFlushTest {
     /** Runs the service stop path for [reason] with [rec] as the app's recorder. */
     private fun stopLink(rec: DriveRecorder, reason: LinkStopReason) {
         install(rec)
-        val controller = Robolectric.buildService(CanDataService::class.java).create()
-        controller.get().stopConnection(reason)
+        TestServices.create().stopConnection(reason)
     }
 
     /** Waits for the stop path's writes (if any), then kills the old recorder's process and opens the next one. */

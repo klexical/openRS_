@@ -16,7 +16,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows
 import org.robolectric.annotation.Config
@@ -57,11 +56,13 @@ class ExportIdentityScanTest {
         assertEquals(hits.toString(), emptyList<String>(), hits)
     }
 
+    @org.junit.After fun destroyServices() { TestServices.destroyAll() }
+
     @Before fun bluetoothOn() { Shadows.shadowOf(BluetoothAdapter.getDefaultAdapter()).setEnabled(true) }
 
     @Test fun `a Bluetooth session's export and share text hold no MAC and no adapter name`() = runBlocking {
         settings("BLUETOOTH")
-        val service = Robolectric.buildService(CanDataService::class.java).create().get()
+        val service = TestServices.create()
         service.startConnection()
         assertTrue("the session started", DiagnosticLogger.sessionEvents.any { it.type == "SESSION" })
         DiagnosticExporter.export(ctx)
@@ -97,7 +98,7 @@ class ExportIdentityScanTest {
         Shadows.shadowOf(wifi).addTransportType(android.net.NetworkCapabilities.TRANSPORT_WIFI)
         Shadows.shadowOf(cm).setNetworkCapabilities(cm.activeNetwork, wifi)
         DiagnosticLogger.sessionStart("before", 0, transport = "before", prefs = null)
-        val service = Robolectric.buildService(CanDataService::class.java).create().get()
+        val service = TestServices.create()
         service.startConnection()
         val label = DiagnosticLogger.sessionTransport
         service.stopConnection(com.openrs.dash.service.LinkStopReason.USER_DISCONNECT)
