@@ -71,7 +71,7 @@ object CanDecoder {
 
     // ── HS-CAN engine / powertrain ──────────────────────────────────────────
     const val ID_TORQUE       = 0x070   // Torque at trans (Motorola bits 37-47) + RS suspension button (byte7 bit7)
-    const val ID_LAUNCH_CTRL  = 0x225   // Launch control engaged (byte5 bit3)
+    const val ID_LAUNCH_CTRL  = 0x225   // launch control, byte5 bit3 — MS-CAN per DigiCluster, diagnostics only (#289)
     const val ID_THROTTLE     = 0x076   // Throttle % (byte 0 × 0.392) — may not broadcast on all tunes
     const val ID_PEDALS       = 0x080   // Accel pedal (bits 0-9 LE ×0.1 %), brake (bit 2), reverse (bit 5)
     const val ID_ENGINE_RPM   = 0x090   // RPM (byte4 low-nib|byte5 × 2), baro (byte2 × 0.5 kPa)
@@ -191,7 +191,8 @@ object CanDecoder {
      */
     /** Every freshness tag a CAN frame stamps (demo mode must stamp the same set — DemoSimulatorTest). */
     val canStampTags: Set<String> get() = FRESH_TAGS.values.flatMap { it.toList() }.toSet() +
-        setOf(MODE_RESOLVED_DETAIL_TAG, MODE_DETAIL_PAIR_TAG, MODE_RESOLVED_PAIR_TAG, MODE_RUN_PREV_TAG)
+        setOf(MODE_RESOLVED_DETAIL_TAG, MODE_DETAIL_PAIR_TAG, MODE_RESOLVED_PAIR_TAG, MODE_RUN_PREV_TAG) +
+        com.openrs.dash.data.LaunchControl.CAN_TAGS
 
     /**
      * Drive-mode provenance (#252) — times only, in fieldLastUpdateMs (no VehicleState field: the 255-slot ceiling), all
@@ -264,6 +265,8 @@ object CanDecoder {
      */
     fun stampFresh(id: Int, previous: VehicleState, decoded: VehicleState, now: Long): VehicleState {
         if (id == ID_DRIVE_MODE_EXT) return stampDetail(previous, decoded, now)
+        // #289: every 0x225 frame, not throttled — diagnostics give its age (it never reaches the screen)
+        if (id == ID_LAUNCH_CTRL) return decoded.markFresh(com.openrs.dash.data.LaunchControl.TAG_225, now = now)
         if (id == ID_DRIVE_MODE) return stampResolve(previous, decoded, now)
         val tags = FRESH_TAGS[id] ?: return decoded
         if (id == ID_ESC_ABS) return stampEsc(previous, decoded, now)
@@ -306,6 +309,7 @@ object CanDecoder {
         if (agreesWithPrevious && prevAt != null) m[MODE_DETAIL_PAIR_TAG] = prevAt else m.remove(MODE_DETAIL_PAIR_TAG)
         m[key] = now
         m[MODE_DETAIL_TAG] = now
+        m[com.openrs.dash.data.LaunchControl.TAG_420] = now   // #289: the "LC" bit's own receipt, on every documented frame
         return decoded.copy(fieldLastUpdateMs = m)
     }
 
@@ -624,8 +628,8 @@ object CanDecoder {
                 escStatus = EscStatus.fromInt(bits(data, 10, 2)), lastUpdate = now
             ) else null
 
-            // ── 0x225: Launch control engaged ─────────────────────────────────
-            // byte5 bit3: 1 = launch control actively engaged
+            // ── 0x225: launch control (DigiCluster's MS-CAN signal, named "active") ──
+            // byte5 bit3. Never seen on HS on this car (0 of 37 captures); diagnostics only, never on screen (#289)
             ID_LAUNCH_CTRL -> if (n >= 6) state.copy(
                 launchControlEngaged = (ubyte(data, 5) shr 3) and 1 == 1,
                 lastUpdate = now
@@ -762,7 +766,7 @@ object CanDecoder {
         ID_ESC_ABS      -> "escStatus=${state.escStatus.diagnostic}"
         ID_GEAR         -> "gear=${state.gearDisplay}"
         ID_TORQUE       -> "torqueNm=${"%.0f".format(state.torqueAtTrans)} suspBtn=${state.suspensionButtonPressed}"
-        ID_LAUNCH_CTRL  -> "lcEngaged=${state.launchControlEngaged}"
+        ID_LAUNCH_CTRL  -> "lc225=${state.launchControlEngaged} (MS-CAN per DigiCluster; diagnostics only)"
         ID_CLUTCH       -> "clutchPct=${"%.1f".format(state.clutchPedalPct)}"
         ID_WHEEL_ROT    -> "rotFL=${state.wheelRotFL} FR=${state.wheelRotFR} RL=${state.wheelRotRL} RR=${state.wheelRotRR} avgFront=${"%.2f".format(state.avgFrontWheelSpeedKph)}kph"
         ID_FUEL_LEVEL   -> "fuelPct=${"%.1f".format(state.fuelLevelPct)} (0x380 Motorola)"

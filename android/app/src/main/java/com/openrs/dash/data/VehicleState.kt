@@ -159,8 +159,8 @@ data class VehicleState(
     val gaugeIllumination: Int = 0,        // 0x0C8: gauge brightness level
     val eBrake: Boolean = false,           // Emergency brake status
     val reverseStatus: Boolean = false,    // Reverse gear engaged
-    val launchControlActive: Boolean = false, // 0x420 bit 50: launch control armed
-    val launchControlEngaged: Boolean = false, // 0x225 byte5 bit3: LC actively engaged
+    val launchControlActive: Boolean = false, // 0x420 byte 6 bit 2 (DBC LaunchControlStatus): the "LC" — shown only via LaunchControl
+    val launchControlEngaged: Boolean = false, // 0x225 byte5 bit3 (MS-CAN per DigiCluster): diagnostics only (#289)
     val suspensionButtonPressed: Boolean = false, // 0x070 byte7 bit7: RS suspension button
     val driveModeButtonPressed: Boolean = false, // 0x305 byte4 bit5: drive mode toggle (held)
     val autoStartStopButtonPressed: Boolean = false, // 0x260 byte0 bit7: ASS button (held)
@@ -182,9 +182,9 @@ data class VehicleState(
     val pdcEnabled: Boolean? = null,       // PSCM 0x730 DID 0xFD07: pull drift compensation
     val fengEnabled: Boolean? = null,      // 0x727  DID 0xEE03: fake engine noise generator
     val fengTimedOut: Boolean = false,     // true after 3 probe cycles with no FENG response
-    val lcArmed: Boolean? = null,          // RSProt 0x731 probe: launch control armed
-    val lcRpmTarget: Int = -1,             // RSProt 0x731 probe: LC RPM setpoint (-1 = unknown)
-    val assEnabled: Boolean? = null,       // RSProt 0x731 probe: auto start-stop status
+    val lcArmed: Boolean? = null,          // 0x731 probe DID DE00 (undocumented, keyless-module address): diagnostics only (#289)
+    val lcRpmTarget: Int = -1,             // 0x731 probe DID DE01 (undocumented; not engine rpm): diagnostics only (-1 = unknown)
+    val assEnabled: Boolean? = null,       // 0x731 probe DID DE02 (undocumented): diagnostics only
     val rsprotTimedOut: Boolean = false,   // true after 3 probe cycles with no RSProt response
 
     // ── Generic PID values (data-driven, no dedicated fields) ──

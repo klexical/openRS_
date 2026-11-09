@@ -205,9 +205,14 @@ internal object DiagnosticReportBuilder {
             appendLine("  RDU Active : ${vs.rduEnabled ?: "—"}")
             appendLine("  PDC Active : ${vs.pdcEnabled ?: "—"}")
             appendLine("  FENG Active: ${vs.fengEnabled ?: "—"}")
-            appendLine("  LC Armed   : ${vs.lcArmed ?: "—"}")
-            appendLine("  LC RPM     : ${if (vs.lcRpmTarget >= 0) vs.lcRpmTarget.toString() else "—"}")
-            appendLine("  ASS Active : ${vs.assEnabled ?: "—"}")
+            // #289: launch control per source, with its age. Only 0x420 bit 2 reaches the screen ("LC", while fresh); the rest
+            // is diagnostics only. "not received" / "stale" are not "off".
+            val lc = com.openrs.dash.data.LaunchControl
+            appendLine("  LC 0x420 bit 2 : ${lc.status420(vs, nowMs).text}, ${age(lc.TAG_420)} — ${lc.LABEL_420}")
+            appendLine("  LC 0x225 bit   : ${lc.status225(vs, nowMs).text}, ${age(lc.TAG_225)} — ${lc.LABEL_225}")
+            appendLine("  0x731 DE00 : ${vs.lcArmed ?: "—"}, ${age("lcArmed")} — undocumented, keyless-module address (was \"LC Armed\")")
+            appendLine("  0x731 DE01 : ${if (vs.lcRpmTarget >= 0) vs.lcRpmTarget.toString() else "—"}, ${age("lcRpmTarget")} — undocumented, keyless-module address; raw value, not engine speed")
+            appendLine("  0x731 DE02 : ${vs.assEnabled ?: "—"}, ${age("assEnabled")} — undocumented, keyless-module address (was \"ASS Active\")")
             appendLine("  FPS        : ${"%.0f".format(vs.framesPerSecond)}")
             appendLine("  Data Mode  : CAN")
             appendLine()
@@ -695,7 +700,8 @@ internal fun modeProvenance(vs: VehicleState, nowMs: Long): String {
 /** Tags whose age the detail JSON reports (rc.8 #253): the polled voltage and the drive-mode provenance (#223, #252). */
 private val AGE_TAGS = listOf("batteryVoltage", "driveMode", com.openrs.dash.can.CanDecoder.MODE_DETAIL_TAG,
     com.openrs.dash.can.CanDecoder.MODE_RESOLVED_DETAIL_TAG, com.openrs.dash.can.CanDecoder.MODE_RUN_PREV_TAG,
-    com.openrs.dash.can.CanDecoder.MODE_RESOLVED_PAIR_TAG, com.openrs.dash.can.CanDecoder.ESC_FRAME_TAG, com.openrs.dash.can.CanDecoder.ESC_FRAME_PREV_TAG)
+    com.openrs.dash.can.CanDecoder.MODE_RESOLVED_PAIR_TAG, com.openrs.dash.can.CanDecoder.ESC_FRAME_TAG, com.openrs.dash.can.CanDecoder.ESC_FRAME_PREV_TAG,
+    com.openrs.dash.data.LaunchControl.TAG_420, com.openrs.dash.data.LaunchControl.TAG_225, "lcArmed", "lcRpmTarget", "assEnabled")   // #289
 
 internal fun VehicleState.toJsonObject(nowMs: Long = System.currentTimeMillis()): JSONObject = JSONObject().apply {
     // Additive (rc.8 #253): ages at export time, never absolute times
@@ -782,6 +788,16 @@ internal fun VehicleState.toJsonObject(nowMs: Long = System.currentTimeMillis())
     put("lcArmed", lcArmed ?: JSONObject.NULL)
     put("lcRpmTarget", lcRpmTarget)
     put("assEnabled", assEnabled ?: JSONObject.NULL)
+    // #289, additive: the launch-control sources and their status ("on" / "off" / "stale" / "not received"); lcArmed /
+    // lcRpmTarget / assEnabled above are the 0x731 probe's raw values (undocumented DIDs), kept for older readers
+    put("launchControl", JSONObject().apply {
+        val lc = com.openrs.dash.data.LaunchControl
+        put("status420", lc.status420(this@toJsonObject, nowMs).text)
+        put("label420", lc.LABEL_420)
+        put("status225", lc.status225(this@toJsonObject, nowMs).text)
+        put("label225", lc.LABEL_225)
+        put("lcProbeSource", lc.PROBE_SOURCE)
+    })
     // #207: session boost peaks per measurement (gauge kPa) — VehicleState.peakBoostPsi is no longer updated
     com.openrs.dash.data.BoostSession.peakKpa(com.openrs.dash.data.BoostSource.CAN_0F8)?.let { put("boostPeakCanGaugeKpa", it) }
     com.openrs.dash.data.BoostSession.peakKpa(com.openrs.dash.data.BoostSource.TIP_033E)?.let { put("boostPeakTipGaugeKpa", it) }

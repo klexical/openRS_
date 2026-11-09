@@ -60,7 +60,6 @@ import com.openrs.dash.demo.DemoMode
 import com.openrs.dash.demo.DemoScenario
 import com.openrs.dash.service.CanDataService
 import com.openrs.dash.ui.anim.EdgeShiftLight
-import com.openrs.dash.ui.anim.LaunchControlEdgeGlow
 import com.openrs.dash.ui.Tokens.CardBorder
 import com.openrs.dash.ui.anim.bloomGlow
 import com.openrs.dash.ui.anim.connectionPulse
@@ -351,7 +350,7 @@ class MainActivity : ComponentActivity() {
                                     }
 
                                     // rc.2: anomaly surface sits below the header so it can't steal the
-                                    // MODE/ESC pills. Priority: e-brake > LC engaged > update.
+                                    // MODE/ESC pills. Priority: e-brake > LC > update.
                                     AnomalyStrip(vs)
 
                                     // ── Quick Mode Dock ──────────────────
@@ -510,9 +509,6 @@ class MainActivity : ComponentActivity() {
                             }
                         )
 
-                        // rc.2: peripheral glow while LC is actively engaged — unmissable in-cabin.
-                        LaunchControlEdgeGlow(engaged = vs.isConnected && vs.launchControlEngaged)
-
                         // ── Bottom Nav Bar (overlay — content extends behind) ──
                         val navScope = rememberCoroutineScope()
                         val onSelectNav = remember<(Int) -> Unit> {
@@ -585,7 +581,7 @@ class MainActivity : ComponentActivity() {
 //
 // MODE/ESC are always visible when connected; disconnected renders dim
 // placeholder pills + "TAP TO CONNECT" gets surfaced in the AnomalyStrip
-// below the header. Anomalies (e-brake / LC engaged / update / reconnect)
+// below the header. Anomalies (e-brake / LC / update / reconnect)
 // slide down into AnomalyStrip — the header itself never changes shape.
 //
 // Pulling down ≥40dp on the header opens the DriveModeDock from any tab.
@@ -835,13 +831,13 @@ class MainActivity : ComponentActivity() {
         )
 
         // E-brake / launch control take the wordmark's fixed slot while active (every tab, nothing below moves):
-        // only live flags — held values from a dropped link are not shown.
+        // only live flags — held values from a dropped link are not shown. Launch control is the cluster's "LC", from a
+        // fresh 0x420 on this connection only (#289, LaunchControl); the clock ages it out when 0x420 stops.
         val ebrakeOn = connected && vs.eBrake
-        val lcEngaged = connected && vs.launchControlEngaged
-        val lcOn = connected && (vs.launchControlActive || vs.launchControlEngaged)
+        val lcOn = connected && com.openrs.dash.data.LaunchControl.shown(vs, wallClockMs(500L))
         Box(Modifier.width(98.dp).height(40.dp), contentAlignment = Alignment.CenterStart) {
         Crossfade(targetState = ebrakeOn || lcOn, animationSpec = tween(220), label = "brandStatus") { showStatus ->
-        if (showStatus) HeaderVehicleStatus(ebrakeOn, lcOn, lcEngaged)
+        if (showStatus) HeaderVehicleStatus(ebrakeOn, lcOn)
         else Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.drawBehind {
@@ -1136,7 +1132,7 @@ private fun HeaderModeEscPills(
 
 // rc.2: unified anomaly surface — sits below the header so it never rewrites
 // header geometry. One strip at a time, priority order:
-//   eBrake > launchControlEngaged > updating.
+//   eBrake > launch control > updating (both have since moved: see below).
 // Connection state is not a strip: inserting / removing one moved every page. RECONNECTING and
 // TAP TO CONNECT live in DRIVE's fixed-height StatusLine; the header pill (RCN / OFF) covers all tabs.
 @Composable
@@ -1191,28 +1187,22 @@ private sealed class AnomalyKind {
 }
 
 /**
- * Header chips in the wordmark's slot (98 × 40 dp): E-BRAKE (orange — the existing e-brake colour) and launch
- * control in the paint accent — outlined "LC ON" while switched on (0x420 LaunchControlStatus), filled "LC ENGAGED"
- * while engaged (0x225). Together they stack (18 dp each) so both keep their full words: engaged never shortens to
- * an ambiguous "LC". The filled chip uses [actionInk] on DAY — white on the bright paint accent was the weakest
- * header label — and the accent on NIGHT, each with [OnAccent] text.
+ * Header chips in the wordmark's slot (98 × 40 dp): E-BRAKE (orange — the existing e-brake colour) and launch control,
+ * an outlined "LC" in the paint accent: the cluster's own word, from a fresh 0x420 bit 2 only (#289, `LaunchControl`).
+ * There is no state word and no "engaged" variant (0x225 is diagnostics only). Together they stack (18 dp each).
  */
-@Composable private fun HeaderVehicleStatus(ebrake: Boolean, lcOn: Boolean, lcEngaged: Boolean) {
+@Composable private fun HeaderVehicleStatus(ebrake: Boolean, lc: Boolean) {
     val accent = LocalThemeAccent.current
-    val both = ebrake && lcOn
+    val both = ebrake && lc
     val chipH = if (both) 18.dp else 22.dp
     Column(verticalArrangement = Arrangement.spacedBy(2.dp),
         modifier = Modifier.semantics(mergeDescendants = true) {
             contentDescription = listOfNotNull(if (ebrake) "E-brake on" else null,
-                if (lcEngaged) "Launch control engaged" else if (lcOn) "Launch control on" else null).joinToString(", ")
+                if (lc) "LC, launch control" else null).joinToString(", ")
         }) {
         if (ebrake) HeaderChip("E-BRAKE", textColor(Orange), Orange.copy(alpha = pillBgAlpha(0.14f)), Orange.copy(alpha = borderAlpha(0.7f)), chipH)
-        if (lcOn) {
-            if (lcEngaged) {
-                val fill = if (isDayModeNow()) actionInk(accent) else accent
-                HeaderChip("LC ENGAGED", OnAccent, fill, fill, chipH)
-            } else HeaderChip("LC ON", actionInk(accent), accent.copy(alpha = pillBgAlpha(0.14f)), accent.copy(alpha = borderAlpha(0.8f)), chipH)
-        }
+        // The cluster's own word, nothing else (#289): no state word, no filled "engaged" variant
+        if (lc) HeaderChip("LC", actionInk(accent), accent.copy(alpha = pillBgAlpha(0.14f)), accent.copy(alpha = borderAlpha(0.8f)), chipH)
     }
 }
 

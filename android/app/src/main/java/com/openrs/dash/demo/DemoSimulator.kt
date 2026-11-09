@@ -16,7 +16,7 @@ enum class DemoScenario(val label: String, val chip: String, val blurb: String) 
     WARNING("Warnings", "WARN", "Hot lap: overheating, knock, low tyre, underboost, low fuel, charge fault"),
     CONNECTION_LOSS("Connection loss", "LOSS", "40 s loop: live 10 s → lost 12 s → OBD re-warm 4 s → live"),
     COOLDOWN("Cool-down", "COOL", "Readiness: oil cools past warn, RDU heats then its replies stop, coolant drops out, oil below warm-up, clutch heat"),
-    LAUNCH("Launch control", "LAUNCH", "40 s: e-brake → + LC on → link drop + recovery → LC on → LC engaged → launch → cruise"),
+    LAUNCH("Launch control", "LAUNCH", "40 s: e-brake → + LC → link drop + recovery → LC → launch rpm hold → launch → cruise"),
 }
 
 /** Adapter link as the real CanDataService would report it. */
@@ -47,13 +47,13 @@ object DemoSimulator {
     /** COOLDOWN: oil starts its second cool-down (below the 80 °C warm-up minimum ≈ 23 s later). */
     const val COOL_OIL_DROP_S = 180.0
 
-    /** LAUNCH: e-brake 0–25 s, LC on (0x420) 5–33 s, LC engaged (0x225) 23–27 s (with the e-brake still on to 25 s),
-     *  link lost 10–15 s, recovering to 17 s. */
+    /** LAUNCH: e-brake 0–25 s, LC (0x420 bit 2) 5–33 s, a simulated launch rpm hold 23–27 s (with the e-brake still on to
+     *  25 s), link lost 10–15 s, recovering to 17 s. No 0x225 "engaged" phase and no 0x731 values (#289). */
     const val LAUNCH_CYCLE_S = 40.0
     const val LAUNCH_EBRAKE_OFF_S = 25.0
     const val LAUNCH_LC_ON_S = 5.0
     const val LAUNCH_LC_OFF_S = 33.0
-    const val LAUNCH_ENGAGED_S = 23.0
+    const val LAUNCH_HOLD_S = 23.0
     const val LAUNCH_GO_S = 27.0
     const val LAUNCH_LOST_S = 10.0
     const val LAUNCH_RECOVER_S = 15.0
@@ -64,7 +64,7 @@ object DemoSimulator {
 
     /** Freshness tags the simulator writes — CAN-sourced THERMAL tags + every polled Mode 22 tag. */
     // Every tag CanDecoder stamps from CAN — incl. "driveMode", which drive-mode confirmation needs (demo dock)
-    val CAN_TAGS = arrayOf("oilTempC", "ptuTempC", "boostKpa", "escStatus", "driveMode", "coolantTempC", "intakeTempC", "ambientTempC",
+    val CAN_TAGS = arrayOf(com.openrs.dash.data.LaunchControl.TAG_420, com.openrs.dash.data.LaunchControl.TAG_225, "oilTempC", "ptuTempC", "boostKpa", "escStatus", "driveMode", "coolantTempC", "intakeTempC", "ambientTempC",
         com.openrs.dash.can.CanDecoder.MODE_DETAIL_TAG, com.openrs.dash.can.CanDecoder.MODE_RESOLVED_DETAIL_TAG,
         com.openrs.dash.can.CanDecoder.MODE_DETAIL_PAIR_TAG, com.openrs.dash.can.CanDecoder.MODE_RESOLVED_PAIR_TAG,
         com.openrs.dash.can.CanDecoder.MODE_RUN_PREV_TAG, com.openrs.dash.can.CanDecoder.ESC_FRAME_TAG, com.openrs.dash.can.CanDecoder.ESC_FRAME_PREV_TAG)
@@ -82,7 +82,7 @@ object DemoSimulator {
         "rduTempC", "awdClutchTempL", "awdClutchTempR", "transOilTempC",
         "awdReqTorqueL", "awdReqTorqueR", "awdDmdPressure", "awdPumpCurrent",
         "awdClutchCurL", "awdClutchCurR", "awdClutchPressureL", "awdClutchPressureR",
-        "rduEnabled", "pdcEnabled", "fengEnabled", "lcArmed", "lcRpmTarget", "assEnabled",
+        "rduEnabled", "pdcEnabled", "fengEnabled",
     )
 
     fun link(scenario: DemoScenario, tSec: Double): DemoLink {
@@ -161,8 +161,8 @@ object DemoSimulator {
         val battV: Double, val battA: Double, val battSoc: Double,
         val kr: DoubleArray, val ltft: Double, val octane: Double,
         val afrLeanBias: Double, val eBrake: Boolean,
-        /** 0x420 LaunchControlStatus / 0x225 LC engaged — only the LAUNCH scenario sets them. */
-        val lcOn: Boolean = false, val lcEngaged: Boolean = false,
+        /** 0x420 LaunchControlStatus — only the LAUNCH scenario sets it (#289: no 0x225 "engaged" phase). */
+        val lcOn: Boolean = false,
     )
 
     /** Smooth deterministic noise in roughly [-1, 1]. */
@@ -334,22 +334,23 @@ object DemoSimulator {
 
     /**
      * Launch-control walk-through at standstill, then the launch (DRIVING's motion from its launch point):
-     * e-brake → e-brake + LC on → link lost / recovering with both on → LC engaged with the e-brake still on →
-     * LC engaged, holding 4,500 rpm → launch (engaged clears; LC on alone) → LC off → cruise. Only flags a real decoder writes (0x0C8, 0x420, 0x225).
+     * e-brake → e-brake + LC → link lost / recovering with both on → a simulated 4,500 rpm launch hold with the e-brake
+     * still on, then released → launch (LC still on) → LC off → cruise. Only flags a real decoder writes (0x0C8, 0x420 bit 2);
+     * no 0x225 "engaged" phase and no 0x731 probe values (#289).
      */
     internal fun launch(t: Double, mode: DriveMode): Model {
         val c = t % LAUNCH_CYCLE_S
-        val engaged = c >= LAUNCH_ENGAGED_S && c < LAUNCH_GO_S
+        val hold = c >= LAUNCH_HOLD_S && c < LAUNCH_GO_S
         val base = when {
-            c < LAUNCH_ENGAGED_S -> driving(1.0, mode, hot = false)                        // standstill, foot on the brake
-            engaged -> driving(1.0, mode, hot = false).copy(                               // LC holding launch rpm
+            c < LAUNCH_HOLD_S -> driving(1.0, mode, hot = false)                           // standstill, foot on the brake
+            hold -> driving(1.0, mode, hot = false).copy(                                  // simulated launch rpm hold
                 rpm = 4500.0 + 25 * noise(t, 13.0), throttle = 100.0, brakeBar = 0.0,
                 boostKpa = psiToKpa(4.0 + 0.3 * noise(t, 14.0)), torqueNm = 90.0)
             c < LAUNCH_GO_S + 9.0 -> driving(3.6 + (c - LAUNCH_GO_S), mode, hot = false)    // the launch and pull
             else -> driving(13.0 + (c - LAUNCH_GO_S - 9.0), mode, hot = false)             // cruise
         }
         return base.copy(eBrake = c < LAUNCH_EBRAKE_OFF_S,
-            lcOn = c >= LAUNCH_LC_ON_S && c < LAUNCH_LC_OFF_S, lcEngaged = engaged)
+            lcOn = c >= LAUNCH_LC_ON_S && c < LAUNCH_LC_OFF_S)
     }
 
     internal fun idle(t: Double): Model {
@@ -440,14 +441,13 @@ object DemoSimulator {
             vin = DEMO_VIN, driveMode = mode, escStatus = esc, gear = 0,
             batteryVoltage = m.battV, fuelLevelPct = m.fuelPct, ambientTempC = 21.0,
             gaugeIllumination = 12, eBrake = m.eBrake, reverseStatus = false,
-            launchControlActive = m.lcOn, launchControlEngaged = m.lcEngaged,
+            launchControlActive = m.lcOn,
             engineStatus = 183, ignitionStatus = 7,
             odometerKm = if (obd) ODOMETER_KM else -1L,
             batterySoc = if (obd) m.battSoc else -1.0, batteryTempC = if (obd) 27.0 else -99.0,
             cabinTempC = if (obd) 22.0 else -99.0,
             batteryChargingVoltageDesired = 14.4, batteryCurrentA = m.battA,
             rduEnabled = true, pdcEnabled = true, fengEnabled = true,
-            lcArmed = false, lcRpmTarget = 4500, assEnabled = false,
             isConnected = true, isReconnecting = false,
             framesPerSecond = 400 + 12 * noise(m.rpm / 500, 12.0),
             lastUpdate = nowMs,

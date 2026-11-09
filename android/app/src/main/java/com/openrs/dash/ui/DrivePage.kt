@@ -279,22 +279,19 @@ import kotlin.math.roundToInt
             val gearSize = if (viewportH < 680.dp) 72.sp else 84.sp
             val gearDigitH = with(LocalDensity.current) { gearSize.toDp() }
             // Launch control / e-brake live inside this fixed-size module (never inserted above / below it):
-            // LC on (0x420) = accent edge + caption, engaged (0x225) = stronger edge + tinted face; e-brake = a tag
-            // above the gear digit. Held flags from a dropped link aren't shown.
-            val lcOn = !stale && (vs.launchControlActive || vs.launchControlEngaged)
-            val lcEngaged = !stale && vs.launchControlEngaged
+            // "LC" (the cluster's word, from a fresh 0x420 bit 2 on this connection, #289) = accent edge + caption;
+            // e-brake = a tag above the gear digit. Held flags from a dropped link aren't shown.
+            val lcOn = !stale && com.openrs.dash.data.LaunchControl.shown(vs, wallClockMs(500L))   // 0.5 s tick: 1.5 s window
             val ebrakeOn = !stale && vs.eBrake
             val gearShape = RoundedCornerShape(16.dp)
             Column(
                 Modifier.fillMaxWidth()
                     .then(pageEntrance(1, pageEntered))
                     .instrumentSurface(radius = 16.dp)
-                    .then(if (lcEngaged) Modifier.background(accent.copy(alpha = pillBgAlpha(0.10f)), gearShape) else Modifier)
-                    .then(if (lcOn) Modifier.border(if (lcEngaged) 2.dp else 1.dp, accent.copy(alpha = borderAlpha(if (lcEngaged) 0.95f else 0.7f)), gearShape)
-                          else Modifier)
+                    .then(if (lcOn) Modifier.border(1.dp, accent.copy(alpha = borderAlpha(0.7f)), gearShape) else Modifier)
                     .semantics { if (lcOn || ebrakeOn) stateDescription = listOfNotNull(
                         if (ebrakeOn) "E-brake on" else null,
-                        if (lcEngaged) "Launch control engaged" else if (lcOn) "Launch control on" else null).joinToString(", ") }
+                        if (lcOn) "LC, launch control" else null).joinToString(", ") }
                     .padding(horizontal = 10.dp, vertical = 10.dp)
             ) {
                 // Disconnected: last RPM is frozen — never leave shift LEDs lit on stale data.
@@ -326,12 +323,10 @@ import kotlin.math.roundToInt
                             if (tinted) modeColor else Dim, tween(600), label = "gearLbl")
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (lcOn) {
-                                // Same caption line, same height: launch control replaces "GEAR" while it is on
+                                // Same caption line, same height: "LC" replaces "GEAR" while it is shown
                                 androidx.compose.material3.Text(
-                                    if (lcEngaged) "LAUNCH CONTROL · ENGAGED" else "LAUNCH CONTROL · ON",
-                                    color = actionInk(accent), fontFamily = JetBrainsMonoFamily, fontSize = 10.sp,
-                                    fontWeight = if (lcEngaged) FontWeight.Bold else FontWeight.SemiBold,
-                                    letterSpacing = 0.4.sp, maxLines = 1, softWrap = false)
+                                    "LC", color = actionInk(accent), fontFamily = JetBrainsMonoFamily, fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold, letterSpacing = 0.4.sp, maxLines = 1, softWrap = false)
                             } else {
                                 // 12 dp inside the caption's line height — the module's fixed height doesn't change
                                 TelemetryIcon(RsIcon.GEAR, if (gearActive) IconTone.NORMAL else IconTone.UNAVAILABLE, 12.dp)

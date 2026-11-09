@@ -266,28 +266,18 @@ import kotlinx.coroutines.launch
                         MonoLabel("\u2014 CONNECT TO POPULATE \u2014", 11.sp, Mid, letterSpacing = 0.2.sp)
                     }
                 } else {
-                    // Design pass: one FEATURES panel (was five cards). States read neutral — STANDBY / OFF /
-                    // PROBING were amber, which signals a problem; ON / ARMED take an accent dot; an engaged
-                    // launch control (on / engaged) uses the paint accent, as on DRIVE.
+                    // Design pass: one FEATURES panel (was five cards). States read neutral — OFF / PROBING were amber, which
+                    // signals a problem; ON takes an accent dot.
+                    // #289: Launch Control shows only the cluster's "LC" (fresh 0x420 bit 2, LaunchControl) or "—". The 0x731 probe
+                    // DIDs (DE00 armed, DE01 setpoint, DE02 Auto Start-Stop) are undocumented, at the keyless module's address:
+                    // diagnostics only, so Auto Start-Stop reads "—" (no other source) while the probe still runs.
                     data class Feature(val name: String, val code: String?, val glyph: String, val state: String, val color: Color)
-                    val lcState = when {
-                        vs.isConnected && vs.launchControlEngaged -> Triple("\u26A1", "ENGAGED", actionInk(LocalThemeAccent.current))
-                        vs.isConnected && vs.launchControlActive -> Triple("\u26A1", "ON", actionInk(LocalThemeAccent.current))
-                        vs.lcArmed == true     -> Triple("\u25CF", "ARMED", Frost)
-                        vs.lcArmed == false    -> Triple("\u25CB", "STANDBY", Mid)
-                        isFw && !vs.rsprotTimedOut -> Triple("\u2026", "PROBING", Dim)
-                        else                   -> Triple("\u25CB", "N/A", Dim)
-                    }
-                    val assState = when {
-                        vs.assEnabled == true  -> Triple("\u25CF", "ACTIVE", Frost)
-                        vs.assEnabled == false -> Triple("\u25CB", "OFF", Mid)
-                        isFw && !vs.rsprotTimedOut -> Triple("\u2026", "PROBING", Dim)
-                        else                   -> Triple("\u25CB", "N/A", Dim)
-                    }
+                    val lcShown = com.openrs.dash.data.LaunchControl.shown(vs, com.openrs.dash.ui.wallClockMs(500L))
+                    val lcState = if (lcShown) Triple("\u25CF", "LC", actionInk(LocalThemeAccent.current))
+                                  else Triple("", "\u2014", Dim)
                     val features = buildList {
-                        add(Feature("Launch Control", if (vs.lcRpmTarget > 0) "${vs.lcRpmTarget} RPM" else null,
-                            lcState.first, lcState.second, lcState.third))
-                        add(Feature("Auto Start-Stop", null, assState.first, assState.second, assState.third))
+                        add(Feature("Launch Control", null, lcState.first, lcState.second, lcState.third))
+                        add(Feature("Auto Start-Stop", null, "", "\u2014", Dim))
                         if (!allModulesEmpty) modules.forEach { (label, state, timedOut, subtitle) ->
                             val (g, txt, col) = when {
                                 state == true  -> Triple("\u25CF", "ON", Frost)
