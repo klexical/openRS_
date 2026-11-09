@@ -60,20 +60,34 @@ import java.time.Duration
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class HeaderFitMatrixTest {
 
-    @After fun night() = setThemeMode(ThemeMode.NIGHT)   // theme is process-wide state
+    @After fun reset() {                                 // theme and update state are process-wide
+        setThemeMode(ThemeMode.NIGHT)
+        updateState(com.openrs.dash.update.UpdateState.Idle)
+    }
+
+    /** UpdateManager's state is private: set it by reflection so the link pill reads "UPD" (test only). */
+    private fun updateState(s: com.openrs.dash.update.UpdateState) {
+        val f = com.openrs.dash.update.UpdateManager::class.java.getDeclaredField("_state").apply { isAccessible = true }
+        @Suppress("UNCHECKED_CAST")
+        (f.get(com.openrs.dash.update.UpdateManager) as kotlinx.coroutines.flow.MutableStateFlow<com.openrs.dash.update.UpdateState>).value = s
+    }
 
     private enum class Rec { ACTIVE, PAUSED, OFF }
 
-    private class Shot(val bmp: Bitmap, val d: Float, val heightDp: Float, val tags: Map<String, Rect>, val settings: () -> Int,
-                       val tap: (Float) -> Unit)
+    /** [cogTaps]: how many of the two taps (width − 22 dp, width − 42 dp, on line 1) opened Settings. */
+    private class Shot(val bmp: Bitmap, val d: Float, val heightDp: Float, val tags: Map<String, Rect>, val cogTaps: Int)
 
-    private fun render(esc: EscStatus, rec: Rec, fontScale: Float, theme: ThemeMode): Shot {
+    private fun render(esc: EscStatus, rec: Rec, fontScale: Float, theme: ThemeMode, link: LinkUi = LinkUi.LIVE,
+                       mode: DriveMode = DriveMode.NORMAL, updating: Boolean = false): Shot {
         ShadowChoreographer.setPaused(true)
         ShadowChoreographer.setFrameDelay(Duration.ofMillis(16))
         setThemeMode(theme)
-        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
+        updateState(if (updating) com.openrs.dash.update.UpdateState.Downloading(0.5f, 1L, 2L) else com.openrs.dash.update.UpdateState.Idle)
+        val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+        val activity = controller.get()
         var settings = 0
-        val vs = VehicleState(isConnected = true, driveMode = DriveMode.NORMAL, escStatus = esc)
+        val vs = VehicleState(isConnected = link == LinkUi.LIVE, isReconnecting = link == LinkUi.RECONNECTING,
+            driveMode = mode, escStatus = esc)
         val drive = DriveState(isRecording = rec != Rec.OFF, isPaused = rec == Rec.PAUSED,
             startTime = System.currentTimeMillis() - (2 * 3_600_000L + 14 * 60_000L), cumulativeDistanceKm = 187.3)
         activity.setContent {
@@ -81,7 +95,7 @@ class HeaderFitMatrixTest {
             CompositionLocalProvider(LocalDensity provides Density(base.density, fontScale)) {
                 Box(Modifier.fillMaxWidth()) {
                     AppHeader(vs = vs, prefs = UserPrefs(), onSettings = { settings++ }, onConnect = {}, onDisconnect = {},
-                        onReconnect = {}, link = LinkUi.LIVE, driveState = drive)
+                        onReconnect = {}, link = link, driveState = drive)
                 }
             }
         }
@@ -95,6 +109,7 @@ class HeaderFitMatrixTest {
         val loc = IntArray(2).also { compose.getLocationInWindow(it) }
         val h = compose.height
         val bmp = Bitmap.createBitmap(full, 0, loc[1], full.width, h)
+        full.recycle()
         val tags = HashMap<String, Rect>()
         fun walk(n: SemanticsNode) {
             if (!n.layoutInfo.isPlaced) return   // what is on screen: SubcomposeLayout keeps measured-only copies composed
@@ -109,7 +124,10 @@ class HeaderFitMatrixTest {
             root.dispatchTouchEvent(MotionEvent.obtain(t, t + 50, MotionEvent.ACTION_UP, x, y, 0))
             shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(50))
         }
-        return Shot(bmp, d, h / d, tags, { settings }, tap)
+        tap(22f); tap(42f)
+        // Each case is a new activity: destroy it, or 100+ renders run the test JVM out of memory
+        controller.pause().stop().destroy()
+        return Shot(bmp, d, h / d, tags, settings)
     }
 
     private fun hue(p: Int): FloatArray = FloatArray(3).also { AColor.colorToHSV(p, it) }
@@ -148,8 +166,7 @@ class HeaderFitMatrixTest {
                         assertTrue("[$case] paused dot not drawn (centre = surface, diff $diff)", diff >= 30)
                     }
                 }
-                s.tap(22f); s.tap(42f)
-                assertEquals("[$case] Settings cog 44 dp target", 2, s.settings())
+                assertEquals("[$case] Settings cog 44 dp target", 2, s.cogTaps)
             }
             assertEquals("$widthDp dp $theme font $fs: one height for every ESC / REC state", 1, heights.size)
         }
@@ -162,4 +179,37 @@ class HeaderFitMatrixTest {
     @Config(qualifiers = "w411dp-h914dp-xxhdpi")
     @Test fun `411 dp — one line at font 1_0 and 1_3, two lines at 2_0`() =
         matrix(411, mapOf(1.0f to false, 1.3f to false, 2.0f to true))
+
+    /**
+     * QA T1: at the switch points the line count must not depend on the link state or the drive mode either — RCN / CONN /
+     * OFF (MODE / ESC placeholders), UPD (update downloading), CUSTOM / TRACK — recording or not. Synthetic states.
+     */
+    private fun linkModeSweep(widthDp: Int, expectTwoLines: Map<Float, Boolean>) {
+        val links = listOf(LinkUi.LIVE to false, LinkUi.RECONNECTING to false, LinkUi.CONNECTING to false,
+            LinkUi.OFFLINE to false, LinkUi.LIVE to true, LinkUi.OFFLINE to true)          // (link, update downloading)
+        for ((fs, two) in expectTwoLines) for ((link, upd) in links)
+            for (mode in listOf(DriveMode.NORMAL, DriveMode.CUSTOM, DriveMode.TRACK)) for (rec in listOf(Rec.ACTIVE, Rec.OFF)) {
+                val case = "$widthDp dp font $fs ${link.pill}${if (upd) "+UPD" else ""} $mode $rec"
+                val s = render(EscStatus.PARTIAL, rec, fs, ThemeMode.NIGHT, link, mode, upd)
+                assertEquals("[$case] header lines", if (two) 88f else 44f, s.heightDp, 0.5f)
+                val pills = s.tags["headerPills"]; assertNotNull("[$case] pills", pills); pills!!
+                val linkR = s.tags["headerLink"]; assertNotNull("[$case] link pill", linkR)
+                assertTrue("[$case] pills overlap the link pill: $pills / $linkR", !overlaps(pills, linkR!!))
+                val dot = s.tags["headerRecDot"]
+                if (rec == Rec.ACTIVE) {
+                    assertNotNull("[$case] REC dot missing", dot)
+                    assertTrue("[$case] dot not on line 1 or too small: $dot", dot!!.bottom <= 44 * s.d && dot.width >= 6.5f * s.d)
+                    assertTrue("[$case] pills overlap the dot", !overlaps(pills, dot))
+                }
+                assertEquals("[$case] Settings cog 44 dp target", 2, s.cogTaps)
+            }
+    }
+
+    @Config(qualifiers = "w360dp-h720dp-xxhdpi")
+    @Test fun `360 dp switch points - link state and drive mode don't change the line count`() =
+        linkModeSweep(360, mapOf(1.15f to false, 1.3f to true))
+
+    @Config(qualifiers = "w411dp-h914dp-xxhdpi")
+    @Test fun `411 dp switch points - link state and drive mode don't change the line count`() =
+        linkModeSweep(411, mapOf(1.3f to false, 2.0f to true))
 }
