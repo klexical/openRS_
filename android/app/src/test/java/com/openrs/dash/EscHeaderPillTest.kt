@@ -49,6 +49,7 @@ class EscHeaderPillTest {
         val compose = activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as ViewGroup
         val found = mutableListOf<String>()
         fun walk(n: SemanticsNode) {
+            if (!n.layoutInfo.isPlaced) return   // what is on screen: SubcomposeLayout keeps measured-only copies composed
             n.config.getOrNull(SemanticsProperties.ContentDescription)?.filter { it.startsWith("Stability control") }?.let { found += it }
             n.children.forEach { walk(it) }
         }

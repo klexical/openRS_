@@ -97,6 +97,7 @@ class HeaderFitMatrixTest {
         val bmp = Bitmap.createBitmap(full, 0, loc[1], full.width, h)
         val tags = HashMap<String, Rect>()
         fun walk(n: SemanticsNode) {
+            if (!n.layoutInfo.isPlaced) return   // what is on screen: SubcomposeLayout keeps measured-only copies composed
             n.config.getOrNull(SemanticsProperties.TestTag)?.let { tags[it] = n.boundsInRoot }
             n.children.forEach { walk(it) }
         }
