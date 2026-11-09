@@ -34,10 +34,11 @@ jobs:
 
       - name: Run unit tests
         id: unit-tests
-        run: ./gradlew test --no-daemon
+        # --continue: a failing variant doesn't stop the other one, so both report sets exist (the step still fails)
+        run: ./gradlew test --no-daemon --continue
 
       # A failed unit-test run keeps Gradle's reports, so a failure that only happens on CI (class order, timing) comes with
-      # its stack. One artifact per variant: `test` stops at the first failing variant, so the other's may not exist.
+      # its stack. One artifact per variant; a missing folder (e.g. the tests didn't compile) is a visible warning.
       # Contents: test names, assertion messages, stack traces and test stdout from this checkout only (the build job has no
       # secrets or API keys).
       - name: Upload unit-test reports (debug)
@@ -48,7 +49,7 @@ jobs:
           path: |
             android/app/build/reports/tests/testDebugUnitTest/
             android/app/build/test-results/testDebugUnitTest/
-          if-no-files-found: ignore
+          if-no-files-found: warn
           retention-days: 14
 
       - name: Upload unit-test reports (release)
@@ -59,7 +60,7 @@ jobs:
           path: |
             android/app/build/reports/tests/testReleaseUnitTest/
             android/app/build/test-results/testReleaseUnitTest/
-          if-no-files-found: ignore
+          if-no-files-found: warn
           retention-days: 14
 
       - name: Test the release configuration check
