@@ -37,6 +37,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -194,13 +198,16 @@ import kotlinx.coroutines.launch
                                             }
                                         }
                                     }
-                                    .heightIn(min = 48.dp),
+                                    .heightIn(min = 48.dp)
+                                    // What TalkBack says names the setting, as the header does: "Stability control: Sport"
+                                    .semantics { contentDescription = "Stability control: ${status.label}"; selected = isActive },
                                 contentAlignment = Alignment.Center
                             ) {
                                 MonoLabel(
                                     if (isPending) "..." else label,
                                     11.sp, if (isActive) textColor(if (color == accent) actionInk(accent) else color) else Mid,
-                                    if (isActive) FontWeight.Bold else FontWeight.Normal, letterSpacing = 0.3.sp
+                                    if (isActive) FontWeight.Bold else FontWeight.Normal, letterSpacing = 0.3.sp,
+                                    modifier = Modifier.clearAndSetSemantics { }
                                 )
                             }
                         }
