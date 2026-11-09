@@ -448,7 +448,7 @@ object ObdResponseParser {
         val b5 by lazy(LazyThreadSafetyMode.NONE) { b5OrNull ?: throw ShortReply() }
 
         // The debug line reads B5 only if the reply carries it: reading the lazy [b5] here, outside the ShortReply guard,
-        // threw for every one-byte reply (a valid DE00 / DE02, a truncated DE01) and ended the connection (#NEW_R)
+        // threw for every one-byte reply (a valid DE00 / DE02, a truncated DE01) and ended the connection (#292)
         onDebug?.invoke("RSProt 0x%04X → B4=0x%02X B5=%s".format(did, b4, b5OrNull?.let { "0x%02X".format(it) } ?: "--"))
 
         try {
