@@ -73,6 +73,7 @@ import com.openrs.dash.update.UpdateManager
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ACTIVITY
@@ -853,10 +854,10 @@ class MainActivity : ComponentActivity() {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Box(Modifier.size(7.dp).clip(CircleShape).background(dotColor.copy(alpha = recAlpha)))
+                        Box(Modifier.testTag("headerRecDot").size(7.dp).clip(CircleShape).background(dotColor.copy(alpha = recAlpha)))
                         Text(label, style = recStyle, color = textColor(dotColor), maxLines = 1, softWrap = false)
                     } else if (constraints.maxWidth >= with(density) { 7.dp.roundToPx() }) {
-                        Box(Modifier.size(7.dp).clip(CircleShape).background(dotColor.copy(alpha = recAlpha)))
+                        Box(Modifier.testTag("headerRecDot").size(7.dp).clip(CircleShape).background(dotColor.copy(alpha = recAlpha)))
                     }
                 }
             } else if (autoRecArmed) {
@@ -886,6 +887,7 @@ class MainActivity : ComponentActivity() {
             // while live only asks — the dialog's Disconnect is the sole path to stopConnection().
             Box(
                 Modifier
+                    .testTag("headerLink")
                     .fillMaxHeight()
                     .alpha(quietAlpha)
                     .pressClick(pressedScale = 0.97f) {
@@ -1034,7 +1036,7 @@ private fun HeaderModeEscPills(vs: VehicleState, accent: Color, onModeClick: () 
     }
     val escSpoken = "Stability control: " + if (escKnown) esc.label else "unknown"
 
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.testTag("headerPills"), verticalAlignment = Alignment.CenterVertically) {
         val pending = com.openrs.dash.can.driveModePending.value != null
         val pulseT = rememberInfiniteTransition(label = "modeBar")
         val animAlpha by pulseT.animateFloat(
