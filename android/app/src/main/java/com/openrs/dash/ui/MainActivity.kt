@@ -702,7 +702,8 @@ class MainActivity : ComponentActivity() {
     // #224: a priority layout, not a Row — the Settings cog and the link pill always get their space; the REC
     // label takes what is left (clipped), so a long elapsed time / distance can never push Settings off screen
     HeaderRow(
-        Modifier.fillMaxWidth()
+        reserveRecDot = driveState.isRecording,
+        modifier = Modifier.fillMaxWidth()
             .height(Tokens.StatusBarHeight)
             .background(Surf)
             .draggable(
@@ -957,18 +958,25 @@ class MainActivity : ComponentActivity() {
 /**
  * The header row (#224) — slots: wordmark, MODE/ESC pills, REC, link pill, Settings cog. Measured by priority, not
  * left to right: the wordmark, cog, link pill and pills take their own widths; REC gets what is left (it clips, so
- * a long time or distance can't push anything out). The cog sits at the right edge, the link pill and REC to its
+ * a long time or distance can't push anything out). While recording ([reserveRecDot]) the gaps shrink, to 0 if needed,
+ * so REC keeps at least its 7 dp dot (#283). The cog sits at the right edge, the link pill and REC to its
  * left, and the pills centred on the screen when there is room, else between the wordmark and REC.
  */
 @Composable
-private fun HeaderRow(modifier: Modifier, content: @Composable () -> Unit) {
+private fun HeaderRow(reserveRecDot: Boolean, modifier: Modifier, content: @Composable () -> Unit) {
     androidx.compose.ui.layout.Layout(content, modifier) { ms, c ->
         val loose = c.copy(minWidth = 0, minHeight = 0)
         val logo = ms[0].measure(loose); val pills = ms[1].measure(loose)
         val conn = ms[3].measure(loose); val cog = ms[4].measure(loose)
         val fixed = c.maxWidth - logo.width - pills.width - conn.width - cog.width
-        // Tight (360 dp, every chip populated): narrower gaps before the REC dot is squeezed out
-        val gap = if (fixed - 4 * 6.dp.roundToPx() >= 9.dp.roundToPx()) 6.dp.roundToPx() else 2.dp.roundToPx()
+        // Tight (360 dp, every chip populated): narrower gaps before the REC dot is squeezed out. #283: at 360 dp with
+        // ESC SPORT, 2 dp gaps still left REC under the 7 dp dot and the recording marker vanished — while recording,
+        // the gaps now give way (down to 0) until the dot fits; the cog, link pill and pills keep their measured widths.
+        val gap = when {
+            fixed - 4 * 6.dp.roundToPx() >= 9.dp.roundToPx() -> 6.dp.roundToPx()
+            !reserveRecDot -> 2.dp.roundToPx()
+            else -> ((fixed - 7.dp.roundToPx()) / 4).coerceIn(0, 2.dp.roundToPx())
+        }
         val recMax = (fixed - 4 * gap).coerceAtLeast(0)
         val rec = ms[2].measure(loose.copy(maxWidth = recMax))
         val h = c.maxHeight
