@@ -1037,7 +1037,9 @@ private fun HeaderRow(
         // the gaps now give way (down to 0) until the dot fits; the cog, link pill and pills keep their measured widths.
         val gap = when {
             fixed - 4 * 6.dp.roundToPx() >= 9.dp.roundToPx() -> 6.dp.roundToPx()
-            !reserveRecDot -> 2.dp.roundToPx()
+            // Without a recording the pills sit between two gaps: shrink them too so the pills never touch the link pill
+            // (font 1.15, TRACK: 5 px spare — 2 dp gaps overlapped it by 1 px; QA T1)
+            !reserveRecDot -> (fixed / 2).coerceIn(0, 2.dp.roundToPx())
             else -> ((fixed - dot) / 4).coerceIn(0, 2.dp.roundToPx())
         }
         val recMax = (fixed - 4 * gap).coerceAtLeast(0)
@@ -1264,7 +1266,9 @@ private sealed class AnomalyKind {
         ) {
             icon?.let { TelemetryIcon(it, iconTone, 13.dp, contentDescription = description) }
             label?.let { MonoLabel(it, 9.sp, Dim, letterSpacing = 0.3.sp) }
-            if (value.isNotEmpty()) MonoLabel(value, 10.sp, valueColor, FontWeight.Bold, 0.3.sp)
+            // A pill with a spoken description (ESC: "Stability control: Sport") says it once — the visible word is silent
+            if (value.isNotEmpty()) MonoLabel(value, 10.sp, valueColor, FontWeight.Bold, 0.3.sp,
+                modifier = if (description != null) Modifier.clearAndSetSemantics { } else Modifier)
             if (chevron) MonoLabel("\u25BE", 9.sp, Dim)
         }
         // Pulsing accent bar at bottom (MODE pill)
