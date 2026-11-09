@@ -221,6 +221,6 @@ class EscStampThrottleTest {
         frame(ON, 1_000L); assertEquals(EscStatus.ON, vs.escStatus)
         frame(OFF, 1_020L); assertEquals(EscStatus.OFF, vs.escStatus)
         frame(SPORT, 1_040L); assertEquals(EscStatus.PARTIAL, vs.escStatus)
-        frame(3, 1_060L); assertEquals(EscStatus.LAUNCH, vs.escStatus)
+        frame(3, 1_060L); assertEquals(EscStatus.UNRECOGNIZED, vs.escStatus)   // raw 3: no name (REQ-rc8-esc-owner-wording)
     }
 }

@@ -524,7 +524,7 @@ class BleWriteBoundaryTest {
         advanceTimeBy(60_000L)                                    // engine running: fast group
         val api = BleFirmwareApi(link.conn)
         for (m in DriveMode.entries) api.setDriveMode(m.toFirmwareInt())
-        for (e in EscStatus.entries) api.setEscMode(e.toFirmwareInt())
+        for (e in EscStatus.entries) e.firmwareMode?.let { api.setEscMode(it) }   // only commandable states have a mode
         link.conn.performDtcScan(DtcScanner.MODULES)
         link.conn.performDtcClear(DtcScanner.MODULES)
         runDidProbeScan("PCM", 0x7E0, 0x7E8, listOf(0xABCD), link.conn::sendRawQuery, { false }) { }
@@ -569,7 +569,7 @@ class BleWriteBoundaryTest {
             advanceTimeBy(500L)
             val api = BleFirmwareApi(link.conn)
             val modes = listOf(DriveMode.NORMAL, DriveMode.SPORT, DriveMode.DRIFT, DriveMode.TRACK).map { it.toFirmwareInt() }
-            val escs = listOf(EscStatus.ON, EscStatus.PARTIAL, EscStatus.OFF).map { it.toFirmwareInt() }
+            val escs = listOf(EscStatus.ON, EscStatus.PARTIAL, EscStatus.OFF).map { it.firmwareMode!! }
             for (m in modes) assertTrue("driveMode $m", api.setDriveMode(m).isSuccess)
             for (e in escs) assertTrue("escMode $e", api.setEscMode(e).isSuccess)
             val expected = modes.map { "AT+FRS=driveMode,$it\r" } + escs.map { "AT+FRS=escMode,$it\r" }

@@ -30,7 +30,7 @@ class EscRuleCTest {
         override suspend fun setEscMode(mode: Int): Result<Unit> { calls++; return result }
     }
 
-    private var vs = VehicleState(isConnected = true)
+    private var vs = VehicleState(isConnected = true, escStatus = EscStatus.ON)  // synthetic: the car has reported ESC Normal (a command needs a known starting state)
     private var gen = 1
 
     private fun frame(raw: Int, now: Long) {

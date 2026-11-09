@@ -624,6 +624,8 @@ class CanDataService : Service() {
                                   else com.openrs.dash.diagnostics.AdapterStatusRecord.NO_REQUEST,
         )
         CanDecoder.resetSessionState()
+        // ESC is unknown until this connection's first 0x1C0 frame — a value held from an earlier link is not a reading
+        OpenRSDashApp.instance.vehicleState.update { it.copy(escStatus = com.openrs.dash.data.EscStatus.UNKNOWN) }
         FuelEconomy.reset()
         PerformanceTimer.resetSession()
         OpenRSDashApp.instance.knockEventCount.value = 0

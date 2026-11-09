@@ -37,6 +37,8 @@ object EscCommand {
         data object ConnectionLost : Outcome
         /** No command path (no openRS_ firmware detected). */
         data object Unsupported : Outcome
+        /** Nothing sent: the target, or the car's current state, is unknown (no 0x1C0 yet, or raw 3) — owner decision. */
+        data object Refused : Outcome
     }
 
     /** Firmware button timing (firmware/components/focusrs: FRS_ESC_SHORT_PRESS_MS / _LONG_PRESS_MS, 1 s between presses). */
@@ -72,12 +74,17 @@ object EscCommand {
         clock: () -> Long = System::currentTimeMillis,
     ): Outcome {
         if (api == null) return Outcome.Unsupported
+        // Owner decision (REQ-rc8-esc-owner-wording): nothing is sent for an unknown target, or while the car's state is
+        // unknown (no 0x1C0 yet, or raw 3) — the firmware's press plan depends on where it starts
+        val mode = target.firmwareMode ?: return Outcome.Refused
+        if (!state().escStatus.isKnown) return Outcome.Refused
         if (!inFlight.compareAndSet(false, true)) return Outcome.Busy
         try {
             val from = state().escStatus
+            if (!from.isKnown) return Outcome.Refused
             val link = connectionId()
             val requestedAt = clock()
-            val result = api.setEscMode(target.toFirmwareInt())
+            val result = api.setEscMode(mode)
             result.exceptionOrNull()?.let { e ->
                 return if (e is BusyException) Outcome.Busy else Outcome.Failed(e.message ?: "no reply")
             }
@@ -108,5 +115,6 @@ object EscCommand {
         is Outcome.Failed -> "FAILED — ${LogText.sanitize(o.message)}"
         Outcome.ConnectionLost -> "CONNECTION LOST or replaced while waiting for the car"
         Outcome.Unsupported -> "UNSUPPORTED — no openRS_ firmware command path"
+        Outcome.Refused -> "REFUSED — ESC state unknown (no 0x1C0 report, or unrecognized): nothing sent"
     }
 }

@@ -97,7 +97,7 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   mode (`escFrameLast` / `escFramePrev`), both after the request on the same `connectionEpoch` (rule C, rc.8 follow-up;
   `EscRuleCTest`); reconnect → ConnectionLost; one request at a time; while the message shows, the pending state is already cleared
   (the message comes after the `finally`). Firmware
-  (`focusrs.c` / `focusrs_esc_plan.c`) saves boot ESC only for a CAN-confirmed change; only a 0x1C0 frame decoding to On /
+  (`focusrs.c` / `focusrs_esc_plan.c`) saves boot ESC only for a CAN-confirmed change; only a 0x1C0 frame decoding to Normal /
   Off / Sport counts (raw 3 no longer advances `esc_frames`). `firmware/tests/run.sh` runs the real `focusrs.c` against
   host stubs (`tests/stubs/`). PRO built once in isolation 2026-10-29 (evidence dir), **never flashed** — adapters keep
   their old firmware. Firmware detection ≠ control capability
@@ -151,3 +151,5 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   captures (no ID above 0x7FF logged) cannot exclude such frames, and no raw-line capture exists; the first real session's refused
   frame-line count is the hardware check. A line with a non-hex data character is refused without printing it anywhere (logcat
   included). `SlcanParserTest` carries real 29-bit IDs for the extended cases.
+- **ESC command while the state is unknown (#288)** — `EscCommand` sends nothing (Outcome.Refused) for an unknown target or
+  while the car's ESC state is unknown: no 0x1C0 on this connection, or raw 3. GARAGE disables its ESC chips then.

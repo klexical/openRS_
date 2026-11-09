@@ -29,7 +29,7 @@ class EscCommandTest {
         override suspend fun setEscMode(mode: Int): Result<Unit> { sent += mode; delay(ackDelayMs); return result }
     }
 
-    private var vs = VehicleState(isConnected = true)
+    private var vs = VehicleState(isConnected = true, escStatus = EscStatus.ON)  // synthetic: the car has reported ESC Normal (a command needs a known starting state)
     private var gen = 1
     private fun bytes(hex: String) = ByteArray(hex.length / 2) { hex.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
     /** One 0x1C0 frame (ESCMode at byte 1 bits 5–4: 0 ON, 1 OFF, 2 SPORT) at [now]. */

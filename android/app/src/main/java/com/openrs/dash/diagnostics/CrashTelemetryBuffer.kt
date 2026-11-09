@@ -104,7 +104,7 @@ object CrashTelemetryBuffer {
                 sb.append("\"lonG\":${"%.3f".format(Locale.ROOT, s.longitudinalG)},")
                 sb.append("\"steer\":${"%.1f".format(Locale.ROOT, s.steeringAngle)},")
                 sb.append("\"battV\":${"%.2f".format(Locale.ROOT, s.batteryVoltage)},")
-                sb.append("\"esc\":\"${s.escStatus.label}\",")
+                sb.append("\"esc\":\"${s.escStatus.diagnostic}\",")
                 sb.append("\"mode\":\"${s.driveMode.label}\"")
                 sb.append("}$comma\n")
             }
