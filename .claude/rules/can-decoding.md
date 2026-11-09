@@ -33,3 +33,8 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   separate rear reading: in the capture it equalled byte1−50 in 67/67 (labels conflict between sources); 0x1E8A is the rear one
 - **Throttle may not broadcast** — CAN 0x076 is absent on some cars (`throttleHasSource` stays false). Anything keyed on throttle (PullTracker, knock snapshot, recorded throttle) must read `throttleOrPedalPct`, never `throttlePct` directly
 - **VehicleState slot ceiling** — `copy()` on the 162-param data class is at the JVM 255-slot limit. Adding any new field requires either collapsing an unused existing field (speculative AWD DIDs are candidates) or storing it off-state (DiagnosticLogger / genericValues Map). 0x040 lamp state is decoded + validated but not yet persisted on VehicleState for this reason
+- **ESC names and raw 3 (#288)** — `EscStatus` labels are Ford's Normal / Sport / Off (2018 RS supplement); the raw 0x1C0
+  value → name mapping is CAN-mapped only (RS_HS.dbc VAL_ 448, #125). Raw 3 is `UNRECOGNIZED` (reads "Unknown"; diagnostics
+  "unrecognized (raw 3)"; the name "Launch" rests only on the community DBC); `UNKNOWN` is the default until this connection's
+  first 0x1C0 frame (CanDataService resets it at connection start). Never show "Launch" for ESC, never infer launch control
+  from ESC, and never map an unknown state to a firmware escMode (`firmwareMode` is null for both).

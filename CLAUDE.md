@@ -58,7 +58,9 @@ The per-file map of `android/app/src/main/java/com/openrs/dash/` is `.claude/rul
 0x190  wheel speeds FL/FR/RL/RR (4 × Motorola 15-bit × 0.011343 km/h)
 0x1A4  ambient temp from MS-CAN bridge — byte4 **UNSIGNED** × 0.25°C (DigiCluster v1.0.46 fix); > 55°C rejected (#185)
 0x1B0  drive mode nibble (byte6>>4); combine with 0x420 to distinguish Sport vs Track
-0x1C0  ESC mode (2-bit at bit position 10)
+0x1C0  ESC setting (2-bit at bit position 10): 0 Normal, 1 Off, 2 Sport — Ford's names (2018 RS supplement); the value → name
+       mapping is CAN-mapped only (RS_HS.dbc VAL_ 448, #125). 3 = unrecognized (the name "Launch" rests only on the community
+       DBC; never seen) → unknown, as is no frame yet; while unknown the app sends no ESC command (owner decision, #288)
 0x225  launch control engaged (byte5 bit3)
 0x230  gear (4-bit) — does NOT broadcast on this car
 0x252  brake pressure (12-bit Motorola)
