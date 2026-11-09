@@ -703,6 +703,8 @@ class MainActivity : ComponentActivity() {
     // label takes what is left (clipped), so a long elapsed time / distance can never push Settings off screen
     HeaderRow(
         reserveRecDot = driveState.isRecording,
+        // MODE + ESC pills (placeholder when offline); HeaderRow asks for the compact form only when the REC dot needs it
+        pills = { compact -> HeaderModeEscPills(vs, accent, onModeClick, compact) },
         modifier = Modifier.fillMaxWidth()
             .height(Tokens.StatusBarHeight)
             .background(Surf)
@@ -803,10 +805,9 @@ class MainActivity : ComponentActivity() {
         }
         }
 
-        // ── Center: always MODE + ESC pills (placeholder when offline). ───
-        HeaderModeEscPills(vs, accent, onModeClick)
+        // ── Center: MODE + ESC pills — HeaderRow's `pills` slot. ───
 
-        // ── Right: REC dot + connection pill + settings gear (HeaderRow slots 3–5) ────
+        // ── Right: REC dot + connection pill + settings gear (content slots 2–4) ────
         Box(contentAlignment = Alignment.CenterEnd) {
             val ctx = LocalContext.current
             val autoRecOn = remember(ctx) { AppSettings.getAutoRecordDrives(ctx) }
@@ -956,19 +957,33 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * The header row (#224) — slots: wordmark, MODE/ESC pills, REC, link pill, Settings cog. Measured by priority, not
+ * The header row (#224) — slots: wordmark, MODE/ESC pills ([pills]), REC, link pill, Settings cog. Measured by priority, not
  * left to right: the wordmark, cog, link pill and pills take their own widths; REC gets what is left (it clips, so
  * a long time or distance can't push anything out). While recording ([reserveRecDot]) the gaps shrink, to 0 if needed,
- * so REC keeps at least its 7 dp dot (#283). The cog sits at the right edge, the link pill and REC to its
- * left, and the pills centred on the screen when there is room, else between the wordmark and REC.
+ * so REC keeps at least its 7 dp dot (#283); if 0 dp gaps are still not enough (ESC LAUNCH at 360 dp), the pills are
+ * measured again in their compact form (less padding, every word kept). The cog sits at the right edge, the link pill
+ * and REC to its left, and the pills centred on the screen when there is room, else between the wordmark and REC.
+ * [content] emits the wordmark, REC, link pill and cog, in that order.
  */
 @Composable
-private fun HeaderRow(reserveRecDot: Boolean, modifier: Modifier, content: @Composable () -> Unit) {
-    androidx.compose.ui.layout.Layout(content, modifier) { ms, c ->
+private fun HeaderRow(
+    reserveRecDot: Boolean,
+    pills: @Composable (compact: Boolean) -> Unit,
+    modifier: Modifier,
+    content: @Composable () -> Unit,
+) {
+    androidx.compose.ui.layout.SubcomposeLayout(modifier) { c ->
         val loose = c.copy(minWidth = 0, minHeight = 0)
-        val logo = ms[0].measure(loose); val pills = ms[1].measure(loose)
-        val conn = ms[3].measure(loose); val cog = ms[4].measure(loose)
-        val fixed = c.maxWidth - logo.width - pills.width - conn.width - cog.width
+        val ms = subcompose("slots", content)
+        val logo = ms[0].measure(loose)
+        val conn = ms[2].measure(loose); val cog = ms[3].measure(loose)
+        fun rest(p: androidx.compose.ui.layout.Placeable) = c.maxWidth - logo.width - p.width - conn.width - cog.width
+        var pillsP = subcompose("pills") { pills(false) }.first().measure(loose)
+        // #283 follow-up: the compact pills are composed only when the dot doesn't fit even at 0 dp gaps
+        if (reserveRecDot && rest(pillsP) < 7.dp.roundToPx()) {
+            pillsP = subcompose("pillsCompact") { pills(true) }.first().measure(loose)
+        }
+        val fixed = rest(pillsP)
         // Tight (360 dp, every chip populated): narrower gaps before the REC dot is squeezed out. #283: at 360 dp with
         // ESC SPORT, 2 dp gaps still left REC under the 7 dp dot and the recording marker vanished — while recording,
         // the gaps now give way (down to 0) until the dot fits; the cog, link pill and pills keep their measured widths.
@@ -978,7 +993,7 @@ private fun HeaderRow(reserveRecDot: Boolean, modifier: Modifier, content: @Comp
             else -> ((fixed - 7.dp.roundToPx()) / 4).coerceIn(0, 2.dp.roundToPx())
         }
         val recMax = (fixed - 4 * gap).coerceAtLeast(0)
-        val rec = ms[2].measure(loose.copy(maxWidth = recMax))
+        val rec = ms[1].measure(loose.copy(maxWidth = recMax))
         val h = c.maxHeight
         layout(c.maxWidth, h) {
             fun y(p: androidx.compose.ui.layout.Placeable) = (h - p.height) / 2
@@ -986,14 +1001,14 @@ private fun HeaderRow(reserveRecDot: Boolean, modifier: Modifier, content: @Comp
             val cogX = c.maxWidth - cog.width; cog.placeRelative(cogX, y(cog))
             val connX = cogX - conn.width; conn.placeRelative(connX, y(conn))
             val recX = connX - (if (rec.width > 0) gap + rec.width else 0); rec.placeRelative(recX, y(rec))
-            val lo = logo.width + gap; val hi = recX - gap - pills.width
-            pills.placeRelative(((c.maxWidth - pills.width) / 2).coerceIn(lo, maxOf(lo, hi)), y(pills))
+            val lo = logo.width + gap; val hi = recX - gap - pillsP.width
+            pillsP.placeRelative(((c.maxWidth - pillsP.width) / 2).coerceIn(lo, maxOf(lo, hi)), y(pillsP))
         }
     }
 }
 
 @Composable
-private fun HeaderModeEscPills(vs: VehicleState, accent: Color, onModeClick: () -> Unit) {
+private fun HeaderModeEscPills(vs: VehicleState, accent: Color, onModeClick: () -> Unit, compact: Boolean = false) {
     val connected = vs.isConnected
     // Calm cockpit: the selected mode is a reading (ink), not an alert — TRACK in amber read as a
     // warning. ESC keeps its existing colours for reduced stability control (Sport / Launch / Off).
@@ -1036,9 +1051,10 @@ private fun HeaderModeEscPills(vs: VehicleState, accent: Color, onModeClick: () 
             onClick = if (connected) onModeClick else null,
             pulseBarColor = if (pending) accent else null,
             pulseBarAlpha = barAlpha,
-            chevron = connected
+            chevron = connected,
+            compact = compact
         )
-        Spacer(Modifier.width(2.dp))
+        Spacer(Modifier.width(if (compact) 1.dp else 2.dp))
         // ESC = the sheet's TRACTION symbol (the dash telltale for stability control), in the ESC state colour
         StatusPill(
             label = null,
@@ -1053,6 +1069,7 @@ private fun HeaderModeEscPills(vs: VehicleState, accent: Color, onModeClick: () 
                 else -> IconTone.NORMAL
             },
             description = escSpoken,
+            compact = compact,
         )
     }
 }
@@ -1167,6 +1184,8 @@ private sealed class AnomalyKind {
     icon: RsIcon? = null,
     iconTone: IconTone = IconTone.NORMAL,
     description: String? = null,
+    /** #283: tighter padding when the header has no room left for the REC dot — the text is never cut */
+    compact: Boolean = false,
 ) {
     val shape = RoundedCornerShape(6.dp)
     Box(
@@ -1179,11 +1198,11 @@ private sealed class AnomalyKind {
         Modifier
             .background(Surf2, shape)
             .border(CardBorder, Brd.copy(alpha = borderAlpha(0.6f)), shape)
-            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .padding(horizontal = if (compact) 4.dp else 8.dp, vertical = 4.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            horizontalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 4.dp)
         ) {
             icon?.let { TelemetryIcon(it, iconTone, 13.dp, contentDescription = description) }
             label?.let { MonoLabel(it, 9.sp, Dim, letterSpacing = 0.3.sp) }
