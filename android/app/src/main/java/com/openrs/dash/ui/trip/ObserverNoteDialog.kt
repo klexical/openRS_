@@ -45,9 +45,12 @@ import com.openrs.dash.ui.actionInk
 /**
  * The note form's state on TRIP. [open] (the long-press on MARK) takes the mark, the moment the note is about; [save]
  * hands that same mark back with the text, so a note is stamped when it was asked for and not when it was saved.
+ * A plain class on purpose: no Compose state, so a JVM test can drive it without composing. TripPage keeps whether
+ * the dialog is shown in its own Compose state (a snapshot write outside composition, left undrained by a test,
+ * stopped a later Compose test class from recomposing).
  */
 class NoteFormState<M : Any>(private val mark: () -> M?, private val onSave: (String, M?) -> Unit) {
-    var isOpen by mutableStateOf(false); private set
+    var isOpen = false; private set
     private var taken: M? = null
     fun open() { taken = mark(); isOpen = true }
     fun save(text: String) { onSave(text, taken); close() }

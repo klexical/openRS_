@@ -514,12 +514,15 @@ private fun TripPageContent(
                     // Tap = a bare marker at once; long-press = a marker with words (the observer's note form).
                     // The note is stamped at the long-press, not at SAVE: the form says "marked at this moment".
                     val noteForm = remember(recorder) { NoteFormState(recorder::markNow, recorder::addBookmark) }
+                    var noteShown by remember { mutableStateOf(false) }
                     MapControl(chipSize, pageEntrance(7, controlsVisible, 50), "Bookmark this spot", onClick = {
                         if (preview == null) recorder.addBookmark()
-                    }, onLongClick = { if (preview == null) noteForm.open() }, longDescription = "Add a note") {
+                    }, onLongClick = { if (preview == null) { noteForm.open(); noteShown = true } }, longDescription = "Add a note") {
                         MonoText("\u2691 MARK", 11.sp, Frost, FontWeight.Bold)
                     }
-                    if (noteForm.isOpen) ObserverNoteDialog(onSave = noteForm::save, onDismiss = noteForm::close)
+                    if (noteShown) ObserverNoteDialog(
+                        onSave = { noteForm.save(it); noteShown = false },
+                        onDismiss = { noteForm.close(); noteShown = false })
                 }
             }
 
