@@ -6,7 +6,7 @@ package com.openrs.dash.ui.trip
  */
 internal object TimeSeriesMath {
 
-    /** Bridge over invalid samples shorter than this; break the line on longer gaps. */
+    /** The shortest spacing that can count as a gap: the floor of [gapThresholdMs], and [segments]' default bridge. */
     const val BREAK_GAP_MS = 5_000L
 
     /** A spacing longer than this many typical spacings is a recording gap (#285), never less than [BREAK_GAP_MS]. */
