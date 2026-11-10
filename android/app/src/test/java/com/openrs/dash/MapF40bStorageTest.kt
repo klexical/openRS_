@@ -105,7 +105,8 @@ class MapF40bStorageTest {
 
     // ── recorder ────────────────────────────────────────────────────────────
 
-    @Test fun `the recorder stores MAP only from a fresh decode, never a held value`() {
+    /** Decode 150 kPa, point, point, decode 255 kPa on the stamp [secondStamp] picks, point: the three stored MAP values. */
+    private fun threePoints(secondStamp: (first: Long, clock: DecodeClock) -> Long): List<Double?> {
         val vs = MutableStateFlow(VehicleState(isConnected = true, speedKph = 50.0))
         val gps = FakeGps()
         val rec = DriveRecorder(app, vs, WeatherRepository(""), db, db.driveDao(), { _, _ -> null }, gps, { }).also { recorders += it }
@@ -116,16 +117,34 @@ class MapF40bStorageTest {
             gps.current!!.trySend(Location("t").apply { latitude = 51.5 + i * 1e-4; longitude = -0.1; time = System.currentTimeMillis() })
             check(waitUntil { rec.driveState.value.totalPointCount == before + 1 })
         }
-        // A real F40B reply through the production parse + merge, after the drive started (the gate refuses older decodes)
-        Thread.sleep(5)
-        ObdResponseParser.parsePcmResponse(byteArrayOf(0x04, 0x62, 0xF4.toByte(), 0x0B, 0x96.toByte(), 0, 0, 0), vs.value) { vs.value = ObdMerge.merge(vs.value, it) }
+        // A real F40B reply through the production parse + merge, stamped by the test (#305): the first after the drive
+        // started (the gate refuses older decodes), the second later than the first
+        val clock = DecodeClock()
+        val first = clock.next()
+        decode(vs, 0x96, first)
         point(0)                                                         // fresh decode → 150 kPa
         point(1)                                                         // no new decode → not a reading
-        ObdResponseParser.parsePcmResponse(byteArrayOf(0x04, 0x62, 0xF4.toByte(), 0x0B, 0xFF.toByte(), 0, 0, 0), vs.value) { vs.value = ObdMerge.merge(vs.value, it) }
-        point(2)                                                         // fresh decode at the ceiling → 255 stored as is
+        decode(vs, 0xFF, secondStamp(first, clock))
+        point(2)                                                         // the second decode, at the byte's ceiling
         val id = rec.driveState.value.driveId
         runBlocking { withTimeout(10_000) { rec.stopDrive().join() } }
-        assertEquals(listOf(150.0, null, 255.0), db.driveDao().getPoints(id).map { it.mapKpa })
+        return db.driveDao().getPoints(id).map { it.mapKpa }
+    }
+
+    private fun decode(vs: MutableStateFlow<VehicleState>, b4: Int, atMs: Long) =
+        parsePcmAt(byteArrayOf(0x04, 0x62, 0xF4.toByte(), 0x0B, b4.toByte(), 0, 0, 0), vs.value, atMs) { vs.value = ObdMerge.merge(vs.value, it) }
+
+    @Test fun `the recorder stores MAP only from a fresh decode, never a held value`() {
+        assertEquals(listOf(150.0, null, 255.0), threePoints { _, clock -> clock.next() })      // 255 stored as is
+    }
+
+    /**
+     * #305: what the test above did on CI when its two unpaced decodes fell inside one millisecond. The merge takes the
+     * second value (an equal stamp is carried), the gate does not see a new decode, so the point has no reading. Kept on
+     * purpose: it is the gate's rule, and the reason a test must choose its stamps.
+     */
+    @Test fun `two decodes on one stamp are one decode to the recorder - the second is not stored`() {
+        assertEquals(listOf(150.0, null, null), threePoints { first, _ -> first })
     }
 
     // ── Room v15 ────────────────────────────────────────────────────────────

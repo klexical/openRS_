@@ -5,7 +5,6 @@ import android.app.Application
 import android.location.Location
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
-import com.openrs.dash.can.ObdResponseParser
 import com.openrs.dash.data.DriveDatabase
 import com.openrs.dash.data.DriveState
 import com.openrs.dash.data.MapF40b
@@ -107,10 +106,9 @@ class MapRecordingPollTest {
         val vs = MutableStateFlow(VehicleState(isConnected = true))
         val gps = FakeGps()
         val rec = DriveRecorder(app, vs, WeatherRepository(""), db, db.driveDao(), { _, _ -> null }, gps, { }).also { recorders += it }
-        fun decode(kpa: Int) {
-            Thread.sleep(5)
-            ObdResponseParser.parsePcmResponse(byteArrayOf(0x04, 0x62, 0xF4.toByte(), 0x0B, kpa.toByte(), 0, 0, 0), vs.value) { vs.value = ObdMerge.merge(vs.value, it) }
-        }
+        val clock = DecodeClock()                                          // #305: the test stamps its decodes
+        fun decode(kpa: Int) =
+            parsePcmAt(byteArrayOf(0x04, 0x62, 0xF4.toByte(), 0x0B, kpa.toByte(), 0, 0, 0), vs.value, clock.next()) { vs.value = ObdMerge.merge(vs.value, it) }
         fun start(): Long {
             val opened = gps.opened.get(); val prev = rec.driveState.value.driveId
             rec.startDrive()
