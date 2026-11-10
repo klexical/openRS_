@@ -15,6 +15,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import com.openrs.dash.can.CanDecoder
 import com.openrs.dash.data.EscStatus
+import com.openrs.dash.data.LaunchControl
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.ui.AppHeader
 import com.openrs.dash.ui.DrivePage
@@ -169,6 +170,35 @@ class LaunchControlDisplayTest {
         val probe = g.filter { it == "ARMED" || it == "STANDBY" || it.endsWith(" RPM") || it == "ACTIVE" }
         assertEquals(emptyList<String>(), probe)
         assertEquals(emptyList<String>(), lcWords(g).filter { it != "LAUNCH CONTROL" && it.contains("ENGAGED") })
+    }
+
+    /**
+     * QA F3: GARAGE's "LC" goes away by itself. A fresh 0x420 shows "LC"; then real time passes with the looper idling and
+     * nothing else (no new frame, no state write: the composition holds a plain value), and once the stamp is older than
+     * the window the row reads "—". On GARAGE only the 0.5 s wall-clock tick (`wallClockMs(500L)`) re-reads the time:
+     * without it the row keeps "LC" until some other state changes.
+     */
+    @Test fun `GARAGE's LC goes away by itself after the window - no new frame, no state write`() {
+        garage { live }                                   // warm-up: a JVM's first composition can take over 1.5 s
+        ShadowChoreographer.setPaused(true)
+        ShadowChoreographer.setFrameDelay(Duration.ofMillis(16))
+        val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+        val activity = controller.get()
+        val stampedAt = now
+        val vs = feed(live, CanDecoder.ID_DRIVE_MODE_EXT, f420(lc = true), stampedAt)
+        activity.setContent {
+            Box(Modifier.fillMaxSize()) { MorePage(vs = vs, p = UserPrefs(), snackbarHostState = SnackbarHostState()) }
+        }
+        idleFrames(4)
+        val fresh = texts(activity)
+        assertTrue("LC while the 0x420 is fresh (read ${now - stampedAt} ms after it): $fresh", "LC" in fresh)
+        while (now - stampedAt < LaunchControl.FRESH_MS + 1_000L) { Thread.sleep(50); idleFrames(3) }
+        val later = texts(activity)
+        close(controller)
+        assertTrue("GARAGE's Launch Control row is on screen: $later", "Launch Control" in later)
+        assertTrue("no LC ${now - stampedAt} ms after the last 0x420, with no new frame (failing only in a full run? A Compose " +
+            "test earlier in this JVM left an activity alive or work queued at exit: destroy it and drain the looper there): " +
+            "$later", "LC" !in later)
     }
 
     @Test fun `GARAGE's Launch Control row reads LC only from a fresh 0x420, never from the probe`() {
