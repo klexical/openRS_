@@ -153,3 +153,11 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   included). `SlcanParserTest` carries real 29-bit IDs for the extended cases.
 - **ESC command while the state is unknown (#288)** — `EscCommand` sends nothing (Outcome.Refused) for an unknown target or
   while the car's ESC state is unknown: no 0x1C0 on this connection, or raw 3. GARAGE disables its ESC chips then.
+- **Launch control has one rule (#289)** — the only driver-facing indication is one "LC", `LaunchControl.shown(vs, nowMs)`:
+  connected, the `lcStatus420` stamp (set on every documented 0x420 in `CanDecoder.stampDetail`) at most 1.5 s old, and byte 6
+  bit 2 set. At connection start `CanDataService` clears both LC flags and both stamps (`lcStatus420`, `lc225`;
+  `LaunchControl.clearedForNewConnection`), and an OBD merge never brings a stamp back (`LaunchControl.CAN_TAGS` in `ObdMerge`).
+  Every surface reads it on `wallClockMs(500L)`, so "LC" goes away by itself when 0x420 stops (without the tick GARAGE kept
+  "LC" after the frames stopped). Never show a state word ("ON", "ENGAGED", "ARMED"), and never take LC from 0x225 or the
+  0x731 probe (DE00 / DE01 / DE02, undocumented DIDs at the keyless module's address): those are diagnostics only, with
+  source and age. The cluster check of bit 2 and the window's timing are #289
