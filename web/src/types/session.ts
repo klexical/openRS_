@@ -228,6 +228,28 @@ export interface DiagnosticData {
   probeResults: ProbeResult[]
   dtcResults: DtcEntry[]
   nrcSuppression?: NrcSuppression[]
+  /** rc.8 exports (#253). Undefined = the export recorded none; never the same as an empty inventory. */
+  didInventory?: DidInventory
+}
+
+/** Mode 22 requests of one session, per module and DID, as the app counted them (#253). */
+export interface DidInventory {
+  rows: DidInventoryRow[]
+  /** Counts for DIDs past the app's row limit: not listed. */
+  overflow: number
+  /** Rows of the export this Sapphire could not read: left out, not shown as zeros. */
+  unreadable: number
+}
+
+export interface DidInventoryRow {
+  module: string          // "PCM" | "BCM" | ...
+  responseId: string      // CAN response ID, 3 hex digits ("7E8")
+  did: string             // 4 hex digits ("033E")
+  sent: number
+  positive: number
+  nrcAttributed: number
+  /** Time of the last positive reply since the session start. Absent = no positive reply (not 0). */
+  lastPositiveRelMs?: number
 }
 
 export interface DtcEntry {

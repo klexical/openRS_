@@ -4,7 +4,8 @@ import { EmptyState } from '../ui/EmptyState'
 import { SectionLabel } from '../ui/SectionLabel'
 import { TimeSeriesChart } from '../charts/TimeSeriesChart'
 import { colors } from '../../styles/tokens'
-import type { DtcEntry, NrcSuppression } from '../../types/session'
+import type { DidInventory, DtcEntry, NrcSuppression } from '../../types/session'
+import { DID_STATUS_LABEL, didInventorySummary, didStatus, lastAnswerText, type DidStatus } from '../../lib/didInventory'
 
 export function DiagnosticsPanel() {
   const session = useActiveSession()
@@ -24,6 +25,7 @@ export function DiagnosticsPanel() {
       {diag.fpsTimeline.length > 0 && <FpsChart data={diag.fpsTimeline} />}
       {diag.canInventory.length > 0 && <CanInventoryTable frames={diag.canInventory} />}
       {diag.sessionEvents.length > 0 && <EventsTable events={diag.sessionEvents} />}
+      <DidInventorySection inventory={diag.didInventory} />
       {diag.probeResults.length > 0 && <ProbeTable probes={diag.probeResults} />}
       {diag.decodeTrace.length > 0 && <DecodeTraceTable entries={diag.decodeTrace} />}
       {diag.nrcSuppression && diag.nrcSuppression.length > 0 && (
@@ -129,6 +131,104 @@ function EventsTable({ events }: { events: { ts: number; type: string; message: 
         </div>
       </div>
     </>
+  )
+}
+
+// ── DID Inventory (#253) ──
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+
+/** Mode 22 requests per module and DID. `undefined` = the export has no inventory: said in words, never drawn as an empty table. */
+function DidInventorySection({ inventory }: { inventory: DidInventory | undefined }) {
+  const statusColor: Record<DidStatus, string> = {
+    'answered': colors.ok,
+    'rejected': colors.orange,
+    'never-answered': colors.warn,
+    'not-sent': colors.dim,
+  }
+  const note = 'px-3 py-2 text-xs font-mono text-dim'
+
+  if (!inventory) {
+    return (
+      <div data-testid="did-inventory">
+        <SectionLabel>DID Inventory</SectionLabel>
+        <div className="rounded-lg border border-brd bg-surf2">
+          <p className={note}>
+            Not recorded for this session. The app writes the DID inventory from v2.2.7-rc.8 on; a session imported with an
+            earlier Sapphire has to be imported again.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  const sum = didInventorySummary(inventory)
+  const headline = [
+    plural(sum.total, 'DID', 'DIDs'),
+    `${sum.answered} answered`,
+    `${sum.rejected} rejected`,
+    `${sum.neverAnswered} never answered`,
+    ...(sum.notSent > 0 ? [`${sum.notSent} not sent`] : []),
+  ].join(' · ')
+
+  return (
+    <div data-testid="did-inventory">
+      <SectionLabel>DID Inventory ({inventory.rows.length})</SectionLabel>
+      <div className="rounded-lg border border-brd bg-surf2 overflow-hidden">
+        {inventory.rows.length === 0 ? (
+          <p className={note}>No Mode 22 request was counted in this session.</p>
+        ) : (
+          <>
+            <p className={`${note} text-mid border-b border-brd`}>{headline}</p>
+            <div className="max-h-[400px] overflow-y-auto">
+              <table className="w-full text-xs font-mono">
+                <thead className="sticky top-0 bg-surf3">
+                  <tr className="text-left text-dim uppercase tracking-wider">
+                    <th className="px-3 py-2">Module</th>
+                    <th className="px-3 py-2">DID</th>
+                    <th className="px-3 py-2">Sent</th>
+                    <th className="px-3 py-2">Answered</th>
+                    <th className="px-3 py-2">Rejected</th>
+                    <th className="px-3 py-2" title="Time of the last positive reply since the session start">Last answer</th>
+                    <th className="px-3 py-2">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {inventory.rows.map((r) => {
+                    const status = didStatus(r)
+                    return (
+                      <tr key={`${r.responseId}-${r.did}`} className="border-t border-brd hover:bg-surf3/50 transition-colors">
+                        <td className="px-3 py-1.5 text-frost" title={r.responseId ? `Reply ID 0x${r.responseId}` : undefined}>{r.module || r.responseId || '—'}</td>
+                        <td className="px-3 py-1.5 text-accent">0x{r.did}</td>
+                        <td className="px-3 py-1.5 text-frost">{r.sent.toLocaleString()}</td>
+                        <td className="px-3 py-1.5 text-frost">{r.positive.toLocaleString()}</td>
+                        <td className="px-3 py-1.5 text-frost">{r.nrcAttributed.toLocaleString()}</td>
+                        <td className="px-3 py-1.5 text-dim">{lastAnswerText(r)}</td>
+                        <td className="px-3 py-1.5" style={{ color: statusColor[status] }}>{DID_STATUS_LABEL[status]}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+        {inventory.overflow > 0 && (
+          <p className={`${note} border-t border-brd`}>
+            {plural(inventory.overflow, 'further count', 'further counts')} of DIDs past the row limit: not listed
+          </p>
+        )}
+        {inventory.unreadable > 0 && (
+          <p className={`${note} border-t border-brd`}>
+            {plural(inventory.unreadable, 'row', 'rows')} could not be read and {inventory.unreadable === 1 ? 'is' : 'are'} not shown
+          </p>
+        )}
+        <p className={`${note} border-t border-brd`}>
+          Counted by the app's pollers: sent = requests not known to be lost; answered = positive replies (DID prober answers
+          are not counted); rejected = negative replies charged to that DID.
+        </p>
+      </div>
+    </div>
   )
 }
 
