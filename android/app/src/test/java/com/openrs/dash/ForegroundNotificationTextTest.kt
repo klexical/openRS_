@@ -83,7 +83,10 @@ class ForegroundNotificationTextTest {
         TestServices.destroyAll(); rec.cancel(); db.close()
         AppVisibility.visible.value = false
         link.transition { link.end(LinkPhase.OFF) }
+        settings().edit().remove(AppSettings.KEY_CONNECTION_METHOD).commit()
     }
+
+    private fun settings() = app.getSharedPreferences("openrs_settings", Context.MODE_PRIVATE)
 
     private val fg get() = CanDataService::class.java.getDeclaredField("foreground").apply { isAccessible = true }.get(service) as ForegroundController
     private val applyPhase by lazy {
@@ -106,13 +109,13 @@ class ForegroundNotificationTextTest {
     private fun text(n: Notification = shown()) = n.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
     private fun actions(n: Notification = shown()) = n.actions.orEmpty().map { it.title.toString() }
 
-    private fun expected(phase: LinkPhase) = rec.driveState.value.let {
-        LinkPresentation.notificationText(phase, bluetooth = false, recording = it.isRecording, paused = it.isPaused)
+    private fun expected(phase: LinkPhase, bluetooth: Boolean) = rec.driveState.value.let {
+        LinkPresentation.notificationText(phase, bluetooth = bluetooth, recording = it.isRecording, paused = it.isPaused)
     }
 
-    private fun assertShows(step: String, phase: LinkPhase) {
+    private fun assertShows(step: String, phase: LinkPhase, bluetooth: Boolean = false) {
         val n = shown()
-        assertEquals("$step: notification text", expected(phase), text(n))
+        assertEquals("$step: notification text", expected(phase, bluetooth), text(n))
         val cancel = LinkPresentation.offersCancel(phase, rec.driveState.value.isRecording)
         assertEquals("$step: Cancel offered = $cancel (actions ${actions(n)})", cancel, "Cancel" in actions(n))
     }
@@ -154,6 +157,29 @@ class ForegroundNotificationTextTest {
         assertTrue("location dropped on stop (type $type)", waitUntil { type == CD })
         assertShows("after STOP", LinkPhase.CONNECTED)
         assertTrue("still foreground for the connection", fg.isForeground)
+    }
+
+    @Test fun `Bluetooth - start, pause, resume and stop a recording keep "via Bluetooth" (QA F1)`() {
+        settings().edit().putString(AppSettings.KEY_CONNECTION_METHOD, "BLUETOOTH").commit()
+        AppVisibility.visible.value = true
+        promote(); publish(LinkPhase.CONNECTING); publish(LinkPhase.CONNECTED)
+        assertShows("connected over Bluetooth", LinkPhase.CONNECTED, bluetooth = true)
+
+        startRecording()
+        assertTrue("location added on start (type $type)", waitUntil { type == CD_LOC })
+        assertShows("after START", LinkPhase.CONNECTED, bluetooth = true)
+
+        rec.pauseDrive()
+        assertTrue("location dropped on pause (type $type)", waitUntil { type == CD })
+        assertShows("after PAUSE", LinkPhase.CONNECTED, bluetooth = true)
+
+        rec.resumeDrive()
+        assertTrue("location added on resume (type $type)", waitUntil { type == CD_LOC })
+        assertShows("after RESUME", LinkPhase.CONNECTED, bluetooth = true)
+
+        rec.stopDrive()
+        assertTrue("location dropped on stop (type $type)", waitUntil { type == CD })
+        assertShows("after STOP", LinkPhase.CONNECTED, bluetooth = true)
     }
 
     @Test fun `a recording started behind gains location when the app is opened, and the text stays the recording one`() {
