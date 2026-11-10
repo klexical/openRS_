@@ -42,7 +42,8 @@ import java.time.Duration
  * Frames are synthetic; they go through the real decoder and stamping (CanDecoder.decode + stampFresh, as LinkSession does).
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(qualifiers = "w411dp-h914dp-xxhdpi")
+// DrivePage and MorePage read OpenRSDashApp.instance: start the app here, or the class passes only after another one has
+@Config(qualifiers = "w411dp-h914dp-xxhdpi", application = OpenRSDashApp::class)
 class LaunchControlDisplayTest {
     @Before fun reset() { CanDecoder.resetSessionState() }
 
