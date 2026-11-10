@@ -10,31 +10,44 @@ internal object TimeSeriesMath {
     const val BREAK_GAP_MS = 5_000L
 
     /**
+     * A stretch with no stored sample (#285): between sample [afterIndex] and the next one. Times are elapsed ms from the
+     * first sample. Inferred from the timestamps alone: a stored drive does not say whether it was a pause, a link loss or
+     * no position fix, so nothing here names a cause.
+     */
+    data class Gap(val afterIndex: Int, val fromMs: Long, val toMs: Long)
+
+    /**
      * Split a series into drawable runs of sample indices. Invalid samples (absent /
      * sentinel) are skipped; consecutive valid samples further apart than [breakGapMs]
      * start a new run so the line doesn't imply data across a long hole.
      * [breakOnInvalid] (pressure channels, #207): any invalid sample — no reading, or another source's — ends the run,
      * however short; a line never joins readings across it.
+     * [breakBefore] (#285): a true entry ends the run before that sample whatever the spacing — a recording gap found in
+     * the full-resolution series, which the drawn samples' own spacing cannot show once a drive is downsampled.
      */
     fun segments(
         timestamps: List<Long>,
         valid: List<Boolean>,
         breakGapMs: Long = BREAK_GAP_MS,
         breakOnInvalid: Boolean = false,
+        breakBefore: List<Boolean>? = null,
     ): List<List<Int>> {
         val runs = ArrayList<List<Int>>()
         var current = ArrayList<Int>()
         var lastTs = Long.MIN_VALUE
+        var pendingBreak = false
         for (i in timestamps.indices) {
+            if (breakBefore != null && breakBefore[i]) pendingBreak = true
             if (!valid[i]) {
                 if (breakOnInvalid && current.isNotEmpty()) { runs += current; current = ArrayList() }
                 continue
             }
             val ts = timestamps[i]
-            if (current.isNotEmpty() && ts - lastTs > breakGapMs) {
+            if (current.isNotEmpty() && (pendingBreak || ts - lastTs > breakGapMs)) {
                 runs += current
                 current = ArrayList()
             }
+            pendingBreak = false
             current += i
             lastTs = ts
         }
@@ -77,5 +90,56 @@ internal object TimeSeriesMath {
             }
         }
         return if (min <= max) min to max else null
+    }
+
+    // ── Time axis (#285) ────────────────────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Where the drawn samples of a drive sit on the chart's time axis.
+     *
+     * [buckets] / drawn sample j = the first sample of bucket j. [xFrac] is its position as a fraction of the width,
+     * [totalMs] the span the axis and its ticks cover, [gaps] the recording gaps of the whole drive and [breakBefore] the
+     * drawn samples a line must not be joined to from the left.
+     */
+    class TimeAxis(
+        val buckets: List<IntRange>,
+        val drawnElapsedMs: List<Long>,
+        val totalMs: Long,
+        val xFrac: List<Float>,
+        val breakGapMs: Long,
+        val breakBefore: List<Boolean>,
+        val gaps: List<Gap>,
+    ) {
+        val hasTimeBase: Boolean get() = totalMs > 0L
+
+        /** Drawable runs of drawn-sample indices for a channel whose per-sample validity (full resolution) is [validFull]. */
+        fun runs(validFull: List<Boolean>, breakOnInvalid: Boolean): List<List<Int>> =
+            segments(drawnElapsedMs, bucketValidity(buckets, validFull, breakOnInvalid), breakGapMs, breakOnInvalid, breakBefore)
+    }
+
+    /** The chart's axis as drawn up to rc.8 Build 39: drawn samples spread evenly by index (labels by elapsed time). */
+    fun timeAxis(timestamps: List<Long>, maxPoints: Int): TimeAxis {
+        val buckets = buckets(timestamps.size, maxPoints)
+        val drawn = buckets.map { timestamps[it.first] }
+        val total = ((drawn.lastOrNull() ?: 0L) - (drawn.firstOrNull() ?: 0L)).coerceAtLeast(1L)
+        val lastIdx = (drawn.size - 1).coerceAtLeast(1)
+        val xFrac = List(drawn.size) { it.toFloat() / lastIdx }
+        return TimeAxis(buckets, drawn, total, xFrac, BREAK_GAP_MS, List(drawn.size) { false }, emptyList())
+    }
+
+    /**
+     * Time ticks as (label, fraction of the drive): the smallest step (15 s … 1 h) that keeps ticks
+     * [minGapPx] apart across [widthPx] — every 60 s overlapped on short charts.
+     */
+    fun timeTicks(totalMs: Long, widthPx: Float, minGapPx: Float): List<Pair<String, Float>> {
+        val step = listOf(15_000L, 30_000L, 60_000L, 120_000L, 300_000L, 600_000L, 900_000L, 1_800_000L, 3_600_000L)
+            .firstOrNull { it.toFloat() / totalMs * widthPx >= minGapPx } ?: 3_600_000L
+        return buildList {
+            var t = 0L
+            while (t <= totalMs) {
+                add("%d:%02d".format((t / 60_000).toInt(), ((t % 60_000) / 1000).toInt()) to t.toFloat() / totalMs)
+                t += step
+            }
+        }
     }
 }

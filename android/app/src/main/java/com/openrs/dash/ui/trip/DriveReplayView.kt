@@ -63,23 +63,26 @@ fun DriveReplayView(
     androidx.activity.compose.BackHandler(onBack = onDismiss)
 
     var replayState by remember { mutableStateOf(ReplayState.IDLE) }
-    var cursorIndex by remember { mutableIntStateOf(0) }
     var playbackSpeed by remember { mutableStateOf(1f) }
+    // #285 seam: the playhead, the slider, its labels and the seeks go through ReplayTimeline
+    val timeline = remember(points) { ReplayTimeline(points.map { it.timestamp }) }
+    var position by remember(points) { mutableLongStateOf(0L) }
+    val cursorIndex by remember(points) { derivedStateOf { timeline.indexAt(position) } }
 
     val currentPoint = points[cursorIndex]
-    val startTime = points.first().timestamp
-    val endTime = points.last().timestamp
 
     // ── Playback tick ────────────────────────────────────────────────────
     LaunchedEffect(replayState, playbackSpeed) {
-        if (replayState == ReplayState.PLAYING) {
-            while (cursorIndex < points.size - 1) {
-                delay((1000L / playbackSpeed).toLong())
-                cursorIndex++
-            }
-            // Auto-pause at end
-            replayState = ReplayState.PAUSED
+        if (replayState != ReplayState.PLAYING) return@LaunchedEffect
+        var last = System.nanoTime()
+        while (position < timeline.durationMs) {
+            delay(100)
+            val dtMs = (System.nanoTime() - last) / 1_000_000
+            last += dtMs * 1_000_000
+            position = timeline.advance(position, dtMs, playbackSpeed)
         }
+        // Auto-pause at end
+        replayState = ReplayState.PAUSED
     }
 
     // ── Camera follow during playback ────────────────────────────────────
@@ -183,12 +186,12 @@ fun DriveReplayView(
         ) {
             // Slider
             Slider(
-                value = cursorIndex.toFloat(),
+                value = position.toFloat(),
                 onValueChange = {
                     replayState = ReplayState.PAUSED
-                    cursorIndex = it.toInt().coerceIn(0, points.size - 1)
+                    position = it.toLong().coerceIn(0L, timeline.durationMs)
                 },
-                valueRange = 0f..(points.size - 1).toFloat(),
+                valueRange = 0f..maxOf(timeline.durationMs, 1L).toFloat(),
                 colors = SliderDefaults.colors(
                     thumbColor = accent,
                     activeTrackColor = accent,
@@ -202,8 +205,8 @@ fun DriveReplayView(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                MonoLabel(formatDuration(currentPoint.timestamp - startTime), 11.sp, Frost, FontWeight.Medium)
-                MonoLabel(formatDuration(endTime - startTime), 11.sp, Dim)
+                MonoLabel(timeline.positionText(position), 11.sp, Frost, FontWeight.Medium)
+                MonoLabel(timeline.durationText(), 11.sp, Dim)
             }
 
             Spacer(Modifier.height(8.dp))
@@ -216,7 +219,7 @@ fun DriveReplayView(
             ) {
                 // Rewind 10 samples (~10 s) — labelled; "◀" read as "back"
                 TransportButton("\u221210s") {
-                    cursorIndex = seekIndex(points, cursorIndex, -10_000L)
+                    position = timeline.seek(position, -10_000L)
                 }
 
                 Spacer(Modifier.width(16.dp))
@@ -230,7 +233,7 @@ fun DriveReplayView(
                         ReplayState.PLAYING -> ReplayState.PAUSED
                         else -> {
                             // If at end, restart from beginning
-                            if (cursorIndex >= points.size - 1) cursorIndex = 0
+                            if (position >= timeline.durationMs) position = 0L
                             ReplayState.PLAYING
                         }
                     }
@@ -240,7 +243,7 @@ fun DriveReplayView(
 
                 // Forward 10 samples (~10 s) — "▶" duplicated the play glyph
                 TransportButton("+10s") {
-                    cursorIndex = seekIndex(points, cursorIndex, 10_000L)
+                    position = timeline.seek(position, 10_000L)
                 }
 
                 Spacer(Modifier.width(24.dp))
@@ -305,14 +308,6 @@ internal fun seekIndex(points: List<DrivePointEntity>, from: Int, deltaMs: Long)
         i == from && deltaMs < 0 -> (from - 1).coerceAtLeast(0)
         else -> i
     }
-}
-
-private fun formatDuration(ms: Long): String {
-    if (ms <= 0) return "0:00"
-    val totalSeconds = ms / 1000
-    val minutes = totalSeconds / 60
-    val seconds = totalSeconds % 60
-    return "%d:%02d".format(minutes, seconds)
 }
 
 private fun formatTimestamp(epochMs: Long): String {
