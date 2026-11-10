@@ -261,9 +261,16 @@ fun Modifier.instrumentSurface(level: Level = Level.NORMAL, radius: Dp = Tokens.
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (icon != null) { Telltale(icon, c, 13.dp); Spacer(Modifier.width(5.dp)) }
-        MonoLabel(text, 10.sp, c, FontWeight.Bold, letterSpacing = 0.3.sp)
+        MonoLabel(text, 10.sp, alertChipInk(level, isDayModeNow()), FontWeight.Bold, letterSpacing = 0.3.sp)
     }
 }
+
+/**
+ * Text colour of an [AlertChip]. A muted (STALE / NONE) chip on DAY takes [Mid]: [Dim] on the chip's own [Dim] fill is
+ * about 4.0 : 1 there, under the 4.5 : 1 that text needs (#307). Every other chip keeps its level colour, as before.
+ */
+internal fun alertChipInk(level: Level, day: Boolean): Color =
+    if (day && (level == Level.STALE || level == Level.NONE)) Mid else levelColor(level)
 
 /**
  * Temperature scale, read like a tachometer: the track shows a faint caution zone (warn → crit) and

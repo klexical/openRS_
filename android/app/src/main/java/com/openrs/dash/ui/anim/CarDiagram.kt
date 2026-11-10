@@ -10,66 +10,82 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
 import com.openrs.dash.R
-import com.openrs.dash.data.VehicleState
 import com.openrs.dash.ui.Dim
 import com.openrs.dash.ui.LocalThemeAccent
 import com.openrs.dash.ui.Mid
 import com.openrs.dash.ui.Ok
 import com.openrs.dash.ui.Orange
+import com.openrs.dash.ui.TyreView
 import com.openrs.dash.ui.Warn
 import com.openrs.dash.ui.UnitConversions
 import com.openrs.dash.ui.UserPrefs
 import kotlin.math.roundToInt
 
 /**
- * Focus RS MK3 top-down artwork with each tyre tinted by its pressure state.
+ * Focus RS MK3 top-down artwork with each tyre tinted by its pressure state ([tyres] = FL, FR, RL, RR).
  *
  * Designed to sit between flanking tire cards in the unified
  * Chassis section ("Neon Connect" layout). Connector lines are
  * drawn by the parent composable via [WHEEL_ANCHORS].
  */
 @Composable
-fun CarDiagram(
-    vs: VehicleState,
+internal fun CarDiagram(
+    tyres: List<TyreView>,
     prefs: UserPrefs,
     modifier: Modifier = Modifier
 ) {
     val accent = LocalThemeAccent.current
-
-    // Tire status colors — animated transitions
-    val lowThreshold  = prefs.tireLowPsi.toDouble()
-    val warnThreshold = prefs.tireWarnPsi.toDouble()
-    val highThreshold = prefs.tireHighPsi.toDouble()
-    val flColor by animateColorAsState(
-        tireStatusColor(vs.tirePressLF, lowThreshold, warnThreshold, highThreshold), tween(400), label = "flCol"
-    )
-    val frColor by animateColorAsState(
-        tireStatusColor(vs.tirePressRF, lowThreshold, warnThreshold, highThreshold), tween(400), label = "frCol"
-    )
-    val rlColor by animateColorAsState(
-        tireStatusColor(vs.tirePressLR, lowThreshold, warnThreshold, highThreshold), tween(400), label = "rlCol"
-    )
-    val rrColor by animateColorAsState(
-        tireStatusColor(vs.tirePressRR, lowThreshold, warnThreshold, highThreshold), tween(400), label = "rrCol"
-    )
-
-    // Normal tyres keep the sheet's blue (the paint accent); warning / critical / no data take over.
-    fun state(c: Color) = if (c == Ok) accent else c
-    TopDownCar(bodyColor = Mid,
-        tyreColors = listOf(state(flColor), state(frColor), state(rlColor), state(rrColor)), modifier = modifier)
+    val low = prefs.tireLowPsi.toDouble()
+    val warn = prefs.tireWarnPsi.toDouble()
+    val high = prefs.tireHighPsi.toDouble()
+    // Normal tyres keep the sheet's blue (the paint accent); warning / critical / no data take over. A held reading is
+    // never tinted by its pressure: the wheel is muted and banded (last-known), like its card.
+    val colors = tyres.mapIndexed { i, t ->
+        animateColorAsState(tyreArtColor(t, low, warn, high, accent), tween(400), label = "tyre$i").value
+    }
+    TopDownCar(bodyColor = Mid, tyreColors = colors, modifier = modifier, lastKnown = lastKnownWheels(tyres))
 }
+
+/** Which wheels the artwork draws banded (FL, FR, RL, RR): those whose reading is held, not current and not missing. */
+internal fun lastKnownWheels(tyres: List<TyreView>): List<Boolean> = tyres.map { it.stale }
+
+/** Lead-line / wheel colour for one tyre: its pressure state while the reading is current, muted otherwise. */
+internal fun tyreStateColor(t: TyreView, low: Double, warn: Double, high: Double): Color =
+    if (t.current) tireStatusColor(t.psi, low, warn, high) else Dim
+
+/** The wheel's tint in the artwork: [tyreStateColor], with in-range shown in the paint [accent] and a held reading faded. */
+internal fun tyreArtColor(t: TyreView, low: Double, warn: Double, high: Double, accent: Color): Color {
+    val c = tyreStateColor(t, low, warn, high)
+    return when {
+        t.stale -> Dim.copy(alpha = LAST_KNOWN_TYRE_ALPHA)
+        c == Ok -> accent
+        else    -> c
+    }
+}
+
+/** Opacity of a last-known wheel in the artwork (a wheel with no reading at all stays solid [Dim]). */
+internal const val LAST_KNOWN_TYRE_ALPHA = 0.7f
 
 /**
  * The approved top-down Focus RS artwork (concept sheet) in two layers: line art tinted [bodyColor]
  * (theme ink — light on NIGHT, dark on DAY, no background box) and the four tyres, each tinted with its
  * own colour in [tyreColors] (FL, FR, RL, RR). Draw it at [TOPDOWN_ASPECT] so it never stretches.
+ * A wheel flagged in [lastKnown] is drawn through horizontal bands (the same tyre shape, dashed), so a held reading is
+ * told apart from a current one without relying on colour.
  */
 @Composable
-fun TopDownCar(bodyColor: Color, tyreColors: List<Color>, modifier: Modifier = Modifier) {
+fun TopDownCar(
+    bodyColor: Color, tyreColors: List<Color>, modifier: Modifier = Modifier,
+    lastKnown: List<Boolean> = emptyList(),
+) {
     val body = ImageBitmap.imageResource(R.drawable.rs_topdown_body)
     val tyres = ImageBitmap.imageResource(R.drawable.rs_topdown_tyres)
     Canvas(modifier) {
@@ -80,7 +96,18 @@ fun TopDownCar(bodyColor: Color, tyreColors: List<Color>, modifier: Modifier = M
             val left = if (i % 2 == 0) 0f else size.width / 2f
             val top = if (i < 2) 0f else size.height / 2f
             clipRect(left, top, left + size.width / 2f, top + size.height / 2f) {
-                drawImage(tyres, dstSize = dst, colorFilter = ColorFilter.tint(c), filterQuality = FilterQuality.High)
+                if (lastKnown.getOrElse(i) { false }) {
+                    val band = 2.dp.toPx()
+                    val bands = Path().apply {
+                        var y = top
+                        while (y < top + size.height / 2f) { addRect(Rect(left, y, left + size.width / 2f, y + band)); y += band * 2 }
+                    }
+                    clipPath(bands) {
+                        drawImage(tyres, dstSize = dst, colorFilter = ColorFilter.tint(c), filterQuality = FilterQuality.High)
+                    }
+                } else {
+                    drawImage(tyres, dstSize = dst, colorFilter = ColorFilter.tint(c), filterQuality = FilterQuality.High)
+                }
             }
         }
     }

@@ -38,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.Dp
@@ -63,7 +64,7 @@ import com.openrs.dash.ui.anim.WHEEL_ANCHORS
 import com.openrs.dash.data.thermalBandForTire
 import com.openrs.dash.data.ThermalBand
 import com.openrs.dash.R
-import com.openrs.dash.ui.anim.tireStatusColor
+import com.openrs.dash.ui.anim.tyreStateColor
 import com.openrs.dash.ui.Tokens.CardBorder
 import com.openrs.dash.ui.Tokens.PagePad
 import kotlin.math.abs
@@ -89,18 +90,31 @@ import kotlin.math.roundToInt
     val warnThreshold = p.tireWarnPsi.toDouble()
     val highThreshold = p.tireHighPsi.toDouble()
 
-    // Animated tire status colors for the lead lines (same rule as before)
+    // One view per wheel (FL, FR, RL, RR): the pressure state counts only while that wheel's own reading is current.
+    // Cards, wheel tints, lead lines, the panel edge and the chips all read these; the 1 s clock ages a held reading
+    // (and lets a reading go stale) without waiting for another frame.
+    val nowMs = wallClockMs()
+    fun view(position: String, psi: Double, tag: String) = tyreView(
+        position, psi, vs.fieldLastUpdateMs[tag], vs.isConnected, lowThreshold, warnThreshold, highThreshold, nowMs)
+    val tyreFL = view("Front Left", vs.tirePressLF, "tirePressLF")
+    val tyreFR = view("Front Right", vs.tirePressRF, "tirePressRF")
+    val tyreRL = view("Rear Left", vs.tirePressLR, "tirePressLR")
+    val tyreRR = view("Rear Right", vs.tirePressRR, "tirePressRR")
+    val tyres = listOf(tyreFL, tyreFR, tyreRL, tyreRR)
+    val panel = tyrePanel(tyres)
+
+    // Animated lead-line colours: the pressure state of a current reading, muted for a held or missing one
     val flColor by animateColorAsState(
-        tireStatusColor(vs.tirePressLF, lowThreshold, warnThreshold, highThreshold), tween(400), label = "flC"
+        tyreStateColor(tyreFL, lowThreshold, warnThreshold, highThreshold), tween(400), label = "flC"
     )
     val frColor by animateColorAsState(
-        tireStatusColor(vs.tirePressRF, lowThreshold, warnThreshold, highThreshold), tween(400), label = "frC"
+        tyreStateColor(tyreFR, lowThreshold, warnThreshold, highThreshold), tween(400), label = "frC"
     )
     val rlColor by animateColorAsState(
-        tireStatusColor(vs.tirePressLR, lowThreshold, warnThreshold, highThreshold), tween(400), label = "rlC"
+        tyreStateColor(tyreRL, lowThreshold, warnThreshold, highThreshold), tween(400), label = "rlC"
     )
     val rrColor by animateColorAsState(
-        tireStatusColor(vs.tirePressRR, lowThreshold, warnThreshold, highThreshold), tween(400), label = "rrC"
+        tyreStateColor(tyreRR, lowThreshold, warnThreshold, highThreshold), tween(400), label = "rrC"
     )
 
     // Deltas
@@ -109,16 +123,7 @@ import kotlin.math.roundToInt
     val deltaLR = tpmsDeltaText(vs.tirePressLR, vs.tireStartLR)
     val deltaRR = tpmsDeltaText(vs.tirePressRR, vs.tireStartRR)
 
-    // Tire TPMS is polled by an OBD session, so when CAN is offline there's
-    // nothing to warm up. Collapse the WARMING state to AVAILABLE (→ blank sub
-    // label) so we don't shout "WARMING" four times on every offline view.
-    fun tireAvail(hasReading: Boolean, lastMs: Long?): TempAvail {
-        val a = scalarAvailFor(hasReading, lastMs)
-        // Offline: no reading → quiet placeholder (not WARMING); held reading → STALE (last-known)
-        return if (!vs.isConnected && a == TempAvail.WARMING) TempAvail.AVAILABLE else a.whenDisconnected(vs.isConnected)
-    }
-    val panelLevel = worstLevel(listOf(vs.tirePressLF, vs.tirePressRF, vs.tirePressLR, vs.tirePressRR)
-        .map { tireLevel(it, lowThreshold, warnThreshold, highThreshold) })
+    val panelLevel = panel.level
 
     SectionLabel("TYRES")
     Column(
@@ -159,25 +164,19 @@ import kotlin.math.roundToInt
                             val r = it.positionInRoot()
                             flEdge = Offset(r.x - rowRoot.x + it.size.width, r.y - rowRoot.y + it.size.height / 2f)
                         }) {
-                            TyreCell("FL", vs.tirePressLF, p, lowThreshold,
-                                vs.wheelSpeedFL, vs.tireTempLF, deltaLF,
-                                avail = tireAvail(vs.tirePressLF >= 0, vs.fieldLastUpdateMs["tirePressLF"]),
-                                live = vs.isConnected)
+                            TyreCell("FL", tyreFL, p, vs.wheelSpeedFL, vs.tireTempLF, deltaLF, live = vs.isConnected)
                         }
                         Box(Modifier.onGloballyPositioned {
                             val r = it.positionInRoot()
                             rlEdge = Offset(r.x - rowRoot.x + it.size.width, r.y - rowRoot.y + it.size.height / 2f)
                         }) {
-                            TyreCell("RL", vs.tirePressLR, p, lowThreshold,
-                                vs.wheelSpeedRL, vs.tireTempLR, deltaLR,
-                                avail = tireAvail(vs.tirePressLR >= 0, vs.fieldLastUpdateMs["tirePressLR"]),
-                                live = vs.isConnected)
+                            TyreCell("RL", tyreRL, p, vs.wheelSpeedRL, vs.tireTempLR, deltaLR, live = vs.isConnected)
                         }
                     }
 
                     // Center: RS wireframe with diamond markers + F/R bar
                     CarDiagram(
-                        vs = vs,
+                        tyres = tyres,
                         prefs = p,
                         modifier = Modifier.width(diagW).aspectRatio(TOPDOWN_ASPECT)
                             .onGloballyPositioned {
@@ -195,19 +194,13 @@ import kotlin.math.roundToInt
                             val r = it.positionInRoot()
                             frEdge = Offset(r.x - rowRoot.x, r.y - rowRoot.y + it.size.height / 2f)
                         }) {
-                            TyreCell("FR", vs.tirePressRF, p, lowThreshold,
-                                vs.wheelSpeedFR, vs.tireTempRF, deltaRF,
-                                avail = tireAvail(vs.tirePressRF >= 0, vs.fieldLastUpdateMs["tirePressRF"]),
-                                live = vs.isConnected)
+                            TyreCell("FR", tyreFR, p, vs.wheelSpeedFR, vs.tireTempRF, deltaRF, live = vs.isConnected)
                         }
                         Box(Modifier.onGloballyPositioned {
                             val r = it.positionInRoot()
                             rrEdge = Offset(r.x - rowRoot.x, r.y - rowRoot.y + it.size.height / 2f)
                         }) {
-                            TyreCell("RR", vs.tirePressRR, p, lowThreshold,
-                                vs.wheelSpeedRR, vs.tireTempRR, deltaRR,
-                                avail = tireAvail(vs.tirePressRR >= 0, vs.fieldLastUpdateMs["tirePressRR"]),
-                                live = vs.isConnected)
+                            TyreCell("RR", tyreRR, p, vs.wheelSpeedRR, vs.tireTempRR, deltaRR, live = vs.isConnected)
                         }
                     }
                 }
@@ -220,12 +213,16 @@ import kotlin.math.roundToInt
                         val dH = diagSz.height.toFloat()
                         val stroke = 1.dp.toPx()
 
+                        // A held reading's lead line is dashed, like its banded wheel
+                        val dash = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 3.dp.toPx()))
                         fun connectLine(edge: Offset, anchorIdx: Int, color: Color) {
                             if (edge == Offset.Zero) return
                             val a = WHEEL_ANCHORS[anchorIdx]
                             val diamond = Offset(diagOff.x + dW * a.xFraction,
                                                   diagOff.y + dH * a.yFraction)
-                            drawLine(color.copy(alpha = 0.3f), edge, diamond, strokeWidth = stroke)
+                            val held = tyres[anchorIdx].stale
+                            drawLine(color.copy(alpha = if (held) 0.6f else 0.3f), edge, diamond, strokeWidth = stroke,
+                                pathEffect = if (held) dash else null)
                         }
 
                         connectLine(flEdge, 0, flColor)
@@ -236,20 +233,18 @@ import kotlin.math.roundToInt
                 }
         }
 
-        // ── Low pressure / imbalance warnings (same rules as before) ──
-        val lowTires = buildList {
-            if (vs.tirePressLF in 0.0..(lowThreshold - 0.001)) add("Front Left")
-            if (vs.tirePressRF in 0.0..(lowThreshold - 0.001)) add("Front Right")
-            if (vs.tirePressLR in 0.0..(lowThreshold - 0.001)) add("Rear Left")
-            if (vs.tirePressRR in 0.0..(lowThreshold - 0.001)) add("Rear Right")
-        }
-        val imbalance = tyreImbalanceText(vs.maxTirePressSpread, p)
-        if (lowTires.isNotEmpty() || imbalance != null) {
+        // ── Low pressure / imbalance warnings: current readings only; a held low reading is a muted fact with its age ──
+        val imbalance = tyreImbalanceText(panel.currentSpreadPsi, p)
+        val wasLow = panel.staleLowText
+        if (panel.liveLow.isNotEmpty() || imbalance != null || wasLow != null) {
             Spacer(Modifier.height(10.dp))
-            if (lowTires.isNotEmpty())
-                AlertChip("${lowTires.joinToString(", ").uppercase()} LOW", Level.CRIT, R.drawable.ic_tt_tyre)
-            else if (imbalance != null)
-                AlertChip(imbalance, Level.WARN, R.drawable.ic_tt_tyre)
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (panel.liveLow.isNotEmpty())
+                    AlertChip("${panel.liveLow.joinToString(", ").uppercase()} LOW", Level.CRIT, R.drawable.ic_tt_tyre)
+                else if (imbalance != null)
+                    AlertChip(imbalance, Level.WARN, R.drawable.ic_tt_tyre)
+                if (wasLow != null) AlertChip(wasLow, Level.STALE, R.drawable.ic_tt_tyre)
+            }
         }
 
         // ── TPMS footer: low-pressure alert threshold + last updated ──
@@ -258,7 +253,7 @@ import kotlin.math.roundToInt
             // This is the low-pressure alert (UserPrefs.tireLowPsi), not a recommended pressure.
             InstrumentMeta("LOW ALERT < ${p.displayTire(lowThreshold)} ${p.tireLabel}")
             Spacer(Modifier.weight(1f))
-            InstrumentMeta(tpmsFooterText(vs.tpmsLastUpdate, System.currentTimeMillis()))
+            InstrumentMeta(tpmsFooterText(vs.tpmsLastUpdate, nowMs))
         }
 
         // ── Wheel Rotation Counts (CAN 0x1E0) ──
@@ -310,28 +305,22 @@ private fun tyreTempColor(tempC: Double): Color = when (thermalBandForTire(tempC
 @Composable
 private fun TyreCell(
     label: String,
-    psi: Double,
+    tyre: TyreView,
     p: UserPrefs,
-    lowThreshold: Double,
     wheelSpeedKph: Double,
     tempC: Double,
     deltaText: String,
-    avail: TempAvail = TempAvail.AVAILABLE,
     /** Adapter connected — wheel speed is a per-frame reading, so offline it shows "—" (pressure / temp go STALE). */
     live: Boolean = true,
 ) {
-    val level = tireLevel(psi, lowThreshold, p.tireWarnPsi.toDouble(), p.tireHighPsi.toDouble())
+    // The card's edge, fill, caption and value colour follow the CURRENT state only; a held value is muted
+    val psi = tyre.psi
+    val level = tyre.level
     val hasTemp = tempC > -90
-    val availSub = when (avail) {
-        TempAvail.WARMING     -> "WARMING"
-        TempAvail.STALE       -> "STALE"
-        TempAvail.UNAVAILABLE -> "N/A"
-        TempAvail.AVAILABLE   -> ""
-    }
     val speedStr = if (live) com.openrs.dash.ui.anim.formatWheelSpeed(wheelSpeedKph, p)
                    else "— " + (if (p.speedUnit == "MPH") "mph" else "kph")
     val animTireTemp by animateColorAsState(tyreTempColor(tempC), tween(400), label = "tireTC")
-    val stale = avail == TempAvail.STALE
+    val stale = tyre.stale
 
     BoxWithConstraints(Modifier.fillMaxWidth()) {
     // Narrow columns (360 dp phones) use the short form so every card keeps a one-line caption.
@@ -357,7 +346,7 @@ private fun TyreCell(
             InstrumentMeta(p.tireLabel.lowercase(), Modifier.padding(bottom = 4.dp))
         }
         // Always one status line (STALE / WARMING / pressure change / blank) so all four cards match in height.
-        InstrumentMeta(availSub.ifEmpty { deltaText }, color = if (stale) WarnInk else Dim)
+        InstrumentMeta(tyreStatusText(tyre, deltaText), color = if (stale) WarnInk else Dim)
         if (hasTemp) DataNum(p.displayTemp(tempC) + p.tempLabel, 16.sp, if (stale) Dim else animTireTemp)
         InstrumentMeta(speedStr)
     }
