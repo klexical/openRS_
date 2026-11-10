@@ -120,11 +120,19 @@ class LaunchControlDisplayTest {
     @Test fun `stale - the last 0x420 is older than 1_5 s with the link up - no LC`() {
         val vs = { feed(live, CanDecoder.ID_DRIVE_MODE_EXT, f420(lc = true), now - 2_000L) }
         assertEquals(emptyList<String>(), lcWords(header(vs)) + lcWords(drive(vs)))
+        assertGarageRowWithoutLc(garage(vs))
     }
 
     @Test fun `missing - a held flag with no 0x420 received shows no LC`() {
         val vs = { live.copy(launchControlActive = true) }
         assertEquals(emptyList<String>(), lcWords(header(vs)) + lcWords(drive(vs)))
+        assertGarageRowWithoutLc(garage(vs))
+    }
+
+    /** GARAGE (QA F2): the FEATURES panel is on screen (link up) and its Launch Control row doesn't read "LC". */
+    private fun assertGarageRowWithoutLc(g: List<String>) {
+        assertTrue("GARAGE's Launch Control row is on screen: $g", "Launch Control" in g)
+        assertTrue("GARAGE shows no LC: $g", "LC" !in g)
     }
 
     @Test fun `0x225 bit 3 set never shows LC or ENGAGED`() {
