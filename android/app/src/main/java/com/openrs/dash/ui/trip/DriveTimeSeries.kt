@@ -169,7 +169,8 @@ fun DriveTimeSeries(
         }
 
         // ── Chart area ──────────────────────────────────────────────────
-        // Buckets of at most 360 drawn samples; pressure channels judge validity over the whole bucket (#207)
+        // Buckets of at most 360 drawn samples; pressure channels judge validity over the whole bucket (#207).
+        // Each drawn sample sits at its elapsed time, so a tick is under the sample recorded then (#285).
         val axis = remember(points) { TimeSeriesMath.timeAxis(points.map { it.timestamp }, 360) }
         val sampled = remember(points) { axis.buckets.map { points[it.first] } }
         val dataWidthDp = (sampled.size * 2).dp
@@ -276,7 +277,36 @@ fun DriveTimeSeries(
                         // step that keeps labels a label-width + 12 dp apart (was every 60 s — they overlapped).
                         val tickFracs = TimeSeriesMath.timeTicks(totalDurationMs, w, sampleLabel.size.width + 12.dp.toPx())
 
+                        // Recording gaps (#285): a neutral band where no sample was stored — a stored drive does not
+                        // say whether it was a pause, a link loss or no position fix, so the band names no cause.
+                        val gapLabel = textMeasurer.measure("NO DATA", axisStyle)
+                        val gapBands = if (axis.hasTimeBase) axis.gaps.map { g ->
+                            val x0 = g.fromMs.toFloat() / totalDurationMs * w
+                            val x1 = maxOf(g.toMs.toFloat() / totalDurationMs * w, x0 + 1f)
+                            x0 to x1
+                        } else emptyList()
+
                         onDrawBehind {
+                            gapBands.forEach { (x0, x1) ->
+                                drawRect(
+                                    color = brdColor.copy(alpha = 0.35f),
+                                    topLeft = Offset(x0, padTop),
+                                    size = androidx.compose.ui.geometry.Size(x1 - x0, drawH)
+                                )
+                                for (x in listOf(x0, x1)) {
+                                    drawLine(brdColor, Offset(x, padTop), Offset(x, padTop + drawH), strokeWidth = 1f)
+                                }
+                                if (x1 - x0 >= gapLabel.size.width + 8.dp.toPx()) {
+                                    drawText(
+                                        gapLabel,
+                                        topLeft = Offset(
+                                            (x0 + x1) / 2f - gapLabel.size.width / 2f,
+                                            padTop + 4.dp.toPx()
+                                        )
+                                    )
+                                }
+                            }
+
                             // Grid lines (25%, 50%, 75%)
                             for (frac in listOf(0.25f, 0.5f, 0.75f)) {
                                 val y = padTop + drawH * (1f - frac)
