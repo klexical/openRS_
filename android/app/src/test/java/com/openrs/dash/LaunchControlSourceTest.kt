@@ -97,6 +97,7 @@ class LaunchControlSourceTest {
             .copy(lcArmed = false, lcRpmTarget = -1)
         val j = vs.toJsonObject(nowMs = 10_500L)
         assertEquals(false, j.get("lcArmed")); assertEquals(-1, j.getInt("lcRpmTarget"))
+        assertTrue("DE02 stays in the export (GARAGE's row is dropped, the probe still runs)", j.has("assEnabled"))
         val lc = j.getJSONObject("launchControl")
         assertEquals("on", lc.getString("status420"))
         assertEquals("not received", lc.getString("status225"))

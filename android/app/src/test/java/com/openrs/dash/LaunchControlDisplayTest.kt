@@ -39,7 +39,7 @@ import java.time.Duration
  * production header, DRIVE and GARAGE, read by what they say on screen and to TalkBack.
  * - One small "LC", from 0x420 byte 6 bit 2 in a documented frame, only while that frame is fresh on this connection.
  * - Never "ON" or "ENGAGED", and nothing from 0x225 (MS-CAN per DigiCluster).
- * - GARAGE shows no 0x731 probe state (ARMED / STANDBY / RPM, Auto Start-Stop ACTIVE / OFF).
+ * - GARAGE shows no 0x731 probe state (ARMED / STANDBY / RPM), and has no Auto Start-Stop row (owner: "Drop the row").
  * Frames are synthetic; they go through the real decoder and stamping (CanDecoder.decode + stampFresh, as LinkSession does).
  */
 @RunWith(RobolectricTestRunner::class)
@@ -164,9 +164,9 @@ class LaunchControlDisplayTest {
     }
 
     @Test fun `GARAGE shows no 0x731 probe state - no ARMED, STANDBY, RPM setpoint or Auto Start-Stop ACTIVE`() {
-        val vs = { live.copy(lcArmed = true, lcRpmTarget = 4500, assEnabled = true) }
+        val vs = { live.copy(lcArmed = true, lcRpmTarget = 4500, assEnabled = true, rduEnabled = true) }
         val g = garage(vs)
-        assertTrue("the FEATURES rows are on screen: $g", "Launch Control" in g && "Auto Start-Stop" in g)
+        assertTrue("the FEATURES rows are on screen: $g", "Launch Control" in g && "Rear Drive Unit" in g)
         val probe = g.filter { it == "ARMED" || it == "STANDBY" || it.endsWith(" RPM") || it == "ACTIVE" }
         assertEquals(emptyList<String>(), probe)
         assertEquals(emptyList<String>(), lcWords(g).filter { it != "LAUNCH CONTROL" && it.contains("ENGAGED") })
@@ -199,6 +199,21 @@ class LaunchControlDisplayTest {
         assertTrue("no LC ${now - stampedAt} ms after the last 0x420, with no new frame (failing only in a full run? A Compose " +
             "test earlier in this JVM left an activity alive or work queued at exit: destroy it and drain the looper there): " +
             "$later", "LC" !in later)
+    }
+
+    /**
+     * Owner's decision ("Drop the row"): GARAGE's FEATURES has no Auto Start-Stop row, whatever DE02 says (it is still
+     * probed and exported). Matched by whole text node: the firmware banner names the firmware feature in a sentence and
+     * keeps its wording.
+     */
+    @Test fun `GARAGE has no Auto Start-Stop row - DE02 true, false or unknown, link up`() {
+        for (ass in listOf(true, false, null)) {
+            val g = garage { live.copy(assEnabled = ass, rduEnabled = true) }
+            assertTrue("FEATURES on screen (assEnabled = $ass): $g", "Launch Control" in g && "Rear Drive Unit" in g)
+            assertEquals("no Auto Start-Stop row (assEnabled = $ass): $g", 0, g.count { it == "Auto Start-Stop" })
+            assertTrue("the firmware banner keeps its wording: $g",
+                "Flash openrs-fw to unlock CAN write, LC, Auto Start-Stop & more." in g)
+        }
     }
 
     @Test fun `GARAGE's Launch Control row reads LC only from a fresh 0x420, never from the probe`() {
