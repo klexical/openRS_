@@ -24,6 +24,16 @@ class LinkPresentationTest {
         assertNull(LinkPresentation.phaseFor(AdapterState.Error("timeout")))     // transient — no change
     }
 
+    @Test fun `a foreground post reads the published phase, and before a new job's first phase the attempt starting (#296)`() {
+        assertEquals(LinkPhase.CONNECTING, LinkPresentation.foregroundPhase(LinkPhase.OFF))      // a promote at a first start
+        assertEquals(LinkPhase.CONNECTING, LinkPresentation.foregroundPhase(LinkPhase.FAILED))   // a start after attempts ran out
+        for (p in listOf(LinkPhase.CONNECTING, LinkPhase.CONNECTED, LinkPhase.RECONNECTING)) {
+            assertEquals(p, LinkPresentation.foregroundPhase(p))
+            // every phase a foreground post reads has a text, so the post never falls back
+            assertTrue(LinkPresentation.notificationText(LinkPresentation.foregroundPhase(p), false, false) != null)
+        }
+    }
+
     @Test fun `notification text follows the phase and the foreground ends with the work`() {
         assertEquals("Connecting to vehicle…", LinkPresentation.notificationText(LinkPhase.CONNECTING, false, false))
         assertEquals("Connected via Bluetooth", LinkPresentation.notificationText(LinkPhase.CONNECTED, true, false))

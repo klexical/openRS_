@@ -429,8 +429,16 @@ class CanDataService : Service() {
             .build()
     }
 
-    private fun goForeground(text: String = "Connecting to vehicle…", location: Boolean = false) {
-        val notification = buildNotification(text, offerCancel = !isRecording())
+    /**
+     * startForeground (a promote, or a location type change #261) with the notification [publishNotification] posts for the
+     * same phase and recording state (#296: a re-type while connected posted "Connecting to vehicle…" until the next phase
+     * change, and after a stop a Cancel #212 doesn't offer once connected). Runs under [link]'s transition.
+     */
+    private fun goForeground(location: Boolean = false) {
+        val ds = OpenRSDashApp.instance.driveRecorder.driveState.value
+        val phase = LinkPresentation.foregroundPhase(link.phase)
+        val text = LinkPresentation.notificationText(phase, isBluetooth(), ds.isRecording, ds.isPaused) ?: "Connecting to vehicle…"
+        val notification = buildNotification(text, offerCancel = LinkPresentation.offersCancel(phase, ds.isRecording))
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             // #261: location only while a drive records with fine location and the app was visible (ForegroundTypes)

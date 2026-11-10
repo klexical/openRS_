@@ -43,4 +43,15 @@ internal object LinkPresentation {
      * end the foreground service the recording runs under. There is deliberately no generic Stop action.
      */
     fun offersCancel(phase: LinkPhase, recording: Boolean): Boolean = phase == LinkPhase.CONNECTING && !recording
+
+    /**
+     * The phase a foreground post (startForeground) describes (#296). A promote at a connection start runs while the previous
+     * job's final phase (OFF / FAILED) is still published: it reads as the attempt that is starting. Every other post (a
+     * location type change, #261) reads the published phase, so a re-type while connected can't put back "Connecting…" or
+     * Cancel.
+     */
+    fun foregroundPhase(published: LinkPhase): LinkPhase = when (published) {
+        LinkPhase.OFF, LinkPhase.FAILED -> LinkPhase.CONNECTING
+        LinkPhase.CONNECTING, LinkPhase.CONNECTED, LinkPhase.RECONNECTING -> published
+    }
 }
