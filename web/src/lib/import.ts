@@ -8,6 +8,7 @@ import type {
 import { parseBoostSource, type BoostSource } from './boost'
 import { parseExportSchemaVersion } from './exportSchema'
 import { recordedDistanceKm } from './distance'
+import { parseDidInventory } from './didInventory'
 
 /** Thrown when an imported ZIP cannot be parsed — surfaced to the user via ImportPanel. */
 export class ImportError extends Error {
@@ -714,6 +715,7 @@ async function parseDiagnosticData(zip: JSZip, dtcResults: DtcEntry[], manifest:
     probeResults: parseProbeResults(data),
     dtcResults,
     nrcSuppression: parseNrcSuppression(data),
+    didInventory: parseDidInventory(data),
   }
 }
 

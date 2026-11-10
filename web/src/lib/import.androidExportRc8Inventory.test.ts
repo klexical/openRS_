@@ -6,8 +6,9 @@ import { importZip } from './import'
 import { KNOWN_EXPORT_SCHEMA_VERSION, exportSchemaNote } from './exportSchema'
 
 // #253: the rc.8 diagnostic export adds `didInventory` and `linkIntegrity.isoTpRefused` (additive: the schema version stays
-// the same). Sapphire doesn't read either yet, so the import must go through unchanged, and a never-answered DID carries no
-// time (absent, not 0). Fixture written by the Android production exporter (ExportSchemaVersionTest); synthetic counts and times.
+// the same). Sapphire reads the inventory; a never-answered DID carries no time (absent, not 0), and an export without the
+// key has no inventory (not recorded), never an empty one. Fixture written by the Android production exporter
+// (ExportSchemaVersionTest); synthetic counts and times.
 const DIR = join(process.cwd(), 'src/lib/__fixtures__/android-export-rc8-inventory/')   // vitest root = web/
 
 type Files = Record<string, string>
@@ -45,14 +46,28 @@ describe('rc.8 diagnostic export with the DID inventory (#253) → Sapphire', ()
     expect(s.diagnostics).toBeTruthy()
   })
 
-  it('the added fields change nothing Sapphire reads', async () => {
+  it('reads the inventory as the app wrote it: counts, and a time only for a DID that answered', async () => {
+    const inv = (await importZip(await zip(files()))).diagnostics!.didInventory!
+    expect(inv.rows).toEqual([
+      { module: 'BCM', responseId: '72E', did: '4028', sent: 1, positive: 1, nrcAttributed: 0, lastPositiveRelMs: 0 },
+      { module: 'PCM', responseId: '7E8', did: '033E', sent: 3, positive: 3, nrcAttributed: 0, lastPositiveRelMs: 0 },
+      { module: 'PCM', responseId: '7E8', did: '03ED', sent: 2, positive: 0, nrcAttributed: 2 },
+      { module: 'PCM', responseId: '7E8', did: '0466', sent: 2, positive: 0, nrcAttributed: 0 },
+    ])
+    expect(inv.overflow).toBe(0)
+    expect(inv.unreadable).toBe(0)
+  })
+
+  it('an export without the inventory imports with none (not recorded), and nothing else changes', async () => {
     const f = files()
     const detail = JSON.parse(f[DETAIL])
     delete detail.didInventory
     delete detail.linkIntegrity.isoTpRefused
     const without = await importZip(await zip({ ...f, [DETAIL]: JSON.stringify(detail, null, 2) }))
     const withFields = await importZip(await zip(f))
-    expect({ ...withFields, id: '', importedAt: 0 }).toEqual({ ...without, id: '', importedAt: 0 })
+    expect(without.diagnostics!.didInventory).toBeUndefined()
+    const strip = (s: typeof withFields) => ({ ...s, id: '', importedAt: 0, diagnostics: { ...s.diagnostics!, didInventory: undefined } })
+    expect(strip(withFields)).toEqual(strip(without))                   // isoTpRefused is still not read
   })
 
   it('holds no real run time: the only time values are the fixed ones', () => {
