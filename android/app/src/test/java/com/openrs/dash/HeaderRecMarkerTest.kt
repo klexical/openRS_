@@ -23,6 +23,7 @@ import com.openrs.dash.ui.LinkUi
 import com.openrs.dash.ui.UserPrefs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -44,6 +45,16 @@ import java.time.Duration
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class HeaderRecMarkerTest {
 
+    // Every activity built here is destroyed after the test and the main looper drained: a composition left alive or with
+    // work queued at exit stops later Compose tests in the same JVM from recomposing (LaunchControlDisplayTest, QA F3)
+    private val activities = mutableListOf<org.robolectric.android.controller.ActivityController<ComponentActivity>>()
+
+    @After fun closeActivities() {
+        activities.forEach { it.pause().stop().destroy() }
+        activities.clear()
+        repeat(8) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16)) }
+    }
+
     private class Shot(val bmp: Bitmap, val density: Float, val settingsTaps: () -> Int, val tap: (Float) -> Unit)
 
     private fun render(
@@ -57,7 +68,7 @@ class HeaderRecMarkerTest {
         // frame runs only when the clock moves (16 ms each).
         ShadowChoreographer.setPaused(true)
         ShadowChoreographer.setFrameDelay(Duration.ofMillis(16))
-        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
+        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().also { activities += it }.get()
         var settings = 0
         val vs = VehicleState(isConnected = true, driveMode = mode, escStatus = esc)
         // A long drive (2 h 14 min, 187 km): the longest REC label the header ever has to drop

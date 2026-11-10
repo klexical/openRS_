@@ -72,9 +72,18 @@ class LaunchControlDisplayTest {
         val activity = controller.get()
         val vs = androidx.compose.runtime.mutableStateOf(state())
         activity.setContent { Box(Modifier.fillMaxSize()) { content(vs.value) } }
-        repeat(4) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16)) }
+        idleFrames(4)
         vs.value = state()
-        repeat(4) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16)) }
+        idleFrames(4)
+        val out = texts(activity)
+        close(controller)
+        return out
+    }
+
+    private fun idleFrames(n: Int) = repeat(n) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16)) }
+
+    /** Every text, content description and state description of [activity]'s composition (unmerged tree). */
+    private fun texts(activity: ComponentActivity): List<String> {
         val compose = activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as ViewGroup
         val out = mutableListOf<String>()
         fun walk(n: SemanticsNode) {
@@ -84,8 +93,16 @@ class LaunchControlDisplayTest {
             n.children.forEach { walk(it) }
         }
         walk((compose.getChildAt(0) as ViewRootForTest).semanticsOwner.unmergedRootSemanticsNode)
-        controller.pause().stop().destroy()
         return out
+    }
+
+    /**
+     * Destroy, then let the main looper run what the composition left queued. Without the drain, later Compose tests in the
+     * same JVM, in this class or another, did not recompose after a state write (QA's harness note on F3).
+     */
+    private fun close(controller: org.robolectric.android.controller.ActivityController<ComponentActivity>) {
+        controller.pause().stop().destroy()
+        idleFrames(8)
     }
 
     private fun header(state: () -> VehicleState) = said(state) { vs ->
