@@ -270,14 +270,14 @@ import kotlinx.coroutines.launch
                     // signals a problem; ON takes an accent dot.
                     // #289: Launch Control shows only the cluster's "LC" (fresh 0x420 bit 2, LaunchControl) or "—". The 0x731 probe
                     // DIDs (DE00 armed, DE01 setpoint, DE02 Auto Start-Stop) are undocumented, at the keyless module's address:
-                    // diagnostics only, so Auto Start-Stop reads "—" (no other source) while the probe still runs.
+                    // diagnostics only, and the probe still runs. No Auto Start-Stop row (owner: "Drop the row"; it had no other
+                    // source). The firmware banner below names the firmware feature, not this row.
                     data class Feature(val name: String, val code: String?, val glyph: String, val state: String, val color: Color)
                     val lcShown = com.openrs.dash.data.LaunchControl.shown(vs, com.openrs.dash.ui.wallClockMs(500L))
                     val lcState = if (lcShown) Triple("\u25CF", "LC", actionInk(LocalThemeAccent.current))
                                   else Triple("", "\u2014", Dim)
                     val features = buildList {
                         add(Feature("Launch Control", null, lcState.first, lcState.second, lcState.third))
-                        add(Feature("Auto Start-Stop", null, "", "\u2014", Dim))
                         if (!allModulesEmpty) modules.forEach { (label, state, timedOut, subtitle) ->
                             val (g, txt, col) = when {
                                 state == true  -> Triple("\u25CF", "ON", Frost)
