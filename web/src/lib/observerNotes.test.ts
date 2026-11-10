@@ -79,6 +79,23 @@ describe('what the session recorded around a note', () => {
     expect(c).toEqual({ note: late, lastRequest: null, frames: null, gaps: [] })
   })
 
+  it('with several requests before the note, the latest one is named - whatever their order in the file', () => {
+    const note = { ts: 50_000, text: '', onMap: true }
+    const early = ev(30_000, 'DM_CMD', 'early'); const late = ev(45_000, 'ESC_CMD', 'late')
+    for (const sessionEvents of [[early, late], [late, early]]) {
+      const c = noteContext(note, { sessionEvents, fpsTimeline: [] })
+      expect(c.lastRequest).toEqual({ event: late, beforeMs: 5_000 })
+    }
+  })
+
+  it('with several frame-rate samples in the window, the nearest is taken, not the first or the last', () => {
+    const note = { ts: 50_000, text: '', onMap: true }
+    const near = { ts: 51_000, fps: 1500 }
+    const samples = [{ ts: 40_000, fps: 1 }, near, { ts: 60_000, fps: 2 }]
+    expect(noteContext(note, { sessionEvents: [], fpsTimeline: samples }).frames).toEqual(near)
+    expect(noteContext(note, { sessionEvents: [], fpsTimeline: [...samples].reverse() }).frames).toEqual(near)
+  })
+
   it('an ESC request counts as a request', () => {
     const c = noteContext({ ts: 10, text: '', onMap: true }, { sessionEvents: [ev(5, 'ESC_CMD', 'x')], fpsTimeline: [] })
     expect(c.lastRequest?.event.type).toBe('ESC_CMD')

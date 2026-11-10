@@ -82,6 +82,13 @@ class ObserverNoteFormTest {
         assertTrue(s, s.startsWith("rear felt loose at the hairpin x") && s.length <= ObserverNote.MAX && '\n' !in s)
     }
 
+    @Test fun `the field itself never holds more than the limit or a line break - what is shown is what is saved`() = form {
+        type("first line\nsecond " + "x".repeat(100))
+        val shown = all(root()).single { it.config.getOrNull(SemanticsActions.SetText) != null }
+            .config[SemanticsProperties.EditableText].text
+        assertTrue(shown, shown.length == ObserverNote.MAX && '\n' !in shown && shown.startsWith("first line second x"))
+    }
+
     @Test fun `SAVE NOTE with no text saves an unlabelled marker - CANCEL saves nothing`() = form {
         tap("SAVE NOTE"); assertEquals(listOf(""), saved)
         tap("CANCEL"); assertEquals(1, cancelled[0]); assertEquals(1, saved.size)
