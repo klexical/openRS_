@@ -111,7 +111,7 @@ data[5] = B5,  data[6] = B6 …
 ## Known Gotchas
 
 The gotchas live in `.claude/rules/` as path-scoped Claude Code rules, one file per area (95 entries, moved verbatim on
-2026-11-06; 110 now). Each file loads on demand when a file matching its `paths:` globs is read or edited; the globs start with `**/`
+2026-11-06; 111 now). Each file loads on demand when a file matching its `paths:` globs is read or edited; the globs start with `**/`
 so they also match from a workspace that holds this repository in a subfolder. Rules for editing them:
 
 - A new gotcha goes at the end of its area's file, in the same `- **Title** — …` style; a cross-cutting one goes to
@@ -138,7 +138,7 @@ so they also match from a workspace that holds this repository in a subfolder. R
 | `recorder-trip.md` | Drive recorder, laps and the TRIP tab (7) | `DriveRecorder.kt`, `data/Drive*.kt`, lap files, `ui/trip/` (incl. `TripPage.kt`), `TripPreview.kt`, `MainActivity.kt`, `DriveExportBuilder.kt`, their tests |
 | `diagnostics.md` | DTC scans, DID prober, diagnostic export (12) | `diagnostics/`, `DiagPage.kt`, `SlcanConnection.kt`, `*Ledger*`, `CanDataService.kt`, `DidProberSection.kt`, `PidBrowserSection.kt`, `data/Dtc*.kt`, their tests |
 | `ui-compose.md` | Compose UI (layout, theme, navigation) (17) | any file under `ui/` or `res/`, `HudOverlayService.kt` |
-| `thermal.md` | Thermal readiness, temperature freshness, drive thermal record (5) | any `*Thermal*` file, `TempsPage.kt` (home of `TempAvail`), `ChassisPage.kt`, `DrivePage.kt`, `DriveRecorder.kt`, their tests |
+| `thermal.md` | Thermal readiness, temperature freshness, drive thermal record (6) | any `*Thermal*` file, `TempsPage.kt` (home of `TempAvail`), `ChassisPage.kt`, `DrivePage.kt`, `DriveRecorder.kt`, their tests |
 | `demo-mode.md` | Demo mode (debug builds) (5) | any file under `com/openrs/dash/` (its rules bind every writer of live telemetry) |
 | `build-release.md` | Build, release identity, CI, private builds, test runtime (8) | Gradle files, `android/scripts/`, `android/CHANGELOG.md`, `robolectric.properties`, `update/`, `BuildInfo*`, `*Version*`, `.github/workflows/` |
 
