@@ -511,9 +511,16 @@ private fun TripPageContent(
                     }) { MonoText(if (sfSet) "CLEAR S/F" else "SET S/F", 11.sp, if (sfSet) Orange else ink, FontWeight.Bold) }
 
                     // Bookmark button — an action, not a warning: ink, not amber.
+                    // Tap = a bare marker at once; long-press = a marker with words (the observer's note form).
+                    var noteForm by remember { mutableStateOf(false) }
                     MapControl(chipSize, pageEntrance(7, controlsVisible, 50), "Bookmark this spot", onClick = {
                         if (preview == null) recorder.addBookmark()
-                    }) { MonoText("\u2691 MARK", 11.sp, Frost, FontWeight.Bold) }
+                    }, onLongClick = { if (preview == null) noteForm = true }, longDescription = "Add a note") {
+                        MonoText("\u2691 MARK", 11.sp, Frost, FontWeight.Bold)
+                    }
+                    if (noteForm) ObserverNoteDialog(
+                        onSave = { recorder.addBookmark(it); noteForm = false },
+                        onDismiss = { noteForm = false })
                 }
             }
 
@@ -1104,19 +1111,25 @@ private fun LiveHud(
  * Map overlay control: a compact visible chip ([chipSize]) centred in a 48 × 48 dp touch area. The press
  * ripple is drawn on the chip only; wide labels (SET S/F, MARK) widen both.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MapControl(
     chipSize: androidx.compose.ui.unit.Dp,
     modifier: Modifier = Modifier,
     description: String,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+    longDescription: String? = null,
     content: @Composable () -> Unit,
 ) {
     val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val shape = RoundedCornerShape(6.dp)
     Box(
         modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-            .clickable(interactionSource = interaction, indication = null, onClickLabel = description) { onClick() },
+            .then(if (onLongClick == null)
+                Modifier.clickable(interactionSource = interaction, indication = null, onClickLabel = description) { onClick() }
+            else Modifier.combinedClickable(interactionSource = interaction, indication = null, onClickLabel = description,
+                onLongClickLabel = longDescription, onLongClick = onLongClick, onClick = onClick)),
         contentAlignment = Alignment.Center
     ) {
         Box(

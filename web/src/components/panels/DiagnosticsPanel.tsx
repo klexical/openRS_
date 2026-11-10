@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useActiveSession } from '../../store'
 import { EmptyState } from '../ui/EmptyState'
 import { SectionLabel } from '../ui/SectionLabel'
+import { ObserverNotesSection, eventTypeLabel } from '../ui/ObserverNotes'
 import { TimeSeriesChart } from '../charts/TimeSeriesChart'
 import { colors } from '../../styles/tokens'
 import type { DidInventory, DtcEntry, NrcSuppression } from '../../types/session'
@@ -23,6 +24,7 @@ export function DiagnosticsPanel() {
     <div className="max-w-6xl mx-auto space-y-2">
       {diag.dtcResults.length > 0 && <DtcTable entries={diag.dtcResults} />}
       {diag.fpsTimeline.length > 0 && <FpsChart data={diag.fpsTimeline} />}
+      <ObserverNotesSection sessionEvents={diag.sessionEvents} fpsTimeline={diag.fpsTimeline} />
       {diag.canInventory.length > 0 && <CanInventoryTable frames={diag.canInventory} />}
       {diag.sessionEvents.length > 0 && <EventsTable events={diag.sessionEvents} />}
       <DidInventorySection inventory={diag.didInventory} />
@@ -120,7 +122,7 @@ function EventsTable({ events }: { events: { ts: number; type: string; message: 
                         backgroundColor: (typeColors[e.type] || colors.dim) + '15',
                       }}
                     >
-                      {e.type}
+                      {eventTypeLabel(e.type)}
                     </span>
                   </td>
                   <td className="px-3 py-1.5 text-frost">{e.message}</td>

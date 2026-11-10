@@ -196,6 +196,10 @@ export interface Bookmark {
   rpm: number
   /** Older exports only — current ones omit it (a bookmark stores no boost source). */
   boostPsi?: number
+  /** ms since the drive's start. Absent in exports made before observer notes. */
+  relMs?: number
+  /** "observer_note": what a person in the car marked or typed, not a measurement. Absent in older exports. */
+  kind?: string
 }
 
 // ── Lap & Performance (stubs for T5 Android gap-fill) ──

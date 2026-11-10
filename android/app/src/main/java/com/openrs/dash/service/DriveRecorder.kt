@@ -1022,13 +1022,18 @@ class DriveRecorder(
     // ── Event bookmarks ──────────────────────────────────────────────────
 
     /**
-     * Inserts a GPS-tagged bookmark at the current location with live vehicle state.
-     * No-op when not recording or no location is available.
+     * Records an observer's note ([com.openrs.dash.data.ObserverNote]) while a drive is recording: a session event on
+     * the diagnostic timeline, always, and a GPS-tagged bookmark row with live vehicle state when a location is known.
+     * No-op when not recording.
      */
     fun addBookmark(label: String = "") {
         val state = _driveState.value
         if (!state.isRecording || state.driveId <= 0L) return
-        val loc = state.currentLocation ?: return
+        val note = com.openrs.dash.data.ObserverNote.clean(label)
+        val loc = state.currentLocation
+        DiagnosticLogger.event(com.openrs.dash.data.ObserverNote.EVENT,
+            com.openrs.dash.data.ObserverNote.eventText(note, placed = loc != null))
+        if (loc == null) return
         val vs = vehicleStateFlow.value
         scope.launch(Dispatchers.IO) {
             try {
@@ -1038,7 +1043,7 @@ class DriveRecorder(
                         timestamp = System.currentTimeMillis(),
                         lat = loc.latitude,
                         lng = loc.longitude,
-                        label = label,
+                        label = note,
                         speedKph = vs.speedKph,
                         rpm = vs.rpm.toInt(),
                         // Not shown or exported (#207): bookmarks have no source column, so a value couldn't be named

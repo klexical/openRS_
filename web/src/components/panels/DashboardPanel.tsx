@@ -204,13 +204,14 @@ export function DashboardPanel() {
           {/* Bookmarks summary */}
           {session.trip?.bookmarks && session.trip.bookmarks.length > 0 && (
             <>
-              <SectionLabel>Bookmarks ({session.trip.bookmarks.length})</SectionLabel>
+              <SectionLabel>Observer’s notes ({session.trip.bookmarks.length})</SectionLabel>
               <div className="rounded-lg border border-brd bg-surf2 overflow-hidden">
                 <div className="max-h-[200px] overflow-y-auto">
                   <table className="w-full text-xs font-mono">
                     <thead className="sticky top-0 bg-surf3">
                       <tr className="text-left text-dim uppercase tracking-wider">
-                        <th className="px-3 py-2">Label</th>
+                        <th className="px-3 py-2">Drive time</th>
+                        <th className="px-3 py-2">Note (typed in the car)</th>
                         <th className="px-3 py-2">Speed</th>
                         <th className="px-3 py-2">RPM</th>
                         <th className="px-3 py-2">Boost</th>
@@ -219,7 +220,8 @@ export function DashboardPanel() {
                     <tbody>
                       {session.trip.bookmarks.map((bm, i) => (
                         <tr key={i} className="border-t border-brd hover:bg-surf3/50">
-                          <td className="px-3 py-1.5" style={{ color: '#E040FB' }}>{bm.label || `#${i + 1}`}</td>
+                          <td className="px-3 py-1.5 text-dim">{bm.relMs != null ? fmtDuration(bm.relMs) : '—'}</td>
+                          <td className="px-3 py-1.5" style={{ color: '#E040FB' }}>{bm.label || `#${i + 1} (no text)`}</td>
                           <td className="px-3 py-1.5 text-frost">{bm.speedKph.toFixed(0)} kph</td>
                           <td className="px-3 py-1.5 text-frost">{bm.rpm}</td>
                           <td className="px-3 py-1.5 text-frost">{bm.boostPsi != null ? fmt.boost(bm.boostPsi) : '—'}</td>

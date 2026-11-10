@@ -500,6 +500,9 @@ function parseProfile(data: Record<string, unknown>): DriveProfile {
     rpm: Number(b.rpm || 0),
     // older exports only; current ones omit it (no source) — absent stays absent, never 0
     ...(b.boostPsi != null && Number.isFinite(Number(b.boostPsi)) ? { boostPsi: Number(b.boostPsi) } : {}),
+    // observer notes (additive): absent in older exports; 0 is a real time (a note at the drive's start)
+    ...(typeof b.relMs === 'number' && Number.isFinite(b.relMs) ? { relMs: b.relMs } : {}),
+    ...(typeof b.kind === 'string' && b.kind ? { kind: b.kind } : {}),
   }))
 
   return { version: Number(data.version || 1), drive, peaks, thermalProgression, modeTimeline, bookmarks }
