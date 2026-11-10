@@ -60,6 +60,10 @@ class ObserverNoteEvidenceTest {
         app = ApplicationProvider.getApplicationContext()
         shadowOf(app).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
         db = Room.inMemoryDatabaseBuilder(app, DriveDatabase::class.java).allowMainThreadQueries().build()
+        // Opened here, before a recorder exists. The recorder's start-up query otherwise makes the first open on its own
+        // thread, and a teardown that reaches db.close() meanwhile deadlocks: close() holds Room's close lock and waits
+        // for the open helper's lock; the open holds that lock and, in onOpen, waits for the close lock.
+        db.openHelper.writableDatabase
         rec = DriveRecorder(app, appVs, WeatherRepository(""), db, db.driveDao(), { _, _ -> null }, gps, { })
         DiagnosticLogger.sessionStart("test", 0, prefs = null)
     }

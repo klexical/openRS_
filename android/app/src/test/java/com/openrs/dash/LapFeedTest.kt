@@ -61,6 +61,7 @@ class LapFeedTest {
         ShadowSystemClock.advanceBy(Duration.ofMinutes(10))                       // room for fix ages on the monotonic clock
         ShadowLog.clear()
         db = Room.inMemoryDatabaseBuilder(app, DriveDatabase::class.java).allowMainThreadQueries().build()
+        db.openHelper.writableDatabase      // open before any recorder (see ObserverNoteEvidenceTest)
         rec = DriveRecorder(app, vs, WeatherRepository(""), db, db.driveDao(), { _, _ -> null }, gps, { })
         rec.lapTimer = lapTimer
     }

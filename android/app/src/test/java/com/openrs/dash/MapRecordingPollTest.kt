@@ -103,6 +103,7 @@ class MapRecordingPollTest {
         val app: Application = ApplicationProvider.getApplicationContext()
         shadowOf(app).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
         db = Room.inMemoryDatabaseBuilder(app, DriveDatabase::class.java).allowMainThreadQueries().build()
+        db.openHelper.writableDatabase      // open before any recorder (see ObserverNoteEvidenceTest)
         val vs = MutableStateFlow(VehicleState(isConnected = true))
         val gps = FakeGps()
         val rec = DriveRecorder(app, vs, WeatherRepository(""), db, db.driveDao(), { _, _ -> null }, gps, { }).also { recorders += it }
