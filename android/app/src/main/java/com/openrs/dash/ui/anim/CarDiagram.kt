@@ -51,8 +51,11 @@ internal fun CarDiagram(
     val colors = tyres.mapIndexed { i, t ->
         animateColorAsState(tyreArtColor(t, low, warn, high, accent), tween(400), label = "tyre$i").value
     }
-    TopDownCar(bodyColor = Mid, tyreColors = colors, modifier = modifier, lastKnown = tyres.map { it.stale })
+    TopDownCar(bodyColor = Mid, tyreColors = colors, modifier = modifier, lastKnown = lastKnownWheels(tyres))
 }
+
+/** Which wheels the artwork draws banded (FL, FR, RL, RR): those whose reading is held, not current and not missing. */
+internal fun lastKnownWheels(tyres: List<TyreView>): List<Boolean> = tyres.map { it.stale }
 
 /** Lead-line / wheel colour for one tyre: its pressure state while the reading is current, muted otherwise. */
 internal fun tyreStateColor(t: TyreView, low: Double, warn: Double, high: Double): Color =

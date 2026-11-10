@@ -2,9 +2,16 @@ package com.openrs.dash
 
 import com.openrs.dash.ui.Dim
 import com.openrs.dash.ui.Level
+import com.openrs.dash.ui.Mid
 import com.openrs.dash.ui.Ok
 import com.openrs.dash.ui.Orange
+import com.openrs.dash.ui.Surf
 import com.openrs.dash.ui.TempAvail
+import com.openrs.dash.ui.ThemeMode
+import com.openrs.dash.ui.alertChipInk
+import com.openrs.dash.ui.pillBgAlpha
+import com.openrs.dash.ui.setThemeMode
+import com.openrs.dash.ui.anim.lastKnownWheels
 import com.openrs.dash.ui.anim.LAST_KNOWN_TYRE_ALPHA
 import com.openrs.dash.ui.anim.tyreArtColor
 import com.openrs.dash.ui.anim.tyreStateColor
@@ -13,6 +20,8 @@ import com.openrs.dash.ui.tyrePanel
 import com.openrs.dash.ui.tyreStatusText
 import com.openrs.dash.ui.tyreView
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.luminance
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -40,6 +49,11 @@ class TyreFreshnessTest {
         val held = view(25.0, 61_000L)
         assertEquals(TempAvail.STALE, held.avail); assertEquals(Level.STALE, held.level)
         assertTrue(held.wasLow); assertFalse(held.wasHigh); assertEquals(61_000L, held.ageMs)
+    }
+
+    @Test fun `the limit itself - 60 000 ms is current, one millisecond more is last-known`() {
+        assertTrue(view(25.0, 60_000L).current); assertFalse(view(25.0, 60_000L).stale)
+        assertFalse(view(25.0, 60_001L).current); assertTrue(view(25.0, 60_001L).stale)
     }
 
     @Test fun `link down - a fresh stamp is last-known at once`() {
@@ -105,5 +119,28 @@ class TyreFreshnessTest {
         assertEquals(Dim.copy(alpha = LAST_KNOWN_TYRE_ALPHA), tyreArtColor(view(25.0, 185_000L), 30.0, 32.0, 45.0, accent))
         assertEquals(Dim.copy(alpha = LAST_KNOWN_TYRE_ALPHA), tyreArtColor(view(38.0, 185_000L), 30.0, 32.0, 45.0, accent))
         assertTrue(Ok != accent)
+    }
+
+    @Test fun `artwork - only a held reading is banded, never a current or a missing one`() {
+        assertEquals(listOf(true, false, false, true), lastKnownWheels(listOf(
+            view(25.0, 185_000L), view(38.0), view(-1.0, null), view(38.0, 5_000L, connected = false))))
+    }
+
+    @Test fun `DAY - the muted WAS LOW chip text reaches 4,5 to 1 on its own fill`() {
+        setThemeMode(ThemeMode.DAY)
+        try {
+            val fill = Dim.copy(alpha = pillBgAlpha(0.12f)).compositeOver(Surf)
+            assertTrue("Dim on its own fill is the reason for the rule", contrast(Dim, fill) < 4.5)
+            assertEquals(Mid, alertChipInk(Level.STALE, day = true))
+            assertTrue(contrast(alertChipInk(Level.STALE, day = true), fill) >= 4.5)
+            assertEquals("live chips keep their level colour", Orange, alertChipInk(Level.CRIT, day = true))
+        } finally { setThemeMode(ThemeMode.NIGHT) }
+        assertEquals("NIGHT is unchanged", Dim, alertChipInk(Level.STALE, day = false))
+    }
+
+    /** WCAG 2 contrast ratio of two opaque colours. */
+    private fun contrast(a: Color, b: Color): Double {
+        val (hi, lo) = listOf(a.luminance().toDouble(), b.luminance().toDouble()).sortedDescending()
+        return (hi + 0.05) / (lo + 0.05)
     }
 }
