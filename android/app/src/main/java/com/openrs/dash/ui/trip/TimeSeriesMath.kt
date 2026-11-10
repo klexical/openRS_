@@ -132,6 +132,8 @@ internal object TimeSeriesMath {
      * [buckets] / drawn sample j = the first sample of bucket j. [xFrac] is its position as a fraction of the width,
      * [totalMs] the span the axis and its ticks cover, [gaps] the recording gaps of the whole drive (full resolution,
      * not only the drawn samples) and [breakBefore] the drawn samples a line must not be joined to from the left.
+     * [breakGapMs] is the longest stretch of drawn samples a line bridges over invalid ones: the gap rule applied to the
+     * drawn samples' own spacing.
      * Without a time base ([hasTimeBase] false: every timestamp equal) samples are spread evenly and there are no ticks.
      */
     class TimeAxis(
@@ -172,7 +174,10 @@ internal object TimeSeriesMath {
             val j = buckets.indexOfFirst { it.first > g.afterIndex }
             if (j > 0) breakBefore[j] = true
         }
-        return TimeAxis(buckets, drawn, total, xFrac, BREAK_GAP_MS, breakBefore.toList(), gaps)
+        // Bridge between drawn samples relative to their own spacing: a fixed 5 s broke every pair once a 1 Hz drive was
+        // longer than 36 min (360 drawn ≥ 6 s apart) or the GPS was sparse throughout — dots, no line. 5 s at 1 Hz up to
+        // 360 points, as before; a genuine gap still breaks through breakBefore.
+        return TimeAxis(buckets, drawn, total, xFrac, gapThresholdMs(drawn), breakBefore.toList(), gaps)
     }
 
     /**
