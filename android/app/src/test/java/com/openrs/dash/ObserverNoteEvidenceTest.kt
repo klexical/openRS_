@@ -14,6 +14,7 @@ import com.openrs.dash.diagnostics.DiagnosticReportBuilder
 import com.openrs.dash.diagnostics.DriveExportBuilder
 import com.openrs.dash.service.DriveRecorder
 import com.openrs.dash.service.WeatherRepository
+import com.openrs.dash.ui.trip.NoteFormState
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -136,6 +137,72 @@ class ObserverNoteEvidenceTest {
         assertTrue(msg, msg.all { it in ' '..'~' } && "AA:BB" !in msg && "<mac>" in msg && msg.length <= "Observer note: ".length + 60)
         val stored = dao.getBookmarks(id).single().label
         assertTrue(stored, stored.startsWith("café") && stored.length == 60)
+    }
+
+    // ── Stamped when asked for (the long-press), not when saved ────────────────────────────────────────────────
+
+    /** TRIP's own wiring: the form state over the real recorder, as TripPage builds it. */
+    private fun noteForm() = NoteFormState(rec::markNow, rec::addBookmark)
+
+    @Test fun `a note typed in the form carries the moment the form opened - time, place and readings - not the save`() {
+        val id = start(fixes = 1)                                           // fix 0: lat 10.0, 2,400 rpm
+        val form = noteForm()
+        val before = System.currentTimeMillis()
+        form.open()                                                         // the long-press
+        val after = System.currentTimeMillis()
+        assertTrue(form.isOpen)
+
+        Thread.sleep(120)                                                   // the driver types; the car moves on
+        DiagnosticLogger.event("STATE", "something later")
+        appVs.value = appVs.value.copy(rpm = 5_100.0, speedKph = 99.0)
+        val n = rec.driveState.value.totalPointCount
+        gps.current!!.trySend(Location("test").apply { latitude = 10.5; longitude = 20.0; time = System.currentTimeMillis() })
+        check(waitUntil { rec.driveState.value.totalPointCount == n + 1 })
+        form.save("Cluster showed SPORT")
+        assertFalse(form.isOpen)
+
+        assertTrue(waitUntil { dao.getBookmarks(id).size == 1 })
+        val b = dao.getBookmarks(id).single()
+        assertTrue("stored at the long-press (${b.timestamp} in $before..$after)", b.timestamp in before..after)
+        assertEquals("where the car was then", 10.0, b.lat, 1e-9)
+        assertEquals("what it read then", listOf(2_400, 62.0), listOf(b.rpm, b.speedKph))
+
+        val events = DiagnosticLogger.sessionEvents
+        val note = events.indexOfFirst { it.type == "NOTE" }; val later = events.indexOfFirst { it.message == "something later" }
+        assertTrue("on the timeline before what happened while typing: $events", note in 0 until later)
+        assertTrue("at least the typing time earlier", events[later].relMs - events[note].relMs >= 100)
+        assertEquals("the timeline stays in time order", events.map { it.relMs }.sorted(), events.map { it.relMs })
+    }
+
+    @Test fun `a tap on MARK is still stamped now`() {
+        val id = start(fixes = 1)
+        val before = System.currentTimeMillis()
+        rec.addBookmark()
+        assertTrue(waitUntil { dao.getBookmarks(id).size == 1 })
+        assertTrue(dao.getBookmarks(id).single().timestamp in before..System.currentTimeMillis())
+    }
+
+    @Test fun `a form opened with no drive recording, or saved after its drive ended, records nothing`() {
+        val idle = noteForm().also { it.open() }
+        val id = start(fixes = 1)
+        idle.save("opened before the drive")                                // no mark was taken: nothing to stamp
+        val form = noteForm().also { it.open() }
+        kotlinx.coroutines.runBlocking { kotlinx.coroutines.withTimeout(10_000) { rec.stopDrive().join() } }
+        form.save("typed after STOP")
+        Thread.sleep(100)
+        assertEquals(emptyList<Any>(), notes())
+        assertEquals(0, dao.getBookmarks(id).size)
+    }
+
+    @Test fun `closing the form drops its mark - the next note is not stamped with an old moment`() {
+        val id = start(fixes = 1)
+        val form = noteForm()
+        form.open(); form.close()
+        Thread.sleep(60)
+        val reopened = System.currentTimeMillis()
+        form.open(); form.save("second try")
+        assertTrue(waitUntil { dao.getBookmarks(id).size == 1 })
+        assertTrue(dao.getBookmarks(id).single().timestamp >= reopened)
     }
 
     // ── Drive export ──────────────────────────────────────────────────────────────────────────────────────────────

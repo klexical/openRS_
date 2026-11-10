@@ -506,9 +506,23 @@ object DiagnosticLogger {
         }
     }
 
+    /**
+     * An event that happened at [wallMs] (System.currentTimeMillis) and is written now: an observer's note is stamped
+     * when the driver asked for it, not when the text was saved. It takes its place in time order among the events
+     * already logged. A moment before this session started reads as the session's start (0).
+     */
+    fun eventAt(type: String, msg: String, wallMs: Long) {
+        synchronized(lock) {
+            val relMs = (wallMs - sessionStartMs).coerceAtLeast(0L).coerceAtMost(relativeMs())
+            var i = sessionEventsDeque.size
+            while (i > 0 && sessionEventsDeque[i - 1].relMs > relMs) i--
+            addEventLocked(SessionEvent(relMs, type, msg), at = i)
+        }
+    }
+
     /** Must be called within [synchronized](lock). */
-    private fun addEventLocked(ev: SessionEvent) {
-        sessionEventsDeque.addLast(ev)
+    private fun addEventLocked(ev: SessionEvent, at: Int = sessionEventsDeque.size) {
+        sessionEventsDeque.add(at, ev)
         while (sessionEventsDeque.size > MAX_EVENTS) {
             sessionEventsDeque.removeFirst()
             eventsDropped++
