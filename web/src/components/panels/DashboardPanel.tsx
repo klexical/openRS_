@@ -14,6 +14,7 @@ import { ThermalProgressionChart } from '../charts/ThermalProgressionChart'
 import { ExportDropdown } from '../ui/ExportDropdown'
 import { fmtNumber, fmtDuration, useUnitFormatters } from '../../lib/format'
 import { latestTpms } from '../../lib/readings'
+import { isDistanceEstimate, DISTANCE_ESTIMATE_NOTE } from '../../lib/distance'
 import { exportSchemaNote } from '../../lib/exportSchema'
 import { colors } from '../../styles/tokens'
 
@@ -135,7 +136,11 @@ export function DashboardPanel() {
           {/* Trip KPIs with sparklines */}
           <SectionLabel>Trip Summary</SectionLabel>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <MetricCard label="Distance" value={fmt.distance(trip.distanceKm)} />
+            <MetricCard
+              label="Distance"
+              value={fmt.distance(trip.distanceKm)}
+              sub={isDistanceEstimate(trip) ? DISTANCE_ESTIMATE_NOTE : undefined}
+            />
             <MetricCard label="Duration" value={fmtDuration(trip.durationMs)} />
             <SparkMetricCard label="Avg Speed" value={fmt.speed(trip.avgSpeedKph)} sparkData={speedData} color={colors.ok} />
             <SparkMetricCard label="Avg RPM" value={fmtNumber(trip.avgRpm, 0)} sparkData={rpmData} color={colors.accent} />

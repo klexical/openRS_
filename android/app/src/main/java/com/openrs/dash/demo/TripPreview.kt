@@ -27,7 +27,9 @@ import kotlin.math.sin
  * `adb shell am start --activity-single-top -n com.openrs.dash.debug/com.openrs.dash.ui.MainActivity
  *   --es trippreview history|selected|recording|paused|summary|compare|replay|export|off`
  * `summary:N` opens sample drive N's summary (1 Custom · 2 STREET → RACE · 3 TRACK · 4 legacy record · 5 none ·
- * 6 early record: missing START, END read at stop above the saved peak).
+ * 6 early record: missing START, END read at stop above the saved peak · 7 a 60 s gap at 1 Hz · 8 a 40 min drive at 1 Hz
+ * with a 90 s gap — #285's chart time axis and line breaks). `replay:N` opens sample drive N in REPLAY (plain `replay` =
+ * drive 1). Send `off` between two values: the page reacts to a change of mode only.
  */
 object TripPreview {
     val AVAILABLE: Boolean = BuildConfig.DEBUG
@@ -43,19 +45,28 @@ object TripPreview {
     @Volatile var summaryDriveId: Long = -1L
         private set
 
-    /** Parses the intent extra; returns false for an unknown value. */
+    /** Sample drive the REPLAY mode opens (negative id). */
+    @Volatile var replayDriveId: Long = -1L
+        private set
+
     /** `recording:long` — a 2 h 14 min, 187.3 km recording, for the header's longest REC label (#224). */
     @Volatile var longRecording = false
         private set
 
+    /** Parses the intent extra; returns false for an unknown value. */
     fun apply(arg: String): Boolean {
         longRecording = arg == "recording:long"
         if (longRecording) { set(Mode.RECORDING); return true }
         if (arg.startsWith("summary:")) {
-            val n = arg.substringAfter(':').toLongOrNull()?.takeIf { it in 1..6 } ?: return false
+            val n = arg.substringAfter(':').toLongOrNull()?.takeIf { it in 1..SAMPLE_DRIVES } ?: return false
             summaryDriveId = -n; set(Mode.SUMMARY); return true
         }
+        if (arg.startsWith("replay:")) {
+            val n = arg.substringAfter(':').toLongOrNull()?.takeIf { it in 1..SAMPLE_DRIVES } ?: return false
+            replayDriveId = -n; set(Mode.REPLAY); return true
+        }
         if (arg == "summary") summaryDriveId = -1L
+        if (arg == "replay") replayDriveId = -1L
         val m = when (arg) {
             "off", "exit" -> null
             else -> Mode.entries.firstOrNull { it.name.equals(arg, ignoreCase = true) } ?: return false
@@ -66,6 +77,7 @@ object TripPreview {
     // ── Sample data ─────────────────────────────────────────────────────────
 
     private const val DAY_MS = 86_400_000L
+    private const val SAMPLE_DRIVES = 8L
     private const val HOME_LAT = 37.4220
     private const val HOME_LNG = -122.0841
 
@@ -82,11 +94,13 @@ object TripPreview {
     private val PTU = DriveThermalSensor.PTU; private val RDU = DriveThermalSensor.RDU
 
     /**
-     * Six past drives across today, yesterday, this week and earlier. Thermal records cover each basis: Custom (oil
+     * Eight past drives across today, yesterday, this week and earlier. Thermal records cover each basis: Custom (oil
      * flag under its own 124 °C limit), STREET → RACE mid-drive (peak under STREET, flag from RACE), TRACK (oil critical,
      * RDU flag, coolant just under the 95 % line), a legacy fixed-limit array, none (temps, no record), and an early
      * record without saved endpoints whose stop reading lies above its peak (START / END fall back, then "—").
-     * Drives 1–3 carry this build's oil / PTU mapping; 4–6 none — the "recorded before the correction" disclosure (#229).
+     * Drives 1–3 carry this build's oil / PTU mapping; 4–8 none — the "recorded before the correction" disclosure (#229).
+     * Drives 7 and 8 are recorded at 1 Hz with one stretch of no samples ([GAPS]) for #285's time axis: 8 is longer than
+     * 36 min, so its 360 drawn samples are more than 5 s apart.
      */
     fun drives(now: Long = System.currentTimeMillis()): List<DriveEntity> {
         val today = now - (now % DAY_MS) + 7 * 3_600_000L      // ~07:00 UTC-ish anchor; only relative dates matter
@@ -158,16 +172,28 @@ object TripPreview {
                     thermalPeaksJson = thermal(it.startTime, listOf(Triple("street", ThermalProfile.STREET,
                         mapOf(OIL to 100.0, COOLANT to 90.0)))))
             },
+            d(-7, now - 9 * 3_600_000L, 6, 4.1) {
+                it.copy(name = "Gap sample (60 s)", maxSpeedKph = 98.0, peakRpm = 5100, peakBoostPsi = 14.0)
+            },
+            d(-8, now - 26 * 3_600_000L, 42, 38.0) {
+                it.copy(name = "Long drive (40 min, 1 Hz)", maxSpeedKph = 112.0, peakRpm = 5600, peakBoostPsi = 16.0)
+            },
         )
     }
+
+    /** 1 Hz sample drives with one gap: id → (points, index the gap follows, gap length ms). */
+    private val GAPS = mapOf(-7L to Triple(300, 179, 60_000L), -8L to Triple(2400, 1199, 90_000L))
 
     /** A loop around the emulator's default location; speed / rpm / boost follow the lap. */
     fun points(driveId: Long, count: Int = 240, startTime: Long = System.currentTimeMillis() - 30 * 60_000L,
                startFuelPct: Double = 72.0, fuelUsedPct: Double = 6.0): List<DrivePointEntity> {
         if (driveId == -5L) return emptyList()                       // the "no GPS" sample
         val scale = 1.0 + (-driveId % 3) * 0.25
-        return List(count) { i ->
-            val t = i.toDouble() / count
+        val gap = GAPS[driveId]
+        val n = gap?.first ?: count
+        val stepMs = if (gap != null) 1_000L else 5_000L
+        return List(n) { i ->
+            val t = i.toDouble() / n
             val a = 2 * PI * t
             val speed = 55 + 45 * sin(4 * a) + 15 * sin(11 * a)
             val rpm = (2400 + speed * 28 + 600 * sin(9 * a)).toInt()
@@ -178,7 +204,8 @@ object TripPreview {
             val targetPsi = boost + 0.8 + 0.6 * sin(5 * a)
             val wgdc = (18 + boost * 3.6 + if (driveId == -3L) 14 else 0).coerceIn(0.0, 98.0)
             DrivePointEntity(
-                driveId = driveId, timestamp = startTime + i * 5_000L,
+                driveId = driveId,
+                timestamp = startTime + i * stepMs + (if (gap != null && i > gap.second) gap.third else 0L),
                 lat = HOME_LAT + 0.011 * scale * sin(a), lng = HOME_LNG + 0.016 * scale * cos(a) * (1 + 0.2 * sin(3 * a)),
                 speedKph = speed.coerceAtLeast(0.0), rpm = rpm, gear = "${(speed / 25).toInt().coerceIn(1, 6)}",
                 boostPsi = boost, coolantTempC = 88.0 + 6 * t, oilTempC = 92.0 + 18 * t, ambientTempC = 18.0,

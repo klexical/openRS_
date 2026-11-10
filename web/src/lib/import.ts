@@ -7,6 +7,7 @@ import type {
 } from '../types/session'
 import { parseBoostSource, type BoostSource } from './boost'
 import { parseExportSchemaVersion } from './exportSchema'
+import { recordedDistanceKm } from './distance'
 
 /** Thrown when an imported ZIP cannot be parsed — surfaced to the user via ImportPanel. */
 export class ImportError extends Error {
@@ -389,6 +390,14 @@ async function mergeProfileJson(zip: JSZip, profileFile: string, trip: TripData)
     if (d.peakOilTempC > -90) s.peakOilTempC = d.peakOilTempC
     if (d.peakCoolantTempC > -90) s.peakCoolantC = d.peakCoolantTempC
     if (d.fuelUsedL > 0) s.fuelUsedL = d.fuelUsedL
+    // #284: the app's distance leaves out what it did not record (a pause, a link loss); the point sum does not.
+    // A drive without coordinates keeps no distance, as on the app's TRIP (it shows DIST only with GPS)
+    const recorded = recordedDistanceKm((data.drive as Record<string, unknown> | undefined)?.distanceKm)
+    if (recorded != null && trip.points.some((p) => p.lat !== 0 || p.lng !== 0)) {
+      s.distanceKm = recorded
+      s.distanceSource = 'recorded'
+      s.avgFuelEconomy = computeAvgFuelEconomy(s.fuelUsedL, recorded)
+    }
     if (d.aggressionScore > 0) s.aggressionScore = d.aggressionScore
 
     // Override peak events with profile peaks (GPS-tagged, canonical)
@@ -551,6 +560,7 @@ function computeSummary(points: TripPoint[]): TripSummary {
 
   return {
     distanceKm,
+    distanceSource: 'estimate',
     durationMs,
     fuelUsedL: computeFuelUsedL(points),
     avgSpeedKph: avg(speedArr),

@@ -169,9 +169,10 @@ fun DriveTimeSeries(
         }
 
         // ── Chart area ──────────────────────────────────────────────────
-        // Buckets of at most 360 drawn samples; pressure channels judge validity over the whole bucket (#207)
-        val buckets = remember(points) { TimeSeriesMath.buckets(points.size, 360) }
-        val sampled = remember(points) { buckets.map { points[it.first] } }
+        // Buckets of at most 360 drawn samples; pressure channels judge validity over the whole bucket (#207).
+        // Each drawn sample sits at its elapsed time, so a tick is under the sample recorded then (#285).
+        val axis = remember(points) { TimeSeriesMath.timeAxis(points.map { it.timestamp }, 360) }
+        val sampled = remember(points) { axis.buckets.map { points[it.first] } }
         val dataWidthDp = (sampled.size * 2).dp
 
         val textMeasurer = rememberTextMeasurer()
@@ -188,12 +189,11 @@ fun DriveTimeSeries(
         // Pre-extract active channel data: values, validity, runs, and an axis range shared
         // by channels in the same axis group (BOOST + TARGET).
         val activeChannelData = remember(sampled, activeIndices.toList(), available) {
-            val timestamps = sampled.map { it.timestamp }
             val visible = activeIndices.filter { available[it] }
             val extracted = visible.associateWith { idx ->
                 val ch = CHANNELS[idx]
                 sampled.map { ch.extract(it).toFloat() } to
-                    TimeSeriesMath.bucketValidity(buckets, points.map { ch.valid(it) }, ch.breakOnInvalid)
+                    TimeSeriesMath.bucketValidity(axis.buckets, points.map { ch.valid(it) }, ch.breakOnInvalid)
             }
             visible.mapNotNull { idx ->
                 val ch = CHANNELS[idx]
@@ -202,15 +202,11 @@ fun DriveTimeSeries(
                             else visible.filter { CHANNELS[it].axis == ch.axis }
                 val range = TimeSeriesMath.sharedRange(group.map { extracted.getValue(it) })
                     ?: return@mapNotNull null
-                ChannelData(idx, values, TimeSeriesMath.segments(timestamps, valid, breakOnInvalid = ch.breakOnInvalid), range)
+                ChannelData(idx, values, axis.runs(points.map { ch.valid(it) }, ch.breakOnInvalid), range)
             }
         }
 
-        val totalDurationMs = remember(sampled) {
-            val first = sampled.firstOrNull()?.timestamp ?: 0L
-            val last = sampled.lastOrNull()?.timestamp ?: 0L
-            (last - first).coerceAtLeast(1L)
-        }
+        val totalDurationMs = axis.totalMs
 
         // The chart is at least the viewport wide (was a fixed 360 dp — wider than a 360 dp phone's viewport, so
         // it scrolled and the last label sat cut at the edge). Time labels draw in a non-scrolling overlay and
@@ -253,8 +249,7 @@ fun DriveTimeSeries(
                             val ch = CHANNELS[cd.idx]
                             val (minV, maxV) = cd.range
                             val span = (maxV - minV).coerceAtLeast(0.01f)
-                            val lastIdx = (cd.values.size - 1).coerceAtLeast(1)
-                            fun xAt(i: Int) = i.toFloat() / lastIdx * w
+                            fun xAt(i: Int) = axis.xFrac[i] * w
                             fun yAt(i: Int) = padTop + drawH * (1f - (cd.values[i] - minV) / span)
 
                             val linePath = Path()
@@ -280,9 +275,38 @@ fun DriveTimeSeries(
 
                         // Pre-measure time labels. The interval comes from the width available: the smallest
                         // step that keeps labels a label-width + 12 dp apart (was every 60 s — they overlapped).
-                        val tickFracs = timeTickFracs(totalDurationMs, w, sampleLabel.size.width + 12.dp.toPx())
+                        val tickFracs = TimeSeriesMath.timeTicks(totalDurationMs, w, sampleLabel.size.width + 12.dp.toPx())
+
+                        // Recording gaps (#285): a neutral band where no sample was stored — a stored drive does not
+                        // say whether it was a pause, a link loss or no position fix, so the band names no cause.
+                        val gapLabel = textMeasurer.measure("NO DATA", axisStyle)
+                        val gapBands = if (axis.hasTimeBase) axis.gaps.map { g ->
+                            val x0 = g.fromMs.toFloat() / totalDurationMs * w
+                            val x1 = maxOf(g.toMs.toFloat() / totalDurationMs * w, x0 + 1f)
+                            x0 to x1
+                        } else emptyList()
 
                         onDrawBehind {
+                            gapBands.forEach { (x0, x1) ->
+                                drawRect(
+                                    color = brdColor.copy(alpha = 0.35f),
+                                    topLeft = Offset(x0, padTop),
+                                    size = androidx.compose.ui.geometry.Size(x1 - x0, drawH)
+                                )
+                                for (x in listOf(x0, x1)) {
+                                    drawLine(brdColor, Offset(x, padTop), Offset(x, padTop + drawH), strokeWidth = 1f)
+                                }
+                                if (x1 - x0 >= gapLabel.size.width + 8.dp.toPx()) {
+                                    drawText(
+                                        gapLabel,
+                                        topLeft = Offset(
+                                            (x0 + x1) / 2f - gapLabel.size.width / 2f,
+                                            padTop + 4.dp.toPx()
+                                        )
+                                    )
+                                }
+                            }
+
                             // Grid lines (25%, 50%, 75%)
                             for (frac in listOf(0.25f, 0.5f, 0.75f)) {
                                 val y = padTop + drawH * (1f - frac)
@@ -345,7 +369,7 @@ fun DriveTimeSeries(
                 // the last one at the end) is edge-aligned instead — if that keeps 4 dp clear of its neighbours.
                 // Otherwise it is left out; a partly clipped label is never drawn.
                 val edge = 2f; val clear = 4.dp.toPx()
-                val placed = timeTickFracs(totalDurationMs, chartW, sample.size.width + 12.dp.toPx()).map { (label, frac) ->
+                val placed = TimeSeriesMath.timeTicks(totalDurationMs, chartW, sample.size.width + 12.dp.toPx()).map { (label, frac) ->
                     val m = textMeasurer.measure(label, axisStyle)
                     val x = frac * chartW - scroll.value
                     Triple(m, x, x - m.size.width / 2f)
@@ -363,22 +387,6 @@ fun DriveTimeSeries(
                 }
             }
         }
-        }
-    }
-}
-
-/**
- * Time ticks as (label, fraction of the drive): the smallest step (15 s … 1 h) that keeps ticks
- * [minGapPx] apart across [widthPx] — every 60 s overlapped on short charts.
- */
-private fun timeTickFracs(totalMs: Long, widthPx: Float, minGapPx: Float): List<Pair<String, Float>> {
-    val step = listOf(15_000L, 30_000L, 60_000L, 120_000L, 300_000L, 600_000L, 900_000L, 1_800_000L, 3_600_000L)
-        .firstOrNull { it.toFloat() / totalMs * widthPx >= minGapPx } ?: 3_600_000L
-    return buildList {
-        var t = 0L
-        while (t <= totalMs) {
-            add("%d:%02d".format((t / 60_000).toInt(), ((t % 60_000) / 1000).toInt()) to t.toFloat() / totalMs)
-            t += step
         }
     }
 }

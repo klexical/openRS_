@@ -330,7 +330,9 @@ private fun TripPageContent(
             }
             TripPreview.Mode.SUMMARY -> summaryDrive = TripPreview.drives().let { ds -> ds.firstOrNull { it.id == TripPreview.summaryDriveId } ?: ds.first() }
             TripPreview.Mode.COMPARE -> TripPreview.drives().let { compareA = it[0]; compareB = it[2] }
-            TripPreview.Mode.REPLAY -> TripPreview.drives().first().let { replayDrive = it; replayPoints = samplePoints(it.id) }
+            TripPreview.Mode.REPLAY -> TripPreview.drives()
+                .let { ds -> ds.firstOrNull { it.id == TripPreview.replayDriveId } ?: ds.first() }
+                .let { replayDrive = it; replayPoints = samplePoints(it.id) }
             TripPreview.Mode.EXPORT -> exportDrive = TripPreview.drives().first()
             null -> {
                 if ((selectedDriveId ?: 0L) < 0) { selectedDriveId = null; selectedDrive = null; selectedDrivePoints = emptyList() }
