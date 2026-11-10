@@ -261,10 +261,27 @@ object DiagnosticLogger {
 
     /** One reading of the counters an export reports, taken under one lock: its summary and detail state the same numbers (L12). */
     class ExportCounters(val integrity: LinkIntegrity, val nrcUnattributed: Int, val limits: LogLimits,
-                         val dids: DidInventory = DidInventory(emptyList(), 0))
+                         val dids: DidInventory = DidInventory(emptyList(), 0),
+                         val bleMtu: BleMtuAttempt? = null)
     val exportCounters: ExportCounters get() = synchronized(lock) {
         ExportCounters(linkIntegrityLive.copy(), nrcUnattributedTotal, logLimits,
-            DidInventory(didInventoryLive.values.map { it.copy() }, didInventoryOverflow))
+            DidInventory(didInventoryLive.values.map { it.copy() }, didInventoryOverflow),
+            attemptMtuTrace?.let { BleMtuAttempt(connectionAttempts, it.read()) })
+    }
+
+    /** The current connection attempt's MTU context: [attempt] counts this session's attempts from 1 (#253). */
+    class BleMtuAttempt(val attempt: Int, val context: com.openrs.dash.can.BleMtuContext)
+    private var connectionAttempts = 0
+    private var attemptMtuTrace: com.openrs.dash.can.BleMtuTrace? = null
+
+    /**
+     * A connection attempt starts. [bleMtu] is that attempt's trace, null for a transport that is not Bluetooth: the
+     * previous attempt's context is replaced either way, so an export never shows an older link's MTU. The trace is read
+     * at export time, so a callback that arrives after the setup stopped waiting is still reported.
+     */
+    fun connectionAttempt(bleMtu: com.openrs.dash.can.BleMtuTrace?) = synchronized(lock) {
+        connectionAttempts++
+        attemptMtuTrace = bleMtu
     }
     fun countWrite(kind: String) = synchronized(lock) { linkIntegrityLive.writes[kind] = (linkIntegrityLive.writes[kind] ?: 0) + 1 }
     fun framingDecided(timestamped: Boolean) = synchronized(lock) { linkIntegrityLive.framingTimestamped = timestamped }
@@ -429,6 +446,7 @@ object DiagnosticLogger {
             nrcSnapshot = emptyMap()   // NRC suppression is per connection (#216)
             nrcUnattributedTotal = 0
             linkIntegrityLive = LinkIntegrity()
+            connectionAttempts = 0; attemptMtuTrace = null
             didInventoryLive.clear(); didInventoryOverflow = 0
             traceDropped = 0L; eventsDropped = 0L; fpsDropped = 0L; probeSessionsDropped = 0L; inventoryNotListed = 0L
             slcanCapHit = false

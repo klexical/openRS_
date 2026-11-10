@@ -54,4 +54,7 @@ interface SlcanTransport {
 
     /** Transport kind for diagnostic events — never an address or device name (#220). */
     val kind: String get() = "adapter"
+
+    /** This attempt's MTU request and answer; only a Bluetooth transport has one (#253). */
+    val bleMtu: BleMtuTrace? get() = null
 }

@@ -65,12 +65,15 @@ class BleGattCore(
         const val BOND_BONDING = 11
         const val BOND_BONDED = 12
         const val DEFAULT_MTU = 23
+        const val REQUESTED_MTU = 247
     }
 
     @Volatile var profile: BleAdapterProfile? = null
         private set
     @Volatile var mtu = DEFAULT_MTU
         private set
+    /** This attempt's MTU request and its answer, for the export (#253); the core only writes to it. */
+    val mtuTrace = BleMtuTrace()
     private var writeType = WRITE_TYPE_DEFAULT
     private var link: GattLink? = null
 
@@ -131,6 +134,7 @@ class BleGattCore(
 
     fun onMtuChanged(newMtu: Int, status: Int) {
         mtu = if (status == BleSetupPolicy.GATT_SUCCESS) newMtu else DEFAULT_MTU
+        mtuTrace.callback(newMtu, status, mtu)
         if (!mtuReady.isCompleted) mtuReady.complete(Unit)
     }
 
@@ -186,7 +190,9 @@ class BleGattCore(
                 is BleSetupPolicy.Action.Fail -> throw IOException(action.message)
             }
         }
-        if (l.requestMtu(247)) withTimeoutOrNull(5_000L) { mtuReady.await() }
+        val started = l.requestMtu(REQUESTED_MTU)
+        mtuTrace.requested(REQUESTED_MTU, started)
+        if (started) withTimeoutOrNull(5_000L) { mtuReady.await() } ?: mtuTrace.waitTimedOut()
     }
 
     private suspend fun bond(l: GattLink) {
