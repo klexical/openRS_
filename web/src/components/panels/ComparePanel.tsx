@@ -7,6 +7,7 @@ import { ComparisonChart } from '../charts/ComparisonChart'
 import { GpsMap } from '../charts/GpsMap'
 import { computeDeltas, overlayBoostSource } from '../../lib/compare'
 import { boostLabel } from '../../lib/boost'
+import { estimateSuffix } from '../../lib/distance'
 import { fmtDateShort } from '../../lib/format'
 import { colors, chartColors } from '../../styles/tokens'
 
@@ -83,7 +84,7 @@ export function ComparePanel() {
                 <div className="text-sm font-mono text-frost truncate">{sess.name}</div>
                 <div className="flex gap-3 text-[10px] font-mono text-dim uppercase mt-0.5">
                   <span>{fmtDateShort(sess.importedAt)}</span>
-                  {sess.trip && <span>{sess.trip.summary.distanceKm.toFixed(1)} km</span>}
+                  {sess.trip && <span>{sess.trip.summary.distanceKm.toFixed(1)} km{estimateSuffix(sess.trip.summary)}</span>}
                   <span>v{sess.meta.appVersion}</span>
                 </div>
               </div>

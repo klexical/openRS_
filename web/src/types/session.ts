@@ -88,6 +88,12 @@ export interface TripPoint {
 
 export interface TripSummary {
   distanceKm: number
+  /**
+   * Where distanceKm comes from (#284): 'recorded' = the app's own figure from the export's profile (nothing counted
+   * across a pause or a link loss); 'estimate' = the sum of straight lines between GPS points, gaps included.
+   * Absent = imported before the source was kept: a point sum (lib/distance.ts treats it as an estimate).
+   */
+  distanceSource?: 'recorded' | 'estimate'
   durationMs: number
   fuelUsedL: number
   avgSpeedKph: number
