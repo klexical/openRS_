@@ -141,7 +141,8 @@ class MapF40bStorageTest {
     /**
      * #305: what the test above did on CI when its two unpaced decodes fell inside one millisecond. The merge takes the
      * second value (an equal stamp is carried), the gate does not see a new decode, so the point has no reading. Kept on
-     * purpose: it is the gate's rule, and the reason a test must choose its stamps.
+     * purpose: it is the gate's rule, and the reason a test must choose its stamps. The gate refuses a stamp older than
+     * the first (a backward clock step) the same way; this case stands for both.
      */
     @Test fun `two decodes on one stamp are one decode to the recorder - the second is not stored`() {
         assertEquals(listOf(150.0, null, null), threePoints { first, _ -> first })
