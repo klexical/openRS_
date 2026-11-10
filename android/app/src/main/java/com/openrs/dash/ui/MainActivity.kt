@@ -73,6 +73,8 @@ import com.openrs.dash.update.UpdateManager
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ACTIVITY
@@ -701,10 +703,77 @@ class MainActivity : ComponentActivity() {
     val compact = maxWidth < 400.dp
     // #224: a priority layout, not a Row — the Settings cog and the link pill always get their space; the REC
     // label takes what is left (clipped), so a long elapsed time / distance can never push Settings off screen
+    // #283: the link pill as one composable, so HeaderRow can also measure it with its longest label
+    val linkPill: @Composable (String, Boolean) -> Unit = { lbl, tagged ->
+            // rc.2: fixed-width connection pill. pressClick + haptic feedback.
+            // Label crossfades on state change. Bloom fades 0→0.3 on connect,
+            // 0.3→0 on disconnect. Quiet mode dims pill after 2s stable.
+            // Neutral chip like MODE / ESC: the dot carries the link colour. Full-height tap area; a tap
+            // while live only asks — the dialog's Disconnect is the sole path to stopConnection().
+            Box(
+                Modifier
+                    .then(if (tagged) Modifier.testTag("headerLink") else Modifier.clearAndSetSemantics { })   // measured-only copy: silent
+                    .fillMaxHeight()
+                    .alpha(quietAlpha)
+                    .pressClick(pressedScale = 0.97f) {
+                        // Demo: the pill never touches the adapter — it folds / unfolds the demo controls.
+                        if (demoActive) { com.openrs.dash.demo.DemoMode.toggleControls(); return@pressClick }
+                        when (link) {
+                            LinkUi.LIVE         -> confirmDisconnect = true
+                            LinkUi.RECONNECTING -> { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onReconnect() }
+                            LinkUi.CONNECTING   -> if (cancelable) { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onCancel() }
+                                                   else haptic.performHapticFeedback(HapticFeedbackType.Reject)
+                            LinkUi.OFFLINE, LinkUi.FAILED -> { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onConnect() }
+                        }
+                    }
+                    .padding(horizontal = 4.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    Modifier.widthIn(min = 52.dp)
+                        .background(Surf2, RoundedCornerShape(6.dp))
+                        .border(CardBorder, Brd.copy(alpha = borderAlpha(0.6f)), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 7.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(10.dp).clip(CircleShape)
+                            .background(connColor.copy(alpha = 0.25f * dotAlpha))
+                            .then(if (bloomIntensity > 0.01f) Modifier.bloomGlow(connColor, 8.dp, bloomIntensity * dotAlpha) else Modifier))
+                        // The sheet's CONNECTED symbol in the link colour (live / reconnecting / off)
+                        Icon(painterResource(R.drawable.ic_tt_connected), contentDescription = null,
+                            tint = connColor.copy(alpha = dotAlpha * (if (vs.isConnected || vs.isReconnecting) 1f else 0.6f)),
+                            modifier = Modifier.size(12.dp))
+                    }
+                    AnimatedContent(
+                        targetState = lbl,
+                        transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(180)) },
+                        label = "connLbl"
+                    ) { lbl ->
+                        MonoLabel(lbl, 9.sp, connInk, FontWeight.Bold, 0.3.sp)
+                    }
+                }
+            }
+    }
+    // The longest labels that can be on screen together (connected / not connected): they decide one or two lines, so the
+    // header's height never changes with ESC, REC or the link state — only with width, font size and demo
+    val longestLink = (LinkUi.entries.map { it.pill } + "UPD").maxBy { it.length }
     HeaderRow(
         reserveRecDot = driveState.isRecording,
+        // MODE + ESC pills (placeholder when offline); HeaderRow asks for the compact form only when the REC dot needs it
+        pills = { compact -> HeaderModeEscPills(vs, accent, onModeClick, compact) },
+        worstCase = { connected ->
+            HeaderModeEscPills(vs, accent, {}, compact = true, worst = connected)
+            linkPill(when {
+                demoActive && connected -> "DEMO"
+                demoActive              -> "DEMO \u00B7 $longestLink"
+                connected               -> listOf(LinkUi.LIVE.pill, "UPD").maxBy { it.length }
+                else                    -> longestLink
+            }, false)
+        },
+        // Height: one or two Tokens.StatusBarHeight rows, decided by HeaderRow
         modifier = Modifier.fillMaxWidth()
-            .height(Tokens.StatusBarHeight)
             .background(Surf)
             .draggable(
                 state = dragState,
@@ -803,10 +872,9 @@ class MainActivity : ComponentActivity() {
         }
         }
 
-        // ── Center: always MODE + ESC pills (placeholder when offline). ───
-        HeaderModeEscPills(vs, accent, onModeClick)
+        // ── Center: MODE + ESC pills — HeaderRow's `pills` slot. ───
 
-        // ── Right: REC dot + connection pill + settings gear (HeaderRow slots 3–5) ────
+        // ── Right: REC dot + connection pill + settings gear (content slots 2–4) ────
         Box(contentAlignment = Alignment.CenterEnd) {
             val ctx = LocalContext.current
             val autoRecOn = remember(ctx) { AppSettings.getAutoRecordDrives(ctx) }
@@ -852,10 +920,10 @@ class MainActivity : ComponentActivity() {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Box(Modifier.size(7.dp).clip(CircleShape).background(dotColor.copy(alpha = recAlpha)))
+                        Box(Modifier.testTag("headerRecDot").size(7.dp).clip(CircleShape).background(dotColor.copy(alpha = recAlpha)))
                         Text(label, style = recStyle, color = textColor(dotColor), maxLines = 1, softWrap = false)
                     } else if (constraints.maxWidth >= with(density) { 7.dp.roundToPx() }) {
-                        Box(Modifier.size(7.dp).clip(CircleShape).background(dotColor.copy(alpha = recAlpha)))
+                        Box(Modifier.testTag("headerRecDot").size(7.dp).clip(CircleShape).background(dotColor.copy(alpha = recAlpha)))
                     }
                 }
             } else if (autoRecArmed) {
@@ -878,55 +946,7 @@ class MainActivity : ComponentActivity() {
 
         }
 
-            // rc.2: fixed-width connection pill. pressClick + haptic feedback.
-            // Label crossfades on state change. Bloom fades 0→0.3 on connect,
-            // 0.3→0 on disconnect. Quiet mode dims pill after 2s stable.
-            // Neutral chip like MODE / ESC: the dot carries the link colour. Full-height tap area; a tap
-            // while live only asks — the dialog's Disconnect is the sole path to stopConnection().
-            Box(
-                Modifier
-                    .fillMaxHeight()
-                    .alpha(quietAlpha)
-                    .pressClick(pressedScale = 0.97f) {
-                        // Demo: the pill never touches the adapter — it folds / unfolds the demo controls.
-                        if (demoActive) { com.openrs.dash.demo.DemoMode.toggleControls(); return@pressClick }
-                        when (link) {
-                            LinkUi.LIVE         -> confirmDisconnect = true
-                            LinkUi.RECONNECTING -> { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onReconnect() }
-                            LinkUi.CONNECTING   -> if (cancelable) { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onCancel() }
-                                                   else haptic.performHapticFeedback(HapticFeedbackType.Reject)
-                            LinkUi.OFFLINE, LinkUi.FAILED -> { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onConnect() }
-                        }
-                    }
-                    .padding(horizontal = 4.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Row(
-                    Modifier.widthIn(min = 52.dp)
-                        .background(Surf2, RoundedCornerShape(6.dp))
-                        .border(CardBorder, Brd.copy(alpha = borderAlpha(0.6f)), RoundedCornerShape(6.dp))
-                        .padding(horizontal = 7.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Box(Modifier.size(10.dp).clip(CircleShape)
-                            .background(connColor.copy(alpha = 0.25f * dotAlpha))
-                            .then(if (bloomIntensity > 0.01f) Modifier.bloomGlow(connColor, 8.dp, bloomIntensity * dotAlpha) else Modifier))
-                        // The sheet's CONNECTED symbol in the link colour (live / reconnecting / off)
-                        Icon(painterResource(R.drawable.ic_tt_connected), contentDescription = null,
-                            tint = connColor.copy(alpha = dotAlpha * (if (vs.isConnected || vs.isReconnecting) 1f else 0.6f)),
-                            modifier = Modifier.size(12.dp))
-                    }
-                    AnimatedContent(
-                        targetState = connLabel,
-                        transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(180)) },
-                        label = "connLbl"
-                    ) { lbl ->
-                        MonoLabel(lbl, 9.sp, connInk, FontWeight.Bold, 0.3.sp)
-                    }
-                }
-            }
+            linkPill(connLabel, true)
 
             // Settings: bare glyph (the filled box read as a button bezel), 44 dp target, glyph held
             // 12 dp off the edge so the right-hand cluster still sits tight to the screen edge.
@@ -956,45 +976,93 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * The header row (#224) — slots: wordmark, MODE/ESC pills, REC, link pill, Settings cog. Measured by priority, not
+ * The header row (#224) — slots: wordmark, MODE/ESC pills ([pills]), REC, link pill, Settings cog. Measured by priority, not
  * left to right: the wordmark, cog, link pill and pills take their own widths; REC gets what is left (it clips, so
- * a long time or distance can't push anything out). While recording ([reserveRecDot]) the gaps shrink, to 0 if needed,
- * so REC keeps at least its 7 dp dot (#283). The cog sits at the right edge, the link pill and REC to its
- * left, and the pills centred on the screen when there is room, else between the wordmark and REC.
+ * a long time or distance can't push anything out). The cog sits at the right edge, the link pill and REC to its left.
+ *
+ * #283: line 1 always keeps room for the REC dot. While it fits there, everything is one line: the gaps shrink (to 0) and
+ * then the pills go compact (less padding, every word kept) before the dot would be squeezed out, and the pills sit
+ * centred when there is room, else between the wordmark and REC. When even the longest labels that can be on screen
+ * together ([worstCase], connected and not connected, compact) would not leave the dot room — a large system font, a
+ * narrow screen — the pills move to a second line of their own. That choice depends only on the width, font size and
+ * demo, never on the current mode, ESC, REC or link state, so the header (and the page under it) doesn't jump.
+ * [content] emits the wordmark, REC, link pill and cog, in that order; [worstCase] emits compact pills and a link pill.
  */
 @Composable
-private fun HeaderRow(reserveRecDot: Boolean, modifier: Modifier, content: @Composable () -> Unit) {
-    androidx.compose.ui.layout.Layout(content, modifier) { ms, c ->
-        val loose = c.copy(minWidth = 0, minHeight = 0)
-        val logo = ms[0].measure(loose); val pills = ms[1].measure(loose)
-        val conn = ms[3].measure(loose); val cog = ms[4].measure(loose)
-        val fixed = c.maxWidth - logo.width - pills.width - conn.width - cog.width
+private fun HeaderRow(
+    reserveRecDot: Boolean,
+    pills: @Composable (compact: Boolean) -> Unit,
+    worstCase: @Composable (connected: Boolean) -> Unit,
+    modifier: Modifier,
+    content: @Composable () -> Unit,
+) {
+    androidx.compose.ui.layout.SubcomposeLayout(modifier) { c ->
+        val rowH = Tokens.StatusBarHeight.roundToPx()
+        val loose = androidx.compose.ui.unit.Constraints(maxWidth = c.maxWidth, maxHeight = rowH)
+        val dot = 7.dp.roundToPx()
+        val ms = subcompose("slots", content)
+        val logo = ms[0].measure(loose)
+        val conn = ms[2].measure(loose); val cog = ms[3].measure(loose)
+        // Widest pills + link pill that can be on screen together, measured, never placed
+        val worst = listOf(true, false).maxOf { connected ->
+            subcompose("worst$connected") { worstCase(connected) }.sumOf { it.measure(loose).width }
+        }
+        val twoLines = logo.width + worst + cog.width + dot > c.maxWidth
+
+        if (twoLines) {
+            var pillsP = subcompose("pills") { pills(false) }.first().measure(loose)
+            if (pillsP.width > c.maxWidth) pillsP = subcompose("pillsCompact") { pills(true) }.first().measure(loose)
+            val gap = 6.dp.roundToPx()
+            val rec = ms[1].measure(loose.copy(maxWidth = (c.maxWidth - logo.width - conn.width - cog.width - 2 * gap).coerceAtLeast(0)))
+            return@SubcomposeLayout layout(c.maxWidth, 2 * rowH) {
+                fun y(p: androidx.compose.ui.layout.Placeable) = (rowH - p.height) / 2
+                logo.placeRelative(0, y(logo))
+                val cogX = c.maxWidth - cog.width; cog.placeRelative(cogX, y(cog))
+                val connX = cogX - conn.width; conn.placeRelative(connX, y(conn))
+                rec.placeRelative(connX - (if (rec.width > 0) gap + rec.width else 0), y(rec))
+                pillsP.placeRelative((c.maxWidth - pillsP.width) / 2, rowH + y(pillsP))
+            }
+        }
+
+        fun rest(p: androidx.compose.ui.layout.Placeable) = c.maxWidth - logo.width - p.width - conn.width - cog.width
+        var pillsP = subcompose("pills") { pills(false) }.first().measure(loose)
+        // #283 follow-up: the compact pills are composed only when the dot (while recording) or the pills themselves (an
+        // overlap with the link pill otherwise) don't fit even at 0 dp gaps
+        if (rest(pillsP) < (if (reserveRecDot) dot else 0)) {
+            pillsP = subcompose("pillsCompact") { pills(true) }.first().measure(loose)
+        }
+        val fixed = rest(pillsP)
         // Tight (360 dp, every chip populated): narrower gaps before the REC dot is squeezed out. #283: at 360 dp with
         // ESC SPORT, 2 dp gaps still left REC under the 7 dp dot and the recording marker vanished — while recording,
         // the gaps now give way (down to 0) until the dot fits; the cog, link pill and pills keep their measured widths.
         val gap = when {
             fixed - 4 * 6.dp.roundToPx() >= 9.dp.roundToPx() -> 6.dp.roundToPx()
-            !reserveRecDot -> 2.dp.roundToPx()
-            else -> ((fixed - 7.dp.roundToPx()) / 4).coerceIn(0, 2.dp.roundToPx())
+            // Without a recording the pills sit between two gaps: shrink them too so the pills never touch the link pill
+            // (font 1.15, TRACK: 5 px spare — 2 dp gaps overlapped it by 1 px; QA T1)
+            !reserveRecDot -> (fixed / 2).coerceIn(0, 2.dp.roundToPx())
+            else -> ((fixed - dot) / 4).coerceIn(0, 2.dp.roundToPx())
         }
         val recMax = (fixed - 4 * gap).coerceAtLeast(0)
-        val rec = ms[2].measure(loose.copy(maxWidth = recMax))
-        val h = c.maxHeight
-        layout(c.maxWidth, h) {
-            fun y(p: androidx.compose.ui.layout.Placeable) = (h - p.height) / 2
+        val rec = ms[1].measure(loose.copy(maxWidth = recMax))
+        layout(c.maxWidth, rowH) {
+            fun y(p: androidx.compose.ui.layout.Placeable) = (rowH - p.height) / 2
             logo.placeRelative(0, y(logo))
             val cogX = c.maxWidth - cog.width; cog.placeRelative(cogX, y(cog))
             val connX = cogX - conn.width; conn.placeRelative(connX, y(conn))
             val recX = connX - (if (rec.width > 0) gap + rec.width else 0); rec.placeRelative(recX, y(rec))
-            val lo = logo.width + gap; val hi = recX - gap - pills.width
-            pills.placeRelative(((c.maxWidth - pills.width) / 2).coerceIn(lo, maxOf(lo, hi)), y(pills))
+            val lo = logo.width + gap; val hi = recX - gap - pillsP.width
+            pillsP.placeRelative(((c.maxWidth - pillsP.width) / 2).coerceIn(lo, maxOf(lo, hi)), y(pillsP))
         }
     }
 }
 
 @Composable
-private fun HeaderModeEscPills(vs: VehicleState, accent: Color, onModeClick: () -> Unit) {
-    val connected = vs.isConnected
+private fun HeaderModeEscPills(
+    vs: VehicleState, accent: Color, onModeClick: () -> Unit, compact: Boolean = false,
+    /** #283: null = the real pills; true / false = the longest labels possible while connected / not (measured only) */
+    worst: Boolean? = null,
+) {
+    val connected = worst ?: vs.isConnected
     // Calm cockpit: the selected mode is a reading (ink), not an alert — TRACK in amber read as a
     // warning. ESC keeps its existing colours for reduced stability control (Sport / Launch / Off).
     val modeColor = if (connected) Frost else Dim
@@ -1006,20 +1074,27 @@ private fun HeaderModeEscPills(vs: VehicleState, accent: Color, onModeClick: () 
         esc == EscStatus.PARTIAL    -> Warn
         else                        -> Frost
     }
-    val modeValue = if (connected) vs.driveMode.label.uppercase() else "\u2014"
+    val modeValue = when {
+        !connected     -> "\u2014"
+        worst == true  -> DriveMode.entries.map { it.label.uppercase() }.maxBy { it.length }
+        else           -> vs.driveMode.label.uppercase()
+    }
     // The mode names are self-describing; the MODE caption only labels the offline placeholder.
     // ESC = Ford's names (Normal / Sport / Off); unknown (no 0x1C0 yet, raw 3) = the placeholder. The ESC setting is its own
     // reading, independent of the drive mode, so its pill never repeats the MODE pill's word: Normal (ESC fully on) is the
     // traction symbol alone — like the car's cluster, which flags only a reduced or off ESC — and Sport / Off add the word.
     // What TalkBack says always names it: "Stability control: Sport" (REQ-rc8-esc-owner-wording).
     val escValue = when {
+        worst == true          -> EscStatus.entries.filter { it.isKnown && it != EscStatus.ON }.map { it.label.uppercase() }.maxBy { it.length }
         !escKnown              -> "\u2014"
         esc == EscStatus.ON    -> ""
         else                   -> esc.label.uppercase()
     }
     val escSpoken = "Stability control: " + if (escKnown) esc.label else "unknown"
 
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    // A measured-only copy (worst-case labels) is never placed and must say nothing to TalkBack
+    Row(Modifier.then(if (worst == null) Modifier.testTag("headerPills") else Modifier.clearAndSetSemantics { }),
+        verticalAlignment = Alignment.CenterVertically) {
         val pending = com.openrs.dash.can.driveModePending.value != null
         val pulseT = rememberInfiniteTransition(label = "modeBar")
         val animAlpha by pulseT.animateFloat(
@@ -1036,9 +1111,10 @@ private fun HeaderModeEscPills(vs: VehicleState, accent: Color, onModeClick: () 
             onClick = if (connected) onModeClick else null,
             pulseBarColor = if (pending) accent else null,
             pulseBarAlpha = barAlpha,
-            chevron = connected
+            chevron = connected,
+            compact = compact
         )
-        Spacer(Modifier.width(2.dp))
+        Spacer(Modifier.width(if (compact) 1.dp else 2.dp))
         // ESC = the sheet's TRACTION symbol (the dash telltale for stability control), in the ESC state colour
         StatusPill(
             label = null,
@@ -1053,6 +1129,7 @@ private fun HeaderModeEscPills(vs: VehicleState, accent: Color, onModeClick: () 
                 else -> IconTone.NORMAL
             },
             description = escSpoken,
+            compact = compact,
         )
     }
 }
@@ -1167,6 +1244,8 @@ private sealed class AnomalyKind {
     icon: RsIcon? = null,
     iconTone: IconTone = IconTone.NORMAL,
     description: String? = null,
+    /** #283: tighter padding when the header has no room left for the REC dot — the text is never cut */
+    compact: Boolean = false,
 ) {
     val shape = RoundedCornerShape(6.dp)
     Box(
@@ -1179,15 +1258,17 @@ private sealed class AnomalyKind {
         Modifier
             .background(Surf2, shape)
             .border(CardBorder, Brd.copy(alpha = borderAlpha(0.6f)), shape)
-            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .padding(horizontal = if (compact) 4.dp else 8.dp, vertical = 4.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            horizontalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 4.dp)
         ) {
             icon?.let { TelemetryIcon(it, iconTone, 13.dp, contentDescription = description) }
             label?.let { MonoLabel(it, 9.sp, Dim, letterSpacing = 0.3.sp) }
-            if (value.isNotEmpty()) MonoLabel(value, 10.sp, valueColor, FontWeight.Bold, 0.3.sp)
+            // A pill with a spoken description (ESC: "Stability control: Sport") says it once — the visible word is silent
+            if (value.isNotEmpty()) MonoLabel(value, 10.sp, valueColor, FontWeight.Bold, 0.3.sp,
+                modifier = if (description != null) Modifier.clearAndSetSemantics { } else Modifier)
             if (chevron) MonoLabel("\u25BE", 9.sp, Dim)
         }
         // Pulsing accent bar at bottom (MODE pill)

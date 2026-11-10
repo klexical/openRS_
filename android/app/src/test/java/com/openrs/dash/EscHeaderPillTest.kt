@@ -49,6 +49,7 @@ class EscHeaderPillTest {
         val compose = activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as ViewGroup
         val found = mutableListOf<String>()
         fun walk(n: SemanticsNode) {
+            if (!n.layoutInfo.isPlaced) return   // what is on screen: SubcomposeLayout keeps measured-only copies composed
             n.config.getOrNull(SemanticsProperties.ContentDescription)?.filter { it.startsWith("Stability control") }?.let { found += it }
             n.children.forEach { walk(it) }
         }
@@ -66,5 +67,37 @@ class EscHeaderPillTest {
         assertEquals("Stability control: Normal", escDescription(VehicleState(isConnected = true, escStatus = EscStatus.fromInt(0))))
         assertEquals("Stability control: Sport", escDescription(VehicleState(isConnected = true, escStatus = EscStatus.fromInt(2))))
         assertEquals("Stability control: Off", escDescription(VehicleState(isConnected = true, escStatus = EscStatus.fromInt(1))))
+    }
+
+    /** Everything TalkBack can announce: the MERGED semantics tree's descriptions and texts, placed nodes only. */
+    private fun announcements(vs: VehicleState): List<String> {
+        ShadowChoreographer.setPaused(true)
+        ShadowChoreographer.setFrameDelay(Duration.ofMillis(16))
+        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
+        activity.setContent {
+            Box(Modifier.fillMaxWidth()) {
+                AppHeader(vs = vs, prefs = UserPrefs(), onSettings = {}, onConnect = {}, onDisconnect = {}, onReconnect = {},
+                    link = LinkUi.LIVE)
+            }
+        }
+        repeat(4) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16)) }
+        val compose = activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as ViewGroup
+        val out = mutableListOf<String>()
+        fun walk(n: SemanticsNode) {
+            if (!n.layoutInfo.isPlaced) return
+            n.config.getOrNull(SemanticsProperties.ContentDescription)?.let { out += it }
+            n.config.getOrNull(SemanticsProperties.Text)?.let { out += it.map { s -> s.text } }
+            n.children.forEach { walk(it) }
+        }
+        walk((compose.getChildAt(0) as ViewRootForTest).semanticsOwner.rootSemanticsNode)
+        return out
+    }
+
+    @Test fun `the ESC pill is announced once - its visible word is not read again (merged tree, QA A2)`() {
+        // Drive mode NORMAL + ESC Sport (a synthetic pair): only the ESC pill can say "SPORT"
+        val said = announcements(VehicleState(isConnected = true, driveMode = com.openrs.dash.data.DriveMode.NORMAL,
+            escStatus = EscStatus.fromInt(2)))
+        assertEquals(said.toString(), 1, said.count { it == "Stability control: Sport" })
+        assertEquals("the visible ESC word read separately: $said", 0, said.count { it == "SPORT" })
     }
 }
