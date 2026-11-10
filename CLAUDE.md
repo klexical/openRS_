@@ -61,7 +61,8 @@ The per-file map of `android/app/src/main/java/com/openrs/dash/` is `.claude/rul
 0x1C0  ESC setting (2-bit at bit position 10): 0 Normal, 1 Off, 2 Sport — Ford's names (2018 RS supplement); the value → name
        mapping is CAN-mapped only (RS_HS.dbc VAL_ 448, #125). 3 = unrecognized (the name "Launch" rests only on the community
        DBC; never seen) → unknown, as is no frame yet; while unknown the app sends no ESC command (owner decision, #288)
-0x225  launch control engaged (byte5 bit3)
+0x225  launch control (byte5 bit3) — MS-CAN per DigiCluster, never seen in an HS capture; diagnostics only, never on
+       screen (#289)
 0x230  gear (4-bit) — does NOT broadcast on this car
 0x252  brake pressure (12-bit Motorola)
 0x2C0  AWD actual left/right torque Nm — RS_HS.dbc AWDmsg02 19|12 / 51|12 Motorola (MSB-first 20 / 52); requested L/R
@@ -74,7 +75,9 @@ The per-file map of `android/app/src/main/java/com/openrs/dash/` is `.claude/rul
 0x340  PCM ambient (byte7 signed × 0.25°C) — NOT TPMS
 0x360  odometer (bytes [3:5] 24-bit BE) + engine status (byte0)
 0x380  fuel level (Motorola 10-bit × 0.4%, clamped 0-100)
-0x420  drive mode detail + launch control flag (byte6/7, ~600 ms broadcast; bit0=0→Sport, bit0=1→Track)
+0x420  drive mode detail + launch control flag (byte6/7, ~600 ms broadcast; bit0=0→Sport, bit0=1→Track). The flag, byte 6
+       bit 2 (DBC LaunchControlStatus, unverified against the cluster), is the only source of the one "LC" (header, DRIVE,
+       GARAGE), shown while a documented 0x420 is ≤ 1.5 s old on this connection (`data/LaunchControl.kt`, #289)
 0x435  per-zone airbag status — **INTENTIONALLY NOT DECODED**: crosstalks with passenger-occupancy and false-triggers SRS lamp (DigiCluster v1.0.73)
 ```
 
@@ -108,7 +111,7 @@ data[5] = B5,  data[6] = B6 …
 ## Known Gotchas
 
 The gotchas live in `.claude/rules/` as path-scoped Claude Code rules, one file per area (95 entries, moved verbatim on
-2026-11-06; 102 now). Each file loads on demand when a file matching its `paths:` globs is read or edited; the globs start with `**/`
+2026-11-06; 110 now). Each file loads on demand when a file matching its `paths:` globs is read or edited; the globs start with `**/`
 so they also match from a workspace that holds this repository in a subfolder. Rules for editing them:
 
 - A new gotcha goes at the end of its area's file, in the same `- **Title** — …` style; a cross-cutting one goes to
@@ -126,15 +129,15 @@ so they also match from a workspace that holds this repository in a subfolder. R
 | File | Area | Loads when a matching file is read / edited |
 |---|---|---|
 | `source-layout.md` | Source Layout (the android/ source map) | any file under `android/` |
-| `android-general.md` | Android, any file (3) | any file under `android/app/src/` |
-| `can-decoding.md` | CAN decoding and VehicleState (11) | `CanDecoder.kt`, `VehicleState.kt`, `DemoSimulator.kt`, `PullTracker.kt`, `Knock*.kt`, `data/Drive*.kt`, `OilPtuMapping*`, `DriveRecorder.kt`, their tests, `test/resources/dbc/` |
+| `android-general.md` | Android, any file (5) | any file under `android/app/src/` |
+| `can-decoding.md` | CAN decoding and VehicleState (12) | `CanDecoder.kt`, `VehicleState.kt`, `DemoSimulator.kt`, `PullTracker.kt`, `Knock*.kt`, `data/Drive*.kt`, `OilPtuMapping*`, `DriveRecorder.kt`, their tests, `test/resources/dbc/` |
 | `obd-polling.md` | OBD Mode 22 polling, decoders and freshness (12) | `Obd*.kt`, `PcmPollSchedule.kt`, `PidRegistry.kt`, `NrcTracker.kt`, `CanDecoder.kt`, `SlcanConnection.kt`, `CanDataService.kt`, `ObdMerge.kt`, `FreshnessGate.kt`, `VehicleState.kt`, `*ModeProvenance*`, `PowerPage.kt`, `CustomDashPage.kt`, the PID assets, their tests |
 | `boost.md` | Boost / TIP rule (#207) (3) | any `*Boost*` file, `DrivePage.kt`, `CustomDashPage.kt`, `HudOverlayService.kt`, `DriveRecorder.kt`, `KnockScatter.kt`, `KnockCapture.kt`, `ui/trip/`, `web/src/lib/boost.ts` |
-| `connection-link.md` | Connection, SLCAN link, service ownership, firmware commands (15) | `Slcan*.kt`, transports, `ObdResponseParser.kt`, `PidRegistry.kt`, `FirmwareApi.kt`, `DriveCommand.kt`, `EscCommand.kt`, `CanDataService.kt`, `Link*.kt`, `ConnectionSetup.kt`, `CanDecoder.kt`, `ObdMerge.kt`, `DemoSimulator.kt`, `DriveModeDock.kt`, `MorePage.kt`, `SettingsSheet.kt`, `BleDeviceDraft.kt`, `MainActivity.kt`, `ObdConstants.kt`, `ForegroundController.kt`, `firmware/`, their tests |
+| `connection-link.md` | Connection, SLCAN link, service ownership, firmware commands (17) | `Slcan*.kt`, transports, `ObdResponseParser.kt`, `PidRegistry.kt`, `FirmwareApi.kt`, `DriveCommand.kt`, `EscCommand.kt`, `CanDataService.kt`, `Link*.kt`, `ConnectionSetup.kt`, `CanDecoder.kt`, `ObdMerge.kt`, `DemoSimulator.kt`, `DriveModeDock.kt`, `MorePage.kt`, `SettingsSheet.kt`, `BleDeviceDraft.kt`, `MainActivity.kt`, `ObdConstants.kt`, `ForegroundController.kt`, `firmware/`, their tests |
 | `ble.md` | BLE GATT transport and picker (7) | `Ble*.kt`, `BleDevicePickerDialog.kt`, `SlcanConnection.kt`, `*Ledger*`, `WriteOutcome.kt`, their tests |
 | `recorder-trip.md` | Drive recorder, laps and the TRIP tab (7) | `DriveRecorder.kt`, `data/Drive*.kt`, lap files, `ui/trip/` (incl. `TripPage.kt`), `TripPreview.kt`, `MainActivity.kt`, `DriveExportBuilder.kt`, their tests |
-| `diagnostics.md` | DTC scans, DID prober, diagnostic export (11) | `diagnostics/`, `DiagPage.kt`, `SlcanConnection.kt`, `*Ledger*`, `CanDataService.kt`, `DidProberSection.kt`, `PidBrowserSection.kt`, `data/Dtc*.kt`, their tests |
-| `ui-compose.md` | Compose UI (layout, theme, navigation) (15) | any file under `ui/` or `res/`, `HudOverlayService.kt` |
+| `diagnostics.md` | DTC scans, DID prober, diagnostic export (12) | `diagnostics/`, `DiagPage.kt`, `SlcanConnection.kt`, `*Ledger*`, `CanDataService.kt`, `DidProberSection.kt`, `PidBrowserSection.kt`, `data/Dtc*.kt`, their tests |
+| `ui-compose.md` | Compose UI (layout, theme, navigation) (17) | any file under `ui/` or `res/`, `HudOverlayService.kt` |
 | `thermal.md` | Thermal readiness, temperature freshness, drive thermal record (5) | any `*Thermal*` file, `TempsPage.kt` (home of `TempAvail`), `ChassisPage.kt`, `DrivePage.kt`, `DriveRecorder.kt`, their tests |
 | `demo-mode.md` | Demo mode (debug builds) (5) | any file under `com/openrs/dash/` (its rules bind every writer of live telemetry) |
 | `build-release.md` | Build, release identity, CI, private builds, test runtime (8) | Gradle files, `android/scripts/`, `android/CHANGELOG.md`, `robolectric.properties`, `update/`, `BuildInfo*`, `*Version*`, `.github/workflows/` |

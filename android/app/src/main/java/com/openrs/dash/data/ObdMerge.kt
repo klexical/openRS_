@@ -116,9 +116,10 @@ object ObdMerge {
             warnTempHigh    = obd.warnTempHigh    ?: current.warnTempHigh,
             // Freshness stamps from markFresh()/putGeneric() — previously dropped here,
             // which left every OBD field without a stamp (UI read them as STALE).
-            // Drive-mode and ESC-frame provenance keys are CAN-only and partly signalled by ABSENCE (#252, #125): an OBD reply carries the
+            // Drive-mode and ESC-frame provenance keys, and the launch-control stamps (#289), are CAN-only and partly signalled by ABSENCE (#252, #125): an OBD reply carries the
             // snapshot it was parsed against, so they are never taken from it — the live state's set is kept exactly
             fieldLastUpdateMs = VehicleState.mergeStamps(current.fieldLastUpdateMs,
-                obd.fieldLastUpdateMs.filterKeys { !it.startsWith(DRIVE_MODE_KEYS) && !it.startsWith(CanDecoder.ESC_FRAME_PREFIX) }),
+                obd.fieldLastUpdateMs.filterKeys { !it.startsWith(DRIVE_MODE_KEYS) && !it.startsWith(CanDecoder.ESC_FRAME_PREFIX) &&
+                    it !in LaunchControl.CAN_TAGS }),
         )
 }

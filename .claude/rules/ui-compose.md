@@ -12,7 +12,7 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
 - **Haze frosted glass placement** — `hazeSource` MUST be on the content composable (inside Scaffold), NOT on a parent Box that also contains the `hazeEffect` composable (BottomNavBar). If hazeEffect is inside the hazeSource tree, blur fails silently with no error. Also: Haze tint with `Bg.copy(alpha > 0.5f)` on a dark theme makes blur invisible — start at 0.0 and increase
 - **Bottom nav bar insets** — `Scaffold(contentWindowInsets = WindowInsets.statusBars)` drops the bottom inset so content extends behind the nav bar overlay. `enableEdgeToEdge(navigationBarStyle = SystemBarStyle.dark(TRANSPARENT))` removes the system nav bar scrim. Pages add `Tokens.NavBarHeight` as bottom scroll padding
 - **Live-only readouts go blank when `!vs.isConnected`** — the last frame stays in VehicleState after a drop, so gear,
-  shift LEDs (bar + edge glow), LC glow/banner, e-brake/LC anomaly priority, DRIVE throttle/brake/AWD/G/torque,
+  shift LEDs (bar + edge glow), e-brake and "LC" on the header and DRIVE, GARAGE's "LC", DRIVE throttle/brake/AWD/G/torque,
   the HUD overlay and Custom Dashboard cells all gate on connection. Fuel / battery / temps keep last value (THERMAL marks
   them STALE). Any new live readout needs the same gate
 - **Don't animate fast values with `AnimatedContent`** — a crossfade keyed on the value restarts on every CAN frame and
@@ -31,9 +31,10 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   (CRIT before WARN; the VEHICLE panel keeps the instant oil → coolant → PTU → RDU order). THERMAL trims padding/gaps (not reading sizes) when the page viewport is < 760 dp tall
   (`LocalThermalDensity`)
 - **E-brake / launch control never insert space** — shown as header chips in the wordmark's fixed slot (stacked
-  full words when both are on — never abbreviate LC ENGAGED; DAY engaged fill = `actionInk(accent)`) and inside DRIVE's
+  when both are on; launch control is the cluster's own "LC", outlined in the paint accent, no state word) and inside DRIVE's
   fixed-height gear module (tag + caption + border); AnomalyStrip now carries only update progress. Live flags only
-  (`vs.isConnected`). LC states supported: on (0x420 bit) and engaged (0x225); `lcArmed` (RSProt probe) is GARAGE-only
+  (`vs.isConnected`). "LC" is `LaunchControl.shown(vs, wallClockMs(500L))` only, a fresh documented 0x420 bit 2 on this
+  connection (#289); 0x225 and the 0x731 probe DIDs (`lcArmed`, `lcRpmTarget`, `assEnabled`) are diagnostics only
 - **Opening presentation** — system splash = background colour only (`splash_blank`). The composition draws alone at
   full opacity (no fade-in); the splash exit listener completes `OpeningState.splashGone`, and only then does the
   dashboard compose underneath (`composeDashboard`) and `CanDataService` bind — composing / binding earlier blocked the

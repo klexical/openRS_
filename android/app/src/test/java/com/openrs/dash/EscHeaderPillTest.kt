@@ -17,6 +17,7 @@ import com.openrs.dash.ui.AppHeader
 import com.openrs.dash.ui.LinkUi
 import com.openrs.dash.ui.UserPrefs
 import org.junit.Assert.assertEquals
+import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -35,10 +36,20 @@ import java.time.Duration
 @Config(qualifiers = "w411dp-h914dp-xxhdpi")
 class EscHeaderPillTest {
 
+    // Every activity built here is destroyed after the test and the main looper drained: a composition left alive or with
+    // work queued at exit stops later Compose tests in the same JVM from recomposing (LaunchControlDisplayTest, QA F3)
+    private val activities = mutableListOf<org.robolectric.android.controller.ActivityController<ComponentActivity>>()
+
+    @After fun closeActivities() {
+        activities.forEach { it.pause().stop().destroy() }
+        activities.clear()
+        repeat(8) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16)) }
+    }
+
     private fun escDescription(vs: VehicleState): String {
         ShadowChoreographer.setPaused(true)
         ShadowChoreographer.setFrameDelay(Duration.ofMillis(16))
-        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
+        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().also { activities += it }.get()
         activity.setContent {
             Box(Modifier.fillMaxWidth()) {
                 AppHeader(vs = vs, prefs = UserPrefs(), onSettings = {}, onConnect = {}, onDisconnect = {}, onReconnect = {},
@@ -73,7 +84,7 @@ class EscHeaderPillTest {
     private fun announcements(vs: VehicleState): List<String> {
         ShadowChoreographer.setPaused(true)
         ShadowChoreographer.setFrameDelay(Duration.ofMillis(16))
-        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
+        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().also { activities += it }.get()
         activity.setContent {
             Box(Modifier.fillMaxWidth()) {
                 AppHeader(vs = vs, prefs = UserPrefs(), onSettings = {}, onConnect = {}, onDisconnect = {}, onReconnect = {},

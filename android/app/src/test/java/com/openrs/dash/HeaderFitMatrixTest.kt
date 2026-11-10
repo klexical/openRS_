@@ -127,6 +127,8 @@ class HeaderFitMatrixTest {
         tap(22f); tap(42f)
         // Each case is a new activity: destroy it, or 100+ renders run the test JVM out of memory
         controller.pause().stop().destroy()
+        // ... and drain the looper: work left queued at exit stops later Compose tests in this JVM from recomposing (QA F3)
+        repeat(8) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16)) }
         return Shot(bmp, d, h / d, tags, settings)
     }
 
