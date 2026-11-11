@@ -206,10 +206,8 @@ class ObserverNoteEvidenceTest {
         assertEquals(0, dao.getBookmarks(first).size)
         assertEquals(0, dao.getBookmarks(second).size)
         noteForm().also { it.open() }.save("opened in the new drive")      // control: a form of this drive records
-        // Placed or not is not checked here: a new drive still starts with the last drive's position (kept for the TRIP
-        // dot in #236), so before its first fix this note takes that position. That is a known defect with its own fix,
-        // which tightens this line to "no GPS fix".
-        assertTrue(notes().single().message.startsWith("Observer note: opened in the new drive"))
+        // Drive 2 has no fix of its own yet, so the note is not placed (#311: no position carried from drive 1)
+        assertEquals("Observer note: opened in the new drive (no GPS fix, not on the map)", notes().single().message)
     }
 
     @Test fun `closing the form drops its mark - the next note is not stamped with an old moment`() {

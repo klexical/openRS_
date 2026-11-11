@@ -274,14 +274,14 @@ class DriveRecorder(
                     )
                 )
                 // Every accumulator starts empty — a new DriveState, not a copy, so none is carried over from the last
-                // drive (peak oil / coolant were, #236). Only the live position dot survives.
-                _driveState.update { state ->
+                // drive (peak oil / coolant were, #236). The position too (#311): a drive has one only once its own
+                // collector receives a fix; until then nothing is placed and TRIP draws no dot.
+                _driveState.update {
                     DriveState(
                         isRecording = true,
                         driveId = driveId,
                         startFuelPct = vs.fuelLevelPct,
-                        startTime = now,
-                        currentLocation = state.currentLocation
+                        startTime = now
                     )
                 }
                 startRecordingLoop(driveId, newRun)
@@ -460,8 +460,10 @@ class DriveRecorder(
         // Set before the state says not recording, so a reader never sees neither (#212)
         finalizeJob = finalize
         finalize.start()
+        // The stopped drive's position goes with it (#311); only that drive's, as a drive started since owns its own
         _driveState.update {
-            it.copy(isRecording = false, isPaused = false)
+            if (it.driveId == state.driveId) it.copy(isRecording = false, isPaused = false, currentLocation = null)
+            else it.copy(isRecording = false, isPaused = false)
         }
         return finalize
     }
@@ -702,7 +704,7 @@ class DriveRecorder(
                     flushBuffer(run)
                 } finally {
                     // Only this drive's state: a drive started since (finalize + start) is recording (#236)
-                    _driveState.update { if (it.driveId == driveId) it.copy(isRecording = false) else it }
+                    _driveState.update { if (it.driveId == driveId) it.copy(isRecording = false, currentLocation = null) else it }
                 }
             }
         }
@@ -827,10 +829,16 @@ class DriveRecorder(
 
     suspend fun getLastKnownLocation(): Location? = locations.last()
 
-    /** How old a fix was when it arrived — on the monotonic clock when the fix carries it, else the wall clock. */
-    private fun fixAgeMs(location: Location, nowMs: Long): Long =
-        if (location.elapsedRealtimeNanos > 0L) (SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos) / 1_000_000L
-        else nowMs - location.time
+    /**
+     * The recording drive's own last fix, if it is at most [LapTimer.MAX_FIX_AGE_MS] old at [nowMs] (#311): the only
+     * position a note or the start/finish line may be placed at. Null before the drive's first fix, after STOP, when
+     * not recording, and during a GPS gap (the last fix is then not where the car is).
+     */
+    fun freshFix(nowMs: Long = System.currentTimeMillis()): Location? {
+        val state = _driveState.value
+        if (!state.isRecording) return null
+        return state.currentLocation?.takeIf { fixAgeMs(it, nowMs) <= LapTimer.MAX_FIX_AGE_MS }
+    }
 
     @SuppressLint("MissingPermission")
     private suspend fun fusedLastLocation(): Location? =
@@ -1033,7 +1041,8 @@ class DriveRecorder(
     fun markNow(): NoteMark? {
         val state = _driveState.value
         if (!state.isRecording || state.driveId <= 0L) return null
-        return NoteMark(state.driveId, System.currentTimeMillis(), state.currentLocation, vehicleStateFlow.value)
+        val now = System.currentTimeMillis()
+        return NoteMark(state.driveId, now, freshFix(now), vehicleStateFlow.value)
     }
 
     /**
@@ -1075,6 +1084,11 @@ class DriveRecorder(
 
     companion object {
         private const val TAG = "DriveRecorder"
+
+        /** How old a fix is at [nowMs] — on the monotonic clock when the fix carries it, else the wall clock. */
+        internal fun fixAgeMs(location: Location, nowMs: Long): Long =
+            if (location.elapsedRealtimeNanos > 0L) (SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos) / 1_000_000L
+            else nowMs - location.time
         private const val LAP_TAG = "LapTimer"
 
         /** Street name, else locality, else admin area of the first result; null when there is none. */
