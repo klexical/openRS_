@@ -244,4 +244,48 @@ class VehicleStateTest {
         val withThrottleFrame = VehicleState(throttlePct = 40.0, throttleHasSource = true, accelPedalPct = 92.0)
         assertEquals(40.0, withThrottleFrame.throttleOrPedalPct, 0.0)
     }
+
+    // ── Session marks: what withPeaksUpdated / withPeaksReset do today (#199 keeps it exactly) ───────────────────
+
+    @Test fun `temperature peaks ignore the -99 sentinel and keep the highest real reading`() {
+        var s = VehicleState()
+        s = s.copy(oilTempC = -99.0, coolantTempC = -99.0, rduTempC = -99.0, ptuTempC = -99.0, chargeAirTempC = -99.0).withPeaksUpdated()
+        assertEquals(listOf(-99.0, -99.0, -99.0, -99.0, -99.0),
+            listOf(s.peakOilTempC, s.peakCoolantTempC, s.peakRduTempC, s.peakPtuTempC, s.peakChargeAirTempC))
+        s = s.copy(oilTempC = 90.0, coolantTempC = 85.0, rduTempC = 40.0, ptuTempC = 50.0, chargeAirTempC = 30.0).withPeaksUpdated()
+        s = s.copy(oilTempC = 80.0, coolantTempC = -99.0, rduTempC = 45.0, ptuTempC = -99.0, chargeAirTempC = 25.0).withPeaksUpdated()
+        assertEquals(listOf(90.0, 85.0, 45.0, 50.0, 30.0),
+            listOf(s.peakOilTempC, s.peakCoolantTempC, s.peakRduTempC, s.peakPtuTempC, s.peakChargeAirTempC))
+    }
+
+    @Test fun `a temperature at -90 or below is not a reading - above it is`() {
+        val s = VehicleState(oilTempC = -90.0, coolantTempC = -89.0).withPeaksUpdated()
+        assertEquals(-99.0, s.peakOilTempC, 0.0)
+        assertEquals(-89.0, s.peakCoolantTempC, 0.0)
+    }
+
+    @Test fun `G peaks track the magnitude in either direction`() {
+        val s = VehicleState(lateralG = -1.1, longitudinalG = -0.8).withPeaksUpdated()
+            .copy(lateralG = 0.5, longitudinalG = 0.3).withPeaksUpdated()
+        assertEquals(1.1, s.peakLateralG, 1e-9)
+        assertEquals(0.8, s.peakLongitudinalG, 1e-9)
+    }
+
+    @Test fun `tyre start pressures take the first valid reading per wheel and keep it`() {
+        var s = VehicleState(tirePressLF = -1.0, tirePressRF = 0.0, tirePressLR = 33.0, tirePressRR = 34.0).withPeaksUpdated()
+        assertEquals(listOf(-1.0, -1.0, 33.0, 34.0), listOf(s.tireStartLF, s.tireStartRF, s.tireStartLR, s.tireStartRR))
+        s = s.copy(tirePressLF = 31.0, tirePressRF = 32.0, tirePressLR = 36.0, tirePressRR = 37.0).withPeaksUpdated()
+        assertEquals(listOf(31.0, 32.0, 33.0, 34.0), listOf(s.tireStartLF, s.tireStartRF, s.tireStartLR, s.tireStartRR))
+    }
+
+    @Test fun `peak reset returns every mark to its not-yet value`() {
+        val s = VehicleState(rpm = 6000.0, speedKph = 150.0, lateralG = 1.0, longitudinalG = 0.7, oilTempC = 110.0,
+            coolantTempC = 95.0, rduTempC = 60.0, ptuTempC = 70.0, chargeAirTempC = 40.0, tirePressLF = 33.0, tirePressRF = 33.0,
+            tirePressLR = 33.0, tirePressRR = 33.0).withPeaksUpdated().withPeaksReset()
+        assertEquals(listOf(0.0, 0.0, 0.0, 0.0), listOf(s.peakRpm, s.peakSpeedKph, s.peakLateralG, s.peakLongitudinalG))
+        assertEquals(listOf(-99.0, -99.0, -99.0, -99.0, -99.0),
+            listOf(s.peakOilTempC, s.peakCoolantTempC, s.peakRduTempC, s.peakPtuTempC, s.peakChargeAirTempC))
+        assertEquals(listOf(-1.0, -1.0, -1.0, -1.0), listOf(s.tireStartLF, s.tireStartRF, s.tireStartLR, s.tireStartRR))
+        assertEquals("live readings untouched", 6000.0, s.rpm, 0.0)
+    }
 }
