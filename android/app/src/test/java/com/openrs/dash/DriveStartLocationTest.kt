@@ -215,6 +215,13 @@ class DriveStartLocationTest {
         assertEquals(2.0, com.openrs.dash.ui.trip.tripDot(state, loc(2.0), fetchedNow)!!.latitude, 0.0)
     }
 
+    @Test fun `an idle fetch asked for in the drive's start millisecond is not drawn - only one asked for later is`() {
+        firstDriveThenStop()
+        val state = rec.driveState.value
+        assertNull("a tie is not after the start", com.openrs.dash.ui.trip.tripDot(state, loc(1.0), state.startTime))
+        assertEquals(1.0, com.openrs.dash.ui.trip.tripDot(state, loc(1.0), state.startTime + 1)!!.latitude, 0.0)
+    }
+
     @Test fun `an idle fetch still in flight when a drive starts is not drawn after that drive's STOP`() {
         val reply = kotlinx.coroutines.CompletableDeferred<Location?>()
         gps.held = reply

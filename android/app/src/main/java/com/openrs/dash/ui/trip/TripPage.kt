@@ -1732,4 +1732,6 @@ internal suspend fun idleFetch(
  */
 internal fun tripDot(state: DriveState, idle: android.location.Location?, idleFetchedAtMs: Long): android.location.Location? =
     if (state.isRecording) state.currentLocation
-    else idle?.takeIf { idleFetchedAtMs >= state.startTime }
+    // Strictly after: a fetch asked for in the drive's start millisecond cannot be shown to be after it, and the safe
+    // answer is no dot (a pre-drive position drawn as current is what #311 removes)
+    else idle?.takeIf { idleFetchedAtMs > state.startTime }
