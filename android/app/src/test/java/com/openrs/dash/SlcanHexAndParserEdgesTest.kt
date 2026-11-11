@@ -298,7 +298,7 @@ class SlcanHexAndParserEdgesTest {
         val tsLines = (0 until 3).map { lower(ts(OIL_115, it)) }
         val vs = Run(this, listOf(SACRIFICE) + tsLines + lower(OIL_70) + (3 until 20).map { lower(ts(OIL_115, it)) }).state.value
         assertEquals("the plain line decodes, nothing +4 does", 70.0, vs.oilTempC, 0.0)
-        assertEquals(70.0, vs.peakOilTempC, 0.0)
+        assertEquals(70.0, vs.session.peakOilTempC, 0.0)
         val li = DiagnosticLogger.linkIntegrity
         assertEquals(false, li.framingTimestamped)
         assertEquals("all +4 lines refused", 20, li.refusedFrameLines)
@@ -396,7 +396,7 @@ class SlcanHexAndParserEdgesTest {
         // Byte for byte OIL_115 under the 29-bit identifier 0x000000F8. Lost distinction: parse() returns only the number
         val vs = Run(this, listOf(SACRIFICE, OIL_70, "T000000F8800BE0000000000AF", "T000000f8800be0000000000af")).state.value
         assertEquals(70.0, vs.oilTempC, 0.0)
-        assertEquals("no peak from another identifier", 70.0, vs.peakOilTempC, 0.0)
+        assertEquals("no peak from another identifier", 70.0, vs.session.peakOilTempC, 0.0)
         assertEquals(2, DiagnosticLogger.linkIntegrity.refusedFrameLines)
     }
 
@@ -607,7 +607,7 @@ class SlcanHexAndParserEdgesTest {
         ble.notifyAt(1_400L, "\t$OIL_115\r", this)
         advanceTimeBy(3_000L)
         assertEquals(70.0, ble.state.value.oilTempC, 0.0)
-        assertEquals(70.0, ble.state.value.peakOilTempC, 0.0)
+        assertEquals(70.0, ble.state.value.session.peakOilTempC, 0.0)
         assertEquals("the trailing LF line starts with t, the others don't", 1, DiagnosticLogger.linkIntegrity.refusedFrameLines)
     }
 

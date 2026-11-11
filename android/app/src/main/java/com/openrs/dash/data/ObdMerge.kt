@@ -108,12 +108,7 @@ object ObdMerge {
             genericValues = if (obd.genericValues.isNotEmpty())
                 current.genericValues + obd.genericValues.filterKeys { carried(it, current, obd) }
             else current.genericValues,
-            warnMil         = obd.warnMil         ?: current.warnMil,
-            warnAbs         = obd.warnAbs         ?: current.warnAbs,
-            warnBrake       = obd.warnBrake       ?: current.warnBrake,
-            warnCharge      = obd.warnCharge      ?: current.warnCharge,
-            warnOilPressure = obd.warnOilPressure ?: current.warnOilPressure,
-            warnTempHigh    = obd.warnTempHigh    ?: current.warnTempHigh,
+            lamps = Lamps.merged(current.lamps, obd.lamps),     // IPC lamps: reply, else live; SRS: live only (CAN)
             // Freshness stamps from markFresh()/putGeneric() — previously dropped here,
             // which left every OBD field without a stamp (UI read them as STALE).
             // Drive-mode and ESC-frame provenance keys, and the launch-control stamps (#289), are CAN-only and partly signalled by ABSENCE (#252, #125): an OBD reply carries the

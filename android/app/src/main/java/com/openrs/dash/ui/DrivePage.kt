@@ -233,8 +233,8 @@ import kotlin.math.roundToInt
                     label = "ENGINE", unit = "RPM", value = rpmStr,
                     valueColor = if (atShift) Orange else Frost,
                     valueSize = 34.sp,
-                    peak = "PEAK ${vs.peakRpm.toInt()}",
-                    peakHoldValue = vs.peakRpm.toInt().toString(),
+                    peak = "PEAK ${vs.session.peakRpm.toInt()}",
+                    peakHoldValue = vs.session.peakRpm.toInt().toString(),
                     spark = rpmSnap, sparkColor = accentMid(),
                     modifier = Modifier.weight(1f).fillMaxHeight()
                 )
@@ -253,8 +253,8 @@ import kotlin.math.roundToInt
                 InstrumentHero(
                     label = "SPEED", unit = p.speedLabel, value = speedStr,
                     valueSize = 34.sp,
-                    peak = "PEAK ${p.displaySpeed(vs.peakSpeedKph)}",
-                    peakHoldValue = p.displaySpeed(vs.peakSpeedKph),
+                    peak = "PEAK ${p.displaySpeed(vs.session.peakSpeedKph)}",
+                    peakHoldValue = p.displaySpeed(vs.session.peakSpeedKph),
                     spark = speedSnap, sparkColor = accentMid(),
                     modifier = Modifier.weight(1f).fillMaxHeight()
                 )

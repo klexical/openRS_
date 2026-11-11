@@ -72,7 +72,7 @@ class SlcanFramingModeTest {
     @Test fun `a Z1-style stream decodes normally once the connection locks to timestamped`() = runTest {
         val vs = replay((0 until 20).map { ts(oil(if (it < 19) 70 else 80), it * 50) })
         assertEquals(80.0, vs.oilTempC, 0.0)
-        assertEquals(80.0, vs.peakOilTempC, 0.0)
+        assertEquals(80.0, vs.session.peakOilTempC, 0.0)
         assertEquals(framingEvents().toString(), 1, framingEvents().size)
         assertTrue(framingEvents().single().contains("timestamp"))
         assertEquals(true, DiagnosticLogger.linkIntegrity.framingTimestamped)
@@ -91,7 +91,7 @@ class SlcanFramingModeTest {
         // detection — corrected after review.)
         val vs = replay(listOf(oil(70), ts(oil(195), 0)) + (0 until 20).map { oil(70) })
         assertEquals(70.0, vs.oilTempC, 0.0)
-        assertEquals("no peak from the +4 line", 70.0, vs.peakOilTempC, 0.0)
+        assertEquals("no peak from the +4 line", 70.0, vs.session.peakOilTempC, 0.0)
         assertTrue(framingEvents().toString(), framingEvents().isEmpty())
         val li = DiagnosticLogger.linkIntegrity
         assertEquals("locked plain", false, li.framingTimestamped)
@@ -102,7 +102,7 @@ class SlcanFramingModeTest {
     @Test fun `a plain line inside a timestamped stream is refused`() = runTest {
         val vs = replay((0 until 10).map { ts(oil(70), it) } + oil(195) + (10 until 15).map { ts(oil(70), it) })
         assertEquals(70.0, vs.oilTempC, 0.0)
-        assertEquals(70.0, vs.peakOilTempC, 0.0)
+        assertEquals(70.0, vs.session.peakOilTempC, 0.0)
     }
 
     @Test fun `50 consecutive lines of the other shape on a locked connection log one FRAMING event, no switch`() = runTest {

@@ -323,10 +323,10 @@ private fun CustomGaugeCell(
                 else -> ""     // RPM: the caption already says it
             }
             val peak = when (cell.fieldKey) {
-                "rpm" -> "PEAK ${vs.peakRpm.toInt()}"
+                "rpm" -> "PEAK ${vs.session.peakRpm.toInt()}"
                 // The peak of the source shown, named with it, in the selected unit (#207)
                 "boostKpa" -> boostPeakCaption(boost, prefs)
-                "speedKph" -> "PEAK ${prefs.displaySpeed(vs.peakSpeedKph)}"
+                "speedKph" -> "PEAK ${prefs.displaySpeed(vs.session.peakSpeedKph)}"
                 else -> null
             }
             // Raw value, 1:1 with the frame (no spring) — the same rule as DRIVE's heroes.

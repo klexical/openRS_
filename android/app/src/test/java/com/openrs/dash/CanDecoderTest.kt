@@ -365,18 +365,31 @@ class CanDecoderTest {
         assertNotNull(issue)
     }
 
-    // ── 0x040: SRS airbag frame recognition (DigiCluster v1.0.73) ──────────
-    // VehicleState.copy() is at the JVM 255-slot ceiling, so the lamp state is NOT
-    // persisted on VehicleState yet. The decoder still recognizes the frame so the
-    // FrameCoverageGrid shows it as live, and 0x435 crosstalk is explicitly skipped.
+    // ── 0x040: SRS airbag lamp (DigiCluster v1.0.73), stored since #199 ─────────────────────────────────────────
+    // Before #199 the lamp was recognized but not stored (VehicleState.copy() was at the JVM slot limit), and every
+    // 0x040 frame returned the same instance. Now byte 2 bits 7:6 == 0xC0 sets lamps.srs; occupancy alone does not.
 
     @Test
-    fun `decode SRS frame recognized returns the same state instance (#192)`() {
-        // Recognized (non-null → not an unknown frame) but nothing changes, so the
-        // same instance comes back and processCanFrame skips the copy + emit.
-        for (b2 in listOf(0x80, 0x40, 0xC0)) {
-            assertSame(blank, CanDecoder.decode(0x040, byteArrayOf(0x00, 0x00, b2.toByte()), blank))
-        }
+    fun `0x040 stores the SRS lamp - on only for both bits set, occupancy alone is off`() {
+        assertEquals(true, CanDecoder.decode(0x040, byteArrayOf(0x00, 0x00, 0xC0.toByte()), blank)!!.lamps.srs)
+        assertEquals(true, CanDecoder.decode(0x040, byteArrayOf(0x00, 0x00, 0xD0.toByte()), blank)!!.lamps.srs)
+        assertEquals(false, CanDecoder.decode(0x040, byteArrayOf(0x00, 0x00, 0x80.toByte()), blank)!!.lamps.srs)
+        assertEquals(false, CanDecoder.decode(0x040, byteArrayOf(0x00, 0x00, 0x40), blank)!!.lamps.srs)
+    }
+
+    @Test
+    fun `0x040 repeating the stored lamp returns the same state instance (#192)`() {
+        val on = CanDecoder.decode(0x040, byteArrayOf(0x00, 0x00, 0xC0.toByte()), blank)!!
+        assertSame(on, CanDecoder.decode(0x040, byteArrayOf(0x00, 0x00, 0xC0.toByte()), on))
+        val off = CanDecoder.decode(0x040, byteArrayOf(0x00, 0x00, 0x80.toByte()), on)!!
+        assertEquals(false, off.lamps.srs)
+        assertSame(off, CanDecoder.decode(0x040, byteArrayOf(0x00, 0x00, 0x40), off))
+    }
+
+    @Test
+    fun `0x040 too short to hold byte 2 updates nothing`() {
+        assertSame(blank, CanDecoder.decode(0x040, byteArrayOf(0x00, 0x00), blank))
+        assertNull(blank.lamps.srs)
     }
 
     @Test

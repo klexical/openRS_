@@ -242,7 +242,8 @@ object CanDecoder {
             "ambient 0x1A4 raw=0x%02X (%.2f°C unsigned) rejected".format(raw, raw * 0.25) to
                 "0x1A4 > ${AMBIENT_1A4_MAX_C}°C — likely sub-zero, encoding pending (#185)"
         }
-        ID_SRS_STATUS      -> "srs=0x040 (frame recognized; lamp state not yet surfaced on VehicleState)" to null
+        ID_SRS_STATUS      -> (if (data.size < 3) "srs=0x040 too short (no byte 2), lamp unchanged"
+                               else "srs=0x040 lamp unchanged (byte2=0x%02X)".format(data[2].toInt() and 0xFF)) to null
         ID_CHARGING_STATUS -> "chargingStatus=0x300 (byte mapping pending)" to null
         else               -> "0x%03X recognized, no state change".format(id) to null
     }
@@ -528,13 +529,12 @@ object CanDecoder {
             // Only (byte2 & 0xC0) == 0xC0 lights the lamp. Occupancy alone must not.
             // 0x435 per-zone airbag status is intentionally NOT decoded here — DigiCluster
             // confirmed it crosstalks with occupancy and false-triggers the lamp.
-            // 0x040 is recognized so FrameCoverageGrid sees it as "live" and the lamp
-            // state is validated at the decoder level, but downstream state is not
-            // mutated — VehicleState.copy() is at the JVM 255-slot ceiling (see memory
-            // gotchas_vehiclestate_jvm_limit.md). When slots are freed in a future RC,
-            // store the lamp as `warnAirbag: Boolean? = (b2 & 0xC0) == 0xC0`.
-            // Returned unchanged (same instance) — no field changes, so no StateFlow emit (#192).
-            ID_SRS_STATUS -> state
+            // Stored as VehicleState.lamps.srs (#199). A frame that repeats the current value returns the same
+            // instance (no StateFlow emit, #192); a frame too short to hold byte 2 updates nothing.
+            ID_SRS_STATUS -> if (n < 3) state else {
+                val on = (data[2].toInt() and 0xC0) == 0xC0
+                if (state.lamps.srs == on) state else state.copy(lamps = state.lamps.copy(srs = on))
+            }
 
             // ── 0x300: Charging/battery system fault ──────────────────────────
             // DigiCluster v1.0.73 confirms this ID lights the battery lamp for real faults
@@ -758,7 +758,7 @@ object CanDecoder {
         ID_PCM_AMBIENT  -> "ambient=${"%.2f".format(state.ambientTempC)}°C (PCMmsg17)"
         ID_DRIVE_MODE_EXT -> "driveMode=${state.driveMode.label} lc=${state.launchControlActive} (resolved via 0x420+0x1B0)"
         ID_AMBIENT_TEMP -> "ambientTempC=${"%.2f".format(state.ambientTempC)}"
-        ID_SRS_STATUS   -> "srs=0x040 (frame recognized; lamp state not yet surfaced on VehicleState)"
+        ID_SRS_STATUS   -> "srsLamp=${state.lamps.srs}"
         ID_CHARGING_STATUS -> "chargingStatus=0x300 (byte mapping pending)"
         ID_WHEEL_SPEEDS -> "FL=${"%.1f".format(state.wheelSpeedFL)} FR=${"%.1f".format(state.wheelSpeedFR)} RL=${"%.1f".format(state.wheelSpeedRL)} RR=${"%.1f".format(state.wheelSpeedRR)} km/h"
         ID_AWD_TORQUE   -> "L=${"%.0f".format(state.awdLeftTorque)}Nm R=${"%.0f".format(state.awdRightTorque)}Nm"

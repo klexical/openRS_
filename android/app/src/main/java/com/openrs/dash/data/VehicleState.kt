@@ -84,12 +84,6 @@ data class VehicleState(
 
     val tpmsLastUpdate: Long = 0L,           // System.currentTimeMillis() of last TPMS pressure update
 
-    // ── TPMS Session Start (first valid reading per session) ──
-    val tireStartLF: Double = -1.0,        // Session-start LF pressure (PSI); -1 = not yet captured
-    val tireStartRF: Double = -1.0,        // Session-start RF pressure (PSI); -1 = not yet captured
-    val tireStartLR: Double = -1.0,        // Session-start LR pressure (PSI); -1 = not yet captured
-    val tireStartRR: Double = -1.0,        // Session-start RR pressure (PSI); -1 = not yet captured
-
     // ── Driver Inputs (CAN Sniffed) ─────────────────────────
     val clutchPedalPct: Double = 0.0,  // CAN 0x138: clutch pedal position 0-100%
 
@@ -133,18 +127,8 @@ data class VehicleState(
     val awdClutchPressureL: Double = -1.0, // AWD 0x1ED1: left clutch hydraulic pressure (mBar); -1 = not yet polled
     val awdClutchPressureR: Double = -1.0, // AWD 0x1ED2: right clutch hydraulic pressure (mBar); -1 = not yet polled
 
-    // ── IPC Warning Lamps (Mode 22 via IPC ECU, DIDs TBD) ─────
-    val warnMil: Boolean? = null,         // MIL (check engine) lamp
-    val warnAbs: Boolean? = null,         // ABS warning lamp
-    val warnBrake: Boolean? = null,       // Brake warning lamp
-    val warnCharge: Boolean? = null,      // Battery/charge warning lamp (0x300 pending bit mapping)
-    val warnOilPressure: Boolean? = null, // Oil pressure warning lamp
-    val warnTempHigh: Boolean? = null,    // High coolant temp warning
-    // Note (rc.4): SRS airbag lamp from HS-CAN 0x040 and the charging/battery fault
-    // from 0x300 are decoded + validated in CanDecoder, but NOT persisted here — the
-    // VehicleState.copy() method is at the JVM 255-slot ceiling. When we free slots
-    // (e.g. by removing unused AWD speculative-DID fields) these lamp states should
-    // move into dedicated Boolean? fields alongside warnMil/warnAbs/etc.
+    // ── Warning lamps (#199: one nested value) ─────────────
+    val lamps: Lamps = Lamps(),
 
     // ── Vehicle Identification (CAN 0x40A multiplexed) ──────
     val vin: String = "",                  // 17-char VIN assembled from mux pages C1 00/01/02
@@ -190,17 +174,8 @@ data class VehicleState(
     // ── Generic PID values (data-driven, no dedicated fields) ──
     val genericValues: Map<String, Double> = emptyMap(),
 
-    // ── Peaks ───────────────────────────────────────────────
-    val peakBoostPsi: Double = 0.0,
-    val peakRpm: Double = 0.0,
-    val peakSpeedKph: Double = 0.0,
-    val peakLateralG: Double = 0.0,
-    val peakLongitudinalG: Double = 0.0,
-    val peakOilTempC: Double = -99.0,
-    val peakCoolantTempC: Double = -99.0,
-    val peakRduTempC: Double = -99.0,
-    val peakPtuTempC: Double = -99.0,
-    val peakChargeAirTempC: Double = -99.0,
+    // ── Session peaks and tyre start pressures (#199: one nested value, so copy() stays under the JVM slot limit) ──
+    val session: SessionMarks = SessionMarks(),
 
     // ── Connection ──────────────────────────────────────────
     val isConnected: Boolean = false,
@@ -394,35 +369,93 @@ data class VehicleState(
         return valid.max() - valid.min()
     }
 
-    /** Session peaks. Boost peaks are kept per source by [BoostSession] (#207) — [peakBoostPsi] isn't updated here. */
+    /** Session marks from this frame (#199). The same instance when nothing changed, as on most CAN frames. */
     fun withPeaksUpdated(): VehicleState {
-        return copy(
-            peakRpm = max(peakRpm, rpm),
-            peakSpeedKph = max(peakSpeedKph, speedKph),
-            peakLateralG = max(peakLateralG, abs(lateralG)),
-            peakLongitudinalG = max(peakLongitudinalG, abs(longitudinalG)),
-            peakOilTempC = if (oilTempC > -90) max(peakOilTempC, oilTempC) else peakOilTempC,
-            peakCoolantTempC = if (coolantTempC > -90) max(peakCoolantTempC, coolantTempC) else peakCoolantTempC,
-            peakRduTempC = if (rduTempC > -90) max(peakRduTempC, rduTempC) else peakRduTempC,
-            peakPtuTempC = if (ptuTempC > -90) max(peakPtuTempC, ptuTempC) else peakPtuTempC,
-            peakChargeAirTempC = if (chargeAirTempC > -90) max(peakChargeAirTempC, chargeAirTempC) else peakChargeAirTempC,
-            // Capture session-start tire pressures (first valid reading only)
-            tireStartLF = if (tireStartLF < 0 && tirePressLF > 0) tirePressLF else tireStartLF,
-            tireStartRF = if (tireStartRF < 0 && tirePressRF > 0) tirePressRF else tireStartRF,
-            tireStartLR = if (tireStartLR < 0 && tirePressLR > 0) tirePressLR else tireStartLR,
-            tireStartRR = if (tireStartRR < 0 && tirePressRR > 0) tirePressRR else tireStartRR
-        )
+        val marks = session.updatedFrom(this)
+        return if (marks === session) this else copy(session = marks)
     }
 
-    fun withPeaksReset(): VehicleState = copy(
-        peakBoostPsi = 0.0, peakRpm = 0.0, peakSpeedKph = 0.0,
-        peakLateralG = 0.0, peakLongitudinalG = 0.0,
-        peakOilTempC = -99.0, peakCoolantTempC = -99.0,
-        peakRduTempC = -99.0, peakPtuTempC = -99.0,
-        peakChargeAirTempC = -99.0,
-        tireStartLF = -1.0, tireStartRF = -1.0,
-        tireStartLR = -1.0, tireStartRR = -1.0
-    )
+    fun withPeaksReset(): VehicleState = copy(session = SessionMarks())
+}
+
+/**
+ * Cluster warning lamps (#199). `null` = unknown. The six IPC lamps (Mode 22 via the IPC ECU, DIDs not yet known) have no
+ * decoder yet; [srs] is stored from HS-CAN 0x040 (byte 2 bits 7:6 == 0xC0 → on, DigiCluster v1.0.73). The 0x300
+ * charging fault stays undecoded (bit mapping pending). No lamp is shown on screen yet.
+ */
+@Immutable
+data class Lamps(
+    val mil: Boolean? = null,          // MIL (check engine)
+    val abs: Boolean? = null,
+    val brake: Boolean? = null,
+    val charge: Boolean? = null,       // battery / charge
+    val oilPressure: Boolean? = null,
+    val tempHigh: Boolean? = null,     // high coolant temperature
+    val srs: Boolean? = null,          // airbag, from CAN 0x040 only
+) {
+    companion object {
+        /**
+         * An OBD reply's lamps over the live ones: each IPC lamp the reply holds, else the live one. [srs] is CAN-only and
+         * always the live value: a reply carries the snapshot it was parsed against, which can still hold an SRS state
+         * that CAN has changed since.
+         */
+        fun merged(current: Lamps, reply: Lamps): Lamps {
+            val next = Lamps(
+                mil = reply.mil ?: current.mil,
+                abs = reply.abs ?: current.abs,
+                brake = reply.brake ?: current.brake,
+                charge = reply.charge ?: current.charge,
+                oilPressure = reply.oilPressure ?: current.oilPressure,
+                tempHigh = reply.tempHigh ?: current.tempHigh,
+                srs = current.srs,
+            )
+            return if (next == current) current else next
+        }
+    }
+}
+
+/**
+ * What a connection session has seen so far (#199): the live peaks and the first valid tyre pressure per wheel. Written
+ * only by [VehicleState.withPeaksUpdated] and reset by [VehicleState.withPeaksReset]; never taken from an OBD reply.
+ * Boost peaks are kept per source by [BoostSession] (#207), not here.
+ */
+@Immutable
+data class SessionMarks(
+    val peakRpm: Double = 0.0,
+    val peakSpeedKph: Double = 0.0,
+    val peakLateralG: Double = 0.0,
+    val peakLongitudinalG: Double = 0.0,
+    val peakOilTempC: Double = -99.0,          // -99 = no reading yet (a temperature at -90 or below is not a reading)
+    val peakCoolantTempC: Double = -99.0,
+    val peakRduTempC: Double = -99.0,
+    val peakPtuTempC: Double = -99.0,
+    val peakChargeAirTempC: Double = -99.0,
+    val tireStartLF: Double = -1.0,            // session-start pressure (PSI); -1 = not yet captured
+    val tireStartRF: Double = -1.0,
+    val tireStartLR: Double = -1.0,
+    val tireStartRR: Double = -1.0,
+) {
+    /** These marks after [vs]'s readings; this same instance when none moves. */
+    fun updatedFrom(vs: VehicleState): SessionMarks {
+        fun temp(peak: Double, v: Double) = if (v > -90) max(peak, v) else peak
+        fun start(start: Double, v: Double) = if (start < 0 && v > 0) v else start
+        val next = SessionMarks(
+            peakRpm = max(peakRpm, vs.rpm),
+            peakSpeedKph = max(peakSpeedKph, vs.speedKph),
+            peakLateralG = max(peakLateralG, abs(vs.lateralG)),
+            peakLongitudinalG = max(peakLongitudinalG, abs(vs.longitudinalG)),
+            peakOilTempC = temp(peakOilTempC, vs.oilTempC),
+            peakCoolantTempC = temp(peakCoolantTempC, vs.coolantTempC),
+            peakRduTempC = temp(peakRduTempC, vs.rduTempC),
+            peakPtuTempC = temp(peakPtuTempC, vs.ptuTempC),
+            peakChargeAirTempC = temp(peakChargeAirTempC, vs.chargeAirTempC),
+            tireStartLF = start(tireStartLF, vs.tirePressLF),
+            tireStartRF = start(tireStartRF, vs.tirePressRF),
+            tireStartLR = start(tireStartLR, vs.tirePressLR),
+            tireStartRR = start(tireStartRR, vs.tirePressRR),
+        )
+        return if (next == this) this else next
+    }
 }
 
 enum class DriveMode(val label: String) {

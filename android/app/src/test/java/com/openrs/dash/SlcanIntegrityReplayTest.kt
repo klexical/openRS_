@@ -39,14 +39,14 @@ class SlcanIntegrityReplayTest {
     @Test fun `baseline - the at-rest fixture decodes oil 70 and speed 0`() = runTest {
         val vs = replay("at-rest-baseline.txt").state.value
         assertEquals(70.0, vs.oilTempC, 0.0)
-        assertEquals(70.0, vs.peakOilTempC, 0.0)
+        assertEquals(70.0, vs.session.peakOilTempC, 0.0)
         assertEquals(0.0, vs.speedKph, 0.0)
     }
 
     @Test fun `guard - short, bad-hex, DLC 9 and DLC 0 lines change nothing`() = runTest {
         val vs = replay("at-rest-baseline.txt", "slcan-malformed-contained.txt").state.value
         assertEquals(70.0, vs.oilTempC, 0.0)
-        assertEquals(70.0, vs.peakOilTempC, 0.0)
+        assertEquals(70.0, vs.session.peakOilTempC, 0.0)
         assertEquals(40.0, vs.ptuTempC, 0.0)   // byte 1 0x5A − 50 (#229 mapping)
     }
 
@@ -65,12 +65,12 @@ class SlcanIntegrityReplayTest {
     @Test fun `a spliced line never reaches the decoder - oil and its peak stay 70`() = runTest {
         val vs = replay("at-rest-baseline.txt", "slcan-spliced-line.txt").state.value
         assertEquals(70.0, vs.oilTempC, 0.0)
-        assertEquals("peak from the spliced line's 195 °C", 70.0, vs.peakOilTempC, 0.0)
+        assertEquals("peak from the spliced line's 195 °C", 70.0, vs.session.peakOilTempC, 0.0)
     }
 
     @Ignore(OUTLIER_POLICY) @Test fun `one impossible well-formed speed frame does not set the session peak`() = runTest {
         val vs = replay("at-rest-baseline.txt", "slcan-outlier-speed.txt").state.value
         assertEquals(0.0, vs.speedKph, 0.0)
-        assertEquals("peak speed from one 655 km/h frame at rest", 0.0, vs.peakSpeedKph, 0.0)
+        assertEquals("peak speed from one 655 km/h frame at rest", 0.0, vs.session.peakSpeedKph, 0.0)
     }
 }

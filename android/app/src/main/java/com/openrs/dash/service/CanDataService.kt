@@ -548,13 +548,13 @@ class CanDataService : Service() {
                 sessionDb.driveDao().updateSession(
                     existing.copy(
                         endTime        = System.currentTimeMillis(),
-                        peakRpm        = vs.peakRpm,
+                        peakRpm        = vs.session.peakRpm,
                         // Session table predates #207's sources: the CAN 0x0F8 peak, its historical meaning
                         peakBoostPsi   = (com.openrs.dash.data.BoostSession.peakKpa(com.openrs.dash.data.BoostSource.CAN_0F8) ?: 0.0) *
                             com.openrs.dash.data.BoostReading.KPA_TO_PSI,
-                        peakOilTempC   = vs.peakOilTempC,
-                        peakCoolantTempC = vs.peakCoolantTempC,
-                        peakSpeedKph   = vs.peakSpeedKph,
+                        peakOilTempC   = vs.session.peakOilTempC,
+                        peakCoolantTempC = vs.session.peakCoolantTempC,
+                        peakSpeedKph   = vs.session.peakSpeedKph,
                         totalFrames    = sessionFrameCount
                     )
                 )
@@ -636,6 +636,9 @@ class CanDataService : Service() {
         OpenRSDashApp.instance.vehicleState.update { it.copy(escStatus = com.openrs.dash.data.EscStatus.UNKNOWN) }
         // Launch control (#289): no flag or stamp held from an earlier link — "LC" needs this connection's own 0x420
         OpenRSDashApp.instance.vehicleState.update { com.openrs.dash.data.LaunchControl.clearedForNewConnection(it) }
+        // SRS lamp (#199): unknown until this connection's first 0x040 frame — a value held from an earlier link is not a
+        // reading. The IPC lamps are not reset here.
+        OpenRSDashApp.instance.vehicleState.update { it.copy(lamps = it.lamps.copy(srs = null)) }
         FuelEconomy.reset()
         PerformanceTimer.resetSession()
         OpenRSDashApp.instance.knockEventCount.value = 0

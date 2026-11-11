@@ -836,12 +836,12 @@ internal fun VehicleState.toJsonObject(nowMs: Long = System.currentTimeMillis())
         put("label225", lc.LABEL_225)
         put("lcProbeSource", lc.PROBE_SOURCE)
     })
-    // #207: session boost peaks per measurement (gauge kPa) — VehicleState.peakBoostPsi is no longer updated
+    // #207: session boost peaks per measurement (gauge kPa); VehicleState has no boost peak (#199 removed the unused field)
     com.openrs.dash.data.BoostSession.peakKpa(com.openrs.dash.data.BoostSource.CAN_0F8)?.let { put("boostPeakCanGaugeKpa", it) }
     com.openrs.dash.data.BoostSession.peakKpa(com.openrs.dash.data.BoostSource.TIP_033E)?.let { put("boostPeakTipGaugeKpa", it) }
-    put("peakRpm", peakRpm)
-    put("peakLateralG", peakLateralG)
-    put("peakLongitudinalG", peakLongitudinalG)
+    put("peakRpm", session.peakRpm)
+    put("peakLateralG", session.peakLateralG)
+    put("peakLongitudinalG", session.peakLongitudinalG)
     put("eBrake", eBrake)
     put("reverseStatus", reverseStatus)
     put("framesPerSecond", framesPerSecond)

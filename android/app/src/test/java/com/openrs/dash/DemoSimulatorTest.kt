@@ -83,9 +83,9 @@ class DemoSimulatorTest {
         for (sc in DemoScenario.entries) {
             val vs = frame(sc, 45_000)
             assertEquals(sc.name, -99.0, vs.manifoldChargeTempC, 0.0)
-            assertNull(sc.name, vs.warnMil)
-            assertNull(sc.name, vs.warnTempHigh)
-            assertNull(sc.name, vs.warnCharge)
+            assertNull(sc.name, vs.lamps.mil)
+            assertNull(sc.name, vs.lamps.tempHigh)
+            assertNull(sc.name, vs.lamps.charge)
             assertEquals(sc.name, 0, vs.gear)                     // 0x230 never broadcasts — derivedGear only
             assertEquals(sc.name, 0.0, vs.awdMaxTorque, 0.0)      // 0x2C0 has no "max" field (#226)
         }
