@@ -179,11 +179,9 @@ class HeaderFitMatrixTest {
                         assertTrue("[$case] paused dot not drawn (centre = surface, diff $diff)", diff >= 30)
                     }
                 }
-                // #316: a pause shows a whole label or none (dot only) — its own label, or plain PAUSED where it doesn't fit
-                if (rec == Rec.PAUSED || rec == Rec.LINK_PAUSED) {
-                    val full = if (rec == Rec.PAUSED) "PAUSED" else "PAUSED · ENGINE OFF"
-                    assertTrue("[$case] REC label cut or wrong: ${s.recText}", s.recText == null || s.recText in setOf(full, "PAUSED"))
-                }
+                // #316 (owner: "Yes, plain PAUSED"): the header names no pause reason — PAUSED, or the dot alone
+                if (rec == Rec.PAUSED || rec == Rec.LINK_PAUSED)
+                    assertTrue("[$case] header pause label: ${s.recText}", s.recText == null || s.recText == "PAUSED")
                 assertEquals("[$case] Settings cog 44 dp target", 2, s.cogTaps)
             }
             assertEquals("$widthDp dp $theme font $fs: one height for every ESC / REC state", 1, heights.size)
@@ -220,12 +218,11 @@ class HeaderFitMatrixTest {
                     assertTrue("[$case] dot not on line 1 or too small: $dot", dot!!.bottom <= 44 * s.d && dot.width >= 6.5f * s.d)
                     assertTrue("[$case] pills overlap the dot", !overlaps(pills, dot))
                 }
-                // #316 (QA T1 on f1e8be4): a link pause shows a whole label or none — its own (ENGINE OFF with the link up,
-                // NO LINK with it down) or plain PAUSED
+                // #316 (owner: "Yes, plain PAUSED"): a link pause reads PAUSED or the dot alone, never its reason — also
+                // at 360 dp / font 1.3 with the link down, where "PAUSED · NO LINK" would fit
                 if (rec == Rec.LINK_PAUSED) {
-                    val full = if (link == LinkUi.LIVE) "PAUSED · ENGINE OFF" else "PAUSED · NO LINK"
                     println("#283S [$case] rec=\"${s.recText}\"")
-                    assertTrue("[$case] REC label cut or wrong: ${s.recText}", s.recText == null || s.recText in setOf(full, "PAUSED"))
+                    assertTrue("[$case] header pause label: ${s.recText}", s.recText == null || s.recText == "PAUSED")
                 }
                 assertEquals("[$case] Settings cog 44 dp target", 2, s.cogTaps)
             }

@@ -901,9 +901,10 @@ class MainActivity : ComponentActivity() {
                 val time = if (hh > 0) "%d:%02d:%02d".format(hh, mm % 60, ss) else "%02d:%02d".format(mm, ss)
                 // The longest label that fits the width HeaderRow leaves (#224): whole parts are dropped (distance,
                 // then time) — a value is never cut mid-way ("REC 2:1…" read as another time)
-                // #316: a paused drive reads its pause label (DriveLabel), or plain PAUSED where the full label doesn't fit
+                // #316 (owner, 2026-11-11: "Yes, plain PAUSED"): the header names no pause reason — hand, link or engine off
+                // all read PAUSED (or the dot alone where it doesn't fit); TRIP, DRIVE's strip and the notification name it
                 val candidates = when {
-                    paused  -> listOfNotNull(com.openrs.dash.data.DriveLabel.of(driveState, vs.isConnected)?.text, "PAUSED").distinct()
+                    paused  -> listOf("PAUSED")
                     compact -> listOf("REC $time", "REC")
                     else    -> listOf("REC $time · $distStr", "REC $time", "REC")
                 }
