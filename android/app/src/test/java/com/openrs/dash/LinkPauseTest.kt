@@ -118,4 +118,81 @@ class LinkPauseTest {
         h.settle()
         assertEquals(recording, state(rec))
     }
+
+    // ── QA's review of d7a810e: U3–U5 pinned (they feed the 15-minute rule), F2 ──────────────────────────────────────
+
+    @Test fun `U3 - a second loss while link-paused keeps the first moment`() {
+        val rec = with(h) { recorder(autoRecord = true).recording() }
+        rec.onConnectionLost(atMs = h.now)
+        h.now += 30_000L
+        rec.onConnectionLost(atMs = h.now)
+        h.now += 1_000L
+        assertEquals(31_000L, rec.pausedDurationMs())
+    }
+
+    @Test fun `U4 - a link pause counts from the loss time the event carries, not from when the event arrives`() {
+        val rec = with(h) { recorder(autoRecord = true).recording() }
+        val lostAt = h.now
+        h.now += 40_000L                                       // the event arrives after the reconnect attempts failed
+        rec.onConnectionLost(atMs = lostAt)
+        h.now += 1_000L
+        assertEquals(41_000L, rec.pausedDurationMs())
+    }
+
+    @Test fun `U4 - a loss held during a start counts from its own time, not from when the start completes`() {
+        val hold = RecorderHarness.Hold("insertDrive")
+        val rec = h.recorder(hold, autoRecord = true)
+        rec.startDrive()
+        hold.awaitEntered()
+        rec.onConnectionLost(atMs = h.now)
+        h.now += 40_000L                                       // the start completes later
+        hold.release.countDown()
+        assertTrue(h.waitUntil { state(rec) == linkPaused })
+        h.now += 1_000L
+        assertEquals(41_000L, rec.pausedDurationMs())
+    }
+
+    @Test fun `U5 - the engine running alone does not end a link pause - the connection must be back too`() {
+        val rec = linkPausedDrive()
+        rec.onEngineRunning()
+        h.settle()
+        assertEquals(linkPaused, state(rec))
+    }
+
+    @Test fun `F2 - lost, back and engine running all during a start - the drive records, both end conditions hold`() {
+        val hold = RecorderHarness.Hold("insertDrive")
+        val rec = h.recorder(hold, autoRecord = true)
+        rec.startDrive()
+        hold.awaitEntered()
+        rec.onConnectionLost(atMs = h.now)
+        rec.onConnectionBack()
+        rec.onEngineRunning()
+        hold.release.countDown()
+        assertTrue(h.waitUntil { rec.driveState.value.phase == DrivePhase.RECORDING })
+        h.settle()
+        assertEquals(recording, state(rec))
+    }
+
+    @Test fun `F2 control - lost and back during a start with the engine not running - the drive begins link-paused`() {
+        val hold = RecorderHarness.Hold("insertDrive")
+        val rec = h.recorder(hold, autoRecord = true)
+        rec.startDrive()
+        hold.awaitEntered()
+        rec.onConnectionLost(atMs = h.now)
+        rec.onConnectionBack()
+        hold.release.countDown()
+        assertTrue(h.waitUntil { state(rec) == linkPaused })
+    }
+
+    @Test fun `F2 control - engine running reported before the loss in a start does not count - the drive begins link-paused`() {
+        val hold = RecorderHarness.Hold("insertDrive")
+        val rec = h.recorder(hold, autoRecord = true)
+        rec.onConnectionBack()
+        rec.onEngineRunning()
+        rec.startDrive()
+        hold.awaitEntered()
+        rec.onConnectionLost(atMs = h.now)
+        hold.release.countDown()
+        assertTrue(h.waitUntil { state(rec) == linkPaused })
+    }
 }

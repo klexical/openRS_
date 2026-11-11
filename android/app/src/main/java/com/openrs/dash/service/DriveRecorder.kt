@@ -414,6 +414,8 @@ class DriveRecorder(
     @Volatile private var linkUp = false
     /** A loss reported while a start was under way (#316): acted on the moment the start completes. 0 = none. */
     private var pendingLossAtMs = 0L
+    /** The engine was reported running with the connection up since the last loss: both end conditions of a link pause hold. */
+    private var engineSinceLoss = false
 
     /**
      * The connection to the adapter was lost at [atMs] (closed by the app, or dropped and not recovered). With auto-record
@@ -423,6 +425,7 @@ class DriveRecorder(
      */
     @Synchronized fun onConnectionLost(atMs: Long) {
         linkUp = false
+        engineSinceLoss = false
         when (_driveState.value.phase) {
             DrivePhase.STARTING -> if (pendingLossAtMs == 0L) pendingLossAtMs = atMs
             DrivePhase.RECORDING -> if (autoRecord) pauseLocked(PauseReason.LINK, atMs)
@@ -435,16 +438,24 @@ class DriveRecorder(
 
     /** The connection sees the engine running (RPM above the auto-record start threshold): a link pause ends. */
     @Synchronized fun onEngineRunning() {
+        if (linkUp) engineSinceLoss = true
         val s = _driveState.value
         if (linkUp && s.phase == DrivePhase.PAUSED && s.pauseReason == PauseReason.LINK) resumeLocked()
     }
 
-    /** The start of [driveId] completed: a loss reported during it is applied now (auto-record on → link-paused). */
+    /**
+     * The start of [driveId] completed: a loss reported during it is applied now (auto-record on → link-paused from the
+     * loss's moment), unless the link pause's end conditions already hold — the connection back and the engine running
+     * since the loss (QA F2 on d7a810e: nothing would report the engine again on that connection, so the drive would stay
+     * paused while the car drives).
+     */
     @Synchronized private fun applyLossDuringStart(driveId: Long) {
         val at = pendingLossAtMs
         pendingLossAtMs = 0L
         val s = _driveState.value
-        if (at > 0L && autoRecord && s.driveId == driveId && s.phase == DrivePhase.RECORDING) pauseLocked(PauseReason.LINK, at)
+        if (at == 0L || !autoRecord || s.driveId != driveId || s.phase != DrivePhase.RECORDING) return
+        if (linkUp && engineSinceLoss) return
+        pauseLocked(PauseReason.LINK, at)
     }
 
     /** Auto-record was switched on or off. */
