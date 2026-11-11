@@ -50,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -77,6 +78,7 @@ import com.openrs.dash.demo.TripPreview
 import com.openrs.dash.ui.anim.pageEntrance
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -108,9 +110,7 @@ fun TripPage(
     prefs: UserPrefs,
     onMapTouched: (Boolean) -> Unit = {},
     settled: Boolean = true,
-    visible: Boolean = true,
-    /** MainActivity's host (the last child of its root, above the bottom nav, #268); null = no messages. */
-    snackbarHostState: androidx.compose.material3.SnackbarHostState? = null
+    visible: Boolean = true
 ) {
     var mapCreated by remember { mutableStateOf(false) }
     LaunchedEffect(settled) { if (settled) mapCreated = true }
@@ -147,8 +147,7 @@ fun TripPage(
             onMapTouched = onMapTouched,
             mapCreated = mapCreated,
             visible = visible,
-            preview = preview,
-            snackbarHostState = snackbarHostState
+            preview = preview
         )
     }
 }
@@ -202,8 +201,7 @@ private fun TripPageContent(
     onMapTouched: (Boolean) -> Unit,
     mapCreated: Boolean,
     visible: Boolean,
-    preview: TripPreview.Mode? = null,
-    snackbarHostState: androidx.compose.material3.SnackbarHostState? = null
+    preview: TripPreview.Mode? = null
 ) {
     // Room ids are positive; TripPreview's sample drives are negative. Reads for a negative id come from
     // TripPreview and every write path returns early for one, so preview data never reaches the database.
@@ -507,15 +505,31 @@ private fun TripPageContent(
                 // SET S/F button (lap timer)
                 if (driveState.isRecording) {
                     val sfSet = lapTimer.startFinish != null
+                    // Refused without a fresh fix (#311): the chip itself reads NO GPS for SF_CUE_MS, then SET S/F again.
+                    // One cue on the chip, nothing over PAUSE / STOP; a refusal while it shows does not restart it.
+                    val sfCue = remember { SfCue() }
+                    var sfCueOn by remember { mutableStateOf(false) }
+                    LaunchedEffect(sfCueOn) {
+                        if (sfCueOn) { delay(sfCue.remainingMs(System.currentTimeMillis())); sfCueOn = false }
+                    }
                     MapControl(chipSize, pageEntrance(6, controlsVisible, 50),
                         if (sfSet) "Clear start/finish line" else "Set start/finish line", onClick = {
                         if (preview != null) return@MapControl
                         if (sfSet) lapTimer.clearStartFinish()
-                        // Refused without a fresh fix (#311): one plain message, not repeated while it shows
-                        else onSetStartFinish(recorder) { msg ->
-                            snackbarHostState?.takeIf { it.currentSnackbarData == null }?.let { host -> scope.launch { host.showSnackbar(msg) } }
+                        else {
+                            val now = System.currentTimeMillis()
+                            onSetStartFinish(recorder, sfCue, now)
+                            if (sfCue.isShowing(now)) sfCueOn = true
                         }
-                    }) { MonoText(if (sfSet) "CLEAR S/F" else "SET S/F", 11.sp, if (sfSet) Orange else ink, FontWeight.Bold) }
+                    }) {
+                        // Both labels laid out, one shown: the chip keeps SET S/F's width while it reads NO GPS
+                        Box(contentAlignment = Alignment.Center) {
+                            val cue = sfCueOn && !sfSet
+                            MonoText(if (sfSet) "CLEAR S/F" else "SET S/F", 11.sp, if (sfSet) Orange else ink, FontWeight.Bold,
+                                modifier = Modifier.alpha(if (cue) 0f else 1f))
+                            if (cue) MonoText(SF_NO_FIX_CUE, 11.sp, Mid, FontWeight.Bold)
+                        }
+                    }
 
                     // Bookmark button — an action, not a warning: ink, not amber.
                     // Tap = a bare marker at once; long-press = a marker with words (the observer's note form).
@@ -1670,15 +1684,32 @@ private fun isSameDay(a: Calendar, b: Calendar): Boolean =
     a.get(Calendar.YEAR) == b.get(Calendar.YEAR) &&
     a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
 
-/** What TRIP says when SET S/F is refused for lack of a fresh fix (#311). */
-internal const val SF_NO_FIX_CUE = "Waiting for GPS. Start/finish not set."
+/** What the SET S/F chip reads when SET S/F is refused for lack of a fresh fix (#311), and for how long. */
+internal const val SF_NO_FIX_CUE = "NO GPS"
+internal const val SF_CUE_MS = 2_000L
 
 /**
- * TRIP's SET S/F tap: the line at the drive's fresh fix ([DriveRecorder.setStartFinishHere]), or, when there is none,
- * one [cue] with [SF_NO_FIX_CUE]. Returns whether the line was set.
+ * The SET S/F chip's refusal cue (#311). A plain class, no Compose state (see android-general.md): TRIP mirrors it in
+ * its own state. A refusal starts a [SF_CUE_MS] window; a refusal inside the window neither restarts nor extends it.
  */
-internal fun onSetStartFinish(recorder: com.openrs.dash.service.DriveRecorder, cue: (String) -> Unit): Boolean =
-    recorder.setStartFinishHere().also { placed -> if (!placed) cue(SF_NO_FIX_CUE) }
+internal class SfCue(private val windowMs: Long = SF_CUE_MS) {
+    private var shownAtMs = Long.MIN_VALUE
+    fun isShowing(nowMs: Long): Boolean = shownAtMs != Long.MIN_VALUE && nowMs - shownAtMs in 0 until windowMs
+    fun remainingMs(nowMs: Long): Long = if (isShowing(nowMs)) windowMs - (nowMs - shownAtMs) else 0L
+    /** A refused tap at [nowMs]: true if it started the cue, false if one is already showing. */
+    fun onRefused(nowMs: Long): Boolean {
+        if (isShowing(nowMs)) return false
+        shownAtMs = nowMs
+        return true
+    }
+}
+
+/**
+ * TRIP's SET S/F tap at [nowMs]: the line at the drive's fresh fix ([DriveRecorder.setStartFinishHere]), or, when there
+ * is none, the chip's [cue]. Returns whether the line was set.
+ */
+internal fun onSetStartFinish(recorder: com.openrs.dash.service.DriveRecorder, cue: SfCue, nowMs: Long): Boolean =
+    recorder.setStartFinishHere().also { placed -> if (!placed) cue.onRefused(nowMs) }
 
 /**
  * One idle fetch for TRIP's dot: the platform's last-known fix and the moment it was ASKED for (#311). The stamp is

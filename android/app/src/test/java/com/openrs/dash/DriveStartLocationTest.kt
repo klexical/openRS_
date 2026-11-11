@@ -171,15 +171,21 @@ class DriveStartLocationTest {
         assertEquals(listOf(31.0, 41.0), line!!.let { listOf(it.lat, it.lng) })
     }
 
-    @Test fun `TRIP's SET S-F tap says why when it is refused - once, and nothing when the line is set`() {
+    @Test fun `a refused SET S-F tap puts NO GPS on the chip for the window - a second refusal does not stack, a set line shows none`() {
         startDrive()
-        val cues = mutableListOf<String>()
-        assertEquals(false, com.openrs.dash.ui.trip.onSetStartFinish(rec) { cues += it })    // no fix yet
-        assertEquals(listOf(com.openrs.dash.ui.trip.SF_NO_FIX_CUE), cues)
+        val cue = com.openrs.dash.ui.trip.SfCue()
+        val t0 = 1_000_000L
+        assertEquals(false, com.openrs.dash.ui.trip.onSetStartFinish(rec, cue, t0))          // no fix yet
         assertNull(line)
+        assertTrue("the chip reads NO GPS", cue.isShowing(t0))
+        assertEquals(com.openrs.dash.ui.trip.SF_CUE_MS, cue.remainingMs(t0))
+        assertEquals(false, com.openrs.dash.ui.trip.onSetStartFinish(rec, cue, t0 + 1_500))  // refused again inside the window
+        assertEquals("not restarted or extended", com.openrs.dash.ui.trip.SF_CUE_MS - 1_500, cue.remainingMs(t0 + 1_500))
+        assertTrue(!cue.isShowing(t0 + com.openrs.dash.ui.trip.SF_CUE_MS))                    // back to SET S/F after the window
         fix(31.0, 41.0)
-        assertEquals(true, com.openrs.dash.ui.trip.onSetStartFinish(rec) { cues += it })
-        assertEquals("no cue when the line is set", 1, cues.size)
+        val t1 = t0 + 10_000
+        assertEquals(true, com.openrs.dash.ui.trip.onSetStartFinish(rec, cue, t1))
+        assertTrue("no cue when the line is set", !cue.isShowing(t1))
         assertEquals(listOf(31.0, 41.0), line!!.let { listOf(it.lat, it.lng) })
     }
 
