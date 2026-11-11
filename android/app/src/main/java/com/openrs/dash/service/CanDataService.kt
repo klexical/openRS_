@@ -987,7 +987,13 @@ class CanDataService : Service() {
             )
         }
         // Transport down (or no foreground allowed): nothing started, so release instead of keeping a stale notification
-        if (!beginConnection()) endConnection(LinkPhase.OFF, LinkStopReason.RETRY_NOT_STARTED, rec)
+        if (!beginConnection()) {
+            // #316: nothing started, so this RCN closed the connection: a "connection lost" at the closure's moment, as
+            // every closure by the service is (the owner's "Yes, pause it")
+            seedAutoRecord()
+            recorder().onConnectionLost(System.currentTimeMillis())
+            endConnection(LinkPhase.OFF, LinkStopReason.RETRY_NOT_STARTED, rec)
+        }
     }
 
     fun resetPeaks() {

@@ -38,11 +38,12 @@ class ServiceLinkLossTest {
     private val link get() = CanDataService.link
     private lateinit var rec: DriveRecorder
 
-    private fun settings(autoRecord: Boolean) {
+    private fun settings(autoRecord: Boolean, wifi: Boolean = true) {
         val ctx = h.app
         ctx.getSharedPreferences("openrs_settings", Context.MODE_PRIVATE).edit()
             .putString("connection_method", "WIFI").putString("adapter_type", "MEATPI_PRO").putString("wican_host", "192.0.2.1")
             .putBoolean(AppSettings.KEY_AUTO_RECORD_DRIVES, autoRecord).commit()
+        if (!wifi) return
         val cm = ctx.getSystemService(ConnectivityManager::class.java)
         val wifi = ShadowNetworkCapabilities.newInstance()
         Shadows.shadowOf(wifi).addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
@@ -50,8 +51,8 @@ class ServiceLinkLossTest {
     }
 
     /** A recording drive on the service's recorder (wall clock: the service reports wall-clock moments). */
-    private fun service(autoRecord: Boolean, holdAutoConnect: Boolean = false): CanDataService {
-        settings(autoRecord)
+    private fun service(autoRecord: Boolean, holdAutoConnect: Boolean = false, wifi: Boolean = true): CanDataService {
+        settings(autoRecord, wifi)
         link.clearManualConnect()
         // Wi-Fi is up, so a created service connects by itself unless automatic connects are held
         if (holdAutoConnect) link.requireManualConnect()
@@ -95,5 +96,15 @@ class ServiceLinkLossTest {
         svc.stopConnection(LinkStopReason.WIFI_LOST)
         assertEquals(DrivePhase.PAUSED, rec.driveState.value.phase)
         assertEquals(PauseReason.LINK, rec.driveState.value.pauseReason)
+    }
+
+    @Test fun `RCN that cannot start a connection is a closure - reported, the drive link-pauses`() {
+        val svc = service(autoRecord = true, wifi = false)              // Wi-Fi mode, Wi-Fi down: nothing can start
+        svc.reconnect()
+        assertEquals("premise: no connection started", false, link.phase == LinkPhase.CONNECTING)
+        assertEquals(DrivePhase.PAUSED, rec.driveState.value.phase)
+        assertEquals(PauseReason.LINK, rec.driveState.value.pauseReason)
+        val paused = rec.pausedDurationMs()
+        assertTrue("paused from the closure's moment: $paused ms", paused in 0L..5_000L)
     }
 }
