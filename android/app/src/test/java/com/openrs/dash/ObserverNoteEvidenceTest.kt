@@ -194,6 +194,24 @@ class ObserverNoteEvidenceTest {
         assertEquals(0, dao.getBookmarks(id).size)
     }
 
+    @Test fun `a note opened in one drive and saved after a new drive started records nothing - in neither drive`() {
+        val first = start(fixes = 1)                                        // the mark has a place: a row would be written
+        val form = noteForm().also { it.open() }
+        kotlinx.coroutines.runBlocking { kotlinx.coroutines.withTimeout(10_000) { rec.stopDrive().join() } }
+        val second = start(fixes = 0)
+        assertTrue("a new drive is recording ($first → $second)", second > 0 && second != first)
+        form.save("typed across STOP and START")
+        Thread.sleep(100)
+        assertEquals("no note on the new drive's timeline", emptyList<Any>(), notes())
+        assertEquals(0, dao.getBookmarks(first).size)
+        assertEquals(0, dao.getBookmarks(second).size)
+        noteForm().also { it.open() }.save("opened in the new drive")      // control: a form of this drive records
+        // Placed or not is not checked here: a new drive still starts with the last drive's position (kept for the TRIP
+        // dot in #236), so before its first fix this note takes that position. That is a known defect with its own fix,
+        // which tightens this line to "no GPS fix".
+        assertTrue(notes().single().message.startsWith("Observer note: opened in the new drive"))
+    }
+
     @Test fun `closing the form drops its mark - the next note is not stamped with an old moment`() {
         val id = start(fixes = 1)
         val form = noteForm()
