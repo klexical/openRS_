@@ -154,10 +154,12 @@ internal fun whatsNewHighlights(base: String): List<String>? = versionHighlights
 
 /**
  * Show What's New once per published release identity (#214): "2.2.7-rc.6" → "2.2.7-rc.7" shows it again, a rebuild of
- * the same release doesn't, and a version without highlights never shows an unrelated version's notes.
+ * the same release doesn't, and a version without highlights never shows an unrelated version's notes. A nightly never
+ * opens it by itself (#322; Settings still opens it), so stable after a nightly shows it.
  */
 internal fun shouldShowWhatsNew(lastSeen: String, releaseName: String, base: String): Boolean =
-    lastSeen != releaseName && whatsNewHighlights(base) != null
+    lastSeen != releaseName && whatsNewHighlights(base) != null &&
+        com.openrs.dash.update.AppVersion.fromVersionName(releaseName)?.isNightly != true
 
 @Composable
 fun WhatsNewDialog(onDismiss: () -> Unit) {

@@ -118,6 +118,9 @@ object UpdateChecker {
                 ?: AppVersion.fromTagName(tagName)
                 ?: continue
 
+            // A nightly is offered on Beta only (#322), whatever GitHub's prerelease flag says — checked after the parse
+            if (channel == "stable" && version.isNightly) continue
+
             // Only consider versions newer than what's installed
             if (version <= current) continue
 
