@@ -296,9 +296,11 @@ private fun TripPageContent(
     var idleLocation by remember { mutableStateOf<android.location.Location?>(null) }
     var idleFetchedAtMs by remember { mutableLongStateOf(0L) }      // app wall clock when idleLocation was fetched
 
-    // One-shot location fetch when tab opens idle
-    LaunchedEffect(hasLocationPerm) {
-        if (hasLocationPerm && !driveState.isRecording) {
+    // One location fetch each time TRIP comes into view idle (#311): TRIP stays composed for the activity's life, so a
+    // fetch keyed on the permission alone ran once, and after a STOP the dot never came back. Not on STOP itself
+    // (owner's option a): the dot returns when TRIP is opened idle again.
+    LaunchedEffect(hasLocationPerm, visible) {
+        if (hasLocationPerm && visible && !driveState.isRecording) {
             try {
                 val loc = recorder.getLastKnownLocation()
                 if (loc != null) { idleLocation = loc; idleFetchedAtMs = System.currentTimeMillis() }
