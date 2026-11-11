@@ -127,18 +127,8 @@ data class VehicleState(
     val awdClutchPressureL: Double = -1.0, // AWD 0x1ED1: left clutch hydraulic pressure (mBar); -1 = not yet polled
     val awdClutchPressureR: Double = -1.0, // AWD 0x1ED2: right clutch hydraulic pressure (mBar); -1 = not yet polled
 
-    // ── IPC Warning Lamps (Mode 22 via IPC ECU, DIDs TBD) ─────
-    val warnMil: Boolean? = null,         // MIL (check engine) lamp
-    val warnAbs: Boolean? = null,         // ABS warning lamp
-    val warnBrake: Boolean? = null,       // Brake warning lamp
-    val warnCharge: Boolean? = null,      // Battery/charge warning lamp (0x300 pending bit mapping)
-    val warnOilPressure: Boolean? = null, // Oil pressure warning lamp
-    val warnTempHigh: Boolean? = null,    // High coolant temp warning
-    // Note (rc.4): SRS airbag lamp from HS-CAN 0x040 and the charging/battery fault
-    // from 0x300 are decoded + validated in CanDecoder, but NOT persisted here — the
-    // VehicleState.copy() method is at the JVM 255-slot ceiling. When we free slots
-    // (e.g. by removing unused AWD speculative-DID fields) these lamp states should
-    // move into dedicated Boolean? fields alongside warnMil/warnAbs/etc.
+    // ── Warning lamps (#199: one nested value) ─────────────
+    val lamps: Lamps = Lamps(),
 
     // ── Vehicle Identification (CAN 0x40A multiplexed) ──────
     val vin: String = "",                  // 17-char VIN assembled from mux pages C1 00/01/02
@@ -386,6 +376,42 @@ data class VehicleState(
     }
 
     fun withPeaksReset(): VehicleState = copy(session = SessionMarks())
+}
+
+/**
+ * Cluster warning lamps (#199). `null` = unknown. The six IPC lamps (Mode 22 via the IPC ECU, DIDs not yet known) have no
+ * decoder yet; [srs] is stored from HS-CAN 0x040 (byte 2 bits 7:6 == 0xC0 → on, DigiCluster v1.0.73). The 0x300
+ * charging fault stays undecoded (bit mapping pending). No lamp is shown on screen yet.
+ */
+@Immutable
+data class Lamps(
+    val mil: Boolean? = null,          // MIL (check engine)
+    val abs: Boolean? = null,
+    val brake: Boolean? = null,
+    val charge: Boolean? = null,       // battery / charge
+    val oilPressure: Boolean? = null,
+    val tempHigh: Boolean? = null,     // high coolant temperature
+    val srs: Boolean? = null,          // airbag, from CAN 0x040 only
+) {
+    companion object {
+        /**
+         * An OBD reply's lamps over the live ones: each IPC lamp the reply holds, else the live one. [srs] is CAN-only and
+         * always the live value: a reply carries the snapshot it was parsed against, which can still hold an SRS state
+         * that CAN has changed since.
+         */
+        fun merged(current: Lamps, reply: Lamps): Lamps {
+            val next = Lamps(
+                mil = reply.mil ?: current.mil,
+                abs = reply.abs ?: current.abs,
+                brake = reply.brake ?: current.brake,
+                charge = reply.charge ?: current.charge,
+                oilPressure = reply.oilPressure ?: current.oilPressure,
+                tempHigh = reply.tempHigh ?: current.tempHigh,
+                srs = current.srs,
+            )
+            return if (next == current) current else next
+        }
+    }
 }
 
 /**
