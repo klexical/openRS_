@@ -92,7 +92,10 @@ class LinkSessionRaceTest {
 
     @Test fun `an old engine-running report held past its ownership check never reaches the recorder`() {
         val rec = FakeRecorder(); val gate = Gate()
-        val old = session(own.begin(), rec, AtomicInteger(), mutableListOf(), gate.hook)
+        var arm = false                                                // the gate holds the engine report, not the RPM frame
+        val old = session(own.begin(), rec, AtomicInteger(), mutableListOf()) { if (arm) gate.hook() }
+        old.onCanFrame(0x090, bytes("0000C1FF617D0000"), 50.0)       // the old connection's own RPM (#316 F5)
+        arm = true
         val running = VehicleState(isConnected = true, rpm = 1_200.0)
         val t = Thread { old.onVehicleState(running, { 11L }) }.apply { start() }
         assertTrue(gate.reached.await(2, TimeUnit.SECONDS))
@@ -101,6 +104,7 @@ class LinkSessionRaceTest {
         gate.release(); t.join(2_000)
         assertEquals("the stale decision did nothing", emptyList<String>(), rec.calls)
 
+        current.onCanFrame(0x090, bytes("0000C1FF617D0000"), 50.0)
         current.onVehicleState(running, { 22L })
         assertEquals("the current session reports once per connection", listOf("engine:22"), rec.calls)
         current.onVehicleState(running, { 22L })

@@ -51,15 +51,20 @@ class LinkSessionLinkEventsTest {
 
     private val running = VehicleState(isConnected = true, rpm = 2_000.0)
 
+    /** A 0x090 (RPM) frame on the session's connection. */
+    private fun LinkSession.rpmFrame() = onCanFrame(0x090, byteArrayOf(0, 0, 0xC1.toByte(), 0xFF.toByte(), 0x61, 0x7D, 0, 0), 50.0)
+
     @Test fun `engine running is reported once per connection - again after the same job's connection is back`() {
         val rec = Rec()
         val s = session(own.begin(), rec)
         s.onConnectionBack()
+        s.rpmFrame()
         s.onVehicleState(running) { 7L }
         s.onVehicleState(running) { 7L }
         assertEquals(listOf("back", "engine:7"), rec.events)
         s.onConnectionLost(atMs = 1_000L)
         s.onConnectionBack()                                            // the same job reconnects (QA F3)
+        s.rpmFrame()
         s.onVehicleState(running) { 7L }
         assertEquals(listOf("back", "engine:7", "lost:1000", "back", "engine:7"), rec.events)
     }
@@ -67,8 +72,24 @@ class LinkSessionLinkEventsTest {
     @Test fun `engine running is reported only on an established connection and above the start RPM`() {
         val rec = Rec()
         val s = session(own.begin(), rec)
+        s.rpmFrame()
         s.onVehicleState(running.copy(isConnected = false)) { 7L }
         s.onVehicleState(running.copy(rpm = LinkSession.AUTO_START_MIN_RPM)) { 7L }
         assertEquals(emptyList<String>(), rec.events)
+    }
+
+    @Test fun `engine running is reported only after an RPM frame on this connection - a held RPM is not enough (QA F5)`() {
+        val rec = Rec()
+        val s = session(own.begin(), rec)
+        s.onConnectionBack()
+        s.onVehicleState(running) { 7L }                                // the RPM held from before: no report
+        assertEquals(listOf("back"), rec.events)
+        s.rpmFrame()
+        s.onConnectionBack()                                            // a reconnect clears the frame seen before it
+        s.onVehicleState(running) { 7L }
+        assertEquals(listOf("back", "back"), rec.events)
+        s.rpmFrame()
+        s.onVehicleState(running) { 7L }
+        assertEquals(listOf("back", "back", "engine:7"), rec.events)
     }
 }

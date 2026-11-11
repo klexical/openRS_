@@ -47,13 +47,22 @@ internal class LinkSession(
 
     /** "Engine running" was reported on the current connection; cleared by [onConnectionBack] (QA F3 on 3a4967b). */
     private var engineReported = false
+    /**
+     * A 0x090 (RPM) frame arrived on the current connection; cleared by [onConnectionBack] (QA F5 on 65c2421). VehicleState
+     * keeps the last RPM across a drop and RPM has no freshness stamp, so the first state after CONNECTED carries the RPM
+     * from before the drop: only this connection's own RPM frame makes its RPM a reading of the engine now.
+     */
+    private var rpmSeen = false
 
     /** A raw CAN frame from this job's connection. */
     fun onCanFrame(canId: Int, data: ByteArray, fps: Double) {
         if (!link.owns(gen)) return                                   // cheap pre-check; the real one is in deliver
         afterOwnershipCheck()
         var finishedRun: PerfRunEntity? = null
-        link.deliver(gen) { finishedRun = processCanFrame(canId, data, fps) }
+        link.deliver(gen) {
+            finishedRun = processCanFrame(canId, data, fps)
+            if (canId == CanDecoder.ID_ENGINE_RPM && !DemoMode.isActive) rpmSeen = true
+        }
         finishedRun?.let(perfRunSink)                                 // blocking write, outside the lock
     }
 
@@ -61,15 +70,16 @@ internal class LinkSession(
      * #316: on the first state of an established connection with the engine running, "engine running" is reported to the
      * recorder, which applies auto-record and the link-pause rules. Once per connection: a reconnect on the same job
      * ([onConnectionBack]) reports again (QA F3 on 3a4967b: once per job left a link pause in place on that reconnect).
-     * Only while connected: the recorder trusts the report to mean the connection is up.
+     * Only while connected: the recorder trusts the report to mean the connection is up. Only after this connection's own
+     * RPM frame ([rpmSeen]): a held RPM is not the engine running.
      */
     fun onVehicleState(vs: VehicleState, sessionId: () -> Long) {
-        if (engineReported || !link.owns(gen)) return
+        if (engineReported || !rpmSeen || !link.owns(gen)) return
         if (!vs.isConnected) return
         if (vs.rpm <= AUTO_START_MIN_RPM) return
         afterOwnershipCheck()
         link.deliver(gen) {
-            if (!engineReported) {
+            if (!engineReported && rpmSeen) {
                 engineReported = true
                 recorder.onEngineRunning(sessionId())
             }
@@ -83,7 +93,7 @@ internal class LinkSession(
     fun onConnectionLost(atMs: Long) { link.deliver(gen) { recorder.onConnectionLost(atMs) } }
 
     /** #316: this job's connection is up (CONNECTED published). Reaches the recorder only while this job owns the link. */
-    fun onConnectionBack() { link.deliver(gen) { engineReported = false; recorder.onConnectionBack() } }
+    fun onConnectionBack() { link.deliver(gen) { engineReported = false; rpmSeen = false; recorder.onConnectionBack() } }
 
     /** Applies one frame (caller holds ownership); returns a finished perf run to persist, if any. */
     private fun processCanFrame(canId: Int, data: ByteArray, fps: Double): PerfRunEntity? {
