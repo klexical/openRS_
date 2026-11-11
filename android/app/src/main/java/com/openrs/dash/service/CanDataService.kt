@@ -636,6 +636,9 @@ class CanDataService : Service() {
         OpenRSDashApp.instance.vehicleState.update { it.copy(escStatus = com.openrs.dash.data.EscStatus.UNKNOWN) }
         // Launch control (#289): no flag or stamp held from an earlier link — "LC" needs this connection's own 0x420
         OpenRSDashApp.instance.vehicleState.update { com.openrs.dash.data.LaunchControl.clearedForNewConnection(it) }
+        // SRS lamp (#199): unknown until this connection's first 0x040 frame — a value held from an earlier link is not a
+        // reading. The IPC lamps are not reset here.
+        OpenRSDashApp.instance.vehicleState.update { it.copy(lamps = it.lamps.copy(srs = null)) }
         FuelEconomy.reset()
         PerformanceTimer.resetSession()
         OpenRSDashApp.instance.knockEventCount.value = 0
