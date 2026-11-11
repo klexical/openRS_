@@ -3,22 +3,14 @@
 Native Android telemetry dashboard for the Ford Focus RS MK3.
 Kotlin 2.0.21 + Jetpack Compose (Material3).
 
-**Releases:** stable **v2.2.6** on main. Prerelease **v2.2.7-rc.7** from staging: tag `android-v2.2.7-rc.7` → `43ad5e1`,
-Build 37 / versionCode 37, asset `openRS_v2.2.7-rc.7.apk` (SHA-256 `eb937284…2464e`, signer `c99b6f26…` = rc.6), plus the
-Build 38 maintenance asset `openrs-2.2.7-rc.7-build38.apk` (`839cdf3e…a0cd1`, versionCode 38) on the same release: the live
-gauge is labelled plain BOOST again, same versionName and certificate, manual in-place upgrade only (the in-app updater never
-offers it). Sapphire (web/ only) is live from main `9a194bf` (#239). **Hardware:** the published Build 37 has run on the
-owner's phone over Bluetooth (two diagnostic captures, the source of #248–#253); hardware checks are tracked per issue.
-**History is not kept in this file.** Release and work records were moved out on 2026-11-05: see Branch / Release Workflow →
-Release records.
+**Releases:** stable **v2.2.6** on main. Release candidates are tagged on staging; the current one is on the GitHub Releases
+page and in `android/CHANGELOG.md`. This file holds durable guidance only: no release status and no work log.
 Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashboard) → `web/`  |  Docs → `docs/`  |  Feature pipeline → `docs/feature-roadmap.md`
 
 ## Source Layout
 
-The per-file map of `android/app/src/main/java/com/openrs/dash/` is `.claude/rules/source-layout.md` (moved verbatim on
-2026-11-06); it loads when any file under `android/` is read or edited. Top level: `OpenRSDashApp.kt` (app singleton +
-`vehicleState` flow), `can/` (decoders, OBD, SLCAN connection, transports), `data/` (VehicleState, Room, rules), `demo/`,
-`diagnostics/`, `service/` (CanDataService, DriveRecorder), `ui/` (+ `ui/trip/`, `ui/anim/`), `update/`.
+The per-file map of `android/app/src/main/java/com/openrs/dash/` is `.claude/rules/source-layout.md`; it loads when any file
+under `android/` is read or edited.
 
 ## ECU Addresses
 
@@ -32,8 +24,8 @@ The per-file map of `android/app/src/main/java/com/openrs/dash/` is `.claude/rul
 | FENG   | 0x727   | 0x72F    | extended                        |
 | RSProt | 0x731   | 0x739    | extended                        |
 | GFM    | 0x7D2   | 0x7DA    | default (DTC scanning only)     |
-| IPC    | 0x720   | 0x728    | scaffolded — not yet active     |
-| HVAC   | 0x733   | 0x73B    | scaffolded — not yet active     |
+| IPC    | 0x720   | 0x728    | not polled                      |
+| HVAC   | 0x733   | 0x73B    | not polled                      |
 
 ## Active CAN IDs (HS-CAN 500 kbps)
 
@@ -46,11 +38,9 @@ The per-file map of `android/app/src/main/java/com/openrs/dash/` is `.claude/rul
 0x090  RPM (bytes 4-5) + baro (byte2 × 0.5 kPa)
 0x0C8  gauge brightness (bits 0-4), e-brake (byte3 bit 6), ignition (byte2 bits 3-6)
 0x0F8  engine oil temp (byte7−60°C), boost (byte5, gauge — see the boost gotcha), PTU temp (byte1−50°C)
-       — #229 CONFIRMED 2026-11-02 (one car): the reverse of RS_HS.dbc's names and of every build up to #238 `d3264c8`
-         (they read oil = byte1, PTU = byte7). Basis: a capture with ICM 0x78C DID 0x6017 (engine oil, X/100) and PCM 0x7E8
-         DID 0x070D (transfer case fluid, signed X/16) on one clock — oil = byte7−60 in 423/424, PTU = ⌊byte1−50⌋ 420/420,
-         bytes 20–24 °C apart. Fixed in #238 `2033fda` (`81e459c` + docs `7cd78fc`), released in rc.7; new drives carry
-         `DriveEntity.oilPtuMapping` (null = recorded before the fix, never relabelled). Not validated on other cars
+       — confirmed on one car against ICM DID 0x6017 and PCM DID 0x070D (#229); the reverse of RS_HS.dbc's names and of
+         builds before rc.7 (they read oil = byte1, PTU = byte7). Drives carry `DriveEntity.oilPtuMapping` (null = recorded
+         before the fix, never relabelled). Not validated on other cars
 0x130  speed (bytes 6-7 BE × 0.01 kph)
 0x138  clutch pedal % (17|10 × 0.1) — decoded for diagnostics only; NOT shown on DRIVE (#225)
 0x160  longitudinal G (bits 48-57 LE)
@@ -66,12 +56,12 @@ The per-file map of `android/app/src/main/java/com/openrs/dash/` is `.claude/rul
 0x230  gear (4-bit) — does NOT broadcast on this car
 0x252  brake pressure (12-bit Motorola)
 0x2C0  AWD actual left/right torque Nm — RS_HS.dbc AWDmsg02 19|12 / 51|12 Motorola (MSB-first 20 / 52); requested L/R
-       at 3|12 / 35|12 not decoded; drivetrain reference point undocumented (#226). Until 2026-10-29 read bits 0|12 / 12|12.
+       at 3|12 / 35|12 not decoded; drivetrain reference point undocumented (#226).
        DBC excerpt + source: android/app/src/test/resources/dbc/ — a second decoder checks the extraction arithmetic only,
        not the physical meaning. Front/rear % (rear ÷ 0x070 engine torque) is WITHDRAWN everywhere — not a physical split;
        saved dashboard cells read "WITHDRAWN …" (`DashLayout.WITHDRAWN_FIELDS`), never deleted
 0x2F0  coolant + intake air temp (10-bit each)
-0x300  battery/charging fault — reserved; bit mapping pending car-side capture
+0x300  battery/charging fault — reserved; bit mapping unknown
 0x340  PCM ambient (byte7 signed × 0.25°C) — NOT TPMS
 0x360  odometer (bytes [3:5] 24-bit BE) + engine status (byte0)
 0x380  fuel level (Motorola 10-bit × 0.4%, clamped 0-100)
@@ -95,7 +85,7 @@ The per-file map of `android/app/src/main/java/com/openrs/dash/` is `.claude/rul
 - `CanDecoder.decode()` returns `null` if data is too short — callers must null-check
 - `CanDecoder.resetSessionState()` MUST be called on every new connection (resets modeDetail420 + has420Arrived)
 - `genericValues: Map<String, Double>` — populated by PidRegistry for catalog DIDs without a dedicated field
-- HVAC/IPC fields in VehicleState are scaffolded (v2.2.5) but not yet reliably populated
+- HVAC/IPC fields in VehicleState are scaffolded and not reliably populated — treat them as unknown
 
 ## OBD Mode 22 Response Layout
 
@@ -110,37 +100,39 @@ data[5] = B5,  data[6] = B6 …
 
 ## Known Gotchas
 
-The gotchas live in `.claude/rules/` as path-scoped Claude Code rules, one file per area (95 entries, moved verbatim on
-2026-11-06; 114 now). Each file loads on demand when a file matching its `paths:` globs is read or edited; the globs start with `**/`
-so they also match from a workspace that holds this repository in a subfolder. Rules for editing them:
+The gotchas live in `.claude/rules/` as path-scoped Claude Code rules, one file per area. Each file loads on demand when a
+file matching its `paths:` globs is read or edited; the globs start with `**/` so they also match from a workspace that
+holds this repository in a subfolder. Rules for editing them:
 
-- A new gotcha goes at the end of its area's file, in the same `- **Title** — …` style; a cross-cutting one goes to
-  `android-general.md`. Never move, merge or reword an existing entry while adding one. The one exception: an entry's facts
-  changed (a decision landed, a mapping was confirmed) — correct those words only, in a commit whose message names each corrected
-  line; rules carry no perishable status ("pending", "undecided"), only the decision or a pointer to the issue that holds it.
+- A new gotcha goes at the end of its area's file as `- **Title** — rule`; a cross-cutting one goes to
+  `android-general.md`. An entry states the rule, its reason and the test or issue that holds the evidence. Dates, commit
+  ids, measurements and the story of the fix go to the issue; status ("pending", "undecided", "follow-up") is written as
+  the decision or a pointer to the issue that holds it.
+- When an entry's facts change (a decision landed, a mapping was confirmed), correct the entry in a commit whose message
+  names each corrected line. Restructuring an entry without changing its meaning (splitting it into sub-bullets, removing
+  history) is a docs change of its own, read by QA against the old text line by line.
 - A rule loads through the file tools (Read / Write / Edit, or `cat` / `head` of one file); a `git diff` or `git show` loads
   nothing — when reviewing a change that way, read the area's rule file explicitly first.
 - Keep every rules file under 40,000 characters (`wc -m`): the Claude Code docs give that as the per-file limit for
   path-scoped rules and subdirectory CLAUDE.md files on a 200K context window (150,000 on 1M) — split an area into two
-  files rather than trim it. Sizes at the split: `source-layout.md` 28 KB, the largest
-  gotcha file (`connection-link.md`) 10.5 KB.
+  files rather than trim it.
 - The ECU / CAN ID tables, VehicleState rules and the Mode 22 layout above stay in this file: every session needs them.
 
 | File | Area | Loads when a matching file is read / edited |
 |---|---|---|
 | `source-layout.md` | Source Layout (the android/ source map) | any file under `android/` |
-| `android-general.md` | Android, any file (6) | any file under `android/app/src/` |
-| `can-decoding.md` | CAN decoding and VehicleState (12) | `CanDecoder.kt`, `VehicleState.kt`, `DemoSimulator.kt`, `PullTracker.kt`, `Knock*.kt`, `data/Drive*.kt`, `OilPtuMapping*`, `DriveRecorder.kt`, their tests, `test/resources/dbc/` |
-| `obd-polling.md` | OBD Mode 22 polling, decoders and freshness (12) | `Obd*.kt`, `PcmPollSchedule.kt`, `PidRegistry.kt`, `NrcTracker.kt`, `CanDecoder.kt`, `SlcanConnection.kt`, `CanDataService.kt`, `ObdMerge.kt`, `FreshnessGate.kt`, `VehicleState.kt`, `*ModeProvenance*`, `PowerPage.kt`, `CustomDashPage.kt`, the PID assets, their tests |
-| `boost.md` | Boost / TIP rule (#207) (3) | any `*Boost*` file, `DrivePage.kt`, `CustomDashPage.kt`, `HudOverlayService.kt`, `DriveRecorder.kt`, `KnockScatter.kt`, `KnockCapture.kt`, `ui/trip/`, `web/src/lib/boost.ts` |
-| `connection-link.md` | Connection, SLCAN link, service ownership, firmware commands (17) | `Slcan*.kt`, transports, `ObdResponseParser.kt`, `PidRegistry.kt`, `FirmwareApi.kt`, `DriveCommand.kt`, `EscCommand.kt`, `CanDataService.kt`, `Link*.kt`, `ConnectionSetup.kt`, `CanDecoder.kt`, `ObdMerge.kt`, `DemoSimulator.kt`, `DriveModeDock.kt`, `MorePage.kt`, `SettingsSheet.kt`, `BleDeviceDraft.kt`, `MainActivity.kt`, `ObdConstants.kt`, `ForegroundController.kt`, `firmware/`, their tests |
-| `ble.md` | BLE GATT transport and picker (7) | `Ble*.kt`, `BleDevicePickerDialog.kt`, `SlcanConnection.kt`, `*Ledger*`, `WriteOutcome.kt`, their tests |
-| `recorder-trip.md` | Drive recorder, laps and the TRIP tab (9) | `DriveRecorder.kt`, `data/Drive*.kt`, lap files, `ui/trip/` (incl. `TripPage.kt`), `TripPreview.kt`, `MainActivity.kt`, `DriveExportBuilder.kt`, their tests |
-| `diagnostics.md` | DTC scans, DID prober, diagnostic export (12) | `diagnostics/`, `DiagPage.kt`, `SlcanConnection.kt`, `*Ledger*`, `CanDataService.kt`, `DidProberSection.kt`, `PidBrowserSection.kt`, `data/Dtc*.kt`, their tests |
-| `ui-compose.md` | Compose UI (layout, theme, navigation) (17) | any file under `ui/` or `res/`, `HudOverlayService.kt` |
-| `thermal.md` | Thermal readiness, temperature freshness, drive thermal record (6) | any `*Thermal*` file, `TempsPage.kt` (home of `TempAvail`), `ChassisPage.kt`, `DrivePage.kt`, `DriveRecorder.kt`, their tests |
-| `demo-mode.md` | Demo mode (debug builds) (5) | any file under `com/openrs/dash/` (its rules bind every writer of live telemetry) |
-| `build-release.md` | Build, release identity, CI, private builds, test runtime (8) | Gradle files, `android/scripts/`, `android/CHANGELOG.md`, `robolectric.properties`, `update/`, `BuildInfo*`, `*Version*`, `.github/workflows/` |
+| `android-general.md` | Android, any file | any file under `android/app/src/` |
+| `can-decoding.md` | CAN decoding and VehicleState | `CanDecoder.kt`, `VehicleState.kt`, `DemoSimulator.kt`, `PullTracker.kt`, `Knock*.kt`, `data/Drive*.kt`, `OilPtuMapping*`, `DriveRecorder.kt`, their tests, `test/resources/dbc/` |
+| `obd-polling.md` | OBD Mode 22 polling, decoders and freshness | `Obd*.kt`, `PcmPollSchedule.kt`, `PidRegistry.kt`, `NrcTracker.kt`, `CanDecoder.kt`, `SlcanConnection.kt`, `CanDataService.kt`, `ObdMerge.kt`, `FreshnessGate.kt`, `VehicleState.kt`, `*ModeProvenance*`, `PowerPage.kt`, `CustomDashPage.kt`, the PID assets, their tests |
+| `boost.md` | Boost / TIP rule (#207) | any `*Boost*` file, `DrivePage.kt`, `CustomDashPage.kt`, `HudOverlayService.kt`, `DriveRecorder.kt`, `KnockScatter.kt`, `KnockCapture.kt`, `ui/trip/`, `web/src/lib/boost.ts` |
+| `connection-link.md` | Connection, SLCAN link, service ownership, firmware commands | `Slcan*.kt`, transports, `ObdResponseParser.kt`, `PidRegistry.kt`, `FirmwareApi.kt`, `DriveCommand.kt`, `EscCommand.kt`, `CanDataService.kt`, `Link*.kt`, `ConnectionSetup.kt`, `CanDecoder.kt`, `ObdMerge.kt`, `DemoSimulator.kt`, `DriveModeDock.kt`, `MorePage.kt`, `SettingsSheet.kt`, `BleDeviceDraft.kt`, `MainActivity.kt`, `ObdConstants.kt`, `ForegroundController.kt`, `firmware/`, their tests |
+| `ble.md` | BLE GATT transport and picker | `Ble*.kt`, `BleDevicePickerDialog.kt`, `SlcanConnection.kt`, `*Ledger*`, `WriteOutcome.kt`, their tests |
+| `recorder-trip.md` | Drive recorder, laps and the TRIP tab | `DriveRecorder.kt`, `data/Drive*.kt`, lap files, `ui/trip/` (incl. `TripPage.kt`), `TripPreview.kt`, `MainActivity.kt`, `DriveExportBuilder.kt`, their tests |
+| `diagnostics.md` | DTC scans, DID prober, diagnostic export | `diagnostics/`, `DiagPage.kt`, `SlcanConnection.kt`, `*Ledger*`, `CanDataService.kt`, `DidProberSection.kt`, `PidBrowserSection.kt`, `data/Dtc*.kt`, their tests |
+| `ui-compose.md` | Compose UI (layout, theme, navigation) | any file under `ui/` or `res/`, `HudOverlayService.kt` |
+| `thermal.md` | Thermal readiness, temperature freshness, drive thermal record | any `*Thermal*` file, `TempsPage.kt` (home of `TempAvail`), `ChassisPage.kt`, `DrivePage.kt`, `DriveRecorder.kt`, their tests |
+| `demo-mode.md` | Demo mode (debug builds) | any file under `com/openrs/dash/` (its rules bind every writer of live telemetry) |
+| `build-release.md` | Build, release identity, CI, private builds, test runtime | Gradle files, `android/scripts/`, `android/CHANGELOG.md`, `robolectric.properties`, `update/`, `BuildInfo*`, `*Version*`, `.github/workflows/` |
 
 ## Theme Colors
 
@@ -184,11 +176,10 @@ Prefs file: "openrs_settings"
 ## Assets
 
 ```
-android/app/src/main/assets/pids/combined_catalog.json   — 136 KB merged PID catalog
-android/app/src/main/assets/pids/forscan_modules.json    — 185 KB FORScan catalog (1,149 PIDs)
-android/app/src/main/res/raw/dtc_database.json           — 873-code Ford DTC descriptions
+android/app/src/main/assets/pids/combined_catalog.json   — merged PID catalog
+android/app/src/main/assets/pids/forscan_modules.json    — FORScan catalog
+android/app/src/main/res/raw/dtc_database.json           — Ford DTC descriptions
 android/app/src/main/res/raw/google_map_style_dark.json  — Google Maps dark style (openRS_ palette)
-android/app/src/main/res/raw/map_style_dark.json         — Legacy OSMDroid dark map style (unused)
 ```
 
 Regenerate the FORScan catalog: `python3 android/scripts/gen_forscan_catalog.py` (writes forscan_modules.json only)
@@ -199,22 +190,22 @@ Regenerate the FORScan catalog: `python3 android/scripts/gen_forscan_catalog.py`
 cd android
 ./gradlew assembleDebug                    # → openRS_v{ver}-staging-debug.apk
 ./gradlew assembleRelease                  # → openRS_v{releaseName}.apk (e.g. openRS_v2.2.7-rc.7.apk; set in app/build.gradle.kts)
-./gradlew test                             # 1102 tests / 94 classes per variant at rc.7 (`43ad5e1`); older totals under Tests
-./gradlew lint                             # report: app/build/reports/lint-results-debug.txt (0 errors, 47 warnings rc.7)
+./gradlew test                             # unit tests, both variants
+./gradlew lint                             # report: app/build/reports/lint-results-debug.txt
 bash scripts/install-debug.sh              # quick build + ADB install + launch (extra args → am start)
 ```
 
-### Emulator / demo-mode workflow (verified 2026-10-22, Pixel 9 Pro XL AVD, Android 17)
+### Emulator / demo-mode workflow
 
 ```bash
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 export PATH="$PATH:$HOME/Library/Android/sdk/platform-tools"     # adb is not on PATH by default
-adb devices -l                                                  # emulator-5554 (AVD id Pixel_9_Pro_XL)
+adb devices -l                                                  # the running emulator's serial
 
 cd android
 bash scripts/install-debug.sh                     # build → install → cold-start (normal, auto-connects)
 bash scripts/install-debug.sh --es demo driving   # same, but straight into demo mode
-# APK: app/build/outputs/apk/debug/openRS_v2.2.7-rc.7-staging-debug.apk   App ID: com.openrs.dash.debug
+# APK: app/build/outputs/apk/debug/openRS_v<releaseName>-staging-debug.apk   App ID: com.openrs.dash.debug
 
 # Control a running debug app (onNewIntent needs --activity-single-top):
 adb shell am start --activity-single-top -n com.openrs.dash.debug/com.openrs.dash.ui.MainActivity --es demo warning
@@ -230,26 +221,22 @@ adb shell am start --activity-single-top -n com.openrs.dash.debug/com.openrs.das
 # Cold start with an extra: am start -S -n … --es demo idle   (without -S the intent is only brought to front)
 ```
 
-The in-app demo controls, the scenario checklist and the emulator testing gotchas were moved out on 2026-11-05 (last full
-copy: this file at staging commit `743230fb`, section Build). One rule from them stays: the header pill always says DEMO in
-demo mode (`DEMO · RCN` during LOSS) — never drop the simulation label.
+In demo mode the header pill always says DEMO (`DEMO · RCN` during LOSS) — never drop the simulation label.
 
 Keys: `android/local.properties` (`MAPS_API_KEY`, `OPENWEATHER_API_KEY`) or the same names in the environment — optional for
 local builds (#235); `android/keystore.properties` for release signing.
-Version display format: `openRS_ v2.2.7-rc.7 · Build 38` (Settings; `Build 37` = the published tag's asset) — the release name comes from `app/build.gradle.kts`
-(see the Release identity gotcha); there is no `-PrcSuffix` any more.
+Version display format: `openRS_ v<releaseName> · Build <versionCode>` (Settings) — the release name comes from
+`app/build.gradle.kts` (see the Release identity gotcha).
 
 ## Tests
 
 Unit tests live in `android/app/src/test/java/com/openrs/dash/` (JVM, plus Robolectric on SDK 35 for the Room-backed tests) and
-in `web/src/` (`*.test.ts`, `*.test.tsx`) for Sapphire. Run one class with `./gradlew test --tests '*ClassName*'`. The
-per-class catalog and the history of counts were moved out on 2026-11-05 (last full copy: this file at staging commit
-`743230fb`); list the folder instead.
+in `web/src/` (`*.test.ts`, `*.test.tsx`) for Sapphire. Run one class with `./gradlew test --tests '*ClassName*'`. For the
+per-class catalog, list the folder.
 
-Current count: **1564 tests / 128 classes** per variant (Android, `feature/rc8-followup` `1499f69`, 1 skipped = `#251 outlier
-policy`; Temurin 17, `clean test lint --no-build-cache` — a plain run can restore results from the Gradle build cache);
-**1200 / 107** at staging `3cb229ce`. Sapphire: **343 vitest across 27 files** (run
-`web/node_modules/.bin/vitest run` and `tsc -b`).
+Counts are not kept here. To count: `./gradlew clean test lint --no-build-cache` on Temurin 17 (a plain run can restore
+results from the Gradle build cache); one test is skipped by decision (`#251 outlier policy`). Sapphire:
+`web/node_modules/.bin/vitest run` and `tsc -b`.
 
 ## Issue tracking and field evidence
 
@@ -264,26 +251,23 @@ policy`; Temurin 17, `clean test lint --no-build-cache` — a plain run can rest
 feature/* → staging → main          (code, tests, android/CHANGELOG.md)
 docs/*    → main    (direct)        (README.md, assets/, docs/, firmware/README.md)
 Release tags: android-v*  (triggers CI signing + GitHub Release)
-RCs: one pre-release per RC tag (android-v2.2.7-rc.4, -rc.5, -rc.6 …), tagged on staging; stable tags on main
+RCs: one pre-release per RC tag (android-v<ver>-rc.N), tagged on staging; stable tags on main
 ```
 
 Android RCs ship from **staging**; **main** carries stable Android (v2.2.6) and Sapphire. Sapphire may reach main web/-only
-(as for rc.6, PR #203) without the Android RC.
+without the Android RC.
 
 Commits carry the committer's GitHub noreply e-mail (`<id>+<login>@users.noreply.github.com`). The owner's account blocks
 pushes that would publish a private address (GH007), and fixing that afterwards means rewriting commits.
 
-**RC publication (as done for rc.6):** merge the feature PR into staging → wait for CI on the staging merge commit →
+**RC publication:** merge the feature PR into staging → wait for CI on the staging merge commit →
 `gh release create android-v<ver>-rc.N --target <full staging SHA> --prerelease --title "openRS_ v<ver>-rc.N"
 --notes-file <notes>` (creates the lightweight tag; the tag push runs `publish-release`, which attaches the signed APK
 to that release) → download the asset and check name, `apksigner verify --print-certs` (cert `c99b6f26…`), versionCode /
 RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an older RC release.
 
-**Release records (moved out 2026-11-05).** The rc.7 work record, the rc.7 publication record (Build 38 included) and the
-rc.6 publication record were dated diaries of commits, hashes, CI runs and evidence notes, not instructions, and made up
-about a quarter of this file. They are no longer kept here. The last full copy is this file at staging commit `743230fb`
-(`git show 743230fb:CLAUDE.md`). Release facts live in `android/CHANGELOG.md` and on the GitHub Releases page; open work
-lives in the issue tracker. Do not add dated status or work-log entries to this file again.
+**Release records.** Release facts live in `android/CHANGELOG.md` and on the GitHub Releases page; open work lives in the
+issue tracker. This file takes no dated status or work-log entries.
 
 Docs branches skip staging entirely — branch from main, PR to main.
 Never route README.md, assets/, or docs/ through staging.
@@ -298,11 +282,11 @@ Never route README.md, assets/, or docs/ through staging.
 5. Add/update the highlights entry in `WhatsNewDialog.kt` for the new base version — since #214 there is no fallback: a base
    version without highlights shows nothing (`shouldShowWhatsNew`). It auto-opens once per release name
    (`BuildInfo.releaseName`, e.g. rc.6 → rc.7 shows it), with content per base version — extend the entry per RC
-   (Settings also opens it). Builds up to rc.6 all named "2.2.7" never re-showed it between RCs
+   (Settings also opens it)
 
 ## Changelog Format (`android/CHANGELOG.md`)
 
-Every release follows the same structure. Consistency matters — do not deviate.
+Every release follows the same structure.
 
 **Entry template:**
 ```
@@ -332,14 +316,14 @@ Release notes are a **condensed highlight reel**, not a copy of the changelog.
 
 ## Sapphire — Web Analytics Dashboard (`web/`)
 
-Post-session analysis dashboard replacing the old Mission Control HTML export.
+Post-session analysis dashboard.
 Named after the Ford Sierra Sapphire RS Cosworth + Nitrous Blue gemstone connection.
 
 **Tech stack:** Vite + React 19 + TypeScript + Tailwind CSS + Recharts + Zustand.
 Pure client-side (no server). Deployed as static files to GitHub Pages.
 
 **Data contract:** Android app exports ZIP → user imports into Sapphire via drag-and-drop.
-ZIP contains: `trip_*.csv`, `diagnostic_detail_*.json`, `diagnostic_summary_*.txt`, `did_probe_*.csv`.
+ZIP contains: `drive_*.csv` and `drive_summary_*.txt` (legacy `trip_*` names still import), `diagnostic_detail_*.json`, `diagnostic_summary_*.txt`, `did_probe_*.csv`.
 Sapphire parses these and stores sessions in browser IndexedDB.
 
 **Design:** Dark "Void" aesthetic matching the openRS_ in-app palette. Nav rail + panel layout.
@@ -372,28 +356,20 @@ web/
     types/             — Session, trip, diagnostic, vehicle state types
 ```
 
-```bash
-cd web
-pnpm install                  # install dependencies
-pnpm dev                      # local dev server (Vite)
-pnpm build                    # production build → dist/
-pnpm preview                  # preview production build
-```
+Scripts are in `web/package.json` (`dev`, `build`, `preview`, `test`, `lint`); CI installs with `npm ci`.
 
 **Testing notes:**
 - Sapphire tests touching `localStorage` (store / App): Node 25's own `localStorage` global (non-functional without
   `--localstorage-file`) shadows jsdom's — stub one per test (`vi.stubGlobal('localStorage', …)`, see `App.test.tsx`)
-- Sapphire browser smoke (prod build, chart gaps / paints / remembered view): `node smoke.mjs <dist> <profile> <shots>
-  <fixtures>` from `~/Documents/openRS_-evidence/sapphire-smoke-2026-10-27/` with Playwright (same setup as
-  `web/scripts/idb-check/check.mjs`); build with `--outDir` outside the repo; IndexedDB is per origin, so each run
+- Sapphire browser smoke (prod build, chart gaps / paints / remembered view): Playwright, same setup as
+  `web/scripts/idb-check/check.mjs`; build with `--outDir` outside the repo; IndexedDB is per origin, so each run
   (random port) starts empty
 - Sapphire import contract: `web/src/lib/import.androidExport.test.tsx` imports complete Android exports from
   `__fixtures__/android-export-rc6/`; regenerate with `OPENRS_EXPORT_SAMPLES=<dir> ./gradlew test --tests '*DriveExportThermalTest'`
 
-**Release merge checklist (staging ↔ main):** moved out on 2026-11-05. It is a one-time runbook for the stable promotion
-(which side to take per file, the `ci.yml` hand-merge, the checks to run after the merge). Read it before merging staging
-into main: the last full copy is this file at staging commit `743230fb`, section Sapphire. The follow-ups below came with
-it and are still open.
+**Release merge checklist (staging ↔ main):** a one-time runbook for the stable promotion (which side to take per file,
+the `ci.yml` hand-merge, the checks to run after the merge). Read it before merging staging into main:
+`git show 743230fb:CLAUDE.md`, section Sapphire.
 
 *Separate follow-ups (noted when the merge checklist was written; not release blockers):*
 - `DriveRecorder` stores points only from location updates, so a drive without GPS records no telemetry (the export
@@ -403,17 +379,3 @@ it and are still open.
 - thermalRecord visualisation in Sapphire (the block imports and is ignored today).
 - Thermal Soak is a stacked chart: while one layer is missing, the layers above it sit lower (stack total). Inherent to
   stacking (main's 0-floor shifts them the same way); a non-stacked view would be a design change.
-
-Old `MissionControlHtmlBuilder.kt` + `mission_control.html` remain as a "lite" fallback
-until Sapphire reaches feature parity.
-
-## Near-Horizon Work
-
-```
-2.1  Knock event logger       — SHIPPED v2.2.7-rc.4 (0x03EC retard scatter + persistence)
-2.2  Fuel trim drift tracker  — SHIPPED v2.2.7-rc.5 (warm-engine STFT/LTFT per drive, PERF trend card, ±8 % alert)
-2.3  Boost target vs actual   — SHIPPED v2.2.7-rc.4 (TIP desired/actual + WGDC, DriveTimeSeries); TIP scale fixed +
-                                live POWER sweep chart, WGDC @ peak, boost by gear in rc.6 (#175 complete)
-```
-
-See `docs/feature-roadmap.md` for full pipeline.

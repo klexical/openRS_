@@ -4,8 +4,6 @@ paths:
 ---
 # openRS_ Known Gotchas — Demo mode (debug builds)
 
-Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-06. Add a new gotcha of this area at the end; never reword an existing one here.
-
 - **Demo mode owns VehicleState while active** — `CanDataService.enterDemoMode()` finalizes any recording drive, calls
   `stopConnection()`, then `DemoMode.start()`. While `DemoMode.isActive`: `processCanFrame` / `mergeObdState` / the adapter
   state collector early-return, `startConnection()` / `reconnect()` are no-ops, `firmwareApi` returns `DemoFirmwareApi`,

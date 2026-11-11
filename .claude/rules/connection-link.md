@@ -38,25 +38,23 @@ paths:
 ---
 # openRS_ Known Gotchas — Connection, SLCAN link, service ownership, firmware commands
 
-Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-06. Add a new gotcha of this area at the end; never reword an existing one here, with one exception: when an entry's facts changed (a decision landed, a mapping was confirmed), correct those words only, in a commit whose message names each corrected line. Entries carry no perishable status, only the decision or a pointer to the issue that holds it.
-
 - Firmware drive mode is **hybrid scroll-then-wait** (v1.61+) — pre-calculates scroll count, sends all presses open-loop, waits up to 6s for auto-confirm. Do NOT revert to closed-loop press-and-poll (v1.6 bug) or pure open-loop press counting (v1.5 bug). The Focus RS mode selector GUI requires ~4s of inactivity to auto-confirm — CAN does not update during scrolling
 - Firmware REST POST `/api/frs` returns `{"ok":false,"busy":true}` when a drive mode change is in progress — app must handle this
 - Android 10+ silently routes new sockets through cellular when WiFi has no internet — `WiFiFirmwareApi` uses `Network.socketFactory` via `ConnectivityManager` to force all traffic on WiFi. BLE transport avoids this entirely (not a "network" in Android's routing model)
-- **Firmware commands never throw (#238 review F1, `2b59644`)** — `BleFirmwareApi.sendCommand` turns the write's
+- **Firmware commands never throw (#238)** — `BleFirmwareApi.sendCommand` turns the write's
   IOException into `Result.failure` (cancellation still propagates). The UI launches (DriveModeDock, MorePage ESC) have
   no catch, so an escaped exception ended the process. Keep every `FirmwareCommandSender` inside its `Result` contract.
   `BleCommandSendFailureTest` (real SlcanConnection over BleGattCore, fake GATT)
-- **SLCAN framing is exact, per connection (#251, rc.8)** — a `t` / `T` line's data field must be exactly DLC × 2 hex digits
+- **SLCAN framing is exact, per connection (#251)** — a `t` / `T` line's data field must be exactly DLC × 2 hex digits
   (`SlcanParser.parse(line, timestamped)`); anything else is refused and counted (LINK INTEGRITY in exports). `SlcanFraming`
   in `SlcanConnection` starts each connection plain and locks to timestamped (exactly DLC × 2 + 4 hex, suffix stripped) only if
   the first 8 well-formed frames all carry the suffix (adapter left in `Z1` by another client); no mid-connection switch;
   50 consecutive other-shape lines log one FRAMING event (no raw line). Never accept "+4" statelessly: a spliced line and a
-  one-nibble DLC corruption both look like +4. `SLCAN_INIT` is unchanged (sending `Z0` at init was decided against on 2026-11-06: the per-connection latch only).
+  one-nibble DLC corruption both look like +4. `SLCAN_INIT` is unchanged (owner decision: no `Z0` at init, the per-connection latch only).
   - Mode 22: a PCI that claims more bytes than the frame holds (or no data byte) is refused
     (`ObdResponseParser.singleFrameDataBytes`); a decoder whose value needs a byte the reply doesn't carry updates nothing
     (it used to read the missing byte as 0). A one-byte value in a short reply still decodes. `PidRegistry.decode` refuses a two-byte formula without B.
-  - Well-formed but implausible single frames (e.g. 0x130 = 0xFFFF → 655.35 km/h) are NOT filtered — decided on 2026-11-06: left unfiltered
+  - Well-formed but implausible single frames (e.g. 0x130 = 0xFFFF → 655.35 km/h) are NOT filtered — owner decision: left unfiltered
     (`#251 outlier policy`, the one @Ignore'd test). Don't invent physical limits.
 - **Foreground service only while connected** — `MainActivity.startSvc()` only **binds** `CanDataService`. `startConnection()`
   promotes it via `ForegroundController.promote()` (startForegroundService(self) immediately followed by startForeground);
@@ -78,8 +76,7 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   finalizing, link not yet up); it saves nothing (next launch auto-connects) and sets a memory-only hold in `LinkOwnership` that a
   transport callback cannot restart until the next bind (`onActivityBound`, one line no JVM test reaches — device check);
   `DriveRecorder.isFinalizing` refuses it while a finalize runs (`stopDrive` starts its finalize before the state says not recording;
-  `TaskRemovalTest`, `DriveFinalizeTest`). Whether Back delivers `onTaskRemoved` on Android 16 is not established (#212 option 2,
-  rc.8 follow-up; the commit is droppable). Raw CAN frames and auto-record go through `LinkSession` (`deliver(gen)`); blocking work
+  `TaskRemovalTest`, `DriveFinalizeTest`). Whether Back delivers `onTaskRemoved` on Android 16 is not established (#212). Raw CAN frames and auto-record go through `LinkSession` (`deliver(gen)`); blocking work
   (perf-run insert) runs after the lock. `reconnect()` (RCN tap) builds a fresh SlcanConnection, so it reads CONN; while
   recording it can't be cancelled
 - **Retry while recording** — `keepRetrying` (= recording) extends retries past `maxRetries` with a 30 s backoff polled every
@@ -92,67 +89,57 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
 - **`UserPrefsStore` outside the activity** — `CanDataService` is START_STICKY: Android can recreate it (and it auto-connects /
   auto-records) with no MainActivity, so its `onCreate` calls `UserPrefsStore.ensureLoaded()` first. Anything service-side
   that reads `UserPrefsStore.prefs` relies on that
-- **ESC confirmation (#125)** — the adapter's OK is acceptance only. `EscCommand` waits the firmware's own press plan
-  (5 s long press for OFF, 300 ms presses, 1 s gap) + 3 s (unmeasured), needs the last two 0x1C0 frames both reporting the requested
-  mode (`escFrameLast` / `escFramePrev`), both after the request on the same `connectionEpoch` (rule C, rc.8 follow-up;
-  `EscRuleCTest`); reconnect → ConnectionLost; one request at a time; while the message shows, the pending state is already cleared
-  (the message comes after the `finally`). Firmware
-  (`focusrs.c` / `focusrs_esc_plan.c`) saves boot ESC only for a CAN-confirmed change; only a 0x1C0 frame decoding to Normal /
-  Off / Sport counts (raw 3 no longer advances `esc_frames`). `firmware/tests/run.sh` runs the real `focusrs.c` against
-  host stubs (`tests/stubs/`). PRO built once in isolation 2026-10-29 (evidence dir), **never flashed** — adapters keep
-  their old firmware. Firmware detection ≠ control capability
-- **Drive-mode confirmation (#252, rc.8; accepted-vs-confirmed since `4937cfb`)** — the adapter's OK is "ACCEPTED";
-  `executeDriveModeChange` confirms only from CAN observed AFTER the request on the same link generation: two agreeing resolved
-  0x1B0 reports (stamp `driveMode`), and for Sport / Track also two agreeing documented 0x420 details
-  (byte 6 0x10 / 0x11 / 0x12 ± LC bit) received after the request, the second before the resolving report
-  (`driveModeDetailPair` → copied to `driveModeResolvedPair`), and the current 0x1B0 run is the target (`driveModeRun.<MODE>`,
-  `driveModeRunPrev`). `driveModeDetail` / `driveModeResolvedDetail` are provenance only (export text, `fieldAgesMs`). An undocumented 0x420 byte 6 changes nothing; a 0x1B0 that changes the resolved mode is stamped
-  at once (the 1 s throttle applies only to unchanged reports). There is no automatic correction any more (rc.8 follow-up, #252 S5): when
-  the wait ends with the car reporting another mode, the app asks ("Car is in Track. You asked for Sport.") and only the driver's tap sends
-  a further command, through the same confirmation; the question comes only at the window's end (a mode on the way, Track via Sport,
-  must not raise it), and closing the dock during the wait ends it with no question and no verdict. OBD merges must not bring back drive-mode provenance keys from their snapshot
-  (`ModeProvenanceMergeTest`). The current mode's chip can't be tapped once the screen shows that state (a request for it reaches the code only if
-  the tap beats the screen update — not run); a real change via Sport confirms about 1.2–1.3 s later than before the corroboration
-  rule (emulator, synthetic adapter; #252 A2 run), and S1 (both details must be of the confirmed mode) adds about 0.9 s at the median on
-  a Sport landing (emulator, 0x420 every 600 ms, 8 runs; not a maximum; real 0x420 is slower) — two different measurements. A confirmation states
-  the car's mode after the request, not that the app caused it (a manual selection looks identical; which 0x305 bit is the mode button is unresolved — in capture A, 874 frames, the bit the decoder reads (byte 4 bit 5) is never
-  set, the firmware's bit (byte 4 bit 2) is set in 5 frames between the Drift send and its confirmation, and closed #120's bit
-  (byte 4 bit 4) flips only at the two mode changes, a state not a press by inference; capture B shows neither; so
-  `driveModeButtonPressed` reads a bit never set in either capture — QA counts 2026-11-07).
-  Timing (2 s + 15 s), retries, ESC and firmware unchanged; reconnect → `DriveCommandResult.ConnectionLost`. Demo must stamp
-  every CAN tag (`CanDecoder.canStampTags` ⊆ `DemoSimulator.CAN_TAGS`, DemoSimulatorTest) or confirmations time out in demo.
-  ESC confirmation (#125): since `7130082` (rc.8 Build 39) a 0x1C0 ESC CHANGE is stamped when it arrives; only an unchanged report
-  stays under the 1 s throttle (`EscStampThrottleTest`); since `cdffbbe` the 1 s reports keep their own tick (`escStatusReportTick`)
-  and a change adds one stamp on top, so a change just before the request no longer delays its confirmation. Since the rc.8 follow-up
-  it confirms on TWO agreeing post-request frames (rule C, as drive mode): a single stray frame no longer confirms, a blip of two or
-  more frames still does (QA matrix: 16 of 32 never-reached cells; the blip sweep confirms exactly as often as one report at every
-  blip length), the window is unchanged, and OBD merges must not bring back a removed ESC frame key (the drive-mode filter now covers
-  ESC). The label is not to be
-  relied on in a car until #125's hardware acceptance (the raw 0x1C0 run read from an export)
-- **Bluetooth with no saved device (#234, fixed on feature/rc7 — verified on the emulator only; trigger: connection method
-  Bluetooth saved with no device selected — on such installs `a605b1c` and earlier crash at every launch; Wi-Fi, or
-  Bluetooth with a device, is unaffected)** — one rule,
+- **ESC confirmation (#125)** — the adapter's OK is acceptance only.
+  - `EscCommand` waits the firmware's own press plan (5 s long press for OFF, 300 ms presses, 1 s gap) + 3 s (unmeasured),
+    then needs the last two 0x1C0 frames both reporting the requested mode (`escFrameLast` / `escFramePrev`), both after
+    the request on the same `connectionEpoch` (`EscRuleCTest`): a single stray frame does not confirm, a blip of two or
+    more frames does.
+  - A 0x1C0 ESC change is stamped when it arrives; only an unchanged report stays under the 1 s throttle
+    (`EscStampThrottleTest`), and the 1 s reports keep their own tick (`escStatusReportTick`), so a change just before the
+    request does not delay its confirmation. OBD merges must not bring back a removed ESC frame key (the drive-mode filter
+    in `ObdMerge` covers ESC).
+  - Reconnect → ConnectionLost; one request at a time; while the message shows, the pending state is already cleared (the
+    message comes after the `finally`).
+  - Firmware (`focusrs.c` / `focusrs_esc_plan.c`) saves boot ESC only for a CAN-confirmed change; only a 0x1C0 frame
+    decoding to Normal / Off / Sport counts (raw 3 does not advance `esc_frames`). `firmware/tests/run.sh` runs the real
+    `focusrs.c` against host stubs (`tests/stubs/`). Firmware detection ≠ control capability.
+  - The label is not to be relied on in a car until #125's hardware acceptance (the raw 0x1C0 run read from an export).
+- **ESC command while the state is unknown (#288)** — `EscCommand` sends nothing (Outcome.Refused) for an unknown target or
+  while the car's ESC state is unknown: no 0x1C0 on this connection, or raw 3. GARAGE disables its ESC chips then.
+- **Drive-mode confirmation (#252)** — the adapter's OK is "ACCEPTED".
+  - `executeDriveModeChange` confirms only from CAN observed AFTER the request on the same link generation: two agreeing
+    resolved 0x1B0 reports (stamp `driveMode`), and for Sport / Track also two agreeing documented 0x420 details
+    (byte 6 0x10 / 0x11 / 0x12 ± LC bit) received after the request, the second before the resolving report
+    (`driveModeDetailPair` → copied to `driveModeResolvedPair`), and the current 0x1B0 run is the target
+    (`driveModeRun.<MODE>`, `driveModeRunPrev`). `driveModeDetail` / `driveModeResolvedDetail` are provenance only (export
+    text, `fieldAgesMs`). An undocumented 0x420 byte 6 changes nothing; a 0x1B0 that changes the resolved mode is stamped
+    at once (the 1 s throttle applies only to unchanged reports).
+  - No automatic correction: when the wait ends with the car reporting another mode, the app asks ("Car is in Track. You
+    asked for Sport.") and only the driver's tap sends a further command, through the same confirmation. The question comes
+    only at the window's end (a mode on the way, Track via Sport, must not raise it); closing the dock during the wait ends
+    it with no question and no verdict.
+  - A confirmation states the car's mode after the request, not that the app caused it: a manual selection looks
+    identical, and which 0x305 bit is the mode button is unresolved, so `driveModeButtonPressed` proves nothing (#252).
+  - OBD merges must not bring back drive-mode provenance keys from their snapshot (`ModeProvenanceMergeTest`). Timing is
+    2 s settle + 15 s window; reconnect → `DriveCommandResult.ConnectionLost`. Demo must stamp every CAN tag
+    (`CanDecoder.canStampTags` ⊆ `DemoSimulator.CAN_TAGS`, DemoSimulatorTest) or confirmations time out in demo.
+- **Bluetooth with no saved device (#234; verified on the emulator only)** — one rule,
   `ConnectionSetup.problem(method, address)`: Settings SAVE checks the draft (`BleDeviceDraft.saveProblem`, FORGET counts);
   `beginConnection` checks the saved prefs BEFORE `foreground.promote()` / `sessionStart` / `startSessionRecording` (no
   notification, session or retry — catching the exception would not have been enough); DRIVE reads SELECT A BLUETOOTH
   DEVICE and Connect opens Settings on CONNECTION; prefs never switched. `connectHybrid` guards `transportFactory()`
   (`UnbuiltTransport` → ordinary failed attempt; cancellation rethrown). Release logcat `Session N started` (autoGenerate
   ids) is how to count sessions on a non-debuggable build
-- **The SLCAN handshake consumes every line up to and including the first well-formed frame or `OPENRS:` reply (rc.8, #253
-  review)** — `SlcanConnection` waits up to 3 s after `SLCAN_INIT` for that first acceptable line; it and anything before it never
+- **The SLCAN handshake consumes every line up to and including the first well-formed frame or `OPENRS:` reply (#253)** — `SlcanConnection` waits up to 3 s after `SLCAN_INIT` for that first acceptable line; it and anything before it never
   reach the frame loop, the framing latch or a test's expectations. A replay or fake-adapter test whose asserted line is the first
-  one sent asserts nothing (fix `8a872ba` in #257 corrected such a negative assertion). Send a handshake line first, then the lines
+  one sent asserts nothing. Send a handshake line first, then the lines
   the test is about.
-- **Impossible CAN IDs and 29-bit frames numbered like 11-bit ones are refused (#253, rc.8 Build 39)** — `SlcanParser` returns
+- **Impossible CAN IDs and 29-bit frames numbered like 11-bit ones are refused (#253)** — `SlcanParser` returns
   an ID number only, not the frame's kind, so the fix is refusal: a `T` (extended) frame whose ID is ≤ 0x7FF, or any ID outside its
-  range, is refused and counted, and can neither reach a decoder keyed on the 11-bit ID (a synthetic `T000000F8…` line moved the oil
-  peak in a test) nor answer a DID probe as if it were the module's 0x7E8. The only support for refusing `T` ≤ 0x7FF is the firmware
-  source (it sets `T` from the frame's extended flag, Pro and USB): the SLCAN log records parsed IDs, never `t` vs `T`, so the
-  captures (no ID above 0x7FF logged) cannot exclude such frames, and no raw-line capture exists; the first real session's refused
-  frame-line count is the hardware check. A line with a non-hex data character is refused without printing it anywhere (logcat
+  range, is refused and counted, and can neither reach a decoder keyed on the 11-bit ID nor answer a DID probe as if it were the module's 0x7E8. The basis for
+  refusing `T` ≤ 0x7FF is the firmware source (it sets `T` from the frame's extended flag, Pro and USB); the SLCAN log
+  records parsed IDs, never `t` vs `T`, so a real session's refused frame-line count is the hardware check. A line with a non-hex data character is refused without printing it anywhere (logcat
   included). `SlcanParserTest` carries real 29-bit IDs for the extended cases.
-- **ESC command while the state is unknown (#288)** — `EscCommand` sends nothing (Outcome.Refused) for an unknown target or
-  while the car's ESC state is unknown: no 0x1C0 on this connection, or raw 3. GARAGE disables its ESC chips then.
 - **Launch control has one rule (#289)** — the only driver-facing indication is one "LC", `LaunchControl.shown(vs, nowMs)`:
   connected, the `lcStatus420` stamp (set on every documented 0x420 in `CanDecoder.stampDetail`) at most 1.5 s old, and byte 6
   bit 2 set. At connection start `CanDataService` clears both LC flags and both stamps (`lcStatus420`, `lc225`;

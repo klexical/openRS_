@@ -10,8 +10,6 @@ paths:
 ---
 # openRS_ Known Gotchas — Thermal readiness, temperature freshness, drive thermal record
 
-Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-06. Add a new gotcha of this area at the end; never reword an existing one here.
-
 - **Readiness = `ThermalReadinessSession.verdict`, never recomputed per surface** — DRIVE, THERMAL and `DriveRecorder`'s RTR
   marker read the one session verdict (composables via `thermalVerdict(vs)`, which voids it offline / on a demo epoch change).
   Worse is immediate; better is held 10 s on the monotonic clock (heat: 2 °C under warn / crit; warm-up: minimum + 1 °C, one

@@ -6,8 +6,6 @@ paths:
 ---
 # openRS_ Known Gotchas — Compose UI (layout, theme, navigation)
 
-Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-06. Add a new gotcha of this area at the end; never reword an existing one here.
-
 - **Theme colours are mode-aware getters** — `Bg`, `Surf`, `Surf2`, `Surf3`, `Brd`, `Dim`, `Mid`, `Frost` in Theme.kt are `val ... get() = when { _isDay -> ...; isUltraNightNow() -> ...; else -> Night... }` backed by `mutableStateOf(ThemeMode)`. They are NOT static vals. Compose snapshot system tracks reads automatically. Call `setThemeMode(ThemeMode)` to change; all composables recompose. Do not cache these colors in non-composable contexts. `setBrightness()`/`getBrightness()` are deprecated no-ops retained for back-compat
 - **Haze frosted glass placement** — `hazeSource` MUST be on the content composable (inside Scaffold), NOT on a parent Box that also contains the `hazeEffect` composable (BottomNavBar). If hazeEffect is inside the hazeSource tree, blur fails silently with no error. Also: Haze tint with `Bg.copy(alpha > 0.5f)` on a dark theme makes blur invisible — start at 0.0 and increase
 - **Bottom nav bar insets** — `Scaffold(contentWindowInsets = WindowInsets.statusBars)` drops the bottom inset so content extends behind the nav bar overlay. `enableEdgeToEdge(navigationBarStyle = SystemBarStyle.dark(TRANSPARENT))` removes the system nav bar scrim. Pages add `Tokens.NavBarHeight` as bottom scroll padding
@@ -32,13 +30,17 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   (`LocalThermalDensity`)
 - **E-brake / launch control never insert space** — shown as header chips in the wordmark's fixed slot (stacked
   when both are on; launch control is the cluster's own "LC", outlined in the paint accent, no state word) and inside DRIVE's
-  fixed-height gear module (tag + caption + border); AnomalyStrip now carries only update progress. Live flags only
-  (`vs.isConnected`). "LC" is `LaunchControl.shown(vs, wallClockMs(500L))` only, a fresh documented 0x420 bit 2 on this
-  connection (#289); 0x225 and the 0x731 probe DIDs (`lcArmed`, `lcRpmTarget`, `assEnabled`) are diagnostics only
+  fixed-height gear module (tag + caption + border); AnomalyStrip carries only update progress. Live flags only
+  (`vs.isConnected`). Every surface shows only "LC", from `data/LaunchControl.kt`
+  (`LaunchControl.shown`, #289); 0x225 and the 0x731 probe DIDs (`lcArmed`, `lcRpmTarget`, `assEnabled`) are diagnostics only
 - **Opening presentation** — system splash = background colour only (`splash_blank`). The composition draws alone at
   full opacity (no fade-in); the splash exit listener completes `OpeningState.splashGone`, and only then does the
   dashboard compose underneath (`composeDashboard`) and `CanDataService` bind — composing / binding earlier blocked the
-  splash hand-off by up to 1.5 s. Hold 2 s from the first visible frame, 300 ms fade; once per **app task** (`OpeningState.shouldShow`, #213): cold launch, Force stop, or a new task after Recents dismissal (even if the process survived) — never Home / resume, rotation, tab changes or service rebinds. Back is the system's: task moved to the back → no replay; task removed (seen on the Android 16 emulator) → next launch is a new task → replay. `splashGone` is a fresh deferred per opening.
+  splash hand-off by up to 1.5 s. Hold 2 s from the first visible frame, 300 ms fade; once per **app task**
+  (`OpeningState.shouldShow`, #213): cold launch, Force stop, or a new task after Recents dismissal (even if the process
+  survived) — never Home / resume, rotation, tab changes or service rebinds. Back is the system's: task moved to the
+  back → no replay; task removed (seen on the Android 16 emulator) → next launch is a new task → replay. `splashGone` is
+  a fresh deferred per opening.
   Keep heavy work out of `onCreate` paths (PID catalog loads on IO). Debug timing: `adb logcat -s openRS_Startup`
   (ms since process start, `ui/StartupTrace.kt`)
 - **Connection state never inserts space** — RECONNECTING / TAP TO CONNECT render inside DRIVE's fixed 48 dp
@@ -51,26 +53,22 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   (`(viewportH × 0.22).coerceIn(124, 176) dp`, digit 84 sp / 72 sp under 680 dp); no auto-zoom, no gear pop/scale (the
   old `driveAutoZoom` setting is removed). Only data availability (ECONOMY, recording strip, VEHICLE alert chips)
   may add rows below the instruments; the StatusLine is permanent so alerts only change its content. Verify by
-  comparing card edges across `at:2.5 / 9.5 / 23` frames. The plain BOOST label (rc.7 Build 38) costs 0 dp: every row
-  below the hero row is pixel-identical to Build 37's TIP layout at 411 / 360 / 320 dp and landscape (measured). The
-  rejected "THROTTLE INLET" line had made the row ≈ 24 dp taller and moved everything below it — a line under one
-  hero moves the whole page
+  comparing card edges across `at:2.5 / 9.5 / 23` frames. A line under one hero value moves the whole page (the rejected
+  "THROTTLE INLET" line made the row ≈ 24 dp taller); the plain BOOST label costs 0 dp
 - **Header is a priority layout (#224)** — `HeaderRow` measures wordmark, MODE/ESC pills, link pill and cog first; REC gets
   the rest and shows the longest of "REC time · distance" / "REC time" / "REC" / dot that fits (never cut mid-value).
   Don't put header chips back in a plain Row
-- **Side system bars (#231, fix branch)** — the root Box pads `WindowInsets.safeDrawing.only(Horizontal)`; never a fixed
-  margin (portrait gesture phones get 0, verified pixel-identical). Settings / BLE picker are separate dialog windows with
-  the default `decorFitsSystemWindows` — Android insets them (emulator: both rotations + split screen, portrait identical
-  to the frozen APK). Rotating portrait ↔ landscape closes Settings (state not saved, unchanged). Whether a head unit's
-  sidebar is a reported system bar is unknown
-- **Snackbars go above the bottom nav and the Custom Dashboard** — the `SnackbarHost` is the LAST child of MainActivity's root Box,
-  not the Scaffold's `snackbarHost`: `BottomNavBar` and the Custom Dashboard overlay are drawn after the Scaffold, so a host inside it
-  (even padded by `navBarClearance()`, the first fix) sat under them — invisible, its action untappable (measured on an emulator with
-  three-button nav; gesture nav showed a sliver; the padded host was accepted on both styles, the moved host's placement is QA's check
-  again; Settings is its own dialog window and still sits over a message); bottom padding = `navBarClearance()` on the pages, the
-  system navigation-bar inset over the dashboard; every build up to
-  rc.8 Build 39 had it: NOT CONFIRMED, Connection changed, Busy, ESC results). A UI text dump still reports such a snackbar with
-  bounds, so "shown" in a dump is not "visible" — a visibility claim needs a screenshot (#252 follow-up, rc.8 ledger L14)
+- **Side system bars (#231)** — the root Box pads `WindowInsets.safeDrawing.only(Horizontal)`; never a fixed
+  margin (portrait gesture phones get 0). Settings / BLE picker are separate dialog windows with the default
+  `decorFitsSystemWindows` — Android insets them (emulator only: both rotations + split screen). Rotating portrait ↔
+  landscape closes Settings (state not saved). Whether a head unit's sidebar is a reported system bar is unknown
+- **Snackbars go above the bottom nav and the Custom Dashboard (#252)** — the `SnackbarHost` is the LAST child of
+  MainActivity's root Box, not the Scaffold's `snackbarHost`: `BottomNavBar` and the Custom Dashboard overlay are drawn
+  after the Scaffold, so a host inside it (even padded by `navBarClearance()`) sits under them — invisible, its action
+  untappable (NOT CONFIRMED, Connection changed, Busy, ESC results). Bottom padding = `navBarClearance()` on the pages,
+  the system navigation-bar inset over the dashboard. Settings is its own dialog window and still sits over a message.
+  A UI text dump reports a covered snackbar with bounds, so "shown" in a dump is not "visible" — a visibility claim
+  needs a screenshot
 - **Header line count is fixed per layout (#283)** — `HeaderRow` decides one or two lines from the width, density, font scale
   and demo mode only: the worst-case MODE / ESC pills and link pill that can co-occur (compact, measured, never placed) plus
   the wordmark, the 44 dp cog and the 7 dp REC dot. Never feed live mode, ESC, REC or link state into that decision: a header

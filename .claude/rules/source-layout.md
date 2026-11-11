@@ -4,8 +4,6 @@ paths:
 ---
 # openRS_ — Source Layout
 
-Moved verbatim from the tracked `CLAUDE.md` (section Source Layout) on 2026-11-06; loads when any file under `android/` is read or edited.
-
 All source under `android/app/src/main/java/com/openrs/dash/`:
 
 ```
@@ -70,7 +68,7 @@ demo/                     — DEBUG BUILDS ONLY (DemoMode.AVAILABLE = BuildConfi
   DemoMode.kt             — Controller: 25 Hz tick into OpenRSDashApp.vehicleState, pause/reset/scenario, sessionEpoch,
                             DemoFirmwareApi (drive mode / ESC → simulated state), simulated DTC scan/clear
 data/
-  VehicleState.kt         — Immutable data class ~95 fields. See sentinel rules below.
+  VehicleState.kt         — Immutable data class; sentinel rules: CLAUDE.md, VehicleState Rules.
   DashLayout.kt           — Custom dashboard layout: DashCell grid, AVAILABLE_FIELDS catalog; JSON via AppSettings
   BoostRule.kt            — BoostSource / BoostReading / BoostRule (policy rc7-boost-v3) / BoostSession / StoredBoost
                             (#207): the one boost rule for every consumer + what a recorded value is; see the boostKpa gotcha
@@ -83,7 +81,7 @@ data/
   PendingSummary.kt       — Post-drive summary queued (DriveRecorder.pendingSummary) until closed on TRIP — shown once
   DtcResult.kt            — module, code, description, status (ACTIVE/PENDING/PERMANENT/UNKNOWN)
   DtcModuleSpec.kt        — name, requestId, responseId for DTC scan targets
-  ForscanCatalog.kt       — Lazy loader for assets/pids/forscan_modules.json (1,149 PIDs)
+  ForscanCatalog.kt       — Lazy loader for assets/pids/forscan_modules.json
   FuelEconomy.kt          — Real-time fuel economy: 60s rolling window, instant/avg, distance-to-empty
   PerformanceTimer.kt     — 0-60 / 0-100 timer using CAN speed: IDLE → ARMED → RUNNING → FINISHED
   SessionDatabase.kt      — Room DB for session snapshots: SessionEntity, SnapshotEntity, SessionDao
@@ -111,7 +109,7 @@ diagnostics/
                             Failed(did, reason, sent)); records the labelled ProbeSession (see the DID prober gotcha, #249)
   DiagnosticLogger.kt     — Thread-safe singleton: frame inventory (opt B), decode trace, SLCAN log (opt C)
                             Pre-allocated hex lookup table; hex conversion outside lock for reduced contention
-                            VIN masking at one write-time choke point (#260, rc.8 follow-up): 0x40A C1 pages, 0x405 pages 10/11/12,
+                            VIN masking at one write-time choke point (#260): 0x40A C1 pages, 0x405 pages 10/11/12,
                             0xF190 replies incl. consecutive frames (page rule), plus any frame holding 4+ consecutive bytes of
                             the assembled VIN (content layer, `VIN_RUN_MIN = 4`); raw log data → 00 (ID/DLC/timing kept),
                             inventory/trace → **, and every stored probe reply at export read once the VIN is known (`probeSessions`); counted
@@ -120,7 +118,7 @@ diagnostics/
   DiagnosticExporter.kt   — ZIP orchestrator + share intents + crash history; delegates format generation
                             to DiagnosticReportBuilder and DriveExportBuilder; rc.6 adds drive_knock_session_*.csv (KnockSessionLog)
   DiagnosticReportBuilder.kt — Diagnostic summary text + JSON detail (JSONObject/JSONArray, no hand-rolled strings);
-                            `buildSummaryAndDetail` takes one `ExportCounters` snapshot (L12: linkIntegrity / logLimits /
+                            `buildSummaryAndDetail` takes one `ExportCounters` snapshot (linkIntegrity / logLimits /
                             nrcUnattributedTotal agree between summary and detail on a live export)
   DriveExportBuilder.kt   — Pure-function builders: GPX track, CSV telemetry, drive summary, DTC report
   DtcDatabase.kt          — 873-code bundled Ford DTC lookup (from res/raw/dtc_database.json)
@@ -275,10 +273,6 @@ ui/
                             diagnostics/DidProbeScan.kt)
   WhatsNewDialog.kt       — Version changelog dialog; shown on first launch after update
   trip/
-    DrivePage.kt          — MAP tab: live mode (Google Maps + HUD + controls) + history mode (drive list)
-                            Hoists cameraPositionState; floating controls: color mode, map type, weather,
-                            zoom in (+), zoom out (−), locate/recenter (◎)
-                            onMapTouched callback: signals parent pager to disable swipe while map is touched
     DriveHistory.kt       — rc.7 (#228) — TRIP history: observe (Room Flow, the list's only source) + delete / tags / rename
                             (writes only — never re-read the list by hand)
     DriveMap.kt           — Google Maps Compose wrapper: 6 color modes (SPD/MODE/BOOST/THRTL/G-LAT/TEMP),
