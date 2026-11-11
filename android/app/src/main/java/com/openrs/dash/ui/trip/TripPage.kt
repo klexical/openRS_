@@ -1663,8 +1663,11 @@ private fun isSameDay(a: Calendar, b: Calendar): Boolean =
     a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
 
 /**
- * The position TRIP's live map draws its dot at: the drive's, else the one-shot idle fetch ([idleFetchedAtMs] = when
- * TRIP fetched it, on the app's wall clock).
+ * The position TRIP's live map draws its dot at (#311, owner's option a). While recording: only the drive's own fix,
+ * so no dot until its first one. Otherwise: the one-shot idle fetch, but only if TRIP fetched it ([idleFetchedAtMs],
+ * app wall clock) after the last drive started; a fetch from before that drive is not where the car is. STOP clears
+ * the drive's position, so with TRIP left open there is no dot after STOP until TRIP is opened idle again.
  */
 internal fun tripDot(state: DriveState, idle: android.location.Location?, idleFetchedAtMs: Long): android.location.Location? =
-    state.currentLocation ?: idle
+    if (state.isRecording) state.currentLocation
+    else idle?.takeIf { idleFetchedAtMs >= state.startTime }

@@ -190,11 +190,11 @@ class DriveRecorder(
 
     /**
      * TRIP's SET S/F: puts the start/finish line at the drive's position, with its bearing when the fix has one (no
-     * bearing ≠ 0° north: the line then takes the direction the car leaves it in, LapTimer). Returns false, and sets
-     * nothing, without a position.
+     * bearing ≠ 0° north: the line then takes the direction the car leaves it in, LapTimer). Only with [freshFix]
+     * (#311): before the drive's first fix or in a GPS gap it returns false and sets nothing (refused, no message).
      */
     fun setStartFinishHere(): Boolean {
-        val loc = _driveState.value.currentLocation ?: return false
+        val loc = freshFix() ?: return false
         lapTimerForUi().setStartFinish(loc.latitude, loc.longitude, loc.bearing.takeIf { loc.hasBearing() })
         return true
     }

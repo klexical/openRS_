@@ -144,6 +144,57 @@ class DriveStartLocationTest {
         assertEquals("Observer note: in a gap (no GPS fix, not on the map)", notes().single().message)
     }
 
+    // ── SET S/F (TRIP's button calls setStartFinishHere) ──────────────────────────────────────────────────────────
+
+    private val line get() = rec.lapTimerForUi().startFinish
+
+    @Test fun `SET S-F in a new drive before its first fix is refused - no line at the previous drive's position`() {
+        firstDriveThenStop()
+        startDrive()
+        assertEquals(false, rec.setStartFinishHere())
+        assertNull(line)
+    }
+
+    @Test fun `SET S-F during a mid-drive GPS gap is refused - a fresh fix sets the line there`() {
+        startDrive()
+        fix(30.0, 40.0, ageMs = com.openrs.dash.data.LapTimer.MAX_FIX_AGE_MS + 3_000)
+        assertEquals(false, rec.setStartFinishHere())
+        assertNull(line)
+        fix(31.0, 41.0)
+        assertEquals(true, rec.setStartFinishHere())
+        assertEquals(listOf(31.0, 41.0), line!!.let { listOf(it.lat, it.lng) })
+    }
+
+    // ── TRIP's dot (tripDot, what the live map draws) ─────────────────────────────────────────────────────────────
+
+    private fun loc(lat: Double) = Location("test").apply { latitude = lat; longitude = 0.0; time = System.currentTimeMillis() }
+
+    @Test fun `TRIP draws no dot in a drive before its first fix - not the previous drive's, not an idle fetch from before it`() {
+        val idleFetchedAt = System.currentTimeMillis()
+        val idle = loc(1.0)
+        Thread.sleep(2)
+        firstDriveThenStop()
+        startDrive()
+        assertNull(com.openrs.dash.ui.trip.tripDot(rec.driveState.value, idle, idleFetchedAt))
+        fix(30.0, 40.0)
+        assertEquals(30.0, com.openrs.dash.ui.trip.tripDot(rec.driveState.value, idle, idleFetchedAt)!!.latitude, 0.0)
+    }
+
+    @Test fun `after STOP TRIP draws no dot from before the drive - an idle fetch made after the drive started is drawn`() {
+        val before = System.currentTimeMillis()
+        Thread.sleep(2)
+        firstDriveThenStop()
+        val state = rec.driveState.value
+        assertNull("the drive's last fix is not drawn as current", com.openrs.dash.ui.trip.tripDot(state, null, 0L))
+        assertNull("an idle fetch from before the drive is not drawn", com.openrs.dash.ui.trip.tripDot(state, loc(1.0), before))
+        val fetchedNow = System.currentTimeMillis()
+        assertEquals(2.0, com.openrs.dash.ui.trip.tripDot(state, loc(2.0), fetchedNow)!!.latitude, 0.0)
+    }
+
+    @Test fun `before any drive TRIP draws the idle fetch`() {
+        assertEquals(1.0, com.openrs.dash.ui.trip.tripDot(rec.driveState.value, loc(1.0), System.currentTimeMillis())!!.latitude, 0.0)
+    }
+
     // ── Session knock log (the real CanDataService merge) ────────────────────────────────────────────────────────
 
     /** The service reads `OpenRSDashApp.instance.driveRecorder` (a `by lazy`); point it at [rec]. */
