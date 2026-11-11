@@ -88,5 +88,6 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   (`NonCancellable`, `DriveRun.driveId`), checks for cancellation, publishes the state and runs the loop. Never assign
   the job from inside its own coroutine or after a launch: a STOP that reads it first neither cancels nor joins the
   loop (the drive keeps recording, its final flush is lost unreported), and a second START starts a second drive.
-  STOP's finalize closes a row whose drive never published its state (`closedOrphan`); a STOP before the insert leaves
-  no row. `DriveStartStopRaceTest` holds one DAO call per window
+  A STOP before the drive's state is published only cancels the start and deletes any row it wrote (`cancelStart`), never
+  the previous drive's; a STOP with nothing under way does nothing; `startDrive` / `stopDrive` are `@Synchronized`.
+  `DriveStartStopRaceTest` holds one DAO call per window
