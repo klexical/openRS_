@@ -32,7 +32,7 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   editor's ranges follow the bytes (OIL −60..195, PTU −50..205); saved limits are never changed on load. AWD 0x1E3F is NOT a
   separate rear reading: in the capture it equalled byte1−50 in 67/67 (labels conflict between sources); 0x1E8A is the rear one
 - **Throttle may not broadcast** — CAN 0x076 is absent on some cars (`throttleHasSource` stays false). Anything keyed on throttle (PullTracker, knock snapshot, recorded throttle) must read `throttleOrPedalPct`, never `throttlePct` directly
-- **VehicleState slot ceiling** — `copy()` on the 162-param data class is at the JVM 255-slot limit. Adding any new field requires either collapsing an unused existing field (speculative AWD DIDs are candidates) or storing it off-state (DiagnosticLogger / genericValues Map). 0x040 lamp state is decoded + validated but not yet persisted on VehicleState for this reason
+- **VehicleState slot ceiling** — `copy$default` on the 125-param data class uses 222 of the JVM's 255 parameter slots (#199; it was at the limit). `VehicleStateSlotsTest` fails with fewer than 16 free. Add a field by grouping fields that change together into a nested value (`session: SessionMarks`, `lamps: Lamps`) or by storing it off-state (DiagnosticLogger / genericValues Map). The 0x040 SRS lamp is stored as `lamps.srs`
 - **ESC names and raw 3 (#288)** — `EscStatus` labels are Ford's Normal / Sport / Off (2018 RS supplement); the raw 0x1C0
   value → name mapping is CAN-mapped only (RS_HS.dbc VAL_ 448, #125). Raw 3 is `UNRECOGNIZED` (reads "Unknown"; diagnostics
   "unrecognized (raw 3)"; the name "Launch" rests only on the community DBC); `UNKNOWN` is the default until this connection's
