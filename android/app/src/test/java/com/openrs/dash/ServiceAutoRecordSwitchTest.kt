@@ -72,7 +72,7 @@ class ServiceAutoRecordSwitchTest {
     @Test fun `switched on in Settings while recording - a later closure link-pauses`() {
         val svc = service(autoRecord = false)
         UserPrefsStore.update(h.app) { it.copy(autoRecordDrives = true) }
-        h.settle()                                                      // the change reaches the recorder
+        // no wait: the change reaches the recorder in the call that saves it (DIFFERENCES item 24)
         svc.stopConnection(LinkStopReason.USER_DISCONNECT)
         assertEquals(DrivePhase.PAUSED to PauseReason.LINK, state)
     }

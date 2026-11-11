@@ -488,8 +488,14 @@ class DriveRecorder(
         }
     }
 
-    /** Demo mode was entered. */
-    @Synchronized fun onDemoModeEntered() {}
+    /**
+     * Demo mode was entered (#316, SPEC stories 34–35): whatever the recorder is doing ends — a recording or paused drive is
+     * stopped and saved (its end now), a start under way is a cancelled start. Nothing under way: nothing happens. START is
+     * refused while demo mode is active ([startDrive]).
+     */
+    @Synchronized fun onDemoModeEntered() {
+        stopDrive(clock())
+    }
 
     /** RESUME (#316): refused unless a drive is paused. */
     @Synchronized fun resumeDrive(): CommandResult {

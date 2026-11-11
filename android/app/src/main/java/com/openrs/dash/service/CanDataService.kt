@@ -1023,8 +1023,9 @@ class CanDataService : Service() {
     fun enterDemoMode(scenario: DemoScenario): Unit = link.transition {
         if (!DemoMode.AVAILABLE) return@transition
         if (DemoMode.isActive) { DemoMode.select(scenario); return@transition }
-        val recorder = recorder()
-        if (recorder.driveState.value.isRecording) recorder.stopDrive()
+        // #316: the recorder ends whatever it is doing (a recording or paused drive is saved, a start under way cancelled),
+        // before the closure below reports its loss
+        recorder().onDemoModeEntered()
         stopConnection(LinkStopReason.DEMO_ENTRY)
         connection = null
         adapterFirmwareApi = null
