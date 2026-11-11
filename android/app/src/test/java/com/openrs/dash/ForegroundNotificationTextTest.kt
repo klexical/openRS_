@@ -169,9 +169,12 @@ class ForegroundNotificationTextTest {
         startRecording()
         rec.onAutoRecordSwitched(true)
         rec.onConnectionLost(atMs = System.currentTimeMillis())
-        assertTrue("link pause: ${text()}", waitUntil { text() == "Connected to vehicle · PAUSED · ENGINE OFF" })
+        // the message is built after the wait (QA nit on f1e8be4): a failure prints the text shown at its end
+        val linkShown = waitUntil { text() == "Connected to vehicle · PAUSED · ENGINE OFF" }
+        assertTrue("link pause: ${text()}", linkShown)
         rec.onAutoRecordSwitched(false)
-        assertTrue("hand pause: ${text()}", waitUntil { text() == "Connected to vehicle · PAUSED" })
+        val handShown = waitUntil { text() == "Connected to vehicle · PAUSED" }
+        assertTrue("hand pause: ${text()}", handShown)
         assertShows("after the switch", LinkPhase.CONNECTED)
     }
 

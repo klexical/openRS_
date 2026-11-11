@@ -220,6 +220,13 @@ class HeaderFitMatrixTest {
                     assertTrue("[$case] dot not on line 1 or too small: $dot", dot!!.bottom <= 44 * s.d && dot.width >= 6.5f * s.d)
                     assertTrue("[$case] pills overlap the dot", !overlaps(pills, dot))
                 }
+                // #316 (QA T1 on f1e8be4): a link pause shows a whole label or none — its own (ENGINE OFF with the link up,
+                // NO LINK with it down) or plain PAUSED
+                if (rec == Rec.LINK_PAUSED) {
+                    val full = if (link == LinkUi.LIVE) "PAUSED · ENGINE OFF" else "PAUSED · NO LINK"
+                    println("#283S [$case] rec=\"${s.recText}\"")
+                    assertTrue("[$case] REC label cut or wrong: ${s.recText}", s.recText == null || s.recText in setOf(full, "PAUSED"))
+                }
                 assertEquals("[$case] Settings cog 44 dp target", 2, s.cogTaps)
             }
     }

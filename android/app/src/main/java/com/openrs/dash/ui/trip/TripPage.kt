@@ -1138,12 +1138,18 @@ private fun LiveHud(
                         startCue.text(now)?.let { cueText = it }
                     }
                 }
-            } else if (driveState.isPaused) {
-                RecButton("RESUME", accent, filled = true, Modifier.weight(1f), onResume)
-                RecButton("STOP", Orange, filled = false, Modifier.weight(0.5f), onStop)
             } else {
-                RecButton("PAUSE", Mid, filled = false, Modifier.weight(1f), onPause)
-                RecButton("STOP", Orange, filled = false, Modifier.weight(0.5f), onStop)
+                // #316: an open drive's buttons are the ones its label offers (DriveLabel: PAUSE + STOP while recording,
+                // RESUME + STOP in every pause)
+                val actions = com.openrs.dash.data.DriveLabel.of(driveState, vehicleState.isConnected)?.actions.orEmpty()
+                for (action in actions) when (action) {
+                    com.openrs.dash.data.DriveAction.RESUME ->
+                        RecButton("RESUME", accent, filled = true, Modifier.weight(1f), onResume)
+                    com.openrs.dash.data.DriveAction.PAUSE ->
+                        RecButton("PAUSE", Mid, filled = false, Modifier.weight(1f), onPause)
+                    com.openrs.dash.data.DriveAction.STOP ->
+                        RecButton("STOP", Orange, filled = false, Modifier.weight(0.5f), onStop)
+                }
             }
         }
     }
