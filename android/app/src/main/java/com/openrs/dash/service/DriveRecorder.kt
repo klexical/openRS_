@@ -47,6 +47,7 @@ import com.openrs.dash.ui.sample
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -119,7 +120,12 @@ class DriveRecorder(
     private val postSummary: (DriveEntity) -> Unit = onSummary ?: pendingSummary::post
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private var recorderJob: Job? = null
+    /**
+     * The recording drive's job: insert, state, loop. Assigned in [startDrive] on the caller's thread before the job runs
+     * anything, so a STOP or a second START always sees it (it used to be assigned on an IO thread after the loop was
+     * already running: a STOP in that window neither cancelled nor joined the loop).
+     */
+    @Volatile private var recorderJob: Job? = null
 
     /**
      * Everything one drive accumulates (#236). Each drive gets its own at [startDrive]; its recording loop and its
@@ -169,6 +175,8 @@ class DriveRecorder(
         /** Point inserts of this drive under way (#262 N2): counted from before the points leave the buffer, so a
          *  [durabilityBarrier] can't miss a batch the loop has taken but Room hasn't stored yet. */
         val inFlight = MutableStateFlow(0)
+        /** This drive's Room id, set once its row is inserted (0 until then; STOP may come before). */
+        @Volatile var driveId = 0L
     }
 
     /** The drive being recorded (or the last one); see [DriveRun]. */
@@ -255,8 +263,10 @@ class DriveRecorder(
         val newRun = DriveRun(vs, System.currentTimeMillis())
         run = newRun
 
-        // Prune old drives if over limit
-        scope.launch(Dispatchers.IO) {
+        // One job per drive, assigned before it runs anything: a STOP or a second START during the insert sees it.
+        val now = System.currentTimeMillis()
+        val job = scope.launch(Dispatchers.IO, start = kotlinx.coroutines.CoroutineStart.LAZY) {
+            // Prune old drives if over limit
             try {
                 val maxDrives = AppSettings.getMaxSavedDrives(context)
                 val count = dao.getDriveCount()
@@ -264,26 +274,33 @@ class DriveRecorder(
                     dao.deleteOldestDrives(count - maxDrives + 1)
                     dao.deleteOrphanLapSessions()
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.w(TAG, "Drive prune failed", e)
             }
-        }
-
-        // Create drive entity
-        val now = System.currentTimeMillis()
-        var driveId = 0L
-        scope.launch(Dispatchers.IO) {
+            ensureActive()                                    // STOP before the insert: no row at all
+            // Create drive entity; once inserted, the run knows its id even if STOP arrives during the insert
+            val driveId = try {
+                withContext(NonCancellable) {
+                    dao.insertDrive(
+                        DriveEntity(
+                            startTime = now,
+                            sessionId = sessionId,
+                            startFuelPct = vs.fuelLevelPct,
+                            hasGps = hasLocationPermission(),
+                            boostPolicy = com.openrs.dash.data.BoostRule.POLICY,
+                            oilPtuMapping = com.openrs.dash.data.OilPtuMapping.CURRENT
+                        )
+                    ).also { newRun.driveId = it }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to start drive", e)
+                _driveState.update { it.copy(isRecording = false) }
+                return@launch
+            }
+            ensureActive()                                    // STOP during the insert: STOP's finalize closes the row
             try {
-                driveId = dao.insertDrive(
-                    DriveEntity(
-                        startTime = now,
-                        sessionId = sessionId,
-                        startFuelPct = vs.fuelLevelPct,
-                        hasGps = hasLocationPermission(),
-                        boostPolicy = com.openrs.dash.data.BoostRule.POLICY,
-                        oilPtuMapping = com.openrs.dash.data.OilPtuMapping.CURRENT
-                    )
-                )
                 // Every accumulator starts empty — a new DriveState, not a copy, so none is carried over from the last
                 // drive (peak oil / coolant were, #236). The position too (#311): a drive has one only once its own
                 // collector receives a fix; until then nothing is placed and TRIP draws no dot.
@@ -295,12 +312,14 @@ class DriveRecorder(
                         startTime = now
                     )
                 }
-                startRecordingLoop(driveId, newRun)
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to start drive", e)
-                _driveState.update { it.copy(isRecording = false) }
+                runRecordingLoop(driveId, newRun)
+            } finally {
+                // A STOP between the state and the loop: the loop's own finally may never have run
+                _driveState.update { if (it.driveId == driveId) it.copy(isRecording = false, currentLocation = null) else it }
             }
         }
+        recorderJob = job
+        job.start()
     }
 
     fun pauseDrive() {
@@ -377,6 +396,22 @@ class DriveRecorder(
             // …and for a pause flush or an active export still writing points it took from this drive's buffer (#241).
             // Only this drive's writers; each holds the lock for one insert, completed, failed or cancelled.
             stopped.outsideLoopWrites.withLock { }
+
+            // STOP came while the drive was still being created: its row exists but it never recorded (no state, no
+            // points). Close it as the orphan recovery would; a drive stopped before its insert has no row at all.
+            val created = stopped.driveId
+            if (created > 0 && created != state.driveId) {
+                try {
+                    dao.getDrive(created)?.takeIf { it.endTime == 0L }?.let { row ->
+                        dao.updateDrive(closedOrphan(row, dao.getPoints(created)))
+                        Log.d(TAG, "Drive $created stopped before it started recording — closed")
+                        DiagnosticLogger.event("REC", "drive $created: stopped before recording started, closed with no points")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Closing a drive stopped during its start failed", e)
+                }
+                return@launch
+            }
 
             if (state.driveId > 0) {
                 try {
@@ -486,8 +521,7 @@ class DriveRecorder(
 
     // ── Internal recording loop ──────────────────────────────────────────────
 
-    private fun startRecordingLoop(driveId: Long, run: DriveRun) {
-        recorderJob = scope.launch {
+    private suspend fun runRecordingLoop(driveId: Long, run: DriveRun) = withContext(Dispatchers.Default) {
             try {
                 fetchInitialWeather()
                 var lastWeatherMs = System.currentTimeMillis()
@@ -719,7 +753,6 @@ class DriveRecorder(
                 }
             }
         }
-    }
 
     /**
      * Persists the in-memory point buffer to Room. Suspends until the write
