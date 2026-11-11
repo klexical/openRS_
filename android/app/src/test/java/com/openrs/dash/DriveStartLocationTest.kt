@@ -12,6 +12,7 @@ import com.openrs.dash.diagnostics.DiagnosticLogger
 import com.openrs.dash.service.CanDataService
 import com.openrs.dash.service.DriveRecorder
 import com.openrs.dash.service.WeatherRepository
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -48,7 +49,12 @@ class DriveStartLocationTest {
         val opened = AtomicInteger()
         override fun updates(): Flow<Location> =
             Channel<Location>(Channel.UNLIMITED).also { current = it; opened.incrementAndGet() }.receiveAsFlow()
-        override suspend fun last(): Location? = null
+        /**
+         * The platform's last-known fix: none, unless a test holds one back. The held reply goes to the first caller only
+         * (TRIP's idle fetch); the recorder's own start-up lookup (weather) gets none and is not blocked.
+         */
+        @Volatile var held: kotlinx.coroutines.CompletableDeferred<Location?>? = null
+        override suspend fun last(): Location? = synchronized(this) { held.also { held = null } }?.await()
     }
 
     private lateinit var app: Application
@@ -189,6 +195,19 @@ class DriveStartLocationTest {
         assertNull("an idle fetch from before the drive is not drawn", com.openrs.dash.ui.trip.tripDot(state, loc(1.0), before))
         val fetchedNow = System.currentTimeMillis()
         assertEquals(2.0, com.openrs.dash.ui.trip.tripDot(state, loc(2.0), fetchedNow)!!.latitude, 0.0)
+    }
+
+    @Test fun `an idle fetch still in flight when a drive starts is not drawn after that drive's STOP`() {
+        val reply = kotlinx.coroutines.CompletableDeferred<Location?>()
+        gps.held = reply
+        val fetch = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).async {
+            com.openrs.dash.ui.trip.idleFetch(rec)
+        }
+        check(waitUntil { gps.held == null }) { "the idle fetch did not ask" }   // the platform call is waiting
+        firstDriveThenStop()                                                 // a drive starts and stops meanwhile
+        reply.complete(loc(1.0))                                     // the reply is the pre-drive position
+        val (idle, stamp) = runBlocking { withTimeout(5_000) { fetch.await() } }!!
+        assertNull(com.openrs.dash.ui.trip.tripDot(rec.driveState.value, idle, stamp))
     }
 
     @Test fun `before any drive TRIP draws the idle fetch`() {

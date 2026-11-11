@@ -302,8 +302,7 @@ private fun TripPageContent(
     LaunchedEffect(hasLocationPerm, visible) {
         if (hasLocationPerm && visible && !driveState.isRecording) {
             try {
-                val loc = recorder.getLastKnownLocation()
-                if (loc != null) { idleLocation = loc; idleFetchedAtMs = System.currentTimeMillis() }
+                idleFetch(recorder)?.let { (loc, askedAt) -> idleLocation = loc; idleFetchedAtMs = askedAt }
             } catch (_: Exception) {}
         }
     }
@@ -1663,6 +1662,19 @@ private fun groupDrivesByDate(drives: List<DriveEntity>): List<Pair<String, List
 private fun isSameDay(a: Calendar, b: Calendar): Boolean =
     a.get(Calendar.YEAR) == b.get(Calendar.YEAR) &&
     a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
+
+/**
+ * One idle fetch for TRIP's dot: the platform's last-known fix and the moment it was ASKED for (#311). The stamp is
+ * taken before the call, so a drive that starts while the call is in flight makes this fix older than that drive, and
+ * [tripDot] does not draw it after the drive's STOP.
+ */
+internal suspend fun idleFetch(
+    recorder: com.openrs.dash.service.DriveRecorder, nowMs: () -> Long = System::currentTimeMillis,
+): Pair<android.location.Location, Long>? {
+    val askedAt = nowMs()
+    val loc = recorder.getLastKnownLocation() ?: return null
+    return loc to askedAt
+}
 
 /**
  * The position TRIP's live map draws its dot at (#311, owner's option a). While recording: only the drive's own fix,
