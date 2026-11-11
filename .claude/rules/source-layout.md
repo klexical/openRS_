@@ -80,7 +80,8 @@ data/
   DriveState.kt           — Live drive state flow: `phase` (IDLE / STARTING / RECORDING / PAUSED) + `pauseReason` (HAND / LINK),
                             peaks, recentPoints, fuel; `isRecording` = open (recording or paused), `isPaused` (#316)
   DriveLabel.kt           — the one label for a drive (STARTING / REC / PAUSED / PAUSED · NO LINK / PAUSED · ENGINE OFF) and the
-                            commands offered beside it; TRIP, the header pill and the notification all read it (#316)
+                            commands offered beside it; the notification, DRIVE's strip and TRIP's chip and buttons read it; the header
+                            shows REC or plain PAUSED (#316)
   PendingSummary.kt       — Post-drive summary queued (DriveRecorder.pendingSummary) until closed on TRIP — shown once
   DtcResult.kt            — module, code, description, status (ACTIVE/PENDING/PERMANENT/UNKNOWN)
   DtcModuleSpec.kt        — name, requestId, responseId for DTC scan targets
@@ -131,12 +132,13 @@ service/
   CanDataService.kt       — Bound service, foreground only while a connection runs (ForegroundController);
                             WiFi/BLE-gated auto-reconnect; owns connection lifecycle
                             Transport selected by connectionMethod (WiFi vs BLE) + adapterType (TCP vs WebSocket)
-                            Auto-record integration: starts/stops DriveRecorder on connect/disconnect (if setting enabled)
+                            Reports link events to the recorder (connection lost / back, engine running, auto-record switched, demo
+                            entered) and applies no recording rule itself (#316)
                             onTaskRemoved (#212 option 2): ends only an initial attempt where Cancel is offered; saves nothing
   LinkOwnership.kt        — process-wide connection ownership (#212): generation, phase, manual-connect block, cancel
                             policy; autoStart / publish / deliver run under one lock (LinkOwnershipTest); memory-only
                             task-removal hold released at the next bind (`onActivityBound`); `connectionEpoch` per connection
-  LinkPresentation.kt     — AdapterState → LinkPhase, notification text (+ recording / paused), offersCancel (the one rule)
+  LinkPresentation.kt     — AdapterState → LinkPhase, notification text (+ the drive's label, `DriveLabel`), offersCancel (the one rule)
   AutoRecordPolicy.kt     — what the recorder does when a connection sees the engine running (#316): recording or starting →
                             keep; a link pause → resume within 15 min of the loss, else save it and start a new drive; a hand
                             pause → keep (only RESUME / STOP end it); no drive open → start if auto-record allows
@@ -144,7 +146,8 @@ service/
                             FusedLocationProviderClient @ 1 Hz; batch writes (30 points/flush); peak tracking
                             Per-drive state = `DriveRun` (#236); STOP = one-transaction re-read + recorder columns; feeds
                             `LapTimer` every recorded fix (#237). Seams (geocode, LocationSource, onSummary) for tests only
-                            `isFinalizing` while STOP's finalize runs (started before the state says not recording)
+                            `isFinalizing` while any drive is still being saved, or a cancelled start's cleanup runs (#329; a STOP's
+                            save is tracked before the state says not recording)
   WeatherRepository.kt    — OpenWeatherMap /data/2.5/weather (BuildConfig.OPENWEATHER_API_KEY)
   HudOverlayService.kt    — Floating HUD overlay (boost/RPM/oil temp); piggybacks CanDataService notification
 ui/

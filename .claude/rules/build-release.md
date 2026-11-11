@@ -20,7 +20,7 @@ paths:
   - One definition at the top of `android/app/build.gradle.kts` (base / stage / candidate / versionCode) drives versionName,
     the Settings label (`<versionName> · Build <versionCode>`), the APK name, the expected tag, `BuildConfig.RELEASE_NAME` /
     `SOURCE_COMMIT`, export and crash metadata, the updater (`AppVersion.current()`) and the What's New gate (once per
-    release name; content by base version, never another version's notes). The build refuses `-PrcSuffix`.
+    release name, never by itself on a nightly (#322); content by base version, never another version's notes). The build refuses `-PrcSuffix`.
   - Bump the versionCode for every distributed production build, stable included. Debug builds carry
     `-dev+<commit>[.dirty]` — dirty = tracked changes or non-ignored untracked files under `android/`.
   - CI `publish-release` runs `android/scripts/verify-release.sh`: tag = versionName = filename, versionCode above every

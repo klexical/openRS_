@@ -81,7 +81,7 @@ paths:
   recording it can't be cancelled
 - **Retry while recording** — `keepRetrying` (= recording) extends retries past `maxRetries` with a 30 s backoff polled every
   second; when recording ends the bounded policy applies at once (budget spent → Idle → service released). Notification
-  text is re-published on recording start / pause / resume / stop. Auto-record never splits a drive still recording
+  text is re-published on every change of the drive's phase or pause reason (#316). Auto-record never splits a drive still recording
   (`AutoRecordPolicy`)
 - **Transport abort** — TCP / WebSocket assign their socket before `connect()` so `abort()` ends a blocked connect at once
   (emulator: ≤ 0.5 s). Without a cancel, an adapter that accepts but never answers (WS upgrade / SLCAN handshake) holds

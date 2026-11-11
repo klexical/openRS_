@@ -88,11 +88,12 @@ paths:
   `DriveStartStopRaceTest` holds one DAO call per window
 - **Two kinds of pause, one owner (#316)** — the recorder owns the drive's phase (`DrivePhase` IDLE / STARTING / RECORDING /
   PAUSED) and takes commands and events; nothing else sets it. A hand pause (`PauseReason.HAND`) ends only by RESUME or STOP.
-  A link pause (`PauseReason.LINK`) is applied by `onConnectionLost` when auto-record is on, and ends by `onEngineRunning`
-  on a later connection: within `STALE_LINK_PAUSE_MS` (15 min) of the loss the same drive records on, older and the drive is
-  saved as stopped at the loss and a new one starts (`AutoRecordPolicy`). A shorter loss is a recording gap: the drive stays
-  RECORDING and stores no point while `isConnected` is false. Every surface shows the drive through `DriveLabel.of`; the
-  header shows plain PAUSED. Terms: `GLOSSARY.md`
+  A link pause (`PauseReason.LINK`) is applied by `onConnectionLost` when auto-record is on. It ends by RESUME or STOP, or by
+  `onEngineRunning` on a later connection: within `STALE_LINK_PAUSE_MS` (15 min) of the loss the same drive records on, older
+  and the drive is saved with its end at the loss (never before its last stored point) and a new one starts
+  (`AutoRecordPolicy`). Switching auto-record off turns an open link pause into a hand pause. A shorter loss is a recording gap: the drive stays
+  RECORDING and stores no point while `isConnected` is false. The notification, DRIVE's strip and TRIP show the drive through
+  `DriveLabel.of`; the header shows REC or plain PAUSED. Terms: `GLOSSARY.md`
 - **Every running save is tracked (#329)** — `isFinalizing` and `durabilityBarrier()` read the set of save jobs still
   running (`trackSave`: a STOP's save and a cancelled start's cleanup, added before they start, counted until completed).
   Never back them with one "latest job" slot: a later drive's quicker save, or a start cancelled by STOP, would hide an
