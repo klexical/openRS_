@@ -118,4 +118,16 @@ class LinkSessionLinkEventsTest {
         s.onVehicleState(running) { 7L }
         assertEquals(listOf("back", "back"), rec.events)
     }
+
+    @Test fun `a 0x090 frame that does not decode does not mark the engine seen - no report on the held RPM`() {
+        val rec = Rec()
+        val s = session(own.begin(), rec)
+        s.onConnectionBack()
+        s.onCanFrame(0x090, byteArrayOf(0, 0, 0xC1.toByte(), 0xFF.toByte(), 0x61), 50.0)   // 5 bytes: RPM needs 6
+        s.onVehicleState(running) { 7L }                                    // RPM held from before the drop
+        assertEquals(listOf("back"), rec.events)
+        s.rpmFrame()
+        s.onVehicleState(running) { 7L }
+        assertEquals(listOf("back", "engine:7"), rec.events)
+    }
 }

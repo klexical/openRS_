@@ -59,10 +59,7 @@ internal class LinkSession(
         if (!link.owns(gen)) return                                   // cheap pre-check; the real one is in deliver
         afterOwnershipCheck()
         var finishedRun: PerfRunEntity? = null
-        link.deliver(gen) {
-            finishedRun = processCanFrame(canId, data, fps)
-            if (canId == CanDecoder.ID_ENGINE_RPM && !DemoMode.isActive) rpmSeen = true
-        }
+        link.deliver(gen) { finishedRun = processCanFrame(canId, data, fps) }
         finishedRun?.let(perfRunSink)                                 // blocking write, outside the lock
     }
 
@@ -104,8 +101,10 @@ internal class LinkSession(
         // loop, so anything inside the lambda can execute more than once on
         // contention with concurrent OBD merges.
         var newState: VehicleState? = null
+        var decodedHere = false                     // set inside the CAS lambda: idempotent across retries
         state.update { current ->
             val decoded = CanDecoder.decode(canId, data, current)
+            decodedHere = decoded != null
             if (decoded === current) {
                 // Recognized frame, nothing changed (0x040, 0x300, rejected 0x1A4): log it as
                 // known and skip peaks/fps copy + emit (#189/#192). Checked before stamping,
@@ -128,6 +127,9 @@ internal class LinkSession(
                 current
             }
         }
+
+        // #316 F5: this connection's own RPM — a 0x090 that decoded (a short one is refused by the decoder and is no reading)
+        if (canId == CanDecoder.ID_ENGINE_RPM && decodedHere) rpmSeen = true
 
         // Side effects — guaranteed to run exactly once after CAS succeeds
         val wp = newState ?: return null
