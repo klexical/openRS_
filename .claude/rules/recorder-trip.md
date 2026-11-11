@@ -78,7 +78,7 @@ paths:
   while recording only the drive's fix; idle, only an idle fetch asked for after the last drive started (`idleFetch`
   stamps before the call). Never carry a fix from one drive into the next, and never
   record the platform's last-known fix as a drive position
-- **A drive's job exists before it runs (CI failure on `3a8c572`)** — `startDrive` creates the drive's job lazily,
+- **A drive's job exists before it runs (#314)** — `startDrive` creates the drive's job lazily,
   assigns `recorderJob` (`@Volatile`) on the caller's thread, then starts it; the job prunes, inserts the row
   (`NonCancellable`, `DriveRun.driveId`), checks for cancellation, publishes the state and runs the loop. Never assign
   the job from inside its own coroutine or after a launch: a STOP that reads it first neither cancels nor joins the
@@ -86,3 +86,14 @@ paths:
   A STOP before the drive's state is published only cancels the start and deletes any row it wrote (`cancelStart`), never
   the previous drive's; a STOP with nothing under way does nothing; `startDrive` / `stopDrive` are `@Synchronized`.
   `DriveStartStopRaceTest` holds one DAO call per window
+- **Two kinds of pause, one owner (#316)** — the recorder owns the drive's phase (`DrivePhase` IDLE / STARTING / RECORDING /
+  PAUSED) and takes commands and events; nothing else sets it. A hand pause (`PauseReason.HAND`) ends only by RESUME or STOP.
+  A link pause (`PauseReason.LINK`) is applied by `onConnectionLost` when auto-record is on, and ends by `onEngineRunning`
+  on a later connection: within `STALE_LINK_PAUSE_MS` (15 min) of the loss the same drive records on, older and the drive is
+  saved as stopped at the loss and a new one starts (`AutoRecordPolicy`). A shorter loss is a recording gap: the drive stays
+  RECORDING and stores no point while `isConnected` is false. Every surface shows the drive through `DriveLabel.of`; the
+  header shows plain PAUSED. Terms: `GLOSSARY.md`
+- **Every running save is tracked (#329)** — `isFinalizing` and `durabilityBarrier()` read the set of save jobs still
+  running (`trackSave`: a STOP's save and a cancelled start's cleanup, added before they start, counted until completed).
+  Never back them with one "latest job" slot: a later drive's quicker save, or a start cancelled by STOP, would hide an
+  earlier save that is still writing, and the foreground service could be released under it

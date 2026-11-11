@@ -4,8 +4,9 @@ paths:
 ---
 # openRS_ Known Gotchas — Demo mode (debug builds)
 
-- **Demo mode owns VehicleState while active** — `CanDataService.enterDemoMode()` finalizes any recording drive, calls
-  `stopConnection()`, then `DemoMode.start()`. While `DemoMode.isActive`: `processCanFrame` / `mergeObdState` / the adapter
+- **Demo mode owns VehicleState while active** — `CanDataService.enterDemoMode()` has the recorder end what it is doing
+  (`onDemoModeEntered`: an open drive is saved, a start under way is cancelled, #316), calls `stopConnection()`, then
+  `DemoMode.start()`. While `DemoMode.isActive`: `processCanFrame` / `mergeObdState` / the adapter
   state collector early-return, `startConnection()` / `reconnect()` are no-ops, `firmwareApi` returns `DemoFirmwareApi`,
   DTC scan/clear/retry and `sendRawQuery` are answered by `DemoMode`, and `resetSession()` replays the scenario. Never
   bypass these — demo frames would mix with real ones

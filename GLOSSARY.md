@@ -11,6 +11,10 @@ that record is named.
 One record of the car being driven, from START to STOP. A drive may span several connections to the adapter.
 _Avoid_: Session, recording (as a noun), trip, run
 
+**Open**:
+A drive that has started and is not yet stopped. An open drive is either recording or paused.
+_Avoid_: Active, running, in progress, "recording" for a paused drive
+
 **Session**:
 The diagnostic log of one connection to the adapter. A drive can touch several sessions; a session is never a drive.
 _Avoid_: Drive, connection log

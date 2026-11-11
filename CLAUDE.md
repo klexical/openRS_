@@ -250,6 +250,7 @@ results from the Gradle build cache); one test is skipped by decision (`#251 out
 ```
 feature/* → staging → main          (code, tests, android/CHANGELOG.md)
 docs/*    → main    (direct)        (README.md, assets/, docs/, firmware/README.md)
+                                    CLAUDE.md, .claude/rules/ and GLOSSARY.md follow the code route (staging)
 Release tags: android-v*  (triggers CI signing + GitHub Release)
 RCs: one pre-release per RC tag (android-v<ver>-rc.N), tagged on staging; stable tags on main
 ```
@@ -270,7 +271,8 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
 issue tracker. This file takes no dated status or work-log entries.
 
 Docs branches skip staging entirely — branch from main, PR to main.
-Never route README.md, assets/, or docs/ through staging.
+Never route README.md, assets/, or docs/ through staging. `CLAUDE.md`, `.claude/rules/` and `GLOSSARY.md` are the exception:
+they describe the code on staging, so a change that makes one of them wrong corrects it in the same branch.
 
 **Release checklist (staging → main):**
 0. Read the Sapphire staging ↔ main merge runbook first (see the Sapphire section: which side to take, the `ci.yml` hand-merge,

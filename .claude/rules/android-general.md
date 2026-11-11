@@ -22,3 +22,5 @@ paths:
   Robolectric test (a state holder driven without a composition) leaves work behind once any earlier class in the JVM
   has composed, and the next Compose class stops recomposing after a state write. Keep state holders that such tests
   drive free of snapshot state (`NoteFormState`, #253: its `isOpen` broke `ObserverNoteFormTest` only in a full run)
+- **Comments cite what a reader of the repository can open** — an issue number or a file in this repository. A spec,
+  review or design note that lives outside the repository is not a reference: say the rule itself in the comment
