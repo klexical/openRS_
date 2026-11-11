@@ -294,13 +294,14 @@ private fun TripPageContent(
 
     // Idle location (one-shot centering when not recording)
     var idleLocation by remember { mutableStateOf<android.location.Location?>(null) }
+    var idleFetchedAtMs by remember { mutableStateOf(0L) }      // app wall clock when idleLocation was fetched
 
     // One-shot location fetch when tab opens idle
     LaunchedEffect(hasLocationPerm) {
         if (hasLocationPerm && !driveState.isRecording) {
             try {
                 val loc = recorder.getLastKnownLocation()
-                if (loc != null) idleLocation = loc
+                if (loc != null) { idleLocation = loc; idleFetchedAtMs = System.currentTimeMillis() }
             } catch (_: Exception) {}
         }
     }
@@ -389,8 +390,9 @@ private fun TripPageContent(
                 emptyList()
             }
 
-            val currentLat = driveState.currentLocation?.latitude ?: idleLocation?.latitude
-            val currentLng = driveState.currentLocation?.longitude ?: idleLocation?.longitude
+            val dot = tripDot(driveState, idleLocation, idleFetchedAtMs)
+            val currentLat = dot?.latitude
+            val currentLng = dot?.longitude
 
             if (mapCreated) DriveMap(
                 points = mapPoints,
@@ -504,10 +506,7 @@ private fun TripPageContent(
                         if (sfSet) "Clear start/finish line" else "Set start/finish line", onClick = {
                         if (preview != null) return@MapControl
                         if (sfSet) lapTimer.clearStartFinish()
-                        else driveState.currentLocation?.let { loc ->
-                            // No bearing ≠ 0° north: the line then takes the direction the car leaves it in (LapTimer)
-                            lapTimer.setStartFinish(loc.latitude, loc.longitude, loc.bearing.takeIf { loc.hasBearing() })
-                        }
+                        else recorder.setStartFinishHere()
                     }) { MonoText(if (sfSet) "CLEAR S/F" else "SET S/F", 11.sp, if (sfSet) Orange else ink, FontWeight.Bold) }
 
                     // Bookmark button — an action, not a warning: ink, not amber.
@@ -1662,3 +1661,10 @@ private fun groupDrivesByDate(drives: List<DriveEntity>): List<Pair<String, List
 private fun isSameDay(a: Calendar, b: Calendar): Boolean =
     a.get(Calendar.YEAR) == b.get(Calendar.YEAR) &&
     a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
+
+/**
+ * The position TRIP's live map draws its dot at: the drive's, else the one-shot idle fetch ([idleFetchedAtMs] = when
+ * TRIP fetched it, on the app's wall clock).
+ */
+internal fun tripDot(state: DriveState, idle: android.location.Location?, idleFetchedAtMs: Long): android.location.Location? =
+    state.currentLocation ?: idle

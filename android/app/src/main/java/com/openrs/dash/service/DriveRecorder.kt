@@ -189,6 +189,17 @@ class DriveRecorder(
     @Synchronized fun lapTimerForUi(): LapTimer = lapTimer ?: LapTimer().also { lapTimer = it }
 
     /**
+     * TRIP's SET S/F: puts the start/finish line at the drive's position, with its bearing when the fix has one (no
+     * bearing ≠ 0° north: the line then takes the direction the car leaves it in, LapTimer). Returns false, and sets
+     * nothing, without a position.
+     */
+    fun setStartFinishHere(): Boolean {
+        val loc = _driveState.value.currentLocation ?: return false
+        lapTimerForUi().setStartFinish(loc.latitude, loc.longitude, loc.bearing.takeIf { loc.hasBearing() })
+        return true
+    }
+
+    /**
      * Timestamp of the most recent [pauseDrive] call, or 0 when not paused.
      * Used by the auto-record pipeline to decide whether a resume is valid
      * (recent pause) or whether to finalize and start fresh.
