@@ -241,7 +241,11 @@ class DriveRecorder(
         job.invokeOnCompletion { synchronized(saving) { saving -= job } }
     }
 
-    private fun savesRunning(): List<Job> = synchronized(saving) { saving.filter { it.isActive } }
+    /**
+     * Saves not yet completed: counted from the moment they are tracked, before they start (a lazy job is not "active"
+     * until started), and while a cancelled one is still finishing (#329).
+     */
+    private fun savesRunning(): List<Job> = synchronized(saving) { saving.filter { !it.isCompleted } }
 
     /** A drive is still being saved (any STOP's save or start cleanup): the process must not lose its foreground now (#212, #329). */
     val isFinalizing: Boolean get() = savesRunning().isNotEmpty()
@@ -406,10 +410,10 @@ class DriveRecorder(
     /**
      * The point at which every point the drive recorded is in Room (#262, N2): stores the buffered points now, without pausing
      * the drive (same lock as [pauseDrive]'s flush, #241), then waits for every point insert under way — the loop's 30-point
-     * batch too, which takes its points from the buffer before Room stores them — and for a STOP's finalize. The service keeps
-     * its foreground until this completes: with auto-record off a drive keeps recording through a link gap, and without the
-     * foreground nothing keeps the process alive to finish the writes. Null when there is nothing to wait for. Never blocks the
-     * caller; a failed insert still completes it (the failure is counted, as before).
+     * batch too, which takes its points from the buffer before Room stores them — and for every drive still being saved
+     * (#329). The service keeps its foreground until this completes: with auto-record off a drive keeps recording through a
+     * recording gap, and without the foreground nothing keeps the process alive to finish the writes. Null when there is
+     * nothing to wait for. Never blocks the caller; a failed insert still completes it (the failure is counted, as before).
      */
     fun durabilityBarrier(): Job? {
         val r = run
