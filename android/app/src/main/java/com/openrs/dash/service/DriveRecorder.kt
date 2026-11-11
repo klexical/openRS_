@@ -56,6 +56,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -225,10 +226,25 @@ class DriveRecorder(
      * (recent pause) or whether to finalize and start fresh.
      */
     @Volatile private var pausedAtMs: Long = 0L
+    /** The latest STOP's save (or a cancelled start's cleanup): what a STOP with nothing to stop returns. */
     @Volatile private var finalizeJob: Job? = null
 
-    /** STOP's writes are still running: the process must not lose its foreground service now (#212). */
-    val isFinalizing: Boolean get() = finalizeJob?.isActive == true
+    /**
+     * Every save still running: each STOP's save and each cancelled start's cleanup, added before it starts and removed when
+     * it completes (#329). One wait covers all of them (SPEC-316): a later job never hides an earlier drive's save.
+     */
+    private val saving = mutableSetOf<Job>()
+
+    /** Tracks [job] in [saving] until it completes. Call before starting it. */
+    private fun trackSave(job: Job) {
+        synchronized(saving) { saving += job }
+        job.invokeOnCompletion { synchronized(saving) { saving -= job } }
+    }
+
+    private fun savesRunning(): List<Job> = synchronized(saving) { saving.filter { it.isActive } }
+
+    /** A drive is still being saved (any STOP's save or start cleanup): the process must not lose its foreground now (#212, #329). */
+    val isFinalizing: Boolean get() = savesRunning().isNotEmpty()
 
     init {
         // Finalize any drives left with endTime=0 from a previous app session
@@ -398,12 +414,12 @@ class DriveRecorder(
     fun durabilityBarrier(): Job? {
         val r = run
         val recording = _driveState.value.isRecording
-        val finalizing = finalizeJob?.takeIf { it.isActive }
-        if (!recording && r.inFlight.value == 0 && finalizing == null) return null
+        val finalizing = savesRunning()                          // every save under way, not only the latest (#329)
+        if (!recording && r.inFlight.value == 0 && finalizing.isEmpty()) return null
         return scope.launch {
             if (recording) r.outsideLoopWrites.withLock { flushBuffer(r) }
             r.inFlight.first { it == 0 }
-            finalizing?.join()
+            finalizing.joinAll()
         }
     }
 
@@ -657,8 +673,9 @@ class DriveRecorder(
                 }
             }
         }
-        // Set before the state says not recording, so a reader never sees neither (#212)
+        // Tracked before the state says not recording, so a reader never sees neither (#212)
         finalizeJob = finalize
+        trackSave(finalize)
         finalize.start()
         // The stopped drive's position goes with it (#311); only that drive's, as a drive started since owns its own
         _driveState.update {
@@ -686,7 +703,8 @@ class DriveRecorder(
                 Log.w(TAG, "Removing a drive stopped during its start failed", e)
             }
         }
-        finalizeJob = cleanup                                    // isFinalizing / durabilityBarrier see it (#212)
+        finalizeJob = cleanup
+        trackSave(cleanup)                                       // isFinalizing / durabilityBarrier see it (#212), beside any save
         cleanup.start()
         return cleanup
     }
