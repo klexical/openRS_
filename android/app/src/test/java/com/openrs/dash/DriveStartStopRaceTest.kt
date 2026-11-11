@@ -41,7 +41,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * StopFlushOutcomeTest losing its final flush unreported. Now the job is assigned in startDrive, before it runs.
  *
  * Production DriveRecorder + Room (Robolectric); the DAO is the real one behind a proxy that can hold one call, so
- * each window is reached deterministically (no sleeps decide the order). Synthetic GPS through the LocationSource seam.
+ * each window is reached by a hold, not by timing. The only sleeps are short settles before "nothing more happened"
+ * checks (a drive that kept going would show by then). Synthetic GPS through the LocationSource seam.
  */
 @RunWith(RobolectricTestRunner::class)
 class DriveStartStopRaceTest {
@@ -126,7 +127,7 @@ class DriveStartStopRaceTest {
     private fun liveRows() = dao.getUnfinishedDrives()
     private fun recEvents() = DiagnosticLogger.sessionEvents.filter { it.type == "REC" && it.message.contains("start cancelled by STOP") }
 
-    // (a) STOP during the insert: the drive ends, nothing listens to GPS, a later START is accepted
+    // STOP during the insert: the drive ends, nothing listens to GPS, a later START is accepted
     @Test fun `STOP while the new drive's row is being written ends the drive - a later START is accepted`() {
         val hold = Hold("insertDrive", before = true)
         val rec = recorder(hold)
@@ -149,7 +150,7 @@ class DriveStartStopRaceTest {
         assertEquals(1, dao.getDriveCount())
     }
 
-    // (c) STOP before the insert: no row, no finalize, no GPS listener
+    // STOP before the insert: no row, no finalize, no GPS listener
     @Test fun `STOP before the row is written leaves no drive at all`() {
         val hold = Hold("getDriveCount", before = true)         // the prune, the job's first step
         val rec = recorder(hold)
@@ -165,7 +166,7 @@ class DriveStartStopRaceTest {
         assertEquals("nothing to close", listOf<Any>(), recEvents())
     }
 
-    // (d) STOP after the insert, before the drive's state: the row is removed, nothing finalized
+    // STOP after the insert, before the drive's state: the row is removed, nothing finalized
     @Test fun `STOP after the row is written but before recording starts removes that row - nothing finalized`() {
         val hold = Hold("insertDrive", before = false)
         val rec = recorder(hold)
@@ -183,7 +184,7 @@ class DriveStartStopRaceTest {
         assertEquals("a cancelled start is not logged as a failed start", listOf<Any>(), startFailureLogs().map { it.msg })
     }
 
-    // (e) START, STOP, START in quick succession: exactly one live drive, the first one closed
+    // START, STOP, START in quick succession: exactly one live drive, the first one closed
     @Test fun `START, STOP, START during the first drive's creation gives exactly one live drive`() {
         val hold = Hold("insertDrive", before = true)
         val rec = recorder(hold)

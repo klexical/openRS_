@@ -44,7 +44,9 @@ import com.openrs.dash.ui.AppSettings
 import com.openrs.dash.ui.ThermalReadinessSession
 import com.openrs.dash.ui.UserPrefsStore
 import com.openrs.dash.ui.sample
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -121,9 +123,9 @@ class DriveRecorder(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     /**
-     * The recording drive's job: insert, state, loop. Assigned in [startDrive] on the caller's thread before the job runs
-     * anything, so a STOP or a second START always sees it (it used to be assigned on an IO thread after the loop was
-     * already running: a STOP in that window neither cancelled nor joined the loop).
+     * The recording drive's job: insert, state, loop. Assigned in [startDrive] on the caller's thread before the job
+     * runs anything, so a STOP or a second START always sees it (it used to be assigned on an IO thread after the
+     * loop was already running: a STOP in that window neither cancelled nor joined the loop).
      */
     @Volatile private var recorderJob: Job? = null
 
@@ -265,43 +267,19 @@ class DriveRecorder(
 
         // One job per drive, assigned before it runs anything: a STOP or a second START during the insert sees it.
         val now = System.currentTimeMillis()
-        val job = scope.launch(Dispatchers.IO, start = kotlinx.coroutines.CoroutineStart.LAZY) {
-            // Prune old drives if over limit
-            try {
-                val maxDrives = AppSettings.getMaxSavedDrives(context)
-                val count = dao.getDriveCount()
-                if (count >= maxDrives) {
-                    dao.deleteOldestDrives(count - maxDrives + 1)
-                    dao.deleteOrphanLapSessions()
-                }
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.w(TAG, "Drive prune failed", e)
-            }
+        val job = scope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
+            pruneOldDrives()
             ensureActive()                                    // STOP before the insert: no row at all
-            // Create drive entity; once inserted, the run knows its id even if STOP arrives during the insert
             val driveId = try {
-                withContext(NonCancellable) {
-                    dao.insertDrive(
-                        DriveEntity(
-                            startTime = now,
-                            sessionId = sessionId,
-                            startFuelPct = vs.fuelLevelPct,
-                            hasGps = hasLocationPermission(),
-                            boostPolicy = com.openrs.dash.data.BoostRule.POLICY,
-                            oilPtuMapping = com.openrs.dash.data.OilPtuMapping.CURRENT
-                        )
-                    ).also { newRun.driveId = it }
-                }
-            } catch (e: kotlinx.coroutines.CancellationException) {
+                insertDriveRow(newRun, now, sessionId, vs)
+            } catch (e: CancellationException) {
                 throw e                                       // a STOP, not a failed start (the rethrow rule)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start drive", e)
                 _driveState.update { it.copy(isRecording = false) }
                 return@launch
             }
-            ensureActive()                                    // STOP during the insert: STOP removes the row (cancelStart)
+            ensureActive()                                    // STOP during the insert: cancelStart removes the row
             try {
                 // Every accumulator starts empty — a new DriveState, not a copy, so none is carried over from the last
                 // drive (peak oil / coolant were, #236). The position too (#311): a drive has one only once its own
@@ -316,13 +294,50 @@ class DriveRecorder(
                 }
                 runRecordingLoop(driveId, newRun)
             } finally {
-                // A STOP between the state and the loop: the loop's own finally may never have run
-                _driveState.update { if (it.driveId == driveId) it.copy(isRecording = false, currentLocation = null) else it }
+                // Only this drive's state: a drive started since (finalize + start) is recording (#236). Here, not in
+                // the loop, so a STOP between the state and the loop clears it too.
+                _driveState.update {
+                    if (it.driveId == driveId) it.copy(isRecording = false, currentLocation = null) else it
+                }
             }
         }
         recorderJob = job
         job.start()
     }
+
+    /** Deletes the oldest drives when the saved-drives limit is reached. A failure is logged; a STOP is rethrown. */
+    private fun pruneOldDrives() {
+        try {
+            val maxDrives = AppSettings.getMaxSavedDrives(context)
+            val count = dao.getDriveCount()
+            if (count >= maxDrives) {
+                dao.deleteOldestDrives(count - maxDrives + 1)
+                dao.deleteOrphanLapSessions()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Drive prune failed", e)
+        }
+    }
+
+    /**
+     * Writes the drive's row under NonCancellable, so a STOP during the insert still leaves [run] knowing the row's id
+     * (STOP then removes it, see [cancelStart]).
+     */
+    private suspend fun insertDriveRow(run: DriveRun, startTime: Long, sessionId: Long, vs: VehicleState): Long =
+        withContext(NonCancellable) {
+            dao.insertDrive(
+                DriveEntity(
+                    startTime = startTime,
+                    sessionId = sessionId,
+                    startFuelPct = vs.fuelLevelPct,
+                    hasGps = hasLocationPermission(),
+                    boostPolicy = com.openrs.dash.data.BoostRule.POLICY,
+                    oilPtuMapping = com.openrs.dash.data.OilPtuMapping.CURRENT
+                )
+            ).also { run.driveId = it }
+        }
 
     fun pauseDrive() {
         pausedAtMs = System.currentTimeMillis()
@@ -393,7 +408,7 @@ class DriveRecorder(
         val stopped = run
         val fuelState = FuelEconomy.state.value
         val laps = lapTimer?.takeLaps(state.driveId)
-        val finalize = scope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY, context = Dispatchers.IO) {
+        val finalize = scope.launch(start = CoroutineStart.LAZY, context = Dispatchers.IO) {
             // Wait for the recording loop's finally{} to flush buffered points
             // before we write the drive summary. This avoids racing our own
             // flush against the loop's flush (both would copy pointsBuffer
@@ -511,7 +526,7 @@ class DriveRecorder(
      * as "ended mid-drive". Publishes nothing to the state: the job's own finally clears its flags if it got that far.
      */
     private fun cancelStart(start: Job, cancelled: DriveRun): Job {
-        val cleanup = scope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY, context = Dispatchers.IO) {
+        val cleanup = scope.launch(start = CoroutineStart.LAZY, context = Dispatchers.IO) {
             start.join()
             val created = cancelled.driveId
             if (created <= 0) return@launch                     // stopped before its insert: no row
@@ -758,13 +773,9 @@ class DriveRecorder(
                     }
                 }
             } finally {
-                try {
-                    // Ensure we flush any remaining buffered points (STOP's cancellation is rethrown after it)
-                    flushBuffer(run)
-                } finally {
-                    // Only this drive's state: a drive started since (finalize + start) is recording (#236)
-                    _driveState.update { if (it.driveId == driveId) it.copy(isRecording = false, currentLocation = null) else it }
-                }
+                // Ensure we flush any remaining buffered points (STOP's cancellation is rethrown after it).
+                // The state is cleared by the drive's job (startDrive), after this
+                flushBuffer(run)
             }
         }
 
