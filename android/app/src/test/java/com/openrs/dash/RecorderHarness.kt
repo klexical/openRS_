@@ -41,8 +41,11 @@ class RecorderHarness {
         override suspend fun last(): Location? = null
     }
 
-    /** Holds the [nth] call of [method] before the real call, until [release]. */
-    class Hold(val method: String, val nth: Int = 1) {
+    /**
+     * Holds the [nth] call of [method] before the real call, until [release]. Calls count only while [armed] (default from
+     * the start): a test that holds a later call (a STOP's save) arms it just before that call.
+     */
+    class Hold(val method: String, val nth: Int = 1, @Volatile var armed: Boolean = true) {
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
         val used = AtomicInteger()
@@ -65,15 +68,16 @@ class RecorderHarness {
         DiagnosticLogger.sessionStart("test", 0, prefs = null)
     }
 
-    fun recorder(hold: Hold? = null, autoRecord: Boolean = false, clock: () -> Long = { now }): DriveRecorder =
-        DriveRecorder(app, vs, WeatherRepository(""), db, heldDao(hold), { _, _ -> null }, gps, { }, clock = clock)
+    fun recorder(hold: Hold? = null, autoRecord: Boolean = false, clock: () -> Long = { now },
+                 holds: List<Hold> = listOfNotNull(hold)): DriveRecorder =
+        DriveRecorder(app, vs, WeatherRepository(""), db, heldDao(holds), { _, _ -> null }, gps, { }, clock = clock)
             .also { recorders += it; it.onAutoRecordSwitched(autoRecord) }
 
-    private fun heldDao(hold: Hold?): DriveDao {
+    private fun heldDao(holds: List<Hold>): DriveDao {
         val real = db.driveDao()
-        if (hold == null) return real
+        if (holds.isEmpty()) return real
         return Proxy.newProxyInstance(DriveDao::class.java.classLoader, arrayOf(DriveDao::class.java)) { _, m, args ->
-            if (m.name == hold.method && hold.used.incrementAndGet() == hold.nth) {
+            for (hold in holds) if (hold.armed && m.name == hold.method && hold.used.incrementAndGet() == hold.nth) {
                 hold.entered.countDown(); check(hold.release.await(10, TimeUnit.SECONDS)) { "hold never released" }
             }
             try { m.invoke(real, *(args ?: emptyArray())) } catch (e: InvocationTargetException) { throw e.targetException }
