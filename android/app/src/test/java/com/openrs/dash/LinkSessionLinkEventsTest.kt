@@ -24,8 +24,8 @@ class LinkSessionLinkEventsTest {
     }
 
     private val own = LinkOwnership()
-    private fun session(gen: Int, rec: Rec) =
-        LinkSession(own, gen, MutableStateFlow(VehicleState()), rec, onFrameCounted = {}, perfRunSink = {})
+    private fun session(gen: Int, rec: Rec, hook: () -> Unit = {}) =
+        LinkSession(own, gen, MutableStateFlow(VehicleState()), rec, onFrameCounted = {}, perfRunSink = {}, afterOwnershipCheck = hook)
 
     @Test fun `the current job's events reach the recorder, the loss with its own moment`() {
         val rec = Rec()
@@ -91,5 +91,31 @@ class LinkSessionLinkEventsTest {
         s.rpmFrame()
         s.onVehicleState(running) { 7L }
         assertEquals(listOf("back", "back", "engine:7"), rec.events)
+    }
+
+    // ── QA's review of f5a9006: G1, G2 ────────────────────────────────────────────────────────────────────────────
+
+    @Test fun `G1 - only an RPM frame marks the engine seen - another frame on the new connection is not enough`() {
+        val rec = Rec()
+        val s = session(own.begin(), rec)
+        s.onConnectionBack()
+        s.onCanFrame(0x130, byteArrayOf(0, 0, 0, 0, 0, 0, 0x27, 0x10), 50.0)   // speed, not RPM
+        s.onVehicleState(running) { 7L }                                    // RPM held from before the drop
+        assertEquals(listOf("back"), rec.events)
+        s.rpmFrame()
+        s.onVehicleState(running) { 7L }
+        assertEquals(listOf("back", "engine:7"), rec.events)
+    }
+
+    @Test fun `G2 - a connection back between the pre-check and the lock - the report is re-checked and not sent`() {
+        val rec = Rec()
+        var s: LinkSession? = null
+        var reconnectInHook = false
+        s = session(own.begin(), rec) { if (reconnectInHook) { reconnectInHook = false; s!!.onConnectionBack() } }
+        s.onConnectionBack()
+        s.rpmFrame()                                                        // the old connection saw its RPM
+        reconnectInHook = true                                              // the pre-check passes, then CONNECTED clears it
+        s.onVehicleState(running) { 7L }
+        assertEquals(listOf("back", "back"), rec.events)
     }
 }
