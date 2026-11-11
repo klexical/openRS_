@@ -38,6 +38,7 @@ import com.openrs.dash.data.LapSessionEntity
 import com.openrs.dash.data.CommandResult
 import com.openrs.dash.data.DrivePhase
 import com.openrs.dash.data.LapTimer
+import com.openrs.dash.data.PauseReason
 import com.openrs.dash.data.Refusal
 import com.openrs.dash.data.PeakEvent
 import com.openrs.dash.data.PeakType
@@ -307,7 +308,7 @@ class DriveRecorder(
                 // Only this drive's state: a drive started since (finalize + start) is recording (#236). Here, not in
                 // the loop, so a STOP between the state and the loop clears it too.
                 _driveState.update {
-                    if (it.driveId == driveId) it.copy(phase = DrivePhase.IDLE, currentLocation = null) else it
+                    if (it.driveId == driveId) it.copy(phase = DrivePhase.IDLE, pauseReason = null, currentLocation = null) else it
                 }
             }
         }
@@ -361,7 +362,9 @@ class DriveRecorder(
     @Synchronized fun pauseDrive(): CommandResult {
         if (_driveState.value.phase != DrivePhase.RECORDING) return refused("PAUSE", Refusal.NOT_RECORDING)
         pausedAtMs = clock()
-        _driveState.update { if (it.phase == DrivePhase.RECORDING) it.copy(phase = DrivePhase.PAUSED) else it }
+        _driveState.update {
+            if (it.phase == DrivePhase.RECORDING) it.copy(phase = DrivePhase.PAUSED, pauseReason = PauseReason.HAND) else it
+        }
         // Flush any buffered points immediately. flushBuffer() is suspend +
         // NonCancellable so it completes even if the scope is cancelled while
         // the pause is being handled.
@@ -390,13 +393,36 @@ class DriveRecorder(
         }
     }
 
+    // ── Events (#316): the service reports these and applies no rule itself ─────────────────────────────────────
+
+    /** Auto-record, as last reported by [onAutoRecordSwitched] (the service reports it when it binds the recorder). */
+    @Volatile private var autoRecord = false
+
+    /**
+     * The connection to the adapter was lost at [atMs] (closed by the app, or dropped and not recovered). A hand pause
+     * holds: a lost connection changes nothing.
+     */
+    @Synchronized fun onConnectionLost(atMs: Long) {}
+
+    /** A connection to the adapter is established. */
+    @Synchronized fun onConnectionBack() {}
+
+    /** The connection sees the engine running (RPM above the auto-record start threshold). */
+    @Synchronized fun onEngineRunning() {}
+
+    /** Auto-record was switched on or off. */
+    @Synchronized fun onAutoRecordSwitched(on: Boolean) { autoRecord = on }
+
+    /** Demo mode was entered. */
+    @Synchronized fun onDemoModeEntered() {}
+
     /** RESUME (#316): refused unless a drive is paused. */
     @Synchronized fun resumeDrive(): CommandResult {
         if (_driveState.value.phase != DrivePhase.PAUSED) return refused("RESUME", Refusal.NOT_PAUSED)
         pausedAtMs = 0L
         run.resumedAtMs = clock()   // N1 / Q1: the loop's next fix takes nothing decoded before this
         run.prevPoint = null  // Gap in polyline — next point won't connect to prev
-        _driveState.update { if (it.phase == DrivePhase.PAUSED) it.copy(phase = DrivePhase.RECORDING) else it }
+        _driveState.update { if (it.phase == DrivePhase.PAUSED) it.copy(phase = DrivePhase.RECORDING, pauseReason = null) else it }
         return CommandResult.Done
     }
 
@@ -541,8 +567,8 @@ class DriveRecorder(
         finalize.start()
         // The stopped drive's position goes with it (#311); only that drive's, as a drive started since owns its own
         _driveState.update {
-            if (it.driveId == state.driveId) it.copy(phase = DrivePhase.IDLE, currentLocation = null)
-            else it.copy(phase = DrivePhase.IDLE)
+            if (it.driveId == state.driveId) it.copy(phase = DrivePhase.IDLE, pauseReason = null, currentLocation = null)
+            else it.copy(phase = DrivePhase.IDLE, pauseReason = null)
         }
         return finalize
     }

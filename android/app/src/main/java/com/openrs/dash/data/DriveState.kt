@@ -15,6 +15,8 @@ import kotlin.math.*
 data class DriveState(
     /** Where the current drive is in its lifecycle (#316). The only source of "recording" and "paused". */
     val phase: DrivePhase = DrivePhase.IDLE,
+    /** Why the drive is paused, while [phase] is PAUSED (#316): a hand pause or a link pause. Null otherwise. */
+    val pauseReason: PauseReason? = null,
     val driveId: Long = 0,
     val recentPoints: List<DrivePointEntity> = emptyList(),
     val totalPointCount: Int = 0,
@@ -122,6 +124,9 @@ enum class DrivePhase {
         }
     }
 }
+
+/** A pause the user asked for, or one the app applied when the connection was lost (GLOSSARY.md). */
+enum class PauseReason { HAND, LINK }
 
 /** What a recorder command did (#316): applied, or refused with a reason. Nothing is queued: a refused command is dropped. */
 sealed interface CommandResult {
