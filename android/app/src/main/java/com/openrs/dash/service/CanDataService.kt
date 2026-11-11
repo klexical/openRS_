@@ -1018,13 +1018,15 @@ class CanDataService : Service() {
     /**
      * Stops all real vehicle communication, then hands [OpenRSDashApp.vehicleState] to the
      * simulator. A drive being recorded is finalized first so it keeps only real samples.
-     * Called again while active, it just switches scenario.
+     * Called again while active, it just switches scenario. Main thread only (MainActivity): a START tap runs there too,
+     * so none can fall between the recorder's event and [DemoMode.start] (#316, DIFFERENCES item 28).
      */
     fun enterDemoMode(scenario: DemoScenario): Unit = link.transition {
         if (!DemoMode.AVAILABLE) return@transition
         if (DemoMode.isActive) { DemoMode.select(scenario); return@transition }
         // #316: the recorder ends whatever it is doing (a recording or paused drive is saved, a start under way cancelled),
-        // before the closure below reports its loss
+        // before the closure below reports its loss. The order also keeps the foreground until the saved drive is written:
+        // the closure's durability barrier waits for a finalize under way (#262 / N2; ServiceFlushDemoteTest)
         recorder().onDemoModeEntered()
         stopConnection(LinkStopReason.DEMO_ENTRY)
         connection = null
