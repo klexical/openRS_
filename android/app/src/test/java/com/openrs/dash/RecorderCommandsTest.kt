@@ -162,6 +162,38 @@ class RecorderCommandsTest {
         assertEquals(5_090_000L, db.driveDao().getDrive(id)!!.endTime)
     }
 
+    // QA F1 on 4ed66fa (#311): TRIP's idle dot is drawn only for a fetch made after the last START, read from the state's
+    // startTime, so the start window and a start that ends without a drive must carry the START's time, never 0
+    @Test fun `a start carries the START's time - kept when it is cancelled`() {
+        val hold = Hold("insertDrive")
+        val rec = recorder(hold)
+        now = 7_000_000L
+        rec.startDrive()
+        assertTrue(hold.entered.await(5, TimeUnit.SECONDS))
+        assertEquals("during the start", 7_000_000L, rec.driveState.value.startTime)
+        now = 7_002_000L
+        val stop = rec.stopDrive()
+        hold.release.countDown()
+        join(stop)
+        Thread.sleep(100)
+        assertEquals(DrivePhase.IDLE, rec.phase())
+        assertEquals("after the cancelled start", 7_000_000L, rec.driveState.value.startTime)
+    }
+
+    @Test fun `a start whose insert fails keeps the START's time`() {
+        val failing = Proxy.newProxyInstance(DriveDao::class.java.classLoader, arrayOf(DriveDao::class.java)) { _, m, args ->
+            if (m.name == "insertDrive") throw android.database.sqlite.SQLiteFullException("test: database full")
+            try { m.invoke(db.driveDao(), *(args ?: emptyArray())) } catch (e: InvocationTargetException) { throw e.targetException }
+        } as DriveDao
+        val rec = DriveRecorder(app, vs, WeatherRepository(""), db, failing, { _, _ -> null }, gps, { }, clock = { now })
+            .also { recorders += it }
+        now = 8_000_000L
+        rec.startDrive()
+        assertTrue(waitUntil { rec.phase() == DrivePhase.IDLE })
+        assertEquals(0, db.driveDao().getDriveCount())
+        assertEquals(8_000_000L, rec.driveState.value.startTime)
+    }
+
     // ── PAUSE ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
     @Test fun `PAUSE on a recording drive is done - a pause`() {
@@ -184,6 +216,18 @@ class RecorderCommandsTest {
         rec.pauseDrive()
         assertEquals("already paused", refused(Refusal.NOT_RECORDING), rec.pauseDrive())
         assertEquals(DrivePhase.PAUSED, rec.phase())
+    }
+
+    // QA U2 on 4ed66fa: a refused command is dropped - it changes nothing, here the pause's start, which the paused time
+    // (and the 15-minute rule) count from
+    @Test fun `a refused PAUSE on a paused drive changes nothing - the pause counts from the first PAUSE`() {
+        val rec = recorder().recording()
+        now = 2_000_000L
+        assertEquals(CommandResult.Done, rec.pauseDrive())
+        now = 2_010_000L
+        assertEquals(refused(Refusal.NOT_RECORDING), rec.pauseDrive())
+        now = 2_015_000L
+        assertEquals(15_000L, rec.pausedDurationMs())
     }
 
     // ── RESUME ────────────────────────────────────────────────────────────────────────────────────────────────────

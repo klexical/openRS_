@@ -276,11 +276,13 @@ class DriveRecorder(
         // A new instance — a drive still being saved keeps its own (#236)
         val newRun = DriveRun(vs, clock())
         run = newRun
-        _driveState.value = DriveState(phase = DrivePhase.STARTING)
+        // The start carries the START's time from here on (#311): TRIP's idle dot is drawn only for a fetch made after the
+        // last START, also during the start and after a start that ends without a drive (cancelled, failed insert)
+        val now = clock()
+        _driveState.value = DriveState(phase = DrivePhase.STARTING, startTime = now)
         pendingLossAtMs = 0L
 
         // One job per drive, assigned before it runs anything: a STOP or a second START during the insert sees it.
-        val now = clock()
         val job = scope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
             pruneOldDrives()
             ensureActive()                                    // STOP before the insert: no row at all
