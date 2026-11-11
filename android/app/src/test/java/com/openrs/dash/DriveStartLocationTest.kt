@@ -214,6 +214,26 @@ class DriveStartLocationTest {
 
     private fun lastKnockPosition() = KnockSessionLog.events.value.last().let { it.lat to it.lng }
 
+    @Test fun `a session knock in a mid-drive GPS gap carries no position - a fresh fix gives it one`() {
+        install(); val svc = TestServices.create()
+        startDrive()
+        fix(30.0, 40.0, ageMs = com.openrs.dash.data.LapTimer.MAX_FIX_AGE_MS + 3_000)
+        knockThroughService(svc)
+        assertEquals(null to null, lastKnockPosition())
+        fix(31.0, 41.0)
+        knockThroughService(svc)
+        assertEquals(31.0 to 41.0, lastKnockPosition())
+    }
+
+    @Test fun `the age limit is inclusive - a fix exactly MAX_FIX_AGE_MS old is fresh, one ms more is not`() {
+        startDrive()
+        fix(30.0, 40.0)
+        val t = rec.driveState.value.currentLocation!!.time
+        val limit = com.openrs.dash.data.LapTimer.MAX_FIX_AGE_MS
+        assertEquals(30.0, rec.freshFix(t + limit)!!.latitude, 0.0)
+        assertNull(rec.freshFix(t + limit + 1))
+    }
+
     @Test fun `a session knock after STOP carries no position`() {
         install(); val svc = TestServices.create()
         firstDriveThenStop()

@@ -757,8 +757,9 @@ class CanDataService : Service() {
         if (DemoMode.isActive) return   // late poll response after demo took over
         OpenRSDashApp.instance.vehicleState.update { current -> com.openrs.dash.data.ObdMerge.merge(current, obdState) }
         countKnockIfFresh(obdState)
-        // Session knock log (#174) — merged live state so pull detection sees CAN rpm/throttle
-        val loc = OpenRSDashApp.instance.driveState.value.currentLocation
+        // Session knock log (#174) — merged live state so pull detection sees CAN rpm/throttle. Position only from the
+        // recording drive's own fix, at most 2 s old (#311): none outside a drive, before its first fix or in a GPS gap
+        val loc = OpenRSDashApp.instance.driveRecorder.freshFix()
         com.openrs.dash.data.KnockSessionLog.onState(
             OpenRSDashApp.instance.vehicleState.value, System.currentTimeMillis(),
             loc?.latitude, loc?.longitude
