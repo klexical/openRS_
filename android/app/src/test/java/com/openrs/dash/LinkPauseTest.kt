@@ -195,4 +195,46 @@ class LinkPauseTest {
         hold.release.countDown()
         assertTrue(h.waitUntil { state(rec) == linkPaused })
     }
+
+    // ── QA's review of 3a4967b: N2, N3 pinned; F4 ──────────────────────────────────────────────────────────────────────
+
+    @Test fun `N2 - an engine report from before the loss does not count - back without the engine, the drive begins link-paused`() {
+        val hold = RecorderHarness.Hold("insertDrive")
+        val rec = h.recorder(hold, autoRecord = true)
+        rec.onConnectionBack(); rec.onEngineRunning()          // before the start
+        rec.startDrive()
+        hold.awaitEntered()
+        rec.onConnectionLost(atMs = h.now)
+        rec.onConnectionBack()                                  // back, but no engine report since the loss
+        hold.release.countDown()
+        assertTrue(h.waitUntil { state(rec) == linkPaused })
+    }
+
+    @Test fun `N3 - the engine reported while the link is down does not count - the drive begins link-paused`() {
+        val hold = RecorderHarness.Hold("insertDrive")
+        val rec = h.recorder(hold, autoRecord = true)
+        rec.startDrive()
+        hold.awaitEntered()
+        rec.onConnectionLost(atMs = h.now)
+        rec.onEngineRunning()                                   // the link is down
+        rec.onConnectionBack()
+        hold.release.countDown()
+        assertTrue(h.waitUntil { state(rec) == linkPaused })
+    }
+
+    @Test fun `F4 - a loss that ended during a start, then a new one - the pause counts from the new loss`() {
+        val hold = RecorderHarness.Hold("insertDrive")
+        val rec = h.recorder(hold, autoRecord = true)
+        rec.startDrive()
+        hold.awaitEntered()
+        rec.onConnectionLost(atMs = h.now)
+        h.now += 10_000L
+        rec.onConnectionBack(); rec.onEngineRunning()          // the first loss is over
+        h.now += 10_000L
+        rec.onConnectionLost(atMs = h.now)
+        hold.release.countDown()
+        assertTrue(h.waitUntil { state(rec) == linkPaused })
+        h.now += 1_000L
+        assertEquals(1_000L, rec.pausedDurationMs())
+    }
 }

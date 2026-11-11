@@ -36,10 +36,14 @@ internal object TestServices {
     fun destroyAll() {
         val all = synchronized(live) { live.toList().also { live.clear() } }
         // A test may already have destroyed one (the SERVICE_DESTROYED path) or never created it: a second onDestroy is harmless
-        all.forEach { runCatching { it.onDestroy() } }
-        awaitScopes(all)
-        // #316 seam 5: a test's own recorder never reaches a later class (its database is closed by then)
-        CanDataService.recorderProvider = CanDataService.APP_RECORDER
+        try {
+            all.forEach { runCatching { it.onDestroy() } }
+            awaitScopes(all)
+        } finally {
+            // #316 seam 5: a test's own recorder never reaches a later class (its database is closed by then), also when
+            // a scope fails to finish
+            CanDataService.recorderProvider = CanDataService.APP_RECORDER
+        }
     }
 
     private val scopeField by lazy { CanDataService::class.java.getDeclaredField("scope").apply { isAccessible = true } }
