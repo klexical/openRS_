@@ -5,7 +5,6 @@ import android.app.Application
 import android.location.Location
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
-import com.openrs.dash.can.ObdResponseParser
 import com.openrs.dash.data.DriveDatabase
 import com.openrs.dash.data.DriveEntity
 import com.openrs.dash.data.DrivePointEntity
@@ -75,10 +74,9 @@ class RecorderFreshnessTest {
     }
 
     // ── synthetic PCM replies through the production parse + merge ─────────
-    private fun reply(vararg bytes: Int) {
-        Thread.sleep(3)
-        ObdResponseParser.parsePcmResponse(ByteArray(8) { (bytes.getOrElse(it) { 0 }).toByte() }, vs.value) { vs.value = ObdMerge.merge(vs.value, it) }
-    }
+    private val clock = DecodeClock()                                       // #305: the test stamps its decodes
+    private fun reply(vararg bytes: Int) =
+        parsePcmAt(ByteArray(8) { (bytes.getOrElse(it) { 0 }).toByte() }, vs.value, clock.next()) { vs.value = ObdMerge.merge(vs.value, it) }
     private fun map(kpa: Int) = reply(0x04, 0x62, 0xF4, 0x0B, kpa)
     private fun tip(raw: Int) = reply(0x05, 0x62, 0x03, 0x3E, raw shr 8, raw and 0xFF)
     private fun tipDesired(raw: Int) = reply(0x05, 0x62, 0x04, 0x66, raw shr 8, raw and 0xFF)

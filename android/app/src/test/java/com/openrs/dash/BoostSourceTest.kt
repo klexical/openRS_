@@ -1,7 +1,6 @@
 package com.openrs.dash
 
 import com.openrs.dash.can.CanDecoder
-import com.openrs.dash.can.ObdResponseParser
 import com.openrs.dash.data.BoostReading
 import com.openrs.dash.data.BoostRule
 import com.openrs.dash.data.BoostSession
@@ -66,9 +65,10 @@ class BoostSourceTest {
     private fun boostFrame(byte5: Int) = link.onCanFrame(0x0F8, hex("0042000000%02X1052".format(byte5)), 50.0)
     private fun throttle(pct: Int) = state.update { it.copy(throttlePct = pct.toDouble(), throttleHasSource = true) }
     /** A TIP decode merged like CanDataService.mergeObdState; the next CAN frame lets the session see it. */
+    private val clock = DecodeClock()
     private fun tip(raw: Int) {
-        Thread.sleep(3)                                                  // one decode per stamp (real ones are ~1.2 s apart)
-        ObdResponseParser.parsePcmResponse(hex("0562033E%04X".format(raw)), state.value) { obd -> state.update { ObdMerge.merge(it, obd) } }
+        val at = clock.next()                                            // one decode per stamp, chosen here (#305)
+        parsePcmAt(hex("0562033E%04X".format(raw)), state.value, at) { obd -> state.update { ObdMerge.merge(it, obd) } }
     }
     private fun now() = System.currentTimeMillis()
     private fun read(atMs: Long = now()) = BoostSession.read(state.value, atMs)

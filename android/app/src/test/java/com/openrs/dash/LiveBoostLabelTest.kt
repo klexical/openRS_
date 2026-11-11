@@ -1,7 +1,6 @@
 package com.openrs.dash
 
 import com.openrs.dash.can.CanDecoder
-import com.openrs.dash.can.ObdResponseParser
 import com.openrs.dash.data.BoostRule
 import com.openrs.dash.data.BoostSession
 import com.openrs.dash.data.BoostSource
@@ -60,9 +59,10 @@ class LiveBoostLabelTest {
 
     private fun rpmFrame(rpm: String = "617D") = link.onCanFrame(0x090, hex("0000C1FF${rpm}0000"), 50.0)
     private fun boostFrame(byte5: Int) = link.onCanFrame(0x0F8, hex("0042000000%02X1052".format(byte5)), 50.0)
+    private val clock = DecodeClock()
     private fun tip(raw: Int) {
-        Thread.sleep(3)
-        ObdResponseParser.parsePcmResponse(hex("0562033E%04X".format(raw)), state.value) { obd -> state.update { ObdMerge.merge(it, obd) } }
+        val at = clock.next()                                            // one decode per stamp, chosen here (#305)
+        parsePcmAt(hex("0562033E%04X".format(raw)), state.value, at) { obd -> state.update { ObdMerge.merge(it, obd) } }
     }
     private fun now() = System.currentTimeMillis()
     private fun gauge(at: Long = now()) = BoostSession.gauge(state.value, at)
