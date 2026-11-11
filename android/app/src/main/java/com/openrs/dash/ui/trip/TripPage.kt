@@ -50,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -77,6 +78,7 @@ import com.openrs.dash.demo.TripPreview
 import com.openrs.dash.ui.anim.pageEntrance
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -294,13 +296,15 @@ private fun TripPageContent(
 
     // Idle location (one-shot centering when not recording)
     var idleLocation by remember { mutableStateOf<android.location.Location?>(null) }
+    var idleFetchedAtMs by remember { mutableLongStateOf(0L) }      // app wall clock when idleLocation was fetched
 
-    // One-shot location fetch when tab opens idle
-    LaunchedEffect(hasLocationPerm) {
-        if (hasLocationPerm && !driveState.isRecording) {
+    // One location fetch each time TRIP comes into view idle (#311): TRIP stays composed for the activity's life, so a
+    // fetch keyed on the permission alone ran once, and after a STOP the dot never came back. Not on STOP itself
+    // (owner's option a): the dot returns when TRIP is opened idle again.
+    LaunchedEffect(hasLocationPerm, visible) {
+        if (hasLocationPerm && visible && !driveState.isRecording) {
             try {
-                val loc = recorder.getLastKnownLocation()
-                if (loc != null) idleLocation = loc
+                idleFetch(recorder)?.let { (loc, askedAt) -> idleLocation = loc; idleFetchedAtMs = askedAt }
             } catch (_: Exception) {}
         }
     }
@@ -389,8 +393,9 @@ private fun TripPageContent(
                 emptyList()
             }
 
-            val currentLat = driveState.currentLocation?.latitude ?: idleLocation?.latitude
-            val currentLng = driveState.currentLocation?.longitude ?: idleLocation?.longitude
+            val dot = tripDot(driveState, idleLocation, idleFetchedAtMs)
+            val currentLat = dot?.latitude
+            val currentLng = dot?.longitude
 
             if (mapCreated) DriveMap(
                 points = mapPoints,
@@ -500,15 +505,31 @@ private fun TripPageContent(
                 // SET S/F button (lap timer)
                 if (driveState.isRecording) {
                     val sfSet = lapTimer.startFinish != null
+                    // Refused without a fresh fix (#311): the chip itself reads NO GPS for SF_CUE_MS, then SET S/F again.
+                    // One cue on the chip, nothing over PAUSE / STOP; a refusal while it shows does not restart it.
+                    val sfCue = remember { SfCue() }
+                    var sfCueOn by remember { mutableStateOf(false) }
+                    LaunchedEffect(sfCueOn) {
+                        if (sfCueOn) { delay(sfCue.remainingMs(System.currentTimeMillis())); sfCueOn = false }
+                    }
                     MapControl(chipSize, pageEntrance(6, controlsVisible, 50),
                         if (sfSet) "Clear start/finish line" else "Set start/finish line", onClick = {
                         if (preview != null) return@MapControl
                         if (sfSet) lapTimer.clearStartFinish()
-                        else driveState.currentLocation?.let { loc ->
-                            // No bearing ≠ 0° north: the line then takes the direction the car leaves it in (LapTimer)
-                            lapTimer.setStartFinish(loc.latitude, loc.longitude, loc.bearing.takeIf { loc.hasBearing() })
+                        else {
+                            val now = System.currentTimeMillis()
+                            onSetStartFinish(recorder, sfCue, now)
+                            if (sfCue.isShowing(now)) sfCueOn = true
                         }
-                    }) { MonoText(if (sfSet) "CLEAR S/F" else "SET S/F", 11.sp, if (sfSet) Orange else ink, FontWeight.Bold) }
+                    }) {
+                        // Both labels laid out, one shown: the chip keeps SET S/F's width while it reads NO GPS
+                        Box(contentAlignment = Alignment.Center) {
+                            val cue = sfCueOn && !sfSet
+                            MonoText(if (sfSet) "CLEAR S/F" else "SET S/F", 11.sp, if (sfSet) Orange else ink, FontWeight.Bold,
+                                modifier = Modifier.alpha(if (cue) 0f else 1f))
+                            if (cue) MonoText(SF_NO_FIX_CUE, 11.sp, Mid, FontWeight.Bold)
+                        }
+                    }
 
                     // Bookmark button — an action, not a warning: ink, not amber.
                     // Tap = a bare marker at once; long-press = a marker with words (the observer's note form).
@@ -1662,3 +1683,53 @@ private fun groupDrivesByDate(drives: List<DriveEntity>): List<Pair<String, List
 private fun isSameDay(a: Calendar, b: Calendar): Boolean =
     a.get(Calendar.YEAR) == b.get(Calendar.YEAR) &&
     a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
+
+/** What the SET S/F chip reads when SET S/F is refused for lack of a fresh fix (#311), and for how long. */
+internal const val SF_NO_FIX_CUE = "NO GPS"
+internal const val SF_CUE_MS = 2_000L
+
+/**
+ * The SET S/F chip's refusal cue (#311). A plain class, no Compose state (see android-general.md): TRIP mirrors it in
+ * its own state. A refusal starts a [SF_CUE_MS] window; a refusal inside the window neither restarts nor extends it.
+ */
+internal class SfCue(private val windowMs: Long = SF_CUE_MS) {
+    private var shownAtMs = Long.MIN_VALUE
+    fun isShowing(nowMs: Long): Boolean = shownAtMs != Long.MIN_VALUE && nowMs - shownAtMs in 0 until windowMs
+    fun remainingMs(nowMs: Long): Long = if (isShowing(nowMs)) windowMs - (nowMs - shownAtMs) else 0L
+    /** A refused tap at [nowMs]: true if it started the cue, false if one is already showing. */
+    fun onRefused(nowMs: Long): Boolean {
+        if (isShowing(nowMs)) return false
+        shownAtMs = nowMs
+        return true
+    }
+}
+
+/**
+ * TRIP's SET S/F tap at [nowMs]: the line at the drive's fresh fix ([DriveRecorder.setStartFinishHere]), or, when there
+ * is none, the chip's [cue]. Returns whether the line was set.
+ */
+internal fun onSetStartFinish(recorder: com.openrs.dash.service.DriveRecorder, cue: SfCue, nowMs: Long): Boolean =
+    recorder.setStartFinishHere().also { placed -> if (!placed) cue.onRefused(nowMs) }
+
+/**
+ * One idle fetch for TRIP's dot: the platform's last-known fix and the moment it was ASKED for (#311). The stamp is
+ * taken before the call, so a drive that starts while the call is in flight makes this fix older than that drive, and
+ * [tripDot] does not draw it after the drive's STOP.
+ */
+internal suspend fun idleFetch(
+    recorder: com.openrs.dash.service.DriveRecorder, nowMs: () -> Long = System::currentTimeMillis,
+): Pair<android.location.Location, Long>? {
+    val askedAt = nowMs()
+    val loc = recorder.getLastKnownLocation() ?: return null
+    return loc to askedAt
+}
+
+/**
+ * The position TRIP's live map draws its dot at (#311, owner's option a). While recording: only the drive's own fix,
+ * so no dot until its first one. Otherwise: the one-shot idle fetch, but only if TRIP fetched it ([idleFetchedAtMs],
+ * app wall clock) after the last drive started; a fetch from before that drive is not where the car is. STOP clears
+ * the drive's position, so with TRIP left open there is no dot after STOP until TRIP is opened idle again.
+ */
+internal fun tripDot(state: DriveState, idle: android.location.Location?, idleFetchedAtMs: Long): android.location.Location? =
+    if (state.isRecording) state.currentLocation
+    else idle?.takeIf { idleFetchedAtMs >= state.startTime }
