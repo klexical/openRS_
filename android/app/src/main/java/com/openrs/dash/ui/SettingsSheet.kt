@@ -1657,7 +1657,7 @@ private fun AppUpdatesSection(
         // ── Channel picker ──────────────────────────────────────────────
         SettingsRow(
             label = "Update channel",
-            help = if (updateChannel == "beta") "Includes pre-release (RC) builds from GitHub"
+            help = if (updateChannel == "beta") "Includes nightly and pre-release builds from GitHub"
                    else "Only stable releases from GitHub",
         ) {
             SettingsPicker(
