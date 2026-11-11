@@ -122,4 +122,36 @@ class AutoRecordTest {
         assertTrue(h.waitUntil { rec.phase() == DrivePhase.RECORDING && rec.id() != old })
         assertNotEquals(old, rec.id())
     }
+
+    // ── the saved end of a drive closed by the 15-minute rule (DESIGN-SUMMARY "Connection lost") ─────────────────────
+
+    @Test fun `a drive closed by the 15-minute rule is saved with its end at the moment of the loss`() {
+        val rec = with(h) { recorder(autoRecord = true).recording() }
+        val old = rec.id()
+        h.now += 120_000L
+        val lostAt = h.now
+        h.now += 30_000L                                               // the event arrives after the attempts
+        rec.onConnectionLost(atMs = lostAt)
+        h.now += window + 60_000L
+        rec.connectedEngineRunning()
+        assertTrue(h.waitUntil { (h.dao.getDrive(old)?.endTime ?: 0L) > 0L })
+        assertEquals(lostAt, h.dao.getDrive(old)!!.endTime)
+    }
+
+    @Test fun `a drive closed by the 15-minute rule never ends before its last stored point`() {
+        val rec = with(h) { recorder(autoRecord = true).recording() }
+        val old = rec.id()
+        assertTrue(h.waitUntil { h.gps.current != null })
+        h.now += 60_000L
+        val pointAt = h.now
+        h.gps.current!!.trySend(android.location.Location("test").apply {
+            latitude = 51.5; longitude = -0.1; speed = 10f; time = pointAt
+        })
+        assertTrue("a point stored", h.waitUntil { rec.driveState.value.totalPointCount == 1 })
+        rec.onConnectionLost(atMs = pointAt - 5_000L)                 // a loss moment before that point
+        h.now += window + 60_000L
+        rec.connectedEngineRunning()
+        assertTrue(h.waitUntil { (h.dao.getDrive(old)?.endTime ?: 0L) > 0L })
+        assertEquals(pointAt, h.dao.getDrive(old)!!.endTime)
+    }
 }

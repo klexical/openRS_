@@ -187,6 +187,8 @@ class DriveRecorder(
         @Volatile var driveId = 0L
         /** When the connection loss that began the current link pause happened (#316); 0 when not link-paused. */
         @Volatile var linkLostAtMs = 0L
+        /** #316: the time of the last point this drive recorded (0 = none); a drive closed at its loss never ends before it. */
+        @Volatile var lastPointMs = 0L
     }
 
     /** The drive being recorded (or the last one); see [DriveRun]. */
@@ -453,7 +455,9 @@ class DriveRecorder(
             AutoRecordPolicy.Action.KEEP -> Unit
             AutoRecordPolicy.Action.RESUME -> resumeLocked()
             AutoRecordPolicy.Action.FINALIZE_AND_START -> {
-                stopDrive(clock())
+                // Saved with its end at the moment of the loss, never before its last stored point (DESIGN-SUMMARY,
+                // Connection lost): the retry time and the pause are not part of the drive
+                stopDrive(maxOf(run.linkLostAtMs, run.lastPointMs))
                 if (autoRecord) startDrive(sessionId)
             }
             AutoRecordPolicy.Action.START -> startDrive(sessionId)
@@ -893,6 +897,7 @@ class DriveRecorder(
                     )
                 }
                 run.prevPoint = point
+                run.lastPointMs = point.timestamp
 
                 // Flush to Room when the buffer is full — last, so a STOP cancellation delivered when the insert
                 // returns (flushBuffer rethrows it) can't cut this point's state update short
