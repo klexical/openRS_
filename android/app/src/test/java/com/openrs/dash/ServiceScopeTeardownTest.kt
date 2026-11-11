@@ -87,10 +87,8 @@ class ServiceScopeTeardownTest {
     @Test fun `destroyAll returns only after a collector body waiting for the link lock has run`() {
         val app = ApplicationProvider.getApplicationContext<OpenRSDashApp>()
         val main = Thread.currentThread()
-        val field = OpenRSDashApp::class.java.getDeclaredField("driveRecorder\$delegate").apply { isAccessible = true }
-        @Suppress("UNCHECKED_CAST")
-        real = field.get(app) as Lazy<DriveRecorder>
-        field.set(app, GatedRecorder(real, main))
+        real = lazy { app.driveRecorder }
+        val gated = GatedRecorder(real, main)
 
         var decisive = 0
         var round = 0
@@ -98,6 +96,7 @@ class ServiceScopeTeardownTest {
             round++
             AppVisibility.visible.value = false
             roundVoid = false
+            CanDataService.recorderProvider = { gated.value }             // #316 seam 5; destroyAll puts the app's back
             val service = TestServices.create()
             // onCreate's collectors have run their first emission and are suspended
             assertTrue("collectors settled", waitUntil(5_000) { (1..5).all { collectorThreads("").isEmpty().also { Thread.sleep(1) } } })

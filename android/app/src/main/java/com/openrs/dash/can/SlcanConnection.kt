@@ -48,6 +48,11 @@ class SlcanConnection(
     private val debugSink: (String) -> Unit = { OpenRSDashApp.instance.pushDebugLine(it) },
     /** Wall clock for NRC attribution / re-probe timing — tests pass the virtual clock. */
     private val clock: () -> Long = System::currentTimeMillis,
+    /**
+     * #316: an established connection dropped and the normal reconnect attempts have failed. Called once per dropped
+     * connection, with the moment the drop was found ([clock]); never for attempts with no connection before them.
+     */
+    private val onLinkLost: (dropAtMs: Long) -> Unit = {},
     /** Where firmware capability is published (#220) — the app's flags by default; tests capture it. */
     private val firmwareSink: (FirmwareStatus) -> Unit = { st ->
         OpenRSDashApp.instanceOrNull?.let { app ->
@@ -214,6 +219,17 @@ class SlcanConnection(
 
     // ── Connection ────────────────────────────────────────────────────────────
 
+    /**
+     * #316: the moment an established connection dropped whose loss is not reported yet (the reconnect attempts are
+     * still under way), handed over once: the service's closure reports that one loss with this time instead of its
+     * own. Null when there is none.
+     */
+    fun takeUnreportedDrop(): Long? = synchronized(dropLock) { unreportedDropAtMs.also { unreportedDropAtMs = null } }
+
+    private val dropLock = Any()
+    /** Guarded by [dropLock]: set when an established connection ends, cleared by a new connection or a hand-over. */
+    private var unreportedDropAtMs: Long? = null
+
     fun connectHybrid(
         onObdUpdate: (VehicleState) -> Unit,
         getCurrentState: () -> VehicleState
@@ -308,6 +324,7 @@ class SlcanConnection(
                 everConnected = true
                 connectedAtMs = System.currentTimeMillis()
                 failedAttempts = 0
+                synchronized(dropLock) { unreportedDropAtMs = null }   // the connection is back: no loss to report (#316)
                 firmwareVersion = transport.stockFirmwareLabel
                 val bcmIsoTp = IsoTpBuffer { DiagnosticLogger.countIsoTpRefused() }
                 val nrcTracker = NrcTracker()
@@ -719,6 +736,11 @@ class SlcanConnection(
             }
 
             if (!currentCoroutineContext().isActive) break
+
+            // #316: an established connection ended (the read ended, or the connected attempt failed): hold the moment the
+            // app found it dropped. It is reported once the normal attempts have failed, or handed to a closure first.
+            if (connectionSucceeded) synchronized(dropLock) { unreportedDropAtMs = clock() }
+            if (failedAttempts >= maxRetries) takeUnreportedDrop()?.let(onLinkLost)
 
             val retryingRecording = failedAttempts >= maxRetries && keepRetrying()
             if (failedAttempts >= maxRetries && !retryingRecording) {

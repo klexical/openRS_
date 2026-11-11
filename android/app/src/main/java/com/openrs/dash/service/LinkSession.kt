@@ -42,6 +42,10 @@ internal class LinkSession(
         fun resumeDrive()
         fun stopDrive()
         fun startDrive(sessionId: Long)
+        /** #316: the connection was lost at [atMs] (the drop's moment, or the closure's). */
+        fun onConnectionLost(atMs: Long) {}
+        /** #316: the connection is up again. */
+        fun onConnectionBack() {}
     }
 
     private var autoStarted = false
@@ -78,6 +82,15 @@ internal class LinkSession(
             }
         }
     }
+
+    /**
+     * #316: this job's connection was lost at [atMs] — an established connection dropped and the reconnect attempts
+     * failed. Reaches the recorder only while this job owns the link.
+     */
+    fun onConnectionLost(atMs: Long) { link.deliver(gen) { recorder.onConnectionLost(atMs) } }
+
+    /** #316: this job's connection is up (CONNECTED published). Reaches the recorder only while this job owns the link. */
+    fun onConnectionBack() { link.deliver(gen) { recorder.onConnectionBack() } }
 
     /** Applies one frame (caller holds ownership); returns a finished perf run to persist, if any. */
     private fun processCanFrame(canId: Int, data: ByteArray, fps: Double): PerfRunEntity? {

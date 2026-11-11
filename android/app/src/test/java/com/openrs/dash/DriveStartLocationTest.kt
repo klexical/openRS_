@@ -241,10 +241,9 @@ class DriveStartLocationTest {
 
     // ── Session knock log (the real CanDataService merge) ────────────────────────────────────────────────────────
 
-    /** The service reads `OpenRSDashApp.instance.driveRecorder` (a `by lazy`); point it at [rec]. */
+    /** The service takes its recorder from the provider (#316 seam 5); hand it [rec] before the service is created. */
     private fun install() {
-        val f = OpenRSDashApp::class.java.getDeclaredField("driveRecorder\$delegate").apply { isAccessible = true }
-        f.set(OpenRSDashApp.instance, lazyOf(rec))
+        CanDataService.recorderProvider = { rec }
     }
 
     /** One OBD reply with a fresh 2.5° KR on cylinder 1, through the service's own merge (the knock log's only feed). */

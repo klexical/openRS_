@@ -65,8 +65,8 @@ class RecorderHarness {
         DiagnosticLogger.sessionStart("test", 0, prefs = null)
     }
 
-    fun recorder(hold: Hold? = null, autoRecord: Boolean = false): DriveRecorder =
-        DriveRecorder(app, vs, WeatherRepository(""), db, heldDao(hold), { _, _ -> null }, gps, { }, clock = { now })
+    fun recorder(hold: Hold? = null, autoRecord: Boolean = false, clock: () -> Long = { now }): DriveRecorder =
+        DriveRecorder(app, vs, WeatherRepository(""), db, heldDao(hold), { _, _ -> null }, gps, { }, clock = clock)
             .also { recorders += it; it.onAutoRecordSwitched(autoRecord) }
 
     private fun heldDao(hold: Hold?): DriveDao {

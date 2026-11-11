@@ -94,7 +94,7 @@ class ServiceFlushDemoteTest {
         db.openHelper.writableDatabase      // open before any recorder (see ObserverNoteEvidenceTest)
         gated = GatedDao(db.driveDao())
         rec = DriveRecorder(app, appVs, WeatherRepository(""), db, gated.dao, { _, _ -> null }, gps, { })
-        OpenRSDashApp::class.java.getDeclaredField("driveRecorder\$delegate").apply { isAccessible = true }.set(OpenRSDashApp.instance, lazyOf(rec))
+        CanDataService.recorderProvider = { rec }                      // #316 seam 5
         service = TestServices.create()
         fg = ForegroundController(host)
         CanDataService::class.java.getDeclaredField("foreground").apply { isAccessible = true }.set(service, fg)
