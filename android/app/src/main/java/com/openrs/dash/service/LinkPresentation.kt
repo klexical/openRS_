@@ -2,6 +2,8 @@ package com.openrs.dash.service
 
 import com.openrs.dash.can.AdapterState
 import com.openrs.dash.can.LinkPhase
+import com.openrs.dash.data.DriveLabel
+import com.openrs.dash.data.DriveState
 
 /**
  * Pure mapping from the adapter connection state to what [CanDataService] publishes (#212): the link phase, the
@@ -20,22 +22,21 @@ internal object LinkPresentation {
     }
 
     /**
-     * Foreground notification text — only phases that keep the service in the foreground have one. Re-published on
-     * recording start / pause / resume / stop as well as on phase changes. While the link is down a recording takes no
-     * samples, so it reads "recording paused" whatever its own pause state.
+     * Foreground notification text — only phases that keep the service in the foreground have one. Re-published on every
+     * change of the drive's phase or pause reason as well as on phase changes. With a drive, it carries the drive's label
+     * (#316, [DriveLabel], the same as TRIP and the header pill), its connection read from [phase]: a recording drive with
+     * the link down reads REC (a recording gap), a link pause reads PAUSED · NO LINK or PAUSED · ENGINE OFF.
      */
-    fun notificationText(phase: LinkPhase, bluetooth: Boolean, recording: Boolean, paused: Boolean = false): String? {
+    fun notificationText(phase: LinkPhase, bluetooth: Boolean, drive: DriveState = DriveState()): String? {
         val target = if (bluetooth) "via Bluetooth" else "to vehicle"
-        return when (phase) {
-            LinkPhase.CONNECTING   -> if (recording) "Connecting $target… · recording paused" else "Connecting $target…"
-            LinkPhase.CONNECTED    -> when {
-                !recording -> "Connected $target"
-                paused     -> "Connected $target · recording paused"
-                else       -> "Connected $target · recording"
-            }
-            LinkPhase.RECONNECTING -> if (recording) "Link lost — reconnecting · recording paused" else "Link lost — reconnecting…"
-            LinkPhase.OFF, LinkPhase.FAILED -> null
+        val label = DriveLabel.of(drive, connected = phase == LinkPhase.CONNECTED)?.text
+        val link = when (phase) {
+            LinkPhase.CONNECTING   -> "Connecting $target…"
+            LinkPhase.CONNECTED    -> "Connected $target"
+            LinkPhase.RECONNECTING -> if (label == null) "Link lost — reconnecting…" else "Link lost — reconnecting"
+            LinkPhase.OFF, LinkPhase.FAILED -> return null
         }
+        return if (label == null) link else "$link · $label"
     }
 
     /**

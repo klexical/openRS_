@@ -241,7 +241,9 @@ class CanDataService : Service() {
         // Recording start / pause / resume / stop changes the notification text and whether Cancel is offered (#212)
         scope.launch {
             recorder().driveState
-                .map { it.isRecording to it.isPaused }
+                // #316: the phase and the pause reason (the label): a link pause turned into a hand pause by the auto-record
+                // switch changes neither "recording" nor "paused", and its label must still be re-published
+                .map { it.phase to it.pauseReason }
                 .distinctUntilChanged()
                 .collect { link.transition { publishNotification(link.phase); retypeForeground() } }
         }
@@ -461,7 +463,7 @@ class CanDataService : Service() {
     private fun goForeground(location: Boolean = false) {
         val ds = recorder().driveState.value
         val phase = LinkPresentation.foregroundPhase(link.phase)
-        val text = LinkPresentation.notificationText(phase, isBluetooth(), ds.isRecording, ds.isPaused) ?: "Connecting to vehicle…"
+        val text = LinkPresentation.notificationText(phase, isBluetooth(), ds) ?: "Connecting to vehicle…"
         val notification = buildNotification(text, offerCancel = LinkPresentation.offersCancel(phase, ds.isRecording))
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -917,7 +919,7 @@ class CanDataService : Service() {
     /** Notification text + Cancel for [phase] and the current recording state; no-op once released (not foreground). */
     private fun publishNotification(phase: LinkPhase) {
         val ds = recorder().driveState.value
-        LinkPresentation.notificationText(phase, isBluetooth(), ds.isRecording, ds.isPaused)?.let {
+        LinkPresentation.notificationText(phase, isBluetooth(), ds)?.let {
             updateNotification(it, LinkPresentation.offersCancel(phase, ds.isRecording))
         }
     }

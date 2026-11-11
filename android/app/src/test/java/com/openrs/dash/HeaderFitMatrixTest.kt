@@ -1,6 +1,7 @@
 package com.openrs.dash
 
 import com.openrs.dash.data.DrivePhase
+import com.openrs.dash.data.PauseReason
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color as AColor
@@ -73,10 +74,12 @@ class HeaderFitMatrixTest {
         (f.get(com.openrs.dash.update.UpdateManager) as kotlinx.coroutines.flow.MutableStateFlow<com.openrs.dash.update.UpdateState>).value = s
     }
 
-    private enum class Rec { ACTIVE, PAUSED, OFF }
+    /** #316: LINK_PAUSED is a link pause (PAUSED · ENGINE OFF with the link up, PAUSED · NO LINK with it down). */
+    private enum class Rec { ACTIVE, PAUSED, LINK_PAUSED, OFF }
 
     /** [cogTaps]: how many of the two taps (width − 22 dp, width − 42 dp, on line 1) opened Settings. */
-    private class Shot(val bmp: Bitmap, val d: Float, val heightDp: Float, val tags: Map<String, Rect>, val cogTaps: Int)
+    private class Shot(val bmp: Bitmap, val d: Float, val heightDp: Float, val tags: Map<String, Rect>, val cogTaps: Int,
+                       val recText: String? = null)
 
     private fun render(esc: EscStatus, rec: Rec, fontScale: Float, theme: ThemeMode, link: LinkUi = LinkUi.LIVE,
                        mode: DriveMode = DriveMode.NORMAL, updating: Boolean = false): Shot {
@@ -89,7 +92,8 @@ class HeaderFitMatrixTest {
         var settings = 0
         val vs = VehicleState(isConnected = link == LinkUi.LIVE, isReconnecting = link == LinkUi.RECONNECTING,
             driveMode = mode, escStatus = esc)
-        val drive = DriveState(phase = DrivePhase.of(rec != Rec.OFF, rec == Rec.PAUSED),
+        val drive = DriveState(phase = DrivePhase.of(rec != Rec.OFF, rec == Rec.PAUSED || rec == Rec.LINK_PAUSED),
+            pauseReason = when (rec) { Rec.PAUSED -> PauseReason.HAND; Rec.LINK_PAUSED -> PauseReason.LINK; else -> null },
             startTime = System.currentTimeMillis() - (2 * 3_600_000L + 14 * 60_000L), cumulativeDistanceKm = 187.3)
         activity.setContent {
             val base = LocalDensity.current
@@ -112,9 +116,12 @@ class HeaderFitMatrixTest {
         val bmp = Bitmap.createBitmap(full, 0, loc[1], full.width, h)
         full.recycle()
         val tags = HashMap<String, Rect>()
+        var recText: String? = null
         fun walk(n: SemanticsNode) {
             if (!n.layoutInfo.isPlaced) return   // what is on screen: SubcomposeLayout keeps measured-only copies composed
             n.config.getOrNull(SemanticsProperties.TestTag)?.let { tags[it] = n.boundsInRoot }
+            if (n.config.getOrNull(SemanticsProperties.TestTag) == "headerRecLabel")
+                recText = n.config.getOrNull(SemanticsProperties.Text)?.joinToString("") { it.text }
             n.children.forEach { walk(it) }
         }
         walk((compose.getChildAt(0) as ViewRootForTest).semanticsOwner.unmergedRootSemanticsNode)
@@ -130,7 +137,7 @@ class HeaderFitMatrixTest {
         controller.pause().stop().destroy()
         // ... and drain the looper: work left queued at exit stops later Compose tests in this JVM from recomposing (QA F3)
         repeat(8) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16)) }
-        return Shot(bmp, d, h / d, tags, settings)
+        return Shot(bmp, d, h / d, tags, settings, recText)
     }
 
     private fun hue(p: Int): FloatArray = FloatArray(3).also { AColor.colorToHSV(p, it) }
@@ -142,10 +149,13 @@ class HeaderFitMatrixTest {
         for (theme in listOf(ThemeMode.NIGHT, ThemeMode.DAY)) for ((fs, two) in expectTwoLines) {
             val heights = HashSet<Float>()
             for (esc in listOf(EscStatus.PARTIAL, EscStatus.OFF, EscStatus.ON)) for (rec in Rec.values()) {
+                // #316: the link pause only beside the widest ESC pill (Sport) — every render is a new activity, and the
+                // added cases at every ESC ran the full suite's test JVM out of memory
+                if (rec == Rec.LINK_PAUSED && esc != EscStatus.PARTIAL) continue
                 val case = "$widthDp dp $theme font $fs $esc $rec"
                 val s = render(esc, rec, fs, theme)
                 heights += s.heightDp
-                println("#283M [$case] height=${s.heightDp} tags=${s.tags.mapValues { (_, r) ->
+                println("#283M [$case] height=${s.heightDp} rec=\"${s.recText}\" tags=${s.tags.mapValues { (_, r) ->
                     "%.0f..%.0f×%.0f..%.0f".format(r.left / s.d, r.right / s.d, r.top / s.d, r.bottom / s.d) }}")
                 assertEquals("[$case] header lines", if (two) 88f else 44f, s.heightDp, 0.5f)
                 val pills = s.tags["headerPills"]; assertNotNull("[$case] pills", pills); pills!!
@@ -169,6 +179,11 @@ class HeaderFitMatrixTest {
                         assertTrue("[$case] paused dot not drawn (centre = surface, diff $diff)", diff >= 30)
                     }
                 }
+                // #316: a pause shows a whole label or none (dot only) — its own label, or plain PAUSED where it doesn't fit
+                if (rec == Rec.PAUSED || rec == Rec.LINK_PAUSED) {
+                    val full = if (rec == Rec.PAUSED) "PAUSED" else "PAUSED · ENGINE OFF"
+                    assertTrue("[$case] REC label cut or wrong: ${s.recText}", s.recText == null || s.recText in setOf(full, "PAUSED"))
+                }
                 assertEquals("[$case] Settings cog 44 dp target", 2, s.cogTaps)
             }
             assertEquals("$widthDp dp $theme font $fs: one height for every ESC / REC state", 1, heights.size)
@@ -191,7 +206,8 @@ class HeaderFitMatrixTest {
         val links = listOf(LinkUi.LIVE to false, LinkUi.RECONNECTING to false, LinkUi.CONNECTING to false,
             LinkUi.OFFLINE to false, LinkUi.LIVE to true, LinkUi.OFFLINE to true)          // (link, update downloading)
         for ((fs, two) in expectTwoLines) for ((link, upd) in links)
-            for (mode in listOf(DriveMode.NORMAL, DriveMode.CUSTOM, DriveMode.TRACK)) for (rec in listOf(Rec.ACTIVE, Rec.OFF)) {
+            for (mode in listOf(DriveMode.NORMAL, DriveMode.CUSTOM, DriveMode.TRACK)) for (rec in listOf(Rec.ACTIVE, Rec.LINK_PAUSED, Rec.OFF)) {
+                if (rec == Rec.LINK_PAUSED && mode != DriveMode.NORMAL) continue   // #316: one mode is enough (memory, as above)
                 val case = "$widthDp dp font $fs ${link.pill}${if (upd) "+UPD" else ""} $mode $rec"
                 val s = render(EscStatus.PARTIAL, rec, fs, ThemeMode.NIGHT, link, mode, upd)
                 assertEquals("[$case] header lines", if (two) 88f else 44f, s.heightDp, 0.5f)

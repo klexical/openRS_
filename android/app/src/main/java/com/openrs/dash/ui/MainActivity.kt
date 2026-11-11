@@ -901,8 +901,9 @@ class MainActivity : ComponentActivity() {
                 val time = if (hh > 0) "%d:%02d:%02d".format(hh, mm % 60, ss) else "%02d:%02d".format(mm, ss)
                 // The longest label that fits the width HeaderRow leaves (#224): whole parts are dropped (distance,
                 // then time) — a value is never cut mid-way ("REC 2:1…" read as another time)
+                // #316: a paused drive reads its pause label (DriveLabel), or plain PAUSED where the full label doesn't fit
                 val candidates = when {
-                    paused  -> listOf("PAUSED")
+                    paused  -> listOfNotNull(com.openrs.dash.data.DriveLabel.of(driveState, vs.isConnected)?.text, "PAUSED").distinct()
                     compact -> listOf("REC $time", "REC")
                     else    -> listOf("REC $time · $distStr", "REC $time", "REC")
                 }
@@ -917,7 +918,8 @@ class MainActivity : ComponentActivity() {
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Box(Modifier.testTag("headerRecDot").size(7.dp).clip(CircleShape).background(dotColor.copy(alpha = recAlpha)))
-                        Text(label, style = recStyle, color = textColor(dotColor), maxLines = 1, softWrap = false)
+                        Text(label, style = recStyle, color = textColor(dotColor), maxLines = 1, softWrap = false,
+                            modifier = Modifier.testTag("headerRecLabel"))
                     } else if (constraints.maxWidth >= with(density) { 7.dp.roundToPx() }) {
                         Box(Modifier.testTag("headerRecDot").size(7.dp).clip(CircleShape).background(dotColor.copy(alpha = recAlpha)))
                     }

@@ -179,7 +179,9 @@ import kotlin.math.roundToInt
                 val h = elapsed / 3_600_000
                 val m = (elapsed % 3_600_000) / 60_000
                 val s = (elapsed % 60_000) / 1_000
-                val timeStr = if (driveState.isPaused) "PAUSED" else "%02d:%02d:%02d".format(h, m, s)
+                // #316: a paused drive reads its pause label (DriveLabel: PAUSED, PAUSED · NO LINK, PAUSED · ENGINE OFF)
+                val timeStr = if (driveState.isPaused) com.openrs.dash.data.DriveLabel.of(driveState, vs.isConnected)?.text ?: "PAUSED"
+                              else "%02d:%02d:%02d".format(h, m, s)
                 val distKm = driveState.cumulativeDistanceKm
                 val distStr = if (p.speedUnit == "MPH") "${"%.1f".format(distKm * UnitConversions.KM_TO_MI)} mi"
                               else "${"%.1f".format(distKm)} km"

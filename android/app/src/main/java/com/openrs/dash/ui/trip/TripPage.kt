@@ -586,8 +586,9 @@ private fun TripPageContent(
                         .padding(horizontal = 10.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Paused is a state, not a warning — ink (was amber).
-                    MonoText("\u2759\u2759 PAUSED", 10.sp, Frost, FontWeight.Bold)
+                    // Paused is a state, not a warning — ink (was amber). #316: the label says which pause (DriveLabel)
+                    val pausedLabel = com.openrs.dash.data.DriveLabel.of(driveState, vehicleState.isConnected)?.text ?: "PAUSED"
+                    MonoText("\u2759\u2759 $pausedLabel", 10.sp, Frost, FontWeight.Bold)
                 }
             }
 
@@ -728,7 +729,10 @@ private fun TripPageContent(
                     ))
                 },
                 // Preview: the buttons only step through the sample states — the recorder is never called.
-                onStart = { if (preview != null) TripPreview.set(TripPreview.Mode.RECORDING) else recorder.startDrive(sessionId = 0) },
+                onStart = {
+                    if (preview != null) { TripPreview.set(TripPreview.Mode.RECORDING); com.openrs.dash.data.CommandResult.Done }
+                    else recorder.startDrive(sessionId = 0)
+                },
                 onPause = { if (preview != null) TripPreview.set(TripPreview.Mode.PAUSED) else recorder.pauseDrive() },
                 onResume = { if (preview != null) TripPreview.set(TripPreview.Mode.RECORDING) else recorder.resumeDrive() },
                 onStop = {
@@ -975,7 +979,8 @@ private fun LiveHud(
     prefs: UserPrefs,
     hasLocationPerm: Boolean,
     onRequestPermission: () -> Unit,
-    onStart: () -> Unit,
+    /** The recorder's START; a refusal shows its reason on the button for [START_CUE_MS] (#316). */
+    onStart: () -> com.openrs.dash.data.CommandResult,
     onPause: () -> Unit,
     onResume: () -> Unit,
     onStop: () -> Unit,
@@ -1115,9 +1120,23 @@ private fun LiveHud(
                     Modifier.weight(1f).height(48.dp).instrumentSurface(),
                     contentAlignment = Alignment.Center
                 ) { InstrumentLabel("DEMO — NOT RECORDED", color = Dim) }
+            } else if (driveState.isStarting) {
+                // #316: a start under way — the button reads STARTING and ignores taps; STOP appears once the drive records
+                RecButton("STARTING", Mid, filled = false, Modifier.weight(1f)) { }
             } else if (!driveState.isRecording) {
-                RecButton("START", accent, filled = true, Modifier.weight(1f)) {
-                    if (!hasLocationPerm) onRequestPermission() else onStart()
+                // A refused START reads its reason on the button for START_CUE_MS (#316; the S/F chip's cue, #311)
+                val startCue = remember { StartCue() }
+                var cueText by remember { mutableStateOf<String?>(null) }
+                LaunchedEffect(cueText) {
+                    if (cueText != null) { delay(startCue.remainingMs(System.currentTimeMillis())); cueText = null }
+                }
+                RecButton(cueText ?: "START", if (cueText != null) Mid else accent, filled = cueText == null, Modifier.weight(1f)) {
+                    if (!hasLocationPerm) onRequestPermission()
+                    else {
+                        val now = System.currentTimeMillis()
+                        onStartTapped(onStart, startCue, now)
+                        startCue.text(now)?.let { cueText = it }
+                    }
                 }
             } else if (driveState.isPaused) {
                 RecButton("RESUME", accent, filled = true, Modifier.weight(1f), onResume)
@@ -1703,6 +1722,36 @@ internal class SfCue(private val windowMs: Long = SF_CUE_MS) {
         return true
     }
 }
+
+/** How long a refused START shows its reason on the START button (#316, SPEC story 9), as the S/F chip's cue. */
+internal const val START_CUE_MS = SF_CUE_MS
+
+/** What the START button reads for [r] while the refusal cue shows (#316). */
+internal fun startRefusalText(r: com.openrs.dash.data.Refusal): String = when (r) {
+    com.openrs.dash.data.Refusal.DEMO       -> "DEMO — NOT RECORDED"
+    com.openrs.dash.data.Refusal.DRIVE_OPEN -> "DRIVE ALREADY OPEN"
+    com.openrs.dash.data.Refusal.STARTING   -> "ALREADY STARTING"
+    else                                    -> "NOT STARTED"
+}
+
+/**
+ * The START button's refusal cue (#316): the reason of a refused START for [START_CUE_MS]. A plain class, no Compose
+ * state (see android-general.md): TRIP mirrors it in its own state. A refusal inside the window neither restarts nor
+ * extends it, and the first reason stays.
+ */
+internal class StartCue(windowMs: Long = START_CUE_MS) {
+    private val timing = SfCue(windowMs)
+    private var reason: com.openrs.dash.data.Refusal? = null
+    fun remainingMs(nowMs: Long): Long = timing.remainingMs(nowMs)
+    /** The button's text while the cue shows, else null (the button reads START). */
+    fun text(nowMs: Long): String? = reason?.takeIf { timing.isShowing(nowMs) }?.let(::startRefusalText)
+    fun onRefused(r: com.openrs.dash.data.Refusal, nowMs: Long) { if (timing.onRefused(nowMs)) reason = r }
+}
+
+/** TRIP's START tap at [nowMs]: runs [start] (the recorder's START), and a refusal shows its reason on the button. */
+internal fun onStartTapped(
+    start: () -> com.openrs.dash.data.CommandResult, cue: StartCue, nowMs: Long,
+): com.openrs.dash.data.CommandResult = start().also { if (it is com.openrs.dash.data.CommandResult.Refused) cue.onRefused(it.reason, nowMs) }
 
 /**
  * TRIP's SET S/F tap at [nowMs]: the line at the drive's fresh fix ([DriveRecorder.setStartFinishHere]), or, when there

@@ -111,9 +111,8 @@ class ForegroundNotificationTextTest {
     private fun text(n: Notification = shown()) = n.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
     private fun actions(n: Notification = shown()) = n.actions.orEmpty().map { it.title.toString() }
 
-    private fun expected(phase: LinkPhase, bluetooth: Boolean) = rec.driveState.value.let {
-        LinkPresentation.notificationText(phase, bluetooth = bluetooth, recording = it.isRecording, paused = it.isPaused)
-    }
+    private fun expected(phase: LinkPhase, bluetooth: Boolean) =
+        LinkPresentation.notificationText(phase, bluetooth = bluetooth, drive = rec.driveState.value)
 
     private fun assertShows(step: String, phase: LinkPhase, bluetooth: Boolean = false) {
         val n = shown()
@@ -159,6 +158,21 @@ class ForegroundNotificationTextTest {
         assertTrue("location dropped on stop (type $type)", waitUntil { type == CD })
         assertShows("after STOP", LinkPhase.CONNECTED)
         assertTrue("still foreground for the connection", fg.isForeground)
+    }
+
+    /**
+     * #316: the notification carries the drive's label and is re-published when only the pause's reason changes — the
+     * auto-record switch turning a link pause into a hand pause changes neither "recording" nor "paused".
+     */
+    @Test fun `a link pause turned into a hand pause re-publishes the label`() {
+        promote(); publish(LinkPhase.CONNECTING); publish(LinkPhase.CONNECTED)
+        startRecording()
+        rec.onAutoRecordSwitched(true)
+        rec.onConnectionLost(atMs = System.currentTimeMillis())
+        assertTrue("link pause: ${text()}", waitUntil { text() == "Connected to vehicle · PAUSED · ENGINE OFF" })
+        rec.onAutoRecordSwitched(false)
+        assertTrue("hand pause: ${text()}", waitUntil { text() == "Connected to vehicle · PAUSED" })
+        assertShows("after the switch", LinkPhase.CONNECTED)
     }
 
     @Test fun `Bluetooth - start, pause, resume and stop a recording keep "via Bluetooth" (QA F1)`() {
