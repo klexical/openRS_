@@ -185,6 +185,8 @@ class DriveRecorder(
         val inFlight = MutableStateFlow(0)
         /** This drive's Room id, set once its row is inserted (0 until then; STOP may come before). */
         @Volatile var driveId = 0L
+        /** When the connection loss that began the current link pause happened (#316); 0 when not link-paused. */
+        @Volatile var linkLostAtMs = 0L
     }
 
     /** The drive being recorded (or the last one); see [DriveRun]. */
@@ -275,6 +277,7 @@ class DriveRecorder(
         val newRun = DriveRun(vs, clock())
         run = newRun
         _driveState.value = DriveState(phase = DrivePhase.STARTING)
+        pendingLossAtMs = 0L
 
         // One job per drive, assigned before it runs anything: a STOP or a second START during the insert sees it.
         val now = clock()
@@ -303,6 +306,7 @@ class DriveRecorder(
                         startTime = now
                     )
                 }
+                applyLossDuringStart(driveId)
                 runRecordingLoop(driveId, newRun)
             } finally {
                 // Only this drive's state: a drive started since (finalize + start) is recording (#236). Here, not in
@@ -361,16 +365,22 @@ class DriveRecorder(
     /** PAUSE (#316): refused unless a drive is recording (also during a start and when already paused). */
     @Synchronized fun pauseDrive(): CommandResult {
         if (_driveState.value.phase != DrivePhase.RECORDING) return refused("PAUSE", Refusal.NOT_RECORDING)
-        pausedAtMs = clock()
+        pauseLocked(PauseReason.HAND, clock())
+        return CommandResult.Done
+    }
+
+    /** Pauses the recording drive for [reason]; the buffered points are stored now. Call holding the lock. */
+    private fun pauseLocked(reason: PauseReason, atMs: Long) {
+        pausedAtMs = atMs
+        if (reason == PauseReason.LINK) run.linkLostAtMs = atMs
         _driveState.update {
-            if (it.phase == DrivePhase.RECORDING) it.copy(phase = DrivePhase.PAUSED, pauseReason = PauseReason.HAND) else it
+            if (it.phase == DrivePhase.RECORDING) it.copy(phase = DrivePhase.PAUSED, pauseReason = reason) else it
         }
         // Flush any buffered points immediately. flushBuffer() is suspend +
         // NonCancellable so it completes even if the scope is cancelled while
         // the pause is being handled.
         val r = run
         scope.launch { r.outsideLoopWrites.withLock { flushBuffer(r) } }
-        return CommandResult.Done
     }
 
     /**
@@ -398,17 +408,42 @@ class DriveRecorder(
     /** Auto-record, as last reported by [onAutoRecordSwitched] (the service reports it when it binds the recorder). */
     @Volatile private var autoRecord = false
 
+    /** Whether the connection is up, as last reported (lost / back). */
+    @Volatile private var linkUp = false
+    /** A loss reported while a start was under way (#316): acted on the moment the start completes. 0 = none. */
+    private var pendingLossAtMs = 0L
+
     /**
-     * The connection to the adapter was lost at [atMs] (closed by the app, or dropped and not recovered). A hand pause
-     * holds: a lost connection changes nothing.
+     * The connection to the adapter was lost at [atMs] (closed by the app, or dropped and not recovered). With auto-record
+     * on, a recording drive is link-paused from [atMs]; with it off it keeps recording (a recording gap). A paused drive
+     * is unchanged: a hand pause holds, a link pause keeps the moment of the loss that began it. During a start the loss
+     * is held and applied when the start completes.
      */
-    @Synchronized fun onConnectionLost(atMs: Long) {}
+    @Synchronized fun onConnectionLost(atMs: Long) {
+        linkUp = false
+        when (_driveState.value.phase) {
+            DrivePhase.STARTING -> if (pendingLossAtMs == 0L) pendingLossAtMs = atMs
+            DrivePhase.RECORDING -> if (autoRecord) pauseLocked(PauseReason.LINK, atMs)
+            else -> Unit
+        }
+    }
 
-    /** A connection to the adapter is established. */
-    @Synchronized fun onConnectionBack() {}
+    /** A connection to the adapter is established. A link pause waits for the engine as well. */
+    @Synchronized fun onConnectionBack() { linkUp = true }
 
-    /** The connection sees the engine running (RPM above the auto-record start threshold). */
-    @Synchronized fun onEngineRunning() {}
+    /** The connection sees the engine running (RPM above the auto-record start threshold): a link pause ends. */
+    @Synchronized fun onEngineRunning() {
+        val s = _driveState.value
+        if (linkUp && s.phase == DrivePhase.PAUSED && s.pauseReason == PauseReason.LINK) resumeLocked()
+    }
+
+    /** The start of [driveId] completed: a loss reported during it is applied now (auto-record on → link-paused). */
+    @Synchronized private fun applyLossDuringStart(driveId: Long) {
+        val at = pendingLossAtMs
+        pendingLossAtMs = 0L
+        val s = _driveState.value
+        if (at > 0L && autoRecord && s.driveId == driveId && s.phase == DrivePhase.RECORDING) pauseLocked(PauseReason.LINK, at)
+    }
 
     /** Auto-record was switched on or off. */
     @Synchronized fun onAutoRecordSwitched(on: Boolean) { autoRecord = on }
@@ -419,11 +454,17 @@ class DriveRecorder(
     /** RESUME (#316): refused unless a drive is paused. */
     @Synchronized fun resumeDrive(): CommandResult {
         if (_driveState.value.phase != DrivePhase.PAUSED) return refused("RESUME", Refusal.NOT_PAUSED)
+        resumeLocked()
+        return CommandResult.Done
+    }
+
+    /** Ends the pause, whatever its reason. Call holding the lock. */
+    private fun resumeLocked() {
         pausedAtMs = 0L
+        run.linkLostAtMs = 0L
         run.resumedAtMs = clock()   // N1 / Q1: the loop's next fix takes nothing decoded before this
         run.prevPoint = null  // Gap in polyline — next point won't connect to prev
         _driveState.update { if (it.phase == DrivePhase.PAUSED) it.copy(phase = DrivePhase.RECORDING, pauseReason = null) else it }
-        return CommandResult.Done
     }
 
     /**
