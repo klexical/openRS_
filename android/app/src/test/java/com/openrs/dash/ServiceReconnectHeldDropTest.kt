@@ -213,10 +213,11 @@ class ServiceReconnectHeldDropTest {
         dropped()
         svc.reconnect()
         assertTrue("premise: connected again", until { link.phase == LinkPhase.CONNECTED && adapter.accepted >= 2 })
-        pass(500L)
+        pass(2_000L)                                                       // a drop kept by mistake would read ≥ 2 s below
         assertEquals(DrivePhase.RECORDING, rec.driveState.value.phase)
         svc.stopConnection(LinkStopReason.USER_DISCONNECT)                 // a later closure: its own moment, not the drop's
         assertTrue(linkPaused)
-        assertTrue("paused from the closure: ${rec.pausedDurationMs()} ms", rec.pausedDurationMs() in 0L..400L)
+        // ≤ 1 s: the closure's synchronous teardown (endConnection) counts against it on a loaded CI machine (#313 / #314)
+        assertTrue("paused from the closure: ${rec.pausedDurationMs()} ms", rec.pausedDurationMs() in 0L..1_000L)
     }
 }
