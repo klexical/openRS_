@@ -294,7 +294,7 @@ private fun TripPageContent(
 
     // Idle location (one-shot centering when not recording)
     var idleLocation by remember { mutableStateOf<android.location.Location?>(null) }
-    var idleFetchedAtMs by remember { mutableStateOf(0L) }      // app wall clock when idleLocation was fetched
+    var idleFetchedAtMs by remember { mutableLongStateOf(0L) }      // app wall clock when idleLocation was fetched
 
     // One-shot location fetch when tab opens idle
     LaunchedEffect(hasLocationPerm) {
