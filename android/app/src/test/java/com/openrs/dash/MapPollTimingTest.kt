@@ -1,5 +1,6 @@
 package com.openrs.dash
 
+import com.openrs.dash.data.DrivePhase
 import com.openrs.dash.data.DriveState
 import com.openrs.dash.data.MapF40b
 import com.openrs.dash.diagnostics.DiagnosticLogger
@@ -42,7 +43,7 @@ class MapPollTimingTest {
     private fun midBatchFlip(after: DriveState) = runTest {
         lateinit var run: ReplayRun
         run = ReplayRun(this, ReplayFixture.load("at-rest-baseline.txt"), rpm = 3_000.0, mapPoll = {
-            val state = if (run.transport.writes.any(::isTip)) after else DriveState(isRecording = true)
+            val state = if (run.transport.writes.any(::isTip)) after else DriveState(phase = DrivePhase.of(true, false))
             MapF40b.pollActive(state)
         })
         advanceTimeBy(60_000L)
@@ -53,7 +54,7 @@ class MapPollTimingTest {
         assertEquals("F40B requests after the mid-batch flip (the batch had been built while recording)", 0, mapAfterFlip)
     }
 
-    @Test fun `a STOP mid-batch sends no further MAP request`() = midBatchFlip(DriveState(isRecording = false))
+    @Test fun `a STOP mid-batch sends no further MAP request`() = midBatchFlip(DriveState(phase = DrivePhase.of(false, false)))
 
-    @Test fun `a PAUSE mid-batch sends no further MAP request`() = midBatchFlip(DriveState(isRecording = true, isPaused = true))
+    @Test fun `a PAUSE mid-batch sends no further MAP request`() = midBatchFlip(DriveState(phase = DrivePhase.of(true, true)))
 }

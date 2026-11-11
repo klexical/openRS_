@@ -1,5 +1,6 @@
 package com.openrs.dash
 
+import com.openrs.dash.data.DrivePhase
 import android.Manifest
 import android.app.Application
 import android.location.Location
@@ -67,14 +68,14 @@ class MapRecordingPollTest {
     }
 
     @Test fun `the poll rule - recording yes, paused no, not recording no`() {
-        assertTrue(MapF40b.pollActive(DriveState(isRecording = true, isPaused = false)))
-        assertFalse("a paused drive stores no points", MapF40b.pollActive(DriveState(isRecording = true, isPaused = true)))
-        assertFalse(MapF40b.pollActive(DriveState(isRecording = false)))
+        assertTrue(MapF40b.pollActive(DriveState(phase = DrivePhase.of(true, false))))
+        assertFalse("a paused drive stores no points", MapF40b.pollActive(DriveState(phase = DrivePhase.of(true, true))))
+        assertFalse(MapF40b.pollActive(DriveState(phase = DrivePhase.of(false, false))))
     }
 
     @Test fun `a paused recording sends no MAP`() = runTest {
         val run = ReplayRun(this, ReplayFixture.load("at-rest-baseline.txt"), rpm = 3_000.0,
-            mapPoll = { MapF40b.pollActive(DriveState(isRecording = true, isPaused = true)) })
+            mapPoll = { MapF40b.pollActive(DriveState(phase = DrivePhase.of(true, true))) })
         advanceTimeBy(80_000L)
         val (tip, map) = counts(run.transport.writes)
         assertTrue(tip >= 15); assertEquals(0, map)

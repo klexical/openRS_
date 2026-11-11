@@ -1,5 +1,6 @@
 package com.openrs.dash
 
+import com.openrs.dash.data.DrivePhase
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -48,7 +49,7 @@ class TaskRemovalTest {
     private fun recording(recording: Boolean, paused: Boolean = false) {
         val f = recorder.javaClass.getDeclaredField("_driveState").apply { isAccessible = true }
         val flow = f.get(recorder) as MutableStateFlow<com.openrs.dash.data.DriveState>
-        flow.value = flow.value.copy(isRecording = recording, isPaused = paused)
+        flow.value = flow.value.copy(phase = DrivePhase.of(recording, paused))
     }
 
     /**

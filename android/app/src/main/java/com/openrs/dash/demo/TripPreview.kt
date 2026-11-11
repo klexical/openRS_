@@ -1,5 +1,6 @@
 package com.openrs.dash.demo
 
+import com.openrs.dash.data.DrivePhase
 import android.location.Location
 import com.openrs.dash.BuildConfig
 import com.openrs.dash.data.DriveEntity
@@ -225,7 +226,7 @@ object TripPreview {
         val pts = points(-100, count = 160, startTime = start, startFuelPct = 66.0, fuelUsedPct = 4.0)
         val last = pts.last()
         return DriveState(
-            isRecording = true, isPaused = paused, driveId = -100,
+            phase = DrivePhase.of(true, paused), driveId = -100,
             recentPoints = pts, totalPointCount = pts.size, startFuelPct = 66.0, startTime = start,
             currentLocation = Location("trip-preview").apply {
                 latitude = last.lat; longitude = last.lng; bearing = 72f; accuracy = 4f; altitude = 21.0

@@ -1,5 +1,6 @@
 package com.openrs.dash
 
+import com.openrs.dash.data.DrivePhase
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Looper
@@ -72,7 +73,7 @@ class HeaderRecMarkerTest {
         var settings = 0
         val vs = VehicleState(isConnected = true, driveMode = mode, escStatus = esc)
         // A long drive (2 h 14 min, 187 km): the longest REC label the header ever has to drop
-        val drive = DriveState(isRecording = recording, isPaused = paused,
+        val drive = DriveState(phase = DrivePhase.of(recording, paused),
             startTime = System.currentTimeMillis() - (2 * 3_600_000L + 14 * 60_000L), cumulativeDistanceKm = 187.3)
         activity.setContent {
             val base = LocalDensity.current

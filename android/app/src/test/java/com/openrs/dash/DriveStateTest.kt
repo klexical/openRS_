@@ -1,5 +1,6 @@
 package com.openrs.dash
 
+import com.openrs.dash.data.DrivePhase
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.DrivePointEntity
 import com.openrs.dash.data.DriveState
@@ -333,7 +334,7 @@ class DriveStateTest {
     // ═════════════════════════════════════════════════════════════════════════
 
     @Test fun `DriveState copy does not mutate original`() {
-        val original = DriveState(isRecording = true, peakRpm = 5000.0)
+        val original = DriveState(phase = DrivePhase.of(true, false), peakRpm = 5000.0)
         val modified = original.copy(peakRpm = 6500.0)
         assertEquals(5000.0, original.peakRpm, 0.01)
         assertEquals(6500.0, modified.peakRpm, 0.01)

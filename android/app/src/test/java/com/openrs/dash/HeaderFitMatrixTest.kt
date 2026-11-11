@@ -1,5 +1,6 @@
 package com.openrs.dash
 
+import com.openrs.dash.data.DrivePhase
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color as AColor
@@ -88,7 +89,7 @@ class HeaderFitMatrixTest {
         var settings = 0
         val vs = VehicleState(isConnected = link == LinkUi.LIVE, isReconnecting = link == LinkUi.RECONNECTING,
             driveMode = mode, escStatus = esc)
-        val drive = DriveState(isRecording = rec != Rec.OFF, isPaused = rec == Rec.PAUSED,
+        val drive = DriveState(phase = DrivePhase.of(rec != Rec.OFF, rec == Rec.PAUSED),
             startTime = System.currentTimeMillis() - (2 * 3_600_000L + 14 * 60_000L), cumulativeDistanceKm = 187.3)
         activity.setContent {
             val base = LocalDensity.current
