@@ -579,16 +579,19 @@ private fun TripPageContent(
 
             // Paused indicator
             if (driveState.isPaused) {
-                Row(
+                Column(
                     Modifier.align(Alignment.TopCenter).padding(top = 12.dp)
                         .clip(RoundedCornerShape(6.dp))
                         .background(Surf.copy(alpha = 0.85f))
                         .padding(horizontal = 10.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Paused is a state, not a warning — ink (was amber). #316: the label says which pause (DriveLabel)
-                    val pausedLabel = com.openrs.dash.data.DriveLabel.of(driveState, vehicleState.isConnected)?.text ?: "PAUSED"
-                    MonoText("\u2759\u2759 $pausedLabel", 10.sp, Frost, FontWeight.Bold)
+                    // Paused is a state, not a warning — ink (was amber). #316: the label says which pause (DriveLabel); a
+                    // reason goes on a second, smaller line in the same chip, so the chip stays as wide as plain PAUSED (D-B)
+                    val (first, reason) = com.openrs.dash.data.DriveLabel.of(driveState, vehicleState.isConnected)
+                        ?.let(::chipLines) ?: ("PAUSED" to null)
+                    MonoText("\u2759\u2759 $first", 10.sp, Frost, FontWeight.Bold)
+                    if (reason != null) MonoText(reason, 8.sp, Frost, FontWeight.Bold)
                 }
             }
 
@@ -1727,6 +1730,15 @@ internal class SfCue(private val windowMs: Long = SF_CUE_MS) {
         shownAtMs = nowMs
         return true
     }
+}
+
+/**
+ * TRIP's map chip text for [label] (#316 D-B): the first line and, for a pause with a reason, the reason on a second line
+ * in the same chip, so the chip is no wider than plain PAUSED. REC, STARTING and a hand pause are one line.
+ */
+internal fun chipLines(label: com.openrs.dash.data.DriveLabel): Pair<String, String?> {
+    val parts = label.text.split(" · ", limit = 2)
+    return parts[0] to parts.getOrNull(1)
 }
 
 /** How long a refused START shows its reason on the START button (#316, SPEC story 9), as the S/F chip's cue. */
