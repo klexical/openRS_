@@ -551,233 +551,233 @@ class DriveRecorder(
     // ── Internal recording loop ──────────────────────────────────────────────
 
     private suspend fun runRecordingLoop(driveId: Long, run: DriveRun) = withContext(Dispatchers.Default) {
-            try {
-                fetchInitialWeather()
-                var lastWeatherMs = System.currentTimeMillis()
-                // Gap diagnostics (#221): why points stopped — never fills them in
-                val gaps = RecordingGapMonitor().also { it.start(System.currentTimeMillis()) }
-                launch {
-                    while (isActive) {
-                        delay(RecordingGapMonitor.GAP_AFTER_MS)
-                        val st = _driveState.value
-                        if (!st.isRecording) continue
-                        gaps.tick(System.currentTimeMillis(), vehicleStateFlow.value.isConnected, st.isPaused)
-                            ?.let { DiagnosticLogger.event("REC_GAP", "drive $driveId: $it") }
-                    }
+        try {
+            fetchInitialWeather()
+            var lastWeatherMs = System.currentTimeMillis()
+            // Gap diagnostics (#221): why points stopped — never fills them in
+            val gaps = RecordingGapMonitor().also { it.start(System.currentTimeMillis()) }
+            launch {
+                while (isActive) {
+                    delay(RecordingGapMonitor.GAP_AFTER_MS)
+                    val st = _driveState.value
+                    if (!st.isRecording) continue
+                    gaps.tick(System.currentTimeMillis(), vehicleStateFlow.value.isConnected, st.isPaused)
+                        ?.let { DiagnosticLogger.event("REC_GAP", "drive $driveId: $it") }
                 }
-
-                locations.updates().collect { location ->
-                    val state = _driveState.value
-                    if (!state.isRecording) return@collect
-
-                    // Always update current location (for live position dot even when paused)
-                    _driveState.update { if (it.driveId == driveId) it.copy(currentLocation = location) else it }
-
-                    // Skip recording when paused
-                    if (state.isPaused) {
-                        // N1: nothing decoded before or during the pause may be stored at a fix after it
-                        run.freshGate.skip(System.currentTimeMillis())
-                        lapTimer?.breakTrack(driveId)
-                        gaps.onLocation(System.currentTimeMillis(), written = false, skipped = RecordingGapMonitor.Reason.PAUSED)
-                            ?.let { DiagnosticLogger.event("REC_GAP", "drive $driveId: ${it.describe()}") }
-                        return@collect
-                    }
-
-                    val now = System.currentTimeMillis()
-
-                    // Periodic weather refresh
-                    if (now - lastWeatherMs >= WEATHER_REFRESH_MS) {
-                        launch { refreshWeather(location.latitude, location.longitude) }
-                        lastWeatherMs = now
-                    }
-
-                    val vs = vehicleStateFlow.value
-                    // Adapter dropped (retry / IDLE, or a manually started drive): VehicleState
-                    // still holds the last frame. Writing it would store held values as fresh
-                    // samples (and feed pulls / knock / trims) — skip like a pause and break the
-                    // polyline. The live position dot above keeps updating; distance driven during
-                    // the gap is not counted.
-                    if (!vs.isConnected) {
-                        run.freshGate.skip(now)                       // N1: the same across a link gap
-                        run.prevPoint = null
-                        lapTimer?.breakTrack(driveId)
-                        gaps.onLocation(now, written = false, skipped = RecordingGapMonitor.Reason.DISCONNECTED)
-                            ?.let { DiagnosticLogger.event("REC_GAP", "drive $driveId: ${it.describe()}") }
-                        return@collect
-                    }
-                    gaps.onLocation(now, written = true)?.let { DiagnosticLogger.event("REC_GAP", "drive $driveId: ${it.describe()}") }
-                    val gate = run.freshGate
-                    // Boost-sweep DIDs: value only on a fresh decode, otherwise the
-                    // "absent" sentinel (0.0 kPa / -1.0 %) so stats never count a held value.
-                    // N1: each polled value only from a decode made after the last skipped fix and within twice its poll budget;
-                    // Q1: and after the last resume (a pause can pass with no fix to skip). The gate is touched only here.
-                    run.resumedAtMs.takeIf { it > 0 }?.let { gate.skip(it) }
-                    val tipFresh    = gate.takeIfCurrent("tipActualKpa", vs, now)
-                    val targetFresh = gate.takeIfCurrent("tipDesiredKpa", vs, now)
-                    val wgdcFresh   = gate.takeIfCurrent("wgdcDesired", vs, now)
-                    // MAP 0xF40B (#271): a value only on a fresh decode, otherwise null — never a held reading
-                    val mapFresh    = gate.takeIfCurrent(com.openrs.dash.data.MapF40b.TAG, vs, now)
-                    // Boost by the source rule (#207): the reading + its source; NONE = no fresh source (0.0 is not a reading)
-                    val boost = com.openrs.dash.data.BoostSession.read(vs, now)
-                    // The shared verdict (DRIVE row / THERMAL card) including its holds: TEMPS READY only.
-                    val raceReady = ThermalReadinessSession.verdict.value.isReady
-                    val point = DrivePointEntity(
-                        driveId        = driveId,
-                        timestamp      = now,
-                        lat            = location.latitude,
-                        lng            = location.longitude,
-                        speedKph       = vs.speedKph,
-                        rpm            = vs.rpm.toInt(),
-                        gear           = vs.gearDisplay,
-                        boostPsi       = boost.psi ?: 0.0,
-                        boostSource    = boost.source.name,
-                        baroKpa        = com.openrs.dash.data.BoostRule.baroKpa(vs),
-                        coolantTempC   = vs.coolantTempC,
-                        oilTempC       = vs.oilTempC,
-                        ambientTempC   = vs.ambientTempC,
-                        rduTempC       = vs.rduTempC,
-                        ptuTempC       = vs.ptuTempC,
-                        fuelLevelPct   = vs.fuelLevelPct,
-                        lateralG       = vs.lateralG,
-                        throttlePct    = vs.throttleOrPedalPct,   // pedal when 0x076 is absent
-                        driveMode      = vs.driveMode.label,
-                        wheelSpeedFL   = vs.wheelSpeedFL,
-                        wheelSpeedFR   = vs.wheelSpeedFR,
-                        wheelSpeedRL   = vs.wheelSpeedRL,
-                        wheelSpeedRR   = vs.wheelSpeedRR,
-                        tirePressLF    = vs.tirePressLF,
-                        tirePressRF    = vs.tirePressRF,
-                        tirePressLR    = vs.tirePressLR,
-                        tirePressRR    = vs.tirePressRR,
-                        tireTempLF     = vs.tireTempLF,
-                        tireTempRF     = vs.tireTempRF,
-                        tireTempLR     = vs.tireTempLR,
-                        tireTempRR     = vs.tireTempRR,
-                        longitudinalG  = vs.longitudinalG,
-                        brakePressure  = vs.brakePressure,
-                        steeringAngle  = vs.steeringAngle,
-                        tipActualKpa   = if (tipFresh) vs.tipActualKpa else 0.0,
-                        boostTargetKpa = if (targetFresh) vs.tipDesiredKpa else 0.0,
-                        wgdcPct        = if (wgdcFresh) vs.wgdcDesired else -1.0,
-                        mapKpa         = if (mapFresh) com.openrs.dash.data.MapF40b.kpa(vs) else null,
-                        isRaceReady    = raceReady
-                    )
-
-                    // Knock event capture (#174/#186) — one event per cylinder per fresh KR decode
-                    // showing retard (positive). Written inline under NonCancellable so a stopDrive()
-                    // cancel can't drop it (#193); events are rare, so the brief suspend is fine.
-                    run.pulls.update(now, vs.rpm, vs.throttleOrPedalPct)
-                    val knocks = KnockCapture.eventsFrom(vs, gate, driveId, now, location.latitude, location.longitude)
-                    if (knocks.isNotEmpty()) {
-                        run.pulls.markKnock(now)
-                        try {
-                            withContext(NonCancellable + Dispatchers.IO) { dao.insertKnockEvents(knocks) }
-                        } catch (e: Exception) {
-                            Log.w(TAG, "knock insert failed (${knocks.size} events)", e)
-                        }
-                    }
-
-                    // Fuel trim drift — fresh decodes only, warm-engine gate inside the accumulator
-                    run.fuelTrims.add(
-                        stftFresh = gate.takeIfCurrent("shortFuelTrim", vs, now), stft = vs.shortFuelTrim,
-                        ltftFresh = gate.takeIfCurrent("longFuelTrim", vs, now),  ltft = vs.longFuelTrim,
-                        coolantC = vs.coolantTempC, rpm = vs.rpm
-                    )
-
-                    // Thermal record: fresh readings judged against the profile in effect now (a mid-drive
-                    // change starts a new segment). Prefs are loaded before any connection (CanDataService).
-                    run.thermal.sample(vs, UserPrefsStore.prefs.value, now)
-                    // Climb rates for the drive-end record
-                    run.thermalPredictor.let { tp ->
-                        tp.recordSample("Oil", now, vs.oilTempC)
-                        tp.recordSample("Coolant", now, vs.coolantTempC)
-                        tp.recordSample("RDU", now, vs.rduTempC)
-                        tp.recordSample("PTU", now, vs.ptuTempC)
-                    }
-
-                    // Lap timer (#237): every recorded fix of this drive, with its own time, age and bearing (none ≠ 0°).
-                    // Paused / disconnected fixes returned above (and broke the track); a point still finishing after STOP
-                    // is not fed, and one that slips past this check is refused by the timer (drive closed at STOP).
-                    if (isActive) lapTimer?.let { timer ->
-                        val ageMs = fixAgeMs(location, now)
-                        val bearing = if (location.hasBearing()) location.bearing else null
-                        val report = timer.onFix(driveId, LapFix(
-                            lat = location.latitude, lng = location.longitude,
-                            bearing = bearing,
-                            timeMs = location.time, ageMs = ageMs, receivedAtMs = now,
-                            speedKph = vs.speedKph, rpm = vs.rpm.toInt(), boostPsi = boost.psi ?: 0.0, lateralG = vs.lateralG
-                        ))
-                        if (report.verdict != FixVerdict.NO_LINE) {
-                            run.lapVerdicts.merge(report.verdict, 1) { a, b -> a + b }
-                            // One line per fix while a line is set: provider delivery vs timer verdict (no coordinates)
-                            Log.d(LAP_TAG, "drive $driveId fix t=${location.time} age=${ageMs}ms " +
-                                "b=${bearing?.let { "%.0f".format(java.util.Locale.ROOT, it) } ?: "none"} " +
-                                "x=${"%.1f".format(java.util.Locale.ROOT, report.xM ?: 0.0)} y=${"%.1f".format(java.util.Locale.ROOT, report.yM ?: 0.0)} " +
-                                "-> ${report.verdict}${report.lap?.let { " lap ${it.lapNumber} ${it.lapTimeMs} ms" } ?: ""}")
-                        }
-                    }
-
-                    // Buffer point
-                    run.addPoint(point)
-
-                    // Update recent points list for live UI
-                    run.recentPoints.add(point)
-                    if (run.recentPoints.size > MAX_RECENT_POINTS) {
-                        run.recentPoints.removeAt(0)
-                    }
-
-                    // Update live state
-                    val prev = run.prevPoint
-                    val segDist = if (prev != null)
-                        DriveState.haversineKm(prev.lat, prev.lng, point.lat, point.lng)
-                    else 0.0
-
-                    val peaks = buildPeakEvents(state, vs, boost, point, now)
-                    val newBoostPeak = com.openrs.dash.data.BoostRule.nextDrivePeak(state.peakBoostPsi, state.peakBoostSource, boost)
-                    val isRaceReady = raceReady
-                    val rtrPt = state.rtrAchievedPoint ?: if (isRaceReady) point else null
-
-                    // A point still in progress when STOP cancelled this loop finishes here; once another drive
-                    // owns the live state it isn't counted there (#236)
-                    _driveState.update { s ->
-                        if (s.driveId != driveId) s else s.copy(
-                            recentPoints         = run.recentPoints.toList(),
-                            totalPointCount      = s.totalPointCount + 1,
-                            cumulativeDistanceKm = s.cumulativeDistanceKm + segDist,
-                            rpmSum               = if (vs.rpm > 400) s.rpmSum + vs.rpm else s.rpmSum,
-                            rpmSamples           = if (vs.rpm > 400) s.rpmSamples + 1 else s.rpmSamples,
-                            speedSum             = s.speedSum + vs.speedKph,
-                            speedSamples         = s.speedSamples + 1,
-                            modeCounts           = s.modeCounts.toMutableMap().also {
-                                it[vs.driveMode] = (it[vs.driveMode] ?: 0) + 1
-                            },
-                            maxSpeedKph          = maxOf(s.maxSpeedKph, vs.speedKph),
-                            peakRpm              = maxOf(s.peakRpm, vs.rpm),
-                            peakBoostPsi         = newBoostPeak?.first ?: s.peakBoostPsi,
-                            peakBoostSource      = newBoostPeak?.second ?: s.peakBoostSource,
-                            peakLateralG         = maxOf(s.peakLateralG, abs(vs.lateralG)),
-                            peakOilTempC         = if (vs.oilTempC > -90) maxOf(s.peakOilTempC, vs.oilTempC) else s.peakOilTempC,
-                            peakCoolantTempC     = if (vs.coolantTempC > -90) maxOf(s.peakCoolantTempC, vs.coolantTempC) else s.peakCoolantTempC,
-                            peakEvents           = peaks,
-                            rtrAchievedPoint     = rtrPt,
-                            pullCount            = run.pulls.pullCount,
-                            knockPullCount       = run.pulls.knockPullCount
-                        )
-                    }
-                    run.prevPoint = point
-
-                    // Flush to Room when the buffer is full — last, so a STOP cancellation delivered when the insert
-                    // returns (flushBuffer rethrows it) can't cut this point's state update short
-                    if (run.bufferedCount() >= FLUSH_SIZE) {
-                        flushBuffer(run)
-                    }
-                }
-            } finally {
-                // Ensure we flush any remaining buffered points (STOP's cancellation is rethrown after it).
-                // The state is cleared by the drive's job (startDrive), after this
-                flushBuffer(run)
             }
+
+            locations.updates().collect { location ->
+                val state = _driveState.value
+                if (!state.isRecording) return@collect
+
+                // Always update current location (for live position dot even when paused)
+                _driveState.update { if (it.driveId == driveId) it.copy(currentLocation = location) else it }
+
+                // Skip recording when paused
+                if (state.isPaused) {
+                    // N1: nothing decoded before or during the pause may be stored at a fix after it
+                    run.freshGate.skip(System.currentTimeMillis())
+                    lapTimer?.breakTrack(driveId)
+                    gaps.onLocation(System.currentTimeMillis(), written = false, skipped = RecordingGapMonitor.Reason.PAUSED)
+                        ?.let { DiagnosticLogger.event("REC_GAP", "drive $driveId: ${it.describe()}") }
+                    return@collect
+                }
+
+                val now = System.currentTimeMillis()
+
+                // Periodic weather refresh
+                if (now - lastWeatherMs >= WEATHER_REFRESH_MS) {
+                    launch { refreshWeather(location.latitude, location.longitude) }
+                    lastWeatherMs = now
+                }
+
+                val vs = vehicleStateFlow.value
+                // Adapter dropped (retry / IDLE, or a manually started drive): VehicleState
+                // still holds the last frame. Writing it would store held values as fresh
+                // samples (and feed pulls / knock / trims) — skip like a pause and break the
+                // polyline. The live position dot above keeps updating; distance driven during
+                // the gap is not counted.
+                if (!vs.isConnected) {
+                    run.freshGate.skip(now)                       // N1: the same across a link gap
+                    run.prevPoint = null
+                    lapTimer?.breakTrack(driveId)
+                    gaps.onLocation(now, written = false, skipped = RecordingGapMonitor.Reason.DISCONNECTED)
+                        ?.let { DiagnosticLogger.event("REC_GAP", "drive $driveId: ${it.describe()}") }
+                    return@collect
+                }
+                gaps.onLocation(now, written = true)?.let { DiagnosticLogger.event("REC_GAP", "drive $driveId: ${it.describe()}") }
+                val gate = run.freshGate
+                // Boost-sweep DIDs: value only on a fresh decode, otherwise the
+                // "absent" sentinel (0.0 kPa / -1.0 %) so stats never count a held value.
+                // N1: each polled value only from a decode made after the last skipped fix and within twice its poll budget;
+                // Q1: and after the last resume (a pause can pass with no fix to skip). The gate is touched only here.
+                run.resumedAtMs.takeIf { it > 0 }?.let { gate.skip(it) }
+                val tipFresh    = gate.takeIfCurrent("tipActualKpa", vs, now)
+                val targetFresh = gate.takeIfCurrent("tipDesiredKpa", vs, now)
+                val wgdcFresh   = gate.takeIfCurrent("wgdcDesired", vs, now)
+                // MAP 0xF40B (#271): a value only on a fresh decode, otherwise null — never a held reading
+                val mapFresh    = gate.takeIfCurrent(com.openrs.dash.data.MapF40b.TAG, vs, now)
+                // Boost by the source rule (#207): the reading + its source; NONE = no fresh source (0.0 is not a reading)
+                val boost = com.openrs.dash.data.BoostSession.read(vs, now)
+                // The shared verdict (DRIVE row / THERMAL card) including its holds: TEMPS READY only.
+                val raceReady = ThermalReadinessSession.verdict.value.isReady
+                val point = DrivePointEntity(
+                    driveId        = driveId,
+                    timestamp      = now,
+                    lat            = location.latitude,
+                    lng            = location.longitude,
+                    speedKph       = vs.speedKph,
+                    rpm            = vs.rpm.toInt(),
+                    gear           = vs.gearDisplay,
+                    boostPsi       = boost.psi ?: 0.0,
+                    boostSource    = boost.source.name,
+                    baroKpa        = com.openrs.dash.data.BoostRule.baroKpa(vs),
+                    coolantTempC   = vs.coolantTempC,
+                    oilTempC       = vs.oilTempC,
+                    ambientTempC   = vs.ambientTempC,
+                    rduTempC       = vs.rduTempC,
+                    ptuTempC       = vs.ptuTempC,
+                    fuelLevelPct   = vs.fuelLevelPct,
+                    lateralG       = vs.lateralG,
+                    throttlePct    = vs.throttleOrPedalPct,   // pedal when 0x076 is absent
+                    driveMode      = vs.driveMode.label,
+                    wheelSpeedFL   = vs.wheelSpeedFL,
+                    wheelSpeedFR   = vs.wheelSpeedFR,
+                    wheelSpeedRL   = vs.wheelSpeedRL,
+                    wheelSpeedRR   = vs.wheelSpeedRR,
+                    tirePressLF    = vs.tirePressLF,
+                    tirePressRF    = vs.tirePressRF,
+                    tirePressLR    = vs.tirePressLR,
+                    tirePressRR    = vs.tirePressRR,
+                    tireTempLF     = vs.tireTempLF,
+                    tireTempRF     = vs.tireTempRF,
+                    tireTempLR     = vs.tireTempLR,
+                    tireTempRR     = vs.tireTempRR,
+                    longitudinalG  = vs.longitudinalG,
+                    brakePressure  = vs.brakePressure,
+                    steeringAngle  = vs.steeringAngle,
+                    tipActualKpa   = if (tipFresh) vs.tipActualKpa else 0.0,
+                    boostTargetKpa = if (targetFresh) vs.tipDesiredKpa else 0.0,
+                    wgdcPct        = if (wgdcFresh) vs.wgdcDesired else -1.0,
+                    mapKpa         = if (mapFresh) com.openrs.dash.data.MapF40b.kpa(vs) else null,
+                    isRaceReady    = raceReady
+                )
+
+                // Knock event capture (#174/#186) — one event per cylinder per fresh KR decode
+                // showing retard (positive). Written inline under NonCancellable so a stopDrive()
+                // cancel can't drop it (#193); events are rare, so the brief suspend is fine.
+                run.pulls.update(now, vs.rpm, vs.throttleOrPedalPct)
+                val knocks = KnockCapture.eventsFrom(vs, gate, driveId, now, location.latitude, location.longitude)
+                if (knocks.isNotEmpty()) {
+                    run.pulls.markKnock(now)
+                    try {
+                        withContext(NonCancellable + Dispatchers.IO) { dao.insertKnockEvents(knocks) }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "knock insert failed (${knocks.size} events)", e)
+                    }
+                }
+
+                // Fuel trim drift — fresh decodes only, warm-engine gate inside the accumulator
+                run.fuelTrims.add(
+                    stftFresh = gate.takeIfCurrent("shortFuelTrim", vs, now), stft = vs.shortFuelTrim,
+                    ltftFresh = gate.takeIfCurrent("longFuelTrim", vs, now),  ltft = vs.longFuelTrim,
+                    coolantC = vs.coolantTempC, rpm = vs.rpm
+                )
+
+                // Thermal record: fresh readings judged against the profile in effect now (a mid-drive
+                // change starts a new segment). Prefs are loaded before any connection (CanDataService).
+                run.thermal.sample(vs, UserPrefsStore.prefs.value, now)
+                // Climb rates for the drive-end record
+                run.thermalPredictor.let { tp ->
+                    tp.recordSample("Oil", now, vs.oilTempC)
+                    tp.recordSample("Coolant", now, vs.coolantTempC)
+                    tp.recordSample("RDU", now, vs.rduTempC)
+                    tp.recordSample("PTU", now, vs.ptuTempC)
+                }
+
+                // Lap timer (#237): every recorded fix of this drive, with its own time, age and bearing (none ≠ 0°).
+                // Paused / disconnected fixes returned above (and broke the track); a point still finishing after STOP
+                // is not fed, and one that slips past this check is refused by the timer (drive closed at STOP).
+                if (isActive) lapTimer?.let { timer ->
+                    val ageMs = fixAgeMs(location, now)
+                    val bearing = if (location.hasBearing()) location.bearing else null
+                    val report = timer.onFix(driveId, LapFix(
+                        lat = location.latitude, lng = location.longitude,
+                        bearing = bearing,
+                        timeMs = location.time, ageMs = ageMs, receivedAtMs = now,
+                        speedKph = vs.speedKph, rpm = vs.rpm.toInt(), boostPsi = boost.psi ?: 0.0, lateralG = vs.lateralG
+                    ))
+                    if (report.verdict != FixVerdict.NO_LINE) {
+                        run.lapVerdicts.merge(report.verdict, 1) { a, b -> a + b }
+                        // One line per fix while a line is set: provider delivery vs timer verdict (no coordinates)
+                        Log.d(LAP_TAG, "drive $driveId fix t=${location.time} age=${ageMs}ms " +
+                            "b=${bearing?.let { "%.0f".format(java.util.Locale.ROOT, it) } ?: "none"} " +
+                            "x=${"%.1f".format(java.util.Locale.ROOT, report.xM ?: 0.0)} y=${"%.1f".format(java.util.Locale.ROOT, report.yM ?: 0.0)} " +
+                            "-> ${report.verdict}${report.lap?.let { " lap ${it.lapNumber} ${it.lapTimeMs} ms" } ?: ""}")
+                    }
+                }
+
+                // Buffer point
+                run.addPoint(point)
+
+                // Update recent points list for live UI
+                run.recentPoints.add(point)
+                if (run.recentPoints.size > MAX_RECENT_POINTS) {
+                    run.recentPoints.removeAt(0)
+                }
+
+                // Update live state
+                val prev = run.prevPoint
+                val segDist = if (prev != null)
+                    DriveState.haversineKm(prev.lat, prev.lng, point.lat, point.lng)
+                else 0.0
+
+                val peaks = buildPeakEvents(state, vs, boost, point, now)
+                val newBoostPeak = com.openrs.dash.data.BoostRule.nextDrivePeak(state.peakBoostPsi, state.peakBoostSource, boost)
+                val isRaceReady = raceReady
+                val rtrPt = state.rtrAchievedPoint ?: if (isRaceReady) point else null
+
+                // A point still in progress when STOP cancelled this loop finishes here; once another drive
+                // owns the live state it isn't counted there (#236)
+                _driveState.update { s ->
+                    if (s.driveId != driveId) s else s.copy(
+                        recentPoints         = run.recentPoints.toList(),
+                        totalPointCount      = s.totalPointCount + 1,
+                        cumulativeDistanceKm = s.cumulativeDistanceKm + segDist,
+                        rpmSum               = if (vs.rpm > 400) s.rpmSum + vs.rpm else s.rpmSum,
+                        rpmSamples           = if (vs.rpm > 400) s.rpmSamples + 1 else s.rpmSamples,
+                        speedSum             = s.speedSum + vs.speedKph,
+                        speedSamples         = s.speedSamples + 1,
+                        modeCounts           = s.modeCounts.toMutableMap().also {
+                            it[vs.driveMode] = (it[vs.driveMode] ?: 0) + 1
+                        },
+                        maxSpeedKph          = maxOf(s.maxSpeedKph, vs.speedKph),
+                        peakRpm              = maxOf(s.peakRpm, vs.rpm),
+                        peakBoostPsi         = newBoostPeak?.first ?: s.peakBoostPsi,
+                        peakBoostSource      = newBoostPeak?.second ?: s.peakBoostSource,
+                        peakLateralG         = maxOf(s.peakLateralG, abs(vs.lateralG)),
+                        peakOilTempC         = if (vs.oilTempC > -90) maxOf(s.peakOilTempC, vs.oilTempC) else s.peakOilTempC,
+                        peakCoolantTempC     = if (vs.coolantTempC > -90) maxOf(s.peakCoolantTempC, vs.coolantTempC) else s.peakCoolantTempC,
+                        peakEvents           = peaks,
+                        rtrAchievedPoint     = rtrPt,
+                        pullCount            = run.pulls.pullCount,
+                        knockPullCount       = run.pulls.knockPullCount
+                    )
+                }
+                run.prevPoint = point
+
+                // Flush to Room when the buffer is full — last, so a STOP cancellation delivered when the insert
+                // returns (flushBuffer rethrows it) can't cut this point's state update short
+                if (run.bufferedCount() >= FLUSH_SIZE) {
+                    flushBuffer(run)
+                }
+            }
+        } finally {
+            // Ensure we flush any remaining buffered points (STOP's cancellation is rethrown after it).
+            // The state is cleared by the drive's job (startDrive), after this
+            flushBuffer(run)
         }
+    }
 
     /**
      * Persists the in-memory point buffer to Room. Suspends until the write
