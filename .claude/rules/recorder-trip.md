@@ -78,7 +78,7 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
 - **A position belongs to one drive (#311)** — `DriveState.currentLocation` is the recording drive's own last fix:
   `startDrive` starts without one, STOP and the loop end clear it (only for their own drive id). Anything that records or
   places a position reads `DriveRecorder.freshFix()` (that fix, at most `LapTimer.MAX_FIX_AGE_MS` old): a note / MARK is
-  saved without a position and SET S/F is refused ("Waiting for GPS", one snackbar) before the drive's first fix and in a
+  saved without a position and SET S/F is refused (the chip reads NO GPS for 2 s, `SfCue`; no snackbar, it would cover PAUSE / STOP) before the drive's first fix and in a
   GPS gap. The session knock log reads `freshFix()` too (none outside a drive or in a gap). TRIP's dot is `tripDot()`:
   while recording only the drive's fix; idle, only an idle fetch asked for after the last drive started (`idleFetch`
   stamps before the call). Never carry a fix from one drive into the next, and never
