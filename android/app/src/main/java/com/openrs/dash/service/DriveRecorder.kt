@@ -412,6 +412,8 @@ class DriveRecorder(
 
     /** Whether the connection is up, as last reported (lost / back). */
     @Volatile private var linkUp = false
+    /** The user stopped a drive since the last "connection back": auto-record starts nothing on this connection. */
+    private var handStoppedOnConnection = false
     /** A loss reported while a start was under way (#316): acted on the moment the start completes. 0 = none. */
     private var pendingLossAtMs = 0L
 
@@ -431,15 +433,31 @@ class DriveRecorder(
     }
 
     /** A connection to the adapter is established. A link pause waits for the engine as well. */
-    @Synchronized fun onConnectionBack() { linkUp = true }
+    @Synchronized fun onConnectionBack() { linkUp = true; handStoppedOnConnection = false }
 
-    /** The connection sees the engine running (RPM above the auto-record start threshold): a link pause ends. */
-    @Synchronized fun onEngineRunning() {
+    /**
+     * The connection sees the engine running (RPM above the auto-record start threshold); the service reports it once per
+     * established connection. Counts only with the connection up. A link pause ends ([AutoRecordPolicy]: the same drive
+     * within [STALE_LINK_PAUSE_MS] of the loss, else the old drive is saved and a new one starts); with no drive open,
+     * auto-record starts one with [sessionId], unless the user stopped a drive on this connection.
+     */
+    @Synchronized fun onEngineRunning(sessionId: Long = 0L) {
+        if (!linkUp) return
         val s = _driveState.value
         // A loss held during a start whose end conditions now both hold (connection back, engine running) is over before
         // the drive began: drop it, so a later loss in the same start is the one applied (QA F2 / F4)
-        if (linkUp && s.phase == DrivePhase.STARTING) pendingLossAtMs = 0L
-        if (linkUp && s.phase == DrivePhase.PAUSED && s.pauseReason == PauseReason.LINK) resumeLocked()
+        if (s.phase == DrivePhase.STARTING) { pendingLossAtMs = 0L; return }
+        val lostForMs = if (s.phase == DrivePhase.PAUSED) clock() - run.linkLostAtMs else 0L
+        when (AutoRecordPolicy.onEngineRunning(s.phase, s.pauseReason, lostForMs,
+            mayStart = autoRecord && !handStoppedOnConnection, staleAfterMs = STALE_LINK_PAUSE_MS)) {
+            AutoRecordPolicy.Action.KEEP -> Unit
+            AutoRecordPolicy.Action.RESUME -> resumeLocked()
+            AutoRecordPolicy.Action.FINALIZE_AND_START -> {
+                stopDrive(clock())
+                if (autoRecord) startDrive(sessionId)
+            }
+            AutoRecordPolicy.Action.START -> startDrive(sessionId)
+        }
     }
 
     /**
@@ -491,7 +509,15 @@ class DriveRecorder(
      * STOP gets no laps, thumbnail or summary.
      */
     @Synchronized fun stopDrive(): Job {
-        val stoppedAt = clock()
+        handStoppedOnConnection = true                        // #316: nothing restarts on this connection
+        return stopDrive(clock())
+    }
+
+    /**
+     * STOP's work, with the drive's end at [stoppedAt] (the user's STOP: now). Kept under the name stopDrive: tests
+     * identify the finalize's point read by its frame (`DriveRecorder$stopDrive`, ThumbnailInputRegressionTest).
+     */
+    private fun stopDrive(stoppedAt: Long): Job {
         val jobToJoin = recorderJob
         val state = _driveState.value
         // Not recording and no start under way: nothing to stop (a second STOP must not rewrite the drive it ended)
@@ -1270,6 +1296,8 @@ class DriveRecorder(
             }
         }
         private const val WEATHER_REFRESH_MS = 15 * 60_000L
+        /** #316: a link pause older than this (from the loss) is not resumed: its drive is saved and a new one starts. */
+        const val STALE_LINK_PAUSE_MS = 15 * 60_000L
         private const val FLUSH_SIZE = 30           // flush every ~30 seconds at 1 Hz
         /** An orphan's distance joins two stored points only this close (1 Hz fixes; see [closedOrphan], #262). */
         private const val ORPHAN_SEGMENT_MAX_GAP_MS = 2_000L

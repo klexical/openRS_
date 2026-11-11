@@ -26,9 +26,7 @@ import org.junit.Test
  */
 class EscLinkSessionTest {
     private class Rec : LinkSession.Recorder {
-        override val isRecording = false; override val isPaused = false; override val activeDriveId: Long? = null
-        override fun pausedDurationMs() = 0L
-        override fun resumeDrive() {}; override fun stopDrive() {}; override fun startDrive(sessionId: Long) {}
+        override val activeDriveId: Long? = null
     }
     private class Api : FirmwareCommandSender {
         override suspend fun setDriveMode(mode: Int) = Result.success(Unit)

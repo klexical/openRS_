@@ -100,6 +100,7 @@ class ServiceLinkLossTest {
 
     @Test fun `RCN that cannot start a connection is a closure - reported, the drive link-pauses`() {
         val svc = service(autoRecord = true, wifi = false)              // Wi-Fi mode, Wi-Fi down: nothing can start
+        assertEquals("premise: recording", DrivePhase.RECORDING, rec.driveState.value.phase)
         svc.reconnect()
         assertEquals("premise: no connection started", false, link.phase == LinkPhase.CONNECTING)
         assertEquals(DrivePhase.PAUSED, rec.driveState.value.phase)

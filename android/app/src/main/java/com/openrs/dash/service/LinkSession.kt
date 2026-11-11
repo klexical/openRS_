@@ -33,22 +33,20 @@ internal class LinkSession(
     /** Test seam: runs right after a callback's ownership pre-check, before it applies anything. */
     private val afterOwnershipCheck: () -> Unit = {},
 ) {
-    /** What auto-record needs from the drive recorder. */
+    /** What a connection job reports to the drive recorder (#316: the recorder applies every rule itself). */
     interface Recorder {
-        val isRecording: Boolean
-        val isPaused: Boolean
+        /** The drive a finished perf run belongs to, if one is open. */
         val activeDriveId: Long?
-        fun pausedDurationMs(): Long
-        fun resumeDrive()
-        fun stopDrive()
-        fun startDrive(sessionId: Long)
+        /** #316: this connection sees the engine running (reported once per established connection). */
+        fun onEngineRunning(sessionId: Long) {}
         /** #316: the connection was lost at [atMs] (the drop's moment, or the closure's). */
         fun onConnectionLost(atMs: Long) {}
         /** #316: the connection is up again. */
         fun onConnectionBack() {}
     }
 
-    private var autoStarted = false
+    /** "Engine running" was reported on the current connection; cleared by [onConnectionBack] (QA F3 on 3a4967b). */
+    private var engineReported = false
 
     /** A raw CAN frame from this job's connection. */
     fun onCanFrame(canId: Int, data: ByteArray, fps: Double) {
@@ -60,25 +58,20 @@ internal class LinkSession(
     }
 
     /**
-     * Auto-record: on the first connected frame with the engine running, start / resume / finalize per
-     * [AutoRecordPolicy]. Only once per connection job.
+     * #316: on the first state of an established connection with the engine running, "engine running" is reported to the
+     * recorder, which applies auto-record and the link-pause rules. Once per connection: a reconnect on the same job
+     * ([onConnectionBack]) reports again (QA F3 on 3a4967b: once per job left a link pause in place on that reconnect).
+     * Only while connected: the recorder trusts the report to mean the connection is up.
      */
-    fun onVehicleState(vs: VehicleState, sessionId: () -> Long, resumeWindowMs: Long) {
-        if (autoStarted || !link.owns(gen)) return
+    fun onVehicleState(vs: VehicleState, sessionId: () -> Long) {
+        if (engineReported || !link.owns(gen)) return
         if (!vs.isConnected) return
         if (vs.rpm <= AUTO_START_MIN_RPM) return
         afterOwnershipCheck()
         link.deliver(gen) {
-            autoStarted = true
-            when (AutoRecordPolicy.onEngineRunning(recorder.isRecording, recorder.isPaused,
-                recorder.pausedDurationMs(), resumeWindowMs)) {
-                AutoRecordPolicy.Action.KEEP -> Unit
-                AutoRecordPolicy.Action.RESUME -> recorder.resumeDrive()
-                AutoRecordPolicy.Action.FINALIZE_AND_START -> {
-                    recorder.stopDrive()
-                    recorder.startDrive(sessionId())
-                }
-                AutoRecordPolicy.Action.START -> recorder.startDrive(sessionId())
+            if (!engineReported) {
+                engineReported = true
+                recorder.onEngineRunning(sessionId())
             }
         }
     }
@@ -90,7 +83,7 @@ internal class LinkSession(
     fun onConnectionLost(atMs: Long) { link.deliver(gen) { recorder.onConnectionLost(atMs) } }
 
     /** #316: this job's connection is up (CONNECTED published). Reaches the recorder only while this job owns the link. */
-    fun onConnectionBack() { link.deliver(gen) { recorder.onConnectionBack() } }
+    fun onConnectionBack() { link.deliver(gen) { engineReported = false; recorder.onConnectionBack() } }
 
     /** Applies one frame (caller holds ownership); returns a finished perf run to persist, if any. */
     private fun processCanFrame(canId: Int, data: ByteArray, fps: Double): PerfRunEntity? {

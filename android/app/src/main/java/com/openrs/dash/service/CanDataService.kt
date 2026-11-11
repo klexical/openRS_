@@ -397,9 +397,6 @@ class CanDataService : Service() {
         /** Notification action: cancel an initial connection attempt (#212). */
         const val ACTION_CANCEL_CONNECT = "com.openrs.dash.action.CANCEL_CONNECT"
 
-        /** Window within which a paused drive will be resumed on reconnect. Beyond this,
-         *  the stale drive is finalized and a fresh one begins. */
-        const val AUTO_RESUME_WINDOW_MS = 15 * 60_000L  // 15 minutes
 
         /** The app's drive recorder: what production uses. */
         internal val APP_RECORDER: () -> DriveRecorder = { OpenRSDashApp.instance.driveRecorder }
@@ -747,21 +744,12 @@ class CanDataService : Service() {
                 }
             }
 
-            // Auto-record drive: gated on adapter connected + engine actually
-            // running. Prevents premature recording when the phone is
-            // on the adapter's WiFi but the car is off (was the
-            // original bug — drive would start with no telemetry). On
-            // reconnect within AUTO_RESUME_WINDOW_MS a paused drive is
-            // resumed seamlessly; beyond that, the stale drive is
-            // finalized and a fresh one begins. A drive still recording
-            // is kept (AutoRecordPolicy).
-            if (AppSettings.getAutoRecordDrives(this@CanDataService)) {
-                launch {
-                    // A drive still recording (manual, or across an RCN retry) is kept — never split (#212)
-                    OpenRSDashApp.instance.vehicleState.collect { vs ->
-                        session.onVehicleState(vs, { currentSessionId }, AUTO_RESUME_WINDOW_MS)
-                    }
-                }
+            // #316: "engine running" on each established connection of this job goes to the recorder, which applies
+            // auto-record (a drive starts unless one is open; nothing after a hand STOP on this connection) and ends a link
+            // pause (the same drive within 15 minutes of the loss, else a new one). Always collected: the recorder reads
+            // the auto-record setting itself.
+            launch {
+                OpenRSDashApp.instance.vehicleState.collect { vs -> session.onVehicleState(vs) { currentSessionId } }
             }
 
             conn.connectHybrid(
@@ -823,13 +811,8 @@ class CanDataService : Service() {
         state = OpenRSDashApp.instance.vehicleState,
         recorder = object : LinkSession.Recorder {
             private val r get() = recorder()
-            override val isRecording get() = r.driveState.value.isRecording
-            override val isPaused get() = r.driveState.value.isPaused
             override val activeDriveId get() = r.driveState.value.let { if (it.isRecording) it.driveId else null }
-            override fun pausedDurationMs() = r.pausedDurationMs()
-            override fun resumeDrive() { r.resumeDrive() }
-            override fun stopDrive() { r.stopDrive() }
-            override fun startDrive(sessionId: Long) { r.startDrive(sessionId = sessionId) }
+            override fun onEngineRunning(sessionId: Long) { r.onEngineRunning(sessionId) }
             override fun onConnectionLost(atMs: Long) { seedAutoRecord(); r.onConnectionLost(atMs) }
             override fun onConnectionBack() { r.onConnectionBack() }
         },

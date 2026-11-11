@@ -27,14 +27,9 @@ import java.util.concurrent.atomic.AtomicInteger
 class LinkSessionRaceTest {
 
     private class FakeRecorder : LinkSession.Recorder {
-        override var isRecording = false
-        override var isPaused = false
         override val activeDriveId: Long? = null
         val calls = mutableListOf<String>()
-        override fun pausedDurationMs() = 0L
-        override fun resumeDrive() { calls += "resume" }
-        override fun stopDrive() { calls += "stop" }
-        override fun startDrive(sessionId: Long) { calls += "start:$sessionId"; isRecording = true }
+        override fun onEngineRunning(sessionId: Long) { calls += "engine:$sessionId" }
     }
 
     /** Holds the first callback that reaches the hook until [release]. */
@@ -95,20 +90,20 @@ class LinkSessionRaceTest {
         assertTrue(runs.isEmpty())
     }
 
-    @Test fun `an old auto-record decision held past its ownership check can't start or finalize a drive`() {
+    @Test fun `an old engine-running report held past its ownership check never reaches the recorder`() {
         val rec = FakeRecorder(); val gate = Gate()
         val old = session(own.begin(), rec, AtomicInteger(), mutableListOf(), gate.hook)
         val running = VehicleState(isConnected = true, rpm = 1_200.0)
-        val t = Thread { old.onVehicleState(running, { 11L }, 15 * 60_000L) }.apply { start() }
+        val t = Thread { old.onVehicleState(running, { 11L }) }.apply { start() }
         assertTrue(gate.reached.await(2, TimeUnit.SECONDS))
 
         val current = session(reconnect(), rec, AtomicInteger(), mutableListOf())
         gate.release(); t.join(2_000)
         assertEquals("the stale decision did nothing", emptyList<String>(), rec.calls)
 
-        current.onVehicleState(running, { 22L }, 15 * 60_000L)
-        assertEquals("the current session's decision runs once", listOf("start:22"), rec.calls)
-        current.onVehicleState(running, { 22L }, 15 * 60_000L)
-        assertEquals(listOf("start:22"), rec.calls)
+        current.onVehicleState(running, { 22L })
+        assertEquals("the current session reports once per connection", listOf("engine:22"), rec.calls)
+        current.onVehicleState(running, { 22L })
+        assertEquals(listOf("engine:22"), rec.calls)
     }
 }
