@@ -70,11 +70,12 @@ class ForegroundNotificationTextTest {
         app = ApplicationProvider.getApplicationContext()
         shadowOf(app).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
         app.getSharedPreferences("openrs_settings", Context.MODE_PRIVATE).edit().putBoolean(AppSettings.KEY_AUTO_RECORD_DRIVES, false).commit()
+        com.openrs.dash.ui.UserPrefsStore.load(app)                      // #316: the service reads the setting from the store
         DiagnosticLogger.sessionStart("test", 0, prefs = null)
         db = Room.inMemoryDatabaseBuilder(app, DriveDatabase::class.java).allowMainThreadQueries().build()
         db.openHelper.writableDatabase      // open before any recorder (see ObserverNoteEvidenceTest)
         rec = DriveRecorder(app, appVs, WeatherRepository(""), db, db.driveDao(), { _, _ -> null }, gps, { })
-        OpenRSDashApp::class.java.getDeclaredField("driveRecorder\$delegate").apply { isAccessible = true }.set(OpenRSDashApp.instance, lazyOf(rec))
+        CanDataService.recorderProvider = { rec }                      // #316 seam 5
         service = TestServices.create()
     }
 
@@ -110,9 +111,8 @@ class ForegroundNotificationTextTest {
     private fun text(n: Notification = shown()) = n.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
     private fun actions(n: Notification = shown()) = n.actions.orEmpty().map { it.title.toString() }
 
-    private fun expected(phase: LinkPhase, bluetooth: Boolean) = rec.driveState.value.let {
-        LinkPresentation.notificationText(phase, bluetooth = bluetooth, recording = it.isRecording, paused = it.isPaused)
-    }
+    private fun expected(phase: LinkPhase, bluetooth: Boolean) =
+        LinkPresentation.notificationText(phase, bluetooth = bluetooth, drive = rec.driveState.value)
 
     private fun assertShows(step: String, phase: LinkPhase, bluetooth: Boolean = false) {
         val n = shown()
@@ -158,6 +158,24 @@ class ForegroundNotificationTextTest {
         assertTrue("location dropped on stop (type $type)", waitUntil { type == CD })
         assertShows("after STOP", LinkPhase.CONNECTED)
         assertTrue("still foreground for the connection", fg.isForeground)
+    }
+
+    /**
+     * #316: the notification carries the drive's label and is re-published when only the pause's reason changes — the
+     * auto-record switch turning a link pause into a hand pause changes neither "recording" nor "paused".
+     */
+    @Test fun `a link pause turned into a hand pause re-publishes the label`() {
+        promote(); publish(LinkPhase.CONNECTING); publish(LinkPhase.CONNECTED)
+        startRecording()
+        rec.onAutoRecordSwitched(true)
+        rec.onConnectionLost(atMs = System.currentTimeMillis())
+        // the message is built after the wait (QA nit on f1e8be4): a failure prints the text shown at its end
+        val linkShown = waitUntil { text() == "Connected to vehicle · PAUSED · ENGINE OFF" }
+        assertTrue("link pause: ${text()}", linkShown)
+        rec.onAutoRecordSwitched(false)
+        val handShown = waitUntil { text() == "Connected to vehicle · PAUSED" }
+        assertTrue("hand pause: ${text()}", handShown)
+        assertShows("after the switch", LinkPhase.CONNECTED)
     }
 
     @Test fun `Bluetooth - start, pause, resume and stop a recording keep "via Bluetooth" (QA F1)`() {

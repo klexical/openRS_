@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -174,33 +175,7 @@ import kotlin.math.roundToInt
             verticalArrangement = Arrangement.spacedBy(CardGap)
         ) {
             // F7: live session stats strip — visible during active recording
-            if (driveState.isRecording) {
-                val elapsed = driveState.elapsedMs
-                val h = elapsed / 3_600_000
-                val m = (elapsed % 3_600_000) / 60_000
-                val s = (elapsed % 60_000) / 1_000
-                val timeStr = if (driveState.isPaused) "PAUSED" else "%02d:%02d:%02d".format(h, m, s)
-                val distKm = driveState.cumulativeDistanceKm
-                val distStr = if (p.speedUnit == "MPH") "${"%.1f".format(distKm * UnitConversions.KM_TO_MI)} mi"
-                              else "${"%.1f".format(distKm)} km"
-                val avgSpd = driveState.avgSpeedKph
-                val avgStr = p.displaySpeed(avgSpd) + " " + p.speedLabel.lowercase()
-                val pts = driveState.totalPointCount
-
-                Row(
-                    Modifier.fillMaxWidth()
-                        .background(Surf2, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    MonoLabel("REC", 8.sp, if (driveState.isPaused) Warn else Ok, letterSpacing = 0.3.sp)
-                    MonoLabel(timeStr, 8.sp, if (driveState.isPaused) Warn else Frost, letterSpacing = 0.3.sp)
-                    MonoLabel(distStr, 8.sp, Dim, letterSpacing = 0.2.sp)
-                    MonoLabel("avg $avgStr", 8.sp, Dim, letterSpacing = 0.2.sp)
-                    MonoLabel("$pts pts", 8.sp, Dim, letterSpacing = 0.2.sp)
-                }
-            }
+            if (driveState.isRecording) RecordingStrip(driveState, vs.isConnected, p)
 
             // V3: idle breathing — subtle ±0.03 alpha pulse when engine is idling.
             // One-way duration scales with RPM: ~2.5s at 800 RPM → ~3.0s at 600 RPM.
@@ -862,5 +837,59 @@ internal fun tempColorShade(c: Double, warnC: Double, critC: Double) = when {
     Box(modifier.padding(top = 2.dp).background(Orange.copy(alpha = pillBgAlpha(0.14f)), shape)
         .border(1.dp, Orange.copy(alpha = borderAlpha(0.7f)), shape).padding(horizontal = 7.dp, vertical = 2.dp)) {
         MonoLabel("E-BRAKE", 10.sp, textColor(Orange), FontWeight.Bold, 0.4.sp)
+    }
+}
+
+/**
+ * DRIVE's live session stats strip, shown while a drive is open (#316: a paused drive reads its pause label). One line
+ * always, the header's rule (#224): REC and the label (the time while recording) first, then distance, avg and points,
+ * each dropped whole from the right when it doesn't fit; never wrapped, never cut, and the label is never dropped or
+ * shortened (D-A: at 360 dp, font 2.0, a pause label pushed the other items into a tall column; RecordingStripFitTest).
+ */
+@Composable
+internal fun RecordingStrip(driveState: com.openrs.dash.data.DriveState, connected: Boolean, p: UserPrefs) {
+    val elapsed = driveState.elapsedMs
+    val h = elapsed / 3_600_000
+    val m = (elapsed % 3_600_000) / 60_000
+    val s = (elapsed % 60_000) / 1_000
+    // #316: a paused drive reads its pause label (DriveLabel: PAUSED, PAUSED · NO LINK, PAUSED · ENGINE OFF)
+    val timeStr = if (driveState.isPaused) com.openrs.dash.data.DriveLabel.of(driveState, connected)?.text ?: "PAUSED"
+                  else "%02d:%02d:%02d".format(h, m, s)
+    val distKm = driveState.cumulativeDistanceKm
+    val distStr = if (p.speedUnit == "MPH") "${"%.1f".format(distKm * UnitConversions.KM_TO_MI)} mi"
+                  else "${"%.1f".format(distKm)} km"
+    val avgSpd = driveState.avgSpeedKph
+    val avgStr = p.displaySpeed(avgSpd) + " " + p.speedLabel.lowercase()
+    val pts = driveState.totalPointCount
+
+    // In priority order: the first two always show
+    val items = listOf(
+        Triple("REC", if (driveState.isPaused) Warn else Ok, 0.3.sp),
+        Triple(timeStr, if (driveState.isPaused) Warn else Frost, 0.3.sp),
+        Triple(distStr, Dim, 0.2.sp),
+        Triple("avg $avgStr", Dim, 0.2.sp),
+        Triple("$pts pts", Dim, 0.2.sp),
+    )
+    fun style(spacing: androidx.compose.ui.unit.TextUnit) =
+        androidx.compose.ui.text.TextStyle(fontSize = 8.sp, fontFamily = JetBrainsMonoFamily, letterSpacing = spacing)
+    BoxWithConstraints(
+        Modifier.testTag("recStrip").fillMaxWidth()
+            .background(Surf2, RoundedCornerShape(8.dp))
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+        val minGap = with(androidx.compose.ui.platform.LocalDensity.current) { 8.dp.roundToPx() }
+        val widths = items.map { (text, _, spacing) -> measurer.measure(text, style(spacing)).size.width }
+        var used = widths[0] + widths[1]
+        var shown = 2
+        while (shown < items.size && used + widths[shown] + minGap * shown <= constraints.maxWidth) { used += widths[shown]; shown++ }
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            for ((text, color, spacing) in items.take(shown))
+                androidx.compose.material3.Text(text, style = style(spacing), color = textColor(color), maxLines = 1, softWrap = false)
+        }
     }
 }

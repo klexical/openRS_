@@ -13,8 +13,10 @@ import kotlin.math.*
  * Room — [recentPoints] holds only the last N for live polyline rendering.
  */
 data class DriveState(
-    val isRecording: Boolean = false,
-    val isPaused: Boolean = false,
+    /** Where the current drive is in its lifecycle (#316). The only source of "recording" and "paused". */
+    val phase: DrivePhase = DrivePhase.IDLE,
+    /** Why the drive is paused, while [phase] is PAUSED (#316): a hand pause or a link pause. Null otherwise. */
+    val pauseReason: PauseReason? = null,
     val driveId: Long = 0,
     val recentPoints: List<DrivePointEntity> = emptyList(),
     val totalPointCount: Int = 0,
@@ -44,6 +46,15 @@ data class DriveState(
     val pullCount: Int = 0,
     val knockPullCount: Int = 0
 ) {
+    /**
+     * True while a drive is open: recording or paused (#316). False while idle and during a start, as before the phase
+     * existed; the reconnect attempts never give up while it is true, a paused drive included.
+     */
+    val isRecording: Boolean get() = phase == DrivePhase.RECORDING || phase == DrivePhase.PAUSED
+    val isPaused: Boolean get() = phase == DrivePhase.PAUSED
+    /** A START is under way: the drive's row is being written and nothing is recorded yet. */
+    val isStarting: Boolean get() = phase == DrivePhase.STARTING
+
     // ── Computed properties ───────────────────────────────────────────────
 
     val latestFuelPct: Double
@@ -99,3 +110,40 @@ data class DriveState(
         }
     }
 }
+
+/** The current drive's lifecycle (#316, GLOSSARY.md). A drive is open while RECORDING or PAUSED. */
+enum class DrivePhase {
+    IDLE, STARTING, RECORDING, PAUSED;
+
+    companion object {
+        /** The phase two flags described before the phase existed (previews and tests that build a state). */
+        fun of(recording: Boolean, paused: Boolean): DrivePhase = when {
+            recording && paused -> PAUSED
+            recording -> RECORDING
+            else -> IDLE
+        }
+    }
+}
+
+/** A pause the user asked for, or one the app applied when the connection was lost (GLOSSARY.md). */
+enum class PauseReason { HAND, LINK }
+
+/** What a recorder command did (#316): applied, or refused with a reason. Nothing is queued: a refused command is dropped. */
+sealed interface CommandResult {
+    data object Done : CommandResult
+    data class Refused(val reason: Refusal) : CommandResult
+}
+
+enum class Refusal {
+    /** START: demo mode is active. */
+    DEMO,
+    /** START: a drive is open (recording or paused). */
+    DRIVE_OPEN,
+    /** START: a start is under way. */
+    STARTING,
+    /** PAUSE: no drive is recording. */
+    NOT_RECORDING,
+    /** RESUME: no drive is paused. */
+    NOT_PAUSED,
+}
+

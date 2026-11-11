@@ -36,8 +36,17 @@ internal object TestServices {
     fun destroyAll() {
         val all = synchronized(live) { live.toList().also { live.clear() } }
         // A test may already have destroyed one (the SERVICE_DESTROYED path) or never created it: a second onDestroy is harmless
-        all.forEach { runCatching { it.onDestroy() } }
-        awaitScopes(all)
+        try {
+            all.forEach { runCatching { it.onDestroy() } }
+            awaitScopes(all)
+        } finally {
+            // #316 seam 5: a test's own recorder never reaches a later class (its database is closed by then), also when
+            // a scope fails to finish
+            CanDataService.recorderProvider = CanDataService.APP_RECORDER
+            // #316 "auto-record switched": the service tells its recorder the setting from UserPrefsStore, so a test's
+            // setting never reaches a later class either (the next service loads the saved one at its creation)
+            com.openrs.dash.ui.UserPrefsStore.resetForTest()
+        }
     }
 
     private val scopeField by lazy { CanDataService::class.java.getDeclaredField("scope").apply { isAccessible = true } }

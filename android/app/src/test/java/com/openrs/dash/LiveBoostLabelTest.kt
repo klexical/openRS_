@@ -43,9 +43,7 @@ class LiveBoostLabelTest {
     private val live = "BOOST"
 
     private class NoRecorder : LinkSession.Recorder {
-        override val isRecording = false; override val isPaused = false; override val activeDriveId: Long? = null
-        override fun pausedDurationMs() = 0L
-        override fun resumeDrive() = Unit; override fun stopDrive() = Unit; override fun startDrive(sessionId: Long) = Unit
+        override val activeDriveId: Long? = null
     }
 
     @Before fun fresh() {

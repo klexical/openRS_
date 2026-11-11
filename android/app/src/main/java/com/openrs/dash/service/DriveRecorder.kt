@@ -35,7 +35,11 @@ import com.openrs.dash.data.FixVerdict
 import com.openrs.dash.data.LapEntity
 import com.openrs.dash.data.LapFix
 import com.openrs.dash.data.LapSessionEntity
+import com.openrs.dash.data.CommandResult
+import com.openrs.dash.data.DrivePhase
 import com.openrs.dash.data.LapTimer
+import com.openrs.dash.data.PauseReason
+import com.openrs.dash.data.Refusal
 import com.openrs.dash.data.PeakEvent
 import com.openrs.dash.data.PeakType
 import com.openrs.dash.data.ThermalPredictor
@@ -98,6 +102,8 @@ class DriveRecorder(
     private val geocode: (lat: Double, lng: Double) -> String? = platformGeocoder(context),
     locationSource: LocationSource? = null,
     onSummary: ((DriveEntity) -> Unit)? = null,
+    /** Wall clock for every time the recorder takes (#316, seam 2); production uses the system clock. */
+    private val clock: () -> Long = System::currentTimeMillis,
 ) {
     /** GPS for the recording loop + the weather lookup (fused provider in production). */
     interface LocationSource {
@@ -179,6 +185,10 @@ class DriveRecorder(
         val inFlight = MutableStateFlow(0)
         /** This drive's Room id, set once its row is inserted (0 until then; STOP may come before). */
         @Volatile var driveId = 0L
+        /** When the connection loss that began the current link pause happened (#316); 0 when not link-paused. */
+        @Volatile var linkLostAtMs = 0L
+        /** #316: the time of the last point this drive recorded (0 = none); a drive closed at its loss never ends before it. */
+        @Volatile var lastPointMs = 0L
     }
 
     /** The drive being recorded (or the last one); see [DriveRun]. */
@@ -228,7 +238,7 @@ class DriveRecorder(
         // that follow from its stored points (#262, [closedOrphan]); the rest stays at the row's defaults.
         // Only drives started before this recorder existed are orphans: a drive this recorder starts can be inserted before
         // the query below runs, and used to be closed here at its start with no points (#262, found by its regression).
-        val createdAtMs = System.currentTimeMillis()
+        val createdAtMs = clock()
         scope.launch(Dispatchers.IO) {
             try {
                 val orphans = dao.getUnfinishedDrives().filter { it.startTime < createdAtMs }
@@ -249,24 +259,32 @@ class DriveRecorder(
     // ── Public API ───────────────────────────────────────────────────────────
 
     /**
-     * Start recording a new drive. Creates a DriveEntity in Room immediately.
-     * If [sessionId] is provided, links this drive to a diagnostic session.
+     * START (#316): refused in demo mode, while a drive is open (recording or paused) and while a start is under way;
+     * allowed while the previous drive is still being saved. Otherwise the phase is STARTING at once (TRIP reads
+     * STARTING), the drive's row is written, and the drive becomes RECORDING. If [sessionId] is provided, links this
+     * drive to a diagnostic session.
+     *
+     * Lock order: callers may hold the service's link lock when they call a command; nothing in the recorder calls back
+     * into the service while holding the recorder's lock.
      */
-    @Synchronized fun startDrive(sessionId: Long = 0) {
-        if (recorderJob?.isActive == true) return
+    @Synchronized fun startDrive(sessionId: Long = 0): CommandResult {
         // Simulated telemetry never enters trip history.
-        if (com.openrs.dash.demo.DemoMode.isActive) {
-            Log.i(TAG, "startDrive ignored — demo mode active")
-            return
-        }
+        if (com.openrs.dash.demo.DemoMode.isActive) return refused("START", Refusal.DEMO)
+        val phase = _driveState.value.phase
+        if (phase == DrivePhase.RECORDING || phase == DrivePhase.PAUSED) return refused("START", Refusal.DRIVE_OPEN)
+        if (phase == DrivePhase.STARTING || recorderJob?.isActive == true) return refused("START", Refusal.STARTING)
 
         val vs = vehicleStateFlow.value
-        // A new instance — a drive still being finalized keeps its own (#236)
-        val newRun = DriveRun(vs, System.currentTimeMillis())
+        // A new instance — a drive still being saved keeps its own (#236)
+        val newRun = DriveRun(vs, clock())
         run = newRun
+        // The start carries the START's time from here on (#311): TRIP's idle dot is drawn only for a fetch made after the
+        // last START, also during the start and after a start that ends without a drive (cancelled, failed insert)
+        val now = clock()
+        _driveState.value = DriveState(phase = DrivePhase.STARTING, startTime = now)
+        pendingLossAtMs = 0L
 
         // One job per drive, assigned before it runs anything: a STOP or a second START during the insert sees it.
-        val now = System.currentTimeMillis()
         val job = scope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
             pruneOldDrives()
             ensureActive()                                    // STOP before the insert: no row at all
@@ -276,7 +294,7 @@ class DriveRecorder(
                 throw e                                       // a STOP, not a failed start (the rethrow rule)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start drive", e)
-                _driveState.update { it.copy(isRecording = false) }
+                _driveState.update { if (it.phase == DrivePhase.STARTING) it.copy(phase = DrivePhase.IDLE) else it }
                 return@launch
             }
             ensureActive()                                    // STOP during the insert: cancelStart removes the row
@@ -286,23 +304,32 @@ class DriveRecorder(
                 // collector receives a fix; until then nothing is placed and TRIP draws no dot.
                 _driveState.update {
                     DriveState(
-                        isRecording = true,
+                        phase = DrivePhase.RECORDING,
                         driveId = driveId,
                         startFuelPct = vs.fuelLevelPct,
                         startTime = now
                     )
                 }
+                applyLossDuringStart(driveId)
                 runRecordingLoop(driveId, newRun)
             } finally {
                 // Only this drive's state: a drive started since (finalize + start) is recording (#236). Here, not in
                 // the loop, so a STOP between the state and the loop clears it too.
                 _driveState.update {
-                    if (it.driveId == driveId) it.copy(isRecording = false, currentLocation = null) else it
+                    if (it.driveId == driveId) it.copy(phase = DrivePhase.IDLE, pauseReason = null, currentLocation = null) else it
                 }
             }
         }
         recorderJob = job
         job.start()
+        return CommandResult.Done
+    }
+
+    /** A refused command: dropped, with one REC line in the diagnostic log (the reason; TRIP shows START's). */
+    private fun refused(command: String, reason: Refusal): CommandResult {
+        Log.i(TAG, "$command refused: $reason")
+        DiagnosticLogger.event("REC", "$command refused: ${reason.name.lowercase().replace('_', ' ')}")
+        return CommandResult.Refused(reason)
     }
 
     /** Deletes the oldest drives when the saved-drives limit is reached. A failure is logged; a STOP is rethrown. */
@@ -339,9 +366,20 @@ class DriveRecorder(
             ).also { run.driveId = it }
         }
 
-    fun pauseDrive() {
-        pausedAtMs = System.currentTimeMillis()
-        _driveState.update { it.copy(isPaused = true) }
+    /** PAUSE (#316): refused unless a drive is recording (also during a start and when already paused). */
+    @Synchronized fun pauseDrive(): CommandResult {
+        if (_driveState.value.phase != DrivePhase.RECORDING) return refused("PAUSE", Refusal.NOT_RECORDING)
+        pauseLocked(PauseReason.HAND, clock())
+        return CommandResult.Done
+    }
+
+    /** Pauses the recording drive for [reason]; the buffered points are stored now. Call holding the lock. */
+    private fun pauseLocked(reason: PauseReason, atMs: Long) {
+        pausedAtMs = atMs
+        if (reason == PauseReason.LINK) run.linkLostAtMs = atMs
+        _driveState.update {
+            if (it.phase == DrivePhase.RECORDING) it.copy(phase = DrivePhase.PAUSED, pauseReason = reason) else it
+        }
         // Flush any buffered points immediately. flushBuffer() is suspend +
         // NonCancellable so it completes even if the scope is cancelled while
         // the pause is being handled.
@@ -369,11 +407,110 @@ class DriveRecorder(
         }
     }
 
-    fun resumeDrive() {
+    // ── Events (#316): the service reports these and applies no rule itself ─────────────────────────────────────
+
+    /** Auto-record, as last reported by [onAutoRecordSwitched] (the service reports it when it binds the recorder). */
+    @Volatile private var autoRecord = false
+
+    /** Whether the connection is up, as last reported (lost / back). */
+    @Volatile private var linkUp = false
+    /** The user stopped a drive since the last "connection back": auto-record starts nothing on this connection. */
+    private var handStoppedOnConnection = false
+    /** A loss reported while a start was under way (#316): acted on the moment the start completes. 0 = none. */
+    private var pendingLossAtMs = 0L
+
+    /**
+     * The connection to the adapter was lost at [atMs] (closed by the app, or dropped and not recovered). With auto-record
+     * on, a recording drive is link-paused from [atMs]; with it off it keeps recording (a recording gap). A paused drive
+     * is unchanged: a hand pause holds, a link pause keeps the moment of the loss that began it. During a start the loss
+     * is held and applied when the start completes.
+     */
+    @Synchronized fun onConnectionLost(atMs: Long) {
+        linkUp = false
+        when (_driveState.value.phase) {
+            DrivePhase.STARTING -> if (pendingLossAtMs == 0L) pendingLossAtMs = atMs
+            DrivePhase.RECORDING -> if (autoRecord) pauseLocked(PauseReason.LINK, atMs)
+            else -> Unit
+        }
+    }
+
+    /** A connection to the adapter is established. A link pause waits for the engine as well. */
+    @Synchronized fun onConnectionBack() { linkUp = true; handStoppedOnConnection = false }
+
+    /**
+     * The connection sees the engine running (RPM above the auto-record start threshold); the service reports it once per
+     * established connection. Counts only with the connection up. A link pause ends ([AutoRecordPolicy]: the same drive
+     * within [STALE_LINK_PAUSE_MS] of the loss, else the old drive is saved and a new one starts); with no drive open,
+     * auto-record starts one with [sessionId], unless the user stopped a drive on this connection.
+     */
+    @Synchronized fun onEngineRunning(sessionId: Long = 0L) {
+        if (!linkUp) return
+        val s = _driveState.value
+        // A loss held during a start whose end conditions now both hold (connection back, engine running) is over before
+        // the drive began: drop it, so a later loss in the same start is the one applied (QA F2 / F4)
+        if (s.phase == DrivePhase.STARTING) { pendingLossAtMs = 0L; return }
+        val lostForMs = if (s.phase == DrivePhase.PAUSED) clock() - run.linkLostAtMs else 0L
+        when (AutoRecordPolicy.onEngineRunning(s.phase, s.pauseReason, lostForMs,
+            mayStart = autoRecord && !handStoppedOnConnection, staleAfterMs = STALE_LINK_PAUSE_MS)) {
+            AutoRecordPolicy.Action.KEEP -> Unit
+            AutoRecordPolicy.Action.RESUME -> resumeLocked()
+            AutoRecordPolicy.Action.FINALIZE_AND_START -> {
+                // Saved with its end at the moment of the loss, never before its last stored point (DESIGN-SUMMARY,
+                // Connection lost): the retry time and the pause are not part of the drive
+                stopDrive(maxOf(run.linkLostAtMs, run.lastPointMs))
+                if (autoRecord) startDrive(sessionId)
+            }
+            AutoRecordPolicy.Action.START -> startDrive(sessionId)
+        }
+    }
+
+    /**
+     * The start of [driveId] completed: a loss still held from it is applied now (auto-record on → link-paused from the
+     * loss's moment). A loss whose end conditions came during the start was dropped by [onEngineRunning].
+     */
+    @Synchronized private fun applyLossDuringStart(driveId: Long) {
+        val at = pendingLossAtMs
+        pendingLossAtMs = 0L
+        val s = _driveState.value
+        if (at > 0L && autoRecord && s.driveId == driveId && s.phase == DrivePhase.RECORDING) pauseLocked(PauseReason.LINK, at)
+    }
+
+    /**
+     * Auto-record was switched on or off (#316, SPEC stories 30–31). Switched off during a link pause, the pause becomes a
+     * hand pause (only RESUME or STOP end it; it keeps its start); switched on, an open pause is left as it is. A call
+     * that repeats the current setting changes nothing.
+     */
+    @Synchronized fun onAutoRecordSwitched(on: Boolean) {
+        val wasOn = autoRecord
+        autoRecord = on
+        if (wasOn && !on) _driveState.update {
+            if (it.phase == DrivePhase.PAUSED && it.pauseReason == PauseReason.LINK) it.copy(pauseReason = PauseReason.HAND) else it
+        }
+    }
+
+    /**
+     * Demo mode was entered (#316, SPEC stories 34–35): whatever the recorder is doing ends — a recording or paused drive is
+     * stopped and saved (its end now), a start under way is a cancelled start. Nothing under way: nothing happens. START is
+     * refused while demo mode is active ([startDrive]).
+     */
+    @Synchronized fun onDemoModeEntered() {
+        stopDrive(clock())
+    }
+
+    /** RESUME (#316): refused unless a drive is paused. */
+    @Synchronized fun resumeDrive(): CommandResult {
+        if (_driveState.value.phase != DrivePhase.PAUSED) return refused("RESUME", Refusal.NOT_PAUSED)
+        resumeLocked()
+        return CommandResult.Done
+    }
+
+    /** Ends the pause, whatever its reason. Call holding the lock. */
+    private fun resumeLocked() {
         pausedAtMs = 0L
-        run.resumedAtMs = System.currentTimeMillis()   // N1 / Q1: the loop's next fix takes nothing decoded before this
+        run.linkLostAtMs = 0L
+        run.resumedAtMs = clock()   // N1 / Q1: the loop's next fix takes nothing decoded before this
         run.prevPoint = null  // Gap in polyline — next point won't connect to prev
-        _driveState.update { it.copy(isPaused = false) }
+        _driveState.update { if (it.phase == DrivePhase.PAUSED) it.copy(phase = DrivePhase.RECORDING, pauseReason = null) else it }
     }
 
     /**
@@ -382,7 +519,7 @@ class DriveRecorder(
      * to resume or has gone stale and should be finalized.
      */
     fun pausedDurationMs(): Long =
-        if (pausedAtMs > 0L) System.currentTimeMillis() - pausedAtMs else 0L
+        if (pausedAtMs > 0L) clock() - pausedAtMs else 0L
 
     /**
      * Ends the drive and finalizes it on IO; the returned job completes when the row, laps and summary are written
@@ -392,7 +529,15 @@ class DriveRecorder(
      * STOP gets no laps, thumbnail or summary.
      */
     @Synchronized fun stopDrive(): Job {
-        val stoppedAt = System.currentTimeMillis()
+        handStoppedOnConnection = true                        // #316: nothing restarts on this connection
+        return stopDrive(clock())
+    }
+
+    /**
+     * STOP's work, with the drive's end at [stoppedAt] (the user's STOP: now). Kept under the name stopDrive: tests
+     * identify the finalize's point read by its frame (`DriveRecorder$stopDrive`, ThumbnailInputRegressionTest).
+     */
+    private fun stopDrive(stoppedAt: Long): Job {
         val jobToJoin = recorderJob
         val state = _driveState.value
         // Not recording and no start under way: nothing to stop (a second STOP must not rewrite the drive it ended)
@@ -402,7 +547,10 @@ class DriveRecorder(
         recorderJob = null
         // A STOP while the drive is still being created (its state not yet published): the start is cancelled and
         // nothing is finalized — the previous drive, whose id the state still holds, is never touched
-        if (!state.isRecording) return cancelStart(jobToJoin!!, run)
+        if (!state.isRecording) {
+            _driveState.update { if (it.phase == DrivePhase.STARTING) it.copy(phase = DrivePhase.IDLE) else it }
+            return cancelStart(jobToJoin!!, run)
+        }
 
         val endVs = vehicleStateFlow.value
         val stopped = run
@@ -514,8 +662,8 @@ class DriveRecorder(
         finalize.start()
         // The stopped drive's position goes with it (#311); only that drive's, as a drive started since owns its own
         _driveState.update {
-            if (it.driveId == state.driveId) it.copy(isRecording = false, isPaused = false, currentLocation = null)
-            else it.copy(isRecording = false, isPaused = false)
+            if (it.driveId == state.driveId) it.copy(phase = DrivePhase.IDLE, pauseReason = null, currentLocation = null)
+            else it.copy(phase = DrivePhase.IDLE, pauseReason = null)
         }
         return finalize
     }
@@ -553,15 +701,15 @@ class DriveRecorder(
     private suspend fun runRecordingLoop(driveId: Long, run: DriveRun) = withContext(Dispatchers.Default) {
         try {
             fetchInitialWeather()
-            var lastWeatherMs = System.currentTimeMillis()
+            var lastWeatherMs = clock()
             // Gap diagnostics (#221): why points stopped — never fills them in
-            val gaps = RecordingGapMonitor().also { it.start(System.currentTimeMillis()) }
+            val gaps = RecordingGapMonitor().also { it.start(clock()) }
             launch {
                 while (isActive) {
                     delay(RecordingGapMonitor.GAP_AFTER_MS)
                     val st = _driveState.value
                     if (!st.isRecording) continue
-                    gaps.tick(System.currentTimeMillis(), vehicleStateFlow.value.isConnected, st.isPaused)
+                    gaps.tick(clock(), vehicleStateFlow.value.isConnected, st.isPaused)
                         ?.let { DiagnosticLogger.event("REC_GAP", "drive $driveId: $it") }
                 }
             }
@@ -576,14 +724,14 @@ class DriveRecorder(
                 // Skip recording when paused
                 if (state.isPaused) {
                     // N1: nothing decoded before or during the pause may be stored at a fix after it
-                    run.freshGate.skip(System.currentTimeMillis())
+                    run.freshGate.skip(clock())
                     lapTimer?.breakTrack(driveId)
-                    gaps.onLocation(System.currentTimeMillis(), written = false, skipped = RecordingGapMonitor.Reason.PAUSED)
+                    gaps.onLocation(clock(), written = false, skipped = RecordingGapMonitor.Reason.PAUSED)
                         ?.let { DiagnosticLogger.event("REC_GAP", "drive $driveId: ${it.describe()}") }
                     return@collect
                 }
 
-                val now = System.currentTimeMillis()
+                val now = clock()
 
                 // Periodic weather refresh
                 if (now - lastWeatherMs >= WEATHER_REFRESH_MS) {
@@ -765,6 +913,7 @@ class DriveRecorder(
                     )
                 }
                 run.prevPoint = point
+                run.lastPointMs = point.timestamp
 
                 // Flush to Room when the buffer is full — last, so a STOP cancellation delivered when the insert
                 // returns (flushBuffer rethrows it) can't cut this point's state update short
@@ -903,7 +1052,7 @@ class DriveRecorder(
      * position a note or the start/finish line may be placed at. Null before the drive's first fix, after STOP, when
      * not recording, and during a GPS gap (the last fix is then not where the car is).
      */
-    fun freshFix(nowMs: Long = System.currentTimeMillis()): Location? {
+    fun freshFix(nowMs: Long = clock()): Location? {
         val state = _driveState.value
         if (!state.isRecording) return null
         return state.currentLocation?.takeIf { fixAgeMs(it, nowMs) <= LapTimer.MAX_FIX_AGE_MS }
@@ -1063,7 +1212,7 @@ class DriveRecorder(
                     startFinishLat = sf.lat,
                     startFinishLng = sf.lng,
                     startFinishBearing = sf.bearing ?: return,   // laps exist only once the line's direction is known
-                    createdAt = System.currentTimeMillis()
+                    createdAt = clock()
                 )
             )
             dao.insertLaps(laps.map { lap ->
@@ -1110,7 +1259,7 @@ class DriveRecorder(
     fun markNow(): NoteMark? {
         val state = _driveState.value
         if (!state.isRecording || state.driveId <= 0L) return null
-        val now = System.currentTimeMillis()
+        val now = clock()
         return NoteMark(state.driveId, now, freshFix(now), vehicleStateFlow.value)
     }
 
@@ -1168,6 +1317,8 @@ class DriveRecorder(
             }
         }
         private const val WEATHER_REFRESH_MS = 15 * 60_000L
+        /** #316: a link pause older than this (from the loss) is not resumed: its drive is saved and a new one starts. */
+        const val STALE_LINK_PAUSE_MS = 15 * 60_000L
         private const val FLUSH_SIZE = 30           // flush every ~30 seconds at 1 Hz
         /** An orphan's distance joins two stored points only this close (1 Hz fixes; see [closedOrphan], #262). */
         private const val ORPHAN_SEGMENT_MAX_GAP_MS = 2_000L

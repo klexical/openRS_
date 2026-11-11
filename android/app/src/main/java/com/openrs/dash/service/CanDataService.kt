@@ -87,7 +87,11 @@ class CanDataService : Service() {
         override fun stopSelf() = this@CanDataService.stopSelf()
     })
 
-    private fun buildConnection(): SlcanConnection {
+    /**
+     * [onLinkLost]: the connection's "connection lost" report (#316) — a dropped connection whose attempts failed.
+     * [heldDropAtMs]: a drop carried over from the connection a manual reconnect replaced (#316 (b)).
+     */
+    private fun buildConnection(onLinkLost: (Long) -> Unit, heldDropAtMs: Long? = null): SlcanConnection {
         val s = AppSettings
         val host = s.getHost(this)
         val port = s.getPort(this)
@@ -115,7 +119,9 @@ class CanDataService : Service() {
             rpmProvider      = { OpenRSDashApp.instance.vehicleState.value.rpm },
             keepRetrying     = { isRecording() },
             // #271: MAP 0xF40B is polled (fast group) only while a drive is recording, not paused
-            mapPoll          = { com.openrs.dash.data.MapF40b.pollActive(OpenRSDashApp.instance.driveRecorder.driveState.value) }
+            mapPoll          = { com.openrs.dash.data.MapF40b.pollActive(recorder().driveState.value) },
+            onLinkLost       = onLinkLost,
+            heldDropAtMs     = heldDropAtMs,
         )
 
         // Create the appropriate firmware command sender
@@ -234,14 +240,25 @@ class CanDataService : Service() {
         registerBluetoothCallback()
         // Recording start / pause / resume / stop changes the notification text and whether Cancel is offered (#212)
         scope.launch {
-            OpenRSDashApp.instance.driveRecorder.driveState
-                .map { it.isRecording to it.isPaused }
+            recorder().driveState
+                // #316: the phase and the pause reason (the label): a link pause turned into a hand pause by the auto-record
+                // switch changes neither "recording" nor "paused", and its label must still be re-published
+                .map { it.phase to it.pauseReason }
                 .distinctUntilChanged()
                 .collect { link.transition { publishNotification(link.phase); retypeForeground() } }
         }
         // #261: the location type can be added only while the app is visible — a recording started behind gets it on return
         scope.launch {
             AppVisibility.visible.collect { visible -> if (visible) link.transition { retypeForeground() } }
+        }
+        // #316 "auto-record switched": the recorder is told the saved setting now and at every change (Settings' SAVE goes
+        // through UserPrefsStore). Unconfined: the first value is delivered before onCreate returns, and a change reaches
+        // the recorder in the same call that saves it, so no connection event can come between the setting and the
+        // recorder. Launched after the two collectors above: ServiceScopeTeardownTest names the visibility collector by
+        // its lambda's place in onCreate (`onCreate$4`).
+        scope.launch(Dispatchers.Unconfined) {
+            UserPrefsStore.prefs.map { it.autoRecordDrives }.distinctUntilChanged()
+                .collect { recorder().onAutoRecordSwitched(it) }
         }
         if (isTransportReady()) autoStartConnection()
         com.openrs.dash.ui.StartupTrace.mark("CanDataService.onCreate end")
@@ -266,7 +283,7 @@ class CanDataService : Service() {
             DiagnosticLogger.event(DiagnosticLogger.EVENT_LINK_TASK_REMOVED, LinkStopLog.taskRemovedLine(
                 link.phase, connectionJob?.isActive == true, recNow(), DemoMode.isActive))
             if (!DemoMode.isActive) {
-                link.cancelOnTaskRemoved(recording = { isRecording() }, finalizing = { OpenRSDashApp.instance.driveRecorder.isFinalizing }) {
+                link.cancelOnTaskRemoved(recording = { isRecording() }, finalizing = { recorder().isFinalizing }) {
                     stopConnection(LinkStopReason.TASK_REMOVED)
                 }
             }
@@ -280,7 +297,7 @@ class CanDataService : Service() {
     }
 
     private fun recNow(): String {
-        val ds = OpenRSDashApp.instance.driveRecorder.driveState.value
+        val ds = recorder().driveState.value
         return LinkStopLog.rec(ds.isRecording, ds.isPaused)
     }
 
@@ -395,12 +412,21 @@ class CanDataService : Service() {
         /** Notification action: cancel an initial connection attempt (#212). */
         const val ACTION_CANCEL_CONNECT = "com.openrs.dash.action.CANCEL_CONNECT"
 
-        /** Window within which a paused drive will be resumed on reconnect. Beyond this,
-         *  the stale drive is finalized and a fresh one begins. */
-        const val AUTO_RESUME_WINDOW_MS = 15 * 60_000L  // 15 minutes
+
+        /** The app's drive recorder: what production uses. */
+        internal val APP_RECORDER: () -> DriveRecorder = { OpenRSDashApp.instance.driveRecorder }
+
+        /**
+         * #316, test seam 5: where the service gets its drive recorder. Production keeps [APP_RECORDER]; a service test hands
+         * in its own before creating the service (the service binds the recorder's state at onCreate). `TestServices`
+         * puts [APP_RECORDER] back at teardown.
+         */
+        @Volatile internal var recorderProvider: () -> DriveRecorder = APP_RECORDER
     }
 
-    private fun isRecording(): Boolean = OpenRSDashApp.instance.driveRecorder.driveState.value.isRecording
+    private fun recorder(): DriveRecorder = recorderProvider()
+
+    private fun isRecording(): Boolean = recorder().driveState.value.isRecording
 
     /**
      * The foreground notification. Its body brings the existing MainActivity forward (SINGLE_TOP + CLEAR_TOP: never a
@@ -435,9 +461,9 @@ class CanDataService : Service() {
      * change, and after a stop a Cancel #212 doesn't offer once connected). Runs under [link]'s transition.
      */
     private fun goForeground(location: Boolean = false) {
-        val ds = OpenRSDashApp.instance.driveRecorder.driveState.value
+        val ds = recorder().driveState.value
         val phase = LinkPresentation.foregroundPhase(link.phase)
-        val text = LinkPresentation.notificationText(phase, isBluetooth(), ds.isRecording, ds.isPaused) ?: "Connecting to vehicle…"
+        val text = LinkPresentation.notificationText(phase, isBluetooth(), ds) ?: "Connecting to vehicle…"
         val notification = buildNotification(text, offerCancel = LinkPresentation.offersCancel(phase, ds.isRecording))
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -468,7 +494,7 @@ class CanDataService : Service() {
      */
     private fun retypeForeground() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return     // no service types before Android 10
-        val ds = OpenRSDashApp.instance.driveRecorder.driveState.value
+        val ds = recorder().driveState.value
         val fine = androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
         val want = ForegroundTypes.wantsLocation(ds.isRecording, ds.isPaused, fine)
@@ -586,8 +612,11 @@ class CanDataService : Service() {
         beginConnection()
     }
 
-    /** Starts a connection job unless one is running; false when nothing could start (transport down / no foreground). */
-    private fun beginConnection(): Boolean = link.transition {
+    /**
+     * Starts a connection job unless one is running; false when nothing could start (transport down / no foreground).
+     * [heldDropAtMs]: a manual reconnect's carried drop (#316 (b)), held by the new connection; unused when nothing starts.
+     */
+    private fun beginConnection(heldDropAtMs: Long? = null): Boolean = link.transition {
         if (DemoMode.isActive) return@transition false
         if (!isTransportReady()) return@transition false
         if (connectionJob?.isActive == true) return@transition true
@@ -647,10 +676,12 @@ class CanDataService : Service() {
         com.openrs.dash.data.BoostSession.reset()
         startSessionRecording()
 
-        val conn = buildConnection()
+        var reportTo: LinkSession? = null                 // the job's session, set below; the report goes through its ownership
+        val conn = buildConnection(onLinkLost = { atMs -> reportTo?.onConnectionLost(atMs) }, heldDropAtMs = heldDropAtMs)
         connection = conn
         val gen = link.begin()
         val session = newLinkSession(gen)
+        reportTo = session
         applyPhase(LinkPhase.CONNECTING)
 
         connectionJob = scope.launch {
@@ -669,6 +700,7 @@ class CanDataService : Service() {
                         else -> link.publish(gen, phase) {
                             DiagnosticLogger.event("STATE", state.label)
                             applyPhase(it)
+                            if (it == LinkPhase.CONNECTED) session.onConnectionBack()       // #316
                         }
                     }
                 }
@@ -723,21 +755,12 @@ class CanDataService : Service() {
                 }
             }
 
-            // Auto-record drive: gated on adapter connected + engine actually
-            // running. Prevents premature recording when the phone is
-            // on the adapter's WiFi but the car is off (was the
-            // original bug — drive would start with no telemetry). On
-            // reconnect within AUTO_RESUME_WINDOW_MS a paused drive is
-            // resumed seamlessly; beyond that, the stale drive is
-            // finalized and a fresh one begins. A drive still recording
-            // is kept (AutoRecordPolicy).
-            if (AppSettings.getAutoRecordDrives(this@CanDataService)) {
-                launch {
-                    // A drive still recording (manual, or across an RCN retry) is kept — never split (#212)
-                    OpenRSDashApp.instance.vehicleState.collect { vs ->
-                        session.onVehicleState(vs, { currentSessionId }, AUTO_RESUME_WINDOW_MS)
-                    }
-                }
+            // #316: "engine running" on each established connection of this job goes to the recorder, which applies
+            // auto-record (a drive starts unless one is open; nothing after a hand STOP on this connection) and ends a link
+            // pause (the same drive within 15 minutes of the loss, else a new one). Always collected: the recorder reads
+            // the auto-record setting itself.
+            launch {
+                OpenRSDashApp.instance.vehicleState.collect { vs -> session.onVehicleState(vs) { currentSessionId } }
             }
 
             conn.connectHybrid(
@@ -762,7 +785,7 @@ class CanDataService : Service() {
         countKnockIfFresh(obdState)
         // Session knock log (#174) — merged live state so pull detection sees CAN rpm/throttle. Position only from the
         // recording drive's own fix, at most 2 s old (#311): none outside a drive, before its first fix or in a GPS gap
-        val loc = OpenRSDashApp.instance.driveRecorder.freshFix()
+        val loc = recorder().freshFix()
         com.openrs.dash.data.KnockSessionLog.onState(
             OpenRSDashApp.instance.vehicleState.value, System.currentTimeMillis(),
             loc?.latitude, loc?.longitude
@@ -798,14 +821,11 @@ class CanDataService : Service() {
         gen = gen,
         state = OpenRSDashApp.instance.vehicleState,
         recorder = object : LinkSession.Recorder {
-            private val r get() = OpenRSDashApp.instance.driveRecorder
-            override val isRecording get() = r.driveState.value.isRecording
-            override val isPaused get() = r.driveState.value.isPaused
+            private val r get() = recorder()
             override val activeDriveId get() = r.driveState.value.let { if (it.isRecording) it.driveId else null }
-            override fun pausedDurationMs() = r.pausedDurationMs()
-            override fun resumeDrive() = r.resumeDrive()
-            override fun stopDrive() { r.stopDrive() }
-            override fun startDrive(sessionId: Long) = r.startDrive(sessionId = sessionId)
+            override fun onEngineRunning(sessionId: Long) { r.onEngineRunning(sessionId) }
+            override fun onConnectionLost(atMs: Long) { r.onConnectionLost(atMs) }
+            override fun onConnectionBack() { r.onConnectionBack() }
         },
         onFrameCounted = { sessionFrameCount++ },
         perfRunSink = { run ->
@@ -820,18 +840,13 @@ class CanDataService : Service() {
     )
 
     fun stopConnection(reason: LinkStopReason): Unit = link.transition {
-        val rec = recNow()   // before the auto-pause below, so a running recording doesn't read as paused
-        // Auto-pause drive if recording — do NOT finalize here. A brief
-        // disconnect (WiFi drop, adapter reboot) should not end the
-        // drive. On reconnect within AUTO_RESUME_WINDOW_MS the drive
-        // resumes; beyond that, the next startConnection finalizes it
-        // and begins a fresh drive. Orphans across app restarts are
-        // cleaned up by DriveRecorder's init block.
-        val recorder = OpenRSDashApp.instance.driveRecorder
-        val ds = recorder.driveState.value
-        if (ds.isRecording && !ds.isPaused && AppSettings.getAutoRecordDrives(this)) {
-            recorder.pauseDrive()
-        }
+        val rec = recNow()   // before the loss below, so a running recording doesn't read as paused
+        // #316: a closure by the service is a "connection lost", always — also for a job that never connected (and, as the
+        // pause here always was, with no job under way). Its moment is the held drop when an established connection dropped
+        // and its attempts are still running (reported once: the connection hands it over), else the closure's. What the
+        // drive does with it is the recorder's rule (a link pause with auto-record on; never a finalize here).
+        val atMs = connection?.takeUnreportedDrop() ?: System.currentTimeMillis()
+        recorder().onConnectionLost(atMs)
         endConnection(LinkPhase.OFF, reason, rec)
     }
 
@@ -844,7 +859,7 @@ class CanDataService : Service() {
         // The drive's points must be durable before the foreground goes (#262, N2): the barrier stores the buffered ones and
         // waits for every insert under way (a 30-point batch the loop has taken too) and a STOP's finalize. Nothing here
         // waits: the demote below runs once the barrier completes, outside link.transition.
-        val durable = OpenRSDashApp.instance.driveRecorder.durabilityBarrier()
+        val durable = recorder().durabilityBarrier()
         teardownJob(finalPhase, reason, rec)
         OpenRSDashApp.instance.linkPhase.value = finalPhase
         // Demo owns the connection flags (WiFi/BT-loss callbacks still land here).
@@ -903,8 +918,8 @@ class CanDataService : Service() {
 
     /** Notification text + Cancel for [phase] and the current recording state; no-op once released (not foreground). */
     private fun publishNotification(phase: LinkPhase) {
-        val ds = OpenRSDashApp.instance.driveRecorder.driveState.value
-        LinkPresentation.notificationText(phase, isBluetooth(), ds.isRecording, ds.isPaused)?.let {
+        val ds = recorder().driveState.value
+        LinkPresentation.notificationText(phase, isBluetooth(), ds)?.let {
             updateNotification(it, LinkPresentation.offersCancel(phase, ds.isRecording))
         }
     }
@@ -917,10 +932,9 @@ class CanDataService : Service() {
         if (!link.owns(gen)) return@transition
         DiagnosticLogger.event("STATE", label)
         android.util.Log.i("CAN", "Connection attempts exhausted — released")
-        val rec = recNow()   // before the auto-pause below
-        val recorder = OpenRSDashApp.instance.driveRecorder
-        val ds = recorder.driveState.value
-        if (ds.isRecording && !ds.isPaused && AppSettings.getAutoRecordDrives(this)) recorder.pauseDrive()
+        val rec = recNow()
+        // #316: no pause here — a dropped connection's loss was reported by the connection when its attempts failed
+        // (before FAILED was published), and a job that never connected reports none
         endConnection(LinkPhase.FAILED, LinkStopReason.ATTEMPTS_EXHAUSTED, rec)
     }
 
@@ -949,6 +963,10 @@ class CanDataService : Service() {
     fun reconnect(): Unit = link.transition {
         if (DemoMode.isActive) return@transition
         link.clearManualConnect()
+        // #316 (b), owner "Yes, carry it": a drop the old connection holds (its attempts were still under way) is not
+        // discarded with the old job. The new connection holds it: reported with its original moment if the new attempts
+        // fail, cleared by a connect. The tap itself reports nothing. Taken before the teardown ends the old job.
+        val heldDrop = connection?.takeUnreportedDrop()
         // Old job, its session record and diagnostic session end before the new ones begin
         val rec = recNow()
         teardownJob(LinkPhase.OFF, LinkStopReason.USER_RETRY, rec)
@@ -966,7 +984,12 @@ class CanDataService : Service() {
             )
         }
         // Transport down (or no foreground allowed): nothing started, so release instead of keeping a stale notification
-        if (!beginConnection()) endConnection(LinkPhase.OFF, LinkStopReason.RETRY_NOT_STARTED, rec)
+        if (!beginConnection(heldDropAtMs = heldDrop)) {
+            // #316: nothing started, so this RCN closed the connection: a "connection lost", as every closure by the service
+            // is (the owner's "Yes, pause it"), at the carried drop's moment when one was held, else the closure's
+            recorder().onConnectionLost(heldDrop ?: System.currentTimeMillis())
+            endConnection(LinkPhase.OFF, LinkStopReason.RETRY_NOT_STARTED, rec)
+        }
     }
 
     fun resetPeaks() {
@@ -997,13 +1020,16 @@ class CanDataService : Service() {
     /**
      * Stops all real vehicle communication, then hands [OpenRSDashApp.vehicleState] to the
      * simulator. A drive being recorded is finalized first so it keeps only real samples.
-     * Called again while active, it just switches scenario.
+     * Called again while active, it just switches scenario. Main thread only (MainActivity): a START tap runs there too,
+     * so none can fall between the recorder's event and [DemoMode.start] (#316, DIFFERENCES item 28).
      */
     fun enterDemoMode(scenario: DemoScenario): Unit = link.transition {
         if (!DemoMode.AVAILABLE) return@transition
         if (DemoMode.isActive) { DemoMode.select(scenario); return@transition }
-        val recorder = OpenRSDashApp.instance.driveRecorder
-        if (recorder.driveState.value.isRecording) recorder.stopDrive()
+        // #316: the recorder ends whatever it is doing (a recording or paused drive is saved, a start under way cancelled),
+        // before the closure below reports its loss. The order also keeps the foreground until the saved drive is written:
+        // the closure's durability barrier waits for a finalize under way (#262 / N2; ServiceFlushDemoteTest)
+        recorder().onDemoModeEntered()
         stopConnection(LinkStopReason.DEMO_ENTRY)
         connection = null
         adapterFirmwareApi = null

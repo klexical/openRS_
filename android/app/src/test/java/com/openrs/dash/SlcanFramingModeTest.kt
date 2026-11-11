@@ -128,13 +128,7 @@ class SlcanFramingModeTest {
     }
 
     private object NoRecorder : LinkSession.Recorder {
-        override val isRecording = false
-        override val isPaused = false
         override val activeDriveId: Long? = null
-        override fun pausedDurationMs() = 0L
-        override fun resumeDrive() = Unit
-        override fun stopDrive() = Unit
-        override fun startDrive(sessionId: Long) = Unit
     }
 
     @Test fun `a new connection detects its framing again`() = runTest {

@@ -35,6 +35,8 @@ class SlcanConnectionLifecycleTest {
         data object ConnectsThenDrops : Attempt
         data object ConnectsAndHolds : Attempt
         data object BlocksUntilClosed : Attempt
+        /** Connects, then the read ends [afterMs] later (virtual time): the moment the app finds the link dropped. */
+        data class ConnectsThenDropsAfter(val afterMs: Long) : Attempt
     }
 
     private class FakeTransport(private val attempt: Attempt) : SlcanTransport {
@@ -50,6 +52,7 @@ class SlcanConnectionLifecycleTest {
         }
         override suspend fun readLine(): String? = lines.removeFirstOrNull() ?: when (attempt) {
             Attempt.ConnectsAndHolds -> awaitCancellation()
+            is Attempt.ConnectsThenDropsAfter -> { kotlinx.coroutines.delay(attempt.afterMs); null }
             else -> null                                                    // EOF — the link dropped
         }
         override suspend fun writeLine(frame: String) = Unit
@@ -66,10 +69,17 @@ class SlcanConnectionLifecycleTest {
 
     private fun kotlinx.coroutines.test.TestScope.connection(
         h: Harness, maxRetries: Int = 3, keepRetrying: () -> Boolean = { false },
+        onLinkLost: (Long) -> Unit = {}, heldDropAtMs: Long? = null,
     ) = SlcanConnection(
         transportFactory = { h.next() }, maxRetries = maxRetries, reconnectDelayMs = 2_000L,
         keepRetrying = keepRetrying, ioDispatcher = StandardTestDispatcher(testScheduler), debugSink = {},
+        clock = { testScheduler.currentTime }, onLinkLost = onLinkLost, heldDropAtMs = heldDropAtMs,
     )
+
+    /** Each "connection lost" the connection reports: (virtual time it was reported, the drop time it carries). */
+    private fun kotlinx.coroutines.test.TestScope.losses() = mutableListOf<Pair<Long, Long>>()
+    private fun kotlinx.coroutines.test.TestScope.into(l: MutableList<Pair<Long, Long>>): (Long) -> Unit =
+        { at -> l += testScheduler.currentTime to at }
 
     private fun kotlinx.coroutines.test.TestScope.record(conn: SlcanConnection): MutableList<AdapterState> {
         val seen = mutableListOf<AdapterState>()
@@ -234,5 +244,148 @@ class SlcanConnectionLifecycleTest {
         job.cancel(); advanceUntilIdle()
         assertTrue(job.isCompleted)
         assertTrue(h.transports.single().closed)
+    }
+
+    // ── #316: "connection lost" (seam 4). Reported once per dropped connection, after the normal attempts fail, carrying
+    // the moment the app found the established connection dropped (the read ended), never the time of the attempts ─────
+
+    @Test fun `auto-reconnect on - a drop is reported after the three attempts fail, with the drop's time`() = runTest {
+        val l = losses()
+        val h = Harness(listOf(Attempt.ConnectsThenDropsAfter(7_000L), Attempt.Fails, Attempt.Fails, Attempt.Fails))
+        val conn = connection(h, maxRetries = 3, onLinkLost = into(l))
+        conn.run().collect {}
+        // drop at 7 s; reconnect backoff 2 s; attempts at 9 s, 14 s (+5 s), 29 s (+15 s): the third fails at 29 s
+        assertEquals(listOf(29_000L to 7_000L), l)
+        assertEquals(4, h.transports.size)
+        assertEquals("handed over once", null, conn.takeUnreportedDrop())
+    }
+
+    @Test fun `auto-reconnect off - a drop is reported after its one attempt fails, with the drop's time`() = runTest {
+        val l = losses()
+        val h = Harness(listOf(Attempt.ConnectsThenDropsAfter(7_000L), Attempt.Fails))
+        val conn = connection(h, maxRetries = 1, onLinkLost = into(l))
+        conn.run().collect {}
+        assertEquals(listOf(9_000L to 7_000L), l)
+        assertEquals(2, h.transports.size)
+    }
+
+    @Test fun `nothing is reported before the attempts have failed`() = runTest {
+        val l = losses()
+        val h = Harness(listOf(Attempt.ConnectsThenDropsAfter(7_000L), Attempt.Fails, Attempt.Fails, Attempt.Fails))
+        val conn = connection(h, maxRetries = 3, onLinkLost = into(l))
+        val job = launch { conn.run().collect {} }
+        advanceTimeBy(28_999L)
+        assertEquals(emptyList<Pair<Long, Long>>(), l)
+        advanceUntilIdle()
+        assertEquals(1, l.size)
+        assertTrue(job.isCompleted)
+    }
+
+    @Test fun `a connection job that never connects reports no loss - with each auto-reconnect setting`() = runTest {
+        for (retries in listOf(3, 1)) {
+            val l = losses()
+            val conn = connection(Harness(List(retries) { Attempt.Fails }), maxRetries = retries, onLinkLost = into(l))
+            conn.run().collect {}
+            assertEquals("maxRetries $retries", emptyList<Pair<Long, Long>>(), l)
+            assertEquals(null, conn.takeUnreportedDrop())
+        }
+    }
+
+    @Test fun `a drop followed by a reconnect reports nothing - the held drop is cleared`() = runTest {
+        val l = losses()
+        val h = Harness(listOf(Attempt.ConnectsThenDropsAfter(7_000L), Attempt.Fails, Attempt.ConnectsAndHolds))
+        val conn = connection(h, maxRetries = 3, onLinkLost = into(l))
+        val job = launch { conn.run().collect {} }
+        advanceTimeBy(10 * 60_000L)
+        assertEquals(AdapterState.Connected, conn.state.value)
+        assertEquals(emptyList<Pair<Long, Long>>(), l)
+        assertEquals(null, conn.takeUnreportedDrop())
+        job.cancel(); advanceUntilIdle()
+        assertEquals(emptyList<Pair<Long, Long>>(), l)
+    }
+
+    @Test fun `a closure during the attempts takes the held drop once - the connection then reports nothing`() = runTest {
+        val l = losses()
+        val h = Harness(listOf(Attempt.ConnectsThenDropsAfter(7_000L), Attempt.Fails, Attempt.Fails, Attempt.Fails))
+        val conn = connection(h, maxRetries = 3, onLinkLost = into(l))
+        val job = launch { conn.run().collect {} }
+        advanceTimeBy(10_000L)                                         // dropped at 7 s, the first attempt failed at 9 s
+        assertEquals(AdapterState.Reconnecting, conn.state.value)
+        assertEquals(7_000L, conn.takeUnreportedDrop())
+        assertEquals("once", null, conn.takeUnreportedDrop())
+        job.cancel(); advanceUntilIdle()                               // the service closes the connection
+        assertEquals(emptyList<Pair<Long, Long>>(), l)
+    }
+
+    @Test fun `while recording the retries go on - one report per dropped connection, never one per extra attempt`() = runTest {
+        val l = losses()
+        val h = Harness(listOf(Attempt.ConnectsThenDropsAfter(7_000L), Attempt.Fails, Attempt.Fails, Attempt.Fails,
+            Attempt.Fails, Attempt.Fails, Attempt.ConnectsThenDropsAfter(1_000L)))      // then Fails, forever
+        val conn = connection(h, maxRetries = 3, keepRetrying = { true }, onLinkLost = into(l))
+        val job = launch { conn.run().collect {} }
+        advanceTimeBy(10 * 60_000L)
+        assertTrue("many attempts: ${h.transports.size}", h.transports.size > 12)
+        assertEquals(listOf(7_000L, 120_000L), l.map { it.second })   // the second connection: 119 s + 1 s
+        assertEquals(29_000L, l.first().first)
+        job.cancel(); advanceUntilIdle()
+    }
+
+    // ── #316 (b), owner "Yes, carry it": a drop carried into the connection a manual reconnect builds (heldDropAtMs) ────
+
+    @Test fun `a carried drop is reported once the new job's own attempts fail - a fresh count with each auto-reconnect setting`() = runTest {
+        // the new job counts its attempts from zero: 3 attempts (5 s + 15 s backoff) with auto-reconnect on, 1 with it off
+        for ((retries, reportedAt) in listOf(3 to 20_000L, 1 to 0L)) {
+            val l = losses()
+            val start = testScheduler.currentTime
+            val conn = connection(Harness(List(retries) { Attempt.Fails }), maxRetries = retries, onLinkLost = into(l),
+                heldDropAtMs = 1_234L)
+            conn.run().collect {}
+            assertEquals("maxRetries $retries", listOf(start + reportedAt to 1_234L), l)
+            assertEquals("handed over once", null, conn.takeUnreportedDrop())
+        }
+    }
+
+    @Test fun `a carried drop is cleared by a connect - nothing reported, then or when the job ends`() = runTest {
+        val l = losses()
+        val conn = connection(Harness(listOf(Attempt.ConnectsAndHolds)), onLinkLost = into(l), heldDropAtMs = 1_234L)
+        val job = launch { conn.run().collect {} }
+        advanceTimeBy(60_000L)
+        assertEquals(AdapterState.Connected, conn.state.value)
+        assertEquals(null, conn.takeUnreportedDrop())
+        job.cancel(); advanceUntilIdle()
+        assertEquals(emptyList<Pair<Long, Long>>(), l)
+    }
+
+    @Test fun `after a connect cleared a carried drop, a later drop is reported with its own moment only`() = runTest {
+        val l = losses()
+        val h = Harness(listOf(Attempt.ConnectsThenDropsAfter(7_000L), Attempt.Fails, Attempt.Fails, Attempt.Fails))
+        val conn = connection(h, maxRetries = 3, onLinkLost = into(l), heldDropAtMs = 1_234L)
+        conn.run().collect {}
+        assertEquals(listOf(7_000L), l.map { it.second })
+    }
+
+    @Test fun `a carried drop can be taken once during the new attempts - by a closure or the next reconnect`() = runTest {
+        val l = losses()
+        val conn = connection(Harness(List(3) { Attempt.Fails }), maxRetries = 3, onLinkLost = into(l), heldDropAtMs = 1_234L)
+        val job = launch { conn.run().collect {} }
+        advanceTimeBy(1_000L)                                          // the first attempt failed, 5 s backoff running
+        assertEquals(1_234L, conn.takeUnreportedDrop())
+        assertEquals("once", null, conn.takeUnreportedDrop())
+        job.cancel(); advanceUntilIdle()
+        assertEquals(emptyList<Pair<Long, Long>>(), l)
+    }
+
+    @Test fun `QA trace at the connections - drop, RCN hands the drop over, the new attempts fail - one loss, the drop's moment`() = runTest {
+        val l = losses()
+        val old = connection(Harness(listOf(Attempt.ConnectsThenDropsAfter(7_000L), Attempt.Fails, Attempt.Fails, Attempt.Fails)),
+            maxRetries = 3, onLinkLost = into(l))
+        val oldJob = launch { old.run().collect {} }
+        advanceTimeBy(10_000L)                                         // dropped at 7 s, the first attempt failed at 9 s
+        val held = old.takeUnreportedDrop()                           // as reconnect(): before the old job is torn down
+        oldJob.cancel(); advanceUntilIdle()
+        val tap = testScheduler.currentTime
+        val new = connection(Harness(List(3) { Attempt.Fails }), maxRetries = 3, onLinkLost = into(l), heldDropAtMs = held)
+        new.run().collect {}
+        assertEquals(listOf(tap + 20_000L to 7_000L), l)
     }
 }

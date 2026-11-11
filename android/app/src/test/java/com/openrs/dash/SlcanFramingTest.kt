@@ -92,13 +92,7 @@ class SlcanFramingTest {
     }
 
     private object NoRecorder : LinkSession.Recorder {
-        override val isRecording = false
-        override val isPaused = false
         override val activeDriveId: Long? = null
-        override fun pausedDurationMs() = 0L
-        override fun resumeDrive() = Unit
-        override fun stopDrive() = Unit
-        override fun startDrive(sessionId: Long) = Unit
     }
 
     /** Connected over the fake BLE core; [notifications] are delivered at their times (ms after open), as raw bytes. */

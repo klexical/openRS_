@@ -76,12 +76,6 @@ internal class ReplayRun(scope: TestScope, rows: List<ReplayRow>, rpm: Double = 
     }
 
     private object NoRecorder : LinkSession.Recorder {
-        override val isRecording = false
-        override val isPaused = false
         override val activeDriveId: Long? = null
-        override fun pausedDurationMs() = 0L
-        override fun resumeDrive() = Unit
-        override fun stopDrive() = Unit
-        override fun startDrive(sessionId: Long) = Unit
     }
 }

@@ -57,9 +57,13 @@ class ServiceFlushDemoteTest {
     private class GatedDao(real: DriveDao) {
         @Volatile var hold = false
         @Volatile var fail = false
+        /** #316 P1: holds the next drive read (the STOP's finalize reads the row first), until [release]. */
+        @Volatile var holdRead = false
+        val readEntered = CountDownLatch(1)
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
         val dao: DriveDao = Proxy.newProxyInstance(DriveDao::class.java.classLoader, arrayOf(DriveDao::class.java)) { _, m, args ->
+            if (m.name == "getDrive" && holdRead) { holdRead = false; readEntered.countDown(); release.await(20, TimeUnit.SECONDS) }
             if (m.name == "insertPoints") {
                 if (fail) throw IllegalStateException("simulated write failure")
                 if (hold) { entered.countDown(); release.await(20, TimeUnit.SECONDS) }
@@ -94,7 +98,7 @@ class ServiceFlushDemoteTest {
         db.openHelper.writableDatabase      // open before any recorder (see ObserverNoteEvidenceTest)
         gated = GatedDao(db.driveDao())
         rec = DriveRecorder(app, appVs, WeatherRepository(""), db, gated.dao, { _, _ -> null }, gps, { })
-        OpenRSDashApp::class.java.getDeclaredField("driveRecorder\$delegate").apply { isAccessible = true }.set(OpenRSDashApp.instance, lazyOf(rec))
+        CanDataService.recorderProvider = { rec }                      // #316 seam 5
         service = TestServices.create()
         fg = ForegroundController(host)
         CanDataService::class.java.getDeclaredField("foreground").apply { isAccessible = true }.set(service, fg)
@@ -108,6 +112,7 @@ class ServiceFlushDemoteTest {
 
     private fun autoRecord(on: Boolean) {
         app.getSharedPreferences("openrs_settings", Context.MODE_PRIVATE).edit().putBoolean(AppSettings.KEY_AUTO_RECORD_DRIVES, on).commit()
+        com.openrs.dash.ui.UserPrefsStore.load(app)                      // #316: a change reaches the recorder through the store
     }
     private fun waitUntil(timeoutMs: Long = 5_000, cond: () -> Boolean): Boolean {
         val end = System.currentTimeMillis() + timeoutMs
@@ -214,5 +219,35 @@ class ServiceFlushDemoteTest {
             if (CanDataService.link.owns(gen)) CanDataService.link.end(LinkPhase.OFF)
         }
         assertFalse(rec.driveState.value.isPaused)
+    }
+
+    /**
+     * #316 P1 (QA on 8335545): entering demo mode stops the drive BEFORE the service closes the connection, so the closure's
+     * durability barrier covers the saved drive's finalize and the foreground stays until it is written (#262 / N2). In the
+     * other order the barrier would cover only the point flush, and the finalize would run after the foreground was gone.
+     * Release builds have no demo mode: there entering it changes nothing.
+     */
+    @Test fun `entering demo mode - the service stays foreground until the stopped drive is saved, then leaves once`() {
+        autoRecord(false)
+        val id = recordPoints(5)
+        gated.holdRead = true
+        service.enterDemoMode(com.openrs.dash.demo.DemoScenario.IDLE)
+        try {
+            if (!com.openrs.dash.demo.DemoMode.AVAILABLE) {
+                assertTrue("release: no demo mode", rec.driveState.value.isRecording && fg.isForeground)
+                return
+            }
+            assertTrue("the finalize is reading the drive", gated.readEntered.await(5, TimeUnit.SECONDS))
+            Thread.sleep(300)
+            assertTrue("still foreground while the stopped drive is not saved", fg.isForeground)
+            assertEquals(0, host.exits.get())
+            gated.release.countDown()
+            assertTrue("saved", waitUntil { db.driveDao().getDrive(id)!!.endTime != 0L })
+            assertTrue("left the foreground", waitUntil { !fg.isForeground })
+            Thread.sleep(200)
+            assertEquals("exactly one demotion", 1, host.exits.get())
+        } finally {
+            service.exitDemoMode()
+        }
     }
 }

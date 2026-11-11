@@ -31,7 +31,11 @@ class TaskRemovalTest {
     private val link get() = CanDataService.link
     private val phaseNow get() = OpenRSDashApp.instance.linkPhase.value
     private lateinit var service: CanDataService
-    private val recorder get() = OpenRSDashApp.instance.driveRecorder
+    // #316 seam 5: the service's recorder is handed in (no reflection into the app's); a held thumbnail read keeps a
+    // stopped drive's finalize running
+    private val h = RecorderHarness()
+    private val finalizeHold = RecorderHarness.Hold("getPoints")
+    private val recorder by lazy { h.recorder(finalizeHold) }
 
     private fun lines(type: String) = DiagnosticLogger.sessionEvents.filter { it.type == type }.map { it.message }
 
@@ -44,11 +48,10 @@ class TaskRemovalTest {
         Shadows.shadowOf(cm).setNetworkCapabilities(cm.activeNetwork, wifi)
     }
 
-    @Suppress("UNCHECKED_CAST")
-    private fun recording(recording: Boolean, paused: Boolean = false) {
-        val f = recorder.javaClass.getDeclaredField("_driveState").apply { isAccessible = true }
-        val flow = f.get(recorder) as MutableStateFlow<com.openrs.dash.data.DriveState>
-        flow.value = flow.value.copy(isRecording = recording, isPaused = paused)
+    /** A drive recording on the service's recorder, paused by hand if [paused]. */
+    private fun recording(paused: Boolean = false) {
+        with(h) { recorder.recording() }
+        if (paused) assertEquals(com.openrs.dash.data.CommandResult.Done, recorder.pauseDrive())
     }
 
     /**
@@ -69,16 +72,17 @@ class TaskRemovalTest {
         DiagnosticLogger.sessionStart("test", 0, prefs = null)
         wifiUp()
         link.clearManualConnect()
+        CanDataService.recorderProvider = { recorder }
         service = TestServices.create()
         service.stopConnection(com.openrs.dash.service.LinkStopReason.USER_DISCONNECT)
-        recording(false)
     }
 
     @After fun tidy() {
-        recording(false)
+        finalizeHold.release.countDown()
         service.stopConnection(com.openrs.dash.service.LinkStopReason.USER_DISCONNECT)
         link.clearManualConnect()
         TestServices.destroyAll()                                       // this test's services, `next` ones included
+        h.close()
     }
 
     @Test fun `an initial attempt ends, with its reason, and no Cancel is saved`() {
@@ -105,7 +109,7 @@ class TaskRemovalTest {
 
     @Test fun `control - an attempt with a drive recording stays, and the drive with it`() {
         attempt()
-        recording(true)
+        recording()
         service.onTaskRemoved(null)
         assertEquals(LinkPhase.CONNECTING, link.phase)
         assertTrue(recorder.driveState.value.isRecording)
@@ -113,7 +117,7 @@ class TaskRemovalTest {
 
     @Test fun `control - an attempt with a paused drive stays, still paused`() {
         attempt()
-        recording(true, paused = true)
+        recording(paused = true)
         service.onTaskRemoved(null)
         assertEquals(LinkPhase.CONNECTING, link.phase)
         assertTrue(recorder.driveState.value.isPaused)
@@ -129,12 +133,14 @@ class TaskRemovalTest {
 
     @Test fun `an attempt stays while a stopped drive is being finalized, whose write the foreground service protects`() {
         attempt()
-        val job = kotlinx.coroutines.Job()
-        recorder.javaClass.getDeclaredField("finalizeJob").apply { isAccessible = true }.set(recorder, job)
+        recording()
+        val job = recorder.stopDrive()
+        finalizeHold.awaitEntered()                                     // the drive is stopped; its finalize is held
         assertTrue("premise", recorder.isFinalizing)
         service.onTaskRemoved(null)
         assertEquals(LinkPhase.CONNECTING, link.phase)
-        job.cancel()
+        finalizeHold.release.countDown()
+        h.join(job)
         assertFalse(recorder.isFinalizing)
         service.onTaskRemoved(null)
         assertEquals("the same removal, once it's finished", LinkPhase.OFF, link.phase)

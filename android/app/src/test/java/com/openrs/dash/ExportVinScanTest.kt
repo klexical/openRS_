@@ -45,9 +45,7 @@ class ExportVinScanTest {
     private val state = MutableStateFlow(VehicleState(isConnected = true))
 
     private class Rec : LinkSession.Recorder {
-        override val isRecording = false; override val isPaused = false; override val activeDriveId: Long? = null
-        override fun pausedDurationMs() = 0L
-        override fun resumeDrive() {}; override fun stopDrive() {}; override fun startDrive(sessionId: Long) {}
+        override val activeDriveId: Long? = null
     }
 
     private fun page(mux: Int, text: String) =

@@ -62,11 +62,12 @@ class LocationFgsServiceTest {
         app = ApplicationProvider.getApplicationContext()
         shadowOf(app).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
         app.getSharedPreferences("openrs_settings", Context.MODE_PRIVATE).edit().putBoolean(AppSettings.KEY_AUTO_RECORD_DRIVES, false).commit()
+        com.openrs.dash.ui.UserPrefsStore.load(app)                      // #316: the service reads the setting from the store
         DiagnosticLogger.sessionStart("test", 0, prefs = null)
         db = Room.inMemoryDatabaseBuilder(app, DriveDatabase::class.java).allowMainThreadQueries().build()
         db.openHelper.writableDatabase      // open before any recorder (see ObserverNoteEvidenceTest)
         rec = DriveRecorder(app, appVs, WeatherRepository(""), db, db.driveDao(), { _, _ -> null }, gps, { })
-        OpenRSDashApp::class.java.getDeclaredField("driveRecorder\$delegate").apply { isAccessible = true }.set(OpenRSDashApp.instance, lazyOf(rec))
+        CanDataService.recorderProvider = { rec }                      // #316 seam 5
         service = TestServices.create()
     }
 

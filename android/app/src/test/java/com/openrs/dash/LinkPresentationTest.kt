@@ -2,6 +2,9 @@ package com.openrs.dash
 
 import com.openrs.dash.can.AdapterState
 import com.openrs.dash.can.LinkPhase
+import com.openrs.dash.data.DrivePhase
+import com.openrs.dash.data.DriveState
+import com.openrs.dash.data.PauseReason
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.service.LinkPresentation
 import com.openrs.dash.ui.LinkUi
@@ -30,22 +33,37 @@ class LinkPresentationTest {
         for (p in listOf(LinkPhase.CONNECTING, LinkPhase.CONNECTED, LinkPhase.RECONNECTING)) {
             assertEquals(p, LinkPresentation.foregroundPhase(p))
             // every phase a foreground post reads has a text, so the post never falls back
-            assertTrue(LinkPresentation.notificationText(LinkPresentation.foregroundPhase(p), false, false) != null)
+            assertTrue(LinkPresentation.notificationText(LinkPresentation.foregroundPhase(p), false) != null)
         }
     }
 
     @Test fun `notification text follows the phase and the foreground ends with the work`() {
-        assertEquals("Connecting to vehicle…", LinkPresentation.notificationText(LinkPhase.CONNECTING, false, false))
-        assertEquals("Connected via Bluetooth", LinkPresentation.notificationText(LinkPhase.CONNECTED, true, false))
-        assertEquals("Connected to vehicle · recording", LinkPresentation.notificationText(LinkPhase.CONNECTED, false, true))
-        assertEquals("Link lost — reconnecting · recording paused",
-            LinkPresentation.notificationText(LinkPhase.RECONNECTING, false, true))
-        assertEquals("Connected to vehicle · recording paused",
-            LinkPresentation.notificationText(LinkPhase.CONNECTED, false, true, paused = true))
-        assertEquals("Connecting to vehicle… · recording paused",
-            LinkPresentation.notificationText(LinkPhase.CONNECTING, false, true))
-        assertNull(LinkPresentation.notificationText(LinkPhase.FAILED, false, false))
-        assertNull(LinkPresentation.notificationText(LinkPhase.OFF, false, false))
+        assertEquals("Connecting to vehicle…", LinkPresentation.notificationText(LinkPhase.CONNECTING, false))
+        assertEquals("Connected via Bluetooth", LinkPresentation.notificationText(LinkPhase.CONNECTED, true))
+        assertEquals("Link lost — reconnecting…", LinkPresentation.notificationText(LinkPhase.RECONNECTING, false))
+        assertNull(LinkPresentation.notificationText(LinkPhase.FAILED, false))
+        assertNull(LinkPresentation.notificationText(LinkPhase.OFF, false))
+    }
+
+    /**
+     * #316: the notification shows the drive's label (DriveLabel, the same as TRIP and the header pill) beside the link
+     * text, with the published phase as the label's connection. A recording drive with the link down is a recording gap and
+     * reads REC (staging read "recording paused" for any drive while the link was down).
+     */
+    @Test fun `notification text carries the drive's label`() {
+        fun drive(phase: DrivePhase, reason: PauseReason? = null) = DriveState(phase = phase, pauseReason = reason)
+        val rec = drive(DrivePhase.RECORDING)
+        val hand = drive(DrivePhase.PAUSED, PauseReason.HAND)
+        val link = drive(DrivePhase.PAUSED, PauseReason.LINK)
+        assertEquals("Connected to vehicle · REC", LinkPresentation.notificationText(LinkPhase.CONNECTED, false, rec))
+        assertEquals("Link lost — reconnecting · REC", LinkPresentation.notificationText(LinkPhase.RECONNECTING, false, rec))
+        assertEquals("Connected via Bluetooth · PAUSED", LinkPresentation.notificationText(LinkPhase.CONNECTED, true, hand))
+        assertEquals("Link lost — reconnecting · PAUSED", LinkPresentation.notificationText(LinkPhase.RECONNECTING, false, hand))
+        assertEquals("Connected to vehicle · PAUSED · ENGINE OFF", LinkPresentation.notificationText(LinkPhase.CONNECTED, false, link))
+        assertEquals("Link lost — reconnecting · PAUSED · NO LINK", LinkPresentation.notificationText(LinkPhase.RECONNECTING, false, link))
+        assertEquals("Connecting to vehicle… · PAUSED · NO LINK", LinkPresentation.notificationText(LinkPhase.CONNECTING, false, link))
+        assertEquals("Connecting to vehicle… · STARTING", LinkPresentation.notificationText(LinkPhase.CONNECTING, false, drive(DrivePhase.STARTING)))
+        assertNull(LinkPresentation.notificationText(LinkPhase.OFF, false, link))
     }
 
     @Test fun `Cancel only for an initial attempt and never while recording`() {
