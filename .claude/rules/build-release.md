@@ -38,7 +38,7 @@ paths:
   name stays outside the updater's `startsWith("openRS_") && endsWith(".apk")` matcher (`VersionIdentityTest`), so the
   in-app updater never offers it, and What's New is once per release NAME. The one-shot publisher that added it was
   deleted: a future maintenance asset needs a new, reviewed publisher.
-- **Every release build needs an on-device launch (R8)** — on 2026-10-29 R8 (AGP 8.7.3) emitted an unverifiable
+- **Every release build needs an on-device launch (R8)** — R8 (AGP 8.7.3) once emitted an unverifiable
   `DrivePageKt$DrivePage$7` after a harmless edit (removing the CLUTCH row): ART threw `VerifyError … register has type
   Conflict` at the first DRIVE frame; debug and every JVM test were fine. Worked around by moving ECONOMY into
   `DriveEconomy` (625c43b). Keep very large composable lambdas split; smoke the minified APK (launch + every tab) and grep

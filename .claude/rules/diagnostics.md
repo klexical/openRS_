@@ -15,7 +15,7 @@ paths:
 ---
 # openRS_ Known Gotchas — DTC scans, DID prober, diagnostic export
 
-- **One DTC record per export (#238)** — `DiagnosticExporter.export` reads
+- **One DTC record per export (PR #238)** — `DiagnosticExporter.export` reads
   `DiagnosticLogger.lastDtcScan` once and passes it to `buildSummaryAndDetail(ts, dtcScan = …)` and the `dtc_scan_*`
   files; never read the ledger again inside one export. Ledger records are immutable, so one read is a snapshot.
   `DiagnosticExportDtcSnapshotTest` (Context seam between the summary and the DTC files)
@@ -109,5 +109,5 @@ paths:
     been run on a masked log; its time field is padded); inventory and trace → `**`, probe CSV too; the other 0x405 pages
     stay (content unknown). The summary and the detail are written from one `ExportCounters` snapshot.
   - **Limits.** DIAG still shows the VIN and the DID prober's on-screen list still shows the reply bytes — never claim the
-    app hides it. Older ZIPs on the device are untouched (Build 39 masked 0x40A only, so its exports can hold the VIN). A
+    app hides it. Older ZIPs on the device are untouched: exports made before this masking can hold the VIN (#260). A
     test that scans an export for the VIN proves nothing unless the fake adapter sends 0x405.

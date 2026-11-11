@@ -41,7 +41,7 @@ paths:
 - Firmware drive mode is **hybrid scroll-then-wait** (v1.61+) — pre-calculates scroll count, sends all presses open-loop, waits up to 6s for auto-confirm. Do NOT revert to closed-loop press-and-poll (v1.6 bug) or pure open-loop press counting (v1.5 bug). The Focus RS mode selector GUI requires ~4s of inactivity to auto-confirm — CAN does not update during scrolling
 - Firmware REST POST `/api/frs` returns `{"ok":false,"busy":true}` when a drive mode change is in progress — app must handle this
 - Android 10+ silently routes new sockets through cellular when WiFi has no internet — `WiFiFirmwareApi` uses `Network.socketFactory` via `ConnectivityManager` to force all traffic on WiFi. BLE transport avoids this entirely (not a "network" in Android's routing model)
-- **Firmware commands never throw (#238)** — `BleFirmwareApi.sendCommand` turns the write's
+- **Firmware commands never throw (PR #238)** — `BleFirmwareApi.sendCommand` turns the write's
   IOException into `Result.failure` (cancellation still propagates). The UI launches (DriveModeDock, MorePage ESC) have
   no catch, so an escaped exception ended the process. Keep every `FirmwareCommandSender` inside its `Result` contract.
   `BleCommandSendFailureTest` (real SlcanConnection over BleGattCore, fake GATT)

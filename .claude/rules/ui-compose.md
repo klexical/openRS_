@@ -62,7 +62,7 @@ paths:
   margin (portrait gesture phones get 0). Settings / BLE picker are separate dialog windows with the default
   `decorFitsSystemWindows` — Android insets them (emulator only: both rotations + split screen). Rotating portrait ↔
   landscape closes Settings (state not saved). Whether a head unit's sidebar is a reported system bar is unknown
-- **Snackbars go above the bottom nav and the Custom Dashboard (#252)** — the `SnackbarHost` is the LAST child of
+- **Snackbars go above the bottom nav and the Custom Dashboard (#268)** — the `SnackbarHost` is the LAST child of
   MainActivity's root Box, not the Scaffold's `snackbarHost`: `BottomNavBar` and the Custom Dashboard overlay are drawn
   after the Scaffold, so a host inside it (even padded by `navBarClearance()`) sits under them — invisible, its action
   untappable (NOT CONFIRMED, Connection changed, Busy, ESC results). Bottom padding = `navBarClearance()` on the pages,

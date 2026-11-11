@@ -33,7 +33,7 @@ under `android/` is read or edited.
 0x010  steering angle (Motorola 15-bit + sign)
 0x040  SRS/airbag frame — byte2 bits 7:6 == 0xC0 → lamp ON (DigiCluster v1.0.73 reference)
 0x070  torque at trans (Motorola 11-bit bits 37-47, offset −500 Nm) + RS suspension button (byte7 bit7)
-0x076  throttle % (byte0 × 0.392) — ABSENT on some RS PCMs (user's car, 2026-10-22); use VehicleState.throttleOrPedalPct
+0x076  throttle % (byte0 × 0.392) — ABSENT on some RS PCMs (the owner's car among them); use VehicleState.throttleOrPedalPct
 0x080  accel pedal (bits 0-9 LE × 0.1%), reverse (bit 5)
 0x090  RPM (bytes 4-5) + baro (byte2 × 0.5 kPa)
 0x0C8  gauge brightness (bits 0-4), e-brake (byte3 bit 6), ignition (byte2 bits 3-6)
@@ -373,7 +373,7 @@ the `ci.yml` hand-merge, the checks to run after the merge). Read it before merg
 
 *Separate follow-ups (noted when the merge checklist was written; not release blockers):*
 - `DriveRecorder` stores points only from location updates, so a drive without GPS records no telemetry (the export
-  fix `9a52612`, for drive CSVs without GPS, covers seeded / legacy data and any later recorder change).
+  fix for drive CSVs without GPS covers seeded / legacy data and any later recorder change).
 - TRIP's map draws a marker at a no-GPS drive's stored coordinates — only reachable with seeded data (real no-GPS
   drives have no points).
 - thermalRecord visualisation in Sapphire (the block imports and is ignored today).

@@ -26,7 +26,7 @@ paths:
   pins the encoding (#185). 0x340 byte7 is still signed per RS_HS.dbc — if it wraps in hot weather, the same fix applies.
 - **0x435 airbag crosstalk** — 0x435 stays OUT of `KNOWN_IDS`; the SRS lamp comes from 0x040 only (CAN table in
   CLAUDE.md). Do not add 0x435 decoding without a verified fault vs occupancy capture.
-- **Oil / PTU byte mapping (#229, in #238 `2033fda`)** — `OilPtuMapping.CURRENT` (`0f8-oil-b7-ptu-b1`) is
+- **Oil / PTU byte mapping (#229, PR #238)** — `OilPtuMapping.CURRENT` (`0f8-oil-b7-ptu-b1`) is
   saved on every new drive (Room v14 `drives.oilPtuMapping`, nullable, never backfilled). NULL = recorded before the
   correction: never restamp, infer (date / version / thermal record v2 / re-export) or recompute; TRIP and exports say
   "not recorded" / "map n/r" (summary note, chart chip, legend, replay, CSV format line, GPX metadata, profile JSON).

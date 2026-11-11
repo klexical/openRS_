@@ -43,7 +43,7 @@ paths:
   - The timer belongs to one drive: `takeLaps(driveId)` closes it and refuses that drive's late fixes. A paused or
     disconnected fix is never fed to the timer — the loop calls `LapTimer.breakTrack(driveId)` instead. LapTimer's
     mutating methods are `@Synchronized` (the overlay getters `currentLapElapsedMs` / `deltaVsBestMs` are not — #246).
-  - One timer per recorder (#238): TRIP takes `remember(recorder) { recorder.lapTimerForUi() }` and never installs its
+  - One timer per recorder (PR #238): TRIP takes `remember(recorder) { recorder.lapTimerForUi() }` and never installs its
     own — `remember { LapTimer() }` + assignment lets a recreated activity (rotation) put a new, unarmed timer on the
     recorder mid-drive, so the line vanishes and STOP loses the laps before it (`LapRecreationTest`).
   - One `LapTimer` logcat line per fix while a line is set (fix time, age, x / y metres from S/F, `b=`, verdict — no
@@ -63,7 +63,7 @@ paths:
     around `withContext(NonCancellable + IO)` in a cancelled `finally` counts the rethrown cancellation as a failure. The
     final flush keeps its `isRecording` update in a `finally`; `snapshotActiveDrive` rethrows cancellation. The knock
     insert has the same catch shape (false debug log only, not counted).
-  - The buffer has one monitor (#238): every access goes through `DriveRun.addPoint` / `bufferedCount` / `takePoints`
+  - The buffer has one monitor (PR #238): every access goes through `DriveRun.addPoint` / `bufferedCount` / `takePoints`
     (copy + clear in one step); `outsideLoopWrites` does not cover the loop's GPS add or its batch / final drain. Inserts
     stay outside the monitor; never suspend inside it. `PointBufferRaceTest` swaps in a test-only `HookedPointBuffer` by
     reflection — keep `pointsBuffer` an `ArrayList`.
