@@ -416,7 +416,8 @@ class MainActivity : ComponentActivity() {
                                                 // settled: TRIP creates its map on the first visit; visible: off screen
                                                 // the retained map is stopped and TRIP's inputs are held (TripPage)
                                                 3 -> TripPage(driveState, vs, prefs, onMapTouched = { mapTouched = it },
-                                                    settled = pagerState.settledPage == 3, visible = tripVisible)
+                                                    settled = pagerState.settledPage == 3, visible = tripVisible,
+                                                    snackbarHostState = snackbarHostState)
                                                 4 -> GaragePage(
                                                     debugLines = debugLines,
                                                     vs = vs,

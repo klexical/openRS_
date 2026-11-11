@@ -108,7 +108,9 @@ fun TripPage(
     prefs: UserPrefs,
     onMapTouched: (Boolean) -> Unit = {},
     settled: Boolean = true,
-    visible: Boolean = true
+    visible: Boolean = true,
+    /** MainActivity's host (the last child of its root, above the bottom nav, #268); null = no messages. */
+    snackbarHostState: androidx.compose.material3.SnackbarHostState? = null
 ) {
     var mapCreated by remember { mutableStateOf(false) }
     LaunchedEffect(settled) { if (settled) mapCreated = true }
@@ -145,7 +147,8 @@ fun TripPage(
             onMapTouched = onMapTouched,
             mapCreated = mapCreated,
             visible = visible,
-            preview = preview
+            preview = preview,
+            snackbarHostState = snackbarHostState
         )
     }
 }
@@ -199,7 +202,8 @@ private fun TripPageContent(
     onMapTouched: (Boolean) -> Unit,
     mapCreated: Boolean,
     visible: Boolean,
-    preview: TripPreview.Mode? = null
+    preview: TripPreview.Mode? = null,
+    snackbarHostState: androidx.compose.material3.SnackbarHostState? = null
 ) {
     // Room ids are positive; TripPreview's sample drives are negative. Reads for a negative id come from
     // TripPreview and every write path returns early for one, so preview data never reaches the database.
@@ -507,7 +511,10 @@ private fun TripPageContent(
                         if (sfSet) "Clear start/finish line" else "Set start/finish line", onClick = {
                         if (preview != null) return@MapControl
                         if (sfSet) lapTimer.clearStartFinish()
-                        else recorder.setStartFinishHere()
+                        // Refused without a fresh fix (#311): one plain message, not repeated while it shows
+                        else onSetStartFinish(recorder) { msg ->
+                            snackbarHostState?.takeIf { it.currentSnackbarData == null }?.let { host -> scope.launch { host.showSnackbar(msg) } }
+                        }
                     }) { MonoText(if (sfSet) "CLEAR S/F" else "SET S/F", 11.sp, if (sfSet) Orange else ink, FontWeight.Bold) }
 
                     // Bookmark button — an action, not a warning: ink, not amber.
@@ -1662,6 +1669,16 @@ private fun groupDrivesByDate(drives: List<DriveEntity>): List<Pair<String, List
 private fun isSameDay(a: Calendar, b: Calendar): Boolean =
     a.get(Calendar.YEAR) == b.get(Calendar.YEAR) &&
     a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
+
+/** What TRIP says when SET S/F is refused for lack of a fresh fix (#311). */
+internal const val SF_NO_FIX_CUE = "Waiting for GPS. Start/finish not set."
+
+/**
+ * TRIP's SET S/F tap: the line at the drive's fresh fix ([DriveRecorder.setStartFinishHere]), or, when there is none,
+ * one [cue] with [SF_NO_FIX_CUE]. Returns whether the line was set.
+ */
+internal fun onSetStartFinish(recorder: com.openrs.dash.service.DriveRecorder, cue: (String) -> Unit): Boolean =
+    recorder.setStartFinishHere().also { placed -> if (!placed) cue(SF_NO_FIX_CUE) }
 
 /**
  * One idle fetch for TRIP's dot: the platform's last-known fix and the moment it was ASKED for (#311). The stamp is

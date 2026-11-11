@@ -171,6 +171,18 @@ class DriveStartLocationTest {
         assertEquals(listOf(31.0, 41.0), line!!.let { listOf(it.lat, it.lng) })
     }
 
+    @Test fun `TRIP's SET S-F tap says why when it is refused - once, and nothing when the line is set`() {
+        startDrive()
+        val cues = mutableListOf<String>()
+        assertEquals(false, com.openrs.dash.ui.trip.onSetStartFinish(rec) { cues += it })    // no fix yet
+        assertEquals(listOf(com.openrs.dash.ui.trip.SF_NO_FIX_CUE), cues)
+        assertNull(line)
+        fix(31.0, 41.0)
+        assertEquals(true, com.openrs.dash.ui.trip.onSetStartFinish(rec) { cues += it })
+        assertEquals("no cue when the line is set", 1, cues.size)
+        assertEquals(listOf(31.0, 41.0), line!!.let { listOf(it.lat, it.lng) })
+    }
+
     // ── TRIP's dot (tripDot, what the live map draws) ─────────────────────────────────────────────────────────────
 
     private fun loc(lat: Double) = Location("test").apply { latitude = lat; longitude = 0.0; time = System.currentTimeMillis() }
