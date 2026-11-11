@@ -83,3 +83,11 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   while recording only the drive's fix; idle, only an idle fetch asked for after the last drive started (`idleFetch`
   stamps before the call). Never carry a fix from one drive into the next, and never
   record the platform's last-known fix as a drive position
+- **A drive's job exists before it runs (CI failure on `3a8c572`)** — `startDrive` creates the drive's job lazily,
+  assigns `recorderJob` (`@Volatile`) on the caller's thread, then starts it; the job prunes, inserts the row
+  (`NonCancellable`, `DriveRun.driveId`), checks for cancellation, publishes the state and runs the loop. Never assign
+  the job from inside its own coroutine or after a launch: a STOP that reads it first neither cancels nor joins the
+  loop (the drive keeps recording, its final flush is lost unreported), and a second START starts a second drive.
+  A STOP before the drive's state is published only cancels the start and deletes any row it wrote (`cancelStart`), never
+  the previous drive's; a STOP with nothing under way does nothing; `startDrive` / `stopDrive` are `@Synchronized`.
+  `DriveStartStopRaceTest` holds one DAO call per window
