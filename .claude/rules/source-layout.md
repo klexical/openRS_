@@ -4,8 +4,6 @@ paths:
 ---
 # openRS_ — Source Layout
 
-Moved verbatim from the tracked `CLAUDE.md` (section Source Layout) on 2026-11-06; loads when any file under `android/` is read or edited.
-
 All source under `android/app/src/main/java/com/openrs/dash/`:
 
 ```
@@ -70,7 +68,7 @@ demo/                     — DEBUG BUILDS ONLY (DemoMode.AVAILABLE = BuildConfi
   DemoMode.kt             — Controller: 25 Hz tick into OpenRSDashApp.vehicleState, pause/reset/scenario, sessionEpoch,
                             DemoFirmwareApi (drive mode / ESC → simulated state), simulated DTC scan/clear
 data/
-  VehicleState.kt         — Immutable data class ~95 fields. See sentinel rules below.
+  VehicleState.kt         — Immutable data class; sentinel rules: CLAUDE.md, VehicleState Rules.
   DashLayout.kt           — Custom dashboard layout: DashCell grid, AVAILABLE_FIELDS catalog; JSON via AppSettings
   BoostRule.kt            — BoostSource / BoostReading / BoostRule (policy rc7-boost-v3) / BoostSession / StoredBoost
                             (#207): the one boost rule for every consumer + what a recorded value is; see the boostKpa gotcha
@@ -79,11 +77,15 @@ data/
                             (+ cylinder v11, boostSource v13), DtcCodeEntity (+ failureType v13), DriveDao, migrations
                             v1→…→v13 (v12 rescales stored TIP ×903.81/128; v13 columns nullable, never backfilled — null =
                             recorded before the rule; checked on the emulator from a real v12 DB)
-  DriveState.kt           — Live drive state flow: isRecording, isPaused, peaks, recentPoints, fuel
+  DriveState.kt           — Live drive state flow: `phase` (IDLE / STARTING / RECORDING / PAUSED) + `pauseReason` (HAND / LINK),
+                            peaks, recentPoints, fuel; `isRecording` = open (recording or paused), `isPaused` (#316)
+  DriveLabel.kt           — the one label for a drive (STARTING / REC / PAUSED / PAUSED · NO LINK / PAUSED · ENGINE OFF) and the
+                            commands offered beside it; the notification, DRIVE's strip and TRIP's chip and buttons read it; the header
+                            shows REC or plain PAUSED (#316)
   PendingSummary.kt       — Post-drive summary queued (DriveRecorder.pendingSummary) until closed on TRIP — shown once
   DtcResult.kt            — module, code, description, status (ACTIVE/PENDING/PERMANENT/UNKNOWN)
   DtcModuleSpec.kt        — name, requestId, responseId for DTC scan targets
-  ForscanCatalog.kt       — Lazy loader for assets/pids/forscan_modules.json (1,149 PIDs)
+  ForscanCatalog.kt       — Lazy loader for assets/pids/forscan_modules.json
   FuelEconomy.kt          — Real-time fuel economy: 60s rolling window, instant/avg, distance-to-empty
   PerformanceTimer.kt     — 0-60 / 0-100 timer using CAN speed: IDLE → ARMED → RUNNING → FINISHED
   SessionDatabase.kt      — Room DB for session snapshots: SessionEntity, SnapshotEntity, SessionDao
@@ -111,7 +113,7 @@ diagnostics/
                             Failed(did, reason, sent)); records the labelled ProbeSession (see the DID prober gotcha, #249)
   DiagnosticLogger.kt     — Thread-safe singleton: frame inventory (opt B), decode trace, SLCAN log (opt C)
                             Pre-allocated hex lookup table; hex conversion outside lock for reduced contention
-                            VIN masking at one write-time choke point (#260, rc.8 follow-up): 0x40A C1 pages, 0x405 pages 10/11/12,
+                            VIN masking at one write-time choke point (#260): 0x40A C1 pages, 0x405 pages 10/11/12,
                             0xF190 replies incl. consecutive frames (page rule), plus any frame holding 4+ consecutive bytes of
                             the assembled VIN (content layer, `VIN_RUN_MIN = 4`); raw log data → 00 (ID/DLC/timing kept),
                             inventory/trace → **, and every stored probe reply at export read once the VIN is known (`probeSessions`); counted
@@ -120,7 +122,7 @@ diagnostics/
   DiagnosticExporter.kt   — ZIP orchestrator + share intents + crash history; delegates format generation
                             to DiagnosticReportBuilder and DriveExportBuilder; rc.6 adds drive_knock_session_*.csv (KnockSessionLog)
   DiagnosticReportBuilder.kt — Diagnostic summary text + JSON detail (JSONObject/JSONArray, no hand-rolled strings);
-                            `buildSummaryAndDetail` takes one `ExportCounters` snapshot (L12: linkIntegrity / logLimits /
+                            `buildSummaryAndDetail` takes one `ExportCounters` snapshot (linkIntegrity / logLimits /
                             nrcUnattributedTotal agree between summary and detail on a live export)
   DriveExportBuilder.kt   — Pure-function builders: GPX track, CSV telemetry, drive summary, DTC report
   DtcDatabase.kt          — 873-code bundled Ford DTC lookup (from res/raw/dtc_database.json)
@@ -130,18 +132,22 @@ service/
   CanDataService.kt       — Bound service, foreground only while a connection runs (ForegroundController);
                             WiFi/BLE-gated auto-reconnect; owns connection lifecycle
                             Transport selected by connectionMethod (WiFi vs BLE) + adapterType (TCP vs WebSocket)
-                            Auto-record integration: starts/stops DriveRecorder on connect/disconnect (if setting enabled)
+                            Reports link events to the recorder (connection lost / back, engine running, auto-record switched, demo
+                            entered) and applies no recording rule itself (#316)
                             onTaskRemoved (#212 option 2): ends only an initial attempt where Cancel is offered; saves nothing
   LinkOwnership.kt        — process-wide connection ownership (#212): generation, phase, manual-connect block, cancel
                             policy; autoStart / publish / deliver run under one lock (LinkOwnershipTest); memory-only
                             task-removal hold released at the next bind (`onActivityBound`); `connectionEpoch` per connection
-  LinkPresentation.kt     — AdapterState → LinkPhase, notification text (+ recording / paused), offersCancel (the one rule)
-  AutoRecordPolicy.kt     — auto-record on a new connection: still recording → keep (never split), paused ≤ 15 min → resume
+  LinkPresentation.kt     — AdapterState → LinkPhase, notification text (+ the drive's label, `DriveLabel`), offersCancel (the one rule)
+  AutoRecordPolicy.kt     — what the recorder does when a connection sees the engine running (#316): recording or starting →
+                            keep; a link pause → resume within 15 min of the loss, else save it and start a new drive; a hand
+                            pause → keep (only RESUME / STOP end it); no drive open → start if auto-record allows
   DriveRecorder.kt        — Room-backed drive recorder: start/stop/pause/resume, 1 Hz GPS + telemetry
                             FusedLocationProviderClient @ 1 Hz; batch writes (30 points/flush); peak tracking
                             Per-drive state = `DriveRun` (#236); STOP = one-transaction re-read + recorder columns; feeds
                             `LapTimer` every recorded fix (#237). Seams (geocode, LocationSource, onSummary) for tests only
-                            `isFinalizing` while STOP's finalize runs (started before the state says not recording)
+                            `isFinalizing` while any drive is still being saved, or a cancelled start's cleanup runs (#329; a STOP's
+                            save is tracked before the state says not recording)
   WeatherRepository.kt    — OpenWeatherMap /data/2.5/weather (BuildConfig.OPENWEATHER_API_KEY)
   HudOverlayService.kt    — Floating HUD overlay (boost/RPM/oil temp); piggybacks CanDataService notification
 ui/
@@ -275,10 +281,6 @@ ui/
                             diagnostics/DidProbeScan.kt)
   WhatsNewDialog.kt       — Version changelog dialog; shown on first launch after update
   trip/
-    DrivePage.kt          — MAP tab: live mode (Google Maps + HUD + controls) + history mode (drive list)
-                            Hoists cameraPositionState; floating controls: color mode, map type, weather,
-                            zoom in (+), zoom out (−), locate/recenter (◎)
-                            onMapTouched callback: signals parent pager to disable swipe while map is touched
     DriveHistory.kt       — rc.7 (#228) — TRIP history: observe (Room Flow, the list's only source) + delete / tags / rename
                             (writes only — never re-read the list by hand)
     DriveMap.kt           — Google Maps Compose wrapper: 6 color modes (SPD/MODE/BOOST/THRTL/G-LAT/TEMP),
@@ -287,6 +289,7 @@ ui/
 update/
   UpdateManager.kt        — In-app update orchestrator: check → download → install via GitHub Releases API
   UpdateChecker.kt        — GitHub Releases API client; compares installed vs latest version per channel
-  AppVersion.kt           — Semver + RC/beta parsing and comparison for update eligibility
+  AppVersion.kt           — version parsing and ordering for updates: stable, `-rc.N`, `-nightly.YYYYMMDD` (#322); within one
+                            base RC < nightly < stable; a nightly is offered on Beta only
   UpdateState.kt          — Sealed class: Idle / Checking / Available / Downloading / ReadyToInstall / Error
 ```
