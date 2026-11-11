@@ -147,7 +147,7 @@ class SlcanFramingTest {
     @Test fun `control - two lines in one notification both decode`() = runTest {
         val vs = run(100L to "t09080000C1FF617D0000\r", 1_500L to oil70 + oil80).value
         assertEquals(80.0, vs.oilTempC, 0.0)
-        assertEquals(80.0, vs.peakOilTempC, 0.0)
+        assertEquals(80.0, vs.session.peakOilTempC, 0.0)
     }
 
     @Test fun `two lines spliced without a CR never reach the decoder`() = runTest {
@@ -156,7 +156,7 @@ class SlcanFramingTest {
         val vs = run(100L to "t09080000C1FF617D0000\r", 1_500L to "t0F88005A0000000000FF" + oil70,
             1_600L to oil80).value
         assertEquals(80.0, vs.oilTempC, 0.0)
-        assertEquals("no reading from the spliced line", 80.0, vs.peakOilTempC, 0.0)
+        assertEquals("no reading from the spliced line", 80.0, vs.session.peakOilTempC, 0.0)
         assertTrue(vs.fieldLastUpdateMs.containsKey("oilTempC"))
     }
 }

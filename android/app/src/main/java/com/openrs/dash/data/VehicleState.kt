@@ -84,12 +84,6 @@ data class VehicleState(
 
     val tpmsLastUpdate: Long = 0L,           // System.currentTimeMillis() of last TPMS pressure update
 
-    // ── TPMS Session Start (first valid reading per session) ──
-    val tireStartLF: Double = -1.0,        // Session-start LF pressure (PSI); -1 = not yet captured
-    val tireStartRF: Double = -1.0,        // Session-start RF pressure (PSI); -1 = not yet captured
-    val tireStartLR: Double = -1.0,        // Session-start LR pressure (PSI); -1 = not yet captured
-    val tireStartRR: Double = -1.0,        // Session-start RR pressure (PSI); -1 = not yet captured
-
     // ── Driver Inputs (CAN Sniffed) ─────────────────────────
     val clutchPedalPct: Double = 0.0,  // CAN 0x138: clutch pedal position 0-100%
 
@@ -190,17 +184,8 @@ data class VehicleState(
     // ── Generic PID values (data-driven, no dedicated fields) ──
     val genericValues: Map<String, Double> = emptyMap(),
 
-    // ── Peaks ───────────────────────────────────────────────
-    val peakBoostPsi: Double = 0.0,
-    val peakRpm: Double = 0.0,
-    val peakSpeedKph: Double = 0.0,
-    val peakLateralG: Double = 0.0,
-    val peakLongitudinalG: Double = 0.0,
-    val peakOilTempC: Double = -99.0,
-    val peakCoolantTempC: Double = -99.0,
-    val peakRduTempC: Double = -99.0,
-    val peakPtuTempC: Double = -99.0,
-    val peakChargeAirTempC: Double = -99.0,
+    // ── Session peaks and tyre start pressures (#199: one nested value, so copy() stays under the JVM slot limit) ──
+    val session: SessionMarks = SessionMarks(),
 
     // ── Connection ──────────────────────────────────────────
     val isConnected: Boolean = false,
@@ -394,35 +379,57 @@ data class VehicleState(
         return valid.max() - valid.min()
     }
 
-    /** Session peaks. Boost peaks are kept per source by [BoostSession] (#207) — [peakBoostPsi] isn't updated here. */
+    /** Session marks from this frame (#199). The same instance when nothing changed, as on most CAN frames. */
     fun withPeaksUpdated(): VehicleState {
-        return copy(
-            peakRpm = max(peakRpm, rpm),
-            peakSpeedKph = max(peakSpeedKph, speedKph),
-            peakLateralG = max(peakLateralG, abs(lateralG)),
-            peakLongitudinalG = max(peakLongitudinalG, abs(longitudinalG)),
-            peakOilTempC = if (oilTempC > -90) max(peakOilTempC, oilTempC) else peakOilTempC,
-            peakCoolantTempC = if (coolantTempC > -90) max(peakCoolantTempC, coolantTempC) else peakCoolantTempC,
-            peakRduTempC = if (rduTempC > -90) max(peakRduTempC, rduTempC) else peakRduTempC,
-            peakPtuTempC = if (ptuTempC > -90) max(peakPtuTempC, ptuTempC) else peakPtuTempC,
-            peakChargeAirTempC = if (chargeAirTempC > -90) max(peakChargeAirTempC, chargeAirTempC) else peakChargeAirTempC,
-            // Capture session-start tire pressures (first valid reading only)
-            tireStartLF = if (tireStartLF < 0 && tirePressLF > 0) tirePressLF else tireStartLF,
-            tireStartRF = if (tireStartRF < 0 && tirePressRF > 0) tirePressRF else tireStartRF,
-            tireStartLR = if (tireStartLR < 0 && tirePressLR > 0) tirePressLR else tireStartLR,
-            tireStartRR = if (tireStartRR < 0 && tirePressRR > 0) tirePressRR else tireStartRR
-        )
+        val marks = session.updatedFrom(this)
+        return if (marks === session) this else copy(session = marks)
     }
 
-    fun withPeaksReset(): VehicleState = copy(
-        peakBoostPsi = 0.0, peakRpm = 0.0, peakSpeedKph = 0.0,
-        peakLateralG = 0.0, peakLongitudinalG = 0.0,
-        peakOilTempC = -99.0, peakCoolantTempC = -99.0,
-        peakRduTempC = -99.0, peakPtuTempC = -99.0,
-        peakChargeAirTempC = -99.0,
-        tireStartLF = -1.0, tireStartRF = -1.0,
-        tireStartLR = -1.0, tireStartRR = -1.0
-    )
+    fun withPeaksReset(): VehicleState = copy(session = SessionMarks())
+}
+
+/**
+ * What a connection session has seen so far (#199): the live peaks and the first valid tyre pressure per wheel. Written
+ * only by [VehicleState.withPeaksUpdated] and reset by [VehicleState.withPeaksReset]; never taken from an OBD reply.
+ * Boost peaks are kept per source by [BoostSession] (#207), not here.
+ */
+@Immutable
+data class SessionMarks(
+    val peakRpm: Double = 0.0,
+    val peakSpeedKph: Double = 0.0,
+    val peakLateralG: Double = 0.0,
+    val peakLongitudinalG: Double = 0.0,
+    val peakOilTempC: Double = -99.0,          // -99 = no reading yet (a temperature at -90 or below is not a reading)
+    val peakCoolantTempC: Double = -99.0,
+    val peakRduTempC: Double = -99.0,
+    val peakPtuTempC: Double = -99.0,
+    val peakChargeAirTempC: Double = -99.0,
+    val tireStartLF: Double = -1.0,            // session-start pressure (PSI); -1 = not yet captured
+    val tireStartRF: Double = -1.0,
+    val tireStartLR: Double = -1.0,
+    val tireStartRR: Double = -1.0,
+) {
+    /** These marks after [vs]'s readings; this same instance when none moves. */
+    fun updatedFrom(vs: VehicleState): SessionMarks {
+        fun temp(peak: Double, v: Double) = if (v > -90) max(peak, v) else peak
+        fun start(start: Double, v: Double) = if (start < 0 && v > 0) v else start
+        val next = SessionMarks(
+            peakRpm = max(peakRpm, vs.rpm),
+            peakSpeedKph = max(peakSpeedKph, vs.speedKph),
+            peakLateralG = max(peakLateralG, abs(vs.lateralG)),
+            peakLongitudinalG = max(peakLongitudinalG, abs(vs.longitudinalG)),
+            peakOilTempC = temp(peakOilTempC, vs.oilTempC),
+            peakCoolantTempC = temp(peakCoolantTempC, vs.coolantTempC),
+            peakRduTempC = temp(peakRduTempC, vs.rduTempC),
+            peakPtuTempC = temp(peakPtuTempC, vs.ptuTempC),
+            peakChargeAirTempC = temp(peakChargeAirTempC, vs.chargeAirTempC),
+            tireStartLF = start(tireStartLF, vs.tirePressLF),
+            tireStartRF = start(tireStartRF, vs.tirePressRF),
+            tireStartLR = start(tireStartLR, vs.tirePressLR),
+            tireStartRR = start(tireStartRR, vs.tirePressRR),
+        )
+        return if (next == this) this else next
+    }
 }
 
 enum class DriveMode(val label: String) {

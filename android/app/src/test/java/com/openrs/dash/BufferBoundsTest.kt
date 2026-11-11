@@ -242,7 +242,7 @@ class BufferBoundsTest {
         assertEquals("nothing decoded from it", VehicleState().oilTempC, state.value.oilTempC, 0.0)
         b.notifyText(oil(70) + "\r"); runCurrent()
         assertEquals(70.0, state.value.oilTempC, 0.0)
-        assertEquals("no peak from the overlong line", 70.0, state.value.peakOilTempC, 0.0)
+        assertEquals("no peak from the overlong line", 70.0, state.value.session.peakOilTempC, 0.0)
     }
 
     @Test fun `ble - a partial line at disconnect is not delivered, buffered lines are, then EOF`() = runTest {

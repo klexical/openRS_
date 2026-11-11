@@ -118,10 +118,10 @@ import kotlin.math.roundToInt
     )
 
     // Deltas
-    val deltaLF = tpmsDeltaText(vs.tirePressLF, vs.tireStartLF)
-    val deltaRF = tpmsDeltaText(vs.tirePressRF, vs.tireStartRF)
-    val deltaLR = tpmsDeltaText(vs.tirePressLR, vs.tireStartLR)
-    val deltaRR = tpmsDeltaText(vs.tirePressRR, vs.tireStartRR)
+    val deltaLF = tpmsDeltaText(vs.tirePressLF, vs.session.tireStartLF)
+    val deltaRF = tpmsDeltaText(vs.tirePressRF, vs.session.tireStartRF)
+    val deltaLR = tpmsDeltaText(vs.tirePressLR, vs.session.tireStartLR)
+    val deltaRR = tpmsDeltaText(vs.tirePressRR, vs.session.tireStartRR)
 
     val panelLevel = panel.level
 
@@ -689,8 +689,8 @@ private fun AwdMetrics(held: VehicleState, p: UserPrefs) {
             lateralG = animLatG,
             longitudinalG = animLonG,
             trail = gTrail.toList(),
-            peakLatG = vs.peakLateralG.toFloat(),
-            peakLonG = vs.peakLongitudinalG.toFloat(),
+            peakLatG = vs.session.peakLateralG.toFloat(),
+            peakLonG = vs.session.peakLongitudinalG.toFloat(),
             modifier = gPlotModifier,
             dotColor = accent,
             isConnected = vs.isConnected

@@ -548,13 +548,13 @@ class CanDataService : Service() {
                 sessionDb.driveDao().updateSession(
                     existing.copy(
                         endTime        = System.currentTimeMillis(),
-                        peakRpm        = vs.peakRpm,
+                        peakRpm        = vs.session.peakRpm,
                         // Session table predates #207's sources: the CAN 0x0F8 peak, its historical meaning
                         peakBoostPsi   = (com.openrs.dash.data.BoostSession.peakKpa(com.openrs.dash.data.BoostSource.CAN_0F8) ?: 0.0) *
                             com.openrs.dash.data.BoostReading.KPA_TO_PSI,
-                        peakOilTempC   = vs.peakOilTempC,
-                        peakCoolantTempC = vs.peakCoolantTempC,
-                        peakSpeedKph   = vs.peakSpeedKph,
+                        peakOilTempC   = vs.session.peakOilTempC,
+                        peakCoolantTempC = vs.session.peakCoolantTempC,
+                        peakSpeedKph   = vs.session.peakSpeedKph,
                         totalFrames    = sessionFrameCount
                     )
                 )
