@@ -294,12 +294,14 @@ class DriveRecorder(
                         )
                     ).also { newRun.driveId = it }
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e                                       // a STOP, not a failed start (the rethrow rule)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start drive", e)
                 _driveState.update { it.copy(isRecording = false) }
                 return@launch
             }
-            ensureActive()                                    // STOP during the insert: STOP's finalize closes the row
+            ensureActive()                                    // STOP during the insert: STOP removes the row (cancelStart)
             try {
                 // Every accumulator starts empty — a new DriveState, not a copy, so none is carried over from the last
                 // drive (peak oil / coolant were, #236). The position too (#311): a drive has one only once its own

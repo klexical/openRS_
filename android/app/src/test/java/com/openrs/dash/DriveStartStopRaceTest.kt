@@ -83,6 +83,7 @@ class DriveStartStopRaceTest {
     private val dao get() = db.driveDao()
 
     @Before fun setUp() {
+        org.robolectric.shadows.ShadowLog.clear()
         app = ApplicationProvider.getApplicationContext()
         shadowOf(app).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
         db = Room.inMemoryDatabaseBuilder(app, DriveDatabase::class.java).allowMainThreadQueries().build()
@@ -118,6 +119,9 @@ class DriveStartStopRaceTest {
     /** Whatever the recorder does on its own after the race: given time to go wrong (a drive that keeps going would). */
     private fun settled(rec: DriveRecorder) { waitUntil(1_000) { rec.driveState.value.isRecording }; Thread.sleep(200) }
 
+    /** A start cancelled by STOP is not a failed start: no "Failed to start drive" error. */
+    private fun startFailureLogs() = org.robolectric.shadows.ShadowLog.getLogsForTag("DriveRecorder").filter { it.msg.startsWith("Failed to start drive") }
+
     private fun closedRows() = dao.getRecentDrives().filter { it.endTime > 0 }
     private fun liveRows() = dao.getUnfinishedDrives()
     private fun recEvents() = DiagnosticLogger.sessionEvents.filter { it.type == "REC" && it.message.contains("start cancelled by STOP") }
@@ -137,6 +141,7 @@ class DriveStartStopRaceTest {
         assertEquals("the cancelled start leaves no row (no empty drive, nothing for the next app start to close)", 0, dao.getDriveCount())
         assertEquals(1, recEvents().size)
         assertEquals("nothing finalized", 0, summaries.get())
+        assertEquals("a cancelled start is not logged as a failed start", listOf<Any>(), startFailureLogs().map { it.msg })
 
         rec.startDrive()
         assertTrue("a later START is accepted", waitUntil { rec.driveState.value.let { it.isRecording && it.driveId > 0 } })
@@ -175,6 +180,7 @@ class DriveStartStopRaceTest {
         assertEquals("no row", 0, dao.getDriveCount())
         assertEquals("one REC event", 1, recEvents().size)
         assertEquals("nothing finalized", 0, summaries.get())
+        assertEquals("a cancelled start is not logged as a failed start", listOf<Any>(), startFailureLogs().map { it.msg })
     }
 
     // (e) START, STOP, START in quick succession: exactly one live drive, the first one closed
