@@ -101,6 +101,7 @@ class ServiceReconnectHeldDropTest {
             .putString("wican_host", "127.0.0.1").putInt(AppSettings.KEY_PORT, adapter.port)
             .putBoolean(AppSettings.KEY_AUTO_RECONNECT, false).putInt(AppSettings.KEY_RECONNECT_INTERVAL, 30)
             .putBoolean(AppSettings.KEY_AUTO_RECORD_DRIVES, true).commit()
+        com.openrs.dash.ui.UserPrefsStore.load(h.app)                    // the service tells the recorder at its creation
         wifi(on = true)
         link.clearManualConnect()
         link.requireManualConnect()                                     // the test starts the connection itself

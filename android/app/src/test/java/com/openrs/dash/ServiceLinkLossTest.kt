@@ -43,6 +43,7 @@ class ServiceLinkLossTest {
         ctx.getSharedPreferences("openrs_settings", Context.MODE_PRIVATE).edit()
             .putString("connection_method", "WIFI").putString("adapter_type", "MEATPI_PRO").putString("wican_host", "192.0.2.1")
             .putBoolean(AppSettings.KEY_AUTO_RECORD_DRIVES, autoRecord).commit()
+        com.openrs.dash.ui.UserPrefsStore.load(ctx)                      // the saved setting, as Settings' SAVE leaves it
         if (!wifi) return
         val cm = ctx.getSystemService(ConnectivityManager::class.java)
         val wifi = ShadowNetworkCapabilities.newInstance()
@@ -56,7 +57,7 @@ class ServiceLinkLossTest {
         link.clearManualConnect()
         // Wi-Fi is up, so a created service connects by itself unless automatic connects are held
         if (holdAutoConnect) link.requireManualConnect()
-        // The recorder is told nothing about auto-record here: the service hands it the setting at connection start
+        // The recorder is told nothing about auto-record here: the service hands it the saved setting when created
         rec = with(h) { recorder(clock = System::currentTimeMillis).recording() }
         CanDataService.recorderProvider = { rec }
         return TestServices.create()

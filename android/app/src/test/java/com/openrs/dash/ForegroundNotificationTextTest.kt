@@ -70,6 +70,7 @@ class ForegroundNotificationTextTest {
         app = ApplicationProvider.getApplicationContext()
         shadowOf(app).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
         app.getSharedPreferences("openrs_settings", Context.MODE_PRIVATE).edit().putBoolean(AppSettings.KEY_AUTO_RECORD_DRIVES, false).commit()
+        com.openrs.dash.ui.UserPrefsStore.load(app)                      // #316: the service reads the setting from the store
         DiagnosticLogger.sessionStart("test", 0, prefs = null)
         db = Room.inMemoryDatabaseBuilder(app, DriveDatabase::class.java).allowMainThreadQueries().build()
         db.openHelper.writableDatabase      // open before any recorder (see ObserverNoteEvidenceTest)

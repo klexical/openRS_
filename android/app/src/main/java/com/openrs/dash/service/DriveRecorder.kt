@@ -475,8 +475,18 @@ class DriveRecorder(
         if (at > 0L && autoRecord && s.driveId == driveId && s.phase == DrivePhase.RECORDING) pauseLocked(PauseReason.LINK, at)
     }
 
-    /** Auto-record was switched on or off. */
-    @Synchronized fun onAutoRecordSwitched(on: Boolean) { autoRecord = on }
+    /**
+     * Auto-record was switched on or off (#316, SPEC stories 30–31). Switched off during a link pause, the pause becomes a
+     * hand pause (only RESUME or STOP end it; it keeps its start); switched on, an open pause is left as it is. A call
+     * that repeats the current setting changes nothing.
+     */
+    @Synchronized fun onAutoRecordSwitched(on: Boolean) {
+        val wasOn = autoRecord
+        autoRecord = on
+        if (wasOn && !on) _driveState.update {
+            if (it.phase == DrivePhase.PAUSED && it.pauseReason == PauseReason.LINK) it.copy(pauseReason = PauseReason.HAND) else it
+        }
+    }
 
     /** Demo mode was entered. */
     @Synchronized fun onDemoModeEntered() {}

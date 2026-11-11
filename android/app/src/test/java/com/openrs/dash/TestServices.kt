@@ -43,6 +43,9 @@ internal object TestServices {
             // #316 seam 5: a test's own recorder never reaches a later class (its database is closed by then), also when
             // a scope fails to finish
             CanDataService.recorderProvider = CanDataService.APP_RECORDER
+            // #316 "auto-record switched": the service tells its recorder the setting from UserPrefsStore, so a test's
+            // setting never reaches a later class either (the next service loads the saved one at its creation)
+            com.openrs.dash.ui.UserPrefsStore.resetForTest()
         }
     }
 

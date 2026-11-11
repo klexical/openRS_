@@ -92,6 +92,7 @@ class DriveLinkEndFlushTest {
     private fun autoRecord(on: Boolean) {
         app.getSharedPreferences("openrs_settings", Context.MODE_PRIVATE).edit()
             .putBoolean(AppSettings.KEY_AUTO_RECORD_DRIVES, on).commit()
+        com.openrs.dash.ui.UserPrefsStore.load(app)                      // #316: the service reads the setting from the store
     }
 
     private fun recorder(d: DriveDao) =

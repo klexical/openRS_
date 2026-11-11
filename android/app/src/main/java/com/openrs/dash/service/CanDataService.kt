@@ -249,6 +249,15 @@ class CanDataService : Service() {
         scope.launch {
             AppVisibility.visible.collect { visible -> if (visible) link.transition { retypeForeground() } }
         }
+        // #316 "auto-record switched": the recorder is told the saved setting now and at every change (Settings' SAVE goes
+        // through UserPrefsStore). Unconfined: the first value is delivered before onCreate returns, and a change reaches
+        // the recorder in the same call that saves it, so no connection event can come between the setting and the
+        // recorder. Launched after the two collectors above: ServiceScopeTeardownTest names the visibility collector by
+        // its lambda's place in onCreate (`onCreate$4`).
+        scope.launch(Dispatchers.Unconfined) {
+            UserPrefsStore.prefs.map { it.autoRecordDrives }.distinctUntilChanged()
+                .collect { recorder().onAutoRecordSwitched(it) }
+        }
         if (isTransportReady()) autoStartConnection()
         com.openrs.dash.ui.StartupTrace.mark("CanDataService.onCreate end")
     }
@@ -414,12 +423,6 @@ class CanDataService : Service() {
     }
 
     private fun recorder(): DriveRecorder = recorderProvider()
-
-    /**
-     * #316: hands the recorder the auto-record setting where a loss is reported or a connection starts. Interim: the
-     * "auto-record switched" event, when the setting changes, comes in its own commit.
-     */
-    private fun seedAutoRecord() = recorder().onAutoRecordSwitched(AppSettings.getAutoRecordDrives(this))
 
     private fun isRecording(): Boolean = recorder().driveState.value.isRecording
 
@@ -670,7 +673,6 @@ class CanDataService : Service() {
         com.openrs.dash.data.BoostSessionLog.reset()
         com.openrs.dash.data.BoostSession.reset()
         startSessionRecording()
-        seedAutoRecord()
 
         var reportTo: LinkSession? = null                 // the job's session, set below; the report goes through its ownership
         val conn = buildConnection(onLinkLost = { atMs -> reportTo?.onConnectionLost(atMs) }, heldDropAtMs = heldDropAtMs)
@@ -820,7 +822,7 @@ class CanDataService : Service() {
             private val r get() = recorder()
             override val activeDriveId get() = r.driveState.value.let { if (it.isRecording) it.driveId else null }
             override fun onEngineRunning(sessionId: Long) { r.onEngineRunning(sessionId) }
-            override fun onConnectionLost(atMs: Long) { seedAutoRecord(); r.onConnectionLost(atMs) }
+            override fun onConnectionLost(atMs: Long) { r.onConnectionLost(atMs) }
             override fun onConnectionBack() { r.onConnectionBack() }
         },
         onFrameCounted = { sessionFrameCount++ },
@@ -842,7 +844,6 @@ class CanDataService : Service() {
         // and its attempts are still running (reported once: the connection hands it over), else the closure's. What the
         // drive does with it is the recorder's rule (a link pause with auto-record on; never a finalize here).
         val atMs = connection?.takeUnreportedDrop() ?: System.currentTimeMillis()
-        seedAutoRecord()
         recorder().onConnectionLost(atMs)
         endConnection(LinkPhase.OFF, reason, rec)
     }
@@ -984,7 +985,6 @@ class CanDataService : Service() {
         if (!beginConnection(heldDropAtMs = heldDrop)) {
             // #316: nothing started, so this RCN closed the connection: a "connection lost", as every closure by the service
             // is (the owner's "Yes, pause it"), at the carried drop's moment when one was held, else the closure's
-            seedAutoRecord()
             recorder().onConnectionLost(heldDrop ?: System.currentTimeMillis())
             endConnection(LinkPhase.OFF, LinkStopReason.RETRY_NOT_STARTED, rec)
         }

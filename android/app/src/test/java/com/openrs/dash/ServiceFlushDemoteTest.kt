@@ -108,6 +108,7 @@ class ServiceFlushDemoteTest {
 
     private fun autoRecord(on: Boolean) {
         app.getSharedPreferences("openrs_settings", Context.MODE_PRIVATE).edit().putBoolean(AppSettings.KEY_AUTO_RECORD_DRIVES, on).commit()
+        com.openrs.dash.ui.UserPrefsStore.load(app)                      // #316: a change reaches the recorder through the store
     }
     private fun waitUntil(timeoutMs: Long = 5_000, cond: () -> Boolean): Boolean {
         val end = System.currentTimeMillis() + timeoutMs
