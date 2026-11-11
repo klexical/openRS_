@@ -251,7 +251,7 @@ fun DriveMap(
             }
             Marker(
                 state = MarkerState(position = LatLng(bm.lat, bm.lng)),
-                title = if (bm.label.isNotEmpty()) bm.label else "Bookmark",
+                title = if (bm.label.isNotEmpty()) "Observer note: ${bm.label}" else "Observer note (no text)",
                 snippet = snippet,
                 icon = BitmapDescriptorFactory.defaultMarker(colorToHue(Warn)),
                 zIndex = 7f

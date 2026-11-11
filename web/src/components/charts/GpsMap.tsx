@@ -5,6 +5,7 @@ import type { TripPoint, PeakEvent, Bookmark } from '../../types/session'
 import { colors } from '../../styles/tokens'
 import { boostLabel, primaryBoostSource, sourceName } from '../../lib/boost'
 import { useUnitFormatters } from '../../lib/format'
+import { noteHeading } from '../../lib/observerNotes'
 import {
   type ColorMode,
   colorModes,
@@ -195,7 +196,7 @@ export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMa
             >
               <Popup>
                 <div style={{ fontFamily: 'JetBrains Mono', fontSize: 11 }}>
-                  <div style={{ fontWeight: 700, marginBottom: 2 }}>{bm.label || 'Bookmark'}</div>
+                  <div style={{ fontWeight: 700, marginBottom: 2 }}>{noteHeading({ text: bm.label })}</div>
                   <div>{bm.speedKph.toFixed(0)} kph · {bm.rpm} RPM{bm.boostPsi != null ? ` · ${fmt.boost(bm.boostPsi)}` : ''}</div>
                 </div>
               </Popup>

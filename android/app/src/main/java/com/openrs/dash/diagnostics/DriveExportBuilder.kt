@@ -541,6 +541,9 @@ internal object DriveExportBuilder {
             bookmarks.forEach { bm ->
                 bmArray.put(JSONObject().apply {
                     put("timestamp", bm.timestamp)
+                    // An observer's note, not a decoded signal; relMs = time from the drive's start
+                    put("kind", com.openrs.dash.data.ObserverNote.KIND)
+                    put("relMs", bm.timestamp - drive.startTime)
                     put("lat", bm.lat)
                     put("lng", bm.lng)
                     put("label", bm.label)

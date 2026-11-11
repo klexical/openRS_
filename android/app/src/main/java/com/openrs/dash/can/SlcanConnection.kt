@@ -238,6 +238,8 @@ class SlcanConnection(
                 UnbuiltTransport(LogText.sanitizeReason(e))
             }
             attemptTransport = transport
+            // The export's MTU context is this attempt's from here on; the previous attempt's is gone (#253)
+            DiagnosticLogger.connectionAttempt(transport.bleMtu)
             try {
                 addDebugLine("--- ${transport.label} ---")
                 addDebugLine("Connecting to ${transport.label}")

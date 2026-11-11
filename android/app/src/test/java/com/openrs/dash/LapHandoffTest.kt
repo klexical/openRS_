@@ -67,6 +67,7 @@ class LapHandoffTest {
         app = ApplicationProvider.getApplicationContext()
         shadowOf(app).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
         db = Room.inMemoryDatabaseBuilder(app, DriveDatabase::class.java).allowMainThreadQueries().build()
+        db.openHelper.writableDatabase      // open before any recorder (see ObserverNoteEvidenceTest)
         rec = DriveRecorder(app, vs, WeatherRepository(""), db, db.driveDao(), { _, _ -> null }, gps, { })
         rec.lapTimer = lapTimer
     }

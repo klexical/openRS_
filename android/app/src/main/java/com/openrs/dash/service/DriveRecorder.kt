@@ -1022,27 +1022,48 @@ class DriveRecorder(
     // ── Event bookmarks ──────────────────────────────────────────────────
 
     /**
-     * Inserts a GPS-tagged bookmark at the current location with live vehicle state.
-     * No-op when not recording or no location is available.
+     * The moment an observer's note refers to: taken when the driver asks for the note (the long-press on MARK), used
+     * when its text is saved. The note's time, place and vehicle readings are this moment's, not the save's.
      */
-    fun addBookmark(label: String = "") {
+    class NoteMark internal constructor(
+        internal val driveId: Long, val atMs: Long, internal val location: Location?, internal val vs: VehicleState,
+    )
+
+    /** The mark for a note asked for now; null when no drive is recording. */
+    fun markNow(): NoteMark? {
         val state = _driveState.value
-        if (!state.isRecording || state.driveId <= 0L) return
-        val loc = state.currentLocation ?: return
-        val vs = vehicleStateFlow.value
+        if (!state.isRecording || state.driveId <= 0L) return null
+        return NoteMark(state.driveId, System.currentTimeMillis(), state.currentLocation, vehicleStateFlow.value)
+    }
+
+    /**
+     * Records an observer's note ([com.openrs.dash.data.ObserverNote]) while a drive is recording: a session event on
+     * the diagnostic timeline, always, and a GPS-tagged bookmark row with vehicle state when a location was known.
+     * Everything is stamped with [at] — by default now (a tap on MARK); a note typed in the form passes the mark taken
+     * when the form opened. No-op without a mark, or when its drive is no longer the one recording.
+     */
+    fun addBookmark(label: String = "", at: NoteMark? = markNow()) {
+        val state = _driveState.value
+        if (at == null || !state.isRecording || state.driveId != at.driveId) return
+        val note = com.openrs.dash.data.ObserverNote.clean(label)
+        val loc = at.location
+        DiagnosticLogger.eventAt(com.openrs.dash.data.ObserverNote.EVENT,
+            com.openrs.dash.data.ObserverNote.eventText(note, placed = loc != null), at.atMs)
+        if (loc == null) return
+        val vs = at.vs
         scope.launch(Dispatchers.IO) {
             try {
                 dao.insertBookmark(
                     DriveBookmarkEntity(
-                        driveId = state.driveId,
-                        timestamp = System.currentTimeMillis(),
+                        driveId = at.driveId,
+                        timestamp = at.atMs,
                         lat = loc.latitude,
                         lng = loc.longitude,
-                        label = label,
+                        label = note,
                         speedKph = vs.speedKph,
                         rpm = vs.rpm.toInt(),
                         // Not shown or exported (#207): bookmarks have no source column, so a value couldn't be named
-                        boostPsi = com.openrs.dash.data.BoostSession.read(vs, System.currentTimeMillis()).psi ?: 0.0
+                        boostPsi = com.openrs.dash.data.BoostSession.read(vs, at.atMs).psi ?: 0.0
                     )
                 )
                 Log.d(TAG, "Bookmark added at (${loc.latitude}, ${loc.longitude})")

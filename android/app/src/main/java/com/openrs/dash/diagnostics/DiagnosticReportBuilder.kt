@@ -89,6 +89,42 @@ internal object DiagnosticReportBuilder {
     ): Pair<String, String> =
         buildSummaryText(ts, snap, dtcScan, counters) to buildDetailJson(ts, snap, dtcScan, counters)
 
+    /**
+     * The current attempt's MTU in four separate parts (#253): what was asked, what the request call returned, what the
+     * callback said, and the size the writes use. "fallback" marks a size nobody negotiated.
+     */
+    internal fun bleMtuText(m: DiagnosticLogger.BleMtuAttempt): String {
+        val c = m.context
+        val asked = when {
+            c.requestedMtu == null -> "not requested (setup ended before the MTU step)"
+            c.requestStarted == false -> "requested ${c.requestedMtu}, refused by the phone"
+            else -> "requested ${c.requestedMtu}"
+        }
+        val answer = when {
+            c.callbackStatus == null && c.requestedMtu == null -> null
+            c.callbackStatus == null && c.requestStarted == false -> "no callback"
+            c.callbackStatus == null -> if (c.waitTimedOut) "no callback within 5 s" else "waiting for the callback"
+            c.callbackStatus == 0 -> "callback GATT 0, MTU ${c.callbackMtu}" + if (c.waitTimedOut) " (after the 5 s wait)" else ""
+            else -> "callback GATT ${c.callbackStatus}, MTU ${c.callbackMtu} (not applied)"
+        }
+        val used = "in use ${c.usedMtu}${if (c.usedIsFallback) " (fallback)" else ""}, writes up to ${c.usedMtu - 3} bytes"
+        return listOfNotNull("attempt ${m.attempt}", asked, answer, used).joinToString(" · ")
+    }
+
+    internal fun bleMtuJson(m: DiagnosticLogger.BleMtuAttempt): JSONObject = JSONObject().apply {
+        val c = m.context
+        put("attempt", m.attempt)
+        put("requestedMtu", c.requestedMtu ?: JSONObject.NULL)
+        put("requestStarted", c.requestStarted ?: JSONObject.NULL)
+        put("callbackStatus", c.callbackStatus ?: JSONObject.NULL)
+        put("callbackMtu", c.callbackMtu ?: JSONObject.NULL)
+        put("waitTimedOut", c.waitTimedOut)
+        put("usedMtu", c.usedMtu)
+        put("usedPayloadBytes", c.usedMtu - 3)
+        put("usedIsFallback", c.usedIsFallback)
+        put("outcome", c.outcome)
+    }
+
     fun buildSummaryText(
         ts: String,
         snap: AdapterStatusSnapshot = DiagnosticLogger.snapshotAdapterStatus(),
@@ -115,6 +151,7 @@ internal object DiagnosticReportBuilder {
         if (log.sessionTransport.isNotEmpty())
             appendLine("  Transport: ${log.sessionTransport}")
         appendLine("  Firmware : ${log.firmwareVersion}")
+        counters.bleMtu?.let { appendLine("  BLE MTU  : ${bleMtuText(it)}") }   // Bluetooth only (#253)
         val connEvent = log.sessionEvents.lastOrNull { it.type == "SESSION" }
         if (connEvent != null) appendLine("  Last evt : ${connEvent.message}")
         appendLine()
@@ -513,6 +550,7 @@ internal object DiagnosticReportBuilder {
 
         root.put("nrcUnattributedTotal", counters.nrcUnattributed)   // exact, even though lines are folded (#216)
         root.put("linkIntegrity", linkIntegrityJson(counters.integrity, counters.nrcUnattributed))   // rc.8 #253, additive
+        counters.bleMtu?.let { root.put("bleMtu", bleMtuJson(it)) }   // #253, additive; absent unless the attempt is Bluetooth
         root.put("didInventory", didInventoryJson(counters.dids))   // rc.8 #253, additive
         root.put("logLimits", logLimitsJson(counters.limits, knockSessionDropped()))  // additive
         root.put("exportSchemaVersion", EXPORT_SCHEMA_VERSION)   // rc.8 #253, additive; when it changes: see the constant

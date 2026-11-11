@@ -91,6 +91,7 @@ class ServiceFlushDemoteTest {
         app = ApplicationProvider.getApplicationContext()
         shadowOf(app).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
         db = Room.inMemoryDatabaseBuilder(app, DriveDatabase::class.java).allowMainThreadQueries().build()
+        db.openHelper.writableDatabase      // open before any recorder (see ObserverNoteEvidenceTest)
         gated = GatedDao(db.driveDao())
         rec = DriveRecorder(app, appVs, WeatherRepository(""), db, gated.dao, { _, _ -> null }, gps, { })
         OpenRSDashApp::class.java.getDeclaredField("driveRecorder\$delegate").apply { isAccessible = true }.set(OpenRSDashApp.instance, lazyOf(rec))

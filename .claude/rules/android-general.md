@@ -20,3 +20,7 @@ Moved verbatim from the tracked `CLAUDE.md` (section Known Gotchas) on 2026-11-0
   helper). A class that left an activity alive, or work queued at exit, stopped every later Compose test in the same JVM
   from recomposing after a state write (`LaunchControlDisplayTest`'s age-out case failed after the header test classes).
   A new composing test class needs the same teardown
+- **A test that never composes must not write Compose state either** — a `mutableStateOf` written from a plain JVM /
+  Robolectric test (a state holder driven without a composition) leaves work behind once any earlier class in the JVM
+  has composed, and the next Compose class stops recomposing after a state write. Keep state holders that such tests
+  drive free of snapshot state (`NoteFormState`, #253: its `isOpen` broke `ObserverNoteFormTest` only in a full run)

@@ -111,7 +111,7 @@ data[5] = B5,  data[6] = B6 …
 ## Known Gotchas
 
 The gotchas live in `.claude/rules/` as path-scoped Claude Code rules, one file per area (95 entries, moved verbatim on
-2026-11-06; 111 now). Each file loads on demand when a file matching its `paths:` globs is read or edited; the globs start with `**/`
+2026-11-06; 112 now). Each file loads on demand when a file matching its `paths:` globs is read or edited; the globs start with `**/`
 so they also match from a workspace that holds this repository in a subfolder. Rules for editing them:
 
 - A new gotcha goes at the end of its area's file, in the same `- **Title** — …` style; a cross-cutting one goes to
@@ -129,7 +129,7 @@ so they also match from a workspace that holds this repository in a subfolder. R
 | File | Area | Loads when a matching file is read / edited |
 |---|---|---|
 | `source-layout.md` | Source Layout (the android/ source map) | any file under `android/` |
-| `android-general.md` | Android, any file (5) | any file under `android/app/src/` |
+| `android-general.md` | Android, any file (6) | any file under `android/app/src/` |
 | `can-decoding.md` | CAN decoding and VehicleState (12) | `CanDecoder.kt`, `VehicleState.kt`, `DemoSimulator.kt`, `PullTracker.kt`, `Knock*.kt`, `data/Drive*.kt`, `OilPtuMapping*`, `DriveRecorder.kt`, their tests, `test/resources/dbc/` |
 | `obd-polling.md` | OBD Mode 22 polling, decoders and freshness (12) | `Obd*.kt`, `PcmPollSchedule.kt`, `PidRegistry.kt`, `NrcTracker.kt`, `CanDecoder.kt`, `SlcanConnection.kt`, `CanDataService.kt`, `ObdMerge.kt`, `FreshnessGate.kt`, `VehicleState.kt`, `*ModeProvenance*`, `PowerPage.kt`, `CustomDashPage.kt`, the PID assets, their tests |
 | `boost.md` | Boost / TIP rule (#207) (3) | any `*Boost*` file, `DrivePage.kt`, `CustomDashPage.kt`, `HudOverlayService.kt`, `DriveRecorder.kt`, `KnockScatter.kt`, `KnockCapture.kt`, `ui/trip/`, `web/src/lib/boost.ts` |
