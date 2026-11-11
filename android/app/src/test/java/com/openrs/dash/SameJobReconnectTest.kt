@@ -107,4 +107,30 @@ class SameJobReconnectTest {
         assertTrue(h.waitUntil { rec.driveState.value.phase == DrivePhase.RECORDING && rec.driveState.value.driveId != old })
         assertEquals(2, h.dao.getDriveCount())
     }
+
+    // ── #316 (b), owner "Yes, carry it": the 15-minute rule counts from the carried drop, not from the report ────────────
+
+    @Test fun `a carried drop 16 minutes old - reported after RCN's attempts fail, then back with the engine - old saved at the drop, new started`() {
+        val rec = with(h) { recorder(autoRecord = true).recording() }
+        val old = rec.driveState.value.driveId
+        val own = LinkOwnership()
+        val s1 = LinkSession(own, own.begin(), h.vs, adapter(rec), onFrameCounted = {}, perfRunSink = {})
+        s1.onConnectionBack()
+        s1.rpmFrame()
+        s1.onVehicleState(VehicleState(isConnected = true, rpm = 2_000.0)) { 0L }
+        val dropAt = h.now                                             // the old connection drops; its loss is held
+        h.now += 16 * 60_000L                                          // the user taps RCN much later
+        val s2 = LinkSession(own, own.begin(), h.vs, adapter(rec), onFrameCounted = {}, perfRunSink = {})
+        s2.onConnectionLost(atMs = dropAt)                             // the new attempts failed: the carried moment
+        assertEquals("premise", DrivePhase.PAUSED to PauseReason.LINK, rec.driveState.value.phase to rec.driveState.value.pauseReason)
+        h.now += 60_000L
+        val s3 = LinkSession(own, own.begin(), h.vs, adapter(rec), onFrameCounted = {}, perfRunSink = {})
+        s3.onConnectionBack()                                          // a later connection is up and sees the engine running
+        s3.rpmFrame()
+        s3.onVehicleState(VehicleState(isConnected = true, rpm = 2_000.0)) { 0L }
+        assertTrue(h.waitUntil { rec.driveState.value.phase == DrivePhase.RECORDING && rec.driveState.value.driveId != old })
+        assertEquals(2, h.dao.getDriveCount())
+        assertTrue(h.waitUntil { h.dao.getDrive(old)!!.endTime != 0L })
+        assertEquals("the old drive ends at the drop", dropAt, h.dao.getDrive(old)!!.endTime)
+    }
 }

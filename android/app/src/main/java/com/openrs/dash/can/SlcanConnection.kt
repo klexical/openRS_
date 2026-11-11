@@ -53,6 +53,12 @@ class SlcanConnection(
      * connection, with the moment the drop was found ([clock]); never for attempts with no connection before them.
      */
     private val onLinkLost: (dropAtMs: Long) -> Unit = {},
+    /**
+     * #316 (b), owner "Yes, carry it": a drop handed over from the connection this one replaces (a manual reconnect during
+     * that connection's attempts). Held from construction exactly as this connection's own drop would be: reported with
+     * this moment once this job's attempts fail, cleared by a connect, takeable once by a closure or the next reconnect.
+     */
+    heldDropAtMs: Long? = null,
     /** Where firmware capability is published (#220) — the app's flags by default; tests capture it. */
     private val firmwareSink: (FirmwareStatus) -> Unit = { st ->
         OpenRSDashApp.instanceOrNull?.let { app ->
@@ -222,13 +228,16 @@ class SlcanConnection(
     /**
      * #316: the moment an established connection dropped whose loss is not reported yet (the reconnect attempts are
      * still under way), handed over once: the service's closure reports that one loss with this time instead of its
-     * own. Null when there is none.
+     * own, and a manual reconnect hands it to the new connection (`heldDropAtMs`). Null when there is none.
      */
     fun takeUnreportedDrop(): Long? = synchronized(dropLock) { unreportedDropAtMs.also { unreportedDropAtMs = null } }
 
     private val dropLock = Any()
-    /** Guarded by [dropLock]: set when an established connection ends, cleared by a new connection or a hand-over. */
-    private var unreportedDropAtMs: Long? = null
+    /**
+     * Guarded by [dropLock]: set when an established connection ends (or handed in at construction), cleared by a new
+     * connection or a hand-over.
+     */
+    private var unreportedDropAtMs: Long? = heldDropAtMs
 
     fun connectHybrid(
         onObdUpdate: (VehicleState) -> Unit,

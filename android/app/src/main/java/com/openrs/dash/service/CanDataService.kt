@@ -87,8 +87,11 @@ class CanDataService : Service() {
         override fun stopSelf() = this@CanDataService.stopSelf()
     })
 
-    /** [onLinkLost]: the connection's "connection lost" report (#316) — a dropped connection whose attempts failed. */
-    private fun buildConnection(onLinkLost: (Long) -> Unit): SlcanConnection {
+    /**
+     * [onLinkLost]: the connection's "connection lost" report (#316) — a dropped connection whose attempts failed.
+     * [heldDropAtMs]: a drop carried over from the connection a manual reconnect replaced (#316 (b)).
+     */
+    private fun buildConnection(onLinkLost: (Long) -> Unit, heldDropAtMs: Long? = null): SlcanConnection {
         val s = AppSettings
         val host = s.getHost(this)
         val port = s.getPort(this)
@@ -118,6 +121,7 @@ class CanDataService : Service() {
             // #271: MAP 0xF40B is polled (fast group) only while a drive is recording, not paused
             mapPoll          = { com.openrs.dash.data.MapF40b.pollActive(recorder().driveState.value) },
             onLinkLost       = onLinkLost,
+            heldDropAtMs     = heldDropAtMs,
         )
 
         // Create the appropriate firmware command sender
@@ -603,8 +607,11 @@ class CanDataService : Service() {
         beginConnection()
     }
 
-    /** Starts a connection job unless one is running; false when nothing could start (transport down / no foreground). */
-    private fun beginConnection(): Boolean = link.transition {
+    /**
+     * Starts a connection job unless one is running; false when nothing could start (transport down / no foreground).
+     * [heldDropAtMs]: a manual reconnect's carried drop (#316 (b)), held by the new connection; unused when nothing starts.
+     */
+    private fun beginConnection(heldDropAtMs: Long? = null): Boolean = link.transition {
         if (DemoMode.isActive) return@transition false
         if (!isTransportReady()) return@transition false
         if (connectionJob?.isActive == true) return@transition true
@@ -666,7 +673,7 @@ class CanDataService : Service() {
         seedAutoRecord()
 
         var reportTo: LinkSession? = null                 // the job's session, set below; the report goes through its ownership
-        val conn = buildConnection(onLinkLost = { atMs -> reportTo?.onConnectionLost(atMs) })
+        val conn = buildConnection(onLinkLost = { atMs -> reportTo?.onConnectionLost(atMs) }, heldDropAtMs = heldDropAtMs)
         connection = conn
         val gen = link.begin()
         val session = newLinkSession(gen)
@@ -953,6 +960,10 @@ class CanDataService : Service() {
     fun reconnect(): Unit = link.transition {
         if (DemoMode.isActive) return@transition
         link.clearManualConnect()
+        // #316 (b), owner "Yes, carry it": a drop the old connection holds (its attempts were still under way) is not
+        // discarded with the old job. The new connection holds it: reported with its original moment if the new attempts
+        // fail, cleared by a connect. The tap itself reports nothing. Taken before the teardown ends the old job.
+        val heldDrop = connection?.takeUnreportedDrop()
         // Old job, its session record and diagnostic session end before the new ones begin
         val rec = recNow()
         teardownJob(LinkPhase.OFF, LinkStopReason.USER_RETRY, rec)
@@ -970,11 +981,11 @@ class CanDataService : Service() {
             )
         }
         // Transport down (or no foreground allowed): nothing started, so release instead of keeping a stale notification
-        if (!beginConnection()) {
-            // #316: nothing started, so this RCN closed the connection: a "connection lost" at the closure's moment, as
-            // every closure by the service is (the owner's "Yes, pause it")
+        if (!beginConnection(heldDropAtMs = heldDrop)) {
+            // #316: nothing started, so this RCN closed the connection: a "connection lost", as every closure by the service
+            // is (the owner's "Yes, pause it"), at the carried drop's moment when one was held, else the closure's
             seedAutoRecord()
-            recorder().onConnectionLost(System.currentTimeMillis())
+            recorder().onConnectionLost(heldDrop ?: System.currentTimeMillis())
             endConnection(LinkPhase.OFF, LinkStopReason.RETRY_NOT_STARTED, rec)
         }
     }

@@ -69,11 +69,11 @@ class SlcanConnectionLifecycleTest {
 
     private fun kotlinx.coroutines.test.TestScope.connection(
         h: Harness, maxRetries: Int = 3, keepRetrying: () -> Boolean = { false },
-        onLinkLost: (Long) -> Unit = {},
+        onLinkLost: (Long) -> Unit = {}, heldDropAtMs: Long? = null,
     ) = SlcanConnection(
         transportFactory = { h.next() }, maxRetries = maxRetries, reconnectDelayMs = 2_000L,
         keepRetrying = keepRetrying, ioDispatcher = StandardTestDispatcher(testScheduler), debugSink = {},
-        clock = { testScheduler.currentTime }, onLinkLost = onLinkLost,
+        clock = { testScheduler.currentTime }, onLinkLost = onLinkLost, heldDropAtMs = heldDropAtMs,
     )
 
     /** Each "connection lost" the connection reports: (virtual time it was reported, the drop time it carries). */
@@ -328,5 +328,64 @@ class SlcanConnectionLifecycleTest {
         assertEquals(listOf(7_000L, 120_000L), l.map { it.second })   // the second connection: 119 s + 1 s
         assertEquals(29_000L, l.first().first)
         job.cancel(); advanceUntilIdle()
+    }
+
+    // ── #316 (b), owner "Yes, carry it": a drop carried into the connection a manual reconnect builds (heldDropAtMs) ────
+
+    @Test fun `a carried drop is reported once the new job's own attempts fail - a fresh count with each auto-reconnect setting`() = runTest {
+        // the new job counts its attempts from zero: 3 attempts (5 s + 15 s backoff) with auto-reconnect on, 1 with it off
+        for ((retries, reportedAt) in listOf(3 to 20_000L, 1 to 0L)) {
+            val l = losses()
+            val start = testScheduler.currentTime
+            val conn = connection(Harness(List(retries) { Attempt.Fails }), maxRetries = retries, onLinkLost = into(l),
+                heldDropAtMs = 1_234L)
+            conn.run().collect {}
+            assertEquals("maxRetries $retries", listOf(start + reportedAt to 1_234L), l)
+            assertEquals("handed over once", null, conn.takeUnreportedDrop())
+        }
+    }
+
+    @Test fun `a carried drop is cleared by a connect - nothing reported, then or when the job ends`() = runTest {
+        val l = losses()
+        val conn = connection(Harness(listOf(Attempt.ConnectsAndHolds)), onLinkLost = into(l), heldDropAtMs = 1_234L)
+        val job = launch { conn.run().collect {} }
+        advanceTimeBy(60_000L)
+        assertEquals(AdapterState.Connected, conn.state.value)
+        assertEquals(null, conn.takeUnreportedDrop())
+        job.cancel(); advanceUntilIdle()
+        assertEquals(emptyList<Pair<Long, Long>>(), l)
+    }
+
+    @Test fun `after a connect cleared a carried drop, a later drop is reported with its own moment only`() = runTest {
+        val l = losses()
+        val h = Harness(listOf(Attempt.ConnectsThenDropsAfter(7_000L), Attempt.Fails, Attempt.Fails, Attempt.Fails))
+        val conn = connection(h, maxRetries = 3, onLinkLost = into(l), heldDropAtMs = 1_234L)
+        conn.run().collect {}
+        assertEquals(listOf(7_000L), l.map { it.second })
+    }
+
+    @Test fun `a carried drop can be taken once during the new attempts - by a closure or the next reconnect`() = runTest {
+        val l = losses()
+        val conn = connection(Harness(List(3) { Attempt.Fails }), maxRetries = 3, onLinkLost = into(l), heldDropAtMs = 1_234L)
+        val job = launch { conn.run().collect {} }
+        advanceTimeBy(1_000L)                                          // the first attempt failed, 5 s backoff running
+        assertEquals(1_234L, conn.takeUnreportedDrop())
+        assertEquals("once", null, conn.takeUnreportedDrop())
+        job.cancel(); advanceUntilIdle()
+        assertEquals(emptyList<Pair<Long, Long>>(), l)
+    }
+
+    @Test fun `QA trace at the connections - drop, RCN hands the drop over, the new attempts fail - one loss, the drop's moment`() = runTest {
+        val l = losses()
+        val old = connection(Harness(listOf(Attempt.ConnectsThenDropsAfter(7_000L), Attempt.Fails, Attempt.Fails, Attempt.Fails)),
+            maxRetries = 3, onLinkLost = into(l))
+        val oldJob = launch { old.run().collect {} }
+        advanceTimeBy(10_000L)                                         // dropped at 7 s, the first attempt failed at 9 s
+        val held = old.takeUnreportedDrop()                           // as reconnect(): before the old job is torn down
+        oldJob.cancel(); advanceUntilIdle()
+        val tap = testScheduler.currentTime
+        val new = connection(Harness(List(3) { Attempt.Fails }), maxRetries = 3, onLinkLost = into(l), heldDropAtMs = held)
+        new.run().collect {}
+        assertEquals(listOf(tap + 20_000L to 7_000L), l)
     }
 }

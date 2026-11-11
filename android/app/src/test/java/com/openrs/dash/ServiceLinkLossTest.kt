@@ -29,7 +29,7 @@ import org.robolectric.shadows.ShadowNetworkCapabilities
  *
  * The attempt is a real one to an unreachable test address (192.0.2.1, TEST-NET-1), as in TaskRemovalTest: it never
  * connects, so the drop-then-closure case (the connection's held drop moment) is covered at the connection
- * (SlcanConnectionLifecycleTest), not here.
+ * (SlcanConnectionLifecycleTest) and, with a local fake adapter that connects then drops, in ServiceReconnectHeldDropTest.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = OpenRSDashApp::class)
