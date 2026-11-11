@@ -15,6 +15,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
@@ -47,12 +48,18 @@ class DriveStartStopRaceTest {
 
     private class FakeGps : DriveRecorder.LocationSource {
         val opened = AtomicInteger()
-        override fun updates(): Flow<Location> = Channel<Location>(Channel.UNLIMITED).also { opened.incrementAndGet() }.receiveAsFlow()
+        @Volatile var current: Channel<Location>? = null
+        /** Runs on the loop's thread as the loop asks for GPS (the moment the loop is running). */
+        @Volatile var onOpen: (() -> Unit)? = null
+        override fun updates(): Flow<Location> {
+            onOpen?.invoke()
+            return Channel<Location>(Channel.UNLIMITED).also { current = it; opened.incrementAndGet() }.receiveAsFlow()
+        }
         override suspend fun last(): Location? = null
     }
 
-    /** One held DAO call: [method] is held [before] or after the real call, the first time only. */
-    private class Hold(val method: String, val before: Boolean) {
+    /** One held DAO call: the [nth] call of [method] is held [before] or after the real call. */
+    private class Hold(val method: String, val before: Boolean, val nth: Int = 1) {
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
         val used = AtomicInteger()
@@ -61,7 +68,7 @@ class DriveStartStopRaceTest {
 
     private fun heldDao(real: DriveDao, hold: Hold): DriveDao =
         Proxy.newProxyInstance(DriveDao::class.java.classLoader, arrayOf(DriveDao::class.java)) { _, m, args ->
-            val mine = m.name == hold.method && hold.used.getAndIncrement() == 0
+            val mine = m.name == hold.method && hold.used.incrementAndGet() == hold.nth
             if (mine && hold.before) hold.pause()
             val result = try { m.invoke(real, *(args ?: emptyArray())) } catch (e: InvocationTargetException) { throw e.targetException }
             if (mine && !hold.before) hold.pause()
@@ -85,8 +92,20 @@ class DriveStartStopRaceTest {
 
     @After fun tearDown() { recorders.forEach { it.cancel() }; db.close() }
 
+    private val summaries = AtomicInteger()
     private fun recorder(hold: Hold) =
-        DriveRecorder(app, vs, WeatherRepository(""), db, heldDao(dao, hold), { _, _ -> null }, gps, { }).also { recorders += it }
+        DriveRecorder(app, vs, WeatherRepository(""), db, heldDao(dao, hold), { _, _ -> null }, gps, { summaries.incrementAndGet() })
+            .also { recorders += it }
+
+    /** Drive 1: started, one fix, stopped and finalized (no holds reached). */
+    private fun firstDrive(rec: DriveRecorder): com.openrs.dash.data.DriveEntity {
+        rec.startDrive()
+        check(waitUntil { rec.driveState.value.isRecording && gps.opened.get() == 1 })
+        gps.current!!.trySend(Location("t").apply { latitude = 10.0; longitude = 20.0; time = System.currentTimeMillis() })
+        check(waitUntil { rec.driveState.value.totalPointCount == 1 })
+        join(rec.stopDrive())
+        return dao.getRecentDrives().single().also { check(it.endTime > 0 && summaries.get() == 1) }
+    }
 
     private fun waitUntil(ms: Long = 5_000, c: () -> Boolean): Boolean {
         val end = System.currentTimeMillis() + ms
@@ -101,7 +120,7 @@ class DriveStartStopRaceTest {
 
     private fun closedRows() = dao.getRecentDrives().filter { it.endTime > 0 }
     private fun liveRows() = dao.getUnfinishedDrives()
-    private fun recEvents() = DiagnosticLogger.sessionEvents.filter { it.type == "REC" && it.message.contains("stopped before recording started") }
+    private fun recEvents() = DiagnosticLogger.sessionEvents.filter { it.type == "REC" && it.message.contains("start cancelled by STOP") }
 
     // (a) STOP during the insert: the drive ends, nothing listens to GPS, a later START is accepted
     @Test fun `STOP while the new drive's row is being written ends the drive - a later START is accepted`() {
@@ -115,13 +134,14 @@ class DriveStartStopRaceTest {
         settled(rec)
         assertFalse("not recording after STOP", rec.driveState.value.isRecording)
         assertEquals("no GPS listener was opened for the stopped drive", 0, gps.opened.get())
-        assertEquals("its row is closed, none left open", listOf<Any>(), liveRows())
-        val first = closedRows().single().id
+        assertEquals("the cancelled start leaves no row (no empty drive, nothing for the next app start to close)", 0, dao.getDriveCount())
+        assertEquals(1, recEvents().size)
+        assertEquals("nothing finalized", 0, summaries.get())
 
         rec.startDrive()
         assertTrue("a later START is accepted", waitUntil { rec.driveState.value.let { it.isRecording && it.driveId > 0 } })
-        assertNotEquals(first, rec.driveState.value.driveId)
         assertTrue(waitUntil { gps.opened.get() == 1 })
+        assertEquals(1, dao.getDriveCount())
     }
 
     // (c) STOP before the insert: no row, no finalize, no GPS listener
@@ -140,8 +160,8 @@ class DriveStartStopRaceTest {
         assertEquals("nothing to close", listOf<Any>(), recEvents())
     }
 
-    // (d) STOP after the insert, before the drive's state: the row is closed from what Room holds, once
-    @Test fun `STOP after the row is written but before recording starts closes that row once`() {
+    // (d) STOP after the insert, before the drive's state: the row is removed, nothing finalized
+    @Test fun `STOP after the row is written but before recording starts removes that row - nothing finalized`() {
         val hold = Hold("insertDrive", before = false)
         val rec = recorder(hold)
         rec.startDrive()
@@ -152,10 +172,9 @@ class DriveStartStopRaceTest {
         settled(rec)
         assertFalse("not recording after STOP", rec.driveState.value.isRecording)
         assertEquals(0, gps.opened.get())
-        val row = dao.getRecentDrives().single()
-        assertEquals("closed with no points: end = start", row.startTime, row.endTime)
-        assertEquals(listOf<Any>(), liveRows())
-        assertEquals("closed once", 1, recEvents().size)
+        assertEquals("no row", 0, dao.getDriveCount())
+        assertEquals("one REC event", 1, recEvents().size)
+        assertEquals("nothing finalized", 0, summaries.get())
     }
 
     // (e) START, STOP, START in quick succession: exactly one live drive, the first one closed
@@ -174,7 +193,7 @@ class DriveStartStopRaceTest {
         assertEquals("it is the one recording", live.single().id, rec.driveState.value.driveId)
         assertTrue(rec.driveState.value.isRecording)
         assertEquals("one GPS listener", 1, gps.opened.get())
-        assertEquals("the first drive is closed", 1, closedRows().size)
+        assertEquals("the cancelled first start left no row", 1, dao.getDriveCount())
     }
 
     // A second START while the first is still being created (a double tap, or auto-record and a tap) is ignored
@@ -189,5 +208,87 @@ class DriveStartStopRaceTest {
         Thread.sleep(200)
         assertEquals("one drive row", 1, dao.getDriveCount())
         assertEquals("one GPS listener", 1, gps.opened.get())
+    }
+
+    // L2 (QA): the start is held inside its "recording" state update, before the loop; STOP; release
+    @Test fun `STOP while the start publishes its recording state - no loop starts afterwards, a later START works`() {
+        val rec = recorder(Hold("none", before = true))
+        val entered = CountDownLatch(1); val release = CountDownLatch(1)
+        val held = java.util.concurrent.atomic.AtomicBoolean()
+        val watcher = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined).launch {
+            rec.driveState.collect { if (it.isRecording && held.compareAndSet(false, true)) { entered.countDown(); release.await(10, TimeUnit.SECONDS) } }
+        }
+        try {
+            rec.startDrive()
+            assertTrue(entered.await(5, TimeUnit.SECONDS))      // the start's thread is inside the state update
+            val stop = rec.stopDrive()
+            release.countDown()
+            join(stop)
+            settled(rec)
+            assertFalse("not recording after STOP", rec.driveState.value.isRecording)
+            assertEquals("no loop, no GPS listener", 0, gps.opened.get())
+            assertEquals("the drive that showed as recording is finalized as an ordinary STOP", 1, closedRows().size)
+            rec.startDrive()
+            assertTrue("a later START is accepted", waitUntil { rec.driveState.value.isRecording && gps.opened.get() == 1 })
+        } finally { watcher.cancel() }
+    }
+
+    // L4 (QA): drive 1 finished; drive 2's insert held; STOP; release
+    @Test fun `STOP during the next drive's insert never touches the previous drive`() {
+        val hold = Hold("insertDrive", before = true, nth = 2)
+        val rec = recorder(hold)
+        val first = firstDrive(rec)
+        rec.startDrive()
+        assertTrue(hold.entered.await(5, TimeUnit.SECONDS))
+        val stop = rec.stopDrive()
+        hold.release.countDown()
+        join(stop)
+        settled(rec)
+        assertEquals("drive 1 is unchanged", first, dao.getDrive(first.id))
+        assertEquals("drive 1's summary is not posted again", 1, summaries.get())
+        assertEquals("drive 2 left no row", 1, dao.getDriveCount())
+        assertFalse(rec.driveState.value.isRecording)
+    }
+
+    // The same before the insert: drive 2 is held in its prune
+    @Test fun `STOP during the next drive's prune never touches the previous drive`() {
+        val hold = Hold("getDriveCount", before = true, nth = 2)
+        val rec = recorder(hold)
+        val first = firstDrive(rec)
+        rec.startDrive()
+        assertTrue(hold.entered.await(5, TimeUnit.SECONDS))
+        val stop = rec.stopDrive()
+        hold.release.countDown()
+        join(stop)
+        settled(rec)
+        assertEquals(first, dao.getDrive(first.id))
+        assertEquals(1, summaries.get())
+        assertEquals(1, dao.getDriveCount())
+    }
+
+    @Test fun `a second STOP does nothing - the drive it ended is not rewritten`() {
+        val rec = recorder(Hold("none", before = true))
+        val first = firstDrive(rec)
+        Thread.sleep(5)
+        join(rec.stopDrive())
+        assertEquals(first, dao.getDrive(first.id))
+        assertEquals(1, summaries.get())
+    }
+
+    // The CI window (loop running, its job not yet known to STOP) cannot exist when the job is set before it runs.
+    // Pin: a STOP issued on the loop's own thread as it opens GPS ends the drive and runs its finalize.
+    @Test fun `a STOP at the moment the loop starts ends the drive and finalizes it`() {
+        val rec = recorder(Hold("none", before = true))
+        val stopped = CountDownLatch(1)
+        var stop: kotlinx.coroutines.Job? = null
+        gps.onOpen = { gps.onOpen = null; stop = rec.stopDrive(); stopped.countDown() }
+        rec.startDrive()
+        assertTrue(stopped.await(5, TimeUnit.SECONDS))
+        join(stop!!)
+        settled(rec)
+        assertFalse(rec.driveState.value.isRecording)
+        assertEquals("finalized", 1, summaries.get())
+        assertEquals(1, closedRows().size)
+        assertEquals(listOf<Any>(), liveRows())
     }
 }

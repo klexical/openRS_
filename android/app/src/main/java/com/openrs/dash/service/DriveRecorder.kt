@@ -250,7 +250,7 @@ class DriveRecorder(
      * Start recording a new drive. Creates a DriveEntity in Room immediately.
      * If [sessionId] is provided, links this drive to a diagnostic session.
      */
-    fun startDrive(sessionId: Long = 0) {
+    @Synchronized fun startDrive(sessionId: Long = 0) {
         if (recorderJob?.isActive == true) return
         // Simulated telemetry never enters trip history.
         if (com.openrs.dash.demo.DemoMode.isActive) {
@@ -374,14 +374,19 @@ class DriveRecorder(
      * transaction, recorder-owned columns only: a rename / tag made during STOP stays, and a drive deleted during
      * STOP gets no laps, thumbnail or summary.
      */
-    fun stopDrive(): Job {
+    @Synchronized fun stopDrive(): Job {
         val stoppedAt = System.currentTimeMillis()
-        pausedAtMs = 0L
         val jobToJoin = recorderJob
+        val state = _driveState.value
+        // Not recording and no start under way: nothing to stop (a second STOP must not rewrite the drive it ended)
+        if (jobToJoin == null && !state.isRecording) return finalizeJob ?: Job().apply { complete() }
+        pausedAtMs = 0L
         recorderJob?.cancel()
         recorderJob = null
+        // A STOP while the drive is still being created (its state not yet published): the start is cancelled and
+        // nothing is finalized — the previous drive, whose id the state still holds, is never touched
+        if (!state.isRecording) return cancelStart(jobToJoin!!, run)
 
-        val state = _driveState.value
         val endVs = vehicleStateFlow.value
         val stopped = run
         val fuelState = FuelEconomy.state.value
@@ -396,22 +401,6 @@ class DriveRecorder(
             // …and for a pause flush or an active export still writing points it took from this drive's buffer (#241).
             // Only this drive's writers; each holds the lock for one insert, completed, failed or cancelled.
             stopped.outsideLoopWrites.withLock { }
-
-            // STOP came while the drive was still being created: its row exists but it never recorded (no state, no
-            // points). Close it as the orphan recovery would; a drive stopped before its insert has no row at all.
-            val created = stopped.driveId
-            if (created > 0 && created != state.driveId) {
-                try {
-                    dao.getDrive(created)?.takeIf { it.endTime == 0L }?.let { row ->
-                        dao.updateDrive(closedOrphan(row, dao.getPoints(created)))
-                        Log.d(TAG, "Drive $created stopped before it started recording — closed")
-                        DiagnosticLogger.event("REC", "drive $created: stopped before recording started, closed with no points")
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Closing a drive stopped during its start failed", e)
-                }
-                return@launch
-            }
 
             if (state.driveId > 0) {
                 try {
@@ -512,6 +501,29 @@ class DriveRecorder(
             else it.copy(isRecording = false, isPaused = false)
         }
         return finalize
+    }
+
+    /**
+     * STOP during a start: wait for the start's job (its insert completes, nothing after it runs), then remove the row
+     * it may have written. No drive is shown for a start that never recorded, and the next app start does not close it
+     * as "ended mid-drive". Publishes nothing to the state: the job's own finally clears its flags if it got that far.
+     */
+    private fun cancelStart(start: Job, cancelled: DriveRun): Job {
+        val cleanup = scope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY, context = Dispatchers.IO) {
+            start.join()
+            val created = cancelled.driveId
+            if (created <= 0) return@launch                     // stopped before its insert: no row
+            try {
+                dao.deleteDrive(created)
+                Log.d(TAG, "Drive $created: STOP during its start — row removed")
+                DiagnosticLogger.event("REC", "drive $created: start cancelled by STOP before recording, nothing kept")
+            } catch (e: Exception) {
+                Log.w(TAG, "Removing a drive stopped during its start failed", e)
+            }
+        }
+        finalizeJob = cleanup                                    // isFinalizing / durabilityBarrier see it (#212)
+        cleanup.start()
+        return cleanup
     }
 
     fun cancel() {
