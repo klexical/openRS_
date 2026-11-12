@@ -127,11 +127,11 @@ object CanDecoder {
     const val ID_DRIVE_MODE_EXT = 0x420
 
     // ── Steering wheel button events (community-discovered) ────────────────
-    // 0x260: Auto Start Stop button (B1b0 / Bit 7), ESC Off button (B6b4 / Bit 43).
+    // 0x260: Auto Start Stop button (byte0 bit0), ESC Off button (byte5 bit4).
     // Source: Google Sheets community CAN map. Bits = 1 while button is held.
     const val ID_BUTTONS_260   = 0x260
 
-    // 0x305: Drive Mode button (B5b2 / Bit 37). Bit = 1 while button is held.
+    // 0x305: Drive Mode button (byte4 bit2). Bit = 1 while button is held.
     // Lets us see button-press events ahead of the resolved mode change on 0x1B0+0x420.
     const val ID_DRIVE_MODE_BTN = 0x305
 
@@ -419,19 +419,19 @@ object CanDecoder {
             ) else null
 
             // ── 0x260: Auto Start Stop button + ESC Off button ────────────────
-            // ASS button:  byte0 bit7 (Bit 7 / B1b0 in spreadsheet notation)
-            // ESC Off btn: byte5 bit3 (Bit 43 / B6b4 in spreadsheet notation)
+            // ASS button:  byte0 bit0 — firmware focusrs.h mask 0x01 (captures: 11 frames, 2 edges)
+            // ESC Off btn: byte5 bit4 — firmware focusrs.h mask 0x10
             // Both are momentary — high while held, low when released.
             ID_BUTTONS_260 -> if (n >= 6) state.copy(
-                autoStartStopButtonPressed = (ubyte(data, 0) shr 7) and 1 == 1,
-                escOffButtonPressed        = (ubyte(data, 5) shr 3) and 1 == 1,
+                autoStartStopButtonPressed = (ubyte(data, 0) and 1) == 1,
+                escOffButtonPressed        = (ubyte(data, 5) shr 4) and 1 == 1,
                 lastUpdate = now
             ) else null
 
             // ── 0x305: Drive mode button ──────────────────────────────────────
-            // byte4 bit5 (Bit 37 / B5b2 in spreadsheet notation), 1 while held.
+            // byte4 bit2 — firmware focusrs.h mask 0x04 (captures: 124 frames, 46 edges), 1 while held.
             ID_DRIVE_MODE_BTN -> if (n >= 5) state.copy(
-                driveModeButtonPressed = (ubyte(data, 4) shr 5) and 1 == 1,
+                driveModeButtonPressed = (ubyte(data, 4) shr 2) and 1 == 1,
                 lastUpdate = now
             ) else null
 
