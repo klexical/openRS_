@@ -45,6 +45,16 @@ data class DriveState(
     val fuelUsedL: Double
         get() = ((startFuelPct - latestFuelPct) / 100.0 * TANK_L).coerceAtLeast(0.0)
 
+    /**
+     * True when the fuel-used figure is meaningful: the start value must not sit on the
+     * 100 % clamp, and the level must have dropped by more than two gauge steps
+     * (0.4 % ≈ 0.2 L each). Smaller drops are gauge noise, not consumption.
+     */
+    val fuelUsedKnown: Boolean
+        get() = startFuelPct > 0.0 &&
+            startFuelPct < 100.0 &&
+            (startFuelPct - latestFuelPct) > FUEL_GAUGE_STEP_PCT * 2
+
     val avgFuelL100km: Double
         get() = if (cumulativeDistanceKm < 0.1) 0.0
                 else fuelUsedL / cumulativeDistanceKm * 100.0
@@ -73,6 +83,21 @@ data class DriveState(
 
     companion object {
         const val TANK_L = 49.8
+        /** One step of the 0x380 fuel-level gauge, in percent (≈ 0.2 L). */
+        const val FUEL_GAUGE_STEP_PCT = 0.4
+
+        /**
+         * Distance to add for one GPS step. Zero while the car reports no speed, so a parked
+         * drive does not accumulate the wander of its fixes.
+         */
+        fun stepDistanceKm(
+            prev: DrivePointEntity?,
+            currentLat: Double,
+            currentLng: Double,
+            speedKph: Double
+        ): Double =
+            if (prev == null || speedKph <= 0.0) 0.0
+            else haversineKm(prev.lat, prev.lng, currentLat, currentLng)
 
         fun haversineKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
             val r = 6371.0
