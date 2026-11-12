@@ -4,6 +4,8 @@ import com.openrs.dash.can.BleAdapterProfile
 import com.openrs.dash.can.BleGattCore
 import com.openrs.dash.can.BleSetupPolicy
 import com.openrs.dash.can.GattLink
+import com.openrs.dash.can.ObdConstants
+import com.openrs.dash.can.PcmRequestLedger
 import com.openrs.dash.can.SlcanConnection
 import com.openrs.dash.can.SlcanTransport
 import com.openrs.dash.can.WriteFailure
@@ -53,12 +55,16 @@ class BleWriteOutcomeTest {
      * refuse the write outright. A PCM Mode 22 line is "forwarded" when the whole line has been written (whatever the
      * callback status, as the Pro's stack does) unless [delivered] says otherwise; the ECU then answers per [reply].
      */
-    private inner class Fake(val core: BleGattCore, val scope: CoroutineScope, val mtu: Int) : GattLink {
+    private inner class Fake(val core: BleGattCore, val scope: CoroutineScope, val mtu: Int, val now: () -> Long) : GattLink {
         var status: (String) -> Int? = { BleSetupPolicy.GATT_SUCCESS }
         var refuse: (String) -> Boolean = { false }
         var delivered: (String) -> Boolean = { true }
         var reply: (Int) -> String? = { did -> "t7E880562%04X00000000".format(did).take(21) }
         val chunks = mutableListOf<String>()
+        /** Every completed line with the virtual time its last chunk was written. */
+        val lines = mutableListOf<Pair<Long, String>>()
+        /** How long after the line is written the ECU's reply arrives (a real Bluetooth link: often past the 150 ms gap). */
+        var latencyMs = 40L
         private val partial = StringBuilder()
         var closed = false
         override fun discoverServices() = true
@@ -72,7 +78,7 @@ class BleWriteOutcomeTest {
             val line = partial.toString()
             if (refuse(line)) { partial.clear(); return false }
             chunks += text
-            if (line.endsWith("\r")) { partial.clear(); if (delivered(line)) forward(line) }
+            if (line.endsWith("\r")) { partial.clear(); lines += now() to line; if (delivered(line)) forward(line) }
             status(line)?.let { s -> scope.launch { delay(10); core.onWrite(s) } }
             return true
         }
@@ -84,7 +90,7 @@ class BleWriteOutcomeTest {
             if (!line.startsWith("t7E08") || line.substring(5, 9) != "0322") return
             val did = line.substring(9, 13).toInt(16)
             val answer = reply(did) ?: return
-            scope.launch { delay(40); core.onNotify(pro.notify, "$answer\r".toByteArray()) }
+            scope.launch { delay(latencyMs); core.onNotify(pro.notify, "$answer\r".toByteArray()) }
         }
         override fun requestMtu(mtu: Int): Boolean { scope.launch { delay(10); core.onMtuChanged(this@Fake.mtu, 0) }; return true }
         override fun bondState() = BleGattCore.BOND_BONDED
@@ -98,12 +104,12 @@ class BleWriteOutcomeTest {
 
     private class Link(val conn: SlcanConnection, val fakes: List<Fake>) { val first get() = fakes.first() }
 
-    private fun TestScope.connected(mtu: Int = 247, rpm: Double = 1_500.0, setup: (Fake) -> Unit = {}): Link {
+    private fun TestScope.connected(mtu: Int = 247, rpm: Double = 1_500.0, recording: Boolean = false, setup: (Fake) -> Unit = {}): Link {
         val fakes = mutableListOf<Fake>()
         val factory = {
             object : SlcanTransport {
                 val core = BleGattCore("MEATPI_PRO", writeTimeoutMs = 2_000L)
-                val g = Fake(core, backgroundScope, mtu).also { setup(it); fakes += it }
+                val g = Fake(core, backgroundScope, mtu, { testScheduler.currentTime }).also { setup(it); fakes += it }
                 override suspend fun open() {
                     backgroundScope.launch {
                         delay(50); core.onConnected(g); delay(50)
@@ -125,7 +131,7 @@ class BleWriteOutcomeTest {
             }
         }
         val conn = SlcanConnection(
-            transportFactory = factory, maxRetries = 3, rpmProvider = { rpm },
+            transportFactory = factory, maxRetries = 3, rpmProvider = { rpm }, mapPoll = { recording },
             ioDispatcher = StandardTestDispatcher(testScheduler), debugSink = {}, clock = { testScheduler.currentTime },
         )
         backgroundScope.launch { conn.connectHybrid({}, { VehicleState() }).collect {} }
@@ -161,6 +167,92 @@ class BleWriteOutcomeTest {
         assertTrue(pcm.isNotEmpty())
         // consecutive identical PCM lines would be a retransmission (the schedule never repeats a DID back to back)
         assertTrue(pcm.zipWithNext().none { (a, b) -> a == b })
+    }
+
+    // ── #333: poll pacing after a possibly delivered write ──────────────────────────────────────────────────────────
+    // The car (rc.8 over Bluetooth on the Pro): every poll write answered GATT 13, replies later than the 150 ms gap, KR2 /
+    // KR3 (0x03ED / 0x03EE) never answering. rc.7 withdrew the request on the (then thrown) GATT 13 and paced at the gap
+    // alone: a batch while running is the 7 fast DIDs + 1 slow DID (8 × 150 ms), or 9 while recording (MAP joins, #271).
+
+    /** TIP-to-TIP windows of PCM lines after the first [skip] batches (engine running: one batch per window). */
+    private fun batches(f: Fake, skip: Int = 2): List<List<Pair<Long, String>>> {
+        val pcm = f.lines.filter { it.second.startsWith("t7E08") }
+        val starts = pcm.indices.filter { pcm[it].second == ObdConstants.PCM_QUERY_TIP_ACTUAL }
+        return starts.zipWithNext().drop(skip).map { (a, b) -> pcm.subList(a, b) }
+    }
+
+    /** Time from each TIP write to the next one, after the first [skip] batches. */
+    private fun tipPeriods(f: Fake, skip: Int = 2): List<Long> =
+        f.lines.filter { it.second == ObdConstants.PCM_QUERY_TIP_ACTUAL }.map { it.first }.zipWithNext { a, b -> b - a }.drop(skip)
+
+    /**
+     * Every PCM write GATT 13, replies 200 ms after the write, KR2 / KR3 silent: each batch takes its requests × the
+     * 150 ms gap — the gap still paces (no gap: about 80 ms), nothing waits for a reply — and each batch is the fast group
+     * in schedule order, then one slow DID, every line once. ± 25 ms: a TIP write can start one 10 ms write callback late
+     * when another poller's write holds the link (the next period makes it up, seen 1 340 / 1 360); a wait for even one
+     * 200 ms reply adds 50 ms and fails it.
+     */
+    private fun TestScope.assertRc7Pacing(recording: Boolean) {
+        val link = connected(recording = recording) {
+            it.status = { line -> if (line.length > 20) 13 else BleSetupPolicy.GATT_SUCCESS }
+            it.latencyMs = 200L
+            it.reply = { did -> if (did == 0x03ED || did == 0x03EE) null else "t7E880562%04X00000000".format(did).take(21) }
+        }
+        advanceTimeBy(60_000L)
+        val fast = ObdConstants.pcmFastQueries(recording)
+        val rc7BatchMs = (fast.size + 1) * ObdConstants.PCM_FAST_GAP_MS            // 8 × 150, or 9 × 150 recording
+        val periods = tipPeriods(link.first)
+        assertTrue("batches: ${periods.size}", periods.size >= 10)
+        assertTrue("TIP-to-TIP periods (ms): $periods, rc.7 batch $rc7BatchMs", periods.all { it in rc7BatchMs - 25..rc7BatchMs + 25 })
+        val windows = batches(link.first)
+        windows.forEach { w ->
+            val sent = w.map { it.second }
+            assertEquals(sent.toString(), fast, sent.take(fast.size))
+            assertEquals(sent.toString(), fast.size + 1, sent.size)
+            assertTrue(sent.toString(), sent.last() in ObdConstants.PCM_SLOW_QUERIES)
+        }
+    }
+
+    @Test fun `GATT 13 polls with replies later than the gap - a batch takes the rc_7 time and no line is written twice (#333)`() = runTest {
+        assertRc7Pacing(recording = false)
+    }
+
+    @Test fun `GATT 13 polls while recording - nine requests (MAP joins) take the rc_7 time, no line is written twice (#333)`() = runTest {
+        assertRc7Pacing(recording = true)
+    }
+
+    @Test fun `GATT 13 polls with replies later than the gap - NRCs are charged to nobody, never to the wrong DID (#333)`() = runTest {
+        // The cost of not waiting: with replies later than the gap, two different DIDs are usually outstanding when an NRC
+        // arrives, so the ledger (#216) cannot say whose it is. Suppression of KR2 / KR3 is lost on such a link; no other
+        // DID is ever suppressed. Their requests, never resolved, lapse and keep later NRCs unattributed (the ledger's
+        // documented consequence); positive replies still resolve their own requests, so no other DID lapses.
+        val link = connected {
+            it.status = { line -> if (line.length > 20) 13 else BleSetupPolicy.GATT_SUCCESS }
+            it.latencyMs = 200L
+            it.reply = { did -> if (did == 0x03ED || did == 0x03EE) nrc(0x31) else "t7E880562%04X00000000".format(did).take(21) }
+        }
+        advanceTimeBy(60_000L)
+        assertTrue(suppressed().toString(), suppressed().all { it == 0x03ED || it == 0x03EE })
+        assertTrue(suppressed().toString(), suppressed().isEmpty())
+        assertTrue(unattributed().toString(), unattributed().any { it.contains("ambiguous") })
+        val named = unattributed().flatMap { m -> Regex("\\b[0-9A-F]{4}\\b").findAll(m).map { it.value.toInt(16) }.toList() }
+        assertTrue(unattributed().toString(), named.isNotEmpty() && named.all { it == 0x03ED || it == 0x03EE })
+        assertTrue(DiagnosticLogger.linkIntegrity.toString(), DiagnosticLogger.linkIntegrity.nrcAttributed == 0)
+    }
+
+    @Test fun `control - a write reported as sent still waits for its reply - Wi-Fi pacing is unchanged (#333)`() = runTest {
+        // Status 0 (as every TCP / WebSocket write): the poller waits up to REPLY_WINDOW_MS for each reply, as in rc.7.
+        val link = connected {
+            it.latencyMs = 200L
+            it.reply = { did -> if (did == 0x03ED || did == 0x03EE) null else "t7E880562%04X00000000".format(did).take(21) }
+        }
+        advanceTimeBy(60_000L)
+        val periods = batches(link.first).map { w -> w.last().first - w.first().first }
+        assertTrue("batches: ${periods.size}", periods.size >= 10)
+        // TIP to the slow DID spans the 7 fast requests: 5 wait their 200 ms reply, KR2 / KR3 the full window — about
+        // 1 600 ms; pacing at the gap alone would be 7 × 150 = 1 050 ms
+        val floor = 5 * 200L + 2 * PcmRequestLedger.REPLY_WINDOW_MS - 100L
+        assertTrue("TIP-to-last-line spans (ms): $periods, floor $floor", periods.all { it >= floor })
     }
 
     @Test fun `another status after sending is uncertain - the request is kept, later NRCs are charged to nobody`() = runTest {

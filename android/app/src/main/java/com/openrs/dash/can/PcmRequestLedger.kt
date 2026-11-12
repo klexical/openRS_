@@ -91,7 +91,10 @@ class PcmRequestLedger(private val maxAgeMs: Long = 2_000L) {
     }
 
     companion object {
-        /** Poll pacing: how long the poller waits for a reply before sending the next PCM request. Not ownership. */
+        /**
+         * Poll pacing: how long the poller waits for a reply before sending the next PCM request — only after a write the
+         * transport reported as sent; a possibly delivered one is paced by the batch gap alone (#333). Not ownership.
+         */
         const val REPLY_WINDOW_MS = 300L
         /** Queue cap (memory). Overflow marks the ledger unresolved — it never erases uncertainty. */
         const val MAX_TRACKED = 32

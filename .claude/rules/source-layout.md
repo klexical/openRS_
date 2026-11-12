@@ -40,7 +40,8 @@ can/
                             Constructor takes transportFactory: () -> SlcanTransport (+ rpmProvider for fast poll)
                             Single PCM sender — an NRC is attributed only when every outstanding request is one DID and no
                             earlier request is still unanswered (no time releases one — only its own positive reply); queue
-                            eviction marks the connection unresolved; 300 ms = poll pacing only; failed writes withdrawn;
+                            eviction marks the connection unresolved; 300 ms = poll pacing only, after a write reported sent
+                            (none after a possibly delivered one, #333); certainly-not-sent writes withdrawn;
                             7F 22 78 keeps the request outstanding (PcmRequestLedger, #216). OPENRS? probe schedule
                             on its own coroutine (×3, give-up 13 s, late replies accepted, #220); DTC frames diverted by
                             service ID (#215)
