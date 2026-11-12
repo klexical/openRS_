@@ -104,7 +104,7 @@ class BleWriteOutcomeTest {
 
     private class Link(val conn: SlcanConnection, val fakes: List<Fake>) { val first get() = fakes.first() }
 
-    private fun TestScope.connected(mtu: Int = 247, rpm: Double = 1_500.0, setup: (Fake) -> Unit = {}): Link {
+    private fun TestScope.connected(mtu: Int = 247, rpm: Double = 1_500.0, recording: Boolean = false, setup: (Fake) -> Unit = {}): Link {
         val fakes = mutableListOf<Fake>()
         val factory = {
             object : SlcanTransport {
@@ -131,7 +131,7 @@ class BleWriteOutcomeTest {
             }
         }
         val conn = SlcanConnection(
-            transportFactory = factory, maxRetries = 3, rpmProvider = { rpm },
+            transportFactory = factory, maxRetries = 3, rpmProvider = { rpm }, mapPoll = { recording },
             ioDispatcher = StandardTestDispatcher(testScheduler), debugSink = {}, clock = { testScheduler.currentTime },
         )
         backgroundScope.launch { conn.connectHybrid({}, { VehicleState() }).collect {} }
@@ -172,7 +172,7 @@ class BleWriteOutcomeTest {
     // ── #333: poll pacing after a possibly delivered write ──────────────────────────────────────────────────────────
     // The car (rc.8 over Bluetooth on the Pro): every poll write answered GATT 13, replies later than the 150 ms gap, KR2 /
     // KR3 (0x03ED / 0x03EE) never answering. rc.7 withdrew the request on the (then thrown) GATT 13 and paced at the gap
-    // alone; a batch while running is the 7 fast DIDs + 1 slow DID here (mapPoll off), so rc.7's batch is 8 × 150 ms.
+    // alone: a batch while running is the 7 fast DIDs + 1 slow DID (8 × 150 ms), or 9 while recording (MAP joins, #271).
 
     /** TIP-to-TIP windows of PCM lines after the first [skip] batches (engine running: one batch per window). */
     private fun batches(f: Fake, skip: Int = 2): List<List<Pair<Long, String>>> {
@@ -181,27 +181,44 @@ class BleWriteOutcomeTest {
         return starts.zipWithNext().drop(skip).map { (a, b) -> pcm.subList(a, b) }
     }
 
-    private val rc7BatchMs = 8 * ObdConstants.PCM_FAST_GAP_MS          // 1 200 ms
+    /** Time from each TIP write to the next one, after the first [skip] batches. */
+    private fun tipPeriods(f: Fake, skip: Int = 2): List<Long> =
+        f.lines.filter { it.second == ObdConstants.PCM_QUERY_TIP_ACTUAL }.map { it.first }.zipWithNext { a, b -> b - a }.drop(skip)
 
-    @Test fun `GATT 13 polls with replies later than the gap - a batch takes the rc_7 time and no line is written twice (#333)`() = runTest {
-        val link = connected {
+    /**
+     * Every PCM write GATT 13, replies 200 ms after the write, KR2 / KR3 silent: each batch takes its requests × the
+     * 150 ms gap — the gap still paces (no gap: about 80 ms), nothing waits for a reply — and each batch is the fast group
+     * in schedule order, then one slow DID, every line once. ± 25 ms: a TIP write can start one 10 ms write callback late
+     * when another poller's write holds the link (the next period makes it up, seen 1 340 / 1 360); a wait for even one
+     * 200 ms reply adds 50 ms and fails it.
+     */
+    private fun TestScope.assertRc7Pacing(recording: Boolean) {
+        val link = connected(recording = recording) {
             it.status = { line -> if (line.length > 20) 13 else BleSetupPolicy.GATT_SUCCESS }
             it.latencyMs = 200L
             it.reply = { did -> if (did == 0x03ED || did == 0x03EE) null else "t7E880562%04X00000000".format(did).take(21) }
         }
         advanceTimeBy(60_000L)
+        val fast = ObdConstants.pcmFastQueries(recording)
+        val rc7BatchMs = (fast.size + 1) * ObdConstants.PCM_FAST_GAP_MS            // 8 × 150, or 9 × 150 recording
+        val periods = tipPeriods(link.first)
+        assertTrue("batches: ${periods.size}", periods.size >= 10)
+        assertTrue("TIP-to-TIP periods (ms): $periods, rc.7 batch $rc7BatchMs", periods.all { it in rc7BatchMs - 25..rc7BatchMs + 25 })
         val windows = batches(link.first)
-        assertTrue("batches: ${windows.size}", windows.size >= 10)
-        val periods = windows.map { w -> w.last().first - w.first().first + ObdConstants.PCM_FAST_GAP_MS }
-        // Bound: 8 requests × the 150 ms gap, + 50 ms for write callbacks (each GATT 13 comes back 10 ms after its write)
-        assertTrue("TIP-to-TIP periods (ms): $periods", periods.all { it <= rc7BatchMs + 50 })
-        // Each window is exactly one batch: the fast group in order, then one slow DID — every line once
         windows.forEach { w ->
             val sent = w.map { it.second }
-            assertEquals(sent.toString(), ObdConstants.PCM_FAST_QUERIES, sent.take(7))
-            assertEquals(sent.toString(), 8, sent.size)
+            assertEquals(sent.toString(), fast, sent.take(fast.size))
+            assertEquals(sent.toString(), fast.size + 1, sent.size)
             assertTrue(sent.toString(), sent.last() in ObdConstants.PCM_SLOW_QUERIES)
         }
+    }
+
+    @Test fun `GATT 13 polls with replies later than the gap - a batch takes the rc_7 time and no line is written twice (#333)`() = runTest {
+        assertRc7Pacing(recording = false)
+    }
+
+    @Test fun `GATT 13 polls while recording - nine requests (MAP joins) take the rc_7 time, no line is written twice (#333)`() = runTest {
+        assertRc7Pacing(recording = true)
     }
 
     @Test fun `GATT 13 polls with replies later than the gap - NRCs are charged to nobody, never to the wrong DID (#333)`() = runTest {
