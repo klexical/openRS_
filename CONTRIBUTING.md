@@ -26,6 +26,7 @@ Pull requests are welcome, from people and from people working with an LLM.
 - Anything beyond a typo starts from an [issue](https://github.com/klexical/openRS_/issues): open one, or comment on the one you want to take, so the approach is agreed before you write code. Issues labelled [`good first issue`](https://github.com/klexical/openRS_/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) are fully specified and need no car or adapter.
 - Code changes target `staging`; documentation targets `main` (see the table above).
 - Documentation under `android/` that describes a code change goes to `staging` in the same pull request as the code: for example a new or changed row in [`android/docs/pid-reference.md`](android/docs/pid-reference.md) for a decoder change, or the changelog entry. A correction to what the docs say about released behaviour goes to `main`.
+- Please keep to two open pull requests at a time until your first one has merged, and keep each one to its own issue: no lines that belong to another pull request. Small, separate changes are reviewed faster.
 
 **What a pull request needs**
 
