@@ -14,6 +14,14 @@ import {
   peakMarkerStyle,
 } from '../../lib/mapColors'
 
+// ── Basemap (#240) ─────────────────────────────────────────────────
+// OpenStreetMap's standard tiles (no key in the bundle), darkened by the `basemap-dark` display filter in index.css.
+// Their tile usage policy requires the attribution to be shown, so the attribution control stays on. The keyless CARTO
+// dark_all endpoint used before answers every tile with one placeholder image.
+const BASEMAP_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
+const BASEMAP_ATTRIBUTION =
+  '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>'
+
 interface GpsMapProps {
   points: TripPoint[]
   peakEvents: PeakEvent[]
@@ -131,12 +139,8 @@ export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMa
         zoom={14}
         style={{ height, width: '100%', background: colors.bg }}
         zoomControl={false}
-        attributionControl={false}
       >
-        <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          maxZoom={19}
-        />
+        <TileLayer url={BASEMAP_URL} attribution={BASEMAP_ATTRIBUTION} maxZoom={19} className="basemap-dark" />
         <ZoomToFit points={points} />
 
         {/* Color-segmented route */}
