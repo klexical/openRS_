@@ -183,7 +183,7 @@ class DriveRecorder(
                             peakRpm = state.peakRpm.toInt(),
                             peakBoostPsi = state.peakBoostPsi,
                             peakLateralG = state.peakLateralG,
-                            fuelUsedL = state.fuelUsedL,
+                            fuelUsedL = if (state.fuelUsedKnown) state.fuelUsedL else 0.0,
                             driveModeBreakdown = modeJson,
                             weatherSummary = state.currentWeather?.description
                         )
