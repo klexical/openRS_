@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss" alt="Tailwind">
 </p>
 
-> For full project documentation — features, CAN tables, architecture, hardware setup, and roadmap — see the **[root README](../README.md)**.
+> For adapter setup, telemetry references and architecture, see [Documentation and help](../README.md#documentation-and-help).
 
 ---
 
