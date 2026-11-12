@@ -420,14 +420,20 @@ class SlcanConnection(
                             // stack may have, so it keeps its request (it lapses) and is never resent (#248)
                             val start = clock()
                             var req = did?.let { pcmRequests.sent(it, start) }
-                            try { noteWrite(transport.write(q)) } catch (e: Exception) {
+                            var outcome: WriteOutcome? = null
+                            try { outcome = transport.write(q); noteWrite(outcome) } catch (e: Exception) {
                                 noteWriteFailure(e)
                                 if (!WriteFailure.isUncertain(e)) { req?.let { pcmRequests.withdraw(it) }; req = null }
                             }
                             if (did != null && req != null) DiagnosticLogger.countDidSent(ObdConstants.PCM_RESPONSE_ID, did)   // inventory (#253)
                             sentAny = true
-                            // Wait (bounded) for the reply, so normally one request is in flight and its NRC attributable
-                            if (req != null) withTimeoutOrNull(PcmRequestLedger.REPLY_WINDOW_MS) { req.reply.await() }
+                            // Wait (bounded) for the reply, so normally one request is in flight and its NRC attributable.
+                            // Not after a possibly delivered write (GATT 13, every Pro poll over Bluetooth): its request is
+                            // kept and its reply still resolves it, but the gap alone paces the next one, as in rc.7 — the
+                            // wait cost every reply's Bluetooth latency and halved the fast group's rate (#333). Replies
+                            // slower than the gap then overlap, and the ledger charges their NRCs to nobody.
+                            if (req != null && outcome != WriteOutcome.POSSIBLY_DELIVERED)
+                                withTimeoutOrNull(PcmRequestLedger.REPLY_WINDOW_MS) { req.reply.await() }
                             delay((batch.gapMs - (clock() - start)).coerceAtLeast(0L))
                         }
                         // Every DID of the batch suppressed: still suspend, never spin
