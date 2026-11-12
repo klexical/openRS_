@@ -1,4 +1,5 @@
 import type { TripPoint } from '../types/session'
+import { boostKeyOf } from './boost'
 
 // Chart values for recorded readings. A sample without a reading becomes `null`, which Recharts draws as a
 // gap — never a 0 dip. Genuine zeros (0 rpm, 0 % throttle, an empty tank, 0 °C) stay plotted.
@@ -21,7 +22,10 @@ export function tripChartData(points: TripPoint[]): TripChartRow[] {
   return points.map((p) => ({
     ts: (p.ts - t0) / 1000,
     rpm: numReading(p.rpm),
-    boostPsi: numReading(p.boostPsi),
+    // #207: one series per measurement — a point fills only its own source's key; no reading → null everywhere
+    boostTip: p.boostPsi != null && boostKeyOf(p.boostSource) === 'boostTip' ? numReading(p.boostPsi) : null,
+    boostCan: p.boostPsi != null && boostKeyOf(p.boostSource) === 'boostCan' ? numReading(p.boostPsi) : null,
+    boostLegacy: p.boostPsi != null && boostKeyOf(p.boostSource) === 'boostLegacy' ? numReading(p.boostPsi) : null,
     speedKph: numReading(p.speedKph),
     coolantC: tempReading(p.coolantC),
     oilTempC: tempReading(p.oilTempC),

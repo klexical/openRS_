@@ -1,0 +1,71 @@
+{
+  "meta": {
+    "app": "openRS_",
+    "appVersion": "2.2.7-rc.8-dev+dfb092e9a604.dirty",
+    "appBuild": 39,
+    "releaseVersion": "2.2.7-rc.8",
+    "versionCode": 39,
+    "sourceCommit": "dfb092e9a604",
+    "sourceDirty": true,
+    "buildType": "debug",
+    "generatedAt": "20260101_000000",
+    "sessionDurationMs": 0,
+    "sessionDurationHuman": "00:00:00",
+    "firmware": "WiCAN stock",
+    "isOpenRsFirmware": false,
+    "host": "test",
+    "port": 0,
+    "slcanLinesLogged": 0,
+    "slcanFileIncluded": false
+  },
+  "dtcScan": {
+    "status": "NONE"
+  },
+  "adapterStatusSource": {
+    "state": "NOT_REQUESTED",
+    "detail": "no status request in this session"
+  },
+  "vehicleState": {},
+  "canFrameInventory": {},
+  "fpsTimeline": [],
+  "decodeTrace": [],
+  "sessionEvents": [
+    {
+      "relMs": 0,
+      "type": "SESSION",
+      "message": "Started — test:0"
+    }
+  ],
+  "nrcUnattributedTotal": 0,
+  "linkIntegrity": {
+    "writes": {
+      "sent": 0,
+      "possiblyDelivered": 0,
+      "notSent": 0,
+      "deliveryUnknown": 0,
+      "otherFailure": 0
+    },
+    "framing": "undecided",
+    "refusedFrameLines": 0,
+    "refusedOtherShape": 0,
+    "refusedReplies": 0,
+    "nrcAttributed": 0,
+    "nrcUnattributed": 0,
+    "overlongLines": 0,
+    "linesDropped": 0,
+    "commandRepliesDropped": 0,
+    "dtcFramesDropped": 0
+  },
+  "logLimits": {
+    "decodeTraceDropped": 0,
+    "eventsDropped": 0,
+    "fpsPointsDropped": 0,
+    "probeSessionsDropped": 0,
+    "inventoryFramesNotListed": 0,
+    "slcanCapReached": false,
+    "slcanWriteFailed": false,
+    "knockSessionDropped": 0
+  },
+  "exportSchemaVersion": 1,
+  "probeResults": []
+}

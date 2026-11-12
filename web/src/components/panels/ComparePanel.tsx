@@ -5,7 +5,9 @@ import { SectionLabel } from '../ui/SectionLabel'
 import { DeltaCard } from '../ui/DeltaCard'
 import { ComparisonChart } from '../charts/ComparisonChart'
 import { GpsMap } from '../charts/GpsMap'
-import { computeDeltas } from '../../lib/compare'
+import { computeDeltas, overlayBoostSource } from '../../lib/compare'
+import { boostLabel } from '../../lib/boost'
+import { estimateSuffix } from '../../lib/distance'
 import { fmtDateShort } from '../../lib/format'
 import { colors, chartColors } from '../../styles/tokens'
 
@@ -82,7 +84,7 @@ export function ComparePanel() {
                 <div className="text-sm font-mono text-frost truncate">{sess.name}</div>
                 <div className="flex gap-3 text-[10px] font-mono text-dim uppercase mt-0.5">
                   <span>{fmtDateShort(sess.importedAt)}</span>
-                  {sess.trip && <span>{sess.trip.summary.distanceKm.toFixed(1)} km</span>}
+                  {sess.trip && <span>{sess.trip.summary.distanceKm.toFixed(1)} km{estimateSuffix(sess.trip.summary)}</span>}
                   <span>v{sess.meta.appVersion}</span>
                 </div>
               </div>
@@ -131,8 +133,23 @@ export function ComparePanel() {
           <SectionLabel>RPM Overlay</SectionLabel>
           <ComparisonChart sessions={compareSessions} dataKey="rpm" label="RPM" />
 
-          <SectionLabel>Boost Overlay</SectionLabel>
-          <ComparisonChart sessions={compareSessions} dataKey="boostPsi" label="Boost (PSI)" />
+          {/* #207: one measurement per overlay — sessions whose boost comes from different sources aren't overlaid */}
+          {(() => {
+            const src = overlayBoostSource(compareSessions)
+            return src === undefined ? (
+              <>
+                <SectionLabel>Boost Overlay</SectionLabel>
+                <p className="text-xs font-mono text-dim px-1">
+                  Not overlaid — these sessions recorded boost from different sources (TIP vs CAN 0x0F8 vs not recorded).
+                </p>
+              </>
+            ) : (
+              <>
+                <SectionLabel>{src === 'TIP_033E' ? 'TIP Overlay' : 'Boost Overlay'}</SectionLabel>
+                <ComparisonChart sessions={compareSessions} dataKey="boostPsi" label={`${boostLabel(src)} (PSI)`} />
+              </>
+            )
+          })()}
 
           <SectionLabel>Lateral G Overlay</SectionLabel>
           <ComparisonChart

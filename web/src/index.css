@@ -50,6 +50,13 @@
   }
 }
 
+/* ── Map basemap (#240) ──
+   OpenStreetMap's standard tiles are light; GpsMap's tile layer carries this class so the display filter turns them dark
+   for the Void palette. Only the tiles are filtered: the route, markers and the attribution control keep their colours. */
+.basemap-dark {
+  filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9) saturate(0.5);
+}
+
 /* ── Print styles ── */
 @media print {
   /* Paint accent darkened for paper (App.tsx) — beats the inline screen value */

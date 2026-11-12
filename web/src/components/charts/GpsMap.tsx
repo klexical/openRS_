@@ -3,6 +3,9 @@ import { MapContainer, TileLayer, Polyline, CircleMarker, Popup, useMap } from '
 import 'leaflet/dist/leaflet.css'
 import type { TripPoint, PeakEvent, Bookmark } from '../../types/session'
 import { colors } from '../../styles/tokens'
+import { boostLabel, primaryBoostSource, sourceName } from '../../lib/boost'
+import { useUnitFormatters } from '../../lib/format'
+import { noteHeading } from '../../lib/observerNotes'
 import {
   type ColorMode,
   colorModes,
@@ -10,6 +13,14 @@ import {
   colorLegend,
   peakMarkerStyle,
 } from '../../lib/mapColors'
+
+// ── Basemap (#240) ─────────────────────────────────────────────────
+// OpenStreetMap's standard tiles (no key in the bundle), darkened by the `basemap-dark` display filter in index.css.
+// Their tile usage policy requires the attribution to be shown, so the attribution control stays on. The keyless CARTO
+// dark_all endpoint used before answers every tile with one placeholder image.
+const BASEMAP_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
+const BASEMAP_ATTRIBUTION =
+  '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>'
 
 interface GpsMapProps {
   points: TripPoint[]
@@ -28,7 +39,8 @@ interface ColorSegment {
 function buildColorSegments(points: TripPoint[], mode: ColorMode): ColorSegment[] {
   if (points.length === 0) return []
   const segments: ColorSegment[] = []
-  let currentColor = pointColor(points[0], mode)
+  const boostSource = mode === 'boost' ? primaryBoostSource(points) : null
+  let currentColor = pointColor(points[0], mode, boostSource)
   let currentPositions: [number, number][] = [[points[0].lat, points[0].lng]]
 
   for (let i = 1; i < points.length; i++) {
@@ -36,7 +48,7 @@ function buildColorSegments(points: TripPoint[], mode: ColorMode): ColorSegment[
     const prev = points[i - 1]
     const gap = p.ts - prev.ts > 5000
 
-    const color = pointColor(p, mode)
+    const color = pointColor(p, mode, boostSource)
     if (color !== currentColor || gap) {
       segments.push({ positions: currentPositions, color: currentColor })
       currentColor = color
@@ -75,10 +87,31 @@ function ZoomToFit({ points }: { points: TripPoint[] }) {
   return null
 }
 
+// ── Attribution height (#240) ───────────────────────────────────────
+// OpenStreetMap's attribution must stay visible. Leaflet draws it in the bottom-right corner and wraps it on a narrow map
+// (three lines on a phone, where the map is about 135 px wide beside the nav rail), so the legend is placed above its
+// measured height instead of at a fixed offset.
+
+function AttributionHeight({ onHeight }: { onHeight: (px: number) => void }) {
+  const map = useMap()
+  useEffect(() => {
+    const el = map.attributionControl?.getContainer()
+    if (!el) return
+    const report = () => onHeight(el.offsetHeight)
+    report()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(report)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [map, onHeight])
+  return null
+}
+
 // ── Main component ──────────────────────────────────────────────────
 
 export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMapProps) {
   const [colorMode, setColorMode] = useState<ColorMode>('speed')
+  const [attributionPx, setAttributionPx] = useState(18)          // one line until measured
 
   // All colour modes are built once per trip (main e9cd565) — switching SPD / BOOST / … is a lookup, not
   // another walk of a long route.
@@ -88,7 +121,10 @@ export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMa
     return byMode
   }, [points])
   const segments = segmentsByMode[colorMode]
-  const legend = useMemo(() => colorLegend(colorMode), [colorMode])
+  const fmt = useUnitFormatters()
+  const legend = useMemo(() => colorLegend(colorMode, fmt.boostUnit), [colorMode, fmt.boostUnit])
+  // #207: the BOOST colour mode colours one measurement — named in the legend (TIP / BOOST 0x0F8 / source not recorded)
+  const boostSourceName = useMemo(() => sourceName(primaryBoostSource(points)), [points])
 
   // Detect pause points (>5s gap)
   const pausePoints = useMemo(() => {
@@ -124,13 +160,10 @@ export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMa
         zoom={14}
         style={{ height, width: '100%', background: colors.bg }}
         zoomControl={false}
-        attributionControl={false}
       >
-        <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          maxZoom={19}
-        />
+        <TileLayer url={BASEMAP_URL} attribution={BASEMAP_ATTRIBUTION} maxZoom={19} className="basemap-dark" />
         <ZoomToFit points={points} />
+        <AttributionHeight onHeight={setAttributionPx} />
 
         {/* Color-segmented route */}
         {segments.map((seg, i) => (
@@ -189,8 +222,8 @@ export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMa
             >
               <Popup>
                 <div style={{ fontFamily: 'JetBrains Mono', fontSize: 11 }}>
-                  <div style={{ fontWeight: 700, marginBottom: 2 }}>{bm.label || 'Bookmark'}</div>
-                  <div>{bm.speedKph.toFixed(0)} kph · {bm.rpm} RPM · {bm.boostPsi.toFixed(1)} PSI</div>
+                  <div style={{ fontWeight: 700, marginBottom: 2 }}>{noteHeading({ text: bm.label })}</div>
+                  <div>{bm.speedKph.toFixed(0)} kph · {bm.rpm} RPM{bm.boostPsi != null ? ` · ${fmt.boost(bm.boostPsi)}` : ''}</div>
                 </div>
               </Popup>
             </CircleMarker>
@@ -201,7 +234,11 @@ export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMa
         {peakEvents.map((peak, i) => {
           if (peak.lat === 0 && peak.lng === 0) return null
           const style = peakMarkerStyle(peak.type)
-          const label = `${style.prefix}: ${peak.value.toFixed(style.decimals)}${style.unit}`
+          const prefix = peak.type === 'boost' ? boostLabel(peak.source) : style.prefix
+          // Pressure peaks in the selected unit (#207); other peak types as before
+          const label = peak.type === 'boost'
+            ? `${prefix}: ${fmt.boost(peak.value)}`
+            : `${prefix}: ${peak.value.toFixed(style.decimals)}${style.unit}`
           return (
             <CircleMarker
               key={`peak-${i}`}
@@ -257,14 +294,17 @@ export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMa
         ))}
       </div>
 
-      {/* Color legend */}
+      {/* Color legend — above the attribution's measured height, so the two never meet however narrow the map (#240).
+          Wraps rather than leave the map. */}
       <div
         style={{
           position: 'absolute',
-          bottom: 12,
+          bottom: attributionPx + 8,
           left: 12,
+          maxWidth: 'calc(100% - 24px)',
           zIndex: 1000,
           display: 'flex',
+          flexWrap: 'wrap',
           gap: 10,
           background: `${colors.bg}cc`,
           borderRadius: 8,
@@ -272,6 +312,11 @@ export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMa
           backdropFilter: 'blur(8px)',
         }}
       >
+        {colorMode === 'boost' && (
+          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: colors.accent, letterSpacing: '0.03em' }}>
+            {boostSourceName} {fmt.boostUnit}
+          </span>
+        )}
         {legend.map((entry) => (
           <div key={entry.label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <div style={{ width: 10, height: 10, borderRadius: '50%', background: entry.color }} />

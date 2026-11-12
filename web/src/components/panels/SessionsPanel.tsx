@@ -4,6 +4,7 @@ import { EmptyState } from '../ui/EmptyState'
 import { SearchBar } from '../ui/SearchBar'
 import { fmtDateShort, fmtNumber, fmtDuration } from '../../lib/format'
 import { deleteSession as dbDelete, putSession as dbPut } from '../../lib/db'
+import { estimateSuffix } from '../../lib/distance'
 import { colors } from '../../styles/tokens'
 
 type SortKey = 'date' | 'name' | 'distance' | 'speed'
@@ -232,7 +233,7 @@ export function SessionsPanel() {
                     <span>v{sess.meta.appVersion}</span>
                     {sess.trip && (
                       <>
-                        <span>{fmtNumber(sess.trip.summary.distanceKm)} km</span>
+                        <span>{fmtNumber(sess.trip.summary.distanceKm)} km{estimateSuffix(sess.trip.summary)}</span>
                         <span>{fmtDuration(sess.trip.summary.durationMs)}</span>
                         <span>Peak {fmtNumber(sess.trip.summary.peakSpeedKph, 0)} kph</span>
                       </>

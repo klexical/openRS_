@@ -1,3 +1,4 @@
+import type { BoostSource } from '../lib/boost'
 /** A stored driving session with trip + diagnostic data. */
 export interface Session {
   id: string
@@ -20,6 +21,8 @@ export interface SessionMeta {
   generatedAt: string
   appBuild?: number
   exportedAt?: number
+  /** Export contract version (lib/exportSchema.ts); absent = none stated (rc.7 and earlier). */
+  exportSchemaVersion?: number
 }
 
 // ── Trip ──
@@ -48,7 +51,10 @@ export interface TripPoint {
   lat: number
   lng: number
   rpm: number
-  boostPsi: number
+  /** Gauge psi, or null when the point has no reading (#207 — never 0 for "none"). */
+  boostPsi: number | null
+  /** Which measurement boostPsi is (lib/boost.ts); null / absent = source not recorded (older exports). */
+  boostSource?: BoostSource | null
   speedKph: number
   coolantC: number
   oilTempC: number
@@ -82,11 +88,22 @@ export interface TripPoint {
 
 export interface TripSummary {
   distanceKm: number
+  /**
+   * Where distanceKm comes from (#284): 'recorded' = the app's own figure from the export's profile (nothing counted
+   * across a pause or a link loss); 'estimate' = the sum of straight lines between GPS points, gaps included.
+   * Absent = imported before the source was kept: a point sum (lib/distance.ts treats it as an estimate).
+   */
+  distanceSource?: 'recorded' | 'estimate'
   durationMs: number
   fuelUsedL: number
   avgSpeedKph: number
   peakRpm: number
-  peakBoostPsi: number
+  /** Null when the drive has no boost reading. */
+  peakBoostPsi: number | null
+  /** Source of the peak; null / absent = not recorded (older exports). */
+  peakBoostSource?: BoostSource | null
+  /** Android boost rule the drive was recorded under (absent = older drive, no provenance). */
+  boostPolicy?: string
   peakLatG: number
   peakLongG: number
   peakSpeedKph: number
@@ -105,6 +122,8 @@ export interface PeakEvent {
   ts: number
   lat: number
   lng: number
+  /** Boost peaks: the measurement (one peak per source). */
+  source?: BoostSource | null
 }
 
 // ── Profile JSON (drive_profile_*.json) ──
@@ -125,7 +144,10 @@ export interface DriveProfileSummary {
   avgSpeedKph: number
   maxSpeedKph: number
   peakRpm: number
-  peakBoostPsi: number
+  /** Null when absent: a drive recorded under a boost rule with no reading has no peak. */
+  peakBoostPsi: number | null
+  peakBoostSource?: BoostSource | null
+  boostPolicy?: string
   peakLateralG: number
   peakOilTempC: number
   peakCoolantTempC: number
@@ -143,6 +165,7 @@ export interface ProfilePeak {
   lat: number
   lng: number
   timestampMs: number
+  source?: BoostSource | null
 }
 
 export interface ThermalProgression {
@@ -171,7 +194,12 @@ export interface Bookmark {
   label: string
   speedKph: number
   rpm: number
-  boostPsi: number
+  /** Older exports only — current ones omit it (a bookmark stores no boost source). */
+  boostPsi?: number
+  /** ms since the drive's start. Absent in exports made before observer notes. */
+  relMs?: number
+  /** "observer_note": what a person in the car marked or typed, not a measurement. Absent in older exports. */
+  kind?: string
 }
 
 // ── Lap & Performance (stubs for T5 Android gap-fill) ──
@@ -204,6 +232,28 @@ export interface DiagnosticData {
   probeResults: ProbeResult[]
   dtcResults: DtcEntry[]
   nrcSuppression?: NrcSuppression[]
+  /** rc.8 exports (#253). Undefined = the export recorded none; never the same as an empty inventory. */
+  didInventory?: DidInventory
+}
+
+/** Mode 22 requests of one session, per module and DID, as the app counted them (#253). */
+export interface DidInventory {
+  rows: DidInventoryRow[]
+  /** Counts for DIDs past the app's row limit: not listed. */
+  overflow: number
+  /** Rows of the export this Sapphire could not read: left out, not shown as zeros. */
+  unreadable: number
+}
+
+export interface DidInventoryRow {
+  module: string          // "PCM" | "BCM" | ...
+  responseId: string      // CAN response ID, 3 hex digits ("7E8")
+  did: string             // 4 hex digits ("033E")
+  sent: number
+  positive: number
+  nrcAttributed: number
+  /** Time of the last positive reply since the session start. Absent = no positive reply (not 0). */
+  lastPositiveRelMs?: number
 }
 
 export interface DtcEntry {
