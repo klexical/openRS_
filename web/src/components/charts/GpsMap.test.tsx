@@ -62,7 +62,7 @@ describe('GpsMap basemap (#240)', () => {
     const cls = String(seen.tiles[0].className ?? '')
     expect(cls).not.toBe('')
     const css = readFileSync(join(process.cwd(), 'src/index.css'), 'utf8')
-    const rule = new RegExp(`\\.${cls}\\s*\\{[^}]*filter\\s*:`)
+    const rule = new RegExp(`\\.${cls}\\s*\\{[^}]*filter\\s*:[^;}]*invert\\(`)   // the filter must darken (owner's decision)
     expect(css).toMatch(rule)
   })
 })
