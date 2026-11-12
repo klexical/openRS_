@@ -557,7 +557,7 @@ private fun LiveHud(
                     if (vehicleState.ptuTempC > -90)
                         "${prefs.displayTemp(vehicleState.ptuTempC)}${prefs.tempLabel}" else "--",
                     modifier = Modifier.weight(1f))
-                DataCell("USED", "%.2fL".format(driveState.fuelUsedL), modifier = Modifier.weight(1f))
+                DataCell("USED", if (driveState.fuelUsedKnown) "%.2fL".format(driveState.fuelUsedL) else "—", modifier = Modifier.weight(1f))
                 val (econVal, econUnit) = if (prefs.speedUnit == "MPH")
                     "%.1f".format(driveState.avgFuelMpg) to "MPG"
                 else
