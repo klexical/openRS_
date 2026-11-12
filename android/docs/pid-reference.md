@@ -135,7 +135,7 @@ All formulas re-validated against DigiCluster `can0_hs.json` and `can1_ms.json`.
 | 0x076 | Throttle % (ECU) | `B0 × 0.392` — may not broadcast on all tunes | RS_HS.dbc |
 | 0x080 | Accelerator pedal %, reverse | pedal: `((B0&0x03)<<8\|B1)×0.1` (bits 0-9); reverse: `B0 bit 5` | RS_HS.dbc |
 | 0x090 | RPM, baro pressure | RPM: `((B4&0x0F)<<8\|B5)×2`; baro: `B2×0.5 kPa` | DigiCluster HS-CAN |
-| 0x0C8 | Gauge brightness, e-brake, ignition status | brightness: `B0&0x1F`; e-brake: `B3&0x40`; ignition: `B2&0x1F` (0=KeyOut..7=Running..9=Cranking) | DigiCluster HS-CAN + RS_HS.dbc |
+| 0x0C8 | Gauge brightness, e-brake, ignition status | brightness: `B0&0x1F`; e-brake: `B3&0x40`; ignition: `(B2 >> 3) & 0x0F` (0 Key Out, 1 Key Recently Out, 2 Key Approved, 3 Post Accessory, 4 Accessory, 5 Post Ignition, 6 Ignition On, 7 Running, 9 Crank) | DigiCluster HS-CAN + RS_HS.dbc |
 | 0x0F8 | Oil temp, boost, PTU temp | oil: `B7−60 °C`; boost: `B5` gauge kPa (1 kPa/bit, unsigned; the app stores `B5 + 101.325`; physical identity unverified, [#207](https://github.com/klexical/openRS_/issues/207)); PTU: `B1−50 °C` — the reverse of the DBC's names, confirmed on one car ([#229](https://github.com/klexical/openRS_/issues/229)); v2.2.6 and builds before v2.2.7-rc.7 read them the other way round | RS_HS.dbc PCMmsg07 |
 | 0x130 | Speed kph | `word(B6-B7)×0.01` | DigiCluster HS-CAN |
 | 0x138 | Clutch pedal position (%) | 10-bit Motorola × 0.1 % | RS_HS.dbc PCMmsg10 |
