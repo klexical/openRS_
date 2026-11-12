@@ -1,17 +1,18 @@
 // Real-browser check of Sapphire's layout at phone width (#344: the bottom navigation bar below md, 768 px): a production
 // build in a disposable Chromium profile per viewport; fixture drives imported through the Import panel; every .png and
 // web-font request aborted (no tiles or fonts needed; deterministic text metrics). The three panels that show the route
-// map (Dashboard, Trip, Compare with two drives) are measured and screenshotted at every viewport.
-// At 375 × 812, on each panel: no horizontal page or panel scroll, the navigation is not a column beside the content, every
-// map at least 300 px wide with its attribution at most two lines and its colour-mode buttons inside it; all seven panels
-// reachable from the navigation.
+// map (Dashboard, Trip, Compare with every imported drive) are measured and screenshotted at every viewport.
+// At 375 × 812, on each panel: no horizontal page or panel scroll, no element reaching past the screen edge, the
+// navigation is not a column beside the content, every map at least 300 px wide with its attribution at most two lines
+// and its colour-mode buttons inside it; Compare with three or more drives; all seven panels reachable from the navigation.
 // At 768 × 1024 (tablet) and 1280 × 800 the element rects are written, to compare two builds.
 // Playwright is not a project dependency — install it anywhere outside the repo (as for scripts/idb-check):
 //   T=$(mktemp -d) && (cd $T && npm i playwright@1.48.2 && PLAYWRIGHT_BROWSERS_PATH=$T/b npx playwright install chromium)
 //   node_modules/.bin/vite build --outDir $T/dist                                                     # from web/
 //   F=src/lib/__fixtures__/android-export-rc7
 //   PLAYWRIGHT_BROWSERS_PATH=$T/b PLAYWRIGHT_MODULE=$T/node_modules/playwright/index.mjs \
-//     node scripts/layout-check/check.mjs $T/dist $F/release-tip-can-drive.zip,$F/release-pressure-gaps-drive.zip \
+//     node scripts/layout-check/check.mjs $T/dist \
+//       $F/release-tip-can-drive.zip,$F/release-pressure-gaps-drive.zip,src/lib/__fixtures__/android-exports/drive-gps-companions.zip \
 //     $T/profiles $T/out                    # writes $T/out-rects.json and $T/out-<panel>-<w>x<h>.png
 // Exit 0 = every check passed.
 import http from 'node:http'
@@ -43,7 +44,21 @@ const measure = (page) => page.evaluate(() => {
     return { map: box(mapEl), selector: box(wrap.children[1]), legend: box(wrap.children[2]), attribution: box(attr),
       attributionLines: attr ? Math.round(attr.getBoundingClientRect().height / lh) : null }
   })
+  // Visible elements in the panel (outside the Leaflet panes and controls, which the map clips) that reach past the
+  // viewport: the root is overflow-hidden, so such content is cut off without any scroll to show it (QA's probe, #344).
+  // Leaf elements only (a group's box is its children's). Accepted exception (#344 review, N1): Recharts text up to 2 px
+  // past the edge — a chart's peak label drawn just right of its plot; moving it would move every desktop chart.
+  const clipped = [], accepted = []
+  for (const el of main.querySelectorAll('*')) {
+    if (el.closest('.leaflet-pane, .leaflet-control-container') || el.children.length) continue
+    const b = el.getBoundingClientRect(); if (!b.width || !b.height) continue
+    const past = Math.max(b.right - window.innerWidth, -b.left)
+    if (past <= 0.5) continue
+    const list = el.closest('.recharts-wrapper') && /^(text|tspan)$/i.test(el.tagName) && past <= 2.5 ? accepted : clipped
+    list.push(`${el.tagName.toLowerCase()}.${String(el.className?.baseVal ?? el.className ?? '').split(' ')[0]} ${Math.round(b.left)}..${Math.round(b.right)} "${(el.textContent ?? '').trim().slice(0, 24)}"`)
+  }
   return {
+    clipped, accepted,
     docScroll: document.documentElement.scrollWidth - window.innerWidth,
     mainScroll: main.scrollWidth - main.clientWidth,
     nav: box(nav), header: box(header), main: box(main), maps,
@@ -92,6 +107,8 @@ for (const [w, h] of [[375, 812], [768, 1024], [1280, 800]]) {
       const [nl, , nw, nh] = r.nav, [ml] = r.main
       check(r.docScroll <= 0, `375 ${panel}: no horizontal page scroll (document overflow ${r.docScroll} px)`)
       check(r.mainScroll <= 0, `375 ${panel}: no horizontal scroll in the panel (main overflow ${r.mainScroll} px)`)
+      check(r.clipped.length === 0, `375 ${panel}: nothing reaches past the screen edge (${r.clipped.length}: ${r.clipped.slice(0, 4).join(', ')})`)
+      if (r.accepted.length) console.log(`NOTE  375 ${panel}: accepted (N1, chart text ≤ 2 px past the edge): ${r.accepted.join(', ')}`)
       check(!(nh > nw && nl + nw <= ml + 1), `375 ${panel}: the navigation is not a column beside the content (nav ${r.nav}, main ${r.main})`)
       check(r.maps.length > 0, `375 ${panel}: a route map is shown (${r.maps.length})`)
       r.maps.forEach((m, i) => {
@@ -100,6 +117,7 @@ for (const [w, h] of [[375, 812], [768, 1024], [1280, 800]]) {
         const [sl, , sw] = m.selector, [pl, , pw] = m.map
         check(sl >= pl && sl + sw <= pl + pw, `375 ${panel} map ${i + 1}: colour-mode buttons inside the map (buttons ${m.selector}, map ${m.map})`)
       })
+      if (panel === 'compare') check(r.maps.length >= 3, `375 compare: three or more drives compared (${r.maps.length} maps)`)
       if (panel === 'trip') check(r.navItems >= 7, `375: all seven panels are reachable from the navigation (${r.navItems} buttons)`)
     }
   }

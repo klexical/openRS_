@@ -15,7 +15,9 @@ export function Shell() {
 
   return (
     // Below md (768 px) the navigation is a bar at the bottom and the panels take the full width; md and up as before.
-    <div className="flex flex-col-reverse md:flex-row h-screen overflow-hidden bg-bg">
+    // h-dvh: the visible viewport, so a phone browser's toolbar never covers the bar (100vh is the toolbar-hidden height;
+    // dvh equals vh on desktop).
+    <div className="flex flex-col-reverse md:flex-row h-dvh overflow-hidden bg-bg">
       <NavRail />
       <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
         <Header />

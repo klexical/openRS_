@@ -59,4 +59,18 @@ describe('navigation at phone width (#344)', () => {
     expect(classes(root)).toContain('md:flex-row')
     expect(root.firstElementChild?.tagName).toBe('NAV')
   })
+
+  it('fills the visible viewport on phone browsers (dvh), not the toolbar-hidden 100vh', () => {
+    const { container } = render(<Shell />)
+    const root = container.firstElementChild!
+    expect(classes(root)).toContain('h-dvh')
+    expect(classes(root)).not.toContain('h-screen')
+  })
+
+  it('names the navigation and marks the active panel', () => {
+    const { container } = render(<NavRail />)
+    expect(container.querySelector('nav')?.getAttribute('aria-label')).toBe('Panels')
+    const current = [...container.querySelectorAll('nav button[aria-current]')]
+    expect(current.map((b) => [b.getAttribute('aria-label'), b.getAttribute('aria-current')])).toEqual([['Trip', 'page']])
+  })
 })
