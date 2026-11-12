@@ -8,7 +8,7 @@ Thanks for your interest in contributing! This project gives Focus RS MK3 owners
 |------|-------|
 | **Android app** | [`android/CONTRIBUTING.md`](android/CONTRIBUTING.md) — build setup, architecture, adding PIDs/CAN signals, PR checklist |
 | **Firmware** | [`firmware/README.md`](firmware/README.md) — build instructions, directory structure, CAN frame reference |
-| **Documentation** | PRs against any `.md` file welcome — branch from `main`, PR to `main` (never route docs through `staging`). See [docs source of truth](README.md) |
+| **Documentation** | PRs against any `.md` file welcome — branch from `main`, PR to `main` (docs go through `staging` only in the exception below). One exception: documentation under `android/` that describes a code change travels with that code (see Pull Requests below). See [docs source of truth](README.md) |
 
 ## Quick Links
 
@@ -25,6 +25,7 @@ Pull requests are welcome, from people and from people working with an LLM.
 
 - Anything beyond a typo starts from an [issue](https://github.com/klexical/openRS_/issues): open one, or comment on the one you want to take, so the approach is agreed before you write code. Issues labelled [`good first issue`](https://github.com/klexical/openRS_/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) are fully specified and need no car or adapter.
 - Code changes target `staging`; documentation targets `main` (see the table above).
+- Documentation under `android/` that describes a code change goes to `staging` in the same pull request as the code: for example a new or changed row in [`android/docs/pid-reference.md`](android/docs/pid-reference.md) for a decoder change, or the changelog entry. A correction to what the docs say about released behaviour goes to `main`.
 
 **What a pull request needs**
 
