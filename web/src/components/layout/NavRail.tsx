@@ -24,6 +24,7 @@ export function NavRail() {
 
   return (
     <nav
+      aria-label="Panels"
       className={`
         flex flex-row md:flex-col bg-surf border-t md:border-t-0 md:border-r border-brd w-full md:h-full shrink-0
         transition-all duration-200
@@ -52,6 +53,7 @@ export function NavRail() {
               key={item.id}
               onClick={() => setActivePanel(item.id)}
               aria-label={item.label}
+              aria-current={isActive ? 'page' : undefined}
               className={`
                 flex items-center gap-3 px-3 py-2.5 rounded-md text-sm
                 transition-all duration-150
