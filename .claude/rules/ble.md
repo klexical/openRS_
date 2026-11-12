@@ -14,7 +14,9 @@ paths:
   - **Why:** the WiCAN Pro (upstream v4.48p) declares FFF2 with a 20-byte maximum but its stack (ESP-IDF 5.2.3) delivers a longer
     write and then answers 0x0D. Every 22-byte `t…` frame (PCM polls, DTC requests, probes) is one ATT write at MTU 247.
     Source-level only: no GATT trace from a real adapter. USB FEE1 allows 64 bytes.
-  - **Rule:** POSSIBLY_DELIVERED keeps the request outstanding and waits for its reply; nothing is ever resent, and it is never
+  - **Rule:** POSSIBLY_DELIVERED keeps the request outstanding until its own reply, but the PCM poller does not wait for that
+    reply: the batch gap paces the next request, as in rc.7 (#333). Replies slower than the gap then overlap, so their NRCs are
+    charged to nobody and KR2 / KR3 go unsuppressed on such a link (`BleWriteOutcomeTest`). Nothing is ever resent, and it is never
     a drive-mode / ESC confirmation (CAN only). Only a certainly-not-sent failure withdraws the request
     (`PcmRequestLedger.withdraw`). Other post-send failures are uncertain and kept. TCP / WebSocket unchanged.
   - The first GATT 13 on a connection logs one BLE_WRITE event. `OPENRS?` / `AT+FRS…` (≤ 19 bytes) are unaffected.
