@@ -127,7 +127,7 @@ internal object DriveExportBuilder {
         appendLine("  Avg Speed   : ${"%.1f".format(drive.avgSpeedKph)} km/h")
         appendLine("  Max Speed   : ${"%.1f".format(drive.maxSpeedKph)} km/h")
         appendLine()
-        appendLine("  Fuel Used   : ${"%.2f".format(drive.fuelUsedL)} L")
+        appendLine("  Fuel Used   : " + if (drive.fuelUsedL > 0.0) "${"%.2f".format(drive.fuelUsedL)} L" else "—")
         appendLine("  Peak RPM    : ${drive.peakRpm}")
         appendLine("  Peak Boost  : ${"%.1f".format(drive.peakBoostPsi)} PSI")
         appendLine("  Peak Lat G  : ${"%.2f".format(drive.peakLateralG)} g")
