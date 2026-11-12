@@ -90,6 +90,34 @@ class DriveStateTest {
         assertEquals(49.8, s.fuelUsedL, 0.01)
     }
 
+    @Test fun `fuelUsedKnown is false when the start sits on the 100 percent clamp`() {
+        val s = DriveState(
+            startFuelPct = 100.0,
+            recentPoints = listOf(point(fuelLevelPct = 98.4))
+        )
+        assertFalse(s.fuelUsedKnown)
+    }
+
+    @Test fun `fuelUsedKnown is false for one or two gauge steps`() {
+        val one = DriveState(startFuelPct = 80.0, recentPoints = listOf(point(fuelLevelPct = 79.6)))
+        val two = DriveState(startFuelPct = 80.0, recentPoints = listOf(point(fuelLevelPct = 79.2)))
+        assertFalse(one.fuelUsedKnown)
+        assertFalse(two.fuelUsedKnown)
+    }
+
+    @Test fun `fuelUsedKnown is true for a drop well beyond the gauge step`() {
+        val s = DriveState(
+            startFuelPct = 80.0,
+            recentPoints = listOf(point(fuelLevelPct = 78.0))
+        )
+        assertTrue(s.fuelUsedKnown)
+        assertEquals(0.996, s.fuelUsedL, 0.01)
+    }
+
+    @Test fun `fuelUsedKnown is false before the first fuel reading`() {
+        assertFalse(DriveState().fuelUsedKnown)
+    }
+
     // ═════════════════════════════════════════════════════════════════════════
     // avgFuelL100km
     // ═════════════════════════════════════════════════════════════════════════
