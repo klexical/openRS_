@@ -902,8 +902,8 @@ class CanDecoderTest {
 
     @Test
     fun `decode drive mode button pressed from 0x305`() {
-        // byte4 bit5 = 1 → button held
-        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x20, 0x00)
+        // byte4 bit2 = 1 → button held
+        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x04, 0x00)
         val result = CanDecoder.decode(0x305, data, blank)
         assertNotNull(result)
         assertTrue(result!!.driveModeButtonPressed)
@@ -928,8 +928,8 @@ class CanDecoderTest {
 
     @Test
     fun `decode ASS button pressed from 0x260`() {
-        // byte0 bit7 = 1 → ASS button held; byte5 bit3 = 0 → ESC Off not held
-        val data = byteArrayOf(0x80.toByte(), 0x00, 0x00, 0x00, 0x00, 0x00)
+        // byte0 bit0 = 1 → ASS button held; byte5 bit4 = 0 → ESC Off not held
+        val data = byteArrayOf(0x01, 0x00, 0x00, 0x00, 0x00, 0x00)
         val result = CanDecoder.decode(0x260, data, blank)
         assertNotNull(result)
         assertTrue(result!!.autoStartStopButtonPressed)
@@ -938,8 +938,8 @@ class CanDecoderTest {
 
     @Test
     fun `decode ESC Off button pressed from 0x260`() {
-        // byte5 bit3 = 1 → ESC Off held; byte0 bit7 = 0 → ASS not held
-        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x08)
+        // byte5 bit4 = 1 → ESC Off held; byte0 bit0 = 0 → ASS not held
+        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x10)
         val result = CanDecoder.decode(0x260, data, blank)
         assertNotNull(result)
         assertFalse(result!!.autoStartStopButtonPressed)
@@ -948,7 +948,7 @@ class CanDecoderTest {
 
     @Test
     fun `decode both 0x260 buttons pressed simultaneously`() {
-        val data = byteArrayOf(0x80.toByte(), 0x00, 0x00, 0x00, 0x00, 0x08)
+        val data = byteArrayOf(0x01, 0x00, 0x00, 0x00, 0x00, 0x10)
         val result = CanDecoder.decode(0x260, data, blank)
         assertNotNull(result)
         assertTrue(result!!.autoStartStopButtonPressed)
