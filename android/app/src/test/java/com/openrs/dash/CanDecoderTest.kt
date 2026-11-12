@@ -1012,8 +1012,8 @@ class CanDecoderTest {
 
     @Test
     fun `decode drive mode button pressed from 0x305`() {
-        // byte4 bit5 = 1 → button held
-        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x20, 0x00)
+        // Captured byte4 0x0C has the firmware's 0x04 button bit set.
+        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x0C, 0x00)
         val result = CanDecoder.decode(0x305, data, blank)
         assertNotNull(result)
         assertTrue(result!!.driveModeButtonPressed)
@@ -1021,7 +1021,8 @@ class CanDecoderTest {
 
     @Test
     fun `decode drive mode button released from 0x305`() {
-        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+        // Captured byte4 0x08 is the matching non-pressed value.
+        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x08, 0x00)
         val result = CanDecoder.decode(0x305, data, blank.copy(driveModeButtonPressed = true))
         assertNotNull(result)
         assertFalse(result!!.driveModeButtonPressed)
@@ -1038,8 +1039,8 @@ class CanDecoderTest {
 
     @Test
     fun `decode ASS button pressed from 0x260`() {
-        // byte0 bit7 = 1 → ASS button held; byte5 bit3 = 0 → ESC Off not held
-        val data = byteArrayOf(0x80.toByte(), 0x00, 0x00, 0x00, 0x00, 0x00)
+        // Captured resting 0x88 plus the firmware's 0x01 ASS bit.
+        val data = byteArrayOf(0x89.toByte(), 0x00, 0x00, 0x00, 0x00, 0x00)
         val result = CanDecoder.decode(0x260, data, blank)
         assertNotNull(result)
         assertTrue(result!!.autoStartStopButtonPressed)
@@ -1047,37 +1048,31 @@ class CanDecoderTest {
     }
 
     @Test
-    fun `decode ESC Off button pressed from 0x260`() {
-        // byte5 bit3 = 1 → ESC Off held; byte0 bit7 = 0 → ASS not held
-        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x08)
+    fun `decode ASS button released from 0x260`() {
+        // Captured resting value: bit 7 is unrelated and must not read as held.
+        val data = byteArrayOf(0x88.toByte(), 0x00, 0x00, 0x00, 0x00, 0x00)
         val result = CanDecoder.decode(0x260, data, blank)
-        assertNotNull(result)
-        assertFalse(result!!.autoStartStopButtonPressed)
-        assertTrue(result.escOffButtonPressed)
-    }
-
-    @Test
-    fun `decode both 0x260 buttons pressed simultaneously`() {
-        val data = byteArrayOf(0x80.toByte(), 0x00, 0x00, 0x00, 0x00, 0x08)
-        val result = CanDecoder.decode(0x260, data, blank)
-        assertNotNull(result)
-        assertTrue(result!!.autoStartStopButtonPressed)
-        assertTrue(result.escOffButtonPressed)
-    }
-
-    @Test
-    fun `decode 0x260 with both buttons released`() {
-        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
-        val result = CanDecoder.decode(0x260, data,
-            blank.copy(autoStartStopButtonPressed = true, escOffButtonPressed = true))
         assertNotNull(result)
         assertFalse(result!!.autoStartStopButtonPressed)
         assertFalse(result.escOffButtonPressed)
+    }
+
+    @Test
+    fun `decode ESC Off button from 0x260 firmware mask`() {
+        val pressed = byteArrayOf(0x88.toByte(), 0x00, 0x00, 0x00, 0x00, 0x10)
+        val pressedResult = CanDecoder.decode(0x260, pressed, blank)
+        assertNotNull(pressedResult)
+        assertTrue(pressedResult!!.escOffButtonPressed)
+
+        val released = byteArrayOf(0x88.toByte(), 0x00, 0x00, 0x00, 0x00, 0x00)
+        val releasedResult = CanDecoder.decode(0x260, released, pressedResult)
+        assertNotNull(releasedResult)
+        assertFalse(releasedResult!!.escOffButtonPressed)
     }
 
     @Test
     fun `decode 0x260 short data returns null`() {
-        val data = byteArrayOf(0x80.toByte(), 0x00, 0x00, 0x00, 0x00) // need 6 bytes
+        val data = byteArrayOf(0x89.toByte(), 0x00, 0x00, 0x00, 0x00) // need 6 bytes
         val result = CanDecoder.decode(0x260, data, blank)
         assertNull(result)
     }
