@@ -38,7 +38,7 @@ Pull requests are welcome, from people and from people working with an LLM.
 
 - We aim to give a first response within seven days.
 - CI does not start by itself on a pull request from a fork: a maintainer approves each run after looking at the diff. CI on your pull request is the test run of record.
-- The change is read in full and checked against the issue. Review comments ask for changes; if we hear nothing for 14 days, we may finish the change ourselves, credit you in the changelog, and close the pull request with thanks.
+- The change is read in full and checked against the issue. Review comments ask for changes; if no revision is pushed within 14 days of our review comment, we may finish the change ourselves, credit you in the changelog, and close the pull request with thanks.
 - Pull requests are squash-merged: one commit, with you as its author. The commit carries the e-mail address you committed with; use your GitHub no-reply address (`ID+username@users.noreply.github.com`) if you prefer to keep yours private.
 
 **Timing**
