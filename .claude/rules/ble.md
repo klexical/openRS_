@@ -16,13 +16,15 @@ paths:
     Source-level only: no GATT trace from a real adapter. USB FEE1 allows 64 bytes.
   - **Rule:** POSSIBLY_DELIVERED keeps the request outstanding until its own reply, but the PCM poller does not wait for that
     reply: the batch gap paces the next request, as in rc.7 (#333). Replies slower than the gap then overlap, so their NRCs are
-    charged to nobody and KR2 / KR3 go unsuppressed on such a link (`BleWriteOutcomeTest`). Nothing is ever resent, and it is never
-    a drive-mode / ESC confirmation (CAN only). Only a certainly-not-sent failure withdraws the request
-    (`PcmRequestLedger.withdraw`). Other post-send failures are uncertain and kept. TCP / WebSocket unchanged.
+    charged to nobody and, by the ledger's rule, no DID is suppressed for the rest of that connection (KR2 / KR3 on the
+    reporting car; `BleWriteOutcomeTest`). Nothing is ever resent, and it is never a drive-mode / ESC confirmation (CAN
+    only). Only a certainly-not-sent failure withdraws the request (`PcmRequestLedger.withdraw`). Other post-send failures
+    are uncertain and kept. TCP / WebSocket unchanged.
   - The first GATT 13 on a connection logs one BLE_WRITE event. `OPENRS?` / `AT+FRS…` (≤ 19 bytes) are unaffected.
   - Don't chunk to ≤ 20 bytes: the firmware rebuilds a split line only if the pieces arrive within 100 ms (`slcan_parse_str`
     static state). The MTU-23 path (20 + 2) already depends on that window — pre-existing, hardware-unverified.
-  - Throwing on GATT 13 caused the DID prober crash (#249) and never-attributed NRCs over BLE (#216).
+  - Throwing on GATT 13 caused the DID prober crash (#249) and never-attributed NRCs over BLE (#216); since #333 a link slower
+    than the gap again leaves them unattributed, by the ledger's rule, never charged to the wrong DID.
 - **BLE write timeout = link closed (#218)** — Android's `onCharacteristicWrite` names no write; after a 2 s timeout a late
   callback would complete the next write. `BleGattCore` invalidates + closes the link (reader EOF → SlcanConnection
   reconnects); later writes fail at once. `SlcanConnection` swallows write errors, so teardown must come from the reader.
