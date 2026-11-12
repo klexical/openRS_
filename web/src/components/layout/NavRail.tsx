@@ -25,9 +25,10 @@ export function NavRail() {
   return (
     <nav
       className={`
-        flex flex-col bg-surf border-r border-brd h-full
+        flex flex-row sm:flex-col bg-surf border-b sm:border-b-0 sm:border-r border-brd
+        w-full sm:h-full
         transition-all duration-200
-        ${expanded ? 'w-48' : 'w-14'}
+        ${expanded ? 'sm:w-48' : 'sm:w-14'}
       `}
     >
       {/* Logo / collapse toggle */}
@@ -44,7 +45,7 @@ export function NavRail() {
       </button>
 
       {/* Nav items */}
-      <div className="flex flex-col gap-1 p-2 flex-1">
+      <div className="flex flex-row sm:flex-col gap-1 p-2 flex-1 overflow-x-auto sm:overflow-visible">
         {navItems.map((item) => {
           const isActive = activePanel === item.id
           return (
@@ -75,7 +76,7 @@ export function NavRail() {
 
       {/* Footer */}
       {expanded && (
-        <div className="px-3 py-3 border-t border-brd">
+        <div className="hidden sm:block px-3 py-3 border-t border-brd">
           <span className="text-[10px] font-mono text-dim/50">
             open<strong className="text-dim">RS_</strong> Sapphire
           </span>
