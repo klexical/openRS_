@@ -135,7 +135,7 @@ All formulas re-validated against DigiCluster `can0_hs.json` and `can1_ms.json`.
 | 0x076 | Throttle % (ECU) | `B0 × 0.392` — may not broadcast on all tunes | RS_HS.dbc |
 | 0x080 | Accelerator pedal %, reverse | pedal: `((B0&0x03)<<8\|B1)×0.1` (bits 0-9); reverse: `B0 bit 5` | RS_HS.dbc |
 | 0x090 | RPM, baro pressure | RPM: `((B4&0x0F)<<8\|B5)×2`; baro: `B2×0.5 kPa` | DigiCluster HS-CAN |
-| 0x0C8 | Gauge brightness, e-brake, ignition status | brightness: `B0&0x1F`; e-brake: `B3&0x40`; ignition: `B2&0x1F` (0=KeyOut..7=Running..9=Cranking) | DigiCluster HS-CAN + RS_HS.dbc |
+| 0x0C8 | Gauge brightness, e-brake, ignition status | brightness: `B0&0x1F`; e-brake: `B3&0x40`; ignition: `(B2 >> 3) & 0x0F` (0 Key Out, 1 Key Recently Out, 2 Key Approved, 3 Post Accessory, 4 Accessory, 5 Post Ignition, 6 Ignition On, 7 Running, 9 Crank) | DigiCluster HS-CAN + RS_HS.dbc |
 | 0x0F8 | Oil temp, boost, PTU temp | oil: `B7−60 °C`; boost: `B5` gauge kPa (1 kPa/bit, unsigned; the app stores `B5 + 101.325`; physical identity unverified, [#207](https://github.com/klexical/openRS_/issues/207)); PTU: `B1−50 °C` — the reverse of the DBC's names, confirmed on one car ([#229](https://github.com/klexical/openRS_/issues/229)); v2.2.6 and builds before v2.2.7-rc.7 read them the other way round | RS_HS.dbc PCMmsg07 |
 | 0x130 | Speed kph | `word(B6-B7)×0.01` | DigiCluster HS-CAN |
 | 0x138 | Clutch pedal position (%) | 10-bit Motorola × 0.1 % | RS_HS.dbc PCMmsg10 |
@@ -149,8 +149,10 @@ All formulas re-validated against DigiCluster `can0_hs.json` and `can1_ms.json`.
 | 0x1E0 | Wheel rotation counts, average front wheel speed | 4 × 8-bit rolling counts FL/FR/RL/RR (B0–B3); average front speed: `word(B4-B5)×0.01` km/h | RS_HS.dbc ABSmsg06 |
 | 0x230 | Gear position | `bits(0,4)` — 0=Park/Neutral, 1–6=gears, 7=Reverse — does not broadcast on this car | RS_HS.dbc |
 | 0x252 | Brake pressure | `((B1&0x0F)<<8\|B2) / 40.95` — 12-bit ADC, normalised 0–100% | RS_HS.dbc ABSmsg10 |
+| 0x260 | Auto Start Stop button, ESC Off button | ASS: `B0 & 0x01`; ESC OFF: `B5 & 0x10` — 1 while the button is held | firmware `focusrs.h` |
 | 0x2C0 | AWD L/R torque | 12-bit words scaled | DigiCluster HS-CAN |
 | 0x2F0 | Coolant temp, IAT | coolant: `((B4&0x03)<<8\|B5) − 60 °C`; IAT: `((B6&0x03)<<8\|B7) × 0.25 − 127 °C` | RS_HS.dbc PCMmsg16 |
+| 0x305 | Drive mode button | `B4 & 0x04` — 1 while the button is held | firmware `focusrs.h` |
 | 0x340 | Ambient temp (PCMmsg17) | `byte7 signed × 0.25 °C` — **not** TPMS | RS_HS.dbc PCMmsg17 |
 | 0x360 | Odometer (km), engine status | odo: `(data[3]<<16\|data[4]<<8\|data[5])` — 24-bit BE, 1 km/bit; engine: `data[0]` (0=Idle, 2=Off, 183=Running, 186=Kill, 191=RecentStart, 196=Warmup) | RS_HS.dbc + community [#102](https://github.com/klexical/openRS_/discussions/102) |
 | 0x380 | Fuel level % (FuelLevelFiltered) | Motorola 10-bit: `((data[2]&0x03)<<8\|data[3]) × 0.4` | RS_HS.dbc PCMmsg30 |
