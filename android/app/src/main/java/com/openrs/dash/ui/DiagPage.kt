@@ -644,9 +644,13 @@ internal fun engineStatusLabel(v: Int): String = when (v) {
 internal fun ignitionStatusLabel(v: Int): String = when (v) {
     -1  -> "—"
     0   -> "Key Out"
-    1   -> "Key In"
-    4   -> "Acc"
-    7   -> "Run"
+    1   -> "Key Recently Out"
+    2   -> "Key Approved"
+    3   -> "Post Accessory"
+    4   -> "Accessory"
+    5   -> "Post Ignition"
+    6   -> "Ignition On"
+    7   -> "Running"
     9   -> "Crank"
     else -> "$v"
 }
