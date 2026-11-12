@@ -51,7 +51,7 @@ Forked from [`meatpiHQ/wican-fw`](https://github.com/meatpiHQ/wican-fw) — the 
 
 ### WiCAN Pro — Verified
 
-The **MeatPi WiCAN Pro** is a higher-end adapter with onboard GPS, MicroSD logging, and a raw TCP SLCAN interface (port 35000). openRS_ firmware PRO v1.0 is the first stable release for this hardware.
+The **MeatPi WiCAN Pro** is a higher-end adapter with MicroSD logging and a raw TCP SLCAN interface (port 35000). According to the vendor's documentation it has no GPS receiver of its own: a position reaches it only through an accessory on its USB host port, which the openRS_ firmware does not read ([#71](https://github.com/klexical/openRS_/issues/71)). openRS_ firmware PRO v1.0 is the first stable release for this hardware.
 
 | Feature | Status |
 |---------|--------|
@@ -65,7 +65,7 @@ The **MeatPi WiCAN Pro** is a higher-end adapter with onboard GPS, MicroSD loggi
 | CAN write (drive mode) | ✅ Working |
 | CAN write (ESC) | ⚠️ Under investigation ([#125](https://github.com/klexical/openRS_/issues/125)) |
 | CAN write (LC, ASS) | ✅ Working |
-| GPS NMEA passthrough | ❌ Not yet implemented |
+| GPS from a USB accessory | ❌ Not implemented (the Pro has no GPS receiver of its own) |
 | MicroSD remote control | ❌ Not yet implemented |
 
 | Field | Value |
@@ -339,7 +339,7 @@ For the full project roadmap (app + firmware), see the [root README](../README.m
 
 - **Dual-CAN (MS-CAN)** — add MS-CAN at 125 kbps alongside HS-CAN at 500 kbps (if WiCAN Pro hardware supports dual TWAI)
 - **On-device data logging** — log CAN frames to onboard flash/SD for post-session retrieval without a connected phone
-- **GPS passthrough** — for MeatPi Pro, relay onboard GPS coordinates to the Android app over the existing WebSocket/TCP channel
+- **GPS passthrough** — for MeatPi Pro, relay the position of a USB GPS accessory to the Android app over the existing WebSocket/TCP channel
 
 ---
 
