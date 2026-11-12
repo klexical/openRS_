@@ -1,5 +1,7 @@
 import type { TripPoint } from '../types/session'
 import { colors } from '../styles/tokens'
+import { boostFor, type BoostSource } from './boost'
+import { convertBoost, type BoostUnit } from './units'
 
 /**
  * Color modes for the GPS map polyline — mirrors Android DriveMap.kt ColorMode.
@@ -15,8 +17,11 @@ export const colorModes: { id: ColorMode; label: string }[] = [
   { id: 'oilTemp', label: 'TEMP' },
 ]
 
-/** Returns a CSS color string for a trip point based on the active color mode. */
-export function pointColor(point: TripPoint, mode: ColorMode): string {
+/**
+ * Returns a CSS color string for a trip point based on the active color mode. BOOST colours one measurement only
+ * ([boostSource], the drive peak's — lib/boost.ts); another source's point or one without a reading is dimmed (#207).
+ */
+export function pointColor(point: TripPoint, mode: ColorMode, boostSource: BoostSource | null = null): string {
   switch (mode) {
     case 'speed':
       if (point.speedKph < 60) return colors.ok
@@ -32,11 +37,14 @@ export function pointColor(point: TripPoint, mode: ColorMode): string {
       return colors.cyan // Normal
     }
 
-    case 'boost':
-      if (point.boostPsi < 0) return colors.cyan
-      if (point.boostPsi < 8) return colors.ok
-      if (point.boostPsi < 16) return colors.warn
+    case 'boost': {
+      const psi = boostFor(point, boostSource)
+      if (psi == null) return colors.dim
+      if (psi < 0) return colors.cyan
+      if (psi < 8) return colors.ok
+      if (psi < 16) return colors.warn
       return colors.orange
+    }
 
     case 'throttle':
       if (point.throttlePct < 25) return colors.cyan
@@ -59,7 +67,7 @@ export function pointColor(point: TripPoint, mode: ColorMode): string {
 }
 
 /** Legend entries for the given color mode (label + color pairs). */
-export function colorLegend(mode: ColorMode): { label: string; color: string }[] {
+export function colorLegend(mode: ColorMode, boostUnit: BoostUnit = 'PSI'): { label: string; color: string }[] {
   switch (mode) {
     case 'speed':
       return [
@@ -75,13 +83,16 @@ export function colorLegend(mode: ColorMode): { label: string; color: string }[]
         { label: 'Track', color: colors.ok },
         { label: 'Drift', color: colors.orange },
       ]
-    case 'boost':
+    case 'boost': {
+      // Band edges are 8 / 16 psi — labelled in the selected unit (#207)
+      const [a, b] = [8, 16].map((psi) => convertBoost(psi, boostUnit).toFixed(boostUnit === 'bar' ? 2 : 0))
       return [
         { label: 'Vac', color: colors.cyan },
-        { label: '<8', color: colors.ok },
-        { label: '8-16', color: colors.warn },
-        { label: '16+', color: colors.orange },
+        { label: `<${a}`, color: colors.ok },
+        { label: `${a}-${b}`, color: colors.warn },
+        { label: `${b}+`, color: colors.orange },
       ]
+    }
     case 'throttle':
       return [
         { label: '<25%', color: colors.cyan },

@@ -76,6 +76,13 @@ describe('drive CSV rows (#204)', () => {
     expect(Number.isFinite(pts[1].rpm)).toBe(true)
   })
 
+  it('the finite check covers timestamp and rpm only: boost no-reading / zero / source are kept (#207)', async () => {
+    const csv = [MARKER, 'timestamp_ms,lat,lng,speed_kph,rpm,boost_psi,boost_source',
+      '1000,,,0,0,,NONE', '2000,,,10,900,0.000,CAN_0F8', '3000,,,20,2500,5.500,TIP_033E'].join('\n')
+    const pts = (await importZip(await one(csv))).trip!.points
+    expect(pts.map((p) => [p.rpm, p.boostPsi, p.boostSource])).toEqual([[0, null, null], [900, 0, 'CAN_0F8'], [2500, 5.5, 'TIP_033E']])
+  })
+
   it('leading blank lines count: marker on line 3, header on 4, a bad row on 6 is row 6', async () => {
     const bad = ['', '', MARKER, HEADER, ROWS[0], ROWS[1].replace(',3500,', ',x,')].join('\n')
     await expect(importZip(await one(bad))).rejects.toThrow(/drive_20261102_120000\.csv row 6: rpm "x" is not a number/)

@@ -12,6 +12,11 @@ import { Histogram } from '../charts/Histogram'
 import { ThermalProgressionChart } from '../charts/ThermalProgressionChart'
 import { useUnitFormatters } from '../../lib/format'
 import { tripChartData } from '../../lib/readings'
+import {
+  BOOST_SERIES, boostLabel, primaryBoostSource, pressureChartRows, pressurePeaks, pressureSeries, pressureTitle,
+  pressureDecimals, sourceName, type BoostKey,
+} from '../../lib/boost'
+import { convertBoost } from '../../lib/units'
 import { colors, chartColors } from '../../styles/tokens'
 
 export function TripPanel() {
@@ -25,6 +30,13 @@ export function TripPanel() {
 
   // Chart rows with relative time in seconds; a missing reading is null → a gap, never a 0 dip
   const chartData = useMemo(() => tripChartData(points), [points])
+  // #207: one line per boost measurement present (TIP / CAN 0x0F8 / source not recorded), never joined into one
+  const boostSource = useMemo(() => primaryBoostSource(points), [points])
+  const pressureRows = useMemo(() => pressureChartRows(chartData, fmt.boostUnit), [chartData, fmt.boostUnit])
+  const boostSeries = useMemo(() => BOOST_SERIES
+    .filter((s) => chartData.some((r) => r[s.key] != null))
+    .map((s, i) => ({ key: s.key, label: `${s.label} ${fmt.boostUnit}`, color: chartColors[(1 + i) % chartColors.length] })),
+  [chartData, fmt.boostUnit])
 
   // ── Early returns (after all hooks) ──
   if (!session) {
@@ -95,14 +107,16 @@ export function TripPanel() {
         peakFilter="rpm"
       />
 
-      <SectionLabel>Boost ({fmt.boostUnit})</SectionLabel>
+      {/* #207: values, peak lines and labels in the selected unit; the title / legend name the measurement */}
+      <SectionLabel>{pressureTitle(boostSeries.map((s) => s.key as BoostKey))} ({fmt.boostUnit})</SectionLabel>
       <TimeSeriesChart
-        data={chartData}
-        series={[{ key: 'boostPsi', label: `Boost ${fmt.boostUnit}`, color: chartColors[1] }]}
+        data={pressureRows}
+        series={boostSeries}
         xFormatter={fmtTime}
         syncId={syncId}
-        peakEvents={peakEvents}
+        peakEvents={pressurePeaks(peakEvents, fmt.boostUnit)}
         peakFilter="boost"
+        peakLabel={(p) => `▲ ${boostLabel(p.source)} ${p.value.toFixed(pressureDecimals(fmt.boostUnit))}`}
       />
 
       <SectionLabel>Speed ({fmt.speedUnit})</SectionLabel>
@@ -282,9 +296,10 @@ export function TripPanel() {
         yLabel="Samples"
       />
 
-      <SectionLabel>Boost Distribution ({fmt.boostUnit})</SectionLabel>
+      <SectionLabel>{sourceName(boostSource)} Distribution ({fmt.boostUnit})</SectionLabel>
       <Histogram
-        values={points.map((p) => p.boostPsi).filter((v) => v > -5)}
+        values={pressureSeries(points, boostSource, fmt.boostUnit)
+          .filter((v): v is number => v != null && v > convertBoost(-5, fmt.boostUnit))}
         bins={12}
         color={chartColors[1]}
         xLabel={fmt.boostUnit}

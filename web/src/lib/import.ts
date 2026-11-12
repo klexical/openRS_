@@ -5,6 +5,10 @@ import type {
   DriveProfile, Bookmark, ThermalProgression, ModeTimelineEntry, NrcSuppression,
   FreezeFrameEntry,
 } from '../types/session'
+import { parseBoostSource, type BoostSource } from './boost'
+import { parseExportSchemaVersion } from './exportSchema'
+import { recordedDistanceKm } from './distance'
+import { parseDidInventory } from './didInventory'
 
 /** Thrown when an imported ZIP cannot be parsed — surfaced to the user via ImportPanel. */
 export class ImportError extends Error {
@@ -21,6 +25,7 @@ interface ManifestEntry {
 }
 
 interface ExportManifest {
+  /** The manifest's own format, always 1; the export's contract is `exportSchemaVersion` (lib/exportSchema.ts). */
   version: number
   app: string
   appVersion: string
@@ -48,15 +53,28 @@ export function isDriveCsvEntry(e: { name: string; type: string }): boolean {
   return e.type === 'drive_csv' && isDriveCsvName(e.name)
 }
 
-/** Read manifest.json from ZIP if present. */
-async function readManifest(zip: JSZip): Promise<ExportManifest | null> {
+/** manifest.json's root if it's a JSON object; null when absent or unreadable. */
+async function readManifestObject(zip: JSZip): Promise<Record<string, unknown> | null> {
   const f = zip.files['manifest.json']
   if (!f) return null
   try {
-    return JSON.parse(await f.async('string'))
+    const m: unknown = JSON.parse(await f.async('string'))
+    return m && typeof m === 'object' && !Array.isArray(m) ? (m as Record<string, unknown>) : null
   } catch {
     return null
   }
+}
+
+const isManifestEntry = (e: unknown): boolean =>
+  !!e && typeof (e as ManifestEntry).name === 'string' && typeof (e as ManifestEntry).type === 'string'
+
+/**
+ * Read manifest.json from ZIP if present. One without a usable file list (a shape this Sapphire doesn't know, e.g. from a
+ * newer export) counts as no manifest: the files are then found by name, so the drive isn't lost or the import stopped.
+ */
+async function readManifest(zip: JSZip): Promise<ExportManifest | null> {
+  const m = await readManifestObject(zip)
+  return m && Array.isArray(m.files) && m.files.every(isManifestEntry) ? (m as unknown as ExportManifest) : null
 }
 
 /** Import a ZIP file exported by the openRS_ Android app. */
@@ -88,11 +106,10 @@ export function isBatchZip(manifest: ExportManifest | null, zip: JSZip): boolean
   return countDriveCsvs(zip, manifest) > 1
 }
 
-/** Drive CSVs in the ZIP — from the manifest when present, else by filename. */
+/** Drive CSVs in the ZIP — from the manifest when it lists any, else by filename (a list this Sapphire can't read loses no drive). */
 function driveCsvFiles(zip: JSZip, manifest: ExportManifest | null): string[] {
-  return manifest
-    ? manifest.files.filter(isDriveCsvEntry).map((e) => e.name)
-    : Object.keys(zip.files).filter(isDriveCsvName)
+  const listed = manifest ? manifest.files.filter(isDriveCsvEntry).map((e) => e.name) : []
+  return listed.length > 0 ? listed : Object.keys(zip.files).filter(isDriveCsvName)
 }
 
 function countDriveCsvs(zip: JSZip, manifest: ExportManifest | null): number {
@@ -284,13 +301,27 @@ async function parseTripDataFromCsv(zip: JSZip, csvFile: string): Promise<TripDa
   return { points, summary }
 }
 
+/**
+ * Boost cell + provenance (#207). Android writes an empty boost_psi for a point without a reading (boost_source NONE)
+ * — that is no reading, never 0; a genuine 0.000 stays 0. boost_source CAN_0F8 / TIP_033E names the measurement; an
+ * empty boost_source (or no such column — older exports) means the source wasn't recorded: the value is kept as
+ * recorded and never given a source.
+ */
+function parseBoost(row: Record<string, string>): { boostPsi: number | null; boostSource: BoostSource | null } {
+  const rawSource = (row['boost_source'] ?? row['boostSource'] ?? '').trim()
+  const rawPsi = (row['boost_psi'] ?? row['boostPsi'] ?? '').trim()
+  const psi = rawPsi === '' ? NaN : parseFloat(rawPsi)
+  if (rawSource === 'NONE' || !Number.isFinite(psi)) return { boostPsi: null, boostSource: null }
+  return { boostPsi: psi, boostSource: parseBoostSource(rawSource) }
+}
+
 function parseTripRow(row: Record<string, string>): TripPoint {
   return {
     ts: parseFloat(row['timestamp_ms'] || row['timestamp'] || row['ts'] || '0'),
     lat: parseFloat(row['lat'] || '0'),
     lng: parseFloat(row['lng'] || row['lon'] || '0'),
     rpm: parseFloat(row['rpm'] || '0'),
-    boostPsi: parseFloat(row['boostPsi'] || row['boost_psi'] || '0'),
+    ...parseBoost(row),
     speedKph: parseFloat(row['speedKph'] || row['speed_kph'] || '0'),
     coolantC: parseFloat(row['coolantC'] || row['coolant_c'] || '-99'),
     oilTempC: parseFloat(row['oilTempC'] || row['oil_c'] || row['oil_temp_c'] || '-99'),
@@ -345,12 +376,29 @@ async function mergeProfileJson(zip: JSZip, profileFile: string, trip: TripData)
     const d = profile.drive
     const s = trip.summary
     if (d.peakRpm > 0) s.peakRpm = d.peakRpm
-    if (d.peakBoostPsi > 0) s.peakBoostPsi = d.peakBoostPsi
+    // #207: a drive recorded under a boost rule states its peak and source (none = no reading); an older profile's
+    // positive peak is kept as recorded with no source
+    if (d.boostPolicy) {
+      s.boostPolicy = d.boostPolicy
+      s.peakBoostPsi = d.peakBoostPsi
+      s.peakBoostSource = d.peakBoostPsi == null ? null : (d.peakBoostSource ?? null)
+    } else if (d.peakBoostPsi != null && d.peakBoostPsi > 0) {
+      s.peakBoostPsi = d.peakBoostPsi
+      s.peakBoostSource = null
+    }
     if (d.peakLateralG > 0) s.peakLatG = d.peakLateralG
     if (d.maxSpeedKph > 0) s.peakSpeedKph = d.maxSpeedKph
     if (d.peakOilTempC > -90) s.peakOilTempC = d.peakOilTempC
     if (d.peakCoolantTempC > -90) s.peakCoolantC = d.peakCoolantTempC
     if (d.fuelUsedL > 0) s.fuelUsedL = d.fuelUsedL
+    // #284: the app's distance leaves out what it did not record (a pause, a link loss); the point sum does not.
+    // A drive without coordinates keeps no distance, as on the app's TRIP (it shows DIST only with GPS)
+    const recorded = recordedDistanceKm((data.drive as Record<string, unknown> | undefined)?.distanceKm)
+    if (recorded != null && trip.points.some((p) => p.lat !== 0 || p.lng !== 0)) {
+      s.distanceKm = recorded
+      s.distanceSource = 'recorded'
+      s.avgFuelEconomy = computeAvgFuelEconomy(s.fuelUsedL, recorded)
+    }
     if (d.aggressionScore > 0) s.aggressionScore = d.aggressionScore
 
     // Override peak events with profile peaks (GPS-tagged, canonical)
@@ -361,6 +409,7 @@ async function mergeProfileJson(zip: JSZip, profileFile: string, trip: TripData)
         ts: p.timestampMs,
         lat: p.lat,
         lng: p.lng,
+        ...(p.type === 'BOOST' ? { source: p.source ?? null } : {}),
       }))
     }
 
@@ -399,7 +448,9 @@ function parseProfile(data: Record<string, unknown>): DriveProfile {
     avgSpeedKph: Number(d.avgSpeedKph || 0),
     maxSpeedKph: Number(d.maxSpeedKph || 0),
     peakRpm: Number(d.peakRpm || 0),
-    peakBoostPsi: Number(d.peakBoostPsi || 0),
+    peakBoostPsi: d.peakBoostPsi != null && Number.isFinite(Number(d.peakBoostPsi)) ? Number(d.peakBoostPsi) : null,
+    peakBoostSource: parseBoostSource(d.peakBoostSource),
+    boostPolicy: typeof d.boostPolicy === 'string' ? d.boostPolicy : undefined,
     peakLateralG: Number(d.peakLateralG || 0),
     peakOilTempC: Number(d.peakOilTempC ?? -99),
     peakCoolantTempC: Number(d.peakCoolantTempC ?? -99),
@@ -417,6 +468,7 @@ function parseProfile(data: Record<string, unknown>): DriveProfile {
     lat: Number(p.lat || 0),
     lng: Number(p.lng || 0),
     timestampMs: Number(p.timestampMs || 0),
+    source: parseBoostSource(p.source),
   }))
 
   const thermalRaw = (data.thermalProgression || {}) as Record<string, unknown>
@@ -446,7 +498,11 @@ function parseProfile(data: Record<string, unknown>): DriveProfile {
     label: String(b.label || ''),
     speedKph: Number(b.speedKph || 0),
     rpm: Number(b.rpm || 0),
-    boostPsi: Number(b.boostPsi || 0),
+    // older exports only; current ones omit it (no source) — absent stays absent, never 0
+    ...(b.boostPsi != null && Number.isFinite(Number(b.boostPsi)) ? { boostPsi: Number(b.boostPsi) } : {}),
+    // observer notes (additive): absent in older exports; 0 is a real time (a note at the drive's start)
+    ...(typeof b.relMs === 'number' && Number.isFinite(b.relMs) ? { relMs: b.relMs } : {}),
+    ...(typeof b.kind === 'string' && b.kind ? { kind: b.kind } : {}),
   }))
 
   return { version: Number(data.version || 1), drive, peaks, thermalProgression, modeTimeline, bookmarks }
@@ -464,7 +520,6 @@ function computeSummary(points: TripPoint[]): TripSummary {
   }
 
   const rpmArr = points.map((p) => p.rpm)
-  const boostArr = points.map((p) => p.boostPsi)
   const speedArr = points.map((p) => p.speedKph)
   const latGArr = points.map((p) => Math.abs(p.latG))
   const longGArr = points.map((p) => Math.abs(p.longG))
@@ -487,17 +542,35 @@ function computeSummary(points: TripPoint[]): TripSummary {
     }
   }
   addPeak('rpm', rpmArr, points)
-  addPeak('boost', boostArr, points)
+  // #207: one boost peak per measurement (TIP, CAN 0x0F8, source not recorded) — never one max across them; points
+  // without a reading take no part
+  const boostGroups = new Map<string, TripPoint[]>()
+  for (const p of points) {
+    if (p.boostPsi == null) continue
+    const k = p.boostSource ?? ''
+    boostGroups.set(k, [...(boostGroups.get(k) ?? []), p])
+  }
+  let peakBoost: { psi: number; source: BoostSource | null } | null = null
+  for (const [k, pts] of boostGroups) {
+    const best = pts.reduce((a, b) => ((b.boostPsi ?? -Infinity) > (a.boostPsi ?? -Infinity) ? b : a))
+    const source = parseBoostSource(k)
+    peakEvents.push({ type: 'boost', value: best.boostPsi!, ts: best.ts, lat: best.lat, lng: best.lng, source })
+    // The drive peak: the highest sourced reading with its source (as Android); unsourced values only without one
+    if (!peakBoost || (source && (!peakBoost.source || best.boostPsi! > peakBoost.psi)) ||
+        (!source && !peakBoost.source && best.boostPsi! > peakBoost.psi)) peakBoost = { psi: best.boostPsi!, source }
+  }
   addPeak('speed', speedArr, points)
   addPeak('latG', latGArr.map((_, i) => Math.abs(points[i].latG)), points)
 
   return {
     distanceKm,
+    distanceSource: 'estimate',
     durationMs,
     fuelUsedL: computeFuelUsedL(points),
     avgSpeedKph: avg(speedArr),
     peakRpm: Math.max(...rpmArr),
-    peakBoostPsi: Math.max(...boostArr),
+    peakBoostPsi: peakBoost?.psi ?? null,
+    peakBoostSource: peakBoost?.source ?? null,
     peakLatG: Math.max(...latGArr),
     peakLongG: Math.max(...longGArr),
     peakSpeedKph: Math.max(...speedArr),
@@ -550,11 +623,8 @@ function computeAvgFuelEconomy(fuelUsedL: number, distanceKm: number): number {
 // ── DTC text parsing ──
 
 async function parseDtcData(zip: JSZip, manifest: ExportManifest | null): Promise<DtcEntry[]> {
-  const dtcFile = manifest
-    ? manifest.files.find((e) => e.type === 'dtc_text')?.name
-    : Object.keys(zip.files).find(
-        (f) => f.startsWith('dtc_scan_') && f.endsWith('.txt')
-      )
+  const dtcFile = manifest?.files.find((e) => e.type === 'dtc_text')?.name
+    ?? Object.keys(zip.files).find((f) => f.startsWith('dtc_scan_') && f.endsWith('.txt'))
   if (!dtcFile) return []
 
   const text = await zip.files[dtcFile].async('string')
@@ -584,11 +654,8 @@ async function parseDtcData(zip: JSZip, manifest: ExportManifest | null): Promis
 // ── DTC JSON parsing (T1E — preferred over TXT) ──
 
 async function parseDtcJsonData(zip: JSZip, manifest: ExportManifest | null): Promise<DtcEntry[] | null> {
-  const jsonFile = manifest
-    ? manifest.files.find((e) => e.type === 'dtc_json')?.name
-    : Object.keys(zip.files).find(
-        (f) => f.startsWith('dtc_scan_') && f.endsWith('.json')
-      )
+  const jsonFile = manifest?.files.find((e) => e.type === 'dtc_json')?.name
+    ?? Object.keys(zip.files).find((f) => f.startsWith('dtc_scan_') && f.endsWith('.json'))
   if (!jsonFile || !zip.files[jsonFile]) return null
 
   try {
@@ -626,12 +693,13 @@ async function parseDtcJsonData(zip: JSZip, manifest: ExportManifest | null): Pr
 
 // ── Diagnostic JSON parsing ──
 
+function diagnosticDetailFile(zip: JSZip, manifest: ExportManifest | null): string | undefined {
+  return manifest?.files.find((e) => e.type === 'diagnostic_detail')?.name
+    ?? Object.keys(zip.files).find((f) => f.startsWith('diagnostic_detail_') && f.endsWith('.json'))
+}
+
 async function parseDiagnosticData(zip: JSZip, dtcResults: DtcEntry[], manifest: ExportManifest | null): Promise<DiagnosticData | null> {
-  const jsonFile = manifest
-    ? manifest.files.find((e) => e.type === 'diagnostic_detail')?.name
-    : Object.keys(zip.files).find(
-        (f) => f.startsWith('diagnostic_detail_') && f.endsWith('.json')
-      )
+  const jsonFile = diagnosticDetailFile(zip, manifest)
   if (!jsonFile) {
     if (dtcResults.length > 0) {
       return { canInventory: [], fpsTimeline: [], sessionEvents: [], decodeTrace: [], probeResults: [], dtcResults }
@@ -650,6 +718,7 @@ async function parseDiagnosticData(zip: JSZip, dtcResults: DtcEntry[], manifest:
     probeResults: parseProbeResults(data),
     dtcResults,
     nrcSuppression: parseNrcSuppression(data),
+    didInventory: parseDidInventory(data),
   }
 }
 
@@ -772,15 +841,38 @@ function parseNrcSuppression(data: Record<string, unknown>): NrcSuppression[] | 
 
 // ── Meta (T1G: manifest metadata) ──
 
+/** The export's contract version: the manifest's, else the detail JSON's. Undefined = none stated; never blocks an import. */
+async function readExportSchemaVersion(zip: JSZip, manifest: ExportManifest | null): Promise<number | undefined> {
+  const fromManifest = parseExportSchemaVersion((await readManifestObject(zip))?.exportSchemaVersion)
+  if (fromManifest !== undefined) return fromManifest
+  const jsonFile = diagnosticDetailFile(zip, manifest)
+  if (!jsonFile || !zip.files[jsonFile]) return undefined
+  try {
+    return parseExportSchemaVersion(JSON.parse(await zip.files[jsonFile].async('string'))?.exportSchemaVersion)
+  } catch {
+    return undefined
+  }
+}
+
 async function parseMeta(zip: JSZip, filename: string, manifest: ExportManifest | null): Promise<SessionMeta> {
+  const meta = await parseExportMeta(zip, filename, manifest)
+  const exportSchemaVersion = await readExportSchemaVersion(zip, manifest)
+  // No key at all without a version: a legacy export's session stays as it was
+  return exportSchemaVersion === undefined ? meta : { ...meta, exportSchemaVersion }
+}
+
+async function parseExportMeta(zip: JSZip, filename: string, manifest: ExportManifest | null): Promise<SessionMeta> {
   if (manifest) {
+    // Only a date that exists: new Date(x).toISOString() throws on anything else and would stop the import
+    const exportedAt = typeof manifest.exportedAt === 'number' && !Number.isNaN(new Date(manifest.exportedAt).getTime())
+      ? manifest.exportedAt : undefined
     return {
-      appVersion: manifest.appVersion || 'unknown',
+      appVersion: typeof manifest.appVersion === 'string' && manifest.appVersion ? manifest.appVersion : 'unknown',
       firmwareVersion: 'unknown',
       sessionStart: '',
-      generatedAt: new Date(manifest.exportedAt).toISOString(),
-      appBuild: manifest.appBuild,
-      exportedAt: manifest.exportedAt,
+      generatedAt: new Date(exportedAt ?? Date.now()).toISOString(),
+      appBuild: typeof manifest.appBuild === 'number' ? manifest.appBuild : undefined,
+      exportedAt,
     }
   }
 
