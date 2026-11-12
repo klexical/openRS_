@@ -183,7 +183,7 @@ class DriveRecorder(
                             peakRpm = state.peakRpm.toInt(),
                             peakBoostPsi = state.peakBoostPsi,
                             peakLateralG = state.peakLateralG,
-                            fuelUsedL = state.fuelUsedL,
+                            fuelUsedL = if (state.fuelUsedKnown) state.fuelUsedL else 0.0,
                             driveModeBreakdown = modeJson,
                             weatherSummary = state.currentWeather?.description
                         )
@@ -279,10 +279,9 @@ class DriveRecorder(
                     }
 
                     // Update live state
-                    val prev = prevPoint
-                    val segDist = if (prev != null)
-                        DriveState.haversineKm(prev.lat, prev.lng, point.lat, point.lng)
-                    else 0.0
+                    val segDist = DriveState.stepDistanceKm(
+                        prevPoint, point.lat, point.lng, vs.speedKph
+                    )
 
                     val peaks = buildPeakEvents(state, vs, point, now)
                     val isRaceReady = vs.isReadyToRace
