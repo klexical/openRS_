@@ -15,7 +15,7 @@ export function Header() {
   const sessionCount = useStore((s) => s.sessions.length)
 
   return (
-    <header className="flex items-center justify-between px-6 py-3 bg-surf border-b border-brd">
+    <header className="flex items-center justify-between px-4 md:px-6 py-3 bg-surf border-b border-brd">
       <div className="flex items-center gap-4">
         <h1 className="text-sm font-display uppercase tracking-[0.2em] text-frost">
           {panelTitles[activePanel] ?? activePanel}

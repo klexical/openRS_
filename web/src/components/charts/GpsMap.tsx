@@ -262,8 +262,11 @@ export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMa
           position: 'absolute',
           top: 12,
           right: 12,
+          maxWidth: 'calc(100% - 24px)',            // a narrow map wraps the buttons instead of running past its edge
           zIndex: 1000,
           display: 'flex',
+          flexWrap: 'wrap',
+          justifyContent: 'flex-end',
           gap: 2,
           background: `${colors.bg}cc`,
           borderRadius: 8,
