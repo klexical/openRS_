@@ -155,11 +155,13 @@ data class VehicleState(
     val launchControlActive: Boolean = false, // 0x420 bit 50: launch control armed
     val launchControlEngaged: Boolean = false, // 0x225 byte5 bit3: LC actively engaged
     val suspensionButtonPressed: Boolean = false, // 0x070 byte7 bit7: RS suspension button
-    val driveModeButtonPressed: Boolean = false, // 0x305 byte4 bit5: drive mode toggle (held)
-    val autoStartStopButtonPressed: Boolean = false, // 0x260 byte0 bit7: ASS button (held)
-    val escOffButtonPressed: Boolean = false, // 0x260 byte5 bit3: ESC defeat button (held)
+    val driveModeButtonPressed: Boolean = false, // 0x305 byte4 bit2: drive mode toggle (held)
+    val autoStartStopButtonPressed: Boolean = false, // 0x260 byte0 bit0: ASS button (held)
+    val escOffButtonPressed: Boolean = false, // 0x260 byte5 bit4: ESC defeat button (held)
     val engineStatus: Int = -1,            // 0x360 byte 0: 0=Idle, 2=Off, 183=Running, 186=Kill, 191=RecentStart
-    val ignitionStatus: Int = -1,          // 0x0C8 byte2 bits 3-6: 0=KeyOut..7=Running..9=Cranking
+    val ignitionStatus: Int = -1,          // 0x0C8 byte2 bits 3-6: 0=Key Out, 1=Key Recently Out,
+                                           // 2=Key Approved, 3=Post Accessory, 4=Accessory, 5=Post Ignition,
+                                           // 6=Ignition On, 7=Running, 9=Crank (-1 = not received)
 
     // ── BCM OBD (Mode 22 via BCM 0x726) ────────────────────
     val odometerKm: Long = -1L,            // 0x360 bytes[3:5] 24-bit, or 0x22DD01 24-bit (once on connect)
