@@ -90,6 +90,34 @@ class DriveStateTest {
         assertEquals(49.8, s.fuelUsedL, 0.01)
     }
 
+    @Test fun `fuelUsedKnown is false when the start sits on the 100 percent clamp`() {
+        val s = DriveState(
+            startFuelPct = 100.0,
+            recentPoints = listOf(point(fuelLevelPct = 98.4))
+        )
+        assertFalse(s.fuelUsedKnown)
+    }
+
+    @Test fun `fuelUsedKnown is false for one or two gauge steps`() {
+        val one = DriveState(startFuelPct = 80.0, recentPoints = listOf(point(fuelLevelPct = 79.6)))
+        val two = DriveState(startFuelPct = 80.0, recentPoints = listOf(point(fuelLevelPct = 79.2)))
+        assertFalse(one.fuelUsedKnown)
+        assertFalse(two.fuelUsedKnown)
+    }
+
+    @Test fun `fuelUsedKnown is true for a drop well beyond the gauge step`() {
+        val s = DriveState(
+            startFuelPct = 80.0,
+            recentPoints = listOf(point(fuelLevelPct = 78.0))
+        )
+        assertTrue(s.fuelUsedKnown)
+        assertEquals(0.996, s.fuelUsedL, 0.01)
+    }
+
+    @Test fun `fuelUsedKnown is false before the first fuel reading`() {
+        assertFalse(DriveState().fuelUsedKnown)
+    }
+
     // ═════════════════════════════════════════════════════════════════════════
     // avgFuelL100km
     // ═════════════════════════════════════════════════════════════════════════
@@ -367,4 +395,23 @@ class DriveStateTest {
         // L/100km = 0.0996/0.5*100 = 19.92
         assertEquals(19.92, s.avgFuelL100km, 0.1)
     }
+    // ═════════════════════════════════════════════════════════════════════════
+    // stepDistanceKm
+    // ═════════════════════════════════════════════════════════════════════════
+
+    @Test fun `a parked drive adds no distance for wandering fixes`() {
+        val prev = point(lat = 0.0, lng = 0.0)
+        assertEquals(0.0, DriveState.stepDistanceKm(prev, 0.00005, 0.00005, 0.0), 1e-9)
+    }
+
+    @Test fun `a moving drive counts the step`() {
+        val prev = point(lat = 0.0, lng = 0.0)
+        val expected = DriveState.haversineKm(0.0, 0.0, 0.001, 0.0)
+        assertEquals(expected, DriveState.stepDistanceKm(prev, 0.001, 0.0, 30.0), 1e-9)
+    }
+
+    @Test fun `no previous fix means no distance`() {
+        assertEquals(0.0, DriveState.stepDistanceKm(null, 0.001, 0.0, 30.0), 1e-9)
+    }
+
 }
