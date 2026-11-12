@@ -557,7 +557,7 @@ private fun LiveHud(
                     if (vehicleState.ptuTempC > -90)
                         "${prefs.displayTemp(vehicleState.ptuTempC)}${prefs.tempLabel}" else "--",
                     modifier = Modifier.weight(1f))
-                DataCell("USED", "%.2fL".format(driveState.fuelUsedL), modifier = Modifier.weight(1f))
+                DataCell("USED", if (driveState.fuelUsedKnown) "%.2fL".format(driveState.fuelUsedL) else "—", modifier = Modifier.weight(1f))
                 val (econVal, econUnit) = if (prefs.speedUnit == "MPH")
                     "%.1f".format(driveState.avgFuelMpg) to "MPG"
                 else
@@ -891,8 +891,9 @@ private fun StatChip(label: String, value: String) {
 // Helpers
 // ═══════════════════════════════════════════════════════════════════════════
 
-private fun formatDuration(ms: Long): String {
-    if (ms <= 0) return "Active"
+internal fun formatDuration(ms: Long): String {
+    // Duration is not a status: a closed drive with no recorded time reads 0:00.
+    if (ms <= 0) return "0:00"
     val secs = ms / 1000
     val h = secs / 3600
     val m = (secs % 3600) / 60
