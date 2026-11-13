@@ -86,7 +86,7 @@ and every nightly.
 _Avoid_: Production, final; "Stable" alone where the Stable channel could be meant
 
 **Release candidate**:
-A test release of the next stable, named by its number (2.2.7-rc.8). rc.8 is the last one: nightlies take their place.
+A test release of the next stable, named by its number (2.2.7-rc.8).
 _Avoid_: RC build, beta (for the release), preview
 
 **Nightly**:
