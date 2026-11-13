@@ -1,7 +1,7 @@
 # openRS_
 
-The language of openRS_, a telemetry app for the Ford Focus RS: what the app records while the car is driven and how
-that record is named.
+The language of openRS_, a telemetry app for the Ford Focus RS: what the app records while the car is driven, how that
+record is named, and how the app's releases are named.
 
 ## Language
 
@@ -77,3 +77,27 @@ _Avoid_: S/F point, gate
 **Lap**:
 One timed pass from the start/finish line back to it. A lap belongs to the drive it was timed in.
 _Avoid_: Sector, split
+
+### Releases
+
+**Stable**:
+A release for everyone, named by its version alone (2.2.7). Within one version it comes after every release candidate
+and every nightly.
+_Avoid_: Production, final; "Stable" alone where the Stable channel could be meant
+
+**Release candidate**:
+A test release of the next stable, named by its number (2.2.7-rc.8).
+_Avoid_: RC build, beta (for the release), preview
+
+**Nightly**:
+A test release built by itself at most once a day, on a day the app has changed, and named by its date in UTC
+(2.2.7-nightly.20261201). Within one version it comes after every release candidate and before the stable.
+_Avoid_: Daily build, snapshot, beta (for the release), debug build
+
+**Stable channel**:
+The update channel that offers stable releases only: never a release candidate or a nightly.
+_Avoid_: "Stable" alone where the stable release could be meant
+
+**Beta channel**:
+The update channel that offers the newest release of any kind: a stable, a release candidate or a nightly.
+_Avoid_: Test channel, nightly channel, pre-release channel

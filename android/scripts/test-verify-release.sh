@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# test-verify-release.sh — checks verify-release.sh's release identity rules (#214, #362) without a real APK or SDK: a
+# throwaway git repository holds the android-v* tags, and a fake SDK's aapt2 / apksigner report what a sidecar file
+# next to each fake APK says. Covers the nightly code rule (YYYYMMDD − 20000000) × 10 — the same rule as
+# app/build.gradle.kts, example 20261201 → 2612010 — earlier nightly tags read from their names, a stable above 39 in
+# slot 9 of a date whether or not nightly tags exist, no date after today (UTC), a nightly's base X.Y.Z, and the RC and
+# older stable checks as before. Dates and keys are invented test values; every passing date lies in the past.
+# Run from anywhere: bash android/scripts/test-verify-release.sh
+set -uo pipefail
+VERIFY="$(cd "$(dirname "$0")" && pwd)/verify-release.sh"
+CERT_OK="c99b6f263ee3b5bb610040431403d459e0e7b12aa941f114f0d9717d974ada74"
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/verify-release-test.XXXXXX")
+trap 'rm -rf "$WORK"' EXIT
+failures=0; ran=0
+
+# ── Fake SDK: the tools read <apk>.meta (VC=, VN=, CERT=, MAPS=) ─────────────────────────────────────────────────────
+BT="$WORK/sdk/build-tools/99.0.0"; mkdir -p "$BT"
+cat > "$BT/aapt2" <<'STUB'
+#!/usr/bin/env bash
+apk="${@: -1}"; . "$apk.meta"
+if [ "$2" = "badging" ]; then
+  echo "package: name='com.openrs.dash' versionCode='$VC' versionName='$VN' platformBuildVersionName='15'"
+else
+  echo "N: android=http://schemas.android.com/apk/res/android"
+  [ "$MAPS" = absent ] && exit 0
+  echo "      E: meta-data (line=1)"
+  echo "        A: http://schemas.android.com/apk/res/android:name(0x01010003)=\"com.google.android.geo.API_KEY\" (Raw: \"x\")"
+  echo "        A: http://schemas.android.com/apk/res/android:value(0x01010024)=\"$MAPS\" (Raw: \"x\")"
+fi
+STUB
+cat > "$BT/apksigner" <<'STUB'
+#!/usr/bin/env bash
+apk="${@: -1}"; . "$apk.meta"
+echo "Signer #1 certificate DN: CN=test"
+echo "Signer #1 certificate SHA-256 digest: $CERT"
+STUB
+chmod +x "$BT/aapt2" "$BT/apksigner"
+
+# ── Throwaway repository: one commit per tag, its build file holding the literal code ──────────────────────────────
+REPO="$WORK/repo"; mkdir -p "$REPO/android/app"
+g() { git -C "$REPO" -c user.name=test -c user.email=test@example.invalid -c commit.gpgsign=false -c tag.gpgsign=false "$@"; }
+g init -q
+# tag_at <tag> <literal releaseVersionCode in that commit's build file>
+tag_at() {
+  printf 'val releaseBase = "2.2.7"\nval releaseVersionCode = %s\n' "$2" > "$REPO/android/app/build.gradle.kts"
+  g add -A; g commit -q --allow-empty -m "$1"; g tag "$1"
+}
+# case_ <name> <0 pass | 1 fail> <output must contain> <tag> <apk file name> <versionCode> [versionName] [cert] [maps]
+case_() {
+  local name="$1" want="$2" needle="$3" tag="$4" apk="$WORK/apks/$5" vc="$6"
+  local vn="${7:-${tag#android-v}}" cert="${8:-$CERT_OK}" maps="${9:-AIzaTESTplaceholderMapsKey_0123456789-x}"
+  rm -rf "$WORK/apks"; mkdir -p "$WORK/apks"; : > "$apk"
+  printf 'VC=%s\nVN=%s\nCERT=%s\nMAPS=%s\n' "$vc" "$vn" "$cert" "$maps" > "$apk.meta"
+  local out code why=""
+  out=$(cd "$REPO" && ANDROID_HOME="$WORK/sdk" bash "$VERIFY" "$tag" "$apk" 2>&1); code=$?
+  [ "$code" -eq "$want" ] || why="exit $code, expected $want"
+  [[ "$out" == *"$needle"* ]] || why="${why:+$why; }output lacks '$needle'"
+  ran=$((ran + 1))
+  if [ -z "$why" ]; then echo "PASS $name"; else echo "FAIL $name — $why"; echo "$out" | sed 's/^/    /'; failures=$((failures + 1)); fi
+}
+
+tag_at android-v2.2.5       30       # the file's literal of each release (2.2.5's and 2.2.6's values are invented)
+
+# Before any nightly: the RC and older stable checks as before
+case_ "a stable at or below 39 verifies as before"   0 "Release identity OK" android-v2.2.6     openRS_v2.2.6.apk      36
+tag_at android-v2.2.6       36
+tag_at android-v2.2.7-rc.7  37
+tag_at android-v2.2.7-rc.8  39
+case_ "an RC tag verifies as before"                 0 "Release identity OK" android-v2.2.7-rc.8 openRS_v2.2.7-rc.8.apk 39
+case_ "an RC code not above rc.7 fails"              1 "not higher than 37"  android-v2.2.7-rc.8 openRS_v2.2.7-rc.8.apk 37
+case_ "the wrong signer fails"                       1 "is not the openRS_ release certificate" android-v2.2.7-rc.8 openRS_v2.2.7-rc.8.apk 39 "" 0000
+case_ "a missing Maps key fails"                     1 "has no com.google.android.geo.API_KEY" android-v2.2.7-rc.8 openRS_v2.2.7-rc.8.apk 39 "" "" absent
+
+# A stable above 39 takes slot 9 of a date, with no nightly tag in the history (they may have been deleted)
+case_ "a stable above 39 needs slot 9 with no nightly tag" 1 "slot 9"                android-v2.2.7 openRS_v2.2.7.apk 40
+case_ "a stable in slot 9 with no nightly tag passes"      0 "versionCode 2610019"   android-v2.2.7 openRS_v2.2.7.apk 2610019
+case_ "a stable in slot 9 of a date after today fails"     1 "after today"           android-v2.2.7 openRS_v2.2.7.apk 9912319
+
+# Nightlies: code by the rule, base X.Y.Z, a calendar date not after today
+N1=android-v2.2.7-nightly.20261001
+case_ "a correct nightly passes (20261001 → 2610010)" 0 "versionCode 2610010"            $N1 openRS_v2.2.7-nightly.20261001.apk 2610010
+case_ "a nightly with a wrong code fails"             1 "is not 2610010, the nightly rule's code" $N1 openRS_v2.2.7-nightly.20261001.apk 2610011
+case_ "a nightly at rc.8's 39 fails"                  1 "is not 2610010, the nightly rule's code" $N1 openRS_v2.2.7-nightly.20261001.apk 39
+case_ "a nightly with a wrong APK name fails"         1 "does not match tag"             $N1 openRS_v2.2.7-nightly.2026101.apk 2610010
+case_ "a nightly with another versionName fails"      1 "embedded versionName"           $N1 openRS_v2.2.7-nightly.20261001.apk 2610010 2.2.7-rc.8
+case_ "a nightly on 29 February of a leap year passes" 0 "versionCode 2402290"           android-v2.2.7-nightly.20240229 openRS_v2.2.7-nightly.20240229.apk 2402290
+case_ "a nightly on 29 February of a common year fails" 1 "not a calendar date"          android-v2.2.7-nightly.20250229 openRS_v2.2.7-nightly.20250229.apk 2502290
+case_ "a nightly on 31 April fails"                   1 "not a calendar date"            android-v2.2.7-nightly.20260431 openRS_v2.2.7-nightly.20260431.apk 2604310
+case_ "a nightly in month 13 fails"                   1 "not a calendar date"            android-v2.2.7-nightly.20261301 openRS_v2.2.7-nightly.20261301.apk 2613010
+case_ "a nightly dated after today fails"             1 "after today"                    android-v2.2.7-nightly.20991231 openRS_v2.2.7-nightly.20991231.apk 9912310
+case_ "a nightly whose base is not X.Y.Z fails"       1 "is not <X.Y.Z>-nightly.YYYYMMDD" android-v2.2.7-rc.1-nightly.20261001 openRS_v2.2.7-rc.1-nightly.20261001.apk 2610010
+
+# Earlier nightly tags: their code comes from the name (their build file still says 39)
+tag_at $N1 39
+tag_at android-v2.2.7-nightly.20261005 39
+case_ "a nightly not above an earlier nightly fails"  1 "not higher than 2610050 already released as android-v2.2.7-nightly.20261005" android-v2.2.7-nightly.20261003 openRS_v2.2.7-nightly.20261003.apk 2610030
+case_ "the next nightly passes"                       0 "(> 2610050, android-v2.2.7-nightly.20261005)" android-v2.2.7-nightly.20261006 openRS_v2.2.7-nightly.20261006.apk 2610060
+
+# A stable after nightlies: slot 9 of a calendar date, above every earlier tag
+case_ "stable in slot 9 of the last nightly's date passes" 0 "versionCode 2610059"  android-v2.2.7 openRS_v2.2.7.apk 2610059
+case_ "stable in slot 9 of a later date passes"       0 "versionCode 2610159"        android-v2.2.7 openRS_v2.2.7.apk 2610159
+case_ "stable outside slot 9 fails"                   1 "slot 9"                     android-v2.2.7 openRS_v2.2.7.apk 2610150
+case_ "stable in slot 9 of no calendar date fails"    1 "not a calendar date"        android-v2.2.7 openRS_v2.2.7.apk 2613329
+case_ "stable below the last nightly fails"           1 "not higher than 2610050"    android-v2.2.7 openRS_v2.2.7.apk 2610049
+
+# After the stable: the next date's nightly is above it, the same date's is not
+tag_at android-v2.2.7 2610159
+case_ "a nightly on the stable's date fails"          1 "not higher than 2610159 already released as android-v2.2.7" android-v2.2.7-nightly.20261015 openRS_v2.2.7-nightly.20261015.apk 2610150
+case_ "the next date's nightly passes"                0 "(> 2610159, android-v2.2.7)" android-v2.2.7-nightly.20261016 openRS_v2.2.7-nightly.20261016.apk 2610160
+
+# Every nightly tag deleted by hand: the next stable still needs slot 9
+g tag -d $N1 android-v2.2.7-nightly.20261005 >/dev/null
+case_ "after the nightly tags are deleted, a stable above 39 still needs slot 9" 1 "slot 9" android-v2.2.8 openRS_v2.2.8.apk 2610160
+case_ "after the nightly tags are deleted, slot 9 passes" 0 "versionCode 2610209"   android-v2.2.8 openRS_v2.2.8.apk 2610209
+
+# An earlier tag that looks like a nightly but is not one by name cannot be read
+tag_at android-v2.2.7-nightly.2026101 39
+case_ "an unreadable earlier nightly tag fails"       1 "cannot read the versionCode of earlier tag android-v2.2.7-nightly.2026101" android-v2.2.7-nightly.20261020 openRS_v2.2.7-nightly.20261020.apk 2610200
+g tag -d android-v2.2.7-nightly.2026101 >/dev/null
+tag_at android-v2.2.7-rc.1-nightly.20261018 39
+case_ "an earlier nightly tag whose base is not X.Y.Z fails" 1 "cannot read the versionCode of earlier tag android-v2.2.7-rc.1-nightly.20261018" android-v2.2.7-nightly.20261020 openRS_v2.2.7-nightly.20261020.apk 2610200
+
+[ "$ran" -gt 0 ] || { echo "verify-release checks: no case ran"; exit 1; }
+[ "$failures" -eq 0 ] && echo "verify-release checks: all $ran passed" || { echo "verify-release checks: $failures of $ran failed"; exit 1; }

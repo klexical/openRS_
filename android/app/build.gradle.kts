@@ -1,3 +1,7 @@
+import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
 import java.util.Properties
 
 plugins {
@@ -24,7 +28,35 @@ val releaseBase = "2.2.7"
 val releaseStage = "rc"          // "rc" for a release candidate, "" for stable
 val releaseCandidate = 8         // ignored when releaseStage is ""
 val releaseVersionCode = 39     // 39 = rc.8 (38 = rc.7 maintenance asset openrs-2.2.7-rc.7-build38.apk, 37 = rc.7 tag)
-val releaseName = if (releaseStage.isEmpty()) releaseBase else "$releaseBase-$releaseStage.$releaseCandidate"
+val literalReleaseName = if (releaseStage.isEmpty()) releaseBase else "$releaseBase-$releaseStage.$releaseCandidate"
+
+// A nightly (#362): -PnightlyDate=YYYYMMDD (the run's UTC date, passed in — never this machine's clock) makes the build
+// <base>-nightly.YYYYMMDD with the code (YYYYMMDD − 20000000) × 10, e.g. 20261201 → 2612010; slots 1–9 of a date are
+// left for other builds (a stable cut takes slot 9). Without the property the build is the literal release above, so
+// releaseStage is "rc" or "" only: the stage "nightly" in this file is refused, as is a date after the build's UTC date.
+// android/scripts/verify-release.sh derives an earlier nightly tag's code by the same rule (test: test-verify-release.sh).
+if (releaseStage == "nightly") throw GradleException(
+    "releaseStage = \"nightly\" is not a stage of this file: a nightly is built with -PnightlyDate=YYYYMMDD (#362)")
+if (releaseStage != "rc" && releaseStage.isNotEmpty()) throw GradleException(
+    "releaseStage = \"$releaseStage\" is not \"rc\" or \"\" (#362)")
+val nightlyDate: Int? = project.findProperty("nightlyDate")?.toString()?.let { raw ->
+    if (raw.isBlank()) throw GradleException("-PnightlyDate is empty: a nightly build needs its UTC date as YYYYMMDD (#362)")
+    if (!Regex("""\d{8}""").matches(raw)) throw GradleException("-PnightlyDate=$raw is not YYYYMMDD (eight digits, #362)")
+    val date = try {
+        LocalDate.parse(raw, DateTimeFormatter.BASIC_ISO_DATE)   // ISO formatters resolve STRICT: no 31 Nov, no 29 Feb 2027
+    } catch (_: DateTimeParseException) {
+        throw GradleException("-PnightlyDate=$raw is not a calendar date (#362)")
+    }
+    val today = LocalDate.now(ZoneOffset.UTC)
+    if (date.isAfter(today)) throw GradleException("-PnightlyDate=$raw is after today ($today UTC): a nightly is named by its run's date (#362)")
+    raw.toInt().also { if (it < 20_000_000) throw GradleException("-PnightlyDate=$raw is before 2000: the code rule needs 2000 or later (#362)") }
+}
+val nightlyVersionCode: Int? = nightlyDate?.let { (it - 20_000_000) * 10 }
+nightlyVersionCode?.let {
+    if (it <= releaseVersionCode) throw GradleException("nightly code $it is not above the file's $releaseVersionCode (#362)")
+}
+val releaseName = if (nightlyDate != null) "$releaseBase-nightly.$nightlyDate" else literalReleaseName
+val versionCodeOfBuild = nightlyVersionCode ?: releaseVersionCode
 
 // The old -PrcSuffix flag appended an RC label separately from versionName; refuse it so nothing builds a mismatch.
 project.findProperty("rcSuffix")?.toString()?.takeIf { it.isNotBlank() }?.let {
@@ -61,7 +93,7 @@ android {
         applicationId = "com.openrs.dash"
         minSdk = 28
         targetSdk = 35
-        versionCode = releaseVersionCode
+        versionCode = versionCodeOfBuild
         versionName = releaseName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

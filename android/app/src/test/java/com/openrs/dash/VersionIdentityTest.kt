@@ -16,11 +16,24 @@ import org.junit.Test
 /** One release identity across build, updater, Settings and What's New (#214). */
 class VersionIdentityTest {
 
-    @Test fun `this build is 2_2_7-rc_8, versionCode 39`() {
-        assertEquals("2.2.7-rc.8", BuildConfig.RELEASE_NAME)
-        assertEquals(39, BuildConfig.VERSION_CODE)
-        assertEquals(AppVersion(2, 2, 7, 8), AppVersion.current())
-        assertTrue(BuildConfig.VERSION_NAME.startsWith("2.2.7-rc.8"))           // debug adds -dev+<commit>
+    // The build's own stage (#362): without -PnightlyDate it is the file's literal release, 2.2.7-rc.8 with code 39;
+    // with it, a nightly of the same base whose code is (YYYYMMDD − 20000000) × 10 of the date in its own name.
+    private val nightlyName = Regex("""2\.2\.7-nightly\.(\d{8})""")
+
+    @Test fun `this build is 2_2_7-rc_8 with code 39, or a nightly of 2_2_7 with the code of its date`() {
+        val nightly = nightlyName.matchEntire(BuildConfig.RELEASE_NAME)
+        if (nightly == null) {
+            assertEquals("2.2.7-rc.8", BuildConfig.RELEASE_NAME)
+            assertEquals(39, BuildConfig.VERSION_CODE)
+            assertEquals(AppVersion(2, 2, 7, 8), AppVersion.current())
+        } else {
+            val date = nightly.groupValues[1].toInt()
+            assertEquals((date - 20_000_000) * 10, BuildConfig.VERSION_CODE)
+            assertEquals(AppVersion(2, 2, 7, nightly = date), AppVersion.current())
+            assertTrue(AppVersion.current().isNightly)
+        }
+        assertTrue(BuildConfig.VERSION_NAME.startsWith(BuildConfig.RELEASE_NAME))   // debug adds -dev+<commit>
+        assertEquals("2.2.7", BuildConfig.RELEASE_BASE)
     }
 
     @Test fun `version names parse with and without RC and dev suffix`() {
@@ -35,7 +48,7 @@ class VersionIdentityTest {
         val v = AppVersion.fromVersionName(BuildConfig.RELEASE_NAME)!!
         assertEquals(v, AppVersion.fromTagName("android-v${BuildConfig.RELEASE_NAME}"))
         assertEquals(v, AppVersion.fromApkFilename("openRS_v${BuildConfig.RELEASE_NAME}.apk"))
-        assertEquals("android-v2.2.7-rc.8", "android-v${v.displayName}")
+        assertEquals("android-v${BuildConfig.RELEASE_NAME}", "android-v${v.displayName}")
     }
 
     private fun release(tag: String, apk: String, prerelease: Boolean) = JSONObject().apply {
@@ -109,7 +122,7 @@ class VersionIdentityTest {
         // shows on a fresh install or from Settings → What's New
         assertFalse(shouldShowWhatsNew(lastSeen = BuildConfig.RELEASE_NAME, releaseName = BuildConfig.RELEASE_NAME, base = "2.2.7"))
         assertTrue(shouldShowWhatsNew(lastSeen = "2.2.7-rc.7", releaseName = "2.2.7-rc.8", base = "2.2.7"))   // rc.7 → rc.8 shows it
-        assertTrue(whatsNewHighlights("2.2.7")!!.first().startsWith("rc.8 · Build ${BuildConfig.VERSION_CODE}: "))
+        assertTrue(whatsNewHighlights("2.2.7")!!.first().startsWith("rc.8 · Build 39: "))   // rc.8's line, in a nightly too
         assertTrue(whatsNewHighlights("2.2.7")!!.any { it.startsWith("rc.7 · Build 38: ") })    // rc.7's maintenance line kept
         assertTrue(whatsNewHighlights("2.2.7")!!.any { it.contains("labelled TIP, and") })      // rc.7's published line kept
         assertFalse(shouldShowWhatsNew(lastSeen = "2.2.7-rc.7", releaseName = "2.2.8-rc.1", base = "2.2.8"))  // no 2.2.8 notes
