@@ -66,6 +66,21 @@ jobs:
       - name: Test the release configuration check
         run: bash scripts/test-release-config.sh
 
+      # The release scripts' own tests (#362, #363): the nightly identity rule in the build file (runs Gradle; edits
+      # app/build.gradle.kts for one case and restores it byte for byte), verify-release.sh against a throwaway tag
+      # history, the shared recipe's build step, and the release workflows' shape. No secrets, no APK.
+      - name: Test the release identity rule
+        run: bash scripts/test-release-identity.sh
+
+      - name: Test the release check (verify-release.sh)
+        run: bash scripts/test-verify-release.sh
+
+      - name: Test the release recipe (release-apk.sh)
+        run: bash scripts/test-release-apk.sh
+
+      - name: Test the release workflows' shape
+        run: ruby scripts/test-release-workflows.rb
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -135,78 +150,68 @@ jobs:
           path: android/app/build/outputs/apk/release/openRS_v*.apk
           retention-days: 30
 
+  # An android-v RC or stable tag: the shared recipe builds and verifies the APK (.github/workflows/release-apk.yml,
+  # #363), then publish-release attests it and attaches it to the tag's GitHub release. A nightly tag is skipped here:
+  # nightlies are built and published by the nightly workflow #363 adds, not by this file.
+  release-name:
+    name: Release name from the tag
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/android-v') && !contains(github.ref_name, '-nightly.')
+    permissions: {}
+    outputs:
+      name: ${{ steps.name.outputs.name }}
+    steps:
+      - name: Release name
+        id: name
+        env:
+          TAG: ${{ github.ref_name }}
+        run: echo "name=${TAG#android-v}" >> "$GITHUB_OUTPUT"
+
+  release-apk:
+    name: Build release APK (tag)
+    if: startsWith(github.ref, 'refs/tags/android-v') && !contains(github.ref_name, '-nightly.')
+    needs: [ build, lint, release-name ]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-apk.yml
+    with:
+      sha: ${{ github.sha }}
+      name: ${{ needs.release-name.outputs.name }}
+      tag: ${{ github.ref_name }}
+      nightly_date: ''   # an RC or stable: no -PnightlyDate at all (the build refuses an empty one, #362)
+    secrets: inherit
+
   publish-release:
     name: Attach APK to GitHub Release
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/android-v')
-    needs: [ build, lint ]
+    if: startsWith(github.ref, 'refs/tags/android-v') && !contains(github.ref_name, '-nightly.')
+    needs: [ release-apk ]
     permissions:
       contents: write
       id-token: write
       attestations: write
-    defaults:
-      run:
-        working-directory: android
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Download the release APK
+        uses: actions/download-artifact@v4
         with:
-          fetch-depth: 0   # verify-release.sh compares versionCode with every earlier android-v* tag
+          name: release-apk-${{ github.run_id }}-${{ github.run_attempt }}   # the recipe's upload name in this run
+          path: release-apk
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-          cache: 'gradle'
-
-      - name: Decode release keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::warning::Keystore secrets not configured — APK will be unsigned"
-            exit 0
-          fi
-          echo "$KEYSTORE_BASE64" | base64 -d > openrs-release.jks
-          printf 'storeFile=openrs-release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
-            "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > keystore.properties
-
-      # API keys come from repository secrets as environment variables (#235) — no file, never echoed. Maps is required
-      # for a published release (the job stops here without it); weather is optional.
-      - name: Check release configuration (API keys)
-        env:
-          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
-          OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
-        run: bash scripts/check-release-config.sh
-
-      # The release identity (name, versionCode) comes only from app/build.gradle.kts (#214); the tag must match it.
-      - name: Build release APK
-        env:
-          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
-          OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
-        run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon
-
-      - name: Verify release identity (tag, versionName, filename, versionCode, signer, Maps key)
-        env:
-          TAG: ${{ github.ref_name }}
-        run: bash scripts/verify-release.sh "$TAG" "app/build/outputs/apk/release/openRS_v${TAG#android-v}.apk"
-
-      - name: Find release APK
+      # The file the recipe verified, byte for byte: the name the tag gives it and the SHA-256 the recipe reported (its only
+      # output: GitHub drops an output holding a secret's value, so the names are built here, not passed)
+      - name: Check the downloaded APK
         id: apk
+        env:
+          SHA256: ${{ needs.release-apk.outputs.sha256 }}
+          TAG: ${{ github.ref_name }}
         run: |
-          APK=$(ls android/app/build/outputs/apk/release/openRS_v*.apk 2>/dev/null | head -1)
-          if [ -z "$APK" ]; then
-            echo "::error::No release APK found in android/app/build/outputs/apk/release/"
-            exit 1
-          fi
-          echo "path=$APK" >> "$GITHUB_OUTPUT"
-          echo "Found APK: $APK"
-        working-directory: .
+          set -euo pipefail
+          FILE="openRS_v${TAG#android-v}.apk"
+          [[ "$SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::the recipe reported no SHA-256 ('$SHA256')"; exit 1; }
+          [ "$(ls release-apk)" = "$FILE" ] || { echo "::error::the artifact does not hold exactly $FILE: $(ls release-apk | tr '\n' ' ')"; exit 1; }
+          echo "$SHA256  release-apk/$FILE" | sha256sum -c -
+          echo "path=release-apk/$FILE" >> "$GITHUB_OUTPUT"
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v2

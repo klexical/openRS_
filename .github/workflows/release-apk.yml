@@ -1,0 +1,111 @@
+name: Release APK (shared recipe)
+
+# The shared release recipe (#363): builds one release APK of the commit it is given, signed with the release key, and
+# checks it with android/scripts/release-apk.sh (a full commit SHA that is the one checked out, tag = android-v<name>,
+# -PnightlyDate only for a nightly, exactly one APK in the output, openRS_v<name>.apk, verify-release.sh). Called by
+# ci.yml's release-apk job for an android-v RC or stable tag; the nightly workflow #363 adds will call it too. It
+# attests and publishes nothing and has read access only: it hands the APK over as a one-day artifact named
+# release-apk-<run id>-<run attempt>, and its SHA-256 as its only output: because GitHub drops a job output that contains
+# any secret's value, the caller builds the artifact and file names itself (the file name from its tag). It re-checks the
+# digest before it attests and attaches the file.
+# Every input reaches the shell through env, never inside a run line (android/scripts/test-release-workflows.rb).
+
+on:
+  workflow_call:
+    inputs:
+      sha:
+        description: Full 40-character SHA of the commit to build (the caller's tag commit; for a nightly, staging's tip)
+        required: true
+        type: string
+      name:
+        description: Release name, e.g. 2.2.7-rc.8 or 2.2.7-nightly.20261201
+        required: true
+        type: string
+      tag:
+        description: Release tag, android-v<name>
+        required: true
+        type: string
+      nightly_date:
+        description: YYYYMMDD for a nightly; empty for an RC or stable (the build then gets no -PnightlyDate)
+        required: false
+        type: string
+        default: ''
+    outputs:
+      sha256:
+        description: The APK's SHA-256
+        value: ${{ jobs.build.outputs.sha256 }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and verify the release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Never for a pull request's head: the keystore and the API keys are in this job
+    if: ${{ !startsWith(github.event_name, 'pull_request') }}
+    outputs:
+      sha256: ${{ steps.recipe.outputs.sha256 }}
+    defaults:
+      run:
+        working-directory: android
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0   # verify-release.sh compares versionCode with every earlier android-v* tag
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Decode release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::warning::Keystore secrets not configured — APK will be unsigned"
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > openrs-release.jks
+          printf 'storeFile=openrs-release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > keystore.properties
+
+      # API keys come from repository secrets as environment variables (#235) — no file, never echoed. Maps is required
+      # for a published release (the job stops here without it); weather is optional.
+      - name: Check release configuration (API keys)
+        env:
+          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+          OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
+        run: bash scripts/check-release-config.sh
+
+      # The release identity (name, versionCode) comes only from app/build.gradle.kts and, for a nightly, its date (#214,
+      # #362); verify-release.sh checks the tag, versionName, filename, versionCode, signer and Maps key.
+      - name: Build and verify the release APK
+        id: recipe
+        env:
+          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+          OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
+          SHA: ${{ inputs.sha }}
+          NAME: ${{ inputs.name }}
+          TAG: ${{ inputs.tag }}
+          NIGHTLY_DATE: ${{ inputs.nightly_date }}
+        run: bash scripts/release-apk.sh "$SHA" "$NAME" "$TAG" "$NIGHTLY_DATE"
+
+      - name: Hand the APK to the caller
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.recipe.outputs.path }}
+          if-no-files-found: error
+          retention-days: 1

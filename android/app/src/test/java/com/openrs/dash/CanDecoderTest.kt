@@ -1067,6 +1067,15 @@ class CanDecoderTest {
     }
 
     @Test
+    fun `decode ASS pressed while unknown ESC bit is set`() {
+        val data = byteArrayOf(0x89.toByte(), 0x00, 0x00, 0x00, 0x00, 0x10)
+        val result = CanDecoder.decode(0x260, data, blank)
+        assertNotNull(result)
+        assertTrue(result!!.autoStartStopButtonPressed)
+        assertNull(result.escOffButtonPressed)
+    }
+
+    @Test
     fun `decode mode and ASS buttons held together`() {
         val ass = CanDecoder.decode(
             0x260,
