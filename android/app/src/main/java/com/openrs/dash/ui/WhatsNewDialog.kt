@@ -43,7 +43,7 @@ import com.openrs.dash.ui.anim.pageEntrance
 
 /** rc.8 (Build 39): one owner-facing line, first in the 2.2.7 list; extended as fixes join this RC (#214). */
 private const val RC_8_NOTE =
-    "rc.8 · Build 39: not yet tested on a phone, adapter or car. A WiCAN Pro write reported as failed (GATT 13) is no longer treated as never sent, and the DID Prober no longer crashes over Bluetooth and matches each reply to its own DID. Malformed adapter lines are refused instead of reaching readings and peaks. DRIVE's battery reading marks a reply that has stopped arriving as STALE, a drive-mode change is confirmed only by agreeing car reports after the request, and diagnostic exports gain a LINK INTEGRITY section."
+    "rc.8 · Build 39: checked on one car, parked, over Bluetooth and Wi-Fi; not yet driven. Two kinds of pause: PAUSED is a pause you asked for; with auto-record on, a lost link pauses the drive (PAUSED · NO LINK, PAUSED · ENGINE OFF) and it resumes by itself. A WiCAN Pro write reported as failed (GATT 13) is no longer treated as never sent, and the DID Prober no longer crashes over Bluetooth. Malformed adapter lines are refused instead of reaching readings and peaks. Beta will get nightly builds after rc.8: this is the last release candidate."
 
 /** rc.7 Build 38 (a maintenance asset on the same rc.7 release): one owner-facing line, kept in the 2.2.7 list. */
 private const val BUILD_38_NOTE =
