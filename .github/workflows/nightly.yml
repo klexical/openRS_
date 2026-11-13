@@ -1,0 +1,230 @@
+name: Nightly
+
+# One build a night from staging's tip (#363; the spec: evidence of the nightly pipeline, "What a run does" 1–6). DRY-RUN
+# MODE: PUBLISH is false, so every run stops after the attestation, before any draft, and no job holds a token that can
+# write contents: no release or tag can be made by this file. T6 adds the draft and publish jobs, gated on the gate's
+# publish output; T7 flips PUBLISH after two green dry-run nights.
+#
+# GitHub runs the schedule (and offers "Run workflow") only from this file on the default branch, main, whose tree is
+# the 2.2.6 one. So every step that runs a repository script or Gradle runs in a checkout of staging's tip, the commit
+# the gate records, never the run's own commit or ref (on a schedule those are main's). The recipe
+# (release-apk.yml, also on main) checks out that commit itself.
+# Each night that builds leaves a release-signed APK as a one-day run artifact and a public build-provenance attestation
+# for a build that is not published (owner, 2026-11-13).
+# android/scripts/test-release-workflows.rb pins this file's shape.
+
+on:
+  schedule:
+    - cron: '17 8 * * *'      # 08:17 UTC; GitHub may run it late, and the date is taken once at the start
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+env:
+  PUBLISH: 'false'            # dry-run mode (#363 T5): flipping it is T7's one small change, after two green dry-run nights
+
+jobs:
+  gate:
+    name: Gate (staging's tip, today's UTC date)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+      reason: ${{ steps.gate.outputs.reason }}
+      sha: ${{ steps.gate.outputs.sha }}
+      date: ${{ steps.gate.outputs.date }}
+      name: ${{ steps.gate.outputs.name }}
+      tag: ${{ steps.gate.outputs.tag }}
+      base_tag: ${{ steps.gate.outputs.base_tag }}
+      publish: ${{ steps.mode.outputs.publish }}
+    steps:
+      - name: Today's UTC date, taken once
+        id: today
+        run: echo "date=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout staging's tip
+        uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0      # the base tag and today's tags are compared in this checkout
+          persist-credentials: false
+
+      - name: Record the commit
+        id: head
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # Builds only if files under android/ changed since the newest published nightly (rc.8 for the first) and today has
+      # no nightly. With this job's read-only token GitHub lists no draft releases: T6, which creates drafts, checks them.
+      - name: Gate
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.head.outputs.sha }}
+          TODAY: ${{ steps.today.outputs.date }}
+        run: bash android/scripts/nightly-gate.sh "$SHA" "$TODAY"
+
+      - name: Mode
+        id: mode
+        run: echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
+
+  checks:
+    name: Test and lint (the gate's commit)
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - name: Checkout the gate's commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      # The same commands as CI's build and lint jobs (ci.yml); test-release-workflows.rb fails if one is missing here.
+      - name: Build, test and lint
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+          ./gradlew test --no-daemon --continue
+          ./gradlew lint --no-daemon
+
+      - name: Release script tests
+        run: |
+          bash scripts/test-release-config.sh
+          bash scripts/test-release-identity.sh
+          bash scripts/test-verify-release.sh
+          bash scripts/test-release-apk.sh
+          ruby scripts/test-release-workflows.rb
+          bash scripts/test-nightly-gate.sh
+          bash scripts/test-launch-check.sh
+
+  release:
+    name: Build the nightly APK
+    needs: [ gate, checks ]
+    if: needs.gate.outputs.run == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-apk.yml
+    with:
+      sha: ${{ needs.gate.outputs.sha }}
+      name: ${{ needs.gate.outputs.name }}
+      tag: ${{ needs.gate.outputs.tag }}
+      nightly_date: ${{ needs.gate.outputs.date }}
+    secrets: inherit
+
+  launch:
+    name: Launch check (API 36 emulator)
+    needs: [ gate, release ]
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15         # the emulator's boot and the launch check together
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout the gate's commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+          persist-credentials: false
+
+      - name: Download the nightly APK
+        uses: actions/download-artifact@v4
+        with:
+          name: release-apk-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-apk
+
+      - name: Check the downloaded APK
+        env:
+          SHA256: ${{ needs.release.outputs.sha256 }}
+          NAME: ${{ needs.gate.outputs.name }}
+        run: |
+          set -euo pipefail
+          FILE="openRS_v${NAME}.apk"
+          [[ "$SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::the recipe reported no SHA-256 ('$SHA256')"; exit 1; }
+          [ "$(ls release-apk)" = "$FILE" ] || { echo "::error::the artifact does not hold exactly $FILE"; exit 1; }
+          echo "$SHA256  release-apk/$FILE" | sha256sum -c -
+
+      # GitHub's documented step for hardware acceleration on its Linux runners
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Start an API 36 emulator
+        run: |
+          set -euo pipefail
+          IMAGE="system-images;android-36;google_apis;x86_64"
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin"
+          yes | "$SDKM/sdkmanager" --install "$IMAGE" emulator platform-tools > /dev/null
+          echo no | "$SDKM/avdmanager" create avd -n nightly -k "$IMAGE" --force
+          nohup "$ANDROID_HOME/emulator/emulator" -avd nightly -no-window -no-audio -no-boot-anim -no-snapshot \
+            -gpu swiftshader_indirect > emulator.log 2>&1 &
+          "$ANDROID_HOME/platform-tools/adb" wait-for-device
+          until [ "$("$ANDROID_HOME/platform-tools/adb" shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; do sleep 2; done
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+
+      - name: Launch check
+        env:
+          NAME: ${{ needs.gate.outputs.name }}
+        run: bash android/scripts/launch-check.sh "release-apk/openRS_v${NAME}.apk" 10
+
+  attest:
+    name: Attest the nightly APK
+    needs: [ gate, release, launch ]
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download the nightly APK
+        uses: actions/download-artifact@v4
+        with:
+          name: release-apk-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-apk
+
+      - name: Check the downloaded APK
+        env:
+          SHA256: ${{ needs.release.outputs.sha256 }}
+          NAME: ${{ needs.gate.outputs.name }}
+        run: |
+          set -euo pipefail
+          FILE="openRS_v${NAME}.apk"
+          [[ "$SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::the recipe reported no SHA-256 ('$SHA256')"; exit 1; }
+          [ "$(ls release-apk)" = "$FILE" ] || { echo "::error::the artifact does not hold exactly $FILE"; exit 1; }
+          echo "$SHA256  release-apk/$FILE" | sha256sum -c -
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: release-apk/openRS_v${{ needs.gate.outputs.name }}.apk
+
+      - name: Verify the attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NAME: ${{ needs.gate.outputs.name }}
+        run: |
+          gh attestation verify "release-apk/openRS_v${NAME}.apk" --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/nightly.yml"
+          echo "Dry run (PUBLISH is $PUBLISH): stopped after the attestation, before any draft." >> "$GITHUB_STEP_SUMMARY"
