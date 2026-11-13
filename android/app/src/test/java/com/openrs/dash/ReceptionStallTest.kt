@@ -1,7 +1,7 @@
 package com.openrs.dash
 
 import com.openrs.dash.can.ReceptionStall
-import com.openrs.dash.can.ReceptionStall.Companion.TYPE_LOW
+import com.openrs.dash.can.ReceptionStall.Companion.TYPE_QUIET
 import com.openrs.dash.can.ReceptionStall.Companion.TYPE_STALL
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -47,22 +47,22 @@ class ReceptionStallTest {
         assertTrue(rate < ReceptionStall.BURST_FACTOR * rate)
     }
 
-    @Test fun `key-on at the normal rate after a quiet span is a low span`() {
+    @Test fun `key-on at the normal rate after a silence is a quiet span`() {
         val d = ReceptionStall()
         d.rate(0, 20_000, 2_017)
         d.rate(30_000, 40_000, 2_017)
         assertEquals(shown(), 1, reports.size)
-        assertEquals(TYPE_LOW, reports.single().type)
+        assertEquals(TYPE_QUIET, reports.single().type)
         assertTrue(shown(), reports.single().message.endsWith(
             "${ReceptionStall.CAME_BACK}. ${ReceptionStall.NOT_TOLD_APART}"))
     }
 
-    @Test fun `key-on ramping up to the normal rate is a low span`() {
+    @Test fun `key-on ramping up to the normal rate is a quiet span`() {
         val d = ReceptionStall()
         d.rate(0, 20_000, 2_017)
         for (k in 1..8) d.rate(30_000L + (k - 1) * 250, 30_000L + k * 250, 2_017 * k / 8)
         d.rate(32_000, 40_000, 2_017)
-        assertEquals(shown(), listOf(TYPE_LOW), reports.map { it.type })
+        assertEquals(shown(), listOf(TYPE_QUIET), reports.map { it.type })
     }
 
     @Test fun `exactly the span length is a span, a quarter second less is not`() {
@@ -96,12 +96,12 @@ class ReceptionStallTest {
         assertEquals(40_000L, reports[1].startMs)
     }
 
-    @Test fun `the end of the connection reports a low span that was not silent`() {
+    @Test fun `the end of the connection reports a quiet span that was not silent`() {
         val d = ReceptionStall()
         d.rate(0, 20_000, 100)
         for (t in 20_500L until 30_000L step 1_500L) d.frames(t, t + 1, 1)
         d.end(30_000)
-        assertEquals(shown(), listOf(TYPE_LOW), reports.map { it.type })
+        assertEquals(shown(), listOf(TYPE_QUIET), reports.map { it.type })
         assertTrue(shown(), reports.single().message.endsWith(
             "${ReceptionStall.CONNECTION_ENDED}. ${ReceptionStall.NOT_TOLD_APART}"))
     }
@@ -114,10 +114,11 @@ class ReceptionStallTest {
         assertEquals(shown(), 0, reports.size)
     }
 
-    @Test fun `a silent span that reaches the bound restarts the rate without a report`() {
+    @Test fun `a silent gap that reaches the bound restarts the rate without a report`() {
         val d = ReceptionStall()
-        d.rate(0, 20_000, 400)
-        d.rate(20_000 + ReceptionStall.MAX_LOW_MS + 1_000, 20_000 + ReceptionStall.MAX_LOW_MS + 21_000, 100)   // a new rate
+        d.rate(0, 20_000, 800)                                            // 200 a quarter second: the old rate
+        // a new rate, below 25 % of the old one: kept, the old rate would make all of it a gap
+        d.rate(20_000 + ReceptionStall.MAX_LOW_MS + 1_000, 20_000 + ReceptionStall.MAX_LOW_MS + 21_000, 100)
         assertEquals(shown(), 0, reports.size)
         val t = 20_000 + ReceptionStall.MAX_LOW_MS + 21_000
         d.frames(t + 6_000, t + 6_010, 200)                               // 6 s of silence, ended by a burst
@@ -126,11 +127,11 @@ class ReceptionStallTest {
         assertTrue(shown(), reports.single().message.contains("(100 frames/s"))   // measured afresh
     }
 
-    @Test fun `a low span with frames that reaches the bound is reported still low`() {
+    @Test fun `a gap with frames that reaches the bound is a quiet span, still low`() {
         val d = ReceptionStall()
         d.rate(0, 20_000, 100)
         for (t in 20_500L until 20_000L + ReceptionStall.MAX_LOW_MS + 5_000 step 1_500L) d.frames(t, t + 1, 1)
-        assertEquals(shown(), listOf(TYPE_LOW), reports.map { it.type })
+        assertEquals(shown(), listOf(TYPE_QUIET), reports.map { it.type })
         assertEquals(20_000L, reports.single().startMs)
         assertTrue(shown(), reports.single().message.startsWith("300.00 s below"))
         assertTrue(shown(), reports.single().message.contains("still low after 300 s; the rate is measured afresh."))

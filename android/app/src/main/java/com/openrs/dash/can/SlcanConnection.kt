@@ -48,7 +48,7 @@ class SlcanConnection(
     private val debugSink: (String) -> Unit = { OpenRSDashApp.instance.pushDebugLine(it) },
     /** Wall clock for NRC attribution / re-probe timing — tests pass the virtual clock. */
     private val clock: () -> Long = System::currentTimeMillis,
-    /** Monotonic ms for measuring reception (#356): a wall-clock correction must not make or hide a low span. */
+    /** Monotonic ms for measuring reception (#356): a wall-clock correction must not make or hide a gap. */
     private val monotonicClock: () -> Long = { System.nanoTime() / 1_000_000L },
     /**
      * #316: an established connection dropped and the normal reconnect attempts have failed. Called once per dropped
@@ -344,7 +344,7 @@ class SlcanConnection(
                 val pcmRequests = PcmRequestLedger()
                 val framing = SlcanFraming()                     // #251: plain unless the first frames are timestamped
                 var framingNoted = false
-                val reception = ReceptionStall()                // #356: low reception on this connection, named in the session log
+                val reception = ReceptionStall()                // #356: gaps in reception on this connection, named in the session log
                 // Each span is logged at its start: the wall time now, less the monotonic time since the span began
                 fun logReception(reports: List<ReceptionStall.Report>) = reports.forEach { r ->
                     DiagnosticLogger.eventAt(r.type, r.message, clock() - (monotonicClock() - r.startMs))

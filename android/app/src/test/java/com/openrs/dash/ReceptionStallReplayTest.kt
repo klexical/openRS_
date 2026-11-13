@@ -11,13 +11,13 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * #356 — low reception on an open connection is named in the session log, once per span, through the production path
+ * #356 — a gap on an open connection is named in the session log, once per gap, through the production path
  * ([ReplayRun]: SlcanConnection's frame loop on virtual time). SYNTHETIC traffic at 100 frames/s, shaped like the issue's
- * capture: a clean rate, then frames in ones and twos about 1.5 s apart, then a catch-up burst and the normal rate. A span
- * that ends with a burst is a RECEPTION_STALL; one that ends otherwise is a RECEPTION_LOW; a connection that ends after
+ * capture: a clean rate, then frames in ones and twos about 1.5 s apart, then a catch-up burst and the normal rate. A gap
+ * that ends with a burst is a RECEPTION_STALL; one that ends otherwise is a QUIET_SPAN; a connection that ends after
  * total silence (a key-off over Wi-Fi ends that way) writes neither. Also: delays with catch-up bursts at about 90 % of
  * the rate, a short silence and a connection with no rate yet name nothing, and a wall-clock jump neither makes nor hides
- * a span (spans are measured on the monotonic clock).
+ * a gap (gaps are measured on the monotonic clock).
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ReceptionStallReplayTest {
@@ -36,7 +36,7 @@ class ReceptionStallReplayTest {
         generateSequence(fromMs) { it + 1_500 }.takeWhile { it < toMs }.map { ReplayRow(it, "RX", "t09080000000000000000") }.toList()
 
     private fun events(type: String) = DiagnosticLogger.sessionEvents.filter { it.type == type }
-    private fun reception() = DiagnosticLogger.sessionEvents.filter { it.type.startsWith("RECEPTION_") }
+    private fun reception() = DiagnosticLogger.sessionEvents.filter { it.type == "RECEPTION_STALL" || it.type == "QUIET_SPAN" }
     private fun shown() = reception().joinToString { "${it.type}: ${it.message}" }
 
     private fun TestScope.replay(rows: List<ReplayRow>, runMs: Long, wallClock: (Long) -> Long = { it }): ReplayRun =
@@ -64,19 +64,19 @@ class ReceptionStallReplayTest {
         assertEquals(shown(), 0, reception().size)
     }
 
-    @Test fun `a low span that was not silent and ends with the connection is a low span, not a stall`() = runTest {
+    @Test fun `a gap with frames that ends with the connection is a quiet span, not a stall`() = runTest {
         val run = replay(clean(0, 30_000) + trickle(30_300, 46_000), 46_000)
         run.transport.close()
         advanceTimeBy(1_000)
         assertEquals(shown(), 1, reception().size)
-        val msg = events("RECEPTION_LOW").single().message
+        val msg = events("QUIET_SPAN").single().message
         assertTrue(msg, msg.endsWith("the connection then ended. A quiet bus and lost reception are not told apart."))
     }
 
-    @Test fun `key-off then key-on on one connection is a low span, not a stall`() = runTest {
+    @Test fun `key-off then key-on on one connection is a quiet span, not a stall`() = runTest {
         replay(clean(0, 30_000) + clean(60_000, 75_000), 80_000)
         assertEquals(shown(), 1, reception().size)
-        val msg = events("RECEPTION_LOW").single().message
+        val msg = events("QUIET_SPAN").single().message
         assertTrue(msg, msg.startsWith("30.00 s below"))
         assertTrue(msg, msg.contains("the rate came back without a catch-up burst."))
     }
@@ -97,7 +97,7 @@ class ReceptionStallReplayTest {
         assertEquals(shown(), 0, reception().size)
     }
 
-    // ── The wall clock may jump (a time correction); spans are measured on the monotonic clock (#356 review C3) ─────────
+    // ── The wall clock may jump (a time correction); gaps are measured on the monotonic clock (#356 review C3) ─────────
 
     @Test fun `a wall clock jumping 8 s forward on a steady rate names nothing`() = runTest {
         replay(clean(0, 50_000), 55_000, wallClock = { t -> if (t >= 30_000) t + 8_000 else t })

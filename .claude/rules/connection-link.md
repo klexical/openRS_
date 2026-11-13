@@ -150,13 +150,14 @@ paths:
   "LC" after the frames stopped). Never show a state word ("ON", "ENGAGED", "ARMED"), and never take LC from 0x225 or the
   0x731 probe (DE00 / DE01 / DE02, undocumented DIDs at the keyless module's address): those are diagnostics only, with
   source and age. The cluster check of bit 2 and the window's timing are #289
-- **Low reception on an open connection fires no timeout; `ReceptionStall` names it (#356)** — frames can keep arriving
-  far below the connection's own rate while the link stays up, so neither a no-frame timer nor the transport's read
-  timeout ends it. `ReceptionStall` measures each quarter second of a monotonic clock (a wall-clock correction must not
-  make or hide a span) against the connection's own rate and writes one session event per low span, stamped at its start:
-  `RECEPTION_STALL` only when the span ends in a catch-up burst (held-up frames released at once are what lost reception
-  leaves), otherwise `RECEPTION_LOW` with a fixed sentence that a quiet bus and lost reception are not told apart. A
-  connection that ends after total silence (an ordinary key-off over Wi-Fi) writes neither. It names spans and prevents
-  none, and the app takes no WifiLock: the frames are dropped upstream of the app's socket, and the WifiManager reference
-  says the API 34+ lock is replaced by one active only with the screen on and the app in front. Thresholds are named constants in
-  `ReceptionStall.kt`; their values and status belong to #356 (`ReceptionStallTest`, `ReceptionStallReplayTest`)
+- **A gap on an open connection fires no timeout; `ReceptionStall` names it (#356)** — frames can keep arriving far
+  below the connection's own rate while the link stays up, so neither a no-frame timer nor the transport's read timeout
+  ends it. `ReceptionStall` measures each quarter second of a monotonic clock (a wall-clock correction must not make or
+  hide a gap) against the connection's own rate and writes one session event per gap, stamped at its start:
+  `RECEPTION_STALL` only when the gap ends in a burst of queued frames (held-up frames released at once are what lost
+  reception leaves), otherwise `QUIET_SPAN`, a name that claims no cause, with a fixed sentence that a quiet bus and lost
+  reception are not told apart. A connection that ends after total silence (an ordinary key-off over Wi-Fi) writes
+  neither. It names gaps and prevents none, and the app takes no WifiLock: the frames are dropped upstream of the app's
+  socket, and the WifiManager reference says the API 34+ lock is replaced by one active only with the screen on and the
+  app in front. Thresholds are named constants in `ReceptionStall.kt`; their values and status belong to #356
+  (`ReceptionStallTest`, `ReceptionStallReplayTest`)

@@ -3,18 +3,19 @@ package com.openrs.dash.can
 import java.util.Locale
 
 /**
- * Low reception on an open connection (#356). Frames are counted per quarter second of a monotonic clock and compared
- * with this connection's own rate: the median of its last [RATE_BUCKETS] quarter seconds that were not low, of any age.
- * A quarter second below [LOW_SHARE] of that rate is low; [STALL_MS] of low quarter seconds in a row are a low span.
- * Each span is reported once, from its start, with its length, the rate before it and the frames received in it:
+ * Gaps on an open connection (#356). Frames are counted per quarter second of a monotonic clock and compared with this
+ * connection's own rate: the median of its last [RATE_BUCKETS] quarter seconds that were not low, of any age. A quarter
+ * second below [LOW_SHARE] of that rate is low; [STALL_MS] of low quarter seconds in a row are a gap. Each gap is
+ * reported once, from its start, with its length, the rate before it and the frames received in it:
  *
- * - [TYPE_STALL] when a catch-up burst ends it: the quarter second that ends the span holds at least [BURST_FACTOR] times
+ * - [TYPE_STALL], a reception stall, when a catch-up burst ends it: the quarter second that ends the span holds at least [BURST_FACTOR] times
  *   the rate. Frames held up on the way and released at once are what lost reception leaves behind. In #356's capture
  *   that quarter second held about 5 times the rate.
- * - [TYPE_LOW] when it ends otherwise: the rate came back without a burst, the connection ended (a span that was low but
- *   not silent), or it was still low after [MAX_LOW_MS], when the rate is measured afresh. The text adds [NOT_TOLD_APART].
+ * - [TYPE_QUIET], a quiet span, when it ends otherwise: the rate came back without a burst, the connection ended (a gap
+ *   that was not silent), or it was still low after [MAX_LOW_MS], when the rate is measured afresh. The name claims no
+ *   cause, and the text adds [NOT_TOLD_APART].
  * - Nothing when the connection ends after at least [STALL_MS] of total silence (an ordinary key-off over Wi-Fi ends that
- *   way), or when a span that is silent reaches [MAX_LOW_MS]: the rate is then measured afresh without a report.
+ *   way), or when a gap that is silent reaches [MAX_LOW_MS]: the rate is then measured afresh without a report.
  *
  * Nothing is reported before the connection has a rate of its own, or while that rate is below [MIN_RATE_FPS]; until it
  * has one, only quarter seconds at or above that rate count. Pure: the caller passes a monotonic clock in ms; one
@@ -26,7 +27,7 @@ class ReceptionStall {
 
     companion object {
         const val TYPE_STALL = "RECEPTION_STALL"
-        const val TYPE_LOW = "RECEPTION_LOW"
+        const val TYPE_QUIET = "QUIET_SPAN"
 
         /** The counting interval. Lengths are reported to this precision. */
         const val BUCKET_MS = 250L
@@ -37,7 +38,7 @@ class ReceptionStall {
          */
         const val LOW_SHARE = 0.25
 
-        /** Low time in a row that makes a span: #356's acceptance test names every gap over 5 s. */
+        /** Low time in a row that makes a gap: #356's acceptance test names every gap over 5 s. */
         const val STALL_MS = 5_000L
 
         /** The rate is the median of this many quarter seconds that were not low (10 s of them). */
@@ -47,12 +48,12 @@ class ReceptionStall {
         const val MIN_RATE_FPS = 50
 
         /**
-         * The quarter second that ends a span marks a catch-up burst at this many times the rate or more. In #356's
+         * The quarter second that ends a gap marks a catch-up burst at this many times the rate or more. In #356's
          * capture it held about 5 times the rate; a bus waking at its normal rate holds about 1 time.
          */
         const val BURST_FACTOR = 2.0
 
-        /** A span still low after this long is closed and the rate measured afresh (a lasting drop, or a parked car). */
+        /** A gap still low after this long is closed and the rate measured afresh (a lasting drop, or a parked car). */
         const val MAX_LOW_MS = 300_000L
 
         const val CAME_BACK_WITH_BURST = "then %d frames in one quarter second (a catch-up burst)"
@@ -73,9 +74,9 @@ class ReceptionStall {
     private var lowFrames = 0
     private var lowRate = 0           // frames per quarter second before the span
     private var lowStart = 0L
-    private var lowHasFrame = false   // a frame arrived inside the span: it is not silent
+    private var lowHasFrame = false   // a frame arrived inside the gap: it is not silent
 
-    /** A frame was received at [nowMs] (monotonic). Returns the span that just ended, if any. */
+    /** A frame was received at [nowMs] (monotonic). Returns the gap that just ended, if any. */
     fun onFrame(nowMs: Long): List<Report> {
         if (!started) {
             started = true; bucketStart = nowMs - Math.floorMod(nowMs, BUCKET_MS); count = 1; lastFrameMs = nowMs
@@ -87,11 +88,11 @@ class ReceptionStall {
         return ended
     }
 
-    /** The connection ended at [nowMs] (monotonic). Returns every span not yet reported, including one under way. */
+    /** The connection ended at [nowMs] (monotonic). Returns every gap not yet reported, including one under way. */
     fun onEnd(nowMs: Long): List<Report> {
         if (!started) return emptyList()
         val ended = closeBucketsBefore(nowMs).toMutableList()    // the quarter second under way is not judged
-        if (lowBuckets * BUCKET_MS >= STALL_MS && nowMs - lastFrameMs < STALL_MS) ended += report(TYPE_LOW, CONNECTION_ENDED)
+        if (lowBuckets * BUCKET_MS >= STALL_MS && nowMs - lastFrameMs < STALL_MS) ended += report(TYPE_QUIET, CONNECTION_ENDED)
         resetSpan()
         started = false
         return ended
@@ -115,7 +116,7 @@ class ReceptionStall {
             lowFrames += n
             if (n > 0) lowHasFrame = true
             if (lowBuckets * BUCKET_MS >= MAX_LOW_MS) {
-                val r = if (lowHasFrame) report(TYPE_LOW, STILL_LOW.format(Locale.ROOT, MAX_LOW_MS / 1_000)) else null
+                val r = if (lowHasFrame) report(TYPE_QUIET, STILL_LOW.format(Locale.ROOT, MAX_LOW_MS / 1_000)) else null
                 resetSpan()
                 rateBuckets.clear()                          // measured afresh from the next traffic at the minimum rate
                 return r
@@ -124,7 +125,7 @@ class ReceptionStall {
         }
         val ended = if (lowBuckets * BUCKET_MS >= STALL_MS) {
             if (n >= BURST_FACTOR * lowRate) report(TYPE_STALL, CAME_BACK_WITH_BURST.format(Locale.ROOT, n))
-            else report(TYPE_LOW, CAME_BACK)
+            else report(TYPE_QUIET, CAME_BACK)
         } else null
         resetSpan()
         if (rateBuckets.size < RATE_BUCKETS && n * BUCKETS_PER_S < MIN_RATE_FPS) return ended   // a quiet start sets no rate
@@ -142,6 +143,6 @@ class ReceptionStall {
             lowBuckets * BUCKET_MS / 1_000.0, (LOW_SHARE * 100).toInt(), lowRate * BUCKETS_PER_S, RATE_BUCKETS,
             lowFrames, if (lowFrames == 1) "" else "s", how,
         )
-        return Report(type, lowStart, if (type == TYPE_LOW) "$facts. $NOT_TOLD_APART" else facts)
+        return Report(type, lowStart, if (type == TYPE_QUIET) "$facts. $NOT_TOLD_APART" else facts)
     }
 }
