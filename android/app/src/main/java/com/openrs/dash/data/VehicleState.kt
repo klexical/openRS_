@@ -148,7 +148,8 @@ data class VehicleState(
     val suspensionButtonPressed: Boolean = false, // 0x070 byte7 bit7: RS suspension button
     val driveModeButtonPressed: Boolean = false, // 0x305 byte4 bit2: drive mode toggle (held)
     val autoStartStopButtonPressed: Boolean = false, // 0x260 byte0 bit0: ASS button (held)
-    val escOffButtonPressed: Boolean? = null, // 0x260: unknown until a parked press capture identifies it (#304)
+    // unknown: neither 0x260 byte 5 candidate (0x10, 0x08) is it on the one car checked; bit not identified (#304)
+    val escOffButtonPressed: Boolean? = null,
     val engineStatus: Int = -1,            // 0x360 byte 0: 0=Idle, 2=Off, 183=Running, 186=Kill, 191=RecentStart
     val ignitionStatus: Int = -1,          // 0x0C8 byte2 bits 3-6: 0=KeyOut..7=Running..9=Cranking
 

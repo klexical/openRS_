@@ -144,9 +144,9 @@ object CanDecoder {
     const val ID_DRIVE_MODE_EXT = 0x420
 
     // ── Steering wheel button events (community-discovered) ────────────────
-    // 0x260: Auto Start Stop button (byte0 bit0). The ESC Off bit remains unknown (#304).
-    // This matches the firmware definitions and the community map's MSB-first bit numbering (#304);
-    // it has not yet been witnessed on a car.
+    // 0x260: Auto Start Stop button (byte0 bit0, mask 0x01), as in the firmware definitions and the community map's
+    // MSB-first bit numbering (#304); one parked press check saw it set for one press, on one car, engine off (#304).
+    // Neither 0x260 byte 5 bit thought to be ESC Off (0x10, 0x08) is it on that car; its bit is not identified (#304).
     const val ID_BUTTONS_260   = 0x260
 
     // 0x305: Drive Mode button (byte4 bit2). Bit = 1 while button is held.
@@ -637,7 +637,7 @@ object CanDecoder {
             ) else null
 
             // ── 0x260: Auto Start Stop button ─────────────────────────────────
-            // ASS button: byte0 bit0. The ESC Off bit remains unknown (#304).
+            // ASS button: byte0 bit0. ESC Off is not decoded (#304).
             ID_BUTTONS_260 -> if (n >= 6) state.copy(
                 autoStartStopButtonPressed = ubyte(data, 0) and 0x01 != 0,
                 lastUpdate = now
@@ -770,7 +770,7 @@ object CanDecoder {
         ID_FUEL_LEVEL   -> "fuelPct=${"%.1f".format(state.fuelLevelPct)} (0x380 Motorola)"
         ID_ODOMETER     -> "odometerKm=${state.odometerKm} engStatus=${state.engineStatus} (0x360 passive)"
         ID_VIN_MUX      -> if (state.vin.isEmpty()) "vin=(assembling)" else "vin=<masked>"   // goes into exports (#260); DIAG reads the value
-        ID_BUTTONS_260  -> "assBtn=${state.autoStartStopButtonPressed} escOffBtn=${state.escOffButtonPressed}"
+        ID_BUTTONS_260  -> "assBtn=${state.autoStartStopButtonPressed}"
         ID_DRIVE_MODE_BTN -> "modeBtn=${state.driveModeButtonPressed}"
         else            -> "(unknown id 0x%03X)".format(id)
     }
