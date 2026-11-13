@@ -30,8 +30,9 @@ decide() {   # decide <run> <reason> <base tag>
   echo "Gate: run=$1${2:+ — $2} (base $3, commit $SHA, $NAME)"
 }
 
-TODAY_RELEASE=$(jq -r --arg d "-nightly.$TODAY" '.[] | select(.tagName | endswith($d)) | .tagName' <<<"$RELEASES" | head -1)
-TODAY_TAG=$(git tag -l "android-v*-nightly.$TODAY" | head -1)
+# No `| head` under pipefail: a producer cut off by SIGPIPE would fail the script (test-release-workflows.rb checks it)
+TODAY_RELEASE=$(jq -r --arg d "-nightly.$TODAY" '[.[] | select(.tagName | endswith($d)) | .tagName] | first // empty' <<<"$RELEASES")
+TODAY_TAG=$(git tag -l "android-v*-nightly.$TODAY"); TODAY_TAG="${TODAY_TAG%%$'\n'*}"   # the first, if any
 if [ -n "$TODAY_RELEASE$TODAY_TAG" ]; then
   decide false "today ($TODAY UTC) already has a nightly: ${TODAY_RELEASE:-tag $TODAY_TAG}" "-"; exit 0
 fi

@@ -174,8 +174,10 @@ jobs:
           set -euo pipefail
           IMAGE="system-images;android-36;google_apis;x86_64"
           SDKM="$ANDROID_HOME/cmdline-tools/latest/bin"
-          yes | "$SDKM/sdkmanager" --install "$IMAGE" emulator platform-tools > /dev/null
-          echo no | "$SDKM/avdmanager" create avd -n nightly -k "$IMAGE" --force
+          # yes is killed by SIGPIPE once sdkmanager exits: under pipefail that would fail the step, hence (yes || true).
+          # sdkmanager's output stays in the log, so a package it cannot find is named there.
+          (yes || true) | "$SDKM/sdkmanager" --install "$IMAGE" emulator platform-tools
+          "$SDKM/avdmanager" create avd -n nightly -k "$IMAGE" --force <<<"no"   # "no" to a custom hardware profile
           nohup "$ANDROID_HOME/emulator/emulator" -avd nightly -no-window -no-audio -no-boot-anim -no-snapshot \
             -gpu swiftshader_indirect > emulator.log 2>&1 &
           "$ANDROID_HOME/platform-tools/adb" wait-for-device

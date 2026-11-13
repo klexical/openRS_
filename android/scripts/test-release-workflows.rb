@@ -369,6 +369,31 @@ check('launch and attest take the recipe\'s artifact, re-check its digest first,
   why
 end
 
+# Under `set -o pipefail` a pipeline fails when its producer is killed by SIGPIPE: `yes` always is once its reader exits,
+# and anything feeding `head` can be when the reader stops early. Workflow run lines and the release scripts that set
+# pipefail may pipe `yes` only as `(yes || true) |` and may not end a pipeline in `head` (#363 T5).
+def sigpipe_risks(text, where)
+  return [] unless text.include?('pipefail')
+  text.lines.each_with_index.flat_map do |l, i|
+    code = l.sub(/(^|\s)#.*$/, '')       # a comment, at the start of a line or after a space (not $#)
+    r = []
+    r << "#{where}:#{i + 1} pipes yes without || true: #{l.strip}" if code =~ /(^|[^(|])\byes\s*\|/ && code !~ /\(yes \|\| true\) \|/
+    r << "#{where}:#{i + 1} ends a pipeline in head: #{l.strip}" if code =~ /\|\s*head\b/ && code !~ /\|\|\s*true/
+    r
+  end
+end
+
+check('no pipeline under pipefail can fail on SIGPIPE (yes, head)') do
+  wf = all.flat_map do |f|
+    jobs(YAML.safe_load(File.read(f, encoding: 'UTF-8'))).flat_map do |id, j|
+      steps(j).flat_map { |x| sigpipe_risks(x['run'].to_s, "#{File.basename(f)} job #{id}") }
+    end
+  end
+  sh = Dir[File.join(ROOT, 'android', 'scripts', '*.sh')].reject { |f| File.basename(f).start_with?('test-') }.sort
+                                                         .flat_map { |f| sigpipe_risks(File.read(f, encoding: 'UTF-8'), File.basename(f)) }
+  wf + sh
+end
+
 abort 'release workflow checks: no case ran' if $ran.zero?
 if $failures.zero?
   puts "release workflow checks: all #{$ran} passed"
