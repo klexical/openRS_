@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # nightly-gate.sh <sha> <today YYYYMMDD> — the nightly workflow's gate (#363; SPEC "When it runs" 3). Run in a checkout of
-# the commit with full history and tags. Writes run=, reason=, sha=, date=, name=, tag=, base_tag= to $GITHUB_OUTPUT:
+# the commit with full history and tags. Writes run=, reason=, sha=, date=, name=, tag= to $GITHUB_OUTPUT (the base it
+# compared with is in the log; T6 adds it as an output when it needs it):
 #   - name <releaseBase>-nightly.<today> (releaseBase read from the commit's app/build.gradle.kts), tag android-v<name>;
 #   - run=false (a quiet success) when today's UTC date already has a nightly: a release the token can see, or a tag;
 #   - run=false when no file under android/ differs between the commit and base_tag: the newest PUBLISHED nightly's tag
@@ -8,7 +9,9 @@
 #   - else run=true.
 # With a read-only token GitHub lists no draft releases ("Only users with push access will receive listings for draft
 # releases"), so in dry-run mode a draft for today is not seen; T6, which creates drafts, owns that check.
-# Fails the run (no decision written) on bad input, a failed release lookup, an unreadable base or a missing base tag.
+# Fails the run (no decision written) on bad input, a failed release lookup or output that is not a JSON list (an empty
+# answer must not read as "no nightly yet"), an unreadable base or a missing base tag. The list is read up to 1000
+# releases and sorted here by the date in each tag, so nothing depends on the order GitHub returns.
 set -euo pipefail
 fail() { echo "::error::$*"; exit 1; }
 [ $# -eq 2 ] || fail "usage: nightly-gate.sh <sha> <today YYYYMMDD>"
@@ -22,11 +25,12 @@ BASE=$(git show "$SHA:android/app/build.gradle.kts" | sed -n 's/^val releaseBase
 [[ "$BASE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "releaseBase '$BASE' in $SHA:android/app/build.gradle.kts is not X.Y.Z"
 NAME="$BASE-nightly.$TODAY"; TAG="android-v$NAME"
 
-RELEASES=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft) || fail "the release list could not be read"
+RELEASES=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName,isDraft) || fail "the release list could not be read"
+jq -e 'type == "array"' >/dev/null 2>&1 <<<"$RELEASES" || fail "the release list is not a JSON list (empty, or an error), so the gate cannot decide"
 echo "Releases read: $(jq length <<<"$RELEASES") (a read-only token is shown no draft releases)"
 
 decide() {   # decide <run> <reason> <base tag>
-  printf 'run=%s\nreason=%s\nsha=%s\ndate=%s\nname=%s\ntag=%s\nbase_tag=%s\n' "$1" "$2" "$SHA" "$TODAY" "$NAME" "$TAG" "$3" >> "$GITHUB_OUTPUT"
+  printf 'run=%s\nreason=%s\nsha=%s\ndate=%s\nname=%s\ntag=%s\n' "$1" "$2" "$SHA" "$TODAY" "$NAME" "$TAG" >> "$GITHUB_OUTPUT"
   echo "Gate: run=$1${2:+ — $2} (base $3, commit $SHA, $NAME)"
 }
 

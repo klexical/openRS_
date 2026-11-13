@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # release-apk.sh <sha> <name> <tag> <nightly date or ""> — the build step of the shared release recipe,
 # .github/workflows/release-apk.yml (#363), which ci.yml's release-apk job calls for an android-v RC or stable tag (no
-# date); the nightly workflow #363 adds will call it with its UTC date. Checked before Gradle runs: <sha> is a full
+# date) and nightly.yml calls with its UTC date. Checked before Gradle runs: <sha> is a full
 # 40-character commit SHA and is the commit checked out here (a branch name would build whatever it points at); the tag
 # is android-v<name>; a date is eight digits and given exactly when the name is <base>-nightly.<date>. Then assembleRelease, with -PnightlyDate only for a nightly (the build
 # refuses an empty one, #362); the output folder must hold exactly one APK, openRS_v<name>.apk; verify-release.sh checks

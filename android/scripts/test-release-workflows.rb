@@ -51,6 +51,9 @@ def cond(job)
 end
 
 RECIPE = './.github/workflows/release-apk.yml'
+# One artifact per run, named by the run id only: "Re-run failed jobs" keeps the run id and moves the attempt number,
+# so a re-run downloader still finds the recipe's artifact; a full re-run's recipe overwrites it (#363 T5 review C7)
+ARTIFACT = 'release-apk-${{ github.run_id }}'
 # The one condition of every job on CI's tag path: an android-v tag that is not a nightly — compared whole, never as a part
 TAG_IF = "startsWith(github.ref, 'refs/tags/android-v') && !contains(github.ref_name, '-nightly.')"
 RECIPE_IF = "${{ !startsWith(github.event_name, 'pull_request') }}"
@@ -182,9 +185,10 @@ check("publish-release downloads the artifact under the recipe's own upload name
   up = jobs(load('release-apk.yml')).values.flat_map { |j| steps(j) }.select { |s| s['uses'].to_s.start_with?('actions/upload-artifact@') }
   down = steps(jobs(ci)['publish-release'] || {}).select { |s| s['uses'].to_s.start_with?('actions/download-artifact@') }
   next "#{up.size} uploads in the recipe and #{down.size} downloads in publish-release, expected 1 each" unless up.size == 1 && down.size == 1
-  name = 'release-apk-${{ github.run_id }}-${{ github.run_attempt }}'
+  name = ARTIFACT
   why = []
   why << "the recipe uploads #{up.first.dig('with', 'name').inspect}, expected #{name}" unless up.first.dig('with', 'name') == name
+  why << 'the recipe does not overwrite an earlier attempt\'s artifact (overwrite: true)' unless up.first.dig('with', 'overwrite') == true
   why << "publish-release downloads #{down.first.dig('with', 'name').inspect}, expected #{name}" unless down.first.dig('with', 'name') == name
   why << "the artifact is kept #{up.first.dig('with', 'retention-days').inspect} days, expected 1" unless up.first.dig('with', 'retention-days') == 1
   why
@@ -225,14 +229,31 @@ end
 
 # ── nightly.yml (#363 T5): the nightly in dry-run mode ────────────────────────────────────────────────────────────────
 GATE_IF = "needs.gate.outputs.run == 'true'"
-NIGHTLY_JOBS = {   # job => [condition, permissions], exactly; while PUBLISH is false no job may write contents
-  'gate' => ['', { 'contents' => 'read' }],
-  'checks' => [GATE_IF, { 'contents' => 'read' }],
-  'release' => [GATE_IF, { 'contents' => 'read' }],
-  'launch' => [GATE_IF, { 'contents' => 'read' }],
-  'attest' => [GATE_IF, { 'contents' => 'read', 'id-token' => 'write', 'attestations' => 'write' }]
+NIGHTLY_JOBS = {   # job => [condition, permissions, needs, timeout-minutes], exactly; while PUBLISH is false no job writes contents
+  'mode' => ['', {}, [], 5],
+  'gate' => ['', { 'contents' => 'read' }, [], 10],
+  'checks' => [GATE_IF, { 'contents' => 'read' }, %w[gate], 45],
+  'release' => [GATE_IF, { 'contents' => 'read' }, %w[gate checks], nil],   # a workflow call: the recipe's own job has 45
+  'launch' => [GATE_IF, { 'contents' => 'read' }, %w[gate release], 15],
+  'attest' => [GATE_IF, { 'contents' => 'read', 'id-token' => 'write', 'attestations' => 'write' }, %w[gate release launch], 10]
 }.freeze
-ARTIFACT = 'release-apk-${{ github.run_id }}-${{ github.run_attempt }}'
+# The only actions a release workflow may use: nothing else can reach the releases API by an action (#363 T5 review C2)
+ALLOWED_USES = {
+  'nightly.yml' => %w[actions/checkout@v4 actions/setup-java@v4 actions/download-artifact@v4 actions/attest-build-provenance@v2] + [RECIPE],
+  'release-apk.yml' => %w[actions/checkout@v4 actions/setup-java@v4 actions/upload-artifact@v4]
+}.freeze
+DIGEST_RUN = <<~'SH'
+  set -euo pipefail
+  FILE="openRS_v${NAME}.apk"
+  [[ "$SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::the recipe reported no SHA-256 ('$SHA256')"; exit 1; }
+  [ "$(ls release-apk)" = "$FILE" ] || { echo "::error::the artifact does not hold exactly $FILE"; exit 1; }
+  echo "$SHA256  release-apk/$FILE" | sha256sum -c -
+SH
+VERIFY_RUN = <<~'SH'
+  gh attestation verify "release-apk/openRS_v${NAME}.apk" --repo "$GITHUB_REPOSITORY" \
+    --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/nightly.yml"
+  echo "Dry run (PUBLISH is $PUBLISH): stopped after the attestation, before any draft." >> "$GITHUB_STEP_SUMMARY"
+SH
 nightly = nil
 check('nightly.yml parses') { nightly = load('nightly.yml'); nil }
 
@@ -255,45 +276,71 @@ check('nightly.yml is in dry-run mode: PUBLISH is false and no job can write con
     job = jobs(nightly)[id] or next
     why << "job #{id} runs under #{cond(job).inspect}, expected #{c.inspect}" unless cond(job) == c
     why << "job #{id} has permissions #{job['permissions'].inspect}, expected #{perms.inspect}" unless job['permissions'] == perms
-  end
-  all.each do |f|
-    w = YAML.safe_load(File.read(f))
-    jobs(w).each { |id, j| why << "#{File.basename(f)} job #{id} writes contents" if j['permissions'].is_a?(Hash) && j['permissions']['contents'] == 'write' && f.end_with?('nightly.yml') }
-  end
-  st = jobs(nightly).values.flat_map { |j| steps(j) }
-  st.each do |x|
-    u = x['uses'].to_s; r = x['run'].to_s
-    why << "a step publishes: #{u}" if u.start_with?('softprops/')
-    why << "a step publishes: #{r.lines.first.strip}" if r =~ /\bgh release\b|\bgit (push|tag)\b|\bgh api\b/
+    why << "job #{id} writes contents" if job['permissions'].is_a?(Hash) && job['permissions']['contents'] == 'write'
   end
   why
 end
 
-check("the gate's publish output is the PUBLISH constant and nothing else") do
-  gate = jobs(nightly)['gate'] || {}
-  st = steps(gate).find { |x| x['id'] == 'mode' }
+check('no step can publish: only allowed actions, and no call to the releases API by any route') do
   why = []
-  why << "gate outputs.publish is #{gate.dig('outputs', 'publish').inspect}" unless gate.dig('outputs', 'publish') == '${{ steps.mode.outputs.publish }}'
-  next why << 'no step with id mode' if st.nil?
-  why << "the mode step runs #{st['run'].inspect}" unless st['run'].to_s.strip == 'echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"'
-  why << 'the mode step sets its own env' if st.key?('env')
-  why << 'the gate job sets its own env' if gate.key?('env')
+  ALLOWED_USES.each do |f, allowed|
+    jobs(load(f)).each do |id, job|
+      used = steps(job).map { |x| x['uses'] }.compact + [job['uses']].compact
+      (used - allowed).each { |u| why << "#{f} job #{id} uses #{u}" }
+      steps(job).each do |x|
+        r = x['run'].to_s
+        why << "#{f} job #{id} reaches the releases API: #{r.lines.first.strip}" if r =~ /\b(curl|wget|gh\s+api|gh\s+release)\b|\/releases\b|\bgit\s+(push|tag)\b/
+      end
+    end
+  end
   why
 end
 
-check("the gate takes today's UTC date once, first, and checks out staging's tip only") do
+check('jobs run in order, fail on any failure, and every job has its timeout') do
+  why = []
+  NIGHTLY_JOBS.each do |id, (_, _, needs, timeout)|
+    job = jobs(nightly)[id] or next
+    why << "job #{id} needs #{job['needs'].inspect}, expected #{needs.inspect}" unless Array(job['needs']) == needs
+    why << "job #{id} has timeout-minutes #{job['timeout-minutes'].inspect}, expected #{timeout.inspect}" unless job['timeout-minutes'] == timeout
+    why << "job #{id} continues on error" if job.key?('continue-on-error')
+    steps(job).each do |x|
+      why << "job #{id} step #{x['name'].inspect} continues on error" if x.key?('continue-on-error')
+      why << "job #{id} step #{x['name'].inspect} has its own condition" if x.key?('if')
+    end
+  end
+  rjob = jobs(load('release-apk.yml'))['build'] || {}
+  why << "the recipe's job has timeout-minutes #{rjob['timeout-minutes'].inspect}, expected 45" unless rjob['timeout-minutes'] == 45
+  why
+end
+
+check('the publish output comes from the mode job alone, which checks out nothing and runs no repository code') do
+  mode = jobs(nightly)['mode'] || {}
+  want_steps = [{ 'name' => 'Mode', 'id' => 'mode', 'run' => 'echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"' }]
+  why = []
+  why << "mode's steps are #{steps(mode).inspect}" unless steps(mode).map { |x| x.merge('run' => x['run'].to_s.strip) } == want_steps
+  why << "mode's outputs are #{mode['outputs'].inspect}" unless mode['outputs'] == { 'publish' => '${{ steps.mode.outputs.publish }}' }
+  why << 'mode sets env' if mode.key?('env')
+  others = jobs(nightly).reject { |id, _| id == 'mode' }.select { |_, j| (j['outputs'] || {}).key?('publish') }.keys
+  why << "other jobs output publish: #{others.inspect}" unless others.empty?
+  why
+end
+
+check("the gate takes today's UTC date once, first, records staging's tip, and outputs only its decision") do
   gate = jobs(nightly)['gate'] || {}
   st = steps(gate)
   why = []
   why << "the first step runs #{st.first && st.first['run'].inspect}" unless st.first && st.first['id'] == 'today' && st.first['run'].to_s.strip == 'echo "date=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"'
-  co = st.select { |x| x['uses'].to_s.start_with?('actions/checkout@') }
-  why << "gate checkouts #{co.map { |x| x['with'] }.inspect}" unless co.size == 1 && co.first['with'] == { 'ref' => 'staging', 'fetch-depth' => 0, 'persist-credentials' => false }
+  co = st.index { |x| x['uses'].to_s.start_with?('actions/checkout@') }
+  why << "gate checkouts #{st.select { |x| x['uses'].to_s.start_with?('actions/checkout@') }.map { |x| x['with'] }.inspect}" unless co && st.count { |x| x['uses'].to_s.start_with?('actions/checkout@') } == 1 && st[co]['with'] == { 'ref' => 'staging', 'fetch-depth' => 0, 'persist-credentials' => false }
+  h = co && st[co + 1]
+  why << "the step after the checkout is #{h.inspect}, expected the commit recorded" unless h && h['id'] == 'head' && h['run'].to_s.strip == 'echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"'
   g = st.find { |x| x['id'] == 'gate' }
   why << "the gate step runs #{g && g['run'].inspect}" unless g && g['run'].to_s.strip == 'bash android/scripts/nightly-gate.sh "$SHA" "$TODAY"'
   want = { 'GH_TOKEN' => '${{ github.token }}', 'SHA' => '${{ steps.head.outputs.sha }}', 'TODAY' => '${{ steps.today.outputs.date }}' }
   why << "the gate step's env #{g && g['env'].inspect}" unless g && g['env'] == want
-  outs = %w[run reason sha date name tag base_tag].map { |k| [k, "${{ steps.gate.outputs.#{k} }}"] }.to_h.merge('publish' => '${{ steps.mode.outputs.publish }}')
+  outs = %w[run reason sha date name tag].map { |k| [k, "${{ steps.gate.outputs.#{k} }}"] }.to_h
   why << "gate outputs #{gate['outputs'].inspect}" unless gate['outputs'] == outs
+  why << "the gate has #{st.size} steps, expected 4" unless st.size == 4
   why
 end
 
@@ -319,12 +366,16 @@ check('every step that runs a repository script or Gradle comes after a checkout
   end
 end
 
-check("the checks job runs every Gradle and script line of ci.yml's build and lint jobs") do
-  ci_runs = %w[build lint].flat_map { |id| steps(jobs(ci)[id] || {}).map { |x| x['run'].to_s } }
-             .flat_map(&:lines).map(&:strip).select { |l| l =~ %r{gradlew|scripts/} }
-             .map { |l| l.sub(/^chmod \+x gradlew && /, '') }
-  mine = steps(jobs(nightly)['checks'] || {}).map { |x| x['run'].to_s }.flat_map(&:lines).map(&:strip)
-  ci_runs.reject { |l| mine.include?(l) }.map { |l| "checks does not run: #{l}" }
+# The commands of some jobs' run lines, one per entry: lines split at `&&`, blank lines dropped
+def commands(job_list)
+  job_list.flat_map { |j| steps(j || {}).map { |x| x['run'].to_s } }.flat_map(&:lines)
+          .flat_map { |l| l.split('&&') }.map(&:strip).reject(&:empty?).uniq.sort
+end
+
+check("the checks job runs exactly the commands of ci.yml's build and lint jobs") do
+  ci_cmds = commands([jobs(ci)['build'], jobs(ci)['lint']])
+  mine = commands([jobs(nightly)['checks']])
+  (ci_cmds - mine).map { |c| "checks does not run: #{c}" } + (mine - ci_cmds).map { |c| "ci.yml's build and lint do not run: #{c}" }
 end
 
 check('the release job calls the recipe for the gate\'s commit, name, tag and date') do
@@ -335,35 +386,46 @@ check('the release job calls the recipe for the gate\'s commit, name, tag and da
   why << "uses #{job['uses'].inspect}" unless job['uses'] == RECIPE
   why << "with #{job['with'].inspect}" unless job['with'] == want
   why << "secrets #{job['secrets'].inspect}" unless job['secrets'] == 'inherit'
-  why << "needs #{job['needs'].inspect}" unless Array(job['needs']) == %w[gate checks]
   others = jobs(nightly).reject { |id, _| id == 'release' }.select { |_, j| secret_bearing?(j) }.keys
   why << "other jobs hold repository secrets: #{others.inspect}" unless others.empty?
   why
 end
 
-check('launch and attest take the recipe\'s artifact, re-check its digest first, then only check or attest') do
+check('launch and attest take the run\'s one artifact, re-check its digest exactly, then only check or attest') do
   why = []
-  { 'launch' => %w[bash], 'attest' => %w[actions/attest-build-provenance gh] }.each do |id, _|
+  %w[launch attest].each do |id|
     st = steps(jobs(nightly)[id] || {})
     d = st.index { |x| x['uses'].to_s.start_with?('actions/download-artifact@') }
     c = st.index { |x| x['run'].to_s.include?('sha256sum -c') }
     next why << "job #{id}: download #{d.inspect}, digest check #{c.inspect}" if d.nil? || c.nil?
-    why << "job #{id} downloads #{st[d].dig('with', 'name').inspect}" unless st[d].dig('with', 'name') == ARTIFACT
+    why << "job #{id} downloads #{st[d].dig('with', 'name').inspect}, expected #{ARTIFACT}" unless st[d].dig('with', 'name') == ARTIFACT
     why << "job #{id}: the digest check comes before the download" unless c > d
+    why << "job #{id}: the digest check is not exactly the agreed one" unless st[c]['run'] == DIGEST_RUN
     env = st[c]['env'] || {}
     why << "job #{id}: digest check env #{env.inspect}" unless env == { 'SHA256' => '${{ needs.release.outputs.sha256 }}', 'NAME' => '${{ needs.gate.outputs.name }}' }
-    r = st[c]['run'].to_s
-    ['set -euo pipefail', 'FILE="openRS_v${NAME}.apk"', '[[ "$SHA256" =~ ^[0-9a-f]{64}$ ]]', '[ "$(ls release-apk)" = "$FILE" ]'].each do |must|
-      why << "job #{id}: the digest check lacks #{must}" unless r.include?(must)
-    end
     rest = st[(c + 1)..-1]
     if id == 'launch'
       why << "launch after the check runs #{rest.map { |x| x['name'] }.inspect}" unless rest.map { |x| x['run'].to_s.lines.last.to_s.strip }.last == 'bash android/scripts/launch-check.sh "release-apk/openRS_v${NAME}.apk" 10'
     else
-      a = rest.index { |x| x['uses'].to_s.start_with?('actions/attest-build-provenance@') }
-      v = rest.index { |x| x['run'].to_s.include?('gh attestation verify') }
-      why << "attest: attestation #{a.inspect}, verification #{v.inspect}" unless a && v && v > a
-      why << "attest attests #{rest[a].dig('with', 'subject-path').inspect}" if a && rest[a].dig('with', 'subject-path') != 'release-apk/${{ needs.gate.outputs.name }}'.sub('${{ needs.gate.outputs.name }}', 'openRS_v${{ needs.gate.outputs.name }}.apk')
+      want = %w[actions/attest-build-provenance@v2 verify]
+      got = rest.map { |x| x['uses'] || (x['run'] == VERIFY_RUN ? 'verify' : x['run'].to_s.lines.first.to_s.strip) }
+      why << "attest after the check: #{got.inspect}, expected the attestation, then exactly the agreed verification" unless got == want
+      why << "attest attests #{rest[0].dig('with', 'subject-path').inspect}" unless rest[0] && rest[0].dig('with', 'subject-path') == 'release-apk/openRS_v${{ needs.gate.outputs.name }}.apk'
+    end
+  end
+  why
+end
+
+check('no artifact name carries the attempt number, and every upload overwrites within its run') do
+  why = []
+  all.each do |f|
+    text = File.read(f, encoding: 'UTF-8')
+    why << "#{File.basename(f)} names an artifact by the attempt" if text =~ /release-apk-[^\n]*run_attempt/
+    jobs(YAML.safe_load(text)).each do |id, job|
+      steps(job).select { |x| x['uses'].to_s.start_with?('actions/upload-artifact@') && x.dig('with', 'name').to_s.start_with?('release-apk') }.each do |x|
+        why << "#{File.basename(f)} job #{id} uploads #{x.dig('with', 'name').inspect} without overwrite" unless x.dig('with', 'overwrite') == true
+        why << "#{File.basename(f)} job #{id} keeps the APK #{x.dig('with', 'retention-days').inspect} days, expected 1" unless x.dig('with', 'retention-days') == 1
+      end
     end
   end
   why

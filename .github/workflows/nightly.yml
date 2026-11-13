@@ -28,6 +28,19 @@ env:
   PUBLISH: 'false'            # dry-run mode (#363 T5): flipping it is T7's one small change, after two green dry-run nights
 
 jobs:
+  # The publish output, from this file's PUBLISH alone: no checkout, no repository code, so nothing on staging can set it
+  mode:
+    name: Mode (dry run or publish)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    outputs:
+      publish: ${{ steps.mode.outputs.publish }}
+    steps:
+      - name: Mode
+        id: mode
+        run: echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
+
   gate:
     name: Gate (staging's tip, today's UTC date)
     runs-on: ubuntu-latest
@@ -41,8 +54,6 @@ jobs:
       date: ${{ steps.gate.outputs.date }}
       name: ${{ steps.gate.outputs.name }}
       tag: ${{ steps.gate.outputs.tag }}
-      base_tag: ${{ steps.gate.outputs.base_tag }}
-      publish: ${{ steps.mode.outputs.publish }}
     steps:
       - name: Today's UTC date, taken once
         id: today
@@ -68,10 +79,6 @@ jobs:
           SHA: ${{ steps.head.outputs.sha }}
           TODAY: ${{ steps.today.outputs.date }}
         run: bash android/scripts/nightly-gate.sh "$SHA" "$TODAY"
-
-      - name: Mode
-        id: mode
-        run: echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
 
   checks:
     name: Test and lint (the gate's commit)
@@ -148,7 +155,7 @@ jobs:
       - name: Download the nightly APK
         uses: actions/download-artifact@v4
         with:
-          name: release-apk-${{ github.run_id }}-${{ github.run_attempt }}
+          name: release-apk-${{ github.run_id }}
           path: release-apk
 
       - name: Check the downloaded APK
@@ -180,8 +187,18 @@ jobs:
           "$SDKM/avdmanager" create avd -n nightly -k "$IMAGE" --force <<<"no"   # "no" to a custom hardware profile
           nohup "$ANDROID_HOME/emulator/emulator" -avd nightly -no-window -no-audio -no-boot-anim -no-snapshot \
             -gpu swiftshader_indirect > emulator.log 2>&1 &
-          "$ANDROID_HOME/platform-tools/adb" wait-for-device
-          until [ "$("$ANDROID_HOME/platform-tools/adb" shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; do sleep 2; done
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          BOOT_LIMIT_S=420                      # its own limit inside the job's 15 minutes, so a failed boot says so
+          booted=no
+          for _ in $(seq 1 $((BOOT_LIMIT_S / 5))); do
+            [ "$(timeout 10 "$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ] && { booted=yes; break; }
+            sleep 5
+          done
+          if [ "$booted" != yes ]; then
+            echo "::error::the emulator did not finish booting within ${BOOT_LIMIT_S} s; the last lines of its log follow"
+            tail -n 60 emulator.log || true
+            exit 1
+          fi
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
 
       - name: Launch check
@@ -203,7 +220,7 @@ jobs:
       - name: Download the nightly APK
         uses: actions/download-artifact@v4
         with:
-          name: release-apk-${{ github.run_id }}-${{ github.run_attempt }}
+          name: release-apk-${{ github.run_id }}
           path: release-apk
 
       - name: Check the downloaded APK

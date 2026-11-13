@@ -55,7 +55,9 @@ is() { [ "$(out "$1")" = "$2" ] || why "$1 is '$(out "$1")', expected '$2'"; }
 expect_run() {
   WHY=""; run "$2" "$D"
   [ "$CODE" -eq 0 ] || why "exit $CODE"
-  is run true; is sha "$2"; is date "$D"; is name "$NAME"; is tag "$TAG"; is base_tag "$3"
+  is run true; is sha "$2"; is date "$D"; is name "$NAME"; is tag "$TAG"
+  [[ "$OUT" == *"(base $3,"* ]] || why "the log does not name the base $3"
+  [ -z "$(out base_tag)" ] || why "a base_tag output was written (T6 adds it when it needs it)"
   check "$1"
 }
 # expect_skip <case> <sha> <reason text>: the gate says skip (a quiet success) and why
@@ -114,6 +116,15 @@ WHY=""; run "$C1" "$D"; [[ "$OUT" == *"draft"* ]] || why "the log does not say d
 expect_fail "a commit that is not a full SHA"     "40"            staging "$D"
 expect_fail "a date that is not eight digits"     "YYYYMMDD"      "$C1" 2026111
 expect_fail "a failed release lookup"             "release list"  "$C1" "$D" FAKE_GH_FAIL=1
+releases ''
+expect_fail "an empty release list output"        "release list"  "$C1" "$D"
+releases 'HTTP 502 Bad Gateway'
+expect_fail "release list output that is not JSON" "release list" "$C1" "$D"
+releases '{"message":"API rate limit exceeded"}'
+expect_fail "an error object instead of a list"   "release list"  "$C1" "$D"
+releases '[{"tagName":"android-v2.2.7-rc.8","isDraft":false}]'
+WHY=""; run "$C1" "$D"; [[ "$(cat "$WORK/gh-args")" == *"--limit 1000"* ]] || why "gh args '$(cat "$WORK/gh-args")'"
+check "the release list is read up to 1000 releases"
 releases '[]'
 g tag -d android-v2.2.7-rc.8 >/dev/null
 expect_fail "no published nightly and no rc.8 tag" "android-v2.2.7-rc.8" "$C1" "$D"
