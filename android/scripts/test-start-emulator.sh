@@ -121,7 +121,7 @@ WHY=""; run 10 FAKE_CREATE=xdg
 [ "$CODE" -ne 0 ] || why "exit 0"
 has "$WORK/home/.config/.android/avd/nightly.ini"
 [[ "$(calls)" != *"emulator -avd"* ]] || why "the emulator was started"
-check "an AVD written to the XDG folder anyway stops the start, and the failure lists that .ini (dry run 1's case)"
+check "an AVD written to the XDG folder anyway stops the start, and the failure lists that .ini (the tools' default on the runner)"
 
 # ── An emulator that exits: the wait ends at once, with its log ────────────────────────────────────────────────────────
 WHY=""; run 20 FAKE_EMU=exit
