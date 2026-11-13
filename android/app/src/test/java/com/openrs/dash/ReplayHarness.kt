@@ -63,6 +63,8 @@ internal class ReplayRun(
     /** The wall clock the connection reads, from virtual time: a test may make it jump (#356); default = virtual time. */
     wallClock: (Long) -> Long = { it },
 ) {
+    /** Gaps the connection logged: type, text, wall time of the start (#356). */
+    val gaps = mutableListOf<Triple<String, String, Long>>()
     val state = MutableStateFlow(VehicleState(isConnected = true))
     val transport = ReplayTransport(scope.backgroundScope, rows)
     private val link = LinkOwnership()
@@ -71,6 +73,7 @@ internal class ReplayRun(
         transportFactory = { transport }, maxRetries = 1, rpmProvider = { rpm }, mapPoll = mapPoll,
         ioDispatcher = StandardTestDispatcher(scope.testScheduler), debugSink = {}, clock = { wallClock(scope.testScheduler.currentTime) },
         monotonicClock = { scope.testScheduler.currentTime },
+        gapLog = { type, message, wallMs -> gaps += Triple(type, message, wallMs) },
     )
 
     init {

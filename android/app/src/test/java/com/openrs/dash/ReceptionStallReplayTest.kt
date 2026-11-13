@@ -21,7 +21,7 @@ import org.junit.Test
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ReceptionStallReplayTest {
-    @Before fun session() { DiagnosticLogger.sessionStart("test", 0, prefs = null) }
+    @Before fun session() { DiagnosticLogger.sessionStart("test", 0, prefs = null) }   // the connection logs other events
 
     private val ids = listOf("090", "130", "0F8", "160", "180")
 
@@ -35,25 +35,28 @@ class ReceptionStallReplayTest {
     private fun trickle(fromMs: Long, toMs: Long) =
         generateSequence(fromMs) { it + 1_500 }.takeWhile { it < toMs }.map { ReplayRow(it, "RX", "t09080000000000000000") }.toList()
 
-    private fun events(type: String) = DiagnosticLogger.sessionEvents.filter { it.type == type }
-    private fun reception() = DiagnosticLogger.sessionEvents.filter { it.type == "RECEPTION_STALL" || it.type == "QUIET_SPAN" }
-    private fun shown() = reception().joinToString { "${it.type}: ${it.message}" }
+    /** The gaps the last replay's connection logged: (type, text, wall time of the start). */
+    private var run: ReplayRun? = null
+    private fun reception() = run!!.gaps
+    private fun events(type: String) = reception().filter { it.first == type }
+    private fun shown() = reception().joinToString { "${it.first}: ${it.second}" }
 
     private fun TestScope.replay(rows: List<ReplayRow>, runMs: Long, wallClock: (Long) -> Long = { it }): ReplayRun =
-        ReplayRun(this, rows.sortedBy { it.atMs }, wallClock = wallClock).also { advanceTimeBy(runMs) }
+        ReplayRun(this, rows.sortedBy { it.atMs }, wallClock = wallClock).also { run = it; advanceTimeBy(runMs) }
 
     @Test fun `a 10 s trickle ended by a catch-up burst is one stall with its length`() = runTest {
         replay(clean(0, 30_000) + trickle(30_300, 40_000) + frames(40_000, 40_050, 200) + clean(40_050, 50_000), 55_000)
         assertEquals(shown(), 1, reception().size)
-        val msg = events("RECEPTION_STALL").single().message
+        val (_, msg, wallMs) = events("RECEPTION_STALL").single()
         assertTrue(msg, msg.startsWith("10.00 s below 25 % of this connection's rate (100 frames/s"))
         assertTrue(msg, msg.contains("; 7 frames in it; then "))
-        assertTrue(msg, msg.endsWith("frames in one quarter second (a catch-up burst)"))
+        assertTrue(msg, msg.endsWith("frames in the half second after it (a catch-up burst)"))
+        assertEquals("logged at the gap's start", 30_000L, wallMs)
     }
 
     @Test fun `a stall that starts inside a second is measured to the quarter second`() = runTest {
         replay(clean(0, 30_400) + trickle(30_800, 41_000) + frames(41_000, 41_050, 200) + clean(41_050, 50_000), 55_000)
-        val msg = events("RECEPTION_STALL").single().message
+        val msg = events("RECEPTION_STALL").single().second
         assertTrue(msg, msg.startsWith("10.50 s below"))
     }
 
@@ -69,14 +72,14 @@ class ReceptionStallReplayTest {
         run.transport.close()
         advanceTimeBy(1_000)
         assertEquals(shown(), 1, reception().size)
-        val msg = events("QUIET_SPAN").single().message
+        val msg = events("QUIET_SPAN").single().second
         assertTrue(msg, msg.endsWith("the connection then ended. A quiet bus and lost reception are not told apart."))
     }
 
     @Test fun `key-off then key-on on one connection is a quiet span, not a stall`() = runTest {
         replay(clean(0, 30_000) + clean(60_000, 75_000), 80_000)
         assertEquals(shown(), 1, reception().size)
-        val msg = events("QUIET_SPAN").single().message
+        val msg = events("QUIET_SPAN").single().second
         assertTrue(msg, msg.startsWith("30.00 s below"))
         assertTrue(msg, msg.contains("the rate came back without a catch-up burst."))
     }
@@ -108,5 +111,7 @@ class ReceptionStallReplayTest {
         replay(clean(0, 31_000) + trickle(31_300, 41_000) + frames(41_000, 41_050, 200) + clean(41_050, 55_000), 60_000,
             wallClock = { t -> if (t >= 31_000) t - 8_000 else t })
         assertEquals(shown(), 1, events("RECEPTION_STALL").size)
+        // logged at the gap's start on the wall clock: 31 s on the counting clock, 8 s earlier on the wall clock
+        assertEquals(23_000L, events("RECEPTION_STALL").single().third)
     }
 }
