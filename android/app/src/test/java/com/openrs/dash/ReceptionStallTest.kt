@@ -33,11 +33,21 @@ class ReceptionStallTest {
         assertEquals(emptyList<String>(), d.onEnd(30_000))
     }
 
+    @Test fun `exactly the stall length of low seconds is a stall`() {
+        val d = ReceptionStall()
+        d.feed(0, 20, 100)
+        // no frame for STALL_SECONDS seconds, then the rate again
+        val ended = d.feed(20 + ReceptionStall.STALL_SECONDS, 30, 100)
+        assertEquals(1, ended.size)
+        assertTrue(ended.single(), ended.single().startsWith("about ${ReceptionStall.STALL_SECONDS} s below"))
+    }
+
     @Test fun `a second just at the share is not low`() {
         val d = ReceptionStall()
         d.feed(0, 20, 100)
         d.feed(20, 30, 25)                                       // exactly 25 % of 100
-        assertEquals(emptyList<String>(), d.feed(30, 31, 100))
+        assertEquals(emptyList<String>(), d.feed(30, 32, 100))   // past the second a stall would be reported in
+        assertEquals(emptyList<String>(), d.onEnd(32_000))
     }
 
     @Test fun `seconds with no frame at all count as low ones`() {
@@ -77,6 +87,15 @@ class ReceptionStallTest {
         d.feed(20, 40, 0)
         assertEquals(emptyList<String>(), d.feed(40, 41, ReceptionStall.MIN_RATE_FPS - 1))
         assertEquals(emptyList<String>(), d.onEnd(60_000))
+    }
+
+    @Test fun `a rate that has sunk below the minimum names no stall`() {
+        val d = ReceptionStall()
+        d.feed(0, 20, 60)                                        // a rate of its own, above the minimum
+        d.feed(20, 40, 40)                                       // not low (≥ 25 % of 60); the rate sinks to 40
+        d.feed(40, 50, 0)
+        assertEquals(emptyList<String>(), d.feed(50, 52, 40))
+        assertEquals(emptyList<String>(), d.onEnd(52_000))
     }
 
     @Test fun `no stall is reported before the connection has a rate of its own`() {
