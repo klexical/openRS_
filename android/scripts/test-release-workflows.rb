@@ -91,9 +91,11 @@ end
 
 check('publish-release attaches only after the recipe, and skips nightly tags') do
   job = jobs(ci)['publish-release'] or next 'no job publish-release'
-  caller = jobs(ci).find { |_, j| j['uses'] == RECIPE }&.first or next 'no job calls the recipe'
+  caller = jobs(ci).find { |_, j| j['uses'] == RECIPE }&.first
   why = []
-  why << "publish-release does not need #{caller}" unless Array(job['needs']).include?(caller)
+  if caller.nil? then why << 'no job calls the recipe'
+  elsif !Array(job['needs']).include?(caller) then why << "publish-release does not need #{caller}"
+  end
   why << "publish-release lacks #{TAG_GATE}" unless cond(job).include?(TAG_GATE)
   why << "publish-release lacks #{NIGHTLY_SKIP}" unless cond(job).include?(NIGHTLY_SKIP)
   why << 'publish-release runs whatever the recipe did (always())' if cond(job).include?('always()')
