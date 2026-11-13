@@ -41,6 +41,16 @@ paths:
     `scripts/test-release-apk.sh` checks the build step; `scripts/test-release-workflows.rb` checks the workflows' shape
     (each tag job's exact condition and permissions, the recipe's one output, the digest check before attest and attach,
     no expression in any `run` line); CI's build job runs both, and the identity and verify-release tests.
+  - **The nightly (#363):** `.github/workflows/nightly.yml` runs from main's copy (schedule and "Run workflow" exist only
+    on the default branch), so every script and Gradle step runs in a checkout of staging's tip, the SHA the gate records,
+    never the run's own commit or ref. Jobs: `gate` (`scripts/nightly-gate.sh`: build only when `android/` changed since
+    the newest published nightly, rc.8's for the first, and today has no nightly or tag; a read-only token is shown no
+    draft releases), `checks` (ci.yml's build and lint commands and the release script tests), `release` (the recipe),
+    `launch` (`scripts/launch-check.sh` on an API 36 emulator: Play Store disabled, log cleared before the cold start, same
+    process after 10 s, no verifier rejection, fatal exception or ANR), `attest`. Dry-run mode: `PUBLISH` is `'false'`, no
+    job can write contents, and the run stops after the attestation; each building night still leaves a one-day
+    release-signed artifact and a public attestation (owner, 2026-11-13). `scripts/test-nightly-gate.sh`,
+    `scripts/test-launch-check.sh` and `test-release-workflows.rb` pin it; CI's build job runs them.
   - `verify-release.sh` checks tag = versionName = filename, versionCode above every
     earlier tag, release signer (CI's keystore secrets sign with the published APKs' certificate, `c99b6f26…`). A nightly
     tag's code is the rule applied to the date in its name, for the tag under check and for earlier tags (their build file
