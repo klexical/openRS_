@@ -48,6 +48,8 @@ class SlcanConnection(
     private val debugSink: (String) -> Unit = { OpenRSDashApp.instance.pushDebugLine(it) },
     /** Wall clock for NRC attribution / re-probe timing — tests pass the virtual clock. */
     private val clock: () -> Long = System::currentTimeMillis,
+    /** Monotonic ms for measuring reception (#356): a wall-clock correction must not make or hide a low span. */
+    private val monotonicClock: () -> Long = { System.nanoTime() / 1_000_000L },
     /**
      * #316: an established connection dropped and the normal reconnect attempts have failed. Called once per dropped
      * connection, with the moment the drop was found ([clock]); never for attempts with no connection before them.
@@ -342,7 +344,11 @@ class SlcanConnection(
                 val pcmRequests = PcmRequestLedger()
                 val framing = SlcanFraming()                     // #251: plain unless the first frames are timestamped
                 var framingNoted = false
-                val receptionStall = ReceptionStall()           // #356: a stall on this connection is named in the session log
+                val reception = ReceptionStall()                // #356: low reception on this connection, named in the session log
+                // Each span is logged at its start: the wall time now, less the monotonic time since the span began
+                fun logReception(reports: List<ReceptionStall.Report>) = reports.forEach { r ->
+                    DiagnosticLogger.eventAt(r.type, r.message, clock() - (monotonicClock() - r.startMs))
+                }
                 // Other modules' Mode 22 requests (pollers + prober) by response ID: decides who may own a 7F 22 (#250)
                 val moduleLedgers = java.util.concurrent.ConcurrentHashMap<Int, PcmRequestLedger>()
                 fun ledgerFor(responseId: Int): PcmRequestLedger =
@@ -590,7 +596,7 @@ class SlcanConnection(
                         }
 
                         framing.accepted()
-                        receptionStall.onFrame(clock()).forEach { DiagnosticLogger.event(DiagnosticLogger.EVENT_RECEPTION_STALL, it) }
+                        reception.onFrame(monotonicClock()).let { if (it.isNotEmpty()) logReception(it) }
 
                         // The prober's own positive reply: response ID + 62 + DID (#250); anything else takes the normal path
                         val probing = _probe
@@ -731,7 +737,7 @@ class SlcanConnection(
                         }
                     }
                 } finally {
-                    receptionStall.onEnd(clock()).forEach { DiagnosticLogger.event(DiagnosticLogger.EVENT_RECEPTION_STALL, it) }
+                    logReception(reception.onEnd(monotonicClock()))
                     obdJob.cancel()
                     probeJob.cancel()
                     pcmJob.cancel()

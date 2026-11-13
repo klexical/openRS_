@@ -11,12 +11,13 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * #356 — a reception stall on an open connection is named in the session log, once, with its length. SYNTHETIC traffic
- * through the production path ([ReplayRun]: SlcanConnection's frame loop on virtual time). The shapes copy the one capture
- * in #356 at a lower rate (100 frames/s here, about 2,000 there): a clean rate, then a trickle of single frames about
- * 1.5 s apart — so a no-frame timer would not fire (the longest silence there was 3.0 s) — then a catch-up burst and the
- * normal rate again. Also: the 0.55–0.6 s delays with bursts (about 90 % of the frames due) are not a stall, a silence
- * shorter than the stall length is not one, and a connection that ends inside a quiet span says it never came back.
+ * #356 — low reception on an open connection is named in the session log, once per span, through the production path
+ * ([ReplayRun]: SlcanConnection's frame loop on virtual time). SYNTHETIC traffic at 100 frames/s, shaped like the issue's
+ * capture: a clean rate, then frames in ones and twos about 1.5 s apart, then a catch-up burst and the normal rate. A span
+ * that ends with a burst is a RECEPTION_STALL; one that ends otherwise is a RECEPTION_LOW; a connection that ends after
+ * total silence (a key-off over Wi-Fi ends that way) writes neither. Also: delays with catch-up bursts at about 90 % of
+ * the rate, a short silence and a connection with no rate yet name nothing, and a wall-clock jump neither makes nor hides
+ * a span (spans are measured on the monotonic clock).
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ReceptionStallReplayTest {
@@ -30,47 +31,82 @@ class ReceptionStallReplayTest {
     }
     /** The clean rate: 100 frames/s. */
     private fun clean(fromMs: Long, toMs: Long) = frames(fromMs, toMs, ((toMs - fromMs) / 10).toInt())
+    /** One frame every 1.5 s from [fromMs] while before [toMs]. */
+    private fun trickle(fromMs: Long, toMs: Long) =
+        generateSequence(fromMs) { it + 1_500 }.takeWhile { it < toMs }.map { ReplayRow(it, "RX", "t09080000000000000000") }.toList()
 
-    private fun stallEvents() = DiagnosticLogger.sessionEvents.filter { it.type == "RECEPTION_STALL" }
+    private fun events(type: String) = DiagnosticLogger.sessionEvents.filter { it.type == type }
+    private fun reception() = DiagnosticLogger.sessionEvents.filter { it.type.startsWith("RECEPTION_") }
+    private fun shown() = reception().joinToString { "${it.type}: ${it.message}" }
 
-    private fun TestScope.replay(rows: List<ReplayRow>, runMs: Long): ReplayRun =
-        ReplayRun(this, rows.sortedBy { it.atMs }).also { advanceTimeBy(runMs) }
+    private fun TestScope.replay(rows: List<ReplayRow>, runMs: Long, wallClock: (Long) -> Long = { it }): ReplayRun =
+        ReplayRun(this, rows.sortedBy { it.atMs }, wallClock = wallClock).also { advanceTimeBy(runMs) }
 
-    @Test fun `a 10 s trickle between a clean rate and its burst is one stall event with its length`() = runTest {
-        val trickle = (0 until 7).map { ReplayRow(30_000L + 300 + it * 1_500L, "RX", "t09080000000000000000") }
-        replay(clean(0, 30_000) + trickle + frames(40_000, 40_050, 200) + clean(40_050, 50_000), 55_000)
-
-        val events = stallEvents()
-        assertEquals(events.joinToString { it.message }, 1, events.size)
-        val msg = events.single().message
-        assertTrue(msg, msg.contains("10 s"))
-        assertTrue(msg, msg.contains("the rate came back"))
-        assertTrue(msg, msg.contains("7 frames"))
+    @Test fun `a 10 s trickle ended by a catch-up burst is one stall with its length`() = runTest {
+        replay(clean(0, 30_000) + trickle(30_300, 40_000) + frames(40_000, 40_050, 200) + clean(40_050, 50_000), 55_000)
+        assertEquals(shown(), 1, reception().size)
+        val msg = events("RECEPTION_STALL").single().message
+        assertTrue(msg, msg.startsWith("10.00 s below 25 % of this connection's rate (100 frames/s"))
+        assertTrue(msg, msg.contains("; 7 frames in it; then "))
+        assertTrue(msg, msg.endsWith("frames in one quarter second (a catch-up burst)"))
     }
 
-    @Test fun `control - delays of 0,6 s with catch-up bursts at 90 percent of the rate are not a stall`() = runTest {
-        val bursts = (0 until 50).flatMap { k -> frames(30_000L + k * 600, 30_000L + k * 600 + 5, 54) }
-        replay(clean(0, 30_000) + bursts + clean(60_000, 70_000), 75_000)
-        assertEquals(stallEvents().joinToString { it.message }, 0, stallEvents().size)
+    @Test fun `a stall that starts inside a second is measured to the quarter second`() = runTest {
+        replay(clean(0, 30_400) + trickle(30_800, 41_000) + frames(41_000, 41_050, 200) + clean(41_050, 50_000), 55_000)
+        val msg = events("RECEPTION_STALL").single().message
+        assertTrue(msg, msg.startsWith("10.50 s below"))
     }
 
-    @Test fun `control - a 3 s silence is shorter than a stall`() = runTest {
-        replay(clean(0, 30_000) + clean(33_000, 50_000), 55_000)
-        assertEquals(stallEvents().joinToString { it.message }, 0, stallEvents().size)
-    }
-
-    @Test fun `a connection that ends inside a quiet span says the rate never came back`() = runTest {
-        val run = replay(clean(0, 30_000), 38_000)
+    @Test fun `a connection that ends after total silence names nothing (a key-off over Wi-Fi)`() = runTest {
+        val run = replay(clean(0, 30_000), 52_000)
         run.transport.close()
         advanceTimeBy(1_000)
-
-        val events = stallEvents()
-        assertEquals(events.joinToString { it.message }, 1, events.size)
-        assertTrue(events.single().message, events.single().message.contains("the connection ended before the rate came back"))
+        assertEquals(shown(), 0, reception().size)
     }
 
-    @Test fun `control - no stall is named before the connection has a rate of its own`() = runTest {
+    @Test fun `a low span that was not silent and ends with the connection is a low span, not a stall`() = runTest {
+        val run = replay(clean(0, 30_000) + trickle(30_300, 46_000), 46_000)
+        run.transport.close()
+        advanceTimeBy(1_000)
+        assertEquals(shown(), 1, reception().size)
+        val msg = events("RECEPTION_LOW").single().message
+        assertTrue(msg, msg.endsWith("the connection then ended. A quiet bus and lost reception are not told apart."))
+    }
+
+    @Test fun `key-off then key-on on one connection is a low span, not a stall`() = runTest {
+        replay(clean(0, 30_000) + clean(60_000, 75_000), 80_000)
+        assertEquals(shown(), 1, reception().size)
+        val msg = events("RECEPTION_LOW").single().message
+        assertTrue(msg, msg.startsWith("30.00 s below"))
+        assertTrue(msg, msg.contains("the rate came back without a catch-up burst."))
+    }
+
+    @Test fun `control - delays of 0,6 s with catch-up bursts at 90 percent of the rate name nothing`() = runTest {
+        val bursts = (0 until 50).flatMap { k -> frames(30_000L + k * 600, 30_000L + k * 600 + 5, 54) }
+        replay(clean(0, 30_000) + bursts + clean(60_000, 70_000), 75_000)
+        assertEquals(shown(), 0, reception().size)
+    }
+
+    @Test fun `control - a 3 s silence is shorter than a span`() = runTest {
+        replay(clean(0, 30_000) + clean(33_000, 50_000), 55_000)
+        assertEquals(shown(), 0, reception().size)
+    }
+
+    @Test fun `control - nothing is named before the connection has a rate of its own`() = runTest {
         replay(clean(0, 4_000) + clean(14_000, 30_000), 35_000)
-        assertEquals(stallEvents().joinToString { it.message }, 0, stallEvents().size)
+        assertEquals(shown(), 0, reception().size)
+    }
+
+    // ── The wall clock may jump (a time correction); spans are measured on the monotonic clock (#356 review C3) ─────────
+
+    @Test fun `a wall clock jumping 8 s forward on a steady rate names nothing`() = runTest {
+        replay(clean(0, 50_000), 55_000, wallClock = { t -> if (t >= 30_000) t + 8_000 else t })
+        assertEquals(shown(), 0, reception().size)
+    }
+
+    @Test fun `a wall clock jumping 8 s back does not hide a stall`() = runTest {
+        replay(clean(0, 31_000) + trickle(31_300, 41_000) + frames(41_000, 41_050, 200) + clean(41_050, 55_000), 60_000,
+            wallClock = { t -> if (t >= 31_000) t - 8_000 else t })
+        assertEquals(shown(), 1, events("RECEPTION_STALL").size)
     }
 }

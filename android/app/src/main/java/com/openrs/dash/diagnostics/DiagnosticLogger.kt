@@ -62,8 +62,6 @@ object DiagnosticLogger {
     const val EVENT_LINK_TASK_REMOVED = "LINK_TASK_REMOVED"
     const val EVENT_LINK_PREV = "LINK_PREV"
     const val EVENT_LINK_PREV_EXIT = "LINK_PREV_EXIT"
-    /** A reception stall on an open connection, with its length (#356, `can/ReceptionStall.kt`). */
-    const val EVENT_RECEPTION_STALL = "RECEPTION_STALL"
     private val CARRIED_EVENT_TYPES = listOf(EVENT_LINK_STOP, EVENT_LINK_START_REFUSED, EVENT_LINK_TASK_REMOVED)
 
     /** Maximum DID probe sessions stored per diagnostic session. */
