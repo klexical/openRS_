@@ -3,9 +3,9 @@ name: Release APK (shared recipe)
 # The shared release recipe (#363): builds one release APK of the commit it is given, signed with the release key, and
 # checks it with android/scripts/release-apk.sh (a full commit SHA that is the one checked out, tag = android-v<name>,
 # -PnightlyDate only for a nightly, exactly one APK in the output, openRS_v<name>.apk, verify-release.sh). Called by
-# ci.yml's release-apk job for an android-v RC or stable tag; the nightly workflow #363 adds will call it too. It
+# ci.yml's release-apk job for an android-v RC or stable tag, and by nightly.yml. It
 # attests and publishes nothing and has read access only: it hands the APK over as a one-day artifact named
-# release-apk-<run id>-<run attempt>, and its SHA-256 as its only output: because GitHub drops a job output that contains
+# release-apk-<run id> (one per run, so "Re-run failed jobs" still finds it), and its SHA-256 as its only output: because GitHub drops a job output that contains
 # any secret's value, the caller builds the artifact and file names itself (the file name from its tag). It re-checks the
 # digest before it attests and attaches the file.
 # Every input reaches the shell through env, never inside a run line (android/scripts/test-release-workflows.rb).
@@ -105,7 +105,8 @@ jobs:
       - name: Hand the APK to the caller
         uses: actions/upload-artifact@v4
         with:
-          name: release-apk-${{ github.run_id }}-${{ github.run_attempt }}
+          name: release-apk-${{ github.run_id }}
           path: ${{ steps.recipe.outputs.path }}
           if-no-files-found: error
           retention-days: 1
+          overwrite: true       # a full re-run's recipe replaces the run's one artifact

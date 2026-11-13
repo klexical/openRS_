@@ -81,6 +81,11 @@ jobs:
       - name: Test the release workflows' shape
         run: ruby scripts/test-release-workflows.rb
 
+      - name: Test the nightly gate and launch check
+        run: |
+          bash scripts/test-nightly-gate.sh
+          bash scripts/test-launch-check.sh
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -152,7 +157,7 @@ jobs:
 
   # An android-v RC or stable tag: the shared recipe builds and verifies the APK (.github/workflows/release-apk.yml,
   # #363), then publish-release attests it and attaches it to the tag's GitHub release. A nightly tag is skipped here:
-  # nightlies are built and published by the nightly workflow #363 adds, not by this file.
+  # nightlies are built by nightly.yml, not by this file.
   release-name:
     name: Release name from the tag
     runs-on: ubuntu-latest
@@ -195,7 +200,7 @@ jobs:
       - name: Download the release APK
         uses: actions/download-artifact@v4
         with:
-          name: release-apk-${{ github.run_id }}-${{ github.run_attempt }}   # the recipe's upload name in this run
+          name: release-apk-${{ github.run_id }}   # the recipe's upload name in this run, the same on a re-run
           path: release-apk
 
       # The file the recipe verified, byte for byte: the name the tag gives it and the SHA-256 the recipe reported (its only

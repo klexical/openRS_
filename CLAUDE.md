@@ -252,7 +252,8 @@ feature/* → staging → main          (code, tests, android/CHANGELOG.md)
 docs/*    → main    (direct)        (README.md, assets/, docs/, firmware/README.md)
                                     CLAUDE.md, .claude/rules/ and GLOSSARY.md follow the code route (staging)
 Release tags: android-v*  (triggers CI signing + GitHub Release)
-RCs: one pre-release per RC tag (android-v<ver>-rc.N), tagged on staging; stable tags on main
+RCs: one pre-release per RC tag (android-v<ver>-rc.N), tagged on staging; stable tags on main; rc.8 is the last RC
+Nightlies (#363, once nightly.yml publishes): android-v<ver>-nightly.YYYYMMDD, from staging's tip
 ```
 
 Android RCs ship from **staging**; **main** carries stable Android (v2.2.6) and Sapphire. Sapphire may reach main web/-only
@@ -266,6 +267,24 @@ pushes that would publish a private address (GH007), and fixing that afterwards 
 --notes-file <notes>` (creates the lightweight tag; the tag push runs `publish-release`, which attaches the signed APK
 to that release) → download the asset and check name, `apksigner verify --print-certs` (cert `c99b6f26…`), versionCode /
 RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an older RC release.
+
+No further RC is cut after rc.8: builds after it are nightlies, which come once the nightly pipeline publishes (#363).
+
+**Nightlies (#363).** `.github/workflows/nightly.yml` is scheduled for 08:17 UTC and can be run by hand ("Run
+workflow"), but GitHub runs it only from the copy on main: once it is there, it builds staging's tip through the shared
+recipe `release-apk.yml`. Its gate
+builds only when files under `android/` changed since the newest published nightly (rc.8 for the first) and today's UTC
+date has no nightly. It runs in dry-run mode while its `PUBLISH` constant is false: it stops after the attestation,
+before any draft, and holds no token that can write contents. GitHub disables a schedule in a public repository after
+60 days without activity: a run that stops arriving may need re-enabling on the Actions page.
+
+**A bad nightly.** On the owner's word the integrator turns that release back into a draft (the tag and the file stay).
+The fix goes into staging the normal way and the next night's build replaces it. This works only while the repository's
+immutable-releases setting is off.
+
+**Stable and the base after it.** Stable is cut by hand: staging merged into main, tag on main, with `releaseStage` empty
+and a versionCode in slot 9 of its date. The same change sets the next base on staging, so the first nightly after stable
+sorts above it.
 
 **Release records.** Release facts live in `android/CHANGELOG.md` and on the GitHub Releases page; open work lives in the
 issue tracker. This file takes no dated status or work-log entries.

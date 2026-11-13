@@ -33,14 +33,26 @@ paths:
     `scripts/release-apk.sh`: `sha` a full 40-character SHA equal to the checked-out commit, tag = `android-v<name>`,
     `-PnightlyDate` passed only for a nightly (empty for an RC or stable: the build refuses an empty date), exactly one APK
     in the output, `openRS_v<name>.apk`, `verify-release.sh`. It has read access only and refuses a pull-request event; it
-    hands the APK over as a one-day artifact `release-apk-<run id>-<run attempt>`, with its SHA-256 as the only output:
+    hands the APK over as a one-day artifact `release-apk-<run id>` (one per run, overwritten by a full re-run), with its
+    SHA-256 as the only output:
     because GitHub drops a job output that contains any secret's value, the caller builds the artifact and file names
     itself. CI's tag path for an `android-v` RC or stable (not `-nightly.`)
-    calls it, and `publish-release` re-checks the digest, attests the file and attaches it; re-running only a failed
-    `publish-release` finds no artifact (another attempt, or past one day): re-run the whole workflow.
+    calls it, and `publish-release` re-checks the digest, attests the file and attaches it. "Re-run failed jobs" keeps
+    the run id, so a re-run caller finds the artifact while it lasts (one day); past that, re-run the whole workflow.
     `scripts/test-release-apk.sh` checks the build step; `scripts/test-release-workflows.rb` checks the workflows' shape
     (each tag job's exact condition and permissions, the recipe's one output, the digest check before attest and attach,
     no expression in any `run` line); CI's build job runs both, and the identity and verify-release tests.
+  - **The nightly (#363):** `.github/workflows/nightly.yml` is scheduled for 08:17 UTC and runs from main's copy only
+    (schedule and "Run workflow" exist only on the default branch), so every script and Gradle step runs in a checkout of staging's tip, the SHA the gate records,
+    never the run's own commit or ref. Jobs: `mode` (the publish output from the file's `PUBLISH`, with no checkout and
+    no repository code), `gate` (`scripts/nightly-gate.sh`: build only when `android/` changed since
+    the newest published nightly, rc.8's for the first, and today has no nightly or tag; a read-only token is shown no
+    draft releases), `checks` (ci.yml's build and lint commands and the release script tests), `release` (the recipe),
+    `launch` (`scripts/launch-check.sh` on an API 36 emulator: Play Store disabled, log cleared before the cold start, same
+    process after 10 s, no verifier rejection, fatal exception or ANR), `attest`. Dry-run mode: `PUBLISH` is `'false'`, no
+    job can write contents, and the run stops after the attestation; nothing is published, so every night builds and
+    leaves a one-day release-signed artifact and a public attestation. `scripts/test-nightly-gate.sh`,
+    `scripts/test-launch-check.sh` and `test-release-workflows.rb` pin it; CI's build job runs them.
   - `verify-release.sh` checks tag = versionName = filename, versionCode above every
     earlier tag, release signer (CI's keystore secrets sign with the published APKs' certificate, `c99b6f26…`). A nightly
     tag's code is the rule applied to the date in its name, for the tag under check and for earlier tags (their build file
