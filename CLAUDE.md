@@ -253,7 +253,7 @@ docs/*    → main    (direct)        (README.md, assets/, docs/, firmware/READM
                                     CLAUDE.md, .claude/rules/ and GLOSSARY.md follow the code route (staging)
 Release tags: android-v*  (triggers CI signing + GitHub Release)
 RCs: one pre-release per RC tag (android-v<ver>-rc.N), tagged on staging; stable tags on main; rc.8 is the last RC
-Nightlies: android-v<ver>-nightly.YYYYMMDD, built from staging's tip by .github/workflows/nightly.yml (#363)
+Nightlies (#363, once nightly.yml publishes): android-v<ver>-nightly.YYYYMMDD, from staging's tip
 ```
 
 Android RCs ship from **staging**; **main** carries stable Android (v2.2.6) and Sapphire. Sapphire may reach main web/-only
@@ -270,8 +270,9 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
 
 No further RC is cut after rc.8: builds after it are nightlies, which come once the nightly pipeline publishes (#363).
 
-**Nightlies (#363).** `.github/workflows/nightly.yml` runs at 08:17 UTC and by hand ("Run workflow"); GitHub runs the
-schedule only from the copy on main, which builds staging's tip through the shared recipe `release-apk.yml`. Its gate
+**Nightlies (#363).** `.github/workflows/nightly.yml` is scheduled for 08:17 UTC and can be run by hand ("Run
+workflow"), but GitHub runs it only from the copy on main: once it is there, it builds staging's tip through the shared
+recipe `release-apk.yml`. Its gate
 builds only when files under `android/` changed since the newest published nightly (rc.8 for the first) and today's UTC
 date has no nightly. It runs in dry-run mode while its `PUBLISH` constant is false: it stops after the attestation,
 before any draft, and holds no token that can write contents. GitHub disables a schedule in a public repository after
