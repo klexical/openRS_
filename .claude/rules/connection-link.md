@@ -9,6 +9,8 @@ paths:
   - "**/com/openrs/dash/can/WriteOutcome.kt"
   - "**/com/openrs/dash/can/AdapterState.kt"
   - "**/com/openrs/dash/can/IsoTpBuffer.kt"
+  - "**/com/openrs/dash/can/ReceptionStall.kt"
+  - "**/android/app/src/test/java/com/openrs/dash/*ReceptionStall*"
   - "**/com/openrs/dash/can/ObdResponseParser.kt"
   - "**/com/openrs/dash/ui/MainActivity.kt"
   - "**/com/openrs/dash/can/ObdConstants.kt"
@@ -148,11 +150,13 @@ paths:
   "LC" after the frames stopped). Never show a state word ("ON", "ENGAGED", "ARMED"), and never take LC from 0x225 or the
   0x731 probe (DE00 / DE01 / DE02, undocumented DIDs at the keyless module's address): those are diagnostics only, with
   source and age. The cluster check of bit 2 and the window's timing are #289
-- **A reception stall keeps the connection up and fires no timeout (#356)** — on Wi-Fi with another app in front, one
-  capture fell from about 2,000 frames/s to single frames about 1.5 s apart for 10.5 s, then a catch-up burst; the
-  longest silence was 3.0 s, so neither a no-frame timer nor the transport's read timeout fires on such a trickle.
-  `ReceptionStall` judges each clock second against the connection's own rate and writes one `RECEPTION_STALL` session
-  event per stall (`ReceptionStallReplayTest`). It names a stall and prevents none: the frames are lost upstream of the
-  app's socket (the adapter's 32-frame queue drops them uncounted, by code reading), and no documented WifiLock is active
-  on API 34+ while another app is in front, so the app takes none. Its four thresholds are named constants waiting for
-  the owner's measured drives; a connection ending inside a quiet span is reported without telling a quiet bus from a stall
+- **Low reception on an open connection fires no timeout; `ReceptionStall` names it (#356)** — frames can keep arriving
+  far below the connection's own rate while the link stays up, so neither a no-frame timer nor the transport's read
+  timeout ends it. `ReceptionStall` measures each quarter second of a monotonic clock (a wall-clock correction must not
+  make or hide a span) against the connection's own rate and writes one session event per low span, stamped at its start:
+  `RECEPTION_STALL` only when the span ends in a catch-up burst (held-up frames released at once are what lost reception
+  leaves), otherwise `RECEPTION_LOW` with a fixed sentence that a quiet bus and lost reception are not told apart. A
+  connection that ends after total silence (an ordinary key-off over Wi-Fi) writes neither. It names spans and prevents
+  none, and the app takes no WifiLock: the frames are dropped upstream of the app's socket, and the WifiManager reference
+  says the API 34+ lock is replaced by one active only with the screen on and the app in front. Thresholds are named constants in
+  `ReceptionStall.kt`; their values and status belong to #356 (`ReceptionStallTest`, `ReceptionStallReplayTest`)

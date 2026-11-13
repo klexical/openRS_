@@ -52,10 +52,14 @@ A stretch inside a drive that is recording but has no adapter data, because the 
 _Avoid_: Link gap, dropout, pause
 
 **Reception stall**:
-A stretch of a connection in which frames still arrive, but far fewer than that connection's own rate, for several
-seconds, until the rate comes back or the connection ends. The connection stays up, so it is not a recording gap; the
-session log names each one with its length.
+Reception lost on an open connection for several seconds, shown by the held-up frames arriving all at once when it comes
+back. The connection stays up, so it is not a recording gap.
 _Avoid_: Dropout, freeze, link loss, lag
+
+**Low reception**:
+A stretch of an open connection in which far fewer frames arrive than its own rate, or none, for several seconds, and
+which does not end in held-up frames arriving at once. A quiet bus and lost reception are not told apart.
+_Avoid_: Stall, dropout
 
 **Cancelled start**:
 A START that was stopped before the drive began. It is not a drive and never appears in history.
