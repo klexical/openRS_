@@ -201,7 +201,8 @@ export function ComparePanel() {
 
           {/* Split GPS maps */}
           <SectionLabel>Route Comparison</SectionLabel>
-          <div className={`grid gap-3 ${compareSessions.length <= 2 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-2'}`}>
+          {/* One map per row below md for any number of drives (#344); two per row from md, as before */}
+          <div className="grid gap-3 grid-cols-1 md:grid-cols-2">
             {compareSessions.map((s, i) => (
               <div key={s.id}>
                 <div className="text-[10px] font-mono uppercase tracking-wider mb-1 flex items-center gap-1.5">

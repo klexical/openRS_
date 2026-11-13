@@ -21,10 +21,19 @@ paths:
     the Settings label (`<versionName> · Build <versionCode>`), the APK name, the expected tag, `BuildConfig.RELEASE_NAME` /
     `SOURCE_COMMIT`, export and crash metadata, the updater (`AppVersion.current()`) and the What's New gate (once per
     release name, never by itself on a nightly (#322); content by base version, never another version's notes). The build refuses `-PrcSuffix`.
+  - A nightly (#362): `-PnightlyDate=YYYYMMDD` builds `<base>-nightly.YYYYMMDD` with versionCode `(YYYYMMDD − 20000000) × 10`
+    (20261201 → 2612010); an empty date, one that is not a calendar date from 2000, or one after the build's UTC date is
+    refused with the reason. Without the property a build is the literal release above; `releaseStage` is `"rc"` or `""`
+    only (`"nightly"` in the file is refused), so a plain build is never refused. `scripts/test-release-identity.sh` checks
+    both paths; `VersionIdentityTest` accepts either stage.
   - Bump the versionCode for every distributed production build, stable included. Debug builds carry
     `-dev+<commit>[.dirty]` — dirty = tracked changes or non-ignored untracked files under `android/`.
   - CI `publish-release` runs `android/scripts/verify-release.sh`: tag = versionName = filename, versionCode above every
-    earlier tag, release signer (CI's keystore secrets sign with the published APKs' certificate, `c99b6f26…`). It fails on
+    earlier tag, release signer (CI's keystore secrets sign with the published APKs' certificate, `c99b6f26…`). A nightly
+    tag's code is the rule applied to the date in its name, for the tag under check and for earlier tags (their build file
+    holds the literal they were built from); a nightly is `<X.Y.Z>-nightly.YYYYMMDD`. A stable above 39 (rc.8, the last
+    literal code) takes slot 9 of a calendar date, whichever tags still exist; no such date lies after today (UTC)
+    (`scripts/test-verify-release.sh`, #362; not run by CI until #363). It fails on
     an earlier tag whose versionCode it can't read (exception list `LEGACY_TAGS`, empty) or a checkout without tags, and it
     rejects APKs up to rc.6 (they embed `2.2.7`, the convention then) — expected, not a defect of those releases.
 - **Release API keys (#235)** — `apiKey(name)` in `app/build.gradle.kts`: `local.properties`, else the

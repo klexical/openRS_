@@ -1044,30 +1044,46 @@ class CanDecoderTest {
         val result = CanDecoder.decode(0x260, data, blank)
         assertNotNull(result)
         assertTrue(result!!.autoStartStopButtonPressed)
-        assertFalse(result.escOffButtonPressed)
+        assertNull(result.escOffButtonPressed)
     }
 
     @Test
     fun `decode ASS button released from 0x260`() {
         // Captured resting value: bit 7 is unrelated and must not read as held.
         val data = byteArrayOf(0x88.toByte(), 0x00, 0x00, 0x00, 0x00, 0x00)
-        val result = CanDecoder.decode(0x260, data, blank)
+        val result = CanDecoder.decode(0x260, data, blank.copy(autoStartStopButtonPressed = true))
         assertNotNull(result)
         assertFalse(result!!.autoStartStopButtonPressed)
-        assertFalse(result.escOffButtonPressed)
+        assertNull(result.escOffButtonPressed)
     }
 
     @Test
-    fun `decode ESC Off button from 0x260 firmware mask`() {
-        val pressed = byteArrayOf(0x88.toByte(), 0x00, 0x00, 0x00, 0x00, 0x10)
-        val pressedResult = CanDecoder.decode(0x260, pressed, blank)
-        assertNotNull(pressedResult)
-        assertTrue(pressedResult!!.escOffButtonPressed)
+    fun `decode ASS stays released while unknown ESC bit is set`() {
+        val data = byteArrayOf(0x88.toByte(), 0x00, 0x00, 0x00, 0x00, 0x10)
+        val result = CanDecoder.decode(0x260, data, blank)
+        assertNotNull(result)
+        assertFalse(result!!.autoStartStopButtonPressed)
+        assertNull(result.escOffButtonPressed)
+    }
 
-        val released = byteArrayOf(0x88.toByte(), 0x00, 0x00, 0x00, 0x00, 0x00)
-        val releasedResult = CanDecoder.decode(0x260, released, pressedResult)
-        assertNotNull(releasedResult)
-        assertFalse(releasedResult!!.escOffButtonPressed)
+    @Test
+    fun `decode mode and ASS buttons held together`() {
+        val ass = CanDecoder.decode(
+            0x260,
+            byteArrayOf(0x89.toByte(), 0x00, 0x00, 0x00, 0x00, 0x00),
+            blank
+        )
+        assertNotNull(ass)
+
+        val both = CanDecoder.decode(
+            0x305,
+            byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x0C, 0x00),
+            ass!!
+        )
+        assertNotNull(both)
+        assertTrue(both!!.autoStartStopButtonPressed)
+        assertTrue(both.driveModeButtonPressed)
+        assertNull(both.escOffButtonPressed)
     }
 
     @Test

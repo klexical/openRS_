@@ -271,13 +271,17 @@ import kotlin.math.roundToInt
                 )
                 Spacer(Modifier.height(Tokens.CardGap))
                 // ── Live button inputs (0x070, 0x260, 0x305) ─────────────────
-                fun held(b: Boolean) = if (b) "HELD" else "— —"
+                fun held(b: Boolean?) = when (b) {
+                    true -> "HELD"
+                    false -> "— —"
+                    null -> "UNKNOWN"
+                }
                 ReadoutGrid(
                     rows = listOf(listOf(
                         Readout("MODE", held(vs.driveModeButtonPressed), color = if (vs.driveModeButtonPressed) accent else Color.Unspecified),
                         Readout("SUSP", held(vs.suspensionButtonPressed), color = if (vs.suspensionButtonPressed) accent else Color.Unspecified),
                         Readout("ASS", held(vs.autoStartStopButtonPressed), color = if (vs.autoStartStopButtonPressed) accent else Color.Unspecified),
-                        Readout("ESC OFF", held(vs.escOffButtonPressed), color = if (vs.escOffButtonPressed) Orange else Color.Unspecified),
+                        Readout("ESC OFF", held(vs.escOffButtonPressed), color = if (vs.escOffButtonPressed == true) Orange else Color.Unspecified),
                     )),
                     captions = mapOf(0 to "BUTTONS")
                 )

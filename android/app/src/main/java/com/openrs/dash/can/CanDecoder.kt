@@ -144,8 +144,9 @@ object CanDecoder {
     const val ID_DRIVE_MODE_EXT = 0x420
 
     // ── Steering wheel button events (community-discovered) ────────────────
-    // 0x260: Auto Start Stop button (byte0 bit0), ESC Off button (byte5 bit4).
-    // Confirmed by the firmware definitions and the community map's MSB-first bit numbering (#304).
+    // 0x260: Auto Start Stop button (byte0 bit0). The ESC Off bit remains unknown (#304).
+    // This matches the firmware definitions and the community map's MSB-first bit numbering (#304);
+    // it has not yet been witnessed on a car.
     const val ID_BUTTONS_260   = 0x260
 
     // 0x305: Drive Mode button (byte4 bit2). Bit = 1 while button is held.
@@ -635,11 +636,10 @@ object CanDecoder {
                 lastUpdate = now
             ) else null
 
-            // ── 0x260: Auto Start Stop button + ESC Off button ────────────────
-            // ASS button: byte0 bit0. ESC Off button: byte5 bit4.
+            // ── 0x260: Auto Start Stop button ─────────────────────────────────
+            // ASS button: byte0 bit0. The ESC Off bit remains unknown (#304).
             ID_BUTTONS_260 -> if (n >= 6) state.copy(
                 autoStartStopButtonPressed = ubyte(data, 0) and 0x01 != 0,
-                escOffButtonPressed        = ubyte(data, 5) and 0x10 != 0,
                 lastUpdate = now
             ) else null
 
