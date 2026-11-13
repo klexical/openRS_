@@ -34,6 +34,7 @@ echo 1 > "$R/android/app/A.kt"; g add -A; g commit -q -m android-change; C1=$(g 
 echo b > "$R/web/x"; g add -A; g commit -q -m web-change; C2=$(g rev-parse HEAD)
 echo 2 > "$R/android/app/A.kt"; g add -A; g commit -q -m android-change-2; C3=$(g rev-parse HEAD)
 g checkout -q -b web-only "$C0"; echo c > "$R/web/x"; g add -A; g commit -q -m web-only; CW=$(g rev-parse HEAD)
+g checkout -q -b scripts-only "$C0"; mkdir -p "$R/android/scripts"; echo s > "$R/android/scripts/x"; g add -A; g commit -q -m scripts-only; CS=$(g rev-parse HEAD)
 g checkout -q "$C3" 2>/dev/null
 
 # run <sha> <today> [env...]: runs the gate in the repository; OUT, CODE, and GITHUB_OUTPUT's lines in $WORK/out
@@ -82,6 +83,7 @@ releases '[{"tagName":"android-v2.2.7-rc.8","isDraft":false}]'
 expect_run  "the first nightly is compared with rc.8"                      "$C1" android-v2.2.7-rc.8
 expect_skip "no change under android/ since rc.8 is a quiet skip"          "$C0" "no change under android/"
 expect_skip "a change outside android/ only is a quiet skip"               "$CW" "no change under android/"
+expect_run  "a change only under android/scripts builds (all of android/ counts)" "$CS" android-v2.2.7-rc.8
 [[ "$(cat "$WORK/gh-args" 2>/dev/null)" == *"--repo owner/repo"* ]] && WHY="" || WHY="gh was not asked about this repository"
 check "the release list is this repository's"
 
@@ -94,6 +96,10 @@ expect_run  "a change since the newest published nightly builds"           "$C3"
 g tag android-v2.2.7-nightly.20261101 "$C0"
 releases '[{"tagName":"android-v2.2.7-nightly.20261101","isDraft":false},{"tagName":"android-v2.2.7-nightly.20261105","isDraft":false}]'
 expect_run  "the newest by date is the base, whatever the list order"      "$C3" android-v2.2.7-nightly.20261105
+g tag android-v2.2.9-nightly.20261102 "$C0"; g tag android-v2.2.10-nightly.20261106 "$C3"
+releases '[{"tagName":"android-v2.2.9-nightly.20261102","isDraft":false},{"tagName":"android-v2.2.10-nightly.20261106","isDraft":false}]'
+expect_skip "a later two-digit base is the newest by date (2.2.10 after 2.2.9)" "$C3" "no change under android/ since android-v2.2.10-nightly.20261106"
+g tag -d android-v2.2.9-nightly.20261102 android-v2.2.10-nightly.20261106 >/dev/null
 releases '[{"tagName":"android-v2.2.7-nightly.20261105","isDraft":true},{"tagName":"android-v2.2.7-nightly.20261101","isDraft":false}]'
 expect_run  "a draft nightly is not a base"                                "$C1" android-v2.2.7-nightly.20261101
 releases '[{"tagName":"android-v2.2.7-rc.8","isDraft":false}]'

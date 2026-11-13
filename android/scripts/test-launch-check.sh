@@ -21,7 +21,8 @@ case "$*" in
   "logcat -c")                    : > "$WORK/log-cleared" ;;
   "logcat -d")                    [ -f "$WORK/log-cleared" ] && cat "$WORK/log" ;;
   "shell am start "*)             [ -f "$WORK/log-cleared" ] || cp "$WORK/log" "$WORK/log-before"; exit "${FAKE_START_EXIT:-0}" ;;
-  "shell pidof com.openrs.dash")  n=$(cat "$WORK/pidof-n" 2>/dev/null || echo 0); n=$((n + 1)); echo $n > "$WORK/pidof-n"
+  "shell pidof com.openrs.dash")  perl -MTime::HiRes=time -e 'printf "%.3f\n", time' >> "$WORK/pidof-times"
+                                  n=$(cat "$WORK/pidof-n" 2>/dev/null || echo 0); n=$((n + 1)); echo $n > "$WORK/pidof-n"
                                   if [ $n -eq 1 ]; then printf '%s\r\n' "${FAKE_PID1-}"; else printf '%s\r\n' "${FAKE_PID2-}"; fi ;;
   "shell pm disable-user"*)       exit "${FAKE_PM_EXIT:-0}" ;;
   *)                              echo "fake adb: unexpected $*" >&2; exit 2 ;;
@@ -32,7 +33,7 @@ chmod +x "$WORK/bin/adb"
 # run <wait seconds> <log text> [env...]
 run() {
   local wait="$1" log="$2"; shift 2
-  rm -f "$WORK/calls" "$WORK/log-cleared" "$WORK/pidof-n"; printf '%s' "$log" > "$WORK/log"
+  rm -f "$WORK/calls" "$WORK/log-cleared" "$WORK/pidof-n" "$WORK/pidof-times"; printf '%s' "$log" > "$WORK/log"
   OUT=$(env PATH="$WORK/bin:$PATH" WORK="$WORK" FAKE_PID1=4242 FAKE_PID2=4242 "$@" bash "$SCRIPT" "$APK" "$wait" 2>&1); CODE=$?
 }
 check() {
@@ -56,6 +57,12 @@ WHY=""; run 0 "I ActivityManager: Start proc com.openrs.dash"
 want="shell pm disable-user --user 0 com.android.vending|install -r <apk>|logcat -c|shell am start -S -W -n com.openrs.dash/com.openrs.dash.ui.MainActivity|shell pidof com.openrs.dash|shell pidof com.openrs.dash|logcat -d|"
 [ "$(calls)" = "$want" ] || why "calls '$(calls)', expected '$want'"
 check "a clean launch passes, the Play Store disabled first and the log cleared before the start"
+
+WHY=""; run 1 ""
+[ "$CODE" -eq 0 ] || why "exit $CODE"
+gap=$(awk 'NR==1{a=$1} NR==2{printf "%.3f", $1-a}' "$WORK/pidof-times" 2>/dev/null)
+awk -v g="${gap:-0}" 'BEGIN{exit !(g >= 0.9)}' || why "the second process check came ${gap:-?} s after the first, expected at least the 1 s wait"
+check "the second process check comes after the wait"
 
 WHY=""; run 0 "" FAKE_PM_EXIT=1
 [ "$CODE" -eq 0 ] || why "exit $CODE"; check "an image without the Play Store still passes"
