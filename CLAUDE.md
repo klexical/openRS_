@@ -274,8 +274,10 @@ No further RC is cut after rc.8: builds after it are nightlies, which come once 
 workflow"), but GitHub runs it only from the copy on main: once it is there, it builds staging's tip through the shared
 recipe `release-apk.yml`. Its gate
 builds only when files under `android/` changed since the newest published nightly (rc.8 for the first) and today's UTC
-date has no nightly. It runs in dry-run mode while its `PUBLISH` constant is false: it stops after the attestation,
-before any draft, and holds no token that can write contents. GitHub disables a schedule in a public repository after
+date has no nightly. While its `PUBLISH` constant is false every run is a dry run: it stops after the attestation. Only
+two jobs can write contents, the publish (`scripts/nightly-publish.sh`: draft, one asset checked, then a pre-release, never
+Latest) and the deletion of a failed publish's draft (`scripts/nightly-cleanup.sh`), and they run only when `PUBLISH` is
+true and the run is on main. GitHub disables a schedule in a public repository after
 60 days without activity: a run that stops arriving may need re-enabling on the Actions page.
 
 **A bad nightly.** On the owner's word the integrator turns that release back into a draft (the tag and the file stay).

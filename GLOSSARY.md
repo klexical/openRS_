@@ -167,6 +167,9 @@ A test release built by itself at most once a day, on a day the app has changed,
 (2.2.7-nightly.20261201). Within one version it comes after every release candidate and before the stable.
 _Avoid_: Daily build, snapshot, beta (for the release), debug build
 
+**Dry run**:
+A nightly run that builds, signs, checks and attests but publishes no release and makes no tag.
+
 **Stable channel**:
 The update channel that offers stable releases only: never a release candidate or a nightly.
 _Avoid_: "Stable" alone where the stable release could be meant

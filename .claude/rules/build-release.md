@@ -73,11 +73,19 @@ paths:
     closed without a trace, and only on the decision's explicit OK) when the job's 15 minutes leave a second boot (`JOB_LIMIT_S`, pinned against the job's
     `timeout-minutes`), with each attempt headed and a summary line for any end but a plain pass, an argument
     failure included),
-    `attest`.
-    Dry-run mode: `PUBLISH` is `'false'`, no job can write contents, and the run stops after the attestation; nothing is
-    published, so every night builds and leaves a one-day release-signed artifact and a public attestation.
+    `attest`, then `publish` and `cleanup` (#363 T6), the only jobs with `contents: write`, each only when the mode's
+    publish output is `'true'`, the run is on main and the gate said build. `publish` (`scripts/nightly-publish.sh`)
+    stops quietly when today's tag already has a release in any state (its token is shown drafts) or a tag; else notes
+    from the generate-notes API from the gate's `base_tag` (the list, the SHA-256 line, the changelog link), a draft
+    pre-release at the commit, one upload, exactly one asset whose bytes match the digest, then a pre-release with Latest
+    off, its tag at the commit. `cleanup` runs after `publish` failed or was cancelled (`scripts/nightly-cleanup.sh`): it
+    deletes the tag's release only while it is a draft and a leftover tag only at the recorded commit, then requires the
+    ref's 404; a published release is never deleted. Both scripts refuse any tag but a nightly's or the throwaway trial's
+    (`test-nightly-cleanup-<date>`). A dry run (`PUBLISH` is `'false'`): the run stops after the attestation and nothing
+    is published, so every night builds and leaves a one-day release-signed artifact and a public attestation.
     `scripts/test-nightly-gate.sh`, `scripts/test-launch-check.sh` (it also runs `scripts/test-crash-facts.py`),
-    `scripts/test-start-emulator.sh` and `test-release-workflows.rb` pin it; CI's build job runs them.
+    `scripts/test-start-emulator.sh`, `scripts/test-nightly-publish.sh` and `test-release-workflows.rb` pin it; CI's
+    build job runs them.
   - `verify-release.sh` checks tag = versionName = filename, versionCode above every
     earlier tag, release signer (CI's keystore secrets sign with the published APKs' certificate, `c99b6f26…`). A nightly
     tag's code is the rule applied to the date in its name, for the tag under check and for earlier tags (their build file
