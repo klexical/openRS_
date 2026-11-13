@@ -57,8 +57,9 @@ stays up, so it is not a recording gap.
 _Avoid_: Dropout, freeze, link loss, lag
 
 **Quiet span**:
-A stretch of an open connection in which few frames arrive, and then the rate returns or the connection ends. Its cause
-is not told apart: a quiet bus and lost reception look the same.
+A stretch of an open connection in which few frames arrive, or none, that does not end with a burst of queued frames:
+the rate returns, the connection ends, or it lasts so long that the app stops waiting for either. Its cause is not told
+apart: a quiet bus and lost reception look the same.
 _Avoid_: Stall, reception loss, dropout
 
 **Cancelled start**:
