@@ -272,7 +272,8 @@ issue tracker. This file takes no dated status or work-log entries.
 
 Docs branches skip staging entirely — branch from main, PR to main.
 Never route README.md, assets/, or docs/ through staging. `CLAUDE.md`, `.claude/rules/` and `GLOSSARY.md` are the exception:
-they describe the code on staging, so a change that makes one of them wrong corrects it in the same branch.
+they describe the code on staging, so a change that makes one of them wrong corrects it in the same branch. Documentation
+under `android/` that describes a code change travels with that code, through staging.
 
 **Release checklist (staging → main):**
 0. Read the Sapphire staging ↔ main merge runbook first (see the Sapphire section: which side to take, the `ci.yml` hand-merge,
@@ -297,7 +298,7 @@ Every release follows the same structure.
 
 **Rules:**
 1. **Sections** — use only these four, in this order: `Added`, `Fixed`, `Changed`, `Removed`. No synonyms (not "Improved", "Refactored", "Stability", "Performance").
-2. **RC sub-sections** — append `(rc.N)` to the section header when a version has multiple RCs: `### Fixed (rc.3)`. Add a short label after the RC number for context: `### Added (rc.4 — visual polish)`.
+2. **Sub-sections** — entries after rc.8 go under the version's heading in sections labelled `(nightlies)`, above the rc.8 sections: `### Added (nightlies)`, `### Fixed (nightlies)`. Up to rc.8 a version with several RCs appended `(rc.N)` to the section header (`### Fixed (rc.3)`, with a short label for context: `### Added (rc.4 — visual polish)`); those sections stay as written.
 3. **Issue links are mandatory** — every entry that originated from or addresses a GitHub issue MUST end with the issue link: `([#N](url))`. If it addresses a sub-item in an umbrella issue, use: `(addresses [#N](url))`. Bugs found and fixed in the same RC also get a tracking issue and link.
 4. **One format for links** — always `[#N](https://github.com/klexical/openRS_/issues/N)`. Never bare `(#N)`, never `Fixes #N` or `Addresses sub-item in #N` inline.
 5. **Entry length** — 1-3 sentences. Lead with what changed, then why. Include the file/class name when it helps locate the change. Do not write paragraphs — the commit message has the full detail.
