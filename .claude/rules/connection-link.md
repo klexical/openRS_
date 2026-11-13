@@ -148,3 +148,11 @@ paths:
   "LC" after the frames stopped). Never show a state word ("ON", "ENGAGED", "ARMED"), and never take LC from 0x225 or the
   0x731 probe (DE00 / DE01 / DE02, undocumented DIDs at the keyless module's address): those are diagnostics only, with
   source and age. The cluster check of bit 2 and the window's timing are #289
+- **A reception stall keeps the connection up and fires no timeout (#356)** — on Wi-Fi with another app in front, one
+  capture fell from about 2,000 frames/s to single frames about 1.5 s apart for 10.5 s, then a catch-up burst; the
+  longest silence was 3.0 s, so neither a no-frame timer nor the transport's read timeout fires on such a trickle.
+  `ReceptionStall` judges each clock second against the connection's own rate and writes one `RECEPTION_STALL` session
+  event per stall (`ReceptionStallReplayTest`). It names a stall and prevents none: the frames are lost upstream of the
+  app's socket (the adapter's 32-frame queue drops them uncounted, by code reading), and no documented WifiLock is active
+  on API 34+ while another app is in front, so the app takes none. Its four thresholds are named constants waiting for
+  the owner's measured drives; a connection ending inside a quiet span is reported without telling a quiet bus from a stall

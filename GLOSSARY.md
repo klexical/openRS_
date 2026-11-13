@@ -51,6 +51,12 @@ _Avoid_: Auto-start, auto-drive
 A stretch inside a drive that is recording but has no adapter data, because the connection was down. It is not a pause.
 _Avoid_: Link gap, dropout, pause
 
+**Reception stall**:
+A stretch of a connection in which frames still arrive, but far fewer than that connection's own rate, for several
+seconds, until the rate comes back or the connection ends. The connection stays up, so it is not a recording gap; the
+session log names each one with its length.
+_Avoid_: Dropout, freeze, link loss, lag
+
 **Cancelled start**:
 A START that was stopped before the drive began. It is not a drive and never appears in history.
 _Avoid_: Aborted drive, empty drive
