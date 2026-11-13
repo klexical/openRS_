@@ -342,6 +342,7 @@ class SlcanConnection(
                 val pcmRequests = PcmRequestLedger()
                 val framing = SlcanFraming()                     // #251: plain unless the first frames are timestamped
                 var framingNoted = false
+                val receptionStall = ReceptionStall()           // #356: a stall on this connection is named in the session log
                 // Other modules' Mode 22 requests (pollers + prober) by response ID: decides who may own a 7F 22 (#250)
                 val moduleLedgers = java.util.concurrent.ConcurrentHashMap<Int, PcmRequestLedger>()
                 fun ledgerFor(responseId: Int): PcmRequestLedger =
@@ -589,6 +590,7 @@ class SlcanConnection(
                         }
 
                         framing.accepted()
+                        receptionStall.onFrame(clock()).forEach { DiagnosticLogger.event(DiagnosticLogger.EVENT_RECEPTION_STALL, it) }
 
                         // The prober's own positive reply: response ID + 62 + DID (#250); anything else takes the normal path
                         val probing = _probe
@@ -729,6 +731,7 @@ class SlcanConnection(
                         }
                     }
                 } finally {
+                    receptionStall.onEnd(clock()).forEach { DiagnosticLogger.event(DiagnosticLogger.EVENT_RECEPTION_STALL, it) }
                     obdJob.cancel()
                     probeJob.cancel()
                     pcmJob.cancel()
