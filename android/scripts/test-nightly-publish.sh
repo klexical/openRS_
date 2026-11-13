@@ -62,7 +62,7 @@ elif a[0] == "api":
         inject("deleteref")
         t = path.rsplit("/tags/", 1)[1]
         if t not in s["tags"]: fail("gh: Reference does not exist (HTTP 422)")
-        del s["tags"][t]; save()
+        if os.environ.get("FAKE_DELETE_REF_NOOP") != "1": del s["tags"][t]; save()
     elif path == "repos/owner/repo/releases/generate-notes" and method == "POST":
         inject("notes")
         f = dict(x.split("=", 1) for x in [a[i + 1] for i, y in enumerate(a) if y == "-f"])
@@ -360,6 +360,10 @@ check "clean-up: a tag lookup failing with anything but 404 fails without deleti
 WHY=""; state "[$EXISTING,$(rel_json "$TAG" true true)]" "{\"$TAG\": \"$SHA\"}"; run_cleanup FAKE_DELETE_KEEPS_TAG=1 FAKE_FAIL=deleteref
 fail_closed "still exists"
 check "clean-up: a tag that cannot be removed fails the clean-up"
+
+WHY=""; state "[$EXISTING]" "{\"$TAG\": \"$SHA\"}"; run_cleanup FAKE_DELETE_REF_NOOP=1
+fail_closed "still exists"
+check "clean-up: a tag still there after a delete that reported success fails the clean-up (the 404 is required)"
 
 WHY=""; OUT=""
 refused "$CLEANUP" "an RC tag" "$RC8" "$SHA"
