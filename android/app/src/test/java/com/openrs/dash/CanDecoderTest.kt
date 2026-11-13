@@ -1146,8 +1146,8 @@ class CanDecoderTest {
 
     @Test
     fun `the 0x260 trace line names only what 0x260 decodes, no ESC field`() {
-        // #304's parked press check: the ESC button is not on 0x260 on that car, so an ESC field on this line would point
-        // a reader of the diagnostic trace at the wrong frame
+        // #304's parked press check: neither 0x260 byte 5 candidate is the ESC button on that car, and no ESC bit
+        // on 0x260 is known, so an ESC field on this line would name a decode the app does not make
         val line = CanDecoder.describeDecoded(CanDecoder.ID_BUTTONS_260, VehicleState(autoStartStopButtonPressed = true))
         assertEquals("assBtn=true", line)
     }

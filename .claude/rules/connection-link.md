@@ -121,8 +121,8 @@ paths:
     only at the window's end (a mode on the way, Track via Sport, must not raise it); closing the dock during the wait ends
     it with no question and no verdict.
   - A confirmation states the car's mode after the request, not that the app caused it: a manual selection looks
-    identical; the mode button's 0x305 bit (byte 4, mask 0x04) was seen set for one press only, parked with the engine off
-    (#304), and a press does not show who caused a mode change, so `driveModeButtonPressed` proves nothing (#252).
+    identical; the mode button's 0x305 bit (byte 4, mask 0x04) was seen set for one press only, parked with the engine
+    off (#304), and a press does not show who caused a mode change, so `driveModeButtonPressed` proves nothing (#252).
   - OBD merges must not bring back drive-mode provenance keys from their snapshot (`ModeProvenanceMergeTest`). Timing is
     2 s settle + 15 s window; reconnect → `DriveCommandResult.ConnectionLost`. Demo must stamp every CAN tag
     (`CanDecoder.canStampTags` ⊆ `DemoSimulator.CAN_TAGS`, DemoSimulatorTest) or confirmations time out in demo.
