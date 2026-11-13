@@ -13,8 +13,7 @@ paths:
   (GATT 13) or a `WriteFailure` (not sent / uncertain).
   - **Why:** the WiCAN Pro (upstream v4.48p) declares FFF2 with a 20-byte maximum but its stack (ESP-IDF 5.2.3) delivers a longer
     write and then answers 0x0D. Every 22-byte `t…` frame (PCM polls, DTC requests, probes) is one ATT write at MTU 247.
-    Seen on one parked car: every such write was answered with GATT 13 and the module still replied (#248, #333); no GATT
-    trace was captured. USB FEE1 allows 64 bytes.
+    Source-level only: no GATT trace from a real adapter. USB FEE1 allows 64 bytes.
   - **Rule:** POSSIBLY_DELIVERED keeps the request outstanding until its own reply, but the PCM poller does not wait for that
     reply: the batch gap paces the next request, as in rc.7 (#333). Replies slower than the gap then overlap, so their NRCs are
     charged to nobody and, by the ledger's rule, no DID is suppressed for the rest of that connection (KR2 / KR3 on the
