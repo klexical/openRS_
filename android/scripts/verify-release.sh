@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# verify-release.sh <tag> <apk> — release identity checks run by CI's publish-release before an APK is attached (#214).
+# verify-release.sh <tag> <apk> — release identity checks run by the shared release recipe (scripts/release-apk.sh, #363)
+# before CI attaches an APK (#214).
 #   1. APK filename is openRS_v<name>.apk for tag android-v<name>
 #   2. the APK's embedded versionName equals <name>
 #   3. its versionCode is higher than every earlier android-v* tag's (no reused or lower code is ever distributed).
@@ -55,7 +56,7 @@ case "$NAME" in
 esac
 
 # Earlier tags whose versionCode can't be read from their build file. An entry needs a reason next to it; there are
-# none — all 37 android-v* tags up to android-v2.2.7-rc.6 read (checked 2026-10-28). Any other unreadable tag fails.
+# none — all 33 android-v* tags up to android-v2.2.7-rc.8 read (checked 2026-11-12, #362). Any other unreadable tag fails.
 LEGACY_TAGS=""
 
 TAGS=$(git tag -l 'android-v*')

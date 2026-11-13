@@ -152,7 +152,7 @@ jobs:
 
   # An android-v RC or stable tag: the shared recipe builds and verifies the APK (.github/workflows/release-apk.yml,
   # #363), then publish-release attests it and attaches it to the tag's GitHub release. A nightly tag is skipped here:
-  # the nightly workflow builds and publishes those.
+  # nightlies are built and published by the nightly workflow #363 adds, not by this file.
   release-name:
     name: Release name from the tag
     runs-on: ubuntu-latest
@@ -195,19 +195,20 @@ jobs:
       - name: Download the release APK
         uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.release-apk.outputs.artifact }}
+          name: release-apk-${{ github.run_id }}-${{ github.run_attempt }}   # the recipe's upload name in this run
           path: release-apk
 
-      # The file the recipe verified, byte for byte: its name and the SHA-256 it reported
+      # The file the recipe verified, byte for byte: the name the tag gives it and the SHA-256 the recipe reported (its only
+      # output: GitHub drops an output holding a secret's value, so the names are built here, not passed)
       - name: Check the downloaded APK
         id: apk
         env:
-          FILE: ${{ needs.release-apk.outputs.file }}
           SHA256: ${{ needs.release-apk.outputs.sha256 }}
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          [ "$FILE" = "openRS_v${TAG#android-v}.apk" ] || { echo "::error::recipe reported $FILE for tag $TAG"; exit 1; }
+          FILE="openRS_v${TAG#android-v}.apk"
+          [[ "$SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::the recipe reported no SHA-256 ('$SHA256')"; exit 1; }
           [ "$(ls release-apk)" = "$FILE" ] || { echo "::error::the artifact does not hold exactly $FILE: $(ls release-apk | tr '\n' ' ')"; exit 1; }
           echo "$SHA256  release-apk/$FILE" | sha256sum -c -
           echo "path=release-apk/$FILE" >> "$GITHUB_OUTPUT"

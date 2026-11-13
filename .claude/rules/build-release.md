@@ -30,13 +30,17 @@ paths:
     `-dev+<commit>[.dirty]` — dirty = tracked changes or non-ignored untracked files under `android/`.
   - **The shared release recipe (#363):** `.github/workflows/release-apk.yml` (`workflow_call` only; inputs `sha`, `name`,
     `tag`, `nightly_date`) checks out the given commit, decodes the keystore, checks the API keys and runs
-    `scripts/release-apk.sh`: tag = `android-v<name>`, `-PnightlyDate` passed only for a nightly (empty for an RC or
-    stable: the build refuses an empty date), exactly one `openRS_v<name>.apk` in the output, `verify-release.sh`. It has
-    read access only and refuses a pull-request event; it hands the APK over as a one-day artifact with its file name and
-    SHA-256. CI's tag path for an `android-v` RC or stable (not `-nightly.`) calls it, and `publish-release` re-checks the
-    digest, attests the file and attaches it. `scripts/test-release-apk.sh` checks the build step;
-    `scripts/test-release-workflows.rb` checks the workflows' shape (secrets only on tag jobs, inputs through `env`, the
-    nightly skip); CI's build job runs both, and the identity and verify-release tests.
+    `scripts/release-apk.sh`: `sha` a full 40-character SHA equal to the checked-out commit, tag = `android-v<name>`,
+    `-PnightlyDate` passed only for a nightly (empty for an RC or stable: the build refuses an empty date), exactly one APK
+    in the output, `openRS_v<name>.apk`, `verify-release.sh`. It has read access only and refuses a pull-request event; it
+    hands the APK over as a one-day artifact `release-apk-<run id>-<run attempt>`, with its SHA-256 as the only output:
+    because GitHub drops a job output that contains any secret's value, the caller builds the artifact and file names
+    itself. CI's tag path for an `android-v` RC or stable (not `-nightly.`)
+    calls it, and `publish-release` re-checks the digest, attests the file and attaches it; re-running only a failed
+    `publish-release` finds no artifact (another attempt, or past one day): re-run the whole workflow.
+    `scripts/test-release-apk.sh` checks the build step; `scripts/test-release-workflows.rb` checks the workflows' shape
+    (each tag job's exact condition and permissions, the recipe's one output, the digest check before attest and attach,
+    no expression in any `run` line); CI's build job runs both, and the identity and verify-release tests.
   - `verify-release.sh` checks tag = versionName = filename, versionCode above every
     earlier tag, release signer (CI's keystore secrets sign with the published APKs' certificate, `c99b6f26…`). A nightly
     tag's code is the rule applied to the date in its name, for the tag under check and for earlier tags (their build file

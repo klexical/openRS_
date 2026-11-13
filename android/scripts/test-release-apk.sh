@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# test-release-apk.sh — checks release-apk.sh, the shared release recipe's build step (#363): the RC / stable path passes
+# test-release-apk.sh — checks release-apk.sh, the shared release recipe's build step (#363): the commit to build is a
+# full 40-character SHA and is the checked-out commit; the RC / stable path passes
 # no -PnightlyDate at all (the build refuses an empty one, #362), a nightly passes its date; the tag must be
 # android-v<name> and the name a nightly of that date exactly when a date is given, checked before Gradle runs; the build
 # output must hold exactly one APK, openRS_v<name>.apk; verify-release.sh runs on it; the path, file name and SHA-256
@@ -30,15 +31,20 @@ printf '%s\n' "$@" > "$WORK/verify-args"
 exit "${FAKE_VERIFY_EXIT:-0}"
 STUB
 chmod +x "$A/gradlew"
+# The throwaway folder is a repository with one commit: the checkout the recipe must be given
+git -C "$WORK" init -q
+git -C "$WORK" -c user.name=test -c user.email=test@example.invalid -c commit.gpgsign=false commit -q --allow-empty -m checkout
+HEAD_SHA=$(git -C "$WORK" rev-parse HEAD)
 
 sha256_of() { openssl dgst -sha256 "$1" | sed 's/.*= //'; }
 
-# run <name> <tag> <nightly date> [env assignments...]: runs the recipe from the repository root, as the workflow does
+# run <name> <tag> <nightly date> [env assignments...]: runs the recipe from the repository root, as the workflow does,
+# for the checked-out commit (or for $SHA_ARG when a case sets it)
 run() {
   local name="$1" tag="$2" date="$3"; shift 3
   rm -rf "$OUTDIR" "$WORK/gradle-args" "$WORK/verify-args" "$WORK/gh-output"; : > "$WORK/gh-output"
   OUT=$(cd "$WORK" && env WORK="$WORK" OUTDIR="$OUTDIR" GITHUB_OUTPUT="$WORK/gh-output" "$@" \
-        bash android/scripts/release-apk.sh "$name" "$tag" "$date" 2>&1); CODE=$?
+        bash android/scripts/release-apk.sh "${SHA_ARG:-$HEAD_SHA}" "$name" "$tag" "$date" 2>&1); CODE=$?
 }
 
 # check <case> <condition...>: one case's verdict, from the conditions collected in WHY
@@ -95,6 +101,17 @@ expect_refused "a date that is not the name's"          "-nightly.20261102"     
 expect_refused "a nightly name without a date"          "nightly"               "$N"       "android-v$N"  ""      no
 expect_refused "a date that is not eight digits"        "YYYYMMDD"              "2.2.7-nightly.2026110" "android-v2.2.7-nightly.2026110" 2026110 no
 expect_refused "a date carrying another argument"       "YYYYMMDD"              "2.2.7-nightly.20261101 -Px" "android-v2.2.7-nightly.20261101 -Px" "20261101 -Px" no
+
+# The commit: a full SHA, and the one checked out
+SHA_ARG=staging
+expect_refused "a branch name instead of a commit SHA"  "40"                    2.2.7-rc.8 android-v2.2.7-rc.8 ""      no
+SHA_ARG="${HEAD_SHA:0:12}"
+expect_refused "an abbreviated commit SHA"              "40"                    2.2.7-rc.8 android-v2.2.7-rc.8 ""      no
+SHA_ARG=$(printf '0%.0s' $(seq 40))
+expect_refused "a SHA that is not the checked-out commit" "checked-out commit"       2.2.7-rc.8 android-v2.2.7-rc.8 ""      no
+SHA_ARG=$(printf '%s' "$HEAD_SHA" | tr 'a-f' 'A-F')
+expect_refused "an upper-case SHA"                      "40"                    2.2.7-rc.8 android-v2.2.7-rc.8 ""      no
+unset SHA_ARG
 
 # The one-APK check on the build output
 expect_refused "no APK in the build output"             "exactly one"   2.2.7-rc.8 android-v2.2.7-rc.8 "" yes FAKE_APKS=

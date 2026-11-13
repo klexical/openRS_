@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
-# release-apk.sh <name> <tag> <nightly date or ""> — the build step of the shared release recipe,
-# .github/workflows/release-apk.yml (#363). Called by CI's publish-release for an RC or stable tag (no date), and by the
-# nightly with its UTC date. Checked before Gradle runs: the tag is android-v<name>; a date is eight digits and given
-# exactly when the name is <base>-nightly.<date>. Then assembleRelease, with -PnightlyDate only for a nightly (the build
+# release-apk.sh <sha> <name> <tag> <nightly date or ""> — the build step of the shared release recipe,
+# .github/workflows/release-apk.yml (#363), which ci.yml's release-apk job calls for an android-v RC or stable tag (no
+# date); the nightly workflow #363 adds will call it with its UTC date. Checked before Gradle runs: <sha> is a full
+# 40-character commit SHA and is the commit checked out here (a branch name would build whatever it points at); the tag
+# is android-v<name>; a date is eight digits and given exactly when the name is <base>-nightly.<date>. Then assembleRelease, with -PnightlyDate only for a nightly (the build
 # refuses an empty one, #362); the output folder must hold exactly one APK, openRS_v<name>.apk; verify-release.sh checks
 # it. Only then are path=, file= and sha256= written to $GITHUB_OUTPUT (and printed). The keystore and the API keys are
 # the workflow's steps before this one. Run from anywhere; never prints a key.
 set -euo pipefail
 fail() { echo "::error::$*"; exit 1; }
-[ $# -eq 3 ] || fail "usage: release-apk.sh <name> <tag> <nightly date or \"\">"
-NAME="$1"; TAG="$2"; DATE="$3"
+[ $# -eq 4 ] || fail "usage: release-apk.sh <sha> <name> <tag> <nightly date or \"\">"
+SHA="$1"; NAME="$2"; TAG="$3"; DATE="$4"
 ANDROID_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 OUTDIR="$ANDROID_DIR/app/build/outputs/apk/release"
+
+[[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || fail "'$SHA' is not a full commit SHA (40 lower-case hex characters)"
+HEAD_SHA=$(git -C "$ANDROID_DIR" rev-parse HEAD) || fail "cannot read the checked-out commit"
+[ "$HEAD_SHA" = "$SHA" ] || fail "the checked-out commit is $HEAD_SHA, not $SHA"
 
 [ -n "$NAME" ] || fail "the release name is empty"
 [ "$TAG" = "android-v$NAME" ] || fail "tag $TAG is not android-v$NAME, the tag of release name $NAME"
