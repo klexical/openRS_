@@ -78,7 +78,7 @@ under `android/` is read or edited.
 - `-1.0` / `-1L` = not yet polled — OBD scalars (oilLife, tirePressures, odometer, batterySoc, etc.)
 - `sparkAdvance` = `-99.0` until received — negative advance is valid (#205)
 - `0L` = not yet received — timestamps (tpmsLastUpdate)
-- `null` = unknown — Boolean? fields (rduEnabled, pdcEnabled, fengEnabled, lcArmed, assEnabled, IPC/HVAC warning lamps)
+- `null` = unknown — Boolean? fields (rduEnabled, pdcEnabled, fengEnabled, lcArmed, assEnabled, escOffButtonPressed, IPC/HVAC warning lamps)
 
 **Rules:**
 - VehicleState is **immutable** — always `.copy(...)`, never mutate directly

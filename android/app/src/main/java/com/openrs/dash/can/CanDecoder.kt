@@ -144,9 +144,9 @@ object CanDecoder {
     const val ID_DRIVE_MODE_EXT = 0x420
 
     // ── Steering wheel button events (community-discovered) ────────────────
-    // 0x260: Auto Start Stop button (byte0 bit0). The ESC Off bit remains unknown (#304).
-    // This matches the firmware definitions and the community map's MSB-first bit numbering (#304);
-    // it has not yet been witnessed on a car.
+    // 0x260: Auto Start Stop button (byte0 bit0, mask 0x01), as in the firmware definitions and the community map's
+    // MSB-first bit numbering (#304); one parked press check saw it set for one press, on one car, engine off (#304).
+    // The ESC Off button is not on 0x260 on that car, and its bit is not identified (#304).
     const val ID_BUTTONS_260   = 0x260
 
     // 0x305: Drive Mode button (byte4 bit2). Bit = 1 while button is held.
