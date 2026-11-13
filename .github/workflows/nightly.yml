@@ -1,16 +1,17 @@
 name: Nightly
 
-# One build a night from staging's tip (#363; the spec: evidence of the nightly pipeline, "What a run does" 1–6). DRY-RUN
-# MODE: PUBLISH is false, so every run stops after the attestation, before any draft, and no job holds a token that can
-# write contents: no release or tag can be made by this file. T6 adds the draft and publish jobs, gated on the gate's
-# publish output; T7 flips PUBLISH after two green dry-run nights.
+# One build a night from staging's tip (#363; the spec: evidence of the nightly pipeline, "What a run does" 1–8). DRY-RUN
+# MODE while PUBLISH is false: every run stops after the attestation, and the two jobs that hold a token able to write
+# contents (publish, cleanup) are skipped, so no release or tag is made. They run only when PUBLISH is true AND the run
+# is on main (a manual run on another ref runs that ref's copy of this file); T7 flips PUBLISH after two green dry-run
+# nights.
 #
 # GitHub runs the schedule (and offers "Run workflow") only from this file on the default branch, main, whose tree is
 # the 2.2.6 one. So every step that runs a repository script or Gradle runs in a checkout of staging's tip, the commit
-# the gate records, never the run's own commit or ref (on a schedule those are main's). The recipe
-# (release-apk.yml, also on main) checks out that commit itself.
-# Each night that builds leaves a release-signed APK as a one-day run artifact and a public build-provenance attestation
-# for a build that is not published (owner, 2026-11-13).
+# the gate records, never the run's own commit or ref (on a schedule those are main's); the run's ref is read only in
+# the two publishing jobs' condition. The recipe (release-apk.yml, also on main) checks out that commit itself.
+# In a dry run each night that builds leaves a release-signed APK as a one-day run artifact and a public build-provenance
+# attestation for a build that is not published (owner, 2026-11-13).
 # android/scripts/test-release-workflows.rb pins this file's shape.
 
 on:
@@ -25,7 +26,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  PUBLISH: 'false'            # dry-run mode (#363 T5): flipping it is T7's one small change, after two green dry-run nights
+  PUBLISH: 'false'            # dry-run mode (#363): flipping it is T7's one small change, after two green dry-run nights
 
 jobs:
   # The publish output, from this file's PUBLISH alone: no checkout, no repository code, so nothing on staging can set it
@@ -54,6 +55,7 @@ jobs:
       date: ${{ steps.gate.outputs.date }}
       name: ${{ steps.gate.outputs.name }}
       tag: ${{ steps.gate.outputs.tag }}
+      base_tag: ${{ steps.gate.outputs.base_tag }}
     steps:
       - name: Today's UTC date, taken once
         id: today
@@ -71,7 +73,7 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       # Builds only if files under android/ changed since the newest published nightly (rc.8 for the first) and today has
-      # no nightly. With this job's read-only token GitHub lists no draft releases: T6, which creates drafts, checks them.
+      # no nightly. With this job's read-only token GitHub lists no draft releases: the publish job checks again first.
       - name: Gate
         id: gate
         env:
@@ -123,6 +125,7 @@ jobs:
           bash scripts/test-nightly-gate.sh
           bash scripts/test-launch-check.sh
           bash scripts/test-start-emulator.sh
+          bash scripts/test-nightly-publish.sh
 
   release:
     name: Build the nightly APK
@@ -227,4 +230,72 @@ jobs:
         run: |
           gh attestation verify "release-apk/openRS_v${NAME}.apk" --repo "$GITHUB_REPOSITORY" \
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/nightly.yml"
-          echo "Dry run (PUBLISH is $PUBLISH): stopped after the attestation, before any draft." >> "$GITHUB_STEP_SUMMARY"
+          echo "Attested. PUBLISH is $PUBLISH: the draft and publish run only when it is true and the run is on main." >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Publishing (#363 T6): only when PUBLISH is true and the run is on main; skipped in a dry run ──────────────────────
+  # The draft check, notes, draft, one upload, asset check and publish are nightly-publish.sh's (SPEC "What a run does" 7).
+  publish:
+    name: Draft, check and publish the nightly
+    needs: [ mode, gate, release, attest ]
+    if: needs.mode.outputs.publish == 'true' && github.ref == 'refs/heads/main' && needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout the gate's commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+          persist-credentials: false
+
+      - name: Download the nightly APK
+        uses: actions/download-artifact@v4
+        with:
+          name: release-apk-${{ github.run_id }}
+          path: release-apk
+
+      - name: Check the downloaded APK
+        env:
+          SHA256: ${{ needs.release.outputs.sha256 }}
+          NAME: ${{ needs.gate.outputs.name }}
+        run: |
+          set -euo pipefail
+          FILE="openRS_v${NAME}.apk"
+          [[ "$SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::the recipe reported no SHA-256 ('$SHA256')"; exit 1; }
+          [ "$(ls release-apk)" = "$FILE" ] || { echo "::error::the artifact does not hold exactly $FILE"; exit 1; }
+          echo "$SHA256  release-apk/$FILE" | sha256sum -c -
+
+      - name: Draft, upload, check and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.gate.outputs.tag }}
+          NAME: ${{ needs.gate.outputs.name }}
+          SHA: ${{ needs.gate.outputs.sha }}
+          BASE_TAG: ${{ needs.gate.outputs.base_tag }}
+          SHA256: ${{ needs.release.outputs.sha256 }}
+        run: bash android/scripts/nightly-publish.sh "$TAG" "openRS_ v$NAME" "$SHA" "$BASE_TAG" "release-apk/openRS_v${NAME}.apk" "$SHA256"
+
+  # When publish fails, is cancelled or times out: delete this run's draft and its tag, never a published release
+  # (nightly-cleanup.sh; SPEC "What a run does" 8). always() lets it run after a failure or a cancellation.
+  cleanup:
+    name: Delete a failed run's draft
+    needs: [ mode, gate, publish ]
+    if: always() && needs.mode.outputs.publish == 'true' && github.ref == 'refs/heads/main' && needs.gate.outputs.run == 'true' && (needs.publish.result == 'failure' || needs.publish.result == 'cancelled')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout the gate's commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+          persist-credentials: false
+
+      - name: Delete this run's draft and its tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.gate.outputs.tag }}
+          SHA: ${{ needs.gate.outputs.sha }}
+        run: bash android/scripts/nightly-cleanup.sh "$TAG" "$SHA"
