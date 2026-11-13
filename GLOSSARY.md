@@ -51,6 +51,17 @@ _Avoid_: Auto-start, auto-drive
 A stretch inside a drive that is recording but has no adapter data, because the connection was down. It is not a pause.
 _Avoid_: Link gap, dropout, pause
 
+**Reception stall**:
+A gap on an open connection that ends with a burst of queued frames: the frames were held up on the way. The connection
+stays up, so it is not a recording gap.
+_Avoid_: Dropout, freeze, link loss, lag
+
+**Quiet span**:
+A stretch of an open connection in which few frames arrive, or none, that does not end with a burst of queued frames:
+the rate returns, the connection ends, or it lasts so long that the app stops waiting for either. Its cause is not told
+apart: a quiet bus and lost reception look the same.
+_Avoid_: Stall, reception loss, dropout
+
 **Cancelled start**:
 A START that was stopped before the drive began. It is not a drive and never appears in history.
 _Avoid_: Aborted drive, empty drive

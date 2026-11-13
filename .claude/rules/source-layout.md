@@ -53,6 +53,11 @@ can/
   Mode22Frames.kt         — `Mode22`: request DID / positive DID / NRC helpers + `RawReply` (Frame / AmbiguousNrc) for probe matching
   WriteOutcome.kt         — transport write outcome: SENT / POSSIBLY_DELIVERED (GATT 13) / WriteFailure (not sent / uncertain)
   IsoTpBuffer.kt          — ISO-TP SF/FF/CF reassembly; caller sends BCM_FLOW_CONTROL after FF
+  ReceptionStall.kt       — gaps on an open connection (#356): frames per quarter second of elapsedRealtime against the
+                            connection's own rate (frames over time outside gaps); a gap whose next half second holds a burst
+                            of queued frames = RECEPTION_STALL, any other = QUIET_SPAN (claims no cause); a gap with no frame
+                            after its first quarter, then the connection's end = nothing; stamped at its start. Pure, one per
+                            connection, fed by SlcanConnection's frame loop. Names gaps; prevents nothing
   EscCommand.kt           — ESC request + confirmation (#125): window = firmware press plan + 3 s; only a 0x1C0 frame
                             stamped after the request on the same link generation confirms; one request at a time (Busy)
   FirmwareApi.kt          — FirmwareCommandSender interface + WiFiFirmwareApi (REST /api/frs) +

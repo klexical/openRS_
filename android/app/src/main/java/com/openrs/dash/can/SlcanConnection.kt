@@ -49,6 +49,13 @@ class SlcanConnection(
     /** Wall clock for NRC attribution / re-probe timing — tests pass the virtual clock. */
     private val clock: () -> Long = System::currentTimeMillis,
     /**
+     * Ms that keep counting while the phone sleeps, for measuring gaps (#356): a wall-clock correction must not make or
+     * hide one, and with the screen off the phone may sleep (System.nanoTime stops then; elapsedRealtime does not).
+     */
+    private val monotonicClock: () -> Long = { android.os.SystemClock.elapsedRealtime() },
+    /** Where a gap is written: type, text and the wall time of its start (#356); tests capture it. */
+    private val gapLog: (type: String, message: String, wallMs: Long) -> Unit = DiagnosticLogger::eventAt,
+    /**
      * #316: an established connection dropped and the normal reconnect attempts have failed. Called once per dropped
      * connection, with the moment the drop was found ([clock]); never for attempts with no connection before them.
      */
@@ -342,6 +349,11 @@ class SlcanConnection(
                 val pcmRequests = PcmRequestLedger()
                 val framing = SlcanFraming()                     // #251: plain unless the first frames are timestamped
                 var framingNoted = false
+                val gaps = ReceptionStall()                     // #356: gaps on this connection, named in the session log
+                // Each gap is logged at its start: the wall time now, less the time counted since the gap began
+                fun logGaps(reports: List<ReceptionStall.Report>) = reports.forEach { r ->
+                    gapLog(r.type, r.message, clock() - (monotonicClock() - r.startMs))
+                }
                 // Other modules' Mode 22 requests (pollers + prober) by response ID: decides who may own a 7F 22 (#250)
                 val moduleLedgers = java.util.concurrent.ConcurrentHashMap<Int, PcmRequestLedger>()
                 fun ledgerFor(responseId: Int): PcmRequestLedger =
@@ -589,6 +601,7 @@ class SlcanConnection(
                         }
 
                         framing.accepted()
+                        gaps.onFrame(monotonicClock()).let { if (it.isNotEmpty()) logGaps(it) }
 
                         // The prober's own positive reply: response ID + 62 + DID (#250); anything else takes the normal path
                         val probing = _probe
@@ -729,6 +742,7 @@ class SlcanConnection(
                         }
                     }
                 } finally {
+                    logGaps(gaps.onEnd(monotonicClock()))
                     obdJob.cancel()
                     probeJob.cancel()
                     pcmJob.cancel()

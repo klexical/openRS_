@@ -58,14 +58,22 @@ internal class ReplayTransport(private val scope: CoroutineScope, private val ro
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
-internal class ReplayRun(scope: TestScope, rows: List<ReplayRow>, rpm: Double = 0.0, mapPoll: () -> Boolean = { false }) {
+internal class ReplayRun(
+    scope: TestScope, rows: List<ReplayRow>, rpm: Double = 0.0, mapPoll: () -> Boolean = { false },
+    /** The wall clock the connection reads, from virtual time: a test may make it jump (#356); default = virtual time. */
+    wallClock: (Long) -> Long = { it },
+) {
+    /** Gaps the connection logged: type, text, wall time of the start (#356). */
+    val gaps = mutableListOf<Triple<String, String, Long>>()
     val state = MutableStateFlow(VehicleState(isConnected = true))
     val transport = ReplayTransport(scope.backgroundScope, rows)
     private val link = LinkOwnership()
     private val session = LinkSession(link, link.begin(), state, NoRecorder, onFrameCounted = {}, perfRunSink = { _: PerfRunEntity -> })
     val connection = SlcanConnection(
         transportFactory = { transport }, maxRetries = 1, rpmProvider = { rpm }, mapPoll = mapPoll,
-        ioDispatcher = StandardTestDispatcher(scope.testScheduler), debugSink = {}, clock = { scope.testScheduler.currentTime },
+        ioDispatcher = StandardTestDispatcher(scope.testScheduler), debugSink = {}, clock = { wallClock(scope.testScheduler.currentTime) },
+        monotonicClock = { scope.testScheduler.currentTime },
+        gapLog = { type, message, wallMs -> gaps += Triple(type, message, wallMs) },
     )
 
     init {
