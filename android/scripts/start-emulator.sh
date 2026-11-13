@@ -3,14 +3,15 @@
 # emulator without a window and waits for its boot, for the nightly's launch check (#363). Needs ANDROID_HOME (the SDK);
 # on success the emulator keeps running and adb's folder is added to $GITHUB_PATH when that is set.
 #   - One AVD folder for both tools: avdmanager and the emulator do not agree on a default. GitHub's Ubuntu runner image
-#     sets XDG_CONFIG_HOME, and avdmanager then writes to $XDG_CONFIG_HOME/.android/avd, while the emulator looks in
-#     $ANDROID_AVD_HOME, $ANDROID_SDK_HOME/avd and $HOME/.android/avd ("Unknown AVD name", #363). So ANDROID_AVD_HOME is
-#     exported for both, and the folder is created BEFORE the create: avdmanager ignores an ANDROID_AVD_HOME that does not
-#     exist and falls back to its default.
+#     sets XDG_CONFIG_HOME; checked locally, with it set, avdmanager (cmdline-tools 20.0 and 12.0) resolves its AVD folder
+#     to $XDG_CONFIG_HOME/.android/avd, while the emulator looks in $ANDROID_AVD_HOME, $ANDROID_SDK_HOME/avd and
+#     $HOME/.android/avd ("Unknown AVD name", #363). So ANDROID_AVD_HOME is exported for both, and the folder is created
+#     BEFORE the create: checked locally, avdmanager ignores an ANDROID_AVD_HOME that does not exist.
 #   - The location variables and `avdmanager list avd` are printed, and nightly.ini must be in that folder before the
 #     emulator starts; otherwise the run stops and lists every .ini under both candidate folders.
 #   - The wait ends at once when the emulator process is gone (the launcher replaces itself with the emulator by execv,
-#     so its process id stays the emulator's), with the last 60 lines of its log; it also ends at the boot limit.
+#     so its process id stays the emulator's), with the last 60 lines of its log; it also ends at the boot limit, measured
+#     by the clock from the emulator's start (a boot check can take up to its 10 s timeout).
 # EMULATOR_POLL_S (default 5) sets the seconds between boot checks; the tests shorten it.
 set -euo pipefail
 fail() { echo "::error::$*"; exit 1; }
@@ -33,28 +34,31 @@ for v in ANDROID_AVD_HOME ANDROID_USER_HOME ANDROID_SDK_HOME HOME XDG_CONFIG_HOM
 echo                                                                   # its prompt ends without a newline
 "$SDKM/avdmanager" list avd || echo "(avdmanager list avd failed with status $?; the check below still decides)"
 if [ ! -f "$ANDROID_AVD_HOME/$AVD.ini" ]; then
-  echo "::error::no $AVD.ini in ANDROID_AVD_HOME ($ANDROID_AVD_HOME) after the create; .ini files under \$HOME/.android and \$XDG_CONFIG_HOME/.android:"
-  find "$HOME/.android" "${XDG_CONFIG_HOME:-$HOME/.config}/.android" -name '*.ini' 2>/dev/null || true
+  XDG_AVD="${XDG_CONFIG_HOME:+$XDG_CONFIG_HOME/.android}"
+  echo "::error::no $AVD.ini in ANDROID_AVD_HOME ($ANDROID_AVD_HOME) after the create; .ini files under HOME/.android ($HOME/.android) and XDG_CONFIG_HOME/.android (${XDG_AVD:-<unset>}):"
+  find "$HOME/.android" ${XDG_AVD:+"$XDG_AVD"} -name '*.ini' 2>/dev/null || true
   exit 1
 fi
 
 nohup "$EMULATOR" -avd "$AVD" -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect > "$LOG" 2>&1 &
 EMULATOR_PID=$!
-waited=0
+STARTED=$SECONDS; waited=0
 while :; do
   if ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
     status=0; wait "$EMULATOR_PID" || status=$?
-    echo "::error::the emulator exited (status $status) about ${waited} s after its start, before it booted; the last lines of its log follow"
+    echo "::error::the emulator exited (status $status) about $((SECONDS - STARTED)) s after its start, before it booted; the last lines of its log follow"
     tail -n 60 "$LOG" || true
     exit 1
   fi
-  [ "$(timeout 10 "$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ] && break
+  booted=$(timeout 10 "$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
+  waited=$((SECONDS - STARTED))
+  [ "$booted" = 1 ] && break
   if [ "$waited" -ge "$BOOT_LIMIT_S" ]; then
     echo "::error::the emulator did not finish booting within ${BOOT_LIMIT_S} s; the last lines of its log follow"
     tail -n 60 "$LOG" || true
     exit 1
   fi
-  sleep "$POLL_S"; waited=$((waited + POLL_S))
+  sleep "$POLL_S"
 done
 echo "Emulator booted about ${waited} s after its start (AVD $AVD in $ANDROID_AVD_HOME)"
 [ -z "${GITHUB_PATH-}" ] || echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"

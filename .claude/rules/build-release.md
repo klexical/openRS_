@@ -93,10 +93,10 @@ paths:
 - **Robolectric tests:** test-only and pinned (4.14.1 + androidx.test:core 1.6.1), `sdk=35` + a plain `Application` in
   `app/src/test/resources/robolectric.properties`. SDK 35 needs only Java 17; Java 21 is needed from SDK 36. CI runs
   Temurin 17; the Android Studio JBR is a different JDK.
-- **The emulator on GitHub's runner needs one AVD folder for both tools (#363)** — the Ubuntu runner image sets
-  `XDG_CONFIG_HOME`, and `avdmanager` (cmdline-tools 12.0 and 20.0, checked locally) then writes AVDs under
-  `$XDG_CONFIG_HOME/.android/avd`, while the emulator looks only in `$ANDROID_AVD_HOME`, `$ANDROID_SDK_HOME/avd` and
-  `$HOME/.android/avd` ("Unknown AVD name"; nightly dry run 1). `avdmanager` uses `ANDROID_AVD_HOME` only when that
-  folder already exists, so create it before the create and export it for both tools. `scripts/start-emulator.sh` does,
-  checks `nightly.ini` is there before the start, and ends the boot wait when the emulator process is gone
+- **Give avdmanager and the emulator one existing AVD folder (#363)** — the emulator looks only in `$ANDROID_AVD_HOME`,
+  `$ANDROID_SDK_HOME/avd` and `$HOME/.android/avd` ("Unknown AVD name" otherwise). Checked locally with
+  `XDG_CONFIG_HOME` set, as GitHub's Ubuntu runner image sets it, `avdmanager` (cmdline-tools 12.0 and 20.0) resolves its
+  AVD folder to `$XDG_CONFIG_HOME/.android/avd`, and uses `ANDROID_AVD_HOME` only when that folder already exists. So
+  create the folder before the create and export it for both tools. `scripts/start-emulator.sh` does, checks
+  `nightly.ini` is there before the start, and ends the boot wait when the emulator process is gone
   (`scripts/test-start-emulator.sh`).
