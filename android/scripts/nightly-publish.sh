@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# nightly-publish.sh <tag> <title> <sha> <base tag> <file> <sha256> — the nightly's publishing step (#363 T6; SPEC "What a
-# run does" 7, "Notes layout"). Needs GH_TOKEN with contents: write and GITHUB_REPOSITORY. In order:
+# nightly-publish.sh <tag> <title> <sha> <base tag> <file> <sha256> — the nightly's publishing step (#363). Needs
+# GH_TOKEN with contents: write and GITHUB_REPOSITORY. In order:
 #   1. stop quietly (exit 0, nothing created) when <tag> already has a release in any state (a draft included: this token
 #      is shown drafts, the gate's read-only one is not) or a tag ref;
 #   2. notes: GitHub's generated list of merged pull requests since <base tag> (the newest published nightly, rc.8 for the

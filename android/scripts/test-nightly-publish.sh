@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# test-nightly-publish.sh — checks nightly-publish.sh and nightly-cleanup.sh, the publishing half of the nightly (#363 T6;
-# SPEC "What a run does" 7–8, "Notes layout"):
+# test-nightly-publish.sh — checks nightly-publish.sh and nightly-cleanup.sh, the publishing half of the nightly (#363):
 #   - publish stops quietly, creating nothing, when today's tag already has a release in any state (a draft, a pre-release
 #     or a published release) or a tag ref; it fails closed on a release list that is not a JSON list and on a tag lookup
 #     that fails with anything but 404;

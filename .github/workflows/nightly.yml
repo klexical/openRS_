@@ -232,8 +232,8 @@ jobs:
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/nightly.yml"
           echo "Attested. PUBLISH is $PUBLISH: the draft and publish run only when it is true and the run is on main." >> "$GITHUB_STEP_SUMMARY"
 
-  # ── Publishing (#363 T6): only when PUBLISH is true and the run is on main; skipped in a dry run ──────────────────────
-  # The draft check, notes, draft, one upload, asset check and publish are nightly-publish.sh's (SPEC "What a run does" 7).
+  # ── Publishing (#363): only when PUBLISH is true and the run is on main; skipped in a dry run ─────────────────────────
+  # The draft check, notes, draft, one upload, asset check and publish are nightly-publish.sh's.
   publish:
     name: Draft, check and publish the nightly
     needs: [ mode, gate, release, attest ]
@@ -277,7 +277,7 @@ jobs:
         run: bash android/scripts/nightly-publish.sh "$TAG" "openRS_ v$NAME" "$SHA" "$BASE_TAG" "release-apk/openRS_v${NAME}.apk" "$SHA256"
 
   # When publish fails, is cancelled or times out: delete this run's draft and its tag, never a published release
-  # (nightly-cleanup.sh; SPEC "What a run does" 8). always() lets it run after a failure or a cancellation.
+  # (nightly-cleanup.sh). always() lets it run after a failure or a cancellation.
   cleanup:
     name: Delete a failed run's draft
     needs: [ mode, gate, publish ]

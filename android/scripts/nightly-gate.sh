@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# nightly-gate.sh <sha> <today YYYYMMDD> — the nightly workflow's gate (#363; SPEC "When it runs" 3). Run in a checkout of
+# nightly-gate.sh <sha> <today YYYYMMDD> — the nightly workflow's gate (#363). Run in a checkout of
 # the commit with full history and tags. Writes run=, reason=, sha=, date=, name=, tag=, base_tag= to $GITHUB_OUTPUT
 # (base_tag: the tag it compared with, which the publish step's notes start from; empty when today already has a nightly):
 #   - name <releaseBase>-nightly.<today> (releaseBase read from the commit's app/build.gradle.kts), tag android-v<name>;
@@ -17,7 +17,7 @@ set -euo pipefail
 fail() { echo "::error::$*"; exit 1; }
 [ $# -eq 2 ] || fail "usage: nightly-gate.sh <sha> <today YYYYMMDD>"
 SHA="$1"; TODAY="$2"
-FIRST_BASE_TAG=android-v2.2.7-rc.8            # the first nightly is compared with rc.8 (SPEC "When it runs" 3)
+FIRST_BASE_TAG=android-v2.2.7-rc.8            # the first nightly is compared with rc.8 (#363)
 NIGHTLY_TAG='^android-v[0-9]+\.[0-9]+\.[0-9]+-nightly\.[0-9]{8}$'
 
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || fail "'$SHA' is not a full commit SHA (40 lower-case hex characters)"

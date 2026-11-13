@@ -3,7 +3,7 @@
 # permissions; the shared recipe .github/workflows/release-apk.yml is only called (workflow_call), builds the commit it
 # is given through android/scripts/release-apk.sh, and is the only builder; publish-release re-checks the recipe's file
 # name and SHA-256 before it attests and attaches; no run line holds an expression; CI's build job runs the release
-# script tests; nightly.yml (T5, T6) runs only on its schedule and by hand, in one group, builds only staging's tip through the
+# script tests; nightly.yml runs only on its schedule and by hand, in one group, builds only staging's tip through the
 # recipe, and re-checks the digest before the launch check, the attestation and the publish; its launch job starts the
 # emulator only through android/scripts/start-emulator.sh, and no workflow runs the SDK's emulator tools inline; only its
 # publish and cleanup jobs can write contents, each only when PUBLISH is true and the run is on main (PUBLISH is false: a
@@ -54,7 +54,7 @@ end
 
 RECIPE = './.github/workflows/release-apk.yml'
 # One artifact per run, named by the run id only: "Re-run failed jobs" keeps the run id and moves the attempt number,
-# so a re-run downloader still finds the recipe's artifact; a full re-run's recipe overwrites it (#363 T5 review C7)
+# so a re-run downloader still finds the recipe's artifact; a full re-run's recipe overwrites it (#363)
 ARTIFACT = 'release-apk-${{ github.run_id }}'
 # The one condition of every job on CI's tag path: an android-v tag that is not a nightly — compared whole, never as a part
 TAG_IF = "startsWith(github.ref, 'refs/tags/android-v') && !contains(github.ref_name, '-nightly.')"
@@ -231,9 +231,9 @@ check('in every workflow, a secret-holding job outputs nothing but the digest') 
   end
 end
 
-# ── nightly.yml (#363 T5): the nightly in dry-run mode ────────────────────────────────────────────────────────────────
+# ── nightly.yml (#363): the nightly in dry-run mode ───────────────────────────────────────────────────────────────────
 GATE_IF = "needs.gate.outputs.run == 'true'"
-# The publishing jobs' condition (#363 T6): PUBLISH true (from the mode job) AND the run on main, whose copy of this file is
+# The publishing jobs' condition (#363): PUBLISH true (from the mode job) AND the run on main, whose copy of this file is
 # the reviewed one (a manual run on another ref runs that ref's copy), AND the gate said build
 PUBLISH_IF = "needs.mode.outputs.publish == 'true' && github.ref == 'refs/heads/main' && needs.gate.outputs.run == 'true'"
 # The clean-up's: the same, after publish failed, was cancelled or timed out (always() lets it run then)
@@ -249,7 +249,7 @@ NIGHTLY_JOBS = {   # job => [condition, permissions, needs, timeout-minutes], ex
   'publish' => [PUBLISH_IF, { 'contents' => 'write' }, %w[mode gate release attest], 10],
   'cleanup' => [CLEANUP_IF, { 'contents' => 'write' }, %w[mode gate publish], 5]
 }.freeze
-# The only actions a release workflow may use: nothing else can reach the releases API by an action (#363 T5 review C2)
+# The only actions a release workflow may use: nothing else can reach the releases API by an action (#363)
 ALLOWED_USES = {
   'nightly.yml' => %w[actions/checkout@v4 actions/setup-java@v4 actions/download-artifact@v4 actions/attest-build-provenance@v2] + [RECIPE],
   'release-apk.yml' => %w[actions/checkout@v4 actions/setup-java@v4 actions/upload-artifact@v4]
@@ -466,7 +466,7 @@ check('no artifact name carries the attempt number, and every upload overwrites 
   why
 end
 
-# ── nightly.yml's publishing jobs (#363 T6) ─────────────────────────────────────────────────────────────────────────
+# ── nightly.yml's publishing jobs (#363) ────────────────────────────────────────────────────────────────────────────
 PUBLISH_RUN = 'bash android/scripts/nightly-publish.sh "$TAG" "openRS_ v$NAME" "$SHA" "$BASE_TAG" "release-apk/openRS_v${NAME}.apk" "$SHA256"'
 PUBLISH_ENV = { 'GH_TOKEN' => '${{ github.token }}', 'TAG' => '${{ needs.gate.outputs.tag }}', 'NAME' => '${{ needs.gate.outputs.name }}',
                 'SHA' => '${{ needs.gate.outputs.sha }}', 'BASE_TAG' => '${{ needs.gate.outputs.base_tag }}',
@@ -528,7 +528,7 @@ end
 
 # Under `set -o pipefail` a pipeline fails when its producer is killed by SIGPIPE: `yes` always is once its reader exits,
 # and anything feeding `head` can be when the reader stops early. Workflow run lines and the release scripts that set
-# pipefail may pipe `yes` only as `(yes || true) |` and may not end a pipeline in `head` (#363 T5).
+# pipefail may pipe `yes` only as `(yes || true) |` and may not end a pipeline in `head` (#363).
 def sigpipe_risks(text, where)
   return [] unless text.include?('pipefail')
   text.lines.each_with_index.flat_map do |l, i|

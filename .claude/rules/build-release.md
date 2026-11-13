@@ -73,7 +73,7 @@ paths:
     closed without a trace, and only on the decision's explicit OK) when the job's 15 minutes leave a second boot (`JOB_LIMIT_S`, pinned against the job's
     `timeout-minutes`), with each attempt headed and a summary line for any end but a plain pass, an argument
     failure included),
-    `attest`, then `publish` and `cleanup` (#363 T6), the only jobs with `contents: write`, each only when the mode's
+    `attest`, then `publish` and `cleanup` (#363), the only jobs with `contents: write`, each only when the mode's
     publish output is `'true'`, the run is on main and the gate said build. `publish` (`scripts/nightly-publish.sh`)
     stops quietly when today's tag already has a release in any state (its token is shown drafts) or a tag; else notes
     from the generate-notes API from the gate's `base_tag` (the list, the SHA-256 line, the changelog link), a draft

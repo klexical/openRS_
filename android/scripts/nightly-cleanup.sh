@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# nightly-cleanup.sh <tag> <sha> — the nightly's clean-up after a failed, cancelled or timed-out publish step (#363 T6;
-# SPEC "What a run does" 8). Needs GH_TOKEN with contents: write and GITHUB_REPOSITORY.
+# nightly-cleanup.sh <tag> <sha> — the nightly's clean-up after a failed, cancelled or timed-out publish step (#363).
+# Needs GH_TOKEN with contents: write and GITHUB_REPOSITORY.
 #   - The tag's release is deleted with its tag (`--cleanup-tag`) only while it is a DRAFT: the publish step creates one
 #     only after finding the tag free, and the workflow's concurrency group runs one nightly at a time, so a draft for
 #     today's tag is this run's. A published release (a pre-release or not) is never deleted: the run fails and says so.
