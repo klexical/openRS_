@@ -33,7 +33,9 @@ const NO_LOCATION = 'drive 7: NO_LOCATION gap 8.0 s (no location update while co
 interface Opts { drive?: boolean; diag?: boolean; events?: SessionEvent[]; codes?: DtcEntry[]; dtcScan?: boolean; scanStatus?: string | null; laps?: boolean; tags?: string[] }
 function session(id: string, o: Opts = {}): Session {
   const { drive = true, diag = true, events = [], codes = [], dtcScan, scanStatus, laps = false, tags = [] } = o
-  const points = drive ? [pt(0), pt(1), pt(2)] : []
+  // each invented drive records its own points: drives are told apart by their points (#384, the owner's Q5 / Q7)
+  const off = [...id].reduce((n, c) => n + c.charCodeAt(0), 0) / 10_000
+  const points = drive ? [pt(0), pt(1), pt(2)].map((p) => ({ ...p, lat: p.lat + off })) : []
   const s: Session = {
     id, name: `Invented ${id}`, importedAt: T0 + 5000, tags,
     trip: drive ? {
@@ -288,9 +290,17 @@ describe('#384 the warnings flag (fault codes and recording gaps; knock and temp
 const CSV = '# openrs_csv_v2\ntimestamp_ms,lat,lng,speed_kph,rpm\n' +
   [0, 1, 2].map((i) => `${T0 + i * 1000},10.00${i},20.000,${50 + i},2000`).join('\n') + '\n'
 const DIAG = JSON.stringify({ sessionEvents: [{ relMs: 1000, type: 'REC_GAP', message: DISCONNECTED }] })
-async function driveZip(o: { compression: 'DEFLATE' | 'STORE'; reverse?: boolean; exportedAt?: number; scan?: unknown }): Promise<File> {
+const csvRows = (n: number) => '# openrs_csv_v2\ntimestamp_ms,lat,lng,speed_kph,rpm\n' +
+  Array.from({ length: n }, (_, i) => `${T0 + i * 1000},10.00${i},20.000,${50 + i},2000`).join('\n') + '\n'
+/** The app's profile file for the same drive: its own figures and the tags set in the app. */
+const profile = (tags: string) => JSON.stringify({ version: 2, drive: { startTime: T0, endTime: T0 + 2000, distanceKm: 1.5,
+  maxSpeedKph: 52, peakRpm: 2000, tags }, peaks: [], bookmarks: [] })
+async function driveZip(o: { compression: 'DEFLATE' | 'STORE'; reverse?: boolean; exportedAt?: number; scan?: unknown;
+  diag?: boolean; profileTags?: string; rows?: number }): Promise<File> {
   const zip = new JSZip()
-  const files: [string, string][] = [['drive_20960101_000000.csv', CSV], ['diagnostic_detail_20960101_000000.json', DIAG]]
+  const files: [string, string][] = [['drive_20960101_000000.csv', o.rows ? csvRows(o.rows) : CSV]]
+  if (o.diag !== false) files.push(['diagnostic_detail_20960101_000000.json', DIAG])
+  if (o.profileTags !== undefined) files.push(['drive_profile_20960101_000000.json', profile(o.profileTags)])
   if (o.scan !== undefined) files.push(['dtc_scan_20960101_000000.json', JSON.stringify(o.scan)])
   if (o.exportedAt !== undefined) files.push(['manifest.json', JSON.stringify({ exportedAt: o.exportedAt,
     files: files.map(([name]) => ({ name, type: name.startsWith('drive_') ? 'drive_csv' : name.startsWith('dtc') ? 'dtc_json' : 'diagnostic_detail' })) })])
@@ -310,6 +320,40 @@ describe('#384 already imported', () => {
     expect(second.alreadyImported).toEqual([{ name: expect.any(String), existingId: first.stored[0].id }])
     expect(await listDrives()).toHaveLength(1)
     expect(first.stored[0].contentHash).toMatch(/^[0-9a-f]{64}$/)   // SHA-256: 256 bits
+  })
+
+  // Owner, 2026-11-14 (Q5, Q7): two imports are the same drive when the drive's own recording (its points) is the same
+  it('the same drive with and without its profile file is one drive', async () => {
+    const a = await storeImported([await importZip(await driveZip({ compression: 'DEFLATE' }))])
+    const b = await storeImported([await importZip(await driveZip({ compression: 'DEFLATE', profileTags: 'Street' }))])
+    expect([a.stored.length, b.stored.length, b.alreadyImported.length]).toEqual([1, 0, 1])
+  })
+
+  it('the same drive after a tag edit in the app (its profile) is one drive', async () => {
+    await storeImported([await importZip(await driveZip({ compression: 'DEFLATE', profileTags: 'Street' }))])
+    const b = await storeImported([await importZip(await driveZip({ compression: 'DEFLATE', profileTags: 'Street,Track Day' }))])
+    expect(b.alreadyImported).toHaveLength(1)
+  })
+
+  it('the same drive with and without its fault-code report and session log is one drive', async () => {
+    await storeImported([await importZip(await driveZip({ compression: 'DEFLATE', diag: false }))])
+    const b = await storeImported([await importZip(await driveZip({ compression: 'DEFLATE',
+      scan: { scan: { status: 'COMPLETE' }, codes: [{ module: 'PCM', code: 'P0000', status: 'ACTIVE', description: 'invented' }] } }))])
+    expect(b.alreadyImported).toHaveLength(1)
+  })
+
+  it('a snapshot with fewer points (taken while recording) is a different drive', async () => {
+    await storeImported([await importZip(await driveZip({ compression: 'DEFLATE', rows: 2 }))])
+    const b = await storeImported([await importZip(await driveZip({ compression: 'DEFLATE', rows: 3 }))])
+    expect([b.stored.length, (await listDrives()).length]).toEqual([1, 2])
+  })
+
+  it('a session with no drive is compared by its diagnostics', async () => {
+    const diagOnly = (msg: string) => session('x', { drive: false, events: [ev('STATE', msg)] })
+    await storeImported([{ ...diagOnly('invented one'), id: 'one' }])
+    const same = await storeImported([{ ...diagOnly('invented one'), id: 'two', name: 'other name' }])
+    const other = await storeImported([{ ...diagOnly('invented other'), id: 'three' }])
+    expect([same.alreadyImported.length, other.stored.length]).toEqual([1, 1])
   })
 
   it('a drive stored before the update is recognised when imported again', async () => {

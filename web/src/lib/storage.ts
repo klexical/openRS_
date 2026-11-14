@@ -222,16 +222,17 @@ function canonical(v: unknown): string {
 }
 
 /**
- * SHA-256 of the drive's parsed content: the session without what the import or the owner adds (id, import time, name,
- * tags), without when it was exported (`meta.exportedAt`, `meta.generatedAt`: the same drive exported twice is one
- * drive) and without `dtcScan` / `dtcScanStatus` (version-1 records never carried them). Computed once when stored.
+ * SHA-256 that decides whether two imports are the same drive (owner, 2026-11-14, Q5 and Q7): the drive's own recording,
+ * its points (the parsed CSV rows), alone. The summary and profile (distance, peaks, laps, performance runs, the app's
+ * tags), the name, notes, tags, import and export times, fault codes, scan flag and session log do not decide identity:
+ * they change between shares of one drive. A session with no drive is compared by its diagnostics. A snapshot taken
+ * while recording has fewer points, so it is a different (partial) drive. Computed once when the drive is stored.
  */
 function contentHash(s: Session): string {
-  const { id: _i, importedAt: _a, name: _n, tags: _g, dtcScan: _c, dtcScanStatus: _cs, meta, ...content } = s as Session & Record<string, unknown>
-  void _i; void _a; void _n; void _g; void _c; void _cs
-  const { exportedAt: _e, generatedAt: _x, ...stableMeta } = (meta ?? {}) as unknown as Record<string, unknown>
-  void _e; void _x
-  return sha256Hex(canonical({ ...content, meta: stableMeta }))
+  const points = s.trip?.points ?? []
+  return points.length > 0
+    ? sha256Hex(`points:${canonical(points)}`)
+    : sha256Hex(`diagnostics:${canonical(s.diagnostics ?? null)}`)
 }
 
 // ── Public functions ──
