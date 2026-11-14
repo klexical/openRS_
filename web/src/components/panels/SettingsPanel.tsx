@@ -1,6 +1,6 @@
 import { useSettings, type ThemeId } from '../../store/settings'
 import { useStore } from '../../store'
-import { clearAllDrives } from '../../lib/storage'
+import { clearAll } from '../../lib/driveLibrary'
 import { rsThemes } from '../../styles/tokens'
 import { SectionLabel } from '../ui/SectionLabel'
 import { BackupButton, RestoreInput } from '../ui/LazyBackupControls'
@@ -26,13 +26,11 @@ export function SettingsPanel() {
   } = useSettings()
 
   const sessions = useStore((s) => s.drives)
-  const setDrives = useStore((s) => s.setDrives)
 
   const [confirmClear, setConfirmClear] = useState(false)
 
   const handleClearAll = async () => {
-    await clearAllDrives()        // #384: the three stores, in one transaction
-    setDrives([])
+    await clearAll()              // #384: the three stores, in one transaction; then the list (the Drive library)
     setConfirmClear(false)
   }
 

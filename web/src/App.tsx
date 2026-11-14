@@ -2,14 +2,14 @@ import { useEffect } from 'react'
 import { Shell } from './components/layout/Shell'
 import { useStore } from './store'
 import { useSettings } from './store/settings'
-import { fillBestLap, listDrives, loadDrive, onStorageStatus, storageStatus } from './lib/storage'
+import { fillBestLap, loadDrive, onStorageStatus, storageStatus } from './lib/storage'
+import { loadList } from './lib/driveLibrary'
 import { go, useAddress } from './lib/address'
 import { rsThemes, shadeHex, printAccent } from './styles/tokens'
 import { colors } from './styles/tokens'
 import { BackupButton } from './components/ui/LazyBackupControls'
 
 export default function App() {
-  const setDrives = useStore((s) => s.setDrives)
   const activeSessionId = useStore((s) => s.activeSessionId)
   const compareSessionIds = useStore((s) => s.compareSessionIds)
   const setStorage = useStore((s) => s.setStorage)
@@ -23,13 +23,7 @@ export default function App() {
 
   // Load every drive's small record on mount (no points). Nothing is opened by itself: the address names what is shown
   // (#384 ticket 03; the remembered view is retired).
-  useEffect(() => {
-    listDrives()
-      .then((drives) => { setDrives(drives); useStore.getState().setDrivesLoaded(true) })
-      .catch((err) => {
-        console.error('[Sapphire] Failed to load drives from IndexedDB:', err)
-      })
-  }, [setDrives])
+  useEffect(() => { void loadList() }, [])
 
   // The address names the open drive; the list and Settings open none (and a drive left is let go)
   const address = useAddress()

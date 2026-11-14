@@ -3,7 +3,8 @@
 // each failure is named with its file and reason. Loaded on first use (JSZip and the parser stay off the first visit).
 import JSZip from 'jszip'
 import { importLoadedZip } from './import'
-import { storeImported, type DriveRecord, type FilledPart } from './storage'
+import type { DriveRecord, FilledPart } from './storage'
+import type { StoringStep } from './driveLibrary'
 
 export type ImportStage = 'reading' | 'parsing' | 'storing'
 export interface ImportProgress { done: number; total: number; file: string; stage: ImportStage }
@@ -17,7 +18,11 @@ export interface FileResult {
 
 const yieldToPage = () => new Promise<void>((r) => setTimeout(r, 0))
 
-export async function importFiles(files: File[], onProgress: (p: ImportProgress) => void): Promise<FileResult[]> {
+/**
+ * Read and store the files of one Import. [store] is the Drive library's storing step (lib/driveLibrary.ts importDrives):
+ * the library alone writes drives; this module reads and parses, as before.
+ */
+export async function importFiles(files: File[], onProgress: (p: ImportProgress) => void, store: StoringStep): Promise<FileResult[]> {
   const results: FileResult[] = []
   for (const [i, file] of files.entries()) {
     let stage: ImportStage = 'reading'
@@ -35,7 +40,7 @@ export async function importFiles(files: File[], onProgress: (p: ImportProgress)
       const sessions = await importLoadedZip(zip, file.name)
       step('storing')
       await yieldToPage()
-      const outcome = await storeImported(sessions)
+      const outcome = await store(sessions)
       result.stored = outcome.stored
       result.already = outcome.alreadyImported
     } catch (err) {

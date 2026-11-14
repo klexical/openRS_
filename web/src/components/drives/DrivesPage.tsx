@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { useStore } from '../../store'
-import { deleteDrives, loadDrive, renameDrive, setDriveNote, setDriveTags } from '../../lib/storage'
+import { loadDrive } from '../../lib/storage'
+import { remove, rename, setNote, setTags } from '../../lib/driveLibrary'
 import { exportSessionCsv, exportSessionJson } from '../../lib/export'
 import { ConfirmDialog, RowMenu, TagEditor, TextEditor, type RowAction } from './RowActions'
 import { startImport } from '../importing/startImport'
@@ -43,8 +44,6 @@ export function DrivesPage() {
   const compareOpen = useStore((s) => s.compareOpen)
   const setCompareOpen = useStore((s) => s.setCompareOpen)
   const setCompare = useStore((s) => s.setCompare)
-  const updateDrive = useStore((s) => s.updateDrive)
-  const removeDrives = useStore((s) => s.removeDrives)
   const [picked, setPicked] = useState<string[]>([])                 // ticked rows, in the order they were ticked
   const ticked = useMemo(() => picked.filter((id) => drives.some((d) => d.id === id)), [picked, drives])
   const [menuFor, setMenuFor] = useState<{ id: string; focus: 'first' | 'last' } | null>(null)
@@ -69,8 +68,9 @@ export function DrivesPage() {
     setMenuFor(null)
   }, [menuId])
   const endEdit = (id: string) => { setEditing(null); setFocusMenuOf(id) }
+  // the Drive library writes and mirrors; a record no longer stored changes nothing and says nothing (K5)
   const save = async (id: string, write: Promise<import('../../lib/storage').DriveRecord | null>) => {
-    try { const rec = await write; if (rec) updateDrive(rec); setMessage(null) }
+    try { await write; setMessage(null) }
     catch (err) { console.warn('[Sapphire] Could not save:', err); setMessage(`Couldn't save the change to ${nameOf(id)}. Try again.`) }
   }
   const choose = async (id: string, a: RowAction) => {
@@ -88,8 +88,7 @@ export function DrivesPage() {
   const doDelete = async (ids: string[]) => {
     setConfirm(null)
     try {
-      await deleteDrives(ids)                     // one transaction: all of them, or none (ticket 01)
-      removeDrives(ids)
+      await remove(ids)                           // one transaction: all of them, or none (ticket 01)
       setPicked((p) => p.filter((x) => !ids.includes(x)))
       setMessage(null)
     } catch (err) {
@@ -106,11 +105,11 @@ export function DrivesPage() {
     onMenuClose: closeMenu, onChoose: (a: RowAction) => { void choose(d.id, a) },
     buttonRef: (el: HTMLButtonElement | null) => { buttons.current[d.id] = el },
     editing: editing?.id === d.id ? editing.kind : null,
-    onRename: (text: string) => { const t = text.trim(); endEdit(d.id); if (t && t !== d.name) void save(d.id, renameDrive(d.id, t)) },
-    onNote: (text: string) => { endEdit(d.id); if (text.trim() !== (d.note ?? '')) void save(d.id, setDriveNote(d.id, text)) },
+    onRename: (text: string) => { const t = text.trim(); endEdit(d.id); if (t && t !== d.name) void save(d.id, rename(d.id, t)) },
+    onNote: (text: string) => { endEdit(d.id); if (text.trim() !== (d.note ?? '')) void save(d.id, setNote(d.id, text)) },
     onToggleTag: (tag: string) => {
       const tags = d.tags ?? []
-      void save(d.id, setDriveTags(d.id, tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag]))
+      void save(d.id, setTags(d.id, tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag]))
     },
     onEndEdit: () => endEdit(d.id),
   })
