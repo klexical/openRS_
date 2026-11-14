@@ -9,6 +9,9 @@ Sections, in this order: Added, Fixed, Changed, Removed. Every entry ends with i
 
 ## Storage and the list of drives (slice 2)
 
+### Added
+- **Back up all drives, and restore** — Settings writes one backup file holding every drive with its points and diagnostic log, and reads one back; after a failed storage update Sapphire offers a backup of the old drives first. Restore only adds: a drive already here, by id or as the same drive, is skipped and counted, and a file from a newer Sapphire or a damaged one is refused with nothing restored. The file is built in a background worker so the page stays usable (`lib/backup.ts`). ([#384](https://github.com/klexical/openRS_/issues/384))
+
 ### Changed
 - **Drives stored one record each, with a safe upgrade** — Sapphire's database moves to version 2: a small record per drive (the list reads only these), its points and its diagnostic log stored apart and read only when that drive is opened. Drives stored before are converted in place with every field and id kept; if one cannot be converted nothing changes and Sapphire says so, and a second open tab no longer stalls the update. A drive already stored is recognised by its content and not stored twice ("already imported"), and each drive records whether it has warnings (fault codes active or pending, recording gaps) and which causes its import let Sapphire check (`lib/storage.ts`). ([#384](https://github.com/klexical/openRS_/issues/384))
 
