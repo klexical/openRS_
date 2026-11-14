@@ -356,6 +356,30 @@ describe('#384 already imported', () => {
     expect([same.alreadyImported.length, other.stored.length]).toEqual([1, 1])
   })
 
+  // QA (H1): the hash covers a fixed, named list of point fields in the CSV's own rounding, behind a version tag
+  it('a point field beyond the hashed list keeps the hash (a later parser that reads one more column)', () => {
+    const base = session('h')
+    const extra = { ...base, trip: { ...base.trip!, points: base.trip!.points.map((p) => ({ ...p, coolantC: 42, aNewColumn: 7 })) } }
+    expect(toDriveRecord(extra as Session).contentHash).toBe(toDriveRecord(base).contentHash)
+  })
+
+  it('a version-1 record with fewer point fields hashes the same as its re-import today', async () => {
+    const zip = await driveZip({ compression: 'DEFLATE' })
+    const today = await importZip(zip)
+    // as an older Sapphire stored it: only the fields its point type had (ts, lat, lng, rpm, speedKph and a few more)
+    const older = { ...today, trip: { ...today.trip!, points: today.trip!.points.map(({ ts, lat, lng, rpm, speedKph }) => ({ ts, lat, lng, rpm, speedKph })) } }
+    delete older.dtcScan; delete older.dtcScanStatus
+    await writeV1([older])
+    const again = await storeImported([await importZip(zip)])
+    expect(again.alreadyImported.map((x) => x.existingId)).toEqual([older.id])
+  })
+
+  it('values are compared as the CSV rounds them (lat / lng 6 decimals, speed 2)', () => {
+    const base = session('r')
+    const noisy = { ...base, trip: { ...base.trip!, points: base.trip!.points.map((p) => ({ ...p, lat: p.lat + 1e-9, speedKph: p.speedKph + 1e-4 })) } }
+    expect(toDriveRecord(noisy).contentHash).toBe(toDriveRecord(base).contentHash)
+  })
+
   it('a drive stored before the update is recognised when imported again', async () => {
     const zip = await driveZip({ compression: 'DEFLATE' })
     const before = await importZip(zip)

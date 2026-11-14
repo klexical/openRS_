@@ -222,17 +222,33 @@ function canonical(v: unknown): string {
 }
 
 /**
+ * The point fields that identify a drive, in the precision the app's CSV writes them (DriveExportBuilder.buildCsv, the
+ * same in every app version from 2026-04-01 to staging 6212b15): time in whole milliseconds, latitude and longitude to
+ * 6 decimals, speed to 2, rpm whole. Every version of Sapphire has kept these five fields on each point (the
+ * `TripPoint` type since its first commit), so a drive stored by any of them hashes as its re-import does today; a
+ * later parser that keeps more fields does not change the hash. Change the list only with a new HASH_VERSION.
+ */
+const HASH_VERSION = 'sapphire-drive-points/1'
+const HASHED_POINT_FIELDS: readonly [field: 'ts' | 'lat' | 'lng' | 'speedKph' | 'rpm', decimals: number][] = [
+  ['ts', 0], ['lat', 6], ['lng', 6], ['speedKph', 2], ['rpm', 0],
+]
+const fixed = (v: unknown, decimals: number): string => {
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) ? n.toFixed(decimals) : 'NaN'
+}
+
+/**
  * SHA-256 that decides whether two imports are the same drive (owner, 2026-11-14, Q5 and Q7): the drive's own recording,
- * its points (the parsed CSV rows), alone. The summary and profile (distance, peaks, laps, performance runs, the app's
- * tags), the name, notes, tags, import and export times, fault codes, scan flag and session log do not decide identity:
- * they change between shares of one drive. A session with no drive is compared by its diagnostics. A snapshot taken
- * while recording has fewer points, so it is a different (partial) drive. Computed once when the drive is stored.
+ * its points, alone, as the fixed list above. The summary and profile (distance, peaks, laps, performance runs, the
+ * app's tags), the name, notes, tags, import and export times, fault codes, scan flag and session log do not decide
+ * identity: they change between shares of one drive. A session with no drive is compared by its diagnostics. A
+ * snapshot taken while recording has fewer points, so it is a different (partial) drive. Computed once when stored.
  */
 function contentHash(s: Session): string {
   const points = s.trip?.points ?? []
-  return points.length > 0
-    ? sha256Hex(`points:${canonical(points)}`)
-    : sha256Hex(`diagnostics:${canonical(s.diagnostics ?? null)}`)
+  if (points.length === 0) return sha256Hex(`${HASH_VERSION}\ndiagnostics\n${canonical(s.diagnostics ?? null)}`)
+  const rows = points.map((p) => HASHED_POINT_FIELDS.map(([f, d]) => fixed((p as unknown as Record<string, unknown>)[f], d)).join(','))
+  return sha256Hex(`${HASH_VERSION}\npoints ${HASHED_POINT_FIELDS.map(([f]) => f).join(',')}\n${rows.join('\n')}`)
 }
 
 // ── Public functions ──
