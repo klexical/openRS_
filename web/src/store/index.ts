@@ -3,45 +3,54 @@ import { useShallow } from 'zustand/react/shallow'
 import type { Session } from '../types/session'
 import type { DriveRecord, StorageStatus } from '../lib/storage'
 
-export type PanelId = 'dashboard' | 'trip' | 'diagnostics' | 'sessions' | 'compare' | 'import' | 'settings'
-
-// Remembered view (main e9cd565): the panel and selected session survive a reload, like the settings in
-// store/settings.ts. App.tsx checks the saved session against IndexedDB once sessions load.
-const VIEW_KEY = 'sapphire_view'
-const VALID_PANELS: ReadonlySet<PanelId> = new Set([
-  'dashboard', 'trip', 'diagnostics', 'sessions', 'compare', 'import', 'settings',
-])
-
-interface PersistedView {
-  activePanel: PanelId
-  activeSessionId: string | null
+/** An import as the page shows it (ticket 06). */
+export interface ImportJob {
+  running: boolean
+  progress: { done: number; total: number; file: string; stage: 'reading' | 'parsing' | 'storing' } | null
+  results: import('../lib/importFiles').FileResult[]
+  /** Drives stored by this import, in total. */
+  storedCount: number
+  /** Lines about files not taken while it ran (a drop during an import; ticket 06 fix round). */
+  notes?: string[]
 }
 
-function loadView(): PersistedView {
-  try {
-    const raw = localStorage.getItem(VIEW_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw) as Partial<PersistedView>
-      const panel = parsed.activePanel && VALID_PANELS.has(parsed.activePanel) ? parsed.activePanel : 'dashboard'
-      const sid = typeof parsed.activeSessionId === 'string' ? parsed.activeSessionId : null
-      return { activePanel: panel, activeSessionId: sid }
-    }
-  } catch { /* unreadable or blocked storage — start from the defaults */ }
-  return { activePanel: 'dashboard', activeSessionId: null }
-}
-
-function persistView(partial: Partial<PersistedView>) {
-  try {
-    localStorage.setItem(VIEW_KEY, JSON.stringify({ ...loadView(), ...partial }))
-  } catch { /* storage unavailable — the view just isn't remembered */ }
-}
-
-const initialView = loadView()
+/** The views of one drive, reached from the drive (#384 ticket 03). Kept in memory: the address names the drive only. */
+export type DriveView = 'dashboard' | 'trip' | 'diagnostics'
 
 interface SapphireState {
-  /** Currently active nav panel. */
-  activePanel: PanelId
-  setActivePanel: (panel: PanelId) => void
+  /** Which of today's views the open drive shows (in memory; ticket 03). */
+  driveView: DriveView
+  setDriveView: (view: DriveView) => void
+
+  /** The running or last import (ticket 06): progress while it runs, each file's outcome after; null when none. */
+  importJob: ImportJob | null
+  setImportJob: (job: ImportJob | null) => void
+  /** The drives the last import stored: marked "New" in the list until the next import. */
+  newIds: string[]
+  setNewIds: (ids: string[]) => void
+
+  /** True once the list's records were read: the empty state is shown only after a read that found none. */
+  drivesLoaded: boolean
+  setDrivesLoaded: (loaded: boolean) => void
+
+  /** The list shows today's Compare for the ticked drives (Compare is an action, not a place; ticket 05). */
+  compareOpen: boolean
+  setCompareOpen: (open: boolean) => void
+
+  /** The list's search text and quick filters (ticket 04): kept here, so they are still there after opening a drive. */
+  listSearch: string
+  setListSearch: (text: string) => void
+  filterWarnings: boolean
+  filterLaps: boolean
+  setFilters: (f: { warnings?: boolean; laps?: boolean }) => void
+
+  /** The drive whose read failed (storage did not answer): its page says so (fix round); null when none. */
+  openFailedId: string | null
+  setOpenFailedId: (id: string | null) => void
+
+  /** A plain message on the list (an address naming a drive that is not stored); null when none. */
+  listNotice: string | null
+  setListNotice: (text: string | null) => void
 
   /**
    * Every stored drive's small record (#384): no points, no diagnostic log. Writes go through lib/storage; these
@@ -66,7 +75,7 @@ interface SapphireState {
   storage: StorageStatus
   setStorage: (status: StorageStatus) => void
 
-  /** Currently selected session for viewing. */
+  /** The drive the address names (App sets it from the address); null on the list and in Settings. */
   activeSessionId: string | null
   setActiveSessionId: (id: string | null) => void
 
@@ -74,30 +83,52 @@ interface SapphireState {
   compareSessionIds: string[]
   toggleCompareSession: (id: string) => void
   clearCompare: () => void
+  /** Compare exactly these drives, in this order (the first is the base): the ticked rows (ticket 05). */
+  setCompare: (ids: string[]) => void
 
-  /** Nav rail expanded state. */
-  navExpanded: boolean
-  toggleNav: () => void
+}
+
+/** A loaded session with the owner's own fields (name, tags, note) taken from its updated small record. */
+function withOwnFields(session: Session, drive: DriveRecord): Session {
+  const { note: _old, ...rest } = session
+  void _old
+  return { ...rest, name: drive.name, tags: drive.tags, ...(drive.note !== undefined ? { note: drive.note } : {}) }
 }
 
 export const useStore = create<SapphireState>((set) => ({
-  activePanel: initialView.activePanel,
-  setActivePanel: (panel) => { persistView({ activePanel: panel }); set({ activePanel: panel }) },
+  driveView: 'dashboard',
+  setDriveView: (view) => set({ driveView: view }),
+  importJob: null,
+  setImportJob: (job) => set({ importJob: job }),
+  newIds: [],
+  setNewIds: (ids) => set({ newIds: ids }),
+  drivesLoaded: false,
+  setDrivesLoaded: (loaded) => set({ drivesLoaded: loaded }),
+  compareOpen: false,
+  setCompareOpen: (open) => set({ compareOpen: open }),
+  listSearch: '',
+  setListSearch: (text) => set({ listSearch: text }),
+  filterWarnings: false,
+  filterLaps: false,
+  setFilters: (f) => set((s) => ({ filterWarnings: f.warnings ?? s.filterWarnings, filterLaps: f.laps ?? s.filterLaps })),
+  openFailedId: null,
+  setOpenFailedId: (id) => set({ openFailedId: id }),
+  listNotice: null,
+  setListNotice: (text) => set({ listNotice: text }),
 
   drives: [],
   setDrives: (drives) => set({ drives }),
   addDrives: (drives) => set((s) => ({ drives: [...s.drives, ...drives] })),
   updateDrive: (drive) => set((s) => ({
     drives: s.drives.map((d) => (d.id === drive.id ? drive : d)),
-    // the open drive shows the new name and tags at once
-    activeSession: s.activeSession?.id === drive.id ? { ...s.activeSession, name: drive.name, tags: drive.tags } : s.activeSession,
+    // the open drive shows the new name, tags and note at once
+    activeSession: s.activeSession?.id === drive.id ? withOwnFields(s.activeSession, drive) : s.activeSession,
     // and Compare, which holds its own copy of the compared drives (review H4)
-    compareSessions: s.compareSessions.map((c) => (c.id === drive.id ? { ...c, name: drive.name, tags: drive.tags } : c)),
+    compareSessions: s.compareSessions.map((c) => (c.id === drive.id ? withOwnFields(c, drive) : c)),
   })),
   removeDrives: (ids) => set((s) => {
     const idSet = new Set(ids)
     const nextActive = s.activeSessionId && idSet.has(s.activeSessionId) ? null : s.activeSessionId
-    if (nextActive !== s.activeSessionId) persistView({ activeSessionId: nextActive })
     return {
       drives: s.drives.filter((d) => !idSet.has(d.id)),
       activeSessionId: nextActive,
@@ -116,8 +147,8 @@ export const useStore = create<SapphireState>((set) => ({
   storage: { state: 'opening' },
   setStorage: (status) => set({ storage: status }),
 
-  activeSessionId: initialView.activeSessionId,
-  setActiveSessionId: (id) => { persistView({ activeSessionId: id }); set({ activeSessionId: id }) },
+  activeSessionId: null,
+  setActiveSessionId: (id) => set({ activeSessionId: id }),
 
   compareSessionIds: [],
   toggleCompareSession: (id) => set((s) => {
@@ -127,9 +158,7 @@ export const useStore = create<SapphireState>((set) => ({
     return { compareSessionIds: [...current, id] }
   }),
   clearCompare: () => set({ compareSessionIds: [] }),
-
-  navExpanded: true,
-  toggleNav: () => set((s) => ({ navExpanded: !s.navExpanded })),
+  setCompare: (ids) => set({ compareSessionIds: ids.slice(0, 4) }),
 }))
 
 /**

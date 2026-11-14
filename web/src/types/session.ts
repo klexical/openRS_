@@ -6,6 +6,8 @@ export interface Session {
   importedAt: number
   /** User-assigned tags for filtering/grouping. */
   tags: string[]
+  /** The owner's own note on the drive (#384 ticket 05); absent when none was written. */
+  note?: string
   /** Trip data (may be absent for diagnostic-only exports). */
   trip: TripData | null
   /** Diagnostic data (may be absent for trip-only exports). */

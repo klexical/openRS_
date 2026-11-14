@@ -126,5 +126,28 @@ const deleteDatabase = () => new Promise<void>((resolve, reject) => {
   const r = indexedDB.deleteDatabase('sapphire'); r.onsuccess = () => resolve(); r.onerror = () => reject(r.error)
 })
 
+/** One stored drive record as an exact string (ticket 04's fill-in compares with a fresh import). */
+async function exactDrive(id: string): Promise<string | null> {
+  storage.closeStorage()
+  const rec = ((await readRaw()).records.drives ?? []).find((r) => (r as { id?: string }).id === id)
+  return rec === undefined ? null : exact(rec)
+}
+/** Remove one field from a stored drive record, outside Sapphire: a record as live delivery A wrote it (no bestLapMs). */
+function stripDriveField(id: string, field: string): Promise<void> {
+  storage.closeStorage()
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('sapphire')
+    req.onerror = () => reject(req.error)
+    req.onsuccess = () => {
+      const db = req.result
+      const tx = db.transaction('drives', 'readwrite')
+      const get = tx.objectStore('drives').get(id)
+      get.onsuccess = () => { const r = get.result; delete r[field]; tx.objectStore('drives').put(r) }
+      tx.oncomplete = () => { db.close(); resolve() }
+      tx.onerror = () => reject(tx.error)
+    }
+  })
+}
+
 Object.assign(window, { sapphire: { ...storage, importBatchZip, writeV1, readRaw, holdOpen, release, writeInventedV1,
-  backupWithHeartbeat, restoreLast, restoreWithHeartbeat, deleteDatabase, exactStores }, ready: true })
+  backupWithHeartbeat, restoreLast, restoreWithHeartbeat, deleteDatabase, exactStores, exactDrive, stripDriveField }, ready: true })

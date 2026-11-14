@@ -406,7 +406,7 @@ describe('#384 already imported', () => {
     const second = await storeImported([await importZip(b)])
     expect(first.stored).toHaveLength(1)
     expect(second.stored).toEqual([])
-    expect(second.alreadyImported).toEqual([{ name: expect.any(String), existingId: first.stored[0].id }])
+    expect(second.alreadyImported).toEqual([{ name: expect.any(String), existingId: first.stored[0].id, filled: [] }])
     expect(await listDrives()).toHaveLength(1)
     expect(first.stored[0].contentHash).toMatch(/^[0-9a-f]{64}$/)   // SHA-256: 256 bits
   })

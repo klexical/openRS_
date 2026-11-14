@@ -50,6 +50,129 @@
   }
 }
 
+/* ── Look A (#384 ticket 03): the list of drives, the places bar and the drive's frame ──
+   Colours come from styles/lookA.ts as --a-* properties on .look-a (Night only until ticket 08); the accent is the paint.
+   Below 768 px the places are a bar at the bottom; from 768 px a narrow rail on the left. Every rule names a class of
+   the new screens: the old views inside a drive (.old-view) keep their own look until tickets 07 and 08. */
+.look-a { background: var(--a-bg); color: var(--a-ink); min-height: 100dvh; color-scheme: dark; }   /* Night: native controls dark too */
+.look-a .a-place:focus-visible, .look-a .a-name:focus-visible, .look-a .a-btn:focus-visible, .look-a .a-crumb:focus-visible {
+  outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.look-a .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.look-a .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.look-a .a-places { position: fixed; left: 0; right: 0; bottom: 0; height: 56px; display: flex; z-index: 20;
+  background: var(--a-bar); border-top: 1px solid var(--a-brd2); }
+.look-a .a-brand { display: none; }
+.look-a .a-place { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  text-decoration: none; color: var(--a-dim); font-size: 12px; border-top: 3px solid transparent; }
+.look-a .a-place[aria-current] { color: var(--a-ink); font-weight: 700; border-top-color: var(--color-accent); }
+.look-a .a-ico { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.look-a .a-shell { padding-bottom: 64px; }
+.look-a .a-page { max-width: 1140px; margin: 0 auto; padding: 16px; }
+.look-a .a-page > * + * { margin-top: 16px; }
+.look-a h1 { font-size: 22px; line-height: 1.2; font-weight: 700; }
+.look-a .a-meta { color: var(--a-dim); font-size: 0.9em; }
+.look-a .a-btn { display: inline-block; cursor: pointer; font: inherit; font-size: 0.9em; color: var(--a-ink);
+  background: var(--a-button); border: 1px solid var(--a-brd2); border-radius: 8px; padding: 8px 12px; text-decoration: none; }
+.look-a .a-btn.primary { background: var(--color-accent); color: var(--a-on-accent); border-color: var(--color-accent); font-weight: 700; }
+.look-a .a-btn[aria-pressed='true'] { color: var(--a-ink); font-weight: 700; border-color: var(--color-accent); }
+.look-a .a-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.look-a .a-notice { color: var(--a-warn); border: 1px solid var(--a-brd2); border-radius: 8px; padding: 8px 12px; background: var(--a-card); }
+.look-a .a-month h2 { color: var(--a-mid); font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px; }
+.look-a .a-rows { display: grid; gap: 10px; list-style: none; margin: 0; padding: 0; }
+.look-a .a-row { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; background: var(--a-card);
+  border: 1px solid var(--a-brd); border-radius: 12px; padding: 14px; }
+.look-a .a-row:hover { border-color: var(--a-brd2); }
+.look-a .a-row.is-session { border-style: dashed; }
+.look-a .a-date { color: var(--a-mid); font-size: 0.9em; }
+.look-a .a-time { color: var(--a-dim); }
+.look-a .a-name { color: var(--a-ink); font-weight: 700; font-size: 1.05em; text-decoration: none; }
+.look-a .a-name::after { content: ''; position: absolute; inset: 0; border-radius: 12px; }   /* the whole row opens the drive */
+.look-a .a-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; margin: 0; align-items: end; }
+.look-a .a-facts dt { color: var(--a-dim); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.08em; line-height: 1.25; }
+.look-a .a-facts dd { margin: 0; font-size: 1.05em; white-space: nowrap; }
+.look-a .a-search { flex: 1 1 100%; }
+.look-a .a-search input { width: 100%; font: inherit; color: var(--a-ink); background: var(--a-card); border: 1px solid var(--a-brd2);
+  border-radius: 8px; padding: 8px 12px; }
+.look-a .a-search input::placeholder { color: var(--a-dim); opacity: 1; }
+.look-a .a-search input:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.look-a .a-filters { display: flex; gap: 10px; flex: 1; flex-wrap: wrap; }
+.look-a .a-chip::before { content: '□ '; }
+.look-a .a-chip[aria-pressed='true']::before { content: '■ '; }
+.look-a .a-markers { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: 8px; vertical-align: middle; font-size: 0.88em; }
+.look-a .a-marker { border: 1px solid var(--a-brd2); border-radius: 8px; padding: 0 7px; color: var(--a-mid); white-space: nowrap; }
+.look-a .a-marker.warn { color: var(--a-warn); font-weight: 700; border-color: var(--a-warn); }
+.look-a .a-row.is-warning { border-left: 4px solid var(--a-warn); }
+/* ticket 05: ticks, the row menu, the editors, the confirmation */
+.look-a .a-rowhead { display: flex; align-items: center; gap: 10px; }
+.look-a .a-tick, .look-a .a-menuwrap, .look-a .a-editor, .look-a .a-tags, .look-a .a-note { position: relative; z-index: 1; }
+.look-a .a-tick { width: 20px; height: 20px; accent-color: var(--color-accent); }
+.look-a .a-tick:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.look-a .a-row.is-ticked { border-color: var(--color-accent); }
+.look-a .a-menuwrap { position: absolute; top: 10px; right: 10px; z-index: 3; }
+.look-a .a-menubtn { min-width: 44px; min-height: 32px; padding: 6px 12px; font-size: 1.1em; line-height: 1; }
+.look-a .a-menu { position: absolute; right: 0; top: 100%; margin-top: 4px; min-width: 180px; display: flex; flex-direction: column;
+  background: var(--a-card); border: 1px solid var(--a-brd2); border-radius: 8px; padding: 4px; z-index: 30;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); }
+.look-a .a-menu [role='menuitem'] { text-align: left; font: inherit; color: var(--a-ink); background: none; border: 0; border-radius: 6px;
+  padding: 8px 10px; cursor: pointer; }
+.look-a .a-menu [role='menuitem']:hover, .look-a .a-menu [role='menuitem']:focus-visible { background: var(--a-button);
+  outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.look-a .a-menu .danger, .look-a .a-btn.danger { color: var(--a-warn); }
+.look-a .a-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.look-a .a-editor { grid-column: 1 / -1; display: grid; gap: 8px; }
+.look-a .a-editor label { display: grid; gap: 4px; color: var(--a-mid); font-size: 0.9em; }
+.look-a .a-editor input, .look-a .a-editor textarea { font: inherit; color: var(--a-ink); background: var(--a-bg);
+  border: 1px solid var(--a-brd2); border-radius: 8px; padding: 8px 10px; }
+.look-a .a-editor input:focus-visible, .look-a .a-editor textarea:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.look-a .a-editor-actions, .look-a .a-tagchoices { display: flex; gap: 8px; flex-wrap: wrap; }
+.look-a .a-tags { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: 8px; vertical-align: middle; font-size: 0.85em; }
+.look-a .a-tag { color: var(--a-mid); border: 1px dashed var(--a-brd2); border-radius: 8px; padding: 0 7px; }
+.look-a .a-note { color: var(--a-mid); font-size: 0.9em; margin-top: 4px; white-space: pre-wrap; }
+.look-a .a-selection { justify-content: flex-start; background: var(--a-card); border: 1px solid var(--a-brd2); border-radius: 8px; padding: 8px 12px; }
+.look-a .a-scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center;
+  padding: 16px; z-index: 50; }
+.look-a .a-dialog { background: var(--a-card); border: 1px solid var(--a-brd2); border-radius: 12px; padding: 20px; max-width: 440px;
+  width: 100%; display: grid; gap: 12px; }
+.look-a .a-dialog h2 { font-size: 18px; }
+.look-a .a-dialog p, .look-a .a-confirm-list { color: var(--a-mid); }
+.look-a .a-confirm-list { padding-left: 18px; list-style: disc; }
+/* ticket 06: the import's progress and outcome, the drop target, the New marker */
+.look-a .a-import { padding-bottom: 0; }
+.look-a .a-import > * + * { margin-top: 8px; }
+.look-a .a-progress { height: 8px; background: var(--a-button); border: 1px solid var(--a-brd2); border-radius: 8px; overflow: hidden; }
+.look-a .a-progress > div { height: 100%; background: var(--color-accent); transition: width 0.2s; }
+.look-a .a-import [data-import-stage], .look-a .a-import [role='status'] { color: var(--a-mid); }
+.look-a .a-import-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; color: var(--a-mid); font-size: 0.9em; }
+.look-a .a-import-lines a { color: var(--a-ink); }
+.look-a .a-failed { color: var(--a-warn); }
+.look-a .a-marker.new { color: var(--a-ink); border-color: var(--color-accent); }
+.look-a .a-dropzone { position: fixed; inset: 12px; z-index: 60; border: 3px dashed var(--color-accent); border-radius: 16px;
+  background: rgba(5, 7, 10, 0.75); display: flex; align-items: center; justify-content: center; pointer-events: none;
+  font-size: 22px; font-weight: 700; }
+.look-a .a-notchecked { color: var(--a-mid); font-size: 0.9em; }
+.look-a .a-empty { background: var(--a-card); border: 1.5px dashed var(--a-brd2); border-radius: 12px; padding: 24px; }
+.look-a .a-empty > * + * { margin-top: 12px; }
+.look-a .a-empty p { color: var(--a-mid); }
+/* the old views keep their own stacking inside one context: Leaflet's panes and the map's own controls (z-index up to
+   1000) must not paint over the places bar */
+.look-a .old-view { isolation: isolate; }
+.look-a .a-crumb { color: var(--a-dim); text-decoration: none; font-size: 0.9em; }
+.look-a .a-views { display: flex; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid var(--a-brd2); padding-bottom: 10px; }
+@media (min-width: 768px) {
+  .look-a .a-places { top: 0; right: auto; width: 76px; height: auto; flex-direction: column; justify-content: flex-start;
+    border-top: 0; border-right: 1px solid var(--a-brd2); padding-top: 10px; }
+  .look-a .a-brand { display: block; text-align: center; font-weight: 700; font-size: 12px; letter-spacing: 0.04em;
+    padding: 6px 0 14px; color: var(--a-ink); }
+  .look-a .a-place { flex: 0 0 64px; border-top: 0; border-left: 3px solid transparent; }
+  .look-a .a-place[aria-current] { border-left-color: var(--color-accent); }
+  .look-a .a-shell { padding-bottom: 0; margin-left: 76px; }
+  .look-a .a-page { padding: 24px; }
+  .look-a .a-search { flex: 0 1 340px; }
+  .look-a .a-row { grid-template-columns: 150px minmax(170px, 1.1fr) minmax(0, 2.6fr); align-items: center; gap: 16px; padding-right: 56px; }
+  .look-a .a-row .a-time { display: block; }
+  .look-a .a-facts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
 /* ── Map basemap (#240) ──
    OpenStreetMap's standard tiles are light; GpsMap's tile layer carries this class so the display filter turns them dark
    for the Void palette. Only the tiles are filtered: the route, markers and the attribution control keep their colours. */
@@ -80,6 +203,16 @@
   .no-print {
     display: none !important;
   }
+
+  /* Look A (#384 ticket 03): a white page; the drive's or page's name stays (only the old app header was chrome) */
+  .look-a {
+    --a-bg: #FFFFFF !important; --a-card: #FFFFFF !important; --a-bar: #FFFFFF !important; --a-button: #FFFFFF !important;
+    --a-brd: #CCCCCC !important; --a-brd2: #CCCCCC !important; --a-ink: #111111 !important; --a-mid: #333333 !important;
+    --a-dim: #444444 !important;
+  }
+  .look-a .a-shell { margin-left: 0 !important; padding-bottom: 0 !important; }
+  .look-a main header { display: block !important; }
+  .look-a .a-crumb { display: none !important; }
 
   /* Let main content fill the page */
   main {

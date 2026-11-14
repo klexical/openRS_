@@ -18,24 +18,11 @@ function makeSession(id: string, name = `Session ${id}`): Session {
 // Reset store between tests
 beforeEach(() => {
   useStore.setState({
-    activePanel: 'dashboard',
     drives: [],
     activeSession: null,
     compareSessions: [],
     activeSessionId: null,
     compareSessionIds: [],
-    navExpanded: true,
-  })
-})
-
-describe('panel navigation', () => {
-  it('defaults to dashboard', () => {
-    expect(useStore.getState().activePanel).toBe('dashboard')
-  })
-
-  it('setActivePanel changes panel', () => {
-    useStore.getState().setActivePanel('trip')
-    expect(useStore.getState().activePanel).toBe('trip')
   })
 })
 
@@ -118,15 +105,5 @@ describe('compare mode', () => {
     useStore.getState().toggleCompareSession('2')
     useStore.getState().removeDrives(['1'])
     expect(useStore.getState().compareSessionIds).toEqual(['2'])
-  })
-})
-
-describe('nav', () => {
-  it('toggleNav flips expanded state', () => {
-    expect(useStore.getState().navExpanded).toBe(true)
-    useStore.getState().toggleNav()
-    expect(useStore.getState().navExpanded).toBe(false)
-    useStore.getState().toggleNav()
-    expect(useStore.getState().navExpanded).toBe(true)
   })
 })

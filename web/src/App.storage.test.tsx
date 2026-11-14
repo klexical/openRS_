@@ -230,24 +230,19 @@ describe('#384 today\'s screens on the new storage', () => {
   })
 
   it('importing a drive that is already stored says "already imported", stores nothing and never throws', async () => {
+    // #384 ticket 06: through the import action (ImportPanel is retired)
     const { useStore, storage } = await modules()
-    const { ImportPanel } = await import('./components/panels/ImportPanel')
+    const { startImport } = await import('./components/importing/startImport')
+    const { ImportStatus } = await import('./components/importing/ImportStatus')
     const zip = new JSZip()
     zip.file('drive_20960101_000000.csv', '# openrs_csv_v2\ntimestamp_ms,lat,lng,speed_kph,rpm\n' +
       `${T0},10,20,40,3000\n${T0 + 1000},10.001,20,42,3100\n`)
     const file = new File([await zip.generateAsync({ type: 'blob' })], 'invented.zip')
-    const drop = async () => {
-      const { container, unmount } = render(<ImportPanel />)
-      const input = container.querySelector('#file-input') as HTMLInputElement
-      Object.defineProperty(input, 'files', { value: [file] })
-      await act(async () => { fireEvent.change(input) })
-      return { container, unmount }
-    }
-    const first = await drop()
+    const { container } = render(<ImportStatus />)
+    await act(async () => { await startImport([file]) })
     await waitFor(() => expect(useStore.getState().drives).toHaveLength(1))
-    first.unmount()
-    const second = await drop()
-    await waitFor(() => expect(second.container.textContent).toMatch(/already imported/i))
+    await act(async () => { await startImport([file]) })
+    await waitFor(() => expect(container.textContent).toMatch(/already imported/i))
     expect(await storage.listDrives()).toHaveLength(1)
     expect(useStore.getState().drives).toHaveLength(1)
   })
