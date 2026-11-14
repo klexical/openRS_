@@ -19,6 +19,13 @@ interface SapphireState {
   drivesLoaded: boolean
   setDrivesLoaded: (loaded: boolean) => void
 
+  /** The list's search text and quick filters (ticket 04): kept here, so they are still there after opening a drive. */
+  listSearch: string
+  setListSearch: (text: string) => void
+  filterWarnings: boolean
+  filterLaps: boolean
+  setFilters: (f: { warnings?: boolean; laps?: boolean }) => void
+
   /** A plain message on the list (an address naming a drive that is not stored); null when none. */
   listNotice: string | null
   setListNotice: (text: string | null) => void
@@ -64,6 +71,11 @@ export const useStore = create<SapphireState>((set) => ({
   setImportOpen: (open) => set({ importOpen: open }),
   drivesLoaded: false,
   setDrivesLoaded: (loaded) => set({ drivesLoaded: loaded }),
+  listSearch: '',
+  setListSearch: (text) => set({ listSearch: text }),
+  filterWarnings: false,
+  filterLaps: false,
+  setFilters: (f) => set((s) => ({ filterWarnings: f.warnings ?? s.filterWarnings, filterLaps: f.laps ?? s.filterLaps })),
   listNotice: null,
   setListNotice: (text) => set({ listNotice: text }),
 

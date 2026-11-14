@@ -1,5 +1,6 @@
 import { useStore, type DriveView } from '../../store'
 import { hrefOf } from '../../lib/address'
+import { notCheckedLine } from '../../lib/warningWords'
 import { ErrorBoundary } from '../ErrorBoundary'
 import { lazyChunk } from '../ui/lazyChunk'
 
@@ -19,11 +20,13 @@ export function DriveFrame({ id }: { id: string }) {
   const view = useStore((s) => s.driveView)
   const setView = useStore((s) => s.setDriveView)
   const name = record?.name ?? open?.name
+  const notChecked = record ? notCheckedLine(record) : null   // #384 ticket 04
   return (
     <div className="a-page">
       <header>
         <a className="a-crumb" href={hrefOf({ place: 'drives' })}>← Drives</a>
         <h1>{name ?? 'Opening the drive…'}</h1>
+        {notChecked && <p className="a-notchecked">{notChecked}</p>}
       </header>
       <nav className="a-views" aria-label="Views of this drive">
         {VIEWS.map((v) => (

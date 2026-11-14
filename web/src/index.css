@@ -90,6 +90,19 @@
 .look-a .a-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; margin: 0; align-items: end; }
 .look-a .a-facts dt { color: var(--a-dim); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.08em; line-height: 1.25; }
 .look-a .a-facts dd { margin: 0; font-size: 1.05em; white-space: nowrap; }
+.look-a .a-search { flex: 1 1 100%; }
+.look-a .a-search input { width: 100%; font: inherit; color: var(--a-ink); background: var(--a-card); border: 1px solid var(--a-brd2);
+  border-radius: 8px; padding: 8px 12px; }
+.look-a .a-search input::placeholder { color: var(--a-dim); opacity: 1; }
+.look-a .a-search input:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.look-a .a-filters { display: flex; gap: 10px; flex: 1; flex-wrap: wrap; }
+.look-a .a-chip::before { content: '□ '; }
+.look-a .a-chip[aria-pressed='true']::before { content: '■ '; }
+.look-a .a-markers { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: 8px; vertical-align: middle; font-size: 0.88em; }
+.look-a .a-marker { border: 1px solid var(--a-brd2); border-radius: 8px; padding: 0 7px; color: var(--a-mid); white-space: nowrap; }
+.look-a .a-marker.warn { color: var(--a-warn); font-weight: 700; border-color: var(--a-warn); }
+.look-a .a-row.is-warning { border-left: 4px solid var(--a-warn); }
+.look-a .a-notchecked { color: var(--a-mid); font-size: 0.9em; }
 .look-a .a-empty { background: var(--a-card); border: 1.5px dashed var(--a-brd2); border-radius: 12px; padding: 24px; }
 .look-a .a-empty > * + * { margin-top: 12px; }
 .look-a .a-empty p { color: var(--a-mid); }
@@ -107,6 +120,7 @@
   .look-a .a-place[aria-current] { border-left-color: var(--color-accent); }
   .look-a .a-shell { padding-bottom: 0; margin-left: 76px; }
   .look-a .a-page { padding: 24px; }
+  .look-a .a-search { flex: 0 1 340px; }
   .look-a .a-row { grid-template-columns: 120px minmax(170px, 1.1fr) minmax(0, 2.6fr); align-items: center; gap: 16px; }
   .look-a .a-row .a-time { display: block; }
   .look-a .a-facts { grid-template-columns: repeat(4, minmax(0, 1fr)); }

@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { Shell } from './components/layout/Shell'
 import { useStore } from './store'
 import { useSettings } from './store/settings'
-import { listDrives, loadDrive, onStorageStatus, storageStatus } from './lib/storage'
+import { fillBestLap, listDrives, loadDrive, onStorageStatus, storageStatus } from './lib/storage'
 import { go, useAddress } from './lib/address'
 import { rsThemes, shadeHex, printAccent } from './styles/tokens'
 import { colors } from './styles/tokens'
@@ -55,7 +55,13 @@ export default function App() {
           // plain message; the address is replaced so Back does not lead to it again. A failed read is not this.
           useStore.getState().setListNotice('That drive is not stored in this browser.')
           go({ place: 'drives' }, { replace: true })
-        } else setActiveSession(s)
+        } else {
+          setActiveSession(s)
+          // a drive stored before ticket 04 gets its best lap now that its points are read; a failure changes nothing
+          fillBestLap(s)
+            .then((rec) => { if (rec) useStore.getState().updateDrive(rec) })
+            .catch((err) => console.warn('[Sapphire] Could not note the best lap:', err))
+        }
       })
       .catch((err) => console.error('[Sapphire] Failed to open the drive:', err))
     return () => { current = false }

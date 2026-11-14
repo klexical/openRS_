@@ -12,6 +12,8 @@ describe('#384 ticket 03: look A Night text contrast (WCAG AA, 4.5:1)', () => {
     ['dim on bg', p.dim, p.bg], ['dim on card', p.dim, p.card], ['dim on bar', p.dim, p.bar],
     ['ink on bar', p.ink, p.bar], ['ink on button', p.ink, p.button],
     ['warn on bar', p.warn, p.bar], ['warn on bg', p.warn, p.bg],
+    // ticket 04: the "Warnings" marker on a row (the search box and the not-checked line use ink, mid and dim on card, above)
+    ['warn on card (the Warnings marker)', p.warn, p.card],
   ]
   it.each(pairs)('%s', (_, fg, bg) => { expect(contrastRatio(fg, bg)).toBeGreaterThanOrEqual(4.5) })
 

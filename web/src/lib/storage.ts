@@ -35,6 +35,12 @@ export type DriveRecord = Omit<Session, 'trip' | 'diagnostics'> & {
   hasDrive: boolean
   hasSession: boolean
   hasLaps: boolean
+  /**
+   * The fastest valid lap (a time above 0), for the list (#384 ticket 04); null when the drive has no lap with a valid time.
+   * Absent: stored before ticket 04 (live delivery A, or a tab still running it); filled in when the drive is next
+   * opened ([fillBestLap]).
+   */
+  bestLapMs?: number | null
   hasWarnings: boolean
   warnings: WarningCauses
   /** SHA-256 (hex) of the drive's points, computed once when stored; see [contentHash]. */
@@ -81,7 +87,7 @@ export const DIAGNOSTICS = 'diagnostics'
 export const OLD_SESSIONS = 'sessions'
 export const ALL = [DRIVES, POINTS, DIAGNOSTICS]
 /** Keys this module adds to a drive record; stripped again when a session is rebuilt. */
-const DERIVED = ['driveStart', 'summary', 'pointCount', 'hasDrive', 'hasSession', 'hasLaps', 'hasWarnings', 'warnings',
+const DERIVED = ['driveStart', 'summary', 'pointCount', 'hasDrive', 'hasSession', 'hasLaps', 'bestLapMs', 'hasWarnings', 'warnings',
   'contentHash', 'sessionProof'] as const
 
 /**
@@ -213,11 +219,18 @@ function derive(s: Session, trip: TripData | null, diagnostics: DiagnosticData |
     hasDrive: points.length > 0,
     hasSession: diagnostics !== null,
     hasLaps: (trip?.laps?.length ?? 0) > 0,
+    bestLapMs: bestLap(trip),
     hasWarnings: warnings.faultCodes === 'found' || warnings.recordingGaps === 'found',
     warnings,
     contentHash: contentHash(s),
     ...(points.length === 0 ? { sessionProof: sessionProof(s, diagnostics) } : {}),
   }
+}
+
+/** The fastest lap with a valid time (finite, above 0); null when there is none. */
+function bestLap(trip: TripData | null): number | null {
+  const times = (trip?.laps ?? []).map((l) => l?.lapTimeMs).filter((t): t is number => typeof t === 'number' && Number.isFinite(t) && t > 0)
+  return times.length > 0 ? Math.min(...times) : null
 }
 
 /** Fewer events than this are the app's start-up lines, which two different short sessions share. */
@@ -420,6 +433,30 @@ async function updateDrive(id: string, change: (d: DriveRecord) => DriveRecord):
   if (!d) { await tx.done; return null }
   const next = change(d)
   await tx.store.put(next)
+  await tx.done
+  return next
+}
+
+/**
+ * Fill in the best lap of a drive stored before ticket 04 (#384), from the session that was just opened (its points are
+ * read then anyway). One write of the small record, in one transaction, and only when the stored record still lacks the
+ * field: the record is rebuilt as an import stores it today (same fields, values and key order), from the stored record
+ * itself, so a rename or tag edit made meanwhile is kept. Returns the new record, or null when nothing was written.
+ * A failure writes nothing: the record stays as it was (the caller only logs it).
+ */
+export async function fillBestLap(session: Session): Promise<DriveRecord | null> {
+  const db = await getDb()
+  const tx = db.transaction(DRIVES, 'readwrite')
+  const stored = (await tx.store.get(session.id)) as DriveRecord | undefined
+  if (!stored || 'bestLapMs' in stored || !stored.hasLaps) { await tx.done; return null }
+  const next = split(rebuildSession(stored, session.trip, session.diagnostics)).drive
+  try {
+    await tx.store.put(next)
+  } catch (err) {
+    try { tx.abort() } catch { /* already ended */ }
+    await tx.done.catch(() => {})
+    throw err
+  }
   await tx.done
   return next
 }
