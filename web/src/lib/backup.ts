@@ -17,7 +17,7 @@ export interface BackupFile extends File_ {
 export interface RestoreOutcome {
   /** Drives brought in. */
   added: number
-  /** Drives already here (same id): skipped, never overwritten. */
+  /** Drives already here (the same id, or the same drive by the import's rule): skipped, never overwritten. */
   skipped: number
   /** Names of version-1 drives in the file that could not be converted (after a failed upgrade). */
   notRestorable: string[]
@@ -94,7 +94,7 @@ export async function makeBackup(onProgress?: (done: number, total: number) => v
   }
 }
 
-/** Restore a backup file: adds what is missing, skips what is here (same id), never overwrites or deletes. */
+/** Restore a backup file: adds what is missing, skips what is already here, never overwrites, merges or deletes. */
 export async function restoreBackup(file: Blob): Promise<RestoreOutcome> {
   const entries = await readBackup(file, yieldToPage)
   const records: RestoreRecord[] = []

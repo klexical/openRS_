@@ -337,3 +337,66 @@ describe('#384 ticket 02, review round', () => {
     expect(Math.max(...steps)).toBeLessThan(3)
   })
 })
+
+// ── Restore by the import's same-drive rule (owner, 2026-11-14; ticket 02 23ba1f56) ──
+
+/** A session-only entry (no points): matched only on proof. [events] at or above three is proof. */
+function sessionOnly(id: string, events: number): Session {
+  return { ...drive(id, 0), trip: null,
+    diagnostics: { canInventory: [], fpsTimeline: [], decodeTrace: [], probeResults: [], dtcResults: [],
+      sessionEvents: Array.from({ length: events }, (_, i) => ({ ts: 1000 + i, type: 'SESSION', message: `invented ${i}` })) } }
+}
+
+describe('#384 restore skips a drive already stored under another id', () => {
+  it('the same export imported here under another id, then restored: one drive, the stored copy as it is', async () => {
+    await storeImported([drive('from-backup', 200)])
+    const backup = await makeBackup()
+    fresh()
+    await storeImported([{ ...drive('here', 200), name: 'Stored name', tags: ['Track'] }])     // same points, other id
+    expect(await restoreBackup(backup.blob)).toEqual({ added: 0, skipped: 1, notRestorable: [] })
+    const listed = await listDrives()
+    expect(listed.map((d) => [d.id, d.name, d.tags])).toEqual([['here', 'Stored name', ['Track']]])
+  })
+
+  it('a version-1 backup: its drives are matched by the hash computed at restore, as at the upgrade', async () => {
+    const v1 = await openDB('sapphire', 1, { upgrade(d) { d.createObjectStore('sessions', { keyPath: 'id' }) } })
+    await v1.put('sessions', drive('old-id', 210))
+    await v1.put('sessions', { ...drive('bad', 211), trip: { ...drive('bad', 211).trip!, points: 'not an array' } })
+    v1.close()
+    await expect(listDrives()).rejects.toThrow()                 // the upgrade fails: the backup is of version 1
+    const backup = await makeBackup()
+    fresh()
+    await storeImported([drive('new-id', 210)])
+    expect(await restoreBackup(backup.blob)).toEqual({ added: 0, skipped: 1, notRestorable: ['Invented bad'] })
+    expect((await listDrives()).map((d) => d.id)).toEqual(['new-id'])
+  })
+
+  it('session-only entries: the same session with proof is already here; without proof it is restored, as at import', async () => {
+    await storeImported([sessionOnly('proved-a', 3), sessionOnly('unproved-a', 1)])
+    const backup = await makeBackup()
+    fresh()
+    await storeImported([sessionOnly('proved-b', 3), sessionOnly('unproved-b', 1)])
+    expect(await restoreBackup(backup.blob)).toEqual({ added: 1, skipped: 1, notRestorable: [] })
+    expect((await listDrives()).map((d) => d.id).sort()).toEqual(['proved-b', 'unproved-a', 'unproved-b'])
+  })
+
+  it('two copies of one entry inside the backup itself: the second is already here, as in one import', async () => {
+    for (const first of [drive('one', 220), sessionOnly('one', 3)]) await copyTwiceThenRestore(first)
+  })
+})
+
+async function copyTwiceThenRestore(first: Session) {
+  {
+    fresh()
+    await storeImported([first])
+    const zip = await JSZip.loadAsync((await makeBackup()).blob)
+    const entry = JSON.parse(await zip.file('drives/1.json')!.async('string'))
+    for (const part of ['drive', 'points', 'diagnostics']) entry[part].id = 'copy'
+    zip.file('drives/2.json', JSON.stringify(entry))
+    zip.file('manifest.json', JSON.stringify({ ...JSON.parse(await zip.file('manifest.json')!.async('string')), drives: 2 }))
+    fresh()
+    expect([first.trip ? 'drive' : 'session only', await restoreBackup(await zip.generateAsync({ type: 'blob' }))])
+      .toEqual([first.trip ? 'drive' : 'session only', { added: 1, skipped: 1, notRestorable: [] }])
+  }
+}
+

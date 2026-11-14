@@ -81,7 +81,7 @@ export function RestoreInput() {
       const out = await restoreBackup(file)
       setDrives(await listDrives())
       const parts = [`Restored ${drivesText(out.added)}.`]
-      if (out.skipped > 0) parts.push(`${drivesText(out.skipped)} already here, left as they are.`)
+      parts.push(`${drivesText(out.skipped)} already here, left as they are.`)   // the same id, or the same drive
       if (out.notRestorable.length > 0) parts.push(`Could not convert: ${out.notRestorable.join(', ')}.`)
       setText({ message: parts.join(' '), warn: out.notRestorable.length > 0 })
     } catch (err) {

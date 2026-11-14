@@ -12,6 +12,7 @@
 
 import JSZip from 'jszip'
 import type { StoredEverything } from './storageBackup'
+import type { DriveRecord } from './storage'
 
 /** The backup file's format version; a file from a newer one is refused. */
 export const BACKUP_FORMAT_VERSION = 1
@@ -144,7 +145,7 @@ export async function buildBackup(data: StoredEverything, onProgress?: (done: nu
 
 /** One drive read back from a backup: as stored (version-2), or a whole version-1 session to convert. */
 export type BackupEntry =
-  | { kind: 'stored'; drive: Record<string, unknown> & { id: string }; points: { id: string; trip: unknown } | null; diagnostics: { id: string; diagnostics: unknown } | null }
+  | { kind: 'stored'; drive: DriveRecord; points: { id: string; trip: unknown } | null; diagnostics: { id: string; diagnostics: unknown } | null }
   | { kind: 'session'; session: unknown }
 
 /** Read a backup file's entries, checked; throws a BackupError in plain words for anything it cannot restore. */
@@ -204,6 +205,6 @@ function storedEntry(e: unknown, i: number): BackupEntry {
   if (diagnostics !== null && !(isObject(diagnostics) && diagnostics.id === drive.id)) {
     throw damaged(`drive ${i}'s diagnostics do not match it`)
   }
-  return { kind: 'stored', drive: drive as Record<string, unknown> & { id: string },
+  return { kind: 'stored', drive: drive as unknown as DriveRecord,   // checked above: id, hasDrive, contentHash
     points: points as { id: string; trip: unknown } | null, diagnostics: diagnostics as { id: string; diagnostics: unknown } | null }
 }

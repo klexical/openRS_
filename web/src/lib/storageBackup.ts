@@ -3,7 +3,7 @@
 // upgrade and store names, and no other code touches IndexedDB.
 
 import { openDB, type IDBPDatabase, type IDBPTransaction } from 'idb'
-import { getDb, settle, DB_NAME, DB_VERSION, DRIVES, POINTS, DIAGNOSTICS, OLD_SESSIONS, ALL, type DriveRecord } from './storage'
+import { getDb, settle, sameDriveFinder, DB_NAME, DB_VERSION, DRIVES, POINTS, DIAGNOSTICS, OLD_SESSIONS, ALL, type DriveRecord } from './storage'
 import type { DiagnosticData, TripData } from '../types/session'
 
 /** Everything stored, as it is stored. A database whose upgrade failed is still version 1: then only `sessions`. */
@@ -53,25 +53,22 @@ export async function readEverything(): Promise<StoredEverything> {
 }
 
 /** A drive's records from a backup, as they were stored (a part the backup did not hold is not written). */
-export interface RestoreRecord { drive: { id: string }; points: { id: string } | null; diagnostics: { id: string } | null }
-
-/** An id present in any of the three stores (an orphan record left by an earlier fault counts): never overwritten. */
-async function alreadyHere(tx: IDBPTransaction<unknown, string[], 'readwrite'>, id: string): Promise<boolean> {
-  for (const store of ALL) if ((await tx.objectStore(store).getKey(id)) !== undefined) return true
-  return false
-}
+export interface RestoreRecord { drive: DriveRecord; points: { id: string } | null; diagnostics: { id: string } | null }
 
 /**
- * Restore records from a backup in one transaction: a drive already here (same id, in any of the three stores) is
- * skipped and counted, never overwritten; nothing is deleted (owner, 2026-11-14: restore only adds).
+ * Restore records from a backup in one transaction. A drive already here is skipped and counted, never overwritten or
+ * merged (owner, 2026-11-14): an id present in any of the three stores (an orphan record left by an earlier fault
+ * counts), or the same drive by the import's rule under another id. Nothing is deleted.
  */
 export async function restoreRecords(records: RestoreRecord[]): Promise<{ added: number; skipped: number }> {
   const db = await getDb()
   const tx = db.transaction(ALL, 'readwrite')
+  const same = sameDriveFinder(tx)
   const out = { added: 0, skipped: 0 }
   try {
     for (const r of records) {
-      if (await alreadyHere(tx, r.drive.id)) { out.skipped++; continue }
+      if (await idHere(tx, r.drive.id) || (await same.find(r.drive)) !== undefined) { out.skipped++; continue }
+      same.add(r.drive)
       settle(tx.objectStore(DRIVES).put(r.drive))
       if (r.points) settle(tx.objectStore(POINTS).put(r.points))
       if (r.diagnostics) settle(tx.objectStore(DIAGNOSTICS).put(r.diagnostics))
@@ -84,4 +81,10 @@ export async function restoreRecords(records: RestoreRecord[]): Promise<{ added:
   }
   await tx.done
   return out
+}
+
+/** An id present in any of the three stores (an orphan record left by an earlier fault counts). */
+async function idHere(tx: IDBPTransaction<unknown, string[], 'readwrite'>, id: string): Promise<boolean> {
+  for (const store of ALL) if ((await tx.objectStore(store).getKey(id)) !== undefined) return true
+  return false
 }

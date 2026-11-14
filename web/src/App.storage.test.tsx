@@ -108,7 +108,7 @@ describe('#384 ticket 02: backup and restore on the page', () => {
     const input = await screen.findByLabelText('Restore from a backup') as HTMLInputElement
     Object.defineProperty(input, 'files', { value: [file] })
     await act(async () => { fireEvent.change(input) })
-    await waitFor(() => expect(container.textContent).toMatch(/Restored 2 drives/))
+    await waitFor(() => expect(container.textContent).toMatch(/Restored 2 drives\. 0 drives already here, left as they are\./))
     expect(useStore.getState().drives).toHaveLength(2)
   }, 15_000)
 

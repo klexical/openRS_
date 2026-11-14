@@ -351,6 +351,30 @@ export async function loadDrive(id: string): Promise<Session | null> {
 }
 
 /**
+ * The same-drive rule, for one transaction that stores drives (import, and restore from a backup): a drive with points
+ * is the same as a stored one with the same content hash; a session-only entry is the same only on proof (the scan's
+ * finish time, or the whole event list). [add] notes a drive this transaction stores, so a second copy in the same
+ * batch is found too.
+ */
+export function sameDriveFinder(tx: IDBPTransaction<unknown, string[], 'readwrite'>) {
+  const seen = new Map<string, string>()
+  let sessionsOnly: DriveRecord[] | null = null   // stored session-only entries, read once when needed
+  return {
+    async find(d: DriveRecord): Promise<string | undefined> {
+      if (d.hasDrive) {
+        return seen.get(d.contentHash) ?? (await tx.objectStore(DRIVES).index('byHash').getKey(d.contentHash)) as string | undefined
+      }
+      sessionsOnly ??= ((await tx.objectStore(DRIVES).getAll()) as DriveRecord[]).filter((x) => !x.hasDrive)
+      return sessionsOnly.find((x) => sameSession(x.sessionProof, d.sessionProof))?.id
+    },
+    add(d: DriveRecord): void {
+      if (d.hasDrive) seen.set(d.contentHash, d.id)
+      else sessionsOnly?.push(d)
+    },
+  }
+}
+
+/**
  * Store freshly imported sessions in one transaction: all of them, or none (a batch ZIP). A session whose content is
  * already stored is not stored again and is returned in `alreadyImported` (never an error).
  */
@@ -363,21 +387,12 @@ export async function storeImported(sessions: Session[]): Promise<ImportOutcome>
   const db = await getDb()
   const tx = db.transaction(ALL, 'readwrite')
   const outcome: ImportOutcome = { stored: [], alreadyImported: [] }
-  const seen = new Map<string, string>()
-  let storedSessions: DriveRecord[] | null = null  // stored drive-less sessions, read once when needed
+  const same = sameDriveFinder(tx)
   try {
     for (const r of prepared) {
-      let existing: string | undefined
-      if (r.drive.hasDrive) {
-        existing = seen.get(r.drive.contentHash)
-          ?? (await tx.objectStore(DRIVES).index('byHash').getKey(r.drive.contentHash)) as string | undefined
-      } else {
-        storedSessions ??= ((await tx.objectStore(DRIVES).getAll()) as DriveRecord[]).filter((d) => !d.hasDrive)
-        existing = storedSessions.find((d) => sameSession(d.sessionProof, r.drive.sessionProof))?.id
-        if (existing === undefined) storedSessions.push(r.drive)
-      }
+      const existing = await same.find(r.drive)
       if (existing !== undefined) { outcome.alreadyImported.push({ name: r.drive.name, existingId: existing }); continue }
-      seen.set(r.drive.contentHash, r.drive.id)
+      same.add(r.drive)
       settle(tx.objectStore(DRIVES).put(r.drive))
       settle(tx.objectStore(POINTS).put(r.points))
       settle(tx.objectStore(DIAGNOSTICS).put(r.diagnostics))
