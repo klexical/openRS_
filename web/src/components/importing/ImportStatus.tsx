@@ -24,7 +24,8 @@ export function ImportStatus() {
           <p data-import-stage>File {Math.min(p.done + 1, p.total)} of {p.total}: {p.file} · {p.stage}</p>
         </>
       )}
-      {(job.notes ?? []).map((n) => <p key={n} className="a-failed">{n}</p>)}
+      {/* keyed by position: the same file dropped twice gives the same line twice (QA N1, REVIEW-07) */}
+      {(job.notes ?? []).map((n, i) => <p key={i} className="a-failed">{n}</p>)}
       {!job.running && (
         <>
           <p role="status">Done. Imported {job.storedCount === 1 ? '1 drive' : `${job.storedCount} drives`}.</p>

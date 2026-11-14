@@ -28,6 +28,8 @@ export function DrivesPage() {
   // Import is an action (ticket 06): the button opens the browser's file chooser, several files at a time
   const fileInput = useRef<HTMLInputElement>(null)
   const chooseFiles = () => fileInput.current?.click()
+  // one import at a time: Import is off while one runs (QA N1, REVIEW-07); a drop meanwhile is told so by the import
+  const importing = useStore((s) => s.importJob?.running ?? false)
   const search = useStore((s) => s.listSearch)
   const setSearch = useStore((s) => s.setListSearch)
   const warnings = useStore((s) => s.filterWarnings)
@@ -147,7 +149,7 @@ export function DrivesPage() {
         <div className="a-empty">
           <p>No drives stored in this browser yet.</p>
           <p>The ZIP comes from the openRS_ app on your phone: export a drive, or share a diagnostic snapshot, and import that file here.</p>
-          <button type="button" className="a-btn primary" onClick={chooseFiles}>Import</button>
+          <button type="button" className="a-btn primary" onClick={chooseFiles} disabled={importing}>Import</button>
         </div>
       ) : loaded ? (
         <>
@@ -160,7 +162,7 @@ export function DrivesPage() {
               <button type="button" className="a-btn a-chip" aria-pressed={warnings} onClick={() => setFilters({ warnings: !warnings })}>With warnings: fault codes and gaps</button>
               <button type="button" className="a-btn a-chip" aria-pressed={laps} onClick={() => setFilters({ laps: !laps })}>With laps</button>
             </div>
-            <button type="button" className="a-btn primary" onClick={chooseFiles}>Import</button>
+            <button type="button" className="a-btn primary" onClick={chooseFiles} disabled={importing}>Import</button>
           </div>
           {ticked.length > 0 && (
             <div className="a-toolbar a-selection" role="group" aria-label="Ticked drives">

@@ -174,3 +174,38 @@ describe('#384 fix round: a drop while an import runs', () => {
     expect(useStore.getState().drives).toHaveLength(1)
   })
 })
+
+describe('#384 fix round, QA N1 (REVIEW-07): the Import button during an import, and the notes\' keys', () => {
+  it('the Import button is disabled while an import runs, and enabled again after', async () => {
+    const { App } = await boot()
+    render(<App />)
+    const root = await list()
+    const input = document.querySelector('#file-input') as HTMLInputElement
+    Object.defineProperty(input, 'files', { value: [await single(10)], configurable: true })
+    fireEvent.change(input)                                         // the import starts; it is still running here
+    expect(within(root).getByRole('button', { name: 'Import' })).toBeDisabled()
+    await done()
+    await act(async () => { window.location.hash = '#/' })
+    expect(within(await list()).getByRole('button', { name: 'Import' })).toBeEnabled()
+  })
+
+  it('the same file dropped twice during an import gives two lines without a duplicate key', async () => {
+    const { App } = await boot()
+    render(<App />)
+    await list()
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const busy = await single(11, 'busy.zip')
+    const dt = (f: File) => ({ dataTransfer: { files: [f], types: ['Files'], items: [], dropEffect: 'copy' } })
+    const main = document.querySelector('main')!
+    await act(async () => {
+      fireEvent.drop(main, dt(await single(12)))
+      fireEvent.drop(main, dt(busy))
+      fireEvent.drop(main, dt(busy))
+    })
+    await done()
+    const keyErrors = err.mock.calls.filter((c) => /same key/.test(String(c[0])))
+    err.mockRestore()
+    expect(keyErrors).toEqual([])
+    expect(status().textContent!.match(/busy\.zip was not imported/g)).toHaveLength(2)
+  })
+})
