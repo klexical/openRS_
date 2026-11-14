@@ -107,7 +107,7 @@ A top-level destination in Sapphire: Drives, Car, Settings.
 _Avoid_: Panel, tab, section
 
 **Page**:
-The screen of one drive in Sapphire.
+The screen of one drive, or of a session-only entry, in Sapphire.
 _Avoid_: Panel, detail view, dashboard
 
 **View**:
@@ -134,7 +134,7 @@ A row in the drive library for an import that held a session and no drive. It ha
 _Avoid_: Drive (a session is never a drive), empty drive
 
 **Current drive**:
-The drive whose page is on screen in Sapphire.
+The drive, or session-only entry, whose page is on screen in Sapphire.
 _Avoid_: Open drive (open means started and not yet stopped), active session, selected drive
 
 **Compare**:
