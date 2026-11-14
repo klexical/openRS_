@@ -175,6 +175,43 @@ check(await page.evaluate(() => location.hash) === '#/' && await rows(page) === 
 await page.goto(home + '#/drive/%E0%A4%A')
 await page.waitForSelector('.a-row', { timeout: 15000 })
 check(await rows(page) === N, 'a malformed address shows the list')
+// ── A row far down the list: the drive opens at its top; Back returns the list where it was ──
+await page.goto(home)
+await page.waitForSelector('.a-row')
+// a row about 600 px down: less than a drive's page is tall, so a page that kept the list's scroll would open mid-page
+const lastLink = page.locator('.a-row .a-name').nth(7)
+await page.evaluate(() => window.scrollTo(0, 0))
+await lastLink.evaluate((el) => window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 200))
+const lastName = await lastLink.innerText()
+const listY = await page.evaluate(() => window.scrollY)
+await lastLink.focus()
+await page.keyboard.press('Enter')
+await page.waitForFunction(() => location.hash.startsWith('#/drive/'))
+await settle(page)
+const atTop = await page.evaluate(() => ({ y: window.scrollY, h1: document.querySelector('main h1')?.getBoundingClientRect().top ?? -1, height: document.documentElement.scrollHeight }))
+check(listY > 300 && atTop.y === 0 && atTop.h1 >= 0 && atTop.h1 < 200 && await h1(page) === lastName,
+  `a row down the list (list scrolled to ${listY} px; the drive's page is ${atTop.height} px tall) opens its drive at the top of the page (scrollY ${atTop.y}, name at ${Math.round(atTop.h1)} px)`)
+await page.goBack()
+await page.waitForSelector('.a-row')
+await settle(page)
+const backY = await page.evaluate(() => window.scrollY)
+const lastInView = await page.locator('.a-row').nth(7).evaluate((el) => { const r = el.getBoundingClientRect(); return r.bottom > 0 && r.top < window.innerHeight })
+check(Math.abs(backY - listY) <= 2 && lastInView, `Back returns the list where it was (scrollY ${backY}, was ${listY})`)
+
+// ── Print: a drive prints on white, with its name, and no rail margin ──
+await page.goForward()
+await page.waitForFunction(() => location.hash.startsWith('#/drive/'))
+await settle(page)
+await page.emulateMedia({ media: 'print' })
+const printed = await page.evaluate(() => {
+  const root = document.querySelector('.look-a'), shell = document.querySelector('.a-shell'), name = document.querySelector('main h1')
+  return { bg: getComputedStyle(root).backgroundColor, ink: getComputedStyle(name).color, margin: getComputedStyle(shell).marginLeft,
+    nameShown: name.getBoundingClientRect().height > 0, rail: getComputedStyle(document.querySelector('nav[aria-label="Places"]')).display }
+})
+await page.emulateMedia({ media: 'screen' })
+check(printed.bg === 'rgb(255, 255, 255)' && printed.nameShown && printed.margin === '0px' && printed.rail === 'none' && printed.ink !== 'rgb(232, 244, 255)',
+  `print: white page, the drive's name shown in dark text, no places, no rail margin (${JSON.stringify(printed)})`)
+
 check(errors.length === 0, `desktop: no page errors (${errors.length}${errors.length ? ': ' + errors[0] : ''})`)
 const rail = await page.locator('nav[aria-label="Places"]').boundingBox()
 check(rail && rail.x === 0 && rail.height > rail.width, `1280: the places are a rail on the left (${JSON.stringify(rail)})`)
@@ -201,6 +238,27 @@ await ctx.close()
     await page.screenshot({ path: `${out}-${what}-375x812.png` })
   }
   await ctx.addInitScript(ROWS_AT, N)
+  // a drive's route map scrolled under the bottom bar: the bar stays on top (Leaflet's panes have z-index 200 to 1000)
+  await page.goto(home)
+  await page.locator('.a-row .a-name').first().click()
+  await page.waitForSelector('.leaflet-container', { timeout: 15000 })
+  await page.waitForTimeout(800)
+  // a short window puts the bottom bar across the map (the map sits near the top of the drive's page)
+  const mapBox = await page.locator('.leaflet-container').first().boundingBox()
+  await page.setViewportSize({ width: 375, height: Math.round(mapBox.y + mapBox.height / 2 + 28) })
+  await page.waitForTimeout(300)
+  const over = await page.evaluate(() => {
+    const map = document.querySelector('.leaflet-container'), bar = document.querySelector('nav[aria-label="Places"]')
+    const b = bar.getBoundingClientRect(), m = map.getBoundingClientRect()
+    const x = Math.round(m.left + m.width / 2), y = Math.round(b.top + b.height / 2)
+    const hit = document.elementFromPoint(x, y)
+    return { crosses: m.top < b.bottom && m.bottom > b.top, onTop: !!hit && bar.contains(hit), hit: hit?.className?.baseVal ?? hit?.className ?? hit?.tagName,
+      map: [Math.round(m.top), Math.round(m.bottom)], bar: [Math.round(b.top), Math.round(b.bottom)], scrollY: Math.round(window.scrollY) }
+  })
+  check(over.crosses && over.onTop, `375: a route map under the bottom bar stays beneath it (${JSON.stringify(over)})`)
+  await page.screenshot({ path: `${out}-map-under-bar-375.png` })
+  await page.setViewportSize({ width: 375, height: 812 })
+
   const cdp = await ctx.newCDPSession(page)
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
   timing.mobile4x = []

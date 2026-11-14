@@ -52,10 +52,11 @@
 
 /* ── Look A (#384 ticket 03): the list of drives, the places bar and the drive's frame ──
    Colours come from styles/lookA.ts as --a-* properties on .look-a (Night only until ticket 08); the accent is the paint.
-   Below 768 px the places are a bar at the bottom; from 768 px a narrow rail on the left. */
+   Below 768 px the places are a bar at the bottom; from 768 px a narrow rail on the left. Every rule names a class of
+   the new screens: the old views inside a drive (.old-view) keep their own look until tickets 07 and 08. */
 .look-a { background: var(--a-bg); color: var(--a-ink); min-height: 100dvh; }
-.look-a a { color: inherit; }
-.look-a :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 4px; }
+.look-a .a-place:focus-visible, .look-a .a-name:focus-visible, .look-a .a-btn:focus-visible, .look-a .a-crumb:focus-visible {
+  outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .look-a .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .look-a .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .look-a .a-places { position: fixed; left: 0; right: 0; bottom: 0; height: 56px; display: flex; z-index: 20;
@@ -84,7 +85,7 @@
 .look-a .a-row.is-session { border-style: dashed; }
 .look-a .a-date { color: var(--a-mid); font-size: 0.9em; }
 .look-a .a-time { color: var(--a-dim); }
-.look-a .a-name { font-weight: 700; font-size: 1.05em; text-decoration: none; }
+.look-a .a-name { color: var(--a-ink); font-weight: 700; font-size: 1.05em; text-decoration: none; }
 .look-a .a-name::after { content: ''; position: absolute; inset: 0; border-radius: 12px; }   /* the whole row opens the drive */
 .look-a .a-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; margin: 0; align-items: end; }
 .look-a .a-facts dt { color: var(--a-dim); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.08em; line-height: 1.25; }
@@ -138,6 +139,16 @@
   .no-print {
     display: none !important;
   }
+
+  /* Look A (#384 ticket 03): a white page; the drive's or page's name stays (only the old app header was chrome) */
+  .look-a {
+    --a-bg: #FFFFFF !important; --a-card: #FFFFFF !important; --a-bar: #FFFFFF !important; --a-button: #FFFFFF !important;
+    --a-brd: #CCCCCC !important; --a-brd2: #CCCCCC !important; --a-ink: #111111 !important; --a-mid: #333333 !important;
+    --a-dim: #444444 !important;
+  }
+  .look-a .a-shell { margin-left: 0 !important; padding-bottom: 0 !important; }
+  .look-a main header { display: block !important; }
+  .look-a .a-crumb { display: none !important; }
 
   /* Let main content fill the page */
   main {
