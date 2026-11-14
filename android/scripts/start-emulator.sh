@@ -12,8 +12,17 @@
 #   - The wait ends at once when the emulator process is gone (the launcher replaces itself with the emulator by execv,
 #     so its process id stays the emulator's), with the last 60 lines of its log; it also ends at the boot limit, measured
 #     by the clock from the emulator's start (a boot check can take up to its 10 s timeout).
-#   - It prints the emulator's version (its first line) and the emulator's process id, and writes that id to emulator.pid
-#     beside emulator.log, for launch-check.sh's failure diagnostics.
+#   - It prints the emulator's version (Pkg.Revision of the SDK's emulator/source.properties: `emulator -version` fails on
+#     the runner for want of libpulse) and the emulator's process id, and writes that id to emulator.pid beside
+#     emulator.log, for launch-check.sh's failure diagnostics.
+#   - The emulator runs under a small wrapper that writes its exit status to emulator.exit (`exit=<status>`; 128 + the
+#     signal for a death by signal). The wrapper gets the emulator's path from its environment, never on its command line,
+#     so launch-check.sh's `pgrep -f 'qemu-system|emulator/emulator'` never finds the wrapper (#363).
+#   - Before the start it asks the kernel to print the fatal-signal line (`kernel.print-fatal-signals=1`, through
+#     `sudo -n sysctl`), and says whether that worked.
+#   - For launch-check.sh's one retry (#363): the first start writes its own start time to emulator.started (a later start
+#     keeps it: the job's clock) and the image to emulator.args. EMULATOR_SKIP_INSTALL=1 skips sdkmanager (the retry: the
+#     packages are there, and it is a network call on the failing path).
 # EMULATOR_POLL_S (default 5) sets the seconds between boot checks; the tests shorten it.
 set -euo pipefail
 fail() { echo "::error::$*"; exit 1; }
@@ -23,7 +32,9 @@ IMAGE="$1"; BOOT_LIMIT_S="$2"; POLL_S="${EMULATOR_POLL_S:-5}"
 [[ "$POLL_S" =~ ^[1-9][0-9]*$ ]] || fail "EMULATOR_POLL_S '$POLL_S' is not a positive number of seconds"
 [ -n "${ANDROID_HOME-}" ] || fail "ANDROID_HOME is not set"
 SDKM="$ANDROID_HOME/cmdline-tools/latest/bin"; EMULATOR="$ANDROID_HOME/emulator/emulator"; ADB="$ANDROID_HOME/platform-tools/adb"
-AVD=nightly; LOG="$PWD/emulator.log"; PID_FILE="$PWD/emulator.pid"
+AVD=nightly; LOG="$PWD/emulator.log"; PID_FILE="$PWD/emulator.pid"; EXIT_FILE="$PWD/emulator.exit"
+[ -f "$PWD/emulator.started" ] || date +%s > "$PWD/emulator.started"
+printf '%s\n' "$IMAGE" > "$PWD/emulator.args"
 
 export ANDROID_AVD_HOME="$HOME/.android/avd"
 mkdir -p "$ANDROID_AVD_HOME"
@@ -31,10 +42,11 @@ for v in ANDROID_AVD_HOME ANDROID_USER_HOME ANDROID_SDK_HOME HOME XDG_CONFIG_HOM
 
 # yes is killed by SIGPIPE once sdkmanager exits: under pipefail that would fail the run, hence (yes || true).
 # sdkmanager's output stays in the log, so a package it cannot find is named there.
-(yes || true) | "$SDKM/sdkmanager" --install "$IMAGE" emulator platform-tools
-# The version is not pinned (sdkmanager installs the newest), and its banner is far from the log's end (#363): its first line
-version=$(timeout 10 "$EMULATOR" -version 2>&1 || true)
-echo "Emulator version: ${version%%$'\n'*}"
+if [ "${EMULATOR_SKIP_INSTALL-}" = 1 ]; then echo "sdkmanager skipped (EMULATOR_SKIP_INSTALL=1: the packages are installed)"
+else (yes || true) | "$SDKM/sdkmanager" --install "$IMAGE" emulator platform-tools; fi
+# The version is not pinned (sdkmanager installs the newest), and its banner is far from the log's end (#363)
+version=$(sed -n 's/^Pkg\.Revision=//p' "$ANDROID_HOME/emulator/source.properties" 2>/dev/null | head -n 1 || true)
+echo "Emulator version: ${version:-(not found in emulator/source.properties)}"
 "$SDKM/avdmanager" create avd -n "$AVD" -k "$IMAGE" --force <<<"no"   # "no" to a custom hardware profile
 echo                                                                   # its prompt ends without a newline
 "$SDKM/avdmanager" list avd || echo "(avdmanager list avd failed with status $?; the check below still decides)"
@@ -45,16 +57,26 @@ if [ ! -f "$ANDROID_AVD_HOME/$AVD.ini" ]; then
   exit 1
 fi
 
-nohup "$EMULATOR" -avd "$AVD" -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect > "$LOG" 2>&1 &
-EMULATOR_PID=$!
-# launch-check.sh reads it on a failure, to say whether this process is alive and to match the kernel's kill lines (#363)
-echo "$EMULATOR_PID" > "$PID_FILE"
+# The kernel names the signal that ends a process once a crash handler has re-delivered it (#363; default off)
+if sudo -n sysctl -w kernel.print-fatal-signals=1 >/dev/null 2>&1; then echo "kernel.print-fatal-signals: on"
+else echo "kernel.print-fatal-signals: could not be set (sudo -n sysctl failed); the kernel will not name a fatal signal"; fi
+
+rm -f "$PID_FILE" "$EXIT_FILE"
+# The wrapper: the emulator's own process id into emulator.pid (launch-check.sh reads it on a failure, to say whether this
+# process is alive and to match the kernel's lines), its exit status into emulator.exit
+nohup env EMU_BIN="$EMULATOR" EMU_PID_FILE="$PID_FILE" EMU_EXIT_FILE="$EXIT_FILE" \
+  bash -c '"$EMU_BIN" "$@" & p=$!; echo "$p" > "$EMU_PID_FILE"; s=0; wait "$p" || s=$?; echo "exit=$s" > "$EMU_EXIT_FILE"' \
+  _ -avd "$AVD" -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect > "$LOG" 2>&1 &
+for _ in $(seq 1 50); do [ -s "$PID_FILE" ] && break; sleep 0.1; done
+EMULATOR_PID=$(cat "$PID_FILE" 2>/dev/null || true)
+[ -n "$EMULATOR_PID" ] || fail "the emulator's wrapper wrote no process id within 5 s"
 echo "Emulator process $EMULATOR_PID (in emulator.pid)"
 STARTED=$SECONDS; waited=0
 while :; do
   if ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
-    status=0; wait "$EMULATOR_PID" || status=$?
-    echo "::error::the emulator exited (status $status) about $((SECONDS - STARTED)) s after its start, before it booted; the last lines of its log follow"
+    for _ in $(seq 1 20); do [ -s "$EXIT_FILE" ] && break; sleep 0.1; done   # the wrapper writes it as the emulator ends
+    status=$(sed -n 's/^exit=//p' "$EXIT_FILE" 2>/dev/null || true)
+    echo "::error::the emulator exited (status ${status:-unknown}) about $((SECONDS - STARTED)) s after its start, before it booted; the last lines of its log follow"
     tail -n 60 "$LOG" || true
     exit 1
   fi

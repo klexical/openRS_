@@ -55,6 +55,7 @@ name="$2"; found=""
 for d in ${ANDROID_AVD_HOME:+"$ANDROID_AVD_HOME"} ${ANDROID_SDK_HOME:+"$ANDROID_SDK_HOME/avd"} "$HOME/.android/avd"; do
   [ -f "$d/$name.ini" ] && { found="$d"; break; }
 done
+[ "${FAKE_EMU-}" = segv ] && { sleep 1; kill -SEGV $$; }
 if [ -z "$found" ] || [ "${FAKE_EMU-}" = exit ]; then
   echo "ERROR | Unknown AVD name [$name], use -list-avds to see valid list. (fake)"; exit 1
 fi
@@ -69,6 +70,10 @@ cat > "$SDK/platform-tools/adb" <<'STUB'
 [ -f "$WORK/booted" ] || { echo "adb: no devices/emulators found" >&2; exit 1; }
 printf '1\r\n'
 STUB
+printf 'Pkg.Desc=Android Emulator\nPkg.Revision=37.2.13\n' > "$SDK/emulator/source.properties"
+# sudo: only `sudo -n sysctl -w kernel.print-fatal-signals=1` (never the host's own); FAKE_SUDO_FAIL refuses it
+printf '#!/usr/bin/env bash\necho "sudo $*" >> "$WORK/calls"\n[ -n "${FAKE_SUDO_FAIL-}" ] && { echo "sudo: a password is required" >&2; exit 1; }\n[ "$*" = "-n sysctl -w kernel.print-fatal-signals=1" ] || exit 2\necho "kernel.print-fatal-signals = 1"\n' > "$WORK/bin/sudo"
+chmod +x "$WORK/bin/sudo"
 # GNU timeout is not on every host: the fake records its limit, then runs the command without one
 printf '#!/usr/bin/env bash\necho "$1 ${2##*/}" >> "$WORK/timeouts"\nshift; exec "$@"\n' > "$WORK/bin/timeout"
 chmod +x "$T/sdkmanager" "$T/avdmanager" "$SDK/emulator/emulator" "$SDK/platform-tools/adb" "$WORK/bin/timeout"
@@ -102,7 +107,7 @@ WHY=""; run 10
 [ "$CODE" -eq 0 ] || why "exit $CODE"
 [ -f "$WORK/home/.android/avd/nightly.ini" ] || why "no nightly.ini in \$HOME/.android/avd"
 [ ! -e "$WORK/home/.config/.android/avd/nightly.ini" ] || why "the AVD was written to the XDG folder"
-want="sdkmanager --install $IMAGE emulator platform-tools|emulator -version|avdmanager create avd -n nightly -k $IMAGE --force | ANDROID_AVD_HOME=<W>/home/.android/avd|avdmanager list avd | ANDROID_AVD_HOME=<W>/home/.android/avd|emulator -avd nightly -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect|"
+want="sdkmanager --install $IMAGE emulator platform-tools|avdmanager create avd -n nightly -k $IMAGE --force | ANDROID_AVD_HOME=<W>/home/.android/avd|avdmanager list avd | ANDROID_AVD_HOME=<W>/home/.android/avd|sudo -n sysctl -w kernel.print-fatal-signals=1|emulator -avd nightly -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect|"
 [ "$(calls)" = "$want" ] || why "calls '$(calls)', expected '$want'"
 check "on a runner-like home (XDG_CONFIG_HOME set) the AVD is created where the emulator looks, then the boot is awaited"
 
@@ -114,14 +119,14 @@ check "the five location variables (an unset one as <unset>) and avdmanager's li
 
 WHY=""
 grep -q -x '10 adb' "$WORK/timeouts" 2>/dev/null || why "no boot check went through timeout"
-grep -q -x '10 emulator' "$WORK/timeouts" 2>/dev/null || why "the version call did not go through timeout 10"
-[ -z "$(grep -v -x -E '10 (adb|emulator)' "$WORK/timeouts" 2>/dev/null)" ] || why "calls under timeout $(sort -u "$WORK/timeouts" | tr '\n' ' ')"
+[ -z "$(grep -v -x -E '10 adb' "$WORK/timeouts" 2>/dev/null)" ] || why "calls under timeout $(sort -u "$WORK/timeouts" | tr '\n' ' ')"
 check "every boot check runs under timeout 10, so a hung adb cannot hold the wait past its limit"
 
 WHY=""
-has "Emulator version: Android emulator version 37.2.13.0 (build_id 1) (CL:N/A)"
-[[ "$OUT" != *"Copyright (C) fake"* ]] || why "more than the version's first line was printed"
-check "the emulator's version is printed once, its first line, before the AVD is created"
+has "Emulator version: 37.2.13"
+[ "$(grep -c '^Emulator version' <<<"$OUT")" -eq 1 ] || why "the version is printed more than once"
+grep -q -- '-version' "$WORK/calls" && why "the emulator was asked for -version (it fails on the runner for want of libpulse)"
+check "the emulator's version comes from emulator/source.properties, printed once (#363)"
 
 WHY=""
 pid=$(cat "$WORK/emu.pid" 2>/dev/null)
@@ -154,7 +159,15 @@ WHY=""; run 20 FAKE_EMU=exit
 [ "$CODE" -ne 0 ] || why "exit 0"
 has "::error::"; has "exited"; has "Unknown AVD name"
 [ "$ELAPSED" -le 5 ] || why "it took ${ELAPSED} s with a 20 s limit"
-check "an emulator that exits ends the wait at once, with the last lines of its log"
+[ "$(cat "$WORK/run/emulator.exit" 2>/dev/null)" = "exit=1" ] || why "emulator.exit holds '$(cat "$WORK/run/emulator.exit" 2>/dev/null)', expected exit=1"
+has "the emulator exited (status 1)"
+check "an emulator that exits ends the wait at once, with the last lines of its log and its status in emulator.exit"
+
+WHY=""; run 20 FAKE_EMU=segv
+[ "$CODE" -ne 0 ] || why "exit 0"
+[ "$(cat "$WORK/run/emulator.exit" 2>/dev/null)" = "exit=139" ] || why "emulator.exit holds '$(cat "$WORK/run/emulator.exit" 2>/dev/null)', expected exit=139 (128 + SIGSEGV)"
+has "the emulator exited (status 139)"
+check "a death by SIGSEGV is written as exit=139 by the wrapper (#363)"
 
 # ── An emulator that never boots: fail at the limit, with its log ──────────────────────────────────────────────────────
 WHY=""; run 4 FAKE_EMU=hang
@@ -187,6 +200,31 @@ has "within 4 s"
 check "slow boot checks do not stretch the limit: it is measured by the clock"
 
 # ── Arguments ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+WHY=""; run 10
+pid=$(cat "$WORK/run/emulator.pid" 2>/dev/null)
+found=$(pgrep -f -- 'qemu-system|emulator/emulator' | tr '\n' ' ')
+[ "$found" = "$pid " ] || why "pgrep -f 'qemu-system|emulator/emulator' found '$found', expected only the emulator's '$pid' (never the wrapper)"
+check "launch-check.sh's process pattern finds the emulator and never its wrapper (#363)"
+
+WHY=""; run 10
+[ "$(cat "$WORK/run/emulator.args" 2>/dev/null)" = "$IMAGE" ] || why "emulator.args holds '$(cat "$WORK/run/emulator.args" 2>/dev/null)'"
+grep -qE '^[0-9]{9,}$' "$WORK/run/emulator.started" || why "emulator.started is not an epoch time"
+check "the first start records its start time and image for the retry (#363)"
+
+WHY=""; run 10 EMULATOR_SKIP_INSTALL=1
+grep -q '^sdkmanager' "$WORK/calls" && why "sdkmanager ran"
+has "sdkmanager skipped (EMULATOR_SKIP_INSTALL=1"
+check "a retry's start skips sdkmanager (#363)"
+
+WHY=""; run 10 FAKE_SUDO_FAIL=1
+[ "$CODE" -eq 0 ] || why "exit $CODE"
+has "kernel.print-fatal-signals: could not be set"
+check "a refused sysctl is said and changes nothing else (#363)"
+
+WHY=""; run 10
+has "kernel.print-fatal-signals: on"
+check "the kernel is asked to name a fatal signal before the start (#363)"
+
 WHY=""; run ten
 [ "$CODE" -ne 0 ] && [[ "$OUT" == *"::error::"* ]] || why "a limit that is not a number was not refused"
 [ ! -f "$WORK/calls" ] || why "a tool was called"
