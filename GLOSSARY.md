@@ -124,6 +124,27 @@ A drive imported from an export made while the drive was still open. It ends whe
 as a drive of its own, apart from the finished drive.
 _Avoid_: Snapshot, incomplete import, duplicate
 
+**Drive library**:
+The drives, and the session-only entries, Sapphire keeps in this browser. The Drives place lists it, an import adds to
+it, and "clear all" empties it.
+_Avoid_: Database, store, sessions
+
+**Session-only entry**:
+A row in the drive library for an import that held a session and no drive. It has a page but no route, charts or laps.
+_Avoid_: Drive (a session is never a drive), empty drive
+
+**Current drive**:
+The drive whose page is on screen in Sapphire.
+_Avoid_: Open drive (open means started and not yet stopped), active session, selected drive
+
+**Compare**:
+Showing two to four ticked drives side by side, started from the Drives list. An action, not a place.
+_Avoid_: Compare panel, Compare page
+
+**Base drive**:
+The first drive ticked for Compare; the other drives' differences are measured against it.
+_Avoid_: Reference, baseline
+
 ### Releases
 
 **Stable**:
