@@ -178,12 +178,13 @@ function sessionEntry(e: unknown, i: number): BackupEntry {
   return { kind: 'session', session: e.session }
 }
 
-/** A stored drive's three records, with the checks that keep a damaged file from storing a row the list cannot show. */
+/** A stored drive's three records, checked so that a damaged file cannot store a row the list or the drive view cannot read. */
 function storedEntry(e: unknown, i: number): BackupEntry {
   if (!isObject(e)) throw damaged(`drive ${i} is not a record`)
   const { drive, points, diagnostics } = e
-  if (!isObject(drive) || typeof drive.id !== 'string' || typeof drive.name !== 'string' || !Array.isArray(drive.tags)
-    || typeof drive.importedAt !== 'number' || typeof drive.hasDrive !== 'boolean' || typeof drive.contentHash !== 'string') {
+  // Only what every stored drive has (the upgrade stores a version-1 drive with no name, tags or import time): its id and
+  // the fields storage.ts derives for each drive, the content hash among them (the index that finds "already imported")
+  if (!isObject(drive) || typeof drive.id !== 'string' || typeof drive.hasDrive !== 'boolean' || typeof drive.contentHash !== 'string') {
     throw damaged(`drive ${i} is incomplete`)
   }
   if (points !== null && !(isObject(points) && points.id === drive.id

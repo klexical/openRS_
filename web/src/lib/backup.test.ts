@@ -178,6 +178,14 @@ describe('#384 back up all drives, and restore', () => {
     fresh()
     await expect(restoreBackup(bad)).rejects.toThrow(/damaged.*Nothing was restored/s)
     expect(await listDrives()).toEqual([])
+
+    // and a drive without its content hash (the index that finds "already imported")
+    const z2 = await JSZip.loadAsync(blob)
+    const first = JSON.parse(await z2.file('drives/1.json')!.async('string'))
+    delete first.drive.contentHash
+    z2.file('drives/1.json', JSON.stringify(first))
+    await expect(restoreBackup(await z2.generateAsync({ type: 'blob' }))).rejects.toThrow(/damaged.*Nothing was restored/s)
+    expect(await listDrives()).toEqual([])
   })
 
   it('a stored value the format cannot hold stops the backup instead of being lost', async () => {
@@ -204,5 +212,19 @@ describe('#384 back up all drives, and restore', () => {
     const outcome = await restoreBackup(backup.blob)
     expect(outcome.added + outcome.notRestorable.length).toBe(2)
     expect((await listDrives()).map((d) => d.id)).toContain('good1')
+  })
+
+  it('whatever the upgrade accepted restores: a version-1 drive with no name, tags or import time, and a session-only entry', async () => {
+    const bare = { id: 'bare', trip: drive('bare', 110).trip }                       // only what the upgrade needs
+    const sessionOnly = { ...drive('s-only', 111), trip: null }
+    const v1 = await openDB('sapphire', 1, { upgrade(d) { d.createObjectStore('sessions', { keyPath: 'id' }) } })
+    await v1.put('sessions', bare); await v1.put('sessions', sessionOnly); v1.close()
+    expect((await listDrives()).map((d) => d.id).sort()).toEqual(['bare', 's-only'])  // the upgrade took both
+    const before = await rawStores()
+    const backup = await makeBackup()
+    fresh()
+    expect(await restoreBackup(backup.blob)).toEqual({ added: 2, skipped: 0, notRestorable: [] })
+    const after = await rawStores()
+    for (const st of ['drives', 'points', 'diagnostics']) expect(bytes(after[st])).toEqual(bytes(before[st]))
   })
 })
