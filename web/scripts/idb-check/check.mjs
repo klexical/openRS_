@@ -5,7 +5,10 @@
 //   2. the upgrade from version 1: three sessions open as version 2 with every field, point and event, same ids;
 //   3. the failed upgrade: a record that cannot convert leaves version 1 exactly as it was;
 //   4. two tabs: an old tab holding version 1 blocks the upgrade until it closes; a tab on version 2 closes when a newer
-//      version asks and reports "outdated".
+//      version asks and reports "outdated";
+//   7. backup and restore (#384 ticket 02): the backup is built in a worker and the page keeps answering; restore into an
+//      empty database gives every record back exactly; restore over the same data adds nothing;
+//   8. after a failed upgrade, the backup is written from the version-1 data and restores into a working Sapphire.
 // Invented data only (and the repository's own invented export fixtures).
 // Playwright is not a project dependency — install it anywhere outside the repo:
 //   T=$(mktemp -d) && (cd $T && npm i playwright@1.48.2 && PLAYWRIGHT_BROWSERS_PATH=$T/b npx playwright install chromium)
@@ -220,6 +223,52 @@ for (const [label, rate] of [['desktop', 1], ['CPU slowed 4x (emulation)', 4]]) 
   check(t.drives === 50 && t.listedAfter === 50, `timing, ${label}: all 50 drives upgraded and listed`)
   await ctx.close()
 }
+
+// ── 7. Backup and restore: 50 one-hour drives (#384 ticket 02) ──
+for (const [label, rate] of [['desktop', 1], ['CPU slowed 4x (emulation)', 4]]) {
+  ;({ ctx, page } = await open(`7-backup-${rate}`))
+  await page.evaluate(() => window.sapphire.writeInventedV1(50, 3600))
+  await page.reload(); await page.waitForFunction(() => window.ready === true)
+  await page.evaluate(() => window.sapphire.listDrives())                     // the upgrade, before anything is timed
+  const cdp7 = await ctx.newCDPSession(page)
+  if (rate > 1) await cdp7.send('Emulation.setCPUThrottlingRate', { rate })
+  const before = await page.evaluate(() => window.sapphire.exactStores())
+  const page7 = await page.evaluate(() => window.sapphire.backupWithHeartbeat('page'))
+  const worker7 = await page.evaluate(() => window.sapphire.backupWithHeartbeat('as-built'))
+  console.log(`  backup, ${label}: in the worker ${worker7.ms} ms, longest page gap ${worker7.longestGapMs} ms, ${worker7.bytes} bytes;`
+    + ` on the page in steps ${page7.ms} ms, longest gap ${page7.longestGapMs} ms`)
+  check(worker7.builtIn === 'worker' && worker7.drives === 50 && worker7.steps >= 50, `backup, ${label}: built in a worker, 50 drives, progress per drive`)
+  if (rate === 1) check(worker7.longestGapMs < 100, `backup, ${label}: the page keeps answering while it is built (longest gap ${worker7.longestGapMs} ms < 100 ms)`)
+  if (rate > 1) await cdp7.send('Emulation.setCPUThrottlingRate', { rate: 1 })
+  await page.evaluate(() => window.sapphire.deleteDatabase())
+  const restored7 = await page.evaluate(() => window.sapphire.restoreLast())
+  const after = await page.evaluate(() => window.sapphire.exactStores())
+  const same = ['drives', 'points', 'diagnostics'].every((s) => before[s].length === after[s].length && before[s].every((r, i) => r === after[s][i]))
+  check(restored7.added === 50 && restored7.skipped === 0 && same, `restore, ${label}: into an empty database, all 50 drives back with every record exactly as stored`)
+  const again7 = await page.evaluate(() => window.sapphire.restoreLast())
+  const after2 = await page.evaluate(() => window.sapphire.exactStores())
+  check(again7.added === 0 && again7.skipped === 50 && JSON.stringify(after2) === JSON.stringify(after), `restore, ${label}: the same backup again adds nothing and changes nothing`)
+  await ctx.close()
+}
+
+// ── 8. After a failed upgrade: the backup of the version-1 data, in the worker ──
+;({ ctx, page } = await open('8-backup-after-failed-upgrade'))
+await page.evaluate(async (T0) => {
+  const s = (id) => ({ id, name: `Invented ${id}`, importedAt: T0, tags: [], diagnostics: null, meta: {},
+    trip: { points: [0, 1].map((i) => ({ ts: T0 + i * 1000, lat: 10 + i / 1000, lng: 20, speedKph: 50, rpm: 2000 })), summary: {} } })
+  await window.sapphire.writeV1([s('good-1'), { ...s('bad'), trip: { points: 'not an array' } }, s('good-2')])
+}, T0)
+const failed8 = await page.evaluate(async () => { try { await window.sapphire.listDrives(); return 'opened' } catch { return window.sapphire.storageStatus().state } })
+const backup8 = await page.evaluate(() => window.sapphire.backupWithHeartbeat('as-built'))
+const v1after = await page.evaluate(() => window.sapphire.readRaw())
+await page.evaluate(() => window.sapphire.deleteDatabase())
+const restored8 = await page.evaluate(() => window.sapphire.restoreLast())
+const listed8 = await page.evaluate(async () => (await window.sapphire.listDrives()).map((d) => d.id).sort())
+check(failed8 === 'upgrade-failed' && backup8.builtIn === 'worker' && backup8.drives === 3 && v1after.version === 1,
+  'after a failed upgrade: the worker writes the backup from the version-1 data (3 drives), and version 1 is left as it was')
+check(restored8.added === 2 && JSON.stringify(restored8.notRestorable) === '["Invented bad"]' && JSON.stringify(listed8) === '["good-1","good-2"]',
+  'after a failed upgrade: that backup restores the two convertible drives into a working Sapphire and names the third')
+await ctx.close()
 
 server.close()
 console.log(failures ? `${failures} FAILED` : 'ALL PASSED')

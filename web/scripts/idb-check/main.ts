@@ -1,6 +1,9 @@
 // Exposes Sapphire's production modules unchanged; check.mjs drives them in a real browser.
 import * as storage from '../../src/lib/storage'
 import { importBatchZip } from '../../src/lib/import'
+import { makeBackup, restoreBackup } from '../../src/lib/backup'
+import { readEverything } from '../../src/lib/storageBackup'
+import { buildBackup } from '../../src/lib/backupFormat'
 
 /** A version-1 database as Sapphire stored it before #384: one `sessions` store holding whole sessions. */
 function writeV1(sessions: unknown[]): Promise<void> {
@@ -67,4 +70,50 @@ async function writeInventedV1(count: number, points: number) {
   for (let i = 0; i < count; i++) await writeV1([inventedSession(`hour-${i}`, points, i)])
 }
 
-Object.assign(window, { sapphire: { ...storage, importBatchZip, writeV1, readRaw, holdOpen, release, writeInventedV1 }, ready: true })
+/** Every value as exact bytes in key order (numbers as IEEE-754 bytes; undefined differs from a missing key). */
+function exact(v: unknown): string {
+  if (typeof v === 'number') {
+    const b = new Uint8Array(new Float64Array([v]).buffer)
+    return `n${Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('')}`
+  }
+  if (v === undefined) return 'u'
+  if (v === null || typeof v !== 'object') return `${typeof v}:${JSON.stringify(v)}`
+  if (Array.isArray(v)) return `[${Array.from({ length: v.length }, (_, i) => (i in v ? exact(v[i]) : 'hole')).join(',')}]`
+  return `{${Object.keys(v).map((k) => `${JSON.stringify(k)}:${exact((v as Record<string, unknown>)[k])}`).join(',')}}`
+}
+
+/** The three stores' records as exact strings, sorted by id (a whole-database comparison). */
+async function exactStores(): Promise<Record<string, string[]>> {
+  const raw = await readRaw()
+  const out: Record<string, string[]> = {}
+  for (const s of ['drives', 'points', 'diagnostics']) out[s] = (raw.records[s] ?? []).map(exact).sort()
+  return out
+}
+
+/**
+ * Run [work] while a timer on the page ticks every 10 ms; the longest gap between ticks is how long the page could not
+ * answer input. [how] picks the path: makeBackup as built (a worker where one starts), or the page path forced.
+ */
+let lastBackup: Blob | null = null
+async function backupWithHeartbeat(how: 'as-built' | 'page') {
+  let longest = 0, last = performance.now(), ticking = true
+  const tick = () => { const now = performance.now(); longest = Math.max(longest, now - last); last = now; if (ticking) setTimeout(tick, 10) }
+  setTimeout(tick, 10)
+  const t0 = performance.now()
+  let steps = 0
+  const file = how === 'as-built'
+    ? await makeBackup(() => { steps++ })
+    : { ...(await buildBackup(await readEverything(), () => { steps++ }, () => new Promise((r) => setTimeout(r, 0)))), builtIn: 'page' as const }
+  const ms = performance.now() - t0
+  ticking = false
+  lastBackup = file.blob
+  return { builtIn: file.builtIn, drives: file.drives, bytes: file.blob.size, name: file.name, ms: Math.round(ms), longestGapMs: Math.round(longest), steps }
+}
+const restoreLast = () => restoreBackup(lastBackup!)
+const deleteDatabase = () => new Promise<void>((resolve, reject) => {
+  storage.closeStorage()
+  const r = indexedDB.deleteDatabase('sapphire'); r.onsuccess = () => resolve(); r.onerror = () => reject(r.error)
+})
+
+Object.assign(window, { sapphire: { ...storage, importBatchZip, writeV1, readRaw, holdOpen, release, writeInventedV1,
+  backupWithHeartbeat, restoreLast, deleteDatabase, exactStores }, ready: true })
