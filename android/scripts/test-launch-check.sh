@@ -4,9 +4,11 @@
 # log is cleared BEFORE the cold start, and the run fails on a missing or changed process id after the wait, a verifier
 # rejection, a fatal exception or an ANR. Every adb call runs under `timeout 60`; a call that fails or does not answer
 # ends the check with a message naming its step, and every failure prints `adb devices`, the emulator processes, the
-# device log's process and crash lines (a line naming a key left out, the APK's two key values redacted by their shape:
-# Maps AIza…, weather appid=… or a bare 32-hex run; a 40-hex run stays), the host's memory and kernel kill lines, and the last
-# 200 lines of start-emulator.sh's emulator.log. A fake adb answers from fixtures, as Android does (`pidof` exits 1
+# emulator.pid process (alive or gone, and whether the kernel's kill lines name it), the device log's process and crash
+# lines and the events buffer's kills and deaths (a line naming a key left out, the APK's two key values redacted by their
+# shape: Maps AIza…, weather appid=… or a bare 32-hex run; a 40-hex run stays), the host's memory and kernel kill lines,
+# `df -h`, the emulator's exit signatures from the whole emulator.log and its last 200 lines, and an end marker; each read
+# that fails, is cut short or finds nothing says so. A fake adb answers from fixtures, as Android does (`pidof` exits 1
 # when nothing matches, and adb passes the status on; with the device gone, logcat waits), and records the order of calls.
 # Run from anywhere: bash android/scripts/test-launch-check.sh
 set -uo pipefail
@@ -42,8 +44,10 @@ case "$*" in
                                      echo "error: closed" >&2; exit 1; }
                                    hit logcat-d; [ -f "$WORK/log-cleared" ] && cat "$WORK/log" ;;
   "logcat -d -b main,system,crash") if gone; then echo "- waiting for device -" >&2; exec sleep 30; fi
+                                   [ -n "${FAKE_DEVLOG_PARTIAL-}" ] && { cat "$WORK/devlog"; exec sleep 30; }
                                    [ -n "${FAKE_DEVLOG_EMPTY-}" ] && { echo "I Zygote: unrelated"; exit 0; }; cat "$WORK/devlog" ;;
-  "logcat -d -b events")           if gone; then echo "- waiting for device -" >&2; exec sleep 30; fi; cat "$WORK/events" ;;
+  "logcat -d -b events")           if gone; then echo "- waiting for device -" >&2; exec sleep 30; fi
+                                   [ -n "${FAKE_EVENTS_PARTIAL-}" ] && { cat "$WORK/events"; exec sleep 30; }; cat "$WORK/events" ;;
   "shell am start "*)              hit start; [ -f "$WORK/log-cleared" ] || cp "$WORK/log" "$WORK/log-before"
                                    printf 'Status: ok\r\nActivity: %s\r\nComplete\r\n' "${FAKE_TOP-com.openrs.dash/.ui.MainActivity}"
                                    exit "${FAKE_START_EXIT:-0}" ;;
@@ -192,9 +196,9 @@ has "Launch check OK"
 check "a clean launch passes, the Play Store disabled first and the log cleared before the start"
 
 WHY=""; run 0 ""
-n=$(grep -c . "$WORK/calls"); t=$(grep -c . "$WORK/timeouts" 2>/dev/null || echo 0)
-[ "$t" -eq "$n" ] || why "$t of $n adb calls ran under timeout"
-[ -z "$(grep -v '^60 adb$' "$WORK/timeouts" 2>/dev/null)" ] || why "a limit other than 'timeout 60 adb': $(sort -u "$WORK/timeouts" | tr '\n' ' ')"
+n=$(grep -c . "$WORK/calls"); t=$(grep -c '^60 adb$' "$WORK/timeouts" 2>/dev/null || echo 0)
+[ "$t" -eq "$n" ] || why "$t of $n adb calls ran under timeout 60"
+[ -z "$(grep ' adb$' "$WORK/timeouts" | grep -v '^60 adb$')" ] || why "an adb call under another limit: $(sort -u "$WORK/timeouts" | tr '\n' ' ')"
 check "every adb call runs under timeout 60"
 
 WHY=""; run 1 ""
@@ -279,6 +283,41 @@ WHY=""; run 0 "" TMPDIR="$WORK/no-such-dir"
 has "::error::the launch check stopped"; diagnostics
 check "an unexpected failure still ends with a message of the check's own and the diagnostics"
 
+# ── The emulator's exit signatures: every one research's guide lists (§6) is found anywhere in the log, redacted ─────
+SIGS=("WARNING | detected a hanging thread 'QEMU2 main loop'. No response for 30001 ms"
+  "ERROR | Failed hang detection predicate: 'system image'"
+  "crashhandler_die: fatal: Emulator crashed"
+  "FATAL | Emulator: exiting because of the internal error 'gl'"
+  "error: kvm run failed Bad address"
+  "KVM internal error. Suberror: 1"
+  "KVM: unknown exit, hardware reason 3"
+  "ERROR | Failed to initialize GL emulation."
+  "ERROR | Failed to initialize FrameBuffer()."
+  "ERROR | Failed to initialize Gfxstream renderer!"
+  "ERROR | Failed to initialize gfxstream frontend!"
+  "Unable to save snapshot: Not enough disk space. Please free up some space and try again."
+  "qemu: write error: No space left on device")
+WHY=""; { for s in "${SIGS[@]}"; do echo "$s"; done; echo "crashhandler_die: fatal: token $BARE_A"; for i in $(seq 1 250); do echo "emulator log line $i"; done; } > "$WORK/cwd/emulator.log"
+run 0 "" FAKE_CLOSED_AT=pidof2; cp "$WORK/emulator.log.with-signatures" "$WORK/cwd/emulator.log"
+sig=$(section "emulator.log: exit signatures")
+for s in "${SIGS[@]}"; do [[ "$sig" == *"$s"* ]] || why "not found: '$s'"; done
+[[ "$sig" != *"$BARE_A"* && "$sig" == *"crashhandler_die: fatal: token <redacted>"* ]] || why "a signature line's 32-hex value was not redacted"
+check "every exit signature research's guide lists is found outside the tail, and its lines are redacted"
+
+# ── A read cut short keeps what it read (#363: a timed-out read on a wedged device is when those lines matter) ────────
+WHY=""; run 0 "" FAKE_INSTALL_EXIT=1 FAKE_DEVLOG_PARTIAL=1 FAKE_EVENTS_PARTIAL=1
+d=$(section "the device log's process and crash lines"); e=$(section "the device's events")
+[[ "$d" == *"(read cut short: adb logcat, exit 124)"* && "$d" == *"Process com.openrs.dash (pid 4242) has died"* ]] || why "the device log's partial read: '$d'"
+[[ "$e" == *"(read cut short: adb logcat -b events, exit 124)"* && "$e" == *"I am_proc_died: [0,2218,com.openrs.dash,0,19]"* ]] || why "the events' partial read: '$e'"
+[[ "$d" != *"FAKEKEY123"* && "$e" != *"apikeys"* ]] || why "a partial read skipped the key filter"
+check "a read that is cut short says so and still shows the lines it read"
+
+# ── Time limits on the local reads that can hang: df 10 s, ps 5 s, free 10 s ─────────────────────────────────────────
+WHY=""; sleep 60 & LIVE=$!; echo "$LIVE" > "$WORK/cwd/emulator.pid"
+run 0 "" FAKE_CLOSED_AT=pidof2; kill "$LIVE" 2>/dev/null; wait "$LIVE" 2>/dev/null; echo "$DEAD_PID" > "$WORK/cwd/emulator.pid"
+for want in "10 df" "5 ps" "10 free"; do grep -q -x "$want" "$WORK/timeouts" || why "no '$want' under timeout"; done
+check "df, ps and free run under their time limits"
+
 # ── What a failed night needs (#363): every section says "no matching lines" or "could not read", never nothing ─────
 WHY=""; run 0 ""
 b=$(grep -n -- '--- host memory before the cold start' <<<"$OUT" | cut -d: -f1); s=$(grep -n 'Status: ok' <<<"$OUT" | cut -d: -f1)
@@ -305,6 +344,18 @@ printf '%s\n' "[  901.6] oom-kill:constraint=CONSTRAINT_NONE,task=other,pid=${DE
 run 0 "" FAKE_CLOSED_AT=pidof2; cp "$WORK/dmesg-out.keep" "$WORK/dmesg-out"
 [[ "$(section "the emulator's process (emulator.pid)")" == *"the kernel's kill lines name pid $DEAD_PID: no"* ]] || why "a kernel line naming pid ${DEAD_PID}9 or ${DEAD_PID}7 was taken for pid $DEAD_PID"
 check "the kernel match takes the exact pid, not one that starts with it"
+
+WHY=""; cp "$WORK/dmesg-out" "$WORK/dmesg-out.keep"
+printf '%s\n' "[  880.1] audit: type=1400 apparmor=\"DENIED\" operation=\"open\" pid=$DEAD_PID comm=\"x\"" "[  880.2] something ppid=$DEAD_PID child" > "$WORK/dmesg-out"
+run 0 "" FAKE_CLOSED_AT=pidof2; cp "$WORK/dmesg-out.keep" "$WORK/dmesg-out"
+[[ "$(section "the emulator's process (emulator.pid)")" == *"the kernel's kill lines name pid $DEAD_PID: no"* ]] || why "an audit pid= line or a ppid= line was taken for a kill line"
+check "an audit pid= line and a ppid= line are not kill lines"
+
+WHY=""; cp "$WORK/dmesg-out" "$WORK/dmesg-out.keep"
+printf '%s\n' "[  901.5] Out of memory: Killed process $DEAD_PID (qemu-system-x86) total-vm:1kB" > "$WORK/dmesg-out"
+run 0 "" FAKE_CLOSED_AT=pidof2; cp "$WORK/dmesg-out.keep" "$WORK/dmesg-out"
+[[ "$(section "the emulator's process (emulator.pid)")" == *"the kernel's kill lines name pid $DEAD_PID: yes"* ]] || why "'Killed process $DEAD_PID' alone is not matched"
+check "a 'Killed process <pid>' line alone is matched"
 
 WHY=""; mv "$WORK/cwd/emulator.pid" "$WORK/emulator.pid.keep"; run 0 "" FAKE_CLOSED_AT=pidof2; mv "$WORK/emulator.pid.keep" "$WORK/cwd/emulator.pid"
 [[ "$(section "the emulator's process (emulator.pid)")" == *"(could not read: no emulator.pid in"* ]] || why "a missing emulator.pid is not reported"
