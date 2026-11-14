@@ -111,3 +111,17 @@ paths:
   - **Limits.** DIAG still shows the VIN and the DID prober's on-screen list still shows the reply bytes — never claim the
     app hides it. Older ZIPs on the device are untouched: exports made before this masking can hold the VIN (#260). A
     test that scans an export for the VIN proves nothing unless the fake adapter sends 0x405.
+- **The raw log holds the app's own requests (#209)** — every CAN frame the app writes (PCM polls, BCM / AWD /
+  extended-session polls, DID probes, DTC scan, flow control, clear and freeze-frame requests) is one `# TX` comment line in
+  the SLCAN log: `# TX (  12.345) can0 7E0#0322033E00000000 sent`, on the replies' clock. The time is taken BEFORE the write
+  (`DiagnosticLogger.txStamp`), as the ledger stamps the request, and the line is written when the result is known, so a
+  reply can stand in the file before the request line that is earlier than it: order by the time field, never by line
+  order (QA's T1; a reply that arrives while a Bluetooth write is still returning would otherwise read as earlier than its
+  request). The result is the link-integrity counters' own word (`sent`, `possiblyDelivered`, `notSent`,
+  `deliveryUnknown`, `otherFailure`); a failed write is a line too, never `sent`. The SLCAN init, `OPENRS?` and `AT+FRS`
+  lines never are TX lines (only `t` frames). Every tracked write logs through `noteWrite` / `noteWriteFailure`, every other
+  frame write through `writeLogged`: a new write site uses one of them. Request lines share the 2,000,000-line cap with
+  received frames; the lines dropped at it are counted (`slcanLinesDropped`, LOG LIMITS). Our readers match frame lines
+  anchored at the line's start (`tools/claude/hardware/slcan_tools.py`, `check_export.py`, `tools/replay/candump_to_slcan.py`
+  drops `# TX` lines), so a TX line is never read as a frame: keep that anchor. can-utils' `canplayer` / `log2asc` skip any
+  line not starting with `(` (`RequestLogTest`, `DtcScanExplainTest`, `BufferBoundsTest`)

@@ -437,7 +437,7 @@ object DiagnosticExporter {
             return
         }
         val slcanLines = DiagnosticLogger.slcanLineCount
-        val slcanNote  = if (slcanLines > 0) "\n• slcan_log_*.log   — raw CAN frames ($slcanLines lines, SavvyCAN/Kayak compatible)" else ""
+        val slcanNote  = if (slcanLines > 0) "\n• slcan_log_*.log   — raw CAN frames and the app's requests ($slcanLines lines, SavvyCAN/Kayak compatible)" else ""
         val driveNote  = if (driveSnapshot != null)
             "\n• drive_*.csv / .gpx / _summary  — active drive recording (Sapphire-compatible)" else ""
         val intent = Intent(Intent.ACTION_SEND).apply {

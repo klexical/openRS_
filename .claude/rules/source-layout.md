@@ -122,6 +122,8 @@ diagnostics/
   DidProbeScan.kt         — DID prober scan loop (`runDidProbeScan` → `DidProbeEnd` Complete / Stopped /
                             Failed(did, reason, sent)); records the labelled ProbeSession (see the DID prober gotcha, #249)
   DiagnosticLogger.kt     — Thread-safe singleton: frame inventory (opt B), decode trace, SLCAN log (opt C)
+                            SLCAN log also holds the app's requests: `# TX` lines with a time taken before the write and
+                            the write's result (`logTxLine`, `txStamp`, #209); lines dropped at the cap are counted
                             Pre-allocated hex lookup table; hex conversion outside lock for reduced contention
                             VIN masking at one write-time choke point (#260): 0x40A C1 pages, 0x405 pages 10/11/12,
                             0xF190 replies incl. consecutive frames (page rule), plus any frame holding 4+ consecutive bytes of

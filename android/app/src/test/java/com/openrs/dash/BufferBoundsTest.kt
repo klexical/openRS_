@@ -751,8 +751,10 @@ class BufferBoundsTest {
         assertEquals(1, DiagnosticLogger.sessionEvents.count { it.type == "SLCAN" })
         assertEquals("the inventory keeps counting past the cap", 1L, DiagnosticLogger.frameInventorySnapshot.getValue(0x123).totalReceived)
         assertEquals(true, detail().optJSONObject("logLimits")?.optBoolean("slcanCapReached", false))
+        // #209: the lines not written at the cap are counted, frames and request lines alike (3 replies + 1 request + 1 frame)
+        assertEquals(5L, detail().optJSONObject("logLimits")?.optLong("slcanLinesDropped", -1))
         val limitsBlock = summary().lines().dropWhile { !it.startsWith("─── LOG LIMITS") }.drop(1).takeWhile { !it.startsWith("───") }
-        assertTrue(limitsBlock.toString(), limitsBlock.any { it.contains("SLCAN log cap reached") })
+        assertTrue(limitsBlock.toString(), limitsBlock.any { it.contains("SLCAN log cap reached: 5 later line(s) are not in the raw log") })
     }
 
     @Test fun `logger - the SLCAN cap's own event can't push the event list past its limit`() {

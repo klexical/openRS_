@@ -130,7 +130,10 @@ class DtcScanExplainTest {
         assertEquals(ModuleScanStatus.ERROR, r.moduleStatuses["PCM"])
         assertTrue(r.moduleNotes["PCM"]!!, r.moduleNotes["PCM"]!!.startsWith("flow control not sent — IOException"))
         assertEquals(1, fcTries)
-        assertTrue("a failed write is not a TX line", !Regex("# TX .*7E0#3000").containsMatchIn(log()))
+        // #209: every request write is a TX line, a failed one too, with its result; a failed flow control never reads "sent"
+        assertTrue("a failed flow control never reads sent", !Regex("# TX .*7E0#3000.* sent$", RegexOption.MULTILINE).containsMatchIn(log()))
+        assertTrue("the failed flow control's line names its failure",
+            Regex("# TX .*7E0#3000.* otherFailure$", RegexOption.MULTILINE).containsMatchIn(log()))
     }
 
     // ── Source review 2026-10-31: a known flow-control failure after "response pending" ──
