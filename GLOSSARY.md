@@ -107,7 +107,7 @@ A top-level destination in Sapphire: Drives, Car, Settings.
 _Avoid_: Panel, tab, section
 
 **Page**:
-The screen of one drive in Sapphire.
+The screen of one drive, or of a session-only entry, in Sapphire.
 _Avoid_: Panel, detail view, dashboard
 
 **View**:
@@ -123,6 +123,27 @@ _Avoid_: Not checkable, unknown, n/a, clean
 A drive imported from an export made while the drive was still open. It ends where that export was made and is listed
 as a drive of its own, apart from the finished drive.
 _Avoid_: Snapshot, incomplete import, duplicate
+
+**Drive library**:
+The drives, and the session-only entries, Sapphire keeps in this browser. The Drives place lists it, an import adds to
+it, and "clear all" empties it.
+_Avoid_: Database, store, sessions
+
+**Session-only entry**:
+A row in the drive library for an import that held a session and no drive. It has a page but no route, charts or laps.
+_Avoid_: Drive (a session is never a drive), empty drive
+
+**Current drive**:
+The drive, or session-only entry, whose page is on screen in Sapphire.
+_Avoid_: Open drive (open means started and not yet stopped), active session, selected drive
+
+**Compare**:
+Showing two to four ticked drives side by side, started from the Drives list. An action, not a place.
+_Avoid_: Compare panel, Compare page
+
+**Base drive**:
+The first drive ticked for Compare; the other drives' differences are measured against it.
+_Avoid_: Reference, baseline
 
 ### Releases
 
