@@ -112,3 +112,8 @@ _Avoid_: "Stable" alone where the stable release could be meant
 **Beta channel**:
 The update channel that offers the newest release of any kind: a stable, a release candidate or a nightly.
 _Avoid_: Test channel, nightly channel, pre-release channel
+
+**Launch check**:
+A check that a nightly's APK installs and starts on an emulator and is still running, with no crash in the log, a set
+time later. It does not show that any screen or reading works.
+_Avoid_: Smoke test (a smoke test also looks at every tab), launch test

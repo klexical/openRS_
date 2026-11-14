@@ -5,8 +5,10 @@
 # The Play Store is disabled first: on a fresh Play-services image it updates GMS and the Maps loader kills the app
 # (.claude/rules/build-release.md). The log is cleared before the start, or the check would not cover the launch.
 # Every adb call runs under `timeout 60` and has a step name: a call that fails or does not answer ends the check with
-# that name and whether adb still sees the emulator. Every failure, the check's own or not, prints `adb devices`, the
-# emulator processes and the last 60 lines of start-emulator.sh's emulator.log (the working directory both steps share).
+# that name and whether adb still sees the emulator. Every failure, the check's own or not, prints what a failed night
+# needs to show its cause (no retry follows it): `adb devices`, the emulator processes, the device log's process and
+# crash lines, the host's memory and its kernel's kill / out-of-memory lines, and the last 200 lines of
+# start-emulator.sh's emulator.log (the working directory both steps share).
 set -euo pipefail
 PKG=com.openrs.dash; ACTIVITY=com.openrs.dash.ui.MainActivity
 ADB_LIMIT_S=60
@@ -18,8 +20,18 @@ diagnostics() {
   timeout 10 adb devices 2>&1 || echo "(adb devices failed)"
   echo "--- emulator processes"
   pgrep -a -f -- 'qemu-system|emulator/emulator' || echo "(no emulator process)"
-  echo "--- the last 60 lines of $EMULATOR_LOG"
-  if [ -f "$EMULATOR_LOG" ]; then tail -n 60 "$EMULATOR_LOG"; else echo "(no emulator.log in $PWD)"; fi
+  # Process and crash lines only, never the whole log: the Maps SDK's authorization block prints the API key
+  # (.claude/rules/build-release.md), so any line naming a key is left out too. Bounded: with the device gone, logcat waits.
+  echo "--- the device log's process and crash lines (the last 40)"
+  { timeout 10 adb logcat -d -b main,system,crash 2>/dev/null || true; } \
+    | grep -E 'AndroidRuntime|Fatal signal|ActivityManager: (Process|Killing|Start proc|ANR)|lowmemorykiller|lmkd' \
+    | grep -v -i 'key' | tail -n 40 || true
+  echo "--- host memory"
+  free -m 2>/dev/null || echo "(free not available)"
+  echo "--- host kernel: killed processes and out-of-memory lines (the last 20)"
+  { sudo -n dmesg 2>/dev/null || true; } | grep -i -E 'killed process|out of memory|oom' | tail -n 20 || true
+  echo "--- the last 200 lines of $EMULATOR_LOG"
+  if [ -f "$EMULATOR_LOG" ]; then tail -n 200 "$EMULATOR_LOG"; else echo "(no emulator.log in $PWD)"; fi
 }
 fail() { echo "::error::$*"; REPORTED=1; diagnostics; exit 1; }
 finish() {
