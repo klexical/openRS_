@@ -84,8 +84,8 @@ class VersionIdentityTest {
         assertEquals(AppVersion(2, 2, 7, 7), UpdateChecker.parseReleases(json, "beta", AppVersion(2, 2, 6))!!.version)
     }
 
-    // rc.7 Build 38 ships as an extra asset on the existing rc.7 release, named outside the updater's
-    // openRS_*.apk matcher: the updater keeps reading the original asset, and Build 38 is a manual in-place upgrade.
+    // rc.7 Build 38 ships as an extra asset on the existing rc.7 release under another name: the updater takes only the
+    // asset named exactly openRS_v<name>.apk for the tag (#364), and Build 38 is a manual in-place upgrade.
     private fun releaseWith(tag: String, prerelease: Boolean, vararg apks: String) = JSONObject().apply {
         put("tag_name", tag); put("prerelease", prerelease); put("draft", false); put("body", "notes $tag")
         put("assets", JSONArray().apply {
@@ -95,7 +95,7 @@ class VersionIdentityTest {
         })
     }
 
-    @Test fun `the Build 38 maintenance asset is outside the updater's matcher, the original asset still matches`() {
+    @Test fun `the Build 38 maintenance asset is not the release's exact name, the original asset still matches`() {
         val original = "openRS_v2.2.7-rc.7.apk"; val build38 = "openrs-2.2.7-rc.7-build38.apk"
         for (order in listOf(arrayOf(original, build38), arrayOf(build38, original))) {
             val json = releases(releaseWith("android-v2.2.7-rc.7", true, *order))
@@ -104,7 +104,7 @@ class VersionIdentityTest {
             assertEquals("https://example.invalid/$original", fromRc6.downloadUrl)                // never the Build 38 file
             assertNull(UpdateChecker.parseReleases(json, "beta", AppVersion(2, 2, 7, 7)))      // Build 37 / 38: up to date
         }
-        // Alone, the maintenance asset is no update at all — its name is not openRS_*.apk (case and separator differ)
+        // Alone, the maintenance asset is no update at all: its name is not openRS_v2.2.7-rc.7.apk
         assertNull(UpdateChecker.parseReleases(releases(releaseWith("android-v2.2.7-rc.7", true, build38)), "beta", AppVersion(2, 2, 7, 6)))
     }
 
