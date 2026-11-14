@@ -40,6 +40,7 @@ describe('SessionsPanel', () => {
     expect(useStore.getState().drives.map((s) => s.id)).toEqual(['a', 'b', 'c'])
     expect(rowBoxes(container).every((b) => b.checked)).toBe(true)
     expect(container.textContent).toContain('3 selected')
+    expect(container.textContent).toMatch(/Couldn't delete the selected drives: nothing was deleted/)   // says so (#384)
     expect(warn).toHaveBeenCalled()
     warn.mockRestore()
   })

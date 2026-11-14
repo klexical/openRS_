@@ -25,6 +25,7 @@ export function SessionsPanel() {
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('date')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [tagEditId, setTagEditId] = useState<string | null>(null)
@@ -78,11 +79,13 @@ export function SessionsPanel() {
     const ids = [...selectedIds]
     // #384: one transaction — all the selected drives are deleted, or none (then they stay selected for a retry)
     try {
+      setDeleteError(null)
       await deleteDrives(ids)
       removeDrives(ids)
       setSelectedIds(new Set())
     } catch (err) {
       console.warn('[Sapphire] Failed to delete drives from IndexedDB:', err)
+      setDeleteError("Couldn't delete the selected drives: nothing was deleted. Try again.")
     }
   }
 
@@ -171,6 +174,7 @@ export function SessionsPanel() {
         )}
         <span className="text-dim ml-auto">{filtered.length} session{filtered.length !== 1 ? 's' : ''}</span>
       </div>
+      {deleteError && <p role="alert" className="text-xs font-mono text-orange mb-2">{deleteError}</p>}
 
       {/* Session list */}
       <div className="space-y-2">
