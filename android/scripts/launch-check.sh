@@ -12,7 +12,7 @@
 set -euo pipefail
 PKG=com.openrs.dash; ACTIVITY=com.openrs.dash.ui.MainActivity
 ADB_LIMIT_S=60
-EMULATOR_LOG="$PWD/emulator.log"
+EMULATOR_LOG="$PWD/emulator.log"; EMULATOR_PID_FILE="$PWD/emulator.pid"
 STEP="the argument checks"; REPORTED=0; TMP=""
 
 # redact: the APK's two key values by their shape: the Maps key (AIza + 35 characters or more), any appid= value, and
@@ -22,25 +22,59 @@ redact() {
   sed -E -e 's/AIza[0-9A-Za-z_-]{35,}/AIza<redacted>/g; s/appid=[^&[:space:]]+/appid=<redacted>/g' \
     -e ':a' -e 's/(^|[^0-9A-Fa-f])[0-9A-Fa-f]{32}([^0-9A-Fa-f]|$)/\1<redacted>\2/' -e 'ta'
 }
+# show <status> <lines> <what>: a section's body. A read that failed says so with its status; one that worked and matched
+# nothing says "(no matching lines)", so an empty section never reads the same as a failed one (#363).
+show() {
+  if [ "$1" -ne 0 ]; then echo "(could not read: $3, exit $1)"
+  elif [ -z "$2" ]; then echo "(no matching lines)"
+  else printf '%s\n' "$2"; fi
+}
+# The emulator's own exit messages, from the whole log (the last 200 lines can miss them): the hang detector, a crash
+# handler's fatal exit, KVM failing under the guest, the renderer, and disk space
+SIGNATURES='detected a hanging thread|Failed hang detection predicate|crashhandler_die|exiting because of the internal error|kvm run failed|KVM internal error|KVM: unknown exit|Failed to initialize (GL emulation|FrameBuffer|Gfxstream)|[Nn]ot enough disk space|No space left on device'
 diagnostics() {
+  local st out kern kst pid
   echo "--- adb devices"
   timeout 10 adb devices 2>&1 || echo "(adb devices failed)"
   echo "--- emulator processes"
-  pgrep -a -f -- 'qemu-system|emulator/emulator' || echo "(no emulator process)"
+  st=0; out=$(pgrep -a -f -- 'qemu-system|emulator/emulator') || st=$?
+  case $st in 0) printf '%s\n' "$out" ;; 1) echo "(no emulator process)" ;; *) echo "(could not read: pgrep, exit $st)" ;; esac
+  kst=0; kern=$(sudo -n dmesg 2>/dev/null) || kst=$?
+  echo "--- the emulator's process (emulator.pid)"
+  pid=$(cat "$EMULATOR_PID_FILE" 2>/dev/null | tr -dc '0-9' || true)
+  if [ ! -f "$EMULATOR_PID_FILE" ]; then echo "(could not read: no emulator.pid in $PWD)"
+  elif [ -z "$pid" ]; then echo "(could not read: emulator.pid holds no process id)"
+  else
+    if kill -0 "$pid" 2>/dev/null; then echo "pid $pid: alive ($(ps -o comm= -p "$pid" 2>/dev/null | sed 's#.*/##' || echo '?'))"
+    else echo "pid $pid: gone"; fi
+    if [ "$kst" -ne 0 ]; then echo "the kernel's lines could not be read (sudo -n dmesg, exit $kst)"
+    elif grep -q -E "[Kk]illed process $pid([^0-9]|\$)|pid=$pid([^0-9]|\$)" <<<"$kern"; then echo "the kernel's kill lines name pid $pid: yes"
+    else echo "the kernel's kill lines name pid $pid: no"; fi
+  fi
   # Process and crash lines only, never the whole log: the Maps SDK's authorization block prints the API key
   # (.claude/rules/build-release.md). A line naming a key is left out, and the two key values the APK holds are
   # redacted by their shape wherever they appear (redact above): the Maps key and the weather key, with or without appid=.
   # Bounded: with the device gone, logcat waits.
   echo "--- the device log's process and crash lines (the last 40)"
-  { timeout 10 adb logcat -d -b main,system,crash 2>/dev/null || true; } \
-    | grep -E 'AndroidRuntime|Fatal signal|ActivityManager: (Process|Killing|Start proc|ANR)|lowmemorykiller|lmkd' \
-    | grep -v -i 'key' | redact | tail -n 40 || true
+  st=0; out=$(timeout 10 adb logcat -d -b main,system,crash 2>/dev/null) || st=$?
+  show "$st" "$(grep -E 'AndroidRuntime|Fatal signal|ActivityManager: (Process|Killing|Start proc|ANR)|lowmemorykiller|lmkd' <<<"$out" \
+    | grep -v -i 'key' | redact | tail -n 40 || true)" "adb logcat"
+  echo "--- the device's events: process kills and deaths (the last 20)"
+  st=0; out=$(timeout 10 adb logcat -d -b events 2>/dev/null) || st=$?
+  show "$st" "$(grep -E 'am_kill|am_proc_died|killinfo' <<<"$out" | grep -v -i 'key' | redact | tail -n 20 || true)" "adb logcat -b events"
   echo "--- host memory"
   free -m 2>/dev/null || echo "(free not available)"
   echo "--- host kernel: killed processes and out-of-memory lines (the last 20)"
-  { sudo -n dmesg 2>/dev/null || true; } | grep -i -E 'killed process|out of memory|oom' | tail -n 20 || true
+  show "$kst" "$(grep -i -E 'killed process|out of memory|oom' <<<"$kern" | tail -n 20 || true)" "sudo -n dmesg"
+  echo "--- disk (df -h)"
+  st=0; out=$(df -h "$PWD" "$HOME/.android" 2>&1) || st=$?
+  printf '%s\n' "$out"; [ "$st" -eq 0 ] || echo "(df exit $st)"
+  echo "--- emulator.log: exit signatures (whole file, the last 20)"
+  if [ -f "$EMULATOR_LOG" ]; then show 0 "$(grep -n -E "$SIGNATURES" "$EMULATOR_LOG" | tail -n 20 || true)" "emulator.log"
+  else echo "(could not read: no emulator.log in $PWD)"; fi
   echo "--- the last 200 lines of $EMULATOR_LOG"
   if [ -f "$EMULATOR_LOG" ]; then tail -n 200 "$EMULATOR_LOG"; else echo "(no emulator.log in $PWD)"; fi
+  echo "--- end of diagnostics"
 }
 fail() { echo "::error::$*"; REPORTED=1; diagnostics; exit 1; }
 finish() {
@@ -82,6 +116,9 @@ timeout "$ADB_LIMIT_S" adb shell pm disable-user --user 0 com.android.vending >/
   || echo "Play Store not disabled (not on this image, or adb failed)"
 call "installing the APK" install -r "$APK"; echo "$OUT"
 call "clearing the log" logcat -c
+# A baseline for the failure's own memory reading (#363)
+echo "--- host memory before the cold start"
+free -m 2>/dev/null || echo "(free not available)"
 call "the cold start" shell am start -S -W -n "$PKG/$ACTIVITY"; echo "$OUT"
 TOP=$(sed -n 's/^Activity: //p' <<<"$OUT")
 case "$TOP" in
