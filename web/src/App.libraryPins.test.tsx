@@ -21,6 +21,10 @@ const gate = vi.hoisted(() => ({
   listHold: null as Promise<void> | null,
   failList: false,
   clearHold: null as Promise<void> | null,
+  /** Each held read that has answered (resolved or failed), by id: a test waits for it before it looks. */
+  answered: [] as string[],
+  /** Each held read that has started, by id: a test waits for it before it moves on. */
+  started: [] as string[],
 }))
 vi.mock('./lib/storage', async (importOriginal) => {
   const real = await importOriginal<typeof import('./lib/storage')>()
@@ -28,9 +32,16 @@ vi.mock('./lib/storage', async (importOriginal) => {
     ...real,
     loadDrive: async (id: string) => {
       const held = gate.hold.get(id)
-      if (held) await held
-      if (gate.failLoad.has(id)) throw new DOMException('invented read failure', 'UnknownError')
-      return real.loadDrive(id)
+      if (!held) {
+        if (gate.failLoad.has(id)) throw new DOMException('invented read failure', 'UnknownError')
+        return real.loadDrive(id)
+      }
+      gate.started.push(id)
+      await held
+      try {
+        if (gate.failLoad.has(id)) throw new DOMException('invented read failure', 'UnknownError')
+        return await real.loadDrive(id)
+      } finally { setTimeout(() => gate.answered.push(id), 0) }        // after the caller's own .then has run
     },
     listDrives: async () => {
       if (gate.listHold) await gate.listHold
@@ -119,7 +130,7 @@ beforeEach(async () => {
   ;(await import('./lib/storage')).closeStorage()
   vi.stubGlobal('localStorage', memoryStorage())
   ;(globalThis as { indexedDB: IDBFactory }).indexedDB = new IDBFactory()
-  gate.hold.clear(); gate.failLoad.clear(); gate.listHold = null; gate.failList = false; gate.clearHold = null
+  gate.hold.clear(); gate.failLoad.clear(); gate.listHold = null; gate.failList = false; gate.clearHold = null; gate.answered = []; gate.started = []
 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.history.replaceState(null, '', '/') })
 
@@ -131,9 +142,11 @@ describe('the Current drive (pins, Drive library commit 1)', () => {
     const { useStore } = await boot()
     await waitFor(() => expect(useStore.getState().drives).toHaveLength(2))
     await go('#/drive/a')                                           // a's read waits
+    await waitFor(() => expect(gate.started).toContain('a'))
     await go('#/drive/b')
     await waitFor(() => expect(useStore.getState().activeSession?.id).toBe('b'))
     release()
+    await waitFor(() => expect(gate.answered).toContain('a'))
     await settle()
     expect(useStore.getState().activeSession?.id).toBe('b')
   })
@@ -159,9 +172,11 @@ describe('the Current drive (pins, Drive library commit 1)', () => {
     const { useStore } = await boot()
     await waitFor(() => expect(useStore.getState().drives).toHaveLength(2))
     await go('#/drive/a')
+    await waitFor(() => expect(gate.started).toContain('a'))
     await go('#/drive/b')
     await waitFor(() => expect(useStore.getState().activeSession?.id).toBe('b'))
     release()
+    await waitFor(() => expect(gate.answered).toContain('a'))
     await settle()
     err.mockRestore()
     expect(useStore.getState().openFailedId).toBeNull()
@@ -205,10 +220,12 @@ describe('the compared drives (pins, Drive library commit 1)', () => {
     const [hold, release] = held()
     gate.hold.set('a', hold)
     await compareOf(['a', 'b'], useStore)                         // waits on a
+    await waitFor(() => expect(gate.started).toContain('a'))
     gate.hold.delete('a')
     await compareOf(['b', 'c'], useStore)
     await waitFor(() => expect(useStore.getState().compareSessions.map((s) => s.id)).toEqual(['b', 'c']))
     release()
+    await waitFor(() => expect(gate.answered).toContain('a'))
     await settle()
     expect(useStore.getState().compareSessions.map((s) => s.id)).toEqual(['b', 'c'])
   })
@@ -271,6 +288,23 @@ describe('the compared drives (pins, Drive library commit 1)', () => {
     expect(useStore.getState().compareSessions.map((s) => s.id)).toEqual(['a', 'b'])
   })
 
+  it('K6 kept, a known defect (L111, fixed separately): a failed read of newly compared drives shows no figures and no message', async () => {
+    await seed([drive('a', 1), drive('b', 2), drive('c', 3), drive('d', 4)])
+    const { useStore } = await boot()
+    await waitFor(() => expect(useStore.getState().drives).toHaveLength(4))
+    await act(async () => { useStore.getState().setCompare(['a', 'b']); useStore.getState().setCompareOpen(true) })
+    expect(await screen.findByText('Invented b vs Invented a', {}, { timeout: 5000 })).toBeInTheDocument()
+    gate.failLoad.add('c')
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await compareOf(['c', 'd'], useStore)
+    await settle()
+    err.mockRestore()
+    expect(useStore.getState().compareSessionIds).toEqual(['c', 'd'])
+    expect(useStore.getState().compareSessions.map((s) => s.id)).toEqual(['a', 'b'])      // the old copies, not shown
+    expect(document.body.textContent).not.toMatch(/ vs /)                                    // no figures
+    expect(screen.queryByRole('alert')).toBeNull()                                            // and no message
+  })
+
   it('K11 kept: a session-only entry can be ticked for Compare, which then says it needs drives with trip data', async () => {
     await seed([drive('a', 1), { ...drive('s', 2), trip: null, diagnostics: { canInventory: [], fpsTimeline: [], decodeTrace: [],
       probeResults: [], dtcResults: [], sessionEvents: LOG } as never }])
@@ -311,11 +345,12 @@ describe('Import and the library (pins, Drive library commit 1)', () => {
     gate.hold.set('x', hold)                                        // the Import's re-read of x waits
     let importing: Promise<void> = Promise.resolve()
     await act(async () => { importing = startImport([await withLogZip(4)]) })
-    await waitFor(() => expect(useStore.getState().importJob?.running).toBe(true))
+    await waitFor(() => expect(gate.started).toContain('x'), { timeout: 5000 })
     await go('#/drive/y')
     await waitFor(() => expect(useStore.getState().activeSession?.id).toBe('y'))
     release()
     await act(async () => { await importing })
+    await waitFor(() => expect(gate.answered).toContain('x'))
     await settle()
     expect(useStore.getState().activeSession?.id).toBe('y')
   })
