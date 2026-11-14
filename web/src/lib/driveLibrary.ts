@@ -5,7 +5,7 @@
 //
 // Each ask states its failure contract: "rejects" means nothing was mirrored and the error reaches the caller, as today.
 import { useStore } from '../store'
-import { clearAllDrives, deleteDrives, listDrives, loadDrive, renameDrive, setDriveNote, setDriveTags, storeImported,
+import { clearAllDrives, deleteDrives, fillBestLap, listDrives, loadDrive, renameDrive, setDriveNote, setDriveTags, storeImported,
   type DriveRecord, type ImportOutcome } from './storage'
 import type { Session } from '../types/session'
 import type { FileResult } from './importFiles'
@@ -106,10 +106,143 @@ export async function importDrives(read: (store: StoringStep) => Promise<FileRes
       store().setDrives(await listDrives())
       const current = store().activeSessionId
       if (current && filled.includes(current)) {
+        const token = store().libraryReads.current          // the one guard: applied only if no newer Current drive was asked for
         const fresh = await loadDrive(current)
-        if (fresh && store().activeSessionId === current) store().setActiveSession(fresh)
+        if (fresh && newest('current', token)) store().setActiveSession(fresh)
       }
     } catch (err) { console.warn('[Sapphire] Could not read the filled-in drives again:', err) }
   }
   return results
+}
+
+// ── The Current drive and Compare ──
+
+/**
+ * The Current drive's state, derived from the store's fields (the whole-app tests set those directly):
+ * none, being read, shown, read failed. "Not stored here" is not a resting state: it is the `onNotStored` event, after
+ * which the app shell goes to the list and the state is none.
+ */
+export type CurrentDriveState = 'none' | 'being read' | 'shown' | 'read failed'
+export function currentDriveState(s: { activeSessionId: string | null; activeSession: Session | null; openFailedId: string | null }): CurrentDriveState {
+  if (s.activeSessionId === null) return 'none'
+  if (s.openFailedId === s.activeSessionId) return 'read failed'
+  return s.activeSession?.id === s.activeSessionId ? 'shown' : 'being read'
+}
+
+type Channel = keyof ReturnType<typeof store>['libraryReads']
+/** The one guard against a late answer: a new token per read; an answer counts only while its token is the newest. */
+function nextToken(channel: Channel): number {
+  const reads = store().libraryReads
+  const token = reads[channel] + 1
+  useStore.setState({ libraryReads: { ...reads, [channel]: token } })
+  return token
+}
+const newest = (channel: Channel, token: number) => store().libraryReads[channel] === token
+
+/** Read the Current drive the store names (as App's effect did): the old one goes first; one guard; the best-lap fill. */
+function readCurrent(id: string | null): void {
+  const token = nextToken('current')
+  store().setActiveSession(null)
+  store().setOpenFailedId(null)
+  if (!id) return
+  loadDrive(id)
+    .then((s) => {
+      if (!newest('current', token)) return
+      if (s === null) {
+        // not stored here (deleted, or another browser's link): the app shell goes to the list with its message; with
+        // no app attached, the Current drive is none, so nothing waits on a read that will not come (I1)
+        const notStored = store().libraryAttachment.onNotStored
+        if (notStored) notStored()
+        else store().setActiveSessionId(null)
+        return
+      }
+      store().setActiveSession(s)
+      // a drive with laps stored before ticket 04 gets its best lap now that its points are read (only then: no write
+      // on any other opening, and not while the list is not loaded, K9); a failure changes nothing
+      const rec = store().drives.find((d) => d.id === s.id)
+      if (rec?.hasLaps && !('bestLapMs' in rec)) {
+        fillBestLap(s)
+          .then((filled) => { if (filled) store().updateDrive(filled) })
+          .catch((err) => console.warn('[Sapphire] Could not note the best lap:', err))
+      }
+    })
+    .catch((err) => {
+      // a failed read is not "not stored" (ticket 03): the drive's page says it could not be opened (fix round)
+      console.error('[Sapphire] Failed to open the drive:', err)
+      if (newest('current', token)) store().setOpenFailedId(id)
+    })
+}
+
+/** Read the compared drives (as App's effect did): the Current drive is reused from memory; one guard (K6, K10). */
+function readCompared(ids: string[]): void {
+  const token = nextToken('compare')
+  if (ids.length === 0) { store().setCompareSessions([]); return }
+  const current = store().activeSession
+  Promise.all(ids.map((id) => (current?.id === id ? current : loadDrive(id))))
+    .then((loaded) => { if (newest('compare', token)) store().setCompareSessions(loaded.filter((s) => s !== null)) })
+    // kept, a known defect (L111): a failed read keeps the old copies and says nothing
+    .catch((err) => console.error('[Sapphire] Failed to open the compared drives:', err))
+}
+
+const attached = () => store().libraryAttachment.count > 0
+
+/**
+ * Start the reads that follow the store (K10): the Current drive whenever its id changes, the compared drives whenever
+ * a new id array is set (equal ids included), from whatever sets them. [onNotStored] is called once when the Current
+ * drive's read finds no such drive. Returns a detach function. Attaching again while attached adds no second
+ * subscription (I2): it counts, and the reads stop when every attach has detached.
+ */
+export function attach(handlers: { onNotStored?: () => void } = {}): () => void {
+  const a = store().libraryAttachment
+  if (a.count > 0) {
+    useStore.setState({ libraryAttachment: { ...a, count: a.count + 1, onNotStored: handlers.onNotStored ?? a.onNotStored } })
+    return detachOnce()
+  }
+  const stop = useStore.subscribe((s, prev) => {
+    if (s.activeSessionId !== prev.activeSessionId) readCurrent(s.activeSessionId)
+    if (s.compareSessionIds !== prev.compareSessionIds) readCompared(s.compareSessionIds)
+  })
+  useStore.setState({ libraryAttachment: { count: 1, stop, onNotStored: handlers.onNotStored ?? null } })
+  // as App's effects did when they first ran
+  readCurrent(store().activeSessionId)
+  readCompared(store().compareSessionIds)
+  return detachOnce()
+}
+function detachOnce(): () => void {
+  let done = false
+  return () => {
+    if (done) return
+    done = true
+    const a = store().libraryAttachment
+    if (a.count > 1) { useStore.setState({ libraryAttachment: { ...a, count: a.count - 1 } }); return }
+    a.stop?.()
+    nextToken('current'); nextToken('compare')                 // an answer still on its way is no longer wanted
+    useStore.setState({ libraryAttachment: { count: 0, stop: null, onNotStored: null } })
+  }
+}
+
+/**
+ * Make [id] the Current drive (what the address names), or none. Attached, the subscription reads it; not attached, this
+ * ask starts the read itself, so the state never stays "being read" with nothing on its way (I1).
+ */
+export function showDrive(id: string | null): void {
+  const changed = store().activeSessionId !== id
+  store().setActiveSessionId(id)
+  if (changed && !attached()) readCurrent(id)
+}
+
+/** Compare exactly these drives, in this order (the first is the Base drive), at most four (K6). */
+export function compareDrives(ids: string[]): void {
+  store().setCompare(ids)
+  if (!attached()) readCompared(store().compareSessionIds)
+}
+/** Add a drive to Compare, or take it out; a fifth is ignored (K6). */
+export function toggleCompared(id: string): void {
+  store().toggleCompareSession(id)
+  if (!attached()) readCompared(store().compareSessionIds)
+}
+/** Compare no drives: the copies go too (K6). */
+export function clearCompared(): void {
+  store().clearCompare()
+  if (!attached()) readCompared(store().compareSessionIds)
 }

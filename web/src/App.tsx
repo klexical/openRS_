@@ -2,16 +2,14 @@ import { useEffect } from 'react'
 import { Shell } from './components/layout/Shell'
 import { useStore } from './store'
 import { useSettings } from './store/settings'
-import { fillBestLap, loadDrive, onStorageStatus, storageStatus } from './lib/storage'
-import { loadList } from './lib/driveLibrary'
+import { onStorageStatus, storageStatus } from './lib/storage'
+import { attach, loadList, showDrive } from './lib/driveLibrary'
 import { go, useAddress } from './lib/address'
 import { rsThemes, shadeHex, printAccent } from './styles/tokens'
 import { colors } from './styles/tokens'
 import { BackupButton } from './components/ui/LazyBackupControls'
 
 export default function App() {
-  const activeSessionId = useStore((s) => s.activeSessionId)
-  const compareSessionIds = useStore((s) => s.compareSessionIds)
   const setStorage = useStore((s) => s.setStorage)
   const themeId = useSettings((s) => s.themeId)
 
@@ -30,56 +28,20 @@ export default function App() {
   const addressedId = address.place === 'drive' ? address.id : null
   useEffect(() => {
     const st = useStore.getState()
-    st.setActiveSessionId(addressedId)
+    showDrive(addressedId)
     if (address.place !== 'drives') st.setListNotice(null)
     if (address.place !== 'drives' || addressedId !== null) st.setCompareOpen(false)
   }, [address.place, addressedId])
 
-  // The open drive's points and log are read when it is opened and dropped when it is left (#384)
-  useEffect(() => {
-    const { setActiveSession, setOpenFailedId } = useStore.getState()
-    setActiveSession(null)
-    setOpenFailedId(null)
-    if (!activeSessionId) return
-    let current = true
-    loadDrive(activeSessionId)
-      .then((s) => {
-        if (!current || useStore.getState().activeSessionId !== activeSessionId) return
-        if (s === null) {
-          // an address naming a drive that is not stored here (deleted, or another browser's link): the list, with a
-          // plain message; the address is replaced so Back does not lead to it again. A failed read is not this.
-          useStore.getState().setListNotice('That drive is not stored in this browser.')
-          go({ place: 'drives' }, { replace: true })
-        } else {
-          setActiveSession(s)
-          // a drive with laps stored before ticket 04 gets its best lap now that its points are read (only then: no
-          // write on any other opening); a failure changes nothing
-          const rec = useStore.getState().drives.find((d) => d.id === s.id)
-          if (rec?.hasLaps && !('bestLapMs' in rec)) {
-            fillBestLap(s)
-              .then((filled) => { if (filled) useStore.getState().updateDrive(filled) })
-              .catch((err) => console.warn('[Sapphire] Could not note the best lap:', err))
-          }
-        }
-      })
-      .catch((err) => {
-        // a failed read is not "not stored" (ticket 03): the drive's page says it could not be opened (fix round)
-        console.error('[Sapphire] Failed to open the drive:', err)
-        if (current) useStore.getState().setOpenFailedId(activeSessionId)
-      })
-    return () => { current = false }
-  }, [activeSessionId])
-
-  // The compared drives, likewise
-  useEffect(() => {
-    const { setCompareSessions, activeSession } = useStore.getState()
-    if (compareSessionIds.length === 0) { setCompareSessions([]); return }
-    let current = true
-    Promise.all(compareSessionIds.map((id) => (activeSession?.id === id ? activeSession : loadDrive(id))))
-      .then((loaded) => { if (current) setCompareSessions(loaded.filter((s) => s !== null)) })
-      .catch((err) => console.error('[Sapphire] Failed to open the compared drives:', err))
-    return () => { current = false }
-  }, [compareSessionIds])
+  // The Drive library reads the Current drive and the compared drives as the store names them (#384). An address that
+  // names a drive not stored here (deleted, or another browser's link): the list, with a plain message; the address is
+  // replaced so Back does not lead to it again. A failed read is not this: the drive's page says so.
+  useEffect(() => attach({
+    onNotStored: () => {
+      useStore.getState().setListNotice('That drive is not stored in this browser.')
+      go({ place: 'drives' }, { replace: true })
+    },
+  }), [])
 
   // RS paint accent → CSS custom properties on the document root. Tailwind utilities (`text-accent`,
   // `bg-accent/10`, …) and `colors.accent` (a var()) resolve them at runtime, so this repaints everything.

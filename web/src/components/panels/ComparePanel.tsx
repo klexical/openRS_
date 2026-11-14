@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useStore, useCompareSessions } from '../../store'
+import { clearCompared, toggleCompared } from '../../lib/driveLibrary'
 import { EmptyState } from '../ui/EmptyState'
 import { SectionLabel } from '../ui/SectionLabel'
 import { DeltaCard } from '../ui/DeltaCard'
@@ -17,8 +18,6 @@ export function ComparePanel() {
   // ── Hooks (must run on every render path — keep above any early return) ──
   const sessions = useStore((s) => s.drives)
   const compareIds = useStore((s) => s.compareSessionIds)
-  const toggleCompare = useStore((s) => s.toggleCompareSession)
-  const clearCompare = useStore((s) => s.clearCompare)
   const compareSessions = useCompareSessions()
 
   // Only sessions with trip data are useful for comparison
@@ -63,7 +62,7 @@ export function ComparePanel() {
           return (
             <button
               key={sess.id}
-              onClick={() => toggleCompare(sess.id)}
+              onClick={() => toggleCompared(sess.id)}
               className={`
                 w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-all
                 ${isSelected
@@ -102,7 +101,7 @@ export function ComparePanel() {
 
       {compareIds.length > 0 && (
         <button
-          onClick={clearCompare}
+          onClick={clearCompared}
           className="text-[10px] font-mono text-dim hover:text-frost uppercase tracking-wider transition-colors"
         >
           Clear Selection

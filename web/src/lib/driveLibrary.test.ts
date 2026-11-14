@@ -222,3 +222,134 @@ describe('Drive library: an Import', () => {
     expect(env.st().drives.map((d) => d.id)).toEqual(['a'])
   })
 })
+
+describe('Drive library: the Current drive', () => {
+  /** Let every read and its answer land. */
+  const settle = () => new Promise((r) => setTimeout(r, 30))
+
+  it('reaches each state: none, being read, shown, not stored here (once), read failed', async () => {
+    const env = await fresh([drive('a', 1)])
+    const { library, st } = env
+    const states = () => library.currentDriveState(st())
+    let notStored = 0
+    const detach = library.attach({ onNotStored: () => { notStored++ } })
+    expect(states()).toBe('none')
+    library.showDrive('a')
+    expect(states()).toBe('being read')
+    await settle()
+    expect(states()).toBe('shown')
+    library.showDrive('gone')
+    await settle()
+    expect(notStored).toBe(1)                                                    // the event; the app shell then goes to the list
+    failOn('get', 'points')
+    library.showDrive('a')
+    await settle()
+    expect(states()).toBe('read failed')
+    library.showDrive(null)
+    expect(states()).toBe('none')
+    detach()
+  })
+
+  it('a late answer for an earlier drive never becomes the Current drive (one guard)', async () => {
+    const env = await fresh([drive('a', 1), drive('b', 2)])
+    const detach = env.library.attach()
+    env.library.showDrive('a')
+    env.library.showDrive('b')                                                   // a's read is still on its way
+    await settle()
+    expect(env.st().activeSession?.id).toBe('b')
+    expect(env.library.currentDriveState(env.st())).toBe('shown')
+    detach()
+  })
+
+  it('without attach, showDrive reads the drive itself: never "being read" for ever (I1)', async () => {
+    const env = await fresh([drive('a', 1)])
+    env.library.showDrive('a')
+    await settle()
+    expect(env.library.currentDriveState(env.st())).toBe('shown')
+    env.library.showDrive('gone')                                                // not stored, and no app shell to tell
+    await settle()
+    expect(env.library.currentDriveState(env.st())).toBe('none')
+  })
+
+  it('attaching twice adds no second read and no second "not stored" (I2); reads stop when both detach', async () => {
+    const env = await fresh([drive('a', 1)])
+    const calls: string[] = []
+    const storage = await import('./storage')
+    const load = vi.spyOn(storage, 'loadDrive')
+    let notStored = 0
+    const one = env.library.attach({ onNotStored: () => { notStored++ } })
+    const two = env.library.attach({ onNotStored: () => { notStored++ } })
+    load.mockClear()
+    env.library.showDrive('a')
+    await settle()
+    calls.push(...load.mock.calls.map((c) => String(c[0])))
+    expect(calls).toEqual(['a'])
+    env.library.showDrive('gone')
+    await settle()
+    expect(notStored).toBe(1)
+    one(); one()                                                                  // a detach called twice counts once
+    load.mockClear()
+    env.useStore.getState().setActiveSessionId('a')                              // still attached (two)
+    await settle()
+    expect(load.mock.calls.map((c) => String(c[0]))).toEqual(['a'])
+    two()
+    load.mockClear()
+    env.useStore.getState().setActiveSessionId(null)
+    env.useStore.getState().setActiveSessionId('a')                              // detached: nothing follows the store
+    await settle()
+    expect(load).not.toHaveBeenCalled()
+  })
+})
+
+describe('Drive library: Compare', () => {
+  const settle = () => new Promise((r) => setTimeout(r, 30))
+
+  it('compareDrives reads the drives in order, at most four; toggleCompared and clearCompared keep them in step', async () => {
+    const env = await fresh([drive('a', 1), drive('b', 2), drive('c', 3), drive('d', 4), drive('e', 5)])
+    const detach = env.library.attach()
+    env.library.compareDrives(['b', 'a', 'c', 'd', 'e'])
+    await settle()
+    expect(env.st().compareSessions.map((s) => s.id)).toEqual(['b', 'a', 'c', 'd'])
+    env.library.toggleCompared('a')
+    await settle()
+    expect(env.st().compareSessions.map((s) => s.id)).toEqual(['b', 'c', 'd'])
+    env.library.clearCompared()
+    await settle()
+    expect(env.st().compareSessions).toEqual([])
+    detach()
+  })
+
+  it('kept (K10): the same drives picked again are read again; a late answer never replaces a newer pick', async () => {
+    const env = await fresh([drive('a', 1), drive('b', 2), drive('c', 3)])
+    const detach = env.library.attach()
+    env.library.compareDrives(['a', 'b'])
+    env.library.compareDrives(['b', 'c'])                                        // the first pick's reads are still on their way
+    await settle()
+    expect(env.st().compareSessions.map((s) => s.id)).toEqual(['b', 'c'])
+    await env.storage.renameDrive('b', 'Renamed behind the page')
+    env.library.compareDrives(['b', 'c'])
+    await settle()
+    expect(env.st().compareSessions[0].name).toBe('Renamed behind the page')
+    detach()
+  })
+
+  it('kept, a known defect (L111): a failed read keeps the old copies and says nothing', async () => {
+    const env = await fresh([drive('a', 1), drive('b', 2)])
+    const detach = env.library.attach()
+    env.library.compareDrives(['a'])
+    await settle()
+    failOn('get', 'points')
+    env.library.compareDrives(['b'])
+    await settle()
+    expect(env.st().compareSessionIds).toEqual(['b'])
+    expect(env.st().compareSessions.map((s) => s.id)).toEqual(['a'])
+    detach()
+  })
+
+  it('without attach, the Compare asks read the drives themselves', async () => {
+    const env = await fresh([drive('a', 1), drive('b', 2)])
+    env.library.compareDrives(['a', 'b'])
+    await settle()
+    expect(env.st().compareSessions.map((s) => s.id)).toEqual(['a', 'b'])
+  })
+})

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { useStore } from '../../store'
 import { loadDrive } from '../../lib/storage'
-import { remove, rename, setNote, setTags } from '../../lib/driveLibrary'
+import { compareDrives, remove, rename, setNote, setTags } from '../../lib/driveLibrary'
 import { exportSessionCsv, exportSessionJson } from '../../lib/export'
 import { ConfirmDialog, RowMenu, TagEditor, TextEditor, type RowAction } from './RowActions'
 import { startImport } from '../importing/startImport'
@@ -43,7 +43,6 @@ export function DrivesPage() {
   // ── Looking after drives from their rows (ticket 05) ──
   const compareOpen = useStore((s) => s.compareOpen)
   const setCompareOpen = useStore((s) => s.setCompareOpen)
-  const setCompare = useStore((s) => s.setCompare)
   const [picked, setPicked] = useState<string[]>([])                 // ticked rows, in the order they were ticked
   const ticked = useMemo(() => picked.filter((id) => drives.some((d) => d.id === id)), [picked, drives])
   const [menuFor, setMenuFor] = useState<{ id: string; focus: 'first' | 'last' } | null>(null)
@@ -170,7 +169,7 @@ export function DrivesPage() {
                 <>
                   <button ref={deleteSelected} type="button" className="a-btn danger" onClick={() => setConfirm(ticked)}>Delete selected ({ticked.length})</button>
                   <button type="button" className="a-btn" disabled={ticked.length > 4} aria-describedby={ticked.length > 4 ? 'compare-limit' : undefined}
-                    onClick={() => { setCompare(ticked); setCompareOpen(true) }}>Compare ({ticked.length})</button>
+                    onClick={() => { compareDrives(ticked); setCompareOpen(true) }}>Compare ({ticked.length})</button>
                   {ticked.length > 4 && <span id="compare-limit" className="a-meta">Compare takes two to four drives.</span>}
                 </>
               )}

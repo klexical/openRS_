@@ -44,6 +44,14 @@ export interface DriveLibraryState {
   clearCompare: () => void
   /** Compare exactly these drives, in this order (the first is the base): the ticked rows (ticket 05). */
   setCompare: (ids: string[]) => void
+
+  /**
+   * The library's own bookkeeping, drawn by nothing (lib/driveLibrary.ts): the newest read per channel (the one guard
+   * against a late answer), and whether its reads are attached. Kept in the store, so an ask works the same with or
+   * without the app on screen and no module-level state is added.
+   */
+  libraryReads: { current: number; compare: number }
+  libraryAttachment: { count: number; stop: (() => void) | null; onNotStored: (() => void) | null }
 }
 
 /** A loaded session with the owner's own fields (name, tags, note) taken from its updated small record. */
@@ -103,4 +111,7 @@ export const driveLibrarySlice = (set: Set): DriveLibraryState => ({
   }),
   clearCompare: () => set({ compareSessionIds: [] }),
   setCompare: (ids) => set({ compareSessionIds: ids.slice(0, 4) }),
+
+  libraryReads: { current: 0, compare: 0 },
+  libraryAttachment: { count: 0, stop: null, onNotStored: null },
 })
