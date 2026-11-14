@@ -5,7 +5,8 @@
 # name and SHA-256 before it attests and attaches; no run line holds an expression; CI's build job runs the release
 # script tests; nightly.yml (T5) runs only on its schedule and by hand, in one group, in dry-run mode (PUBLISH false, no job
 # able to write contents), builds only staging's tip through the recipe, and re-checks the digest before the launch check
-# and the attestation. Reads the YAML only; GitHub's own run of the workflows is the evidence for what they do. Ruby's standard library only (YAML 1.1: the key `on` reads as true).
+# and the attestation; its launch job starts the emulator only through android/scripts/start-emulator.sh, and no workflow
+# runs the SDK's emulator tools inline. Reads the YAML only; GitHub's own run of the workflows is the evidence for what they do. Ruby's standard library only (YAML 1.1: the key `on` reads as true).
 # Runs on Ruby 2.6 (macOS) and 3.x (CI's Ubuntu). Run from anywhere: ruby android/scripts/test-release-workflows.rb
 require 'yaml'
 
@@ -63,6 +64,7 @@ TAG_JOB_PERMISSIONS = {
   'release-apk' => { 'contents' => 'read' },
   'publish-release' => { 'contents' => 'write', 'id-token' => 'write', 'attestations' => 'write' }
 }.freeze
+START_EMULATOR_RUN = 'bash android/scripts/start-emulator.sh "system-images;android-36;google_apis;x86_64" 420'
 RECIPE_RUN = 'bash scripts/release-apk.sh "$SHA" "$NAME" "$TAG" "$NIGHTLY_DATE"'
 RECIPE_ENV = { 'SHA' => '${{ inputs.sha }}', 'NAME' => '${{ inputs.name }}', 'TAG' => '${{ inputs.tag }}',
                'NIGHTLY_DATE' => '${{ inputs.nightly_date }}' }.freeze
@@ -212,12 +214,13 @@ check('no workflow puts an expression inside a run line (values reach the shell 
   end
 end
 
+SCRIPT_TESTS = %w[scripts/test-release-config.sh scripts/test-release-identity.sh scripts/test-verify-release.sh
+                  scripts/test-release-apk.sh scripts/test-release-workflows.rb scripts/test-nightly-gate.sh
+                  scripts/test-launch-check.sh scripts/test-start-emulator.sh].freeze
+
 check("ci.yml's build job runs the release script tests") do
   runs = steps(jobs(ci)['build'] || {}).map { |s| s['run'].to_s }.join("\n")
-  %w[scripts/test-release-config.sh scripts/test-release-identity.sh scripts/test-verify-release.sh
-     scripts/test-release-apk.sh scripts/test-release-workflows.rb scripts/test-nightly-gate.sh
-     scripts/test-launch-check.sh].reject { |t| runs.include?(t) }
-    .map { |t| "build job does not run #{t}" }
+  SCRIPT_TESTS.reject { |t| runs.include?(t) }.map { |t| "build job does not run #{t}" }
 end
 
 check('in every workflow, a secret-holding job outputs nothing but the digest') do
@@ -406,6 +409,10 @@ check('launch and attest take the run\'s one artifact, re-check its digest exact
     rest = st[(c + 1)..-1]
     if id == 'launch'
       why << "launch after the check runs #{rest.map { |x| x['name'] }.inspect}" unless rest.map { |x| x['run'].to_s.lines.last.to_s.strip }.last == 'bash android/scripts/launch-check.sh "release-apk/openRS_v${NAME}.apk" 10'
+      kinds = rest.map { |x| x['run'] == START_EMULATOR_RUN ? 'start' : (x['run'].to_s.include?('udevadm') ? 'kvm' : (x['run'].to_s.include?('launch-check.sh') ? 'check' : x['name'].to_s)) }
+      why << "launch after the digest check: #{kinds.inspect}, expected KVM, then exactly the agreed emulator start, then the launch check" unless kinds == %w[kvm start check]
+      s = rest.find { |x| x['run'] == START_EMULATOR_RUN }
+      why << "the emulator start step has env #{s['env'].inspect}: start-emulator.sh takes the defaults on CI" if s && s['env']
     else
       want = %w[actions/attest-build-provenance@v2 verify]
       got = rest.map { |x| x['uses'] || (x['run'] == VERIFY_RUN ? 'verify' : x['run'].to_s.lines.first.to_s.strip) }
@@ -414,6 +421,21 @@ check('launch and attest take the run\'s one artifact, re-check its digest exact
     end
   end
   why
+end
+
+check("nightly.yml's checks job runs the release script tests") do
+  runs = steps(jobs(nightly)['checks'] || {}).map { |s| s['run'].to_s }.join("\n")
+  SCRIPT_TESTS.reject { |t| runs.include?(t) }.map { |t| "checks job does not run #{t}" }
+end
+
+# The emulator start lives in start-emulator.sh, which its test covers (#363): no workflow drives the SDK's emulator tools
+# in a run line of its own
+check('no workflow runs sdkmanager, avdmanager or the emulator inline') do
+  all.flat_map do |f|
+    run_lines(YAML.safe_load(File.read(f, encoding: 'UTF-8')))
+      .select { |l| l =~ %r{sdkmanager|avdmanager|emulator/emulator|\bemulator\s+-avd} }
+      .map { |l| "#{File.basename(f)}: #{l.lines.first.strip}" }
+  end
 end
 
 check('no artifact name carries the attempt number, and every upload overwrites within its run') do

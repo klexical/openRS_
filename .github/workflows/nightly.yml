@@ -122,6 +122,7 @@ jobs:
           ruby scripts/test-release-workflows.rb
           bash scripts/test-nightly-gate.sh
           bash scripts/test-launch-check.sh
+          bash scripts/test-start-emulator.sh
 
   release:
     name: Build the nightly APK
@@ -176,30 +177,10 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # The AVD folder for both tools, the printed locations, the nightly.ini check and the boot wait that ends when the
+      # emulator exits are start-emulator.sh's (#363)
       - name: Start an API 36 emulator
-        run: |
-          set -euo pipefail
-          IMAGE="system-images;android-36;google_apis;x86_64"
-          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin"
-          # yes is killed by SIGPIPE once sdkmanager exits: under pipefail that would fail the step, hence (yes || true).
-          # sdkmanager's output stays in the log, so a package it cannot find is named there.
-          (yes || true) | "$SDKM/sdkmanager" --install "$IMAGE" emulator platform-tools
-          "$SDKM/avdmanager" create avd -n nightly -k "$IMAGE" --force <<<"no"   # "no" to a custom hardware profile
-          nohup "$ANDROID_HOME/emulator/emulator" -avd nightly -no-window -no-audio -no-boot-anim -no-snapshot \
-            -gpu swiftshader_indirect > emulator.log 2>&1 &
-          ADB="$ANDROID_HOME/platform-tools/adb"
-          BOOT_LIMIT_S=420                      # its own limit inside the job's 15 minutes, so a failed boot says so
-          booted=no
-          for _ in $(seq 1 $((BOOT_LIMIT_S / 5))); do
-            [ "$(timeout 10 "$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ] && { booted=yes; break; }
-            sleep 5
-          done
-          if [ "$booted" != yes ]; then
-            echo "::error::the emulator did not finish booting within ${BOOT_LIMIT_S} s; the last lines of its log follow"
-            tail -n 60 emulator.log || true
-            exit 1
-          fi
-          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+        run: bash android/scripts/start-emulator.sh "system-images;android-36;google_apis;x86_64" 420
 
       - name: Launch check
         env:

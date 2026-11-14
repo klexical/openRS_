@@ -48,11 +48,12 @@ paths:
     no repository code), `gate` (`scripts/nightly-gate.sh`: build only when `android/` changed since
     the newest published nightly, rc.8's for the first, and today has no nightly or tag; a read-only token is shown no
     draft releases), `checks` (ci.yml's build and lint commands and the release script tests), `release` (the recipe),
-    `launch` (`scripts/launch-check.sh` on an API 36 emulator: Play Store disabled, log cleared before the cold start, same
-    process after 10 s, no verifier rejection, fatal exception or ANR), `attest`. Dry-run mode: `PUBLISH` is `'false'`, no
-    job can write contents, and the run stops after the attestation; nothing is published, so every night builds and
-    leaves a one-day release-signed artifact and a public attestation. `scripts/test-nightly-gate.sh`,
-    `scripts/test-launch-check.sh` and `test-release-workflows.rb` pin it; CI's build job runs them.
+    `launch` (`scripts/start-emulator.sh` starts an API 36 emulator, then `scripts/launch-check.sh`: Play Store disabled,
+    log cleared before the cold start, same process after 10 s, no verifier rejection, fatal exception or ANR), `attest`.
+    Dry-run mode: `PUBLISH` is `'false'`, no job can write contents, and the run stops after the attestation; nothing is
+    published, so every night builds and leaves a one-day release-signed artifact and a public attestation.
+    `scripts/test-nightly-gate.sh`, `scripts/test-launch-check.sh`, `scripts/test-start-emulator.sh` and
+    `test-release-workflows.rb` pin it; CI's build job runs them.
   - `verify-release.sh` checks tag = versionName = filename, versionCode above every
     earlier tag, release signer (CI's keystore secrets sign with the published APKs' certificate, `c99b6f26…`). A nightly
     tag's code is the rule applied to the date in its name, for the tag under check and for earlier tags (their build file
@@ -92,3 +93,10 @@ paths:
 - **Robolectric tests:** test-only and pinned (4.14.1 + androidx.test:core 1.6.1), `sdk=35` + a plain `Application` in
   `app/src/test/resources/robolectric.properties`. SDK 35 needs only Java 17; Java 21 is needed from SDK 36. CI runs
   Temurin 17; the Android Studio JBR is a different JDK.
+- **Give avdmanager and the emulator one existing AVD folder (#363)** — the emulator looks only in `$ANDROID_AVD_HOME`,
+  `$ANDROID_SDK_HOME/avd` and `$HOME/.android/avd` ("Unknown AVD name" otherwise). Checked locally with
+  `XDG_CONFIG_HOME` set, as GitHub's Ubuntu runner image sets it, `avdmanager` (cmdline-tools 12.0 and 20.0) resolves its
+  AVD folder to `$XDG_CONFIG_HOME/.android/avd`, and uses `ANDROID_AVD_HOME` only when that folder already exists. So
+  create the folder before the create and export it for both tools. `scripts/start-emulator.sh` does, checks
+  `nightly.ini` is there before the start, and ends the boot wait when the emulator process is gone
+  (`scripts/test-start-emulator.sh`).

@@ -81,10 +81,11 @@ jobs:
       - name: Test the release workflows' shape
         run: ruby scripts/test-release-workflows.rb
 
-      - name: Test the nightly gate and launch check
+      - name: Test the nightly gate, launch check and emulator start
         run: |
           bash scripts/test-nightly-gate.sh
           bash scripts/test-launch-check.sh
+          bash scripts/test-start-emulator.sh
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
