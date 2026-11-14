@@ -305,14 +305,16 @@ describe('#384 ticket 03: places and addresses', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Settings' }, { timeout: 3000 })).toBeInTheDocument()
   })
 
-  it('the Import button opens the import screen without a place of its own', async () => {
+  it('the Import button opens the browser\'s file chooser, without a place of its own (ticket 06)', async () => {
     const { App } = await boot()
     render(<App />)
     const empty = await list()
     const button = await within(empty).findByRole('button', { name: 'Import' })
     const before = window.location.hash
-    fireEvent.click(button)
-    expect(await screen.findByText('Drop an openRS_ export ZIP here', {}, { timeout: 3000 })).toBeInTheDocument()
+    const clicked: string[] = []
+    const click = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (this: HTMLInputElement) { clicked.push(`${this.id} ${this.type} ${this.multiple}`) })
+    try { fireEvent.click(button) } finally { click.mockRestore() }
+    expect(clicked).toEqual(['file-input file true'])
     expect(window.location.hash).toBe(before)
   })
 })

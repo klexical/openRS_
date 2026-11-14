@@ -5,6 +5,7 @@ import { Places } from './Places'
 import { SettingsPage } from './SettingsPage'
 import { DrivesPage } from '../drives/DrivesPage'
 import { DriveFrame } from '../drive/DriveFrame'
+import { DropToImport, ImportStatus } from '../importing/ImportStatus'
 
 /** Sapphire's frame (#384 ticket 03): the two places and the page the address names, in look A's Night palette. */
 export function Shell() {
@@ -13,8 +14,10 @@ export function Shell() {
   return (
     <div className="look-a" style={lookAVars(lookANight)}>
       <Places current={address} />
+      <DropToImport />
       <div className="a-shell">
         <main>
+          <ImportStatus />
           <ErrorBoundary key={page} fallbackLabel="Error loading this page">
             {address.place === 'drive' ? <DriveFrame id={address.id} />
               : address.place === 'settings' ? <SettingsPage /> : <DrivesPage />}

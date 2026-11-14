@@ -38,7 +38,7 @@ export default function App() {
     const st = useStore.getState()
     st.setActiveSessionId(addressedId)
     if (address.place !== 'drives') st.setListNotice(null)
-    if (address.place !== 'drives' || addressedId !== null) { st.setImportOpen(false); st.setCompareOpen(false) }
+    if (address.place !== 'drives' || addressedId !== null) st.setCompareOpen(false)
   }, [address.place, addressedId])
 
   // The open drive's points and log are read when it is opened and dropped when it is left (#384)

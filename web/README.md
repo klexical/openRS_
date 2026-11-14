@@ -26,7 +26,7 @@ Named after the **Ford Sierra Sapphire RS Cosworth** — one of the most legenda
 
 1. Record a session with the openRS_ Android app
 2. Export via **Capture & Share Snapshot** on the DIAG tab
-3. Drop the ZIP file into Sapphire
+3. Drop the ZIP file anywhere on Sapphire, or press Import
 4. Explore your data — charts, tables, and diagnostics persist in your browser
 
 No server required. Everything runs client-side. Your data stays in your browser (IndexedDB).
@@ -40,7 +40,7 @@ Sapphire opens on **Drives**; the other place is **Settings**. Each has an addre
 
 | Place | Description |
 |-------|-------------|
-| **Drives** | Every stored drive, newest first, grouped by month: date, name, duration, distance, top speed, peak boost, and the markers Warnings, Laps (with the best lap) and Session only. A search box (name, tag, date) and the quick filters With warnings and With laps. Each row's menu: rename, note, tags, export, delete; ticked rows: Delete selected, Compare (two to four). **Import** brings in an export ZIP |
+| **Drives** | Every stored drive, newest first, grouped by month: date, name, duration, distance, top speed, peak boost, and the markers Warnings, Laps (with the best lap) and Session only. A search box (name, tag, date) and the quick filters With warnings and With laps. Each row's menu: rename, note, tags, export, delete; ticked rows: Delete selected, Compare (two to four). **Import** takes one or several export ZIPs; a ZIP dropped anywhere on the page imports too |
 | **A drive** | Opened from its row: today's **Dashboard** (KPI cards, peaks, drive mode breakdown), **Trip** (time-series charts, map) and **Diagnostics** (CAN frame inventory, session events, DID probe results) views |
 | **Settings** | Units, paint accent, back up all drives and restore, clear all |
 

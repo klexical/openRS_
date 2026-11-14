@@ -3,6 +3,15 @@ import { useShallow } from 'zustand/react/shallow'
 import type { Session } from '../types/session'
 import type { DriveRecord, StorageStatus } from '../lib/storage'
 
+/** An import as the page shows it (ticket 06). */
+export interface ImportJob {
+  running: boolean
+  progress: { done: number; total: number; file: string; stage: 'reading' | 'parsing' | 'storing' } | null
+  results: import('../lib/importFiles').FileResult[]
+  /** Drives stored by this import, in total. */
+  storedCount: number
+}
+
 /** The views of one drive, reached from the drive (#384 ticket 03). Kept in memory: the address names the drive only. */
 export type DriveView = 'dashboard' | 'trip' | 'diagnostics'
 
@@ -11,9 +20,12 @@ interface SapphireState {
   driveView: DriveView
   setDriveView: (view: DriveView) => void
 
-  /** The list's import screen is shown (Import is an action, not a place; ticket 06 replaces it). */
-  importOpen: boolean
-  setImportOpen: (open: boolean) => void
+  /** The running or last import (ticket 06): progress while it runs, each file's outcome after; null when none. */
+  importJob: ImportJob | null
+  setImportJob: (job: ImportJob | null) => void
+  /** The drives the last import stored: marked "New" in the list until the next import. */
+  newIds: string[]
+  setNewIds: (ids: string[]) => void
 
   /** True once the list's records were read: the empty state is shown only after a read that found none. */
   drivesLoaded: boolean
@@ -80,8 +92,10 @@ function withOwnFields(session: Session, drive: DriveRecord): Session {
 export const useStore = create<SapphireState>((set) => ({
   driveView: 'dashboard',
   setDriveView: (view) => set({ driveView: view }),
-  importOpen: false,
-  setImportOpen: (open) => set({ importOpen: open }),
+  importJob: null,
+  setImportJob: (job) => set({ importJob: job }),
+  newIds: [],
+  setNewIds: (ids) => set({ newIds: ids }),
   drivesLoaded: false,
   setDrivesLoaded: (loaded) => set({ drivesLoaded: loaded }),
   compareOpen: false,

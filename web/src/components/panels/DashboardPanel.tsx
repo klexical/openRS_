@@ -24,7 +24,6 @@ export function DashboardPanel() {
   const session = useActiveSession()
   const opening = useOpeningDrive()
   const sessions = useStore((s) => s.drives)
-  const setImportOpen = useStore((s) => s.setImportOpen)
   const fmt = useUnitFormatters()
 
   const trip = session?.trip?.summary
@@ -57,11 +56,11 @@ export function DashboardPanel() {
         description="Import a session ZIP from the openRS_ app to get started."
         action={
           <button
-            onClick={() => { setImportOpen(true); go({ place: 'drives' }) }}
+            onClick={() => go({ place: 'drives' })}
             className="px-4 py-2 rounded-md bg-accent/10 text-accent border border-accent/20
                        text-sm font-mono uppercase tracking-wider hover:bg-accent/20 transition-colors"
           >
-            Import Session
+            Drives
           </button>
         }
       />

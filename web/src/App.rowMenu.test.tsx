@@ -295,3 +295,73 @@ describe('#384 ticket 05: ticked rows', () => {
     expect(back.textContent).toMatch(/Compare takes two to four drives/)
   })
 })
+
+describe('#384 ticket 05, QA notes N1 and N2 (in ticket 06)', () => {
+  /** A contextmenu event as a browser sends it; [pointerType] when the browser states one (Chromium: a PointerEvent). */
+  const contextMenu = (el: Element, pointerType?: string) => {
+    const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+    if (pointerType !== undefined) Object.defineProperty(ev, 'pointerType', { value: pointerType })
+    let result = true
+    act(() => { result = el.dispatchEvent(ev) })
+    return result
+  }
+
+  it('N1: after a touch has ended, the keyboard menu key opens the menu; a contextmenu that says it is a touch does not', async () => {
+    const { root } = await start()
+    const li = row(root, 'Morning commute')
+    fireEvent.pointerDown(li, { pointerType: 'touch' })
+    fireEvent.pointerUp(li, { pointerType: 'touch' })
+    expect(contextMenu(li)).toBe(false)                          // the menu key: no pointer down, no type stated
+    expect(screen.getByRole('menu', { name: 'Actions for Morning commute' })).toBeInTheDocument()
+    key(document.activeElement!, 'Escape')
+    expect(contextMenu(li, 'touch')).toBe(true)                  // Chromium's long press states a touch: left to the browser
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(contextMenu(li, 'mouse')).toBe(false)
+  })
+
+  describe('N2: a save that fails says so and changes nothing', () => {
+    const failDrivesPut = () => {
+      const proto = (globalThis as unknown as { IDBObjectStore: { prototype: Record<string, (...a: unknown[]) => unknown> } }).IDBObjectStore.prototype
+      const put = proto.put
+      proto.put = function (this: { name: string }, ...a: unknown[]) {
+        if (this.name === 'drives') throw new DOMException('invented failure', 'QuotaExceededError')
+        return put.apply(this, a)
+      }
+      return () => { proto.put = put }
+    }
+    const choose = (root: HTMLElement, name: string, item: string) => {
+      fireEvent.click(menuButton(root, name))
+      fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: item }))
+    }
+    for (const what of ['rename', 'note', 'tags'] as const) {
+      it(what, async () => {
+        const { root } = await start()
+        const db = await openDB('sapphire'); const before = await db.get('drives', 'h'); db.close()
+        const restore = failDrivesPut()
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        try {
+          if (what === 'rename') {
+            choose(root, 'Hill road', 'Rename…')
+            const input = within(row(root, 'Hill road')).getByRole('textbox', { name: 'Name' })
+            fireEvent.change(input, { target: { value: 'Never saved' } })
+            await act(async () => { key(input, 'Enter') })
+          } else if (what === 'note') {
+            choose(root, 'Hill road', 'Note…')
+            fireEvent.change(within(row(root, 'Hill road')).getByRole('textbox', { name: 'Note' }), { target: { value: 'Never saved' } })
+            await act(async () => { fireEvent.click(within(row(root, 'Hill road')).getByRole('button', { name: 'Save' })) })
+          } else {
+            choose(root, 'Hill road', 'Tags…')
+            await act(async () => { fireEvent.click(within(row(root, 'Hill road')).getByRole('button', { name: 'Rain' })) })
+          }
+          await waitFor(() => expect(within(root).getByRole('alert').textContent).toBe("Couldn't save the change to Hill road. Try again."))
+        } finally { restore(); warn.mockRestore() }
+        expect(rowNames(root)).toContain('Hill road')
+        expect(row(root, 'Hill road').querySelector('.a-tags')).toBeNull()                 // no tag shown on the row
+        expect(row(root, 'Hill road').querySelector('.a-name')?.textContent).toBe('Hill road')
+        expect(row(root, 'Hill road').querySelector('.a-note')).toBeNull()
+        const db2 = await openDB('sapphire'); const after = await db2.get('drives', 'h'); db2.close()
+        expect(after).toEqual(before)
+      })
+    }
+  })
+})

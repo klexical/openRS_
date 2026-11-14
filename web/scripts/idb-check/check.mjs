@@ -10,7 +10,9 @@
 //      empty database gives every record back exactly; restore over the same data adds nothing;
 //   8. after a failed upgrade, the backup is written from the version-1 data and restores into a working Sapphire;
 //   9. the best lap's fill-in (#384 ticket 04): a record without bestLapMs (as live delivery A wrote it) is filled in as
-//      an import stores it today, exactly; a fill-in whose write fails leaves the record exactly as it was.
+//      an import stores it today, exactly; a fill-in whose write fails leaves the record exactly as it was;
+//  10. a later import fills in (#384 ticket 06): the same drive without, then with, its scan and session log is one
+//      drive, filled in; a fill-in whose drive write fails leaves all three stores exactly as they were.
 // Invented data only (and the repository's own invented export fixtures).
 // Playwright is not a project dependency — install it anywhere outside the repo:
 //   T=$(mktemp -d) && (cd $T && npm i playwright@1.48.2 && PLAYWRIGHT_BROWSERS_PATH=$T/b npx playwright install chromium)
@@ -308,6 +310,39 @@ check(fill9.hadField && !fill9.strippedField && fill9.failed === 'QuotaExceededE
   'best lap: a fill-in whose write fails throws and leaves the record without the field exactly as it was')
 check(fill9.best === 112400 && fill9.asImported && fill9.again,
   'best lap: the fill-in writes the record exactly as an import stores it today (fastest valid lap 112400 ms), and only once')
+await ctx.close()
+
+// ── 10. A later import fills in (#384 ticket 06) ──
+;({ ctx, page } = await open('10-fill-in'))
+const fill10 = await page.evaluate(async (T0) => {
+  const s = window.sapphire
+  const LOG = [{ ts: 0, type: 'SESSION', message: 'Started' }, { ts: 1000, type: 'STATE', message: 'Connected' }, { ts: 2000, type: 'STATE', message: 'Polling' }]
+  const exp = (full) => ({ id: crypto.randomUUID(), name: 'Invented fill-in', importedAt: T0, tags: [],
+    meta: { appVersion: '2.2.7', firmwareVersion: 'unknown', sessionStart: '', generatedAt: '' },
+    trip: { points: [0, 1, 2].map((i) => ({ ts: T0 + i * 1000, lat: 14 + i / 1000, lng: 20, speedKph: 50, rpm: 2000 })),
+      summary: { distanceKm: 1, durationMs: 2000, peakRpm: 2000, peakSpeedKph: 50, peakEvents: [], modeBreakdown: {} } },
+    diagnostics: full ? { canInventory: [], fpsTimeline: [], sessionEvents: LOG, decodeTrace: [], probeResults: [], dtcResults: [] } : null,
+    dtcScan: full, dtcScanStatus: full ? 'COMPLETE' : null })
+  const first = await s.storeImported([exp(false)])
+  const id = first.stored[0].id
+  const before = await s.exactStores()
+  // a fill-in whose drive write fails: nothing changes
+  const put = IDBObjectStore.prototype.put
+  IDBObjectStore.prototype.put = function (...a) { if (this.name === 'drives') throw new DOMException('invented failure', 'QuotaExceededError'); return put.apply(this, a) }
+  let failed = 'no error'
+  try { await s.storeImported([exp(true)]) } catch (e) { failed = e.name }
+  IDBObjectStore.prototype.put = put
+  const afterFailure = await s.exactStores()
+  const again = await s.storeImported([exp(true)])
+  const listed = await s.listDrives()
+  return { failed, unchanged: JSON.stringify(afterFailure) === JSON.stringify(before), again: again.alreadyImported, stored: again.stored.length,
+    count: listed.length, id, warnings: listed[0].warnings, sameId: listed[0].id === id }
+}, T0)
+console.log('  fill-in:', JSON.stringify(fill10))
+check(fill10.failed === 'QuotaExceededError' && fill10.unchanged, 'fill-in: a fill-in whose drive write fails leaves all three stores exactly as they were')
+check(fill10.stored === 0 && fill10.count === 1 && fill10.sameId && JSON.stringify(fill10.again.map((a) => a.filled)) === '[["fault-code scan","session log"]]'
+  && fill10.warnings.faultCodes === 'none' && fill10.warnings.recordingGaps === 'none',
+  'fill-in: the same drive again with its scan and session log is one drive, filled in, its causes now checked')
 await ctx.close()
 
 server.close()

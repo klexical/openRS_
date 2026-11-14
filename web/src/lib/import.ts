@@ -10,7 +10,7 @@ import { parseExportSchemaVersion } from './exportSchema'
 import { recordedDistanceKm } from './distance'
 import { parseDidInventory } from './didInventory'
 
-/** Thrown when an imported ZIP cannot be parsed — surfaced to the user via ImportPanel. */
+/** Thrown when an imported ZIP cannot be parsed — named with its file by the import action (lib/importFiles.ts). */
 export class ImportError extends Error {
   constructor(message: string) {
     super(message)
@@ -101,9 +101,15 @@ export async function importBatchZip(file: File): Promise<Session[]> {
   return importBatchZipInner(zip, manifest, file.name)
 }
 
-/** Detect whether a ZIP is a batch export (multiple drive CSVs). */
-export function isBatchZip(manifest: ExportManifest | null, zip: JSZip): boolean {
-  return countDriveCsvs(zip, manifest) > 1
+/**
+ * Import an export ZIP already read into memory (#384 ticket 06): every drive of a batch export (all of them, or the
+ * first malformed one throws), else the one drive or session-only entry. The import action reads the ZIP itself, so
+ * it can report reading and parsing as separate stages.
+ */
+export async function importLoadedZip(zip: JSZip, filename: string): Promise<Session[]> {
+  const manifest = await readManifest(zip)
+  if (countDriveCsvs(zip, manifest) > 1) return importBatchZipInner(zip, manifest, filename)
+  return [await importSingleDrive(zip, manifest, filename)]
 }
 
 /** Drive CSVs in the ZIP — from the manifest when it lists any, else by filename (a list this Sapphire can't read loses no drive). */

@@ -299,6 +299,62 @@ await page.waitForSelector('.a-row')
 check(/Delete 2 drives\?/.test(asked) && /cannot be undone/.test(asked) && cancelFirst === 'Cancel' && await rows(page) === before - 2,
   `"Delete selected" asks first (focus on Cancel), deletes the two ticked drives, and they stay gone after a reload (${await rows(page)} rows)`)
 
+// ── Import as an action (#384 ticket 06): five files with real progress, a drop on the page, the same file twice ──
+async function smallZip(n, name) {
+  const zip = new JSZip()
+  const t0 = new Date(2097, 0, n, 9).getTime()
+  const rows = ['# openrs_csv_v2', 'timestamp_ms,lat,lng,speed_kph,rpm']
+  for (let s = 0; s < 600; s++) rows.push(`${t0 + s * 1000},${(30 + n / 100 + s / 1e5).toFixed(6)},${(40 + s / 1e5).toFixed(6)},${50 + (s % 30)},${2200 + (s % 700)}`)
+  zip.file(`drive_2097010${n}_090000.csv`, rows.join('\n'))
+  const path = join(profiles, name)
+  await writeFile(path, await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }))
+  return path
+}
+const five = []
+for (let n = 1; n <= 5; n++) five.push(await smallZip(n, `five-${n}.zip`))
+await page.goto(home)
+await page.waitForSelector('.a-row')
+const rowsBefore = await rows(page)
+await page.evaluate(() => {
+  window.__progress = new Set(); window.__stages = new Set()
+  new MutationObserver(() => {
+    const bar = document.querySelector('[role="progressbar"]')
+    if (bar) window.__progress.add(`${bar.getAttribute('aria-valuenow')}/${bar.getAttribute('aria-valuemax')}`)
+    const m = /(reading|parsing|storing)/.exec(document.querySelector('[data-import-stage]')?.textContent ?? '')
+    if (m) window.__stages.add(m[1])
+  }).observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true })
+})
+await page.setInputFiles('#file-input', five)
+await page.waitForSelector('text=Done. Imported 5 drives.', { timeout: 60000 })
+const seen = await page.evaluate(() => ({ progress: [...window.__progress], stages: [...window.__stages].sort() }))
+check(seen.progress.filter((v) => v.endsWith('/5')).length > 1 && seen.stages.join() === 'parsing,reading,storing'
+  && await page.evaluate(() => location.hash) === '#/' && await page.locator('.a-marker.new').count() === 5,
+  `five files: progress seen at ${seen.progress.length} values (${seen.progress.join(' ')}), stages ${seen.stages.join(', ')}; the list with the five new rows marked`)
+// a drop on the page, through a real DataTransfer
+const dropBytes = (await readFile(await smallZip(6, 'dropped.zip'))).toString('base64')
+await page.goto(home + '#/settings')
+await page.waitForSelector('main h1')
+const dt = await page.evaluateHandle((b64) => {
+  const t = new DataTransfer()
+  t.items.add(new File([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], 'dropped.zip', { type: 'application/zip' }))
+  return t
+}, dropBytes)
+await page.dispatchEvent('main', 'dragenter', { dataTransfer: dt })
+await page.dispatchEvent('main', 'dragover', { dataTransfer: dt })
+const overlay = await page.locator('.a-dropzone').count()
+await page.dispatchEvent('main', 'drop', { dataTransfer: dt })
+await page.waitForFunction(() => location.hash.startsWith('#/drive/'), null, { timeout: 20000 })
+check(overlay === 1 && await page.locator('main h1').innerText() !== 'Settings', 'a ZIP dropped on the Settings page imports and lands on the new drive')
+// the same file twice: one drive, "already imported" with a link
+await page.goto(home)
+await page.waitForSelector('.a-row')
+const before6 = await rows(page)
+await page.setInputFiles('#file-input', five[0])
+await page.waitForSelector('text=already imported', { timeout: 20000 })
+const link = await page.locator('section[aria-label="Import"] a').getAttribute('href')
+check(await rows(page) === before6 && /^#\/drive\//.test(link ?? '') && before6 === rowsBefore + 6,
+  `the same file again: no new row (${before6}), "already imported" with a link to the drive`)
+
 check(errors.length === 0, `desktop: no page errors (${errors.length}${errors.length ? ': ' + errors[0] : ''})`)
 const rail = await page.locator('nav[aria-label="Places"]').boundingBox()
 check(rail && rail.x === 0 && rail.height > rail.width, `1280: the places are a rail on the left (${JSON.stringify(rail)})`)

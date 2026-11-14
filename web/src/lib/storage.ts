@@ -74,9 +74,16 @@ export class NothingReadableError extends Error {
   }
 }
 
+/** A part of a drive a later import can fill in (owner, 2026-11-14, Q6). */
+export type FilledPart = 'profile' | 'session log' | 'fault-code scan'
+
 export interface ImportOutcome {
   stored: DriveRecord[]
-  alreadyImported: { name: string; existingId: string }[]
+  /**
+   * Drives already stored ("already imported"), with the parts this import filled in (ticket 06): 'profile',
+   * 'session log', 'fault-code scan'; empty when nothing was missing.
+   */
+  alreadyImported: { name: string; existingId: string; filled: FilledPart[] }[]
 }
 
 export const DB_NAME = 'sapphire'
@@ -401,7 +408,7 @@ export async function storeImported(sessions: Session[]): Promise<ImportOutcome>
   for (const s of sessions) {
     if ((s.trip?.points?.length ?? 0) === 0 && !s.diagnostics) throw new NothingReadableError()
   }
-  const prepared = sessions.map(split)          // a session that cannot be split fails before anything is written
+  const prepared = sessions.map((s) => ({ ...split(s), session: s }))   // a session that cannot be split fails before anything is written
   const db = await getDb()
   const tx = db.transaction(ALL, 'readwrite')
   const outcome: ImportOutcome = { stored: [], alreadyImported: [] }
@@ -409,7 +416,11 @@ export async function storeImported(sessions: Session[]): Promise<ImportOutcome>
   try {
     for (const r of prepared) {
       const existing = await same.find(r.drive)
-      if (existing !== undefined) { outcome.alreadyImported.push({ name: r.drive.name, existingId: existing }); continue }
+      if (existing !== undefined) {
+        // the same drive: nothing new is stored; what the stored drive lacks is filled in, in this transaction (ticket 06)
+        outcome.alreadyImported.push({ name: r.drive.name, existingId: existing, filled: await fillIn(tx, existing, r.session) })
+        continue
+      }
       same.add(r.drive)
       settle(tx.objectStore(DRIVES).put(r.drive))
       settle(tx.objectStore(POINTS).put(r.points))
@@ -424,6 +435,61 @@ export async function storeImported(sessions: Session[]): Promise<ImportOutcome>
   }
   await tx.done
   return outcome
+}
+
+/** Whether a drive holds a fault-code scan: its flag, or (an older record without the flag) any stored code. */
+const hasScan = (s: Pick<Session, 'dtcScan'>, d: DiagnosticData | null) => s.dtcScan === true || (d?.dtcResults?.length ?? 0) > 0
+const SCAN_FIELDS = ['dtcScan', 'dtcScanStatus', 'dtcScanFinishedAtMs'] as const
+
+/**
+ * Fill in a stored drive from the same drive imported again (owner, 2026-11-14, Q6; ticket 06). Each part on its own:
+ * - the profile (its summary figures, laps, performance runs, thermal record, bookmarks, mode timeline): only when the
+ *   stored drive has none; the stored points are kept;
+ * - the session log: only when the stored drive has none;
+ * - the fault-code scan: when the stored drive has none, or when its fault codes are "not checked" and this import's
+ *   scan answers them (found or none). An answer is never replaced, and never turned back into "not checked".
+ * The id, name, note, tags, import time, points and content hash stay; the derived fields (the warnings flag among
+ * them) are recomputed as an import computes them. Writes only the records that change, in the caller's transaction;
+ * nothing at all when nothing is missing. Restore never comes here: it merges nothing.
+ */
+async function fillIn(tx: IDBPTransaction<unknown, string[], 'readwrite'>, id: string, incoming: Session): Promise<FilledPart[]> {
+  const stored = (await tx.objectStore(DRIVES).get(id)) as DriveRecord | undefined
+  if (!stored) return []
+  const storedTrip = ((await tx.objectStore(POINTS).get(id)) as { trip: TripData | null } | undefined)?.trip ?? null
+  const storedDiag = ((await tx.objectStore(DIAGNOSTICS).get(id)) as { diagnostics: DiagnosticData | null } | undefined)?.diagnostics ?? null
+  const inDiag = incoming.diagnostics ?? null
+  const filled: FilledPart[] = []
+
+  let trip = storedTrip
+  if (storedTrip && incoming.trip && !storedTrip.profile && incoming.trip.profile) {
+    trip = { ...incoming.trip, points: storedTrip.points }
+    filled.push('profile')
+  }
+  const logFill = !hasSessionLog(storedDiag) && hasSessionLog(inDiag)
+  const inCause = split(incoming).drive.warnings.faultCodes
+  const scanFill = hasScan(incoming, inDiag) && stored.warnings?.faultCodes === 'not-checked'
+    && (inCause !== 'not-checked' || !hasScan(stored, storedDiag))
+  if (scanFill) filled.push('fault-code scan')
+  if (logFill) filled.push('session log')
+  if (filled.length === 0) return []
+
+  const logFrom = logFill ? inDiag : storedDiag
+  const codesFrom = scanFill ? inDiag : storedDiag
+  const base = logFrom ?? codesFrom
+  const diagnostics: DiagnosticData | null = base ? { ...base, dtcResults: codesFrom?.dtcResults ?? [] } : null
+  const session = rebuildSession(stored, trip, diagnostics)
+  if (scanFill) {
+    const bag = session as unknown as Record<string, unknown>
+    for (const k of SCAN_FIELDS) {
+      if (incoming[k] !== undefined) bag[k] = incoming[k]
+      else delete bag[k]
+    }
+  }
+  const next = split(session)
+  settle(tx.objectStore(DRIVES).put(next.drive))
+  if (logFill || scanFill) settle(tx.objectStore(DIAGNOSTICS).put(next.diagnostics))
+  if (filled.includes('profile')) settle(tx.objectStore(POINTS).put(next.points))
+  return filled
 }
 
 async function updateDrive(id: string, change: (d: DriveRecord) => DriveRecord): Promise<DriveRecord | null> {
