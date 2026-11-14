@@ -97,7 +97,7 @@ const asyncResult = await page.evaluate(async ([p1]) => {
   window.idbLog = []
   const big = { ...p1, id: 'q-big', name: 'too big', big: 'x'.repeat(8 * 1024 * 1024) }
   try {
-    await window.sapphire.storeImported([{ ...p1, id: 'q-small', name: 'small', trip: { ...p1.trip, points: [] } }, big])
+    await window.sapphire.storeImported([{ ...p1, id: 'q-small', name: 'small', trip: { ...p1.trip, points: p1.trip.points.map((p) => ({ ...p, lat: p.lat + 4 })) } }, big])
     return 'resolved'
   } catch (e) { return `rejected ${e.name}` }
 }, [pre('pre-1', 'Earlier drive', 12)])
@@ -113,7 +113,7 @@ check(JSON.stringify(afterAsync) === JSON.stringify(baseline), 'quota failure: a
 
 const syncResult = await page.evaluate(async ([p2]) => {
   try {
-    await window.sapphire.storeImported([{ ...p2, id: 'c-ok', name: 'ok' }, { ...p2, id: 'c-bad', fn: () => 1, trip: { ...p2.trip, points: [] } }])
+    await window.sapphire.storeImported([{ ...p2, id: 'c-ok', name: 'ok' }, { ...p2, id: 'c-bad', fn: () => 1, trip: { ...p2.trip, points: p2.trip.points.map((p) => ({ ...p, lat: p.lat + 5 })) } }])
     return 'resolved'
   } catch (e) { return `rejected ${e.name}` }
 }, [pre('pre-2', 'Other drive', 13)])
@@ -121,7 +121,7 @@ await page.waitForTimeout(300)
 await ctx.close()
 ;({ ctx, page } = await open('1-batch'))
 const afterSync = await dump(page)
-check(syncResult.startsWith('rejected'), 'clone failure: storeImported rejects')
+check(syncResult === 'rejected DataCloneError', 'clone failure: storeImported rejects with the clone error')
 check(JSON.stringify(afterSync) === JSON.stringify(baseline), 'clone failure: after reopening, records identical to before (no c-ok)')
 await ctx.close()
 
