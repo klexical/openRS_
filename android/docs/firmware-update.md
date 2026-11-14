@@ -25,8 +25,6 @@ firmware/stock/
   partition-table.bin                         ← address 0x8000
   ota_data_initial.bin                        ← address 0xd000
   wican-fw_usb_v420u_beta-01.bin              ← address 0x10000
-
-  wican-fw_usb_v420u_beta-01_flash-package.zip  ← all 4 files zipped
 ```
 
 Latest official releases are always at:

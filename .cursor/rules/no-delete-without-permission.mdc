@@ -1,6 +1,0 @@
----
-description: Never delete files or directories without explicit user permission
-alwaysApply: true
----
-
-NEVER delete, remove, or `git rm` any file or directory (including via `rm`, `rmdir`, `trash`) without the user explicitly saying "yes, delete it". Always state exactly what will be deleted and why, then wait for approval before proceeding.

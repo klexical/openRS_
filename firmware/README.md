@@ -101,8 +101,8 @@ The `--target` flag selects the device profile:
 
 | Target | Device | SoC | Upstream tag | Output binary |
 |--------|--------|-----|-------------|---------------|
-| `usb` (default) | WiCAN USB-C3 | ESP32-C3 | `v4.20u_beta-01` | `openrs-fw-usb_v1.5.bin` |
-| `pro` | WiCAN Pro | ESP32-S3 | `v4.48p` | `openrs-fw-pro_v1.0.bin` |
+| `usb` (default) | WiCAN USB-C3 | ESP32-C3 | `v4.20u_beta-01` | `openrs-fw-usb_v1.61.bin` |
+| `pro` | WiCAN Pro | ESP32-S3 | `v4.48p` | `openrs-fw-pro_v1.2.bin` |
 
 The script will:
 1. Install ESP-IDF v5.2.3 to `firmware/.build/esp-idf` if not already present (~5–15 min, one-time)
@@ -119,12 +119,12 @@ firmware/release/
   bootloader_usb.bin          ← flash at 0x0      (USB build)
   partition-table_usb.bin     ← flash at 0x8000
   ota_data_initial_usb.bin    ← flash at 0xd000
-  openrs-fw-usb_v1.5.bin      ← flash at 0x10000
+  openrs-fw-usb_v1.61.bin     ← flash at 0x10000
 
   bootloader_pro.bin          ← flash at 0x0      (Pro build)
   partition-table_pro.bin     ← flash at 0x8000
   ota_data_initial_pro.bin    ← flash at 0xd000
-  openrs-fw-pro_v1.0.bin      ← flash at 0x10000
+  openrs-fw-pro_v1.2.bin      ← flash at 0x10000
 ```
 
 ### Building both targets
@@ -162,7 +162,7 @@ All endpoints inherit from wican-fw and extend it. Example responses below are i
 ### `GET /status`
 ```json
 {
-  "version": "openrs-fw USB v1.5",
+  "version": "openrs-fw USB v1.61",
   "connected": true,
   "can_bitrate": 500000,
   "battery_mv": 13420,
@@ -314,8 +314,8 @@ firmware/
 │   ├── partitions_openrs_usb.csv      ← 4MB flash, single OTA
 │   └── partitions_openrs_pro.csv      ← 16MB flash, dual OTA
 ├── release/                           ← flash-ready binaries
-│   ├── openrs-fw-usb_v1.5.bin       ← current (USB v1.5)
-│   ├── openrs-fw-pro_v1.0.bin       ← current (PRO v1.0)
+│   ├── openrs-fw-usb_v1.61.bin      ← current (USB v1.61)
+│   ├── openrs-fw-pro_v1.2.bin       ← current (PRO v1.2)
 │   ├── bootloader_usb.bin / bootloader_pro.bin
 │   ├── partition-table_usb.bin / partition-table_pro.bin
 │   ├── ota_data_initial_usb.bin / ota_data_initial_pro.bin
