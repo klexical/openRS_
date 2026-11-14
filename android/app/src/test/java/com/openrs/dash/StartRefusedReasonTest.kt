@@ -5,6 +5,7 @@ import android.net.ConnectivityManager
 import androidx.test.core.app.ApplicationProvider
 import com.openrs.dash.diagnostics.DiagnosticLogger
 import com.openrs.dash.service.CanDataService
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -38,7 +39,7 @@ class StartRefusedReasonTest {
     }
 
     @Before fun fresh() { DiagnosticLogger.sessionStart("test", 0, prefs = null) }
-    @org.junit.After fun destroyServices() { TestServices.destroyAll() }
+    @org.junit.After fun destroyServices() { CanDataService.link.clearManualConnect(); TestServices.destroyAll() }
 
     private fun assertOneWifiReason(lines: List<String>) =
         assertTrue("expected one refused-start line naming Wi-Fi, got $lines", lines.size == 1 && "Wi-Fi" in lines.single())
@@ -68,6 +69,17 @@ class StartRefusedReasonTest {
         while (refused().isEmpty() && System.currentTimeMillis() < deadline) Thread.sleep(50)
         assertOneWifiReason(refused())
         assertTrue(refused().single(), refused().single().startsWith("not started (automatic start): not an adapter network yet:"))
+    }
+
+    @Test fun `a held start on the Wi-Fi callback path writes the held line, once for the network (A3)`() {
+        connectionMethod("WIFI"); noNetwork()
+        controller.create()
+        CanDataService.link.requireManualConnect()
+        DiagnosticLogger.sessionStart("test", 0, prefs = null)
+        CanDataService.probeOverride = { com.openrs.dash.can.ProbeOutcome.NoAnswer("the adapter did not answer on this Wi-Fi network", 0) }
+        (field("wifiCallback") as ConnectivityManager.NetworkCallback).onAvailable(ShadowNetwork.newInstance(7))
+        Thread.sleep(300)
+        assertEquals(listOf("auto-start held: demo mode"), refused())
     }
 
     @Test fun `a manual Connect refused with Bluetooth off writes its reason`() {

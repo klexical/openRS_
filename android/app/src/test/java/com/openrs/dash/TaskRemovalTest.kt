@@ -150,9 +150,11 @@ class TaskRemovalTest {
         attempt()
         service.onTaskRemoved(null)
         assertTrue(link.manualConnectRequired)
+        adapterAnswers()   // #324: the adapter would answer, so OFF below is the hold holding, not a silent probe
         val cb = CanDataService::class.java.getDeclaredField("wifiCallback").apply { isAccessible = true }.get(service) as ConnectivityManager.NetworkCallback
         cb.onAvailable(org.robolectric.shadows.ShadowNetwork.newInstance(7))
         org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        assertFalse("the hold keeps the start back", until(1_500) { link.phase == LinkPhase.CONNECTING })
         assertEquals(LinkPhase.OFF, link.phase)
     }
 
@@ -189,9 +191,10 @@ class TaskRemovalTest {
     @Test fun `the next launch auto-connects with a new service and nothing saved`() {
         attempt()
         service.onTaskRemoved(null)
+        adapterAnswers()   // #324: the adapter would answer, so OFF below is the hold holding, not a silent probe
         val next = TestServices.create()
+        assertFalse("the hold still covers the service's own start", until(1_500) { link.phase == LinkPhase.CONNECTING })
         assertEquals("the hold still covers the service's own start", LinkPhase.OFF, link.phase)
-        adapterAnswers()
         next.onActivityBound()
         assertTrue("auto-connects once the adapter answers", until { link.phase == LinkPhase.CONNECTING })
         next.stopConnection(com.openrs.dash.service.LinkStopReason.USER_DISCONNECT)

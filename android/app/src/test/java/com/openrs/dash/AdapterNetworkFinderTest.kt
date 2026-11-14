@@ -67,7 +67,8 @@ class AdapterNetworkFinderTest {
         val refused = r.refused()
         assertEquals(2, refused.size)
         assertTrue(refused[0], refused[0].startsWith("not started (automatic start): not an adapter network yet:"))
-        assertEquals("not started (automatic start): no adapter network: gave up after 60 s (13 probes)", refused[1])
+        assertEquals("not started (automatic start): no adapter network: gave up after 60 s (13 probes; the last: the adapter did not " +
+            "answer on this Wi-Fi network)", refused[1])
         assertEquals(13, r.logs.count { it.first == AdapterNetworkFinder.EVENT_PROBE })
         assertNull(r.finder.adapterNetwork)
     }
@@ -107,5 +108,19 @@ class AdapterNetworkFinderTest {
         finder.networkAvailable("home"); finder.networkAvailable("adapter"); runCurrent()
         assertEquals(listOf("adapter"), found)
         assertEquals("adapter", finder.adapterNetwork)
+    }
+
+    @Test fun `an answer that lands as its network is lost is closed, never handed over (C1)`() = runTest {
+        val transport = FakeTransport()
+        val found = mutableListOf<String>()
+        lateinit var finder: AdapterNetworkFinder<String>
+        finder = AdapterNetworkFinder(
+            scope = backgroundScope, clock = { testScheduler.currentTime },
+            probe = { n -> finder.networkLost(n); ProbeOutcome.Answered(transport, "CR", 30) },   // the loss lands mid-probe
+            mayProbe = { true }, onFound = { n, _, _ -> found += n }, log = { _, _ -> },
+        )
+        finder.networkAvailable("wifi-1"); runCurrent()
+        assertTrue("not handed over", found.isEmpty())
+        assertTrue("closed", transport.closed)
     }
 }

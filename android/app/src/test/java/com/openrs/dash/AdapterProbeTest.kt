@@ -99,10 +99,31 @@ class AdapterProbeTest {
         noHost(o)
     }
 
+    @Test fun `a first line that is not the adapter's (a banner) does not pass`() {
+        val port = server { s -> s.getOutputStream().write("SSH-2.0-OpenSSH_9.6\r\n".toByteArray()); Thread.sleep(2_000) }
+        val o = probe(tcp(port), overTcp = true)
+        assertTrue("$o", o is ProbeOutcome.NoAnswer && o.reason == "the adapter did not answer on this Wi-Fi network")
+    }
+
+    @Test fun `a host name the network cannot resolve keeps its class, and the message is never printed`() {
+        val t = TcpSlcanTransport("adapter.invalid", 1, resolve = { throw java.net.UnknownHostException("adapter.invalid: secret detail") })
+        val o = probe(t, overTcp = true)
+        assertTrue("$o", o is ProbeOutcome.NoAnswer && o.reason == "could not connect on this Wi-Fi network: UnknownHostException")
+        assertFalse("$o", "secret" in (o as ProbeOutcome.NoAnswer).reason || "adapter.invalid" in o.reason)
+    }
+
+    @Test fun `an SLCAN frame as the first line passes`() {
+        val port = server { s -> s.readUntil("\r"); s.getOutputStream().write("t09080000C1FF617D0000\r".toByteArray()); Thread.sleep(2_000) }
+        val o = probe(tcp(port), overTcp = true)
+        assertTrue("$o", o is ProbeOutcome.Answered && o.answer == "frame")
+        (o as ProbeOutcome.Answered).transport.close()
+    }
+
     @Test fun `the answer kinds name the Pro's first line, never the line itself`() {
         assertEquals("CR", AdapterProbe.answerKind(""))
         assertEquals("BEL", AdapterProbe.answerKind("\u0007"))
         assertEquals("OPENRS", AdapterProbe.answerKind("OPENRS:1.4"))
-        assertEquals("line", AdapterProbe.answerKind("t0F88010203040506070"))
+        assertEquals("frame", AdapterProbe.answerKind("t0F88010203040506070"))
+        assertEquals(null, AdapterProbe.answerKind("SSH-2.0-OpenSSH_9.6"))
     }
 }

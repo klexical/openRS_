@@ -21,9 +21,11 @@ sealed class ProbeOutcome {
  * rule A). A TCP accept is not enough: a captive portal, a transparent proxy or a home router at the same address accepts
  * the connection too.
  *  - MeatPi USB (WebSocket): the transport's open passes only on the `101` upgrade reply.
- *  - MeatPi Pro (TCP): the SLCAN init is written and the first line read. A CR acknowledgement (an empty line), a BEL (the
- *    SLCAN error reply, still the adapter answering), an `OPENRS:` reply or a frame all count. Whether the Pro acknowledges
- *    `C\r` with a CR is not established; the probe's event names the kind of answer, so an export shows it.
+ *  - MeatPi Pro (TCP): the SLCAN init is written and the first line read. Only a CR acknowledgement (an empty line), a BEL
+ *    (the SLCAN error reply, still the adapter answering), an `OPENRS:` reply or an SLCAN frame counts; any other line (a
+ *    banner, a web page) does not. Whether the Pro acknowledges `C\r` with a CR is #324's (the owner's parked check); the
+ *    probe's event names the kind of answer, so an export shows it. The connection then sends its own init: the Pro sees it
+ *    twice on a hand-over.
  * The whole probe is bounded by [limitMs]: at the limit it returns, and the transport is closed, which ends a blocked
  * connect or read.
  */
@@ -39,7 +41,8 @@ object AdapterProbe {
                 transport.open()
                 if (slcanOverTcp) {
                     transport.writeLine(ObdConstants.SLCAN_INIT)
-                    answerKind(transport.readLine() ?: throw java.io.IOException("closed before an answer"))
+                    val line = transport.readLine() ?: throw NoProtocolAnswer("closed before an answer")
+                    answerKind(line) ?: throw NoProtocolAnswer("a first line that is not the adapter's")
                 } else "101"
             } catch (e: Throwable) { e }   // also an Error from a socket factory: a refused probe, never a silent death
         }
@@ -55,29 +58,40 @@ object AdapterProbe {
         }
     }
 
-    /** The kind of the Pro's first line, for the probe event: never the line itself. */
-    fun answerKind(line: String): String = when {
+    /** The kind of the Pro's first line, for the probe event (never the line itself); null when it is not the adapter's. */
+    fun answerKind(line: String): String? = when {
         line.isEmpty() -> "CR"
         '\u0007' in line -> "BEL"
         line.startsWith("OPENRS:") -> "OPENRS"
-        else -> "line"
+        SLCAN_FRAME.matches(line) -> "frame"
+        else -> null
     }
 
+    /** An SLCAN data or remote frame: t / r (11-bit) or T / R (29-bit), the ID, a DLC, and hex (a timestamp suffix allowed). */
+    private val SLCAN_FRAME = Regex("[tr][0-9A-Fa-f]{3}[0-8][0-9A-Fa-f]{0,20}|[TR][0-9A-Fa-f]{8}[0-8][0-9A-Fa-f]{0,20}")
+
+    /** The probe's own "no protocol answer": the line closed before one, or the first line was not the adapter's. */
+    private class NoProtocolAnswer(what: String) : java.io.IOException(what)
+
     /**
-     * The reason for a probe with no protocol reply. A blocked connection is told apart from a silent one (QA's W3: an
-     * always-on VPN in lockdown can block a socket bound to the Wi-Fi network). The error texts a lockdown VPN produces are
-     * not checked; any other error names its class only.
+     * The reason for a probe with no protocol reply. "Did not answer" only for a timeout and the no-protocol-answer errors
+     * (the probe's own, the WebSocket's "Upgrade failed", a stream closed). A blocked connection is told apart from a silent
+     * one (QA's W3: an always-on VPN in lockdown can block a socket bound to the Wi-Fi network; the error texts it produces
+     * are not checked). Any other error names its class only (a host name the network cannot resolve:
+     * UnknownHostException). An error's message is read to classify it, never printed.
      */
     fun reasonFor(e: Throwable?, timedOut: Boolean): String {
         val msg = e?.message.orEmpty()
         return when {
-            timedOut || e is SocketTimeoutException -> "the adapter did not answer on this Wi-Fi network"
+            timedOut || e is SocketTimeoutException || e is NoProtocolAnswer -> DID_NOT_ANSWER
+            e is java.io.IOException && (msg.startsWith("Upgrade failed") || msg == "Stream closed") -> DID_NOT_ANSWER
             BLOCKED.any { it in msg } -> "the connection was blocked on this Wi-Fi network (a VPN or a network policy)"
             e is ConnectException || "ECONNREFUSED" in msg -> "the connection was refused on this Wi-Fi network"
-            e is java.io.IOException -> "the adapter did not answer on this Wi-Fi network"
             else -> "could not connect on this Wi-Fi network: ${e?.javaClass?.simpleName ?: "unknown"}"
         }
     }
+
+    private const val DID_NOT_ANSWER = "the adapter did not answer on this Wi-Fi network"
 
     private val BLOCKED = listOf("EACCES", "EPERM", "ENETUNREACH", "Permission denied", "Network is unreachable")
 }

@@ -25,7 +25,8 @@ can/
   SlcanTransport.kt       — Transport interface: open/readLine/writeLine/close; AlreadyOpenTransport (the adapter network's
                             probe transport, handed to the first attempt, #324)
   AdapterProbe.kt         — one probe of the adapter over one Wi-Fi network (#324): the adapter's own protocol reply
-                            (WebSocket 101; the Pro's first line after the SLCAN init), 2 s; reasons never name the host
+                            (WebSocket 101; the Pro's CR / BEL / OPENRS: / frame after the SLCAN init), 2 s; reasons
+                            never name the host
   TcpSlcanTransport.kt    — MeatPi Pro: raw TCP 192.168.0.10:35000 (socket source + lookup: the adapter network's, #324)
   WebSocketSlcanTransport.kt — MeatPi USB: WebSocket ws://192.168.80.1:80/ws (socket source + lookup as TCP)
   BleSlcanTransport.kt    — BLE GATT transport: connects and forwards BluetoothGatt callbacks to BleGattCore; GattLink over
@@ -143,6 +144,7 @@ service/
                             BLE-gated auto-reconnect; owns connection lifecycle
   AdapterNetworkFinder.kt — finds the adapter network among the joined Wi-Fi networks: probes each, re-probes every 5 s
                             for up to 60 s, hands the open transport over; generic over the network type (JVM tests)
+                            + HandOver: the probe's open transport, closed unless a connection takes it
                             Transport selected by connectionMethod (WiFi vs BLE) + adapterType (TCP vs WebSocket)
                             Reports link events to the recorder (connection lost / back, engine running, auto-record switched, demo
                             entered) and applies no recording rule itself (#316)
