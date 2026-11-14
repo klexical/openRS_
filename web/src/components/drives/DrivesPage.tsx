@@ -16,6 +16,8 @@ import { groupByMonth, lapTime, listStart, matches } from './listing'
 const CompareScreen = lazyChunk(() => import('../panels/ComparePanel').then((m) => m.ComparePanel), 'Compare')
 
 type Editing = { id: string; kind: 'rename' | 'note' | 'tags' } | null
+/** Where focus goes when the "Delete selected" dialog is cancelled (not a drive id). */
+const DELETE_SELECTED = '\u0000delete-selected'
 
 /** Home (#384 ticket 03): every stored drive, newest first, grouped by month. */
 export function DrivesPage() {
@@ -48,9 +50,15 @@ export function DrivesPage() {
   const [confirm, setConfirm] = useState<string[] | null>(null)     // the drives a delete would remove
   const [message, setMessage] = useState<string | null>(null)
   const buttons = useRef<Record<string, HTMLButtonElement | null>>({})
+  const deleteSelected = useRef<HTMLButtonElement>(null)
   // focus goes back to a row's menu button after its menu, editor or dialog closes: noted here, done after the render
   const focusBack = useRef<string | null>(null)
-  useEffect(() => { if (focusBack.current) { buttons.current[focusBack.current]?.focus(); focusBack.current = null } })
+  useEffect(() => {
+    if (!focusBack.current) return
+    // the "Delete selected" button after its dialog is cancelled (QA, delivery B review); else a row's menu button
+    ;(focusBack.current === DELETE_SELECTED ? deleteSelected.current : buttons.current[focusBack.current])?.focus()
+    focusBack.current = null
+  })
   const setFocusMenuOf = (id: string) => { focusBack.current = id }
   const nameOf = (id: string) => drives.find((d) => d.id === id)?.name ?? ''
   const menuId = menuFor?.id ?? null
@@ -123,7 +131,7 @@ export function DrivesPage() {
       {message && <p role="alert" className="a-notice">{message}</p>}
       {confirm && (
         <ConfirmDialog title={confirm.length === 1 ? `Delete ${nameOf(confirm[0])}?` : `Delete ${confirm.length} drives?`}
-          confirm="Delete" onCancel={() => { const one = confirm.length === 1 ? confirm[0] : null; setConfirm(null); if (one) setFocusMenuOf(one) }}
+          confirm="Delete" onCancel={() => { setFocusMenuOf(confirm.length === 1 ? confirm[0] : DELETE_SELECTED); setConfirm(null) }}
           onConfirm={() => void doDelete(confirm)}>
           {confirm.length > 1 && <ul className="a-confirm-list">{confirm.map((id) => <li key={id}>{nameOf(id)}</li>)}</ul>}
           <p>{confirm.length === 1 ? 'This removes the drive, its points and its log' : 'This removes these drives, their points and their logs'} from
@@ -159,7 +167,7 @@ export function DrivesPage() {
               <span>{plural(ticked.length, 'drive')} ticked</span>
               {ticked.length >= 2 && (
                 <>
-                  <button type="button" className="a-btn danger" onClick={() => setConfirm(ticked)}>Delete selected ({ticked.length})</button>
+                  <button ref={deleteSelected} type="button" className="a-btn danger" onClick={() => setConfirm(ticked)}>Delete selected ({ticked.length})</button>
                   <button type="button" className="a-btn" disabled={ticked.length > 4} aria-describedby={ticked.length > 4 ? 'compare-limit' : undefined}
                     onClick={() => { setCompare(ticked); setCompareOpen(true) }}>Compare ({ticked.length})</button>
                   {ticked.length > 4 && <span id="compare-limit" className="a-meta">Compare takes two to four drives.</span>}
@@ -177,7 +185,7 @@ export function DrivesPage() {
           {groups.map((g) => (
             <section key={g.key} className="a-month" aria-labelledby={`month-${g.key}`}>
               <h2 id={`month-${g.key}`}>{g.label}</h2>
-              <ul className="a-rows">{g.drives.map((d) => <DriveRow key={d.id} {...rowProps(d)} isNew={newIds.includes(d.id)} />)}</ul>
+              <ul className="a-rows" role="list">{g.drives.map((d) => <DriveRow key={d.id} {...rowProps(d)} isNew={newIds.includes(d.id)} />)}</ul>
             </section>
           ))}
         </>

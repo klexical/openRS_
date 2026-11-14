@@ -473,6 +473,10 @@ async function fillIn(tx: IDBPTransaction<unknown, string[], 'readwrite'>, id: s
   if (logFill) filled.push('session log')
   if (filled.length === 0) return []
 
+  // E1 (QA, ticket 06): a log fill takes the incoming diagnostics whole, except the stored fault codes. So a stored
+  // record whose detail held no log but did hold nrcSuppression, didInventory or sessionDurationMs gets those from the
+  // incoming file. Safe: they come from the same detail file as the log, so a record without a log has them only as
+  // an older parser's empty values; for the same drive's fuller export they are the same data or more.
   const logFrom = logFill ? inDiag : storedDiag
   const codesFrom = scanFill ? inDiag : storedDiag
   const base = logFrom ?? codesFrom

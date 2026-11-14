@@ -24,12 +24,14 @@ export function ImportStatus() {
           <p data-import-stage>File {Math.min(p.done + 1, p.total)} of {p.total}: {p.file} · {p.stage}</p>
         </>
       )}
+      {(job.notes ?? []).map((n) => <p key={n} className="a-failed">{n}</p>)}
       {!job.running && (
         <>
           <p role="status">Done. Imported {job.storedCount === 1 ? '1 drive' : `${job.storedCount} drives`}.</p>
-          <ul className="a-import-lines">
-            {job.results.map((r) => (
-              <li key={r.file + (r.error ?? '')}>
+          {/* role="list": WebKit stops announcing a list styled without bullets (QA, delivery B review) */}
+          <ul className="a-import-lines" role="list">
+            {job.results.map((r, i) => (
+              <li key={i}>
                 {r.error ? <span className="a-failed">{r.file}: {r.error}</span>
                   : r.already.map((a) => (
                     <span key={a.existingId}>{r.file}: already imported <a href={hrefOf({ place: 'drive', id: a.existingId })}>{nameOf(a.existingId, a.name)}</a>

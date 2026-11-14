@@ -10,6 +10,8 @@ export interface ImportJob {
   results: import('../lib/importFiles').FileResult[]
   /** Drives stored by this import, in total. */
   storedCount: number
+  /** Lines about files not taken while it ran (a drop during an import; ticket 06 fix round). */
+  notes?: string[]
 }
 
 /** The views of one drive, reached from the drive (#384 ticket 03). Kept in memory: the address names the drive only. */
@@ -41,6 +43,10 @@ interface SapphireState {
   filterWarnings: boolean
   filterLaps: boolean
   setFilters: (f: { warnings?: boolean; laps?: boolean }) => void
+
+  /** The drive whose read failed (storage did not answer): its page says so (fix round); null when none. */
+  openFailedId: string | null
+  setOpenFailedId: (id: string | null) => void
 
   /** A plain message on the list (an address naming a drive that is not stored); null when none. */
   listNotice: string | null
@@ -105,6 +111,8 @@ export const useStore = create<SapphireState>((set) => ({
   filterWarnings: false,
   filterLaps: false,
   setFilters: (f) => set((s) => ({ filterWarnings: f.warnings ?? s.filterWarnings, filterLaps: f.laps ?? s.filterLaps })),
+  openFailedId: null,
+  setOpenFailedId: (id) => set({ openFailedId: id }),
   listNotice: null,
   setListNotice: (text) => set({ listNotice: text }),
 

@@ -20,7 +20,8 @@ const yieldToPage = () => new Promise<void>((r) => setTimeout(r, 0))
 export async function importFiles(files: File[], onProgress: (p: ImportProgress) => void): Promise<FileResult[]> {
   const results: FileResult[] = []
   for (const [i, file] of files.entries()) {
-    const step = (stage: ImportStage) => onProgress({ done: i, total: files.length, file: file.name, stage })
+    let stage: ImportStage = 'reading'
+    const step = (s: ImportStage) => { stage = s; onProgress({ done: i, total: files.length, file: file.name, stage: s }) }
     const result: FileResult = { file: file.name, stored: [], already: [] }
     try {
       if (!/\.zip$/i.test(file.name)) throw new Error('not a .zip file')
@@ -38,13 +39,29 @@ export async function importFiles(files: File[], onProgress: (p: ImportProgress)
       result.stored = outcome.stored
       result.already = outcome.alreadyImported
     } catch (err) {
-      result.error = err instanceof Error && err.message ? err.message : 'it could not be imported'
+      result.error = plainWords(err, stage)
     }
     results.push(result)
     onProgress({ done: i + 1, total: files.length, file: file.name, stage: 'storing' })
     await yieldToPage()
   }
   return results
+}
+
+/**
+ * The reason shown for a file (QA, delivery B review: plain words, never the engine's own text). Sapphire's own errors
+ * (the parser's, "nothing could be read", the checks above) are already plain; a failure of the browser's storage is
+ * named by its kind, and its own text goes to the console only.
+ */
+function plainWords(err: unknown, stage: ImportStage): string {
+  const name = (err as { name?: unknown } | null)?.name
+  if (stage === 'storing' && (err instanceof DOMException || name === 'QuotaExceededError')) {
+    console.warn('[Sapphire] Storing an import failed:', err)
+    return name === 'QuotaExceededError'
+      ? 'the browser has no room left to store it; nothing of this file was stored'
+      : 'the browser could not store it; nothing of this file was stored'
+  }
+  return err instanceof Error && err.message ? err.message : 'it could not be imported'
 }
 
 async function isSapphireBackup(zip: JSZip): Promise<boolean> {

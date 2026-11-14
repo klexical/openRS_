@@ -18,6 +18,7 @@ export function DriveFrame({ id }: { id: string }) {
   const record = useStore((s) => s.drives.find((d) => d.id === id))
   const open = useStore((s) => (s.activeSession?.id === id ? s.activeSession : null))
   const view = useStore((s) => s.driveView)
+  const failed = useStore((s) => s.openFailedId === id)
   const setView = useStore((s) => s.setDriveView)
   const name = record?.name ?? open?.name
   const notChecked = record ? notCheckedLine(record) : null   // #384 ticket 04
@@ -28,6 +29,9 @@ export function DriveFrame({ id }: { id: string }) {
         <h1>{name ?? 'Opening the drive…'}</h1>
         {notChecked && <p className="a-notchecked">{notChecked}</p>}
       </header>
+      {failed ? (
+        <p role="alert" className="a-notice">Couldn't open this drive. Try again. <a href={hrefOf({ place: 'drives' })}>Back to the list</a></p>
+      ) : (<>
       <nav className="a-views" aria-label="Views of this drive">
         {VIEWS.map((v) => (
           <button key={v.id} type="button" className="a-btn" aria-pressed={view === v.id} onClick={() => setView(v.id)}>{v.label}</button>
@@ -38,6 +42,7 @@ export function DriveFrame({ id }: { id: string }) {
           <Views view={view} />
         </ErrorBoundary>
       </div>
+      </>)}
     </div>
   )
 }

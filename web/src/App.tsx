@@ -43,8 +43,9 @@ export default function App() {
 
   // The open drive's points and log are read when it is opened and dropped when it is left (#384)
   useEffect(() => {
-    const { setActiveSession } = useStore.getState()
+    const { setActiveSession, setOpenFailedId } = useStore.getState()
     setActiveSession(null)
+    setOpenFailedId(null)
     if (!activeSessionId) return
     let current = true
     loadDrive(activeSessionId)
@@ -67,7 +68,11 @@ export default function App() {
           }
         }
       })
-      .catch((err) => console.error('[Sapphire] Failed to open the drive:', err))
+      .catch((err) => {
+        // a failed read is not "not stored" (ticket 03): the drive's page says it could not be opened (fix round)
+        console.error('[Sapphire] Failed to open the drive:', err)
+        if (current) useStore.getState().setOpenFailedId(activeSessionId)
+      })
     return () => { current = false }
   }, [activeSessionId])
 
