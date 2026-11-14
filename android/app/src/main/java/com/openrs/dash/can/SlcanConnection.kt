@@ -177,12 +177,20 @@ class SlcanConnection(
     @Volatile private var _ledgerFor: ((Int) -> PcmRequestLedger)? = null
     private val possiblyDeliveredNoted = java.util.concurrent.atomic.AtomicBoolean(false)
 
-    /** A frame write outside the tracked requests (flow control, a DTC clear, a freeze-frame read): its `# TX` line too (#209). */
+    /**
+     * A frame write outside the tracked requests (flow control, a DTC clear, a freeze-frame read): its `# TX` line too, with
+     * what the write established (#209). Through [SlcanTransport.write], never `writeLine`: on Bluetooth `writeLine` returns
+     * normally for a possibly delivered write and drops that outcome.
+     */
     private suspend fun writeLogged(transport: SlcanTransport, frame: String) {
         val at = DiagnosticLogger.txStamp()
-        try { transport.writeLine(frame) } catch (e: Exception) { DiagnosticLogger.logTxLine(frame, at, failureKind(e)); throw e }
-        DiagnosticLogger.logTxLine(frame, at, DiagnosticLogger.WRITE_SENT)
+        val outcome = try { transport.write(frame) } catch (e: Exception) { DiagnosticLogger.logTxLine(frame, at, failureKind(e)); throw e }
+        DiagnosticLogger.logTxLine(frame, at, outcomeKind(outcome))
     }
+
+    /** What a write that returned established, in the link-integrity counters' words (#248, #209). */
+    private fun outcomeKind(outcome: WriteOutcome): String =
+        if (outcome == WriteOutcome.POSSIBLY_DELIVERED) DiagnosticLogger.WRITE_POSSIBLY_DELIVERED else DiagnosticLogger.WRITE_SENT
 
     /** What a write that threw established, in the link-integrity counters' words (#253); a cancelled write may have gone out. */
     private fun failureKind(e: Exception): String = when {
@@ -207,7 +215,7 @@ class SlcanConnection(
      * one bounded line per connection the first time a write comes back possibly delivered (#248).
      */
     private fun noteWrite(frame: String, atMs: Long, outcome: WriteOutcome) {
-        val kind = if (outcome == WriteOutcome.POSSIBLY_DELIVERED) DiagnosticLogger.WRITE_POSSIBLY_DELIVERED else DiagnosticLogger.WRITE_SENT
+        val kind = outcomeKind(outcome)
         DiagnosticLogger.logTxLine(frame, atMs, kind)
         DiagnosticLogger.countWrite(kind)
         if (outcome == WriteOutcome.POSSIBLY_DELIVERED && possiblyDeliveredNoted.compareAndSet(false, true)) {
@@ -849,8 +857,8 @@ class SlcanConnection(
             suspend fun send(module: String, stage: DtcStage, frame: String): Boolean {
                 val at = DiagnosticLogger.txStamp()
                 return try {
-                    transport.writeLine(frame)
-                    DiagnosticLogger.logTxLine(frame, at, DiagnosticLogger.WRITE_SENT)
+                    val outcome = transport.write(frame)                          // write, not writeLine: keeps the outcome (#209)
+                    DiagnosticLogger.logTxLine(frame, at, outcomeKind(outcome))
                     true
                 } catch (e: Exception) {
                     DiagnosticLogger.logTxLine(frame, at, failureKind(e))         // #209: a failed write is a line too, never "sent"

@@ -50,6 +50,8 @@ can/
                             on its own coroutine (×3, give-up 13 s, late replies accepted, #220); DTC frames diverted by
                             service ID (#215)
                             Command response channel routes +FRS: lines separately from SLCAN frames
+                            Every frame write is a `# TX` line in the SLCAN log with what `write()` established
+                            (noteWrite / noteWriteFailure for tracked requests, writeLogged for the rest; #209)
   AdapterState.kt         — Disconnected / Connecting / Connected / Reconnecting / Idle / Error (sealed, `label` = fixed
                             names for logs — R8 renames the classes) + LinkPhase (OFF/CONNECTING/CONNECTED/RECONNECTING/FAILED)
   SlcanParser.kt          — SLCAN frame tokenizer ('t'=standard, 'T'=extended); exact DLC × 2 data (+4 only when timestamped)

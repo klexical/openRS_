@@ -118,7 +118,9 @@ paths:
   reply can stand in the file before the request line that is earlier than it: order by the time field, never by line
   order (QA's T1; a reply that arrives while a Bluetooth write is still returning would otherwise read as earlier than its
   request). The result is the link-integrity counters' own word (`sent`, `possiblyDelivered`, `notSent`,
-  `deliveryUnknown`, `otherFailure`); a failed write is a line too, never `sent`. The SLCAN init, `OPENRS?` and `AT+FRS`
+  `deliveryUnknown`, `otherFailure`); a failed write is a line too, never `sent`. The result comes from
+  `SlcanTransport.write`, never `writeLine`: on Bluetooth `writeLine` returns normally for a possibly delivered (GATT 13)
+  write and drops that outcome (`RequestLogTest`). The SLCAN init, `OPENRS?` and `AT+FRS`
   lines never are TX lines (only `t` frames). Every tracked write logs through `noteWrite` / `noteWriteFailure`, every other
   frame write through `writeLogged`: a new write site uses one of them. Request lines share the 2,000,000-line cap with
   received frames; the lines dropped at it are counted (`slcanLinesDropped`, LOG LIMITS). Our readers match frame lines

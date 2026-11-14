@@ -123,6 +123,27 @@ class RequestLogTest {
     }
 
     /**
+     * A write the adapter reports as possibly delivered (Bluetooth GATT 13) reads so on every path, never `sent`: the
+     * freeze-frame request goes through the untracked-write helper, the DTC scan request through the scan's own send.
+     * On Bluetooth `writeLine` returns normally for such a write and drops its outcome, so a path that logs from
+     * `writeLine` would call it sent.
+     */
+    @Test fun `a possibly delivered freeze-frame or DTC scan request is never logged as sent`() = runTest {
+        val pd = { f: String -> if (f.contains("031904FF") || f.contains("031902FF")) WriteOutcome.POSSIBLY_DELIVERED else WriteOutcome.SENT }
+        val conn = connect(Adapter(outcome = pd), rpm = 0.0)
+        advanceTimeBy(100L)
+        val pcm = com.openrs.dash.diagnostics.DtcScanner.MODULES.first { it.name == "PCM" }
+        backgroundScope.launch { conn.performFreezeFrameIdentification(pcm) }
+        advanceTimeBy(5_000L)
+        backgroundScope.launch { com.openrs.dash.diagnostics.DtcScanner.runScan(conn, listOf(pcm)) { _, _ -> } }
+        advanceTimeBy(10_000L)
+        val l = tx("7E0")
+        assertTrue("freeze-frame request: $l", l.any { it.contains("#031904FF") && it.endsWith(" possiblyDelivered") })
+        assertTrue("DTC scan request: $l", l.any { it.contains("#031902FF") && it.endsWith(" possiblyDelivered") })
+        assertTrue("never sent: $l", l.none { (it.contains("#031904FF") || it.contains("#031902FF")) && it.endsWith(" sent") })
+    }
+
+    /**
      * QA's T1, with real threads: the reply is read while the write is still returning (it sleeps 40 ms after the reply
      * is in); the request's time must not be later than its reply's. The DID prober's requests go through the same
      * logging as the polls, and start at once (the PCM poller waits 20 s).
@@ -153,8 +174,21 @@ class RequestLogTest {
         assertTrue(log().toString(), log().any { it.startsWith("# TX ") && it.contains("7E0#0322F40D00000000") })
     }
 
-    @Test fun `a line that is not a CAN frame (OPENRS?, AT+FRS, the SLCAN init) is never a TX line`() {
-        listOf("OPENRS?\r", "AT+FRS=MODE,S\r", "C\rS6\rO\r").forEach { DiagnosticLogger.logTxLine(it) }
+    /** The mask itself, on a request line: no request carries a VIN today, so this pins the defence, with a synthetic VIN. */
+    @Test fun `a request line holding a run of the known VIN is masked like a received frame`() {
+        val vin = "TESTVIN0123456789"
+        DiagnosticLogger.logFrame(0x123, byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8), VehicleState(vin = vin), "", null)
+        val run = vin.substring(4, 12).toByteArray(Charsets.US_ASCII).joinToString("") { "%02X".format(it) }   // "VIN01234"
+        DiagnosticLogger.logTxLine("t7E08${run}\r")
+        val l = log().filter { it.startsWith("# TX ") }
+        assertEquals(l.toString(), 1, l.size)
+        assertTrue("masked: $l", l[0].contains("7E0#0000000000000000 sent"))
+        assertTrue("no VIN bytes: $l", !l[0].contains(run))
+    }
+
+    /** Only `t` frames: an SLCAN remote frame (`r`, no data) is the one other line whose ID and data would parse. */
+    @Test fun `a line that is not a standard data frame (OPENRS?, AT+FRS, the SLCAN init, extended and remote frames) is never a TX line`() {
+        listOf("OPENRS?\r", "AT+FRS=MODE,S\r", "C\rS6\rO\r", "T18DAF11080322F40D00000000\r", "r7E08\r").forEach { DiagnosticLogger.logTxLine(it) }
         assertEquals(log().toString(), 0, log().count { it.startsWith("# TX") })
     }
 }
