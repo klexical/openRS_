@@ -21,7 +21,7 @@ async function zipOf(name: string, files: [string, string][]): Promise<File> {
   for (const [n, text] of files) zip.file(n, text)
   return new File([await zip.generateAsync({ type: 'blob' })], name, { type: 'application/zip' })
 }
-const single = (n: number, name = `drive-${n}.zip`) => zipOf(name, [[`drive_2096010${n}_120000.csv`, csv(n)]])
+const single = (n: number, name = `drive-${n}.zip`) => zipOf(name, [[`drive_invented_${n}.csv`, csv(n)]])
 
 async function boot() {
   window.history.replaceState(null, '', '/')
@@ -103,21 +103,21 @@ describe('#384 ticket 06: Import is an action', () => {
 
   it('three files, the second damaged: two drives stored, the second named with its file and reason', async () => {
     const { useStore } = await start()
-    const bad = await zipOf('damaged.zip', [['drive_20960102_120000.csv', BAD_ROW]])
+    const bad = await zipOf('damaged.zip', [['drive_invented_damaged.csv', BAD_ROW]])
     await choose([await single(1), bad, await single(3)])
     await done()
     expect(useStore.getState().drives).toHaveLength(2)
-    expect(status().textContent).toContain('damaged.zip: CSV drive_20960102_120000.csv row 4: expected 5 fields, found 6')
+    expect(status().textContent).toContain('damaged.zip: CSV drive_invented_damaged.csv row 4: expected 5 fields, found 6')
     expect(window.location.hash).toBe('#/')                                         // two stored: the list, the failure kept in view
   })
 
   it('inside one ZIP all of it is stored or none of it: a batch with one bad drive stores nothing', async () => {
     const { useStore } = await start()
-    const batch = await zipOf('batch.zip', [['drive_1_20960101_120000.csv', csv(1)], ['drive_2_20960101_130000.csv', BAD_ROW]])
+    const batch = await zipOf('batch.zip', [['drive_invented_batch_1.csv', csv(1)], ['drive_invented_batch_2.csv', BAD_ROW]])
     await choose([batch])
     await done()
     expect(useStore.getState().drives).toHaveLength(0)
-    expect(status().textContent).toMatch(/batch\.zip: CSV drive_2_20960101_130000\.csv row 4/)
+    expect(status().textContent).toMatch(/batch\.zip: CSV drive_invented_batch_2\.csv row 4/)
   })
 
   it('a file that is not a ZIP, and a Sapphire backup, are named with a reason', async () => {
@@ -171,7 +171,7 @@ describe('#384 ticket 06: Import is an action', () => {
     await waitFor(() => expect(useStore.getState().activeSession?.id).toBe(id))
     expect(useStore.getState().activeSession?.diagnostics ?? null).toBeNull()
     // the same drive again, now with its session log: dropped on the drive's own page
-    const withLog = await zipOf('second.zip', [['drive_20960105_120000.csv', csv(5)], ['diagnostic_detail_20960105_120000.json',
+    const withLog = await zipOf('second.zip', [['drive_invented_5.csv', csv(5)], ['diagnostic_detail_invented.json',
       JSON.stringify({ sessionEvents: [{ ts: 0, type: 'SESSION', message: 'Started' }, { ts: 1, type: 'STATE', message: 'Up' }, { ts: 2, type: 'STATE', message: 'Polling' }] })]])
     await drop(document.querySelector('main')!, [withLog])
     await done()
