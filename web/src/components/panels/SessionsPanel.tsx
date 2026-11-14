@@ -6,6 +6,7 @@ import { fmtDateShort, fmtNumber, fmtDuration } from '../../lib/format'
 import { deleteDrives, renameDrive, setDriveTags } from '../../lib/storage'
 import { estimateSuffix } from '../../lib/distance'
 import { colors } from '../../styles/tokens'
+import { go } from '../../lib/address'
 
 type SortKey = 'date' | 'name' | 'distance' | 'speed'
 
@@ -15,10 +16,9 @@ export function SessionsPanel() {
   // #384: the list reads each drive's small record (no points); writes go through lib/storage
   const sessions = useStore((s) => s.drives)
   const activeSessionId = useStore((s) => s.activeSessionId)
-  const setActiveSessionId = useStore((s) => s.setActiveSessionId)
   const removeDrives = useStore((s) => s.removeDrives)
   const updateDrive = useStore((s) => s.updateDrive)
-  const setActivePanel = useStore((s) => s.setActivePanel)
+  const setImportOpen = useStore((s) => s.setImportOpen)
 
   // Already debounced: SearchBar calls onChange 200 ms after typing pauses (main e9cd565's extra 150 ms
   // debounce here would only stack on top)
@@ -58,7 +58,7 @@ export function SessionsPanel() {
         description="Import a session to get started."
         action={
           <button
-            onClick={() => setActivePanel('import')}
+            onClick={() => setImportOpen(true)}
             className="px-4 py-2 rounded-md bg-accent/10 text-accent border border-accent/20
                        text-sm font-mono uppercase tracking-wider hover:bg-accent/20 transition-colors"
           >
@@ -90,8 +90,7 @@ export function SessionsPanel() {
   }
 
   const handleSelect = (id: string) => {
-    setActiveSessionId(id)
-    setActivePanel('dashboard')
+    go({ place: 'drive', id })
   }
 
   const toggleSelect = (id: string) => {

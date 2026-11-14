@@ -3,45 +3,25 @@ import { useShallow } from 'zustand/react/shallow'
 import type { Session } from '../types/session'
 import type { DriveRecord, StorageStatus } from '../lib/storage'
 
-export type PanelId = 'dashboard' | 'trip' | 'diagnostics' | 'sessions' | 'compare' | 'import' | 'settings'
-
-// Remembered view (main e9cd565): the panel and selected session survive a reload, like the settings in
-// store/settings.ts. App.tsx checks the saved session against IndexedDB once sessions load.
-const VIEW_KEY = 'sapphire_view'
-const VALID_PANELS: ReadonlySet<PanelId> = new Set([
-  'dashboard', 'trip', 'diagnostics', 'sessions', 'compare', 'import', 'settings',
-])
-
-interface PersistedView {
-  activePanel: PanelId
-  activeSessionId: string | null
-}
-
-function loadView(): PersistedView {
-  try {
-    const raw = localStorage.getItem(VIEW_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw) as Partial<PersistedView>
-      const panel = parsed.activePanel && VALID_PANELS.has(parsed.activePanel) ? parsed.activePanel : 'dashboard'
-      const sid = typeof parsed.activeSessionId === 'string' ? parsed.activeSessionId : null
-      return { activePanel: panel, activeSessionId: sid }
-    }
-  } catch { /* unreadable or blocked storage — start from the defaults */ }
-  return { activePanel: 'dashboard', activeSessionId: null }
-}
-
-function persistView(partial: Partial<PersistedView>) {
-  try {
-    localStorage.setItem(VIEW_KEY, JSON.stringify({ ...loadView(), ...partial }))
-  } catch { /* storage unavailable — the view just isn't remembered */ }
-}
-
-const initialView = loadView()
+/** The views of one drive, reached from the drive (#384 ticket 03). Kept in memory: the address names the drive only. */
+export type DriveView = 'dashboard' | 'trip' | 'diagnostics'
 
 interface SapphireState {
-  /** Currently active nav panel. */
-  activePanel: PanelId
-  setActivePanel: (panel: PanelId) => void
+  /** Which of today's views the open drive shows (in memory; ticket 03). */
+  driveView: DriveView
+  setDriveView: (view: DriveView) => void
+
+  /** The list's import screen is shown (Import is an action, not a place; ticket 06 replaces it). */
+  importOpen: boolean
+  setImportOpen: (open: boolean) => void
+
+  /** True once the list's records were read: the empty state is shown only after a read that found none. */
+  drivesLoaded: boolean
+  setDrivesLoaded: (loaded: boolean) => void
+
+  /** A plain message on the list (an address naming a drive that is not stored); null when none. */
+  listNotice: string | null
+  setListNotice: (text: string | null) => void
 
   /**
    * Every stored drive's small record (#384): no points, no diagnostic log. Writes go through lib/storage; these
@@ -66,7 +46,7 @@ interface SapphireState {
   storage: StorageStatus
   setStorage: (status: StorageStatus) => void
 
-  /** Currently selected session for viewing. */
+  /** The drive the address names (App sets it from the address); null on the list and in Settings. */
   activeSessionId: string | null
   setActiveSessionId: (id: string | null) => void
 
@@ -75,14 +55,17 @@ interface SapphireState {
   toggleCompareSession: (id: string) => void
   clearCompare: () => void
 
-  /** Nav rail expanded state. */
-  navExpanded: boolean
-  toggleNav: () => void
 }
 
 export const useStore = create<SapphireState>((set) => ({
-  activePanel: initialView.activePanel,
-  setActivePanel: (panel) => { persistView({ activePanel: panel }); set({ activePanel: panel }) },
+  driveView: 'dashboard',
+  setDriveView: (view) => set({ driveView: view }),
+  importOpen: false,
+  setImportOpen: (open) => set({ importOpen: open }),
+  drivesLoaded: false,
+  setDrivesLoaded: (loaded) => set({ drivesLoaded: loaded }),
+  listNotice: null,
+  setListNotice: (text) => set({ listNotice: text }),
 
   drives: [],
   setDrives: (drives) => set({ drives }),
@@ -97,7 +80,6 @@ export const useStore = create<SapphireState>((set) => ({
   removeDrives: (ids) => set((s) => {
     const idSet = new Set(ids)
     const nextActive = s.activeSessionId && idSet.has(s.activeSessionId) ? null : s.activeSessionId
-    if (nextActive !== s.activeSessionId) persistView({ activeSessionId: nextActive })
     return {
       drives: s.drives.filter((d) => !idSet.has(d.id)),
       activeSessionId: nextActive,
@@ -116,8 +98,8 @@ export const useStore = create<SapphireState>((set) => ({
   storage: { state: 'opening' },
   setStorage: (status) => set({ storage: status }),
 
-  activeSessionId: initialView.activeSessionId,
-  setActiveSessionId: (id) => { persistView({ activeSessionId: id }); set({ activeSessionId: id }) },
+  activeSessionId: null,
+  setActiveSessionId: (id) => set({ activeSessionId: id }),
 
   compareSessionIds: [],
   toggleCompareSession: (id) => set((s) => {
@@ -127,9 +109,6 @@ export const useStore = create<SapphireState>((set) => ({
     return { compareSessionIds: [...current, id] }
   }),
   clearCompare: () => set({ compareSessionIds: [] }),
-
-  navExpanded: true,
-  toggleNav: () => set((s) => ({ navExpanded: !s.navExpanded })),
 }))
 
 /**

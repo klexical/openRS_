@@ -27,7 +27,7 @@ const existing = (id: string, name: string) => ({ id, name, importedAt: 1, tags:
 
 beforeEach(() => {
   db.storeImported.mockReset().mockImplementation(async (sessions: Session[]) => ({ stored: sessions.map(toDriveRecord), alreadyImported: [] }))
-  useStore.setState({ ...storeWithSessions([existing('a', 'Earlier drive')], 'a'), activePanel: 'import' })
+  useStore.setState({ ...storeWithSessions([existing('a', 'Earlier drive')], 'a') })
 })
 afterEach(cleanup)
 

@@ -17,13 +17,14 @@ import { latestTpms } from '../../lib/readings'
 import { isDistanceEstimate, DISTANCE_ESTIMATE_NOTE } from '../../lib/distance'
 import { exportSchemaNote } from '../../lib/exportSchema'
 import { colors } from '../../styles/tokens'
+import { go } from '../../lib/address'
 
 export function DashboardPanel() {
   // ── Hooks (must run on every render path — keep above any early return) ──
   const session = useActiveSession()
   const opening = useOpeningDrive()
   const sessions = useStore((s) => s.drives)
-  const setActivePanel = useStore((s) => s.setActivePanel)
+  const setImportOpen = useStore((s) => s.setImportOpen)
   const fmt = useUnitFormatters()
 
   const trip = session?.trip?.summary
@@ -53,10 +54,10 @@ export function DashboardPanel() {
       <EmptyState
         icon="◈"
         title="Welcome to Sapphire"
-        description="Import a session ZIP from the openRS_ app to get started. Drop a file or use the Import panel."
+        description="Import a session ZIP from the openRS_ app to get started."
         action={
           <button
-            onClick={() => setActivePanel('import')}
+            onClick={() => { setImportOpen(true); go({ place: 'drives' }) }}
             className="px-4 py-2 rounded-md bg-accent/10 text-accent border border-accent/20
                        text-sm font-mono uppercase tracking-wider hover:bg-accent/20 transition-colors"
           >
@@ -74,14 +75,14 @@ export function DashboardPanel() {
       <EmptyState
         icon="◎"
         title="No Session Selected"
-        description="Select a session from the Sessions panel to view its dashboard."
+        description="Open a drive from the list of drives to view its dashboard."
         action={
           <button
-            onClick={() => setActivePanel('sessions')}
+            onClick={() => go({ place: 'drives' })}
             className="px-4 py-2 rounded-md bg-accent/10 text-accent border border-accent/20
                        text-sm font-mono uppercase tracking-wider hover:bg-accent/20 transition-colors"
           >
-            View Sessions
+            Drives
           </button>
         }
       />

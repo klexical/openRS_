@@ -34,7 +34,7 @@ async function drop(file: File) {
 
 beforeEach(() => {
   db.storeImported.mockReset().mockImplementation(async (sessions: Session[]) => ({ stored: sessions.map(toDriveRecord), alreadyImported: [] }))
-  useStore.setState({ ...storeWithSessions([existing('a', 'Earlier drive'), existing('b', 'Other drive')], 'b', ['a', 'b']), activePanel: 'import' })
+  useStore.setState({ ...storeWithSessions([existing('a', 'Earlier drive'), existing('b', 'Other drive')], 'b', ['a', 'b']) })
 })
 
 afterEach(cleanup)
@@ -61,7 +61,7 @@ describe('batch import is all-or-nothing', () => {
       expect(after.drives.map((s) => s.id)).toEqual(['a', 'b'])
       expect(after.activeSessionId).toBe('b')
       expect(after.compareSessionIds).toEqual(['a', 'b'])
-      expect(after.activePanel).toBe('import')
+      expect(window.location.hash).toBe('')   // no address change: the import screen stays (#384 ticket 03)
       expect(db.storeImported).not.toHaveBeenCalled()
     })
   }

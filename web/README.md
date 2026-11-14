@@ -33,15 +33,16 @@ No server required. Everything runs client-side. Your data stays in your browser
 
 ---
 
-## Panels
+## Places
 
-| Panel | Description |
+Sapphire opens on **Drives**; the other place is **Settings**. Each has an address, so reload and back / forward work:
+`#/` the list of drives, `#/drive/<id>` one drive, `#/settings`.
+
+| Place | Description |
 |-------|-------------|
-| **Dashboard** | KPI cards (distance, duration, speed, RPM), session peaks (7 metrics), drive mode breakdown bar |
-| **Trip** | 8 time-series charts: RPM, boost, speed, temperatures (4-line), lateral G, fuel %, wheel speeds (4-line), AWD torque (L/R) |
-| **Diagnostics** | CAN frame inventory (sortable), session events (color-coded), DID probe results, decode trace (searchable) |
-| **Sessions** | Persistent session library — select, delete, auto-navigate |
-| **Import** | Drag-and-drop ZIP import + step-by-step export instructions |
+| **Drives** | Every stored drive, newest first, grouped by month: date, name, duration, distance, top speed, peak boost. **Import** brings in an export ZIP |
+| **A drive** | Opened from its row: today's **Dashboard** (KPI cards, peaks, drive mode breakdown), **Trip** (time-series charts, map) and **Diagnostics** (CAN frame inventory, session events, DID probe results) views |
+| **Settings** | Units, paint accent, back up all drives and restore, clear all |
 
 ---
 

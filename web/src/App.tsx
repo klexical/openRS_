@@ -2,14 +2,14 @@ import { useEffect } from 'react'
 import { Shell } from './components/layout/Shell'
 import { useStore } from './store'
 import { useSettings } from './store/settings'
-import { listDrives, loadDrive, onStorageStatus, storageStatus, type DriveRecord } from './lib/storage'
+import { listDrives, loadDrive, onStorageStatus, storageStatus } from './lib/storage'
+import { go, useAddress } from './lib/address'
 import { rsThemes, shadeHex, printAccent } from './styles/tokens'
 import { colors } from './styles/tokens'
 import { BackupButton } from './components/ui/LazyBackupControls'
 
 export default function App() {
   const setDrives = useStore((s) => s.setDrives)
-  const setActiveSessionId = useStore((s) => s.setActiveSessionId)
   const activeSessionId = useStore((s) => s.activeSessionId)
   const compareSessionIds = useStore((s) => s.compareSessionIds)
   const setStorage = useStore((s) => s.setStorage)
@@ -21,21 +21,25 @@ export default function App() {
     return onStorageStatus(setStorage)
   }, [setStorage])
 
-  // Load every drive's small record on mount (no points). Keep the remembered drive if it still exists; otherwise
-  // (deleted, or another browser's view) select the most recently imported one, or none.
+  // Load every drive's small record on mount (no points). Nothing is opened by itself: the address names what is shown
+  // (#384 ticket 03; the remembered view is retired).
   useEffect(() => {
     listDrives()
-      .then((drives) => {
-        setDrives(drives)
-        const saved = useStore.getState().activeSessionId
-        if (saved && drives.some((d) => d.id === saved)) return
-        const latest = drives.reduce<DriveRecord | null>((a, b) => (!a || b.importedAt > a.importedAt ? b : a), null)
-        setActiveSessionId(latest?.id ?? null)
-      })
+      .then((drives) => { setDrives(drives); useStore.getState().setDrivesLoaded(true) })
       .catch((err) => {
         console.error('[Sapphire] Failed to load drives from IndexedDB:', err)
       })
-  }, [setDrives, setActiveSessionId])
+  }, [setDrives])
+
+  // The address names the open drive; the list and Settings open none (and a drive left is let go)
+  const address = useAddress()
+  const addressedId = address.place === 'drive' ? address.id : null
+  useEffect(() => {
+    const st = useStore.getState()
+    st.setActiveSessionId(addressedId)
+    if (address.place !== 'drives') st.setListNotice(null)
+    if (address.place !== 'drives' || addressedId !== null) st.setImportOpen(false)
+  }, [address.place, addressedId])
 
   // The open drive's points and log are read when it is opened and dropped when it is left (#384)
   useEffect(() => {
@@ -46,9 +50,12 @@ export default function App() {
     loadDrive(activeSessionId)
       .then((s) => {
         if (!current || useStore.getState().activeSessionId !== activeSessionId) return
-        // a selection whose drive is not stored (another browser's remembered view) is dropped, not left "opening"
-        if (s === null) useStore.getState().setActiveSessionId(null)
-        else setActiveSession(s)
+        if (s === null) {
+          // an address naming a drive that is not stored here (deleted, or another browser's link): the list, with a
+          // plain message; the address is replaced so Back does not lead to it again. A failed read is not this.
+          useStore.getState().setListNotice('That drive is not stored in this browser.')
+          go({ place: 'drives' }, { replace: true })
+        } else setActiveSession(s)
       })
       .catch((err) => console.error('[Sapphire] Failed to open the drive:', err))
     return () => { current = false }

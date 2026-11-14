@@ -32,7 +32,7 @@ describe('Compare route maps at phone width (#344)', () => {
   for (const count of [2, 3, 4]) {
     it(`stacks ${count} maps one per row below md, two per row from md`, () => {
       const sessions = Array.from({ length: count }, (_, i) => ({ ...drive, id: `d${i}`, name: `Drive ${i + 1}` }))
-      useStore.setState({ ...storeWithSessions(sessions, null, sessions.map((s) => s.id)), activePanel: 'compare' })
+      useStore.setState({ ...storeWithSessions(sessions, null, sessions.map((s) => s.id)) })
       const { getAllByTestId } = render(<ComparePanel />)
       const maps = getAllByTestId('map')
       expect(maps).toHaveLength(count)

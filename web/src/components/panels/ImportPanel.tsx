@@ -3,6 +3,7 @@ import { useStore } from '../../store'
 import { importZip, importBatchZip, isDriveCsvEntry, isDriveCsvName } from '../../lib/import'
 import { storeImported, type ImportOutcome } from '../../lib/storage'
 import { colors } from '../../styles/tokens'
+import { go } from '../../lib/address'
 import JSZip from 'jszip'
 
 /** "Already imported" for the drives that were stored before, named as they are stored (#384). */
@@ -14,8 +15,7 @@ const alreadyNote = (o: ImportOutcome) => (o.alreadyImported.length > 0 ? ` (${o
 
 export function ImportPanel() {
   const addDrives = useStore((s) => s.addDrives)
-  const setActiveSessionId = useStore((s) => s.setActiveSessionId)
-  const setActivePanel = useStore((s) => s.setActivePanel)
+  const setImportOpen = useStore((s) => s.setImportOpen)
 
   const [dragging, setDragging] = useState(false)
   const [importing, setImporting] = useState(false)
@@ -68,9 +68,8 @@ export function ImportPanel() {
         setBatchProgress({ current: sessions.length, total: sessions.length })
         addDrives(outcome.stored)
         if (outcome.stored.length > 0) {
-          setActiveSessionId(outcome.stored[0].id)
           setSuccess(`Imported ${outcome.stored.length} drives from batch export${alreadyNote(outcome)}`)
-          setTimeout(() => setActivePanel('sessions'), 1500)
+          setTimeout(() => setImportOpen(false), 1500)   // back to the list (ticket 03; ticket 06 marks the new rows)
         } else {
           setSuccess(alreadyText(outcome))
         }
@@ -79,15 +78,15 @@ export function ImportPanel() {
         const session = await importZip(file)
         const outcome = await storeImported([session])
         if (outcome.stored.length === 0) {
-          // #384: the same drive is already stored: nothing new is kept, and that is not an error
-          setActiveSessionId(outcome.alreadyImported[0].existingId)
+          // #384: the same drive is already stored: nothing new is kept, and that is not an error (the address decides
+          // what is open: nothing is opened from here; ticket 06 adds the link to the drive)
           setSuccess(alreadyText(outcome))
           return
         }
         addDrives(outcome.stored)
-        setActiveSessionId(outcome.stored[0].id)
         setSuccess(`Imported: ${session.name}`)
-        setTimeout(() => setActivePanel('dashboard'), 1200)
+        const id = outcome.stored[0].id
+        setTimeout(() => go({ place: 'drive', id }), 1200)   // the new drive's address (ticket 03)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Import failed')
@@ -95,7 +94,7 @@ export function ImportPanel() {
       setImporting(false)
       setBatchProgress(null)
     }
-  }, [addDrives, setActiveSessionId, setActivePanel])
+  }, [addDrives, setImportOpen])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
