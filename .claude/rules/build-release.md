@@ -55,8 +55,8 @@ paths:
     process is alive and named by the kernel's kill lines, the device log's process and crash lines and its events
     buffer's kills and deaths (a line naming a key left out, the Maps and weather key values redacted by their shape),
     the host's memory and kernel kill lines, `df -h`, the emulator's exit messages from the whole `emulator.log` and its
-    tail; each section says "(no matching lines)" or "(could not read: …)", never nothing, and the output ends with
-    `--- end of diagnostics`),
+    tail; the device-log, events, kernel and signature sections say "(no matching lines)", "(read cut short: …)" or
+    "(could not read: …)" rather than nothing, and the output ends with `--- end of diagnostics`),
     `attest`.
     Dry-run mode: `PUBLISH` is `'false'`, no job can write contents, and the run stops after the attestation; nothing is
     published, so every night builds and leaves a one-day release-signed artifact and a public attestation.

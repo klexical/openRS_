@@ -30,6 +30,9 @@ output.json
 # ═══ Kotlin ═════════════════════════════════════════
 *.kotlin_metadata
 android/.kotlin/
+# start-emulator.sh / launch-check.sh write these in the working folder (a local run of the nightly's launch scripts)
+emulator.log
+emulator.pid
 
 # ═══ OS files ═══════════════════════════════════════
 .DS_Store
