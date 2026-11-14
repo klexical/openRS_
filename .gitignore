@@ -29,6 +29,7 @@ output.json
 
 # ═══ Kotlin ═════════════════════════════════════════
 *.kotlin_metadata
+android/.kotlin/
 
 # ═══ OS files ═══════════════════════════════════════
 .DS_Store
