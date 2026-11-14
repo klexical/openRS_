@@ -89,6 +89,35 @@ _Avoid_: S/F point, gate
 One timed pass from the start/finish line back to it. A lap belongs to the drive it was timed in.
 _Avoid_: Sector, split
 
+### Sapphire
+
+**Import**:
+One export file brought into Sapphire. An import can hold a drive, a session, or both; what Sapphire keeps is the drive
+or the session, not the file.
+_Avoid_: Upload (nothing leaves the browser), "session" for whatever was imported
+
+**Place**:
+A top-level destination in Sapphire: Drives, Car, Settings.
+_Avoid_: Panel, tab, section
+
+**Page**:
+The screen of one drive in Sapphire.
+_Avoid_: Panel, detail view, dashboard
+
+**View**:
+One tab inside a drive's page.
+_Avoid_: Panel, page, place
+
+**Not checked**:
+What Sapphire says of a warning cause when the import did not hold what answers it. It is never shown or counted as
+"none".
+_Avoid_: Not checkable, unknown, n/a, clean
+
+**Partial drive**:
+A drive imported from an export made while it was still being recorded. It ends where that export was made and is
+listed as a drive of its own, apart from the finished drive.
+_Avoid_: Snapshot, incomplete import, duplicate
+
 ### Releases
 
 **Stable**:
