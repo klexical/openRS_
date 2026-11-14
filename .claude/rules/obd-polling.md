@@ -76,8 +76,8 @@ paths:
     answer lands before the next request and is that request's; the next request starts with nothing outstanding. 5,000 ms
     is a chosen value: the usual default for a response-pending wait (P2*) in diagnostic libraries; no standard was read.
     Counted in the export: any final answer inside the pause (`lateInWindow`), and a positive reply after it for a DID
-    that timed out and is not the one being waited for (`lateAfterWindow`). A rejection after the pause names no DID and
-    is the current request's (Reading 2).
+    that timed out and is not the one being waited for (`lateAfterWindow`). A rejection after the pause names no DID: it
+    is taken as the current request's (Reading 2), so an answer later than 5,000 ms can still end the next wait early.
   - **At switch-on** the first turn waits for any PCM request sent before the capture began (still outstanding in the
     ledger), up to `WAIT_MS` after its write; the capture's own requests are not waited for again (`RequestCapture.switchOns`
     marks a new capture).

@@ -256,6 +256,25 @@ class RequestCaptureTest {
         assertTrue("polls during the read: $polls", polls.isEmpty())
     }
 
+    /**
+     * QA's T1: a DTC operation waits out the pause too. With the poller idle (engine off, between sweeps): a poller turn
+     * would itself hold the gate through the pause and hide whether the operation takes its own turn.
+     */
+    @Test fun `a DTC scan started inside the pause waits it out`() = runTest {
+        session()
+        val p = pcm({ did -> if (did == "A101") emptyList() else listOf(positive(did)) })
+        val conn = connect(p, rpm = 0.0); advanceTimeBy(1_000L); capture.set(true)
+        advanceTimeBy(34_000L)                                      // the engine-off sweep is done; the poller idles 30 s
+        backgroundScope.launch {
+            conn.sendRawQuery(0x7E8, "t7E080322A10100000000\r", 1_000L)          // no answer: the pause starts
+            com.openrs.dash.diagnostics.DtcScanner.runScan(conn, listOf(pcmSpec)) { _, _ -> }
+        }
+        advanceTimeBy(12_000L)
+        val probe = p.pcmReads().first { it.first == "A101" }.second
+        val scan = p.writes.toList().first { (f, t) -> t >= probe && f.startsWith("t7E08031902") }.second
+        assertTrue("the scan's first write came ${scan - probe} ms after the timed-out probe", scan - probe >= RequestCapture.LATE_WINDOW_MS)
+    }
+
     @Test fun `with the capture off, polling goes on during a DTC scan, and the scan starts at once, as before`() = runTest {
         session(); val p = pcm({ did -> listOf(positive(did, afterMs = 250L)) }); val conn = connect(p); advanceTimeBy(22_000L)
         // Launch while a poll is waiting for its answer: a capture turn would wait for it (the premise of this check)
