@@ -478,6 +478,15 @@ check('no pipeline under pipefail can fail on SIGPIPE (yes, head)') do
   wf + sh
 end
 
+check("launch-check.sh's job limit is the launch job's timeout-minutes, for its retry's time budget (#363)") do
+  text = File.read(File.join(ROOT, 'android', 'scripts', 'launch-check.sh'), encoding: 'UTF-8')
+  limit = text[/^JOB_LIMIT_S=(\d+)$/, 1]
+  minutes = jobs(nightly)['launch']['timeout-minutes']
+  if limit.nil? then ["launch-check.sh has no JOB_LIMIT_S=<seconds> line"]
+  elsif limit.to_i != minutes.to_i * 60 then ["JOB_LIMIT_S is #{limit}, the launch job's timeout-minutes is #{minutes}"]
+  else [] end
+end
+
 abort 'release workflow checks: no case ran' if $ran.zero?
 if $failures.zero?
   puts "release workflow checks: all #{$ran} passed"
