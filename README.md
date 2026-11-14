@@ -66,8 +66,9 @@ The stable v2.2.6 screens are in the [app guide](docs/app-guide.md#screens-v226)
 [Release page](https://github.com/klexical/openRS_/releases/tag/android-v2.2.7-rc.8) · download `openRS_v2.2.7-rc.8.apk`
 
 **Stable or pre-release?** Stable is the build most owners should install. A pre-release has newer features and fixes
-that have had less time on cars; it installs over stable and keeps your settings and drives. In the app, Settings →
-update channel decides which of the two the updater offers.
+that have had less time on cars. It is built to install over stable and keep your settings and drives (the same app,
+signed the same way, with its database upgraded in place); that upgrade has not yet been checked on a phone, so export
+anything you would miss first. In the app, Settings → update channel decides which of the two the updater offers.
 
 Release notes and checksums are on each release page. The channel says how a build is distributed, not that every
 feature in it is verified on a car.
@@ -140,7 +141,9 @@ varies by feature ([#125](https://github.com/klexical/openRS_/issues/125)).
 **Privacy.** There is no account, and the app sends no telemetry or analytics to this project. It reads the car through
 the adapter and keeps drives and settings on your phone. It contacts three outside services: GitHub, to check for
 updates; Google Maps, to draw the map on the TRIP tab; and OpenWeatherMap for the weather on a drive, only in a build that
-was given a weather key (the published builds have none). Sapphire runs in your browser and uploads nothing.
+was given a weather key (the published builds have none). The phone's own location service supplies the position while a
+drive is recorded. Sapphire runs in your browser and uploads nothing; its map loads OpenStreetMap tiles for the area on
+screen, which tells that tile server roughly where a drive was, and its fonts come from Google Fonts.
 
 **Before you share an export.** A drive export contains your route: GPS positions and times. A diagnostic export contains
 the car's raw CAN traffic and the app's logs. The v2.2.7 release candidates mask the VIN in a diagnostic export
