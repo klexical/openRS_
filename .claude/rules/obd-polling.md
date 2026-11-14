@@ -42,7 +42,7 @@ paths:
   2×): POWER dims with STALE Ns, the dashboard shows "— —". NRC suppression (#216) needs 2 attributed NRCs (attributed only
   when unambiguous — see SlcanConnection; a timeout or the 32-entry queue limit is a resource limit, never proof of ownership,
   so after one lost reply NRCs stay unattributed for that connection), recovers on a positive reply and re-probes after 60 s;
-  the PCM poller always suspends.
+  the PCM poller always suspends. While Request capture is on, suppression skips no DID (#209).
 - **POWER cells are gated per field** — engine cells show only when `rpm > FAST_POLL_MIN_RPM` AND `fieldLastUpdateMs[tag] != null`; never gate on another field's value (the old `calcLoad > 0` gate hid everything once load lost its decoder)
 - **An OBD merge can resurrect a stamp key the CAN side removed (#252)** — `ObdMerge.merge()` merges
   `fieldLastUpdateMs` by per-key max from the reply's SNAPSHOT of VehicleState; a key that CAN-side code deleted after the snapshot
@@ -58,3 +58,21 @@ paths:
   (poll pacing, not command timing; hardware-unverified; pinned by `IsoTpCoverageTest`; tracked on #216).
   Not handled (#253): no N_Cr timer (two lost lines can join reply B to reply A's head), a restarted reply waiting for FC ends as TIMEOUT, no
   counter for dropped ISO-TP replies.
+- **Request capture (#209 Step B, the owner's decisions of 2026-11-14)** — `can/RequestCapture.kt` (`RequestCapture.shared`),
+  the GARAGE → DIAG switch beside the DID prober (`ui/RequestCaptureRow.kt`, the owner's text as `REQUEST_CAPTURE_TEXT`).
+  - **While on, PCM only:** the poller sends its next request only after the previous one is answered or
+    `RequestCapture.WAIT_MS` (2,000 ms) has passed, after a possibly delivered write too (the #333 pacing is the mode-off
+    rule). An answer is the DID's positive reply or any final `7F 22` rejection, even one the ledger cannot charge (after a
+    lapse every rejection is unattributable); `7F 22 78` is not. The wait signal (`CaptureWait`) is separate from the
+    ledger, whose attribution is unchanged.
+  - **One gate:** `captureGate` is held by the poller and by a PCM DID probe from the write to the answer or the set time,
+    so neither writes while the other's request waits (a "not during a probe" check races). A probe takes it inside
+    `_dtcMutex`; the poller never takes `_dtcMutex`.
+  - **NRC suppression skips no DID** while on: `shouldPoll` is not asked (it changes re-probe state). The frame loop still
+    records NRCs, so ones seen during a capture count toward suppression after it is off.
+  - **No answer in time** is a `# CAPTURE-TIMEOUT (t) can0 ID#DATA no answer within 2000 ms` line, stamped at the wait's
+    end, so a later answer reads as late. It does not start with `# TX`, so no reader picks it as a request.
+  - **Off at every link up and down,** automatic reconnects included (`linkChanged`), and refused with no link or in demo
+    mode. A capture never ends silently: a `REQUEST_CAPTURE` session event says why, the switch reads off, and the export's
+    REQUEST CAPTURE section / `requestCapture` JSON (spans with on, off and reason; timeouts; additive) say when
+    (`RequestCaptureTest`)

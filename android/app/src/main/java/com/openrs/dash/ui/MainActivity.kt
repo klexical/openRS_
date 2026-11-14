@@ -215,6 +215,7 @@ class MainActivity : ComponentActivity() {
             val vs          by OpenRSDashApp.instance.vehicleState.collectAsState()
             val prefs       by UserPrefsStore.prefs.collectAsState()
             val debugLines  by OpenRSDashApp.instance.debugLines.collectAsState()
+            val requestCaptureOn by com.openrs.dash.can.RequestCapture.shared.on.collectAsState()   // #209 Step B
             val driveState  by OpenRSDashApp.instance.driveState.collectAsState()
             // Debug TRIP preview: the header's REC / PAUSED indicator shows the sample recording too (nothing records)
             val tripPreview by com.openrs.dash.demo.TripPreview.mode.collectAsState()
@@ -448,6 +449,8 @@ class MainActivity : ComponentActivity() {
                                                             { r, f, t -> svc.sendRawQuery(r, f, t) }
                                                         q
                                                     },
+                                                    requestCaptureOn = requestCaptureOn,
+                                                    onRequestCapture = service?.let { svc -> { on: Boolean -> svc.setRequestCapture(on) } },
                                                     onResetSession = { service?.resetSession() },
                                                     onOpenDock = { dockOpen = true },
                                                 )

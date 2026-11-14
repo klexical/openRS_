@@ -344,6 +344,8 @@ internal object DiagnosticReportBuilder {
         // Link integrity (rc.8 #253): counts only — what writes established, what framing / length checks refused
         linkIntegrityText(counters.integrity, counters.nrcUnattributed).forEach { appendLine(it) }
         appendLine()
+        requestCaptureText(counters.capture).forEach { appendLine(it) }   // #209 Step B
+        appendLine()
         didInventoryText(counters.dids).forEach { appendLine(it) }   // rc.8 #253, additive
         appendLine()
         logLimitsText(counters.limits, knockSessionDropped(), counters.integrity).forEach { appendLine(it) }
@@ -550,6 +552,7 @@ internal object DiagnosticReportBuilder {
 
         root.put("nrcUnattributedTotal", counters.nrcUnattributed)   // exact, even though lines are folded (#216)
         root.put("linkIntegrity", linkIntegrityJson(counters.integrity, counters.nrcUnattributed))   // rc.8 #253, additive
+        root.put("requestCapture", requestCaptureJson(counters.capture))   // #209 Step B, additive
         counters.bleMtu?.let { root.put("bleMtu", bleMtuJson(it)) }   // #253, additive; absent unless the attempt is Bluetooth
         root.put("didInventory", didInventoryJson(counters.dids))   // rc.8 #253, additive
         root.put("logLimits", logLimitsJson(counters.limits, knockSessionDropped()))  // additive
@@ -633,6 +636,36 @@ internal fun linkIntegrityText(li: DiagnosticLogger.LinkIntegrity, nrcUnattribut
         "${li.commandRepliesDropped} command reply(ies) dropped · ${li.dtcFramesDropped} DTC frame(s) dropped",
     "  ISO-TP   : ${li.isoTpRefused} frame(s) refused or reply(ies) abandoned (truncated, too short, sequence break, superseded by a new reply, open at a DTC / freeze-frame deadline)",
 )
+
+/**
+ * REQUEST CAPTURE summary lines (#209 Step B): whether the capture was on in this session, and each stretch with when it
+ * went off and why, so a capture a link drop ended reads as ended, never as a whole one. Session-relative seconds.
+ */
+internal fun requestCaptureText(c: DiagnosticLogger.RequestCaptureRecord): List<String> = buildList {
+    add("─── REQUEST CAPTURE ───────────────────────────────────────")
+    if (c.spans.isEmpty() && c.spansDropped == 0) { add("  Off for the whole session"); return@buildList }
+    add("  PCM requests one at a time, up to ${com.openrs.dash.can.RequestCapture.WAIT_MS} ms per answer; " +
+        "${c.timeouts} answer(s) not received in time")
+    c.spans.forEach { sp ->
+        add("  On %.1f s → ".format(java.util.Locale.ROOT, sp.onMs / 1000.0) +
+            (sp.offMs?.let { "off %.1f s (%s)".format(java.util.Locale.ROOT, it / 1000.0, sp.offReason) } ?: "still on at export"))
+    }
+    if (c.spansDropped > 0) add("  ${c.spansDropped} later stretch(es) not listed")
+}
+
+internal fun requestCaptureJson(c: DiagnosticLogger.RequestCaptureRecord): JSONObject = JSONObject().apply {
+    put("used", c.spans.isNotEmpty() || c.spansDropped > 0)
+    put("waitMs", com.openrs.dash.can.RequestCapture.WAIT_MS)
+    put("timeouts", c.timeouts)
+    put("spans", JSONArray().apply {
+        c.spans.forEach { sp -> put(JSONObject().apply {
+            put("onMs", sp.onMs)
+            put("offMs", sp.offMs ?: JSONObject.NULL)
+            put("offReason", sp.offReason ?: JSONObject.NULL)
+        }) }
+    })
+    put("spansDropped", c.spansDropped)
+}
 
 /** A module's name for its Mode 22 response ID (the ECU table), else the hex ID. */
 internal fun moduleName(responseId: Int): String = when (responseId) {

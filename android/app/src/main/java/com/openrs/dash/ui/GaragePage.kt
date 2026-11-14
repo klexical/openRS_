@@ -57,6 +57,8 @@ fun GaragePage(
     onRetryScanModule: (suspend (String) -> com.openrs.dash.data.DtcModuleRetry)? = null,
     onFetchFreezeFrames: (suspend (List<DtcResult>) -> List<DtcResult>)? = null,
     onSendRawQuery: (suspend (Int, String, Long) -> com.openrs.dash.can.RawReply?)? = null,
+    requestCaptureOn: Boolean = false,
+    onRequestCapture: ((Boolean) -> Boolean)? = null,
     onResetSession: () -> Unit = {},
     onOpenDock: () -> Unit = {},
 ) {
@@ -80,6 +82,8 @@ fun GaragePage(
                 onRetryScanModule = onRetryScanModule,
                 onFetchFreezeFrames = onFetchFreezeFrames,
                 onSendRawQuery = onSendRawQuery,
+                requestCaptureOn = requestCaptureOn,
+                onRequestCapture = onRequestCapture,
                 onResetSession = onResetSession,
                 snackbarHostState = snackbarHostState,
             )
