@@ -15,14 +15,16 @@ import java.net.URI
 /**
  * How the updater finds a release (#364), through `UpdateChecker.findUpdate` with a fake GitHub that serves
  * `/releases/latest` (the release marked Latest, else 404) and `/releases?per_page=&page=` (newest first, default 30,
- * at most [FakeGitHub.maxPer], with a `Link: …; rel="next"` header while more follow), and records every request.
+ * at most [FakeGitHub.maxPer], with GitHub's `Link` header: next / last while more follow, prev / first after page 1),
+ * and records every request.
  * Stable asks for Latest first and pages (100 at a time while there is a next page, at most 10 pages) only when Latest
  * is not an Android stable; Beta reads one page of 100; the APK is the asset named exactly `openRS_v<name>.apk`; the choice is
  * by version, never by list position.
  */
 class UpdateLookupTest {
 
-    private class FakeGitHub(val releases: List<JSONObject>, val latestTag: String?, val maxPer: Int = 100) {
+    private class FakeGitHub(val releases: List<JSONObject>, val latestTag: String?, val maxPer: Int = 100,
+                             val alwaysNext: Boolean = false) {
         val urls = mutableListOf<String>()
         var rateLimited: (String) -> Boolean = { false }
         var failing: (String) -> Boolean = { false }
@@ -43,9 +45,14 @@ class UpdateLookupTest {
                     val per = minOf(query["per_page"]?.toInt() ?: 30, maxPer)
                     val page = query["page"]?.toInt() ?: 1
                     val slice = releases.drop((page - 1) * per).take(per)
-                    val next = if (page * per < releases.size)
-                        "<https://api.github.com/repositories/1/releases?per_page=$per&page=${page + 1}>; rel=\"next\"" else null
-                    UpdateChecker.Reply(200, JSONArray().apply { slice.forEach { put(it) } }.toString(), next)
+                    // As GitHub's: next and last while more follow, prev and first after page 1, no header for one page
+                    fun ref(p: Int, rel: String) = "<https://api.github.com/repositories/1/releases?per_page=$per&page=$p>; rel=\"$rel\""
+                    val lastPage = maxOf(1, (releases.size + per - 1) / per)
+                    val link = buildList {
+                        if (page > 1) { add(ref(page - 1, "prev")); add(ref(1, "first")) }
+                        if (page < lastPage || alwaysNext) { add(ref(page + 1, "next")); add(ref(lastPage, "last")) }
+                    }.joinToString(", ").ifEmpty { null }
+                    UpdateChecker.Reply(200, JSONArray().apply { slice.forEach { put(it) } }.toString(), link)
                 }
                 else -> UpdateChecker.Reply(404, null)
             }
@@ -116,6 +123,14 @@ class UpdateLookupTest {
         assertEquals(listOf("/latest", "/?per_page=100&page=1", "/?per_page=100&page=2"), gh.paths)
     }
 
+    @Test fun `documented reading - Latest is the newest full release, a firmware one, so Stable pages and finds the stable`() {
+        // GitHub's docs: the most recent non-prerelease, non-draft release by creation date, whatever is marked
+        val gh = FakeGitHub(listOf(firmware("fw-usb-v1.62"), firmware("fw-pro-v1.3")) + nightlies(40) + android("2.2.7", false),
+            latestTag = "fw-usb-v1.62")
+        assertEquals("2.2.7", find(gh, "stable", "2.2.6")?.version?.displayName)
+        assertEquals(listOf("/latest", "/?per_page=100&page=1"), gh.paths)
+    }
+
     @Test fun `with no release marked Latest, Stable pages and finds the stable`() {
         val gh = FakeGitHub(nightlies(40) + android("2.2.7", false), latestTag = null)
         assertEquals("2.2.7", find(gh, "stable", "2.2.7-rc.8")?.version?.displayName)
@@ -146,6 +161,12 @@ class UpdateLookupTest {
         val gh = FakeGitHub(nightlies(70) + android("2.2.7", false), latestTag = null, maxPer = 50)
         assertEquals("2.2.7", find(gh, "stable", "2.2.6")?.version?.displayName)
         assertEquals(listOf("/latest", "/?per_page=100&page=1", "/?per_page=100&page=2"), gh.paths)
+    }
+
+    @Test fun `an empty page ends the paging, whatever the Link header says`() {
+        val gh = FakeGitHub(nightlies(150) + android("2.2.7", false), latestTag = null, alwaysNext = true)
+        assertEquals("2.2.7", find(gh, "stable", "2.2.6")?.version?.displayName)
+        assertEquals(listOf("/latest") + (1..3).map { "/?per_page=100&page=$it" }, gh.paths)
     }
 
     @Test fun `paging stops at 10 pages of 100`() {

@@ -84,9 +84,13 @@ object UpdateChecker {
      * The update for [channel] above [current], reading the release list through [get] (one call per request, #364).
      * - Stable asks for the release marked Latest first. If that is an Android stable with its APK, it decides alone:
      *   the update if it is newer, else none. Otherwise (firmware, an RC or nothing marked Latest, or no APK) Stable pages
-     *   the list, [PER_PAGE] at a time, while GitHub's `Link` header names a next page, at most [MAX_PAGES] pages.
-     *   Named assumption: the release checklist keeps Latest on the newest Android stable. If Latest were left on an
-     *   older one, Stable would offer that one (or nothing) and not see the newer stable; no fallback pages every time.
+     *   the list, [PER_PAGE] at a time, while GitHub's `Link` header names a next page (its documented signal; a short
+     *   page is not documented as the last), at most [MAX_PAGES] pages; an empty page also ends it.
+     *   GitHub documents `/releases/latest` as the most recent full release by creation date, but it has been seen to
+     *   return the release marked Latest; the reply is trusted only when it is an Android stable with its APK, so a
+     *   newer firmware release under either reading makes Stable page. Named assumption: the release checklist keeps
+     *   Latest on the newest Android stable. If Latest were left on an older one, Stable would offer that one (or
+     *   nothing) and not see the newer stable; no fallback pages every time.
      * - Beta reads one page of [PER_PAGE] (the newest releases come first; GitHub's default page is 30).
      * Either way the choice is by version, never by position: GitHub does not document the list's order.
      * A 403 / 429 on any request throws [RateLimitException]; any other failed reply means no update.
@@ -108,7 +112,7 @@ object UpdateChecker {
         for (page in 1..MAX_PAGES) {
             val pageReply = reply("$RELEASES_URL?per_page=$PER_PAGE&page=$page") ?: return null
             parseReleases(pageReply.body!!, channel, current)?.let { if (best == null || it.version > best!!.version) best = it }
-            if (!pageReply.hasNext) break
+            if (!pageReply.hasNext || JSONArray(pageReply.body).length() == 0) break
         }
         return best
     }
