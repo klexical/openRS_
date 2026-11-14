@@ -89,6 +89,12 @@ _Avoid_: S/F point, gate
 One timed pass from the start/finish line back to it. A lap belongs to the drive it was timed in.
 _Avoid_: Sector, split
 
+### Connection
+
+**Adapter network**:
+A Wi-Fi network on which the adapter gave its own protocol reply.
+_Avoid_: Eligible network, the adapter's SSID
+
 ### Sapphire
 
 **Import**:

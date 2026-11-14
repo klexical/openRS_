@@ -18,6 +18,8 @@ paths:
   - "**/com/openrs/dash/can/PidRegistry.kt"
   - "**/com/openrs/dash/service/CanDataService.kt"
   - "**/com/openrs/dash/service/Link*.kt"
+  - "**/com/openrs/dash/can/AdapterProbe.kt"
+  - "**/com/openrs/dash/service/AdapterNetworkFinder.kt"
   - "**/com/openrs/dash/service/AutoRecordPolicy.kt"
   - "**/com/openrs/dash/service/ConnectionSetup.kt"
   - "**/com/openrs/dash/can/CanDecoder.kt"
@@ -30,6 +32,8 @@ paths:
   - "**/firmware/**"
   - "**/android/app/src/test/java/com/openrs/dash/*Slcan*"
   - "**/android/app/src/test/java/com/openrs/dash/*Link*"
+  - "**/android/app/src/test/java/com/openrs/dash/AdapterNetwork*"
+  - "**/android/app/src/test/java/com/openrs/dash/AdapterProbe*"
   - "**/android/app/src/test/java/com/openrs/dash/*DriveMode*"
   - "**/android/app/src/test/java/com/openrs/dash/*ModeAttribution*"
   - "**/android/app/src/test/java/com/openrs/dash/*ModeProvenance*"
@@ -42,7 +46,7 @@ paths:
 
 - Firmware drive mode is **hybrid scroll-then-wait** (v1.61+) — pre-calculates scroll count, sends all presses open-loop, waits up to 6s for auto-confirm. Do NOT revert to closed-loop press-and-poll (v1.6 bug) or pure open-loop press counting (v1.5 bug). The Focus RS mode selector GUI requires ~4s of inactivity to auto-confirm — CAN does not update during scrolling
 - Firmware REST POST `/api/frs` returns `{"ok":false,"busy":true}` when a drive mode change is in progress — app must handle this
-- Android 10+ silently routes new sockets through cellular when WiFi has no internet — `WiFiFirmwareApi` uses `Network.socketFactory` via `ConnectivityManager` to force all traffic on WiFi. BLE transport avoids this entirely (not a "network" in Android's routing model)
+- Android 10+ silently routes new sockets through cellular when WiFi has no internet — `WiFiFirmwareApi` uses `Network.socketFactory` via `ConnectivityManager` to force all traffic on WiFi, and the SLCAN transports (TCP and WebSocket) open their sockets and resolve the host through the adapter network's socket factory and lookup (#324). BLE transport avoids this entirely (not a "network" in Android's routing model)
 - **Firmware commands never throw (PR #238)** — `BleFirmwareApi.sendCommand` turns the write's
   IOException into `Result.failure` (cancellation still propagates). The UI launches (DriveModeDock, MorePage ESC) have
   no catch, so an escaped exception ended the process. Keep every `FirmwareCommandSender` inside its `Result` contract.
@@ -164,3 +168,19 @@ paths:
   cause is not established; the WifiManager reference says the API 34+ lock is replaced by one active only with the
   screen on and the app in front. Thresholds are named constants in `ReceptionStall.kt`; their values and status belong
   to #356 (`ReceptionStallTest`, `ReceptionStallReplayTest`)
+- **The adapter network (#324)** — over Wi-Fi the app connects on the adapter network: a Wi-Fi network on which the
+  adapter gave its own protocol reply (the USB adapter's WebSocket `101`; for the Pro, the first line after the SLCAN init:
+  a CR, a BEL, an `OPENRS:` reply or a frame). A TCP accept alone never counts: a captive portal or a router at the same
+  address accepts too. Never the default network: with mobile data on, Android keeps a validated mobile network as the
+  default while the adapter's Wi-Fi has no internet. Rules:
+  - readiness is "a Wi-Fi network is joined"; the probe (`AdapterProbe`, 2 s) decides whether it is the adapter network,
+    and `AdapterNetworkFinder` re-probes every 5 s for up to 60 s after the network appears;
+  - the probe's open transport is the connection's first attempt (`AlreadyOpenTransport`), so the adapter sees one
+    connection; later attempts open their own, bound to the same network;
+  - `onLost` ends the connection only for the network it is bound to (`boundNetwork`);
+  - a manual Connect uses the adapter network, or else the first joined Wi-Fi network, and tries; with no Wi-Fi network it
+    says so on screen;
+  - each probe writes an `ADAPTER_PROBE` event (the kind of answer or the reason, never the host); the first refusal and a
+    "gave up" line are refused starts.
+  Whether the Pro acknowledges `C\r` with a CR is not established. `CHANGE_NETWORK_STATE` is declared for the binding
+  (`AdapterProbeTest`, `AdapterNetworkFinderTest`, `AdapterNetworkServiceTest`)

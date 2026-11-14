@@ -250,7 +250,8 @@ class MainActivity : ComponentActivity() {
             }
             val connect: () -> Unit = {
                 if (setupProblem != null) { settingsAtConnection = true; settingsOpen = true }
-                else service?.startConnection()
+                // A Connect with no Wi-Fi network says so on screen, not only in the log (#324)
+                else service?.startConnection()?.let { why -> pageScope.launch { snackbarHostState.showSnackbar(why) } }
             }
 
 

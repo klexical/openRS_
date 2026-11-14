@@ -57,12 +57,17 @@ class StartRefusedReasonTest {
         assertOneWifiReason(refused())
     }
 
-    @Test fun `the Wi-Fi callback's start refused for no Wi-Fi writes its reason`() {
+    @Test fun `a network the Wi-Fi callback reports that is not an adapter network writes its reason`() {
         connectionMethod("WIFI"); noNetwork()
         controller.create()
         DiagnosticLogger.sessionStart("test", 0, prefs = null)
+        // #324: the reported network is probed; here the adapter does not answer. Its first refusal is written, off the main thread
+        CanDataService.probeOverride = { com.openrs.dash.can.ProbeOutcome.NoAnswer("the adapter did not answer on this Wi-Fi network", 0) }
         (field("wifiCallback") as ConnectivityManager.NetworkCallback).onAvailable(ShadowNetwork.newInstance(7))
+        val deadline = System.currentTimeMillis() + 10_000
+        while (refused().isEmpty() && System.currentTimeMillis() < deadline) Thread.sleep(50)
         assertOneWifiReason(refused())
+        assertTrue(refused().single(), refused().single().startsWith("not started (automatic start): not an adapter network yet:"))
     }
 
     @Test fun `a manual Connect refused with Bluetooth off writes its reason`() {

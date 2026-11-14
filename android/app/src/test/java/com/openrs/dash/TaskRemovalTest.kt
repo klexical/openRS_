@@ -156,11 +156,33 @@ class TaskRemovalTest {
         assertEquals(LinkPhase.OFF, link.phase)
     }
 
+    /**
+     * #324: over Wi-Fi an automatic start begins once the adapter has answered on the adapter network, so these launches
+     * get a probe that answers at once, with a transport that stays open (the attempt stays CONNECTING) until closed.
+     */
+    private fun adapterAnswers() {
+        CanDataService.probeOverride = { com.openrs.dash.can.ProbeOutcome.Answered(OpenUntilClosed(), "CR", 0) }
+    }
+    private class OpenUntilClosed : com.openrs.dash.can.SlcanTransport {
+        private val closed = kotlinx.coroutines.CompletableDeferred<Unit>()
+        override suspend fun open() {}
+        override suspend fun readLine(): String? { closed.await(); return null }
+        override suspend fun writeLine(frame: String) {}
+        override fun close() { closed.complete(Unit) }
+        override val label = "test"; override val stockFirmwareLabel = "test"
+    }
+    private fun until(ms: Long = 5_000, ok: () -> Boolean): Boolean {
+        val end = System.currentTimeMillis() + ms
+        while (!ok() && System.currentTimeMillis() < end) Thread.sleep(20)
+        return ok()
+    }
+
     @Test fun `the next launch auto-connects, this service or process having survived`() {
         attempt()
         service.onTaskRemoved(null)
+        adapterAnswers()
         service.onActivityBound()
-        assertEquals(LinkPhase.CONNECTING, link.phase)
+        assertTrue("auto-connects once the adapter answers", until { link.phase == LinkPhase.CONNECTING })
         assertFalse(link.manualConnectRequired)
     }
 
@@ -169,8 +191,9 @@ class TaskRemovalTest {
         service.onTaskRemoved(null)
         val next = TestServices.create()
         assertEquals("the hold still covers the service's own start", LinkPhase.OFF, link.phase)
+        adapterAnswers()
         next.onActivityBound()
-        assertEquals(LinkPhase.CONNECTING, link.phase)
+        assertTrue("auto-connects once the adapter answers", until { link.phase == LinkPhase.CONNECTING })
         next.stopConnection(com.openrs.dash.service.LinkStopReason.USER_DISCONNECT)
     }
 
@@ -179,8 +202,9 @@ class TaskRemovalTest {
         service.onTaskRemoved(null)
         val next = TestServices.create()
         assertEquals(listOf("auto-start held: a task removal, until the app is opened"), lines(DiagnosticLogger.EVENT_LINK_START_REFUSED))
+        adapterAnswers()
         next.onActivityBound()
-        assertEquals(LinkPhase.CONNECTING, link.phase)
+        assertTrue("auto-connects once the adapter answers", until { link.phase == LinkPhase.CONNECTING })
         next.stopConnection(com.openrs.dash.service.LinkStopReason.USER_DISCONNECT)
     }
 
