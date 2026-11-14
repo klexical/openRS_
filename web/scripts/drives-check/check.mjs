@@ -102,8 +102,13 @@ await page.screenshot({ path: `${out}-list-1280x800.png` })
 async function listTime(p) {
   await p.goto(`${home}?load=${Date.now()}`)   // same origin, a new URL: a full navigation (CPU throttling stays)
   await p.waitForFunction(() => window.__rowsAt !== undefined, null, { timeout: 30000 })
-  const [at, type] = await p.evaluate(() => [Math.round(window.__rowsAt), performance.getEntriesByType('navigation')[0]?.type])
+  const [at, type, html, dcl] = await p.evaluate(() => {
+    const n = performance.getEntriesByType('navigation')[0]
+    return [Math.round(window.__rowsAt), n?.type, Math.round(n?.responseEnd ?? NaN), Math.round(n?.domContentLoadedEventEnd ?? NaN)]
+  })
   if (type !== 'navigate') throw new Error(`timing: not a full navigation (${type})`)
+  // the same clock's own marks beside it: the page's HTML received, and its scripts run (DOMContentLoaded)
+  console.log(`NOTE  timing: html at ${html} ms, scripts run at ${dcl} ms, last row at ${at} ms`)
   return at
 }
 const timing = { desktop: [] }
