@@ -110,10 +110,21 @@ async function backupWithHeartbeat(how: 'as-built' | 'page') {
   return { builtIn: file.builtIn, drives: file.drives, bytes: file.blob.size, name: file.name, ms: Math.round(ms), longestGapMs: Math.round(longest), steps }
 }
 const restoreLast = () => restoreBackup(lastBackup!)
+/** Restore the last backup while a 10 ms page timer runs: how long it takes, and the longest gap (the page's pause). */
+async function restoreWithHeartbeat() {
+  let longest = 0, last = performance.now(), ticking = true
+  const tick = () => { const now = performance.now(); longest = Math.max(longest, now - last); last = now; if (ticking) setTimeout(tick, 10) }
+  setTimeout(tick, 10)
+  const t0 = performance.now()
+  const outcome = await restoreBackup(lastBackup!)
+  const ms = performance.now() - t0
+  ticking = false
+  return { ...outcome, ms: Math.round(ms), longestGapMs: Math.round(longest) }
+}
 const deleteDatabase = () => new Promise<void>((resolve, reject) => {
   storage.closeStorage()
   const r = indexedDB.deleteDatabase('sapphire'); r.onsuccess = () => resolve(); r.onerror = () => reject(r.error)
 })
 
 Object.assign(window, { sapphire: { ...storage, importBatchZip, writeV1, readRaw, holdOpen, release, writeInventedV1,
-  backupWithHeartbeat, restoreLast, deleteDatabase, exactStores }, ready: true })
+  backupWithHeartbeat, restoreLast, restoreWithHeartbeat, deleteDatabase, exactStores }, ready: true })
