@@ -48,6 +48,7 @@ STUB
 cat > "$SDK/emulator/emulator" <<'STUB'
 #!/usr/bin/env bash
 echo "emulator $*" >> "$WORK/calls"
+[ "$*" = -version ] && { printf 'Android emulator version 37.2.13.0 (build_id 1) (CL:N/A)\nCopyright (C) fake\n'; exit 0; }
 echo $$ > "$WORK/emu.pid"
 i=1; while [ "$i" -le "${FAKE_EMU_LINES:-0}" ]; do echo "emulator log line $i"; i=$((i + 1)); done
 name="$2"; found=""
@@ -69,7 +70,7 @@ cat > "$SDK/platform-tools/adb" <<'STUB'
 printf '1\r\n'
 STUB
 # GNU timeout is not on every host: the fake records its limit, then runs the command without one
-printf '#!/usr/bin/env bash\necho "$1" >> "$WORK/timeouts"\nshift; exec "$@"\n' > "$WORK/bin/timeout"
+printf '#!/usr/bin/env bash\necho "$1 ${2##*/}" >> "$WORK/timeouts"\nshift; exec "$@"\n' > "$WORK/bin/timeout"
 chmod +x "$T/sdkmanager" "$T/avdmanager" "$SDK/emulator/emulator" "$SDK/platform-tools/adb" "$WORK/bin/timeout"
 
 # run <boot limit s> [--no-xdg] [env...]: a fresh runner-like home (HOME, XDG_CONFIG_HOME set; no ANDROID_* location
@@ -101,7 +102,7 @@ WHY=""; run 10
 [ "$CODE" -eq 0 ] || why "exit $CODE"
 [ -f "$WORK/home/.android/avd/nightly.ini" ] || why "no nightly.ini in \$HOME/.android/avd"
 [ ! -e "$WORK/home/.config/.android/avd/nightly.ini" ] || why "the AVD was written to the XDG folder"
-want="sdkmanager --install $IMAGE emulator platform-tools|avdmanager create avd -n nightly -k $IMAGE --force | ANDROID_AVD_HOME=<W>/home/.android/avd|avdmanager list avd | ANDROID_AVD_HOME=<W>/home/.android/avd|emulator -avd nightly -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect|"
+want="sdkmanager --install $IMAGE emulator platform-tools|emulator -version|avdmanager create avd -n nightly -k $IMAGE --force | ANDROID_AVD_HOME=<W>/home/.android/avd|avdmanager list avd | ANDROID_AVD_HOME=<W>/home/.android/avd|emulator -avd nightly -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect|"
 [ "$(calls)" = "$want" ] || why "calls '$(calls)', expected '$want'"
 check "on a runner-like home (XDG_CONFIG_HOME set) the AVD is created where the emulator looks, then the boot is awaited"
 
@@ -112,9 +113,22 @@ has "Path: $WORK/home/.android/avd/nightly.avd"
 check "the five location variables (an unset one as <unset>) and avdmanager's list are printed"
 
 WHY=""
-[ -s "$WORK/timeouts" ] || why "no boot check went through timeout"
-[ -z "$(grep -v -x 10 "$WORK/timeouts" 2>/dev/null)" ] || why "boot checks under timeout $(sort -u "$WORK/timeouts" | tr '\n' ' ')"
+grep -q -x '10 adb' "$WORK/timeouts" 2>/dev/null || why "no boot check went through timeout"
+grep -q -x '10 emulator' "$WORK/timeouts" 2>/dev/null || why "the version call did not go through timeout 10"
+[ -z "$(grep -v -x -E '10 (adb|emulator)' "$WORK/timeouts" 2>/dev/null)" ] || why "calls under timeout $(sort -u "$WORK/timeouts" | tr '\n' ' ')"
 check "every boot check runs under timeout 10, so a hung adb cannot hold the wait past its limit"
+
+WHY=""
+has "Emulator version: Android emulator version 37.2.13.0 (build_id 1) (CL:N/A)"
+[[ "$OUT" != *"Copyright (C) fake"* ]] || why "more than the version's first line was printed"
+check "the emulator's version is printed once, its first line, before the AVD is created"
+
+WHY=""
+pid=$(cat "$WORK/emu.pid" 2>/dev/null)
+[ -n "$pid" ] && [ "$(cat "$WORK/run/emulator.pid" 2>/dev/null)" = "$pid" ] || why "emulator.pid holds '$(cat "$WORK/run/emulator.pid" 2>/dev/null)', the emulator's process is '$pid'"
+has "Emulator process $pid"
+grep -qF 'PID_FILE="$PWD/emulator.pid"' "$SCRIPT" || why "start-emulator.sh no longer writes \$PWD/emulator.pid"
+check "the emulator's process id is printed and written to emulator.pid in the working directory, beside emulator.log"
 
 WHY=""
 [ "$(cat "$WORK/github_path")" = "$SDK/platform-tools" ] || why "GITHUB_PATH holds '$(cat "$WORK/github_path")'"

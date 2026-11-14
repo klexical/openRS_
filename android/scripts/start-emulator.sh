@@ -12,6 +12,8 @@
 #   - The wait ends at once when the emulator process is gone (the launcher replaces itself with the emulator by execv,
 #     so its process id stays the emulator's), with the last 60 lines of its log; it also ends at the boot limit, measured
 #     by the clock from the emulator's start (a boot check can take up to its 10 s timeout).
+#   - It prints the emulator's version (its first line) and the emulator's process id, and writes that id to emulator.pid
+#     beside emulator.log, for launch-check.sh's failure diagnostics.
 # EMULATOR_POLL_S (default 5) sets the seconds between boot checks; the tests shorten it.
 set -euo pipefail
 fail() { echo "::error::$*"; exit 1; }
@@ -21,7 +23,7 @@ IMAGE="$1"; BOOT_LIMIT_S="$2"; POLL_S="${EMULATOR_POLL_S:-5}"
 [[ "$POLL_S" =~ ^[1-9][0-9]*$ ]] || fail "EMULATOR_POLL_S '$POLL_S' is not a positive number of seconds"
 [ -n "${ANDROID_HOME-}" ] || fail "ANDROID_HOME is not set"
 SDKM="$ANDROID_HOME/cmdline-tools/latest/bin"; EMULATOR="$ANDROID_HOME/emulator/emulator"; ADB="$ANDROID_HOME/platform-tools/adb"
-AVD=nightly; LOG="$PWD/emulator.log"
+AVD=nightly; LOG="$PWD/emulator.log"; PID_FILE="$PWD/emulator.pid"
 
 export ANDROID_AVD_HOME="$HOME/.android/avd"
 mkdir -p "$ANDROID_AVD_HOME"
@@ -30,6 +32,9 @@ for v in ANDROID_AVD_HOME ANDROID_USER_HOME ANDROID_SDK_HOME HOME XDG_CONFIG_HOM
 # yes is killed by SIGPIPE once sdkmanager exits: under pipefail that would fail the run, hence (yes || true).
 # sdkmanager's output stays in the log, so a package it cannot find is named there.
 (yes || true) | "$SDKM/sdkmanager" --install "$IMAGE" emulator platform-tools
+# The version is not pinned (sdkmanager installs the newest), and its banner is far from the log's end (#363): its first line
+version=$(timeout 10 "$EMULATOR" -version 2>&1 || true)
+echo "Emulator version: ${version%%$'\n'*}"
 "$SDKM/avdmanager" create avd -n "$AVD" -k "$IMAGE" --force <<<"no"   # "no" to a custom hardware profile
 echo                                                                   # its prompt ends without a newline
 "$SDKM/avdmanager" list avd || echo "(avdmanager list avd failed with status $?; the check below still decides)"
@@ -42,6 +47,9 @@ fi
 
 nohup "$EMULATOR" -avd "$AVD" -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect > "$LOG" 2>&1 &
 EMULATOR_PID=$!
+# launch-check.sh reads it on a failure, to say whether this process is alive and to match the kernel's kill lines (#363)
+echo "$EMULATOR_PID" > "$PID_FILE"
+echo "Emulator process $EMULATOR_PID (in emulator.pid)"
 STARTED=$SECONDS; waited=0
 while :; do
   if ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
