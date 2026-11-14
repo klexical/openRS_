@@ -56,20 +56,12 @@ object UpdateChecker {
                 val httpClient = client.newBuilder()
                     .socketFactory(network.socketFactory)
                     .build()
-
-                val request = Request.Builder()
-                    .url(RELEASES_URL)
-                    .header("Accept", "application/vnd.github+json")
-                    .build()
-
-                httpClient.newCall(request).execute().use { response ->
-                    if (response.code == 403 || response.code == 429) {
-                        throw RateLimitException()
-                    }
-                    if (!response.isSuccessful) return@withContext null
-
-                    val body = response.body?.string() ?: return@withContext null
-                    parseReleases(body, channel)
+                findUpdate(channel, AppVersion.current()) { url ->
+                    val request = Request.Builder()
+                        .url(url)
+                        .header("Accept", "application/vnd.github+json")
+                        .build()
+                    httpClient.newCall(request).execute().use { Reply(it.code, it.body?.string()) }
                 }
             } catch (e: RateLimitException) {
                 throw e
@@ -77,6 +69,21 @@ object UpdateChecker {
                 null
             }
         }
+    }
+
+    /** One HTTP reply: its status code and body. */
+    internal data class Reply(val code: Int, val body: String?)
+
+    /**
+     * The update for [channel] above [current], reading the release list through [get] (one call per request).
+     * A 403 / 429 throws [RateLimitException]; any other failed reply means no update. Unit-tested with a fake [get] (#364).
+     */
+    internal fun findUpdate(channel: String, current: AppVersion, get: (String) -> Reply): UpdateResult? {
+        val reply = get(RELEASES_URL)
+        if (reply.code == 403 || reply.code == 429) throw RateLimitException()
+        if (reply.code !in 200..299) return null
+        val body = reply.body ?: return null
+        return parseReleases(body, channel, current)
     }
 
     /** Pick the best newer release for [channel] from the GitHub releases JSON. Pure — unit-tested (#214). */
