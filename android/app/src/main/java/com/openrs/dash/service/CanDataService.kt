@@ -1021,6 +1021,11 @@ class CanDataService : Service() {
         link.end(phase)
         stopSessionRecording()
         DiagnosticLogger.event(stopType, stopLine)
+        // Request capture ends here, in the session it belongs to: the old connection's own end comes later, after the
+        // job's cancellation, and could land in the next session (#209, the spec review's C6)
+        com.openrs.dash.can.RequestCapture.shared.linkDown(null,
+            if (reason == LinkStopReason.USER_RETRY) com.openrs.dash.can.RequestCapture.REASON_RECONNECTED
+            else com.openrs.dash.can.RequestCapture.REASON_STOPPED)
         DiagnosticLogger.sessionEnd()
         connection?.abort()          // a blocking connect / read returns now instead of after its timeout
         connectionJob?.cancel()

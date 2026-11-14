@@ -646,6 +646,8 @@ internal fun requestCaptureText(c: DiagnosticLogger.RequestCaptureRecord): List<
     if (c.spans.isEmpty() && c.spansDropped == 0) { add("  Off for the whole session"); return@buildList }
     add("  PCM requests one at a time, up to ${com.openrs.dash.can.RequestCapture.WAIT_MS} ms per answer; " +
         "${c.timeouts} answer(s) not received in time")
+    add("  Late answers: ${c.lateInWindow} within the ${com.openrs.dash.can.RequestCapture.LATE_WINDOW_MS} ms pause after a " +
+        "timeout · ${c.lateAfterWindow} after it")
     c.spans.forEach { sp ->
         add("  On %.1f s → ".format(java.util.Locale.ROOT, sp.onMs / 1000.0) +
             (sp.offMs?.let { "off %.1f s (%s)".format(java.util.Locale.ROOT, it / 1000.0, sp.offReason) } ?: "still on at export"))
@@ -657,6 +659,9 @@ internal fun requestCaptureJson(c: DiagnosticLogger.RequestCaptureRecord): JSONO
     put("used", c.spans.isNotEmpty() || c.spansDropped > 0)
     put("waitMs", com.openrs.dash.can.RequestCapture.WAIT_MS)
     put("timeouts", c.timeouts)
+    put("lateWindowMs", com.openrs.dash.can.RequestCapture.LATE_WINDOW_MS)
+    put("lateInWindow", c.lateInWindow)
+    put("lateAfterWindow", c.lateAfterWindow)
     put("spans", JSONArray().apply {
         c.spans.forEach { sp -> put(JSONObject().apply {
             put("onMs", sp.onMs)

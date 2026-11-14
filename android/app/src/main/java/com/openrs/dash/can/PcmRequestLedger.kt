@@ -76,6 +76,9 @@ class PcmRequestLedger(private val maxAgeMs: Long = 2_000L) {
         return first.did
     }
 
+    /** The requests still waiting for a final reply, oldest first (request capture's turn, #209). */
+    @Synchronized fun outstandingRequests(): List<Request> = outstanding.toList()
+
     /** DIDs that may own a reply at [nowMs], lapsed first (diagnostics for an ambiguous NRC). */
     @Synchronized fun waiting(nowMs: Long): List<Int> { prune(nowMs); return lapsed.toList() + outstanding.map { it.did } }
 

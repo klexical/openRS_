@@ -952,7 +952,10 @@ import kotlin.math.roundToInt
         // ── Request capture (#209 Step B): beside the DID prober, this connection only ──
         onRequestCapture?.let { set ->
             RequestCaptureRow(on = requestCaptureOn, enabled = vs.isConnected && !com.openrs.dash.demo.DemoMode.isActive,
-                onChange = { set(it) })
+                onChange = { want ->
+                    // A refusal has a reason on screen (the spec review's N5): no live link at the moment of the tap
+                    if (!set(want)) scope.launch { snackbarHostState?.showSnackbar(REQUEST_CAPTURE_REFUSED) }
+                })
         }
 
         Spacer(Modifier.height(Tokens.SectionGap))

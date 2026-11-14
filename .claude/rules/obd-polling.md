@@ -42,7 +42,8 @@ paths:
   2×): POWER dims with STALE Ns, the dashboard shows "— —". NRC suppression (#216) needs 2 attributed NRCs (attributed only
   when unambiguous — see SlcanConnection; a timeout or the 32-entry queue limit is a resource limit, never proof of ownership,
   so after one lost reply NRCs stay unattributed for that connection), recovers on a positive reply and re-probes after 60 s;
-  the PCM poller always suspends. While Request capture is on, suppression skips no DID (#209).
+  the PCM poller always suspends. While Request capture is on, suppression skips no DID and no rejection counts toward it
+  (#209).
 - **POWER cells are gated per field** — engine cells show only when `rpm > FAST_POLL_MIN_RPM` AND `fieldLastUpdateMs[tag] != null`; never gate on another field's value (the old `calcLoad > 0` gate hid everything once load lost its decoder)
 - **An OBD merge can resurrect a stamp key the CAN side removed (#252)** — `ObdMerge.merge()` merges
   `fieldLastUpdateMs` by per-key max from the reply's SNAPSHOT of VehicleState; a key that CAN-side code deleted after the snapshot
@@ -67,12 +68,32 @@ paths:
     ledger, whose attribution is unchanged.
   - **One gate:** `captureGate` is held by the poller and by a PCM DID probe from the write to the answer or the set time,
     so neither writes while the other's request waits (a "not during a probe" check races). A probe takes it inside
-    `_dtcMutex`; the poller never takes `_dtcMutex`.
-  - **NRC suppression skips no DID** while on: `shouldPoll` is not asked (it changes re-probe state). The frame loop still
-    records NRCs, so ones seen during a capture count toward suppression after it is off.
-  - **No answer in time** is a `# CAPTURE-TIMEOUT (t) can0 ID#DATA no answer within 2000 ms` line, stamped at the wait's
-    end, so a later answer reads as late. It does not start with `# TX`, so no reader picks it as a request.
-  - **Off at every link up and down,** automatic reconnects included (`linkChanged`), and refused with no link or in demo
-    mode. A capture never ends silently: a `REQUEST_CAPTURE` session event says why, the switch reads off, and the export's
-    REQUEST CAPTURE section / `requestCapture` JSON (spans with on, off and reason; timeouts; additive) say when
-    (`RequestCaptureTest`)
+    `_dtcMutex`; the poller never takes `_dtcMutex`. A PCM probe in the mode waits `max(its timeout, WAIT_MS)`. Every
+    turn runs `awaitCaptureTurn` inside the gate before the write.
+  - **Only its own answer ends a wait:** a positive reply for another DID (a late one) does not.
+  - **The late-answer pause (C1, owner 2026-11-14):** after a capture request (poll or PCM probe) gets no answer in time,
+    nothing goes to the PCM until `RequestCapture.LATE_WINDOW_MS` (5,000 ms) after that request's write, so a late
+    answer lands before the next request and is that request's; the next request starts with nothing outstanding. 5,000 ms
+    is a chosen value: the usual default for a response-pending wait (P2*) in diagnostic libraries; no standard was read.
+    Counted in the export: any final answer inside the pause (`lateInWindow`), and a positive reply after it for a DID
+    that timed out and is not the one being waited for (`lateAfterWindow`). A rejection after the pause names no DID and
+    is the current request's (Reading 2).
+  - **At switch-on** the first turn waits for any PCM request sent before the capture began (still outstanding in the
+    ledger), up to `WAIT_MS` after its write; the capture's own requests are not waited for again (`RequestCapture.switchOns`
+    marks a new capture).
+  - **DTC operations (C2, owner 2026-11-14):** while the mode is on, the DTC scan, clear and both freeze-frame reads hold
+    `captureGate` for their whole operation (`dtcOperation`, inside `_dtcMutex`), after their turn, so polling pauses for
+    their length. With the mode off they start at once, as before.
+  - **NRC suppression is off:** `shouldPoll` is not asked (it changes re-probe state) and `recordNrc` is not called, so no
+    rejection counts toward suppression; it resumes from where it was after the mode. `recordPositive` still runs (a
+    positive reply truly clears a suppression).
+  - **No answer in time** is a `# CAPTURE-TIMEOUT (t) can0 ID#DATA no answer within 2000 ms` line (`response pending, no
+    final answer within …` after a `7F 22 78`), from the poller and from a PCM probe, stamped at the wait's end, so a later
+    answer reads as late. It does not start with `# TX`, so no reader picks it as a request.
+  - **Off at every link up and down,** automatic reconnects included, and refused with no link or in demo mode (DIAG's
+    snackbar says so). Each link has a token (`linkUp`); `linkDown(token, …)` acts only for the current link, so an old
+    connection's late end (a manual reconnect cancels it without waiting) leaves the new link's switch alone. The service's
+    `teardownJob` ends the capture itself before `sessionEnd`, so the event lands in the session it belongs to. Every
+    change is recorded inside the switch's lock. A capture never ends silently: a `REQUEST_CAPTURE` session event says why,
+    the switch reads off, and the export's REQUEST CAPTURE section / `requestCapture` JSON (spans with on, off and reason;
+    timeouts; additive) say when (`RequestCaptureTest`, `RequestCaptureServiceTest`, `RequestCaptureRowTest`)

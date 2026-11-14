@@ -92,6 +92,18 @@ class RequestCaptureRowTest {
         }
     }
 
+    /** N5: a tap the switch refuses (no live link at that moment) says why, in DIAG's snackbar. */
+    @Test fun `a refused tap says why in DIAG's snackbar`() {
+        val vs = VehicleState(isConnected = true)
+        val snack = androidx.compose.material3.SnackbarHostState()
+        composed({ DiagPage(lines = emptyList(), vs = vs, onScanDtcs = null, onRequestCapture = { false }, snackbarHostState = snack) }) { r ->
+            r().tap("DEVELOPER")
+            r().switch()!!.config[SemanticsActions.OnClick].action!!.invoke()
+            idleFrames(6)
+            assertEquals(com.openrs.dash.ui.REQUEST_CAPTURE_REFUSED, snack.currentSnackbarData?.visuals?.message)
+        }
+    }
+
     /** The switch sits beside the DID prober, in DIAG's DEVELOPER section (collapsed by default, as the prober is). */
     @Test fun `DIAG shows the switch beside the DID prober with a service to ask, and not without one`() {
         val vs = VehicleState(isConnected = true)

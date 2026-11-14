@@ -57,3 +57,6 @@ fun RequestCaptureRow(on: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit
 }
 
 internal const val REQUEST_CAPTURE_SWITCH_TAG = "request_capture_switch"
+
+/** What DIAG says when the switch refuses a tap (no live connection at that moment, #209). */
+const val REQUEST_CAPTURE_REFUSED = "Request capture needs a live connection."

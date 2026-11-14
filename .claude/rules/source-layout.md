@@ -55,7 +55,9 @@ can/
                             Every frame write is a `# TX` line in the SLCAN log with what `write()` established
                             (noteWrite / noteWriteFailure for tracked requests; the rest through writeLogged or the DTC scan's send; #209)
   RequestCapture.kt       — Request capture (#209 Step B): the one switch (`shared`), off at every link up / down with a
-                            session event, refused with no link; `WAIT_MS` = 2,000 ms per PCM answer
+                            session event (a token per link: an old link's late end is ignored), refused with no link;
+                            `WAIT_MS` = 2,000 ms per PCM answer; `LATE_WINDOW_MS` = 5,000 ms pause after a timeout (a chosen
+                            value); DTC operations hold the gate while it is on
   AdapterState.kt         — Disconnected / Connecting / Connected / Reconnecting / Idle / Error (sealed, `label` = fixed
                             names for logs — R8 renames the classes) + LinkPhase (OFF/CONNECTING/CONNECTED/RECONNECTING/FAILED)
   SlcanParser.kt          — SLCAN frame tokenizer ('t'=standard, 'T'=extended); exact DLC × 2 data (+4 only when timestamped)
