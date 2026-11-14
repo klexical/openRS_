@@ -93,6 +93,9 @@
 .look-a .a-empty { background: var(--a-card); border: 1.5px dashed var(--a-brd2); border-radius: 12px; padding: 24px; }
 .look-a .a-empty > * + * { margin-top: 12px; }
 .look-a .a-empty p { color: var(--a-mid); }
+/* the old views keep their own stacking inside one context: Leaflet's panes and the map's own controls (z-index up to
+   1000) must not paint over the places bar */
+.look-a .old-view { isolation: isolate; }
 .look-a .a-crumb { color: var(--a-dim); text-decoration: none; font-size: 0.9em; }
 .look-a .a-views { display: flex; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid var(--a-brd2); padding-bottom: 10px; }
 @media (min-width: 768px) {

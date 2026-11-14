@@ -250,9 +250,17 @@ await ctx.close()
   const over = await page.evaluate(() => {
     const map = document.querySelector('.leaflet-container'), bar = document.querySelector('nav[aria-label="Places"]')
     const b = bar.getBoundingClientRect(), m = map.getBoundingClientRect()
-    const x = Math.round(m.left + m.width / 2), y = Math.round(b.top + b.height / 2)
-    const hit = document.elementFromPoint(x, y)
-    return { crosses: m.top < b.bottom && m.bottom > b.top, onTop: !!hit && bar.contains(hit), hit: hit?.className?.baseVal ?? hit?.className ?? hit?.tagName,
+    // every 4 px of the band where the map and the bar overlap, at five points across: the bar must be what is there
+    const top = Math.ceil(Math.max(m.top, b.top)), bottom = Math.floor(Math.min(m.bottom, b.bottom))
+    const misses = []
+    let samples = 0
+    for (let y = top + 1; y < bottom; y += 4) for (let i = 1; i <= 5; i++) {
+      const x = Math.round(m.left + (m.width * i) / 6)
+      const hit = document.elementFromPoint(x, y)
+      samples++
+      if (!hit || !bar.contains(hit)) misses.push(`${x},${y} ${hit?.tagName} ${hit?.className?.baseVal ?? hit?.className ?? ''}`)
+    }
+    return { crosses: m.top < b.bottom && m.bottom > b.top, onTop: samples > 0 && misses.length === 0, samples, misses: misses.slice(0, 3),
       map: [Math.round(m.top), Math.round(m.bottom)], bar: [Math.round(b.top), Math.round(b.bottom)], scrollY: Math.round(window.scrollY) }
   })
   check(over.crosses && over.onTop, `375: a route map under the bottom bar stays beneath it (${JSON.stringify(over)})`)
