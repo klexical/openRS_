@@ -59,9 +59,8 @@ data class AppVersion(
         /**
          * Parse an APK asset filename like `openRS_v2.2.6.apk`, `openRS_v2.2.6-rc.10.apk` or
          * `openRS_v2.2.7-nightly.20261201.apk`.
-         * Used as the authoritative version source for release detection — the rolling-RC
-         * tag pattern keeps the same git tag across multiple RCs, so the APK filename is
-         * the only place the actual RC number is recorded.
+         * The updater takes a release's version from its tag and only the asset named exactly
+         * `openRS_v<name>.apk` for that tag (#364); this parser checks that a file name and a tag agree.
          */
         fun fromApkFilename(name: String): AppVersion? = APK_REGEX.matchEntire(name)?.let(::of)
 
