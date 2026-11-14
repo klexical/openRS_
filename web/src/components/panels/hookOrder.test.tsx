@@ -9,7 +9,7 @@ import type { Session } from '../../types/session'
 import { DashboardPanel } from './DashboardPanel'
 import { TripPanel } from './TripPanel'
 import { ComparePanel } from './ComparePanel'
-import { SessionsPanel } from './SessionsPanel'
+import { DrivesPage } from '../drives/DrivesPage'
 import { Sparkline } from '../charts/Sparkline'
 import { storeWithSessions } from '../../test/storeState'
 
@@ -119,16 +119,18 @@ describe('hook order across data transitions (same mounted component)', () => {
     expectNoHookErrors()
   })
 
-  it('SessionsPanel — no sessions → three sessions → selection changed → no sessions', () => {
-    const { container } = render(<SessionsPanel />)
-    expect(container.textContent).toContain('No Sessions')
+  // #384 ticket 05: the list of drives took over from SessionsPanel
+  it('DrivesPage — no drives → three drives → selection changed → no drives', () => {
+    set({ drivesLoaded: true })
+    const { container } = render(<DrivesPage />)
+    expect(container.textContent).toContain('No drives stored')
 
     set(storeWithSessions([driveA, driveB, diagOnly], driveA.id))
     expect(container.textContent).toContain('3-street-to-race')
     set({ activeSessionId: diagOnly.id, activeSession: diagOnly })
     expect(container.textContent).toContain('diag-only')
     set(storeWithSessions([]))
-    expect(container.textContent).toContain('No Sessions')
+    expect(container.textContent).toContain('No drives stored')
     expectNoHookErrors()
   })
 

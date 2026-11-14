@@ -5,7 +5,7 @@ import { importZip, importBatchZip } from './import'
 import { useStore } from '../store'
 import type { Session, TripSummary } from '../types/session'
 import { DashboardPanel } from '../components/panels/DashboardPanel'
-import { SessionsPanel } from '../components/panels/SessionsPanel'
+import { DrivesPage } from '../components/drives/DrivesPage'
 import { ComparePanel } from '../components/panels/ComparePanel'
 import { storeWithSessions } from '../test/storeState'
 
@@ -180,9 +180,9 @@ describe('#284 display: an estimate says so, a recorded distance does not', () =
     expect(dashboard(legacy)).toMatch(/Distance3\.1 kmEstimate from GPS points/)
   })
 
-  it('Sessions and Compare rows mark only the estimates', () => {
-    useStore.setState(storeWithSessions([recorded, estimate, legacy], 'rec'))
-    for (const Panel of [SessionsPanel, ComparePanel]) {
+  it('the list of drives and Compare rows mark only the estimates', () => {
+    useStore.setState({ ...storeWithSessions([recorded, estimate, legacy], 'rec'), drivesLoaded: true })
+    for (const Panel of [DrivesPage, ComparePanel]) {
       const text = render(<Panel />).container.textContent ?? ''
       expect(text).toMatch(/0\.9 km(?! est\.)/)
       expect(text.match(/3\.1 km est\./g)).toHaveLength(2)

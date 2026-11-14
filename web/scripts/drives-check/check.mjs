@@ -253,6 +253,52 @@ const snapRow = page.locator('.a-row.is-session')
 check(await snapRow.count() === 1 && /◇\s*Session only/.test(await snapRow.innerText()), 'the snapshot is a session-only row, marked "◇ Session only"')
 await page.screenshot({ path: `${out}-list-markers-1280x800.png` })
 
+// ── Look after a drive from its row (#384 ticket 05), by keyboard: rename, ticks, Compare, Delete selected; right-click ──
+await page.goto(home)
+await page.waitForSelector('.a-row')
+const firstRow = page.locator('.a-row').first()
+const oldName = await firstRow.locator('.a-name').innerText()
+await firstRow.getByRole('button', { name: `Actions for ${oldName}` }).focus()
+await page.keyboard.press('Enter')                                   // opens the menu at its first item
+const onRename = await page.evaluate(() => document.activeElement?.textContent)
+await page.keyboard.press('Enter')                                   // Rename…
+await page.waitForFunction(() => document.activeElement?.tagName === 'INPUT')   // the editor has focus, the name selected
+await page.keyboard.press('ArrowRight')                              // to the end of the selected name (End does not, on a Mac)
+await page.keyboard.type(' (renamed)')
+await page.keyboard.press('Enter')
+await page.waitForFunction((n) => [...document.querySelectorAll('.a-name')].some((a) => a.textContent === n), `${oldName} (renamed)`)
+const focusBackTo = await page.evaluate(() => document.activeElement?.getAttribute('aria-label'))
+await page.reload()
+await page.waitForSelector('.a-row')
+check(onRename === 'Rename…' && focusBackTo === `Actions for ${oldName} (renamed)` && await page.locator('.a-row .a-name').first().innerText() === `${oldName} (renamed)`,
+  `keyboard only: Enter opens the row menu, Enter renames, the name is kept after a reload, and focus returns to the menu button`)
+// right-click with the mouse opens the row's menu; Escape closes it
+await page.locator('.a-row').nth(1).click({ button: 'right', position: { x: 200, y: 20 } })
+const rightMenu = await page.locator('[role="menu"]').count()
+await page.keyboard.press('Escape')
+check(rightMenu === 1 && await page.locator('[role="menu"]').count() === 0, 'right-click on a row opens its menu; Escape closes it')
+// tick two rows by keyboard and open Compare
+const before = await rows(page)
+for (const i of [1, 2]) { await page.locator('.a-row .a-tick').nth(i).focus(); await page.keyboard.press('Space') }
+await page.getByRole('button', { name: 'Compare (2)' }).focus()
+await page.keyboard.press('Enter')
+const compared = await page.waitForSelector('text=/ vs /', { timeout: 15000 }).then(() => true, () => false)
+check(compared, 'two ticked rows open Compare (today\'s view, against the first ticked)')
+await page.getByRole('button', { name: 'Back to the list' }).click()
+await page.waitForSelector('.a-row')
+// Delete selected asks first; Tab from Cancel to Delete, Enter
+await page.getByRole('button', { name: 'Delete selected (2)' }).focus()
+await page.keyboard.press('Enter')
+const asked = await page.locator('[role="alertdialog"]').innerText()
+const cancelFirst = await page.evaluate(() => document.activeElement?.textContent)
+await page.keyboard.press('Tab')
+await page.keyboard.press('Enter')
+await page.waitForFunction((n) => document.querySelectorAll('.a-row').length === n, before - 2)
+await page.reload()
+await page.waitForSelector('.a-row')
+check(/Delete 2 drives\?/.test(asked) && /cannot be undone/.test(asked) && cancelFirst === 'Cancel' && await rows(page) === before - 2,
+  `"Delete selected" asks first (focus on Cancel), deletes the two ticked drives, and they stay gone after a reload (${await rows(page)} rows)`)
+
 check(errors.length === 0, `desktop: no page errors (${errors.length}${errors.length ? ': ' + errors[0] : ''})`)
 const rail = await page.locator('nav[aria-label="Places"]').boundingBox()
 check(rail && rail.x === 0 && rail.height > rail.width, `1280: the places are a rail on the left (${JSON.stringify(rail)})`)

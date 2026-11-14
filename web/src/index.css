@@ -54,7 +54,7 @@
    Colours come from styles/lookA.ts as --a-* properties on .look-a (Night only until ticket 08); the accent is the paint.
    Below 768 px the places are a bar at the bottom; from 768 px a narrow rail on the left. Every rule names a class of
    the new screens: the old views inside a drive (.old-view) keep their own look until tickets 07 and 08. */
-.look-a { background: var(--a-bg); color: var(--a-ink); min-height: 100dvh; }
+.look-a { background: var(--a-bg); color: var(--a-ink); min-height: 100dvh; color-scheme: dark; }   /* Night: native controls dark too */
 .look-a .a-place:focus-visible, .look-a .a-name:focus-visible, .look-a .a-btn:focus-visible, .look-a .a-crumb:focus-visible {
   outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .look-a .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
@@ -102,6 +102,40 @@
 .look-a .a-marker { border: 1px solid var(--a-brd2); border-radius: 8px; padding: 0 7px; color: var(--a-mid); white-space: nowrap; }
 .look-a .a-marker.warn { color: var(--a-warn); font-weight: 700; border-color: var(--a-warn); }
 .look-a .a-row.is-warning { border-left: 4px solid var(--a-warn); }
+/* ticket 05: ticks, the row menu, the editors, the confirmation */
+.look-a .a-rowhead { display: flex; align-items: center; gap: 10px; }
+.look-a .a-tick, .look-a .a-menuwrap, .look-a .a-editor, .look-a .a-tags, .look-a .a-note { position: relative; z-index: 1; }
+.look-a .a-tick { width: 20px; height: 20px; accent-color: var(--color-accent); }
+.look-a .a-tick:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.look-a .a-row.is-ticked { border-color: var(--color-accent); }
+.look-a .a-menuwrap { position: absolute; top: 10px; right: 10px; z-index: 3; }
+.look-a .a-menubtn { min-width: 44px; min-height: 32px; padding: 6px 12px; font-size: 1.1em; line-height: 1; }
+.look-a .a-menu { position: absolute; right: 0; top: 100%; margin-top: 4px; min-width: 180px; display: flex; flex-direction: column;
+  background: var(--a-card); border: 1px solid var(--a-brd2); border-radius: 8px; padding: 4px; z-index: 30;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); }
+.look-a .a-menu [role='menuitem'] { text-align: left; font: inherit; color: var(--a-ink); background: none; border: 0; border-radius: 6px;
+  padding: 8px 10px; cursor: pointer; }
+.look-a .a-menu [role='menuitem']:hover, .look-a .a-menu [role='menuitem']:focus-visible { background: var(--a-button);
+  outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.look-a .a-menu .danger, .look-a .a-btn.danger { color: var(--a-warn); }
+.look-a .a-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.look-a .a-editor { grid-column: 1 / -1; display: grid; gap: 8px; }
+.look-a .a-editor label { display: grid; gap: 4px; color: var(--a-mid); font-size: 0.9em; }
+.look-a .a-editor input, .look-a .a-editor textarea { font: inherit; color: var(--a-ink); background: var(--a-bg);
+  border: 1px solid var(--a-brd2); border-radius: 8px; padding: 8px 10px; }
+.look-a .a-editor input:focus-visible, .look-a .a-editor textarea:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.look-a .a-editor-actions, .look-a .a-tagchoices { display: flex; gap: 8px; flex-wrap: wrap; }
+.look-a .a-tags { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: 8px; vertical-align: middle; font-size: 0.85em; }
+.look-a .a-tag { color: var(--a-mid); border: 1px dashed var(--a-brd2); border-radius: 8px; padding: 0 7px; }
+.look-a .a-note { color: var(--a-mid); font-size: 0.9em; margin-top: 4px; white-space: pre-wrap; }
+.look-a .a-selection { justify-content: flex-start; background: var(--a-card); border: 1px solid var(--a-brd2); border-radius: 8px; padding: 8px 12px; }
+.look-a .a-scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center;
+  padding: 16px; z-index: 50; }
+.look-a .a-dialog { background: var(--a-card); border: 1px solid var(--a-brd2); border-radius: 12px; padding: 20px; max-width: 440px;
+  width: 100%; display: grid; gap: 12px; }
+.look-a .a-dialog h2 { font-size: 18px; }
+.look-a .a-dialog p, .look-a .a-confirm-list { color: var(--a-mid); }
+.look-a .a-confirm-list { padding-left: 18px; list-style: disc; }
 .look-a .a-notchecked { color: var(--a-mid); font-size: 0.9em; }
 .look-a .a-empty { background: var(--a-card); border: 1.5px dashed var(--a-brd2); border-radius: 12px; padding: 24px; }
 .look-a .a-empty > * + * { margin-top: 12px; }
@@ -121,7 +155,7 @@
   .look-a .a-shell { padding-bottom: 0; margin-left: 76px; }
   .look-a .a-page { padding: 24px; }
   .look-a .a-search { flex: 0 1 340px; }
-  .look-a .a-row { grid-template-columns: 120px minmax(170px, 1.1fr) minmax(0, 2.6fr); align-items: center; gap: 16px; }
+  .look-a .a-row { grid-template-columns: 150px minmax(170px, 1.1fr) minmax(0, 2.6fr); align-items: center; gap: 16px; padding-right: 56px; }
   .look-a .a-row .a-time { display: block; }
   .look-a .a-facts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }

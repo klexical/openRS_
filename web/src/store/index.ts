@@ -19,6 +19,10 @@ interface SapphireState {
   drivesLoaded: boolean
   setDrivesLoaded: (loaded: boolean) => void
 
+  /** The list shows today's Compare for the ticked drives (Compare is an action, not a place; ticket 05). */
+  compareOpen: boolean
+  setCompareOpen: (open: boolean) => void
+
   /** The list's search text and quick filters (ticket 04): kept here, so they are still there after opening a drive. */
   listSearch: string
   setListSearch: (text: string) => void
@@ -61,7 +65,16 @@ interface SapphireState {
   compareSessionIds: string[]
   toggleCompareSession: (id: string) => void
   clearCompare: () => void
+  /** Compare exactly these drives, in this order (the first is the base): the ticked rows (ticket 05). */
+  setCompare: (ids: string[]) => void
 
+}
+
+/** A loaded session with the owner's own fields (name, tags, note) taken from its updated small record. */
+function withOwnFields(session: Session, drive: DriveRecord): Session {
+  const { note: _old, ...rest } = session
+  void _old
+  return { ...rest, name: drive.name, tags: drive.tags, ...(drive.note !== undefined ? { note: drive.note } : {}) }
 }
 
 export const useStore = create<SapphireState>((set) => ({
@@ -71,6 +84,8 @@ export const useStore = create<SapphireState>((set) => ({
   setImportOpen: (open) => set({ importOpen: open }),
   drivesLoaded: false,
   setDrivesLoaded: (loaded) => set({ drivesLoaded: loaded }),
+  compareOpen: false,
+  setCompareOpen: (open) => set({ compareOpen: open }),
   listSearch: '',
   setListSearch: (text) => set({ listSearch: text }),
   filterWarnings: false,
@@ -84,10 +99,10 @@ export const useStore = create<SapphireState>((set) => ({
   addDrives: (drives) => set((s) => ({ drives: [...s.drives, ...drives] })),
   updateDrive: (drive) => set((s) => ({
     drives: s.drives.map((d) => (d.id === drive.id ? drive : d)),
-    // the open drive shows the new name and tags at once
-    activeSession: s.activeSession?.id === drive.id ? { ...s.activeSession, name: drive.name, tags: drive.tags } : s.activeSession,
+    // the open drive shows the new name, tags and note at once
+    activeSession: s.activeSession?.id === drive.id ? withOwnFields(s.activeSession, drive) : s.activeSession,
     // and Compare, which holds its own copy of the compared drives (review H4)
-    compareSessions: s.compareSessions.map((c) => (c.id === drive.id ? { ...c, name: drive.name, tags: drive.tags } : c)),
+    compareSessions: s.compareSessions.map((c) => (c.id === drive.id ? withOwnFields(c, drive) : c)),
   })),
   removeDrives: (ids) => set((s) => {
     const idSet = new Set(ids)
@@ -121,6 +136,7 @@ export const useStore = create<SapphireState>((set) => ({
     return { compareSessionIds: [...current, id] }
   }),
   clearCompare: () => set({ compareSessionIds: [] }),
+  setCompare: (ids) => set({ compareSessionIds: ids.slice(0, 4) }),
 }))
 
 /**

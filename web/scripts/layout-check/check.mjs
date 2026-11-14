@@ -2,11 +2,11 @@
 // build in a disposable Chromium profile per viewport; fixture drives imported through the list's Import button; every
 // .png and web-font request aborted (no tiles or fonts needed; deterministic text metrics). The drive's two views that
 // show the route map (Dashboard, Trip; #384 ticket 03 reaches them from the drive's address) are measured and
-// screenshotted at every viewport. Compare is not reachable between tickets 03 and 05 of #384 (it returns from ticked
-// rows in ticket 05, which puts its case back here).
+// screenshotted at every viewport, and Compare with every imported drive, opened from ticked rows (#384 ticket 05).
 // At 375 × 812, on each view: no horizontal page or panel scroll, no element reaching past the screen edge, the
 // navigation is not a column beside the content, every map at least 300 px wide with its attribution at most two lines
-// and its colour-mode buttons inside it; both places (Drives, Settings) reachable from the navigation.
+// and its colour-mode buttons inside it; Compare with three or more drives; both places (Drives, Settings) reachable from
+// the navigation.
 // At 768 × 1024 (tablet) and 1280 × 800 the element rects are written, to compare two builds.
 // Playwright is not a project dependency — install it anywhere outside the repo (as for scripts/idb-check):
 //   T=$(mktemp -d) && (cd $T && npm i playwright@1.48.2 && PLAYWRIGHT_BROWSERS_PATH=$T/b npx playwright install chromium)
@@ -96,8 +96,15 @@ for (const [w, h] of [[375, 812], [768, 1024], [1280, 800]]) {
   await page.waitForFunction(() => location.hash.startsWith('#/drive/'), null, { timeout: 15000 })
   const driveHref = await page.evaluate(() => location.hash)
   results[vp] = {}
-  for (const panel of ['dashboard', 'trip']) {
-    await show(page, panel, driveHref)
+  for (const panel of ['dashboard', 'trip', 'compare']) {
+    if (panel === 'compare') {
+      // every imported drive ticked in list order, then Compare (#384 ticket 05)
+      await page.goto(origin + '/openRS_/')
+      await page.waitForSelector('.a-row .a-tick', { timeout: 15000 })
+      const n = await page.locator('.a-row .a-tick').count()
+      for (let i = 0; i < n; i++) await page.locator('.a-row .a-tick').nth(i).check()
+      await page.getByRole('button', { name: `Compare (${n})` }).click()
+    } else await show(page, panel, driveHref)
     await page.waitForSelector('.leaflet-container', { timeout: 15000 }).catch(() => {})
     await page.waitForTimeout(1200)
     const r = await measure(page)
@@ -117,6 +124,7 @@ for (const [w, h] of [[375, 812], [768, 1024], [1280, 800]]) {
         const [sl, , sw] = m.selector, [pl, , pw] = m.map
         check(sl >= pl && sl + sw <= pl + pw, `375 ${panel} map ${i + 1}: colour-mode buttons inside the map (buttons ${m.selector}, map ${m.map})`)
       })
+      if (panel === 'compare') check(r.maps.length >= 3, `375 compare: three or more drives compared (${r.maps.length} maps)`)
       if (panel === 'trip') check(r.navItems === 2, `375: both places are reachable from the navigation (${r.navItems} links)`)
     }
   }

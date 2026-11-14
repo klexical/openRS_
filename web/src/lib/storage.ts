@@ -466,6 +466,16 @@ export function renameDrive(id: string, name: string): Promise<DriveRecord | nul
   return updateDrive(id, (d) => ({ ...d, name }))
 }
 
+/** Write the owner's note (#384 ticket 05): the small record only. An empty note removes the field. */
+export function setDriveNote(id: string, note: string): Promise<DriveRecord | null> {
+  return updateDrive(id, (d) => {
+    const { note: _old, ...rest } = d
+    void _old
+    const text = note.trim()
+    return text ? { ...rest, note: text } : rest
+  })
+}
+
 /** Replace the tags: the small record only. */
 export function setDriveTags(id: string, tags: string[]): Promise<DriveRecord | null> {
   return updateDrive(id, (d) => ({ ...d, tags }))
