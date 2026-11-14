@@ -15,17 +15,21 @@ ADB_LIMIT_S=60
 EMULATOR_LOG="$PWD/emulator.log"
 STEP="the argument checks"; REPORTED=0; TMP=""
 
+# redact: the APK's two key values by their shape (the Maps key AIza + 35 characters or more; any appid= value)
+redact() { sed -E 's/AIza[0-9A-Za-z_-]{35,}/AIza<redacted>/g; s/appid=[^&[:space:]]+/appid=<redacted>/g'; }
 diagnostics() {
   echo "--- adb devices"
   timeout 10 adb devices 2>&1 || echo "(adb devices failed)"
   echo "--- emulator processes"
   pgrep -a -f -- 'qemu-system|emulator/emulator' || echo "(no emulator process)"
   # Process and crash lines only, never the whole log: the Maps SDK's authorization block prints the API key
-  # (.claude/rules/build-release.md), so any line naming a key is left out too. Bounded: with the device gone, logcat waits.
+  # (.claude/rules/build-release.md). A line naming a key is left out, and the two key values the APK holds are
+  # redacted by their shape wherever they appear: the Maps key (AIza…) and the weather key (sent as appid=…).
+  # Bounded: with the device gone, logcat waits.
   echo "--- the device log's process and crash lines (the last 40)"
   { timeout 10 adb logcat -d -b main,system,crash 2>/dev/null || true; } \
     | grep -E 'AndroidRuntime|Fatal signal|ActivityManager: (Process|Killing|Start proc|ANR)|lowmemorykiller|lmkd' \
-    | grep -v -i 'key' | tail -n 40 || true
+    | grep -v -i 'key' | redact | tail -n 40 || true
   echo "--- host memory"
   free -m 2>/dev/null || echo "(free not available)"
   echo "--- host kernel: killed processes and out-of-memory lines (the last 20)"
@@ -70,7 +74,7 @@ APK="$1"; WAIT="$2"
 STEP="setting up"; TMP=$(mktemp -d "${TMPDIR:-/tmp}/launch-check.XXXXXX")
 
 timeout "$ADB_LIMIT_S" adb shell pm disable-user --user 0 com.android.vending >/dev/null 2>&1 \
-  || echo "Play Store not present on this image"
+  || echo "Play Store not disabled (not on this image, or adb failed)"
 call "installing the APK" install -r "$APK"; echo "$OUT"
 call "clearing the log" logcat -c
 call "the cold start" shell am start -S -W -n "$PKG/$ACTIVITY"; echo "$OUT"

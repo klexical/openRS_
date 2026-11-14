@@ -4,7 +4,8 @@
 # log is cleared BEFORE the cold start, and the run fails on a missing or changed process id after the wait, a verifier
 # rejection, a fatal exception or an ANR. Every adb call runs under `timeout 60`; a call that fails or does not answer
 # ends the check with a message naming its step, and every failure prints `adb devices`, the emulator processes, the
-# device log's process and crash lines (never a line naming a key), the host's memory and kernel kill lines, and the last
+# device log's process and crash lines (a line naming a key left out, the APK's two key values redacted by their shape:
+# Maps AIza…, weather appid=…), the host's memory and kernel kill lines, and the last
 # 200 lines of start-emulator.sh's emulator.log. A fake adb answers from fixtures, as Android does (`pidof` exits 1
 # when nothing matches, and adb passes the status on; with the device gone, logcat waits), and records the order of calls.
 # Run from anywhere: bash android/scripts/test-launch-check.sh
@@ -71,9 +72,14 @@ printf '%s\n' "[  812.1] usb 1-1: new device" "[  901.5] Out of memory: Killed p
 printf '#!/usr/bin/env bash\ncat "$WORK/free-out"\n' > "$WORK/bin/free"
 printf '#!/usr/bin/env bash\n[ "$*" = "-n dmesg" ] && cat "$WORK/dmesg-out"\n' > "$WORK/bin/sudo"
 chmod +x "$WORK/bin/free" "$WORK/bin/sudo"
-# The device log's lines: process and crash lines pass, other lines and any line naming a key do not
+# The device log's lines: process and crash lines pass, other lines and any line naming a key do not, and crash lines
+# carrying a key value without the word are printed with the value redacted. The two values are built here, so no
+# key-shaped literal is in this file: the Maps form AIza + 35 characters, the weather form appid=<32 hex>.
+MAPS_VALUE="AIza$(printf 'Q%.0s' $(seq 1 35))"; WEATHER_VALUE="$(printf '0f%.0s' $(seq 1 16))"
 printf '%s\n' "I ActivityManager: Start proc 4242:com.openrs.dash/u0a190 for top-activity" \
   "D SomeService: unrelated line" "E AndroidRuntime: Ensure the API Key FAKEKEY123 is set" \
+  "E AndroidRuntime: java.lang.IllegalStateException: denied for $MAPS_VALUE in request" \
+  "E AndroidRuntime: Caused by: java.io.IOException: GET /data/2.5/weather?lat=1&appid=$WEATHER_VALUE&units=metric" \
   "I ActivityManager: Process com.openrs.dash (pid 4242) has died" > "$WORK/devlog"
 # ── Fake pgrep: the emulator's process, as on the runner ──
 cat > "$WORK/bin/pgrep" <<'STUB'
@@ -122,6 +128,9 @@ devicelog() {
   has "Process com.openrs.dash (pid 4242) has died"; has "Start proc 4242:com.openrs.dash"
   [[ "$OUT" != *"unrelated line"* ]] || why "a device log line that is not a process or crash line"
   [[ "$OUT" != *"FAKEKEY123"* ]] || why "a device log line naming a key was printed"
+  [[ "$OUT" != *"$MAPS_VALUE"* ]] || why "a Maps-shaped key value (AIza…) on a crash line was printed"
+  [[ "$OUT" != *"$WEATHER_VALUE"* ]] || why "a weather key value (appid=…) on a crash line was printed"
+  has "denied for AIza<redacted> in request"; has "appid=<redacted>&units=metric"
 }
 
 WHY=""; run 0 "I ActivityManager: Start proc com.openrs.dash"
@@ -145,6 +154,11 @@ check "the second process check comes after the wait"
 
 WHY=""; run 0 "" FAKE_PM_EXIT=1
 [ "$CODE" -eq 0 ] || why "exit $CODE"; check "an image without the Play Store still passes"
+
+WHY=""; run 0 "" FAKE_CLOSED_AT=pm
+[[ "$OUT" != *"Play Store not present on this image"* ]] || why "an adb failure at the Play Store step was called an image without it"
+has "Play Store not disabled (not on this image, or adb failed)"; has "::error::installing the APK"
+check "adb failing at the Play Store step is not called a missing Play Store, and the install step is named"
 
 expect_fail "no process after the start (pidof exits 1, as on Android)" "not running" "" FAKE_PID1=
 expect_fail "the process gone after the wait (pidof exits 1)"           "gone"        "" FAKE_PID2=
