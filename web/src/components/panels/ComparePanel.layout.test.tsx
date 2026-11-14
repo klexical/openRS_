@@ -7,6 +7,7 @@ import { useStore } from '../../store'
 import { importZip } from '../../lib/import'
 import type { Session } from '../../types/session'
 import { ComparePanel } from './ComparePanel'
+import { storeWithSessions } from '../../test/storeState'
 
 // #344: below the phone breakpoint (md, 768 px) Compare stacks its route maps one per row for every number of drives (a
 // 2-up grid left them 169 px wide at 375 px with three or four); md and up keep two per row. jsdom does no layout, so this
@@ -31,7 +32,7 @@ describe('Compare route maps at phone width (#344)', () => {
   for (const count of [2, 3, 4]) {
     it(`stacks ${count} maps one per row below md, two per row from md`, () => {
       const sessions = Array.from({ length: count }, (_, i) => ({ ...drive, id: `d${i}`, name: `Drive ${i + 1}` }))
-      useStore.setState({ sessions, compareSessionIds: sessions.map((s) => s.id), activePanel: 'compare' })
+      useStore.setState({ ...storeWithSessions(sessions, null, sessions.map((s) => s.id)), activePanel: 'compare' })
       const { getAllByTestId } = render(<ComparePanel />)
       const maps = getAllByTestId('map')
       expect(maps).toHaveLength(count)

@@ -1,6 +1,6 @@
 import { useSettings, type ThemeId } from '../../store/settings'
 import { useStore } from '../../store'
-import { clearAllSessions } from '../../lib/db'
+import { clearAllDrives } from '../../lib/storage'
 import { rsThemes } from '../../styles/tokens'
 import { SectionLabel } from '../ui/SectionLabel'
 import type { UnitSystem, BoostUnit, TirePressUnit } from '../../lib/units'
@@ -24,14 +24,14 @@ export function SettingsPanel() {
     resetDefaults,
   } = useSettings()
 
-  const sessions = useStore((s) => s.sessions)
-  const setSessions = useStore((s) => s.setSessions)
+  const sessions = useStore((s) => s.drives)
+  const setDrives = useStore((s) => s.setDrives)
 
   const [confirmClear, setConfirmClear] = useState(false)
 
   const handleClearAll = async () => {
-    await clearAllSessions()
-    setSessions([])
+    await clearAllDrives()        // #384: the three stores, in one transaction
+    setDrives([])
     setConfirmClear(false)
   }
 

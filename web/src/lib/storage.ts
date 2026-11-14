@@ -1,0 +1,323 @@
+/**
+ * Sapphire's storage module (#384 ticket 01): the only code that touches IndexedDB.
+ *
+ * Database `sapphire`, version 2, three stores keyed by the drive's id:
+ * - `drives`: one small record per drive (or drive-less session): the session's own fields without its points and log,
+ *   plus what the list shows (headline numbers, flags, which warning causes were checked, the content hash);
+ * - `points`: `{ id, trip }`, read only when that drive is opened;
+ * - `diagnostics`: `{ id, diagnostics }`, read only when that drive is opened.
+ * Version 1 kept whole sessions in one `sessions` store; the upgrade splits each one and keeps every field and id.
+ */
+import { openDB, type IDBPDatabase, type IDBPTransaction } from 'idb'
+import { sha256Hex } from './sha256'
+import type { DiagnosticData, DtcEntry, Session, TripData, TripSummary } from '../types/session'
+
+/**
+ * What a warning cause found for one drive. "not-checked": the import holds nothing to check it with (no fault-code scan,
+ * no session log), or this delivery does not check it yet. Never read "not checked" as "none" (owner, 2026-11-14).
+ */
+export type CauseState = 'found' | 'none' | 'not-checked'
+
+export interface WarningCauses {
+  faultCodes: CauseState
+  recordingGaps: CauseState
+  /** Not checked in this delivery: their parsing waits for a real rc.8 drive export (owner, 2026-11-14). */
+  knockEvents: 'not-checked'
+  criticalTemperatures: 'not-checked'
+}
+
+/** The small record per drive (or drive-less session): everything but the points and the diagnostic log. */
+export type DriveRecord = Omit<Session, 'trip' | 'diagnostics'> & {
+  /** First point's time, else the session's stated start, else the import time (the list's order). */
+  driveStart: number
+  summary: TripSummary | null
+  pointCount: number
+  hasDrive: boolean
+  hasSession: boolean
+  hasLaps: boolean
+  hasWarnings: boolean
+  warnings: WarningCauses
+  /** SHA-256 (hex) of the drive's parsed content, computed once when stored; see [contentHash]. */
+  contentHash: string
+}
+
+export type StorageStatus =
+  | { state: 'opening' }
+  | { state: 'ready' }
+  | { state: 'blocked' }
+  | { state: 'outdated' }
+  | { state: 'upgrade-failed'; reason: string }
+
+export interface ImportOutcome {
+  stored: DriveRecord[]
+  alreadyImported: { name: string; existingId: string }[]
+}
+
+const DB_NAME = 'sapphire'
+const DB_VERSION = 2
+const DRIVES = 'drives'
+const POINTS = 'points'
+const DIAGNOSTICS = 'diagnostics'
+const OLD_SESSIONS = 'sessions'
+const ALL = [DRIVES, POINTS, DIAGNOSTICS]
+/** Keys this module adds to a drive record; stripped again when a session is rebuilt. */
+const DERIVED = ['driveStart', 'summary', 'pointCount', 'hasDrive', 'hasSession', 'hasLaps', 'hasWarnings', 'warnings',
+  'contentHash'] as const
+
+// ── Status, for the page's plain-words messages ──
+
+let status: StorageStatus = { state: 'opening' }
+const listeners = new Set<(s: StorageStatus) => void>()
+function setStatus(s: StorageStatus) { status = s; for (const l of listeners) l(s) }
+export function storageStatus(): StorageStatus { return status }
+export function onStorageStatus(cb: (s: StorageStatus) => void): () => void {
+  listeners.add(cb)
+  return () => { listeners.delete(cb) }
+}
+
+// ── Opening and upgrading ──
+
+let dbPromise: Promise<IDBPDatabase> | null = null
+let openDb: IDBPDatabase | null = null
+
+function getDb(): Promise<IDBPDatabase> {
+  if (status.state === 'outdated') return Promise.reject(new Error('Sapphire was updated in another tab: reload'))
+  if (dbPromise) return dbPromise
+  let failure: string | null = null
+  setStatus({ state: 'opening' })
+  dbPromise = openDB(DB_NAME, DB_VERSION, {
+    async upgrade(db, oldVersion, _newVersion, tx) {
+      try {
+        const drives = db.createObjectStore(DRIVES, { keyPath: 'id' })
+        drives.createIndex('byStart', 'driveStart')
+        drives.createIndex('byTag', 'tags', { multiEntry: true })
+        drives.createIndex('byHash', 'contentHash', { unique: false })
+        db.createObjectStore(POINTS, { keyPath: 'id' })
+        db.createObjectStore(DIAGNOSTICS, { keyPath: 'id' })
+        if (oldVersion >= 1 && db.objectStoreNames.contains(OLD_SESSIONS)) {
+          const t = tx as unknown as IDBPTransaction<unknown, string[], 'versionchange'>
+          let cursor = await t.objectStore(OLD_SESSIONS).openCursor()
+          while (cursor) {
+            const r = split(cursor.value)              // throws on a record it cannot convert
+            t.objectStore(DRIVES).put(r.drive)
+            t.objectStore(POINTS).put(r.points)
+            t.objectStore(DIAGNOSTICS).put(r.diagnostics)
+            cursor = await cursor.continue()
+          }
+          // Only after every record converted, in the same transaction
+          db.deleteObjectStore(OLD_SESSIONS)
+        }
+      } catch (err) {
+        failure = err instanceof Error ? err.message : String(err)
+        tx.done.catch(() => {})                         // the abort below rejects it; openDB reports the failure
+        tx.abort()                                      // version 1 stays exactly as it was
+      }
+    },
+    blocked() { setStatus({ state: 'blocked' }) },
+    blocking() {
+      // A newer Sapphire in another tab asks for the database: let it upgrade, and say so here
+      openDb?.close()
+      openDb = null
+      dbPromise = null
+      setStatus({ state: 'outdated' })
+    },
+    terminated() { openDb = null; dbPromise = null },
+  }).then(
+    (db) => { openDb = db; setStatus({ state: 'ready' }); return db },
+    (err) => {
+      if (failure !== null) {
+        setStatus({ state: 'upgrade-failed', reason: `Sapphire couldn't update its storage (${failure}).` })
+      }
+      throw err
+    },
+  )
+  return dbPromise
+}
+
+/** Close the connection (tests, and a newer tab's request). The next call opens it again. */
+export function closeStorage(): void {
+  openDb?.close()
+  openDb = null
+  dbPromise = null
+  setStatus({ state: 'opening' })
+}
+
+// ── A session split into its three records ──
+
+interface Split { drive: DriveRecord; points: { id: string; trip: TripData | null }; diagnostics: { id: string; diagnostics: DiagnosticData | null } }
+
+class ConvertError extends Error {}
+
+function split(raw: unknown): Split {
+  const s = raw as Session & Record<string, unknown>
+  if (!s || typeof s !== 'object' || typeof s.id !== 'string') throw new ConvertError('a stored record has no id')
+  const trip = (s.trip ?? null) as TripData | null
+  if (trip !== null && !Array.isArray(trip.points)) throw new ConvertError(`the stored drive "${String(s.name)}" has unreadable points`)
+  const diagnostics = (s.diagnostics ?? null) as DiagnosticData | null
+  const { trip: _t, diagnostics: _d, ...rest } = s
+  void _t; void _d
+  return {
+    drive: { ...(rest as Omit<Session, 'trip' | 'diagnostics'>), ...derive(s, trip, diagnostics) },
+    points: { id: s.id, trip },
+    diagnostics: { id: s.id, diagnostics },
+  }
+}
+
+function derive(s: Session, trip: TripData | null, diagnostics: DiagnosticData | null): Omit<DriveRecord, keyof Omit<Session, 'trip' | 'diagnostics'>> {
+  const points = trip?.points ?? []
+  const stated = Date.parse(s.meta?.sessionStart ?? '')
+  const driveStart = points.length > 0 && Number.isFinite(points[0].ts) ? points[0].ts
+    : Number.isFinite(stated) ? stated : s.importedAt
+  const warnings = warningCauses(s, diagnostics)
+  return {
+    driveStart,
+    summary: trip?.summary ?? null,
+    pointCount: points.length,
+    hasDrive: points.length > 0,
+    hasSession: diagnostics !== null,
+    hasLaps: (trip?.laps?.length ?? 0) > 0,
+    hasWarnings: warnings.faultCodes === 'found' || warnings.recordingGaps === 'found',
+    warnings,
+    contentHash: contentHash(s),
+  }
+}
+
+// ── The warnings marker (owner, 2026-11-14: fault codes and recording gaps in this delivery) ──
+
+/** Which fault-code entries raise the "with warnings" marker: active or pending in that drive's scan (owner, 2026-11-14). */
+export function faultCodeRaisesMarker(entry: DtcEntry): boolean {
+  const st = String(entry.status ?? '').toUpperCase()
+  return st === 'ACTIVE' || st === 'PENDING'
+}
+
+/** The app's REC_GAP message names its reason first ("DISCONNECTED gap 12.0 s (…)"); only a link loss counts (GLOSSARY). */
+const DISCONNECTED_GAP = /\bDISCONNECTED gap\b/
+
+function warningCauses(s: Session, diagnostics: DiagnosticData | null): WarningCauses {
+  const codes = diagnostics?.dtcResults ?? []
+  // Version-1 records do not say whether a scan was present: codes present means one was; none means not checked
+  const scanned = s.dtcScan ?? codes.length > 0
+  const faultCodes: CauseState = !scanned ? 'not-checked' : codes.some(faultCodeRaisesMarker) ? 'found' : 'none'
+  const recordingGaps: CauseState = diagnostics === null ? 'not-checked'
+    : diagnostics.sessionEvents.some((e) => String(e.type).toUpperCase() === 'REC_GAP' && DISCONNECTED_GAP.test(e.message))
+      ? 'found' : 'none'
+  return { faultCodes, recordingGaps, knockEvents: 'not-checked', criticalTemperatures: 'not-checked' }
+}
+
+// ── "Already imported" ──
+
+/** JSON with object keys sorted, so the same content always gives the same text. */
+function canonical(v: unknown): string {
+  if (v === null || typeof v !== 'object') return JSON.stringify(v) ?? 'null'
+  if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`
+  const o = v as Record<string, unknown>
+  return `{${Object.keys(o).filter((k) => o[k] !== undefined).sort().map((k) => `${JSON.stringify(k)}:${canonical(o[k])}`).join(',')}}`
+}
+
+/**
+ * SHA-256 of the drive's parsed content: the session without what the import or the owner adds (id, import time, name,
+ * tags), without when it was exported (`meta.exportedAt`, `meta.generatedAt`: the same drive exported twice is one
+ * drive) and without `dtcScan` (version-1 records never carried it). Computed once when the drive is stored.
+ */
+function contentHash(s: Session): string {
+  const { id: _i, importedAt: _a, name: _n, tags: _g, dtcScan: _c, meta, ...content } = s as Session & Record<string, unknown>
+  void _i; void _a; void _n; void _g; void _c
+  const { exportedAt: _e, generatedAt: _x, ...stableMeta } = (meta ?? {}) as unknown as Record<string, unknown>
+  void _e; void _x
+  return sha256Hex(canonical({ ...content, meta: stableMeta }))
+}
+
+// ── Public functions ──
+
+/** The small record a session is stored as (no I/O): what the list sees. */
+export function toDriveRecord(session: Session): DriveRecord {
+  return split(session).drive
+}
+
+/** Every stored drive's small record; reads no points and no log. */
+export async function listDrives(): Promise<DriveRecord[]> {
+  const db = await getDb()
+  return db.getAll(DRIVES) as Promise<DriveRecord[]>
+}
+
+/** One drive with its points and log, as a session; null when it is not stored. */
+export async function loadDrive(id: string): Promise<Session | null> {
+  const db = await getDb()
+  const tx = db.transaction(ALL, 'readonly')
+  const [drive, points, diagnostics] = await Promise.all([
+    tx.objectStore(DRIVES).get(id), tx.objectStore(POINTS).get(id), tx.objectStore(DIAGNOSTICS).get(id),
+  ]) as [Record<string, unknown> | undefined, { trip: TripData | null } | undefined, { diagnostics: DiagnosticData | null } | undefined]
+  await tx.done
+  if (!drive) return null
+  const session = { ...drive }
+  for (const k of DERIVED) delete session[k]
+  return { ...(session as unknown as Session), trip: points?.trip ?? null, diagnostics: diagnostics?.diagnostics ?? null }
+}
+
+/**
+ * Store freshly imported sessions in one transaction: all of them, or none (a batch ZIP). A session whose content is
+ * already stored is not stored again and is returned in `alreadyImported` (never an error).
+ */
+export async function storeImported(sessions: Session[]): Promise<ImportOutcome> {
+  const prepared = sessions.map(split)          // a session that cannot be split fails before anything is written
+  const db = await getDb()
+  const tx = db.transaction(ALL, 'readwrite')
+  const outcome: ImportOutcome = { stored: [], alreadyImported: [] }
+  const seen = new Map<string, string>()
+  try {
+    for (const r of prepared) {
+      const existing = seen.get(r.drive.contentHash)
+        ?? (await tx.objectStore(DRIVES).index('byHash').getKey(r.drive.contentHash)) as string | undefined
+      if (existing !== undefined) { outcome.alreadyImported.push({ name: r.drive.name, existingId: existing }); continue }
+      seen.set(r.drive.contentHash, r.drive.id)
+      tx.objectStore(DRIVES).put(r.drive)
+      tx.objectStore(POINTS).put(r.points)
+      tx.objectStore(DIAGNOSTICS).put(r.diagnostics)
+      outcome.stored.push(r.drive)
+    }
+  } catch (err) {
+    // A put that throws (e.g. DataCloneError) doesn't end the transaction on its own: abort so nothing is kept
+    tx.abort()
+    await tx.done.catch(() => {})
+    throw err
+  }
+  await tx.done
+  return outcome
+}
+
+async function updateDrive(id: string, change: (d: DriveRecord) => DriveRecord): Promise<DriveRecord | null> {
+  const db = await getDb()
+  const tx = db.transaction(DRIVES, 'readwrite')
+  const d = (await tx.store.get(id)) as DriveRecord | undefined
+  if (!d) { await tx.done; return null }
+  const next = change(d)
+  await tx.store.put(next)
+  await tx.done
+  return next
+}
+
+/** Rename: the small record only (the content hash is not recomputed). */
+export function renameDrive(id: string, name: string): Promise<DriveRecord | null> {
+  return updateDrive(id, (d) => ({ ...d, name }))
+}
+
+/** Replace the tags: the small record only. */
+export function setDriveTags(id: string, tags: string[]): Promise<DriveRecord | null> {
+  return updateDrive(id, (d) => ({ ...d, tags }))
+}
+
+/** Delete drives: each one's three records, all in one transaction. */
+export async function deleteDrives(ids: string[]): Promise<void> {
+  const db = await getDb()
+  const tx = db.transaction(ALL, 'readwrite')
+  for (const id of ids) for (const store of ALL) tx.objectStore(store).delete(id)
+  await tx.done
+}
+
+/** Empty the three stores in one transaction. */
+export async function clearAllDrives(): Promise<void> {
+  const db = await getDb()
+  const tx = db.transaction(ALL, 'readwrite')
+  for (const store of ALL) tx.objectStore(store).clear()
+  await tx.done
+}

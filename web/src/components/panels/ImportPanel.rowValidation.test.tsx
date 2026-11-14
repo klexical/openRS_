@@ -4,11 +4,13 @@ import JSZip from 'jszip'
 import { useStore } from '../../store'
 import type { Session } from '../../types/session'
 import { ImportPanel } from './ImportPanel'
+import { toDriveRecord } from '../../lib/storage'
+import { storeWithSessions } from '../../test/storeState'
 
 // #204 through the panel: a drive with a bad row saves nothing (writes recorded, not a real database — scripts/idb-check
 // covers IndexedDB itself)
-const db = vi.hoisted(() => ({ putSession: vi.fn(), putSessions: vi.fn() }))
-vi.mock('../../lib/db', () => ({ putSession: db.putSession, putSessions: db.putSessions }))
+const db = vi.hoisted(() => ({ storeImported: vi.fn() }))
+vi.mock('../../lib/storage', async (importOriginal) => ({ ...(await importOriginal<object>()), storeImported: db.storeImported }))
 
 const HEADER = '# openrs_csv_v2\ntimestamp_ms,lat,lng,speed_kph,rpm'
 const VALID = `${HEADER}\n1000,0.5,0.5,40,3000\n2000,0.5001,0.5001,60,4200`
@@ -24,9 +26,8 @@ const existing = (id: string, name: string) => ({ id, name, importedAt: 1, tags:
   meta: { appVersion: '2.2.7', firmwareVersion: 'unknown', sessionStart: '', exportedAt: '' } }) as unknown as Session
 
 beforeEach(() => {
-  db.putSession.mockReset().mockResolvedValue(undefined)
-  db.putSessions.mockReset().mockResolvedValue(undefined)
-  useStore.setState({ sessions: [existing('a', 'Earlier drive')], activeSessionId: 'a', compareSessionIds: [], activePanel: 'import' })
+  db.storeImported.mockReset().mockImplementation(async (sessions: Session[]) => ({ stored: sessions.map(toDriveRecord), alreadyImported: [] }))
+  useStore.setState({ ...storeWithSessions([existing('a', 'Earlier drive')], 'a'), activePanel: 'import' })
 })
 afterEach(cleanup)
 
@@ -37,7 +38,7 @@ describe('batch with a malformed drive row (#204)', () => {
     ['bad drive last', [[VALID_NAME, VALID], [BAD_NAME, BAD_ROW]]],
   ] as [string, [string, string][]][]) {
     it(`names the file and row and saves nothing (${order})`, async () => {
-      const before = useStore.getState().sessions
+      const before = useStore.getState().drives
       const { container } = render(<ImportPanel />)
       const input = container.querySelector('#file-input') as HTMLInputElement
       Object.defineProperty(input, 'files', { value: [await zipFile(files)] })
@@ -45,10 +46,9 @@ describe('batch with a malformed drive row (#204)', () => {
 
       await waitFor(() => expect(container.textContent).toContain(`CSV ${BAD_NAME} row 4: expected 5 fields, found 7`))
       expect(container.textContent).not.toContain('Imported')
-      expect(useStore.getState().sessions).toBe(before)
+      expect(useStore.getState().drives).toBe(before)
       expect(useStore.getState().activeSessionId).toBe('a')
-      expect(db.putSession).not.toHaveBeenCalled()
-      expect(db.putSessions).not.toHaveBeenCalled()
+      expect(db.storeImported).not.toHaveBeenCalled()
     })
   }
 })

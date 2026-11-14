@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { useShallow } from 'zustand/react/shallow'
 import type { Session } from '../types/session'
+import type { DriveRecord, StorageStatus } from '../lib/storage'
 
 export type PanelId = 'dashboard' | 'trip' | 'diagnostics' | 'sessions' | 'compare' | 'import' | 'settings'
 
@@ -42,18 +43,28 @@ interface SapphireState {
   activePanel: PanelId
   setActivePanel: (panel: PanelId) => void
 
-  /** All imported sessions. */
-  sessions: Session[]
-  setSessions: (sessions: Session[]) => void
-  addSession: (session: Session) => void
-  removeSession: (id: string) => void
-  removeSessions: (ids: string[]) => void
+  /**
+   * Every stored drive's small record (#384): no points, no diagnostic log. Writes go through lib/storage; these
+   * actions only mirror what it stored.
+   */
+  drives: DriveRecord[]
+  setDrives: (drives: DriveRecord[]) => void
+  addDrives: (drives: DriveRecord[]) => void
+  /** Replace one record (after a rename or a tag edit). */
+  updateDrive: (drive: DriveRecord) => void
+  removeDrives: (ids: string[]) => void
 
-  /** Rename a session. */
-  renameSession: (id: string, name: string) => void
+  /** The open drive, with its points and log, loaded from storage while it is selected; null when none is open. */
+  activeSession: Session | null
+  setActiveSession: (session: Session | null) => void
 
-  /** Update tags for a session. */
-  setSessionTags: (id: string, tags: string[]) => void
+  /** The drives being compared, loaded from storage while selected. */
+  compareSessions: Session[]
+  setCompareSessions: (sessions: Session[]) => void
+
+  /** Storage state for the page's messages (a blocked or failed upgrade, a newer Sapphire in another tab). */
+  storage: StorageStatus
+  setStorage: (status: StorageStatus) => void
 
   /** Currently selected session for viewing. */
   activeSessionId: string | null
@@ -73,36 +84,35 @@ export const useStore = create<SapphireState>((set) => ({
   activePanel: initialView.activePanel,
   setActivePanel: (panel) => { persistView({ activePanel: panel }); set({ activePanel: panel }) },
 
-  sessions: [],
-  setSessions: (sessions) => set({ sessions }),
-  addSession: (session) => set((s) => ({ sessions: [...s.sessions, session] })),
-  removeSession: (id) => set((s) => {
-    const nextActive = s.activeSessionId === id ? null : s.activeSessionId
-    if (nextActive !== s.activeSessionId) persistView({ activeSessionId: nextActive })
-    return {
-      sessions: s.sessions.filter((sess) => sess.id !== id),
-      activeSessionId: nextActive,
-      compareSessionIds: s.compareSessionIds.filter((cid) => cid !== id),
-    }
-  }),
-  removeSessions: (ids) => set((s) => {
+  drives: [],
+  setDrives: (drives) => set({ drives }),
+  addDrives: (drives) => set((s) => ({ drives: [...s.drives, ...drives] })),
+  updateDrive: (drive) => set((s) => ({
+    drives: s.drives.map((d) => (d.id === drive.id ? drive : d)),
+    // the open drive shows the new name and tags at once
+    activeSession: s.activeSession?.id === drive.id ? { ...s.activeSession, name: drive.name, tags: drive.tags } : s.activeSession,
+  })),
+  removeDrives: (ids) => set((s) => {
     const idSet = new Set(ids)
     const nextActive = s.activeSessionId && idSet.has(s.activeSessionId) ? null : s.activeSessionId
     if (nextActive !== s.activeSessionId) persistView({ activeSessionId: nextActive })
     return {
-      sessions: s.sessions.filter((sess) => !idSet.has(sess.id)),
+      drives: s.drives.filter((d) => !idSet.has(d.id)),
       activeSessionId: nextActive,
+      activeSession: s.activeSession && idSet.has(s.activeSession.id) ? null : s.activeSession,
       compareSessionIds: s.compareSessionIds.filter((cid) => !idSet.has(cid)),
+      compareSessions: s.compareSessions.filter((c) => !idSet.has(c.id)),
     }
   }),
 
-  renameSession: (id, name) => set((s) => ({
-    sessions: s.sessions.map((sess) => sess.id === id ? { ...sess, name } : sess),
-  })),
+  activeSession: null,
+  setActiveSession: (session) => set({ activeSession: session }),
 
-  setSessionTags: (id, tags) => set((s) => ({
-    sessions: s.sessions.map((sess) => sess.id === id ? { ...sess, tags } : sess),
-  })),
+  compareSessions: [],
+  setCompareSessions: (sessions) => set({ compareSessions: sessions }),
+
+  storage: { state: 'opening' },
+  setStorage: (status) => set({ storage: status }),
 
   activeSessionId: initialView.activeSessionId,
   setActiveSessionId: (id) => { persistView({ activeSessionId: id }); set({ activeSessionId: id }) },
@@ -120,14 +130,14 @@ export const useStore = create<SapphireState>((set) => ({
   toggleNav: () => set((s) => ({ navExpanded: !s.navExpanded })),
 }))
 
-/** Convenience selector for the active session object. */
+/** The open drive (points and log loaded); null while none is selected or it is still loading. */
 export const useActiveSession = () =>
-  useStore((s) => s.sessions.find((sess) => sess.id === s.activeSessionId) ?? null)
+  useStore((s) => (s.activeSession && s.activeSession.id === s.activeSessionId ? s.activeSession : null))
 
 /**
- * Convenience selector for compare sessions. `useShallow` keeps the array identity while its
- * members are unchanged — a fresh array per store read makes React re-render forever
+ * The drives being compared, in the order they were picked, loaded from storage. `useShallow` keeps the array
+ * identity while its members are unchanged — a fresh array per store read makes React re-render forever
  * ("Maximum update depth exceeded" as soon as ComparePanel mounts).
  */
 export const useCompareSessions = () =>
-  useStore(useShallow((s) => s.compareSessionIds.map((id) => s.sessions.find((sess) => sess.id === id)).filter(Boolean) as Session[]))
+  useStore(useShallow((s) => s.compareSessionIds.map((id) => s.compareSessions.find((c) => c.id === id)).filter(Boolean) as Session[]))

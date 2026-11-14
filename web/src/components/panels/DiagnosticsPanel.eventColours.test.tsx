@@ -3,8 +3,8 @@ import { render, cleanup } from '@testing-library/react'
 import { useStore } from '../../store'
 import type { DiagnosticData, Session } from '../../types/session'
 import { DiagnosticsPanel } from './DiagnosticsPanel'
+import { storeWithSessions } from '../../test/storeState'
 
-vi.mock('../../lib/db', () => ({ deleteSession: vi.fn(), putSession: vi.fn() }))
 
 // #382: every event type the app writes gets its own group colour on the Diagnostics panel, whatever its letter
 // case; an unknown type gets the neutral style. Invented events only. First written by QA as the reproduction.
@@ -28,7 +28,7 @@ function show(types: string[]): HTMLElement {
   }
   const session = { id: 'a', name: 'A', importedAt: 1, tags: [], trip: null, diagnostics,
     meta: { appVersion: '2.2.7', firmwareVersion: 'unknown', sessionStart: '', exportedAt: '' } } as unknown as Session
-  useStore.setState({ sessions: [session], activeSessionId: 'a', compareSessionIds: [] })
+  useStore.setState(storeWithSessions([session], 'a'))
   return render(<DiagnosticsPanel />).container
 }
 

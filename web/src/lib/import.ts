@@ -132,6 +132,7 @@ async function importBatchZipInner(zip: JSZip, manifest: ExportManifest | null, 
 
     // DTC data (shared across batch — use first found)
     const dtcResults = await parseDtcData(zip, manifest)
+    const dtcScan = dtcTextFile(zip, manifest) !== undefined
     const diagnostics = await parseDiagnosticData(zip, dtcResults, manifest)
     const meta = await parseMeta(zip, filename, manifest)
     const name = buildSessionName(meta, trip, csvFile)
@@ -141,7 +142,7 @@ async function importBatchZipInner(zip: JSZip, manifest: ExportManifest | null, 
       tags.push(...trip.profile.drive.tags.split(',').map((t) => t.trim()).filter(Boolean))
     }
 
-    sessions.push({ id, name, importedAt: Date.now(), tags, trip, diagnostics, meta })
+    sessions.push({ id, name, importedAt: Date.now(), tags, trip, diagnostics, meta, dtcScan })
   }
   return sessions
 }
@@ -211,7 +212,10 @@ async function importSingleDrive(zip: JSZip, manifest: ExportManifest | null, fi
   }
 
   // Prefer DTC JSON over TXT when available
-  const dtcResults = await parseDtcJsonData(zip, manifest) ?? await parseDtcData(zip, manifest)
+  const dtcJson = await parseDtcJsonData(zip, manifest)
+  const dtcResults = dtcJson ?? await parseDtcData(zip, manifest)
+  // #384: a scan with no codes is not "no scan": the warnings marker needs to know which it was
+  const dtcScan = dtcJson !== null || dtcTextFile(zip, manifest) !== undefined
   const diagnostics = await parseDiagnosticData(zip, dtcResults, manifest)
   const meta = await parseMeta(zip, filename, manifest)
   const name = buildSessionName(meta, trip, filename)
@@ -221,7 +225,7 @@ async function importSingleDrive(zip: JSZip, manifest: ExportManifest | null, fi
     tags.push(...trip.profile.drive.tags.split(',').map((t) => t.trim()).filter(Boolean))
   }
 
-  return { id, name, importedAt: Date.now(), tags, trip, diagnostics, meta }
+  return { id, name, importedAt: Date.now(), tags, trip, diagnostics, meta, dtcScan }
 }
 
 // ── Trip CSV parsing ──
@@ -622,9 +626,15 @@ function computeAvgFuelEconomy(fuelUsedL: number, distanceKm: number): number {
 
 // ── DTC text parsing ──
 
-async function parseDtcData(zip: JSZip, manifest: ExportManifest | null): Promise<DtcEntry[]> {
-  const dtcFile = manifest?.files.find((e) => e.type === 'dtc_text')?.name
+/** The fault-code scan's text file, when the import holds one. */
+function dtcTextFile(zip: JSZip, manifest: ExportManifest | null): string | undefined {
+  const name = manifest?.files.find((e) => e.type === 'dtc_text')?.name
     ?? Object.keys(zip.files).find((f) => f.startsWith('dtc_scan_') && f.endsWith('.txt'))
+  return name && zip.files[name] ? name : undefined
+}
+
+async function parseDtcData(zip: JSZip, manifest: ExportManifest | null): Promise<DtcEntry[]> {
+  const dtcFile = dtcTextFile(zip, manifest)
   if (!dtcFile) return []
 
   const text = await zip.files[dtcFile].async('string')

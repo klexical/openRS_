@@ -7,6 +7,7 @@ import type { Session, TripSummary } from '../types/session'
 import { DashboardPanel } from '../components/panels/DashboardPanel'
 import { SessionsPanel } from '../components/panels/SessionsPanel'
 import { ComparePanel } from '../components/panels/ComparePanel'
+import { storeWithSessions } from '../test/storeState'
 
 // #284: the app does not count distance across a link loss or a pause (DriveRecorder drops its previous point), and
 // exports its figure as the profile's drive.distanceKm. Sapphire summed the straight line between every pair of
@@ -161,7 +162,7 @@ describe('#284 display: an estimate says so, a recorded distance does not', () =
   })
 
   const dashboard = (s: Session) => {
-    useStore.setState({ sessions: [s], activeSessionId: s.id, compareSessionIds: [] })
+    useStore.setState(storeWithSessions([s], s.id))
     return render(<DashboardPanel />).container.textContent ?? ''
   }
 
@@ -180,7 +181,7 @@ describe('#284 display: an estimate says so, a recorded distance does not', () =
   })
 
   it('Sessions and Compare rows mark only the estimates', () => {
-    useStore.setState({ sessions: [recorded, estimate, legacy], activeSessionId: 'rec', compareSessionIds: [] })
+    useStore.setState(storeWithSessions([recorded, estimate, legacy], 'rec'))
     for (const Panel of [SessionsPanel, ComparePanel]) {
       const text = render(<Panel />).container.textContent ?? ''
       expect(text).toMatch(/0\.9 km(?! est\.)/)

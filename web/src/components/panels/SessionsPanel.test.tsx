@@ -3,9 +3,10 @@ import { act, render, cleanup, fireEvent } from '@testing-library/react'
 import { useStore } from '../../store'
 import type { Session } from '../../types/session'
 import { SessionsPanel } from './SessionsPanel'
+import { storeWithSessions } from '../../test/storeState'
 
-const db = vi.hoisted(() => ({ deleteSession: vi.fn(), putSession: vi.fn() }))
-vi.mock('../../lib/db', () => ({ deleteSession: db.deleteSession, putSession: db.putSession }))
+const db = vi.hoisted(() => ({ deleteDrives: vi.fn() }))
+vi.mock('../../lib/storage', async (importOriginal) => ({ ...(await importOriginal<object>()), deleteDrives: db.deleteDrives }))
 
 const session = (id: string, name: string, importedAt: number) =>
   ({ id, name, importedAt, tags: [], trip: null, diagnostics: null,
@@ -13,29 +14,32 @@ const session = (id: string, name: string, importedAt: number) =>
 const rowBoxes = (c: HTMLElement) => [...c.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].slice(1)   // [0] = Select All
 
 beforeEach(() => {
-  db.deleteSession.mockReset()
-  useStore.setState({
-    sessions: [session('a', 'Alpha run', 3), session('b', 'Bravo run', 2), session('c', 'Charlie run', 1)],
-    activeSessionId: 'b', compareSessionIds: [],
-  })
+  db.deleteDrives.mockReset().mockResolvedValue(undefined)
+  useStore.setState(storeWithSessions([session('a', 'Alpha run', 3), session('b', 'Bravo run', 2), session('c', 'Charlie run', 1)], 'b'))
 })
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
 describe('SessionsPanel', () => {
-  it('bulk delete removes what IndexedDB deleted and keeps a failed one listed + selected', async () => {
-    db.deleteSession.mockImplementation((id: string) => (id === 'b' ? Promise.reject(new Error('locked')) : Promise.resolve()))
+  // #384: the selected drives are deleted in one transaction (each one's three records): all of them, or none
+  it('bulk delete removes every selected drive in one call', async () => {
+    const { container, getByText } = render(<SessionsPanel />)
+    fireEvent.click(rowBoxes(container)[0]); fireEvent.click(rowBoxes(container)[2])
+    await act(async () => { fireEvent.click(getByText('Delete Selected')) })
+    expect(db.deleteDrives).toHaveBeenCalledTimes(1)
+    expect([...db.deleteDrives.mock.calls[0][0]].sort()).toEqual(['a', 'c'])
+    expect(useStore.getState().drives.map((s) => s.id)).toEqual(['b'])
+    expect(useStore.getState().activeSessionId).toBe('b')
+  })
+
+  it('a failed bulk delete deletes nothing: every drive stays listed and selected for a retry', async () => {
+    db.deleteDrives.mockRejectedValue(new Error('locked'))
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const { container, getByText } = render(<SessionsPanel />)
     for (const box of rowBoxes(container)) fireEvent.click(box)
-    expect(container.textContent).toContain('3 selected')
     await act(async () => { fireEvent.click(getByText('Delete Selected')) })
-
-    expect(db.deleteSession).toHaveBeenCalledTimes(3)
-    expect(useStore.getState().sessions.map((s) => s.id)).toEqual(['b'])      // deleted ones gone, failure kept
-    expect(useStore.getState().activeSessionId).toBe('b')
-    expect(rowBoxes(container)).toHaveLength(1)
-    expect(rowBoxes(container)[0].checked).toBe(true)                         // still selected for a retry
-    expect(container.textContent).toContain('1 selected')
+    expect(useStore.getState().drives.map((s) => s.id)).toEqual(['a', 'b', 'c'])
+    expect(rowBoxes(container).every((b) => b.checked)).toBe(true)
+    expect(container.textContent).toContain('3 selected')
     expect(warn).toHaveBeenCalled()
     warn.mockRestore()
   })

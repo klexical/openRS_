@@ -12,6 +12,11 @@ export interface Session {
   diagnostics: DiagnosticData | null
   /** Metadata from the export. */
   meta: SessionMeta
+  /**
+   * Whether the import held a fault-code scan (#384): without one, "no fault codes" cannot be told from "not scanned".
+   * Absent = stored before this was recorded.
+   */
+  dtcScan?: boolean
 }
 
 export interface SessionMeta {

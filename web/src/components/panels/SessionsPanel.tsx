@@ -3,7 +3,7 @@ import { useStore } from '../../store'
 import { EmptyState } from '../ui/EmptyState'
 import { SearchBar } from '../ui/SearchBar'
 import { fmtDateShort, fmtNumber, fmtDuration } from '../../lib/format'
-import { deleteSession as dbDelete, putSession as dbPut } from '../../lib/db'
+import { deleteDrives, renameDrive, setDriveTags } from '../../lib/storage'
 import { estimateSuffix } from '../../lib/distance'
 import { colors } from '../../styles/tokens'
 
@@ -12,13 +12,12 @@ type SortKey = 'date' | 'name' | 'distance' | 'speed'
 const TAG_PRESETS = ['Track Day', 'Street', 'Commute', 'Tuning', 'Rain', 'Winter']
 
 export function SessionsPanel() {
-  const sessions = useStore((s) => s.sessions)
+  // #384: the list reads each drive's small record (no points); writes go through lib/storage
+  const sessions = useStore((s) => s.drives)
   const activeSessionId = useStore((s) => s.activeSessionId)
   const setActiveSessionId = useStore((s) => s.setActiveSessionId)
-  const removeSession = useStore((s) => s.removeSession)
-  const removeSessions = useStore((s) => s.removeSessions)
-  const renameSession = useStore((s) => s.renameSession)
-  const setSessionTags = useStore((s) => s.setSessionTags)
+  const removeDrives = useStore((s) => s.removeDrives)
+  const updateDrive = useStore((s) => s.updateDrive)
   const setActivePanel = useStore((s) => s.setActivePanel)
 
   // Already debounced: SearchBar calls onChange 200 ms after typing pauses (main e9cd565's extra 150 ms
@@ -43,8 +42,8 @@ export function SessionsPanel() {
     return [...list].sort((a, b) => {
       switch (sortKey) {
         case 'name': return a.name.localeCompare(b.name)
-        case 'distance': return (b.trip?.summary.distanceKm ?? 0) - (a.trip?.summary.distanceKm ?? 0)
-        case 'speed': return (b.trip?.summary.peakSpeedKph ?? 0) - (a.trip?.summary.peakSpeedKph ?? 0)
+        case 'distance': return (b.summary?.distanceKm ?? 0) - (a.summary?.distanceKm ?? 0)
+        case 'speed': return (b.summary?.peakSpeedKph ?? 0) - (a.summary?.peakSpeedKph ?? 0)
         default: return b.importedAt - a.importedAt
       }
     })
@@ -70,22 +69,21 @@ export function SessionsPanel() {
   }
 
   const handleDelete = async (id: string) => {
-    await dbDelete(id)
-    removeSession(id)
+    await deleteDrives([id])
+    removeDrives([id])
     setSelectedIds((prev) => { const next = new Set(prev); next.delete(id); return next })
   }
 
   const handleBulkDelete = async () => {
     const ids = [...selectedIds]
-    // allSettled (main e9cd565): with Promise.all one failed delete skipped removing the ones that were
-    // deleted — they stayed listed though gone from IndexedDB. Remove what was deleted; failures stay
-    // selected so they can be retried.
-    const results = await Promise.allSettled(ids.map((id) => dbDelete(id)))
-    const deleted = ids.filter((_, i) => results[i].status === 'fulfilled')
-    const failed = ids.filter((_, i) => results[i].status === 'rejected')
-    if (deleted.length > 0) removeSessions(deleted)
-    setSelectedIds(new Set(failed))
-    if (failed.length > 0) console.warn('[Sapphire] Failed to delete sessions from IndexedDB:', failed)
+    // #384: one transaction — all the selected drives are deleted, or none (then they stay selected for a retry)
+    try {
+      await deleteDrives(ids)
+      removeDrives(ids)
+      setSelectedIds(new Set())
+    } catch (err) {
+      console.warn('[Sapphire] Failed to delete drives from IndexedDB:', err)
+    }
   }
 
   const handleSelect = (id: string) => {
@@ -110,9 +108,8 @@ export function SessionsPanel() {
   const commitRename = async (id: string) => {
     const trimmed = editName.trim()
     if (trimmed) {
-      renameSession(id, trimmed)
-      const sess = sessions.find((s) => s.id === id)
-      if (sess) await dbPut({ ...sess, name: trimmed })
+      const updated = await renameDrive(id, trimmed)
+      if (updated) updateDrive(updated)
     }
     setEditingId(null)
   }
@@ -122,8 +119,8 @@ export function SessionsPanel() {
     if (!sess) return
     const current = sess.tags ?? []
     const next = current.includes(tag) ? current.filter((t) => t !== tag) : [...current, tag]
-    setSessionTags(sessionId, next)
-    await dbPut({ ...sess, tags: next })
+    const updated = await setDriveTags(sessionId, next)
+    if (updated) updateDrive(updated)
   }
 
   const allSelected = filtered.length > 0 && filtered.every((s) => selectedIds.has(s.id))
@@ -227,15 +224,15 @@ export function SessionsPanel() {
 
                   {/* Meta row */}
                   <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] font-mono text-dim uppercase mt-1">
-                    {sess.trip && <span style={{ color: colors.ok }}>Trip</span>}
-                    {sess.diagnostics && <span style={{ color: colors.accent }}>Diag</span>}
+                    {sess.summary && <span style={{ color: colors.ok }}>Trip</span>}
+                    {sess.hasSession && <span style={{ color: colors.accent }}>Diag</span>}
                     <span>Imported {fmtDateShort(sess.importedAt)}</span>
                     <span>v{sess.meta.appVersion}</span>
-                    {sess.trip && (
+                    {sess.summary && (
                       <>
-                        <span>{fmtNumber(sess.trip.summary.distanceKm)} km{estimateSuffix(sess.trip.summary)}</span>
-                        <span>{fmtDuration(sess.trip.summary.durationMs)}</span>
-                        <span>Peak {fmtNumber(sess.trip.summary.peakSpeedKph, 0)} kph</span>
+                        <span>{fmtNumber(sess.summary.distanceKm)} km{estimateSuffix(sess.summary)}</span>
+                        <span>{fmtDuration(sess.summary.durationMs)}</span>
+                        <span>Peak {fmtNumber(sess.summary.peakSpeedKph, 0)} kph</span>
                       </>
                     )}
                   </div>

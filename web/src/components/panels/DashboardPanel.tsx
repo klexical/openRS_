@@ -21,7 +21,7 @@ import { colors } from '../../styles/tokens'
 export function DashboardPanel() {
   // ── Hooks (must run on every render path — keep above any early return) ──
   const session = useActiveSession()
-  const sessions = useStore((s) => s.sessions)
+  const sessions = useStore((s) => s.drives)
   const setActivePanel = useStore((s) => s.setActivePanel)
   const fmt = useUnitFormatters()
 
