@@ -111,4 +111,5 @@ paths:
   flight when the emulator dies exits 255 with no message. `scripts/launch-check.sh` runs every adb call under
   `timeout 60` with a step name and prints what a failed night needs on any failure; the device log's lines only through
   a process / crash filter that drops any line naming a key and redacts the APK's two key values by their shape (Maps
-  `AIza…`, weather `appid=…`), since a word list cannot be shown complete (`scripts/test-launch-check.sh`).
+  `AIza…`; weather `appid=…` or a standalone run of exactly 32 hex, longer hex runs kept), since a word list cannot be
+  shown complete (`scripts/test-launch-check.sh`).

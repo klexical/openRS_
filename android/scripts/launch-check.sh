@@ -15,8 +15,13 @@ ADB_LIMIT_S=60
 EMULATOR_LOG="$PWD/emulator.log"
 STEP="the argument checks"; REPORTED=0; TMP=""
 
-# redact: the APK's two key values by their shape (the Maps key AIza + 35 characters or more; any appid= value)
-redact() { sed -E 's/AIza[0-9A-Za-z_-]{35,}/AIza<redacted>/g; s/appid=[^&[:space:]]+/appid=<redacted>/g'; }
+# redact: the APK's two key values by their shape: the Maps key (AIza + 35 characters or more), any appid= value, and
+# any standalone run of exactly 32 hex characters (the weather key printed bare; longer hex runs such as 40-hex build ids
+# stay). The last one loops, so two values one character apart are both replaced.
+redact() {
+  sed -E -e 's/AIza[0-9A-Za-z_-]{35,}/AIza<redacted>/g; s/appid=[^&[:space:]]+/appid=<redacted>/g' \
+    -e ':a' -e 's/(^|[^0-9A-Fa-f])[0-9A-Fa-f]{32}([^0-9A-Fa-f]|$)/\1<redacted>\2/' -e 'ta'
+}
 diagnostics() {
   echo "--- adb devices"
   timeout 10 adb devices 2>&1 || echo "(adb devices failed)"
@@ -24,7 +29,7 @@ diagnostics() {
   pgrep -a -f -- 'qemu-system|emulator/emulator' || echo "(no emulator process)"
   # Process and crash lines only, never the whole log: the Maps SDK's authorization block prints the API key
   # (.claude/rules/build-release.md). A line naming a key is left out, and the two key values the APK holds are
-  # redacted by their shape wherever they appear: the Maps key (AIza…) and the weather key (sent as appid=…).
+  # redacted by their shape wherever they appear (redact above): the Maps key and the weather key, with or without appid=.
   # Bounded: with the device gone, logcat waits.
   echo "--- the device log's process and crash lines (the last 40)"
   { timeout 10 adb logcat -d -b main,system,crash 2>/dev/null || true; } \

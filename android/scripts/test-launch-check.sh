@@ -5,7 +5,7 @@
 # rejection, a fatal exception or an ANR. Every adb call runs under `timeout 60`; a call that fails or does not answer
 # ends the check with a message naming its step, and every failure prints `adb devices`, the emulator processes, the
 # device log's process and crash lines (a line naming a key left out, the APK's two key values redacted by their shape:
-# Maps AIza…, weather appid=…), the host's memory and kernel kill lines, and the last
+# Maps AIza…, weather appid=… or a bare 32-hex run; a 40-hex run stays), the host's memory and kernel kill lines, and the last
 # 200 lines of start-emulator.sh's emulator.log. A fake adb answers from fixtures, as Android does (`pidof` exits 1
 # when nothing matches, and adb passes the status on; with the device gone, logcat waits), and records the order of calls.
 # Run from anywhere: bash android/scripts/test-launch-check.sh
@@ -76,10 +76,14 @@ chmod +x "$WORK/bin/free" "$WORK/bin/sudo"
 # carrying a key value without the word are printed with the value redacted. The two values are built here, so no
 # key-shaped literal is in this file: the Maps form AIza + 35 characters, the weather form appid=<32 hex>.
 MAPS_VALUE="AIza$(printf 'Q%.0s' $(seq 1 35))"; WEATHER_VALUE="$(printf '0f%.0s' $(seq 1 16))"
+BARE_A="$(printf 'a1%.0s' $(seq 1 16))"; BARE_B="$(printf 'B2%.0s' $(seq 1 16))"; HEX40="$(printf 'c3%.0s' $(seq 1 20))"
 printf '%s\n' "I ActivityManager: Start proc 4242:com.openrs.dash/u0a190 for top-activity" \
   "D SomeService: unrelated line" "E AndroidRuntime: Ensure the API Key FAKEKEY123 is set" \
   "E AndroidRuntime: java.lang.IllegalStateException: denied for $MAPS_VALUE in request" \
   "E AndroidRuntime: Caused by: java.io.IOException: GET /data/2.5/weather?lat=1&appid=$WEATHER_VALUE&units=metric" \
+  "E AndroidRuntime: Caused by: java.lang.IllegalArgumentException: bad token $BARE_A" \
+  "E AndroidRuntime: tokens [$BARE_A:$BARE_B] rejected" \
+  "F DEBUG   : Fatal signal 6 (SIGABRT), BuildId: $HEX40" \
   "I ActivityManager: Process com.openrs.dash (pid 4242) has died" > "$WORK/devlog"
 # ── Fake pgrep: the emulator's process, as on the runner ──
 cat > "$WORK/bin/pgrep" <<'STUB'
@@ -131,6 +135,9 @@ devicelog() {
   [[ "$OUT" != *"$MAPS_VALUE"* ]] || why "a Maps-shaped key value (AIza…) on a crash line was printed"
   [[ "$OUT" != *"$WEATHER_VALUE"* ]] || why "a weather key value (appid=…) on a crash line was printed"
   has "denied for AIza<redacted> in request"; has "appid=<redacted>&units=metric"
+  [[ "$OUT" != *"$BARE_A"* && "$OUT" != *"$BARE_B"* ]] || why "a bare 32-hex value (the weather key without appid=) was printed"
+  has "bad token <redacted>"; has "tokens [<redacted>:<redacted>] rejected"
+  has "BuildId: $HEX40"
 }
 
 WHY=""; run 0 "I ActivityManager: Start proc com.openrs.dash"
