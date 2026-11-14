@@ -12,6 +12,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -20,6 +21,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import java.io.File
@@ -33,16 +35,24 @@ import java.io.IOException
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class RequestLogTest {
-    /** A scripted adapter: answers a Mode 22 read with a positive reply, writes with [outcome] or throws [fail]. */
+    /**
+     * A scripted adapter: answers a Mode 22 read with a positive reply, writes with [outcome] or throws [fail]. Records the
+     * session clock as each write begins ([began]); with [writeDelayMs] the write suspends that long before it answers, as
+     * a Bluetooth write waits for its callback, so a time taken after the write reads later than the one before it.
+     */
     private class Adapter(
         private val outcome: (String) -> WriteOutcome = { WriteOutcome.SENT },
         private val fail: (String) -> Exception? = { null },
         private val replyInsideWrite: Boolean = false,
+        private val writeDelayMs: Long = 0L,
     ) : SlcanTransport {
         val lines = Channel<String>(Channel.UNLIMITED).apply { trySend("t09080000C1FF617D0000") }
+        val began: MutableList<Pair<String, Long>> = java.util.Collections.synchronizedList(mutableListOf())
         override suspend fun open() = Unit
         override suspend fun readLine(): String? = lines.receive()
         override suspend fun write(frame: String): WriteOutcome {
+            began += frame.trimEnd('\r') to DiagnosticLogger.txStamp()
+            if (writeDelayMs > 0) delay(writeDelayMs)
             fail(frame)?.let { throw it }
             answer(frame)
             if (replyInsideWrite) Thread.sleep(40)        // the reply is already in while this write is still returning
@@ -62,6 +72,7 @@ class RequestLogTest {
 
     private val dir = File(System.getProperty("java.io.tmpdir"), "request-log-${System.nanoTime()}")
     @Before fun session() { DiagnosticLogger.sessionStart("test", 0, prefs = null, logDir = dir) }
+    @After fun realClock() { DiagnosticLogger.sessionClock = System::currentTimeMillis }
     private fun log(): List<String> { DiagnosticLogger.flushSlcan(); return DiagnosticLogger.slcanLogFile!!.readLines() }
     private fun tx(id: String) = log().filter { it.startsWith("# TX ") && it.contains(" can0 $id#") }
 
@@ -143,6 +154,54 @@ class RequestLogTest {
         assertTrue("never sent: $l", l.none { (it.contains("#031904FF") || it.contains("#031902FF")) && it.endsWith(" sent") })
     }
 
+    /** A BCM flow control (`writeLogged`) and a DTC clear request reported possibly delivered read so, never `sent`. */
+    @Test fun `a possibly delivered BCM flow control or clear request is never logged as sent`() = runTest {
+        val pd = { f: String -> if (f.startsWith("t72683000") || f.contains("0414FFFFFF")) WriteOutcome.POSSIBLY_DELIVERED else WriteOutcome.SENT }
+        val a = Adapter(outcome = pd)
+        val conn = connect(a, rpm = 0.0)
+        advanceTimeBy(100L)
+        a.lines.trySend("t72E8100B62280B010203")         // a BCM first frame: the connection answers it with flow control
+        advanceTimeBy(1_000L)
+        val pcm = com.openrs.dash.diagnostics.DtcScanner.MODULES.first { it.name == "PCM" }
+        backgroundScope.launch { conn.performDtcClear(listOf(pcm)) }
+        advanceTimeBy(5_000L)
+        val fc = tx("726").filter { it.contains("#3000") }
+        val clear = tx("7E0").filter { it.contains("#0414FFFFFF") }
+        assertTrue("flow control: ${tx("726")}", fc.isNotEmpty() && fc.all { it.endsWith(" possiblyDelivered") })
+        assertTrue("clear: ${tx("7E0")}", clear.isNotEmpty() && clear.all { it.endsWith(" possiblyDelivered") })
+    }
+
+    /**
+     * QA's T1 on the paths #366 measures, on a virtual clock: the PCM poller, `pollWrite` (BCM), the DTC scan's send and
+     * `writeLogged` (a freeze-frame request). Each write suspends 40 ms, so every line's time must be the clock as its
+     * write began; a time taken after the write reads 40 ms later.
+     */
+    @Test fun `on the PCM poller, pollWrite, the DTC scan and writeLogged a request's time is the clock as its write began`() = runTest {
+        DiagnosticLogger.sessionClock = { 1_000_000L + testScheduler.currentTime }
+        DiagnosticLogger.sessionStart("test", 0, prefs = null, logDir = dir)
+        val a = Adapter(writeDelayMs = 40L)
+        val conn = connect(a, rpm = 0.0)
+        advanceTimeBy(25_000L)                       // BCM from 5 s, the extended session from 15 s, the PCM poller from 20 s
+        val pcm = com.openrs.dash.diagnostics.DtcScanner.MODULES.first { it.name == "PCM" }
+        backgroundScope.launch { com.openrs.dash.diagnostics.DtcScanner.runScan(conn, listOf(pcm)) { _, _ -> } }
+        advanceTimeBy(10_000L)
+        backgroundScope.launch { conn.performFreezeFrameIdentification(pcm) }
+        advanceTimeBy(5_000L)
+        fun ms(l: String) = Math.round(Regex("""\(\s*([\d.]+)\)""").find(l)!!.groupValues[1].toDouble() * 1000)
+        val logged = log().filter { it.startsWith("# TX ") }.groupBy({ it.substringAfter(" can0 ").substringBefore(' ') }, { ms(it) })
+        val began = a.began.filter { it.first.startsWith("t") }
+            .groupBy({ it.first.substring(1, 4) + "#" + it.first.substring(5) }, { it.second })
+        for ((path, prefix) in listOf("PCM poller" to "7E0#0322", "pollWrite (BCM)" to "726#0322",
+                                      "DTC scan" to "7E0#031902FF", "writeLogged (freeze frame)" to "7E0#031904FF")) {
+            val keys = logged.keys.filter { it.startsWith(prefix) }
+            assertTrue("$path: no TX line in ${logged.keys}", keys.isNotEmpty())
+            for (k in keys) {
+                val got = logged.getValue(k)
+                assertEquals("$path $k: each line's time is the clock as its write began", began.getValue(k).take(got.size), got)
+            }
+        }
+    }
+
     /**
      * QA's T1, with real threads: the reply is read while the write is still returning (it sleeps 40 ms after the reply
      * is in); the request's time must not be later than its reply's. The DID prober's requests go through the same
@@ -170,7 +229,7 @@ class RequestLogTest {
     }
 
     @Test fun `a request line goes through the VIN mask, and a normal request comes out unchanged`() {
-        DiagnosticLogger.logTxLine("t7E080322F40D00000000\r")
+        DiagnosticLogger.logTxLine("t7E080322F40D00000000\r", DiagnosticLogger.txStamp(), DiagnosticLogger.WRITE_SENT)
         assertTrue(log().toString(), log().any { it.startsWith("# TX ") && it.contains("7E0#0322F40D00000000") })
     }
 
@@ -179,7 +238,7 @@ class RequestLogTest {
         val vin = "TESTVIN0123456789"
         DiagnosticLogger.logFrame(0x123, byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8), VehicleState(vin = vin), "", null)
         val run = vin.substring(4, 12).toByteArray(Charsets.US_ASCII).joinToString("") { "%02X".format(it) }   // "VIN01234"
-        DiagnosticLogger.logTxLine("t7E08${run}\r")
+        DiagnosticLogger.logTxLine("t7E08${run}\r", DiagnosticLogger.txStamp(), DiagnosticLogger.WRITE_SENT)
         val l = log().filter { it.startsWith("# TX ") }
         assertEquals(l.toString(), 1, l.size)
         assertTrue("masked: $l", l[0].contains("7E0#0000000000000000 sent"))
@@ -188,7 +247,7 @@ class RequestLogTest {
 
     /** Only `t` frames: an SLCAN remote frame (`r`, no data) is the one other line whose ID and data would parse. */
     @Test fun `a line that is not a standard data frame (OPENRS?, AT+FRS, the SLCAN init, extended and remote frames) is never a TX line`() {
-        listOf("OPENRS?\r", "AT+FRS=MODE,S\r", "C\rS6\rO\r", "T18DAF11080322F40D00000000\r", "r7E08\r").forEach { DiagnosticLogger.logTxLine(it) }
+        listOf("OPENRS?\r", "AT+FRS=MODE,S\r", "C\rS6\rO\r", "T18DAF11080322F40D00000000\r", "r7E08\r").forEach { DiagnosticLogger.logTxLine(it, DiagnosticLogger.txStamp(), DiagnosticLogger.WRITE_SENT) }
         assertEquals(log().toString(), 0, log().count { it.startsWith("# TX") })
     }
 }

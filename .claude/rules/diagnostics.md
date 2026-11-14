@@ -44,8 +44,8 @@ paths:
   `DtcSendFailure` (stage + reason; one per module — request > flow control > extended session, `DtcRawScan.keeps`) →
   `moduleNotes` in export / DTC files / DIAG; `DtcRawScan.statusWithoutReply` is the one rule for progress AND result
   (request / FC failure → ERROR **before** PENDING; no session-write note beside PENDING); FC marked sent only on success;
-  diverted replies are logged once before the scanner gets them; requests / FC are `# TX` comment lines
-  (`DiagnosticLogger.logTxLine`)
+  diverted replies are logged once before the scanner gets them; every request / FC write is a `# TX` comment line with
+  its result; a failed one reads its failure word, never `sent` (`DiagnosticLogger.logTxLine`, #209)
 - **DTC retries carry their own note (#215)** — `scanSingleModule` / `retryScanModule` return `DtcModuleRetry`
   (codes, status, note); the ledger record and DIAG's result apply it with ONE rule (`DtcScanLedger.withNote`: replaced on
   failure, cleared on OK / genuine timeout). DIAG's NOT SCANNED row reads the DISPLAYED result
@@ -100,30 +100,46 @@ paths:
   (pages 10 / 11 / 12 by byte 0; one car), and a DID 0xF190 reply carries it too.
   - **Layers.** Page rule: one choke point in `DiagnosticLogger` masks both IDs + 0xF190 incl. consecutive frames. Content:
     any frame with 4+ consecutive bytes of the assembled VIN (`VIN_RUN_MIN = 4`; 3 stays unmasked by a pinned test; it can
-    mask an unrelated frame, counted separately). Probe replies: stored DID-prober replies on ANY DID get the same run mask
+    mask an unrelated frame, counted separately); the content layer also covers request lines, at a second site
+    (`logTxLine`, #209), counted in the same `vinFramesMaskedContent`. Probe replies: stored DID-prober replies on ANY DID get the same run mask
     at export read time, but only once the VIN is known (`probeSessions` returns them unmasked while `knownVin` is null; it
     is cleared at session start and set from state) — an export written before the VIN is decoded keeps a probe reply's
     bytes in every member (cold start only; pinned by a limit test). Only the run reads 00, a rejection's text stays; the
     0xF190 branch in `vinMasked()` is dead on the probe path (the prober cannot request it).
-  - **Form.** Raw log data bytes → `00` with ID / DLC / timing / mux kept so candump / SavvyCAN still parse (neither has
-    been run on a masked log; its time field is padded); inventory and trace → `**`, probe CSV too; the other 0x405 pages
+  - **Form.** Raw log data bytes → `00` with ID / DLC / timing / mux kept so candump-style readers still parse (none has
+    been run on a masked log; SavvyCAN's loader refuses this log's padded time field at all, see the #209 entry); inventory and trace → `**`, probe CSV too; the other 0x405 pages
     stay (content unknown). The summary and the detail are written from one `ExportCounters` snapshot.
   - **Limits.** DIAG still shows the VIN and the DID prober's on-screen list still shows the reply bytes — never claim the
     app hides it. Older ZIPs on the device are untouched: exports made before this masking can hold the VIN (#260). A
     test that scans an export for the VIN proves nothing unless the fake adapter sends 0x405.
-- **The raw log holds the app's own requests (#209)** — every CAN frame the app writes (PCM polls, BCM / AWD /
-  extended-session polls, DID probes, DTC scan, flow control, clear and freeze-frame requests) is one `# TX` comment line in
-  the SLCAN log: `# TX (  12.345) can0 7E0#0322033E00000000 sent`, on the replies' clock. The time is taken BEFORE the write
-  (`DiagnosticLogger.txStamp`), as the ledger stamps the request, and the line is written when the result is known, so a
-  reply can stand in the file before the request line that is earlier than it: order by the time field, never by line
-  order (QA's T1; a reply that arrives while a Bluetooth write is still returning would otherwise read as earlier than its
-  request). The result is the link-integrity counters' own word (`sent`, `possiblyDelivered`, `notSent`,
-  `deliveryUnknown`, `otherFailure`); a failed write is a line too, never `sent`. The result comes from
-  `SlcanTransport.write`, never `writeLine`: on Bluetooth `writeLine` returns normally for a possibly delivered (GATT 13)
-  write and drops that outcome (`RequestLogTest`). The SLCAN init, `OPENRS?` and `AT+FRS`
-  lines never are TX lines (only `t` frames). Every tracked write logs through `noteWrite` / `noteWriteFailure`, every other
-  frame write through `writeLogged`: a new write site uses one of them. Request lines share the 2,000,000-line cap with
-  received frames; the lines dropped at it are counted (`slcanLinesDropped`, LOG LIMITS). Our readers match frame lines
-  anchored at the line's start (`tools/claude/hardware/slcan_tools.py`, `check_export.py`, `tools/replay/candump_to_slcan.py`
-  drops `# TX` lines), so a TX line is never read as a frame: keep that anchor. can-utils' `canplayer` / `log2asc` skip any
-  line not starting with `(` (`RequestLogTest`, `DtcScanExplainTest`, `BufferBoundsTest`)
+- **The raw log holds the app's own requests (#209)** — every CAN frame the app writes is one `# TX` comment line in the
+  SLCAN log, on the replies' clock: `# TX (  12.345) can0 7E0#0322033E00000000 sent`. The log's `# Format:` header line names the
+  form (`# TX (relative_seconds) can0 ID#DATA <result>`); no header line starts with `# TX `, which would read as a request. No export schema bump: an addition inside comment lines (#253, QA's
+  ruling).
+  - **Time.** Taken BEFORE the write (`DiagnosticLogger.txStamp`), as the ledger stamps the request; the line is written
+    when the result is known, so a reply can stand in the file before the request line that is earlier than it: order by
+    the time field, never by line order (QA's T1: a reply that arrives while a Bluetooth write is still returning would
+    otherwise read as earlier than its request). `logTxLine` has no defaults: every caller passes the time and the result.
+    Tests pin it at every site on a virtual clock with a write that suspends (`DiagnosticLogger.sessionClock`:
+    `internal`, `@VisibleForTesting`, written only by tests, which restore it; production never sets it).
+  - **Result.** The link-integrity counters' own word (`sent`, `possiblyDelivered`, `notSent`, `deliveryUnknown`,
+    `otherFailure`), from `SlcanTransport.write`, never `writeLine`: on Bluetooth `writeLine` returns normally for a
+    possibly delivered (GATT 13) write and drops that outcome. A failed write is a line too, never `sent`.
+  - **Sites.** Tracked requests (PCM poller, `pollWrite`, the prober's `sendRawQuery`) log through `noteWrite` /
+    `noteWriteFailure`; every other frame write goes through `writeLogged` or the DTC scan's `send` (which calls
+    `logTxLine` itself): BCM and ISO-TP flow control, the clear, the freeze-frame requests. A new frame write site uses
+    one of them.
+  - **Not the LINK INTEGRITY counts.** Two facts: the untracked writes (the DTC `send`, `writeLogged`) are not counted;
+    a cancelled tracked write logs `deliveryUnknown` and is not counted. So while the raw log is complete (cap not
+    reached, no write failure), TX lines summed by word are at least LINK INTEGRITY's write counts, equal only when no
+    untracked or cancelled write happened; a line does not say whether the ledger tracked it.
+  - **Only `t` frames.** The SLCAN init, `OPENRS?`, `AT+FRS`, extended (`T`) and remote (`r`) frames are never TX lines.
+    The data goes through the VIN content mask (#260's second mask site); no request carries the VIN.
+  - **Cap.** Request lines share the 2,000,000-line cap with received frames; the lines dropped at it are counted
+    (`slcanLinesDropped`, LOG LIMITS).
+  - **Readers.** Ours match frame lines anchored at the line's start (`tools/claude/hardware/slcan_tools.py`,
+    `check_export.py`; `tools/replay/candump_to_slcan.py` drops `# TX` lines), so a TX line is never read as a frame: keep
+    that anchor. can-utils' `canplayer` / `log2asc` read the frame lines and skip any line not starting with `(` (their
+    source, read). SavvyCAN's loader refuses the log's time field, which is padded inside the parentheses (`(%10.3f)`;
+    its source, read, not run); Kayak not read. So no text in the app names either as compatible (`RequestLogTest`,
+    `RequestLogExportTest`, `DtcScanExplainTest`, `BufferBoundsTest`)

@@ -23,9 +23,10 @@ import java.io.File
  *
  * All methods are thread-safe. DiagnosticExporter reads from this object to build the ZIP.
  *
- * SLCAN log format (compatible with candump / SavvyCAN / Kayak):
+ * SLCAN log format (candump-style lines; the app's requests are `# TX` comment lines, #209):
  *   (   0.000) can0 0F8#0102030405060708
  *   (  30.512) can0 190#AABBCCDDEE001122
+ *   # TX (  30.600) can0 7E0#0322033E00000000 sent
  */
 object DiagnosticLogger {
 
@@ -427,7 +428,7 @@ object DiagnosticLogger {
             vinFramesMaskedPage = 0L
             vinFramesMaskedContent = 0L
 
-            sessionStartMs = System.currentTimeMillis()
+            sessionStartMs = sessionClock()
             sessionHost = safeHost
             sessionPort = port
             sessionTransport = safeTransport
@@ -462,8 +463,9 @@ object DiagnosticLogger {
                     val transportLabel = if (safeTransport.isNotEmpty()) " ($safeTransport)" else ""
                     w.write("# openRS_ SLCAN log — $safeHost:$port$transportLabel\n")
                     w.write("# Session started: ${System.currentTimeMillis()} ms epoch\n")
-                    w.write("# Format: (relative_seconds) can0 ID#DATA\n")
-                    w.write("# Compatible with candump, SavvyCAN, Kayak\n")
+                    // The request form sits inside the Format line: a header line starting "# TX " would read as a request (#209)
+                    w.write("# Format: (relative_seconds) can0 ID#DATA; the app's requests: # TX (relative_seconds) can0 ID#DATA <result>\n")
+                    w.write("# Read by can-utils' canplayer and log2asc, which skip the # lines\n")
                     w.write("# VIN-bearing frames keep ID, length, time and mux; their data bytes read 00\n")
                     w.flush()
                     slcanWriter = w
@@ -730,7 +732,7 @@ object DiagnosticLogger {
      * Only a CAN frame (`t<id><dlc><data>\r`) is a TX line: the SLCAN init, `OPENRS?` and `AT+FRS` lines never are. The
      * data goes through the VIN mask's content layer (#260) like any frame; no request carries the VIN.
      */
-    fun logTxLine(slcanFrame: String, stampMs: Long = txStamp(), result: String = WRITE_SENT) {
+    fun logTxLine(slcanFrame: String, stampMs: Long, result: String) {   // no defaults: the time before the write and the result are always the caller's
         val f = slcanFrame.trimEnd('\r')
         if (f.length < 5 || f[0] != 't') return
         val id = f.substring(1, 4).toIntOrNull(16) ?: return
@@ -743,7 +745,7 @@ object DiagnosticLogger {
         synchronized(lock) { writePreformattedSlcanLine(stampMs, "# TX $body $result\n") }
     }
 
-    /** Build a candump-format line outside the lock to keep hot-path holds short. Always `.` decimals (candump / SavvyCAN). */
+    /** Build a candump-format line outside the lock to keep hot-path holds short. Always `.` decimals (candump). */
     internal fun buildSlcanLine(relMs: Long, canId: Int, compactHex: String): String {
         val seconds = relMs / 1000.0
         return "(%10.3f) can0 %03X#%s\n".format(java.util.Locale.ROOT, seconds, canId, compactHex)
@@ -838,7 +840,14 @@ object DiagnosticLogger {
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private fun relativeMs() = (System.currentTimeMillis() - sessionStartMs).coerceAtLeast(0L)
+    /**
+     * The wall clock behind the session clock ([relativeMs], so every raw-log time). Production never sets it; tests that
+     * must tell a time taken before a write from one taken after it (#209, QA's T1) set a virtual clock, and restore it.
+     */
+    @androidx.annotation.VisibleForTesting(otherwise = androidx.annotation.VisibleForTesting.PRIVATE)
+    @Volatile internal var sessionClock: () -> Long = System::currentTimeMillis
+
+    private fun relativeMs() = (sessionClock() - sessionStartMs).coerceAtLeast(0L)
 
     fun formatDuration(ms: Long): String {
         val s = ms / 1000

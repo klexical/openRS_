@@ -741,7 +741,7 @@ class BufferBoundsTest {
         DiagnosticLogger.sessionStart("test", 0, prefs = null, logDir = dir)
         staticField("slcanLinesWritten").setLong(null, 2_000_000L - 2)    // the cap, without writing 2 M lines
         repeat(5) { DiagnosticLogger.logObdFrame(0x7E8, byteArrayOf(it.toByte())) }
-        DiagnosticLogger.logTxLine("t7E08031902FF00000000\r")
+        DiagnosticLogger.logTxLine("t7E08031902FF00000000\r", DiagnosticLogger.txStamp(), DiagnosticLogger.WRITE_SENT)
         DiagnosticLogger.logUnknownFrame(0x123, byteArrayOf(9))
         DiagnosticLogger.flushSlcan()
         val text = File(dir, "session_slcan.log").readLines()
