@@ -565,7 +565,8 @@ check "no fault line is worded as deciding nothing (D1) (#363)"
 
 # QA's P1: the helper processes print a process id and a name, never a command line (BSD pgrep -l prints one), with the
 # real pgrep and ps
-exec -a crashpad_handler perl -e 'sleep 30' -- --annotation=prod=SECRET-MARK-P1 & HELPER=$!
+mkdir -p "$WORK/sdk/emulator"
+exec -a "$WORK/sdk/emulator/crashpad_handler" perl -e 'sleep 30' -- --annotation=prod=SECRET-MARK-P1 & HELPER=$!
 sleep 0.3
 WHY=""; run 0 "" FAKE_INSTALL_EXIT=1 FAKE_REAL_PGREP=1
 h=$(section "emulator helper processes")
@@ -573,6 +574,27 @@ grep -qE "^$HELPER [^ ]+$" <<<"$h" || why "no '<pid> <name>' line for the helper
 [[ "$OUT" != *"SECRET-MARK-P1"* && "$OUT" != *"--annotation"* ]] || why "a helper's arguments were printed"
 kill "$HELPER" 2>/dev/null; wait "$HELPER" 2>/dev/null
 check "a helper process prints its id and name only, never its arguments (QA's P1, real pgrep and ps) (#363)"
+
+# QA's N1: only the emulator's own helpers (the SDK's emulator/crashpad_handler and emulator/netsimd), never another
+# program's crash handler (a browser's runs on a developer's Mac): not listed, and the dump decode does not wait for it
+exec -a chrome_crashpad_handler perl -e 'sleep 30' & OTHER1=$!
+exec -a "/Applications/Other.app/Contents/Frameworks/Other Helper/crashpad_handler" perl -e 'sleep 30' & OTHER2=$!
+sleep 0.3
+WHY=""; t_start=$SECONDS
+run 0 "" FAKE_INSTALL_EXIT=1 FAKE_REAL_PGREP=1 LAUNCH_HANDLER_WAIT_S=6
+waited=$((SECONDS - t_start))
+h=$(section "emulator helper processes")
+! grep -qE "^($OTHER1|$OTHER2) " <<<"$h" || why "another program's crash handler was listed: '$h'"
+[[ "$h" == *"(none)"* ]] || why "no '(none)' with only other programs' handlers running: '$h'"
+[ "$waited" -lt 4 ] || why "the decode waited ${waited} s for another program's crash handler"
+exec -a "$WORK/sdk/emulator/crashpad_handler" perl -e 'select(undef, undef, undef, 2.5)' & OWN=$!
+sleep 0.3
+t_start=$SECONDS
+run 0 "" FAKE_INSTALL_EXIT=1 FAKE_REAL_PGREP=1 LAUNCH_HANDLER_WAIT_S=6
+waited=$((SECONDS - t_start))
+[ "$waited" -ge 2 ] || why "the decode did not wait for the emulator's own crash handler (${waited} s)"
+kill "$OTHER1" "$OTHER2" "$OWN" 2>/dev/null; wait "$OTHER1" "$OTHER2" "$OWN" 2>/dev/null
+check "only the emulator's own crash handler is listed and waited for, never another program's (QA's N1) (#363)"
 
 # The crash database is the one the emulator's log names, never the whole temp folder (its disk overlays are there)
 WHY=""; mkdir -p "$WORK/tmpdir/emu-crash-37.2.13.db/completed"; : > "$WORK/tmpdir/emulator-AbCd.qcow2"

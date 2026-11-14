@@ -59,7 +59,9 @@ paths:
     the host's memory and kernel kill lines, `df -h`, the emulator's exit messages from the whole `emulator.log` and its
     tail; the device-log, events, kernel and signature sections say "(no matching lines)", "(read cut short: …)" or
     "(could not read: …)" rather than nothing, and the output ends with `--- end of diagnostics`; also the emulator's exit
-    status, its helper processes (process id and name only: BSD pgrep's -l / -a print whole command lines), the host's
+    status, its helper processes (only the emulator's own, `emulator/crashpad_handler` and `emulator/netsimd` by their
+    place in the SDK, never another program's crash handler, which the dump decode does not wait for either; process id
+    and name only: BSD pgrep's -l / -a print whole command lines), the host's
     load, the kernel's fault and fatal-signal lines (kind and thread name, a fatal signal's number; no error code,
     address, register or object name), and through `scripts/crash-facts.py` the crash database the emulator's log names
     (a count, and per file its kind, size and time after the cold start, no names) and the newest dump written after

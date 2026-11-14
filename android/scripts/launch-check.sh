@@ -31,6 +31,11 @@ RETRY_MARGIN_S=60; RESTART_S=30; CHECK_S=150; MIN_BOOT_S=120; MAX_BOOT_S=420
 TRACE_S="${LAUNCH_TRACE_S:-2}"                                     # the liveness trace's interval
 CRASH_DIR="${LAUNCH_CRASH_DIR-}"     # the emulator's crash database: by default the one its own log names (crash_dir)
 HANDLER_WAIT_S="${LAUNCH_HANDLER_WAIT_S:-20}"                      # for crashpad_handler to finish a dump
+# The emulator's own helpers, by their place in the SDK (emulator/crashpad_handler, emulator/netsimd): another program's
+# crash handler (a browser's, on a developer's Mac) is neither listed nor waited for (QA's N1). Not by parent: the decode
+# waits after the emulator is gone, when its children belong to init.
+EMULATOR_HELPERS='/emulator/(crashpad_handler|netsimd)( |$)'
+EMULATOR_HANDLER='/emulator/crashpad_handler( |$)'
 START_EMULATOR="${LAUNCH_START_EMULATOR:-$DIR/start-emulator.sh}"
 STEP="the argument checks"; REPORTED=0; TMP=""; A=""; TRACER=""
 
@@ -80,10 +85,10 @@ diagnostics() {
   echo "--- emulator processes"
   st=0; out=$(pgrep -a -f -- 'qemu-system|emulator/emulator') || st=$?
   case $st in 0) printf '%s\n' "$out" ;; 1) echo "(no emulator process)" ;; *) echo "(could not read: pgrep, exit $st)" ;; esac
-  echo "--- emulator helper processes (crashpad_handler, netsimd): process id and name only"
+  echo "--- emulator helper processes (the emulator's own crashpad_handler, netsimd): process id and name only"
   # Never pgrep's -l / -a: BSD pgrep prints a process's whole command line with them, and a crash handler's arguments
   # carry paths and annotations (QA's P1; seen on macOS). ps's comm, cut to its file name, is the name.
-  st=0; out=$(pgrep -f -- 'crashpad_handler|netsimd') || st=$?
+  st=0; out=$(pgrep -f -- "$EMULATOR_HELPERS") || st=$?
   case $st in
     0) for p in $out; do n=$(timeout 5 ps -o comm= -p "$p" 2>/dev/null | sed 's#.*/##' || true); echo "$p ${n:-?}"; done ;;
     1) echo "(none)" ;; *) echo "(could not read: pgrep, exit $st)" ;; esac
@@ -143,7 +148,7 @@ diagnostics() {
   if ! command -v python3 >/dev/null 2>&1; then echo "(could not read: python3 not found)"
   elif [ -z "$cdir" ]; then echo "(could not read: the emulator's log names no crash database)"
   else
-    for _ in $(seq 1 "$HANDLER_WAIT_S"); do pgrep -f -- crashpad_handler >/dev/null 2>&1 || break; sleep 1; done
+    for _ in $(seq 1 "$HANDLER_WAIT_S"); do pgrep -f -- "$EMULATOR_HANDLER" >/dev/null 2>&1 || break; sleep 1; done
     timeout 20 python3 -I "$DIR/crash-facts.py" decode "$cdir" "$t0" 2>&1 | redact || echo "(could not read: crash-facts.py decode)"
   fi
   echo "--- the liveness trace (the last 60 samples: seconds after the cold start, emulator, app's process id, load)"
