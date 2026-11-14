@@ -54,7 +54,7 @@
 │  GFM (0x7D2) DTC scan · IPC/HVAC scaffolded                          │
 ├──────────────────────┬───────────────────────────────────────────────┤
 │  MeatPi USB (C3)     │  MeatPi Pro (S3)                              │
-│  ESP32-C3 · Wi-Fi+BLE│  ESP32-S3 · Wi-Fi+BLE+GPS+MicroSD             │
+│  ESP32-C3 · Wi-Fi+BLE│  ESP32-S3 · Wi-Fi+BLE+MicroSD                 │
 │  openrs-fw v1.61     │  openrs-fw v1.2                               │
 ├──────────────────────┴───────────────────────────────────────────────┤
 │  HS-CAN 500k         │  MS-CAN 125k: not read by the app             │
