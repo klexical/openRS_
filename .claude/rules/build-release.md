@@ -49,7 +49,9 @@ paths:
     the newest published nightly, rc.8's for the first, and today has no nightly or tag; a read-only token is shown no
     draft releases), `checks` (ci.yml's build and lint commands and the release script tests), `release` (the recipe),
     `launch` (`scripts/start-emulator.sh` starts an API 36 emulator, then `scripts/launch-check.sh`: Play Store disabled,
-    log cleared before the cold start, same process after 10 s, no verifier rejection, fatal exception or ANR), `attest`.
+    log cleared before the cold start, same process after 10 s, no verifier rejection, fatal exception or ANR; every adb
+    call named and limited to 60 s, a failure printing `adb devices`, the emulator processes and `emulator.log`'s tail),
+    `attest`.
     Dry-run mode: `PUBLISH` is `'false'`, no job can write contents, and the run stops after the attestation; nothing is
     published, so every night builds and leaves a one-day release-signed artifact and a public attestation.
     `scripts/test-nightly-gate.sh`, `scripts/test-launch-check.sh`, `scripts/test-start-emulator.sh` and
@@ -100,3 +102,10 @@ paths:
   create the folder before the create and export it for both tools. `scripts/start-emulator.sh` does, checks
   `nightly.ini` is there before the start, and ends the boot wait when the emulator process is gone
   (`scripts/test-start-emulator.sh`).
+- **adb in a script: read pidof's status, bound every call (#363)** — Android's `pidof` exits 1 when nothing matches and
+  `adb shell` passes the status on, so `PID=$(adb shell pidof …)` under `set -e` ends the script silently when the
+  process is missing; run `pidof … || true` on the device, so adb's own status speaks only for the connection. Checked
+  locally (API 36.1 arm64 emulator): with the device gone `adb logcat -d` waits for it without end, and a call in
+  flight when the emulator dies exits 255 with no message. `scripts/launch-check.sh` runs every adb call under
+  `timeout 60` with a step name and prints `adb devices`, the emulator processes and `emulator.log`'s tail on any
+  failure (`scripts/test-launch-check.sh`).
