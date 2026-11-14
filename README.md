@@ -66,8 +66,8 @@ The stable v2.2.6 screens are in the [app guide](docs/app-guide.md#screens-v226)
 [Release page](https://github.com/klexical/openRS_/releases/tag/android-v2.2.7-rc.8) · download `openRS_v2.2.7-rc.8.apk`
 
 **Stable or pre-release?** Stable is the build most owners should install. A pre-release has newer features and fixes
-that have had less time on cars. It is built to install over stable and keep your settings and drives (the same app,
-signed the same way, with its database upgraded in place); that upgrade has not yet been checked on a phone, so export
+that have had less time on cars. It is built to install over stable and keep your settings and drives (the same app, with its database
+upgraded in place); that upgrade has not yet been checked on a phone, so export
 anything you would miss first. In the app, Settings → update channel decides which of the two the updater offers.
 
 Release notes and checksums are on each release page. The channel says how a build is distributed, not that every
