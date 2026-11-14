@@ -74,8 +74,8 @@ paths:
   key value. `OPENWEATHER_API_KEY` is not configured as a repository secret, so published builds have no weather —
   expected, not a bug
 - **RC maintenance assets** — the rc.7 release carries `openrs-2.2.7-rc.7-build38.apk` beside the tag's own asset. Its
-  name stays outside the updater's `startsWith("openRS_") && endsWith(".apk")` matcher (`VersionIdentityTest`), so the
-  in-app updater never offers it, and What's New is once per release NAME. The one-shot publisher that added it was
+  name is not the release's exact `openRS_v<name>.apk`, the only asset the updater takes (#364, `VersionIdentityTest`), so
+  the in-app updater never offers it, and What's New is once per release NAME. The one-shot publisher that added it was
   deleted: a future maintenance asset needs a new, reviewed publisher.
 - **Every release build needs an on-device launch (R8)** — R8 (AGP 8.7.3) once emitted an unverifiable
   `DrivePageKt$DrivePage$7` after a harmless edit (removing the CLUTCH row): ART threw `VerifyError … register has type
