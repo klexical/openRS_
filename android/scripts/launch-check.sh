@@ -44,15 +44,17 @@ finish() {
 }
 trap finish EXIT
 
-# call <step> <adb args...>: adb under the time limit. Its stdout (CR removed) is in OUT; a failed call or one that does
-# not answer fails the check, named by its step.
+# call [--private] <step> <adb args...>: adb under the time limit. Its stdout (CR removed) is in OUT; a failed call or
+# one that does not answer fails the check, named by its step, and shows what it printed, unless --private: the device
+# log is never printed whole (the Maps SDK's authorization block prints the API key, .claude/rules/build-release.md).
 call() {
+  local private=0; if [ "$1" = --private ]; then private=1; shift; fi
   STEP="$1"; shift
   local status=0 detail err state
   timeout "$ADB_LIMIT_S" adb "$@" > "$TMP/out" 2> "$TMP/err" || status=$?
   OUT=$(tr -d '\r' < "$TMP/out")
   [ "$status" -ne 0 ] || return 0
-  [ -z "$OUT" ] || echo "$OUT"
+  [ -z "$OUT" ] || [ "$private" -eq 1 ] || echo "$OUT"
   err=$(tr -d '\r' < "$TMP/err" | tr '\n' ' ')
   if [ "$status" -eq 124 ]; then detail="did not answer within $ADB_LIMIT_S s"
   else detail="failed (exit $status: ${err:0:300})"; fi
@@ -85,7 +87,7 @@ call "the process check after the wait" shell "pidof $PKG || true"; PID2="$OUT"
 [ -n "$PID2" ] || fail "$PKG is gone ${WAIT} s after the start (process $PID1)"
 [ "$PID2" = "$PID1" ] || fail "$PKG restarted: process $PID1 at the start, $PID2 after ${WAIT} s"
 
-call "reading the log" logcat -d; LOG="$OUT"
+call --private "reading the log" logcat -d; LOG="$OUT"
 V=$(grep -c 'Verifier rejected' <<<"$LOG" || true)
 F=$(grep -c 'FATAL EXCEPTION' <<<"$LOG" || true)
 A=$(grep -c "ANR in $PKG" <<<"$LOG" || true)

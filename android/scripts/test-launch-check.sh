@@ -37,7 +37,9 @@ case "$*" in
   "devices")                       echo "List of devices attached"; gone || printf 'emulator-5554\tdevice\n'; echo ;;
   "install -r "*)                  hit install; echo "Success"; exit "${FAKE_INSTALL_EXIT:-0}" ;;
   "logcat -c")                     hit logcat-c; : > "$WORK/log-cleared" ;;
-  "logcat -d")                     hit logcat-d; [ -f "$WORK/log-cleared" ] && cat "$WORK/log" ;;
+  "logcat -d")                     [ "${FAKE_CLOSED_AT-}" = logcat-d-midway ] && { cat "$WORK/log"; : > "$WORK/gone"
+                                     echo "error: closed" >&2; exit 1; }
+                                   hit logcat-d; [ -f "$WORK/log-cleared" ] && cat "$WORK/log" ;;
   "logcat -d -b main,system,crash") if gone; then echo "- waiting for device -" >&2; exec sleep 30; fi; cat "$WORK/devlog" ;;
   "shell am start "*)              hit start; [ -f "$WORK/log-cleared" ] || cp "$WORK/log" "$WORK/log-before"
                                    printf 'Status: ok\r\nActivity: %s\r\nComplete\r\n' "${FAKE_TOP-com.openrs.dash/.ui.MainActivity}"
@@ -169,6 +171,11 @@ run 0 "" FAKE_CLOSED_AT=pidof1 FAKE_ERR_FILE="$WORK/long-err"
 has "::error::the process check after the start"; has "the emulator is no longer connected"
 [ "$(grep -m1 '::error::' <<<"$OUT" | wc -c)" -lt 600 ] || why "the message holds more than 300 characters of adb's error"
 check "a long adb error is cut short in the message, not fatal to it"
+
+WHY=""; run 0 "I ActivityManager: Start proc com.openrs.dash"$'\n'"E Maps: Ensure the API Key FAKEKEY456 is set" FAKE_CLOSED_AT=logcat-d-midway
+has "::error::reading the log"; has "the emulator is no longer connected"
+[[ "$OUT" != *"FAKEKEY456"* ]] || why "the device log read before the connection closed was printed"
+check "a log read that fails part-way prints none of what it read"
 
 WHY=""; run 0 "" FAKE_INSTALL_EXIT=1
 has "adb still sees the emulator"; diagnostics; devicelog
