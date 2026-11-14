@@ -1,11 +1,12 @@
-import { chartColors, colors } from '../styles/tokens'
+import { chartColors, colors, shadeHex } from '../styles/tokens'
 
 // Session event types as the app writes them (upper case), grouped for the Diagnostics events table (#382). The list
 // comes from the Android source (DiagnosticLogger.event / eventAt and its EVENT_* constants, SessionEvent, ObserverNote);
 // components/panels/DiagnosticsPanel.eventColours.test.tsx holds the same list. Lookup ignores letter case; a type
 // not listed (a newer app, or one Sapphire does not know yet) gets the neutral style.
-// Colours are fixed tokens, never the paint accent, and each meets WCAG AA (4.5:1) as badge text on its own 8 % tint
-// over surf2 (#382).
+// Colours are fixed tokens (Recording's lightened), never the paint accent, and each meets WCAG AA (4.5:1) as badge
+// text on its own 8 % tint over surf2 (#382). The meaning colours keep their meaning: orange for a failed operation,
+// warn for a caution (a command sent to the car, lost recording time); the green "good" colour is used by no group.
 
 export interface EventStyle {
   /** The group in words: shown on hover, so the colour is never the only cue. */
@@ -23,7 +24,10 @@ const GROUPS: { group: string; color: string; types: string[] }[] = [
   { group: 'Command to the car', color: colors.warn, types: ['DM_CMD', 'ESC_CMD'] },
   { group: 'Module query', color: chartColors[6],
     types: ['DTC', 'AUTO_DTC_SCAN', 'PROBE', 'NRC_RECOVER', 'NRC_SUPPRESS', 'NRC_UNATTRIBUTED', 'BOOST_SOURCE'] },
-  { group: 'Recording', color: colors.ok, types: ['REC', 'REC_GAP', 'LAP', 'SHARE', 'DEMO'] },
+  // Deep purple lightened 30 % to meet AA as badge text (5.69:1; the plain chart colour gives 3.58:1)
+  { group: 'Recording', color: shadeHex(chartColors[7], 0.3), types: ['REC', 'LAP', 'SHARE', 'DEMO'] },
+  // A pause, a disconnect or a missing fix while recording: recording goes on, so a caution, not a failed operation
+  { group: 'Recording gap', color: colors.warn, types: ['REC_GAP'] },
   { group: 'Observer note', color: chartColors[4], types: ['NOTE'] },
 ]
 

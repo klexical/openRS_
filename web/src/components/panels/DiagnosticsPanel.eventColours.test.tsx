@@ -69,6 +69,15 @@ describe('#382 Diagnostics event colours', () => {
     expect(c.FIRMWARE).not.toBe(NEUTRAL)
   })
 
+  it('a recording gap shows the warning colour, never the "good" colour; plain recording events neither', () => {
+    // REC_GAP marks lost recording time (a pause, a disconnect, a missing fix); the meaning colours keep their meaning
+    const c = colours(badges(show(['REC_GAP', 'REC', 'LAP'])))
+    const OK = 'rgb(0, 255, 136)', WARN = 'rgb(255, 204, 0)'
+    expect(c.REC_GAP).toBe(WARN)
+    expect([c.REC, c.LAP]).not.toContain(OK)
+    expect([c.REC, c.LAP]).not.toContain(WARN)
+  })
+
   it('an unknown type renders with the neutral style and does not throw', () => {
     const b = badges(show(['SOMETHING_NEW', 'FIRMWARE']))
     expect(getComputedStyle(b.SOMETHING_NEW).color).toBe(NEUTRAL)
