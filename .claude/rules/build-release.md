@@ -48,11 +48,15 @@ paths:
     no repository code), `gate` (`scripts/nightly-gate.sh`: build only when `android/` changed since
     the newest published nightly, rc.8's for the first, and today has no nightly or tag; a read-only token is shown no
     draft releases), `checks` (ci.yml's build and lint commands and the release script tests), `release` (the recipe),
-    `launch` (`scripts/start-emulator.sh` starts an API 36 emulator, then `scripts/launch-check.sh`: Play Store disabled,
-    log cleared before the cold start, same process after 10 s, no verifier rejection, fatal exception or ANR; every adb
-    call named and limited to 60 s; a failure prints `adb devices`, the emulator processes, the device log's process and
-    crash lines (a line naming a key left out, the Maps and weather key values redacted by their shape), the host's
-    memory and kernel kill lines and `emulator.log`'s tail),
+    `launch` (`scripts/start-emulator.sh` starts an API 36 emulator, prints its version and process id and writes
+    `emulator.pid` beside `emulator.log`; then `scripts/launch-check.sh`: Play Store disabled, a `free -m` baseline, log
+    cleared before the cold start, same process after 10 s, no verifier rejection, fatal exception or ANR; every adb
+    call named and limited to 60 s; a failure prints `adb devices`, the emulator processes, whether the `emulator.pid`
+    process is alive and named by the kernel's kill lines, the device log's process and crash lines and its events
+    buffer's kills and deaths (a line naming a key left out, the Maps and weather key values redacted by their shape),
+    the host's memory and kernel kill lines, `df -h`, the emulator's exit messages from the whole `emulator.log` and its
+    tail; each section says "(no matching lines)" or "(could not read: …)", never nothing, and the output ends with
+    `--- end of diagnostics`),
     `attest`.
     Dry-run mode: `PUBLISH` is `'false'`, no job can write contents, and the run stops after the attestation; nothing is
     published, so every night builds and leaves a one-day release-signed artifact and a public attestation.
