@@ -73,13 +73,13 @@ export interface ImportOutcome {
   alreadyImported: { name: string; existingId: string }[]
 }
 
-const DB_NAME = 'sapphire'
-const DB_VERSION = 2
-const DRIVES = 'drives'
-const POINTS = 'points'
-const DIAGNOSTICS = 'diagnostics'
-const OLD_SESSIONS = 'sessions'
-const ALL = [DRIVES, POINTS, DIAGNOSTICS]
+export const DB_NAME = 'sapphire'
+export const DB_VERSION = 2
+export const DRIVES = 'drives'
+export const POINTS = 'points'
+export const DIAGNOSTICS = 'diagnostics'
+export const OLD_SESSIONS = 'sessions'
+export const ALL = [DRIVES, POINTS, DIAGNOSTICS]
 /** Keys this module adds to a drive record; stripped again when a session is rebuilt. */
 const DERIVED = ['driveStart', 'summary', 'pointCount', 'hasDrive', 'hasSession', 'hasLaps', 'hasWarnings', 'warnings',
   'contentHash', 'sessionProof'] as const
@@ -88,7 +88,7 @@ const DERIVED = ['driveStart', 'summary', 'pointCount', 'hasDrive', 'hasSession'
  * A write whose promise nobody awaits: its failure already reaches the caller through the transaction's own result
  * (`tx.done`, or openDB for the upgrade), so a rejection here must not also surface as an unhandled one.
  */
-const settle = (request: Promise<unknown>): void => { request.catch(() => {}) }
+export const settle = (request: Promise<unknown>): void => { request.catch(() => {}) }
 
 // ── Status, for the page's plain-words messages ──
 
@@ -106,7 +106,8 @@ export function onStorageStatus(cb: (s: StorageStatus) => void): () => void {
 let dbPromise: Promise<IDBPDatabase> | null = null
 let openDb: IDBPDatabase | null = null
 
-function getDb(): Promise<IDBPDatabase> {
+/** The open database (upgraded). Exported for storageBackup.ts, the backup's half of this module (#384 ticket 02). */
+export function getDb(): Promise<IDBPDatabase> {
   if (status.state === 'outdated') return Promise.reject(new Error('Sapphire was updated in another tab: reload'))
   if (dbPromise) return dbPromise
   let upgrading = false
@@ -179,11 +180,12 @@ export function closeStorage(): void {
 
 // ── A session split into its three records ──
 
-interface Split { drive: DriveRecord; points: { id: string; trip: TripData | null }; diagnostics: { id: string; diagnostics: DiagnosticData | null } }
+export interface Split { drive: DriveRecord; points: { id: string; trip: TripData | null }; diagnostics: { id: string; diagnostics: DiagnosticData | null } }
 
 class ConvertError extends Error {}
 
-function split(raw: unknown): Split {
+/** Exported for storageBackup.ts: a version-1 session in a backup converts as the upgrade converts it. */
+export function split(raw: unknown): Split {
   const s = raw as Session & Record<string, unknown>
   if (!s || typeof s !== 'object' || typeof s.id !== 'string') throw new ConvertError('a stored record has no id')
   const trip = (s.trip ?? null) as TripData | null

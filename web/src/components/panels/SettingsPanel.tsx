@@ -3,6 +3,7 @@ import { useStore } from '../../store'
 import { clearAllDrives } from '../../lib/storage'
 import { rsThemes } from '../../styles/tokens'
 import { SectionLabel } from '../ui/SectionLabel'
+import { BackupButton, RestoreInput } from '../ui/LazyBackupControls'
 import type { UnitSystem, BoostUnit, TirePressUnit } from '../../lib/units'
 import { useState } from 'react'
 
@@ -117,6 +118,10 @@ export function SettingsPanel() {
             <span className="text-xs font-mono text-dim ml-2">{sessions.length} session{sessions.length !== 1 ? 's' : ''} in IndexedDB</span>
           </div>
         </div>
+
+        {/* #384 ticket 02: above "Clear all" */}
+        <BackupButton label="Back up all drives" />
+        <RestoreInput />
 
         {!confirmClear ? (
           <button

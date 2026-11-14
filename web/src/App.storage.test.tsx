@@ -84,6 +84,46 @@ describe('#384 the storage messages, in plain words', () => {
   })
 })
 
+describe('#384 ticket 02: backup and restore on the page', () => {
+  // The controls load on demand (first-visit budget), hence findBy with a longer wait: the first transform of that
+  // chunk can take over a second in a full run. jsdom has no object URLs: the download link's address is invented here; its file name is the app's
+  beforeEach(() => { URL.createObjectURL = () => 'blob:invented'; URL.revokeObjectURL = () => {} })
+
+  it('Settings backs up all drives as a download, and restores a backup with its count', async () => {
+    const { useStore, storage } = await modules()
+    const { SettingsPanel } = await import('./components/panels/SettingsPanel')
+    await storage.storeImported([session('a'), session('b')])
+    useStore.setState({ drives: await storage.listDrives() })
+    const { container } = render(<SettingsPanel />)
+    const button = await screen.findByText('Back up all drives', {}, { timeout: 5000 })   // outside act: act holds the lazy render
+    await act(async () => { fireEvent.click(button) })
+    const link = await waitFor(() => { const a = container.querySelector('a[download]'); expect(a).not.toBeNull(); return a! })
+    expect(link.getAttribute('download')).toMatch(/^sapphire-backup-\d{4}-\d{2}-\d{2}\.zip$/)
+    expect(container.textContent).toMatch(/2 drives/)
+
+    const { makeBackup } = await import('./lib/backup')
+    const file = new File([(await makeBackup()).blob], 'invented-backup.zip')
+    await storage.clearAllDrives()
+    useStore.setState({ drives: [] })                          // the list must come back from the restore itself
+    const input = await screen.findByLabelText('Restore from a backup') as HTMLInputElement
+    Object.defineProperty(input, 'files', { value: [file] })
+    await act(async () => { fireEvent.change(input) })
+    await waitFor(() => expect(container.textContent).toMatch(/Restored 2 drives/))
+    expect(useStore.getState().drives).toHaveLength(2)
+  }, 15_000)
+
+  it('after a failed upgrade, the notice offers a backup of the old drives first', async () => {
+    await writeV1([{ ...session('bad'), trip: { ...session('bad').trip!, points: 'not an array' } }, session('good')])
+    const { App } = await modules()
+    render(<App />)
+    await waitFor(() => expect(document.body.textContent).toMatch(/Sapphire couldn't update its storage/))
+    const button = await screen.findByText('Back up the old drives', {}, { timeout: 5000 })   // outside act: act holds the lazy render
+    await act(async () => { fireEvent.click(button) })
+    const link = await waitFor(() => { const a = document.querySelector('a[download]'); expect(a).not.toBeNull(); return a! })
+    expect(link.getAttribute('download')).toMatch(/^sapphire-backup-/)
+  }, 15_000)
+})
+
 describe('#384 today\'s screens on the new storage', () => {
   it('opening a drive reads its points; leaving it frees them', async () => {
     const { App, useStore, storage } = await modules()

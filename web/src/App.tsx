@@ -5,6 +5,7 @@ import { useSettings } from './store/settings'
 import { listDrives, loadDrive, onStorageStatus, storageStatus, type DriveRecord } from './lib/storage'
 import { rsThemes, shadeHex, printAccent } from './styles/tokens'
 import { colors } from './styles/tokens'
+import { BackupButton } from './components/ui/LazyBackupControls'
 
 export default function App() {
   const setDrives = useStore((s) => s.setDrives)
@@ -103,6 +104,8 @@ function StorageNotice() {
       {action && (
         <button onClick={action.run} className="px-2 py-1 rounded border border-brd text-frost hover:bg-surf3">{action.label}</button>
       )}
+      {/* After a failed upgrade, a backup of the old data comes first (#384 ticket 02) */}
+      {storage.state === 'upgrade-failed' && <BackupButton label="Back up the old drives" />}
     </div>
   )
 }
