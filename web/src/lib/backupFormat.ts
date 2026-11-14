@@ -33,7 +33,7 @@ const unreadable = () => new BackupError(`This file is not a Sapphire backup, or
 /** JSZip writes dates with UTC getters; 1980-01-01 is the earliest date a ZIP can hold. */
 const ENTRY_DATE = new Date(Date.UTC(1980, 0, 1))
 const ENTRY = { date: ENTRY_DATE, createFolders: false }
-const damaged = (what: string) => new BackupError(`This backup is damaged (${what}). ${NOTHING_RESTORED}`)
+export const damaged = (what: string) => new BackupError(`This backup is damaged (${what}). ${NOTHING_RESTORED}`)
 
 // ── Values ──
 
@@ -198,6 +198,8 @@ function storedEntry(e: unknown, i: number): BackupEntry {
   if (!isObject(drive) || typeof drive.id !== 'string' || typeof drive.hasDrive !== 'boolean' || typeof drive.contentHash !== 'string') {
     throw damaged(`drive ${i} is incomplete`)
   }
+  // A drive with points needs its points: without them it would be restored as something else (a session-only entry)
+  if (drive.hasDrive && (points === null || (isObject(points) && points.trip === null))) throw damaged(`drive ${i} has no points`)
   if (points !== null && !(isObject(points) && points.id === drive.id
     && (points.trip === null || (isObject(points.trip) && Array.isArray(points.trip.points))))) {
     throw damaged(`drive ${i}'s points do not match it`)

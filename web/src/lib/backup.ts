@@ -4,7 +4,7 @@
 
 import { split, rebuildSession } from './storage'
 import { readEverything, restoreRecords, NewerStorageError, type RestoreRecord } from './storageBackup'
-import { buildBackup, readBackup, BackupError, BACKUP_FORMAT_VERSION, type BackupFile as File_ } from './backupFormat'
+import { buildBackup, readBackup, damaged, BackupError, BACKUP_FORMAT_VERSION, type BackupFile as File_ } from './backupFormat'
 import type { WorkerReply } from './backupWorker'
 import type { DiagnosticData, TripData } from '../types/session'
 
@@ -100,11 +100,12 @@ export async function restoreBackup(file: Blob): Promise<RestoreOutcome> {
   const entries = await readBackup(file, yieldToPage)
   const records: RestoreRecord[] = []
   const notRestorable: string[] = []
-  for (const e of entries) {
+  for (const [i, e] of entries.entries()) {
     // Every entry is converted by the import's own split, so the content hash and the session proof (and the other
     // derived fields) come from the entry's points and log, never from what the file claims: a version-1 session as
-    // at the upgrade; a stored drive from its three records (QA R1). One that cannot convert is named; the others
-    // still restore.
+    // at the upgrade; a stored drive from its three records (QA R1). A version-2 file is restored whole or not at all:
+    // a stored entry that cannot convert makes the file damaged. A version-1 file (written after a failed upgrade) is
+    // restored in part by design: a session that cannot convert is named, and the others restore.
     try {
       if (e.kind === 'stored') {
         const r = split(rebuildSession(e.drive, (e.points?.trip ?? null) as TripData | null,
@@ -114,7 +115,8 @@ export async function restoreBackup(file: Blob): Promise<RestoreOutcome> {
         records.push(split(e.session))
       }
     } catch {
-      const name = ((e.kind === 'stored' ? e.drive : e.session) as { name?: unknown } | null)?.name
+      if (e.kind === 'stored') throw damaged(`drive ${i + 1} cannot be converted`)
+      const name = (e.session as { name?: unknown } | null)?.name
       notRestorable.push(typeof name === 'string' && name !== '' ? name : 'A drive with no name')
     }
     await yieldToPage()                                       // hashing a long drive takes a moment: let the page answer

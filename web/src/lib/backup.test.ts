@@ -452,3 +452,29 @@ describe('#384 restore recomputes the content hash and the session proof from th
   })
 })
 
+// ── QA's read of 4fbe27f: F1 (a version-2 file is all or none) and F2 (a drive without its points is damaged) ──
+
+describe('#384 a version-2 backup is restored whole or not at all', () => {
+  it('F1: one stored entry that passes the format check but cannot convert: the file is refused, nothing restored', async () => {
+    await storeImported([drive('a', 410), drive('b', 411), drive('c', 412)])
+    const file = await edited((es) => { (es[1] as unknown as { points: { trip: { points: unknown[] } } }).points.trip.points = [null] })
+    fresh()
+    await storeImported([drive('here', 413)])
+    const before = await rawStores()
+    await expect(restoreBackup(file)).rejects.toThrow(/This backup is damaged \(drive 2 .*\)\. Nothing was restored\./)
+    const after = await rawStores()
+    for (const st of ['drives', 'points', 'diagnostics']) expect(bytes(after[st])).toEqual(bytes(before[st]))
+  })
+
+  it('F2: a drive entry (with points) whose points record is missing is damaged, not turned into a session-only entry', async () => {
+    await storeImported([{ ...drive('d', 420), diagnostics: sessionOnly('x', 3).diagnostics }])   // a drive with a 3-event log
+    const file = await edited((es) => { (es[0] as unknown as { points: unknown }).points = null })
+    fresh()
+    await storeImported([sessionOnly('s-here', 3)])                 // the same 3-event log, session only
+    const before = await rawStores()
+    await expect(restoreBackup(file)).rejects.toThrow(/This backup is damaged \(drive 1 has no points\)\. Nothing was restored\./)
+    const after = await rawStores()
+    for (const st of ['drives', 'points', 'diagnostics']) expect(bytes(after[st])).toEqual(bytes(before[st]))
+  })
+})
+
