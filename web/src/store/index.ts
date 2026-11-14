@@ -130,6 +130,13 @@ export const useStore = create<SapphireState>((set) => ({
   toggleNav: () => set((s) => ({ navExpanded: !s.navExpanded })),
 }))
 
+/**
+ * True while the selected drive is still being read from storage (#384): its panels show nothing then, rather than
+ * "No Session Selected" or the drive that was open before.
+ */
+export const useOpeningDrive = () =>
+  useStore((s) => s.activeSessionId !== null && s.activeSession?.id !== s.activeSessionId)
+
 /** The open drive (points and log loaded); null while none is selected or it is still loading. */
 export const useActiveSession = () =>
   useStore((s) => (s.activeSession && s.activeSession.id === s.activeSessionId ? s.activeSession : null))

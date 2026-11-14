@@ -17,6 +17,12 @@ export interface Session {
    * Absent = stored before this was recorded.
    */
   dtcScan?: boolean
+  /**
+   * The scan's own status from its JSON (COMPLETE, PARTIAL, FAILED, CANCELLED, INTERRUPTED, RUNNING); null when the scan
+   * states none (an older app, or a scan known from the text file alone). Only COMPLETE lets "no fault codes" be read
+   * as none (#384). Absent = stored before this was recorded.
+   */
+  dtcScanStatus?: string | null
 }
 
 export interface SessionMeta {
@@ -264,7 +270,7 @@ export interface DidInventoryRow {
 export interface DtcEntry {
   module: string      // "PCM" | "BCM" | "ABS" | "AWD" | "PSCM"
   code: string        // e.g. "P0101"
-  status: string      // "STORED" | "PENDING" | "PERMANENT" | "ACTIVE"
+  status: string      // the app's DtcStatus: "ACTIVE" | "PENDING" | "PERMANENT" | "UNKNOWN" (JSON), or its label "Active" … (text)
   description: string
   severity?: string   // "CRITICAL" | "WARNING" | "INFO" | "UNKNOWN"
   freezeFrame?: FreezeFrame

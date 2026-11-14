@@ -5,7 +5,7 @@ import { openDB } from 'idb'
 import JSZip from 'jszip'
 import {
   listDrives, loadDrive, storeImported, renameDrive, setDriveTags, deleteDrives, clearAllDrives, closeStorage,
-  storageStatus, faultCodeRaisesMarker, type DriveRecord,
+  storageStatus, faultCodeRaisesMarker, toDriveRecord, type DriveRecord,
 } from './storage'
 import { importZip } from './import'
 import type { DtcEntry, Session, SessionEvent, TripPoint } from '../types/session'
@@ -30,9 +30,9 @@ const DISCONNECTED = 'drive 7: DISCONNECTED gap 12.0 s (adapter disconnected —
 const PAUSED = 'drive 7: PAUSED gap 30.0 s (recording paused)'
 const NO_LOCATION = 'drive 7: NO_LOCATION gap 8.0 s (no location update while connected — telemetry not recorded)'
 
-interface Opts { drive?: boolean; diag?: boolean; events?: SessionEvent[]; codes?: DtcEntry[]; dtcScan?: boolean; laps?: boolean; tags?: string[] }
+interface Opts { drive?: boolean; diag?: boolean; events?: SessionEvent[]; codes?: DtcEntry[]; dtcScan?: boolean; scanStatus?: string | null; laps?: boolean; tags?: string[] }
 function session(id: string, o: Opts = {}): Session {
-  const { drive = true, diag = true, events = [], codes = [], dtcScan, laps = false, tags = [] } = o
+  const { drive = true, diag = true, events = [], codes = [], dtcScan, scanStatus, laps = false, tags = [] } = o
   const points = drive ? [pt(0), pt(1), pt(2)] : []
   const s: Session = {
     id, name: `Invented ${id}`, importedAt: T0 + 5000, tags,
@@ -47,6 +47,7 @@ function session(id: string, o: Opts = {}): Session {
     meta: { appVersion: '2.2.7', firmwareVersion: 'unknown', sessionStart: '', generatedAt: '' },
   }
   if (dtcScan !== undefined) s.dtcScan = dtcScan
+  if (scanStatus !== undefined) s.dtcScanStatus = scanStatus
   return s
 }
 
@@ -139,6 +140,15 @@ describe('#384 upgrade from version 1', () => {
     raw.close()
   })
 
+  it('any other failure to open is reported in plain words too, never left at "opening" (a newer database than this Sapphire)', async () => {
+    const newer = await openDB('sapphire', 5, { upgrade(d) { d.createObjectStore('sessions', { keyPath: 'id' }) } })
+    newer.close()
+    await expect(listDrives()).rejects.toThrow()
+    const status = storageStatus()
+    expect(status.state).toBe('upgrade-failed')
+    expect(status.state === 'upgrade-failed' && status.reason).toMatch(/couldn't open its storage/)
+  })
+
   it('the drives store has the three indexes; the hash index is not unique', async () => {
     await writeV1([session('a')])
     await listDrives()
@@ -211,18 +221,30 @@ describe('#384 reads and writes touch only what they need', () => {
 })
 
 describe('#384 the warnings flag (fault codes and recording gaps; knock and temperatures not checked)', () => {
+  // Fault codes (owner, 2026-11-14): found = an ACTIVE or PENDING code whatever the scan's status; none = only a scan
+  // marked COMPLETE with no such code; everything else (another status, no status, a text-only scan, no scan) = not checked
+  const C = { dtcScan: true, scanStatus: 'COMPLETE' } as const
   const CASES: [string, Opts, { faultCodes: string; recordingGaps: string; flag: boolean }][] = [
-    ['an active fault code', { dtcScan: true, codes: [dtc('ACTIVE')] }, { faultCodes: 'found', recordingGaps: 'none', flag: true }],
-    ['a pending fault code', { dtcScan: true, codes: [dtc('PENDING')] }, { faultCodes: 'found', recordingGaps: 'none', flag: true }],
-    ['only stored, permanent and status-less codes', { dtcScan: true, codes: [dtc('STORED'), dtc('PERMANENT'), dtc('UNKNOWN')] },
+    ['an active fault code (complete scan)', { ...C, codes: [dtc('ACTIVE')] }, { faultCodes: 'found', recordingGaps: 'none', flag: true }],
+    ['a pending fault code (complete scan)', { ...C, codes: [dtc('PENDING')] }, { faultCodes: 'found', recordingGaps: 'none', flag: true }],
+    ['an active fault code in a PARTIAL scan (found whatever the status)', { dtcScan: true, scanStatus: 'PARTIAL', codes: [dtc('ACTIVE')] },
+      { faultCodes: 'found', recordingGaps: 'none', flag: true }],
+    ['an active code from a text-only scan (found)', { dtcScan: true, scanStatus: null, codes: [dtc('Active')] },
+      { faultCodes: 'found', recordingGaps: 'none', flag: true }],
+    ['only stored, permanent and status-less codes in a complete scan', { ...C, codes: [dtc('STORED'), dtc('PERMANENT'), dtc('UNKNOWN')] },
       { faultCodes: 'none', recordingGaps: 'none', flag: false }],
+    ['a complete scan with no codes', { ...C }, { faultCodes: 'none', recordingGaps: 'none', flag: false }],
+    ...(['PARTIAL', 'FAILED', 'CANCELLED', 'INTERRUPTED', 'RUNNING'].map((st) =>
+      [`a ${st} scan with no active or pending code`, { dtcScan: true, scanStatus: st, codes: [dtc('PERMANENT')] },
+        { faultCodes: 'not-checked', recordingGaps: 'none', flag: false }]) as [string, Opts, { faultCodes: string; recordingGaps: string; flag: boolean }][]),
+    ['a scan with no status (an older app)', { dtcScan: true, scanStatus: null }, { faultCodes: 'not-checked', recordingGaps: 'none', flag: false }],
     ['no fault-code scan in the import', { dtcScan: false }, { faultCodes: 'not-checked', recordingGaps: 'none', flag: false }],
-    ['a REC_GAP with the DISCONNECTED reason', { dtcScan: true, events: [ev('REC_GAP', DISCONNECTED)] },
+    ['a REC_GAP with the DISCONNECTED reason', { ...C, events: [ev('REC_GAP', DISCONNECTED)] },
       { faultCodes: 'none', recordingGaps: 'found', flag: true }],
-    ['only a pause and a missing location', { dtcScan: true, events: [ev('REC_GAP', PAUSED), ev('REC_GAP', NO_LOCATION)] },
+    ['only a pause and a missing location', { ...C, events: [ev('REC_GAP', PAUSED), ev('REC_GAP', NO_LOCATION)] },
       { faultCodes: 'none', recordingGaps: 'none', flag: false }],
     ['no session log', { diag: false, dtcScan: false }, { faultCodes: 'not-checked', recordingGaps: 'not-checked', flag: false }],
-    ['none of them', { dtcScan: true, events: [ev('SESSION', 'Started')] }, { faultCodes: 'none', recordingGaps: 'none', flag: false }],
+    ['none of them', { ...C, events: [ev('SESSION', 'Started')] }, { faultCodes: 'none', recordingGaps: 'none', flag: false }],
     ['a disconnected gap and no fault-code scan (one cause found shows though another was not checked)',
       { dtcScan: false, events: [ev('REC_GAP', DISCONNECTED)] }, { faultCodes: 'not-checked', recordingGaps: 'found', flag: true }],
   ]
@@ -236,7 +258,7 @@ describe('#384 the warnings flag (fault codes and recording gaps; knock and temp
     })
   }
 
-  it('at the upgrade (version-1 records do not say whether a scan was present: codes present = scanned; none = not checked)', async () => {
+  it('at the upgrade (version-1 records carry no scan status: an active or pending code = found; anything else = not checked)', async () => {
     const v1 = (id: string, o: Opts) => { const s = session(id, o); delete s.dtcScan; return s }
     await writeV1([
       v1('active', { codes: [dtc('ACTIVE')] }),
@@ -249,7 +271,7 @@ describe('#384 the warnings flag (fault codes and recording gaps; knock and temp
     const d = byId(await listDrives())
     const row = (id: string) => [d[id].warnings.faultCodes, d[id].warnings.recordingGaps, d[id].hasWarnings]
     expect(row('active')).toEqual(['found', 'none', true])
-    expect(row('stored-only')).toEqual(['none', 'none', false])
+    expect(row('stored-only')).toEqual(['not-checked', 'none', false])   // no scan status in version 1: never "none"
     expect(row('no-codes')).toEqual(['not-checked', 'none', false])
     expect(row('gap')).toEqual(['not-checked', 'found', true])
     expect(row('pause')).toEqual(['not-checked', 'none', false])
@@ -300,16 +322,43 @@ describe('#384 already imported', () => {
     expect(again.alreadyImported.map((x) => x.existingId)).toEqual([before.id])
   })
 
-  it('the importer records whether a fault-code scan was present (a scan with no codes is not "no scan")', async () => {
+  it('the importer records whether a fault-code scan was present and its status (a scan with no codes is not "no scan")', async () => {
     const noScan = await importZip(await driveZip({ compression: 'DEFLATE' }))
-    const emptyScan = await importZip(await driveZip({ compression: 'DEFLATE', scan: { codes: [] } }))
+    const complete = await importZip(await driveZip({ compression: 'DEFLATE', scan: { scan: { status: 'COMPLETE' }, codes: [] } }))
+    const partial = await importZip(await driveZip({ compression: 'DEFLATE', scan: { scan: { status: 'PARTIAL' }, codes: [] } }))
+    const noStatus = await importZip(await driveZip({ compression: 'DEFLATE', scan: { codes: [] } }))
     const pending = await importZip(await driveZip({ compression: 'DEFLATE',
-      scan: { codes: [{ module: 'PCM', code: 'P0000', status: 'PENDING', description: 'invented' }] } }))
-    expect([noScan.dtcScan, emptyScan.dtcScan, pending.dtcScan]).toEqual([false, true, true])
-    const { stored } = await storeImported([noScan])
-    const d2 = (await storeImported([pending])).stored[0]
-    expect(stored[0].warnings.faultCodes).toBe('not-checked')
-    expect([d2.warnings.faultCodes, d2.hasWarnings]).toEqual(['found', true])
+      scan: { scan: { status: 'PARTIAL' }, codes: [{ module: 'PCM', code: 'P0000', status: 'PENDING', description: 'invented' }] } }))
+    expect([noScan.dtcScan, complete.dtcScan, partial.dtcScan, noStatus.dtcScan, pending.dtcScan]).toEqual([false, true, true, true, true])
+    expect([complete.dtcScanStatus, partial.dtcScanStatus, noStatus.dtcScanStatus]).toEqual(['COMPLETE', 'PARTIAL', null])
+    // the same drive five times: read each one's record without storing (storing would say "already imported")
+    expect([noScan, complete, partial, noStatus, pending].map((s) => toDriveRecord(s).warnings.faultCodes))
+      .toEqual(['not-checked', 'none', 'not-checked', 'not-checked', 'found'])
+  })
+})
+
+// L104: the app writes a code with its failure type ("P0123-1C", displayCode); main's text reader dropped that line
+describe('#384 the fault-code text reader', () => {
+  const TEXT = [
+    '═══════════════════════════════════════════════════════════',
+    '  openRS_ DTC Scan Report',
+    '═══════════════════════════════════════════════════════════',
+    '',
+    '─── PCM ────────────────────────────────────────────────────',
+    '  P0123-1C  [Active]  Invented description',
+    '  P0456  [Permanent]  Another invented description',
+    '',
+    'Total: 2 fault code(s) across 1 module(s)',
+  ].join('\n')
+  it('keeps a code written with a failure type (the app\'s exact line), as its base code', async () => {
+    const zip = new JSZip()
+    zip.file('drive_20960101_000000.csv', CSV)
+    zip.file('dtc_scan_20960101_000000.txt', TEXT)
+    const s = await importZip(new File([await zip.generateAsync({ type: 'blob' })], 'invented.zip'))
+    expect(s.diagnostics?.dtcResults.map((d) => [d.module, d.code, d.status])).toEqual([['PCM', 'P0123', 'Active'], ['PCM', 'P0456', 'Permanent']])
+    expect([s.dtcScan, s.dtcScanStatus]).toEqual([true, null])                 // a text-only scan has no status
+    const d = (await storeImported([s])).stored[0]
+    expect([d.warnings.faultCodes, d.hasWarnings]).toEqual(['found', true])
   })
 })
 

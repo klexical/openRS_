@@ -6,7 +6,8 @@ import type { Session } from './types/session'
 // seeds storage, then imports a fresh store + App. IndexedDB is mocked; the shell isn't under test.
 const db = vi.hoisted(() => ({ getAllSessions: vi.fn() }))
 vi.mock('./lib/storage', () => ({
-  listDrives: db.getAllSessions, loadDrive: async () => null,
+  // a stored drive opens; one that is not stored would be dropped from the selection (#384)
+  listDrives: db.getAllSessions, loadDrive: async (id: string) => ({ id, name: id }),
   storageStatus: () => ({ state: 'ready' }), onStorageStatus: () => () => {},
 }))
 vi.mock('./components/layout/Shell', () => ({ Shell: () => null }))

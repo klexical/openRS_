@@ -96,6 +96,21 @@ describe('#384 today\'s screens on the new storage', () => {
     await waitFor(() => expect(useStore.getState().activeSession).toBeNull())
   })
 
+  it('a drive that is selected but still opening never reads "No Session Selected" (Dashboard, Trip, Diagnostics)', async () => {
+    const { useStore } = await modules()
+    const { DashboardPanel } = await import('./components/panels/DashboardPanel')
+    const { TripPanel } = await import('./components/panels/TripPanel')
+    const { DiagnosticsPanel } = await import('./components/panels/DiagnosticsPanel')
+    const { toDriveRecord } = await import('./lib/storage')
+    useStore.setState({ drives: [toDriveRecord(session('a')), toDriveRecord(session('b'))], activeSessionId: 'b', activeSession: session('a') })
+    for (const Panel of [DashboardPanel, TripPanel, DiagnosticsPanel]) {
+      const { container, unmount } = render(<Panel />)
+      expect(container.textContent).not.toContain('No Session Selected')
+      expect(container.textContent).not.toContain('Invented a')                  // nor the drive that was open before
+      unmount()
+    }
+  })
+
   it('importing a drive that is already stored says "already imported", stores nothing and never throws', async () => {
     const { useStore, storage } = await modules()
     const { ImportPanel } = await import('./components/panels/ImportPanel')

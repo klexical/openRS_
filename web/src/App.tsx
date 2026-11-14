@@ -43,7 +43,12 @@ export default function App() {
     if (!activeSessionId) return
     let current = true
     loadDrive(activeSessionId)
-      .then((s) => { if (current && useStore.getState().activeSessionId === activeSessionId) setActiveSession(s) })
+      .then((s) => {
+        if (!current || useStore.getState().activeSessionId !== activeSessionId) return
+        // a selection whose drive is not stored (another browser's remembered view) is dropped, not left "opening"
+        if (s === null) useStore.getState().setActiveSessionId(null)
+        else setActiveSession(s)
+      })
       .catch((err) => console.error('[Sapphire] Failed to open the drive:', err))
     return () => { current = false }
   }, [activeSessionId])

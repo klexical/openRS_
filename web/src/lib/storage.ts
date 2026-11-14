@@ -85,8 +85,11 @@ function getDb(): Promise<IDBPDatabase> {
   if (dbPromise) return dbPromise
   let failure: string | null = null
   setStatus({ state: 'opening' })
-  dbPromise = openDB(DB_NAME, DB_VERSION, {
+  // Promise.resolve().then: an open() that throws at once rejects like any other failure to open
+  dbPromise = Promise.resolve().then(() => openDB(DB_NAME, DB_VERSION, {
     async upgrade(db, oldVersion, _newVersion, tx) {
+      // An error the transaction itself hits (a full disk: QuotaExceededError) aborts it outside the try below
+      tx.done.catch((e: unknown) => { if (failure === null) failure = e instanceof Error ? e.name : 'the update was stopped' })
       try {
         const drives = db.createObjectStore(DRIVES, { keyPath: 'id' })
         drives.createIndex('byStart', 'driveStart')
@@ -109,7 +112,6 @@ function getDb(): Promise<IDBPDatabase> {
         }
       } catch (err) {
         failure = err instanceof Error ? err.message : String(err)
-        tx.done.catch(() => {})                         // the abort below rejects it; openDB reports the failure
         tx.abort()                                      // version 1 stays exactly as it was
       }
     },
@@ -122,12 +124,15 @@ function getDb(): Promise<IDBPDatabase> {
       setStatus({ state: 'outdated' })
     },
     terminated() { openDb = null; dbPromise = null },
-  }).then(
+  })).then(
     (db) => { openDb = db; setStatus({ state: 'ready' }); return db },
     (err) => {
-      if (failure !== null) {
-        setStatus({ state: 'upgrade-failed', reason: `Sapphire couldn't update its storage (${failure}).` })
-      }
+      // Any failure to open says so in plain words: a record that could not convert, a quota or other error that
+      // aborted the upgrade, or a database newer than this Sapphire. In each case nothing stored was changed.
+      const why = err instanceof Error ? err.name : String(err)
+      setStatus({ state: 'upgrade-failed', reason: failure !== null
+        ? `Sapphire couldn't update its storage (${failure}).`
+        : `Sapphire couldn't open its storage (${why}).` })
       throw err
     },
   )
@@ -195,9 +200,11 @@ const DISCONNECTED_GAP = /\bDISCONNECTED gap\b/
 
 function warningCauses(s: Session, diagnostics: DiagnosticData | null): WarningCauses {
   const codes = diagnostics?.dtcResults ?? []
-  // Version-1 records do not say whether a scan was present: codes present means one was; none means not checked
-  const scanned = s.dtcScan ?? codes.length > 0
-  const faultCodes: CauseState = !scanned ? 'not-checked' : codes.some(faultCodeRaisesMarker) ? 'found' : 'none'
+  // Owner, 2026-11-14: found = an active or pending code, whatever the scan's status; none = only a scan marked COMPLETE
+  // with no such code; anything else (another status, no status, a text-only scan, no scan, a version-1 record) is
+  // not checked, never none
+  const faultCodes: CauseState = codes.some(faultCodeRaisesMarker) ? 'found'
+    : s.dtcScan === true && s.dtcScanStatus === 'COMPLETE' ? 'none' : 'not-checked'
   const recordingGaps: CauseState = diagnostics === null ? 'not-checked'
     : diagnostics.sessionEvents.some((e) => String(e.type).toUpperCase() === 'REC_GAP' && DISCONNECTED_GAP.test(e.message))
       ? 'found' : 'none'
@@ -217,11 +224,11 @@ function canonical(v: unknown): string {
 /**
  * SHA-256 of the drive's parsed content: the session without what the import or the owner adds (id, import time, name,
  * tags), without when it was exported (`meta.exportedAt`, `meta.generatedAt`: the same drive exported twice is one
- * drive) and without `dtcScan` (version-1 records never carried it). Computed once when the drive is stored.
+ * drive) and without `dtcScan` / `dtcScanStatus` (version-1 records never carried them). Computed once when stored.
  */
 function contentHash(s: Session): string {
-  const { id: _i, importedAt: _a, name: _n, tags: _g, dtcScan: _c, meta, ...content } = s as Session & Record<string, unknown>
-  void _i; void _a; void _n; void _g; void _c
+  const { id: _i, importedAt: _a, name: _n, tags: _g, dtcScan: _c, dtcScanStatus: _cs, meta, ...content } = s as Session & Record<string, unknown>
+  void _i; void _a; void _n; void _g; void _c; void _cs
   const { exportedAt: _e, generatedAt: _x, ...stableMeta } = (meta ?? {}) as unknown as Record<string, unknown>
   void _e; void _x
   return sha256Hex(canonical({ ...content, meta: stableMeta }))

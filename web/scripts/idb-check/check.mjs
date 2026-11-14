@@ -182,6 +182,45 @@ check(newer === 3 && oldTabState === 'outdated', 'two tabs: a tab on version 2 c
 await page.evaluate(() => window.sapphire.release())
 await ctx.close()
 
+// ── 5. The upgrade with no free quota (observation): Chromium charges the move into version 2 at its net size ──
+// Observed 2026-11-14: with the quota set below the current usage, Chromium still completes the upgrade, while the same
+// override stops an ordinary write (scenario 1). The old store is deleted in the same transaction, so the move is
+// about neutral at commit. The failure path itself (any failed open → "upgrade-failed") is tested in
+// src/lib/storage.test.ts with a database newer than this Sapphire.
+;({ ctx, page } = await open('5-upgrade-quota'))
+await page.evaluate(() => window.sapphire.writeInventedV1(3, 3600))
+const cdp5 = await ctx.newCDPSession(page)
+const usage5 = await page.evaluate(async () => (await navigator.storage.estimate()).usage)
+await cdp5.send('Storage.overrideQuotaForOrigin', { origin, quotaSize: Math.max(0, usage5 - 64 * 1024) })
+const quota5 = await page.evaluate(async () => {
+  try { const d = await window.sapphire.listDrives(); return { rejected: false, drives: d.length } } catch { return { rejected: true, status: window.sapphire.storageStatus() } }
+})
+await cdp5.send('Storage.overrideQuotaForOrigin', { origin })
+await page.reload(); await page.waitForFunction(() => window.ready === true)
+const raw5 = await page.evaluate(() => window.sapphire.readRaw())
+console.log('  no free quota, observed:', JSON.stringify(quota5), 'then version', raw5.version, 'points records', raw5.records.points?.length ?? 0)
+check(quota5.rejected ? (quota5.status.state === 'upgrade-failed' && raw5.version === 1) : (raw5.version === 2 && raw5.records.points.length === 3 && raw5.records.points.every((p) => p.trip.points.length === 3600)),
+  'no free quota: the upgrade either completes with every point, or fails in plain words leaving version 1')
+await ctx.close()
+
+// ── 6. Timing (not a pass / fail): the one-time upgrade of 50 one-hour drives, and the list read after it ──
+for (const [label, rate] of [['desktop', 1], ['CPU slowed 4x (emulation)', 4]]) {
+  ;({ ctx, page } = await open(`6-timing-${rate}`))
+  await page.evaluate(() => window.sapphire.writeInventedV1(50, 3600))
+  const cdp6 = await ctx.newCDPSession(page)
+  await page.reload(); await page.waitForFunction(() => window.ready === true)
+  if (rate > 1) await cdp6.send('Emulation.setCPUThrottlingRate', { rate })
+  const t = await page.evaluate(async () => {
+    const t0 = performance.now(); const d = await window.sapphire.listDrives(); const t1 = performance.now()
+    window.sapphire.closeStorage()
+    const t2 = performance.now(); const d2 = await window.sapphire.listDrives(); const t3 = performance.now()
+    return { drives: d.length, upgradeMs: Math.round(t1 - t0), listedAfter: d2.length, listMs: Math.round(t3 - t2) }
+  })
+  console.log(`  timing, ${label}: upgrade of ${t.drives} one-hour drives ${t.upgradeMs} ms; list of ${t.listedAfter} after it (fresh connection) ${t.listMs} ms`)
+  check(t.drives === 50 && t.listedAfter === 50, `timing, ${label}: all 50 drives upgraded and listed`)
+  await ctx.close()
+}
+
 server.close()
 console.log(failures ? `${failures} FAILED` : 'ALL PASSED')
 process.exit(failures ? 1 : 0)

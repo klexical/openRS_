@@ -132,7 +132,7 @@ async function importBatchZipInner(zip: JSZip, manifest: ExportManifest | null, 
 
     // DTC data (shared across batch — use first found)
     const dtcResults = await parseDtcData(zip, manifest)
-    const dtcScan = dtcTextFile(zip, manifest) !== undefined
+    const dtcScan = dtcTextFile(zip, manifest) !== undefined   // a text-only scan states no status
     const diagnostics = await parseDiagnosticData(zip, dtcResults, manifest)
     const meta = await parseMeta(zip, filename, manifest)
     const name = buildSessionName(meta, trip, csvFile)
@@ -142,7 +142,7 @@ async function importBatchZipInner(zip: JSZip, manifest: ExportManifest | null, 
       tags.push(...trip.profile.drive.tags.split(',').map((t) => t.trim()).filter(Boolean))
     }
 
-    sessions.push({ id, name, importedAt: Date.now(), tags, trip, diagnostics, meta, dtcScan })
+    sessions.push({ id, name, importedAt: Date.now(), tags, trip, diagnostics, meta, dtcScan, dtcScanStatus: null })
   }
   return sessions
 }
@@ -213,9 +213,10 @@ async function importSingleDrive(zip: JSZip, manifest: ExportManifest | null, fi
 
   // Prefer DTC JSON over TXT when available
   const dtcJson = await parseDtcJsonData(zip, manifest)
-  const dtcResults = dtcJson ?? await parseDtcData(zip, manifest)
-  // #384: a scan with no codes is not "no scan": the warnings marker needs to know which it was
+  const dtcResults = dtcJson?.codes ?? await parseDtcData(zip, manifest)
+  // #384: a scan with no codes is not "no scan", and only a scan marked COMPLETE lets "no codes" mean none
   const dtcScan = dtcJson !== null || dtcTextFile(zip, manifest) !== undefined
+  const dtcScanStatus = dtcJson?.status ?? null
   const diagnostics = await parseDiagnosticData(zip, dtcResults, manifest)
   const meta = await parseMeta(zip, filename, manifest)
   const name = buildSessionName(meta, trip, filename)
@@ -225,7 +226,7 @@ async function importSingleDrive(zip: JSZip, manifest: ExportManifest | null, fi
     tags.push(...trip.profile.drive.tags.split(',').map((t) => t.trim()).filter(Boolean))
   }
 
-  return { id, name, importedAt: Date.now(), tags, trip, diagnostics, meta, dtcScan }
+  return { id, name, importedAt: Date.now(), tags, trip, diagnostics, meta, dtcScan, dtcScanStatus }
 }
 
 // ── Trip CSV parsing ──
@@ -648,7 +649,8 @@ async function parseDtcData(zip: JSZip, manifest: ExportManifest | null): Promis
       currentModule = modMatch[1]
       continue
     }
-    const dtcMatch = trimmed.match(/^([A-Z]\d{4})\s+\[(\w+)]\s+(.*)/)
+    // The app writes the code with its failure type when known ("P0123-1C", displayCode): keep the base code (L104)
+    const dtcMatch = trimmed.match(/^([A-Z]\d{4})(?:-[0-9A-F]{2})?\s+\[(\w+)]\s+(.*)/)
     if (dtcMatch && currentModule) {
       results.push({
         module: currentModule,
@@ -663,7 +665,8 @@ async function parseDtcData(zip: JSZip, manifest: ExportManifest | null): Promis
 
 // ── DTC JSON parsing (T1E — preferred over TXT) ──
 
-async function parseDtcJsonData(zip: JSZip, manifest: ExportManifest | null): Promise<DtcEntry[] | null> {
+/** The fault-code scan's JSON: its codes and its own status (`scan.status`, rc.8 and later; null when it states none). */
+async function parseDtcJsonData(zip: JSZip, manifest: ExportManifest | null): Promise<{ codes: DtcEntry[]; status: string | null } | null> {
   const jsonFile = manifest?.files.find((e) => e.type === 'dtc_json')?.name
     ?? Object.keys(zip.files).find((f) => f.startsWith('dtc_scan_') && f.endsWith('.json'))
   if (!jsonFile || !zip.files[jsonFile]) return null
@@ -672,8 +675,9 @@ async function parseDtcJsonData(zip: JSZip, manifest: ExportManifest | null): Pr
     const raw = await zip.files[jsonFile].async('string')
     const data = JSON.parse(raw)
     const codes = Array.isArray(data.codes) ? data.codes : []
+    const status = data.scan && typeof data.scan.status === 'string' ? data.scan.status : null
 
-    return codes.map((c: Record<string, unknown>): DtcEntry => {
+    return { status, codes: codes.map((c: Record<string, unknown>): DtcEntry => {
       const entry: DtcEntry = {
         module: String(c.module || ''),
         code: String(c.code || ''),
@@ -695,7 +699,7 @@ async function parseDtcJsonData(zip: JSZip, manifest: ExportManifest | null): Pr
         }
       }
       return entry
-    })
+    }) }
   } catch {
     return null
   }

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useActiveSession } from '../../store'
+import { useActiveSession, useOpeningDrive } from '../../store'
 import { EmptyState } from '../ui/EmptyState'
 import { SectionLabel } from '../ui/SectionLabel'
 import { ObserverNotesSection, eventTypeLabel } from '../ui/ObserverNotes'
@@ -11,6 +11,9 @@ import { DID_STATUS_LABEL, didInventorySummary, didStatus, lastAnswerText, type 
 
 export function DiagnosticsPanel() {
   const session = useActiveSession()
+  const opening = useOpeningDrive()
+
+  if (opening) return <div aria-busy="true" />   // #384: the selected drive is still being read
 
   if (!session) {
     return <EmptyState icon="⬡" title="No Session Selected" description="Select a session to view diagnostics." />
