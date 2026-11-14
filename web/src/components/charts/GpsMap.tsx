@@ -80,7 +80,9 @@ function ZoomToFit({ points }: { points: TripPoint[] }) {
       [Math.min(...lats), Math.min(...lngs)],
       [Math.max(...lats), Math.max(...lngs)],
     ]
-    map.fitBounds(bounds, { padding: [40, 40] })
+    // no zoom animation: one still running when the map is left (a drive closed within moments of opening) threw
+    // Leaflet's "_leaflet_pos" page error (L108, #384 ticket 03); the map now opens at the fitted view at once
+    map.fitBounds(bounds, { padding: [40, 40], animate: false })
     fitted.current = true
   }, [map, points])
 
