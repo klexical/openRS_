@@ -400,3 +400,55 @@ async function copyTwiceThenRestore(first: Session) {
   }
 }
 
+// ── Restore recomputes what the file claims (QA R1, probe P3): the hash and proof come from the entry's own data ──
+
+/** A backup whose drive files are edited by [edit] (entries in file order), as a hand-edited file would be. */
+async function edited(edit: (entries: { drive: Record<string, unknown>; points: { id: string }; diagnostics: { id: string } }[]) => void) {
+  const zip = await JSZip.loadAsync((await makeBackup()).blob)
+  const names = Object.keys(zip.files).filter((n) => /^drives\/\d+\.json$/.test(n)).sort()
+  const entries = await Promise.all(names.map(async (n) => JSON.parse(await zip.file(n)!.async('string'))))
+  edit(entries)
+  names.forEach((n, i) => zip.file(n, JSON.stringify(entries[i])))
+  return zip.generateAsync({ type: 'blob' })
+}
+
+describe('#384 restore recomputes the content hash and the session proof from the entry itself', () => {
+  it('QA P3: drive x claims drive y\'s hash; y is stored here under another id: x is restored, y is already here', async () => {
+    await storeImported([drive('x', 320), drive('y', 321)])
+    const realX = (await listDrives()).find((d) => d.id === 'x')!.contentHash
+    const file = await edited((es) => {
+      const x = es.find((e) => e.drive.id === 'x')!, y = es.find((e) => e.drive.id === 'y')!
+      x.drive.contentHash = y.drive.contentHash
+    })
+    fresh()
+    await storeImported([drive('y-here', 321)])
+    expect(await restoreBackup(file)).toEqual({ added: 1, skipped: 1, notRestorable: [] })
+    const listed = await listDrives()
+    expect(listed.map((d) => d.id).sort()).toEqual(['x', 'y-here'])
+    expect(listed.find((d) => d.id === 'x')!.contentHash).toBe(realX)        // stored as recomputed, not as claimed
+  })
+
+  it('into an empty database, two drives where one claims the other\'s hash are both restored', async () => {
+    await storeImported([drive('x', 330), drive('y', 331)])
+    const file = await edited((es) => { es[0].drive.contentHash = es[1].drive.contentHash })
+    fresh()
+    expect(await restoreBackup(file)).toEqual({ added: 2, skipped: 0, notRestorable: [] })
+  })
+
+  it('a session-only entry that claims another\'s proof is restored, and stored with its own', async () => {
+    await storeImported([sessionOnly('s-a', 3)])
+    const other = { ...sessionOnly('s-b', 4) }
+    await storeImported([other])
+    const realA = (await listDrives()).find((d) => d.id === 's-a')!.sessionProof
+    const file = await edited((es) => {
+      const a = es.find((e) => e.drive.id === 's-a')!, b = es.find((e) => e.drive.id === 's-b')!
+      a.drive.sessionProof = b.drive.sessionProof
+      for (const e of [b]) e.drive.id = e.points.id = e.diagnostics.id = 's-b-file'
+    })
+    fresh()
+    await storeImported([sessionOnly('s-b-here', 4)])
+    expect(await restoreBackup(file)).toEqual({ added: 1, skipped: 1, notRestorable: [] })
+    expect((await listDrives()).find((d) => d.id === 's-a')!.sessionProof).toEqual(realA)
+  })
+})
+

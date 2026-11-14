@@ -345,9 +345,14 @@ export async function loadDrive(id: string): Promise<Session | null> {
   ]) as [Record<string, unknown> | undefined, { trip: TripData | null } | undefined, { diagnostics: DiagnosticData | null } | undefined]
   await tx.done
   if (!drive) return null
-  const session = { ...drive }
+  return rebuildSession(drive, points?.trip ?? null, diagnostics?.diagnostics ?? null)
+}
+
+/** A session from its stored records: the drive record without the fields this module derives, with its points and log. */
+export function rebuildSession(drive: object, trip: TripData | null, diagnostics: DiagnosticData | null): Session {
+  const session = { ...drive } as Record<string, unknown>
   for (const k of DERIVED) delete session[k]
-  return { ...(session as unknown as Session), trip: points?.trip ?? null, diagnostics: diagnostics?.diagnostics ?? null }
+  return { ...(session as unknown as Session), trip, diagnostics }
 }
 
 /**
