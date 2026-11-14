@@ -223,7 +223,7 @@ export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMa
               <Popup>
                 <div style={{ fontFamily: 'JetBrains Mono', fontSize: 11 }}>
                   <div style={{ fontWeight: 700, marginBottom: 2 }}>{noteHeading({ text: bm.label })}</div>
-                  <div>{bm.speedKph.toFixed(0)} kph · {bm.rpm} RPM{bm.boostPsi != null ? ` · ${fmt.boost(bm.boostPsi)}` : ''}</div>
+                  <div>{fmt.speed(bm.speedKph)} · {bm.rpm} RPM{bm.boostPsi != null ? ` · ${fmt.boost(bm.boostPsi)}` : ''}</div>
                 </div>
               </Popup>
             </CircleMarker>
