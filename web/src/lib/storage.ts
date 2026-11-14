@@ -340,18 +340,29 @@ export function setDriveTags(id: string, tags: string[]): Promise<DriveRecord | 
   return updateDrive(id, (d) => ({ ...d, tags }))
 }
 
-/** Delete drives: each one's three records, all in one transaction. */
-export async function deleteDrives(ids: string[]): Promise<void> {
+/**
+ * Run [write] in one read-write transaction over the three stores: all of it, or none. A call that throws part-way
+ * does not end a transaction by itself (the earlier writes would commit), so it is aborted here.
+ */
+async function allOrNone(write: (tx: IDBPTransaction<unknown, string[], 'readwrite'>) => void): Promise<void> {
   const db = await getDb()
   const tx = db.transaction(ALL, 'readwrite')
-  for (const id of ids) for (const store of ALL) tx.objectStore(store).delete(id)
+  try {
+    write(tx)
+  } catch (err) {
+    try { tx.abort() } catch { /* already ended */ }
+    await tx.done.catch(() => {})
+    throw err
+  }
   await tx.done
 }
 
-/** Empty the three stores in one transaction. */
-export async function clearAllDrives(): Promise<void> {
-  const db = await getDb()
-  const tx = db.transaction(ALL, 'readwrite')
-  for (const store of ALL) tx.objectStore(store).clear()
-  await tx.done
+/** Delete drives: each one's three records, all in one transaction; a failure deletes none of them. */
+export function deleteDrives(ids: string[]): Promise<void> {
+  return allOrNone((tx) => { for (const id of ids) for (const store of ALL) tx.objectStore(store).delete(id) })
+}
+
+/** Empty the three stores in one transaction; a failure empties none of them. */
+export function clearAllDrives(): Promise<void> {
+  return allOrNone((tx) => { for (const store of ALL) tx.objectStore(store).clear() })
 }

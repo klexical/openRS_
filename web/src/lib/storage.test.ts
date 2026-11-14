@@ -209,6 +209,35 @@ describe('#384 reads and writes touch only what they need', () => {
     raw.close()
   })
 
+  // Spec review H3 / QA: a failure part-way (a synchronous throw does not end a transaction by itself) keeps everything
+  const injectThrow = (method: 'delete' | 'clear', when: (self: { name: string }, arg: unknown) => boolean) => {
+    const proto = g.IDBObjectStore.prototype as Record<string, (...a: unknown[]) => unknown>
+    const orig = proto[method]
+    originals.push([proto, method, orig])
+    proto[method] = function (this: { name: string }, ...a: unknown[]) {
+      if (when(this, a[0])) throw new DOMException('injected', 'DataError')
+      return orig.apply(this, a)
+    }
+  }
+
+  it('a delete that fails on its second drive deletes none of them', async () => {
+    await storeImported([session('first'), session('second')])
+    injectThrow('delete', (_s, key) => key === 'second')
+    await expect(deleteDrives(['first', 'second'])).rejects.toThrow()
+    for (const [proto, name, orig] of originals.splice(0).reverse()) proto[name] = orig
+    expect((await listDrives()).map((d) => d.id).sort()).toEqual(['first', 'second'])
+    expect(await loadDrive('first')).not.toBeNull()
+  })
+
+  it('clear all that fails on its second store clears none of them', async () => {
+    await storeImported([session('p1'), session('q1')])
+    injectThrow('clear', (self) => self.name === 'points')
+    await expect(clearAllDrives()).rejects.toThrow()
+    for (const [proto, name, orig] of originals.splice(0).reverse()) proto[name] = orig
+    expect((await listDrives()).map((d) => d.id).sort()).toEqual(['p1', 'q1'])
+    expect((await loadDrive('p1'))?.trip?.points).toHaveLength(3)
+  })
+
   it('clear all empties the three stores in one transaction', async () => {
     await storeImported([session('p'), session('q')])
     resetLog()
