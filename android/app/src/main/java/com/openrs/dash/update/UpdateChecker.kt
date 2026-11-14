@@ -87,7 +87,7 @@ object UpdateChecker {
      *   the list, [PER_PAGE] at a time, while GitHub's `Link` header names a next page, at most [MAX_PAGES] pages.
      *   Named assumption: the release checklist keeps Latest on the newest Android stable. If Latest were left on an
      *   older one, Stable would offer that one (or nothing) and not see the newer stable; no fallback pages every time.
-     * - Beta reads one page (the newest releases come first).
+     * - Beta reads one page of [PER_PAGE] (the newest releases come first; GitHub's default page is 30).
      * Either way the choice is by version, never by position: GitHub does not document the list's order.
      * A 403 / 429 on any request throws [RateLimitException]; any other failed reply means no update.
      */
@@ -98,7 +98,7 @@ object UpdateChecker {
             return reply.takeIf { it.code in 200..299 && it.body != null }
         }
         fun body(url: String): String? = reply(url)?.body
-        if (channel != "stable") return parseReleases(body(RELEASES_URL) ?: return null, channel, current)
+        if (channel != "stable") return parseReleases(body("$RELEASES_URL?per_page=$PER_PAGE") ?: return null, channel, current)
 
         body("$RELEASES_URL/latest")?.let { json ->
             val latest = runCatching { JSONObject(json) }.getOrNull()?.let { offer(it, channel) }

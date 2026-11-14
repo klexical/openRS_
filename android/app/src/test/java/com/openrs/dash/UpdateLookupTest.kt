@@ -17,7 +17,7 @@ import java.net.URI
  * `/releases/latest` (the release marked Latest, else 404) and `/releases?per_page=&page=` (newest first, default 30,
  * at most [FakeGitHub.maxPer], with a `Link: …; rel="next"` header while more follow), and records every request.
  * Stable asks for Latest first and pages (100 at a time while there is a next page, at most 10 pages) only when Latest
- * is not an Android stable; Beta reads one page; the APK is the asset named exactly `openRS_v<name>.apk`; the choice is
+ * is not an Android stable; Beta reads one page of 100; the APK is the asset named exactly `openRS_v<name>.apk`; the choice is
  * by version, never by list position.
  */
 class UpdateLookupTest {
@@ -186,10 +186,15 @@ class UpdateLookupTest {
         assertEquals(newestOf40, find(gh, "beta", "2.2.8-nightly.20270101")?.version?.displayName)
     }
 
-    @Test fun `Beta reads one page and never asks for Latest`() {
+    @Test fun `Beta reads one page of 100 and never asks for Latest`() {
         val gh = FakeGitHub(nightlies(40) + android("2.2.7", false), latestTag = "android-v2.2.7")
         find(gh, "beta", "2.2.7-rc.8")
-        assertEquals(listOf("/"), gh.paths)
+        assertEquals(listOf("/?per_page=100"), gh.paths)
+    }
+
+    @Test fun `Beta sees a release behind 35 firmware releases, past GitHub's default page of 30`() {
+        val gh = FakeGitHub((1..35).map { firmware("fw-pro-v1.$it") } + android("2.2.8", false), latestTag = null)
+        assertEquals("2.2.8", find(gh, "beta", "2.2.7")?.version?.displayName)
     }
 
     // ── Rate limit ───────────────────────────────────────────────────────────────────────────────────────────────

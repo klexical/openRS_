@@ -296,7 +296,7 @@ update/
   UpdateManager.kt        — In-app update orchestrator: check → download → install via GitHub Releases API
   UpdateChecker.kt        — GitHub Releases API client (#364): Stable asks for the release marked Latest first and pages
                             (100 at a time while GitHub names a next page, ≤ 10 pages) only when that is not an Android
-                            stable (assumes Latest is kept on the newest Android stable); Beta reads one page; the APK is
+                            stable (assumes Latest is kept on the newest Android stable); Beta reads one page of 100; the APK is
                             the asset named exactly openRS_v<name>.apk; the choice is by version, never list position
   AppVersion.kt           — version parsing and ordering for updates: stable, `-rc.N`, `-nightly.YYYYMMDD` (#322); within one
                             base RC < nightly < stable; a nightly is offered on Beta only
