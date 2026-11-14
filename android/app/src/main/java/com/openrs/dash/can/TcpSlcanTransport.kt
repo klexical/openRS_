@@ -6,6 +6,7 @@ import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
 
@@ -14,10 +15,15 @@ import java.net.Socket
  *
  * Connects to the device's TCP SLCAN socket (default 192.168.0.10:35000).
  * SLCAN frames are delimited by `\r` (0x0D) — no framing overhead.
+ *
+ * [socketSource] and [resolve] bind the connection to one Wi-Fi network (#324: the adapter network's socket factory and
+ * name lookup); the defaults are the process's own.
  */
 class TcpSlcanTransport(
     private val host: String = "192.168.0.10",
-    private val port: Int = 35000
+    private val port: Int = 35000,
+    private val socketSource: () -> Socket = { Socket() },
+    private val resolve: (String) -> InetAddress = InetAddress::getByName,
 ) : SlcanTransport {
 
     /** Assigned before connect(), so [close] from another thread (an abort) ends a blocking connect at once (#212). */
@@ -33,10 +39,10 @@ class TcpSlcanTransport(
     override val stockFirmwareLabel: String get() = "MeatPi Pro"
 
     override suspend fun open() = withContext(Dispatchers.IO) {
-        val s = Socket()
+        val s = socketSource()
         socket = s
         if (closed) { s.close(); throw IOException("Transport closed") }   // closed before the socket existed
-        s.connect(InetSocketAddress(host, port), 5_000)
+        s.connect(InetSocketAddress(resolve(host), port), 5_000)
         s.soTimeout = 20_000
         inp = s.getInputStream().buffered()
         out = s.getOutputStream()

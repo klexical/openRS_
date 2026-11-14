@@ -53,8 +53,11 @@ class LinkStopServiceTest {
 
     @Test fun `Wi-Fi lost writes WIFI_LOST`() {
         connectionMethod("WIFI")
+        // Only the network the connection is bound to ends it (#324)
+        val bound = ShadowNetwork.newInstance(7)
+        CanDataService::class.java.getDeclaredField("boundNetwork").apply { isAccessible = true }.set(service, bound)
         val cb = field("wifiCallback") as ConnectivityManager.NetworkCallback
-        cb.onLost(ShadowNetwork.newInstance(7))
+        cb.onLost(bound)
         assertEquals(listOf("WIFI_LOST"), idleReasons())
     }
 
@@ -73,9 +76,13 @@ class LinkStopServiceTest {
         controller.destroy()
         assertEquals("SERVICE_DESTROYED", idleReasons().last())
         DiagnosticLogger.sessionStart("test", 0, prefs = null)
+        // Exactly two carried: the stop line, and the launch's own refused start (no Wi-Fi under Robolectric, #324)
         val prev = lines(DiagnosticLogger.EVENT_LINK_PREV)
-        assertEquals(prev.toString(), 1, prev.size)
-        assertTrue(prev.single(), prev.single().contains("reason=WIFI_LOST"))
+        assertEquals(prev.toString(), 2, prev.size)
+        val stop = prev.single { it.startsWith(DiagnosticLogger.EVENT_LINK_STOP + " ") }
+        assertTrue(stop, stop.contains("reason=WIFI_LOST"))
+        val refused = prev.single { it.startsWith(DiagnosticLogger.EVENT_LINK_START_REFUSED + " ") }
+        assertTrue(refused, refused.endsWith("not started (launch): no Wi-Fi network"))
     }
 
     @Test fun `a task removal writes a line and changes nothing`() {

@@ -19,7 +19,9 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
+import com.openrs.dash.can.AdapterProbe
 import com.openrs.dash.can.AdapterState
+import com.openrs.dash.can.AlreadyOpenTransport
 import com.openrs.dash.can.BleFirmwareApi
 import com.openrs.dash.can.BleSlcanTransport
 import com.openrs.dash.can.CanDecoder
@@ -27,6 +29,7 @@ import com.openrs.dash.can.FirmwareCommandSender
 import com.openrs.dash.can.LinkPhase
 import com.openrs.dash.can.PidRegistry
 import com.openrs.dash.can.SlcanConnection
+import com.openrs.dash.can.SlcanTransport
 import com.openrs.dash.can.TcpSlcanTransport
 import com.openrs.dash.can.WebSocketSlcanTransport
 import com.openrs.dash.can.WicanApi
@@ -61,6 +64,25 @@ class CanDataService : Service() {
     @Volatile private var connection: SlcanConnection? = null
 
     private val cm by lazy { getSystemService(ConnectivityManager::class.java) }
+
+    /** The Wi-Fi network the current connection's sockets are bound to (#324); null with no connection or over Bluetooth. */
+    @Volatile private var boundNetwork: Network? = null
+
+    /** The current connection's hand-over from the probe, until its first attempt takes it (#324). */
+    @Volatile private var currentHandOver: HandOver? = null
+
+    /** Finds the adapter network among the joined Wi-Fi networks and starts the connection over it (#324). */
+    private val finder by lazy {
+        AdapterNetworkFinder<Network>(
+            scope = scope,
+            clock = { android.os.SystemClock.elapsedRealtime() },
+            probe = { net -> probeAdapter(net) },
+            mayProbe = { !isBluetooth() && connectionJob?.isActive != true && !link.manualConnectRequired &&
+                !DemoMode.isActive && !DemoMode.launchRequested },
+            onFound = { net, transport, lines -> startOnAdapterNetwork(net, transport, lines) },
+            log = { type, message -> DiagnosticLogger.event(type, message) },
+        )
+    }
     private var wifiCallback: ConnectivityManager.NetworkCallback? = null
 
     // ── Session History ──────────────────────────────────────────────────────
@@ -91,7 +113,10 @@ class CanDataService : Service() {
      * [onLinkLost]: the connection's "connection lost" report (#316) — a dropped connection whose attempts failed.
      * [heldDropAtMs]: a drop carried over from the connection a manual reconnect replaced (#316 (b)).
      */
-    private fun buildConnection(onLinkLost: (Long) -> Unit, heldDropAtMs: Long? = null): SlcanConnection {
+    private fun buildConnection(
+        onLinkLost: (Long) -> Unit, heldDropAtMs: Long? = null, network: Network? = null, handOver: HandOver? = null,
+    ): SlcanConnection {
+        // The probe's open transport is the first attempt's (#324); later attempts open their own
         val s = AppSettings
         val host = s.getHost(this)
         val port = s.getPort(this)
@@ -109,9 +134,8 @@ class CanDataService : Service() {
                     val name = s.getBleDeviceName(this) ?: "WiCAN"
                     BleSlcanTransport(this, mac, name, adapterType = adapterType)
                 } else {
-                    // WiFi: adapter type determines protocol
-                    if (adapterType == "MEATPI_PRO") TcpSlcanTransport(host, port)
-                    else WebSocketSlcanTransport(host, port)
+                    // WiFi: adapter type determines protocol; the sockets go over [network] (#324)
+                    handOver?.take()?.let { AlreadyOpenTransport(it) } ?: wifiTransport(network)
                 }
             },
             maxRetries       = maxRetries,
@@ -260,7 +284,7 @@ class CanDataService : Service() {
             UserPrefsStore.prefs.map { it.autoRecordDrives }.distinctUntilChanged()
                 .collect { recorder().onAutoRecordSwitched(it) }
         }
-        if (isTransportReady()) autoStartConnection()
+        if (isTransportReady()) autoStartConnection() else logTransportRefused("launch")
         com.openrs.dash.ui.StartupTrace.mark("CanDataService.onCreate end")
     }
 
@@ -293,7 +317,8 @@ class CanDataService : Service() {
 
     /** MainActivity is bound: what a task removal held back can start, so the next launch auto-connects even if this service or process survived. */
     fun onActivityBound(): Unit = link.transition {
-        if (link.releaseTaskRemovedHold() && isTransportReady()) autoStartConnection()
+        if (!link.releaseTaskRemovedHold()) return@transition
+        if (isTransportReady()) autoStartConnection() else logTransportRefused("task-removal release")
     }
 
     private fun recNow(): String {
@@ -304,6 +329,7 @@ class CanDataService : Service() {
     override fun onDestroy() {
         unregisterWifiCallback()
         unregisterBluetoothCallback()
+        finder.stopAll()
         stopConnection(LinkStopReason.SERVICE_DESTROYED)   // flush sessionEnd() before scope is torn down
         scope.cancel()
         super.onDestroy()
@@ -321,34 +347,90 @@ class CanDataService : Service() {
         return btManager.adapter?.isEnabled == true
     }
 
-    private fun isOnWifi(): Boolean {
-        val network = cm.activeNetwork ?: return false
-        val caps = cm.getNetworkCapabilities(network) ?: return false
-        return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+    /**
+     * Every Wi-Fi network the phone has joined, whichever network is the default (#324): with mobile data on, Android keeps
+     * a validated mobile network as the default while the adapter's Wi-Fi has no internet, so the default says nothing about
+     * whether the adapter can be reached.
+     */
+    private fun wifiNetworks(): List<Network> {
+        @Suppress("DEPRECATION")
+        val all = try { cm.allNetworks.toList() } catch (_: Exception) { emptyList() }
+        return all.filter { cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true }
     }
 
-    /** True if the selected transport is ready (WiFi connected or Bluetooth enabled). */
+    /** True if the selected transport is ready (a Wi-Fi network joined, or Bluetooth enabled). */
     private fun isTransportReady(): Boolean =
-        if (isBluetooth()) isBluetoothEnabled() else isOnWifi()
+        if (isBluetooth()) isBluetoothEnabled() else wifiNetworks().isNotEmpty()
+
+    /** A transport for the saved Wi-Fi adapter, its sockets and name lookup bound to [network] (#324). */
+    private fun wifiTransport(network: Network?): SlcanTransport {
+        val s = AppSettings
+        val host = s.getHost(this); val port = s.getPort(this)
+        val bound = network?.takeIf { bindToNetwork }
+        val socketSource: () -> java.net.Socket = { bound?.socketFactory?.createSocket() ?: java.net.Socket() }
+        val resolve: (String) -> java.net.InetAddress = { h -> bound?.getByName(h) ?: java.net.InetAddress.getByName(h) }
+        return if (s.getAdapterType(this) == "MEATPI_PRO") TcpSlcanTransport(host, port, socketSource, resolve)
+               else WebSocketSlcanTransport(host, port, socketSource, resolve)
+    }
+
+    /** One probe of the saved adapter over [network]: an adapter network answers its own protocol ([AdapterProbe]). */
+    private suspend fun probeAdapter(network: Network): com.openrs.dash.can.ProbeOutcome {
+        probeOverride?.let { return it(network) }
+        // No withContext here: it would throw away an answer when the probing job is cancelled on its return (C1). The probe
+        // runs its blocking work on the IO dispatcher itself.
+        return AdapterProbe.probe(wifiTransport(network), slcanOverTcp = AppSettings.getAdapterType(this) == "MEATPI_PRO",
+            clock = { android.os.SystemClock.elapsedRealtime() })
+    }
+
+    /**
+     * The adapter answered over [network]: start there, with the probe's open transport as the first attempt's, so the
+     * adapter sees one connection. A hold (a saved Cancel, demo, a task removal) or a connection already running leaves it
+     * unused, and it is closed.
+     */
+    private fun startOnAdapterNetwork(network: Network, transport: SlcanTransport, probeLines: List<String>) {
+        val handOver = HandOver(transport)
+        try {
+            link.autoStart(
+                blocked = { DemoMode.isActive || DemoMode.launchRequested },
+                onHeld = { holds -> DiagnosticLogger.event(DiagnosticLogger.EVENT_LINK_START_REFUSED, "auto-start held: $holds") },
+            ) { beginConnection(origin = "automatic start", network = network, handOver = handOver, probeLines = probeLines) }
+        } catch (e: Exception) {
+            DiagnosticLogger.event(DiagnosticLogger.EVENT_LINK_START_REFUSED, "auto-start failed: ${LogText.sanitizeReason(e)}")
+        } finally {
+            handOver.closeUnlessAdopted()   // not started, held, refused or failed: a hand-over no connection owns is closed
+        }
+    }
+
+    /**
+     * #324: a start refused because the transport is not ready writes its reason, as every other refusal does, on every start
+     * path ([origin]: launch, the task-removal release, an automatic start, Connect, a retry). Over Wi-Fi the transport is
+     * ready once any Wi-Fi network is joined; whether it is an adapter network is the probe's question.
+     */
+    private fun logTransportRefused(origin: String) {
+        val reason = if (isBluetooth()) "Bluetooth is off" else "no Wi-Fi network"
+        DiagnosticLogger.event(DiagnosticLogger.EVENT_LINK_START_REFUSED, "not started ($origin): $reason")
+    }
 
     private fun registerWifiCallback() {
         val request = NetworkRequest.Builder()
             .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
             .build()
         wifiCallback = object : ConnectivityManager.NetworkCallback() {
+            // The network it reports is the one probed: never the default network, and no synchronous ConnectivityManager
+            // call here (#324). A network that is not an adapter network is refused by its probe, silently but logged.
             override fun onAvailable(network: Network) {
                 if (isBluetooth()) return  // WiFi events irrelevant in BLE mode
-                if (connectionJob?.isActive != true) {
-                    try {
-                        autoStartConnection()
-                    } catch (e: Exception) {
-                        DiagnosticLogger.event(DiagnosticLogger.EVENT_LINK_START_REFUSED, "auto-start failed: ${LogText.sanitizeReason(e)}")
-                        android.util.Log.w("CAN", "Cannot start foreground service from background", e)
-                    }
-                }
+                if (connectionJob?.isActive == true) return
+                // A hold is named once for this network, as every refused start is (A3); otherwise the network is probed
+                link.autoStart(
+                    blocked = { DemoMode.isActive || DemoMode.launchRequested },
+                    onHeld = { holds -> DiagnosticLogger.event(DiagnosticLogger.EVENT_LINK_START_REFUSED, "auto-start held: $holds") },
+                ) { finder.networkAvailable(network) }
             }
+            // Only the network the connection is bound to ends it: another Wi-Fi network going away leaves it running (#324)
             override fun onLost(network: Network) {
-                if (!isBluetooth()) stopConnection(LinkStopReason.WIFI_LOST)
+                finder.networkLost(network)
+                if (!isBluetooth() && network == boundNetwork) stopConnection(LinkStopReason.WIFI_LOST)
             }
         }
         try { cm.registerNetworkCallback(request, wifiCallback!!) } catch (e: Exception) {
@@ -398,6 +480,16 @@ class CanDataService : Service() {
     // ── Foreground notification ──────────────────────────────────────────────
 
     internal companion object {
+        /**
+         * Tests only (Robolectric's `Network.getSocketFactory` throws): false opens the adapter's sockets unbound. A JVM test
+         * cannot bind a socket to an Android network; binding itself needs a phone or an emulator (#324).
+         */
+        @Volatile internal var bindToNetwork: Boolean = true
+        /** Tests only: answers the adapter-network probe in place of [AdapterProbe] (no network traffic from a test). */
+        @Volatile internal var probeOverride: (suspend (Network) -> com.openrs.dash.can.ProbeOutcome)? = null
+
+        /** Shown when a Connect tap finds no Wi-Fi network at all (#324). */
+        const val NO_WIFI_MESSAGE = "No Wi-Fi network. Join the adapter's Wi-Fi."
         const val NOTIF_ID = 1
 
         /**
@@ -599,27 +691,51 @@ class CanDataService : Service() {
      * cancel, then start anyway.
      */
     private fun autoStartConnection() {
+        // Over Wi-Fi the probe decides (#324); a hold is still named at once, as before
+        if (!isBluetooth()) {
+            link.autoStart(
+                blocked = { DemoMode.isActive || DemoMode.launchRequested },
+                onHeld = { holds -> DiagnosticLogger.event(DiagnosticLogger.EVENT_LINK_START_REFUSED, "auto-start held: $holds") },
+            ) { wifiNetworks().forEach { finder.networkAvailable(it) } }
+            return
+        }
         link.autoStart(
             blocked = { DemoMode.isActive || DemoMode.launchRequested },
             onHeld = { holds -> DiagnosticLogger.event(DiagnosticLogger.EVENT_LINK_START_REFUSED, "auto-start held: $holds") },
-        ) { beginConnection() }
+        ) { beginConnection(origin = "automatic start") }
     }
 
-    /** Explicit (user) connect. No-op while demo mode owns the vehicle state. */
-    fun startConnection(): Unit = link.transition {
-        if (DemoMode.isActive) return@transition
+    /**
+     * Explicit (user) connect. No-op while demo mode owns the vehicle state. Over Wi-Fi it uses the adapter network if one
+     * has answered, else the first Wi-Fi network, and tries: the connection reports its own error (#324). Returns the text
+     * to show when nothing could start for want of a transport (a tap that seems to do nothing is #324's symptom), else null.
+     */
+    fun startConnection(): String? = link.transition {
+        if (DemoMode.isActive) return@transition null
         link.clearManualConnect()
-        beginConnection()
+        val wifiMissing = !isBluetooth() && wifiNetworks().isEmpty()
+        beginConnection(origin = "Connect")
+        if (wifiMissing) NO_WIFI_MESSAGE else null
     }
 
     /**
      * Starts a connection job unless one is running; false when nothing could start (transport down / no foreground).
      * [heldDropAtMs]: a manual reconnect's carried drop (#316 (b)), held by the new connection; unused when nothing starts.
      */
-    private fun beginConnection(heldDropAtMs: Long? = null): Boolean = link.transition {
+    private fun beginConnection(
+        heldDropAtMs: Long? = null, origin: String, network: Network? = null, handOver: HandOver? = null,
+        probeLines: List<String> = emptyList(),
+    ): Boolean = link.transition {
+        // A hand-over this start does not adopt is closed by its caller's finally (startOnAdapterNetwork)
+        if (isBluetooth()) handOver?.closeIfUntaken()   // the method changed to Bluetooth during the probe (C2)
         if (DemoMode.isActive) return@transition false
-        if (!isTransportReady()) return@transition false
+        if (!isTransportReady()) { logTransportRefused(origin); return@transition false }
         if (connectionJob?.isActive == true) return@transition true
+        // Over Wi-Fi the sockets are bound to one network (#324): the one that answered, else the connection's own (a retry),
+        // else the adapter network found earlier, else the first joined (a manual Connect tries; its error is the answer)
+        val joined = if (isBluetooth()) emptyList() else wifiNetworks()
+        val wifiNet = if (isBluetooth()) null
+            else network ?: boundNetwork?.takeIf { it in joined } ?: finder.adapterNetwork?.takeIf { it in joined } ?: joined.firstOrNull()
         // Bluetooth with no saved device (#234): nothing to connect to — checked before the service is promoted and a
         // session begins, so no notification, no session record, no retries. Every start path lands here (launch,
         // Connect, Bluetooth on, a sticky restart with no activity); the dashboard explains it, the choice is kept.
@@ -660,6 +776,10 @@ class CanDataService : Service() {
             adapterStatusReason = if (isBle) com.openrs.dash.diagnostics.AdapterStatusRecord.BLUETOOTH
                                   else com.openrs.dash.diagnostics.AdapterStatusRecord.NO_REQUEST,
         )
+        // The probes that found this adapter network belong to this connection's session (the new session wiped them)
+        probeLines.forEach { DiagnosticLogger.event(AdapterNetworkFinder.EVENT_PROBE, it) }
+        boundNetwork = wifiNet
+        finder.stopAll()   // a connection is starting: no network is probed beside it (#324)
         CanDecoder.resetSessionState()
         // ESC is unknown until this connection's first 0x1C0 frame — a value held from an earlier link is not a reading
         OpenRSDashApp.instance.vehicleState.update { it.copy(escStatus = com.openrs.dash.data.EscStatus.UNKNOWN) }
@@ -677,7 +797,11 @@ class CanDataService : Service() {
         startSessionRecording()
 
         var reportTo: LinkSession? = null                 // the job's session, set below; the report goes through its ownership
-        val conn = buildConnection(onLinkLost = { atMs -> reportTo?.onConnectionLost(atMs) }, heldDropAtMs = heldDropAtMs)
+        // From here the connection owns the hand-over: its first attempt takes it, or its teardown closes it
+        handOver?.adopt()
+        currentHandOver = handOver
+        val conn = buildConnection(onLinkLost = { atMs -> reportTo?.onConnectionLost(atMs) }, heldDropAtMs = heldDropAtMs,
+            network = wifiNet, handOver = handOver)
         connection = conn
         val gen = link.begin()
         val session = newLinkSession(gen)
@@ -861,6 +985,9 @@ class CanDataService : Service() {
         // waits: the demote below runs once the barrier completes, outside link.transition.
         val durable = recorder().durabilityBarrier()
         teardownJob(finalPhase, reason, rec)
+        currentHandOver?.closeIfUntaken()   // a stop before the first attempt took the hand-over (L1)
+        currentHandOver = null
+        boundNetwork = null
         OpenRSDashApp.instance.linkPhase.value = finalPhase
         // Demo owns the connection flags (WiFi/BT-loss callbacks still land here).
         if (!DemoMode.isActive) {
@@ -984,7 +1111,7 @@ class CanDataService : Service() {
             )
         }
         // Transport down (or no foreground allowed): nothing started, so release instead of keeping a stale notification
-        if (!beginConnection(heldDropAtMs = heldDrop)) {
+        if (!beginConnection(heldDropAtMs = heldDrop, origin = "retry")) {
             // #316: nothing started, so this RCN closed the connection: a "connection lost", as every closure by the service
             // is (the owner's "Yes, pause it"), at the carried drop's moment when one was held, else the closure's
             recorder().onConnectionLost(heldDrop ?: System.currentTimeMillis())

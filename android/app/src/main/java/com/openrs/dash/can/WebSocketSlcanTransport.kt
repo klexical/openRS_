@@ -6,6 +6,7 @@ import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.security.SecureRandom
@@ -16,10 +17,15 @@ import java.security.SecureRandom
  * Connects to ws://host:port/ws, performs the HTTP upgrade handshake,
  * then exchanges SLCAN frames inside WebSocket text frames.
  * Ping/pong handling is transparent to the caller.
+ *
+ * [socketSource] and [resolve] bind the connection to one Wi-Fi network (#324: the adapter network's socket factory and
+ * name lookup); the defaults are the process's own.
  */
 class WebSocketSlcanTransport(
     private val host: String = "192.168.80.1",
-    private val port: Int = 80
+    private val port: Int = 80,
+    private val socketSource: () -> Socket = { Socket() },
+    private val resolve: (String) -> InetAddress = InetAddress::getByName,
 ) : SlcanTransport {
 
     private companion object {
@@ -40,10 +46,10 @@ class WebSocketSlcanTransport(
     override val stockFirmwareLabel: String get() = "WiCAN stock"
 
     override suspend fun open() = withContext(Dispatchers.IO) {
-        val s = Socket()
+        val s = socketSource()
         socket = s
         if (closed) { s.close(); throw IOException("Transport closed") }   // closed before the socket existed
-        s.connect(InetSocketAddress(host, port), 5_000)
+        s.connect(InetSocketAddress(resolve(host), port), 5_000)
         s.soTimeout = 20_000
         inp = s.getInputStream()
         out = s.getOutputStream()

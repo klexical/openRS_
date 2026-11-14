@@ -23,9 +23,22 @@ internal object TestServices {
     /** A created service, destroyed by [destroyAll]. */
     fun create(): CanDataService = controller().create().get()
 
-    /** A not-yet-created controller (for tests that drive the lifecycle); its service is destroyed by [destroyAll]. */
-    fun controller(): ServiceController<CanDataService> =
-        Robolectric.buildService(CanDataService::class.java).also { live += it.get() }
+    /**
+     * A not-yet-created controller (for tests that drive the lifecycle); its service is destroyed by [destroyAll].
+     * #324 networks: Robolectric starts with a mobile default (netId 0) and a joined Wi-Fi network (netId 1). Over Wi-Fi the
+     * app connects on any joined Wi-Fi network that answers as the adapter, so netId 1 is removed here: a test says "Wi-Fi
+     * up" by giving the default network Wi-Fi capabilities, or adds its own Wi-Fi networks. Sockets open unbound (Robolectric
+     * cannot bind one), and the adapter-network probe never answers unless a test sets [CanDataService.probeOverride].
+     */
+    fun controller(): ServiceController<CanDataService> {
+        val cm = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+            .getSystemService(android.net.ConnectivityManager::class.java)
+        @Suppress("DEPRECATION")
+        cm.allNetworks.filter { it.toString() == "1" }.forEach { shadowOf(cm).removeNetwork(it) }
+        CanDataService.bindToNetwork = false
+        if (CanDataService.probeOverride == null) CanDataService.probeOverride = { kotlinx.coroutines.awaitCancellation() }
+        return Robolectric.buildService(CanDataService::class.java).also { live += it.get() }
+    }
 
     /**
      * Destroys every service created since the last call and returns only once every coroutine of their scopes has finished.
@@ -46,6 +59,8 @@ internal object TestServices {
             // #316 "auto-record switched": the service tells its recorder the setting from UserPrefsStore, so a test's
             // setting never reaches a later class either (the next service loads the saved one at its creation)
             com.openrs.dash.ui.UserPrefsStore.resetForTest()
+            CanDataService.bindToNetwork = true
+            CanDataService.probeOverride = null
         }
     }
 

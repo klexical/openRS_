@@ -58,3 +58,11 @@ interface SlcanTransport {
     /** This attempt's MTU request and answer; only a Bluetooth transport has one (#253). */
     val bleMtu: BleMtuTrace? get() = null
 }
+
+/**
+ * A transport that is already open (#324: the adapter network's probe opened it and the adapter answered): its first
+ * attempt uses it as it is, so the adapter sees one connection. Everything else goes to [inner].
+ */
+class AlreadyOpenTransport(private val inner: SlcanTransport) : SlcanTransport by inner {
+    override suspend fun open() {}
+}

@@ -22,9 +22,13 @@ can/
   ObdResponseParser.kt    — Mode 22 DID dispatch by module (PCM/BCM/AWD/PSCM/FENG/RSProt/HVAC/IPC)
   PidRegistry.kt          — Data-driven catalog decoder; builds index from ForscanCatalog on first load
                             Fallback for ObdResponseParser when DID not hardcoded; stores in genericValues
-  SlcanTransport.kt       — Transport interface: open/readLine/writeLine/close
-  TcpSlcanTransport.kt    — MeatPi Pro: raw TCP 192.168.0.10:35000
-  WebSocketSlcanTransport.kt — MeatPi USB: WebSocket ws://192.168.80.1:80/ws
+  SlcanTransport.kt       — Transport interface: open/readLine/writeLine/close; AlreadyOpenTransport (the adapter network's
+                            probe transport, handed to the first attempt, #324)
+  AdapterProbe.kt         — one probe of the adapter over one Wi-Fi network (#324): the adapter's own protocol reply
+                            (WebSocket 101; the Pro's CR / BEL / OPENRS: / frame after the SLCAN init), 2 s; reasons
+                            never name the host
+  TcpSlcanTransport.kt    — MeatPi Pro: raw TCP 192.168.0.10:35000 (socket source + lookup: the adapter network's, #324)
+  WebSocketSlcanTransport.kt — MeatPi USB: WebSocket ws://192.168.80.1:80/ws (socket source + lookup as TCP)
   BleSlcanTransport.kt    — BLE GATT transport: connects and forwards BluetoothGatt callbacks to BleGattCore; GattLink over
                             BluetoothGatt. autoConnect=true after a first success with that MAC (per process), MTU 247 w/ fallback
   BleGattCore.kt          — Android-free setup sequence / writes / framing (#218): layout from BleAdapterProfile (Pro
@@ -136,7 +140,11 @@ diagnostics/
   CrashTelemetryBuffer.kt — 300-snapshot ring buffer of VehicleState (`CAPACITY`); flushed on crash to JSON
 service/
   CanDataService.kt       — Bound service, foreground only while a connection runs (ForegroundController);
-                            WiFi/BLE-gated auto-reconnect; owns connection lifecycle
+                            Wi-Fi: connects on the adapter network (#324; sockets bound to it, onLost only for it);
+                            BLE-gated auto-reconnect; owns connection lifecycle
+  AdapterNetworkFinder.kt — finds the adapter network among the joined Wi-Fi networks: probes each, re-probes every 5 s
+                            for up to 60 s, hands the open transport over; generic over the network type (JVM tests)
+                            + HandOver: the probe's open transport, closed unless a connection takes it
                             Transport selected by connectionMethod (WiFi vs BLE) + adapterType (TCP vs WebSocket)
                             Reports link events to the recorder (connection lost / back, engine running, auto-record switched, demo
                             entered) and applies no recording rule itself (#316)
