@@ -307,6 +307,8 @@ before it when they describe the code change.
    version without highlights shows nothing (`shouldShowWhatsNew`). It auto-opens once per release name
    (`BuildInfo.releaseName`, e.g. rc.6 → rc.7 shows it), with content per base version — extend the entry per RC
    (Settings also opens it)
+6. Keep Latest on the newest Android stable (`gh release edit android-vX.Y.Z --latest`; firmware never Latest): the Stable
+   updater trusts `/releases/latest` only for an Android stable (#364)
 
 ## Changelog Format (`android/CHANGELOG.md`)
 
