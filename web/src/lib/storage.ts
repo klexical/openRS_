@@ -289,8 +289,10 @@ function canonical(v: unknown): string {
 
 /**
  * The point fields that identify a drive, in the precision the app's CSV writes them (DriveExportBuilder.buildCsv, the
- * same in every app version from 2026-04-01 to staging 6212b15): time in whole milliseconds, latitude and longitude to
- * 6 decimals, speed to 2, rpm whole. Every version of Sapphire has kept these five fields on each point (the
+ * same precision in every app version from 2026-04-01 to staging 6212b15): time in whole milliseconds, latitude and
+ * longitude to 6 decimals, speed to 2, rpm whole. The text is not always the same: before rc.7 the app formatted
+ * these with the phone's language, so a decimal comma or other digits wrote different text (which Sapphire rejects
+ * or reads differently), and such a drive's re-export from rc.7 on will not match it. Every version of Sapphire has kept these five fields on each point (the
  * `TripPoint` type since its first commit), so a drive stored by any of them hashes as its re-import does today; a
  * later parser that keeps more fields does not change the hash. Change the list only with a new HASH_VERSION.
  */
