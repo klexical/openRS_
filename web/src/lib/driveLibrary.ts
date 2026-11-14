@@ -8,7 +8,7 @@ import { useStore } from '../store'
 import { clearAllDrives, deleteDrives, fillBestLap, listDrives, loadDrive, renameDrive, setDriveNote, setDriveTags, storeImported,
   type DriveRecord, type ImportOutcome } from './storage'
 import type { Session } from '../types/session'
-import type { FileResult } from './importFiles'
+import type { FileResult, ImportProgress } from './importFiles'
 import type { RestoreOutcome } from './backup'
 
 const store = () => useStore.getState()
@@ -83,19 +83,32 @@ export async function restore(file: Blob): Promise<RestoreOutcome> {
 /** The storing step of one file of an Import: all of that file's drives, or none (one transaction). */
 export type StoringStep = (sessions: Session[]) => Promise<ImportOutcome>
 
+/** The Import's reading pipeline (lib/importFiles.ts importFiles): reads and parses each file, and stores it with [store]. */
+export type ReadingPipeline = (files: File[], onProgress: (p: ImportProgress) => void, store: StoringStep) => Promise<FileResult[]>
+
+/** The Import's reading code could not load (a tab left open across a deploy): nothing was read or stored. */
+export class ImportCodeUnavailable extends Error {
+  constructor(cause: unknown) { super('The import code could not load.', { cause }) }
+}
+
 /**
- * One Import, all of it. [read] is the Import's own reading pipeline (lib/importFiles.ts), handed the library's storing
- * step for each file; the step refuses once this Import has ended. After [read] ends the library mirrors once (K4):
+ * One Import, all of it. The library loads the Import's reading pipeline (lib/importFiles.ts, on first use: the
+ * first-visit budget) and runs it on [files], handing it the library's storing step for each file; the step refuses
+ * once this Import has ended (I3). [read] replaces the pipeline in tests only. After it ends the library mirrors once (K4):
  * the drives stored are added to the list (no re-read, K2); when a stored drive was filled in, the list is read again,
  * and the Current drive too if it was filled in and is still current (K3). Compare's copies are not read again: a
- * known defect, ledger L110, kept. Resolves with [read]'s results; rejects only if [read] does (a re-read that fails is
- * logged).
+ * known defect, ledger L110, kept. Resolves with the pipeline's results. Rejects with [ImportCodeUnavailable] when the
+ * reading code cannot load, or when the pipeline itself rejects (nothing mirrored); a re-read that fails is logged.
  */
-export async function importDrives(read: (store: StoringStep) => Promise<FileResult[]>): Promise<FileResult[]> {
+export async function importDrives(files: File[], onProgress: (p: ImportProgress) => void, read?: ReadingPipeline): Promise<FileResult[]> {
+  let pipeline = read
+  if (!pipeline) {
+    try { pipeline = (await import('./importFiles')).importFiles } catch (err) { throw new ImportCodeUnavailable(err) }
+  }
   let open = true
   const step: StoringStep = (sessions) => (open ? storeImported(sessions) : Promise.reject(new Error('This import has ended: nothing was stored.')))
   let results: FileResult[]
-  try { results = await read(step) } finally { open = false }
+  try { results = await pipeline(files, onProgress, step) } finally { open = false }
 
   const stored = results.flatMap((r) => r.stored)
   const filled = results.flatMap((r) => r.already.filter((a) => a.filled.length > 0).map((a) => a.existingId))

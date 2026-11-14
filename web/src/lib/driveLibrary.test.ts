@@ -177,7 +177,7 @@ describe('Drive library: an Import', () => {
   it('kept: the drives an Import stored are added to the list once, after the last file (K4), not by reading the list again', async () => {
     const env = await fresh([drive('a', 1)])
     await env.library.loadList()
-    const results = await env.library.importDrives(async (step) => {
+    const results = await env.library.importDrives([], () => {}, async (_f, _p, step) => {
       const one = result('one.zip', await step([drive('b', 2)]))
       expect(env.st().drives.map((d) => d.id)).toEqual(['a'])                  // between files: not yet
       const two = result('two.zip', await step([drive('c', 3)]))
@@ -192,7 +192,7 @@ describe('Drive library: an Import', () => {
     const env = await fresh([drive('a', 1)])
     await env.library.loadList()
     env.useStore.setState({ activeSessionId: 'a', activeSession: (await env.storage.loadDrive('a'))! })
-    await env.library.importDrives(async (step) => [result('again.zip', await step([withLog(drive('a', 1))]))])
+    await env.library.importDrives([], () => {}, async (_f, _p, step) => [result('again.zip', await step([withLog(drive('a', 1))]))])
     await agrees(env)
     expect(env.st().drives[0].hasSession).toBe(true)
     expect(env.st().activeSession?.diagnostics?.sessionEvents).toHaveLength(3)
@@ -203,14 +203,14 @@ describe('Drive library: an Import', () => {
     await env.library.loadList()
     const a = (await env.storage.loadDrive('a'))!
     env.useStore.setState({ compareSessionIds: ['a'], compareSessions: [a] })
-    await env.library.importDrives(async (step) => [result('again.zip', await step([withLog(drive('a', 1))]))])
+    await env.library.importDrives([], () => {}, async (_f, _p, step) => [result('again.zip', await step([withLog(drive('a', 1))]))])
     expect(env.st().compareSessions[0]).toBe(a)
   })
 
   it('the storing step refuses once its Import has ended, and stores nothing (I3)', async () => {
     const env = await fresh()
     let kept: import('./driveLibrary').StoringStep | null = null
-    await env.library.importDrives(async (step) => { kept = step; return [] })
+    await env.library.importDrives([], () => {}, async (_f, _p, step) => { kept = step; return [] })
     await expect(kept!([drive('late', 9)])).rejects.toThrow(/This import has ended/)
     expect(await env.storage.listDrives()).toEqual([])
   })
@@ -218,7 +218,7 @@ describe('Drive library: an Import', () => {
   it('a reading pipeline that throws rejects the Import and mirrors nothing', async () => {
     const env = await fresh([drive('a', 1)])
     await env.library.loadList()
-    await expect(env.library.importDrives(async () => { throw new Error('invented') })).rejects.toThrow('invented')
+    await expect(env.library.importDrives([], () => {}, async () => { throw new Error('invented') })).rejects.toThrow('invented')
     expect(env.st().drives.map((d) => d.id)).toEqual(['a'])
   })
 })
