@@ -16,7 +16,7 @@ import {
   BOOST_SERIES, boostLabel, primaryBoostSource, pressureChartRows, pressurePeaks, pressureSeries, pressureTitle,
   pressureDecimals, sourceName, type BoostKey,
 } from '../../lib/boost'
-import { convertBoost } from '../../lib/units'
+import { convertBoost, speedPeaks, tirePressDecimals, unitChartRows } from '../../lib/units'
 import { colors, chartColors } from '../../styles/tokens'
 
 export function TripPanel() {
@@ -30,6 +30,9 @@ export function TripPanel() {
 
   // Chart rows with relative time in seconds; a missing reading is null → a gap, never a 0 dip
   const chartData = useMemo(() => tripChartData(points), [points])
+  // #381: speeds, temperatures and tyre pressures in the selected units (a gap stays a gap); pressure rows below
+  const rows = useMemo(() => unitChartRows(chartData, fmt.unitSystem, fmt.tirePressUnit),
+    [chartData, fmt.unitSystem, fmt.tirePressUnit])
   // #207: one line per boost measurement present (TIP / CAN 0x0F8 / source not recorded), never joined into one
   const boostSource = useMemo(() => primaryBoostSource(points), [points])
   const pressureRows = useMemo(() => pressureChartRows(chartData, fmt.boostUnit), [chartData, fmt.boostUnit])
@@ -99,7 +102,7 @@ export function TripPanel() {
 
       <SectionLabel>RPM</SectionLabel>
       <TimeSeriesChart
-        data={chartData}
+        data={rows}
         series={[{ key: 'rpm', label: 'RPM', color: colors.accent }]}
         xFormatter={fmtTime}
         syncId={syncId}
@@ -121,11 +124,11 @@ export function TripPanel() {
 
       <SectionLabel>Speed ({fmt.speedUnit})</SectionLabel>
       <TimeSeriesChart
-        data={chartData}
+        data={rows}
         series={[{ key: 'speedKph', label: 'Speed', color: chartColors[2] }]}
         xFormatter={fmtTime}
         syncId={syncId}
-        peakEvents={peakEvents}
+        peakEvents={speedPeaks(peakEvents, fmt.unitSystem)}
         peakFilter="speed"
       />
 
@@ -133,7 +136,7 @@ export function TripPanel() {
         <>
           <SectionLabel>Throttle (%)</SectionLabel>
           <TimeSeriesChart
-            data={chartData}
+            data={rows}
             series={[{ key: 'throttlePct', label: 'Throttle', color: chartColors[5] }]}
             xFormatter={fmtTime}
             syncId={syncId}
@@ -146,7 +149,7 @@ export function TripPanel() {
         <>
           <SectionLabel>Brake Pressure</SectionLabel>
           <TimeSeriesChart
-            data={chartData}
+            data={rows}
             series={[{ key: 'brakePressure', label: 'Brake', color: chartColors[5] }]}
             xFormatter={fmtTime}
             syncId={syncId}
@@ -159,7 +162,7 @@ export function TripPanel() {
         <>
           <SectionLabel>Steering Angle (°)</SectionLabel>
           <TimeSeriesChart
-            data={chartData}
+            data={rows}
             series={[{ key: 'steeringAngle', label: 'Steering', color: chartColors[4] }]}
             xFormatter={fmtTime}
             yFormatter={(v) => `${v.toFixed(0)}°`}
@@ -170,7 +173,7 @@ export function TripPanel() {
 
       <SectionLabel>Temperatures ({fmt.tempUnit})</SectionLabel>
       <TimeSeriesChart
-        data={chartData}
+        data={rows}
         series={[
           { key: 'coolantC', label: 'Coolant', color: colors.cyan },
           { key: 'oilTempC', label: 'Oil', color: colors.orange },
@@ -185,7 +188,7 @@ export function TripPanel() {
 
       <SectionLabel>Lateral G</SectionLabel>
       <TimeSeriesChart
-        data={chartData}
+        data={rows}
         series={[{ key: 'latG', label: 'Lat G', color: chartColors[3] }]}
         xFormatter={fmtTime}
         yFormatter={(v) => `${v.toFixed(2)}G`}
@@ -199,7 +202,7 @@ export function TripPanel() {
         <>
           <SectionLabel>Longitudinal G</SectionLabel>
           <TimeSeriesChart
-            data={chartData}
+            data={rows}
             series={[{ key: 'longG', label: 'Long G', color: chartColors[6] }]}
             xFormatter={fmtTime}
             yFormatter={(v) => `${v.toFixed(2)}G`}
@@ -210,15 +213,15 @@ export function TripPanel() {
 
       <SectionLabel>Fuel Level (%)</SectionLabel>
       <TimeSeriesChart
-        data={chartData}
+        data={rows}
         series={[{ key: 'fuelPct', label: 'Fuel %', color: chartColors[6] }]}
         xFormatter={fmtTime}
         syncId={syncId}
       />
 
-      <SectionLabel>Wheel Speeds</SectionLabel>
+      <SectionLabel>Wheel Speeds ({fmt.speedUnit})</SectionLabel>
       <TimeSeriesChart
-        data={chartData}
+        data={rows}
         series={[
           { key: 'wsFL', label: 'FL', color: colors.cyan },
           { key: 'wsFR', label: 'FR', color: chartColors[1] },
@@ -234,7 +237,7 @@ export function TripPanel() {
         <>
           <SectionLabel>Tire Pressure ({fmt.tirePressUnit})</SectionLabel>
           <TimeSeriesChart
-            data={chartData}
+            data={rows}
             series={[
               { key: 'tirePressLF', label: 'LF', color: colors.cyan },
               { key: 'tirePressRF', label: 'RF', color: chartColors[1] },
@@ -242,7 +245,7 @@ export function TripPanel() {
               { key: 'tirePressRR', label: 'RR', color: chartColors[3] },
             ]}
             xFormatter={fmtTime}
-            yFormatter={(v) => `${v.toFixed(1)}`}
+            yFormatter={(v) => v.toFixed(tirePressDecimals(fmt.tirePressUnit))}
             height={200}
             syncId={syncId}
           />
@@ -253,7 +256,7 @@ export function TripPanel() {
         <>
           <SectionLabel>Tire Temperature ({fmt.tempUnit})</SectionLabel>
           <TimeSeriesChart
-            data={chartData}
+            data={rows}
             series={[
               { key: 'tireTempLF', label: 'LF', color: colors.cyan },
               { key: 'tireTempRF', label: 'RF', color: chartColors[1] },
@@ -270,7 +273,7 @@ export function TripPanel() {
 
       <SectionLabel>AWD Torque (Nm)</SectionLabel>
       <TimeSeriesChart
-        data={chartData}
+        data={rows}
         series={[
           { key: 'awdL', label: 'Left', color: colors.cyan },
           { key: 'awdR', label: 'Right', color: chartColors[1] },

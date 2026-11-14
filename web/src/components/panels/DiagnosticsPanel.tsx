@@ -5,6 +5,7 @@ import { SectionLabel } from '../ui/SectionLabel'
 import { ObserverNotesSection, eventTypeLabel } from '../ui/ObserverNotes'
 import { TimeSeriesChart } from '../charts/TimeSeriesChart'
 import { colors } from '../../styles/tokens'
+import { eventStyle, NEUTRAL_EVENT_STYLE } from '../../lib/eventTypes'
 import type { DidInventory, DtcEntry, NrcSuppression } from '../../types/session'
 import { DID_STATUS_LABEL, didInventorySummary, didStatus, lastAnswerText, type DidStatus } from '../../lib/didInventory'
 
@@ -89,14 +90,6 @@ function CanInventoryTable({ frames }: { frames: { id: string; count: number; ch
 // ── Session Events ──
 
 function EventsTable({ events }: { events: { ts: number; type: string; message: string }[] }) {
-  const typeColors: Record<string, string> = {
-    error: colors.orange,
-    session: colors.cyan,
-    slcan: colors.dim,
-    firmware: colors.ok,
-    dm_cmd: colors.warn,
-  }
-
   return (
     <>
       <SectionLabel>Session Events</SectionLabel>
@@ -111,23 +104,29 @@ function EventsTable({ events }: { events: { ts: number; type: string; message: 
               </tr>
             </thead>
             <tbody>
-              {events.map((e, i) => (
-                <tr key={i} className="border-t border-brd hover:bg-surf3/50 transition-colors">
-                  <td className="px-3 py-1.5 text-dim">{fmtRelMs(e.ts)}</td>
-                  <td className="px-3 py-1.5">
-                    <span
-                      className="inline-block px-1.5 py-0.5 rounded text-[10px] uppercase"
-                      style={{
-                        color: typeColors[e.type] || colors.frost,
-                        backgroundColor: (typeColors[e.type] || colors.dim) + '15',
-                      }}
-                    >
-                      {eventTypeLabel(e.type)}
-                    </span>
-                  </td>
-                  <td className="px-3 py-1.5 text-frost">{e.message}</td>
-                </tr>
-              ))}
+              {events.map((e, i) => {
+                // #382: group colour by type whatever its letter case; an unknown type keeps the neutral style
+                const style = eventStyle(e.type)
+                const known = style !== NEUTRAL_EVENT_STYLE
+                return (
+                  <tr key={i} className="border-t border-brd hover:bg-surf3/50 transition-colors">
+                    <td className="px-3 py-1.5 text-dim">{fmtRelMs(e.ts)}</td>
+                    <td className="px-3 py-1.5">
+                      <span
+                        className="inline-block px-1.5 py-0.5 rounded text-[10px] uppercase"
+                        title={style.group}
+                        style={{
+                          color: style.color,
+                          backgroundColor: (known ? style.color : colors.dim) + '15',
+                        }}
+                      >
+                        {eventTypeLabel(e.type)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-1.5 text-frost">{e.message}</td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
