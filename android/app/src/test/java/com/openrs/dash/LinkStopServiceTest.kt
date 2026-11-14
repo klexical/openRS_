@@ -73,7 +73,8 @@ class LinkStopServiceTest {
         controller.destroy()
         assertEquals("SERVICE_DESTROYED", idleReasons().last())
         DiagnosticLogger.sessionStart("test", 0, prefs = null)
-        val prev = lines(DiagnosticLogger.EVENT_LINK_PREV)
+        // The stop line carried; the launch's own refused start (no Wi-Fi under Robolectric, #324) is carried beside it
+        val prev = lines(DiagnosticLogger.EVENT_LINK_PREV).filter { it.startsWith(DiagnosticLogger.EVENT_LINK_STOP + " ") }
         assertEquals(prev.toString(), 1, prev.size)
         assertTrue(prev.single(), prev.single().contains("reason=WIFI_LOST"))
     }

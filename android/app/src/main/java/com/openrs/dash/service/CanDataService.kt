@@ -260,7 +260,7 @@ class CanDataService : Service() {
             UserPrefsStore.prefs.map { it.autoRecordDrives }.distinctUntilChanged()
                 .collect { recorder().onAutoRecordSwitched(it) }
         }
-        if (isTransportReady()) autoStartConnection()
+        if (isTransportReady()) autoStartConnection() else logTransportRefused("launch")
         com.openrs.dash.ui.StartupTrace.mark("CanDataService.onCreate end")
     }
 
@@ -293,7 +293,8 @@ class CanDataService : Service() {
 
     /** MainActivity is bound: what a task removal held back can start, so the next launch auto-connects even if this service or process survived. */
     fun onActivityBound(): Unit = link.transition {
-        if (link.releaseTaskRemovedHold() && isTransportReady()) autoStartConnection()
+        if (!link.releaseTaskRemovedHold()) return@transition
+        if (isTransportReady()) autoStartConnection() else logTransportRefused("task-removal release")
     }
 
     private fun recNow(): String {
@@ -330,6 +331,16 @@ class CanDataService : Service() {
     /** True if the selected transport is ready (WiFi connected or Bluetooth enabled). */
     private fun isTransportReady(): Boolean =
         if (isBluetooth()) isBluetoothEnabled() else isOnWifi()
+
+    /**
+     * #324: a start refused because the transport is not ready writes its reason, as every other refusal does, on every start
+     * path ([origin]: launch, the task-removal release, an automatic start, Connect, a retry). The Wi-Fi reason names today's
+     * check: the default network, not any Wi-Fi network the phone has joined.
+     */
+    private fun logTransportRefused(origin: String) {
+        val reason = if (isBluetooth()) "Bluetooth is off" else "the default network is not Wi-Fi"
+        DiagnosticLogger.event(DiagnosticLogger.EVENT_LINK_START_REFUSED, "not started ($origin): $reason")
+    }
 
     private fun registerWifiCallback() {
         val request = NetworkRequest.Builder()
@@ -602,23 +613,23 @@ class CanDataService : Service() {
         link.autoStart(
             blocked = { DemoMode.isActive || DemoMode.launchRequested },
             onHeld = { holds -> DiagnosticLogger.event(DiagnosticLogger.EVENT_LINK_START_REFUSED, "auto-start held: $holds") },
-        ) { beginConnection() }
+        ) { beginConnection(origin = "automatic start") }
     }
 
     /** Explicit (user) connect. No-op while demo mode owns the vehicle state. */
     fun startConnection(): Unit = link.transition {
         if (DemoMode.isActive) return@transition
         link.clearManualConnect()
-        beginConnection()
+        beginConnection(origin = "Connect")
     }
 
     /**
      * Starts a connection job unless one is running; false when nothing could start (transport down / no foreground).
      * [heldDropAtMs]: a manual reconnect's carried drop (#316 (b)), held by the new connection; unused when nothing starts.
      */
-    private fun beginConnection(heldDropAtMs: Long? = null): Boolean = link.transition {
+    private fun beginConnection(heldDropAtMs: Long? = null, origin: String): Boolean = link.transition {
         if (DemoMode.isActive) return@transition false
-        if (!isTransportReady()) return@transition false
+        if (!isTransportReady()) { logTransportRefused(origin); return@transition false }
         if (connectionJob?.isActive == true) return@transition true
         // Bluetooth with no saved device (#234): nothing to connect to — checked before the service is promoted and a
         // session begins, so no notification, no session record, no retries. Every start path lands here (launch,
@@ -984,7 +995,7 @@ class CanDataService : Service() {
             )
         }
         // Transport down (or no foreground allowed): nothing started, so release instead of keeping a stale notification
-        if (!beginConnection(heldDropAtMs = heldDrop)) {
+        if (!beginConnection(heldDropAtMs = heldDrop, origin = "retry")) {
             // #316: nothing started, so this RCN closed the connection: a "connection lost", as every closure by the service
             // is (the owner's "Yes, pause it"), at the carried drop's moment when one was held, else the closure's
             recorder().onConnectionLost(heldDrop ?: System.currentTimeMillis())
