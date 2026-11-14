@@ -23,6 +23,11 @@ export interface Session {
    * as none (#384). Absent = stored before this was recorded.
    */
   dtcScanStatus?: string | null
+  /**
+   * When the fault-code scan finished (the app's `finishedAtMs`: the detail JSON's `dtcScan` block, else the scan
+   * JSON's `scan` block; never an export time). Proves that two drive-less sessions are the same one (#384).
+   */
+  dtcScanFinishedAtMs?: number
 }
 
 export interface SessionMeta {
@@ -250,6 +255,8 @@ export interface DiagnosticData {
    * log came from the detail file (or the record was stored before this was kept).
    */
   sessionLog?: false
+  /** The session's length from the detail JSON's `meta.sessionDurationMs` (#384: part of a drive-less session's proof). */
+  sessionDurationMs?: number
 }
 
 /** Mode 22 requests of one session, per module and DID, as the app counted them (#253). */

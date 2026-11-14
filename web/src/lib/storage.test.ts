@@ -437,15 +437,6 @@ describe('#384 already imported', () => {
     expect([b.stored.length, (await listDrives()).length]).toEqual([1, 2])
   })
 
-  it('a session with no drive is compared by its diagnostics', async () => {
-    const diagOnly = (msg: string) => session('x', { drive: false, events: [ev('STATE', msg)] })
-    await storeImported([{ ...diagOnly('invented one'), id: 'one' }])
-    const same = await storeImported([{ ...diagOnly('invented one'), id: 'two', name: 'other name' }])
-    const other = await storeImported([{ ...diagOnly('invented other'), id: 'three' }])
-    expect([same.alreadyImported.length, other.stored.length]).toEqual([1, 1])
-  })
-
-  // QA (H1): the hash covers a fixed, named list of point fields in the CSV's own rounding, behind a version tag
   it('a point field beyond the hashed list keeps the hash (a later parser that reads one more column)', () => {
     const base = session('h')
     const extra = { ...base, trip: { ...base.trip!, points: base.trip!.points.map((p) => ({ ...p, coolantC: 42, aNewColumn: 7 })) } }
@@ -525,6 +516,82 @@ describe('#384 the fault-code text reader', () => {
     expect([s.dtcScan, s.dtcScanStatus]).toEqual([true, null])                 // a text-only scan has no status
     const d = (await storeImported([s])).stored[0]
     expect([d.warnings.faultCodes, d.hasWarnings]).toEqual(['found', true])
+  })
+})
+
+// Owner (draft 10) and the integrator's rule: a session with no drive is "already imported" only on proof:
+// (a) both carry the scan's own finish time and it is equal; or (b) both carry a session log of at least 3 events and
+// the whole list is equal (relative time, type, message, in order), with equal session durations when both state one.
+// Export times and equal fault codes never count; nothing readable is not stored.
+describe('#384 a session with no drive: already imported only on proof', () => {
+  const logOf = (n: number, tag = '') => Array.from({ length: n }, (_, i) => ev(i === 0 ? 'SESSION' : 'STATE', `invented ${i}${tag}`, i * 1000))
+  const sess = (id: string, o: { events?: SessionEvent[]; finishedAt?: number; durationMs?: number; codes?: DtcEntry[]; log?: boolean }) => {
+    const s = session(id, { drive: false, events: o.events ?? [], codes: o.codes ?? [] })
+    if (o.log === false) s.diagnostics!.sessionLog = false
+    if (o.durationMs !== undefined) s.diagnostics!.sessionDurationMs = o.durationMs
+    if (o.finishedAt !== undefined) s.dtcScanFinishedAtMs = o.finishedAt
+    return s
+  }
+  const twice = async (a: Session, b: Session) => { await storeImported([a]); return storeImported([b]) }
+
+  it('(a) the same scan finish time proves it: already imported', async () => {
+    const r = await twice(sess('a1', { finishedAt: T0 + 5, codes: [dtc('ACTIVE')], log: false }), sess('a2', { finishedAt: T0 + 5, codes: [dtc('ACTIVE')], log: false }))
+    expect(r.alreadyImported.map((x) => x.existingId)).toEqual(['a1'])
+  })
+
+  it('(b) the same whole event list (3 or more events) proves it: already imported', async () => {
+    const r = await twice(sess('b1', { events: logOf(4) }), sess('b2', { events: logOf(4) }))
+    expect(r.alreadyImported.map((x) => x.existingId)).toEqual(['b1'])
+  })
+
+  it('equal fault codes alone prove nothing: two scan-only imports are two records', async () => {
+    const r = await twice(sess('c1', { codes: [dtc('ACTIVE')], log: false }), sess('c2', { codes: [dtc('ACTIVE')], log: false }))
+    expect([r.stored.length, (await listDrives()).length]).toEqual([1, 2])
+  })
+
+  it('two minimal sessions with the same start-up lines (fewer than 3 events) both import', async () => {
+    const r = await twice(sess('d1', { events: logOf(2) }), sess('d2', { events: logOf(2) }))
+    expect(r.stored).toHaveLength(1)
+  })
+
+  it('the same events with different session durations both import', async () => {
+    const r = await twice(sess('e1', { events: logOf(3), durationMs: 60_000 }), sess('e2', { events: logOf(3), durationMs: 61_000 }))
+    expect(r.stored).toHaveLength(1)
+  })
+
+  it('different scan finish times: both import even with the same codes and events', async () => {
+    const r = await twice(sess('f1', { finishedAt: T0 + 1, events: logOf(1) }), sess('f2', { finishedAt: T0 + 2, events: logOf(1) }))
+    expect(r.stored).toHaveLength(1)
+  })
+
+  it('a version-1 session is recognised by its event list', async () => {
+    const v1 = sess('v1-session', { events: logOf(5) })
+    await writeV1([v1])
+    const r = await storeImported([sess('again', { events: logOf(5) })])
+    expect(r.alreadyImported.map((x) => x.existingId)).toEqual(['v1-session'])
+  })
+
+  it('the importer reads the scan finish time (detail JSON first, then the scan JSON) and the session duration', async () => {
+    const zip = async (files: Record<string, string>) => {
+      const z = new JSZip(); for (const [n, t] of Object.entries(files)) z.file(n, t)
+      return importZip(new File([await z.generateAsync({ type: 'blob' })], 'invented.zip'))
+    }
+    const detail = (o: object) => JSON.stringify({ sessionEvents: logOf(3).map((e) => ({ relMs: e.ts, type: e.type, message: e.message })), ...o })
+    const both = await zip({ 'diagnostic_detail_20960101_000000.json': detail({ meta: { sessionDurationMs: 90_000 }, dtcScan: { status: 'COMPLETE', finishedAtMs: T0 + 7 } }),
+      'dtc_scan_20960101_000000.json': JSON.stringify({ timestamp: T0 + 999, scan: { status: 'COMPLETE', finishedAtMs: T0 + 8 }, codes: [] }) })
+    const jsonOnly = await zip({ 'diagnostic_detail_20960101_000000.json': detail({ dtcScan: { status: 'NONE' } }),
+      'dtc_scan_20960101_000000.json': JSON.stringify({ timestamp: T0 + 999, scan: { status: 'COMPLETE', finishedAtMs: T0 + 8 }, codes: [] }) })
+    const none = await zip({ 'diagnostic_detail_20960101_000000.json': detail({ dtcScan: { status: 'NONE' } }) })
+    expect([both.dtcScanFinishedAtMs, both.diagnostics?.sessionDurationMs]).toEqual([T0 + 7, 90_000])
+    expect(jsonOnly.dtcScanFinishedAtMs).toBe(T0 + 8)                     // never the export's root timestamp
+    expect(none.dtcScanFinishedAtMs).toBeUndefined()
+  })
+
+  it('a file with nothing readable is not stored, and says so (two of them are not "already imported" as each other)', async () => {
+    const empty = async (name: string) => { const z = new JSZip(); z.file(name, 'invented'); return importZip(new File([await z.generateAsync({ type: 'blob' })], 'invented.zip')) }
+    await expect(storeImported([await empty('readme.txt')])).rejects.toThrow(/Nothing in this file could be read/)
+    await expect(storeImported([await empty('other.txt')])).rejects.toThrow(/Nothing in this file could be read/)
+    expect(await listDrives()).toEqual([])
   })
 })
 

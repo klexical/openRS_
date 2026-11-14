@@ -37,8 +37,20 @@ export type DriveRecord = Omit<Session, 'trip' | 'diagnostics'> & {
   hasLaps: boolean
   hasWarnings: boolean
   warnings: WarningCauses
-  /** SHA-256 (hex) of the drive's parsed content, computed once when stored; see [contentHash]. */
+  /** SHA-256 (hex) of the drive's points, computed once when stored; see [contentHash]. */
   contentHash: string
+  /** A session with no drive: what can prove it is the same as another one (see [sameSession]); absent for a drive. */
+  sessionProof?: SessionProof
+}
+
+/** What proves two drive-less sessions are the same one (owner, 2026-11-14, draft 10; the integrator's rule). */
+export interface SessionProof {
+  /** The fault-code scan's own finish time (never an export time). */
+  scanFinishedAtMs?: number
+  /** SHA-256 of the whole session event list (relative time, type, message, in order), when it has 3 or more events. */
+  eventsHash?: string
+  /** The session's length, when the detail stated it. */
+  durationMs?: number
 }
 
 export type StorageStatus =
@@ -47,6 +59,14 @@ export type StorageStatus =
   | { state: 'blocked' }
   | { state: 'outdated' }
   | { state: 'upgrade-failed'; reason: string }
+
+/** An import with nothing readable in it: no drive, no session log and no fault codes. It is not stored. */
+export class NothingReadableError extends Error {
+  constructor() {
+    super('Nothing in this file could be read: it holds no drive, no session log and no fault codes. Nothing was stored.')
+    this.name = 'NothingReadableError'
+  }
+}
 
 export interface ImportOutcome {
   stored: DriveRecord[]
@@ -62,7 +82,7 @@ const OLD_SESSIONS = 'sessions'
 const ALL = [DRIVES, POINTS, DIAGNOSTICS]
 /** Keys this module adds to a drive record; stripped again when a session is rebuilt. */
 const DERIVED = ['driveStart', 'summary', 'pointCount', 'hasDrive', 'hasSession', 'hasLaps', 'hasWarnings', 'warnings',
-  'contentHash'] as const
+  'contentHash', 'sessionProof'] as const
 
 /**
  * A write whose promise nobody awaits: its failure already reaches the caller through the transaction's own result
@@ -194,7 +214,33 @@ function derive(s: Session, trip: TripData | null, diagnostics: DiagnosticData |
     hasWarnings: warnings.faultCodes === 'found' || warnings.recordingGaps === 'found',
     warnings,
     contentHash: contentHash(s),
+    ...(points.length === 0 ? { sessionProof: sessionProof(s, diagnostics) } : {}),
   }
+}
+
+/** Fewer events than this are the app's start-up lines, which two different short sessions share. */
+const PROOF_MIN_EVENTS = 3
+
+function sessionProof(s: Session, d: DiagnosticData | null): SessionProof {
+  const events = hasSessionLog(d) ? d!.sessionEvents : []
+  return {
+    ...(typeof s.dtcScanFinishedAtMs === 'number' ? { scanFinishedAtMs: s.dtcScanFinishedAtMs } : {}),
+    ...(events.length >= PROOF_MIN_EVENTS
+      ? { eventsHash: sha256Hex(`${HASH_VERSION}\nevents\n${canonical(events.map((e) => [e.ts, e.type, e.message]))}`) } : {}),
+    ...(typeof d?.sessionDurationMs === 'number' ? { durationMs: d.sessionDurationMs } : {}),
+  }
+}
+
+/**
+ * Two drive-less sessions are the same one when (a) both carry the scan's finish time and it is equal, or (b) both
+ * carry an event list of at least 3 events and the whole list is equal, with equal durations when both state one.
+ * Equal fault codes, and export times, prove nothing: without proof a session is imported again.
+ */
+function sameSession(a: SessionProof | undefined, b: SessionProof | undefined): boolean {
+  if (!a || !b) return false
+  if (a.scanFinishedAtMs !== undefined && a.scanFinishedAtMs === b.scanFinishedAtMs) return true
+  return a.eventsHash !== undefined && a.eventsHash === b.eventsHash
+    && (a.durationMs === undefined || b.durationMs === undefined || a.durationMs === b.durationMs)
 }
 
 // ── The warnings marker (owner, 2026-11-14: fault codes and recording gaps in this delivery) ──
@@ -262,11 +308,13 @@ const fixed = (v: unknown, decimals: number): string => {
  * its points, alone, as the fixed list above. The summary and profile (distance, peaks, laps, performance runs, the
  * app's tags), the name, notes, tags, import and export times, fault codes, scan flag and session log do not decide
  * identity: they change between shares of one drive. A session with no drive is compared by its diagnostics. A
- * snapshot taken while recording has fewer points, so it is a different (partial) drive. Computed once when stored.
+ * snapshot taken while recording has fewer points, so it is a different (partial) drive. A session with no drive gets a
+ * hash of its own id: it is matched by its proof instead (owner, draft 10). Computed once when stored.
  */
 function contentHash(s: Session): string {
   const points = s.trip?.points ?? []
-  if (points.length === 0) return sha256Hex(`${HASH_VERSION}\ndiagnostics\n${canonical(s.diagnostics ?? null)}`)
+  // a session with no drive is matched by its proof (sessionProof / sameSession), never by this hash
+  if (points.length === 0) return sha256Hex(`${HASH_VERSION}\nsession ${s.id}`)
   const rows = points.map((p) => HASHED_POINT_FIELDS.map(([f, d]) => fixed((p as unknown as Record<string, unknown>)[f], d)).join(','))
   return sha256Hex(`${HASH_VERSION}\npoints ${HASHED_POINT_FIELDS.map(([f]) => f).join(',')}\n${rows.join('\n')}`)
 }
@@ -303,15 +351,27 @@ export async function loadDrive(id: string): Promise<Session | null> {
  * already stored is not stored again and is returned in `alreadyImported` (never an error).
  */
 export async function storeImported(sessions: Session[]): Promise<ImportOutcome> {
+  // An import in which nothing could be read (no points, no diagnostics) is not stored, and says so (owner, draft 10)
+  for (const s of sessions) {
+    if ((s.trip?.points?.length ?? 0) === 0 && !s.diagnostics) throw new NothingReadableError()
+  }
   const prepared = sessions.map(split)          // a session that cannot be split fails before anything is written
   const db = await getDb()
   const tx = db.transaction(ALL, 'readwrite')
   const outcome: ImportOutcome = { stored: [], alreadyImported: [] }
   const seen = new Map<string, string>()
+  let storedSessions: DriveRecord[] | null = null  // stored drive-less sessions, read once when needed
   try {
     for (const r of prepared) {
-      const existing = seen.get(r.drive.contentHash)
-        ?? (await tx.objectStore(DRIVES).index('byHash').getKey(r.drive.contentHash)) as string | undefined
+      let existing: string | undefined
+      if (r.drive.hasDrive) {
+        existing = seen.get(r.drive.contentHash)
+          ?? (await tx.objectStore(DRIVES).index('byHash').getKey(r.drive.contentHash)) as string | undefined
+      } else {
+        storedSessions ??= ((await tx.objectStore(DRIVES).getAll()) as DriveRecord[]).filter((d) => !d.hasDrive)
+        existing = storedSessions.find((d) => sameSession(d.sessionProof, r.drive.sessionProof))?.id
+        if (existing === undefined) storedSessions.push(r.drive)
+      }
       if (existing !== undefined) { outcome.alreadyImported.push({ name: r.drive.name, existingId: existing }); continue }
       seen.set(r.drive.contentHash, r.drive.id)
       settle(tx.objectStore(DRIVES).put(r.drive))

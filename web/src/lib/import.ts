@@ -218,6 +218,7 @@ async function importSingleDrive(zip: JSZip, manifest: ExportManifest | null, fi
   const dtcScan = dtcJson !== null || dtcTextFile(zip, manifest) !== undefined
   const dtcScanStatus = dtcJson?.status ?? null
   const diagnostics = await parseDiagnosticData(zip, dtcResults, manifest)
+  const dtcScanFinishedAtMs = (await detailScanFinishedAtMs(zip, manifest)) ?? dtcJson?.finishedAtMs
   const meta = await parseMeta(zip, filename, manifest)
   const name = buildSessionName(meta, trip, filename)
 
@@ -226,7 +227,8 @@ async function importSingleDrive(zip: JSZip, manifest: ExportManifest | null, fi
     tags.push(...trip.profile.drive.tags.split(',').map((t) => t.trim()).filter(Boolean))
   }
 
-  return { id, name, importedAt: Date.now(), tags, trip, diagnostics, meta, dtcScan, dtcScanStatus }
+  return { id, name, importedAt: Date.now(), tags, trip, diagnostics, meta, dtcScan, dtcScanStatus,
+    ...(dtcScanFinishedAtMs !== undefined ? { dtcScanFinishedAtMs } : {}) }
 }
 
 // ── Trip CSV parsing ──
@@ -665,8 +667,11 @@ async function parseDtcData(zip: JSZip, manifest: ExportManifest | null): Promis
 
 // ── DTC JSON parsing (T1E — preferred over TXT) ──
 
-/** The fault-code scan's JSON: its codes and its own status (`scan.status`, rc.8 and later; null when it states none). */
-async function parseDtcJsonData(zip: JSZip, manifest: ExportManifest | null): Promise<{ codes: DtcEntry[]; status: string | null } | null> {
+/**
+ * The fault-code scan's JSON: its codes, its own status (`scan.status`, rc.8 and later; null when it states none) and
+ * when it finished (`scan.finishedAtMs`; never the root `timestamp`, which is the export's time).
+ */
+async function parseDtcJsonData(zip: JSZip, manifest: ExportManifest | null): Promise<{ codes: DtcEntry[]; status: string | null; finishedAtMs?: number } | null> {
   const jsonFile = manifest?.files.find((e) => e.type === 'dtc_json')?.name
     ?? Object.keys(zip.files).find((f) => f.startsWith('dtc_scan_') && f.endsWith('.json'))
   if (!jsonFile || !zip.files[jsonFile]) return null
@@ -676,8 +681,10 @@ async function parseDtcJsonData(zip: JSZip, manifest: ExportManifest | null): Pr
     const data = JSON.parse(raw)
     const codes = Array.isArray(data.codes) ? data.codes : []
     const status = data.scan && typeof data.scan.status === 'string' ? data.scan.status : null
+    const finished = data.scan?.finishedAtMs
+    const finishedAtMs = typeof finished === 'number' && Number.isFinite(finished) ? finished : undefined
 
-    return { status, codes: codes.map((c: Record<string, unknown>): DtcEntry => {
+    return { status, ...(finishedAtMs !== undefined ? { finishedAtMs } : {}), codes: codes.map((c: Record<string, unknown>): DtcEntry => {
       const entry: DtcEntry = {
         module: String(c.module || ''),
         code: String(c.code || ''),
@@ -725,6 +732,8 @@ async function parseDiagnosticData(zip: JSZip, dtcResults: DtcEntry[], manifest:
   const raw = await zip.files[jsonFile].async('string')
   const data = JSON.parse(raw)
 
+  // #384: the session's length (part of a drive-less session's proof), when the detail states it
+  const durationMs = typeof data?.meta?.sessionDurationMs === 'number' ? data.meta.sessionDurationMs : undefined
   return {
     canInventory: parseCanInventory(data),
     fpsTimeline: parseFpsTimeline(data),
@@ -734,6 +743,22 @@ async function parseDiagnosticData(zip: JSZip, dtcResults: DtcEntry[], manifest:
     dtcResults,
     nrcSuppression: parseNrcSuppression(data),
     didInventory: parseDidInventory(data),
+    ...(durationMs !== undefined ? { sessionDurationMs: durationMs } : {}),
+  }
+}
+
+/**
+ * When the fault-code scan finished, from the detail JSON's own `dtcScan` block (#384). Absent when the detail states
+ * none ({"status":"NONE"}, no scan this session) or there is no detail file.
+ */
+async function detailScanFinishedAtMs(zip: JSZip, manifest: ExportManifest | null): Promise<number | undefined> {
+  const jsonFile = diagnosticDetailFile(zip, manifest)
+  if (!jsonFile || !zip.files[jsonFile]) return undefined
+  try {
+    const v = JSON.parse(await zip.files[jsonFile].async('string'))?.dtcScan?.finishedAtMs
+    return typeof v === 'number' && Number.isFinite(v) ? v : undefined
+  } catch {
+    return undefined
   }
 }
 
