@@ -19,6 +19,8 @@ interface Spec {
   events?: Pick<SessionEvent, 'type' | 'message'>[]
   laps?: number[]
   sessionOnly?: boolean
+  /** Stored before Sapphire recorded whether the import held a scan (no dtcScan field at all). */
+  unrecorded?: boolean
 }
 
 function drive(s: Spec): Session {
@@ -44,7 +46,7 @@ function drive(s: Spec): Session {
       ...(s.events === undefined ? { sessionLog: false as const } : {}),
     } : null,
     meta: { appVersion: '2.2.7', firmwareVersion: 'unknown', sessionStart: s.start.toISOString(), generatedAt: '' },
-    ...(s.scan !== undefined ? { dtcScan: true, dtcScanStatus: s.scan } : { dtcScan: false, dtcScanStatus: null }),
+    ...(s.unrecorded ? {} : s.scan !== undefined ? { dtcScan: true, dtcScanStatus: s.scan } : { dtcScan: false, dtcScanStatus: null }),
   }
 }
 
@@ -235,6 +237,20 @@ describe("#384 ticket 04: a drive's own page names a warning cause it could not 
   it('a scan not marked complete is named as such, not as missing', async () => {
     const main = await page({ id: 'p', name: 'Partial scan', start: new Date(2096, 1, 1), scan: 'PARTIAL', codes: [], events: LOG })
     expect(main.textContent).toContain("Warnings not checked: this import's fault-code scan is not marked complete.")
+  })
+  it('a scan not marked complete and no session log: both said', async () => {
+    const main = await page({ id: 'q', name: 'Partial, no log', start: new Date(2096, 1, 1), scan: null, codes: [] })
+    expect(main.textContent).toContain("Warnings not checked: this import's fault-code scan is not marked complete, and it has no session log.")
+  })
+  it('a drive stored before Sapphire recorded the scan: said so, not "no scan"', async () => {
+    let main = await page({ id: 'u', name: 'Older record', start: new Date(2096, 1, 1), unrecorded: true, codes: [], events: LOG })
+    expect(main.textContent).toContain('Warnings not checked: this drive was stored before Sapphire recorded its fault-code scan.')
+    cleanup()
+    main = await page({ id: 'v', name: 'Older record, no log', start: new Date(2096, 1, 1), unrecorded: true, codes: [] })
+    expect(main.textContent).toContain('Warnings not checked: this drive was stored before Sapphire recorded its fault-code scan, and its import has no session log.')
+    cleanup()
+    main = await page({ id: 'x', name: 'Older record, no diagnostics', start: new Date(2096, 1, 1), unrecorded: true })
+    expect(main.textContent).toContain('Warnings not checked: this import has no fault-code scan or session log.')   // nothing at all: no scan either way
   })
   it('both causes checked, none found: no line; a warning found: no "not checked" line', async () => {
     let main = await page({ id: 'c', name: 'All clear', start: new Date(2096, 1, 1), scan: 'COMPLETE', codes: [], events: LOG })
