@@ -150,5 +150,10 @@ _Avoid_: Test channel, nightly channel, pre-release channel
 
 **Launch check**:
 A check that a nightly's APK installs and starts on an emulator and is still running, with no crash in the log, a set
-time later. It does not show that any screen or reading works.
+time later. It does not show that any screen or reading works. A nightly is published only after its launch check has
+passed. A launch check is repeated once in the same run only for a vanished emulator.
 _Avoid_: Smoke test (a smoke test also looks at every tab), launch test
+
+**Vanished emulator**:
+The emulator's process is gone during the launch check while the app's own process had not changed.
+_Avoid_: Emulator crash (the cause is not known), flaky emulator
