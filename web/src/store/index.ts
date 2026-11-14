@@ -91,6 +91,8 @@ export const useStore = create<SapphireState>((set) => ({
     drives: s.drives.map((d) => (d.id === drive.id ? drive : d)),
     // the open drive shows the new name and tags at once
     activeSession: s.activeSession?.id === drive.id ? { ...s.activeSession, name: drive.name, tags: drive.tags } : s.activeSession,
+    // and Compare, which holds its own copy of the compared drives (review H4)
+    compareSessions: s.compareSessions.map((c) => (c.id === drive.id ? { ...c, name: drive.name, tags: drive.tags } : c)),
   })),
   removeDrives: (ids) => set((s) => {
     const idSet = new Set(ids)

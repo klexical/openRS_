@@ -10,12 +10,13 @@ import type { Session } from './types/session'
 // (fake-indexeddb); the shell is not under test, the panels are rendered on their own. Invented data only.
 
 vi.mock('./components/layout/Shell', () => ({ Shell: () => null }))
+vi.mock('./components/charts/GpsMap', () => ({ GpsMap: () => null }))   // Leaflet needs a layout engine
 
 const T0 = 4_000_000_000_000   // an invented time (2096)
 const session = (id: string): Session => ({
   id, name: `Invented ${id}`, importedAt: T0, tags: [],
   // content differs per id: two drives with the same content are one drive ("already imported")
-  trip: { points: [0, 1, 2].map((i) => ({ ts: T0 + i * 1000, lat: 10 + id.charCodeAt(0) / 1000, lng: 20, speedKph: 50, rpm: 2000 })) as never,
+  trip: { points: [0, 1, 2].map((i) => ({ ts: T0 + i * 1000, lat: 10 + id.charCodeAt(0) / 1000, lng: 20, speedKph: 50, rpm: 2000, driveMode: 'Normal' })) as never,
     summary: { distanceKm: 1, durationMs: 2000, fuelUsedL: 0, avgSpeedKph: 50, peakRpm: 2000, peakBoostPsi: null, peakLatG: 0,
       peakLongG: 0, peakSpeedKph: 50, peakCoolantC: 90, peakOilTempC: 95, avgRpm: 2000, avgFuelEconomy: 0, modeBreakdown: {},
       peakEvents: [] } },
@@ -132,6 +133,18 @@ describe('#384 today\'s screens on the new storage', () => {
     await waitFor(() => expect(second.container.textContent).toMatch(/already imported/i))
     expect(await storage.listDrives()).toHaveLength(1)
     expect(useStore.getState().drives).toHaveLength(1)
+  })
+
+  it('a rename shows at once in Compare (review H4: Compare reads its own copy of the drives)', async () => {
+    const { useStore } = await modules()
+    const { ComparePanel } = await import('./components/panels/ComparePanel')
+    const { storeWithSessions } = await import('./test/storeState')
+    const { toDriveRecord } = await import('./lib/storage')
+    useStore.setState(storeWithSessions([session('a'), session('b')], null, ['a', 'b']))
+    const { container } = render(<ComparePanel />)
+    expect(container.textContent).toContain('Invented b vs Invented a')
+    act(() => useStore.getState().updateDrive({ ...toDriveRecord(session('b')), name: 'Renamed b' }))
+    expect(container.textContent).toContain('Renamed b vs Invented a')
   })
 
   it('"Clear all" empties all three stores', async () => {
