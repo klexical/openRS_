@@ -124,6 +124,18 @@ describe('#384 ticket 02: backup and restore on the page', () => {
   }, 15_000)
 })
 
+describe('#384 ticket 02: the controls\' chunk cannot load (a tab left open across a deploy)', () => {
+  afterEach(() => { vi.doUnmock('./components/ui/BackupControls') })
+  it('Settings says to reload, and the rest of the page stays', async () => {
+    await modules()
+    vi.doMock('./components/ui/BackupControls', () => { throw new Error('invented: chunk gone') })
+    const { SettingsPanel } = await import('./components/panels/SettingsPanel')
+    const { container } = render(<SettingsPanel />)
+    await screen.findAllByText(/reload this tab/, {}, { timeout: 5000 })
+    expect(container.textContent).toContain('Clear All Sessions')
+  }, 15_000)
+})
+
 describe('#384 today\'s screens on the new storage', () => {
   it('opening a drive reads its points; leaving it frees them', async () => {
     const { App, useStore, storage } = await modules()

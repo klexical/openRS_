@@ -2,9 +2,17 @@
 // than on the first visit: the 300 kB first-visit budget (#384 ticket 02).
 import { lazy, Suspense } from 'react'
 
-const Controls = { load: () => import('./BackupControls') }
-const LazyBackup = lazy(() => Controls.load().then((m) => ({ default: m.BackupButton })))
-const LazyRestore = lazy(() => Controls.load().then((m) => ({ default: m.RestoreInput })))
+/** A tab left open across a deploy asks for a chunk that is gone: say so, and keep the page. */
+function Unloadable() {
+  return <span className="text-xs font-mono text-warn">Sapphire was updated: reload this tab to back up or restore.</span>
+}
+let loaded: Promise<typeof import('./BackupControls') | null> | null = null
+const load = () => (loaded ??= import('./BackupControls').catch((err: unknown) => {
+  console.warn('[Sapphire] The backup controls could not load:', err)
+  return null
+}))
+const LazyBackup = lazy(() => load().then((m) => ({ default: m?.BackupButton ?? Unloadable })))
+const LazyRestore = lazy(() => load().then((m) => ({ default: m?.RestoreInput ?? (() => null) })))
 
 export function BackupButton({ label }: { label: string }) {
   return <Suspense fallback={null}><LazyBackup label={label} /></Suspense>
