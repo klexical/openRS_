@@ -255,8 +255,9 @@ for (const [label, rate] of [['desktop', 1], ['CPU slowed 4x (emulation)', 4]]) 
 ;({ ctx, page } = await open('8-backup-after-failed-upgrade'))
 await page.evaluate(async (T0) => {
   const s = (id) => ({ id, name: `Invented ${id}`, importedAt: T0, tags: [], diagnostics: null, meta: {},
-    trip: { points: [0, 1].map((i) => ({ ts: T0 + i * 1000, lat: 10 + i / 1000, lng: 20, speedKph: 50, rpm: 2000 })), summary: {} } })
-  await window.sapphire.writeV1([s('good-1'), { ...s('bad'), trip: { points: 'not an array' } }, s('good-2')])
+    // points differ per drive: two drives with the same points are one drive (the same-drive rule, at restore too)
+    trip: { points: [0, 1].map((i) => ({ ts: T0 + i * 1000, lat: 10 + id.length / 100 + i / 1000, lng: 20, speedKph: 50, rpm: 2000 })), summary: {} } })
+  await window.sapphire.writeV1([s('good-1'), { ...s('bad'), trip: { points: 'not an array' } }, s('good-22')])
 }, T0)
 const failed8 = await page.evaluate(async () => { try { await window.sapphire.listDrives(); return 'opened' } catch { return window.sapphire.storageStatus().state } })
 const backup8 = await page.evaluate(() => window.sapphire.backupWithHeartbeat('as-built'))
@@ -264,9 +265,10 @@ const v1after = await page.evaluate(() => window.sapphire.readRaw())
 await page.evaluate(() => window.sapphire.deleteDatabase())
 const restored8 = await page.evaluate(() => window.sapphire.restoreLast())
 const listed8 = await page.evaluate(async () => (await window.sapphire.listDrives()).map((d) => d.id).sort())
+console.log('  after a failed upgrade, restore:', JSON.stringify(restored8), 'listed', JSON.stringify(listed8))
 check(failed8 === 'upgrade-failed' && backup8.builtIn === 'worker' && backup8.drives === 3 && v1after.version === 1,
   'after a failed upgrade: the worker writes the backup from the version-1 data (3 drives), and version 1 is left as it was')
-check(restored8.added === 2 && JSON.stringify(restored8.notRestorable) === '["Invented bad"]' && JSON.stringify(listed8) === '["good-1","good-2"]',
+check(restored8.added === 2 && JSON.stringify(restored8.notRestorable) === '["Invented bad"]' && JSON.stringify(listed8) === '["good-1","good-22"]',
   'after a failed upgrade: that backup restores the two convertible drives into a working Sapphire and names the third')
 await ctx.close()
 
