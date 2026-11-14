@@ -16,38 +16,38 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT"></a>
 </p>
 
-<p align="center"><sub>Stable v2.2.6 · Testing v2.2.7-rc.7 (Build 38) · Preview RC8 Build 39, unreleased</sub></p>
+<p align="center"><sub>Stable v2.2.6 · Pre-release v2.2.7-rc.8 (Build 39)</sub></p>
 
 See boost, rear-axle torque, tire pressures and temperatures from your Focus RS. Connect a supported MeatPi adapter over **Wi-Fi on stable v2.2.6**. The [setup guide](android/docs/hardware-setup.md#which-connection-to-use) covers Bluetooth LE on supported release-candidate configurations.
 
-## Next release preview
+## The v2.2.7 pre-release
 
-<p align="center"><b>RC8 Build 39 · unreleased · simulated data</b></p>
+<p align="center"><b>v2.2.7-rc.8 (Build 39) · pre-release · simulated data</b></p>
 
 <div align="center">
-  <a href="assets/screenshots/v2.2.7-preview/drive-night-normal.png"><img src="assets/screenshots/v2.2.7-preview/drive-night-normal.png" width="240" alt="DRIVE tab with no active alerts, RC8 Build 39 preview, simulated data"></a>
-  <a href="assets/screenshots/v2.2.7-preview/thermal-night.png"><img src="assets/screenshots/v2.2.7-preview/thermal-night.png" width="240" alt="THERMAL tab, RC8 Build 39 preview, simulated data"></a>
-  <a href="assets/screenshots/v2.2.7-preview/trip-summary-night.png"><img src="assets/screenshots/v2.2.7-preview/trip-summary-night.png" width="240" alt="TRIP drive summary, RC8 Build 39 preview, simulated data"></a>
+  <a href="assets/screenshots/v2.2.7-preview/drive-night-normal.png"><img src="assets/screenshots/v2.2.7-preview/drive-night-normal.png" width="240" alt="DRIVE tab with no active alerts, v2.2.7-rc.8, simulated data"></a>
+  <a href="assets/screenshots/v2.2.7-preview/thermal-night.png"><img src="assets/screenshots/v2.2.7-preview/thermal-night.png" width="240" alt="THERMAL tab, v2.2.7-rc.8, simulated data"></a>
+  <a href="assets/screenshots/v2.2.7-preview/trip-summary-night.png"><img src="assets/screenshots/v2.2.7-preview/trip-summary-night.png" width="240" alt="TRIP drive summary, v2.2.7-rc.8, simulated data"></a>
 </div>
 
 <p align="center">
   <sub>DRIVE: the essentials at a glance &nbsp;·&nbsp; THERMAL: is the car warm enough to push? &nbsp;·&nbsp; TRIP: review a drive afterwards</sub>
 </p>
 
-These images come from **RC8 Build 39, which is not released** and has no download. They were captured from a debug
-build in its demo mode on an emulator: the **DEMO** label in the header marks simulated data, and the TRIP summary
-carries its own "PREVIEW · SAMPLE DATA — NOT SAVED" banner. Features may still change before release.
+These images show **v2.2.7-rc.8 (Build 39)**, the current pre-release. They were captured from a debug build in its demo
+mode on an emulator: the **DEMO** label in the header marks simulated data, and the TRIP summary carries its own
+"PREVIEW · SAMPLE DATA — NOT SAVED" banner. Features may still change before the stable release.
 
 <details>
-<summary><b>More preview screens</b> (an alert, DAY theme, PERF, GARAGE)</summary>
+<summary><b>More screens</b> (an alert, DAY theme, PERF, GARAGE)</summary>
 <br/>
-<p align="center"><b>RC8 Build 39 · unreleased · simulated data</b></p>
+<p align="center"><b>v2.2.7-rc.8 (Build 39) · pre-release · simulated data</b></p>
 <div align="center">
-  <a href="assets/screenshots/v2.2.7-preview/drive-night.png"><img src="assets/screenshots/v2.2.7-preview/drive-night.png" width="240" alt="DRIVE tab showing a HEAT RISING alert, RC8 Build 39 preview, simulated data"></a>
-  <a href="assets/screenshots/v2.2.7-preview/drive-day.png"><img src="assets/screenshots/v2.2.7-preview/drive-day.png" width="240" alt="DRIVE tab, DAY theme, RC8 Build 39 preview, simulated data"></a>
+  <a href="assets/screenshots/v2.2.7-preview/drive-night.png"><img src="assets/screenshots/v2.2.7-preview/drive-night.png" width="240" alt="DRIVE tab showing a HEAT RISING alert, v2.2.7-rc.8, simulated data"></a>
+  <a href="assets/screenshots/v2.2.7-preview/drive-day.png"><img src="assets/screenshots/v2.2.7-preview/drive-day.png" width="240" alt="DRIVE tab, DAY theme, v2.2.7-rc.8, simulated data"></a>
   <br/>
-  <a href="assets/screenshots/v2.2.7-preview/perf-night.png"><img src="assets/screenshots/v2.2.7-preview/perf-night.png" width="240" alt="PERF tab, RC8 Build 39 preview, simulated data"></a>
-  <a href="assets/screenshots/v2.2.7-preview/garage-night.png"><img src="assets/screenshots/v2.2.7-preview/garage-night.png" width="240" alt="GARAGE tab, RC8 Build 39 preview, simulated data"></a>
+  <a href="assets/screenshots/v2.2.7-preview/perf-night.png"><img src="assets/screenshots/v2.2.7-preview/perf-night.png" width="240" alt="PERF tab, v2.2.7-rc.8, simulated data"></a>
+  <a href="assets/screenshots/v2.2.7-preview/garage-night.png"><img src="assets/screenshots/v2.2.7-preview/garage-night.png" width="240" alt="GARAGE tab, v2.2.7-rc.8, simulated data"></a>
 </div>
 <p align="center"><sub>An alert on DRIVE: HEAT RISING forecasts a temperature reaching its critical limit &nbsp;·&nbsp; DRIVE in the DAY theme &nbsp;·&nbsp; PERF &nbsp;·&nbsp; GARAGE</sub></p>
 
@@ -62,13 +62,12 @@ The stable v2.2.6 screens are in the [app guide](docs/app-guide.md#screens-v226)
 **Stable · v2.2.6** — for most owners<br/>
 [Release page](https://github.com/klexical/openRS_/releases/tag/android-v2.2.6) · download `openRS_v2.2.6.apk`
 
-**Testing · v2.2.7-rc.7, Build 38** — prerelease, for testers<br/>
-[Release page](https://github.com/klexical/openRS_/releases/tag/android-v2.2.7-rc.7) · download `openrs-2.2.7-rc.7-build38.apk`<br/>
-A manual install: it upgrades rc.7 Build 37 in place (same version name and signing certificate), and the in-app
-updater does not offer it.
+**Pre-release · v2.2.7-rc.8, Build 39** — for testers<br/>
+[Release page](https://github.com/klexical/openRS_/releases/tag/android-v2.2.7-rc.8) · download `openRS_v2.2.7-rc.8.apk`
 
-**Preview · RC8, Build 39** — not released, no download<br/>
-Shown in the screenshots above only.
+**Stable or pre-release?** Stable is the build most owners should install. A pre-release has newer features and fixes
+that have had less time on cars; it installs over stable and keeps your settings and drives. In the app, Settings →
+update channel decides which of the two the updater offers.
 
 Release notes and checksums are on each release page. The channel says how a build is distributed, not that every
 feature in it is verified on a car.
@@ -102,7 +101,7 @@ Full detail: the [app guide](docs/app-guide.md) (v2.2.6) and the
 |---|---|
 | **Vehicle** | Ford Focus RS Mk3, 2016–2018 (LZ platform, 2.3L EcoBoost) |
 | **Phone** | Android 9 or newer, with Wi-Fi or Bluetooth Low Energy |
-| **Adapter** | [MeatPi USB (C3)](https://www.mouser.com/ProductDetail/MeatPi/WICAN-USB-C3?qs=rQFj71Wb1eVDX2eEy0FC7A%3D%3D) (Wi-Fi + BLE) or [MeatPi Pro (S3)](https://www.meatpi.com/) (Wi-Fi + BLE, GPS, MicroSD) |
+| **Adapter** | [MeatPi USB (C3)](https://www.mouser.com/ProductDetail/MeatPi/WICAN-USB-C3?qs=rQFj71Wb1eVDX2eEy0FC7A%3D%3D) (Wi-Fi + BLE) or [MeatPi Pro (S3)](https://www.meatpi.com/) (Wi-Fi + BLE, MicroSD) |
 | **Adapter firmware** | Stock MeatPi firmware for monitoring, or **openrs-fw** (v1.61 USB, v1.2 Pro) for adapter commands |
 
 Stock firmware works out of the box for passive monitoring. openrs-fw adds the commands behind drive-mode change,
@@ -130,6 +129,32 @@ firmware.
 5. **Connect.** Tap the connection indicator in the header. Once CAN frames arrive the link shows as connected and the
    gauges fill in. If no frames arrive, check the adapter's protocol and port settings in the setup guide.
 
+## Safety and privacy
+
+**Safety.** Set the app up before you drive and do not operate it while driving. openRS_ is a hobby project, not a
+Ford product: a reading can be wrong or late, so never rely on it in place of the car's own instruments and warnings.
+With openrs-fw, the adapter can send the same messages as the car's own buttons (drive mode, ESC, Auto Start-Stop,
+Launch Control) onto the car's CAN bus. You use those commands at your own risk, and what has been verified on a car
+varies by feature ([#125](https://github.com/klexical/openRS_/issues/125)).
+
+**Privacy.** There is no account, and the app sends no telemetry or analytics to this project. It reads the car through
+the adapter and keeps drives and settings on your phone. It contacts three outside services: GitHub, to check for
+updates; Google Maps, to draw the map on the TRIP tab; and OpenWeatherMap for the weather on a drive, only in a build that
+was given a weather key (the published builds have none). Sapphire runs in your browser and uploads nothing.
+
+**Before you share an export.** A drive export contains your route: GPS positions and times. A diagnostic export contains
+the car's raw CAN traffic and the app's logs. The v2.2.7 release candidates mask the VIN in a diagnostic export
+([#260](https://github.com/klexical/openRS_/issues/260)); v2.2.6 does not. Look at what you are about to attach to a
+public issue, and leave the drive files out if the route is private.
+
+## Reporting a problem
+
+Open an [issue](https://github.com/klexical/openRS_/issues) with the app version (Settings shows it), the adapter and
+its firmware, Wi-Fi or Bluetooth, and what you expected against what happened. A diagnostic export helps most (the DIAG
+screen; GARAGE → DIAG in the release candidates): read **Before you share an export** above first. A weakness that could affect a car or an adapter goes
+through [SECURITY.md](SECURITY.md), not a public issue. Questions and ideas are welcome in
+[Discussions](https://github.com/klexical/openRS_/discussions).
+
 ## Companion tools
 
 **Browser demo · v2.2.6** — [klexical.github.io/openRS_/emulator](https://klexical.github.io/openRS_/emulator/). The
@@ -149,7 +174,8 @@ there (IndexedDB). Source and details: [web/README.md](web/README.md).
 | Learn the screens, thresholds and settings | [App guide (v2.2.6)](docs/app-guide.md) |
 | Look up CAN frames, Mode 22 PIDs and formulas | [Telemetry reference](android/docs/pid-reference.md) |
 | Analyse an exported session | [Sapphire](https://klexical.github.io/openRS_/) · [web/README.md](web/README.md) |
-| Fix a problem or report one | [Connection settings](android/docs/hardware-setup.md) · [Firmware flashing troubleshooting](android/docs/firmware-update.md#troubleshooting) · [Issues](https://github.com/klexical/openRS_/issues) |
+| Fix a problem | [Connection settings](android/docs/hardware-setup.md) · [Firmware flashing troubleshooting](android/docs/firmware-update.md#troubleshooting) |
+| Report a problem | [Reporting a problem](#reporting-a-problem) · [Issues](https://github.com/klexical/openRS_/issues) · [Security](SECURITY.md) |
 | Build the app or contribute | [Contributing](CONTRIBUTING.md) |
 | Understand the code and the design | [Architecture](docs/architecture.md) · [Brand tokens](docs/brand.md) |
 | Follow releases and plans | [Releases](https://github.com/klexical/openRS_/releases) · [Changelog (staging)](https://github.com/klexical/openRS_/blob/staging/android/CHANGELOG.md) · [Feature roadmap](docs/feature-roadmap.md) |
@@ -158,14 +184,14 @@ there (IndexedDB). Source and details: [web/README.md](web/README.md).
 
 **Current focus.** The v2.2.7 release candidates: the "Daylight" redesign (five tabs, DAY / NIGHT / AUTO / ULTRA
 themes), the knock logger, boost target against actual, the fuel-trim drift tracker, lap timing, corrected oil / PTU
-temperature mapping and Bluetooth LE fixes. RC8 adds diagnostics, reliability and ESC-confirmation fixes; it is on
-staging and not yet released.
+temperature mapping and Bluetooth LE fixes. rc.8 adds diagnostics, reliability and ESC-confirmation fixes; it is the
+current pre-release.
 
 **Next priorities.**
-- RC8 on staging polls manifold absolute pressure (MAP, PCM 0xF40B) beside throttle-inlet pressure (TIP) during active drive recording. Whether this PCM answers it, and [validating the TIP scale](https://github.com/klexical/openRS_/issues/271), still need vehicle data.
+- rc.8 polls manifold absolute pressure (MAP, PCM 0xF40B) beside throttle-inlet pressure (TIP) during active drive recording. Whether this PCM answers it, and [validating the TIP scale](https://github.com/klexical/openRS_/issues/271), still need vehicle data.
 - Planned PCM work includes barometric pressure, engine load, oil pressure and knock counters.
 - Track days: geofenced lap timing, track map overlays and better drive comparison.
-- Hardware: the MeatPi Pro's own GPS, and MS-CAN through a second adapter.
+- Hardware: position from a GPS accessory on the MeatPi Pro's USB port (the Pro has no GPS receiver of its own), and MS-CAN through a second adapter.
 - High-frequency telemetry through a UDS fast-rate session (about 100 Hz).
 
 **Exploring.** Android Auto, streaming data to lap-timing apps such as RaceChrono or Harry's LapTimer, and video

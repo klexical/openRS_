@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question or idea
+    url: https://github.com/klexical/openRS_/discussions
+    about: Ask a question, share a setup or propose an idea in Discussions.
+  - name: Security report
+    url: https://github.com/klexical/openRS_/security/advisories/new
+    about: Report a weakness privately. See SECURITY.md.

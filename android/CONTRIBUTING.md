@@ -87,7 +87,7 @@ Please include:
 - Device model and Android version
 - WiCAN firmware version (stock or openrs-fw)
 - Which screen/tab the issue occurs on
-- Relevant logcat output (`adb logcat -s openRS`)
+- A diagnostic export from the DIAG screen, or relevant logcat output (`adb logcat --pid=$(adb shell pidof com.openrs.dash)`)
 
 ## PID Research
 

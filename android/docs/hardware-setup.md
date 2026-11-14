@@ -5,7 +5,7 @@ openRS_ supports two MeatPi adapters, each with both **Wi-Fi** and **Bluetooth L
 | Adapter | Hardware | Protocol | Default Wi-Fi target |
 |---------|----------|----------|-----------------------|
 | **MeatPi USB (C3)** | ESP32-C3 | WebSocket SLCAN | `ws://192.168.80.1:80/ws` |
-| **MeatPi Pro (S3)** | ESP32-S3 + GPS + MicroSD | Raw TCP SLCAN | `tcp://192.168.0.10:35000` |
+| **MeatPi Pro (S3)** | ESP32-S3 + MicroSD | Raw TCP SLCAN | `tcp://192.168.0.10:35000` |
 
 Choose the transport in **Settings → Adapter** + **Settings → Connection method**. Which transport works depends on the app release: see [Which connection to use](#which-connection-to-use).
 
@@ -167,7 +167,7 @@ See the [Firmware Update Guide](firmware-update.md) for step-by-step flashing in
 
 ## MeatPi Pro (S3) Adapter
 
-openRS_ also supports the [MeatPi Pro](https://www.meatpi.com/) via raw TCP SLCAN. The Pro adds GPS, MicroSD logging, and an ESP32-S3 with more memory, but requires a one-time configuration change before openRS_ can connect.
+openRS_ also supports the [MeatPi Pro](https://www.meatpi.com/) via raw TCP SLCAN. The Pro adds MicroSD logging and an ESP32-S3 with more memory (it has no GPS receiver of its own; position comes from the phone), but requires a one-time configuration change before openRS_ can connect.
 
 ### Hardware Specifications
 
@@ -175,9 +175,9 @@ openRS_ also supports the [MeatPi Pro](https://www.meatpi.com/) via raw TCP SLCA
 |-----------|-------|
 | **Manufacturer** | MeatPi Electronics |
 | **Microcontroller** | ESP32-S3 (dual-core, 16 MB flash, 8 MB PSRAM) |
-| **Interfaces** | CAN bus, USB-C, Wi-Fi 2.4 GHz, BLE 5.0, GPS, MicroSD |
+| **Interfaces** | CAN bus, USB-C, Wi-Fi 2.4 GHz, BLE 5.0, MicroSD |
 | **Operating Voltage** | 7.5V – 36V (OBD-II pin 16, always-on) |
-| **Extras** | GPS passthrough, on-device MicroSD CAN logging |
+| **Extras** | On-device MicroSD CAN logging |
 
 ### First-Time Setup
 
