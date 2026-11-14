@@ -315,7 +315,8 @@ check "a read that is cut short says so and still shows the lines it read"
 # ── Time limits on the local reads that can hang: df 10 s, ps 5 s, free 10 s ─────────────────────────────────────────
 WHY=""; sleep 60 & LIVE=$!; echo "$LIVE" > "$WORK/cwd/emulator.pid"
 run 0 "" FAKE_CLOSED_AT=pidof2; kill "$LIVE" 2>/dev/null; wait "$LIVE" 2>/dev/null; echo "$DEAD_PID" > "$WORK/cwd/emulator.pid"
-for want in "10 df" "5 ps" "10 free"; do grep -q -x "$want" "$WORK/timeouts" || why "no '$want' under timeout"; done
+for want in "10 df" "5 ps"; do grep -q -x "$want" "$WORK/timeouts" || why "no '$want' under timeout"; done
+[ "$(grep -c -x '10 free' "$WORK/timeouts")" -eq 2 ] || why "$(grep -c -x '10 free' "$WORK/timeouts") of the 2 free calls (the baseline, the diagnostics) under timeout 10"
 check "df, ps and free run under their time limits"
 
 # ── What a failed night needs (#363): every section says "no matching lines" or "could not read", never nothing ─────
@@ -346,10 +347,11 @@ run 0 "" FAKE_CLOSED_AT=pidof2; cp "$WORK/dmesg-out.keep" "$WORK/dmesg-out"
 check "the kernel match takes the exact pid, not one that starts with it"
 
 WHY=""; cp "$WORK/dmesg-out" "$WORK/dmesg-out.keep"
-printf '%s\n' "[  880.1] audit: type=1400 apparmor=\"DENIED\" operation=\"open\" pid=$DEAD_PID comm=\"x\"" "[  880.2] something ppid=$DEAD_PID child" > "$WORK/dmesg-out"
+printf '%s\n' "[  880.1] audit: type=1400 apparmor=\"DENIED\" operation=\"open\" pid=$DEAD_PID comm=\"x\"" "[  880.2] something ppid=$DEAD_PID child" \
+  "[  880.3] oom-kill:constraint=CONSTRAINT_NONE,task=other,pid=4,ppid=$DEAD_PID,uid=1001" > "$WORK/dmesg-out"
 run 0 "" FAKE_CLOSED_AT=pidof2; cp "$WORK/dmesg-out.keep" "$WORK/dmesg-out"
 [[ "$(section "the emulator's process (emulator.pid)")" == *"the kernel's kill lines name pid $DEAD_PID: no"* ]] || why "an audit pid= line or a ppid= line was taken for a kill line"
-check "an audit pid= line and a ppid= line are not kill lines"
+check "an audit pid= line and a ppid= line, also inside an out-of-memory line, are not kill lines for that pid"
 
 WHY=""; cp "$WORK/dmesg-out" "$WORK/dmesg-out.keep"
 printf '%s\n' "[  901.5] Out of memory: Killed process $DEAD_PID (qemu-system-x86) total-vm:1kB" > "$WORK/dmesg-out"
