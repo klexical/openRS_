@@ -57,10 +57,14 @@ export default function App() {
           go({ place: 'drives' }, { replace: true })
         } else {
           setActiveSession(s)
-          // a drive stored before ticket 04 gets its best lap now that its points are read; a failure changes nothing
-          fillBestLap(s)
-            .then((rec) => { if (rec) useStore.getState().updateDrive(rec) })
-            .catch((err) => console.warn('[Sapphire] Could not note the best lap:', err))
+          // a drive with laps stored before ticket 04 gets its best lap now that its points are read (only then: no
+          // write on any other opening); a failure changes nothing
+          const rec = useStore.getState().drives.find((d) => d.id === s.id)
+          if (rec?.hasLaps && !('bestLapMs' in rec)) {
+            fillBestLap(s)
+              .then((filled) => { if (filled) useStore.getState().updateDrive(filled) })
+              .catch((err) => console.warn('[Sapphire] Could not note the best lap:', err))
+          }
         }
       })
       .catch((err) => console.error('[Sapphire] Failed to open the drive:', err))

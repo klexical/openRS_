@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, cleanup, waitFor, act, fireEvent, screen, within } from '@testing-library/react'
 import { openDB } from 'idb'
 import type { DtcEntry, Session, SessionEvent } from './types/session'
+import { exact } from './test/exact'
 
 // #384 ticket 04 at the page: find a drive (search, quick filters, markers, best lap) and the drive's "warnings not
 // checked" line. The whole App over an in-memory IndexedDB (fake-indexeddb) and the real storage module; only the map is
@@ -36,7 +37,8 @@ function drive(s: Spec): Session {
       points: points as never,
       summary: { distanceKm: 12.3, distanceSource: 'recorded', durationMs: 1_200_000, fuelUsedL: 0, avgSpeedKph: 50, peakRpm: 5000,
         peakBoostPsi: 14.2, peakBoostSource: 'CAN_0F8', peakLatG: 0, peakLongG: 0, peakSpeedKph: 80, peakCoolantC: 90,
-        peakOilTempC: 95, avgRpm: 2500, avgFuelEconomy: 0, modeBreakdown: {}, peakEvents: [] },
+        // NaN and an undefined key: values a careless comparison or rewrite would lose (the fill-in's exact comparison)
+        peakOilTempC: 95, avgRpm: 2500, avgFuelEconomy: NaN, modeBreakdown: {}, peakEvents: [], aggressionScore: undefined },
       ...(s.laps ? { laps: s.laps.map((ms, i) => ({ lapNumber: i + 1, lapTimeMs: ms })) } : {}),
     } as never,
     diagnostics: hasDiag ? {
@@ -292,7 +294,28 @@ describe('#384 ticket 04: the best lap of a drive stored before the record held 
     const db = await openDB('sapphire')
     const filled = await db.get('drives', 'track')
     db.close()
-    expect(JSON.stringify(filled)).toBe(JSON.stringify(fresh))          // same fields, values and key order as an import
+    expect(exact(filled)).toBe(exact(fresh))          // same fields, values and key order as an import
+  })
+
+  it('opening a drive whose record is complete, or that has no laps, writes nothing', async () => {
+    await seed([DRIVES.find((d) => d.id === 'track')!, DRIVES.find((d) => d.id === 'bare')!])
+    const db = await openDB('sapphire')                        // 'bare' as delivery A stored it: no field, and no laps
+    const rec = await db.get('drives', 'bare'); delete rec.bestLapMs; await db.put('drives', rec); db.close()
+    const proto = (globalThis as unknown as { IDBDatabase: { prototype: Record<string, (...a: unknown[]) => unknown> } }).IDBDatabase.prototype
+    const tx = proto.transaction
+    const modes: string[] = []
+    proto.transaction = function (this: unknown, stores: unknown, mode?: unknown, ...rest: unknown[]) { modes.push(String(mode ?? 'readonly')); return tx.call(this, stores, mode, ...rest) }
+    try {
+      const { App, useStore } = await boot()
+      render(<App />)
+      await list()
+      for (const id of ['track', 'bare']) {
+        await act(async () => { window.location.hash = `#/drive/${id}` })
+        await waitFor(() => expect(useStore.getState().activeSession?.id).toBe(id))
+        await act(async () => { await new Promise((r) => setTimeout(r, 30)) })
+      }
+    } finally { proto.transaction = tx }
+    expect(modes.filter((m) => m === 'readwrite')).toEqual([])
   })
 
   it('a fill-in that fails leaves the record as it was, and the drive still opens', async () => {
@@ -316,6 +339,6 @@ describe('#384 ticket 04: the best lap of a drive stored before the record held 
     const db = await openDB('sapphire')
     const after = await db.get('drives', 'track')
     db.close()
-    expect(JSON.stringify(after)).toBe(JSON.stringify(before))
+    expect(exact(after)).toBe(exact(before))
   })
 })

@@ -237,6 +237,22 @@ await page.emulateMedia({ media: 'screen' })
 check(printed.bg === 'rgb(255, 255, 255)' && printed.nameShown && printed.margin === '0px' && printed.rail === 'none' && printed.ink !== 'rgb(232, 244, 255)',
   `print: white page, the drive's name shown in dark text, no places, no rail margin (${JSON.stringify(printed)})`)
 
+// ── A session-only entry from a real export fixture (#384 ticket 04): its marker, and its page's not-checked line ──
+await page.goto(home)
+await page.waitForSelector('.a-row')
+await page.getByRole('button', { name: 'Import', exact: true }).click()
+await page.waitForSelector('#file-input', { state: 'attached', timeout: 15000 })
+await page.setInputFiles('#file-input', 'src/lib/__fixtures__/android-exports/diag-snapshot-release.zip')
+await page.waitForFunction(() => location.hash.startsWith('#/drive/'), null, { timeout: 20000 })   // a single import lands on it
+await page.waitForSelector('.a-notchecked', { timeout: 15000 })
+const snapLine = await page.locator('.a-notchecked').innerText()
+check(/^Warnings not checked: this import has no fault-code scan\.$/.test(snapLine), `a diagnostic snapshot's page names what it lacks ("${snapLine}")`)
+await page.goto(home)
+await page.waitForSelector('.a-row')
+const snapRow = page.locator('.a-row.is-session')
+check(await snapRow.count() === 1 && /◇\s*Session only/.test(await snapRow.innerText()), 'the snapshot is a session-only row, marked "◇ Session only"')
+await page.screenshot({ path: `${out}-list-markers-1280x800.png` })
+
 check(errors.length === 0, `desktop: no page errors (${errors.length}${errors.length ? ': ' + errors[0] : ''})`)
 const rail = await page.locator('nav[aria-label="Places"]').boundingBox()
 check(rail && rail.x === 0 && rail.height > rail.width, `1280: the places are a rail on the left (${JSON.stringify(rail)})`)
@@ -294,6 +310,23 @@ await ctx.close()
 
   const cdp = await ctx.newCDPSession(page)
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
+  // one keystroke in the search, CPU 4× slower: from the input event to the next frame after the list is re-rendered
+  await page.goto(home)
+  await page.waitForFunction((n) => document.querySelectorAll('.a-row').length === n, N)
+  const keystroke = []
+  for (const text of ['2', '20', '209', '2096', '']) {
+    keystroke.push(await page.evaluate((t) => new Promise((resolve) => {
+      const input = document.querySelector('.a-search input')
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+      const t0 = performance.now()
+      set.call(input, t)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve(Math.round(performance.now() - t0))))
+    }), text))
+  }
+  timing.keystroke4x = keystroke
+  console.log(`TIMING  one search keystroke over ${N} drives, CPU 4× slower (emulation), ms to the frame after: ${keystroke.join(' / ')}`)
+  check(Math.max(...keystroke) <= 100, `mobile emulation, CPU 4×: a search keystroke shows its rows within 100 ms (${Math.max(...keystroke)} ms, worst of 5; emulation)`)
   timing.mobile4x = []
   for (let i = 0; i < 3; i++) timing.mobile4x.push(await listTime(page))
   check(errors.length === 0, `phone: no page errors (${errors.length}${errors.length ? ': ' + errors[0] : ''})`)

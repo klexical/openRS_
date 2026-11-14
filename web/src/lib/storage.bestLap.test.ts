@@ -6,6 +6,7 @@ import JSZip from 'jszip'
 import { storeImported, closeStorage, listDrives } from './storage'
 import { makeBackup, restoreBackup, BACKUP_FORMAT_VERSION } from './backup'
 import type { Session } from '../types/session'
+import { exact } from '../test/exact'
 
 // #384 ticket 04: the best lap in each drive's small record (the list reads no points), at the storage and backup
 // modules' public functions over an in-memory IndexedDB. Invented data only.
@@ -17,8 +18,8 @@ function drive(id: string, laps?: number[]): Session {
     trip: {
       points: [0, 1, 2].map((i) => ({ ts: T0 + i * 1000, lat: 10 + id.charCodeAt(0) / 1000, lng: 20, speedKph: 50, rpm: 2000 })) as never,
       summary: { distanceKm: 1, durationMs: 2000, fuelUsedL: 0, avgSpeedKph: 50, peakRpm: 2000, peakBoostPsi: null, peakLatG: 0,
-        peakLongG: 0, peakSpeedKph: 50, peakCoolantC: 90, peakOilTempC: 95, avgRpm: 2000, avgFuelEconomy: 0, modeBreakdown: {},
-        peakEvents: [] },
+        peakLongG: 0, peakSpeedKph: 50, peakCoolantC: 90, peakOilTempC: 95, avgRpm: 2000, avgFuelEconomy: NaN, modeBreakdown: {},
+        peakEvents: [], aggressionScore: undefined },   // NaN and an undefined key: the exact comparisons keep them apart
       ...(laps ? { laps: laps.map((ms, i) => ({ lapNumber: i + 1, lapTimeMs: ms })) } : {}),
     },
     diagnostics: null,
@@ -69,7 +70,7 @@ describe('#384 ticket 04: backups across the change (format version unchanged)',
     expect(BACKUP_FORMAT_VERSION).toBe(1)
     fresh()
     expect(await restoreBackup(backup.blob)).toEqual({ added: 1, skipped: 0, notRestorable: [] })
-    expect(JSON.stringify(await raw('a'))).toBe(JSON.stringify(asImported))   // as an import stores it today
+    expect(exact(await raw('a'))).toBe(exact(asImported))   // as an import stores it today
   })
 
   it('a backup made after the change restores the same record', async () => {
@@ -78,6 +79,6 @@ describe('#384 ticket 04: backups across the change (format version unchanged)',
     const backup = await makeBackup()
     fresh()
     await restoreBackup(backup.blob)
-    expect(JSON.stringify([await raw('a'), await raw('b')])).toBe(JSON.stringify(before))
+    expect(exact([await raw('a'), await raw('b')])).toBe(exact(before))
   })
 })
