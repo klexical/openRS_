@@ -102,7 +102,7 @@ class UpdateLookupTest {
     }
 
     @Test fun `named assumption - Latest left on an older Android stable decides alone, a newer unmarked stable is not seen`() {
-        // The release checklist keeps Latest on the newest Android stable; this pins what Stable does when it is not
+        // Latest is kept on the newest Android stable by hand at each stable release; this pins what Stable does when it is not
         val gh = FakeGitHub(listOf(android("2.2.8", false), android("2.2.7", false)), latestTag = "android-v2.2.7")
         assertEquals("2.2.7", find(gh, "stable", "2.2.6")?.version?.displayName)
         assertEquals(listOf("/latest"), gh.paths)
