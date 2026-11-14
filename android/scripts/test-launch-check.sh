@@ -31,7 +31,7 @@ gone() { [ -f "$WORK/gone" ]; }
 hit() {   # hit <name>: act on FAKE_CLOSED_AT / FAKE_HANG_AT for this call
   if [ "${FAKE_HANG_AT-}" = "$1" ]; then exec sleep 30; fi   # exec: the fake timeout's kill reaches the sleep
   if [ "${FAKE_CLOSED_AT-}" = "$1" ] && { [ ! -f "$WORK/restarted" ] || [ -n "${FAKE_VANISH_AGAIN-}" ]; }; then
-    : > "$WORK/gone"; if [ -n "${FAKE_ERR_FILE-}" ]; then cat "$FAKE_ERR_FILE" >&2; else echo "error: closed" >&2; fi; exit 1
+    : > "$WORK/gone"; [ -z "${FAKE_BREAK_CLOCK-}" ] || : > "$WORK/date-broken"; if [ -n "${FAKE_ERR_FILE-}" ]; then cat "$FAKE_ERR_FILE" >&2; else echo "error: closed" >&2; fi; exit 1
   fi
   if gone; then echo "error: no devices/emulators found" >&2; exit 1; fi
 }
@@ -116,6 +116,7 @@ EVENTS
 cat > "$WORK/bin/pgrep" <<'STUB'
 #!/usr/bin/env bash
 [ -n "${FAKE_PGREP_FAIL-}" ] && { echo "pgrep: cannot read /proc" >&2; exit 3; }
+if [ -n "${FAKE_REAL_PGREP-}" ]; then PATH="${PATH#*/bin:}" exec pgrep "$@"; fi
 case "$*" in
   *crashpad_handler*) [ -n "${FAKE_HELPER_PS-}" ] && { echo "$FAKE_HELPER_PS"; exit 0; }; exit 1 ;;
 esac
@@ -131,7 +132,8 @@ rm -f "$WORK/gone" "$WORK/pidof-n" "$WORK/log-cleared"; : > "$WORK/restarted"
 for i in $(seq 1 3); do echo "second emulator log line $i"; done > "$PWD/emulator.log"
 echo "Emulator booted (fake restart)"
 STUB
-chmod +x "$WORK/bin/adb" "$WORK/bin/timeout" "$WORK/bin/pgrep" "$WORK/bin/start-emulator"
+printf '#!/usr/bin/env bash\n[ -f "$WORK/date-broken" ] && exit 1\nexec /bin/date "$@"\n' > "$WORK/bin/date"
+chmod +x "$WORK/bin/adb" "$WORK/bin/timeout" "$WORK/bin/pgrep" "$WORK/bin/start-emulator" "$WORK/bin/date"
 # start-emulator.sh's log, in the working directory both steps share: 250 numbered lines
 for i in $(seq 1 250); do
   case $i in
@@ -150,7 +152,7 @@ printf '%s\n' "[  812.1] usb 1-1: new device" "[  901.5] Out of memory: Killed p
 # run <wait seconds> <log text> [env...]  (from $WORK/cwd, where emulator.log is)
 run() {
   local wait="$1" log="$2"; shift 2
-  rm -f "$WORK/calls" "$WORK/log-cleared" "$WORK/pidof-n" "$WORK/pidof-times" "$WORK/gone" "$WORK/timeouts" "$WORK/restarted"
+  rm -f "$WORK/calls" "$WORK/log-cleared" "$WORK/pidof-n" "$WORK/pidof-times" "$WORK/gone" "$WORK/timeouts" "$WORK/restarted" "$WORK/date-broken"
   printf '%s' "$log" > "$WORK/log"
   rm -f "$WORK/summary" "$WORK/restarts"
   OUT=$(cd "$WORK/cwd" && env PATH="$WORK/bin:$PATH" WORK="$WORK" FAKE_PID1=4242 FAKE_PID2=4242 \
@@ -427,7 +429,7 @@ run_vanish() {
   local cwd="$WORK/rcwd"; rm -rf "$cwd"; mkdir -p "$cwd"
   cp "$WORK/emulator.log.plain" "$cwd/emulator.log"; echo "$DEAD_PID" > "$cwd/emulator.pid"
   date +%s > "$cwd/emulator.started"; echo "system-images;android-36;google_apis;x86_64" > "$cwd/emulator.args"
-  rm -f "$WORK/calls" "$WORK/log-cleared" "$WORK/pidof-n" "$WORK/gone" "$WORK/timeouts" "$WORK/restarted" "$WORK/summary" "$WORK/restarts"
+  rm -f "$WORK/calls" "$WORK/log-cleared" "$WORK/pidof-n" "$WORK/gone" "$WORK/timeouts" "$WORK/restarted" "$WORK/summary" "$WORK/restarts" "$WORK/date-broken"
   printf '%s' "" > "$WORK/log"
   OUT=$(cd "$cwd" && env PATH="$WORK/bin:$PATH" WORK="$WORK" FAKE_PID1=4242 FAKE_PID2=4242 FAKE_EMULATOR_PS= \
         FAKE_CLOSED_AT=pidof2 LAUNCH_TRACE_S=0.2 LAUNCH_HANDLER_WAIT_S=1 LAUNCH_CRASH_DIR="$WORK/crash" \
@@ -445,6 +447,8 @@ grep -q '^system-images;android-36;google_apis;x86_64 [0-9]* skip=1$' "$WORK/res
 grep -q '^kill-server$' "$WORK/calls" || why "adb kill-server was not called before the restart"
 [ -f "$WORK/rcwd/emulator.attempt1.log" ] && [ -f "$WORK/rcwd/emulator.attempt1.pid" ] || why "attempt 1's emulator.log / .pid were not kept"
 [[ "$SUMMARY" == "Launch check passed on attempt 2; attempt 1: the emulator vanished"* ]] || why "summary '$SUMMARY'"
+[[ "$SUMMARY" == *"adb get-state: error: no devices/emulators found"* && "$SUMMARY" != *"device offline"* ]] || why "the summary does not give adb's real state: '$SUMMARY'"
+has "adb get-state: error: no devices/emulators found; the app's process unchanged"
 check "a vanished emulator is started again once, without sdkmanager, and attempt 2 passes; the summary says so (#363)"
 
 WHY=""; run_vanish FAKE_VANISH_AGAIN=1
@@ -524,21 +528,31 @@ printf '%s\n' "[  950.1] QEMU2 main loop[2590]: segfault at 41417a6153795151 ip 
   "[  950.2] RAX: $REG_HEX RBX: 0000000000000000 RCX: 00007f00deadbeef" \
   "[  950.2] RIP: 0033:0x7f1234567890" \
   "[  950.3] traps: Render Thread[2601] general protection fault ip:7f00aa sp:7ffdbb error:0 in libGLESv2.so[7f00+1000]" \
-  "[  950.4] evil; name-is-too-long[2602]: segfault at 0 ip 0 sp 0 error 4 in /tmp/evil;$MAPS_VALUE.so[0+1]" >> "$WORK/dmesg-out"
+  "[  950.4] evil; name-is-too-long[2602]: segfault at 0 ip 0 sp 0 error 4 in /tmp/evil;$MAPS_VALUE.so[0+1]" \
+  "[  950.5] traps: Worker[2603] trap $MAPS_VALUE ip:7f00aa sp:7ffdbb error:0 in libx.so[7f00+1000]" \
+  "[  950.6] audit: type=1400 comm=\"zoomd-$REG_HEX\" name=\"oom-thing\"" >> "$WORK/dmesg-out"
 echo "exit=139" > "$WORK/cwd/emulator.exit"; mkdir -p "$WORK/crash/completed"; printf 'x%.0s' $(seq 1 10) > "$WORK/crash/completed/3f2a.dmp"
-WHY=""; run 0 "" FAKE_INSTALL_EXIT=1 FAKE_HELPER_PS="2780 crashpad_handler"
+touch -t "$(date -v+1H +%Y%m%d%H%M 2>/dev/null || date -d '+1 hour' +%Y%m%d%H%M)" "$WORK/crash/completed/3f2a.dmp"   # written after this attempt's start
+WHY=""; run 0 "" FAKE_INSTALL_EXIT=1 FAKE_HELPER_PS="$$"     # pgrep prints process ids; the name comes from the real ps
 f=$(section "host kernel: fault and fatal-signal lines")
-[[ "$f" == *"segfault: thread QEMU2 main loop, error 6 in libgfxstream_backend.so"* ]] || why "the segfault line's fixed fields"
+[[ "$f" == *"segfault: thread QEMU2 main loop"* ]] || why "the segfault line's fixed fields"
 [[ "$f" == *"fatal signal 11: thread QEMU2 main loop"* ]] || why "the fatal-signal line"
-[[ "$f" == *"trap (general protection fault): thread Render Thread, error 0 in libGLESv2.so"* ]] || why "the trap line"
-[[ "$f" == *"segfault: thread <name withheld>, error 4 in <name withheld>"* ]] || why "a name outside the rules was not withheld"
+[[ "$f" == *"trap (general protection fault): thread Render Thread"* ]] || why "the trap line"
+[[ "$f" == *"segfault: thread <name withheld>"* ]] || why "a name outside the rules was not withheld"
+[[ "$f" == *"trap (other): thread Worker"* ]] || why "a trap kind outside the list did not read 'other'"
+[[ "$f" != *"error"* && "$f" != *".so"* ]] || why "an error code or an object name was printed (the reduced form)"
+[[ "$OUT" != *"zoomd"* && "$OUT" != *"oom-thing"* ]] || why "a line that only contains 'oom' passed the out-of-memory filter"
 [[ "$OUT" != *"$REG_HEX"* && "$OUT" != *"41417a6153795151"* && "$OUT" != *"00007f1234567890"* ]] || why "a raw address or register value was printed"
 [[ "$f" != *"RAX"* && "$f" != *"RIP"* && "$f" != *"Code:"* ]] || why "a register or Code: line was printed"
 [[ "$OUT" != *"$MAPS_VALUE"* ]] || why "a key-shaped value in a kernel line was printed"
 [[ "$(section "the emulator's exit status")" == *"exit=139 (signal 11: SEGV)"* ]] || why "the exit status line"
-[[ "$(section "emulator helper processes")" == *"2780 crashpad_handler"* ]] || why "the helper process"
-[[ "$(section "the crash database")" == *"completed/3f2a.dmp  10 bytes"* ]] || why "the crash folder's file"
-[[ "$(section "the newest crash dump")" == *"could not decode: "* ]] || why "a dump that is not one should read 'could not decode'"
+grep -qE "^$$ [^ ]+$" <<<"$(section "emulator helper processes")" || why "the helper process's '<pid> <name>' line"
+c=$(section "the crash database")
+[[ "$c" == *"1 file(s)"* && "$c" == *"dump  10 bytes"* ]] || why "the crash folder's count and kind"
+[[ "$c" != *"3f2a"* && "$c" != *"completed"* ]] || why "a file or folder name was printed"
+d=$(section "the newest crash dump of this attempt")
+[[ "$d" == *"dump written +"*" s after the cold start"* && "$d" == *"could not decode: "* ]] || why "the dump's age, or 'could not decode'"
+[[ "$d" != *"3f2a"* ]] || why "the dump's name was printed"
 [[ "$(section "the liveness trace")" == *"(no trace: the check stopped before the cold start)"* ]] || why "the trace section before the cold start"
 has "--- host load (uptime)"
 check "the new diagnostics print fixed fields only: no raw address, register or Code: bytes (owner's rule, QA's V2) (#363)"
@@ -547,6 +561,50 @@ cp "$WORK/dmesg-out.keep" "$WORK/dmesg-out"; rm -f "$WORK/cwd/emulator.exit"; rm
 WHY=""; run 0 "" FAKE_DMESG_EMPTY=1 FAKE_INSTALL_EXIT=1
 [[ "$(section "host kernel: fault and fatal-signal lines")" == *"none is expected, so this decides nothing"* ]] || why "no-line wording"
 check "no fault line is worded as deciding nothing (D1) (#363)"
+
+
+# QA's P1: the helper processes print a process id and a name, never a command line (BSD pgrep -l prints one), with the
+# real pgrep and ps
+exec -a crashpad_handler perl -e 'sleep 30' -- --annotation=prod=SECRET-MARK-P1 & HELPER=$!
+sleep 0.3
+WHY=""; run 0 "" FAKE_INSTALL_EXIT=1 FAKE_REAL_PGREP=1
+h=$(section "emulator helper processes")
+grep -qE "^$HELPER [^ ]+$" <<<"$h" || why "no '<pid> <name>' line for the helper $HELPER: '$h'"
+[[ "$OUT" != *"SECRET-MARK-P1"* && "$OUT" != *"--annotation"* ]] || why "a helper's arguments were printed"
+kill "$HELPER" 2>/dev/null; wait "$HELPER" 2>/dev/null
+check "a helper process prints its id and name only, never its arguments (QA's P1, real pgrep and ps) (#363)"
+
+# The crash database is the one the emulator's log names, never the whole temp folder (its disk overlays are there)
+WHY=""; mkdir -p "$WORK/tmpdir/emu-crash-37.2.13.db/completed"; : > "$WORK/tmpdir/emulator-AbCd.qcow2"
+printf 'x%.0s' $(seq 1 7) > "$WORK/tmpdir/emu-crash-37.2.13.db/completed/9e.dmp"
+cp "$WORK/cwd/emulator.log" "$WORK/emulator.log.keep"
+echo "INFO | Storing crashdata in: $WORK/tmpdir/emu-crash-37.2.13.db, detection is enabled for process: 2584" >> "$WORK/cwd/emulator.log"
+run 0 "" FAKE_INSTALL_EXIT=1 LAUNCH_CRASH_DIR=
+c=$(section "the crash database")
+[[ "$c" == *"1 file(s)"* && "$c" == *"dump  7 bytes"* ]] || why "the log's crash database was not the one read: '$c'"
+cp "$WORK/emulator.log.keep" "$WORK/cwd/emulator.log"
+run 0 "" FAKE_INSTALL_EXIT=1 LAUNCH_CRASH_DIR=
+[[ "$(section "the crash database")" == *"the emulator's log names no crash database"* ]] || why "no crash database line without the log's"
+check "the crash database is the folder the emulator's log names, and only that (#363)"
+
+# QA's P3: a trace answer that is not a process id reads "fail"
+WHY=""; run 1 "" FAKE_CLOSED_AT=logcat-d FAKE_TRACE_PID='12a;x'
+t=$(section "the liveness trace")
+grep -qE ' app=fail ' <<<"$t" || why "the odd answer did not read fail"
+[[ "$t" != *"12a"* ]] || why "the odd answer was printed"
+check "a liveness answer that is not a process id reads fail (QA's P3) (#363)"
+
+# The retry needs an explicit OK: a decision that cannot read the clock refuses (spec review / QA)
+WHY=""; run_vanish FAKE_BREAK_CLOCK=1
+[ ! -s "$WORK/restarts" ] || why "the emulator was started again without a clock reading"
+grep -q "No retry: no clock reading" <<<"$OUT" || why "no 'no clock reading' refusal"
+check "the retry happens only on an explicit OK; a broken clock refuses it (#363)"
+
+# Any end but a plain pass writes one summary line, an argument failure included
+WHY=""; rm -f "$WORK/summary"
+OUT=$(env PATH="$WORK/bin:$PATH" WORK="$WORK" GITHUB_STEP_SUMMARY="$WORK/summary" bash "$SCRIPT" "$WORK/missing.apk" 0 2>&1); CODE=$?
+[ "$(cat "$WORK/summary" 2>/dev/null)" = "Launch check failed during the argument checks (exit 1)" ] || why "summary '$(cat "$WORK/summary" 2>/dev/null)'"
+check "an argument failure writes a summary line too (#363)"
 
 for k in 1 2 3 4 5; do
   WHY=""; run 0 "" FAKE_START_EXIT=1

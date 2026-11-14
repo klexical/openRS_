@@ -3,11 +3,12 @@
 2026-11-14): nothing else is ever read or printed.
 
   crash-facts.py list <crash folder> <cold start, epoch seconds>
-      Each file under the folder: its name (only from a fixed character set, else withheld), its size, and its time in
-      seconds after the cold start. Never its contents.
-  crash-facts.py decode <crash folder>
-      The newest minidump (*.dmp), four facts only:
-        - the signal number;
+      A count, then per file only its kind (from a fixed list of extensions), its size and its time in seconds after
+      the cold start: no file or folder name, never its contents (the owner allowed four crash facts; QA's reduced form).
+  crash-facts.py decode <crash folder> <cold start, epoch seconds>
+      The newest minidump (*.dmp) written after this attempt's cold start (an earlier attempt's dump is never read), its
+      age, and four facts only:
+        - the signal number (1-64; anything else reads "not decoded": a macOS dump stores a Mach exception there);
         - the crashing thread's name (if the dump names it);
         - where it crashed, as <module file name> + <offset> (code, which is public);
         - the fault address as a class: 0 (null), below 64 KiB, inside <module>, non-canonical, or outside every module.
@@ -29,22 +30,22 @@ def safe_name(name, pattern=NAME_OK):
     return name if pattern.fullmatch(name or "") else "<name withheld>"
 
 
+KINDS = {".dmp": "dump", ".dat": "settings", ".meta": "metadata", ".lock": "lock", ".log": "log"}
+
+
 def list_folder(folder, cold_start):
     if not os.path.isdir(folder):
         print("(no crash folder)"); return
     rows = []
     for root, _, files in os.walk(folder):
         for f in files:
-            p = os.path.join(root, f)
             try:
-                st = os.stat(p)
+                st = os.stat(os.path.join(root, f))
             except OSError:
                 continue
-            rel = os.path.relpath(p, folder)
-            shown = "/".join(safe_name(part) for part in rel.split(os.sep))
-            rows.append((st.st_mtime, f"{shown}  {st.st_size} bytes  {st.st_mtime - cold_start:+.0f} s after the cold start"))
-    if not rows:
-        print("(the crash folder holds no file)"); return
+            kind = KINDS.get(os.path.splitext(f)[1].lower(), "other")
+            rows.append((st.st_mtime, f"{kind}  {st.st_size} bytes  {st.st_mtime - cold_start:+.0f} s after the cold start"))
+    print(f"{len(rows)} file(s)")
     for _, row in sorted(rows):
         print(row)
 
@@ -99,7 +100,10 @@ def decode(path):
             if tid == thread_id:
                 thread = safe_name(read_string(data, name_rva), THREAD_OK)
 
-    print(f"signal: {code}" + (f" ({SIGNALS[code]})" if code in SIGNALS else ""))
+    if 1 <= code <= 64:
+        print(f"signal: {code}" + (f" ({SIGNALS[code]})" if code in SIGNALS else ""))
+    else:
+        print("signal: not decoded (no signal number in this dump)")
     print(f"crashing thread: {thread if thread else 'no name in the dump'}")
     ip = None
     if ctx_size >= AMD64_RIP_OFFSET + 8 and ctx_rva + ctx_size <= len(data):
@@ -127,26 +131,33 @@ def address_class(a, module_of):
     return f"inside {where[0]}" if where else "outside every module"
 
 
-def newest_dump(folder):
+def newest_dump(folder, since):
     dumps = []
     for root, _, files in os.walk(folder):
-        dumps += [os.path.join(root, f) for f in files if f.endswith(".dmp")]
-    return max(dumps, key=os.path.getmtime) if dumps else None
+        for f in files:
+            if f.endswith(".dmp"):
+                p = os.path.join(root, f)
+                m = os.path.getmtime(p)
+                if m >= since:
+                    dumps.append((m, p))
+    return max(dumps) if dumps else None
 
 
 def main(argv):
     if len(argv) == 4 and argv[1] == "list":
         list_folder(argv[2], float(argv[3])); return 0
-    if len(argv) == 3 and argv[1] == "decode":
-        d = newest_dump(argv[2]) if os.path.isdir(argv[2]) else None
-        if not d:
-            print("(no dump)"); return 0
-        try:
-            decode(d)
-        except Exception as e:  # never the message: it could hold bytes of the file
+    if len(argv) == 4 and argv[1] == "decode":
+        try:  # the search too: an unreadable entry must not print a traceback with its path
+            since = float(argv[3])
+            d = newest_dump(argv[2], since) if os.path.isdir(argv[2]) else None
+            if not d:
+                print("(no dump written after this attempt's cold start)"); return 0
+            print(f"dump written {d[0] - since:+.0f} s after the cold start")
+            decode(d[1])
+        except Exception as e:  # never the message: it could hold a path or bytes of the file
             print(f"could not decode: {type(e).__name__}")
         return 0
-    print("usage: crash-facts.py list <folder> <cold start epoch> | decode <folder>", file=sys.stderr)
+    print("usage: crash-facts.py list <folder> <cold start epoch> | decode <folder> <cold start epoch>", file=sys.stderr)
     return 2
 
 

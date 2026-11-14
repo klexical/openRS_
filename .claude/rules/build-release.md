@@ -59,13 +59,16 @@ paths:
     the host's memory and kernel kill lines, `df -h`, the emulator's exit messages from the whole `emulator.log` and its
     tail; the device-log, events, kernel and signature sections say "(no matching lines)", "(read cut short: …)" or
     "(could not read: …)" rather than nothing, and the output ends with `--- end of diagnostics`; also the emulator's exit
-    status, its helper processes, the host's load, the kernel's fault and fatal-signal lines with fixed fields only, the
-    crash database's file list and the newest dump's four facts through `scripts/crash-facts.py` (signal, thread name,
-    module + offset, fault address class: never a raw address, a register or the dump, the owner's rule), and a liveness
-    trace every 2 s; the check is repeated once in the same step only for a vanished emulator (a lost adb connection, the
+    status, its helper processes (process id and name only: BSD pgrep's -l / -a print whole command lines), the host's
+    load, the kernel's fault and fatal-signal lines (kind and thread name, a fatal signal's number; no error code,
+    address, register or object name), and through `scripts/crash-facts.py` the crash database the emulator's log names
+    (a count, and per file its kind, size and time after the cold start, no names) and the newest dump written after
+    that attempt's cold start (its age, then signal, thread name, module + offset, fault address class: never a raw
+    address, a register or the dump, the owner's rule), and a liveness trace every 2 s; the check is repeated once in the same step only for a vanished emulator (a lost adb connection, the
     `emulator.pid` process gone, no emulator process left, the app's process unchanged at the trace's last answer; fail
-    closed without a trace) when the job's 15 minutes leave a second boot (`JOB_LIMIT_S`, pinned against the job's
-    `timeout-minutes`), with each attempt headed and a summary line for any end but a plain pass),
+    closed without a trace, and only on the decision's explicit OK) when the job's 15 minutes leave a second boot (`JOB_LIMIT_S`, pinned against the job's
+    `timeout-minutes`), with each attempt headed and a summary line for any end but a plain pass, an argument
+    failure included),
     `attest`.
     Dry-run mode: `PUBLISH` is `'false'`, no job can write contents, and the run stops after the attestation; nothing is
     published, so every night builds and leaves a one-day release-signed artifact and a public attestation.

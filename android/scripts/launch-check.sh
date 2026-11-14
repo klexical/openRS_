@@ -29,7 +29,7 @@ STARTED_FILE="$PWD/emulator.started"; ARGS_FILE="$PWD/emulator.args"
 JOB_LIMIT_S=900
 RETRY_MARGIN_S=60; RESTART_S=30; CHECK_S=150; MIN_BOOT_S=120; MAX_BOOT_S=420
 TRACE_S="${LAUNCH_TRACE_S:-2}"                                     # the liveness trace's interval
-CRASH_DIR="${LAUNCH_CRASH_DIR:-/tmp/android-runner}"               # the emulator's crash database (its own log says so)
+CRASH_DIR="${LAUNCH_CRASH_DIR-}"     # the emulator's crash database: by default the one its own log names (crash_dir)
 HANDLER_WAIT_S="${LAUNCH_HANDLER_WAIT_S:-20}"                      # for crashpad_handler to finish a dump
 START_EMULATOR="${LAUNCH_START_EMULATOR:-$DIR/start-emulator.sh}"
 STEP="the argument checks"; REPORTED=0; TMP=""; A=""; TRACER=""
@@ -53,16 +53,25 @@ show() {
 # The emulator's own exit messages, from the whole log (the last 200 lines can miss them): the hang detector, a crash
 # handler's fatal exit, KVM failing under the guest, the renderer, and disk space
 SIGNATURES='detected a hanging thread|Failed hang detection predicate|crashhandler_die|exiting because of the internal error|kvm run failed|KVM internal error|KVM: unknown exit|Failed to initialize (GL emulation|FrameBuffer|[Gg]fxstream)|[Nn]ot enough disk space|No space left on device'
-# fault_lines: the kernel's fault and fatal-signal lines, fixed fields only (the owner's rule, QA's V2): the kind, the
-# thread's name ([A-Za-z0-9._+ -], at most 15, else withheld), the error code or signal number, and the object's file
-# name. Never an address, ip, sp, a register line or the Code: bytes: a register or a wild address can hold data.
+# fault_lines: the kernel's fault and fatal-signal lines, fixed fields only (the owner's rule, QA's V2 and its reduced
+# form): the kind (a trap's from a fixed list), the thread's name ([A-Za-z0-9._+ -], at most 15, else withheld), and for
+# a fatal-signal line its signal number (1-64). Never an address, ip, sp, an error code, an object name, a register line
+# or the Code: bytes: a register or a wild address can hold data.
 fault_lines() {
   perl -ne '
     sub thr { my $t = shift; return ($t =~ /^[A-Za-z0-9._+ -]{1,15}$/) ? $t : "<name withheld>" }
-    sub obj { my $o = shift; return "" unless defined $o; $o =~ s{.*/}{}; return ($o =~ /^[A-Za-z0-9._+-]{1,64}$/) ? " in $o" : " in <name withheld>" }
-    if (/\]\s*(.+?)\[\d+\]: segfault at \S+ ip \S+ sp \S+ error (\d+)(?: in ([^\[\s]+))?/) { print "segfault: thread ", thr($1), ", error $2", obj($3), "\n"; next }
-    if (/traps:\s*(.+?)\[\d+\]\s+(.+?)\s+ip[:\s].*?error[:\s]*(\d+)(?: in ([^\[\s]+))?/) { print "trap ($2): thread ", thr($1), ", error $3", obj($4), "\n"; next }
-    if (/\]\s*\S+?: (.+?): potentially unexpected fatal signal (\d+)\./) { print "fatal signal $2: thread ", thr($1), "\n"; next }'
+    my %traps = map { $_ => 1 } ("general protection fault", "general protection", "invalid opcode", "divide error", "int3", "stack segment");
+    if (/\]\s*(.+?)\[\d+\]: segfault at \S+ ip \S+ sp \S+ error \d+/) { print "segfault: thread ", thr($1), "\n"; next }
+    if (/traps:\s*(.+?)\[\d+\]\s+(?:trap\s+)?(.+?)\s+ip[:\s]/) { my $k = $traps{$2} ? $2 : "other"; print "trap ($k): thread ", thr($1), "\n"; next }
+    if (/\]\s*\S+?: (.+?): potentially unexpected fatal signal (\d+)\./ && $2 >= 1 && $2 <= 64) { print "fatal signal $2: thread ", thr($1), "\n"; next }'
+}
+# The kernel's own kill and out-of-memory phrases, anchored: a register line that happens to hold "oom" is not one
+OOM_LINES='Out of memory|[Kk]illed process [0-9]+|oom-kill:|oom_reaper|invoked oom-killer'
+# crash_dir: the emulator's crash database, as its log names it ("Storing crashdata in: <folder>, …"); never the whole
+# temp folder, which also holds the emulator's disk overlays
+crash_dir() {
+  if [ -n "$CRASH_DIR" ]; then echo "$CRASH_DIR"; return; fi
+  sed -n 's/.*Storing crashdata in: \(.*\), detection is .*/\1/p' "$EMULATOR_LOG" 2>/dev/null | tail -n 1 || true
 }
 diagnostics() {
   local st out kern kst pid ex t0
@@ -71,9 +80,13 @@ diagnostics() {
   echo "--- emulator processes"
   st=0; out=$(pgrep -a -f -- 'qemu-system|emulator/emulator') || st=$?
   case $st in 0) printf '%s\n' "$out" ;; 1) echo "(no emulator process)" ;; *) echo "(could not read: pgrep, exit $st)" ;; esac
-  echo "--- emulator helper processes (crashpad_handler, netsimd)"
-  st=0; out=$(pgrep -l -f -- 'crashpad_handler|netsimd') || st=$?        # names only: a handler's arguments are not shown
-  case $st in 0) printf '%s\n' "$out" ;; 1) echo "(none)" ;; *) echo "(could not read: pgrep, exit $st)" ;; esac
+  echo "--- emulator helper processes (crashpad_handler, netsimd): process id and name only"
+  # Never pgrep's -l / -a: BSD pgrep prints a process's whole command line with them, and a crash handler's arguments
+  # carry paths and annotations (QA's P1; seen on macOS). ps's comm, cut to its file name, is the name.
+  st=0; out=$(pgrep -f -- 'crashpad_handler|netsimd') || st=$?
+  case $st in
+    0) for p in $out; do n=$(timeout 5 ps -o comm= -p "$p" 2>/dev/null | sed 's#.*/##' || true); echo "$p ${n:-?}"; done ;;
+    1) echo "(none)" ;; *) echo "(could not read: pgrep, exit $st)" ;; esac
   kst=0; kern=$(sudo -n dmesg 2>/dev/null) || kst=$?
   echo "--- the emulator's process (emulator.pid)"
   pid=$(cat "$EMULATOR_PID_FILE" 2>/dev/null | tr -dc '0-9' || true)
@@ -84,7 +97,7 @@ diagnostics() {
     else echo "pid $pid: gone"; fi
     if [ "$kst" -ne 0 ]; then echo "the kernel's lines could not be read (sudo -n dmesg, exit $kst)"
     # Only within the kill and out-of-memory lines, and pid= as a whole field: not an audit line's pid=, not ppid=
-    elif grep -i -E 'killed process|out of memory|oom' <<<"$kern" \
+    elif grep -E "$OOM_LINES" <<<"$kern" \
         | grep -q -E "[Kk]illed process $pid([^0-9]|\$)|(^|[^[:alnum:]_])pid=$pid([^0-9]|\$)"; then
       echo "the kernel's kill lines name pid $pid: yes"
     else echo "the kernel's kill lines name pid $pid: no"; fi
@@ -110,7 +123,7 @@ diagnostics() {
   echo "--- host load (uptime)"
   timeout 5 uptime 2>/dev/null || echo "(uptime not available)"
   echo "--- host kernel: killed processes and out-of-memory lines (the last 20)"
-  show "$kst" "$(grep -i -E 'killed process|out of memory|oom' <<<"$kern" | tail -n 20 || true)" "sudo -n dmesg" "$kern"
+  show "$kst" "$(grep -E "$OOM_LINES" <<<"$kern" | tail -n 20 || true)" "sudo -n dmesg" "$kern"
   echo "--- host kernel: fault and fatal-signal lines (the last 10, fixed fields only)"
   if [ "$kst" -ne 0 ]; then echo "(could not read: sudo -n dmesg, exit $kst)"
   else
@@ -121,14 +134,17 @@ diagnostics() {
     else printf '%s\n' "$out"; fi
   fi
   t0=$(cat "${A:-/nonexistent}/cold-start" 2>/dev/null || date +%s)
-  echo "--- the crash database (file names, sizes, seconds after the cold start)"
+  local cdir; cdir=$(crash_dir)
+  echo "--- the crash database (a count; per file its kind, size and seconds after the cold start; no names)"
   if ! command -v python3 >/dev/null 2>&1; then echo "(could not read: python3 not found)"
-  else timeout 10 python3 -I "$DIR/crash-facts.py" list "$CRASH_DIR" "$t0" 2>&1 | redact || echo "(could not read: crash-facts.py list)"; fi
-  echo "--- the newest crash dump: signal, crashing thread, where, fault address class"
+  elif [ -z "$cdir" ]; then echo "(could not read: the emulator's log names no crash database)"
+  else timeout 10 python3 -I "$DIR/crash-facts.py" list "$cdir" "$t0" 2>&1 | redact || echo "(could not read: crash-facts.py list)"; fi
+  echo "--- the newest crash dump of this attempt: its age, signal, crashing thread, where, fault address class"
   if ! command -v python3 >/dev/null 2>&1; then echo "(could not read: python3 not found)"
+  elif [ -z "$cdir" ]; then echo "(could not read: the emulator's log names no crash database)"
   else
     for _ in $(seq 1 "$HANDLER_WAIT_S"); do pgrep -f -- crashpad_handler >/dev/null 2>&1 || break; sleep 1; done
-    timeout 20 python3 -I "$DIR/crash-facts.py" decode "$CRASH_DIR" 2>&1 | redact || echo "(could not read: crash-facts.py decode)"
+    timeout 20 python3 -I "$DIR/crash-facts.py" decode "$cdir" "$t0" 2>&1 | redact || echo "(could not read: crash-facts.py decode)"
   fi
   echo "--- the liveness trace (the last 60 samples: seconds after the cold start, emulator, app's process id, load)"
   if [ -n "$A" ] && [ -s "$A/trace" ]; then tail -n 60 "$A/trace"; else echo "(no trace: the check stopped before the cold start)"; fi
@@ -161,7 +177,7 @@ call() {
   else detail="failed (exit $status: ${err:0:300})"; fi
   state=$(timeout 10 adb get-state 2>&1 | tr -d '\r' | tr '\n' ' ' || true)
   if [ "${state% }" = device ]; then fail "$STEP: adb $* $detail; adb still sees the emulator"
-  else : > "$A/lost"; fail "$STEP: adb $* $detail; the emulator is no longer connected (adb get-state: ${state% })"; fi
+  else printf '%s\n' "${state% }" > "$A/lost"; fail "$STEP: adb $* $detail; the emulator is no longer connected (adb get-state: ${state% })"; fi
 }
 
 # trace: the liveness trace, in the background from just before the cold start (#363): every TRACE_S, the seconds since
@@ -174,7 +190,7 @@ trace() {
   while :; do
     r=$(timeout 3 adb shell 'p=$(pidof com.openrs.dash); echo "pid:$p"' 2>/dev/null); st=$?; r=${r//$'\r'/}
     if [ "$st" -eq 124 ]; then app=timeout; elif [ "$st" -ne 0 ] || [[ "$r" != pid:* ]]; then app=fail
-    else app=${r#pid:}; app=${app// /,}; [ -n "$app" ] || app=none; fi
+    else app=${r#pid:}; app=${app// /,}; [ -n "$app" ] || app=none; [[ "$app" =~ ^([0-9,]+|none)$ ]] || app=fail; fi
     load=$(cut -d' ' -f1 /proc/loadavg 2>/dev/null || echo -)
     echo "+$(( $(date +%s) - t0 ))s emulator=$( [ -n "$epid" ] && kill -0 "$epid" 2>/dev/null && echo alive || echo gone) app=$app load=${load:--} after=$( [ -s "$A/pid1" ] && echo 1 || echo 0)" >> "$A/trace"
     sleep "$TRACE_S"
@@ -209,7 +225,7 @@ attempt() {
   echo "--- host memory before the cold start"
   timeout 10 free -m 2>/dev/null || echo "(free not available)"
   date +%s > "$A/cold-start"
-  trace & TRACER=$!
+  trace 2>/dev/null & TRACER=$!                           # its stderr: the shell's "Terminated" when it is stopped
   call "the cold start" shell am start -S -W -n "$PKG/$ACTIVITY"; echo "$OUT"
   TOP=$(sed -n 's/^Activity: //p' <<<"$OUT")
   case "$TOP" in
@@ -234,10 +250,10 @@ attempt() {
   echo "Launch check OK: $PKG process $PID1 running ${WAIT} s after a cold start; Verifier rejected 0, FATAL EXCEPTION 0, ANR 0"
 }
 
-# retry_refusal <attempt folder>: why the failed attempt may not be repeated, or nothing (then BOOT_S is set). Fail closed:
-# anything not shown counts against a retry.
+# retry_refusal <attempt folder>: why the failed attempt may not be repeated, or OK. Fail closed: anything not shown counts
+# against a retry, and only the word OK, printed last, allows one (an early stop prints nothing and is no OK).
 retry_refusal() {
-  local a="$1" pid last started left
+  local a="$1" pid last started left now
   [ -f "$a/lost" ] || { echo "the failure was not a lost connection to the emulator"; return; }
   pid=$(tr -dc '0-9' < "$EMULATOR_PID_FILE" 2>/dev/null || true)
   [ -n "$pid" ] || { echo "no process id in emulator.pid"; return; }
@@ -250,9 +266,12 @@ retry_refusal() {
   [ "$last" = "$(cat "$a/pid1")" ] || { echo "the app's process was $last at the last answer, not $(cat "$a/pid1")"; return; }
   started=$(tr -dc '0-9' < "$STARTED_FILE" 2>/dev/null || true)
   [ -n "$started" ] || { echo "no start time in emulator.started"; return; }
-  left=$(( JOB_LIMIT_S - ($(date +%s) - started) - RETRY_MARGIN_S - RESTART_S - CHECK_S ))
+  now=$(date +%s 2>/dev/null || true)
+  [[ "$now" =~ ^[0-9]+$ ]] || { echo "no clock reading"; return; }
+  left=$(( JOB_LIMIT_S - (now - started) - RETRY_MARGIN_S - RESTART_S - CHECK_S ))
   [ "$left" -ge "$MIN_BOOT_S" ] || { echo "not enough time: ${left} s of boot time left, ${MIN_BOOT_S} s needed"; return; }
   [ -s "$ARGS_FILE" ] || { echo "no image in emulator.args"; return; }
+  echo OK
 }
 boot_limit() {
   local started left
@@ -260,12 +279,9 @@ boot_limit() {
   left=$(( JOB_LIMIT_S - ($(date +%s) - started) - RETRY_MARGIN_S - RESTART_S - CHECK_S ))
   echo $(( left < MAX_BOOT_S ? left : MAX_BOOT_S ))
 }
-summary() { [ -z "${GITHUB_STEP_SUMMARY-}" ] || echo "$*" >> "$GITHUB_STEP_SUMMARY"; }
+SUMMARY_DONE=0
+summary() { SUMMARY_DONE=1; [ -z "${GITHUB_STEP_SUMMARY-}" ] || echo "$*" >> "$GITHUB_STEP_SUMMARY"; }
 
-[ $# -eq 2 ] || fail "usage: launch-check.sh <apk> <wait seconds>"
-APK="$1"; WAIT="$2"
-[ -f "$APK" ] || fail "APK not found: $APK"
-[[ "$WAIT" =~ ^[0-9]+$ ]] || fail "wait '$WAIT' is not a number of seconds"
 # Outside the attempts, a failure with no message of its own still ends with one and the diagnostics; an attempt reports
 # its own (its subshell's trap), and after the attempts every exit is the script's own decision
 ATTEMPTED=0
@@ -275,9 +291,15 @@ script_end() {
     echo "::error::the launch check stopped during $STEP (exit $status) without a message of its own"
     diagnostics
   fi
+  # Any end but a plain pass writes one summary line: an argument failure, or a stop between the attempts (spec review)
+  [ "$status" -eq 0 ] || [ "$SUMMARY_DONE" -eq 1 ] || summary "Launch check failed during $STEP (exit $status)"
   [ -z "$TMP" ] || rm -rf "$TMP"
 }
 trap script_end EXIT
+[ $# -eq 2 ] || fail "usage: launch-check.sh <apk> <wait seconds>"
+APK="$1"; WAIT="$2"
+[ -f "$APK" ] || fail "APK not found: $APK"
+[[ "$WAIT" =~ ^[0-9]+$ ]] || fail "wait '$WAIT' is not a number of seconds"
 STEP="setting up"; TMP=$(mktemp -d "${TMPDIR:-/tmp}/launch-check.XXXXXX")
 
 echo "=== launch attempt 1 of 2"
@@ -285,25 +307,29 @@ A="$TMP/a1"; mkdir "$A"; ATTEMPTED=1
 set +e; ( attempt ); status=$?; set -e
 [ "$status" -ne 0 ] || exit 0
 
-why=$(retry_refusal "$A")
-if [ -n "$why" ]; then
+STEP="the retry decision"
+why=$(retry_refusal "$A" | tail -n 1 || true)
+if [ "$why" != OK ]; then
+  why=${why:-the decision stopped without a reason}
   echo "No retry: $why"
   summary "Launch check failed; no retry: $why"
   exit 1
 fi
 BOOT_S=$(boot_limit)
-echo "=== launch attempt 2 of 2 (attempt 1: the emulator vanished: no emulator process, device offline; the app's process unchanged)"
+lost=$(head -n 1 "$A/lost" 2>/dev/null || true); lost=${lost:-unknown}
+echo "=== launch attempt 2 of 2 (attempt 1: the emulator vanished: no emulator process, adb get-state: $lost; the app's process unchanged)"
 for f in log pid exit; do [ ! -f "$PWD/emulator.$f" ] || mv "$PWD/emulator.$f" "$PWD/emulator.attempt1.$f"; done
+STEP="starting the emulator again"
 timeout 10 adb kill-server >/dev/null 2>&1 || true                       # the dead emulator's transport goes with it
 if ! EMULATOR_SKIP_INSTALL=1 bash "$START_EMULATOR" "$(head -n 1 "$ARGS_FILE")" "$BOOT_S"; then
-  summary "Launch check failed on attempt 2: the emulator did not start again (attempt 1: the emulator vanished)"
+  summary "Launch check failed on attempt 2: the emulator did not start again (attempt 1: the emulator vanished; adb get-state: $lost)"
   exit 1
 fi
 A="$TMP/a2"; mkdir "$A"
 set +e; ( attempt ); status=$?; set -e
 if [ "$status" -eq 0 ]; then
-  summary "Launch check passed on attempt 2; attempt 1: the emulator vanished (no emulator process, device offline)"
+  summary "Launch check passed on attempt 2; attempt 1: the emulator vanished (no emulator process; adb get-state: $lost)"
   exit 0
 fi
-summary "Launch check failed on attempt 2 after a retry (attempt 1: the emulator vanished)"
+summary "Launch check failed on attempt 2 after a retry (attempt 1: the emulator vanished; adb get-state: $lost)"
 exit 1

@@ -72,8 +72,8 @@ def case(name, expect, **kw):
     with tempfile.TemporaryDirectory() as d:
         os.makedirs(os.path.join(d, "completed"))
         build(os.path.join(d, "completed", "3f2a.dmp"), **kw)
-        out = run("decode", d)
-        check(name, all(e in out for e in expect) and no_secret(out), out)
+        out = run("decode", d, "0")
+        check(name, all(e in out for e in expect) and no_secret(out) and "3f2a" not in out, out)
         return out
 
 
@@ -96,18 +96,38 @@ case("a module name with characters outside the set is withheld", ["crashed in: 
 case("a context that is not x86-64 is not decoded", ["crashed in: not decoded (not an x86-64 context)"], context_flags=0x00400002)
 case("a truncated dump prints 'could not decode' and its error class only", ["could not decode:"], truncate=True)
 
+case("a signal number of 0 (a macOS dump's Mach exception) is not printed as a signal", ["signal: not decoded"], signal=0)
+case("a signal number above 64 is not printed", ["signal: not decoded"], signal=200)
+
 with tempfile.TemporaryDirectory() as d:
-    check("an empty folder: no dump", "(no dump)" in run("decode", d), run("decode", d))
-    check("no folder: no dump", "(no dump)" in run("decode", os.path.join(d, "missing")), "")
+    check("an empty folder: no dump", "(no dump written after this attempt's cold start)" in run("decode", d, "0"), run("decode", d, "0"))
+    check("no folder: no dump", "(no dump written after this attempt's cold start)" in run("decode", os.path.join(d, "missing"), "0"), "")
+    os.makedirs(os.path.join(d, "completed"))
+    old = os.path.join(d, "completed", "old.dmp"); build(old, signal=6); os.utime(old, (500, 500))
+    out = run("decode", d, "900")
+    check("a dump older than this attempt's cold start is never read (an earlier attempt's)",
+          "(no dump written after this attempt's cold start)" in out and "SIGABRT" not in out, out)
+    new = os.path.join(d, "completed", "new.dmp"); build(new); os.utime(new, (930, 930))
+    out = run("decode", d, "900")
+    check("the newest dump of this attempt: its age, never its name", "dump written +30 s after the cold start" in out
+          and "SIGSEGV" in out and "new.dmp" not in out and "completed" not in out, out)
+    os.symlink(os.path.join(d, "nowhere"), os.path.join(d, "completed", "broken-" + MARKER + ".dmp"))
+    out = run("decode", d, "900")
+    check("an unreadable entry prints 'could not decode' and a class, never a traceback or a path",
+          out.startswith("could not decode:") and "Traceback" not in out and MARKER not in out and d not in out, out)
+
+with tempfile.TemporaryDirectory() as d:
     os.makedirs(os.path.join(d, "completed"))
     p = os.path.join(d, "completed", "3f2a.dmp"); build(p)
     q = os.path.join(d, "settings.dat"); open(q, "wb").write((KEY + MARKER).encode())
     odd = os.path.join(d, "odd " + MARKER); open(odd, "wb").write(b"x")
     os.utime(p, (1000, 1000)); os.utime(q, (990, 990)); os.utime(odd, (995, 995))
     out = run("list", d, "960")
-    check("the listing names files, sizes and times after the cold start, never contents",
-          "completed/3f2a.dmp" in out and "+40 s after the cold start" in out and "settings.dat" in out and no_secret(out), out)
-    check("  ... and withholds a name outside the character set", "<name withheld>" in out, out)
+    check("the listing prints a count, then per file its kind, size and time after the cold start",
+          "3 file(s)" in out and "dump  " in out and "+40 s after the cold start" in out and "settings  " in out
+          and "other  1 bytes" in out and no_secret(out), out)
+    check("  ... and no file or folder name (the reduced form)", "3f2a" not in out and "settings.dat" not in out
+          and "completed" not in out and "odd" not in out, out)
 
 print(f"crash facts checks: all {ran} passed" if failures == 0 else f"crash facts checks: {failures} of {ran} failed")
 sys.exit(1 if failures else 0)
