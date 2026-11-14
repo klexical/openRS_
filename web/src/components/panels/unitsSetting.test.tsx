@@ -33,13 +33,13 @@ vi.mock('recharts', async (importOriginal) => {
   }
 })
 vi.mock('../charts/GpsMap', () => ({ GpsMap: () => null }))
-vi.mock('../../lib/db', () => ({ deleteSession: vi.fn(), putSession: vi.fn() }))
 
 const { importZip } = await import('../../lib/import')
 const { useStore } = await import('../../store')
 const { useSettings } = await import('../../store/settings')
 const { TripPanel } = await import('./TripPanel')
 const { DashboardPanel } = await import('./DashboardPanel')
+const { storeWithSessions } = await import('../../test/storeState')
 
 const HDR = 'timestamp_ms,lat,lng,speed_kph,rpm,gear,boost_psi,boost_source,coolant_c,oil_c,ambient_c,rdu_c,ptu_c,fuel_pct,' +
   'tire_press_lf_psi,tire_press_rf_psi,tire_press_lr_psi,tire_press_rr_psi,tire_temp_lf_c,tire_temp_rf_c,tire_temp_lr_c,' +
@@ -83,7 +83,7 @@ beforeAll(async () => {
   expect(drive.trip!.points).toHaveLength(201)
   expect(drive.trip!.bookmarks).toHaveLength(1)
 })
-const show = (s: Session) => useStore.setState({ sessions: [s], activeSessionId: s.id, compareSessionIds: [] })
+const show = (s: Session) => useStore.setState(storeWithSessions([s], s.id))
 beforeEach(() => {
   vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => {}, removeItem: () => {} })
   show(drive)

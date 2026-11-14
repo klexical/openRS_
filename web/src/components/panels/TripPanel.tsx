@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { useActiveSession } from '../../store'
+import { useActiveSession, useOpeningDrive } from '../../store'
 import { EmptyState } from '../ui/EmptyState'
 import { SectionLabel } from '../ui/SectionLabel'
 import { ExportDropdown } from '../ui/ExportDropdown'
@@ -22,6 +22,7 @@ import { colors, chartColors } from '../../styles/tokens'
 export function TripPanel() {
   // ── Hooks (must run on every render path — keep above any early return) ──
   const session = useActiveSession()
+  const opening = useOpeningDrive()
   const fmt = useUnitFormatters()
 
   const trip = session?.trip ?? null
@@ -42,6 +43,8 @@ export function TripPanel() {
   [chartData, fmt.boostUnit])
 
   // ── Early returns (after all hooks) ──
+  if (opening) return <div aria-busy="true" />   // #384: the selected drive is still being read
+
   if (!session) {
     return <EmptyState icon="◎" title="No Session Selected" description="Select a session to view trip data." />
   }

@@ -8,6 +8,7 @@ import { KNOWN_EXPORT_SCHEMA_VERSION, exportSchemaNote } from './exportSchema'
 import { useStore } from '../store'
 import { DashboardPanel } from '../components/panels/DashboardPanel'
 import type { Session } from '../types/session'
+import { storeWithSessions } from '../test/storeState'
 
 // Leaflet needs a real layout engine; the map is not what these tests are about.
 vi.mock('../components/charts/GpsMap', () => ({ GpsMap: () => null }))
@@ -269,7 +270,7 @@ describe('malformed version', () => {
 describe('note on the dashboard (never in the way)', () => {
   async function shown(files: Files): Promise<string> {
     const s = await importZip(await file(files))
-    useStore.setState({ sessions: [s], activeSessionId: s.id, compareSessionIds: [] })
+    useStore.setState(storeWithSessions([s], s.id))
     const { container } = render(<DashboardPanel />)
     expect(container.textContent).toContain(s.name)   // the session's page rendered, not an empty state
     return container.textContent ?? ''

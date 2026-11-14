@@ -1,8 +1,9 @@
 import { useSettings, type ThemeId } from '../../store/settings'
 import { useStore } from '../../store'
-import { clearAllSessions } from '../../lib/db'
+import { clearAllDrives } from '../../lib/storage'
 import { rsThemes } from '../../styles/tokens'
 import { SectionLabel } from '../ui/SectionLabel'
+import { BackupButton, RestoreInput } from '../ui/LazyBackupControls'
 import type { UnitSystem, BoostUnit, TirePressUnit } from '../../lib/units'
 import { useState } from 'react'
 
@@ -24,14 +25,14 @@ export function SettingsPanel() {
     resetDefaults,
   } = useSettings()
 
-  const sessions = useStore((s) => s.sessions)
-  const setSessions = useStore((s) => s.setSessions)
+  const sessions = useStore((s) => s.drives)
+  const setDrives = useStore((s) => s.setDrives)
 
   const [confirmClear, setConfirmClear] = useState(false)
 
   const handleClearAll = async () => {
-    await clearAllSessions()
-    setSessions([])
+    await clearAllDrives()        // #384: the three stores, in one transaction
+    setDrives([])
     setConfirmClear(false)
   }
 
@@ -117,6 +118,10 @@ export function SettingsPanel() {
             <span className="text-xs font-mono text-dim ml-2">{sessions.length} session{sessions.length !== 1 ? 's' : ''} in IndexedDB</span>
           </div>
         </div>
+
+        {/* #384 ticket 02: above "Clear all" */}
+        <BackupButton label="Back up all drives" />
+        <RestoreInput />
 
         {!confirmClear ? (
           <button

@@ -1,10 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { render, cleanup } from '@testing-library/react'
 import { useStore } from '../../store'
 import type { DiagnosticData, DidInventory, Session } from '../../types/session'
 import { DiagnosticsPanel } from './DiagnosticsPanel'
+import { storeWithSessions } from '../../test/storeState'
 
-vi.mock('../../lib/db', () => ({ deleteSession: vi.fn(), putSession: vi.fn() }))
 
 // #253: the DID inventory on the Diagnostics panel. Synthetic rows only.
 const INV: DidInventory = {
@@ -24,13 +24,13 @@ function show(didInventory: DidInventory | undefined) {
   }
   const session = { id: 'a', name: 'A', importedAt: 1, tags: [], trip: null, diagnostics,
     meta: { appVersion: '2.2.7', firmwareVersion: 'unknown', sessionStart: '', exportedAt: '' } } as unknown as Session
-  useStore.setState({ sessions: [session], activeSessionId: 'a', compareSessionIds: [] })
+  useStore.setState(storeWithSessions([session], 'a'))
   return render(<DiagnosticsPanel />).container
 }
 const cells = (c: HTMLElement) => [...c.querySelectorAll('[data-testid="did-inventory"] tbody tr')]
   .map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent))
 
-beforeEach(() => useStore.setState({ sessions: [], activeSessionId: null, compareSessionIds: [] }))
+beforeEach(() => useStore.setState(storeWithSessions([])))
 afterEach(cleanup)
 
 describe('Diagnostics panel: DID inventory (#253)', () => {

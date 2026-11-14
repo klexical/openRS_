@@ -12,6 +12,22 @@ export interface Session {
   diagnostics: DiagnosticData | null
   /** Metadata from the export. */
   meta: SessionMeta
+  /**
+   * Whether the import held a fault-code scan (#384): without one, "no fault codes" cannot be told from "not scanned".
+   * Absent = stored before this was recorded.
+   */
+  dtcScan?: boolean
+  /**
+   * The scan's own status from its JSON (COMPLETE, PARTIAL, FAILED, CANCELLED, INTERRUPTED, RUNNING); null when the scan
+   * states none (an older app, or a scan known from the text file alone). Only COMPLETE lets "no fault codes" be read
+   * as none (#384). Absent = stored before this was recorded.
+   */
+  dtcScanStatus?: string | null
+  /**
+   * When the fault-code scan finished (the app's `finishedAtMs`: the detail JSON's `dtcScan` block, else the scan
+   * JSON's `scan` block; never an export time). Proves that two drive-less sessions are the same one (#384).
+   */
+  dtcScanFinishedAtMs?: number
 }
 
 export interface SessionMeta {
@@ -234,6 +250,13 @@ export interface DiagnosticData {
   nrcSuppression?: NrcSuppression[]
   /** rc.8 exports (#253). Undefined = the export recorded none; never the same as an empty inventory. */
   didInventory?: DidInventory
+  /**
+   * false: the import held no diagnostic detail file, only fault codes, so there is no session log (#384); absent: the
+   * log came from the detail file (or the record was stored before this was kept).
+   */
+  sessionLog?: false
+  /** The session's length from the detail JSON's `meta.sessionDurationMs` (#384: part of a drive-less session's proof). */
+  sessionDurationMs?: number
 }
 
 /** Mode 22 requests of one session, per module and DID, as the app counted them (#253). */
@@ -259,7 +282,7 @@ export interface DidInventoryRow {
 export interface DtcEntry {
   module: string      // "PCM" | "BCM" | "ABS" | "AWD" | "PSCM"
   code: string        // e.g. "P0101"
-  status: string      // "STORED" | "PENDING" | "PERMANENT" | "ACTIVE"
+  status: string      // the app's DtcStatus: "ACTIVE" | "PENDING" | "PERMANENT" | "UNKNOWN" (JSON), or its label "Active" … (text)
   description: string
   severity?: string   // "CRITICAL" | "WARNING" | "INFO" | "UNKNOWN"
   freezeFrame?: FreezeFrame

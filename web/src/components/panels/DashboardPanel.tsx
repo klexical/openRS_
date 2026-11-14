@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { boostLabel, pressureDecimals, pressureSeries } from '../../lib/boost'
 import { convertBoost, convertSpeed } from '../../lib/units'
-import { useStore, useActiveSession } from '../../store'
+import { useStore, useActiveSession, useOpeningDrive } from '../../store'
 import { MetricCard } from '../ui/MetricCard'
 import { SectionLabel } from '../ui/SectionLabel'
 import { EmptyState } from '../ui/EmptyState'
@@ -21,7 +21,8 @@ import { colors } from '../../styles/tokens'
 export function DashboardPanel() {
   // ── Hooks (must run on every render path — keep above any early return) ──
   const session = useActiveSession()
-  const sessions = useStore((s) => s.sessions)
+  const opening = useOpeningDrive()
+  const sessions = useStore((s) => s.drives)
   const setActivePanel = useStore((s) => s.setActivePanel)
   const fmt = useUnitFormatters()
 
@@ -65,6 +66,8 @@ export function DashboardPanel() {
       />
     )
   }
+
+  if (opening) return <div aria-busy="true" />   // #384: the selected drive is still being read
 
   if (!session) {
     return (

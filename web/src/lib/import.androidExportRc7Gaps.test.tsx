@@ -10,6 +10,7 @@ import { useSettings } from '../store/settings'
 import { DashboardPanel } from '../components/panels/DashboardPanel'
 import { TripPanel } from '../components/panels/TripPanel'
 import type { Session } from '../types/session'
+import { storeWithSessions } from '../test/storeState'
 
 vi.mock('../components/charts/GpsMap', () => ({ GpsMap: () => null }))
 
@@ -35,7 +36,7 @@ beforeAll(async () => { session = await load() })
 afterEach(() => {
   cleanup()
   useSettings.setState({ boostUnit: 'PSI' })
-  useStore.setState({ sessions: [], activeSessionId: null })
+  useStore.setState(storeWithSessions([]))
 })
 
 /** Runs of consecutive equal keys, e.g. ['TIP', 19], ['CAN', 12] … */
@@ -87,7 +88,7 @@ describe('rc.7 release export with both pressure sources missing → Sapphire (#
 
   it('TripPanel names the sources and the selected unit', () => {
     useSettings.setState({ boostUnit: 'kPa' })
-    useStore.setState({ sessions: [session], activeSessionId: session.id })
+    useStore.setState(storeWithSessions([session], session.id))
     const { container } = render(<TripPanel />)
     expect(container.textContent).toContain('Pressure (kPa)')              // two sources on one chart
     expect(container.textContent).not.toContain('(PSI)')
@@ -103,7 +104,7 @@ describe('rc.7 release export with both pressure sources missing → Sapphire (#
   it('DashboardPanel trace: the gap breaks the line, samples keep their positions, unit converted', () => {
     act(() => {
       useSettings.setState({ boostUnit: 'bar' })
-      useStore.setState({ sessions: [session], activeSessionId: session.id })
+      useStore.setState(storeWithSessions([session], session.id))
     })
     const { container } = render(<DashboardPanel />)
     expect(container.textContent).toContain('TIP Trace')

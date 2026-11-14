@@ -11,6 +11,7 @@ import { TripPanel } from './TripPanel'
 import { ComparePanel } from './ComparePanel'
 import { SessionsPanel } from './SessionsPanel'
 import { Sparkline } from '../charts/Sparkline'
+import { storeWithSessions } from '../../test/storeState'
 
 // Leaflet needs a real layout engine; the map is not what these tests are about.
 vi.mock('../charts/GpsMap', () => ({ GpsMap: () => null }))
@@ -48,7 +49,7 @@ beforeAll(async () => {
 })
 
 beforeEach(() => {
-  useStore.setState({ sessions: [], activeSessionId: null, compareSessionIds: [] })
+  useStore.setState(storeWithSessions([]))
   errors = vi.spyOn(console, 'error')
 })
 
@@ -57,6 +58,7 @@ afterEach(() => {
   errors.mockRestore()
 })
 
+// The open drive and the compared drives are loaded by App from storage (#384); these tests set them with the selection
 const set = (state: Partial<ReturnType<typeof useStore.getState>>) => act(() => { useStore.setState(state) })
 
 function expectNoHookErrors() {
@@ -70,17 +72,17 @@ describe('hook order across data transitions (same mounted component)', () => {
     const { container } = render(<DashboardPanel />)
     expect(container.textContent).toContain('Welcome to Sapphire')
 
-    set({ sessions: [driveA, driveB, diagOnly], activeSessionId: driveA.id })
+    set(storeWithSessions([driveA, driveB, diagOnly], driveA.id))
     expect(container.textContent).toContain('1-track')
-    set({ activeSessionId: driveB.id })
+    set({ activeSessionId: driveB.id, activeSession: driveB })
     expect(container.textContent).toContain('3-street-to-race')
-    set({ activeSessionId: diagOnly.id })
+    set({ activeSessionId: diagOnly.id, activeSession: diagOnly })
     expect(container.textContent).toContain('diag-only')
-    set({ activeSessionId: null })
+    set({ activeSessionId: null, activeSession: null })
     expect(container.textContent).toContain('No Session Selected')
-    set({ activeSessionId: driveA.id })
+    set({ activeSessionId: driveA.id, activeSession: driveA })
     expect(container.textContent).toContain('1-track')
-    set({ sessions: [], activeSessionId: null })
+    set(storeWithSessions([]))
     expect(container.textContent).toContain('Welcome to Sapphire')
     expectNoHookErrors()
   })
@@ -89,16 +91,16 @@ describe('hook order across data transitions (same mounted component)', () => {
     const { container } = render(<TripPanel />)
     expect(container.textContent).toContain('No Session Selected')
 
-    set({ sessions: [driveA, driveB, diagOnly], activeSessionId: driveA.id })
+    set(storeWithSessions([driveA, driveB, diagOnly], driveA.id))
     expect(container.textContent).toContain('1-track')
-    set({ activeSessionId: driveB.id })
+    set({ activeSessionId: driveB.id, activeSession: driveB })
     expect(container.textContent).toContain('3-street-to-race')
-    set({ activeSessionId: diagOnly.id })
+    set({ activeSessionId: diagOnly.id, activeSession: diagOnly })
     expect(container.textContent).toContain('No Trip Data')
     expect(container.textContent).toContain('diagnostic data but no drive recording')   // points at TRIP → SHARE
-    set({ activeSessionId: driveA.id })
+    set({ activeSessionId: driveA.id, activeSession: driveA })
     expect(container.textContent).toContain('1-track')
-    set({ sessions: [], activeSessionId: null })
+    set(storeWithSessions([]))
     expect(container.textContent).toContain('No Session Selected')
     expectNoHookErrors()
   })
@@ -107,12 +109,12 @@ describe('hook order across data transitions (same mounted component)', () => {
     const { container } = render(<ComparePanel />)
     expect(container.textContent).toContain('Need More Sessions')
 
-    set({ sessions: [driveA, driveB, diagOnly], compareSessionIds: [driveA.id, driveB.id] })
+    set(storeWithSessions([driveA, driveB, diagOnly], null, [driveA.id, driveB.id]))
     expect(container.textContent).toContain('Select Sessions to Compare')
-    set({ compareSessionIds: [driveB.id, driveA.id] })
-    set({ compareSessionIds: [driveB.id] })
+    set({ compareSessionIds: [driveB.id, driveA.id], compareSessions: [driveB, driveA] })
+    set({ compareSessionIds: [driveB.id], compareSessions: [driveB] })
     expect(container.textContent).toContain('Select Sessions to Compare')
-    set({ sessions: [driveA, diagOnly], compareSessionIds: [] })
+    set(storeWithSessions([driveA, diagOnly]))
     expect(container.textContent).toContain('Need More Sessions')
     expectNoHookErrors()
   })
@@ -121,11 +123,11 @@ describe('hook order across data transitions (same mounted component)', () => {
     const { container } = render(<SessionsPanel />)
     expect(container.textContent).toContain('No Sessions')
 
-    set({ sessions: [driveA, driveB, diagOnly], activeSessionId: driveA.id })
+    set(storeWithSessions([driveA, driveB, diagOnly], driveA.id))
     expect(container.textContent).toContain('3-street-to-race')
-    set({ activeSessionId: diagOnly.id })
+    set({ activeSessionId: diagOnly.id, activeSession: diagOnly })
     expect(container.textContent).toContain('diag-only')
-    set({ sessions: [], activeSessionId: null })
+    set(storeWithSessions([]))
     expect(container.textContent).toContain('No Sessions')
     expectNoHookErrors()
   })

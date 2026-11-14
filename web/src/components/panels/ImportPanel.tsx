@@ -1,12 +1,19 @@
 import { useState, useCallback } from 'react'
 import { useStore } from '../../store'
 import { importZip, importBatchZip, isDriveCsvEntry, isDriveCsvName } from '../../lib/import'
-import { putSession, putSessions } from '../../lib/db'
+import { storeImported, type ImportOutcome } from '../../lib/storage'
 import { colors } from '../../styles/tokens'
 import JSZip from 'jszip'
 
+/** "Already imported" for the drives that were stored before, named as they are stored (#384). */
+function alreadyText(o: ImportOutcome): string {
+  const names = o.alreadyImported.map((a) => useStore.getState().drives.find((d) => d.id === a.existingId)?.name ?? a.name)
+  return names.length === 1 ? `Already imported: ${names[0]}` : `Already imported: all ${names.length} drives`
+}
+const alreadyNote = (o: ImportOutcome) => (o.alreadyImported.length > 0 ? ` (${o.alreadyImported.length} already imported)` : '')
+
 export function ImportPanel() {
-  const addSession = useStore((s) => s.addSession)
+  const addDrives = useStore((s) => s.addDrives)
   const setActiveSessionId = useStore((s) => s.setActiveSessionId)
   const setActivePanel = useStore((s) => s.setActivePanel)
 
@@ -53,26 +60,32 @@ export function ImportPanel() {
         // All-or-nothing: importBatchZip rejects the whole batch if any drive CSV is malformed,
         // and the sessions are stored in one transaction before any of them reaches the store.
         const sessions = await importBatchZip(file)
-        if (sessions.length > 0) await putSessions(sessions)
-
-        for (let i = 0; i < sessions.length; i++) {
-          setBatchProgress({ current: i + 1, total: sessions.length })
-          addSession(sessions[i])
+        if (sessions.length === 0) {
+          setError('No valid drives found in batch ZIP')
+          return
         }
-
-        if (sessions.length > 0) {
-          setActiveSessionId(sessions[0].id)
-          setSuccess(`Imported ${sessions.length} drives from batch export`)
+        const outcome = await storeImported(sessions)
+        setBatchProgress({ current: sessions.length, total: sessions.length })
+        addDrives(outcome.stored)
+        if (outcome.stored.length > 0) {
+          setActiveSessionId(outcome.stored[0].id)
+          setSuccess(`Imported ${outcome.stored.length} drives from batch export${alreadyNote(outcome)}`)
           setTimeout(() => setActivePanel('sessions'), 1500)
         } else {
-          setError('No valid drives found in batch ZIP')
+          setSuccess(alreadyText(outcome))
         }
       } else {
         // Single import
         const session = await importZip(file)
-        await putSession(session)
-        addSession(session)
-        setActiveSessionId(session.id)
+        const outcome = await storeImported([session])
+        if (outcome.stored.length === 0) {
+          // #384: the same drive is already stored: nothing new is kept, and that is not an error
+          setActiveSessionId(outcome.alreadyImported[0].existingId)
+          setSuccess(alreadyText(outcome))
+          return
+        }
+        addDrives(outcome.stored)
+        setActiveSessionId(outcome.stored[0].id)
         setSuccess(`Imported: ${session.name}`)
         setTimeout(() => setActivePanel('dashboard'), 1200)
       }
@@ -82,7 +95,7 @@ export function ImportPanel() {
       setImporting(false)
       setBatchProgress(null)
     }
-  }, [addSession, setActiveSessionId, setActivePanel])
+  }, [addDrives, setActiveSessionId, setActivePanel])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()

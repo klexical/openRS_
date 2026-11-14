@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useStore } from './index'
 import type { Session } from '../types/session'
+import { toDriveRecord } from '../lib/storage'
 
 function makeSession(id: string, name = `Session ${id}`): Session {
   return {
@@ -18,7 +19,9 @@ function makeSession(id: string, name = `Session ${id}`): Session {
 beforeEach(() => {
   useStore.setState({
     activePanel: 'dashboard',
-    sessions: [],
+    drives: [],
+    activeSession: null,
+    compareSessions: [],
     activeSessionId: null,
     compareSessionIds: [],
     navExpanded: true,
@@ -36,57 +39,47 @@ describe('panel navigation', () => {
   })
 })
 
-describe('session management', () => {
-  it('addSession appends to sessions list', () => {
-    const s = makeSession('1')
-    useStore.getState().addSession(s)
-    expect(useStore.getState().sessions).toHaveLength(1)
-    expect(useStore.getState().sessions[0].id).toBe('1')
+describe('drive records (#384: the store mirrors what lib/storage stored)', () => {
+  const rec = (id: string, name = `Session ${id}`) => toDriveRecord(makeSession(id, name))
+
+  it('addDrives appends to the list', () => {
+    useStore.getState().addDrives([rec('1')])
+    expect(useStore.getState().drives.map((d) => d.id)).toEqual(['1'])
   })
 
-  it('setSessions replaces entire list', () => {
-    useStore.getState().addSession(makeSession('1'))
-    useStore.getState().setSessions([makeSession('2'), makeSession('3')])
-    expect(useStore.getState().sessions).toHaveLength(2)
-    expect(useStore.getState().sessions[0].id).toBe('2')
+  it('setDrives replaces the entire list', () => {
+    useStore.getState().addDrives([rec('1')])
+    useStore.getState().setDrives([rec('2'), rec('3')])
+    expect(useStore.getState().drives.map((d) => d.id)).toEqual(['2', '3'])
   })
 
-  it('removeSession removes by id', () => {
-    useStore.getState().setSessions([makeSession('1'), makeSession('2'), makeSession('3')])
-    useStore.getState().removeSession('2')
-    expect(useStore.getState().sessions.map((s) => s.id)).toEqual(['1', '3'])
+  it('removeDrives removes by id and clears the selection, the open drive and compare picks that were removed', () => {
+    useStore.getState().setDrives([rec('1'), rec('2'), rec('3'), rec('4')])
+    useStore.getState().setActiveSessionId('2')
+    useStore.setState({ activeSession: makeSession('2'), compareSessionIds: ['2', '3'], compareSessions: [makeSession('2'), makeSession('3')] })
+    useStore.getState().removeDrives(['2', '4'])
+    const st = useStore.getState()
+    expect(st.drives.map((d) => d.id)).toEqual(['1', '3'])
+    expect([st.activeSessionId, st.activeSession]).toEqual([null, null])
+    expect(st.compareSessionIds).toEqual(['3'])
+    expect(st.compareSessions.map((c) => c.id)).toEqual(['3'])
   })
 
-  it('removeSession clears activeSessionId if it was the removed session', () => {
-    useStore.getState().setSessions([makeSession('1'), makeSession('2')])
+  it('removeDrives keeps the selection when another drive is removed', () => {
+    useStore.getState().setDrives([rec('1'), rec('2')])
     useStore.getState().setActiveSessionId('1')
-    useStore.getState().removeSession('1')
-    expect(useStore.getState().activeSessionId).toBeNull()
-  })
-
-  it('removeSession preserves activeSessionId if different session removed', () => {
-    useStore.getState().setSessions([makeSession('1'), makeSession('2')])
-    useStore.getState().setActiveSessionId('1')
-    useStore.getState().removeSession('2')
+    useStore.getState().removeDrives(['2'])
     expect(useStore.getState().activeSessionId).toBe('1')
   })
 
-  it('removeSessions removes multiple by id', () => {
-    useStore.getState().setSessions([makeSession('1'), makeSession('2'), makeSession('3'), makeSession('4')])
-    useStore.getState().removeSessions(['2', '4'])
-    expect(useStore.getState().sessions.map((s) => s.id)).toEqual(['1', '3'])
-  })
-
-  it('renameSession updates session name', () => {
-    useStore.getState().addSession(makeSession('1', 'Old Name'))
-    useStore.getState().renameSession('1', 'New Name')
-    expect(useStore.getState().sessions[0].name).toBe('New Name')
-  })
-
-  it('setSessionTags updates tags', () => {
-    useStore.getState().addSession(makeSession('1'))
-    useStore.getState().setSessionTags('1', ['Track Day', 'Rain'])
-    expect(useStore.getState().sessions[0].tags).toEqual(['Track Day', 'Rain'])
+  it('updateDrive replaces one record, and the open drive shows its new name and tags', () => {
+    useStore.getState().setDrives([rec('1', 'Old Name'), rec('2')])
+    useStore.getState().setActiveSessionId('1')
+    useStore.setState({ activeSession: makeSession('1', 'Old Name') })
+    useStore.getState().updateDrive({ ...rec('1', 'New Name'), tags: ['Track Day', 'Rain'] })
+    const st = useStore.getState()
+    expect([st.drives[0].name, st.drives[0].tags]).toEqual(['New Name', ['Track Day', 'Rain']])
+    expect([st.activeSession?.name, st.activeSession?.tags]).toEqual(['New Name', ['Track Day', 'Rain']])
   })
 })
 
@@ -119,11 +112,11 @@ describe('compare mode', () => {
     expect(useStore.getState().compareSessionIds).toEqual([])
   })
 
-  it('removeSession also removes from compareSessionIds', () => {
-    useStore.getState().setSessions([makeSession('1'), makeSession('2')])
+  it('removeDrives also removes from compareSessionIds', () => {
+    useStore.getState().setDrives([toDriveRecord(makeSession('1')), toDriveRecord(makeSession('2'))])
     useStore.getState().toggleCompareSession('1')
     useStore.getState().toggleCompareSession('2')
-    useStore.getState().removeSession('1')
+    useStore.getState().removeDrives(['1'])
     expect(useStore.getState().compareSessionIds).toEqual(['2'])
   })
 })

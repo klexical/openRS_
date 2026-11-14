@@ -5,7 +5,11 @@ import type { Session } from './types/session'
 // The remembered view (localStorage `sapphire_view`) is read when the store module loads, so each case
 // seeds storage, then imports a fresh store + App. IndexedDB is mocked; the shell isn't under test.
 const db = vi.hoisted(() => ({ getAllSessions: vi.fn() }))
-vi.mock('./lib/db', () => ({ getAllSessions: db.getAllSessions }))
+vi.mock('./lib/storage', () => ({
+  // a stored drive opens; one that is not stored would be dropped from the selection (#384)
+  listDrives: db.getAllSessions, loadDrive: async (id: string) => ({ id, name: id }),
+  storageStatus: () => ({ state: 'ready' }), onStorageStatus: () => () => {},
+}))
 vi.mock('./components/layout/Shell', () => ({ Shell: () => null }))
 
 const session = (id: string, importedAt: number) =>
@@ -20,7 +24,7 @@ async function boot(saved: unknown, stored = 3) {
   const initial = useStore.getState()
   render(<App />)
   await waitFor(() => expect(db.getAllSessions).toHaveBeenCalled())
-  await waitFor(() => expect(useStore.getState().sessions).toHaveLength(stored))   // IndexedDB load applied
+  await waitFor(() => expect(useStore.getState().drives).toHaveLength(stored))   // IndexedDB load applied
   return { useStore, initial }
 }
 
@@ -89,7 +93,7 @@ describe('remembered panel and session', () => {
     useStore.getState().setActivePanel('diagnostics')
     useStore.getState().setActiveSessionId('middle')
     expect(JSON.parse(localStorage.getItem('sapphire_view')!)).toEqual({ activePanel: 'diagnostics', activeSessionId: 'middle' })
-    useStore.getState().removeSessions(['middle', 'older'])
+    useStore.getState().removeDrives(['middle', 'older'])
     expect(JSON.parse(localStorage.getItem('sapphire_view')!)).toEqual({ activePanel: 'diagnostics', activeSessionId: null })
   })
 
@@ -99,7 +103,7 @@ describe('remembered panel and session', () => {
     vi.resetModules()
     const { default: App } = await import('./App')
     render(<App />)
-    await waitFor(() => expect(err).toHaveBeenCalledWith('[Sapphire] Failed to load sessions from IndexedDB:', expect.any(Error)))
+    await waitFor(() => expect(err).toHaveBeenCalledWith('[Sapphire] Failed to load drives from IndexedDB:', expect.any(Error)))
     err.mockRestore()
   })
 })

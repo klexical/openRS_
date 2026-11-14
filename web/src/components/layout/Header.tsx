@@ -12,7 +12,7 @@ const panelTitles: Record<string, string> = {
 
 export function Header() {
   const activePanel = useStore((s) => s.activePanel)
-  const sessionCount = useStore((s) => s.sessions.length)
+  const sessionCount = useStore((s) => s.drives.length)
 
   return (
     <header className="flex items-center justify-between px-4 md:px-6 py-3 bg-surf border-b border-brd">

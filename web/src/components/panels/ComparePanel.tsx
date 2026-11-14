@@ -15,7 +15,7 @@ const SESSION_COLORS = [chartColors[0], chartColors[1], chartColors[2], chartCol
 
 export function ComparePanel() {
   // ── Hooks (must run on every render path — keep above any early return) ──
-  const sessions = useStore((s) => s.sessions)
+  const sessions = useStore((s) => s.drives)
   const compareIds = useStore((s) => s.compareSessionIds)
   const toggleCompare = useStore((s) => s.toggleCompareSession)
   const clearCompare = useStore((s) => s.clearCompare)
@@ -23,7 +23,7 @@ export function ComparePanel() {
 
   // Only sessions with trip data are useful for comparison
   const eligibleSessions = useMemo(
-    () => sessions.filter((s) => s.trip && s.trip.points.length > 0),
+    () => sessions.filter((s) => s.hasDrive),
     [sessions]
   )
 
@@ -84,7 +84,7 @@ export function ComparePanel() {
                 <div className="text-sm font-mono text-frost truncate">{sess.name}</div>
                 <div className="flex gap-3 text-[10px] font-mono text-dim uppercase mt-0.5">
                   <span>{fmtDateShort(sess.importedAt)}</span>
-                  {sess.trip && <span>{sess.trip.summary.distanceKm.toFixed(1)} km{estimateSuffix(sess.trip.summary)}</span>}
+                  {sess.summary && <span>{sess.summary.distanceKm.toFixed(1)} km{estimateSuffix(sess.summary)}</span>}
                   <span>v{sess.meta.appVersion}</span>
                 </div>
               </div>
