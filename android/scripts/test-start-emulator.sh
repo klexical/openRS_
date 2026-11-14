@@ -70,7 +70,7 @@ cat > "$SDK/platform-tools/adb" <<'STUB'
 printf '1\r\n'
 STUB
 # GNU timeout is not on every host: the fake records its limit, then runs the command without one
-printf '#!/usr/bin/env bash\necho "$1" >> "$WORK/timeouts"\nshift; exec "$@"\n' > "$WORK/bin/timeout"
+printf '#!/usr/bin/env bash\necho "$1 ${2##*/}" >> "$WORK/timeouts"\nshift; exec "$@"\n' > "$WORK/bin/timeout"
 chmod +x "$T/sdkmanager" "$T/avdmanager" "$SDK/emulator/emulator" "$SDK/platform-tools/adb" "$WORK/bin/timeout"
 
 # run <boot limit s> [--no-xdg] [env...]: a fresh runner-like home (HOME, XDG_CONFIG_HOME set; no ANDROID_* location
@@ -113,8 +113,9 @@ has "Path: $WORK/home/.android/avd/nightly.avd"
 check "the five location variables (an unset one as <unset>) and avdmanager's list are printed"
 
 WHY=""
-[ -s "$WORK/timeouts" ] || why "no boot check went through timeout"
-[ -z "$(grep -v -x 10 "$WORK/timeouts" 2>/dev/null)" ] || why "boot checks under timeout $(sort -u "$WORK/timeouts" | tr '\n' ' ')"
+grep -q -x '10 adb' "$WORK/timeouts" 2>/dev/null || why "no boot check went through timeout"
+grep -q -x '10 emulator' "$WORK/timeouts" 2>/dev/null || why "the version call did not go through timeout 10"
+[ -z "$(grep -v -x -E '10 (adb|emulator)' "$WORK/timeouts" 2>/dev/null)" ] || why "calls under timeout $(sort -u "$WORK/timeouts" | tr '\n' ' ')"
 check "every boot check runs under timeout 10, so a hung adb cannot hold the wait past its limit"
 
 WHY=""

@@ -63,10 +63,14 @@ cat > "$WORK/bin/timeout" <<'STUB'
 #!/usr/bin/env bash
 echo "$1 $2" >> "$WORK/timeouts"; shift
 "$@" & child=$!
-( sleep "${FAKE_TIMEOUT_S:-2}"; kill "$child" 2>/dev/null ) >/dev/null 2>&1 & killer=$!   # off the caller's pipes
+# The timer marks the timeout BEFORE it kills, and the marker decides: asking whether the timer is still alive raced
+# with its own exit (a killed call then read as status 143, not 124)
+mark="$WORK/timed-out.$$"; rm -f "$mark"
+( sleep "${FAKE_TIMEOUT_S:-2}"; : > "$mark"; kill "$child" 2>/dev/null ) >/dev/null 2>&1 & killer=$!   # off the caller's pipes
 if wait "$child"; then status=0; else status=$?; fi
-if kill -0 "$killer" 2>/dev/null; then kill "$killer" 2>/dev/null; wait "$killer" 2>/dev/null; exit "$status"; fi
-exit 124
+kill "$killer" 2>/dev/null; wait "$killer" 2>/dev/null
+if [ -f "$mark" ]; then rm -f "$mark"; exit 124; fi
+exit "$status"
 STUB
 # ── Fake free and sudo (dmesg): the host's memory and kernel log ──
 printf '               total        used        free\nMem:           15990       14100         310\n' > "$WORK/free-out"
@@ -208,7 +212,7 @@ has "Play Store not disabled (not on this image, or adb failed)"; has "::error::
 check "adb failing at the Play Store step is not called a missing Play Store, and the install step is named"
 
 expect_fail "no process after the start (pidof exits 1, as on Android)" "not running" "" FAKE_PID1=
-expect_fail "the process gone after the wait (pidof exits 1)"           "gone"        "" FAKE_PID2=
+expect_fail "the process gone after the wait (pidof exits 1)"           "is gone 0 s after the start" "" FAKE_PID2=
 expect_fail "a different process id after the wait" "4243"                   "" FAKE_PID2=4243
 expect_fail "a verifier rejection"                  "Verifier rejected"      "W art: Verifier rejected class DrivePageKt\$x"
 expect_fail "a fatal exception"                     "FATAL EXCEPTION"        "E AndroidRuntime: FATAL EXCEPTION: main"
@@ -295,6 +299,12 @@ p=$(section "the emulator's process (emulator.pid)")
 [[ "$p" == *"pid $LIVE: alive (sleep)"* ]] || why "a live pid is not reported alive with its command: '$p'"
 [[ "$p" == *"the kernel's kill lines name pid $LIVE: no"* ]] || why "a pid the kernel did not kill is not reported so: '$p'"
 check "a live emulator pid is reported alive with its command name, and not named by the kernel"
+
+WHY=""; cp "$WORK/dmesg-out" "$WORK/dmesg-out.keep"
+printf '%s\n' "[  901.6] oom-kill:constraint=CONSTRAINT_NONE,task=other,pid=${DEAD_PID}9,uid=1001" "[  901.7] Killed process ${DEAD_PID}7 (other)" > "$WORK/dmesg-out"
+run 0 "" FAKE_CLOSED_AT=pidof2; cp "$WORK/dmesg-out.keep" "$WORK/dmesg-out"
+[[ "$(section "the emulator's process (emulator.pid)")" == *"the kernel's kill lines name pid $DEAD_PID: no"* ]] || why "a kernel line naming pid ${DEAD_PID}9 or ${DEAD_PID}7 was taken for pid $DEAD_PID"
+check "the kernel match takes the exact pid, not one that starts with it"
 
 WHY=""; mv "$WORK/cwd/emulator.pid" "$WORK/emulator.pid.keep"; run 0 "" FAKE_CLOSED_AT=pidof2; mv "$WORK/emulator.pid.keep" "$WORK/cwd/emulator.pid"
 [[ "$(section "the emulator's process (emulator.pid)")" == *"(could not read: no emulator.pid in"* ]] || why "a missing emulator.pid is not reported"
