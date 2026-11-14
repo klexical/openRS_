@@ -716,7 +716,8 @@ async function parseDiagnosticData(zip: JSZip, dtcResults: DtcEntry[], manifest:
   const jsonFile = diagnosticDetailFile(zip, manifest)
   if (!jsonFile) {
     if (dtcResults.length > 0) {
-      return { canInventory: [], fpsTimeline: [], sessionEvents: [], decodeTrace: [], probeResults: [], dtcResults }
+      // fault codes only: no session log in this import (#384: recording gaps are then not checked)
+      return { canInventory: [], fpsTimeline: [], sessionEvents: [], decodeTrace: [], probeResults: [], dtcResults, sessionLog: false }
     }
     return null
   }

@@ -205,10 +205,20 @@ function warningCauses(s: Session, diagnostics: DiagnosticData | null): WarningC
   // not checked, never none
   const faultCodes: CauseState = codes.some(faultCodeRaisesMarker) ? 'found'
     : s.dtcScan === true && s.dtcScanStatus === 'COMPLETE' ? 'none' : 'not-checked'
-  const recordingGaps: CauseState = diagnostics === null ? 'not-checked'
-    : diagnostics.sessionEvents.some((e) => String(e.type).toUpperCase() === 'REC_GAP' && DISCONNECTED_GAP.test(e.message))
+  const recordingGaps: CauseState = !hasSessionLog(diagnostics) ? 'not-checked'
+    : diagnostics!.sessionEvents.some((e) => String(e.type).toUpperCase() === 'REC_GAP' && DISCONNECTED_GAP.test(e.message))
       ? 'found' : 'none'
   return { faultCodes, recordingGaps, knockEvents: 'not-checked', criticalTemperatures: 'not-checked' }
+}
+
+/**
+ * Whether the import held a session log (the diagnostic detail file). An import with fault codes alone also gets a
+ * diagnostics object: it is marked `sessionLog: false`; a version-1 record has no marker, and main's importer left every
+ * log part empty in that case, so a record whose log parts are all empty has no log either.
+ */
+function hasSessionLog(d: DiagnosticData | null): boolean {
+  if (d === null || d.sessionLog === false) return false
+  return [d.sessionEvents, d.canInventory, d.fpsTimeline, d.decodeTrace, d.probeResults].some((part) => (part?.length ?? 0) > 0)
 }
 
 // ── "Already imported" ──

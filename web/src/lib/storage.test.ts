@@ -32,7 +32,8 @@ const NO_LOCATION = 'drive 7: NO_LOCATION gap 8.0 s (no location update while co
 
 interface Opts { drive?: boolean; diag?: boolean; events?: SessionEvent[]; codes?: DtcEntry[]; dtcScan?: boolean; scanStatus?: string | null; laps?: boolean; tags?: string[] }
 function session(id: string, o: Opts = {}): Session {
-  const { drive = true, diag = true, events = [], codes = [], dtcScan, scanStatus, laps = false, tags = [] } = o
+  // a session log always holds events: the default one carries the app's session start (an empty log is codes-only)
+  const { drive = true, diag = true, events = [ev('SESSION', 'Started')], codes = [], dtcScan, scanStatus, laps = false, tags = [] } = o
   // each invented drive records its own points: drives are told apart by their points (#384, the owner's Q5 / Q7)
   const off = [...id].reduce((n, c) => n + c.charCodeAt(0), 0) / 10_000
   const points = drive ? [pt(0), pt(1), pt(2)].map((p) => ({ ...p, lat: p.lat + off })) : []
@@ -260,6 +261,23 @@ describe('#384 the warnings flag (fault codes and recording gaps; knock and temp
     })
   }
 
+  it('fault codes without a session log: the gap cause is not checked (at import, through the importer)', async () => {
+    const s = await importZip(await driveZip({ compression: 'DEFLATE', diag: false,
+      scan: { scan: { status: 'COMPLETE' }, codes: [{ module: 'PCM', code: 'P0000', status: 'STORED', description: 'invented' }] } }))
+    expect(s.diagnostics?.dtcResults).toHaveLength(1)                     // the importer keeps the codes in a diagnostics object
+    const d = toDriveRecord(s)
+    expect([d.warnings.faultCodes, d.warnings.recordingGaps]).toEqual(['none', 'not-checked'])
+  })
+
+  it('fault codes without a session log: the gap cause is not checked (at the upgrade)', async () => {
+    // as main's importer stored it: codes, and every log part empty because there was no diagnostic detail file
+    const v1 = session('codes-only', { codes: [dtc('ACTIVE')], events: [] })
+    delete v1.dtcScan
+    await writeV1([v1])
+    const [d] = await listDrives()
+    expect([d.warnings.faultCodes, d.warnings.recordingGaps, d.hasWarnings]).toEqual(['found', 'not-checked', true])
+  })
+
   it('at the upgrade (version-1 records carry no scan status: an active or pending code = found; anything else = not checked)', async () => {
     const v1 = (id: string, o: Opts) => { const s = session(id, o); delete s.dtcScan; return s }
     await writeV1([
@@ -372,6 +390,15 @@ describe('#384 already imported', () => {
     await writeV1([older])
     const again = await storeImported([await importZip(zip)])
     expect(again.alreadyImported.map((x) => x.existingId)).toEqual([older.id])
+  })
+
+  it('−0 hashes as 0; NaN is written as NaN, never as 0 or null (pins the hashed bytes)', () => {
+    const base = session('z')
+    const withPoint = (p: Partial<TripPoint>) => ({ ...base, trip: { ...base.trip!, points: [{ ...base.trip!.points[0], ...p }, ...base.trip!.points.slice(1)] } })
+    const h = (s: Session) => toDriveRecord(s).contentHash
+    expect(h(withPoint({ speedKph: -0 }))).toBe(h(withPoint({ speedKph: 0 })))
+    expect(h(withPoint({ rpm: NaN }))).not.toBe(h(withPoint({ rpm: 0 })))
+    expect(h(withPoint({ rpm: NaN }))).toBe(h(withPoint({ rpm: NaN })))
   })
 
   it('values are compared as the CSV rounds them (lat / lng 6 decimals, speed 2)', () => {

@@ -245,6 +245,11 @@ export interface DiagnosticData {
   nrcSuppression?: NrcSuppression[]
   /** rc.8 exports (#253). Undefined = the export recorded none; never the same as an empty inventory. */
   didInventory?: DidInventory
+  /**
+   * false: the import held no diagnostic detail file, only fault codes, so there is no session log (#384); absent: the
+   * log came from the detail file (or the record was stored before this was kept).
+   */
+  sessionLog?: false
 }
 
 /** Mode 22 requests of one session, per module and DID, as the app counted them (#253). */
