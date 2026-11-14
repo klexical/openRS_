@@ -87,11 +87,13 @@ export function convertTirePress(psi: number, tpu: TirePressUnit): number {
   }
 }
 
+/** Decimal places per unit for tyre pressure labels. */
+export const tirePressDecimals = (tpu: TirePressUnit): number => (tpu === 'bar' ? 2 : tpu === 'kPa' ? 0 : 1)
+
 export function fmtTirePress(psi: number, tpu: TirePressUnit): string {
   if (psi < 0) return '—'
   const v = convertTirePress(psi, tpu)
-  const decimals = tpu === 'bar' ? 2 : tpu === 'kPa' ? 0 : 1
-  return `${v.toFixed(decimals)} ${tpu}`
+  return `${v.toFixed(tirePressDecimals(tpu))} ${tpu}`
 }
 
 // ── Fuel economy ──
@@ -109,4 +111,37 @@ export function fmtFuelEconomy(lPer100km: number, unit: UnitSystem): string {
   if (!isFinite(lPer100km) || lPer100km <= 0) return '—'
   const v = convertFuelEconomy(lPer100km, unit)
   return `${v.toFixed(1)} ${fuelEconomyUnit(unit)}`
+}
+
+// ── TRIP chart rows and peak lines in the selected units (#381) ──
+// Rows as `tripChartData` (lib/readings.ts) builds them: speeds in km/h, temperatures in °C, tyre pressures in psi.
+// A null (no reading) stays null, a gap, never 0; a genuine 0 converts like any reading (0 °C → 32 °F). Pressure keys
+// go through `pressureChartRows` (lib/boost.ts) instead.
+
+const SPEED_KEYS = ['speedKph', 'wsFL', 'wsFR', 'wsRL', 'wsRR']
+const TEMP_KEYS = ['coolantC', 'oilTempC', 'rduTempC', 'ptuTempC', 'tireTempLF', 'tireTempRF', 'tireTempLR', 'tireTempRR']
+const TIRE_PRESS_KEYS = ['tirePressLF', 'tirePressRF', 'tirePressLR', 'tirePressRR']
+
+/** Chart rows with the speed, temperature and tyre pressure keys converted (other keys untouched). */
+export function unitChartRows<T extends Record<string, number | null>>(rows: T[], unit: UnitSystem, tpu: TirePressUnit): T[] {
+  if (unit === 'metric' && tpu === 'PSI') return rows
+  const each = (out: Record<string, number | null>, keys: string[], f: (v: number) => number) => {
+    for (const k of keys) {
+      if (!(k in out)) continue
+      const v = out[k]
+      out[k] = v == null ? null : f(v)
+    }
+  }
+  return rows.map((r) => {
+    const out: Record<string, number | null> = { ...r }
+    each(out, SPEED_KEYS, (v) => convertSpeed(v, unit))
+    each(out, TEMP_KEYS, (v) => convertTemp(v, unit))
+    each(out, TIRE_PRESS_KEYS, (v) => convertTirePress(v, tpu))
+    return out as T
+  })
+}
+
+/** Speed peak events in [unit] (other peak types untouched). */
+export function speedPeaks<P extends { type: string; value: number }>(peaks: P[], unit: UnitSystem): P[] {
+  return peaks.map((p) => (p.type === 'speed' ? { ...p, value: convertSpeed(p.value, unit) } : p))
 }

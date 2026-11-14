@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { boostLabel, pressureDecimals, pressureSeries } from '../../lib/boost'
-import { convertBoost } from '../../lib/units'
+import { convertBoost, convertSpeed } from '../../lib/units'
 import { useStore, useActiveSession } from '../../store'
 import { MetricCard } from '../ui/MetricCard'
 import { SectionLabel } from '../ui/SectionLabel'
@@ -162,7 +162,8 @@ export function DashboardPanel() {
                 ? <GaugeChart value={Number(convertBoost(trip.peakBoostPsi, fmt.boostUnit).toFixed(pressureDecimals(fmt.boostUnit)))}
                     max={convertBoost(25, fmt.boostUnit)} label={`Peak ${boostName}`} unit={fmt.boostUnit} color={colors.accent} />
                 : <MetricCard label="Peak Boost" value="— (no reading)" color={colors.dim} />}
-              <GaugeChart value={trip.peakSpeedKph} max={270} label="Peak Speed" unit={fmt.speedUnit} color={colors.ok} />
+              <GaugeChart value={convertSpeed(trip.peakSpeedKph, fmt.unitSystem)} max={convertSpeed(270, fmt.unitSystem)}
+                label="Peak Speed" unit={fmt.speedUnit} color={colors.ok} />
               <GaugeChart value={trip.peakLatG} max={1.5} label="Peak Lat G" unit="G" color={colors.warn} />
               {/* Aggression Score (T2A) */}
               {trip.aggressionScore != null && trip.aggressionScore > 0 && (
@@ -222,7 +223,7 @@ export function DashboardPanel() {
                         <tr key={i} className="border-t border-brd hover:bg-surf3/50">
                           <td className="px-3 py-1.5 text-dim">{bm.relMs != null ? fmtDuration(bm.relMs) : '—'}</td>
                           <td className="px-3 py-1.5" style={{ color: '#E040FB' }}>{bm.label || `#${i + 1} (no text)`}</td>
-                          <td className="px-3 py-1.5 text-frost">{bm.speedKph.toFixed(0)} kph</td>
+                          <td className="px-3 py-1.5 text-frost">{fmt.speed(bm.speedKph)}</td>
                           <td className="px-3 py-1.5 text-frost">{bm.rpm}</td>
                           <td className="px-3 py-1.5 text-frost">{bm.boostPsi != null ? fmt.boost(bm.boostPsi) : '—'}</td>
                         </tr>
