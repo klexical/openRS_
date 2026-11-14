@@ -95,6 +95,12 @@ _Avoid_: Sector, split
 A Wi-Fi network on which the adapter gave its own protocol reply.
 _Avoid_: Eligible network, the adapter's SSID
 
+**Request capture**:
+A switch for one connection: while it is on, the app sends the PCM its next request only after the previous one is
+answered or a set time has passed, so each answer's delay can be read from the session's raw log. Every connection
+starts with it off.
+_Avoid_: Capture mode, debug mode, slow polling
+
 ### Sapphire
 
 **Import**:
