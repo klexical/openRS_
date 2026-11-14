@@ -5,7 +5,8 @@
 //   manifest.json      {"format":"sapphire-backup","version":1,"source":"version-2"|"version-1","drives":N}
 //   drives/1.json …    one per drive: {"drive","points","diagnostics"} as stored (version-2), or {"session"} (version-1,
 //                      written after a failed upgrade)
-// A file holding one drive is a valid backup (the one-drive share file of slice 7 uses this format).
+// A file holding one drive is a valid backup (the one-drive share file of slice 7 uses this format). Every entry is
+// dated 1980-01-01 UTC, so the file holds no time of its own; restore checks each entry's CRC.
 // JSON loses NaN, ±Infinity, −0 and undefined; each is written as {"$sapphire":"NaN"} and so on, and a stored object that
 // has its own "$sapphire" key is wrapped as {"$sapphire":"object","value":{…}}, so text never reads as a marker.
 
@@ -26,6 +27,11 @@ export class BackupError extends Error {
 
 const NOTHING_RESTORED = 'Nothing was restored.'
 export const notABackup = () => new BackupError(`This file is not a Sapphire backup. ${NOTHING_RESTORED}`)
+/** A file the ZIP reader cannot read, or whose content fails its CRC: cut short or changed on the way. */
+const unreadable = () => new BackupError(`This file is not a Sapphire backup, or is incomplete or damaged. ${NOTHING_RESTORED}`)
+/** JSZip writes dates with UTC getters; 1980-01-01 is the earliest date a ZIP can hold. */
+const ENTRY_DATE = new Date(Date.UTC(1980, 0, 1))
+const ENTRY = { date: ENTRY_DATE, createFolders: false }
 const damaged = (what: string) => new BackupError(`This backup is damaged (${what}). ${NOTHING_RESTORED}`)
 
 // ── Values ──
@@ -55,7 +61,11 @@ export function encodeValue(v: unknown): unknown {
       if (v === null) return null
       if (Array.isArray(v)) {
         const out: unknown[] = new Array(v.length)
-        for (let i = 0; i < v.length; i++) out[i] = encodeValue(v[i])
+        for (let i = 0; i < v.length; i++) {
+          // JSON has no gap: it would come back as a value. None is made by the importer; refuse rather than change it
+          if (!(i in v)) throw new BackupError('A stored drive holds a list with a gap, which Sapphire cannot write to a backup. Nothing was written.')
+          out[i] = encodeValue(v[i])
+        }
         return out
       }
       if (!isPlainObject(v)) throw new BackupError(`A stored drive holds a value Sapphire cannot write to a backup (${Object.prototype.toString.call(v)}). Nothing was written.`)
@@ -123,11 +133,11 @@ export async function buildBackup(data: StoredEverything, onProgress?: (done: nu
   const total = entries.length
   onProgress?.(0, total)
   for (let i = 0; i < total; i++) {
-    zip.file(`drives/${i + 1}.json`, JSON.stringify(encodeValue(entries[i]())))
+    zip.file(`drives/${i + 1}.json`, JSON.stringify(encodeValue(entries[i]())), ENTRY)
     onProgress?.(i + 1, total)
     await pause()
   }
-  zip.file('manifest.json', JSON.stringify({ format: FORMAT, version: BACKUP_FORMAT_VERSION, source: data.source, drives: total }))
+  zip.file('manifest.json', JSON.stringify({ format: FORMAT, version: BACKUP_FORMAT_VERSION, source: data.source, drives: total }), ENTRY)
   const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 }, mimeType: 'application/zip' })
   return { blob, name: backupName(), drives: total }
 }
@@ -140,7 +150,7 @@ export type BackupEntry =
 /** Read a backup file's entries, checked; throws a BackupError in plain words for anything it cannot restore. */
 export async function readBackup(file: Blob, pause: () => Promise<void> = async () => {}): Promise<BackupEntry[]> {
   let zip: JSZip
-  try { zip = await JSZip.loadAsync(file) } catch { throw notABackup() }
+  try { zip = await JSZip.loadAsync(file, { checkCRC32: true }) } catch { throw unreadable() }
   const manifestFile = zip.file('manifest.json')
   if (!manifestFile) throw notABackup()
   let manifest: Record<string, unknown>

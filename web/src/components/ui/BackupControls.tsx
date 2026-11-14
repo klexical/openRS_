@@ -15,21 +15,31 @@ type BackupState =
   | { state: 'ready'; url: string; name: string; drives: number }
   | { state: 'failed'; message: string }
 
-/** A button that builds the backup file, shows its progress, then offers it as a download link. */
-export function BackupButton({ label }: { label: string }) {
+/**
+ * A button that builds the backup file, shows its progress, then offers it as a download link. Leaving the page while
+ * it is built stops it: the worker is ended and no download address is made.
+ */
+export function BackupButton({ label, afterFailedUpgrade = false }: { label: string; afterFailedUpgrade?: boolean }) {
   const [s, setS] = useState<BackupState>({ state: 'idle' })
+  const storage = useStore((st) => st.storage)
   const url = useRef<string | null>(null)
+  const building = useRef<AbortController | null>(null)
   const forget = () => { if (url.current) URL.revokeObjectURL(url.current); url.current = null }
-  useEffect(() => forget, [])
+  useEffect(() => () => { building.current?.abort(); forget() }, [])
 
   const run = async () => {
     forget()
+    building.current?.abort()
+    const stop = new AbortController()
+    building.current = stop
     setS({ state: 'building', done: 0, total: 0 })
     try {
-      const file = await makeBackup((done, total) => setS({ state: 'building', done, total }))
+      const file = await makeBackup((done, total) => { if (!stop.signal.aborted) setS({ state: 'building', done, total }) }, { signal: stop.signal })
+      if (stop.signal.aborted) return
       url.current = URL.createObjectURL(file.blob)
       setS({ state: 'ready', url: url.current, name: file.name, drives: file.drives })
     } catch (err) {
+      if (stop.signal.aborted) return
       console.warn('[Sapphire] Backup failed:', err)
       setS({ state: 'failed', message: plainMessage(err, "Sapphire couldn't build the backup. Nothing was written.") })
     }
@@ -39,7 +49,10 @@ export function BackupButton({ label }: { label: string }) {
     <div className="flex flex-wrap items-center gap-3">
       <button onClick={run} disabled={s.state === 'building'} className={button}>{label}</button>
       <span role="status" className="text-xs font-mono text-dim">
-        {s.state === 'building' && (s.total > 0 ? `Building the backup: ${s.done} of ${drivesText(s.total)}…` : 'Building the backup…')}
+        {s.state === 'building' && (storage.state === 'blocked'
+          // the database waits for an older tab, and so does the backup: say what unblocks it
+          ? <span className="text-warn">Close Sapphire's other tabs: the backup continues once they are closed.</span>
+          : s.total > 0 ? `Building the backup: ${s.done} of ${drivesText(s.total)}…` : 'Building the backup…')}
         {s.state === 'ready' && (
           <a href={s.url} download={s.name} className="text-accent underline">
             Download {s.name} ({drivesText(s.drives)})
@@ -47,6 +60,9 @@ export function BackupButton({ label }: { label: string }) {
         )}
         {s.state === 'failed' && <span className="text-warn">{s.message}</span>}
       </span>
+      {afterFailedUpgrade && (
+        <span className="text-xs font-mono">Keep this file. It can be restored once Sapphire's update has completed in this browser.</span>
+      )}
     </div>
   )
 }

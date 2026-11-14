@@ -105,7 +105,7 @@ function StorageNotice() {
         <button onClick={action.run} className="px-2 py-1 rounded border border-brd text-frost hover:bg-surf3">{action.label}</button>
       )}
       {/* After a failed upgrade, a backup of the old data comes first (#384 ticket 02) */}
-      {storage.state === 'upgrade-failed' && <BackupButton label="Back up the old drives" />}
+      {storage.state === 'upgrade-failed' && <BackupButton label="Back up the old drives" afterFailedUpgrade />}
     </div>
   )
 }

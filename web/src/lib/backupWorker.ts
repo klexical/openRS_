@@ -5,6 +5,7 @@ import { readEverything, NewerStorageError } from './storageBackup'
 import { buildBackup, BackupError } from './backupFormat'
 
 export type WorkerReply =
+  | { type: 'started' }
   | { type: 'progress'; done: number; total: number }
   | { type: 'done'; blob: Blob; name: string; drives: number }
   | { type: 'failed'; message: string; plain: boolean }
@@ -12,6 +13,7 @@ export type WorkerReply =
 const post = (m: WorkerReply) => (self as unknown as Worker).postMessage(m)
 
 self.onmessage = async () => {
+  post({ type: 'started' })              // at once, before the read: the page's watchdog waits only for this
   try {
     const file = await buildBackup(await readEverything(), (done, total) => post({ type: 'progress', done, total }))
     post({ type: 'done', ...file })

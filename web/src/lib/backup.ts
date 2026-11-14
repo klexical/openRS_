@@ -1,5 +1,6 @@
 // Back up all drives, and restore (#384 ticket 02). Loaded on demand (Settings, the failed-upgrade message), not on the
-// first visit. The file format is in backupFormat.ts; every IndexedDB access is in storage.ts.
+// first visit. The file format is in backupFormat.ts; the IndexedDB reads and writes are in storageBackup.ts, which
+// opens the database through storage.ts (and on its own, at any version, to read for a backup).
 
 import { split } from './storage'
 import { readEverything, restoreRecords, NewerStorageError, type RestoreRecord } from './storageBackup'
@@ -25,9 +26,20 @@ export interface RestoreOutcome {
 /** Let the page draw and take input between steps. */
 const yieldToPage = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 
+/** The worker could not be used (did not load, sent a message that cannot be read, or said nothing): build on the page. */
 class NoWorker extends Error {}
 
-function inWorker(onProgress?: (done: number, total: number) => void): Promise<BackupFile> {
+export interface BackupOptions {
+  /** Stops the backup: the worker is ended, the page build stops at its next drive, and no file is made. */
+  signal?: AbortSignal
+  /** How long the worker may stay silent before its first message (its "started", sent before it reads anything). */
+  silenceMs?: number
+}
+
+const stopped = (signal: AbortSignal) => signal.reason ?? new DOMException('The backup was stopped.', 'AbortError')
+
+function inWorker(onProgress: ((done: number, total: number) => void) | undefined, signal: AbortSignal | undefined,
+  silenceMs: number): Promise<BackupFile> {
   return new Promise((resolve, reject) => {
     let worker: Worker
     try {
@@ -35,31 +47,45 @@ function inWorker(onProgress?: (done: number, total: number) => void): Promise<B
     } catch {
       reject(new NoWorker()); return
     }
+    const onAbort = () => { end(); reject(stopped(signal!)) }
+    const end = () => { clearTimeout(watchdog); signal?.removeEventListener('abort', onAbort); worker.terminate() }
+    const fallBack = () => { end(); reject(new NoWorker()) }
+    let heard = false
+    const watchdog = setTimeout(() => { if (!heard) fallBack() }, silenceMs)
+    if (signal?.aborted) { onAbort(); return }
+    signal?.addEventListener('abort', onAbort, { once: true })
     worker.onmessage = (e: MessageEvent<WorkerReply>) => {
+      heard = true
       const m = e.data
+      if (m.type === 'started') return
       if (m.type === 'progress') { onProgress?.(m.done, m.total); return }
-      worker.terminate()
+      end()
       if (m.type === 'done') resolve({ blob: m.blob, name: m.name, drives: m.drives, builtIn: 'worker' })
       else reject(m.plain ? new BackupError(m.message) : new Error(`The backup could not be built (${m.message}).`))
     }
+    worker.onmessageerror = fallBack
     // The worker could not start or load (a browser without module workers): build on the page instead
-    worker.onerror = (e) => { e.preventDefault(); worker.terminate(); reject(new NoWorker()) }
+    worker.onerror = (e) => { e.preventDefault(); fallBack() }
     worker.postMessage('backup')
   })
 }
 
 /** Build the backup of everything stored (in a worker where one can start), as a file to download. */
-export async function makeBackup(onProgress?: (done: number, total: number) => void): Promise<BackupFile> {
+export async function makeBackup(onProgress?: (done: number, total: number) => void,
+  { signal, silenceMs = 5000 }: BackupOptions = {}): Promise<BackupFile> {
   if (typeof Worker !== 'undefined') {
     try {
-      return await inWorker(onProgress)
+      return await inWorker(onProgress, signal, silenceMs)
     } catch (err) {
       if (!(err instanceof NoWorker)) throw err
-      console.warn('[Sapphire] The backup worker could not start; building on the page.')
+      console.warn('[Sapphire] The backup worker could not be used; building on the page.')
     }
   }
   try {
-    const file = await buildBackup(await readEverything(), onProgress, yieldToPage)
+    signal?.throwIfAborted()
+    const data = await readEverything()
+    signal?.throwIfAborted()
+    const file = await buildBackup(data, onProgress, async () => { await yieldToPage(); signal?.throwIfAborted() })
     return { ...file, builtIn: 'page' }
   } catch (err) {
     if (err instanceof BackupError) throw err

@@ -14,8 +14,8 @@ const load = () => (loaded ??= import('./BackupControls').catch((err: unknown) =
 const LazyBackup = lazy(() => load().then((m) => ({ default: m?.BackupButton ?? Unloadable })))
 const LazyRestore = lazy(() => load().then((m) => ({ default: m?.RestoreInput ?? (() => null) })))
 
-export function BackupButton({ label }: { label: string }) {
-  return <Suspense fallback={null}><LazyBackup label={label} /></Suspense>
+export function BackupButton(props: { label: string; afterFailedUpgrade?: boolean }) {
+  return <Suspense fallback={null}><LazyBackup {...props} /></Suspense>
 }
 
 export function RestoreInput() {

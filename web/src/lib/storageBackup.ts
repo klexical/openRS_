@@ -2,7 +2,7 @@
 // Kept apart from storage.ts so the first visit does not load it (300 kB budget); it uses storage.ts's own opening,
 // upgrade and store names, and no other code touches IndexedDB.
 
-import { openDB, type IDBPDatabase } from 'idb'
+import { openDB, type IDBPDatabase, type IDBPTransaction } from 'idb'
 import { getDb, settle, DB_NAME, DB_VERSION, DRIVES, POINTS, DIAGNOSTICS, OLD_SESSIONS, ALL, type DriveRecord } from './storage'
 import type { DiagnosticData, TripData } from '../types/session'
 
@@ -55,9 +55,15 @@ export async function readEverything(): Promise<StoredEverything> {
 /** A drive's records from a backup, as they were stored (a part the backup did not hold is not written). */
 export interface RestoreRecord { drive: { id: string }; points: { id: string } | null; diagnostics: { id: string } | null }
 
+/** An id present in any of the three stores (an orphan record left by an earlier fault counts): never overwritten. */
+async function alreadyHere(tx: IDBPTransaction<unknown, string[], 'readwrite'>, id: string): Promise<boolean> {
+  for (const store of ALL) if ((await tx.objectStore(store).getKey(id)) !== undefined) return true
+  return false
+}
+
 /**
- * Restore records from a backup in one transaction: a drive already here (same id) is skipped and counted, never
- * overwritten; nothing is deleted (owner, 2026-11-14: restore only adds).
+ * Restore records from a backup in one transaction: a drive already here (same id, in any of the three stores) is
+ * skipped and counted, never overwritten; nothing is deleted (owner, 2026-11-14: restore only adds).
  */
 export async function restoreRecords(records: RestoreRecord[]): Promise<{ added: number; skipped: number }> {
   const db = await getDb()
@@ -65,7 +71,7 @@ export async function restoreRecords(records: RestoreRecord[]): Promise<{ added:
   const out = { added: 0, skipped: 0 }
   try {
     for (const r of records) {
-      if ((await tx.objectStore(DRIVES).getKey(r.drive.id)) !== undefined) { out.skipped++; continue }
+      if (await alreadyHere(tx, r.drive.id)) { out.skipped++; continue }
       settle(tx.objectStore(DRIVES).put(r.drive))
       if (r.points) settle(tx.objectStore(POINTS).put(r.points))
       if (r.diagnostics) settle(tx.objectStore(DIAGNOSTICS).put(r.diagnostics))

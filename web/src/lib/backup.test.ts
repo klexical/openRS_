@@ -1,9 +1,10 @@
 import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { openDB } from 'idb'
 import JSZip from 'jszip'
 import { storeImported, listDrives, closeStorage, renameDrive, storageStatus, loadDrive } from './storage'
+import { makeBackup as makeBackupWith } from './backup'
 import { makeBackup, restoreBackup, BACKUP_FORMAT_VERSION } from './backup'
 import type { Session } from '../types/session'
 
@@ -226,5 +227,113 @@ describe('#384 back up all drives, and restore', () => {
     expect(await restoreBackup(backup.blob)).toEqual({ added: 2, skipped: 0, notRestorable: [] })
     const after = await rawStores()
     for (const st of ['drives', 'points', 'diagnostics']) expect(bytes(after[st])).toEqual(bytes(before[st]))
+  })
+})
+
+// ── Review round (SPEC-REVIEW-02, QA REVIEW-02-b134185): findings 1–7 ──
+
+/** A stand-in for the browser's Worker: [act] decides what it does when the page posts to it. */
+class StubWorker {
+  static act: (w: StubWorker) => void = () => {}
+  static made: StubWorker[] = []
+  onmessage: ((e: { data: unknown }) => void) | null = null
+  onerror: ((e: { preventDefault(): void }) => void) | null = null
+  onmessageerror: ((e: unknown) => void) | null = null
+  terminated = false
+  constructor() { StubWorker.made.push(this) }
+  postMessage() { StubWorker.act(this) }
+  terminate() { this.terminated = true }
+}
+
+describe('#384 ticket 02, review round', () => {
+  afterEach(() => { vi.unstubAllGlobals(); StubWorker.made = []; StubWorker.act = () => {} })
+
+  it('finding 1: every entry of the file carries one fixed date (1980-01-01 UTC), never the time it was built', async () => {
+    await storeImported([drive('d1', 120), drive('d2', 121)])
+    const zip = await JSZip.loadAsync((await makeBackup()).blob)
+    const dates = Object.values(zip.files).map((e) => e.date.getTime())
+    expect(dates.length).toBeGreaterThanOrEqual(3)
+    expect(new Set(dates)).toEqual(new Set([Date.UTC(1980, 0, 1)]))
+  })
+
+  it('finding 4: a backup cut short is refused as incomplete or damaged', async () => {
+    await storeImported([drive('c1', 130), drive('c2', 131)])
+    const bytes7 = new Uint8Array(await (await makeBackup()).blob.arrayBuffer())
+    fresh()
+    await expect(restoreBackup(new Blob([bytes7.slice(0, Math.floor(bytes7.length * 0.7))])))
+      .rejects.toThrow(/not a Sapphire backup, or is incomplete or damaged.*Nothing was restored/s)
+    expect(await listDrives()).toEqual([])
+  })
+
+  it('finding 4: one changed digit inside a drive (an uncompressed file, so the place is known) is refused, not restored wrong', async () => {
+    await storeImported([drive('f1', 140)])
+    const real = await JSZip.loadAsync((await makeBackup()).blob)
+    const stored = new JSZip()
+    for (const name of ['manifest.json', 'drives/1.json']) stored.file(name, await real.file(name)!.async('string'), { compression: 'STORE' })
+    const bytes = new Uint8Array(await (await stored.generateAsync({ type: 'blob', compression: 'STORE' })).arrayBuffer())
+    const at = Buffer.from(bytes).indexOf('"rpm":2000')
+    expect(at).toBeGreaterThan(0)
+    bytes[at + 6] = 0x33                                        // "rpm":2000 → "rpm":3000
+    fresh()
+    await expect(restoreBackup(new Blob([bytes]))).rejects.toThrow(/incomplete or damaged.*Nothing was restored/s)
+    expect(await listDrives()).toEqual([])
+  })
+
+  it('finding 5: a list with a gap stops the backup in plain words instead of coming back changed', async () => {
+    const s = drive('gap', 150)
+    ;(s.diagnostics as unknown as Record<string, unknown>).canInventory = [1, , 3]   // eslint-disable-line no-sparse-arrays
+    await storeImported([s])
+    await expect(makeBackup()).rejects.toThrow(/a list with a gap.*cannot write to a backup.*Nothing was written/s)
+  })
+
+  it('finding 7: an id already in any store (an orphan points record) is skipped and counted, and that record is left alone', async () => {
+    await storeImported([drive('o1', 160)])
+    const backup = await makeBackup()
+    closeStorage()
+    const db = await openDB('sapphire')
+    await db.delete('drives', 'o1'); await db.delete('diagnostics', 'o1')
+    await db.put('points', { id: 'o1', trip: null })            // an orphan left by an earlier fault
+    db.close()
+    expect(await restoreBackup(backup.blob)).toEqual({ added: 0, skipped: 1, notRestorable: [] })
+    const after = await rawStores()
+    expect(after.points).toEqual([{ id: 'o1', trip: null }])
+    expect(after.drives).toEqual([])
+  })
+
+  it('findings 2 and 3: a worker that cannot load, sends a message that cannot be read, or stays silent → built on the page', async () => {
+    await storeImported([drive('w1', 170)])
+    vi.stubGlobal('Worker', StubWorker)
+    // error and messageerror come after "started" (the watchdog no longer waits), so only their own handling ends them
+    const started = (w: StubWorker) => w.onmessage?.({ data: { type: 'started' } })
+    const cases: [string, (w: StubWorker) => void, number][] = [
+      ['error', (w) => setTimeout(() => { started(w); w.onerror?.({ preventDefault() {} }) }), 60_000],
+      ['messageerror', (w) => setTimeout(() => { started(w); w.onmessageerror?.({}) }), 60_000],
+      ['silent', () => {}, 50],
+    ]
+    for (const [label, act, silenceMs] of cases) {
+      StubWorker.act = act
+      const file = await Promise.race([makeBackupWith(undefined, { silenceMs }),
+        new Promise<never>((_, no) => setTimeout(() => no(new Error(`${label}: still building after 2 s`)), 2000))])
+      expect([label, file.builtIn, file.drives]).toEqual([label, 'page', 1])
+      expect([label, StubWorker.made.at(-1)!.terminated]).toEqual([label, true])
+    }
+  })
+
+  it('finding 6: an aborted backup ends the worker; on the page it stops between drives', async () => {
+    await storeImported([drive('a1', 180), drive('a2', 181), drive('a3', 182)])
+    vi.stubGlobal('Worker', StubWorker)
+    StubWorker.act = (w) => setTimeout(() => w.onmessage?.({ data: { type: 'started' } }))
+    const inWorker = new AbortController()
+    const pending = makeBackupWith(undefined, { signal: inWorker.signal })
+    await new Promise((r) => setTimeout(r, 20))
+    inWorker.abort()
+    await expect(pending).rejects.toThrow()
+    expect(StubWorker.made[0].terminated).toBe(true)
+
+    vi.unstubAllGlobals()                                       // no Worker: the page path
+    const onPage = new AbortController()
+    const steps: number[] = []
+    await expect(makeBackupWith((done) => { steps.push(done); if (done === 1) onPage.abort() }, { signal: onPage.signal })).rejects.toThrow()
+    expect(Math.max(...steps)).toBeLessThan(3)
   })
 })

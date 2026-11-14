@@ -117,10 +117,74 @@ describe('#384 ticket 02: backup and restore on the page', () => {
     const { App } = await modules()
     render(<App />)
     await waitFor(() => expect(document.body.textContent).toMatch(/Sapphire couldn't update its storage/))
-    const button = await screen.findByText('Back up the old drives', {}, { timeout: 5000 })   // outside act: act holds the lazy render
+    const button = await screen.findByText('Back up the old drives', {}, { timeout: 5000 })
+    expect(document.body.textContent).toContain("Keep this file. It can be restored once Sapphire's update has completed in this browser.")   // outside act: act holds the lazy render
     await act(async () => { fireEvent.click(button) })
     const link = await waitFor(() => { const a = document.querySelector('a[download]'); expect(a).not.toBeNull(); return a! })
     expect(link.getAttribute('download')).toMatch(/^sapphire-backup-/)
+  }, 15_000)
+})
+
+describe('#384 ticket 02, review round: the backup button', () => {
+  class HeldWorker {
+    static made: HeldWorker[] = []
+    onmessage: ((e: { data: unknown }) => void) | null = null
+    onerror: unknown = null; onmessageerror: unknown = null
+    terminated = false
+    constructor() { HeldWorker.made.push(this) }
+    postMessage() { setTimeout(() => this.onmessage?.({ data: { type: 'started' } })) }
+    terminate() { this.terminated = true }
+  }
+  afterEach(() => { HeldWorker.made = [] })
+
+  it('leaving Settings while the backup is built ends the worker and makes no download address', async () => {
+    const created: string[] = []
+    vi.stubGlobal('Worker', HeldWorker)
+    URL.createObjectURL = () => { created.push('made'); return 'blob:invented' }
+    URL.revokeObjectURL = () => {}
+    await modules()
+    const { SettingsPanel } = await import('./components/panels/SettingsPanel')
+    const { unmount } = render(<SettingsPanel />)
+    const button = await screen.findByText('Back up all drives', {}, { timeout: 5000 })
+    await act(async () => { fireEvent.click(button) })
+    await waitFor(() => expect(HeldWorker.made).toHaveLength(1))
+    await new Promise((r) => setTimeout(r, 30))                // the worker has started and is still building
+    expect(document.body.textContent).toMatch(/Building the backup/)
+    unmount()
+    HeldWorker.made[0].onmessage?.({ data: { type: 'done', blob: new Blob(['x']), name: 'sapphire-backup-2096-01-01.zip', drives: 1 } })
+    await new Promise((r) => setTimeout(r, 50))
+    expect(HeldWorker.made[0].terminated).toBe(true)
+    expect(created).toEqual([])
+  }, 15_000)
+
+  it('a file finished at the moment Settings is left makes no download address either', async () => {
+    const created: string[] = []
+    vi.stubGlobal('Worker', HeldWorker)
+    URL.createObjectURL = () => { created.push('made'); return 'blob:invented' }
+    URL.revokeObjectURL = () => {}
+    await modules()
+    const { SettingsPanel } = await import('./components/panels/SettingsPanel')
+    const { unmount } = render(<SettingsPanel />)
+    const button = await screen.findByText('Back up all drives', {}, { timeout: 5000 })
+    await act(async () => { fireEvent.click(button) })
+    await waitFor(() => expect(HeldWorker.made).toHaveLength(1))
+    // in one go: the worker's file arrives, and Settings is left before the page acts on it
+    HeldWorker.made[0].onmessage?.({ data: { type: 'done', blob: new Blob(['x']), name: 'sapphire-backup-2096-01-01.zip', drives: 1 } })
+    unmount()
+    await new Promise((r) => setTimeout(r, 50))
+    expect(created).toEqual([])
+  }, 15_000)
+
+  it('while this tab waits for Sapphire\'s other tabs, the button says so instead of "Building the backup"', async () => {
+    vi.stubGlobal('Worker', HeldWorker)
+    const { useStore } = await modules()
+    const { SettingsPanel } = await import('./components/panels/SettingsPanel')
+    render(<SettingsPanel />)
+    const button = await screen.findByText('Back up all drives', {}, { timeout: 5000 })
+    act(() => useStore.setState({ storage: { state: 'blocked' } }))
+    await act(async () => { fireEvent.click(button) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Close Sapphire's other tabs/))
+    expect(document.body.textContent).not.toMatch(/Building the backup/)
   }, 15_000)
 })
 
