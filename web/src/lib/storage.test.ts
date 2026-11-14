@@ -143,6 +143,48 @@ describe('#384 upgrade from version 1', () => {
     raw.close()
   })
 
+  it('an engine error during the upgrade (DataCloneError) leaves version 1 and says so without the engine\'s text (M1)', async () => {
+    await writeV1([session('clone')])
+    const proto = g.IDBObjectStore.prototype as Record<string, (...a: unknown[]) => unknown>
+    const orig = proto.put
+    originals.push([proto, 'put', orig])
+    proto.put = function (this: { name: string }, ...a: unknown[]) {
+      if (this.name === 'drives') throw new DOMException('The object could not be cloned (engine text).', 'DataCloneError')
+      return orig.apply(this, a)
+    }
+    await expect(listDrives()).rejects.toThrow()
+    for (const [p2, name, o] of originals.splice(0).reverse()) p2[name] = o
+    const status = storageStatus()
+    expect(status.state).toBe('upgrade-failed')
+    const reason = status.state === 'upgrade-failed' ? status.reason : ''
+    expect(reason).toBe("Sapphire couldn't update its storage.")
+    expect(reason).not.toMatch(/engine|DataCloneError|cloned/)
+    closeStorage()
+    const raw = await openDB('sapphire')
+    expect([raw.version, [...raw.objectStoreNames]]).toEqual([1, ['sessions']])
+    raw.close()
+  })
+
+  it('an engine error that aborts the upgrade asynchronously (ConstraintError) says so in plain words, no unhandled error (M1)', async () => {
+    await writeV1([session('async')])
+    const proto = g.IDBObjectStore.prototype as Record<string, (...a: unknown[]) => unknown>
+    const orig = proto.put
+    originals.push([proto, 'put', orig])
+    proto.put = function (this: { name: string; add: (v: unknown) => unknown }, ...a: unknown[]) {
+      if (this.name !== 'drives') return orig.apply(this, a)
+      this.add(a[0])
+      return this.add(a[0])                    // the same key twice: the request fails later, aborting the transaction
+    }
+    await expect(listDrives()).rejects.toThrow()
+    for (const [p2, name, o] of originals.splice(0).reverse()) p2[name] = o
+    const status = storageStatus()
+    expect(status.state === 'upgrade-failed' && status.reason).toBe("Sapphire couldn't update its storage.")
+    closeStorage()
+    const raw = await openDB('sapphire')
+    expect([raw.version, [...raw.objectStoreNames]]).toEqual([1, ['sessions']])
+    raw.close()
+  })
+
   it('any other failure to open is reported in plain words too, never left at "opening" (a newer database than this Sapphire)', async () => {
     const newer = await openDB('sapphire', 5, { upgrade(d) { d.createObjectStore('sessions', { keyPath: 'id' }) } })
     newer.close()

@@ -64,6 +64,12 @@ const ALL = [DRIVES, POINTS, DIAGNOSTICS]
 const DERIVED = ['driveStart', 'summary', 'pointCount', 'hasDrive', 'hasSession', 'hasLaps', 'hasWarnings', 'warnings',
   'contentHash'] as const
 
+/**
+ * A write whose promise nobody awaits: its failure already reaches the caller through the transaction's own result
+ * (`tx.done`, or openDB for the upgrade), so a rejection here must not also surface as an unhandled one.
+ */
+const settle = (request: Promise<unknown>): void => { request.catch(() => {}) }
+
 // ── Status, for the page's plain-words messages ──
 
 let status: StorageStatus = { state: 'opening' }
@@ -83,13 +89,15 @@ let openDb: IDBPDatabase | null = null
 function getDb(): Promise<IDBPDatabase> {
   if (status.state === 'outdated') return Promise.reject(new Error('Sapphire was updated in another tab: reload'))
   if (dbPromise) return dbPromise
-  let failure: string | null = null
+  let upgrading = false
+  let convertProblem: string | null = null      // our own plain words for a record that cannot convert
   setStatus({ state: 'opening' })
   // Promise.resolve().then: an open() that throws at once rejects like any other failure to open
   dbPromise = Promise.resolve().then(() => openDB(DB_NAME, DB_VERSION, {
     async upgrade(db, oldVersion, _newVersion, tx) {
-      // An error the transaction itself hits (a full disk: QuotaExceededError) aborts it outside the try below
-      tx.done.catch((e: unknown) => { if (failure === null) failure = e instanceof Error ? e.name : 'the update was stopped' })
+      upgrading = true
+      // An error the transaction itself hits (a full disk) aborts it outside the try below; openDB then rejects
+      tx.done.catch((e: unknown) => console.warn('[Sapphire] Storage update stopped:', e instanceof Error ? e.name : e))
       try {
         const drives = db.createObjectStore(DRIVES, { keyPath: 'id' })
         drives.createIndex('byStart', 'driveStart')
@@ -102,17 +110,18 @@ function getDb(): Promise<IDBPDatabase> {
           let cursor = await t.objectStore(OLD_SESSIONS).openCursor()
           while (cursor) {
             const r = split(cursor.value)              // throws on a record it cannot convert
-            t.objectStore(DRIVES).put(r.drive)
-            t.objectStore(POINTS).put(r.points)
-            t.objectStore(DIAGNOSTICS).put(r.diagnostics)
+            settle(t.objectStore(DRIVES).put(r.drive))
+            settle(t.objectStore(POINTS).put(r.points))
+            settle(t.objectStore(DIAGNOSTICS).put(r.diagnostics))
             cursor = await cursor.continue()
           }
           // Only after every record converted, in the same transaction
           db.deleteObjectStore(OLD_SESSIONS)
         }
       } catch (err) {
-        failure = err instanceof Error ? err.message : String(err)
-        tx.abort()                                      // version 1 stays exactly as it was
+        if (err instanceof ConvertError) convertProblem = err.message
+        else console.warn('[Sapphire] Storage update failed:', err instanceof Error ? err.name : err)
+        try { tx.abort() } catch { /* the engine already ended it */ }   // version 1 stays exactly as it was
       }
     },
     blocked() { setStatus({ state: 'blocked' }) },
@@ -127,12 +136,13 @@ function getDb(): Promise<IDBPDatabase> {
   })).then(
     (db) => { openDb = db; setStatus({ state: 'ready' }); return db },
     (err) => {
-      // Any failure to open says so in plain words: a record that could not convert, a quota or other error that
-      // aborted the upgrade, or a database newer than this Sapphire. In each case nothing stored was changed.
-      const why = err instanceof Error ? err.name : String(err)
-      setStatus({ state: 'upgrade-failed', reason: failure !== null
-        ? `Sapphire couldn't update its storage (${failure}).`
-        : `Sapphire couldn't open its storage (${why}).` })
+      // Any failure to open says so in plain words, never the engine's text (that goes to the console): a record that
+      // could not convert, an engine or quota error that aborted the upgrade, or a database newer than this Sapphire.
+      // In each case nothing stored was changed.
+      console.warn('[Sapphire] Storage could not be opened:', err instanceof Error ? err.name : err)
+      setStatus({ state: 'upgrade-failed', reason: !upgrading ? "Sapphire couldn't open its storage."
+        : convertProblem !== null ? `Sapphire couldn't update its storage: ${convertProblem}.`
+          : "Sapphire couldn't update its storage." })
       throw err
     },
   )
@@ -304,9 +314,9 @@ export async function storeImported(sessions: Session[]): Promise<ImportOutcome>
         ?? (await tx.objectStore(DRIVES).index('byHash').getKey(r.drive.contentHash)) as string | undefined
       if (existing !== undefined) { outcome.alreadyImported.push({ name: r.drive.name, existingId: existing }); continue }
       seen.set(r.drive.contentHash, r.drive.id)
-      tx.objectStore(DRIVES).put(r.drive)
-      tx.objectStore(POINTS).put(r.points)
-      tx.objectStore(DIAGNOSTICS).put(r.diagnostics)
+      settle(tx.objectStore(DRIVES).put(r.drive))
+      settle(tx.objectStore(POINTS).put(r.points))
+      settle(tx.objectStore(DIAGNOSTICS).put(r.diagnostics))
       outcome.stored.push(r.drive)
     }
   } catch (err) {
@@ -359,10 +369,10 @@ async function allOrNone(write: (tx: IDBPTransaction<unknown, string[], 'readwri
 
 /** Delete drives: each one's three records, all in one transaction; a failure deletes none of them. */
 export function deleteDrives(ids: string[]): Promise<void> {
-  return allOrNone((tx) => { for (const id of ids) for (const store of ALL) tx.objectStore(store).delete(id) })
+  return allOrNone((tx) => { for (const id of ids) for (const store of ALL) settle(tx.objectStore(store).delete(id)) })
 }
 
 /** Empty the three stores in one transaction; a failure empties none of them. */
 export function clearAllDrives(): Promise<void> {
-  return allOrNone((tx) => { for (const store of ALL) tx.objectStore(store).clear() })
+  return allOrNone((tx) => { for (const store of ALL) settle(tx.objectStore(store).clear()) })
 }
