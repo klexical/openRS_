@@ -180,6 +180,12 @@ class UpdateLookupTest {
         assertEquals("2.2.8", find(gh, "stable", "2.2.6")?.version?.displayName)
     }
 
+    @Test fun `across pages the highest version wins, not the last page read`() {
+        val gh = FakeGitHub(listOf(android("2.2.8", false)) + nightlies(150) + android("2.2.7", false), latestTag = null)
+        assertEquals("2.2.8", find(gh, "stable", "2.2.6")?.version?.displayName)
+        assertEquals(listOf("/latest", "/?per_page=100&page=1", "/?per_page=100&page=2"), gh.paths)
+    }
+
     // ── The APK asset by its exact name ──────────────────────────────────────────────────────────────────────────
 
     @Test fun `a release with two APK-like assets gives the one named exactly`() {
