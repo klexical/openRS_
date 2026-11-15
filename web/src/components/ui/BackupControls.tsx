@@ -19,7 +19,13 @@ type BackupState =
  * A button that builds the backup file, shows its progress, then offers it as a download link. Leaving the page while
  * it is built stops it: the worker is ended and no download address is made.
  */
-export function BackupButton({ label, afterFailedUpgrade = false }: { label: string; afterFailedUpgrade?: boolean }) {
+export function BackupButton({ label, afterFailedUpgrade = false, buttonClass = button, onReady }: {
+  label: string; afterFailedUpgrade?: boolean
+  /** The button's look (look A screens pass theirs). */
+  buttonClass?: string
+  /** Called once the file is ready to download (Clear all's first step). */
+  onReady?: () => void
+}) {
   const [s, setS] = useState<BackupState>({ state: 'idle' })
   const storage = useStore((st) => st.storage)
   const url = useRef<string | null>(null)
@@ -38,6 +44,7 @@ export function BackupButton({ label, afterFailedUpgrade = false }: { label: str
       if (stop.signal.aborted) return
       url.current = URL.createObjectURL(file.blob)
       setS({ state: 'ready', url: url.current, name: file.name, drives: file.drives })
+      onReady?.()
     } catch (err) {
       if (stop.signal.aborted) return
       console.warn('[Sapphire] Backup failed:', err)
@@ -47,7 +54,7 @@ export function BackupButton({ label, afterFailedUpgrade = false }: { label: str
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <button onClick={run} disabled={s.state === 'building'} className={button}>{label}</button>
+      <button type="button" onClick={run} disabled={s.state === 'building'} className={buttonClass}>{label}</button>
       <span role="status" className="text-xs font-mono text-dim">
         {s.state === 'building' && (storage.state === 'blocked'
           // the database waits for an older tab, and so does the backup: say what unblocks it
@@ -68,7 +75,7 @@ export function BackupButton({ label, afterFailedUpgrade = false }: { label: str
 }
 
 /** Choose a backup file and restore it: adds what is missing, skips what is here, never overwrites. */
-export function RestoreInput() {
+export function RestoreInput({ buttonClass = button }: { buttonClass?: string } = {}) {
   const [text, setText] = useState<{ message: string; warn: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -92,7 +99,7 @@ export function RestoreInput() {
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <label className={`${button} cursor-pointer`}>
+      <label className={`${buttonClass} cursor-pointer`}>
         Restore from a backup
         <input type="file" accept=".zip,application/zip" aria-label="Restore from a backup" className="sr-only" disabled={busy}
           onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; void restore(f) }} />

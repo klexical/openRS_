@@ -5,6 +5,7 @@ import { useStore, type ImportJob } from '../../store'
 import { ImportCodeUnavailable, importDrives } from '../../lib/driveLibrary'
 import type { FileResult } from '../../lib/importFiles'
 import { go } from '../../lib/address'
+import { askToKeepOnce } from '../../lib/keepData'
 
 export async function startImport(files: File[]): Promise<void> {
   const st = useStore.getState()
@@ -38,6 +39,8 @@ export async function startImport(files: File[]): Promise<void> {
   const s = useStore.getState()
   s.setNewIds(stored.map((d) => d.id))
   s.setImportJob({ running: false, progress: null, results, storedCount: stored.length, notes: useStore.getState().importJob?.notes })
+  // the first import that stored a drive asks the browser to keep the data, once ever (#384 ticket 07)
+  if (stored.length > 0) void askToKeepOnce()
   if (stored.length === 1) go({ place: 'drive', id: stored[0].id })
   else if (stored.length > 1) {
     s.setListSearch('')

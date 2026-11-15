@@ -1,13 +1,8 @@
 import { lazyChunk } from '../ui/lazyChunk'
 
-// Settings at `#/settings` (#384 ticket 03): today's settings, unchanged; tickets 07 and 08 restyle them.
-const Panel = lazyChunk(() => import('../panels/SettingsPanel').then((m) => m.SettingsPanel), 'Settings')
+// Settings at `#/settings` (#384 tickets 03, 07): loaded when first opened, not on the first visit (the 300 kB budget).
+const Screen = lazyChunk(() => import('../settings/SettingsScreen').then((m) => m.SettingsScreen), 'Settings')
 
 export function SettingsPage() {
-  return (
-    <section className="a-page" aria-labelledby="settings-title">
-      <h1 id="settings-title">Settings</h1>
-      <div className="old-view"><Panel /></div>
-    </section>
-  )
+  return <Screen />
 }

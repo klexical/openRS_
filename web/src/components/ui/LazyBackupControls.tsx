@@ -12,12 +12,13 @@ const load = () => (loaded ??= import('./BackupControls').catch((err: unknown) =
   return null
 }))
 const LazyBackup = lazy(() => load().then((m) => ({ default: m?.BackupButton ?? Unloadable })))
-const LazyRestore = lazy(() => load().then((m) => ({ default: m?.RestoreInput ?? (() => null) })))
+const NoRestore: (props: { buttonClass?: string }) => null = () => null
+const LazyRestore = lazy(() => load().then((m) => ({ default: m?.RestoreInput ?? NoRestore })))
 
-export function BackupButton(props: { label: string; afterFailedUpgrade?: boolean }) {
+export function BackupButton(props: { label: string; afterFailedUpgrade?: boolean; buttonClass?: string; onReady?: () => void }) {
   return <Suspense fallback={null}><LazyBackup {...props} /></Suspense>
 }
 
-export function RestoreInput() {
-  return <Suspense fallback={null}><LazyRestore /></Suspense>
+export function RestoreInput(props: { buttonClass?: string }) {
+  return <Suspense fallback={null}><LazyRestore {...props} /></Suspense>
 }

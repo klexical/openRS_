@@ -1,0 +1,77 @@
+// Clear all's confirmation (#384 ticket 07; the owner's pick, mock-up C): two steps, the backup offered first. Step one:
+// back up all drives (then continue) or skip; step two: the sentence, word for word, and Clear all. A sheet from the
+// bottom on a phone, a centred box on a desktop. Escape or Cancel closes it with nothing changed.
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { clearAll } from '../../lib/driveLibrary'
+import { BackupButton } from '../ui/LazyBackupControls'
+
+export const CLEAR_SENTENCE = 'Removes every drive and session from this browser. Your settings stay.'
+
+const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled])'
+
+export function ClearAllDialog({ what, onClose, onCleared }: {
+  /** What is stored, in words ("6 drives", "2 drives and 1 session-only entry"). */
+  what: string
+  onClose: () => void
+  onCleared: () => void
+}) {
+  const [step, setStep] = useState<1 | 2>(1)
+  const [backedUp, setBackedUp] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+  // each step starts with its first control focused
+  useEffect(() => { box.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus() }, [step])
+
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'Escape' && !busy) { e.preventDefault(); onClose() }
+    if (e.key === 'Tab') {                                       // focus stays in the dialog
+      const items = [...(box.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])]
+      if (items.length === 0) return
+      const at = items.indexOf(document.activeElement as HTMLElement)
+      e.preventDefault()
+      items[(at + (e.shiftKey ? -1 : 1) + items.length) % items.length]?.focus()
+    }
+  }
+  const clear = async () => {
+    setBusy(true); setFailed(false)
+    try {
+      await clearAll()                                           // the three stores in one transaction, then the list
+      onCleared()
+    } catch (err) {
+      console.warn('[Sapphire] Clear all failed:', err)
+      setFailed(true)
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="a-scrim a-sheet-scrim">
+      <div ref={box} role="dialog" aria-modal="true" aria-labelledby="clear-title" className="a-dialog a-sheet" onKeyDown={onKey}>
+        <ol className="a-steps" aria-label="Steps">
+          <li aria-current={step === 1 ? 'step' : undefined}>1 Back up</li>
+          <li aria-current={step === 2 ? 'step' : undefined}>2 Clear</li>
+        </ol>
+        {step === 1 ? <>
+          <h2 id="clear-title">Back up before clearing?</h2>
+          <p>A backup is one file with every drive and its log. It can be restored into Sapphire later.</p>
+          <div className="a-stack">
+            <BackupButton label="Back up all drives" buttonClass="a-btn primary" onReady={() => setBackedUp(true)} />
+            <button type="button" className={backedUp ? 'a-btn primary' : 'a-btn'} onClick={() => setStep(2)}>
+              {backedUp ? 'Continue' : 'Skip the backup'}</button>
+            <button type="button" className="a-btn" onClick={onClose}>Cancel</button>
+          </div>
+        </> : <>
+          <h2 id="clear-title">Clear all {what}?</h2>
+          <p>{CLEAR_SENTENCE}</p>
+          {failed && <p role="alert" className="a-notice">Nothing was cleared: this browser's storage did not answer. Try again.</p>}
+          <div className="a-stack">
+            <button type="button" className="a-btn danger strong" disabled={busy} onClick={() => void clear()}>Clear all</button>
+            <button type="button" className="a-btn" disabled={busy} onClick={() => setStep(1)}>Back</button>
+            <button type="button" className="a-btn" disabled={busy} onClick={onClose}>Cancel</button>
+          </div>
+        </>}
+      </div>
+    </div>
+  )
+}

@@ -509,8 +509,9 @@ describe('list writes and their failures (pins, Drive library commit 1)', () => 
     gate.clearHold = hold
     const { useStore } = await boot('#/settings')
     await waitFor(() => expect(useStore.getState().drives).toHaveLength(2))
-    fireEvent.click(await screen.findByText('Clear All Sessions', {}, { timeout: 5000 }))
-    await act(async () => { fireEvent.click(screen.getByText('Confirm')) })
+    fireEvent.click(await screen.findByRole('button', { name: 'Clear all' }, { timeout: 5000 }))   // ticket 07: two steps
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Skip the backup' }))
+    await act(async () => { fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Clear all' })) })
     await settle()
     expect(useStore.getState().drives).toHaveLength(2)                                          // the write has not finished
     release()
@@ -524,8 +525,9 @@ describe('list writes and their failures (pins, Drive library commit 1)', () => 
     await act(async () => { useStore.getState().setCompare(['a', 'b']) })
     await waitFor(() => expect(useStore.getState().compareSessions).toHaveLength(2))
     await go('#/settings')
-    fireEvent.click(await screen.findByText('Clear All Sessions', {}, { timeout: 5000 }))
-    await act(async () => { fireEvent.click(screen.getByText('Confirm')) })
+    fireEvent.click(await screen.findByRole('button', { name: 'Clear all' }, { timeout: 5000 }))   // ticket 07: two steps
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Skip the backup' }))
+    await act(async () => { fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Clear all' })) })
     await waitFor(() => expect(useStore.getState().drives).toEqual([]))
     expect(useStore.getState().compareSessionIds).toEqual(['a', 'b'])
     expect(useStore.getState().compareSessions).toHaveLength(2)
