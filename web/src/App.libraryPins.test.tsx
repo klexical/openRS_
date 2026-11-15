@@ -206,6 +206,28 @@ describe('the Current drive (pins, Drive library commit 1)', () => {
     release()
     await waitFor(() => expect(useStore.getState().drivesLoaded).toBe(true))
   })
+
+  // The spec review's finding 4 (QA's FINAL at 16706a6): main reads an addressed drive once at first load; the library
+  // must too. An already-answered hold only counts the reads; nothing waits.
+  it('a first load whose address names a drive reads it once, as main does', async () => {
+    await seed([drive('a', 1)])
+    gate.hold.set('a', Promise.resolve())
+    const { useStore } = await boot('#/drive/a')
+    await waitFor(() => expect(useStore.getState().activeSession?.id).toBe('a'))
+    await settle(); await settle()
+    expect(gate.started).toEqual(['a'])
+  })
+
+  it('a drive opened from the list is read once', async () => {
+    await seed([drive('a', 1), drive('b', 2)])
+    gate.hold.set('b', Promise.resolve())
+    const { useStore } = await boot('')
+    await waitFor(() => expect(useStore.getState().drives).toHaveLength(2))
+    await go('#/drive/b')
+    await waitFor(() => expect(useStore.getState().activeSession?.id).toBe('b'))
+    await settle(); await settle()
+    expect(gate.started).toEqual(['b'])
+  })
 })
 
 describe('the compared drives (pins, Drive library commit 1)', () => {

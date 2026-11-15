@@ -23,6 +23,18 @@ export default function App() {
   // (#384 ticket 03; the remembered view is retired).
   useEffect(() => { void loadList() }, [])
 
+  // The Drive library reads the Current drive and the compared drives as the store names them (#384). An address that
+  // names a drive not stored here (deleted, or another browser's link): the list, with a plain message; the address is
+  // replaced so Back does not lead to it again. A failed read is not this: the drive's page says so.
+  // Attached before the address effect below runs, so a first load on a drive's address reads it once, as main did
+  // (the spec review's finding 4): attached later, showDrive would read it itself and attach would read it again.
+  useEffect(() => attach({
+    onNotStored: () => {
+      useStore.getState().setListNotice('That drive is not stored in this browser.')
+      go({ place: 'drives' }, { replace: true })
+    },
+  }), [])
+
   // The address names the open drive; the list and Settings open none (and a drive left is let go)
   const address = useAddress()
   const addressedId = address.place === 'drive' ? address.id : null
@@ -32,16 +44,6 @@ export default function App() {
     if (address.place !== 'drives') st.setListNotice(null)
     if (address.place !== 'drives' || addressedId !== null) st.setCompareOpen(false)
   }, [address.place, addressedId])
-
-  // The Drive library reads the Current drive and the compared drives as the store names them (#384). An address that
-  // names a drive not stored here (deleted, or another browser's link): the list, with a plain message; the address is
-  // replaced so Back does not lead to it again. A failed read is not this: the drive's page says so.
-  useEffect(() => attach({
-    onNotStored: () => {
-      useStore.getState().setListNotice('That drive is not stored in this browser.')
-      go({ place: 'drives' }, { replace: true })
-    },
-  }), [])
 
   // RS paint accent → CSS custom properties on the document root. Tailwind utilities (`text-accent`,
   // `bg-accent/10`, …) and `colors.accent` (a var()) resolve them at runtime, so this repaints everything.
