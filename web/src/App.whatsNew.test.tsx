@@ -89,6 +89,19 @@ describe('#384 ticket 09: "What\'s new" is shown once after the update, not on a
     expect(await screen.findByRole('dialog', { name: "What's new" }, { timeout: 3000 })).toBeInTheDocument()
   })
 
+  it('not over a storage upgrade that failed: the page says so instead, and nothing is marked seen', async () => {
+    const db = await openDB('sapphire', 1, { upgrade(d) { d.createObjectStore('sessions', { keyPath: 'id' }) } })
+    await db.put('sessions', { ...session('bad'), trip: { ...session('bad').trip!, points: 'not an array' } })   // cannot convert
+    db.close()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await boot()
+    await waitFor(() => expect(document.body.textContent).toMatch(/Sapphire couldn't update its storage/), { timeout: 3000 })
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)) })
+    warn.mockRestore()
+    expect(whatsNew()).toBeNull()
+    expect(localStorage.getItem('sapphire_whats_new_seen')).toBeNull()
+  })
+
   it('always reachable from Settings, also after it was dismissed', async () => {
     await boot('#/settings')
     fireEvent.click(await screen.findByRole('button', { name: "What's new" }, { timeout: 3000 }))
