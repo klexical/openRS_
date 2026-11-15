@@ -38,7 +38,11 @@ function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
-      const s = { ...defaults, ...JSON.parse(raw) }
+      const stored = JSON.parse(raw)
+      const s = { ...defaults, ...stored }
+      // settings stored before the palettes (#384 ticket 08) keep Night, the only look there was: Match device is for a
+      // first visit (owner, 2026-11-15, Q8)
+      if (stored && typeof stored === 'object' && !('palette' in stored)) s.palette = 'night'
       // a palette this build does not know (a later build's, after a revert): Match device, as an unknown paint
       // falls back to Nitrous Blue (QA R5)
       if (!PALETTES.includes(s.palette)) s.palette = defaults.palette

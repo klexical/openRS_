@@ -73,7 +73,8 @@ export function ClearAllDialog({ what, onClose, onCleared }: {
         </> : <>
           <h2 id="clear-title">{what ? `Clear all ${what}?` : 'Clear all drives and sessions?'}</h2>
           <p>{CLEAR_SENTENCE}</p>
-          {downloaded && <p className="a-meta">The backup file was downloaded.</p>}
+          {/* the owner's words (2026-11-15, Q4): a page cannot know the file was saved */}
+          {downloaded && <p className="a-meta">The backup file was offered for download. Check it was saved before you clear.</p>}
           {failed && <p role="alert" className="a-notice">Nothing was cleared: this browser's storage did not answer. Try again.</p>}
           {busy && blocked && <p role="status" className="a-notice">Close Sapphire's other tabs: Clear all continues once they are closed.</p>}
           <div className="a-stack">

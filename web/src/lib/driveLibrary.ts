@@ -10,6 +10,7 @@ import { clearAllDrives, deleteDrives, fillBestLap, listDrives, loadDrive, renam
 import type { Session } from '../types/session'
 import type { FileResult, ImportProgress } from './importFiles'
 import type { RestoreOutcome } from './backup'
+import { askToKeepOnce } from './keepData'
 
 const store = () => useStore.getState()
 
@@ -77,6 +78,8 @@ export async function restore(file: Blob): Promise<RestoreOutcome> {
   const { restoreBackup } = await import('./backup')
   const outcome = await restoreBackup(file)
   store().setDrives(await listDrives())
+  // a restore that stored drives asks the browser to keep the data too, once ever, as the first import does (owner, Q2)
+  if (outcome.added > 0) void askToKeepOnce()
   return outcome
 }
 

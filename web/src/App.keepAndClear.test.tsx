@@ -94,6 +94,23 @@ async function counts() {
   const raw = await openDB('sapphire')
   try { return Promise.all((['drives', 'points', 'diagnostics'] as const).map((s) => raw.count(s))) } finally { raw.close() }
 }
+/** A backup file of drives [n], made from a browser that is then emptied (the restore must bring them back). */
+async function backupOf(n: number[]): Promise<File> {
+  await seed(n)
+  const { makeBackup } = await import('./lib/backup')
+  const file = new File([(await makeBackup()).blob], 'invented-backup.zip')
+  const storage = await import('./lib/storage')
+  await storage.clearAllDrives()
+  storage.closeStorage()
+  return file
+}
+/** Settings' Restore, with [file] chosen; waits for its outcome line. */
+async function restore(file: File) {
+  const input = await screen.findByLabelText('Restore from a backup', {}, { timeout: 5000 }) as HTMLInputElement
+  Object.defineProperty(input, 'files', { value: [file], configurable: true })
+  await act(async () => { fireEvent.change(input) })
+  await waitFor(() => expect(document.body.textContent).toMatch(/Restored \d+ drive/), { timeout: 8000 })
+}
 const dataPanel = () => screen.findByRole('region', { name: 'Your drives' }, { timeout: 3000 })
 async function openClearAll() {
   fireEvent.click(within(await dataPanel()).getByRole('button', { name: 'Clear all' }))
@@ -131,6 +148,27 @@ describe('#384 ticket 07: the browser is asked to keep the data once, after the 
     answer(true)
     expect(sm.persist).toHaveBeenCalledTimes(1)
   })
+
+  it('a restore that stores drives asks once too, under the same memory (owner, 2026-11-15, Q2)', async () => {
+    const sm = storageManager()
+    const file = await backupOf([1, 2])                                          // made in another browser
+    await boot('#/settings')
+    await restore(file)
+    await waitFor(() => expect(sm.persist).toHaveBeenCalledTimes(1))
+    await act(async () => { window.location.hash = '#/' })
+    await list()
+    await choose([await single(3)])                                              // a first import after it: not again
+    expect(sm.persist).toHaveBeenCalledTimes(1)
+  }, 15_000)
+
+  it('a restore that stores nothing does not ask', async () => {
+    const sm = storageManager()
+    const file = await backupOf([1])
+    await seed([1])                                                              // already here: the restore skips it
+    await boot('#/settings')
+    await restore(file)
+    expect(sm.persist).not.toHaveBeenCalled()
+  }, 15_000)
 
   it('an import that stores no drive does not ask', async () => {
     const sm = storageManager()
@@ -227,7 +265,8 @@ describe('#384 ticket 07: Clear all asks, offers the backup first, and empties a
     link.addEventListener('click', (e) => e.preventDefault())                     // jsdom cannot follow a download
     fireEvent.click(link)
     fireEvent.click(within(dialog).getByRole('button', { name: 'Continue' }))
-    expect(within(dialog).getByText('The backup file was downloaded.')).toBeInTheDocument()
+    // the owner's words (2026-11-15, Q4): a page cannot know the file was saved
+    expect(within(dialog).getByText('The backup file was offered for download. Check it was saved before you clear.')).toBeInTheDocument()
   }, 15_000)
 
   it('step two opens with focus on Cancel, never on Clear all', async () => {

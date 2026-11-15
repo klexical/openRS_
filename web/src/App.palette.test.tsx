@@ -170,6 +170,14 @@ describe('#384 ticket 08: Settings offers Match device, Night, Day and Ultra, na
     } finally { window.removeEventListener('error', onError) }
   })
 
+  it('settings stored before this update (no palette in them) keep Night: Match device is for a first visit (owner, Q8)', async () => {
+    device('light')
+    localStorage.setItem('sapphire_settings', JSON.stringify({ unitSystem: 'imperial', themeId: 'red' }))
+    await boot('#/settings')
+    await waitFor(() => expect(shown()).toBe('night'))
+    expect(within(await palettePicker()).getByRole('radio', { name: 'Night' })).toHaveAttribute('aria-checked', 'true')
+  })
+
   it('the option is never named "Auto", and the words "Theme", "Mode" and "Look" do not name it', async () => {
     device('dark')
     await boot('#/settings')
@@ -224,7 +232,8 @@ describe('#384 ticket 08: the paint colours buttons, tabs and highlights only; d
     const style = (el as HTMLElement).style
     const values = [style?.color, style?.stroke, style?.fill, style?.background, style?.backgroundColor,
       el.getAttribute('stroke'), el.getAttribute('fill'), el.getAttribute('color')]
-    return values.some((v) => v?.includes('--color-accent'))
+    // the paint as an inline value, or as a Tailwind class that resolves to it (text-accent, …)
+    return values.some((v) => v?.includes('--color-accent')) || [...el.classList].some((c) => /(^|:)(text|bg|fill|stroke)-accent\b/.test(c))
   }).map((el) => `${el.tagName.toLowerCase()} "${(el.textContent ?? '').trim().slice(0, 30)}"`)
 
   it('a drive\'s Dashboard and Trip draw no figure, line or bar in the paint (Race Red chosen)', async () => {
@@ -237,7 +246,9 @@ describe('#384 ticket 08: the paint colours buttons, tabs and highlights only; d
       trip: { points: points as never, summary: { distanceKm: 1, durationMs: 39_000, fuelUsedL: 1, avgSpeedKph: 60, peakRpm: 4450,
         peakBoostPsi: 12, peakLatG: 0.5, peakLongG: 0.3, peakSpeedKph: 79, peakCoolantC: 90, peakOilTempC: 95, avgRpm: 3500,
         avgFuelEconomy: 9, modeBreakdown: {}, peakEvents: [] } },
-      diagnostics: null, meta: { appVersion: '2.2.7', firmwareVersion: 'unknown', sessionStart: new Date(T0).toISOString(), generatedAt: '' } }])
+      diagnostics: { canInventory: [{ id: '0x0F8', count: 40, changed: true, firstHex: '00', lastHex: '01', samples: [] }], fpsTimeline: [],
+        decodeTrace: [], probeResults: [], dtcResults: [], sessionEvents: [] } as never,
+      meta: { appVersion: '2.2.7', firmwareVersion: 'unknown', sessionStart: new Date(T0).toISOString(), generatedAt: '' } }])
     storage.closeStorage()
     localStorage.setItem('sapphire_settings', JSON.stringify({ themeId: 'red' }))
     await boot('#/drive/d')
@@ -246,6 +257,10 @@ describe('#384 ticket 08: the paint colours buttons, tabs and highlights only; d
     fireEvent.click(screen.getByRole('button', { name: 'Trip' }))
     expect(await screen.findByText('RPM Distribution', {}, { timeout: 3000 })).toBeInTheDocument()
     await waitFor(() => expect(document.querySelectorAll('.old-view .recharts-line-curve, .old-view .recharts-bar-rectangle').length).toBeGreaterThan(0))
+    expect(paintedData()).toEqual([])
+    // Diagnostics: its ID cells (CAN IDs, DIDs, modules) are data too (owner, 2026-11-15, Q7)
+    fireEvent.click(screen.getByRole('button', { name: 'Diagnostics' }))
+    expect(await screen.findByText('0x0F8', {}, { timeout: 3000 })).toBeInTheDocument()
     expect(paintedData()).toEqual([])
   })
 })
