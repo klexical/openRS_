@@ -75,6 +75,29 @@ describe('#384 the storage messages, in plain words', () => {
     expect(document.body.textContent).not.toContain("Close Sapphire's other tabs")
   })
 
+  it('the bar reads at AA in Night, Day and Ultra: the palette\'s warning text on its surface (QA F12)', async () => {
+    // a colour as the page resolves it: var(--x) from the root's properties (App sets them per palette), rgb() as hex
+    const resolve = (v: string): string => {
+      const ref = v.match(/^var\((--[\w-]+)\)$/)
+      if (ref) return resolve(document.documentElement.style.getPropertyValue(ref[1]).trim())
+      const rgb = v.match(/^rgb\((\d+), (\d+), (\d+)\)$/)
+      return rgb ? '#' + rgb.slice(1).map((c) => (+c).toString(16).padStart(2, '0')).join('') : v
+    }
+    const { contrastRatio } = await import('./styles/tokens')
+    for (const palette of ['night', 'day', 'ultra']) {
+      cleanup()
+      ;(globalThis as { indexedDB: IDBFactory }).indexedDB = new IDBFactory()
+      localStorage.setItem('sapphire_settings', JSON.stringify({ palette }))
+      await writeV1([{ ...session('bad'), trip: { ...session('bad').trip!, points: 'not an array' } }])
+      const { App } = await modules()
+      render(<App />)
+      const bar = await screen.findByRole('alert', {}, { timeout: 3000 })
+      await waitFor(() => expect(bar.textContent).toMatch(/Sapphire couldn't update its storage/))
+      const fg = resolve(bar.style.color), bg = resolve(bar.style.background || bar.style.backgroundColor)
+      expect(contrastRatio(fg, bg), `${palette}: ${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
   it('an old tab told that Sapphire was updated says "reload"', async () => {
     const { App, useStore, storage } = await modules()
     await storage.storeImported([session('t')])

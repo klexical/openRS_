@@ -28,6 +28,7 @@ export const colors = {
   brd: 'var(--color-brd)',
   accent: 'var(--color-accent)',
   accentD: 'var(--color-accent-d)',
+  warnText: 'var(--color-warn-text)',   // the palette's warning text (QA F12); `warn` below is the fixed fill colour
   cyan: '#0091EA',
   orange: '#FF4D00',
   ok: '#00FF88',

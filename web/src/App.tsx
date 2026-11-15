@@ -82,7 +82,10 @@ export default function App() {
   )
 }
 
-/** Storage problems the owner has to know about, in plain words (#384). Nothing when storage is fine. */
+/**
+ * Storage problems the owner has to know about, in plain words (#384). Nothing when storage is fine. Outside look A's
+ * frame: the palette's warning text on the palette's surface (QA F12).
+ */
 function StorageNotice() {
   const storage = useStore((s) => s.storage)
   let text: string | null = null
@@ -98,7 +101,7 @@ function StorageNotice() {
   if (!text) return null
   return (
     <div role="alert" className="px-4 py-2 text-sm font-mono flex items-center gap-3"
-      style={{ background: colors.surf2, color: colors.warn, borderBottom: `1px solid ${colors.brd}` }}>
+      style={{ background: colors.surf2, color: colors.warnText, borderBottom: `1px solid ${colors.brd}` }}>
       <span>{text}</span>
       {action && (
         <button onClick={action.run} className="px-2 py-1 rounded border border-brd text-frost hover:bg-surf3">{action.label}</button>

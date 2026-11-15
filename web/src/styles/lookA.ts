@@ -77,8 +77,8 @@ export function lookAVars(p: LookAPalette): CSSProperties {
 
 /**
  * The old views' surfaces and text in [palette]: the CSS custom properties Tailwind's classes (`bg-surf2`,
- * `text-frost`, …) and `colors.bg` … `colors.brd` resolve to. Data and meaning colours (cyan, ok, warn, orange, red,
- * the chart and map colours) are not here: they stay fixed.
+ * `text-frost`, …) and `colors.bg` … `colors.brd` resolve to, and the warning text (`text-warn-text`, `colors.warnText`).
+ * Data and meaning colours (cyan, ok, warn, orange, red, the chart and map colours) are not here: they stay fixed.
  */
 export function oldViewTokens(palette: PaletteName): Record<string, string> {
   const p = LOOK_A[palette]
@@ -89,5 +89,8 @@ export function oldViewTokens(palette: PaletteName): Record<string, string> {
     '--color-brd': p.brd, '--color-frost': p.ink,
     // the old views' own dim and mid (darker on Night than look A's), Day's from the app's palette
     '--color-dim': palette === 'day' ? p.dim : nightTokens.dim, '--color-mid': palette === 'day' ? p.mid : nightTokens.mid,
+    // the palette's warning TEXT, for the lines outside look A's frame: the storage bar above every page and the backup
+    // controls' fallback (QA F12). `--color-warn` itself stays fixed (fills, markers, the old views' data).
+    '--color-warn-text': p.warnText,
   }
 }

@@ -2,9 +2,12 @@
 // than on the first visit: the 300 kB first-visit budget (#384 ticket 02).
 import { lazy, Suspense } from 'react'
 
-/** A tab left open across a deploy asks for a chunk that is gone: say so, and keep the page. */
-function Unloadable() {
-  return <span className="text-xs font-mono text-warn">Sapphire was updated: reload this tab to back up or restore.</span>
+/**
+ * A tab left open across a deploy asks for a chunk that is gone: say so, and keep the page. In the palette's warning
+ * text: look A's on the new screens, the root's in the storage bar (QA F12).
+ */
+function Unloadable({ lookA = false }: { lookA?: boolean }) {
+  return <span className={lookA ? 'a-failed' : 'text-xs font-mono text-warn-text'}>Sapphire was updated: reload this tab to back up or restore.</span>
 }
 let loaded: Promise<typeof import('./BackupControls') | null> | null = null
 const load = () => (loaded ??= import('./BackupControls').catch((err: unknown) => {
