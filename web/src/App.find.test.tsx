@@ -90,6 +90,8 @@ function memoryStorage(): Storage {
 
 beforeEach(() => {
   vi.stubGlobal('localStorage', memoryStorage())
+  // a browser that has seen "What's new" (ticket 09): this file's tests seed earlier drives, which would open it
+  localStorage.setItem('sapphire_whats_new_seen', 'slice-2')
   ;(globalThis as { indexedDB: IDBFactory }).indexedDB = new IDBFactory()
 })
 afterEach(() => {

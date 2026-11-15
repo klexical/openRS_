@@ -139,6 +139,8 @@ beforeEach(async () => {
   // the mock's real storage module outlives vi.resetModules: let go of its connection to the previous test's database
   ;(await import('./lib/storage')).closeStorage()
   vi.stubGlobal('localStorage', memoryStorage())
+  // a browser that has seen "What's new" (ticket 09): this file's tests seed earlier drives, which would open it
+  localStorage.setItem('sapphire_whats_new_seen', 'slice-2')
   ;(globalThis as { indexedDB: IDBFactory }).indexedDB = new IDBFactory()
   gate.hold.clear(); gate.failLoad.clear(); gate.listHold = null; gate.failList = false; gate.clearHold = null; gate.answered = []; gate.started = []
 })
