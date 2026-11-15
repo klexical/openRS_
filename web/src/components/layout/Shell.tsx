@@ -28,7 +28,7 @@ export function Shell() {
       <div className="a-shell">
         <main>
           <ImportStatus />
-          <ErrorBoundary key={page} fallbackLabel="Error loading this page">
+          <ErrorBoundary key={page} fallbackLabel="Error loading this page" lookA>
             {address.place === 'drive' ? <DriveFrame id={address.id} />
               : address.place === 'settings' ? <SettingsPage /> : <DrivesPage />}
           </ErrorBoundary>
