@@ -117,7 +117,7 @@ describe('#384 ticket 07: the browser is asked to keep the data once, after the 
 
   it('a second import while the browser has not answered yet does not ask again', async () => {
     const sm = storageManager()
-    let answer = (_: boolean) => {}
+    let answer: (kept: boolean) => void = () => {}
     sm.persist.mockImplementation(() => new Promise<boolean>((r) => { answer = r }))     // the browser takes its time
     await boot()
     await list()
