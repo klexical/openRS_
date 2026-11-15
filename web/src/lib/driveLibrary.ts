@@ -98,9 +98,10 @@ export class ImportCodeUnavailable extends Error {
  * first-visit budget) and runs it on [files], handing it the library's storing step for each file; the step refuses
  * once this Import has ended (I3). [read] replaces the pipeline in tests only. After it ends the library mirrors once (K4):
  * the drives stored are added to the list (no re-read, K2); when a stored drive was filled in, the list is read again,
- * and the Current drive too if it was filled in and is still current (K3). Compare's copies are not read again: a
- * known defect, ledger L110, kept. Resolves with the pipeline's results. Rejects with [ImportCodeUnavailable] when the
- * reading code cannot load, or when the pipeline itself rejects (nothing mirrored); a re-read that fails is logged.
+ * and the Current drive too if it was filled in and is still current (K3), then the compared drives if one of them was
+ * filled in (#406), all before it resolves. Resolves with the pipeline's results. Rejects with [ImportCodeUnavailable]
+ * when the reading code cannot load, or when the pipeline itself rejects (nothing mirrored); a re-read that fails is
+ * logged.
  */
 export async function importDrives(files: File[], onProgress: (p: ImportProgress) => void, read?: ReadingPipeline): Promise<FileResult[]> {
   let pipeline = read
@@ -126,6 +127,10 @@ export async function importDrives(files: File[], onProgress: (p: ImportProgress
         if (fresh && newest('current', token)) store().setActiveSession(fresh)
       }
     } catch (err) { console.warn('[Sapphire] Could not read the filled-in drives again:', err) }
+    // a compared drive was filled in: Compare's copies are read again, the filled-in ones from storage (the Current
+    // drive in memory may be the old copy if its re-read failed); run even when the list's re-read failed (#406)
+    const compared = store().compareSessionIds
+    if (filled.some((id) => compared.includes(id))) await readCompared(compared, filled)
   }
   return results
 }
@@ -188,15 +193,27 @@ function readCurrent(id: string | null): void {
     })
 }
 
-/** Read the compared drives (as App's effect did): the Current drive is reused from memory; one guard (K6, K10). */
-function readCompared(ids: string[]): void {
+/**
+ * Read the compared drives (as App's effect did): the Current drive is reused from memory, unless it is in [fresh];
+ * one guard (K6, K10). A read that fails keeps the old copies (kept, P2), and its drive is named in
+ * `compareFailedIds` for Compare to say so (#407); a new read clears them. Never rejects.
+ */
+function readCompared(ids: string[], fresh: string[] = []): Promise<void> {
   const token = nextToken('compare')
-  if (ids.length === 0) { store().setCompareSessions([]); return }
+  if (store().compareFailedIds.length > 0) store().setCompareFailedIds([])
+  if (ids.length === 0) { store().setCompareSessions([]); return Promise.resolve() }
   const current = store().activeSession
-  Promise.all(ids.map((id) => (current?.id === id ? current : loadDrive(id))))
-    .then((loaded) => { if (newest('compare', token)) store().setCompareSessions(loaded.filter((s) => s !== null)) })
-    // kept, a known defect (L111): a failed read keeps the old copies and says nothing
-    .catch((err) => console.error('[Sapphire] Failed to open the compared drives:', err))
+  return Promise.allSettled(ids.map((id) => (current?.id === id && !fresh.includes(id) ? current : loadDrive(id))))
+    .then((answers) => {
+      if (!newest('compare', token)) return
+      const failed = ids.filter((_, i) => answers[i].status === 'rejected')
+      if (failed.length > 0) {
+        for (const a of answers) if (a.status === 'rejected') console.error('[Sapphire] Failed to open the compared drives:', a.reason)
+        store().setCompareFailedIds(failed)
+        return
+      }
+      store().setCompareSessions(answers.flatMap((a) => (a.status === 'fulfilled' && a.value !== null ? [a.value] : [])))
+    })
 }
 
 const attached = () => store().libraryAttachment.count > 0
@@ -216,12 +233,12 @@ export function attach(handlers: { onNotStored?: () => void } = {}): () => void 
   }
   const stop = useStore.subscribe((s, prev) => {
     if (s.activeSessionId !== prev.activeSessionId) readCurrent(s.activeSessionId)
-    if (s.compareSessionIds !== prev.compareSessionIds) readCompared(s.compareSessionIds)
+    if (s.compareSessionIds !== prev.compareSessionIds) void readCompared(s.compareSessionIds)
   })
   useStore.setState({ libraryAttachment: { count: 1, stop, onNotStored: handlers.onNotStored ?? null } })
   // as App's effects did when they first ran
   readCurrent(store().activeSessionId)
-  readCompared(store().compareSessionIds)
+  void readCompared(store().compareSessionIds)
   return detachOnce()
 }
 function detachOnce(): () => void {
@@ -233,7 +250,7 @@ function detachOnce(): () => void {
     if (a.count > 1) { useStore.setState({ libraryAttachment: { ...a, count: a.count - 1 } }); return }
     a.stop?.()
     nextToken('current'); nextToken('compare')                 // an answer still on its way is no longer wanted
-    useStore.setState({ libraryAttachment: { count: 0, stop: null, onNotStored: null } })
+    useStore.setState({ libraryAttachment: { count: 0, stop: null, onNotStored: null }, compareFailedIds: [] })
   }
 }
 
@@ -250,15 +267,15 @@ export function showDrive(id: string | null): void {
 /** Compare exactly these drives, in this order (the first is the Base drive), at most four (K6). */
 export function compareDrives(ids: string[]): void {
   store().setCompare(ids)
-  if (!attached()) readCompared(store().compareSessionIds)
+  if (!attached()) void readCompared(store().compareSessionIds)
 }
 /** Add a drive to Compare, or take it out; a fifth is ignored (K6). */
 export function toggleCompared(id: string): void {
   store().toggleCompareSession(id)
-  if (!attached()) readCompared(store().compareSessionIds)
+  if (!attached()) void readCompared(store().compareSessionIds)
 }
 /** Compare no drives: the copies go too (K6). */
 export function clearCompared(): void {
   store().clearCompare()
-  if (!attached()) readCompared(store().compareSessionIds)
+  if (!attached()) void readCompared(store().compareSessionIds)
 }

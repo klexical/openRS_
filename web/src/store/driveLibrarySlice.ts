@@ -38,6 +38,10 @@ export interface DriveLibraryState {
   compareSessions: Session[]
   setCompareSessions: (sessions: Session[]) => void
 
+  /** The compared drives whose read failed (storage did not answer), in Compare's order: Compare names them (#407). */
+  compareFailedIds: string[]
+  setCompareFailedIds: (ids: string[]) => void
+
   /** Compare mode — selected session IDs (2-4). */
   compareSessionIds: string[]
   toggleCompareSession: (id: string) => void
@@ -84,6 +88,7 @@ export const driveLibrarySlice = (set: Set): DriveLibraryState => ({
       activeSession: s.activeSession && idSet.has(s.activeSession.id) ? null : s.activeSession,
       compareSessionIds: s.compareSessionIds.filter((cid) => !idSet.has(cid)),
       compareSessions: s.compareSessions.filter((c) => !idSet.has(c.id)),
+      compareFailedIds: s.compareFailedIds.filter((cid) => !idSet.has(cid)),
     }
   }),
 
@@ -101,6 +106,9 @@ export const driveLibrarySlice = (set: Set): DriveLibraryState => ({
 
   compareSessions: [],
   setCompareSessions: (sessions) => set({ compareSessions: sessions }),
+
+  compareFailedIds: [],
+  setCompareFailedIds: (ids) => set({ compareFailedIds: ids }),
 
   compareSessionIds: [],
   toggleCompareSession: (id) => set((s) => {
