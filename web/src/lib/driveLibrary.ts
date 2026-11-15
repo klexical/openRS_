@@ -10,6 +10,7 @@ import { clearAllDrives, deleteDrives, fillBestLap, listDrives, loadDrive, renam
 import type { Session } from '../types/session'
 import type { FileResult, ImportProgress } from './importFiles'
 import type { RestoreOutcome } from './backup'
+import { askToKeepOnce } from './keepData'
 
 const store = () => useStore.getState()
 
@@ -77,6 +78,8 @@ export async function restore(file: Blob): Promise<RestoreOutcome> {
   const { restoreBackup } = await import('./backup')
   const outcome = await restoreBackup(file)
   store().setDrives(await listDrives())
+  // a restore that stored drives asks the browser to keep the data too, once ever, as the first import does (owner, Q2)
+  if (outcome.added > 0) void askToKeepOnce()
   return outcome
 }
 
@@ -117,7 +120,11 @@ export async function importDrives(files: File[], onProgress: (p: ImportProgress
   const filled = results.flatMap((r) => r.already.filter((a) => a.filled.length > 0).map((a) => a.existingId))
   if (stored.length > 0) store().addDrives(stored)
   if (filled.length > 0) {
-    // a stored drive was filled in: its small record, and the Current drive if it is that one, are read again
+    // a stored drive was filled in: its small record, and the Current drive if it is that one, are read again. The
+    // Current drive's copy in memory is stale until its re-read lands: if that re-read fails (or the list's before it),
+    // Compare reads the drive from storage until it is read again (owner, Q14)
+    const before = store().activeSessionId
+    if (before && filled.includes(before)) useStore.setState({ staleCurrentId: before })
     try {
       store().setDrives(await listDrives())
       const current = store().activeSessionId
@@ -125,6 +132,7 @@ export async function importDrives(files: File[], onProgress: (p: ImportProgress
         const token = store().libraryReads.current          // the one guard: applied only if no newer Current drive was asked for
         const fresh = await loadDrive(current)
         if (fresh && newest('current', token)) store().setActiveSession(fresh)
+        if (fresh && store().activeSession === fresh && store().staleCurrentId === current) useStore.setState({ staleCurrentId: null })
       }
     } catch (err) { console.warn('[Sapphire] Could not read the filled-in drives again:', err) }
     // a compared drive was filled in: Compare's copies are read again, the filled-in ones from storage (the Current
@@ -162,6 +170,7 @@ const newest = (channel: Channel, token: number) => store().libraryReads[channel
 /** Read the Current drive the store names (as App's effect did): the old one goes first; one guard; the best-lap fill. */
 function readCurrent(id: string | null): void {
   const token = nextToken('current')
+  if (store().staleCurrentId !== null) useStore.setState({ staleCurrentId: null })   // the drive is read again (Q14)
   store().setActiveSession(null)
   store().setOpenFailedId(null)
   if (!id) return
@@ -194,21 +203,24 @@ function readCurrent(id: string | null): void {
 }
 
 /**
- * Read the compared drives (as App's effect did): the Current drive is reused from memory, unless it is in [fresh];
- * one guard (K6, K10). A read that fails keeps the old copies (kept, P2), and its drive is named in
- * `compareFailedIds` for Compare to say so (#407); a new read clears them. Never rejects.
+ * Read the compared drives (as App's effect did): the Current drive is reused from memory, unless it is in [fresh] or
+ * its copy is stale (`staleCurrentId`, owner Q14); one guard (K6, K10). A read that fails clears the old copies, so
+ * Compare shows no figures it just failed to read (owner, Q13), and its drive is named in `compareFailedIds` for Compare
+ * to say so (#407); a new read clears them. Never rejects.
  */
 function readCompared(ids: string[], fresh: string[] = []): Promise<void> {
   const token = nextToken('compare')
   if (store().compareFailedIds.length > 0) store().setCompareFailedIds([])
   if (ids.length === 0) { store().setCompareSessions([]); return Promise.resolve() }
   const current = store().activeSession
-  return Promise.allSettled(ids.map((id) => (current?.id === id && !fresh.includes(id) ? current : loadDrive(id))))
+  const reuse = (id: string) => current?.id === id && !fresh.includes(id) && store().staleCurrentId !== id
+  return Promise.allSettled(ids.map((id) => (reuse(id) ? current! : loadDrive(id))))
     .then((answers) => {
       if (!newest('compare', token)) return
       const failed = ids.filter((_, i) => answers[i].status === 'rejected')
       if (failed.length > 0) {
         for (const a of answers) if (a.status === 'rejected') console.error('[Sapphire] Failed to open the compared drives:', a.reason)
+        store().setCompareSessions([])                          // no figures beside a read that failed (owner, Q13)
         store().setCompareFailedIds(failed)
         return
       }

@@ -146,7 +146,7 @@ export function DashboardPanel() {
             />
             <MetricCard label="Duration" value={fmtDuration(trip.durationMs)} />
             <SparkMetricCard label="Avg Speed" value={fmt.speed(trip.avgSpeedKph)} sparkData={speedData} color={colors.ok} />
-            <SparkMetricCard label="Avg RPM" value={fmtNumber(trip.avgRpm, 0)} sparkData={rpmData} color={colors.accent} />
+            <SparkMetricCard label="Avg RPM" value={fmtNumber(trip.avgRpm, 0)} sparkData={rpmData} color={colors.cyan} />
           </div>
 
           {trip.fuelUsedL > 0 && (
@@ -163,7 +163,7 @@ export function DashboardPanel() {
               <GaugeChart value={trip.peakRpm} max={7000} label="Peak RPM" unit="RPM" color={colors.orange} />
               {trip.peakBoostPsi != null
                 ? <GaugeChart value={Number(convertBoost(trip.peakBoostPsi, fmt.boostUnit).toFixed(pressureDecimals(fmt.boostUnit)))}
-                    max={convertBoost(25, fmt.boostUnit)} label={`Peak ${boostName}`} unit={fmt.boostUnit} color={colors.accent} />
+                    max={convertBoost(25, fmt.boostUnit)} label={`Peak ${boostName}`} unit={fmt.boostUnit} color={colors.cyan} />
                 : <MetricCard label="Peak Boost" value="— (no reading)" color={colors.dim} />}
               <GaugeChart value={convertSpeed(trip.peakSpeedKph, fmt.unitSystem)} max={convertSpeed(270, fmt.unitSystem)}
                 label="Peak Speed" unit={fmt.speedUnit} color={colors.ok} />
@@ -185,7 +185,7 @@ export function DashboardPanel() {
               <MetricCard label="Peak Coolant" value={fmt.temp(trip.peakCoolantC)} color={trip.peakCoolantC > 105 ? colors.orange : colors.ok} />
               <MetricCard label="Peak Oil" value={fmt.temp(trip.peakOilTempC)} color={trip.peakOilTempC > 130 ? colors.orange : colors.ok} />
               <SparkMetricCard label={`${boostName} Trace`} value={trip.peakBoostPsi != null ? fmt.boost(trip.peakBoostPsi) : '—'}
-                sparkData={boostData} color={colors.accent} />
+                sparkData={boostData} color={colors.cyan} />
             </div>
           </div>
 
@@ -268,7 +268,7 @@ export function DashboardPanel() {
 }
 
 /** MetricCard with an inline sparkline below the value. */
-function SparkMetricCard({ label, value, sparkData, color = colors.accent }: {
+function SparkMetricCard({ label, value, sparkData, color = colors.cyan }: {   // data: fixed, never the paint (#384 ticket 08)
   label: string; value: string; sparkData: (number | null)[]; color?: string
 }) {
   return (

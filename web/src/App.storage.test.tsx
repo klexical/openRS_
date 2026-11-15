@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, cleanup, waitFor, act, fireEvent, screen } from '@testing-library/react'
+import { render, cleanup, waitFor, act, fireEvent, screen, within } from '@testing-library/react'
 import { openDB } from 'idb'
 import JSZip from 'jszip'
 import type { Session } from './types/session'
@@ -49,6 +49,8 @@ function memoryStorage(): Storage {
 
 beforeEach(() => {
   vi.stubGlobal('localStorage', memoryStorage())
+  // a browser that has seen "What's new" (ticket 09): this file's tests seed earlier drives, which would open it
+  localStorage.setItem('sapphire_whats_new_seen', 'slice-2')
   ;(globalThis as { indexedDB: IDBFactory }).indexedDB = new IDBFactory()
 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
@@ -73,6 +75,29 @@ describe('#384 the storage messages, in plain words', () => {
     expect(document.body.textContent).not.toContain("Close Sapphire's other tabs")
   })
 
+  it('the bar reads at AA in Night, Day and Ultra: the palette\'s warning text on its surface (QA F12)', async () => {
+    // a colour as the page resolves it: var(--x) from the root's properties (App sets them per palette), rgb() as hex
+    const resolve = (v: string): string => {
+      const ref = v.match(/^var\((--[\w-]+)\)$/)
+      if (ref) return resolve(document.documentElement.style.getPropertyValue(ref[1]).trim())
+      const rgb = v.match(/^rgb\((\d+), (\d+), (\d+)\)$/)
+      return rgb ? '#' + rgb.slice(1).map((c) => (+c).toString(16).padStart(2, '0')).join('') : v
+    }
+    const { contrastRatio } = await import('./styles/tokens')
+    for (const palette of ['night', 'day', 'ultra']) {
+      cleanup()
+      ;(globalThis as { indexedDB: IDBFactory }).indexedDB = new IDBFactory()
+      localStorage.setItem('sapphire_settings', JSON.stringify({ palette }))
+      await writeV1([{ ...session('bad'), trip: { ...session('bad').trip!, points: 'not an array' } }])
+      const { App } = await modules()
+      render(<App />)
+      const bar = await screen.findByRole('alert', {}, { timeout: 3000 })
+      await waitFor(() => expect(bar.textContent).toMatch(/Sapphire couldn't update its storage/))
+      const fg = resolve(bar.style.color), bg = resolve(bar.style.background || bar.style.backgroundColor)
+      expect(contrastRatio(fg, bg), `${palette}: ${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
   it('an old tab told that Sapphire was updated says "reload"', async () => {
     const { App, useStore, storage } = await modules()
     await storage.storeImported([session('t')])
@@ -91,7 +116,7 @@ describe('#384 ticket 02: backup and restore on the page', () => {
 
   it('Settings backs up all drives as a download, and restores a backup with its count', async () => {
     const { useStore, storage } = await modules()
-    const { SettingsPanel } = await import('./components/panels/SettingsPanel')
+    const { SettingsScreen: SettingsPanel } = await import('./components/settings/SettingsScreen')   // ticket 07: the new Settings
     await storage.storeImported([session('a'), session('b')])
     useStore.setState({ drives: await storage.listDrives() })
     const { container } = render(<SettingsPanel />)
@@ -144,7 +169,7 @@ describe('#384 ticket 02, review round: the backup button', () => {
     URL.createObjectURL = () => { created.push('made'); return 'blob:invented' }
     URL.revokeObjectURL = () => {}
     await modules()
-    const { SettingsPanel } = await import('./components/panels/SettingsPanel')
+    const { SettingsScreen: SettingsPanel } = await import('./components/settings/SettingsScreen')   // ticket 07: the new Settings
     const { unmount } = render(<SettingsPanel />)
     const button = await screen.findByText('Back up all drives', {}, { timeout: 5000 })
     await act(async () => { fireEvent.click(button) })
@@ -164,7 +189,7 @@ describe('#384 ticket 02, review round: the backup button', () => {
     URL.createObjectURL = () => { created.push('made'); return 'blob:invented' }
     URL.revokeObjectURL = () => {}
     await modules()
-    const { SettingsPanel } = await import('./components/panels/SettingsPanel')
+    const { SettingsScreen: SettingsPanel } = await import('./components/settings/SettingsScreen')   // ticket 07: the new Settings
     const { unmount } = render(<SettingsPanel />)
     const button = await screen.findByText('Back up all drives', {}, { timeout: 5000 })
     await act(async () => { fireEvent.click(button) })
@@ -179,7 +204,7 @@ describe('#384 ticket 02, review round: the backup button', () => {
   it('while this tab waits for Sapphire\'s other tabs, the button says so instead of "Building the backup"', async () => {
     vi.stubGlobal('Worker', HeldWorker)
     const { useStore } = await modules()
-    const { SettingsPanel } = await import('./components/panels/SettingsPanel')
+    const { SettingsScreen: SettingsPanel } = await import('./components/settings/SettingsScreen')   // ticket 07: the new Settings
     render(<SettingsPanel />)
     const button = await screen.findByText('Back up all drives', {}, { timeout: 5000 })
     act(() => useStore.setState({ storage: { state: 'blocked' } }))
@@ -187,6 +212,40 @@ describe('#384 ticket 02, review round: the backup button', () => {
     await waitFor(() => expect(document.body.textContent).toMatch(/Close Sapphire's other tabs/))
     expect(document.body.textContent).not.toMatch(/Building the backup/)
   }, 15_000)
+
+  it('in the storage bar, that line takes the palette\'s warning text (QA F12; a class check, measured in a browser)', async () => {
+    vi.stubGlobal('Worker', HeldWorker)
+    const { useStore } = await modules()
+    const { BackupButton } = await import('./components/ui/LazyBackupControls')
+    render(<BackupButton label="Back up the old drives" afterFailedUpgrade />)          // as the bar draws it (App.tsx)
+    const button = await screen.findByText('Back up the old drives', {}, { timeout: 5000 })
+    act(() => useStore.setState({ storage: { state: 'blocked' } }))
+    await act(async () => { fireEvent.click(button) })
+    const line = await screen.findByText("Close Sapphire's other tabs: the backup continues once they are closed.")
+    expect(line).toHaveClass('text-warn-text')
+  }, 15_000)
+
+  it('in the storage bar, "Building the backup…" reads at AA in Night, Day and Ultra (QA F13)', async () => {
+    // the class the line takes, and that class's colour as the root holds it per palette, on the bar's surface (jsdom has
+    // no stylesheet: the class is held here, the colour measured in a browser by the AA audit and QA's notice-aa.mjs)
+    const { contrastRatio } = await import('./styles/tokens')
+    const rootVar = (name: string) => document.documentElement.style.getPropertyValue(name).trim()
+    for (const palette of ['night', 'day', 'ultra']) {
+      cleanup()
+      vi.stubGlobal('Worker', HeldWorker)
+      ;(globalThis as { indexedDB: IDBFactory }).indexedDB = new IDBFactory()
+      localStorage.setItem('sapphire_settings', JSON.stringify({ palette }))
+      await writeV1([{ ...session('bad'), trip: { ...session('bad').trip!, points: 'not an array' } }, session('good')])
+      const { App } = await modules()
+      render(<App />)
+      const button = await screen.findByText('Back up the old drives', {}, { timeout: 5000 })
+      await act(async () => { fireEvent.click(button) })
+      const line = await screen.findByText(/Building the backup/)
+      expect(line, palette).toHaveClass('text-dim-text')
+      const fg = rootVar('--color-dim-text'), bg = rootVar('--color-surf2')
+      expect(contrastRatio(fg, bg), `${palette}: ${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5)
+    }
+  }, 30_000)
 })
 
 describe('#384 ticket 02: the controls\' chunk cannot load (a tab left open across a deploy)', () => {
@@ -194,10 +253,10 @@ describe('#384 ticket 02: the controls\' chunk cannot load (a tab left open acro
   it('Settings says to reload, and the rest of the page stays', async () => {
     await modules()
     vi.doMock('./components/ui/BackupControls', () => { throw new Error('invented: chunk gone') })
-    const { SettingsPanel } = await import('./components/panels/SettingsPanel')
+    const { SettingsScreen: SettingsPanel } = await import('./components/settings/SettingsScreen')   // ticket 07: the new Settings
     const { container } = render(<SettingsPanel />)
     await screen.findAllByText(/reload this tab/, {}, { timeout: 5000 })
-    expect(container.textContent).toContain('Clear All Sessions')
+    expect(container.textContent).toContain('Clear all')                  // ticket 07's words
   }, 15_000)
 })
 
@@ -261,12 +320,13 @@ describe('#384 today\'s screens on the new storage', () => {
 
   it('"Clear all" empties all three stores', async () => {
     const { useStore, storage } = await modules()
-    const { SettingsPanel } = await import('./components/panels/SettingsPanel')
+    const { SettingsScreen: SettingsPanel } = await import('./components/settings/SettingsScreen')   // ticket 07: the new Settings
     await storage.storeImported([session('p'), session('q')])
     useStore.setState({ drives: await storage.listDrives() })
     render(<SettingsPanel />)
-    fireEvent.click(screen.getByText('Clear All Sessions'))
-    await act(async () => { fireEvent.click(screen.getByText('Confirm')) })
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all' }))       // ticket 07: two steps, the backup offered first
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Skip the backup' }))
+    await act(async () => { fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Clear all' })) })
     await waitFor(() => expect(useStore.getState().drives).toEqual([]))
     storage.closeStorage()
     const raw = await openDB('sapphire')

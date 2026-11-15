@@ -90,6 +90,8 @@ function memoryStorage(): Storage {
 
 beforeEach(() => {
   vi.stubGlobal('localStorage', memoryStorage())
+  // a browser that has seen "What's new" (ticket 09): this file's tests seed earlier drives, which would open it
+  localStorage.setItem('sapphire_whats_new_seen', 'slice-2')
   ;(globalThis as { indexedDB: IDBFactory }).indexedDB = new IDBFactory()
 })
 afterEach(() => {
@@ -334,7 +336,8 @@ describe('#384 ticket 04: the best lap of a drive stored before the record held 
       render(<App />)
       await screen.findByRole('heading', { level: 1, name: 'Circuit afternoon' }, { timeout: 3000 })
       await waitFor(() => expect(useStore.getState().activeSession?.id).toBe('track'))
-      await act(async () => { await new Promise((r) => setTimeout(r, 50)) })
+      // the best-lap write was tried and failed, so what follows holds after it, not before it (QA F6b)
+      await waitFor(() => expect(warn).toHaveBeenCalledWith('[Sapphire] Could not note the best lap:', expect.anything()))
     } finally { proto.put = put; warn.mockRestore() }
     const db = await openDB('sapphire')
     const after = await db.get('drives', 'track')

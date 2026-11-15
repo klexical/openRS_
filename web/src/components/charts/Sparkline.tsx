@@ -13,7 +13,7 @@ interface SparklineProps {
  * Lightweight inline trend chart — SVG glow line + gradient fill.
  * Matches the Android app's Sparkline.kt aesthetic.
  */
-export function Sparkline({ data, color = colors.accent, width = 120, height = 36 }: SparklineProps) {
+export function Sparkline({ data, color = colors.cyan, width = 120, height = 36 }: SparklineProps) {   // data, never the paint (#384 ticket 08)
   // Gradient / filter ids, unique per instance (useId — stable across renders, no hook after the early return)
   const id = `spark${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
   const { path, areaPath } = useMemo(() => {

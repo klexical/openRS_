@@ -4,6 +4,9 @@ import type { ErrorInfo, ReactNode } from 'react'
 interface Props {
   children: ReactNode
   fallbackLabel?: string
+  /** Around a look A page (Shell): the message in the palette's muted text, which reads at AA there (QA F14). The old
+   *  views' boundary keeps their own (the owner's Q5). */
+  lookA?: boolean
 }
 
 interface State {
@@ -30,7 +33,7 @@ export class ErrorBoundary extends Component<Props, State> {
           <h2 className="text-sm font-display tracking-wide text-frost">
             {this.props.fallbackLabel ?? 'Something went wrong'}
           </h2>
-          <p className="text-xs font-mono text-dim max-w-md">
+          <p className={`text-xs font-mono ${this.props.lookA ? 'text-dim-text' : 'text-dim'} max-w-md`}>
             {this.state.error?.message ?? 'An unexpected error occurred while rendering this panel.'}
           </p>
           <button

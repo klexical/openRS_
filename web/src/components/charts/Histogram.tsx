@@ -28,7 +28,7 @@ interface Bin {
 export function Histogram({
   values,
   bins = 12,
-  color = colors.accent,
+  color = colors.cyan,                     // data, never the paint (#384 ticket 08)
   xLabel,
   yLabel = 'Time (s)',
   height = 220,

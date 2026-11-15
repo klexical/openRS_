@@ -139,6 +139,8 @@ beforeEach(async () => {
   // the mock's real storage module outlives vi.resetModules: let go of its connection to the previous test's database
   ;(await import('./lib/storage')).closeStorage()
   vi.stubGlobal('localStorage', memoryStorage())
+  // a browser that has seen "What's new" (ticket 09): this file's tests seed earlier drives, which would open it
+  localStorage.setItem('sapphire_whats_new_seen', 'slice-2')
   ;(globalThis as { indexedDB: IDBFactory }).indexedDB = new IDBFactory()
   gate.hold.clear(); gate.failLoad.clear(); gate.listHold = null; gate.failList = false; gate.clearHold = null; gate.answered = []; gate.started = []
 })
@@ -306,7 +308,7 @@ describe('the compared drives (pins, Drive library commit 1)', () => {
     await waitFor(() => expect(useStore.getState().compareSessions[0]?.name).toBe('Renamed behind the page'))
   })
 
-  it('P2 kept: a failed read of the compared drives keeps the copies already shown', async () => {
+  it('Q13: a failed read of the compared drives clears the copies already shown', async () => {
     await seed([drive('a', 1), drive('b', 2)])
     const { useStore } = await boot()
     await waitFor(() => expect(useStore.getState().drives).toHaveLength(2))
@@ -315,9 +317,9 @@ describe('the compared drives (pins, Drive library commit 1)', () => {
     gate.failLoad.add('b')
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     await compareOf(['a', 'b'], useStore)
-    await settle()
+    await waitFor(() => expect(useStore.getState().compareFailedIds).toEqual(['b']))           // the read has failed (QA F6b)
     err.mockRestore()
-    expect(useStore.getState().compareSessions.map((s) => s.id)).toEqual(['a', 'b'])
+    expect(useStore.getState().compareSessions).toEqual([])                                  // no figures it just failed to read (owner, Q13)
   })
 
   it('K6 kept, with #407: a failed read of newly compared drives shows no figures, and names the drive', async () => {
@@ -329,24 +331,38 @@ describe('the compared drives (pins, Drive library commit 1)', () => {
     gate.failLoad.add('c')
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     await compareOf(['c', 'd'], useStore)
-    await settle()
+    const alert = await screen.findByRole('alert', {}, { timeout: 3000 })                    // the line appears once the read fails (QA F6b)
     err.mockRestore()
+    expect(alert.textContent).toBe("Couldn't open Invented c.")                               // the line (#407)
     expect(useStore.getState().compareSessionIds).toEqual(['c', 'd'])
-    expect(useStore.getState().compareSessions.map((s) => s.id)).toEqual(['a', 'b'])      // the old copies, not shown
+    expect(useStore.getState().compareSessions).toEqual([])                                  // the old copies are cleared (owner, Q13)
     expect(document.body.textContent).not.toMatch(/ vs /)                                    // no figures
-    expect(screen.getByRole('alert').textContent).toBe("Couldn't open Invented c.")           // the line (#407)
   })
 
-  it('K11 kept: a session-only entry can be ticked for Compare, which then says it needs drives with trip data', async () => {
+  // K11 changed in delivery C (owner, 2026-11-14, "three grilling questions on Sapphire's Compare", item 2): Compare
+  // counts only ticked drives; a ticked session-only entry is left out, and ticking stays (it is how rows are deleted)
+  it('Compare counts only ticked drives: one drive and a session-only entry offer no Compare, only Delete', async () => {
     await seed([drive('a', 1), { ...drive('s', 2), trip: null, diagnostics: { canInventory: [], fpsTimeline: [], decodeTrace: [],
       probeResults: [], dtcResults: [], sessionEvents: LOG } as never }])
     await boot()
     const root = await screen.findByRole('region', { name: 'Drives' }, { timeout: 3000 })
     await waitFor(() => expect(within(root).getAllByRole('checkbox')).toHaveLength(2))
     for (const box of within(root).getAllByRole('checkbox')) fireEvent.click(box)
+    expect(within(root).getByRole('button', { name: 'Delete selected (2)' })).toBeInTheDocument()
+    expect(within(root).queryByRole('button', { name: /^Compare/ })).toBeNull()
+  })
+
+  it('Compare counts only ticked drives: two drives and a session-only entry compare the two drives, and say so', async () => {
+    await seed([drive('a', 1), drive('b', 2), { ...drive('s', 3), trip: null, diagnostics: { canInventory: [], fpsTimeline: [],
+      decodeTrace: [], probeResults: [], dtcResults: [], sessionEvents: LOG } as never }])
+    const { useStore } = await boot()
+    const root = await screen.findByRole('region', { name: 'Drives' }, { timeout: 3000 })
+    await waitFor(() => expect(within(root).getAllByRole('checkbox')).toHaveLength(3))
+    for (const box of within(root).getAllByRole('checkbox')) fireEvent.click(box)
+    expect(within(root).getByRole('button', { name: 'Delete selected (3)' })).toBeInTheDocument()
+    expect(within(root).getByText('Session-only entries are left out of Compare.')).toBeInTheDocument()
     fireEvent.click(within(root).getByRole('button', { name: 'Compare (2)' }))
-    expect(await screen.findByText(/Need More Sessions/, {}, { timeout: 5000 })).toBeInTheDocument()
-    expect(document.body.textContent).toMatch(/Import at least 2 sessions with trip data/)
+    await waitFor(() => expect(useStore.getState().compareSessionIds.slice().sort()).toEqual(['a', 'b']))
   })
 })
 
@@ -394,9 +410,8 @@ describe('Import and the library (pins, Drive library commit 1)', () => {
     await act(async () => { useStore.getState().setCompare(['x', 'y']) })
     await waitFor(() => expect(useStore.getState().compareSessions).toHaveLength(2))
     await act(async () => { await startImport([await withLogZip(4)]) })
-    await settle()
+    await waitFor(() => expect(useStore.getState().compareSessions[0].diagnostics?.sessionEvents).toHaveLength(3))  // and Compare's copy
     expect(useStore.getState().drives.find((d) => d.id === 'x')?.hasSession).toBe(true)       // the list was re-read
-    expect(useStore.getState().compareSessions[0].diagnostics?.sessionEvents).toHaveLength(3)  // and Compare's copy
   })
 
   it('#406: an Import\'s re-read of Compare is dropped when other drives were picked for Compare meanwhile', async () => {
@@ -493,12 +508,12 @@ describe('Compare when a compared drive cannot be read (#407)', () => {
     expect(screen.getByText('Invented b vs Invented a')).toBeInTheDocument()
   })
 
-  it('#407 with P2 kept: the same drives picked again, one read failing, keeps the copies shown and names that drive', async () => {
+  it('#407 with Q13: the same drives picked again, one read failing, shows only the line, no figures beside it', async () => {
     const { useStore } = await comparing(['a', 'b'])
     gate.failLoad.add('b')
     await act(async () => { useStore.getState().setCompare(['a', 'b']) })                  // the same ids, a new pick
     await waitFor(() => expect(lines()).toEqual(["Couldn't open Invented b."]))
-    expect(screen.getByText('Invented b vs Invented a')).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/ vs /)                    // no figures it just failed to read (owner, Q13)
   })
 })
 
@@ -509,8 +524,9 @@ describe('list writes and their failures (pins, Drive library commit 1)', () => 
     gate.clearHold = hold
     const { useStore } = await boot('#/settings')
     await waitFor(() => expect(useStore.getState().drives).toHaveLength(2))
-    fireEvent.click(await screen.findByText('Clear All Sessions', {}, { timeout: 5000 }))
-    await act(async () => { fireEvent.click(screen.getByText('Confirm')) })
+    fireEvent.click(await screen.findByRole('button', { name: 'Clear all' }, { timeout: 5000 }))   // ticket 07: two steps
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Skip the backup' }))
+    await act(async () => { fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Clear all' })) })
     await settle()
     expect(useStore.getState().drives).toHaveLength(2)                                          // the write has not finished
     release()
@@ -524,8 +540,9 @@ describe('list writes and their failures (pins, Drive library commit 1)', () => 
     await act(async () => { useStore.getState().setCompare(['a', 'b']) })
     await waitFor(() => expect(useStore.getState().compareSessions).toHaveLength(2))
     await go('#/settings')
-    fireEvent.click(await screen.findByText('Clear All Sessions', {}, { timeout: 5000 }))
-    await act(async () => { fireEvent.click(screen.getByText('Confirm')) })
+    fireEvent.click(await screen.findByRole('button', { name: 'Clear all' }, { timeout: 5000 }))   // ticket 07: two steps
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Skip the backup' }))
+    await act(async () => { fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Clear all' })) })
     await waitFor(() => expect(useStore.getState().drives).toEqual([]))
     expect(useStore.getState().compareSessionIds).toEqual(['a', 'b'])
     expect(useStore.getState().compareSessions).toHaveLength(2)

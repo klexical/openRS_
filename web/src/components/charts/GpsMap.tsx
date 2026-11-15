@@ -114,6 +114,10 @@ function AttributionHeight({ onHeight }: { onHeight: (px: number) => void }) {
 export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMapProps) {
   const [colorMode, setColorMode] = useState<ColorMode>('speed')
   const [attributionPx, setAttributionPx] = useState(18)          // one line until measured
+  // #384 ticket 09: when the map server cannot be reached, the route is drawn on a plain background and says so. A tile
+  // that fails before any has loaded marks the background unavailable; a tile that loads later takes it back.
+  const [basemapUnavailable, setBasemapUnavailable] = useState(false)
+  const tileLoaded = useRef(false)
 
   // All colour modes are built once per trip (main e9cd565) — switching SPD / BOOST / … is a lookup, not
   // another walk of a long route.
@@ -163,7 +167,11 @@ export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMa
         style={{ height, width: '100%', background: colors.bg }}
         zoomControl={false}
       >
-        <TileLayer url={BASEMAP_URL} attribution={BASEMAP_ATTRIBUTION} maxZoom={19} className="basemap-dark" />
+        <TileLayer url={BASEMAP_URL} attribution={BASEMAP_ATTRIBUTION} maxZoom={19} className="basemap-dark"
+          eventHandlers={{
+            tileload: () => { tileLoaded.current = true; setBasemapUnavailable(false) },
+            tileerror: () => { if (!tileLoaded.current) setBasemapUnavailable(true) },
+          }} />
         <ZoomToFit points={points} />
         <AttributionHeight onHeight={setAttributionPx} />
 
@@ -257,6 +265,12 @@ export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMa
           )
         })}
       </MapContainer>
+      {basemapUnavailable && (
+        <p role="status" style={{ position: 'absolute', top: 10, left: 10, zIndex: 1000, margin: 0, padding: '4px 10px', borderRadius: 8,
+          background: colors.surf, color: colors.frost, border: `1px solid ${colors.brd}`, fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>
+          Map background unavailable
+        </p>
+      )}
 
       {/* Color mode selector */}
       <div
@@ -270,7 +284,7 @@ export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMa
           flexWrap: 'wrap',
           justifyContent: 'flex-end',
           gap: 2,
-          background: `${colors.bg}cc`,
+          background: `color-mix(in srgb, ${colors.bg} 80%, transparent)`,   // the palette's background, 80 %
           borderRadius: 8,
           padding: 3,
           backdropFilter: 'blur(8px)',
@@ -311,7 +325,7 @@ export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMa
           display: 'flex',
           flexWrap: 'wrap',
           gap: 10,
-          background: `${colors.bg}cc`,
+          background: `color-mix(in srgb, ${colors.bg} 80%, transparent)`,   // the palette's background, 80 %
           borderRadius: 8,
           padding: '5px 10px',
           backdropFilter: 'blur(8px)',

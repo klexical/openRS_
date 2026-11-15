@@ -4,14 +4,20 @@ import { useStore } from './store'
 import { useSettings } from './store/settings'
 import { onStorageStatus, storageStatus } from './lib/storage'
 import { attach, loadList, showDrive } from './lib/driveLibrary'
+import { showWhatsNewNow } from './lib/whatsNew'
+import { storageCreatedNow } from './lib/storage'
+import { decideFirstVisitPalette } from './store/settings'
 import { go, useAddress } from './lib/address'
 import { rsThemes, shadeHex, printAccent } from './styles/tokens'
+import { oldViewTokens, paintAccent } from './styles/lookA'
+import { useResolvedPalette } from './lib/devicePalette'
 import { colors } from './styles/tokens'
 import { BackupButton } from './components/ui/LazyBackupControls'
 
 export default function App() {
   const setStorage = useStore((s) => s.setStorage)
   const themeId = useSettings((s) => s.themeId)
+  const palette = useResolvedPalette(useSettings((s) => s.palette))
 
   // Storage state → the store, for the messages below (#384)
   useEffect(() => {
@@ -21,7 +27,15 @@ export default function App() {
 
   // Load every drive's small record on mount (no points). Nothing is opened by itself: the address names what is shown
   // (#384 ticket 03; the remembered view is retired).
-  useEffect(() => { void loadList() }, [])
+  // Then "What's new", once after the update (ticket 09): only once the storage has opened, so a fresh install is known.
+  // The palette of a visit with no settings record is settled then too: a first visit takes Match device, a returning
+  // user keeps Night (QA G2).
+  useEffect(() => {
+    void loadList().then(() => {
+      decideFirstVisitPalette(storageCreatedNow())
+      if (showWhatsNewNow()) useStore.getState().setWhatsNewOpen(true)
+    })
+  }, [])
 
   // The Drive library reads the Current drive and the compared drives as the store names them (#384). An address that
   // names a drive not stored here (deleted, or another browser's link): the list, with a plain message; the address is
@@ -46,14 +60,19 @@ export default function App() {
   }, [address.place, addressedId])
 
   // RS paint accent → CSS custom properties on the document root. Tailwind utilities (`text-accent`,
-  // `bg-accent/10`, …) and `colors.accent` (a var()) resolve them at runtime, so this repaints everything.
+  // `bg-accent/10`, …) and `colors.accent` (a var()) resolve them at runtime, so this repaints everything. The accent
+  // is the paint's shade for the palette (Day: darker, #384 ticket 08); the old views' surfaces and text follow the
+  // palette too (their layout does not change). Print keeps the paint itself, darkened for paper.
   useEffect(() => {
-    const accent = rsThemes[themeId] ?? rsThemes.cyan
+    const paint = rsThemes[themeId] ?? rsThemes.cyan
+    const accent = paintAccent(themeId, palette)
     const root = document.documentElement.style
     root.setProperty('--color-accent', accent)
     root.setProperty('--color-accent-d', shadeHex(accent, -0.25))
-    root.setProperty('--color-accent-print', printAccent(accent))
-  }, [themeId])
+    root.setProperty('--color-accent-print', printAccent(paint))
+    for (const [k, v] of Object.entries(oldViewTokens(palette))) root.setProperty(k, v)
+    root.colorScheme = palette === 'day' ? 'light' : 'dark'
+  }, [themeId, palette])
 
   return (
     <>
@@ -63,7 +82,10 @@ export default function App() {
   )
 }
 
-/** Storage problems the owner has to know about, in plain words (#384). Nothing when storage is fine. */
+/**
+ * Storage problems the owner has to know about, in plain words (#384). Nothing when storage is fine. Outside look A's
+ * frame: the palette's warning text on the palette's surface (QA F12).
+ */
 function StorageNotice() {
   const storage = useStore((s) => s.storage)
   let text: string | null = null
@@ -79,7 +101,7 @@ function StorageNotice() {
   if (!text) return null
   return (
     <div role="alert" className="px-4 py-2 text-sm font-mono flex items-center gap-3"
-      style={{ background: colors.surf2, color: colors.warn, borderBottom: `1px solid ${colors.brd}` }}>
+      style={{ background: colors.surf2, color: colors.warnText, borderBottom: `1px solid ${colors.brd}` }}>
       <span>{text}</span>
       {action && (
         <button onClick={action.run} className="px-2 py-1 rounded border border-brd text-frost hover:bg-surf3">{action.label}</button>

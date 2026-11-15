@@ -9,6 +9,9 @@ import { eventStyle, NEUTRAL_EVENT_STYLE } from '../../lib/eventTypes'
 import type { DidInventory, DtcEntry, NrcSuppression } from '../../types/session'
 import { DID_STATUS_LABEL, didInventorySummary, didStatus, lastAnswerText, type DidStatus } from '../../lib/didInventory'
 
+
+/** An ID cell (CAN ID, DID, module) is data: fixed cyan, never the paint (owner, 2026-11-15, Q7). */
+const ID_CELL = { color: colors.cyan }
 export function DiagnosticsPanel() {
   const session = useActiveSession()
   const opening = useOpeningDrive()
@@ -71,7 +74,7 @@ function CanInventoryTable({ frames }: { frames: { id: string; count: number; ch
             <tbody>
               {sorted.map((f) => (
                 <tr key={f.id} className="border-t border-brd hover:bg-surf3/50 transition-colors">
-                  <td className="px-3 py-1.5 text-accent">{f.id}</td>
+                  <td className="px-3 py-1.5" style={ID_CELL}>{f.id}</td>
                   <td className="px-3 py-1.5 text-frost">{f.count.toLocaleString()}</td>
                   <td className="px-3 py-1.5">
                     <span className={f.changed ? 'text-ok' : 'text-dim'}>
@@ -203,7 +206,7 @@ function DidInventorySection({ inventory }: { inventory: DidInventory | undefine
                     return (
                       <tr key={`${r.responseId}-${r.did}`} className="border-t border-brd hover:bg-surf3/50 transition-colors">
                         <td className="px-3 py-1.5 text-frost" title={r.responseId ? `Reply ID 0x${r.responseId}` : undefined}>{r.module || r.responseId || '—'}</td>
-                        <td className="px-3 py-1.5 text-accent">0x{r.did}</td>
+                        <td className="px-3 py-1.5" style={ID_CELL}>0x{r.did}</td>
                         <td className="px-3 py-1.5 text-frost">{r.sent.toLocaleString()}</td>
                         <td className="px-3 py-1.5 text-frost">{r.positive.toLocaleString()}</td>
                         <td className="px-3 py-1.5 text-frost">{r.nrcAttributed.toLocaleString()}</td>
@@ -259,7 +262,7 @@ function ProbeTable({ probes }: { probes: { module: string; did: string; status:
             <tbody>
               {probes.map((p, i) => (
                 <tr key={i} className="border-t border-brd hover:bg-surf3/50 transition-colors">
-                  <td className="px-3 py-1.5 text-accent">{p.module}</td>
+                  <td className="px-3 py-1.5" style={ID_CELL}>{p.module}</td>
                   <td className="px-3 py-1.5 text-frost">{p.did}</td>
                   <td className="px-3 py-1.5" style={{ color: statusColor(p.status) }}>{p.status}</td>
                   <td className="px-3 py-1.5 text-dim">{p.responseHex}</td>
@@ -314,7 +317,7 @@ function DecodeTraceTable({ entries }: { entries: { ts: number; canId: string; r
               {filtered.map((e, i) => (
                 <tr key={i} className="border-t border-brd hover:bg-surf3/50 transition-colors">
                   <td className="px-3 py-1.5 text-dim">{fmtRelMs(e.ts)}</td>
-                  <td className="px-3 py-1.5 text-accent">{e.canId}</td>
+                  <td className="px-3 py-1.5" style={ID_CELL}>{e.canId}</td>
                   <td className="px-3 py-1.5 text-dim">{e.rawHex}</td>
                   <td className="px-3 py-1.5 text-frost">{e.decoded}</td>
                   <td className="px-3 py-1.5 text-orange">{e.issue}</td>
@@ -382,7 +385,7 @@ function DtcTable({ entries }: { entries: DtcEntry[] }) {
                     className={`border-t border-brd transition-colors ${dtc.freezeFrame ? 'cursor-pointer hover:bg-surf3/50' : ''}`}
                     onClick={() => dtc.freezeFrame && setExpandedIdx(expandedIdx === i ? null : i)}
                   >
-                    <td className="px-3 py-1.5 text-accent">{dtc.module}</td>
+                    <td className="px-3 py-1.5" style={ID_CELL}>{dtc.module}</td>
                     <td className="px-3 py-1.5 text-frost font-semibold">{dtc.code}</td>
                     <td className="px-3 py-1.5">
                       <span
@@ -458,7 +461,7 @@ function NrcSuppressionTable({ entries }: { entries: NrcSuppression[] }) {
             <tbody>
               {entries.map((n, i) => (
                 <tr key={i} className="border-t border-brd hover:bg-surf3/50 transition-colors">
-                  <td className="px-3 py-1.5 text-accent">{n.did}</td>
+                  <td className="px-3 py-1.5" style={ID_CELL}>{n.did}</td>
                   <td className="px-3 py-1.5 text-frost">0x{n.nrcCode.toString(16).toUpperCase().padStart(2, '0')}</td>
                   <td className="px-3 py-1.5 text-mid">{n.nrcName}</td>
                   <td className="px-3 py-1.5 text-dim">{fmtRelMs(n.firstSeenMs)}</td>

@@ -45,6 +45,9 @@ export function DrivesPage() {
   const setCompareOpen = useStore((s) => s.setCompareOpen)
   const [picked, setPicked] = useState<string[]>([])                 // ticked rows, in the order they were ticked
   const ticked = useMemo(() => picked.filter((id) => drives.some((d) => d.id === id)), [picked, drives])
+  // Compare counts only ticked drives: a ticked session-only entry is left out of it, and stays ticked for Delete
+  // (owner, 2026-11-14, "three grilling questions on Sapphire's Compare", item 2)
+  const tickedDrives = useMemo(() => ticked.filter((id) => drives.some((d) => d.id === id && d.hasDrive)), [ticked, drives])
   const [menuFor, setMenuFor] = useState<{ id: string; focus: 'first' | 'last' } | null>(null)
   const [editing, setEditing] = useState<Editing>(null)
   const [confirm, setConfirm] = useState<string[] | null>(null)     // the drives a delete would remove
@@ -168,9 +171,14 @@ export function DrivesPage() {
               {ticked.length >= 2 && (
                 <>
                   <button ref={deleteSelected} type="button" className="a-btn danger" onClick={() => setConfirm(ticked)}>Delete selected ({ticked.length})</button>
-                  <button type="button" className="a-btn" disabled={ticked.length > 4} aria-describedby={ticked.length > 4 ? 'compare-limit' : undefined}
-                    onClick={() => { compareDrives(ticked); setCompareOpen(true) }}>Compare ({ticked.length})</button>
-                  {ticked.length > 4 && <span id="compare-limit" className="a-meta">Compare takes two to four drives.</span>}
+                </>
+              )}
+              {tickedDrives.length >= 2 && (
+                <>
+                  <button type="button" className="a-btn" disabled={tickedDrives.length > 4} aria-describedby={tickedDrives.length > 4 ? 'compare-limit' : undefined}
+                    onClick={() => { compareDrives(tickedDrives); setCompareOpen(true) }}>Compare ({tickedDrives.length})</button>
+                  {tickedDrives.length > 4 && <span id="compare-limit" className="a-meta">Compare takes two to four drives.</span>}
+                  {tickedDrives.length < ticked.length && <span className="a-meta">Session-only entries are left out of Compare.</span>}
                 </>
               )}
               <button type="button" className="a-btn" onClick={() => setPicked([])}>Clear the ticks</button>

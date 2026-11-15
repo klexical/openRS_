@@ -42,6 +42,12 @@ export interface DriveLibraryState {
   compareFailedIds: string[]
   setCompareFailedIds: (ids: string[]) => void
 
+  /**
+   * The Current drive whose copy in memory is older than storage: it was filled in and its own re-read did not land
+   * (owner, Q14). Compare reads that drive from storage until it is read again; null when none. Set by the library only.
+   */
+  staleCurrentId: string | null
+
   /** Compare mode — selected session IDs (2-4). */
   compareSessionIds: string[]
   toggleCompareSession: (id: string) => void
@@ -109,6 +115,8 @@ export const driveLibrarySlice = (set: Set): DriveLibraryState => ({
 
   compareFailedIds: [],
   setCompareFailedIds: (ids) => set({ compareFailedIds: ids }),
+
+  staleCurrentId: null,
 
   compareSessionIds: [],
   toggleCompareSession: (id) => set((s) => {

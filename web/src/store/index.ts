@@ -35,6 +35,10 @@ interface SapphireState extends DriveLibraryState {
   compareOpen: boolean
   setCompareOpen: (open: boolean) => void
 
+  /** "What's new" is open over the page (ticket 09): once after the update, or from Settings. */
+  whatsNewOpen: boolean
+  setWhatsNewOpen: (open: boolean) => void
+
   /** The list's search text and quick filters (ticket 04): kept here, so they are still there after opening a drive. */
   listSearch: string
   setListSearch: (text: string) => void
@@ -61,6 +65,8 @@ export const useStore = create<SapphireState>((set) => ({
   setNewIds: (ids) => set({ newIds: ids }),
   compareOpen: false,
   setCompareOpen: (open) => set({ compareOpen: open }),
+  whatsNewOpen: false,
+  setWhatsNewOpen: (open) => set({ whatsNewOpen: open }),
   listSearch: '',
   setListSearch: (text) => set({ listSearch: text }),
   filterWarnings: false,

@@ -57,7 +57,7 @@ export function TpmsSummaryCard({ data }: { data: TireData }) {
             {/* A corner that never reported shows "—", not a 0 PSI reading */}
             <span style={{
               fontSize: 16,
-              fontFamily: 'Orbitron, sans-serif',
+              fontFamily: "'Sapphire Display', sans-serif",
               fontWeight: 700,
               color: t.press >= 0 ? pressColor(t.press) : colors.dim,
             }}>

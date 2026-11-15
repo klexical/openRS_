@@ -2,9 +2,12 @@
 // than on the first visit: the 300 kB first-visit budget (#384 ticket 02).
 import { lazy, Suspense } from 'react'
 
-/** A tab left open across a deploy asks for a chunk that is gone: say so, and keep the page. */
-function Unloadable() {
-  return <span className="text-xs font-mono text-warn">Sapphire was updated: reload this tab to back up or restore.</span>
+/**
+ * A tab left open across a deploy asks for a chunk that is gone: say so, and keep the page. In the palette's warning
+ * text: look A's on the new screens (at the size of F10's status lines), the root's in the storage bar (QA F12).
+ */
+function Unloadable({ lookA = false }: { lookA?: boolean }) {
+  return <span className={lookA ? 'a-meta a-failed' : 'text-xs font-mono text-warn-text'}>Sapphire was updated: reload this tab to back up or restore.</span>
 }
 let loaded: Promise<typeof import('./BackupControls') | null> | null = null
 const load = () => (loaded ??= import('./BackupControls').catch((err: unknown) => {
@@ -12,12 +15,13 @@ const load = () => (loaded ??= import('./BackupControls').catch((err: unknown) =
   return null
 }))
 const LazyBackup = lazy(() => load().then((m) => ({ default: m?.BackupButton ?? Unloadable })))
-const LazyRestore = lazy(() => load().then((m) => ({ default: m?.RestoreInput ?? (() => null) })))
+const NoRestore: (props: { buttonClass?: string; lookA?: boolean }) => null = () => null
+const LazyRestore = lazy(() => load().then((m) => ({ default: m?.RestoreInput ?? NoRestore })))
 
-export function BackupButton(props: { label: string; afterFailedUpgrade?: boolean }) {
+export function BackupButton(props: { label: string; afterFailedUpgrade?: boolean; buttonClass?: string; onDownloaded?: () => void; lookA?: boolean }) {
   return <Suspense fallback={null}><LazyBackup {...props} /></Suspense>
 }
 
-export function RestoreInput() {
-  return <Suspense fallback={null}><LazyRestore /></Suspense>
+export function RestoreInput(props: { buttonClass?: string; lookA?: boolean }) {
+  return <Suspense fallback={null}><LazyRestore {...props} /></Suspense>
 }

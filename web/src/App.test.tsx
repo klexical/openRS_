@@ -7,6 +7,7 @@ vi.mock('./lib/storage', () => ({
   // a stored drive opens; one that is not stored would be dropped from the selection (#384)
   listDrives: db.getAllSessions, loadDrive: async (id: string) => ({ id, name: id }),
   storageStatus: () => ({ state: 'ready' }), onStorageStatus: () => () => {},
+  storageCreatedNow: () => false,               // ticket 09: What's new asks whether this visit created the storage
 }))
 vi.mock('./components/layout/Shell', () => ({ Shell: () => null }))
 
