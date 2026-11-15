@@ -198,13 +198,37 @@ describe('Drive library: an Import', () => {
     expect(env.st().activeSession?.diagnostics?.sessionEvents).toHaveLength(3)
   })
 
-  it('kept, a known defect (L110): a fill-in does not read Compare\'s copies again', async () => {
-    const env = await fresh([drive('a', 1)])
+  it('#406: a fill-in of a compared drive reads Compare\'s copies again before the Import resolves', async () => {
+    const env = await fresh([drive('a', 1), drive('b', 2)])
     await env.library.loadList()
-    const a = (await env.storage.loadDrive('a'))!
-    env.useStore.setState({ compareSessionIds: ['a'], compareSessions: [a] })
+    const [a, b] = [(await env.storage.loadDrive('a'))!, (await env.storage.loadDrive('b'))!]
+    env.useStore.setState({ compareSessionIds: ['a', 'b'], compareSessions: [a, b] })
     await env.library.importDrives([], () => {}, async (_f, _p, step) => [result('again.zip', await step([withLog(drive('a', 1))]))])
-    expect(env.st().compareSessions[0]).toBe(a)
+    expect(env.st().compareSessions.map((s) => s.id)).toEqual(['a', 'b'])
+    expect(env.st().compareSessions[0].diagnostics?.sessionEvents).toHaveLength(3)
+  })
+
+  it('#406: a fill-in of a drive that is not compared reads no compared drive', async () => {
+    const env = await fresh([drive('a', 1), drive('b', 2)])
+    await env.library.loadList()
+    const b = (await env.storage.loadDrive('b'))!
+    env.useStore.setState({ compareSessionIds: ['b'], compareSessions: [b] })
+    const load = vi.spyOn(env.storage, 'loadDrive')
+    await env.library.importDrives([], () => {}, async (_f, _p, step) => [result('again.zip', await step([withLog(drive('a', 1))]))])
+    expect(load).not.toHaveBeenCalled()
+    expect(env.st().compareSessions[0]).toBe(b)
+  })
+
+  it('#406: Compare is read again even when the list\'s re-read fails, and a filled-in Current drive is read from storage', async () => {
+    const env = await fresh([drive('a', 1), drive('b', 2)])
+    await env.library.loadList()
+    const [a, b] = [(await env.storage.loadDrive('a'))!, (await env.storage.loadDrive('b'))!]
+    env.useStore.setState({ activeSessionId: 'a', activeSession: a, compareSessionIds: ['a', 'b'], compareSessions: [a, b] })
+    vi.spyOn(env.storage, 'listDrives').mockRejectedValue(new DOMException('invented list failure', 'UnknownError'))
+    await env.library.importDrives([], () => {}, async (_f, _p, step) => [result('again.zip', await step([withLog(drive('a', 1))]))])
+    expect(console.warn).toHaveBeenCalledWith('[Sapphire] Could not read the filled-in drives again:', expect.anything())
+    expect(env.st().activeSession).toBe(a)                                         // its re-read was skipped: the old copy
+    expect(env.st().compareSessions[0].diagnostics?.sessionEvents).toHaveLength(3)  // Compare did not reuse it
   })
 
   it('kept (K8): a fill-in whose re-read of the list fails still ends the Import: it resolves, warns, and lists what it stored', async () => {
