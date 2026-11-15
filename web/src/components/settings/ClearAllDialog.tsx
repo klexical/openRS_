@@ -3,6 +3,7 @@
 // bottom on a phone, a centred box on a desktop. Escape or Cancel closes it with nothing changed.
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { clearAll } from '../../lib/driveLibrary'
+import { useStore } from '../../store'
 import { BackupButton } from '../ui/LazyBackupControls'
 
 export const CLEAR_SENTENCE = 'Removes every drive and session from this browser. Your settings stay.'
@@ -10,8 +11,8 @@ export const CLEAR_SENTENCE = 'Removes every drive and session from this browser
 const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled])'
 
 export function ClearAllDialog({ what, onClose, onCleared }: {
-  /** What is stored, in words ("6 drives", "2 drives and 1 session-only entry"). */
-  what: string
+  /** What is stored, in words ("6 drives", "2 drives and 1 session-only entry"); null while the list is not read yet. */
+  what: string | null
   onClose: () => void
   onCleared: () => void
 }) {
@@ -19,6 +20,8 @@ export function ClearAllDialog({ what, onClose, onCleared }: {
   const [downloaded, setDownloaded] = useState(false)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
+  // the database waits for an older tab (QA R2): the clear waits too, and the sheet says what unblocks it
+  const blocked = useStore((s) => s.storage.state === 'blocked')
   const box = useRef<HTMLDivElement>(null)
   const cancel = useRef<HTMLButtonElement>(null)
   // step one starts on its first control (the backup); step two on Cancel, never on Clear all: a second Enter or a held
@@ -68,10 +71,11 @@ export function ClearAllDialog({ what, onClose, onCleared }: {
             <button type="button" className="a-btn" onClick={onClose}>Cancel</button>
           </div>
         </> : <>
-          <h2 id="clear-title">Clear all {what}?</h2>
+          <h2 id="clear-title">{what ? `Clear all ${what}?` : 'Clear all drives and sessions?'}</h2>
           <p>{CLEAR_SENTENCE}</p>
           {downloaded && <p className="a-meta">The backup file was downloaded.</p>}
           {failed && <p role="alert" className="a-notice">Nothing was cleared: this browser's storage did not answer. Try again.</p>}
+          {busy && blocked && <p role="status" className="a-notice">Close Sapphire's other tabs: Clear all continues once they are closed.</p>}
           <div className="a-stack">
             <button type="button" className="a-btn danger strong" disabled={busy} onClick={() => void clear()}>Clear all</button>
             <button type="button" className="a-btn" disabled={busy} onClick={() => setStep(1)}>Back</button>

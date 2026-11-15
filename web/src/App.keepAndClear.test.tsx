@@ -236,6 +236,19 @@ describe('#384 ticket 07: Clear all asks, offers the backup first, and empties a
     expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Cancel' }))
   })
 
+  it('while another tab holds the storage, the sheet says so, and gives no count it does not have (QA R2)', async () => {
+    const older = await openDB('sapphire', 1)                   // an older Sapphire's tab, still open: it does not let go
+    try {
+      const { useStore } = await boot('#/settings')
+      await waitFor(() => expect(useStore.getState().storage.state).toBe('blocked'), { timeout: 3000 })
+      const dialog = await openClearAll()
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Skip the backup' }))
+      expect(within(dialog).getByRole('heading').textContent).toBe('Clear all drives and sessions?')   // the list is not read yet
+      await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: 'Clear all' })) })
+      expect(within(dialog).getByRole('status').textContent).toBe('Close Sapphire\'s other tabs: Clear all continues once they are closed.')
+    } finally { older.close() }
+  })
+
   it('Cancel and Escape change nothing, and focus returns to Clear all', async () => {
     await seed([1])
     await boot('#/settings')

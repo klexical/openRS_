@@ -90,7 +90,7 @@ function DrivesPanel() {
           onClick={() => { setCleared(false); setClearing(true) }}>Clear all</button>
         {cleared && <p ref={clearedLine} tabIndex={-1} role="status" className="a-meta">Every drive and session was removed from this browser.</p>}
       </div>
-      {clearing && <ClearAllDialog what={what} onClose={close} onCleared={() => { setCleared(true); setClearing(false); read() }} />}
+      {clearing && <ClearAllDialog what={loaded ? what : null} onClose={close} onCleared={() => { setCleared(true); setClearing(false); read() }} />}
     </Panel>
   )
 }
