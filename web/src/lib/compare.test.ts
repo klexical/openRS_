@@ -127,6 +127,34 @@ describe('computeDeltas', () => {
   })
 })
 
+// #414: a drive without coolant or oil readings is stored with the import's −99 "no reading" marker as its peak; Compare
+// leaves that figure out, as for any missing value, and computes no difference from it. Invented values only.
+describe('computeDeltas: a peak temperature that is the "no reading" marker (#414)', () => {
+  const labels = (d: ReturnType<typeof computeDeltas>) => d.map((x) => x.label)
+  it('a drive without coolant or oil readings, against one with them: no Peak Coolant or Peak Oil difference', () => {
+    const without = makeSummary({ peakCoolantC: -99, peakOilTempC: -99 })
+    const withTemps = makeSummary({ peakCoolantC: 92, peakOilTempC: 104 })
+    for (const [base, comp] of [[without, withTemps], [withTemps, without], [without, without]]) {
+      const got = labels(computeDeltas(base, comp))
+      expect(got).not.toContain('Peak Coolant')
+      expect(got).not.toContain('Peak Oil')
+      expect(got).toContain('Peak RPM')                          // the other figures stay
+    }
+  })
+
+  it('only the missing one is left out: a drive with coolant but no oil reading keeps Peak Coolant', () => {
+    const got = computeDeltas(makeSummary({ peakCoolantC: 90, peakOilTempC: -99 }), makeSummary({ peakCoolantC: 95, peakOilTempC: 101 }))
+    expect(labels(got)).not.toContain('Peak Oil')
+    expect(got.find((d) => d.label === 'Peak Coolant')?.diff).toBe(5)
+  })
+
+  it('a real peak stays a figure: sub-zero and 0 °C peaks compare', () => {
+    const got = computeDeltas(makeSummary({ peakCoolantC: -12, peakOilTempC: 0 }), makeSummary({ peakCoolantC: 8, peakOilTempC: 3 }))
+    expect(got.find((d) => d.label === 'Peak Coolant')?.diff).toBe(20)
+    expect(got.find((d) => d.label === 'Peak Oil')?.diff).toBe(3)
+  })
+})
+
 describe('normalizePoints', () => {
   it('normalizes time to 0..1 range', () => {
     const points = [

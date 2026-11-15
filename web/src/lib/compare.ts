@@ -35,9 +35,12 @@ export interface NormalizedPoint {
   steeringAngle: number
 }
 
-/** Compute KPI deltas between two trip summaries. */
+/**
+ * Compute KPI deltas between two trip summaries. A peak temperature that is the import's −99 "no reading" marker is
+ * missing, like any other missing value: that figure is left out and no difference is computed from it (#414).
+ */
 export function computeDeltas(base: TripSummary, comp: TripSummary): KpiDelta[] {
-  const kpis: { key: keyof TripSummary; label: string; unit: string; higherIsBetter: boolean }[] = [
+  const kpis: { key: keyof TripSummary; label: string; unit: string; higherIsBetter: boolean; temp?: true }[] = [
     { key: 'peakSpeedKph', label: 'Peak Speed', unit: 'kph', higherIsBetter: true },
     { key: 'avgSpeedKph', label: 'Avg Speed', unit: 'kph', higherIsBetter: true },
     { key: 'peakRpm', label: 'Peak RPM', unit: 'RPM', higherIsBetter: true },
@@ -47,17 +50,18 @@ export function computeDeltas(base: TripSummary, comp: TripSummary): KpiDelta[] 
     { key: 'distanceKm', label: 'Distance', unit: 'km', higherIsBetter: true },
     { key: 'durationMs', label: 'Duration', unit: 'ms', higherIsBetter: false },
     { key: 'avgFuelEconomy', label: 'Fuel Economy', unit: 'L/100km', higherIsBetter: false },
-    { key: 'peakCoolantC', label: 'Peak Coolant', unit: '°C', higherIsBetter: false },
-    { key: 'peakOilTempC', label: 'Peak Oil', unit: '°C', higherIsBetter: false },
+    { key: 'peakCoolantC', label: 'Peak Coolant', unit: '°C', higherIsBetter: false, temp: true },
+    { key: 'peakOilTempC', label: 'Peak Oil', unit: '°C', higherIsBetter: false, temp: true },
     { key: 'aggressionScore', label: 'Aggression', unit: '/100', higherIsBetter: true },   // T4A
     { key: 'fuelUsedL', label: 'Fuel Used', unit: 'L', higherIsBetter: false },             // T4A
   ]
 
   return kpis
-    .map(({ key, label, unit, higherIsBetter }) => {
+    .map(({ key, label, unit, higherIsBetter, temp }) => {
       const baseValue = base[key] as number | undefined
       const compValue = comp[key] as number | undefined
       if (baseValue == null || compValue == null) return null
+      if (temp && (tempReading(baseValue) === null || tempReading(compValue) === null)) return null   // the marker (#414)
       if (!isFinite(baseValue) || !isFinite(compValue)) return null
       if (baseValue === 0 && compValue === 0) return null
       const diff = compValue - baseValue
