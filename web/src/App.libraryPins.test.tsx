@@ -308,7 +308,7 @@ describe('the compared drives (pins, Drive library commit 1)', () => {
     await waitFor(() => expect(useStore.getState().compareSessions[0]?.name).toBe('Renamed behind the page'))
   })
 
-  it('P2 kept: a failed read of the compared drives keeps the copies already shown', async () => {
+  it('Q13: a failed read of the compared drives clears the copies already shown', async () => {
     await seed([drive('a', 1), drive('b', 2)])
     const { useStore } = await boot()
     await waitFor(() => expect(useStore.getState().drives).toHaveLength(2))
@@ -319,7 +319,7 @@ describe('the compared drives (pins, Drive library commit 1)', () => {
     await compareOf(['a', 'b'], useStore)
     await waitFor(() => expect(useStore.getState().compareFailedIds).toEqual(['b']))           // the read has failed (QA F6b)
     err.mockRestore()
-    expect(useStore.getState().compareSessions.map((s) => s.id)).toEqual(['a', 'b'])
+    expect(useStore.getState().compareSessions).toEqual([])                                  // no figures it just failed to read (owner, Q13)
   })
 
   it('K6 kept, with #407: a failed read of newly compared drives shows no figures, and names the drive', async () => {
@@ -335,7 +335,7 @@ describe('the compared drives (pins, Drive library commit 1)', () => {
     err.mockRestore()
     expect(alert.textContent).toBe("Couldn't open Invented c.")                               // the line (#407)
     expect(useStore.getState().compareSessionIds).toEqual(['c', 'd'])
-    expect(useStore.getState().compareSessions.map((s) => s.id)).toEqual(['a', 'b'])      // the old copies, not shown
+    expect(useStore.getState().compareSessions).toEqual([])                                  // the old copies are cleared (owner, Q13)
     expect(document.body.textContent).not.toMatch(/ vs /)                                    // no figures
   })
 
@@ -508,12 +508,12 @@ describe('Compare when a compared drive cannot be read (#407)', () => {
     expect(screen.getByText('Invented b vs Invented a')).toBeInTheDocument()
   })
 
-  it('#407 with P2 kept: the same drives picked again, one read failing, keeps the copies shown and names that drive', async () => {
+  it('#407 with Q13: the same drives picked again, one read failing, shows only the line, no figures beside it', async () => {
     const { useStore } = await comparing(['a', 'b'])
     gate.failLoad.add('b')
     await act(async () => { useStore.getState().setCompare(['a', 'b']) })                  // the same ids, a new pick
     await waitFor(() => expect(lines()).toEqual(["Couldn't open Invented b."]))
-    expect(screen.getByText('Invented b vs Invented a')).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/ vs /)                    // no figures it just failed to read (owner, Q13)
   })
 })
 

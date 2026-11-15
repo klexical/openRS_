@@ -231,6 +231,62 @@ describe('Drive library: an Import', () => {
     expect(env.st().compareSessions[0].diagnostics?.sessionEvents).toHaveLength(3)  // Compare did not reuse it
   })
 
+  // Q14 (owner, 2026-11-15): after the Current drive's own re-read fails, its copy in memory is stale: Compare reads that
+  // drive from storage, like any other compared drive, until the drive is read again; the normal path is unchanged
+  it('Q14: after the Current drive\'s own re-read fails, a later Compare pick reads it from storage until it is read again', async () => {
+    const env = await fresh([drive('a', 1), drive('b', 2)])
+    await env.library.loadList()
+    const [a, b] = [(await env.storage.loadDrive('a'))!, (await env.storage.loadDrive('b'))!]
+    env.useStore.setState({ activeSessionId: 'a', activeSession: a, compareSessionIds: ['b'], compareSessions: [b] })
+    const real = env.storage.loadDrive
+    let failA = true
+    const load = vi.spyOn(env.storage, 'loadDrive').mockImplementation((id) =>
+      (id === 'a' && failA ? Promise.reject(new DOMException('invented read failure', 'UnknownError')) : real(id)))
+    await env.library.importDrives([], () => {}, async (_f, _p, step) => [result('again.zip', await step([withLog(drive('a', 1))]))])
+    expect(console.warn).toHaveBeenCalledWith('[Sapphire] Could not read the filled-in drives again:', expect.anything())
+    expect(env.st().activeSession).toBe(a)                                       // the re-read failed: the old copy
+    failA = false
+    env.library.compareDrives(['a', 'b'])                                        // a later pick, not the fill-in's own
+    await vi.waitFor(() => expect(env.st().compareSessions.map((s) => s.id)).toEqual(['a', 'b']))
+    expect(env.st().compareSessions[0]).not.toBe(a)
+    expect(env.st().compareSessions[0].diagnostics?.sessionEvents).toHaveLength(3)  // read from storage
+    env.library.showDrive(null); env.library.showDrive('a')                       // the drive is read again
+    await vi.waitFor(() => expect(env.st().activeSession?.diagnostics?.sessionEvents).toHaveLength(3))
+    const reread = env.st().activeSession
+    load.mockClear()
+    env.library.compareDrives(['a', 'b'])
+    await vi.waitFor(() => expect(env.st().compareSessions[0]).toBe(reread))      // the normal path: the copy in memory
+    expect(load.mock.calls.map((c) => c[0])).toEqual(['b'])
+  })
+
+  it('Q14: when the list\'s re-read fails before the Current drive\'s, a later Compare pick reads the Current drive from storage', async () => {
+    const env = await fresh([drive('a', 1), drive('b', 2)])
+    await env.library.loadList()
+    const [a, b] = [(await env.storage.loadDrive('a'))!, (await env.storage.loadDrive('b'))!]
+    env.useStore.setState({ activeSessionId: 'a', activeSession: a, compareSessionIds: ['b'], compareSessions: [b] })
+    vi.spyOn(env.storage, 'listDrives').mockRejectedValue(new DOMException('invented list failure', 'UnknownError'))
+    await env.library.importDrives([], () => {}, async (_f, _p, step) => [result('again.zip', await step([withLog(drive('a', 1))]))])
+    expect(env.st().activeSession).toBe(a)                                       // its re-read never ran: the old copy
+    env.library.compareDrives(['a', 'b'])
+    await vi.waitFor(() => expect(env.st().compareSessions.map((s) => s.id)).toEqual(['a', 'b']))
+    expect(env.st().compareSessions[0].diagnostics?.sessionEvents).toHaveLength(3)  // read from storage
+  })
+
+  it('Q14, the normal path: after the Current drive\'s re-read succeeds, a later Compare pick uses the copy in memory', async () => {
+    const env = await fresh([drive('a', 1), drive('b', 2)])
+    await env.library.loadList()
+    const [a, b] = [(await env.storage.loadDrive('a'))!, (await env.storage.loadDrive('b'))!]
+    env.useStore.setState({ activeSessionId: 'a', activeSession: a, compareSessionIds: ['b'], compareSessions: [b] })
+    await env.library.importDrives([], () => {}, async (_f, _p, step) => [result('again.zip', await step([withLog(drive('a', 1))]))])
+    const reread = env.st().activeSession
+    expect(reread?.diagnostics?.sessionEvents).toHaveLength(3)
+    const load = vi.spyOn(env.storage, 'loadDrive')
+    env.library.compareDrives(['a', 'b'])
+    await vi.waitFor(() => expect(env.st().compareSessions.map((s) => s.id)).toEqual(['a', 'b']))
+    expect(env.st().compareSessions[0]).toBe(reread)
+    expect(load.mock.calls.map((c) => c[0])).toEqual(['b'])
+  })
+
   it('kept (K8): a fill-in whose re-read of the list fails still ends the Import: it resolves, warns, and lists what it stored', async () => {
     const env = await fresh([drive('a', 1)])
     await env.library.loadList()
@@ -376,7 +432,7 @@ describe('Drive library: Compare', () => {
     detach()
   })
 
-  it('kept (P2), with #407: a failed read keeps the old copies and names the drive that failed', async () => {
+  it('Q13, with #407: a failed read clears the old copies and names the drive that failed', async () => {
     const env = await fresh([drive('a', 1), drive('b', 2)])
     const detach = env.library.attach()
     env.library.compareDrives(['a'])
@@ -385,7 +441,7 @@ describe('Drive library: Compare', () => {
     env.library.compareDrives(['b'])
     await vi.waitFor(() => expect(env.st().compareFailedIds).toEqual(['b']))
     expect(env.st().compareSessionIds).toEqual(['b'])
-    expect(env.st().compareSessions.map((s) => s.id)).toEqual(['a'])
+    expect(env.st().compareSessions).toEqual([])                                 // no copy it did not just read (owner, Q13)
     expect(env.st().compareFailedIds).toEqual(['b'])
     env.library.compareDrives(['a'])                                             // a new read clears them
     expect(env.st().compareFailedIds).toEqual([])
