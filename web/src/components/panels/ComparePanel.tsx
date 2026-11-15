@@ -19,6 +19,7 @@ export function ComparePanel() {
   const sessions = useStore((s) => s.drives)
   const compareIds = useStore((s) => s.compareSessionIds)
   const compareSessions = useCompareSessions()
+  const failedIds = useStore((s) => s.compareFailedIds)
 
   // Only sessions with trip data are useful for comparison
   const eligibleSessions = useMemo(
@@ -107,6 +108,13 @@ export function ComparePanel() {
           Clear Selection
         </button>
       )}
+
+      {/* A compared drive that could not be read (#407), named as the list calls it now */}
+      {failedIds.filter((id) => compareIds.includes(id)).map((id) => (
+        <p key={id} role="alert" className="text-sm font-mono" style={{ color: colors.warn }}>
+          Couldn't open {sessions.find((d) => d.id === id)?.name ?? 'a compared drive'}.
+        </p>
+      ))}
 
       {/* Comparison results */}
       {hasEnough && (

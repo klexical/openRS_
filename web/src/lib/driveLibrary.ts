@@ -195,16 +195,25 @@ function readCurrent(id: string | null): void {
 
 /**
  * Read the compared drives (as App's effect did): the Current drive is reused from memory, unless it is in [fresh];
- * one guard (K6, K10). Never rejects.
+ * one guard (K6, K10). A read that fails keeps the old copies (kept, P2), and its drive is named in
+ * `compareFailedIds` for Compare to say so (#407); a new read clears them. Never rejects.
  */
 function readCompared(ids: string[], fresh: string[] = []): Promise<void> {
   const token = nextToken('compare')
+  if (store().compareFailedIds.length > 0) store().setCompareFailedIds([])
   if (ids.length === 0) { store().setCompareSessions([]); return Promise.resolve() }
   const current = store().activeSession
-  return Promise.all(ids.map((id) => (current?.id === id && !fresh.includes(id) ? current : loadDrive(id))))
-    .then((loaded) => { if (newest('compare', token)) store().setCompareSessions(loaded.filter((s) => s !== null)) })
-    // kept, a known defect (L111): a failed read keeps the old copies and says nothing
-    .catch((err) => console.error('[Sapphire] Failed to open the compared drives:', err))
+  return Promise.allSettled(ids.map((id) => (current?.id === id && !fresh.includes(id) ? current : loadDrive(id))))
+    .then((answers) => {
+      if (!newest('compare', token)) return
+      const failed = ids.filter((_, i) => answers[i].status === 'rejected')
+      if (failed.length > 0) {
+        for (const a of answers) if (a.status === 'rejected') console.error('[Sapphire] Failed to open the compared drives:', a.reason)
+        store().setCompareFailedIds(failed)
+        return
+      }
+      store().setCompareSessions(answers.flatMap((a) => (a.status === 'fulfilled' && a.value !== null ? [a.value] : [])))
+    })
 }
 
 const attached = () => store().libraryAttachment.count > 0
@@ -241,7 +250,7 @@ function detachOnce(): () => void {
     if (a.count > 1) { useStore.setState({ libraryAttachment: { ...a, count: a.count - 1 } }); return }
     a.stop?.()
     nextToken('current'); nextToken('compare')                 // an answer still on its way is no longer wanted
-    useStore.setState({ libraryAttachment: { count: 0, stop: null, onNotStored: null } })
+    useStore.setState({ libraryAttachment: { count: 0, stop: null, onNotStored: null }, compareFailedIds: [] })
   }
 }
 

@@ -381,7 +381,7 @@ describe('Drive library: Compare', () => {
     detach()
   })
 
-  it('kept, a known defect (L111): a failed read keeps the old copies and says nothing', async () => {
+  it('kept (P2), with #407: a failed read keeps the old copies and names the drive that failed', async () => {
     const env = await fresh([drive('a', 1), drive('b', 2)])
     const detach = env.library.attach()
     env.library.compareDrives(['a'])
@@ -391,7 +391,25 @@ describe('Drive library: Compare', () => {
     await settle()
     expect(env.st().compareSessionIds).toEqual(['b'])
     expect(env.st().compareSessions.map((s) => s.id)).toEqual(['a'])
+    expect(env.st().compareFailedIds).toEqual(['b'])
+    env.library.compareDrives(['a'])                                             // a new read clears them
+    expect(env.st().compareFailedIds).toEqual([])
     detach()
+  })
+
+  it('#407: a failed read named in Compare goes when that drive is removed, and on detach', async () => {
+    const env = await fresh([drive('a', 1), drive('b', 2), drive('c', 3)])
+    failOn('get', 'points')
+    env.library.compareDrives(['b', 'c'])                                        // not attached: the ask reads them
+    await settle()
+    expect(env.st().compareFailedIds).toEqual(['b', 'c'])
+    env.useStore.getState().removeDrives(['b'])                                  // not attached: no read again
+    expect(env.st().compareFailedIds).toEqual(['c'])
+    const detach = env.library.attach()                                          // reads c again, which fails again
+    await settle()
+    expect(env.st().compareFailedIds).toEqual(['c'])
+    detach()
+    expect(env.st().compareFailedIds).toEqual([])
   })
 
   it('without attach, the Compare asks read the drives themselves', async () => {

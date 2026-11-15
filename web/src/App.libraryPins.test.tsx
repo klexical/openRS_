@@ -320,7 +320,7 @@ describe('the compared drives (pins, Drive library commit 1)', () => {
     expect(useStore.getState().compareSessions.map((s) => s.id)).toEqual(['a', 'b'])
   })
 
-  it('K6 kept, a known defect (L111, fixed separately): a failed read of newly compared drives shows no figures and no message', async () => {
+  it('K6 kept, with #407: a failed read of newly compared drives shows no figures, and names the drive', async () => {
     await seed([drive('a', 1), drive('b', 2), drive('c', 3), drive('d', 4)])
     const { useStore } = await boot()
     await waitFor(() => expect(useStore.getState().drives).toHaveLength(4))
@@ -334,7 +334,7 @@ describe('the compared drives (pins, Drive library commit 1)', () => {
     expect(useStore.getState().compareSessionIds).toEqual(['c', 'd'])
     expect(useStore.getState().compareSessions.map((s) => s.id)).toEqual(['a', 'b'])      // the old copies, not shown
     expect(document.body.textContent).not.toMatch(/ vs /)                                    // no figures
-    expect(screen.queryByRole('alert')).toBeNull()                                            // and no message
+    expect(screen.getByRole('alert').textContent).toBe("Couldn't open Invented c.")           // the line (#407)
   })
 
   it('K11 kept: a session-only entry can be ticked for Compare, which then says it needs drives with trip data', async () => {
@@ -435,6 +435,70 @@ describe('Compare after an Import fills a compared drive in (#406)', () => {
     expect(useStore.getState().drives.find((d) => d.id === 'y')?.summary?.peakRpm).toBe(6500)   // y was filled in
     await waitFor(() => expect(peakRpmCard().textContent).toBe('Peak RPM6500RPM▲ +3498(+116.5%)base: 3002'))
     expect(screen.getByText('Invented y vs Invented x')).toBeInTheDocument()             // Compare stayed open
+  })
+})
+
+describe('Compare when a compared drive cannot be read (#407)', () => {
+  /** Compare open on a and b, their figures shown. */
+  async function comparing(ids: string[]) {
+    await seed(ids.map((id, i) => drive(id, i + 1)))
+    const env = await boot()
+    await waitFor(() => expect(env.useStore.getState().drives).toHaveLength(ids.length))
+    await act(async () => { env.useStore.getState().setCompare(['a', 'b']); env.useStore.getState().setCompareOpen(true) })
+    expect(await screen.findByText('Invented b vs Invented a', {}, { timeout: 5000 })).toBeInTheDocument()
+    return env
+  }
+  const lines = () => screen.queryAllByRole('alert').map((e) => e.textContent)
+
+  it('#407: Compare says "Couldn\'t open <name>." when a newly compared drive cannot be read', async () => {
+    const { useStore } = await comparing(['a', 'b', 'c', 'd'])
+    gate.failLoad.add('c')
+    await act(async () => { useStore.getState().setCompare(['c', 'd']) })
+    await waitFor(() => expect(lines()).toEqual(["Couldn't open Invented c."]))
+    expect(document.body.textContent).not.toMatch(/ vs /)                    // the drives that did open are not compared
+  })
+
+  it('#407: one line for each drive that cannot be read, in Compare\'s order', async () => {
+    const { useStore } = await comparing(['a', 'b', 'c', 'd'])
+    gate.failLoad.add('d'); gate.failLoad.add('c')
+    await act(async () => { useStore.getState().setCompare(['c', 'd']) })
+    await waitFor(() => expect(lines()).toEqual(["Couldn't open Invented c.", "Couldn't open Invented d."]))
+  })
+
+  it('#407: the line names the drive as it is called now, and goes when the drives are read', async () => {
+    const { useStore } = await comparing(['a', 'b', 'c'])
+    gate.failLoad.add('c')
+    await act(async () => { useStore.getState().setCompare(['a', 'b', 'c']) })
+    await waitFor(() => expect(lines()).toEqual(["Couldn't open Invented c."]))
+    await act(async () => { useStore.getState().updateDrive({ ...useStore.getState().drives.find((d) => d.id === 'c')!, name: 'Renamed c' }) })
+    expect(lines()).toEqual(["Couldn't open Renamed c."])
+    gate.failLoad.delete('c')
+    await act(async () => { useStore.getState().setCompare(['a', 'b']) })                  // c out of Compare: a, b read again
+    await waitFor(() => expect(screen.getByText('Invented b vs Invented a')).toBeInTheDocument())
+    expect(lines()).toEqual([])
+  })
+
+  it('#407: a failed read of drives no longer compared puts up no line', async () => {
+    const { useStore } = await comparing(['a', 'b', 'c', 'd'])
+    const [hold, release] = held()
+    gate.hold.set('c', hold); gate.failLoad.add('c')                       // c's read waits, then fails
+    await act(async () => { useStore.getState().setCompare(['c', 'd']) })
+    await waitFor(() => expect(gate.started).toContain('c'), { timeout: 5000 })
+    await act(async () => { useStore.getState().setCompare(['a', 'b']) })
+    await waitFor(() => expect(screen.getByText('Invented b vs Invented a')).toBeInTheDocument())
+    release()
+    await waitFor(() => expect(gate.answered).toContain('c'))
+    await settle()
+    expect(lines()).toEqual([])
+    expect(screen.getByText('Invented b vs Invented a')).toBeInTheDocument()
+  })
+
+  it('#407 with P2 kept: the same drives picked again, one read failing, keeps the copies shown and names that drive', async () => {
+    const { useStore } = await comparing(['a', 'b'])
+    gate.failLoad.add('b')
+    await act(async () => { useStore.getState().setCompare(['a', 'b']) })                  // the same ids, a new pick
+    await waitFor(() => expect(lines()).toEqual(["Couldn't open Invented b."]))
+    expect(screen.getByText('Invented b vs Invented a')).toBeInTheDocument()
   })
 })
 
