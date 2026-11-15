@@ -16,12 +16,17 @@ export function ClearAllDialog({ what, onClose, onCleared }: {
   onCleared: () => void
 }) {
   const [step, setStep] = useState<1 | 2>(1)
-  const [backedUp, setBackedUp] = useState(false)
+  const [downloaded, setDownloaded] = useState(false)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   const box = useRef<HTMLDivElement>(null)
-  // each step starts with its first control focused
-  useEffect(() => { box.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus() }, [step])
+  const cancel = useRef<HTMLButtonElement>(null)
+  // step one starts on its first control (the backup); step two on Cancel, never on Clear all: a second Enter or a held
+  // key must not clear everything (as ConfirmDialog)
+  useEffect(() => {
+    if (step === 2) cancel.current?.focus()
+    else box.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus()
+  }, [step])
 
   const onKey = (e: KeyboardEvent) => {
     if (e.key === 'Escape' && !busy) { e.preventDefault(); onClose() }
@@ -56,19 +61,21 @@ export function ClearAllDialog({ what, onClose, onCleared }: {
           <h2 id="clear-title">Back up before clearing?</h2>
           <p>A backup is one file with every drive and its log. It can be restored into Sapphire later.</p>
           <div className="a-stack">
-            <BackupButton label="Back up all drives" buttonClass="a-btn primary" onReady={() => setBackedUp(true)} />
-            <button type="button" className={backedUp ? 'a-btn primary' : 'a-btn'} onClick={() => setStep(2)}>
-              {backedUp ? 'Continue' : 'Skip the backup'}</button>
+            {/* the way on says "Continue" only once the file's link was followed: a file built but not saved is no backup */}
+            <BackupButton label="Back up all drives" buttonClass="a-btn primary" onDownloaded={() => setDownloaded(true)} />
+            <button type="button" className={downloaded ? 'a-btn primary' : 'a-btn'} onClick={() => setStep(2)}>
+              {downloaded ? 'Continue' : 'Skip the backup'}</button>
             <button type="button" className="a-btn" onClick={onClose}>Cancel</button>
           </div>
         </> : <>
           <h2 id="clear-title">Clear all {what}?</h2>
           <p>{CLEAR_SENTENCE}</p>
+          {downloaded && <p className="a-meta">The backup file was downloaded.</p>}
           {failed && <p role="alert" className="a-notice">Nothing was cleared: this browser's storage did not answer. Try again.</p>}
           <div className="a-stack">
             <button type="button" className="a-btn danger strong" disabled={busy} onClick={() => void clear()}>Clear all</button>
             <button type="button" className="a-btn" disabled={busy} onClick={() => setStep(1)}>Back</button>
-            <button type="button" className="a-btn" disabled={busy} onClick={onClose}>Cancel</button>
+            <button ref={cancel} type="button" className="a-btn" disabled={busy} onClick={onClose}>Cancel</button>
           </div>
         </>}
       </div>

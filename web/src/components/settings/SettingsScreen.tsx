@@ -19,6 +19,8 @@ const PAINTS: { id: ThemeId; label: string }[] = [
 const SECTIONS = [['drives', 'Your drives'], ['units', 'Units'], ['paint', 'Paint colour'], ['map', 'The map']] as const
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+/** Below this (0.05 MB) the space is "almost none": rounding it up to a figure would say more than the browser does. */
+const ALMOST_NONE = 50_000
 
 export function SettingsScreen() {
   return (
@@ -75,7 +77,7 @@ function DrivesPanel() {
     <Panel id="drives" title="Your drives" className="a-panel-lead">
       <dl className="a-summary">
         <div><dt>Stored</dt><dd>{loaded ? what : '…'}</dd></div>
-        <div><dt>Space</dt><dd>{status?.usage != null ? `about ${aboutSize(status.usage)}` : '—'}</dd></div>
+        <div><dt>Space</dt><dd>{status?.usage == null ? '—' : status.usage < ALMOST_NONE ? 'almost none' : `about ${aboutSize(status.usage)}`}</dd></div>
         <div><dt>Kept</dt><dd>{status === null ? '…' : status.kept === null ? 'Not said' : status.kept ? 'Kept' : 'Not kept'}</dd></div>
       </dl>
       {status && <KeepWords status={status} />}
@@ -102,7 +104,7 @@ function KeepWords({ status }: { status: KeepStatus }) {
       : kept ? 'Kept: this browser keeps Sapphire\'s drives and will not clear them to free space.'
         : 'Not kept: this browser may clear Sapphire\'s drives when space runs low. A backup keeps a copy.'}</p>
     <p className="a-meta">{usage === null ? 'This browser does not say how much space they use.'
-      : quota ? `About ${aboutSize(usage)} used, of about ${aboutSize(quota)} this browser allows.` : `About ${aboutSize(usage)} used.`}</p>
+      : `${usage < ALMOST_NONE ? 'Almost no space used' : `About ${aboutSize(usage)} used`}${quota ? `, of about ${aboutSize(quota)} this browser allows` : ''}.`}</p>
   </>
 }
 

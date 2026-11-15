@@ -166,6 +166,13 @@ describe('#384 ticket 07: Settings says, in words, whether the browser keeps the
     expect(within(panel).getByText('Kept').nextElementSibling?.textContent).toBe('Not said')
   })
 
+  it('almost no space used is said as such, not rounded up to a figure', async () => {
+    storageManager({ persisted: true, usage: 0, quota: 2_000_000_000 })
+    await boot('#/settings')
+    const panel = await dataPanel()
+    await waitFor(() => expect(panel.textContent).toContain('Almost no space used, of about 2 GB this browser allows.'))
+  })
+
   it('Settings says where the map background comes from, word for word', async () => {
     await boot('#/settings')
     expect(await screen.findByText(MAP_SENTENCE, {}, { timeout: 3000 })).toBeInTheDocument()
@@ -204,6 +211,29 @@ describe('#384 ticket 07: Clear all asks, offers the backup first, and empties a
     originals.splice(0).reverse().forEach(([m, orig]) => { proto[m] = orig })
     expect(await counts()).toEqual([2, 2, 2])
     expect(useStore.getState().drives).toHaveLength(2)
+  })
+
+  it('a backup made in step one counts only once its file is downloaded: until then the way on still says "Skip"', async () => {
+    URL.createObjectURL = () => 'blob:invented'; URL.revokeObjectURL = () => {}
+    await seed([1, 2])
+    await boot('#/settings')
+    const dialog = await openClearAll()
+    await act(async () => { fireEvent.click(await within(dialog).findByRole('button', { name: 'Back up all drives' }, { timeout: 3000 })) })
+    const link = await waitFor(() => { const a = dialog.querySelector('a[download]'); expect(a).not.toBeNull(); return a as HTMLAnchorElement })
+    expect(within(dialog).getByRole('button', { name: 'Skip the backup' })).toBeInTheDocument()   // the file is not saved yet
+    expect(within(dialog).queryByRole('button', { name: 'Continue' })).toBeNull()
+    link.addEventListener('click', (e) => e.preventDefault())                     // jsdom cannot follow a download
+    fireEvent.click(link)
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Continue' }))
+    expect(within(dialog).getByText('The backup file was downloaded.')).toBeInTheDocument()
+  }, 15_000)
+
+  it('step two opens with focus on Cancel, never on Clear all', async () => {
+    await seed([1])
+    await boot('#/settings')
+    const dialog = await openClearAll()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Skip the backup' }))
+    expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Cancel' }))
   })
 
   it('Cancel and Escape change nothing, and focus returns to Clear all', async () => {

@@ -19,12 +19,12 @@ type BackupState =
  * A button that builds the backup file, shows its progress, then offers it as a download link. Leaving the page while
  * it is built stops it: the worker is ended and no download address is made.
  */
-export function BackupButton({ label, afterFailedUpgrade = false, buttonClass = button, onReady }: {
+export function BackupButton({ label, afterFailedUpgrade = false, buttonClass = button, onDownloaded }: {
   label: string; afterFailedUpgrade?: boolean
   /** The button's look (look A screens pass theirs). */
   buttonClass?: string
-  /** Called once the file is ready to download (Clear all's first step). */
-  onReady?: () => void
+  /** Called when the download link is followed: the file is being saved, not only built (Clear all's first step). */
+  onDownloaded?: () => void
 }) {
   const [s, setS] = useState<BackupState>({ state: 'idle' })
   const storage = useStore((st) => st.storage)
@@ -44,7 +44,6 @@ export function BackupButton({ label, afterFailedUpgrade = false, buttonClass = 
       if (stop.signal.aborted) return
       url.current = URL.createObjectURL(file.blob)
       setS({ state: 'ready', url: url.current, name: file.name, drives: file.drives })
-      onReady?.()
     } catch (err) {
       if (stop.signal.aborted) return
       console.warn('[Sapphire] Backup failed:', err)
@@ -61,7 +60,7 @@ export function BackupButton({ label, afterFailedUpgrade = false, buttonClass = 
           ? <span className="text-warn">Close Sapphire's other tabs: the backup continues once they are closed.</span>
           : s.total > 0 ? `Building the backup: ${s.done} of ${drivesText(s.total)}…` : 'Building the backup…')}
         {s.state === 'ready' && (
-          <a href={s.url} download={s.name} className="text-accent underline">
+          <a href={s.url} download={s.name} className="text-accent underline" onClick={() => onDownloaded?.()}>
             Download {s.name} ({drivesText(s.drives)})
           </a>
         )}

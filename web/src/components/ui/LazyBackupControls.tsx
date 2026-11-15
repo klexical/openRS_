@@ -15,7 +15,7 @@ const LazyBackup = lazy(() => load().then((m) => ({ default: m?.BackupButton ?? 
 const NoRestore: (props: { buttonClass?: string }) => null = () => null
 const LazyRestore = lazy(() => load().then((m) => ({ default: m?.RestoreInput ?? NoRestore })))
 
-export function BackupButton(props: { label: string; afterFailedUpgrade?: boolean; buttonClass?: string; onReady?: () => void }) {
+export function BackupButton(props: { label: string; afterFailedUpgrade?: boolean; buttonClass?: string; onDownloaded?: () => void }) {
   return <Suspense fallback={null}><LazyBackup {...props} /></Suspense>
 }
 
