@@ -89,6 +89,18 @@ describe('#384 ticket 09: "What\'s new" is shown once after the update, not on a
     expect(await screen.findByRole('dialog', { name: "What's new" }, { timeout: 3000 })).toBeInTheDocument()
   })
 
+  it('after an upgrade that waited on another tab: shown once that tab closes and the upgrade completes (QA F5)', async () => {
+    const older = await openDB('sapphire', 1, { upgrade(d) { d.createObjectStore('sessions', { keyPath: 'id' }) } })
+    await older.put('sessions', session('v1'))                   // an older Sapphire's tab, still open: it does not let go
+    try {
+      const { useStore } = await boot()
+      await waitFor(() => expect(useStore.getState().storage.state).toBe('blocked'), { timeout: 3000 })
+      expect(whatsNew()).toBeNull()                              // not while the upgrade waits
+      older.close()
+      expect(await screen.findByRole('dialog', { name: "What's new" }, { timeout: 3000 })).toBeInTheDocument()
+    } finally { older.close() }
+  })
+
   it('not over a storage upgrade that failed: the page says so instead, and nothing is marked seen', async () => {
     const db = await openDB('sapphire', 1, { upgrade(d) { d.createObjectStore('sessions', { keyPath: 'id' }) } })
     await db.put('sessions', { ...session('bad'), trip: { ...session('bad').trip!, points: 'not an array' } })   // cannot convert

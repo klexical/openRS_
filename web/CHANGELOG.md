@@ -19,6 +19,8 @@ Sections, in this order: Added, Fixed, Changed, Removed. Every entry ends with i
 - **Keep my data** — after the first import or restore that stores a drive, Sapphire asks the browser to keep its data, once; Settings says in words whether the browser agreed, and about how much space is used (`lib/keepData.ts`). ([#384](https://github.com/klexical/openRS_/issues/384))
 - **Match device, Night, Day and Ultra** — Settings' "Palette": Match device, the first visit's choice, follows the device's light or dark setting; Night, Day and Ultra are fixed choices; text on the new screens reads at WCAG AA in all three; on Day, the older Trip, Dashboard and Diagnostics views' fixed yellow, green and orange figures stay below AA until slice 3 rebuilds those views (`styles/lookA.ts`, `lib/devicePalette.ts`). ([#384](https://github.com/klexical/openRS_/issues/384))
 - **What's new** — shown once after this update to anyone who had Sapphire before, never on a fresh install, and always reachable from Settings, under About (`components/whatsnew/`). ([#384](https://github.com/klexical/openRS_/issues/384))
+- **Map background unavailable** — when the map server cannot be reached, a drive's route is drawn on a plain background with the line "Map background unavailable", and every chart still works (`GpsMap.tsx`). ([#384](https://github.com/klexical/openRS_/issues/384))
+- **The openRS_ icon in the browser tab** — the favicon is the openRS_ app's launcher icon, in place of the build tool's stock one (`public/favicon.png`). ([#384](https://github.com/klexical/openRS_/issues/384))
 
 ### Fixed
 - **Leaving a route map at once no longer throws a page error** — the map's zoom-to-fit no longer animates, so a drive closed within moments of opening leaves no Leaflet "_leaflet_pos" error behind; the map opens at the fitted view at once (`GpsMap.tsx`). ([#401](https://github.com/klexical/openRS_/issues/401))
@@ -34,7 +36,7 @@ Sections, in this order: Added, Fixed, Changed, Removed. Every entry ends with i
 - **The Import screen** — Import is an action now (the list's Import button, or a drop anywhere); the screen and the unused batch-ZIP check (`isBatchZip`) are removed (`ImportPanel.tsx`, `lib/import.ts`). ([#384](https://github.com/klexical/openRS_/issues/384))
 - **The Sessions screen** — its rename, tags, delete, "Delete selected" and Compare live on in the list of drives (each row's menu, ticked rows); the screen and its search bar are removed (`SessionsPanel.tsx`, `SearchBar.tsx`). ([#384](https://github.com/klexical/openRS_/issues/384))
 - **The remembered view and the unused router** — the address is the memory now: the old remembered-view key is ignored, and the `react-router-dom` dependency, which nothing used, is removed (`package.json`). ([#384](https://github.com/klexical/openRS_/issues/384))
-- **Unused code** — the data-cell component and the `@` import alias, which nothing used (`DataCell.tsx`, `vite.config.ts`). ([#384](https://github.com/klexical/openRS_/issues/384))
+- **Unused code** — the data-cell component and the `@` import alias, which nothing used (`DataCell.tsx`, `vite.config.ts`, `vitest.config.ts`). ([#384](https://github.com/klexical/openRS_/issues/384))
 
 ## Repairs (slice 1)
 
