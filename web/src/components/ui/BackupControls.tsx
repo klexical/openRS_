@@ -6,6 +6,9 @@ import { restore as restoreLibrary } from '../../lib/driveLibrary'
 import { makeBackup } from '../../lib/backup'
 
 const drivesText = (n: number) => `${n} drive${n === 1 ? '' : 's'}`
+/** The status line's classes: the old palette's (the failed-upgrade notice), or look A's on the new screens (QA F10). */
+const OLD_TEXT = { line: 'text-xs font-mono text-dim', warn: 'text-warn' }
+const LOOK_A_TEXT = { line: 'a-meta', warn: 'a-failed' }
 const button = `px-3 py-2 rounded-md text-xs font-mono uppercase tracking-wider border border-brd text-frost
   hover:bg-surf3 transition-colors disabled:opacity-30 disabled:cursor-not-allowed`
 
@@ -19,13 +22,16 @@ type BackupState =
  * A button that builds the backup file, shows its progress, then offers it as a download link. Leaving the page while
  * it is built stops it: the worker is ended and no download address is made.
  */
-export function BackupButton({ label, afterFailedUpgrade = false, buttonClass = button, onDownloaded }: {
+export function BackupButton({ label, afterFailedUpgrade = false, buttonClass = button, onDownloaded, lookA = false }: {
   label: string; afterFailedUpgrade?: boolean
   /** The button's look (look A screens pass theirs). */
   buttonClass?: string
   /** Called when the download link is followed: the file is being saved, not only built (Clear all's first step). */
   onDownloaded?: () => void
+  /** On a look A screen (Settings, Clear all): its text classes, so the status reads in every palette (QA F10). */
+  lookA?: boolean
 }) {
+  const t = lookA ? LOOK_A_TEXT : OLD_TEXT
   const [s, setS] = useState<BackupState>({ state: 'idle' })
   const storage = useStore((st) => st.storage)
   const url = useRef<string | null>(null)
@@ -54,17 +60,17 @@ export function BackupButton({ label, afterFailedUpgrade = false, buttonClass = 
   return (
     <div className="flex flex-wrap items-center gap-3">
       <button type="button" onClick={run} disabled={s.state === 'building'} className={buttonClass}>{label}</button>
-      <span role="status" className="text-xs font-mono text-dim">
+      <span role="status" className={t.line}>
         {s.state === 'building' && (storage.state === 'blocked'
           // the database waits for an older tab, and so does the backup: say what unblocks it
-          ? <span className="text-warn">Close Sapphire's other tabs: the backup continues once they are closed.</span>
+          ? <span className={t.warn}>Close Sapphire's other tabs: the backup continues once they are closed.</span>
           : s.total > 0 ? `Building the backup: ${s.done} of ${drivesText(s.total)}…` : 'Building the backup…')}
         {s.state === 'ready' && (
           <a href={s.url} download={s.name} className="text-accent underline" onClick={() => onDownloaded?.()}>
             Download {s.name} ({drivesText(s.drives)})
           </a>
         )}
-        {s.state === 'failed' && <span className="text-warn">{s.message}</span>}
+        {s.state === 'failed' && <span className={t.warn}>{s.message}</span>}
       </span>
       {afterFailedUpgrade && (
         <span className="text-xs font-mono">Keep this file. It can be restored once Sapphire's update has completed in this browser.</span>
@@ -74,7 +80,8 @@ export function BackupButton({ label, afterFailedUpgrade = false, buttonClass = 
 }
 
 /** Choose a backup file and restore it: adds what is missing, skips what is here, never overwrites. */
-export function RestoreInput({ buttonClass = button }: { buttonClass?: string } = {}) {
+export function RestoreInput({ buttonClass = button, lookA = false }: { buttonClass?: string; lookA?: boolean } = {}) {
+  const t = lookA ? LOOK_A_TEXT : OLD_TEXT
   const [text, setText] = useState<{ message: string; warn: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -103,7 +110,7 @@ export function RestoreInput({ buttonClass = button }: { buttonClass?: string } 
         <input type="file" accept=".zip,application/zip" aria-label="Restore from a backup" className="sr-only" disabled={busy}
           onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; void restore(f) }} />
       </label>
-      {text && <span role="status" className={`text-xs font-mono ${text.warn ? 'text-warn' : 'text-dim'}`}>{text.message}</span>}
+      {text && <span role="status" className={text.warn ? t.warn : t.line}>{text.message}</span>}
     </div>
   )
 }

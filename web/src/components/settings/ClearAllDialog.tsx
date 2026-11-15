@@ -65,7 +65,7 @@ export function ClearAllDialog({ what, onClose, onCleared }: {
           <p>A backup is one file with every drive and its log. It can be restored into Sapphire later.</p>
           <div className="a-stack">
             {/* the way on says "Continue" only once the file's link was followed: a file built but not saved is no backup */}
-            <BackupButton label="Back up all drives" buttonClass="a-btn primary" onDownloaded={() => setDownloaded(true)} />
+            <BackupButton label="Back up all drives" buttonClass="a-btn primary" onDownloaded={() => setDownloaded(true)} lookA />
             <button type="button" className={downloaded ? 'a-btn primary' : 'a-btn'} onClick={() => setStep(2)}>
               {downloaded ? 'Continue' : 'Skip the backup'}</button>
             <button type="button" className="a-btn" onClick={onClose}>Cancel</button>

@@ -219,6 +219,23 @@ describe('#384 ticket 08: Settings offers Match device, Night, Day and Ultra, na
     await waitFor(() => expect(shown()).toBe('day'))
   })
 
+  it('a Reset pressed before the storage opens is kept: the first-visit decision does not overwrite it (QA item 5)', async () => {
+    device('light')
+    const { openDB } = await import('idb')
+    const older = await openDB('sapphire', 1, { upgrade(d) { d.createObjectStore('sessions', { keyPath: 'id' }) } })
+    try {                                                       // an older tab holds the storage: it does not open yet
+      const { useStore } = await boot('#/settings')
+      await waitFor(() => expect(useStore.getState().storage.state).toBe('blocked'), { timeout: 3000 })
+      expect(shown()).toBe('night')                             // no settings record: Night until the storage opens
+      fireEvent.click(await screen.findByRole('button', { name: 'Reset units, palette and paint colour' }, { timeout: 3000 }))
+      older.close()                                             // the storage opens; earlier data: a returning visit
+      await waitFor(() => expect(useStore.getState().drivesLoaded).toBe(true), { timeout: 3000 })
+      await act(async () => { for (let i = 0; i < 5; i++) await Promise.resolve() })
+      expect(within(await palettePicker()).getByRole('radio', { name: 'Match device' })).toHaveAttribute('aria-checked', 'true')
+      expect(shown()).toBe('day')
+    } finally { older.close() }
+  })
+
   it('the option is never named "Auto", and the words "Theme", "Mode" and "Look" do not name it', async () => {
     device('dark')
     await boot('#/settings')

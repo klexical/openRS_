@@ -90,6 +90,7 @@ export const useSettings = create<SettingsState>((set) => ({
   setPalette: (palette) => { paletteUndecided = false; persist({ palette }); set({ palette }) },
 
   resetDefaults: () => {
+    paletteUndecided = false                      // a Reset before the storage opens is the choice: not overwritten (QA item 5)
     // a record with the defaults, not none: no record would read as "returning, keep Night" on the next visit (QA G2)
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(defaults)) } catch { /* ignore */ }
     set(defaults)

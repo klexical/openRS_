@@ -83,8 +83,8 @@ function DrivesPanel() {
       </dl>
       {status && <KeepWords status={status} />}
       <div className="a-buttons">
-        <BackupButton label="Back up all drives" buttonClass="a-btn primary" />
-        <RestoreInput buttonClass="a-btn" />
+        <BackupButton label="Back up all drives" buttonClass="a-btn primary" lookA />
+        <RestoreInput buttonClass="a-btn" lookA />
       </div>
       <div className="a-under">
         <button ref={clearButton} type="button" className="a-btn danger" disabled={loaded && drives.length === 0}

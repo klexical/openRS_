@@ -40,9 +40,9 @@ Sapphire opens on **Drives**; the other place is **Settings**. Each has an addre
 
 | Place | Description |
 |-------|-------------|
-| **Drives** | Every stored drive, newest first, grouped by month: date, name, duration, distance, top speed, peak boost, and the markers Warnings, Laps (with the best lap) and Session only. A search box (name, tag, date) and the quick filters With warnings and With laps. Each row's menu: rename, note, tags, export, delete; ticked rows: Delete selected, Compare (two to four). **Import** takes one or several export ZIPs; a ZIP dropped anywhere on the page imports too. One new drive opens on its own page; several new drives open the list with each marked New |
+| **Drives** | Every stored drive, newest first, grouped by month: date, name, duration, distance, top speed, peak boost, and the markers Warnings, Laps (with the best lap) and Session only. A search box (name, tag, date) and the quick filters With warnings and With laps. Each row's menu: rename, note, tags, export, delete; ticked rows: Delete selected, and Compare (two to four ticked drives; a session-only entry is left out). **Import** takes one or several export ZIPs; a ZIP dropped anywhere on the page imports too. One new drive opens on its own page; several new drives open the list with each marked New |
 | **A drive** | Opened from its row: today's **Dashboard** (KPI cards, peaks, drive mode breakdown), **Trip** (time-series charts, map) and **Diagnostics** (CAN frame inventory, session events, DID probe results) views |
-| **Settings** | Units, paint accent, back up all drives and restore, clear all |
+| **Settings** | Your drives first (how many, about how much space, whether the browser keeps them), back up all drives and restore, Clear all (in two steps, a backup offered first); units; the Palette (Match device, Night, Day, Ultra) and the Paint colour, the RS paint on buttons, tabs and highlights only, never on data; the map sentence; About, with "What's new" |
 
 ---
 
