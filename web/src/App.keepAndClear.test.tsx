@@ -248,6 +248,10 @@ describe('#384 ticket 07: Clear all asks, offers the backup first, and empties a
       expect(within(dialog).getByRole('heading').textContent).toBe('Clear all drives and sessions?')   // the list is not read yet
       await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: 'Clear all' })) })
       expect(within(dialog).getByRole('status').textContent).toBe('Close Sapphire\'s other tabs: Clear all continues once they are closed.')
+      older.close()                                              // the other tab closes: the clear goes on, and the words go
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: 3000 })
+      expect(screen.queryByText('Close Sapphire\'s other tabs: Clear all continues once they are closed.')).toBeNull()
+      expect((await dataPanel()).textContent).toContain('Every drive and session was removed from this browser.')
     } finally { older.close() }
   })
 

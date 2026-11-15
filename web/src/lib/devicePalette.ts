@@ -25,6 +25,6 @@ const deviceIsDark = () => query()?.matches ?? false
 /** The palette to draw in: the one chosen, or for Match device the one the device's setting gives. Never Ultra by itself. */
 export function useResolvedPalette(choice: PaletteChoice): PaletteName {
   const dark = useSyncExternalStore(subscribe, deviceIsDark, deviceIsDark)
-  if (choice !== 'match') return choice
+  if (choice !== 'match') return choice                        // an unknown stored value never gets here: settings.ts (QA R5)
   return dark ? 'night' : 'day'
 }

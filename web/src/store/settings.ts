@@ -32,10 +32,18 @@ const defaults: Settings = {
   palette: 'match',               // a first visit follows the device (owner, 2026-11-14)
 }
 
+const PALETTES: readonly PaletteChoice[] = ['match', 'night', 'day', 'ultra']
+
 function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return { ...defaults, ...JSON.parse(raw) }
+    if (raw) {
+      const s = { ...defaults, ...JSON.parse(raw) }
+      // a palette this build does not know (a later build's, after a revert): Match device, as an unknown paint
+      // falls back to Nitrous Blue (QA R5)
+      if (!PALETTES.includes(s.palette)) s.palette = defaults.palette
+      return s
+    }
   } catch { /* ignore */ }
   return defaults
 }

@@ -156,6 +156,20 @@ describe('#384 ticket 08: Settings offers Match device, Night, Day and Ultra, na
     expect(shown()).toBe('day')
   })
 
+  it('an unknown palette in the stored settings (a later build\'s, after a revert) falls back to Match device (QA R5)', async () => {
+    device('dark')
+    localStorage.setItem('sapphire_settings', JSON.stringify({ palette: 'qa-unknown', themeId: 'cyan' }))
+    const errors: unknown[] = []
+    const onError = (e: ErrorEvent) => errors.push(e.error)
+    window.addEventListener('error', onError)
+    try {
+      await boot('#/settings')
+      await waitFor(() => expect(shown()).toBe('night'))
+      expect(within(await palettePicker()).getByRole('radio', { name: 'Match device' })).toHaveAttribute('aria-checked', 'true')
+      expect(errors).toEqual([])
+    } finally { window.removeEventListener('error', onError) }
+  })
+
   it('the option is never named "Auto", and the words "Theme", "Mode" and "Look" do not name it', async () => {
     device('dark')
     await boot('#/settings')
